@@ -66,8 +66,7 @@ export class AvailabilityCalendar {
 
     // Also update unit in repository if repository exists
     if (this.#repository) {
-      const units = this.#repository.findAll();
-      const unit = units.find((u) => u.id === unitId);
+      const unit = this.#repository.findById ? this.#repository.findById(unitId) : this.#repository.findAll().find((u) => u.id === unitId);
       if (unit) {
         unit.blockedDates = unit.blockedDates || [];
         unit.blockedDates.push({ start, end });
@@ -95,7 +94,7 @@ export class AvailabilityCalendar {
     }
 
     if (this.#repository) {
-      const unit = this.#repository.findAll().find((u) => u.id === unitId);
+      const unit = this.#repository.findById ? this.#repository.findById(unitId) : this.#repository.findAll().find((u) => u.id === unitId);
       if (unit && unit.blockedDates) {
         for (const blocked of unit.blockedDates) {
           if (dateOverlaps(start, end, blocked.start, blocked.end)) {
@@ -137,9 +136,12 @@ export class AvailabilityCalendar {
       throw new Error("Maximum extension limit reached: at most 1 extension permitted");
     }
 
-    // Extend by 15 minutes from original 45 (max 60 minutes total from creation)
-    const maxExpiry = new Date(new Date(hold.createdAt).getTime() + 60 * 60 * 1000).toISOString();
-    hold.expiresAt = maxExpiry;
+    // US-70: 15-minute extension capped at 60 minutes total from creation
+    const currentExpiryMs = new Date(hold.expiresAt).getTime();
+    const maxExpiryMs = new Date(hold.createdAt).getTime() + 60 * 60 * 1000;
+    const newExpiresMs = Math.min(currentExpiryMs + 15 * 60 * 1000, maxExpiryMs);
+
+    hold.expiresAt = new Date(newExpiresMs).toISOString();
     hold.extensionCount += 1;
 
     return { ...hold };
@@ -164,7 +166,7 @@ export class AvailabilityCalendar {
 
     // Check Repository Blocked Dates
     if (this.#repository) {
-      const unit = this.#repository.findAll().find((u) => u.id === unitId);
+      const unit = this.#repository.findById ? this.#repository.findById(unitId) : this.#repository.findAll().find((u) => u.id === unitId);
       if (unit && unit.blockedDates) {
         for (const blocked of unit.blockedDates) {
           if (dateOverlaps(checkIn, checkOut, blocked.start, blocked.end)) {
@@ -179,6 +181,7 @@ export class AvailabilityCalendar {
         }
       }
     }
+
 
     // Check Active Holds
     const activeHolds = this.#getActiveHolds(unitId, clock);

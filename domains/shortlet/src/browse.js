@@ -105,6 +105,7 @@ export class UnitRepository {
   #units = new Map();
   save(unit) { this.#units.set(unit.id, structuredClone(unit)); }
   findAll() { return [...this.#units.values()].map((unit) => structuredClone(unit)); }
+  findById(id) { const unit = this.#units.get(id); return unit ? structuredClone(unit) : null; }
 }
 
 export class JsonUnitRepository {
@@ -118,7 +119,9 @@ export class JsonUnitRepository {
     writeFileSync(this.filePath, JSON.stringify([...units, unit], null, 2), "utf8");
   }
   findAll() { return JSON.parse(readFileSync(this.filePath, "utf8")).map((unit) => structuredClone(unit)); }
+  findById(id) { return this.findAll().find((unit) => unit.id === id) ?? null; }
 }
+
 
 function readFileSafe(filePath) {
   try { return readFileSync(filePath, "utf8"); }

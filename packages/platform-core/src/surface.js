@@ -46,7 +46,7 @@ export class GenerativeSurfaceManager {
     return { ...surface };
   }
 
-  renderWithFallback({ catalogue, projectionVersion = 1, profile, invalidRichUiPayload, workflowState = {}, textFallback = "", conventionalRoute = "" }) {
+  renderWithFallback({ catalogue, projectionVersion = 1, profile, workflowState = {}, textFallback = "", conventionalRoute = "" }) {
     this.#validateProfileAndCatalogue(catalogue, profile);
 
     const surfaceId = `surf-${crypto.randomUUID()}`;
@@ -60,12 +60,12 @@ export class GenerativeSurfaceManager {
       workflowState: Object.freeze({ ...workflowState }),
       textFallback,
       conventionalRoute,
-      isFallback: true,
-      invalidPayload: invalidRichUiPayload ? Object.freeze({ ...invalidRichUiPayload }) : null
+      isFallback: true
     };
     this.#surfaces.set(surfaceId, surface);
     return { ...surface };
   }
+
 
   getSurface(surfaceId) {
     const surface = this.#surfaces.get(surfaceId);

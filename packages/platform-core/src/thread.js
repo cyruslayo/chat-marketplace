@@ -179,13 +179,15 @@ export class InteractionThreadManager {
       sessionId: context.sessionId,
       actionType,
       amountKobo,
+      currency: "NGN",
       issuedAt: Date.now(),
       expiresAt: Date.now() + 5 * 60 * 1000,
       valid: true
     };
     this.#leases.set(leaseId, lease);
-    return deepFreeze({ leaseId, valid: true });
+    return deepFreeze({ leaseId, valid: true, currency: "NGN", amountKobo });
   }
+
 
   confirmMaterialAction(leaseId, context) {
     assertContext(context);

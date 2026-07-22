@@ -151,4 +151,19 @@ test("Restricted identity data is minimized, tenant-scoped, redacted, and never 
   assert.equal(projection.passportNumber, undefined);
   assert.equal(projection.documentScanUrl, undefined);
   assert.equal(projection.fullAddress, undefined);
+
+  // Unauthenticated or wrong tenant scope retrieval must be rejected
+  assert.throws(
+    () => identityStore.getRawIdentityEvidence("tenant-lagos", "guest-1", null),
+    /Access denied/i
+  );
+  assert.throws(
+    () => identityStore.getRawIdentityEvidence("tenant-lagos", "guest-1", { tenantId: "tenant-other" }),
+    /Access denied/i
+  );
+
+  // Valid tenant context succeeds
+  const raw = identityStore.getRawIdentityEvidence("tenant-lagos", "guest-1", { tenantId: "tenant-lagos" });
+  assert.equal(raw.ninNumber, "12345678901");
 });
+

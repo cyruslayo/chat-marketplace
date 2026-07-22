@@ -9,7 +9,10 @@ export class RestrictedIdentityStore {
     this.#vault.set(key, Object.freeze({ ...rawEvidence }));
   }
 
-  getRawIdentityEvidence(tenantId, guestId) {
+  getRawIdentityEvidence(tenantId, guestId, callerContext) {
+    if (!tenantId || !callerContext || callerContext.tenantId !== tenantId) {
+      throw new Error("Access denied: Tenant scope mismatch or authentication required for raw identity evidence");
+    }
     const key = `${tenantId}:${guestId}`;
     const evidence = this.#vault.get(key);
     return evidence ? { ...evidence } : null;
@@ -51,11 +54,12 @@ export class GuestVerificationService {
     }
 
     if (this.#repository) {
-      const unit = this.#repository.findAll().find((u) => u.id === unitId);
+      const unit = this.#repository.findById ? this.#repository.findById(unitId) : this.#repository.findAll().find((u) => u.id === unitId);
       if (unit && occupants.length > unit.capacity) {
         throw new Error(`Occupancy exceeds Unit capacity (${unit.capacity})`);
       }
     }
+
 
     for (const occupant of occupants) {
       if (!occupant || !occupant.name || occupant.name.trim() === "") {
