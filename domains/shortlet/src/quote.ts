@@ -1,10 +1,20 @@
 import { StayDateRange } from "./browse.js";
 
+export interface OptionalServiceCatalogueItem {
+  id: string;
+  code: string;
+  title: string;
+  priceKobo: number;
+  pricingType: "fixed" | "per-night" | "per-guest";
+  supplier: "operator" | "platform-partner";
+  offPlatformPaymentAllowed: boolean;
+}
+
 /**
  * Controlled catalogue for optional services under launch policy.
  * Optional services come ONLY from this catalogue and CANNOT request off-platform payment.
  */
-export const CONTROLLED_OPTIONAL_SERVICES_CATALOGUE = Object.freeze([
+export const CONTROLLED_OPTIONAL_SERVICES_CATALOGUE: readonly OptionalServiceCatalogueItem[] = Object.freeze([
   {
     id: "svc-airport-pickup-lagos",
     code: "airport-pickup",
@@ -43,16 +53,12 @@ export const CONTROLLED_OPTIONAL_SERVICES_CATALOGUE = Object.freeze([
   }
 ]);
 
-export function getCatalogueService(serviceId) {
+export function getCatalogueService(serviceId: string): OptionalServiceCatalogueItem | null {
   return CONTROLLED_OPTIONAL_SERVICES_CATALOGUE.find((svc) => svc.id === serviceId) ?? null;
 }
 
-/**
- * Validates selected optional services against the controlled catalogue.
- * Rejects uncatalogued services or any service that attempts off-platform payment.
- */
-export function validateAndResolveOptionalServices(selectedServices = [], nights = 1, partySize = 1) {
-  const resolved = [];
+export function validateAndResolveOptionalServices(selectedServices: any[] = [], nights = 1, partySize = 1): readonly any[] {
+  const resolved: any[] = [];
   for (const item of selectedServices) {
     const catalogueItem = typeof item === "string" ? getCatalogueService(item) : getCatalogueService(item.id ?? item.serviceId);
     if (!catalogueItem) {
@@ -92,11 +98,7 @@ export function validateAndResolveOptionalServices(selectedServices = [], nights
   return Object.freeze(resolved);
 }
 
-/**
- * Computes tax in kobo using counsel-approved tax configuration.
- * Money arithmetic uses integer precision (kobo) without floating-point rounding errors.
- */
-export function calculateTaxKobo(taxConfig, taxableAmountKobo) {
+export function calculateTaxKobo(taxConfig: any, taxableAmountKobo: number): number {
   if (!taxConfig) return 0;
   if (typeof taxConfig.fixedTaxKobo === "number") {
     return Math.max(0, Math.floor(taxConfig.fixedTaxKobo));
@@ -108,11 +110,16 @@ export function calculateTaxKobo(taxConfig, taxableAmountKobo) {
   return 0;
 }
 
-/**
- * Explicitly classifies Revenue into Commissionable Operator Revenue and Excluded amounts.
- * - Commissionable: accommodation, mandatory property non-tax fees, operator-supplied optional services.
- * - Excluded: refundable security deposit, taxes, damage awards, pass-through amounts.
- */
+export interface RevenueClassificationParams {
+  accommodationKobo: number;
+  mandatoryFeesKobo?: number;
+  taxesKobo?: number;
+  optionalServices?: any[];
+  refundableSecurityDepositKobo?: number;
+  commissionRate?: number;
+  operatorTier?: string;
+}
+
 export function classifyRevenue({
   accommodationKobo,
   mandatoryFeesKobo = 0,
@@ -121,7 +128,7 @@ export function classifyRevenue({
   refundableSecurityDepositKobo = 0,
   commissionRate = 0.12,
   operatorTier = "standard"
-}) {
+}: RevenueClassificationParams) {
   let operatorOptionalServicesKobo = 0;
   let passThroughOptionalServicesKobo = 0;
 
@@ -134,8 +141,7 @@ export function classifyRevenue({
   }
 
   const commissionableOperatorRevenueKobo = accommodationKobo + mandatoryFeesKobo + operatorOptionalServicesKobo;
-  
-  // Rate: 12% standard, 8% founding (first 6 months), 10% preferred
+
   let rate = commissionRate;
   if (operatorTier === "founding") rate = 0.08;
   else if (operatorTier === "preferred") rate = 10 / 100;
@@ -157,9 +163,17 @@ export function classifyRevenue({
   });
 }
 
-/**
- * Calculates and returns a versioned Stay Quote.
- */
+export interface CreateStayQuoteOptions {
+  unit: any;
+  checkIn: any;
+  checkOut: any;
+  partySize?: number;
+  selectedOptionalServices?: any[];
+  commissionRate?: number;
+  clock?: () => Date;
+  idFactory?: () => string;
+}
+
 export function createStayQuote({
   unit,
   checkIn,
@@ -169,7 +183,7 @@ export function createStayQuote({
   commissionRate = 0.12,
   clock = () => new Date(),
   idFactory = () => crypto.randomUUID()
-}) {
+}: CreateStayQuoteOptions) {
   if (!unit || !unit.id || !unit.price) {
     throw new TypeError("A valid unit with price details is required");
   }
@@ -205,14 +219,14 @@ export function createStayQuote({
     accommodationKobo,
     mandatoryFeesKobo,
     taxesKobo,
-    optionalServices: resolvedOptionalServices,
+    optionalServices: [...resolvedOptionalServices],
     refundableSecurityDepositKobo,
     commissionRate,
     operatorTier: unit.operator?.tier ?? "standard"
   });
 
   const createdAtIso = now.toISOString();
-  const expiresAtMs = now.getTime() + 30 * 60 * 1000; // Quote valid for 30 minutes
+  const expiresAtMs = now.getTime() + 30 * 60 * 1000;
   const expiresAtIso = new Date(expiresAtMs).toISOString();
 
   const quoteId = `quote-${idFactory()}`;

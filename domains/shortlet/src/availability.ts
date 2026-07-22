@@ -1,28 +1,28 @@
-function dateOverlaps(startA, endA, startB, endB) {
+function dateOverlaps(startA: any, endA: any, startB: any, endB: any): boolean {
   return startA < endB && startB < endA;
 }
 
 export class AvailabilityCalendar {
-  #repository;
-  #audit;
-  #operatorBlocks = new Map(); // unitId -> list of blocks
-  #holds = new Map(); // holdId -> hold
+  #repository: any;
+  #audit: any;
+  #operatorBlocks = new Map<string, any[]>();
+  #holds = new Map<string, any>();
 
-  constructor({ repository, audit } = {}) {
+  constructor({ repository = null, audit = null }: { repository?: any; audit?: any } = {}) {
     this.#repository = repository;
     this.#audit = audit;
   }
 
-  #getUnitBlocks(unitId) {
+  #getUnitBlocks(unitId: string): any[] {
     if (!this.#operatorBlocks.has(unitId)) {
       this.#operatorBlocks.set(unitId, []);
     }
-    return this.#operatorBlocks.get(unitId);
+    return this.#operatorBlocks.get(unitId)!;
   }
 
-  #getActiveHolds(unitId, clock) {
+  #getActiveHolds(unitId: string, clock: () => Date): any[] {
     const now = clock();
-    const active = [];
+    const active: any[] = [];
     for (const hold of this.#holds.values()) {
       if (hold.unitId === unitId && new Date(hold.expiresAt) > now) {
         active.push(hold);
@@ -31,7 +31,7 @@ export class AvailabilityCalendar {
     return active;
   }
 
-  addOperatorBlock({ unitId, operatorId, start, end, reason = "", clock = () => new Date() }) {
+  addOperatorBlock({ unitId, operatorId, start, end, reason = "", clock = () => new Date() }: { unitId: string; operatorId: string; start: any; end: any; reason?: string; clock?: () => Date }) {
     const activeHolds = this.#getActiveHolds(unitId, clock);
     for (const hold of activeHolds) {
       if (dateOverlaps(start, end, hold.start, hold.end)) {
@@ -64,9 +64,8 @@ export class AvailabilityCalendar {
       });
     }
 
-    // Also update unit in repository if repository exists
     if (this.#repository) {
-      const unit = this.#repository.findById ? this.#repository.findById(unitId) : this.#repository.findAll().find((u) => u.id === unitId);
+      const unit = this.#repository.findById ? this.#repository.findById(unitId) : this.#repository.findAll().find((u: any) => u.id === unitId);
       if (unit) {
         unit.blockedDates = unit.blockedDates || [];
         unit.blockedDates.push({ start, end });
@@ -77,7 +76,7 @@ export class AvailabilityCalendar {
     return { ...block };
   }
 
-  createHold({ unitId, holderId, start, end, clock = () => new Date() }) {
+  createHold({ unitId, holderId, start, end, clock = () => new Date() }: { unitId: string; holderId: string; start: any; end: any; clock?: () => Date }) {
     const now = clock();
     const activeHolds = this.#getActiveHolds(unitId, clock);
     for (const hold of activeHolds) {
@@ -94,7 +93,7 @@ export class AvailabilityCalendar {
     }
 
     if (this.#repository) {
-      const unit = this.#repository.findById ? this.#repository.findById(unitId) : this.#repository.findAll().find((u) => u.id === unitId);
+      const unit = this.#repository.findById ? this.#repository.findById(unitId) : this.#repository.findAll().find((u: any) => u.id === unitId);
       if (unit && unit.blockedDates) {
         for (const blocked of unit.blockedDates) {
           if (dateOverlaps(start, end, blocked.start, blocked.end)) {
@@ -106,7 +105,7 @@ export class AvailabilityCalendar {
 
     const holdId = `hld-${crypto.randomUUID()}`;
     const createdAt = now.toISOString();
-    const expiresAt = new Date(now.getTime() + 45 * 60 * 1000).toISOString(); // 45 mins
+    const expiresAt = new Date(now.getTime() + 45 * 60 * 1000).toISOString();
 
     const hold = {
       holdId,
@@ -123,7 +122,7 @@ export class AvailabilityCalendar {
     return { ...hold };
   }
 
-  extendHold(holdId, { clock = () => new Date() }) {
+  extendHold(holdId: string, { clock = () => new Date() }: { clock?: () => Date } = {}) {
     const hold = this.#holds.get(holdId);
     if (!hold) throw new Error(`Hold not found: ${holdId}`);
 
@@ -136,7 +135,6 @@ export class AvailabilityCalendar {
       throw new Error("Maximum extension limit reached: at most 1 extension permitted");
     }
 
-    // US-70: 15-minute extension capped at 60 minutes total from creation
     const currentExpiryMs = new Date(hold.expiresAt).getTime();
     const maxExpiryMs = new Date(hold.createdAt).getTime() + 60 * 60 * 1000;
     const newExpiresMs = Math.min(currentExpiryMs + 15 * 60 * 1000, maxExpiryMs);
@@ -147,10 +145,7 @@ export class AvailabilityCalendar {
     return { ...hold };
   }
 
-  getAuthoritativeAvailability({ unitId, checkIn, checkOut, clock = () => new Date() }) {
-    const now = clock();
-    
-    // Check Operator Blocks
+  getAuthoritativeAvailability({ unitId, checkIn, checkOut, clock = () => new Date() }: { unitId: string; checkIn: any; checkOut: any; clock?: () => Date }) {
     const blocks = this.#getUnitBlocks(unitId);
     for (const block of blocks) {
       if (dateOverlaps(checkIn, checkOut, block.start, block.end)) {
@@ -164,9 +159,8 @@ export class AvailabilityCalendar {
       }
     }
 
-    // Check Repository Blocked Dates
     if (this.#repository) {
-      const unit = this.#repository.findById ? this.#repository.findById(unitId) : this.#repository.findAll().find((u) => u.id === unitId);
+      const unit = this.#repository.findById ? this.#repository.findById(unitId) : this.#repository.findAll().find((u: any) => u.id === unitId);
       if (unit && unit.blockedDates) {
         for (const blocked of unit.blockedDates) {
           if (dateOverlaps(checkIn, checkOut, blocked.start, blocked.end)) {
@@ -182,8 +176,6 @@ export class AvailabilityCalendar {
       }
     }
 
-
-    // Check Active Holds
     const activeHolds = this.#getActiveHolds(unitId, clock);
     for (const hold of activeHolds) {
       if (dateOverlaps(checkIn, checkOut, hold.start, hold.end)) {

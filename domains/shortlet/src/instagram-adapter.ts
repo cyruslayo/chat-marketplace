@@ -1,17 +1,17 @@
 export class InstagramChannelAdapter {
-  #repository;
-  #baseUrl;
+  #repository: any;
+  #baseUrl: string;
 
-  constructor({ repository, baseUrl = "https://shortlet.platform" } = {}) {
+  constructor({ repository = null, baseUrl = "https://shortlet.platform" }: { repository?: any; baseUrl?: string } = {}) {
     this.#repository = repository;
     this.#baseUrl = baseUrl;
   }
 
-  projectToInstagram(unit) {
+  projectToInstagram(unit: any) {
     if (!unit) throw new Error("Unit is required for Instagram projection");
 
     return Object.freeze({
-      channel: "instagram",
+      channel: "instagram" as const,
       unitId: unit.id,
       title: unit.title,
       neighbourhood: unit.location.neighbourhood,
@@ -19,11 +19,11 @@ export class InstagramChannelAdapter {
       capacity: unit.capacity,
       pricingSummary: Object.freeze({
         nightlyKobo: unit.price.nightlyKobo,
-        currency: "NGN"
+        currency: "NGN" as const
       }),
       actions: Object.freeze([
         Object.freeze({
-          type: "get_web_referral_link",
+          type: "get_web_referral_link" as const,
           label: "Continue booking on secure web",
           targetUrl: `${this.#baseUrl}/stays/${unit.id}`
         })
@@ -31,7 +31,7 @@ export class InstagramChannelAdapter {
     });
   }
 
-  generateSecureReferralLink({ unitId, searchContext = {} }) {
+  generateSecureReferralLink({ unitId, searchContext = {} }: { unitId?: string; searchContext?: any } = {}) {
     const token = `ref-${crypto.randomUUID()}`;
     const referralUrl = `${this.#baseUrl}/stays/${unitId}?ref=${token}`;
 
@@ -46,7 +46,7 @@ export class InstagramChannelAdapter {
     });
   }
 
-  handleInstagramMessage(messagePayload = {}) {
+  handleInstagramMessage(messagePayload: any = {}) {
     return Object.freeze({
       channel: "instagram",
       createsBookingState: false,
@@ -55,7 +55,7 @@ export class InstagramChannelAdapter {
     });
   }
 
-  executeAction({ intent, payload }) {
+  executeAction({ intent, payload = {} }: { intent: string; payload?: any }) {
     const prohibitedIntents = new Set([
       "create_booking_request",
       "pay_reservation",

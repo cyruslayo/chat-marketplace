@@ -90,7 +90,6 @@ test("publication fails if any eligibility requirement is missing or expired", (
   const { repository } = setup();
   seedIssue01Units(repository);
 
-  // Expired unit from seed
   assert.throws(
     () => publishUnit(repository, "unit-abuja-expired", { clock: () => new Date("2026-07-22T00:00:00Z") }),
     /Physical inspection expired or invalid/
@@ -122,7 +121,7 @@ test("material unit change invalidates eligibility until reinspected", () => {
 
   flagMaterialUnitChange(repository, "unit-lagos-001");
 
-  const updated = repository.findAll().find((u) => u.id === "unit-lagos-001");
+  const updated = repository.findAll().find((u: any) => u.id === "unit-lagos-001");
   assert.equal(updated.published, false);
   assert.equal(updated.inspection.materialChangePending, true);
 
@@ -154,8 +153,8 @@ test("operators and staff see actionable status without raw evidence exposure", 
   const { repository } = setup();
   seedIssue01Units(repository);
 
-  const unit = repository.findAll().find((u) => u.id === "unit-lagos-001");
-  const status = getUnitOnboardingStatus(unit);
+  const unit = repository.findAll().find((u: any) => u.id === "unit-lagos-001");
+  const status: any = getUnitOnboardingStatus(unit);
 
   assert.equal(status.unitId, "unit-lagos-001");
   assert.equal(status.published, true);
@@ -164,7 +163,6 @@ test("operators and staff see actionable status without raw evidence exposure", 
   assert.equal(status.inspectionStatus, "passed");
   assert.equal(status.operatorStatus, "approved");
 
-  // Ensure no raw evidence (e.g. CAC papers, beneficial owner details) is exposed
   assert.equal(status.rawCACDocuments, undefined);
   assert.equal(status.beneficialOwnerDetails, undefined);
 });

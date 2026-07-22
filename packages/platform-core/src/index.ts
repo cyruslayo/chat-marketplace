@@ -3,29 +3,28 @@
  * these small contracts; channel/framework adapters stay outside them.
  */
 export class InMemoryAuditLog {
-  #entries = [];
+  #entries: any[] = [];
 
-  record(entry) {
+  record(entry: any) {
     this.#entries.push(Object.freeze({ ...entry, recordedAt: entry.recordedAt ?? new Date().toISOString() }));
   }
 
-  entries() {
+  entries(): any[] {
     return this.#entries.map((entry) => ({ ...entry }));
   }
 }
 
 export class InMemoryTelemetry {
-  #events = [];
+  #events: any[] = [];
 
-  track(event) {
+  track(event: any) {
     this.#events.push(Object.freeze({ ...event, recordedAt: event.recordedAt ?? new Date().toISOString() }));
   }
 
-  events() {
+  events(): any[] {
     return this.#events.map((event) => ({ ...event }));
   }
 }
 
 export * from "./thread.js";
 export * from "./surface.js";
-

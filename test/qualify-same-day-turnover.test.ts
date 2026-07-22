@@ -134,7 +134,7 @@ test("A missed deadline initiates incident workflow and immediately protects inc
 
   let incidentOpened = false;
   const incidentWorkflow = {
-    openBlockingFulfilmentComplaint: (params) => {
+    openBlockingFulfilmentComplaint: (params: any) => {
       incidentOpened = true;
       assert.equal(params.unitId, unit.id);
       assert.equal(params.humanOwnershipRequired, true);

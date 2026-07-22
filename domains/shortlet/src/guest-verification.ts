@@ -1,7 +1,7 @@
 export class RestrictedIdentityStore {
-  #vault = new Map();
+  #vault = new Map<string, any>();
 
-  storeIdentityEvidence({ tenantId, guestId, rawEvidence }) {
+  storeIdentityEvidence({ tenantId, guestId, rawEvidence }: { tenantId: string; guestId: string; rawEvidence: any }) {
     if (!tenantId || !guestId) {
       throw new Error("tenantId and guestId are required for identity storage");
     }
@@ -9,7 +9,7 @@ export class RestrictedIdentityStore {
     this.#vault.set(key, Object.freeze({ ...rawEvidence }));
   }
 
-  getRawIdentityEvidence(tenantId, guestId, callerContext) {
+  getRawIdentityEvidence(tenantId: string, guestId: string, callerContext: any) {
     if (!tenantId || !callerContext || callerContext.tenantId !== tenantId) {
       throw new Error("Access denied: Tenant scope mismatch or authentication required for raw identity evidence");
     }
@@ -19,12 +19,22 @@ export class RestrictedIdentityStore {
   }
 }
 
-export class GuestVerificationService {
-  #repository;
-  #identityStore;
-  #disclosures = new Map();
+export interface ValidateDisclosureOptions {
+  tenantId?: string;
+  unitId: string;
+  primaryGuest: any;
+  isPrimaryGuestOccupant: boolean;
+  occupants?: any[];
+  distinctPayer?: any;
+  payerAttestationAccepted?: boolean;
+}
 
-  constructor({ repository, identityStore } = {}) {
+export class GuestVerificationService {
+  #repository: any;
+  #identityStore: any;
+  #disclosures = new Map<string, any>();
+
+  constructor({ repository = null, identityStore = null }: { repository?: any; identityStore?: any } = {}) {
     this.#repository = repository;
     this.#identityStore = identityStore;
   }
@@ -37,7 +47,7 @@ export class GuestVerificationService {
     occupants = [],
     distinctPayer = null,
     payerAttestationAccepted = false
-  }) {
+  }: ValidateDisclosureOptions) {
     if (!primaryGuest || primaryGuest.isGovernmentIdVerified !== true) {
       throw new Error("Unverified Primary Guest: government-ID verification required before disclosure");
     }
@@ -54,12 +64,11 @@ export class GuestVerificationService {
     }
 
     if (this.#repository) {
-      const unit = this.#repository.findById ? this.#repository.findById(unitId) : this.#repository.findAll().find((u) => u.id === unitId);
+      const unit = this.#repository.findById ? this.#repository.findById(unitId) : this.#repository.findAll().find((u: any) => u.id === unitId);
       if (unit && occupants.length > unit.capacity) {
         throw new Error(`Occupancy exceeds Unit capacity (${unit.capacity})`);
       }
     }
-
 
     for (const occupant of occupants) {
       if (!occupant || !occupant.name || occupant.name.trim() === "") {
@@ -88,7 +97,7 @@ export class GuestVerificationService {
     };
   }
 
-  getInteractionProjection(disclosureId) {
+  getInteractionProjection(disclosureId: string) {
     const projection = this.#disclosures.get(disclosureId);
     if (!projection) throw new Error(`Disclosure not found: ${disclosureId}`);
     return { ...projection };

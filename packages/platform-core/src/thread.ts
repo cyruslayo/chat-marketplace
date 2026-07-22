@@ -1,23 +1,31 @@
-function assertContext(context) {
+export interface SecurityContext {
+  principalId: string;
+  tenantId: string;
+  sessionId: string;
+  deviceId?: string;
+  tabId?: string;
+}
+
+function assertContext(context: SecurityContext): void {
   if (!context || !context.principalId || !context.tenantId || !context.sessionId) {
     throw new Error("Authentication required: principalId, tenantId, and sessionId are required");
   }
 }
 
-function deepFreeze(value) {
+function deepFreeze<T>(value: T): T {
   if (value && typeof value === "object" && !Object.isFrozen(value)) {
-    for (const nested of Object.values(value)) deepFreeze(nested);
+    for (const nested of Object.values(value as any)) deepFreeze(nested);
     Object.freeze(value);
   }
   return value;
 }
 
 export class InteractionThreadManager {
-  #threads = new Map();
-  #revokedSessions = new Set();
-  #leases = new Map();
+  #threads = new Map<string, any>();
+  #revokedSessions = new Set<string>();
+  #leases = new Map<string, any>();
 
-  createThread(context) {
+  createThread(context: SecurityContext) {
     assertContext(context);
     const threadId = `thread-${crypto.randomUUID()}`;
     const thread = {
@@ -28,10 +36,10 @@ export class InteractionThreadManager {
       deviceId: context.deviceId,
       observers: new Set([context.tabId].filter(Boolean)),
       observerStreams: new Set(),
-      runs: {},
-      activeRunId: null,
-      events: [],
-      compactedProjection: null,
+      runs: {} as Record<string, any>,
+      activeRunId: null as string | null,
+      events: [] as any[],
+      compactedProjection: null as any,
       projectionVersion: 1,
       streamTerminated: false
     };
@@ -39,7 +47,7 @@ export class InteractionThreadManager {
     return deepFreeze({ threadId: thread.threadId, tenantId: thread.tenantId, principalId: thread.principalId });
   }
 
-  getThread(threadId, context) {
+  getThread(threadId: string, context: SecurityContext) {
     assertContext(context);
     if (this.#revokedSessions.has(context.sessionId)) {
       throw new Error("Session is revoked");
@@ -54,7 +62,7 @@ export class InteractionThreadManager {
     return thread;
   }
 
-  getObservers(threadId, context) {
+  getObservers(threadId: string, context: SecurityContext) {
     const thread = this.getThread(threadId, context);
     if (context.tabId) {
       thread.observers.add(context.tabId);
@@ -62,7 +70,7 @@ export class InteractionThreadManager {
     return Array.from(thread.observers);
   }
 
-  attachObserverStream(threadId, context, stream) {
+  attachObserverStream(threadId: string, context: SecurityContext, stream: any) {
     const thread = this.getThread(threadId, context);
     if (stream) {
       thread.observerStreams.add(stream);
@@ -70,7 +78,7 @@ export class InteractionThreadManager {
     return true;
   }
 
-  startAgentRun(threadId, context, { intent }) {
+  startAgentRun(threadId: string, context: SecurityContext, { intent }: { intent: string }) {
     const thread = this.getThread(threadId, context);
     if (thread.activeRunId) {
       const activeRun = thread.runs[thread.activeRunId];
@@ -92,7 +100,7 @@ export class InteractionThreadManager {
     return deepFreeze({ runId, status: run.status });
   }
 
-  completeAgentRun(threadId, runId, context, result = {}) {
+  completeAgentRun(threadId: string, runId: string, context: SecurityContext, result = {}) {
     const thread = this.getThread(threadId, context);
     const run = thread.runs[runId];
     if (!run) throw new Error(`Run ${runId} not found`);
@@ -105,7 +113,7 @@ export class InteractionThreadManager {
     return deepFreeze({ runId, status: run.status });
   }
 
-  stopAgentRun(threadId, runId, context) {
+  stopAgentRun(threadId: string, runId: string, context: SecurityContext) {
     const thread = this.getThread(threadId, context);
     const run = thread.runs[runId];
     if (!run) throw new Error(`Run ${runId} not found`);
@@ -117,14 +125,14 @@ export class InteractionThreadManager {
     return deepFreeze({ runId, status: run.status, committedActionsPreserved: true });
   }
 
-  getActiveRun(threadId, context) {
+  getActiveRun(threadId: string, context: SecurityContext) {
     const thread = this.getThread(threadId, context);
     if (!thread.activeRunId) return null;
     const run = thread.runs[thread.activeRunId];
     return run && run.status === "running" ? deepFreeze({ ...run }) : null;
   }
 
-  appendEvent(threadId, context, eventData) {
+  appendEvent(threadId: string, context: SecurityContext, eventData: any) {
     const thread = this.getThread(threadId, context);
     const sequence = thread.events.length + 1;
     const event = {
@@ -136,7 +144,7 @@ export class InteractionThreadManager {
     return deepFreeze(event);
   }
 
-  compactThread(threadId, context) {
+  compactThread(threadId: string, context: SecurityContext) {
     const thread = this.getThread(threadId, context);
     thread.compactedProjection = {
       threadId,
@@ -150,7 +158,7 @@ export class InteractionThreadManager {
     thread.projectionVersion += 1;
   }
 
-  reconnect(threadId, context, { lastSeenSequence = 0 }) {
+  reconnect(threadId: string, context: SecurityContext, { lastSeenSequence = 0 }: { lastSeenSequence?: number } = {}) {
     const thread = this.getThread(threadId, context);
     if (context.tabId) {
       thread.observers.add(context.tabId);
@@ -161,14 +169,14 @@ export class InteractionThreadManager {
         projection: thread.compactedProjection
       });
     }
-    const missedEvents = thread.events.filter((e) => e.sequence > lastSeenSequence);
+    const missedEvents = thread.events.filter((e: any) => e.sequence > lastSeenSequence);
     return deepFreeze({
       mode: "events",
       events: missedEvents
     });
   }
 
-  issueConfirmationLease(threadId, context, { actionType, amountKobo }) {
+  issueConfirmationLease(threadId: string, context: SecurityContext, { actionType, amountKobo }: { actionType: string; amountKobo: number }) {
     const thread = this.getThread(threadId, context);
     const leaseId = `lease-${crypto.randomUUID()}`;
     const lease = {
@@ -188,8 +196,7 @@ export class InteractionThreadManager {
     return deepFreeze({ leaseId, valid: true, currency: "NGN", amountKobo });
   }
 
-
-  confirmMaterialAction(leaseId, context) {
+  confirmMaterialAction(leaseId: string, context: SecurityContext) {
     assertContext(context);
     const lease = this.#leases.get(leaseId);
     if (
@@ -207,7 +214,7 @@ export class InteractionThreadManager {
     return deepFreeze({ confirmed: true, actionType: lease.actionType });
   }
 
-  revokeSession(sessionId, context) {
+  revokeSession(sessionId: string, context?: SecurityContext) {
     if (context) assertContext(context);
     this.#revokedSessions.add(sessionId);
 
@@ -224,7 +231,7 @@ export class InteractionThreadManager {
             else if (typeof stream.destroy === "function") stream.destroy();
             else if (typeof stream.close === "function") stream.close();
           } catch {
-            // ignore stream closure errors
+            // ignore
           }
         }
         thread.observerStreams.clear();
@@ -239,4 +246,3 @@ export class InteractionThreadManager {
     }
   }
 }
-

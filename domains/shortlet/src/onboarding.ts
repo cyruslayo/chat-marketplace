@@ -1,21 +1,37 @@
 import { isEligibleUnit } from "./browse.js";
 
-export const REQUIRED_AUTHORITY_PERMISSIONS = Object.freeze([
+export const REQUIRED_AUTHORITY_PERMISSIONS: readonly string[] = Object.freeze([
   "advertise", "accept-bookings", "contract-guests", "provide-access",
   "collect-revenue", "manage-cancellations", "issue-refunds", "manage-incidents"
 ]);
 
-export const REQUIRED_INSPECTION_SCOPE = Object.freeze([
+export const REQUIRED_INSPECTION_SCOPE: readonly string[] = Object.freeze([
   "entire-place-possession", "structure-and-sanitation", "fire-and-emergency-readiness",
   "electrical-and-utilities", "locks-and-privacy", "access-controls", "cameras",
   "listing-accuracy", "current-media"
 ]);
 
-function findUnitOrThrow(repository, unitId) {
+function findUnitOrThrow(repository: any, unitId: string): any {
   const units = repository.findAll();
-  const unit = units.find((u) => u.id === unitId);
+  const unit = units.find((u: any) => u.id === unitId);
   if (!unit) throw new Error(`Unit ${unitId} not found`);
   return unit;
+}
+
+export interface OnboardOperatorOptions {
+  id: string;
+  name: string;
+  legalForm?: string | null;
+  cacVerified?: boolean;
+  responsiblePersonsVerified?: boolean;
+  responsiblePersons?: any[];
+  beneficialOwnersVerified?: boolean;
+  paymentProviderApproved?: boolean;
+  settlementAccountVerified?: boolean;
+  settlementIdentity?: any;
+  status?: string;
+  approvedAt?: string;
+  approvalExpiresAt?: string;
 }
 
 export function onboardOperator({
@@ -32,7 +48,7 @@ export function onboardOperator({
   status = "approved",
   approvedAt = new Date().toISOString(),
   approvalExpiresAt
-}) {
+}: OnboardOperatorOptions) {
   return Object.freeze({
     id,
     name,
@@ -50,7 +66,20 @@ export function onboardOperator({
   });
 }
 
-export function registerUnit(repository, {
+export interface RegisterUnitOptions {
+  id: string;
+  propertyId: string;
+  operator: any;
+  title: string;
+  location: any;
+  occupancyModel?: string;
+  capacity: number;
+  amenities?: string[];
+  price: any;
+  blockedDates?: any[];
+}
+
+export function registerUnit(repository: any, {
   id,
   propertyId,
   operator,
@@ -61,7 +90,7 @@ export function registerUnit(repository, {
   amenities = [],
   price,
   blockedDates = []
-}) {
+}: RegisterUnitOptions) {
   const unit = {
     id,
     propertyId,
@@ -82,14 +111,23 @@ export function registerUnit(repository, {
   return structuredClone(unit);
 }
 
-export function grantManagementAuthority(repository, unitId, {
+export interface GrantManagementAuthorityOptions {
+  id: string;
+  propertyId?: string;
+  status?: string;
+  verifiedAt?: string;
+  expiresAt?: string;
+  permissions?: readonly string[];
+}
+
+export function grantManagementAuthority(repository: any, unitId: string, {
   id,
   propertyId,
   status = "verified",
   verifiedAt = new Date().toISOString(),
   expiresAt,
   permissions = REQUIRED_AUTHORITY_PERMISSIONS
-}) {
+}: GrantManagementAuthorityOptions) {
   const unit = findUnitOrThrow(repository, unitId);
 
   unit.managementAuthority = {
@@ -104,7 +142,17 @@ export function grantManagementAuthority(repository, unitId, {
   return structuredClone(unit.managementAuthority);
 }
 
-export function recordPhysicalInspection(repository, {
+export interface RecordPhysicalInspectionOptions {
+  unitId: string;
+  inspectorId: string;
+  status?: string;
+  inspectedAt?: string;
+  expiresAt?: string;
+  scopeItems?: readonly string[];
+  evidenceNotes?: string;
+}
+
+export function recordPhysicalInspection(repository: any, {
   unitId,
   inspectorId,
   status = "passed",
@@ -112,7 +160,7 @@ export function recordPhysicalInspection(repository, {
   expiresAt,
   scopeItems = REQUIRED_INSPECTION_SCOPE,
   evidenceNotes
-}) {
+}: RecordPhysicalInspectionOptions) {
   const unit = findUnitOrThrow(repository, unitId);
 
   unit.inspection = {
@@ -134,7 +182,7 @@ export function recordPhysicalInspection(repository, {
   return structuredClone(unit.inspection);
 }
 
-export function recordLicensingAndInsurance(repository, unitId, { licensing, insurance }) {
+export function recordLicensingAndInsurance(repository: any, unitId: string, { licensing, insurance }: { licensing: any; insurance: any }) {
   const unit = findUnitOrThrow(repository, unitId);
 
   unit.regulatory = {
@@ -146,7 +194,7 @@ export function recordLicensingAndInsurance(repository, unitId, { licensing, ins
   return structuredClone(unit.regulatory);
 }
 
-export function flagMaterialUnitChange(repository, unitId) {
+export function flagMaterialUnitChange(repository: any, unitId: string) {
   const unit = findUnitOrThrow(repository, unitId);
 
   if (unit.inspection) {
@@ -157,7 +205,7 @@ export function flagMaterialUnitChange(repository, unitId) {
   return structuredClone(unit);
 }
 
-export function publishUnit(repository, unitId, { clock = () => new Date() } = {}) {
+export function publishUnit(repository: any, unitId: string, { clock = () => new Date() }: { clock?: () => Date } = {}) {
   const unit = findUnitOrThrow(repository, unitId);
 
   const now = clock();
@@ -174,9 +222,9 @@ export function publishUnit(repository, unitId, { clock = () => new Date() } = {
   return structuredClone(unit);
 }
 
-export function getUnitOnboardingStatus(unit, now = new Date()) {
+export function getUnitOnboardingStatus(unit: any, now: Date | string = new Date()) {
   const today = typeof now === "string" ? now : (now instanceof Date ? now : new Date()).toISOString().slice(0, 10);
-  const blockers = [];
+  const blockers: string[] = [];
 
   if (!unit.operator || unit.operator.status !== "approved") {
     blockers.push("Operator not approved");
@@ -223,7 +271,7 @@ export function getUnitOnboardingStatus(unit, now = new Date()) {
   }
 
   const tempUnit = { ...unit, published: true };
-  if (!isEligibleUnit(tempUnit, now)) {
+  if (!isEligibleUnit(tempUnit, typeof now === "string" ? new Date(now) : now)) {
     if (blockers.length === 0) blockers.push("Unit eligibility requirements not met through checkout");
   }
 
@@ -241,4 +289,3 @@ export function getUnitOnboardingStatus(unit, now = new Date()) {
     insuranceStatus: unit.regulatory?.insurance?.status ?? "unverified"
   });
 }
-

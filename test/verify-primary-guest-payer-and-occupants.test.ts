@@ -12,14 +12,13 @@ function setup() {
   seedIssue01Units(repository);
   const identityStore = new RestrictedIdentityStore();
   const service = new GuestVerificationService({ repository, identityStore });
-  const unit = repository.findAll()[0]; // capacity 4
+  const unit = repository.findAll()[0];
   return { repository, identityStore, service, unit };
 }
 
 test("Unverified Primary Guests and prohibited third-party bookings cannot progress to disclosure", () => {
   const { service, unit } = setup();
 
-  // Primary Guest is unverified -> throws error
   assert.throws(
     () => service.validateDisclosure({
       unitId: unit.id,
@@ -30,7 +29,6 @@ test("Unverified Primary Guests and prohibited third-party bookings cannot progr
     /Unverified Primary Guest/i
   );
 
-  // Prohibited third-party booking (isPrimaryGuestOccupant = false without valid distinct payer) -> throws error
   assert.throws(
     () => service.validateDisclosure({
       unitId: unit.id,
@@ -43,9 +41,8 @@ test("Unverified Primary Guests and prohibited third-party bookings cannot progr
 });
 
 test("Occupancy and named-occupant rules are checked against Unit capacity and policy", () => {
-  const { service, unit } = setup(); // capacity 4
+  const { service, unit } = setup();
 
-  // Exceeds unit capacity (5 occupants for capacity 4) -> throws error
   assert.throws(
     () => service.validateDisclosure({
       unitId: unit.id,
@@ -56,13 +53,12 @@ test("Occupancy and named-occupant rules are checked against Unit capacity and p
         { name: "Amina Bello" },
         { name: "Emeka Obi" },
         { name: "Funke Adebayo" },
-        { name: "Tunde Bakare" } // 5th occupant
+        { name: "Tunde Bakare" }
       ]
     }),
     /Occupancy exceeds Unit capacity/i
   );
 
-  // Unnamed occupant (blank name) -> throws error
   assert.throws(
     () => service.validateDisclosure({
       unitId: unit.id,
@@ -77,7 +73,6 @@ test("Occupancy and named-occupant rules are checked against Unit capacity and p
 test("A permitted distinct payer requires the accepted attestations and cannot replace the Primary Guest", () => {
   const { service, unit } = setup();
 
-  // Distinct payer provided but missing attestation -> throws error
   assert.throws(
     () => service.validateDisclosure({
       unitId: unit.id,
@@ -90,12 +85,11 @@ test("A permitted distinct payer requires the accepted attestations and cannot r
     /Payer attestation required/i
   );
 
-  // Distinct payer trying to replace Primary Guest (Primary Guest not staying in occupants list) -> throws error
   assert.throws(
     () => service.validateDisclosure({
       unitId: unit.id,
       primaryGuest: { id: "guest-1", name: "Chidi Okafor", isGovernmentIdVerified: true },
-      isPrimaryGuestOccupant: false, // Trying to swap out Primary Guest
+      isPrimaryGuestOccupant: false,
       occupants: [{ name: "Other Guest" }],
       distinctPayer: { id: "payer-1", name: "Corporate Sponsor LLC" },
       payerAttestationAccepted: true
@@ -103,7 +97,6 @@ test("A permitted distinct payer requires the accepted attestations and cannot r
     /Distinct payer cannot replace Primary Guest/i
   );
 
-  // Valid distinct payer WITH Primary Guest staying and accepted attestation -> succeeds
   const result = service.validateDisclosure({
     unitId: unit.id,
     primaryGuest: { id: "guest-1", name: "Chidi Okafor", isGovernmentIdVerified: true },
@@ -119,7 +112,6 @@ test("A permitted distinct payer requires the accepted attestations and cannot r
 test("Restricted identity data is minimized, tenant-scoped, redacted, and never exposed through ordinary AG-UI/A2UI state", () => {
   const { service, identityStore, unit } = setup();
 
-  // Store raw restricted identity evidence in tenant scope
   identityStore.storeIdentityEvidence({
     tenantId: "tenant-lagos",
     guestId: "guest-1",
@@ -131,7 +123,6 @@ test("Restricted identity data is minimized, tenant-scoped, redacted, and never 
     }
   });
 
-  // Verify disclosure validation output produces a sanitized/redacted projection for AG-UI/A2UI state
   const result = service.validateDisclosure({
     tenantId: "tenant-lagos",
     unitId: unit.id,
@@ -142,17 +133,14 @@ test("Restricted identity data is minimized, tenant-scoped, redacted, and never 
 
   assert.equal(result.approvedForDisclosure, true);
 
-  // Redacted projection check
-  const projection = service.getInteractionProjection(result.disclosureId);
+  const projection: any = service.getInteractionProjection(result.disclosureId);
   assert.equal(projection.primaryGuestName, "Chidi Okafor");
   assert.equal(projection.isVerified, true);
-  // Ensure NO restricted identity fields are exposed in interaction projection
   assert.equal(projection.ninNumber, undefined);
   assert.equal(projection.passportNumber, undefined);
   assert.equal(projection.documentScanUrl, undefined);
   assert.equal(projection.fullAddress, undefined);
 
-  // Unauthenticated or wrong tenant scope retrieval must be rejected
   assert.throws(
     () => identityStore.getRawIdentityEvidence("tenant-lagos", "guest-1", null),
     /Access denied/i
@@ -162,8 +150,6 @@ test("Restricted identity data is minimized, tenant-scoped, redacted, and never 
     /Access denied/i
   );
 
-  // Valid tenant context succeeds
-  const raw = identityStore.getRawIdentityEvidence("tenant-lagos", "guest-1", { tenantId: "tenant-lagos" });
+  const raw: any = identityStore.getRawIdentityEvidence("tenant-lagos", "guest-1", { tenantId: "tenant-lagos" });
   assert.equal(raw.ninNumber, "12345678901");
 });
-

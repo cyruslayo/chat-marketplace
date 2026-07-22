@@ -6,7 +6,7 @@ export const AG_UI_PROFILE = Object.freeze({
   allowedInboundMessageRoles: ["assistant"]
 });
 
-export const APPROVED_CATALOGUES = Object.freeze([
+export const APPROVED_CATALOGUES: readonly string[] = Object.freeze([
   "common/v1",
   "discovery/v1",
   "booking/v1",
@@ -14,10 +14,20 @@ export const APPROVED_CATALOGUES = Object.freeze([
   "operator/v1"
 ]);
 
-export class GenerativeSurfaceManager {
-  #surfaces = new Map();
+export interface CreateSurfaceOptions {
+  catalogue: string;
+  projectionVersion?: number;
+  profile: any;
+  facts?: any;
+  workflowState?: any;
+  textFallback?: string;
+  conventionalRoute?: string;
+}
 
-  #validateProfileAndCatalogue(catalogue, profile) {
+export class GenerativeSurfaceManager {
+  #surfaces = new Map<string, any>();
+
+  #validateProfileAndCatalogue(catalogue: string, profile: any) {
     if (!APPROVED_CATALOGUES.includes(catalogue)) {
       throw new Error(`Unsupported catalogue: ${catalogue}`);
     }
@@ -26,7 +36,7 @@ export class GenerativeSurfaceManager {
     }
   }
 
-  createSurface({ catalogue, projectionVersion = 1, profile, facts = {}, workflowState = {}, textFallback = "", conventionalRoute = "" }) {
+  createSurface({ catalogue, projectionVersion = 1, profile, facts = {}, workflowState = {}, textFallback = "", conventionalRoute = "" }: CreateSurfaceOptions) {
     this.#validateProfileAndCatalogue(catalogue, profile);
 
     const surfaceId = `surf-${crypto.randomUUID()}`;
@@ -46,7 +56,7 @@ export class GenerativeSurfaceManager {
     return { ...surface };
   }
 
-  renderWithFallback({ catalogue, projectionVersion = 1, profile, workflowState = {}, textFallback = "", conventionalRoute = "" }) {
+  renderWithFallback({ catalogue, projectionVersion = 1, profile, workflowState = {}, textFallback = "", conventionalRoute = "" }: CreateSurfaceOptions) {
     this.#validateProfileAndCatalogue(catalogue, profile);
 
     const surfaceId = `surf-${crypto.randomUUID()}`;
@@ -66,14 +76,13 @@ export class GenerativeSurfaceManager {
     return { ...surface };
   }
 
-
-  getSurface(surfaceId) {
+  getSurface(surfaceId: string) {
     const surface = this.#surfaces.get(surfaceId);
     if (!surface) throw new Error(`Surface not found: ${surfaceId}`);
     return { ...surface };
   }
 
-  updateSurfaceProjection(surfaceId, { projectionVersion, facts = {} }) {
+  updateSurfaceProjection(surfaceId: string, { projectionVersion, facts = {} }: { projectionVersion: number; facts?: any }) {
     const surface = this.#surfaces.get(surfaceId);
     if (!surface) throw new Error(`Surface not found: ${surfaceId}`);
 
@@ -85,13 +94,13 @@ export class GenerativeSurfaceManager {
     }
   }
 
-  expireSurface(surfaceId) {
+  expireSurface(surfaceId: string) {
     const surface = this.#surfaces.get(surfaceId);
     if (!surface) throw new Error(`Surface not found: ${surfaceId}`);
     surface.status = "expired";
   }
 
-  executeSurfaceAction(surfaceId, { actionName, payload = {} }) {
+  executeSurfaceAction(surfaceId: string, { actionName, payload = {} }: { actionName: string; payload?: any }) {
     const surface = this.#surfaces.get(surfaceId);
     if (!surface) throw new Error(`Surface not found: ${surfaceId}`);
 
@@ -110,8 +119,8 @@ export class GenerativeSurfaceManager {
 }
 
 export class IndependentReferenceClient {
-  renderRecordedStream(events) {
-    let normalized = null;
+  renderRecordedStream(events: any[]) {
+    let normalized: any = null;
     for (const event of events) {
       if (event.type === "surface.created") {
         normalized = {

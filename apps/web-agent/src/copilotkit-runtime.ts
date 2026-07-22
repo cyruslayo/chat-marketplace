@@ -9,7 +9,7 @@ export const AG_UI_PROFILE = Object.freeze({
   allowedInboundMessageRoles: Object.freeze(["assistant"])
 });
 
-function assertProtocolConformance(profile, artifact) {
+function assertProtocolConformance(profile: any, artifact: any) {
   if (profile.id !== AG_UI_PROFILE.id || profile.transport !== "https-post-sse") {
     throw new Error("Unsupported AG-UI protocol profile");
   }
@@ -18,17 +18,17 @@ function assertProtocolConformance(profile, artifact) {
   }
 }
 
-function waitForAgent(core, agentId, timeoutMs) {
-  const existing = core.getAgent(agentId);
+function waitForAgent(core: any, agentId: string, timeoutMs: number): Promise<any> {
+  const existing = core.getAgent ? core.getAgent(agentId) : null;
   if (existing) return Promise.resolve(existing);
   return new Promise((resolve, reject) => {
-    let subscription;
+    let subscription: any;
     const timeout = setTimeout(() => {
       subscription?.unsubscribe();
       reject(new Error(`CopilotKit agent ${agentId} unavailable`));
     }, timeoutMs);
     subscription = core.subscribe({
-      onAgentsChanged: ({ agents }) => {
+      onAgentsChanged: ({ agents }: any) => {
         if (!agents[agentId]) return;
         clearTimeout(timeout);
         subscription.unsubscribe();
@@ -38,14 +38,21 @@ function waitForAgent(core, agentId, timeoutMs) {
   });
 }
 
+export interface CreateCopilotKitRuntimeOptions {
+  runtimeUrl?: string;
+  agentId?: string;
+  timeoutMs?: number;
+  coreFactory?: (config: any) => any;
+}
+
 export function createCopilotKitRuntime({
   runtimeUrl = "/api/copilotkit", agentId = "default", timeoutMs = 5000,
   coreFactory = (config) => new CopilotKitCore(config)
-} = {}) {
+}: CreateCopilotKitRuntimeOptions = {}) {
   const core = coreFactory({ runtimeUrl, credentials: "include", deferInitialConnection: true });
   core.connect();
   return Object.freeze({
-    async present({ intent, artifact }) {
+    async present({ intent, artifact }: { intent: string; artifact: any }) {
       assertProtocolConformance(AG_UI_PROFILE, artifact);
       const agent = await waitForAgent(core, agentId, timeoutMs);
       const messageBoundary = agent.messages.length;
@@ -56,12 +63,12 @@ export function createCopilotKitRuntime({
       agent.addMessage(message);
       await core.runAgent({ agent, forwardedProps: { agUiProfile: AG_UI_PROFILE, interactionArtifact: artifact } });
       const response = agent.messages.slice(messageBoundary + 1).reverse()
-        .find((candidate) => candidate.role === "assistant" && typeof candidate.content === "string");
+        .find((candidate: any) => candidate.role === "assistant" && typeof candidate.content === "string");
       if (response) AssistantMessageSchema.parse(response);
       return { artifactId: artifact.id, message: response?.content };
     },
-    async renderRecordedStream(events) {
-      let normalized = null;
+    async renderRecordedStream(events: any[]) {
+      let normalized: any = null;
       for (const event of events) {
         if (event.type === "surface.created") {
           normalized = {
@@ -86,4 +93,3 @@ export function createCopilotKitRuntime({
     }
   });
 }
-

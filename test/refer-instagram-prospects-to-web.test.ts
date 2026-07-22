@@ -17,7 +17,7 @@ function setup() {
 test("Instagram projections contain only approved public facts and non-transactional actions", () => {
   const { adapter, unit } = setup();
 
-  const projection = adapter.projectToInstagram(unit);
+  const projection: any = adapter.projectToInstagram(unit);
 
   assert.equal(projection.channel, "instagram");
   assert.equal(projection.unitId, unit.id);
@@ -26,13 +26,11 @@ test("Instagram projections contain only approved public facts and non-transacti
   assert.equal(projection.city, "Lagos");
   assert.equal(projection.capacity, 4);
 
-  // Non-transactional actions ONLY
   assert.deepEqual(
-    projection.actions.map((a) => a.type),
+    projection.actions.map((a: any) => a.type),
     ["get_web_referral_link"]
   );
 
-  // Exact address and restricted details MUST NOT be exposed
   assert.equal(projection.exactAddress, undefined);
   assert.equal(projection.operatorFinancials, undefined);
   assert.equal(projection.paymentDetails, undefined);
@@ -41,7 +39,7 @@ test("Instagram projections contain only approved public facts and non-transacti
 test("Secure referral preserves lawful context but creates a newly authorized destination session", () => {
   const { adapter, unit } = setup();
 
-  const referral = adapter.generateSecureReferralLink({
+  const referral: any = adapter.generateSecureReferralLink({
     unitId: unit.id,
     searchContext: { checkIn: "2026-08-10", checkOut: "2026-08-12", partySize: 2 }
   });
@@ -89,7 +87,7 @@ test("Capability and privacy tests reject restricted information and every prohi
 
   for (const intent of prohibitedIntents) {
     assert.throws(
-      () => adapter.executeAction({ intent }),
+      () => adapter.executeAction({ intent, payload: {} }),
       /Prohibited completion path: Instagram does not support transactional or restricted actions/i
     );
   }

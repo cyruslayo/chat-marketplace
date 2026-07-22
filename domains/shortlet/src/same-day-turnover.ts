@@ -3,7 +3,7 @@
  * Implements ADR 0034, 0035, 0036, 0037, 0038.
  */
 
-export const REQUIRED_TURNOVER_CHECKLIST = Object.freeze([
+export const REQUIRED_TURNOVER_CHECKLIST: readonly string[] = Object.freeze([
   "entire-place-sanitation",
   "linen-and-towel-change",
   "trash-removal",
@@ -13,17 +13,21 @@ export const REQUIRED_TURNOVER_CHECKLIST = Object.freeze([
   "listing-accuracy-verify"
 ]);
 
-/**
- * Evaluates whether a unit satisfies the observed readiness requirements to become eligible for same-day turnover review.
- * ADR 0035: Requires 5 completed platform stays and 3 successful platform-observed Turnover Runs within 90 days (at least 2 following real stays).
- */
+export interface EvaluateUnitEligibilityOptions {
+  completedStaysCount?: number;
+  observedRuns?: any[];
+  messageAckRate?: number;
+  missedEscalationCount?: number;
+  contactsReachable?: boolean;
+}
+
 export function evaluateUnitEligibilityForSameDayTurnover({
   completedStaysCount = 0,
   observedRuns = [],
   messageAckRate = 1.0,
   missedEscalationCount = 0,
   contactsReachable = true
-}) {
+}: EvaluateUnitEligibilityOptions): { eligible: boolean; reason?: string } {
   if (completedStaysCount < 5) {
     return { eligible: false, reason: "Requires at least 5 completed platform stays" };
   }
@@ -48,15 +52,19 @@ export function evaluateUnitEligibilityForSameDayTurnover({
   return { eligible: true };
 }
 
-/**
- * Operations grants Same-Day Turnover as an earned Unit capability.
- */
+export interface ApproveUnitSameDayTurnoverOptions {
+  unit: any;
+  earliestSameDayArrival?: string;
+  turnoverPlan: any;
+  reviewerId: string;
+}
+
 export function approveUnitSameDayTurnover({
   unit,
   earliestSameDayArrival = "15:00",
   turnoverPlan,
   reviewerId
-}) {
+}: ApproveUnitSameDayTurnoverOptions) {
   if (!unit || typeof unit !== "object") throw new TypeError("Valid unit is required");
   if (!reviewerId) throw new Error("Reviewer ID is required for human operational review approval");
   if (!turnoverPlan || !turnoverPlan.primaryCleanerId || !turnoverPlan.backupCleanerId) {
@@ -78,9 +86,16 @@ export function approveUnitSameDayTurnover({
   return unit.sameDayTurnover;
 }
 
-/**
- * Creates a Turnover Run for a same-day turnover event.
- */
+export interface CreateTurnoverRunOptions {
+  unitId: string;
+  operatorId: string;
+  priorCheckoutAt: string;
+  readinessDeadline: string;
+  turnoverPlan?: any;
+  clock?: () => Date;
+  idFactory?: () => string;
+}
+
 export function createTurnoverRun({
   unitId,
   operatorId,
@@ -89,7 +104,7 @@ export function createTurnoverRun({
   turnoverPlan,
   clock = () => new Date(),
   idFactory = () => crypto.randomUUID()
-}) {
+}: CreateTurnoverRunOptions) {
   if (!unitId || !operatorId || !priorCheckoutAt || !readinessDeadline) {
     throw new Error("unitId, operatorId, priorCheckoutAt, and readinessDeadline are required");
   }
@@ -106,21 +121,26 @@ export function createTurnoverRun({
     readinessState: "pending",
     turnoverPlan: turnoverPlan ?? { checklist: [...REQUIRED_TURNOVER_CHECKLIST] },
     evidence: {
-      completedChecklist: [],
-      photoEvidenceUrls: [],
+      completedChecklist: [] as string[],
+      photoEvidenceUrls: [] as string[],
       testedAccessVerified: false,
       essentialUtilitiesVerified: false
     },
     auditTrail: [
       { timestamp: nowIso, action: "created", actorId: operatorId, details: "Turnover Run created" }
-    ]
+    ],
+    incomingBookingDate: undefined as string | undefined
   };
 }
 
-/**
- * Submits evidence for a Turnover Run and verifies whether it meets Ready for Arrival criteria.
- */
-export function submitTurnoverRunEvidence({ run, evidence = {}, actorId, clock = () => new Date() }) {
+export interface SubmitTurnoverRunEvidenceOptions {
+  run: any;
+  evidence?: any;
+  actorId: string;
+  clock?: () => Date;
+}
+
+export function submitTurnoverRunEvidence({ run, evidence = {}, actorId, clock = () => new Date() }: SubmitTurnoverRunEvidenceOptions) {
   if (!run) throw new TypeError("TurnoverRun is required");
   if (run.readinessState === "missed_deadline" || run.readinessState === "failed") {
     throw new Error(`Cannot submit evidence for run in state '${run.readinessState}'`);
@@ -143,7 +163,7 @@ export function submitTurnoverRunEvidence({ run, evidence = {}, actorId, clock =
   });
 
   const requiredItems = run.turnoverPlan?.checklist ?? REQUIRED_TURNOVER_CHECKLIST;
-  const checklistPassed = requiredItems.every((item) => updatedEvidence.completedChecklist.includes(item));
+  const checklistPassed = requiredItems.every((item: string) => updatedEvidence.completedChecklist.includes(item));
 
   if (checklistPassed && updatedEvidence.testedAccessVerified && updatedEvidence.essentialUtilitiesVerified) {
     run.readinessState = "ready_for_arrival";
@@ -161,17 +181,21 @@ export function submitTurnoverRunEvidence({ run, evidence = {}, actorId, clock =
   return run;
 }
 
-/**
- * Checks if a Turnover Run missed its readiness deadline.
- * Implements ADR 0036: If deadline missed, opens incident, suspends capability, pages support, updates guest, and protects availability.
- */
+export interface CheckTurnoverRunReadinessOptions {
+  run: any;
+  unit: any;
+  incidentWorkflow?: any;
+  availabilityCalendar?: any;
+  clock?: () => Date;
+}
+
 export function checkTurnoverRunReadiness({
   run,
   unit,
   incidentWorkflow = null,
   availabilityCalendar = null,
   clock = () => new Date()
-}) {
+}: CheckTurnoverRunReadinessOptions) {
   if (!run || !unit) throw new TypeError("TurnoverRun and Unit are required");
 
   const now = clock();
@@ -188,7 +212,6 @@ export function checkTurnoverRunReadiness({
       details: "Readiness deadline missed before Ready for Arrival established"
     });
 
-    // Immediately suspend unit same-day turnover capability (ADR 0036)
     if (!unit.sameDayTurnover) unit.sameDayTurnover = {};
     unit.sameDayTurnover.status = "suspended";
     unit.sameDayTurnover.suspendedAt = nowIso;
@@ -234,9 +257,16 @@ export function checkTurnoverRunReadiness({
   return { deadlinePassed: false, run, unitStatus: unit.sameDayTurnover?.status ?? "disabled" };
 }
 
-/**
- * Restores turnover eligibility under the accepted graduated rules (ADR 0037).
- */
+export interface RestoreSameDayTurnoverOptions {
+  unit: any;
+  failureClassification: "evidence_only" | "actual_operational_delay" | "serious_failure" | string;
+  evidenceProof?: boolean;
+  newObservedRuns?: any[];
+  rootCauseRemediated?: boolean;
+  approverId: string;
+  isSeniorApproval?: boolean;
+}
+
 export function restoreSameDayTurnoverCapability({
   unit,
   failureClassification,
@@ -245,7 +275,7 @@ export function restoreSameDayTurnoverCapability({
   rootCauseRemediated = false,
   approverId,
   isSeniorApproval = false
-}) {
+}: RestoreSameDayTurnoverOptions) {
   if (!unit || !unit.sameDayTurnover) throw new Error("Unit has no same-day turnover record");
   if (!approverId) throw new Error("Human approver ID is required for restoration");
 
@@ -285,16 +315,21 @@ export function restoreSameDayTurnoverCapability({
   return unit.sameDayTurnover;
 }
 
-/**
- * Revokes Same-Day Turnover capability after two serious failures or one egregious failure (ADR 0038).
- */
+export interface RevokeSameDayTurnoverOptions {
+  unit: any;
+  reason: string;
+  isEgregious?: boolean;
+  reviewerId: string;
+  secondReviewerId?: string | null;
+}
+
 export function revokeSameDayTurnoverCapability({
   unit,
   reason,
   isEgregious = false,
   reviewerId,
   secondReviewerId = null
-}) {
+}: RevokeSameDayTurnoverOptions) {
   if (!unit || !unit.sameDayTurnover) throw new Error("Unit has no same-day turnover record");
   if (!reviewerId) throw new Error("Reviewer ID is required for revocation");
 
@@ -317,16 +352,12 @@ export function revokeSameDayTurnoverCapability({
   return { revoked: false, unitStatus: "suspended", seriousFailureCount: currentFailures };
 }
 
-/**
- * Checks if Same-Day Turnover arrival inventory can be exposed for a given check-in request.
- * AC: Units without active qualification cannot expose same-day arrival inventory after checkout.
- */
-export function isSameDayTurnoverPermitted(unit, priorCheckoutDate, requestedCheckInDate, requestedCheckInTime = "15:00") {
+export function isSameDayTurnoverPermitted(unit: any, priorCheckoutDate: string, requestedCheckInDate: string, requestedCheckInTime = "15:00"): boolean {
   if (!unit || unit.sameDayTurnover?.status !== "approved") {
     return false;
   }
   if (requestedCheckInDate !== priorCheckoutDate) {
-    return true; // Not a same-day turnover attempt
+    return true;
   }
   const earliest = unit.sameDayTurnover.earliestSameDayArrival ?? "15:00";
   return requestedCheckInTime >= earliest;
