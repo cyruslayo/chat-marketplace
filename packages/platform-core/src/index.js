@@ -27,4 +27,5 @@ export class InMemoryTelemetry {
 }
 
 export * from "./thread.js";
+export * from "./surface.js";
 

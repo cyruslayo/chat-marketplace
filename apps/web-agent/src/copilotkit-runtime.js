@@ -59,6 +59,31 @@ export function createCopilotKitRuntime({
         .find((candidate) => candidate.role === "assistant" && typeof candidate.content === "string");
       if (response) AssistantMessageSchema.parse(response);
       return { artifactId: artifact.id, message: response?.content };
+    },
+    async renderRecordedStream(events) {
+      let normalized = null;
+      for (const event of events) {
+        if (event.type === "surface.created") {
+          normalized = {
+            surfaceId: event.surfaceId,
+            catalogue: event.catalogue,
+            revision: event.revision,
+            status: "active",
+            facts: { ...event.facts }
+          };
+        } else if (event.type === "surface.updated" && normalized?.surfaceId === event.surfaceId) {
+          if (event.revision < normalized.revision) {
+            normalized.status = "stale";
+          } else {
+            normalized.revision = event.revision;
+            normalized.facts = { ...event.facts };
+          }
+        } else if (event.type === "surface.expired" && normalized?.surfaceId === event.surfaceId) {
+          normalized.status = "expired";
+        }
+      }
+      return normalized;
     }
   });
 }
+
