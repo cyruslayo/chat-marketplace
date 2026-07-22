@@ -76,7 +76,7 @@ export class AvailabilityCalendar {
     return { ...block };
   }
 
-  createHold({ unitId, holderId, start, end, clock = () => new Date() }: { unitId: string; holderId: string; start: any; end: any; clock?: () => Date }) {
+  createHold({ unitId, holderId, start, end, durationMinutes = 45, clock = () => new Date() }: { unitId: string; holderId: string; start: any; end: any; durationMinutes?: number; clock?: () => Date }) {
     const now = clock();
     const activeHolds = this.#getActiveHolds(unitId, clock);
     for (const hold of activeHolds) {
@@ -105,7 +105,7 @@ export class AvailabilityCalendar {
 
     const holdId = `hld-${crypto.randomUUID()}`;
     const createdAt = now.toISOString();
-    const expiresAt = new Date(now.getTime() + 45 * 60 * 1000).toISOString();
+    const expiresAt = new Date(now.getTime() + durationMinutes * 60 * 1000).toISOString();
 
     const hold = {
       holdId,
@@ -121,6 +121,11 @@ export class AvailabilityCalendar {
     this.#holds.set(holdId, hold);
     return { ...hold };
   }
+
+  releaseHold(holdId: string) {
+    this.#holds.delete(holdId);
+  }
+
 
   extendHold(holdId: string, { clock = () => new Date() }: { clock?: () => Date } = {}) {
     const hold = this.#holds.get(holdId);
