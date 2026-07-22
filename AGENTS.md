@@ -16,4 +16,5 @@ Use the canonical `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-hu
 
 ### Domain docs
 
-This repository uses a multi-context layout rooted at `CONTEXT-MAP.md`, with bounded contexts under `domains/` and `packages/`, and system-wide ADRs under `docs/adr/`. See `docs/agents/domain.md`.
+This repository uses a multi-context layout rooted at `CONTEXT-MAP.md`, with bounded contexts under `domains/` and `packages/`, and system-wide ADRs under `docs/adr/`. Agents MUST inspect relevant ADRs under `docs/adr/` during planning and implementation to ensure code changes strictly conform to established architectural decisions and never violate them. See `docs/agents/domain.md`.
+
