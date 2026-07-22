@@ -1,8 +1,14 @@
 # Capability-gate USSD and payment authentication
 
-Status: ready-for-agent
+Status: resolved
 Type: AFK
 User stories: 30
+
+## ADR Compliance
+- ADR 0002 & 0049: Fresh PSP checkout, zero raw credentials (PAN, CVV, PIN, OTP) exposed or persisted.
+- ADR 0048: Authoritative Payment Capability Certification checked again prior to USSD session initialization.
+- ADR 0050: Risk-based card authentication outcome mapping preserved safely.
+- ADR 0068 & 0077: Unified capability state projections across web, agent, and messaging experiences.
 
 ## Parent
 

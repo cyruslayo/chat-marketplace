@@ -1,8 +1,12 @@
 # Amend dates, occupants, price, or checkout atomically
 
-Status: ready-for-agent
+Status: resolved
 Type: AFK
 User stories: 41–43
+
+## ADR Compliance
+- ADR 0012: Primary Guest replacement is strictly prohibited.
+- ADR 0023, 0032, 0033, 0055, 0056, 0057 & 0060: Versioned booking amendments revalidate availability, 14-night max stay limit, 90-day booking horizon, inspection, authority, checkout limit (<=14:00 WAT without same-day check-in), and submission deadlines (>=24h check-in date change, 18:00-20:00 WAT day before checkout extension). Atomic payment commitment leaves original contract unchanged on failure. Chat / informal promises rejected.
 
 ## Parent
 

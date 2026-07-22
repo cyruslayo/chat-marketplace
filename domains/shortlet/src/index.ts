@@ -13,8 +13,6 @@ export * from "./bank-transfer.js";
 export * from "./contract-release.js";
 export * from "./same-day-booking.js";
 export * from "./security-deposit.js";
-
-
-
-
-
+export * from "./ussd-capability.js";
+export * from "./checkin-support.js";
+export * from "./booking-amendment.js";

@@ -1,8 +1,13 @@
 # Verify access with live check-in support
 
-Status: ready-for-agent
+Status: resolved
 Type: AFK
 User stories: 34–37
+
+## ADR Compliance
+- ADR 0021 & 0076: Protection window starts after Verified Access; blocking complaints hold exposed revenue.
+- ADR 0022: Independent evidence hierarchy enforced; operator assertion or chat state alone cannot declare Verified Access.
+- ADR 0030 & 0031: Human incident support required for check-in window (14:00 to 22:00 WAT). Late voluntary arrival vs failed access produce distinct outcomes.
 
 ## Parent
 
