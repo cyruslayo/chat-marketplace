@@ -1,6 +1,6 @@
 # Complete a same-day booking without shortcuts
 
-Status: ready-for-agent
+Status: resolved
 Type: AFK
 User stories: 18–20
 
@@ -14,10 +14,10 @@ Complete a same-day Booking Request and payment through the ordinary identity, e
 
 ## Acceptance criteria
 
-- [ ] Same-day requests receive no identity, payment, authority, inspection, availability, or confirmation shortcut.
-- [ ] Disclosure is rejected when the ordinary response and payment lifecycle cannot finish before the safe cutoff.
-- [ ] Access instructions release only after the same-day Unit is Ready for Arrival and the booking is confirmed.
-- [ ] Boundary-time, readiness-change, payment-expiry, and competing-inventory cases are covered end to end.
+- [x] Same-day requests receive no identity, payment, authority, inspection, availability, or confirmation shortcut.
+- [x] Disclosure is rejected when the ordinary response and payment lifecycle cannot finish before the safe cutoff.
+- [x] Access instructions release only after the same-day Unit is Ready for Arrival and the booking is confirmed.
+- [x] Boundary-time, readiness-change, payment-expiry, and competing-inventory cases are covered end to end.
 
 ## Blocked by
 

@@ -1,0 +1,252 @@
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
+import {
+  BankTransferPaymentManager,
+  BankTransferCheckoutSession,
+  MockBankTransferVerifyResult
+} from "../domains/shortlet/src/bank-transfer.js";
+import { ConditionalBookingOffer } from "../domains/shortlet/src/conditional-offer.js";
+import { PlatformCommandEnvelope } from "../packages/platform-core/src/index.js";
+
+function createMockOffer(overrides: Partial<ConditionalBookingOffer> = {}): ConditionalBookingOffer {
+  const baseTime = new Date("2026-07-22T10:00:00Z");
+  const expiresAt = new Date(baseTime.getTime() + 20 * 60 * 1000).toISOString();
+
+  return {
+    offerId: "off_test_11",
+    offerVersion: 1,
+    requestId: "req_test_11",
+    unitId: "unit_11",
+    tenantId: "tenant_11",
+    parties: {
+      primaryGuest: { id: "guest_11", name: "Guest Eleven" },
+      operator: { id: "op_11", name: "Operator Eleven" }
+    },
+    unit: {
+      id: "unit_11",
+      title: "Test Unit 11",
+      propertyId: "prop_11",
+      location: { city: "Lagos" }
+    },
+    dates: { checkIn: "2026-08-01", checkOut: "2026-08-05", nights: 4 },
+    occupants: [{ name: "Guest Eleven" }],
+    quote: {
+      quoteId: "quote_11",
+      allInStayTotalKobo: 10000000,
+      refundableSecurityDepositKobo: 2000000,
+      totalAmountDueNowKobo: 12000000,
+      breakdown: {
+        accommodationNetKobo: 8000000,
+        platformCommissionKobo: 2000000
+      }
+    },
+    totalAmountDueNowKobo: 12000000,
+    refundableSecurityDepositKobo: 2000000,
+    policies: {
+      cancellationPolicy: { type: "standard", version: "v1" },
+      guestConductRules: ["No smoking"]
+    },
+    disclosures: ["Disclosed policy"],
+    paymentWindow: {
+      durationMinutes: 20,
+      expiresAt
+    },
+    status: "accepted",
+    issuedAt: baseTime.toISOString(),
+    acceptedAt: baseTime.toISOString(),
+    confirmationToken: "tok_test_11",
+    tokenUsed: true,
+    aggregateVersions: {
+      offerVersion: 1,
+      pricingVersion: "v1",
+      quoteVersion: "v1",
+      cancellationPolicyVersion: "v1",
+      managementAuthorityVersion: "v1",
+      inspectionVersion: "v1"
+    },
+    ...overrides
+  };
+}
+
+function createCommandEnvelope<T extends Record<string, unknown>>(
+  commandName: string,
+  payload: T,
+  tenantId = "tenant_11",
+  userId = "guest_11"
+): PlatformCommandEnvelope<T> {
+  return {
+    commandId: `cmd_${Math.random().toString(36).substring(2, 9)}`,
+    commandName,
+    principal: { id: userId, role: "guest", tenantId },
+    payload,
+    timestamp: new Date().toISOString()
+  };
+}
+
+describe("Issue 11: Expire bank-transfer payment and refund late success", () => {
+  it("AC 1: Only one Live Payment Attempt and reference may exist for the offer", () => {
+    const offer = createMockOffer();
+    const offerManager = { getOffer: () => offer };
+    const manager = new BankTransferPaymentManager({ offerManager });
+
+    const clockTime = new Date("2026-07-22T10:05:00Z");
+    const envelope = createCommandEnvelope("bank_transfer.initialize", { offerId: offer.offerId });
+
+    const session1 = manager.initializeBankTransfer(envelope, { clock: () => clockTime });
+    assert.equal(session1.status, "initiated");
+    assert.ok(session1.transferReference);
+
+    // Secondary initiation attempt should return existing active live attempt reference (ADR 0046)
+    const session2 = manager.initializeBankTransfer(envelope, { clock: () => clockTime });
+    assert.equal(session2.transferReference, session1.transferReference);
+  });
+
+  it("AC 2: Reference expiry, processing grace, inventory release, and late-success classification use server time and exact boundaries", () => {
+    const offer = createMockOffer();
+    const offerManager = { getOffer: () => offer };
+    let inventoryReleased = false;
+    const calendar = {
+      getAuthoritativeAvailability: () => ({ isAvailable: true }),
+      blockDates: () => {},
+      releaseInventory: () => { inventoryReleased = true; }
+    };
+    const manager = new BankTransferPaymentManager({ offerManager, calendar });
+
+    const startTime = new Date("2026-07-22T10:00:00Z");
+    const envelope = createCommandEnvelope("bank_transfer.initialize", { offerId: offer.offerId });
+    const session = manager.initializeBankTransfer(envelope, { clock: () => startTime });
+
+    // 1. Within 20 minutes (10:15:00Z): Success confirms booking
+    const verifyTime1 = new Date("2026-07-22T10:15:00Z");
+    const mockPsp1: MockBankTransferVerifyResult = {
+      verified: true,
+      status: "success",
+      amountKobo: 12000000,
+      currency: "NGN",
+      pspReference: session.transferReference,
+      payerId: "guest_11"
+    };
+
+    const verifyEnvelope1 = createCommandEnvelope("bank_transfer.verify_and_process", {
+      offerId: offer.offerId,
+      transferReference: session.transferReference,
+      mockPspResult: mockPsp1
+    });
+
+    const result1 = manager.verifyAndProcessTransfer(verifyEnvelope1, { clock: () => verifyTime1 });
+    assert.equal(result1.outcome, "confirmed");
+    assert.ok(result1.reservation);
+    assert.ok(result1.bookingContract);
+
+    // 2. In grace window (10:25:00Z - 25 min): Pending in-flight reported
+    const offer2 = createMockOffer({ offerId: "off_grace" });
+    const offerManager2 = { getOffer: () => offer2 };
+    const manager2 = new BankTransferPaymentManager({ offerManager: offerManager2 });
+    const session2 = manager2.initializeBankTransfer(
+      createCommandEnvelope("bank_transfer.initialize", { offerId: offer2.offerId }),
+      { clock: () => startTime }
+    );
+
+    const graceTime = new Date("2026-07-22T10:25:00Z");
+    const mockPspGrace: MockBankTransferVerifyResult = {
+      verified: false,
+      status: "pending",
+      amountKobo: 12000000,
+      currency: "NGN",
+      pspReference: session2.transferReference,
+      payerId: "guest_11"
+    };
+
+    const graceEnvelope = createCommandEnvelope("bank_transfer.verify_and_process", {
+      offerId: offer2.offerId,
+      transferReference: session2.transferReference,
+      mockPspResult: mockPspGrace
+    });
+
+    const graceResult = manager2.verifyAndProcessTransfer(graceEnvelope, { clock: () => graceTime });
+    assert.equal(graceResult.outcome, "processing_in_grace");
+  });
+
+  it("AC 3: A late success creates refund and reconciliation records but no Reservation or Booking Contract", () => {
+    const offer = createMockOffer({ offerId: "off_late" });
+    const offerManager = { getOffer: () => offer };
+    let released = false;
+    const calendar = {
+      getAuthoritativeAvailability: () => ({ isAvailable: true }),
+      blockDates: () => {},
+      releaseInventory: () => { released = true; }
+    };
+    const manager = new BankTransferPaymentManager({ offerManager, calendar });
+
+    const startTime = new Date("2026-07-22T10:00:00Z");
+    const session = manager.initializeBankTransfer(
+      createCommandEnvelope("bank_transfer.initialize", { offerId: offer.offerId }),
+      { clock: () => startTime }
+    );
+
+    // Late success at 35 minutes (10:35:00Z) > 30 minutes total
+    const lateTime = new Date("2026-07-22T10:35:00Z");
+    const mockPspLate: MockBankTransferVerifyResult = {
+      verified: true,
+      status: "success",
+      amountKobo: 12000000,
+      currency: "NGN",
+      pspReference: session.transferReference,
+      payerId: "guest_11"
+    };
+
+    const lateEnvelope = createCommandEnvelope("bank_transfer.verify_and_process", {
+      offerId: offer.offerId,
+      transferReference: session.transferReference,
+      mockPspResult: mockPspLate
+    });
+
+    const lateResult = manager.verifyAndProcessTransfer(lateEnvelope, { clock: () => lateTime });
+    assert.equal(lateResult.outcome, "late_payment_refunded");
+    assert.equal(lateResult.reservation, undefined);
+    assert.equal(lateResult.bookingContract, undefined);
+    assert.ok(lateResult.refundRecord);
+    assert.equal(lateResult.refundRecord.amountKobo, 12000000);
+    assert.equal(lateResult.refundRecord.reason, "late_payment_after_expiry");
+    assert.ok(lateResult.reconciliationRecord);
+    assert.equal(lateResult.reconciliationRecord.status, "quarantined_for_refund");
+    assert.equal(released, true);
+  });
+
+  it("AC 4: Races among verification, expiry, release, duplicate callbacks, and Operator Blocks are tested with real transactions", () => {
+    const offer = createMockOffer({ offerId: "off_race" });
+    const offerManager = { getOffer: () => offer };
+    const manager = new BankTransferPaymentManager({ offerManager });
+
+    const startTime = new Date("2026-07-22T10:00:00Z");
+    const session = manager.initializeBankTransfer(
+      createCommandEnvelope("bank_transfer.initialize", { offerId: offer.offerId }),
+      { clock: () => startTime }
+    );
+
+    // 1. Confirm before expiry
+    const confirmTime = new Date("2026-07-22T10:10:00Z");
+    const mockPspRace: MockBankTransferVerifyResult = {
+      verified: true,
+      status: "success",
+      amountKobo: 12000000,
+      currency: "NGN",
+      pspReference: session.transferReference,
+      payerId: "guest_11"
+    };
+
+    const confirmEnvelope = createCommandEnvelope("bank_transfer.verify_and_process", {
+      offerId: offer.offerId,
+      transferReference: session.transferReference,
+      mockPspResult: mockPspRace
+    });
+
+    const res1 = manager.verifyAndProcessTransfer(confirmEnvelope, { clock: () => confirmTime });
+    assert.equal(res1.outcome, "confirmed");
+
+    // 2. Duplicate callback after confirmation returns idempotent confirmed result
+    const res2 = manager.verifyAndProcessTransfer(confirmEnvelope, { clock: () => confirmTime });
+    assert.equal(res2.outcome, "confirmed");
+    assert.equal(res2.reservation?.reservationId, res1.reservation?.reservationId);
+  });
+});

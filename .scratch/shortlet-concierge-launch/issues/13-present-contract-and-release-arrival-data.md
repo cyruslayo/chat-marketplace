@@ -1,6 +1,6 @@
 # Present the Booking Contract and release protected arrival data
 
-Status: ready-for-agent
+Status: resolved
 Type: AFK
 User stories: 10–11, 33, 37
 
@@ -14,10 +14,10 @@ Provide the authenticated guest with the durable Booking Contract, current booki
 
 ## Acceptance criteria
 
-- [ ] The contract displays the captured parties, Unit, stay, money, deposit, policies, disclosures, and versions.
-- [ ] Full address and access instructions are tenant-scoped and released only at the accepted lifecycle points.
-- [ ] Interaction logs and model context do not retain unredacted protected access material unnecessarily.
-- [ ] Revoked, cancelled, cross-tenant, and premature requests fail without leaking whether protected data exists.
+- [x] The contract displays the captured parties, Unit, stay, money, deposit, policies, disclosures, and versions.
+- [x] Full address and access instructions are tenant-scoped and released only at the accepted lifecycle points.
+- [x] Interaction logs and model context do not retain unredacted protected access material unnecessarily.
+- [x] Revoked, cancelled, cross-tenant, and premature requests fail without leaking whether protected data exists.
 
 ## Blocked by
 

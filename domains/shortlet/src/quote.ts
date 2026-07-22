@@ -1,4 +1,5 @@
 import { StayDateRange } from "./browse.js";
+import { calculateRefundableSecurityDeposit } from "./security-deposit.js";
 
 export interface OptionalServiceCatalogueItem {
   id: string;
@@ -206,7 +207,13 @@ export function createStayQuote({
   const taxesKobo = calculateTaxKobo(unit.price.taxConfig, taxableBaseKobo);
 
   const allInStayTotalKobo = accommodationKobo + mandatoryFeesKobo + taxesKobo + optionalServicesTotalKobo;
-  const refundableSecurityDepositKobo = unit.price.refundableSecurityDepositKobo ?? 0;
+  const rawDepositKobo = unit.price.refundableSecurityDepositKobo;
+  const bedrooms = unit.bedrooms ?? unit.bedroomCount ?? 1;
+  const refundableSecurityDepositKobo = calculateRefundableSecurityDeposit({
+    accommodationKobo,
+    bedrooms,
+    requestedDepositKobo: rawDepositKobo
+  });
   const totalAmountDueNowKobo = allInStayTotalKobo + refundableSecurityDepositKobo;
 
   const cancellationPolicy = Object.freeze({

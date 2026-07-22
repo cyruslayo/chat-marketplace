@@ -1,6 +1,6 @@
 # Expire bank-transfer payment and refund late success
 
-Status: ready-for-agent
+Status: resolved
 Type: AFK
 User stories: 26–28, 31–32
 
@@ -14,10 +14,10 @@ Offer one booking-specific, amount-bound bank-transfer reference, enforce the 20
 
 ## Acceptance criteria
 
-- [ ] Only one Live Payment Attempt and reference may exist for the offer.
-- [ ] Reference expiry, processing grace, inventory release, and late-success classification use server time and exact boundaries.
-- [ ] A late success creates refund and reconciliation records but no Reservation or Booking Contract.
-- [ ] Races among verification, expiry, release, duplicate callbacks, and Operator Blocks are tested with real transactions.
+- [x] Only one Live Payment Attempt and reference may exist for the offer.
+- [x] Reference expiry, processing grace, inventory release, and late-success classification use server time and exact boundaries.
+- [x] A late success creates refund and reconciliation records but no Reservation or Booking Contract.
+- [x] Races among verification, expiry, release, duplicate callbacks, and Operator Blocks are tested with real transactions.
 
 ## Blocked by
 

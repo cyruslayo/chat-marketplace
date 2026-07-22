@@ -1,6 +1,6 @@
 # Quote and collect a capped Refundable Security Deposit
 
-Status: ready-for-agent
+Status: resolved
 Type: AFK
 User stories: 58
 
@@ -14,10 +14,10 @@ Calculate the Refundable Security Deposit as the lower accepted percentage and U
 
 ## Acceptance criteria
 
-- [ ] Studio/one-bedroom, two-bedroom, and larger-Unit caps and the 25% accommodation limit are tested exactly.
-- [ ] The deposit is not commissionable revenue and remains separately identifiable in projections and ledger entries.
-- [ ] Quote, payment, contract, cancellation, and refund paths preserve the same deposit amount and policy version.
-- [ ] No Operator can demand additional cash or direct-transfer security money.
+- [x] Studio/one-bedroom, two-bedroom, and larger-Unit caps and the 25% accommodation limit are tested exactly.
+- [x] The deposit is not commissionable revenue and remains separately identifiable in projections and ledger entries.
+- [x] Quote, payment, contract, cancellation, and refund paths preserve the same deposit amount and policy version.
+- [x] No Operator can demand additional cash or direct-transfer security money.
 
 ## Blocked by
 

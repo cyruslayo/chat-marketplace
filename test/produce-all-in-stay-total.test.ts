@@ -73,8 +73,8 @@ test("Commissionable Operator Revenue and excluded amounts (deposit, tax, damage
   assert.equal(quote.revenueClassification.estimatedCommissionKobo, 2400000);
   assert.equal(quote.revenueClassification.estimatedOperatorNetKobo, 17600000);
 
-  // Excluded amounts: deposit = 5,000,000, tax = 1,350,000 (7.5% of 18m), pass-through chef = 10,000,000
-  assert.equal(quote.revenueClassification.excludedAmounts.refundableSecurityDepositKobo, 5000000);
+  // Excluded amounts: deposit = quote.refundableSecurityDepositKobo, tax = 1,350,000 (7.5% of 18m), pass-through chef = 10,000,000
+  assert.equal(quote.revenueClassification.excludedAmounts.refundableSecurityDepositKobo, quote.refundableSecurityDepositKobo);
   assert.equal(quote.revenueClassification.excludedAmounts.taxesKobo, 1350000);
   assert.equal(quote.revenueClassification.excludedAmounts.passThroughKobo, 10000000);
   assert.equal(quote.revenueClassification.excludedAmounts.damageAwardsKobo, 0);
