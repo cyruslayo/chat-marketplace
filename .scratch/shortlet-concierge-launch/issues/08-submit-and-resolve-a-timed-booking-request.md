@@ -14,10 +14,11 @@ Turn a Request Draft into one disclosed Booking Request only when stay length, B
 
 ## Acceptance criteria
 
-- [ ] Drafts do not block inventory; successfully disclosed requests do so exclusively for the defined window.
-- [ ] Disclosure enforces one-to-fourteen nights, the 90-day horizon, active hours, and safe cutoff.
-- [ ] Technical delivery, Operator response, expiry, confirmation, and decline are distinct auditable events.
-- [ ] Agent, conventional web, and permitted Operator interfaces produce the same Platform Command Envelope and outcome.
+- [x] Drafts do not block inventory; successfully disclosed requests do so exclusively for the defined window.
+- [x] Disclosure enforces one-to-fourteen nights, the 90-day horizon, active hours, and safe cutoff.
+- [x] Technical delivery, Operator response, expiry, confirmation, and decline are distinct auditable events.
+- [x] Agent, conventional web, and permitted Operator interfaces produce the same Platform Command Envelope and outcome.
+
 
 ## Blocked by
 
