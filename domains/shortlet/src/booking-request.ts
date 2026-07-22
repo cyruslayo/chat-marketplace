@@ -1,27 +1,39 @@
-import { PlatformCommandEnvelope } from "../../../packages/platform-core/src/index.js";
-
+import { PlatformCommandEnvelope, createPlatformCommandEnvelope } from "../../../packages/platform-core/src/index.js";
 import { StayDateRange } from "./browse.js";
 import { createStayQuote } from "./quote.js";
 
 export function getWatTime(date: Date) {
-  const watMs = date.getTime() + 1 * 60 * 60 * 1000;
-  const watDate = new Date(watMs);
-  const year = watDate.getUTCFullYear();
-  const month = watDate.getUTCMonth() + 1;
-  const day = watDate.getUTCDate();
-  const hour = watDate.getUTCHours();
-  const minute = watDate.getUTCMinutes();
+  const formatter = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Africa/Lagos",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  });
+  const parts = formatter.formatToParts(date);
+  const getPart = (type: string) => parts.find((p) => p.type === type)?.value ?? "00";
+  const year = parseInt(getPart("year"), 10);
+  const month = parseInt(getPart("month"), 10);
+  const day = parseInt(getPart("day"), 10);
+  const hour = parseInt(getPart("hour"), 10);
+  const minute = parseInt(getPart("minute"), 10);
   const dateString = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
   return { year, month, day, hour, minute, dateString };
 }
 
-export interface CreateDraftOptions {
-  unitId: string;
-  primaryGuest: any;
+export interface OccupancyDetails {
+  primaryGuest: { id: string; name: string; isGovernmentIdVerified?: boolean };
   isPrimaryGuestOccupant: boolean;
-  occupants?: any[];
-  distinctPayer?: any;
+  occupants?: Array<{ name: string }>;
+  distinctPayer?: { id: string; name: string } | null;
   payerAttestationAccepted?: boolean;
+}
+
+export interface CreateDraftOptions extends OccupancyDetails {
+  unitId: string;
   checkIn: string;
   checkOut: string;
   selectedOptionalServices?: any[];
@@ -53,18 +65,35 @@ export class BookingRequestManager {
     this.#guestVerification = guestVerification;
   }
 
-  createDraft({
-    unitId,
-    primaryGuest,
-    isPrimaryGuestOccupant,
-    occupants = [],
-    distinctPayer = null,
-    payerAttestationAccepted = false,
-    checkIn,
-    checkOut,
-    selectedOptionalServices = [],
-    clock = () => new Date()
-  }: CreateDraftOptions) {
+  createDraft(
+    input: PlatformCommandEnvelope<CreateDraftOptions> | CreateDraftOptions,
+    { clock = () => new Date() }: { clock?: () => Date } = {}
+  ) {
+    let payload: CreateDraftOptions;
+    let envelopeId: string | undefined;
+
+    if ("commandName" in input && "payload" in input) {
+      if (input.commandName !== "booking_request.create_draft") {
+        throw new Error("Invalid envelope: commandName must be 'booking_request.create_draft'");
+      }
+      payload = input.payload;
+      envelopeId = input.commandId;
+    } else {
+      payload = input;
+    }
+
+    const {
+      unitId,
+      primaryGuest,
+      isPrimaryGuestOccupant,
+      occupants = [],
+      distinctPayer = null,
+      payerAttestationAccepted = false,
+      checkIn,
+      checkOut,
+      selectedOptionalServices = []
+    } = payload;
+
     if (!unitId) throw new Error("unitId is required to create a draft");
     if (!primaryGuest) throw new Error("primaryGuest is required to create a draft");
     if (!checkIn || !checkOut) throw new Error("checkIn and checkOut dates are required");
@@ -94,7 +123,8 @@ export class BookingRequestManager {
         type: "booking_request.draft_created",
         draftId,
         unitId,
-        primaryGuestId: primaryGuest.id
+        primaryGuestId: primaryGuest.id,
+        commandEnvelopeId: envelopeId
       });
     }
 
@@ -107,12 +137,15 @@ export class BookingRequestManager {
     return draft;
   }
 
-  discloseBookingRequest(envelope: PlatformCommandEnvelope, { clock = () => new Date() }: { clock?: () => Date } = {}) {
+  discloseBookingRequest(
+    envelope: PlatformCommandEnvelope<{ draftId: string; autoDeliver?: boolean }>,
+    { clock = () => new Date() }: { clock?: () => Date } = {}
+  ) {
     if (!envelope || !envelope.commandName || envelope.commandName !== "booking_request.disclose") {
       throw new Error("Invalid envelope: commandName must be 'booking_request.disclose'");
     }
 
-    const { draftId } = envelope.payload ?? {};
+    const { draftId, autoDeliver = true } = envelope.payload ?? {};
     const draft = this.getDraft(draftId);
 
     const now = clock();
@@ -123,35 +156,36 @@ export class BookingRequestManager {
     try {
       dateRange = new StayDateRange(draft.checkIn, draft.checkOut, now);
     } catch (err: any) {
-      if (err.message.includes("checkOut must be after checkIn") || err.message.includes("stay cannot exceed")) {
-        throw new Error(`Stay length must be between 1 and 14 nights (${err.message})`);
-      }
-      if (err.message.includes("booking horizon")) {
-        throw new Error(`Check-in date exceeds rolling 90-day booking horizon (${err.message})`);
+      if (err instanceof RangeError) {
+        if (err.message.includes("checkOut must be after checkIn") || err.message.includes("stay cannot exceed")) {
+          throw new Error(`Stay length must be between 1 and 14 nights (${err.message})`);
+        }
+        if (err.message.includes("booking horizon")) {
+          throw new Error(`Check-in date exceeds rolling 90-day booking horizon (${err.message})`);
+        }
       }
       throw err;
     }
     const nights = dateRange.nights;
-    if (nights < 1 || nights > 14) {
-      throw new Error(`Stay length must be between 1 and 14 nights (requested: ${nights} nights)`);
+
+    // 2. Operator Active Hours Enforcement (08:00 AM - 08:00 PM WAT daily)
+    // ADR 0041 & ADR 0042: Full 30-minute response window must fit inside Active Hours -> latest disclosure 19:30 WAT
+    const currentMinutes = watNow.hour * 60 + watNow.minute;
+    const activeStartMinutes = 8 * 60; // 08:00 WAT
+    const activeLatestDisclosureMinutes = 19 * 60 + 30; // 19:30 WAT (so 30-min window ends at 20:00 WAT)
+    if (currentMinutes < activeStartMinutes || currentMinutes > activeLatestDisclosureMinutes) {
+      throw new Error("Booking Requests can only be disclosed during Operator Active Hours (8:00 AM - 8:00 PM WAT) allowing a full 30-minute response window (latest disclosure 7:30 PM WAT)");
     }
 
-
-    // 3. Operator Active Hours Enforcement (08:00 AM - 08:00 PM WAT daily)
-    if (watNow.hour < 8 || watNow.hour >= 20) {
-      throw new Error("Booking Requests can only be disclosed during Operator Active Hours (8:00 AM - 8:00 PM WAT)");
-    }
-
-    // 4. Latest Disclosure Cutoff Enforcement (At least 3 hours before 14:00 WAT check-in on check-in date -> <= 11:00 AM WAT)
+    // 3. Latest Disclosure Cutoff Enforcement (ADR 0053: Cutoff 11:00 AM WAT; 5-min delivery cannot extend past cutoff -> latest disclosure 10:55 AM WAT)
     if (draft.checkIn === watNow.dateString) {
-      const minutesPastMidnight = watNow.hour * 60 + watNow.minute;
-      const cutoffMinutes = 11 * 60; // 11:00 AM WAT
-      if (minutesPastMidnight >= cutoffMinutes) {
-        throw new Error("Disclosure violates Latest Disclosure Cutoff: must be sent at least 3 hours before check-in (11:00 AM WAT on check-in date)");
+      const latestCutoffDisclosureMinutes = 10 * 60 + 55; // 10:55 AM WAT
+      if (currentMinutes > latestCutoffDisclosureMinutes) {
+        throw new Error("Disclosure violates Latest Disclosure Cutoff: must be completed by 10:55 AM WAT on check-in date to allow 5-minute delivery before 11:00 AM WAT cutoff");
       }
     }
 
-    // 5. Identity & Occupant Verification
+    // 4. Identity & Occupant Verification
     if (this.#guestVerification) {
       this.#guestVerification.validateDisclosure({
         unitId: draft.unitId,
@@ -163,7 +197,7 @@ export class BookingRequestManager {
       });
     }
 
-    // 6. Quote Validation
+    // 5. Quote Validation
     let unit = null;
     if (this.#repository) {
       unit = this.#repository.findById
@@ -181,7 +215,7 @@ export class BookingRequestManager {
       clock
     });
 
-    // 7. Authoritative Availability & Exclusive 30-Minute Hold Creation
+    // 6. Authoritative Availability & Exclusive 30-Minute Hold Creation
     if (this.#calendar) {
       const avail = this.#calendar.getAuthoritativeAvailability({
         unitId: draft.unitId,
@@ -211,6 +245,9 @@ export class BookingRequestManager {
     const deliveryDeadlineIso = new Date(now.getTime() + 5 * 60 * 1000).toISOString();
     const operatorResponseDeadlineIso = new Date(now.getTime() + 30 * 60 * 1000).toISOString();
 
+    const isDelivered = autoDeliver;
+    const deliveredAtIso = autoDeliver ? disclosedAtIso : null;
+
     const bookingRequest = {
       requestId,
       draftId,
@@ -226,8 +263,8 @@ export class BookingRequestManager {
       disclosedAt: disclosedAtIso,
       deliveryDeadlineAt: deliveryDeadlineIso,
       operatorResponseDeadlineAt: operatorResponseDeadlineIso,
-      delivered: true,
-      deliveredAt: disclosedAtIso,
+      delivered: isDelivered,
+      deliveredAt: deliveredAtIso,
       status: "disclosed"
     };
 
@@ -245,13 +282,15 @@ export class BookingRequestManager {
         disclosedAt: disclosedAtIso
       });
 
-      this.#audit.record({
-        type: "booking_request.delivered",
-        requestId,
-        unitId: draft.unitId,
-        operatorId: unit.operator?.id,
-        deliveredAt: disclosedAtIso
-      });
+      if (autoDeliver) {
+        this.#audit.record({
+          type: "booking_request.delivered",
+          requestId,
+          unitId: draft.unitId,
+          operatorId: unit.operator?.id,
+          deliveredAt: disclosedAtIso
+        });
+      }
     }
 
     return { ...bookingRequest };
@@ -263,7 +302,91 @@ export class BookingRequestManager {
     return req;
   }
 
-  checkAndResolveExpiry(requestId: string, { clock = () => new Date() }: { clock?: () => Date } = {}) {
+  markDelivered(
+    envelope: PlatformCommandEnvelope<{ requestId: string }>,
+    { clock = () => new Date() }: { clock?: () => Date } = {}
+  ) {
+    if (!envelope || envelope.commandName !== "booking_request.mark_delivered") {
+      throw new Error("Invalid envelope: commandName must be 'booking_request.mark_delivered'");
+    }
+
+    const { requestId } = envelope.payload ?? {};
+    const req = this.getRequest(requestId);
+    const now = clock();
+
+    if (req.status !== "disclosed") {
+      throw new Error(`Cannot mark delivery for request in status '${req.status}'`);
+    }
+
+    if (now.getTime() >= new Date(req.deliveryDeadlineAt).getTime()) {
+      this.checkAndResolveDeliveryFailure(
+        createPlatformCommandEnvelope({
+          commandName: "booking_request.delivery_failed",
+          principal: envelope.principal,
+          payload: { requestId }
+        }),
+        { clock }
+      );
+      throw new Error("Technical delivery deadline (5 minutes) expired; request delivery failed");
+    }
+
+    req.delivered = true;
+    req.deliveredAt = now.toISOString();
+
+    if (this.#audit) {
+      this.#audit.record({
+        type: "booking_request.delivered",
+        requestId,
+        unitId: req.unitId,
+        operatorId: req.operatorId,
+        commandEnvelopeId: envelope.commandId,
+        deliveredAt: req.deliveredAt
+      });
+    }
+
+    return { ...req };
+  }
+
+  checkAndResolveDeliveryFailure(
+    envelope: PlatformCommandEnvelope<{ requestId: string }> | { requestId: string },
+    { clock = () => new Date() }: { clock?: () => Date } = {}
+  ) {
+    const requestId = "commandName" in envelope ? envelope.payload.requestId : envelope.requestId;
+    const envelopeId = "commandName" in envelope ? envelope.commandId : undefined;
+    const req = this.#requests.get(requestId);
+    if (!req) throw new Error(`Booking request not found: ${requestId}`);
+
+    if (req.status !== "disclosed" || req.delivered) {
+      return req;
+    }
+
+    const now = clock();
+    if (now.getTime() >= new Date(req.deliveryDeadlineAt).getTime()) {
+      req.status = "delivery_failed";
+      if (req.holdId && this.#calendar) {
+        this.#calendar.releaseHold(req.holdId);
+      }
+      if (this.#audit) {
+        this.#audit.record({
+          type: "booking_request.delivery_failed",
+          requestId,
+          unitId: req.unitId,
+          commandEnvelopeId: envelopeId,
+          failedAt: now.toISOString()
+        });
+      }
+    }
+
+    return req;
+  }
+
+  checkAndResolveExpiry(
+    envelope: PlatformCommandEnvelope<{ requestId: string }> | { requestId: string },
+    { clock = () => new Date() }: { clock?: () => Date } = {}
+  ) {
+    const requestId = "commandName" in envelope ? envelope.payload.requestId : envelope.requestId;
+    const envelopeId = "commandName" in envelope ? envelope.commandId : undefined;
+
     const req = this.#requests.get(requestId);
     if (!req) throw new Error(`Booking request not found: ${requestId}`);
 
@@ -282,6 +405,7 @@ export class BookingRequestManager {
           type: "booking_request.expired",
           requestId,
           unitId: req.unitId,
+          commandEnvelopeId: envelopeId,
           expiredAt: now.toISOString()
         });
       }
@@ -290,7 +414,7 @@ export class BookingRequestManager {
     return req;
   }
 
-  confirmBookingRequest(envelope: PlatformCommandEnvelope, { clock = () => new Date() }: { clock?: () => Date } = {}) {
+  confirmBookingRequest(envelope: PlatformCommandEnvelope<{ requestId: string }>, { clock = () => new Date() }: { clock?: () => Date } = {}) {
     if (!envelope || envelope.commandName !== "booking_request.confirm") {
       throw new Error("Invalid envelope: commandName must be 'booking_request.confirm'");
     }
@@ -299,8 +423,15 @@ export class BookingRequestManager {
     const req = this.getRequest(requestId);
 
     const now = clock();
+
+    // Check delivery failure or expiry
+    if (!req.delivered && now.getTime() >= new Date(req.deliveryDeadlineAt).getTime()) {
+      this.checkAndResolveDeliveryFailure(envelope, { clock });
+      throw new Error("Booking request delivery failed and cannot be confirmed");
+    }
+
     if (now.getTime() >= new Date(req.operatorResponseDeadlineAt).getTime()) {
-      this.checkAndResolveExpiry(requestId, { clock });
+      this.checkAndResolveExpiry(envelope, { clock });
       throw new Error("Booking request has expired and can no longer be confirmed");
     }
 
@@ -332,7 +463,7 @@ export class BookingRequestManager {
     return { ...req };
   }
 
-  declineBookingRequest(envelope: PlatformCommandEnvelope, { clock = () => new Date() }: { clock?: () => Date } = {}) {
+  declineBookingRequest(envelope: PlatformCommandEnvelope<{ requestId: string; reason?: string }>, { clock = () => new Date() }: { clock?: () => Date } = {}) {
     if (!envelope || envelope.commandName !== "booking_request.decline") {
       throw new Error("Invalid envelope: commandName must be 'booking_request.decline'");
     }

@@ -2,8 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   InMemoryAuditLog,
-  createPlatformCommandEnvelope,
-  PlatformCommandEnvelope
+  createPlatformCommandEnvelope
 } from "../packages/platform-core/src/index.js";
 import {
   AvailabilityCalendar,
@@ -32,22 +31,32 @@ function setup() {
 }
 
 test("Drafts do not block inventory; successfully disclosed requests do so exclusively for the 30-minute window", () => {
-  const { manager, calendar, unit } = setup();
+  const { manager, calendar, unit, audit } = setup();
   const clock = () => new Date("2026-07-22T10:00:00Z"); // 11:00 AM WAT
 
-  // Create a draft
-  const draft = manager.createDraft({
-    unitId: unit.id,
-    primaryGuest: { id: "guest-101", name: "Tunde Ednut", isGovernmentIdVerified: true },
-    isPrimaryGuestOccupant: true,
-    occupants: [{ name: "Tunde Ednut" }],
-    checkIn: "2026-08-01",
-    checkOut: "2026-08-05",
-    clock
+  // Create a draft using PlatformCommandEnvelope (ADR 0072)
+  const draftEnvelope = createPlatformCommandEnvelope({
+    commandName: "booking_request.create_draft",
+    principal: { id: "guest-101", role: "guest", tenantId: "tenant-lagos" },
+    payload: {
+      unitId: unit.id,
+      primaryGuest: { id: "guest-101", name: "Tunde Ednut", isGovernmentIdVerified: true },
+      isPrimaryGuestOccupant: true,
+      occupants: [{ name: "Tunde Ednut" }],
+      checkIn: "2026-08-01",
+      checkOut: "2026-08-05"
+    }
   });
+
+  const draft = manager.createDraft(draftEnvelope, { clock });
 
   assert.ok(draft.draftId);
   assert.equal(draft.status, "draft");
+
+  // Verify draft audit entry contains commandEnvelopeId
+  const draftAudit = audit.entries().find((e) => e.type === "booking_request.draft_created");
+  assert.ok(draftAudit);
+  assert.equal(draftAudit.commandEnvelopeId, draftEnvelope.commandId);
 
   // Verify draft does NOT block inventory
   const initialAvailability = calendar.getAuthoritativeAvailability({
@@ -81,7 +90,7 @@ test("Drafts do not block inventory; successfully disclosed requests do so exclu
   assert.equal(postDiscloseAvailability.conflictReason, "Overlaps with active Hold");
 });
 
-test("Disclosure enforces one-to-fourteen nights, 90-day horizon, active hours, and safe cutoff", () => {
+test("Disclosure enforces one-to-fourteen nights, 90-day horizon, active hours window, and safe cutoff", () => {
   const { manager, unit } = setup();
 
   // 1. Enforce stay length: 0 nights
@@ -150,8 +159,8 @@ test("Disclosure enforces one-to-fourteen nights, 90-day horizon, active hours, 
     /booking horizon/i
   );
 
-  // 4. Enforce Operator Active Hours (08:00 - 20:00 WAT)
-  // Test disclosure at 06:30 WAT (05:30 UTC) -> outside active hours
+  // 4. Enforce Operator Active Hours response window (ADR 0041 & ADR 0042: full 30-min window must fit inside 08:00 - 20:00 WAT -> latest disclosure 19:30 WAT)
+  // Test disclosure at 19:35 WAT (18:35 UTC) -> fails because 30-min window ends at 20:05 WAT
   assert.throws(
     () => {
       const draft = manager.createDraft({
@@ -161,20 +170,38 @@ test("Disclosure enforces one-to-fourteen nights, 90-day horizon, active hours, 
         occupants: [{ name: "Tunde Ednut" }],
         checkIn: "2026-08-01",
         checkOut: "2026-08-03",
-        clock: () => new Date("2026-07-22T05:30:00Z") // 06:30 WAT
+        clock: () => new Date("2026-07-22T18:35:00Z") // 19:35 WAT
       });
       const env = createPlatformCommandEnvelope({
         commandName: "booking_request.disclose",
         principal: { id: "guest-101", role: "guest" },
         payload: { draftId: draft.draftId }
       });
-      manager.discloseBookingRequest(env, { clock: () => new Date("2026-07-22T05:30:00Z") });
+      manager.discloseBookingRequest(env, { clock: () => new Date("2026-07-22T18:35:00Z") });
     },
     /Operator Active Hours/i
   );
 
-  // 5. Enforce Latest Disclosure Cutoff (at least 3 hours before check-in 14:00 WAT)
-  // Same-day check-in on 2026-07-22 disclosed at 11:30 AM WAT (10:30 UTC) -> less than 3 hours
+  // Disclosure at 19:25 WAT (18:25 UTC) -> full 30-min window ends at 19:55 WAT <= 20:00 WAT -> succeeds!
+  const validEveningDraft = manager.createDraft({
+    unitId: unit.id,
+    primaryGuest: { id: "guest-101", name: "Tunde Ednut", isGovernmentIdVerified: true },
+    isPrimaryGuestOccupant: true,
+    occupants: [{ name: "Tunde Ednut" }],
+    checkIn: "2026-08-01",
+    checkOut: "2026-08-03",
+    clock: () => new Date("2026-07-22T18:25:00Z") // 19:25 WAT
+  });
+  const validEveningEnv = createPlatformCommandEnvelope({
+    commandName: "booking_request.disclose",
+    principal: { id: "guest-101", role: "guest" },
+    payload: { draftId: validEveningDraft.draftId }
+  });
+  const disclosedEvening = manager.discloseBookingRequest(validEveningEnv, { clock: () => new Date("2026-07-22T18:25:00Z") });
+  assert.equal(disclosedEvening.status, "disclosed");
+
+  // 5. Enforce Latest Disclosure Cutoff (ADR 0053: Cutoff 11:00 AM WAT; 5-min delivery window requires disclosure by 10:55 AM WAT)
+  // Same-day check-in on 2026-07-22 disclosed at 10:56 AM WAT (09:56 UTC) -> past 10:55 AM WAT -> throws!
   assert.throws(
     () => {
       const draft = manager.createDraft({
@@ -184,19 +211,19 @@ test("Disclosure enforces one-to-fourteen nights, 90-day horizon, active hours, 
         occupants: [{ name: "Tunde Ednut" }],
         checkIn: "2026-07-22",
         checkOut: "2026-07-24",
-        clock: () => new Date("2026-07-22T10:30:00Z") // 11:30 WAT
+        clock: () => new Date("2026-07-22T09:56:00Z") // 10:56 WAT
       });
       const env = createPlatformCommandEnvelope({
         commandName: "booking_request.disclose",
         principal: { id: "guest-101", role: "guest" },
         payload: { draftId: draft.draftId }
       });
-      manager.discloseBookingRequest(env, { clock: () => new Date("2026-07-22T10:30:00Z") });
+      manager.discloseBookingRequest(env, { clock: () => new Date("2026-07-22T09:56:00Z") });
     },
     /Latest Disclosure Cutoff/i
   );
 
-  // Same-day check-in disclosed at 09:30 AM WAT (08:30 UTC) -> >= 3 hours before 14:00 WAT -> succeeds!
+  // Same-day check-in disclosed at 10:50 AM WAT (09:50 UTC) -> <= 10:55 AM WAT -> succeeds!
   const validSameDayDraft = manager.createDraft({
     unitId: unit.id,
     primaryGuest: { id: "guest-101", name: "Tunde Ednut", isGovernmentIdVerified: true },
@@ -204,18 +231,18 @@ test("Disclosure enforces one-to-fourteen nights, 90-day horizon, active hours, 
     occupants: [{ name: "Tunde Ednut" }],
     checkIn: "2026-07-22",
     checkOut: "2026-07-24",
-    clock: () => new Date("2026-07-22T08:30:00Z") // 09:30 WAT
+    clock: () => new Date("2026-07-22T09:50:00Z") // 10:50 WAT
   });
   const validSameDayEnv = createPlatformCommandEnvelope({
     commandName: "booking_request.disclose",
     principal: { id: "guest-101", role: "guest" },
     payload: { draftId: validSameDayDraft.draftId }
   });
-  const disclosedSameDay = manager.discloseBookingRequest(validSameDayEnv, { clock: () => new Date("2026-07-22T08:30:00Z") });
+  const disclosedSameDay = manager.discloseBookingRequest(validSameDayEnv, { clock: () => new Date("2026-07-22T09:50:00Z") });
   assert.equal(disclosedSameDay.status, "disclosed");
 });
 
-test("Technical delivery, Operator response, expiry, confirmation, and decline are distinct auditable events", () => {
+test("Technical delivery, delivery failure, Operator response, expiry, confirmation, and decline are distinct auditable events", () => {
   const { manager, audit, calendar, unit } = setup();
 
   // Test 1: Technical delivery & Confirmation
@@ -254,7 +281,43 @@ test("Technical delivery, Operator response, expiry, confirmation, and decline a
   assert.ok(types1.includes("booking_request.operator_responded"));
   assert.ok(types1.includes("booking_request.confirmed"));
 
-  // Test 2: Decline releases inventory hold immediately
+  // Test 2: Technical Delivery Failure (ADR 0043)
+  const draftDeliveryFail = manager.createDraft({
+    unitId: unit.id,
+    primaryGuest: { id: "guest-df", name: "David Adeleke", isGovernmentIdVerified: true },
+    isPrimaryGuestOccupant: true,
+    occupants: [{ name: "David Adeleke" }],
+    checkIn: "2026-08-08",
+    checkOut: "2026-08-10",
+    clock: clock1
+  });
+
+  const discloseEnvDF = createPlatformCommandEnvelope({
+    commandName: "booking_request.disclose",
+    principal: { id: "guest-df", role: "guest" },
+    payload: { draftId: draftDeliveryFail.draftId, autoDeliver: false }
+  });
+  const reqDF = manager.discloseBookingRequest(discloseEnvDF, { clock: clock1 });
+  assert.equal(reqDF.delivered, false);
+
+  // Advance clock +6 minutes (past 5-min delivery deadline)
+  const clockAfterDeliveryDeadline = () => new Date("2026-07-22T10:06:00Z");
+  const failEnv = createPlatformCommandEnvelope({
+    commandName: "booking_request.delivery_failed",
+    principal: { id: "system", role: "system" },
+    payload: { requestId: reqDF.requestId }
+  });
+  const failedReq = manager.checkAndResolveDeliveryFailure(failEnv, { clock: clockAfterDeliveryDeadline });
+  assert.equal(failedReq.status, "delivery_failed");
+
+  // Verify inventory hold is released upon delivery failure
+  assert.equal(calendar.getAuthoritativeAvailability({ unitId: unit.id, checkIn: "2026-08-08", checkOut: "2026-08-10", clock: clockAfterDeliveryDeadline }).isAvailable, true);
+
+  const dfAudit = audit.entries().find((e) => e.requestId === reqDF.requestId && e.type === "booking_request.delivery_failed");
+  assert.ok(dfAudit);
+  assert.equal(dfAudit.commandEnvelopeId, failEnv.commandId);
+
+  // Test 3: Decline releases inventory hold immediately
   const draft2 = manager.createDraft({
     unitId: unit.id,
     primaryGuest: { id: "guest-2", name: "Bolu Tokunbo", isGovernmentIdVerified: true },
@@ -287,7 +350,7 @@ test("Technical delivery, Operator response, expiry, confirmation, and decline a
   const types2 = entries2.map((e) => e.type);
   assert.ok(types2.includes("booking_request.declined"));
 
-  // Test 3: Expiry after 30 minutes unblocks inventory automatically
+  // Test 4: Expiry after 30 minutes unblocks inventory automatically (ADR 0072: command envelope)
   const draft3 = manager.createDraft({
     unitId: unit.id,
     primaryGuest: { id: "guest-3", name: "Seyi Shay", isGovernmentIdVerified: true },
@@ -306,7 +369,12 @@ test("Technical delivery, Operator response, expiry, confirmation, and decline a
 
   // Clock ticks +31 minutes (no operator response)
   const clockAfterExpiry = () => new Date("2026-07-22T10:31:00Z");
-  const expiredReq = manager.checkAndResolveExpiry(req3.requestId, { clock: clockAfterExpiry });
+  const expireEnv = createPlatformCommandEnvelope({
+    commandName: "booking_request.expire",
+    principal: { id: "system", role: "system" },
+    payload: { requestId: req3.requestId }
+  });
+  const expiredReq = manager.checkAndResolveExpiry(expireEnv, { clock: clockAfterExpiry });
   assert.equal(expiredReq.status, "expired");
 
   // Verify inventory is unblocked after expiry
@@ -315,6 +383,8 @@ test("Technical delivery, Operator response, expiry, confirmation, and decline a
   const entries3 = audit.entries().filter((e) => e.requestId === req3.requestId);
   const types3 = entries3.map((e) => e.type);
   assert.ok(types3.includes("booking_request.expired"));
+  const expireAudit = entries3.find((e) => e.type === "booking_request.expired");
+  assert.equal(expireAudit.commandEnvelopeId, expireEnv.commandId);
 });
 
 test("Agent, conventional web, and permitted Operator interfaces produce the same Platform Command Envelope and outcome", () => {
