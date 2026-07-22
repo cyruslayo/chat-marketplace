@@ -295,8 +295,8 @@ export class CardPaymentManager {
 
     // Verify Payer Attribution (ADR 0013, 0050)
     const expectedPayerId = offer.parties.distinctPayer?.id ?? offer.parties.primaryGuest.id;
-    if (pspResult.payerId && pspResult.payerId !== expectedPayerId) {
-      throw new Error(`Payer attribution verification failed: Expected ${expectedPayerId}, got ${pspResult.payerId}`);
+    if (!pspResult.payerId || pspResult.payerId !== expectedPayerId) {
+      throw new Error(`Payer attribution verification failed: Expected ${expectedPayerId}, got ${pspResult.payerId ?? "none"}`);
     }
 
     // Expiry check (Payment Window + Grace)
@@ -321,10 +321,17 @@ export class CardPaymentManager {
 
     // Revalidate Unit publication state from repository if provided
     if (this.#repository) {
-      const unit = this.#repository.findById
-        ? (this.#repository.findById(offer.unitId) as any)
-        : (this.#repository.findAll().find((u: any) => u.id === offer.unitId) as any);
-      if (unit && (!unit.published || unit.inspection?.materialChangePending)) {
+      interface UnitRecord {
+        id?: string;
+        published?: boolean;
+        inspection?: {
+          materialChangePending?: boolean;
+        };
+      }
+      const rawUnit = this.#repository.findById
+        ? (this.#repository.findById(offer.unitId) as UnitRecord | undefined)
+        : (this.#repository.findAll() as UnitRecord[]).find((u) => u?.id === offer.unitId);
+      if (rawUnit && (!rawUnit.published || rawUnit.inspection?.materialChangePending)) {
         throw new Error("Inventory verification failed: Unit condition or publication status is invalid");
       }
     }

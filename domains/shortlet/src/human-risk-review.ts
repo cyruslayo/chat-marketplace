@@ -51,6 +51,7 @@ export interface HumanRiskReviewItem {
 }
 
 export interface HumanRiskReviewManagerOptions {
+  readonly riskScoreThreshold?: number;
   readonly audit?: {
     record(entry: Record<string, unknown>): void;
   };
@@ -73,11 +74,13 @@ export function calculateReviewDeadline(openedAt: Date, checkInIso: string): Dat
 }
 
 export class HumanRiskReviewManager {
+  readonly #riskScoreThreshold: number;
   readonly #audit?: HumanRiskReviewManagerOptions["audit"];
   readonly #reviews = new Map<string, HumanRiskReviewItem>();
   readonly #draftReviews = new Map<string, string>(); // draftId -> reviewId
 
   constructor(options: HumanRiskReviewManagerOptions = {}) {
+    this.#riskScoreThreshold = options.riskScoreThreshold ?? 50;
     this.#audit = options.audit;
   }
 
@@ -102,8 +105,8 @@ export class HumanRiskReviewManager {
     const riskTriggers = payload.riskTriggers ?? [];
     const internalRiskScore = payload.internalRiskScore ?? 0;
 
-    // Automatic progression if no risk triggers and low risk score (< 50)
-    if (riskTriggers.length === 0 && internalRiskScore < 50) {
+    // Policy-defined automatic progression if no risk triggers and risk score below policy threshold
+    if (riskTriggers.length === 0 && internalRiskScore < this.#riskScoreThreshold) {
       if (this.#audit) {
         this.#audit.record({
           type: "risk_review.auto_progression",
@@ -204,7 +207,11 @@ export class HumanRiskReviewManager {
     }
 
     // ADR 0076 & AC 4: Solely automated adverse final decisions are impossible!
-    const isHuman = isHumanReviewer ?? (envelope.principal as any).isHumanReviewer ?? ((envelope.principal as any).role === "human_reviewer");
+    const principalRecord = envelope.principal as unknown as Record<string, unknown>;
+    const isHuman =
+      isHumanReviewer ??
+      ((typeof principalRecord.isHumanReviewer === "boolean" ? principalRecord.isHumanReviewer : false) ||
+        principalRecord.role === "human_reviewer");
     if (!isHuman) {
       throw new Error("Solely automated adverse final decisions are impossible; decision requires an authorized human reviewer");
     }
@@ -332,7 +339,10 @@ export class HumanRiskReviewManager {
    * AC 3 & ADR 0075: Guest Interaction Projection.
    * Internal risk scores and restricted evidence are REDACTED / OMITTED.
    */
-  projectGuestInteractionState(reviewId: string): {
+  projectGuestInteractionState(
+    reviewId: string,
+    { clock = () => new Date() }: { clock?: () => Date } = {}
+  ): {
     readonly reviewId: string;
     readonly draftId: string;
     readonly status: string;
@@ -340,7 +350,7 @@ export class HumanRiskReviewManager {
     readonly deadlineAt: string;
     readonly reasonCode: string;
   } {
-    const review = this.getReview(reviewId);
+    const review = this.evaluateExpiry(reviewId, { clock });
     let publicStatusMessage = "Draft is undergoing standard security review.";
     if (review.status === "approved") {
       publicStatusMessage = "Security review complete. Ready for request disclosure.";

@@ -276,3 +276,33 @@ test("Solely automated adverse final decisions are impossible, and authorized re
   assert.ok(recordedTypes.includes("risk_review.opened"));
   assert.ok(recordedTypes.includes("risk_review.approved"));
 });
+
+test("Guest projection evaluates expiry at deadline and configurable risk score threshold works", () => {
+  const manager = new HumanRiskReviewManager({ riskScoreThreshold: 30 });
+  const startClock = () => new Date("2026-08-01T08:00:00.000Z");
+
+  // Draft with internalRiskScore 40 (>= custom threshold 30) -> requires human review
+  const env = createEnvelope("risk_review.route_draft", {
+    draftId: "draft-exp-proj",
+    primaryGuestId: "guest-100",
+    unitId: "unit-1",
+    checkIn: "2026-08-10T14:00:00.000Z",
+    checkOut: "2026-08-12T11:00:00.000Z",
+    internalRiskScore: 40
+  });
+
+  const routeResult = manager.routeRequestDraft(env, { clock: startClock });
+  assert.equal(routeResult.requiresHumanReview, true);
+
+  const reviewId = routeResult.reviewItem!.reviewId;
+
+  // Guest projection before deadline: pending
+  const pendingProj = manager.projectGuestInteractionState(reviewId, { clock: startClock });
+  assert.equal(pendingProj.status, "pending_review");
+
+  // Guest projection after 24h deadline: evaluate expiry lazily and return expired_unresolved
+  const expiredClock = () => new Date("2026-08-02T08:05:00.000Z");
+  const expiredProj = manager.projectGuestInteractionState(reviewId, { clock: expiredClock });
+  assert.equal(expiredProj.status, "expired_unresolved");
+  assert.ok(expiredProj.publicStatusMessage.includes("expired unresolved"));
+});

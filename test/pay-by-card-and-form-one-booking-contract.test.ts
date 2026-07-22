@@ -250,6 +250,23 @@ test("Confirmation requires independently verified booking, amount, currency, re
     /Payer attribution verification failed/
   );
 
+  // Failure path 3b: Missing Payer ID
+  const missingPayerEnv = createEnvelope("card_payment.verify_and_confirm", {
+    offerId: "offer-123",
+    pspReference: "psp_ref_missing_payer",
+    mockVerifyResult: {
+      verified: true,
+      status: "success" as const,
+      amountKobo: 15000000,
+      currency: "NGN",
+      pspReference: "psp_ref_missing_payer"
+    }
+  });
+  assert.throws(
+    () => manager.verifyAndConfirmCardPayment(missingPayerEnv, { clock }),
+    /Payer attribution verification failed/
+  );
+
   // Failure path 4: Expired Payment Window and Grace period
   const expiredClock = () => new Date("2026-08-01T12:35:00.000Z"); // > 20 min + 10 min grace
   const expiredEnv = createEnvelope("card_payment.verify_and_confirm", {

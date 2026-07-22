@@ -1,6 +1,6 @@
 # Issue and explicitly accept a Conditional Booking Offer
 
-Status: ready-for-human
+Status: resolved
 Type: AFK
 User stories: 24, 41–43, 97
 
@@ -22,3 +22,6 @@ After Operator confirmation, issue a versioned Conditional Booking Offer contain
 ## Blocked by
 
 - [Issue 08](08-submit-and-resolve-a-timed-booking-request.md)
+
+## Answer
+Issue implemented and code review findings addressed in commit e3c6999.
