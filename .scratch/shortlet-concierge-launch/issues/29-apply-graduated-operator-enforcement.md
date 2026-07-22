@@ -1,6 +1,6 @@
 # Apply graduated Operator and turnover enforcement
 
-Status: ready-for-agent
+Status: resolved
 Type: AFK
 User stories: 75–77, 92
 
@@ -14,10 +14,10 @@ Turn calendar errors, cancellations, substitutions, response failures, negative 
 
 ## Acceptance criteria
 
-- [ ] Severity, recurrence, attribution, restoration, revocation, and egregious-event thresholds follow accepted policy.
-- [ ] Provider/platform faults and extraordinary events do not count as Operator misconduct.
-- [ ] Immediate protection is distinguished from the independent human final decision and seven-day appeal.
-- [ ] One underlying incident is not multiplied by downstream reports, and every affected feature or Unit projection updates consistently.
+- [x] Severity, recurrence, attribution, restoration, revocation, and egregious-event thresholds follow accepted policy.
+- [x] Provider/platform faults and extraordinary events do not count as Operator misconduct.
+- [x] Immediate protection is distinguished from the independent human final decision and seven-day appeal.
+- [x] One underlying incident is not multiplied by downstream reports, and every affected feature or Unit projection updates consistently.
 
 ## Blocked by
 

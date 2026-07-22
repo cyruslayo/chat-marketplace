@@ -1,6 +1,6 @@
 # Appeal and finalize a deposit claim
 
-Status: ready-for-agent
+Status: resolved
 Type: AFK
 User stories: 61–62
 
@@ -14,10 +14,10 @@ Allow one timely Claim Appeal after successful decision notice, route it to an i
 
 ## Acceptance criteria
 
-- [ ] Appeal eligibility, deadline, independence, evidence, and final decision are explicit and versioned.
-- [ ] Approved Operator awards remain reserved until internally final and cannot be paid twice.
-- [ ] Notification failure follows independent review, reserve-release, late-appeal, and closure deadlines exactly.
-- [ ] Fraud, regulator, court, and legal-hold exceptions preserve records without silently reopening ordinary appeal rights.
+- [x] Appeal eligibility, deadline, independence, evidence, and final decision are explicit and versioned.
+- [x] Approved Operator awards remain reserved until internally final and cannot be paid twice.
+- [x] Notification failure follows independent review, reserve-release, late-appeal, and closure deadlines exactly.
+- [x] Fraud, regulator, court, and legal-hold exceptions preserve records without silently reopening ordinary appeal rights.
 
 ## Blocked by
 

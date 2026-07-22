@@ -1,6 +1,6 @@
 # Enforce standardized guest-conduct rules
 
-Status: ready-for-agent
+Status: resolved
 Type: AFK
 User stories: 44–46
 
@@ -14,10 +14,10 @@ Present and enforce the standardized rules for parties, commercial use, occupanc
 
 ## Acceptance criteria
 
-- [ ] Unit-specific visitor and Pet Friendly choices remain within the platform catalogue and disclosed contract terms.
-- [ ] Operators cannot copy identity evidence without legal authority or create cash fines and arbitrary penalties.
-- [ ] Consequential termination or charge uses a Platform Command Envelope, evidence, policy, and authorized human decision.
-- [ ] Guest, Operator, and support projections show the same rule version, allegation state, cure, and outcome.
+- [x] Unit-specific visitor and Pet Friendly choices remain within the platform catalogue and disclosed contract terms.
+- [x] Operators cannot copy identity evidence without legal authority or create cash fines and arbitrary penalties.
+- [x] Consequential termination or charge uses a Platform Command Envelope, evidence, policy, and authorized human decision.
+- [x] Guest, Operator, and support projections show the same rule version, allegation state, cure, and outcome.
 
 ## Blocked by
 

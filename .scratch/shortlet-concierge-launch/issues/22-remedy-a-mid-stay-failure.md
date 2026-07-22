@@ -1,6 +1,6 @@
 # Classify and remedy a Mid-Stay Failure
 
-Status: ready-for-agent
+Status: resolved
 Type: AFK
 User stories: 52–53
 
@@ -14,10 +14,10 @@ Open a Mid-Stay Failure, classify safety/access/habitability, essential amenity,
 
 ## Acceptance criteria
 
-- [ ] Category and timing boundaries produce the exact accepted 100%, 50%, 25%, 20%, 10%, or no-automatic-payment outcomes.
-- [ ] Refunds use each affected contracted nightly line item and attributable undelivered charges and taxes.
-- [ ] Material incidents hold exposed revenue and preserve consent, evidence, causation, and human authority.
-- [ ] Delayed reporting is handled fairly where safety or practical circumstances prevented immediate notice.
+- [x] Category and timing boundaries produce the exact accepted 100%, 50%, 25%, 20%, 10%, or no-automatic-payment outcomes.
+- [x] Refunds use each affected contracted nightly line item and attributable undelivered charges and taxes.
+- [x] Material incidents hold exposed revenue and preserve consent, evidence, causation, and human authority.
+- [x] Delayed reporting is handled fairly where safety or practical circumstances prevented immediate notice.
 
 ## Blocked by
 
