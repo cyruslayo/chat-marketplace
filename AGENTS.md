@@ -14,7 +14,15 @@ Issues and PRDs are tracked as local Markdown under `.scratch/shortlet-concierge
 
 Use the canonical `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `wontfix` states. See `docs/agents/triage-labels.md`.
 
-### Domain docs
+### Domain docs & ADR Compliance
 
-This repository uses a multi-context layout rooted at `CONTEXT-MAP.md`, with bounded contexts under `domains/` and `packages/`, and system-wide ADRs under `docs/adr/`. Agents MUST inspect relevant ADRs under `docs/adr/` during planning and implementation to ensure code changes strictly conform to established architectural decisions and never violate them. See `docs/agents/domain.md`.
+This repository uses a multi-context layout rooted at `CONTEXT-MAP.md`, with bounded contexts under `domains/` and `packages/`. 
+
+**CRITICAL: Architectural Decision Records (ADRs)**
+System-wide architectural decisions are recorded in `docs/adr/`. Agents frequently fail by assuming domain logic instead of checking ADR constraints. To guarantee ADR compliance, agents MUST follow these steps for every implementation task:
+1. **Discover:** Always list the contents of `docs/adr/` and read all ADRs that might affect your domain. Do not skip this step.
+2. **Acknowledge:** Explicitly state in your plan which ADRs apply and exactly what constraints they impose on your implementation.
+3. **Verify:** Map every acceptance criterion and feature detail directly to the relevant ADRs. Never silently override an ADR.
+
+See `docs/agents/domain.md` for more details.
 
