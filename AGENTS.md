@@ -28,6 +28,15 @@ System-wide architectural decisions are recorded in `docs/adr/`. Agents frequent
 
 See `docs/agents/domain.md` for the no-invented-logic rule, vocabulary standards, and ADR conflict guidance.
 
+### Common Agent Anti-Patterns (Do NOT do these)
+
+Code reviewers frequently catch agents making the following mistakes. Prevent them proactively:
+1. **Loose Negative Validation (Fail-Open):** When verifying identity or authorization, do not use loose truthy checks (e.g., `if (payload.id && payload.id !== expected)`). If a field is missing, it must **fail closed** (e.g., `if (!payload.id || payload.id !== expected)`).
+2. **Static Projections for Time-Bound State:** If a domain entity has an expiry or deadline, its projection methods (`projectState`) MUST lazily evaluate that expiry against the current clock. Do not assume the entity will magically transition to "expired" in memory without a background cron or a lazy check.
+3. **Hardcoding Policies:** Never hardcode thresholds (e.g., `riskScore < 50`) as magic numbers inside domain logic. Accept them as configurable constructor options (e.g., `options.riskScoreThreshold ?? 50`) or derive them from explicit policy documents.
+4. **Duplicating Test Fixtures:** Do not copy-paste complex `createEnvelope` or `createMock` functions across multiple test files. Extract them into shared test utility modules.
+5. **Silencing with `any`:** `any` casts in the domain layer are strictly forbidden. Use `unknown` with narrowing guards or define explicit interfaces (e.g., `interface UnitRecord`) when dealing with loosely-typed repository returns.
+
 ### Implementation protocol
 
 Follow this sequence for every issue. Do not skip steps.
