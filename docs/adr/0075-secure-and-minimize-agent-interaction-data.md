@@ -1,0 +1,5 @@
+# Secure and minimize agent-interaction data
+
+Every interaction stream is bound server-side to an authenticated principal, tenant, session and authorization context; client-supplied ownership claims and opaque identifiers confer no access. Guest, operator, connector, tool and model content is untrusted data. A2UI renderers accept validated typed properties only, use strict browser security controls, allow-listed destinations and secure upload/payment contexts, and never execute agent content.
+
+Public, account, booking-sensitive, identity, payment, access and secret data receive explicit projection rules. Restricted identity and payment material, secrets, raw scores and premature access information never enter general interaction state or logs. Precise location and access should normally use authorized secure references. The proposed 30-day transient, 180-day conversational/telemetry and seven-year material audit periods remain provisional pending the DPIA, Nigerian privacy review and final record-retention mapping.

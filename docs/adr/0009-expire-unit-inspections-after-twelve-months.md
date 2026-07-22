@@ -1,0 +1,7 @@
+# Expire unit inspections after twelve months
+
+A passed physical inspection remains valid for 12 months from its completion time unless a material unit change or serious trust, authority, accuracy, or safety event causes immediate early expiry. The platform computes expiry centrally; operators and inspectors cannot extend it. An expired inspection automatically removes the unit from search and disables new booking requests without a grace period until a new inspection passes.
+
+Operator or management-authority changes, disputed or expired authority, material renovation or layout changes, loss of the entire-place boundary, changed access, substitution, serious damage, credible material-accuracy or safety complaints, extended inactivity, and inability to verify continued operator control trigger early expiry. Cosmetic changes ordinarily require listing updates rather than reinspection. Operators must report material changes before accepting another booking, and failing to do so is an enforcement violation.
+
+Expiry does not indiscriminately cancel confirmed reservations. Routine time expiry triggers review and prioritized reinspection, while substitution, loss of authority, or serious safety concerns trigger immediate risk review and may require suspension, relocation, or cancellation. Inspection records remain immutable; each successful reinspection supersedes rather than overwrites the prior record.

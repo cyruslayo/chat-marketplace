@@ -1,0 +1,7 @@
+# Allow one internal deposit-claim appeal
+
+Each party may file one internal Claim Appeal within seven elapsed calendar days of successful notification of the full adjudication decision. The decision must be available in the authenticated account and supported by positive approved-channel delivery evidence or direct viewing; failed delivery does not start or exhaust the window and instead triggers assisted review. Exact deadlines are displayed in West Africa Time.
+
+Appeals are limited to material factual error, previously unavailable material evidence, calculation error, or incorrect policy application. They are record-based by default and require an independent, conflict-free human reviewer who did not make or assist with the original decision. The reviewer may affirm, reduce, reverse, correct, remand, or reject an out-of-scope or late appeal. AI may organize the record but cannot make a final adverse financial decision.
+
+A timely guest appeal prevents release of the disputed operator award. An operator appeal reserves only the amount still legitimately disputed; undisputed guest money remains refunded and is never clawed back. One completed appeal exhausts ordinary internal review, subject only to exceptional reopening for fraud, misattributed evidence, duplicate money movement, serious system defect, regulatory or court direction, or a related material safety incident. Internal finality never removes statutory, regulatory, complaint, or legal rights.

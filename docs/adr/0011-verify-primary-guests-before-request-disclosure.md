@@ -1,0 +1,7 @@
+# Verify primary guests before request disclosure
+
+The primary guest must be at least 18 and complete government-ID verification before a booking request is disclosed to an operator. Anonymous visitors may search and compare; verified phone and email are required to prepare a request, but the operator is not notified and dates are not blocked until identity verification or authorized manual review succeeds. A valid verification result is reusable until expiry, revocation, material identity change, account risk, or a trust-and-safety trigger requires reverification.
+
+The operator receives only booking-relevant identity information, verified contact status, and the platform's verification assurance. Raw identity documents, national identifiers, biometric or liveness evidence, provider responses, risk scores, and internal fraud notes remain unavailable to operators. The platform minimizes its own storage of identity evidence, preferring provider references and necessary results under strict access, retention, audit, and privacy controls.
+
+Additional occupants are declared by name and age category but are not routinely identity-verified at launch; disclosed legal, property, or risk policies may require step-up verification. Replacing a primary guest requires verification of the replacement, renewed risk checks, operator notice and approval where applicable, and an updated contract snapshot.

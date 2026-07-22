@@ -1,0 +1,7 @@
+# Block inventory for thirty minutes per disclosed request
+
+A Booking Request successfully disclosed during Operator Active Hours exclusively blocks its unit and every overlapping date range for 30 minutes. The clock starts only after authoritative availability and price revalidation, atomic inventory blocking, request persistence, and acceptance by at least one supported operator-delivery channel. Reminders occur at 10 and 25 minutes. Operator confirmation atomically replaces the request block with Payment Pending; decline or timeout releases inventory immediately.
+
+Outside Active Hours, guest work remains a Request Draft: it blocks nothing and promises neither availability nor price. At the next active window the platform revalidates publication, inventory, quote, stay rules, guest and operator eligibility, and priority. Material price changes require renewed guest acceptance; unavailable dates invalidate the draft without operator penalty or silent substitution.
+
+Only one disclosed request may control any overlapping range. A failed delivery attempt does not start the operator clock or count as operator timeout; after a short deterministic technical window it releases inventory as Delivery Failed and records channel health. Confirmation explicitly re-attests availability, price, included services, arrival, maintenance, access, and absence of external conflict. Patterns of genuine active-hours timeout—not platform delivery failure—drive graduated review and enforcement.

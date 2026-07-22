@@ -1,0 +1,7 @@
+# Use one revenue release per launch booking
+
+Every supported one-to-fourteen-night reservation has one full booking-level Revenue Release 24 hours after Verified Access. Release requires verified payment and contract formation, an elapsed protection window, an active operator payment account, and no blocking fulfilment, safety, payment-dispute, fraud, compliance, reversal, or refund condition. Launch does not accrue or release operator revenue nightly or in instalments; any future extended-stay product must define staged rules.
+
+The released Operator Net is calculated deterministically from approved operator accommodation and mandatory charges after commission, operator-borne processor fees, applicable withholding, refunds, and booking offsets. It excludes security deposits, platform-owned fees, platform-remitted taxes, undelivered extras, refunded amounts, and open-claim reserves. Platform commission becomes earned at the same release event, while processor fees are accounted for when incurred.
+
+Revenue Release creates ledger payability, not completed transfer. Actual payout remains subject to operator-account reserves, negative balances, offsets, fraud and compliance holds, later refund and chargeback exposure, and PSP transfer states. Every transfer is idempotent and reconciled. The one-release rule may operate only through a PSP-approved delayed-payout arrangement that supports post-release recovery; it cannot be simulated through ordinary platform custody.

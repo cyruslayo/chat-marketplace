@@ -1,0 +1,7 @@
+# Use AG-UI and A2UI behind platform-owned adapters
+
+AG-UI is the mandatory protocol between supported interactive-client adapters and the agent-runtime gateway. A2UI is the mandatory declarative representation for approved agent-generated surfaces, using versioned domain-specific catalogues that are negotiated and validated at runtime. CopilotKit is the replaceable launch web implementation behind a platform-owned adapter; its types and APIs cannot enter domain models, application services, state machines, payments, ledgers, policies, or the framework-neutral agent-runtime port.
+
+AG-UI state is an interaction projection, not authoritative business state. A2UI actions resolve to platform-owned commands that independently enforce authentication, authorization, schema and current-state validation, policy, idempotency, concurrency, and audit requirements. Unsupported catalogue versions fail closed with a safe textual or conventional-UI fallback. Ordinary authentication, uploads, payment redirects, webhooks, media delivery, administration, and deterministic application operations may use appropriate non-AG-UI interfaces.
+
+The boundary must be protected by dependency tests, protocol and catalogue conformance tests, event-stream replay against CopilotKit and a minimal reference client, and direct tests of application ports. CopilotKit must be removable without changing authoritative application or domain behaviour, A2UI catalogue definitions, or the AG-UI runtime contract.

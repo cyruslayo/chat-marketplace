@@ -1,0 +1,7 @@
+# Use all-in pricing throughout the booking funnel
+
+Discovery, budget filtering, ranking, comparison, quoting, Request to Book, and checkout use the All-In Stay Total for the specified dates and declared guest party. It includes accommodation plus every unavoidable cleaning, operator, platform, administrative, utility, check-in, extra-guest, tax, levy, seasonal, and other mandatory charge. Base and average nightly rates are secondary context only; any displayed average is derived from and labeled as including the all-in total.
+
+A Refundable Security Deposit is excluded from stay cost but displayed separately on every applicable result before a request is submitted, together with the total cash or authorization requirement. Genuine optional extras enter the quote only when selected. When dates or party size are unknown, the platform may show clearly qualified indicative rates but cannot make budget promises until its deterministic pricing service produces an all-in quote.
+
+Quotes are time-limited, version their pricing inputs, and are revalidated before request submission. Operator confirmation produces a final quote; operators and agents cannot add or negotiate fees in conversation. Any correction creates a fully explained replacement quote that the guest may accept or decline without penalty. Reservation commit requires server-verified payment amount and currency to match the accepted quote exactly.

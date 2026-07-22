@@ -1,0 +1,5 @@
+# Require physical inspection before publication
+
+Every launch unit requires an in-person platform inspection before it may become publicly searchable, requestable, or bookable. Approval is unit-specific: an approved operator, property, or neighboring unit does not satisfy this requirement. The inspection confirms existence and location, the entire-place boundary, observable listing accuracy, basic guest readiness, and demonstrated operator control using a versioned checklist and protected evidence package.
+
+Physical inspection is a dated verification claim, not proof of legal ownership, management authority, regulatory compliance, structural or specialist safety, service quality, or future condition. Those claims require their own evidence and statuses. Public surfaces state exactly what was checked and when, avoid generic or absolute verification language, and disclose relevant shared facilities. Blocking findings prevent publication; credible reports of property substitution, nonexistence, loss of access, or serious safety concerns pause new requests pending review.

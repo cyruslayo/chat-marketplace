@@ -1,0 +1,7 @@
+# Revoke turnover after two serious or one egregious failure
+
+Same-Day Turnover is immediately suspended after a qualifying incident and revoked for the remainder of launch after two finally classified guest-impacting serious turnover failures for the unit, or one egregious incident. Duplicate reports from one turnover event count once. A serious failure materially reaches the incoming guest through failed or materially delayed access, serious cleanliness, uninhabitability, relocation, refund, or an important defect turnover should have detected; guest-caused delay does not count.
+
+An egregious incident includes falsified readiness evidence, knowingly presenting an unready or unsafe unit, concealed habitability failure, bypassing controls, abandoning an active serious incident, retaliation for reporting, or substitution intended to hide failure. Senior human review preserves evidence, hears the operator, and records classification; egregious revocation requires two-person approval. An appeal keeps the capability suspended until resolved, while urgent guest and safety protections never wait for the operator response.
+
+Turnover Revocation blocks checkout-date arrivals and reapplication until the launch policy is reviewed, but does not by itself delist the unit, cancel unrelated bookings, terminate the operator, or establish fraud elsewhere. The underlying safety, authority, deception, access, or multi-unit operational facts are evaluated separately for broader suspension or enforcement.

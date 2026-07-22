@@ -25,3 +25,6 @@ export class InMemoryTelemetry {
     return this.#events.map((event) => ({ ...event }));
   }
 }
+
+export * from "./thread.js";
+

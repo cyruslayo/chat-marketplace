@@ -1,0 +1,7 @@
+# Give guests forty-eight hours to answer deposit claims
+
+A guest has 48 elapsed hours to accept or dispute a timely, sufficiently evidenced Security Deposit Claim. The window starts only after the claim is available in the authenticated account and an approved channel provides positive delivery evidence, or the guest views it directly. Sending or API acceptance alone is insufficient. If notification cannot be established, no deadline expires; the claim enters assisted review while operations attempts other approved contact routes.
+
+Before notification, the platform validates timeliness, category, specificity, evidence, quantification, deposit cap, and absence from pre-existing damage. Deficiency does not consume guest response time. Once validated, any deposit balance above the claimed amount is immediately submitted for asynchronous original-source refund and shown using its actual processor status.
+
+Guest acceptance must be explicit. A dispute or silence after successful notification sends the claimed amount to human platform adjudication; silence never counts as consent or causes automatic operator payment. The operator receives only an amount explicitly accepted by the guest or approved through adjudication, and every remaining amount is refunded. A separate legally and operationally reviewed long-stop policy is required before unresolved failed-notification cases can be closed.

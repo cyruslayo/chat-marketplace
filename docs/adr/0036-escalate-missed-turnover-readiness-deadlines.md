@@ -1,0 +1,7 @@
+# Escalate missed turnover readiness deadlines
+
+When an approved Same-Day Turnover unit has not established Ready for Arrival by the Readiness Deadline, the platform automatically opens an urgent Blocking Fulfilment Complaint, suspends the unit's Same-Day Turnover capability, pages Human Incident Support, places the incoming booking under human ownership, proactively updates the guest, and begins preparing Comparable Replacements. Search and preparation do not impose relocation; the booking is not automatically cancelled.
+
+The miss blocks operator self-clearance, automatic readiness, conditional access-instruction release, new same-day bookings, and automatic restoration. Late evidence may inform an authorized responder but cannot change state by itself. Human clearance requires completed cleaning and inspection, functioning essential utilities and critical amenities, tested access, no blocking damage or maintenance, reachable contacts, and credible on-time provision within the Contractual Check-In Window.
+
+Same-Day Turnover remains suspended even if the original unit is cleared and the guest is unaffected. After the stay, review distinguishes administrative evidence delay from operational delay and guest-impacting failure, examines cause, evidence integrity, responsiveness, and the Turnover Plan, and determines remediation, restoration, continued suspension, or revocation. This keeps the live guest remedy separate from future eligibility.

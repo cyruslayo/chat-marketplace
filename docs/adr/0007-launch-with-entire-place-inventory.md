@@ -1,0 +1,5 @@
+# Launch with entire-place inventory
+
+Launch inventory is limited to identifiable, self-contained apartments and houses reserved exclusively for one guest party for the full stay. Individual rooms, shared apartments, bedspaces, dormitories, hostel beds, co-living rooms, hotel room categories, and other pooled or unallocated inventory are outside the initial shortlet domain. This keeps pricing, availability, Request to Book, and reservation formation aligned around one unambiguous inventory object.
+
+Each unit has its own authoritative calendar, pricing, amenities, media, maximum occupancy, and reservation history, even when several units are physically identical. A property may contain many such units. No operator may separately rent part of an entire-place unit or list both its component spaces and the complete unit for overlapping dates. Entire Place describes exclusive use of the accommodation unit; shared compounds, gates, pools, gyms, parking, lifts, lobbies, or staff areas remain permitted when clearly disclosed.

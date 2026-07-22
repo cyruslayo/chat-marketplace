@@ -1,0 +1,5 @@
+# Govern domain-specific A2UI catalogues
+
+Launch uses five application-specific A2UI v0.9.1 catalogues under a platform-controlled URI namespace: `platform-common/v1`, `shortlet-discovery/v1`, `shortlet-booking/v1`, `shortlet-incident/v1`, and `shortlet-operator/v1`. Their compile-time schema bundles define approved presentation components and allow-listed platform actions. The agent may compose those components but cannot invent schemas, components, functions, renderers, URLs, prompts, authorization rules or executable behaviour.
+
+Dynamic schema, raw HTML, JavaScript, unsafe URLs or frames, CSS injection, executable renderers, hidden controls and automatic contractual or financial submission are prohibited. Every outbound message passes A2UI, catalogue, semantic and authorization-aware validation. Breaking or uncertain changes receive a new catalogue major after ownership, accessibility, security, fallback, fixture and replay review; the exact production catalogue identifiers are frozen by the catalogue-certification gate.

@@ -1,0 +1,7 @@
+# Limit Operator Holds to sixty minutes
+
+An Operator Hold lasts 45 minutes and may receive one affirmative 15-minute extension, for a maximum lifetime of 60 minutes from original creation. Editing or shifting dates does not reset expiry. It then atomically converts to an Operator Block for an accepted external commitment or expires and releases inventory; operators can release earlier. Conversion records unit and dates but does not routinely require external guest identity, price, or payment evidence.
+
+After expiry or release, a provisional configurable 30-minute cooldown prevents the same operator from creating another materially overlapping hold on that unit. Overlap rather than exact date equality prevents trivial range changes from bypassing the rule. Only one operator-created hold may affect an inventory range, and a hold created after a platform request cannot displace it; payment-pending or confirmed commitments prohibit both holds and ordinary blocks.
+
+Hold behavior is audited at unit and operator level. Isolated authentic enquiries that fail to convert carry no penalty, while patterns of low conversion, overlapping recreation, demand-responsive blocking, or deliberate warehousing trigger training, loss of hold privileges, ranking review, or broader operator review. Expiry and calendar release occur in one authoritative transaction rather than depending on a delayed background update.

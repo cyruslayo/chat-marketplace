@@ -1,0 +1,24 @@
+# Issue and explicitly accept a Conditional Booking Offer
+
+Status: ready-for-agent
+Type: AFK
+User stories: 24, 41–43, 97
+
+## Parent
+
+[Concierge Platform and Verified Shortlet Launch PRD](../PRD.md)
+
+## What to build
+
+After Operator confirmation, issue a versioned Conditional Booking Offer containing the exact parties, Unit, dates, occupants, quote, deposit, policies, disclosures, Payment Window, and material consequences. Require explicit guest acceptance bound to the displayed version before payment can begin.
+
+## Acceptance criteria
+
+- [ ] Offer creation revalidates current Unit eligibility, authority, availability, quote, and aggregate versions.
+- [ ] Acceptance uses a short-lived, single-use confirmation token bound to actor, terms, amounts, deadline, and expected version.
+- [ ] Stale, changed, expired, replayed, or cross-tenant offers cannot progress.
+- [ ] Conventional and Generative Surface acceptance reach the same command and audit classification.
+
+## Blocked by
+
+- [Issue 08](08-submit-and-resolve-a-timed-booking-request.md)

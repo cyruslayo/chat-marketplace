@@ -1,0 +1,7 @@
+# Earn stay revenue after the check-in protection window
+
+The operator's net accommodation revenue remains pending until 24 hours after Verified Access, provided no Blocking Fulfilment Complaint is open. The platform commission is unearned until the same event; processor fees are recognized separately when incurred. If operator-caused access is late, the window starts late. A guest's voluntary late arrival may instead use verified evidence that valid access was available as agreed.
+
+Failed access, operator unreachability, unavailable or unrecognized bookings, double booking, substituted units, undisclosed sharing, material listing mismatch, serious safety or habitability concerns, and disputed management authority block release. Investigation may later reserve only the amount reasonably exposed. The 24-hour window governs routine payout eligibility and does not extinguish later consumer, contractual, safety, refund, or enforcement rights.
+
+“Payable” and “earned” are marketplace-ledger states distinct from scheduled or completed settlement. Funds may move only through a PSP-approved, counsel-reviewed delayed-payout structure; ordinary automatic split settlement must not pay the operator before fulfilment, and the platform must not simulate custody in its bank account or call the arrangement escrow. If the PSP cannot approve the structure, payout remains feature-flagged rather than implemented inconsistently.

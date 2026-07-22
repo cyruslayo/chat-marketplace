@@ -1,0 +1,7 @@
+# Offer risk-equivalent operator payout plans
+
+Curated launch operators choose between two transparent, risk-equivalent Payout Plans. Fast Payout makes 90% of Operator Net payable after the 24-hour protection window and contributes 10% to booking-specific Rolling Reserve tranches eligible for review 30 days after checkout. Full Post-Stay Payout uses no routine percentage reserve and makes 100% payable 24 hours after checkout. Neither plan changes the booking's single Revenue Release; it controls account-level settlement availability.
+
+Elevated-risk operators may be assigned higher reserves, longer delays, payout holds, or a minimum reserve such as ₦100,000 under a versioned policy and operator agreement. The ₦100,000 minimum is not universal. Operators earn access to improved terms through a transparent Operator Trust Tier based on platform-observed calendar accuracy, responsiveness, successful access, cancellations, substitutions, complaints, refunds, chargebacks, support behavior, and completed volume. No tier guarantees zero-reserve treatment.
+
+Every restriction displays the affected amount, reason, policy version, start time, required action, expected next step, and review route. Actual delayed payout and reserve mechanics remain contingent on written PSP approval and Nigerian legal and finance review. This ADR supersedes ADR-0025's requirement that every active operator permanently maintain a non-zero reserve.

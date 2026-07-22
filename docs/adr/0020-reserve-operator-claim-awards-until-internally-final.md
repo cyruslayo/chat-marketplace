@@ -1,0 +1,7 @@
+# Reserve operator claim awards until internally final
+
+An approved security-deposit award remains reserved and is not payable to the operator until it reaches Internal Finality. That occurs only when the successfully notified seven-day guest appeal window expires without appeal, a timely appeal concludes with an operator award, or the guest gives a specific authenticated waiver after receiving the complete decision. A waiver cannot be prospective, buried in general terms, or inferred from viewing, silence, earlier claim acceptance, or support contact.
+
+Only the approved award remains reserved. Guest amounts outside the validated claim and any additional amount rejected during adjudication are promptly refunded and cannot be frozen or clawed back by an appeal. During an operator appeal, both the initial award and requested increase remain unpaid; the increase is not an operator receivable unless approved. Ledger states distinguish reserved, internally final, payout scheduled, paid, failed, and externally disputed amounts.
+
+Internal Finality authorizes settlement under the platform process but is not legal finality and does not remove consumer, regulatory, chargeback, fraud-review, court, or exceptional-reopening rights. Any post-payment recovery uses the operator agreement, reserves, negative balances, or future settlement deductions. “Reserved” is an internal ledger meaning only and does not claim escrow or lawful custody absent a PSP-approved, counsel-reviewed Nigerian funds structure.

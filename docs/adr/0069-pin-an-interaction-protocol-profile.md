@@ -1,0 +1,5 @@
+# Pin an interaction protocol profile
+
+Launch publishes and enforces `com.chat-marketplace.interaction/agui-v1` rather than depending on unqualified protocol or package versions. It uses HTTPS POST with UTF-8 JSON over SSE, the stable schemas in repository-pinned AG-UI SDKs (`@ag-ui/core` 0.0.57 and, where Python is used, `ag-ui-protocol` 0.1.19), and A2UI v0.9.1. A2UI v1.0 remains candidate-only; draft events, raw passthrough, direct browser-to-model connections, binary transport, WebSockets and dynamic schemas are excluded from launch contractual workflows.
+
+A2UI travels through registered `platform.a2ui.message.v1` custom events until the adopted profile has a stable native envelope. Every custom event is namespaced, schema-registered, owned, classified and non-authoritative; unregistered `CUSTOM` and all `RAW` events fail closed. The current and immediately previous profile majors receive a 90-day compatibility window, while upgrades require schema review, replay, negotiation, security review, canary, rollback and a retirement date.

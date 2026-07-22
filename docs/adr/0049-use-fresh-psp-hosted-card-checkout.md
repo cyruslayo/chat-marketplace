@@ -1,0 +1,7 @@
+# Use fresh PSP-hosted card checkout
+
+Every launch card payment uses Fresh Card Checkout with a unique booking-specific reference. Saved-card, card-on-file, recurring authorization, reusable-token, merchant-initiated charge, and direct card-data APIs are excluded. Guests enter card and authentication data only on a PSP-hosted or PSP-rendered surface and complete whatever issuer or processor challenge is invoked.
+
+The platform never collects, processes, logs, or stores full PAN, CVV, PIN, OTP, authentication answers, screenshots, reusable authorization codes, or raw provider authorization objects. It retains only necessary references, amount and status, and minimized permitted metadata such as brand, last four digits, issuer, country, and provider fingerprint when justified by documented fraud or duplicate-payment purposes. Redaction applies to logs, traces, analytics, support, CRM, archives, and warehouses.
+
+Fresh checkout remains governed by one Live Payment Attempt and the original Payment Window; a terminal decline may be replaced before the deadline without resetting it. Processor authentication and card fingerprints do not prove the verified guest is the cardholder. Adding stored credentials later requires a separate decision covering consent, card management, revocation, account takeover, step-up authentication, payer attribution, network and PCI obligations, and dispute controls.

@@ -1,0 +1,5 @@
+# Adopt graduated operator enforcement
+
+Operator enforcement is published, versioned, evidence-based and graduated from coaching through feature/ranking/payout restriction, unit suspension, operator-wide pause, and termination. Calendar errors, cancellations, substitutions, response failures, negative balances, safety, habitability and control circumvention use explicit severity and recurrence thresholds; immediate protective suspension precedes final classification where guests, funds or inventory are at risk, and one egregious deceptive or safety incident may justify termination review.
+
+Operators receive reasons, evidence, remediation and one seven-day appeal after successful notice before an independent human, while necessary protective action continues. AI cannot make final suspension, termination, financial or appeal decisions. Platform/provider faults do not count against operators, extraordinary events are distinguished from misconduct, and the same underlying incident is not multiplied by its downstream reports.

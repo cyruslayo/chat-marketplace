@@ -1,0 +1,7 @@
+# Set provisional financial-protection amounts
+
+Security deposits are capped at the lower of 25% of accommodation subtotal and ₦100,000 for studios/one-bedroom, ₦150,000 for two-bedroom, or ₦250,000 for larger units. Failed claim notification permits independent review at Day 14, reserves an approved award through Day 45, preserves guest late appeal through Day 90, and then closes absent fraud, regulator, court or legal hold.
+
+Before paid launch, the Guest Protection Fund seed is the greatest of ₦5m, three times projected P95 net remedy exposure, or 1% of next-90-day projected GBV; 10% of earned commission contributes until target, then 2%; target is the greatest of ₦10m, 1% trailing-90-day GBV, or three times trailing P95 exposure. Routine relocation permits up to 25% remaining-stay difference, ₦150k total exposure and ₦50k transport; senior Operations plus Finance permits 50%, ₦500k and ₦100k; higher requires two-person executive approval.
+
+Founding payout choices remain 90/10 after access or 100% 24 hours after checkout; Proven eligibility starts at 10 bookings/60 days with 95/5 terms and stated reliability thresholds; Preferred starts at 30 bookings/180 days with 100% after access and no routine reserve, always overridden by open risk, liabilities and legal/PSP holds. All amounts and thresholds remain provisional pending PSP, finance, insurance, legal, interview and loss-model validation.

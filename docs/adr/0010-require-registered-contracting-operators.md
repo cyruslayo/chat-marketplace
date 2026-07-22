@@ -1,0 +1,7 @@
+# Require registered contracting operators
+
+Only CAC-registered business names and private companies limited by shares may act as contracting accommodation operators at launch; other incorporated forms require legal approval. Each operator must have a verified legal identity, appropriate responsible-person and beneficial-owner checks, payment-provider approval, and a verified settlement account in the approved registered identity. Unregistered individuals, informal agents, social-media identities, and personal payment accounts are ineligible, without implying that individuals can never lawfully offer Nigerian accommodation outside this marketplace.
+
+An individual owner may participate only by appointing an approved registered operator under documented, property-specific Management Authority that expressly permits shortlet use, platform listing, guest contracting, payment collection, and the required operational duties. Operator approval permits property submission but grants no blanket authority to publish. Every public unit resolves to exactly one active contracting operator and valid authority record.
+
+Changing the contracting operator expires the existing authority and physical inspection, disables new requests, freezes payout changes pending review, and requires full onboarding, new property authority, reinspection, and review of upcoming reservations. Existing bookings retain immutable snapshots of the operator and authority under which their contracts formed and never migrate silently to a replacement operator.

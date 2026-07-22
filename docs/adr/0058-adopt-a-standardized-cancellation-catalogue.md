@@ -1,0 +1,5 @@
+# Adopt a standardized cancellation catalogue
+
+Launch units choose Flexible, Standard, or Firm, measured from the Contractual Check-In Window start. Flexible refunds 100% of Cancellation Base at T-72h and 50% at T-24h; Standard at T-14d and T-7d; Firm at T-30d and T-14d; later guest cancellation and human-confirmed no-show retain the base, while deposits, undelivered services and cleaning, attributable refundable taxes, and duplicate payments remain refundable. No-show requires failed contact and human confirmation at 10:00 AM the next day; operator/platform failure, illegality, material unsafety, and non-excludable rights override the catalogue.
+
+Cancellation Base consists of nightly accommodation and mandatory capacity-reservation charges, not deposits or unprovided items. Retained consideration follows the booking commission rate; guests pay no extra processor charge. Voluntary early departure from a conforming unit has no automatic unused-night refund, while failure-caused departure follows ADR-0061.

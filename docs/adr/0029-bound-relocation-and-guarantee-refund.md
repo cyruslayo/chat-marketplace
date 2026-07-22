@@ -1,0 +1,7 @@
+# Bound relocation and guarantee refund
+
+After an eligible operator failure, the platform makes an urgent good-faith effort to offer one or more Comparable Replacements at no additional guest cost. Relocation remains subject to inventory, comparability, operational feasibility, versioned financial approval limits, and explicit guest acceptance; it is not promised regardless of cost. Comparability is decided before affordability, so limits cannot justify an inferior unit, hidden guest contribution, or indefinite delay.
+
+When no comparable option is available and approved promptly, the firm contractual remedy is a full original-source Refund Fallback covering all collected booking amounts and unsupplied extras. Reasonable transport already caused by the failure may remain reimbursable. Internal thresholds establish routine, senior, and exceptional approvals outside the booking domain; failure to approve triggers refund rather than additional guest cost.
+
+The Guest Protection Fund may bridge approved relocation expense while operator liability and platform-absorbed amounts remain separately recorded. Operator recovery follows pre-agreed bounds for reasonable price differences, transport, and directly attributable costs; the platform cannot make unconstrained spending decisions and automatically pass every amount through. Public language promises a suitable replacement when available and approved, otherwise refund—not an unlimited guarantee or purely discretionary remedy.

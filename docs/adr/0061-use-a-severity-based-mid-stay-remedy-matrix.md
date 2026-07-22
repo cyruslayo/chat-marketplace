@@ -1,0 +1,5 @@
+# Use a severity-based mid-stay remedy matrix
+
+Mid-stay remedies depend on verified severity, duration, impact and cure. Safety, access or habitability failure gives the guest relocation or termination, 100% of unused contracted nightly line items and any materially unusable affected night; essential-amenity failure has a two-hour cure window then 25% of the affected night at 2–6 hours and 50% beyond six hours or material overnight impact; material advertised-amenity failure has a four-hour cure window then 10% at 4–12 hours and 20% beyond twelve hours; minor defects require cure but no automatic payment absent material or repeated impact.
+
+Refunds use each night's contracted value rather than an average and include attributable undelivered charges and taxes. Material incidents hold exposed revenue, preserve guest-controlled replacement or departure, permit consented temporary relocation, and receive human final decisions; delayed reporting does not defeat safety or otherwise reasonably impracticable claims.

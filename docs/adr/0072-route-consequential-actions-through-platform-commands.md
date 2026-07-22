@@ -1,0 +1,5 @@
+# Route consequential actions through platform commands
+
+Every consequential A2UI action or AG-UI tool call resolves to one platform-owned application command envelope carrying actor and tenant scope, interaction and aggregate correlation, expected aggregate version, idempotency, profile and catalogue context, and any required server-issued confirmation token. The server independently authenticates, authorizes, validates, evaluates policy, checks concurrency and idempotency, and records the result.
+
+Launch client tools are limited to reversible presentation and device effects; they cannot create contractual or financial state, reveal protected information, execute arbitrary code or call arbitrary destinations. Material contractual, financial and remedy choices require exact-effect confirmation, while privileged exceptions require authorized human roles and applicable approval tiers. External content and tool results remain untrusted data and cannot define tools, permissions, policies or confirmation rules.

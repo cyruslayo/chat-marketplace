@@ -1,0 +1,3 @@
+# Build an extensible concierge platform through a shortlet product
+
+Build a domain-extensible Concierge Platform and internal SDK while delivering a verified shortlet aggregation and booking product for Lagos and Abuja as its first reference application. Shared platform capabilities provide infrastructure and explicit extension points, while shortlets, marketplace commerce, appointments, and future businesses retain separate domain packs and business language. The SDK remains internal until multiple operators and at least one second domain demonstrate that its abstractions survive real transactional use.

@@ -1,0 +1,7 @@
+# Restore turnover eligibility proportionately
+
+Turnover Suspension never clears automatically. An authorized human classifies the failure using independent evidence, verifies corrective action, and records a unit-level decision. When evidence cannot prove readiness by the deadline, the failure is operational rather than merely administrative. Incidents remain in history after restoration, and cross-unit patterns trigger operator-level operational and risk review.
+
+An evidence-only miss requires proof of timely readiness, no guest impact, corrected evidence workflow, and human approval. An actual operational delay without guest impact requires root-cause remediation, an updated Turnover Plan where needed, and one newly observed successful Turnover Run while the next date remains blocked. Guest delay, cleanliness failure, or failed access requires completed incident remediation, three new observed runs—at least two following real stays—full operational reapproval, and senior approval. Earlier qualification runs do not count.
+
+Repeated serious failure results in Turnover Revocation under ADR-0038: the unit may remain bookable only with checkout dates blocked and cannot reapply until the launch policy is formally reviewed. Restoration and revocation affect the unit, while shared-staff or multi-unit patterns can pause new approvals, narrow arrival windows, change payout risk treatment, or cause broader enforcement.

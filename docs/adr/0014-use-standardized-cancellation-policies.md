@@ -1,0 +1,7 @@
+# Use standardized cancellation policies
+
+Every launch unit selects a Flexible, Standard, or Firm policy from a small platform-maintained, versioned cancellation catalogue. Operators cannot create custom policies, add binding cancellation prose, negotiate stricter terms through chat, or reduce guest entitlements. Exact thresholds and charge caps require Nigerian legal approval before publication; blanket non-refundable, no-cancellation, case-by-case, and contact-operator policies are unavailable.
+
+The selected policy and immutable version are captured when the booking request begins and again in the booking contract; later unit configuration affects only new requests. A deterministic service calculates and explains refunds by component using exact timestamps and the captured snapshot. The agent may retrieve and explain that result but cannot interpret or modify the rules. Refund processing remains pending until the payment provider confirms completion, and contractual cash refunds return to the original source rather than being replaced by mandatory credit.
+
+Ordinary guest cancellation is distinct from operator failure, platform failure, force-majeure review, and legal override. Statutory rights and remedies for unavailability, double booking, failed check-in, material inaccuracy, unsafe or uninhabitable conditions, unauthorized substitution, authority loss, or platform error override the selected policy. Operators may approve additional goodwill refunds but never less than the guest's entitlement, with funding and settlement adjustments recorded.

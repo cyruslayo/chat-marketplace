@@ -1,0 +1,7 @@
+# Require human support through every check-in window
+
+The platform may confirm a reservation only when authorized Human Incident Support is scheduled for its entire Active Check-In Window. Coverage begins before the earliest contractual arrival and continues beyond the latest permitted arrival or until every expected guest has Verified Access or an actively owned incident, whichever is later. Exact buffers remain configurable; absence of staffed coverage is a hard booking constraint.
+
+The concierge provides immediate triage, evidence collection, operator contact, verified replacement search, deterministic comparison, explanation, and paging. A human must promptly own failed access, serious safety concerns, substitution, relocation approval, emergency expenditure, exceptional refunds, fraud findings, and inventory suspension. The team must have actual authority to act, plus a backup responder and reachable senior escalation—not merely take messages for later.
+
+All guest channels converge on one auditable incident record and do not require the story to be repeated. Critical and urgent incidents block relevant revenue and receive measured response targets. Operators still supply primary, backup, and emergency contacts and maintain valid instructions. Launch readiness requires realistic simulations of failed access, substitution, safety, refund, PSP delay, simultaneous incidents, and channel outage before accepting paid bookings.

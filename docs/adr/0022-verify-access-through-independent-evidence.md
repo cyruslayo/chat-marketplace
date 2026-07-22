@@ -1,0 +1,7 @@
+# Verify access through independent evidence
+
+Guest confirmation is preferred but not mandatory for Verified Access. Evidence is evaluated in descending strength: authenticated guest confirmation or a booking-specific platform code; a booking-attributable event from a supported access system; documented platform-support verification; or an authorized human finding that valid access was provided as agreed. An operator declaration remains operational input requiring corroboration and can never trigger revenue release by itself. Guest silence and absence of a complaint support other evidence but prove nothing alone.
+
+The protection window starts at the later of contractual check-in and verified access provision. If a guest voluntarily arrives late, an assisted finding may use contractual check-in only when positive evidence establishes that the correct unit and valid access were available then. Early access does not start the window before contractual check-in unless it was formally added to the booking contract.
+
+Automation may request confirmation, validate platform codes and supported events, detect conflict, open cases, and keep revenue pending. Ambiguous, mismatched, or contradictory evidence requires human fulfilment review; the operator bears the burden of proving it provided the booked accommodation when seeking payout. Verified Access starts the protection window and is distinct from revenue becoming payable, payout scheduling, and completed settlement.

@@ -1,0 +1,7 @@
+# Put the burden of deposit claims on operators
+
+An operator seeking any portion of a guest's security deposit bears the entire burden of establishing that the loss occurred during the reservation, the guest or a declared occupant caused it, the loss is covered by the versioned deposit policy, and the amount is reasonable and supported. The platform applies a Balance of Evidence standard to each claim item. The guest never has to prove innocence, guest silence shifts no burden, and missing, evenly balanced, conflicting, or inconclusive evidence returns the disputed amount to the guest.
+
+Occurrence allegations require specific evidence; reservation causation ordinarily requires credible recent pre-stay and post-checkout comparison; responsibility must account for other access, defects, maintenance, wear, and pre-existing conditions; and amount evidence must account for repair, age, depreciation, useful life, betterment, and salvage. Ordinary cleaning, turnover, utilities, maintenance, deterioration, and normal wear remain operator costs. AI may organize evidence or flag gaps but cannot make the final adverse financial decision.
+
+Claims are divisible and adjudicated item by item. The platform may approve only the substantiated portion of a requested amount and gives both parties an understandable explanation, while withholding fraud-sensitive internal reasoning. A platform inspection from months earlier does not, by itself, prove immediate pre-stay condition.
