@@ -1,6 +1,6 @@
 # Issue and explicitly accept a Conditional Booking Offer
 
-Status: ready-for-agent
+Status: ready-for-human
 Type: AFK
 User stories: 24, 41–43, 97
 
@@ -14,10 +14,10 @@ After Operator confirmation, issue a versioned Conditional Booking Offer contain
 
 ## Acceptance criteria
 
-- [ ] Offer creation revalidates current Unit eligibility, authority, availability, quote, and aggregate versions.
-- [ ] Acceptance uses a short-lived, single-use confirmation token bound to actor, terms, amounts, deadline, and expected version.
-- [ ] Stale, changed, expired, replayed, or cross-tenant offers cannot progress.
-- [ ] Conventional and Generative Surface acceptance reach the same command and audit classification.
+- [x] Offer creation revalidates current Unit eligibility, authority, availability, quote, and aggregate versions.
+- [x] Acceptance uses a short-lived, single-use confirmation token bound to actor, terms, amounts, deadline, and expected version.
+- [x] Stale, changed, expired, replayed, or cross-tenant offers cannot progress.
+- [x] Conventional and Generative Surface acceptance reach the same command and audit classification.
 
 ## Blocked by
 
