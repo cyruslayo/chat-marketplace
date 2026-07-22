@@ -121,7 +121,8 @@ test("Competing holds, blocks, and bookings are protected by real transaction an
       operatorId: "operator-001",
       start: "2026-08-04",
       end: "2026-08-06",
-      reason: "Host maintenance"
+      reason: "Host maintenance",
+      clock: () => now
     }),
     /availability conflict/i
   );
