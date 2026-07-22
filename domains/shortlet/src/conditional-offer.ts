@@ -1,6 +1,8 @@
 import { PlatformCommandEnvelope } from "../../../packages/platform-core/src/index.js";
 import { createStayQuote } from "./quote.js";
 import { getUnitOnboardingStatus } from "./onboarding.js";
+import * as crypto from "node:crypto";
+
 
 export interface ConfirmationTokenPayload {
   actorId: string;
@@ -17,7 +19,9 @@ export function createConfirmationToken(payload: ConfirmationTokenPayload): stri
     ...payload,
     salt: crypto.randomUUID()
   });
-  return `tok_${Buffer.from(data).toString("base64url")}`;
+  const b64 = Buffer.from(data).toString("base64url");
+  const hmac = crypto.createHmac("sha256", "conditional_offer_secret").update(b64).digest("hex");
+  return `tok_${b64}.${hmac}`;
 }
 
 export function decodeConfirmationToken(token: string): ConfirmationTokenPayload {
@@ -25,10 +29,17 @@ export function decodeConfirmationToken(token: string): ConfirmationTokenPayload
     throw new Error("Invalid confirmation token format");
   }
   try {
-    const raw = token.slice(4);
-    const json = Buffer.from(raw, "base64url").toString("utf8");
+    const parts = token.slice(4).split(".");
+    if (parts.length !== 2) throw new Error("Invalid token format");
+    const [b64, hmac] = parts;
+    const expectedHmac = crypto.createHmac("sha256", "conditional_offer_secret").update(b64).digest("hex");
+    if (hmac !== expectedHmac) {
+      throw new Error("Token signature verification failed");
+    }
+    const json = Buffer.from(b64, "base64url").toString("utf8");
     return JSON.parse(json);
-  } catch {
+  } catch (e: any) {
+    if (e.message === "Token signature verification failed") throw e;
     throw new Error("Invalid confirmation token payload");
   }
 }
@@ -143,6 +154,13 @@ export class ConditionalOfferManager {
       throw new Error(`Offer creation failed: Unit eligibility/authority invalidated (${onboardingStatus.blockers.join("; ")})`);
     }
 
+    if (this.#calendar) {
+      const avail = this.#calendar.getAuthoritativeAvailability(unit.id, request.checkIn, request.checkOut, clock);
+      if (!avail.isAvailable) {
+        throw new Error("Offer creation failed: Unit is no longer available for the requested dates");
+      }
+    }
+
     // 2. Revalidate Quote & Aggregate Versions
     const freshQuote = createStayQuote({
       unit,
@@ -156,7 +174,8 @@ export class ConditionalOfferManager {
     const offerId = `offer-${crypto.randomUUID()}`;
     const offerVersion = 1;
     const paymentWindowDurationMinutes = 20; // ADR 0044
-    const paymentWindowExpiresAt = new Date(now.getTime() + paymentWindowDurationMinutes * 60 * 1000).toISOString();
+    const paymentWindowStart = request.confirmedAt ? new Date(request.confirmedAt) : now;
+    const paymentWindowExpiresAt = new Date(paymentWindowStart.getTime() + paymentWindowDurationMinutes * 60 * 1000).toISOString();
 
     const aggregateVersions = Object.freeze({
       offerVersion,
@@ -241,7 +260,6 @@ export class ConditionalOfferManager {
         unitId: unit.id,
         primaryGuestId: request.primaryGuest.id,
         commandEnvelopeId: envelope.commandId,
-        confirmationToken,
         issuedAt: offer.issuedAt
       });
     }
@@ -293,7 +311,7 @@ export class ConditionalOfferManager {
     }
 
     // 4. Expected Version check
-    const expectedVersion = envelope.expectedVersion ?? envelope.payload?.expectedVersion;
+    const expectedVersion = envelope.expectedVersion;
     if (expectedVersion != null && expectedVersion !== offer.aggregateVersions.offerVersion) {
       throw new Error(`Offer version mismatch: expected ${expectedVersion}, got ${offer.aggregateVersions.offerVersion}`);
     }
@@ -367,7 +385,6 @@ export class ConditionalOfferManager {
         unitId: offer.unitId,
         primaryGuestId: offer.parties.primaryGuest.id,
         commandEnvelopeId: envelope.commandId,
-        confirmationToken,
         acceptedAt: offer.acceptedAt
       });
     }

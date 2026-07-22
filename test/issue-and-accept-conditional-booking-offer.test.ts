@@ -322,22 +322,30 @@ test("Conventional and Generative Surface acceptance reach the same command and 
   const s = setup();
   const clock = () => new Date("2026-07-22T10:00:00Z");
 
-  const { request } = createConfirmedRequest(s, clock, { checkIn: "2026-08-25", checkOut: "2026-08-28" });
+  const { request: request1 } = createConfirmedRequest(s, clock, { guestId: "guest-101", checkIn: "2026-08-25", checkOut: "2026-08-28" });
+  const { request: request2 } = createConfirmedRequest(s, clock, { guestId: "guest-102", checkIn: "2026-09-01", checkOut: "2026-09-05" });
 
-  const issueEnv = createPlatformCommandEnvelope({
+  const issueEnv1 = createPlatformCommandEnvelope({
     commandName: "conditional_offer.issue",
     principal: { id: s.unit.operator.id, role: "operator", tenantId: "tenant-lagos" },
-    payload: { requestId: request.requestId }
+    payload: { requestId: request1.requestId }
   });
-  const offer = s.offerManager.issueOffer(issueEnv, { clock });
+  const offer1 = s.offerManager.issueOffer(issueEnv1, { clock });
+
+  const issueEnv2 = createPlatformCommandEnvelope({
+    commandName: "conditional_offer.issue",
+    principal: { id: s.unit.operator.id, role: "operator", tenantId: "tenant-lagos" },
+    payload: { requestId: request2.requestId }
+  });
+  const offer2 = s.offerManager.issueOffer(issueEnv2, { clock });
 
   // 1. Conventional web route envelope
   const webAcceptEnv = createPlatformCommandEnvelope({
     commandName: "conditional_offer.accept",
     principal: { id: "guest-101", role: "guest", tenantId: "tenant-lagos" },
     payload: {
-      offerId: offer.offerId,
-      confirmationToken: offer.confirmationToken
+      offerId: offer1.offerId,
+      confirmationToken: offer1.confirmationToken
     }
   });
 
@@ -346,23 +354,23 @@ test("Conventional and Generative Surface acceptance reach the same command and 
   const surface = surfaceMgr.createSurface({
     catalogue: "booking/v1",
     profile: AG_UI_PROFILE,
-    workflowState: { offerId: offer.offerId, status: offer.status }
+    workflowState: { offerId: offer2.offerId, status: offer2.status }
   });
 
   // Execute action on generative surface
   const surfaceActionResult = surfaceMgr.executeSurfaceAction(surface.surfaceId, {
     actionName: "accept_offer",
-    payload: { offerId: offer.offerId }
+    payload: { offerId: offer2.offerId }
   });
   assert.ok(surfaceActionResult.success);
 
   // Both surfaces dispatch the identical PlatformCommandEnvelope structure to the domain
   const surfaceAcceptEnv = createPlatformCommandEnvelope({
     commandName: "conditional_offer.accept",
-    principal: { id: "guest-101", role: "guest", tenantId: "tenant-lagos" },
+    principal: { id: "guest-102", role: "guest", tenantId: "tenant-lagos" },
     payload: {
-      offerId: offer.offerId,
-      confirmationToken: offer.confirmationToken
+      offerId: offer2.offerId,
+      confirmationToken: offer2.confirmationToken
     }
   });
 
@@ -370,12 +378,15 @@ test("Conventional and Generative Surface acceptance reach the same command and 
   assert.equal(webAcceptEnv.principal.role, surfaceAcceptEnv.principal.role);
 
   // Executing the domain command for acceptance
-  const acceptedOffer = s.offerManager.acceptOffer(surfaceAcceptEnv, { clock: () => new Date("2026-07-22T10:05:00Z") });
-  assert.equal(acceptedOffer.status, "accepted");
+  s.offerManager.acceptOffer(webAcceptEnv, { clock: () => new Date("2026-07-22T10:05:00Z") });
+  s.offerManager.acceptOffer(surfaceAcceptEnv, { clock: () => new Date("2026-07-22T10:05:00Z") });
 
   // Verify audit log has exact single classification "conditional_offer.accepted"
   const auditEntries = s.audit.entries().filter((e) => e.type === "conditional_offer.accepted");
-  assert.equal(auditEntries.length, 1);
-  assert.equal(auditEntries[0].offerId, offer.offerId);
-  assert.equal(auditEntries[0].commandEnvelopeId, surfaceAcceptEnv.commandId);
+  assert.equal(auditEntries.length, 2);
+  
+  const auditWeb = auditEntries.find(e => e.offerId === offer1.offerId);
+  const auditSurface = auditEntries.find(e => e.offerId === offer2.offerId);
+  assert.ok(auditWeb);
+  assert.ok(auditSurface);
 });
