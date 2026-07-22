@@ -34,6 +34,7 @@ export * from "./stream-replay.js";
 export * from "./provider-contracts.js";
 export * from "./interaction-security.js";
 export * from "./reconciliation.js";
+export * from "./provider-certification.js";
 
 
 

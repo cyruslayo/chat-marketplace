@@ -31,5 +31,6 @@ export * from "./whatsapp-adapter.js";
 export * from "./accessibility-localization.js";
 export * from "./verified-stay-review.js";
 export * from "./operator-unit-economics.js";
+export * from "./legal-privacy-gates.js";
 
 
