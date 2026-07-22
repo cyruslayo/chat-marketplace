@@ -29,4 +29,5 @@ export class InMemoryTelemetry {
 export * from "./thread.js";
 export * from "./surface.js";
 export * from "./envelope.js";
+export * from "./human-handoff.js";
 
