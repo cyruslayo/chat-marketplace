@@ -91,6 +91,10 @@ test("logout, revocation, or tenant change terminates streams and invalidates co
   const { manager, context } = setup();
   const thread = manager.createThread(context);
 
+  let streamEnded = false;
+  const mockStream = { end() { streamEnded = true; } };
+  manager.attachObserverStream(thread.threadId, context, mockStream);
+
   // Issue a material confirmation lease
   const lease = manager.issueConfirmationLease(thread.threadId, context, {
     actionType: "confirm-booking",
@@ -104,6 +108,8 @@ test("logout, revocation, or tenant change terminates streams and invalidates co
 
   // User logs out / session is revoked
   manager.revokeSession(context.sessionId, context);
+
+  assert.equal(streamEnded, true);
 
   // Thread access with revoked session must be rejected
   assert.throws(

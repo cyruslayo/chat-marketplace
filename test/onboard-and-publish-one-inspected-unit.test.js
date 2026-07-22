@@ -29,12 +29,17 @@ test("publication succeeds when all operator, unit, authority, inspection, licen
     legalForm: "private-company-limited-by-shares",
     cacVerified: true,
     responsiblePersonsVerified: true,
+    responsiblePersons: [{ name: "Jane Doe", role: "Director" }],
     beneficialOwnersVerified: true,
     paymentProviderApproved: true,
     settlementAccountVerified: true,
+    settlementIdentity: { bank: "GTBank", accountNumber: "0123456789" },
     approvedAt: "2026-01-01",
     approvalExpiresAt: "2027-12-31"
   });
+
+  assert.equal(operator.responsiblePersons.length, 1);
+  assert.equal(operator.settlementIdentity.bank, "GTBank");
 
   const unit = registerUnit(repository, {
     id: "unit-ikeja-100",

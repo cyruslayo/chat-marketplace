@@ -27,11 +27,13 @@ export class InteractionThreadManager {
       sessionId: context.sessionId,
       deviceId: context.deviceId,
       observers: new Set([context.tabId].filter(Boolean)),
+      observerStreams: new Set(),
       runs: {},
       activeRunId: null,
       events: [],
       compactedProjection: null,
-      projectionVersion: 1
+      projectionVersion: 1,
+      streamTerminated: false
     };
     this.#threads.set(threadId, thread);
     return deepFreeze({ threadId: thread.threadId, tenantId: thread.tenantId, principalId: thread.principalId });
@@ -58,6 +60,14 @@ export class InteractionThreadManager {
       thread.observers.add(context.tabId);
     }
     return Array.from(thread.observers);
+  }
+
+  attachObserverStream(threadId, context, stream) {
+    const thread = this.getThread(threadId, context);
+    if (stream) {
+      thread.observerStreams.add(stream);
+    }
+    return true;
   }
 
   startAgentRun(threadId, context, { intent }) {
@@ -206,7 +216,18 @@ export class InteractionThreadManager {
           if (run) run.status = "terminated";
           thread.activeRunId = null;
         }
+        for (const stream of thread.observerStreams) {
+          try {
+            if (typeof stream.end === "function") stream.end();
+            else if (typeof stream.destroy === "function") stream.destroy();
+            else if (typeof stream.close === "function") stream.close();
+          } catch {
+            // ignore stream closure errors
+          }
+        }
+        thread.observerStreams.clear();
         thread.observers.clear();
+        thread.streamTerminated = true;
       }
     }
     for (const lease of this.#leases.values()) {
@@ -216,3 +237,4 @@ export class InteractionThreadManager {
     }
   }
 }
+

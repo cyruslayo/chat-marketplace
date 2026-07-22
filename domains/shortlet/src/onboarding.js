@@ -11,15 +11,24 @@ export const REQUIRED_INSPECTION_SCOPE = Object.freeze([
   "listing-accuracy", "current-media"
 ]);
 
+function findUnitOrThrow(repository, unitId) {
+  const units = repository.findAll();
+  const unit = units.find((u) => u.id === unitId);
+  if (!unit) throw new Error(`Unit ${unitId} not found`);
+  return unit;
+}
+
 export function onboardOperator({
   id,
   name,
-  legalForm = "private-company-limited-by-shares",
+  legalForm = null,
   cacVerified = true,
   responsiblePersonsVerified = true,
+  responsiblePersons = [],
   beneficialOwnersVerified = true,
   paymentProviderApproved = true,
   settlementAccountVerified = true,
+  settlementIdentity = null,
   status = "approved",
   approvedAt = new Date().toISOString(),
   approvalExpiresAt
@@ -30,9 +39,11 @@ export function onboardOperator({
     legalForm,
     cacVerified,
     responsiblePersonsVerified,
+    responsiblePersons: Array.isArray(responsiblePersons) ? [...responsiblePersons] : responsiblePersons,
     beneficialOwnersVerified,
     paymentProviderApproved,
     settlementAccountVerified,
+    settlementIdentity: settlementIdentity ? { ...settlementIdentity } : null,
     status,
     approvedAt,
     approvalExpiresAt
@@ -79,9 +90,7 @@ export function grantManagementAuthority(repository, unitId, {
   expiresAt,
   permissions = REQUIRED_AUTHORITY_PERMISSIONS
 }) {
-  const units = repository.findAll();
-  const unit = units.find((u) => u.id === unitId);
-  if (!unit) throw new Error(`Unit ${unitId} not found`);
+  const unit = findUnitOrThrow(repository, unitId);
 
   unit.managementAuthority = {
     id,
@@ -104,9 +113,7 @@ export function recordPhysicalInspection(repository, {
   scopeItems = REQUIRED_INSPECTION_SCOPE,
   evidenceNotes
 }) {
-  const units = repository.findAll();
-  const unit = units.find((u) => u.id === unitId);
-  if (!unit) throw new Error(`Unit ${unitId} not found`);
+  const unit = findUnitOrThrow(repository, unitId);
 
   unit.inspection = {
     id: `inspection-${crypto.randomUUID()}`,
@@ -128,9 +135,7 @@ export function recordPhysicalInspection(repository, {
 }
 
 export function recordLicensingAndInsurance(repository, unitId, { licensing, insurance }) {
-  const units = repository.findAll();
-  const unit = units.find((u) => u.id === unitId);
-  if (!unit) throw new Error(`Unit ${unitId} not found`);
+  const unit = findUnitOrThrow(repository, unitId);
 
   unit.regulatory = {
     licensing: structuredClone(licensing),
@@ -142,9 +147,7 @@ export function recordLicensingAndInsurance(repository, unitId, { licensing, ins
 }
 
 export function flagMaterialUnitChange(repository, unitId) {
-  const units = repository.findAll();
-  const unit = units.find((u) => u.id === unitId);
-  if (!unit) throw new Error(`Unit ${unitId} not found`);
+  const unit = findUnitOrThrow(repository, unitId);
 
   if (unit.inspection) {
     unit.inspection.materialChangePending = true;
@@ -155,9 +158,7 @@ export function flagMaterialUnitChange(repository, unitId) {
 }
 
 export function publishUnit(repository, unitId, { clock = () => new Date() } = {}) {
-  const units = repository.findAll();
-  const unit = units.find((u) => u.id === unitId);
-  if (!unit) throw new Error(`Unit ${unitId} not found`);
+  const unit = findUnitOrThrow(repository, unitId);
 
   const now = clock();
   const status = getUnitOnboardingStatus(unit, now);
@@ -214,10 +215,10 @@ export function getUnitOnboardingStatus(unit, now = new Date()) {
   if (!unit.regulatory?.insurance || unit.regulatory.insurance.status !== "verified" || (unit.regulatory.insurance.expiresAt && unit.regulatory.insurance.expiresAt < today)) {
     blockers.push("Insurance missing, invalid or expired");
   }
-  if (unit.regulatory?.insurance && unit.regulatory.insurance.publicLiabilityPerOccurrenceKobo < 1000000000) {
+  if (unit.regulatory?.insurance?.publicLiabilityPerOccurrenceKobo != null && unit.regulatory.insurance.publicLiabilityPerOccurrenceKobo < 1000000000) {
     blockers.push("Insurance public liability per occurrence below 1,000,000,000 NGN kobo");
   }
-  if (unit.regulatory?.insurance && unit.regulatory.insurance.annualAggregateKobo < 2000000000) {
+  if (unit.regulatory?.insurance?.annualAggregateKobo != null && unit.regulatory.insurance.annualAggregateKobo < 2000000000) {
     blockers.push("Insurance annual aggregate below 2,000,000,000 NGN kobo");
   }
 
@@ -240,3 +241,4 @@ export function getUnitOnboardingStatus(unit, now = new Date()) {
     insuranceStatus: unit.regulatory?.insurance?.status ?? "unverified"
   });
 }
+
