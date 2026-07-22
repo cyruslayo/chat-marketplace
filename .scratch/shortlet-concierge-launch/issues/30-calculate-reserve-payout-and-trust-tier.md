@@ -1,6 +1,6 @@
 # Calculate Rolling Reserve, Payout Plan, and Operator Trust Tier
 
-Status: ready-for-agent
+Status: resolved
 Type: AFK
 User stories: 81–82, 90–91
 

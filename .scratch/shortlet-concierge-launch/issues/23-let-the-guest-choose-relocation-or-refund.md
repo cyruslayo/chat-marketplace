@@ -1,6 +1,6 @@
 # Let the guest choose relocation or Refund Fallback
 
-Status: ready-for-agent
+Status: resolved
 Type: AFK
 User stories: 54–57
 

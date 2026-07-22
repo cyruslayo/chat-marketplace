@@ -23,3 +23,5 @@ export * from "./revenue-release.js";
 export * from "./guest-conduct.js";
 export * from "./mid-stay-failure.js";
 export * from "./operator-enforcement.js";
+export * from "./relocation-choice.js";
+export * from "./reserve-payout-trust.js";
