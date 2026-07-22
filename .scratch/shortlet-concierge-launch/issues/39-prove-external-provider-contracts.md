@@ -1,6 +1,6 @@
 # Prove external-provider contracts with automated fixtures
 
-Status: ready-for-agent
+Status: resolved
 Type: AFK
 User stories: 107
 
@@ -14,10 +14,10 @@ Define replaceable adapters for payment, identity, messaging, maps/location, cal
 
 ## Acceptance criteria
 
-- [ ] Domain and application services depend on platform-owned provider capabilities rather than vendor types.
-- [ ] Request, signature, response mapping, error translation, idempotency, redaction, circuit-breaking, and recovery cases pass.
-- [ ] Unknown or contradictory provider states fail safely and create actionable reconciliation context.
-- [ ] Automated contract success is recorded separately from production-equivalent capability certification.
+- [x] Domain and application services depend on platform-owned provider capabilities rather than vendor types.
+- [x] Request, signature, response mapping, error translation, idempotency, redaction, circuit-breaking, and recovery cases pass.
+- [x] Unknown or contradictory provider states fail safely and create actionable reconciliation context.
+- [x] Automated contract success is recorded separately from production-equivalent capability certification.
 
 ## Blocked by
 
@@ -25,3 +25,11 @@ Define replaceable adapters for payment, identity, messaging, maps/location, cal
 - [Issue 07](07-verify-primary-guest-payer-and-occupants.md)
 - [Issue 10](10-pay-by-card-and-form-one-booking-contract.md)
 - [Issue 34](34-project-artifacts-through-whatsapp.md)
+
+## Comments
+
+- Implemented `ProviderContractRegistry` and `CircuitBreaker` in `packages/platform-core/src/provider-contracts.ts`.
+- Established vendor-neutral platform capability interfaces for payment, identity, messaging, maps, calendar, and notifications (ADR 0004, ADR 0068).
+- Implemented signature validation, idempotency caching, error translation, PII/credential redaction (ADR 0075), circuit breaking, and contradictory-state reconciliation context.
+- Separated automated contract success recording from production capability certification.
+- Covered by unit tests in `test/prove-external-provider-contracts.test.ts`.

@@ -31,5 +31,7 @@ export * from "./surface.js";
 export * from "./envelope.js";
 export * from "./human-handoff.js";
 export * from "./stream-replay.js";
+export * from "./provider-contracts.js";
+
 
 
