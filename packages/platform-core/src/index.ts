@@ -32,6 +32,9 @@ export * from "./envelope.js";
 export * from "./human-handoff.js";
 export * from "./stream-replay.js";
 export * from "./provider-contracts.js";
+export * from "./interaction-security.js";
+export * from "./reconciliation.js";
+
 
 
 

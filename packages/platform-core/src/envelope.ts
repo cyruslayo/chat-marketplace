@@ -1,6 +1,6 @@
 export interface CommandPrincipal {
   id: string;
-  role: "guest" | "operator" | "agent" | "system" | "admin";
+  role: "guest" | "operator" | "agent" | "system" | "admin" | "authorized_staff";
   tenantId?: string;
 }
 
