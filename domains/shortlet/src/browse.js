@@ -128,9 +128,13 @@ function readFileSafe(filePath) {
   catch (error) { if (error.code === "ENOENT") return null; throw error; }
 }
 
+import { calculateTaxKobo } from "./quote.js";
+
 function allInStayTotalKobo(unit, dateRange) {
   if (!dateRange) return null;
-  return unit.price.nightlyKobo * dateRange.nights + (unit.price.mandatoryFeesKobo ?? 0);
+  const base = unit.price.nightlyKobo * dateRange.nights + (unit.price.mandatoryFeesKobo ?? 0);
+  const taxes = calculateTaxKobo(unit.price.taxConfig, base);
+  return base + taxes;
 }
 
 function deepFreeze(value) {

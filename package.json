@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "check": "node --check domains/shortlet/src/index.js && node --check domains/shortlet/src/browse.js && node --check domains/shortlet/src/onboarding.js && node --check domains/shortlet/src/availability.js && node --check domains/shortlet/src/guest-verification.js && node --check domains/shortlet/src/instagram-adapter.js && node --check packages/platform-core/src/index.js && node --check packages/platform-core/src/thread.js && node --check packages/platform-core/src/surface.js && node --check apps/web/src/presentation.js && node --check apps/web-agent/src/presentation.js && node --check apps/web-agent/src/copilotkit-runtime.js"
+    "check": "node --check domains/shortlet/src/index.js && node --check domains/shortlet/src/browse.js && node --check domains/shortlet/src/onboarding.js && node --check domains/shortlet/src/availability.js && node --check domains/shortlet/src/guest-verification.js && node --check domains/shortlet/src/quote.js && node --check domains/shortlet/src/same-day-turnover.js && node --check domains/shortlet/src/instagram-adapter.js && node --check packages/platform-core/src/index.js && node --check packages/platform-core/src/thread.js && node --check packages/platform-core/src/surface.js && node --check apps/web/src/presentation.js && node --check apps/web-agent/src/presentation.js && node --check apps/web-agent/src/copilotkit-runtime.js"
   },
   "dependencies": {
     "@ag-ui/core": "0.0.57",
