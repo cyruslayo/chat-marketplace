@@ -49,12 +49,12 @@ A declarative, catalogue-validated arrangement of approved interface components 
 _Avoid_: Generated code, authoritative workflow, arbitrary HTML
 
 **Web Agent Adapter**:
-A replaceable integration that translates the platform interaction contract into a particular web agent framework and renderer.
+A replaceable web presentation integration that converts canonical Interaction Artifacts into the supported A2UI presentation and connects interactive events back to trusted application boundaries. The current implementation uses Weaver for A2UI v0.9.1; Weaver remains an adapter/runtime dependency rather than a domain or platform contract.
 _Avoid_: Agent runtime, application service, domain dependency
 
-**Interaction Protocol Profile**:
-A named, versioned compatibility contract that selects the allowed AG-UI events, A2UI messages, transports, custom extensions and failure behaviour independently of any package's latest release.
-_Avoid_: Dependency version, framework configuration
+**Interaction Stream Contract**:
+The platform-owned, versioned durable interaction-stream contract covering stream version, registered event vocabulary, ordering and replay expectations, and validation and failure behaviour without selecting a renderer or framework.
+_Avoid_: Renderer protocol, framework configuration, transient UI state
 
 **Interaction Thread**:
 A durable conversational context belonging to one authorized principal and tenant that may reference, but never own, domain aggregates.
@@ -77,13 +77,13 @@ The property that an agent-enabled material action is also available through a c
 _Avoid_: Visually identical UI, duplicated business logic
 
 **Agent-Runtime Gateway**:
-The platform-owned boundary that translates between agent interaction protocols and application capabilities without owning authoritative domain state.
-_Avoid_: Domain service, system of record, CopilotKit backend
+The platform-owned boundary that translates interactive requests and application capabilities without owning authoritative domain state, authentication policy, command authority, durable replay or concurrency.
+_Avoid_: Domain service, system of record, renderer backend
 
 **Platform Action**:
 A typed request originating from an interactive surface that must pass the same application-level controls as any other command before changing state.
 _Avoid_: UI callback, tool permission, direct state mutation
 
 **Interactive-Client Adapter**:
-A replaceable translation layer between a client framework and the platform's supported agent-interaction protocol.
+A replaceable translation layer between a client surface and trusted platform/application boundaries; it does not require or define one mandatory agent-interaction protocol.
 _Avoid_: Domain interface, application service, permanent framework dependency
