@@ -44,6 +44,8 @@ export function createWeaverWebAgentAdapter({ query, createSurfaceId }: CreateWe
   });
 }
 
+export const createWebAgentAdapter = createWeaverWebAgentAdapter;
+
 export function createCopilotKitWebAgentAdapter({ runtime, query }: { runtime: any; query: any }) {
   return Object.freeze({
     async search(filters: any) {
