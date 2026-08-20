@@ -1,29 +1,23 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   GenerativeSurfaceManager,
-  AG_UI_PROFILE,
   APPROVED_CATALOGUES,
   IndependentReferenceClient
 } from "../packages/platform-core/src/index.js";
 
-test("surface uses pinned interaction profile and approved catalogue known at deploy time", () => {
+test("surface requires no interaction protocol profile and validates approved catalogue", () => {
   const manager = new GenerativeSurfaceManager();
 
   assert.throws(
-    () => manager.createSurface({ catalogue: "unapproved/v99", profile: AG_UI_PROFILE }),
+    () => manager.createSurface({ catalogue: "unapproved/v99" }),
     /Unsupported catalogue/
-  );
-
-  assert.throws(
-    () => manager.createSurface({ catalogue: "discovery/v1", profile: { id: "wrong-profile" } }),
-    /Pinned interaction profile mismatch/
   );
 
   const surface = manager.createSurface({
     catalogue: "discovery/v1",
     projectionVersion: 1,
-    profile: AG_UI_PROFILE,
     facts: { totalResults: 2 },
     textFallback: "2 stays found",
     conventionalRoute: "/stays/search"
@@ -31,7 +25,16 @@ test("surface uses pinned interaction profile and approved catalogue known at de
 
   assert.equal(surface.status, "active");
   assert.equal(surface.revision, 1);
-  assert.equal(surface.profile.id, AG_UI_PROFILE.id);
+  assert.equal(surface.catalogue, "discovery/v1");
+  assert.equal("profile" in surface, false);
+});
+
+test("surface source has no AG-UI profile or HTTPS POST-SSE coupling", () => {
+  const source = readFileSync(new URL("../packages/platform-core/src/surface.ts", import.meta.url), "utf8");
+
+  assert.equal(source.includes("AG_UI_PROFILE"), false);
+  assert.equal(source.includes("ag-ui/0.0.57-shortlet-launch-v1"), false);
+  assert.equal(source.includes("https-post-sse"), false);
 });
 
 test("revisions correlate to authoritative projection versions and stale or expired actions fail closed", () => {
@@ -40,7 +43,6 @@ test("revisions correlate to authoritative projection versions and stale or expi
   const surface = manager.createSurface({
     catalogue: "booking/v1",
     projectionVersion: 2,
-    profile: AG_UI_PROFILE,
     facts: { priceKobo: 8500000 }
   });
 
@@ -66,6 +68,24 @@ test("revisions correlate to authoritative projection versions and stale or expi
   );
 });
 
+test("valid projection updates keep the surface active and usable", () => {
+  const manager = new GenerativeSurfaceManager();
+  const surface = manager.createSurface({ catalogue: "booking/v1", projectionVersion: 2, facts: { priceKobo: 8500000 } });
+
+  manager.updateSurfaceProjection(surface.surfaceId, { projectionVersion: 2, facts: { priceKobo: 8500000 } });
+  const equalRevisionSurface = manager.getSurface(surface.surfaceId);
+  assert.equal(equalRevisionSurface.revision, 2);
+  assert.deepEqual(equalRevisionSurface.facts, { priceKobo: 8500000 });
+
+  manager.updateSurfaceProjection(surface.surfaceId, { projectionVersion: 3, facts: { priceKobo: 9000000 } });
+
+  const updatedSurface = manager.getSurface(surface.surfaceId);
+  assert.equal(updatedSurface.revision, 3);
+  assert.deepEqual(updatedSurface.facts, { priceKobo: 9000000 });
+  assert.equal(updatedSurface.status, "active");
+  assert.equal(manager.executeSurfaceAction(surface.surfaceId, { actionName: "confirm-booking" }).success, true);
+});
+
 test("unsupported or invalid rich UI produces safe text plus conventional route without losing workflow state", () => {
   const manager = new GenerativeSurfaceManager();
 
@@ -75,7 +95,6 @@ test("unsupported or invalid rich UI produces safe text plus conventional route 
   const surface = manager.renderWithFallback({
     catalogue: "discovery/v1",
     projectionVersion: 1,
-    profile: AG_UI_PROFILE,
     workflowState,
     textFallback: "Unit summary for Lagos stay",
     conventionalRoute: "/stays/search?location=Lagos"
@@ -86,6 +105,7 @@ test("unsupported or invalid rich UI produces safe text plus conventional route 
   assert.equal(surface.conventionalRoute, "/stays/search?location=Lagos");
   assert.deepEqual(surface.workflowState, workflowState);
   assert.equal(surface.status, "active");
+  assert.equal("profile" in surface, false);
 });
 
 test("recorded surface events normalize deterministically through the framework-independent reference path", () => {

@@ -3,8 +3,7 @@ import assert from "node:assert/strict";
 import {
   InMemoryAuditLog,
   createPlatformCommandEnvelope,
-  GenerativeSurfaceManager,
-  AG_UI_PROFILE
+  GenerativeSurfaceManager
 } from "../packages/platform-core/src/index.js";
 import {
   AvailabilityCalendar,
@@ -353,7 +352,6 @@ test("Conventional and Generative Surface acceptance reach the same command and 
   const surfaceMgr = new GenerativeSurfaceManager();
   const surface = surfaceMgr.createSurface({
     catalogue: "booking/v1",
-    profile: AG_UI_PROFILE,
     workflowState: { offerId: offer2.offerId, status: offer2.status }
   });
 

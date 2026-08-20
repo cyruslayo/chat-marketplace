@@ -1,11 +1,3 @@
-export const AG_UI_PROFILE = Object.freeze({
-  id: "ag-ui/0.0.57-shortlet-launch-v1",
-  protocolVersion: "0.0.57",
-  transport: "https-post-sse",
-  artifactSchema: "shortlet.discovery/v1",
-  allowedInboundMessageRoles: ["assistant"]
-});
-
 export const APPROVED_CATALOGUES: readonly string[] = Object.freeze([
   "common/v1",
   "discovery/v1",
@@ -17,7 +9,6 @@ export const APPROVED_CATALOGUES: readonly string[] = Object.freeze([
 export interface CreateSurfaceOptions {
   catalogue: string;
   projectionVersion?: number;
-  profile: any;
   facts?: any;
   workflowState?: any;
   textFallback?: string;
@@ -27,17 +18,14 @@ export interface CreateSurfaceOptions {
 export class GenerativeSurfaceManager {
   #surfaces = new Map<string, any>();
 
-  #validateProfileAndCatalogue(catalogue: string, profile: any) {
+  #validateCatalogue(catalogue: string) {
     if (!APPROVED_CATALOGUES.includes(catalogue)) {
       throw new Error(`Unsupported catalogue: ${catalogue}`);
     }
-    if (!profile || profile.id !== AG_UI_PROFILE.id) {
-      throw new Error(`Pinned interaction profile mismatch: expected ${AG_UI_PROFILE.id}`);
-    }
   }
 
-  createSurface({ catalogue, projectionVersion = 1, profile, facts = {}, workflowState = {}, textFallback = "", conventionalRoute = "" }: CreateSurfaceOptions) {
-    this.#validateProfileAndCatalogue(catalogue, profile);
+  createSurface({ catalogue, projectionVersion = 1, facts = {}, workflowState = {}, textFallback = "", conventionalRoute = "" }: CreateSurfaceOptions) {
+    this.#validateCatalogue(catalogue);
 
     const surfaceId = `surf-${crypto.randomUUID()}`;
     const surface = {
@@ -45,7 +33,6 @@ export class GenerativeSurfaceManager {
       catalogue,
       revision: projectionVersion,
       status: "active",
-      profile: Object.freeze({ ...profile }),
       facts: Object.freeze({ ...facts }),
       workflowState: Object.freeze({ ...workflowState }),
       textFallback,
@@ -56,8 +43,8 @@ export class GenerativeSurfaceManager {
     return { ...surface };
   }
 
-  renderWithFallback({ catalogue, projectionVersion = 1, profile, workflowState = {}, textFallback = "", conventionalRoute = "" }: CreateSurfaceOptions) {
-    this.#validateProfileAndCatalogue(catalogue, profile);
+  renderWithFallback({ catalogue, projectionVersion = 1, workflowState = {}, textFallback = "", conventionalRoute = "" }: CreateSurfaceOptions) {
+    this.#validateCatalogue(catalogue);
 
     const surfaceId = `surf-${crypto.randomUUID()}`;
     const surface = {
@@ -65,7 +52,6 @@ export class GenerativeSurfaceManager {
       catalogue,
       revision: projectionVersion,
       status: "active",
-      profile: Object.freeze({ ...profile }),
       facts: Object.freeze({}),
       workflowState: Object.freeze({ ...workflowState }),
       textFallback,
