@@ -45,25 +45,3 @@ export function createWeaverWebAgentAdapter({ query, createSurfaceId }: CreateWe
 }
 
 export const createWebAgentAdapter = createWeaverWebAgentAdapter;
-
-export function createCopilotKitWebAgentAdapter({ runtime, query }: { runtime: any; query: any }) {
-  return Object.freeze({
-    async search(filters: any) {
-      const artifact = query.search(filters);
-      const fallback = { message: fallbackMessage(artifact), conventionalRoute: conventionalSearchRoute(filters) };
-      try {
-        const presentation = await runtime.present({ intent: "browse-eligible-unit", artifact });
-        const correlatedMessage = presentation?.artifactId === artifact.id && typeof presentation.message === "string"
-          ? presentation.message : fallback.message;
-        return {
-          channel: "web-agent" as const, artifact,
-          message: correlatedMessage,
-          agentRun: "completed" as const,
-          fallback
-        };
-      } catch {
-        return { channel: "web-agent" as const, artifact, message: fallback.message, agentRun: "failed" as const, fallback };
-      }
-    }
-  });
-}

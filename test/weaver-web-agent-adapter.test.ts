@@ -7,7 +7,6 @@ import {
   type A2UIServerMessage,
 } from "@weaver/core";
 import {
-  createCopilotKitWebAgentAdapter,
   createWeaverWebAgentAdapter,
   discoveryArtifactToA2UI,
   type WeaverDiscoveryQueryPort,
@@ -71,10 +70,8 @@ function allMessageSurfaceIds(messages: readonly A2UIServerMessage[]): string[] 
 async function weaverAdapterSource(): Promise<string> {
   const source = await readFile(new URL("../apps/web-agent/src/presentation.ts", import.meta.url), "utf8");
   const start = source.indexOf("export function createWeaverWebAgentAdapter");
-  const end = source.indexOf("export function createCopilotKitWebAgentAdapter", start);
   assert.notEqual(start, -1);
-  assert.notEqual(end, -1);
-  return source.slice(start, end);
+  return source.slice(start);
 }
 
 test("AC1 — Search delegates to authoritative query exactly once", () => {
@@ -132,10 +129,6 @@ test("AC7 — Conventional parity retained", () => {
 test("AC8 — Runtime/provider independence", async () => {
   const source = await weaverAdapterSource();
   assert.doesNotMatch(source, /@copilotkit\/core|@ag-ui\/core|CopilotKitCore|createCopilotKitRuntime|Gemini|OpenAI|Anthropic/i);
-});
-
-test("AC9 — Existing CopilotKit adapter remains available", () => {
-  assert.equal(typeof createCopilotKitWebAgentAdapter, "function");
 });
 
 test("AC10 — Zero results still produce valid A2UI", () => {

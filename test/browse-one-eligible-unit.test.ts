@@ -6,7 +6,7 @@ import { InMemoryAuditLog, InMemoryTelemetry } from "../packages/platform-core/s
 import { UnitDiscoveryQuery, UnitRepository, seedIssue01Units } from "../domains/shortlet/src/index.js";
 import { JsonUnitRepository } from "../domains/shortlet/src/index.js";
 import { conventionalSearch, conventionalSearchRoute } from "../apps/web/src/index.js";
-import { createCopilotKitWebAgentAdapter, createWebAgentAdapter } from "../apps/web-agent/src/index.js";
+import { createWebAgentAdapter } from "../apps/web-agent/src/index.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -126,19 +126,6 @@ test("default web-agent presentation exposes deterministic A2UI with conventiona
   assert.equal(result.surfaceId, "application-surface");
 });
 
-test("CopilotKit adapter delegates intent handling but returns the same canonical result", async () => {
-  const deps = setup();
-  const query = new UnitDiscoveryQuery({ ...deps, clock: () => new Date("2026-07-22T00:00:00Z") });
-  const adapter = createCopilotKitWebAgentAdapter({
-    query,
-    runtime: { present: async ({ artifact }: any) => ({ artifactId: artifact.id, message: "One matching stay." }) }
-  });
-  const result = await adapter.search({ location: "Lagos" });
-  assert.deepEqual(result.artifact.facts, conventionalSearch(query, { location: "Lagos" }).artifact.facts);
-  assert.equal(result.message, "One matching stay.");
-  assert.equal(result.agentRun, "completed");
-});
-
 test("default presenter preserves authoritative filters structurally", () => {
   const deps = setup();
   const filters = Object.freeze({ location: "Lagos" });
@@ -161,15 +148,6 @@ test("default presenter preserves authoritative filters structurally", () => {
   assert.ok(result.a2uiMessages.length > 0);
   assert.equal(result.fallback.conventionalRoute, conventionalSearchRoute(filters));
   assert.equal("agentRun" in result, false);
-});
-
-test("legacy CopilotKit runtime failure uses deterministic fallback", async () => {
-  const deps = setup();
-  const query = new UnitDiscoveryQuery({ ...deps, clock: () => new Date("2026-07-22T00:00:00Z") });
-  const failing = createCopilotKitWebAgentAdapter({ query, runtime: { present: async () => { throw new Error("offline"); } } });
-  const fallback = await failing.search({ location: "Lagos" });
-  assert.equal(fallback.fallback.message, "Found 1 eligible Unit.");
-  assert.equal(fallback.fallback.conventionalRoute, "/stays/search?location=Lagos");
 });
 
 test("search records an audit trail and telemetry without exposing source records", () => {
@@ -202,59 +180,4 @@ test("canonical artifacts are deeply immutable", () => {
   const artifact = query.search({ location: "Lagos" });
   assert.throws(() => { (artifact.facts.filters as any).location = "Abuja"; }, TypeError);
   assert.throws(() => { (artifact.facts.results[0] as any).price.nightlyKobo = 1; }, TypeError);
-});
-
-test("CopilotKit infrastructure adapter loads independently of the Domain Pack", async () => {
-  const runtimeModule = await import("../apps/web-agent/src/copilotkit-runtime.js");
-  assert.equal(typeof runtimeModule.createCopilotKitRuntime, "function");
-  assert.deepEqual(runtimeModule.AG_UI_PROFILE, {
-    id: "ag-ui/0.0.57-shortlet-launch-v1", protocolVersion: "0.0.57",
-    transport: "https-post-sse", artifactSchema: "shortlet.discovery/v1",
-    allowedInboundMessageRoles: ["assistant"]
-  });
-});
-
-test("CopilotKit runtime emits the pinned AG-UI profile and correlates its response", async () => {
-  const { createCopilotKitRuntime, AG_UI_PROFILE } = await import("../apps/web-agent/src/copilotkit-runtime.js");
-  const agent = {
-    messages: [] as any[],
-    addMessage(message: any) { this.messages.push(message); }
-  };
-  let forwardedProps: any;
-  const runtime = createCopilotKitRuntime({
-    coreFactory: () => ({
-      connect() {},
-      getAgent: () => agent,
-      subscribe: () => ({ unsubscribe() {} }),
-      async runAgent({ forwardedProps: props }: any) {
-        forwardedProps = props;
-        agent.messages.push({ id: "assistant-1", role: "assistant", content: "One eligible Unit." });
-      }
-    })
-  });
-  const artifact = Object.freeze({ id: "artifact-1", schemaVersion: "shortlet.discovery/v1" });
-  const result = await runtime.present({ intent: "browse-eligible-unit", artifact });
-  assert.equal(result.artifactId, artifact.id);
-  assert.equal(result.message, "One eligible Unit.");
-  assert.deepEqual(forwardedProps?.agUiProfile, AG_UI_PROFILE);
-  assert.equal(agent.messages[0].role, "user");
-});
-
-test("CopilotKit runtime never correlates stale narration to a new artifact", async () => {
-  const { createCopilotKitRuntime } = await import("../apps/web-agent/src/copilotkit-runtime.js");
-  const agent = {
-    messages: [{ id: "old", role: "assistant", content: "Stale result." }] as any[],
-    addMessage(message: any) { this.messages.push(message); }
-  };
-  const runtime = createCopilotKitRuntime({
-    coreFactory: () => ({
-      connect() {}, getAgent: () => agent,
-      subscribe: () => ({ unsubscribe() {} }), async runAgent() {}
-    })
-  });
-  const result = await runtime.present({
-    intent: "browse-eligible-unit",
-    artifact: Object.freeze({ id: "artifact-2", schemaVersion: "shortlet.discovery/v1" })
-  });
-  assert.equal(result.message, undefined);
 });

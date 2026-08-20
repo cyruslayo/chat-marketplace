@@ -6,7 +6,6 @@ import {
   APPROVED_CATALOGUES,
   IndependentReferenceClient
 } from "../packages/platform-core/src/index.js";
-import { createCopilotKitRuntime } from "../apps/web-agent/src/index.js";
 
 test("surface uses pinned interaction profile and approved catalogue known at deploy time", () => {
   const manager = new GenerativeSurfaceManager();
@@ -89,24 +88,19 @@ test("unsupported or invalid rich UI produces safe text plus conventional route 
   assert.equal(surface.status, "active");
 });
 
-test("same recorded stream renders equivalent normalized meaning in CopilotKit and independent reference client", async () => {
+test("recorded surface events normalize deterministically through the framework-independent reference path", () => {
   const streamEvents = [
     { type: "surface.created", surfaceId: "surf-101", catalogue: "discovery/v1", revision: 1, facts: { unitId: "unit-lagos-001", title: "Luxury Flat" } },
     { type: "surface.updated", surfaceId: "surf-101", revision: 2, facts: { unitId: "unit-lagos-001", title: "Luxury Flat - Updated" } }
   ];
 
-  const copilotRuntime = createCopilotKitRuntime({
-    coreFactory: () => ({
-      connect() {}, getAgent: () => ({ addMessage() {} }), subscribe: () => ({ unsubscribe() {} }), runAgent: async () => {}
-    })
-  });
-  const copilotNormalized = await copilotRuntime.renderRecordedStream(streamEvents);
-
   const referenceClient = new IndependentReferenceClient();
-  const referenceNormalized = referenceClient.renderRecordedStream(streamEvents);
+  const normalized = referenceClient.renderRecordedStream(streamEvents);
+  const repeated = new IndependentReferenceClient().renderRecordedStream(streamEvents);
 
-  assert.deepEqual(copilotNormalized, referenceNormalized);
-  assert.equal(copilotNormalized!.surfaceId, "surf-101");
-  assert.equal(copilotNormalized!.revision, 2);
-  assert.equal(copilotNormalized!.facts.title, "Luxury Flat - Updated");
+  assert.deepEqual(normalized, repeated);
+  assert.equal(normalized!.surfaceId, "surf-101");
+  assert.equal(normalized!.revision, 2);
+  assert.equal(normalized!.facts.unitId, "unit-lagos-001");
+  assert.equal(normalized!.facts.title, "Luxury Flat - Updated");
 });

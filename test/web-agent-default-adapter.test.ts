@@ -1,16 +1,14 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   createBasicCatalogV091Registration,
   createWeaverRuntime,
 } from "@weaver/core";
 import {
-  createCopilotKitRuntime,
-  createCopilotKitWebAgentAdapter,
   createWebAgentAdapter,
   createWeaverWebAgentAdapter,
 } from "../apps/web-agent/src/index.js";
+import * as webAgent from "../apps/web-agent/src/index.js";
 import { conventionalSearch, conventionalSearchRoute } from "../apps/web/src/index.js";
 import { UnitDiscoveryQuery, UnitRepository, seedIssue01Units } from "../domains/shortlet/src/index.js";
 import { InMemoryAuditLog, InMemoryTelemetry } from "../packages/platform-core/src/index.js";
@@ -23,7 +21,7 @@ const FILTERS = Object.freeze({
 });
 const SURFACE_ID = "task-9-surface";
 
-function createQuery(): UnitDiscoveryQuery {
+function createQuery(id = "task-9-artifact"): UnitDiscoveryQuery {
   const repository = new UnitRepository();
   seedIssue01Units(repository);
   return new UnitDiscoveryQuery({
@@ -31,21 +29,12 @@ function createQuery(): UnitDiscoveryQuery {
     audit: new InMemoryAuditLog(),
     telemetry: new InMemoryTelemetry(),
     clock: () => new Date("2026-07-22T00:00:00Z"),
-    idFactory: () => "task-9-artifact",
+    idFactory: () => id,
   });
 }
 
 function createDefaultAdapter(query = createQuery()) {
   return createWebAgentAdapter({ query, createSurfaceId: () => SURFACE_ID });
-}
-
-async function defaultImplementationSource(): Promise<string> {
-  const source = await readFile(new URL("../apps/web-agent/src/presentation.ts", import.meta.url), "utf8");
-  const start = source.indexOf("export function createWeaverWebAgentAdapter");
-  const end = source.indexOf("export function createCopilotKitWebAgentAdapter", start);
-  assert.notEqual(start, -1);
-  assert.notEqual(end, -1);
-  return source.slice(start, end);
 }
 
 test("AC1 — Framework-neutral default points to Weaver", () => {
@@ -89,17 +78,27 @@ test("AC5 — Conventional parity remains intact", () => {
   assert.equal(result.fallback.conventionalRoute, conventionalSearchRoute(FILTERS));
 });
 
-test("AC6 — Default implementation has no CopilotKit dependency", async () => {
-  const source = await defaultImplementationSource();
-  assert.doesNotMatch(source, /@copilotkit\/core|@ag-ui\/core|CopilotKitCore|createCopilotKitRuntime|AG_UI_PROFILE/);
+test("AC6 — Web-agent public barrel exposes no CopilotKit runtime factory", () => {
+  assert.equal("createCopilotKitRuntime" in webAgent, false);
+  assert.equal("createCopilotKitWebAgentAdapter" in webAgent, false);
 });
 
-test("AC7 — Legacy adapter remains explicitly available", () => {
-  assert.equal(typeof createCopilotKitWebAgentAdapter, "function");
-  assert.equal(typeof createCopilotKitRuntime, "function");
+test("AC7 — Default construction requires no runtime or provider", () => {
+  const adapter = createWebAgentAdapter({ query: createQuery(), createSurfaceId: () => SURFACE_ID });
+  assert.equal(typeof adapter.search, "function");
 });
 
-test("AC8 — No implicit runtime selection exists", async () => {
-  const source = await defaultImplementationSource();
-  assert.doesNotMatch(source, /process\.env|globalThis|createCopilotKitWebAgentAdapter|runtime|provider/i);
+test("AC8 — Default Weaver results preserve current-artifact and caller-surface correlation", () => {
+  const first = createWebAgentAdapter({ query: createQuery("artifact-1"), createSurfaceId: () => "surface-1" }).search(FILTERS);
+  const firstSnapshot = structuredClone(first);
+  const second = createWebAgentAdapter({ query: createQuery("artifact-2"), createSurfaceId: () => "surface-2" }).search({ location: "Abuja" });
+
+  assert.equal(first.artifact.id, "search-artifact-1");
+  assert.equal(first.surfaceId, "surface-1");
+  assert.equal(second.artifact.id, "search-artifact-2");
+  assert.equal(second.surfaceId, "surface-2");
+  assert.notEqual(second.artifact.id, first.artifact.id);
+  assert.notEqual(second.surfaceId, first.surfaceId);
+  assert.deepEqual(first, firstSnapshot);
+  assert.notDeepEqual(second.a2uiMessages, first.a2uiMessages);
 });
