@@ -104,11 +104,70 @@ export class GenerativeSurfaceManager {
   }
 }
 
-export class IndependentReferenceClient {
-  renderRecordedStream(events: any[]) {
-    let normalized: any = null;
+export interface RecordedSurfaceCreatedEvent {
+  readonly type: "surface.created";
+  readonly surfaceId: string;
+  readonly catalogue: string;
+  readonly revision: number;
+  readonly facts: Readonly<Record<string, unknown>>;
+}
+
+export interface RecordedSurfaceUpdatedEvent {
+  readonly type: "surface.updated";
+  readonly surfaceId: string;
+  readonly revision: number;
+  readonly facts: Readonly<Record<string, unknown>>;
+}
+
+export interface RecordedSurfaceExpiredEvent {
+  readonly type: "surface.expired";
+  readonly surfaceId: string;
+}
+
+export interface RecordedSurfaceUnknownEvent {
+  readonly type: string;
+  readonly [key: string]: unknown;
+}
+
+export type RecordedSurfaceEvent =
+  | RecordedSurfaceCreatedEvent
+  | RecordedSurfaceUpdatedEvent
+  | RecordedSurfaceExpiredEvent
+  | RecordedSurfaceUnknownEvent;
+
+export interface RecordedSurfaceProjection {
+  readonly surfaceId: string;
+  readonly catalogue: string;
+  readonly revision: number;
+  readonly status: "active" | "stale" | "expired";
+  readonly facts: Readonly<Record<string, unknown>>;
+}
+
+function isRecordedSurfaceCreatedEvent(
+  event: RecordedSurfaceEvent
+): event is RecordedSurfaceCreatedEvent {
+  return event.type === "surface.created";
+}
+
+function isRecordedSurfaceUpdatedEvent(
+  event: RecordedSurfaceEvent
+): event is RecordedSurfaceUpdatedEvent {
+  return event.type === "surface.updated";
+}
+
+function isRecordedSurfaceExpiredEvent(
+  event: RecordedSurfaceEvent
+): event is RecordedSurfaceExpiredEvent {
+  return event.type === "surface.expired";
+}
+
+export class RecordedSurfaceProjector {
+  renderRecordedStream(
+    events: readonly RecordedSurfaceEvent[]
+  ): RecordedSurfaceProjection | null {
+    let normalized: RecordedSurfaceProjection | null = null;
     for (const event of events) {
-      if (event.type === "surface.created") {
+      if (isRecordedSurfaceCreatedEvent(event)) {
         normalized = {
           surfaceId: event.surfaceId,
           catalogue: event.catalogue,
@@ -116,17 +175,45 @@ export class IndependentReferenceClient {
           status: "active",
           facts: { ...event.facts }
         };
-      } else if (event.type === "surface.updated" && normalized?.surfaceId === event.surfaceId) {
-        if (event.revision < normalized.revision) {
-          normalized.status = "stale";
-        } else {
-          normalized.revision = event.revision;
-          normalized.facts = { ...event.facts };
+      } else if (isRecordedSurfaceUpdatedEvent(event)) {
+        const current = normalized as RecordedSurfaceProjection | null;
+        if (!current || current.surfaceId !== event.surfaceId) {
+          continue;
         }
-      } else if (event.type === "surface.expired" && normalized?.surfaceId === event.surfaceId) {
-        normalized.status = "expired";
+        if (event.revision < current.revision) {
+          normalized = {
+            surfaceId: current.surfaceId,
+            catalogue: current.catalogue,
+            revision: current.revision,
+            status: "stale",
+            facts: current.facts
+          };
+        } else {
+          normalized = {
+            surfaceId: current.surfaceId,
+            catalogue: current.catalogue,
+            revision: event.revision,
+            status: current.status,
+            facts: { ...event.facts }
+          };
+        }
+      } else if (isRecordedSurfaceExpiredEvent(event)) {
+        const current = normalized as RecordedSurfaceProjection | null;
+        if (!current || current.surfaceId !== event.surfaceId) {
+          continue;
+        }
+        normalized = {
+          surfaceId: current.surfaceId,
+          catalogue: current.catalogue,
+          revision: current.revision,
+          status: "expired",
+          facts: current.facts
+        };
       }
     }
     return normalized;
   }
 }
+
+// Temporary compatibility export for the former platform-core API name.
+export { RecordedSurfaceProjector as IndependentReferenceClient };
