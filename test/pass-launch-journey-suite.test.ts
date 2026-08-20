@@ -43,7 +43,7 @@ test("Each journey proves authoritative state, ledger, projection, notification,
       auditVerified: true,
       conventionalRouteVerified: true,
       permittedChannelVerified: true,
-      channel: "web_agui",
+      channel: "web_agent",
       commandEnvelopeId: `env-${category}-001`
     };
     const recorded = manager.recordJourneyProof(proof);
@@ -52,6 +52,10 @@ test("Each journey proves authoritative state, ledger, projection, notification,
 
   const proofs = manager.getJourneyProofs();
   assert.equal(proofs.length, 12);
+  const firstJourneyAudit = audit.entries().find(
+    (entry) => entry.action === "record_journey_proof"
+  );
+  assert.equal(firstJourneyAudit?.details.channel, "web_agent");
 
   // Failure path 1: Missing journeyId
   assert.throws(
@@ -66,7 +70,7 @@ test("Each journey proves authoritative state, ledger, projection, notification,
         auditVerified: true,
         conventionalRouteVerified: true,
         permittedChannelVerified: true,
-        channel: "web_agui",
+        channel: "web_agent",
         commandEnvelopeId: "env-fail-1"
       }),
     /Journey proof requires a non-empty journeyId/
@@ -85,7 +89,7 @@ test("Each journey proves authoritative state, ledger, projection, notification,
         auditVerified: true,
         conventionalRouteVerified: true,
         permittedChannelVerified: true,
-        channel: "web_agui",
+        channel: "web_agent",
         commandEnvelopeId: ""
       }),
     /Journey proof requires a non-empty commandEnvelopeId/
@@ -104,7 +108,7 @@ test("Each journey proves authoritative state, ledger, projection, notification,
         auditVerified: true,
         conventionalRouteVerified: true,
         permittedChannelVerified: true,
-        channel: "web_agui",
+        channel: "web_agent",
         commandEnvelopeId: "env-fail-2"
       }),
     /failed verification: authoritative state, ledger, projection, notification, audit, conventional route, and channel behavior must all be proved/
@@ -175,7 +179,7 @@ test("Deterministic Parity fixtures show every material interface reaches the sa
   const fixture: DeterministicParityFixture = {
     fixtureId: "parity-booking-request-01",
     workflowName: "Submit Booking Request",
-    interfacesTested: ["ag_ui", "whatsapp", "conventional_web", "operator_portal"],
+    interfacesTested: ["web_agent", "whatsapp", "conventional_web", "operator_portal"],
     commandType: "SUBMIT_BOOKING_REQUEST",
     envelopeSchemaMatched: true,
     semanticsIdentical: true,
@@ -206,7 +210,7 @@ test("Deterministic Parity fixtures show every material interface reaches the sa
       manager.verifyDeterministicParity({
         ...fixture,
         fixtureId: "parity-fail-interfaces",
-        interfacesTested: ["ag_ui"]
+        interfacesTested: ["web_agent"]
       }),
     /requires testing across at least 2 distinct interfaces/
   );
@@ -242,7 +246,7 @@ test("All applicable provider, legal, privacy, Operator, operational, accessibil
       auditVerified: true,
       conventionalRouteVerified: true,
       permittedChannelVerified: true,
-      channel: "web_agui",
+      channel: "web_agent",
       commandEnvelopeId: `env-${category}`
     });
   }
@@ -269,7 +273,7 @@ test("All applicable provider, legal, privacy, Operator, operational, accessibil
   manager.verifyDeterministicParity({
     fixtureId: "parity-01",
     workflowName: "E2E Booking",
-    interfacesTested: ["ag_ui", "whatsapp"],
+    interfacesTested: ["web_agent", "whatsapp"],
     commandType: "CREATE_BOOKING",
     envelopeSchemaMatched: true,
     semanticsIdentical: true,
