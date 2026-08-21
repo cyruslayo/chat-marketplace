@@ -30,6 +30,10 @@ function assertContext(context: SecurityContext): void {
   }
 }
 
+function authScopeKey(context: SecurityContext): string {
+  return JSON.stringify([context.principalId, context.tenantId, context.sessionId]);
+}
+
 function deepFreeze<T>(value: T): T {
   if (value && typeof value === "object" && !Object.isFrozen(value)) {
     for (const nested of Object.values(value as any)) deepFreeze(nested);
@@ -41,10 +45,21 @@ function deepFreeze<T>(value: T): T {
 export class InteractionThreadManager {
   #threads = new Map<string, any>();
   #revokedSessions = new Set<string>();
+  #invalidatedTenantScopes = new Set<string>();
   #leases = new Map<string, any>();
 
-  createThread(context: SecurityContext) {
+  #assertActiveContext(context: SecurityContext): void {
     assertContext(context);
+    if (this.#revokedSessions.has(context.sessionId)) {
+      throw new Error("Session is revoked");
+    }
+    if (this.#invalidatedTenantScopes.has(authScopeKey(context))) {
+      throw new Error("Authentication context is invalidated by tenant change");
+    }
+  }
+
+  createThread(context: SecurityContext) {
+    this.#assertActiveContext(context);
     const threadId = `thread-${crypto.randomUUID()}`;
     const thread = {
       threadId,
@@ -67,10 +82,7 @@ export class InteractionThreadManager {
   }
 
   #requireThreadIdentity(threadId: string, context: SecurityContext) {
-    assertContext(context);
-    if (this.#revokedSessions.has(context.sessionId)) {
-      throw new Error("Session is revoked");
-    }
+    this.#assertActiveContext(context);
     const thread = this.#threads.get(threadId);
     if (!thread) {
       throw new Error(`Thread ${threadId} not found`);
@@ -273,12 +285,45 @@ export class InteractionThreadManager {
       lease.tenantId !== context.tenantId ||
       lease.sessionId !== context.sessionId ||
       this.#revokedSessions.has(context.sessionId) ||
+      this.#invalidatedTenantScopes.has(authScopeKey(context)) ||
       Date.now() > lease.expiresAt
     ) {
       throw new Error("Confirmation lease is invalid or revoked");
     }
     lease.valid = false;
     return deepFreeze({ confirmed: true, actionType: lease.actionType });
+  }
+
+  handleTenantChange(previousContext: SecurityContext, nextTenantId: string): void {
+    assertContext(previousContext);
+    if (typeof nextTenantId !== "string" || nextTenantId.length === 0) {
+      throw new Error("Next tenant is required");
+    }
+    if (nextTenantId === previousContext.tenantId) {
+      throw new Error("Tenant change requires a different tenant");
+    }
+
+    this.#invalidatedTenantScopes.add(authScopeKey(previousContext));
+
+    for (const thread of this.#threads.values()) {
+      if (
+        thread.principalId === previousContext.principalId &&
+        thread.tenantId === previousContext.tenantId &&
+        thread.sessionId === previousContext.sessionId
+      ) {
+        this.#terminateThreadAuthority(thread);
+        thread.streamTerminated = true;
+      }
+    }
+    for (const lease of this.#leases.values()) {
+      if (
+        lease.principalId === previousContext.principalId &&
+        lease.tenantId === previousContext.tenantId &&
+        lease.sessionId === previousContext.sessionId
+      ) {
+        lease.valid = false;
+      }
+    }
   }
 
   revokeSession(sessionId: string, context?: SecurityContext) {

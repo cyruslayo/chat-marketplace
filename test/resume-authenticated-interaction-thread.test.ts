@@ -344,3 +344,98 @@ test("session revocation is exact-scoped and cannot revoke another session", () 
   assert.throws(() => manager.confirmMaterialAction(leaseB2.leaseId, contextB), /invalid or revoked/i);
   manager.revokeSession(contextB.sessionId);
 });
+
+test("tenant change invalidates only the previous authentication scope and interaction authority", () => {
+  const manager = new InteractionThreadManager();
+  const oldContext: SecurityContext = {
+    principalId: "user-123",
+    tenantId: "tenant-lagos",
+    sessionId: "sess-shared",
+    tabId: "tab-lagos"
+  };
+  const newTenantContext: SecurityContext = {
+    principalId: "user-123",
+    tenantId: "tenant-abuja",
+    sessionId: "sess-shared",
+    tabId: "tab-abuja"
+  };
+  const controlContext: SecurityContext = {
+    principalId: "user-123",
+    tenantId: "tenant-lagos",
+    sessionId: "sess-control",
+    tabId: "tab-control"
+  };
+  const recoveryContext: SecurityContext = {
+    principalId: "user-123",
+    tenantId: "tenant-lagos",
+    sessionId: "sess-recovery",
+    tabId: "tab-recovery"
+  };
+
+  const primaryThread = manager.createThread(oldContext);
+  const controlThread = manager.createThread(controlContext);
+  const firstEvent = manager.appendEvent(primaryThread.threadId, oldContext, {
+    type: "message",
+    content: "Preserve this history"
+  });
+  let oldStreamEnded = false;
+  let controlStreamEnded = false;
+  manager.attachObserverStream(primaryThread.threadId, oldContext, {
+    end() {
+      oldStreamEnded = true;
+    }
+  });
+  manager.attachObserverStream(controlThread.threadId, controlContext, {
+    end() {
+      controlStreamEnded = true;
+    }
+  });
+  manager.startAgentRun(primaryThread.threadId, oldContext, { intent: "confirm" });
+  const leaseOld = manager.issueConfirmationLease(primaryThread.threadId, oldContext, {
+    actionType: "confirm-booking",
+    amountKobo: 5000000
+  });
+  const leaseControl = manager.issueConfirmationLease(controlThread.threadId, controlContext, {
+    actionType: "confirm-booking",
+    amountKobo: 6000000
+  });
+
+  assert.throws(
+    () => manager.handleTenantChange(controlContext, controlContext.tenantId),
+    /Tenant change requires a different tenant/
+  );
+  assert.equal(controlStreamEnded, false);
+
+  manager.handleTenantChange(oldContext, "tenant-abuja");
+
+  assert.equal(oldStreamEnded, true);
+  assert.equal(controlStreamEnded, false);
+  assert.throws(
+    () => manager.getThread(primaryThread.threadId, oldContext),
+    /Authentication context is invalidated by tenant change/
+  );
+  assert.throws(
+    () => manager.createThread(oldContext),
+    /Authentication context is invalidated by tenant change/
+  );
+  assert.equal(manager.getThread(controlThread.threadId, controlContext).threadId, controlThread.threadId);
+  assert.throws(
+    () => manager.confirmMaterialAction(leaseOld.leaseId, oldContext),
+    /invalid or revoked/i
+  );
+  assert.equal(manager.confirmMaterialAction(leaseControl.leaseId, controlContext).confirmed, true);
+
+  assert.doesNotThrow(() => manager.createThread(newTenantContext));
+  assert.throws(
+    () => manager.reconnect(primaryThread.threadId, newTenantContext),
+    /Tenant scope mismatch/
+  );
+
+  const rebound: any = manager.reconnect(primaryThread.threadId, recoveryContext, {
+    lastSeenSequence: 0
+  });
+  assert.equal(rebound.mode, "events");
+  assert.equal(rebound.events[0].sequence, firstEvent.sequence);
+  assert.equal(manager.getActiveRun(primaryThread.threadId, recoveryContext), null);
+  assert.equal(manager.getThread(primaryThread.threadId, recoveryContext).projectionVersion, 1);
+});
