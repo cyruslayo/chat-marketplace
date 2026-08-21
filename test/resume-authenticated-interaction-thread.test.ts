@@ -32,6 +32,55 @@ test("authentication and tenant scope are enforced on all thread operations", ()
   );
 });
 
+test("public thread lookup exposes only frozen read-only thread metadata", () => {
+  const { manager, context } = setup();
+  const thread = manager.createThread(context);
+
+  const descriptor = manager.getThread(thread.threadId, context);
+  assert.deepEqual(Object.keys(descriptor).sort(), ["principalId", "projectionVersion", "tenantId", "threadId"]);
+  assert.equal(descriptor.threadId, thread.threadId);
+  assert.equal(descriptor.principalId, context.principalId);
+  assert.equal(descriptor.tenantId, context.tenantId);
+  assert.equal(descriptor.projectionVersion, 1);
+  assert.equal(Object.isFrozen(descriptor), true);
+
+  for (const field of [
+    "sessionId",
+    "deviceId",
+    "activeRunId",
+    "runs",
+    "events",
+    "observers",
+    "observerStreams",
+    "lastSequence",
+    "compactedProjection",
+    "streamTerminated"
+  ]) {
+    assert.equal(field in descriptor, false, `${field} must not be exposed`);
+  }
+
+  const firstRun = manager.startAgentRun(thread.threadId, context, { intent: "search-stay" });
+  const runningDescriptor = manager.getThread(thread.threadId, context);
+  assert.equal(Reflect.set(runningDescriptor, "projectionVersion", 99), false);
+  assert.equal(runningDescriptor.projectionVersion, 1);
+
+  const otherTabContext = { ...context, tabId: "tab-2" };
+  assert.throws(
+    () => manager.startAgentRun(thread.threadId, otherTabContext, { intent: "book-stay" }),
+    /mutating Agent Run/
+  );
+
+  manager.completeAgentRun(thread.threadId, firstRun.runId, context);
+  manager.compactThread(thread.threadId, context);
+  assert.equal(manager.getThread(thread.threadId, context).projectionVersion, 2);
+
+  const wrongTenantContext = { ...context, tenantId: "tenant-other" };
+  assert.throws(
+    () => manager.getThread(thread.threadId, wrongTenantContext),
+    /Tenant scope mismatch/
+  );
+});
+
 test("allows only one mutating Agent Run per thread while multiple tabs observe", () => {
   const { manager, context } = setup();
   const thread = manager.createThread(context);
