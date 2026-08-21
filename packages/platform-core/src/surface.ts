@@ -124,16 +124,10 @@ export interface RecordedSurfaceExpiredEvent {
   readonly surfaceId: string;
 }
 
-export interface RecordedSurfaceUnknownEvent {
-  readonly type: string;
-  readonly [key: string]: unknown;
-}
-
 export type RecordedSurfaceEvent =
   | RecordedSurfaceCreatedEvent
   | RecordedSurfaceUpdatedEvent
-  | RecordedSurfaceExpiredEvent
-  | RecordedSurfaceUnknownEvent;
+  | RecordedSurfaceExpiredEvent;
 
 export interface RecordedSurfaceProjection {
   readonly surfaceId: string;
@@ -143,27 +137,50 @@ export interface RecordedSurfaceProjection {
   readonly facts: Readonly<Record<string, unknown>>;
 }
 
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
 function isRecordedSurfaceCreatedEvent(
-  event: RecordedSurfaceEvent
+  event: unknown
 ): event is RecordedSurfaceCreatedEvent {
-  return event.type === "surface.created";
+  return isRecord(event)
+    && event.type === "surface.created"
+    && isNonEmptyString(event.surfaceId)
+    && isNonEmptyString(event.catalogue)
+    && isNonNegativeInteger(event.revision)
+    && isRecord(event.facts);
 }
 
 function isRecordedSurfaceUpdatedEvent(
-  event: RecordedSurfaceEvent
+  event: unknown
 ): event is RecordedSurfaceUpdatedEvent {
-  return event.type === "surface.updated";
+  return isRecord(event)
+    && event.type === "surface.updated"
+    && isNonEmptyString(event.surfaceId)
+    && isNonNegativeInteger(event.revision)
+    && isRecord(event.facts);
 }
 
 function isRecordedSurfaceExpiredEvent(
-  event: RecordedSurfaceEvent
+  event: unknown
 ): event is RecordedSurfaceExpiredEvent {
-  return event.type === "surface.expired";
+  return isRecord(event)
+    && event.type === "surface.expired"
+    && isNonEmptyString(event.surfaceId);
 }
 
 export class RecordedSurfaceProjector {
   renderRecordedStream(
-    events: readonly RecordedSurfaceEvent[]
+    events: readonly unknown[]
   ): RecordedSurfaceProjection | null {
     let normalized: RecordedSurfaceProjection | null = null;
     for (const event of events) {

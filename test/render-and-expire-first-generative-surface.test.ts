@@ -325,3 +325,78 @@ test("AC15: the compatibility alias constructs the same implementation", () => {
 
   assert.deepEqual(compatibilityProjection, currentProjection);
 });
+
+test("AC16: malformed known create is ignored", () => {
+  const projection = new RecordedSurfaceProjector().renderRecordedStream([
+    { type: "surface.created" }
+  ]);
+
+  assert.equal(projection, null);
+});
+
+test("AC17: malformed known create does not replace valid state", () => {
+  const projection = new RecordedSurfaceProjector().renderRecordedStream([
+    createRecordedSurface("surf-a", 1, { title: "A" }),
+    { type: "surface.created" }
+  ]);
+
+  assert.deepEqual(projection, {
+    surfaceId: "surf-a",
+    catalogue: "discovery/v1",
+    revision: 1,
+    status: "active",
+    facts: { title: "A" }
+  });
+});
+
+test("AC18: malformed known update is ignored", () => {
+  const projection = new RecordedSurfaceProjector().renderRecordedStream([
+    createRecordedSurface("surf-a", 1, { title: "A" }),
+    {
+      type: "surface.updated",
+      surfaceId: "surf-a",
+      revision: "2",
+      facts: { title: "bad" }
+    }
+  ]);
+
+  assert.equal(projection?.revision, 1);
+  assert.deepEqual(projection?.facts, { title: "A" });
+  assert.equal(projection?.status, "active");
+});
+
+test("AC19: malformed expiry is ignored", () => {
+  const projection = new RecordedSurfaceProjector().renderRecordedStream([
+    createRecordedSurface("surf-a", 1, { title: "A" }),
+    { type: "surface.expired", surfaceId: "" }
+  ]);
+
+  assert.equal(projection?.status, "active");
+});
+
+test("AC20: non-object recorded values are ignored", () => {
+  const projector = new RecordedSurfaceProjector();
+
+  assert.equal(
+    projector.renderRecordedStream([null, undefined, "surface.created", 42, [], {}]),
+    null
+  );
+  assert.deepEqual(
+    projector.renderRecordedStream([
+      null,
+      createRecordedSurface("surf-a", 1, { title: "A" }),
+      undefined,
+      "surface.created",
+      42,
+      [],
+      {}
+    ]),
+    {
+      surfaceId: "surf-a",
+      catalogue: "discovery/v1",
+      revision: 1,
+      status: "active",
+      facts: { title: "A" }
+    }
+  );
+});
