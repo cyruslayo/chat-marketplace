@@ -87,6 +87,7 @@ function formatNgnKobo(kobo: number): string {
 function unitComponents(
   artifactId: string,
   unit: DiscoveryUnitProjection,
+  canViewUnit: boolean,
 ): { readonly cardId: string; readonly components: readonly A2UIComponent[] } {
   const prefix = `unit-${unit.id}`;
   const priceText = unit.price.allInStayTotalKobo === null
@@ -103,7 +104,7 @@ function unitComponents(
         children: [
           `${prefix}-title`, `${prefix}-location`, `${prefix}-capacity`, `${prefix}-amenities`,
           `${prefix}-divider`, `${prefix}-prices`, `${prefix}-inspection`, `${prefix}-inspection-dates`,
-          `${prefix}-view-button`,
+          ...(canViewUnit ? [`${prefix}-view-button`] : []),
         ],
       },
       { id: `${prefix}-title`, component: "Text", text: unit.title, variant: "h3" },
@@ -130,20 +131,22 @@ function unitComponents(
         text: `Inspected: ${unit.trust.inspection.inspectedAt}; current through: ${unit.trust.inspection.expiresAt}`,
         variant: "caption",
       },
-      {
-        id: `${prefix}-view-button`,
-        component: "Button",
-        child: `${prefix}-view-label`,
-        variant: "primary",
-        action: {
-          event: {
-            name: VIEW_UNIT_EVENT,
-            context: { artifactId, unitId: unit.id },
+      ...(canViewUnit ? [
+        {
+          id: `${prefix}-view-button`,
+          component: "Button" as const,
+          child: `${prefix}-view-label`,
+          variant: "primary" as const,
+          action: {
+            event: {
+              name: VIEW_UNIT_EVENT,
+              context: { artifactId, unitId: unit.id },
+            },
           },
+          accessibility: { label: `View ${unit.title}` },
         },
-        accessibility: { label: `View ${unit.title}` },
-      },
-      { id: `${prefix}-view-label`, component: "Text", text: "View Unit" },
+        { id: `${prefix}-view-label`, component: "Text" as const, text: "View Unit" },
+      ] : []),
     ],
   };
 }
@@ -152,7 +155,11 @@ export function discoveryArtifactToA2UI({
   artifact,
   surfaceId,
 }: DiscoveryArtifactToA2UIInput): readonly A2UIServerMessage[] {
-  const unitGroups = artifact.facts.results.map((unit) => unitComponents(artifact.id, unit));
+  const unitGroups = artifact.facts.results.map((unit) => unitComponents(
+    artifact.id,
+    unit,
+    artifact.actions.some((action) => action.type === "view-unit" && action.unitId === unit.id),
+  ));
   const resultSummary = artifact.facts.results.length === 0
     ? "No eligible Units match those requirements."
     : `${artifact.facts.results.length} eligible Unit${artifact.facts.results.length === 1 ? "" : "s"} found.`;

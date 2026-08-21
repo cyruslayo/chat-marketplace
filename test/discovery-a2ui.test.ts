@@ -167,3 +167,51 @@ test("AC10: the generated surface uses the canonical Basic Catalog identifier", 
   assert.ok("createSurface" in message);
   assert.equal(message.createSurface.catalogId, A2UI_V091_BASIC_CATALOG_ID);
 });
+
+test("AC12: missing canonical action removes the View Unit affordance", () => {
+  const original = datedArtifact();
+  const artifact = { ...original, actions: [] };
+  const messages = discoveryArtifactToA2UI({ artifact, surfaceId: SURFACE_ID });
+  const components = updateComponents(messages);
+
+  assert.equal(components.some((component) => component.component === "Text" && component.text === original.facts.results[0].title), true);
+  assert.equal(components.some((component) => component.component === "Button"), false);
+  assert.equal(components.some((component) => component.component === "Text" && component.text === "View Unit"), false);
+  processMessages(messages);
+});
+
+test("AC13: an action for another Unit does not authorize the visible Unit", () => {
+  const original = datedArtifact();
+  const artifact = {
+    ...original,
+    actions: [{
+      type: "view-unit",
+      unitId: "some-other-unit",
+      conventionalRoute: "/stays/some-other-unit",
+    }],
+  };
+  const components = updateComponents(discoveryArtifactToA2UI({ artifact, surfaceId: SURFACE_ID }));
+
+  assert.equal(components.some((component) => component.component === "Text" && component.text === original.facts.results[0].title), true);
+  assert.equal(components.some((component) => component.component === "Button"), false);
+});
+
+test("AC14: conventional route is never copied into the client event context", () => {
+  const artifact = datedArtifact();
+  const action = artifact.actions[0];
+  assert.equal(action.conventionalRoute, "/stays/unit-lagos-001");
+  const button = updateComponents(discoveryArtifactToA2UI({ artifact, surfaceId: SURFACE_ID }))
+    .find((component) => component.component === "Button");
+  assert.ok(button && button.component === "Button");
+
+  assert.deepEqual(button.action, {
+    event: {
+      name: "shortlet.discovery.view-unit",
+      context: {
+        artifactId: artifact.id,
+        unitId: artifact.facts.results[0].id,
+      },
+    },
+  });
+  assert.doesNotMatch(JSON.stringify(button.action), /"(?:route|conventionalRoute)"/);
+});
