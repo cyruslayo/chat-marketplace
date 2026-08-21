@@ -77,6 +77,38 @@ test("reconnect resumes by sequence or returns compacted projection without star
   assert.equal(activeRun, null);
 });
 
+test("event sequences remain monotonic across compaction and reconnect", () => {
+  const { manager, context } = setup();
+  const thread = manager.createThread(context);
+
+  const firstEvent = manager.appendEvent(thread.threadId, context, { type: "message", content: "First" });
+  const secondEvent = manager.appendEvent(thread.threadId, context, { type: "message", content: "Second" });
+  assert.equal(firstEvent.sequence, 1);
+  assert.equal(secondEvent.sequence, 2);
+
+  manager.compactThread(thread.threadId, context);
+
+  const thirdEvent = manager.appendEvent(thread.threadId, context, { type: "message", content: "Third" });
+  assert.equal(thirdEvent.sequence, 3);
+
+  const afterFirstCompaction: any = manager.reconnect(thread.threadId, context, { lastSeenSequence: 2 });
+  assert.equal(afterFirstCompaction.mode, "events");
+  assert.equal(afterFirstCompaction.events.length, 1);
+  assert.equal(afterFirstCompaction.events[0].sequence, 3);
+  assert.equal(manager.getActiveRun(thread.threadId, context), null);
+
+  manager.compactThread(thread.threadId, context);
+
+  const fourthEvent = manager.appendEvent(thread.threadId, context, { type: "message", content: "Fourth" });
+  assert.equal(fourthEvent.sequence, 4);
+
+  const afterSecondCompaction: any = manager.reconnect(thread.threadId, context, { lastSeenSequence: 3 });
+  assert.equal(afterSecondCompaction.mode, "events");
+  assert.equal(afterSecondCompaction.events.length, 1);
+  assert.equal(afterSecondCompaction.events[0].sequence, 4);
+  assert.equal(manager.getActiveRun(thread.threadId, context), null);
+});
+
 test("logout, revocation, or tenant change terminates streams and invalidates confirmation authority", () => {
   const { manager, context } = setup();
   const thread = manager.createThread(context);

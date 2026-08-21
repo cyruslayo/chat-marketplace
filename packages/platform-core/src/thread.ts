@@ -39,6 +39,7 @@ export class InteractionThreadManager {
       runs: {} as Record<string, any>,
       activeRunId: null as string | null,
       events: [] as any[],
+      lastSequence: 0,
       compactedProjection: null as any,
       projectionVersion: 1,
       streamTerminated: false
@@ -134,7 +135,7 @@ export class InteractionThreadManager {
 
   appendEvent(threadId: string, context: SecurityContext, eventData: any) {
     const thread = this.getThread(threadId, context);
-    const sequence = thread.events.length + 1;
+    const sequence = ++thread.lastSequence;
     const event = {
       sequence,
       timestamp: new Date().toISOString(),
@@ -151,7 +152,7 @@ export class InteractionThreadManager {
       tenantId: thread.tenantId,
       principalId: thread.principalId,
       projectionVersion: thread.projectionVersion + 1,
-      lastSequence: thread.events.length,
+      lastSequence: thread.lastSequence,
       facts: { summary: "Compacted interaction thread projection" }
     };
     thread.events = [];
