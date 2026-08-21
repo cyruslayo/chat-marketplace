@@ -75,12 +75,14 @@ test("AC1 — Valid event resolves trusted route", () => {
 
 test("AC2 — Route never comes from client context", () => {
   const maliciousRoute = "https://evil.example";
-  const result = resolveDiscoveryServerEvent({
-    event: event({ artifactId: ARTIFACT_ID, unitId: UNIT_ID, route: maliciousRoute }),
-    artifact: discoveryArtifact(),
-  });
-  assertRejected(result, "INVALID_CONTEXT");
-  assert.equal(JSON.stringify(result).includes(maliciousRoute), false);
+  for (const routeField of ["route", "conventionalRoute"]) {
+    const result = resolveDiscoveryServerEvent({
+      event: event({ artifactId: ARTIFACT_ID, unitId: UNIT_ID, [routeField]: maliciousRoute }),
+      artifact: discoveryArtifact(),
+    });
+    assertRejected(result, "INVALID_CONTEXT");
+    assert.equal(JSON.stringify(result).includes(maliciousRoute), false);
+  }
 });
 
 test("AC3 — Artifact mismatch fails closed", () => {
@@ -110,12 +112,83 @@ test("AC6 — Missing or malformed context fails closed", () => {
 
 test("AC7 — Unsafe authoritative route fails closed", () => {
   const artifact = discoveryArtifact();
-  for (const route of ["https://evil.example", "//evil.example"]) {
+  for (const route of [`https://evil.example/stays/${UNIT_ID}`, `//evil.example/stays/${UNIT_ID}`]) {
     const unsafeArtifact: AuthoritativeDiscoveryArtifact = {
       id: artifact.id,
       kind: artifact.kind,
       schemaVersion: artifact.schemaVersion,
       projectionVersion: artifact.projectionVersion,
+      actions: [{ type: "view-unit", unitId: UNIT_ID, conventionalRoute: route }],
+    };
+    assertRejected(resolveDiscoveryServerEvent({ event: event(), artifact: unsafeArtifact }), "INVALID_ROUTE");
+  }
+});
+
+test("AC13 — Raw dot-segment traversal is rejected", () => {
+  const artifact = discoveryArtifact();
+  const unsafeArtifact: AuthoritativeDiscoveryArtifact = {
+    ...artifact,
+    actions: [{ type: "view-unit", unitId: UNIT_ID, conventionalRoute: "/stays/../admin" }],
+  };
+  assertRejected(resolveDiscoveryServerEvent({ event: event(), artifact: unsafeArtifact }), "INVALID_ROUTE");
+});
+
+test("AC14 — Percent-encoded dot traversal is rejected regardless of encoding case", () => {
+  const artifact = discoveryArtifact();
+  for (const route of ["/stays/%2e%2e/admin", "/stays/%2E%2E/admin"]) {
+    const unsafeArtifact: AuthoritativeDiscoveryArtifact = {
+      ...artifact,
+      actions: [{ type: "view-unit", unitId: UNIT_ID, conventionalRoute: route }],
+    };
+    assertRejected(resolveDiscoveryServerEvent({ event: event(), artifact: unsafeArtifact }), "INVALID_ROUTE");
+  }
+});
+
+test("AC15 — Unit and normalized route identity must agree", () => {
+  const artifact = discoveryArtifact();
+  const mismatchedArtifact: AuthoritativeDiscoveryArtifact = {
+    ...artifact,
+    actions: [{ type: "view-unit", unitId: UNIT_ID, conventionalRoute: "/stays/some-other-unit" }],
+  };
+  assertRejected(resolveDiscoveryServerEvent({ event: event(), artifact: mismatchedArtifact }), "INVALID_ROUTE");
+});
+
+test("AC16 — Canonical same-Unit route succeeds unchanged", () => {
+  const artifact = discoveryArtifact();
+  const route = `/stays/${UNIT_ID}`;
+  const canonicalArtifact: AuthoritativeDiscoveryArtifact = {
+    ...artifact,
+    actions: [{ type: "view-unit", unitId: UNIT_ID, conventionalRoute: route }],
+  };
+  const result = resolveDiscoveryServerEvent({ event: event(), artifact: canonicalArtifact });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.effect.route, route);
+});
+
+test("AC18 — Query strings and fragments are permitted only on the canonical same-Unit pathname", () => {
+  const artifact = discoveryArtifact();
+  for (const route of [`/stays/${UNIT_ID}?source=agent`, `/stays/${UNIT_ID}#details`]) {
+    const routedArtifact: AuthoritativeDiscoveryArtifact = {
+      ...artifact,
+      actions: [{ type: "view-unit", unitId: UNIT_ID, conventionalRoute: route }],
+    };
+    const result = resolveDiscoveryServerEvent({ event: event(), artifact: routedArtifact });
+    assert.equal(result.ok, true);
+    if (!result.ok) continue;
+    assert.equal(result.effect.route, route);
+  }
+});
+
+test("AC19 — WHATWG URL parsing normalizes encoded traversal outside the stays route", () => {
+  assert.equal(new URL("/stays/%2e%2e/admin", "https://app.example").pathname, "/admin");
+});
+
+test("Route validation rejects empty, malformed, non-relative, and backslash-normalized inputs", () => {
+  const artifact = discoveryArtifact();
+  for (const route of ["", "   ", `stays/${UNIT_ID}`, "%", `/stays/..\\admin`, `/stays/%2e%2e\\admin`]) {
+    const unsafeArtifact: AuthoritativeDiscoveryArtifact = {
+      ...artifact,
       actions: [{ type: "view-unit", unitId: UNIT_ID, conventionalRoute: route }],
     };
     assertRejected(resolveDiscoveryServerEvent({ event: event(), artifact: unsafeArtifact }), "INVALID_ROUTE");

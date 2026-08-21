@@ -3,6 +3,7 @@ import type { WebServerEventHandoff } from "@weaver/web";
 const VIEW_UNIT_ACTION_NAME = "shortlet.discovery.view-unit";
 const DISCOVERY_ARTIFACT_KIND = "shortlet.discovery-results";
 const DISCOVERY_SCHEMA_VERSION = "shortlet.discovery/v1";
+const APPLICATION_BASE_ORIGIN = "https://app.example";
 
 export interface AuthoritativeDiscoveryAction {
   readonly type: "view-unit";
@@ -81,8 +82,17 @@ function isValidArtifactIdentity(artifact: AuthoritativeDiscoveryArtifact): bool
     && Array.isArray(artifact.actions);
 }
 
-function isSafeConventionalRoute(route: string): boolean {
-  return route.trim() !== "" && route.startsWith("/stays/");
+function isSafeConventionalRoute(route: string, unitId: string): boolean {
+  if (route.trim() === "" || !route.startsWith("/") || route.startsWith("//")) return false;
+
+  try {
+    const parsedRoute = new URL(route, APPLICATION_BASE_ORIGIN);
+    const expectedPathname = `/stays/${encodeURIComponent(unitId)}`;
+    return parsedRoute.origin === APPLICATION_BASE_ORIGIN
+      && parsedRoute.pathname === expectedPathname;
+  } catch {
+    return false;
+  }
 }
 
 export function resolveDiscoveryServerEvent({
@@ -110,7 +120,7 @@ export function resolveDiscoveryServerEvent({
   if (action === undefined) {
     return reject("ACTION_NOT_AUTHORIZED", "The requested action is not authorized.");
   }
-  if (typeof action.conventionalRoute !== "string" || !isSafeConventionalRoute(action.conventionalRoute)) {
+  if (typeof action.conventionalRoute !== "string" || !isSafeConventionalRoute(action.conventionalRoute, action.unitId)) {
     return reject("INVALID_ROUTE", "The authoritative route is invalid.");
   }
 
