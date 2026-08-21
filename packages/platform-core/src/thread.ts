@@ -233,11 +233,16 @@ export class InteractionThreadManager {
   }
 
   revokeSession(sessionId: string, context?: SecurityContext) {
-    if (context) assertContext(context);
+    if (context) {
+      assertContext(context);
+      if (sessionId !== context.sessionId) {
+        throw new Error("Session revocation scope mismatch");
+      }
+    }
     this.#revokedSessions.add(sessionId);
 
     for (const thread of this.#threads.values()) {
-      if (thread.sessionId === sessionId || (context && thread.principalId === context.principalId)) {
+      if (thread.sessionId === sessionId) {
         if (thread.activeRunId) {
           const run = thread.runs[thread.activeRunId];
           if (run) run.status = "terminated";
@@ -258,7 +263,7 @@ export class InteractionThreadManager {
       }
     }
     for (const lease of this.#leases.values()) {
-      if (lease.sessionId === sessionId || (context && lease.principalId === context.principalId)) {
+      if (lease.sessionId === sessionId) {
         lease.valid = false;
       }
     }

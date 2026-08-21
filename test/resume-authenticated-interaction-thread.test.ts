@@ -199,3 +199,68 @@ test("stopping an agent run does not undo committed domain actions", () => {
   assert.equal(stopped.status, "stopped");
   assert.equal(stopped.committedActionsPreserved, true);
 });
+
+test("session revocation is exact-scoped and cannot revoke another session", () => {
+  const manager = new InteractionThreadManager();
+  const contextA: SecurityContext = {
+    principalId: "user-123",
+    tenantId: "tenant-lagos",
+    sessionId: "sess-a",
+    tabId: "tab-a"
+  };
+  const contextB: SecurityContext = {
+    principalId: "user-123",
+    tenantId: "tenant-lagos",
+    sessionId: "sess-b",
+    tabId: "tab-b"
+  };
+  const threadA = manager.createThread(contextA);
+  const threadB = manager.createThread(contextB);
+  let streamAEnded = false;
+  let streamBEnded = false;
+
+  manager.attachObserverStream(threadA.threadId, contextA, { end() { streamAEnded = true; } });
+  manager.attachObserverStream(threadB.threadId, contextB, { end() { streamBEnded = true; } });
+  const leaseA = manager.issueConfirmationLease(threadA.threadId, contextA, {
+    actionType: "confirm-booking",
+    amountKobo: 5000000
+  });
+  const leaseB = manager.issueConfirmationLease(threadB.threadId, contextB, {
+    actionType: "confirm-booking",
+    amountKobo: 6000000
+  });
+  const runA = manager.startAgentRun(threadA.threadId, contextA, { intent: "confirm-a" });
+  const runB = manager.startAgentRun(threadB.threadId, contextB, { intent: "confirm-b" });
+
+  assert.throws(
+    () => manager.revokeSession(contextB.sessionId, contextA),
+    /session revocation scope mismatch/i
+  );
+  assert.equal(streamAEnded, false);
+  assert.equal(streamBEnded, false);
+  assert.equal(manager.getThread(threadA.threadId, contextA).threadId, threadA.threadId);
+  assert.equal(manager.getThread(threadB.threadId, contextB).threadId, threadB.threadId);
+  assert.equal(manager.getActiveRun(threadA.threadId, contextA)?.runId, runA.runId);
+  assert.equal(manager.getActiveRun(threadB.threadId, contextB)?.runId, runB.runId);
+
+  manager.revokeSession(contextA.sessionId, contextA);
+  assert.equal(streamAEnded, true);
+  assert.throws(() => manager.getThread(threadA.threadId, contextA), /Session is revoked/);
+  assert.throws(() => manager.confirmMaterialAction(leaseA.leaseId, contextA), /invalid or revoked/i);
+  assert.throws(() => manager.getActiveRun(threadA.threadId, contextA), /Session is revoked/);
+
+  assert.equal(streamBEnded, false);
+  assert.equal(manager.getThread(threadB.threadId, contextB).threadId, threadB.threadId);
+  assert.equal(manager.getActiveRun(threadB.threadId, contextB)?.runId, runB.runId);
+  assert.equal(manager.confirmMaterialAction(leaseB.leaseId, contextB).confirmed, true);
+
+  const leaseB2 = manager.issueConfirmationLease(threadB.threadId, contextB, {
+    actionType: "confirm-booking",
+    amountKobo: 6000000
+  });
+  manager.revokeSession(contextB.sessionId);
+  assert.equal(streamBEnded, true);
+  assert.throws(() => manager.getThread(threadB.threadId, contextB), /Session is revoked/);
+  assert.throws(() => manager.confirmMaterialAction(leaseB2.leaseId, contextB), /invalid or revoked/i);
+  manager.revokeSession(contextB.sessionId);
+});
