@@ -1,6 +1,6 @@
 # Produce an All-In Stay Total and versioned Stay Quote
 
-Status: ready-for-human
+Status: resolved
 Type: AFK
 User stories: 4, 11–12, 24, 78–80
 

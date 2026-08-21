@@ -44,7 +44,8 @@ describe("Issue 25: Quote and collect a capped Refundable Security Deposit", () 
     const quote = createStayQuote({
       unit,
       checkIn: "2026-08-01",
-      checkOut: "2026-08-03"
+      checkOut: "2026-08-03",
+      clock: () => new Date("2026-07-22T12:00:00Z")
     });
 
     assert.equal(quote.refundableSecurityDepositKobo, 15000000);

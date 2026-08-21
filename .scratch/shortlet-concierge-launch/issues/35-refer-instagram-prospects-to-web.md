@@ -1,6 +1,6 @@
 # Refer Instagram prospects to secure web without booking authority
 
-Status: ready-for-agent
+Status: resolved
 Type: AFK
 User stories: 101–102, 106
 

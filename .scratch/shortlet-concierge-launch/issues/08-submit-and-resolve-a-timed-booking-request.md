@@ -1,6 +1,6 @@
 # Submit and resolve a timed Booking Request
 
-Status: ready-for-agent
+Status: resolved
 Type: AFK
 User stories: 13, 18, 20–23, 71–72
 

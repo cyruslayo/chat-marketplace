@@ -1,6 +1,6 @@
 # Render and safely expire the first Generative Surface
 
-Status: ready-for-agent
+Status: resolved
 Type: AFK
 User stories: 94–99, 108–110
 

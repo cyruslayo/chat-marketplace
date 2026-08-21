@@ -1,6 +1,6 @@
 # Qualify a Unit for Same-Day Turnover
 
-Status: ready-for-human
+Status: resolved
 Type: AFK
 User stories: 73–75
 

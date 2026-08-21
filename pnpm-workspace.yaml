@@ -1,0 +1,13 @@
+packages:
+  - "."
+  # The client is a standalone Vite app with its own npm lockfile; keep it out
+  # of the pnpm workspace so it continues to install with npm.
+  - "!client"
+
+# pnpm 11 reads settings from this file (not package.json).
+# These packages run postinstall build scripts; everything else stays
+# blocked for supply-chain safety.
+allowBuilds:
+  "@google/genai": true
+  esbuild: true
+  protobufjs: true

@@ -1,6 +1,6 @@
 # Browse one eligible Unit through conventional and conversational web
 
-Status: ready-for-agent
+Status: resolved
 Type: AFK
 User stories: 1–3, 12, 94, 105, 108
 

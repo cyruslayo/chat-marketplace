@@ -1,6 +1,6 @@
 # Verify the Primary Guest, payer, and occupants
 
-Status: ready-for-agent
+Status: resolved
 Type: AFK
 User stories: 14–17
 

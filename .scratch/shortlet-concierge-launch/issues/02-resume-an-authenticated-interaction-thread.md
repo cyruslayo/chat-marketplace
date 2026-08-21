@@ -1,6 +1,6 @@
 # Resume an authenticated Interaction Thread safely
 
-Status: ready-for-agent
+Status: resolved
 Type: AFK
 User stories: 95–97, 102, 104, 109
 

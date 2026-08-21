@@ -1,6 +1,6 @@
 # Block and hold Unit availability authoritatively
 
-Status: ready-for-agent
+Status: resolved
 Type: AFK
 User stories: 69–70
 

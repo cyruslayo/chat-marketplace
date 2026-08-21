@@ -1,0 +1,16 @@
+# Taste
+- Wants code reviews to be strictly read-only ("Do not edit files"), findings-first, with exact file:line references and quoted requirement lines, a hard word cap (300–400 words), and an explicit "no findings" statement when nothing actionable remains. Confidence: 0.95
+- Uses a dual-axis review format: a "spec axis" (missing/partial requirements, scope creep, wrong-looking implementations, with quoted spec lines) and a "standards axis" (documented-standard violations plus a Fowler smell baseline), explicitly distinguishing hard violations from judgement calls. Confidence: 0.95
+- Anchors review sessions to explicit git ranges (e.g., `git diff --cached HEAD`, fixed-point commits with commit lists) and re-reviews after fixes to confirm prior findings are resolved ("Final review … confirm prior findings are fixed"). Confidence: 0.9
+- Considers test/check status (e.g., `npm test`, `npm run check`) part of the review context to be stated up front. Confidence: 0.6
+- Prefers invoking standardized workflows via skills referenced by path (e.g., `$implement`, `$code-review`, `$grill-with-docs`, `$to-prd`, `$to-issues`, `/goal`) rather than ad-hoc prompts. Confidence: 0.9
+- Captures product decisions as ADRs in the repo through an explicit ratification loop — one "Yes. Adopt …" per decision — and tracks the remaining open decisions to close out a decision session. Confidence: 0.9
+- Keeps planning/decision artifacts as local markdown inside the repository (PRD, ADRs, AGENTS.md, issue files), with issue files referencing their parent PRD; wants an AGENTS.md created for agent operating instructions. Confidence: 0.85
+- Likes to parallelize implementation by first identifying which open issues can be worked on concurrently. Confidence: 0.7
+- Communicates tersely and directly ("yes", "continue", "yes plese", "yes it is right", "try again"), expecting the agent to act/retry rather than re-confirm or re-explain. Confidence: 0.85
+- Prefers stateless integrations with no server-side conversation/data retention when offered the choice (picked stateless `store:false` over stateful Gemini Interactions storage). Confidence: 0.6
+- Reports bugs by pasting the full error output verbatim — stack traces, runtime context (e.g., `runtime_info_fetch_failed` context), and server logs — rather than paraphrasing. Confidence: 0.85
+- Works on Windows with PowerShell; sets environment variables using `$env:NAME = "..."` syntax (e.g., `$env:GEMINI_API_KEY = "..."`). Confidence: 0.7
+- Prefers pnpm as the package manager, run through corepack (explicitly directed "use pnpm with corepack" when npm's install/pruning behavior broke node_modules), with the pnpm version pinned via the `packageManager` field in package.json. Confidence: 0.9
+- Owns a custom "weaver" library built on the a2ui protocol and prefers replacing vendor frameworks (e.g. CopilotKit) with protocol-native implementations behind platform-owned adapters, keeping the coupling surface small and the wire protocol (AG-UI/A2UI) standard rather than vendor-specific. Confidence: 0.8
+- When migrating off a dependency/framework, wants a detailed, exhaustive audit of every coupling point — imports, HTTP routes, transport/SSE, agent lifecycle, tests, and build/dependency pins — organized by file before making changes. Confidence: 0.7

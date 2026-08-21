@@ -1,6 +1,6 @@
 # Onboard and publish one inspected Operator Unit
 
-Status: ready-for-agent
+Status: resolved
 Type: AFK
 User stories: 2, 63–68, 83–84
 
