@@ -295,7 +295,7 @@ export class InteractionThreadManager {
   }
 
   handleTenantChange(previousContext: SecurityContext, nextTenantId: string): void {
-    assertContext(previousContext);
+    this.#assertActiveContext(previousContext);
     if (typeof nextTenantId !== "string" || nextTenantId.length === 0) {
       throw new Error("Next tenant is required");
     }
