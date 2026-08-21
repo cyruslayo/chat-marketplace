@@ -1,8 +1,10 @@
 import { InMemoryTelemetry } from "./index.js";
 
+export const INTERACTION_STREAM_VERSION = "com.chat-marketplace.interaction/stream-v1";
+
 export interface StreamEvent {
   eventId: string;
-  profileVersion: string;
+  streamVersion: string;
   eventType: string;
   sequence: number;
   timestampIso: string;
@@ -25,15 +27,13 @@ export interface StreamMetricsInput {
   bytesProcessed: number;
 }
 
-export interface ClientProjection {
-  clientType: "copilotkit" | "reference_client";
+export interface InteractionProjection {
   facts: any;
   actions: ReadonlyArray<any>;
   deadlines: ReadonlyArray<any>;
   accessibility: any;
 }
 
-const REGISTERED_PROFILE = "com.chat-marketplace.interaction/agui-v1";
 const REGISTERED_EVENT_TYPES = new Set([
   "platform.a2ui.message.v1",
   "platform.agent.run_started",
@@ -46,8 +46,8 @@ const MAX_ORDINARY_EVENT_BYTES = 65536; // 64 KiB
 
 /**
  * ADR 0068, ADR 0069, ADR 0071, ADR 0079, ADR 0080:
- * Implements the pinned AG-UI interaction profile (`agui-v1`), ordered replayable stream with deduplication,
- * gap detection, backpressure/size limits, golden stream parity across clients, and redacted telemetry.
+ * Implements a versioned interaction stream with ordered replay, deduplication,
+ * gap detection, backpressure/size limits, normalized projection, and redacted telemetry.
  */
 export class InteractionStreamEngine {
   readonly #telemetry?: InMemoryTelemetry;
@@ -61,29 +61,30 @@ export class InteractionStreamEngine {
 
   /**
    * ADR 0069, ADR 0079 & AC1, AC2:
-   * Processes incoming stream event with profile checking, size limits, deduplication, conflict checks, and gap detection.
+   * Processes an incoming event with stream validation, size limits, deduplication,
+   * conflict checks, and gap detection.
    */
   processIncomingEvent(event: StreamEvent): ProcessEventResult {
-    // Reject raw production events or mismatched profile version
-    if (event.profileVersion === "raw" || event.eventType === "RAW_EVENT") {
+    // Reject raw production events or mismatched stream versions.
+    if (event.streamVersion === "raw" || event.eventType === "RAW_EVENT") {
       throw new Error("Rejected raw production event");
     }
-    if (event.profileVersion !== REGISTERED_PROFILE) {
-      throw new Error(`Rejected unregistered profile version: ${event.profileVersion}`);
+    if (event.streamVersion !== INTERACTION_STREAM_VERSION) {
+      throw new Error(`Rejected unregistered stream version: ${event.streamVersion}`);
     }
 
-    // Reject unregistered event types
+    // Reject unregistered event types.
     if (!REGISTERED_EVENT_TYPES.has(event.eventType)) {
       throw new Error(`Rejected unregistered event type: ${event.eventType}`);
     }
 
-    // Size limit check (64 KiB for ordinary event)
+    // Size limit check (64 KiB for ordinary event).
     const serialized = JSON.stringify(event.payload ?? {});
     if (serialized.length > MAX_ORDINARY_EVENT_BYTES) {
       throw new Error(`Event size exceeds 64 KiB limit (${serialized.length} bytes)`);
     }
 
-    // Deduplication and conflict check
+    // Deduplication and conflict check.
     const existing = this.#processedEvents.get(event.sequence);
     if (existing) {
       const existingSerialized = JSON.stringify(existing.payload ?? {});
@@ -93,7 +94,7 @@ export class InteractionStreamEngine {
       throw new Error(`Conflicting duplicate event detected for sequence ${event.sequence}`);
     }
 
-    // Gap detection
+    // Gap detection.
     let gapDetected = false;
     let missingSequenceStart: number | undefined;
     if (event.sequence > this.#expectedSequence) {
@@ -116,7 +117,7 @@ export class InteractionStreamEngine {
 
   /**
    * ADR 0079 & AC2:
-   * Reconnects and fetches missed events or returns compacted snapshot.
+   * Reconnects and fetches missed events or returns a compacted snapshot.
    */
   reconnect({ lastSeenSequence = 0 }: { lastSeenSequence?: number } = {}) {
     if (this.#compactedSnapshot && lastSeenSequence < this.#compactedSnapshot.lastSequence) {
@@ -152,12 +153,9 @@ export class InteractionStreamEngine {
 
   /**
    * ADR 0080 & AC3:
-   * Renders golden stream into client projection, verifying normalized parity between CopilotKit and reference client.
+   * Renders stream events into one deterministic normalized interaction projection.
    */
-  renderClientProjection(
-    streamEvents: StreamEvent[],
-    clientType: "copilotkit" | "reference_client"
-  ): ClientProjection {
+  renderInteractionProjection(streamEvents: StreamEvent[]): InteractionProjection {
     let mergedFacts: any = {};
     let mergedActions: any[] = [];
     let mergedDeadlines: any[] = [];
@@ -178,9 +176,7 @@ export class InteractionStreamEngine {
       }
     }
 
-    // Both CopilotKit and reference_client produce identical normalized output structure
     return Object.freeze({
-      clientType,
       facts: Object.freeze(mergedFacts),
       actions: Object.freeze(mergedActions),
       deadlines: Object.freeze(mergedDeadlines),

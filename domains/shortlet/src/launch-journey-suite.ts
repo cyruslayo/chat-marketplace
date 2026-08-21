@@ -45,7 +45,7 @@ export interface JourneyProofRecord {
   auditVerified: boolean;
   conventionalRouteVerified: boolean;
   permittedChannelVerified: boolean;
-  channel: "web_agui" | "whatsapp" | "a2ui_adapter";
+  channel: "web_agent" | "whatsapp" | "a2ui_adapter";
   commandEnvelopeId: string;
 }
 
@@ -61,7 +61,7 @@ export interface ExecutionPathRecord {
 export interface DeterministicParityFixture {
   fixtureId: string;
   workflowName: string;
-  interfacesTested: ("ag_ui" | "whatsapp" | "conventional_web" | "operator_portal")[];
+  interfacesTested: ("web_agent" | "whatsapp" | "conventional_web" | "operator_portal")[];
   commandType: string;
   envelopeSchemaMatched: boolean;
   semanticsIdentical: boolean;

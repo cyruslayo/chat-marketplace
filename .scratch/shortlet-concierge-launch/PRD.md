@@ -14,7 +14,7 @@ Build a domain-extensible Concierge Platform and launch its first Domain Pack as
 
 The complete transactional experience is available through an authenticated web application. WhatsApp provides bounded discovery, structured operational actions, notifications, triage, and Human Handoff; Instagram provides acquisition and secure referral only. Application services, domain state machines, policies, ledgers, and audit records remain authoritative across every channel.
 
-The web’s agent experience uses AG-UI at the Agent-Interaction Boundary and versioned A2UI catalogues for approved Generative Surfaces. CopilotKit is the replaceable launch Web Agent Adapter. Every material action maps to a Platform Command Envelope and also has a conventional deterministic route, preserving Deterministic Parity when the agent or framework is unavailable.
+Canonical Interaction Artifacts drive the web presentation: approved declarative surfaces use A2UI v0.9.1, with Weaver as the current replaceable Web Agent Adapter/runtime boundary. Authoritative application and domain state remains outside Weaver; material and consequential actions reach trusted application authority through Platform Command Envelopes. Conventional deterministic routes remain available for every material workflow, preserving Deterministic Parity when the presentation runtime is unavailable.
 
 ## User Stories
 
@@ -148,14 +148,14 @@ The web’s agent experience uses AG-UI at the Agent-Interaction Boundary and ve
 105. As a platform developer, I want Domain Packs to register their own vocabulary, tools, workflows, policies, and UI catalogues, so that future domains reuse infrastructure without inheriting shortlet semantics.
 106. As a platform developer, I want Channel Adapters to translate Interaction Artifacts without owning transaction state, so that channel changes cannot fork business behaviour.
 107. As a platform developer, I want provider integrations behind certified adapters, so that PSP, identity, maps, calendar, messaging, and notification vendors can change without rewriting domain logic.
-108. As a platform developer, I want CopilotKit isolated behind the Web Agent Adapter, so that replacing it does not change application commands, domain models, A2UI catalogues, or AG-UI behaviour.
+108. As a platform developer, I want the selected web presentation runtime isolated behind the Web Agent Adapter, so that replacing it does not change application commands, domain models, canonical Interaction Artifacts, or supported presentation semantics.
 109. As a platform developer, I want every consequential interaction to use a Platform Command Envelope, so that identity, authorization, idempotency, concurrency, confirmation, and audit are uniform.
 110. As a platform developer, I want every material agent action to have Deterministic Parity, so that the platform remains operable during agent or framework failure.
 
 ## Implementation Decisions
 
 - Build a shared Concierge Platform plus a separate Shortlet Booking Domain Pack; the internal SDK remains private until a second real domain validates its abstractions.
-- Keep authoritative transaction state in application services, domain aggregates, databases, ledgers, and policy engines. Conversation, AG-UI, A2UI, CopilotKit, and messaging channels only project or request state.
+- Keep authoritative transaction state in application services, domain aggregates, databases, ledgers, and policy engines. Conversation state, Interaction Projections, A2UI presentation/component state, the Web Agent Adapter/runtime, and channel adapters only project or request state.
 - Launch only in Lagos and Abuja with inspected entire-place inventory, registered Operators, current Management Authority, required regulatory evidence, and eligible insurance.
 - Operators are the contracting Accommodation Providers. The platform facilitates discovery, contracting, collection, support, protection, settlement, and enforcement without becoming the accommodation supplier.
 - Use Request to Book exclusively at launch. Inventory is blocked for the disclosed request and subsequent payment lifecycle under the accepted Operator Hold, request-delivery, response, and payment deadlines.
@@ -174,13 +174,13 @@ The web’s agent experience uses AG-UI at the Agent-Interaction Boundary and ve
 - Enforce published Operator coaching, restriction, suspension, restoration, revocation, appeal, and termination rules using evidence, severity, recurrence, causation, and human review.
 - Generate a canonical Interaction Artifact from authoritative projections and translate it into channel-appropriate presentations. Preserve semantic and contractual parity even when visual parity is impossible.
 - Web supports all launch workflows. WhatsApp supports only its approved capability matrix and redirects complex or sensitive work to authenticated web. Instagram is discovery and referral only.
-- Adopt the named AG-UI launch profile over HTTPS POST and SSE with pinned SDK and schema baselines, registered custom events, a 90-day previous-major compatibility window, and controlled upgrades.
-- Treat AG-UI state as a redacted Interaction Projection with server-owned facts, client-local ephemeral state, and user draft input accepted only through Platform Actions.
+- Use the platform-owned, versioned Interaction Stream contract for registered events, ordering, replay, validation, failure behaviour, and controlled upgrades; it remains framework-neutral and is not a renderer transport profile.
+- Treat the Interaction Projection as derived state with server-owned facts, client-local ephemeral state, and user draft input accepted only through Platform Actions. Server-owned facts remain authoritative only through application state; client-local state is never authoritative, and drafts become consequential only through trusted Platform Actions and application commands.
 - Distinguish principal, tenant, device, browser session, tab, Interaction Thread, Agent Run, message, Generative Surface, Platform Action, command, and domain aggregate identities. Permit one mutating run per thread.
 - Route consequential interactions through a Platform Command Envelope with independent authentication, authorization, validation, policy evaluation, idempotency, expected-version checking, confirmation, and audit.
-- Use five versioned A2UI catalogue families: common, discovery, booking, incident, and Operator. Validate every message and prohibit dynamic schema, executable UI, unsafe rich content, and arbitrary client tools.
+- Use A2UI v0.9.1 Basic Catalog first with deterministic approved component usage. Unsupported catalogue or version behaviour fails safely; custom shortlet catalogues remain deferred until justified and certified. Validate every message and prohibit dynamic schema, executable UI, unsafe rich content, and arbitrary client tools.
 - Give Generative Surfaces immutable catalogue selection, revisions, domain correlations, explicit lifecycle status, stale-action rejection, safe text fallback, and conventional-route fallback.
-- Isolate CopilotKit inside the replaceable Web Agent Adapter and prove replacement through replay against an independent reference client.
+- Isolate the current Weaver web presentation runtime inside the replaceable Web Agent Adapter. Keep framework types outside authoritative packages, test deterministic presentation behaviour, and ensure replacement does not change commands or domain semantics.
 - Preserve conventional deterministic routes for every state-changing, recovery-critical, support, and administrative workflow. Agent failure cannot remove the platform's ability to search, contract, collect payment, manage stays, resolve incidents, or support users.
 - Target WCAG 2.2 AA, English (Nigeria), NGN stored in kobo, Africa/Lagos time, unambiguous contractual dates, mobile layouts, reduced motion, restrained live-region updates, and degraded-network recovery.
 - Apply data minimization, tenant isolation, redaction, strict rendering, secure sessions, CSRF and content controls, safe uploads, protected location/access release, and separate restricted identity storage.
@@ -189,12 +189,12 @@ The web’s agent experience uses AG-UI at the Agent-Interaction Boundary and ve
 
 ## Testing Decisions
 
-- Tests prioritize stable authoritative boundaries and externally visible behaviour rather than CopilotKit components, framework hooks, controller wiring, or internal call structure.
+- Tests prioritize stable authoritative boundaries and externally visible behaviour rather than framework/runtime-specific component trees, hooks, wiring, controller wiring, or internal call structure.
 - The application-command seam carries the largest share of behavioural coverage. Tests invoke real command handlers, policy engines, repositories, transaction boundaries, projections, ledgers, events, outbox behaviour, and audit recording where practical.
 - Application-command tests cover valid and invalid transitions, stale versions, authorization failures, duplicate commands, exact deadline boundaries, captured policy versions, concurrent attempts, monetary invariants, and resulting authoritative state.
 - The Deterministic Parity seam runs a canonical actor, intent, domain state, disclosure, and input fixture through every permitted A2UI, conventional web, WhatsApp, and support mechanism. It compares command meaning, validation, authorization, policy, confirmation, idempotency, audit classification, and resulting projection rather than raw transport shapes.
-- The interaction-gateway seam replays recorded and synthetic AG-UI/A2UI streams through CopilotKit and an independent reference client. It covers lifecycle, text/tool interleaving, snapshots, deltas, duplicates, gaps, reconnect, compaction, stale or expired surfaces, unsupported catalogues, invalid payloads, Human Handoff, cancellation, late tools, and safe fallback.
-- Gateway assertions compare normalized visible facts, available and disabled actions, deadlines, surface state, fallback content, produced commands, and accessibility semantics rather than framework component trees.
+- Platform interaction stream/replay tests cover stream version validation, registered events, ordering, duplicates and conflicts, gaps, reconnect, compaction, limits, and telemetry. A2UI/Weaver presentation tests cover deterministic Interaction Artifact to A2UI projection, Basic Catalog compatibility, DOM/render behaviour, server/client events, stale or expired authority integration, safe fallback, and accessibility behaviour.
+- Presentation assertions compare normalized visible facts, available and disabled actions, deadlines, surface state, fallback content, produced commands, and accessibility semantics rather than framework component trees.
 - The Channel Adapter seam begins with a canonical Interaction Artifact and verifies that every supported channel preserves exact money, currency, deadlines, consequences, disclosures, references, policy versions, consent meaning, sensitivity, and capability restrictions.
 - Maintain the channel-capability matrix as shared test data. Fail a projection that drops required meaning, changes money or time, exposes protected data, offers unsupported authority, or treats acknowledgement as consent.
 - Automated provider-contract tests use local fixtures, recorded signed messages, sandboxes, fake clocks, delayed and out-of-order callbacks, duplicates, unknown states, retries, idempotency, timeouts, redaction, circuit breaking, and recovery.
@@ -222,7 +222,7 @@ The web’s agent experience uses AG-UI at the Agent-Interaction Boundary and ve
 - Voice agents, autonomous outbound calling, and unrestricted proactive marketing
 - Instagram booking completion
 - Dynamic-schema A2UI, arbitrary HTML or JavaScript, generated executable client code, or unrestricted browser automation
-- Making CopilotKit, AG-UI state, A2UI component state, a Channel Adapter, or an LLM the system of record
+- Making conversational state, Interaction Projections, A2UI component state, a Web Agent or Channel Adapter, or an LLM the system of record
 - Public release of the internal Concierge Platform SDK before a second Domain Pack validates its abstractions
 - Full implementation of Marketplace Commerce, appointments, or other future Domain Packs
 - Full localization beyond English (Nigeria), although content must be externalizable
@@ -230,9 +230,9 @@ The web’s agent experience uses AG-UI at the Agent-Interaction Boundary and ve
 
 ## Further Notes
 
-- Accepted, current decisions from ADR-0003 through ADR-0080 are normative for this PRD. Commerce-only, deprecated, and superseded records remain contextual or historical rather than shortlet launch requirements.
+- Accepted, current decisions from ADR-0003 through ADR-0081 are normative for this PRD. Commerce-only, deprecated, and superseded records remain contextual or historical rather than shortlet launch requirements.
 - The Shortlet Launch Validation Gates must close PSP selection, channel certification, identity/privacy readiness, Nigerian legal and tax review, insurance placement, Operator validation, unit economics, and operational simulations.
-- The Interaction Architecture Validation Gates must close the protocol profile, CopilotKit replacement proof, catalogue certification, identity/concurrency, security/privacy, Human Handoff, cross-channel parity, reliability, and accessibility.
+- The Interaction Architecture Validation Gates must close the A2UI/Weaver boundary, platform interaction stream reliability, surface lifecycle/authority, identity/concurrency, security/privacy, Human Handoff, cross-channel parity, reliability, and accessibility.
 - Provisional values include commission and founding duration, insurance limits, deposit caps, Guest Protection Fund parameters, relocation authority, payout Trust Tier thresholds, tax and withholding treatment, interaction retention, transport limits, timeouts, and SLOs.
-- Failure of a validation gate reopens only the affected policy, amount, capability, or protocol profile; it does not implicitly reopen the complete product model.
+- Failure of a validation gate reopens only the affected policy, amount, capability, or interaction architecture decision; it does not implicitly reopen the complete product model.
 - Regulatory and provider assumptions require current primary-source and specialist review immediately before launch.

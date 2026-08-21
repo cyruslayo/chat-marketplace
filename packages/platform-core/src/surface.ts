@@ -1,11 +1,3 @@
-export const AG_UI_PROFILE = Object.freeze({
-  id: "ag-ui/0.0.57-shortlet-launch-v1",
-  protocolVersion: "0.0.57",
-  transport: "https-post-sse",
-  artifactSchema: "shortlet.discovery/v1",
-  allowedInboundMessageRoles: ["assistant"]
-});
-
 export const APPROVED_CATALOGUES: readonly string[] = Object.freeze([
   "common/v1",
   "discovery/v1",
@@ -17,7 +9,6 @@ export const APPROVED_CATALOGUES: readonly string[] = Object.freeze([
 export interface CreateSurfaceOptions {
   catalogue: string;
   projectionVersion?: number;
-  profile: any;
   facts?: any;
   workflowState?: any;
   textFallback?: string;
@@ -27,17 +18,14 @@ export interface CreateSurfaceOptions {
 export class GenerativeSurfaceManager {
   #surfaces = new Map<string, any>();
 
-  #validateProfileAndCatalogue(catalogue: string, profile: any) {
+  #validateCatalogue(catalogue: string) {
     if (!APPROVED_CATALOGUES.includes(catalogue)) {
       throw new Error(`Unsupported catalogue: ${catalogue}`);
     }
-    if (!profile || profile.id !== AG_UI_PROFILE.id) {
-      throw new Error(`Pinned interaction profile mismatch: expected ${AG_UI_PROFILE.id}`);
-    }
   }
 
-  createSurface({ catalogue, projectionVersion = 1, profile, facts = {}, workflowState = {}, textFallback = "", conventionalRoute = "" }: CreateSurfaceOptions) {
-    this.#validateProfileAndCatalogue(catalogue, profile);
+  createSurface({ catalogue, projectionVersion = 1, facts = {}, workflowState = {}, textFallback = "", conventionalRoute = "" }: CreateSurfaceOptions) {
+    this.#validateCatalogue(catalogue);
 
     const surfaceId = `surf-${crypto.randomUUID()}`;
     const surface = {
@@ -45,7 +33,6 @@ export class GenerativeSurfaceManager {
       catalogue,
       revision: projectionVersion,
       status: "active",
-      profile: Object.freeze({ ...profile }),
       facts: Object.freeze({ ...facts }),
       workflowState: Object.freeze({ ...workflowState }),
       textFallback,
@@ -56,8 +43,8 @@ export class GenerativeSurfaceManager {
     return { ...surface };
   }
 
-  renderWithFallback({ catalogue, projectionVersion = 1, profile, workflowState = {}, textFallback = "", conventionalRoute = "" }: CreateSurfaceOptions) {
-    this.#validateProfileAndCatalogue(catalogue, profile);
+  renderWithFallback({ catalogue, projectionVersion = 1, workflowState = {}, textFallback = "", conventionalRoute = "" }: CreateSurfaceOptions) {
+    this.#validateCatalogue(catalogue);
 
     const surfaceId = `surf-${crypto.randomUUID()}`;
     const surface = {
@@ -65,7 +52,6 @@ export class GenerativeSurfaceManager {
       catalogue,
       revision: projectionVersion,
       status: "active",
-      profile: Object.freeze({ ...profile }),
       facts: Object.freeze({}),
       workflowState: Object.freeze({ ...workflowState }),
       textFallback,
@@ -118,11 +104,87 @@ export class GenerativeSurfaceManager {
   }
 }
 
-export class IndependentReferenceClient {
-  renderRecordedStream(events: any[]) {
-    let normalized: any = null;
+export interface RecordedSurfaceCreatedEvent {
+  readonly type: "surface.created";
+  readonly surfaceId: string;
+  readonly catalogue: string;
+  readonly revision: number;
+  readonly facts: Readonly<Record<string, unknown>>;
+}
+
+export interface RecordedSurfaceUpdatedEvent {
+  readonly type: "surface.updated";
+  readonly surfaceId: string;
+  readonly revision: number;
+  readonly facts: Readonly<Record<string, unknown>>;
+}
+
+export interface RecordedSurfaceExpiredEvent {
+  readonly type: "surface.expired";
+  readonly surfaceId: string;
+}
+
+export type RecordedSurfaceEvent =
+  | RecordedSurfaceCreatedEvent
+  | RecordedSurfaceUpdatedEvent
+  | RecordedSurfaceExpiredEvent;
+
+export interface RecordedSurfaceProjection {
+  readonly surfaceId: string;
+  readonly catalogue: string;
+  readonly revision: number;
+  readonly status: "active" | "stale" | "expired";
+  readonly facts: Readonly<Record<string, unknown>>;
+}
+
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+function isRecordedSurfaceCreatedEvent(
+  event: unknown
+): event is RecordedSurfaceCreatedEvent {
+  return isRecord(event)
+    && event.type === "surface.created"
+    && isNonEmptyString(event.surfaceId)
+    && isNonEmptyString(event.catalogue)
+    && isNonNegativeInteger(event.revision)
+    && isRecord(event.facts);
+}
+
+function isRecordedSurfaceUpdatedEvent(
+  event: unknown
+): event is RecordedSurfaceUpdatedEvent {
+  return isRecord(event)
+    && event.type === "surface.updated"
+    && isNonEmptyString(event.surfaceId)
+    && isNonNegativeInteger(event.revision)
+    && isRecord(event.facts);
+}
+
+function isRecordedSurfaceExpiredEvent(
+  event: unknown
+): event is RecordedSurfaceExpiredEvent {
+  return isRecord(event)
+    && event.type === "surface.expired"
+    && isNonEmptyString(event.surfaceId);
+}
+
+export class RecordedSurfaceProjector {
+  renderRecordedStream(
+    events: readonly unknown[]
+  ): RecordedSurfaceProjection | null {
+    let normalized: RecordedSurfaceProjection | null = null;
     for (const event of events) {
-      if (event.type === "surface.created") {
+      if (isRecordedSurfaceCreatedEvent(event)) {
         normalized = {
           surfaceId: event.surfaceId,
           catalogue: event.catalogue,
@@ -130,17 +192,45 @@ export class IndependentReferenceClient {
           status: "active",
           facts: { ...event.facts }
         };
-      } else if (event.type === "surface.updated" && normalized?.surfaceId === event.surfaceId) {
-        if (event.revision < normalized.revision) {
-          normalized.status = "stale";
-        } else {
-          normalized.revision = event.revision;
-          normalized.facts = { ...event.facts };
+      } else if (isRecordedSurfaceUpdatedEvent(event)) {
+        const current = normalized as RecordedSurfaceProjection | null;
+        if (!current || current.surfaceId !== event.surfaceId) {
+          continue;
         }
-      } else if (event.type === "surface.expired" && normalized?.surfaceId === event.surfaceId) {
-        normalized.status = "expired";
+        if (event.revision < current.revision) {
+          normalized = {
+            surfaceId: current.surfaceId,
+            catalogue: current.catalogue,
+            revision: current.revision,
+            status: "stale",
+            facts: current.facts
+          };
+        } else {
+          normalized = {
+            surfaceId: current.surfaceId,
+            catalogue: current.catalogue,
+            revision: event.revision,
+            status: current.status,
+            facts: { ...event.facts }
+          };
+        }
+      } else if (isRecordedSurfaceExpiredEvent(event)) {
+        const current = normalized as RecordedSurfaceProjection | null;
+        if (!current || current.surfaceId !== event.surfaceId) {
+          continue;
+        }
+        normalized = {
+          surfaceId: current.surfaceId,
+          catalogue: current.catalogue,
+          revision: current.revision,
+          status: "expired",
+          facts: current.facts
+        };
       }
     }
     return normalized;
   }
 }
+
+// Temporary compatibility export for the former platform-core API name.
+export { RecordedSurfaceProjector as IndependentReferenceClient };
