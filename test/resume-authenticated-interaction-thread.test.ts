@@ -200,6 +200,86 @@ test("stopping an agent run does not undo committed domain actions", () => {
   assert.equal(stopped.committedActionsPreserved, true);
 });
 
+test("reconnect explicitly rebinds a durable thread to a new authenticated session", () => {
+  const manager = new InteractionThreadManager();
+  const contextA: SecurityContext = {
+    principalId: "user-123",
+    tenantId: "tenant-lagos",
+    sessionId: "sess-a",
+    tabId: "tab-a"
+  };
+  const contextB: SecurityContext = {
+    principalId: "user-123",
+    tenantId: "tenant-lagos",
+    sessionId: "sess-b",
+    tabId: "tab-b"
+  };
+  const primaryThread = manager.createThread(contextA);
+  const controlThread = manager.createThread(contextA);
+  const event = manager.appendEvent(primaryThread.threadId, contextA, {
+    type: "message",
+    content: "Resume me"
+  });
+
+  let streamAEnded = false;
+  manager.attachObserverStream(primaryThread.threadId, contextA, {
+    end() {
+      streamAEnded = true;
+    }
+  });
+  const leaseA = manager.issueConfirmationLease(primaryThread.threadId, contextA, {
+    actionType: "confirm-booking",
+    amountKobo: 5000000
+  });
+  const runA = manager.startAgentRun(primaryThread.threadId, contextA, { intent: "confirm" });
+
+  const sameSessionReconnect: any = manager.reconnect(primaryThread.threadId, contextA, {
+    lastSeenSequence: event.sequence
+  });
+  assert.equal(sameSessionReconnect.mode, "events");
+  assert.equal(streamAEnded, false);
+  assert.equal(manager.getActiveRun(primaryThread.threadId, contextA)?.runId, runA.runId);
+
+  assert.throws(
+    () => manager.getThread(primaryThread.threadId, contextB),
+    /Session scope mismatch/
+  );
+  assert.throws(
+    () => manager.startAgentRun(primaryThread.threadId, contextB, { intent: "must-not-start" }),
+    /Session scope mismatch/
+  );
+
+  const rebound: any = manager.reconnect(primaryThread.threadId, contextB, {
+    lastSeenSequence: event.sequence
+  });
+  assert.equal(rebound.mode, "events");
+  assert.deepEqual(rebound.events, []);
+  assert.equal(streamAEnded, true);
+  assert.equal(manager.getActiveRun(primaryThread.threadId, contextB), null);
+  assert.equal(manager.getThread(primaryThread.threadId, contextB).threadId, primaryThread.threadId);
+  assert.throws(
+    () => manager.getThread(primaryThread.threadId, contextA),
+    /Session scope mismatch/
+  );
+  assert.throws(
+    () => manager.confirmMaterialAction(leaseA.leaseId, contextA),
+    /invalid or revoked/i
+  );
+
+  const leaseB = manager.issueConfirmationLease(primaryThread.threadId, contextB, {
+    actionType: "confirm-booking",
+    amountKobo: 5000000
+  });
+  assert.equal(manager.confirmMaterialAction(leaseB.leaseId, contextB).confirmed, true);
+  assert.equal(manager.getThread(controlThread.threadId, contextA).threadId, controlThread.threadId);
+
+  manager.revokeSession(contextA.sessionId, contextA);
+  assert.equal(manager.getThread(primaryThread.threadId, contextB).threadId, primaryThread.threadId);
+
+  const runB = manager.startAgentRun(primaryThread.threadId, contextB, { intent: "resume" });
+  assert.equal(runB.status, "running");
+});
+
 test("session revocation is exact-scoped and cannot revoke another session", () => {
   const manager = new InteractionThreadManager();
   const contextA: SecurityContext = {

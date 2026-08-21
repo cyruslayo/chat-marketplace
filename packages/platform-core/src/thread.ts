@@ -13,6 +13,17 @@ export interface InteractionThreadDescriptor {
   readonly projectionVersion: number;
 }
 
+interface ThreadAuthorityState {
+  activeRunId: string | null;
+  runs: Record<string, { status: string }>;
+  observerStreams: Set<{
+    end?: () => void;
+    destroy?: () => void;
+    close?: () => void;
+  }>;
+  observers: Set<string>;
+}
+
 function assertContext(context: SecurityContext): void {
   if (!context || !context.principalId || !context.tenantId || !context.sessionId) {
     throw new Error("Authentication required: principalId, tenantId, and sessionId are required");
@@ -55,7 +66,7 @@ export class InteractionThreadManager {
     return deepFreeze({ threadId: thread.threadId, tenantId: thread.tenantId, principalId: thread.principalId });
   }
 
-  #requireThread(threadId: string, context: SecurityContext) {
+  #requireThreadIdentity(threadId: string, context: SecurityContext) {
     assertContext(context);
     if (this.#revokedSessions.has(context.sessionId)) {
       throw new Error("Session is revoked");
@@ -68,6 +79,33 @@ export class InteractionThreadManager {
       throw new Error("Tenant scope mismatch");
     }
     return thread;
+  }
+
+  #requireThread(threadId: string, context: SecurityContext) {
+    const thread = this.#requireThreadIdentity(threadId, context);
+    if (thread.sessionId !== context.sessionId) {
+      throw new Error("Session scope mismatch");
+    }
+    return thread;
+  }
+
+  #terminateThreadAuthority(thread: ThreadAuthorityState): void {
+    if (thread.activeRunId) {
+      const run = thread.runs[thread.activeRunId];
+      if (run) run.status = "terminated";
+      thread.activeRunId = null;
+    }
+    for (const stream of thread.observerStreams) {
+      try {
+        if (typeof stream.end === "function") stream.end();
+        else if (typeof stream.destroy === "function") stream.destroy();
+        else if (typeof stream.close === "function") stream.close();
+      } catch {
+        // ignore
+      }
+    }
+    thread.observerStreams.clear();
+    thread.observers.clear();
   }
 
   getThread(threadId: string, context: SecurityContext): InteractionThreadDescriptor {
@@ -177,7 +215,18 @@ export class InteractionThreadManager {
   }
 
   reconnect(threadId: string, context: SecurityContext, { lastSeenSequence = 0 }: { lastSeenSequence?: number } = {}) {
-    const thread = this.#requireThread(threadId, context);
+    const thread = this.#requireThreadIdentity(threadId, context);
+    if (thread.sessionId !== context.sessionId) {
+      this.#terminateThreadAuthority(thread);
+      for (const lease of this.#leases.values()) {
+        if (lease.threadId === thread.threadId && lease.sessionId === thread.sessionId) {
+          lease.valid = false;
+        }
+      }
+      thread.sessionId = context.sessionId;
+      thread.deviceId = context.deviceId;
+      thread.streamTerminated = false;
+    }
     if (context.tabId) {
       thread.observers.add(context.tabId);
     }
@@ -243,22 +292,7 @@ export class InteractionThreadManager {
 
     for (const thread of this.#threads.values()) {
       if (thread.sessionId === sessionId) {
-        if (thread.activeRunId) {
-          const run = thread.runs[thread.activeRunId];
-          if (run) run.status = "terminated";
-          thread.activeRunId = null;
-        }
-        for (const stream of thread.observerStreams) {
-          try {
-            if (typeof stream.end === "function") stream.end();
-            else if (typeof stream.destroy === "function") stream.destroy();
-            else if (typeof stream.close === "function") stream.close();
-          } catch {
-            // ignore
-          }
-        }
-        thread.observerStreams.clear();
-        thread.observers.clear();
+        this.#terminateThreadAuthority(thread);
         thread.streamTerminated = true;
       }
     }
