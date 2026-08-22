@@ -67,6 +67,14 @@ function calendarDayNumber(dateKey: string): number {
   return Date.UTC(year, month - 1, day) / 86400000;
 }
 
+export type EligibilityThrough = Pick<StayDateRange, "checkOut">;
+
+export function latestPossibleCheckoutDate(now: Date = new Date()): string {
+  const today = dateKeyInLagos(now, "now");
+  const latestCheckoutDay = calendarDayNumber(today) + BOOKING_HORIZON_DAYS + MAX_STAY_NIGHTS;
+  return new Date(latestCheckoutDay * 86400000).toISOString().slice(0, 10);
+}
+
 export class StayDateRange {
   public readonly checkIn: string;
   public readonly checkOut: string;
@@ -116,7 +124,7 @@ function operatorIsEligible(operator: any, today: string, checkout: string): boo
     && dateKeyInLagos(operator.approvalExpiresAt, "operator.approvalExpiresAt") >= checkout;
 }
 
-export function isEligibleUnit(unit: any, now: Date = new Date(), dateRange?: StayDateRange | null): boolean {
+export function isEligibleUnit(unit: any, now: Date = new Date(), dateRange?: EligibilityThrough | null): boolean {
   const today = dateKeyInLagos(now, "now");
   const checkout = dateRange?.checkOut ?? dateKeyInLagos(now, "now");
   return unit.published === true

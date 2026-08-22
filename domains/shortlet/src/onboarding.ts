@@ -1,4 +1,4 @@
-import { isEligibleUnit } from "./browse.js";
+import { isEligibleUnit, latestPossibleCheckoutDate } from "./browse.js";
 
 export const REQUIRED_AUTHORITY_PERMISSIONS: readonly string[] = Object.freeze([
   "advertise", "accept-bookings", "contract-guests", "provide-access",
@@ -223,13 +223,15 @@ export function publishUnit(repository: any, unitId: string, { clock = () => new
 }
 
 export function getUnitOnboardingStatus(unit: any, now: Date | string = new Date()) {
-  const today = typeof now === "string" ? now : (now instanceof Date ? now : new Date()).toISOString().slice(0, 10);
+  const nowDate = typeof now === "string" ? new Date(now) : (now instanceof Date ? now : new Date());
+  const today = typeof now === "string" ? now : nowDate.toISOString().slice(0, 10);
+  const latestCheckout = latestPossibleCheckoutDate(nowDate);
   const blockers: string[] = [];
 
   if (!unit.operator || unit.operator.status !== "approved") {
     blockers.push("Operator not approved");
   }
-  if (unit.operator?.approvalExpiresAt && unit.operator.approvalExpiresAt < today) {
+  if (unit.operator?.approvalExpiresAt && unit.operator.approvalExpiresAt < latestCheckout) {
     blockers.push("Operator approval expired");
   }
   if (!unit.operator?.cacVerified || !unit.operator?.responsiblePersonsVerified || !unit.operator?.beneficialOwnersVerified) {
@@ -239,7 +241,7 @@ export function getUnitOnboardingStatus(unit: any, now: Date | string = new Date
     blockers.push("Operator settlement/payment provider not verified");
   }
 
-  if (!unit.inspection || unit.inspection.status !== "passed" || (unit.inspection.expiresAt && unit.inspection.expiresAt < today)) {
+  if (!unit.inspection || unit.inspection.status !== "passed" || (unit.inspection.expiresAt && unit.inspection.expiresAt < latestCheckout)) {
     blockers.push("Physical inspection expired or invalid");
   }
   if (unit.inspection?.materialChangePending) {
@@ -249,18 +251,18 @@ export function getUnitOnboardingStatus(unit: any, now: Date | string = new Date
     blockers.push("Physical inspection scope incomplete");
   }
 
-  if (!unit.managementAuthority || unit.managementAuthority.status !== "verified" || (unit.managementAuthority.expiresAt && unit.managementAuthority.expiresAt < today)) {
+  if (!unit.managementAuthority || unit.managementAuthority.status !== "verified" || (unit.managementAuthority.expiresAt && unit.managementAuthority.expiresAt < latestCheckout)) {
     blockers.push("Management authority missing, invalid or expired");
   }
   if (unit.managementAuthority && REQUIRED_AUTHORITY_PERMISSIONS.some((p) => !unit.managementAuthority.permissions?.includes(p))) {
     blockers.push("Management authority permissions incomplete");
   }
 
-  if (!unit.regulatory?.licensing || unit.regulatory.licensing.status !== "verified" || (unit.regulatory.licensing.expiresAt && unit.regulatory.licensing.expiresAt < today)) {
+  if (!unit.regulatory?.licensing || unit.regulatory.licensing.status !== "verified" || (unit.regulatory.licensing.expiresAt && unit.regulatory.licensing.expiresAt < latestCheckout)) {
     blockers.push("Licensing missing, invalid or expired");
   }
 
-  if (!unit.regulatory?.insurance || unit.regulatory.insurance.status !== "verified" || (unit.regulatory.insurance.expiresAt && unit.regulatory.insurance.expiresAt < today)) {
+  if (!unit.regulatory?.insurance || unit.regulatory.insurance.status !== "verified" || (unit.regulatory.insurance.expiresAt && unit.regulatory.insurance.expiresAt < latestCheckout)) {
     blockers.push("Insurance missing, invalid or expired");
   }
   if (unit.regulatory?.insurance?.publicLiabilityPerOccurrenceKobo != null && unit.regulatory.insurance.publicLiabilityPerOccurrenceKobo < 1000000000) {
@@ -271,7 +273,7 @@ export function getUnitOnboardingStatus(unit: any, now: Date | string = new Date
   }
 
   const tempUnit = { ...unit, published: true };
-  if (!isEligibleUnit(tempUnit, typeof now === "string" ? new Date(now) : now)) {
+  if (!isEligibleUnit(tempUnit, nowDate, { checkOut: latestCheckout })) {
     if (blockers.length === 0) blockers.push("Unit eligibility requirements not met through checkout");
   }
 
