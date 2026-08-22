@@ -1,6 +1,6 @@
 # Onboard and publish one inspected Operator Unit
 
-Status: ready-for-agent
+Status: resolved
 Type: AFK
 User stories: 2, 63–68, 83–84
 
@@ -14,10 +14,18 @@ Onboard one registered Operator and entire-place Unit, capture responsible perso
 
 ## Acceptance criteria
 
-- [ ] Publication fails unless Operator, Unit, authority, inspection, licensing, insurance, and settlement requirements pass.
-- [ ] Expiry and Material Unit Change make affected future inventory ineligible; scheduled reinspection grants no provisional eligibility.
-- [ ] Inspectors can record the accepted safety, accuracy, possession, privacy, utility, sanitation, and media evidence.
-- [ ] Operators and staff see actionable status without exposure of unnecessary raw verification evidence.
+- [x] Publication fails unless Operator, Unit, authority, inspection, licensing, insurance, and settlement requirements pass.
+- [x] Expiry and Material Unit Change make affected future inventory ineligible; scheduled reinspection grants no provisional eligibility.
+- [x] Inspectors can record the accepted safety, accuracy, possession, privacy, utility, sanitation, and media evidence.
+- [x] Operators and staff see actionable status without exposure of unnecessary raw verification evidence.
+
+## Completion note
+
+Issue 04 is implemented with authoritative Operator and Unit publication eligibility, Management Authority and regulatory checks, complete Physical Inspection scope, Material Unit Change invalidation, actionable status projection, and expiry coverage through the latest checkout permitted by the existing booking horizon.
+
+Publication reuses the existing 90-day latest check-in and 14-night maximum-stay policy, so time-bounded Operator approval, inspection, Management Authority, licensing, and insurance must remain valid through the furthest possible checkout.
+
+Validation: 310 tests passed, 0 failed across 4 suites; focused onboarding and browse tests, Weaver vendor verification, and TypeScript checks passed.
 
 ## Blocked by
 
