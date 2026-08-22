@@ -328,7 +328,7 @@ export class InteractionThreadManager {
 
   revokeSession(sessionId: string, context?: SecurityContext) {
     if (context) {
-      assertContext(context);
+      this.#assertActiveContext(context);
       if (sessionId !== context.sessionId) {
         throw new Error("Session revocation scope mismatch");
       }

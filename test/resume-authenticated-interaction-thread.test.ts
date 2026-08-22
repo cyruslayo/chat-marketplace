@@ -429,10 +429,18 @@ test("tenant change invalidates only the previous authentication scope and inter
   );
   assert.equal(manager.confirmMaterialAction(leaseControl.leaseId, controlContext).confirmed, true);
 
-  assert.doesNotThrow(() => manager.createThread(newTenantContext));
+  const newTenantThread = manager.createThread(newTenantContext);
   assert.throws(
     () => manager.reconnect(primaryThread.threadId, newTenantContext),
     /Tenant scope mismatch/
+  );
+  assert.throws(
+    () => manager.revokeSession(oldContext.sessionId, oldContext),
+    /Authentication context is invalidated by tenant change/
+  );
+  assert.equal(
+    manager.getThread(newTenantThread.threadId, newTenantContext).threadId,
+    newTenantThread.threadId
   );
 
   const rebound: any = manager.reconnect(primaryThread.threadId, recoveryContext, {
@@ -451,6 +459,12 @@ test("tenant change invalidates only the previous authentication scope and inter
   };
   manager.createThread(revokedContext);
   manager.revokeSession(revokedContext.sessionId, revokedContext);
+  assert.throws(
+    () => manager.revokeSession(revokedContext.sessionId, revokedContext),
+    /Session is revoked/
+  );
+  assert.doesNotThrow(() => manager.revokeSession(revokedContext.sessionId));
+  assert.doesNotThrow(() => manager.revokeSession(revokedContext.sessionId));
   assert.throws(
     () => manager.handleTenantChange(revokedContext, "tenant-another"),
     /Session is revoked/
