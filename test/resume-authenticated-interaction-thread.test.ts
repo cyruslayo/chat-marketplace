@@ -32,6 +32,55 @@ test("authentication and tenant scope are enforced on all thread operations", ()
   );
 });
 
+test("public thread lookup exposes only frozen read-only thread metadata", () => {
+  const { manager, context } = setup();
+  const thread = manager.createThread(context);
+
+  const descriptor = manager.getThread(thread.threadId, context);
+  assert.deepEqual(Object.keys(descriptor).sort(), ["principalId", "projectionVersion", "tenantId", "threadId"]);
+  assert.equal(descriptor.threadId, thread.threadId);
+  assert.equal(descriptor.principalId, context.principalId);
+  assert.equal(descriptor.tenantId, context.tenantId);
+  assert.equal(descriptor.projectionVersion, 1);
+  assert.equal(Object.isFrozen(descriptor), true);
+
+  for (const field of [
+    "sessionId",
+    "deviceId",
+    "activeRunId",
+    "runs",
+    "events",
+    "observers",
+    "observerStreams",
+    "lastSequence",
+    "compactedProjection",
+    "streamTerminated"
+  ]) {
+    assert.equal(field in descriptor, false, `${field} must not be exposed`);
+  }
+
+  const firstRun = manager.startAgentRun(thread.threadId, context, { intent: "search-stay" });
+  const runningDescriptor = manager.getThread(thread.threadId, context);
+  assert.equal(Reflect.set(runningDescriptor, "projectionVersion", 99), false);
+  assert.equal(runningDescriptor.projectionVersion, 1);
+
+  const otherTabContext = { ...context, tabId: "tab-2" };
+  assert.throws(
+    () => manager.startAgentRun(thread.threadId, otherTabContext, { intent: "book-stay" }),
+    /mutating Agent Run/
+  );
+
+  manager.completeAgentRun(thread.threadId, firstRun.runId, context);
+  manager.compactThread(thread.threadId, context);
+  assert.equal(manager.getThread(thread.threadId, context).projectionVersion, 2);
+
+  const wrongTenantContext = { ...context, tenantId: "tenant-other" };
+  assert.throws(
+    () => manager.getThread(thread.threadId, wrongTenantContext),
+    /Tenant scope mismatch/
+  );
+});
+
 test("allows only one mutating Agent Run per thread while multiple tabs observe", () => {
   const { manager, context } = setup();
   const thread = manager.createThread(context);
@@ -77,6 +126,38 @@ test("reconnect resumes by sequence or returns compacted projection without star
   assert.equal(activeRun, null);
 });
 
+test("event sequences remain monotonic across compaction and reconnect", () => {
+  const { manager, context } = setup();
+  const thread = manager.createThread(context);
+
+  const firstEvent = manager.appendEvent(thread.threadId, context, { type: "message", content: "First" });
+  const secondEvent = manager.appendEvent(thread.threadId, context, { type: "message", content: "Second" });
+  assert.equal(firstEvent.sequence, 1);
+  assert.equal(secondEvent.sequence, 2);
+
+  manager.compactThread(thread.threadId, context);
+
+  const thirdEvent = manager.appendEvent(thread.threadId, context, { type: "message", content: "Third" });
+  assert.equal(thirdEvent.sequence, 3);
+
+  const afterFirstCompaction: any = manager.reconnect(thread.threadId, context, { lastSeenSequence: 2 });
+  assert.equal(afterFirstCompaction.mode, "events");
+  assert.equal(afterFirstCompaction.events.length, 1);
+  assert.equal(afterFirstCompaction.events[0].sequence, 3);
+  assert.equal(manager.getActiveRun(thread.threadId, context), null);
+
+  manager.compactThread(thread.threadId, context);
+
+  const fourthEvent = manager.appendEvent(thread.threadId, context, { type: "message", content: "Fourth" });
+  assert.equal(fourthEvent.sequence, 4);
+
+  const afterSecondCompaction: any = manager.reconnect(thread.threadId, context, { lastSeenSequence: 3 });
+  assert.equal(afterSecondCompaction.mode, "events");
+  assert.equal(afterSecondCompaction.events.length, 1);
+  assert.equal(afterSecondCompaction.events[0].sequence, 4);
+  assert.equal(manager.getActiveRun(thread.threadId, context), null);
+});
+
 test("logout, revocation, or tenant change terminates streams and invalidates confirmation authority", () => {
   const { manager, context } = setup();
   const thread = manager.createThread(context);
@@ -117,4 +198,275 @@ test("stopping an agent run does not undo committed domain actions", () => {
   const stopped = manager.stopAgentRun(thread.threadId, run.runId, context);
   assert.equal(stopped.status, "stopped");
   assert.equal(stopped.committedActionsPreserved, true);
+});
+
+test("reconnect explicitly rebinds a durable thread to a new authenticated session", () => {
+  const manager = new InteractionThreadManager();
+  const contextA: SecurityContext = {
+    principalId: "user-123",
+    tenantId: "tenant-lagos",
+    sessionId: "sess-a",
+    tabId: "tab-a"
+  };
+  const contextB: SecurityContext = {
+    principalId: "user-123",
+    tenantId: "tenant-lagos",
+    sessionId: "sess-b",
+    tabId: "tab-b"
+  };
+  const primaryThread = manager.createThread(contextA);
+  const controlThread = manager.createThread(contextA);
+  const event = manager.appendEvent(primaryThread.threadId, contextA, {
+    type: "message",
+    content: "Resume me"
+  });
+
+  let streamAEnded = false;
+  manager.attachObserverStream(primaryThread.threadId, contextA, {
+    end() {
+      streamAEnded = true;
+    }
+  });
+  const leaseA = manager.issueConfirmationLease(primaryThread.threadId, contextA, {
+    actionType: "confirm-booking",
+    amountKobo: 5000000
+  });
+  const runA = manager.startAgentRun(primaryThread.threadId, contextA, { intent: "confirm" });
+
+  const sameSessionReconnect: any = manager.reconnect(primaryThread.threadId, contextA, {
+    lastSeenSequence: event.sequence
+  });
+  assert.equal(sameSessionReconnect.mode, "events");
+  assert.equal(streamAEnded, false);
+  assert.equal(manager.getActiveRun(primaryThread.threadId, contextA)?.runId, runA.runId);
+
+  assert.throws(
+    () => manager.getThread(primaryThread.threadId, contextB),
+    /Session scope mismatch/
+  );
+  assert.throws(
+    () => manager.startAgentRun(primaryThread.threadId, contextB, { intent: "must-not-start" }),
+    /Session scope mismatch/
+  );
+
+  const rebound: any = manager.reconnect(primaryThread.threadId, contextB, {
+    lastSeenSequence: event.sequence
+  });
+  assert.equal(rebound.mode, "events");
+  assert.deepEqual(rebound.events, []);
+  assert.equal(streamAEnded, true);
+  assert.equal(manager.getActiveRun(primaryThread.threadId, contextB), null);
+  assert.equal(manager.getThread(primaryThread.threadId, contextB).threadId, primaryThread.threadId);
+  assert.throws(
+    () => manager.getThread(primaryThread.threadId, contextA),
+    /Session scope mismatch/
+  );
+  assert.throws(
+    () => manager.confirmMaterialAction(leaseA.leaseId, contextA),
+    /invalid or revoked/i
+  );
+
+  const leaseB = manager.issueConfirmationLease(primaryThread.threadId, contextB, {
+    actionType: "confirm-booking",
+    amountKobo: 5000000
+  });
+  assert.equal(manager.confirmMaterialAction(leaseB.leaseId, contextB).confirmed, true);
+  assert.equal(manager.getThread(controlThread.threadId, contextA).threadId, controlThread.threadId);
+
+  manager.revokeSession(contextA.sessionId, contextA);
+  assert.equal(manager.getThread(primaryThread.threadId, contextB).threadId, primaryThread.threadId);
+
+  const runB = manager.startAgentRun(primaryThread.threadId, contextB, { intent: "resume" });
+  assert.equal(runB.status, "running");
+});
+
+test("session revocation is exact-scoped and cannot revoke another session", () => {
+  const manager = new InteractionThreadManager();
+  const contextA: SecurityContext = {
+    principalId: "user-123",
+    tenantId: "tenant-lagos",
+    sessionId: "sess-a",
+    tabId: "tab-a"
+  };
+  const contextB: SecurityContext = {
+    principalId: "user-123",
+    tenantId: "tenant-lagos",
+    sessionId: "sess-b",
+    tabId: "tab-b"
+  };
+  const threadA = manager.createThread(contextA);
+  const threadB = manager.createThread(contextB);
+  let streamAEnded = false;
+  let streamBEnded = false;
+
+  manager.attachObserverStream(threadA.threadId, contextA, { end() { streamAEnded = true; } });
+  manager.attachObserverStream(threadB.threadId, contextB, { end() { streamBEnded = true; } });
+  const leaseA = manager.issueConfirmationLease(threadA.threadId, contextA, {
+    actionType: "confirm-booking",
+    amountKobo: 5000000
+  });
+  const leaseB = manager.issueConfirmationLease(threadB.threadId, contextB, {
+    actionType: "confirm-booking",
+    amountKobo: 6000000
+  });
+  const runA = manager.startAgentRun(threadA.threadId, contextA, { intent: "confirm-a" });
+  const runB = manager.startAgentRun(threadB.threadId, contextB, { intent: "confirm-b" });
+
+  assert.throws(
+    () => manager.revokeSession(contextB.sessionId, contextA),
+    /session revocation scope mismatch/i
+  );
+  assert.equal(streamAEnded, false);
+  assert.equal(streamBEnded, false);
+  assert.equal(manager.getThread(threadA.threadId, contextA).threadId, threadA.threadId);
+  assert.equal(manager.getThread(threadB.threadId, contextB).threadId, threadB.threadId);
+  assert.equal(manager.getActiveRun(threadA.threadId, contextA)?.runId, runA.runId);
+  assert.equal(manager.getActiveRun(threadB.threadId, contextB)?.runId, runB.runId);
+
+  manager.revokeSession(contextA.sessionId, contextA);
+  assert.equal(streamAEnded, true);
+  assert.throws(() => manager.getThread(threadA.threadId, contextA), /Session is revoked/);
+  assert.throws(() => manager.confirmMaterialAction(leaseA.leaseId, contextA), /invalid or revoked/i);
+  assert.throws(() => manager.getActiveRun(threadA.threadId, contextA), /Session is revoked/);
+
+  assert.equal(streamBEnded, false);
+  assert.equal(manager.getThread(threadB.threadId, contextB).threadId, threadB.threadId);
+  assert.equal(manager.getActiveRun(threadB.threadId, contextB)?.runId, runB.runId);
+  assert.equal(manager.confirmMaterialAction(leaseB.leaseId, contextB).confirmed, true);
+
+  const leaseB2 = manager.issueConfirmationLease(threadB.threadId, contextB, {
+    actionType: "confirm-booking",
+    amountKobo: 6000000
+  });
+  manager.revokeSession(contextB.sessionId);
+  assert.equal(streamBEnded, true);
+  assert.throws(() => manager.getThread(threadB.threadId, contextB), /Session is revoked/);
+  assert.throws(() => manager.confirmMaterialAction(leaseB2.leaseId, contextB), /invalid or revoked/i);
+  manager.revokeSession(contextB.sessionId);
+});
+
+test("tenant change invalidates only the previous authentication scope and interaction authority", () => {
+  const manager = new InteractionThreadManager();
+  const oldContext: SecurityContext = {
+    principalId: "user-123",
+    tenantId: "tenant-lagos",
+    sessionId: "sess-shared",
+    tabId: "tab-lagos"
+  };
+  const newTenantContext: SecurityContext = {
+    principalId: "user-123",
+    tenantId: "tenant-abuja",
+    sessionId: "sess-shared",
+    tabId: "tab-abuja"
+  };
+  const controlContext: SecurityContext = {
+    principalId: "user-123",
+    tenantId: "tenant-lagos",
+    sessionId: "sess-control",
+    tabId: "tab-control"
+  };
+  const recoveryContext: SecurityContext = {
+    principalId: "user-123",
+    tenantId: "tenant-lagos",
+    sessionId: "sess-recovery",
+    tabId: "tab-recovery"
+  };
+
+  const primaryThread = manager.createThread(oldContext);
+  const controlThread = manager.createThread(controlContext);
+  const firstEvent = manager.appendEvent(primaryThread.threadId, oldContext, {
+    type: "message",
+    content: "Preserve this history"
+  });
+  let oldStreamEnded = false;
+  let controlStreamEnded = false;
+  manager.attachObserverStream(primaryThread.threadId, oldContext, {
+    end() {
+      oldStreamEnded = true;
+    }
+  });
+  manager.attachObserverStream(controlThread.threadId, controlContext, {
+    end() {
+      controlStreamEnded = true;
+    }
+  });
+  manager.startAgentRun(primaryThread.threadId, oldContext, { intent: "confirm" });
+  const leaseOld = manager.issueConfirmationLease(primaryThread.threadId, oldContext, {
+    actionType: "confirm-booking",
+    amountKobo: 5000000
+  });
+  const leaseControl = manager.issueConfirmationLease(controlThread.threadId, controlContext, {
+    actionType: "confirm-booking",
+    amountKobo: 6000000
+  });
+
+  assert.throws(
+    () => manager.handleTenantChange(controlContext, controlContext.tenantId),
+    /Tenant change requires a different tenant/
+  );
+  assert.equal(controlStreamEnded, false);
+
+  manager.handleTenantChange(oldContext, "tenant-abuja");
+
+  assert.equal(oldStreamEnded, true);
+  assert.equal(controlStreamEnded, false);
+  assert.throws(
+    () => manager.getThread(primaryThread.threadId, oldContext),
+    /Authentication context is invalidated by tenant change/
+  );
+  assert.throws(
+    () => manager.createThread(oldContext),
+    /Authentication context is invalidated by tenant change/
+  );
+  assert.throws(
+    () => manager.handleTenantChange(oldContext, "tenant-another"),
+    /Authentication context is invalidated by tenant change/
+  );
+  assert.equal(manager.getThread(controlThread.threadId, controlContext).threadId, controlThread.threadId);
+  assert.throws(
+    () => manager.confirmMaterialAction(leaseOld.leaseId, oldContext),
+    /invalid or revoked/i
+  );
+  assert.equal(manager.confirmMaterialAction(leaseControl.leaseId, controlContext).confirmed, true);
+
+  const newTenantThread = manager.createThread(newTenantContext);
+  assert.throws(
+    () => manager.reconnect(primaryThread.threadId, newTenantContext),
+    /Tenant scope mismatch/
+  );
+  assert.throws(
+    () => manager.revokeSession(oldContext.sessionId, oldContext),
+    /Authentication context is invalidated by tenant change/
+  );
+  assert.equal(
+    manager.getThread(newTenantThread.threadId, newTenantContext).threadId,
+    newTenantThread.threadId
+  );
+
+  const rebound: any = manager.reconnect(primaryThread.threadId, recoveryContext, {
+    lastSeenSequence: 0
+  });
+  assert.equal(rebound.mode, "events");
+  assert.equal(rebound.events[0].sequence, firstEvent.sequence);
+  assert.equal(manager.getActiveRun(primaryThread.threadId, recoveryContext), null);
+  assert.equal(manager.getThread(primaryThread.threadId, recoveryContext).projectionVersion, 1);
+
+  const revokedContext: SecurityContext = {
+    principalId: "user-123",
+    tenantId: "tenant-ibadan",
+    sessionId: "sess-revoked",
+    tabId: "tab-revoked"
+  };
+  manager.createThread(revokedContext);
+  manager.revokeSession(revokedContext.sessionId, revokedContext);
+  assert.throws(
+    () => manager.revokeSession(revokedContext.sessionId, revokedContext),
+    /Session is revoked/
+  );
+  assert.doesNotThrow(() => manager.revokeSession(revokedContext.sessionId));
+  assert.doesNotThrow(() => manager.revokeSession(revokedContext.sessionId));
+  assert.throws(
+    () => manager.handleTenantChange(revokedContext, "tenant-another"),
+    /Session is revoked/
+  );
 });
