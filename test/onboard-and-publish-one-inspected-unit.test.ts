@@ -12,7 +12,8 @@ import {
   flagMaterialUnitChange,
   getUnitOnboardingStatus,
   REQUIRED_INSPECTION_SCOPE,
-  REQUIRED_AUTHORITY_PERMISSIONS
+  REQUIRED_AUTHORITY_PERMISSIONS,
+  latestPossibleCheckoutDate
 } from "../domains/shortlet/src/index.js";
 
 function setup() {
@@ -147,6 +148,34 @@ test("inspectors can record physical evidence across all required scope items", 
 
   assert.equal(inspection.status, "passed");
   assert.equal(inspection.scope.length, 9);
+});
+
+test("publication requires eligibility through the furthest sellable checkout", () => {
+  const { repository } = setup();
+  seedIssue01Units(repository);
+  const publicationDate = new Date("2026-07-22T00:00:00Z");
+
+  assert.equal(latestPossibleCheckoutDate(publicationDate), "2026-11-03");
+
+  const unit = repository.findById("unit-lagos-001");
+  repository.save({
+    ...unit,
+    inspection: { ...unit.inspection, expiresAt: "2026-08-01" }
+  });
+
+  assert.throws(
+    () => publishUnit(repository, "unit-lagos-001", { clock: () => publicationDate }),
+    /Physical inspection expired or invalid/
+  );
+
+  const boundaryUnit = repository.findById("unit-lagos-001");
+  repository.save({
+    ...boundaryUnit,
+    published: true,
+    inspection: { ...boundaryUnit.inspection, expiresAt: "2026-11-03" }
+  });
+
+  assert.equal(publishUnit(repository, "unit-lagos-001", { clock: () => publicationDate }).published, true);
 });
 
 test("operators and staff see actionable status without raw evidence exposure", () => {
