@@ -388,3 +388,23 @@ test("Conventional and Generative Surface acceptance reach the same command and 
   assert.ok(auditWeb);
   assert.ok(auditSurface);
 });
+
+test("Conditional Offer rejects a confirmed request after its exact inventory commitment is released", () => {
+  const s = setup();
+  const clock = () => new Date("2026-07-22T10:00:00Z");
+  const { request } = createConfirmedRequest(s, clock);
+
+  assert.ok(request.holdId);
+  s.calendar.releaseHold(request.holdId, { clock });
+
+  const issueEnv = createPlatformCommandEnvelope({
+    commandName: "conditional_offer.issue",
+    principal: { id: s.unit.operator.id, role: "operator", tenantId: "tenant-lagos" },
+    payload: { requestId: request.requestId }
+  });
+
+  assert.throws(
+    () => s.offerManager.issueOffer(issueEnv, { clock }),
+    /inventory commitment is no longer valid/i
+  );
+});

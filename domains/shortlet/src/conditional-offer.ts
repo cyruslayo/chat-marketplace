@@ -155,9 +155,16 @@ export class ConditionalOfferManager {
     }
 
     if (this.#calendar) {
-      const avail = this.#calendar.getAuthoritativeAvailability(unit.id, request.checkIn, request.checkOut, clock);
-      if (!avail.isAvailable) {
-        throw new Error("Offer creation failed: Unit is no longer available for the requested dates");
+      try {
+        this.#calendar.assertActiveCommitment({
+          commitmentId: request.holdId,
+          unitId: request.unitId,
+          start: request.checkIn,
+          end: request.checkOut,
+          clock
+        });
+      } catch {
+        throw new Error("Offer creation failed: request inventory commitment is no longer valid");
       }
     }
 

@@ -1,7 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { InMemoryAuditLog } from "../packages/platform-core/src/index.js";
-import { AvailabilityCalendar, UnitRepository, seedIssue01Units } from "../domains/shortlet/src/index.js";
+import {
+  AvailabilityCalendar,
+  SqliteAvailabilityStore,
+  UnitRepository,
+  seedIssue01Units
+} from "../domains/shortlet/src/index.js";
 
 function setup() {
   const repository = new UnitRepository();
@@ -151,4 +159,96 @@ test("Web, agent, and support views show the same current availability without o
   assert.deepEqual(webView, agentView);
   assert.deepEqual(webView, supportView);
   assert.equal(webView.isAvailable, false);
+});
+
+test("File-backed availability authority is shared across independent calendars and survives reconstruction", () => {
+  const directory = mkdtempSync(join(tmpdir(), "shortlet-availability-"));
+  const databasePath = join(directory, "availability.sqlite");
+  const storeA = new SqliteAvailabilityStore(databasePath);
+  const storeB = new SqliteAvailabilityStore(databasePath);
+  const unitId = "unit-lagos-001";
+  const now = () => new Date("2026-07-22T10:00:00Z");
+  const calendarA = new AvailabilityCalendar({ store: storeA });
+  const calendarB = new AvailabilityCalendar({ store: storeB });
+
+  try {
+    const hold = calendarA.createHold({ unitId, holderId: "guest-1", start: "2026-08-01", end: "2026-08-05", clock: now });
+    assert.equal(calendarB.getAuthoritativeAvailability({ unitId, checkIn: "2026-08-03", checkOut: "2026-08-04", clock: now }).isAvailable, false);
+    calendarB.releaseHold(hold.holdId, { clock: now });
+    assert.equal(calendarA.getAuthoritativeAvailability({ unitId, checkIn: "2026-08-03", checkOut: "2026-08-04", clock: now }).isAvailable, true);
+
+    calendarA.addOperatorBlock({ unitId, operatorId: "operator-001", start: "2026-08-10", end: "2026-08-12", reason: "Maintenance", clock: now });
+    storeA.close();
+    storeB.close();
+
+    const storeC = new SqliteAvailabilityStore(databasePath);
+    try {
+      const calendarC = new AvailabilityCalendar({ store: storeC });
+      const availability = calendarC.getAuthoritativeAvailability({ unitId, checkIn: "2026-08-10", checkOut: "2026-08-11", clock: now });
+      assert.equal(availability.isAvailable, false);
+      assert.equal(availability.conflictReason, "Overlaps with Operator Block");
+    } finally {
+      storeC.close();
+    }
+  } finally {
+    storeA.close();
+    storeB.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("Independent SQLite connections atomically reject overlapping holds and blocks while allowing non-overlap", () => {
+  const directory = mkdtempSync(join(tmpdir(), "shortlet-availability-"));
+  const databasePath = join(directory, "availability.sqlite");
+  const storeA = new SqliteAvailabilityStore(databasePath);
+  const storeB = new SqliteAvailabilityStore(databasePath);
+  const unitId = "unit-lagos-001";
+  const clock = () => new Date("2026-07-22T10:00:00Z");
+  const calendarA = new AvailabilityCalendar({ store: storeA });
+  const calendarB = new AvailabilityCalendar({ store: storeB });
+
+  try {
+    calendarA.createHold({ unitId, holderId: "guest-1", start: "2026-09-01", end: "2026-09-05", clock });
+    assert.throws(() => calendarB.createHold({ unitId, holderId: "guest-2", start: "2026-09-03", end: "2026-09-07", clock }), /availability conflict/i);
+    assert.throws(() => calendarB.addOperatorBlock({ unitId, operatorId: "operator-001", start: "2026-09-04", end: "2026-09-06", clock }), /availability conflict/i);
+    assert.doesNotThrow(() => calendarB.addOperatorBlock({ unitId, operatorId: "operator-001", start: "2026-09-05", end: "2026-09-06", clock }));
+  } finally {
+    storeA.close();
+    storeB.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("Object and positional availability forms both project active Hold authority", () => {
+  const { calendar } = setup();
+  const unitId = "unit-lagos-001";
+  const clock = () => new Date("2026-07-22T10:00:00Z");
+  const hold = calendar.createHold({
+    unitId,
+    holderId: "guest-1",
+    start: "2026-10-01",
+    end: "2026-10-05",
+    clock
+  });
+
+  const objectAvailability = calendar.getAuthoritativeAvailability({
+    unitId,
+    checkIn: "2026-10-02",
+    checkOut: "2026-10-03",
+    clock
+  });
+  const positionalAvailability = calendar.getAuthoritativeAvailability(
+    unitId,
+    "2026-10-02",
+    "2026-10-03",
+    clock
+  );
+
+  assert.equal(objectAvailability.isAvailable, false);
+  assert.equal(positionalAvailability.isAvailable, false);
+  assert.equal(objectAvailability.conflictReason, "Overlaps with active Hold");
+  assert.equal(positionalAvailability.conflictReason, "Overlaps with active Hold");
+
+  calendar.releaseHold(hold.holdId, { clock });
+  assert.equal(calendar.getAuthoritativeAvailability(unitId, "2026-10-02", "2026-10-03", clock).isAvailable, true);
 });
