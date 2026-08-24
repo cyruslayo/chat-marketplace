@@ -93,34 +93,36 @@ export class AvailabilityCalendar {
     };
   }
 
-  createHold({ unitId, holderId, start, end, durationMinutes = 45, clock = () => new Date() }: { unitId: string; holderId: string; start: DateValue; end: DateValue; durationMinutes?: number; clock?: Clock }) {
-    const now = clock();
+  createOperatorHold({ unitId, operatorId, start, end, clock = () => new Date() }: { unitId: string; operatorId: string; start: DateValue; end: DateValue; clock?: Clock }) {
+    const createdAt = clock();
     const hold = this.#store.create({
-      commitmentId: `hld-${crypto.randomUUID()}`,
+      commitmentId: `oph-${crypto.randomUUID()}`,
       unitId,
-      kind: "hold",
+      kind: "operator_hold",
       start: dateValue(start),
       end: dateValue(end),
-      createdAt: now.toISOString(),
-      expiresAt: new Date(now.getTime() + durationMinutes * 60 * 1000).toISOString(),
-      holderId,
+      createdAt: createdAt.toISOString(),
+      expiresAt: new Date(createdAt.getTime() + 45 * 60 * 1000).toISOString(),
+      operatorId,
       extensionCount: 0
     });
-    if (!hold.expiresAt) throw new Error("Created hold must expire");
+    if (!hold.expiresAt) throw new Error("Created Operator Hold must expire");
     return {
       holdId: hold.commitmentId,
+      commitmentId: hold.commitmentId,
       unitId: hold.unitId,
-      holderId: hold.holderId ?? holderId,
+      operatorId: hold.operatorId ?? operatorId,
       start,
       end,
       createdAt: hold.createdAt,
       expiresAt: hold.expiresAt,
-      extensionCount: hold.extensionCount
+      extensionCount: hold.extensionCount,
+      kind: hold.kind
     };
   }
 
-  releaseHold(holdId: string, { clock = () => new Date() }: { clock?: Clock } = {}): void {
-    this.#store.release(holdId, clock().toISOString());
+  releaseOperatorHold(commitmentId: string, { clock = () => new Date() }: { clock?: Clock } = {}): void {
+    this.#store.releaseOperatorHold(commitmentId, clock().toISOString());
   }
 
   createBookingRequestBlock({ unitId, holderId, start, end, clock = () => new Date() }: { unitId: string; holderId: string; start: DateValue; end: DateValue; clock?: Clock }) {
@@ -151,18 +153,20 @@ export class AvailabilityCalendar {
     return this.#store.transitionBookingRequestBlockToPaymentPending({ commitmentId, unitId, start: dateValue(start), end: dateValue(end), now: clock().toISOString() });
   }
 
-  extendHold(holdId: string, { clock = () => new Date() }: { clock?: Clock } = {}) {
-    const hold = this.#store.extend(holdId, clock().toISOString());
-    if (!hold.expiresAt) throw new Error("Extended hold must expire");
+  extendOperatorHold(commitmentId: string, { clock = () => new Date() }: { clock?: Clock } = {}) {
+    const hold = this.#store.extendOperatorHold(commitmentId, clock().toISOString());
+    if (!hold.expiresAt) throw new Error("Extended Operator Hold must expire");
     return {
       holdId: hold.commitmentId,
+      commitmentId: hold.commitmentId,
       unitId: hold.unitId,
-      holderId: hold.holderId,
+      operatorId: hold.operatorId,
       start: hold.start,
       end: hold.end,
       createdAt: hold.createdAt,
       expiresAt: hold.expiresAt,
-      extensionCount: hold.extensionCount
+      extensionCount: hold.extensionCount,
+      kind: hold.kind
     };
   }
 

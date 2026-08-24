@@ -1,6 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 
-export type AvailabilityCommitmentKind = "hold" | "operator_block" | "booking_request_block" | "payment_pending";
+export type AvailabilityCommitmentKind = "operator_hold" | "operator_block" | "booking_request_block" | "payment_pending";
 export type AvailabilityCommitmentState = "active" | "released" | "expired";
 
 export interface AvailabilityCommitment {
@@ -198,14 +198,21 @@ export class SqliteAvailabilityStore {
     });
   }
 
-  release(holdId: string, now: string): void {
+  releaseOperatorHold(commitmentId: string, now: string): void {
     this.#withWriteTransaction(() => {
       this.#expireStale(now);
+      const row = this.#database.prepare(`
+        SELECT kind, state FROM availability_commitments WHERE commitment_id = $commitmentId
+      `).get({ $commitmentId: commitmentId }) as { kind: AvailabilityCommitmentKind; state: AvailabilityCommitmentState } | undefined;
+      if (!row || row.kind !== "operator_hold") {
+        throw new Error("Availability commitment is not an Operator Hold");
+      }
+      if (row.state !== "active") throw new Error("Operator Hold is no longer active");
       this.#database.prepare(`
         UPDATE availability_commitments
         SET state = 'released', released_at = $now
-        WHERE commitment_id = $holdId AND kind = 'hold' AND state = 'active'
-      `).run({ $holdId: holdId, $now: now });
+        WHERE commitment_id = $commitmentId AND kind = 'operator_hold' AND state = 'active'
+      `).run({ $commitmentId: commitmentId, $now: now });
     });
   }
 
@@ -259,27 +266,29 @@ export class SqliteAvailabilityStore {
     });
   }
 
-  extend(holdId: string, now: string): AvailabilityCommitment {
+  extendOperatorHold(commitmentId: string, now: string): AvailabilityCommitment {
     return this.#withWriteTransaction(() => {
       this.#expireStale(now);
       const row = this.#database.prepare(`
         SELECT commitment_id, unit_id, kind, start_date, end_date, state,
                created_at, expires_at, extension_count, operator_id, holder_id, reason
         FROM availability_commitments
-        WHERE commitment_id = $holdId AND kind = 'hold' AND state = 'active'
-      `).get({ $holdId: holdId }) as CommitmentRow | undefined;
-      if (!row) throw new Error(`Hold not found: ${holdId}`);
-      if (row.expires_at === null || new Date(now) >= new Date(row.expires_at)) throw new Error("Hold expired automatically");
-      if (row.extension_count >= 1) throw new Error("Maximum extension limit reached: at most 1 extension permitted");
+        WHERE commitment_id = $commitmentId
+      `).get({ $commitmentId: commitmentId }) as CommitmentRow | undefined;
+      if (!row) throw new Error(`Operator Hold not found: ${commitmentId}`);
+      if (row.kind !== "operator_hold") throw new Error("Availability commitment is not an Operator Hold");
+      if (row.state === "expired") throw new Error("Operator Hold expired automatically");
+      if (row.state !== "active") throw new Error("Operator Hold is no longer active");
+      if (row.expires_at === null || new Date(now) >= new Date(row.expires_at)) throw new Error("Operator Hold expired automatically");
+      if (row.extension_count !== 0) throw new Error("Maximum extension limit reached: at most 1 extension permitted");
       const maxExpiry = new Date(new Date(row.created_at).getTime() + 60 * 60 * 1000);
-      const currentExpiry = new Date(row.expires_at);
-      const newExpiry = new Date(Math.min(currentExpiry.getTime() + 15 * 60 * 1000, maxExpiry.getTime()));
+      const newExpiry = maxExpiry.toISOString();
       this.#database.prepare(`
         UPDATE availability_commitments
-        SET expires_at = $expiresAt, extension_count = extension_count + 1
-        WHERE commitment_id = $holdId AND state = 'active'
-      `).run({ $holdId: holdId, $expiresAt: newExpiry.toISOString() });
-      return project({ ...row, expires_at: newExpiry.toISOString(), extension_count: row.extension_count + 1 });
+        SET expires_at = $expiresAt, extension_count = 1
+        WHERE commitment_id = $commitmentId AND kind = 'operator_hold' AND state = 'active'
+      `).run({ $commitmentId: commitmentId, $expiresAt: newExpiry });
+      return project({ ...row, expires_at: newExpiry, extension_count: 1 });
     });
   }
 

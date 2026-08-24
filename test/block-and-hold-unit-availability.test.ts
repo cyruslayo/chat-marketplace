@@ -61,37 +61,40 @@ test("Holds expire automatically, allow at most one valid extension, and never e
   const now = new Date("2026-07-22T10:00:00Z");
 
   // Create hold (45 mins by default)
-  const hold = calendar.createHold({
+  const hold = calendar.createOperatorHold({
     unitId,
-    holderId: "guest-123",
+    operatorId: "operator-123",
     start: "2026-08-20",
     end: "2026-08-22",
     clock: () => now
   });
 
   assert.ok(hold.holdId);
+  assert.equal(hold.kind, "operator_hold");
+  assert.equal(hold.operatorId, "operator-123");
+  assert.equal(hold.createdAt, "2026-07-22T10:00:00.000Z");
   assert.equal(hold.extensionCount, 0);
   const initialExpiry = new Date("2026-07-22T10:45:00Z").getTime();
   assert.equal(new Date(hold.expiresAt).getTime(), initialExpiry);
 
   // Extend hold once (adds 15 mins -> total 60 mins from creation)
-  const extended = calendar.extendHold(hold.holdId, { clock: () => new Date("2026-07-22T10:20:00Z") });
+  const extended = calendar.extendOperatorHold(hold.holdId, { clock: () => new Date("2026-07-22T10:20:00Z") });
   assert.equal(extended.extensionCount, 1);
   const extendedExpiry = new Date("2026-07-22T11:00:00Z").getTime();
   assert.equal(new Date(extended.expiresAt).getTime(), extendedExpiry);
 
   // Second extension attempt fails (allow at most one valid extension)
   assert.throws(
-    () => calendar.extendHold(hold.holdId, { clock: () => new Date("2026-07-22T10:30:00Z") }),
+    () => calendar.extendOperatorHold(hold.holdId, { clock: () => new Date("2026-07-22T10:30:00Z") }),
     /maximum extension limit reached/i
   );
 
-  // Automatic expiry check: after 11:00 AM, hold is expired and dates become available again
+  // At the absolute maximum, the Operator Hold is expired and dates are available again.
   const afterExpiryAvailability = calendar.getAuthoritativeAvailability({
     unitId,
     checkIn: "2026-08-20",
     checkOut: "2026-08-22",
-    clock: () => new Date("2026-07-22T11:01:00Z")
+    clock: () => new Date("2026-07-22T11:00:00Z")
   });
   assert.equal(afterExpiryAvailability.isAvailable, true);
 });
@@ -102,9 +105,9 @@ test("Competing holds, blocks, and bookings are protected by real transaction an
   const now = new Date("2026-07-22T10:00:00Z");
 
   // Create active hold
-  calendar.createHold({
+  calendar.createOperatorHold({
     unitId,
-    holderId: "guest-1",
+    operatorId: "operator-001",
     start: "2026-08-01",
     end: "2026-08-05",
     clock: () => now
@@ -112,9 +115,9 @@ test("Competing holds, blocks, and bookings are protected by real transaction an
 
   // Competing hold on overlapping dates fails
   assert.throws(
-    () => calendar.createHold({
+    () => calendar.createOperatorHold({
       unitId,
-      holderId: "guest-2",
+      operatorId: "operator-002",
       start: "2026-08-03",
       end: "2026-08-07",
       clock: () => now
@@ -172,9 +175,9 @@ test("File-backed availability authority is shared across independent calendars 
   const calendarB = new AvailabilityCalendar({ store: storeB });
 
   try {
-    const hold = calendarA.createHold({ unitId, holderId: "guest-1", start: "2026-08-01", end: "2026-08-05", clock: now });
+    const hold = calendarA.createOperatorHold({ unitId, operatorId: "operator-001", start: "2026-08-01", end: "2026-08-05", clock: now });
     assert.equal(calendarB.getAuthoritativeAvailability({ unitId, checkIn: "2026-08-03", checkOut: "2026-08-04", clock: now }).isAvailable, false);
-    calendarB.releaseHold(hold.holdId, { clock: now });
+    calendarB.releaseOperatorHold(hold.holdId, { clock: now });
     assert.equal(calendarA.getAuthoritativeAvailability({ unitId, checkIn: "2026-08-03", checkOut: "2026-08-04", clock: now }).isAvailable, true);
 
     calendarA.addOperatorBlock({ unitId, operatorId: "operator-001", start: "2026-08-10", end: "2026-08-12", reason: "Maintenance", clock: now });
@@ -208,8 +211,8 @@ test("Independent SQLite connections atomically reject overlapping holds and blo
   const calendarB = new AvailabilityCalendar({ store: storeB });
 
   try {
-    calendarA.createHold({ unitId, holderId: "guest-1", start: "2026-09-01", end: "2026-09-05", clock });
-    assert.throws(() => calendarB.createHold({ unitId, holderId: "guest-2", start: "2026-09-03", end: "2026-09-07", clock }), /availability conflict/i);
+    calendarA.createOperatorHold({ unitId, operatorId: "operator-001", start: "2026-09-01", end: "2026-09-05", clock });
+    assert.throws(() => calendarB.createOperatorHold({ unitId, operatorId: "operator-002", start: "2026-09-03", end: "2026-09-07", clock }), /availability conflict/i);
     assert.throws(() => calendarB.addOperatorBlock({ unitId, operatorId: "operator-001", start: "2026-09-04", end: "2026-09-06", clock }), /availability conflict/i);
     assert.doesNotThrow(() => calendarB.addOperatorBlock({ unitId, operatorId: "operator-001", start: "2026-09-05", end: "2026-09-06", clock }));
   } finally {
@@ -223,9 +226,9 @@ test("Object and positional availability forms both project active Hold authorit
   const { calendar } = setup();
   const unitId = "unit-lagos-001";
   const clock = () => new Date("2026-07-22T10:00:00Z");
-  const hold = calendar.createHold({
+  const hold = calendar.createOperatorHold({
     unitId,
-    holderId: "guest-1",
+    operatorId: "operator-001",
     start: "2026-10-01",
     end: "2026-10-05",
     clock
@@ -249,6 +252,86 @@ test("Object and positional availability forms both project active Hold authorit
   assert.equal(objectAvailability.conflictReason, "Overlaps with active Hold");
   assert.equal(positionalAvailability.conflictReason, "Overlaps with active Hold");
 
-  calendar.releaseHold(hold.holdId, { clock });
+  calendar.releaseOperatorHold(hold.holdId, { clock });
   assert.equal(calendar.getAuthoritativeAvailability(unitId, "2026-10-02", "2026-10-03", clock).isAvailable, true);
+});
+
+test("Operator Hold lasts 45 minutes and extends once to a maximum of 60 minutes", () => {
+  const { calendar } = setup();
+  const unitId = "unit-lagos-001";
+  const createdAt = new Date("2026-07-22T10:00:00Z");
+  const hold = calendar.createOperatorHold({
+    unitId,
+    operatorId: "operator-001",
+    start: "2026-11-01",
+    end: "2026-11-03",
+    clock: () => createdAt
+  });
+
+  assert.equal(hold.kind, "operator_hold");
+  assert.equal(hold.createdAt, "2026-07-22T10:00:00.000Z");
+  assert.equal(hold.expiresAt, "2026-07-22T10:45:00.000Z");
+  assert.equal(hold.extensionCount, 0);
+
+  const extended = calendar.extendOperatorHold(hold.commitmentId, {
+    clock: () => new Date("2026-07-22T10:44:59Z")
+  });
+  assert.equal(extended.commitmentId, hold.commitmentId);
+  assert.equal(extended.expiresAt, "2026-07-22T11:00:00.000Z");
+  assert.equal(extended.extensionCount, 1);
+  assert.throws(
+    () => calendar.extendOperatorHold(hold.commitmentId, { clock: () => new Date("2026-07-22T10:45:00Z") }),
+    /maximum extension limit reached/i
+  );
+  assert.ok(new Date(extended.expiresAt).getTime() <= createdAt.getTime() + 60 * 60 * 1000);
+  assert.equal(calendar.getAuthoritativeAvailability({
+    unitId,
+    checkIn: "2026-11-02",
+    checkOut: "2026-11-03",
+    clock: () => new Date("2026-07-22T11:00:00Z")
+  }).isAvailable, true);
+});
+
+test("Operator Hold extension and release are kind-safe and fail at expiry", () => {
+  const { calendar } = setup();
+  const unitId = "unit-lagos-001";
+  const hold = calendar.createOperatorHold({
+    unitId,
+    operatorId: "operator-001",
+    start: "2026-12-01",
+    end: "2026-12-03",
+    clock: () => new Date("2026-07-22T10:00:00Z")
+  });
+  assert.throws(
+    () => calendar.extendOperatorHold(hold.commitmentId, { clock: () => new Date("2026-07-22T10:45:00Z") }),
+    /expired/i
+  );
+  assert.equal(calendar.getAuthoritativeAvailability({
+    unitId,
+    checkIn: "2026-12-01",
+    checkOut: "2026-12-02",
+    clock: () => new Date("2026-07-22T10:45:00Z")
+  }).isAvailable, true);
+
+  const bookingBlock = calendar.createBookingRequestBlock({
+    unitId,
+    holderId: "guest-001",
+    start: "2026-12-10",
+    end: "2026-12-12",
+    clock: () => new Date("2026-07-22T10:00:00Z")
+  });
+  assert.throws(
+    () => calendar.extendOperatorHold(bookingBlock.commitmentId, { clock: () => new Date("2026-07-22T10:01:00Z") }),
+    /not an operator hold/i
+  );
+  assert.throws(
+    () => calendar.releaseOperatorHold(bookingBlock.commitmentId, { clock: () => new Date("2026-07-22T10:01:00Z") }),
+    /not an operator hold/i
+  );
+  assert.equal(calendar.getAuthoritativeAvailability({
+    unitId,
+    checkIn: "2026-12-10",
+    checkOut: "2026-12-11",
+    clock: () => new Date("2026-07-22T10:01:00Z")
+  }).isAvailable, false);
 });
