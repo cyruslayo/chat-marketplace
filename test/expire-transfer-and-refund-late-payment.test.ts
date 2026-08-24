@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { AvailabilityCalendar } from "../domains/shortlet/src/availability.js";
 import {
   BankTransferPaymentManager,
   BankTransferCheckoutSession,
@@ -16,6 +17,7 @@ function createMockOffer(overrides: Partial<ConditionalBookingOffer> = {}): Cond
     offerId: "off_test_11",
     offerVersion: 1,
     requestId: "req_test_11",
+    inventoryCommitmentId: "commitment_test_11",
     unitId: "unit_11",
     tenantId: "tenant_11",
     parties: {
@@ -84,6 +86,39 @@ function createCommandEnvelope<T extends Record<string, unknown>>(
 }
 
 describe("Issue 11: Expire bank-transfer payment and refund late success", () => {
+  it("Bank transfer finalizes only through the exact authoritative Booking commitment", () => {
+    const calendar = new AvailabilityCalendar();
+    const offer = createMockOffer();
+    const offerManager = { getOffer: () => offer };
+    const start = new Date("2026-07-22T10:00:00Z");
+    const commitment = calendar.createBookingRequestBlock({ unitId: offer.unitId, holderId: offer.parties.primaryGuest.id, start: offer.dates.checkIn, end: offer.dates.checkOut, clock: () => start });
+    calendar.transitionBookingRequestBlockToPaymentPending({ commitmentId: commitment.commitmentId, unitId: offer.unitId, start: offer.dates.checkIn, end: offer.dates.checkOut, clock: () => start });
+    const acceptedOffer = { ...offer, inventoryCommitmentId: commitment.commitmentId };
+    const manager = new BankTransferPaymentManager({ offerManager: { getOffer: () => acceptedOffer }, calendar });
+    const init = manager.initializeBankTransfer(createCommandEnvelope("bank_transfer.initialize", { offerId: acceptedOffer.offerId }), { clock: () => new Date("2026-07-22T10:05:00Z") });
+    const result = manager.verifyAndProcessTransfer(createCommandEnvelope("bank_transfer.verify_and_process", {
+      offerId: acceptedOffer.offerId,
+      transferReference: init.transferReference,
+      mockPspResult: { verified: true, status: "success", amountKobo: acceptedOffer.totalAmountDueNowKobo, currency: "NGN", pspReference: init.transferReference, payerId: acceptedOffer.parties.primaryGuest.id }
+    }), { clock: () => new Date("2026-07-22T10:15:00Z") });
+    assert.equal(result.outcome, "confirmed");
+    assert.equal(calendar.assertActiveCommitment({ commitmentId: commitment.commitmentId, unitId: offer.unitId, start: offer.dates.checkIn, end: offer.dates.checkOut, expectedKind: "confirmed_booking", clock: () => new Date("2026-07-22T10:31:00Z") }).commitmentId, commitment.commitmentId);
+    assert.equal(calendar.getAuthoritativeAvailability({ unitId: offer.unitId, checkIn: offer.dates.checkIn, checkOut: offer.dates.checkOut, clock: () => new Date("2026-07-22T10:31:00Z") }).isAvailable, false);
+
+    const failedCalendar = new AvailabilityCalendar();
+    const failedOffer = { ...createMockOffer({ offerId: "off_failed_authority" }) };
+    const failedCommitment = failedCalendar.createBookingRequestBlock({ unitId: failedOffer.unitId, holderId: failedOffer.parties.primaryGuest.id, start: failedOffer.dates.checkIn, end: failedOffer.dates.checkOut, clock: () => start });
+    failedCalendar.transitionBookingRequestBlockToPaymentPending({ commitmentId: failedCommitment.commitmentId, unitId: failedOffer.unitId, start: failedOffer.dates.checkIn, end: failedOffer.dates.checkOut, clock: () => start });
+    failedCalendar.releasePaymentPending(failedCommitment.commitmentId, { clock: () => new Date("2026-07-22T10:10:00Z") });
+    const failedManager = new BankTransferPaymentManager({ offerManager: { getOffer: () => ({ ...failedOffer, inventoryCommitmentId: failedCommitment.commitmentId }) }, calendar: failedCalendar });
+    const failedInit = failedManager.initializeBankTransfer(createCommandEnvelope("bank_transfer.initialize", { offerId: failedOffer.offerId }), { clock: () => new Date("2026-07-22T10:05:00Z") });
+    assert.throws(() => failedManager.verifyAndProcessTransfer(createCommandEnvelope("bank_transfer.verify_and_process", {
+      offerId: failedOffer.offerId,
+      transferReference: failedInit.transferReference,
+      mockPspResult: { verified: true, status: "success", amountKobo: failedOffer.totalAmountDueNowKobo, currency: "NGN", pspReference: failedInit.transferReference, payerId: failedOffer.parties.primaryGuest.id }
+    }), { clock: () => new Date("2026-07-22T10:15:00Z") }), /no longer active/i);
+    assert.equal(failedCalendar.getAuthoritativeAvailability({ unitId: failedOffer.unitId, checkIn: failedOffer.dates.checkIn, checkOut: failedOffer.dates.checkOut, clock: () => new Date("2026-07-22T10:15:00Z") }).isAvailable, true);
+  });
   it("AC 1: Only one Live Payment Attempt and reference may exist for the offer", () => {
     const offer = createMockOffer();
     const offerManager = { getOffer: () => offer };
@@ -106,8 +141,7 @@ describe("Issue 11: Expire bank-transfer payment and refund late success", () =>
     const offerManager = { getOffer: () => offer };
     let inventoryReleased = false;
     const calendar = {
-      getAuthoritativeAvailability: () => ({ isAvailable: true }),
-      blockDates: () => {},
+      transitionPaymentPendingToConfirmedBooking: () => {},
       releaseInventory: () => { inventoryReleased = true; }
     };
     const manager = new BankTransferPaymentManager({ offerManager, calendar });
@@ -172,8 +206,7 @@ describe("Issue 11: Expire bank-transfer payment and refund late success", () =>
     const offerManager = { getOffer: () => offer };
     let released = false;
     const calendar = {
-      getAuthoritativeAvailability: () => ({ isAvailable: true }),
-      blockDates: () => {},
+      transitionPaymentPendingToConfirmedBooking: () => {},
       releaseInventory: () => { released = true; }
     };
     const manager = new BankTransferPaymentManager({ offerManager, calendar });
@@ -216,7 +249,10 @@ describe("Issue 11: Expire bank-transfer payment and refund late success", () =>
   it("AC 4: Races among verification, expiry, release, duplicate callbacks, and Operator Blocks are tested with real transactions", () => {
     const offer = createMockOffer({ offerId: "off_race" });
     const offerManager = { getOffer: () => offer };
-    const manager = new BankTransferPaymentManager({ offerManager });
+    const manager = new BankTransferPaymentManager({
+      offerManager,
+      calendar: { transitionPaymentPendingToConfirmedBooking: () => {} }
+    });
 
     const startTime = new Date("2026-07-22T10:00:00Z");
     const session = manager.initializeBankTransfer(

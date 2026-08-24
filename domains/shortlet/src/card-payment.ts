@@ -111,13 +111,13 @@ export interface CardPaymentManagerOptions {
     findAll(): unknown[];
   };
   readonly calendar?: {
-    getAuthoritativeAvailability(
-      unitId: string,
-      checkIn: string,
-      checkOut: string,
-      clock: () => Date
-    ): { isAvailable: boolean };
-    blockDates(unitId: string, checkIn: string, checkOut: string, reservationId: string): void;
+    transitionPaymentPendingToConfirmedBooking(input: {
+      commitmentId: string;
+      unitId: string;
+      start: string;
+      end: string;
+      clock: () => Date;
+    }): unknown;
   };
   readonly audit?: {
     record(entry: Record<string, unknown>): void;
@@ -306,19 +306,6 @@ export class CardPaymentManager {
       throw new Error("Payment verification failed: Payment Window and Grace period have expired");
     }
 
-    // Revalidate inventory state
-    if (this.#calendar) {
-      const avail = this.#calendar.getAuthoritativeAvailability(
-        offer.unitId,
-        offer.dates.checkIn,
-        offer.dates.checkOut,
-        clock
-      );
-      if (!avail.isAvailable) {
-        throw new Error("Inventory verification failed: Unit dates are no longer available");
-      }
-    }
-
     // Revalidate Unit publication state from repository if provided
     if (this.#repository) {
       interface UnitRecord {
@@ -418,15 +405,22 @@ export class CardPaymentManager {
       });
     }
 
+    if (!this.#calendar) {
+      throw new Error("Authoritative availability calendar is required to confirm a Booking");
+    }
+    this.#calendar.transitionPaymentPendingToConfirmedBooking({
+      commitmentId: offer.inventoryCommitmentId,
+      unitId: offer.unitId,
+      start: offer.dates.checkIn,
+      end: offer.dates.checkOut,
+      clock: () => now
+    });
+
     // Save authoritative state
     this.#reservations.set(reservationId, reservation);
     this.#contracts.set(contractId, bookingContract);
     this.#ledgerEntries.set(reservationId, ledgerEntries);
     this.#processedPspReferences.set(pspReference, { reservationId, contractId });
-
-    if (this.#calendar) {
-      this.#calendar.blockDates(offer.unitId, offer.dates.checkIn, offer.dates.checkOut, reservationId);
-    }
 
     if (this.#audit) {
       this.#audit.record({

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  AvailabilityCalendar,
   CardPaymentManager
 } from "../domains/shortlet/src/index.js";
 import { PlatformCommandEnvelope } from "../packages/platform-core/src/index.js";
@@ -11,6 +12,7 @@ function createMockOfferManager() {
     offerId: "offer-123",
     offerVersion: 1,
     requestId: "req-123",
+    inventoryCommitmentId: "commitment-123",
     unitId: "unit-1",
     tenantId: "tenant-lagos",
     parties: {
@@ -83,10 +85,7 @@ function createMockRepository() {
 
 function createMockCalendar() {
   return {
-    getAuthoritativeAvailability(_unitId: string, _checkIn: string, _checkOut: string, _clock: () => Date) {
-      return { isAvailable: true };
-    },
-    blockDates(_unitId: string, _checkIn: string, _checkOut: string, _reservationId: string) {}
+    transitionPaymentPendingToConfirmedBooking() {}
   };
 }
 
@@ -328,6 +327,43 @@ test("Duplicate callbacks and command retries produce one Reservation, one contr
   assert.equal(duplicateResult.reservation.reservationId, firstResult.reservation.reservationId);
   assert.equal(duplicateResult.bookingContract.contractId, firstResult.bookingContract.contractId);
   assert.equal(duplicateResult.ledgerEntries, firstResult.ledgerEntries);
+});
+
+test("Card payment finalizes only through the exact authoritative Booking commitment", () => {
+  const calendar = new AvailabilityCalendar();
+  const clock = () => new Date("2026-08-01T12:10:00.000Z");
+  const commitment = calendar.createBookingRequestBlock({ unitId: "unit-1", holderId: "guest-456", start: "2026-08-10", end: "2026-08-12", clock: () => new Date("2026-08-01T12:00:00.000Z") });
+  calendar.transitionBookingRequestBlockToPaymentPending({ commitmentId: commitment.commitmentId, unitId: "unit-1", start: "2026-08-10", end: "2026-08-12", clock: () => new Date("2026-08-01T12:00:00.000Z") });
+  const offer = { ...createMockOfferManager().getOffer("offer-123"), inventoryCommitmentId: commitment.commitmentId, dates: { checkIn: "2026-08-10", checkOut: "2026-08-12", nights: 2 } };
+  const manager = new CardPaymentManager({ offerManager: { getOffer: () => offer }, repository: createMockRepository(), calendar });
+  const pspReference = "psp_ref_authoritative";
+  const envelope = createEnvelope("card_payment.verify_and_confirm", {
+    offerId: offer.offerId,
+    pspReference,
+    mockVerifyResult: { verified: true, status: "success" as const, amountKobo: offer.totalAmountDueNowKobo, currency: "NGN", pspReference, payerId: "guest-456" }
+  });
+
+  assert.equal(calendar.assertActiveCommitment({ commitmentId: commitment.commitmentId, unitId: "unit-1", start: "2026-08-10", end: "2026-08-12", expectedKind: "payment_pending", clock }).kind, "payment_pending");
+  const result = manager.verifyAndConfirmCardPayment(envelope, { clock });
+  assert.equal(result.reservation.status, "confirmed");
+  assert.equal(calendar.assertActiveCommitment({ commitmentId: commitment.commitmentId, unitId: "unit-1", start: "2026-08-10", end: "2026-08-12", expectedKind: "confirmed_booking", clock }).commitmentId, commitment.commitmentId);
+  assert.equal(calendar.getAuthoritativeAvailability({ unitId: "unit-1", checkIn: "2026-08-10", checkOut: "2026-08-12", clock }).isAvailable, false);
+  const duplicate = manager.verifyAndConfirmCardPayment(envelope, { clock });
+  assert.equal(duplicate.reservation.reservationId, result.reservation.reservationId);
+
+  const failedCalendar = new AvailabilityCalendar();
+  const failedCommitment = failedCalendar.createBookingRequestBlock({ unitId: "unit-1", holderId: "guest-456", start: "2026-09-10", end: "2026-09-12", clock: () => new Date("2026-08-01T12:00:00.000Z") });
+  failedCalendar.transitionBookingRequestBlockToPaymentPending({ commitmentId: failedCommitment.commitmentId, unitId: "unit-1", start: "2026-09-10", end: "2026-09-12", clock: () => new Date("2026-08-01T12:00:00.000Z") });
+  failedCalendar.releasePaymentPending(failedCommitment.commitmentId, { clock: () => new Date("2026-08-01T12:10:00.000Z") });
+  const failedOffer = { ...createMockOfferManager().getOffer("offer-123"), offerId: "offer-failed", inventoryCommitmentId: failedCommitment.commitmentId, dates: { checkIn: "2026-09-10", checkOut: "2026-09-12", nights: 2 } };
+  const failedManager = new CardPaymentManager({ offerManager: { getOffer: () => failedOffer }, repository: createMockRepository(), calendar: failedCalendar });
+  assert.throws(() => failedManager.verifyAndConfirmCardPayment(createEnvelope("card_payment.verify_and_confirm", {
+    offerId: failedOffer.offerId,
+    pspReference: "psp_ref_failed_inventory",
+    mockVerifyResult: { verified: true, status: "success" as const, amountKobo: failedOffer.totalAmountDueNowKobo, currency: "NGN", pspReference: "psp_ref_failed_inventory", payerId: "guest-456" }
+  }), { clock }), /no longer active/i);
+  assert.equal(failedManager.projectInteractionState(failedOffer.offerId).paymentStatus, "awaiting_verification");
+  assert.equal(failedCalendar.getAuthoritativeAvailability({ unitId: "unit-1", checkIn: "2026-09-10", checkOut: "2026-09-12", clock }).isAvailable, true);
 });
 
 test("Payment success appears in interaction state only after the authoritative transaction commits", () => {

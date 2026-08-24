@@ -100,6 +100,7 @@ test("Offer creation revalidates current Unit eligibility, authority, availabili
   assert.ok(offer.offerId);
   assert.equal(offer.status, "issued");
   assert.equal(offer.requestId, request.requestId);
+  assert.equal(offer.inventoryCommitmentId, request.inventoryCommitmentId);
   assert.equal(offer.unitId, s.unit.id);
   assert.equal(offer.parties.primaryGuest.id, "guest-101");
   assert.equal(offer.parties.operator.id, s.unit.operator.id);
@@ -387,4 +388,24 @@ test("Conventional and Generative Surface acceptance reach the same command and 
   const auditSurface = auditEntries.find(e => e.offerId === offer2.offerId);
   assert.ok(auditWeb);
   assert.ok(auditSurface);
+});
+
+test("Conditional Offer rejects a confirmed request after its exact inventory commitment is released", () => {
+  const s = setup();
+  const clock = () => new Date("2026-07-22T10:00:00Z");
+  const { request } = createConfirmedRequest(s, clock);
+
+  assert.ok(request.holdId);
+  s.calendar.releasePaymentPending(request.holdId, { clock });
+
+  const issueEnv = createPlatformCommandEnvelope({
+    commandName: "conditional_offer.issue",
+    principal: { id: s.unit.operator.id, role: "operator", tenantId: "tenant-lagos" },
+    payload: { requestId: request.requestId }
+  });
+
+  assert.throws(
+    () => s.offerManager.issueOffer(issueEnv, { clock }),
+    /inventory commitment is no longer valid/i
+  );
 });
