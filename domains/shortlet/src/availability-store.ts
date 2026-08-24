@@ -1,6 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 
-export type AvailabilityCommitmentKind = "hold" | "operator_block";
+export type AvailabilityCommitmentKind = "hold" | "operator_block" | "booking_request_block" | "payment_pending";
 export type AvailabilityCommitmentState = "active" | "released" | "expired";
 
 export interface AvailabilityCommitment {
@@ -164,7 +164,7 @@ export class SqliteAvailabilityStore {
     });
   }
 
-  assertActiveCommitment(commitmentId: string, unitId: string, start: string, end: string, now: string): AvailabilityCommitment {
+  assertActiveCommitment(commitmentId: string, unitId: string, start: string, end: string, now: string, expectedKind?: AvailabilityCommitmentKind): AvailabilityCommitment {
     return this.#withWriteTransaction(() => {
       this.#expireStale(now);
       const row = this.#database.prepare(`
@@ -173,11 +173,11 @@ export class SqliteAvailabilityStore {
         FROM availability_commitments
         WHERE commitment_id = $commitmentId
           AND unit_id = $unitId
-          AND kind = 'hold'
           AND state = 'active'
           AND start_date = $start
           AND end_date = $end
-      `).get({ $commitmentId: commitmentId, $unitId: unitId, $start: start, $end: end }) as CommitmentRow | undefined;
+          AND ($kind IS NULL OR kind = $kind)
+      `).get({ $commitmentId: commitmentId, $unitId: unitId, $start: start, $end: end, $kind: expectedKind ?? null }) as CommitmentRow | undefined;
       if (!row) throw new Error("Availability commitment is no longer valid");
       return project(row);
     });
@@ -206,6 +206,56 @@ export class SqliteAvailabilityStore {
         SET state = 'released', released_at = $now
         WHERE commitment_id = $holdId AND kind = 'hold' AND state = 'active'
       `).run({ $holdId: holdId, $now: now });
+    });
+  }
+
+  releaseBookingRequestBlock(commitmentId: string, now: string): void {
+    this.#withWriteTransaction(() => {
+      this.#expireStale(now);
+      const row = this.#database.prepare(`
+        SELECT kind, state FROM availability_commitments WHERE commitment_id = $commitmentId
+      `).get({ $commitmentId: commitmentId }) as { kind: AvailabilityCommitmentKind; state: AvailabilityCommitmentState } | undefined;
+      if (row && row.kind !== "booking_request_block") {
+        throw new Error("Availability commitment is not a booking request block");
+      }
+      this.#database.prepare(`
+        UPDATE availability_commitments
+        SET state = 'released', released_at = $now
+        WHERE commitment_id = $commitmentId AND kind = 'booking_request_block' AND state = 'active'
+      `).run({ $commitmentId: commitmentId, $now: now });
+    });
+  }
+
+  releasePaymentPending(commitmentId: string, now: string): void {
+    this.#withWriteTransaction(() => {
+      this.#expireStale(now);
+      this.#database.prepare(`
+        UPDATE availability_commitments
+        SET state = 'released', released_at = $now
+        WHERE commitment_id = $commitmentId AND kind = 'payment_pending' AND state = 'active'
+      `).run({ $commitmentId: commitmentId, $now: now });
+    });
+  }
+
+  transitionBookingRequestBlockToPaymentPending({ commitmentId, unitId, start, end, now }: { commitmentId: string; unitId: string; start: string; end: string; now: string }): AvailabilityCommitment {
+    return this.#withWriteTransaction(() => {
+      this.#expireStale(now);
+      const row = this.#database.prepare(`
+        SELECT commitment_id, unit_id, kind, start_date, end_date, state,
+               created_at, expires_at, extension_count, operator_id, holder_id, reason
+        FROM availability_commitments
+        WHERE commitment_id = $commitmentId AND state = 'active'
+      `).get({ $commitmentId: commitmentId }) as CommitmentRow | undefined;
+      if (!row || row.kind !== "booking_request_block" || row.unit_id !== unitId || row.start_date !== start || row.end_date !== end) {
+        throw new Error("Booking request block is no longer valid for payment pending transition");
+      }
+      const expiresAt = new Date(new Date(now).getTime() + 20 * 60 * 1000).toISOString();
+      this.#database.prepare(`
+        UPDATE availability_commitments
+        SET kind = 'payment_pending', expires_at = $expiresAt
+        WHERE commitment_id = $commitmentId AND state = 'active' AND kind = 'booking_request_block'
+      `).run({ $commitmentId: commitmentId, $expiresAt: expiresAt });
+      return project({ ...row, kind: "payment_pending", expires_at: expiresAt });
     });
   }
 

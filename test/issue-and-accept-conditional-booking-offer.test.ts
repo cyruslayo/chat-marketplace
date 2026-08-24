@@ -395,7 +395,7 @@ test("Conditional Offer rejects a confirmed request after its exact inventory co
   const { request } = createConfirmedRequest(s, clock);
 
   assert.ok(request.holdId);
-  s.calendar.releaseHold(request.holdId, { clock });
+  s.calendar.releasePaymentPending(request.holdId, { clock });
 
   const issueEnv = createPlatformCommandEnvelope({
     commandName: "conditional_offer.issue",

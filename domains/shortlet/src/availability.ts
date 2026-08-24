@@ -1,7 +1,8 @@
 import {
   AvailabilityConflictError,
   SqliteAvailabilityStore,
-  type AvailabilityCommitment
+  type AvailabilityCommitment,
+  type AvailabilityCommitmentKind
 } from "./availability-store.js";
 
 export interface AvailabilityCalendarOptions {
@@ -34,9 +35,10 @@ function dateValue(value: DateValue): string {
 }
 
 function conflictReason(commitment: AvailabilityCommitment): string {
-  return commitment.kind === "operator_block"
-    ? "Overlaps with Operator Block"
-    : "Overlaps with active Hold";
+  if (commitment.kind === "operator_block") return "Overlaps with Operator Block";
+  if (commitment.kind === "booking_request_block") return "Overlaps with Booking Request Block";
+  if (commitment.kind === "payment_pending") return "Overlaps with Payment Pending";
+  return "Overlaps with active Hold";
 }
 
 export class AvailabilityCalendar {
@@ -121,6 +123,34 @@ export class AvailabilityCalendar {
     this.#store.release(holdId, clock().toISOString());
   }
 
+  createBookingRequestBlock({ unitId, holderId, start, end, clock = () => new Date() }: { unitId: string; holderId: string; start: DateValue; end: DateValue; clock?: Clock }) {
+    const now = clock();
+    const commitment = this.#store.create({
+      commitmentId: `brb-${crypto.randomUUID()}`,
+      unitId,
+      kind: "booking_request_block",
+      start: dateValue(start),
+      end: dateValue(end),
+      createdAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + 30 * 60 * 1000).toISOString(),
+      holderId
+    });
+    if (!commitment.expiresAt) throw new Error("Booking request block must expire");
+    return { commitmentId: commitment.commitmentId, unitId: commitment.unitId, holderId: commitment.holderId ?? holderId, start, end, createdAt: commitment.createdAt, expiresAt: commitment.expiresAt };
+  }
+
+  releaseBookingRequestBlock(commitmentId: string, { clock = () => new Date() }: { clock?: Clock } = {}): void {
+    this.#store.releaseBookingRequestBlock(commitmentId, clock().toISOString());
+  }
+
+  releasePaymentPending(commitmentId: string, { clock = () => new Date() }: { clock?: Clock } = {}): void {
+    this.#store.releasePaymentPending(commitmentId, clock().toISOString());
+  }
+
+  transitionBookingRequestBlockToPaymentPending({ commitmentId, unitId, start, end, clock = () => new Date() }: { commitmentId: string; unitId: string; start: DateValue; end: DateValue; clock?: Clock }) {
+    return this.#store.transitionBookingRequestBlockToPaymentPending({ commitmentId, unitId, start: dateValue(start), end: dateValue(end), now: clock().toISOString() });
+  }
+
   extendHold(holdId: string, { clock = () => new Date() }: { clock?: Clock } = {}) {
     const hold = this.#store.extend(holdId, clock().toISOString());
     if (!hold.expiresAt) throw new Error("Extended hold must expire");
@@ -136,9 +166,9 @@ export class AvailabilityCalendar {
     };
   }
 
-  assertActiveCommitment({ commitmentId, unitId, start, end, clock = () => new Date() }: { commitmentId?: string; unitId: string; start: DateValue; end: DateValue; clock?: Clock }): AvailabilityCommitment {
+  assertActiveCommitment({ commitmentId, unitId, start, end, expectedKind, clock = () => new Date() }: { commitmentId?: string; unitId: string; start: DateValue; end: DateValue; expectedKind?: AvailabilityCommitmentKind; clock?: Clock }): AvailabilityCommitment {
     if (!commitmentId) throw new Error("Availability commitment is required");
-    return this.#store.assertActiveCommitment(commitmentId, unitId, dateValue(start), dateValue(end), clock().toISOString());
+    return this.#store.assertActiveCommitment(commitmentId, unitId, dateValue(start), dateValue(end), clock().toISOString(), expectedKind);
   }
 
   getAuthoritativeAvailability(options: { unitId: string; checkIn: DateValue; checkOut: DateValue; clock?: Clock }): { isAvailable: boolean; conflictReason?: string; unitId: string; checkIn: DateValue; checkOut: DateValue };

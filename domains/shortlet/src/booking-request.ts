@@ -228,15 +228,14 @@ export class BookingRequestManager {
       }
     }
 
-    let hold = null;
+    let inventoryBlock = null;
     if (this.#calendar) {
-      hold = this.#calendar.createHold({
+      inventoryBlock = this.#calendar.createBookingRequestBlock({
         unitId: draft.unitId,
         holderId: draft.primaryGuest.id,
         start: draft.checkIn,
         end: draft.checkOut,
-        durationMinutes: 30,
-        clock
+        clock: () => now
       });
     }
 
@@ -259,7 +258,8 @@ export class BookingRequestManager {
       checkOut: draft.checkOut,
       nights,
       quote,
-      holdId: hold?.holdId,
+      inventoryCommitmentId: inventoryBlock?.commitmentId,
+      holdId: inventoryBlock?.commitmentId,
       disclosedAt: disclosedAtIso,
       deliveryDeadlineAt: deliveryDeadlineIso,
       operatorResponseDeadlineAt: operatorResponseDeadlineIso,
@@ -276,7 +276,7 @@ export class BookingRequestManager {
         requestId,
         draftId,
         unitId: draft.unitId,
-        holdId: hold?.holdId,
+        holdId: inventoryBlock?.commitmentId,
         primaryGuestId: draft.primaryGuest.id,
         commandEnvelopeId: envelope.commandId,
         disclosedAt: disclosedAtIso
@@ -363,8 +363,8 @@ export class BookingRequestManager {
     const now = clock();
     if (now.getTime() >= new Date(req.deliveryDeadlineAt).getTime()) {
       req.status = "delivery_failed";
-      if (req.holdId && this.#calendar) {
-        this.#calendar.releaseHold(req.holdId);
+      if (req.inventoryCommitmentId && this.#calendar) {
+        this.#calendar.releaseBookingRequestBlock(req.inventoryCommitmentId, { clock });
       }
       if (this.#audit) {
         this.#audit.record({
@@ -397,8 +397,8 @@ export class BookingRequestManager {
     const now = clock();
     if (now.getTime() >= new Date(req.operatorResponseDeadlineAt).getTime()) {
       req.status = "expired";
-      if (req.holdId && this.#calendar) {
-        this.#calendar.releaseHold(req.holdId);
+      if (req.inventoryCommitmentId && this.#calendar) {
+        this.#calendar.releaseBookingRequestBlock(req.inventoryCommitmentId, { clock });
       }
       if (this.#audit) {
         this.#audit.record({
@@ -438,6 +438,18 @@ export class BookingRequestManager {
     if (req.status !== "disclosed") {
       throw new Error(`Cannot confirm booking request in status '${req.status}'`);
     }
+
+    if (!req.inventoryCommitmentId || !this.#calendar) {
+      throw new Error("Booking request inventory commitment is required for confirmation");
+    }
+
+    this.#calendar.transitionBookingRequestBlockToPaymentPending({
+      commitmentId: req.inventoryCommitmentId,
+      unitId: req.unitId,
+      start: req.checkIn,
+      end: req.checkOut,
+      clock: () => now
+    });
 
     req.status = "confirmed";
     req.confirmedAt = now.toISOString();
@@ -480,8 +492,8 @@ export class BookingRequestManager {
     req.declinedAt = now.toISOString();
     req.declineReason = reason;
 
-    if (req.holdId && this.#calendar) {
-      this.#calendar.releaseHold(req.holdId);
+    if (req.inventoryCommitmentId && this.#calendar) {
+      this.#calendar.releaseBookingRequestBlock(req.inventoryCommitmentId, { clock });
     }
 
     if (this.#audit) {

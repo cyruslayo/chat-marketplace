@@ -161,6 +161,7 @@ export class ConditionalOfferManager {
           unitId: request.unitId,
           start: request.checkIn,
           end: request.checkOut,
+          expectedKind: "payment_pending",
           clock
         });
       } catch {

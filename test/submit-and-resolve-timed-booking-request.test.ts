@@ -87,7 +87,7 @@ test("Drafts do not block inventory; successfully disclosed requests do so exclu
     clock
   });
   assert.equal(postDiscloseAvailability.isAvailable, false);
-  assert.equal(postDiscloseAvailability.conflictReason, "Overlaps with active Hold");
+  assert.equal(postDiscloseAvailability.conflictReason, "Overlaps with Booking Request Block");
 });
 
 test("Disclosure enforces one-to-fourteen nights, 90-day horizon, active hours window, and safe cutoff", () => {
@@ -385,6 +385,79 @@ test("Technical delivery, delivery failure, Operator response, expiry, confirmat
   assert.ok(types3.includes("booking_request.expired"));
   const expireAudit = entries3.find((e) => e.type === "booking_request.expired");
   assert.equal(expireAudit.commandEnvelopeId, expireEnv.commandId);
+});
+
+test("A disclosed Booking Request creates an explicit 30-minute booking request block", () => {
+  const { manager, calendar, unit } = setup();
+  const clock = () => new Date("2026-07-22T10:00:00Z");
+  const draft = manager.createDraft({ unitId: unit.id, primaryGuest: { id: "guest-block", name: "Block Guest", isGovernmentIdVerified: true }, isPrimaryGuestOccupant: true, occupants: [{ name: "Block Guest" }], checkIn: "2026-08-25", checkOut: "2026-08-27", clock });
+  const request = manager.discloseBookingRequest(createPlatformCommandEnvelope({ commandName: "booking_request.disclose", principal: { id: "guest-block", role: "guest" }, payload: { draftId: draft.draftId } }), { clock });
+
+  assert.equal(request.inventoryCommitmentId, request.holdId);
+  assert.ok(request.inventoryCommitmentId);
+  const commitment = calendar.assertActiveCommitment({ commitmentId: request.inventoryCommitmentId, unitId: unit.id, start: request.checkIn, end: request.checkOut, expectedKind: "booking_request_block", clock });
+  assert.equal(commitment.kind, "booking_request_block");
+  assert.equal(commitment.expiresAt, "2026-07-22T10:30:00.000Z");
+  assert.equal(calendar.getAuthoritativeAvailability({ unitId: unit.id, checkIn: request.checkIn, checkOut: request.checkOut, clock }).isAvailable, false);
+  assert.throws(() => calendar.createBookingRequestBlock({ unitId: unit.id, holderId: "other", start: request.checkIn, end: request.checkOut, clock }), /availability conflict/i);
+
+  calendar.releaseBookingRequestBlock(request.inventoryCommitmentId, { clock });
+  assert.throws(
+    () => manager.confirmBookingRequest(createPlatformCommandEnvelope({ commandName: "booking_request.confirm", principal: { id: unit.operator.id, role: "operator" }, payload: { requestId: request.requestId } }), { clock }),
+    /booking request block is no longer valid/i
+  );
+  assert.equal(manager.getRequest(request.requestId).status, "disclosed");
+  assert.equal(calendar.getAuthoritativeAvailability({ unitId: unit.id, checkIn: request.checkIn, checkOut: request.checkOut, clock }).isAvailable, true);
+});
+
+test("Booking Request confirmation atomically transitions the same commitment to Payment Pending", () => {
+  const { manager, calendar, unit } = setup();
+  const disclosureClock = () => new Date("2026-07-22T10:00:00Z");
+  const confirmationClock = () => new Date("2026-07-22T10:10:00Z");
+  const draft = manager.createDraft({ unitId: unit.id, primaryGuest: { id: "guest-confirm", name: "Confirm Guest", isGovernmentIdVerified: true }, isPrimaryGuestOccupant: true, occupants: [{ name: "Confirm Guest" }], checkIn: "2026-09-01", checkOut: "2026-09-04", clock: disclosureClock });
+  const request = manager.discloseBookingRequest(createPlatformCommandEnvelope({ commandName: "booking_request.disclose", principal: { id: "guest-confirm", role: "guest" }, payload: { draftId: draft.draftId } }), { clock: disclosureClock });
+  const confirmed = manager.confirmBookingRequest(createPlatformCommandEnvelope({ commandName: "booking_request.confirm", principal: { id: unit.operator.id, role: "operator" }, payload: { requestId: request.requestId } }), { clock: confirmationClock });
+
+  assert.equal(confirmed.status, "confirmed");
+  assert.equal(confirmed.inventoryCommitmentId, request.inventoryCommitmentId);
+  const commitment = calendar.assertActiveCommitment({ commitmentId: request.inventoryCommitmentId, unitId: unit.id, start: request.checkIn, end: request.checkOut, expectedKind: "payment_pending", clock: confirmationClock });
+  assert.equal(commitment.kind, "payment_pending");
+  assert.equal(commitment.expiresAt, "2026-07-22T10:30:00.000Z");
+  assert.equal(calendar.getAuthoritativeAvailability({ unitId: unit.id, checkIn: request.checkIn, checkOut: request.checkOut, clock: confirmationClock }).isAvailable, false);
+  assert.throws(() => calendar.assertActiveCommitment({ commitmentId: request.inventoryCommitmentId, unitId: unit.id, start: request.checkIn, end: request.checkOut, expectedKind: "booking_request_block", clock: confirmationClock }), /no longer valid/i);
+});
+
+test("Disclosure and confirmation use one captured instant with an advancing clock", () => {
+  const { manager, calendar, unit } = setup();
+  const draftClock = () => new Date("2026-07-22T09:00:00Z");
+  const disclosureStart = new Date("2026-07-22T10:00:00Z");
+  let disclosureCalls = 0;
+  const disclosureClock = () => new Date(disclosureStart.getTime() + disclosureCalls++ * 60 * 1000);
+  const draft = manager.createDraft({ unitId: unit.id, primaryGuest: { id: "guest-clock", name: "Clock Guest", isGovernmentIdVerified: true }, isPrimaryGuestOccupant: true, occupants: [{ name: "Clock Guest" }], checkIn: "2026-10-01", checkOut: "2026-10-04", clock: draftClock });
+  const request = manager.discloseBookingRequest(createPlatformCommandEnvelope({ commandName: "booking_request.disclose", principal: { id: "guest-clock", role: "guest" }, payload: { draftId: draft.draftId } }), { clock: disclosureClock });
+  const disclosureT = disclosureStart.toISOString();
+  const disclosureExpiry = new Date(disclosureStart.getTime() + 30 * 60 * 1000).toISOString();
+
+  assert.equal(request.disclosedAt, disclosureT);
+  assert.equal(request.operatorResponseDeadlineAt, disclosureExpiry);
+  assert.ok(request.inventoryCommitmentId);
+  const block = calendar.assertActiveCommitment({ commitmentId: request.inventoryCommitmentId, unitId: unit.id, start: request.checkIn, end: request.checkOut, expectedKind: "booking_request_block", clock: () => disclosureStart });
+  assert.equal(block.createdAt, disclosureT);
+  assert.equal(block.expiresAt, disclosureExpiry);
+  assert.equal(block.expiresAt, request.operatorResponseDeadlineAt);
+
+  const confirmationStart = new Date("2026-07-22T10:10:00Z");
+  let confirmationCalls = 0;
+  const confirmationClock = () => new Date(confirmationStart.getTime() + confirmationCalls++ * 60 * 1000);
+  const confirmed = manager.confirmBookingRequest(createPlatformCommandEnvelope({ commandName: "booking_request.confirm", principal: { id: unit.operator.id, role: "operator" }, payload: { requestId: request.requestId } }), { clock: confirmationClock });
+  const confirmationC = confirmationStart.toISOString();
+  const paymentExpiry = new Date(confirmationStart.getTime() + 20 * 60 * 1000).toISOString();
+
+  assert.equal(confirmed.confirmedAt, confirmationC);
+  assert.equal(confirmed.inventoryCommitmentId, request.inventoryCommitmentId);
+  const paymentPending = calendar.assertActiveCommitment({ commitmentId: request.inventoryCommitmentId, unitId: unit.id, start: request.checkIn, end: request.checkOut, expectedKind: "payment_pending", clock: () => confirmationStart });
+  assert.equal(paymentPending.expiresAt, paymentExpiry);
+  assert.equal(paymentPending.expiresAt, new Date(new Date(confirmed.confirmedAt).getTime() + 20 * 60 * 1000).toISOString());
 });
 
 test("Agent, conventional web, and permitted Operator interfaces produce the same Platform Command Envelope and outcome", () => {
