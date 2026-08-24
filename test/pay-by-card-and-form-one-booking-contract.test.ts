@@ -7,7 +7,9 @@ import {
 import { PlatformCommandEnvelope } from "../packages/platform-core/src/index.js";
 
 
-function createMockOfferManager() {
+function createMockOfferManager(
+  distinctPayer: { id: string; name: string } | null = null
+) {
   const dummyOffer = {
     offerId: "offer-123",
     offerVersion: 1,
@@ -18,7 +20,7 @@ function createMockOfferManager() {
     parties: {
       primaryGuest: { id: "guest-456", name: "Ada Okafor" },
       operator: { id: "op-789", name: "Lekki Luxury Homes" },
-      distinctPayer: null
+      distinctPayer
     },
     unit: { id: "unit-1", title: "Waterfront Suite", propertyId: "prop-1", location: { city: "Lagos" } },
     dates: { checkIn: "2026-08-10", checkOut: "2026-08-12", nights: 2 },
@@ -364,6 +366,56 @@ test("Card payment finalizes only through the exact authoritative Booking commit
   }), { clock }), /no longer active/i);
   assert.equal(failedManager.projectInteractionState(failedOffer.offerId).paymentStatus, "awaiting_verification");
   assert.equal(failedCalendar.getAuthoritativeAvailability({ unitId: "unit-1", checkIn: "2026-09-10", checkOut: "2026-09-12", clock }).isAvailable, true);
+});
+
+test("Card payment attributes a permitted distinct payer without replacing the Primary Guest", () => {
+  const offerManager = createMockOfferManager({ id: "payer-789", name: "Authorized Payer" });
+  const clock = () => new Date("2026-08-01T12:10:00.000Z");
+  const distinctPayerManager = new CardPaymentManager({
+    offerManager,
+    repository: createMockRepository(),
+    calendar: createMockCalendar()
+  });
+  const successfulReference = "psp_ref_distinct_payer";
+
+  const result = distinctPayerManager.verifyAndConfirmCardPayment(createEnvelope("card_payment.verify_and_confirm", {
+    offerId: "offer-123",
+    pspReference: successfulReference,
+    mockVerifyResult: {
+      verified: true,
+      status: "success" as const,
+      amountKobo: 15000000,
+      currency: "NGN",
+      pspReference: successfulReference,
+      payerId: "payer-789"
+    }
+  }), { clock });
+
+  assert.equal(result.reservation.status, "confirmed");
+  assert.equal(result.bookingContract.parties.primaryGuest.id, "guest-456");
+  assert.equal(result.bookingContract.parties.distinctPayer?.id, "payer-789");
+
+  const primaryGuestManager = new CardPaymentManager({
+    offerManager: createMockOfferManager({ id: "payer-789", name: "Authorized Payer" }),
+    repository: createMockRepository(),
+    calendar: createMockCalendar()
+  });
+  const primaryGuestReference = "psp_ref_primary_on_distinct";
+  assert.throws(
+    () => primaryGuestManager.verifyAndConfirmCardPayment(createEnvelope("card_payment.verify_and_confirm", {
+      offerId: "offer-123",
+      pspReference: primaryGuestReference,
+      mockVerifyResult: {
+        verified: true,
+        status: "success" as const,
+        amountKobo: 15000000,
+        currency: "NGN",
+        pspReference: primaryGuestReference,
+        payerId: "guest-456"
+      }
+    }), { clock }),
+    /Payer attribution verification failed/
+  );
 });
 
 test("Payment success appears in interaction state only after the authoritative transaction commits", () => {

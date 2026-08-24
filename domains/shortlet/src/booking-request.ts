@@ -1,6 +1,14 @@
 import { PlatformCommandEnvelope, createPlatformCommandEnvelope } from "../../../packages/platform-core/src/index.js";
 import { StayDateRange } from "./browse.js";
 import { createStayQuote } from "./quote.js";
+import {
+  DistinctPayer,
+  DistinctPayerAttestation,
+  GuestVerificationService,
+  OvernightOccupant,
+  PrimaryGuest,
+  SelfBookingAttestation
+} from "./guest-verification.js";
 
 export function getWatTime(date: Date) {
   const formatter = new Intl.DateTimeFormat("en-GB", {
@@ -25,11 +33,11 @@ export function getWatTime(date: Date) {
 }
 
 export interface OccupancyDetails {
-  primaryGuest: { id: string; name: string; isGovernmentIdVerified?: boolean };
-  isPrimaryGuestOccupant: boolean;
-  occupants?: Array<{ name: string }>;
-  distinctPayer?: { id: string; name: string } | null;
-  payerAttestationAccepted?: boolean;
+  primaryGuest: PrimaryGuest;
+  occupants: Array<OvernightOccupant>;
+  selfBookingAttestation: SelfBookingAttestation;
+  distinctPayer?: DistinctPayer | null;
+  distinctPayerAttestation?: DistinctPayerAttestation;
 }
 
 export interface CreateDraftOptions extends OccupancyDetails {
@@ -44,7 +52,7 @@ export class BookingRequestManager {
   #repository: any;
   #audit: any;
   #calendar: any;
-  #guestVerification: any;
+  #guestVerification: GuestVerificationService;
   #drafts = new Map<string, any>();
   #requests = new Map<string, any>();
 
@@ -52,17 +60,17 @@ export class BookingRequestManager {
     repository = null,
     audit = null,
     calendar = null,
-    guestVerification = null
+    guestVerification
   }: {
     repository?: any;
     audit?: any;
     calendar?: any;
-    guestVerification?: any;
+    guestVerification?: GuestVerificationService;
   } = {}) {
     this.#repository = repository;
     this.#audit = audit;
     this.#calendar = calendar;
-    this.#guestVerification = guestVerification;
+    this.#guestVerification = guestVerification ?? new GuestVerificationService({ repository });
   }
 
   createDraft(
@@ -85,10 +93,10 @@ export class BookingRequestManager {
     const {
       unitId,
       primaryGuest,
-      isPrimaryGuestOccupant,
       occupants = [],
+      selfBookingAttestation,
       distinctPayer = null,
-      payerAttestationAccepted = false,
+      distinctPayerAttestation,
       checkIn,
       checkOut,
       selectedOptionalServices = []
@@ -98,17 +106,36 @@ export class BookingRequestManager {
     if (!primaryGuest) throw new Error("primaryGuest is required to create a draft");
     if (!checkIn || !checkOut) throw new Error("checkIn and checkOut dates are required");
 
+    const canonicalPrimaryGuest: PrimaryGuest = {
+      id: primaryGuest.id,
+      name: primaryGuest.name
+    };
+    const canonicalOccupants: OvernightOccupant[] = occupants.map(({ name }) => ({ name }));
+    const canonicalDistinctPayer = distinctPayer
+      ? { id: distinctPayer.id, name: distinctPayer.name }
+      : null;
+    const canonicalSelfBookingAttestation = selfBookingAttestation
+      ? { accepted: selfBookingAttestation.accepted === true, version: selfBookingAttestation.version }
+      : undefined;
+    const canonicalDistinctPayerAttestation = distinctPayerAttestation
+      ? { accepted: distinctPayerAttestation.accepted === true, version: distinctPayerAttestation.version }
+      : undefined;
+
     const draftId = `draft-${crypto.randomUUID()}`;
     const now = clock();
 
     const draft = Object.freeze({
       draftId,
       unitId,
-      primaryGuest: Object.freeze({ ...primaryGuest }),
-      isPrimaryGuestOccupant,
-      occupants: Object.freeze([...occupants]),
-      distinctPayer: distinctPayer ? Object.freeze({ ...distinctPayer }) : null,
-      payerAttestationAccepted,
+      primaryGuest: Object.freeze(canonicalPrimaryGuest),
+      occupants: Object.freeze(canonicalOccupants),
+      selfBookingAttestation: canonicalSelfBookingAttestation
+        ? Object.freeze(canonicalSelfBookingAttestation)
+        : undefined,
+      distinctPayer: canonicalDistinctPayer ? Object.freeze(canonicalDistinctPayer) : null,
+      distinctPayerAttestation: canonicalDistinctPayerAttestation
+        ? Object.freeze(canonicalDistinctPayerAttestation)
+        : undefined,
       checkIn,
       checkOut,
       selectedOptionalServices: Object.freeze([...selectedOptionalServices]),
@@ -148,6 +175,24 @@ export class BookingRequestManager {
     const { draftId, autoDeliver = true } = envelope.payload ?? {};
     const draft = this.getDraft(draftId);
 
+    const principal = envelope.principal;
+    const tenantId = principal?.tenantId;
+    if (!tenantId) throw new Error("Authenticated tenant is required for disclosure");
+    if (!principal.id || principal.id !== draft.primaryGuest.id) {
+      throw new Error("Authenticated principal must match the Primary Guest");
+    }
+
+    const identityValidation = this.#guestVerification.validateDisclosure({
+      tenantId,
+      unitId: draft.unitId,
+      primaryGuest: draft.primaryGuest,
+      occupants: draft.occupants,
+      selfBookingAttestation: draft.selfBookingAttestation,
+      distinctPayer: draft.distinctPayer,
+      distinctPayerAttestation: draft.distinctPayerAttestation,
+      attestingPrincipalId: principal.id
+    });
+
     const now = clock();
     const watNow = getWatTime(now);
 
@@ -185,19 +230,7 @@ export class BookingRequestManager {
       }
     }
 
-    // 4. Identity & Occupant Verification
-    if (this.#guestVerification) {
-      this.#guestVerification.validateDisclosure({
-        unitId: draft.unitId,
-        primaryGuest: draft.primaryGuest,
-        isPrimaryGuestOccupant: draft.isPrimaryGuestOccupant,
-        occupants: draft.occupants,
-        distinctPayer: draft.distinctPayer,
-        payerAttestationAccepted: draft.payerAttestationAccepted
-      });
-    }
-
-    // 5. Quote Validation
+    // 4. Quote Validation
     let unit = null;
     if (this.#repository) {
       unit = this.#repository.findById
@@ -251,9 +284,20 @@ export class BookingRequestManager {
       requestId,
       draftId,
       unitId: draft.unitId,
+      tenantId,
       operatorId: unit.operator?.id,
-      primaryGuest: draft.primaryGuest,
-      occupants: draft.occupants,
+      primaryGuest: {
+        id: draft.primaryGuest.id,
+        name: draft.primaryGuest.name,
+        isGovernmentIdVerified: identityValidation.verificationResult.governmentIdVerified
+      },
+      distinctPayer: draft.distinctPayer
+        ? Object.freeze({
+            id: draft.distinctPayer.id,
+            name: draft.distinctPayer.name
+          })
+        : null,
+      occupants: draft.occupants.map(({ name }: OvernightOccupant) => ({ name })),
       checkIn: draft.checkIn,
       checkOut: draft.checkOut,
       nights,
@@ -278,6 +322,11 @@ export class BookingRequestManager {
         unitId: draft.unitId,
         holdId: inventoryBlock?.commitmentId,
         primaryGuestId: draft.primaryGuest.id,
+        attestedByPrincipalId: principal.id,
+        selfBookingAttestationVersion: identityValidation.selfBookingAttestationVersion,
+        ...(identityValidation.distinctPayerAttestationVersion
+          ? { distinctPayerAttestationVersion: identityValidation.distinctPayerAttestationVersion }
+          : {}),
         commandEnvelopeId: envelope.commandId,
         disclosedAt: disclosedAtIso
       });

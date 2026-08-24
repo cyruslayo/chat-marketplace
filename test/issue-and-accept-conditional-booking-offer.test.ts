@@ -10,6 +10,7 @@ import {
   UnitRepository,
   seedIssue01Units,
   GuestVerificationService,
+  GuestIdentityVerificationResultSource,
   RestrictedIdentityStore,
   BookingRequestManager,
   ConditionalOfferManager,
@@ -22,7 +23,14 @@ function setup() {
   const audit = new InMemoryAuditLog();
   const calendar = new AvailabilityCalendar({ repository, audit });
   const identityStore = new RestrictedIdentityStore();
-  const guestVerification = new GuestVerificationService({ repository, identityStore });
+  const verifiedFixtureGuests = new Set(["guest-101", "guest-102", "guest-103", "guest-104"]);
+  const verificationResults: GuestIdentityVerificationResultSource = {
+    getVerificationResult: ({ tenantId, guestId }) =>
+      tenantId === "tenant-lagos" && verifiedFixtureGuests.has(guestId)
+        ? { tenantId, guestId, governmentIdVerified: true }
+        : null
+  };
+  const guestVerification = new GuestVerificationService({ repository, verificationResults });
   const requestManager = new BookingRequestManager({
     repository,
     audit,
@@ -46,8 +54,9 @@ function createConfirmedRequest(
   {
     guestId = "guest-101",
     checkIn = "2026-08-01",
-    checkOut = "2026-08-05"
-  }: { guestId?: string; checkIn?: string; checkOut?: string } = {}
+    checkOut = "2026-08-05",
+    distinctPayer = false
+  }: { guestId?: string; checkIn?: string; checkOut?: string; distinctPayer?: boolean } = {}
 ) {
   const { requestManager, unit } = setupObj;
 
@@ -57,11 +66,25 @@ function createConfirmedRequest(
     payload: {
       unitId: unit.id,
       primaryGuest: { id: guestId, name: "Tunde Ednut", isGovernmentIdVerified: true },
-      isPrimaryGuestOccupant: true,
+      selfBookingAttestation: { accepted: true, version: "self-booking-v1" },
       occupants: [{ name: "Tunde Ednut" }],
+      ...(distinctPayer
+        ? {
+            distinctPayer: {
+              id: "payer-B",
+              name: "Distinct Payer",
+              passportNumber: "secret",
+              ninNumber: "secret",
+              rawEvidence: "secret",
+              fullAddress: "secret",
+              riskScore: 99
+            },
+            distinctPayerAttestation: { accepted: true, version: "distinct-payer-v1" }
+          }
+        : {}),
       checkIn,
       checkOut
-    }
+    } as any
   });
   const draft = requestManager.createDraft(draftEnv, { clock });
 
@@ -79,14 +102,23 @@ function createConfirmedRequest(
   });
   const confirmedRequest = requestManager.confirmBookingRequest(confirmEnv, { clock });
 
-  return { draft, request: confirmedRequest };
+  return { draft, disclosedRequest: request, request: confirmedRequest };
 }
 
 test("Offer creation revalidates current Unit eligibility, authority, availability, quote, and aggregate versions", () => {
   const s = setup();
   const clock = () => new Date("2026-07-22T10:00:00Z"); // 11:00 AM WAT
 
-  const { request } = createConfirmedRequest(s, clock);
+  const { disclosedRequest, request } = createConfirmedRequest(s, clock, { distinctPayer: true });
+
+  assert.equal(disclosedRequest.primaryGuest.id, "guest-101");
+  assert.equal(disclosedRequest.distinctPayer?.id, "payer-B");
+  assert.deepEqual(disclosedRequest.distinctPayer, { id: "payer-B", name: "Distinct Payer" });
+  assert.equal((disclosedRequest.distinctPayer as Record<string, unknown>).passportNumber, undefined);
+  assert.equal((disclosedRequest.distinctPayer as Record<string, unknown>).ninNumber, undefined);
+  assert.equal((disclosedRequest.distinctPayer as Record<string, unknown>).rawEvidence, undefined);
+  assert.equal((disclosedRequest.distinctPayer as Record<string, unknown>).fullAddress, undefined);
+  assert.equal((disclosedRequest.distinctPayer as Record<string, unknown>).riskScore, undefined);
 
   // Issue conditional booking offer using command envelope
   const issueEnv = createPlatformCommandEnvelope({
@@ -102,8 +134,22 @@ test("Offer creation revalidates current Unit eligibility, authority, availabili
   assert.equal(offer.requestId, request.requestId);
   assert.equal(offer.inventoryCommitmentId, request.inventoryCommitmentId);
   assert.equal(offer.unitId, s.unit.id);
+  assert.equal(offer.tenantId, "tenant-lagos");
   assert.equal(offer.parties.primaryGuest.id, "guest-101");
+  assert.equal(offer.parties.primaryGuest.name, "Tunde Ednut");
+  assert.equal(offer.parties.distinctPayer?.id, "payer-B");
+  assert.equal(offer.parties.distinctPayer?.name, "Distinct Payer");
+  assert.equal(offer.parties.distinctPayer?.id, disclosedRequest.distinctPayer?.id);
+  assert.equal((offer.parties.distinctPayer as Record<string, unknown>).passportNumber, undefined);
+  assert.equal((offer.parties.distinctPayer as Record<string, unknown>).ninNumber, undefined);
+  assert.equal((offer.parties.distinctPayer as Record<string, unknown>).rawEvidence, undefined);
+  assert.equal((offer.parties.distinctPayer as Record<string, unknown>).fullAddress, undefined);
+  assert.equal((offer.parties.distinctPayer as Record<string, unknown>).riskScore, undefined);
+  assert.deepEqual(Object.keys(offer.parties.distinctPayer ?? {}).sort(), ["id", "name"]);
+  assert.equal((offer.parties.primaryGuest as Record<string, unknown>).ninNumber, undefined);
   assert.equal(offer.parties.operator.id, s.unit.operator.id);
+  assert.equal(offer.occupants[0].name, "Tunde Ednut");
+  assert.equal((offer.occupants[0] as Record<string, unknown>).rawEvidence, undefined);
   assert.equal(offer.dates.checkIn, "2026-08-01");
   assert.equal(offer.dates.checkOut, "2026-08-05");
   assert.equal(offer.dates.nights, 4);
@@ -114,6 +160,14 @@ test("Offer creation revalidates current Unit eligibility, authority, availabili
   assert.ok(offer.aggregateVersions);
   assert.equal(offer.aggregateVersions.offerVersion, 1);
   assert.ok(offer.disclosures.length > 0);
+  assert.throws(
+    () => s.offerManager.issueOffer(createPlatformCommandEnvelope({
+      commandName: "conditional_offer.issue",
+      principal: { id: s.unit.operator.id, role: "operator", tenantId: "tenant-abuja" },
+      payload: { requestId: request.requestId }
+    }), { clock }),
+    /Cross-tenant request access denied/i
+  );
 
   // Audit entry recorded
   const auditEntries = s.audit.entries().filter((e) => e.type === "conditional_offer.issued");
