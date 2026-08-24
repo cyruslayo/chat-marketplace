@@ -100,6 +100,7 @@ test("Offer creation revalidates current Unit eligibility, authority, availabili
   assert.ok(offer.offerId);
   assert.equal(offer.status, "issued");
   assert.equal(offer.requestId, request.requestId);
+  assert.equal(offer.inventoryCommitmentId, request.inventoryCommitmentId);
   assert.equal(offer.unitId, s.unit.id);
   assert.equal(offer.parties.primaryGuest.id, "guest-101");
   assert.equal(offer.parties.operator.id, s.unit.operator.id);

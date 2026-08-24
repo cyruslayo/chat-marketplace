@@ -48,6 +48,7 @@ export interface ConditionalBookingOffer {
   offerId: string;
   offerVersion: number;
   requestId: string;
+  readonly inventoryCommitmentId: string;
   unitId: string;
   tenantId?: string;
   parties: {
@@ -154,19 +155,21 @@ export class ConditionalOfferManager {
       throw new Error(`Offer creation failed: Unit eligibility/authority invalidated (${onboardingStatus.blockers.join("; ")})`);
     }
 
-    if (this.#calendar) {
-      try {
-        this.#calendar.assertActiveCommitment({
-          commitmentId: request.holdId,
-          unitId: request.unitId,
-          start: request.checkIn,
-          end: request.checkOut,
-          expectedKind: "payment_pending",
-          clock
-        });
-      } catch {
-        throw new Error("Offer creation failed: request inventory commitment is no longer valid");
-      }
+    if (!request.inventoryCommitmentId || !this.#calendar) {
+      throw new Error("Offer creation failed: request inventory commitment is required");
+    }
+
+    try {
+      this.#calendar.assertActiveCommitment({
+        commitmentId: request.inventoryCommitmentId,
+        unitId: request.unitId,
+        start: request.checkIn,
+        end: request.checkOut,
+        expectedKind: "payment_pending",
+        clock
+      });
+    } catch {
+      throw new Error("Offer creation failed: request inventory commitment is no longer valid");
     }
 
     // 2. Revalidate Quote & Aggregate Versions
@@ -216,6 +219,7 @@ export class ConditionalOfferManager {
       offerId,
       offerVersion,
       requestId,
+      inventoryCommitmentId: request.inventoryCommitmentId,
       unitId: unit.id,
       tenantId,
       parties: Object.freeze({

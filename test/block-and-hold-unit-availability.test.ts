@@ -292,6 +292,92 @@ test("Operator Hold lasts 45 minutes and extends once to a maximum of 60 minutes
   }).isAvailable, true);
 });
 
+test("Payment Pending transitions atomically to non-expiring confirmed Booking inventory", () => {
+  const directory = mkdtempSync(join(tmpdir(), "shortlet-confirmed-booking-"));
+  const databasePath = join(directory, "availability.sqlite");
+  const store = new SqliteAvailabilityStore(databasePath);
+  const unitId = "unit-lagos-001";
+  const start = "2027-01-10";
+  const end = "2027-01-12";
+  const beforeExpiry = () => new Date("2026-07-22T10:10:00Z");
+  const afterExpiry = () => new Date("2026-07-22T10:31:00Z");
+  const calendar = new AvailabilityCalendar({ store });
+
+  try {
+    const requestBlock = calendar.createBookingRequestBlock({ unitId, holderId: "guest-confirmed", start, end, clock: beforeExpiry });
+    const paymentPending = calendar.transitionBookingRequestBlockToPaymentPending({
+      commitmentId: requestBlock.commitmentId, unitId, start, end, clock: beforeExpiry
+    });
+    const confirmed = calendar.transitionPaymentPendingToConfirmedBooking({
+      commitmentId: requestBlock.commitmentId, unitId, start, end, clock: beforeExpiry
+    });
+
+    assert.equal(confirmed.commitmentId, paymentPending.commitmentId);
+    assert.equal(confirmed.kind, "confirmed_booking");
+    assert.equal(confirmed.state, "active");
+    assert.equal(confirmed.unitId, unitId);
+    assert.equal(confirmed.start, start);
+    assert.equal(confirmed.end, end);
+    assert.equal(confirmed.expiresAt, null);
+    assert.equal(calendar.assertActiveCommitment({ commitmentId: requestBlock.commitmentId, unitId, start, end, expectedKind: "confirmed_booking", clock: afterExpiry }).kind, "confirmed_booking");
+    assert.equal(calendar.getAuthoritativeAvailability({ unitId, checkIn: start, checkOut: end, clock: afterExpiry }).isAvailable, false);
+    assert.equal(calendar.getAuthoritativeAvailability(unitId, start, end, afterExpiry).isAvailable, false);
+    assert.throws(() => calendar.createOperatorHold({ unitId, operatorId: "operator-1", start, end, clock: afterExpiry }), /availability conflict/i);
+    assert.throws(() => calendar.addOperatorBlock({ unitId, operatorId: "operator-1", start, end, clock: afterExpiry }), /availability conflict/i);
+    assert.throws(() => calendar.transitionPaymentPendingToConfirmedBooking({ commitmentId: requestBlock.commitmentId, unitId, start, end, clock: afterExpiry }), /not Payment Pending/i);
+
+    const expiredBlock = calendar.createBookingRequestBlock({ unitId, holderId: "guest-expired", start: "2027-02-10", end: "2027-02-12", clock: beforeExpiry });
+    const expiredPending = calendar.transitionBookingRequestBlockToPaymentPending({ commitmentId: expiredBlock.commitmentId, unitId, start: "2027-02-10", end: "2027-02-12", clock: beforeExpiry });
+    assert.ok(expiredPending.expiresAt);
+    assert.throws(() => calendar.transitionPaymentPendingToConfirmedBooking({ commitmentId: expiredBlock.commitmentId, unitId, start: "2027-02-10", end: "2027-02-12", clock: afterExpiry }), /no longer active/i);
+
+    store.close();
+    const reconstructedStore = new SqliteAvailabilityStore(databasePath);
+    try {
+      const reconstructedCalendar = new AvailabilityCalendar({ store: reconstructedStore });
+      assert.equal(reconstructedCalendar.getAuthoritativeAvailability({ unitId, checkIn: start, checkOut: end, clock: afterExpiry }).isAvailable, false);
+    } finally {
+      reconstructedStore.close();
+    }
+  } finally {
+    try { store.close(); } catch { /* already closed after reconstruction */ }
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("Confirmed Booking inventory cannot be created outside the Payment Pending transition", () => {
+  const directory = mkdtempSync(join(tmpdir(), "shortlet-confirmed-booking-guard-"));
+  const databasePath = join(directory, "availability.sqlite");
+  const store = new SqliteAvailabilityStore(databasePath);
+  const calendar = new AvailabilityCalendar({ store });
+  const unitId = "unit-lagos-001";
+  const start = "2027-03-10";
+  const end = "2027-03-12";
+  const clock = () => new Date("2026-07-22T10:00:00Z");
+
+  try {
+    assert.throws(() => store.create({
+      commitmentId: "confirmed-direct-attempt",
+      unitId,
+      kind: "confirmed_booking",
+      start,
+      end,
+      createdAt: clock().toISOString(),
+      expiresAt: null
+    } as any), /must be created through the payment_pending transition/i);
+    assert.equal(calendar.getAuthoritativeAvailability({ unitId, checkIn: start, checkOut: end, clock }).isAvailable, true);
+
+    const requestBlock = calendar.createBookingRequestBlock({ unitId, holderId: "guest-legal-transition", start, end, clock });
+    calendar.transitionBookingRequestBlockToPaymentPending({ commitmentId: requestBlock.commitmentId, unitId, start, end, clock });
+    const confirmed = calendar.transitionPaymentPendingToConfirmedBooking({ commitmentId: requestBlock.commitmentId, unitId, start, end, clock });
+    assert.equal(confirmed.kind, "confirmed_booking");
+    assert.equal(confirmed.commitmentId, requestBlock.commitmentId);
+  } finally {
+    store.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("Operator Hold extension and release are kind-safe and fail at expiry", () => {
   const { calendar } = setup();
   const unitId = "unit-lagos-001";

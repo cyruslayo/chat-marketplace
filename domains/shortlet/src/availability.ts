@@ -38,6 +38,7 @@ function conflictReason(commitment: AvailabilityCommitment): string {
   if (commitment.kind === "operator_block") return "Overlaps with Operator Block";
   if (commitment.kind === "booking_request_block") return "Overlaps with Booking Request Block";
   if (commitment.kind === "payment_pending") return "Overlaps with Payment Pending";
+  if (commitment.kind === "confirmed_booking") return "Overlaps with confirmed Booking";
   return "Overlaps with active Hold";
 }
 
@@ -151,6 +152,10 @@ export class AvailabilityCalendar {
 
   transitionBookingRequestBlockToPaymentPending({ commitmentId, unitId, start, end, clock = () => new Date() }: { commitmentId: string; unitId: string; start: DateValue; end: DateValue; clock?: Clock }) {
     return this.#store.transitionBookingRequestBlockToPaymentPending({ commitmentId, unitId, start: dateValue(start), end: dateValue(end), now: clock().toISOString() });
+  }
+
+  transitionPaymentPendingToConfirmedBooking({ commitmentId, unitId, start, end, clock = () => new Date() }: { commitmentId: string; unitId: string; start: DateValue; end: DateValue; clock?: Clock }) {
+    return this.#store.transitionPaymentPendingToConfirmedBooking({ commitmentId, unitId, start: dateValue(start), end: dateValue(end), now: clock().toISOString() });
   }
 
   extendOperatorHold(commitmentId: string, { clock = () => new Date() }: { clock?: Clock } = {}) {

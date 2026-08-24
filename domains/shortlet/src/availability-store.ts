@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 
-export type AvailabilityCommitmentKind = "operator_hold" | "operator_block" | "booking_request_block" | "payment_pending";
+export type AvailabilityCommitmentKind = "operator_hold" | "operator_block" | "booking_request_block" | "payment_pending" | "confirmed_booking";
+export type CreatableAvailabilityCommitmentKind = Exclude<AvailabilityCommitmentKind, "confirmed_booking">;
 export type AvailabilityCommitmentState = "active" | "released" | "expired";
 
 export interface AvailabilityCommitment {
@@ -21,7 +22,7 @@ export interface AvailabilityCommitment {
 export interface CreateAvailabilityCommitment {
   commitmentId: string;
   unitId: string;
-  kind: AvailabilityCommitmentKind;
+  kind: CreatableAvailabilityCommitmentKind;
   start: string;
   end: string;
   createdAt: string;
@@ -134,6 +135,9 @@ export class SqliteAvailabilityStore {
   }
 
   create(commitment: CreateAvailabilityCommitment): AvailabilityCommitment {
+    if ((commitment as { kind: AvailabilityCommitmentKind }).kind === "confirmed_booking") {
+      throw new Error("confirmed_booking commitments must be created through the payment_pending transition");
+    }
     return this.#withWriteTransaction(() => {
       this.#expireStale(commitment.createdAt);
       const conflict = this.#findConflict(commitment.unitId, commitment.start, commitment.end);
@@ -241,6 +245,30 @@ export class SqliteAvailabilityStore {
         SET state = 'released', released_at = $now
         WHERE commitment_id = $commitmentId AND kind = 'payment_pending' AND state = 'active'
       `).run({ $commitmentId: commitmentId, $now: now });
+    });
+  }
+
+  transitionPaymentPendingToConfirmedBooking({ commitmentId, unitId, start, end, now }: { commitmentId: string; unitId: string; start: string; end: string; now: string }): AvailabilityCommitment {
+    return this.#withWriteTransaction(() => {
+      this.#expireStale(now);
+      const row = this.#database.prepare(`
+        SELECT commitment_id, unit_id, kind, start_date, end_date, state,
+               created_at, expires_at, extension_count, operator_id, holder_id, reason
+        FROM availability_commitments
+        WHERE commitment_id = $commitmentId
+      `).get({ $commitmentId: commitmentId }) as CommitmentRow | undefined;
+      if (!row) throw new Error("Payment Pending commitment not found");
+      if (row.state !== "active") throw new Error("Payment Pending commitment is no longer active");
+      if (row.kind !== "payment_pending") throw new Error("Availability commitment is not Payment Pending");
+      if (row.unit_id !== unitId || row.start_date !== start || row.end_date !== end) {
+        throw new Error("Payment Pending commitment does not match the expected inventory");
+      }
+      this.#database.prepare(`
+        UPDATE availability_commitments
+        SET kind = 'confirmed_booking', expires_at = NULL
+        WHERE commitment_id = $commitmentId AND state = 'active' AND kind = 'payment_pending'
+      `).run({ $commitmentId: commitmentId });
+      return project({ ...row, kind: "confirmed_booking", expires_at: null });
     });
   }
 

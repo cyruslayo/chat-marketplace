@@ -52,13 +52,13 @@ export interface BankTransferPaymentManagerOptions {
     getOffer(offerId: string): ConditionalBookingOffer;
   };
   readonly calendar?: {
-    getAuthoritativeAvailability(
-      unitId: string,
-      checkIn: string,
-      checkOut: string,
-      clock: () => Date
-    ): { isAvailable: boolean };
-    blockDates(unitId: string, checkIn: string, checkOut: string, reservationId: string): void;
+    transitionPaymentPendingToConfirmedBooking(input: {
+      commitmentId: string;
+      unitId: string;
+      start: string;
+      end: string;
+      clock: () => Date;
+    }): unknown;
     releaseInventory?(unitId: string, checkIn: string, checkOut: string): void;
   };
   readonly audit?: {
@@ -323,14 +323,21 @@ export class BankTransferPaymentManager {
         }
       ];
 
+      if (!this.#calendar) {
+        throw new Error("Authoritative availability calendar is required to confirm a Booking");
+      }
+      this.#calendar.transitionPaymentPendingToConfirmedBooking({
+        commitmentId: offer.inventoryCommitmentId,
+        unitId: offer.unitId,
+        start: offer.dates.checkIn,
+        end: offer.dates.checkOut,
+        clock: () => now
+      });
+
       this.#reservations.set(reservationId, reservation);
       this.#contracts.set(contractId, bookingContract);
       this.#ledgerEntries.set(reservationId, ledgerEntries);
       this.#processedReferences.set(transferReference, { reservationId, contractId, outcome: "confirmed" });
-
-      if (this.#calendar) {
-        this.#calendar.blockDates(offer.unitId, offer.dates.checkIn, offer.dates.checkOut, reservationId);
-      }
 
       return { outcome: "confirmed", reservation, bookingContract, ledgerEntries: Object.freeze(ledgerEntries) };
     }
