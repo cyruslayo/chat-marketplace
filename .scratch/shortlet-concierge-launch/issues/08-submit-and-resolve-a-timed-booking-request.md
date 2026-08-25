@@ -1,6 +1,6 @@
 # Submit and resolve a timed Booking Request
 
-Status: ready-for-agent
+Status: resolved
 Type: AFK
 User stories: 13, 18, 20–23, 71–72
 
@@ -19,6 +19,13 @@ Turn a Request Draft into one disclosed Booking Request only when stay length, B
 - [x] Technical delivery, Operator response, expiry, confirmation, and decline are distinct auditable events.
 - [x] Agent, conventional web, and permitted Operator interfaces produce the same Platform Command Envelope and outcome.
 
+## Completion note
+
+Issue 08 is implemented with one authoritative timed Booking Request lifecycle from Request Draft through disclosure, technical delivery, Operator response, expiry, confirmation, decline, and delivery failure. Drafts remain non-blocking, while successful disclosure enforces the stay, Booking Horizon, Operator Active Hours, Latest Disclosure Cutoff, identity, quote, and authoritative availability rules before creating the exclusive 30-minute inventory block.
+
+Guest, conventional-web, Weaver, and permitted Operator paths now share the same trusted Booking Request application boundary and PlatformCommandEnvelope semantics. A canonical minimized Booking Request InteractionArtifact projects authoritative lifecycle state and deadlines to deterministic Weaver A2UI v0.9.1 Basic Catalog surfaces, while consequential actions are resolved server-side with authenticated principal, tenant, and Operator authority. Pre-delivery Operator decisions and stale/replayed surface actions fail closed, and restricted identity evidence remains outside ordinary interaction/A2UI state.
+
+Validation: 339 tests passed, 0 failed; focused Issue 08 tests, TypeScript checks, Weaver verification, and final code review passed.
 
 ## Blocked by
 

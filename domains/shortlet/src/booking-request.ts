@@ -474,9 +474,12 @@ export class BookingRequestManager {
     const now = clock();
 
     // Check delivery failure or expiry
-    if (!req.delivered && now.getTime() >= new Date(req.deliveryDeadlineAt).getTime()) {
-      this.checkAndResolveDeliveryFailure(envelope, { clock });
-      throw new Error("Booking request delivery failed and cannot be confirmed");
+    if (!req.delivered) {
+      if (now.getTime() >= new Date(req.deliveryDeadlineAt).getTime()) {
+        this.checkAndResolveDeliveryFailure(envelope, { clock });
+        throw new Error("Booking request delivery failed and cannot be confirmed");
+      }
+      throw new Error("Booking request has not been delivered and cannot be confirmed");
     }
 
     if (now.getTime() >= new Date(req.operatorResponseDeadlineAt).getTime()) {
@@ -533,6 +536,13 @@ export class BookingRequestManager {
     const req = this.getRequest(requestId);
 
     const now = clock();
+    if (!req.delivered) {
+      if (now.getTime() >= new Date(req.deliveryDeadlineAt).getTime()) {
+        this.checkAndResolveDeliveryFailure(envelope, { clock });
+        throw new Error("Booking request delivery failed and cannot be declined");
+      }
+      throw new Error("Booking request has not been delivered and cannot be declined");
+    }
     if (req.status !== "disclosed") {
       throw new Error(`Cannot decline booking request in status '${req.status}'`);
     }

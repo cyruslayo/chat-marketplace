@@ -1,4 +1,7 @@
 export * from "./browser-navigation.js";
+export * from "./booking-request-application.js";
+export * from "./booking-request-artifact.js";
+export * from "./booking-request-actions.js";
 export * from "./discovery-actions.js";
 export * from "./discovery-interactions.js";
 export * from "./navigation.js";
