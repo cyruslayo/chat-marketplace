@@ -18,6 +18,8 @@ export interface CommissionAndNetCalculation {
   operatorNetKobo: number;
 }
 
+export interface BlockingComplaintQuery { hasUnresolvedBlockingComplaint(reservationId: string): boolean; }
+
 export interface RevenueReleaseRecord {
   releaseId: string;
   reservationId: string;
@@ -52,6 +54,8 @@ export interface LedgerAdjustment {
  */
 export class RevenueReleaseManager {
   readonly #releases = new Map<string, RevenueReleaseRecord>();
+  readonly #blockingComplaintQuery?: BlockingComplaintQuery;
+  constructor(options: { readonly blockingComplaintQuery?: BlockingComplaintQuery } = {}) { this.#blockingComplaintQuery = options.blockingComplaintQuery; }
   readonly #adjustments: LedgerAdjustment[] = [];
 
   /**
@@ -106,7 +110,8 @@ export class RevenueReleaseManager {
       throw new Error("Check-In Protection Window active: Revenue release requires Verified Access plus 24 hours");
     }
 
-    if (hasUnresolvedBlockingComplaint) {
+    const complaintOpen = this.#blockingComplaintQuery?.hasUnresolvedBlockingComplaint(booking.reservationId) ?? hasUnresolvedBlockingComplaint;
+    if (complaintOpen) {
       throw new Error("Revenue release blocked: Unresolved Blocking Fulfilment Complaint exists");
     }
 

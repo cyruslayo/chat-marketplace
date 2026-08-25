@@ -1,226 +1,28 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { CheckInSupportManager } from "../domains/shortlet/src/index.js";
-import { PlatformCommandEnvelope } from "../packages/platform-core/src/index.js";
+import { CheckInSupportManager, type CheckInReservation, type CheckInWindow } from "../domains/shortlet/src/index.js";
+import { createPlatformCommandEnvelope, type CommandPrincipal } from "../packages/platform-core/src/index.js";
 
-function createEnvelope<T>(
-  commandName: string,
-  payload: T,
-  actorId = "guest-123",
-  tenantId = "tenant-lagos"
-): PlatformCommandEnvelope<T> {
-  return {
-    commandId: `cmd-${Math.random().toString(36).slice(2)}`,
-    commandName,
-    timestamp: "2026-08-10T15:00:00.000Z",
-    principal: {
-      id: actorId,
-      role: "guest",
-      tenantId
-    },
-    payload
-  };
-}
+const reservation: CheckInReservation = { reservationId: "res-1", primaryGuestId: "guest-1", tenantId: "tenant-1", status: "confirmed" };
+const window: CheckInWindow = { checkInDate: "2026-08-10", earliestAccessTime: "14:00", latestPermittedArrival: "22:00", timezone: "Africa/Lagos" };
+const provider = { getWindow: () => window };
+const assignment = { assign: () => ({ assignedResponderId: "responder-1", backupResponderId: "responder-2" }) };
+const reservationProvider = { getReservation: () => reservation };
+const principal = (role: CommandPrincipal["role"], id = "guest-1", tenantId?: string): CommandPrincipal => ({ id, role, ...(tenantId === undefined ? {} : { tenantId }) });
+const command = <T>(name: string, payload: T, p: CommandPrincipal) => createPlatformCommandEnvelope({ commandName: name, payload, principal: p });
+function manager(options: { assignment?: typeof assignment; window?: CheckInWindow } = {}) { return new CheckInSupportManager({ windowProvider: { getWindow: () => options.window ?? window }, assignmentProvider: options.assignment ?? assignment, reservationProvider }); }
 
-test("Arrival boundaries, support ownership, evidence requests, and escalation are visible and auditable", () => {
-  const manager = new CheckInSupportManager();
-  const clock = () => new Date("2026-08-10T14:30:00.000Z");
-
-  // Valid arrival window & support ownership
-  const scheduleEnv = createEnvelope("checkin_support.schedule", {
-    reservationId: "res-101",
-    checkInWindow: {
-      checkInDate: "2026-08-10",
-      earliestAccessTime: "14:00",
-      latestPermittedArrival: "22:00"
-    },
-    assignedAgentId: "agent-human-1",
-    backupAgentId: "agent-human-2"
-  });
-
-  const sched = manager.scheduleHumanSupport(scheduleEnv, clock);
-  assert.equal(sched.status, "scheduled");
-  assert.equal(sched.assignedAgentId, "agent-human-1");
-
-  // Escalation request
-  const escalateEnv = createEnvelope("checkin_support.escalate", {
-    reservationId: "res-101",
-    reason: "Guest at gate, operator primary contact unreachable"
-  });
-  const escalated = manager.escalateIncident(escalateEnv, clock);
-  assert.equal(escalated.status, "escalated");
-
-  const proj = manager.projectCheckInStatus("res-101");
-  assert.equal(proj.supportOwnership.status, "escalated");
-  assert.equal(proj.supportOwnership.assignedAgentId, "agent-human-1");
-  assert.equal(proj.checkInWindow?.earliestAccessTime, "14:00");
-  assert.equal(proj.checkInWindow?.latestPermittedArrival, "22:00");
-
-  // Invalid check-in window outside 14:00-22:00 WAT MUST throw
-  const badWindowEnv = createEnvelope("checkin_support.schedule", {
-    reservationId: "res-bad",
-    checkInWindow: {
-      checkInDate: "2026-08-10",
-      earliestAccessTime: "11:00", // Invalid: before 14:00 WAT
-      latestPermittedArrival: "23:00" // Invalid: after 22:00 WAT
-    },
-    assignedAgentId: "agent-human-1",
-    backupAgentId: "agent-human-2"
-  });
-  assert.throws(
-    () => manager.scheduleHumanSupport(badWindowEnv, clock),
-    /Contractual check-in window must be between 14:00 and 22:00 WAT/
-  );
-});
-
-test("Verified Access follows independent evidence priority and cannot be declared by Operator assertion or chat state alone", () => {
-  const manager = new CheckInSupportManager();
-  const clock = () => new Date("2026-08-10T15:00:00.000Z");
-
-  manager.scheduleHumanSupport(
-    createEnvelope("checkin_support.schedule", {
-      reservationId: "res-202",
-      checkInWindow: { checkInDate: "2026-08-10", earliestAccessTime: "14:00", latestPermittedArrival: "22:00" },
-      assignedAgentId: "agent-human-1",
-      backupAgentId: "agent-human-2"
-    }),
-    clock
-  );
-
-  // Failure path: Operator assertion alone CANNOT declare Verified Access
-  const opAssertionEnv = createEnvelope("checkin_support.submit_evidence", {
-    reservationId: "res-202",
-    evidence: {
-      evidenceId: "ev-op-1",
-      source: "operator_assertion" as const,
-      timestamp: "2026-08-10T15:00:00.000Z",
-      details: { note: "Operator claims guest checked in" }
-    }
-  });
-
-  assert.throws(
-    () => manager.submitAccessEvidence(opAssertionEnv, clock),
-    /Verified Access cannot be declared by Operator assertion or chat state alone/
-  );
-
-  // Failure path: Chat state alone CANNOT declare Verified Access
-  const chatStateEnv = createEnvelope("checkin_support.submit_evidence", {
-    reservationId: "res-202",
-    evidence: {
-      evidenceId: "ev-chat-1",
-      source: "chat_state" as const,
-      timestamp: "2026-08-10T15:00:00.000Z",
-      details: { note: "Guest said 'I am inside' in unstructured chat" }
-    }
-  });
-
-  assert.throws(
-    () => manager.submitAccessEvidence(chatStateEnv, clock),
-    /Verified Access cannot be declared by Operator assertion or chat state alone/
-  );
-
-  // Success path: Higher priority evidence (authenticated guest confirmation or platform code)
-  const validGuestEvidenceEnv = createEnvelope("checkin_support.submit_evidence", {
-    reservationId: "res-202",
-    evidence: {
-      evidenceId: "ev-guest-1",
-      source: "guest_confirmation" as const,
-      timestamp: "2026-08-10T15:00:00.000Z",
-      details: { confirmationCode: "CODE-987" }
-    }
-  });
-
-  const verified = manager.submitAccessEvidence(validGuestEvidenceEnv, clock);
-  assert.equal(verified.status, "verified_access");
-  assert.equal(verified.evidenceSource, "guest_confirmation");
-  assert.ok(verified.protectionWindowStartsAt);
-});
-
-test("Blocking complaints hold exposed revenue and preserve the current incident context for human review", () => {
-  const manager = new CheckInSupportManager();
-  const clock = () => new Date("2026-08-10T16:00:00.000Z");
-
-  manager.scheduleHumanSupport(
-    createEnvelope("checkin_support.schedule", {
-      reservationId: "res-303",
-      checkInWindow: { checkInDate: "2026-08-10", earliestAccessTime: "14:00", latestPermittedArrival: "22:00" },
-      assignedAgentId: "agent-human-1",
-      backupAgentId: "agent-human-2"
-    }),
-    clock
-  );
-
-  // Raise blocking complaint
-  const complaintEnv = createEnvelope("checkin_support.raise_complaint", {
-    reservationId: "res-303",
-    type: "habitability_failure" as const,
-    details: { reason: "AC and water not functioning upon arrival" }
-  });
-
-  const complaint = manager.raiseBlockingComplaint(complaintEnv, clock);
-  assert.equal(complaint.status, "open");
-  assert.equal(complaint.revenueHeld, true);
-  assert.equal(complaint.type, "habitability_failure");
-
-  const proj = manager.projectCheckInStatus("res-303");
-  assert.equal(proj.revenueHeld, true);
-  assert.equal(proj.activeComplaints.length, 1);
-  assert.equal(proj.activeComplaints[0].complaintId, complaint.complaintId);
-});
-
-test("Late voluntary arrival and actual failed access produce distinct outcomes under the accepted policy", () => {
-  const manager = new CheckInSupportManager();
-
-  // Case A: Late voluntary arrival (valid access provided at check-in time 14:00 WAT, guest arrived 21:00 WAT)
-  const clockLate = () => new Date("2026-08-10T21:00:00.000Z");
-  manager.scheduleHumanSupport(
-    createEnvelope("checkin_support.schedule", {
-      reservationId: "res-late-1",
-      checkInWindow: { checkInDate: "2026-08-10", earliestAccessTime: "14:00", latestPermittedArrival: "22:00" },
-      assignedAgentId: "agent-human-1",
-      backupAgentId: "agent-human-2"
-    }),
-    clockLate
-  );
-
-  const lateEvidenceEnv = createEnvelope("checkin_support.submit_evidence", {
-    reservationId: "res-late-1",
-    evidence: {
-      evidenceId: "ev-late",
-      source: "support_verification" as const,
-      timestamp: "2026-08-10T21:00:00.000Z",
-      details: { note: "Guest arrived late voluntarily, valid keybox access was ready since 14:00", isLateVoluntaryArrival: true }
-    }
-  });
-
-  const lateResult = manager.submitAccessEvidence(lateEvidenceEnv, clockLate);
-  assert.equal(lateResult.status, "late_voluntary_arrival");
-
-  // Case B: Actual failed access (lockbox key missing, guest turned away)
-  const clockFailed = () => new Date("2026-08-10T16:00:00.000Z");
-  manager.scheduleHumanSupport(
-    createEnvelope("checkin_support.schedule", {
-      reservationId: "res-failed-1",
-      checkInWindow: { checkInDate: "2026-08-10", earliestAccessTime: "14:00", latestPermittedArrival: "22:00" },
-      assignedAgentId: "agent-human-1",
-      backupAgentId: "agent-human-2"
-    }),
-    clockFailed
-  );
-
-  const failedEvidenceEnv = createEnvelope("checkin_support.submit_evidence", {
-    reservationId: "res-failed-1",
-    evidence: {
-      evidenceId: "ev-fail",
-      source: "support_verification" as const,
-      timestamp: "2026-08-10T16:00:00.000Z",
-      details: { note: "Key code defective, operator failed to provide key", accessFailed: true }
-    }
-  });
-
-  const failedResult = manager.submitAccessEvidence(failedEvidenceEnv, clockFailed);
-  assert.equal(failedResult.status, "failed_access");
-
-  // Outcomes are distinct!
-  assert.notEqual(lateResult.status, failedResult.status);
-});
+for (const [name, value] of [["14:00", "14:00"], ["22:00", "22:00"]] as const) test(`Arrival boundary ${name} WAT is accepted`, () => { const m = manager({ window: { ...window, earliestAccessTime: value, latestPermittedArrival: value } }); assert.equal(m.scheduleHumanSupport(command("checkin_support.schedule", { reservationId: "res-1" }, principal("system", "scheduler", "tenant-1"))).activeFrom.endsWith("+01:00"), true); });
+test("Before 14:00 WAT and after 22:00 WAT are rejected", () => { assert.throws(() => manager({ window: { ...window, earliestAccessTime: "13:59" } }).scheduleHumanSupport(command("checkin_support.schedule", { reservationId: "res-1" }, principal("system", "s", "tenant-1")))); assert.throws(() => manager({ window: { ...window, latestPermittedArrival: "22:01" } }).scheduleHumanSupport(command("checkin_support.schedule", { reservationId: "res-1" }, principal("system", "s", "tenant-1")))); });
+test("A narrowed Unit window is accepted and cannot extend the launch boundary", () => { assert.equal(manager({ window: { ...window, earliestAccessTime: "15:00", latestPermittedArrival: "20:00" } }).scheduleHumanSupport(command("checkin_support.schedule", { reservationId: "res-1" }, principal("admin", "a", "tenant-1"))).activeUntil, "2026-08-10T20:00:00.000+01:00"); });
+test("Guests and Operators cannot schedule; trusted operational principal can, and assignment is server-owned", () => { assert.throws(() => manager().scheduleHumanSupport(command("checkin_support.schedule", { reservationId: "res-1" }, principal("guest", "guest-1", "tenant-1")))); assert.throws(() => manager().scheduleHumanSupport(command("checkin_support.schedule", { reservationId: "res-1" }, principal("operator", "operator-1", "tenant-1")))); const scheduled = manager().scheduleHumanSupport(command("checkin_support.schedule", { reservationId: "res-1" }, principal("authorized_staff", "staff", "tenant-1"))); assert.equal(scheduled.assignedResponderId, "responder-1"); assert.equal(scheduled.backupResponderId, "responder-2"); });
+test("Missing primary or backup coverage fails closed", () => { assert.throws(() => manager({ assignment: { assign: () => ({ assignedResponderId: "", backupResponderId: "backup" }) } }).scheduleHumanSupport(command("checkin_support.schedule", { reservationId: "res-1" }, principal("system", "s", "tenant-1")))); });
+test("Primary Guest authorization fails closed for wrong guest, payer, Operator, wrong tenant, and missing tenant", () => { const m = manager(); m.scheduleHumanSupport(command("checkin_support.schedule", { reservationId: "res-1" }, principal("system", "s", "tenant-1"))); for (const p of [principal("guest", "wrong", "tenant-1"), principal("guest", "payer", "tenant-1"), principal("operator", "guest-1", "tenant-1"), principal("guest", "guest-1", "wrong"), principal("guest", "guest-1")]) assert.throws(() => m.projectCheckInStatusForGuest("res-1", p)); assert.equal(m.projectCheckInStatusForGuest("res-1", principal("guest", "guest-1", "tenant-1")).accessResult.status, "awaiting_access"); });
+test("Guest confirmation creates server-owned evidence and client classifications are not accepted", () => { const m = manager(); m.scheduleHumanSupport(command("checkin_support.schedule", { reservationId: "res-1" }, principal("system", "s", "tenant-1"))); const result = m.confirmGuestAccess(command("checkin_support.confirm_access", { reservationId: "res-1" }, principal("guest", "guest-1", "tenant-1")), () => new Date("2026-08-10T21:00:00Z")); assert.equal(result.status, "verified_access"); assert.equal(result.evidenceSource, "guest_confirmation"); assert.throws(() => m.confirmGuestAccess(command("checkin_support.confirm_access", { reservationId: "res-1", source: "operator_assertion", accessFailed: true, isLateVoluntaryArrival: true } as never, principal("guest", "guest-1", "tenant-1")))); });
+test("Operator assertion and chat state cannot establish Verified Access", () => { const m = manager(); m.scheduleHumanSupport(command("checkin_support.schedule", { reservationId: "res-1" }, principal("system", "s", "tenant-1"))); const result = m.recordOperatorAssertion(command("checkin_support.operator_assertion", { reservationId: "res-1" }, principal("operator", "op", "tenant-1"))); assert.equal(result.status, "awaiting_access"); });
+test("Trusted access-system and support verification evidence are authoritative", () => { const m = manager(); m.scheduleHumanSupport(command("checkin_support.schedule", { reservationId: "res-1" }, principal("system", "s", "tenant-1"))); const result = m.recordAccessSystemEvidence(command("checkin_support.access_system_event", { reservationId: "res-1", provisionedAt: "2026-08-10T16:00:00Z", validAccess: true, failedAccess: false }, principal("system", "provider", "tenant-1"))); assert.equal(result.status, "verified_access"); });
+test("Conflicting evidence routes to human review", () => { const m = manager(); m.scheduleHumanSupport(command("checkin_support.schedule", { reservationId: "res-1" }, principal("system", "s", "tenant-1"))); m.recordAccessSystemEvidence(command("checkin_support.access_system_event", { reservationId: "res-1", provisionedAt: "2026-08-10T16:00:00Z", validAccess: true, failedAccess: false }, principal("system", "provider", "tenant-1"))); assert.equal(m.recordSupportVerification(command("checkin_support.support_verification", { reservationId: "res-1", failedAccess: true, validAccess: false, positiveAtContractualCheckIn: false }, principal("authorized_staff", "staff", "tenant-1"))).status, "under_human_review"); });
+test("Protection starts at the later authoritative time; early evidence cannot start before contractual check-in", () => { const m = manager(); m.scheduleHumanSupport(command("checkin_support.schedule", { reservationId: "res-1" }, principal("system", "s", "tenant-1"))); const result = m.recordAccessSystemEvidence(command("checkin_support.access_system_event", { reservationId: "res-1", provisionedAt: "2026-08-10T12:00:00Z", validAccess: true, failedAccess: false }, principal("system", "provider", "tenant-1"))); assert.equal(result.protectionWindowStartsAt, "2026-08-10T13:00:00.000Z"); });
+test("Positive trusted late-arrival finding is distinct and uses contractual check-in", () => { const m = manager(); m.scheduleHumanSupport(command("checkin_support.schedule", { reservationId: "res-1" }, principal("system", "s", "tenant-1"))); const result = m.recordSupportVerification(command("checkin_support.support_verification", { reservationId: "res-1", validAccess: true, failedAccess: false, positiveAtContractualCheckIn: true }, principal("authorized_staff", "staff", "tenant-1")), () => new Date("2026-08-10T21:00:00Z")); assert.equal(result.status, "late_voluntary_arrival"); assert.equal(result.protectionWindowStartsAt, "2026-08-10T13:00:00.000Z"); });
+test("Trusted failed access has no protection-window start", () => { const m = manager(); m.scheduleHumanSupport(command("checkin_support.schedule", { reservationId: "res-1" }, principal("system", "s", "tenant-1"))); const result = m.recordSupportVerification(command("checkin_support.support_verification", { reservationId: "res-1", validAccess: false, failedAccess: true, positiveAtContractualCheckIn: false }, principal("authorized_staff", "staff", "tenant-1"))); assert.equal(result.status, "failed_access"); assert.equal(result.protectionWindowStartsAt, undefined); });
+test("Bounded blocking complaint is idempotent, minimized, revenue-held, and preserves human context", () => { const ownership = { requests: [] as unknown[], requestHumanOwnership(input: unknown) { this.requests.push(input); } }; const m = new CheckInSupportManager({ windowProvider: provider, assignmentProvider: assignment, reservationProvider, humanOwnership: ownership }); m.scheduleHumanSupport(command("checkin_support.schedule", { reservationId: "res-1" }, principal("system", "s", "tenant-1"))); const payload = { reservationId: "res-1" as const, category: "habitability_failure" as const, safeSummary: "water unavailable", evidenceReferences: ["photo-1"] }; const first = m.raiseBlockingComplaint(command("checkin_support.report_problem", payload, principal("guest", "guest-1", "tenant-1"))); const second = m.raiseBlockingComplaint(command("checkin_support.report_problem", { ...payload, safeSummary: "different retry" }, principal("guest", "guest-1", "tenant-1"))); assert.equal(first.complaintId, second.complaintId); assert.equal(m.projectCheckInStatus("res-1").revenueHeld, true); assert.equal(ownership.requests.length, 1); });

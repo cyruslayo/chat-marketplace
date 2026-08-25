@@ -91,6 +91,12 @@ test("Revenue becomes payable only after Verified Access plus 24 hours without a
   assert.equal(release.isPayable, true);
 });
 
+test("Authoritative unresolved complaint query cannot be bypassed by a false caller flag", () => {
+  const complaintQuery = { hasUnresolvedBlockingComplaint: () => true };
+  const manager = new RevenueReleaseManager({ blockingComplaintQuery: complaintQuery });
+  assert.throws(() => manager.processRevenueRelease({ booking: createMockBookingData(), verifiedAccessIso: "2026-08-25T14:00:00.000Z", currentIso: "2026-08-26T15:00:00.000Z", hasUnresolvedBlockingComplaint: false }), /Unresolved Blocking Fulfilment Complaint/);
+});
+
 test("One launch Reservation creates at most one Revenue Release while corrections use explicit ledger adjustments", () => {
   const manager = new RevenueReleaseManager();
   const booking = createMockBookingData();

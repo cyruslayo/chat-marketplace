@@ -21,6 +21,10 @@ import { bankTransferArtifactToA2UI } from "./bank-transfer-a2ui.js";
 import { bookingContractArtifactToA2UI } from "./booking-contract-a2ui.js";
 import type { BookingContractApplication } from "../../web/src/booking-contract-application.js";
 import type { BookingContractArtifact } from "../../web/src/booking-contract-artifact.js";
+import type { CheckInSupportApplication } from "../../web/src/checkin-support-application.js";
+import type { CheckInSupportArtifact } from "../../web/src/checkin-support-artifact.js";
+import { checkInSupportArtifactToA2UI } from "./checkin-support-a2ui.js";
+import { conventionalCheckInSupportRoute } from "../../web/src/presentation.js";
 export { bankTransferArtifactToA2UI } from "./bank-transfer-a2ui.js";
 export { bookingContractArtifactToA2UI } from "./booking-contract-a2ui.js";
 
@@ -140,6 +144,11 @@ export function createBookingContractWebAgentAdapter({ application, principal, c
       return Object.freeze({ channel: "web-agent" as const, artifact, surfaceId, a2uiMessages: bookingContractArtifactToA2UI({ artifact, surfaceId }), fallback: Object.freeze({ message: "Booking Contract", conventionalRoute: conventionalBookingContractRoute(contractId) }) });
     },
   });
+}
+
+export interface CreateCheckInSupportWebAgentAdapterOptions { readonly application: CheckInSupportApplication; readonly principal: CommandPrincipal; readonly contract: { contractId: string; unitId: string }; readonly createSurfaceId: (artifactId: string) => string; }
+export function createCheckInSupportWebAgentAdapter({ application, principal, contract, createSurfaceId }: CreateCheckInSupportWebAgentAdapterOptions) {
+  return Object.freeze({ get(reservationId: string) { const artifact: CheckInSupportArtifact = application.getArtifact(reservationId, principal, contract); const surfaceId = createSurfaceId(artifact.id); return Object.freeze({ channel: "web-agent" as const, artifact, surfaceId, a2uiMessages: checkInSupportArtifactToA2UI({ artifact, surfaceId }), fallback: Object.freeze({ message: `Check-In status: ${artifact.facts.accessStatus}`, conventionalRoute: conventionalCheckInSupportRoute(reservationId) }) }); } });
 }
 
 export function createBookingRequestWebAgentAdapter({
