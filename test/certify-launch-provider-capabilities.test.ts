@@ -129,6 +129,13 @@ test("Payment, identity, and channel failure simulations produce the platform's 
   assert.ok(auditEntries.some((e) => e.type === "provider.failure_simulated"));
 });
 
+test("Production-equivalent certification is eligible immediately before expiry and disabled at expiry.", () => {
+  const certifier = new ProviderCapabilityCertifier();
+  certifier.recordCapabilityCertification({ providerId: "psp_paystack", capability: "ussd", environment: "production-equivalent", configuration: {}, evidence: ["EVID-USSD"], observedBehaviour: "Certified lifecycle", exceptions: [], owner: "Launch owner", expiryDate: "2026-08-01T12:00:00.000Z" });
+  assert.equal(certifier.isCapabilityEnabled("ussd", "psp_paystack", new Date("2026-08-01T11:59:59.999Z")), true);
+  assert.equal(certifier.isCapabilityEnabled("ussd", "psp_paystack", new Date("2026-08-01T12:00:00.000Z")), false);
+});
+
 test("Unsupported capabilities remain disabled and any accepted limitation is reflected in the capability matrix and launch policy.", () => {
   const certifier = new ProviderCapabilityCertifier();
 

@@ -137,6 +137,7 @@ export interface CardPaymentManagerOptions {
   readonly pspClient?: {
     verifyTransaction(pspReference: string): PSPVerifyResult;
   };
+  readonly liveAttempts?: import("./payment-attempt.js").LivePaymentAttemptRegistry;
 }
 
 export class CardPaymentManager {
@@ -145,6 +146,7 @@ export class CardPaymentManager {
   readonly #calendar?: CardPaymentManagerOptions["calendar"];
   readonly #audit?: CardPaymentManagerOptions["audit"];
   readonly #pspClient?: CardPaymentManagerOptions["pspClient"];
+  readonly #liveAttempts?: CardPaymentManagerOptions["liveAttempts"];
 
   readonly #sessions = new Map<string, CardCheckoutSession>();
   readonly #reservations = new Map<string, Reservation>();
@@ -161,6 +163,7 @@ export class CardPaymentManager {
     this.#calendar = options.calendar;
     this.#audit = options.audit;
     this.#pspClient = options.pspClient;
+    this.#liveAttempts = options.liveAttempts;
   }
 
   /**
@@ -192,11 +195,8 @@ export class CardPaymentManager {
       throw new Error("Cross-tenant offer access denied");
     }
     for (const existing of this.#sessions.values()) {
-      if (existing.offerId === offerId && existing.status === "initiated") {
-        throw new Error("A live checkout already exists for this offer");
-      }
+      if (existing.offerId === offerId && existing.status === "initiated") throw new Error("A live checkout already exists for this offer");
     }
-
     if (offer.status !== "accepted") {
       throw new Error(`Checkout initialization requires an accepted offer (current status: '${offer.status}')`);
     }
@@ -221,6 +221,7 @@ export class CardPaymentManager {
       status: "initiated"
     };
 
+    this.#liveAttempts?.acquire({ offerId, method: "fresh_card", attemptId: checkoutId, startedAt: now.toISOString(), expiresAt: offer.paymentWindow.expiresAt });
     this.#sessions.set(checkoutId, session);
 
     if (this.#audit) {
@@ -452,6 +453,7 @@ export class CardPaymentManager {
     this.#contracts.set(contractId, bookingContract);
     this.#ledgerEntries.set(reservationId, ledgerEntries);
     session.status = "completed";
+    this.#liveAttempts?.release(offer.offerId);
     this.#processedPspReferences.set(pspReference, { reservationId, contractId, offerId: offer.offerId, tenantId: offer.tenantId });
 
     if (this.#audit) {

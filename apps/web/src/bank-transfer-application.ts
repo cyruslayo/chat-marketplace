@@ -8,6 +8,7 @@ export interface BankTransferPaymentApplicationOptions {
   readonly calendar?: BankTransferPaymentManagerOptions["calendar"];
   readonly audit?: BankTransferPaymentManagerOptions["audit"];
   readonly providerClient: BankTransferPaymentManagerOptions["providerClient"];
+  readonly liveAttempts?: BankTransferPaymentManagerOptions["liveAttempts"];
   readonly clock?: () => Date;
 }
 
