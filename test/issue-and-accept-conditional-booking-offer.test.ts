@@ -14,7 +14,9 @@ import {
   RestrictedIdentityStore,
   BookingRequestManager,
   ConditionalOfferManager,
-  flagMaterialUnitChange
+  flagMaterialUnitChange,
+  createConfirmationToken,
+  decodeConfirmationToken
 } from "../domains/shortlet/src/index.js";
 
 function setup() {
@@ -442,6 +444,41 @@ test("Conventional and Generative Surface acceptance reach the same command and 
   const auditSurface = auditEntries.find(e => e.offerId === offer2.offerId);
   assert.ok(auditWeb);
   assert.ok(auditSurface);
+});
+
+test("Conditional Offer authority and token claims fail closed for invalid principals", () => {
+  const s = setup();
+  const clock = () => new Date("2026-07-22T10:00:00Z");
+  const { request } = createConfirmedRequest(s, clock);
+  const payload = { requestId: request.requestId };
+  for (const principal of [
+    { id: s.unit.operator.id, role: "guest" as const, tenantId: "tenant-lagos" },
+    { id: "operator-wrong", role: "operator" as const, tenantId: "tenant-lagos" },
+    { id: s.unit.operator.id, role: "operator" as const, tenantId: "tenant-abuja" },
+    { id: s.unit.operator.id, role: "operator" as const },
+  ]) {
+    assert.throws(() => s.offerManager.issueOffer(createPlatformCommandEnvelope({ commandName: "conditional_offer.issue", principal, payload }), { clock }), /Operator|authorized|tenant|Cross-tenant/i);
+  }
+  const offer = s.offerManager.issueOffer(createPlatformCommandEnvelope({ commandName: "conditional_offer.issue", principal: { id: s.unit.operator.id, role: "operator", tenantId: "tenant-lagos" }, payload }), { clock });
+  for (const principal of [
+    { id: "guest-101", role: "operator" as const, tenantId: "tenant-lagos" },
+    { id: "guest-other", role: "guest" as const, tenantId: "tenant-lagos" },
+    { id: "guest-101", role: "guest" as const, tenantId: "tenant-abuja" },
+    { id: "guest-101", role: "guest" as const },
+  ]) {
+    assert.throws(() => s.offerManager.acceptOffer(createPlatformCommandEnvelope({ commandName: "conditional_offer.accept", principal, payload: { offerId: offer.offerId, confirmationToken: offer.confirmationToken } }), { clock }), /guest|tenant|Cross-tenant/i);
+  }
+  const original = decodeConfirmationToken(offer.confirmationToken);
+  const mismatches = [
+    { tenantId: "tenant-abuja", quoteVersion: original.quoteVersion },
+    { tenantId: original.tenantId, quoteVersion: "quote-tampered" },
+  ];
+  for (const mismatch of mismatches) {
+    const token = createConfirmationToken({ ...original, ...mismatch });
+    s.offerManager.getOffer(offer.offerId).confirmationToken = token;
+    assert.throws(() => s.offerManager.acceptOffer(createPlatformCommandEnvelope({ commandName: "conditional_offer.accept", principal: { id: "guest-101", role: "guest", tenantId: "tenant-lagos" }, payload: { offerId: offer.offerId, confirmationToken: token } }), { clock }), /claim validation/i);
+    s.offerManager.getOffer(offer.offerId).confirmationToken = createConfirmationToken(original);
+  }
 });
 
 test("Conditional Offer rejects a confirmed request after its exact inventory commitment is released", () => {

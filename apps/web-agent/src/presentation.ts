@@ -7,7 +7,10 @@ import { bookingRequestArtifactToA2UI } from "./booking-request-a2ui.js";
 import type { BookingRequestApplication } from "../../web/src/booking-request-application.js";
 import type { BookingRequestArtifact } from "../../web/src/booking-request-artifact.js";
 import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
-import { conventionalBookingRequestRoute } from "../../web/src/presentation.js";
+import { conventionalBookingRequestRoute, conventionalConditionalOfferRoute } from "../../web/src/presentation.js";
+import type { ConditionalOfferApplication } from "../../web/src/conditional-offer-application.js";
+import type { ConditionalOfferArtifact } from "../../web/src/conditional-offer-artifact.js";
+import { conditionalOfferArtifactToA2UI } from "./conditional-offer-a2ui.js";
 
 function fallbackMessage(artifact: any): string {
   const count = artifact.facts.results.length;
@@ -55,6 +58,28 @@ export interface CreateBookingRequestWebAgentAdapterOptions {
   readonly application: BookingRequestApplication;
   readonly principal: CommandPrincipal;
   readonly createSurfaceId: (artifactId: string) => string;
+}
+
+export interface CreateConditionalOfferWebAgentAdapterOptions {
+  readonly application: ConditionalOfferApplication;
+  readonly principal: CommandPrincipal;
+  readonly createSurfaceId: (artifactId: string) => string;
+}
+
+export function createConditionalOfferWebAgentAdapter({ application, principal, createSurfaceId }: CreateConditionalOfferWebAgentAdapterOptions) {
+  return Object.freeze({
+    get(offerId: string) {
+      const artifact: ConditionalOfferArtifact = application.getArtifact(offerId, principal);
+      const surfaceId = createSurfaceId(artifact.id);
+      return Object.freeze({
+        channel: "web-agent" as const,
+        artifact,
+        surfaceId,
+        a2uiMessages: conditionalOfferArtifactToA2UI({ artifact, surfaceId }),
+        fallback: Object.freeze({ message: `Conditional Booking Offer status: ${artifact.facts.status}`, conventionalRoute: conventionalConditionalOfferRoute(offerId) }),
+      });
+    },
+  });
 }
 
 export function createBookingRequestWebAgentAdapter({
