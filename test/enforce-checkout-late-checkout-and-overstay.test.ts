@@ -24,7 +24,7 @@ test("Eligibility checks same-day arrivals, maintenance/inspection needs, turnov
     checkoutDate: "2026-08-25"
   });
   assert.equal(eligible.eligible, true);
-  assert.equal(eligible.feeKobo > 0, true);
+  assert.equal("feeKobo" in eligible, false);
 
   // Failure path 1: Prohibited when same-day arrival exists (ADR 0033 & ADR 0034)
   const sameDayDeps = createMockDeps({ hasSameDayArrival: () => true });
@@ -120,7 +120,7 @@ test("Overstay consequences are standardized, evidence-backed, non-duplicative, 
     checkoutDate: "2026-08-25",
     contractualCheckoutTime: "11:00",
     currentIso: "2026-08-25T10:30:00.000Z", // 11:30 WAT
-    evidence: { photoProofUrl: "https://evidence.example.com/overstay.jpg" }
+    evidenceReferences: [{ evidenceId: "occupancy-1", source: "trusted-occupancy" }]
   });
 
   assert.equal(incident.status, "open_incident");
@@ -129,8 +129,8 @@ test("Overstay consequences are standardized, evidence-backed, non-duplicative, 
 
   // Safety threat escalation path
   const escalated = manager.escalateOverstaySafetyIncident(incident.incidentId, {
-    safetyThreatReported: true,
-    details: "Guest refusing to leave and threatening staff"
+    requiresHumanSafetyEscalation: true,
+    assessmentVersion: "safety-1"
   });
 
   assert.equal(escalated.humanSafetyEscalation, true);

@@ -1,252 +1,75 @@
+export type CheckoutTime = "11:00" | "12:00" | "13:00" | "14:00";
+export type LateCheckoutTime = Exclude<CheckoutTime, "11:00">;
+
 export interface CheckoutOverstayDeps {
   hasSameDayArrival: (reservationId: string, checkoutDate: string) => boolean;
   hasMaintenanceOrInspection: (reservationId: string, checkoutDate: string) => boolean;
   hasTurnoverCapacity: (reservationId: string, checkoutDate: string) => boolean;
   hasSupportAvailability: (reservationId: string, checkoutDate: string) => boolean;
-  operatorApproved: (reservationId: string, requestedTime: string) => boolean;
+  operatorApproved: (reservationId: string, requestedTime: LateCheckoutTime) => boolean;
+}
+export interface LateCheckoutEligibilityResult { readonly eligible: boolean; readonly requestedTime: string; readonly reason?: string; }
+export interface CheckoutSchedule { readonly reservationId: string; readonly contractualCheckoutTime: CheckoutTime; readonly contractualCheckoutIso: string; readonly accessExpiryIso: string; readonly turnoverStartIso: string; readonly depositClaimDeadlineIso: string; readonly remindersIso: readonly string[]; }
+export type OverstayRemedyBasis = "late_checkout_pricing_or_evidenced_cost" | "one_nightly_amount_plus_evidenced_direct_losses";
+export interface SafeEvidenceReference { readonly evidenceId: string; readonly source: string; }
+export interface OverstayIncident { readonly incidentId: string; readonly reservationId: string; readonly status: "open_incident" | "resolved" | "escalated"; readonly evidenceReferences: readonly SafeEvidenceReference[]; readonly consequences: { readonly standardized: true; readonly duplicativeChargesProhibited: true; readonly arbitraryPenaltyProhibited: true; }; readonly remedyBasis: OverstayRemedyBasis; readonly humanSafetyEscalation: boolean; readonly targetQueue?: "Active-Stay Emergency Support (24/7)"; }
+
+const LATE_TIMES: readonly LateCheckoutTime[] = ["12:00", "13:00", "14:00"];
+const CHECKOUT_TIMES: readonly CheckoutTime[] = ["11:00", ...LATE_TIMES];
+function validDate(value: string): boolean { if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false; const parsed = new Date(`${value}T00:00:00.000Z`); return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value; }
+function validTime(value: string): value is CheckoutTime { return CHECKOUT_TIMES.includes(value as CheckoutTime) && /^([01]\d|2[0-3]):[0-5]\d$/.test(value); }
+function checkoutIso(date: string, time: CheckoutTime): string {
+  if (!validDate(date) || !validTime(time)) throw new Error("Checkout date and time must be valid Africa/Lagos values");
+  const [hours, minutes] = time.split(":").map(Number);
+  return new Date(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10)), hours - 1, minutes)).toISOString();
 }
 
-export interface LateCheckoutEligibilityResult {
-  eligible: boolean;
-  requestedTime: string;
-  feeKobo: number;
-  reason?: string;
-}
-
-export interface CheckoutSchedule {
-  reservationId: string;
-  contractualCheckoutTime: string;
-  contractualCheckoutIso: string;
-  accessExpiryIso: string;
-  turnoverStartIso: string;
-  depositClaimDeadlineIso: string;
-  remindersIso: string[];
-}
-
-export interface OverstayIncident {
-  incidentId: string;
-  reservationId: string;
-  status: "open_incident" | "resolved" | "escalated";
-  evidence: Record<string, unknown>;
-  consequences: {
-    standardized: true;
-    duplicativeChargesProhibited: true;
-    maxChargeKobo?: number;
-  };
-  humanSafetyEscalation: boolean;
-  targetQueue?: string;
-}
-
-/**
- * ADR 0032, ADR 0033, ADR 0034, ADR 0060:
- * Enforces Contractual Checkout (11:00 AM WAT), Late Checkout eligibility (up to 14:00 WAT),
- * and standardized overstay incident management.
- */
+/** ADR 0032/0033/0034/0060: the single framework-neutral checkout authority. */
 export class CheckoutOverstayManager {
   readonly #deps: CheckoutOverstayDeps;
   readonly #incidents = new Map<string, OverstayIncident>();
-
-  constructor(deps: CheckoutOverstayDeps) {
-    this.#deps = deps;
+  constructor(deps: CheckoutOverstayDeps) { this.#deps = deps; }
+  evaluateLateCheckoutEligibility(input: { reservationId: string; requestedTime: string; checkoutDate: string; currentCheckoutTime?: CheckoutTime }): LateCheckoutEligibilityResult {
+    const { reservationId, requestedTime, checkoutDate, currentCheckoutTime = "11:00" } = input;
+    if (!validDate(checkoutDate)) return { eligible: false, requestedTime, reason: "Invalid checkout date." };
+    if (!LATE_TIMES.includes(requestedTime as LateCheckoutTime)) return { eligible: false, requestedTime, reason: "Late checkout capped at 14:00 WAT. Only 12:00, 13:00, or 14:00 WAT increments available." };
+    if (!validTime(currentCheckoutTime) || requestedTime <= currentCheckoutTime) return { eligible: false, requestedTime, reason: "Requested checkout time must be later than the authoritative effective checkout." };
+    if (this.#deps.hasSameDayArrival(reservationId, checkoutDate)) return { eligible: false, requestedTime, reason: "Late checkout is prohibited for same-day incoming reservation." };
+    if (this.#deps.hasMaintenanceOrInspection(reservationId, checkoutDate)) return { eligible: false, requestedTime, reason: "Conflicting maintenance or inspection scheduled." };
+    if (!this.#deps.hasTurnoverCapacity(reservationId, checkoutDate)) return { eligible: false, requestedTime, reason: "Turnover capacity not available for late checkout." };
+    if (!this.#deps.hasSupportAvailability(reservationId, checkoutDate)) return { eligible: false, requestedTime, reason: "Platform human support not available for requested timeframe." };
+    if (!this.#deps.operatorApproved(reservationId, requestedTime as LateCheckoutTime)) return { eligible: false, requestedTime, reason: "Operator declined late checkout request." };
+    return { eligible: true, requestedTime };
   }
-
-  /**
-   * ADR 0033 & ADR 0034:
-   * Late checkout capped at 14:00 WAT (2:00 PM WAT). Prohibited if same-day arrival exists.
-   */
-  evaluateLateCheckoutEligibility({
-    reservationId,
-    requestedTime,
-    checkoutDate
-  }: {
-    reservationId: string;
-    requestedTime: string;
-    checkoutDate: string;
-  }): LateCheckoutEligibilityResult {
-    const validTimes = ["12:00", "13:00", "14:00"];
-
-    if (!validTimes.includes(requestedTime)) {
-      return {
-        eligible: false,
-        requestedTime,
-        feeKobo: 0,
-        reason: "Late checkout capped at 14:00 WAT. Only 12:00, 13:00, or 14:00 WAT increments available."
-      };
-    }
-
-    if (this.#deps.hasSameDayArrival(reservationId, checkoutDate)) {
-      return {
-        eligible: false,
-        requestedTime,
-        feeKobo: 0,
-        reason: "Late checkout is prohibited for same-day incoming reservation."
-      };
-    }
-
-    if (this.#deps.hasMaintenanceOrInspection(reservationId, checkoutDate)) {
-      return {
-        eligible: false,
-        requestedTime,
-        feeKobo: 0,
-        reason: "Conflicting maintenance or inspection scheduled."
-      };
-    }
-
-    if (!this.#deps.hasTurnoverCapacity(reservationId, checkoutDate)) {
-      return {
-        eligible: false,
-        requestedTime,
-        feeKobo: 0,
-        reason: "Turnover capacity not available for late checkout."
-      };
-    }
-
-    if (!this.#deps.hasSupportAvailability(reservationId, checkoutDate)) {
-      return {
-        eligible: false,
-        requestedTime,
-        feeKobo: 0,
-        reason: "Platform human support not available for requested timeframe."
-      };
-    }
-
-    if (!this.#deps.operatorApproved(reservationId, requestedTime)) {
-      return {
-        eligible: false,
-        requestedTime,
-        feeKobo: 0,
-        reason: "Operator declined late checkout request."
-      };
-    }
-
-    const feeMap: Record<string, number> = {
-      "12:00": 500000, // ₦5,000
-      "13:00": 1000000, // ₦10,000
-      "14:00": 1500000 // ₦15,000
-    };
-
-    return {
-      eligible: true,
-      requestedTime,
-      feeKobo: feeMap[requestedTime] ?? 500000
-    };
+  calculateCheckoutSchedule(input: { reservationId: string; checkoutDate: string; contractualCheckoutTime?: string }): CheckoutSchedule {
+    const time = input.contractualCheckoutTime ?? "11:00";
+    if (!validTime(time)) throw new Error("Checkout time must be 11:00, 12:00, 13:00, or 14:00 WAT");
+    const iso = checkoutIso(input.checkoutDate, time);
+    const deadline = new Date(iso).getTime();
+    return { reservationId: input.reservationId, contractualCheckoutTime: time, contractualCheckoutIso: iso, accessExpiryIso: iso, turnoverStartIso: iso, depositClaimDeadlineIso: new Date(deadline + 86400000).toISOString(), remindersIso: [new Date(deadline - 3600000).toISOString()] };
   }
-
-  /**
-   * ADR 0032 & ADR 0033:
-   * Calculate exact WAT timestamps for checkout, access expiry, turnover start, deposit claim deadline.
-   */
-  calculateCheckoutSchedule({
-    reservationId,
-    checkoutDate,
-    contractualCheckoutTime = "11:00"
-  }: {
-    reservationId: string;
-    checkoutDate: string;
-    contractualCheckoutTime?: string;
-  }): CheckoutSchedule {
-    // Lagos is UTC+1 (WAT)
-    const [hoursStr, minutesStr] = contractualCheckoutTime.split(":");
-    const hours = parseInt(hoursStr, 10);
-    const minutes = parseInt(minutesStr, 10);
-
-    const utcHours = hours - 1;
-    const checkoutDateObj = new Date(`${checkoutDate}T${String(utcHours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:00.000Z`);
-    const contractualCheckoutIso = checkoutDateObj.toISOString();
-
-    // Deposit claim deadline is 24h after contractual checkout (ADR 0016 & ADR 0032)
-    const depositClaimDeadlineObj = new Date(checkoutDateObj.getTime() + 24 * 60 * 60 * 1000);
-
-    // Reminders 1h before checkout
-    const reminderObj = new Date(checkoutDateObj.getTime() - 60 * 60 * 1000);
-
-    return {
-      reservationId,
-      contractualCheckoutTime,
-      contractualCheckoutIso,
-      accessExpiryIso: contractualCheckoutIso,
-      turnoverStartIso: contractualCheckoutIso,
-      depositClaimDeadlineIso: depositClaimDeadlineObj.toISOString(),
-      remindersIso: [reminderObj.toISOString()]
-    };
+  processCheckoutExtensionRequest(request: { reservationId: string; method: string; note?: string; amountKobo?: number }): void {
+    if (request.method === "informal_chat") throw new Error("Informal messages cannot amend checkout. Material terms change only through versioned platform amendments.");
+    if (request.method === "cash_or_direct_transfer") throw new Error("Cash or direct transfers cannot extend checkout or create charges.");
+    if (request.method !== "versioned_amendment") throw new Error(`Unsupported extension method: ${request.method}`);
   }
-
-  /**
-   * ADR 0060:
-   * Prohibit informal messages, cash, or direct bank transfer extensions.
-   */
-  processCheckoutExtensionRequest(request: {
-    reservationId: string;
-    method: string;
-    note?: string;
-    amountKobo?: number;
-  }): void {
-    if (request.method === "informal_chat") {
-      throw new Error("Informal messages cannot amend checkout. Material terms change only through versioned platform amendments.");
-    }
-
-    if (request.method === "cash_or_direct_transfer") {
-      throw new Error("Cash or direct transfers cannot extend checkout or create charges.");
-    }
-
-    if (request.method !== "versioned_amendment") {
-      throw new Error(`Unsupported extension method: ${request.method}`);
-    }
+  openOverstayIncident(input: { reservationId: string; checkoutDate: string; contractualCheckoutTime: string; currentIso: string; evidenceReferences?: readonly SafeEvidenceReference[] }): OverstayIncident {
+    const schedule = this.calculateCheckoutSchedule({ reservationId: input.reservationId, checkoutDate: input.checkoutDate, contractualCheckoutTime: input.contractualCheckoutTime });
+    const currentTime = new Date(input.currentIso).getTime();
+    if (!Number.isFinite(currentTime)) throw new Error("Current time must be a valid ISO timestamp.");
+    if (currentTime <= new Date(schedule.contractualCheckoutIso).getTime()) throw new Error("Overstay cannot open at or before the effective checkout deadline.");
+    const incidentId = `overstay:${input.reservationId}`;
+    const existing = this.#incidents.get(incidentId);
+    if (existing) return { ...existing, remedyBasis: new Date(input.currentIso).getTime() > new Date(`${input.checkoutDate}T13:00:00.000Z`).getTime() ? "one_nightly_amount_plus_evidenced_direct_losses" : existing.remedyBasis };
+    const references = (input.evidenceReferences ?? []).filter((reference) => /^[A-Za-z0-9:_-]{1,80}$/.test(reference.evidenceId) && /^[A-Za-z0-9:_-]{1,80}$/.test(reference.source));
+    const incident: OverstayIncident = { incidentId, reservationId: input.reservationId, status: "open_incident", evidenceReferences: references.map(({ evidenceId, source }) => ({ evidenceId, source })), consequences: { standardized: true, duplicativeChargesProhibited: true, arbitraryPenaltyProhibited: true }, remedyBasis: new Date(input.currentIso).getTime() > new Date(`${input.checkoutDate}T13:00:00.000Z`).getTime() ? "one_nightly_amount_plus_evidenced_direct_losses" : "late_checkout_pricing_or_evidenced_cost", humanSafetyEscalation: false };
+    this.#incidents.set(incidentId, incident); return { ...incident };
   }
-
-  /**
-   * ADR 0033 & ADR 0060:
-   * Standardized overstay incident creation.
-   */
-  openOverstayIncident({
-    reservationId,
-    checkoutDate,
-    contractualCheckoutTime,
-    currentIso,
-    evidence
-  }: {
-    reservationId: string;
-    checkoutDate: string;
-    contractualCheckoutTime: string;
-    currentIso: string;
-    evidence: Record<string, unknown>;
-  }): OverstayIncident {
-    const incidentId = `inc_overstay_${reservationId}`;
-    const incident: OverstayIncident = {
-      incidentId,
-      reservationId,
-      status: "open_incident",
-      evidence,
-      consequences: {
-        standardized: true,
-        duplicativeChargesProhibited: true,
-        maxChargeKobo: 5000000 // 1 nightly amount maximum cap for unauthorized overstay
-      },
-      humanSafetyEscalation: false
-    };
-
-    this.#incidents.set(incidentId, incident);
-    return { ...incident };
-  }
-
-  /**
-   * ADR 0030: Escalate safety threats to Active-Stay Emergency Support.
-   */
-  escalateOverstaySafetyIncident(
-    incidentId: string,
-    details: { safetyThreatReported: boolean; details: string }
-  ): OverstayIncident {
-    const incident = this.#incidents.get(incidentId);
-    if (!incident) {
-      throw new Error(`Incident not found: ${incidentId}`);
-    }
-
-    if (details.safetyThreatReported) {
-      incident.status = "escalated";
-      incident.humanSafetyEscalation = true;
-      incident.targetQueue = "Active-Stay Emergency Support (24/7)";
-    }
-
+  escalateOverstaySafetyIncident(incidentId: string, assessment: { requiresHumanSafetyEscalation: boolean; assessmentVersion: string }): OverstayIncident {
+    const incident = this.#incidents.get(incidentId); if (!incident) throw new Error(`Incident not found: ${incidentId}`);
+    const requiresEscalation = assessment.requiresHumanSafetyEscalation;
+    if (requiresEscalation) { const next = { ...incident, status: "escalated" as const, humanSafetyEscalation: true, targetQueue: "Active-Stay Emergency Support (24/7)" as const }; this.#incidents.set(incidentId, next); return { ...next }; }
     return { ...incident };
   }
 }
+export { checkoutIso as effectiveCheckoutIso };
