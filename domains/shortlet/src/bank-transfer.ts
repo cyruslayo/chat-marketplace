@@ -77,7 +77,7 @@ export class BankTransferPaymentManager {
   readonly #ledgerEntries = new Map<string, LedgerEntry[]>();
   readonly #refundRecords = new Map<string, BankTransferRefundRecord>();
   readonly #reconciliationRecords = new Map<string, BankTransferReconciliationRecord>();
-  readonly #processedReferences = new Map<string, { reservationId?: string; contractId?: string; outcome: string }>();
+  readonly #processedReferences = new Map<string, { offerId: string; reservationId?: string; contractId?: string; outcome: string }>();
 
   constructor(options: BankTransferPaymentManagerOptions) {
     if (!options.offerManager) {
@@ -157,6 +157,41 @@ export class BankTransferPaymentManager {
     return { ...session };
   }
 
+  #validateSuccessfulTransferResult(
+    session: BankTransferCheckoutSession,
+    offer: ConditionalBookingOffer,
+    transferReference: string,
+    providerResult: MockBankTransferVerifyResult
+  ): MockBankTransferVerifyResult {
+    if (session.offerId !== offer.offerId || session.transferReference !== transferReference) {
+      throw new Error("Bank transfer session/reference binding failed");
+    }
+    if (
+      !providerResult ||
+      providerResult.verified !== true ||
+      providerResult.status !== "success" ||
+      typeof providerResult.pspReference !== "string" ||
+      providerResult.pspReference.length === 0 ||
+      providerResult.pspReference !== session.transferReference
+    ) {
+      throw new Error("Bank transfer provider verification failed");
+    }
+    if (providerResult.currency !== session.currency || providerResult.currency !== "NGN") {
+      throw new Error(`Currency verification failed: Expected NGN, got ${providerResult.currency}`);
+    }
+    if (
+      providerResult.amountKobo !== session.totalAmountDueNowKobo ||
+      providerResult.amountKobo !== offer.totalAmountDueNowKobo
+    ) {
+      throw new Error(`Amount verification failed: Expected ${offer.totalAmountDueNowKobo}, got ${providerResult.amountKobo}`);
+    }
+    const expectedPayerId = offer.parties.distinctPayer?.id ?? offer.parties.primaryGuest.id;
+    if (!providerResult.payerId || providerResult.payerId !== expectedPayerId) {
+      throw new Error(`Payer attribution verification failed: Expected ${expectedPayerId}, got ${providerResult.payerId ?? "none"}`);
+    }
+    return providerResult;
+  }
+
   /**
    * ADR 0044, 0045, 0046, 0047: Server-side bank transfer verification & processing.
    */
@@ -184,16 +219,23 @@ export class BankTransferPaymentManager {
       throw new Error("offerId and transferReference are required for transfer verification");
     }
 
-    // Idempotency check
+    const offer = this.#offerManager.getOffer(offerId);
+    const session = this.#sessionsByOffer.get(offerId);
+    if (!session || session.offerId !== offer.offerId || session.transferReference !== transferReference) {
+      throw new Error("Bank transfer checkout session/reference binding failed");
+    }
+
+    // Idempotency check, after binding the reference to its original offer/session.
     const existingRef = this.#processedReferences.get(transferReference);
+    if (existingRef && existingRef.offerId !== offer.offerId) {
+      throw new Error("Processed bank transfer reference is bound to another offer");
+    }
     if (existingRef && existingRef.outcome === "confirmed" && existingRef.reservationId && existingRef.contractId) {
       const reservation = this.#reservations.get(existingRef.reservationId)!;
       const bookingContract = this.#contracts.get(existingRef.contractId)!;
       const ledgerEntries = this.#ledgerEntries.get(existingRef.reservationId) ?? [];
       return { outcome: "confirmed", reservation, bookingContract, ledgerEntries };
     }
-
-    const offer = this.#offerManager.getOffer(offerId);
 
     // Cross-tenant check
     if (offer.tenantId && envelope.principal.tenantId && offer.tenantId !== envelope.principal.tenantId) {
@@ -208,9 +250,21 @@ export class BankTransferPaymentManager {
     if (!pspResult) {
       throw new Error("PSP verification result is required");
     }
+    if (
+      pspResult.status === "pending" &&
+      typeof pspResult.pspReference === "string" &&
+      pspResult.pspReference !== session.transferReference
+    ) {
+      throw new Error("Bank transfer provider reference binding failed");
+    }
+
+    // Successful results use the same complete validation for on-time and late processing.
+    const validatedSuccess = pspResult.status === "success"
+      ? this.#validateSuccessfulTransferResult(session, offer, transferReference, pspResult)
+      : undefined;
 
     // 1. Late Success Classification (>30 minutes total or >20 minutes without in-flight grace) (ADR 0045)
-    const isLateSuccess = pspResult.status === "success" && now.getTime() > paymentWindowEnd;
+    const isLateSuccess = validatedSuccess !== undefined && now.getTime() > paymentWindowEnd;
 
     if (isLateSuccess) {
       // Release inventory atomically (ADR 0045)
@@ -225,7 +279,7 @@ export class BankTransferPaymentManager {
         refundId,
         offerId: offer.offerId,
         transferReference,
-        amountKobo: pspResult.amountKobo,
+        amountKobo: validatedSuccess.amountKobo,
         currency: "NGN",
         reason: "late_payment_after_expiry",
         status: "initiated",
@@ -236,14 +290,14 @@ export class BankTransferPaymentManager {
         reconciliationId,
         offerId: offer.offerId,
         transferReference,
-        amountKobo: pspResult.amountKobo,
+        amountKobo: validatedSuccess.amountKobo,
         status: "quarantined_for_refund",
         createdAt: now.toISOString()
       };
 
       this.#refundRecords.set(refundId, refundRecord);
       this.#reconciliationRecords.set(reconciliationId, reconciliationRecord);
-      this.#processedReferences.set(transferReference, { outcome: "late_payment_refunded" });
+      this.#processedReferences.set(transferReference, { offerId: offer.offerId, outcome: "late_payment_refunded" });
 
       if (this.#audit) {
         this.#audit.record({
@@ -252,7 +306,7 @@ export class BankTransferPaymentManager {
           transferReference,
           refundId,
           reconciliationId,
-          amountKobo: pspResult.amountKobo,
+          amountKobo: validatedSuccess.amountKobo,
           timestamp: now.toISOString()
         });
       }
@@ -266,15 +320,7 @@ export class BankTransferPaymentManager {
     }
 
     // 3. Normal Verification within 20 min or grace success
-    if (now.getTime() <= graceEnd && pspResult.status === "success") {
-      // Validation checks
-      if (pspResult.currency !== "NGN") {
-        throw new Error(`Currency verification failed: Expected NGN, got ${pspResult.currency}`);
-      }
-      if (pspResult.amountKobo !== offer.totalAmountDueNowKobo) {
-        throw new Error(`Amount verification failed: Expected ${offer.totalAmountDueNowKobo}, got ${pspResult.amountKobo}`);
-      }
-
+    if (now.getTime() <= graceEnd && validatedSuccess) {
       const reservationId = `res_trf_${envelope.commandId.slice(0, 8)}_${now.getTime()}`;
       const contractId = `ctr_trf_${envelope.commandId.slice(0, 8)}_${now.getTime()}`;
 
@@ -303,7 +349,7 @@ export class BankTransferPaymentManager {
         paymentDetails: {
           pspReference: transferReference,
           paymentMethod: "fresh_card", // or bank_transfer
-          amountKobo: pspResult.amountKobo,
+          amountKobo: validatedSuccess.amountKobo,
           currency: "NGN",
           paidAt: now.toISOString(),
           cardMetadata: { brand: "BankTransfer", last4: "0000" }
@@ -337,7 +383,7 @@ export class BankTransferPaymentManager {
       this.#reservations.set(reservationId, reservation);
       this.#contracts.set(contractId, bookingContract);
       this.#ledgerEntries.set(reservationId, ledgerEntries);
-      this.#processedReferences.set(transferReference, { reservationId, contractId, outcome: "confirmed" });
+      this.#processedReferences.set(transferReference, { offerId: offer.offerId, reservationId, contractId, outcome: "confirmed" });
 
       return { outcome: "confirmed", reservation, bookingContract, ledgerEntries: Object.freeze(ledgerEntries) };
     }

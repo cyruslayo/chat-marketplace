@@ -129,12 +129,16 @@ export class ConditionalOfferManager {
 
     const { requestId } = envelope.payload ?? {};
     if (!requestId) throw new Error("requestId is required to issue an offer");
+    if (!envelope.principal.tenantId) throw new Error("Authenticated tenant is required to issue an offer");
 
     if (!this.#bookingRequestManager) {
       throw new Error("bookingRequestManager is required to issue an offer");
     }
 
     const request = this.#bookingRequestManager.getRequest(requestId);
+    if (!request.tenantId || request.tenantId !== envelope.principal.tenantId) {
+      throw new Error("Cross-tenant request access denied");
+    }
     if (request.status !== "confirmed") {
       throw new Error(`Cannot issue offer for request in status '${request.status}' (must be confirmed)`);
     }
@@ -223,9 +227,14 @@ export class ConditionalOfferManager {
       unitId: unit.id,
       tenantId,
       parties: Object.freeze({
-        primaryGuest: Object.freeze({ ...request.primaryGuest }),
+        primaryGuest: Object.freeze({
+          id: request.primaryGuest.id,
+          name: request.primaryGuest.name
+        }),
         operator: Object.freeze({ id: unit.operator.id, name: unit.operator.name }),
-        distinctPayer: request.distinctPayer ? Object.freeze({ ...request.distinctPayer }) : null
+        distinctPayer: request.distinctPayer
+          ? Object.freeze({ id: request.distinctPayer.id, name: request.distinctPayer.name })
+          : null
       }),
       unit: Object.freeze({
         id: unit.id,
@@ -238,7 +247,7 @@ export class ConditionalOfferManager {
         checkOut: request.checkOut,
         nights: request.nights
       }),
-      occupants: Object.freeze([...request.occupants]),
+      occupants: Object.freeze(request.occupants.map(({ name }: { name: string }) => ({ name }))),
       quote: freshQuote,
       refundableSecurityDepositKobo: freshQuote.refundableSecurityDepositKobo,
       totalAmountDueNowKobo: freshQuote.totalAmountDueNowKobo,

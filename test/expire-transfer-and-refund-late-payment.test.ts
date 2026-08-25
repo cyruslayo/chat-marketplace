@@ -285,4 +285,189 @@ describe("Issue 11: Expire bank-transfer payment and refund late success", () =>
     assert.equal(res2.outcome, "confirmed");
     assert.equal(res2.reservation?.reservationId, res1.reservation?.reservationId);
   });
+
+  it("Bank confirmation fails closed on missing or wrong payer attribution before inventory transition", () => {
+    const offer = createMockOffer({ offerId: "off_payer_guard" });
+    let transitions = 0;
+    const calendar = { transitionPaymentPendingToConfirmedBooking: () => { transitions += 1; } };
+    const manager = new BankTransferPaymentManager({ offerManager: { getOffer: () => offer }, calendar });
+    const start = new Date("2026-07-22T10:00:00Z");
+    const session = manager.initializeBankTransfer(
+      createCommandEnvelope("bank_transfer.initialize", { offerId: offer.offerId }),
+      { clock: () => start }
+    );
+    const verify = (payerId?: string) => manager.verifyAndProcessTransfer(
+      createCommandEnvelope("bank_transfer.verify_and_process", {
+        offerId: offer.offerId,
+        transferReference: session.transferReference,
+        mockPspResult: {
+          verified: true,
+          status: "success",
+          amountKobo: offer.totalAmountDueNowKobo,
+          currency: "NGN",
+          pspReference: session.transferReference,
+          payerId
+        }
+      }),
+      { clock: () => new Date("2026-07-22T10:10:00Z") }
+    );
+    assert.throws(() => verify(), /Payer attribution verification failed/i);
+    assert.throws(() => verify("wrong-payer"), /Payer attribution verification failed/i);
+    assert.equal(transitions, 0);
+
+    const distinctOffer = createMockOffer({
+      offerId: "off_distinct_payer",
+      parties: {
+        ...offer.parties,
+        distinctPayer: { id: "payer_11", name: "Authorized Payer" }
+      }
+    });
+    const distinctManager = new BankTransferPaymentManager({
+      offerManager: { getOffer: () => distinctOffer },
+      calendar
+    });
+    const distinctSession = distinctManager.initializeBankTransfer(
+      createCommandEnvelope("bank_transfer.initialize", { offerId: distinctOffer.offerId }),
+      { clock: () => start }
+    );
+    const result = distinctManager.verifyAndProcessTransfer(createCommandEnvelope("bank_transfer.verify_and_process", {
+      offerId: distinctOffer.offerId,
+      transferReference: distinctSession.transferReference,
+      mockPspResult: {
+        verified: true,
+        status: "success",
+        amountKobo: distinctOffer.totalAmountDueNowKobo,
+        currency: "NGN",
+        pspReference: distinctSession.transferReference,
+        payerId: "payer_11"
+      }
+    }), { clock: () => new Date("2026-07-22T10:10:00Z") });
+    assert.equal(result.outcome, "confirmed");
+  });
+
+  it("Complete provider validation precedes normal confirmation and binds every success field", () => {
+    const invalidCases: Array<[string, Partial<MockBankTransferVerifyResult>]> = [
+      ["unverified", { verified: false }],
+      ["wrong currency", { currency: "USD" }],
+      ["wrong amount", { amountKobo: 1 }],
+      ["missing payer", { payerId: undefined }],
+      ["wrong payer", { payerId: "wrong-payer" }],
+      ["wrong provider reference", { pspReference: "other-reference" }]
+    ];
+
+    for (const [label, overrides] of invalidCases) {
+      const offer = createMockOffer({ offerId: `off_normal_${label.replaceAll(" ", "_")}` });
+      let transitions = 0;
+      const manager = new BankTransferPaymentManager({
+        offerManager: { getOffer: () => offer },
+        calendar: { transitionPaymentPendingToConfirmedBooking: () => { transitions += 1; } }
+      });
+      const session = manager.initializeBankTransfer(
+        createCommandEnvelope("bank_transfer.initialize", { offerId: offer.offerId }),
+        { clock: () => new Date("2026-07-22T10:00:00Z") }
+      );
+      const providerResult = {
+        verified: true,
+        status: "success",
+        amountKobo: offer.totalAmountDueNowKobo,
+        currency: "NGN",
+        pspReference: session.transferReference,
+        payerId: offer.parties.primaryGuest.id,
+        ...overrides
+      } as MockBankTransferVerifyResult;
+      assert.throws(
+        () => manager.verifyAndProcessTransfer(createCommandEnvelope("bank_transfer.verify_and_process", {
+          offerId: offer.offerId,
+          transferReference: session.transferReference,
+          mockPspResult: providerResult
+        }), { clock: () => new Date("2026-07-22T10:10:00Z") }),
+        /verification|Currency|Amount|Payer attribution/i,
+        label
+      );
+      assert.equal(transitions, 0, `${label} must not transition inventory`);
+    }
+
+    const referenceOffer = createMockOffer({ offerId: "off_payload_reference" });
+    const referenceManager = new BankTransferPaymentManager({ offerManager: { getOffer: () => referenceOffer }, calendar: { transitionPaymentPendingToConfirmedBooking: () => {} } });
+    const referenceSession = referenceManager.initializeBankTransfer(createCommandEnvelope("bank_transfer.initialize", { offerId: referenceOffer.offerId }), { clock: () => new Date("2026-07-22T10:00:00Z") });
+    assert.throws(() => referenceManager.verifyAndProcessTransfer(createCommandEnvelope("bank_transfer.verify_and_process", {
+      offerId: referenceOffer.offerId,
+      transferReference: "caller-supplied-reference",
+      mockPspResult: {
+        verified: true,
+        status: "success",
+        amountKobo: referenceOffer.totalAmountDueNowKobo,
+        currency: "NGN",
+        pspReference: referenceSession.transferReference,
+        payerId: referenceOffer.parties.primaryGuest.id
+      }
+    }), { clock: () => new Date("2026-07-22T10:10:00Z") }), /session\/reference binding/i);
+
+    const missingSessionManager = new BankTransferPaymentManager({ offerManager: { getOffer: () => referenceOffer }, calendar: { transitionPaymentPendingToConfirmedBooking: () => {} } });
+    assert.throws(() => missingSessionManager.verifyAndProcessTransfer(createCommandEnvelope("bank_transfer.verify_and_process", {
+      offerId: referenceOffer.offerId,
+      transferReference: "uninitialized-reference",
+      mockPspResult: { verified: true, status: "success", amountKobo: referenceOffer.totalAmountDueNowKobo, currency: "NGN", pspReference: "uninitialized-reference", payerId: referenceOffer.parties.primaryGuest.id }
+    }), { clock: () => new Date("2026-07-22T10:10:00Z") }), /session\/reference binding/i);
+
+    const primaryOffer = createMockOffer({ offerId: "off_valid_primary" });
+    const primaryManager = new BankTransferPaymentManager({ offerManager: { getOffer: () => primaryOffer }, calendar: { transitionPaymentPendingToConfirmedBooking: () => {} } });
+    const primarySession = primaryManager.initializeBankTransfer(createCommandEnvelope("bank_transfer.initialize", { offerId: primaryOffer.offerId }), { clock: () => new Date("2026-07-22T10:00:00Z") });
+    const primaryResult = primaryManager.verifyAndProcessTransfer(createCommandEnvelope("bank_transfer.verify_and_process", {
+      offerId: primaryOffer.offerId,
+      transferReference: primarySession.transferReference,
+      mockPspResult: { verified: true, status: "success", amountKobo: primaryOffer.totalAmountDueNowKobo, currency: "NGN", pspReference: primarySession.transferReference, payerId: primaryOffer.parties.primaryGuest.id }
+    }), { clock: () => new Date("2026-07-22T10:10:00Z") });
+    assert.equal(primaryResult.outcome, "confirmed");
+    assert.equal(primaryResult.bookingContract?.paymentDetails.pspReference, primarySession.transferReference);
+
+    const distinctOffer = createMockOffer({ offerId: "off_valid_distinct", parties: { ...primaryOffer.parties, distinctPayer: { id: "payer_valid", name: "Valid Payer" } } });
+    const distinctManager = new BankTransferPaymentManager({ offerManager: { getOffer: () => distinctOffer }, calendar: { transitionPaymentPendingToConfirmedBooking: () => {} } });
+    const distinctSession = distinctManager.initializeBankTransfer(createCommandEnvelope("bank_transfer.initialize", { offerId: distinctOffer.offerId }), { clock: () => new Date("2026-07-22T10:00:00Z") });
+    const distinctResult = distinctManager.verifyAndProcessTransfer(createCommandEnvelope("bank_transfer.verify_and_process", {
+      offerId: distinctOffer.offerId,
+      transferReference: distinctSession.transferReference,
+      mockPspResult: { verified: true, status: "success", amountKobo: distinctOffer.totalAmountDueNowKobo, currency: "NGN", pspReference: distinctSession.transferReference, payerId: "payer_valid" }
+    }), { clock: () => new Date("2026-07-22T10:10:00Z") });
+    assert.equal(distinctResult.outcome, "confirmed");
+  });
+
+  it("Invalid late successes cannot release inventory or create refund state", () => {
+    const invalidCases: Array<[string, Partial<MockBankTransferVerifyResult>]> = [
+      ["unverified", { verified: false }],
+      ["wrong provider reference", { pspReference: "wrong-reference" }],
+      ["wrong amount", { amountKobo: 1 }],
+      ["wrong currency", { currency: "USD" }],
+      ["missing payer", { payerId: undefined }],
+      ["wrong payer", { payerId: "wrong-payer" }]
+    ];
+
+    for (const [label, overrides] of invalidCases) {
+      const offer = createMockOffer({ offerId: `off_late_invalid_${label.replaceAll(" ", "_")}` });
+      let released = false;
+      const auditEntries: Array<Record<string, unknown>> = [];
+      const manager = new BankTransferPaymentManager({
+        offerManager: { getOffer: () => offer },
+        calendar: { transitionPaymentPendingToConfirmedBooking: () => {}, releaseInventory: () => { released = true; } },
+        audit: { record: (entry) => auditEntries.push(entry) }
+      });
+      const session = manager.initializeBankTransfer(createCommandEnvelope("bank_transfer.initialize", { offerId: offer.offerId }), { clock: () => new Date("2026-07-22T10:00:00Z") });
+      const providerResult = {
+        verified: true,
+        status: "success",
+        amountKobo: offer.totalAmountDueNowKobo,
+        currency: "NGN",
+        pspReference: session.transferReference,
+        payerId: offer.parties.primaryGuest.id,
+        ...overrides
+      } as MockBankTransferVerifyResult;
+      assert.throws(() => manager.verifyAndProcessTransfer(createCommandEnvelope("bank_transfer.verify_and_process", {
+        offerId: offer.offerId,
+        transferReference: session.transferReference,
+        mockPspResult: providerResult
+      }), { clock: () => new Date("2026-07-22T10:35:00Z") }), /verification|Currency|Amount|Payer attribution/i, label);
+      assert.equal(released, false, `${label} must not release inventory`);
+      assert.equal(auditEntries.some((entry) => entry.type === "bank_transfer.late_payment_refunded"), false);
+    }
+  });
 });
