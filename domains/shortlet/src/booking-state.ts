@@ -6,7 +6,7 @@ export interface BookingStateRepository {
   saveContract(contract: BookingContract): void;
   findReservationById(reservationId: string): Reservation | null;
   saveReservation(reservation: Reservation): void;
-  mutateContract?(contractId: string, expectedVersion: number, mutation: (current: BookingContract) => BookingContract): BookingContract;
+  mutateContract(contractId: string, expectedVersion: number, mutation: (current: BookingContract) => BookingContract): BookingContract;
 }
 
 export class InMemoryBookingStateRepository implements BookingStateRepository {

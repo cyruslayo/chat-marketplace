@@ -1,0 +1,12 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { resolveBookingAmendmentServerEvent, BOOKING_AMENDMENT_ACCEPT_EVENT } from "../apps/web/src/booking-amendment-actions.js";
+import type { BookingAmendmentApplication } from "../apps/web/src/booking-amendment-application.js";
+import type { BookingAmendmentArtifact } from "../apps/web/src/booking-amendment-artifact.js";
+
+const artifact: BookingAmendmentArtifact = { id: "booking-amendment:c1", kind: "shortlet.booking-amendment", schemaVersion: "shortlet.booking-amendment/v1", projectionVersion: "projection-1", facts: { contractId: "c1", reservationId: "r1", currentContractVersion: 1, current: { checkIn: "2026-08-20", checkOut: "2026-08-21", occupants: ["Guest"], checkout: "11:00", totalKobo: 1000, currency: "NGN" }, proposal: { amendmentId: "a1", amendmentVersion: 1, status: "proposed", checkIn: "2026-08-20", checkOut: "2026-08-22", occupants: ["Guest"], revisedAllInStayTotalKobo: 2000, quoteId: "q1", quoteVersion: "v1", financialAdjustment: { type: "additional_collection", amountKobo: 1000, currency: "NGN" }, humanApprovalRequired: false, humanApprovalSatisfied: true } } };
+const principal = { id: "g1", role: "guest" as const, tenantId: "t1" };
+const event = (context: Record<string, unknown>) => ({ message: { action: { name: BOOKING_AMENDMENT_ACCEPT_EVENT, context } } }) as never;
+const base = { artifactId: artifact.id, contractId: "c1", amendmentId: "a1", amendmentVersion: 1, expectedContractVersion: 1, quoteId: "q1", quoteVersion: "v1", projectionVersion: artifact.projectionVersion };
+
+test("Weaver amendment event resolution is strict, current-state based, and fail closed", () => { let accepted = false; const application = { getArtifact: () => artifact, acceptAmendment: () => { accepted = true; } } as unknown as BookingAmendmentApplication; const result = resolveBookingAmendmentServerEvent({ event: event(base), application, principal }); assert.equal(result.ok, true); assert.equal(accepted, true); const stale = resolveBookingAmendmentServerEvent({ event: event({ ...base, projectionVersion: "old" }), application, principal }); assert.equal(stale.ok, false); assert.equal(stale.ok ? "" : stale.code, "STALE_ACTION"); const unsafe = resolveBookingAmendmentServerEvent({ event: event({ ...base, tenantId: "t1" }), application, principal }); assert.equal(unsafe.ok, false); assert.equal(unsafe.ok ? "" : unsafe.code, "INVALID_CONTEXT"); });
