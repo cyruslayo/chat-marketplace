@@ -25,6 +25,14 @@ export function conventionalBookingContractRoute(contractId: string): string {
   return `/booking-contracts/${encodeURIComponent(contractId)}`;
 }
 
+export function conventionalCheckInSupportRoute(reservationId: string): string {
+  return `/reservations/${encodeURIComponent(reservationId)}/check-in`;
+}
+
+export function getConventionalCheckInSupportView(application: import("./checkin-support-application.js").CheckInSupportApplication, reservationId: string, principal: CommandPrincipal, contract: { contractId: string; unitId: string }) {
+  return Object.freeze({ route: conventionalCheckInSupportRoute(reservationId), artifact: application.getArtifact(reservationId, principal, contract) });
+}
+
 export function conventionalProtectedArrivalRoute(contractId: string): string {
   return `/booking-contracts/${encodeURIComponent(contractId)}/arrival`;
 }

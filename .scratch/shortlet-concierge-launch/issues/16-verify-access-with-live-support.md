@@ -19,11 +19,22 @@ Guide arrival within 2:00 PM–10:00 PM WAT, maintain live Human Incident Suppor
 
 ## Acceptance criteria
 
-- [ ] Arrival boundaries, support ownership, evidence requests, and escalation are visible and auditable.
-- [ ] Verified Access follows independent evidence priority and cannot be declared by Operator assertion or chat state alone.
-- [ ] Blocking complaints hold exposed revenue and preserve the current incident context for human review.
-- [ ] Late voluntary arrival and actual failed access produce distinct outcomes under the accepted policy.
+- [x] Arrival boundaries, support ownership, evidence requests, and escalation are visible and auditable.
+- [x] Verified Access follows independent evidence priority and cannot be declared by Operator assertion or chat state alone.
+- [x] Blocking complaints hold exposed revenue and preserve the current incident context for human review.
+- [x] Late voluntary arrival and actual failed access produce distinct outcomes under the accepted policy.
 
 ## Blocked by
 
 - [Issue 13](13-present-contract-and-release-arrival-data.md)
+
+## Answer
+
+- The contractual arrival window is authoritative and represented in Africa/Lagos.
+- Human Incident Support assignment and coverage are trusted server state.
+- The Primary Guest can confirm access or report a bounded incident through one application boundary.
+- Verified Access follows the ADR 0022 evidence hierarchy; Operator assertion and chat cannot independently verify access.
+- Protection-window start follows the later-of rule, with the voluntary late-arrival exception only on positive trusted evidence.
+- Blocking complaints request human ownership and prevent Revenue Release through authoritative complaint state.
+- Conventional and Weaver presentations share a minimized canonical artifact.
+- Final local validation totals: focused suite 27 passed, 0 failed; full suite 373 passed, 0 failed, 0 skipped, 0 todo.
