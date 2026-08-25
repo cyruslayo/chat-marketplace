@@ -1,6 +1,7 @@
 import { PlatformCommandEnvelope } from "../../../packages/platform-core/src/index.js";
 import { createStayQuote } from "./quote.js";
 import { getUnitOnboardingStatus } from "./onboarding.js";
+import { createGuestConductPolicySnapshot, type GuestConductPolicySnapshot, type UnitConductPolicy } from "./guest-conduct.js";
 import * as crypto from "node:crypto";
 
 
@@ -73,7 +74,8 @@ export interface ConditionalBookingOffer {
   totalAmountDueNowKobo: number;
   policies: {
     cancellationPolicy: any;
-    guestConductRules: readonly string[];
+    readonly guestConductPolicy?: GuestConductPolicySnapshot;
+    readonly guestConductRules: readonly string[];
   };
   disclosures: readonly string[];
   paymentWindow: {
@@ -257,14 +259,18 @@ export class ConditionalOfferManager {
       quote: freshQuote,
       refundableSecurityDepositKobo: freshQuote.refundableSecurityDepositKobo,
       totalAmountDueNowKobo: freshQuote.totalAmountDueNowKobo,
-      policies: Object.freeze({
-        cancellationPolicy: freshQuote.cancellationPolicy,
-        guestConductRules: Object.freeze([
-          "Primary guest must personally occupy the unit for the entire stay.",
-          "No unauthorized extra occupants or commercial parties permitted.",
-          "Strict quiet hours between 10:00 PM and 7:00 AM WAT."
-        ])
-      }),
+      policies: (() => {
+        const conduct = createGuestConductPolicySnapshot({
+          unitId: unit.id,
+          capacity: unit.capacity,
+          policy: unit.conductPolicy as UnitConductPolicy | undefined
+        });
+        return Object.freeze({
+          cancellationPolicy: freshQuote.cancellationPolicy,
+          guestConductPolicy: conduct,
+          guestConductRules: Object.freeze(conduct.rules.map((rule) => rule.summary))
+        });
+      })(),
       disclosures: Object.freeze(disclosures),
       paymentWindow: Object.freeze({
         durationMinutes: paymentWindowDurationMinutes,
