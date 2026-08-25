@@ -150,6 +150,10 @@ export class AvailabilityCalendar {
     this.#store.releasePaymentPending(commitmentId, clock().toISOString());
   }
 
+  releaseConfirmedBooking({ commitmentId, unitId, start, end, clock = () => new Date() }: { commitmentId: string; unitId: string; start: DateValue; end: DateValue; clock?: Clock }): void {
+    this.#store.releaseConfirmedBooking(commitmentId, unitId, dateValue(start), dateValue(end), clock().toISOString());
+  }
+
   transitionBookingRequestBlockToPaymentPending({ commitmentId, unitId, start, end, clock = () => new Date() }: { commitmentId: string; unitId: string; start: DateValue; end: DateValue; clock?: Clock }) {
     return this.#store.transitionBookingRequestBlockToPaymentPending({ commitmentId, unitId, start: dateValue(start), end: dateValue(end), now: clock().toISOString() });
   }

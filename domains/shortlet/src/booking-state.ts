@@ -7,6 +7,7 @@ export interface BookingStateRepository {
   findReservationById(reservationId: string): Reservation | null;
   saveReservation(reservation: Reservation): void;
   mutateContract(contractId: string, expectedVersion: number, mutation: (current: BookingContract) => BookingContract): BookingContract;
+  transitionReservationStatus(reservationId: string, expectedStatus: "confirmed", nextStatus: "cancelled" | "no_show"): Reservation;
 }
 
 export class InMemoryBookingStateRepository implements BookingStateRepository {
@@ -26,6 +27,13 @@ export class InMemoryBookingStateRepository implements BookingStateRepository {
     const next = mutation(current);
     if (next.contractVersion !== expectedVersion + 1) throw new Error("Invalid atomic contract version");
     this.#contracts.set(id, next);
+    return next;
+  }
+  transitionReservationStatus(id: string, expectedStatus: "confirmed", nextStatus: "cancelled" | "no_show"): Reservation {
+    const current = this.#reservations.get(id);
+    if (!current || current.status !== expectedStatus) throw new Error("STALE_ACTION");
+    const next = { ...current, status: nextStatus };
+    this.#reservations.set(id, next);
     return next;
   }
 }

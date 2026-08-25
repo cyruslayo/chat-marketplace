@@ -89,8 +89,9 @@ export interface Reservation {
   readonly unitId: string;
   readonly primaryGuestId: string;
   readonly dates: { readonly checkIn: string; readonly checkOut: string };
-  readonly status: "confirmed";
+  readonly status: "confirmed" | "cancelled" | "no_show";
   readonly confirmedAt: string;
+  readonly inventoryCommitmentId?: string;
 }
 
 export interface LedgerEntry {
@@ -375,7 +376,8 @@ export class CardPaymentManager {
       primaryGuestId: offer.parties.primaryGuest.id,
       dates: { checkIn: offer.dates.checkIn, checkOut: offer.dates.checkOut },
       status: "confirmed",
-      confirmedAt: now.toISOString()
+      confirmedAt: now.toISOString(),
+      inventoryCommitmentId: offer.inventoryCommitmentId
     };
 
     const bookingContract: BookingContract = {

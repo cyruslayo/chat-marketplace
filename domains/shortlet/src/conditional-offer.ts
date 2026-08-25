@@ -185,13 +185,20 @@ export class ConditionalOfferManager {
     }
 
     // 2. Revalidate Quote & Aggregate Versions
-    const freshQuote = createStayQuote({
+    const recalculatedQuote = createStayQuote({
       unit,
       checkIn: request.checkIn,
       checkOut: request.checkOut,
       partySize: request.occupants.length || 1,
       selectedOptionalServices: request.quote?.lineItems?.optionalServices ?? [],
       clock
+    });
+    // ADR 0014/0058: reprice the offer, but never replace the immutable
+    // cancellation snapshot disclosed when this Booking Request began.
+    const freshQuote = Object.freeze({
+      ...recalculatedQuote,
+      cancellationPolicy: request.quote.cancellationPolicy,
+      policyVersions: Object.freeze({ ...recalculatedQuote.policyVersions, cancellation: request.quote.cancellationPolicy.version })
     });
 
     const offerId = `offer-${crypto.randomUUID()}`;

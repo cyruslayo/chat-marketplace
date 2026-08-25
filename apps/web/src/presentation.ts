@@ -33,6 +33,9 @@ export function conventionalBookingContractRoute(contractId: string): string {
 export function conventionalBookingAmendmentRoute(contractId: string): string { return `/booking-contracts/${encodeURIComponent(contractId)}/amend`; }
 export function getConventionalBookingAmendmentView(application: import("./booking-amendment-application.js").BookingAmendmentApplication, contractId: string, principal: CommandPrincipal) { return Object.freeze({ route: conventionalBookingAmendmentRoute(contractId), artifact: application.getArtifact(contractId, principal) }); }
 
+export function conventionalCancellationRoute(reservationId: string): string { return `/reservations/${encodeURIComponent(reservationId)}/cancellation`; }
+export function getConventionalCancellationView(application: import("./cancellation-application.js").CancellationApplication, reservationId: string, principal: CommandPrincipal) { return Object.freeze({ route: conventionalCancellationRoute(reservationId), artifact: application.getArtifact(reservationId, principal) }); }
+
 export function conventionalGuestConductRoute(reservationId: string): string { return `/reservations/${encodeURIComponent(reservationId)}/conduct`; }
 export function getConventionalGuestConductView(application: import("./guest-conduct-application.js").GuestConductApplication, reservationId: string, principal: CommandPrincipal) { return Object.freeze({ route: conventionalGuestConductRoute(reservationId), artifact: application.getArtifact(reservationId, principal) }); }
 
