@@ -32,6 +32,9 @@ export interface BookingContractArtifact {
     readonly cancellationPolicy?: { readonly type?: string; readonly version?: string; readonly summary?: string };
     readonly guestConductRules: readonly string[];
     readonly contractVersion: number;
+    readonly checkout?: { readonly time: "11:00" | "12:00" | "13:00" | "14:00"; readonly timezone: "Africa/Lagos"; readonly source: "contractual" | "checkout_amendment" };
+    readonly currentContractTotalKobo?: number;
+    readonly amendmentAdjustments?: readonly { readonly amendmentId: string; readonly type: "additional_collection" | "refund" | "none"; readonly amountKobo: number; readonly currency: "NGN" }[];
     readonly addressAvailability: "locked" | "available";
     readonly accessAvailability: "locked" | "available";
     readonly locationReferenceId?: string;
@@ -53,7 +56,7 @@ function safeCancellationPolicy(value: unknown): BookingContractArtifact["facts"
 
 export function bookingContractArtifactId(contractId: string): string { return `booking-contract:${contractId}`; }
 
-export function bookingContractArtifactFromView(view: BookingContractView, contract: { readonly paymentDetails: { readonly paymentMethod: "fresh_card" | "bank_transfer"; readonly amountKobo: number; readonly cardMetadata?: { readonly brand: string; readonly last4: string } }; readonly policies: { readonly cancellationPolicy: unknown; readonly guestConductRules: readonly string[] }; readonly parties: BookingContractView["parties"] }, _viewer: CommandPrincipal): BookingContractArtifact {
+export function bookingContractArtifactFromView(view: BookingContractView, contract: { readonly paymentDetails: { readonly paymentMethod: "fresh_card" | "bank_transfer"; readonly amountKobo: number; readonly cardMetadata?: { readonly brand: string; readonly last4: string } }; readonly policies: { readonly cancellationPolicy: unknown; readonly guestConductRules: readonly string[] }; readonly parties: BookingContractView["parties"]; readonly checkout?: BookingContractView["checkout"]; readonly financialSummary?: { readonly currentContractTotalKobo: number; readonly amendmentAdjustments: readonly { readonly amendmentId: string; readonly type: "additional_collection" | "refund" | "none"; readonly amountKobo: number; readonly currency: "NGN" }[] } }, _viewer: CommandPrincipal): BookingContractArtifact {
   const facts = {
     contractId: view.contractId, reservationId: view.reservationId, offerId: view.offerId, unitId: view.unitId,
     primaryGuest: Object.freeze({ ...view.parties.primaryGuest }), accommodationProvider: Object.freeze({ ...view.parties.operator }),
@@ -65,6 +68,8 @@ export function bookingContractArtifactFromView(view: BookingContractView, contr
     paymentMethod: contract.paymentDetails.paymentMethod, ...(contract.paymentDetails.cardMetadata ? { cardMetadata: Object.freeze({ ...contract.paymentDetails.cardMetadata }) } : {}),
     ...(safeCancellationPolicy(contract.policies.cancellationPolicy) ? { cancellationPolicy: safeCancellationPolicy(contract.policies.cancellationPolicy) } : {}),
     guestConductRules: Object.freeze([...contract.policies.guestConductRules]), contractVersion: view.contractVersion,
+    checkout: Object.freeze({ time: view.checkout?.time ?? contract.checkout?.time ?? "11:00", timezone: view.checkout?.timezone ?? contract.checkout?.timezone ?? "Africa/Lagos", source: view.checkout?.source ?? contract.checkout?.source ?? "contractual" }),
+    ...(contract.financialSummary ? { currentContractTotalKobo: contract.financialSummary.currentContractTotalKobo, amendmentAdjustments: Object.freeze(contract.financialSummary.amendmentAdjustments.map(({ amendmentId, type, amountKobo, currency }) => ({ amendmentId, type, amountKobo, currency }))) } : {}),
     addressAvailability: view.addressAvailability, accessAvailability: view.accessAvailability,
     ...(view.locationReferenceId ? { locationReferenceId: view.locationReferenceId } : {}), ...(view.accessReferenceId ? { accessReferenceId: view.accessReferenceId } : {}),
   };

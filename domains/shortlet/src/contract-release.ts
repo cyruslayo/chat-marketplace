@@ -54,6 +54,7 @@ export interface BookingContractView {
   readonly locationReferenceId?: string;
   readonly accessReferenceId?: string;
   readonly projectionVersion: number;
+  readonly checkout: NonNullable<BookingContract["checkout"]>;
 }
 
 export interface ProtectedArrivalView {
@@ -121,6 +122,7 @@ export class ContractAndArrivalReleaseManager {
     const currency = typeof quote?.currency === "string" ? quote.currency : undefined;
     const projectionVersion = `${contract.contractVersion}|${reservation?.status ?? "missing"}|${state.addressAvailable ? "address" : "locked"}|${state.accessAvailable ? "access" : "locked"}`;
     const numericVersion = Number.parseInt(Buffer.from(projectionVersion).toString("hex").slice(0, 12), 16);
+    const checkout = contract.checkout ?? { time: "11:00" as const, timezone: "Africa/Lagos" as const, source: "contractual" as const };
     return Object.freeze({
       contractId: contract.contractId, reservationId: contract.reservationId, offerId: contract.offerId, unitId: contract.unitId,
       parties: contract.parties, dates: contract.dates, occupants: contract.occupants,
@@ -130,6 +132,7 @@ export class ContractAndArrivalReleaseManager {
       ...(arrival?.locationReferenceId ? { locationReferenceId: arrival.locationReferenceId } : {}),
       ...(arrival?.accessReferenceId ? { accessReferenceId: arrival.accessReferenceId } : {}),
       projectionVersion: numericVersion,
+      checkout,
     });
   }
 

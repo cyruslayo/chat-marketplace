@@ -18,10 +18,16 @@ Create a versioned Booking Amendment that revalidates availability, eligibility,
 
 ## Acceptance criteria
 
-- [ ] Date changes, extensions, occupants, price, and checkout follow their accepted submission and completion deadlines.
-- [ ] Primary Guest replacement remains prohibited and late first access remains a human-approved exception only.
-- [ ] Additional collection or refund completes as part of the accepted amendment outcome without partial contract mutation.
-- [ ] Chat, Operator promises, stale surfaces, and failed payments cannot alter contractual state.
+- [x] Date changes, extensions, occupants, price, and checkout follow their accepted submission and completion deadlines.
+- [x] Primary Guest replacement remains prohibited and late first access remains a human-approved exception only.
+- [x] Additional collection or refund completes as part of the accepted amendment outcome without partial contract mutation.
+- [x] Chat, Operator promises, stale surfaces, and failed payments cannot alter contractual state.
+
+## Answer
+
+Implemented the versioned Booking Amendment slice. Material amendments are Primary-Guest and tenant scoped; proposals remain separate from explicit acceptance, with contract, quote, and validation versions rechecked. Dates, occupants, Checkout, and the revised quote commit atomically. Checkout Amendment persists into the durable Booking Contract, and Issue 18 reads that same durable term. Additional collection and refund use trusted provider state, not client results; the original contract remains valid until settlement and commit succeed. Primary Guest replacement is rejected, and late first access after 22:00 WAT requires trusted human approval. Conventional web and Weaver use the same canonical amendment state.
+
+Local validation: focused tests 34 passed, 0 failed, 0 skipped, 0 todo; full suite 379 passed, 0 failed, 0 skipped, 0 todo; `npm run check`, `npm run verify:weaver`, and `git diff --check` passed.
 
 ## Blocked by
 

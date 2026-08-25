@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { PlatformCommandEnvelope, CommandPrincipal } from "../../../packages/platform-core/src/index.js";
 import type { ConditionalBookingOffer } from "./conditional-offer.js";
 import type { BookingContract, LedgerEntry, Reservation } from "./card-payment.js";
+import type { BookingStateRepository } from "./booking-state.js";
 
 export interface BankTransferCheckoutSession {
   readonly checkoutId: string;
@@ -66,6 +67,7 @@ export interface BankTransferPaymentManagerOptions {
   readonly audit?: { record(entry: Record<string, unknown>): void };
   readonly providerClient: BankTransferProviderClient;
   readonly liveAttempts?: import("./payment-attempt.js").LivePaymentAttemptRegistry;
+  readonly bookingState?: BookingStateRepository;
 }
 
 type Outcome = "confirmed" | "processing_in_grace" | "late_payment_refunded" | "failed" | "expired";
@@ -84,6 +86,7 @@ export class BankTransferPaymentManager {
   readonly #audit?: BankTransferPaymentManagerOptions["audit"];
   readonly #providerClient: BankTransferProviderClient;
   readonly #liveAttempts?: BankTransferPaymentManagerOptions["liveAttempts"];
+  readonly #bookingState?: BookingStateRepository;
   readonly #sessionsByOffer = new Map<string, BankTransferCheckoutSession>();
   readonly #sessionsByReference = new Map<string, BankTransferCheckoutSession>();
   readonly #reservations = new Map<string, Reservation>();
@@ -95,7 +98,7 @@ export class BankTransferPaymentManager {
 
   constructor(options: BankTransferPaymentManagerOptions) {
     if (!options.offerManager || !options.providerClient) throw new Error("offerManager and providerClient are required for BankTransferPaymentManager");
-    this.#offerManager = options.offerManager; this.#calendar = options.calendar; this.#audit = options.audit; this.#providerClient = options.providerClient; this.#liveAttempts = options.liveAttempts;
+    this.#offerManager = options.offerManager; this.#calendar = options.calendar; this.#audit = options.audit; this.#providerClient = options.providerClient; this.#liveAttempts = options.liveAttempts; this.#bookingState = options.bookingState;
   }
 
   initializeBankTransfer(envelope: PlatformCommandEnvelope<{ offerId: string }>, { clock = () => new Date() }: { clock?: () => Date } = {}): BankTransferCheckoutSession {
@@ -174,9 +177,9 @@ export class BankTransferPaymentManager {
     this.#calendar.transitionPaymentPendingToConfirmedBooking({ commitmentId: offer.inventoryCommitmentId, unitId: offer.unitId, start: offer.dates.checkIn, end: offer.dates.checkOut, clock: () => now });
     const reservationId = `res_trf_${deterministicSuffix(session.transferReference)}`; const contractId = `ctr_trf_${deterministicSuffix(session.transferReference)}`;
     const reservation: Reservation = { reservationId, contractId, unitId: offer.unitId, primaryGuestId: offer.parties.primaryGuest.id, dates: { checkIn: offer.dates.checkIn, checkOut: offer.dates.checkOut }, status: "confirmed", confirmedAt: now.toISOString() };
-    const bookingContract: BookingContract = { contractId, reservationId, offerId: offer.offerId, unitId: offer.unitId, tenantId: offer.tenantId, parties: offer.parties, dates: offer.dates, occupants: offer.occupants, quote: offer.quote, totalAmountDueNowKobo: offer.totalAmountDueNowKobo, policies: offer.policies, disclosures: offer.disclosures, paymentDetails: { paymentMethod: "bank_transfer", transferReference: session.transferReference, amountKobo: result.amountKobo, currency: "NGN", paidAt: now.toISOString() }, createdAt: now.toISOString(), contractVersion: 1 };
+    const bookingContract: BookingContract = { contractId, reservationId, offerId: offer.offerId, unitId: offer.unitId, tenantId: offer.tenantId, parties: offer.parties, dates: offer.dates, occupants: offer.occupants, quote: offer.quote, totalAmountDueNowKobo: offer.totalAmountDueNowKobo, policies: offer.policies, disclosures: offer.disclosures, paymentDetails: { paymentMethod: "bank_transfer", transferReference: session.transferReference, amountKobo: result.amountKobo, currency: "NGN", paidAt: now.toISOString() }, createdAt: now.toISOString(), contractVersion: 1, checkout: { time: "11:00", timezone: "Africa/Lagos", source: "contractual" }, financialSummary: { originalBookingTotalKobo: offer.totalAmountDueNowKobo, currentContractTotalKobo: offer.totalAmountDueNowKobo, currency: "NGN", amendmentAdjustments: [] } };
     const ledgerEntries: LedgerEntry[] = [{ entryId: `led_${reservationId}_1`, reservationId, type: "guest_payment_credit", amountKobo: offer.totalAmountDueNowKobo, currency: "NGN", createdAt: now.toISOString() }];
-    this.#reservations.set(reservationId, reservation); this.#contracts.set(contractId, bookingContract); this.#ledgerEntries.set(reservationId, ledgerEntries); this.#sessionsByOffer.set(offer.offerId, { ...session, status: "completed" }); this.#liveAttempts?.release(offer.offerId); this.#processedReferences.set(session.transferReference, { offerId: offer.offerId, tenantId: offer.tenantId, outcome: "confirmed", reservationId, contractId });
+    this.#reservations.set(reservationId, reservation); this.#contracts.set(contractId, bookingContract); this.#bookingState?.saveContract(bookingContract); this.#bookingState?.saveReservation(reservation); this.#ledgerEntries.set(reservationId, ledgerEntries); this.#sessionsByOffer.set(offer.offerId, { ...session, status: "completed" }); this.#liveAttempts?.release(offer.offerId); this.#processedReferences.set(session.transferReference, { offerId: offer.offerId, tenantId: offer.tenantId, outcome: "confirmed", reservationId, contractId });
     return { outcome: "confirmed", reservation, bookingContract, ledgerEntries: Object.freeze(ledgerEntries) };
   }
 

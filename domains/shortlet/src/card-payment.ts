@@ -1,5 +1,6 @@
 import { PlatformCommandEnvelope } from "../../../packages/platform-core/src/index.js";
 import { ConditionalBookingOffer } from "./conditional-offer.js";
+import type { BookingStateRepository } from "./booking-state.js";
 
 /**
  * ADR 0049 & AC 1: Strictly reject payloads containing raw PAN, CVV, PIN, OTP, or reusable card tokens.
@@ -76,6 +77,8 @@ export interface BookingContract {
       };
   readonly createdAt: string;
   readonly contractVersion: number;
+  readonly checkout?: { readonly time: "11:00" | "12:00" | "13:00" | "14:00"; readonly timezone: "Africa/Lagos"; readonly source: "contractual" | "checkout_amendment"; readonly amendmentId?: string; readonly amendmentVersion?: number | string };
+  readonly financialSummary?: { readonly originalBookingTotalKobo: number; readonly currentContractTotalKobo: number; readonly currency: "NGN"; readonly amendmentAdjustments: readonly { readonly amendmentId: string; readonly type: "additional_collection" | "refund" | "none"; readonly amountKobo: number; readonly currency: "NGN"; readonly settlementId?: string; readonly settledAt?: string; readonly quoteId: string; readonly quoteVersion: string | number }[] };
 }
 
 export interface Reservation {
@@ -139,6 +142,7 @@ export interface CardPaymentManagerOptions {
     verifyTransaction(pspReference: string): PSPVerifyResult;
   };
   readonly liveAttempts?: import("./payment-attempt.js").LivePaymentAttemptRegistry;
+  readonly bookingState?: BookingStateRepository;
 }
 
 export class CardPaymentManager {
@@ -148,6 +152,7 @@ export class CardPaymentManager {
   readonly #audit?: CardPaymentManagerOptions["audit"];
   readonly #pspClient?: CardPaymentManagerOptions["pspClient"];
   readonly #liveAttempts?: CardPaymentManagerOptions["liveAttempts"];
+  readonly #bookingState?: BookingStateRepository;
 
   readonly #sessions = new Map<string, CardCheckoutSession>();
   readonly #reservations = new Map<string, Reservation>();
@@ -165,6 +170,7 @@ export class CardPaymentManager {
     this.#audit = options.audit;
     this.#pspClient = options.pspClient;
     this.#liveAttempts = options.liveAttempts;
+    this.#bookingState = options.bookingState;
   }
 
   /**
@@ -392,7 +398,9 @@ export class CardPaymentManager {
         ...(pspResult.cardMetadata ? { cardMetadata: pspResult.cardMetadata } : {})
       },
       createdAt: now.toISOString(),
-      contractVersion: 1
+      contractVersion: 1,
+      checkout: { time: "11:00", timezone: "Africa/Lagos", source: "contractual" },
+      financialSummary: { originalBookingTotalKobo: offer.totalAmountDueNowKobo, currentContractTotalKobo: offer.totalAmountDueNowKobo, currency: "NGN", amendmentAdjustments: [] }
     };
 
     // Ledger posting (Balanced ledger effects)
@@ -453,6 +461,8 @@ export class CardPaymentManager {
     // Save authoritative state
     this.#reservations.set(reservationId, reservation);
     this.#contracts.set(contractId, bookingContract);
+    this.#bookingState?.saveContract(bookingContract);
+    this.#bookingState?.saveReservation(reservation);
     this.#ledgerEntries.set(reservationId, ledgerEntries);
     session.status = "completed";
     this.#liveAttempts?.release(offer.offerId);

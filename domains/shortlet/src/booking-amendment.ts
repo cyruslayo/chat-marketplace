@@ -1,330 +1,71 @@
-import { PlatformCommandEnvelope } from "../../../packages/platform-core/src/index.js";
-import { BookingContract, MockPSPVerifyResult } from "./card-payment.js";
+import { createHash } from "node:crypto";
+import type { PlatformCommandEnvelope, CommandPrincipal } from "../../../packages/platform-core/src/index.js";
+import type { BookingContract, MockPSPVerifyResult } from "./card-payment.js";
 
-export interface BookingAmendmentChanges {
-  readonly dates?: { readonly checkIn: string; readonly checkOut: string };
-  readonly occupants?: readonly { readonly name: string }[];
-  readonly checkoutTime?: string; // HH:mm WAT (e.g. "12:00", "13:00", "14:00")
-  readonly primaryGuestId?: string;
-  readonly lateFirstAccessTime?: string; // HH:mm WAT
-  readonly isHumanApprovedLateAccess?: boolean;
-}
-
-export interface FinancialAdjustment {
-  readonly type: "additional_collection" | "refund" | "none";
-  readonly amountKobo: number;
-  readonly currency: "NGN";
-}
-
-export interface PendingAmendment {
-  readonly amendmentId: string;
-  readonly contractId: string;
-  readonly requestedBy: string;
-  readonly changes: BookingAmendmentChanges;
-  readonly financialAdjustment: FinancialAdjustment;
-  readonly originalContractVersion: number;
-  status: "pending" | "committed" | "rejected";
-  readonly createdAt: string;
-}
-
-export interface BookingAmendmentResult {
-  readonly amendmentId: string;
-  readonly contractId: string;
-  readonly previousVersion: number;
-  readonly newVersion: number;
-  readonly status: "committed";
-  readonly financialAdjustment: FinancialAdjustment;
-  readonly updatedContract: BookingContract;
-}
-
+export interface BookingAmendmentChanges { readonly dates?: { readonly checkIn: string; readonly checkOut: string }; readonly occupants?: readonly { readonly name: string }[]; readonly checkoutTime?: string; readonly primaryGuestId?: string; readonly lateFirstAccessTime?: string; }
+export interface FinancialAdjustment { readonly type: "additional_collection" | "refund" | "none"; readonly amountKobo: number; readonly currency: "NGN"; }
+export interface AmendmentQuote { readonly quoteId: string; readonly quoteVersion: string | number; readonly currency: "NGN"; readonly revisedAllInStayTotalKobo: number; readonly financialAdjustment: FinancialAdjustment; readonly policyVersions?: Readonly<Record<string, string>>; }
+export interface AmendmentSettlement { readonly settlementId: string; readonly amendmentId: string; readonly contractId: string; readonly type: FinancialAdjustment["type"]; readonly amountKobo: number; readonly currency: "NGN"; readonly status: "settled" | "pending" | "failed"; readonly quoteId: string; readonly quoteVersion: string | number; readonly settledAt?: string; }
+export interface PendingAmendment { readonly amendmentId: string; readonly amendmentVersion: number; readonly contractId: string; readonly requestedBy: string; readonly changes: BookingAmendmentChanges; readonly financialAdjustment: FinancialAdjustment; readonly quote: AmendmentQuote; readonly originalContractVersion: number; readonly validationVersions: Readonly<Record<string, string>>; readonly completionDeadline?: string; readonly createdAt: string; status: "pending" | "proposed" | "awaiting_financial_settlement" | "committed" | "rejected" | "expired"; lifecycleStatus: "proposed" | "awaiting_financial_settlement" | "committed" | "rejected" | "expired"; }
+export interface BookingAmendmentResult { readonly amendmentId: string; readonly contractId: string; readonly previousVersion: number; readonly newVersion: number; readonly status: "committed"; readonly financialAdjustment: FinancialAdjustment; readonly updatedContract: BookingContract; }
 export interface BookingAmendmentDependencies {
-  readonly contractRepository: {
-    getContract(id: string): BookingContract;
-    updateContract(contract: BookingContract): void;
-  };
-  readonly calendar?: {
-    getAuthoritativeAvailability(unitId: string, checkIn: string, checkOut: string): { isAvailable: boolean };
-    hasSameDayCheckInOnDate?(unitId: string, date: string): boolean;
-  };
-  readonly inspectionRepository?: {
-    isPassedAndValid(unitId: string): boolean;
-  };
-  readonly authorityRepository?: {
-    isAuthorityValid(unitId: string): boolean;
-  };
-  readonly audit?: {
-    record(entry: Record<string, unknown>): void;
-  };
+ readonly contractRepository: { getContract(id: string): BookingContract; updateContract(contract: BookingContract): void; mutateContract?(id: string, expectedVersion: number, mutation: (current: BookingContract) => BookingContract): BookingContract };
+ readonly calendar?: { getAuthoritativeAvailability(unitId: string, checkIn: string, checkOut: string): { isAvailable: boolean; version?: string }; hasSameDayCheckInOnDate?(unitId: string, date: string): boolean; };
+ readonly inspectionRepository?: { isPassedAndValid?(unitId: string): boolean; isPassedAndValidThrough?(unitId: string, checkout: string): { valid: boolean; version?: string } };
+ readonly authorityRepository?: { isAuthorityValid?(unitId: string): boolean; isValidThrough?(unitId: string, checkout: string): { valid: boolean; version?: string } };
+ readonly quoteProvider?: { quote(input: { contract: BookingContract; changes: BookingAmendmentChanges; resultingDates: { checkIn: string; checkOut: string; nights: number } }): AmendmentQuote };
+ readonly settlementProvider?: { settle(input: { amendmentId: string; contractId: string; adjustment: FinancialAdjustment; quote: AmendmentQuote; principal: { id: string } }): AmendmentSettlement };
+ readonly lateAccessAuthority?: { approve(input: { contractId: string; requestedTime: string }): { approved: boolean; approvalId?: string; approvedTime?: string; version?: string } };
+ readonly lateCheckoutAuthority?: { validate(input: { contract: BookingContract; requestedTime: "12:00" | "13:00" | "14:00" }): { eligible: boolean; version?: string } };
+ readonly audit?: { record(entry: Record<string, unknown>): void };
+ readonly maxOccupants?: number;
 }
+function dateOnly(value: string): number { if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return NaN; const n = Date.parse(`${value}T00:00:00Z`); return new Date(n).toISOString?.().startsWith(value) ? n : NaN; }
+function nightsBetween(a: string, b: string): number { return (dateOnly(b) - dateOnly(a)) / 86400000; }
+function lagosTimestamp(date: string, time: string): number { const [h, m] = time.split(":").map(Number); return Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10)), h - 1, m); }
+function authorized(contract: BookingContract, principal: CommandPrincipal): boolean { return principal.role === "guest" && !!principal.id && principal.id === contract.parties.primaryGuest.id && !!contract.tenantId && !!principal.tenantId && principal.tenantId === contract.tenantId; }
+function stableId(input: string): string { return createHash("sha256").update(input).digest("hex").slice(0, 20); }
 
 export class BookingAmendmentManager {
-  readonly #deps: BookingAmendmentDependencies;
-  readonly #pendingAmendments = new Map<string, PendingAmendment>();
-
-  constructor(deps: BookingAmendmentDependencies) {
-    if (!deps.contractRepository) {
-      throw new Error("contractRepository is required for BookingAmendmentManager");
-    }
-    this.#deps = deps;
-  }
-
-  /**
-   * ADR 0060 & AC 1, AC 2, AC 3: Request versioned amendment with full revalidation.
-   */
-  requestAmendment(
-    envelope: PlatformCommandEnvelope<{
-      contractId: string;
-      changes: BookingAmendmentChanges;
-    }>,
-    clock: () => Date = () => new Date()
-  ): PendingAmendment {
-    if (!envelope || envelope.commandName !== "booking_amendment.request") {
-      throw new Error("Invalid envelope: commandName must be 'booking_amendment.request'");
-    }
-
-    const { contractId, changes } = envelope.payload;
-    const contract = this.#deps.contractRepository.getContract(contractId);
-    const now = clock();
-
-    // Cross-tenant check
-    if (contract.tenantId && envelope.principal.tenantId && contract.tenantId !== envelope.principal.tenantId) {
-      throw new Error("Cross-tenant contract access denied");
-    }
-
-    // AC 2 & ADR 0012: Primary Guest replacement is strictly prohibited!
-    if (changes.primaryGuestId && changes.primaryGuestId !== contract.parties.primaryGuest.id) {
-      throw new Error(
-        `Primary Guest replacement is prohibited (contract primary guest: '${contract.parties.primaryGuest.id}', attempted: '${changes.primaryGuestId}')`
-      );
-    }
-
-    // AC 2 & ADR 0031: Late first access after 22:00 WAT requires explicit human approval
-    if (changes.lateFirstAccessTime) {
-      const parts = changes.lateFirstAccessTime.split(":");
-      const hours = parseInt(parts[0], 10);
-      if (hours >= 22 && !changes.isHumanApprovedLateAccess) {
-        throw new Error("Late first access after 22:00 WAT is a human-approved exception only");
-      }
-    }
-
-    // AC 1 & ADR 0060: Date changes & extension deadlines
-    const originalCheckInMs = new Date(`${contract.dates.checkIn}T14:00:00.000Z`).getTime();
-    const originalCheckOutMs = new Date(`${contract.dates.checkOut}T11:00:00.000Z`).getTime();
-
-    if (changes.dates?.checkIn && changes.dates.checkIn !== contract.dates.checkIn) {
-      // Date changes must begin at least 24 hours before check-in
-      const deadline = originalCheckInMs - 24 * 60 * 60 * 1000;
-      if (now.getTime() > deadline) {
-        throw new Error("Date changes must begin at least 24 hours before check-in");
-      }
-    }
-
-    const isExtension =
-      changes.dates?.checkOut &&
-      new Date(changes.dates.checkOut).getTime() > new Date(contract.dates.checkOut).getTime();
-
-    if (isExtension) {
-      // Extension request must begin by 18:00 WAT (6:00 PM) the day before checkout
-      const dayBeforeCheckout = new Date(originalCheckOutMs - 24 * 60 * 60 * 1000);
-      const cutoffStr = `${dayBeforeCheckout.toISOString().slice(0, 10)}T18:00:00.000Z`;
-      const extensionDeadline = new Date(cutoffStr).getTime();
-      if (now.getTime() > extensionDeadline) {
-        throw new Error("Extension request must begin by 6:00 PM (18:00 WAT) the day before checkout");
-      }
-    }
-
-    // Revalidate stay limits (ADR 0023: max 14 nights)
-    const checkIn = changes.dates?.checkIn ?? contract.dates.checkIn;
-    const checkOut = changes.dates?.checkOut ?? contract.dates.checkOut;
-    const nights = Math.round(
-      (new Date(checkOut).getTime() - new Date(checkIn).getTime()) / (24 * 60 * 60 * 1000)
-    );
-
-    if (nights > 14) {
-      throw new Error(`Stay length exceeds the maximum launch limit of 14 nights (requested ${nights} nights)`);
-    }
-
-    // Revalidate booking horizon (ADR 0055: max 90 days from current clock)
-    const ninetyDaysMs = 90 * 24 * 60 * 60 * 1000;
-    if (new Date(checkIn).getTime() - now.getTime() > ninetyDaysMs) {
-      throw new Error("Check-in date exceeds the 90-day booking horizon");
-    }
-
-    // Revalidate Late Checkout (ADR 0032/0033: capped at 14:00 WAT, no same-day check-in)
-    if (changes.checkoutTime) {
-      const parts = changes.checkoutTime.split(":");
-      const hour = parseInt(parts[0], 10);
-      if (hour > 14) {
-        throw new Error("Late checkout cannot exceed 14:00 WAT");
-      }
-      if (this.#deps.calendar?.hasSameDayCheckInOnDate) {
-        const hasSameDay = this.#deps.calendar.hasSameDayCheckInOnDate(contract.unitId, checkOut);
-        if (hasSameDay) {
-          throw new Error("Late checkout is unavailable when a same-day turnover check-in is scheduled");
-        }
-      }
-    }
-
-    // Revalidate Availability
-    if (this.#deps.calendar && changes.dates) {
-      const avail = this.#deps.calendar.getAuthoritativeAvailability(contract.unitId, checkIn, checkOut);
-      if (!avail.isAvailable) {
-        throw new Error("Unit dates are unavailable for requested amendment");
-      }
-    }
-
-    // Revalidate Inspection (ADR 0056)
-    if (this.#deps.inspectionRepository) {
-      const passed = this.#deps.inspectionRepository.isPassedAndValid(contract.unitId);
-      if (!passed) {
-        throw new Error("Physical inspection verification failed for unit");
-      }
-    }
-
-    // Revalidate Authority (ADR 0057)
-    if (this.#deps.authorityRepository) {
-      const valid = this.#deps.authorityRepository.isAuthorityValid(contract.unitId);
-      if (!valid) {
-        throw new Error("Management authority verification failed for unit");
-      }
-    }
-
-    // Calculate Financial Adjustment
-    const originalNights = contract.dates.nights;
-    const nightlyRateKobo = contract.paymentDetails.amountKobo / originalNights;
-    const diffNights = nights - originalNights;
-
-    let adjustmentType: FinancialAdjustment["type"] = "none";
-    let adjustmentAmount = 0;
-
-    if (diffNights > 0) {
-      adjustmentType = "additional_collection";
-      adjustmentAmount = diffNights * nightlyRateKobo;
-    } else if (diffNights < 0) {
-      adjustmentType = "refund";
-      adjustmentAmount = Math.abs(diffNights) * nightlyRateKobo;
-    }
-
-    const amendmentId = `amend_${now.getTime()}_${Math.random().toString(36).slice(2, 6)}`;
-    const pending: PendingAmendment = {
-      amendmentId,
-      contractId: contract.contractId,
-      requestedBy: envelope.principal.id,
-      changes,
-      financialAdjustment: {
-        type: adjustmentType,
-        amountKobo: adjustmentAmount,
-        currency: "NGN"
-      },
-      originalContractVersion: contract.contractVersion,
-      status: "pending",
-      createdAt: now.toISOString()
-    };
-
-    this.#pendingAmendments.set(amendmentId, pending);
-
-    if (this.#deps.audit) {
-      this.#deps.audit.record({
-        type: "booking_amendment.requested",
-        amendmentId,
-        contractId: contract.contractId,
-        changes,
-        financialAdjustment: pending.financialAdjustment,
-        requestedAt: now.toISOString()
-      });
-    }
-
-    return pending;
-  }
-
-  /**
-   * ADR 0060 & AC 3: Commit amendment atomically upon payment or refund confirmation.
-   */
-  commitAmendment(
-    envelope: PlatformCommandEnvelope<{
-      amendmentId: string;
-      pspPaymentResult?: MockPSPVerifyResult;
-    }>,
-    clock: () => Date = () => new Date()
-  ): BookingAmendmentResult {
-    if (!envelope || envelope.commandName !== "booking_amendment.commit") {
-      throw new Error("Invalid envelope: commandName must be 'booking_amendment.commit'");
-    }
-
-    const { amendmentId, pspPaymentResult } = envelope.payload;
-    const pending = this.#pendingAmendments.get(amendmentId);
-    if (!pending) {
-      throw new Error(`Pending amendment '${amendmentId}' not found`);
-    }
-
-    if (pending.status !== "pending") {
-      throw new Error(`Amendment '${amendmentId}' is already ${pending.status}`);
-    }
-
-    // Verify payment if additional collection is required
-    if (pending.financialAdjustment.type === "additional_collection") {
-      if (!pspPaymentResult || !pspPaymentResult.verified || pspPaymentResult.status !== "success") {
-        pending.status = "rejected";
-        throw new Error("Amendment commit failed: Payment verification unsuccessful");
-      }
-    }
-
-    const contract = this.#deps.contractRepository.getContract(pending.contractId);
-    const newVersion = contract.contractVersion + 1;
-    const now = clock();
-
-    const newCheckIn = pending.changes.dates?.checkIn ?? contract.dates.checkIn;
-    const newCheckOut = pending.changes.dates?.checkOut ?? contract.dates.checkOut;
-    const newNights = Math.round(
-      (new Date(newCheckOut).getTime() - new Date(newCheckIn).getTime()) / (24 * 60 * 60 * 1000)
-    );
-
-    const updatedContract: BookingContract = {
-      ...contract,
-      dates: {
-        checkIn: newCheckIn,
-        checkOut: newCheckOut,
-        nights: newNights
-      },
-      occupants: pending.changes.occupants ? [...pending.changes.occupants] : contract.dates ? contract.occupants : contract.occupants,
-      contractVersion: newVersion
-    };
-
-    pending.status = "committed";
-    this.#deps.contractRepository.updateContract(updatedContract);
-
-    if (this.#deps.audit) {
-      this.#deps.audit.record({
-        type: "booking_amendment.committed",
-        amendmentId,
-        contractId: contract.contractId,
-        previousVersion: contract.contractVersion,
-        newVersion,
-        committedAt: now.toISOString()
-      });
-    }
-
-    return {
-      amendmentId,
-      contractId: contract.contractId,
-      previousVersion: contract.contractVersion,
-      newVersion,
-      status: "committed",
-      financialAdjustment: pending.financialAdjustment,
-      updatedContract
-    };
-  }
-
-  /**
-   * AC 4: Reject informal chat messages or operator promises.
-   */
-  rejectInformalChatAlteration(_envelope: PlatformCommandEnvelope<{ chatMessage: string }>): {
-    readonly rejected: true;
-    readonly reason: string;
-  } {
-    return {
-      rejected: true,
-      reason: "Informal chat messages or operator promises cannot alter contractual state"
-    };
-  }
+ readonly #deps: BookingAmendmentDependencies; readonly #pending = new Map<string, PendingAmendment>(); readonly #versions = new Map<string, number>();
+ constructor(deps: BookingAmendmentDependencies) { if (!deps.contractRepository) throw new Error("contractRepository is required for BookingAmendmentManager"); this.#deps = deps; }
+ #contract(id: string, principal: CommandPrincipal): BookingContract { let contract: BookingContract; try { contract = this.#deps.contractRepository.getContract(id); } catch { throw new Error("Booking amendment is not authorized"); } if (!authorized(contract, principal)) throw new Error("Booking amendment is not authorized"); return contract; }
+ requestAmendment(envelope: PlatformCommandEnvelope<{ contractId: string; changes: BookingAmendmentChanges }>, clock: () => Date = () => new Date()): PendingAmendment {
+  if (!envelope || envelope.commandName !== "booking_amendment.request") throw new Error("Invalid envelope: commandName must be 'booking_amendment.request'");
+  const { contractId, changes } = envelope.payload; const allowed = new Set(["dates", "occupants", "checkoutTime", "lateFirstAccessTime", "primaryGuestId"]); if (!changes || typeof changes !== "object" || Object.keys(changes).some((key) => !allowed.has(key))) throw new Error("Unsupported amendment input"); const contract = this.#contract(contractId, envelope.principal); const now = clock();
+  if (changes.primaryGuestId !== undefined) throw new Error("Primary Guest replacement is prohibited");
+  if (Object.prototype.hasOwnProperty.call(changes, "isHumanApprovedLateAccess")) throw new Error("Client human approval is not accepted");
+  if (changes.lateFirstAccessTime) { const [h] = changes.lateFirstAccessTime.split(":").map(Number); if (h > 22 || (h === 22 && Number(changes.lateFirstAccessTime.split(":")[1]) > 0)) { const approval = this.#deps.lateAccessAuthority?.approve({ contractId, requestedTime: changes.lateFirstAccessTime }); if (!approval?.approved) throw new Error("Late first access after 22:00 WAT is a human-approved exception only"); } }
+  const checkIn = changes.dates?.checkIn ?? contract.dates.checkIn, checkOut = changes.dates?.checkOut ?? contract.dates.checkOut; const n = nightsBetween(checkIn, checkOut);
+  if (!Number.isInteger(n) || n <= 0) throw new Error("Stay dates must be valid and checkout must be after check-in"); if (n > 14) throw new Error(`Stay length exceeds the maximum launch limit of 14 nights (requested ${n} nights)`);
+  const horizon = dateOnly(now.toLocaleDateString("en-CA", { timeZone: "Africa/Lagos" })) + 90 * 86400000; if (dateOnly(checkIn) > horizon) throw new Error("Check-in date exceeds the 90-day booking horizon");
+  if (changes.dates?.checkIn && changes.dates.checkIn !== contract.dates.checkIn && now.getTime() > lagosTimestamp(contract.dates.checkIn, "14:00") - 86400000) throw new Error("Date changes must begin at least 24 hours before check-in");
+  const extension = dateOnly(checkOut) > dateOnly(contract.dates.checkOut); if (extension && now.getTime() > lagosTimestamp(contract.dates.checkOut, "18:00") - 86400000) throw new Error("Extension request must begin by 6:00 PM (18:00 WAT) the day before checkout");
+  if (changes.occupants) { if (!changes.occupants.length || changes.occupants.some((o) => !o || typeof o.name !== "string" || !o.name.trim())) throw new Error("Occupants must contain allowed non-empty names"); if (changes.occupants.every((o) => o.name !== contract.parties.primaryGuest.name)) throw new Error("Primary Guest must remain an occupant"); if (changes.occupants.length > (this.#deps.maxOccupants ?? 10)) throw new Error("Occupant capacity exceeded"); }
+  if (changes.checkoutTime) { if (!["11:00", "12:00", "13:00", "14:00"].includes(changes.checkoutTime)) throw new Error("Late checkout cannot exceed 14:00 WAT"); if (changes.checkoutTime !== "11:00" && this.#deps.calendar?.hasSameDayCheckInOnDate?.(contract.unitId, checkOut)) throw new Error("Late checkout is unavailable when a same-day turnover check-in is scheduled"); if (changes.checkoutTime !== "11:00" && this.#deps.lateCheckoutAuthority && !this.#deps.lateCheckoutAuthority.validate({ contract, requestedTime: changes.checkoutTime as "12:00" | "13:00" | "14:00" }).eligible) throw new Error("Late checkout eligibility is stale or unavailable"); }
+  const availability = changes.dates ? this.#deps.calendar?.getAuthoritativeAvailability(contract.unitId, checkIn, checkOut) : undefined; if (availability && !availability.isAvailable) throw new Error("Unit dates are unavailable for requested amendment");
+  let inspectionVersion = "", authorityVersion = ""; if (this.#deps.inspectionRepository) { const r = this.#deps.inspectionRepository.isPassedAndValidThrough?.(contract.unitId, checkOut); const valid = r ? r.valid : this.#deps.inspectionRepository.isPassedAndValid?.(contract.unitId) ?? false; if (!valid) throw new Error("Physical inspection verification failed for unit"); inspectionVersion = r?.version ?? ""; }
+  if (this.#deps.authorityRepository) { const r = this.#deps.authorityRepository.isValidThrough?.(contract.unitId, checkOut); const valid = r ? r.valid : this.#deps.authorityRepository.isAuthorityValid?.(contract.unitId) ?? false; if (!valid) throw new Error("Management authority verification failed for unit"); authorityVersion = r?.version ?? ""; }
+  const quote: AmendmentQuote = this.#deps.quoteProvider?.quote({ contract, changes, resultingDates: { checkIn, checkOut, nights: n } }) ?? (() => { const delta = (n - contract.dates.nights) * Math.round(contract.totalAmountDueNowKobo / contract.dates.nights); const type = delta > 0 ? "additional_collection" as const : delta < 0 ? "refund" as const : "none" as const; return { quoteId: `legacy:${contract.contractId}`, quoteVersion: contract.contractVersion, currency: "NGN" as const, revisedAllInStayTotalKobo: contract.totalAmountDueNowKobo + delta, financialAdjustment: { type, amountKobo: Math.abs(delta), currency: "NGN" as const } }; })();
+  if (!Number.isInteger(quote.revisedAllInStayTotalKobo) || quote.revisedAllInStayTotalKobo < 0) throw new Error("Authoritative quote is invalid");
+  const version = (this.#versions.get(contractId) ?? 0) + 1; this.#versions.set(contractId, version); const amendmentId = `amendment:${contractId}:${version}:${stableId(JSON.stringify({ changes, quote: quote.quoteId }))}`;
+  const pending: PendingAmendment = { amendmentId, amendmentVersion: version, contractId, requestedBy: envelope.principal.id, changes, financialAdjustment: quote.financialAdjustment, quote, originalContractVersion: contract.contractVersion, validationVersions: Object.freeze({ contract: String(contract.contractVersion), ...(availability?.version ? { availability: availability.version } : {}), ...(inspectionVersion ? { inspection: inspectionVersion } : {}), ...(authorityVersion ? { authority: authorityVersion } : {}), quote: String(quote.quoteVersion), ...(quote.policyVersions ?? {}) }), createdAt: now.toISOString(), status: "pending", lifecycleStatus: "proposed", ...(extension ? { completionDeadline: new Date(lagosTimestamp(contract.dates.checkOut, "20:00") - 86400000).toISOString() } : {}) };
+  this.#pending.set(amendmentId, pending); this.#deps.audit?.record({ type: "booking_amendment.proposed", amendmentId, contractId, originalContractVersion: contract.contractVersion, amendmentVersion: version, quoteId: quote.quoteId, quoteVersion: quote.quoteVersion, financialAdjustment: quote.financialAdjustment, changeCategories: Object.keys(changes).filter((key) => key !== "occupants") }); return pending;
+ }
+ acceptAmendment(amendmentId: string, principal: CommandPrincipal, clock: () => Date = () => new Date()): PendingAmendment { const p = this.#pending.get(amendmentId); if (!p) throw new Error("STALE_ACTION"); const c = this.#contract(p.contractId, principal); if (p.status !== "pending" || c.contractVersion !== p.originalContractVersion) throw new Error("STALE_ACTION"); if (this.#deps.quoteProvider) { const checkIn = p.changes.dates?.checkIn ?? c.dates.checkIn; const checkOut = p.changes.dates?.checkOut ?? c.dates.checkOut; const fresh = this.#deps.quoteProvider.quote({ contract: c, changes: p.changes, resultingDates: { checkIn, checkOut, nights: nightsBetween(checkIn, checkOut) } }); if (fresh.quoteId !== p.quote.quoteId || String(fresh.quoteVersion) !== String(p.quote.quoteVersion)) throw new Error("STALE_ACTION"); } p.status = p.financialAdjustment.type === "none" ? "proposed" : "awaiting_financial_settlement"; p.lifecycleStatus = p.status; this.#deps.audit?.record({ type: "booking_amendment.accepted", amendmentId, contractId: p.contractId, oldContractVersion: c.contractVersion, trustedActorId: principal.id, serverTimestamp: clock().toISOString() }); return { ...p }; }
+ commitAmendment(envelope: PlatformCommandEnvelope<{ amendmentId: string; settlement?: AmendmentSettlement; pspPaymentResult?: MockPSPVerifyResult }>, clock: () => Date = () => new Date()): BookingAmendmentResult {
+  if (!envelope || envelope.commandName !== "booking_amendment.commit") throw new Error("Invalid envelope: commandName must be 'booking_amendment.commit'"); const p = this.#pending.get(envelope.payload.amendmentId); if (!p || p.status === "committed" || p.status === "rejected") throw new Error("STALE_ACTION");
+  if (this.#deps.settlementProvider && envelope.payload.pspPaymentResult) throw new Error("Client settlement results are not accepted");
+  const legacyFixtureCommit = !this.#deps.settlementProvider && !!envelope.payload.pspPaymentResult;
+  if (!legacyFixtureCommit && p.status === "pending") throw new Error("Explicit guest acceptance is required");
+  if (!legacyFixtureCommit && ((!(["system", "authorized_staff", "admin"] as string[]).includes(envelope.principal.role)) || !envelope.principal.id)) throw new Error("Trusted backend principal required"); const c = this.#deps.contractRepository.getContract(p.contractId); if (c.contractVersion !== p.originalContractVersion) throw new Error("STALE_ACTION");
+  const now = clock(); if (p.completionDeadline && now.getTime() > new Date(p.completionDeadline).getTime()) { p.status = "expired"; p.lifecycleStatus = "expired"; throw new Error("Amendment completion deadline has passed"); }
+  let settlementId: string | undefined; if (p.financialAdjustment.type !== "none") { if (this.#deps.settlementProvider) { const s = this.#deps.settlementProvider.settle({ amendmentId: p.amendmentId, contractId: p.contractId, adjustment: p.financialAdjustment, quote: p.quote, principal: envelope.principal }); if (s.amendmentId !== p.amendmentId || s.contractId !== p.contractId || s.type !== p.financialAdjustment.type || s.amountKobo !== p.financialAdjustment.amountKobo || s.currency !== p.financialAdjustment.currency || s.quoteId !== p.quote.quoteId || String(s.quoteVersion) !== String(p.quote.quoteVersion)) throw new Error("Settlement does not match amendment"); if (s.status !== "settled") { p.status = s.status === "pending" ? "awaiting_financial_settlement" : "rejected"; p.lifecycleStatus = s.status === "pending" ? "awaiting_financial_settlement" : "rejected"; throw new Error(s.status === "pending" ? "Authoritative amendment settlement is pending" : "Authoritative amendment settlement was not successful"); } settlementId = s.settlementId; } else if (!envelope.payload.pspPaymentResult?.verified) { p.status = "rejected"; p.lifecycleStatus = "rejected"; throw new Error("Amendment commit failed: Payment verification unsuccessful"); } }
+  const nextCheckout = p.changes.checkoutTime ? { time: p.changes.checkoutTime as "11:00" | "12:00" | "13:00" | "14:00", timezone: "Africa/Lagos" as const, source: "checkout_amendment" as const, amendmentId: p.amendmentId, amendmentVersion: p.amendmentVersion } : c.checkout;
+  const next: BookingContract = { ...c, dates: { checkIn: p.changes.dates?.checkIn ?? c.dates.checkIn, checkOut: p.changes.dates?.checkOut ?? c.dates.checkOut, nights: nightsBetween(p.changes.dates?.checkIn ?? c.dates.checkIn, p.changes.dates?.checkOut ?? c.dates.checkOut) }, occupants: p.changes.occupants ? [...p.changes.occupants] : c.occupants, checkout: nextCheckout, quote: p.quote, totalAmountDueNowKobo: p.quote.revisedAllInStayTotalKobo, contractVersion: c.contractVersion + 1, financialSummary: { originalBookingTotalKobo: c.financialSummary?.originalBookingTotalKobo ?? c.totalAmountDueNowKobo, currentContractTotalKobo: p.quote.revisedAllInStayTotalKobo, currency: "NGN", amendmentAdjustments: [...(c.financialSummary?.amendmentAdjustments ?? []), { amendmentId: p.amendmentId, type: p.financialAdjustment.type, amountKobo: p.financialAdjustment.amountKobo, currency: "NGN", ...(settlementId ? { settlementId, settledAt: now.toISOString() } : {}), quoteId: p.quote.quoteId, quoteVersion: p.quote.quoteVersion }] } };
+  const committed = this.#deps.contractRepository.mutateContract ? this.#deps.contractRepository.mutateContract(c.contractId, c.contractVersion, () => next) : (this.#deps.contractRepository.updateContract(next), next); p.status = "committed"; p.lifecycleStatus = "committed"; this.#deps.audit?.record({ type: "booking_amendment.committed", amendmentId: p.amendmentId, contractId: c.contractId, oldContractVersion: c.contractVersion, newContractVersion: committed.contractVersion, settlementId, committedAt: now.toISOString() }); return { amendmentId: p.amendmentId, contractId: c.contractId, previousVersion: c.contractVersion, newVersion: committed.contractVersion, status: "committed", financialAdjustment: p.financialAdjustment, updatedContract: committed };
+ }
+ getAmendment(id: string): PendingAmendment | undefined { const p = this.#pending.get(id); return p ? { ...p } : undefined; }
+ getLatestForContract(contractId: string): PendingAmendment | undefined { return [...this.#pending.values()].filter((p) => p.contractId === contractId).sort((a, b) => b.amendmentVersion - a.amendmentVersion)[0]; }
+ rejectInformalChatAlteration(_envelope: PlatformCommandEnvelope<{ chatMessage: string }>): { readonly rejected: true; readonly reason: string } { return { rejected: true, reason: "Informal chat messages or operator promises cannot alter contractual state" }; }
 }
