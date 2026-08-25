@@ -24,7 +24,10 @@ import type { BookingContractArtifact } from "../../web/src/booking-contract-art
 import type { CheckInSupportApplication } from "../../web/src/checkin-support-application.js";
 import type { CheckInSupportArtifact } from "../../web/src/checkin-support-artifact.js";
 import { checkInSupportArtifactToA2UI } from "./checkin-support-a2ui.js";
-import { conventionalCheckInSupportRoute, conventionalHumanHandoffRoute } from "../../web/src/presentation.js";
+import type { CheckoutOverstayApplication } from "../../web/src/checkout-overstay-application.js";
+import type { CheckoutArtifact } from "../../web/src/checkout-overstay-artifact.js";
+import { checkoutArtifactToA2UI } from "./checkout-overstay-a2ui.js";
+import { conventionalCheckInSupportRoute, conventionalCheckoutRoute, conventionalHumanHandoffRoute } from "../../web/src/presentation.js";
 import type { HumanHandoffApplication } from "../../web/src/human-handoff-application.js";
 import type { SecurityContext } from "../../../packages/platform-core/src/index.js";
 import type { HumanHandoffArtifact } from "../../web/src/human-handoff-artifact.js";
@@ -157,6 +160,9 @@ export interface CreateCheckInSupportWebAgentAdapterOptions { readonly applicati
 export function createCheckInSupportWebAgentAdapter({ application, principal, contract, createSurfaceId }: CreateCheckInSupportWebAgentAdapterOptions) {
   return Object.freeze({ get(reservationId: string) { const artifact: CheckInSupportArtifact = application.getArtifact(reservationId, principal, contract); const surfaceId = createSurfaceId(artifact.id); return Object.freeze({ channel: "web-agent" as const, artifact, surfaceId, a2uiMessages: checkInSupportArtifactToA2UI({ artifact, surfaceId }), fallback: Object.freeze({ message: `Check-In status: ${artifact.facts.accessStatus}`, conventionalRoute: conventionalCheckInSupportRoute(reservationId) }) }); } });
 }
+
+export interface CreateCheckoutWebAgentAdapterOptions { readonly application: CheckoutOverstayApplication; readonly principal: CommandPrincipal; readonly createSurfaceId: (artifactId: string) => string; }
+export function createCheckoutWebAgentAdapter({ application, principal, createSurfaceId }: CreateCheckoutWebAgentAdapterOptions) { return Object.freeze({ get(reservationId: string) { const artifact: CheckoutArtifact = application.getArtifact(reservationId, principal); const surfaceId = createSurfaceId(artifact.id); return Object.freeze({ channel: "web-agent" as const, artifact, surfaceId, a2uiMessages: checkoutArtifactToA2UI({ artifact, surfaceId }), fallback: Object.freeze({ message: `Checkout: ${artifact.facts.effectiveCheckoutTime} WAT`, conventionalRoute: conventionalCheckoutRoute(reservationId) }) }); } }); }
 
 export function createBookingRequestWebAgentAdapter({
   application,

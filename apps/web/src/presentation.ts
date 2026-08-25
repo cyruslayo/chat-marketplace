@@ -35,6 +35,14 @@ export function conventionalCheckInSupportRoute(reservationId: string): string {
   return `/reservations/${encodeURIComponent(reservationId)}/check-in`;
 }
 
+export function conventionalCheckoutRoute(reservationId: string): string {
+  return `/reservations/${encodeURIComponent(reservationId)}/checkout`;
+}
+
+export function getConventionalCheckoutView(application: import("./checkout-overstay-application.js").CheckoutOverstayApplication, reservationId: string, principal: CommandPrincipal) {
+  return Object.freeze({ route: conventionalCheckoutRoute(reservationId), artifact: application.getArtifact(reservationId, principal) });
+}
+
 export function getConventionalCheckInSupportView(application: import("./checkin-support-application.js").CheckInSupportApplication, reservationId: string, principal: CommandPrincipal, contract: { contractId: string; unitId: string }) {
   return Object.freeze({ route: conventionalCheckInSupportRoute(reservationId), artifact: application.getArtifact(reservationId, principal, contract) });
 }
