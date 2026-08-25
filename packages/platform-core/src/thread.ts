@@ -200,6 +200,17 @@ export class InteractionThreadManager {
     return run && run.status === "running" ? deepFreeze({ ...run }) : null;
   }
 
+  getCurrentRunStatus(threadId: string, context: SecurityContext): { readonly status: "running" | "stopped" | "completed" | "terminated" | "none"; readonly runId?: string } {
+    const thread = this.#requireThread(threadId, context);
+    if (thread.activeRunId && thread.runs[thread.activeRunId]) {
+      const run = thread.runs[thread.activeRunId];
+      return deepFreeze({ status: run.status, runId: run.runId });
+    }
+    const runs = Object.values(thread.runs) as Array<{ runId: string; status: "running" | "stopped" | "completed" | "terminated" }>;
+    const latest = runs.at(-1);
+    return latest ? deepFreeze({ status: latest.status, runId: latest.runId }) : { status: "none" };
+  }
+
   appendEvent(threadId: string, context: SecurityContext, eventData: any) {
     const thread = this.#requireThread(threadId, context);
     const sequence = ++thread.lastSequence;

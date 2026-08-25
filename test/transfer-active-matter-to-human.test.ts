@@ -82,7 +82,7 @@ test("Human ownership suppresses autonomous messages, state-changing tools, and 
   handoffMgr.assignHumanOwner(threadId, context, {
     responderId: "staff-emeka",
     role: "emergency_support_responder"
-  });
+  }, { id: "staff-assigner", role: "authorized_staff", tenantId: "tenant-lagos" });
 
   const status = handoffMgr.getHandoffStatus(threadId, context);
   assert.equal(status.mode, "human-owned");
@@ -119,7 +119,7 @@ test("Handback requires authorization, resolved authority, fresh state, user not
   handoffMgr.assignHumanOwner(threadId, context, {
     responderId: "staff-emeka",
     role: "general_support_responder"
-  });
+  }, { id: "staff-assigner", role: "authorized_staff", tenantId: "tenant-lagos" });
 
   // Failure path 1: Unauthorized responder attempting handback
   assert.throws(
