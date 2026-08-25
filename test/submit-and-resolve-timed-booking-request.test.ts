@@ -34,6 +34,32 @@ function setup() {
   return { repository, audit, calendar, identityStore, guestVerification, manager, unit };
 }
 
+test("Undelivered Booking Requests reject both Operator decisions", () => {
+  const { manager, unit } = setup();
+  const clock = () => new Date("2026-07-22T10:00:00Z");
+  const draft = manager.createDraft({
+    unitId: unit.id,
+    primaryGuest: { id: "guest-undelivered", name: "Undelivered Guest" },
+    selfBookingAttestation: { accepted: true, version: "self-booking-v1" },
+    occupants: [{ name: "Undelivered Guest" }],
+    checkIn: "2026-08-20",
+    checkOut: "2026-08-22",
+  }, { clock });
+  const request = manager.discloseBookingRequest(createPlatformCommandEnvelope({
+    commandName: "booking_request.disclose",
+    principal: { id: "guest-undelivered", role: "guest", tenantId: "tenant-lagos" },
+    payload: { draftId: draft.draftId, autoDeliver: false },
+  }), { clock });
+  const principal = { id: unit.operator.id, role: "operator" as const, tenantId: "tenant-lagos" };
+
+  assert.throws(() => manager.confirmBookingRequest(createPlatformCommandEnvelope({
+    commandName: "booking_request.confirm", principal, payload: { requestId: request.requestId },
+  }), { clock }), /has not been delivered/);
+  assert.throws(() => manager.declineBookingRequest(createPlatformCommandEnvelope({
+    commandName: "booking_request.decline", principal, payload: { requestId: request.requestId },
+  }), { clock }), /has not been delivered/);
+});
+
 test("Drafts do not block inventory; successfully disclosed requests do so exclusively for the 30-minute window", () => {
   const { manager, calendar, unit, audit } = setup();
   const clock = () => new Date("2026-07-22T10:00:00Z"); // 11:00 AM WAT

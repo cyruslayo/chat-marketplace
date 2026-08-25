@@ -3,6 +3,11 @@ import {
   discoveryArtifactToA2UI,
   type DiscoveryArtifactProjection,
 } from "./discovery-a2ui.js";
+import { bookingRequestArtifactToA2UI } from "./booking-request-a2ui.js";
+import type { BookingRequestApplication } from "../../web/src/booking-request-application.js";
+import type { BookingRequestArtifact } from "../../web/src/booking-request-artifact.js";
+import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
+import { conventionalBookingRequestRoute } from "../../web/src/presentation.js";
 
 function fallbackMessage(artifact: any): string {
   const count = artifact.facts.results.length;
@@ -45,3 +50,32 @@ export function createWeaverWebAgentAdapter({ query, createSurfaceId }: CreateWe
 }
 
 export const createWebAgentAdapter = createWeaverWebAgentAdapter;
+
+export interface CreateBookingRequestWebAgentAdapterOptions {
+  readonly application: BookingRequestApplication;
+  readonly principal: CommandPrincipal;
+  readonly createSurfaceId: (artifactId: string) => string;
+}
+
+export function createBookingRequestWebAgentAdapter({
+  application,
+  principal,
+  createSurfaceId,
+}: CreateBookingRequestWebAgentAdapterOptions) {
+  return Object.freeze({
+    get(requestId: string) {
+      const artifact: BookingRequestArtifact = application.getArtifact(requestId, principal);
+      const surfaceId = createSurfaceId(artifact.id);
+      return Object.freeze({
+        channel: "web-agent" as const,
+        artifact,
+        surfaceId,
+        a2uiMessages: bookingRequestArtifactToA2UI({ artifact, surfaceId }),
+        fallback: Object.freeze({
+          message: `Booking Request status: ${artifact.facts.status}`,
+          conventionalRoute: conventionalBookingRequestRoute(requestId),
+        }),
+      });
+    },
+  });
+}
