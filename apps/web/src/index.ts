@@ -1,5 +1,7 @@
 export * from "./browser-navigation.js";
 export * from "./booking-request-application.js";
+export * from "./booking-contract-application.js";
+export * from "./booking-contract-artifact.js";
 export * from "./conditional-offer-application.js";
 export * from "./conditional-offer-artifact.js";
 export * from "./conditional-offer-actions.js";

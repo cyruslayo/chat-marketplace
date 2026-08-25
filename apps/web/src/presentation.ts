@@ -21,6 +21,14 @@ export function conventionalSearchRoute(filters: Record<string, any> = {}) {
   return `/stays/search${query ? `?${query}` : ""}`;
 }
 
+export function conventionalBookingContractRoute(contractId: string): string {
+  return `/booking-contracts/${encodeURIComponent(contractId)}`;
+}
+
+export function conventionalProtectedArrivalRoute(contractId: string): string {
+  return `/booking-contracts/${encodeURIComponent(contractId)}/arrival`;
+}
+
 export function conventionalBookingRequestRoute(requestId: string): string {
   return `/booking-requests/${encodeURIComponent(requestId)}`;
 }
@@ -77,6 +85,14 @@ export function acceptConventionalConditionalOffer(
 ): ConditionalOfferArtifact {
   application.accept(input);
   return application.getArtifact(input.offerId, input.principal);
+}
+
+export function getConventionalBookingContractView(application: import("./booking-contract-application.js").BookingContractApplication, contractId: string, principal: CommandPrincipal) {
+  return Object.freeze({ route: conventionalBookingContractRoute(contractId), artifact: application.getArtifact(contractId, principal) });
+}
+
+export function getConventionalProtectedArrivalView(application: import("./booking-contract-application.js").BookingContractApplication, contractId: string, principal: CommandPrincipal) {
+  return Object.freeze({ route: conventionalProtectedArrivalRoute(contractId), view: application.getProtectedArrivalView(contractId, principal) });
 }
 
 export function getConventionalBookingRequestView(

@@ -56,6 +56,7 @@ export interface BookingContract {
     readonly cancellationPolicy: unknown;
     readonly guestConductRules: readonly string[];
   };
+  readonly disclosures?: readonly string[];
   readonly paymentDetails:
     | {
         readonly paymentMethod: "fresh_card";
@@ -381,6 +382,7 @@ export class CardPaymentManager {
       quote: offer.quote,
       totalAmountDueNowKobo: offer.totalAmountDueNowKobo,
       policies: offer.policies,
+      disclosures: offer.disclosures,
       paymentDetails: {
         pspReference,
         paymentMethod: "fresh_card",

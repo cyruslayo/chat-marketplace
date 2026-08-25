@@ -1,151 +1,154 @@
-import { PlatformCommandEnvelope } from "../../../packages/platform-core/src/index.js";
-import { BookingContract } from "./card-payment.js";
+import type { PlatformCommandEnvelope } from "../../../packages/platform-core/src/index.js";
+import type { BookingContract } from "./card-payment.js";
+import type { ArrivalDisclosurePolicy, ReservationLike } from "./arrival-disclosure-policy.js";
+import { failClosedArrivalDisclosurePolicy } from "./arrival-disclosure-policy.js";
+
+export const PROTECTED_RESOURCE_DENIAL = "Access denied or resource not found";
 
 export interface ProtectedArrivalData {
   readonly contractId: string;
-  readonly fullAddress: string;
-  readonly accessInstructions: string;
+  readonly fullAddress?: string;
+  readonly accessInstructions?: string;
   readonly locationReferenceId: string;
   readonly accessReferenceId: string;
-  readonly releasedAt?: string;
 }
 
 export interface ContractRepository {
   findContractById(contractId: string): BookingContract | null;
   findArrivalDataByContractId(contractId: string): ProtectedArrivalData | null;
-  findReservationById(reservationId: string): { reservationId: string; status: string } | null;
+  findReservationById(reservationId: string): ReservationLike | null;
+}
+
+export interface ArrivalReleaseAudit {
+  record(entry: {
+    readonly type: "arrival_data.released";
+    readonly contractId: string;
+    readonly reservationId: string;
+    readonly tenantId: string;
+    readonly principalId: string;
+    readonly releasedCategories: readonly ("address" | "access_instructions")[];
+    readonly policyPermitted: boolean;
+    readonly occurredAt: string;
+  }): void;
+}
+
+export interface BookingContractView {
+  readonly contractId: string;
+  readonly reservationId: string;
+  readonly offerId: string;
+  readonly unitId: string;
+  readonly parties: BookingContract["parties"];
+  readonly dates: BookingContract["dates"];
+  readonly occupants: BookingContract["occupants"];
+  readonly money: {
+    readonly allInStayTotalKobo?: number;
+    readonly refundableSecurityDepositKobo?: number;
+    readonly totalAmountDueNowKobo: number;
+    readonly currency?: string;
+  };
+  readonly policies: BookingContract["policies"];
+  readonly disclosures: readonly string[];
+  readonly contractVersion: number;
+  readonly addressAvailability: "locked" | "available";
+  readonly accessAvailability: "locked" | "available";
+  readonly locationReferenceId?: string;
+  readonly accessReferenceId?: string;
+  readonly projectionVersion: number;
+}
+
+export interface ProtectedArrivalView {
+  readonly contractId: string;
+  readonly reservationId: string;
+  readonly locationReferenceId: string;
+  readonly accessReferenceId: string;
+  readonly addressAvailability: "locked" | "available";
+  readonly accessAvailability: "locked" | "available";
+  readonly fullAddress?: string;
+  readonly accessInstructions?: string;
+}
+
+function isAuthorizedGuest(contract: BookingContract, envelope: PlatformCommandEnvelope<{ contractId: string }>): boolean {
+  const principal = envelope.principal;
+  return principal.role === "guest"
+    && !!principal.id
+    && principal.id === contract.parties.primaryGuest.id
+    && !!contract.tenantId
+    && !!principal.tenantId
+    && principal.tenantId === contract.tenantId;
 }
 
 export class ContractAndArrivalReleaseManager {
   readonly #repository: ContractRepository;
+  readonly #policy: ArrivalDisclosurePolicy;
+  readonly #audit?: ArrivalReleaseAudit;
 
-  constructor({ repository }: { repository: ContractRepository }) {
-    if (!repository) {
-      throw new Error("repository is required for ContractAndArrivalReleaseManager");
-    }
+  constructor({ repository, policy = failClosedArrivalDisclosurePolicy, audit }: { repository: ContractRepository; policy?: ArrivalDisclosurePolicy; audit?: ArrivalReleaseAudit }) {
+    if (!repository) throw new Error("repository is required for ContractAndArrivalReleaseManager");
     this.#repository = repository;
+    this.#policy = policy;
+    this.#audit = audit;
   }
 
-  /**
-   * ADR 0006 & AC 1: Present durable Booking Contract view.
-   */
-  getBookingContractView(
-    envelope: PlatformCommandEnvelope<{ contractId: string } & Record<string, unknown>>
-  ): {
-    contractId: string;
-    reservationId: string;
-    offerId: string;
-    unitId: string;
-    parties: BookingContract["parties"];
-    dates: BookingContract["dates"];
-    occupants: BookingContract["occupants"];
-    money: {
-      allInStayTotalKobo: number;
-      refundableSecurityDepositKobo: number;
-      totalAmountDueNowKobo: number;
-    };
-    policies: BookingContract["policies"];
-    disclosures: readonly string[];
-    contractVersion: number;
-  } {
-    const { contractId } = envelope.payload ?? {};
-    if (!contractId) throw new Error("Access denied or resource not found");
-
+  #authorizedContract(envelope: PlatformCommandEnvelope<{ contractId: string }>, commandName: string): BookingContract {
+    if (!envelope || envelope.commandName !== commandName) throw new Error(PROTECTED_RESOURCE_DENIAL);
+    const contractId = envelope.payload?.contractId;
+    if (!contractId) throw new Error(PROTECTED_RESOURCE_DENIAL);
     const contract = this.#repository.findContractById(contractId);
-    if (!contract) throw new Error("Access denied or resource not found");
-
-    // Tenant check (fail closed!)
-    if (contract.tenantId && envelope.principal.tenantId && contract.tenantId !== envelope.principal.tenantId) {
-      throw new Error("Access denied or resource not found");
-    }
-
-    const quoteAny = contract.quote as Record<string, unknown> | undefined;
-
-    return {
-      contractId: contract.contractId,
-      reservationId: contract.reservationId,
-      offerId: contract.offerId,
-      unitId: contract.unitId,
-      parties: contract.parties,
-      dates: contract.dates,
-      occupants: contract.occupants,
-      money: {
-        allInStayTotalKobo: (quoteAny?.allInStayTotalKobo as number) ?? contract.totalAmountDueNowKobo,
-        refundableSecurityDepositKobo: (quoteAny?.refundableSecurityDepositKobo as number) ?? 0,
-        totalAmountDueNowKobo: contract.totalAmountDueNowKobo
-      },
-      policies: contract.policies,
-      disclosures: [
-        "Verified Accommodation Contract under Nigerian Shortlet Concierge Platform Rules",
-        "Full property address and arrival access codes release upon accepted lifecycle points"
-      ],
-      contractVersion: contract.contractVersion
-    };
+    if (!contract || !isAuthorizedGuest(contract, envelope)) throw new Error(PROTECTED_RESOURCE_DENIAL);
+    return contract;
   }
 
-  /**
-   * ADR 0011, 0022, 0031, 0075 & AC 2 & 4: Tenant-scoped, authorized arrival data release.
-   * Fails closed without leaking data existence if cancelled, revoked, premature, or cross-tenant.
-   */
-  getProtectedArrivalData(
-    envelope: PlatformCommandEnvelope<{ contractId: string } & Record<string, unknown>>,
-    { clock = () => new Date() }: { clock?: () => Date } = {}
-  ): ProtectedArrivalData {
-    const { contractId } = envelope.payload ?? {};
-    if (!contractId) throw new Error("Access denied or resource not found");
+  #arrivalState(contract: BookingContract, reservation: ReservationLike | null, arrival: ProtectedArrivalData | null, now: Date) {
+    const confirmed = reservation?.reservationId === contract.reservationId && reservation.status === "confirmed";
+    const addressAvailable = confirmed && !!arrival?.fullAddress;
+    const accessPermitted = confirmed && !!arrival && this.#policy.canReleaseAccessInstructions({ contract, reservation: reservation as ReservationLike, now });
+    const accessAvailable = accessPermitted && !!arrival?.accessInstructions;
+    return { confirmed, addressAvailable, accessAvailable, accessPermitted };
+  }
 
-    const contract = this.#repository.findContractById(contractId);
-    if (!contract) throw new Error("Access denied or resource not found");
+  getAuthorizedContractForApplication(envelope: PlatformCommandEnvelope<{ contractId: string }>): BookingContract {
+    return this.#authorizedContract(envelope, "contract.get_view");
+  }
 
-    // ADR 0075: Fail closed tenant scope check
-    if (contract.tenantId && envelope.principal.tenantId && contract.tenantId !== envelope.principal.tenantId) {
-      throw new Error("Access denied or resource not found");
-    }
-
-    // Principal authorization check (must be primary guest, distinct payer, or operator)
-    const principalId = envelope.principal.id;
-    const isAuthorized =
-      principalId === contract.parties.primaryGuest.id ||
-      principalId === contract.parties.distinctPayer?.id ||
-      principalId === contract.parties.operator.id;
-
-    if (!isAuthorized) {
-      throw new Error("Access denied or resource not found");
-    }
-
-    // Reservation state check (must be confirmed and not cancelled/revoked)
+  getBookingContractView(envelope: PlatformCommandEnvelope<{ contractId: string }>): BookingContractView {
+    const contract = this.#authorizedContract(envelope, "contract.get_view");
     const reservation = this.#repository.findReservationById(contract.reservationId);
-    if (!reservation || reservation.status !== "confirmed") {
-      throw new Error("Access denied or resource not found");
-    }
-
-    const arrivalData = this.#repository.findArrivalDataByContractId(contractId);
-    if (!arrivalData) throw new Error("Access denied or resource not found");
-
-    return {
-      ...arrivalData,
-      releasedAt: clock().toISOString()
-    };
+    const arrival = this.#repository.findArrivalDataByContractId(contract.contractId);
+    const state = this.#arrivalState(contract, reservation, arrival, new Date(envelope.timestamp));
+    const quote = contract.quote && typeof contract.quote === "object" ? contract.quote as Record<string, unknown> : undefined;
+    const allIn = typeof quote?.allInStayTotalKobo === "number" ? quote.allInStayTotalKobo : undefined;
+    const deposit = typeof quote?.refundableSecurityDepositKobo === "number" ? quote.refundableSecurityDepositKobo : undefined;
+    const currency = typeof quote?.currency === "string" ? quote.currency : undefined;
+    const projectionVersion = `${contract.contractVersion}|${reservation?.status ?? "missing"}|${state.addressAvailable ? "address" : "locked"}|${state.accessAvailable ? "access" : "locked"}`;
+    const numericVersion = Number.parseInt(Buffer.from(projectionVersion).toString("hex").slice(0, 12), 16);
+    return Object.freeze({
+      contractId: contract.contractId, reservationId: contract.reservationId, offerId: contract.offerId, unitId: contract.unitId,
+      parties: contract.parties, dates: contract.dates, occupants: contract.occupants,
+      money: { ...(allIn === undefined ? {} : { allInStayTotalKobo: allIn }), ...(deposit === undefined ? {} : { refundableSecurityDepositKobo: deposit }), totalAmountDueNowKobo: contract.totalAmountDueNowKobo, ...(currency ? { currency } : {}) },
+      policies: contract.policies, disclosures: Object.freeze([...(contract.disclosures ?? [])]), contractVersion: contract.contractVersion,
+      addressAvailability: state.addressAvailable ? "available" : "locked", accessAvailability: state.accessAvailable ? "available" : "locked",
+      ...(arrival?.locationReferenceId ? { locationReferenceId: arrival.locationReferenceId } : {}),
+      ...(arrival?.accessReferenceId ? { accessReferenceId: arrival.accessReferenceId } : {}),
+      projectionVersion: numericVersion,
+    });
   }
 
-  /**
-   * ADR 0071 & 0075 & AC 3: Redacted interaction projection.
-   * Does NOT include raw full address or access instructions.
-   */
-  projectRedactedInteractionView(contractId: string): {
-    contractId: string;
-    locationReferenceId: string;
-    accessReferenceId: string;
-    status: "protected_reference_ready";
-  } {
-    const arrivalData = this.#repository.findArrivalDataByContractId(contractId);
-    if (!arrivalData) throw new Error("Access denied or resource not found");
+  getProtectedArrivalData(envelope: PlatformCommandEnvelope<{ contractId: string }>): ProtectedArrivalView {
+    const contract = this.#authorizedContract(envelope, "arrival_data.get_protected");
+    const reservation = this.#repository.findReservationById(contract.reservationId);
+    const arrival = this.#repository.findArrivalDataByContractId(contract.contractId);
+    const state = this.#arrivalState(contract, reservation, arrival, new Date(envelope.timestamp));
+    if (!arrival || !state.confirmed) throw new Error(PROTECTED_RESOURCE_DENIAL);
+    const releasedCategories: ("address" | "access_instructions")[] = [];
+    if (state.addressAvailable) releasedCategories.push("address");
+    if (state.accessAvailable) releasedCategories.push("access_instructions");
+    if (this.#audit && contract.tenantId) {
+      this.#audit.record({ type: "arrival_data.released", contractId: contract.contractId, reservationId: contract.reservationId, tenantId: contract.tenantId, principalId: envelope.principal.id, releasedCategories, policyPermitted: state.accessPermitted, occurredAt: new Date(envelope.timestamp).toISOString() });
+    }
+    return Object.freeze({ contractId: contract.contractId, reservationId: contract.reservationId, locationReferenceId: arrival.locationReferenceId, accessReferenceId: arrival.accessReferenceId, addressAvailability: state.addressAvailable ? "available" : "locked", accessAvailability: state.accessAvailable ? "available" : "locked", ...(state.addressAvailable && arrival.fullAddress ? { fullAddress: arrival.fullAddress } : {}), ...(state.accessAvailable && arrival.accessInstructions ? { accessInstructions: arrival.accessInstructions } : {}) });
+  }
 
-    return {
-      contractId,
-      locationReferenceId: arrivalData.locationReferenceId,
-      accessReferenceId: arrivalData.accessReferenceId,
-      status: "protected_reference_ready"
-    };
+  projectRedactedInteractionView(envelope: PlatformCommandEnvelope<{ contractId: string }>): BookingContractView {
+    return this.getBookingContractView(envelope);
   }
 }
