@@ -56,14 +56,23 @@ export interface BookingContract {
     readonly cancellationPolicy: unknown;
     readonly guestConductRules: readonly string[];
   };
-  readonly paymentDetails: {
-    readonly pspReference: string;
-    readonly paymentMethod: "fresh_card";
-    readonly amountKobo: number;
-    readonly currency: "NGN";
-    readonly paidAt: string;
-    readonly cardMetadata?: { readonly brand: string; readonly last4: string };
-  };
+  readonly paymentDetails:
+    | {
+        readonly paymentMethod: "fresh_card";
+        readonly pspReference: string;
+        readonly amountKobo: number;
+        readonly currency: "NGN";
+        readonly paidAt: string;
+        readonly cardMetadata?: { readonly brand: string; readonly last4: string };
+      }
+    | {
+        readonly paymentMethod: "bank_transfer";
+        readonly transferReference: string;
+        readonly amountKobo: number;
+        readonly currency: "NGN";
+        readonly paidAt: string;
+        readonly cardMetadata?: never;
+      };
   readonly createdAt: string;
   readonly contractVersion: number;
 }
