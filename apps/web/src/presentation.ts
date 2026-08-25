@@ -3,6 +3,8 @@ import type { BookingRequestApplication } from "./booking-request-application.js
 import type { BookingRequestArtifact } from "./booking-request-artifact.js";
 import type { ConditionalOfferApplication } from "./conditional-offer-application.js";
 import type { ConditionalOfferArtifact } from "./conditional-offer-artifact.js";
+import type { CardPaymentApplication } from "./card-payment-application.js";
+import type { CardPaymentArtifact } from "./card-payment-artifact.js";
 
 export function conventionalSearch(query: any, filters: any) {
   return { channel: "web" as const, artifact: query.search(filters) };
@@ -23,6 +25,19 @@ export function conventionalBookingRequestRoute(requestId: string): string {
 
 export function conventionalConditionalOfferRoute(offerId: string): string {
   return `/conditional-offers/${encodeURIComponent(offerId)}`;
+}
+
+export function conventionalCardPaymentRoute(offerId: string): string {
+  return `/payments/offers/${encodeURIComponent(offerId)}`;
+}
+
+export function getConventionalCardPaymentView(application: CardPaymentApplication, offerId: string, principal: CommandPrincipal): { readonly route: string; readonly artifact: CardPaymentArtifact } {
+  return Object.freeze({ route: conventionalCardPaymentRoute(offerId), artifact: application.getArtifact(offerId, principal) });
+}
+
+export function initializeConventionalCardPayment(application: CardPaymentApplication, offerId: string, principal: CommandPrincipal): { readonly route: string; readonly artifact: CardPaymentArtifact } {
+  application.initializeCheckout(offerId, principal);
+  return getConventionalCardPaymentView(application, offerId, principal);
 }
 
 export function getConventionalConditionalOfferView(

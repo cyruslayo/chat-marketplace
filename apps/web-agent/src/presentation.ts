@@ -11,6 +11,10 @@ import { conventionalBookingRequestRoute, conventionalConditionalOfferRoute } fr
 import type { ConditionalOfferApplication } from "../../web/src/conditional-offer-application.js";
 import type { ConditionalOfferArtifact } from "../../web/src/conditional-offer-artifact.js";
 import { conditionalOfferArtifactToA2UI } from "./conditional-offer-a2ui.js";
+import type { CardPaymentApplication } from "../../web/src/card-payment-application.js";
+import type { CardPaymentArtifact } from "../../web/src/card-payment-artifact.js";
+import { cardPaymentArtifactToA2UI } from "./card-payment-a2ui.js";
+import { conventionalCardPaymentRoute } from "../../web/src/presentation.js";
 
 function fallbackMessage(artifact: any): string {
   const count = artifact.facts.results.length;
@@ -58,6 +62,22 @@ export interface CreateBookingRequestWebAgentAdapterOptions {
   readonly application: BookingRequestApplication;
   readonly principal: CommandPrincipal;
   readonly createSurfaceId: (artifactId: string) => string;
+}
+
+export interface CreateCardPaymentWebAgentAdapterOptions {
+  readonly application: CardPaymentApplication;
+  readonly principal: CommandPrincipal;
+  readonly createSurfaceId: (artifactId: string) => string;
+}
+
+export function createCardPaymentWebAgentAdapter({ application, principal, createSurfaceId }: CreateCardPaymentWebAgentAdapterOptions) {
+  return Object.freeze({
+    get(offerId: string) {
+      const artifact: CardPaymentArtifact = application.getArtifact(offerId, principal);
+      const surfaceId = createSurfaceId(artifact.id);
+      return Object.freeze({ channel: "web-agent" as const, artifact, surfaceId, a2uiMessages: cardPaymentArtifactToA2UI({ artifact, surfaceId }), fallback: Object.freeze({ message: `Card payment status: ${artifact.facts.status}`, conventionalRoute: conventionalCardPaymentRoute(offerId) }) });
+    },
+  });
 }
 
 export interface CreateConditionalOfferWebAgentAdapterOptions {

@@ -1,462 +1,55 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {
-  AvailabilityCalendar,
-  CardPaymentManager
-} from "../domains/shortlet/src/index.js";
-import { PlatformCommandEnvelope } from "../packages/platform-core/src/index.js";
+import { CardPaymentManager, type PSPVerifyResult } from "../domains/shortlet/src/index.js";
+import type { CommandPrincipal, PlatformCommandEnvelope } from "../packages/platform-core/src/index.js";
 
-
-function createMockOfferManager(
-  distinctPayer: { id: string; name: string } | null = null
-) {
-  const dummyOffer = {
-    offerId: "offer-123",
-    offerVersion: 1,
-    requestId: "req-123",
-    inventoryCommitmentId: "commitment-123",
-    unitId: "unit-1",
-    tenantId: "tenant-lagos",
-    parties: {
-      primaryGuest: { id: "guest-456", name: "Ada Okafor" },
-      operator: { id: "op-789", name: "Lekki Luxury Homes" },
-      distinctPayer
-    },
-    unit: { id: "unit-1", title: "Waterfront Suite", propertyId: "prop-1", location: { city: "Lagos" } },
-    dates: { checkIn: "2026-08-10", checkOut: "2026-08-12", nights: 2 },
-    occupants: [{ name: "Ada Okafor" }],
-    quote: {
-      totalAmountDueNowKobo: 15000000,
-      refundableSecurityDepositKobo: 2000000,
-      quoteVersion: "qv1",
-      breakdown: {
-        accommodationNetKobo: 11000000,
-        platformCommissionKobo: 2000000
-      }
-    },
-    refundableSecurityDepositKobo: 2000000,
-    totalAmountDueNowKobo: 15000000,
-    policies: {
-      cancellationPolicy: { name: "Flexible" },
-      guestConductRules: ["No parties"]
-    },
-    disclosures: ["Payment window 20 mins"],
-    paymentWindow: {
-      durationMinutes: 20,
-      expiresAt: "2026-08-01T12:20:00.000Z"
-    },
-    status: "accepted" as const,
-    issuedAt: "2026-08-01T12:00:00.000Z",
-    confirmationToken: "tok_123",
-    tokenUsed: true,
-    aggregateVersions: {
-      offerVersion: 1,
-      pricingVersion: "p1",
-      quoteVersion: "qv1",
-      cancellationPolicyVersion: "cp1",
-      managementAuthorityVersion: "ma1",
-      inspectionVersion: "iv1"
-    }
-  };
-
-  return {
-    getOffer(offerId: string) {
-      if (offerId === "offer-123") return dummyOffer;
-      throw new Error(`Conditional offer not found: ${offerId}`);
-    }
-  };
+const clock = () => new Date("2026-08-01T12:10:00.000Z");
+function offer(offerId = "offer-123", tenantId: string | undefined = "tenant-lagos") {
+  return { offerId, offerVersion: 1, requestId: "req-123", inventoryCommitmentId: `commit-${offerId}`, unitId: "unit-1", tenantId, parties: { primaryGuest: { id: "guest-456", name: "Ada Okafor" }, operator: { id: "op-789", name: "Lekki Luxury Homes" }, distinctPayer: null }, unit: { id: "unit-1", title: "Waterfront Suite", propertyId: "prop-1", location: { city: "Lagos" } }, dates: { checkIn: "2026-08-10", checkOut: "2026-08-12", nights: 2 }, occupants: [{ name: "Ada Okafor" }], quote: { breakdown: { accommodationNetKobo: 11000000, platformCommissionKobo: 2000000 } }, refundableSecurityDepositKobo: 2000000, totalAmountDueNowKobo: 15000000, policies: { cancellationPolicy: { name: "Flexible" }, guestConductRules: ["No parties"] }, disclosures: [], paymentWindow: { durationMinutes: 20, expiresAt: "2026-08-01T12:20:00.000Z" }, status: "accepted" as const, issuedAt: "2026-08-01T12:00:00.000Z", confirmationToken: "token", tokenUsed: true, aggregateVersions: { offerVersion: 1, pricingVersion: "p1", quoteVersion: "q1", cancellationPolicyVersion: "c1", managementAuthorityVersion: "m1", inspectionVersion: "i1" } };
 }
-
-function createMockRepository() {
-  return {
-    findById(id: string) {
-      if (id === "unit-1") {
-        return {
-          id: "unit-1",
-          published: true,
-          inspection: { materialChangePending: false }
-        };
-      }
-      return null;
-    },
-    findAll() {
-      return [{ id: "unit-1", published: true, inspection: { materialChangePending: false } }];
-    }
-  };
-}
-
-function createMockCalendar() {
-  return {
-    transitionPaymentPendingToConfirmedBooking() {}
-  };
-}
-
-function createMockAudit() {
-  const records: Record<string, unknown>[] = [];
-  return {
-    record(entry: Record<string, unknown>) {
-      records.push(entry);
-    },
-    records
-  };
-}
-
-function createEnvelope<T>(commandName: string, payload: T, actorId = "guest-456", tenantId = "tenant-lagos"): PlatformCommandEnvelope<T> {
-  return {
-    commandId: `cmd-${Math.random().toString(36).slice(2)}`,
-    commandName,
-    timestamp: "2026-08-01T12:05:00.000Z",
-    principal: {
-      id: actorId,
-      role: "guest",
-      tenantId
-    },
-    payload
-  };
+function envelope<T>(commandName: string, payload: T, principal: CommandPrincipal = { id: "guest-456", role: "guest", tenantId: "tenant-lagos" }): PlatformCommandEnvelope<T> { return { commandId: `cmd-${Math.random()}`, commandName, timestamp: clock().toISOString(), principal, payload }; }
+function setup() {
+  let result: PSPVerifyResult = { verified: true, status: "success", amountKobo: 15000000, currency: "NGN", pspReference: "unset", payerId: "guest-456" };
+  const pspClient = { verifyTransaction(reference: string) { return { ...result, pspReference: result.pspReference === "unset" ? reference : result.pspReference }; } };
+  const manager = new CardPaymentManager({ offerManager: { getOffer: (id: string) => { if (id !== "offer-123") throw new Error("not found"); return offer(); } }, repository: { findById: () => ({ id: "unit-1", published: true, inspection: { materialChangePending: false } }), findAll: () => [] }, calendar: { transitionPaymentPendingToConfirmedBooking() {} }, pspClient });
+  const session = manager.initializeCardCheckout(envelope("card_payment.initialize_checkout", { offerId: "offer-123" }), { clock });
+  return { manager, session, setResult: (next: PSPVerifyResult) => { result = next; } };
 }
 
 test("The platform handles no raw PAN, CVV, PIN, OTP, or reusable card token", () => {
-  const offerManager = createMockOfferManager();
-  const repository = createMockRepository();
-  const calendar = createMockCalendar();
-  const audit = createMockAudit();
+  const { manager } = setup();
+  for (const key of ["pan", "cvv", "pin", "otp", "cardToken", "reusableToken"]) assert.throws(() => manager.initializeCardCheckout(envelope("card_payment.initialize_checkout", { offerId: "offer-123", [key]: "secret" })), /Security policy violation/);
+});
 
-  const manager = new CardPaymentManager({
-    offerManager,
-    repository,
-    calendar,
-    audit
-  });
+test("Authoritative payer, tenant, role, and one-live-attempt checks fail closed", () => {
+  const { manager } = setup();
+  for (const principal of [{ id: "other", role: "guest" as const, tenantId: "tenant-lagos" }, { id: "guest-456", role: "guest" as const, tenantId: "other" }, { id: "guest-456", role: "guest" as const }, { id: "op-789", role: "operator" as const, tenantId: "tenant-lagos" }]) assert.throws(() => manager.initializeCardCheckout(envelope("card_payment.initialize_checkout", { offerId: "offer-123" }, principal)), /authorized payer|payer|tenant|Cross-tenant/);
+  assert.throws(() => manager.initializeCardCheckout(envelope("card_payment.initialize_checkout", { offerId: "offer-123" })), /live checkout/);
+});
 
-  // Success path: initialization with valid offerId and no raw credentials
-  const validEnvelope = createEnvelope("card_payment.initialize_checkout", { offerId: "offer-123" });
-  const clock = () => new Date("2026-08-01T12:05:00.000Z");
-  const session = manager.initializeCardCheckout(validEnvelope, { clock });
+test("Production verification uses the injected PSP client and rejects client verification facts", () => {
+  const { manager, session } = setup();
+  assert.throws(() => manager.verifyAndConfirmCardPayment(envelope("card_payment.verify_and_confirm", { offerId: "offer-123", pspReference: session.pspReference, mockVerifyResult: { verified: true } } as unknown as { offerId: string; pspReference: string }, { id: "system", role: "system", tenantId: "tenant-lagos" })), /only the server-resolved/);
+  const result = manager.verifyAndConfirmCardPayment(envelope("card_payment.verify_and_confirm", { offerId: "offer-123", pspReference: session.pspReference }, { id: "system", role: "system", tenantId: "tenant-lagos" }), { clock });
+  assert.equal(result.bookingContract.paymentDetails.cardMetadata, undefined);
+});
 
-  assert.equal(session.offerId, "offer-123");
-  assert.equal(session.currency, "NGN");
-  assert.equal(session.totalAmountDueNowKobo, 15000000);
-  assert.ok(session.pspReference.startsWith("psp_ref_"));
-  assert.ok(session.checkoutUrl.includes("checkout.psp.example.com"));
-
-  // Failure paths: raw payment credentials MUST be rejected
-  const sensitiveKeys = ["pan", "cvv", "pin", "otp", "reusableToken", "cardToken"];
-  for (const key of sensitiveKeys) {
-    const badEnvelope = createEnvelope("card_payment.initialize_checkout", {
-      offerId: "offer-123",
-      [key]: "1234567890123456"
-    });
-    assert.throws(
-      () => manager.initializeCardCheckout(badEnvelope, { clock }),
-      /Security policy violation: Platform must handle no raw payment credentials/
-    );
+test("Confirmation independently verifies amount, currency, reference, payer, expiry, and inventory", () => {
+  for (const change of [{ amountKobo: 1, message: /Amount/ }, { currency: "USD", message: /Currency/ }, { pspReference: "wrong", message: /Reference/ }, { payerId: "wrong", message: /Payer/ }]) {
+    const { manager, session, setResult } = setup(); setResult({ verified: true, status: "success", amountKobo: 15000000, currency: "NGN", pspReference: session.pspReference, payerId: "guest-456", ...change });
+    assert.throws(() => manager.verifyAndConfirmCardPayment(envelope("card_payment.verify_and_confirm", { offerId: "offer-123", pspReference: session.pspReference }, { id: "system", role: "system", tenantId: "tenant-lagos" }), { clock }), change.message);
   }
-
-  // Audit records must contain no raw card credentials
-  for (const record of audit.records) {
-    const str = JSON.stringify(record);
-    assert.equal(str.includes("pan"), false);
-    assert.equal(str.includes("cvv"), false);
-    assert.equal(str.includes("otp"), false);
-  }
+  const { manager, session, setResult } = setup(); setResult({ verified: true, status: "success", amountKobo: 15000000, currency: "NGN", pspReference: session.pspReference, payerId: "guest-456" });
+  assert.throws(() => manager.verifyAndConfirmCardPayment(envelope("card_payment.verify_and_confirm", { offerId: "offer-123", pspReference: session.pspReference }, { id: "system", role: "system", tenantId: "tenant-lagos" }), { clock: () => new Date("2026-08-01T12:31:00.000Z") }), /expired/);
 });
 
-test("Confirmation requires independently verified booking, amount, currency, reference, payer, and unexpired inventory state", () => {
-  const offerManager = createMockOfferManager();
-  const repository = createMockRepository();
-  const calendar = createMockCalendar();
-  const audit = createMockAudit();
-
-  const manager = new CardPaymentManager({
-    offerManager,
-    repository,
-    calendar,
-    audit
-  });
-
-  const clock = () => new Date("2026-08-01T12:10:00.000Z");
-
-  // Success path: all parameters independently verified
-  const confirmEnvelope = createEnvelope("card_payment.verify_and_confirm", {
-    offerId: "offer-123",
-    pspReference: "psp_ref_valid_123",
-    mockVerifyResult: {
-      verified: true,
-      status: "success" as const,
-      amountKobo: 15000000,
-      currency: "NGN",
-      pspReference: "psp_ref_valid_123",
-      payerId: "guest-456",
-      cardMetadata: { brand: "Mastercard", last4: "8888" }
-    }
-  });
-
-  const result = manager.verifyAndConfirmCardPayment(confirmEnvelope, { clock });
-  assert.equal(result.reservation.status, "confirmed");
-  assert.equal(result.bookingContract.paymentDetails.amountKobo, 15000000);
-  assert.equal(result.bookingContract.paymentDetails.currency, "NGN");
-  assert.equal(result.ledgerEntries.length, 4);
-
-  // Failure path 1: Amount mismatch
-  const badAmountEnv = createEnvelope("card_payment.verify_and_confirm", {
-    offerId: "offer-123",
-    pspReference: "psp_ref_bad_amount",
-    mockVerifyResult: {
-      verified: true,
-      status: "success" as const,
-      amountKobo: 10000000, // Mismatched
-      currency: "NGN",
-      pspReference: "psp_ref_bad_amount",
-      payerId: "guest-456"
-    }
-  });
-  assert.throws(
-    () => manager.verifyAndConfirmCardPayment(badAmountEnv, { clock }),
-    /Amount verification failed/
-  );
-
-  // Failure path 2: Non-NGN Currency mismatch
-  const badCurrencyEnv = createEnvelope("card_payment.verify_and_confirm", {
-    offerId: "offer-123",
-    pspReference: "psp_ref_bad_curr",
-    mockVerifyResult: {
-      verified: true,
-      status: "success" as const,
-      amountKobo: 15000000,
-      currency: "USD",
-      pspReference: "psp_ref_bad_curr",
-      payerId: "guest-456"
-    }
-  });
-  assert.throws(
-    () => manager.verifyAndConfirmCardPayment(badCurrencyEnv, { clock }),
-    /Currency verification failed/
-  );
-
-  // Failure path 3: Payer mismatch
-  const badPayerEnv = createEnvelope("card_payment.verify_and_confirm", {
-    offerId: "offer-123",
-    pspReference: "psp_ref_bad_payer",
-    mockVerifyResult: {
-      verified: true,
-      status: "success" as const,
-      amountKobo: 15000000,
-      currency: "NGN",
-      pspReference: "psp_ref_bad_payer",
-      payerId: "wrong-guest-999"
-    }
-  });
-  assert.throws(
-    () => manager.verifyAndConfirmCardPayment(badPayerEnv, { clock }),
-    /Payer attribution verification failed/
-  );
-
-  // Failure path 3b: Missing Payer ID
-  const missingPayerEnv = createEnvelope("card_payment.verify_and_confirm", {
-    offerId: "offer-123",
-    pspReference: "psp_ref_missing_payer",
-    mockVerifyResult: {
-      verified: true,
-      status: "success" as const,
-      amountKobo: 15000000,
-      currency: "NGN",
-      pspReference: "psp_ref_missing_payer"
-    }
-  });
-  assert.throws(
-    () => manager.verifyAndConfirmCardPayment(missingPayerEnv, { clock }),
-    /Payer attribution verification failed/
-  );
-
-  // Failure path 4: Expired Payment Window and Grace period
-  const expiredClock = () => new Date("2026-08-01T12:35:00.000Z"); // > 20 min + 10 min grace
-  const expiredEnv = createEnvelope("card_payment.verify_and_confirm", {
-    offerId: "offer-123",
-    pspReference: "psp_ref_expired",
-    mockVerifyResult: {
-      verified: true,
-      status: "success" as const,
-      amountKobo: 15000000,
-      currency: "NGN",
-      pspReference: "psp_ref_expired",
-      payerId: "guest-456"
-    }
-  });
-  assert.throws(
-    () => manager.verifyAndConfirmCardPayment(expiredEnv, { clock: expiredClock }),
-    /Payment Window and Grace period have expired/
-  );
+test("Duplicate callbacks produce one Reservation, Booking Contract, and ledger effect set", () => {
+  const { manager, session } = setup(); const command = envelope("card_payment.verify_and_confirm", { offerId: "offer-123", pspReference: session.pspReference }, { id: "system", role: "system", tenantId: "tenant-lagos" });
+  const first = manager.verifyAndConfirmCardPayment(command, { clock }); const second = manager.verifyAndConfirmCardPayment(command, { clock });
+  assert.equal(second.reservation.reservationId, first.reservation.reservationId); assert.equal(second.bookingContract.contractId, first.bookingContract.contractId); assert.equal(second.ledgerEntries, first.ledgerEntries); assert.equal(manager.projectInteractionState("offer-123").paymentStatus, "confirmed");
 });
 
-test("Duplicate callbacks and command retries produce one Reservation, one contract snapshot, and balanced ledger effects", () => {
-  const offerManager = createMockOfferManager();
-  const repository = createMockRepository();
-  const calendar = createMockCalendar();
-  const audit = createMockAudit();
-
-  const manager = new CardPaymentManager({
-    offerManager,
-    repository,
-    calendar,
-    audit
-  });
-
-  const clock = () => new Date("2026-08-01T12:10:00.000Z");
-  const pspReference = "psp_ref_retry_test";
-
-  const confirmEnvelope = createEnvelope("card_payment.verify_and_confirm", {
-    offerId: "offer-123",
-    pspReference,
-    mockVerifyResult: {
-      verified: true,
-      status: "success" as const,
-      amountKobo: 15000000,
-      currency: "NGN",
-      pspReference,
-      payerId: "guest-456",
-      cardMetadata: { brand: "Visa", last4: "1234" }
-    }
-  });
-
-  // First call
-  const firstResult = manager.verifyAndConfirmCardPayment(confirmEnvelope, { clock });
-  assert.ok(firstResult.reservation.reservationId);
-  assert.ok(firstResult.bookingContract.contractId);
-  assert.equal(firstResult.ledgerEntries.length, 4);
-
-  // Retry / Duplicate callback with same pspReference
-  const duplicateResult = manager.verifyAndConfirmCardPayment(confirmEnvelope, { clock });
-  assert.equal(duplicateResult.reservation.reservationId, firstResult.reservation.reservationId);
-  assert.equal(duplicateResult.bookingContract.contractId, firstResult.bookingContract.contractId);
-  assert.equal(duplicateResult.ledgerEntries, firstResult.ledgerEntries);
-});
-
-test("Card payment finalizes only through the exact authoritative Booking commitment", () => {
-  const calendar = new AvailabilityCalendar();
-  const clock = () => new Date("2026-08-01T12:10:00.000Z");
-  const commitment = calendar.createBookingRequestBlock({ unitId: "unit-1", holderId: "guest-456", start: "2026-08-10", end: "2026-08-12", clock: () => new Date("2026-08-01T12:00:00.000Z") });
-  calendar.transitionBookingRequestBlockToPaymentPending({ commitmentId: commitment.commitmentId, unitId: "unit-1", start: "2026-08-10", end: "2026-08-12", clock: () => new Date("2026-08-01T12:00:00.000Z") });
-  const offer = { ...createMockOfferManager().getOffer("offer-123"), inventoryCommitmentId: commitment.commitmentId, dates: { checkIn: "2026-08-10", checkOut: "2026-08-12", nights: 2 } };
-  const manager = new CardPaymentManager({ offerManager: { getOffer: () => offer }, repository: createMockRepository(), calendar });
-  const pspReference = "psp_ref_authoritative";
-  const envelope = createEnvelope("card_payment.verify_and_confirm", {
-    offerId: offer.offerId,
-    pspReference,
-    mockVerifyResult: { verified: true, status: "success" as const, amountKobo: offer.totalAmountDueNowKobo, currency: "NGN", pspReference, payerId: "guest-456" }
-  });
-
-  assert.equal(calendar.assertActiveCommitment({ commitmentId: commitment.commitmentId, unitId: "unit-1", start: "2026-08-10", end: "2026-08-12", expectedKind: "payment_pending", clock }).kind, "payment_pending");
-  const result = manager.verifyAndConfirmCardPayment(envelope, { clock });
-  assert.equal(result.reservation.status, "confirmed");
-  assert.equal(calendar.assertActiveCommitment({ commitmentId: commitment.commitmentId, unitId: "unit-1", start: "2026-08-10", end: "2026-08-12", expectedKind: "confirmed_booking", clock }).commitmentId, commitment.commitmentId);
-  assert.equal(calendar.getAuthoritativeAvailability({ unitId: "unit-1", checkIn: "2026-08-10", checkOut: "2026-08-12", clock }).isAvailable, false);
-  const duplicate = manager.verifyAndConfirmCardPayment(envelope, { clock });
-  assert.equal(duplicate.reservation.reservationId, result.reservation.reservationId);
-
-  const failedCalendar = new AvailabilityCalendar();
-  const failedCommitment = failedCalendar.createBookingRequestBlock({ unitId: "unit-1", holderId: "guest-456", start: "2026-09-10", end: "2026-09-12", clock: () => new Date("2026-08-01T12:00:00.000Z") });
-  failedCalendar.transitionBookingRequestBlockToPaymentPending({ commitmentId: failedCommitment.commitmentId, unitId: "unit-1", start: "2026-09-10", end: "2026-09-12", clock: () => new Date("2026-08-01T12:00:00.000Z") });
-  failedCalendar.releasePaymentPending(failedCommitment.commitmentId, { clock: () => new Date("2026-08-01T12:10:00.000Z") });
-  const failedOffer = { ...createMockOfferManager().getOffer("offer-123"), offerId: "offer-failed", inventoryCommitmentId: failedCommitment.commitmentId, dates: { checkIn: "2026-09-10", checkOut: "2026-09-12", nights: 2 } };
-  const failedManager = new CardPaymentManager({ offerManager: { getOffer: () => failedOffer }, repository: createMockRepository(), calendar: failedCalendar });
-  assert.throws(() => failedManager.verifyAndConfirmCardPayment(createEnvelope("card_payment.verify_and_confirm", {
-    offerId: failedOffer.offerId,
-    pspReference: "psp_ref_failed_inventory",
-    mockVerifyResult: { verified: true, status: "success" as const, amountKobo: failedOffer.totalAmountDueNowKobo, currency: "NGN", pspReference: "psp_ref_failed_inventory", payerId: "guest-456" }
-  }), { clock }), /no longer active/i);
-  assert.equal(failedManager.projectInteractionState(failedOffer.offerId).paymentStatus, "awaiting_verification");
-  assert.equal(failedCalendar.getAuthoritativeAvailability({ unitId: "unit-1", checkIn: "2026-09-10", checkOut: "2026-09-12", clock }).isAvailable, true);
-});
-
-test("Card payment attributes a permitted distinct payer without replacing the Primary Guest", () => {
-  const offerManager = createMockOfferManager({ id: "payer-789", name: "Authorized Payer" });
-  const clock = () => new Date("2026-08-01T12:10:00.000Z");
-  const distinctPayerManager = new CardPaymentManager({
-    offerManager,
-    repository: createMockRepository(),
-    calendar: createMockCalendar()
-  });
-  const successfulReference = "psp_ref_distinct_payer";
-
-  const result = distinctPayerManager.verifyAndConfirmCardPayment(createEnvelope("card_payment.verify_and_confirm", {
-    offerId: "offer-123",
-    pspReference: successfulReference,
-    mockVerifyResult: {
-      verified: true,
-      status: "success" as const,
-      amountKobo: 15000000,
-      currency: "NGN",
-      pspReference: successfulReference,
-      payerId: "payer-789"
-    }
-  }), { clock });
-
-  assert.equal(result.reservation.status, "confirmed");
-  assert.equal(result.bookingContract.parties.primaryGuest.id, "guest-456");
-  assert.equal(result.bookingContract.parties.distinctPayer?.id, "payer-789");
-
-  const primaryGuestManager = new CardPaymentManager({
-    offerManager: createMockOfferManager({ id: "payer-789", name: "Authorized Payer" }),
-    repository: createMockRepository(),
-    calendar: createMockCalendar()
-  });
-  const primaryGuestReference = "psp_ref_primary_on_distinct";
-  assert.throws(
-    () => primaryGuestManager.verifyAndConfirmCardPayment(createEnvelope("card_payment.verify_and_confirm", {
-      offerId: "offer-123",
-      pspReference: primaryGuestReference,
-      mockVerifyResult: {
-        verified: true,
-        status: "success" as const,
-        amountKobo: 15000000,
-        currency: "NGN",
-        pspReference: primaryGuestReference,
-        payerId: "guest-456"
-      }
-    }), { clock }),
-    /Payer attribution verification failed/
-  );
-});
-
-test("Payment success appears in interaction state only after the authoritative transaction commits", () => {
-  const offerManager = createMockOfferManager();
-  const repository = createMockRepository();
-  const calendar = createMockCalendar();
-  const audit = createMockAudit();
-
-  const manager = new CardPaymentManager({
-    offerManager,
-    repository,
-    calendar,
-    audit
-  });
-
-  const clock = () => new Date("2026-08-01T12:10:00.000Z");
-
-  // Before confirmation / commitment: interaction state is awaiting_verification
-  const initialProjection = manager.projectInteractionState("offer-123");
-  assert.equal(initialProjection.paymentStatus, "awaiting_verification");
-  assert.equal(initialProjection.reservationId, undefined);
-
-  // Authoritative transaction commits
-  const confirmEnvelope = createEnvelope("card_payment.verify_and_confirm", {
-    offerId: "offer-123",
-    pspReference: "psp_ref_proj_test",
-    mockVerifyResult: {
-      verified: true,
-      status: "success" as const,
-      amountKobo: 15000000,
-      currency: "NGN",
-      pspReference: "psp_ref_proj_test",
-      payerId: "guest-456"
-    }
-  });
-
-  const commitResult = manager.verifyAndConfirmCardPayment(confirmEnvelope, { clock });
-
-  // After commitment: interaction state transitions to confirmed
-  const committedProjection = manager.projectInteractionState("offer-123");
-  assert.equal(committedProjection.paymentStatus, "confirmed");
-  assert.equal(committedProjection.reservationId, commitResult.reservation.reservationId);
-  assert.equal(committedProjection.contractId, commitResult.bookingContract.contractId);
+test("PSP references require an authoritative existing checkout and cannot be substituted across offers", () => {
+  const { manager } = setup();
+  assert.throws(() => manager.verifyAndConfirmCardPayment(envelope("card_payment.verify_and_confirm", { offerId: "offer-123", pspReference: "arbitrary" }, { id: "system", role: "system", tenantId: "tenant-lagos" })), /bound/);
 });

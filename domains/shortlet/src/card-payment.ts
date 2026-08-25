@@ -62,7 +62,7 @@ export interface BookingContract {
     readonly amountKobo: number;
     readonly currency: "NGN";
     readonly paidAt: string;
-    readonly cardMetadata: { readonly brand: string; readonly last4: string };
+    readonly cardMetadata?: { readonly brand: string; readonly last4: string };
   };
   readonly createdAt: string;
   readonly contractVersion: number;
@@ -91,7 +91,7 @@ export interface LedgerEntry {
   readonly createdAt: string;
 }
 
-export interface MockPSPVerifyResult {
+export interface PSPVerifyResult {
   readonly verified: boolean;
   readonly status: "success" | "pending" | "failed";
   readonly amountKobo: number;
@@ -101,6 +101,9 @@ export interface MockPSPVerifyResult {
   readonly cardMetadata?: { readonly brand: string; readonly last4: string };
   readonly failureReason?: string;
 }
+
+/** Test fixtures may alias the provider response type, but production commands cannot carry it. */
+export type MockPSPVerifyResult = PSPVerifyResult;
 
 export interface CardPaymentManagerOptions {
   readonly offerManager: {
@@ -123,7 +126,7 @@ export interface CardPaymentManagerOptions {
     record(entry: Record<string, unknown>): void;
   };
   readonly pspClient?: {
-    verifyTransaction(pspReference: string): MockPSPVerifyResult;
+    verifyTransaction(pspReference: string): PSPVerifyResult;
   };
 }
 
@@ -138,7 +141,7 @@ export class CardPaymentManager {
   readonly #reservations = new Map<string, Reservation>();
   readonly #contracts = new Map<string, BookingContract>();
   readonly #ledgerEntries = new Map<string, LedgerEntry[]>();
-  readonly #processedPspReferences = new Map<string, { reservationId: string; contractId: string }>();
+  readonly #processedPspReferences = new Map<string, { reservationId: string; contractId: string; offerId: string; tenantId?: string }>();
 
   constructor(options: CardPaymentManagerOptions) {
     if (!options.offerManager) {
@@ -155,7 +158,7 @@ export class CardPaymentManager {
    * ADR 0049: Initialize fresh PSP-hosted card checkout.
    */
   initializeCardCheckout(
-    envelope: PlatformCommandEnvelope<{ offerId: string } & Record<string, unknown>>,
+    envelope: PlatformCommandEnvelope<{ offerId: string }>,
     { clock = () => new Date() }: { clock?: () => Date } = {}
   ): CardCheckoutSession {
     if (!envelope || envelope.commandName !== "card_payment.initialize_checkout") {
@@ -164,14 +167,25 @@ export class CardPaymentManager {
 
     assertNoRawCardCredentials(envelope.payload ?? {});
 
-    const { offerId } = envelope.payload ?? {};
+    const payload = envelope.payload ?? {};
+    const { offerId } = payload;
     if (!offerId) throw new Error("offerId is required to initialize checkout");
+    if (Object.keys(payload).some((key) => key !== "offerId")) {
+      throw new Error("Checkout initialization accepts only offerId");
+    }
 
     const offer = this.#offerManager.getOffer(offerId);
-
-    // Cross-tenant check
-    if (offer.tenantId && envelope.principal.tenantId && offer.tenantId !== envelope.principal.tenantId) {
+    const expectedPayerId = offer.parties.distinctPayer?.id ?? offer.parties.primaryGuest.id;
+    if (envelope.principal.role !== "guest" || !envelope.principal.id || envelope.principal.id !== expectedPayerId) {
+      throw new Error("Only the authoritative payer can initialize checkout");
+    }
+    if (!offer.tenantId || !envelope.principal.tenantId || offer.tenantId !== envelope.principal.tenantId) {
       throw new Error("Cross-tenant offer access denied");
+    }
+    for (const existing of this.#sessions.values()) {
+      if (existing.offerId === offerId && existing.status === "initiated") {
+        throw new Error("A live checkout already exists for this offer");
+      }
     }
 
     if (offer.status !== "accepted") {
@@ -220,11 +234,7 @@ export class CardPaymentManager {
    * ADR 0002, 0044, 0046, 0050: Server-side payment verification and atomic commitment.
    */
   verifyAndConfirmCardPayment(
-    envelope: PlatformCommandEnvelope<{
-      offerId: string;
-      pspReference: string;
-      mockVerifyResult?: MockPSPVerifyResult;
-    } & Record<string, unknown>>,
+    envelope: PlatformCommandEnvelope<{ offerId: string; pspReference: string }>,
     { clock = () => new Date() }: { clock?: () => Date } = {}
   ): { reservation: Reservation; bookingContract: BookingContract; ledgerEntries: readonly LedgerEntry[] } {
     if (!envelope || envelope.commandName !== "card_payment.verify_and_confirm") {
@@ -233,25 +243,37 @@ export class CardPaymentManager {
 
     assertNoRawCardCredentials(envelope.payload ?? {});
 
-    const { offerId, pspReference, mockVerifyResult } = envelope.payload ?? {};
+    const payload = envelope.payload ?? {};
+    const { offerId, pspReference } = payload;
     if (!offerId || !pspReference) {
       throw new Error("offerId and pspReference are required for payment verification");
     }
+    if (Object.keys(payload).some((key) => key !== "offerId" && key !== "pspReference")) {
+      throw new Error("Payment verification accepts only the server-resolved offer and PSP reference");
+    }
+    if (envelope.principal.role !== "system" || !envelope.principal.id) {
+      throw new Error("Payment verification requires a trusted system principal");
+    }
 
-    // ADR 0046 & AC 3: Idempotency check on duplicate callbacks / retries
+    const session = [...this.#sessions.values()].find((candidate) => candidate.pspReference === pspReference);
+    if (!session || session.offerId !== offerId) {
+      throw new Error("PSP reference is not bound to an authoritative checkout session");
+    }
+    const offer = this.#offerManager.getOffer(session.offerId);
+    if (!offer.tenantId || !envelope.principal.tenantId || offer.tenantId !== envelope.principal.tenantId) {
+      throw new Error("Cross-tenant offer access denied");
+    }
+
+    // Authorization and session binding precede idempotency disclosure.
     const existingReference = this.#processedPspReferences.get(pspReference);
     if (existingReference) {
+      if (existingReference.offerId !== offer.offerId || existingReference.tenantId !== offer.tenantId) {
+        throw new Error("Processed PSP reference is not authorized for this offer");
+      }
       const reservation = this.#reservations.get(existingReference.reservationId)!;
       const bookingContract = this.#contracts.get(existingReference.contractId)!;
       const ledgerEntries = this.#ledgerEntries.get(existingReference.reservationId) ?? [];
       return { reservation, bookingContract, ledgerEntries };
-    }
-
-    const offer = this.#offerManager.getOffer(offerId);
-
-    // Cross-tenant check
-    if (offer.tenantId && envelope.principal.tenantId && offer.tenantId !== envelope.principal.tenantId) {
-      throw new Error("Cross-tenant offer access denied");
     }
 
     if (offer.status !== "accepted") {
@@ -261,7 +283,7 @@ export class CardPaymentManager {
     const now = clock();
 
     // Verification from PSP
-    const pspResult = mockVerifyResult ?? this.#pspClient?.verifyTransaction(pspReference);
+    const pspResult = this.#pspClient?.verifyTransaction(pspReference);
     if (!pspResult) {
       throw new Error("Server-side payment verification failed: No PSP result available");
     }
@@ -355,7 +377,7 @@ export class CardPaymentManager {
         amountKobo: pspResult.amountKobo,
         currency: "NGN",
         paidAt: now.toISOString(),
-        cardMetadata: pspResult.cardMetadata ?? { brand: "Visa", last4: "4242" }
+        ...(pspResult.cardMetadata ? { cardMetadata: pspResult.cardMetadata } : {})
       },
       createdAt: now.toISOString(),
       contractVersion: 1
@@ -420,7 +442,8 @@ export class CardPaymentManager {
     this.#reservations.set(reservationId, reservation);
     this.#contracts.set(contractId, bookingContract);
     this.#ledgerEntries.set(reservationId, ledgerEntries);
-    this.#processedPspReferences.set(pspReference, { reservationId, contractId });
+    session.status = "completed";
+    this.#processedPspReferences.set(pspReference, { reservationId, contractId, offerId: offer.offerId, tenantId: offer.tenantId });
 
     if (this.#audit) {
       this.#audit.record({
@@ -437,6 +460,21 @@ export class CardPaymentManager {
     }
 
     return { reservation, bookingContract, ledgerEntries: Object.freeze(ledgerEntries) };
+  }
+
+  getCheckoutSession(offerId: string): CardCheckoutSession | undefined {
+    const sessions = [...this.#sessions.values()].filter((session) => session.offerId === offerId);
+    const session = sessions.find((candidate) => candidate.status === "initiated") ?? sessions.at(-1);
+    return session ? { ...session } : undefined;
+  }
+
+  getCheckoutSessionByReference(pspReference: string): CardCheckoutSession | undefined {
+    const session = [...this.#sessions.values()].find((candidate) => candidate.pspReference === pspReference);
+    return session ? { ...session } : undefined;
+  }
+
+  getBookingContract(offerId: string): BookingContract | undefined {
+    return [...this.#contracts.values()].find((contract) => contract.offerId === offerId);
   }
 
   /**
