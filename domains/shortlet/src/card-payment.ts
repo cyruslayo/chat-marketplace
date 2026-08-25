@@ -1,6 +1,7 @@
 import { PlatformCommandEnvelope } from "../../../packages/platform-core/src/index.js";
 import { ConditionalBookingOffer } from "./conditional-offer.js";
 import type { BookingStateRepository } from "./booking-state.js";
+import type { GuestConductPolicySnapshot } from "./guest-conduct.js";
 
 /**
  * ADR 0049 & AC 1: Strictly reject payloads containing raw PAN, CVV, PIN, OTP, or reusable card tokens.
@@ -56,6 +57,7 @@ export interface BookingContract {
   readonly policies: {
     readonly cancellationPolicy: unknown;
     readonly guestConductRules: readonly string[];
+    readonly guestConductPolicy?: GuestConductPolicySnapshot;
   };
   readonly disclosures?: readonly string[];
   readonly paymentDetails:
