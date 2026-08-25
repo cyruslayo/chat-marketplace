@@ -5,6 +5,8 @@ import type { ConditionalOfferApplication } from "./conditional-offer-applicatio
 import type { ConditionalOfferArtifact } from "./conditional-offer-artifact.js";
 import type { CardPaymentApplication } from "./card-payment-application.js";
 import type { CardPaymentArtifact } from "./card-payment-artifact.js";
+import type { BankTransferPaymentApplication } from "./bank-transfer-application.js";
+import type { BankTransferArtifact } from "./bank-transfer-artifact.js";
 
 export function conventionalSearch(query: any, filters: any) {
   return { channel: "web" as const, artifact: query.search(filters) };
@@ -29,6 +31,19 @@ export function conventionalConditionalOfferRoute(offerId: string): string {
 
 export function conventionalCardPaymentRoute(offerId: string): string {
   return `/payments/offers/${encodeURIComponent(offerId)}`;
+}
+
+export function conventionalBankTransferRoute(offerId: string): string {
+  return `/payments/bank-transfer/offers/${encodeURIComponent(offerId)}`;
+}
+
+export function getConventionalBankTransferView(application: BankTransferPaymentApplication, offerId: string, principal: CommandPrincipal): { readonly route: string; readonly artifact: BankTransferArtifact } {
+  return Object.freeze({ route: conventionalBankTransferRoute(offerId), artifact: application.getArtifact(offerId, principal) });
+}
+
+export function initializeConventionalBankTransfer(application: BankTransferPaymentApplication, offerId: string, principal: CommandPrincipal): { readonly route: string; readonly artifact: BankTransferArtifact } {
+  application.initializeTransfer(offerId, principal);
+  return getConventionalBankTransferView(application, offerId, principal);
 }
 
 export function getConventionalCardPaymentView(application: CardPaymentApplication, offerId: string, principal: CommandPrincipal): { readonly route: string; readonly artifact: CardPaymentArtifact } {

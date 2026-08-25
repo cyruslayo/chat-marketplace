@@ -248,6 +248,13 @@ export class SqliteAvailabilityStore {
     });
   }
 
+  extendPaymentPending(commitmentId: string, expiresAt: string, now: string): void {
+    this.#withWriteTransaction(() => {
+      const result = this.#database.prepare(`UPDATE availability_commitments SET expires_at = $expiresAt WHERE commitment_id = $commitmentId AND kind = 'payment_pending' AND state = 'active' AND expires_at <= $now`).run({ $commitmentId: commitmentId, $expiresAt: expiresAt, $now: now });
+      if (result.changes !== 1) throw new Error("Payment Pending commitment is no longer active");
+    });
+  }
+
   transitionPaymentPendingToConfirmedBooking({ commitmentId, unitId, start, end, now }: { commitmentId: string; unitId: string; start: string; end: string; now: string }): AvailabilityCommitment {
     return this.#withWriteTransaction(() => {
       this.#expireStale(now);

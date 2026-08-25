@@ -14,7 +14,11 @@ import { conditionalOfferArtifactToA2UI } from "./conditional-offer-a2ui.js";
 import type { CardPaymentApplication } from "../../web/src/card-payment-application.js";
 import type { CardPaymentArtifact } from "../../web/src/card-payment-artifact.js";
 import { cardPaymentArtifactToA2UI } from "./card-payment-a2ui.js";
-import { conventionalCardPaymentRoute } from "../../web/src/presentation.js";
+import { conventionalCardPaymentRoute, conventionalBankTransferRoute } from "../../web/src/presentation.js";
+import type { BankTransferPaymentApplication } from "../../web/src/bank-transfer-application.js";
+import type { BankTransferArtifact } from "../../web/src/bank-transfer-artifact.js";
+import { bankTransferArtifactToA2UI } from "./bank-transfer-a2ui.js";
+export { bankTransferArtifactToA2UI } from "./bank-transfer-a2ui.js";
 
 function fallbackMessage(artifact: any): string {
   const count = artifact.facts.results.length;
@@ -76,6 +80,22 @@ export function createCardPaymentWebAgentAdapter({ application, principal, creat
       const artifact: CardPaymentArtifact = application.getArtifact(offerId, principal);
       const surfaceId = createSurfaceId(artifact.id);
       return Object.freeze({ channel: "web-agent" as const, artifact, surfaceId, a2uiMessages: cardPaymentArtifactToA2UI({ artifact, surfaceId }), fallback: Object.freeze({ message: `Card payment status: ${artifact.facts.status}`, conventionalRoute: conventionalCardPaymentRoute(offerId) }) });
+    },
+  });
+}
+
+export interface CreateBankTransferWebAgentAdapterOptions {
+  readonly application: BankTransferPaymentApplication;
+  readonly principal: CommandPrincipal;
+  readonly createSurfaceId: (artifactId: string) => string;
+}
+
+export function createBankTransferWebAgentAdapter({ application, principal, createSurfaceId }: CreateBankTransferWebAgentAdapterOptions) {
+  return Object.freeze({
+    get(offerId: string) {
+      const artifact: BankTransferArtifact = application.getArtifact(offerId, principal);
+      const surfaceId = createSurfaceId(artifact.id);
+      return Object.freeze({ channel: "web-agent" as const, artifact, surfaceId, a2uiMessages: bankTransferArtifactToA2UI({ artifact, surfaceId }), fallback: Object.freeze({ message: `Bank transfer status: ${artifact.facts.status}`, conventionalRoute: conventionalBankTransferRoute(offerId) }) });
     },
   });
 }
