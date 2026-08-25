@@ -37,6 +37,12 @@ export { bankTransferArtifactToA2UI } from "./bank-transfer-a2ui.js";
 export interface CreateHumanHandoffWebAgentAdapterOptions { readonly application: HumanHandoffApplication; readonly context: SecurityContext; readonly createSurfaceId: (artifactId: string) => string; }
 export function createHumanHandoffWebAgentAdapter({ application, context, createSurfaceId }: CreateHumanHandoffWebAgentAdapterOptions) { return Object.freeze({ get(threadId: string) { const artifact: HumanHandoffArtifact = application.getArtifact(threadId, context); const surfaceId = createSurfaceId(artifact.id); return Object.freeze({ channel: "web-agent" as const, artifact, surfaceId, a2uiMessages: humanHandoffArtifactToA2UI({ artifact, surfaceId }), fallback: Object.freeze({ message: artifact.facts.mode, conventionalRoute: conventionalHumanHandoffRoute(threadId) }) }); } }); }
 export { bookingContractArtifactToA2UI } from "./booking-contract-a2ui.js";
+export { bookingAmendmentArtifactToA2UI } from "./booking-amendment-a2ui.js";
+import type { BookingAmendmentApplication } from "../../web/src/booking-amendment-application.js";
+import type { BookingAmendmentArtifact } from "../../web/src/booking-amendment-artifact.js";
+import { bookingAmendmentArtifactToA2UI } from "./booking-amendment-a2ui.js";
+import { conventionalBookingAmendmentRoute } from "../../web/src/presentation.js";
+export function createBookingAmendmentWebAgentAdapter(options: { readonly application: BookingAmendmentApplication; readonly principal: CommandPrincipal; readonly createSurfaceId: (artifactId: string) => string }) { return Object.freeze({ get(contractId: string) { const artifact: BookingAmendmentArtifact = options.application.getArtifact(contractId, options.principal); const surfaceId = options.createSurfaceId(artifact.id); return Object.freeze({ channel: "web-agent" as const, artifact, surfaceId, a2uiMessages: bookingAmendmentArtifactToA2UI({ artifact, surfaceId }), fallback: Object.freeze({ message: "Booking Amendment", conventionalRoute: conventionalBookingAmendmentRoute(contractId) }) }); } }); }
 
 function fallbackMessage(artifact: any): string {
   const count = artifact.facts.results.length;

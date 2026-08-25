@@ -1,0 +1,11 @@
+import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
+import type { BookingContract } from "../../../domains/shortlet/src/card-payment.js";
+import type { BookingAmendmentApplication } from "./booking-amendment-application.js";
+import type { CheckoutAmendmentPort, EffectiveCheckoutTermsProvider } from "./checkout-overstay-application.js";
+/** Production Issue 18 bridge: checkout terms are read and written through the amendment application. */
+export function createBookingAmendmentCheckoutAdapter(application: BookingAmendmentApplication, contracts: { getContract?(id: string): BookingContract; findContractById?(id: string): BookingContract | null; findByReservationId?(id: string): BookingContract | null }): { readonly terms: EffectiveCheckoutTermsProvider; readonly amendments: CheckoutAmendmentPort } {
+  return {
+    terms: { getTerms(reservationId) { const found = contracts.findByReservationId?.(reservationId); if (!found) throw new Error("Reservation not found"); const checkout = found.checkout ?? { time: "11:00" as const, timezone: "Africa/Lagos" as const, source: "contractual" as const }; return { reservationId, checkoutDate: found.dates.checkOut, checkoutTime: checkout.time, source: checkout.source, termVersion: `${found.contractVersion}`, ...(checkout.amendmentId ? { amendmentId: checkout.amendmentId } : {}), ...(checkout.amendmentVersion !== undefined ? { amendmentVersion: checkout.amendmentVersion } : {}) }; } },
+    amendments: { acceptLateCheckout(input) { const contract = contracts.findByReservationId?.(input.reservationId); if (!contract) throw new Error("Reservation not found"); const result = application.requestAmendment(contract.contractId, { checkoutTime: input.requestedTime }, input.principal); application.acceptAmendment(result.facts.proposal!.amendmentId, input.principal); const system: CommandPrincipal = { id: "checkout-system", role: "system", tenantId: contract.tenantId }; const committed = application.finalizeSettlement(result.facts.proposal!.amendmentId, system); return { amendmentId: committed.amendmentId, amendmentVersion: result.facts.proposal!.amendmentVersion, effectiveCheckoutTime: input.requestedTime, quoteId: result.facts.proposal!.quoteId, feeKobo: committed.financialAdjustment.amountKobo, currency: "NGN" as const }; } }
+  };
+}

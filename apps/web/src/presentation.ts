@@ -30,6 +30,8 @@ export function conventionalSearchRoute(filters: Record<string, any> = {}) {
 export function conventionalBookingContractRoute(contractId: string): string {
   return `/booking-contracts/${encodeURIComponent(contractId)}`;
 }
+export function conventionalBookingAmendmentRoute(contractId: string): string { return `/booking-contracts/${encodeURIComponent(contractId)}/amend`; }
+export function getConventionalBookingAmendmentView(application: import("./booking-amendment-application.js").BookingAmendmentApplication, contractId: string, principal: CommandPrincipal) { return Object.freeze({ route: conventionalBookingAmendmentRoute(contractId), artifact: application.getArtifact(contractId, principal) }); }
 
 export function conventionalCheckInSupportRoute(reservationId: string): string {
   return `/reservations/${encodeURIComponent(reservationId)}/check-in`;

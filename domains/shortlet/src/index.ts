@@ -19,6 +19,7 @@ export * from "./ussd-capability.js";
 export * from "./payment-attempt.js";
 export * from "./checkin-support.js";
 export * from "./booking-amendment.js";
+export * from "./booking-state.js";
 export * from "./checkout-overstay.js";
 export * from "./cancellation-noshow.js";
 export * from "./deposit-claim.js";
