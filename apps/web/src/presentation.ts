@@ -37,6 +37,14 @@ export function conventionalBankTransferRoute(offerId: string): string {
   return `/payments/bank-transfer/offers/${encodeURIComponent(offerId)}`;
 }
 
+export function conventionalPaymentCapabilitiesRoute(offerId: string): string {
+  return `/payments/capabilities/offers/${encodeURIComponent(offerId)}`;
+}
+
+export function getConventionalPaymentCapabilitiesView(application: import("./payment-capability-application.js").PaymentCapabilityApplication, offerId: string, principal: CommandPrincipal) {
+  return Object.freeze({ route: conventionalPaymentCapabilitiesRoute(offerId), artifact: application.getArtifact(offerId, principal) });
+}
+
 export function getConventionalBankTransferView(application: BankTransferPaymentApplication, offerId: string, principal: CommandPrincipal): { readonly route: string; readonly artifact: BankTransferArtifact } {
   return Object.freeze({ route: conventionalBankTransferRoute(offerId), artifact: application.getArtifact(offerId, principal) });
 }

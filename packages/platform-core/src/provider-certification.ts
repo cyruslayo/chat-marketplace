@@ -186,10 +186,12 @@ export class ProviderCapabilityCertifier {
     this.#limitations.set(key, item.acceptedLimitation);
   }
 
-  isCapabilityEnabled(capability: string, providerId: string): boolean {
+  isCapabilityEnabled(capability: string, providerId: string, now: Date = new Date()): boolean {
     const cert = this.#certifications.get(`${providerId}:${capability}`);
     if (!cert) return false;
-    return cert.environment === "production-equivalent" || cert.environment === "live";
+    if (cert.environment !== "production-equivalent" && cert.environment !== "live") return false;
+    const expiry = Date.parse(cert.expiryDate);
+    return Number.isFinite(expiry) && now.getTime() < expiry;
   }
 
   executeCapability<T>(capability: string, providerId: string, fn: () => T): T {
@@ -217,7 +219,7 @@ export class ProviderCapabilityCertifier {
 
         if (cert) {
           certificationStatus = "certified";
-          enabled = true;
+          enabled = this.isCapabilityEnabled(cap, prov);
         } else if (limitation || cap === "ussd") {
           certificationStatus = "disabled";
           enabled = false;

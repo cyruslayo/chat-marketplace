@@ -77,6 +77,11 @@ export class WhatsAppChannelAdapter {
     });
   }
 
+  /** Payment capability meaning is shared with web/agent; WhatsApp presents state but redirects high-impact initialization. */
+  projectPaymentCapabilities(artifact: { readonly id: string; readonly kind: string; readonly schemaVersion: string; readonly facts: { readonly availableMethods: readonly string[]; readonly paymentDeadline: string } }): Readonly<{ channel: "whatsapp"; artifactId: string; availableMethods: readonly string[]; paymentDeadline: string; initializationRequiresWeb: true }> {
+    return Object.freeze({ channel: "whatsapp", artifactId: artifact.id, availableMethods: Object.freeze([...artifact.facts.availableMethods]), paymentDeadline: artifact.facts.paymentDeadline, initializationRequiresWeb: true });
+  }
+
   /**
    * ADR 0077 & AC2:
    * Shared capability matrix evaluating disclosure, authentication, consent, and audit evidence.

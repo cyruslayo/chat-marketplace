@@ -9,6 +9,7 @@ export interface CardPaymentApplicationOptions {
   readonly calendar?: CardPaymentManagerOptions["calendar"];
   readonly audit?: CardPaymentManagerOptions["audit"];
   readonly pspClient: NonNullable<CardPaymentManagerOptions["pspClient"]>;
+  readonly liveAttempts?: CardPaymentManagerOptions["liveAttempts"];
   readonly clock?: () => Date;
 }
 

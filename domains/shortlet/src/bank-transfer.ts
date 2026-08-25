@@ -65,6 +65,7 @@ export interface BankTransferPaymentManagerOptions {
   };
   readonly audit?: { record(entry: Record<string, unknown>): void };
   readonly providerClient: BankTransferProviderClient;
+  readonly liveAttempts?: import("./payment-attempt.js").LivePaymentAttemptRegistry;
 }
 
 type Outcome = "confirmed" | "processing_in_grace" | "late_payment_refunded" | "failed" | "expired";
@@ -82,6 +83,7 @@ export class BankTransferPaymentManager {
   readonly #calendar?: BankTransferPaymentManagerOptions["calendar"];
   readonly #audit?: BankTransferPaymentManagerOptions["audit"];
   readonly #providerClient: BankTransferProviderClient;
+  readonly #liveAttempts?: BankTransferPaymentManagerOptions["liveAttempts"];
   readonly #sessionsByOffer = new Map<string, BankTransferCheckoutSession>();
   readonly #sessionsByReference = new Map<string, BankTransferCheckoutSession>();
   readonly #reservations = new Map<string, Reservation>();
@@ -93,7 +95,7 @@ export class BankTransferPaymentManager {
 
   constructor(options: BankTransferPaymentManagerOptions) {
     if (!options.offerManager || !options.providerClient) throw new Error("offerManager and providerClient are required for BankTransferPaymentManager");
-    this.#offerManager = options.offerManager; this.#calendar = options.calendar; this.#audit = options.audit; this.#providerClient = options.providerClient;
+    this.#offerManager = options.offerManager; this.#calendar = options.calendar; this.#audit = options.audit; this.#providerClient = options.providerClient; this.#liveAttempts = options.liveAttempts;
   }
 
   initializeBankTransfer(envelope: PlatformCommandEnvelope<{ offerId: string }>, { clock = () => new Date() }: { clock?: () => Date } = {}): BankTransferCheckoutSession {
@@ -114,7 +116,7 @@ export class BankTransferPaymentManager {
       totalAmountDueNowKobo: offer.totalAmountDueNowKobo, currency: "NGN", expiresAt: offer.paymentWindow.expiresAt,
       graceEndsAt: new Date(deadline + GRACE_MS).toISOString(), status: "initiated"
     };
-    this.#sessionsByOffer.set(offer.offerId, session); this.#sessionsByReference.set(transferReference, session);
+    this.#liveAttempts?.acquire({ offerId: offer.offerId, method: "bank_transfer", attemptId: session.checkoutId, startedAt: now.toISOString(), expiresAt: session.graceEndsAt }); this.#sessionsByOffer.set(offer.offerId, session); this.#sessionsByReference.set(transferReference, session);
     this.#audit?.record({ type: "bank_transfer.initialized", checkoutId: session.checkoutId, offerId: offer.offerId, commandEnvelopeId: envelope.commandId, initiatedAt: now.toISOString() });
     return { ...session };
   }
@@ -141,7 +143,7 @@ export class BankTransferPaymentManager {
     const now = clock(); if (now.getTime() < new Date(session.graceEndsAt).getTime()) throw new Error("Payment release deadline has not been reached");
     if (session.status === "expired" || session.status === "refunded") return { ...session };
     this.#calendar?.releasePaymentPending?.(offer.inventoryCommitmentId, { clock: () => now });
-    const expired = { ...session, status: "expired" as const }; this.#sessionsByOffer.set(offerId, expired); this.#sessionsByReference.set(session.transferReference, expired);
+    const expired = { ...session, status: "expired" as const }; this.#liveAttempts?.release(offerId); this.#sessionsByOffer.set(offerId, expired); this.#sessionsByReference.set(session.transferReference, expired);
     this.#audit?.record({ type: "bank_transfer.expired", offerId, checkoutId: session.checkoutId, commandEnvelopeId: principal.id, expiredAt: now.toISOString() });
     return { ...expired };
   }
@@ -174,7 +176,7 @@ export class BankTransferPaymentManager {
     const reservation: Reservation = { reservationId, contractId, unitId: offer.unitId, primaryGuestId: offer.parties.primaryGuest.id, dates: { checkIn: offer.dates.checkIn, checkOut: offer.dates.checkOut }, status: "confirmed", confirmedAt: now.toISOString() };
     const bookingContract: BookingContract = { contractId, reservationId, offerId: offer.offerId, unitId: offer.unitId, tenantId: offer.tenantId, parties: offer.parties, dates: offer.dates, occupants: offer.occupants, quote: offer.quote, totalAmountDueNowKobo: offer.totalAmountDueNowKobo, policies: offer.policies, paymentDetails: { paymentMethod: "bank_transfer", transferReference: session.transferReference, amountKobo: result.amountKobo, currency: "NGN", paidAt: now.toISOString() }, createdAt: now.toISOString(), contractVersion: 1 };
     const ledgerEntries: LedgerEntry[] = [{ entryId: `led_${reservationId}_1`, reservationId, type: "guest_payment_credit", amountKobo: offer.totalAmountDueNowKobo, currency: "NGN", createdAt: now.toISOString() }];
-    this.#reservations.set(reservationId, reservation); this.#contracts.set(contractId, bookingContract); this.#ledgerEntries.set(reservationId, ledgerEntries); this.#sessionsByOffer.set(offer.offerId, { ...session, status: "completed" }); this.#processedReferences.set(session.transferReference, { offerId: offer.offerId, tenantId: offer.tenantId, outcome: "confirmed", reservationId, contractId });
+    this.#reservations.set(reservationId, reservation); this.#contracts.set(contractId, bookingContract); this.#ledgerEntries.set(reservationId, ledgerEntries); this.#sessionsByOffer.set(offer.offerId, { ...session, status: "completed" }); this.#liveAttempts?.release(offer.offerId); this.#processedReferences.set(session.transferReference, { offerId: offer.offerId, tenantId: offer.tenantId, outcome: "confirmed", reservationId, contractId });
     return { outcome: "confirmed", reservation, bookingContract, ledgerEntries: Object.freeze(ledgerEntries) };
   }
 
@@ -183,7 +185,7 @@ export class BankTransferPaymentManager {
     const refundId = `ref_${deterministicSuffix(session.transferReference)}`; const reconciliationId = `rec_${deterministicSuffix(session.transferReference)}`;
     const refundRecord: BankTransferRefundRecord = { refundId, offerId: offer.offerId, transferReference: session.transferReference, amountKobo: result.amountKobo, currency: "NGN", reason: "late_payment_after_expiry", status: "initiated", createdAt: now.toISOString() };
     const reconciliationRecord: BankTransferReconciliationRecord = { reconciliationId, offerId: offer.offerId, transferReference: session.transferReference, amountKobo: result.amountKobo, status: "quarantined_for_refund", createdAt: now.toISOString() };
-    this.#refundRecords.set(refundId, refundRecord); this.#reconciliationRecords.set(reconciliationId, reconciliationRecord); this.#processedReferences.set(session.transferReference, { offerId: offer.offerId, tenantId: offer.tenantId, outcome: "late_payment_refunded", refundId, reconciliationId }); this.#sessionsByOffer.set(offer.offerId, { ...session, status: "refunded" });
+    this.#liveAttempts?.release(offer.offerId); this.#refundRecords.set(refundId, refundRecord); this.#reconciliationRecords.set(reconciliationId, reconciliationRecord); this.#processedReferences.set(session.transferReference, { offerId: offer.offerId, tenantId: offer.tenantId, outcome: "late_payment_refunded", refundId, reconciliationId }); this.#sessionsByOffer.set(offer.offerId, { ...session, status: "refunded" });
     this.#audit?.record({ type: "bank_transfer.late_payment_refunded", offerId: offer.offerId, commandEnvelopeId: envelope.commandId, refundId, reconciliationId, timestamp: now.toISOString() });
     return { outcome: "late_payment_refunded" as const, refundRecord, reconciliationRecord };
   }
