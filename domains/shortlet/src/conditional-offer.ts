@@ -129,6 +129,9 @@ export class ConditionalOfferManager {
 
     const { requestId } = envelope.payload ?? {};
     if (!requestId) throw new Error("requestId is required to issue an offer");
+    if (envelope.principal.role !== "operator") {
+      throw new Error("Only an authenticated Operator can issue an offer");
+    }
     if (!envelope.principal.tenantId) throw new Error("Authenticated tenant is required to issue an offer");
 
     if (!this.#bookingRequestManager) {
@@ -138,6 +141,9 @@ export class ConditionalOfferManager {
     const request = this.#bookingRequestManager.getRequest(requestId);
     if (!request.tenantId || request.tenantId !== envelope.principal.tenantId) {
       throw new Error("Cross-tenant request access denied");
+    }
+    if (!request.operatorId || envelope.principal.id !== request.operatorId) {
+      throw new Error("Authenticated principal is not authorized for this Operator action");
     }
     if (request.status !== "confirmed") {
       throw new Error(`Cannot issue offer for request in status '${request.status}' (must be confirmed)`);
@@ -307,8 +313,8 @@ export class ConditionalOfferManager {
 
     const offer = this.getOffer(offerId);
 
-    // 1. Cross-tenant check
-    if (offer.tenantId && envelope.principal.tenantId && offer.tenantId !== envelope.principal.tenantId) {
+    // 1. Cross-tenant and role checks fail closed.
+    if (envelope.principal.role !== "guest" || !offer.tenantId || !envelope.principal.tenantId || offer.tenantId !== envelope.principal.tenantId) {
       throw new Error("Cross-tenant offer access denied");
     }
 
@@ -385,8 +391,10 @@ export class ConditionalOfferManager {
 
     if (
       tokenPayload.actorId !== offer.parties.primaryGuest.id ||
+      tokenPayload.tenantId !== offer.tenantId ||
       tokenPayload.offerId !== offer.offerId ||
       tokenPayload.offerVersion !== offer.offerVersion ||
+      tokenPayload.quoteVersion !== offer.aggregateVersions.quoteVersion ||
       tokenPayload.totalAmountDueNowKobo !== offer.totalAmountDueNowKobo ||
       tokenPayload.expiresAt !== offer.paymentWindow.expiresAt
     ) {
