@@ -216,10 +216,19 @@ export function createStayQuote({
   });
   const totalAmountDueNowKobo = allInStayTotalKobo + refundableSecurityDepositKobo;
 
+  const configuredCancellationPolicy = unit.cancellationPolicy;
+  const policyType = configuredCancellationPolicy?.type ?? "standard";
+  if (policyType !== "flexible" && policyType !== "standard" && policyType !== "firm") {
+    throw new Error("Unit cancellation policy must be Flexible, Standard, or Firm");
+  }
+  const policyVersion = configuredCancellationPolicy?.version ?? "cancellation-v1";
+  if (typeof policyVersion !== "string" || policyVersion.trim().length === 0) {
+    throw new Error("Unit cancellation policy version is required");
+  }
   const cancellationPolicy = Object.freeze({
-    type: unit.cancellationPolicy?.type ?? "standard",
-    version: unit.cancellationPolicy?.version ?? "cancellation-v1",
-    policySummary: unit.cancellationPolicy?.summary ?? "Standard launch cancellation policy"
+    type: policyType,
+    version: policyVersion,
+    policySummary: configuredCancellationPolicy?.summary ?? "Standard launch cancellation policy"
   });
 
   const revenueClassification = classifyRevenue({

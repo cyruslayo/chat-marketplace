@@ -237,6 +237,17 @@ export class SqliteAvailabilityStore {
     });
   }
 
+  releaseConfirmedBooking(commitmentId: string, unitId: string, start: string, end: string, now: string): void {
+    this.#withWriteTransaction(() => {
+      this.#expireStale(now);
+      const row = this.#database.prepare(`SELECT kind, state, unit_id, start_date, end_date FROM availability_commitments WHERE commitment_id = $commitmentId`).get({ $commitmentId: commitmentId }) as { kind: AvailabilityCommitmentKind; state: AvailabilityCommitmentState; unit_id: string; start_date: string; end_date: string } | undefined;
+      if (!row || row.kind !== "confirmed_booking" || row.unit_id !== unitId || row.start_date !== start || row.end_date !== end) throw new Error("Confirmed booking commitment does not match the expected inventory");
+      if (row.state === "released") return;
+      if (row.state !== "active") throw new Error("Confirmed booking commitment is not active");
+      this.#database.prepare(`UPDATE availability_commitments SET state = 'released', released_at = $now WHERE commitment_id = $commitmentId AND state = 'active'`).run({ $commitmentId: commitmentId, $now: now });
+    });
+  }
+
   releasePaymentPending(commitmentId: string, now: string): void {
     this.#withWriteTransaction(() => {
       this.#expireStale(now);

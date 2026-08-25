@@ -26,11 +26,14 @@ Calculate guest cancellation under the captured Flexible, Standard, or Firm poli
 
 ## Answer
 
-Implemented `CancellationNoShowManager` in `domains/shortlet/src/cancellation-noshow.ts`.
+Issue 21 is implemented through the authoritative `CancellationNoShowManager` and `CancellationApplication`.
 
-### ADR Compliance
-- **ADR 0014**: Standardized Flexible, Standard, Firm policies; captured at request creation time; immutable; cash refunds return to original source.
-- **ADR 0015 & ADR 0016**: Excluded security deposits, cleaning fees, unprovided optional services, duplicate payments, and attributable taxes from Cancellation Base.
-- **ADR 0058**: Boundary tests for Flexible (T-72h 100%, T-24h 50%), Standard (T-14d 100%, T-7d 50%), Firm (T-30d 100%, T-14d 50%). No-Show determination requires human confirmation and 10:00 AM WAT deadline on day after arrival.
-- **ADR 0072 & ADR 0080**: Deterministic parity across agent, web, and support channels using `cancellation.process` command envelope.
+- Requests capture immutable Flexible, Standard, or Firm policy snapshots and versions; later Unit policy changes affect new requests only. Offers and both card and bank Booking Contracts preserve that snapshot.
+- Refund timing uses the authoritative Contractual Check-In Window in Africa/Lagos with exact timestamp boundaries. Economics, Cancellation Base, refundable components, commission, and liability are server/provider-owned; trusted reviewed overrides receive full-base treatment.
+- Primary Guest and exact tenant authorization are enforced. Reservation transitions are authoritative (`confirmed` → `cancelled` or `no_show`), exact confirmed inventory commitments are released, and cancellation ledger obligations are idempotent.
+- Refunds use the Booking Contract's original card or bank-transfer source and expose provider-authoritative pending, settled, or failed status.
+- No-Show requires trusted failed required-contact state, the next-day 10:00 AM Africa/Lagos deadline, and an authorized human. Verified Access, late voluntary arrival, failed access, and human review cannot be misclassified.
+- One minimized `shortlet.cancellation/v1` artifact feeds the conventional route and Weaver A2UI v0.9.1 Basic Catalog; both use the same application and command semantics.
+
+Validation: `npm run check`, `npm run verify:weaver`, and the full suite pass with 389 tests, 0 failures, 0 skipped, and 0 todo.
 

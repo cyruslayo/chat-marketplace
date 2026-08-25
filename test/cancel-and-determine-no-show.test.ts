@@ -107,6 +107,17 @@ test("Exact boundary tests cover every full, partial, and zero-refund threshold 
   assert.equal(firmZero.refundPercentage, 0);
 });
 
+test("Exact policy boundaries use timestamp comparisons at every threshold", () => {
+  const manager = new CancellationNoShowManager();
+  const checkInIso = "2026-09-01T13:00:00.000Z"; const checkIn = Date.parse(checkInIso);
+  const cases: readonly ["flexible" | "standard" | "firm", number, number][] = [["flexible", 72 * 3600000, 100], ["flexible", 24 * 3600000, 50], ["standard", 14 * 86400000, 100], ["standard", 7 * 86400000, 50], ["firm", 30 * 86400000, 100], ["firm", 14 * 86400000, 50]];
+  for (const [policyType, threshold, expected] of cases) {
+    assert.equal(manager.calculateGuestCancellation({ policyType, checkInIso, cancellationBaseKobo: 1000, cancelledAtIso: new Date(checkIn - threshold).toISOString() }).refundPercentage, expected);
+    assert.equal(manager.calculateGuestCancellation({ policyType, checkInIso, cancellationBaseKobo: 1000, cancelledAtIso: new Date(checkIn - threshold + 1).toISOString() }).refundPercentage, expected === 100 ? 50 : 0);
+  }
+  assert.equal(manager.calculateGuestCancellation({ policyType: "flexible", checkInIso, cancellationBaseKobo: 1000, cancelledAtIso: new Date(checkIn - 1).toISOString() }).refundPercentage, 0);
+});
+
 test("Deposit, duplicate payment, unprovided services, cleaning, and attributable refundable tax are excluded as required", () => {
   const manager = new CancellationNoShowManager();
   const booking = createMockBooking();
