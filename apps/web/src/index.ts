@@ -24,3 +24,7 @@ export * from "./discovery-interactions.js";
 export * from "./navigation.js";
 export * from "./presentation.js";
 export * from "./weaver-host.js";
+export * from "./human-handoff-application.js";
+export * from "./human-handoff-artifact.js";
+export * from "./human-handoff-actions.js";
+export * from "./checkin-human-handoff.js";

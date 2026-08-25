@@ -8,6 +8,12 @@ import type { CardPaymentArtifact } from "./card-payment-artifact.js";
 import type { BankTransferPaymentApplication } from "./bank-transfer-application.js";
 import type { BankTransferArtifact } from "./bank-transfer-artifact.js";
 
+import type { HumanHandoffApplication } from "./human-handoff-application.js";
+import type { SecurityContext } from "../../../packages/platform-core/src/index.js";
+
+export function conventionalHumanHandoffRoute(threadId: string): string { return `/interactions/${encodeURIComponent(threadId)}/support`; }
+export function getConventionalHumanHandoffView(application: HumanHandoffApplication, threadId: string, context: SecurityContext) { return Object.freeze({ route: conventionalHumanHandoffRoute(threadId), artifact: application.getArtifact(threadId, context) }); }
+
 export function conventionalSearch(query: any, filters: any) {
   return { channel: "web" as const, artifact: query.search(filters) };
 }

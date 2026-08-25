@@ -24,8 +24,15 @@ import type { BookingContractArtifact } from "../../web/src/booking-contract-art
 import type { CheckInSupportApplication } from "../../web/src/checkin-support-application.js";
 import type { CheckInSupportArtifact } from "../../web/src/checkin-support-artifact.js";
 import { checkInSupportArtifactToA2UI } from "./checkin-support-a2ui.js";
-import { conventionalCheckInSupportRoute } from "../../web/src/presentation.js";
+import { conventionalCheckInSupportRoute, conventionalHumanHandoffRoute } from "../../web/src/presentation.js";
+import type { HumanHandoffApplication } from "../../web/src/human-handoff-application.js";
+import type { SecurityContext } from "../../../packages/platform-core/src/index.js";
+import type { HumanHandoffArtifact } from "../../web/src/human-handoff-artifact.js";
+import { humanHandoffArtifactToA2UI } from "./human-handoff-a2ui.js";
 export { bankTransferArtifactToA2UI } from "./bank-transfer-a2ui.js";
+
+export interface CreateHumanHandoffWebAgentAdapterOptions { readonly application: HumanHandoffApplication; readonly context: SecurityContext; readonly createSurfaceId: (artifactId: string) => string; }
+export function createHumanHandoffWebAgentAdapter({ application, context, createSurfaceId }: CreateHumanHandoffWebAgentAdapterOptions) { return Object.freeze({ get(threadId: string) { const artifact: HumanHandoffArtifact = application.getArtifact(threadId, context); const surfaceId = createSurfaceId(artifact.id); return Object.freeze({ channel: "web-agent" as const, artifact, surfaceId, a2uiMessages: humanHandoffArtifactToA2UI({ artifact, surfaceId }), fallback: Object.freeze({ message: artifact.facts.mode, conventionalRoute: conventionalHumanHandoffRoute(threadId) }) }); } }); }
 export { bookingContractArtifactToA2UI } from "./booking-contract-a2ui.js";
 
 function fallbackMessage(artifact: any): string {
