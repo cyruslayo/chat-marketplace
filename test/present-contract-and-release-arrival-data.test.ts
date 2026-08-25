@@ -41,6 +41,7 @@ describe("Issue 13: Present contract and release arrival data", () => {
       cancellationPolicy: { type: "standard", version: "v1" },
       guestConductRules: ["No loud noise after 10 PM"]
     },
+    disclosures: ["Captured booking disclosure"],
     paymentDetails: {
       pspReference: "psp_13",
       paymentMethod: "fresh_card" as const,
@@ -84,7 +85,7 @@ describe("Issue 13: Present contract and release arrival data", () => {
   });
 
   it("AC 2: Full address and access instructions are tenant-scoped and released only at the accepted lifecycle points", () => {
-    const manager = new ContractAndArrivalReleaseManager({ repository });
+    const manager = new ContractAndArrivalReleaseManager({ repository, policy: { canReleaseAccessInstructions: () => true } });
     const envelope = createCommandEnvelope("arrival_data.get_protected", { contractId: "ctr_13" });
 
     const arrival = manager.getProtectedArrivalData(envelope);
@@ -96,7 +97,7 @@ describe("Issue 13: Present contract and release arrival data", () => {
 
   it("AC 3: Interaction logs and model context do not retain unredacted protected access material unnecessarily", () => {
     const manager = new ContractAndArrivalReleaseManager({ repository });
-    const projection = manager.projectRedactedInteractionView("ctr_13");
+    const projection = manager.projectRedactedInteractionView(createCommandEnvelope("contract.get_view", { contractId: "ctr_13" }));
 
     assert.equal(projection.contractId, "ctr_13");
     assert.equal(projection.locationReferenceId, "loc_ref_9921");

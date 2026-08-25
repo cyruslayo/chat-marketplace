@@ -7,7 +7,7 @@ import { bookingRequestArtifactToA2UI } from "./booking-request-a2ui.js";
 import type { BookingRequestApplication } from "../../web/src/booking-request-application.js";
 import type { BookingRequestArtifact } from "../../web/src/booking-request-artifact.js";
 import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
-import { conventionalBookingRequestRoute, conventionalConditionalOfferRoute } from "../../web/src/presentation.js";
+import { conventionalBookingRequestRoute, conventionalConditionalOfferRoute, conventionalBookingContractRoute } from "../../web/src/presentation.js";
 import type { ConditionalOfferApplication } from "../../web/src/conditional-offer-application.js";
 import type { ConditionalOfferArtifact } from "../../web/src/conditional-offer-artifact.js";
 import { conditionalOfferArtifactToA2UI } from "./conditional-offer-a2ui.js";
@@ -18,7 +18,11 @@ import { conventionalCardPaymentRoute, conventionalBankTransferRoute } from "../
 import type { BankTransferPaymentApplication } from "../../web/src/bank-transfer-application.js";
 import type { BankTransferArtifact } from "../../web/src/bank-transfer-artifact.js";
 import { bankTransferArtifactToA2UI } from "./bank-transfer-a2ui.js";
+import { bookingContractArtifactToA2UI } from "./booking-contract-a2ui.js";
+import type { BookingContractApplication } from "../../web/src/booking-contract-application.js";
+import type { BookingContractArtifact } from "../../web/src/booking-contract-artifact.js";
 export { bankTransferArtifactToA2UI } from "./bank-transfer-a2ui.js";
+export { bookingContractArtifactToA2UI } from "./booking-contract-a2ui.js";
 
 function fallbackMessage(artifact: any): string {
   const count = artifact.facts.results.length;
@@ -118,6 +122,22 @@ export function createConditionalOfferWebAgentAdapter({ application, principal, 
         a2uiMessages: conditionalOfferArtifactToA2UI({ artifact, surfaceId }),
         fallback: Object.freeze({ message: `Conditional Booking Offer status: ${artifact.facts.status}`, conventionalRoute: conventionalConditionalOfferRoute(offerId) }),
       });
+    },
+  });
+}
+
+export interface CreateBookingContractWebAgentAdapterOptions {
+  readonly application: BookingContractApplication;
+  readonly principal: CommandPrincipal;
+  readonly createSurfaceId: (artifactId: string) => string;
+}
+
+export function createBookingContractWebAgentAdapter({ application, principal, createSurfaceId }: CreateBookingContractWebAgentAdapterOptions) {
+  return Object.freeze({
+    get(contractId: string) {
+      const artifact: BookingContractArtifact = application.getArtifact(contractId, principal);
+      const surfaceId = createSurfaceId(artifact.id);
+      return Object.freeze({ channel: "web-agent" as const, artifact, surfaceId, a2uiMessages: bookingContractArtifactToA2UI({ artifact, surfaceId }), fallback: Object.freeze({ message: "Booking Contract", conventionalRoute: conventionalBookingContractRoute(contractId) }) });
     },
   });
 }
