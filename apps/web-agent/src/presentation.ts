@@ -39,7 +39,14 @@ import { conventionalCancellationRoute, conventionalMidStayFailureRoute } from "
 import type { MidStayFailureApplication } from "../../web/src/mid-stay-failure-application.js";
 import type { MidStayFailureArtifact } from "../../web/src/mid-stay-failure-artifact.js";
 import { midStayFailureArtifactToA2UI } from "./mid-stay-failure-a2ui.js";
+import type { RelocationApplication } from "../../web/src/relocation-application.js";
+import type { RelocationArtifact } from "../../web/src/relocation-artifact.js";
+import { relocationArtifactToA2UI } from "./relocation-a2ui.js";
+import { conventionalRelocationRoute } from "../../web/src/presentation.js";
 export { bankTransferArtifactToA2UI } from "./bank-transfer-a2ui.js";
+export interface CreateRelocationWebAgentAdapterOptions { readonly application: RelocationApplication; readonly principal: CommandPrincipal; readonly createSurfaceId: (artifactId: string) => string; }
+export function createRelocationWebAgentAdapter(options: CreateRelocationWebAgentAdapterOptions) { return Object.freeze({ get(reservationId: string) { const artifact: RelocationArtifact = options.application.getArtifact(reservationId, options.principal); const surfaceId = options.createSurfaceId(artifact.id); return Object.freeze({ channel: "web-agent" as const, artifact, surfaceId, a2uiMessages: relocationArtifactToA2UI({ artifact, surfaceId }), fallback: Object.freeze({ message: "Your accommodation remedy", conventionalRoute: conventionalRelocationRoute(reservationId) }) }); } }); }
+
 export interface CreateMidStayFailureWebAgentAdapterOptions { readonly application: MidStayFailureApplication; readonly principal: CommandPrincipal; readonly createSurfaceId: (artifactId: string) => string; }
 export function createMidStayFailureWebAgentAdapter(options: CreateMidStayFailureWebAgentAdapterOptions) { return Object.freeze({ get(reservationId: string) { const artifact: MidStayFailureArtifact = options.application.getArtifact(reservationId, options.principal); const surfaceId = options.createSurfaceId(artifact.id); return Object.freeze({ channel: "web-agent" as const, artifact, surfaceId, a2uiMessages: midStayFailureArtifactToA2UI({ artifact, surfaceId }), fallback: Object.freeze({ message: "Mid-Stay Support", conventionalRoute: conventionalMidStayFailureRoute(reservationId) }) }); } }); }
 
