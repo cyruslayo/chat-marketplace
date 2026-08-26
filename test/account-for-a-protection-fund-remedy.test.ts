@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { ProtectionFundManager } from "../domains/shortlet/src/protection-fund-remedy.js";
 import { InMemoryAuditLog } from "../packages/platform-core/src/index.js";
 
-test("Seed, contribution, target, approval, and available-balance rules use versioned provisional policy.", () => {
+test("Compatibility ProtectionFundManager policy rules use versioned provisional policy.", () => {
   const audit = new InMemoryAuditLog();
   const manager = new ProtectionFundManager({ auditLog: audit });
 
@@ -49,7 +49,7 @@ test("Seed, contribution, target, approval, and available-balance rules use vers
   assert.match(failedRoutineEval.error!, /Senior relocation requires both senior operations and finance approvals/);
 });
 
-test("Every movement posts balanced ledger entries with incident, booking, decision, and funding correlation.", () => {
+test("Compatibility ProtectionFundManager movement ledger remains balanced.", () => {
   const audit = new InMemoryAuditLog();
   const manager = new ProtectionFundManager({ auditLog: audit });
   manager.seedFund({ seedAmountKobo: 500000000 });
@@ -77,7 +77,7 @@ test("Every movement posts balanced ledger entries with incident, booking, decis
   assert.equal(totalDebits, 15000000);
 });
 
-test("Insufficient fund balance does not erase the approved guest remedy or Refund Fallback workflow.", () => {
+test("Compatibility ProtectionFundManager preserves the historical fallback shape.", () => {
   const audit = new InMemoryAuditLog();
   const manager = new ProtectionFundManager({ auditLog: audit });
   // Start with 0 available fund balance
@@ -100,7 +100,7 @@ test("Insufficient fund balance does not erase the approved guest remedy or Refu
   assert.equal(record.remedyDisbursedKobo, 20000000);
 });
 
-test("Finance can see exposure and recovery without accessing unrelated interaction or identity data.", () => {
+test("Compatibility ProtectionFundManager Finance report excludes unrelated data.", () => {
   const audit = new InMemoryAuditLog();
   const manager = new ProtectionFundManager({ auditLog: audit });
   manager.seedFund({ seedAmountKobo: 500000000 });

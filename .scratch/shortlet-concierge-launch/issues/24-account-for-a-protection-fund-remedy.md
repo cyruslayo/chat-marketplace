@@ -26,13 +26,15 @@ Fund an approved guest remedy from the Guest Protection Fund when ordinary recov
 
 ## Answer
 
-Productionized the Guest Protection Fund through `ProtectionFundApplication`, `InMemoryProtectionFundAccountingRepository`, and the Issue 23 relocation funding port.
+Productionized and hardened the Guest Protection Fund through `ProtectionFundApplication`, `InMemoryProtectionFundAccountingRepository`, and the Issue 23 relocation funding port.
 
 The production path binds seed, dynamic target, contribution, approval, and balance decisions to versioned provisional policy `gpf-v1.0-launch` and trusted metrics. Seed capital is obtained from a trusted platform-capital provider; contributions consume Issue 28's immutable `EarnedCommissionSource`, with one contribution per earned-commission record. Shared atomic accounting records balanced, correlated journals and survives application recreation.
 
-Issue 23 reserves the exact GPF bridge amount before replacement fulfilment. Insufficient balance produces no deduction or false disbursement and preserves automatic original-source Refund Fallback. Successful replacement settles the exact reservation; failed fulfilment releases it idempotently. Operator recovery rights remain receivables separate from the guest remedy, and later trusted recovery postings replenish the Fund idempotently. Platform-caused and unresolved funding routes do not debit GPF.
+GPF-funded relocation now requires a mandatory funding port, exact Issue 23 case, reservation, and case-version binding. Current relocation state, operator responsibility, and a complete liability decomposition are required. The Fund reserves the exact bridge amount before replacement fulfilment. Insufficient balance produces no deduction or false disbursement and preserves automatic original-source Refund Fallback. Successful replacement settles the exact reservation; failed fulfilment releases it idempotently. Completed relocation remains recorded when Fund settlement requires reconciliation.
+
+Settlement recognizes the Operator recovery receivable as a debit asset and clears the committed-remedy account. Trusted recovery is accepted only after settled Fund movement, is bounded by the receivable, and is idempotent. Platform-caused and unresolved funding routes do not debit GPF. Finance authorization is mandatory and fails closed for all read and manual seed/recovery paths.
 
 Finance receives a minimized read-only conventional projection at `/finance/guest-protection-fund` and Weaver A2UI Basic Catalog v0.9.1 projection. No guest identity, access evidence, complaint content, approver identity, payment data, credentials, or session data is projected.
 
-Validation was local: 436 passed, 0 failed, 0 skipped, 0 todo; `npm run check`, `npm run verify:weaver`, and `git diff --check` passed (delta +5 from the 431-test baseline).
+Validation was local: 436 passed, 0 failed, 0 skipped, 0 todo; `npm run check`, `npm run verify:weaver`, and `git diff --check` passed (delta 0 from the 436-test baseline).
 
