@@ -277,7 +277,8 @@ export function createStayQuote({
     policyVersions: Object.freeze({
       eligibility: "launch-2026-07",
       pricing: "all-in/v1",
-      cancellation: cancellationPolicy.version
+      cancellation: cancellationPolicy.version,
+      commission: "adr-0062-launch-v1"
     }),
     disclosures: Object.freeze([
       "All-In Stay Total includes nightly accommodation, mandatory property charges, taxes, and selected catalogue services.",

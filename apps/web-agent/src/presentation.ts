@@ -42,8 +42,13 @@ import { midStayFailureArtifactToA2UI } from "./mid-stay-failure-a2ui.js";
 import type { RelocationApplication } from "../../web/src/relocation-application.js";
 import type { RelocationArtifact } from "../../web/src/relocation-artifact.js";
 import { relocationArtifactToA2UI } from "./relocation-a2ui.js";
-import { conventionalRelocationRoute } from "../../web/src/presentation.js";
+import { conventionalRelocationRoute, conventionalRevenueReleaseRoute } from "../../web/src/presentation.js";
+import type { RevenueReleaseApplication } from "../../web/src/revenue-release-application.js";
+import type { RevenueReleaseArtifact } from "../../web/src/revenue-release-artifact.js";
+import { revenueReleaseArtifactToA2UI } from "./revenue-release-a2ui.js";
 export { bankTransferArtifactToA2UI } from "./bank-transfer-a2ui.js";
+export { revenueReleaseArtifactToA2UI } from "./revenue-release-a2ui.js";
+export function createRevenueReleaseWebAgentAdapter(options: { readonly application: RevenueReleaseApplication; readonly principal: CommandPrincipal; readonly createSurfaceId: (artifactId: string) => string }) { return Object.freeze({ get(reservationId: string) { const artifact: RevenueReleaseArtifact = options.application.getArtifact(reservationId, options.principal); const surfaceId = options.createSurfaceId(artifact.id); return Object.freeze({ channel: "web-agent" as const, artifact, surfaceId, a2uiMessages: revenueReleaseArtifactToA2UI({ artifact, surfaceId }), fallback: Object.freeze({ message: `Revenue Release: ${String(artifact.facts.status)}`, conventionalRoute: conventionalRevenueReleaseRoute(reservationId) }) }); } }); }
 export interface CreateRelocationWebAgentAdapterOptions { readonly application: RelocationApplication; readonly principal: CommandPrincipal; readonly createSurfaceId: (artifactId: string) => string; }
 export function createRelocationWebAgentAdapter(options: CreateRelocationWebAgentAdapterOptions) { return Object.freeze({ get(reservationId: string) { const artifact: RelocationArtifact = options.application.getArtifact(reservationId, options.principal); const surfaceId = options.createSurfaceId(artifact.id); return Object.freeze({ channel: "web-agent" as const, artifact, surfaceId, a2uiMessages: relocationArtifactToA2UI({ artifact, surfaceId }), fallback: Object.freeze({ message: "Your accommodation remedy", conventionalRoute: conventionalRelocationRoute(reservationId) }) }); } }); }
 
