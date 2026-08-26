@@ -12,6 +12,7 @@ export interface RevenueAccountingRepository {
   findReleaseById(releaseId: string): unknown;
   commitRelease(input: { readonly release: unknown; readonly journal: LedgerJournal; readonly earnedCommission: EarnedCommissionRecord }): unknown;
   findLedgerEntriesForRelease(releaseId: string): readonly LedgerJournal[];
+  findAdjustmentsForRelease(releaseId: string): readonly RevenueAdjustmentRecord[];
   postAdjustment(input: { readonly adjustment: RevenueAdjustmentRecord }): RevenueAdjustmentRecord;
   findAdjustment(adjustmentId: string, adjustmentVersion: number): RevenueAdjustmentRecord | null;
   getEarnedCommissionRecord(releaseId: string): EarnedCommissionRecord | null;
@@ -29,6 +30,9 @@ export function journal(input: { readonly correlationId: string; readonly lines:
   const journalId = `journal:${input.correlationId}:${createHash("sha256").update(JSON.stringify(input.lines)).digest("hex").slice(0, 16)}`;
   return Object.freeze({ journalId, correlationId: input.correlationId, lines: Object.freeze(input.lines.map((line) => Object.freeze({ ...line }))), balanced: true as const, createdAt: input.createdAt });
 }
+function sameAdjustment(a: RevenueAdjustmentRecord, b: RevenueAdjustmentRecord): boolean {
+  return a.reservationId === b.reservationId && a.releaseId === b.releaseId && a.source === b.source && a.sourceReference === b.sourceReference && a.reasonCode === b.reasonCode && a.journal.correlationId === b.journal.correlationId && a.journal.journalId === b.journal.journalId && JSON.stringify(a.journal.lines) === JSON.stringify(b.journal.lines);
+}
 
 export class InMemoryRevenueAccountingRepository implements RevenueAccountingRepository {
   readonly #releases = new Map<string, unknown>(); readonly #journals = new Map<string, LedgerJournal>(); readonly #earned = new Map<string, EarnedCommissionRecord>(); readonly #adjustments = new Map<string, RevenueAdjustmentRecord>();
@@ -37,16 +41,20 @@ export class InMemoryRevenueAccountingRepository implements RevenueAccountingRep
   findReleaseByReservationId(id: string): unknown { return this.#releases.get(id) ?? null; }
   findReleaseById(id: string): unknown { return [...this.#releases.values()].find((value) => typeof value === "object" && value !== null && "releaseId" in value && (value as { releaseId: string }).releaseId === id) ?? null; }
   commitRelease(input: { readonly release: unknown; readonly journal: LedgerJournal; readonly earnedCommission: EarnedCommissionRecord }): unknown {
-    const release = input.release as { releaseId: string; reservationId: string };
-    const existing = this.#releases.get(release.reservationId); if (existing) return existing;
-    this.#failCommit(); assertBalanced(input.journal.lines);
+    const release = input.release as { releaseId: string; reservationId: string }; const existing = this.#releases.get(release.reservationId); if (existing) return existing;
+    this.#failCommit(); assertBalanced(input.journal.lines); if (input.journal.correlationId !== release.releaseId || input.earnedCommission.releaseId !== release.releaseId) throw new Error("Release accounting correlation is invalid");
     this.#releases.set(release.reservationId, Object.freeze(input.release)); this.#journals.set(input.journal.journalId, input.journal); this.#earned.set(input.earnedCommission.releaseId, Object.freeze(input.earnedCommission)); return input.release;
   }
   findLedgerEntriesForRelease(releaseId: string): readonly LedgerJournal[] { return Object.freeze([...this.#journals.values()].filter((j) => j.correlationId === releaseId)); }
-  postAdjustment(input: { readonly adjustment: RevenueAdjustmentRecord }): RevenueAdjustmentRecord { assertBalanced(input.adjustment.journal.lines); const key = `${input.adjustment.adjustmentId}:${input.adjustment.adjustmentVersion}`; const existing = this.#adjustments.get(key); if (existing) return existing; this.#adjustments.set(key, Object.freeze(input.adjustment)); return input.adjustment; }
+  findAdjustmentsForRelease(releaseId: string): readonly RevenueAdjustmentRecord[] { return Object.freeze([...this.#adjustments.values()].filter((a) => a.releaseId === releaseId)); }
+  postAdjustment(input: { readonly adjustment: RevenueAdjustmentRecord }): RevenueAdjustmentRecord {
+    const adjustment = input.adjustment; assertBalanced(adjustment.journal.lines); if (adjustment.journal.correlationId !== adjustment.releaseId) throw new Error("Adjustment journal correlation is invalid");
+    const key = `${adjustment.adjustmentId}:${adjustment.adjustmentVersion}`; const existing = this.#adjustments.get(key); if (existing) { if (!sameAdjustment(existing, adjustment)) throw new Error("Adjustment identity conflict"); return existing; }
+    if (!this.findReleaseById(adjustment.releaseId)) throw new Error("Adjustment release does not exist");
+    this.#adjustments.set(key, Object.freeze(adjustment)); this.#journals.set(adjustment.journal.journalId, adjustment.journal); return adjustment;
+  }
   findAdjustment(id: string, version: number): RevenueAdjustmentRecord | null { return this.#adjustments.get(`${id}:${version}`) ?? null; }
   getEarnedCommissionRecord(id: string): EarnedCommissionRecord | null { return this.#earned.get(id) ?? null; }
 }
-
 export interface EarnedCommissionSource { getEarnedCommission(releaseId: string): EarnedCommissionRecord | null; }
 export class RepositoryEarnedCommissionSource implements EarnedCommissionSource { constructor(private readonly repository: RevenueAccountingRepository) {} getEarnedCommission(releaseId: string): EarnedCommissionRecord | null { return this.repository.getEarnedCommissionRecord(releaseId); } }
