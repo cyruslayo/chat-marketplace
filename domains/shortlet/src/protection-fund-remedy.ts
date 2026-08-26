@@ -82,6 +82,7 @@ export interface FinanceExposureReport {
  * Manages the Guest Protection Fund, versioned policy rules, balanced double-entry ledger,
  * tiered remedy approvals, insufficient-balance fallback, and Finance exposure reporting.
  */
+/** @deprecated Compatibility-only adapter retained for historical consumers. Production uses ProtectionFundApplication. */
 export class ProtectionFundManager {
   readonly #auditLog?: InMemoryAuditLog;
   #availableBalanceKobo = 0;
