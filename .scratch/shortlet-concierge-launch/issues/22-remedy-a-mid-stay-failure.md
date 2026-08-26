@@ -23,3 +23,7 @@ Open a Mid-Stay Failure, classify safety/access/habitability, essential amenity,
 
 - [Issue 16](16-verify-access-with-live-support.md)
 - [Issue 17](17-transfer-an-active-matter-to-a-human.md)
+
+## Answer
+
+Mid-Stay Failure now requires an active verified stay and fail-closed Primary Guest/tenant authority. Evidence, classification, timing, impact, causation, cure, and delayed-report treatment come from trusted provider/server state. Exact ADR 0061 boundaries are enforced, using current contracted per-night economics and authoritative attributable undelivered charges/tax. Material incidents block Revenue Release through `BlockingComplaintQuery`; existing Human Handoff owns safety/material review, and final remedy decisions require authorized human support. Issue 23 relocation/refund choice is deliberately not implemented. Conventional and Weaver surfaces share a minimized canonical projection. Local validation: 395 passed, 0 failed, 0 skipped, 0 todo (delta +2 from 393).
