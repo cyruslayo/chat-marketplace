@@ -45,6 +45,9 @@ export function getConventionalMidStayFailureView(application: import("./mid-sta
 export function conventionalGuestConductRoute(reservationId: string): string { return `/reservations/${encodeURIComponent(reservationId)}/conduct`; }
 export function getConventionalGuestConductView(application: import("./guest-conduct-application.js").GuestConductApplication, reservationId: string, principal: CommandPrincipal) { return Object.freeze({ route: conventionalGuestConductRoute(reservationId), artifact: application.getArtifact(reservationId, principal) }); }
 
+export function conventionalRevenueReleaseRoute(reservationId: string): string { return `/operator/reservations/${encodeURIComponent(reservationId)}/revenue`; }
+export function getConventionalRevenueReleaseView(application: import("./revenue-release-application.js").RevenueReleaseApplication, reservationId: string, principal: CommandPrincipal) { return Object.freeze({ route: conventionalRevenueReleaseRoute(reservationId), artifact: application.getArtifact(reservationId, principal) }); }
+
 export function conventionalCheckInSupportRoute(reservationId: string): string {
   return `/reservations/${encodeURIComponent(reservationId)}/check-in`;
 }
