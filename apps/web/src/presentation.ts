@@ -10,6 +10,8 @@ import type { BankTransferArtifact } from "./bank-transfer-artifact.js";
 
 import type { HumanHandoffApplication } from "./human-handoff-application.js";
 import type { SecurityContext } from "../../../packages/platform-core/src/index.js";
+import type { ProtectionFundApplication } from "./protection-fund-application.js";
+import { protectionFundArtifact, type ProtectionFundArtifact } from "./protection-fund-artifact.js";
 
 export function conventionalHumanHandoffRoute(threadId: string): string { return `/interactions/${encodeURIComponent(threadId)}/support`; }
 export function getConventionalHumanHandoffView(application: HumanHandoffApplication, threadId: string, context: SecurityContext) { return Object.freeze({ route: conventionalHumanHandoffRoute(threadId), artifact: application.getArtifact(threadId, context) }); }
@@ -46,6 +48,8 @@ export function conventionalGuestConductRoute(reservationId: string): string { r
 export function getConventionalGuestConductView(application: import("./guest-conduct-application.js").GuestConductApplication, reservationId: string, principal: CommandPrincipal) { return Object.freeze({ route: conventionalGuestConductRoute(reservationId), artifact: application.getArtifact(reservationId, principal) }); }
 
 export function conventionalRevenueReleaseRoute(reservationId: string): string { return `/operator/reservations/${encodeURIComponent(reservationId)}/revenue`; }
+export function conventionalProtectionFundRoute(): string { return "/finance/guest-protection-fund"; }
+export function getConventionalProtectionFundView(application: ProtectionFundApplication, principal: CommandPrincipal): { readonly route: string; readonly artifact: ProtectionFundArtifact } { return Object.freeze({ route: conventionalProtectionFundRoute(), artifact: protectionFundArtifact(application, principal) }); }
 export function getConventionalRevenueReleaseView(application: import("./revenue-release-application.js").RevenueReleaseApplication, reservationId: string, principal: CommandPrincipal) { return Object.freeze({ route: conventionalRevenueReleaseRoute(reservationId), artifact: application.getArtifact(reservationId, principal) }); }
 
 export function conventionalCheckInSupportRoute(reservationId: string): string {

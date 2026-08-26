@@ -51,3 +51,6 @@ export * from "./checkout-overstay-human-handoff.js";
 export * from "./revenue-release-application.js";
 export * from "./revenue-release-artifact.js";
 export * from "./revenue-release-authority-adapters.js";
+export * from "./protection-fund-application.js";
+export * from "./protection-fund-artifact.js";
+export * from "./protection-fund-relocation-adapter.js";
