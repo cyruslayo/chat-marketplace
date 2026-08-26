@@ -38,6 +38,8 @@ export function getConventionalCancellationView(application: import("./cancellat
 export function cancelConventionalCancellation(application: import("./cancellation-application.js").CancellationApplication, reservationId: string, principal: CommandPrincipal) { application.cancel(reservationId, principal); return getConventionalCancellationView(application, reservationId, principal); }
 
 export function conventionalMidStayFailureRoute(reservationId: string): string { return `/reservations/${encodeURIComponent(reservationId)}/mid-stay-failure`; }
+export function conventionalRelocationRoute(reservationId: string): string { return `/reservations/${encodeURIComponent(reservationId)}/remedy`; }
+export function getConventionalRelocationView(application: import("./relocation-application.js").RelocationApplication, reservationId: string, principal: CommandPrincipal) { return Object.freeze({ route: conventionalRelocationRoute(reservationId), artifact: application.getArtifact(reservationId, principal) }); }
 export function getConventionalMidStayFailureView(application: import("./mid-stay-failure-application.js").MidStayFailureApplication, reservationId: string, principal: CommandPrincipal) { return Object.freeze({ route: conventionalMidStayFailureRoute(reservationId), artifact: application.getArtifact(reservationId, principal) }); }
 
 export function conventionalGuestConductRoute(reservationId: string): string { return `/reservations/${encodeURIComponent(reservationId)}/conduct`; }

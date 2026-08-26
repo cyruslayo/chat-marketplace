@@ -78,6 +78,11 @@ export interface RelocationCommitRecord {
  * Manages relocation comparability, bounded human spending limits, guest choice,
  * explicit consent, atomic commitment, and Refund Fallback guarantee.
  */
+/**
+ * Historical pure-policy compatibility surface. Production authority lives in
+ * apps/web/relocation-application.ts and its injected trusted providers; this
+ * legacy command method is retained only for pre-Issue-23 callers/tests.
+ */
 export class RelocationManager {
   readonly #commits = new Map<string, RelocationCommitRecord>();
 
