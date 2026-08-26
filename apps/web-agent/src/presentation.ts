@@ -32,7 +32,14 @@ import type { HumanHandoffApplication } from "../../web/src/human-handoff-applic
 import type { SecurityContext } from "../../../packages/platform-core/src/index.js";
 import type { HumanHandoffArtifact } from "../../web/src/human-handoff-artifact.js";
 import { humanHandoffArtifactToA2UI } from "./human-handoff-a2ui.js";
+import type { CancellationApplication } from "../../web/src/cancellation-application.js";
+import type { CancellationArtifact } from "../../web/src/cancellation-artifact.js";
+import { cancellationArtifactToA2UI } from "./cancellation-a2ui.js";
+import { conventionalCancellationRoute } from "../../web/src/presentation.js";
 export { bankTransferArtifactToA2UI } from "./bank-transfer-a2ui.js";
+
+export interface CreateCancellationWebAgentAdapterOptions { readonly application: CancellationApplication; readonly principal: CommandPrincipal; readonly createSurfaceId: (artifactId: string) => string; }
+export function createCancellationWebAgentAdapter({ application, principal, createSurfaceId }: CreateCancellationWebAgentAdapterOptions) { return Object.freeze({ get(reservationId: string) { const artifact: CancellationArtifact = application.getArtifact(reservationId, principal); const surfaceId = createSurfaceId(artifact.id); return Object.freeze({ channel: "web-agent" as const, artifact, surfaceId, a2uiMessages: cancellationArtifactToA2UI({ artifact, surfaceId }), fallback: Object.freeze({ message: `Cancellation: ${artifact.facts.reservationStatus}`, conventionalRoute: conventionalCancellationRoute(reservationId) }) }); } }); }
 
 export interface CreateHumanHandoffWebAgentAdapterOptions { readonly application: HumanHandoffApplication; readonly context: SecurityContext; readonly createSurfaceId: (artifactId: string) => string; }
 export function createHumanHandoffWebAgentAdapter({ application, context, createSurfaceId }: CreateHumanHandoffWebAgentAdapterOptions) { return Object.freeze({ get(threadId: string) { const artifact: HumanHandoffArtifact = application.getArtifact(threadId, context); const surfaceId = createSurfaceId(artifact.id); return Object.freeze({ channel: "web-agent" as const, artifact, surfaceId, a2uiMessages: humanHandoffArtifactToA2UI({ artifact, surfaceId }), fallback: Object.freeze({ message: artifact.facts.mode, conventionalRoute: conventionalHumanHandoffRoute(threadId) }) }); } }); }
