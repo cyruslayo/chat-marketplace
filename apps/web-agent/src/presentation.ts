@@ -35,8 +35,13 @@ import { humanHandoffArtifactToA2UI } from "./human-handoff-a2ui.js";
 import type { CancellationApplication } from "../../web/src/cancellation-application.js";
 import type { CancellationArtifact } from "../../web/src/cancellation-artifact.js";
 import { cancellationArtifactToA2UI } from "./cancellation-a2ui.js";
-import { conventionalCancellationRoute } from "../../web/src/presentation.js";
+import { conventionalCancellationRoute, conventionalMidStayFailureRoute } from "../../web/src/presentation.js";
+import type { MidStayFailureApplication } from "../../web/src/mid-stay-failure-application.js";
+import type { MidStayFailureArtifact } from "../../web/src/mid-stay-failure-artifact.js";
+import { midStayFailureArtifactToA2UI } from "./mid-stay-failure-a2ui.js";
 export { bankTransferArtifactToA2UI } from "./bank-transfer-a2ui.js";
+export interface CreateMidStayFailureWebAgentAdapterOptions { readonly application: MidStayFailureApplication; readonly principal: CommandPrincipal; readonly createSurfaceId: (artifactId: string) => string; }
+export function createMidStayFailureWebAgentAdapter(options: CreateMidStayFailureWebAgentAdapterOptions) { return Object.freeze({ get(reservationId: string) { const artifact: MidStayFailureArtifact = options.application.getArtifact(reservationId, options.principal); const surfaceId = options.createSurfaceId(artifact.id); return Object.freeze({ channel: "web-agent" as const, artifact, surfaceId, a2uiMessages: midStayFailureArtifactToA2UI({ artifact, surfaceId }), fallback: Object.freeze({ message: "Mid-Stay Support", conventionalRoute: conventionalMidStayFailureRoute(reservationId) }) }); } }); }
 
 export interface CreateCancellationWebAgentAdapterOptions { readonly application: CancellationApplication; readonly principal: CommandPrincipal; readonly createSurfaceId: (artifactId: string) => string; }
 export function createCancellationWebAgentAdapter({ application, principal, createSurfaceId }: CreateCancellationWebAgentAdapterOptions) { return Object.freeze({ get(reservationId: string) { const artifact: CancellationArtifact = application.getArtifact(reservationId, principal); const surfaceId = createSurfaceId(artifact.id); return Object.freeze({ channel: "web-agent" as const, artifact, surfaceId, a2uiMessages: cancellationArtifactToA2UI({ artifact, surfaceId }), fallback: Object.freeze({ message: `Cancellation: ${artifact.facts.reservationStatus}`, conventionalRoute: conventionalCancellationRoute(reservationId) }) }); } }); }
