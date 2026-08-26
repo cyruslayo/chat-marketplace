@@ -1,6 +1,7 @@
 # Post commission, Operator Net, and Revenue Release entries
 
 Status: resolved
+Acceptance: 4/4 acceptance criteria satisfied.
 Type: AFK
 User stories: 78–81, 89–90
 
@@ -28,9 +29,9 @@ Calculate commission on Commissionable Operator Revenue, hold stay consideration
 
 Productionized as an authoritative, backend-only Revenue Release path.
 
-- `BookingStateRepository`, the real `RevenueReleaseCheckInAccessAdapter` over `CheckInSupportManager`, server clock, and exact authoritative `protectionWindowStartsAt` + 24-hour gate drive release; `verifiedAt` remains a separate historical fact and awaiting, failed, and human-review access states fail closed.
-- Blocking Fulfilment Complaint state is composed from Check-In Support and the real `MidStayBlockingComplaintQuery`; trusted payment/fraud/compliance/refund/reversal holds, active Operator payment account, effective Checkout terms, and relocation consequence state are read-only authority gates.
-- Captured commission rate and `adr-0062-launch-v1` policy version remain attached to the booking. Current amended Contract economics are used without retroactively changing the captured rate; Standard/Founding/Preferred are 12%/8%/10%.
+- `BookingStateRepository`, the real `RevenueReleaseCheckInAccessAdapter` over `CheckInSupportManager`, server clock, and exact authoritative `protectionWindowStartsAt` + 24-hour gate drive release; `verifiedAt` remains a separate historical fact and awaiting, failed, and human-review access states fail closed. Check-In Support is integrated through `RevenueReleaseCheckInAccessAdapter` and covered by integration tests.
+- Blocking Fulfilment Complaint state is composed from Check-In Support and the real `MidStayBlockingComplaintQuery`; trusted payment/fraud/compliance/refund/reversal holds, active Operator payment account, effective Checkout terms, and relocation consequence state are read-only authority gates. Mid-Stay blocking is integrated through `MidStayBlockingComplaintQuery` + `RevenueReleaseBlockingComplaintQuery`.
+- Captured commission rate and `adr-0062-launch-v1` policy version remain attached to the booking. Current amended Contract economics come from trusted `RevenueEconomicsProvider`; they are not inferred from All-In total and do not retroactively change the captured rate; Standard/Founding/Preferred are 12%/8%/10%.
 - `RevenueAccountingRepository` atomically commits one immutable `revenue-release:<reservationId>`, a balanced kobo journal, and one durable earned-commission record; replay returns an existing authority-matching Release before consulting mutable providers. Later refunds, remedies, and provider corrections use canonical, correlated, discoverable, idempotent ledger adjustments and never rewrite the release.
 - Fast Payout classifies 90% payable and 10% as a booking-specific Rolling Reserve tranche eligible for review after 30 days. Full Post-Stay has no routine reserve: 100% is deferred until 24 hours after authoritative effective Checkout. No payout transfer is performed.
 - `shortlet.revenue-release/v1` is the truthful pre-release and immutable post-release projection for the conventional Operator route and Weaver A2UI Basic Catalog v0.9.1 adapter; actual adjustment records are summarized and no release or adjustment action is exposed.
@@ -38,7 +39,7 @@ Productionized as an authoritative, backend-only Revenue Release path.
 
 ### Validation
 
-Local validation: `npm run check` passed; `npm run verify:weaver` passed; full suite **422 passed, 0 failed, 0 skipped, 0 todo** (delta **0** from the accepted 422 baseline); `git diff --check` passed.
+Local validation: `npm run check` passed; `npm run verify:weaver` passed; full suite **431 passed, 0 failed, 0 skipped, 0 todo** (delta **+9** from the accepted 422 baseline); `git diff --check` passed.
 
 ### ADR Compliance
 
