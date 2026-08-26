@@ -51,7 +51,7 @@ const baseCandidate: ReplacementCandidate = {
 /**
  * ADR 0027, ADR 0028, ADR 0029, ADR 0063, ADR 0072
  */
-test("Replacement comparison preserves capacity, location, quality, safety, dates, price difference, transport, and material disclosures", () => {
+test("Compatibility policy: Replacement comparison preserves capacity, location, quality, safety, dates, price difference, transport, and material disclosures", () => {
   const manager = new RelocationManager();
 
   // Valid comparable candidate
@@ -100,7 +100,7 @@ test("Replacement comparison preserves capacity, location, quality, safety, date
   assert.ok(missingAmenity.reasons.some((r) => r.toLowerCase().includes("amenity")));
 });
 
-test("Routine, senior, and executive relocation limits require the accepted human roles and approvals", () => {
+test("Compatibility policy: Routine, senior, and executive relocation limits require the accepted human roles and approvals", () => {
   const manager = new RelocationManager();
 
   // 1. Routine tier (<=25% diff, <=₦150k exposure, <=₦50k transport)
@@ -173,7 +173,7 @@ test("Routine, senior, and executive relocation limits require the accepted huma
   assert.ok(execInsufficient.error?.includes("Executive relocation requires 2 executive approvals"));
 });
 
-test("The guest is never forced to relocate and temporary substitution requires consent", () => {
+test("Compatibility policy: The guest is never forced to relocate and temporary substitution requires consent", () => {
   const manager = new RelocationManager();
   const auditLog = new InMemoryAuditLog();
 
@@ -220,7 +220,7 @@ test("The guest is never forced to relocate and temporary substitution requires 
   );
 });
 
-test("Choice, funding source, Operator liability, booking consequences, and resulting projection are committed atomically and audited", () => {
+test("Compatibility policy: legacy choice records are committed atomically and audited", () => {
   const manager = new RelocationManager();
   const auditLog = new InMemoryAuditLog();
 
