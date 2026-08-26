@@ -13,3 +13,4 @@ export * from "./guest-conduct-a2ui.js";
 export * from "./mid-stay-failure-a2ui.js";
 export * from "./relocation-a2ui.js";
 export * from "./revenue-release-a2ui.js";
+export * from "./protection-fund-a2ui.js";

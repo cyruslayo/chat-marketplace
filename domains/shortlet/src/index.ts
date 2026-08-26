@@ -32,6 +32,7 @@ export * from "./relocation-choice.js";
 export * from "./relocation-policy.js";
 export * from "./reserve-payout-trust.js";
 export * from "./protection-fund-remedy.js";
+export * from "./protection-fund-accounting.js";
 export * from "./ranking.js";
 export * from "./whatsapp-adapter.js";
 export * from "./accessibility-localization.js";
