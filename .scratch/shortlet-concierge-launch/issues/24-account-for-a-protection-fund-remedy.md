@@ -34,7 +34,9 @@ GPF-funded relocation now requires a mandatory funding port, exact Issue 23 case
 
 Settlement recognizes the Operator recovery receivable as a debit asset and clears the committed-remedy account. Trusted recovery is accepted only after settled Fund movement, is bounded by the receivable, and is idempotent. Platform-caused and unresolved funding routes do not debit GPF. Finance authorization is mandatory and fails closed for all read and manual seed/recovery paths.
 
+The production path is now covered by real Issue 23 → Issue 24 integration tests, the real Issue 28 Revenue Release → RepositoryEarnedCommissionSource → Issue 24 contribution path, account-level journal invariants, the Finance authorization matrix, and insufficient-Fund plus reconciliation projection tests.
+
 Finance receives a minimized read-only conventional projection at `/finance/guest-protection-fund` and Weaver A2UI Basic Catalog v0.9.1 projection. No guest identity, access evidence, complaint content, approver identity, payment data, credentials, or session data is projected.
 
-Validation was local: 436 passed, 0 failed, 0 skipped, 0 todo; `npm run check`, `npm run verify:weaver`, and `git diff --check` passed (delta 0 from the 436-test baseline).
+Validation was local: 452 passed, 0 failed, 0 skipped, 0 todo (delta +16 from the 436-test baseline); `npm run check`, `npm run verify:weaver`, and `git diff --check` passed.
 
