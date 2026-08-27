@@ -26,6 +26,7 @@ export interface BookingContractArtifact {
     readonly occupants: readonly string[];
     readonly allInStayTotalKobo?: number;
     readonly refundableSecurityDepositKobo?: number;
+    readonly securityDeposit?: BookingContractView["money"]["securityDeposit"];
     readonly amountPaidKobo: number;
     readonly currency?: string;
     readonly paymentMethod: "fresh_card" | "bank_transfer";
@@ -66,6 +67,7 @@ export function bookingContractArtifactFromView(view: BookingContractView, contr
     occupants: Object.freeze(view.occupants.map(({ name }) => name)),
     ...(view.money.allInStayTotalKobo === undefined ? {} : { allInStayTotalKobo: view.money.allInStayTotalKobo }),
     ...(view.money.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: view.money.refundableSecurityDepositKobo }),
+    ...(view.money.securityDeposit ? { securityDeposit: view.money.securityDeposit } : {}),
     amountPaidKobo: contract.paymentDetails.amountKobo, ...(view.money.currency ? { currency: view.money.currency } : {}),
     paymentMethod: contract.paymentDetails.paymentMethod, ...(contract.paymentDetails.cardMetadata ? { cardMetadata: Object.freeze({ ...contract.paymentDetails.cardMetadata }) } : {}),
     ...(safeCancellationPolicy(contract.policies.cancellationPolicy) ? { cancellationPolicy: safeCancellationPolicy(contract.policies.cancellationPolicy) } : {}),

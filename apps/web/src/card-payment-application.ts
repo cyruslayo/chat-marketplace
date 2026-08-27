@@ -11,6 +11,7 @@ export interface CardPaymentApplicationOptions {
   readonly pspClient: NonNullable<CardPaymentManagerOptions["pspClient"]>;
   readonly liveAttempts?: CardPaymentManagerOptions["liveAttempts"];
   readonly clock?: () => Date;
+  readonly journeyRepository?: import("../../../domains/shortlet/src/booking-payment-journey.js").BookingPaymentJourneyRepository;
 }
 
 export class CardPaymentApplication {

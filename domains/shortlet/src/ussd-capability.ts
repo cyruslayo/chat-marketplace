@@ -78,7 +78,7 @@ export class PaymentCapabilityManager {
     const deadline = new Date(offer.paymentWindow.expiresAt); if (now.getTime() >= deadline.getTime()) throw new Error("Payment window has expired");
     // Re-check immediately before the provider boundary; suspension/version changes fail closed.
     const current = this.#certifications.get(cert.capabilityId); if (!current || current.version !== cert.version || !this.#isActive(current, clock())) throw new Error("Payment capability changed before initialization");
-    const attempt = this.#liveAttempts.acquire({ offerId: offer.offerId, method: "ussd", attemptId: `ussd_${envelope.commandId}`, startedAt: now.toISOString(), expiresAt: deadline.toISOString() });
+    const attempt = this.#liveAttempts.acquire({ offerId: offer.offerId, method: "ussd", purpose: "stay", attemptId: `ussd_${envelope.commandId}`, startedAt: now.toISOString(), expiresAt: deadline.toISOString() });
     let provider: ReturnType<UssdProviderClient["initializeSession"]>;
     try { provider = this.#ussdProvider.initializeSession({ capabilityId: cert.capabilityId, offerId: offer.offerId, amountKobo: offer.totalAmountDueNowKobo, currency: "NGN", expiresAt: deadline.toISOString() }); } catch (error) { this.#liveAttempts.release(offer.offerId); throw error; }
     const effectiveExpiry = provider.expiresAt && new Date(provider.expiresAt).getTime() < deadline.getTime() ? provider.expiresAt : deadline.toISOString();

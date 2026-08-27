@@ -1,7 +1,11 @@
 import { PlatformCommandEnvelope } from "../../../packages/platform-core/src/index.js";
 import { ConditionalBookingOffer } from "./conditional-offer.js";
 import type { BookingStateRepository } from "./booking-state.js";
+import type { BookingPaymentJourneyRepository } from "./booking-payment-journey.js";
+import { assertSecurityDepositCollectionAvailable, type SecurityDepositCollectionCapabilityProvider } from "./security-deposit.js";
 import type { GuestConductPolicySnapshot } from "./guest-conduct.js";
+import type { SecurityDepositPolicySnapshot } from "./security-deposit.js";
+import type { SecurityDepositAccountingRepository } from "./security-deposit-accounting.js";
 
 /**
  * ADR 0049 & AC 1: Strictly reject payloads containing raw PAN, CVV, PIN, OTP, or reusable card tokens.
@@ -34,6 +38,8 @@ export interface CardCheckoutSession {
   readonly pspReference: string;
   readonly checkoutUrl: string;
   readonly totalAmountDueNowKobo: number;
+  readonly amountKobo: number;
+  readonly purpose: "stay" | "security_deposit";
   readonly currency: "NGN";
   readonly expiresAt: string;
   status: "initiated" | "completed" | "expired" | "failed";
@@ -54,6 +60,7 @@ export interface BookingContract {
   readonly occupants: readonly { readonly name: string }[];
   readonly quote: unknown;
   readonly totalAmountDueNowKobo: number;
+  readonly securityDeposit?: { readonly policyVersion: string; readonly amountKobo: number; readonly currency: "NGN"; readonly collectionId?: string; readonly status: "held" | "refunded" | "reconciliation_required" };
   readonly policies: {
     readonly cancellationPolicy: unknown;
     readonly guestConductRules: readonly string[];
@@ -146,6 +153,10 @@ export interface CardPaymentManagerOptions {
   };
   readonly liveAttempts?: import("./payment-attempt.js").LivePaymentAttemptRegistry;
   readonly bookingState?: BookingStateRepository;
+  readonly journeyRepository?: BookingPaymentJourneyRepository;
+  readonly securityDepositCapability?: SecurityDepositCollectionCapabilityProvider;
+  readonly securityDepositAccounting?: SecurityDepositAccountingRepository;
+  readonly compensationRefundProvider?: { initiateOrGetRefund(input: { obligationId: string; offerId: string; originalPaymentReference: string; amountKobo: number; currency: "NGN" }): { refundId: string; status: "pending" | "settled" | "failed" } };
 }
 
 export class CardPaymentManager {
@@ -156,6 +167,10 @@ export class CardPaymentManager {
   readonly #pspClient?: CardPaymentManagerOptions["pspClient"];
   readonly #liveAttempts?: CardPaymentManagerOptions["liveAttempts"];
   readonly #bookingState?: BookingStateRepository;
+  readonly #journeys?: BookingPaymentJourneyRepository;
+  readonly #securityDepositCapability?: SecurityDepositCollectionCapabilityProvider;
+  readonly #securityDepositAccounting?: SecurityDepositAccountingRepository;
+  readonly #compensationRefundProvider?: CardPaymentManagerOptions["compensationRefundProvider"];
 
   readonly #sessions = new Map<string, CardCheckoutSession>();
   readonly #reservations = new Map<string, Reservation>();
@@ -174,6 +189,10 @@ export class CardPaymentManager {
     this.#pspClient = options.pspClient;
     this.#liveAttempts = options.liveAttempts;
     this.#bookingState = options.bookingState;
+    this.#journeys = options.journeyRepository;
+    this.#securityDepositCapability = options.securityDepositCapability;
+    this.#securityDepositAccounting = options.securityDepositAccounting;
+    this.#compensationRefundProvider = options.compensationRefundProvider;
   }
 
   /**
@@ -216,6 +235,11 @@ export class CardPaymentManager {
       throw new Error("Payment window has expired; cannot initialize checkout");
     }
 
+    if (offer.securityDeposit && offer.securityDeposit.amountKobo > 0 && (!this.#securityDepositCapability || !this.#journeys || !this.#securityDepositAccounting)) { if (this.#journeys?.findByOfferId(offerId)?.stage === "stay_settled") this.#compensateStay(offerId); throw new Error("Refundable Security Deposit collection unavailable"); }
+    if (offer.securityDeposit && offer.securityDeposit.amountKobo > 0) { try { assertSecurityDepositCollectionAvailable(this.#securityDepositCapability!, "fresh_card"); } catch { if (this.#journeys?.findByOfferId(offerId)?.stage === "stay_settled") this.#compensateStay(offerId); throw new Error("Refundable Security Deposit collection unavailable"); } }
+    const journey = this.#journeys?.createIfAbsent({ offerId, paymentMethod: "fresh_card", originalPaymentDeadline: offer.paymentWindow.expiresAt, stayAmountKobo: typeof offer.quote?.allInStayTotalKobo === "number" ? offer.quote.allInStayTotalKobo : offer.totalAmountDueNowKobo - (offer.refundableSecurityDepositKobo ?? 0), deposit: offer.securityDeposit ?? null });
+    const purpose = journey?.stage === "stay_settled" ? "security_deposit" as const : "stay" as const;
+    if (purpose === "security_deposit" && (!journey || !journey.requiredDeposit || journey.requiredDeposit.amountKobo <= 0)) throw new Error("No deposit payment is required");
     const pspReference = `psp_ref_${envelope.commandId.slice(0, 8)}_${now.getTime()}`;
     const checkoutId = `chk_${now.getTime()}`;
     const checkoutUrl = `https://checkout.psp.example.com/pay/${pspReference}`;
@@ -226,12 +250,15 @@ export class CardPaymentManager {
       pspReference,
       checkoutUrl,
       totalAmountDueNowKobo: offer.totalAmountDueNowKobo,
+      amountKobo: purpose === "stay" ? (journey?.stay.amountKobo ?? offer.totalAmountDueNowKobo) : (journey?.deposit.amountKobo ?? 0),
+      purpose,
       currency: "NGN",
       expiresAt: offer.paymentWindow.expiresAt,
       status: "initiated"
     };
 
-    this.#liveAttempts?.acquire({ offerId, method: "fresh_card", attemptId: checkoutId, startedAt: now.toISOString(), expiresAt: offer.paymentWindow.expiresAt });
+    if (purpose === "security_deposit") this.#securityDepositAccounting!.createOrGet({ offerId, snapshot: journey!.requiredDeposit!, paymentMethod: "fresh_card", providerReference: pspReference, capabilityVersion: this.#securityDepositCapability!.getCapability({ paymentMethod: "fresh_card" }).capabilityVersion });
+    this.#liveAttempts?.acquire({ offerId, method: "fresh_card", purpose, attemptId: checkoutId, startedAt: now.toISOString(), expiresAt: offer.paymentWindow.expiresAt });
     this.#sessions.set(checkoutId, session);
 
     if (this.#audit) {
@@ -240,7 +267,7 @@ export class CardPaymentManager {
         checkoutId,
         offerId: offer.offerId,
         pspReference,
-        amountKobo: session.totalAmountDueNowKobo,
+        amountKobo: session.amountKobo,
         currency: session.currency,
         commandEnvelopeId: envelope.commandId,
         initiatedAt: now.toISOString()
@@ -309,6 +336,8 @@ export class CardPaymentManager {
     }
 
     if (!pspResult.verified || pspResult.status !== "success") {
+      if (session.purpose === "security_deposit" && pspResult.status === "failed") this.#compensateStay(offerId);
+
       // Check Payment-Processing Grace (ADR 0044)
       if (pspResult.status === "pending") {
         const paymentWindowEnd = new Date(offer.paymentWindow.expiresAt).getTime();
@@ -325,9 +354,9 @@ export class CardPaymentManager {
       throw new Error(`Currency verification failed: Expected NGN, got '${pspResult.currency}'`);
     }
 
-    if (pspResult.amountKobo !== offer.totalAmountDueNowKobo) {
+    if (pspResult.amountKobo !== session.amountKobo) {
       throw new Error(
-        `Amount verification failed: Expected ${offer.totalAmountDueNowKobo} kobo, got ${pspResult.amountKobo} kobo`
+        `Amount verification failed: Expected ${session.amountKobo} kobo, got ${pspResult.amountKobo} kobo`
       );
     }
 
@@ -365,6 +394,21 @@ export class CardPaymentManager {
       }
     }
 
+    if (session.purpose === "stay" && offer.securityDeposit && offer.securityDeposit.amountKobo > 0 && this.#journeys) {
+      const current = this.#journeys.findByOfferId(offer.offerId);
+      if (!current) throw new Error("Payment journey not found");
+      this.#journeys.update(offer.offerId, current.journeyVersion, (value) => ({ ...value, stage: "stay_settled", stay: { ...value.stay, status: "settled", providerReference: session.pspReference, paidAt: now.toISOString() } }));
+      session.status = "completed"; this.#liveAttempts?.release(offer.offerId);
+      return { outcome: "deposit_required" as const, journey: this.#journeys.findByOfferId(offer.offerId) } as never;
+    }
+    if (session.purpose === "security_deposit") {
+      const collection = this.#securityDepositAccounting?.getByOfferId(offer.offerId);
+      if (!collection) throw new Error("Deposit collection record not found");
+      this.#securityDepositAccounting!.recordCollection(collection.collectionId, now.toISOString());
+      const current = this.#journeys?.findByOfferId(offer.offerId);
+      if (!current || current.stage !== "stay_settled") throw new Error("Deposit payment is not the authorized next component");
+      this.#journeys!.update(offer.offerId, current.journeyVersion, (value) => ({ ...value, stage: "both_settled", deposit: { ...value.deposit, status: "settled", providerReference: session.pspReference, paidAt: now.toISOString() } }));
+    }
     // Atomic Commitment of Reservation, BookingContract, and Ledger
     const reservationId = `res_${envelope.commandId.slice(0, 8)}_${now.getTime()}`;
     const contractId = `ctr_${envelope.commandId.slice(0, 8)}_${now.getTime()}`;
@@ -393,10 +437,11 @@ export class CardPaymentManager {
       totalAmountDueNowKobo: offer.totalAmountDueNowKobo,
       policies: offer.policies,
       disclosures: offer.disclosures,
+      ...(offer.securityDeposit && offer.securityDeposit.amountKobo > 0 ? { securityDeposit: { policyVersion: offer.securityDeposit.policyVersion, amountKobo: offer.securityDeposit.amountKobo, currency: "NGN" as const, collectionId: this.#securityDepositAccounting?.getByOfferId(offer.offerId)?.collectionId, status: "held" as const } } : {}),
       paymentDetails: {
-        pspReference,
+        pspReference: session.purpose === "security_deposit" ? (this.#journeys?.findByOfferId(offer.offerId)?.stay.providerReference ?? pspReference) : pspReference,
         paymentMethod: "fresh_card",
-        amountKobo: pspResult.amountKobo,
+        amountKobo: session.purpose === "security_deposit" ? (this.#journeys?.findByOfferId(offer.offerId)?.stay.amountKobo ?? pspResult.amountKobo) : pspResult.amountKobo,
         currency: "NGN",
         paidAt: now.toISOString(),
         ...(pspResult.cardMetadata ? { cardMetadata: pspResult.cardMetadata } : {})
@@ -418,7 +463,7 @@ export class CardPaymentManager {
         entryId: `led_${reservationId}_1`,
         reservationId,
         type: "guest_payment_credit",
-        amountKobo: offer.totalAmountDueNowKobo,
+        amountKobo: session.purpose === "security_deposit" ? (this.#journeys?.findByOfferId(offer.offerId)?.stay.amountKobo ?? offer.totalAmountDueNowKobo) : offer.totalAmountDueNowKobo,
         currency: "NGN",
         createdAt: now.toISOString()
       },
@@ -465,10 +510,12 @@ export class CardPaymentManager {
     // Save authoritative state
     this.#reservations.set(reservationId, reservation);
     this.#contracts.set(contractId, bookingContract);
+    if (session.purpose === "security_deposit") { const collection = this.#securityDepositAccounting?.getByOfferId(offer.offerId); if (collection) this.#securityDepositAccounting?.bind(collection.collectionId, { reservationId, contractId }); }
     this.#bookingState?.saveContract(bookingContract);
     this.#bookingState?.saveReservation(reservation);
     this.#ledgerEntries.set(reservationId, ledgerEntries);
     session.status = "completed";
+    if (this.#journeys) { const current = this.#journeys.findByOfferId(offer.offerId); if (current?.stage === "both_settled") this.#journeys.update(offer.offerId, current.journeyVersion, (value) => ({ ...value, stage: "confirmed", finalReservationId: reservationId, finalContractId: contractId })); }
     this.#liveAttempts?.release(offer.offerId);
     this.#processedPspReferences.set(pspReference, { reservationId, contractId, offerId: offer.offerId, tenantId: offer.tenantId });
 
@@ -489,6 +536,7 @@ export class CardPaymentManager {
     return { reservation, bookingContract, ledgerEntries: Object.freeze(ledgerEntries) };
   }
 
+  #compensateStay(offerId: string): void { const journey = this.#journeys?.findByOfferId(offerId); if (!journey || journey.compensation.status === "settled" || journey.compensation.status === "reconciliation_required") return; const reference = journey.stay.providerReference; if (!reference || !this.#compensationRefundProvider) { this.#journeys?.update(offerId, journey.journeyVersion, (value) => ({ ...value, stage: "reconciliation_required", compensation: { status: "reconciliation_required" } })); return; } const refund = this.#compensationRefundProvider.initiateOrGetRefund({ obligationId: `payment-compensation:${offerId}:stay`, offerId, originalPaymentReference: reference, amountKobo: journey.stay.amountKobo, currency: "NGN" }); this.#journeys?.update(offerId, journey.journeyVersion, (value) => ({ ...value, stage: refund.status === "failed" ? "reconciliation_required" : "compensated", compensation: { status: refund.status === "failed" ? "reconciliation_required" : "settled", refundId: refund.refundId } })); }
   getCheckoutSession(offerId: string): CardCheckoutSession | undefined {
     const sessions = [...this.#sessions.values()].filter((session) => session.offerId === offerId);
     const session = sessions.find((candidate) => candidate.status === "initiated") ?? sessions.at(-1);
