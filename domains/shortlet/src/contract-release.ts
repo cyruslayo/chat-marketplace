@@ -43,6 +43,7 @@ export interface BookingContractView {
   readonly money: {
     readonly allInStayTotalKobo?: number;
     readonly refundableSecurityDepositKobo?: number;
+    readonly securityDeposit?: BookingContract["securityDeposit"];
     readonly totalAmountDueNowKobo: number;
     readonly currency?: string;
   };
@@ -126,7 +127,7 @@ export class ContractAndArrivalReleaseManager {
     return Object.freeze({
       contractId: contract.contractId, reservationId: contract.reservationId, offerId: contract.offerId, unitId: contract.unitId,
       parties: contract.parties, dates: contract.dates, occupants: contract.occupants,
-      money: { ...(allIn === undefined ? {} : { allInStayTotalKobo: allIn }), ...(deposit === undefined ? {} : { refundableSecurityDepositKobo: deposit }), totalAmountDueNowKobo: contract.totalAmountDueNowKobo, ...(currency ? { currency } : {}) },
+      money: { ...(allIn === undefined ? {} : { allInStayTotalKobo: allIn }), ...(deposit === undefined ? {} : { refundableSecurityDepositKobo: deposit }), ...(contract.securityDeposit ? { securityDeposit: contract.securityDeposit } : {}), totalAmountDueNowKobo: contract.totalAmountDueNowKobo, ...(currency ? { currency } : {}) },
       policies: contract.policies, disclosures: Object.freeze([...(contract.disclosures ?? [])]), contractVersion: contract.contractVersion,
       addressAvailability: state.addressAvailable ? "available" : "locked", accessAvailability: state.accessAvailable ? "available" : "locked",
       ...(arrival?.locationReferenceId ? { locationReferenceId: arrival.locationReferenceId } : {}),

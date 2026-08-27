@@ -26,6 +26,11 @@ export interface CardPaymentArtifact {
     readonly checkIn: string;
     readonly checkOut: string;
     readonly amountDueNowKobo: number;
+    readonly allInStayTotalKobo?: number;
+    readonly refundableSecurityDepositKobo?: number;
+    readonly depositPolicyVersion?: string;
+    readonly currentComponent?: "stay" | "security_deposit";
+    readonly currentComponentAmountKobo?: number;
     readonly currency: "NGN";
     readonly paymentWindowExpiresAt: string;
     readonly expectedPayerName?: string;
@@ -55,7 +60,7 @@ export function cardPaymentArtifactFromState({
   contract,
   now,
 }: {
-  readonly offer: { offerId: string; unitId: string; unit: { title: string }; dates: { checkIn: string; checkOut: string }; totalAmountDueNowKobo: number; paymentWindow: { expiresAt: string }; status: string; parties: { primaryGuest: { id: string; name: string }; distinctPayer?: { id: string; name: string } | null }; tenantId?: string };
+  readonly offer: { offerId: string; unitId: string; unit: { title: string }; dates: { checkIn: string; checkOut: string }; totalAmountDueNowKobo: number; refundableSecurityDepositKobo?: number; securityDeposit?: { policyVersion: string }; quote?: { allInStayTotalKobo?: number }; paymentWindow: { expiresAt: string }; status: string; parties: { primaryGuest: { id: string; name: string }; distinctPayer?: { id: string; name: string } | null }; tenantId?: string };
   readonly viewer: CommandPrincipal;
   readonly session?: CardCheckoutSession;
   readonly reservation?: Reservation;
@@ -75,6 +80,10 @@ export function cardPaymentArtifactFromState({
     checkIn: offer.dates.checkIn,
     checkOut: offer.dates.checkOut,
     amountDueNowKobo: offer.totalAmountDueNowKobo,
+    ...(offer.quote?.allInStayTotalKobo === undefined ? {} : { allInStayTotalKobo: offer.quote.allInStayTotalKobo }),
+    ...(offer.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: offer.refundableSecurityDepositKobo }),
+    ...(offer.securityDeposit ? { depositPolicyVersion: offer.securityDeposit.policyVersion } : {}),
+    ...(session ? { currentComponent: session.purpose, currentComponentAmountKobo: session.amountKobo } : {}),
     currency: "NGN",
     paymentWindowExpiresAt: offer.paymentWindow.expiresAt,
     ...(canInitialize ? { expectedPayerName: payer.name } : {}),

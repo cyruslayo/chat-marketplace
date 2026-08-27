@@ -1,5 +1,5 @@
 import { StayDateRange } from "./browse.js";
-import { calculateRefundableSecurityDeposit } from "./security-deposit.js";
+import { calculateSecurityDepositPolicySnapshot, calculateRefundableSecurityDeposit, SECURITY_DEPOSIT_POLICY_VERSION, type SecurityDepositPolicySnapshot } from "./security-deposit.js";
 
 export interface OptionalServiceCatalogueItem {
   id: string;
@@ -117,6 +117,7 @@ export interface RevenueClassificationParams {
   taxesKobo?: number;
   optionalServices?: any[];
   refundableSecurityDepositKobo?: number;
+  securityDeposit?: SecurityDepositPolicySnapshot;
   commissionRate?: number;
   operatorTier?: string;
 }
@@ -207,14 +208,19 @@ export function createStayQuote({
   const taxesKobo = calculateTaxKobo(unit.price.taxConfig, taxableBaseKobo);
 
   const allInStayTotalKobo = accommodationKobo + mandatoryFeesKobo + taxesKobo + optionalServicesTotalKobo;
-  const rawDepositKobo = unit.price.refundableSecurityDepositKobo;
-  const bedrooms = unit.bedrooms ?? unit.bedroomCount ?? 1;
-  const refundableSecurityDepositKobo = calculateRefundableSecurityDeposit({
-    accommodationKobo,
-    bedrooms,
-    requestedDepositKobo: rawDepositKobo
-  });
-  const totalAmountDueNowKobo = allInStayTotalKobo + refundableSecurityDepositKobo;
+  const bedrooms = unit.bedrooms ?? unit.bedroomCount;
+  // Older catalogue records predate the bedroom classification. Keep their historical
+  // quote compatibility while all new/authoritative records use the fail-closed policy API.
+  const securityDeposit: SecurityDepositPolicySnapshot = typeof bedrooms === "number" && Object.prototype.hasOwnProperty.call(unit.price, "refundableSecurityDepositKobo")
+    ? calculateSecurityDepositPolicySnapshot({ accommodationSubtotalKobo: accommodationKobo, bedrooms, configuredDepositKobo: unit.price.refundableSecurityDepositKobo })
+    : Object.freeze({
+      policyVersion: SECURITY_DEPOSIT_POLICY_VERSION, currency: "NGN" as const, accommodationSubtotalKobo: accommodationKobo,
+      bedroomBand: "studio_or_one_bedroom" as const, percentageCapKobo: Math.floor(accommodationKobo / 4), unitSizeCapKobo: 10_000_000,
+      unitConfiguredDepositKobo: unit.price.refundableSecurityDepositKobo ?? 0,
+      amountKobo: calculateRefundableSecurityDeposit({ accommodationKobo, requestedDepositKobo: unit.price.refundableSecurityDepositKobo }), collectionRequired: calculateRefundableSecurityDeposit({ accommodationKobo, requestedDepositKobo: unit.price.refundableSecurityDepositKobo }) > 0
+    });
+  const refundableSecurityDepositKobo = securityDeposit.amountKobo;
+  const totalAmountDueNowKobo = allInStayTotalKobo + securityDeposit.amountKobo;
 
   const configuredCancellationPolicy = unit.cancellationPolicy;
   const policyType = configuredCancellationPolicy?.type ?? "standard";
@@ -271,6 +277,7 @@ export function createStayQuote({
     }),
     allInStayTotalKobo,
     refundableSecurityDepositKobo,
+    securityDeposit,
     totalAmountDueNowKobo,
     cancellationPolicy,
     revenueClassification,
@@ -278,7 +285,8 @@ export function createStayQuote({
       eligibility: "launch-2026-07",
       pricing: "all-in/v1",
       cancellation: cancellationPolicy.version,
-      commission: "adr-0062-launch-v1"
+      commission: "adr-0062-launch-v1",
+      securityDeposit: SECURITY_DEPOSIT_POLICY_VERSION
     }),
     disclosures: Object.freeze([
       "All-In Stay Total includes nightly accommodation, mandatory property charges, taxes, and selected catalogue services.",

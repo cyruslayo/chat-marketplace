@@ -39,6 +39,7 @@ export interface ConditionalOfferArtifact {
     readonly currency: string;
     readonly allInStayTotalKobo: number;
     readonly refundableSecurityDepositKobo: number;
+    readonly securityDeposit?: { readonly policyVersion: string; readonly amountKobo: number; readonly currency: "NGN"; readonly collectionRequired: boolean };
     readonly totalAmountDueNowKobo: number;
     readonly cancellationPolicy: { readonly type: string; readonly version: string; readonly summary: string };
     readonly guestConductRules: readonly string[];
@@ -96,6 +97,7 @@ export function conditionalOfferArtifactFromOffer(
     currency,
     allInStayTotalKobo: quote && typeof offer.quote.allInStayTotalKobo === "number" ? offer.quote.allInStayTotalKobo : offer.totalAmountDueNowKobo - offer.refundableSecurityDepositKobo,
     refundableSecurityDepositKobo: offer.refundableSecurityDepositKobo,
+    ...(offer.securityDeposit ? { securityDeposit: { policyVersion: offer.securityDeposit.policyVersion, amountKobo: offer.securityDeposit.amountKobo, currency: offer.securityDeposit.currency, collectionRequired: offer.securityDeposit.collectionRequired } } : {}),
     totalAmountDueNowKobo: offer.totalAmountDueNowKobo,
     cancellationPolicy: {
       type: quote.cancellationPolicy?.type ?? "standard",

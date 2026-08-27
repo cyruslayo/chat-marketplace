@@ -2,6 +2,7 @@ import { PlatformCommandEnvelope } from "../../../packages/platform-core/src/ind
 import { createStayQuote } from "./quote.js";
 import { getUnitOnboardingStatus } from "./onboarding.js";
 import { createGuestConductPolicySnapshot, type GuestConductPolicySnapshot, type UnitConductPolicy } from "./guest-conduct.js";
+import type { SecurityDepositPolicySnapshot } from "./security-deposit.js";
 import * as crypto from "node:crypto";
 
 
@@ -71,6 +72,7 @@ export interface ConditionalBookingOffer {
   occupants: readonly { name: string }[];
   quote: any;
   refundableSecurityDepositKobo: number;
+  readonly securityDeposit?: SecurityDepositPolicySnapshot;
   totalAmountDueNowKobo: number;
   policies: {
     cancellationPolicy: any;
@@ -265,6 +267,7 @@ export class ConditionalOfferManager {
       occupants: Object.freeze(request.occupants.map(({ name }: { name: string }) => ({ name }))),
       quote: freshQuote,
       refundableSecurityDepositKobo: freshQuote.refundableSecurityDepositKobo,
+      securityDeposit: freshQuote.securityDeposit,
       totalAmountDueNowKobo: freshQuote.totalAmountDueNowKobo,
       policies: (() => {
         const conduct = createGuestConductPolicySnapshot({
