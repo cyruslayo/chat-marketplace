@@ -12,6 +12,10 @@ export interface CardPaymentApplicationOptions {
   readonly liveAttempts?: CardPaymentManagerOptions["liveAttempts"];
   readonly clock?: () => Date;
   readonly journeyRepository?: import("../../../domains/shortlet/src/booking-payment-journey.js").BookingPaymentJourneyRepository;
+  readonly securityDepositCapability?: CardPaymentManagerOptions["securityDepositCapability"];
+  readonly securityDepositAccounting?: CardPaymentManagerOptions["securityDepositAccounting"];
+  readonly bookingState?: CardPaymentManagerOptions["bookingState"];
+  readonly compensationRefundProvider?: CardPaymentManagerOptions["compensationRefundProvider"];
 }
 
 export class CardPaymentApplication {
@@ -31,7 +35,7 @@ export class CardPaymentApplication {
     const session = this.manager.getCheckoutSession(offerId);
     const contract = this.manager.getBookingContract(offerId);
     const reservation = contract && projection.reservationId ? { reservationId: projection.reservationId, contractId: contract.contractId, unitId: contract.unitId, primaryGuestId: contract.parties.primaryGuest.id, dates: contract.dates, status: "confirmed" as const, confirmedAt: contract.paymentDetails.paidAt } : undefined;
-    return cardPaymentArtifactFromState({ offer, viewer, session, contract, reservation, now: this.#clock() });
+    return cardPaymentArtifactFromState({ offer, viewer, session, contract, reservation, journey: this.manager.getPaymentJourney(offerId), now: this.#clock() });
   }
 
   initializeCheckout(offerId: string, trustedPayerPrincipal: CommandPrincipal): CardCheckoutSession {

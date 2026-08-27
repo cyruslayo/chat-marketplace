@@ -10,6 +10,11 @@ export interface BankTransferPaymentApplicationOptions {
   readonly providerClient: BankTransferPaymentManagerOptions["providerClient"];
   readonly liveAttempts?: BankTransferPaymentManagerOptions["liveAttempts"];
   readonly clock?: () => Date;
+  readonly journeyRepository?: BankTransferPaymentManagerOptions["journeyRepository"];
+  readonly securityDepositCapability?: BankTransferPaymentManagerOptions["securityDepositCapability"];
+  readonly securityDepositAccounting?: BankTransferPaymentManagerOptions["securityDepositAccounting"];
+  readonly bookingState?: BankTransferPaymentManagerOptions["bookingState"];
+  readonly compensationRefundProvider?: BankTransferPaymentManagerOptions["compensationRefundProvider"];
 }
 
 export class BankTransferPaymentApplication {
@@ -20,7 +25,7 @@ export class BankTransferPaymentApplication {
   getArtifact(offerId: string, viewer: CommandPrincipal): BankTransferArtifact {
     const offer = this.#conditionalOfferApplication.manager.getOffer(offerId);
     const session = this.manager.getSession(offerId); const contract = this.manager.getBookingContract(offerId);
-    return bankTransferArtifactFromState({ offer, viewer, session, contract, refundRecord: this.manager.getRefundRecord(offerId), reconciliationRecord: this.manager.getReconciliationRecord(offerId), now: this.#clock() });
+    return bankTransferArtifactFromState({ offer, viewer, session, contract, journey: this.manager.getPaymentJourney(offerId), refundRecord: this.manager.getRefundRecord(offerId), reconciliationRecord: this.manager.getReconciliationRecord(offerId), now: this.#clock() });
   }
   initializeTransfer(offerId: string, trustedPayerPrincipal: CommandPrincipal): BankTransferCheckoutSession {
     return this.manager.initializeBankTransfer(createPlatformCommandEnvelope({ commandName: "bank_transfer.initialize", principal: trustedPayerPrincipal, payload: { offerId } }), { clock: this.#clock });
