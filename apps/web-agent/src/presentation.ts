@@ -4,6 +4,10 @@ import {
   type DiscoveryArtifactProjection,
 } from "./discovery-a2ui.js";
 import { bookingRequestArtifactToA2UI } from "./booking-request-a2ui.js";
+import type { DepositClaimApplication } from "../../web/src/deposit-claim-application.js";
+import type { DepositClaimArtifact } from "../../web/src/deposit-claim-artifact.js";
+import { depositClaimArtifact } from "../../web/src/deposit-claim-artifact.js";
+import { depositClaimArtifactToA2UI } from "./deposit-claim-a2ui.js";
 import type { BookingRequestApplication } from "../../web/src/booking-request-application.js";
 import type { BookingRequestArtifact } from "../../web/src/booking-request-artifact.js";
 import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
@@ -221,4 +225,8 @@ export function createBookingRequestWebAgentAdapter({
       });
     },
   });
+}
+
+export function createDepositClaimWebAgentAdapter(options: { readonly application: DepositClaimApplication; readonly principal: CommandPrincipal; readonly createSurfaceId: (artifactId: string) => string }) {
+  return Object.freeze({ get(reservationId: string) { const artifact: DepositClaimArtifact = depositClaimArtifact(options.application, reservationId, options.principal); const surfaceId = options.createSurfaceId(artifact.id); return Object.freeze({ channel: "web-agent" as const, artifact, surfaceId, a2uiMessages: depositClaimArtifactToA2UI({ artifact, surfaceId }), fallback: Object.freeze({ message: "Security Deposit Claim", conventionalRoute: `/reservations/${encodeURIComponent(reservationId)}/deposit-claim` }) }); } });
 }

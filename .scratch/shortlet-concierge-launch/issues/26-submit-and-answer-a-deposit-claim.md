@@ -26,12 +26,7 @@ Open a Security Deposit Claim after authoritative checkout, require timely itemi
 
 ## Answer
 
-Implemented `DepositClaimManager` in `domains/shortlet/src/deposit-claim.ts`.
+Implemented the production Issue 26 path through `DepositClaimApplication`, using authoritative BookingState, effective Checkout terms, and the real Issue 25 held-deposit accounting source. Claims have one versioned identity, trusted evidence references, exact 24-hour timing, deterministic no-claim original-source refunds, partial reservation/refund accounting, positive-delivery notification, and an exact 48-hour guest response window. Explicit guest acceptance or dispute is authenticated; silence and disputes go to reused human handoff, and only a trusted human decision provider can apply itemized Balance-of-Evidence adjudication. Unsupported money is refunded and any surviving Operator amount is reserved only; Issue 27 appeal, finality, waiver, and payout behavior is not exposed.
 
-### ADR Compliance
-- **ADR 0016**: Timely claim submission requirement (within 24 hours of contractual or amended checkout); late/unsupported submissions rejected under policy.
-- **ADR 0017**: Successful Claim Notification with positive delivery evidence triggers 48-hour guest response window.
-- **ADR 0018**: Balance of Evidence standard; operator proof burden; arbitrary fees & uncorroborated assertions rejected; unapproved balance refunded immediately.
-- **ADR 0019**: One internal appeal within 7 calendar days.
-- **ADR 0020**: Reserved operator award until internal finality. Tenant-scoped audit trail maintained.
+The canonical `shortlet.deposit-claim/v1` artifact, conventional reservation route, and Weaver A2UI v0.9.1 adapter share the same application and strict versioned action contexts. Final local validation: 468 passed, 0 failed, 0 skipped, 0 todo.
 

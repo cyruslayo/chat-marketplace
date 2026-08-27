@@ -1,4 +1,5 @@
 export * from "./presentation.js";
+export * from "./deposit-claim-a2ui.js";
 export * from "./booking-request-a2ui.js";
 export * from "./booking-contract-a2ui.js";
 export * from "./checkin-support-a2ui.js";
