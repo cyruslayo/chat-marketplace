@@ -1,15 +1,19 @@
 import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
-import type { BookingContract, CardCheckoutSession, Reservation } from "../../../domains/shortlet/src/index.js";
+import type { BookingContract, CardCheckoutSession, Reservation, BookingPaymentJourney } from "../../../domains/shortlet/src/index.js";
 
 export const CARD_PAYMENT_ARTIFACT_KIND = "shortlet.card-payment";
 export const CARD_PAYMENT_SCHEMA_VERSION = "shortlet.card-payment/v1";
-export type CardPaymentStatus = "ready" | "checkout_initiated" | "confirmed" | "expired" | "failed";
+export type CardPaymentStatus = "ready" | "checkout_initiated" | "deposit_required" | "compensation_pending" | "compensated" | "reconciliation_required" | "confirmed" | "expired" | "failed";
 
 export interface CardPaymentAction {
   readonly type: "initialize_checkout";
   readonly artifactId: string;
   readonly offerId: string;
-  readonly expectedStatus: "ready";
+  readonly expectedStatus: "ready" | "deposit_required";
+  readonly expectedPurpose?: "stay" | "security_deposit";
+  readonly expectedJourneyVersion?: number;
+  readonly expectedStage?: string;
+  readonly depositPolicyVersion?: string;
   readonly projectionVersion: number;
 }
 
@@ -31,6 +35,8 @@ export interface CardPaymentArtifact {
     readonly depositPolicyVersion?: string;
     readonly currentComponent?: "stay" | "security_deposit";
     readonly currentComponentAmountKobo?: number;
+    readonly journeyVersion?: number;
+    readonly journeyStage?: string;
     readonly currency: "NGN";
     readonly paymentWindowExpiresAt: string;
     readonly expectedPayerName?: string;
@@ -58,6 +64,7 @@ export function cardPaymentArtifactFromState({
   session,
   reservation,
   contract,
+  journey,
   now,
 }: {
   readonly offer: { offerId: string; unitId: string; unit: { title: string }; dates: { checkIn: string; checkOut: string }; totalAmountDueNowKobo: number; refundableSecurityDepositKobo?: number; securityDeposit?: { policyVersion: string }; quote?: { allInStayTotalKobo?: number }; paymentWindow: { expiresAt: string }; status: string; parties: { primaryGuest: { id: string; name: string }; distinctPayer?: { id: string; name: string } | null }; tenantId?: string };
@@ -66,12 +73,13 @@ export function cardPaymentArtifactFromState({
   readonly reservation?: Reservation;
   readonly contract?: BookingContract;
   readonly now: Date;
+  readonly journey?: BookingPaymentJourney | null;
 }): CardPaymentArtifact {
   const id = cardPaymentArtifactId(offer.offerId);
   const expired = now.getTime() >= new Date(offer.paymentWindow.expiresAt).getTime();
-  const status: CardPaymentStatus = contract && reservation ? "confirmed" : session?.status === "failed" ? "failed" : session && (session.status === "completed" || session.status === "initiated") && !expired ? (session.status === "completed" ? "confirmed" : "checkout_initiated") : expired ? "expired" : "ready";
+  const status: CardPaymentStatus = contract && reservation ? "confirmed" : journey?.stage === "stay_settled" ? "deposit_required" : journey?.stage === "compensation_pending" ? "compensation_pending" : journey?.stage === "compensated" ? "compensated" : journey?.stage === "reconciliation_required" ? "reconciliation_required" : session?.status === "failed" ? "failed" : session && (session.status === "completed" || session.status === "initiated") && !expired ? (session.status === "completed" ? "confirmed" : "checkout_initiated") : expired ? "expired" : "ready";
   const payer = offer.parties.distinctPayer ?? offer.parties.primaryGuest;
-  const canInitialize = status === "ready" && viewer.role === "guest" && !!viewer.id && viewer.id === payer.id && !!viewer.tenantId && !!offer.tenantId && viewer.tenantId === offer.tenantId;
+  const canInitialize = (status === "ready" || status === "deposit_required") && viewer.role === "guest" && !!viewer.id && viewer.id === payer.id && !!viewer.tenantId && !!offer.tenantId && viewer.tenantId === offer.tenantId;
   const facts: CardPaymentArtifact["facts"] = {
     offerId: offer.offerId,
     status,
@@ -83,7 +91,8 @@ export function cardPaymentArtifactFromState({
     ...(offer.quote?.allInStayTotalKobo === undefined ? {} : { allInStayTotalKobo: offer.quote.allInStayTotalKobo }),
     ...(offer.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: offer.refundableSecurityDepositKobo }),
     ...(offer.securityDeposit ? { depositPolicyVersion: offer.securityDeposit.policyVersion } : {}),
-    ...(session ? { currentComponent: session.purpose, currentComponentAmountKobo: session.amountKobo } : {}),
+    ...(session || journey?.stage === "stay_settled" ? { currentComponent: journey?.stage === "stay_settled" ? "security_deposit" as const : session!.purpose, currentComponentAmountKobo: journey?.stage === "stay_settled" ? journey.deposit.amountKobo : session!.amountKobo } : {}),
+    ...(journey ? { journeyVersion: journey.journeyVersion, journeyStage: journey.stage } : {}),
     currency: "NGN",
     paymentWindowExpiresAt: offer.paymentWindow.expiresAt,
     ...(canInitialize ? { expectedPayerName: payer.name } : {}),
@@ -97,6 +106,6 @@ export function cardPaymentArtifactFromState({
       ...(contract.paymentDetails.cardMetadata ? { cardMetadata: contract.paymentDetails.cardMetadata } : {}),
     } : {}),
   };
-  const actions: readonly CardPaymentAction[] = canInitialize ? [{ type: "initialize_checkout", artifactId: id, offerId: offer.offerId, expectedStatus: "ready", projectionVersion: 1 }] : [];
-  return Object.freeze({ id, kind: CARD_PAYMENT_ARTIFACT_KIND, schemaVersion: CARD_PAYMENT_SCHEMA_VERSION, projectionVersion: status === "ready" ? 1 : status === "checkout_initiated" ? 2 : status === "confirmed" ? 3 : status === "expired" ? 4 : 5, facts: Object.freeze(facts), actions: Object.freeze(actions), sensitivity: "booking-sensitive" });
+  const actions: readonly CardPaymentAction[] = canInitialize ? [{ type: "initialize_checkout", artifactId: id, offerId: offer.offerId, expectedStatus: status, expectedPurpose: status === "deposit_required" ? "security_deposit" : "stay", expectedJourneyVersion: journey?.journeyVersion, expectedStage: journey?.stage, depositPolicyVersion: offer.securityDeposit?.policyVersion, projectionVersion: status === "ready" ? 1 : 6 }] : [];
+  return Object.freeze({ id, kind: CARD_PAYMENT_ARTIFACT_KIND, schemaVersion: CARD_PAYMENT_SCHEMA_VERSION, projectionVersion: status === "ready" ? 1 : status === "checkout_initiated" ? 2 : status === "deposit_required" ? 6 : status === "confirmed" ? 3 : status === "expired" ? 4 : 5, facts: Object.freeze(facts), actions: Object.freeze(actions), sensitivity: "booking-sensitive" });
 }

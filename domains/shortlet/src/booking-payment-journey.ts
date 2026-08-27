@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { SecurityDepositPolicySnapshot } from "./security-deposit.js";
 
 export type BookingPaymentStage = "ready" | "stay_payment_active" | "stay_payment_processing" | "stay_settled" | "deposit_payment_active" | "deposit_payment_processing" | "both_settled" | "confirmed" | "compensation_pending" | "compensated" | "reconciliation_required" | "failed" | "expired";
+export interface BookingPaymentCompensationPort { refundOrGet(input: { obligationId: string; offerId: string; paymentMethod: "fresh_card" | "bank_transfer"; originalPaymentReference: string; amountKobo: number; currency: "NGN" }): { refundId: string; status: "pending" | "settled" | "failed"; amountKobo: number; currency: "NGN" }; }
 export type PaymentComponentStatus = "unpaid" | "active" | "processing" | "settled" | "failed";
 export interface BookingPaymentJourney {
   readonly offerId: string; readonly journeyVersion: number; readonly paymentMethod: "fresh_card" | "bank_transfer"; readonly originalPaymentDeadline: string;

@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createPlatformCommandEnvelope, type CommandPrincipal } from "../packages/platform-core/src/index.js";
 import { BankTransferPaymentManager, InMemoryBookingPaymentJourneyRepository, InMemorySecurityDepositAccountingRepository, LivePaymentAttemptRegistry, type ConditionalBookingOffer } from "../domains/shortlet/src/index.js";
+import { ConditionalOfferApplication } from "../apps/web/src/conditional-offer-application.js";
+import { createBankTransferPaymentApplication } from "../apps/web/src/bank-transfer-application.js";
 
 const guest: CommandPrincipal = { id: "guest-bank-25", role: "guest", tenantId: "tenant-bank-25" };
 const system: CommandPrincipal = { id: "system-bank-25", role: "system", tenantId: "tenant-bank-25" };
@@ -15,4 +17,12 @@ test("Bank staged journey uses two exact expiring references and confirms after 
   const stay = manager.initializeBankTransfer(command({ offerId: offer.offerId }), { clock: () => new Date("2026-09-01T12:01:00Z") }); const first = verify(stay.transferReference); assert.equal(first.outcome, "deposit_required"); assert.equal(manager.getBookingContract(offer.offerId), undefined);
   const deposit = manager.initializeBankTransfer(command({ offerId: offer.offerId }), { clock: () => new Date("2026-09-01T12:03:00Z") }); const result = verify(deposit.transferReference);
   assert.deepEqual(amounts, [18_234_567, 4_321_000]); assert.notEqual(stay.transferReference, deposit.transferReference); assert.equal(result.outcome, "confirmed"); assert.equal(result.bookingContract?.paymentDetails.amountKobo, 18_234_567); assert.equal(result.bookingContract?.securityDeposit?.amountKobo, 4_321_000); assert.equal(accounting.journals().length, 1);
+});
+
+test("Bank production factory wires the shared staged authorities", () => {
+  const journeys = new InMemoryBookingPaymentJourneyRepository(); const accounting = new InMemorySecurityDepositAccountingRepository(); let manager: BankTransferPaymentManager;
+  const conditional = new ConditionalOfferApplication(Object.assign({ getOffer: () => offer }, { manager: { getOffer: () => offer } }) as unknown as ConstructorParameters<typeof ConditionalOfferApplication>[0]);
+  const app = createBankTransferPaymentApplication({ conditionalOfferApplication: conditional, journeyRepository: journeys, securityDepositAccounting: accounting, securityDepositCapability: { getCapability: () => ({ capabilityVersion: "cap-factory-bank", enabled: true, pspProviderId: "psp", pspApproved: true, counselApproved: true, collectionModel: "separate_actual_charge", paymentMethod: "bank_transfer" }) }, liveAttempts: new LivePaymentAttemptRegistry(), calendar: { transitionPaymentPendingToConfirmedBooking: () => undefined }, providerClient: { verifyTransfer(reference) { const session = manager.getSessionByReference(reference)!; return { verified: true, status: "success", amountKobo: session.amountKobo, currency: "NGN", pspReference: reference, payerId: guest.id }; } } });
+  manager = app.manager; const session = app.initializeTransfer(offer.offerId, guest); const result = app.verifyAndProcess(session.transferReference, system);
+  assert.equal(result.outcome, "deposit_required"); assert.equal(app.getArtifact(offer.offerId, guest).facts.status, "deposit_required");
 });
