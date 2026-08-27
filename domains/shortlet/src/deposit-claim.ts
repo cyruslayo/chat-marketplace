@@ -13,18 +13,18 @@ export interface DepositClaimAssertionItem {
   readonly claimedAmountKobo: number;
   readonly evidenceReferenceIds: readonly string[];
 }
-export type DepositClaimCaseStatus = "validated_notification_pending" | "response_open" | "guest_accepted" | "human_review" | "adjudicated" | "no_claim_refund_pending" | "no_claim_refunded" | "reconciliation_required";
+export type DepositClaimCaseStatus = "allocation_pending" | "validated_notification_pending" | "response_open" | "guest_accepted" | "human_review" | "adjudicated" | "no_claim_refund_pending" | "no_claim_refunded" | "reconciliation_required";
 export interface DepositClaimEvidenceAuthority {
   readonly evidenceSetId: string; readonly evidenceVersion: string; readonly reservationId: string; readonly itemId: string;
   readonly references: readonly { readonly evidenceReferenceId: string; readonly type: string; readonly capturedAt: string; readonly classification: "immediate_pre_stay" | "post_checkout" | "repair" | "other"; readonly safeDescription: string }[];
   readonly validation: "approved" | "insufficient" | "requires_additional_evidence";
   readonly occurrenceDuringReservation: "supported" | "unsupported" | "unknown";
-  readonly causation: "supported" | "unsupported" | "unknown";
+  readonly causation: "supported" | "unsupported" | "unknown"; readonly responsibility?: "supported" | "unsupported" | "unknown"; readonly alternativeAccess?: "considered" | "not_considered"; readonly conditionBeforeStay?: "supported" | "unsupported" | "unknown"; readonly repairBasis?: "supported" | "unsupported" | "unknown"; readonly depreciationConsidered?: boolean; readonly bettermentConsidered?: boolean; readonly salvageConsidered?: boolean;
 }
 export interface DepositClaimProductionItem extends DepositClaimAssertionItem { readonly evidence: DepositClaimEvidenceAuthority; }
 export interface DepositClaimProductionRecord {
   readonly claimId: string; readonly reservationId: string; readonly contractId: string; readonly tenantId: string; readonly operatorId: string; readonly guestId: string;
-  readonly policyVersion: string; readonly depositAmountKobo: number; readonly claimedAmountKobo: number; readonly effectiveCheckoutIso: string; readonly claimDeadlineIso: string;
+  readonly policyVersion: string; readonly evidenceVersion: string; readonly depositAmountKobo: number; readonly claimedAmountKobo: number; readonly effectiveCheckoutIso: string; readonly claimDeadlineIso: string;
   readonly submittedAtIso: string; readonly claimVersion: number; readonly status: DepositClaimCaseStatus; readonly items: readonly DepositClaimProductionItem[];
   readonly notification: { readonly status: "pending" | "delivered" | "failed"; readonly notificationVersion: string; readonly deliveredAtIso: string | null; readonly evidenceId: string | null };
   readonly responseWindowStartIso: string | null; readonly responseWindowEndIso: string | null;
