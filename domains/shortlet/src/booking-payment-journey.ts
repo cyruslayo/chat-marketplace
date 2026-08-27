@@ -2,14 +2,14 @@ import { createHash } from "node:crypto";
 import type { SecurityDepositPolicySnapshot } from "./security-deposit.js";
 
 export type BookingPaymentStage = "ready" | "stay_payment_active" | "stay_payment_processing" | "stay_settled" | "deposit_payment_active" | "deposit_payment_processing" | "both_settled" | "confirmed" | "compensation_pending" | "compensated" | "reconciliation_required" | "failed" | "expired";
-export interface BookingPaymentCompensationPort { refundOrGet(input: { obligationId: string; offerId: string; paymentMethod: "fresh_card" | "bank_transfer"; originalPaymentReference: string; amountKobo: number; currency: "NGN" }): { refundId: string; status: "pending" | "settled" | "failed"; amountKobo: number; currency: "NGN" }; }
+export interface BookingPaymentCompensationPort { refundOrGet(input: { obligationId: string; offerId: string; paymentMethod: "fresh_card" | "bank_transfer"; originalPaymentReference: string; amountKobo: number; currency: "NGN" }): { refundId: string; status: "pending" | "settled" | "failed"; amountKobo: number; currency: string }; }
 export type PaymentComponentStatus = "unpaid" | "active" | "processing" | "settled" | "failed";
 export interface BookingPaymentJourney {
   readonly offerId: string; readonly journeyVersion: number; readonly paymentMethod: "fresh_card" | "bank_transfer"; readonly originalPaymentDeadline: string;
   readonly requiredDeposit: SecurityDepositPolicySnapshot | null; readonly stage: BookingPaymentStage;
   readonly stay: { readonly amountKobo: number; readonly status: PaymentComponentStatus; readonly providerReference?: string; readonly paidAt?: string };
   readonly deposit: { readonly amountKobo: number; readonly status: PaymentComponentStatus; readonly providerReference?: string; readonly paidAt?: string; readonly policyVersion: string };
-  readonly compensation: { readonly status: "not_required" | "pending" | "settled" | "reconciliation_required"; readonly refundId?: string };
+  readonly compensation: { readonly status: "not_required" | "pending" | "settled" | "reconciliation_required"; readonly refundId?: string; readonly obligationId?: string; readonly originalPaymentReference?: string; readonly amountKobo?: number; readonly currency?: "NGN"; };
   readonly finalReservationId?: string; readonly finalContractId?: string;
 }
 export interface BookingPaymentJourneyRepository { findByOfferId(offerId: string): BookingPaymentJourney | null; createIfAbsent(input: { offerId: string; paymentMethod: "fresh_card" | "bank_transfer"; originalPaymentDeadline: string; stayAmountKobo: number; deposit: SecurityDepositPolicySnapshot | null }): BookingPaymentJourney; update(offerId: string, expectedJourneyVersion: number, mutation: (current: BookingPaymentJourney) => BookingPaymentJourney): BookingPaymentJourney; }

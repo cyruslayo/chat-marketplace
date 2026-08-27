@@ -4,6 +4,9 @@ import type { BookingContract, Reservation } from "./card-payment.js";
 export interface BookingStateRepository {
   findContractById(contractId: string): BookingContract | null;
   saveContract(contract: BookingContract): void;
+  /** Commits the two halves of a Booking together; adapters may provide a transaction-backed implementation. */
+  saveBookingAtomically?(input: { contract: BookingContract; reservation: Reservation }): void;
+  removeBookingAtomically?(input: { contractId: string; reservationId: string }): void;
   findReservationById(reservationId: string): Reservation | null;
   saveReservation(reservation: Reservation): void;
   mutateContract(contractId: string, expectedVersion: number, mutation: (current: BookingContract) => BookingContract): BookingContract;
@@ -19,6 +22,12 @@ export class InMemoryBookingStateRepository implements BookingStateRepository {
   }
   findContractById(id: string): BookingContract | null { return this.#contracts.get(id) ?? null; }
   saveContract(contract: BookingContract): void { this.#contracts.set(contract.contractId, contract); }
+  saveBookingAtomically(input: { contract: BookingContract; reservation: Reservation }): void {
+    if (input.contract.reservationId !== input.reservation.reservationId || input.contract.contractId !== input.reservation.contractId) throw new Error("Booking identity mismatch");
+    this.#contracts.set(input.contract.contractId, input.contract);
+    this.#reservations.set(input.reservation.reservationId, input.reservation);
+  }
+  removeBookingAtomically(input: { contractId: string; reservationId: string }): void { this.#contracts.delete(input.contractId); this.#reservations.delete(input.reservationId); }
   findReservationById(id: string): Reservation | null { return this.#reservations.get(id) ?? null; }
   saveReservation(reservation: Reservation): void { this.#reservations.set(reservation.reservationId, reservation); }
   mutateContract(id: string, expectedVersion: number, mutation: (current: BookingContract) => BookingContract): BookingContract {

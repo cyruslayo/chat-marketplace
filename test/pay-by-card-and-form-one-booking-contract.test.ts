@@ -31,7 +31,7 @@ test("Production verification uses the injected PSP client and rejects client ve
   const { manager, session } = setup();
   assert.throws(() => manager.verifyAndConfirmCardPayment(envelope("card_payment.verify_and_confirm", { offerId: "offer-123", pspReference: session.pspReference, mockVerifyResult: { verified: true } } as unknown as { offerId: string; pspReference: string }, { id: "system", role: "system", tenantId: "tenant-lagos" })), /only the server-resolved/);
   const result = manager.verifyAndConfirmCardPayment(envelope("card_payment.verify_and_confirm", { offerId: "offer-123", pspReference: session.pspReference }, { id: "system", role: "system", tenantId: "tenant-lagos" }), { clock });
-  assert.equal(result.bookingContract.paymentDetails.cardMetadata, undefined);
+  assert.equal(result.outcome, "confirmed"); if (result.outcome === "confirmed") assert.equal(result.bookingContract.paymentDetails.cardMetadata, undefined);
 });
 
 test("Confirmation independently verifies amount, currency, reference, payer, expiry, and inventory", () => {
@@ -46,7 +46,7 @@ test("Confirmation independently verifies amount, currency, reference, payer, ex
 test("Duplicate callbacks produce one Reservation, Booking Contract, and ledger effect set", () => {
   const { manager, session } = setup(); const command = envelope("card_payment.verify_and_confirm", { offerId: "offer-123", pspReference: session.pspReference }, { id: "system", role: "system", tenantId: "tenant-lagos" });
   const first = manager.verifyAndConfirmCardPayment(command, { clock }); const second = manager.verifyAndConfirmCardPayment(command, { clock });
-  assert.equal(second.reservation.reservationId, first.reservation.reservationId); assert.equal(second.bookingContract.contractId, first.bookingContract.contractId); assert.equal(second.ledgerEntries, first.ledgerEntries); assert.equal(manager.projectInteractionState("offer-123").paymentStatus, "confirmed");
+  assert.equal(first.outcome, "confirmed"); assert.equal(second.outcome, "confirmed"); if (first.outcome === "confirmed" && second.outcome === "confirmed") { assert.equal(second.reservation.reservationId, first.reservation.reservationId); assert.equal(second.bookingContract.contractId, first.bookingContract.contractId); assert.equal(second.ledgerEntries, first.ledgerEntries); } assert.equal(manager.projectInteractionState("offer-123").paymentStatus, "confirmed");
 });
 
 test("PSP references require an authoritative existing checkout and cannot be substituted across offers", () => {
