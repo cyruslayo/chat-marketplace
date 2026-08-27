@@ -21,15 +21,16 @@ Allow one timely Claim Appeal after successful decision notice, route it to an i
 
 ## Answer
 
-Production Issue 27 extends the durable Issue 26 claim record rather than using `DepositClaimManager`. Full-decision receipt is a separate, per-party notice authority; the Issue 26 Claim notice and 48-hour response window never start the appeal clock. Receipt is established only by positive delivery evidence or authenticated direct viewing, with an exact seven elapsed-day UTC deadline and deterministic WAT presentation. Each eligible party has one versioned appeal, with the four exact grounds, trusted evidence references, independent human review attestations, and version-bound reviewed dispositions.
+The corrective pass keeps the real Issue 26 production record/repositories and does not use `DepositClaimManager`.
 
-Approved Operator awards remain reserved through Internal Finality. Guest acceptance is represented as an accepted outcome and is not a waiver. Waiver is an explicit authenticated, claim/decision-specific command; viewing, silence, prior acceptance, and general terms do not waive rights. The existing Security Deposit accounting collection is extended with durable Operator award obligations, replay-safe provider settlement, one balanced journal, and no Guest refund clawback. Appeal reductions create separate deterministic Guest refund obligations; unsupported increases fail closed because no approved funding authority exists.
+- Guest and Operator now persist distinct full-decision receipt timestamps, sources, and seven-elapsed-day UTC deadlines; the earliest valid delivery/direct-view receipt wins. Viewer artifacts expose the matching party deadline in WAT.
+- Appeals use the authenticated caller's own window. Both parties can file one appeal independently, and all four allowed grounds call trusted evidence validation; new-material evidence additionally requires positive `genuinelyNewMaterial` authority.
+- Human appeal application rejects `system`, `agent`, and `model` actors, requires authorized staff/admin tenant scope, rejects the original adjudicator even when provider independence assertions are false, and preserves the immutable original adjudication snapshot while changing only the current outcome.
+- Whole-claim Internal Finality now waits for both applicable party gates and unresolved appeals. Guest waiver records only the Guest gate and cannot bypass an open or pending Operator authority. Guest refunds are not clawed back; reductions use distinct `appeal-adjustment` obligations.
+- Award identity checks include collection, reservation, claim, operator, tenant, amount, and currency. Pending/settled award replay produces one balanced journal. Failed Guest decision notice uses `submittedAtIso`: Day 14 assisted review, Day 45 real Guest refund obligation, and Day 90 durable closure, including the exact boundary tests.
+- Consequential repair operations carry PlatformCommand provenance in durable history. Canonical artifact/A2UI tests prove per-party deadlines, WAT output, Basic Catalog 0.9.1, and sensitive-data redaction.
 
-Failed full-decision notices use `submittedAtIso` as the authoritative timeline anchor. Day 14 creates one assisted-review handoff, Day 45 creates a real Guest refund obligation for the remaining reserve, and Day 90 records durable closure; progression is idempotent. The implementation preserves the accepted late-appeal minimum: failed delivery does not consume appeal rights through Day 90, Day-45 release is not clawed back, and closure does not recreate ordinary rights. No source defines a more specific late-appeal remedy.
-
-The canonical `shortlet.deposit-claim` artifact now projects decision identity, receipt/finality facts, appeals, settlement state, milestones, exceptions, and a WAT deadline through Weaver Basic Catalog v0.9.1 without provider or security leakage. Production tests cover durable receipt/direct-view replay, acceptance-versus-waiver, artifact parity, award identity/replay/journaling, and existing Issue 26 regressions.
-
-Local validation: `npm run check`, `npm run verify:weaver`, and full `npm test` all pass: **492 passed, 0 failed, 0 skipped, 0 todo** (delta +4 from 488). `git diff --check` passes. Implementation commit: `0212607`.
+LOCAL validation: `npm run check`, `npm run verify:weaver`, and full `npm test` pass: **503 passed, 0 failed, 0 skipped, 0 todo** (delta +11 from 492). `git diff --check` passes. Implementation commit: `883d84c`.
 
 ## Blocked by
 
