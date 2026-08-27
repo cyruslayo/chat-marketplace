@@ -139,7 +139,7 @@ export class OperatorEnforcementManager {
   readonly #notices = new Map<string, EnforcementNoticeRecord>();
   readonly #appeals = new Map<string, EnforcementAppealRecord>();
   readonly #restoredUnits = new Set<string>();
-  readonly #restoredActions = new Set<string>();
+  readonly #restorationDispositions: Array<{ enforcementId: string; operatorId: string; unitId: string; disposition: "restored"; kind: TurnoverRestorationKind; recordedAtIso: string }> = [];
   readonly #operatorAuthority: OperatorAuthority;
   readonly #initialDecisionMakers = new Map<string, string>();
   readonly #clock: () => Date;
@@ -272,7 +272,6 @@ export class OperatorEnforcementManager {
     this.#requireHumanCommand(envelope, "operator_enforcement.restore_turnover");
     const p = envelope.payload;
     if (!p.operatorId || !p.unitId || !p.enforcementId || !envelope.principal.tenantId || !this.#unitBelongsToTenant(p.operatorId, p.unitId, envelope.principal.tenantId)) throw new Error("Restoration scope denied");
-    if (!this.#operatorAuthority.canActForOperator({ actorId: envelope.principal.id, operatorId: p.operatorId, tenantId: envelope.principal.tenantId })) throw new Error("Restoration authority denied");
     if (!this.#hasRevocation(p.operatorId, p.unitId)) {
       const action = this.#protectiveActions.get(p.enforcementId);
       if (!action || action.operatorId !== p.operatorId || action.unitId !== p.unitId || action.tenantId !== envelope.principal.tenantId) throw new Error("Restoration action scope denied");
@@ -284,7 +283,15 @@ export class OperatorEnforcementManager {
         ? p.rootCauseRemediated === true && p.updatedTurnoverPlan === true && p.observedSuccessfulTurnoverRuns === 1 && p.nextDateBlocked === true
         : p.incidentRemediated === true && p.observedSuccessfulTurnoverRuns === 3 && p.runsAfterRealStays === 2 && p.fullOperationalReapproval === true && p.approvalTier === "senior";
     if (!qualifies) throw new Error("Required turnover remediation evidence is incomplete");
-    this.#restoredActions.add(p.enforcementId);
+    // ADR 0037/0064: restoration is authorized human review, not Operator membership authority.
+    this.#restorationDispositions.push({
+      enforcementId: p.enforcementId,
+      operatorId: p.operatorId,
+      unitId: p.unitId,
+      disposition: "restored",
+      kind: p.kind,
+      recordedAtIso: this.#clock().toISOString()
+    });
     this.#restoredUnits.add(`${p.operatorId}:${p.unitId}`);
   }
 
@@ -307,15 +314,19 @@ export class OperatorEnforcementManager {
     if (!envelope.principal.tenantId || !this.#isHuman(envelope.principal)) throw new Error("Authorized human command principal is required");
   }
   #hasActiveProtection(params: { operatorId: string; unitId: string }): boolean {
-    return [...this.#protectiveActions.values()].some(a => a.operatorId === params.operatorId && a.unitId === params.unitId && !this.#restoredActions.has(a.enforcementId));
+    return [...this.#protectiveActions.values()].some(a => a.operatorId === params.operatorId && a.unitId === params.unitId && !this.#restorationDispositions.some(d => d.enforcementId === a.enforcementId));
   }
   #unitBelongsToTenant(operatorId: string, unitId: string, tenantId: string): boolean {
     return [...this.#protectiveActions.values()].some(a => a.operatorId === operatorId && a.unitId === unitId && a.tenantId === tenantId);
   }
-  #hasRevocation(operatorId: string, unitId: string): boolean { return this.#classifiedTurnoverRoots({ operatorId, unitId }).some(i => i.severity === "egregious") || this.#classifiedTurnoverRoots({ operatorId, unitId }).filter(i => i.severity === "serious").length >= 2; }
-  #classifiedTurnoverRoots(params: { operatorId: string; unitId: string }): IncidentRecordInput[] {
+  #hasRevocation(operatorId: string, unitId: string): boolean {
+    const classified = this.#classifiedTurnoverRoots({ operatorId, unitId }, true);
+    return classified.some(i => i.severity === "egregious") || classified.filter(i => i.severity === "serious").length >= 2;
+  }
+  #classifiedTurnoverRoots(params: { operatorId: string; unitId: string }, includeRestored = false): IncidentRecordInput[] {
     const ids = new Set<string>();
     for (const final of this.#effectiveFinals()) {
+      if (!includeRestored && this.#restorationDispositions.some(d => d.enforcementId === final.enforcementId)) continue;
       if (final.operatorId !== params.operatorId || final.unitId !== params.unitId) continue;
       for (const id of final.classifiedIncidentIds) ids.add(id);
     }
@@ -333,7 +344,7 @@ export class OperatorEnforcementManager {
     const finals = this.#effectiveFinals().filter(f => f.operatorId === params.operatorId && (f.unitId === params.unitId || f.decision === "operator_pause" || f.decision === "termination"));
     if (finals.some(f => f.decision === "termination")) return "termination";
     if (finals.some(f => f.decision === "operator_pause")) return "operator_pause";
-    const unitFinals = finals.filter(f => f.unitId === params.unitId);
+    const unitFinals = finals.filter(f => f.unitId === params.unitId && !this.#restorationDispositions.some(d => d.enforcementId === f.enforcementId));
     const rank: Record<EnforcementLevel, number> = { coaching: 0, restriction: 1, unit_suspension: 2, operator_pause: 3, termination: 4 };
     unitFinals.sort((a, b) => rank[b.decision] - rank[a.decision] || b.finalizedAtIso.localeCompare(a.finalizedAtIso) || b.enforcementId.localeCompare(a.enforcementId));
     return unitFinals[0]?.decision ?? (this.#hasActiveProtection(params) ? "unit_suspension" : "coaching");

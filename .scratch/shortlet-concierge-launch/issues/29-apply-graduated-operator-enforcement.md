@@ -1,6 +1,6 @@
 # Apply graduated Operator and turnover enforcement
 
-Status: resolved
+Status: blocked
 Type: AFK
 User stories: 75–77, 92
 
@@ -21,11 +21,11 @@ Turn calendar errors, cancellations, substitutions, response failures, negative 
 
 ## Answer
 
-Final senior-review corrective pass for PR #42. Final classifications now explicitly reference incident reports and deduplicate their root incidents; raw incidents and unrelated finalized actions cannot qualify turnover revocation. Restoration uses explicit protective-action lifecycle records, preserves historical incidents, and permits all ADR-0037 restoration classes without weakening permanent ADR-0038 revocation. Protective availability changes use human-authorized PlatformCommandEnvelope commands, bind tenant scope when created, and support explicit ADR-0037 restoration with the required evidence and approval for each impact class while retaining incident history. Appeals are append-only dispositions: upheld decisions remain effective and exonerated decisions leave projections while necessary protection remains until explicit restoration.
+Corrective restoration now records an explicit later disposition, preserves immutable incidents and finalized decisions, and excludes only the restored Turnover Suspension from effective Unit projection. Later protective actions remain effective, while Operator-wide pause, termination, unrelated Unit suspension, and ADR-0038 revocation remain unaffected. ADR-0037 restoration classes use authorized human review; OperatorAuthority remains reserved for Operator-originated actions such as appeals, with distinct human and Operator identities in tests.
 
-Operator-wide pause and termination project across Units without allowing later Unit decisions to erase them; Unit decisions remain Unit-scoped. Effective Unit decisions use deterministic graduated precedence, and Operator-wide pending appeals project across all applicable Units. Operator appeal authority is supplied by the server-side OperatorAuthority port, keeping actor and Operator identities distinct under ADR 0070. Notice delivery is fail-closed for malformed, future, pre-decision, wrong-action, wrong-operator, and wrong-tenant timestamps, preserves successful receipts, and starts the exact seven-day appeal boundary. Operator appeals require the authenticated Operator principal to match the affected Operator and tenant. Egregious two-person approval is limited to the classified egregious turnover path; ADR 0064 supplies authorized human finality without an unsupported generic senior-termination rule.
+Production composition remains blocked: no accepted Operator membership or authorization source, and no production construction of `OperatorEnforcementManager`, was found. The server-side `OperatorAuthority` port therefore remains fail-closed by default and is not claimed as production-wired. The generic non-turnover recurrence source gap also remains visible.
 
-ADR evidence applied: 0037, 0038, 0064, 0072, 0075. The accepted source gap about generic non-turnover recurrence thresholds remains unresolved; no thresholds were invented. Four dedicated top-level acceptance-criterion tests cover the repair.
+ADR evidence applied: 0037, 0038, 0064, 0070, 0072, 0075. The four dedicated top-level acceptance-criterion tests cover the repair.
 
 ## Blocked by
 
