@@ -13,7 +13,7 @@ export interface BankTransferPaymentApplicationOptions {
   readonly journeyRepository?: BankTransferPaymentManagerOptions["journeyRepository"];
   readonly securityDepositCapability?: BankTransferPaymentManagerOptions["securityDepositCapability"];
   readonly securityDepositAccounting?: BankTransferPaymentManagerOptions["securityDepositAccounting"];
-  readonly bookingState?: BankTransferPaymentManagerOptions["bookingState"];
+  readonly bookingState: NonNullable<BankTransferPaymentManagerOptions["bookingState"]>;
   readonly compensationRefundProvider?: BankTransferPaymentManagerOptions["compensationRefundProvider"];
 }
 
@@ -39,6 +39,7 @@ export class BankTransferPaymentApplication {
 }
 
 export function createBankTransferPaymentApplication(options: BankTransferPaymentApplicationOptions): BankTransferPaymentApplication {
+  if (!options.bookingState?.saveBookingAtomically || !options.bookingState.removeBookingAtomically) throw new Error("Atomic BookingState authority is required");
   const { conditionalOfferApplication, clock = () => new Date(), ...dependencies } = options;
   return new BankTransferPaymentApplication(new BankTransferPaymentManager({ ...dependencies, offerManager: conditionalOfferApplication.manager }), conditionalOfferApplication, clock);
 }

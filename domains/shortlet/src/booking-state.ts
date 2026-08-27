@@ -4,9 +4,9 @@ import type { BookingContract, Reservation } from "./card-payment.js";
 export interface BookingStateRepository {
   findContractById(contractId: string): BookingContract | null;
   saveContract(contract: BookingContract): void;
-  /** Commits the two halves of a Booking together; adapters may provide a transaction-backed implementation. */
-  saveBookingAtomically?(input: { contract: BookingContract; reservation: Reservation }): void;
-  removeBookingAtomically?(input: { contractId: string; reservationId: string }): void;
+  /** Commits the two halves of a Booking together. */
+  saveBookingAtomically(input: { contract: BookingContract; reservation: Reservation }): void;
+  removeBookingAtomically(input: { contractId: string; reservationId: string }): void;
   findReservationById(reservationId: string): Reservation | null;
   saveReservation(reservation: Reservation): void;
   mutateContract(contractId: string, expectedVersion: number, mutation: (current: BookingContract) => BookingContract): BookingContract;
@@ -24,6 +24,9 @@ export class InMemoryBookingStateRepository implements BookingStateRepository {
   saveContract(contract: BookingContract): void { this.#contracts.set(contract.contractId, contract); }
   saveBookingAtomically(input: { contract: BookingContract; reservation: Reservation }): void {
     if (input.contract.reservationId !== input.reservation.reservationId || input.contract.contractId !== input.reservation.contractId) throw new Error("Booking identity mismatch");
+    const existingContract = this.#contracts.get(input.contract.contractId);
+    const existingReservation = this.#reservations.get(input.reservation.reservationId);
+    if ((existingContract && (existingContract.reservationId !== input.reservation.reservationId || existingContract.contractId !== input.contract.contractId)) || (existingReservation && (existingReservation.contractId !== input.contract.contractId || existingReservation.reservationId !== input.reservation.reservationId))) throw new Error("Booking identity conflict");
     this.#contracts.set(input.contract.contractId, input.contract);
     this.#reservations.set(input.reservation.reservationId, input.reservation);
   }
