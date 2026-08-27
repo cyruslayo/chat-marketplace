@@ -21,11 +21,11 @@ Turn calendar errors, cancellations, substitutions, response failures, negative 
 
 ## Answer
 
-Corrective productionization pass from `a558278ea0bdc82a69d76d7756688cb49c4c358b`. Issue 29 acceptance criteria are checked and backed by four dedicated tests in `test/apply-graduated-operator-enforcement.test.ts`.
+Senior-review corrective pass at the current PR #42 branch head. Final classifications now explicitly reference incident reports and deduplicate their root incidents; raw incidents and unrelated finalized actions cannot qualify turnover revocation. Protective availability changes use human-authorized PlatformCommandEnvelope commands, bind tenant scope when created, and support explicit ADR-0037 restoration with the required evidence and approval for each impact class while retaining incident history. Appeals are append-only dispositions: upheld decisions remain effective and exonerated decisions leave projections while necessary protection remains until explicit restoration.
 
-The repair removes unsupported generic two/three-incident punitive thresholds; only ADR 0037/0038 turnover rules are automatic/source-backed, with human final classification and required two-person egregious turnover approval. It binds appeals to successful notice timestamps, one ordinary appeal, exact seven-elapsed-day timing, opaque evidence references, tenant scope, and independent authorized human command principals. Protective actions and finalized decisions are represented separately and drive projections without treating evidence alone as a final decision. Root incidents and excluded attribution classes remain correctly handled.
+Operator-wide pause and termination project across Units without allowing later Unit decisions to erase them; Unit decisions remain Unit-scoped. Notice delivery is fail-closed for malformed, future, pre-decision, wrong-action, wrong-operator, and wrong-tenant timestamps, preserves successful receipts, and starts the exact seven-day appeal boundary. Operator appeals require the authenticated Operator principal to match the affected Operator and tenant. Egregious two-person approval is limited to the classified egregious turnover path; ADR 0064 supplies authorized human finality without an unsupported generic senior-termination rule.
 
-ADR evidence applied: 0037, 0038, 0039, 0042, 0064, 0067, 0072, 0075. Validation: focused Issue 29 tests 4/4; `npm run check` passes; `npm run verify:weaver` passes; full `npm test` 504 passed, 0 failed, 0 skipped, 0 todo; `git diff --check` passes. Issues 27, 30, and 35 and all ADR files were untouched. No dependencies changed.
+ADR evidence applied: 0037, 0038, 0064, 0072, 0075. The accepted source gap about generic non-turnover recurrence thresholds remains unresolved; no thresholds were invented. Four dedicated top-level acceptance-criterion tests cover the repair.
 
 ## Blocked by
 
