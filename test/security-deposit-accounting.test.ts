@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { calculateSecurityDepositPolicySnapshot, SECURITY_DEPOSIT_POLICY_VERSION, assertSecurityDepositCollectionAvailable } from "../domains/shortlet/src/index.js";
-import { InMemorySecurityDepositAccountingRepository } from "../domains/shortlet/src/index.js";
+import { InMemorySecurityDepositAccountingRepository, InMemoryBookingStateRepository } from "../domains/shortlet/src/index.js";
 import { createSecurityDepositCancellationRefundAdapter } from "../apps/web/src/security-deposit-cancellation-adapter.js";
 
 test("Issue 25 production snapshot and accounting are fail-closed, separate, and balanced", () => {
@@ -32,6 +32,10 @@ test("Issue 25 refund-pending replay is idempotent and settled refund creates on
 
 test("Issue 25 cancellation pending replay remains pending before settling", () => {
   const repo = new InMemorySecurityDepositAccountingRepository(); const snapshot = calculateSecurityDepositPolicySnapshot({ accommodationSubtotalKobo: 10_000_000, bedrooms: 1, configuredDepositKobo: 1_000_000 }); const created = repo.createOrGet({ offerId: "offer-cancel-replay", snapshot, paymentMethod: "fresh_card" }); repo.recordCollection(created.collectionId, { providerReference: "source-cancel-replay", collectedAt: "2026-08-01T00:00:00Z" }); repo.bind(created.collectionId, { reservationId: "reservation-cancel-replay", contractId: "contract-cancel-replay" }); let calls = 0; const adapter = createSecurityDepositCancellationRefundAdapter({ accounting: repo, refunds: { refundOrGet: (input) => ({ refundId: "refund-cancel-replay", status: ++calls < 3 ? "pending" : "settled", amountKobo: input.amountKobo, currency: "NGN" }) } }); const input = { cancellationId: "cancellation:reservation-cancel-replay", reservationId: "reservation-cancel-replay", collectionId: created.collectionId, amountKobo: snapshot.amountKobo, currency: "NGN" as const }; assert.equal(adapter.initiateOrGetRefund(input).status, "pending"); const second = adapter.initiateOrGetRefund(input); assert.equal(second.status, "pending"); assert.equal(repo.getByCollectionId(created.collectionId)?.collectionVersion, 4); assert.equal(adapter.initiateOrGetRefund(input).status, "settled"); assert.equal(repo.journals().length, 2);
+});
+
+test("Issue 25 BookingState atomically validates, commits, and removes both Booking halves", () => {
+  const state = new InMemoryBookingStateRepository(); const reservation = { reservationId: "reservation-atomic", contractId: "contract-atomic", unitId: "unit", primaryGuestId: "guest", dates: { checkIn: "2026-09-01", checkOut: "2026-09-02" }, status: "confirmed" as const, confirmedAt: "2026-08-01T00:00:00Z" }; const contract = { contractId: "contract-atomic", reservationId: "reservation-atomic" } as unknown as Parameters<NonNullable<InMemoryBookingStateRepository["saveBookingAtomically"]>>[0]["contract"]; state.saveBookingAtomically({ contract, reservation }); assert.equal(state.findContractById(contract.contractId), contract); assert.equal(state.findReservationById(reservation.reservationId), reservation); const mismatch = { ...reservation, reservationId: "other" }; assert.throws(() => state.saveBookingAtomically({ contract, reservation: mismatch })); const conflicting = { ...reservation, contractId: "other-contract" }; assert.throws(() => state.saveBookingAtomically({ contract, reservation: conflicting })); state.removeBookingAtomically({ contractId: contract.contractId, reservationId: reservation.reservationId }); assert.equal(state.findContractById(contract.contractId), null); assert.equal(state.findReservationById(reservation.reservationId), null);
 });
 
 test("Issue 25 collection capability fails closed and requires both approvals", () => {

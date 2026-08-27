@@ -14,7 +14,7 @@ export interface CardPaymentApplicationOptions {
   readonly journeyRepository?: import("../../../domains/shortlet/src/booking-payment-journey.js").BookingPaymentJourneyRepository;
   readonly securityDepositCapability?: CardPaymentManagerOptions["securityDepositCapability"];
   readonly securityDepositAccounting?: CardPaymentManagerOptions["securityDepositAccounting"];
-  readonly bookingState?: CardPaymentManagerOptions["bookingState"];
+  readonly bookingState: NonNullable<CardPaymentManagerOptions["bookingState"]>;
   readonly compensationRefundProvider?: CardPaymentManagerOptions["compensationRefundProvider"];
 }
 
@@ -52,6 +52,7 @@ export class CardPaymentApplication {
 }
 
 export function createCardPaymentApplication(options: CardPaymentApplicationOptions): CardPaymentApplication {
+  if (!options.bookingState?.saveBookingAtomically || !options.bookingState.removeBookingAtomically) throw new Error("Atomic BookingState authority is required");
   const { conditionalOfferApplication, clock = () => new Date(), ...dependencies } = options;
   return new CardPaymentApplication(new CardPaymentManager({ ...dependencies, offerManager: conditionalOfferApplication.manager }), conditionalOfferApplication, clock);
 }
