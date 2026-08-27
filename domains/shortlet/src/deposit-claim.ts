@@ -22,6 +22,25 @@ export interface DepositClaimEvidenceAuthority {
   readonly causation: "supported" | "unsupported" | "unknown"; readonly responsibility?: "supported" | "unsupported" | "unknown"; readonly alternativeAccess?: "considered" | "not_considered"; readonly conditionBeforeStay?: "supported" | "unsupported" | "unknown"; readonly repairBasis?: "supported" | "unsupported" | "unknown"; readonly depreciationConsidered?: boolean; readonly bettermentConsidered?: boolean; readonly salvageConsidered?: boolean;
 }
 export interface DepositClaimProductionItem extends DepositClaimAssertionItem { readonly evidence: DepositClaimEvidenceAuthority; }
+export type DepositClaimAppealGround = "material_factual_error" | "previously_unavailable_material_evidence" | "calculation_error" | "incorrect_policy_application";
+export type DepositClaimAppealDisposition = "affirm" | "reduce" | "reverse" | "correct" | "remand" | "reject_out_of_scope" | "reject_late";
+export type DepositClaimParty = "guest" | "operator";
+export interface DepositClaimAdjudicationSnapshot {
+  readonly decisionId: string; readonly decisionVersion: string; readonly claimId: string; readonly claimVersion: number;
+  readonly policyVersion: string; readonly evidenceVersion: string; readonly reviewerId: string; readonly reviewerAuthorityVersion: string;
+  readonly approvedOperatorAwardKobo: number; readonly decidedAtIso: string;
+  readonly evaluations: readonly { readonly itemId: string; readonly approvedAmountKobo: number; readonly explanation: string }[];
+}
+export interface DepositClaimDecisionNoticeState { readonly party: DepositClaimParty; readonly noticeVersion: string; readonly status: "pending" | "delivered" | "failed"; readonly deliveredAtIso: string | null; readonly deliveryEvidenceId: string | null; readonly viewedAtIso: string | null; }
+export interface DepositClaimAppealRecord {
+  readonly appealId: string; readonly appealVersion: number; readonly claimId: string; readonly reservationId: string; readonly tenantId: string;
+  readonly appellantParty: DepositClaimParty; readonly appellantId: string; readonly originalDecisionId: string; readonly originalDecisionVersion: string;
+  readonly appealGround: DepositClaimAppealGround; readonly statement: string; readonly evidenceReferenceIds: readonly string[]; readonly filedAtIso: string;
+  readonly status: "pending_review" | "decided" | "remanded" | "rejected"; readonly disposition?: DepositClaimAppealDisposition;
+  readonly finalApprovedOperatorAwardKobo?: number; readonly appealDecisionId?: string; readonly appealDecisionVersion?: string; readonly reviewerId?: string;
+}
+export interface DepositClaimFinality { readonly finalityVersion: number; readonly status: "reserved" | "appeal_window_open" | "appeal_pending" | "internally_final" | "payout_pending" | "paid" | "failed" | "reconciliation_required" | "externally_disputed" | "assisted_review" | "reserve_released" | "closed"; readonly cause: "appeal_window_expired" | "appeal_decided" | "guest_specific_waiver" | "failed_notice_closure" | null; readonly finalizedAtIso: string | null; readonly appealWindowStartsAt: string | null; readonly appealWindowEndsAt: string | null; }
+export interface DepositClaimExceptionalStatus { readonly active: boolean; readonly reason?: "fraud" | "misattributed_evidence" | "duplicate_money" | "system_defect" | "regulatory_court_direction" | "material_safety_incident" | "legal_hold"; readonly referenceId?: string; readonly authorityVersion?: string; }
 export interface DepositClaimProductionRecord {
   readonly claimId: string; readonly reservationId: string; readonly contractId: string; readonly tenantId: string; readonly operatorId: string; readonly guestId: string;
   readonly policyVersion: string; readonly claimPolicyVersion: string; readonly evidenceVersion: string; readonly depositAmountKobo: number; readonly claimedAmountKobo: number; readonly effectiveCheckoutIso: string; readonly claimDeadlineIso: string;
@@ -29,7 +48,7 @@ export interface DepositClaimProductionRecord {
   readonly notification: { readonly status: "pending" | "delivered" | "failed"; readonly notificationVersion: string; readonly deliveredAtIso: string | null; readonly evidenceId: string | null };
   readonly responseWindowStartIso: string | null; readonly responseWindowEndIso: string | null;
   readonly guestResponse: { readonly type: "accept" | "dispute"; readonly statement?: string; readonly respondedAtIso: string } | null;
-  readonly initialReservedOperatorAwardKobo: number; readonly initialApprovedAmountKobo: number | null; readonly approvedOperatorAwardKobo: number | null; readonly unapprovedRefundKobo: number; readonly history: readonly { readonly action: string; readonly at: string; readonly commandId?: string }[];
+  readonly initialReservedOperatorAwardKobo: number; readonly initialApprovedAmountKobo: number | null; readonly approvedOperatorAwardKobo: number | null; readonly unapprovedRefundKobo: number; readonly adjudicationSnapshot?: DepositClaimAdjudicationSnapshot; readonly decisionNotices?: readonly DepositClaimDecisionNoticeState[]; readonly appeals?: readonly DepositClaimAppealRecord[]; readonly finality?: DepositClaimFinality; readonly exceptional?: DepositClaimExceptionalStatus; readonly history: readonly { readonly action: string; readonly at: string; readonly commandId?: string }[];
 }
 export interface DepositClaimRepository {
   findByReservationId(reservationId: string): DepositClaimProductionRecord | null;
