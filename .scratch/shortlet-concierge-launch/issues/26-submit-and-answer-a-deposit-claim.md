@@ -30,3 +30,13 @@ Implemented the production Issue 26 path through `DepositClaimApplication`, usin
 
 The canonical `shortlet.deposit-claim/v1` artifact, conventional reservation route, and Weaver A2UI v0.9.1 adapter share the same application and strict versioned action contexts. Final corrective validation: 480 passed, 0 failed, 0 skipped, 0 todo. Timely provisional claims recover deterministically and no provisional claim can strand the held deposit. Claim reserve transitions and refund-obligation preparation are invariant-safe; no external refund precedes durable accounting authority. Guest acceptance creates the initial reserved accepted amount. Apply Reviewed Decision is version-bound at the application mutation, with explicit Balance-of-Evidence authority. No-claim artifacts use the actual no-claim refund obligation, notification cannot mutate terminal/no-claim cases, and effective Checkout comes from authoritative terms. Real Human Handoff integration is tested, alongside conventional and Weaver generated-event coverage. Issue 27 remains excluded.
 
+- ordinary successful claim submission is idempotently replayable
+- reconciliation-required refund money remains encumbered guest liability
+- the accounting conservation equation includes reconciliation amounts
+- settled/reconciliation refund obligations short-circuit provider replay
+- pending Issue 26 refunds progress through one trusted server operation
+- adjudication survives interruption between decision commit and provider effect
+- pending refund progression changes canonical projection versions
+- no-claim pending refunds use the same durable progression path
+- exact final LOCAL test total: 485 passed, 0 failed, 0 skipped, 0 todo.
+
