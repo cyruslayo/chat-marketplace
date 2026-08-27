@@ -1,0 +1,7 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { InteractionThreadManager } from "../packages/platform-core/src/index.js";
+import { HumanHandoffApplication } from "../apps/web/src/human-handoff-application.js";
+import { createDepositClaimHumanHandoffAdapter } from "../apps/web/src/deposit-claim-human-handoff.js";
+const subject = { principalId: "guest", tenantId: "tenant", sessionId: "session", deviceId: "device" };
+test("Issue 26 reuses HumanHandoffApplication for deposit ownership", () => { const threads = new InteractionThreadManager(); const { threadId } = threads.createThread(subject); threads.startAgentRun(threadId, subject, { intent: "deposit-claim" }); const handoff = new HumanHandoffApplication({ threadManager: threads, threadAuthority: { getSubjectContext: () => subject }, matterContext: { getContext: () => ({ activeStay: false, category: "deposit" }) }, assignment: { assign: () => ({ responderId: "staff", responderRole: "authorized_staff" }) }, resolution: { getResolution: () => ({ resolved: true }) } }); const adapter = createDepositClaimHumanHandoffAdapter({ application: handoff, threadForReservation: () => threadId, subjectActor: () => ({ id: "system", role: "system", tenantId: "tenant" }) }); adapter.request({ reservationId: "r26", reason: "dispute" }); const state = handoff.getArtifact(threadId, subject); assert.equal(state.facts.mode, "handoff-requested"); });

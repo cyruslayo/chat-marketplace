@@ -24,12 +24,12 @@ export interface DepositClaimEvidenceAuthority {
 export interface DepositClaimProductionItem extends DepositClaimAssertionItem { readonly evidence: DepositClaimEvidenceAuthority; }
 export interface DepositClaimProductionRecord {
   readonly claimId: string; readonly reservationId: string; readonly contractId: string; readonly tenantId: string; readonly operatorId: string; readonly guestId: string;
-  readonly policyVersion: string; readonly evidenceVersion: string; readonly depositAmountKobo: number; readonly claimedAmountKobo: number; readonly effectiveCheckoutIso: string; readonly claimDeadlineIso: string;
+  readonly policyVersion: string; readonly claimPolicyVersion: string; readonly evidenceVersion: string; readonly depositAmountKobo: number; readonly claimedAmountKobo: number; readonly effectiveCheckoutIso: string; readonly claimDeadlineIso: string;
   readonly submittedAtIso: string; readonly claimVersion: number; readonly status: DepositClaimCaseStatus; readonly items: readonly DepositClaimProductionItem[];
   readonly notification: { readonly status: "pending" | "delivered" | "failed"; readonly notificationVersion: string; readonly deliveredAtIso: string | null; readonly evidenceId: string | null };
   readonly responseWindowStartIso: string | null; readonly responseWindowEndIso: string | null;
   readonly guestResponse: { readonly type: "accept" | "dispute"; readonly statement?: string; readonly respondedAtIso: string } | null;
-  readonly initialReservedOperatorAwardKobo: number; readonly approvedOperatorAwardKobo: number | null; readonly unapprovedRefundKobo: number; readonly history: readonly { readonly action: string; readonly at: string; readonly commandId?: string }[];
+  readonly initialReservedOperatorAwardKobo: number; readonly initialApprovedAmountKobo: number | null; readonly approvedOperatorAwardKobo: number | null; readonly unapprovedRefundKobo: number; readonly history: readonly { readonly action: string; readonly at: string; readonly commandId?: string }[];
 }
 export interface DepositClaimRepository {
   findByReservationId(reservationId: string): DepositClaimProductionRecord | null;
