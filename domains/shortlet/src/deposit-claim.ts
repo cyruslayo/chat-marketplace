@@ -6,6 +6,45 @@ export interface ClaimItem {
   isArbitraryPenalty?: boolean;
 }
 
+/** Production Issue 26 input: evidence references are assertions, never proof by themselves. */
+export interface DepositClaimAssertionItem {
+  readonly itemId: string;
+  readonly description: string;
+  readonly claimedAmountKobo: number;
+  readonly evidenceReferenceIds: readonly string[];
+}
+export type DepositClaimCaseStatus = "validated_notification_pending" | "response_open" | "guest_accepted" | "human_review" | "adjudicated" | "no_claim_refund_pending" | "no_claim_refunded" | "reconciliation_required";
+export interface DepositClaimEvidenceAuthority {
+  readonly evidenceSetId: string; readonly evidenceVersion: string; readonly reservationId: string; readonly itemId: string;
+  readonly references: readonly { readonly evidenceReferenceId: string; readonly type: string; readonly capturedAt: string; readonly classification: "immediate_pre_stay" | "post_checkout" | "repair" | "other"; readonly safeDescription: string }[];
+  readonly validation: "approved" | "insufficient" | "requires_additional_evidence";
+  readonly occurrenceDuringReservation: "supported" | "unsupported" | "unknown";
+  readonly causation: "supported" | "unsupported" | "unknown";
+}
+export interface DepositClaimProductionItem extends DepositClaimAssertionItem { readonly evidence: DepositClaimEvidenceAuthority; }
+export interface DepositClaimProductionRecord {
+  readonly claimId: string; readonly reservationId: string; readonly contractId: string; readonly tenantId: string; readonly operatorId: string; readonly guestId: string;
+  readonly policyVersion: string; readonly depositAmountKobo: number; readonly claimedAmountKobo: number; readonly effectiveCheckoutIso: string; readonly claimDeadlineIso: string;
+  readonly submittedAtIso: string; readonly claimVersion: number; readonly status: DepositClaimCaseStatus; readonly items: readonly DepositClaimProductionItem[];
+  readonly notification: { readonly status: "pending" | "delivered" | "failed"; readonly notificationVersion: string; readonly deliveredAtIso: string | null; readonly evidenceId: string | null };
+  readonly responseWindowStartIso: string | null; readonly responseWindowEndIso: string | null;
+  readonly guestResponse: { readonly type: "accept" | "dispute"; readonly statement?: string; readonly respondedAtIso: string } | null;
+  readonly initialReservedOperatorAwardKobo: number; readonly approvedOperatorAwardKobo: number | null; readonly unapprovedRefundKobo: number; readonly history: readonly { readonly action: string; readonly at: string; readonly commandId?: string }[];
+}
+export interface DepositClaimRepository {
+  findByReservationId(reservationId: string): DepositClaimProductionRecord | null;
+  findByClaimId(claimId: string): DepositClaimProductionRecord | null;
+  createIfAbsent(record: DepositClaimProductionRecord): DepositClaimProductionRecord;
+  update(claimId: string, expectedClaimVersion: number, mutation: (current: DepositClaimProductionRecord) => DepositClaimProductionRecord): DepositClaimProductionRecord;
+}
+export class InMemoryDepositClaimRepository implements DepositClaimRepository {
+  readonly #records = new Map<string, DepositClaimProductionRecord>();
+  findByReservationId(id: string): DepositClaimProductionRecord | null { return [...this.#records.values()].find((record) => record.reservationId === id) ?? null; }
+  findByClaimId(id: string): DepositClaimProductionRecord | null { return this.#records.get(id) ?? null; }
+  createIfAbsent(record: DepositClaimProductionRecord): DepositClaimProductionRecord { const old = this.#records.get(record.claimId); if (old) { if (old.reservationId !== record.reservationId) throw new Error("Claim identity conflict"); return old; } this.#records.set(record.claimId, Object.freeze(record)); return record; }
+  update(id: string, expected: number, mutation: (current: DepositClaimProductionRecord) => DepositClaimProductionRecord): DepositClaimProductionRecord { const current = this.#records.get(id); if (!current || current.claimVersion !== expected) throw new Error("STALE_ACTION"); const next = mutation(current); if (next.claimId !== current.claimId || next.reservationId !== current.reservationId || next.claimVersion !== expected + 1) throw new Error("Invalid claim version transition"); this.#records.set(id, Object.freeze(next)); return next; }
+}
+
 export interface ClaimItemEvaluation {
   itemId: string;
   approvedAmountKobo: number;
