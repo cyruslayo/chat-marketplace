@@ -48,6 +48,7 @@ export * from "./checkout-overstay-application.js";
 export * from "./deposit-claim-application.js";
 export * from "./deposit-claim-artifact.js";
 export * from "./deposit-claim-actions.js";
+export * from "./deposit-claim-human-handoff.js";
 export * from "./checkout-overstay-artifact.js";
 export * from "./checkout-overstay-actions.js";
 export * from "./checkout-overstay-human-handoff.js";

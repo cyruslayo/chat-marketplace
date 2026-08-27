@@ -12,6 +12,7 @@ import type { HumanHandoffApplication } from "./human-handoff-application.js";
 import type { SecurityContext } from "../../../packages/platform-core/src/index.js";
 import type { ProtectionFundApplication } from "./protection-fund-application.js";
 import { protectionFundArtifact, type ProtectionFundArtifact } from "./protection-fund-artifact.js";
+import { depositClaimArtifact } from "./deposit-claim-artifact.js";
 
 export function conventionalHumanHandoffRoute(threadId: string): string { return `/interactions/${encodeURIComponent(threadId)}/support`; }
 export function getConventionalHumanHandoffView(application: HumanHandoffApplication, threadId: string, context: SecurityContext) { return Object.freeze({ route: conventionalHumanHandoffRoute(threadId), artifact: application.getArtifact(threadId, context) }); }
@@ -55,6 +56,9 @@ export function getConventionalRevenueReleaseView(application: import("./revenue
 export function conventionalCheckInSupportRoute(reservationId: string): string {
   return `/reservations/${encodeURIComponent(reservationId)}/check-in`;
 }
+
+export function conventionalDepositClaimRoute(reservationId: string): string { return `/reservations/${encodeURIComponent(reservationId)}/deposit-claim`; }
+export function getConventionalDepositClaimView(application: import("./deposit-claim-application.js").DepositClaimApplication, reservationId: string, principal: CommandPrincipal) { return Object.freeze({ route: conventionalDepositClaimRoute(reservationId), artifact: depositClaimArtifact(application, reservationId, principal) }); }
 
 export function conventionalCheckoutRoute(reservationId: string): string {
   return `/reservations/${encodeURIComponent(reservationId)}/checkout`;
