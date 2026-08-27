@@ -82,6 +82,7 @@ test("Severity, recurrence, attribution, restoration, revocation, and egregious-
   const egregiousAction = protect(egregiousManager, "op", "u");
   assert.throws(() => finalize(egregiousManager, egregiousAction.enforcementId, "op", "u", ["eg"]), /two-person/);
   finalize(egregiousManager, egregiousAction.enforcementId, "op", "u", ["eg"], "unit_suspension", "human-1", "tenant-lagos", "two_person");
+  assert.throws(() => egregiousManager.restoreTurnoverEligibility(command("operator_enforcement.restore_turnover", { operatorId: "op", unitId: "u", enforcementId: egregiousAction.enforcementId, kind: "guest_impacting_failure", incidentRemediated: true, observedSuccessfulTurnoverRuns: 3, runsAfterRealStays: 2, fullOperationalReapproval: true, approvalTier: "senior" }, "authorized_staff", "restoration-reviewer")), /revocation cannot be restored/);
 });
 
 test("Provider/platform faults and extraordinary events do not count as Operator misconduct", () => {
