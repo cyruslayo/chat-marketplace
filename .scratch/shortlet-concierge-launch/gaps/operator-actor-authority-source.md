@@ -1,6 +1,6 @@
 # Operator actor authority source-of-truth gap
 
-Status: blocked
+Status: resolved
 Type: research
 
 ## Decision
@@ -11,7 +11,7 @@ B — PRODUCT AUTHORITY MODEL REQUIRED
 
 Issue 29 requires an authenticated Operator actor to file an enforcement appeal through `canActForOperator({ actorId, operatorId, tenantId })`. ADR 0070 requires interaction/actor identities and Operator domain identities to remain separate. The repository currently has no accepted source mapping an authenticated actor to an Operator.
 
-The `OperatorAuthority` port in the enforcement module therefore correctly fails closed, but cannot be production-composed.
+The `OperatorAuthority` port in the enforcement module therefore correctly fails closed, but cannot yet be production-composed.
 
 ## Discovery
 
@@ -56,23 +56,28 @@ The product and governance owners must define:
 - whether one actor may represent multiple Operators;
 - the required minimal audit record and retention behavior.
 
-The decision must explicitly keep actor identity separate from Operator identity under ADR 0070 and must define how the server independently validates the relationship under ADR 0072.
+The decision must explicitly keep actor identity separate from Operator identity under ADR 0070 and must define how the server independently validates the relationship under ADR 0072. This decision is now recorded in ADR 0082.
 
 ## Candidate existing data
 
-`responsiblePersons` remains a candidate source to evaluate after the product decision. It is not authoritative today. The current fields do not establish stable authenticated identity, authorization scope, tenant scope, verification lifecycle, or revocation/removal semantics.
+`responsiblePersons` was evaluated as a candidate source and is not authoritative by itself. The current fields do not establish stable authenticated identity, authorization scope, tenant scope, verification lifecycle, or revocation/removal semantics. ADR 0082 makes responsible-person verification a prerequisite for a separate representative grant, not the grant itself.
 
 Management Authority and beneficial-owner data are distinct concepts and must not be repurposed silently.
 
 ## Blocked behavior
 
-Issue 29 Operator appeals must remain fail-closed until the product authority model and authoritative source are implemented. No caller-provided boolean, `actorId === operatorId` shortcut, tenant-only inference, responsible-person shortcut, beneficial-owner shortcut, or Unit Management Authority adapter is permitted.
+The architecture authority gap is resolved by ADR 0082, but Issue 29 Operator appeals must remain fail-closed until the representative-grant source and adapter are implemented. No caller-provided boolean, `actorId === operatorId` shortcut, tenant-only inference, responsible-person shortcut, beneficial-owner shortcut, or Unit Management Authority adapter is permitted.
 
 This gap document does not modify Issue 29 or PR #42.
+
+## Resolution
+
+ADR 0082 formalizes the launch authority model. The gap is resolved at the architecture/policy level. Production representative-grant storage, commands, adapter, and composition remain pending and are deliberately out of scope for this task.
 
 ## Affected decisions
 
 - ADR 0070: actor and Operator identities remain distinct.
 - ADR 0072: consequential commands require independent server-side authorization.
 - ADR 0075: future authority records must minimize identity/security data.
-- Requested ADR 0001 was not present in `docs/adr/`.
+- ADR 0001 exists at `docs/adr/0001-merchants-are-sellers-of-record.md`; it concerns merchant seller-of-record status and is irrelevant to authenticated Operator representative authority.
+- ADR 0082: accepted source-of-truth policy for explicit Operator representative grants.
