@@ -37,6 +37,28 @@ async function database() { const directory = await mkdtemp(join(tmpdir(), "oper
   const db = await database(); let current = new Date(now); const store = new SqliteOperatorRepresentativeGrantStore(db.path, { clock: () => current });
   store.createGrant(command("operator_representative.grant", human, payload, "active"));
   assert.equal(store.canActForOperator({ actorId: "person-1", operatorId: "operator-1", tenantId: "tenant-a" }), true);
+
+  const tenantAGrant = store.createGrant(command("operator_representative.grant", human, { ...payload, actorId: "person-shared", operatorId: "operator-shared" }, "shared-tenant-a"));
+  const tenantBHuman: CommandPrincipal = { id: "staff-b", role: "authorized_staff", tenantId: "tenant-b" };
+  const tenantBGrant = store.createGrant(command("operator_representative.grant", tenantBHuman, { ...payload, actorId: "person-shared", operatorId: "operator-shared" }, "shared-tenant-b"));
+  const sharedLookup = { actorId: "person-shared", operatorId: "operator-shared" };
+  assert.equal(store.canActForOperator({ ...sharedLookup, tenantId: "tenant-a" }), true);
+  assert.equal(store.canActForOperator({ ...sharedLookup, tenantId: "tenant-b" }), true);
+  store.revokeGrant(command("operator_representative.revoke", admin, { grantId: tenantAGrant.grantId }, "revoke-shared-tenant-a"));
+  assert.equal(store.canActForOperator({ ...sharedLookup, tenantId: "tenant-a" }), false);
+  assert.equal(store.canActForOperator({ ...sharedLookup, tenantId: "tenant-b" }), true);
+  assert.equal(tenantBGrant.tenantId, "tenant-b");
+
+  const duplicatePayload = { ...payload, actorId: "person-duplicate", operatorId: "operator-duplicate", expiresAtIso: "2026-08-01T14:00:00Z" };
+  const duplicateFirst = store.createGrant(command("operator_representative.grant", human, duplicatePayload, "duplicate-first"));
+  const duplicateSecond = store.createGrant(command("operator_representative.grant", { ...human, id: "staff-duplicate-2" }, duplicatePayload, "duplicate-second"));
+  const duplicateLookup = { actorId: "person-duplicate", operatorId: "operator-duplicate", tenantId: "tenant-a" };
+  assert.equal(store.canActForOperator(duplicateLookup), true);
+  store.revokeGrant(command("operator_representative.revoke", admin, { grantId: duplicateFirst.grantId }, "revoke-duplicate-first"));
+  assert.equal(store.canActForOperator(duplicateLookup), true);
+  store.revokeGrant(command("operator_representative.revoke", admin, { grantId: duplicateSecond.grantId }, "revoke-duplicate-second"));
+  assert.equal(store.canActForOperator(duplicateLookup), false);
+
   assert.equal(store.canActForOperator({ actorId: "operator-1", operatorId: "operator-1", tenantId: "tenant-a" }), false);
   for (const input of [{ actorId: "other", operatorId: "operator-1", tenantId: "tenant-a" }, { actorId: "person-1", operatorId: "other", tenantId: "tenant-a" }, { actorId: "person-1", operatorId: "operator-1", tenantId: "tenant-b" }]) assert.equal(store.canActForOperator(input), false);
   assert.equal(store.canActForOperator({ actorId: "none", operatorId: "none", tenantId: "tenant-a" }), false);
