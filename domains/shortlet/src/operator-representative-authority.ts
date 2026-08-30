@@ -5,8 +5,6 @@ export const OPERATOR_ACTIONS_PERMISSION = "operator_actions" as const;
 export const OPERATOR_REPRESENTATIVE_GRANT_COMMAND = "operator_representative.grant" as const;
 export const OPERATOR_REPRESENTATIVE_REVOKE_COMMAND = "operator_representative.revoke" as const;
 
-type GrantingRole = "admin" | "authorized_staff";
-
 export interface CreateOperatorRepresentativeGrantPayload {
   actorId: string;
   operatorId: string;
@@ -94,23 +92,46 @@ function parsedTimestamp(value: unknown, label: string): Date {
   return new Date(value);
 }
 
+function storedTimestamp(value: unknown): Date | undefined {
+  return typeof value === "string" && value.trim() !== "" && Number.isFinite(Date.parse(value)) ? new Date(value) : undefined;
+}
+
+function opaqueReference(value: unknown): value is string {
+  if (typeof value !== "string" || value.trim() === "") return false;
+  try {
+    const url = new URL(value);
+    return url.protocol !== "http:" && url.protocol !== "https:";
+  } catch {
+    return true;
+  }
+}
+
 function project(row: GrantRow): OperatorRepresentativeGrant | undefined {
+  const grantedAt = storedTimestamp(row.granted_at_iso);
+  const expiresAt = storedTimestamp(row.expires_at_iso);
+  const verifiedAt = storedTimestamp(row.responsible_person_verified_at_iso);
+  const revokedAt = row.revoked_at_iso === null ? undefined : storedTimestamp(row.revoked_at_iso);
+  const hasRevokedAt = row.revoked_at_iso !== null;
+  const hasRevokedBy = row.revoked_by_id !== null;
   if (
-    typeof row.grant_id !== "string" || typeof row.actor_id !== "string" || typeof row.operator_id !== "string" ||
-    typeof row.tenant_id !== "string" || row.permission !== OPERATOR_ACTIONS_PERMISSION ||
-    typeof row.granted_at_iso !== "string" || typeof row.expires_at_iso !== "string" ||
-    typeof row.authorized_grantor_id !== "string" || typeof row.responsible_person_verified_at_iso !== "string" ||
-    (row.verification_reference !== null && typeof row.verification_reference !== "string") ||
-    (row.revoked_at_iso !== null && typeof row.revoked_at_iso !== "string") ||
-    (row.revoked_by_id !== null && typeof row.revoked_by_id !== "string")
+    typeof row.grant_id !== "string" || row.grant_id.trim() === "" ||
+    typeof row.actor_id !== "string" || row.actor_id.trim() === "" ||
+    typeof row.operator_id !== "string" || row.operator_id.trim() === "" ||
+    typeof row.tenant_id !== "string" || row.tenant_id.trim() === "" ||
+    row.permission !== OPERATOR_ACTIONS_PERMISSION ||
+    typeof row.authorized_grantor_id !== "string" || row.authorized_grantor_id.trim() === "" ||
+    !grantedAt || !expiresAt || !verifiedAt || verifiedAt > grantedAt || grantedAt >= expiresAt ||
+    (row.verification_reference !== null && !opaqueReference(row.verification_reference)) ||
+    hasRevokedAt !== hasRevokedBy ||
+    (hasRevokedAt && (!revokedAt || typeof row.revoked_by_id !== "string" || row.revoked_by_id.trim() === "" || revokedAt < grantedAt))
   ) return undefined;
   return {
     grantId: row.grant_id, actorId: row.actor_id, operatorId: row.operator_id, tenantId: row.tenant_id,
-    permission: OPERATOR_ACTIONS_PERMISSION, grantedAtIso: row.granted_at_iso, expiresAtIso: row.expires_at_iso,
-    authorizedGrantorId: row.authorized_grantor_id, responsiblePersonVerifiedAtIso: row.responsible_person_verified_at_iso,
+    permission: OPERATOR_ACTIONS_PERMISSION, grantedAtIso: row.granted_at_iso as string, expiresAtIso: row.expires_at_iso as string,
+    authorizedGrantorId: row.authorized_grantor_id, responsiblePersonVerifiedAtIso: row.responsible_person_verified_at_iso as string,
     ...(row.verification_reference === null ? {} : { verificationReference: row.verification_reference }),
-    ...(row.revoked_at_iso === null ? {} : { revokedAtIso: row.revoked_at_iso }),
-    ...(row.revoked_by_id === null ? {} : { revokedById: row.revoked_by_id })
+    ...(row.revoked_at_iso === null ? {} : { revokedAtIso: row.revoked_at_iso as string }),
+    ...(row.revoked_by_id === null ? {} : { revokedById: row.revoked_by_id as string })
   };
 }
 
@@ -191,12 +212,8 @@ export class SqliteOperatorRepresentativeGrantStore implements OperatorRepresent
     const verified = parsedTimestamp(payload?.responsiblePersonVerifiedAtIso, "Responsible-person verification timestamp");
     if (verified > now.date) throw new Error("Responsible-person verification cannot be in the future");
     const reference = payload?.verificationReference;
-    if (reference !== undefined) {
-      requiredText(reference, "Verification reference");
-      try { const url = new URL(reference); if (url.protocol === "http:" || url.protocol === "https:") throw new Error("Verification reference must not be a URL"); }
-      catch (error) { if (error instanceof Error && error.message === "Verification reference must not be a URL") throw error; }
-    }
-    const key = requiredText(envelope.idempotencyKey ?? envelope.commandId, "Idempotency key");
+    if (reference !== undefined && !opaqueReference(reference)) throw new Error("Verification reference must be a non-empty opaque reference");
+    const key = requiredText(envelope.idempotencyKey, "Idempotency key");
     const fingerprint = this.#fingerprint(envelope.commandName, grantorId, envelope.principal.role, envelope.principal.tenantId, {
       actorId, operatorId, expiresAtIso: expires.toISOString(), responsiblePersonVerifiedAtIso: verified.toISOString(), verificationReference: reference ?? null
     });
@@ -231,7 +248,7 @@ export class SqliteOperatorRepresentativeGrantStore implements OperatorRepresent
     const revokerId = this.#assertHuman(envelope);
     const tenantId = requiredText(envelope.principal.tenantId, "Principal tenant");
     const grantId = requiredText(envelope.payload?.grantId, "Grant ID");
-    const key = requiredText(envelope.idempotencyKey ?? envelope.commandId, "Idempotency key");
+    const key = requiredText(envelope.idempotencyKey, "Idempotency key");
     const fingerprint = this.#fingerprint(envelope.commandName, revokerId, envelope.principal.role, envelope.principal.tenantId, { grantId });
     return this.#transaction(() => {
       const prior = this.#database.prepare("SELECT * FROM operator_representative_commands WHERE idempotency_key = $key").get({ $key: key }) as CommandRow | undefined;
