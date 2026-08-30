@@ -5,11 +5,11 @@ Type: research
 
 ## Decision
 
-Architecture policy resolved by ADR 0082; production implementation pending.
+Runtime representative-grant source implemented by this prerequisite. Issue 29 integration still pending.
 
 ## Problem
 
-Issue 29 requires an authenticated Operator actor to file an enforcement appeal through `canActForOperator({ actorId, operatorId, tenantId })`. ADR 0070 requires interaction/actor identities and Operator domain identities to remain separate. ADR 0082 now defines the accepted policy for mapping an authenticated actor to an Operator through explicit representative grants. The repository still has no implemented durable grant source.
+Issue 29 requires an authenticated Operator actor to file an enforcement appeal through `canActForOperator({ actorId, operatorId, tenantId })`. ADR 0070 requires interaction/actor identities and Operator domain identities to remain separate. ADR 0082 now defines the accepted policy for mapping an authenticated actor to an Operator through explicit representative grants. The durable representative-grant source and Operator authority adapter are implemented by this prerequisite.
 
 The `OperatorAuthority` port in the enforcement module therefore correctly fails closed, but cannot yet be production-composed.
 
@@ -72,7 +72,7 @@ This gap document does not modify Issue 29 or PR #42.
 
 ## Resolution
 
-ADR 0082 formalizes the launch authority model. The gap is resolved at the architecture/policy level. Production representative-grant storage, commands, adapter, and composition remain pending and are deliberately out of scope for this task.
+ADR 0082 formalizes the launch authority model. The gap is resolved at the architecture/policy level. Production representative-grant storage, commands, and adapter are implemented by this prerequisite; Issue 29 integration remains pending and is deliberately out of scope for this task.
 
 ## Affected decisions
 
