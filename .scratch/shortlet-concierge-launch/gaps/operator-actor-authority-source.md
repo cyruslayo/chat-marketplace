@@ -5,11 +5,11 @@ Type: research
 
 ## Decision
 
-B — PRODUCT AUTHORITY MODEL REQUIRED
+Architecture policy resolved by ADR 0082; production implementation pending.
 
 ## Problem
 
-Issue 29 requires an authenticated Operator actor to file an enforcement appeal through `canActForOperator({ actorId, operatorId, tenantId })`. ADR 0070 requires interaction/actor identities and Operator domain identities to remain separate. The repository currently has no accepted source mapping an authenticated actor to an Operator.
+Issue 29 requires an authenticated Operator actor to file an enforcement appeal through `canActForOperator({ actorId, operatorId, tenantId })`. ADR 0070 requires interaction/actor identities and Operator domain identities to remain separate. ADR 0082 now defines the accepted policy for mapping an authenticated actor to an Operator through explicit representative grants. The repository still has no implemented durable grant source.
 
 The `OperatorAuthority` port in the enforcement module therefore correctly fails closed, but cannot yet be production-composed.
 
@@ -56,7 +56,7 @@ The product and governance owners must define:
 - whether one actor may represent multiple Operators;
 - the required minimal audit record and retention behavior.
 
-The decision must explicitly keep actor identity separate from Operator identity under ADR 0070 and must define how the server independently validates the relationship under ADR 0072. This decision is now recorded in ADR 0082.
+The decision must explicitly keep actor identity separate from Operator identity under ADR 0070 and must define how the server independently validates the relationship under ADR 0072. ADR 0082 now specifies deterministic expiry, human verification binding, and non-bypass command authorization.
 
 ## Candidate existing data
 
