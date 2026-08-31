@@ -1,4 +1,5 @@
 import type { PlatformCommandEnvelope, CommandPrincipal } from "../../../packages/platform-core/src/index.js";
+import type { OperatorRepresentativeAuthority } from "./operator-representative-authority.js";
 
 export type MisconductAttribution = "operator_misconduct" | "platform_fault" | "provider_fault" | "extraordinary_event";
 export type EnforcementIncidentType = "calendar_error" | "cancellation" | "substitution" | "response_failure" | "negative_balance" | "turnover_defect" | "safety_failure" | "control_circumvention";
@@ -7,10 +8,6 @@ export type EnforcementLevel = "coaching" | "restriction" | "unit_suspension" | 
 export type TurnoverCapability = "eligible" | "suspended" | "revoked";
 
 type TurnoverRestorationKind = "evidence_only_miss" | "operational_delay_without_guest_impact" | "guest_impacting_failure";
-
-export interface OperatorAuthority {
-  canActForOperator(input: { actorId: string; operatorId: string; tenantId: string }): boolean;
-}
 
 export interface IncidentRecordInput {
   incidentId: string;
@@ -140,12 +137,12 @@ export class OperatorEnforcementManager {
   readonly #appeals = new Map<string, EnforcementAppealRecord>();
   readonly #restoredUnits = new Set<string>();
   readonly #restorationDispositions: Array<{ enforcementId: string; operatorId: string; unitId: string; disposition: "restored"; kind: TurnoverRestorationKind; recordedAtIso: string }> = [];
-  readonly #operatorAuthority: OperatorAuthority;
+  readonly #operatorAuthority: OperatorRepresentativeAuthority;
   readonly #initialDecisionMakers = new Map<string, string>();
   readonly #clock: () => Date;
   #sequence = 0;
 
-  constructor(options: { clock?: () => Date; operatorAuthority?: OperatorAuthority } = {}) {
+  constructor(options: { clock?: () => Date; operatorAuthority?: OperatorRepresentativeAuthority } = {}) {
     this.#clock = options.clock ?? (() => new Date());
     this.#operatorAuthority = options.operatorAuthority ?? { canActForOperator: () => false };
   }

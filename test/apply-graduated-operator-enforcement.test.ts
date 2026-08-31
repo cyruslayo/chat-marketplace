@@ -1,12 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { OperatorEnforcementManager } from "../domains/shortlet/src/index.js";
-import { createPlatformCommandEnvelope, type PlatformCommandEnvelope } from "../packages/platform-core/src/index.js";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { OperatorEnforcementManager, SqliteOperatorRepresentativeGrantStore } from "../domains/shortlet/src/index.js";
+import { createPlatformCommandEnvelope, type PlatformCommandEnvelope, type CommandPrincipal } from "../packages/platform-core/src/index.js";
 
 const clock = () => new Date("2026-09-10T10:00:00.000Z");
 const operatorAuthority = { canActForOperator: ({ actorId, operatorId }: { actorId: string; operatorId: string; tenantId: string }) => actorId === "operator-actor" && operatorId === "op" };
-function command<T>(commandName: string, payload: T, role: "admin" | "authorized_staff" | "agent" | "operator" = "admin", id = "human-1", tenantId = "tenant-lagos"): PlatformCommandEnvelope<T> {
-  return createPlatformCommandEnvelope({ commandName, payload, principal: { id, role, tenantId } });
+function command<T>(commandName: string, payload: T, role: "admin" | "authorized_staff" | "agent" | "operator" | "guest" | "system" = "admin", id = "human-1", tenantId = "tenant-lagos", idempotencyKey?: string): PlatformCommandEnvelope<T> {
+  return createPlatformCommandEnvelope({ commandName, payload, principal: { id, role, tenantId }, ...(idempotencyKey ? { idempotencyKey } : {}) });
+}
+function grantCommand(payload: { actorId: string; operatorId: string; expiresAtIso: string; responsiblePersonVerifiedAtIso: string }, idempotencyKey: string, principal: CommandPrincipal = { id: "admin-1", role: "admin", tenantId: "tenant-lagos" }): PlatformCommandEnvelope<typeof payload> {
+  return command("operator_representative.grant", payload, principal.role, principal.id, principal.tenantId, idempotencyKey);
 }
 function incident(manager: OperatorEnforcementManager, input: Partial<Parameters<typeof manager.recordIncident>[0]> & { incidentId: string; operatorId: string; unitId: string; incidentType: Parameters<typeof manager.recordIncident>[0]["incidentType"]; severity: Parameters<typeof manager.recordIncident>[0]["severity"]; attribution?: Parameters<typeof manager.recordIncident>[0]["attribution"] }) {
   manager.recordIncident({ reportedAtIso: "2026-09-01T10:00:00.000Z", attribution: "operator_misconduct", ...input });
@@ -92,7 +98,7 @@ test("Provider/platform faults and extraordinary events do not count as Operator
   assert.equal(manager.getProjections({ operatorId: "op", unitId: "u" }).operatorStatus, "active");
 });
 
-test("Immediate protection is distinguished from the independent human final decision and seven-day appeal", () => {
+test("Immediate protection is distinguished from the independent human final decision and seven-day appeal", async () => {
   const manager = new OperatorEnforcementManager({ clock, operatorAuthority });
   assert.throws(() => manager.applyImmediateProtectiveAction({} as never), /command/);
   const action = protect(manager, "op", "u");
@@ -127,6 +133,47 @@ test("Immediate protection is distinguished from the independent human final dec
   boundaryNow = new Date("2026-09-17T10:00:00.000Z");
   boundaryManager.recordEnforcementNotice({ enforcementId: boundaryAction.enforcementId, operatorId: "op", unitId: "u", tenantId: "tenant-lagos", status: "delivered", deliveredAtIso: "2026-09-10T10:00:00.000Z" });
   assert.throws(() => boundaryManager.fileEnforcementAppeal(command("operator_enforcement.appeal", { enforcementId: boundaryAction.enforcementId, operatorId: "op", appellantId: "operator-actor", statement: "boundary", evidenceReferences: [] }, "operator", "operator-actor")), /expired/);
+
+  const directory = await mkdtemp(join(tmpdir(), "issue-29-representative-"));
+  const databasePath = join(directory, "grants.sqlite");
+  let current = new Date("2026-09-10T10:00:00.000Z");
+  const store = new SqliteOperatorRepresentativeGrantStore(databasePath, { clock: () => current });
+  try {
+    const realManager = new OperatorEnforcementManager({ clock: () => current, operatorAuthority: store });
+    const realAction = protect(realManager, "op", "u");
+    finalize(realManager, realAction.enforcementId, "op", "u");
+    realManager.recordEnforcementNotice({ enforcementId: realAction.enforcementId, operatorId: "op", unitId: "u", tenantId: "tenant-lagos", status: "delivered", deliveredAtIso: current.toISOString() });
+    const grant = store.createGrant(grantCommand({ actorId: "operator-actor", operatorId: "op", expiresAtIso: "2026-09-11T10:00:00.000Z", responsiblePersonVerifiedAtIso: "2026-09-01T10:00:00.000Z" }, "issue-29-happy"));
+    const appeal = realManager.fileEnforcementAppeal(command("operator_enforcement.appeal", { enforcementId: realAction.enforcementId, operatorId: "op", appellantId: "operator-actor", statement: "appeal", evidenceReferences: ["evidence-1"] }, "operator", "operator-actor"));
+    assert.equal(appeal.status, "appeal_pending");
+    assert.equal(store.canActForOperator({ actorId: grant.actorId, operatorId: grant.operatorId, tenantId: grant.tenantId }), true);
+    store.revokeGrant(command("operator_representative.revoke", { grantId: grant.grantId }, "admin", "admin-1", "tenant-lagos", "issue-29-revoke-happy"));
+
+    const appealable = (actorId: string, operatorId: string, tenantId = "tenant-lagos") => {
+      const scopedManager = new OperatorEnforcementManager({ clock: () => current, operatorAuthority: store });
+      const scopedAction = protect(scopedManager, "op", "u", `support-${actorId}-${operatorId}-${tenantId}`);
+      finalize(scopedManager, scopedAction.enforcementId, "op", "u");
+      scopedManager.recordEnforcementNotice({ enforcementId: scopedAction.enforcementId, operatorId: "op", unitId: "u", tenantId: "tenant-lagos", status: "delivered", deliveredAtIso: current.toISOString() });
+      assert.throws(() => scopedManager.fileEnforcementAppeal(command("operator_enforcement.appeal", { enforcementId: scopedAction.enforcementId, operatorId, appellantId: actorId, statement: "appeal", evidenceReferences: [] }, "operator", actorId, tenantId)), /authority|scope/);
+    };
+
+    appealable("missing-actor", "op");
+    store.createGrant(grantCommand({ actorId: "other-actor", operatorId: "op", expiresAtIso: "2026-09-11T10:00:00.000Z", responsiblePersonVerifiedAtIso: "2026-09-01T10:00:00.000Z" }, "issue-29-wrong-actor"));
+    appealable("operator-actor", "op");
+    store.createGrant(grantCommand({ actorId: "operator-actor", operatorId: "other-op", expiresAtIso: "2026-09-11T10:00:00.000Z", responsiblePersonVerifiedAtIso: "2026-09-01T10:00:00.000Z" }, "issue-29-wrong-operator"));
+    appealable("operator-actor", "other-op");
+    store.createGrant(grantCommand({ actorId: "operator-actor", operatorId: "op", expiresAtIso: "2026-09-11T10:00:00.000Z", responsiblePersonVerifiedAtIso: "2026-09-01T10:00:00.000Z" }, "issue-29-wrong-tenant", { id: "admin-b", role: "admin", tenantId: "tenant-b" }));
+    appealable("operator-actor", "op");
+    const revoked = store.createGrant(grantCommand({ actorId: "revoked-actor", operatorId: "op", expiresAtIso: "2026-09-11T10:00:00.000Z", responsiblePersonVerifiedAtIso: "2026-09-01T10:00:00.000Z" }, "issue-29-revoked"));
+    store.revokeGrant(command("operator_representative.revoke", { grantId: revoked.grantId }, "admin", "admin-1", "tenant-lagos", "issue-29-revoke"));
+    appealable("revoked-actor", "op");
+    store.createGrant(grantCommand({ actorId: "expired-actor", operatorId: "op", expiresAtIso: "2026-09-10T10:01:00.000Z", responsiblePersonVerifiedAtIso: "2026-09-01T10:00:00.000Z" }, "issue-29-expired"));
+    current = new Date("2026-09-10T10:02:00.000Z");
+    appealable("expired-actor", "op");
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("One underlying incident is not multiplied by downstream reports, and every affected feature or Unit projection updates consistently", () => {

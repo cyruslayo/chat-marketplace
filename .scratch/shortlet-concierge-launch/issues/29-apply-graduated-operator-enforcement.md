@@ -19,6 +19,10 @@ Turn calendar errors, cancellations, substitutions, response failures, negative 
 - [x] Immediate protection is distinguished from the independent human final decision and seven-day appeal.
 - [x] One underlying incident is not multiplied by downstream reports, and every affected feature or Unit projection updates consistently.
 
+## Completion
+
+ADR-0082 representative authority is now production-integrated for Operator appeals through the durable SQLite representative-grant store. Missing, revoked, expired, and cross-scope authority fails closed; restoration remains human authority rather than Operator representative authority. Full validation passed.
+
 ## Answer
 
 Corrective restoration now records an explicit later disposition, preserves immutable incidents and finalized decisions, and excludes only the restored Turnover Suspension from effective Unit projection. Later protective actions remain effective, while Operator-wide pause, termination, unrelated Unit suspension, and ADR-0038 revocation remain unaffected. ADR-0037 restoration classes use authorized human review; OperatorAuthority remains reserved for Operator-originated actions such as appeals, with distinct human and Operator identities in tests.
