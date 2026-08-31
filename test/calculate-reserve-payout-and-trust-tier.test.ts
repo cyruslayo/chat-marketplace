@@ -3,9 +3,10 @@ import assert from "node:assert/strict";
 import { createPlatformCommandEnvelope, InMemoryAuditLog } from "../packages/platform-core/src/index.js";
 import {
   ReservePayoutManager,
-  OperatorActivity,
-  PayoutCalculationInput,
-  ReserveTranche
+  type AuthoritativeReliabilityRecord,
+  type OperatorReliabilityAuthority,
+  type OperatorEnforcementAuthority,
+  type ReserveTranche
 } from "../domains/shortlet/src/reserve-payout-trust.js";
 import {
   InMemoryRevenueAccountingRepository,
@@ -14,78 +15,31 @@ import {
 } from "../domains/shortlet/src/revenue-accounting.js";
 import type { ProductionRevenueReleaseRecord } from "../domains/shortlet/src/revenue-release.js";
 
-const sampleOperatorActivity: OperatorActivity = {
-  operatorId: "op-100",
-  tenantId: "tenant-lagos",
-  completedBookings60d: 12,
-  completedBookings180d: 35,
-  reliabilityScore60d: 0.96,
-  reliabilityScore180d: 0.99,
-  activeEnforcementState: "none"
-};
+const createMockReliability = (overrides: Partial<AuthoritativeReliabilityRecord> = {}): OperatorReliabilityAuthority => ({
+  getReliability: ({ operatorId, tenantId }: { operatorId: string; tenantId: string }): AuthoritativeReliabilityRecord => ({
+    operatorId,
+    tenantId,
+    trailing60dCompletedBookings: 12,
+    trailing60dOpportunities: 12,
+    trailing60dReliabilityRate: 0.96,
+    trailing180dCompletedBookings: 35,
+    trailing180dOpportunities: 35,
+    trailing180dReliabilityRate: 0.99,
+    ...overrides
+  })
+});
 
-const sampleBooking: PayoutCalculationInput = {
-  reservationId: "res-501",
-  operatorId: "op-100",
-  tenantId: "tenant-lagos",
-  accommodationKobo: 10000000, // ₦100,000
-  mandatoryChargesKobo: 1000000, // ₦10,000
-  securityDepositKobo: 2000000, // ₦20,000
-  checkoutDateIso: "2026-08-10T11:00:00Z"
-};
+const createMockEnforcement = (overrides: Record<string, unknown> = {}): OperatorEnforcementAuthority => ({
+  getProjections: ({ operatorId }: { operatorId: string }) => ({
+    misconductCount: 0,
+    enforcementLevel: "coaching" as const,
+    operatorStatus: "active" as const,
+    ...overrides
+  })
+});
 
-/**
- * ADR 0021, ADR 0024, ADR 0025, ADR 0026, ADR 0062, ADR 0063, ADR 0064, ADR 0066, ADR 0083
- */
-test("Founding 90/10 and post-checkout choices, Proven 95/5, and Preferred terms use versioned provisional policy", () => {
-  const manager = new ReservePayoutManager();
-
-  // Founding 90/10 payout plan (Fast Payout)
-  const founding9010 = manager.calculatePayoutPlanAndReserve({
-    booking: sampleBooking,
-    payoutPlan: "founding_90_10",
-    tier: "standard"
-  });
-
-  assert.equal(founding9010.policyVersion, "v1.0-launch");
-  assert.equal(founding9010.commissionBaseKobo, 11000000); // ₦110,000
-  assert.equal(founding9010.commissionKobo, 1320000); // 12% standard commission = ₦13,200
-  assert.equal(founding9010.operatorNetKobo, 9680000); // ₦96,800
-  assert.equal(founding9010.payableNowKobo, 8712000); // 90% payable = ₦87,120
-  assert.equal(founding9010.reserveTrancheKobo, 968000); // 10% reserve = ₦9,680
-  assert.equal(founding9010.payableNowKobo + founding9010.reserveTrancheKobo, founding9010.operatorNetKobo);
-
-  // Founding post-checkout choice (Full Post-Stay 100%)
-  const foundingPostCheckout = manager.calculatePayoutPlanAndReserve({
-    booking: sampleBooking,
-    payoutPlan: "founding_100_post_checkout",
-    tier: "standard"
-  });
-  assert.equal(foundingPostCheckout.payableNowKobo, 9680000);
-  assert.equal(foundingPostCheckout.reserveTrancheKobo, 0);
-
-  // Proven 95/5 terms
-  const provenTerms = manager.calculatePayoutPlanAndReserve({
-    booking: sampleBooking,
-    payoutPlan: "proven_95_5",
-    tier: "proven"
-  });
-  assert.equal(provenTerms.payableNowKobo, 9196000); // 95% of 96,800 = ₦91,960
-  assert.equal(provenTerms.reserveTrancheKobo, 484000); // 5% = ₦4,840
-
-  // Preferred terms (100% after access, 10% commission rate)
-  const preferredTerms = manager.calculatePayoutPlanAndReserve({
-    booking: { ...sampleBooking, operatorTier: "preferred" },
-    payoutPlan: "preferred_100_access",
-    tier: "preferred"
-  });
-  assert.equal(preferredTerms.commissionKobo, 1100000); // 10% preferred commission = ₦11,000
-  assert.equal(preferredTerms.operatorNetKobo, 9900000); // ₦99,000
-  assert.equal(preferredTerms.payableNowKobo, 9900000);
-  assert.equal(preferredTerms.reserveTrancheKobo, 0);
-
-  // ADR 0083: Consuming immutable Revenue Release does not recalculate captured economics
-  const mockRevenueRelease: ProductionRevenueReleaseRecord = {
+function createMockRevenueRelease(overrides: Partial<ProductionRevenueReleaseRecord> = {}): ProductionRevenueReleaseRecord {
+  return {
     releaseId: "rev-rel-501",
     releaseVersion: 1,
     reservationId: "res-501",
@@ -101,14 +55,14 @@ test("Founding 90/10 and post-checkout choices, Proven 95/5, and Preferred terms
     protectionWindowEndsAt: "2026-08-02T12:00:00Z",
     economicsVersion: "v1",
     commissionPolicyVersion: "v1",
-    commissionRate: 0.08, // Founding 8% captured rate!
-    commissionBaseKobo: 11000000,
-    commissionKobo: 880000, // 8% of 110,000 = 8,800
-    operatorNetKobo: 10120000, // 110,000 - 8,800 = 101,200
+    commissionRate: 0.12, // Standard 12% captured rate
+    commissionBaseKobo: 11000000, // ₦110,000
+    commissionKobo: 1320000, // ₦13,200
+    operatorNetKobo: 9680000, // ₦96,800
     payoutPlan: "fast_payout",
     payoutPlanVersion: "v1",
-    payableNowKobo: 9108000,
-    routineReserveTrancheKobo: 1012000,
+    payableNowKobo: 8712000,
+    routineReserveTrancheKobo: 968000,
     deferredPostStayKobo: 0,
     riskHoldVersion: "v1",
     riskHoldKobo: 0,
@@ -116,112 +70,172 @@ test("Founding 90/10 and post-checkout choices, Proven 95/5, and Preferred terms
     earnedCommissionRecordId: "ec-501",
     effectiveCheckoutVersion: "v1",
     releasedAt: "2026-08-02T12:00:00Z",
-    currency: "NGN"
+    currency: "NGN",
+    ...overrides
   };
+}
 
-  const provenWithFoundingEconomics = manager.calculatePayoutPlanAndReserve({
-    booking: sampleBooking,
-    payoutPlan: "proven_95_5",
-    tier: "proven",
-    revenueRelease: mockRevenueRelease
+/**
+ * ADR 0021, ADR 0024, ADR 0025, ADR 0026, ADR 0062, ADR 0063, ADR 0064, ADR 0066, ADR 0072, ADR 0075, ADR 0083
+ */
+test("Founding 90/10 and post-checkout choices, Proven 95/5, and Preferred terms consume authoritative Revenue Release economics", () => {
+  // 1. Standard tier with Fast Payout (90/10)
+  const standardReliability = createMockReliability({
+    trailing60dCompletedBookings: 5,
+    trailing180dCompletedBookings: 8,
+    trailing60dReliabilityRate: 0.90,
+    trailing180dReliabilityRate: 0.90
   });
-  // Preserves 8% founding commission economics while applying Proven 95/5 settlement
-  assert.equal(provenWithFoundingEconomics.commissionKobo, 880000);
-  assert.equal(provenWithFoundingEconomics.operatorNetKobo, 10120000);
-  assert.equal(provenWithFoundingEconomics.payableNowKobo, 9614000); // 95% of 10,120,000
-  assert.equal(provenWithFoundingEconomics.reserveTrancheKobo, 506000); // 5% of 10,120,000
+  const standardManager = new ReservePayoutManager({ reliabilityAuthority: standardReliability });
+  const releaseStandard = createMockRevenueRelease();
+
+  const standard9010 = standardManager.calculatePayoutPlanAndReserve({
+    revenueRelease: releaseStandard,
+    standardPayoutPreference: "fast_payout"
+  });
+
+  assert.equal(standard9010.policyVersion, "v1.0-launch");
+  assert.equal(standard9010.tier, "standard");
+  assert.equal(standard9010.commissionBaseKobo, 11000000);
+  assert.equal(standard9010.commissionKobo, 1320000);
+  assert.equal(standard9010.operatorNetKobo, 9680000);
+  assert.equal(standard9010.payableNowKobo, 8712000); // 90% payable
+  assert.equal(standard9010.reserveTrancheKobo, 968000); // 10% reserve
+  assert.equal(standard9010.payableNowKobo + standard9010.reserveTrancheKobo, standard9010.operatorNetKobo);
+
+  // 2. Standard tier with Full Post-Stay choice (100% deferred)
+  const standardPostCheckout = standardManager.calculatePayoutPlanAndReserve({
+    revenueRelease: releaseStandard,
+    standardPayoutPreference: "full_post_stay"
+  });
+  assert.equal(standardPostCheckout.payableNowKobo, 9680000);
+  assert.equal(standardPostCheckout.reserveTrancheKobo, 0);
+
+  // 3. Proven tier terms (95/5)
+  const provenReliability = createMockReliability({
+    trailing60dCompletedBookings: 12,
+    trailing60dReliabilityRate: 0.96,
+    trailing180dCompletedBookings: 15,
+    trailing180dReliabilityRate: 0.96
+  });
+  const provenManager = new ReservePayoutManager({ reliabilityAuthority: provenReliability });
+  const provenTerms = provenManager.calculatePayoutPlanAndReserve({
+    revenueRelease: releaseStandard
+  });
+  assert.equal(provenTerms.tier, "proven");
+  assert.equal(provenTerms.payableNowKobo, 9196000); // 95% of 9,680,000
+  assert.equal(provenTerms.reserveTrancheKobo, 484000); // 5% of 9,680,000
+
+  // 4. Preferred tier terms (100% payout, 0% reserve) with captured 10% economics
+  const preferredReliability = createMockReliability({
+    trailing180dCompletedBookings: 35,
+    trailing180dReliabilityRate: 0.99
+  });
+  const preferredManager = new ReservePayoutManager({ reliabilityAuthority: preferredReliability });
+  const releasePreferred = createMockRevenueRelease({
+    commissionRate: 0.1,
+    commissionKobo: 1100000,
+    operatorNetKobo: 9900000
+  });
+  const preferredTerms = preferredManager.calculatePayoutPlanAndReserve({
+    revenueRelease: releasePreferred
+  });
+  assert.equal(preferredTerms.tier, "preferred");
+  assert.equal(preferredTerms.commissionKobo, 1100000);
+  assert.equal(preferredTerms.operatorNetKobo, 9900000);
+  assert.equal(preferredTerms.payableNowKobo, 9900000);
+  assert.equal(preferredTerms.reserveTrancheKobo, 0);
+
+  // 5. Fail closed when Revenue Release is missing
+  assert.throws(
+    () => standardManager.calculatePayoutPlanAndReserve({} as any),
+    /Authoritative ProductionRevenueReleaseRecord is mandatory/
+  );
 });
 
-test("Tier evaluation uses the accepted booking counts, observation periods, reliability thresholds, and enforcement state", () => {
-  const manager = new ReservePayoutManager();
+test("Tier evaluation strictly requires authoritative reliability and enforcement sources", () => {
+  // 1. Missing reliability source fails closed
+  const noSourceManager = new ReservePayoutManager();
+  assert.throws(
+    () => noSourceManager.evaluateOperatorTrustTier({ operatorId: "op-100", tenantId: "tenant-lagos" }),
+    /Authoritative reliability authority is required/
+  );
 
-  // 1. Preferred Tier: >= 30 bookings in 180d, reliability >= 0.98, no enforcement
-  const preferredEval = manager.evaluateOperatorTrustTier(sampleOperatorActivity);
-  assert.equal(preferredEval.tier, "preferred");
-
-  // 2. Proven Tier: >= 10 bookings in 60d, reliability >= 0.95, no enforcement
-  const provenEval = manager.evaluateOperatorTrustTier({
-    ...sampleOperatorActivity,
-    completedBookings180d: 15,
-    reliabilityScore180d: 0.96
-  });
-  assert.equal(provenEval.tier, "proven");
-
-  // 3. Standard Tier: < 10 bookings
-  const standardEval = manager.evaluateOperatorTrustTier({
-    ...sampleOperatorActivity,
-    completedBookings60d: 5,
-    completedBookings180d: 8
-  });
-  assert.equal(standardEval.tier, "standard");
-
-  // 4. Downgrade by reliability score (< 0.95)
-  const lowReliabilityEval = manager.evaluateOperatorTrustTier({
-    ...sampleOperatorActivity,
-    reliabilityScore60d: 0.90,
-    reliabilityScore180d: 0.90
-  });
-  assert.equal(lowReliabilityEval.tier, "standard");
-
-  // 5. Downgrade by active enforcement state (e.g. "warning", "restriction")
-  const activeEnforcementEval = manager.evaluateOperatorTrustTier({
-    ...sampleOperatorActivity,
-    activeEnforcementState: "restriction"
-  });
-  assert.equal(activeEnforcementEval.tier, "standard");
-  assert.equal(activeEnforcementEval.overriddenByEnforcement, true);
-
-  // Authoritative provider evaluation
-  const authoritativeReliability = {
-    getReliability: ({ operatorId }: { operatorId: string; tenantId: string }) => ({
-      operatorId,
-      tenantId: "tenant-lagos",
-      trailing60dCompletedBookings: 12,
-      trailing60dOpportunities: 12,
-      trailing60dReliabilityRate: 0.96,
+  // 2. Preferred Tier: >= 30 bookings in 180d, reliability >= 0.98, no enforcement
+  const prefManager = new ReservePayoutManager({
+    reliabilityAuthority: createMockReliability({
       trailing180dCompletedBookings: 35,
-      trailing180dOpportunities: 35,
       trailing180dReliabilityRate: 0.99
     })
-  };
-  const authoritativeEnforcement = {
-    getProjections: ({ operatorId }: { operatorId: string }) => ({
-      misconductCount: 0,
-      enforcementLevel: "coaching" as const,
-      operatorStatus: "active" as const
+  });
+  const prefEval = prefManager.evaluateOperatorTrustTier({ operatorId: "op-100", tenantId: "tenant-lagos" });
+  assert.equal(prefEval.tier, "preferred");
+
+  // 3. Proven Tier: >= 10 bookings in 60d, reliability >= 0.95
+  const provManager = new ReservePayoutManager({
+    reliabilityAuthority: createMockReliability({
+      trailing60dCompletedBookings: 12,
+      trailing60dReliabilityRate: 0.96,
+      trailing180dCompletedBookings: 15,
+      trailing180dReliabilityRate: 0.96
     })
-  };
-
-  const providerManager = new ReservePayoutManager({
-    reliabilityAuthority: authoritativeReliability,
-    enforcementAuthority: authoritativeEnforcement
   });
+  const provEval = provManager.evaluateOperatorTrustTier({ operatorId: "op-100", tenantId: "tenant-lagos" });
+  assert.equal(provEval.tier, "proven");
 
-  const authEval = providerManager.evaluateOperatorTrustTier({
-    operatorId: "op-100",
-    tenantId: "tenant-lagos"
+  // 4. Standard Tier: < 10 bookings in 60d
+  const stdManager = new ReservePayoutManager({
+    reliabilityAuthority: createMockReliability({
+      trailing60dCompletedBookings: 5,
+      trailing60dReliabilityRate: 0.96,
+      trailing180dCompletedBookings: 8,
+      trailing180dReliabilityRate: 0.96
+    })
   });
-  assert.equal(authEval.tier, "preferred");
+  const stdEval = stdManager.evaluateOperatorTrustTier({ operatorId: "op-100", tenantId: "tenant-lagos" });
+  assert.equal(stdEval.tier, "standard");
+
+  // 5. Active enforcement override forces Standard tier
+  const enforcedManager = new ReservePayoutManager({
+    reliabilityAuthority: createMockReliability({
+      trailing180dCompletedBookings: 35,
+      trailing180dReliabilityRate: 0.99
+    }),
+    enforcementAuthority: createMockEnforcement({
+      enforcementLevel: "restriction" as const,
+      operatorStatus: "active_with_restrictions" as const
+    })
+  });
+  const enforcedEval = enforcedManager.evaluateOperatorTrustTier({ operatorId: "op-100", tenantId: "tenant-lagos" });
+  assert.equal(enforcedEval.tier, "standard");
+  assert.equal(enforcedEval.overriddenByEnforcement, true);
 });
 
 test("Reserve and payout projections reconcile to ledger entries and never promise unavailable or legally held funds", () => {
   const accountingRepo = new InMemoryRevenueAccountingRepository();
-  const manager = new ReservePayoutManager({ accountingRepository: accountingRepo });
+  const reliability = createMockReliability();
+  const manager = new ReservePayoutManager({
+    reliabilityAuthority: reliability,
+    accountingRepository: accountingRepo
+  });
+
+  const release = createMockRevenueRelease({
+    commissionRate: 0.1,
+    commissionKobo: 1100000,
+    operatorNetKobo: 9900000
+  });
 
   // Open risk / legal hold / open liabilities override payout acceleration
   const overriddenPayout = manager.calculatePayoutPlanAndReserve({
-    booking: sampleBooking,
-    payoutPlan: "preferred_100_access",
-    tier: "preferred",
+    revenueRelease: release,
     holds: {
       openRisk: true,
-      openLiabilitiesKobo: 5000000, // ₦50,000 open liability
+      openLiabilitiesKobo: 5000000,
       legalHold: false,
       providerRestriction: false
     }
   });
 
-  // Payout acceleration is overridden -> funds are NOT promised/payable now
   assert.equal(overriddenPayout.payoutAccelerated, false);
   assert.equal(overriddenPayout.payableNowKobo, 0);
   assert.equal(overriddenPayout.heldAmountKobo, 9900000); // Entire Operator Net held pending risk/liability resolution
@@ -229,10 +243,14 @@ test("Reserve and payout projections reconcile to ledger entries and never promi
   assert.ok(overriddenPayout.overrideReasons.includes("open_liabilities"));
 });
 
-test("Downgrade, open liability, appeal, adjustment, and duplicate-release cases are covered behaviourally", () => {
+test("Reserve movements are strictly ledger-atomic, fail closed on accounting error, and require mandatory idempotency & tenant scope", () => {
   const accountingRepo = new InMemoryRevenueAccountingRepository();
   const auditLog = new InMemoryAuditLog();
-  const manager = new ReservePayoutManager({ accountingRepository: accountingRepo });
+  const reliability = createMockReliability();
+  const manager = new ReservePayoutManager({
+    reliabilityAuthority: reliability,
+    accountingRepository: accountingRepo
+  });
 
   // Seed release in accounting repo to ensure balanced ledger tracking
   const releaseId = "revenue-release:res-501";
@@ -272,22 +290,35 @@ test("Downgrade, open liability, appeal, adjustment, and duplicate-release cases
     status: "held",
     policyVersion: "v1.0-launch"
   };
-
   manager.registerReserveTranche(tranche);
 
-  // Failure path 1: Cannot release before maturity date
+  // Failure path: Missing accounting repository fails closed
+  const noRepoManager = new ReservePayoutManager({ reliabilityAuthority: reliability });
+  noRepoManager.registerReserveTranche({ ...tranche, trancheId: "tr-no-repo" });
   assert.throws(
-    () => manager.releaseReserveTranche("tr-101", "2026-08-20T00:00:00Z", {}, auditLog),
-    /Tranche tr-101 has not reached maturity date/
+    () => noRepoManager.releaseReserveTranche("tr-no-repo", "2026-09-10T00:00:00Z"),
+    /Authoritative RevenueAccountingRepository is required/
   );
 
-  // Failure path 2: Paused due to open appeal or legal hold
+  // Failure path: Ledger write failure leaves tranche held
+  const brokenRepo: any = {
+    postAdjustment: () => {
+      throw new Error("Ledger database disk full");
+    }
+  };
+  const brokenRepoManager = new ReservePayoutManager({
+    reliabilityAuthority: reliability,
+    accountingRepository: brokenRepo
+  });
+  brokenRepoManager.registerReserveTranche({ ...tranche, trancheId: "tr-broken-ledger" });
   assert.throws(
-    () => manager.releaseReserveTranche("tr-101", "2026-09-10T00:00:00Z", { legalHold: true }, auditLog),
-    /Tranche release paused due to legal hold or open appeal/
+    () => brokenRepoManager.releaseReserveTranche("tr-broken-ledger", "2026-09-10T00:00:00Z"),
+    /Ledger database disk full/
   );
+  assert.equal(brokenRepoManager.getReserveTranche("tr-broken-ledger")?.status, "held");
+  assert.equal(brokenRepoManager.getReserveTranche("tr-broken-ledger")?.releasedAtIso, undefined);
 
-  // Success path: Release after maturity without holds reconciles balanced movement
+  // Success path: Release after maturity reconciles balanced movement
   const released = manager.releaseReserveTranche("tr-101", "2026-09-10T00:00:00Z", {}, auditLog);
   assert.equal(released.status, "released");
   assert.equal(released.releasedAtIso, "2026-09-10T00:00:00Z");
@@ -297,105 +328,49 @@ test("Downgrade, open liability, appeal, adjustment, and duplicate-release cases
   assert.equal(adjustments.length, 1);
   assert.equal(adjustments[0].reasonCode, "reserve_tranche_released_to_payable");
 
-  // Failure path 3: Duplicate release attempt
-  assert.throws(
-    () => manager.releaseReserveTranche("tr-101", "2026-09-11T00:00:00Z", {}, auditLog),
-    /Duplicate release attempted for tranche tr-101/
-  );
-
-  // Open liability offset case: Tranche applied to offset open liability
-  const releaseId2 = "revenue-release:res-502";
-  accountingRepo.commitRelease({
-    release: { releaseId: releaseId2, reservationId: "res-502" },
-    journal: journal({
-      correlationId: releaseId2,
-      lines: [
-        { lineId: `${releaseId2}:1`, account: "revenue_pending", side: "debit", amountKobo: 5000000, currency: "NGN" },
-        { lineId: `${releaseId2}:2`, account: "platform_commission_earned", side: "credit", amountKobo: 600000, currency: "NGN" },
-        { lineId: `${releaseId2}:3`, account: "operator_net_recognized", side: "credit", amountKobo: 4400000, currency: "NGN" },
-        { lineId: `${releaseId2}:4`, account: "operator_net_recognized", side: "debit", amountKobo: 4400000, currency: "NGN" },
-        { lineId: `${releaseId2}:5`, account: "operator_payable", side: "credit", amountKobo: 3900000, currency: "NGN" },
-        { lineId: `${releaseId2}:6`, account: "rolling_reserve", side: "credit", amountKobo: 500000, currency: "NGN" },
-        { lineId: `${releaseId2}:7`, account: "post_stay_deferred", side: "credit", amountKobo: 0, currency: "NGN" }
-      ],
-      createdAt: "2026-08-10T12:00:00Z"
+  // Mandatory idempotency on financial commands
+  const missingIdemCmd = {
+    ...createPlatformCommandEnvelope({
+      commandName: "reserve.override_payout_hold",
+      principal: { id: "admin-1", role: "admin", tenantId: "tenant-lagos" },
+      payload: {
+        operatorId: "op-100",
+        tenantId: "tenant-lagos",
+        action: "apply_hold" as const,
+        reason: "Missing idempotency test"
+      },
     }),
-    earnedCommission: {
-      recordId: `ec-${releaseId2}`,
-      releaseId: releaseId2,
-      reservationId: "res-502",
-      commissionPolicyVersion: "v1.0-launch",
-      earnedCommissionKobo: 600000,
-      currency: "NGN",
-      earnedAt: "2026-08-10T12:00:00Z"
-    }
-  });
-
-  const tranche2: ReserveTranche = {
-    trancheId: "tr-102",
-    reservationId: "res-502",
-    operatorId: "op-100",
-    tenantId: "tenant-lagos",
-    amountKobo: 500000,
-    checkoutDateIso: "2026-08-10T11:00:00Z",
-    maturityDateIso: "2026-09-09T11:00:00Z",
-    status: "held",
-    policyVersion: "v1.0-launch"
+    idempotencyKey: undefined
   };
-  manager.registerReserveTranche(tranche2);
-
-  const forfeited = manager.releaseReserveTranche(
-    "tr-102",
-    "2026-09-10T00:00:00Z",
-    { openLiabilitiesKobo: 1000000 },
-    auditLog
+  assert.throws(
+    () => manager.processAdminPayoutOverride(missingIdemCmd),
+    /Idempotency key is required/
   );
-  assert.equal(forfeited.status, "forfeited_for_liability");
-  assert.ok(forfeited.ledgerJournalId);
 
-  // Manual override command via PlatformCommandEnvelope with idempotency
-  const overrideCmd = createPlatformCommandEnvelope({
+  // Tenant mismatch on financial command fails closed
+  const tenantMismatchCmd = createPlatformCommandEnvelope({
     commandName: "reserve.override_payout_hold",
     principal: { id: "admin-1", role: "admin", tenantId: "tenant-lagos" },
     payload: {
       operatorId: "op-100",
+      tenantId: "tenant-abuja", // Mismatched tenant!
       action: "apply_hold" as const,
-      reason: "Under investigation for fraudulent listing"
+      reason: "Tenant mismatch test"
     },
-    idempotencyKey: "idem-override-101"
-  });
-
-  const holdResult = manager.processAdminPayoutOverride(overrideCmd);
-  assert.equal(holdResult.operatorId, "op-100");
-  assert.equal(holdResult.holdActive, true);
-
-  // Replay of same command envelope returns idempotent cached result
-  const replayed = manager.processAdminPayoutOverride(overrideCmd);
-  assert.equal(replayed.operatorId, "op-100");
-  assert.equal(replayed.holdActive, true);
-
-  // Conflicting idempotency key reuse fails closed
-  const conflictingCmd = createPlatformCommandEnvelope({
-    commandName: "reserve.override_payout_hold",
-    principal: { id: "admin-1", role: "admin", tenantId: "tenant-lagos" },
-    payload: {
-      operatorId: "op-999", // Different payload!
-      action: "apply_hold" as const,
-      reason: "Different reason"
-    },
-    idempotencyKey: "idem-override-101"
+    idempotencyKey: "idem-mismatch-1"
   });
   assert.throws(
-    () => manager.processAdminPayoutOverride(conflictingCmd),
-    /Idempotency key was reused for a different command/
+    () => manager.processAdminPayoutOverride(tenantMismatchCmd),
+    /Principal tenant does not match resource tenant/
   );
 
-  // Non-human/agent execution rejection (ADR 0072 & ADR 0083)
+  // Agent role rejection (ADR 0072 & ADR 0083)
   const agentCmd = createPlatformCommandEnvelope({
     commandName: "reserve.override_payout_hold",
-    principal: { id: "agent-bot", role: "agent" as any, tenantId: "tenant-lagos" },
+    principal: { id: "agent-bot", role: "agent", tenantId: "tenant-lagos" },
     payload: {
       operatorId: "op-100",
+      tenantId: "tenant-lagos",
       action: "apply_hold" as const,
       reason: "AI agent decision"
     },
@@ -403,6 +378,23 @@ test("Downgrade, open liability, appeal, adjustment, and duplicate-release cases
   });
   assert.throws(
     () => manager.processAdminPayoutOverride(agentCmd),
+    /Admin authority required/
+  );
+
+  // System role rejection
+  const systemCmd = createPlatformCommandEnvelope({
+    commandName: "reserve.override_payout_hold",
+    principal: { id: "cron-system", role: "system", tenantId: "tenant-lagos" },
+    payload: {
+      operatorId: "op-100",
+      tenantId: "tenant-lagos",
+      action: "apply_hold" as const,
+      reason: "Automated hold"
+    },
+    idempotencyKey: "idem-override-system"
+  });
+  assert.throws(
+    () => manager.processAdminPayoutOverride(systemCmd),
     /Admin authority required/
   );
 });

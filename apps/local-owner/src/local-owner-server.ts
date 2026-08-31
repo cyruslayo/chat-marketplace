@@ -263,20 +263,20 @@ export function renderOwnerDashboardHtml(overview: LocalOwnerStateOverview): str
           <span class="meta-value">${formatKobo(overview.payoutProjections.commissionBaseKobo)}</span>
         </div>
         <div class="meta-row">
-          <span class="meta-label">Commission Rate:</span>
-          <span class="meta-value">${(overview.payoutProjections.commissionRate * 100).toFixed(0)}% (${overview.payoutProjections.tier})</span>
+          <span class="meta-label">Captured Commission Rate:</span>
+          <span class="meta-value">${(overview.payoutProjections.commissionRate * 100).toFixed(0)}% (Preferred tier)</span>
         </div>
         <div class="meta-row">
           <span class="meta-label">Operator Net:</span>
           <span class="meta-value">${formatKobo(overview.payoutProjections.operatorNetKobo)}</span>
         </div>
         <div class="meta-row">
-          <span class="meta-label">Fast Payout (90% payable):</span>
+          <span class="meta-label">Ordinary Settlement (100%):</span>
           <span class="meta-value" style="color: #3fb950;">${formatKobo(overview.payoutProjections.payableNowKobo)}</span>
         </div>
         <div class="meta-row">
-          <span class="meta-label">Rolling Reserve (10% tranche):</span>
-          <span class="meta-value">${formatKobo(overview.payoutProjections.reserveTrancheKobo)} (30d review)</span>
+          <span class="meta-label">Routine Reserve:</span>
+          <span class="meta-value">${formatKobo(overview.payoutProjections.reserveTrancheKobo)} (0% for Preferred)</span>
         </div>
       </div>
     </div>
@@ -372,7 +372,7 @@ export function startLocalOwnerServer(options: {
   environment?: LocalApartmentOwnerEnvironment;
 } = {}) {
   const port = options.port ?? 3000;
-  const env = options.environment ?? new LocalApartmentOwnerEnvironment();
+  let env = options.environment ?? new LocalApartmentOwnerEnvironment();
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
@@ -428,7 +428,9 @@ export function startLocalOwnerServer(options: {
       }
 
       if (url.pathname === "/action/reset") {
-        resetLocalOwnerFixture();
+        env.close();
+        resetLocalOwnerFixture(env.config.databasePath);
+        env = new LocalApartmentOwnerEnvironment(env.config);
         res.writeHead(302, { Location: "/" });
         res.end();
         return;
@@ -441,7 +443,9 @@ export function startLocalOwnerServer(options: {
 
   return {
     server,
-    env,
+    get env() {
+      return env;
+    },
     listen: () =>
       new Promise<number>((resolve) => {
         server.listen(port, () => {

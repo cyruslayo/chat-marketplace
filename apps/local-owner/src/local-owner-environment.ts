@@ -18,6 +18,9 @@ import {
   type PayoutPlanResult,
   type ReserveTranche,
   type OperatorUnitProjections,
+  type AuthoritativeReliabilityRecord,
+  type OperatorReliabilityAuthority,
+  type ProductionRevenueReleaseRecord,
 } from "../../../domains/shortlet/src/index.js";
 import {
   createBookingRequestApplication,
@@ -97,6 +100,7 @@ export class LocalApartmentOwnerEnvironment {
   readonly calendar: AvailabilityCalendar;
   readonly grantStore: SqliteOperatorRepresentativeGrantStore;
   readonly enforcementManager: OperatorEnforcementManager;
+  readonly reliabilityAuthority: OperatorReliabilityAuthority;
   readonly reservePayoutManager: ReservePayoutManager;
   readonly accountingRepository: InMemoryRevenueAccountingRepository;
   readonly bookingStateRepository: InMemoryBookingStateRepository;
@@ -117,10 +121,23 @@ export class LocalApartmentOwnerEnvironment {
       clock: this.clock,
       operatorAuthority: this.grantStore,
     });
+    this.reliabilityAuthority = {
+      getReliability: ({ operatorId, tenantId }: { operatorId: string; tenantId: string }): AuthoritativeReliabilityRecord => ({
+        operatorId,
+        tenantId,
+        trailing60dCompletedBookings: 12,
+        trailing60dOpportunities: 12,
+        trailing60dReliabilityRate: 0.98,
+        trailing180dCompletedBookings: 35,
+        trailing180dOpportunities: 35,
+        trailing180dReliabilityRate: 0.99,
+      }),
+    };
     this.accountingRepository = new InMemoryRevenueAccountingRepository();
     this.reservePayoutManager = new ReservePayoutManager({
       accountingRepository: this.accountingRepository,
       enforcementAuthority: this.enforcementManager,
+      reliabilityAuthority: this.reliabilityAuthority,
       clock: this.clock,
     });
     this.bookingStateRepository = new InMemoryBookingStateRepository();
@@ -140,6 +157,7 @@ export class LocalApartmentOwnerEnvironment {
       repository: this.unitRepository,
       calendar: this.calendar,
       guestVerification,
+      operatorAuthority: this.grantStore,
       clock: this.clock,
     });
 
@@ -255,15 +273,7 @@ export class LocalApartmentOwnerEnvironment {
 
   getRepresentativePrincipal(): CommandPrincipal {
     return {
-      id: this.config.operatorId, // Acts on behalf of Operator
-      role: "operator",
-      tenantId: this.config.tenantId,
-    };
-  }
-
-  getHumanActorPrincipal(): CommandPrincipal {
-    return {
-      id: this.config.representativePersonId,
+      id: this.config.representativePersonId, // Authenticated human representative actor
       role: "operator",
       tenantId: this.config.tenantId,
     };
@@ -362,25 +372,46 @@ export class LocalApartmentOwnerEnvironment {
     const trustTier = this.reservePayoutManager.evaluateOperatorTrustTier({
       operatorId: this.config.operatorId,
       tenantId: this.config.tenantId,
-      completedBookings60d: 12,
-      completedBookings180d: 35,
-      reliabilityScore60d: 0.98,
-      reliabilityScore180d: 0.99,
-      activeEnforcementState: "none",
     });
 
+    // Authoritative ProductionRevenueReleaseRecord for a 3-night stay at ₦120,000/night + ₦10,000 cleaning
+    // Total accommodation + mandatory = ₦370,000. Preferred captured commission rate = 10% (₦37,000). Operator Net = ₦333,000.
+    const mockRevenueRelease: ProductionRevenueReleaseRecord = {
+      releaseId: "rev-rel-sample-ikoyi-001",
+      releaseVersion: 1,
+      reservationId: "res-sample-ikoyi-001",
+      contractId: "ctr-sample-ikoyi-001",
+      contractVersion: 1,
+      unitId: this.config.unitId,
+      tenantId: this.config.tenantId,
+      operatorId: this.config.operatorId,
+      accessVersion: "v1",
+      accessStatus: "verified_access",
+      verifiedAccessAt: "2026-08-15T14:00:00Z",
+      protectionWindowStartsAt: "2026-08-15T14:00:00Z",
+      protectionWindowEndsAt: "2026-08-16T14:00:00Z",
+      economicsVersion: "v1",
+      commissionPolicyVersion: "v1",
+      commissionRate: 0.1, // 10% Preferred captured rate
+      commissionBaseKobo: 37000000,
+      commissionKobo: 3700000,
+      operatorNetKobo: 33300000,
+      payoutPlan: "fast_payout",
+      payoutPlanVersion: "v1",
+      payableNowKobo: 33300000,
+      routineReserveTrancheKobo: 0,
+      deferredPostStayKobo: 0,
+      riskHoldVersion: "v1",
+      riskHoldKobo: 0,
+      ledgerJournalId: "j-sample-ikoyi-001",
+      earnedCommissionRecordId: "ec-sample-ikoyi-001",
+      effectiveCheckoutVersion: "v1",
+      releasedAt: "2026-08-16T14:00:00Z",
+      currency: "NGN",
+    };
+
     const samplePayout = this.reservePayoutManager.calculatePayoutPlanAndReserve({
-      booking: {
-        reservationId: "sample-res-overview",
-        operatorId: this.config.operatorId,
-        tenantId: this.config.tenantId,
-        accommodationKobo: unit.price.nightlyKobo * 3, // 3 nights = ₦360,000
-        mandatoryChargesKobo: unit.price.mandatoryFeesKobo ?? 0,
-        securityDepositKobo: unit.price.refundableSecurityDepositKobo,
-        checkoutDateIso: "2026-08-18T11:00:00Z",
-      },
-      payoutPlan: "founding_90_10",
-      tier: trustTier.tier,
+      revenueRelease: mockRevenueRelease,
     });
 
     const pendingRequests = this.#demoRequests.map((reqId) => {

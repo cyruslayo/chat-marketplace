@@ -42,7 +42,7 @@ Navigate in your browser to: **`http://localhost:3000`**
 
 ### 3. Review Settlement & Trust Projections
 - Observe the **Preferred** tier projection with 10% platform commission.
-- Review the **Fast Payout (90%)** vs **Rolling Reserve (10%)** settlement breakdown for an upcoming 3-night stay (₦370,000 gross $\rightarrow$ ₦333,000 net $\rightarrow$ ₦299,700 payable now, ₦33,300 reserve tranche).
+- Review the **Ordinary Settlement (100%)** breakdown for an upcoming 3-night stay (₦370,000 gross $\rightarrow$ ₦333,000 net $\rightarrow$ ₦333,000 payable now, ₦0 routine reserve tranche under ADR 0083).
 
 ### 4. Test Incoming Booking Request
 1. Click **"Generate Demo Booking Request"** on the dashboard.

@@ -35,16 +35,6 @@ export interface OperatorEnforcementAuthority {
   };
 }
 
-export interface OperatorActivity {
-  operatorId: string;
-  tenantId: string;
-  completedBookings60d: number;
-  completedBookings180d: number;
-  reliabilityScore60d: number;
-  reliabilityScore180d: number;
-  activeEnforcementState: "none" | "warning" | "restriction" | "suspension" | "termination";
-}
-
 export interface TrustTierEvaluation {
   operatorId: string;
   tier: OperatorTrustTier;
@@ -64,20 +54,10 @@ export interface PayoutHoldConditions {
   appealPending?: boolean;
 }
 
-export interface PayoutCalculationInput {
-  reservationId: string;
-  operatorId: string;
-  tenantId: string;
-  operatorTier?: OperatorTrustTier;
-  accommodationKobo: number;
-  mandatoryChargesKobo: number;
-  securityDepositKobo: number;
-  checkoutDateIso: string;
-}
-
 export interface PayoutPlanResult {
   reservationId: string;
   operatorId: string;
+  tenantId: string;
   payoutPlan: PayoutPlanType;
   tier: OperatorTrustTier;
   policyVersion: string;
@@ -109,6 +89,7 @@ export interface ReserveTranche {
 
 export interface AdminHoldRecord {
   operatorId: string;
+  tenantId: string;
   holdActive: boolean;
   reason: string;
   appliedByUserId: string;
@@ -117,6 +98,7 @@ export interface AdminHoldRecord {
 
 export interface AdminPayoutOverridePayload {
   operatorId: string;
+  tenantId: string;
   action: "apply_hold" | "remove_hold";
   reason: string;
 }
@@ -135,9 +117,9 @@ export interface ReservePayoutManagerOptions {
 
 /**
  * ADR 0021, ADR 0024, ADR 0025, ADR 0026, ADR 0062, ADR 0063, ADR 0064, ADR 0072, ADR 0075, ADR 0083:
- * Calculates rolling reserve and settlement availability, evaluates Operator Trust Tier from authoritative
- * reliability and enforcement state, manages reserve tranches reconciling to ledger entries, and routes
- * consequential financial commands through authorized idempotent human command envelopes.
+ * Calculates rolling reserve and settlement availability consuming authoritative Revenue Release economics,
+ * evaluates Operator Trust Tier strictly from injected reliability and enforcement authorities,
+ * manages reserve tranches with atomic ledger adjustments, and enforces mandatory idempotency and tenant scope.
  */
 export class ReservePayoutManager {
   readonly #tranches = new Map<string, ReserveTranche>();
@@ -157,56 +139,35 @@ export class ReservePayoutManager {
 
   /**
    * ADR 0063, ADR 0064, ADR 0083:
-   * Evaluates Operator Trust Tier from authoritative platform evidence (completed bookings,
-   * observation periods, reliability thresholds, and active enforcement state).
+   * Evaluates Operator Trust Tier strictly from authoritative platform authorities.
    */
-  evaluateOperatorTrustTier(activityOrContext: OperatorActivity | { operatorId: string; tenantId: string }): TrustTierEvaluation {
+  evaluateOperatorTrustTier(context: { operatorId: string; tenantId: string }): TrustTierEvaluation {
+    if (!context || !context.operatorId || !context.tenantId) {
+      throw new Error("operatorId and tenantId are required to evaluate trust tier");
+    }
+    if (!this.#reliabilityAuthority) {
+      throw new Error("Authoritative reliability authority is required to evaluate trust tier");
+    }
+
+    const { operatorId, tenantId } = context;
     const policyVersion = "v1.0-launch";
     const evaluatedAtIso = this.#clock().toISOString();
     const reasons: string[] = [];
-
-    let operatorId: string;
-    let tenantId: string;
-    let completedBookings60d: number;
-    let completedBookings180d: number;
-    let reliabilityScore60d: number;
-    let reliabilityScore180d: number;
     let activeEnforcementBlocked = false;
 
-    if ("completedBookings60d" in activityOrContext) {
-      operatorId = activityOrContext.operatorId;
-      tenantId = activityOrContext.tenantId;
-      completedBookings60d = activityOrContext.completedBookings60d;
-      completedBookings180d = activityOrContext.completedBookings180d;
-      reliabilityScore60d = activityOrContext.reliabilityScore60d;
-      reliabilityScore180d = activityOrContext.reliabilityScore180d;
-      if (activityOrContext.activeEnforcementState !== "none") {
+    if (this.#enforcementAuthority) {
+      const proj = this.#enforcementAuthority.getProjections({ operatorId });
+      if (proj.enforcementLevel !== "coaching" || proj.operatorStatus !== "active" || proj.protectiveActionActive || proj.appealPending) {
         activeEnforcementBlocked = true;
-        reasons.push(`Active operator enforcement state: ${activityOrContext.activeEnforcementState}`);
-      }
-    } else {
-      operatorId = activityOrContext.operatorId;
-      tenantId = activityOrContext.tenantId;
-      if (this.#enforcementAuthority) {
-        const proj = this.#enforcementAuthority.getProjections({ operatorId });
-        if (proj.enforcementLevel !== "coaching" || proj.operatorStatus !== "active" || proj.protectiveActionActive || proj.appealPending) {
-          activeEnforcementBlocked = true;
-          reasons.push(`Active operator enforcement: level=${proj.enforcementLevel}, status=${proj.operatorStatus}`);
-        }
-      }
-      if (this.#reliabilityAuthority) {
-        const rel = this.#reliabilityAuthority.getReliability({ operatorId, tenantId });
-        completedBookings60d = rel.trailing60dCompletedBookings;
-        completedBookings180d = rel.trailing180dCompletedBookings;
-        reliabilityScore60d = rel.trailing60dReliabilityRate;
-        reliabilityScore180d = rel.trailing180dReliabilityRate;
-      } else {
-        completedBookings60d = 0;
-        completedBookings180d = 0;
-        reliabilityScore60d = 0;
-        reliabilityScore180d = 0;
+        reasons.push(`Active operator enforcement: level=${proj.enforcementLevel}, status=${proj.operatorStatus}`);
       }
     }
+
+    const rel = this.#reliabilityAuthority.getReliability({ operatorId, tenantId });
+    const completedBookings60d = rel.trailing60dCompletedBookings;
+    const completedBookings180d = rel.trailing180dCompletedBookings;
+    const reliabilityScore60d = rel.trailing60dReliabilityRate;
+    const reliabilityScore180d = rel.trailing180dReliabilityRate;
 
     // Check active admin hold
     const adminHold = this.#adminHolds.get(operatorId);
@@ -266,62 +227,60 @@ export class ReservePayoutManager {
   /**
    * ADR 0026, ADR 0062, ADR 0063, ADR 0083:
    * Calculates settlement classification and reserve breakdown consuming authoritative Revenue Release economics.
+   * Trust Tier dictates settlement terms (Standard: Fast Payout 90/10 or Post-Stay 100%; Proven: 95/5; Preferred: 100%).
    */
   calculatePayoutPlanAndReserve({
-    booking,
-    payoutPlan,
-    tier,
-    holds,
-    revenueRelease
+    revenueRelease,
+    standardPayoutPreference = "fast_payout",
+    holds
   }: {
-    booking: PayoutCalculationInput;
-    payoutPlan: PayoutPlanType;
-    tier: OperatorTrustTier;
+    revenueRelease: ProductionRevenueReleaseRecord;
+    standardPayoutPreference?: "fast_payout" | "full_post_stay";
     holds?: PayoutHoldConditions;
-    revenueRelease?: ProductionRevenueReleaseRecord;
   }): PayoutPlanResult {
-    const policyVersion = "v1.0-launch";
-    let commissionBaseKobo: number;
-    let commissionRate: number;
-    let commissionKobo: number;
-    let operatorNetKobo: number;
-
-    if (revenueRelease) {
-      commissionBaseKobo = revenueRelease.commissionBaseKobo;
-      commissionRate = revenueRelease.commissionRate;
-      commissionKobo = revenueRelease.commissionKobo;
-      operatorNetKobo = revenueRelease.operatorNetKobo;
-    } else {
-      commissionBaseKobo = booking.accommodationKobo + booking.mandatoryChargesKobo;
-      const effectiveTier = booking.operatorTier ?? tier;
-      commissionRate = effectiveTier === "preferred" ? 0.1 : 0.12;
-      commissionKobo = Math.floor(commissionBaseKobo * commissionRate);
-      operatorNetKobo = commissionBaseKobo - commissionKobo;
+    if (!revenueRelease) {
+      throw new Error("Authoritative ProductionRevenueReleaseRecord is mandatory for settlement calculation");
     }
 
-    const effectiveTier = booking.operatorTier ?? tier;
+    const { reservationId, operatorId, tenantId, commissionBaseKobo, commissionRate, commissionKobo, operatorNetKobo } = revenueRelease;
+    const policyVersion = "v1.0-launch";
+
+    // Evaluate authoritative Trust Tier
+    const trustTierEval = this.evaluateOperatorTrustTier({ operatorId, tenantId });
+    const tier = trustTierEval.tier;
+
+    let payoutPlan: PayoutPlanType;
     let payableNowKobo = 0;
     let reserveTrancheKobo = 0;
     let payoutAccelerated = true;
 
-    // Base Payout Plan calculation under ADR 0083
-    if (payoutPlan === "founding_90_10") {
-      payableNowKobo = Math.floor(operatorNetKobo * 0.9);
-      reserveTrancheKobo = operatorNetKobo - payableNowKobo;
-    } else if (payoutPlan === "founding_100_post_checkout") {
+    // Settlement precedence under ADR 0083:
+    // Preferred: 100% ordinary payout (0% reserve)
+    // Proven: 95/5 payout (5% reserve)
+    // Standard: Fast Payout (90/10) or Full Post-Stay (100% deferred)
+    if (tier === "preferred") {
+      payoutPlan = "preferred_100_access";
       payableNowKobo = operatorNetKobo;
       reserveTrancheKobo = 0;
-    } else if (payoutPlan === "proven_95_5") {
+    } else if (tier === "proven") {
+      payoutPlan = "proven_95_5";
       payableNowKobo = Math.floor(operatorNetKobo * 0.95);
       reserveTrancheKobo = operatorNetKobo - payableNowKobo;
-    } else if (payoutPlan === "preferred_100_access") {
-      payableNowKobo = operatorNetKobo;
-      reserveTrancheKobo = 0;
+    } else {
+      if (standardPayoutPreference === "full_post_stay") {
+        payoutPlan = "founding_100_post_checkout";
+        payableNowKobo = operatorNetKobo;
+        reserveTrancheKobo = 0;
+      } else {
+        payoutPlan = "founding_90_10";
+        payableNowKobo = Math.floor(operatorNetKobo * 0.9);
+        reserveTrancheKobo = operatorNetKobo - payableNowKobo;
+      }
     }
 
     // Check hold overrides (ADR 0026, ADR 0063, ADR 0083)
     const overrideReasons: string[] = [];
-    const adminHold = this.#adminHolds.get(booking.operatorId);
+    const adminHold = this.#adminHolds.get(operatorId);
     if (adminHold && adminHold.holdActive) {
       overrideReasons.push(`admin_hold: ${adminHold.reason}`);
     }
@@ -356,10 +315,11 @@ export class ReservePayoutManager {
     }
 
     return {
-      reservationId: booking.reservationId,
-      operatorId: booking.operatorId,
+      reservationId,
+      operatorId,
+      tenantId,
       payoutPlan,
-      tier: effectiveTier,
+      tier,
       policyVersion,
       commissionBaseKobo,
       commissionRate,
@@ -382,21 +342,28 @@ export class ReservePayoutManager {
     return { ...tranche };
   }
 
+  getReserveTranche(trancheId: string): ReserveTranche | undefined {
+    return this.#tranches.get(trancheId);
+  }
+
   /**
    * ADR 0024, ADR 0025, ADR 0026, ADR 0083:
    * Releases or forfeits a reserve tranche after maturity date, checking for duplicate releases,
-   * open liabilities, active holds, and recording balanced ledger movements.
+   * open liabilities, active holds, and committing balanced ledger movements before updating state.
    */
   releaseReserveTranche(
     trancheId: string,
     currentIso: string,
     holds?: PayoutHoldConditions,
-    auditLog?: InMemoryAuditLog,
-    accountingRepo?: RevenueAccountingRepository
+    auditLog?: InMemoryAuditLog
   ): ReserveTranche {
     const tranche = this.#tranches.get(trancheId);
     if (!tranche) {
       throw new Error(`Reserve tranche not found: ${trancheId}`);
+    }
+
+    if (!this.#accountingRepository) {
+      throw new Error("Authoritative RevenueAccountingRepository is required for reserve movements");
     }
 
     // Behavioral check: Duplicate release
@@ -423,38 +390,33 @@ export class ReservePayoutManager {
       throw new Error(`Tranche release paused due to legal hold or open appeal for tranche ${trancheId}`);
     }
 
-    const repo = accountingRepo ?? this.#accountingRepository;
+    const releaseId = `revenue-release:${tranche.reservationId}`;
 
-    // Behavioral check: Open liabilities offset
+    // Open liabilities offset case
     if (holds?.openLiabilitiesKobo && holds.openLiabilitiesKobo > 0) {
+      const lines: RevenueLedgerLine[] = [
+        { lineId: `tranche-forfeit:${trancheId}:1`, account: "rolling_reserve", side: "debit", amountKobo: tranche.amountKobo, currency: "NGN" },
+        { lineId: `tranche-forfeit:${trancheId}:2`, account: "operator_costs_and_offsets", side: "credit", amountKobo: tranche.amountKobo, currency: "NGN" }
+      ];
+      const j = journal({ correlationId: releaseId, lines, createdAt: currentIso });
+      const adj: RevenueAdjustmentRecord = {
+        adjustmentId: `adj-forfeit-${trancheId}`,
+        adjustmentVersion: 1,
+        reservationId: tranche.reservationId,
+        releaseId,
+        source: "other_accepted_source",
+        sourceReference: trancheId,
+        reasonCode: "applied_to_operator_liability",
+        journal: j
+      };
+
+      // Atomic commit to ledger first. If it throws, tranche remains held.
+      this.#accountingRepository.postAdjustment({ adjustment: adj });
+
+      // Ledger write succeeded -> update state
       tranche.status = "forfeited_for_liability";
       tranche.releasedAtIso = currentIso;
-
-      if (repo) {
-        const releaseId = `revenue-release:${tranche.reservationId}`;
-        const lines: RevenueLedgerLine[] = [
-          { lineId: `tranche-forfeit:${trancheId}:1`, account: "rolling_reserve", side: "debit", amountKobo: tranche.amountKobo, currency: "NGN" },
-          { lineId: `tranche-forfeit:${trancheId}:2`, account: "operator_costs_and_offsets", side: "credit", amountKobo: tranche.amountKobo, currency: "NGN" }
-        ];
-        const j = journal({ correlationId: releaseId, lines, createdAt: currentIso });
-        tranche.ledgerJournalId = j.journalId;
-        const adj: RevenueAdjustmentRecord = {
-          adjustmentId: `adj-forfeit-${trancheId}`,
-          adjustmentVersion: 1,
-          reservationId: tranche.reservationId,
-          releaseId,
-          source: "other_accepted_source",
-          sourceReference: trancheId,
-          reasonCode: "applied_to_operator_liability",
-          journal: j
-        };
-        try {
-          repo.postAdjustment({ adjustment: adj });
-        } catch {
-          // If release not in repo, still balance journal and assign journalId
-        }
-      }
-
+      tranche.ledgerJournalId = j.journalId;
       this.#tranches.set(trancheId, tranche);
 
       auditLog?.record({
@@ -469,34 +431,29 @@ export class ReservePayoutManager {
     }
 
     // Normal release
+    const lines: RevenueLedgerLine[] = [
+      { lineId: `tranche-release:${trancheId}:1`, account: "rolling_reserve", side: "debit", amountKobo: tranche.amountKobo, currency: "NGN" },
+      { lineId: `tranche-release:${trancheId}:2`, account: "operator_payable", side: "credit", amountKobo: tranche.amountKobo, currency: "NGN" }
+    ];
+    const j = journal({ correlationId: releaseId, lines, createdAt: currentIso });
+    const adj: RevenueAdjustmentRecord = {
+      adjustmentId: `adj-release-${trancheId}`,
+      adjustmentVersion: 1,
+      reservationId: tranche.reservationId,
+      releaseId,
+      source: "other_accepted_source",
+      sourceReference: trancheId,
+      reasonCode: "reserve_tranche_released_to_payable",
+      journal: j
+    };
+
+    // Atomic commit to ledger first. If it throws, tranche remains held.
+    this.#accountingRepository.postAdjustment({ adjustment: adj });
+
+    // Ledger write succeeded -> update state
     tranche.status = "released";
     tranche.releasedAtIso = currentIso;
-
-    if (repo) {
-      const releaseId = `revenue-release:${tranche.reservationId}`;
-      const lines: RevenueLedgerLine[] = [
-        { lineId: `tranche-release:${trancheId}:1`, account: "rolling_reserve", side: "debit", amountKobo: tranche.amountKobo, currency: "NGN" },
-        { lineId: `tranche-release:${trancheId}:2`, account: "operator_payable", side: "credit", amountKobo: tranche.amountKobo, currency: "NGN" }
-      ];
-      const j = journal({ correlationId: releaseId, lines, createdAt: currentIso });
-      tranche.ledgerJournalId = j.journalId;
-      const adj: RevenueAdjustmentRecord = {
-        adjustmentId: `adj-release-${trancheId}`,
-        adjustmentVersion: 1,
-        reservationId: tranche.reservationId,
-        releaseId,
-        source: "other_accepted_source",
-        sourceReference: trancheId,
-        reasonCode: "reserve_tranche_released_to_payable",
-        journal: j
-      };
-      try {
-        repo.postAdjustment({ adjustment: adj });
-      } catch {
-        // If release not in repo, still balance journal and assign journalId
-      }
-    }
-
+    tranche.ledgerJournalId = j.journalId;
     this.#tranches.set(trancheId, tranche);
 
     auditLog?.record({
@@ -511,7 +468,7 @@ export class ReservePayoutManager {
 
   /**
    * ADR 0072, ADR 0064, ADR 0083:
-   * Process manual admin payout override command using strongly typed envelope and idempotency.
+   * Process manual admin payout override command using strongly typed envelope and mandatory idempotency.
    */
   processAdminPayoutOverride(envelope: PlatformCommandEnvelope<AdminPayoutOverridePayload>): AdminHoldRecord {
     if (envelope.commandName !== "reserve.override_payout_hold") {
@@ -522,25 +479,40 @@ export class ReservePayoutManager {
       throw new Error("Admin authority required for payout hold override");
     }
 
-    const { operatorId, action, reason } = envelope.payload;
-    if (!operatorId || !action || !reason) {
+    const { operatorId, tenantId, action, reason } = envelope.payload ?? {};
+    if (!operatorId || !tenantId || !action || !reason) {
       throw new Error("Complete payload required for admin payout override");
     }
 
+    // Strict tenant match check
+    if (!envelope.principal.tenantId || envelope.principal.tenantId !== tenantId) {
+      throw new Error("Principal tenant does not match resource tenant");
+    }
+
+    // Mandatory idempotency key
     const idempotencyKey = envelope.idempotencyKey;
-    if (idempotencyKey) {
-      const fingerprint = JSON.stringify({ commandName: envelope.commandName, payload: envelope.payload });
-      const existing = this.#executedCommands.get(idempotencyKey);
-      if (existing) {
-        if (existing.commandName !== envelope.commandName || existing.fingerprint !== fingerprint) {
-          throw new Error("Idempotency key was reused for a different command");
-        }
-        return existing.result as AdminHoldRecord;
+    if (!idempotencyKey || typeof idempotencyKey !== "string" || idempotencyKey.trim() === "") {
+      throw new Error("Idempotency key is required for admin payout override");
+    }
+
+    const fingerprint = JSON.stringify({
+      commandName: envelope.commandName,
+      principalId: envelope.principal.id,
+      tenantId: envelope.principal.tenantId,
+      payload: envelope.payload
+    });
+
+    const existing = this.#executedCommands.get(idempotencyKey);
+    if (existing) {
+      if (existing.commandName !== envelope.commandName || existing.fingerprint !== fingerprint) {
+        throw new Error("Idempotency key was reused for a different command");
       }
+      return existing.result as AdminHoldRecord;
     }
 
     const record: AdminHoldRecord = {
       operatorId,
+      tenantId,
       holdActive: action === "apply_hold",
       reason,
       appliedByUserId: envelope.principal.id,
@@ -549,20 +521,18 @@ export class ReservePayoutManager {
 
     this.#adminHolds.set(operatorId, record);
 
-    if (idempotencyKey) {
-      this.#executedCommands.set(idempotencyKey, {
-        commandName: envelope.commandName,
-        fingerprint: JSON.stringify({ commandName: envelope.commandName, payload: envelope.payload }),
-        result: record
-      });
-    }
+    this.#executedCommands.set(idempotencyKey, {
+      commandName: envelope.commandName,
+      fingerprint,
+      result: record
+    });
 
     return { ...record };
   }
 
   /**
    * ADR 0072, ADR 0083:
-   * Process release reserve tranche command via platform command envelope.
+   * Process release reserve tranche command via platform command envelope with mandatory idempotency and tenant verification.
    */
   processReleaseReserveTrancheCommand(
     envelope: PlatformCommandEnvelope<ReleaseReserveTrancheCommandPayload>,
@@ -576,32 +546,49 @@ export class ReservePayoutManager {
       throw new Error("Authorized human role required for reserve release command");
     }
 
-    const { trancheId, holds } = envelope.payload;
+    const { trancheId, holds } = envelope.payload ?? {};
     if (!trancheId) {
       throw new Error("Tranche ID required for reserve release command");
     }
 
+    const tranche = this.#tranches.get(trancheId);
+    if (!tranche) {
+      throw new Error(`Reserve tranche not found: ${trancheId}`);
+    }
+
+    // Tenant check against tranche resource
+    if (!envelope.principal.tenantId || envelope.principal.tenantId !== tranche.tenantId) {
+      throw new Error("Principal tenant does not match tranche tenant");
+    }
+
+    // Mandatory idempotency key
     const idempotencyKey = envelope.idempotencyKey;
-    if (idempotencyKey) {
-      const fingerprint = JSON.stringify({ commandName: envelope.commandName, payload: envelope.payload });
-      const existing = this.#executedCommands.get(idempotencyKey);
-      if (existing) {
-        if (existing.commandName !== envelope.commandName || existing.fingerprint !== fingerprint) {
-          throw new Error("Idempotency key was reused for a different command");
-        }
-        return existing.result as ReserveTranche;
+    if (!idempotencyKey || typeof idempotencyKey !== "string" || idempotencyKey.trim() === "") {
+      throw new Error("Idempotency key is required for reserve release command");
+    }
+
+    const fingerprint = JSON.stringify({
+      commandName: envelope.commandName,
+      principalId: envelope.principal.id,
+      tenantId: envelope.principal.tenantId,
+      payload: envelope.payload
+    });
+
+    const existing = this.#executedCommands.get(idempotencyKey);
+    if (existing) {
+      if (existing.commandName !== envelope.commandName || existing.fingerprint !== fingerprint) {
+        throw new Error("Idempotency key was reused for a different command");
       }
+      return existing.result as ReserveTranche;
     }
 
     const result = this.releaseReserveTranche(trancheId, this.#clock().toISOString(), holds, auditLog);
 
-    if (idempotencyKey) {
-      this.#executedCommands.set(idempotencyKey, {
-        commandName: envelope.commandName,
-        fingerprint: JSON.stringify({ commandName: envelope.commandName, payload: envelope.payload }),
-        result
-      });
-    }
+    this.#executedCommands.set(idempotencyKey, {
+      commandName: envelope.commandName,
+      fingerprint,
+      result
+    });
 
     return result;
   }

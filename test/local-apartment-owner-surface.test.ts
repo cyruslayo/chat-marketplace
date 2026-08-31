@@ -6,7 +6,8 @@ import { join } from "node:path";
 import {
   LocalApartmentOwnerEnvironment,
   startLocalOwnerServer,
-  renderOwnerDashboardHtml,
+  resetLocalOwnerFixture,
+  DEFAULT_LOCAL_OWNER_CONFIG,
 } from "../apps/local-owner/src/index.js";
 import {
   createPlatformCommandEnvelope,
@@ -73,7 +74,7 @@ test("Local Apartment Owner Experience — Full End-to-End Verification", async 
     assert.equal(overview.availability.isAvailable, true);
   });
 
-  await t.test("3. Trust Tier and Settlement Projections reconcile with ADR 0083", () => {
+  await t.test("3. Trust Tier and Settlement Projections reconcile with ADR 0083 (Preferred Tier Ordinary 100%)", () => {
     const overview = env.getStateOverview();
 
     // Verify Trust Tier evaluation
@@ -81,21 +82,17 @@ test("Local Apartment Owner Experience — Full End-to-End Verification", async 
     assert.equal(overview.enforcement.enforcementLevel, "coaching");
     assert.equal(overview.enforcement.operatorStatus, "active");
 
-    // Verify Payout Plan breakdown
+    // Verify Payout Plan breakdown for Preferred tier under ADR 0083
     // 3 nights @ ₦120,000 = ₦360,000 + ₦10,000 mandatory charges = ₦370,000
     assert.equal(overview.payoutProjections.commissionBaseKobo, 37000000);
     assert.equal(overview.payoutProjections.commissionRate, 0.1); // 10% preferred rate
     assert.equal(overview.payoutProjections.commissionKobo, 3700000); // ₦37,000
     assert.equal(overview.payoutProjections.operatorNetKobo, 33300000); // ₦333,000
-    assert.equal(overview.payoutProjections.payableNowKobo, 29970000); // 90% = ₦299,700
-    assert.equal(overview.payoutProjections.reserveTrancheKobo, 3330000); // 10% = ₦33,300
-    assert.equal(
-      overview.payoutProjections.payableNowKobo + overview.payoutProjections.reserveTrancheKobo,
-      overview.payoutProjections.operatorNetKobo
-    );
+    assert.equal(overview.payoutProjections.payableNowKobo, 33300000); // 100% ordinary payout for Preferred
+    assert.equal(overview.payoutProjections.reserveTrancheKobo, 0); // 0% routine reserve
   });
 
-  await t.test("4. Incoming Booking Request response workflow (Confirm/Decline & Inventory Lock)", () => {
+  await t.test("4. Booking Request response workflow via Representative Grant (Confirm/Decline & Inventory Lock)", () => {
     // Generate an incoming demo booking request
     const request = env.createDemoIncomingBookingRequest({
       guestId: "guest-test-1",
@@ -107,9 +104,48 @@ test("Local Apartment Owner Experience — Full End-to-End Verification", async 
     assert.equal(request.facts.status, "disclosed");
     assert.equal(request.facts.delivered, true);
     assert.equal(request.facts.nights, 3);
-    assert.equal(request.actions.length, 2); // confirm and decline
+    assert.equal(request.actions.length, 2); // confirm and decline available for authorized representative
 
-    // Confirm booking request on behalf of the Operator
+    // Negative: Unauthorized stranger cannot view actions or confirm
+    const unauthorizedViewer: CommandPrincipal = {
+      id: "stranger-unauth",
+      role: "operator",
+      tenantId: env.config.tenantId,
+    };
+    const unauthArtifact = env.bookingRequestApp.getArtifact(request.facts.requestId, unauthorizedViewer);
+    assert.equal(unauthArtifact.actions.length, 0);
+
+    assert.throws(
+      () => env.bookingRequestApp.confirm({
+        artifactId: `booking-request:${request.facts.requestId}`,
+        requestId: request.facts.requestId,
+        expectedStatus: "disclosed",
+        projectionVersion: 3,
+        principal: unauthorizedViewer,
+        action: "confirm",
+      }),
+      /not authorized to act for this Operator/
+    );
+
+    // Negative: Wrong tenant fails closed
+    const wrongTenantViewer: CommandPrincipal = {
+      id: env.config.representativePersonId,
+      role: "operator",
+      tenantId: "tenant-wrong",
+    };
+    assert.throws(
+      () => env.bookingRequestApp.confirm({
+        artifactId: `booking-request:${request.facts.requestId}`,
+        requestId: request.facts.requestId,
+        expectedStatus: "disclosed",
+        projectionVersion: 3,
+        principal: wrongTenantViewer,
+        action: "confirm",
+      }),
+      /not authorized for this tenant/
+    );
+
+    // Confirm booking request using authorized human representative actor
     const confirmed = env.confirmBookingRequest(request.facts.requestId);
     assert.equal(confirmed.facts.status, "confirmed");
 
@@ -130,10 +166,10 @@ test("Local Apartment Owner Experience — Full End-to-End Verification", async 
     );
   });
 
-  await t.test("5. Local Server HTTP endpoints & HTML Dashboard render", async () => {
-    // Use fresh env with separate calendar/dates for HTTP test to avoid previous date conflict
+  await t.test("5. Local Server HTTP endpoints, HTML Dashboard render, and live reset", async () => {
+    const httpDbPath = join(testDir, "test_grants_http.sqlite");
     const httpEnv = new LocalApartmentOwnerEnvironment({
-      databasePath: join(testDir, "test_grants_http.sqlite"),
+      databasePath: httpDbPath,
       clock,
     });
     const serverInstance = startLocalOwnerServer({ port: 0, environment: httpEnv });
@@ -164,13 +200,40 @@ test("Local Apartment Owner Experience — Full End-to-End Verification", async 
         redirect: "manual",
       });
       assert.equal(postDemo.status, 302);
+
+      // Confirm demo request via server
+      const stateAfterDemo = (await (await fetch(`http://localhost:${actualPort}/api/state`)).json()) as any;
+      const reqId = stateAfterDemo.pendingRequests[0].facts.requestId;
+
+      const postConfirm = await fetch(`http://localhost:${actualPort}/action/confirm`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: `requestId=${reqId}`,
+        redirect: "manual",
+      });
+      assert.equal(postConfirm.status, 302);
+
+      // Availability is now locked
+      const stateLocked = (await (await fetch(`http://localhost:${actualPort}/api/state`)).json()) as any;
+      assert.equal(stateLocked.availability.isAvailable, false);
+
+      // Test POST /action/reset -> triggers full environment rebuild
+      const postReset = await fetch(`http://localhost:${actualPort}/action/reset`, {
+        method: "POST",
+        redirect: "manual",
+      });
+      assert.equal(postReset.status, 302);
+
+      // Verify reset state: availability open again, no requests, grant active
+      const stateReset = (await (await fetch(`http://localhost:${actualPort}/api/state`)).json()) as any;
+      assert.equal(stateReset.availability.isAvailable, true);
+      assert.equal(stateReset.pendingRequests.length, 0);
+      assert.equal(stateReset.representative.isAuthorized, true);
     } finally {
       await serverInstance.close();
-      httpEnv.close();
     }
   });
 
   env.close();
   await rm(testDir, { recursive: true, force: true });
 });
-

@@ -13,9 +13,13 @@ function setup() {
   seedIssue01Units(repository);
   const audit = new InMemoryAuditLog();
   const calendar = new AvailabilityCalendar({ repository, audit });
+  const operatorAuthority = {
+    canActForOperator: ({ actorId, operatorId, tenantId }: { actorId: string; operatorId: string; tenantId: string }) =>
+      tenantId === "tenant-lagos" && (actorId === operatorId || actorId.startsWith("rep-")),
+  };
   const guestVerification = new GuestVerificationService({ repository, verificationResults: { getVerificationResult: ({ tenantId, guestId }) => tenantId === "tenant-lagos" && guestId.startsWith("guest-") ? { tenantId, guestId, governmentIdVerified: true } : null } });
   const clock = () => new Date("2026-07-22T10:00:00Z");
-  const bookingRequestApplication = createBookingRequestApplication({ repository, audit, calendar, guestVerification, clock });
+  const bookingRequestApplication = createBookingRequestApplication({ repository, audit, calendar, guestVerification, operatorAuthority, clock });
   const application = createConditionalOfferApplication({ bookingRequestApplication, repository, audit, calendar, clock });
   return { repository, audit, calendar, bookingRequestApplication, application, unit: repository.findAll()[0], clock };
 }
