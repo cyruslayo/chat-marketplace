@@ -1,6 +1,6 @@
 # Apply graduated Operator and turnover enforcement
 
-Status: blocked
+Status: resolved
 Type: AFK
 User stories: 75–77, 92
 
@@ -27,9 +27,9 @@ ADR-0082 representative authority is now production-integrated for Operator appe
 
 Corrective restoration now records an explicit later disposition, preserves immutable incidents and finalized decisions, and excludes only the restored Turnover Suspension from effective Unit projection. Later protective actions remain effective, while Operator-wide pause, termination, unrelated Unit suspension, and ADR-0038 revocation remain unaffected. ADR-0037 restoration classes use authorized human review; OperatorAuthority remains reserved for Operator-originated actions such as appeals, with distinct human and Operator identities in tests.
 
-Production composition remains blocked: no accepted Operator membership or authorization source, and no production construction of `OperatorEnforcementManager`, was found. The server-side `OperatorAuthority` port therefore remains fail-closed by default and is not claimed as production-wired. The generic non-turnover recurrence source gap also remains visible.
+ADR-0082 defines explicit Operator representative authority, and the durable SQLite representative-grant runtime is merged. Issue 29 consumes `OperatorRepresentativeAuthority`; appeal authority fails closed for missing, revoked, expired, or cross-scope grants. The manager retains a fail-closed default when no source is supplied, and explicit dependency injection makes it production-composable. Restoration authority remains authorized human authority, not Operator representative authority.
 
-ADR evidence applied: 0037, 0038, 0064, 0070, 0072, 0075. The four dedicated top-level acceptance-criterion tests cover the repair.
+All four Issue 29 acceptance criteria are complete. Full validation passes. ADR evidence applied: 0037, 0038, 0064, 0070, 0072, 0075, 0082. Issue 30 remains out of scope.
 
 ## Blocked by
 

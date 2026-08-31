@@ -161,7 +161,7 @@ test("Immediate protection is distinguished from the independent human final dec
     store.createGrant(grantCommand({ actorId: "other-actor", operatorId: "op", expiresAtIso: "2026-09-11T10:00:00.000Z", responsiblePersonVerifiedAtIso: "2026-09-01T10:00:00.000Z" }, "issue-29-wrong-actor"));
     appealable("operator-actor", "op");
     store.createGrant(grantCommand({ actorId: "operator-actor", operatorId: "other-op", expiresAtIso: "2026-09-11T10:00:00.000Z", responsiblePersonVerifiedAtIso: "2026-09-01T10:00:00.000Z" }, "issue-29-wrong-operator"));
-    appealable("operator-actor", "other-op");
+    appealable("operator-actor", "op");
     store.createGrant(grantCommand({ actorId: "operator-actor", operatorId: "op", expiresAtIso: "2026-09-11T10:00:00.000Z", responsiblePersonVerifiedAtIso: "2026-09-01T10:00:00.000Z" }, "issue-29-wrong-tenant", { id: "admin-b", role: "admin", tenantId: "tenant-b" }));
     appealable("operator-actor", "op");
     const revoked = store.createGrant(grantCommand({ actorId: "revoked-actor", operatorId: "op", expiresAtIso: "2026-09-11T10:00:00.000Z", responsiblePersonVerifiedAtIso: "2026-09-01T10:00:00.000Z" }, "issue-29-revoked"));
