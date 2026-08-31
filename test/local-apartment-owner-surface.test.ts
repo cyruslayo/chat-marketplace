@@ -6,13 +6,11 @@ import { join } from "node:path";
 import {
   LocalApartmentOwnerEnvironment,
   startLocalOwnerServer,
-  resetLocalOwnerFixture,
-  DEFAULT_LOCAL_OWNER_CONFIG,
 } from "../apps/local-owner/src/index.js";
 import {
-  createPlatformCommandEnvelope,
   type CommandPrincipal,
 } from "../packages/platform-core/src/index.js";
+import type { ProductionRevenueReleaseRecord } from "../domains/shortlet/src/revenue-release.js";
 
 test("Local Apartment Owner Experience — Full End-to-End Verification", async (t) => {
   const testDir = await mkdtemp(join(tmpdir(), "owner-local-test-"));
@@ -74,7 +72,7 @@ test("Local Apartment Owner Experience — Full End-to-End Verification", async 
     assert.equal(overview.availability.isAvailable, true);
   });
 
-  await t.test("3. Trust Tier and Settlement Projections reconcile with ADR 0083 (Preferred Tier Ordinary 100%)", () => {
+  await t.test("3. Trust Tier and Settlement Projections reconcile with authoritative committed ledger (Preferred Tier Ordinary 100%)", () => {
     const overview = env.getStateOverview();
 
     // Verify Trust Tier evaluation
@@ -90,6 +88,24 @@ test("Local Apartment Owner Experience — Full End-to-End Verification", async 
     assert.equal(overview.payoutProjections.operatorNetKobo, 33300000); // ₦333,000
     assert.equal(overview.payoutProjections.payableNowKobo, 33300000); // 100% ordinary payout for Preferred
     assert.equal(overview.payoutProjections.reserveTrancheKobo, 0); // 0% routine reserve
+
+    // Verify that the initial Issue-28 Release was committed into the accounting repository
+    const release = env.accountingRepository.findReleaseByReservationId("res-sample-ikoyi-001") as ProductionRevenueReleaseRecord | null;
+    assert.ok(release);
+    assert.equal(release.releaseId, "revenue-release:res-sample-ikoyi-001");
+    assert.equal(release.commissionRate, 0.1);
+    assert.equal(release.operatorNetKobo, 33300000);
+
+    // Verify that the Issue-30 ledger reclassification adjustment was committed
+    const adjustments = env.accountingRepository.findAdjustmentsForRelease(release.releaseId);
+    assert.equal(adjustments.length, 1);
+    assert.equal(adjustments[0].reasonCode, "trust_tier_preferred_reclassification");
+
+    // Verify total ledger lines: initial release + reclassification adjustment
+    const journals = env.accountingRepository.findLedgerEntriesForRelease(release.releaseId);
+    assert.equal(journals.length, 2);
+    assert.equal(journals[0].balanced, true);
+    assert.equal(journals[1].balanced, true);
   });
 
   await t.test("4. Booking Request response workflow via Representative Grant (Confirm/Decline & Inventory Lock)", () => {
@@ -189,10 +205,19 @@ test("Local Apartment Owner Experience — Full End-to-End Verification", async 
       // Test GET /api/state (JSON API)
       const jsonRes = await fetch(`http://localhost:${actualPort}/api/state`);
       assert.equal(jsonRes.status, 200);
-      const state = (await jsonRes.json()) as any;
+      const state = (await jsonRes.json()) as {
+        operator: { id: string };
+        unit: { id: string };
+        trustTier: { tier: string };
+        payoutProjections: { payableNowKobo: number };
+        pendingRequests: unknown[];
+        availability: { isAvailable: boolean };
+        representative: { isAuthorized: boolean };
+      };
       assert.equal(state.operator.id, "op-lagos-owner-001");
       assert.equal(state.unit.id, "unit-lagos-ikoyi-001");
       assert.equal(state.trustTier.tier, "preferred");
+      assert.equal(state.payoutProjections.payableNowKobo, 33300000);
 
       // Test POST /action/demo-request
       const postDemo = await fetch(`http://localhost:${actualPort}/action/demo-request`, {
@@ -202,7 +227,9 @@ test("Local Apartment Owner Experience — Full End-to-End Verification", async 
       assert.equal(postDemo.status, 302);
 
       // Confirm demo request via server
-      const stateAfterDemo = (await (await fetch(`http://localhost:${actualPort}/api/state`)).json()) as any;
+      const stateAfterDemo = (await (await fetch(`http://localhost:${actualPort}/api/state`)).json()) as {
+        pendingRequests: Array<{ facts: { requestId: string } }>;
+      };
       const reqId = stateAfterDemo.pendingRequests[0].facts.requestId;
 
       const postConfirm = await fetch(`http://localhost:${actualPort}/action/confirm`, {
@@ -214,7 +241,9 @@ test("Local Apartment Owner Experience — Full End-to-End Verification", async 
       assert.equal(postConfirm.status, 302);
 
       // Availability is now locked
-      const stateLocked = (await (await fetch(`http://localhost:${actualPort}/api/state`)).json()) as any;
+      const stateLocked = (await (await fetch(`http://localhost:${actualPort}/api/state`)).json()) as {
+        availability: { isAvailable: boolean };
+      };
       assert.equal(stateLocked.availability.isAvailable, false);
 
       // Test POST /action/reset -> triggers full environment rebuild
@@ -225,7 +254,11 @@ test("Local Apartment Owner Experience — Full End-to-End Verification", async 
       assert.equal(postReset.status, 302);
 
       // Verify reset state: availability open again, no requests, grant active
-      const stateReset = (await (await fetch(`http://localhost:${actualPort}/api/state`)).json()) as any;
+      const stateReset = (await (await fetch(`http://localhost:${actualPort}/api/state`)).json()) as {
+        availability: { isAvailable: boolean };
+        pendingRequests: unknown[];
+        representative: { isAuthorized: boolean };
+      };
       assert.equal(stateReset.availability.isAvailable, true);
       assert.equal(stateReset.pendingRequests.length, 0);
       assert.equal(stateReset.representative.isAuthorized, true);

@@ -6,6 +6,7 @@ import {
   type AuthoritativeReliabilityRecord,
   type OperatorReliabilityAuthority,
   type OperatorEnforcementAuthority,
+  type OperatorScopeAuthority,
   type ReserveTranche
 } from "../domains/shortlet/src/reserve-payout-trust.js";
 import {
@@ -13,7 +14,11 @@ import {
   journal,
   type RevenueLedgerLine
 } from "../domains/shortlet/src/revenue-accounting.js";
-import type { ProductionRevenueReleaseRecord } from "../domains/shortlet/src/revenue-release.js";
+import {
+  RevenueReleaseManager,
+  type ProductionRevenueReleaseRecord,
+  type AuthoritativeReleaseInput
+} from "../domains/shortlet/src/revenue-release.js";
 
 const createMockReliability = (overrides: Partial<AuthoritativeReliabilityRecord> = {}): OperatorReliabilityAuthority => ({
   getReliability: ({ operatorId, tenantId }: { operatorId: string; tenantId: string }): AuthoritativeReliabilityRecord => ({
@@ -38,47 +43,78 @@ const createMockEnforcement = (overrides: Record<string, unknown> = {}): Operato
   })
 });
 
-function createMockRevenueRelease(overrides: Partial<ProductionRevenueReleaseRecord> = {}): ProductionRevenueReleaseRecord {
-  return {
-    releaseId: "rev-rel-501",
-    releaseVersion: 1,
-    reservationId: "res-501",
-    contractId: "contract-501",
+const createMockScope = (overrides: { operatorId?: string; tenantId?: string } = {}): OperatorScopeAuthority => ({
+  isOperatorInTenant: ({ operatorId, tenantId }: { operatorId: string; tenantId: string }) => {
+    const validOp = overrides.operatorId ?? "op-100";
+    const validTenant = overrides.tenantId ?? "tenant-lagos";
+    return operatorId === validOp && tenantId === validTenant;
+  }
+});
+
+function createCommittedProductionRelease(
+  accountingRepo: InMemoryRevenueAccountingRepository,
+  overrides: {
+    reservationId?: string;
+    operatorId?: string;
+    tenantId?: string;
+    payoutPlan?: "fast_payout" | "full_post_stay";
+    capturedCommissionRate?: 0.08 | 0.1 | 0.12;
+    commissionableRevenueKobo?: number;
+    effectiveCheckoutAt?: string;
+    now?: Date;
+  } = {}
+): ProductionRevenueReleaseRecord {
+  const manager = new RevenueReleaseManager();
+  const reservationId = overrides.reservationId ?? "res-501";
+  const rate = overrides.capturedCommissionRate ?? 0.12;
+  const revenue = overrides.commissionableRevenueKobo ?? 11000000;
+  const now = overrides.now ?? new Date("2026-08-02T15:00:00.000Z");
+
+  const input: AuthoritativeReleaseInput = {
+    reservationId,
+    contractId: `contract-${reservationId}`,
     contractVersion: 1,
     unitId: "unit-101",
-    tenantId: "tenant-lagos",
-    operatorId: "op-100",
+    tenantId: overrides.tenantId ?? "tenant-lagos",
+    operatorId: overrides.operatorId ?? "op-100",
     accessVersion: "v1",
     accessStatus: "verified_access",
-    verifiedAccessAt: "2026-08-01T12:00:00Z",
-    protectionWindowStartsAt: "2026-08-01T12:00:00Z",
-    protectionWindowEndsAt: "2026-08-02T12:00:00Z",
-    economicsVersion: "v1",
-    commissionPolicyVersion: "v1",
-    commissionRate: 0.12, // Standard 12% captured rate
-    commissionBaseKobo: 11000000, // ₦110,000
-    commissionKobo: 1320000, // ₦13,200
-    operatorNetKobo: 9680000, // ₦96,800
-    payoutPlan: "fast_payout",
+    verifiedAccessAt: "2026-08-01T12:00:00.000Z",
+    protectionWindowStartsAt: "2026-08-01T12:00:00.000Z",
+    economics: {
+      economicsVersion: "v1",
+      currency: "NGN",
+      commissionPolicyVersion: "v1",
+      capturedCommissionRate: rate,
+      commissionableOperatorRevenueKobo: revenue,
+      operatorBorneProcessorCostsKobo: 0,
+      applicableWithholdingKobo: 0,
+      preReleaseRefundOrCreditKobo: 0,
+      bookingOffsetsKobo: 0,
+      securityDepositKobo: 1000000,
+      platformRemittedTaxesKobo: 0,
+      platformOwnedFeesKobo: 0,
+      passThroughKobo: 0,
+      undeliveredExtrasKobo: 0
+    },
+    payoutPlan: overrides.payoutPlan ?? "fast_payout",
     payoutPlanVersion: "v1",
-    payableNowKobo: 8712000,
-    routineReserveTrancheKobo: 968000,
-    deferredPostStayKobo: 0,
+    effectiveCheckoutAt: overrides.effectiveCheckoutAt ?? "2026-08-05T11:00:00.000Z",
+    effectiveCheckoutVersion: "v1",
     riskHoldVersion: "v1",
     riskHoldKobo: 0,
-    ledgerJournalId: "j-501",
-    earnedCommissionRecordId: "ec-501",
-    effectiveCheckoutVersion: "v1",
-    releasedAt: "2026-08-02T12:00:00Z",
-    currency: "NGN",
-    ...overrides
+    now
   };
+
+  return manager.commitProductionRelease(input, accountingRepo);
 }
 
 /**
  * ADR 0021, ADR 0024, ADR 0025, ADR 0026, ADR 0062, ADR 0063, ADR 0064, ADR 0066, ADR 0072, ADR 0075, ADR 0083
  */
-test("Founding 90/10 and post-checkout choices, Proven 95/5, and Preferred terms consume authoritative Revenue Release economics", () => {
+test("Founding 90/10 and post-checkout choices, Proven 95/5, and Preferred terms consume authoritative Revenue Release economics and enforce timing", () => {
+  const accountingRepo = new InMemoryRevenueAccountingRepository();
+
   // 1. Standard tier with Fast Payout (90/10)
   const standardReliability = createMockReliability({
     trailing60dCompletedBookings: 5,
@@ -86,8 +122,13 @@ test("Founding 90/10 and post-checkout choices, Proven 95/5, and Preferred terms
     trailing60dReliabilityRate: 0.90,
     trailing180dReliabilityRate: 0.90
   });
-  const standardManager = new ReservePayoutManager({ reliabilityAuthority: standardReliability });
-  const releaseStandard = createMockRevenueRelease();
+  const standardEnforcement = createMockEnforcement();
+  const standardManager = new ReservePayoutManager({
+    reliabilityAuthority: standardReliability,
+    enforcementAuthority: standardEnforcement,
+    accountingRepository: accountingRepo
+  });
+  const releaseStandard = createCommittedProductionRelease(accountingRepo, { reservationId: "res-std-1" });
 
   const standard9010 = standardManager.calculatePayoutPlanAndReserve({
     revenueRelease: releaseStandard,
@@ -103,13 +144,57 @@ test("Founding 90/10 and post-checkout choices, Proven 95/5, and Preferred terms
   assert.equal(standard9010.reserveTrancheKobo, 968000); // 10% reserve
   assert.equal(standard9010.payableNowKobo + standard9010.reserveTrancheKobo, standard9010.operatorNetKobo);
 
-  // 2. Standard tier with Full Post-Stay choice (100% deferred)
-  const standardPostCheckout = standardManager.calculatePayoutPlanAndReserve({
-    revenueRelease: releaseStandard,
+  // 2. Standard tier with Full Post-Stay choice: BEFORE +24h boundary (checkout = 2026-08-05T11:00:00Z -> eligible = 2026-08-06T11:00:00Z)
+  const fullPostStayRelease = createCommittedProductionRelease(accountingRepo, {
+    reservationId: "res-post-stay-1",
+    payoutPlan: "full_post_stay",
+    effectiveCheckoutAt: "2026-08-05T11:00:00.000Z"
+  });
+
+  // Querying before +24h (e.g. 2026-08-05T15:00:00Z) MUST NOT report payable
+  const clockBefore = () => new Date("2026-08-05T15:00:00.000Z");
+  const managerBefore = new ReservePayoutManager({
+    reliabilityAuthority: standardReliability,
+    enforcementAuthority: standardEnforcement,
+    accountingRepository: accountingRepo,
+    clock: clockBefore
+  });
+  const beforeResult = managerBefore.calculatePayoutPlanAndReserve({
+    revenueRelease: fullPostStayRelease,
     standardPayoutPreference: "full_post_stay"
   });
-  assert.equal(standardPostCheckout.payableNowKobo, 9680000);
-  assert.equal(standardPostCheckout.reserveTrancheKobo, 0);
+  assert.equal(beforeResult.payableNowKobo, 0);
+  assert.equal(beforeResult.reserveTrancheKobo, 0);
+  assert.equal(beforeResult.heldAmountKobo, 9680000);
+  assert.ok(beforeResult.overrideReasons.includes("post_stay_deferred_active"));
+
+  // Querying AT OR AFTER +24h (e.g. 2026-08-06T12:00:00Z) posts balanced ledger transition and reports payable
+  const clockAfter = () => new Date("2026-08-06T12:00:00.000Z");
+  const managerAfter = new ReservePayoutManager({
+    reliabilityAuthority: standardReliability,
+    enforcementAuthority: standardEnforcement,
+    accountingRepository: accountingRepo,
+    clock: clockAfter
+  });
+  const afterResult = managerAfter.calculatePayoutPlanAndReserve({
+    revenueRelease: fullPostStayRelease,
+    standardPayoutPreference: "full_post_stay"
+  });
+  assert.equal(afterResult.payableNowKobo, 9680000);
+  assert.equal(afterResult.reserveTrancheKobo, 0);
+  assert.equal(afterResult.heldAmountKobo, 0);
+
+  // Check ledger adjustment committed
+  const postStayAdjustments = accountingRepo.findAdjustmentsForRelease(fullPostStayRelease.releaseId);
+  assert.equal(postStayAdjustments.length, 1);
+  assert.equal(postStayAdjustments[0].reasonCode, "post_stay_deferred_released_to_payable");
+
+  // Replay does not duplicate adjustment
+  managerAfter.calculatePayoutPlanAndReserve({
+    revenueRelease: fullPostStayRelease,
+    standardPayoutPreference: "full_post_stay"
+  });
+  assert.equal(accountingRepo.findAdjustmentsForRelease(fullPostStayRelease.releaseId).length, 1);
 
   // 3. Proven tier terms (95/5)
   const provenReliability = createMockReliability({
@@ -118,9 +203,14 @@ test("Founding 90/10 and post-checkout choices, Proven 95/5, and Preferred terms
     trailing180dCompletedBookings: 15,
     trailing180dReliabilityRate: 0.96
   });
-  const provenManager = new ReservePayoutManager({ reliabilityAuthority: provenReliability });
+  const provenManager = new ReservePayoutManager({
+    reliabilityAuthority: provenReliability,
+    enforcementAuthority: standardEnforcement,
+    accountingRepository: accountingRepo
+  });
+  const releaseProven = createCommittedProductionRelease(accountingRepo, { reservationId: "res-proven-1" });
   const provenTerms = provenManager.calculatePayoutPlanAndReserve({
-    revenueRelease: releaseStandard
+    revenueRelease: releaseProven
   });
   assert.equal(provenTerms.tier, "proven");
   assert.equal(provenTerms.payableNowKobo, 9196000); // 95% of 9,680,000
@@ -131,11 +221,14 @@ test("Founding 90/10 and post-checkout choices, Proven 95/5, and Preferred terms
     trailing180dCompletedBookings: 35,
     trailing180dReliabilityRate: 0.99
   });
-  const preferredManager = new ReservePayoutManager({ reliabilityAuthority: preferredReliability });
-  const releasePreferred = createMockRevenueRelease({
-    commissionRate: 0.1,
-    commissionKobo: 1100000,
-    operatorNetKobo: 9900000
+  const preferredManager = new ReservePayoutManager({
+    reliabilityAuthority: preferredReliability,
+    enforcementAuthority: standardEnforcement,
+    accountingRepository: accountingRepo
+  });
+  const releasePreferred = createCommittedProductionRelease(accountingRepo, {
+    reservationId: "res-pref-1",
+    capturedCommissionRate: 0.1
   });
   const preferredTerms = preferredManager.calculatePayoutPlanAndReserve({
     revenueRelease: releasePreferred
@@ -153,49 +246,62 @@ test("Founding 90/10 and post-checkout choices, Proven 95/5, and Preferred terms
   );
 });
 
-test("Tier evaluation strictly requires authoritative reliability and enforcement sources", () => {
+test("Tier evaluation strictly requires both authoritative reliability and enforcement sources", () => {
+  const validRel = createMockReliability();
+  const validEnf = createMockEnforcement();
+
   // 1. Missing reliability source fails closed
-  const noSourceManager = new ReservePayoutManager();
+  const noRelManager = new ReservePayoutManager({ enforcementAuthority: validEnf });
   assert.throws(
-    () => noSourceManager.evaluateOperatorTrustTier({ operatorId: "op-100", tenantId: "tenant-lagos" }),
+    () => noRelManager.evaluateOperatorTrustTier({ operatorId: "op-100", tenantId: "tenant-lagos" }),
     /Authoritative reliability authority is required/
   );
 
-  // 2. Preferred Tier: >= 30 bookings in 180d, reliability >= 0.98, no enforcement
+  // 2. Missing enforcement source fails closed
+  const noEnfManager = new ReservePayoutManager({ reliabilityAuthority: validRel });
+  assert.throws(
+    () => noEnfManager.evaluateOperatorTrustTier({ operatorId: "op-100", tenantId: "tenant-lagos" }),
+    /Authoritative enforcement authority is required/
+  );
+
+  // 3. Both sources present allow evaluation - Preferred Tier
   const prefManager = new ReservePayoutManager({
     reliabilityAuthority: createMockReliability({
       trailing180dCompletedBookings: 35,
       trailing180dReliabilityRate: 0.99
-    })
+    }),
+    enforcementAuthority: validEnf
   });
   const prefEval = prefManager.evaluateOperatorTrustTier({ operatorId: "op-100", tenantId: "tenant-lagos" });
   assert.equal(prefEval.tier, "preferred");
 
-  // 3. Proven Tier: >= 10 bookings in 60d, reliability >= 0.95
+  // 4. Proven Tier: >= 10 bookings in 60d, reliability >= 0.95
   const provManager = new ReservePayoutManager({
     reliabilityAuthority: createMockReliability({
       trailing60dCompletedBookings: 12,
       trailing60dReliabilityRate: 0.96,
       trailing180dCompletedBookings: 15,
       trailing180dReliabilityRate: 0.96
-    })
+    }),
+    enforcementAuthority: validEnf
   });
   const provEval = provManager.evaluateOperatorTrustTier({ operatorId: "op-100", tenantId: "tenant-lagos" });
   assert.equal(provEval.tier, "proven");
 
-  // 4. Standard Tier: < 10 bookings in 60d
+  // 5. Standard Tier: < 10 bookings in 60d
   const stdManager = new ReservePayoutManager({
     reliabilityAuthority: createMockReliability({
       trailing60dCompletedBookings: 5,
       trailing60dReliabilityRate: 0.96,
       trailing180dCompletedBookings: 8,
       trailing180dReliabilityRate: 0.96
-    })
+    }),
+    enforcementAuthority: validEnf
   });
   const stdEval = stdManager.evaluateOperatorTrustTier({ operatorId: "op-100", tenantId: "tenant-lagos" });
   assert.equal(stdEval.tier, "standard");
 
-  // 5. Active enforcement override forces Standard tier
+  // 6. Active enforcement override forces Standard tier
   const enforcedManager = new ReservePayoutManager({
     reliabilityAuthority: createMockReliability({
       trailing180dCompletedBookings: 35,
@@ -213,21 +319,46 @@ test("Tier evaluation strictly requires authoritative reliability and enforcemen
 
 test("Reserve and payout projections reconcile to ledger entries and never promise unavailable or legally held funds", () => {
   const accountingRepo = new InMemoryRevenueAccountingRepository();
-  const reliability = createMockReliability();
+  const reliability = createMockReliability({
+    trailing180dCompletedBookings: 35,
+    trailing180dReliabilityRate: 0.99
+  });
+  const enforcement = createMockEnforcement();
   const manager = new ReservePayoutManager({
     reliabilityAuthority: reliability,
+    enforcementAuthority: enforcement,
     accountingRepository: accountingRepo
   });
 
-  const release = createMockRevenueRelease({
-    commissionRate: 0.1,
-    commissionKobo: 1100000,
-    operatorNetKobo: 9900000
+  const release = createCommittedProductionRelease(accountingRepo, {
+    reservationId: "res-pref-reclass",
+    capturedCommissionRate: 0.1,
+    commissionableRevenueKobo: 11000000
   });
 
-  // Open risk / legal hold / open liabilities override payout acceleration
+  // Preferred settlement reclassifies routine reserve to operator_payable in ledger
+  const result = manager.calculatePayoutPlanAndReserve({
+    revenueRelease: release
+  });
+
+  assert.equal(result.tier, "preferred");
+  assert.equal(result.payableNowKobo, 9900000);
+  assert.equal(result.reserveTrancheKobo, 0);
+
+  // Check that ledger reclassification adjustment is committed
+  const adjustments = accountingRepo.findAdjustmentsForRelease(release.releaseId);
+  assert.equal(adjustments.length, 1);
+  assert.equal(adjustments[0].reasonCode, "trust_tier_preferred_reclassification");
+
+  // Open risk / legal hold / open liabilities override payout acceleration and prevent reclassification
+  const releaseWithHold = createCommittedProductionRelease(accountingRepo, {
+    reservationId: "res-pref-hold",
+    capturedCommissionRate: 0.1,
+    commissionableRevenueKobo: 11000000
+  });
+
   const overriddenPayout = manager.calculatePayoutPlanAndReserve({
-    revenueRelease: release,
+    revenueRelease: releaseWithHold,
     holds: {
       openRisk: true,
       openLiabilitiesKobo: 5000000,
@@ -247,36 +378,18 @@ test("Reserve movements are strictly ledger-atomic, fail closed on accounting er
   const accountingRepo = new InMemoryRevenueAccountingRepository();
   const auditLog = new InMemoryAuditLog();
   const reliability = createMockReliability();
+  const enforcement = createMockEnforcement();
+  const scope = createMockScope({ operatorId: "op-100", tenantId: "tenant-lagos" });
   const manager = new ReservePayoutManager({
     reliabilityAuthority: reliability,
+    enforcementAuthority: enforcement,
+    scopeAuthority: scope,
     accountingRepository: accountingRepo
   });
 
-  // Seed release in accounting repo to ensure balanced ledger tracking
-  const releaseId = "revenue-release:res-501";
-  const lines: RevenueLedgerLine[] = [
-    { lineId: `${releaseId}:1`, account: "revenue_pending", side: "debit", amountKobo: 11000000, currency: "NGN" },
-    { lineId: `${releaseId}:2`, account: "platform_commission_earned", side: "credit", amountKobo: 1320000, currency: "NGN" },
-    { lineId: `${releaseId}:3`, account: "operator_net_recognized", side: "credit", amountKobo: 9680000, currency: "NGN" },
-    { lineId: `${releaseId}:4`, account: "operator_net_recognized", side: "debit", amountKobo: 9680000, currency: "NGN" },
-    { lineId: `${releaseId}:5`, account: "operator_payable", side: "credit", amountKobo: 8712000, currency: "NGN" },
-    { lineId: `${releaseId}:6`, account: "rolling_reserve", side: "credit", amountKobo: 968000, currency: "NGN" },
-    { lineId: `${releaseId}:7`, account: "post_stay_deferred", side: "credit", amountKobo: 0, currency: "NGN" }
-  ];
-  const j = journal({ correlationId: releaseId, lines, createdAt: "2026-08-10T12:00:00Z" });
-  accountingRepo.commitRelease({
-    release: { releaseId, reservationId: "res-501" },
-    journal: j,
-    earnedCommission: {
-      recordId: `ec-${releaseId}`,
-      releaseId,
-      reservationId: "res-501",
-      commissionPolicyVersion: "v1.0-launch",
-      earnedCommissionKobo: 1320000,
-      currency: "NGN",
-      earnedAt: "2026-08-10T12:00:00Z"
-    }
-  });
+  // Commit release in accounting repo to ensure balanced ledger tracking
+  const release = createCommittedProductionRelease(accountingRepo, { reservationId: "res-501" });
+  const releaseId = release.releaseId;
 
   // Create a reserve tranche
   const tranche: ReserveTranche = {
@@ -293,7 +406,11 @@ test("Reserve movements are strictly ledger-atomic, fail closed on accounting er
   manager.registerReserveTranche(tranche);
 
   // Failure path: Missing accounting repository fails closed
-  const noRepoManager = new ReservePayoutManager({ reliabilityAuthority: reliability });
+  const noRepoManager = new ReservePayoutManager({
+    reliabilityAuthority: reliability,
+    enforcementAuthority: enforcement,
+    scopeAuthority: scope
+  });
   noRepoManager.registerReserveTranche({ ...tranche, trancheId: "tr-no-repo" });
   assert.throws(
     () => noRepoManager.releaseReserveTranche("tr-no-repo", "2026-09-10T00:00:00Z"),
@@ -308,6 +425,8 @@ test("Reserve movements are strictly ledger-atomic, fail closed on accounting er
   };
   const brokenRepoManager = new ReservePayoutManager({
     reliabilityAuthority: reliability,
+    enforcementAuthority: enforcement,
+    scopeAuthority: scope,
     accountingRepository: brokenRepo
   });
   brokenRepoManager.registerReserveTranche({ ...tranche, trancheId: "tr-broken-ledger" });
@@ -343,7 +462,7 @@ test("Reserve movements are strictly ledger-atomic, fail closed on accounting er
     idempotencyKey: undefined
   };
   assert.throws(
-    () => manager.processAdminPayoutOverride(missingIdemCmd),
+    () => manager.processAdminPayoutOverride(missingIdemCmd as any),
     /Idempotency key is required/
   );
 
@@ -353,7 +472,7 @@ test("Reserve movements are strictly ledger-atomic, fail closed on accounting er
     principal: { id: "admin-1", role: "admin", tenantId: "tenant-lagos" },
     payload: {
       operatorId: "op-100",
-      tenantId: "tenant-abuja", // Mismatched tenant!
+      tenantId: "tenant-abuja", // Mismatched payload tenant!
       action: "apply_hold" as const,
       reason: "Tenant mismatch test"
     },
@@ -362,6 +481,30 @@ test("Reserve movements are strictly ledger-atomic, fail closed on accounting er
   assert.throws(
     () => manager.processAdminPayoutOverride(tenantMismatchCmd),
     /Principal tenant does not match resource tenant/
+  );
+
+  // Authoritative scope check: Operator in different tenant cannot be acted upon by spoofing payload
+  const crossTenantScope = createMockScope({ operatorId: "op-other", tenantId: "tenant-other" });
+  const crossTenantManager = new ReservePayoutManager({
+    reliabilityAuthority: reliability,
+    enforcementAuthority: enforcement,
+    scopeAuthority: crossTenantScope,
+    accountingRepository: accountingRepo
+  });
+  const crossTenantCmd = createPlatformCommandEnvelope({
+    commandName: "reserve.override_payout_hold",
+    principal: { id: "admin-1", role: "admin", tenantId: "tenant-lagos" },
+    payload: {
+      operatorId: "op-100", // Not in tenant-lagos according to crossTenantScope!
+      tenantId: "tenant-lagos",
+      action: "apply_hold" as const,
+      reason: "Cross-tenant test"
+    },
+    idempotencyKey: "idem-cross-tenant-1"
+  });
+  assert.throws(
+    () => crossTenantManager.processAdminPayoutOverride(crossTenantCmd),
+    /Operator op-100 does not belong to tenant tenant-lagos/
   );
 
   // Agent role rejection (ADR 0072 & ADR 0083)

@@ -10,6 +10,7 @@ import {
   SqliteOperatorRepresentativeGrantStore,
   OperatorEnforcementManager,
   ReservePayoutManager,
+  RevenueReleaseManager,
   InMemoryRevenueAccountingRepository,
   InMemoryBookingStateRepository,
   type Unit,
@@ -20,7 +21,9 @@ import {
   type OperatorUnitProjections,
   type AuthoritativeReliabilityRecord,
   type OperatorReliabilityAuthority,
+  type OperatorScopeAuthority,
   type ProductionRevenueReleaseRecord,
+  type AuthoritativeReleaseInput,
 } from "../../../domains/shortlet/src/index.js";
 import {
   createBookingRequestApplication,
@@ -101,7 +104,9 @@ export class LocalApartmentOwnerEnvironment {
   readonly grantStore: SqliteOperatorRepresentativeGrantStore;
   readonly enforcementManager: OperatorEnforcementManager;
   readonly reliabilityAuthority: OperatorReliabilityAuthority;
+  readonly scopeAuthority: OperatorScopeAuthority;
   readonly reservePayoutManager: ReservePayoutManager;
+  readonly revenueReleaseManager: RevenueReleaseManager;
   readonly accountingRepository: InMemoryRevenueAccountingRepository;
   readonly bookingStateRepository: InMemoryBookingStateRepository;
   readonly bookingRequestApp: BookingRequestApplication;
@@ -133,11 +138,17 @@ export class LocalApartmentOwnerEnvironment {
         trailing180dReliabilityRate: 0.99,
       }),
     };
+    this.scopeAuthority = {
+      isOperatorInTenant: ({ operatorId, tenantId }: { operatorId: string; tenantId: string }) =>
+        operatorId === this.config.operatorId && tenantId === this.config.tenantId,
+    };
     this.accountingRepository = new InMemoryRevenueAccountingRepository();
+    this.revenueReleaseManager = new RevenueReleaseManager();
     this.reservePayoutManager = new ReservePayoutManager({
       accountingRepository: this.accountingRepository,
       enforcementAuthority: this.enforcementManager,
       reliabilityAuthority: this.reliabilityAuthority,
+      scopeAuthority: this.scopeAuthority,
       clock: this.clock,
     });
     this.bookingStateRepository = new InMemoryBookingStateRepository();
@@ -374,44 +385,54 @@ export class LocalApartmentOwnerEnvironment {
       tenantId: this.config.tenantId,
     });
 
-    // Authoritative ProductionRevenueReleaseRecord for a 3-night stay at ₦120,000/night + ₦10,000 cleaning
-    // Total accommodation + mandatory = ₦370,000. Preferred captured commission rate = 10% (₦37,000). Operator Net = ₦333,000.
-    const mockRevenueRelease: ProductionRevenueReleaseRecord = {
-      releaseId: "rev-rel-sample-ikoyi-001",
-      releaseVersion: 1,
+    // Authoritative Issue-28 Production Revenue Release execution:
+    // 3 nights @ ₦120,000/night + ₦10,000 mandatory cleaning = ₦370,000 gross.
+    // Captured Preferred commission rate = 10% (₦37,000). Operator Net = ₦333,000.
+    const releaseInput: AuthoritativeReleaseInput = {
       reservationId: "res-sample-ikoyi-001",
       contractId: "ctr-sample-ikoyi-001",
       contractVersion: 1,
       unitId: this.config.unitId,
       tenantId: this.config.tenantId,
       operatorId: this.config.operatorId,
-      accessVersion: "v1",
+      accessVersion: "v1.0",
       accessStatus: "verified_access",
-      verifiedAccessAt: "2026-08-15T14:00:00Z",
-      protectionWindowStartsAt: "2026-08-15T14:00:00Z",
-      protectionWindowEndsAt: "2026-08-16T14:00:00Z",
-      economicsVersion: "v1",
-      commissionPolicyVersion: "v1",
-      commissionRate: 0.1, // 10% Preferred captured rate
-      commissionBaseKobo: 37000000,
-      commissionKobo: 3700000,
-      operatorNetKobo: 33300000,
+      verifiedAccessAt: "2026-08-15T14:00:00.000Z",
+      protectionWindowStartsAt: "2026-08-15T14:00:00.000Z",
+      economics: {
+        economicsVersion: "econ-ikoyi-v1",
+        currency: "NGN",
+        commissionPolicyVersion: "adr-0062-v1",
+        capturedCommissionRate: 0.1, // 10% Preferred captured rate
+        commissionableOperatorRevenueKobo: 37000000,
+        operatorBorneProcessorCostsKobo: 0,
+        applicableWithholdingKobo: 0,
+        preReleaseRefundOrCreditKobo: 0,
+        bookingOffsetsKobo: 0,
+        securityDepositKobo: 5000000,
+        platformRemittedTaxesKobo: 0,
+        platformOwnedFeesKobo: 0,
+        passThroughKobo: 0,
+        undeliveredExtrasKobo: 0,
+      },
       payoutPlan: "fast_payout",
-      payoutPlanVersion: "v1",
-      payableNowKobo: 33300000,
-      routineReserveTrancheKobo: 0,
-      deferredPostStayKobo: 0,
-      riskHoldVersion: "v1",
+      payoutPlanVersion: "v1.0",
+      effectiveCheckoutAt: "2026-08-18T11:00:00.000Z",
+      effectiveCheckoutVersion: "v1.0",
+      riskHoldVersion: "v1.0",
       riskHoldKobo: 0,
-      ledgerJournalId: "j-sample-ikoyi-001",
-      earnedCommissionRecordId: "ec-sample-ikoyi-001",
-      effectiveCheckoutVersion: "v1",
-      releasedAt: "2026-08-16T14:00:00Z",
-      currency: "NGN",
+      now: new Date("2026-08-16T15:00:00.000Z"), // 25 hours post verified access
     };
 
+    // Commit via RevenueReleaseManager into accountingRepository
+    const committedRevenueRelease = this.revenueReleaseManager.commitProductionRelease(
+      releaseInput,
+      this.accountingRepository
+    );
+
+    // Issue 30: Feed committed Revenue Release into ReservePayoutManager to derive authoritative Trust Tier settlement & reclassify ledger
     const samplePayout = this.reservePayoutManager.calculatePayoutPlanAndReserve({
-      revenueRelease: mockRevenueRelease,
+      revenueRelease: committedRevenueRelease,
     });
 
     const pendingRequests = this.#demoRequests.map((reqId) => {
