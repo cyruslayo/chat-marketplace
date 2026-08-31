@@ -1,6 +1,6 @@
 # Calculate Rolling Reserve, Payout Plan, and Operator Trust Tier
 
-Status: resolved
+Status: blocked
 Type: AFK
 User stories: 81–82, 90–91
 
@@ -18,6 +18,10 @@ Assign the accepted founding Payout Plan, retain and release Reserve Tranches, e
 - [ ] Tier evaluation uses the accepted booking counts, observation periods, reliability thresholds, and enforcement state.
 - [ ] Reserve and payout projections reconcile to ledger entries and never promise unavailable or legally held funds.
 - [ ] Downgrade, open liability, appeal, adjustment, and duplicate-release cases are covered behaviourally.
+
+## Policy prerequisite
+
+Issues 28 and 29 are resolved. Issue 30 production work is blocked only on the explicit Operator Trust Tier and settlement-policy prerequisite in ADR-0083. The existing `reserve-payout-trust.ts` implementation is not accepted proof of the four criteria. After ADR-0083 merges, Issue 30 runtime repair is the next task.
 
 ## Blocked by
 
