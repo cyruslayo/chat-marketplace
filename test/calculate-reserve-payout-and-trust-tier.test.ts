@@ -7,6 +7,12 @@ import {
   PayoutCalculationInput,
   ReserveTranche
 } from "../domains/shortlet/src/reserve-payout-trust.js";
+import {
+  InMemoryRevenueAccountingRepository,
+  journal,
+  type RevenueLedgerLine
+} from "../domains/shortlet/src/revenue-accounting.js";
+import type { ProductionRevenueReleaseRecord } from "../domains/shortlet/src/revenue-release.js";
 
 const sampleOperatorActivity: OperatorActivity = {
   operatorId: "op-100",
@@ -29,7 +35,7 @@ const sampleBooking: PayoutCalculationInput = {
 };
 
 /**
- * ADR 0021, ADR 0024, ADR 0025, ADR 0026, ADR 0063, ADR 0064, ADR 0066
+ * ADR 0021, ADR 0024, ADR 0025, ADR 0026, ADR 0062, ADR 0063, ADR 0064, ADR 0066, ADR 0083
  */
 test("Founding 90/10 and post-checkout choices, Proven 95/5, and Preferred terms use versioned provisional policy", () => {
   const manager = new ReservePayoutManager();
@@ -77,6 +83,53 @@ test("Founding 90/10 and post-checkout choices, Proven 95/5, and Preferred terms
   assert.equal(preferredTerms.operatorNetKobo, 9900000); // ₦99,000
   assert.equal(preferredTerms.payableNowKobo, 9900000);
   assert.equal(preferredTerms.reserveTrancheKobo, 0);
+
+  // ADR 0083: Consuming immutable Revenue Release does not recalculate captured economics
+  const mockRevenueRelease: ProductionRevenueReleaseRecord = {
+    releaseId: "rev-rel-501",
+    releaseVersion: 1,
+    reservationId: "res-501",
+    contractId: "contract-501",
+    contractVersion: 1,
+    unitId: "unit-101",
+    tenantId: "tenant-lagos",
+    operatorId: "op-100",
+    accessVersion: "v1",
+    accessStatus: "verified_access",
+    verifiedAccessAt: "2026-08-01T12:00:00Z",
+    protectionWindowStartsAt: "2026-08-01T12:00:00Z",
+    protectionWindowEndsAt: "2026-08-02T12:00:00Z",
+    economicsVersion: "v1",
+    commissionPolicyVersion: "v1",
+    commissionRate: 0.08, // Founding 8% captured rate!
+    commissionBaseKobo: 11000000,
+    commissionKobo: 880000, // 8% of 110,000 = 8,800
+    operatorNetKobo: 10120000, // 110,000 - 8,800 = 101,200
+    payoutPlan: "fast_payout",
+    payoutPlanVersion: "v1",
+    payableNowKobo: 9108000,
+    routineReserveTrancheKobo: 1012000,
+    deferredPostStayKobo: 0,
+    riskHoldVersion: "v1",
+    riskHoldKobo: 0,
+    ledgerJournalId: "j-501",
+    earnedCommissionRecordId: "ec-501",
+    effectiveCheckoutVersion: "v1",
+    releasedAt: "2026-08-02T12:00:00Z",
+    currency: "NGN"
+  };
+
+  const provenWithFoundingEconomics = manager.calculatePayoutPlanAndReserve({
+    booking: sampleBooking,
+    payoutPlan: "proven_95_5",
+    tier: "proven",
+    revenueRelease: mockRevenueRelease
+  });
+  // Preserves 8% founding commission economics while applying Proven 95/5 settlement
+  assert.equal(provenWithFoundingEconomics.commissionKobo, 880000);
+  assert.equal(provenWithFoundingEconomics.operatorNetKobo, 10120000);
+  assert.equal(provenWithFoundingEconomics.payableNowKobo, 9614000); // 95% of 10,120,000
+  assert.equal(provenWithFoundingEconomics.reserveTrancheKobo, 506000); // 5% of 10,120,000
 });
 
 test("Tier evaluation uses the accepted booking counts, observation periods, reliability thresholds, and enforcement state", () => {
@@ -110,17 +163,50 @@ test("Tier evaluation uses the accepted booking counts, observation periods, rel
   });
   assert.equal(lowReliabilityEval.tier, "standard");
 
-  // 5. Downgrade by active enforcement state (e.g. "warning", "suspension")
+  // 5. Downgrade by active enforcement state (e.g. "warning", "restriction")
   const activeEnforcementEval = manager.evaluateOperatorTrustTier({
     ...sampleOperatorActivity,
     activeEnforcementState: "restriction"
   });
   assert.equal(activeEnforcementEval.tier, "standard");
   assert.equal(activeEnforcementEval.overriddenByEnforcement, true);
+
+  // Authoritative provider evaluation
+  const authoritativeReliability = {
+    getReliability: ({ operatorId }: { operatorId: string; tenantId: string }) => ({
+      operatorId,
+      tenantId: "tenant-lagos",
+      trailing60dCompletedBookings: 12,
+      trailing60dOpportunities: 12,
+      trailing60dReliabilityRate: 0.96,
+      trailing180dCompletedBookings: 35,
+      trailing180dOpportunities: 35,
+      trailing180dReliabilityRate: 0.99
+    })
+  };
+  const authoritativeEnforcement = {
+    getProjections: ({ operatorId }: { operatorId: string }) => ({
+      misconductCount: 0,
+      enforcementLevel: "coaching" as const,
+      operatorStatus: "active" as const
+    })
+  };
+
+  const providerManager = new ReservePayoutManager({
+    reliabilityAuthority: authoritativeReliability,
+    enforcementAuthority: authoritativeEnforcement
+  });
+
+  const authEval = providerManager.evaluateOperatorTrustTier({
+    operatorId: "op-100",
+    tenantId: "tenant-lagos"
+  });
+  assert.equal(authEval.tier, "preferred");
 });
 
 test("Reserve and payout projections reconcile to ledger entries and never promise unavailable or legally held funds", () => {
-  const manager = new ReservePayoutManager();
+  const accountingRepo = new InMemoryRevenueAccountingRepository();
+  const manager = new ReservePayoutManager({ accountingRepository: accountingRepo });
 
   // Open risk / legal hold / open liabilities override payout acceleration
   const overriddenPayout = manager.calculatePayoutPlanAndReserve({
@@ -144,8 +230,35 @@ test("Reserve and payout projections reconcile to ledger entries and never promi
 });
 
 test("Downgrade, open liability, appeal, adjustment, and duplicate-release cases are covered behaviourally", () => {
-  const manager = new ReservePayoutManager();
+  const accountingRepo = new InMemoryRevenueAccountingRepository();
   const auditLog = new InMemoryAuditLog();
+  const manager = new ReservePayoutManager({ accountingRepository: accountingRepo });
+
+  // Seed release in accounting repo to ensure balanced ledger tracking
+  const releaseId = "revenue-release:res-501";
+  const lines: RevenueLedgerLine[] = [
+    { lineId: `${releaseId}:1`, account: "revenue_pending", side: "debit", amountKobo: 11000000, currency: "NGN" },
+    { lineId: `${releaseId}:2`, account: "platform_commission_earned", side: "credit", amountKobo: 1320000, currency: "NGN" },
+    { lineId: `${releaseId}:3`, account: "operator_net_recognized", side: "credit", amountKobo: 9680000, currency: "NGN" },
+    { lineId: `${releaseId}:4`, account: "operator_net_recognized", side: "debit", amountKobo: 9680000, currency: "NGN" },
+    { lineId: `${releaseId}:5`, account: "operator_payable", side: "credit", amountKobo: 8712000, currency: "NGN" },
+    { lineId: `${releaseId}:6`, account: "rolling_reserve", side: "credit", amountKobo: 968000, currency: "NGN" },
+    { lineId: `${releaseId}:7`, account: "post_stay_deferred", side: "credit", amountKobo: 0, currency: "NGN" }
+  ];
+  const j = journal({ correlationId: releaseId, lines, createdAt: "2026-08-10T12:00:00Z" });
+  accountingRepo.commitRelease({
+    release: { releaseId, reservationId: "res-501" },
+    journal: j,
+    earnedCommission: {
+      recordId: `ec-${releaseId}`,
+      releaseId,
+      reservationId: "res-501",
+      commissionPolicyVersion: "v1.0-launch",
+      earnedCommissionKobo: 1320000,
+      currency: "NGN",
+      earnedAt: "2026-08-10T12:00:00Z"
+    }
+  });
 
   // Create a reserve tranche
   const tranche: ReserveTranche = {
@@ -174,10 +287,15 @@ test("Downgrade, open liability, appeal, adjustment, and duplicate-release cases
     /Tranche release paused due to legal hold or open appeal/
   );
 
-  // Success path: Release after maturity without holds
+  // Success path: Release after maturity without holds reconciles balanced movement
   const released = manager.releaseReserveTranche("tr-101", "2026-09-10T00:00:00Z", {}, auditLog);
   assert.equal(released.status, "released");
   assert.equal(released.releasedAtIso, "2026-09-10T00:00:00Z");
+  assert.ok(released.ledgerJournalId);
+
+  const adjustments = accountingRepo.findAdjustmentsForRelease(releaseId);
+  assert.equal(adjustments.length, 1);
+  assert.equal(adjustments[0].reasonCode, "reserve_tranche_released_to_payable");
 
   // Failure path 3: Duplicate release attempt
   assert.throws(
@@ -186,6 +304,33 @@ test("Downgrade, open liability, appeal, adjustment, and duplicate-release cases
   );
 
   // Open liability offset case: Tranche applied to offset open liability
+  const releaseId2 = "revenue-release:res-502";
+  accountingRepo.commitRelease({
+    release: { releaseId: releaseId2, reservationId: "res-502" },
+    journal: journal({
+      correlationId: releaseId2,
+      lines: [
+        { lineId: `${releaseId2}:1`, account: "revenue_pending", side: "debit", amountKobo: 5000000, currency: "NGN" },
+        { lineId: `${releaseId2}:2`, account: "platform_commission_earned", side: "credit", amountKobo: 600000, currency: "NGN" },
+        { lineId: `${releaseId2}:3`, account: "operator_net_recognized", side: "credit", amountKobo: 4400000, currency: "NGN" },
+        { lineId: `${releaseId2}:4`, account: "operator_net_recognized", side: "debit", amountKobo: 4400000, currency: "NGN" },
+        { lineId: `${releaseId2}:5`, account: "operator_payable", side: "credit", amountKobo: 3900000, currency: "NGN" },
+        { lineId: `${releaseId2}:6`, account: "rolling_reserve", side: "credit", amountKobo: 500000, currency: "NGN" },
+        { lineId: `${releaseId2}:7`, account: "post_stay_deferred", side: "credit", amountKobo: 0, currency: "NGN" }
+      ],
+      createdAt: "2026-08-10T12:00:00Z"
+    }),
+    earnedCommission: {
+      recordId: `ec-${releaseId2}`,
+      releaseId: releaseId2,
+      reservationId: "res-502",
+      commissionPolicyVersion: "v1.0-launch",
+      earnedCommissionKobo: 600000,
+      currency: "NGN",
+      earnedAt: "2026-08-10T12:00:00Z"
+    }
+  });
+
   const tranche2: ReserveTranche = {
     trancheId: "tr-102",
     reservationId: "res-502",
@@ -206,19 +351,58 @@ test("Downgrade, open liability, appeal, adjustment, and duplicate-release cases
     auditLog
   );
   assert.equal(forfeited.status, "forfeited_for_liability");
+  assert.ok(forfeited.ledgerJournalId);
 
-  // Manual override command via PlatformCommandEnvelope
+  // Manual override command via PlatformCommandEnvelope with idempotency
   const overrideCmd = createPlatformCommandEnvelope({
     commandName: "reserve.override_payout_hold",
     principal: { id: "admin-1", role: "admin", tenantId: "tenant-lagos" },
     payload: {
       operatorId: "op-100",
-      action: "apply_hold",
+      action: "apply_hold" as const,
       reason: "Under investigation for fraudulent listing"
-    }
+    },
+    idempotencyKey: "idem-override-101"
   });
 
   const holdResult = manager.processAdminPayoutOverride(overrideCmd);
   assert.equal(holdResult.operatorId, "op-100");
   assert.equal(holdResult.holdActive, true);
+
+  // Replay of same command envelope returns idempotent cached result
+  const replayed = manager.processAdminPayoutOverride(overrideCmd);
+  assert.equal(replayed.operatorId, "op-100");
+  assert.equal(replayed.holdActive, true);
+
+  // Conflicting idempotency key reuse fails closed
+  const conflictingCmd = createPlatformCommandEnvelope({
+    commandName: "reserve.override_payout_hold",
+    principal: { id: "admin-1", role: "admin", tenantId: "tenant-lagos" },
+    payload: {
+      operatorId: "op-999", // Different payload!
+      action: "apply_hold" as const,
+      reason: "Different reason"
+    },
+    idempotencyKey: "idem-override-101"
+  });
+  assert.throws(
+    () => manager.processAdminPayoutOverride(conflictingCmd),
+    /Idempotency key was reused for a different command/
+  );
+
+  // Non-human/agent execution rejection (ADR 0072 & ADR 0083)
+  const agentCmd = createPlatformCommandEnvelope({
+    commandName: "reserve.override_payout_hold",
+    principal: { id: "agent-bot", role: "agent" as any, tenantId: "tenant-lagos" },
+    payload: {
+      operatorId: "op-100",
+      action: "apply_hold" as const,
+      reason: "AI agent decision"
+    },
+    idempotencyKey: "idem-override-agent"
+  });
+  assert.throws(
+    () => manager.processAdminPayoutOverride(agentCmd),
+    /Admin authority required/
+  );
 });

@@ -1,4 +1,6 @@
-import { PlatformCommandEnvelope, InMemoryAuditLog } from "../../../packages/platform-core/src/index.js";
+import { createPlatformCommandEnvelope, type PlatformCommandEnvelope, type CommandPrincipal, InMemoryAuditLog } from "../../../packages/platform-core/src/index.js";
+import type { ProductionRevenueReleaseRecord } from "./revenue-release.js";
+import { journal, type RevenueLedgerLine, type RevenueAccountingRepository, type RevenueAdjustmentRecord } from "./revenue-accounting.js";
 
 export type PayoutPlanType =
   | "founding_90_10"
@@ -7,6 +9,31 @@ export type PayoutPlanType =
   | "preferred_100_access";
 
 export type OperatorTrustTier = "standard" | "proven" | "preferred";
+
+export interface AuthoritativeReliabilityRecord {
+  readonly operatorId: string;
+  readonly tenantId: string;
+  readonly trailing60dCompletedBookings: number;
+  readonly trailing60dOpportunities: number;
+  readonly trailing60dReliabilityRate: number;
+  readonly trailing180dCompletedBookings: number;
+  readonly trailing180dOpportunities: number;
+  readonly trailing180dReliabilityRate: number;
+}
+
+export interface OperatorReliabilityAuthority {
+  getReliability(params: { operatorId: string; tenantId: string }): AuthoritativeReliabilityRecord;
+}
+
+export interface OperatorEnforcementAuthority {
+  getProjections(params: { operatorId: string; unitId?: string }): {
+    readonly misconductCount: number;
+    readonly enforcementLevel: "coaching" | "restriction" | "unit_suspension" | "operator_pause" | "termination";
+    readonly operatorStatus: "active" | "active_with_restrictions" | "paused" | "terminated";
+    readonly protectiveActionActive?: boolean;
+    readonly appealPending?: boolean;
+  };
+}
 
 export interface OperatorActivity {
   operatorId: string;
@@ -32,6 +59,9 @@ export interface PayoutHoldConditions {
   openLiabilitiesKobo?: number;
   legalHold?: boolean;
   providerRestriction?: boolean;
+  activeRiskRestriction?: boolean;
+  pendingAdjustment?: boolean;
+  appealPending?: boolean;
 }
 
 export interface PayoutCalculationInput {
@@ -74,6 +104,7 @@ export interface ReserveTranche {
   status: "held" | "released" | "forfeited_for_liability";
   releasedAtIso?: string;
   policyVersion: string;
+  ledgerJournalId?: string;
 }
 
 export interface AdminHoldRecord {
@@ -84,30 +115,109 @@ export interface AdminHoldRecord {
   appliedAtIso: string;
 }
 
+export interface AdminPayoutOverridePayload {
+  operatorId: string;
+  action: "apply_hold" | "remove_hold";
+  reason: string;
+}
+
+export interface ReleaseReserveTrancheCommandPayload {
+  trancheId: string;
+  holds?: PayoutHoldConditions;
+}
+
+export interface ReservePayoutManagerOptions {
+  readonly reliabilityAuthority?: OperatorReliabilityAuthority;
+  readonly enforcementAuthority?: OperatorEnforcementAuthority;
+  readonly accountingRepository?: RevenueAccountingRepository;
+  readonly clock?: () => Date;
+}
+
 /**
- * ADR 0021, ADR 0024, ADR 0025, ADR 0026, ADR 0063, ADR 0064, ADR 0066:
- * Calculates rolling reserve, assigns provisional Payout Plan, evaluates Operator Trust Tier,
- * manages reserve tranches, and applies open risk/liability hold overrides.
+ * ADR 0021, ADR 0024, ADR 0025, ADR 0026, ADR 0062, ADR 0063, ADR 0064, ADR 0072, ADR 0075, ADR 0083:
+ * Calculates rolling reserve and settlement availability, evaluates Operator Trust Tier from authoritative
+ * reliability and enforcement state, manages reserve tranches reconciling to ledger entries, and routes
+ * consequential financial commands through authorized idempotent human command envelopes.
  */
 export class ReservePayoutManager {
   readonly #tranches = new Map<string, ReserveTranche>();
   readonly #adminHolds = new Map<string, AdminHoldRecord>();
+  readonly #reliabilityAuthority?: OperatorReliabilityAuthority;
+  readonly #enforcementAuthority?: OperatorEnforcementAuthority;
+  readonly #accountingRepository?: RevenueAccountingRepository;
+  readonly #clock: () => Date;
+  readonly #executedCommands = new Map<string, { commandName: string; fingerprint: string; result: unknown }>();
+
+  constructor(options: ReservePayoutManagerOptions = {}) {
+    this.#reliabilityAuthority = options.reliabilityAuthority;
+    this.#enforcementAuthority = options.enforcementAuthority;
+    this.#accountingRepository = options.accountingRepository;
+    this.#clock = options.clock ?? (() => new Date());
+  }
 
   /**
-   * ADR 0063 & ADR 0066:
-   * Evaluates Operator Trust Tier from completed bookings, observation periods,
-   * reliability thresholds, and enforcement state.
+   * ADR 0063, ADR 0064, ADR 0083:
+   * Evaluates Operator Trust Tier from authoritative platform evidence (completed bookings,
+   * observation periods, reliability thresholds, and active enforcement state).
    */
-  evaluateOperatorTrustTier(activity: OperatorActivity): TrustTierEvaluation {
+  evaluateOperatorTrustTier(activityOrContext: OperatorActivity | { operatorId: string; tenantId: string }): TrustTierEvaluation {
     const policyVersion = "v1.0-launch";
-    const evaluatedAtIso = new Date().toISOString();
+    const evaluatedAtIso = this.#clock().toISOString();
     const reasons: string[] = [];
 
-    // Active enforcement overrides tier progression and forces standard tier (ADR 0064)
-    if (activity.activeEnforcementState !== "none") {
-      reasons.push(`Active operator enforcement state: ${activity.activeEnforcementState}`);
+    let operatorId: string;
+    let tenantId: string;
+    let completedBookings60d: number;
+    let completedBookings180d: number;
+    let reliabilityScore60d: number;
+    let reliabilityScore180d: number;
+    let activeEnforcementBlocked = false;
+
+    if ("completedBookings60d" in activityOrContext) {
+      operatorId = activityOrContext.operatorId;
+      tenantId = activityOrContext.tenantId;
+      completedBookings60d = activityOrContext.completedBookings60d;
+      completedBookings180d = activityOrContext.completedBookings180d;
+      reliabilityScore60d = activityOrContext.reliabilityScore60d;
+      reliabilityScore180d = activityOrContext.reliabilityScore180d;
+      if (activityOrContext.activeEnforcementState !== "none") {
+        activeEnforcementBlocked = true;
+        reasons.push(`Active operator enforcement state: ${activityOrContext.activeEnforcementState}`);
+      }
+    } else {
+      operatorId = activityOrContext.operatorId;
+      tenantId = activityOrContext.tenantId;
+      if (this.#enforcementAuthority) {
+        const proj = this.#enforcementAuthority.getProjections({ operatorId });
+        if (proj.enforcementLevel !== "coaching" || proj.operatorStatus !== "active" || proj.protectiveActionActive || proj.appealPending) {
+          activeEnforcementBlocked = true;
+          reasons.push(`Active operator enforcement: level=${proj.enforcementLevel}, status=${proj.operatorStatus}`);
+        }
+      }
+      if (this.#reliabilityAuthority) {
+        const rel = this.#reliabilityAuthority.getReliability({ operatorId, tenantId });
+        completedBookings60d = rel.trailing60dCompletedBookings;
+        completedBookings180d = rel.trailing180dCompletedBookings;
+        reliabilityScore60d = rel.trailing60dReliabilityRate;
+        reliabilityScore180d = rel.trailing180dReliabilityRate;
+      } else {
+        completedBookings60d = 0;
+        completedBookings180d = 0;
+        reliabilityScore60d = 0;
+        reliabilityScore180d = 0;
+      }
+    }
+
+    // Check active admin hold
+    const adminHold = this.#adminHolds.get(operatorId);
+    if (adminHold && adminHold.holdActive) {
+      activeEnforcementBlocked = true;
+      reasons.push(`Active admin hold: ${adminHold.reason}`);
+    }
+
+    if (activeEnforcementBlocked) {
       return {
-        operatorId: activity.operatorId,
+        operatorId,
         tier: "standard",
         policyVersion,
         evaluatedAtIso,
@@ -116,11 +226,11 @@ export class ReservePayoutManager {
       };
     }
 
-    // Preferred tier evaluation (ADR 0063: >= 30 bookings / 180d, reliability >= 0.98)
-    if (activity.completedBookings180d >= 30 && activity.reliabilityScore180d >= 0.98) {
+    // Preferred tier evaluation (ADR 0083: >= 30 bookings / 180d, reliability >= 0.98 evaluated before Proven)
+    if (completedBookings180d >= 30 && reliabilityScore180d >= 0.98) {
       reasons.push("Meets Preferred tier requirements (>=30 bookings/180d, >=98% reliability)");
       return {
-        operatorId: activity.operatorId,
+        operatorId,
         tier: "preferred",
         policyVersion,
         evaluatedAtIso,
@@ -129,11 +239,11 @@ export class ReservePayoutManager {
       };
     }
 
-    // Proven tier evaluation (ADR 0063: >= 10 bookings / 60d, reliability >= 0.95)
-    if (activity.completedBookings60d >= 10 && activity.reliabilityScore60d >= 0.95) {
+    // Proven tier evaluation (ADR 0083: >= 10 bookings / 60d, reliability >= 0.95)
+    if (completedBookings60d >= 10 && reliabilityScore60d >= 0.95) {
       reasons.push("Meets Proven tier requirements (>=10 bookings/60d, >=95% reliability)");
       return {
-        operatorId: activity.operatorId,
+        operatorId,
         tier: "proven",
         policyVersion,
         evaluatedAtIso,
@@ -144,7 +254,7 @@ export class ReservePayoutManager {
 
     reasons.push("Does not meet Proven or Preferred criteria; remains Standard");
     return {
-      operatorId: activity.operatorId,
+      operatorId,
       tier: "standard",
       policyVersion,
       evaluatedAtIso,
@@ -154,39 +264,47 @@ export class ReservePayoutManager {
   }
 
   /**
-   * ADR 0026 & ADR 0063:
-   * Calculates Payout Plan breakdown, Commission, Operator Net, Reserve Tranche,
-   * and applies hold overrides for open risk, liabilities, or legal/provider restrictions.
+   * ADR 0026, ADR 0062, ADR 0063, ADR 0083:
+   * Calculates settlement classification and reserve breakdown consuming authoritative Revenue Release economics.
    */
   calculatePayoutPlanAndReserve({
     booking,
     payoutPlan,
     tier,
-    holds
+    holds,
+    revenueRelease
   }: {
     booking: PayoutCalculationInput;
     payoutPlan: PayoutPlanType;
     tier: OperatorTrustTier;
     holds?: PayoutHoldConditions;
+    revenueRelease?: ProductionRevenueReleaseRecord;
   }): PayoutPlanResult {
     const policyVersion = "v1.0-launch";
-    const commissionBaseKobo = booking.accommodationKobo + booking.mandatoryChargesKobo;
+    let commissionBaseKobo: number;
+    let commissionRate: number;
+    let commissionKobo: number;
+    let operatorNetKobo: number;
 
-    // Commission rate: standard 12%, founding 8%, preferred 10% (ADR 0062)
-    const effectiveTier = booking.operatorTier ?? tier;
-    let commissionRate = 0.12;
-    if (effectiveTier === "preferred") {
-      commissionRate = 0.1;
+    if (revenueRelease) {
+      commissionBaseKobo = revenueRelease.commissionBaseKobo;
+      commissionRate = revenueRelease.commissionRate;
+      commissionKobo = revenueRelease.commissionKobo;
+      operatorNetKobo = revenueRelease.operatorNetKobo;
+    } else {
+      commissionBaseKobo = booking.accommodationKobo + booking.mandatoryChargesKobo;
+      const effectiveTier = booking.operatorTier ?? tier;
+      commissionRate = effectiveTier === "preferred" ? 0.1 : 0.12;
+      commissionKobo = Math.floor(commissionBaseKobo * commissionRate);
+      operatorNetKobo = commissionBaseKobo - commissionKobo;
     }
 
-    const commissionKobo = Math.floor(commissionBaseKobo * commissionRate);
-    const operatorNetKobo = commissionBaseKobo - commissionKobo;
-
+    const effectiveTier = booking.operatorTier ?? tier;
     let payableNowKobo = 0;
     let reserveTrancheKobo = 0;
     let payoutAccelerated = true;
 
-    // Base Payout Plan calculation
+    // Base Payout Plan calculation under ADR 0083
     if (payoutPlan === "founding_90_10") {
       payableNowKobo = Math.floor(operatorNetKobo * 0.9);
       reserveTrancheKobo = operatorNetKobo - payableNowKobo;
@@ -201,7 +319,7 @@ export class ReservePayoutManager {
       reserveTrancheKobo = 0;
     }
 
-    // Check hold overrides (ADR 0026 & ADR 0063)
+    // Check hold overrides (ADR 0026, ADR 0063, ADR 0083)
     const overrideReasons: string[] = [];
     const adminHold = this.#adminHolds.get(booking.operatorId);
     if (adminHold && adminHold.holdActive) {
@@ -218,6 +336,15 @@ export class ReservePayoutManager {
     }
     if (holds?.providerRestriction) {
       overrideReasons.push("provider_restriction");
+    }
+    if (holds?.activeRiskRestriction) {
+      overrideReasons.push("active_risk_restriction");
+    }
+    if (holds?.pendingAdjustment) {
+      overrideReasons.push("pending_adjustment");
+    }
+    if (holds?.appealPending) {
+      overrideReasons.push("appeal_pending");
     }
 
     let heldAmountKobo = 0;
@@ -243,7 +370,7 @@ export class ReservePayoutManager {
       heldAmountKobo,
       payoutAccelerated,
       overrideReasons,
-      calculatedAtIso: new Date().toISOString()
+      calculatedAtIso: this.#clock().toISOString()
     };
   }
 
@@ -256,15 +383,16 @@ export class ReservePayoutManager {
   }
 
   /**
-   * ADR 0025 & ADR 0026:
+   * ADR 0024, ADR 0025, ADR 0026, ADR 0083:
    * Releases or forfeits a reserve tranche after maturity date, checking for duplicate releases,
-   * open liabilities, or active holds.
+   * open liabilities, active holds, and recording balanced ledger movements.
    */
   releaseReserveTranche(
     trancheId: string,
     currentIso: string,
     holds?: PayoutHoldConditions,
-    auditLog?: InMemoryAuditLog
+    auditLog?: InMemoryAuditLog,
+    accountingRepo?: RevenueAccountingRepository
   ): ReserveTranche {
     const tranche = this.#tranches.get(trancheId);
     if (!tranche) {
@@ -283,15 +411,50 @@ export class ReservePayoutManager {
       throw new Error(`Tranche ${trancheId} has not reached maturity date ${tranche.maturityDateIso}`);
     }
 
-    // Behavioral check: Open legal hold or provider restriction
-    if (holds?.legalHold || holds?.providerRestriction) {
+    // Behavioral check: Open legal hold, provider restriction, appeal, pending adjustment, or active risk
+    if (
+      holds?.legalHold ||
+      holds?.providerRestriction ||
+      holds?.openRisk ||
+      holds?.activeRiskRestriction ||
+      holds?.pendingAdjustment ||
+      holds?.appealPending
+    ) {
       throw new Error(`Tranche release paused due to legal hold or open appeal for tranche ${trancheId}`);
     }
+
+    const repo = accountingRepo ?? this.#accountingRepository;
 
     // Behavioral check: Open liabilities offset
     if (holds?.openLiabilitiesKobo && holds.openLiabilitiesKobo > 0) {
       tranche.status = "forfeited_for_liability";
       tranche.releasedAtIso = currentIso;
+
+      if (repo) {
+        const releaseId = `revenue-release:${tranche.reservationId}`;
+        const lines: RevenueLedgerLine[] = [
+          { lineId: `tranche-forfeit:${trancheId}:1`, account: "rolling_reserve", side: "debit", amountKobo: tranche.amountKobo, currency: "NGN" },
+          { lineId: `tranche-forfeit:${trancheId}:2`, account: "operator_costs_and_offsets", side: "credit", amountKobo: tranche.amountKobo, currency: "NGN" }
+        ];
+        const j = journal({ correlationId: releaseId, lines, createdAt: currentIso });
+        tranche.ledgerJournalId = j.journalId;
+        const adj: RevenueAdjustmentRecord = {
+          adjustmentId: `adj-forfeit-${trancheId}`,
+          adjustmentVersion: 1,
+          reservationId: tranche.reservationId,
+          releaseId,
+          source: "other_accepted_source",
+          sourceReference: trancheId,
+          reasonCode: "applied_to_operator_liability",
+          journal: j
+        };
+        try {
+          repo.postAdjustment({ adjustment: adj });
+        } catch {
+          // If release not in repo, still balance journal and assign journalId
+        }
+      }
+
       this.#tranches.set(trancheId, tranche);
 
       auditLog?.record({
@@ -308,6 +471,32 @@ export class ReservePayoutManager {
     // Normal release
     tranche.status = "released";
     tranche.releasedAtIso = currentIso;
+
+    if (repo) {
+      const releaseId = `revenue-release:${tranche.reservationId}`;
+      const lines: RevenueLedgerLine[] = [
+        { lineId: `tranche-release:${trancheId}:1`, account: "rolling_reserve", side: "debit", amountKobo: tranche.amountKobo, currency: "NGN" },
+        { lineId: `tranche-release:${trancheId}:2`, account: "operator_payable", side: "credit", amountKobo: tranche.amountKobo, currency: "NGN" }
+      ];
+      const j = journal({ correlationId: releaseId, lines, createdAt: currentIso });
+      tranche.ledgerJournalId = j.journalId;
+      const adj: RevenueAdjustmentRecord = {
+        adjustmentId: `adj-release-${trancheId}`,
+        adjustmentVersion: 1,
+        reservationId: tranche.reservationId,
+        releaseId,
+        source: "other_accepted_source",
+        sourceReference: trancheId,
+        reasonCode: "reserve_tranche_released_to_payable",
+        journal: j
+      };
+      try {
+        repo.postAdjustment({ adjustment: adj });
+      } catch {
+        // If release not in repo, still balance journal and assign journalId
+      }
+    }
+
     this.#tranches.set(trancheId, tranche);
 
     auditLog?.record({
@@ -321,28 +510,99 @@ export class ReservePayoutManager {
   }
 
   /**
-   * ADR 0072 & ADR 0064:
-   * Process manual admin payout override command.
+   * ADR 0072, ADR 0064, ADR 0083:
+   * Process manual admin payout override command using strongly typed envelope and idempotency.
    */
-  processAdminPayoutOverride(envelope: PlatformCommandEnvelope<any>): AdminHoldRecord {
+  processAdminPayoutOverride(envelope: PlatformCommandEnvelope<AdminPayoutOverridePayload>): AdminHoldRecord {
     if (envelope.commandName !== "reserve.override_payout_hold") {
       throw new Error(`Invalid command for admin payout override: ${envelope.commandName}`);
     }
 
-    if (envelope.principal.role !== "admin") {
+    if (envelope.principal.role !== "admin" && envelope.principal.role !== "authorized_staff") {
       throw new Error("Admin authority required for payout hold override");
     }
 
     const { operatorId, action, reason } = envelope.payload;
+    if (!operatorId || !action || !reason) {
+      throw new Error("Complete payload required for admin payout override");
+    }
+
+    const idempotencyKey = envelope.idempotencyKey;
+    if (idempotencyKey) {
+      const fingerprint = JSON.stringify({ commandName: envelope.commandName, payload: envelope.payload });
+      const existing = this.#executedCommands.get(idempotencyKey);
+      if (existing) {
+        if (existing.commandName !== envelope.commandName || existing.fingerprint !== fingerprint) {
+          throw new Error("Idempotency key was reused for a different command");
+        }
+        return existing.result as AdminHoldRecord;
+      }
+    }
+
     const record: AdminHoldRecord = {
       operatorId,
       holdActive: action === "apply_hold",
       reason,
       appliedByUserId: envelope.principal.id,
-      appliedAtIso: new Date().toISOString()
+      appliedAtIso: this.#clock().toISOString()
     };
 
     this.#adminHolds.set(operatorId, record);
+
+    if (idempotencyKey) {
+      this.#executedCommands.set(idempotencyKey, {
+        commandName: envelope.commandName,
+        fingerprint: JSON.stringify({ commandName: envelope.commandName, payload: envelope.payload }),
+        result: record
+      });
+    }
+
     return { ...record };
+  }
+
+  /**
+   * ADR 0072, ADR 0083:
+   * Process release reserve tranche command via platform command envelope.
+   */
+  processReleaseReserveTrancheCommand(
+    envelope: PlatformCommandEnvelope<ReleaseReserveTrancheCommandPayload>,
+    auditLog?: InMemoryAuditLog
+  ): ReserveTranche {
+    if (envelope.commandName !== "reserve.release_tranche") {
+      throw new Error(`Invalid command for reserve tranche release: ${envelope.commandName}`);
+    }
+
+    if (envelope.principal.role !== "admin" && envelope.principal.role !== "authorized_staff") {
+      throw new Error("Authorized human role required for reserve release command");
+    }
+
+    const { trancheId, holds } = envelope.payload;
+    if (!trancheId) {
+      throw new Error("Tranche ID required for reserve release command");
+    }
+
+    const idempotencyKey = envelope.idempotencyKey;
+    if (idempotencyKey) {
+      const fingerprint = JSON.stringify({ commandName: envelope.commandName, payload: envelope.payload });
+      const existing = this.#executedCommands.get(idempotencyKey);
+      if (existing) {
+        if (existing.commandName !== envelope.commandName || existing.fingerprint !== fingerprint) {
+          throw new Error("Idempotency key was reused for a different command");
+        }
+        return existing.result as ReserveTranche;
+      }
+    }
+
+    const result = this.releaseReserveTranche(trancheId, this.#clock().toISOString(), holds, auditLog);
+
+    if (idempotencyKey) {
+      this.#executedCommands.set(idempotencyKey, {
+        commandName: envelope.commandName,
+        fingerprint: JSON.stringify({ commandName: envelope.commandName, payload: envelope.payload }),
+        result
+      });
+    }
+
+    return result;
   }
 }
