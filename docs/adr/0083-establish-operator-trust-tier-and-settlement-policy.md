@@ -54,14 +54,18 @@ Trust Tier is derived from current authoritative evidence and may downgrade at t
 
 Settlement classification applies after the booking's single authoritative Revenue Release. It does not create a second Revenue Release or alter captured commission, commission base, commission rate, taxes, Operator Net, or booking offsets.
 
-For a Standard/Founding launch Operator:
+Founding commercial cohort status affects commission treatment under ADR 0062. Trust Tier determines the ordinary tier-based settlement terms once an Operator qualifies for Proven or Preferred; Founding status does not prevent progression to either tier's settlement terms. A Founding Operator who qualifies for Proven uses Proven settlement terms while retaining the separately captured Founding commission rate where ADR 0062 still applies. A Founding Operator who qualifies for Preferred uses Preferred settlement terms while retaining that separately captured Founding commission rate where ADR 0062 still applies. Historical Revenue Releases and captured commission economics are never rewritten by Trust Tier progression.
+
+At Standard Trust Tier, the launch base settlement choices are:
 
 - Fast Payout makes 90% of authoritative Operator Net settlement-eligible after Revenue Release and classifies 10% to a booking-specific Rolling Reserve. The reserve tranche is eligible for review 30 days after authoritative checkout.
 - Full Post-Stay Payout uses no routine percentage reserve and makes 100% settlement-eligible 24 hours after authoritative checkout. Funds must not be described as payable before that time.
 
-For a Proven Operator, 95% of authoritative Operator Net is settlement-eligible after Revenue Release and 5% is classified to a booking-specific Rolling Reserve. The tranche uses the same 30-day-after-checkout reserve review point unless a stronger risk restriction applies.
+At Proven Trust Tier, 95% of authoritative Operator Net is settlement-eligible after Revenue Release and 5% is classified to a booking-specific Rolling Reserve. The tranche uses the same 30-day-after-checkout reserve review point unless a stronger risk restriction applies.
 
-For a Preferred Operator, 100% of authoritative Operator Net is ordinarily settlement-eligible after Revenue Release and no routine percentage reserve is required. This does not guarantee immediate transfer or eliminate open risk, liabilities, legal holds, PSP/provider restrictions, or other accepted holds.
+At Preferred Trust Tier, 100% of authoritative Operator Net is ordinarily settlement-eligible after Revenue Release and no routine percentage reserve is required. This does not guarantee immediate transfer or eliminate open risk, liabilities, legal holds, PSP/provider restrictions, or other accepted holds.
+
+For example, a Founding Operator still within the ADR-0062 Founding commission period that later qualifies for Proven keeps the captured Founding commission treatment where applicable and uses Proven 95/5 settlement terms for new qualifying settlement decisions. Progression to Preferred changes ordinary settlement classification without retroactively changing captured commission.
 
 Settlement eligibility is an extension of account settlement policy, not a Trust Tier commission rule. Founding cohort status and Trust Tier must be represented separately.
 
