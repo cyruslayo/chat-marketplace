@@ -5,7 +5,10 @@
   "scripts": {
     "test": "tsx --test test/*.test.ts",
     "check": "tsc --noEmit",
-    "verify:weaver": "node scripts/verify-weaver-vendor.mjs"
+    "verify:weaver": "node scripts/verify-weaver-vendor.mjs",
+    "owner:local": "tsx apps/local-owner/src/cli-start.ts",
+    "owner:reset": "tsx apps/local-owner/src/cli-reset.ts",
+    "test:owner-local": "tsx --test test/local-apartment-owner-surface.test.ts"
   },
   "dependencies": {
     "@weaver/core": "file:vendor/weaver/weaver-core-0.1.2.tgz",
