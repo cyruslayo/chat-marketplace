@@ -503,16 +503,20 @@ test("Downgrade, open liability, appeal, adjustment, and duplicate-release cases
   const releaseId = release.releaseId;
 
   // 1. Initial Preferred evaluation -> moves 10% reserve to payable (100% payable = 9,680,000, 0 reserve)
-  const prefResult = manager.calculatePayoutPlanAndReserve({ revenueRelease: release });
-  assert.equal(prefResult.tier, "preferred");
-  assert.equal(prefResult.payableNowKobo, 9680000);
-  assert.equal(prefResult.reserveTrancheKobo, 0);
+  const prefResult1 = manager.calculatePayoutPlanAndReserve({ revenueRelease: release });
+  assert.equal(prefResult1.tier, "preferred");
+  assert.equal(prefResult1.payableNowKobo, 9680000);
+  assert.equal(prefResult1.reserveTrancheKobo, 0);
 
   let b = getBalances(accountingRepo, releaseId);
   assert.equal(b.operatorPayableKobo, 9680000);
   assert.equal(b.rollingReserveKobo, 0);
 
-  // 2. Enforcement Downgrade: Misconduct causes restriction -> downgrades to Standard (100/0 -> 90/10 reverse movement)
+  const adjustmentsAfter1 = accountingRepo.findAdjustmentsForRelease(releaseId);
+  assert.equal(adjustmentsAfter1.length, 1);
+  const adj1 = adjustmentsAfter1[0];
+
+  // 2. Force authoritative enforcement downgrade -> ledger becomes Standard 90/10 (100/0 -> 90/10 reverse movement)
   enforcement = createMockEnforcement({
     enforcementLevel: "restriction" as const,
     operatorStatus: "active_with_restrictions" as const
@@ -526,6 +530,51 @@ test("Downgrade, open liability, appeal, adjustment, and duplicate-release cases
   b = getBalances(accountingRepo, releaseId);
   assert.equal(b.operatorPayableKobo, 8712000);
   assert.equal(b.rollingReserveKobo, 968000);
+
+  const adjustmentsAfter2 = accountingRepo.findAdjustmentsForRelease(releaseId);
+  assert.equal(adjustmentsAfter2.length, 2);
+  const adj2 = adjustmentsAfter2[1];
+
+  // 3. Clear enforcement and evaluate Preferred again -> ledger becomes 100/0
+  enforcement = createMockEnforcement(); // Cleared
+
+  const prefResult2 = manager.calculatePayoutPlanAndReserve({ revenueRelease: release });
+  assert.equal(prefResult2.tier, "preferred");
+  assert.equal(prefResult2.payableNowKobo, 9680000);
+  assert.equal(prefResult2.reserveTrancheKobo, 0);
+
+  // Verify the two Standard->Preferred adjustments have distinct adjustment IDs and journal IDs
+  const adjustmentsAfter3 = accountingRepo.findAdjustmentsForRelease(releaseId);
+  assert.equal(adjustmentsAfter3.length, 3);
+  const adj3 = adjustmentsAfter3[2];
+
+  assert.notEqual(adj1.adjustmentId, adj3.adjustmentId);
+  assert.notEqual(adj1.journal.journalId, adj3.journal.journalId);
+  assert.notEqual(adj2.adjustmentId, adj3.adjustmentId);
+  assert.notEqual(adj2.journal.journalId, adj3.journal.journalId);
+
+  // Verify all three transition journals remain present
+  const allJournals = accountingRepo.findLedgerEntriesForRelease(releaseId);
+  // Initial release journal + 3 transition journals = 4 journals total
+  assert.equal(allJournals.length, 4);
+  const transitionJournalIds = allJournals.filter((j) => j.journalId !== release.ledgerJournalId).map((j) => j.journalId);
+  assert.equal(transitionJournalIds.length, 3);
+  assert.ok(transitionJournalIds.includes(adj1.journal.journalId));
+  assert.ok(transitionJournalIds.includes(adj2.journal.journalId));
+  assert.ok(transitionJournalIds.includes(adj3.journal.journalId));
+
+  // Verify final folded ledger is exactly operator_payable = Operator Net, rolling_reserve = 0
+  b = getBalances(accountingRepo, releaseId);
+  assert.equal(b.operatorPayableKobo, release.operatorNetKobo);
+  assert.equal(b.rollingReserveKobo, 0);
+
+  // Immediate replay of step 5 posts no fourth transition adjustment
+  const replayResult = manager.calculatePayoutPlanAndReserve({ revenueRelease: release });
+  assert.equal(replayResult.tier, "preferred");
+  assert.equal(replayResult.payableNowKobo, 9680000);
+  assert.equal(replayResult.reserveTrancheKobo, 0);
+  assert.equal(accountingRepo.findAdjustmentsForRelease(releaseId).length, 3);
+  assert.equal(accountingRepo.findLedgerEntriesForRelease(releaseId).length, 4);
 
   // 3. Open liability / active hold restricts settlement -> moves funds to risk_restricted
   const heldResult = manager.calculatePayoutPlanAndReserve({

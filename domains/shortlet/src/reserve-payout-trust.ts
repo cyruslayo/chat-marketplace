@@ -503,39 +503,39 @@ export class ReservePayoutManager {
     const hasDiff = diffPayable !== 0 || diffReserve !== 0 || diffDeferred !== 0 || diffRestricted !== 0;
 
     if (hasDiff) {
+      const transitionKey = `${tier}:${hasHolds ? "held" : "active"}:${currentBalances.historyDigest}`;
       const lines: RevenueLedgerLine[] = [];
       let lineIndex = 1;
 
       // Decreases (Debits)
       if (diffPayable < 0) {
-        lines.push({ lineId: `reclass:${releaseId}:${lineIndex++}`, account: "operator_payable", side: "debit", amountKobo: Math.abs(diffPayable), currency: "NGN" });
+        lines.push({ lineId: `reclass:${releaseId}:${transitionKey}:${lineIndex++}`, account: "operator_payable", side: "debit", amountKobo: Math.abs(diffPayable), currency: "NGN" });
       }
       if (diffReserve < 0) {
-        lines.push({ lineId: `reclass:${releaseId}:${lineIndex++}`, account: "rolling_reserve", side: "debit", amountKobo: Math.abs(diffReserve), currency: "NGN" });
+        lines.push({ lineId: `reclass:${releaseId}:${transitionKey}:${lineIndex++}`, account: "rolling_reserve", side: "debit", amountKobo: Math.abs(diffReserve), currency: "NGN" });
       }
       if (diffDeferred < 0) {
-        lines.push({ lineId: `reclass:${releaseId}:${lineIndex++}`, account: "post_stay_deferred", side: "debit", amountKobo: Math.abs(diffDeferred), currency: "NGN" });
+        lines.push({ lineId: `reclass:${releaseId}:${transitionKey}:${lineIndex++}`, account: "post_stay_deferred", side: "debit", amountKobo: Math.abs(diffDeferred), currency: "NGN" });
       }
       if (diffRestricted < 0) {
-        lines.push({ lineId: `reclass:${releaseId}:${lineIndex++}`, account: "risk_restricted", side: "debit", amountKobo: Math.abs(diffRestricted), currency: "NGN" });
+        lines.push({ lineId: `reclass:${releaseId}:${transitionKey}:${lineIndex++}`, account: "risk_restricted", side: "debit", amountKobo: Math.abs(diffRestricted), currency: "NGN" });
       }
 
       // Increases (Credits)
       if (diffPayable > 0) {
-        lines.push({ lineId: `reclass:${releaseId}:${lineIndex++}`, account: "operator_payable", side: "credit", amountKobo: diffPayable, currency: "NGN" });
+        lines.push({ lineId: `reclass:${releaseId}:${transitionKey}:${lineIndex++}`, account: "operator_payable", side: "credit", amountKobo: diffPayable, currency: "NGN" });
       }
       if (diffReserve > 0) {
-        lines.push({ lineId: `reclass:${releaseId}:${lineIndex++}`, account: "rolling_reserve", side: "credit", amountKobo: diffReserve, currency: "NGN" });
+        lines.push({ lineId: `reclass:${releaseId}:${transitionKey}:${lineIndex++}`, account: "rolling_reserve", side: "credit", amountKobo: diffReserve, currency: "NGN" });
       }
       if (diffDeferred > 0) {
-        lines.push({ lineId: `reclass:${releaseId}:${lineIndex++}`, account: "post_stay_deferred", side: "credit", amountKobo: diffDeferred, currency: "NGN" });
+        lines.push({ lineId: `reclass:${releaseId}:${transitionKey}:${lineIndex++}`, account: "post_stay_deferred", side: "credit", amountKobo: diffDeferred, currency: "NGN" });
       }
       if (diffRestricted > 0) {
-        lines.push({ lineId: `reclass:${releaseId}:${lineIndex++}`, account: "risk_restricted", side: "credit", amountKobo: diffRestricted, currency: "NGN" });
+        lines.push({ lineId: `reclass:${releaseId}:${transitionKey}:${lineIndex++}`, account: "risk_restricted", side: "credit", amountKobo: diffRestricted, currency: "NGN" });
       }
 
       const adjJournal = journal({ correlationId: releaseId, lines, createdAt: nowIso });
-      const transitionKey = `${tier}:${hasHolds ? "held" : "active"}:${currentBalances.historyDigest}`;
       const adj: RevenueAdjustmentRecord = {
         adjustmentId: `adj-reclass-${reservationId}-${transitionKey}`,
         adjustmentVersion: 1,
