@@ -1,6 +1,7 @@
+import { createHash } from "node:crypto";
 import { createPlatformCommandEnvelope, type PlatformCommandEnvelope, type CommandPrincipal, InMemoryAuditLog } from "../../../packages/platform-core/src/index.js";
 import type { ProductionRevenueReleaseRecord } from "./revenue-release.js";
-import { journal, type RevenueLedgerLine, type RevenueAccountingRepository, type RevenueAdjustmentRecord } from "./revenue-accounting.js";
+import { journal, type RevenueLedgerLine, type RevenueAccountingRepository, type RevenueAdjustmentRecord, type LedgerJournal } from "./revenue-accounting.js";
 
 export type PayoutPlanType =
   | "founding_90_10"
@@ -120,12 +121,22 @@ export interface ReservePayoutManagerOptions {
   readonly clock?: () => Date;
 }
 
+export interface SettlementLedgerBalances {
+  operatorPayableKobo: number;
+  rollingReserveKobo: number;
+  postStayDeferredKobo: number;
+  riskRestrictedKobo: number;
+  operatorCostsAndOffsetsKobo: number;
+  historyDigest: string;
+}
+
 /**
  * ADR 0021, ADR 0024, ADR 0025, ADR 0026, ADR 0062, ADR 0063, ADR 0064, ADR 0072, ADR 0075, ADR 0083:
  * Calculates rolling reserve and settlement availability consuming authoritative Revenue Release economics,
  * evaluates Operator Trust Tier strictly from mandatory reliability and enforcement authorities,
- * commits explicit balanced ledger reclassifications for Trust Tier settlement changes and Full Post-Stay eligibility,
- * manages reserve tranches with atomic ledger adjustments, and enforces mandatory idempotency and authoritative tenant scope.
+ * commits explicit balanced ledger reclassifications for Trust Tier settlement changes and Full Post-Stay eligibility
+ * by reconciling against the CURRENT accumulated ledger state, manages reserve tranches with atomic ledger adjustments,
+ * and enforces mandatory idempotency and authoritative tenant scope.
  */
 export class ReservePayoutManager {
   readonly #tranches = new Map<string, ReserveTranche>();
@@ -143,6 +154,67 @@ export class ReservePayoutManager {
     this.#scopeAuthority = options.scopeAuthority;
     this.#accountingRepository = options.accountingRepository;
     this.#clock = options.clock ?? (() => new Date());
+  }
+
+  /**
+   * Folds all committed ledger journals for a given releaseId to derive CURRENT accumulated balances.
+   */
+  #deriveCurrentLedgerBalances(releaseId: string): SettlementLedgerBalances {
+    if (!this.#accountingRepository) {
+      throw new Error("Authoritative RevenueAccountingRepository is required for ledger derivation");
+    }
+
+    const journals = this.#accountingRepository.findLedgerEntriesForRelease(releaseId);
+    if (!journals || journals.length === 0) {
+      throw new Error(`No committed ledger entries found for release ${releaseId}`);
+    }
+
+    let operatorPayableKobo = 0;
+    let rollingReserveKobo = 0;
+    let postStayDeferredKobo = 0;
+    let riskRestrictedKobo = 0;
+    let operatorCostsAndOffsetsKobo = 0;
+
+    const journalIds: string[] = [];
+
+    for (const j of journals) {
+      journalIds.push(j.journalId);
+      for (const line of j.lines) {
+        const delta = line.side === "credit" ? line.amountKobo : -line.amountKobo;
+        if (line.account === "operator_payable") {
+          operatorPayableKobo += delta;
+        } else if (line.account === "rolling_reserve") {
+          rollingReserveKobo += delta;
+        } else if (line.account === "post_stay_deferred") {
+          postStayDeferredKobo += delta;
+        } else if (line.account === "risk_restricted") {
+          riskRestrictedKobo += delta;
+        } else if (line.account === "operator_costs_and_offsets") {
+          operatorCostsAndOffsetsKobo += delta;
+        }
+      }
+    }
+
+    if (
+      operatorPayableKobo < 0 ||
+      rollingReserveKobo < 0 ||
+      postStayDeferredKobo < 0 ||
+      riskRestrictedKobo < 0 ||
+      operatorCostsAndOffsetsKobo < 0
+    ) {
+      throw new Error(`Corrupt or negative ledger balances for release ${releaseId}`);
+    }
+
+    const historyDigest = createHash("sha256").update(journalIds.join(":")).digest("hex").slice(0, 12);
+
+    return {
+      operatorPayableKobo,
+      rollingReserveKobo,
+      postStayDeferredKobo,
+      riskRestrictedKobo,
+      operatorCostsAndOffsetsKobo,
+      historyDigest,
+    };
   }
 
   /**
@@ -235,23 +307,46 @@ export class ReservePayoutManager {
 
   /**
    * ADR 0026, ADR 0062, ADR 0063, ADR 0083:
-   * Calculates settlement classification, commits explicit balanced ledger adjustments for Trust Tier
-   * settlement changes and Full Post-Stay timing eligibility, and ensures returned projection agrees with ledger state.
+   * Reconciles settlement from the CURRENT accumulated ledger state in RevenueAccountingRepository,
+   * derives the authoritative target settlement classification, posts balanced adjustments if current != target,
+   * and returns a projection strictly matching the final committed ledger balances.
    */
   calculatePayoutPlanAndReserve({
     revenueRelease,
-    standardPayoutPreference = "fast_payout",
     holds
   }: {
     revenueRelease: ProductionRevenueReleaseRecord;
-    standardPayoutPreference?: "fast_payout" | "full_post_stay";
     holds?: PayoutHoldConditions;
   }): PayoutPlanResult {
     if (!revenueRelease) {
       throw new Error("Authoritative ProductionRevenueReleaseRecord is mandatory for settlement calculation");
     }
+    if (!this.#accountingRepository) {
+      throw new Error("Authoritative RevenueAccountingRepository is mandatory for settlement calculation");
+    }
+    if (!this.#reliabilityAuthority) {
+      throw new Error("Authoritative reliability authority is required to evaluate trust tier");
+    }
+    if (!this.#enforcementAuthority) {
+      throw new Error("Authoritative enforcement authority is required to evaluate trust tier");
+    }
 
     const { reservationId, operatorId, tenantId, commissionBaseKobo, commissionRate, commissionKobo, operatorNetKobo, releaseId } = revenueRelease;
+
+    // Verify that the committed Release exists in repository and matches supplied record
+    const committedRaw = this.#accountingRepository.findReleaseByReservationId(reservationId) as ProductionRevenueReleaseRecord | null;
+    if (!committedRaw) {
+      throw new Error(`Committed Revenue Release not found in accounting repository for reservation ${reservationId}`);
+    }
+    if (
+      committedRaw.releaseId !== releaseId ||
+      committedRaw.operatorId !== operatorId ||
+      committedRaw.tenantId !== tenantId ||
+      committedRaw.reservationId !== reservationId
+    ) {
+      throw new Error(`Committed Revenue Release mismatch in accounting repository for release ${releaseId}`);
+    }
+
     const policyVersion = "v1.0-launch";
     const nowIso = this.#clock().toISOString();
     const nowTime = this.#clock().getTime();
@@ -290,138 +385,147 @@ export class ReservePayoutManager {
 
     const hasHolds = overrideReasons.length > 0;
 
+    // 1. Fold all journals to get CURRENT ledger balances
+    let currentBalances = this.#deriveCurrentLedgerBalances(releaseId);
+
+    // Total settlement balance currently allocated (excluding deductions already in costs & offsets)
+    const currentSettlementTotal =
+      currentBalances.operatorPayableKobo +
+      currentBalances.rollingReserveKobo +
+      currentBalances.postStayDeferredKobo +
+      currentBalances.riskRestrictedKobo;
+
+    if (currentSettlementTotal + currentBalances.operatorCostsAndOffsetsKobo !== operatorNetKobo) {
+      throw new Error(`Accumulated ledger balance (${currentSettlementTotal} + ${currentBalances.operatorCostsAndOffsetsKobo}) does not equal Operator Net (${operatorNetKobo})`);
+    }
+
+    // 2. Compute TARGET balances
+    let targetPayableKobo = 0;
+    let targetReserveKobo = 0;
+    let targetDeferredKobo = 0;
+    let targetRestrictedKobo = 0;
     let payoutPlan: PayoutPlanType;
-    let payableNowKobo = 0;
-    let reserveTrancheKobo = 0;
     let payoutAccelerated = true;
 
-    // Determine target settlement classification based on Trust Tier & plan preference
-    if (tier === "preferred") {
-      payoutPlan = "preferred_100_access";
-      if (hasHolds) {
-        payoutAccelerated = false;
-        payableNowKobo = 0;
-        reserveTrancheKobo = 0;
-      } else {
-        // Preferred target: 100% payable now, 0 reserve
-        payableNowKobo = operatorNetKobo;
-        reserveTrancheKobo = 0;
-
-        // Reconcile with ledger: If initial release was fast_payout with routine reserve, post adjustment
-        if (this.#accountingRepository && revenueRelease.routineReserveTrancheKobo > 0) {
-          const adjId = `adj-reclass-preferred-${reservationId}`;
-          const lines: RevenueLedgerLine[] = [
-            { lineId: `${adjId}:1`, account: "rolling_reserve", side: "debit", amountKobo: revenueRelease.routineReserveTrancheKobo, currency: "NGN" },
-            { lineId: `${adjId}:2`, account: "operator_payable", side: "credit", amountKobo: revenueRelease.routineReserveTrancheKobo, currency: "NGN" }
-          ];
-          const adjJournal = journal({ correlationId: releaseId, lines, createdAt: nowIso });
-          const adj: RevenueAdjustmentRecord = {
-            adjustmentId: adjId,
-            adjustmentVersion: 1,
-            reservationId,
-            releaseId,
-            source: "other_accepted_source",
-            sourceReference: `tier_reclassification_preferred_${tier}`,
-            reasonCode: "trust_tier_preferred_reclassification",
-            journal: adjJournal
-          };
-          this.#accountingRepository.postAdjustment({ adjustment: adj });
-        }
-      }
-    } else if (tier === "proven") {
-      payoutPlan = "proven_95_5";
-      if (hasHolds) {
-        payoutAccelerated = false;
-        payableNowKobo = 0;
-        reserveTrancheKobo = 0;
-      } else {
-        // Proven target: 95% payable, 5% reserve
-        payableNowKobo = Math.floor(operatorNetKobo * 0.95);
-        reserveTrancheKobo = operatorNetKobo - payableNowKobo;
-
-        // Reconcile with ledger: Move additional 5% from reserve to payable if initial release had 10% reserve
-        const initialReserve = revenueRelease.routineReserveTrancheKobo;
-        const reclassAmount = initialReserve - reserveTrancheKobo;
-        if (this.#accountingRepository && reclassAmount > 0) {
-          const adjId = `adj-reclass-proven-${reservationId}`;
-          const lines: RevenueLedgerLine[] = [
-            { lineId: `${adjId}:1`, account: "rolling_reserve", side: "debit", amountKobo: reclassAmount, currency: "NGN" },
-            { lineId: `${adjId}:2`, account: "operator_payable", side: "credit", amountKobo: reclassAmount, currency: "NGN" }
-          ];
-          const adjJournal = journal({ correlationId: releaseId, lines, createdAt: nowIso });
-          const adj: RevenueAdjustmentRecord = {
-            adjustmentId: adjId,
-            adjustmentVersion: 1,
-            reservationId,
-            releaseId,
-            source: "other_accepted_source",
-            sourceReference: `tier_reclassification_proven_${tier}`,
-            reasonCode: "trust_tier_proven_reclassification",
-            journal: adjJournal
-          };
-          this.#accountingRepository.postAdjustment({ adjustment: adj });
-        }
-      }
-    } else {
-      // Standard Tier
-      if (revenueRelease.payoutPlan === "full_post_stay" || standardPayoutPreference === "full_post_stay") {
-        payoutPlan = "founding_100_post_checkout";
-        const eligibleTime = revenueRelease.postStayPayableEligibleAt ? new Date(revenueRelease.postStayPayableEligibleAt).getTime() : 0;
-        const isEligibleTimePassed = eligibleTime > 0 && nowTime >= eligibleTime;
-
-        if (hasHolds || !isEligibleTimePassed) {
-          payoutAccelerated = false;
-          payableNowKobo = 0;
-          reserveTrancheKobo = 0;
-          if (!isEligibleTimePassed && !hasHolds) {
-            overrideReasons.push("post_stay_deferred_active");
-          }
-        } else {
-          // At or after post-stay eligibility boundary (+24h checkout)
-          payableNowKobo = operatorNetKobo;
-          reserveTrancheKobo = 0;
-
-          // Transition ledger from post_stay_deferred to operator_payable
-          if (this.#accountingRepository && revenueRelease.deferredPostStayKobo > 0) {
-            const adjId = `adj-post-stay-payable-${reservationId}`;
-            const lines: RevenueLedgerLine[] = [
-              { lineId: `${adjId}:1`, account: "post_stay_deferred", side: "debit", amountKobo: revenueRelease.deferredPostStayKobo, currency: "NGN" },
-              { lineId: `${adjId}:2`, account: "operator_payable", side: "credit", amountKobo: revenueRelease.deferredPostStayKobo, currency: "NGN" }
-            ];
-            const adjJournal = journal({ correlationId: releaseId, lines, createdAt: nowIso });
-            const adj: RevenueAdjustmentRecord = {
-              adjustmentId: adjId,
-              adjustmentVersion: 1,
-              reservationId,
-              releaseId,
-              source: "other_accepted_source",
-              sourceReference: `post_stay_eligible_${reservationId}`,
-              reasonCode: "post_stay_deferred_released_to_payable",
-              journal: adjJournal
-            };
-            this.#accountingRepository.postAdjustment({ adjustment: adj });
-          }
-        }
-      } else {
-        payoutPlan = "founding_90_10";
-        if (hasHolds) {
-          payoutAccelerated = false;
-          payableNowKobo = 0;
-          reserveTrancheKobo = 0;
-        } else {
-          payableNowKobo = Math.floor(operatorNetKobo * 0.9);
-          reserveTrancheKobo = operatorNetKobo - payableNowKobo;
-        }
-      }
-    }
-
-    let heldAmountKobo = 0;
-    if (overrideReasons.length > 0) {
+    if (hasHolds) {
+      // All settlement funds become risk_restricted
       payoutAccelerated = false;
-      heldAmountKobo = operatorNetKobo;
-      payableNowKobo = 0;
-      reserveTrancheKobo = 0;
+      targetRestrictedKobo = currentSettlementTotal;
+      targetPayableKobo = 0;
+      targetReserveKobo = 0;
+      targetDeferredKobo = 0;
+      payoutPlan = tier === "preferred"
+        ? "preferred_100_access"
+        : tier === "proven"
+        ? "proven_95_5"
+        : revenueRelease.payoutPlan === "full_post_stay"
+        ? "founding_100_post_checkout"
+        : "founding_90_10";
+    } else {
+      // Normal tier-derived target
+      if (tier === "preferred") {
+        payoutPlan = "preferred_100_access";
+        targetPayableKobo = currentSettlementTotal;
+        targetReserveKobo = 0;
+        targetDeferredKobo = 0;
+        targetRestrictedKobo = 0;
+      } else if (tier === "proven") {
+        payoutPlan = "proven_95_5";
+        targetPayableKobo = Math.floor(currentSettlementTotal * 0.95);
+        targetReserveKobo = currentSettlementTotal - targetPayableKobo;
+        targetDeferredKobo = 0;
+        targetRestrictedKobo = 0;
+      } else {
+        // Standard Tier
+        if (revenueRelease.payoutPlan === "full_post_stay") {
+          payoutPlan = "founding_100_post_checkout";
+          const eligibleTime = revenueRelease.postStayPayableEligibleAt ? new Date(revenueRelease.postStayPayableEligibleAt).getTime() : 0;
+          const isEligibleTimePassed = eligibleTime > 0 && nowTime >= eligibleTime;
+
+          if (!isEligibleTimePassed) {
+            payoutAccelerated = false;
+            targetDeferredKobo = currentSettlementTotal;
+            targetPayableKobo = 0;
+            targetReserveKobo = 0;
+            targetRestrictedKobo = 0;
+            overrideReasons.push("post_stay_deferred_active");
+          } else {
+            targetPayableKobo = currentSettlementTotal;
+            targetReserveKobo = 0;
+            targetDeferredKobo = 0;
+            targetRestrictedKobo = 0;
+          }
+        } else {
+          // Standard Fast Payout (90/10)
+          payoutPlan = "founding_90_10";
+          targetPayableKobo = Math.floor(currentSettlementTotal * 0.9);
+          targetReserveKobo = currentSettlementTotal - targetPayableKobo;
+          targetDeferredKobo = 0;
+          targetRestrictedKobo = 0;
+        }
+      }
     }
+
+    // 3. Reconcile CURRENT -> TARGET via balanced ledger adjustments if they differ
+    const diffPayable = targetPayableKobo - currentBalances.operatorPayableKobo;
+    const diffReserve = targetReserveKobo - currentBalances.rollingReserveKobo;
+    const diffDeferred = targetDeferredKobo - currentBalances.postStayDeferredKobo;
+    const diffRestricted = targetRestrictedKobo - currentBalances.riskRestrictedKobo;
+
+    const hasDiff = diffPayable !== 0 || diffReserve !== 0 || diffDeferred !== 0 || diffRestricted !== 0;
+
+    if (hasDiff) {
+      const lines: RevenueLedgerLine[] = [];
+      let lineIndex = 1;
+
+      // Decreases (Debits)
+      if (diffPayable < 0) {
+        lines.push({ lineId: `reclass:${releaseId}:${lineIndex++}`, account: "operator_payable", side: "debit", amountKobo: Math.abs(diffPayable), currency: "NGN" });
+      }
+      if (diffReserve < 0) {
+        lines.push({ lineId: `reclass:${releaseId}:${lineIndex++}`, account: "rolling_reserve", side: "debit", amountKobo: Math.abs(diffReserve), currency: "NGN" });
+      }
+      if (diffDeferred < 0) {
+        lines.push({ lineId: `reclass:${releaseId}:${lineIndex++}`, account: "post_stay_deferred", side: "debit", amountKobo: Math.abs(diffDeferred), currency: "NGN" });
+      }
+      if (diffRestricted < 0) {
+        lines.push({ lineId: `reclass:${releaseId}:${lineIndex++}`, account: "risk_restricted", side: "debit", amountKobo: Math.abs(diffRestricted), currency: "NGN" });
+      }
+
+      // Increases (Credits)
+      if (diffPayable > 0) {
+        lines.push({ lineId: `reclass:${releaseId}:${lineIndex++}`, account: "operator_payable", side: "credit", amountKobo: diffPayable, currency: "NGN" });
+      }
+      if (diffReserve > 0) {
+        lines.push({ lineId: `reclass:${releaseId}:${lineIndex++}`, account: "rolling_reserve", side: "credit", amountKobo: diffReserve, currency: "NGN" });
+      }
+      if (diffDeferred > 0) {
+        lines.push({ lineId: `reclass:${releaseId}:${lineIndex++}`, account: "post_stay_deferred", side: "credit", amountKobo: diffDeferred, currency: "NGN" });
+      }
+      if (diffRestricted > 0) {
+        lines.push({ lineId: `reclass:${releaseId}:${lineIndex++}`, account: "risk_restricted", side: "credit", amountKobo: diffRestricted, currency: "NGN" });
+      }
+
+      const adjJournal = journal({ correlationId: releaseId, lines, createdAt: nowIso });
+      const transitionKey = `${tier}:${hasHolds ? "held" : "active"}:${currentBalances.historyDigest}`;
+      const adj: RevenueAdjustmentRecord = {
+        adjustmentId: `adj-reclass-${reservationId}-${transitionKey}`,
+        adjustmentVersion: 1,
+        reservationId,
+        releaseId,
+        source: "other_accepted_source",
+        sourceReference: `settlement_reclassification_${transitionKey}`,
+        reasonCode: hasHolds ? "settlement_held_restriction" : `settlement_tier_${tier}_reclassification`,
+        journal: adjJournal,
+      };
+
+      this.#accountingRepository.postAdjustment({ adjustment: adj });
+
+      // Re-read current balances after committing adjustment
+      currentBalances = this.#deriveCurrentLedgerBalances(releaseId);
+    }
+
+    const heldAmountKobo = currentBalances.riskRestrictedKobo > 0 ? currentBalances.riskRestrictedKobo : (hasHolds ? operatorNetKobo : 0);
 
     return {
       reservationId,
@@ -434,12 +538,12 @@ export class ReservePayoutManager {
       commissionRate,
       commissionKobo,
       operatorNetKobo,
-      payableNowKobo,
-      reserveTrancheKobo,
+      payableNowKobo: currentBalances.operatorPayableKobo,
+      reserveTrancheKobo: currentBalances.rollingReserveKobo,
       heldAmountKobo,
-      payoutAccelerated,
+      payoutAccelerated: payoutAccelerated && currentBalances.operatorPayableKobo > 0,
       overrideReasons,
-      calculatedAtIso: nowIso
+      calculatedAtIso: nowIso,
     };
   }
 
@@ -578,7 +682,7 @@ export class ReservePayoutManager {
   /**
    * ADR 0072, ADR 0064, ADR 0083:
    * Process manual admin payout override command using strongly typed envelope, mandatory idempotency,
-   * and authoritative operator scope verification.
+   * and mandatory authoritative operator scope verification.
    */
   processAdminPayoutOverride(envelope: PlatformCommandEnvelope<AdminPayoutOverridePayload>): AdminHoldRecord {
     if (envelope.commandName !== "reserve.override_payout_hold") {
@@ -599,8 +703,11 @@ export class ReservePayoutManager {
       throw new Error("Principal tenant does not match resource tenant");
     }
 
-    // Authoritative Operator/Tenant relationship check
-    if (this.#scopeAuthority && !this.#scopeAuthority.isOperatorInTenant({ operatorId, tenantId })) {
+    // Mandatory authoritative OperatorScopeAuthority check
+    if (!this.#scopeAuthority) {
+      throw new Error("Authoritative OperatorScopeAuthority is mandatory for payout hold commands");
+    }
+    if (!this.#scopeAuthority.isOperatorInTenant({ operatorId, tenantId })) {
       throw new Error(`Operator ${operatorId} does not belong to tenant ${tenantId}`);
     }
 

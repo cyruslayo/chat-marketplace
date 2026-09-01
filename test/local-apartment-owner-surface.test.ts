@@ -99,7 +99,7 @@ test("Local Apartment Owner Experience — Full End-to-End Verification", async 
     // Verify that the Issue-30 ledger reclassification adjustment was committed
     const adjustments = env.accountingRepository.findAdjustmentsForRelease(release.releaseId);
     assert.equal(adjustments.length, 1);
-    assert.equal(adjustments[0].reasonCode, "trust_tier_preferred_reclassification");
+    assert.equal(adjustments[0].reasonCode, "settlement_tier_preferred_reclassification");
 
     // Verify total ledger lines: initial release + reclassification adjustment
     const journals = env.accountingRepository.findLedgerEntriesForRelease(release.releaseId);

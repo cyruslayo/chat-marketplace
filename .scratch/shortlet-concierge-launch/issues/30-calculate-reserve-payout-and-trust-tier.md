@@ -33,11 +33,12 @@ Issues 28 and 29 are resolved. Issue 30 production work is governed by ADR-0083 
 
 Productionized as an authoritative, ledger-integrated reserve and settlement path under ADR-0083.
 
-- **Authoritative Revenue Release Integration**: `ReservePayoutManager` consumes the immutable `ProductionRevenueReleaseRecord` from Issue 28 rather than maintaining an independent calculation of commission, commission base, taxes, or Operator Net.
-- **Mandatory Dual Authorities for Trust Tier**: Both `OperatorReliabilityAuthority` and `OperatorEnforcementAuthority` are mandatory for Trust Tier evaluation; missing either authority fails closed. Evaluates `preferred` (>=30 completed bookings in trailing 180 days, >=98% authoritative platform reliability) prior to `proven` (>=10 completed bookings in trailing 60 days, >=95% authoritative platform reliability), falling back to `standard`. Active enforcement state or admin hold immediately overrides tier progression to Standard.
-- **Ledger-Reconciled Settlement & Reclassification**: Trust Tier settlement changes and Full Post-Stay timing transitions reconcile strictly through explicit balanced ledger adjustments committed to `RevenueAccountingRepository`. Preferred tier releases reclassify routine reserve to `operator_payable` in the ledger, Proven tier releases reclassify 5% from reserve to `operator_payable`, and Full Post-Stay releases respect the +24h post-checkout eligibility boundary before transitioning `post_stay_deferred` to `operator_payable`. Payout projections strictly equal committed ledger balances.
-- **Authoritative Operator Scope**: Payout hold commands verify the Operator/Tenant relationship through authoritative `OperatorScopeAuthority` rather than caller assertions.
-- **Fail-Closed Hold Overrides**: Payout acceleration and tranche releases fail closed when open risk, open liabilities, legal holds, provider restrictions, active risk restrictions, pending adjustments, or pending appeals exist.
+- **Mandatory Committed Accounting Repository & Release**: Settlement calculation strictly requires an authoritative `ProductionRevenueReleaseRecord`, an authoritative `RevenueAccountingRepository`, and mandatory reliability and enforcement authorities. Projections are never produced for uncommitted or free-floating objects; missing any source fails closed.
+- **Reconciliation from CURRENT Accumulated Ledger State**: `ReservePayoutManager` derives current balances across `operator_payable`, `rolling_reserve`, `post_stay_deferred`, `risk_restricted`, and `operator_costs_and_offsets` by folding all committed journals for the release. The sum of settlement balances strictly reconciles to authoritative Operator Net.
+- **Target Derivation & Bi-directional Ledger Adjustments**: Computes target settlement allocations strictly from authoritative Trust Tier, the immutable release's `payoutPlan`, server time (+24h checkout for Full Post-Stay), and active holds. Upward and downward tier transitions (Preferred -> Standard on downgrade, Standard -> Proven, Proven -> Preferred, Full Post-Stay -> Preferred) and hold applications/clearances post balanced, correlated ledger adjustments to `RevenueAccountingRepository`. Payout projections strictly equal the final matching ledger balances.
+- **Ledger-Reconciled Holds**: Open liabilities, active risk conditions, appeals, and pending adjustments restrict settlement into the `risk_restricted` ledger account rather than mutating projections without backing journals. Clearing restrictions restores the applicable Trust Tier classification.
+- **Natural Idempotency**: Repeated evaluations compare current folded ledger state with the target; matching states post zero adjustments. Transition adjustment IDs incorporate deterministic history digests to allow cyclical transitions (Preferred -> Standard -> Preferred) safely without collisions or duplicate ledger movements.
+- **Mandatory Authoritative Operator Scope**: Payout hold commands require a mandatory `OperatorScopeAuthority`, failing closed if absent, for unknown operators, or for cross-tenant attempts.
 - **Platform Commands & Human Authority**: Consequential overrides and release actions require `PlatformCommandEnvelope` with valid idempotency keys and authorized human roles (`admin` or `authorized_staff`), strictly rejecting AI/agent decisions and conflicting idempotency key reuse.
 - **Local Owner Demonstration**: The local apartment owner test surface exercises the genuine `RevenueReleaseManager.commitProductionRelease()` path into `InMemoryRevenueAccountingRepository`, feeds the resulting committed record into `ReservePayoutManager`, and verifies that the owner's ordinary 100% Preferred settlement projection reconciles with committed ledger adjustments.
 
@@ -47,9 +48,9 @@ Full automated verification: `npm run check` clean; `test/calculate-reserve-payo
 
 ### ADR Compliance
 
-- ADR 0024: One immutable Revenue Release; reserve movements post explicit, balanced ledger adjustments.
+- ADR 0024: One immutable Revenue Release; reserve movements and settlement reclassifications post explicit, balanced ledger adjustments.
 - ADR 0026 & ADR 0063: Provisional Payout Plans (90/10 Fast Payout, Full Post-Stay, Proven 95/5, Preferred) and 30-day review points.
 - ADR 0062: Founding commercial cohort status remains distinct from Trust Tier; commission rates (8%/10%/12%) remain immutable.
 - ADR 0064: Authoritative enforcement state overrides commercial progression.
-- ADR 0072 & ADR 0083: Human-authorized commands with idempotency, authoritative scope, and strict concurrency.
+- ADR 0072 & ADR 0083: Human-authorized commands with idempotency, mandatory authoritative operator scope, and strict concurrency.
 - ADR 0075: Minimized, tenant-scoped projections without exposing internal risk scores or secrets.
