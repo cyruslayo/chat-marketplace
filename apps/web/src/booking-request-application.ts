@@ -1,6 +1,7 @@
 import {
   BookingRequestManager,
   type CreateDraftOptions,
+  type OperatorRepresentativeAuthority,
 } from "../../../domains/shortlet/src/index.js";
 import {
   createPlatformCommandEnvelope,
@@ -17,6 +18,7 @@ import {
 type BookingRequestManagerDependencies = ConstructorParameters<typeof BookingRequestManager>[0];
 
 export type BookingRequestApplicationDependencies = BookingRequestManagerDependencies & {
+  readonly operatorAuthority?: OperatorRepresentativeAuthority;
   readonly clock?: () => Date;
 };
 
@@ -36,11 +38,16 @@ function snapshot(manager: BookingRequestManager, requestId: string): BookingReq
 
 export class BookingRequestApplication {
   readonly manager: BookingRequestManager;
+  readonly #operatorAuthority?: OperatorRepresentativeAuthority;
   readonly #clock: () => Date;
 
-  constructor(manager: BookingRequestManager, clock: () => Date = () => new Date()) {
+  constructor(
+    manager: BookingRequestManager,
+    options: { operatorAuthority?: OperatorRepresentativeAuthority; clock?: () => Date } = {}
+  ) {
     this.manager = manager;
-    this.#clock = clock;
+    this.#operatorAuthority = options.operatorAuthority;
+    this.#clock = options.clock ?? (() => new Date());
   }
 
   createDraft(input: CreateDraftOptions, principal: CommandPrincipal) {
@@ -80,7 +87,7 @@ export class BookingRequestApplication {
       });
       this.manager.checkAndResolveExpiry(expiryEnvelope, { clock: this.#clock });
     }
-    return bookingRequestArtifactFromRequest(snapshot(this.manager, requestId), viewer);
+    return bookingRequestArtifactFromRequest(snapshot(this.manager, requestId), viewer, this.#operatorAuthority);
   }
 
   confirm(input: BookingRequestDecisionInput) {
@@ -99,7 +106,7 @@ export class BookingRequestApplication {
     if (current.status !== input.expectedStatus || current.status !== "disclosed") {
       throw new Error("Booking Request action is stale or no longer allowed");
     }
-    if (input.projectionVersion !== bookingRequestArtifactFromRequest(current, input.principal).projectionVersion) {
+    if (input.projectionVersion !== bookingRequestArtifactFromRequest(current, input.principal, this.#operatorAuthority).projectionVersion) {
       throw new Error("Booking Request projection is stale");
     }
     this.assertOperator(current, input.principal);
@@ -117,11 +124,25 @@ export class BookingRequestApplication {
   }
 
   private assertOperator(request: BookingRequestProjectionInput, principal: CommandPrincipal): void {
-    if (principal.role !== "operator" || !principal.id || !request.operatorId || principal.id !== request.operatorId) {
+    if (principal.role !== "operator" || !principal.id) {
       throw new Error("Authenticated principal is not authorized for this Operator action");
+    }
+    if (!request.operatorId) {
+      throw new Error("Booking request has no assigned Operator");
     }
     if (!request.tenantId || !principal.tenantId || request.tenantId !== principal.tenantId) {
       throw new Error("Authenticated principal is not authorized for this tenant");
+    }
+    if (!this.#operatorAuthority) {
+      throw new Error("Representative authority source is required for Operator decisions");
+    }
+    const authorized = this.#operatorAuthority.canActForOperator({
+      actorId: principal.id,
+      operatorId: request.operatorId,
+      tenantId: request.tenantId,
+    });
+    if (!authorized) {
+      throw new Error("Authenticated principal is not authorized to act for this Operator");
     }
   }
 }
@@ -129,6 +150,9 @@ export class BookingRequestApplication {
 export function createBookingRequestApplication(
   dependencies: BookingRequestApplicationDependencies,
 ): BookingRequestApplication {
-  const { clock, ...managerDependencies } = dependencies;
-  return new BookingRequestApplication(new BookingRequestManager(managerDependencies), clock ?? (() => new Date()));
+  const { clock, operatorAuthority, ...managerDependencies } = dependencies;
+  return new BookingRequestApplication(
+    new BookingRequestManager(managerDependencies),
+    { operatorAuthority, clock: clock ?? (() => new Date()) }
+  );
 }

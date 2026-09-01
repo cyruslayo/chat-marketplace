@@ -1,4 +1,5 @@
 import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
+import type { OperatorRepresentativeAuthority } from "../../../domains/shortlet/src/index.js";
 
 export const BOOKING_REQUEST_ARTIFACT_KIND = "shortlet.booking-request";
 export const BOOKING_REQUEST_SCHEMA_VERSION = "shortlet.booking-request/v1";
@@ -97,6 +98,7 @@ export function bookingRequestArtifactId(requestId: string): string {
 export function bookingRequestArtifactFromRequest(
   request: BookingRequestProjectionInput,
   viewer: CommandPrincipal,
+  operatorAuthority?: OperatorRepresentativeAuthority,
 ): BookingRequestArtifact {
   const id = bookingRequestArtifactId(request.requestId);
   const version = projectionVersion(request);
@@ -109,8 +111,18 @@ export function bookingRequestArtifactFromRequest(
       totalAmountDueNowKobo: quote.totalAmountDueNowKobo ?? quote.allInStayTotalKobo,
     })
     : undefined;
-  const canDecide = viewer.role === "operator" && request.status === "disclosed" && request.delivered && request.operatorId === viewer.id
-    && !!request.tenantId && request.tenantId === viewer.tenantId;
+
+  let canDecide = false;
+  if (viewer.role === "operator" && request.status === "disclosed" && request.delivered && request.operatorId && !!request.tenantId && request.tenantId === viewer.tenantId && !!viewer.id) {
+    if (operatorAuthority) {
+      canDecide = operatorAuthority.canActForOperator({
+        actorId: viewer.id,
+        operatorId: request.operatorId,
+        tenantId: request.tenantId,
+      });
+    }
+  }
+
   const actions: readonly BookingRequestArtifactAction[] = canDecide
     ? ["confirm", "decline"].map((type) => Object.freeze({
       type: type as BookingRequestActionType,

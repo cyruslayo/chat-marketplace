@@ -26,10 +26,15 @@ function setup() {
   seedIssue01Units(repository);
   const audit = new InMemoryAuditLog();
   const calendar = new AvailabilityCalendar({ repository, audit });
+  const operatorAuthority = {
+    canActForOperator: ({ actorId, operatorId, tenantId }: { actorId: string; operatorId: string; tenantId: string }) =>
+      tenantId === "tenant-lagos" && (actorId === operatorId || actorId.startsWith("rep-")),
+  };
   const application = createBookingRequestApplication({
     repository,
     audit,
     calendar,
+    operatorAuthority,
     guestVerification: new GuestVerificationService({ repository, verificationResults: {
       getVerificationResult: ({ tenantId, guestId }) => ({ tenantId, guestId, governmentIdVerified: true }),
     } }),
