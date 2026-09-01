@@ -59,6 +59,10 @@ function createCommittedProductionRelease(
     payoutPlan?: "fast_payout" | "full_post_stay";
     capturedCommissionRate?: 0.08 | 0.1 | 0.12;
     commissionableRevenueKobo?: number;
+    operatorBorneProcessorCostsKobo?: number;
+    applicableWithholdingKobo?: number;
+    preReleaseRefundOrCreditKobo?: number;
+    bookingOffsetsKobo?: number;
     effectiveCheckoutAt?: string;
     now?: Date;
   } = {}
@@ -86,10 +90,10 @@ function createCommittedProductionRelease(
       commissionPolicyVersion: "v1",
       capturedCommissionRate: rate,
       commissionableOperatorRevenueKobo: revenue,
-      operatorBorneProcessorCostsKobo: 0,
-      applicableWithholdingKobo: 0,
-      preReleaseRefundOrCreditKobo: 0,
-      bookingOffsetsKobo: 0,
+      operatorBorneProcessorCostsKobo: overrides.operatorBorneProcessorCostsKobo ?? 0,
+      applicableWithholdingKobo: overrides.applicableWithholdingKobo ?? 0,
+      preReleaseRefundOrCreditKobo: overrides.preReleaseRefundOrCreditKobo ?? 0,
+      bookingOffsetsKobo: overrides.bookingOffsetsKobo ?? 0,
       securityDepositKobo: 1000000,
       platformRemittedTaxesKobo: 0,
       platformOwnedFeesKobo: 0,
@@ -414,6 +418,61 @@ test("Reserve and payout projections reconcile to ledger entries and never promi
   assert.equal(holdBalances.operatorPayableKobo, 0);
   assert.equal(holdBalances.rollingReserveKobo, 0);
   assert.equal(holdBalances.riskRestrictedKobo, 9900000);
+
+  // 4. Committed Release with non-zero booking deductions (processor costs, withholding, refund/offsets)
+  // Commissionable revenue: ₦100,000 (10,000,000 kobo). 10% Preferred commission = ₦10,000 (1,000,000 kobo).
+  // Deductions: processor ₦1,500 (150,000 kobo) + withholding ₦2,000 (200,000 kobo) + refund ₦3,000 (300,000 kobo) + offset ₦500 (50,000 kobo) = ₦7,000 (700,000 kobo).
+  // Operator Net = 10,000,000 - 1,000,000 - 700,000 = ₦83,000 (8,300,000 kobo).
+  const releaseWithDeductions = createCommittedProductionRelease(accountingRepo, {
+    reservationId: "res-deductions-1",
+    capturedCommissionRate: 0.1,
+    commissionableRevenueKobo: 10000000,
+    operatorBorneProcessorCostsKobo: 150000,
+    applicableWithholdingKobo: 200000,
+    preReleaseRefundOrCreditKobo: 300000,
+    bookingOffsetsKobo: 50000
+  });
+
+  assert.equal(releaseWithDeductions.operatorNetKobo, 8300000);
+  const baseBalances = getBalances(accountingRepo, releaseWithDeductions.releaseId);
+  assert.equal(baseBalances.operatorCostsAndOffsetsKobo, 700000); // ₦7,000 initial offsets
+  assert.equal(baseBalances.operatorPayableKobo, 7470000); // 90% of 8,300,000
+  assert.equal(baseBalances.rollingReserveKobo, 830000); // 10% of 8,300,000
+
+  // Calculate settlement for Preferred tier: Reconciles remaining 8,300,000 to 100% payable without recreating deducted offsets
+  const deductionResult = manager.calculatePayoutPlanAndReserve({
+    revenueRelease: releaseWithDeductions
+  });
+
+  assert.equal(deductionResult.tier, "preferred");
+  assert.equal(deductionResult.commissionKobo, 1000000);
+  assert.equal(deductionResult.operatorNetKobo, 8300000);
+  assert.equal(deductionResult.payableNowKobo, 8300000);
+  assert.equal(deductionResult.reserveTrancheKobo, 0);
+
+  const postReclassBalances = getBalances(accountingRepo, releaseWithDeductions.releaseId);
+  assert.equal(postReclassBalances.operatorPayableKobo, 8300000);
+  assert.equal(postReclassBalances.rollingReserveKobo, 0);
+  assert.equal(postReclassBalances.operatorCostsAndOffsetsKobo, 700000); // Offsets preserved unchanged
+
+  // 5. Tampered caller Release object fails to override committed repository values
+  const tamperedRelease: ProductionRevenueReleaseRecord = {
+    ...releaseWithDeductions,
+    operatorNetKobo: 999999999, // Tampered inflated net!
+    payableNowKobo: 999999999,
+    commissionKobo: 0,
+    commissionRate: 0.08
+  };
+
+  const tamperedResult = manager.calculatePayoutPlanAndReserve({
+    revenueRelease: tamperedRelease
+  });
+
+  // Calculation used authoritative committed values (8,300,000 kobo net, 1,000,000 commission, 0.1 rate)
+  assert.equal(tamperedResult.operatorNetKobo, 8300000);
+  assert.equal(tamperedResult.payableNowKobo, 8300000);
+  assert.equal(tamperedResult.commissionKobo, 1000000);
+  assert.equal(tamperedResult.commissionRate, 0.1);
 });
 
 /**

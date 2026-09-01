@@ -126,7 +126,9 @@ export interface SettlementLedgerBalances {
   rollingReserveKobo: number;
   postStayDeferredKobo: number;
   riskRestrictedKobo: number;
-  operatorCostsAndOffsetsKobo: number;
+  currentOperatorCostsAndOffsetsKobo: number;
+  initialReleaseOffsetsKobo: number;
+  postReleaseOffsetDeltaKobo: number;
   historyDigest: string;
 }
 
@@ -158,8 +160,9 @@ export class ReservePayoutManager {
 
   /**
    * Folds all committed ledger journals for a given releaseId to derive CURRENT accumulated balances.
+   * Separates initial Release offsets (from base Release journal) from post-Release offset adjustments.
    */
-  #deriveCurrentLedgerBalances(releaseId: string): SettlementLedgerBalances {
+  #deriveCurrentLedgerBalances(releaseId: string, baseReleaseJournalId: string): SettlementLedgerBalances {
     if (!this.#accountingRepository) {
       throw new Error("Authoritative RevenueAccountingRepository is required for ledger derivation");
     }
@@ -173,12 +176,15 @@ export class ReservePayoutManager {
     let rollingReserveKobo = 0;
     let postStayDeferredKobo = 0;
     let riskRestrictedKobo = 0;
-    let operatorCostsAndOffsetsKobo = 0;
+    let currentOperatorCostsAndOffsetsKobo = 0;
+    let initialReleaseOffsetsKobo = 0;
 
     const journalIds: string[] = [];
 
     for (const j of journals) {
       journalIds.push(j.journalId);
+      const isBaseJournal = j.journalId === baseReleaseJournalId;
+
       for (const line of j.lines) {
         const delta = line.side === "credit" ? line.amountKobo : -line.amountKobo;
         if (line.account === "operator_payable") {
@@ -190,7 +196,10 @@ export class ReservePayoutManager {
         } else if (line.account === "risk_restricted") {
           riskRestrictedKobo += delta;
         } else if (line.account === "operator_costs_and_offsets") {
-          operatorCostsAndOffsetsKobo += delta;
+          currentOperatorCostsAndOffsetsKobo += delta;
+          if (isBaseJournal) {
+            initialReleaseOffsetsKobo += delta;
+          }
         }
       }
     }
@@ -200,11 +209,13 @@ export class ReservePayoutManager {
       rollingReserveKobo < 0 ||
       postStayDeferredKobo < 0 ||
       riskRestrictedKobo < 0 ||
-      operatorCostsAndOffsetsKobo < 0
+      currentOperatorCostsAndOffsetsKobo < 0 ||
+      initialReleaseOffsetsKobo < 0
     ) {
       throw new Error(`Corrupt or negative ledger balances for release ${releaseId}`);
     }
 
+    const postReleaseOffsetDeltaKobo = currentOperatorCostsAndOffsetsKobo - initialReleaseOffsetsKobo;
     const historyDigest = createHash("sha256").update(journalIds.join(":")).digest("hex").slice(0, 12);
 
     return {
@@ -212,7 +223,9 @@ export class ReservePayoutManager {
       rollingReserveKobo,
       postStayDeferredKobo,
       riskRestrictedKobo,
-      operatorCostsAndOffsetsKobo,
+      currentOperatorCostsAndOffsetsKobo,
+      initialReleaseOffsetsKobo,
+      postReleaseOffsetDeltaKobo,
       historyDigest,
     };
   }
@@ -308,8 +321,8 @@ export class ReservePayoutManager {
   /**
    * ADR 0026, ADR 0062, ADR 0063, ADR 0083:
    * Reconciles settlement from the CURRENT accumulated ledger state in RevenueAccountingRepository,
-   * derives the authoritative target settlement classification, posts balanced adjustments if current != target,
-   * and returns a projection strictly matching the final committed ledger balances.
+   * derives the authoritative target settlement classification using the committed Revenue Release record as single authority,
+   * posts balanced adjustments if current != target, and returns a projection strictly matching the final committed ledger balances.
    */
   calculatePayoutPlanAndReserve({
     revenueRelease,
@@ -331,9 +344,9 @@ export class ReservePayoutManager {
       throw new Error("Authoritative enforcement authority is required to evaluate trust tier");
     }
 
-    const { reservationId, operatorId, tenantId, commissionBaseKobo, commissionRate, commissionKobo, operatorNetKobo, releaseId } = revenueRelease;
+    const { reservationId, operatorId, tenantId, releaseId } = revenueRelease;
 
-    // Verify that the committed Release exists in repository and matches supplied record
+    // Verify that the committed Release exists in repository and matches supplied identity
     const committedRaw = this.#accountingRepository.findReleaseByReservationId(reservationId) as ProductionRevenueReleaseRecord | null;
     if (!committedRaw) {
       throw new Error(`Committed Revenue Release not found in accounting repository for reservation ${reservationId}`);
@@ -346,6 +359,18 @@ export class ReservePayoutManager {
     ) {
       throw new Error(`Committed Revenue Release mismatch in accounting repository for release ${releaseId}`);
     }
+
+    // Use the committed repository record as the sole authoritative Revenue Release
+    const authoritativeRelease = committedRaw;
+    const {
+      commissionBaseKobo,
+      commissionRate,
+      commissionKobo,
+      operatorNetKobo,
+      ledgerJournalId: baseReleaseJournalId,
+      payoutPlan: basePayoutPlan,
+      postStayPayableEligibleAt
+    } = authoritativeRelease;
 
     const policyVersion = "v1.0-launch";
     const nowIso = this.#clock().toISOString();
@@ -385,21 +410,24 @@ export class ReservePayoutManager {
 
     const hasHolds = overrideReasons.length > 0;
 
-    // 1. Fold all journals to get CURRENT ledger balances
-    let currentBalances = this.#deriveCurrentLedgerBalances(releaseId);
+    // 1. Fold all journals to get CURRENT ledger balances and post-release offset delta
+    let currentBalances = this.#deriveCurrentLedgerBalances(releaseId, baseReleaseJournalId);
 
-    // Total settlement balance currently allocated (excluding deductions already in costs & offsets)
+    // Total settlement balance currently allocated in settlement accounts
     const currentSettlementTotal =
       currentBalances.operatorPayableKobo +
       currentBalances.rollingReserveKobo +
       currentBalances.postStayDeferredKobo +
       currentBalances.riskRestrictedKobo;
 
-    if (currentSettlementTotal + currentBalances.operatorCostsAndOffsetsKobo !== operatorNetKobo) {
-      throw new Error(`Accumulated ledger balance (${currentSettlementTotal} + ${currentBalances.operatorCostsAndOffsetsKobo}) does not equal Operator Net (${operatorNetKobo})`);
+    // Consistency invariant: current settlement balances + postReleaseOffsetDelta === authoritative Operator Net
+    if (currentSettlementTotal + currentBalances.postReleaseOffsetDeltaKobo !== operatorNetKobo) {
+      throw new Error(
+        `Accumulated settlement ledger balance (${currentSettlementTotal}) + post-release offset delta (${currentBalances.postReleaseOffsetDeltaKobo}) does not equal authoritative Operator Net (${operatorNetKobo})`
+      );
     }
 
-    // 2. Compute TARGET balances
+    // 2. Compute TARGET balances from available settlement pool (currentSettlementTotal)
     let targetPayableKobo = 0;
     let targetReserveKobo = 0;
     let targetDeferredKobo = 0;
@@ -408,7 +436,7 @@ export class ReservePayoutManager {
     let payoutAccelerated = true;
 
     if (hasHolds) {
-      // All settlement funds become risk_restricted
+      // All remaining settlement funds become risk_restricted
       payoutAccelerated = false;
       targetRestrictedKobo = currentSettlementTotal;
       targetPayableKobo = 0;
@@ -418,7 +446,7 @@ export class ReservePayoutManager {
         ? "preferred_100_access"
         : tier === "proven"
         ? "proven_95_5"
-        : revenueRelease.payoutPlan === "full_post_stay"
+        : basePayoutPlan === "full_post_stay"
         ? "founding_100_post_checkout"
         : "founding_90_10";
     } else {
@@ -436,10 +464,10 @@ export class ReservePayoutManager {
         targetDeferredKobo = 0;
         targetRestrictedKobo = 0;
       } else {
-        // Standard Tier
-        if (revenueRelease.payoutPlan === "full_post_stay") {
+        // Standard Tier derived from committed Release basePayoutPlan
+        if (basePayoutPlan === "full_post_stay") {
           payoutPlan = "founding_100_post_checkout";
-          const eligibleTime = revenueRelease.postStayPayableEligibleAt ? new Date(revenueRelease.postStayPayableEligibleAt).getTime() : 0;
+          const eligibleTime = postStayPayableEligibleAt ? new Date(postStayPayableEligibleAt).getTime() : 0;
           const isEligibleTimePassed = eligibleTime > 0 && nowTime >= eligibleTime;
 
           if (!isEligibleTimePassed) {
@@ -522,7 +550,7 @@ export class ReservePayoutManager {
       this.#accountingRepository.postAdjustment({ adjustment: adj });
 
       // Re-read current balances after committing adjustment
-      currentBalances = this.#deriveCurrentLedgerBalances(releaseId);
+      currentBalances = this.#deriveCurrentLedgerBalances(releaseId, baseReleaseJournalId);
     }
 
     const heldAmountKobo = currentBalances.riskRestrictedKobo > 0 ? currentBalances.riskRestrictedKobo : (hasHolds ? operatorNetKobo : 0);
