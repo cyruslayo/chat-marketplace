@@ -18,15 +18,15 @@ Use this canonical prompt to exercise the complete journey:
 
 > I need an apartment in Ikoyi for 3 nights for 2 people
 
-The local concierge is a small deterministic regex interpreter. It is deliberately not an LLM; it supplies fixed demo dates (15–18 August 2026) and asks for clarification when location, nights, or guest count cannot be safely interpreted.
+The local concierge is a small deterministic regex interpreter. It is deliberately not an LLM; it uses 15 August 2026 as the deterministic check-in date, derives checkout from the requested night count, preserves an optional Lagos neighbourhood filter, and asks for clarification when location, nights, or guest count cannot be safely interpreted.
 
 ## Journey stages
 
-1. Discovery renders the two eligible Lagos Units with Weaver Basic Catalog A2UI, All-In Stay Total, separate Refundable Security Deposit, inspection, and management-trust facts.
+1. Discovery renders authoritative results with Weaver Basic Catalog A2UI, All-In Stay Total, separate Refundable Security Deposit, inspection, and management-trust facts. The canonical Ikoyi prompt returns only the eligible Old Ikoyi Unit; a generic Lagos prompt can return both eligible fixtures.
 2. View Unit requests a server-generated Unit detail surface.
 3. Request to Book creates and discloses a real Booking Request through the guest verification and availability application paths.
 4. The local fixture simulates the authorized Operator representative confirming the request and issuing a Conditional Booking Offer.
-5. Accept Offer creates the payment projection. Start secure checkout uses a deterministic local PSP stub; no card data or live provider is used.
+5. Accept Offer creates the payment projection. Start secure checkout uses a deterministic local PSP stub and progresses through separate stay and refundable-deposit charges; no card data or live provider is used.
 6. Verified payment commits the reservation and exposes the resulting Booking Contract projection. Arrival data remains locked in this demo.
 
 Every consequential action is emitted by Weaver and sent to the server. The browser owns only presentation and interaction projection state; the server validates the allow-listed action, current surface, identity, authorization, amount, and aggregate state.

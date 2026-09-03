@@ -235,7 +235,9 @@ export class LocalGuestApp {
 
     thread.unitDetail = { unitId: unit.id, artifactId: artifact.id };
     const surfaceId = `thread-${thread.threadId}:unit:detail`;
-    this.#supersede(thread, UNIT_STAGE);
+    // ADR-0074: selecting a Unit supersedes the discovery projection and its
+    // generated actions; the linear demo has no valid back-navigation state.
+    this.#supersede(thread, DISCOVERY_STAGE);
     thread.activeSurfaces.set(UNIT_STAGE, surfaceId);
     return {
       ok: true,
@@ -245,8 +247,7 @@ export class LocalGuestApp {
           surfaceId,
           a2uiMessages: unitDetailToA2UI({
             unit,
-            checkIn: this.#environment.config.demoCheckIn,
-            checkOut: this.#environment.config.demoCheckOut,
+            ...this.#stayDatesFor(thread),
             surfaceId,
             action: { artifactId: artifact.id, unitId: unit.id, projectionVersion: artifact.projectionVersion },
           }),
@@ -275,8 +276,7 @@ export class LocalGuestApp {
         primaryGuest: { id: environment.config.guestId, name: environment.config.guestName },
         occupants: environment.demoOccupants(this.#partySizeFor(thread)),
         selfBookingAttestation: environment.selfBookingAttestation(),
-        checkIn: environment.config.demoCheckIn,
-        checkOut: environment.config.demoCheckOut,
+        ...this.#stayDatesFor(thread),
       },
       guest,
     );
@@ -390,6 +390,14 @@ export class LocalGuestApp {
     return typeof filters?.partySize === "number" && Number.isInteger(filters.partySize) && filters.partySize >= 1
       ? filters.partySize
       : 1;
+  }
+
+  #stayDatesFor(thread: GuestThreadState): { readonly checkIn: string; readonly checkOut: string } {
+    const filters = thread.discoveryArtifact?.facts.filters;
+    if (typeof filters?.checkIn !== "string" || typeof filters.checkOut !== "string") {
+      throw new Error("Discovery dates are required for the booking journey");
+    }
+    return { checkIn: filters.checkIn, checkOut: filters.checkOut };
   }
 }
 

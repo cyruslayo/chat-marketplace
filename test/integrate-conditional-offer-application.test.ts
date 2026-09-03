@@ -15,12 +15,12 @@ function setup() {
   const calendar = new AvailabilityCalendar({ repository, audit });
   const operatorAuthority = {
     canActForOperator: ({ actorId, operatorId, tenantId }: { actorId: string; operatorId: string; tenantId: string }) =>
-      tenantId === "tenant-lagos" && (actorId === operatorId || actorId.startsWith("rep-")),
+      tenantId === "tenant-lagos" && actorId === "rep-operator" && operatorId === "operator-001",
   };
   const guestVerification = new GuestVerificationService({ repository, verificationResults: { getVerificationResult: ({ tenantId, guestId }) => tenantId === "tenant-lagos" && guestId.startsWith("guest-") ? { tenantId, guestId, governmentIdVerified: true } : null } });
   const clock = () => new Date("2026-07-22T10:00:00Z");
   const bookingRequestApplication = createBookingRequestApplication({ repository, audit, calendar, guestVerification, operatorAuthority, clock });
-  const application = createConditionalOfferApplication({ bookingRequestApplication, repository, audit, calendar, clock });
+  const application = createConditionalOfferApplication({ bookingRequestApplication, repository, audit, calendar, clock, operatorAuthority });
   return { repository, audit, calendar, bookingRequestApplication, application, unit: repository.findAll()[0], clock };
 }
 
@@ -28,7 +28,7 @@ function confirmedRequest(s: ReturnType<typeof setup>, guestId: string, checkIn:
   const principal = { id: guestId, role: "guest" as const, tenantId: "tenant-lagos" };
   const draft = s.bookingRequestApplication.createDraft({ unitId: s.unit.id, primaryGuest: { id: guestId, name: "Guest Name" }, occupants: [{ name: "Guest Name" }], selfBookingAttestation: { accepted: true, version: "self-booking-v1" }, checkIn, checkOut }, principal);
   const request = s.bookingRequestApplication.disclose(draft.draftId, principal);
-  return s.bookingRequestApplication.confirm({ artifactId: `booking-request:${request.requestId}`, requestId: request.requestId, expectedStatus: "disclosed", projectionVersion: 3, principal: { id: s.unit.operator.id, role: "operator", tenantId: "tenant-lagos" }, action: "confirm" });
+  return s.bookingRequestApplication.confirm({ artifactId: `booking-request:${request.requestId}`, requestId: request.requestId, expectedStatus: "disclosed", projectionVersion: 3, principal: { id: "rep-operator", role: "operator", tenantId: "tenant-lagos" }, action: "confirm" });
 }
 
 function event(context: unknown): WebServerEventHandoff {
@@ -38,7 +38,7 @@ function event(context: unknown): WebServerEventHandoff {
 test("Conditional Offer application shares Booking Request state and creates trusted issue and accept envelopes", () => {
   const s = setup();
   const request = confirmedRequest(s, "guest-101", "2026-08-01", "2026-08-05");
-  const operator = { id: s.unit.operator.id, role: "operator" as const, tenantId: "tenant-lagos" };
+  const operator = { id: "rep-operator", role: "operator" as const, tenantId: "tenant-lagos" };
   const offer = s.application.issue(request.requestId, operator);
   assert.equal(s.application.manager instanceof ConditionalOfferManager, true);
   assert.equal(s.application.manager.constructor.name, "ConditionalOfferManager");
@@ -72,7 +72,7 @@ test("Conditional Offer application shares Booking Request state and creates tru
 test("Conditional Offer server events reject stale, replayed, expired, and unauthorized actions", () => {
   const s = setup();
   const request = confirmedRequest(s, "guest-101", "2026-08-06", "2026-08-09");
-  const offer = s.application.issue(request.requestId, { id: s.unit.operator.id, role: "operator", tenantId: "tenant-lagos" });
+  const offer = s.application.issue(request.requestId, { id: "rep-operator", role: "operator", tenantId: "tenant-lagos" });
   const principal = { id: "guest-101", role: "guest" as const, tenantId: "tenant-lagos" };
   const artifact = s.application.getArtifact(offer.offerId, principal);
   const action = artifact.actions[0];
@@ -82,7 +82,7 @@ test("Conditional Offer server events reject stale, replayed, expired, and unaut
   assert.equal(resolveConditionalOfferServerEvent({ event: event(actionContext), application: s.application, principal }).ok, false);
 
   const request2 = confirmedRequest(s, "guest-102", "2026-08-10", "2026-08-12");
-  const offer2 = s.application.issue(request2.requestId, { id: s.unit.operator.id, role: "operator", tenantId: "tenant-lagos" });
+  const offer2 = s.application.issue(request2.requestId, { id: "rep-operator", role: "operator", tenantId: "tenant-lagos" });
   const action2 = s.application.getArtifact(offer2.offerId, { id: "guest-102", role: "guest", tenantId: "tenant-lagos" }).actions[0];
   assert.equal(resolveConditionalOfferServerEvent({ event: event({ artifactId: action2.artifactId, offerId: action2.offerId, expectedStatus: action2.expectedStatus, offerVersion: action2.offerVersion, projectionVersion: action2.projectionVersion, confirmationToken: action2.confirmationToken }), application: s.application, principal: { id: "guest-102", role: "guest", tenantId: "tenant-abuja" } }).ok, false);
 });

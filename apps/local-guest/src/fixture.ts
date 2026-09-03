@@ -38,9 +38,10 @@ export interface LocalGuestFixtureConfig {
   readonly adminId: string;
   readonly guestId: string;
   readonly guestName: string;
-  /** Deterministic demo check-in/check-out used by the local concierge. */
+  /** Deterministic demo check-in; checkout is derived from requested nights. */
   readonly demoCheckIn: string;
-  readonly demoCheckOut: string;
+  /** @deprecated Checkout is derived from the requested nights. */
+  readonly demoCheckOut?: string;
   readonly clock?: () => Date;
 }
 
@@ -412,11 +413,12 @@ export class LocalGuestEnvironment {
 }
 
 export function resetLocalGuestFixture(databasePath = DEFAULT_LOCAL_GUEST_CONFIG.databasePath): void {
-  if (existsSync(databasePath)) {
-    try {
-      unlinkSync(databasePath);
-    } catch {
-      // Ignore if locked or already removed.
-    }
+  if (!existsSync(databasePath)) return;
+  try {
+    unlinkSync(databasePath);
+  } catch (error) {
+    // A concurrent remover is the only benign race; locked or permission
+    // failures must be visible rather than falsely reported as a reset.
+    if (existsSync(databasePath)) throw error;
   }
 }

@@ -9,6 +9,7 @@
 
 export interface StayRequestFilters {
   readonly location: string;
+  readonly neighbourhood?: string;
   readonly checkIn: string;
   readonly checkOut: string;
   readonly partySize: number;
@@ -20,18 +21,30 @@ export type StayRequestInterpretation =
 
 export interface ConciergeOptions {
   readonly demoCheckIn: string;
-  readonly demoCheckOut: string;
+  /** Retained for callers that supplied the old fixed-date option; ignored. */
+  readonly demoCheckOut?: string;
 }
 
-const LOCATION_PATTERNS: readonly { readonly pattern: RegExp; readonly city: string }[] = [
-  { pattern: /\b(ikoyi|old ikoyi)\b/i, city: "Lagos" },
-  { pattern: /\b(lekki|lekki phase 1)\b/i, city: "Lagos" },
-  { pattern: /\b(victoria island|vi)\b/i, city: "Lagos" },
+const LOCATION_PATTERNS: readonly {
+  readonly pattern: RegExp;
+  readonly city: string;
+  readonly neighbourhood?: string;
+}[] = [
+  { pattern: /\b(ikoyi|old ikoyi)\b/i, city: "Lagos", neighbourhood: "Old Ikoyi" },
+  { pattern: /\b(lekki|lekki phase 1)\b/i, city: "Lagos", neighbourhood: "Lekki Phase 1" },
+  { pattern: /\b(victoria island|vi)\b/i, city: "Lagos", neighbourhood: "Victoria Island" },
   { pattern: /\b(lagos)\b/i, city: "Lagos" },
 ];
 
 const NIGHTS_PATTERN = /\b(\d{1,2})\s*(?:nights?|nitesc?|nts?)\b/i;
 const GUESTS_PATTERN = /\b(\d{1,2})\s*(?:people|persons?|guests?|adults?|pax)\b/i;
+
+function addCalendarDays(dateIso: string, nights: number): string {
+  const date = new Date(`${dateIso}T00:00:00Z`);
+  if (!Number.isFinite(date.getTime())) throw new TypeError("demoCheckIn must be an ISO calendar date");
+  date.setUTCDate(date.getUTCDate() + nights);
+  return date.toISOString().slice(0, 10);
+}
 
 export function interpretStayRequest(text: string, options: ConciergeOptions): StayRequestInterpretation {
   const normalized = text.trim();
@@ -63,8 +76,9 @@ export function interpretStayRequest(text: string, options: ConciergeOptions): S
     kind: "search",
     filters: {
       location: location.city,
+      ...(location.neighbourhood ? { neighbourhood: location.neighbourhood } : {}),
       checkIn: options.demoCheckIn,
-      checkOut: options.demoCheckOut,
+      checkOut: addCalendarDays(options.demoCheckIn, nights),
       partySize,
     },
   };

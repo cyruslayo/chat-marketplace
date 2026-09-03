@@ -151,14 +151,13 @@ export class ConditionalOfferManager {
     if (!request.tenantId || request.tenantId !== envelope.principal.tenantId) {
       throw new Error("Cross-tenant request access denied");
     }
-    const directOperator = !!request.operatorId && envelope.principal.id === request.operatorId;
     const representative = !!request.operatorId && !!this.#operatorAuthority
       && this.#operatorAuthority.canActForOperator({
         actorId: envelope.principal.id,
         operatorId: request.operatorId,
         tenantId: request.tenantId,
       });
-    if (!request.operatorId || (!directOperator && !representative)) {
+    if (!request.operatorId || !representative) {
       throw new Error("Authenticated principal is not authorized for this Operator action");
     }
     if (request.status !== "confirmed") {

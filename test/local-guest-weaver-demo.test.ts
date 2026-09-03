@@ -167,10 +167,43 @@ test("Guest natural-language turn produces an authoritative discovery artifact r
     );
     const target = journey.harness.mounted[0]!.target;
     const rendered = target.textContent ?? "";
-    assert.ok(rendered.includes("2 eligible Units found"), "rendered Weaver surface shows result summary");
+    assert.ok(rendered.includes("1 eligible Unit found"), "rendered Weaver surface shows the filtered result summary");
     assert.ok(rendered.includes(IKOYI_TITLE), "rendered Weaver surface shows the Ikoyi unit card");
+    assert.equal(rendered.includes(LEKKI_TITLE), false, "neighbourhood filter excludes the Lekki unit");
     assert.ok(rendered.includes(`All-In Stay Total: ${ALL_IN_TOTAL_NGN}`), "rendered surface shows all-in pricing");
+    assert.ok(rendered.includes("2026-08-15") && rendered.includes("2026-08-18"), "requested three nights control the stay dates");
     assert.ok(rendered.includes("Inspection: current"), "rendered surface shows trust information");
+  } finally {
+    await journey.server.close();
+  }
+});
+
+test("Generic Lagos discovery keeps both eligible units while requested nights control checkout and pricing", async () => {
+  const journey = await startJourneyServer();
+  try {
+    const lagos = expectSuccess(
+      (await postJson(journey.base, "/api/turn", { threadId: journey.threadId, text: "I need an apartment in Lagos for 3 nights for 2 people" })).body,
+      "generic Lagos turn",
+    );
+    journey.harness.mountSurface(lagos.surfaces[0]!.surfaceId, lagos.surfaces[0]!.a2uiMessages);
+    const lagosText = journey.harness.mounted[0]!.target.textContent ?? "";
+    assert.ok(lagosText.includes("2 eligible Units found"));
+    assert.ok(lagosText.includes(IKOYI_TITLE) && lagosText.includes(LEKKI_TITLE));
+
+    const fiveNightJourney = await startJourneyServer();
+    try {
+      const five = expectSuccess(
+        (await postJson(fiveNightJourney.base, "/api/turn", { threadId: fiveNightJourney.threadId, text: "I need an apartment in Ikoyi for 5 nights for 2 people" })).body,
+        "five-night Ikoyi turn",
+      );
+      fiveNightJourney.harness.mountSurface(five.surfaces[0]!.surfaceId, five.surfaces[0]!.a2uiMessages);
+      const fiveText = fiveNightJourney.harness.mounted[0]!.target.textContent ?? "";
+      assert.ok(fiveText.includes("2026-08-20"), "five nights produce a five-day checkout");
+      assert.ok(fiveText.includes("₦610,000"), "five nights use the authoritative calculated stay total");
+      assert.equal(fiveText.includes("₦370,000"), false);
+    } finally {
+      await fiveNightJourney.server.close();
+    }
   } finally {
     await journey.server.close();
   }
@@ -299,6 +332,7 @@ test("Weaver-generated offer acceptance advances through the real application pa
     // Accept the offer through the generated action.
     const offerTarget = journey.harness.mounted[2]!.target;
     assert.ok(journey.harness.clickButton(offerTarget, "Accept"));
+    const offerAcceptAction = { ...journey.harness.events[0]! };
     const [acceptEvent] = await journey.relayEvents();
     const acceptResponse = expectSuccess(acceptEvent, "offer accept");
     const paymentSurface = acceptResponse.surfaces[0]!;
@@ -313,6 +347,7 @@ test("Weaver-generated offer acceptance advances through the real application pa
 
     // Start the local deterministic checkout.
     assert.ok(journey.harness.clickButton(paymentTarget, "Start secure checkout"));
+    const paymentInitializeAction = { ...journey.harness.events[0]! };
     const [checkoutEvent] = await journey.relayEvents();
     const checkoutResponse = expectSuccess(checkoutEvent, "card checkout");
     const confirmedPayment = checkoutResponse.surfaces.find((surface: any) => surface.surfaceId.includes(":payment:"));
@@ -327,6 +362,11 @@ test("Weaver-generated offer acceptance advances through the real application pa
     assert.ok(confirmedText.includes("Booking Contract: "), "confirmed payment shows the authoritative contract reference");
     assert.ok(contractText.includes("Booking confirmed"), "booking contract surface confirms the stay");
     assert.ok(contractText.includes(IKOYI_TITLE) || contractText.includes("unit-lagos-ikoyi-001"));
+
+    const replayOffer = await postJson(journey.base, "/api/event", { threadId: journey.threadId, ...offerAcceptAction });
+    assert.equal(replayOffer.body.code, "STALE_SURFACE", "accepted offer action is stale after payment begins");
+    const replayPayment = await postJson(journey.base, "/api/event", { threadId: journey.threadId, ...paymentInitializeAction });
+    assert.equal(replayPayment.body.code, "STALE_SURFACE", "completed payment action is stale after booking confirmation");
   } finally {
     await journey.server.close();
   }
@@ -375,10 +415,10 @@ test("Unknown or stale generated events fail closed", async () => {
       context: { artifactId: "search-guest-demo-001", unitId: "unit-not-in-results" },
     });
     expectRejection(unlistedUnit.body, "unlisted unit id");
-    assert.equal(unlistedUnit.body.code, "ACTION_NOT_AUTHORIZED");
+    assert.equal(unlistedUnit.body.code, "STALE_SURFACE");
 
-    // Replaying the already-consumed View Unit action against the superseded
-    // unit-detail stage fails closed once the journey advances.
+    // Replaying the genuine Weaver-generated View Unit action against the
+    // superseded discovery surface fails closed once the journey advances.
     const unitResponse = expectSuccess(viewUnitEvent, "view-unit");
     journey.harness.mountSurface(unitResponse.surfaces[0]!.surfaceId, unitResponse.surfaces[0]!.a2uiMessages as readonly A2UIServerMessage[]);
     assert.ok(journey.harness.clickButton(journey.harness.mounted[1]!.target, "Request to Book"));
@@ -387,11 +427,7 @@ test("Unknown or stale generated events fail closed", async () => {
 
     const replayedViewUnit = await postJson(journey.base, "/api/event", {
       threadId: journey.threadId,
-      name: "shortlet.discovery.view-unit",
-      surfaceId: "thread-not-active",
-      sourceComponentId: "test",
-      timestamp: new Date().toISOString(),
-      context: { artifactId: "search-guest-demo-001", unitId: "unit-lagos-ikoyi-001" },
+      ...viewUnitAction,
     });
     expectRejection(replayedViewUnit.body, "stale surface after journey advanced");
   } finally {
@@ -438,7 +474,7 @@ test("Guest demo reset restores deterministic discovery and booking state", asyn
       .map((component: any) => component.text)
       .join(" ");
     assert.ok(rendered.includes(IKOYI_TITLE));
-    assert.ok(rendered.includes(LEKKI_TITLE));
+    assert.equal(rendered.includes(LEKKI_TITLE), false, "reset preserves the canonical Ikoyi filter");
   } finally {
     await journey.server.close();
   }
