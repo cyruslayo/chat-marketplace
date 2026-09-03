@@ -30,6 +30,14 @@ import {
 import { interpretStayRequest } from "./concierge.js";
 import { createGeminiConciergeClient, handleGeminiTurn, type GeminiConciergeClient } from "./gemini-concierge.js";
 import type { Content } from "@google/genai";
+import { AssistantRuntime } from "./assistant/assistant-runtime.js";
+import { ScriptedAssistantModel } from "./assistant/scripted-assistant-model.js";
+import { GeminiInteractionsClient } from "./assistant/gemini-interactions-client.js";
+import type { AssistantModelClient } from "./assistant/assistant-model.js";
+import {
+  ASSISTANT_CONFIRM_ACTION_EVENT,
+  ASSISTANT_CANCEL_ACTION_EVENT,
+} from "./assistant/pending-action-a2ui.js";
 
 export interface GuestSurfacePayload {
   readonly surfaceId: string;
@@ -57,6 +65,8 @@ const OFFER_STAGE = "offer";
 const PAYMENT_STAGE = "payment";
 const BOOKING_STAGE = "booking";
 
+const PENDING_ACTION_STAGE = "pending_action";
+
 /**
  * Explicit local allow-list of Weaver-generated action events (ADR-0072).
  * Everything else fails closed.
@@ -66,6 +76,8 @@ const EVENT_STAGE_ALLOW_LIST: Readonly<Record<string, string>> = Object.freeze({
   [REQUEST_TO_BOOK_EVENT]: UNIT_STAGE,
   "shortlet.conditional-offer.accept": OFFER_STAGE,
   "shortlet.card-payment.initialize-checkout": PAYMENT_STAGE,
+  [ASSISTANT_CONFIRM_ACTION_EVENT]: PENDING_ACTION_STAGE,
+  [ASSISTANT_CANCEL_ACTION_EVENT]: PENDING_ACTION_STAGE,
 });
 
 const THREAD_ID_PATTERN = /^g-[a-f0-9-]{6,64}$/;
@@ -86,22 +98,46 @@ interface GuestThreadState {
 export class LocalGuestApp {
   #environment: LocalGuestEnvironment;
   readonly #threads = new Map<string, GuestThreadState>();
-
   readonly #geminiClient: GeminiConciergeClient | null;
+  readonly #assistantRuntime: AssistantRuntime | null;
 
-  constructor(environment: LocalGuestEnvironment, options: { readonly geminiClient?: GeminiConciergeClient } = {}) {
+  constructor(
+    environment: LocalGuestEnvironment,
+    options: {
+      readonly geminiClient?: GeminiConciergeClient;
+      readonly assistantRuntime?: AssistantRuntime;
+    } = {},
+  ) {
     this.#environment = environment;
     this.#geminiClient = options.geminiClient ?? null;
+    this.#assistantRuntime = options.assistantRuntime ?? null;
   }
 
   get environment(): LocalGuestEnvironment {
     return this.#environment;
   }
 
+  get assistantRuntime(): AssistantRuntime | null {
+    return this.#assistantRuntime;
+  }
+
   async handleTurn(threadId: string, text: string): Promise<GuestTurnResult> {
     if (!THREAD_ID_PATTERN.test(threadId)) {
       return { ok: false, code: "INVALID_THREAD", message: "Unknown conversation." };
     }
+
+    if (this.#assistantRuntime) {
+      const output = await this.#assistantRuntime.handleTurn(threadId, text);
+      if (!output.ok) {
+        return { ok: false, code: output.code ?? "CONCIERGE_UNAVAILABLE", message: output.message ?? "The assistant is unavailable." };
+      }
+      return {
+        ok: true,
+        messages: output.messages ?? (output.message ? [output.message] : []),
+        surfaces: (output.surfaces ?? []) as readonly GuestSurfacePayload[],
+      };
+    }
+
     const thread = this.#threads.get(threadId) ?? this.#createThread(threadId);
     if (this.#geminiClient) {
       try {
@@ -172,6 +208,21 @@ export class LocalGuestApp {
     if (!THREAD_ID_PATTERN.test(threadId)) {
       return { ok: false, code: "INVALID_THREAD", message: "Unknown conversation." };
     }
+
+    if (this.#assistantRuntime) {
+      if (event.name === ASSISTANT_CONFIRM_ACTION_EVENT || event.name === ASSISTANT_CANCEL_ACTION_EVENT) {
+        const output = this.#assistantRuntime.handleAssistantEvent(threadId, event.name, event.context);
+        if (!output.ok) {
+          return { ok: false, code: output.code ?? "UNSUPPORTED_EVENT", message: output.message ?? "The action failed." };
+        }
+        return {
+          ok: true,
+          messages: output.messages ?? (output.message ? [output.message] : []),
+          surfaces: (output.surfaces ?? []) as readonly GuestSurfacePayload[],
+        };
+      }
+    }
+
     const thread = this.#threads.get(threadId);
     if (!thread) {
       return { ok: false, code: "UNKNOWN_THREAD", message: "Unknown conversation." };
@@ -206,6 +257,7 @@ export class LocalGuestApp {
 
   reset(): void {
     this.#threads.clear();
+    this.#assistantRuntime?.reset();
     const config = this.#environment.config;
     this.#environment.close();
     resetLocalGuestFixture(config.databasePath);
@@ -590,14 +642,40 @@ export function startLocalGuestServer(options: {
   environment?: LocalGuestEnvironment;
   clientScriptPath?: string;
   geminiClient?: GeminiConciergeClient;
-  conciergeMode?: "deterministic" | "gemini";
+  modelClient?: AssistantModelClient;
+  conciergeMode?: "deterministic" | "gemini" | "assistant-offline";
 } = {}): LocalGuestServerHandle {
   const port = options.port ?? LOCAL_GUEST_PORT;
-  const mode = options.conciergeMode ?? (process.env.CONCIERGE_MODE === "gemini" ? "gemini" : "deterministic");
-  const geminiClient = options.geminiClient ?? (mode === "gemini"
-    ? createGeminiConciergeClient(process.env.GEMINI_API_KEY ?? (() => { throw new Error("CONCIERGE_MODE=gemini requires GEMINI_API_KEY"); })(), process.env.GEMINI_MODEL ?? "gemini-2.5-flash")
-    : undefined);
-  const app = new LocalGuestApp(options.environment ?? new LocalGuestEnvironment(), { geminiClient });
+  const rawMode = options.conciergeMode ?? process.env.CONCIERGE_MODE;
+  const mode: "deterministic" | "gemini" | "assistant-offline" =
+    rawMode === "gemini"
+      ? "gemini"
+      : rawMode === "assistant-offline"
+        ? "assistant-offline"
+        : "deterministic";
+
+  const env = options.environment ?? new LocalGuestEnvironment();
+
+  let assistantRuntime: AssistantRuntime | undefined;
+  let geminiClient: GeminiConciergeClient | undefined;
+
+  if (mode === "assistant-offline") {
+    const modelClient = options.modelClient ?? new ScriptedAssistantModel();
+    assistantRuntime = new AssistantRuntime(env, modelClient);
+  } else if (mode === "gemini") {
+    if (options.modelClient) {
+      assistantRuntime = new AssistantRuntime(env, options.modelClient);
+    } else {
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        throw new Error("CONCIERGE_MODE=gemini requires GEMINI_API_KEY");
+      }
+      const client = new GeminiInteractionsClient({ apiKey });
+      assistantRuntime = new AssistantRuntime(env, client);
+    }
+  }
+
+  const app = new LocalGuestApp(env, { geminiClient, assistantRuntime });
   const clientScriptPath = options.clientScriptPath
     ?? join(dirname(fileURLToPath(import.meta.url)), "..", "dist", "client.js");
 

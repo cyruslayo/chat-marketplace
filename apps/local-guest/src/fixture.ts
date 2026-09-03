@@ -55,8 +55,8 @@ export const DEFAULT_LOCAL_GUEST_CONFIG: LocalGuestFixtureConfig = {
   adminId: "platform-admin-001",
   guestId: "guest-demo-101",
   guestName: "Demo Guest",
-  demoCheckIn: "2026-08-15",
-  demoCheckOut: "2026-08-18",
+  demoCheckIn: "2026-09-10",
+  demoCheckOut: "2026-09-13",
 };
 
 const INSPECTION_SCOPE = [
@@ -128,7 +128,7 @@ export class LocalGuestEnvironment {
 
   constructor(config: Partial<LocalGuestFixtureConfig> = {}) {
     this.config = { ...DEFAULT_LOCAL_GUEST_CONFIG, ...config };
-    this.clock = this.config.clock ?? (() => new Date("2026-08-10T10:00:00Z"));
+    this.clock = this.config.clock ?? (() => new Date("2026-09-03T10:00:00Z"));
 
     mkdirSync(dirname(this.config.databasePath), { recursive: true });
 
