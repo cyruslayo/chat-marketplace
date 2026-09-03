@@ -28,6 +28,8 @@ import {
   type LocalGuestFixtureConfig,
 } from "./fixture.js";
 import { interpretStayRequest } from "./concierge.js";
+import { createGeminiConciergeClient, handleGeminiTurn, type GeminiConciergeClient } from "./gemini-concierge.js";
+import type { Content } from "@google/genai";
 
 export interface GuestSurfacePayload {
   readonly surfaceId: string;
@@ -70,6 +72,7 @@ const THREAD_ID_PATTERN = /^g-[a-f0-9-]{6,64}$/;
 
 interface GuestThreadState {
   readonly threadId: string;
+  readonly geminiHistory: Content[];
   discoveryArtifact: DiscoveryArtifactProjection | null;
   discoverySurfaceId: string;
   unitDetail: { readonly unitId: string; readonly artifactId: string } | null;
@@ -77,25 +80,64 @@ interface GuestThreadState {
   offerId: string | null;
   activeSurfaces: Map<string, string>;
   supersededSurfaces: Set<string>;
+  geminiLastSearch: { readonly surfaceId: string; readonly a2uiMessages: readonly A2UIServerMessage[] } | null;
 }
 
 export class LocalGuestApp {
   #environment: LocalGuestEnvironment;
   readonly #threads = new Map<string, GuestThreadState>();
 
-  constructor(environment: LocalGuestEnvironment) {
+  readonly #geminiClient: GeminiConciergeClient | null;
+
+  constructor(environment: LocalGuestEnvironment, options: { readonly geminiClient?: GeminiConciergeClient } = {}) {
     this.#environment = environment;
+    this.#geminiClient = options.geminiClient ?? null;
   }
 
   get environment(): LocalGuestEnvironment {
     return this.#environment;
   }
 
-  handleTurn(threadId: string, text: string): GuestTurnResult {
+  async handleTurn(threadId: string, text: string): Promise<GuestTurnResult> {
     if (!THREAD_ID_PATTERN.test(threadId)) {
       return { ok: false, code: "INVALID_THREAD", message: "Unknown conversation." };
     }
     const thread = this.#threads.get(threadId) ?? this.#createThread(threadId);
+    if (this.#geminiClient) {
+      try {
+        const live = await handleGeminiTurn({
+          client: this.#geminiClient,
+          history: thread.geminiHistory,
+          text,
+          demoCheckIn: this.#environment.config.demoCheckIn,
+          now: this.#environment.clock(),
+          search: (filters) => {
+            const adapter = createWeaverWebAgentAdapter({
+              query: { search: (query) => this.#environment.discoveryQuery.search(query) },
+              createSurfaceId: () => thread.discoverySurfaceId,
+            });
+            const result = adapter.search({ ...filters });
+            thread.discoveryArtifact = result.artifact;
+            thread.activeSurfaces.set(DISCOVERY_STAGE, thread.discoverySurfaceId);
+            thread.geminiLastSearch = result;
+            return {
+              resultCount: result.artifact.facts.results.length,
+              location: filters.location,
+              ...(filters.neighbourhood ? { neighbourhood: filters.neighbourhood } : {}),
+              checkIn: filters.checkIn,
+              checkOut: filters.checkOut,
+            };
+          },
+        });
+        if (live.kind === "clarify") return { ok: true, messages: [live.reply], surfaces: [] };
+        const result = thread.geminiLastSearch;
+        if (!result) throw new Error("Gemini search did not produce a discovery surface");
+        return { ok: true, messages: [live.reply], surfaces: [{ surfaceId: result.surfaceId, a2uiMessages: result.a2uiMessages }] };
+      } catch {
+        return { ok: false, code: "CONCIERGE_UNAVAILABLE", message: "The concierge is temporarily unavailable. Please try again." };
+      }
+    }
+
     const interpretation = interpretStayRequest(text, {
       demoCheckIn: this.#environment.config.demoCheckIn,
       demoCheckOut: this.#environment.config.demoCheckOut,
@@ -180,6 +222,8 @@ export class LocalGuestApp {
       offerId: null,
       activeSurfaces: new Map(),
       supersededSurfaces: new Set(),
+      geminiHistory: [],
+      geminiLastSearch: null,
     };
     this.#threads.set(threadId, thread);
     return thread;
@@ -545,9 +589,15 @@ export function startLocalGuestServer(options: {
   port?: number;
   environment?: LocalGuestEnvironment;
   clientScriptPath?: string;
+  geminiClient?: GeminiConciergeClient;
+  conciergeMode?: "deterministic" | "gemini";
 } = {}): LocalGuestServerHandle {
   const port = options.port ?? LOCAL_GUEST_PORT;
-  const app = new LocalGuestApp(options.environment ?? new LocalGuestEnvironment());
+  const mode = options.conciergeMode ?? (process.env.CONCIERGE_MODE === "gemini" ? "gemini" : "deterministic");
+  const geminiClient = options.geminiClient ?? (mode === "gemini"
+    ? createGeminiConciergeClient(process.env.GEMINI_API_KEY ?? (() => { throw new Error("CONCIERGE_MODE=gemini requires GEMINI_API_KEY"); })(), process.env.GEMINI_MODEL ?? "gemini-2.5-flash")
+    : undefined);
+  const app = new LocalGuestApp(options.environment ?? new LocalGuestEnvironment(), { geminiClient });
   const clientScriptPath = options.clientScriptPath
     ?? join(dirname(fileURLToPath(import.meta.url)), "..", "dist", "client.js");
 
@@ -591,7 +641,7 @@ export function startLocalGuestServer(options: {
             sendJson(res, 400, { ok: false, code: "INVALID_INPUT", message: "A short message is required." });
             return;
           }
-          sendJson(res, 200, app.handleTurn(threadId, text));
+          sendJson(res, 200, await app.handleTurn(threadId, text));
           return;
         }
         sendJson(res, 200, app.handleEvent(threadId, body));
