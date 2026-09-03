@@ -6,7 +6,7 @@ function amount(kobo: number | undefined, currency = "NGN"): string { return kob
 export function bookingContractArtifactToA2UI({ artifact, surfaceId }: { readonly artifact: BookingContractArtifact; readonly surfaceId: string }): readonly A2UIServerMessage[] {
   const { facts } = artifact;
   const components: A2UIComponent[] = [
-    { id: "booking-contract-root", component: "Column", children: ["booking-contract-title", "booking-contract-parties", "booking-contract-stay", "booking-contract-money", "booking-contract-payment", "booking-contract-policies", "booking-contract-arrival", "booking-contract-version", "booking-contract-checkout"] },
+    { id: "root", component: "Column", children: ["booking-contract-title", "booking-contract-parties", "booking-contract-stay", "booking-contract-money", "booking-contract-payment", "booking-contract-policies", "booking-contract-arrival", "booking-contract-version", "booking-contract-checkout"] },
     { id: "booking-contract-title", component: "Text", text: "Booking confirmed", variant: "h2" },
     { id: "booking-contract-parties", component: "Text", text: `Primary Guest: ${facts.primaryGuest.name}; Accommodation Provider: ${facts.accommodationProvider.name ?? facts.accommodationProvider.id}` },
     { id: "booking-contract-stay", component: "Text", text: `Unit: ${facts.unitId}; Stay: ${facts.checkIn} to ${facts.checkOut} (${facts.nights} nights)` },

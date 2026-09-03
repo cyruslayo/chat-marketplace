@@ -8,6 +8,7 @@ export * from "./human-handoff-a2ui.js";
 export * from "./conditional-offer-a2ui.js";
 export * from "./card-payment-a2ui.js";
 export * from "./discovery-a2ui.js";
+export * from "./unit-detail-a2ui.js";
 export * from "./payment-capability-a2ui.js";
 export * from "./cancellation-a2ui.js";
 export * from "./guest-conduct-a2ui.js";

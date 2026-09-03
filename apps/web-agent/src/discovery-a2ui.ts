@@ -160,9 +160,12 @@ export function discoveryArtifactToA2UI({
     unit,
     artifact.actions.some((action) => action.type === "view-unit" && action.unitId === unit.id),
   ));
+  const dateSummary = typeof artifact.facts.filters.checkIn === "string" && typeof artifact.facts.filters.checkOut === "string"
+    ? ` Stay: ${artifact.facts.filters.checkIn} to ${artifact.facts.filters.checkOut}.`
+    : "";
   const resultSummary = artifact.facts.results.length === 0
-    ? "No eligible Units match those requirements."
-    : `${artifact.facts.results.length} eligible Unit${artifact.facts.results.length === 1 ? "" : "s"} found.`;
+    ? `No eligible Units match those requirements.${dateSummary}`
+    : `${artifact.facts.results.length} eligible Unit${artifact.facts.results.length === 1 ? "" : "s"} found.${dateSummary}`;
   const disclosureIds = artifact.disclosures.map((_, index) => `disclosure-${index}`);
   const rootChildren = ["result-summary", ...unitGroups.map((group) => group.cardId), ...disclosureIds];
   const components: A2UIComponent[] = [

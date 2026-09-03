@@ -63,7 +63,7 @@ export function bookingRequestArtifactToA2UI({
       : "";
   const statusText = `Booking Request status: ${facts.status}`;
   const details: A2UIComponent[] = [
-    { id: "booking-request-root", component: "Column", children: ["booking-request-title", "booking-request-status", "booking-request-dates", "booking-request-nights", "booking-request-delivery", ...(quote ? ["booking-request-amount"] : []), ...(deadlineText ? ["booking-request-deadline"] : []), "booking-request-actions"] },
+    { id: "root", component: "Column", children: ["booking-request-title", "booking-request-status", "booking-request-dates", "booking-request-nights", "booking-request-delivery", ...(quote ? ["booking-request-amount"] : []), ...(deadlineText ? ["booking-request-deadline"] : []), "booking-request-actions"] },
     { id: "booking-request-title", component: "Text", text: "Booking Request", variant: "h2" },
     { id: "booking-request-status", component: "Text", text: statusText },
     { id: "booking-request-dates", component: "Text", text: `Stay: ${facts.checkIn} to ${facts.checkOut}` },

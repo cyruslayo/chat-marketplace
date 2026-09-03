@@ -39,11 +39,16 @@ function setup() {
     calendar,
     guestVerification
   });
+  const operatorAuthority = {
+    canActForOperator: ({ actorId, operatorId, tenantId }: { actorId: string; operatorId: string; tenantId: string }) =>
+      actorId === "rep-operator" && operatorId === "operator-001" && tenantId === "tenant-lagos",
+  };
   const offerManager = new ConditionalOfferManager({
     repository,
     audit,
     calendar,
-    bookingRequestManager: requestManager
+    bookingRequestManager: requestManager,
+    operatorAuthority,
   });
   const unit = repository.findAll()[0];
 
@@ -125,7 +130,7 @@ test("Offer creation revalidates current Unit eligibility, authority, availabili
   // Issue conditional booking offer using command envelope
   const issueEnv = createPlatformCommandEnvelope({
     commandName: "conditional_offer.issue",
-    principal: { id: s.unit.operator.id, role: "operator", tenantId: "tenant-lagos" },
+    principal: { id: "rep-operator", role: "operator", tenantId: "tenant-lagos" },
     payload: { requestId: request.requestId }
   });
 
@@ -185,7 +190,7 @@ test("Offer creation revalidates current Unit eligibility, authority, availabili
       s.offerManager.issueOffer(
         createPlatformCommandEnvelope({
           commandName: "conditional_offer.issue",
-          principal: { id: s.unit.operator.id, role: "operator", tenantId: "tenant-lagos" },
+          principal: { id: "rep-operator", role: "operator", tenantId: "tenant-lagos" },
           payload: { requestId: request.requestId }
         }),
         { clock }
@@ -203,7 +208,7 @@ test("Acceptance uses a short-lived, single-use confirmation token bound to acto
 
   const issueEnv = createPlatformCommandEnvelope({
     commandName: "conditional_offer.issue",
-    principal: { id: s.unit.operator.id, role: "operator", tenantId: "tenant-lagos" },
+    principal: { id: "rep-operator", role: "operator", tenantId: "tenant-lagos" },
     payload: { requestId: request.requestId }
   });
   const offer = s.offerManager.issueOffer(issueEnv, { clock });
@@ -237,7 +242,7 @@ test("Acceptance uses a short-lived, single-use confirmation token bound to acto
   const offer2 = s.offerManager.issueOffer(
     createPlatformCommandEnvelope({
       commandName: "conditional_offer.issue",
-      principal: { id: s.unit.operator.id, role: "operator", tenantId: "tenant-lagos" },
+      principal: { id: "rep-operator", role: "operator", tenantId: "tenant-lagos" },
       payload: { requestId: req2.requestId }
     }),
     { clock }
@@ -269,7 +274,7 @@ test("Stale, changed, expired, replayed, or cross-tenant offers cannot progress"
 
   const issueEnv = createPlatformCommandEnvelope({
     commandName: "conditional_offer.issue",
-    principal: { id: s.unit.operator.id, role: "operator", tenantId: "tenant-lagos" },
+    principal: { id: "rep-operator", role: "operator", tenantId: "tenant-lagos" },
     payload: { requestId: request.requestId }
   });
   const offer = s.offerManager.issueOffer(issueEnv, { clock });
@@ -298,7 +303,7 @@ test("Stale, changed, expired, replayed, or cross-tenant offers cannot progress"
   const offer2 = s.offerManager.issueOffer(
     createPlatformCommandEnvelope({
       commandName: "conditional_offer.issue",
-      principal: { id: s.unit.operator.id, role: "operator", tenantId: "tenant-lagos" },
+      principal: { id: "rep-operator", role: "operator", tenantId: "tenant-lagos" },
       payload: { requestId: request2.requestId }
     }),
     { clock }
@@ -327,7 +332,7 @@ test("Stale, changed, expired, replayed, or cross-tenant offers cannot progress"
   const offer3 = s.offerManager.issueOffer(
     createPlatformCommandEnvelope({
       commandName: "conditional_offer.issue",
-      principal: { id: s.unit.operator.id, role: "operator", tenantId: "tenant-lagos" },
+      principal: { id: "rep-operator", role: "operator", tenantId: "tenant-lagos" },
       payload: { requestId: request3.requestId }
     }),
     { clock }
@@ -352,7 +357,7 @@ test("Stale, changed, expired, replayed, or cross-tenant offers cannot progress"
   const offer4 = s.offerManager.issueOffer(
     createPlatformCommandEnvelope({
       commandName: "conditional_offer.issue",
-      principal: { id: s.unit.operator.id, role: "operator", tenantId: "tenant-lagos" },
+      principal: { id: "rep-operator", role: "operator", tenantId: "tenant-lagos" },
       payload: { requestId: request4.requestId }
     }),
     { clock }
@@ -383,14 +388,14 @@ test("Conventional and Generative Surface acceptance reach the same command and 
 
   const issueEnv1 = createPlatformCommandEnvelope({
     commandName: "conditional_offer.issue",
-    principal: { id: s.unit.operator.id, role: "operator", tenantId: "tenant-lagos" },
+    principal: { id: "rep-operator", role: "operator", tenantId: "tenant-lagos" },
     payload: { requestId: request1.requestId }
   });
   const offer1 = s.offerManager.issueOffer(issueEnv1, { clock });
 
   const issueEnv2 = createPlatformCommandEnvelope({
     commandName: "conditional_offer.issue",
-    principal: { id: s.unit.operator.id, role: "operator", tenantId: "tenant-lagos" },
+    principal: { id: "rep-operator", role: "operator", tenantId: "tenant-lagos" },
     payload: { requestId: request2.requestId }
   });
   const offer2 = s.offerManager.issueOffer(issueEnv2, { clock });
@@ -459,7 +464,7 @@ test("Conditional Offer authority and token claims fail closed for invalid princ
   ]) {
     assert.throws(() => s.offerManager.issueOffer(createPlatformCommandEnvelope({ commandName: "conditional_offer.issue", principal, payload }), { clock }), /Operator|authorized|tenant|Cross-tenant/i);
   }
-  const offer = s.offerManager.issueOffer(createPlatformCommandEnvelope({ commandName: "conditional_offer.issue", principal: { id: s.unit.operator.id, role: "operator", tenantId: "tenant-lagos" }, payload }), { clock });
+  const offer = s.offerManager.issueOffer(createPlatformCommandEnvelope({ commandName: "conditional_offer.issue", principal: { id: "rep-operator", role: "operator", tenantId: "tenant-lagos" }, payload }), { clock });
   for (const principal of [
     { id: "guest-101", role: "operator" as const, tenantId: "tenant-lagos" },
     { id: "guest-other", role: "guest" as const, tenantId: "tenant-lagos" },
@@ -491,7 +496,7 @@ test("Conditional Offer rejects a confirmed request after its exact inventory co
 
   const issueEnv = createPlatformCommandEnvelope({
     commandName: "conditional_offer.issue",
-    principal: { id: s.unit.operator.id, role: "operator", tenantId: "tenant-lagos" },
+    principal: { id: "rep-operator", role: "operator", tenantId: "tenant-lagos" },
     payload: { requestId: request.requestId }
   });
 

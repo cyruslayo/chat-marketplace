@@ -4,6 +4,7 @@ import { getUnitOnboardingStatus } from "./onboarding.js";
 import { createGuestConductPolicySnapshot, type GuestConductPolicySnapshot, type UnitConductPolicy } from "./guest-conduct.js";
 import type { SecurityDepositPolicySnapshot } from "./security-deposit.js";
 import * as crypto from "node:crypto";
+import type { OperatorRepresentativeAuthority } from "./operator-representative-authority.js";
 
 
 export interface ConfirmationTokenPayload {
@@ -104,23 +105,27 @@ export class ConditionalOfferManager {
   #audit: any;
   #calendar: any;
   #bookingRequestManager: any;
+  #operatorAuthority?: OperatorRepresentativeAuthority;
   #offers = new Map<string, ConditionalBookingOffer>();
 
   constructor({
     repository = null,
     audit = null,
     calendar = null,
-    bookingRequestManager = null
+    bookingRequestManager = null,
+    operatorAuthority = undefined
   }: {
     repository?: any;
     audit?: any;
     calendar?: any;
     bookingRequestManager?: any;
+    operatorAuthority?: OperatorRepresentativeAuthority;
   } = {}) {
     this.#repository = repository;
     this.#audit = audit;
     this.#calendar = calendar;
     this.#bookingRequestManager = bookingRequestManager;
+    this.#operatorAuthority = operatorAuthority;
   }
 
   issueOffer(
@@ -146,7 +151,13 @@ export class ConditionalOfferManager {
     if (!request.tenantId || request.tenantId !== envelope.principal.tenantId) {
       throw new Error("Cross-tenant request access denied");
     }
-    if (!request.operatorId || envelope.principal.id !== request.operatorId) {
+    const representative = !!request.operatorId && !!this.#operatorAuthority
+      && this.#operatorAuthority.canActForOperator({
+        actorId: envelope.principal.id,
+        operatorId: request.operatorId,
+        tenantId: request.tenantId,
+      });
+    if (!request.operatorId || !representative) {
       throw new Error("Authenticated principal is not authorized for this Operator action");
     }
     if (request.status !== "confirmed") {

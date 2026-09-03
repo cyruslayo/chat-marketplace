@@ -262,6 +262,7 @@ export class UnitDiscoveryQuery {
     const results = this.repository.findAll()
       .filter((unit: any) => isEligibleUnit(unit, now, dateRange))
       .filter((unit: any) => !filters.location || unit.location.city === filters.location)
+      .filter((unit: any) => !filters.neighbourhood || unit.location.neighbourhood === filters.neighbourhood)
       .filter((unit: any) => !filters.amenity || unit.amenities.includes(filters.amenity))
       .filter((unit: any) => filters.partySize === undefined || unit.capacity >= filters.partySize)
       .filter((unit: any) => !dateRange || !unit.blockedDates.some((range: any) => dateRange.overlaps(range)))
