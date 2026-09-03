@@ -7,6 +7,7 @@ import {
   type CommandPrincipal,
 } from "../../../packages/platform-core/src/index.js";
 import type { BookingRequestApplication } from "./booking-request-application.js";
+import type { OperatorRepresentativeAuthority } from "../../../domains/shortlet/src/index.js";
 import {
   conditionalOfferArtifactFromOffer,
   type ConditionalOfferArtifact,
@@ -18,6 +19,7 @@ export interface ConditionalOfferApplicationDependencies {
   readonly audit?: unknown;
   readonly calendar?: unknown;
   readonly clock?: () => Date;
+  readonly operatorAuthority?: OperatorRepresentativeAuthority;
 }
 
 export class ConditionalOfferApplication {
@@ -66,12 +68,14 @@ export class ConditionalOfferApplication {
 export function createConditionalOfferApplication({
   bookingRequestApplication,
   clock,
+  operatorAuthority,
   ...managerDependencies
 }: ConditionalOfferApplicationDependencies): ConditionalOfferApplication {
   return new ConditionalOfferApplication(
     new ConditionalOfferManager({
       ...managerDependencies,
       bookingRequestManager: bookingRequestApplication.manager,
+      operatorAuthority,
     }),
     clock ?? (() => new Date()),
   );

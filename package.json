@@ -8,7 +8,10 @@
     "verify:weaver": "node scripts/verify-weaver-vendor.mjs",
     "owner:local": "tsx apps/local-owner/src/cli-start.ts",
     "owner:reset": "tsx apps/local-owner/src/cli-reset.ts",
-    "test:owner-local": "tsx --test test/local-apartment-owner-surface.test.ts"
+    "test:owner-local": "tsx --test test/local-apartment-owner-surface.test.ts",
+    "guest:local": "node apps/local-guest/scripts/build-client.mjs && tsx apps/local-guest/src/cli-start.ts",
+    "guest:reset": "tsx apps/local-guest/src/cli-reset.ts",
+    "test:guest-local": "tsx --test test/local-guest-weaver-demo.test.ts"
   },
   "dependencies": {
     "@weaver/core": "file:vendor/weaver/weaver-core-0.1.2.tgz",
@@ -16,6 +19,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.1.1",
+    "esbuild": "^0.28.2",
     "happy-dom": "20.11.2",
     "tsx": "^4.23.1",
     "typescript": "^7.0.2"

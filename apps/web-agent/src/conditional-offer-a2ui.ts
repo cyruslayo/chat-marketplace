@@ -11,7 +11,7 @@ export function conditionalOfferArtifactToA2UI({ artifact, surfaceId }: { readon
   const { facts } = artifact;
   const action = artifact.actions.find((candidate) => candidate.type === "accept");
   const components: A2UIComponent[] = [
-    { id: "conditional-offer-root", component: "Column", children: ["conditional-offer-title", "conditional-offer-status", "conditional-offer-unit", "conditional-offer-dates", "conditional-offer-occupants", "conditional-offer-total", "conditional-offer-deposit", "conditional-offer-due", "conditional-offer-cancellation", "conditional-offer-conduct", "conditional-offer-disclosures", "conditional-offer-expiry", "conditional-offer-actions"] },
+    { id: "root", component: "Column", children: ["conditional-offer-title", "conditional-offer-status", "conditional-offer-unit", "conditional-offer-dates", "conditional-offer-occupants", "conditional-offer-total", "conditional-offer-deposit", "conditional-offer-due", "conditional-offer-cancellation", "conditional-offer-conduct", "conditional-offer-disclosures", "conditional-offer-expiry", "conditional-offer-actions"] },
     { id: "conditional-offer-title", component: "Text", text: "Conditional Booking Offer", variant: "h2" },
     { id: "conditional-offer-status", component: "Text", text: `Status: ${facts.status}` },
     { id: "conditional-offer-unit", component: "Text", text: `Unit: ${facts.unitTitle}` },
