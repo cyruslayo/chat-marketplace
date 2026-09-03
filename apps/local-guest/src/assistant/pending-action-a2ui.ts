@@ -104,7 +104,7 @@ export function pendingActionToA2UI({
       action: {
         event: {
           name: ASSISTANT_CONFIRM_ACTION_EVENT,
-          context: { actionId: action.id, threadId: action.threadId },
+          context: { actionId: action.id, threadId: action.threadId, surfaceId },
         },
       },
       accessibility: { label: `Confirm: ${title}` },
@@ -117,7 +117,7 @@ export function pendingActionToA2UI({
       action: {
         event: {
           name: ASSISTANT_CANCEL_ACTION_EVENT,
-          context: { actionId: action.id, threadId: action.threadId },
+          context: { actionId: action.id, threadId: action.threadId, surfaceId },
         },
       },
       accessibility: { label: `Cancel: ${title}` },
@@ -136,4 +136,3 @@ export function pendingActionToA2UI({
     },
   ];
 }
-

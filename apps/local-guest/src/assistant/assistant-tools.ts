@@ -222,6 +222,7 @@ export interface AssistantToolExecutionResult {
   readonly result: Record<string, unknown>;
   readonly updatedTaskState: AssistantTaskState;
   readonly pendingActionCreated?: PendingAssistantAction;
+  readonly discoveryArtifact?: ReturnType<LocalGuestEnvironment["discoveryQuery"]["search"]>;
   readonly searchSurfacePayload?: { readonly surfaceId: string; readonly a2uiMessages: readonly unknown[] };
 }
 
@@ -284,17 +285,11 @@ export function executeAssistantTool(
         checkOut,
         partySize: guests,
         ...(maxBudgetKobo !== undefined ? { maxPriceKobo: maxBudgetKobo } : {}),
+        ...(requiredAmenities?.length ? { requiredAmenities } : {}),
       };
 
       const discoveryArtifact = context.environment.discoveryQuery.search(searchFilters);
-
-      // Filter by required amenities if any (ADR-0072/safe extension)
-      let results = discoveryArtifact.facts.results;
-      if (requiredAmenities && requiredAmenities.length > 0) {
-        results = results.filter((unit: any) =>
-          requiredAmenities.every((req) => unit.amenities.includes(req)),
-        );
-      }
+      const results = discoveryArtifact.facts.results;
 
       // Generate opaque conversational stay references: stay-1, stay-2
       const shortlist: AssistantStayReference[] = results.map((unit: any, index: number) => {
@@ -357,6 +352,7 @@ export function executeAssistantTool(
           stays: publicSummaries,
         },
         updatedTaskState: taskState,
+        discoveryArtifact,
       };
     }
 
@@ -573,6 +569,8 @@ export function executeAssistantTool(
         type: "accept_offer",
         authoritativeReferences: {
           offerId: taskState.currentOfferId,
+          offerStatus: offer.facts.status,
+          offerVersion: offer.facts.offerVersion,
           stayTotalKobo: offer.facts.allInStayTotalKobo,
           refundableDepositKobo: offer.facts.refundableSecurityDepositKobo,
           totalDueNowKobo: offer.facts.totalAmountDueNowKobo,
@@ -604,6 +602,10 @@ export function executeAssistantTool(
         throw new Error("No accepted offer available for payment.");
       }
 
+      const payment = context.environment.cardPaymentApp.getArtifact(
+        taskState.currentOfferId,
+        context.environment.guestPrincipal(),
+      );
       const actionId = `pa-${crypto.randomUUID()}`;
       const expiresAt = new Date(context.now.getTime() + 15 * 60 * 1000).toISOString();
       const pendingAction: PendingAssistantAction = {
@@ -614,8 +616,12 @@ export function executeAssistantTool(
         type: "start_checkout",
         authoritativeReferences: {
           offerId: taskState.currentOfferId,
+          stayTotalKobo: payment.facts.allInStayTotalKobo,
+          refundableDepositKobo: payment.facts.refundableSecurityDepositKobo,
+          totalDueNowKobo: payment.facts.amountDueNowKobo,
+          projectionVersion: payment.projectionVersion,
         },
-        summary: `Complete secure checkout for booking. Stay total and separate refundable security deposit will be processed.`,
+        summary: `Complete secure checkout for booking. Amount due now: ₦${(payment.facts.amountDueNowKobo / 100).toLocaleString("en-NG")}.`,
         createdAt: context.now.toISOString(),
         expiresAt,
         executed: false,
@@ -640,4 +646,3 @@ export function executeAssistantTool(
       throw new Error(`Unhandled tool: ${name}`);
   }
 }
-

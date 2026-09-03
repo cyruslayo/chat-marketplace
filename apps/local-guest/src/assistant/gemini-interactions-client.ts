@@ -1,6 +1,6 @@
 import {
   GoogleGenAI,
-  type Content,
+  type Interactions,
 } from "@google/genai";
 import type {
   AssistantConversationStep,
@@ -14,6 +14,17 @@ import type {
 export const DEFAULT_GEMINI_MODEL = "gemini-3.8-flash";
 export const DEFAULT_GEMINI_TIMEOUT_MS = 20_000;
 
+interface InteractionRequestOptions {
+  readonly timeout?: number;
+}
+
+interface InteractionTransport {
+  create(
+    params: Interactions.CreateModelInteractionParamsNonStreaming,
+    options?: InteractionRequestOptions,
+  ): Promise<Interactions.Interaction>;
+}
+
 export interface GeminiInteractionsClientConfig {
   readonly apiKey: string;
   readonly model?: string;
@@ -21,9 +32,7 @@ export interface GeminiInteractionsClientConfig {
   readonly thinkingLevel?: "minimal" | "low" | "medium" | "high";
   /** Optional custom transport injector for testing without network. */
   readonly customAi?: {
-    interactions: {
-      create(params: any, options?: any): Promise<any>;
-    };
+    readonly interactions: InteractionTransport;
   };
 }
 
@@ -33,11 +42,7 @@ export interface GeminiInteractionsClientConfig {
  * Keeps API key strictly server-side (Item 5).
  */
 export class GeminiInteractionsClient implements AssistantModelClient {
-  readonly #ai: {
-    interactions: {
-      create(params: any, options?: any): Promise<any>;
-    };
-  };
+  readonly #interactions: InteractionTransport;
   readonly #model: string;
   readonly #timeoutMs: number;
   readonly #thinkingLevel?: string;
@@ -46,7 +51,14 @@ export class GeminiInteractionsClient implements AssistantModelClient {
     if (!config.apiKey && !config.customAi) {
       throw new Error("GEMINI_API_KEY is required for GeminiInteractionsClient");
     }
-    this.#ai = config.customAi ?? new GoogleGenAI({ apiKey: config.apiKey });
+    if (config.customAi) {
+      this.#interactions = config.customAi.interactions;
+    } else {
+      const ai = new GoogleGenAI({ apiKey: config.apiKey });
+      this.#interactions = {
+        create: (params, options) => ai.interactions.create({ ...params, stream: false }, options),
+      };
+    }
     this.#model = config.model ?? process.env.GEMINI_MODEL ?? DEFAULT_GEMINI_MODEL;
     this.#timeoutMs = config.timeoutMs ?? DEFAULT_GEMINI_TIMEOUT_MS;
     this.#thinkingLevel = config.thinkingLevel ?? process.env.GEMINI_THINKING_LEVEL;
@@ -61,7 +73,7 @@ export class GeminiInteractionsClient implements AssistantModelClient {
       generationConfig.thinking_level = this.#thinkingLevel;
     }
 
-    const params: Record<string, unknown> = {
+    const params: Interactions.CreateModelInteractionParamsNonStreaming = {
       model: this.#model,
       input: inputSteps,
       store: false, // Item 3: platform-owned statelessness
@@ -70,34 +82,43 @@ export class GeminiInteractionsClient implements AssistantModelClient {
       ...(Object.keys(generationConfig).length > 0 ? { generation_config: generationConfig } : {}),
     };
 
-    const options: Record<string, unknown> = {
+    const options: InteractionRequestOptions = {
       timeout: request.timeoutMs ?? this.#timeoutMs,
     };
 
-    const interaction = await this.#ai.interactions.create(params, options);
+    const interaction = await this.#interactions.create(params, options);
     return this.#parseInteractionResponse(interaction);
   }
 
-  #mapHistoryToInteractionsInput(history: readonly AssistantConversationStep[]): any[] {
-    const steps: any[] = [];
+  #mapHistoryToInteractionsInput(history: readonly AssistantConversationStep[]): Interactions.Step[] {
+    const steps: Interactions.Step[] = [];
 
     for (const item of history) {
       switch (item.role) {
         case "user":
           steps.push({
             type: "user_input",
-            content: [{ role: "user", parts: [{ text: item.text }] }],
+            content: [{ type: "text", text: item.text }],
           });
           break;
 
         case "assistant":
           steps.push({
             type: "model_output",
-            content: [{ role: "model", parts: [{ text: item.text }] }],
+            content: [{ type: "text", text: item.text }],
           });
           break;
 
         case "tool_calls":
+          // ADR-0070: provider interaction identities and payloads remain opaque.
+          if (item.rawStep !== undefined) {
+            const providerSteps = Array.isArray(item.rawStep) ? item.rawStep : [item.rawStep];
+            if (!providerSteps.every(isInteractionStep)) {
+              throw new Error("Stored Gemini interaction steps are structurally invalid");
+            }
+            steps.push(...providerSteps);
+            break;
+          }
           for (const call of item.calls) {
             steps.push({
               type: "function_call",
@@ -125,8 +146,8 @@ export class GeminiInteractionsClient implements AssistantModelClient {
     return steps;
   }
 
-  #mapToolsToInteractionsTools(tools: readonly AssistantToolDefinition[]): any[] {
-    return tools.map((tool) => ({
+  #mapToolsToInteractionsTools(tools: readonly AssistantToolDefinition[]): Interactions.Tool[] {
+    return tools.map((tool): Interactions.Function => ({
       type: "function",
       name: tool.name,
       description: tool.description,
@@ -134,38 +155,33 @@ export class GeminiInteractionsClient implements AssistantModelClient {
     }));
   }
 
-  #parseInteractionResponse(interaction: any): AssistantModelResponse {
+  #parseInteractionResponse(interaction: Interactions.Interaction): AssistantModelResponse {
     if (!interaction) {
       throw new Error("Gemini Interactions API returned an empty interaction");
     }
 
     const steps = Array.isArray(interaction.steps) ? interaction.steps : [];
     const toolCalls: AssistantToolCall[] = [];
-    let text: string | undefined;
+    let text = typeof interaction.output_text === "string" && interaction.output_text.trim() !== ""
+      ? interaction.output_text.trim()
+      : undefined;
 
     for (const step of steps) {
       if (step.type === "function_call") {
+        // ADR-0070/ADR-0075: never fabricate provider identity or echo untrusted arguments.
+        if (!isValidFunctionCallStep(step)) {
+          throw new Error("Gemini function_call step is structurally invalid");
+        }
         toolCalls.push({
-          id: step.id ?? `call-${crypto.randomUUID()}`,
+          id: step.id,
           name: step.name,
-          args: step.arguments ?? {},
+          args: step.arguments,
         });
-      } else if (step.type === "model_output") {
+      } else if (step.type === "model_output" && text === undefined) {
         if (Array.isArray(step.content)) {
           for (const content of step.content) {
-            if (Array.isArray(content.parts)) {
-              for (const part of content.parts) {
-                if (typeof part.text === "string" && part.text.trim() !== "") {
-                  text = (text ? `${text}\n` : "") + part.text.trim();
-                }
-                if (part.functionCall) {
-                  toolCalls.push({
-                    id: part.functionCall.id ?? `call-${crypto.randomUUID()}`,
-                    name: part.functionCall.name,
-                    args: part.functionCall.args ?? {},
-                  });
-                }
-              }
+            if (content.type === "text" && content.text.trim() !== "") {
+              text = (text ? `${text}\n` : "") + content.text.trim();
             }
           }
         }
@@ -180,3 +196,18 @@ export class GeminiInteractionsClient implements AssistantModelClient {
   }
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isValidFunctionCallStep(step: Interactions.FunctionCallStep): step is Interactions.FunctionCallStep & { readonly arguments: Record<string, unknown> } {
+  return typeof step.id === "string"
+    && step.id.trim() !== ""
+    && typeof step.name === "string"
+    && step.name.trim() !== ""
+    && isPlainRecord(step.arguments);
+}
+
+function isInteractionStep(value: unknown): value is Interactions.Step {
+  return isPlainRecord(value) && typeof value.type === "string" && value.type.trim() !== "";
+}

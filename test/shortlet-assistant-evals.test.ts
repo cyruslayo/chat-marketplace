@@ -106,6 +106,19 @@ test("Eval 5: Search refinement updates destination and results", async () => {
   assert.ok(container.textContent?.includes("Lekki"));
 });
 
+test("Unit detail surface projects inspection facts from the authoritative Unit", async () => {
+  const { runtime } = createTestRuntime();
+  await runtime.handleTurn("g-authoritative-detail", "I need a place in Lekki for 4 nights for 2 guests");
+
+  const response = await runtime.handleTurn("g-authoritative-detail", "Tell me more about the first one.");
+
+  assert.equal(response.ok, true);
+  const payload = JSON.stringify(response.surfaces?.[0]?.a2uiMessages);
+  assert.match(payload, /2026-02-01T00:00:00Z/);
+  assert.match(payload, /2027-02-01T00:00:00Z/);
+  assert.doesNotMatch(payload, /2026-01-15T00:00:00Z/);
+});
+
 // 6. Comparison of shortlisted stays
 test("Eval 6: Compare stays side-by-side using authoritative facts", async () => {
   const { runtime } = createTestRuntime();
@@ -181,6 +194,7 @@ test("Eval 11: Weaver Confirm button executes pending action", async () => {
   const eventRes = runtime.handleAssistantEvent("g-eval-11", ASSISTANT_CONFIRM_ACTION_EVENT, {
     actionId,
     threadId: "g-eval-11",
+    surfaceId: pendingSurface.surfaceId,
   });
   assert.equal(eventRes.ok, true);
   assert.ok(eventRes.messages?.[0]?.includes("host has accepted your request"));
@@ -192,21 +206,125 @@ test("Eval 11: Weaver Confirm button executes pending action", async () => {
 test("Eval 12: Replayed or duplicate confirmation fails closed", async () => {
   const { runtime } = createTestRuntime();
   await runtime.handleTurn("g-eval-12", "I need a place in Ikoyi for 4 nights for 2 guests");
-  await runtime.handleTurn("g-eval-12", "Request the first one.");
+  const proposal = await runtime.handleTurn("g-eval-12", "Request the first one.");
   const actionId = runtime.getThread("g-eval-12").taskState.pendingAction!.id;
+  const surfaceId = proposal.surfaces![0]!.surfaceId;
 
   const first = runtime.handleAssistantEvent("g-eval-12", ASSISTANT_CONFIRM_ACTION_EVENT, {
     actionId,
     threadId: "g-eval-12",
+    surfaceId,
   });
   assert.equal(first.ok, true);
 
   const second = runtime.handleAssistantEvent("g-eval-12", ASSISTANT_CONFIRM_ACTION_EVENT, {
     actionId,
     threadId: "g-eval-12",
+    surfaceId,
   });
   assert.equal(second.ok, false);
   assert.equal(second.code, "STALE_SURFACE");
+});
+
+test("Weaver confirmation is rejected unless it comes from the active pending-action surface", async () => {
+  const { runtime } = createTestRuntime();
+  await runtime.handleTurn("g-surface-binding", "I need a place in Ikoyi for 4 nights for 2 guests");
+  await runtime.handleTurn("g-surface-binding", "Request the first one.");
+  const actionId = runtime.getThread("g-surface-binding").taskState.pendingAction!.id;
+
+  const response = runtime.handleAssistantEvent("g-surface-binding", ASSISTANT_CONFIRM_ACTION_EVENT, {
+    actionId,
+    threadId: "g-surface-binding",
+    surfaceId: "superseded-surface",
+  });
+
+  assert.equal(response.ok, false);
+  assert.equal(response.code, "STALE_SURFACE");
+});
+
+test("Expired pending actions fail closed before executing", async () => {
+  let now = new Date("2026-09-03T10:00:00Z");
+  const env = new LocalGuestEnvironment({
+    databasePath: `.scratch/local-guest/eval_expiry_${Date.now()}.sqlite`,
+    clock: () => now,
+  });
+  const runtime = new AssistantRuntime(env, new ScriptedAssistantModel());
+  await runtime.handleTurn("g-expired-action", "I need a place in Ikoyi for 4 nights for 2 guests");
+  await runtime.handleTurn("g-expired-action", "Request the first one.");
+  now = new Date("2026-09-03T10:16:00Z");
+
+  const response = await runtime.handleTurn("g-expired-action", "Yes");
+
+  assert.equal(response.ok, false);
+  assert.equal(response.code, "STALE_SURFACE");
+  assert.ok(!runtime.getThread("g-expired-action").taskState.currentBookingRequestId);
+});
+
+test("Pending actions fail closed when guest actor or tenant scope does not match", async () => {
+  for (const mismatch of ["actor", "tenant"] as const) {
+    const { runtime } = createTestRuntime();
+    const threadId = `g-scope-${mismatch}`;
+    await runtime.handleTurn(threadId, "I need a place in Ikoyi for 4 nights for 2 guests");
+    await runtime.handleTurn(threadId, "Request the first one.");
+    const thread = runtime.getThread(threadId);
+    const action = thread.taskState.pendingAction!;
+    thread.taskState.pendingAction = {
+      ...action,
+      ...(mismatch === "actor" ? { guestActorId: "another-guest" } : { tenantId: "another-tenant" }),
+    };
+
+    const response = await runtime.handleTurn(threadId, "Yes");
+
+    assert.equal(response.ok, false, `${mismatch} mismatch must fail closed`);
+    assert.equal(response.code, "STALE_SURFACE");
+  }
+});
+
+test("Offer acceptance revalidates the confirmed status, version, and amounts", async () => {
+  const { runtime } = createTestRuntime();
+  await runtime.handleTurn("g-stale-offer", "I need a place in Ikoyi for 4 nights for 2 guests");
+  await runtime.handleTurn("g-stale-offer", "Request the first one.");
+  await runtime.handleTurn("g-stale-offer", "Yes");
+  await runtime.handleTurn("g-stale-offer", "Accept the offer");
+  const thread = runtime.getThread("g-stale-offer");
+  const action = thread.taskState.pendingAction!;
+  const refs = action.authoritativeReferences;
+  const staleReferences = [
+    { ...refs, offerStatus: "expired" as const },
+    { ...refs, offerVersion: (refs.offerVersion ?? 0) + 1 },
+    { ...refs, projectionVersion: (refs.projectionVersion ?? 0) + 1 },
+    { ...refs, stayTotalKobo: (refs.stayTotalKobo ?? 0) + 1 },
+    { ...refs, refundableDepositKobo: (refs.refundableDepositKobo ?? 0) + 1 },
+    { ...refs, totalDueNowKobo: (refs.totalDueNowKobo ?? 0) + 1 },
+  ];
+
+  for (const authoritativeReferences of staleReferences) {
+    thread.taskState.pendingAction = { ...action, authoritativeReferences };
+    const response = await runtime.handleTurn("g-stale-offer", "Yes");
+    assert.equal(response.ok, false);
+    assert.equal(response.code, "STALE_SURFACE");
+  }
+});
+
+test("Checkout confirmation derives the live stay total and refundable deposit", async () => {
+  const { env, runtime } = createTestRuntime();
+  await runtime.handleTurn("g-checkout-amounts", "I need a place in Ikoyi for 4 nights for 2 guests");
+  await runtime.handleTurn("g-checkout-amounts", "Request the first one.");
+  await runtime.handleTurn("g-checkout-amounts", "Yes");
+  await runtime.handleTurn("g-checkout-amounts", "Accept the offer");
+  await runtime.handleTurn("g-checkout-amounts", "Yes");
+
+  const response = await runtime.handleTurn("g-checkout-amounts", "Start payment");
+
+  assert.equal(response.ok, true);
+  const pending = runtime.getThread("g-checkout-amounts").taskState.pendingAction!;
+  const payment = env.cardPaymentApp.getArtifact(pending.authoritativeReferences.offerId!, env.guestPrincipal());
+  assert.equal(pending.authoritativeReferences.stayTotalKobo, payment.facts.allInStayTotalKobo);
+  assert.equal(pending.authoritativeReferences.refundableDepositKobo, payment.facts.refundableSecurityDepositKobo);
+  assert.equal(pending.authoritativeReferences.totalDueNowKobo, payment.facts.amountDueNowKobo);
+  const surface = JSON.stringify(response.surfaces?.[0]?.a2uiMessages);
+  assert.match(surface, /Stay Total/);
+  assert.match(surface, /Refundable Deposit/);
 });
 
 // 13. Conversational offer acceptance proposal & confirmation
@@ -332,3 +450,47 @@ test("Eval 20: Explicit cancellation cancels pending action", async () => {
   assert.equal(thread.taskState.pendingAction, null);
 });
 
+test("Search artifact, assistant shortlist, and Weaver surface contain the same amenity-filtered Units", async () => {
+  const model = new ScriptedAssistantModel([
+    (request) => request.history.at(-1)?.role === "user" ? ({
+      toolCalls: [{
+        id: "call-filtered-search",
+        name: "search_stays",
+        args: {
+          city: "Lagos",
+          neighbourhood: null,
+          checkIn: null,
+          nights: 4,
+          guests: 2,
+          maxBudgetKobo: 60_000_000,
+          requiredAmenities: ["24_7_power_generator", "swimming_pool"],
+        },
+      }],
+    }) : null,
+    (request) => request.history.at(-1)?.role === "tool_results"
+      ? ({ text: "I found the matching stay." })
+      : null,
+  ]);
+  const { env, runtime } = createTestRuntime(model);
+  const artifacts: ReturnType<typeof env.discoveryQuery.search>[] = [];
+  const authoritativeSearch = env.discoveryQuery.search.bind(env.discoveryQuery);
+  env.discoveryQuery.search = (filters) => {
+    const artifact = authoritativeSearch(filters);
+    artifacts.push(artifact);
+    return artifact;
+  };
+
+  const response = await runtime.handleTurn("g-filtered-parity", "Lagos for four nights and two guests");
+
+  assert.equal(response.ok, true);
+  assert.equal(artifacts.length, 1, "authoritative discovery executes exactly once");
+  const artifactUnitIds = artifacts[0]!.facts.results.map((unit: { readonly id: string }) => unit.id);
+  const shortlistUnitIds = runtime.getThread("g-filtered-parity").taskState.shortlist.map((stay) => stay.unitId);
+  const surfacePayload = JSON.stringify(response.surfaces?.[0]?.a2uiMessages);
+  const surfaceUnitIds = env.unitRepository.findAll()
+    .map((unit: { readonly id: string }) => unit.id)
+    .filter((unitId: string) => surfacePayload.includes(unitId));
+  assert.deepEqual(artifactUnitIds, ["unit-lagos-ikoyi-001"]);
+  assert.deepEqual(shortlistUnitIds, artifactUnitIds);
+  assert.deepEqual(surfaceUnitIds, artifactUnitIds);
+});

@@ -37,6 +37,17 @@ test("date, party-size, location, amenity, and price filters return only eligibl
   assert.equal(results.sensitivity, "public");
 });
 
+test("required amenities return only Units containing every requested amenity", () => {
+  const deps = setup();
+  const query = new UnitDiscoveryQuery({ ...deps, clock: () => new Date("2026-07-22T00:00:00Z") });
+
+  const matching = query.search({ location: "Lagos", requiredAmenities: ["wifi", "generator"] });
+  const missing = query.search({ location: "Lagos", requiredAmenities: ["wifi", "swimming_pool"] });
+
+  assert.deepEqual(matching.facts.results.map((unit: { readonly id: string }) => unit.id), ["unit-lagos-001"]);
+  assert.deepEqual(missing.facts.results, []);
+});
+
 test("dated budget filters use the All-In Stay Total, not the nightly rate", () => {
   const deps = setup();
   const query = new UnitDiscoveryQuery({ ...deps, clock: () => new Date("2026-07-22T00:00:00Z") });

@@ -1,7 +1,6 @@
 import type { A2UIServerMessage } from "@weaver/core";
 import {
   discoveryArtifactToA2UI,
-  createWeaverWebAgentAdapter,
   bookingRequestArtifactToA2UI,
   conditionalOfferArtifactToA2UI,
   cardPaymentArtifactToA2UI,
@@ -9,6 +8,7 @@ import {
   unitDetailToA2UI,
 } from "../../../web-agent/src/index.js";
 import type { CommandPrincipal } from "../../../../packages/platform-core/src/index.js";
+import { StayDateRange, toDiscoveryProjection } from "../../../../domains/shortlet/src/index.js";
 import type { LocalGuestEnvironment } from "../fixture.js";
 import type {
   AssistantConversationStep,
@@ -48,6 +48,12 @@ export interface AssistantTurnOutput {
   readonly surfaces?: readonly { readonly surfaceId: string; readonly a2uiMessages: readonly unknown[] }[];
 }
 
+interface AssistantEventContext {
+  readonly actionId?: unknown;
+  readonly threadId?: unknown;
+  readonly surfaceId?: unknown;
+}
+
 const DISCOVERY_STAGE = "discovery";
 const UNIT_STAGE = "unit";
 const PENDING_ACTION_STAGE = "pending_action";
@@ -79,6 +85,8 @@ export class AssistantRuntime {
     if (!thread) {
       thread = {
         threadId,
+        guestActorId: this.#environment.config.guestId,
+        tenantId: this.#environment.config.tenantId,
         conversationHistory: [],
         taskState: createInitialTaskState(),
         activeSurfaces: new Map(),
@@ -219,23 +227,15 @@ export class AssistantRuntime {
             supersede(DISCOVERY_STAGE);
             supersede(UNIT_STAGE);
 
-            const adapter = createWeaverWebAgentAdapter({
-              query: this.#environment.discoveryQuery,
-              createSurfaceId: () => surfaceId,
-            });
-
-            const searchFilters = {
-              location: candidateTaskState.stayIntent.location ?? "Lagos",
-              ...(candidateTaskState.stayIntent.neighbourhood ? { neighbourhood: candidateTaskState.stayIntent.neighbourhood } : {}),
-              checkIn: candidateTaskState.stayIntent.checkIn,
-              checkOut: candidateTaskState.stayIntent.checkOut,
-              partySize: candidateTaskState.stayIntent.partySize,
-            };
-
-            const result = adapter.search(searchFilters);
-            candidateDiscoveryArtifactId = result.artifact.id;
+            if (!execution.discoveryArtifact) {
+              throw new Error("Authoritative discovery did not return an artifact");
+            }
+            candidateDiscoveryArtifactId = execution.discoveryArtifact.id;
             candidateActiveSurfaces.set(DISCOVERY_STAGE, surfaceId);
-            candidateSurfaces.push({ surfaceId, a2uiMessages: result.a2uiMessages });
+            candidateSurfaces.push({
+              surfaceId,
+              a2uiMessages: discoveryArtifactToA2UI({ artifact: execution.discoveryArtifact, surfaceId }),
+            });
           } else if (call.name === "get_unit_details") {
             const stayRef = String(call.args.stayRef ?? "").trim();
             const stay = candidateTaskState.shortlist.find((s) => s.stayRef === stayRef);
@@ -245,41 +245,20 @@ export class AssistantRuntime {
               supersede(UNIT_STAGE);
               candidateActiveSurfaces.set(UNIT_STAGE, surfaceId);
 
-              // Map stay to DiscoveryUnitProjection format
-              const unitProjection: any = {
-                id: stay.unitId,
-                title: stay.title,
-                location: { city: stay.city, neighbourhood: stay.neighbourhood },
-                capacity: stay.capacity,
-                amenities: stay.amenities,
-                price: {
-                  nightlyKobo: stay.nightlyKobo,
-                  allInStayTotalKobo: stay.allInStayTotalKobo,
-                  mandatoryFeesKobo: stay.mandatoryFeesKobo,
-                  refundableSecurityDepositKobo: stay.refundableSecurityDepositKobo,
-                  amountDueNowKobo: stay.amountDueNowKobo,
-                  currency: "NGN",
-                  pricingVersion: "price-v1",
-                },
-                trust: {
-                  inspection: {
-                    status: stay.inspectionStatus,
-                    inspectedAt: "2026-01-15T00:00:00Z",
-                    expiresAt: "2027-01-15T00:00:00Z",
-                    scope: [],
-                  },
-                  managementAuthority: {
-                    status: stay.managementAuthorityStatus,
-                    verifiedAt: "2026-01-15T00:00:00Z",
-                  },
-                  occupancyModel: "entire-place",
-                },
-              };
+              const unit = this.#environment.unitRepository.findById(stay.unitId);
+              if (!unit) throw new Error("The selected Unit no longer exists");
+              const checkIn = candidateTaskState.stayIntent.checkIn ?? this.#environment.config.demoCheckIn;
+              const checkOut = candidateTaskState.stayIntent.checkOut ?? this.#environment.config.demoCheckOut;
+              if (!checkOut) throw new Error("The selected stay has no checkout date");
+              const unitProjection = toDiscoveryProjection(
+                unit,
+                new StayDateRange(checkIn, checkOut, this.#environment.clock()),
+              );
 
               const a2uiMessages = unitDetailToA2UI({
                 unit: unitProjection,
-                checkIn: candidateTaskState.stayIntent.checkIn ?? this.#environment.config.demoCheckIn,
-                checkOut: candidateTaskState.stayIntent.checkOut ?? "2026-09-13",
+                checkIn,
+                checkOut,
                 surfaceId,
                 action: {
                   artifactId: candidateDiscoveryArtifactId ?? "search-guest-demo-001",
@@ -345,7 +324,7 @@ export class AssistantRuntime {
     }
   }
 
-  handleAssistantEvent(threadId: string, eventName: string, context: any): AssistantTurnOutput {
+  handleAssistantEvent(threadId: string, eventName: string, context: AssistantEventContext | null | undefined): AssistantTurnOutput {
     const thread = this.getThread(threadId);
     const candidateTaskState = cloneTaskState(thread.taskState);
     const candidateActiveSurfaces = new Map<string, string>(thread.activeSurfaces);
@@ -358,6 +337,14 @@ export class AssistantRuntime {
         candidateActiveSurfaces.delete(stage);
       }
     };
+
+    if (eventName === ASSISTANT_CONFIRM_ACTION_EVENT || eventName === ASSISTANT_CANCEL_ACTION_EVENT) {
+      // ADR-0074: only the current authoritative surface retains action authority.
+      const activeSurfaceId = candidateActiveSurfaces.get(PENDING_ACTION_STAGE);
+      if (!activeSurfaceId || context?.surfaceId !== activeSurfaceId) {
+        return { ok: false, code: "STALE_SURFACE", message: "That action is no longer active." };
+      }
+    }
 
     if (eventName === ASSISTANT_CANCEL_ACTION_EVENT) {
       if (!candidateTaskState.pendingAction || candidateTaskState.pendingAction.id !== context?.actionId) {
@@ -421,6 +408,17 @@ export class AssistantRuntime {
     if (action.executed) {
       return { ok: false, code: "STALE_SURFACE", message: "This action was already executed." };
     }
+    // ADR-0070/ADR-0074/ADR-0075: interaction authority is scoped and expires fail closed.
+    const thread = this.#threads.get(threadId);
+    const expiresAt = Date.parse(action.expiresAt);
+    if (action.threadId !== threadId
+      || !thread
+      || action.guestActorId !== thread.guestActorId
+      || action.tenantId !== thread.tenantId
+      || !Number.isFinite(expiresAt)
+      || expiresAt <= this.#environment.clock().getTime()) {
+      return { ok: false, code: "STALE_SURFACE", message: "This action has expired or is no longer authorized." };
+    }
 
     context.supersede(PENDING_ACTION_STAGE);
 
@@ -481,12 +479,21 @@ export class AssistantRuntime {
       }
 
       case "accept_offer": {
-        const offerId = action.authoritativeReferences.offerId;
+        const refs = action.authoritativeReferences;
+        const offerId = refs.offerId;
         if (!offerId) {
           return { ok: false, code: "INVALID_ARTIFACT", message: "No offer reference found." };
         }
 
         const offerArtifact = this.#environment.conditionalOfferApp.getArtifact(offerId, this.#environment.guestPrincipal());
+        if (refs.offerStatus !== offerArtifact.facts.status
+          || refs.offerVersion !== offerArtifact.facts.offerVersion
+          || refs.projectionVersion !== offerArtifact.projectionVersion
+          || refs.stayTotalKobo !== offerArtifact.facts.allInStayTotalKobo
+          || refs.refundableDepositKobo !== offerArtifact.facts.refundableSecurityDepositKobo
+          || refs.totalDueNowKobo !== offerArtifact.facts.totalAmountDueNowKobo) {
+          return { ok: false, code: "STALE_SURFACE", message: "The offer changed. Review the current offer before accepting." };
+        }
         const acceptAction = offerArtifact.actions.find((a) => a.type === "accept");
         if (!acceptAction) {
           return { ok: false, code: "ACTION_NOT_AUTHORIZED", message: "Offer cannot be accepted in current state." };
@@ -576,4 +583,3 @@ export class AssistantRuntime {
     }
   }
 }
-

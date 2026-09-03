@@ -50,6 +50,8 @@ export interface AssistantTaskState {
 
 export interface AssistantThreadState {
   readonly threadId: string;
+  readonly guestActorId: string;
+  readonly tenantId: string;
   readonly conversationHistory: AssistantConversationStep[];
   taskState: AssistantTaskState;
   activeSurfaces: Map<string, string>;
@@ -87,4 +89,3 @@ export function cloneTaskState(state: AssistantTaskState): AssistantTaskState {
     pendingAction: state.pendingAction ? { ...state.pendingAction } : null,
   };
 }
-

@@ -30,7 +30,7 @@ test("Gemini search_stays tool arguments are validated before authoritative disc
   try {
     const result = await handleGeminiTurn({ client: fake({ functionCalls: [{ name: "search_stays", id: "call-1", args } ] }, { text: "I found one matching stay in Old Ikoyi." }), history: [], text: "Four nights for two people.", demoCheckIn: environment.config.demoCheckIn, now, search: (filters) => { const artifact = environment.discoveryQuery.search({ ...filters }); return { resultCount: artifact.facts.results.length, location: filters.location, neighbourhood: filters.neighbourhood, checkIn: filters.checkIn, checkOut: filters.checkOut }; } });
     assert.equal(result.kind, "search");
-    if (result.kind === "search") assert.deepEqual(result.filters, { location: "Lagos", neighbourhood: "Old Ikoyi", checkIn: "2026-08-15", checkOut: "2026-08-19", partySize: 2 });
+    if (result.kind === "search") assert.deepEqual(result.filters, { location: "Lagos", neighbourhood: "Old Ikoyi", checkIn: "2026-09-10", checkOut: "2026-09-14", partySize: 2 });
   } finally { environment.close(); }
 });
 

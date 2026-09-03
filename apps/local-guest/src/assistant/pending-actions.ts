@@ -5,6 +5,8 @@
  * require explicit confirmation before platform execution.
  */
 
+import type { ConditionalBookingOffer } from "../../../../domains/shortlet/src/index.js";
+
 export type PendingActionType = "request_to_book" | "accept_offer" | "start_checkout";
 
 export interface PendingActionAuthoritativeReferences {
@@ -18,6 +20,8 @@ export interface PendingActionAuthoritativeReferences {
   readonly totalDueNowKobo?: number;
   readonly requestId?: string;
   readonly offerId?: string;
+  readonly offerStatus?: ConditionalBookingOffer["status"];
+  readonly offerVersion?: number;
   readonly projectionVersion?: number;
 }
 
@@ -89,4 +93,3 @@ export function isExplicitCancellation(text: string): boolean {
   const normalized = text.trim().toLowerCase().replace(/[.,!?;:'"]/g, "").replace(/\s+/g, " ");
   return CANCELLATION_NEGATIVES.has(normalized);
 }
-

@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import type { Interactions } from "@google/genai";
 import {
   GeminiInteractionsClient,
   DEFAULT_GEMINI_MODEL,
@@ -7,12 +8,12 @@ import {
 import { ASSISTANT_TOOL_DEFINITIONS } from "../apps/local-guest/src/assistant/assistant-tools.js";
 
 test("GeminiInteractionsClient maps request to Interactions API shape without live network", async () => {
-  let capturedParams: any = null;
-  let capturedOptions: any = null;
+  let capturedParams: Interactions.CreateModelInteractionParamsNonStreaming | undefined;
+  let capturedOptions: { readonly timeout?: number } | undefined;
 
   const mockAi = {
     interactions: {
-      async create(params: any, options?: any) {
+      async create(params: Interactions.CreateModelInteractionParamsNonStreaming, options?: { readonly timeout?: number }): Promise<Interactions.Interaction> {
         capturedParams = params;
         capturedOptions = options;
         return {
@@ -31,7 +32,8 @@ test("GeminiInteractionsClient maps request to Interactions API shape without li
               },
             },
           ],
-        };
+          status: "completed",
+        } as Interactions.Interaction;
       },
     },
   };
@@ -59,15 +61,18 @@ test("GeminiInteractionsClient maps request to Interactions API shape without li
   assert.equal(capturedOptions?.timeout, 15_000);
 
   // Input mapping assertions
-  assert.equal(Array.isArray(capturedParams.input), true);
-  assert.equal(capturedParams.input.length, 1);
-  assert.equal(capturedParams.input[0].type, "user_input");
-  assert.equal(capturedParams.input[0].content[0].parts[0].text, "I need a place in Ikoyi for 3 nights for 2 guests");
+  const input = capturedParams.input;
+  assert.ok(Array.isArray(input));
+  assert.equal(input.length, 1);
+  assert.equal(input[0].type, "user_input");
+  const userInput = input[0] as Interactions.UserInputStep;
+  assert.deepEqual(userInput.content, [{ type: "text", text: "I need a place in Ikoyi for 3 nights for 2 guests" }]);
 
   // Tools mapping assertions
-  assert.equal(Array.isArray(capturedParams.tools), true);
-  assert.equal(capturedParams.tools.length, ASSISTANT_TOOL_DEFINITIONS.length);
-  const searchTool = capturedParams.tools.find((t: any) => t.name === "search_stays");
+  const tools = capturedParams.tools;
+  assert.ok(Array.isArray(tools));
+  assert.equal(tools.length, ASSISTANT_TOOL_DEFINITIONS.length);
+  const searchTool = tools.find((tool) => tool.type === "function" && tool.name === "search_stays");
   assert.ok(searchTool, "search_stays tool mapped");
   assert.equal(searchTool.type, "function");
 
@@ -79,26 +84,22 @@ test("GeminiInteractionsClient maps request to Interactions API shape without li
 });
 
 test("GeminiInteractionsClient maps tool results and model outputs accurately", async () => {
-  let capturedParams: any = null;
+  let capturedParams: Interactions.CreateModelInteractionParamsNonStreaming | undefined;
 
   const mockAi = {
     interactions: {
-      async create(params: any) {
+      async create(params: Interactions.CreateModelInteractionParamsNonStreaming): Promise<Interactions.Interaction> {
         capturedParams = params;
         return {
           id: "int-mock-456",
           steps: [
             {
               type: "model_output",
-              content: [
-                {
-                  role: "model",
-                  parts: [{ text: "I found 1 matching stay in Old Ikoyi." }],
-                },
-              ],
+              content: [{ type: "text", text: "I found 1 matching stay in Old Ikoyi." }],
             },
           ],
-        };
+          status: "completed",
+        } as Interactions.Interaction;
       },
     },
   };
@@ -130,16 +131,101 @@ test("GeminiInteractionsClient maps tool results and model outputs accurately", 
     ],
   });
 
+  assert.ok(capturedParams);
+  assert.ok(Array.isArray(capturedParams.input));
   assert.equal(capturedParams.input.length, 3);
   assert.equal(capturedParams.input[0].type, "user_input");
   assert.equal(capturedParams.input[1].type, "function_call");
   assert.equal(capturedParams.input[1].name, "search_stays");
   assert.equal(capturedParams.input[2].type, "function_result");
   assert.equal(capturedParams.input[2].call_id, "call-1");
-  assert.ok(capturedParams.input[2].result.includes("Luxury 2-Bed Ikoyi"));
+  const toolResult = capturedParams.input[2] as Interactions.FunctionResultStep;
+  assert.ok(typeof toolResult.result === "string");
+  assert.ok(toolResult.result.includes("Luxury 2-Bed Ikoyi"));
 
   assert.equal(response.text, "I found 1 matching stay in Old Ikoyi.");
   assert.equal(response.toolCalls, undefined);
+});
+
+test("GeminiInteractionsClient always disables provider storage", async () => {
+  let store: boolean | undefined;
+  const client = new GeminiInteractionsClient({
+    apiKey: "fake-key-offline",
+    customAi: { interactions: { async create(params: Interactions.CreateModelInteractionParamsNonStreaming): Promise<Interactions.Interaction> {
+      store = params.store;
+      return { id: "int-store", status: "completed", steps: [] } as Interactions.Interaction;
+    } } },
+  });
+
+  await client.generate({ systemInstruction: "System", tools: [], history: [] });
+
+  assert.equal(store, false);
+});
+
+test("GeminiInteractionsClient rejects a provider function call without an id", async () => {
+  const client = new GeminiInteractionsClient({
+    apiKey: "fake-key-offline",
+    customAi: { interactions: { async create(): Promise<Interactions.Interaction> {
+      return {
+        id: "int-invalid-call",
+        status: "completed",
+        steps: [{ type: "function_call", name: "search_stays", arguments: {} }],
+      } as unknown as Interactions.Interaction;
+    } } },
+  });
+
+  await assert.rejects(
+    client.generate({ systemInstruction: "System", tools: [], history: [] }),
+    /function_call step is structurally invalid/,
+  );
+});
+
+test("GeminiInteractionsClient preserves provider function-call steps across stateless tool turns", async () => {
+  const providerStep: Interactions.FunctionCallStep = {
+    type: "function_call",
+    id: "provider-call-1",
+    name: "search_stays",
+    arguments: { city: "Lagos" },
+  };
+  let capturedInput: Interactions.CreateModelInteractionParamsNonStreaming["input"] | undefined;
+  const client = new GeminiInteractionsClient({
+    apiKey: "fake-key-offline",
+    customAi: { interactions: { async create(params: Interactions.CreateModelInteractionParamsNonStreaming): Promise<Interactions.Interaction> {
+      capturedInput = params.input;
+      return { id: "int-raw-step", status: "completed", steps: [] } as Interactions.Interaction;
+    } } },
+  });
+
+  await client.generate({
+    systemInstruction: "System",
+    tools: [],
+    history: [{
+      role: "tool_calls",
+      calls: [{ id: "normalized-call", name: "search_stays", args: { city: "Abuja" } }],
+      rawStep: [providerStep],
+    }],
+  });
+
+  assert.ok(Array.isArray(capturedInput));
+  assert.equal(capturedInput[0], providerStep);
+});
+
+test("GeminiInteractionsClient uses output_text as the primary response text", async () => {
+  const client = new GeminiInteractionsClient({
+    apiKey: "fake-key-offline",
+    customAi: { interactions: { async create(): Promise<Interactions.Interaction> {
+      return {
+        id: "int-output-text",
+        status: "completed",
+        output_text: "Primary SDK text",
+        steps: [{ type: "model_output", content: [{ type: "text", text: "Fallback step text" }] }],
+      } as Interactions.Interaction;
+    } } },
+  });
+
+  const response = await client.generate({ systemInstruction: "System", tools: [], history: [] });
+
+  assert.equal(response.text, "Primary SDK text");
 });
 
 test("GeminiInteractionsClient fails closed when apiKey and customAi are missing", () => {
@@ -148,4 +234,3 @@ test("GeminiInteractionsClient fails closed when apiKey and customAi are missing
     /GEMINI_API_KEY is required/,
   );
 });
-
