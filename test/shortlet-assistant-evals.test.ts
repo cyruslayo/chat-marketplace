@@ -497,9 +497,10 @@ test("Search artifact, assistant shortlist, and Weaver surface contain the same 
 
 test("Post-authoritative-commit reconciliation: request_to_book retains request state if operator simulation fails", async () => {
   const { env, runtime } = createTestRuntime();
-  // Simulate operator failure
-  env.simulateOperatorAcceptance = () => {
-    throw new Error("Operator simulation downstream offline");
+
+  // Force Conditional Offer issuance to fail while letting Booking Request confirmation succeed
+  env.conditionalOfferApp.issue = () => {
+    throw new Error("Downstream offer service offline");
   };
 
   await runtime.handleTurn("g-post-commit-request", "I need a place in Ikoyi for 4 nights for 2 guests");
@@ -514,10 +515,17 @@ test("Post-authoritative-commit reconciliation: request_to_book retains request 
   });
 
   assert.equal(confirmRes.ok, true);
-  assert.ok(confirmRes.messages?.[0]?.includes("submitted to the host"));
+  // Verify assistant response does NOT claim the host has not reviewed it
+  assert.equal(confirmRes.messages?.[0]?.includes("awaiting review"), false);
+  assert.ok(confirmRes.messages?.[0]?.includes("confirmed by the host"));
+
   const taskState = runtime.getThread("g-post-commit-request").taskState;
-  assert.ok(taskState.currentBookingRequestId, "Booking request ID authoritatively recorded");
+  assert.ok(taskState.currentBookingRequestId, "currentBookingRequestId remains authoritative");
   assert.equal(taskState.pendingAction, null, "Pending action consumed");
+
+  // Verify authoritative Request status reflects the committed confirmation
+  const requestArtifact = env.bookingRequestApp.getArtifact(taskState.currentBookingRequestId!, env.guestPrincipal());
+  assert.equal(requestArtifact.facts.status, "confirmed");
 
   // Verify replayed confirmation fails closed
   const replayRes = runtime.handleAssistantEvent("g-post-commit-request", ASSISTANT_CONFIRM_ACTION_EVENT, {
@@ -527,6 +535,11 @@ test("Post-authoritative-commit reconciliation: request_to_book retains request 
   });
   assert.equal(replayRes.ok, false);
   assert.equal(replayRes.code, "STALE_SURFACE");
+
+  // Verify no duplicate Booking Request can be created via replayed turn
+  const secondTurn = await runtime.handleTurn("g-post-commit-request", "Request the first one.");
+  const taskStateAfter = runtime.getThread("g-post-commit-request").taskState;
+  assert.equal(taskStateAfter.currentBookingRequestId, taskState.currentBookingRequestId, "No duplicate booking request created");
 });
 
 test("Post-authoritative-commit reconciliation: accept_offer retains accepted state if payment presentation fails", async () => {

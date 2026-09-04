@@ -195,7 +195,11 @@ export class AssistantRuntime {
         // If model produced no tool calls, it is returning a natural language reply
         if (!modelResponse.toolCalls || modelResponse.toolCalls.length === 0) {
           finalAssistantReply = modelResponse.text?.trim() ?? "How can I assist you with your stay?";
-          candidateHistory.push({ role: "assistant", text: finalAssistantReply });
+          candidateHistory.push({
+            role: "assistant",
+            text: finalAssistantReply,
+            rawStep: modelResponse.rawStep,
+          });
           break;
         }
 
@@ -534,10 +538,19 @@ export class AssistantRuntime {
           };
         } catch {
           // If operator simulation or offer presentation fails, DO NOT pretend booking request was rolled back.
-          // Disclose committed, request exists and is waiting for host response.
+          // Disclose committed, request exists. Check if operator confirmed it before failure.
+          let statusMessage = "Your booking request has been submitted to the host and is awaiting review.";
+          try {
+            const currentReq = environment.bookingRequestApp.getArtifact(disclosed.requestId, guest);
+            if (currentReq.facts.status === "confirmed") {
+              statusMessage = "Your booking request has been confirmed by the host. Preparing your booking offer.";
+            }
+          } catch {
+            // Keep default message if read fails
+          }
           return {
             ok: true,
-            message: "Your booking request has been submitted to the host and is awaiting review.",
+            message: statusMessage,
             surfaces: [
               {
                 surfaceId: requestSurfaceId,

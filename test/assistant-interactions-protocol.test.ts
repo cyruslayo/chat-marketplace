@@ -1,16 +1,17 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { type Interactions, ThinkingLevel } from "@google/genai";
+import { type Interactions } from "@google/genai";
 import {
   GeminiInteractionsClient,
   DEFAULT_GEMINI_MODEL,
 } from "../apps/local-guest/src/assistant/gemini-interactions-client.js";
 import { ASSISTANT_TOOL_DEFINITIONS } from "../apps/local-guest/src/assistant/assistant-tools.js";
+import type { AssistantConversationStep } from "../apps/local-guest/src/assistant/assistant-model.js";
 
 test("GeminiInteractionsClient maps request to Interactions API shape without live network", async () => {
   let capturedParams:
     | (Interactions.CreateModelInteractionParamsNonStreaming & {
-        readonly generationConfig?: { readonly thinkingConfig?: { readonly thinkingLevel?: ThinkingLevel } };
+        readonly generationConfig?: unknown;
       })
     | undefined;
   let capturedOptions: { readonly timeout?: number } | undefined;
@@ -64,7 +65,8 @@ test("GeminiInteractionsClient maps request to Interactions API shape without li
   assert.equal(capturedParams.model, DEFAULT_GEMINI_MODEL);
   assert.equal(capturedParams.store, false, "store: false enforced (ADR-0004)");
   assert.equal(capturedParams.system_instruction, "You are the assistant.");
-  assert.equal(capturedParams.generationConfig?.thinkingConfig?.thinkingLevel, ThinkingLevel.LOW);
+  assert.equal(capturedParams.generation_config?.thinking_level, "low");
+  assert.equal(capturedParams.generationConfig, undefined, "Proves no generationConfig property is emitted");
   assert.equal(capturedOptions?.timeout, 15_000);
 
   // Input mapping assertions
@@ -240,4 +242,78 @@ test("GeminiInteractionsClient fails closed when apiKey and customAi are missing
     () => new GeminiInteractionsClient({ apiKey: "" }),
     /GEMINI_API_KEY is required/,
   );
+});
+
+test("GeminiInteractionsClient preserves thought steps with signatures and model_output across stateless turns", async () => {
+  const thoughtStep: Interactions.ThoughtStep = {
+    type: "thought",
+    signature: "sig-thought-turn-1-alpha",
+  };
+  const modelOutputStep: Interactions.ModelOutputStep = {
+    type: "model_output",
+    content: [{ type: "text", text: "How many nights and guests?" }],
+  };
+
+  let capturedInputTurn2: Interactions.CreateModelInteractionParamsNonStreaming["input"] | undefined;
+
+  const mockAi = {
+    interactions: {
+      async create(params: Interactions.CreateModelInteractionParamsNonStreaming): Promise<Interactions.Interaction> {
+        capturedInputTurn2 = params.input;
+        return {
+          id: "int-turn-2",
+          status: "completed",
+          steps: [
+            {
+              type: "function_call",
+              id: "call-turn-2",
+              name: "search_stays",
+              arguments: { city: "Lagos", neighbourhood: "Old Ikoyi", checkIn: null, nights: 4, guests: 2 },
+            },
+          ],
+        } as Interactions.Interaction;
+      },
+    },
+  };
+
+  const client = new GeminiInteractionsClient({
+    apiKey: "fake-key-offline",
+    customAi: mockAi,
+  });
+
+  // Turn 1 stored in conversation history with rawStep holding exact thought and model_output steps
+  const turn1AssistantHistoryStep: AssistantConversationStep = {
+    role: "assistant",
+    text: "How many nights and guests?",
+    rawStep: [thoughtStep, modelOutputStep],
+  };
+
+  // Turn 2 request
+  await client.generate({
+    systemInstruction: "You are the assistant.",
+    tools: ASSISTANT_TOOL_DEFINITIONS,
+    history: [
+      { role: "user", text: "I need somewhere in Ikoyi." },
+      turn1AssistantHistoryStep,
+      { role: "user", text: "Four nights for two people." },
+    ],
+  });
+
+  assert.ok(Array.isArray(capturedInputTurn2), "Turn 2 input is an array");
+  assert.equal(capturedInputTurn2.length, 4, "user_input -> thought -> model_output -> user_input");
+
+  // Verify user turn 1
+  assert.equal(capturedInputTurn2[0].type, "user_input");
+
+  // Verify exact thought step preserved with signature
+  assert.equal(capturedInputTurn2[1], thoughtStep, "Exact thought step with signature is preserved without reconstruction");
+  assert.equal(capturedInputTurn2[1].type, "thought");
+  assert.equal((capturedInputTurn2[1] as Interactions.ThoughtStep).signature, "sig-thought-turn-1-alpha");
+
+  // Verify exact model_output step preserved
+  assert.equal(capturedInputTurn2[2], modelOutputStep, "Exact model_output step is preserved without reconstruction");
+  assert.equal(capturedInputTurn2[2].type, "model_output");
+
+  // Verify user turn 2
+  assert.equal(capturedInputTurn2[3].type, "user_input");
 });

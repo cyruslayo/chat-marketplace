@@ -42,7 +42,7 @@ export interface AssistantToolResult {
 
 export type AssistantConversationStep =
   | { readonly role: "user"; readonly text: string }
-  | { readonly role: "assistant"; readonly text: string }
+  | { readonly role: "assistant"; readonly text: string; readonly rawStep?: unknown }
   | { readonly role: "tool_calls"; readonly calls: readonly AssistantToolCall[]; readonly rawStep?: unknown }
   | { readonly role: "tool_results"; readonly results: readonly AssistantToolResult[] };
 

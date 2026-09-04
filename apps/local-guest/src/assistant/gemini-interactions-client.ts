@@ -1,9 +1,6 @@
 import {
   GoogleGenAI,
-  ThinkingLevel,
-  type GenerationConfig,
   type Interactions,
-  type ThinkingConfig,
 } from "@google/genai";
 import type {
   AssistantConversationStep,
@@ -41,18 +38,18 @@ export interface GeminiInteractionsClientConfig {
   };
 }
 
-function mapToSdkThinkingLevel(level: string | undefined): ThinkingLevel | undefined {
+function mapToInteractionsThinkingLevel(level: string | undefined): Interactions.ThinkingLevel | undefined {
   if (!level) return undefined;
   const normalized = level.trim().toLowerCase();
   switch (normalized) {
     case "minimal":
-      return ThinkingLevel.MINIMAL;
+      return "minimal";
     case "low":
-      return ThinkingLevel.LOW;
+      return "low";
     case "medium":
-      return ThinkingLevel.MEDIUM;
+      return "medium";
     case "high":
-      return ThinkingLevel.HIGH;
+      return "high";
     default:
       return undefined;
   }
@@ -90,14 +87,11 @@ export class GeminiInteractionsClient implements AssistantModelClient {
     const inputSteps = this.#mapHistoryToInteractionsInput(request.history);
     const tools = this.#mapToolsToInteractionsTools(request.tools);
 
-    let generationConfig: GenerationConfig | undefined;
-    const sdkThinkingLevel = mapToSdkThinkingLevel(this.#thinkingLevel);
-    if (sdkThinkingLevel) {
-      const thinkingConfig: ThinkingConfig = {
-        thinkingLevel: sdkThinkingLevel,
-      };
-      generationConfig = {
-        thinkingConfig,
+    let generation_config: Interactions.GenerationConfig | undefined;
+    const thinking_level = mapToInteractionsThinkingLevel(this.#thinkingLevel);
+    if (thinking_level) {
+      generation_config = {
+        thinking_level,
       };
     }
 
@@ -107,7 +101,7 @@ export class GeminiInteractionsClient implements AssistantModelClient {
       store: false, // Item 3: platform-owned statelessness
       system_instruction: request.systemInstruction,
       ...(tools.length > 0 ? { tools } : {}),
-      ...(generationConfig ? { generationConfig } : {}),
+      ...(generation_config ? { generation_config } : {}),
     };
 
     const options: InteractionRequestOptions = {
@@ -131,6 +125,14 @@ export class GeminiInteractionsClient implements AssistantModelClient {
           break;
 
         case "assistant":
+          if (item.rawStep !== undefined) {
+            const providerSteps = Array.isArray(item.rawStep) ? item.rawStep : [item.rawStep];
+            if (!providerSteps.every(isInteractionStep)) {
+              throw new Error("Stored Gemini interaction steps are structurally invalid");
+            }
+            steps.push(...providerSteps);
+            break;
+          }
           steps.push({
             type: "model_output",
             content: [{ type: "text", text: item.text }],
