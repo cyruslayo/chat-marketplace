@@ -70,9 +70,10 @@ export interface DiscoveryArtifactToA2UIInput {
   readonly surfaceId: string;
 }
 
-const VIEW_UNIT_EVENT = "shortlet.discovery.view-unit";
+export const VIEW_UNIT_EVENT = "shortlet.discovery.view-unit";
+export const SEE_ALL_DISCOVERY_EVENT = "shortlet.discovery.see-all";
 
-function formatNgnKobo(kobo: number): string {
+export function formatNgnKobo(kobo: number): string {
   const sign = kobo < 0 ? "-" : "";
   const absoluteKobo = Math.abs(kobo);
   const wholeNaira = Math.floor(absoluteKobo / 100);
@@ -167,10 +168,26 @@ export function discoveryArtifactToA2UI({
     ? `No eligible Units match those requirements.${dateSummary}`
     : `${artifact.facts.results.length} eligible Unit${artifact.facts.results.length === 1 ? "" : "s"} found.${dateSummary}`;
   const disclosureIds = artifact.disclosures.map((_, index) => `disclosure-${index}`);
-  const rootChildren = ["result-summary", ...unitGroups.map((group) => group.cardId), ...disclosureIds];
+  const resultListId = "result-list";
+  const seeAllId = "see-all-results";
+  const rootChildren = ["result-summary", resultListId, ...(unitGroups.length > 1 ? [seeAllId] : []), ...disclosureIds];
   const components: A2UIComponent[] = [
     { id: "root", component: "Column", children: rootChildren },
     { id: "result-summary", component: "Text", text: resultSummary, variant: "h2" },
+    // A single horizontally browsable result sequence keeps discovery compact
+    // on mobile while preserving every result in the active workspace.
+    { id: resultListId, component: "Row", children: unitGroups.map((group) => group.cardId) },
+    ...(unitGroups.length > 1 ? [
+      {
+        id: seeAllId,
+        component: "Button" as const,
+        child: "see-all-results-label",
+        variant: "primary" as const,
+        action: { event: { name: SEE_ALL_DISCOVERY_EVENT, context: { artifactId: artifact.id } } },
+        accessibility: { label: "See all discovery results" },
+      },
+      { id: "see-all-results-label", component: "Text" as const, text: "See all results" },
+    ] : []),
     ...unitGroups.flatMap((group) => group.components),
     ...artifact.disclosures.map((disclosure, index): A2UIComponent => ({
       id: `disclosure-${index}`,

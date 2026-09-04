@@ -14,11 +14,20 @@ import {
   bookingContractArtifactToA2UI,
   unitDetailToA2UI,
   REQUEST_TO_BOOK_EVENT,
+  SEE_ALL_DISCOVERY_EVENT,
+  formatNgnKobo,
   type DiscoveryArtifactProjection,
 } from "../../../apps/web-agent/src/index.js";
 import {
   resolveDiscoveryServerEvent,
 } from "../../../apps/web/src/discovery-actions.js";
+import {
+  conventionalBookingContractRoute,
+  conventionalBookingRequestRoute,
+  conventionalCardPaymentRoute,
+  conventionalConditionalOfferRoute,
+  conventionalSearchRoute,
+} from "../../../apps/web/src/presentation.js";
 import { resolveConditionalOfferServerEvent } from "../../../apps/web/src/conditional-offer-actions.js";
 import { resolveCardPaymentServerEvent } from "../../../apps/web/src/card-payment-actions.js";
 import {
@@ -42,6 +51,23 @@ import {
 export interface GuestSurfacePayload {
   readonly surfaceId: string;
   readonly a2uiMessages: readonly A2UIServerMessage[];
+  readonly mode?: "text" | "inline-surface" | "focused-surface";
+  readonly status?: "active" | "superseded" | "stale" | "expired" | "deleted" | "fallback";
+  readonly summary?: string;
+  readonly textFallback?: string;
+  readonly conventionalRoute?: string;
+}
+
+export interface GuestTimelineEntry {
+  readonly role: "assistant" | "user";
+  readonly text: string;
+}
+
+export interface GuestStateSnapshot {
+  readonly ok: true;
+  readonly threadId: string;
+  readonly timeline: readonly GuestTimelineEntry[];
+  readonly surfaces: readonly GuestSurfacePayload[];
 }
 
 export interface GuestTurnSuccess {
@@ -66,6 +92,12 @@ const PAYMENT_STAGE = "payment";
 const BOOKING_STAGE = "booking";
 
 const PENDING_ACTION_STAGE = "pending_action";
+const SHELL_TELEMETRY_EVENTS = [
+  "text-response-rendered", "inline-surface-rendered", "focused-surface-opened", "focused-surface-closed",
+  "surface-replaced", "stale-surface-encountered", "expired-surface-encountered", "fallback-rendered",
+  "conventional-route-fallback", "weaver-rendering-failure",
+] as const;
+type ShellTelemetryEvent = typeof SHELL_TELEMETRY_EVENTS[number];
 
 /**
  * Explicit local allow-list of Weaver-generated action events (ADR-0072).
@@ -73,6 +105,7 @@ const PENDING_ACTION_STAGE = "pending_action";
  */
 const EVENT_STAGE_ALLOW_LIST: Readonly<Record<string, string>> = Object.freeze({
   "shortlet.discovery.view-unit": DISCOVERY_STAGE,
+  [SEE_ALL_DISCOVERY_EVENT]: DISCOVERY_STAGE,
   [REQUEST_TO_BOOK_EVENT]: UNIT_STAGE,
   "shortlet.conditional-offer.accept": OFFER_STAGE,
   "shortlet.card-payment.initialize-checkout": PAYMENT_STAGE,
@@ -93,6 +126,8 @@ interface GuestThreadState {
   activeSurfaces: Map<string, string>;
   supersededSurfaces: Set<string>;
   geminiLastSearch: { readonly surfaceId: string; readonly a2uiMessages: readonly A2UIServerMessage[] } | null;
+  timeline: GuestTimelineEntry[];
+  lastSurfaces: GuestSurfacePayload[];
 }
 
 export class LocalGuestApp {
@@ -122,6 +157,13 @@ export class LocalGuestApp {
   }
 
   async handleTurn(threadId: string, text: string): Promise<GuestTurnResult> {
+    const result = await this.#handleTurn(threadId, text);
+    const decorated = this.#decorateResult(result);
+    if (decorated.ok) this.#rememberResult(threadId, text, decorated);
+    return decorated;
+  }
+
+  async #handleTurn(threadId: string, text: string): Promise<GuestTurnResult> {
     if (!THREAD_ID_PATTERN.test(threadId)) {
       return { ok: false, code: "INVALID_THREAD", message: "Unknown conversation." };
     }
@@ -168,7 +210,17 @@ export class LocalGuestApp {
         if (live.kind === "clarify") return { ok: true, messages: [live.reply], surfaces: [] };
         const result = thread.geminiLastSearch;
         if (!result) throw new Error("Gemini search did not produce a discovery surface");
-        return { ok: true, messages: [live.reply], surfaces: [{ surfaceId: result.surfaceId, a2uiMessages: result.a2uiMessages }] };
+        return {
+          ok: true,
+          messages: [live.reply],
+          surfaces: [{
+            surfaceId: result.surfaceId,
+            a2uiMessages: result.a2uiMessages,
+            mode: "inline-surface",
+            summary: "Discovery results",
+            conventionalRoute: conventionalSearchRoute({}),
+          }],
+        };
       } catch {
         return { ok: false, code: "CONCIERGE_UNAVAILABLE", message: "The concierge is temporarily unavailable. Please try again." };
       }
@@ -196,11 +248,25 @@ export class LocalGuestApp {
       messages: [
         `I found ${result.artifact.facts.results.length} eligible place${result.artifact.facts.results.length === 1 ? "" : "s"} in ${interpretation.filters.location} for your stay ${interpretation.filters.checkIn} to ${interpretation.filters.checkOut}. You can view the details below.`,
       ],
-      surfaces: [{ surfaceId: result.surfaceId, a2uiMessages: result.a2uiMessages }],
+      surfaces: [{
+        surfaceId: result.surfaceId,
+        a2uiMessages: result.a2uiMessages,
+        mode: "inline-surface",
+        summary: "Discovery results",
+        textFallback: result.fallback.message,
+        conventionalRoute: result.fallback.conventionalRoute,
+      }],
     };
   }
 
   handleEvent(threadId: string, payload: unknown): GuestTurnResult {
+    const result = this.#handleEvent(threadId, payload);
+    const decorated = this.#decorateResult(result);
+    if (decorated.ok) this.#rememberResult(threadId, undefined, decorated);
+    return decorated;
+  }
+
+  #handleEvent(threadId: string, payload: unknown): GuestTurnResult {
     const event = readEventPayload(payload);
     if (!event) {
       return { ok: false, code: "INVALID_EVENT", message: "The action could not be processed." };
@@ -242,6 +308,8 @@ export class LocalGuestApp {
     }
 
     switch (event.name) {
+      case SEE_ALL_DISCOVERY_EVENT:
+        return this.#handleSeeAllDiscovery(thread, event);
       case "shortlet.discovery.view-unit":
         return this.#handleViewUnit(thread, event);
       case REQUEST_TO_BOOK_EVENT:
@@ -264,6 +332,23 @@ export class LocalGuestApp {
     this.#environment = new LocalGuestEnvironment(config);
   }
 
+  getState(threadId: string): GuestStateSnapshot | undefined {
+    const thread = this.#threads.get(threadId);
+    if (!thread) return undefined;
+    return {
+      ok: true,
+      threadId,
+      timeline: [...thread.timeline],
+      surfaces: [...thread.lastSurfaces],
+    };
+  }
+
+  recordShellTelemetry(event: unknown): boolean {
+    if (typeof event !== "string" || !(SHELL_TELEMETRY_EVENTS as readonly string[]).includes(event)) return false;
+    this.#environment.telemetry.track({ type: `interaction.${event as ShellTelemetryEvent}` });
+    return true;
+  }
+
   #createThread(threadId: string): GuestThreadState {
     const thread: GuestThreadState = {
       threadId,
@@ -276,6 +361,8 @@ export class LocalGuestApp {
       supersededSurfaces: new Set(),
       geminiHistory: [],
       geminiLastSearch: null,
+      timeline: [],
+      lastSurfaces: [],
     };
     this.#threads.set(threadId, thread);
     return thread;
@@ -287,6 +374,32 @@ export class LocalGuestApp {
       thread.supersededSurfaces.add(surfaceId);
       thread.activeSurfaces.delete(stage);
     }
+  }
+
+  #rememberResult(threadId: string, userText: string | undefined, result: GuestTurnResult & { readonly ok: true }): void {
+    const thread = this.#threads.get(threadId) ?? this.#createThread(threadId);
+    if (userText !== undefined) thread.timeline.push({ role: "user", text: userText });
+    for (const message of result.messages) thread.timeline.push({ role: "assistant", text: message });
+    // A text-only turn changes the transcript but does not supersede the
+    // current server-backed workspace (ADR-0074).
+    if (result.surfaces.length > 0) thread.lastSurfaces = [...result.surfaces];
+    if (result.messages.length > 0) this.#environment.telemetry.track({ type: "interaction.text-response-rendered" });
+    for (const surface of result.surfaces) {
+      this.#environment.telemetry.track({ type: `interaction.${surface.mode ?? "surface"}-rendered` });
+    }
+  }
+
+  #decorateResult(result: GuestTurnResult): GuestTurnResult {
+    if (!result.ok) return result;
+    return {
+      ...result,
+      surfaces: result.surfaces.map((surface) => ({
+        ...surface,
+        mode: surface.mode ?? (surface.surfaceId.includes(":unit:") || surface.surfaceId.includes(":request:") || surface.surfaceId.includes(":offer:") || surface.surfaceId.includes(":payment:") || surface.surfaceId.includes(":booking:") ? "focused-surface" : "inline-surface"),
+        status: surface.status ?? "active",
+        summary: surface.summary ?? "Current conversation workspace",
+      })),
+    };
   }
 
   #handoff(event: GuestEventPayload): WebServerEventHandoff {
@@ -341,6 +454,10 @@ export class LocalGuestApp {
       surfaces: [
         {
           surfaceId,
+          mode: "focused-surface",
+          summary: `${unit.title} details`,
+          conventionalRoute: resolved.effect.route,
+          textFallback: `${unit.title}. ${unit.location.neighbourhood}, ${unit.location.city}. Entire Place; capacity ${unit.capacity} guests. All-In Stay Total: ${unit.price.allInStayTotalKobo === null ? "not yet quoted" : formatNgnKobo(unit.price.allInStayTotalKobo)}. Refundable Security Deposit: ${formatNgnKobo(unit.price.refundableSecurityDepositKobo)}. Inspection: ${unit.trust.inspection.status}; Management Authority: ${unit.trust.managementAuthority.status}.`,
           a2uiMessages: unitDetailToA2UI({
             unit,
             ...this.#stayDatesFor(thread),
@@ -349,6 +466,33 @@ export class LocalGuestApp {
           }),
         },
       ],
+    };
+  }
+
+  #handleSeeAllDiscovery(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
+    const artifact = thread.discoveryArtifact;
+    const context = event.context;
+    if (!artifact || !context || typeof context !== "object" || Array.isArray(context)
+      || Object.keys(context).length !== 1 || context.artifactId !== artifact.id) {
+      return { ok: false, code: "INVALID_CONTEXT", message: "That discovery workspace is no longer valid." };
+    }
+    const surfaceId = `thread-${thread.threadId}:discovery:focused`;
+    this.#supersede(thread, DISCOVERY_STAGE);
+    thread.activeSurfaces.set(DISCOVERY_STAGE, surfaceId);
+    const filters = artifact.facts.filters;
+    return {
+      ok: true,
+      messages: ["Here are all the matching Units."],
+      surfaces: [{
+        surfaceId,
+        mode: "focused-surface",
+        summary: "All discovery results",
+        conventionalRoute: conventionalSearchRoute(filters),
+        textFallback: artifact.facts.results.length === 0
+          ? "No eligible Units match those requirements."
+          : `Found ${artifact.facts.results.length} eligible Units.`,
+        a2uiMessages: discoveryArtifactToA2UI({ artifact, surfaceId }),
+      }],
     };
   }
 
@@ -386,7 +530,8 @@ export class LocalGuestApp {
     const requestSurfaceId = `thread-${thread.threadId}:request:${disclosed.requestId}`;
     const offerSurfaceId = `thread-${thread.threadId}:offer:${offerId}`;
     this.#supersede(thread, UNIT_STAGE);
-    thread.activeSurfaces.set(REQUEST_STAGE, requestSurfaceId);
+    // The Booking Request is returned as a committed historical status
+    // surface; the Offer is the only active primary workspace (ADR-0074).
     thread.activeSurfaces.set(OFFER_STAGE, offerSurfaceId);
 
     const requestArtifact = environment.bookingRequestApp.getArtifact(disclosed.requestId, guest);
@@ -396,8 +541,8 @@ export class LocalGuestApp {
       ok: true,
       messages: ["The host has accepted your request. Here is your booking offer."],
       surfaces: [
-        { surfaceId: requestSurfaceId, a2uiMessages: bookingRequestArtifactToA2UI({ artifact: requestArtifact, surfaceId: requestSurfaceId }) },
-        { surfaceId: offerSurfaceId, a2uiMessages: conditionalOfferArtifactToA2UI({ artifact: offerArtifact, surfaceId: offerSurfaceId }) },
+        { surfaceId: requestSurfaceId, mode: "focused-surface", summary: "Booking Request", conventionalRoute: conventionalBookingRequestRoute(disclosed.requestId), textFallback: `Booking Request status: ${requestArtifact.facts.status}. Stay: ${requestArtifact.facts.checkIn} to ${requestArtifact.facts.checkOut}. ${requestArtifact.facts.quote ? `All-In Stay Total: ${formatNgnKobo(requestArtifact.facts.quote.allInStayTotalKobo)}. Refundable Security Deposit: ${formatNgnKobo(requestArtifact.facts.quote.refundableSecurityDepositKobo)}. Amount Due Now: ${formatNgnKobo(requestArtifact.facts.quote.totalAmountDueNowKobo)}.` : "A quote is not available yet."}`, a2uiMessages: bookingRequestArtifactToA2UI({ artifact: requestArtifact, surfaceId: requestSurfaceId }) },
+        { surfaceId: offerSurfaceId, mode: "focused-surface", summary: "Booking offer", conventionalRoute: conventionalConditionalOfferRoute(offerId), textFallback: `Booking offer for ${offerArtifact.facts.unitTitle}. Stay: ${offerArtifact.facts.checkIn} to ${offerArtifact.facts.checkOut}. All-In Stay Total: ${formatNgnKobo(offerArtifact.facts.allInStayTotalKobo)}. Refundable Security Deposit: ${formatNgnKobo(offerArtifact.facts.refundableSecurityDepositKobo)}. Amount Due Now: ${formatNgnKobo(offerArtifact.facts.totalAmountDueNowKobo)}. Payment deadline: ${offerArtifact.facts.paymentWindowExpiresAt}.`, a2uiMessages: conditionalOfferArtifactToA2UI({ artifact: offerArtifact, surfaceId: offerSurfaceId }) },
       ],
     };
   }
@@ -425,7 +570,7 @@ export class LocalGuestApp {
       ok: true,
       messages: ["Offer accepted. Complete the secure card payment to confirm your booking."],
       surfaces: [
-        { surfaceId: paymentSurfaceId, a2uiMessages: cardPaymentArtifactToA2UI({ artifact: paymentArtifact, surfaceId: paymentSurfaceId }) },
+        { surfaceId: paymentSurfaceId, mode: "focused-surface", summary: "Secure payment", conventionalRoute: conventionalCardPaymentRoute(offerId), textFallback: `Payment status: ${paymentArtifact.facts.status}. ${paymentArtifact.facts.unit}. Stay: ${paymentArtifact.facts.checkIn} to ${paymentArtifact.facts.checkOut}. Amount Due Now: ${formatNgnKobo(paymentArtifact.facts.amountDueNowKobo)}. Payment deadline: ${paymentArtifact.facts.paymentWindowExpiresAt}.`, a2uiMessages: cardPaymentArtifactToA2UI({ artifact: paymentArtifact, surfaceId: paymentSurfaceId }) },
       ],
     };
   }
@@ -475,8 +620,8 @@ export class LocalGuestApp {
       ok: true,
       messages: ["Payment complete. Your booking is confirmed."],
       surfaces: [
-        { surfaceId: paymentSurfaceId, a2uiMessages: cardPaymentArtifactToA2UI({ artifact: paymentArtifact, surfaceId: paymentSurfaceId }) },
-        { surfaceId: bookingSurfaceId, a2uiMessages: bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: bookingSurfaceId }) },
+        { surfaceId: paymentSurfaceId, mode: "focused-surface", summary: "Payment status", conventionalRoute: conventionalCardPaymentRoute(offerId), textFallback: `Payment status: ${paymentArtifact.facts.status}. ${paymentArtifact.facts.unit}. Stay: ${paymentArtifact.facts.checkIn} to ${paymentArtifact.facts.checkOut}. Amount Due Now: ${formatNgnKobo(paymentArtifact.facts.amountDueNowKobo)}.`, a2uiMessages: cardPaymentArtifactToA2UI({ artifact: paymentArtifact, surfaceId: paymentSurfaceId }) },
+        { surfaceId: bookingSurfaceId, mode: "focused-surface", summary: "Booking confirmation", conventionalRoute: conventionalBookingContractRoute(contractId), textFallback: `Booking confirmed for ${contractArtifact.facts.checkIn} to ${contractArtifact.facts.checkOut}. Amount paid: ${formatNgnKobo(contractArtifact.facts.amountPaidKobo)} ${contractArtifact.facts.currency ?? "NGN"}.`, a2uiMessages: bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: bookingSurfaceId }) },
       ],
     };
   }
@@ -528,78 +673,86 @@ export function renderGuestShellHtml(): string {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Shortlet Concierge</title>
   <style>
     :root {
-      --bg: #f7f7f5;
-      --surface: #ffffff;
-      --border: #e4e4e0;
-      --text: #1c1c1a;
-      --text-muted: #6b6b66;
-      --accent: #0f6b4f;
-      --accent-hover: #0c5840;
-      --user-bubble: #0f6b4f;
+      --bg: #f5f5f0; --surface: #fff; --surface-soft: #ecece5;
+      --border: #d8d8cf; --text: #1c2520; --text-muted: #5e6a63;
+      --accent: #0c6b4f; --accent-hover: #09563f; --user-bubble: #145f4a;
+      --focus: #b45f06; --danger: #a83232;
     }
     * { box-sizing: border-box; }
-    body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-      margin: 0;
-      line-height: 1.5;
-    }
-    .app { max-width: 680px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; }
+    html { background: var(--bg); }
+    body { background: var(--bg); color: var(--text); font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0; line-height: 1.5; }
+    button, input { font: inherit; }
+    button, a { -webkit-tap-highlight-color: transparent; }
+    :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+    .skip-link { position: absolute; left: 8px; top: -100px; z-index: 30; background: var(--surface); color: var(--text); padding: 10px 14px; border: 2px solid var(--focus); border-radius: 8px; }
+    .skip-link:focus { top: 8px; }
+    .app { width: 100%; max-width: 760px; min-height: 100dvh; margin: 0 auto; display: flex; flex-direction: column; }
     header {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 16px 20px; border-bottom: 1px solid var(--border); background: var(--surface);
-      position: sticky; top: 0; z-index: 10;
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: max(14px, env(safe-area-inset-top)) 20px 14px;
+      border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 94%, transparent);
+      position: sticky; top: 0; z-index: 10; backdrop-filter: blur(12px);
     }
-    header h1 { font-size: 18px; margin: 0; font-weight: 650; }
-    .demo-badge {
-      font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
-      color: var(--text-muted); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px;
-      background: var(--bg);
-    }
-    #transcript { flex: 1; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+    header h1 { font-size: 18px; letter-spacing: -0.02em; margin: 0; font-weight: 750; }
+    .header-note { color: var(--text-muted); font-size: 12px; white-space: nowrap; }
+    main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    #transcript { flex: 1; min-height: 35dvh; padding: 24px 20px 12px; display: flex; flex-direction: column; gap: 14px; overflow: auto; overscroll-behavior: contain; }
     .turn { display: flex; flex-direction: column; gap: 4px; }
     .turn.user { align-items: flex-end; }
-    .bubble {
-      max-width: 85%; padding: 10px 14px; border-radius: 14px; font-size: 15px; white-space: pre-wrap;
-    }
-    .turn.assistant .bubble { background: var(--surface); border: 1px solid var(--border); border-top-left-radius: 4px; }
-    .turn.user .bubble { background: var(--user-bubble); color: #fff; border-top-right-radius: 4px; }
-    .surface-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px; max-width: 92%; }
-    .surface-card .weaver-mount { margin-top: 4px; }
-    .surface-error { color: var(--text-muted); font-size: 14px; }
-    form#composer {
-      display: flex; gap: 10px; padding: 14px 20px 20px; border-top: 1px solid var(--border);
-      background: var(--surface); position: sticky; bottom: 0;
-    }
-    #composer-input {
-      flex: 1; padding: 11px 14px; border: 1px solid var(--border); border-radius: 10px;
-      font-size: 15px; font-family: inherit; background: var(--bg); color: var(--text);
-    }
-    #composer-input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
-    #composer button {
-      padding: 11px 20px; border: none; border-radius: 10px; background: var(--accent); color: #fff;
-      font-size: 15px; font-weight: 600; cursor: pointer; font-family: inherit;
-    }
-    #composer button:hover { background: var(--accent-hover); }
-    @media (max-width: 480px) { .app { max-width: 100%; } header { padding: 12px 14px; } #transcript { padding: 14px; } }
+    .bubble { max-width: min(88%, 620px); padding: 11px 14px; border-radius: 16px; font-size: 16px; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .turn.assistant .bubble { background: var(--surface); border: 1px solid var(--border); border-top-left-radius: 5px; }
+    .turn.user .bubble { background: var(--user-bubble); color: #fff; border-top-right-radius: 5px; }
+    .historical-summary { width: 100%; color: var(--text-muted); font-size: 13px; padding: 9px 12px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+    #workspace-region { padding: 0 20px 14px; }
+    #active-workspace { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 16px; box-shadow: 0 8px 24px rgba(20, 40, 30, 0.07); }
+    #active-workspace[data-mode="focused-surface"] { min-height: min(68dvh, 680px); }
+    .workspace-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 8px; }
+    .workspace-heading-text { min-width: 0; display: grid; gap: 2px; }
+    .workspace-heading-text strong { font-size: 17px; overflow-wrap: anywhere; }
+    .eyebrow { color: var(--accent); font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+    .workspace-close, #workspace-reopen { min-height: 44px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; color: var(--text); background: var(--surface-soft); cursor: pointer; }
+    .workspace-close:hover, #workspace-reopen:hover { border-color: var(--accent); }
+    .workspace-status { margin: 0 0 12px; color: var(--text-muted); font-size: 13px; }
+    .status-stale, .status-expired, .status-deleted, .status-fallback { color: var(--danger); }
+    .weaver-mount { min-width: 0; overflow-x: auto; }
+    .surface-fallback { border-left: 4px solid var(--focus); padding: 4px 0 4px 12px; }
+    .surface-fallback p { margin: 0 0 10px; }
+    .fallback-link { color: var(--accent); font-weight: 700; }
+    #workspace-reopen { margin: 0 20px 14px; width: calc(100% - 40px); text-align: left; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+    form#composer { display: flex; align-items: flex-end; gap: 10px; padding: 12px 20px max(16px, env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: var(--surface); position: sticky; bottom: 0; z-index: 10; }
+    #composer-input { min-width: 0; flex: 1; min-height: 48px; padding: 11px 14px; border: 1px solid var(--border); border-radius: 12px; font-size: 16px; background: var(--bg); color: var(--text); }
+    #composer-submit { min-height: 48px; min-width: 70px; padding: 10px 16px; border: 0; border-radius: 12px; background: var(--accent); color: #fff; font-weight: 750; cursor: pointer; }
+    #composer-submit:hover { background: var(--accent-hover); }
+    #composer-submit:disabled, #composer-input:disabled { cursor: wait; opacity: .65; }
+    @media (min-width: 700px) { #transcript { padding-left: 32px; padding-right: 32px; } #workspace-region { padding-left: 32px; padding-right: 32px; } form#composer { padding-left: 32px; padding-right: 32px; } }
+    @media (max-width: 420px) { header { padding-left: 14px; padding-right: 14px; } .header-note { display: none; } #transcript { padding: 18px 14px 10px; } #workspace-region { padding-left: 14px; padding-right: 14px; } #active-workspace { padding: 13px; border-radius: 15px; } form#composer { padding-left: 14px; padding-right: 14px; } #workspace-reopen { margin-left: 14px; width: calc(100% - 28px); margin-right: 14px; } .bubble { max-width: 94%; } }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; } }
   </style>
 </head>
 <body>
+  <a class="skip-link" href="#composer-input">Skip to message composer</a>
   <div class="app">
     <header>
       <h1>Shortlet Concierge</h1>
-      <span class="demo-badge">Local demo</span>
+      <span class="header-note">Local demo · A clearer way to find your stay</span>
     </header>
-    <main id="transcript" aria-live="polite"></main>
-    <form id="composer">
+    <main>
+      <section id="transcript" aria-label="Conversation history"></section>
+      <section id="workspace-region" aria-label="Current workspace" hidden>
+        <div id="active-workspace" hidden></div>
+      </section>
+      <button id="workspace-reopen" type="button" hidden></button>
+    </main>
+    <div id="announcer" class="sr-only" role="status" aria-live="polite"></div>
+    <form id="composer" aria-label="Message the concierge">
       <input id="composer-input" type="text" autocomplete="off"
              placeholder="Where would you like to stay?" aria-label="Message the concierge" />
-      <button type="submit">Send</button>
+      <button id="composer-submit" type="submit">Send</button>
     </form>
   </div>
   <script src="/client.js" defer></script>
@@ -626,6 +779,44 @@ function readJsonBody(req: IncomingMessage): Promise<unknown> {
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(body));
+}
+
+const GUEST_SESSION_COOKIE = "shortlet_guest_session";
+const GUEST_SESSION_PATTERN = /^gs-[a-f0-9-]{36}$/;
+
+function readGuestSession(req: IncomingMessage): string | null | undefined {
+  const header = req.headers.cookie;
+  if (typeof header !== "string") return undefined;
+  const value = header.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${GUEST_SESSION_COOKIE}=`))?.slice(GUEST_SESSION_COOKIE.length + 1);
+  if (value === undefined) return undefined;
+  return GUEST_SESSION_PATTERN.test(value) ? value : null;
+}
+
+function issueGuestSession(res: ServerResponse): string {
+  const sessionId = `gs-${crypto.randomUUID()}`;
+  res.setHeader("Set-Cookie", `${GUEST_SESSION_COOKIE}=${sessionId}; HttpOnly; SameSite=Lax; Path=/`);
+  return sessionId;
+}
+
+function bindBrowserThread(
+  req: IncomingMessage,
+  threadId: string,
+  sessions: Map<string, BrowserSession>,
+): boolean {
+  const sessionId = readGuestSession(req);
+  if (sessionId === null) return false;
+  if (!sessionId) return true;
+  const session = sessions.get(sessionId);
+  if (!session) return false;
+  session.threadIds.add(threadId);
+  return true;
+}
+
+interface BrowserSession {
+  readonly sessionId: string;
+  readonly principalId: string;
+  readonly tenantId: string;
+  readonly threadIds: Set<string>;
 }
 
 export interface LocalGuestServerHandle {
@@ -676,6 +867,7 @@ export function startLocalGuestServer(options: {
   }
 
   const app = new LocalGuestApp(env, { geminiClient, assistantRuntime });
+  const browserSessions = new Map<string, BrowserSession>();
   const clientScriptPath = options.clientScriptPath
     ?? join(dirname(fileURLToPath(import.meta.url)), "..", "dist", "client.js");
 
@@ -683,6 +875,16 @@ export function startLocalGuestServer(options: {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
     if (req.method === "GET" && url.pathname === "/") {
+      const sessionId = readGuestSession(req) ?? issueGuestSession(res);
+      if (!browserSessions.has(sessionId)) {
+        const principal = app.environment.guestPrincipal();
+        browserSessions.set(sessionId, {
+          sessionId,
+          principalId: principal.id,
+          tenantId: app.environment.config.tenantId,
+          threadIds: new Set(),
+        });
+      }
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       res.end(renderGuestShellHtml());
       return;
@@ -700,17 +902,64 @@ export function startLocalGuestServer(options: {
       return;
     }
 
+    if (req.method === "GET" && url.pathname === "/api/state") {
+      const threadId = url.searchParams.get("threadId");
+      if (!threadId || !THREAD_ID_PATTERN.test(threadId)) {
+        sendJson(res, 400, { ok: false, code: "INVALID_THREAD", message: "Unknown conversation." });
+        return;
+      }
+      // ADR-0070/0075: a syntactically valid opaque thread ID is not an
+      // ownership claim; browser refresh must present the server-issued
+      // session binding before any projection is returned.
+      const sessionId = readGuestSession(req);
+      const session = sessionId ? browserSessions.get(sessionId) : undefined;
+      if (!session || session.sessionId !== sessionId || session.principalId !== app.environment.config.guestId || session.tenantId !== app.environment.config.tenantId) {
+        sendJson(res, 401, { ok: false, code: "AUTHENTICATION_REQUIRED", message: "Conversation access requires an active browser session." });
+        return;
+      }
+      if (!session.threadIds.has(threadId)) {
+        sendJson(res, 200, { ok: true, threadId, timeline: [], surfaces: [] });
+        return;
+      }
+      const state = app.getState(threadId);
+      if (!state) {
+        sendJson(res, 200, { ok: true, threadId, timeline: [], surfaces: [] });
+        return;
+      }
+      sendJson(res, 200, state);
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/telemetry") {
+      try {
+        const body = await readJsonBody(req);
+        const event = body !== null && typeof body === "object" && !Array.isArray(body)
+          ? (body as { event?: unknown }).event
+          : undefined;
+        const accepted = app.recordShellTelemetry(event);
+        sendJson(res, accepted ? 200 : 400, { ok: accepted });
+      } catch {
+        sendJson(res, 400, { ok: false, code: "INVALID_TELEMETRY" });
+      }
+      return;
+    }
+
     if (req.method === "POST" && (url.pathname === "/api/turn" || url.pathname === "/api/event" || url.pathname === "/api/reset")) {
       try {
         const body = await readJsonBody(req);
         if (url.pathname === "/api/reset") {
           app.reset();
+          browserSessions.clear();
           sendJson(res, 200, { ok: true });
           return;
         }
         const threadId = (body as { threadId?: unknown }).threadId;
         if (typeof threadId !== "string") {
           sendJson(res, 400, { ok: false, code: "INVALID_THREAD", message: "threadId is required." });
+          return;
+        }
+        if (!bindBrowserThread(req, threadId, browserSessions)) {
+          sendJson(res, 401, { ok: false, code: "AUTHENTICATION_REQUIRED", message: "Conversation access requires an active browser session." });
           return;
         }
         if (url.pathname === "/api/turn") {

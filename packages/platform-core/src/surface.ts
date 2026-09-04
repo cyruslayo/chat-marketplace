@@ -9,26 +9,49 @@ export const APPROVED_CATALOGUES: readonly string[] = Object.freeze([
 export interface CreateSurfaceOptions {
   catalogue: string;
   projectionVersion?: number;
-  facts?: any;
-  workflowState?: any;
+  facts?: Readonly<Record<string, unknown>>;
+  workflowState?: Readonly<Record<string, unknown>>;
   textFallback?: string;
   conventionalRoute?: string;
+  expiresAtIso?: string;
 }
 
-export class GenerativeSurfaceManager {
-  #surfaces = new Map<string, any>();
+export type SurfaceLifecycleStatus = "active" | "superseded" | "stale" | "expired" | "deleted" | "fallback";
 
-  #validateCatalogue(catalogue: string) {
+interface ManagedSurface {
+  surfaceId: string;
+  catalogue: string;
+  revision: number;
+  status: SurfaceLifecycleStatus;
+  facts: Readonly<Record<string, unknown>>;
+  workflowState: Readonly<Record<string, unknown>>;
+  textFallback: string;
+  conventionalRoute: string;
+  expiresAtIso?: string;
+  isFallback: boolean;
+}
+
+export type ManagedSurfaceSnapshot = Readonly<ManagedSurface>;
+
+export class GenerativeSurfaceManager {
+  #surfaces = new Map<string, ManagedSurface>();
+  readonly #clock: () => Date;
+
+  constructor(options: { readonly clock?: () => Date } = {}) {
+    this.#clock = options.clock ?? (() => new Date());
+  }
+
+  #validateCatalogue(catalogue: string): void {
     if (!APPROVED_CATALOGUES.includes(catalogue)) {
       throw new Error(`Unsupported catalogue: ${catalogue}`);
     }
   }
 
-  createSurface({ catalogue, projectionVersion = 1, facts = {}, workflowState = {}, textFallback = "", conventionalRoute = "" }: CreateSurfaceOptions) {
+  createSurface({ catalogue, projectionVersion = 1, facts = {}, workflowState = {}, textFallback = "", conventionalRoute = "", expiresAtIso }: CreateSurfaceOptions) {
     this.#validateCatalogue(catalogue);
 
     const surfaceId = `surf-${crypto.randomUUID()}`;
-    const surface = {
+    const surface: ManagedSurface = {
       surfaceId,
       catalogue,
       revision: projectionVersion,
@@ -37,17 +60,18 @@ export class GenerativeSurfaceManager {
       workflowState: Object.freeze({ ...workflowState }),
       textFallback,
       conventionalRoute,
+      ...(expiresAtIso === undefined ? {} : { expiresAtIso }),
       isFallback: false
     };
     this.#surfaces.set(surfaceId, surface);
     return { ...surface };
   }
 
-  renderWithFallback({ catalogue, projectionVersion = 1, workflowState = {}, textFallback = "", conventionalRoute = "" }: CreateSurfaceOptions) {
+  renderWithFallback({ catalogue, projectionVersion = 1, workflowState = {}, textFallback = "", conventionalRoute = "", expiresAtIso }: CreateSurfaceOptions): ManagedSurfaceSnapshot {
     this.#validateCatalogue(catalogue);
 
     const surfaceId = `surf-${crypto.randomUUID()}`;
-    const surface = {
+    const surface: ManagedSurface = {
       surfaceId,
       catalogue,
       revision: projectionVersion,
@@ -56,19 +80,21 @@ export class GenerativeSurfaceManager {
       workflowState: Object.freeze({ ...workflowState }),
       textFallback,
       conventionalRoute,
+      ...(expiresAtIso === undefined ? {} : { expiresAtIso }),
       isFallback: true
     };
     this.#surfaces.set(surfaceId, surface);
-    return { ...surface };
+    return this.#snapshot(surface);
   }
 
-  getSurface(surfaceId: string) {
+  getSurface(surfaceId: string): ManagedSurfaceSnapshot {
     const surface = this.#surfaces.get(surfaceId);
     if (!surface) throw new Error(`Surface not found: ${surfaceId}`);
-    return { ...surface };
+    this.#refreshLifecycle(surface);
+    return this.#snapshot(surface);
   }
 
-  updateSurfaceProjection(surfaceId: string, { projectionVersion, facts = {} }: { projectionVersion: number; facts?: any }) {
+  updateSurfaceProjection(surfaceId: string, { projectionVersion, facts = {} }: { projectionVersion: number; facts?: Readonly<Record<string, unknown>> }): void {
     const surface = this.#surfaces.get(surfaceId);
     if (!surface) throw new Error(`Surface not found: ${surfaceId}`);
 
@@ -80,15 +106,29 @@ export class GenerativeSurfaceManager {
     }
   }
 
-  expireSurface(surfaceId: string) {
+  expireSurface(surfaceId: string): void {
     const surface = this.#surfaces.get(surfaceId);
     if (!surface) throw new Error(`Surface not found: ${surfaceId}`);
     surface.status = "expired";
   }
 
-  executeSurfaceAction(surfaceId: string, { actionName, payload = {} }: { actionName: string; payload?: any }) {
+  supersedeSurface(surfaceId: string): void {
     const surface = this.#surfaces.get(surfaceId);
     if (!surface) throw new Error(`Surface not found: ${surfaceId}`);
+    this.#refreshLifecycle(surface);
+    if (surface.status === "active") surface.status = "superseded";
+  }
+
+  deleteSurface(surfaceId: string): void {
+    const surface = this.#surfaces.get(surfaceId);
+    if (!surface) throw new Error(`Surface not found: ${surfaceId}`);
+    surface.status = "deleted";
+  }
+
+  executeSurfaceAction(surfaceId: string, { actionName, payload = {} }: { actionName: string; payload?: Readonly<Record<string, unknown>> }) {
+    const surface = this.#surfaces.get(surfaceId);
+    if (!surface) throw new Error(`Surface not found: ${surfaceId}`);
+    this.#refreshLifecycle(surface);
 
     if (surface.status !== "active") {
       throw new Error(`Action authority revoked: surface is ${surface.status}`);
@@ -100,6 +140,20 @@ export class GenerativeSurfaceManager {
       actionName,
       payload,
       executedAt: new Date().toISOString()
+    };
+  }
+
+  #refreshLifecycle(surface: ManagedSurface): void {
+    if (surface.status !== "active" || surface.expiresAtIso === undefined) return;
+    const expiresAt = Date.parse(surface.expiresAtIso);
+    if (Number.isFinite(expiresAt) && this.#clock().getTime() >= expiresAt) surface.status = "expired";
+  }
+
+  #snapshot(surface: ManagedSurface): ManagedSurfaceSnapshot {
+    return {
+      ...surface,
+      facts: { ...surface.facts },
+      workflowState: { ...surface.workflowState },
     };
   }
 }

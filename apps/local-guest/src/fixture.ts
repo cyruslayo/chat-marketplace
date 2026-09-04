@@ -118,6 +118,7 @@ export class LocalGuestEnvironment {
   readonly calendar: AvailabilityCalendar;
   readonly grantStore: SqliteOperatorRepresentativeGrantStore;
   readonly audit: InMemoryAuditLog;
+  readonly telemetry: InMemoryTelemetry;
   readonly discoveryQuery: UnitDiscoveryQuery;
   readonly bookingRequestApp: BookingRequestApplication;
   readonly conditionalOfferApp: ConditionalOfferApplication;
@@ -136,11 +137,12 @@ export class LocalGuestEnvironment {
     this.unitRepository = new UnitRepository();
     this.calendar = new AvailabilityCalendar({ repository: this.unitRepository });
     this.audit = new InMemoryAuditLog();
+    this.telemetry = new InMemoryTelemetry();
 
     this.discoveryQuery = new UnitDiscoveryQuery({
       repository: this.unitRepository,
       audit: this.audit,
-      telemetry: new InMemoryTelemetry(),
+      telemetry: this.telemetry,
       clock: this.clock,
       idFactory: () => `guest-demo-${String(++this.#searchCounter).padStart(3, "0")}`,
     });
