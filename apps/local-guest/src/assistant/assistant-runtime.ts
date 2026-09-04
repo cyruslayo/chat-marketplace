@@ -8,7 +8,12 @@ import {
   unitDetailToA2UI,
 } from "../../../web-agent/src/index.js";
 import type { CommandPrincipal } from "../../../../packages/platform-core/src/index.js";
-import { StayDateRange, toDiscoveryProjection } from "../../../../domains/shortlet/src/index.js";
+import {
+  StayDateRange,
+  toDiscoveryProjection,
+  isEligibleUnit,
+  allInStayTotalKobo,
+} from "../../../../domains/shortlet/src/index.js";
 import type { LocalGuestEnvironment } from "../fixture.js";
 import type {
   AssistantConversationStep,
@@ -432,11 +437,47 @@ export class AssistantRuntime {
         const environment = this.#environment;
         const guest: CommandPrincipal = environment.guestPrincipal();
 
+        // Pre-execution revalidation: re-read current Unit/discovery truth for the same Unit, dates, and party size
+        const currentUnit = environment.unitRepository.findById(refs.unitId);
+        if (!currentUnit) {
+          context.candidateTaskState.pendingAction = null;
+          return { ok: false, code: "STALE_SURFACE", message: "The requested accommodation is no longer available. Please explore current stays." };
+        }
+
+        let dateRange: StayDateRange;
+        try {
+          dateRange = new StayDateRange(refs.checkIn, refs.checkOut, environment.clock());
+        } catch {
+          context.candidateTaskState.pendingAction = null;
+          return { ok: false, code: "STALE_SURFACE", message: "The stay dates are no longer valid. Please select current dates." };
+        }
+
+        const partySize = refs.partySize ?? 1;
+        const eligible = isEligibleUnit(currentUnit, environment.clock(), dateRange);
+        const capacityOk = currentUnit.capacity >= partySize;
+        const notBlocked = !currentUnit.blockedDates?.some((range: any) => dateRange.overlaps(range));
+
+        if (!eligible || !capacityOk || !notBlocked) {
+          context.candidateTaskState.pendingAction = null;
+          return { ok: false, code: "STALE_SURFACE", message: "This stay is no longer available for your dates and party size. Please choose another stay." };
+        }
+
+        // Verify displayed pricing is still consistent
+        const currentStayTotal = allInStayTotalKobo(currentUnit, dateRange);
+        if (refs.stayTotalKobo !== undefined && currentStayTotal !== null && refs.stayTotalKobo !== currentStayTotal) {
+          context.candidateTaskState.pendingAction = null;
+          return { ok: false, code: "STALE_SURFACE", message: "Pricing for this stay has changed. Please review the updated quote." };
+        }
+        if (refs.refundableDepositKobo !== undefined && currentUnit.price?.refundableSecurityDepositKobo !== refs.refundableDepositKobo) {
+          context.candidateTaskState.pendingAction = null;
+          return { ok: false, code: "STALE_SURFACE", message: "The security deposit requirement has changed. Please review the updated quote." };
+        }
+
         const draft = environment.bookingRequestApp.createDraft(
           {
             unitId: refs.unitId,
             primaryGuest: { id: environment.config.guestId, name: environment.config.guestName },
-            occupants: environment.demoOccupants(refs.partySize ?? 1),
+            occupants: environment.demoOccupants(partySize),
             selfBookingAttestation: environment.selfBookingAttestation(),
             checkIn: refs.checkIn,
             checkOut: refs.checkOut,
@@ -445,37 +486,66 @@ export class AssistantRuntime {
         );
 
         const disclosed = environment.bookingRequestApp.disclose(draft.draftId, guest);
-        context.candidateTaskState.currentBookingRequestId = disclosed.requestId;
 
-        // Local operator simulation via authorized representative (ADR-0082)
-        const { offerId } = environment.simulateOperatorAcceptance(disclosed.requestId);
-        context.candidateTaskState.currentOfferId = offerId;
+        // POST-AUTHORITATIVE-COMMIT RECONCILIATION:
+        // Booking request has committed. Record it authoritatively in working state.
+        context.candidateTaskState.currentBookingRequestId = disclosed.requestId;
         context.candidateTaskState.goal = "book_stay";
         context.candidateTaskState.pendingAction = null;
 
         const requestSurfaceId = `thread-${threadId}:request:${disclosed.requestId}`;
-        const offerSurfaceId = `thread-${threadId}:offer:${offerId}`;
         context.supersede(UNIT_STAGE);
         context.candidateActiveSurfaces.set(REQUEST_STAGE, requestSurfaceId);
-        context.candidateActiveSurfaces.set(OFFER_STAGE, offerSurfaceId);
 
-        const requestArtifact = environment.bookingRequestApp.getArtifact(disclosed.requestId, guest);
-        const offerArtifact = environment.conditionalOfferApp.getArtifact(offerId, guest);
+        let requestArtifact: ReturnType<typeof environment.bookingRequestApp.getArtifact>;
+        try {
+          requestArtifact = environment.bookingRequestApp.getArtifact(disclosed.requestId, guest);
+        } catch {
+          // If artifact presentation read fails, retain authoritative commit truth
+          return {
+            ok: true,
+            message: "Your booking request has been submitted to the host. You can check status at any time.",
+            surfaces: [],
+          };
+        }
 
-        return {
-          ok: true,
-          message: "The host has accepted your request. Here is your booking offer.",
-          surfaces: [
-            {
-              surfaceId: requestSurfaceId,
-              a2uiMessages: bookingRequestArtifactToA2UI({ artifact: requestArtifact, surfaceId: requestSurfaceId }),
-            },
-            {
-              surfaceId: offerSurfaceId,
-              a2uiMessages: conditionalOfferArtifactToA2UI({ artifact: offerArtifact, surfaceId: offerSurfaceId }),
-            },
-          ],
-        };
+        // Attempt local operator simulation
+        try {
+          const { offerId } = environment.simulateOperatorAcceptance(disclosed.requestId);
+          context.candidateTaskState.currentOfferId = offerId;
+          const offerSurfaceId = `thread-${threadId}:offer:${offerId}`;
+          context.candidateActiveSurfaces.set(OFFER_STAGE, offerSurfaceId);
+
+          const offerArtifact = environment.conditionalOfferApp.getArtifact(offerId, guest);
+
+          return {
+            ok: true,
+            message: "The host has accepted your request. Here is your booking offer.",
+            surfaces: [
+              {
+                surfaceId: requestSurfaceId,
+                a2uiMessages: bookingRequestArtifactToA2UI({ artifact: requestArtifact, surfaceId: requestSurfaceId }),
+              },
+              {
+                surfaceId: offerSurfaceId,
+                a2uiMessages: conditionalOfferArtifactToA2UI({ artifact: offerArtifact, surfaceId: offerSurfaceId }),
+              },
+            ],
+          };
+        } catch {
+          // If operator simulation or offer presentation fails, DO NOT pretend booking request was rolled back.
+          // Disclose committed, request exists and is waiting for host response.
+          return {
+            ok: true,
+            message: "Your booking request has been submitted to the host and is awaiting review.",
+            surfaces: [
+              {
+                surfaceId: requestSurfaceId,
+                a2uiMessages: bookingRequestArtifactToA2UI({ artifact: requestArtifact, surfaceId: requestSurfaceId }),
+              },
+            ],
+          };
+        }
       }
 
       case "accept_offer": {
@@ -492,14 +562,16 @@ export class AssistantRuntime {
           || refs.stayTotalKobo !== offerArtifact.facts.allInStayTotalKobo
           || refs.refundableDepositKobo !== offerArtifact.facts.refundableSecurityDepositKobo
           || refs.totalDueNowKobo !== offerArtifact.facts.totalAmountDueNowKobo) {
+          context.candidateTaskState.pendingAction = null;
           return { ok: false, code: "STALE_SURFACE", message: "The offer changed. Review the current offer before accepting." };
         }
         const acceptAction = offerArtifact.actions.find((a) => a.type === "accept");
         if (!acceptAction) {
+          context.candidateTaskState.pendingAction = null;
           return { ok: false, code: "ACTION_NOT_AUTHORIZED", message: "Offer cannot be accepted in current state." };
         }
 
-        // Accept offer through application command
+        // Accept offer through authoritative application command
         this.#environment.conditionalOfferApp.accept({
           offerId,
           confirmationToken: acceptAction.confirmationToken,
@@ -507,29 +579,59 @@ export class AssistantRuntime {
           principal: this.#environment.guestPrincipal(),
         });
 
+        // POST-AUTHORITATIVE-COMMIT RECONCILIATION:
+        // Offer acceptance committed. Pending action consumed, cannot replay.
+        context.candidateTaskState.pendingAction = null;
+
         const paymentSurfaceId = `thread-${threadId}:payment:${offerId}`;
         context.supersede(OFFER_STAGE);
         context.candidateActiveSurfaces.set(PAYMENT_STAGE, paymentSurfaceId);
-        context.candidateTaskState.pendingAction = null;
 
-        const paymentArtifact = this.#environment.cardPaymentApp.getArtifact(offerId, this.#environment.guestPrincipal());
-
-        return {
-          ok: true,
-          message: "Offer accepted. Complete the secure card payment to confirm your booking.",
-          surfaces: [
-            {
-              surfaceId: paymentSurfaceId,
-              a2uiMessages: cardPaymentArtifactToA2UI({ artifact: paymentArtifact, surfaceId: paymentSurfaceId }),
-            },
-          ],
-        };
+        try {
+          const paymentArtifact = this.#environment.cardPaymentApp.getArtifact(offerId, this.#environment.guestPrincipal());
+          return {
+            ok: true,
+            message: "Offer accepted. Complete the secure card payment to confirm your booking.",
+            surfaces: [
+              {
+                surfaceId: paymentSurfaceId,
+                a2uiMessages: cardPaymentArtifactToA2UI({ artifact: paymentArtifact, surfaceId: paymentSurfaceId }),
+              },
+            ],
+          };
+        } catch {
+          // If payment presentation fails, retain accepted state authoritatively
+          return {
+            ok: true,
+            message: "Offer accepted successfully. Proceed to payment checkout.",
+            surfaces: [],
+          };
+        }
       }
 
       case "start_checkout": {
-        const offerId = action.authoritativeReferences.offerId;
+        const refs = action.authoritativeReferences;
+        const offerId = refs.offerId;
         if (!offerId) {
           return { ok: false, code: "INVALID_ARTIFACT", message: "No payment reference found." };
+        }
+
+        // Revalidate start_checkout against current authoritative card-payment artifact
+        let paymentArtifact;
+        try {
+          paymentArtifact = this.#environment.cardPaymentApp.getArtifact(offerId, this.#environment.guestPrincipal());
+        } catch {
+          context.candidateTaskState.pendingAction = null;
+          return { ok: false, code: "STALE_SURFACE", message: "Payment checkout is no longer available for this offer." };
+        }
+
+        if (refs.offerId !== offerId
+          || (refs.projectionVersion !== undefined && refs.projectionVersion !== paymentArtifact.projectionVersion)
+          || (refs.stayTotalKobo !== undefined && refs.stayTotalKobo !== paymentArtifact.facts.allInStayTotalKobo)
+          || (refs.refundableDepositKobo !== undefined && refs.refundableDepositKobo !== paymentArtifact.facts.refundableSecurityDepositKobo)
+          || (refs.totalDueNowKobo !== undefined && refs.totalDueNowKobo !== paymentArtifact.facts.amountDueNowKobo)) {
+          context.candidateTaskState.pendingAction = null;
+          return { ok: false, code: "STALE_SURFACE", message: "Payment details or amounts have changed. Please review the updated checkout." };
         }
 
         let session = this.#environment.cardPaymentApp.manager.getCheckoutSession(offerId);
@@ -547,8 +649,11 @@ export class AssistantRuntime {
           return { ok: false, code: "PAYMENT_NOT_CONFIRMED", message: "Payment could not be completed." };
         }
 
+        // Authoritatively commit to contract repository
         this.#environment.contractRepository.recordConfirmedOutcome(outcome.reservation, outcome.bookingContract);
 
+        // POST-AUTHORITATIVE-COMMIT RECONCILIATION:
+        // Payment committed. Reservation and contract recorded. Action consumed, cannot replay.
         const contractId = outcome.bookingContract.contractId;
         context.candidateTaskState.currentReservationId = outcome.reservation.reservationId;
         context.candidateTaskState.currentContractId = contractId;
@@ -559,23 +664,32 @@ export class AssistantRuntime {
         context.supersede(PAYMENT_STAGE);
         context.candidateActiveSurfaces.set(BOOKING_STAGE, bookingSurfaceId);
 
-        const paymentArtifact = this.#environment.cardPaymentApp.getArtifact(offerId, this.#environment.guestPrincipal());
-        const contractArtifact = this.#environment.contractApp.getArtifact(contractId, this.#environment.guestPrincipal());
+        try {
+          const updatedPaymentArtifact = this.#environment.cardPaymentApp.getArtifact(offerId, this.#environment.guestPrincipal());
+          const contractArtifact = this.#environment.contractApp.getArtifact(contractId, this.#environment.guestPrincipal());
 
-        return {
-          ok: true,
-          message: "Payment complete. Your booking is confirmed.",
-          surfaces: [
-            {
-              surfaceId: paymentSurfaceId,
-              a2uiMessages: cardPaymentArtifactToA2UI({ artifact: paymentArtifact, surfaceId: paymentSurfaceId }),
-            },
-            {
-              surfaceId: bookingSurfaceId,
-              a2uiMessages: bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: bookingSurfaceId }),
-            },
-          ],
-        };
+          return {
+            ok: true,
+            message: "Payment complete. Your booking is confirmed.",
+            surfaces: [
+              {
+                surfaceId: paymentSurfaceId,
+                a2uiMessages: cardPaymentArtifactToA2UI({ artifact: updatedPaymentArtifact, surfaceId: paymentSurfaceId }),
+              },
+              {
+                surfaceId: bookingSurfaceId,
+                a2uiMessages: bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: bookingSurfaceId }),
+              },
+            ],
+          };
+        } catch {
+          // If contract/payment presentation fails, payment/contract truth is retained
+          return {
+            ok: true,
+            message: `Payment complete. Your booking is confirmed under contract reference ${contractId}.`,
+            surfaces: [],
+          };
+        }
       }
 
       default:

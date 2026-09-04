@@ -171,7 +171,7 @@ function readFileSafe(filePath: string): string | null {
   catch (error: any) { if (error.code === "ENOENT") return null; throw error; }
 }
 
-function allInStayTotalKobo(unit: any, dateRange: StayDateRange | null): number | null {
+export function allInStayTotalKobo(unit: any, dateRange: StayDateRange | null): number | null {
   if (!dateRange) return null;
   const base = unit.price.nightlyKobo * dateRange.nights + (unit.price.mandatoryFeesKobo ?? 0);
   const taxes = calculateTaxKobo(unit.price.taxConfig, base);

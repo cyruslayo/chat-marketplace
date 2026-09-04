@@ -1,6 +1,9 @@
 import {
   GoogleGenAI,
+  ThinkingLevel,
+  type GenerationConfig,
   type Interactions,
+  type ThinkingConfig,
 } from "@google/genai";
 import type {
   AssistantConversationStep,
@@ -25,15 +28,34 @@ interface InteractionTransport {
   ): Promise<Interactions.Interaction>;
 }
 
+export type AssistantThinkingLevel = "minimal" | "low" | "medium" | "high";
+
 export interface GeminiInteractionsClientConfig {
   readonly apiKey: string;
   readonly model?: string;
   readonly timeoutMs?: number;
-  readonly thinkingLevel?: "minimal" | "low" | "medium" | "high";
+  readonly thinkingLevel?: AssistantThinkingLevel;
   /** Optional custom transport injector for testing without network. */
   readonly customAi?: {
     readonly interactions: InteractionTransport;
   };
+}
+
+function mapToSdkThinkingLevel(level: string | undefined): ThinkingLevel | undefined {
+  if (!level) return undefined;
+  const normalized = level.trim().toLowerCase();
+  switch (normalized) {
+    case "minimal":
+      return ThinkingLevel.MINIMAL;
+    case "low":
+      return ThinkingLevel.LOW;
+    case "medium":
+      return ThinkingLevel.MEDIUM;
+    case "high":
+      return ThinkingLevel.HIGH;
+    default:
+      return undefined;
+  }
 }
 
 /**
@@ -68,9 +90,15 @@ export class GeminiInteractionsClient implements AssistantModelClient {
     const inputSteps = this.#mapHistoryToInteractionsInput(request.history);
     const tools = this.#mapToolsToInteractionsTools(request.tools);
 
-    const generationConfig: Record<string, unknown> = {};
-    if (this.#thinkingLevel) {
-      generationConfig.thinking_level = this.#thinkingLevel;
+    let generationConfig: GenerationConfig | undefined;
+    const sdkThinkingLevel = mapToSdkThinkingLevel(this.#thinkingLevel);
+    if (sdkThinkingLevel) {
+      const thinkingConfig: ThinkingConfig = {
+        thinkingLevel: sdkThinkingLevel,
+      };
+      generationConfig = {
+        thinkingConfig,
+      };
     }
 
     const params: Interactions.CreateModelInteractionParamsNonStreaming = {
@@ -79,7 +107,7 @@ export class GeminiInteractionsClient implements AssistantModelClient {
       store: false, // Item 3: platform-owned statelessness
       system_instruction: request.systemInstruction,
       ...(tools.length > 0 ? { tools } : {}),
-      ...(Object.keys(generationConfig).length > 0 ? { generation_config: generationConfig } : {}),
+      ...(generationConfig ? { generationConfig } : {}),
     };
 
     const options: InteractionRequestOptions = {

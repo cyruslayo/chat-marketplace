@@ -9,7 +9,10 @@
  */
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
-import { GeminiInteractionsClient } from "../apps/local-guest/src/assistant/gemini-interactions-client.js";
+import {
+  GeminiInteractionsClient,
+  DEFAULT_GEMINI_MODEL,
+} from "../apps/local-guest/src/assistant/gemini-interactions-client.js";
 
 if (process.env.RUN_LIVE_GEMINI !== "1") {
   console.error("Live Gemini smoke test was blocked: RUN_LIVE_GEMINI=1 is required.");
@@ -23,24 +26,33 @@ if (!apiKey) {
   process.exit(1);
 }
 
+function parseThinkingLevel(val: string | undefined): "minimal" | "low" | "medium" | "high" | undefined {
+  if (!val) return undefined;
+  const normalized = val.trim().toLowerCase();
+  if (normalized === "minimal" || normalized === "low" || normalized === "medium" || normalized === "high") {
+    return normalized;
+  }
+  return undefined;
+}
+
 console.log("Initializing Live Gemini Interactions Assistant...");
 const env = new LocalGuestEnvironment();
 const gemini = new GeminiInteractionsClient({
   apiKey,
-  model: process.env.GEMINI_MODEL ?? "gemini-2.5-flash",
-  thinkingLevel: process.env.GEMINI_THINKING_LEVEL ? Number(process.env.GEMINI_THINKING_LEVEL) : undefined,
+  model: process.env.GEMINI_MODEL ?? DEFAULT_GEMINI_MODEL,
+  thinkingLevel: parseThinkingLevel(process.env.GEMINI_THINKING_LEVEL),
 });
 const runtime = new AssistantRuntime(env, gemini);
 
-const threadId = live-smoke-;
-console.log(Executing live turn 1: Search Ikoyi for 4 nights... (Thread: ));
+const threadId = `g-${crypto.randomUUID()}`;
+console.log(`Executing live turn 1: Search Ikoyi for 4 nights... (Thread: ${threadId})`);
 
 const turn1 = await runtime.handleTurn(threadId, "I need a place in Ikoyi for 4 nights for 2 guests");
 console.log("Turn 1 Result Ok:", turn1.ok);
 console.log("Assistant Response:", turn1.messages);
-console.log("Surfaces Mounted:", turn1.surfaces.map(s => s.surfaceId));
+console.log("Surfaces Mounted:", turn1.surfaces?.map((s) => s.surfaceId));
 
-if (turn1.ok && turn1.surfaces.length > 0) {
+if (turn1.ok && turn1.surfaces && turn1.surfaces.length > 0) {
   console.log("\nLive Gemini smoke test completed successfully!");
 } else {
   console.error("\nLive Gemini smoke test failed.");

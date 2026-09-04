@@ -35,12 +35,12 @@ For an optional live conversational interpreter, obtain a Gemini Developer API k
 
 ```sh
 export GEMINI_API_KEY="YOUR_KEY"
-export GEMINI_MODEL="gemini-2.5-flash"
+export GEMINI_MODEL="gemini-3.8-flash"
 npm run guest:reset
 CONCIERGE_MODE=gemini npm run guest:local
 ```
 
-`GEMINI_MODEL` is configurable and defaults to `gemini-2.5-flash`. Gemini mode has a bounded 20-second local-demo request timeout and may incur API usage/cost. `GEMINI_API_KEY` is never sent to the browser, HTML, A2UI, Interaction Artifacts, events, responses, or logs. The server exposes exactly one model tool: `search_stays`. The server validates and normalizes its arguments, executes the authoritative `UnitDiscoveryQuery`, and sends Gemini only minimal result metadata. Discovery Artifact → `discoveryArtifactToA2UI` → Weaver still produces the apartment UI. Gemini is not involved in booking, Operator acceptance, offers, payment, or Booking Contract actions.
+`GEMINI_MODEL` is configurable and defaults to `gemini-3.8-flash`. Gemini mode has a bounded 20-second local-demo request timeout and may incur API usage/cost. `GEMINI_API_KEY` is never sent to the browser, HTML, A2UI, Interaction Artifacts, events, responses, or logs. The server exposes exactly one model tool: `search_stays`. The server validates and normalizes its arguments, executes the authoritative `UnitDiscoveryQuery`, and sends Gemini only minimal result metadata. Discovery Artifact → `discoveryArtifactToA2UI` → Weaver still produces the apartment UI. Gemini is not involved in booking, Operator acceptance, offers, payment, or Booking Contract actions.
 
 If `CONCIERGE_MODE=gemini` is selected without `GEMINI_API_KEY`, startup fails clearly. Deterministic tests never call Gemini.
 

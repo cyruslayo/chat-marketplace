@@ -494,3 +494,137 @@ test("Search artifact, assistant shortlist, and Weaver surface contain the same 
   assert.deepEqual(shortlistUnitIds, artifactUnitIds);
   assert.deepEqual(surfaceUnitIds, artifactUnitIds);
 });
+
+test("Post-authoritative-commit reconciliation: request_to_book retains request state if operator simulation fails", async () => {
+  const { env, runtime } = createTestRuntime();
+  // Simulate operator failure
+  env.simulateOperatorAcceptance = () => {
+    throw new Error("Operator simulation downstream offline");
+  };
+
+  await runtime.handleTurn("g-post-commit-request", "I need a place in Ikoyi for 4 nights for 2 guests");
+  const proposalTurn = await runtime.handleTurn("g-post-commit-request", "Request the first one.");
+  const pendingAction = runtime.getThread("g-post-commit-request").taskState.pendingAction!;
+  const surfaceId = proposalTurn.surfaces![0]!.surfaceId;
+
+  const confirmRes = runtime.handleAssistantEvent("g-post-commit-request", ASSISTANT_CONFIRM_ACTION_EVENT, {
+    actionId: pendingAction.id,
+    threadId: "g-post-commit-request",
+    surfaceId,
+  });
+
+  assert.equal(confirmRes.ok, true);
+  assert.ok(confirmRes.messages?.[0]?.includes("submitted to the host"));
+  const taskState = runtime.getThread("g-post-commit-request").taskState;
+  assert.ok(taskState.currentBookingRequestId, "Booking request ID authoritatively recorded");
+  assert.equal(taskState.pendingAction, null, "Pending action consumed");
+
+  // Verify replayed confirmation fails closed
+  const replayRes = runtime.handleAssistantEvent("g-post-commit-request", ASSISTANT_CONFIRM_ACTION_EVENT, {
+    actionId: pendingAction.id,
+    threadId: "g-post-commit-request",
+    surfaceId,
+  });
+  assert.equal(replayRes.ok, false);
+  assert.equal(replayRes.code, "STALE_SURFACE");
+});
+
+test("Post-authoritative-commit reconciliation: accept_offer retains accepted state if payment presentation fails", async () => {
+  const { env, runtime } = createTestRuntime();
+
+  await runtime.handleTurn("g-post-commit-offer", "I need a place in Ikoyi for 4 nights for 2 guests");
+  const reqProposal = await runtime.handleTurn("g-post-commit-offer", "Request the first one.");
+  const reqAction = runtime.getThread("g-post-commit-offer").taskState.pendingAction!;
+  runtime.handleAssistantEvent("g-post-commit-offer", ASSISTANT_CONFIRM_ACTION_EVENT, {
+    actionId: reqAction.id,
+    threadId: "g-post-commit-offer",
+    surfaceId: reqProposal.surfaces![0]!.surfaceId,
+  });
+
+  const offerProposal = await runtime.handleTurn("g-post-commit-offer", "Accept the offer");
+  const offerAction = runtime.getThread("g-post-commit-offer").taskState.pendingAction!;
+  const offerSurfaceId = offerProposal.surfaces![0]!.surfaceId;
+
+  // Make card payment artifact throw on read during presentation
+  const originalGetArtifact = env.cardPaymentApp.getArtifact.bind(env.cardPaymentApp);
+  env.cardPaymentApp.getArtifact = () => {
+    throw new Error("Card payment presentation rendering failed");
+  };
+
+  const confirmOfferRes = runtime.handleAssistantEvent("g-post-commit-offer", ASSISTANT_CONFIRM_ACTION_EVENT, {
+    actionId: offerAction.id,
+    threadId: "g-post-commit-offer",
+    surfaceId: offerSurfaceId,
+  });
+
+  assert.equal(confirmOfferRes.ok, true);
+  assert.ok(confirmOfferRes.messages?.[0]?.includes("Offer accepted successfully"));
+  const taskState = runtime.getThread("g-post-commit-offer").taskState;
+  assert.equal(taskState.pendingAction, null, "Pending action consumed");
+
+  // Re-enable getArtifact to inspect offer state in domain
+  env.cardPaymentApp.getArtifact = originalGetArtifact;
+  const offerArtifact = env.conditionalOfferApp.getArtifact(taskState.currentOfferId!, env.guestPrincipal());
+  assert.equal(offerArtifact.facts.status, "accepted", "Offer is accepted in domain");
+
+  // Replay fails closed
+  const replayRes = runtime.handleAssistantEvent("g-post-commit-offer", ASSISTANT_CONFIRM_ACTION_EVENT, {
+    actionId: offerAction.id,
+    threadId: "g-post-commit-offer",
+    surfaceId: offerSurfaceId,
+  });
+  assert.equal(replayRes.ok, false);
+});
+
+test("Post-authoritative-commit reconciliation: start_checkout retains reservation and contract if contract presentation fails", async () => {
+  const { env, runtime } = createTestRuntime();
+
+  await runtime.handleTurn("g-post-commit-pay", "I need a place in Ikoyi for 4 nights for 2 guests");
+  const reqProposal = await runtime.handleTurn("g-post-commit-pay", "Request the first one.");
+  runtime.handleAssistantEvent("g-post-commit-pay", ASSISTANT_CONFIRM_ACTION_EVENT, {
+    actionId: runtime.getThread("g-post-commit-pay").taskState.pendingAction!.id,
+    threadId: "g-post-commit-pay",
+    surfaceId: reqProposal.surfaces![0]!.surfaceId,
+  });
+
+  const offerProposal = await runtime.handleTurn("g-post-commit-pay", "Accept the offer");
+  runtime.handleAssistantEvent("g-post-commit-pay", ASSISTANT_CONFIRM_ACTION_EVENT, {
+    actionId: runtime.getThread("g-post-commit-pay").taskState.pendingAction!.id,
+    threadId: "g-post-commit-pay",
+    surfaceId: offerProposal.surfaces![0]!.surfaceId,
+  });
+
+  const payProposal = await runtime.handleTurn("g-post-commit-pay", "Start payment");
+  const payAction = runtime.getThread("g-post-commit-pay").taskState.pendingAction!;
+  const paySurfaceId = payProposal.surfaces![0]!.surfaceId;
+
+  // Make contract app throw during presentation formatting
+  env.contractApp.getArtifact = () => {
+    throw new Error("Contract presentation unavailable");
+  };
+
+  const confirmPayRes = runtime.handleAssistantEvent("g-post-commit-pay", ASSISTANT_CONFIRM_ACTION_EVENT, {
+    actionId: payAction.id,
+    threadId: "g-post-commit-pay",
+    surfaceId: paySurfaceId,
+  });
+
+  assert.equal(confirmPayRes.ok, true);
+  assert.ok(confirmPayRes.messages?.[0]?.includes("booking is confirmed under contract reference"));
+  const taskState = runtime.getThread("g-post-commit-pay").taskState;
+  assert.ok(taskState.currentReservationId, "Reservation ID preserved in task state");
+  assert.ok(taskState.currentContractId, "Contract ID preserved in task state");
+  assert.equal(taskState.pendingAction, null, "Pending action consumed");
+
+  // Confirm contract exists in contract repository
+  const contract = env.contractRepository.findContractById(taskState.currentContractId!);
+  assert.ok(contract, "Contract exists in authoritative repository");
+
+  // Replay fails closed
+  const replayRes = runtime.handleAssistantEvent("g-post-commit-pay", ASSISTANT_CONFIRM_ACTION_EVENT, {
+    actionId: payAction.id,
+    threadId: "g-post-commit-pay",
+    surfaceId: paySurfaceId,
+  });
+  assert.equal(replayRes.ok, false);
+});

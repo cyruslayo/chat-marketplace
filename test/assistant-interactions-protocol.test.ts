@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { Interactions } from "@google/genai";
+import { type Interactions, ThinkingLevel } from "@google/genai";
 import {
   GeminiInteractionsClient,
   DEFAULT_GEMINI_MODEL,
@@ -8,13 +8,20 @@ import {
 import { ASSISTANT_TOOL_DEFINITIONS } from "../apps/local-guest/src/assistant/assistant-tools.js";
 
 test("GeminiInteractionsClient maps request to Interactions API shape without live network", async () => {
-  let capturedParams: Interactions.CreateModelInteractionParamsNonStreaming | undefined;
+  let capturedParams:
+    | (Interactions.CreateModelInteractionParamsNonStreaming & {
+        readonly generationConfig?: { readonly thinkingConfig?: { readonly thinkingLevel?: ThinkingLevel } };
+      })
+    | undefined;
   let capturedOptions: { readonly timeout?: number } | undefined;
 
   const mockAi = {
     interactions: {
-      async create(params: Interactions.CreateModelInteractionParamsNonStreaming, options?: { readonly timeout?: number }): Promise<Interactions.Interaction> {
-        capturedParams = params;
+      async create(
+        params: Interactions.CreateModelInteractionParamsNonStreaming,
+        options?: { readonly timeout?: number },
+      ): Promise<Interactions.Interaction> {
+        capturedParams = params as typeof capturedParams;
         capturedOptions = options;
         return {
           id: "int-mock-123",
@@ -57,7 +64,7 @@ test("GeminiInteractionsClient maps request to Interactions API shape without li
   assert.equal(capturedParams.model, DEFAULT_GEMINI_MODEL);
   assert.equal(capturedParams.store, false, "store: false enforced (ADR-0004)");
   assert.equal(capturedParams.system_instruction, "You are the assistant.");
-  assert.equal(capturedParams.generation_config?.thinking_level, "low");
+  assert.equal(capturedParams.generationConfig?.thinkingConfig?.thinkingLevel, ThinkingLevel.LOW);
   assert.equal(capturedOptions?.timeout, 15_000);
 
   // Input mapping assertions
