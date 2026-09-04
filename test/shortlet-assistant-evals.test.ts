@@ -10,6 +10,7 @@ import {
   ASSISTANT_CONFIRM_ACTION_EVENT,
   ASSISTANT_CANCEL_ACTION_EVENT,
 } from "../apps/local-guest/src/assistant/pending-action-a2ui.js";
+import { ASSISTANT_SYSTEM_INSTRUCTION } from "../apps/local-guest/src/assistant/assistant-tools.js";
 
 function setupHarness() {
   const window = new Window();
@@ -69,7 +70,34 @@ test("Eval 2: Clarification when essential search info is missing", async () => 
   const res = await runtime.handleTurn("g-eval-02", "I want somewhere in Ikoyi");
   assert.equal(res.ok, true);
   assert.ok(res.messages?.[0]?.toLowerCase().includes("how many nights"));
+  assert.ok(res.messages?.[0]?.toLowerCase().includes("guest"));
+  assert.doesNotMatch(res.messages?.[0] ?? "", /date|check.?in|yyyy-mm-dd/i);
   assert.equal(res.surfaces?.length, 0);
+});
+
+test("No-date local demo instruction makes date optional while relative dates require YYYY-MM-DD", () => {
+  assert.match(ASSISTANT_SYSTEM_INSTRUCTION, /check-in date is optional for this local demo/i);
+  assert.match(ASSISTANT_SYSTEM_INSTRUCTION, /checkIn: null/i);
+  assert.match(ASSISTANT_SYSTEM_INSTRUCTION, /relative date[\s\S]*YYYY-MM-DD/i);
+});
+
+test("Authoritative search normalizes Lagos and Abuja case-insensitively without accepting other cities", async () => {
+  for (const [raw, canonical] of [["lagos", "Lagos"], ["LAGOS", "Lagos"], ["Lagos", "Lagos"], ["abuja", "Abuja"], ["ABUJA", "Abuja"], ["Abuja", "Abuja"]] as const) {
+    const model = new ScriptedAssistantModel([
+      () => ({ toolCalls: [{ id: `call-${raw}`, name: "search_stays", args: { city: raw, checkIn: null, nights: 2, guests: 1 } }] }),
+      () => ({ text: "Search complete." }),
+    ]);
+    const { runtime } = createTestRuntime(model);
+    const response = await runtime.handleTurn(`city-${raw}`, `${raw} for two nights and one guest`);
+    assert.equal(response.ok, true, `${raw} is accepted`);
+    assert.equal(runtime.getThread(`city-${raw}`).taskState.stayIntent.location, canonical);
+  }
+
+  const model = new ScriptedAssistantModel([
+    () => ({ toolCalls: [{ id: "call-kano", name: "search_stays", args: { city: "Kano", checkIn: null, nights: 2, guests: 1 } }] }),
+  ]);
+  const { runtime } = createTestRuntime(model);
+  assert.equal((await runtime.handleTurn("city-kano", "Kano for two nights and one guest")).ok, false);
 });
 
 // 3. Multi-turn completion
@@ -436,6 +464,70 @@ test("Eval 19: Error in provider does not mutate thread state", async () => {
   assert.equal(res.ok, false);
   const thread = runtime.getThread("g-eval-19");
   assert.equal(thread.conversationHistory.length, 0, "No partial history committed");
+});
+
+test("Server-only diagnostics identify provider, tool, and continuation stages without sensitive payloads", async () => {
+  const events: unknown[] = [];
+  const model = new ScriptedAssistantModel([
+    () => ({ toolCalls: [{ id: "diagnostic-call", name: "search_stays", args: { city: "Lagos", checkIn: null, nights: 2, guests: 1 } }] }),
+    () => ({ text: "Search complete." }),
+  ]);
+  testDbIndex++;
+  const env = new LocalGuestEnvironment({ databasePath: `.scratch/local-guest/diagnostic_${testDbIndex}_${Date.now()}.sqlite` });
+  const runtime = new AssistantRuntime(env, model, { onDiagnostic: (event) => events.push(event) });
+
+  const response = await runtime.handleTurn("diagnostic-thread", "Lagos for two nights and one guest");
+
+  assert.equal(response.ok, true);
+  assert.ok(events.some((event) => (event as { stage?: string }).stage === "provider_request"));
+  assert.ok(events.some((event) => (event as { stage?: string; toolName?: string }).stage === "tool_execution" && (event as { toolName?: string }).toolName === "search_stays"));
+  assert.ok(events.some((event) => (event as { stage?: string }).stage === "function_result_round_trip"));
+  const serialized = JSON.stringify(events);
+  assert.doesNotMatch(serialized, /GEMINI_API_KEY|Authorization|diagnostic-thread|Lagos for two nights|stay-1|unit-/i);
+});
+
+test("Server-only diagnostics safely expose provider status and code while the guest response stays generic", async () => {
+  const providerError = Object.assign(new Error("request contained secret-provider-detail"), { status: 429, code: "RATE_LIMITED" });
+  const model = new ScriptedAssistantModel([() => { throw providerError; }]);
+  const events: import("../apps/local-guest/src/assistant/assistant-runtime.js").AssistantDiagnosticEvent[] = [];
+  testDbIndex++;
+  const env = new LocalGuestEnvironment({ databasePath: `.scratch/local-guest/diagnostic_error_${testDbIndex}_${Date.now()}.sqlite` });
+  const runtime = new AssistantRuntime(env, model, { onDiagnostic: (event) => events.push(event) });
+
+  const response = await runtime.handleTurn("diagnostic-error", "private conversation content");
+
+  assert.equal(response.code, "CONCIERGE_UNAVAILABLE");
+  assert.equal(response.message, "The concierge is temporarily unavailable. Please try again.");
+  const failure = events.at(-1);
+  assert.deepEqual(failure, {
+    stage: "provider_request",
+    round: 1,
+    succeeded: false,
+    errorClass: "Error",
+    providerStatusCode: 429,
+    providerErrorCode: "RATE_LIMITED",
+  });
+  assert.doesNotMatch(JSON.stringify(events), /secret-provider-detail|private conversation content/i);
+});
+
+test("Server-only diagnostics discard malformed provider metadata that could carry private data", async () => {
+  const providerError = Object.assign(new Error("private record"), {
+    status: 9999,
+    code: "PRIVATE_RECORD guest@example.com Authorization: Bearer secret",
+  });
+  const model = new ScriptedAssistantModel([() => { throw providerError; }]);
+  const events: import("../apps/local-guest/src/assistant/assistant-runtime.js").AssistantDiagnosticEvent[] = [];
+  testDbIndex++;
+  const env = new LocalGuestEnvironment({ databasePath: `.scratch/local-guest/diagnostic_malformed_${testDbIndex}_${Date.now()}.sqlite` });
+  const runtime = new AssistantRuntime(env, model, { onDiagnostic: (event) => events.push(event) });
+
+  await runtime.handleTurn("diagnostic-malformed", "private prompt");
+
+  const failure = events.at(-1);
+  assert.equal(failure?.succeeded, false);
+  assert.equal(failure?.providerStatusCode, undefined);
+  assert.equal(failure?.providerErrorCode, undefined);
+  assert.doesNotMatch(JSON.stringify(events), /guest@example.com|Authorization|Bearer|private record|private prompt/i);
 });
 
 // 20. Cancellation of pending action

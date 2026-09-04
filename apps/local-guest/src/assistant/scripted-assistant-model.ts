@@ -339,7 +339,7 @@ export class ScriptedAssistantModel implements AssistantModelClient {
     // If user says "I want somewhere in Ikoyi" or "I'm coming to Lagos with my partner. Somewhere quiet in Ikoyi with reliable power."
     if (hasIkoyi && !nights) {
       return {
-        text: "How many nights will you be staying?",
+        text: "How many nights will you be staying, and for how many guests?",
       };
     }
 
@@ -403,4 +403,3 @@ export class ScriptedAssistantModel implements AssistantModelClient {
     };
   }
 }
-

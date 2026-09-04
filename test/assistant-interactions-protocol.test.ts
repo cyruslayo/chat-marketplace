@@ -7,6 +7,8 @@ import {
 } from "../apps/local-guest/src/assistant/gemini-interactions-client.js";
 import { ASSISTANT_TOOL_DEFINITIONS } from "../apps/local-guest/src/assistant/assistant-tools.js";
 import type { AssistantConversationStep } from "../apps/local-guest/src/assistant/assistant-model.js";
+import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 
 test("GeminiInteractionsClient maps request to Interactions API shape without live network", async () => {
   let capturedParams:
@@ -147,10 +149,14 @@ test("GeminiInteractionsClient maps tool results and model outputs accurately", 
   assert.equal(capturedParams.input[1].type, "function_call");
   assert.equal(capturedParams.input[1].name, "search_stays");
   assert.equal(capturedParams.input[2].type, "function_result");
-  assert.equal(capturedParams.input[2].call_id, "call-1");
   const toolResult = capturedParams.input[2] as Interactions.FunctionResultStep;
-  assert.ok(typeof toolResult.result === "string");
-  assert.ok(toolResult.result.includes("Luxury 2-Bed Ikoyi"));
+  assert.equal(toolResult.call_id, "call-1");
+  assert.equal(toolResult.name, "search_stays");
+  assert.ok(Array.isArray(toolResult.result));
+  assert.equal(toolResult.result.length, 1);
+  const content = toolResult.result[0];
+  assert.equal(content?.type, "text");
+  assert.ok(content?.type === "text" && content.text.includes("Luxury 2-Bed Ikoyi"));
 
   assert.equal(response.text, "I found 1 matching stay in Old Ikoyi.");
   assert.equal(response.toolCalls, undefined);
@@ -316,4 +322,102 @@ test("GeminiInteractionsClient preserves thought steps with signatures and model
 
   // Verify user turn 2
   assert.equal(capturedInputTurn2[3].type, "user_input");
+});
+
+test("GeminiInteractionsClient replays signed thought and function-call steps with documented function-result content before the next model output", async () => {
+  const thoughtStep: Interactions.ThoughtStep = { type: "thought", signature: "signed-search-thought" };
+  const functionCallStep: Interactions.FunctionCallStep = {
+    type: "function_call",
+    id: "provider-call-search-1",
+    name: "search_stays",
+    arguments: { city: "Lagos", neighbourhood: "Old Ikoyi", checkIn: null, nights: 4, guests: 2 },
+  };
+  const requests: Interactions.CreateModelInteractionParamsNonStreaming[] = [];
+  const client = new GeminiInteractionsClient({
+    apiKey: "fake-key-offline",
+    customAi: { interactions: { async create(params): Promise<Interactions.Interaction> {
+      requests.push(params);
+      if (requests.length === 1) {
+        return { id: "interaction-tool-call", status: "completed", steps: [thoughtStep, functionCallStep] } as Interactions.Interaction;
+      }
+      return {
+        id: "interaction-model-output",
+        status: "completed",
+        steps: [{ type: "model_output", content: [{ type: "text", text: "I found one matching stay." }] }],
+      } as Interactions.Interaction;
+    } } },
+  });
+
+  const first = await client.generate({
+    systemInstruction: "System",
+    tools: ASSISTANT_TOOL_DEFINITIONS,
+    history: [{ role: "user", text: "Ikoyi for four nights and two guests" }],
+  });
+  const second = await client.generate({
+    systemInstruction: "System",
+    tools: ASSISTANT_TOOL_DEFINITIONS,
+    history: [
+      { role: "user", text: "Ikoyi for four nights and two guests" },
+      { role: "tool_calls", calls: first.toolCalls!, rawStep: first.rawStep },
+      {
+        role: "tool_results",
+        results: [{ callId: "provider-call-search-1", name: "search_stays", result: { resultCount: 1, authoritative: true } }],
+      },
+    ],
+  });
+
+  assert.equal(requests.length, 2);
+  const continuation = requests[1]!.input;
+  assert.ok(Array.isArray(continuation));
+  assert.equal(continuation[0]?.type, "user_input");
+  assert.equal(continuation[1], thoughtStep, "exact signed thought step is replayed");
+  assert.equal(continuation[2], functionCallStep, "exact provider function_call is replayed");
+  const resultStep = continuation[3] as Interactions.FunctionResultStep;
+  assert.equal(resultStep.type, "function_result");
+  assert.equal(resultStep.call_id, functionCallStep.id);
+  assert.equal(resultStep.name, functionCallStep.name);
+  assert.deepEqual(resultStep.result, [{ type: "text", text: JSON.stringify({ resultCount: 1, authoritative: true }) }]);
+  assert.equal(second.text, "I found one matching stay.");
+});
+
+test("AssistantRuntime executes the full stateless user-to-tool-to-function-result-to-model-output Interactions sequence", async () => {
+  const thoughtStep: Interactions.ThoughtStep = { type: "thought", signature: "runtime-signed-thought" };
+  const functionCallStep: Interactions.FunctionCallStep = {
+    type: "function_call",
+    id: "runtime-provider-call",
+    name: "search_stays",
+    arguments: { city: "LAGOS", neighbourhood: "Old Ikoyi", checkIn: null, nights: 4, guests: 2 },
+  };
+  const requests: Interactions.CreateModelInteractionParamsNonStreaming[] = [];
+  const client = new GeminiInteractionsClient({
+    apiKey: "fake-key-offline",
+    customAi: { interactions: { async create(params): Promise<Interactions.Interaction> {
+      requests.push(params);
+      return requests.length === 1
+        ? { id: "runtime-tool", status: "completed", steps: [thoughtStep, functionCallStep] } as Interactions.Interaction
+        : { id: "runtime-output", status: "completed", steps: [{ type: "model_output", content: [{ type: "text", text: "Authoritative search complete." }] }] } as Interactions.Interaction;
+    } } },
+  });
+  const env = new LocalGuestEnvironment({ databasePath: `.scratch/eval-test/runtime_protocol_${Date.now()}.sqlite` });
+  try {
+    const response = await new AssistantRuntime(env, client).handleTurn("runtime-protocol", "Ikoyi for four nights and two guests");
+
+    assert.equal(response.ok, true);
+    assert.equal(response.messages?.[0], "Authoritative search complete.");
+    assert.equal(requests.length, 2);
+    const continuation = requests[1]!.input;
+    assert.ok(Array.isArray(continuation));
+    assert.equal(continuation[0]?.type, "user_input");
+    assert.equal(continuation[1], thoughtStep);
+    assert.equal(continuation[2], functionCallStep);
+    const result = continuation[3] as Interactions.FunctionResultStep;
+    assert.equal(result.call_id, functionCallStep.id);
+    assert.equal(result.name, functionCallStep.name);
+    assert.ok(Array.isArray(result.result));
+    assert.equal(result.result.length, 1);
+    assert.equal(result.result[0]?.type, "text");
+    assert.match(result.result[0]?.type === "text" ? result.result[0].text : "", /"resultCount":1/);
+  } finally {
+    env.close();
+  }
 });

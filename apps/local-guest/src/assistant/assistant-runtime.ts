@@ -53,6 +53,27 @@ export interface AssistantTurnOutput {
   readonly surfaces?: readonly { readonly surfaceId: string; readonly a2uiMessages: readonly unknown[] }[];
 }
 
+export type AssistantDiagnosticStage =
+  | "provider_request"
+  | "provider_response"
+  | "tool_execution"
+  | "function_result_round_trip";
+
+export interface AssistantDiagnosticEvent {
+  readonly stage: AssistantDiagnosticStage;
+  readonly round: number;
+  readonly succeeded: boolean;
+  readonly toolName?: string;
+  readonly resultCount?: number;
+  readonly errorClass?: string;
+  readonly providerStatusCode?: number;
+  readonly providerErrorCode?: string;
+}
+
+export interface AssistantRuntimeOptions {
+  readonly onDiagnostic?: (event: AssistantDiagnosticEvent) => void;
+}
+
 interface AssistantEventContext {
   readonly actionId?: unknown;
   readonly threadId?: unknown;
@@ -70,11 +91,13 @@ const BOOKING_STAGE = "booking";
 export class AssistantRuntime {
   readonly #environment: LocalGuestEnvironment;
   readonly #modelClient: AssistantModelClient;
+  readonly #onDiagnostic?: (event: AssistantDiagnosticEvent) => void;
   readonly #threads = new Map<string, AssistantThreadState>();
 
-  constructor(environment: LocalGuestEnvironment, modelClient: AssistantModelClient) {
+  constructor(environment: LocalGuestEnvironment, modelClient: AssistantModelClient, options: AssistantRuntimeOptions = {}) {
     this.#environment = environment;
     this.#modelClient = modelClient;
+    this.#onDiagnostic = options.onDiagnostic;
   }
 
   get environment(): LocalGuestEnvironment {
@@ -180,17 +203,27 @@ export class AssistantRuntime {
 
     let round = 0;
     let finalAssistantReply: string | undefined;
+    let activeStage: AssistantDiagnosticStage = "provider_request";
+    let activeToolName: string | undefined;
 
     try {
       while (round < MAX_ASSISTANT_TOOL_ROUNDS) {
         round++;
 
+        const isFunctionResultContinuation = round > 1 && candidateHistory.at(-1)?.role === "tool_results";
+        activeStage = isFunctionResultContinuation ? "function_result_round_trip" : "provider_request";
         const modelResponse = await this.#modelClient.generate({
           systemInstruction: ASSISTANT_SYSTEM_INSTRUCTION,
           tools: ASSISTANT_TOOL_DEFINITIONS,
           history: candidateHistory,
           timeoutMs: 20_000,
         });
+        this.#diagnose({ stage: "provider_request", round, succeeded: true });
+        if (isFunctionResultContinuation) {
+          this.#diagnose({ stage: "function_result_round_trip", round, succeeded: true });
+        }
+        activeStage = "provider_response";
+        this.#diagnose({ stage: activeStage, round, succeeded: true });
 
         // If model produced no tool calls, it is returning a natural language reply
         if (!modelResponse.toolCalls || modelResponse.toolCalls.length === 0) {
@@ -213,6 +246,8 @@ export class AssistantRuntime {
         const toolResults: AssistantToolResult[] = [];
 
         for (const call of modelResponse.toolCalls) {
+          activeStage = "tool_execution";
+          activeToolName = call.name;
           const toolContext: AssistantToolContext = {
             environment: this.#environment,
             taskState: candidateTaskState,
@@ -223,6 +258,14 @@ export class AssistantRuntime {
           };
 
           const execution = executeAssistantTool(call.name, call.args, toolContext);
+          const resultCount = getSafeResultCount(execution.result);
+          this.#diagnose({
+            stage: "tool_execution",
+            round,
+            toolName: call.name,
+            succeeded: true,
+            ...(resultCount !== undefined ? { resultCount } : {}),
+          });
           toolResults.push({
             callId: call.id,
             name: call.name,
@@ -297,15 +340,23 @@ export class AssistantRuntime {
           role: "tool_results",
           results: toolResults,
         });
+        activeStage = "function_result_round_trip";
+        activeToolName = undefined;
       }
 
       if (!finalAssistantReply) {
         // Run one final step to get summary reply if bounded rounds reached
+        round++;
+        activeStage = "function_result_round_trip";
         const finalModelResponse = await this.#modelClient.generate({
           systemInstruction: ASSISTANT_SYSTEM_INSTRUCTION,
           tools: [],
           history: candidateHistory,
         });
+        this.#diagnose({ stage: "provider_request", round, succeeded: true });
+        this.#diagnose({ stage: "function_result_round_trip", round, succeeded: true });
+        activeStage = "provider_response";
+        this.#diagnose({ stage: activeStage, round, succeeded: true });
         finalAssistantReply = finalModelResponse.text?.trim() ?? "I processed your request.";
         candidateHistory.push({ role: "assistant", text: finalAssistantReply });
       }
@@ -324,12 +375,21 @@ export class AssistantRuntime {
         surfaces: candidateSurfaces,
       };
     } catch (error) {
+      this.#diagnose(createFailureDiagnostic(activeStage, round, activeToolName, error));
       // Rollback: thread is not mutated on error
       return {
         ok: false,
         code: "CONCIERGE_UNAVAILABLE",
         message: "The concierge is temporarily unavailable. Please try again.",
       };
+    }
+  }
+
+  #diagnose(event: AssistantDiagnosticEvent): void {
+    try {
+      this.#onDiagnostic?.(event);
+    } catch {
+      // Diagnostics are observational and must never affect the authoritative flow.
     }
   }
 
@@ -709,4 +769,39 @@ export class AssistantRuntime {
         return { ok: false, code: "UNSUPPORTED_ACTION", message: "Unsupported action." };
     }
   }
+}
+
+function getSafeResultCount(result: unknown): number | undefined {
+  if (typeof result !== "object" || result === null || !("resultCount" in result)) return undefined;
+  const count = result.resultCount;
+  return typeof count === "number" && Number.isSafeInteger(count) && count >= 0 ? count : undefined;
+}
+
+function createFailureDiagnostic(
+  stage: AssistantDiagnosticStage,
+  round: number,
+  toolName: string | undefined,
+  error: unknown,
+): AssistantDiagnosticEvent {
+  const record = typeof error === "object" && error !== null ? error as Record<string, unknown> : undefined;
+  const statusCandidate = record?.status ?? record?.statusCode;
+  const codeCandidate = record?.code;
+  const safeStatus = typeof statusCandidate === "number"
+    && Number.isSafeInteger(statusCandidate)
+    && statusCandidate >= 100
+    && statusCandidate <= 599
+    ? statusCandidate
+    : undefined;
+  const safeCode = typeof codeCandidate === "string" && /^[A-Za-z0-9_.-]{1,64}$/.test(codeCandidate)
+    ? codeCandidate
+    : undefined;
+  return {
+    stage,
+    round,
+    succeeded: false,
+    ...(toolName ? { toolName } : {}),
+    errorClass: error instanceof Error ? error.constructor.name : typeof error,
+    ...(safeStatus !== undefined ? { providerStatusCode: safeStatus } : {}),
+    ...(safeCode !== undefined ? { providerErrorCode: safeCode } : {}),
+  };
 }

@@ -13,6 +13,7 @@ import {
   GeminiInteractionsClient,
   DEFAULT_GEMINI_MODEL,
 } from "../apps/local-guest/src/assistant/gemini-interactions-client.js";
+import type { AssistantDiagnosticEvent } from "../apps/local-guest/src/assistant/assistant-runtime.js";
 
 if (process.env.RUN_LIVE_GEMINI !== "1") {
   console.error("Live Gemini smoke test was blocked: RUN_LIVE_GEMINI=1 is required.");
@@ -42,7 +43,13 @@ const gemini = new GeminiInteractionsClient({
   model: process.env.GEMINI_MODEL ?? DEFAULT_GEMINI_MODEL,
   thinkingLevel: parseThinkingLevel(process.env.GEMINI_THINKING_LEVEL),
 });
-const runtime = new AssistantRuntime(env, gemini);
+const turnDiagnostics: AssistantDiagnosticEvent[] = [];
+const runtime = new AssistantRuntime(env, gemini, {
+  onDiagnostic(event) {
+    turnDiagnostics.push(event);
+    console.log("Assistant diagnostic:", event);
+  },
+});
 
 const threadId = `g-${crypto.randomUUID()}`;
 
@@ -71,10 +78,17 @@ try {
   console.log("✓ Turn 1 succeeded: Clarification asked, no discovery surface mounted.");
 
   console.log(`\nExecuting live turn 2: Completing criteria... (Thread: ${threadId})`);
+  turnDiagnostics.length = 0;
   const turn2 = await runtime.handleTurn(threadId, "Four nights for two people.");
   console.log("Turn 2 Result Ok:", turn2.ok);
   console.log("Assistant Response:", turn2.messages);
   console.log("Surfaces Mounted:", turn2.surfaces?.map((s) => s.surfaceId));
+  const searchExecution = turnDiagnostics.find((event) => event.stage === "tool_execution" && event.toolName === "search_stays");
+  const continuation = turnDiagnostics.filter((event) => event.stage === "function_result_round_trip").at(-1);
+  console.log("Turn 2 model tool selected:", searchExecution?.toolName ?? "none");
+  console.log("Turn 2 tool execution succeeded:", searchExecution?.succeeded ?? false);
+  console.log("Turn 2 result count:", searchExecution?.resultCount ?? "unavailable");
+  console.log("Turn 2 provider continuation succeeded:", continuation?.succeeded ?? false);
 
   if (!turn2.ok) {
     console.error("Turn 2 failed unexpectedly:", turn2);

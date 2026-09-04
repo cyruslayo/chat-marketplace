@@ -161,13 +161,18 @@ export class GeminiInteractionsClient implements AssistantModelClient {
 
         case "tool_results":
           for (const res of item.results) {
-            steps.push({
+            const resultContent: Interactions.TextContent = {
+              type: "text",
+              text: JSON.stringify(res.result),
+            };
+            const functionResult: Interactions.FunctionResultStep = {
               type: "function_result",
               call_id: res.callId,
               name: res.name,
-              result: JSON.stringify(res.result),
+              result: [resultContent],
               ...(res.isError ? { is_error: true } : {}),
-            });
+            };
+            steps.push(functionResult);
           }
           break;
       }
