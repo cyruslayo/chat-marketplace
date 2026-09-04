@@ -10,10 +10,15 @@
     "owner:reset": "tsx apps/local-owner/src/cli-reset.ts",
     "test:owner-local": "tsx --test test/local-apartment-owner-surface.test.ts",
     "guest:local": "node apps/local-guest/scripts/build-client.mjs && tsx apps/local-guest/src/cli-start.ts",
+    "guest:assistant": "node apps/local-guest/scripts/build-client.mjs && tsx apps/local-guest/src/cli-assistant.ts",
     "guest:reset": "tsx apps/local-guest/src/cli-reset.ts",
-    "test:guest-local": "tsx --test test/local-guest-weaver-demo.test.ts"
+    "test:guest-local": "tsx --test test/local-guest-weaver-demo.test.ts",
+    "test:assistant": "node --import tsx --test test/assistant-interactions-protocol.test.ts test/shortlet-assistant-evals.test.ts",
+    "assistant:preflight": "node --import tsx scripts/assistant-preflight.ts",
+    "assistant:live-smoke": "node --import tsx scripts/assistant-live-smoke.ts"
   },
   "dependencies": {
+    "@google/genai": "^2.21.0",
     "@weaver/core": "file:vendor/weaver/weaver-core-0.1.2.tgz",
     "@weaver/web": "file:vendor/weaver/weaver-web-0.1.2.tgz"
   },

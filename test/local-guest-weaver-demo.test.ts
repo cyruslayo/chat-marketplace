@@ -171,7 +171,7 @@ test("Guest natural-language turn produces an authoritative discovery artifact r
     assert.ok(rendered.includes(IKOYI_TITLE), "rendered Weaver surface shows the Ikoyi unit card");
     assert.equal(rendered.includes(LEKKI_TITLE), false, "neighbourhood filter excludes the Lekki unit");
     assert.ok(rendered.includes(`All-In Stay Total: ${ALL_IN_TOTAL_NGN}`), "rendered surface shows all-in pricing");
-    assert.ok(rendered.includes("2026-08-15") && rendered.includes("2026-08-18"), "requested three nights control the stay dates");
+    assert.ok(rendered.includes("2026-09-10") && rendered.includes("2026-09-13"), "requested three nights control the stay dates");
     assert.ok(rendered.includes("Inspection: current"), "rendered surface shows trust information");
   } finally {
     await journey.server.close();
@@ -198,7 +198,7 @@ test("Generic Lagos discovery keeps both eligible units while requested nights c
       );
       fiveNightJourney.harness.mountSurface(five.surfaces[0]!.surfaceId, five.surfaces[0]!.a2uiMessages);
       const fiveText = fiveNightJourney.harness.mounted[0]!.target.textContent ?? "";
-      assert.ok(fiveText.includes("2026-08-20"), "five nights produce a five-day checkout");
+      assert.ok(fiveText.includes("2026-09-15"), "five nights produce a five-day checkout");
       assert.ok(fiveText.includes("₦610,000"), "five nights use the authoritative calculated stay total");
       assert.equal(fiveText.includes("₦370,000"), false);
     } finally {

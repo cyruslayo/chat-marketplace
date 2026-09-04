@@ -2,9 +2,10 @@
 
 This is a deterministic local demonstration of the guest Shortlet booking journey. It is not a production concierge or payment integration.
 
-## Run it
+## Deterministic mode
 
-From the repository root:
+From the repository root (no Gemini API key or network is required):
+
 
 ```sh
 npm install
@@ -18,7 +19,30 @@ Use this canonical prompt to exercise the complete journey:
 
 > I need an apartment in Ikoyi for 3 nights for 2 people
 
-The local concierge is a small deterministic regex interpreter. It is deliberately not an LLM; it uses 15 August 2026 as the deterministic check-in date, derives checkout from the requested night count, preserves an optional Lagos neighbourhood filter, and asks for clarification when location, nights, or guest count cannot be safely interpreted.
+The default concierge is a small deterministic regex interpreter. It uses 10 September 2026 as the deterministic check-in date (fixture clock: 3 September 2026), derives checkout from the requested night count, preserves an optional Lagos neighbourhood filter, and asks for clarification when location, nights, or guest count cannot be safely interpreted.
+
+## Assistant offline mode (v1)
+
+To run the complete task-oriented Shortlet Guest Assistant completely offline with multi-turn support and two-phase confirmations:
+
+```sh
+npm run guest:assistant
+```
+
+## Gemini mode
+
+For an optional live conversational interpreter, obtain a Gemini Developer API key through Google's official documentation and export it server-side:
+
+```sh
+export GEMINI_API_KEY="YOUR_KEY"
+export GEMINI_MODEL="gemini-3.8-flash"
+npm run guest:reset
+CONCIERGE_MODE=gemini npm run guest:local
+```
+
+`GEMINI_MODEL` is configurable and defaults to `gemini-3.8-flash`. Gemini mode has a bounded 20-second local-demo request timeout and may incur API usage/cost. `GEMINI_API_KEY` is never sent to the browser, HTML, A2UI, Interaction Artifacts, events, responses, or logs. The server exposes exactly one model tool: `search_stays`. The server validates and normalizes its arguments, executes the authoritative `UnitDiscoveryQuery`, and sends Gemini only minimal result metadata. Discovery Artifact → `discoveryArtifactToA2UI` → Weaver still produces the apartment UI. Gemini is not involved in booking, Operator acceptance, offers, payment, or Booking Contract actions.
+
+If `CONCIERGE_MODE=gemini` is selected without `GEMINI_API_KEY`, startup fails clearly. Deterministic tests never call Gemini.
 
 ## Journey stages
 

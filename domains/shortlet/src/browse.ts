@@ -171,7 +171,7 @@ function readFileSafe(filePath: string): string | null {
   catch (error: any) { if (error.code === "ENOENT") return null; throw error; }
 }
 
-function allInStayTotalKobo(unit: any, dateRange: StayDateRange | null): number | null {
+export function allInStayTotalKobo(unit: any, dateRange: StayDateRange | null): number | null {
   if (!dateRange) return null;
   const base = unit.price.nightlyKobo * dateRange.nights + (unit.price.mandatoryFeesKobo ?? 0);
   const taxes = calculateTaxKobo(unit.price.taxConfig, base);
@@ -186,7 +186,7 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
-function toDiscoveryProjection(unit: any, dateRange: StayDateRange | null) {
+export function toDiscoveryProjection(unit: Unit, dateRange: StayDateRange | null) {
   const allInTotal = allInStayTotalKobo(unit, dateRange);
   return deepFreeze({
     id: unit.id, title: unit.title,
@@ -198,15 +198,15 @@ function toDiscoveryProjection(unit: any, dateRange: StayDateRange | null) {
       mandatoryFeesKobo: unit.price.mandatoryFeesKobo ?? 0,
       refundableSecurityDepositKobo: unit.price.refundableSecurityDepositKobo,
       amountDueNowKobo: allInTotal === null ? null : allInTotal + unit.price.refundableSecurityDepositKobo,
-      currency: "NGN", pricingVersion: unit.price.version
+      currency: "NGN" as const, pricingVersion: unit.price.version
     },
     trust: {
       inspection: {
-        status: "current", inspectedAt: unit.inspection.inspectedAt,
+        status: "current" as const, inspectedAt: unit.inspection.inspectedAt,
         expiresAt: unit.inspection.expiresAt, scope: [...unit.inspection.scope]
       },
-      managementAuthority: { status: "current", verifiedAt: unit.managementAuthority.verifiedAt },
-      occupancyModel: "entire-place"
+      managementAuthority: { status: "current" as const, verifiedAt: unit.managementAuthority.verifiedAt },
+      occupancyModel: "entire-place" as const
     }
   });
 }
@@ -232,6 +232,19 @@ export interface UnitDiscoveryQueryOptions {
   idFactory?: () => string;
 }
 
+export interface UnitDiscoveryFilters {
+  readonly [key: string]: unknown;
+  readonly location?: string;
+  readonly neighbourhood?: string;
+  readonly amenity?: string;
+  readonly requiredAmenities?: readonly string[];
+  readonly checkIn?: string | Date;
+  readonly checkOut?: string | Date;
+  readonly partySize?: number;
+  readonly minPriceKobo?: number;
+  readonly maxPriceKobo?: number;
+}
+
 export class UnitDiscoveryQuery {
   public readonly repository: any;
   public readonly audit: any;
@@ -247,7 +260,7 @@ export class UnitDiscoveryQuery {
     this.idFactory = idFactory;
   }
 
-  search(filters: any = {}) {
+  search(filters: UnitDiscoveryFilters = {}) {
     const now = this.clock();
     const hasAnyDate = filters.checkIn !== undefined || filters.checkOut !== undefined;
     if (hasAnyDate && (!filters.checkIn || !filters.checkOut)) throw new TypeError("checkIn and checkOut are required together");
@@ -264,6 +277,8 @@ export class UnitDiscoveryQuery {
       .filter((unit: any) => !filters.location || unit.location.city === filters.location)
       .filter((unit: any) => !filters.neighbourhood || unit.location.neighbourhood === filters.neighbourhood)
       .filter((unit: any) => !filters.amenity || unit.amenities.includes(filters.amenity))
+      .filter((unit: Unit) => !filters.requiredAmenities?.length
+        || filters.requiredAmenities.every((required: string) => unit.amenities.includes(required)))
       .filter((unit: any) => filters.partySize === undefined || unit.capacity >= filters.partySize)
       .filter((unit: any) => !dateRange || !unit.blockedDates.some((range: any) => dateRange.overlaps(range)))
       .filter((unit: any) => filters.minPriceKobo === undefined || (allInStayTotalKobo(unit, dateRange) ?? 0) >= filters.minPriceKobo)
