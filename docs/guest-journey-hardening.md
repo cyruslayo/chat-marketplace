@@ -10,30 +10,30 @@ No later goal is considered passed before the preceding goal passes its gates.
 
 | ADR | Constraint | Acceptance criteria / affected path |
 | --- | --- | --- |
-| 0004 | Backend owns conversation and transactions | AC1–AC12; SQLite repositories and authenticated restoration |
+| 0004 | Backend owns conversation and transactions | AC1–AC16; SQLite repositories and authenticated restoration |
 | 0005, 0006 | Request to Book; contract only after acceptance and verified payment | AC2–AC7; request, offer, payment, Reservation recovery |
-| 0011–0013, 0065 | Current identity assurance; Self-Booking and payer controls; no raw evidence | AC8, AC12; revalidation and persistence allow-lists |
+| 0011–0013, 0065 | Current identity assurance; Self-Booking and payer controls; no raw evidence | AC10, AC14, AC15; revalidation and persistence allow-lists |
 | 0014–0016, 0058, 0059 | Preserve versioned terms, all-in totals, separate deposit and conduct rules | AC1–AC7; persisted domain snapshots and regenerated artifacts |
-| 0039, 0040 | Central authoritative inventory; expiry does not reset | AC7–AC9; existing SQLite availability store |
-| 0041–0043 | Draft does not reserve; delivery and response clocks remain distinct | AC1, AC2, AC7, AC9; request recovery |
-| 0044–0046 | Original payment deadlines; one live attempt; no late resurrection | AC4–AC9; payment recovery and idempotency |
-| 0047–0050 | Capability-gated rails; hosted card credentials excluded | AC4, AC5, AC12; payment storage boundary |
-| 0051–0057 | No risk, cutoff, horizon, inspection or authority shortcuts | AC8, AC9; fresh authoritative validation |
-| 0066, 0067 | Preserve discovery disclosure and channel boundaries | Discovery / Unit restoration and AC12 |
+| 0039, 0040 | Central authoritative inventory; expiry does not reset | AC7–AC9; existing SQLite availability store; zero hold duplication |
+| 0041–0043 | Draft does not reserve; delivery and response clocks remain distinct | AC1–AC3, AC8, AC9; request recovery |
+| 0044–0046 | Original payment deadlines; one live attempt; no late resurrection | AC4–AC7, AC8; payment recovery and idempotency |
+| 0047–0050 | Capability-gated rails; hosted card credentials excluded | AC5, AC6, AC14; payment storage boundary |
+| 0051–0057 | No risk, cutoff, horizon, inspection or authority shortcuts | AC8–AC11; fresh authoritative validation |
+| 0066, 0067 | Preserve discovery disclosure and channel boundaries | Discovery / Unit restoration and AC14, AC15 |
 | 0068, 0069 | Versioned, validated adapter boundaries, as amended by 0081 | Restoration presentation and existing replay contracts |
-| 0070 | Principal, tenant, session, thread, run and aggregate identities stay separate | AC7, AC10, AC11; hashed session binding and thread identity |
-| 0071 | Redacted projection, separate draft input and ephemeral UI | AC1–AC12; allow-listed durable interaction projection |
-| 0072 | Commands retain authorization, confirmation, concurrency and idempotency | AC4–AC11; restore is not command replay |
-| 0073 | Approved catalogue; no persisted executable/generated authority | AC8, AC12; regenerate surfaces from artifacts |
-| 0074 | Durable surface identity/revision; stale and expired actions fail closed | AC8, AC9; lifecycle recovery and current-domain checks |
-| 0075 | Session-bound authorization; credentials/evidence excluded | AC10–AC12; hashed session proof, security tests |
+| 0070 | Principal, tenant, session, thread, run and aggregate identities stay separate | AC8, AC12, AC13; hashed session binding and thread identity |
+| 0071 | Redacted projection, separate draft input and ephemeral UI | AC1–AC16; allow-listed durable interaction projection |
+| 0072 | Commands retain authorization, confirmation, concurrency and idempotency | AC4–AC13; restore is not command replay |
+| 0073 | Approved catalogue; no persisted executable/generated authority | AC8, AC10, AC16; regenerate surfaces from artifacts |
+| 0074 | Durable surface identity/revision; stale and expired actions fail closed | AC10, AC11; lifecycle recovery and current-domain checks |
+| 0075 | Session-bound authorization; credentials/evidence excluded | AC12–AC15, Token tests 1–5; hashed session proof, unpredictable token salt |
 | 0076 | Restart does not restart suspended automation | Recovery excludes model execution and runtime history |
-| 0077 | Canonical artifacts preserve facts and consent | AC1–AC9; regenerate current presentation |
+| 0077 | Canonical artifacts preserve facts and consent | AC1–AC9, AC16; regenerate current presentation |
 | 0078 | Accessible fallback, 320px support, WAT and NGN | Existing Guest browser suite; Goal 4 |
-| 0079 | Durable replay/correlation; zero duplicate side effects | AC7; separate-instance tests and command-count evidence |
-| 0080 | Same domain command path for deterministic and rich UI | AC1–AC9; reuse existing applications |
+| 0079 | Durable replay/correlation; zero duplicate side effects | AC8, AC9, AC16; separate-instance tests and command-count evidence |
+| 0080 | Same domain command path for deterministic and rich UI | AC1–AC7; reuse existing applications |
 | 0081 | Weaver is replaceable; host owns restart recovery | All criteria; no Weaver state as authority |
-| 0082 | Operator actions require a current explicit representative grant | AC3, AC8; existing SQLite grant store |
+| 0082 | Operator actions require a current explicit representative grant | AC3, AC4, AC8; existing SQLite grant store |
 
 Use repository-supported SQLite (`node:sqlite`) and existing repository seams.
 Store authoritative domain records separately from interaction references and
@@ -98,11 +98,10 @@ used. See test/guest-process-restart.test.ts.
 ## Validation status
 
 Goal 1 (durable restart restoration) complete and verified:
-- `test/guest-process-restart.test.ts` (15/15 passing; AC1–AC12 and restoration stages)
+- `test/guest-process-restart.test.ts` (23/23 passing; AC1–AC16, Token tests 1–5, and restoration stages)
 - `test/guest-browser-restart.test.ts` (4/4 passing; browser restart flow over shared durable store)
 - `test/local-guest-shell.test.ts`, `test/local-guest-weaver-demo.test.ts`, `test/guest-booking-journey.test.ts` (17/17 passing)
 - `npm run check` (clean; zero type errors)
-- `npm test` (full suite passes, 613/613 tests across 6 suites)
+- `npm test` (full suite passes, 621/621 tests across 6 suites)
 - `npm run verify:weaver` (clean)
 - `git diff --check` (clean)
-
