@@ -48,6 +48,11 @@ const announcer = requiredElement<HTMLElement>("announcer");
 
 function getThreadId(): string {
   try {
+    const urlParam = new URLSearchParams(window.location.search).get("threadId");
+    if (urlParam && /^g-[a-f0-9-]{6,64}$/.test(urlParam)) {
+      window.sessionStorage.setItem("shortlet-concierge-thread", urlParam);
+      return urlParam;
+    }
     const stored = window.sessionStorage.getItem("shortlet-concierge-thread");
     if (stored && /^g-[a-f0-9-]{6,64}$/.test(stored)) return stored;
   } catch { /* Storage is optional; the server remains authoritative. */ }
@@ -278,9 +283,10 @@ function renderSurfaces(surfaces: readonly GuestSurfacePayload[]): void {
 function renderResponse(response: GuestResponse): boolean {
   if (!response.ok) {
     const message = response.message ?? "That action could not be completed.";
-    if (response.code === "STALE_SURFACE" || response.code === "EXPIRED_SURFACE") {
+    if (response.code === "STALE_SURFACE" || response.code === "STALE_ACTION" || response.code === "EXPIRED_SURFACE") {
       shellState = markActiveSurfaceStatus(shellState, response.code === "EXPIRED_SURFACE" ? "expired" : "stale");
       if (activePayload) renderSurface({ ...activePayload, status: shellState.activeSurface?.status });
+      void refreshServerState();
     }
     addTurn("assistant", message);
     announce(message, true);
@@ -291,6 +297,15 @@ function renderResponse(response: GuestResponse): boolean {
   const surfaces = response.surfaces ?? [];
   renderSurfaces(surfaces);
   return true;
+}
+
+async function refreshServerState(): Promise<void> {
+  try {
+    const response = await postJson(`/api/state?threadId=${encodeURIComponent(threadId)}`) as GuestStateResponse;
+    if (response.ok && response.surfaces && response.surfaces.length > 0) {
+      renderSurfaces(response.surfaces);
+    }
+  } catch { /* Recovery is best-effort over network */ }
 }
 
 async function postJson(path: string, body?: unknown): Promise<GuestResponse> {

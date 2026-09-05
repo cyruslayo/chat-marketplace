@@ -371,15 +371,19 @@ export class LocalGuestApp {
     const thread = this.#threads.get(threadId) ?? this.#loadThread(threadId);
     if (!thread) return undefined;
     const refreshed = this.#refreshWorkflow(thread);
-    if (refreshed?.ok && refreshed.surfaces.length > 0) {
-      thread.lastSurfaces = [...refreshed.surfaces];
-      this.#rememberResult(threadId, undefined, refreshed);
+    const decorated = refreshed ? this.#decorateResult(refreshed) : null;
+    if (decorated?.ok && decorated.surfaces.length > 0) {
+      thread.lastSurfaces = [...decorated.surfaces];
+      this.#rememberResult(threadId, undefined, decorated);
     }
+    const normalized = this.#decorateResult({ ok: true, messages: [], surfaces: thread.lastSurfaces });
+    if (!normalized.ok) return undefined;
+    thread.lastSurfaces = [...normalized.surfaces];
     return {
       ok: true,
       threadId,
       timeline: [...thread.timeline],
-      surfaces: [...thread.lastSurfaces],
+      surfaces: [...normalized.surfaces],
     };
   }
 
@@ -937,6 +941,26 @@ export class LocalGuestApp {
   }
 
   #refreshWorkflow(thread: GuestThreadState): GuestTurnResult | null {
+    if (thread.offerId && thread.activeSurfaces.has(OFFER_STAGE)) {
+      const offer = this.#environment.conditionalOfferApp.getArtifact(thread.offerId, this.#environment.guestPrincipal());
+      if (offer.facts.status === "expired") {
+        const surfaceId = `thread-${thread.threadId}:offer:${thread.offerId}`;
+        thread.activeSurfaces.set(OFFER_STAGE, surfaceId);
+        return {
+          ok: true,
+          messages: ["The Conditional Booking Offer expired. Payment authority has been removed; no Reservation exists."],
+          surfaces: [{
+            surfaceId,
+            mode: "focused-surface",
+            summary: "Conditional Booking Offer expired",
+            status: "expired",
+            conventionalRoute: conventionalConditionalOfferRoute(thread.offerId),
+            textFallback: `Conditional Booking Offer for ${offer.facts.unitTitle}. Payment Window expired. No Reservation exists.`,
+            a2uiMessages: conditionalOfferArtifactToA2UI({ artifact: offer, surfaceId }),
+          }],
+        };
+      }
+    }
     if (thread.offerId && thread.activeSurfaces.has(PAYMENT_STAGE)) {
       const payment = this.#environment.cardPaymentApp.getArtifact(thread.offerId, this.#environment.guestPrincipal());
       if (payment.facts.status === "expired") {
