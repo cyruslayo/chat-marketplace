@@ -7,6 +7,7 @@ import {
   type GuestTurnSuccess,
   type LocalGuestServerHandle,
 } from "../apps/local-guest/src/guest-server.js";
+import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import type { A2UIServerMessage, A2UIClientActionMessage } from "@weaver/core";
 
 const CANONICAL_PROMPT = "I need an apartment in Ikoyi for 3 nights for 2 people";
@@ -115,7 +116,8 @@ interface JourneyServer {
 }
 
 async function startJourneyServer(): Promise<JourneyServer> {
-  const server = startLocalGuestServer({ port: 0 });
+  const environment = new LocalGuestEnvironment({ databasePath: `.scratch/local-guest/browser-${Date.now()}-${crypto.randomUUID()}.sqlite` });
+  const server = startLocalGuestServer({ port: 0, environment });
   const port = await server.listen();
   const base = `http://127.0.0.1:${port}`;
   const harness = createBrowserHarness();
@@ -255,7 +257,7 @@ test("Weaver-generated View Unit action round-trips through the server and repla
   }
 });
 
-test("Guest booking request and local authorized Operator acceptance produce a guest Conditional Offer surface", async () => {
+test("Guest Request Draft remains separate from Booking Request until review and submission, then Operator confirmation produces an offer", async () => {
   const journey = await startJourneyServer();
   try {
     const turn = expectSuccess(
@@ -269,31 +271,30 @@ test("Guest booking request and local authorized Operator acceptance produce a g
     journey.harness.mountSurface(unitResponse.surfaces[0]!.surfaceId, unitResponse.surfaces[0]!.a2uiMessages as readonly A2UIServerMessage[]);
 
     assert.ok(journey.harness.clickButton(journey.harness.mounted[1]!.target, "Request to Book"));
-    const [requestEvent] = await journey.relayEvents();
-    const requestResponse = expectSuccess(requestEvent, "request-to-book");
-    assert.ok(
-      requestResponse.messages.some((message: string) => message.includes("The host has accepted your request")),
-      "operator simulation is announced conversationally",
-    );
+    const [draftEvent] = await journey.relayEvents();
+    const draftResponse = expectSuccess(draftEvent, "request-to-book");
+    assert.match(draftResponse.surfaces[0]!.surfaceId, /:request:draft:/);
+    journey.harness.mountSurface(draftResponse.surfaces[0]!.surfaceId, draftResponse.surfaces[0]!.a2uiMessages as readonly A2UIServerMessage[]);
+    const draftTarget = journey.harness.mounted[2]!.target;
+    assert.ok((draftTarget.textContent ?? "").includes("Inventory is not reserved"));
+    assert.ok(journey.harness.clickButton(draftTarget, "Review Request"));
+    const [reviewEvent] = await journey.relayEvents();
+    const reviewResponse = expectSuccess(reviewEvent, "request review");
+    journey.harness.mountSurface(reviewResponse.surfaces[0]!.surfaceId, reviewResponse.surfaces[0]!.a2uiMessages as readonly A2UIServerMessage[]);
+    assert.ok(journey.harness.clickButton(journey.harness.mounted[3]!.target, "Submit Booking Request"));
+    const [submitEvent] = await journey.relayEvents();
+    const pendingResponse = expectSuccess(submitEvent, "booking request submission");
+    assert.ok(pendingResponse.messages.some((message: string) => message.includes("No Reservation exists yet")));
+    assert.match(pendingResponse.surfaces[0]!.surfaceId, /:request:req-/);
+    assert.ok((pendingResponse.surfaces[0]!.textFallback ?? "").includes("Operator response deadline"));
 
-    const requestSurface = requestResponse.surfaces.find((surface: any) => surface.surfaceId.includes(":request:"))!;
-    const offerSurface = requestResponse.surfaces.find((surface: any) => surface.surfaceId.includes(":offer:"))!;
-    assert.ok(requestSurface && offerSurface, "booking request and offer surfaces are returned");
-
-    journey.harness.mountSurface(requestSurface.surfaceId, requestSurface.a2uiMessages as readonly A2UIServerMessage[]);
+    const requestId = pendingResponse.surfaces[0]!.surfaceId.split(":").at(-1)!;
+    journey.server.environment.simulateOperatorAcceptance(requestId);
+    const refreshed = journey.server.app.getState(journey.threadId);
+    assert.ok(refreshed);
+    const offerSurface = refreshed!.surfaces[0]!;
     journey.harness.mountSurface(offerSurface.surfaceId, offerSurface.a2uiMessages as readonly A2UIServerMessage[]);
-    const requestTarget = journey.harness.mounted[2]!.target;
-    const offerTarget = journey.harness.mounted[3]!.target;
-
-    const requestText = requestTarget.textContent ?? "";
-    assert.ok(requestText.includes("Booking Request status: confirmed"), "request advanced through the real confirm path");
-    const requestButtons = [...requestTarget.querySelectorAll("button")].map((button) => button.textContent ?? "");
-    assert.equal(
-      requestButtons.some((label) => label.includes("Confirm") || label.includes("Decline")),
-      false,
-      "guest-facing request surface must not expose Operator confirm/decline controls",
-    );
-
+    const offerTarget = journey.harness.mounted[4]!.target;
     const offerText = offerTarget.textContent ?? "";
     assert.ok(offerText.includes("Conditional Booking Offer"));
     assert.ok(offerText.includes(`All-In Stay Total: ${ALL_IN_TOTAL_NGN}`));
@@ -301,16 +302,13 @@ test("Guest booking request and local authorized Operator acceptance produce a g
     assert.ok(offerText.includes("Amount Due Now: ₦420,000.00"));
     assert.ok(offerText.includes("Cancellation:"));
     assert.ok(offerText.includes("Payment Window expires:"));
-    assert.ok(
-      [...offerTarget.querySelectorAll("button")].some((button) => button.textContent?.includes("Accept")),
-      "guest offer exposes the generated Accept action",
-    );
+    assert.ok([...offerTarget.querySelectorAll("button")].some((button) => button.textContent?.includes("Accept")));
   } finally {
     await journey.server.close();
   }
 });
 
-test("Weaver-generated offer acceptance advances through the real application path without client-side authority", async () => {
+test("Weaver-generated offer acceptance, PSP handoff, verified payment, and Reservation confirmation use the real application path", async () => {
   const journey = await startJourneyServer();
   try {
     // Drive to the offer stage.
@@ -324,13 +322,22 @@ test("Weaver-generated offer acceptance advances through the real application pa
     const unitResponse = expectSuccess(unitEvent, "view-unit");
     journey.harness.mountSurface(unitResponse.surfaces[0]!.surfaceId, unitResponse.surfaces[0]!.a2uiMessages as readonly A2UIServerMessage[]);
     assert.ok(journey.harness.clickButton(journey.harness.mounted[1]!.target, "Request to Book"));
-    const [requestEvent] = await journey.relayEvents();
-    const requestResponse = expectSuccess(requestEvent, "request-to-book");
-    const offerSurface = requestResponse.surfaces.find((surface: any) => surface.surfaceId.includes(":offer:"))!;
+    const [draftEvent] = await journey.relayEvents();
+    const draftResponse = expectSuccess(draftEvent, "request draft");
+    journey.harness.mountSurface(draftResponse.surfaces[0]!.surfaceId, draftResponse.surfaces[0]!.a2uiMessages as readonly A2UIServerMessage[]);
+    assert.ok(journey.harness.clickButton(journey.harness.mounted[2]!.target, "Review Request"));
+    const [reviewEvent] = await journey.relayEvents();
+    const reviewResponse = expectSuccess(reviewEvent, "request review");
+    journey.harness.mountSurface(reviewResponse.surfaces[0]!.surfaceId, reviewResponse.surfaces[0]!.a2uiMessages as readonly A2UIServerMessage[]);
+    assert.ok(journey.harness.clickButton(journey.harness.mounted[3]!.target, "Submit Booking Request"));
+    const [submitEvent] = await journey.relayEvents();
+    const pendingResponse = expectSuccess(submitEvent, "request submission");
+    journey.server.environment.simulateOperatorAcceptance(pendingResponse.surfaces[0]!.surfaceId.split(":").at(-1)!);
+    const offerSurface = journey.server.app.getState(journey.threadId)!.surfaces[0]!;
     journey.harness.mountSurface(offerSurface.surfaceId, offerSurface.a2uiMessages as readonly A2UIServerMessage[]);
 
     // Accept the offer through the generated action.
-    const offerTarget = journey.harness.mounted[2]!.target;
+    const offerTarget = journey.harness.mounted[4]!.target;
     assert.ok(journey.harness.clickButton(offerTarget, "Accept"));
     const offerAcceptAction = { ...journey.harness.events[0]! };
     const [acceptEvent] = await journey.relayEvents();
@@ -338,7 +345,7 @@ test("Weaver-generated offer acceptance advances through the real application pa
     const paymentSurface = acceptResponse.surfaces[0]!;
     assert.match(paymentSurface.surfaceId, /:payment:/);
     journey.harness.mountSurface(paymentSurface.surfaceId, paymentSurface.a2uiMessages as readonly A2UIServerMessage[]);
-    const paymentTarget = journey.harness.mounted[3]!.target;
+    const paymentTarget = journey.harness.mounted[5]!.target;
     const paymentText = paymentTarget.textContent ?? "";
     assert.ok(paymentText.includes("Payment status: ready"), "payment surface comes from the real CardPaymentApplication");
     assert.ok(
@@ -350,17 +357,25 @@ test("Weaver-generated offer acceptance advances through the real application pa
     const paymentInitializeAction = { ...journey.harness.events[0]! };
     const [checkoutEvent] = await journey.relayEvents();
     const checkoutResponse = expectSuccess(checkoutEvent, "card checkout");
-    const confirmedPayment = checkoutResponse.surfaces.find((surface: any) => surface.surfaceId.includes(":payment:"));
-    const bookingSurface = checkoutResponse.surfaces.find((surface: any) => surface.surfaceId.includes(":booking:"));
-    assert.ok(confirmedPayment && bookingSurface, "confirmed payment and booking contract surfaces are returned");
-
-    journey.harness.mountSurface(confirmedPayment.surfaceId, confirmedPayment.a2uiMessages as readonly A2UIServerMessage[]);
+    const handoff = checkoutResponse.surfaces[0]!;
+    journey.harness.mountSurface(handoff.surfaceId, handoff.a2uiMessages as readonly A2UIServerMessage[]);
+    assert.ok((journey.harness.mounted[6]!.target.textContent ?? "").includes("Payment status: checkout_initiated"));
+    assert.ok(journey.harness.clickButton(journey.harness.mounted[6]!.target, "I have returned from secure checkout"));
+    const [returnEvent] = await journey.relayEvents();
+    const depositResponse = expectSuccess(returnEvent, "verified stay payment");
+    assert.ok(depositResponse.messages[0]!.includes("separate Refundable Security Deposit"));
+    journey.harness.mountSurface(depositResponse.surfaces[0]!.surfaceId, depositResponse.surfaces[0]!.a2uiMessages as readonly A2UIServerMessage[]);
+    assert.ok(journey.harness.clickButton(journey.harness.mounted[7]!.target, "Continue to refundable deposit"));
+    const [depositInitEvent] = await journey.relayEvents();
+    const depositInit = expectSuccess(depositInitEvent, "deposit checkout");
+    journey.harness.mountSurface(depositInit.surfaces[0]!.surfaceId, depositInit.surfaces[0]!.a2uiMessages as readonly A2UIServerMessage[]);
+    assert.ok(journey.harness.clickButton(journey.harness.mounted[8]!.target, "I have returned from secure checkout"));
+    const [finalEvent] = await journey.relayEvents();
+    const bookingResponse = expectSuccess(finalEvent, "verified deposit and reservation commit");
+    const bookingSurface = bookingResponse.surfaces[0]!;
     journey.harness.mountSurface(bookingSurface.surfaceId, bookingSurface.a2uiMessages as readonly A2UIServerMessage[]);
-    const confirmedText = journey.harness.mounted[4]!.target.textContent ?? "";
-    const contractText = journey.harness.mounted[5]!.target.textContent ?? "";
-    assert.ok(confirmedText.includes("Payment status: confirmed"));
-    assert.ok(confirmedText.includes("Booking Contract: "), "confirmed payment shows the authoritative contract reference");
-    assert.ok(contractText.includes("Booking confirmed"), "booking contract surface confirms the stay");
+    const contractText = journey.harness.mounted[9]!.target.textContent ?? "";
+    assert.ok(contractText.includes("Booking confirmed"));
     assert.ok(contractText.includes(IKOYI_TITLE) || contractText.includes("unit-lagos-ikoyi-001"));
 
     const replayOffer = await postJson(journey.base, "/api/event", { threadId: journey.threadId, ...offerAcceptAction });

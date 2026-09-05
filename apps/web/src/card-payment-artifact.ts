@@ -6,10 +6,10 @@ export const CARD_PAYMENT_SCHEMA_VERSION = "shortlet.card-payment/v1";
 export type CardPaymentStatus = "ready" | "checkout_initiated" | "deposit_required" | "compensation_pending" | "compensated" | "reconciliation_required" | "confirmed" | "expired" | "failed";
 
 export interface CardPaymentAction {
-  readonly type: "initialize_checkout";
+  readonly type: "initialize_checkout" | "verify_return";
   readonly artifactId: string;
   readonly offerId: string;
-  readonly expectedStatus: "ready" | "deposit_required";
+  readonly expectedStatus: "ready" | "deposit_required" | "checkout_initiated";
   readonly expectedPurpose?: "stay" | "security_deposit";
   readonly expectedJourneyVersion?: number;
   readonly expectedStage?: string;
@@ -80,6 +80,7 @@ export function cardPaymentArtifactFromState({
   const status: CardPaymentStatus = contract && reservation ? "confirmed" : journey?.stage === "stay_settled" ? "deposit_required" : journey?.stage === "compensation_pending" ? "compensation_pending" : journey?.stage === "compensated" ? "compensated" : journey?.stage === "reconciliation_required" ? "reconciliation_required" : session?.status === "failed" ? "failed" : session && (session.status === "completed" || session.status === "initiated") && !expired ? (session.status === "completed" ? "confirmed" : "checkout_initiated") : expired ? "expired" : "ready";
   const payer = offer.parties.distinctPayer ?? offer.parties.primaryGuest;
   const canInitialize = (status === "ready" || status === "deposit_required") && viewer.role === "guest" && !!viewer.id && viewer.id === payer.id && !!viewer.tenantId && !!offer.tenantId && viewer.tenantId === offer.tenantId;
+  const canVerifyReturn = status === "checkout_initiated" && viewer.role === "guest" && !!viewer.id && viewer.id === payer.id && !!viewer.tenantId && !!offer.tenantId && viewer.tenantId === offer.tenantId;
   const facts: CardPaymentArtifact["facts"] = {
     offerId: offer.offerId,
     status,
@@ -106,6 +107,10 @@ export function cardPaymentArtifactFromState({
       ...(contract.paymentDetails.cardMetadata ? { cardMetadata: contract.paymentDetails.cardMetadata } : {}),
     } : {}),
   };
-  const actions: readonly CardPaymentAction[] = canInitialize ? [{ type: "initialize_checkout", artifactId: id, offerId: offer.offerId, expectedStatus: status, expectedPurpose: status === "deposit_required" ? "security_deposit" : "stay", expectedJourneyVersion: journey?.journeyVersion, expectedStage: journey?.stage, depositPolicyVersion: offer.securityDeposit?.policyVersion, projectionVersion: status === "ready" ? 1 : 6 }] : [];
+  const actions: readonly CardPaymentAction[] = canInitialize
+    ? [{ type: "initialize_checkout", artifactId: id, offerId: offer.offerId, expectedStatus: status, expectedPurpose: status === "deposit_required" ? "security_deposit" : "stay", expectedJourneyVersion: journey?.journeyVersion, expectedStage: journey?.stage, depositPolicyVersion: offer.securityDeposit?.policyVersion, projectionVersion: status === "ready" ? 1 : 6 }]
+    : canVerifyReturn
+      ? [{ type: "verify_return", artifactId: id, offerId: offer.offerId, expectedStatus: "checkout_initiated", expectedJourneyVersion: journey?.journeyVersion, expectedStage: journey?.stage, depositPolicyVersion: offer.securityDeposit?.policyVersion, projectionVersion: 2 }]
+      : [];
   return Object.freeze({ id, kind: CARD_PAYMENT_ARTIFACT_KIND, schemaVersion: CARD_PAYMENT_SCHEMA_VERSION, projectionVersion: status === "ready" ? 1 : status === "checkout_initiated" ? 2 : status === "deposit_required" ? 6 : status === "confirmed" ? 3 : status === "expired" ? 4 : 5, facts: Object.freeze(facts), actions: Object.freeze(actions), sensitivity: "booking-sensitive" });
 }

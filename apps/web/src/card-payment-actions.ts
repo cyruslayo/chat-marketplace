@@ -4,6 +4,7 @@ import { CARD_PAYMENT_ARTIFACT_KIND, CARD_PAYMENT_SCHEMA_VERSION, type CardPayme
 import type { CardPaymentApplication } from "./card-payment-application.js";
 
 export const CARD_PAYMENT_INITIALIZE_CHECKOUT_EVENT = "shortlet.card-payment.initialize-checkout";
+export const CARD_PAYMENT_VERIFY_RETURN_EVENT = "shortlet.card-payment.verify-return";
 type Context = { readonly artifactId: string; readonly offerId: string; readonly expectedStatus: string; readonly expectedPurpose?: string; readonly expectedJourneyVersion?: number; readonly expectedStage?: string; readonly depositPolicyVersion?: string; readonly projectionVersion: number };
 export type CardPaymentServerEventRejectionCode = "UNSUPPORTED_ACTION" | "INVALID_CONTEXT" | "INVALID_ARTIFACT" | "ARTIFACT_MISMATCH" | "OFFER_MISMATCH" | "STALE_ACTION" | "ACTION_NOT_AUTHORIZED";
 export type CardPaymentServerEventResult = { readonly ok: true; readonly artifact: CardPaymentArtifact } | { readonly ok: false; readonly code: CardPaymentServerEventRejectionCode; readonly message: string };

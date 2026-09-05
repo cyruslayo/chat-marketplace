@@ -19,6 +19,10 @@ function formatAmount(amountKobo: number, currency: string): string {
   return currency === "NGN" ? `₦${amount}` : `${currency} ${amount}`;
 }
 
+function formatWAT(iso: string): string {
+  return new Intl.DateTimeFormat("en-NG", { timeZone: "Africa/Lagos", dateStyle: "medium", timeStyle: "short", hour12: false }).format(new Date(iso)) + " WAT";
+}
+
 function actionButton(
   artifact: BookingRequestArtifact,
   action: "confirm" | "decline",
@@ -66,11 +70,11 @@ export function bookingRequestArtifactToA2UI({
     { id: "root", component: "Column", children: ["booking-request-title", "booking-request-status", "booking-request-dates", "booking-request-nights", "booking-request-delivery", ...(quote ? ["booking-request-amount"] : []), ...(deadlineText ? ["booking-request-deadline"] : []), "booking-request-actions"] },
     { id: "booking-request-title", component: "Text", text: "Booking Request", variant: "h2" },
     { id: "booking-request-status", component: "Text", text: statusText },
-    { id: "booking-request-dates", component: "Text", text: `Stay: ${facts.checkIn} to ${facts.checkOut}` },
+    { id: "booking-request-dates", component: "Text", text: `Unit: ${facts.unitId}; Stay: ${facts.checkIn} to ${facts.checkOut}` },
     { id: "booking-request-nights", component: "Text", text: `Nights: ${facts.nights}` },
     { id: "booking-request-delivery", component: "Text", text: `Delivery: ${facts.delivered ? `delivered${facts.deliveredAt ? ` at ${facts.deliveredAt}` : ""}` : "pending"}` },
     ...(quote ? [{ id: "booking-request-amount", component: "Text" as const, text: `All-In Stay Total: ${formatAmount(quote.allInStayTotalKobo, quote.currency)}; Refundable Security Deposit: ${formatAmount(quote.refundableSecurityDepositKobo, quote.currency)}` }] : []),
-    ...(deadlineText ? [{ id: "booking-request-deadline", component: "Text" as const, text: deadlineText }] : []),
+    ...(deadlineText ? [{ id: "booking-request-deadline", component: "Text" as const, text: deadlineText.replace(/\d{4}-\d{2}-\d{2}T[^ ]+Z/g, (iso) => formatWAT(iso)) }] : []),
     { id: "booking-request-actions", component: "Row", children: [...actionButton(artifact, "confirm"), ...actionButton(artifact, "decline")].filter((component) => component.component === "Button").map((component) => component.id) },
     ...actionButton(artifact, "confirm"),
     ...actionButton(artifact, "decline"),

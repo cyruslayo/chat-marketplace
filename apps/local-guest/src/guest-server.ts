@@ -13,6 +13,9 @@ import {
   cardPaymentArtifactToA2UI,
   bookingContractArtifactToA2UI,
   unitDetailToA2UI,
+  requestDraftArtifactToA2UI,
+  REQUEST_DRAFT_REVIEW_EVENT,
+  REQUEST_DRAFT_SUBMIT_EVENT,
   REQUEST_TO_BOOK_EVENT,
   SEE_ALL_DISCOVERY_EVENT,
   formatNgnKobo,
@@ -24,12 +27,17 @@ import {
 import {
   conventionalBookingContractRoute,
   conventionalBookingRequestRoute,
+  conventionalRequestDraftRoute,
   conventionalCardPaymentRoute,
   conventionalConditionalOfferRoute,
   conventionalSearchRoute,
 } from "../../../apps/web/src/presentation.js";
 import { resolveConditionalOfferServerEvent } from "../../../apps/web/src/conditional-offer-actions.js";
 import { resolveCardPaymentServerEvent } from "../../../apps/web/src/card-payment-actions.js";
+import { createStayQuote, type Unit } from "../../../domains/shortlet/src/index.js";
+import { requestDraftArtifactFromProjection, requestDraftArtifactId } from "../../../apps/web/src/request-draft-artifact.js";
+import type { RequestDraftArtifact } from "../../../apps/web/src/request-draft-artifact.js";
+import type { CardPaymentApplication } from "../../../apps/web/src/card-payment-application.js";
 import {
   LocalGuestEnvironment,
   LOCAL_GUEST_PORT,
@@ -109,6 +117,9 @@ const EVENT_STAGE_ALLOW_LIST: Readonly<Record<string, string>> = Object.freeze({
   [REQUEST_TO_BOOK_EVENT]: UNIT_STAGE,
   "shortlet.conditional-offer.accept": OFFER_STAGE,
   "shortlet.card-payment.initialize-checkout": PAYMENT_STAGE,
+  "shortlet.card-payment.verify-return": PAYMENT_STAGE,
+  [REQUEST_DRAFT_REVIEW_EVENT]: REQUEST_STAGE,
+  [REQUEST_DRAFT_SUBMIT_EVENT]: REQUEST_STAGE,
   [ASSISTANT_CONFIRM_ACTION_EVENT]: PENDING_ACTION_STAGE,
   [ASSISTANT_CANCEL_ACTION_EVENT]: PENDING_ACTION_STAGE,
 });
@@ -120,8 +131,11 @@ interface GuestThreadState {
   readonly geminiHistory: Content[];
   discoveryArtifact: DiscoveryArtifactProjection | null;
   discoverySurfaceId: string;
+  discoveryRevision: number;
   unitDetail: { readonly unitId: string; readonly artifactId: string } | null;
   requestId: string | null;
+  draftId: string | null;
+  draftQuote: { readonly allInStayTotalKobo: number; readonly refundableSecurityDepositKobo: number; readonly amountDueNowKobo: number } | null;
   offerId: string | null;
   activeSurfaces: Map<string, string>;
   supersededSurfaces: Set<string>;
@@ -181,6 +195,11 @@ export class LocalGuestApp {
     }
 
     const thread = this.#threads.get(threadId) ?? this.#createThread(threadId);
+    const refreshed = this.#refreshWorkflow(thread);
+    if (refreshed) return refreshed;
+    if (thread.offerId || thread.activeSurfaces.has(PAYMENT_STAGE) || thread.activeSurfaces.has(BOOKING_STAGE)) {
+      return { ok: true, messages: ["Your current booking workspace remains active. Complete or return from that workflow to continue."], surfaces: [] };
+    }
     if (this.#geminiClient) {
       try {
         const live = await handleGeminiTurn({
@@ -190,6 +209,7 @@ export class LocalGuestApp {
           demoCheckIn: this.#environment.config.demoCheckIn,
           now: this.#environment.clock(),
           search: (filters) => {
+            this.#prepareDiscovery(thread);
             const adapter = createWeaverWebAgentAdapter({
               query: { search: (query) => this.#environment.discoveryQuery.search(query) },
               createSurfaceId: () => thread.discoverySurfaceId,
@@ -235,6 +255,7 @@ export class LocalGuestApp {
       return { ok: true, messages: [interpretation.reply], surfaces: [] };
     }
 
+    this.#prepareDiscovery(thread);
     const adapter = createWeaverWebAgentAdapter({
       query: { search: (filters) => this.#environment.discoveryQuery.search(filters) },
       createSurfaceId: () => thread.discoverySurfaceId,
@@ -318,6 +339,12 @@ export class LocalGuestApp {
         return this.#handleOfferAccept(thread, event);
       case "shortlet.card-payment.initialize-checkout":
         return this.#handleCardCheckout(thread, event);
+      case "shortlet.card-payment.verify-return":
+        return this.#handlePaymentReturn(thread, event);
+      case REQUEST_DRAFT_REVIEW_EVENT:
+        return this.#handleDraftReview(thread, event);
+      case REQUEST_DRAFT_SUBMIT_EVENT:
+        return this.#handleDraftSubmit(thread, event);
       default:
         return { ok: false, code: "UNSUPPORTED_EVENT", message: "That action is not available." };
     }
@@ -335,6 +362,8 @@ export class LocalGuestApp {
   getState(threadId: string): GuestStateSnapshot | undefined {
     const thread = this.#threads.get(threadId);
     if (!thread) return undefined;
+    const refreshed = this.#refreshWorkflow(thread);
+    if (refreshed?.ok && refreshed.surfaces.length > 0) thread.lastSurfaces = [...refreshed.surfaces];
     return {
       ok: true,
       threadId,
@@ -354,8 +383,11 @@ export class LocalGuestApp {
       threadId,
       discoveryArtifact: null,
       discoverySurfaceId: `thread-${threadId}:discovery:results`,
+      discoveryRevision: 0,
       unitDetail: null,
       requestId: null,
+      draftId: null,
+      draftQuote: null,
       offerId: null,
       activeSurfaces: new Map(),
       supersededSurfaces: new Set(),
@@ -374,6 +406,15 @@ export class LocalGuestApp {
       thread.supersededSurfaces.add(surfaceId);
       thread.activeSurfaces.delete(stage);
     }
+  }
+
+  #prepareDiscovery(thread: GuestThreadState): void {
+    this.#supersede(thread, UNIT_STAGE);
+    this.#supersede(thread, DISCOVERY_STAGE);
+    thread.discoveryRevision += 1;
+    thread.discoverySurfaceId = thread.discoveryRevision === 1
+      ? `thread-${thread.threadId}:discovery:results`
+      : `thread-${thread.threadId}:discovery:results:${thread.discoveryRevision}`;
   }
 
   #rememberResult(threadId: string, userText: string | undefined, result: GuestTurnResult & { readonly ok: true }): void {
@@ -504,8 +545,14 @@ export class LocalGuestApp {
       || (context as Record<string, unknown>).unitId !== detail.unitId) {
       return { ok: false, code: "INVALID_CONTEXT", message: "That request is no longer valid." };
     }
-    if (thread.requestId || thread.offerId) {
-      return { ok: false, code: "STALE_SURFACE", message: "A booking request already exists for this conversation." };
+    if (thread.requestId || thread.offerId) return { ok: false, code: "STALE_SURFACE", message: "A Booking Request already exists for this conversation." };
+
+    if (thread.draftId) {
+      const surfaceId = `thread-${thread.threadId}:request:draft:${thread.draftId}`;
+      const artifact = this.#draftArtifact(thread, "draft");
+      this.#supersede(thread, UNIT_STAGE);
+      thread.activeSurfaces.set(REQUEST_STAGE, surfaceId);
+      return { ok: true, messages: ["Your existing Request Draft is ready to continue. Dates are not reserved."], surfaces: [{ surfaceId, mode: "focused-surface", summary: "Request Draft", conventionalRoute: conventionalRequestDraftRoute(thread.draftId), textFallback: this.#draftFallback(artifact), a2uiMessages: requestDraftArtifactToA2UI({ artifact, surfaceId }) }] };
     }
 
     const environment = this.#environment;
@@ -520,31 +567,137 @@ export class LocalGuestApp {
       },
       guest,
     );
-    const disclosed = environment.bookingRequestApp.disclose(draft.draftId, guest);
-    thread.requestId = disclosed.requestId;
-
-    // Local operator simulation through the real authorized representative path.
-    const { offerId } = environment.simulateOperatorAcceptance(disclosed.requestId);
-    thread.offerId = offerId;
-
-    const requestSurfaceId = `thread-${thread.threadId}:request:${disclosed.requestId}`;
-    const offerSurfaceId = `thread-${thread.threadId}:offer:${offerId}`;
+    thread.draftId = draft.draftId;
+    const requestSurfaceId = `thread-${thread.threadId}:request:draft:${draft.draftId}`;
     this.#supersede(thread, UNIT_STAGE);
-    // The Booking Request is returned as a committed historical status
-    // surface; the Offer is the only active primary workspace (ADR-0074).
-    thread.activeSurfaces.set(OFFER_STAGE, offerSurfaceId);
-
-    const requestArtifact = environment.bookingRequestApp.getArtifact(disclosed.requestId, guest);
-    const offerArtifact = environment.conditionalOfferApp.getArtifact(offerId, guest);
+    thread.activeSurfaces.set(REQUEST_STAGE, requestSurfaceId);
+    const artifact = this.#draftArtifact(thread, "draft");
+    thread.draftQuote = { allInStayTotalKobo: artifact.facts.allInStayTotalKobo, refundableSecurityDepositKobo: artifact.facts.refundableSecurityDepositKobo, amountDueNowKobo: artifact.facts.amountDueNowKobo };
 
     return {
       ok: true,
-      messages: ["The host has accepted your request. Here is your booking offer."],
+      messages: ["Your Request Draft is ready. Dates are not reserved until you submit a revalidated Booking Request."],
       surfaces: [
-        { surfaceId: requestSurfaceId, mode: "focused-surface", summary: "Booking Request", conventionalRoute: conventionalBookingRequestRoute(disclosed.requestId), textFallback: `Booking Request status: ${requestArtifact.facts.status}. Stay: ${requestArtifact.facts.checkIn} to ${requestArtifact.facts.checkOut}. ${requestArtifact.facts.quote ? `All-In Stay Total: ${formatNgnKobo(requestArtifact.facts.quote.allInStayTotalKobo)}. Refundable Security Deposit: ${formatNgnKobo(requestArtifact.facts.quote.refundableSecurityDepositKobo)}. Amount Due Now: ${formatNgnKobo(requestArtifact.facts.quote.totalAmountDueNowKobo)}.` : "A quote is not available yet."}`, a2uiMessages: bookingRequestArtifactToA2UI({ artifact: requestArtifact, surfaceId: requestSurfaceId }) },
-        { surfaceId: offerSurfaceId, mode: "focused-surface", summary: "Booking offer", conventionalRoute: conventionalConditionalOfferRoute(offerId), textFallback: `Booking offer for ${offerArtifact.facts.unitTitle}. Stay: ${offerArtifact.facts.checkIn} to ${offerArtifact.facts.checkOut}. All-In Stay Total: ${formatNgnKobo(offerArtifact.facts.allInStayTotalKobo)}. Refundable Security Deposit: ${formatNgnKobo(offerArtifact.facts.refundableSecurityDepositKobo)}. Amount Due Now: ${formatNgnKobo(offerArtifact.facts.totalAmountDueNowKobo)}. Payment deadline: ${offerArtifact.facts.paymentWindowExpiresAt}.`, a2uiMessages: conditionalOfferArtifactToA2UI({ artifact: offerArtifact, surfaceId: offerSurfaceId }) },
+        { surfaceId: requestSurfaceId, mode: "focused-surface", summary: "Request Draft", conventionalRoute: conventionalRequestDraftRoute(draft.draftId), textFallback: this.#draftFallback(artifact), a2uiMessages: requestDraftArtifactToA2UI({ artifact, surfaceId: requestSurfaceId }) },
       ],
     };
+  }
+
+  #draftArtifact(thread: GuestThreadState, view: "draft" | "review"): RequestDraftArtifact {
+    if (!thread.draftId) throw new Error("No Request Draft is active");
+    const draft = this.#environment.bookingRequestApp.manager.getDraft(thread.draftId) as {
+      readonly draftId: string; readonly unitId: string; readonly primaryGuest: { readonly name: string };
+      readonly occupants: readonly { readonly name: string }[]; readonly checkIn: string; readonly checkOut: string;
+    };
+    const unit = this.#environment.unitRepository.findById(draft.unitId) as Unit | null;
+    if (!unit) throw new Error("The selected Unit is no longer available.");
+    const quote = createStayQuote({
+      unit,
+      checkIn: draft.checkIn,
+      checkOut: draft.checkOut,
+      partySize: draft.occupants.length || 1,
+      clock: this.#environment.clock,
+    });
+    return requestDraftArtifactFromProjection({
+      draftId: draft.draftId,
+      unitId: unit.id,
+      unitTitle: unit.title,
+      operatorName: unit.operator.name,
+      checkIn: quote.checkIn,
+      checkOut: quote.checkOut,
+      nights: quote.nights,
+      primaryGuestName: draft.primaryGuest.name,
+      occupants: draft.occupants.map((occupant) => occupant.name),
+      allInStayTotalKobo: quote.allInStayTotalKobo,
+      refundableSecurityDepositKobo: quote.refundableSecurityDepositKobo,
+      amountDueNowKobo: quote.totalAmountDueNowKobo,
+      cancellationPolicy: { type: quote.cancellationPolicy.type, version: quote.cancellationPolicy.version, summary: quote.cancellationPolicy.policySummary },
+      guestIdentityVerified: this.#environment.config.guestIdentityVerified !== false,
+      view,
+      policyVersions: quote.policyVersions,
+      disclosures: quote.disclosures,
+    }, this.#environment.guestPrincipal());
+  }
+
+  #draftFallback(artifact: RequestDraftArtifact): string {
+    return `${artifact.facts.unitTitle}. Stay: ${artifact.facts.checkIn} to ${artifact.facts.checkOut} (${artifact.facts.nights} nights). All-In Stay Total: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. Refundable Security Deposit: ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. Amount Due Now if confirmed: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}. Inventory is not reserved.`;
+  }
+
+  #handleDraftReview(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
+    if (!thread.draftId || event.context?.artifactId !== requestDraftArtifactId(thread.draftId) || event.context?.draftId !== thread.draftId) {
+      return { ok: false, code: "INVALID_CONTEXT", message: "That Request Draft is no longer valid." };
+    }
+    const artifact = this.#draftArtifact(thread, "review");
+    const surfaceId = `thread-${thread.threadId}:request:review:${thread.draftId}`;
+    this.#supersede(thread, REQUEST_STAGE);
+    thread.activeSurfaces.set(REQUEST_STAGE, surfaceId);
+    return {
+      ok: true,
+      messages: ["Review the complete request terms. Nothing is reserved until you submit."],
+      surfaces: [{ surfaceId, mode: "focused-surface", summary: "Request review", conventionalRoute: conventionalRequestDraftRoute(thread.draftId), textFallback: this.#draftFallback(artifact), a2uiMessages: requestDraftArtifactToA2UI({ artifact, surfaceId }) }],
+    };
+  }
+
+  #handleDraftSubmit(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
+    if (!thread.draftId || event.context?.artifactId !== requestDraftArtifactId(thread.draftId) || event.context?.draftId !== thread.draftId) {
+      return { ok: false, code: "STALE_SURFACE", message: "That Request review is no longer current." };
+    }
+    const currentTerms = this.#draftArtifact(thread, "review");
+    if (!thread.draftQuote || thread.draftQuote.allInStayTotalKobo !== currentTerms.facts.allInStayTotalKobo || thread.draftQuote.refundableSecurityDepositKobo !== currentTerms.facts.refundableSecurityDepositKobo || thread.draftQuote.amountDueNowKobo !== currentTerms.facts.amountDueNowKobo) {
+      return { ok: false, code: "QUOTE_CHANGED", message: "The price or deposit changed before submission. Review the updated material terms and submit again." };
+    }
+    try {
+      const disclosed = this.#environment.bookingRequestApp.disclose(thread.draftId, this.#environment.guestPrincipal(), this.#environment.config.autoDeliverRequests !== false);
+      thread.requestId = disclosed.requestId;
+      this.#supersede(thread, REQUEST_STAGE);
+      const surface = this.#requestSurface(thread, disclosed.requestId);
+      thread.activeSurfaces.set(REQUEST_STAGE, surface.surfaceId);
+      return { ok: true, messages: ["Booking Request submitted. No Reservation exists yet; the Operator must respond."], surfaces: [surface] };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "The Booking Request could not be submitted.";
+      return { ok: false, code: /verification|Primary Guest/i.test(message) ? "VERIFICATION_REQUIRED" : "REQUEST_NOT_SUBMITTED", message };
+    }
+  }
+
+  #requestSurface(thread: GuestThreadState, requestId: string): GuestSurfacePayload {
+    const artifact = this.#environment.bookingRequestApp.getArtifact(requestId, this.#environment.guestPrincipal());
+    const surfaceId = `thread-${thread.threadId}:request:${requestId}`;
+    return {
+      surfaceId,
+      mode: "focused-surface",
+      summary: "Booking Request status",
+      conventionalRoute: conventionalBookingRequestRoute(requestId),
+      textFallback: `Booking Request status: ${artifact.facts.status}. Stay: ${artifact.facts.checkIn} to ${artifact.facts.checkOut}. Operator response deadline: ${formatWAT(artifact.facts.operatorResponseDeadlineAt)}. No Reservation exists yet.`,
+      a2uiMessages: bookingRequestArtifactToA2UI({ artifact, surfaceId }),
+    };
+  }
+
+  #refreshWorkflow(thread: GuestThreadState): GuestTurnResult | null {
+    if (thread.offerId && thread.activeSurfaces.has(PAYMENT_STAGE)) {
+      const payment = this.#environment.cardPaymentApp.getArtifact(thread.offerId, this.#environment.guestPrincipal());
+      if (payment.facts.status === "expired") {
+        const surfaceId = `thread-${thread.threadId}:payment:expired:${thread.offerId}`;
+        this.#supersede(thread, PAYMENT_STAGE);
+        thread.activeSurfaces.set(PAYMENT_STAGE, surfaceId);
+        return { ok: true, messages: ["The Payment Window expired. Payment authority has been removed; no Reservation exists."], surfaces: [{ ...this.#paymentSurface(thread, payment, "Payment Window expired", surfaceId), status: "expired", textFallback: `Payment Window expired. Amount Due Now: ${formatNgnKobo(payment.facts.amountDueNowKobo)}. No Reservation exists.` }] };
+      }
+    }
+    if (!thread.requestId || thread.offerId) return null;
+    const artifact = this.#environment.bookingRequestApp.getArtifact(thread.requestId, this.#environment.guestPrincipal());
+    if (artifact.facts.status === "confirmed") {
+      const offer = this.#environment.conditionalOfferApp.issue(thread.requestId, this.#environment.representativePrincipal());
+      thread.offerId = offer.offerId;
+      this.#supersede(thread, REQUEST_STAGE);
+      const surfaceId = `thread-${thread.threadId}:offer:${offer.offerId}`;
+      thread.activeSurfaces.set(OFFER_STAGE, surfaceId);
+      const offerArtifact = this.#environment.conditionalOfferApp.getArtifact(offer.offerId, this.#environment.guestPrincipal());
+      return { ok: true, messages: ["Operator confirmed availability. Review the Conditional Booking Offer; payment is still required."], surfaces: [{ surfaceId, mode: "focused-surface", summary: "Conditional Booking Offer", conventionalRoute: conventionalConditionalOfferRoute(offer.offerId), textFallback: `Conditional Booking Offer for ${offerArtifact.facts.unitTitle}. Amount Due Now: ${formatNgnKobo(offerArtifact.facts.totalAmountDueNowKobo)}. Payment deadline: ${formatWAT(offerArtifact.facts.paymentWindowExpiresAt)}.`, a2uiMessages: conditionalOfferArtifactToA2UI({ artifact: offerArtifact, surfaceId }) }] };
+    }
+    if (["declined", "expired", "delivery_failed"].includes(artifact.facts.status)) {
+      this.#supersede(thread, REQUEST_STAGE);
+      return { ok: true, messages: [artifact.facts.status === "declined" ? "The Operator declined the request. No Reservation was created and no payment was taken." : artifact.facts.status === "expired" ? "The Booking Request expired. Inventory is no longer reserved and no Reservation exists." : "The Booking Request could not be delivered successfully. Nothing remains reserved; this was not an Operator decline."], surfaces: [{ ...this.#requestSurface(thread, thread.requestId), mode: "inline-surface", summary: "Request outcome", status: "fallback" }] };
+    }
+    return { ok: true, messages: [], surfaces: [this.#requestSurface(thread, thread.requestId)] };
   }
 
   #handleOfferAccept(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
@@ -561,7 +714,7 @@ export class LocalGuestApp {
     }
 
     const offerId = thread.offerId;
-    const paymentSurfaceId = `thread-${thread.threadId}:payment:${offerId}`;
+    const paymentSurfaceId = `thread-${thread.threadId}:payment:ready:${offerId}`;
     this.#supersede(thread, OFFER_STAGE);
     thread.activeSurfaces.set(PAYMENT_STAGE, paymentSurfaceId);
 
@@ -589,41 +742,52 @@ export class LocalGuestApp {
       return { ok: false, code: resolved.code, message: resolved.message };
     }
 
-    let session = environment.cardPaymentApp.manager.getCheckoutSession(thread.offerId);
+    const session = environment.cardPaymentApp.manager.getCheckoutSession(thread.offerId);
     if (!session) {
       return { ok: false, code: "INVALID_ARTIFACT", message: "No checkout session is active." };
     }
-    let outcome = environment.cardPaymentApp.verifyAndConfirm(session.pspReference, environment.systemPrincipal());
-    // The launch deposit is a separate actual charge (ADR-0016). The local
-    // demo immediately completes that second deterministic checkout so the
-    // browser journey can demonstrate final confirmation in one interaction.
-    if (outcome.outcome === "deposit_required") {
-      session = environment.cardPaymentApp.initializeCheckout(thread.offerId, environment.guestPrincipal());
-      outcome = environment.cardPaymentApp.verifyAndConfirm(session.pspReference, environment.systemPrincipal());
-    }
-    if (outcome.outcome !== "confirmed") {
-      return { ok: false, code: "PAYMENT_NOT_CONFIRMED", message: "The payment could not be completed." };
-    }
-    environment.contractRepository.recordConfirmedOutcome(outcome.reservation, outcome.bookingContract);
-
-    const offerId = thread.offerId;
-    const contractId = outcome.bookingContract.contractId;
-    const paymentSurfaceId = `thread-${thread.threadId}:payment:confirmed:${offerId}`;
-    const bookingSurfaceId = `thread-${thread.threadId}:booking:${contractId}`;
+    const artifact = environment.cardPaymentApp.getArtifact(thread.offerId, environment.guestPrincipal());
+    const surfaceId = `thread-${thread.threadId}:payment:checkout:${session.checkoutId}`;
     this.#supersede(thread, PAYMENT_STAGE);
-    thread.activeSurfaces.set(BOOKING_STAGE, bookingSurfaceId);
+    thread.activeSurfaces.set(PAYMENT_STAGE, surfaceId);
+    return { ok: true, messages: ["Secure checkout is ready. Payment credentials stay on the PSP-hosted page; return here for backend verification."], surfaces: [{ surfaceId, mode: "focused-surface", summary: "Payment handoff", conventionalRoute: conventionalCardPaymentRoute(thread.offerId), textFallback: `Payment status: ${artifact.facts.status}. Amount Due Now: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}. Payment deadline: ${formatWAT(artifact.facts.paymentWindowExpiresAt)}. Continue at the secure PSP checkout: ${session.checkoutUrl}`, a2uiMessages: cardPaymentArtifactToA2UI({ artifact, surfaceId }) }] };
+  }
 
-    const paymentArtifact = environment.cardPaymentApp.getArtifact(offerId, environment.guestPrincipal());
-    const contractArtifact = environment.contractApp.getArtifact(contractId, environment.guestPrincipal());
+  #handlePaymentReturn(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
+    if (!thread.offerId || event.context?.artifactId !== `card-payment:${thread.offerId}` || event.context?.offerId !== thread.offerId) return { ok: false, code: "STALE_SURFACE", message: "That payment handoff is no longer current." };
+    const environment = this.#environment;
+    const current = environment.cardPaymentApp.getArtifact(thread.offerId, environment.guestPrincipal());
+    if (current.facts.status !== "checkout_initiated" || event.context?.projectionVersion !== current.projectionVersion) return { ok: false, code: "STALE_SURFACE", message: "That payment handoff is no longer current." };
+    const session = environment.cardPaymentApp.manager.getCheckoutSession(thread.offerId);
+    if (!session) return { ok: false, code: "INVALID_ARTIFACT", message: "No active payment attempt was found." };
+    try {
+      const outcome = environment.cardPaymentApp.verifyAndConfirm(session.pspReference, environment.systemPrincipal());
+      if (outcome.outcome === "deposit_required") {
+        const artifact = environment.cardPaymentApp.getArtifact(thread.offerId, environment.guestPrincipal());
+        const surfaceId = `thread-${thread.threadId}:payment:deposit-ready:${thread.offerId}`;
+        this.#supersede(thread, PAYMENT_STAGE);
+        thread.activeSurfaces.set(PAYMENT_STAGE, surfaceId);
+        return { ok: true, messages: ["Payment verified for the stay. A separate Refundable Security Deposit payment is required before a Reservation can exist."], surfaces: [this.#paymentSurface(thread, artifact, "Refundable Security Deposit payment required", surfaceId)] };
+      }
+      environment.contractRepository.recordConfirmedOutcome(outcome.reservation, outcome.bookingContract);
+      const contractArtifact = environment.contractApp.getArtifact(outcome.bookingContract.contractId, environment.guestPrincipal());
+      const bookingSurfaceId = `thread-${thread.threadId}:booking:${outcome.bookingContract.contractId}`;
+      this.#supersede(thread, PAYMENT_STAGE);
+      thread.activeSurfaces.set(BOOKING_STAGE, bookingSurfaceId);
+      return { ok: true, messages: ["Payment verified and the Reservation was committed. Your stay is confirmed."], surfaces: [{ surfaceId: bookingSurfaceId, mode: "focused-surface", summary: "Reservation confirmed", conventionalRoute: conventionalBookingContractRoute(outcome.bookingContract.contractId), textFallback: `Reservation confirmed for ${contractArtifact.facts.checkIn} to ${contractArtifact.facts.checkOut}. Reservation reference: ${contractArtifact.facts.reservationId}.`, a2uiMessages: bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: bookingSurfaceId }) }] };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Payment verification did not complete.";
+      const artifact = environment.cardPaymentApp.getArtifact(thread.offerId, environment.guestPrincipal());
+      const surfaceId = `thread-${thread.threadId}:payment:result:${Date.now()}`;
+      this.#supersede(thread, PAYMENT_STAGE);
+      thread.activeSurfaces.set(PAYMENT_STAGE, surfaceId);
+      if (/processing|grace/i.test(message)) return { ok: true, messages: ["Payment is still processing. It has not succeeded and no Reservation exists yet."], surfaces: [this.#paymentSurface(thread, artifact, "Payment processing", surfaceId)] };
+      return { ok: true, messages: [`Payment was not verified. No Reservation was created. ${message}`], surfaces: [this.#paymentSurface(thread, artifact, "Payment verification result", surfaceId)] };
+    }
+  }
 
-    return {
-      ok: true,
-      messages: ["Payment complete. Your booking is confirmed."],
-      surfaces: [
-        { surfaceId: paymentSurfaceId, mode: "focused-surface", summary: "Payment status", conventionalRoute: conventionalCardPaymentRoute(offerId), textFallback: `Payment status: ${paymentArtifact.facts.status}. ${paymentArtifact.facts.unit}. Stay: ${paymentArtifact.facts.checkIn} to ${paymentArtifact.facts.checkOut}. Amount Due Now: ${formatNgnKobo(paymentArtifact.facts.amountDueNowKobo)}.`, a2uiMessages: cardPaymentArtifactToA2UI({ artifact: paymentArtifact, surfaceId: paymentSurfaceId }) },
-        { surfaceId: bookingSurfaceId, mode: "focused-surface", summary: "Booking confirmation", conventionalRoute: conventionalBookingContractRoute(contractId), textFallback: `Booking confirmed for ${contractArtifact.facts.checkIn} to ${contractArtifact.facts.checkOut}. Amount paid: ${formatNgnKobo(contractArtifact.facts.amountPaidKobo)} ${contractArtifact.facts.currency ?? "NGN"}.`, a2uiMessages: bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: bookingSurfaceId }) },
-      ],
-    };
+  #paymentSurface(thread: GuestThreadState, artifact: ReturnType<CardPaymentApplication["getArtifact"]>, summary: string, surfaceId: string): GuestSurfacePayload {
+    return { surfaceId, mode: "focused-surface", summary, conventionalRoute: conventionalCardPaymentRoute(thread.offerId!), textFallback: `Payment status: ${artifact.facts.status}. Amount Due Now: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}. Payment deadline: ${formatWAT(artifact.facts.paymentWindowExpiresAt)}.`, a2uiMessages: cardPaymentArtifactToA2UI({ artifact, surfaceId }) };
   }
 
   #partySizeFor(thread: GuestThreadState): number {
@@ -666,6 +830,12 @@ function readEventPayload(payload: unknown): GuestEventPayload | undefined {
     timestamp: typeof record.timestamp === "string" ? record.timestamp : new Date().toISOString(),
     context,
   };
+}
+
+function formatWAT(iso: string): string {
+  return new Intl.DateTimeFormat("en-NG", {
+    timeZone: "Africa/Lagos", dateStyle: "medium", timeStyle: "short", hour12: false,
+  }).format(new Date(iso)) + " WAT";
 }
 
 export function renderGuestShellHtml(): string {

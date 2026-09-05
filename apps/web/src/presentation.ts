@@ -80,6 +80,10 @@ export function conventionalBookingRequestRoute(requestId: string): string {
   return `/booking-requests/${encodeURIComponent(requestId)}`;
 }
 
+export function conventionalRequestDraftRoute(draftId: string): string {
+  return `/booking-requests/drafts/${encodeURIComponent(draftId)}`;
+}
+
 export function conventionalConditionalOfferRoute(offerId: string): string {
   return `/conditional-offers/${encodeURIComponent(offerId)}`;
 }

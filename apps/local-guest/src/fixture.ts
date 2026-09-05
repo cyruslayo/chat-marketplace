@@ -38,6 +38,10 @@ export interface LocalGuestFixtureConfig {
   readonly adminId: string;
   readonly guestId: string;
   readonly guestName: string;
+  /** Local fixture switch for testing the existing verification boundary. */
+  readonly guestIdentityVerified?: boolean;
+  /** Keep false only for deterministic delivery-failure fixtures. */
+  readonly autoDeliverRequests?: boolean;
   /** Deterministic demo check-in; checkout is derived from requested nights. */
   readonly demoCheckIn: string;
   /** @deprecated Checkout is derived from the requested nights. */
@@ -55,6 +59,8 @@ export const DEFAULT_LOCAL_GUEST_CONFIG: LocalGuestFixtureConfig = {
   adminId: "platform-admin-001",
   guestId: "guest-demo-101",
   guestName: "Demo Guest",
+  guestIdentityVerified: true,
+  autoDeliverRequests: true,
   demoCheckIn: "2026-09-10",
   demoCheckOut: "2026-09-13",
 };
@@ -152,7 +158,7 @@ export class LocalGuestEnvironment {
       verificationResults: {
         getVerificationResult: ({ tenantId, guestId }) =>
           tenantId === this.config.tenantId && guestId === this.config.guestId
-            ? { tenantId, guestId, governmentIdVerified: true }
+            ? { tenantId, guestId, governmentIdVerified: this.config.guestIdentityVerified !== false }
             : null,
       },
     });
@@ -272,6 +278,15 @@ export class LocalGuestEnvironment {
     });
     const offer = this.conditionalOfferApp.issue(requestId, representative);
     return { offerId: offer.offerId };
+  }
+
+  /** Local-only deterministic fixture for decline and timeout browser tests. */
+  simulateOperatorDecline(requestId: string, reason = "Operator declined availability"): void {
+    const representative = this.representativePrincipal();
+    const artifact = this.bookingRequestApp.getArtifact(requestId, representative);
+    const declineAction = artifact.actions.find((action) => action.type === "decline");
+    if (!declineAction) throw new Error(`Cannot simulate operator decline for ${requestId}: no decline action available`);
+    this.bookingRequestApp.decline({ ...declineAction, principal: representative, action: "decline", reason });
   }
 
   #seedUnits(): void {
