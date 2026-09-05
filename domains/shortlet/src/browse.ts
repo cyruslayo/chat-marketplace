@@ -287,7 +287,11 @@ export class UnitDiscoveryQuery {
     const queryId = `search-${this.idFactory()}`;
     const artifact = createInteractionArtifact({ id: queryId, filters, results });
     this.audit.record({ type: "unit.search", queryId, filters: { ...filters }, resultUnitIds: results.map((unit: any) => unit.id) });
-    this.telemetry.track({ type: "unit.search.completed", queryId, resultCount: results.length });
+    try {
+      this.telemetry.track({ type: "unit.search.completed", queryId, resultCount: results.length });
+    } catch {
+      // Discovery remains authoritative even when the observational sink is unavailable.
+    }
     return artifact;
   }
 }

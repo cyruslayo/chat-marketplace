@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { A2UIServerMessage, JsonObject } from "@weaver/core";
 import type { WebServerEventHandoff } from "@weaver/web";
-import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
+import type { CommandPrincipal, TransitionTelemetryEvent } from "../../../packages/platform-core/src/index.js";
 import {
   discoveryArtifactToA2UI,
   createWeaverWebAgentAdapter,
@@ -225,6 +225,7 @@ export class LocalGuestApp {
             const result = adapter.search({ ...filters });
             thread.discoveryArtifact = result.artifact;
             thread.activeSurfaces.set(DISCOVERY_STAGE, thread.discoverySurfaceId);
+            this.#emitTransition(thread, "unit.discovery.results_produced", { aggregateType: "discovery", aggregateId: result.artifact.id, surfaceId: thread.discoverySurfaceId });
             thread.geminiLastSearch = result;
             return {
               resultCount: result.artifact.facts.results.length,
@@ -271,6 +272,7 @@ export class LocalGuestApp {
     const result = adapter.search({ ...interpretation.filters });
     thread.discoveryArtifact = result.artifact;
     thread.activeSurfaces.set(DISCOVERY_STAGE, thread.discoverySurfaceId);
+    this.#emitTransition(thread, "unit.discovery.results_produced", { aggregateType: "discovery", aggregateId: result.artifact.id, surfaceId: thread.discoverySurfaceId });
 
     return {
       ok: true,
@@ -329,6 +331,13 @@ export class LocalGuestApp {
     }
     const activeSurfaceId = thread.activeSurfaces.get(stage);
     if (!activeSurfaceId || activeSurfaceId !== event.surfaceId) {
+      const duplicate = event.name === "shortlet.card-payment.verify-return" && thread.activeSurfaces.has(BOOKING_STAGE);
+      this.#emitTransition(thread, duplicate ? "interaction.duplicate_command_rejected" : "interaction.stale_surface_rejected", {
+        aggregateType: duplicate ? "payment" : "interaction_surface",
+        aggregateId: duplicate ? thread.offerId ?? thread.threadId : event.surfaceId,
+        surfaceId: event.surfaceId,
+        reasonCode: duplicate ? "DUPLICATE_COMMAND" : "STALE_SURFACE",
+      });
       return {
         ok: false,
         code: "STALE_SURFACE",
@@ -370,6 +379,7 @@ export class LocalGuestApp {
   getState(threadId: string): GuestStateSnapshot | undefined {
     const thread = this.#threads.get(threadId) ?? this.#loadThread(threadId);
     if (!thread) return undefined;
+    const priorSurfaceId = thread.lastSurfaces.at(-1)?.surfaceId;
     const refreshed = this.#refreshWorkflow(thread);
     const decorated = refreshed ? this.#decorateResult(refreshed) : null;
     if (decorated?.ok && decorated.surfaces.length > 0) {
@@ -379,6 +389,9 @@ export class LocalGuestApp {
     const normalized = this.#decorateResult({ ok: true, messages: [], surfaces: thread.lastSurfaces });
     if (!normalized.ok) return undefined;
     thread.lastSurfaces = [...normalized.surfaces];
+    if (priorSurfaceId !== undefined && thread.lastSurfaces.at(-1)?.surfaceId !== priorSurfaceId) {
+      this.#emitTransition(thread, "interaction.cross_tab_recovery_occurred", { aggregateType: "interaction_thread", aggregateId: threadId });
+    }
     return {
       ok: true,
       threadId,
@@ -389,8 +402,19 @@ export class LocalGuestApp {
 
   recordShellTelemetry(event: unknown): boolean {
     if (typeof event !== "string" || !(SHELL_TELEMETRY_EVENTS as readonly string[]).includes(event)) return false;
-    this.#environment.telemetry.track({ type: `interaction.${event as ShellTelemetryEvent}` });
+    try { this.#environment.telemetry.track({ type: `interaction.${event as ShellTelemetryEvent}` }); } catch { /* telemetry is non-blocking */ }
     return true;
+  }
+
+  #emitTransition(thread: GuestThreadState, type: string, fields: Omit<TransitionTelemetryEvent, "type" | "eventVersion" | "timestamp" | "transitionKey" | "tenantId" | "principalId" | "threadId"> = {}): void {
+    const aggregateId = fields.aggregateId ?? fields.correlationId;
+    const event: TransitionTelemetryEvent = {
+      type, eventVersion: "1", timestamp: this.#environment.clock().toISOString(),
+      tenantId: this.#environment.config.tenantId, principalId: this.#environment.config.guestId,
+      threadId: thread.threadId, transitionKey: `${type}:${thread.threadId}:${fields.aggregateType ?? "interaction"}:${aggregateId ?? "none"}`,
+      ...(aggregateId === undefined ? {} : { aggregateId }), ...fields,
+    };
+    try { this.#environment.telemetry.trackTransition(event); } catch { /* telemetry cannot block a Guest action */ }
   }
 
   #persistThread(thread: GuestThreadState): void {
@@ -487,7 +511,10 @@ export class LocalGuestApp {
     };
     this.#threads.set(threadId, thread);
     const restored = this.#restoreCurrentSurface(thread, projection);
-    if (restored) thread.lastSurfaces = [restored];
+    if (restored) {
+      thread.lastSurfaces = [restored];
+      this.#emitTransition(thread, "interaction.restart_restoration_succeeded", { aggregateType: "interaction_thread", aggregateId: threadId });
+    }
     return thread;
   }
 
@@ -635,6 +662,7 @@ export class LocalGuestApp {
     } catch {
       // A current-domain validation failure during restoration keeps the
       // thread non-actionable rather than starting a new workflow.
+      this.#emitTransition(thread, "interaction.restart_restoration_failed", { aggregateType: "interaction_thread", aggregateId: thread.threadId, reasonCode: "RESTORATION_FAILED" });
       return null;
     }
   }
@@ -691,10 +719,15 @@ export class LocalGuestApp {
     // A text-only turn changes the transcript but does not supersede the
     // current server-backed workspace (ADR-0074).
     if (result.surfaces.length > 0) thread.lastSurfaces = [...result.surfaces];
-    if (result.messages.length > 0) this.#environment.telemetry.track({ type: "interaction.text-response-rendered" });
-    for (const surface of result.surfaces) {
-      this.#environment.telemetry.track({ type: `interaction.${surface.mode ?? "surface"}-rendered` });
-    }
+    try {
+      if (result.messages.length > 0) this.#environment.telemetry.track({ type: "interaction.text-response-rendered" });
+      for (const surface of result.surfaces) {
+        this.#environment.telemetry.track({ type: `interaction.${surface.mode ?? "surface"}-rendered` });
+        if (surface.surfaceId.includes(":booking:")) {
+          this.#emitTransition(thread, "reservation.summary.rendered", { aggregateType: "reservation", aggregateId: surface.surfaceId.split(":booking:").at(-1), surfaceId: surface.surfaceId });
+        }
+      }
+    } catch { /* presentation telemetry is best-effort */ }
     this.#persistThread(thread);
   }
 
@@ -757,6 +790,8 @@ export class LocalGuestApp {
     // generated actions; the linear demo has no valid back-navigation state.
     this.#supersede(thread, DISCOVERY_STAGE);
     thread.activeSurfaces.set(UNIT_STAGE, surfaceId);
+    this.#emitTransition(thread, "unit.selected", { aggregateType: "unit", aggregateId: unit.id, surfaceId });
+    this.#emitTransition(thread, "unit.inspection.opened", { aggregateType: "unit", aggregateId: unit.id, surfaceId });
     return {
       ok: true,
       messages: [`Here are the details for ${unit.title}.`],
@@ -820,6 +855,7 @@ export class LocalGuestApp {
       const artifact = this.#draftArtifact(thread, "draft");
       this.#supersede(thread, UNIT_STAGE);
       thread.activeSurfaces.set(REQUEST_STAGE, surfaceId);
+      this.#emitTransition(thread, "request_draft.resumed", { aggregateType: "request_draft", aggregateId: thread.draftId, surfaceId });
       return { ok: true, messages: ["Your existing Request Draft is ready to continue. Dates are not reserved."], surfaces: [{ surfaceId, mode: "focused-surface", summary: "Request Draft", conventionalRoute: conventionalRequestDraftRoute(thread.draftId), textFallback: this.#draftFallback(artifact), a2uiMessages: requestDraftArtifactToA2UI({ artifact, surfaceId }) }] };
     }
 
@@ -841,6 +877,7 @@ export class LocalGuestApp {
     thread.activeSurfaces.set(REQUEST_STAGE, requestSurfaceId);
     const artifact = this.#draftArtifact(thread, "draft");
     thread.draftQuote = { allInStayTotalKobo: artifact.facts.allInStayTotalKobo, refundableSecurityDepositKobo: artifact.facts.refundableSecurityDepositKobo, amountDueNowKobo: artifact.facts.amountDueNowKobo };
+    this.#emitTransition(thread, "request_draft.created", { aggregateType: "request_draft", aggregateId: draft.draftId, surfaceId: requestSurfaceId });
 
     return {
       ok: true,
@@ -896,9 +933,13 @@ export class LocalGuestApp {
       return { ok: false, code: "INVALID_CONTEXT", message: "That Request Draft is no longer valid." };
     }
     const artifact = this.#draftArtifact(thread, "review");
+    if (!artifact.facts.guestIdentityVerified) {
+      this.#emitTransition(thread, "request_draft.blocked", { aggregateType: "request_draft", aggregateId: thread.draftId, reasonCode: "VERIFICATION_REQUIRED" });
+    }
     const surfaceId = `thread-${thread.threadId}:request:review:${thread.draftId}`;
     this.#supersede(thread, REQUEST_STAGE);
     thread.activeSurfaces.set(REQUEST_STAGE, surfaceId);
+    this.#emitTransition(thread, "request_draft.review.opened", { aggregateType: "request_draft", aggregateId: thread.draftId, surfaceId });
     return {
       ok: true,
       messages: ["Review the complete request terms. Nothing is reserved until you submit."],
@@ -915,15 +956,19 @@ export class LocalGuestApp {
       return { ok: false, code: "QUOTE_CHANGED", message: "The price or deposit changed before submission. Review the updated material terms and submit again." };
     }
     try {
+      this.#emitTransition(thread, "booking_request.submission.attempted", { aggregateType: "request_draft", aggregateId: thread.draftId, surfaceId: event.surfaceId });
       const disclosed = this.#environment.bookingRequestApp.disclose(thread.draftId, this.#environment.guestPrincipal(), this.#environment.config.autoDeliverRequests !== false);
       thread.requestId = disclosed.requestId;
       this.#supersede(thread, REQUEST_STAGE);
       const surface = this.#requestSurface(thread, disclosed.requestId);
       thread.activeSurfaces.set(REQUEST_STAGE, surface.surfaceId);
+      this.#emitTransition(thread, "booking_request.submitted", { aggregateType: "booking_request", aggregateId: disclosed.requestId, correlationId: thread.draftId, surfaceId: surface.surfaceId });
       return { ok: true, messages: ["Booking Request submitted. No Reservation exists yet; the Operator must respond."], surfaces: [surface] };
     } catch (error) {
       const message = error instanceof Error ? error.message : "The Booking Request could not be submitted.";
-      return { ok: false, code: /verification|Primary Guest/i.test(message) ? "VERIFICATION_REQUIRED" : "REQUEST_NOT_SUBMITTED", message };
+      const verificationBlocked = /verification|Primary Guest/i.test(message);
+      this.#emitTransition(thread, verificationBlocked ? "request_draft.blocked" : "booking_request.delivery_failed", { aggregateType: "request_draft", aggregateId: thread.draftId, reasonCode: verificationBlocked ? "VERIFICATION_REQUIRED" : "REQUEST_DELIVERY_FAILED" });
+      return { ok: false, code: verificationBlocked ? "VERIFICATION_REQUIRED" : "REQUEST_NOT_SUBMITTED", message };
     }
   }
 
@@ -946,6 +991,7 @@ export class LocalGuestApp {
       if (offer.facts.status === "expired") {
         const surfaceId = `thread-${thread.threadId}:offer:${thread.offerId}`;
         thread.activeSurfaces.set(OFFER_STAGE, surfaceId);
+        this.#emitTransition(thread, "conditional_booking_offer.expired", { aggregateType: "conditional_booking_offer", aggregateId: thread.offerId, reasonCode: "OFFER_EXPIRED", surfaceId });
         return {
           ok: true,
           messages: ["The Conditional Booking Offer expired. Payment authority has been removed; no Reservation exists."],
@@ -967,6 +1013,7 @@ export class LocalGuestApp {
         const surfaceId = `thread-${thread.threadId}:payment:expired:${thread.offerId}`;
         this.#supersede(thread, PAYMENT_STAGE);
         thread.activeSurfaces.set(PAYMENT_STAGE, surfaceId);
+        this.#emitTransition(thread, "payment.expired", { aggregateType: "payment_window", aggregateId: thread.offerId, reasonCode: "PAYMENT_EXPIRED", surfaceId });
         return { ok: true, messages: ["The Payment Window expired. Payment authority has been removed; no Reservation exists."], surfaces: [{ ...this.#paymentSurface(thread, payment, "Payment Window expired", surfaceId), status: "expired", textFallback: `Payment Window expired. Amount Due Now: ${formatNgnKobo(payment.facts.amountDueNowKobo)}. No Reservation exists.` }] };
       }
     }
@@ -992,10 +1039,14 @@ export class LocalGuestApp {
       const surfaceId = `thread-${thread.threadId}:offer:${offerId}`;
       thread.activeSurfaces.set(OFFER_STAGE, surfaceId);
       const offerArtifact = this.#environment.conditionalOfferApp.getArtifact(offerId, this.#environment.guestPrincipal());
+      this.#emitTransition(thread, "booking_request.confirmed", { aggregateType: "booking_request", aggregateId: thread.requestId, nextState: "confirmed", correlationId: offerId });
+      this.#emitTransition(thread, "conditional_booking_offer.shown", { aggregateType: "conditional_booking_offer", aggregateId: offerId, correlationId: thread.requestId, surfaceId });
       return { ok: true, messages: ["Operator confirmed availability. Review the Conditional Booking Offer; payment is still required."], surfaces: [{ surfaceId, mode: "focused-surface", summary: "Conditional Booking Offer", conventionalRoute: conventionalConditionalOfferRoute(offerId), textFallback: `Conditional Booking Offer for ${offerArtifact.facts.unitTitle}. Amount Due Now: ${formatNgnKobo(offerArtifact.facts.totalAmountDueNowKobo)}. Payment deadline: ${formatWAT(offerArtifact.facts.paymentWindowExpiresAt)}.`, a2uiMessages: conditionalOfferArtifactToA2UI({ artifact: offerArtifact, surfaceId }) }] };
     }
     if (["declined", "expired", "delivery_failed"].includes(artifact.facts.status)) {
       this.#supersede(thread, REQUEST_STAGE);
+      const type = artifact.facts.status === "declined" ? "booking_request.declined" : artifact.facts.status === "expired" ? "booking_request.timed_out" : "booking_request.delivery_failed";
+      this.#emitTransition(thread, type, { aggregateType: "booking_request", aggregateId: thread.requestId, reasonCode: artifact.facts.status === "declined" ? "OPERATOR_DECLINED" : artifact.facts.status === "expired" ? "OPERATOR_TIMEOUT" : "REQUEST_DELIVERY_FAILED" });
       return { ok: true, messages: [artifact.facts.status === "declined" ? "The Operator declined the request. No Reservation was created and no payment was taken." : artifact.facts.status === "expired" ? "The Booking Request expired. Inventory is no longer reserved and no Reservation exists." : "The Booking Request could not be delivered successfully. Nothing remains reserved; this was not an Operator decline."], surfaces: [{ ...this.#requestSurface(thread, thread.requestId), mode: "inline-surface", summary: "Request outcome", status: "fallback" }] };
     }
     return { ok: true, messages: [], surfaces: [this.#requestSurface(thread, thread.requestId)] };
@@ -1005,12 +1056,14 @@ export class LocalGuestApp {
     if (!thread.offerId) {
       return { ok: false, code: "INVALID_ARTIFACT", message: "No offer is active for this conversation." };
     }
+    this.#emitTransition(thread, "conditional_booking_offer.acceptance_attempted", { aggregateType: "conditional_booking_offer", aggregateId: thread.offerId, surfaceId: event.surfaceId });
     const resolved = resolveConditionalOfferServerEvent({
       event: this.#handoff(event),
       application: this.#environment.conditionalOfferApp,
       principal: this.#environment.guestPrincipal(),
     });
     if (!resolved.ok) {
+      this.#emitTransition(thread, "conditional_booking_offer.stale_action_rejected", { aggregateType: "conditional_booking_offer", aggregateId: thread.offerId, reasonCode: "STALE_ACTION", surfaceId: event.surfaceId });
       return { ok: false, code: resolved.code, message: resolved.message };
     }
 
@@ -1018,6 +1071,7 @@ export class LocalGuestApp {
     const paymentSurfaceId = `thread-${thread.threadId}:payment:ready:${offerId}`;
     this.#supersede(thread, OFFER_STAGE);
     thread.activeSurfaces.set(PAYMENT_STAGE, paymentSurfaceId);
+    this.#emitTransition(thread, "conditional_booking_offer.accepted", { aggregateType: "conditional_booking_offer", aggregateId: offerId, nextState: "accepted", surfaceId: paymentSurfaceId });
 
     const paymentArtifact = this.#environment.cardPaymentApp.getArtifact(offerId, this.#environment.guestPrincipal());
     return {
@@ -1051,6 +1105,8 @@ export class LocalGuestApp {
     const surfaceId = `thread-${thread.threadId}:payment:checkout:${session.checkoutId}`;
     this.#supersede(thread, PAYMENT_STAGE);
     thread.activeSurfaces.set(PAYMENT_STAGE, surfaceId);
+    this.#emitTransition(thread, "payment.handoff.opened", { aggregateType: "payment", aggregateId: thread.offerId, surfaceId });
+    this.#emitTransition(thread, "payment.attempt.initialized", { aggregateType: "payment_attempt", aggregateId: session.checkoutId, correlationId: thread.offerId });
     return { ok: true, messages: ["Secure checkout is ready. Payment credentials stay on the PSP-hosted page; return here for backend verification."], surfaces: [{ surfaceId, mode: "focused-surface", summary: "Payment handoff", conventionalRoute: conventionalCardPaymentRoute(thread.offerId), textFallback: `Payment status: ${artifact.facts.status}. Amount Due Now: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}. Payment deadline: ${formatWAT(artifact.facts.paymentWindowExpiresAt)}. Continue at the secure PSP checkout: ${session.checkoutUrl}`, a2uiMessages: cardPaymentArtifactToA2UI({ artifact, surfaceId }) }] };
   }
 
@@ -1061,6 +1117,7 @@ export class LocalGuestApp {
     if (current.facts.status !== "checkout_initiated" || event.context?.projectionVersion !== current.projectionVersion) return { ok: false, code: "STALE_SURFACE", message: "That payment handoff is no longer current." };
     const session = environment.cardPaymentApp.manager.getCheckoutSession(thread.offerId);
     if (!session) return { ok: false, code: "INVALID_ARTIFACT", message: "No active payment attempt was found." };
+    this.#emitTransition(thread, "payment.return.received", { aggregateType: "payment", aggregateId: thread.offerId, surfaceId: event.surfaceId });
     try {
       const outcome = environment.cardPaymentApp.verifyAndConfirm(session.pspReference, environment.systemPrincipal());
       if (outcome.outcome === "deposit_required") {
@@ -1068,6 +1125,7 @@ export class LocalGuestApp {
         const surfaceId = `thread-${thread.threadId}:payment:deposit-ready:${thread.offerId}`;
         this.#supersede(thread, PAYMENT_STAGE);
         thread.activeSurfaces.set(PAYMENT_STAGE, surfaceId);
+        this.#emitTransition(thread, "payment.verified", { aggregateType: "payment", aggregateId: thread.offerId, nextState: "deposit_required", surfaceId });
         return { ok: true, messages: ["Payment verified for the stay. A separate Refundable Security Deposit payment is required before a Reservation can exist."], surfaces: [this.#paymentSurface(thread, artifact, "Refundable Security Deposit payment required", surfaceId)] };
       }
       environment.contractRepository.recordConfirmedOutcome(outcome.reservation, outcome.bookingContract);
@@ -1075,6 +1133,8 @@ export class LocalGuestApp {
       const bookingSurfaceId = `thread-${thread.threadId}:booking:${outcome.bookingContract.contractId}`;
       this.#supersede(thread, PAYMENT_STAGE);
       thread.activeSurfaces.set(BOOKING_STAGE, bookingSurfaceId);
+      this.#emitTransition(thread, "payment.verified", { aggregateType: "payment", aggregateId: thread.offerId, nextState: "verified", surfaceId: bookingSurfaceId });
+      this.#emitTransition(thread, "reservation.confirmed", { aggregateType: "reservation", aggregateId: outcome.reservation.reservationId, correlationId: thread.offerId, nextState: "confirmed" });
       return { ok: true, messages: ["Payment verified and the Reservation was committed. Your stay is confirmed."], surfaces: [{ surfaceId: bookingSurfaceId, mode: "focused-surface", summary: "Reservation confirmed", conventionalRoute: conventionalBookingContractRoute(outcome.bookingContract.contractId), textFallback: `Reservation confirmed for ${contractArtifact.facts.checkIn} to ${contractArtifact.facts.checkOut}. Reservation reference: ${contractArtifact.facts.reservationId}.`, a2uiMessages: bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: bookingSurfaceId }) }] };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Payment verification did not complete.";
@@ -1082,8 +1142,10 @@ export class LocalGuestApp {
       const surfaceId = `thread-${thread.threadId}:payment:result:${Date.now()}`;
       this.#supersede(thread, PAYMENT_STAGE);
       thread.activeSurfaces.set(PAYMENT_STAGE, surfaceId);
-      if (/processing|grace/i.test(message)) return { ok: true, messages: ["Payment is still processing. It has not succeeded and no Reservation exists yet."], surfaces: [this.#paymentSurface(thread, artifact, "Payment processing", surfaceId)] };
-      return { ok: true, messages: [`Payment was not verified. No Reservation was created. ${message}`], surfaces: [this.#paymentSurface(thread, artifact, "Payment verification result", surfaceId)] };
+       if (/processing|grace/i.test(message)) { this.#emitTransition(thread, "payment.processing", { aggregateType: "payment", aggregateId: thread.offerId, reasonCode: "PAYMENT_PROCESSING", surfaceId }); return { ok: true, messages: ["Payment is still processing. It has not succeeded and no Reservation exists yet."], surfaces: [this.#paymentSurface(thread, artifact, "Payment processing", surfaceId)] }; }
+       if (/late|expired|deadline/i.test(message)) this.#emitTransition(thread, "payment.late_payment.detected", { aggregateType: "payment", aggregateId: thread.offerId, reasonCode: /expired|deadline/i.test(message) ? "PAYMENT_EXPIRED" : "LATE_PAYMENT", surfaceId });
+       else this.#emitTransition(thread, "payment.failed", { aggregateType: "payment", aggregateId: thread.offerId, reasonCode: "PAYMENT_FAILED", surfaceId });
+       return { ok: true, messages: [`Payment was not verified. No Reservation was created. ${message}`], surfaces: [this.#paymentSurface(thread, artifact, "Payment verification result", surfaceId)] };
     }
   }
 
