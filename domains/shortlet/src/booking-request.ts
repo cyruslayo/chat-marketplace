@@ -7,7 +7,8 @@ import {
   GuestVerificationService,
   OvernightOccupant,
   PrimaryGuest,
-  SelfBookingAttestation
+  SelfBookingAttestation,
+  SELF_BOOKING_ATTESTATION_VERSION
 } from "./guest-verification.js";
 
 export function getWatTime(date: Date) {
@@ -55,22 +56,28 @@ export class BookingRequestManager {
   #guestVerification: GuestVerificationService;
   #drafts = new Map<string, any>();
   #requests = new Map<string, any>();
+  readonly #draftStore: import("./guest-interaction-store.js").SqliteGuestInteractionStore | null;
+  readonly #requestStore: import("./guest-interaction-store.js").SqliteGuestInteractionStore | null;
 
   constructor({
     repository = null,
     audit = null,
     calendar = null,
-    guestVerification
+    guestVerification,
+    store = null
   }: {
     repository?: any;
     audit?: any;
     calendar?: any;
     guestVerification?: GuestVerificationService;
+    store?: import("./guest-interaction-store.js").SqliteGuestInteractionStore | null;
   } = {}) {
     this.#repository = repository;
     this.#audit = audit;
     this.#calendar = calendar;
     this.#guestVerification = guestVerification ?? new GuestVerificationService({ repository });
+    this.#draftStore = store;
+    this.#requestStore = store;
   }
 
   createDraft(
@@ -144,6 +151,18 @@ export class BookingRequestManager {
     });
 
     this.#drafts.set(draftId, draft);
+    this.#draftStore?.saveDraft({
+      draftId,
+      unitId,
+      primaryGuestId: canonicalPrimaryGuest.id,
+      primaryGuestName: canonicalPrimaryGuest.name,
+      occupants: canonicalOccupants.map(({ name }) => name),
+      selfBookingAttestationAccepted: canonicalSelfBookingAttestation?.accepted === true,
+      selfBookingAttestationVersion: canonicalSelfBookingAttestation?.version ?? SELF_BOOKING_ATTESTATION_VERSION,
+      checkIn,
+      checkOut,
+      createdAt: now.toISOString()
+    });
 
     if (this.#audit) {
       this.#audit.record({
@@ -158,10 +177,101 @@ export class BookingRequestManager {
     return draft;
   }
 
+  #persistRequest(request: any): void {
+    if (!this.#requestStore) return;
+    this.#requestStore.saveBookingRequest({
+      requestId: request.requestId,
+      draftId: request.draftId,
+      unitId: request.unitId,
+      tenantId: request.tenantId,
+      operatorId: request.operatorId ?? null,
+      primaryGuestId: request.primaryGuest?.id,
+      primaryGuestName: request.primaryGuest?.name,
+      occupants: (request.occupants ?? []).map((occupant: { name: string }) => occupant.name),
+      checkIn: request.checkIn,
+      checkOut: request.checkOut,
+      nights: request.nights,
+      quoteJson: JSON.stringify(request.quote ?? {}),
+      inventoryCommitmentId: request.inventoryCommitmentId,
+      disclosedAt: request.disclosedAt,
+      deliveryDeadlineAt: request.deliveryDeadlineAt,
+      operatorResponseDeadlineAt: request.operatorResponseDeadlineAt,
+      delivered: request.delivered === true,
+      deliveredAt: request.deliveredAt ?? null,
+      status: request.status,
+      confirmedAt: request.confirmedAt ?? null,
+      declinedAt: request.declinedAt ?? null,
+      declineReason: request.declineReason ?? null
+    });
+  }
+
+  #hydrateRequest(requestId: string): any | undefined {
+    const record = this.#requestStore?.findBookingRequest(requestId);
+    if (!record) return undefined;
+    let quote: any = {};
+    try {
+      quote = JSON.parse(record.quoteJson);
+    } catch {
+      quote = {};
+    }
+    const request = {
+      requestId: record.requestId,
+      draftId: record.draftId,
+      unitId: record.unitId,
+      tenantId: record.tenantId,
+      operatorId: record.operatorId,
+      primaryGuest: { id: record.primaryGuestId, name: record.primaryGuestName },
+      occupants: record.occupants.map((name) => ({ name })),
+      checkIn: record.checkIn,
+      checkOut: record.checkOut,
+      nights: record.nights,
+      quote,
+      inventoryCommitmentId: record.inventoryCommitmentId,
+      holdId: record.inventoryCommitmentId,
+      disclosedAt: record.disclosedAt,
+      deliveryDeadlineAt: record.deliveryDeadlineAt,
+      operatorResponseDeadlineAt: record.operatorResponseDeadlineAt,
+      delivered: record.delivered,
+      deliveredAt: record.deliveredAt,
+      status: record.status,
+      confirmedAt: record.confirmedAt,
+      declinedAt: record.declinedAt,
+      declineReason: record.declineReason
+    };
+    this.#requests.set(requestId, request);
+    return request;
+  }
+
   getDraft(draftId: string) {
-    const draft = this.#drafts.get(draftId);
+    let draft = this.#drafts.get(draftId);
+    if (!draft) {
+      const record = this.#draftStore?.findDraft(draftId);
+      if (record) {
+        draft = Object.freeze({
+          draftId: record.draftId,
+          unitId: record.unitId,
+          primaryGuest: Object.freeze({ id: record.primaryGuestId, name: record.primaryGuestName }),
+          occupants: Object.freeze(record.occupants.map((name) => Object.freeze({ name }))),
+          selfBookingAttestation: record.selfBookingAttestationAccepted
+            ? Object.freeze({ accepted: true, version: record.selfBookingAttestationVersion })
+            : undefined,
+          checkIn: record.checkIn,
+          checkOut: record.checkOut,
+          status: "draft",
+          createdAt: record.createdAt
+        });
+        this.#drafts.set(draftId, draft);
+      }
+    }
     if (!draft) throw new Error(`Draft not found: ${draftId}`);
     return draft;
+  }
+
+  getRequest(requestId: string) {
+    let req = this.#requests.get(requestId);
+    if (!req) req = this.#hydrateRequest(requestId);
+    if (!req) throw new Error(`Booking request not found: ${requestId}`);
+    return req;
   }
 
   discloseBookingRequest(
@@ -313,6 +423,7 @@ export class BookingRequestManager {
     };
 
     this.#requests.set(requestId, bookingRequest);
+    this.#persistRequest(bookingRequest);
 
     if (this.#audit) {
       this.#audit.record({
@@ -345,12 +456,6 @@ export class BookingRequestManager {
     return { ...bookingRequest };
   }
 
-  getRequest(requestId: string) {
-    const req = this.#requests.get(requestId);
-    if (!req) throw new Error(`Booking request not found: ${requestId}`);
-    return req;
-  }
-
   markDelivered(
     envelope: PlatformCommandEnvelope<{ requestId: string }>,
     { clock = () => new Date() }: { clock?: () => Date } = {}
@@ -381,6 +486,7 @@ export class BookingRequestManager {
 
     req.delivered = true;
     req.deliveredAt = now.toISOString();
+    this.#persistRequest(req);
 
     if (this.#audit) {
       this.#audit.record({
@@ -402,8 +508,7 @@ export class BookingRequestManager {
   ) {
     const requestId = "commandName" in envelope ? envelope.payload.requestId : envelope.requestId;
     const envelopeId = "commandName" in envelope ? envelope.commandId : undefined;
-    const req = this.#requests.get(requestId);
-    if (!req) throw new Error(`Booking request not found: ${requestId}`);
+    const req = this.getRequest(requestId);
 
     if (req.status !== "disclosed" || req.delivered) {
       return req;
@@ -415,6 +520,7 @@ export class BookingRequestManager {
       if (req.inventoryCommitmentId && this.#calendar) {
         this.#calendar.releaseBookingRequestBlock(req.inventoryCommitmentId, { clock });
       }
+      this.#persistRequest(req);
       if (this.#audit) {
         this.#audit.record({
           type: "booking_request.delivery_failed",
@@ -436,8 +542,7 @@ export class BookingRequestManager {
     const requestId = "commandName" in envelope ? envelope.payload.requestId : envelope.requestId;
     const envelopeId = "commandName" in envelope ? envelope.commandId : undefined;
 
-    const req = this.#requests.get(requestId);
-    if (!req) throw new Error(`Booking request not found: ${requestId}`);
+    const req = this.getRequest(requestId);
 
     if (req.status !== "disclosed") {
       return req;
@@ -449,6 +554,7 @@ export class BookingRequestManager {
       if (req.inventoryCommitmentId && this.#calendar) {
         this.#calendar.releaseBookingRequestBlock(req.inventoryCommitmentId, { clock });
       }
+      this.#persistRequest(req);
       if (this.#audit) {
         this.#audit.record({
           type: "booking_request.expired",
@@ -505,6 +611,7 @@ export class BookingRequestManager {
 
     req.status = "confirmed";
     req.confirmedAt = now.toISOString();
+    this.#persistRequest(req);
 
     if (this.#audit) {
       this.#audit.record({
@@ -550,6 +657,7 @@ export class BookingRequestManager {
     req.status = "declined";
     req.declinedAt = now.toISOString();
     req.declineReason = reason;
+    this.#persistRequest(req);
 
     if (req.inventoryCommitmentId && this.#calendar) {
       this.#calendar.releaseBookingRequestBlock(req.inventoryCommitmentId, { clock });

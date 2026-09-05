@@ -1,14 +1,18 @@
 import { existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { dirname } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { createPlatformCommandEnvelope, InMemoryAuditLog, InMemoryTelemetry, type CommandPrincipal } from "../../../packages/platform-core/src/index.js";
 import {
   AvailabilityCalendar,
   GuestVerificationService,
-  InMemoryBookingStateRepository,
   SqliteOperatorRepresentativeGrantStore,
+  SqliteGuestInteractionStore,
+  SqliteBookingPaymentJourneyRepository,
+  SqliteBookingStateRepository,
+  SqliteLivePaymentAttemptRegistry,
+  SqliteAvailabilityStore,
   UnitDiscoveryQuery,
   UnitRepository,
-  InMemoryBookingPaymentJourneyRepository,
   InMemorySecurityDepositAccountingRepository,
   type BookingContract,
   type ContractRepository,
@@ -47,6 +51,8 @@ export interface LocalGuestFixtureConfig {
   /** @deprecated Checkout is derived from the requested nights. */
   readonly demoCheckOut?: string;
   readonly clock?: () => Date;
+  /** Local PSP fixture port, also used to prove pending/failed restart paths. */
+  readonly verifyPayment?: (reference: string, amountKobo: number) => import("../../../domains/shortlet/src/card-payment.js").PSPVerifyResult;
 }
 
 export const DEFAULT_LOCAL_GUEST_CONFIG: LocalGuestFixtureConfig = {
@@ -92,18 +98,52 @@ const AUTHORITY_PERMISSIONS = [
  * Local composition-side store for Booking Contracts produced by the real
  * CardPaymentManager confirmation path. It only records results that the
  * authoritative payment application returned; it never creates contracts.
+ * Durable so a restarted application instance can re-serve the confirmed
+ * Reservation summary from the same SQLite file.
  */
 class LocalBookingContractRepository implements ContractRepository {
-  readonly #contracts = new Map<string, BookingContract>();
-  readonly #reservations = new Map<string, ReservationLike>();
+  readonly #database: import("node:sqlite").DatabaseSync;
+  #closed = false;
+
+  constructor(database: import("node:sqlite").DatabaseSync) {
+    this.#database = database;
+    this.#database.exec(`
+      CREATE TABLE IF NOT EXISTS local_booking_contracts (
+        contract_id TEXT PRIMARY KEY,
+        contract_json TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS local_booking_reservations (
+        reservation_id TEXT PRIMARY KEY,
+        reservation_json TEXT NOT NULL
+      );
+    `);
+  }
+
+  #rowContract(contractId: string): BookingContract | null {
+    const row = this.#database.prepare("SELECT contract_json FROM local_booking_contracts WHERE contract_id = $id").get({ $id: contractId }) as { contract_json?: string } | undefined;
+    if (!row || typeof row.contract_json !== "string") return null;
+    try {
+      const parsed: unknown = JSON.parse(row.contract_json);
+      return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as BookingContract : null;
+    } catch {
+      return null;
+    }
+  }
 
   recordConfirmedOutcome(reservation: ReservationLike, contract: BookingContract): void {
-    this.#reservations.set(reservation.reservationId, reservation);
-    this.#contracts.set(contract.contractId, contract);
+    this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      this.#database.prepare("INSERT INTO local_booking_contracts (contract_id, contract_json) VALUES ($id, $json) ON CONFLICT(contract_id) DO UPDATE SET contract_json = excluded.contract_json").run({ $id: contract.contractId, $json: JSON.stringify(contract) });
+      this.#database.prepare("INSERT INTO local_booking_reservations (reservation_id, reservation_json) VALUES ($id, $json) ON CONFLICT(reservation_id) DO UPDATE SET reservation_json = excluded.reservation_json").run({ $id: reservation.reservationId, $json: JSON.stringify(reservation) });
+      this.#database.exec("COMMIT");
+    } catch (error) {
+      try { this.#database.exec("ROLLBACK"); } catch { /* preserve the original failure */ }
+      throw error;
+    }
   }
 
   findContractById(contractId: string): BookingContract | null {
-    return this.#contracts.get(contractId) ?? null;
+    return this.#rowContract(contractId);
   }
 
   findArrivalDataByContractId(_contractId: string): null {
@@ -113,7 +153,18 @@ class LocalBookingContractRepository implements ContractRepository {
   }
 
   findReservationById(reservationId: string): ReservationLike | null {
-    return this.#reservations.get(reservationId) ?? null;
+    const row = this.#database.prepare("SELECT reservation_json FROM local_booking_reservations WHERE reservation_id = $id").get({ $id: reservationId }) as { reservation_json?: string } | undefined;
+    if (!row || typeof row.reservation_json !== "string") return null;
+    try {
+      const parsed: unknown = JSON.parse(row.reservation_json);
+      return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as ReservationLike : null;
+    } catch {
+      return null;
+    }
+  }
+
+  close(): void {
+    if (!this.#closed) this.#closed = true;
   }
 }
 
@@ -130,8 +181,11 @@ export class LocalGuestEnvironment {
   readonly conditionalOfferApp: ConditionalOfferApplication;
   readonly cardPaymentApp: CardPaymentApplication;
   readonly contractApp: BookingContractApplication;
-  readonly contractRepository = new LocalBookingContractRepository();
+  readonly contractRepository: LocalBookingContractRepository;
+  readonly interactionStore: SqliteGuestInteractionStore;
+  readonly livePaymentAttempts: SqliteLivePaymentAttemptRegistry;
   #searchCounter = 0;
+  readonly #database: DatabaseSync;
 
   constructor(config: Partial<LocalGuestFixtureConfig> = {}) {
     this.config = { ...DEFAULT_LOCAL_GUEST_CONFIG, ...config };
@@ -139,9 +193,22 @@ export class LocalGuestEnvironment {
 
     mkdirSync(dirname(this.config.databasePath), { recursive: true });
 
+    // One durable SQLite file backs every authoritative repository in this
+    // composition. A restarted application instance opens a fresh connection
+    // over the same file; no application state is retained in memory across
+    // the restart boundary. ADR-0039/0041/0070/0079.
+    this.#database = new DatabaseSync(this.config.databasePath);
+    this.#database.exec("PRAGMA busy_timeout = 5000");
+    this.#database.exec("PRAGMA foreign_keys = ON");
+    this.interactionStore = new SqliteGuestInteractionStore(this.config.databasePath, this.#database);
+    this.livePaymentAttempts = new SqliteLivePaymentAttemptRegistry(this.interactionStore);
+
     this.grantStore = new SqliteOperatorRepresentativeGrantStore(this.config.databasePath, { clock: this.clock });
     this.unitRepository = new UnitRepository();
-    this.calendar = new AvailabilityCalendar({ repository: this.unitRepository });
+    this.calendar = new AvailabilityCalendar({
+      repository: this.unitRepository,
+      store: new SqliteAvailabilityStore(this.config.databasePath, this.#database),
+    });
     this.audit = new InMemoryAuditLog();
     this.telemetry = new InMemoryTelemetry();
 
@@ -168,6 +235,7 @@ export class LocalGuestEnvironment {
       calendar: this.calendar,
       audit: this.audit,
       guestVerification,
+      store: this.interactionStore,
       // ADR-0082: operator representative authority is evaluated through the
       // real server-side grant store on every consequential operator command.
       operatorAuthority: this.grantStore,
@@ -179,9 +247,14 @@ export class LocalGuestEnvironment {
       repository: this.unitRepository,
       audit: this.audit,
       calendar: this.calendar,
+      store: this.interactionStore,
       clock: this.clock,
       operatorAuthority: this.grantStore,
     });
+
+    this.contractRepository = new LocalBookingContractRepository(this.#database);
+    const journeyRepository = new SqliteBookingPaymentJourneyRepository(this.#database, this.config.databasePath);
+    const bookingState = new SqliteBookingStateRepository(this.#database, this.config.databasePath);
 
     this.cardPaymentApp = createCardPaymentApplication({
       conditionalOfferApplication: this.conditionalOfferApp,
@@ -193,6 +266,7 @@ export class LocalGuestEnvironment {
       pspClient: {
         verifyTransaction: (pspReference: string) => {
           const session = this.cardPaymentApp.manager.getCheckoutSessionByReference(pspReference);
+          if (this.config.verifyPayment) return this.config.verifyPayment(pspReference, session?.amountKobo ?? 0);
           return {
             verified: true,
             status: "success",
@@ -203,7 +277,9 @@ export class LocalGuestEnvironment {
           };
         },
       },
-      journeyRepository: new InMemoryBookingPaymentJourneyRepository(),
+      journeyRepository,
+      liveAttempts: this.livePaymentAttempts,
+      store: this.interactionStore,
       securityDepositAccounting: new InMemorySecurityDepositAccountingRepository(),
       securityDepositCapability: {
         getCapability: ({ paymentMethod }) => ({
@@ -216,7 +292,7 @@ export class LocalGuestEnvironment {
           paymentMethod,
         }),
       },
-      bookingState: new InMemoryBookingStateRepository(),
+      bookingState,
       clock: this.clock,
     });
 
@@ -419,13 +495,19 @@ export class LocalGuestEnvironment {
         responsiblePersonVerifiedAtIso: "2026-08-01T00:00:00Z",
         verificationReference: "verif-ref-adeleke-001",
       },
-      idempotencyKey: `seed-guest-grant-${this.config.representativePersonId}`,
+      idempotencyKey: `seed-guest-grant-${this.config.tenantId}-${this.config.representativePersonId}`,
     });
     this.grantStore.createGrant(grantCommand);
   }
 
   close(): void {
     this.grantStore.close();
+    if (!this.#database.isOpen) return;
+    try {
+      this.#database.close();
+    } catch {
+      // The connection may already be closed by a prior reset; closing is best-effort.
+    }
   }
 }
 

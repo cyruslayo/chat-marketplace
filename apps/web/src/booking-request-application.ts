@@ -20,6 +20,7 @@ type BookingRequestManagerDependencies = ConstructorParameters<typeof BookingReq
 export type BookingRequestApplicationDependencies = BookingRequestManagerDependencies & {
   readonly operatorAuthority?: OperatorRepresentativeAuthority;
   readonly clock?: () => Date;
+  readonly store?: import("../../../domains/shortlet/src/guest-interaction-store.js").SqliteGuestInteractionStore | null;
 };
 
 export interface BookingRequestDecisionInput {
@@ -150,9 +151,9 @@ export class BookingRequestApplication {
 export function createBookingRequestApplication(
   dependencies: BookingRequestApplicationDependencies,
 ): BookingRequestApplication {
-  const { clock, operatorAuthority, ...managerDependencies } = dependencies;
+  const { clock, operatorAuthority, store, ...managerDependencies } = dependencies;
   return new BookingRequestApplication(
-    new BookingRequestManager(managerDependencies),
+    new BookingRequestManager({ ...managerDependencies, store }),
     { operatorAuthority, clock: clock ?? (() => new Date()) }
   );
 }

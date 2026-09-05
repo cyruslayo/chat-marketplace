@@ -16,6 +16,7 @@ export interface CardPaymentApplicationOptions {
   readonly securityDepositAccounting?: CardPaymentManagerOptions["securityDepositAccounting"];
   readonly bookingState: NonNullable<CardPaymentManagerOptions["bookingState"]>;
   readonly compensationRefundProvider?: CardPaymentManagerOptions["compensationRefundProvider"];
+  readonly store?: import("../../../domains/shortlet/src/guest-interaction-store.js").SqliteGuestInteractionStore | null;
 }
 
 export class CardPaymentApplication {

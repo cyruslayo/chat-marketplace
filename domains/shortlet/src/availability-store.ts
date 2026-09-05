@@ -76,10 +76,12 @@ export class SqliteAvailabilityStore {
   readonly databasePath: string;
   #database: DatabaseSync;
   #closed = false;
+  readonly #ownsDatabase: boolean;
 
-  constructor(databasePath: string) {
+  constructor(databasePath: string, database?: DatabaseSync) {
     this.databasePath = databasePath;
-    this.#database = new DatabaseSync(databasePath);
+    this.#database = database ?? new DatabaseSync(databasePath);
+    this.#ownsDatabase = database === undefined;
     this.#database.exec("PRAGMA busy_timeout = 5000");
     this.#database.exec(`
       CREATE TABLE IF NOT EXISTS availability_commitments (
@@ -103,6 +105,9 @@ export class SqliteAvailabilityStore {
   }
 
   #withWriteTransaction<T>(operation: () => T): T {
+    // ADR-0041/0044: composition may atomically commit inventory with its
+    // associated domain records using the same SQLite connection.
+    if (this.#database.isTransaction) return operation();
     this.#database.exec("BEGIN IMMEDIATE");
     try {
       const result = operation();
@@ -340,7 +345,7 @@ export class SqliteAvailabilityStore {
 
   close(): void {
     if (!this.#closed) {
-      this.#database.close();
+      if (this.#ownsDatabase) this.#database.close();
       this.#closed = true;
     }
   }

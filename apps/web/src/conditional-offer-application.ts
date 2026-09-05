@@ -20,6 +20,7 @@ export interface ConditionalOfferApplicationDependencies {
   readonly calendar?: unknown;
   readonly clock?: () => Date;
   readonly operatorAuthority?: OperatorRepresentativeAuthority;
+  readonly store?: import("../../../domains/shortlet/src/guest-interaction-store.js").SqliteGuestInteractionStore | null;
 }
 
 export class ConditionalOfferApplication {
@@ -69,6 +70,7 @@ export function createConditionalOfferApplication({
   bookingRequestApplication,
   clock,
   operatorAuthority,
+  store,
   ...managerDependencies
 }: ConditionalOfferApplicationDependencies): ConditionalOfferApplication {
   return new ConditionalOfferApplication(
@@ -76,6 +78,7 @@ export function createConditionalOfferApplication({
       ...managerDependencies,
       bookingRequestManager: bookingRequestApplication.manager,
       operatorAuthority,
+      store,
     }),
     clock ?? (() => new Date()),
   );

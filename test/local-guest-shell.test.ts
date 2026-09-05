@@ -83,7 +83,8 @@ test("shell telemetry accepts only the registered redacted event vocabulary", ()
 });
 
 test("HTTP refresh state requires the server-issued browser session and cannot enumerate another thread", async () => {
-  const server = startLocalGuestServer({ port: 0 });
+  const environment = new LocalGuestEnvironment({ databasePath: `.scratch/eval-test/shell_http_${Date.now()}.sqlite` });
+  const server = startLocalGuestServer({ port: 0, environment });
   const port = await server.listen();
   const base = `http://127.0.0.1:${port}`;
   const threadId = "g-0123456789ab";
@@ -116,5 +117,6 @@ test("HTTP refresh state requires the server-issued browser session and cannot e
     assert.equal(malformedSession.status, 401);
   } finally {
     await server.close();
+    environment.close();
   }
 });

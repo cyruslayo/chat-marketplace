@@ -107,25 +107,29 @@ export class ConditionalOfferManager {
   #bookingRequestManager: any;
   #operatorAuthority?: OperatorRepresentativeAuthority;
   #offers = new Map<string, ConditionalBookingOffer>();
+  readonly #store: import("./guest-interaction-store.js").SqliteGuestInteractionStore | null;
 
   constructor({
     repository = null,
     audit = null,
     calendar = null,
     bookingRequestManager = null,
-    operatorAuthority = undefined
+    operatorAuthority = undefined,
+    store = null
   }: {
     repository?: any;
     audit?: any;
     calendar?: any;
     bookingRequestManager?: any;
     operatorAuthority?: OperatorRepresentativeAuthority;
+    store?: import("./guest-interaction-store.js").SqliteGuestInteractionStore | null;
   } = {}) {
     this.#repository = repository;
     this.#audit = audit;
     this.#calendar = calendar;
     this.#bookingRequestManager = bookingRequestManager;
     this.#operatorAuthority = operatorAuthority;
+    this.#store = store;
   }
 
   issueOffer(
@@ -305,6 +309,7 @@ export class ConditionalOfferManager {
     };
 
     this.#offers.set(offerId, offer);
+    this.#persistOffer(offer);
 
     if (this.#audit) {
       this.#audit.record({
@@ -321,8 +326,56 @@ export class ConditionalOfferManager {
     return { ...offer };
   }
 
+  #persistOffer(offer: ConditionalBookingOffer): void {
+    // ADR-0075: the confirmation token is a server-issued secret and never
+    // enters the durable store. The token is regenerated in memory when the
+    // offer is hydrated after a restart; tokenUsed remains authoritative.
+    const { confirmationToken: _token, ...redacted } = offer;
+    this.#store?.saveConditionalOffer({
+      offerId: offer.offerId,
+      requestId: offer.requestId,
+      inventoryCommitmentId: offer.inventoryCommitmentId,
+      unitId: offer.unitId,
+      tenantId: offer.tenantId ?? "",
+      offerJson: JSON.stringify(redacted),
+      status: offer.status,
+      issuedAt: offer.issuedAt,
+      acceptedAt: offer.acceptedAt ?? null,
+      tokenUsed: offer.tokenUsed,
+      offerVersion: offer.offerVersion
+    });
+  }
+
   getOffer(offerId: string): ConditionalBookingOffer {
-    const offer = this.#offers.get(offerId);
+    let offer = this.#offers.get(offerId);
+    if (!offer) {
+      const record = this.#store?.findConditionalOffer(offerId);
+      if (record) {
+        try {
+          const parsed = JSON.parse(record.offerJson) as ConditionalBookingOffer;
+          if (parsed.offerId === offerId && typeof parsed.paymentWindow?.expiresAt === "string") {
+            // Regenerate the server-issued confirmation token from the
+            // deterministic offer facts (the token was never persisted).
+            if (!parsed.tokenUsed && parsed.status !== "accepted") {
+              const regenerated = createConfirmationToken({
+                actorId: parsed.parties.primaryGuest.id,
+                tenantId: parsed.tenantId,
+                offerId: parsed.offerId,
+                offerVersion: parsed.offerVersion,
+                quoteVersion: parsed.aggregateVersions.quoteVersion,
+                totalAmountDueNowKobo: parsed.totalAmountDueNowKobo,
+                expiresAt: parsed.paymentWindow.expiresAt
+              });
+              parsed.confirmationToken = regenerated;
+            }
+            offer = parsed;
+            this.#offers.set(offerId, offer);
+          }
+        } catch {
+          offer = undefined;
+        }
+      }
+    }
     if (!offer) throw new Error(`Conditional offer not found: ${offerId}`);
     return offer;
   }
@@ -432,6 +485,7 @@ export class ConditionalOfferManager {
     offer.status = "accepted";
     offer.tokenUsed = true;
     offer.acceptedAt = now.toISOString();
+    this.#persistOffer(offer);
 
     if (this.#audit) {
       this.#audit.record({

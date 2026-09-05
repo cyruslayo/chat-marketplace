@@ -155,12 +155,13 @@ export interface CardPaymentManagerOptions {
   readonly pspClient?: {
     verifyTransaction(pspReference: string): PSPVerifyResult;
   };
-  readonly liveAttempts?: import("./payment-attempt.js").LivePaymentAttemptRegistry;
+  readonly liveAttempts?: import("./payment-attempt.js").LivePaymentAttemptRegistryPort;
   readonly bookingState?: BookingStateRepository;
   readonly journeyRepository?: BookingPaymentJourneyRepository;
   readonly securityDepositCapability?: SecurityDepositCollectionCapabilityProvider;
   readonly securityDepositAccounting?: SecurityDepositAccountingRepository;
   readonly compensationRefundProvider?: BookingPaymentCompensationPort;
+  readonly store?: import("./guest-interaction-store.js").SqliteGuestInteractionStore | null;
 }
 
 export class CardPaymentManager {
@@ -175,6 +176,7 @@ export class CardPaymentManager {
   readonly #securityDepositCapability?: SecurityDepositCollectionCapabilityProvider;
   readonly #securityDepositAccounting?: SecurityDepositAccountingRepository;
   readonly #compensationRefundProvider?: CardPaymentManagerOptions["compensationRefundProvider"];
+  readonly #store?: CardPaymentManagerOptions["store"];
 
   readonly #sessions = new Map<string, CardCheckoutSession>();
   readonly #reservations = new Map<string, Reservation>();
@@ -197,10 +199,73 @@ export class CardPaymentManager {
     this.#securityDepositCapability = options.securityDepositCapability;
     this.#securityDepositAccounting = options.securityDepositAccounting;
     this.#compensationRefundProvider = options.compensationRefundProvider;
+    this.#store = options.store ?? null;
+    if (this.#store) this.#rehydrateFromStore();
   }
 
-  /**
-   * ADR 0049: Initialize fresh PSP-hosted card checkout.
+  #rehydrateFromStore(): void {
+    if (!this.#store) return;
+    for (const offerId of this.#store.listBookingSnapshotOfferIds()) {
+      const snapshot = this.#store.findBookingSnapshotByOfferId(offerId);
+      if (!snapshot) continue;
+      try {
+        const reservation = JSON.parse(snapshot.reservationJson) as Reservation;
+        const contract = JSON.parse(snapshot.contractJson) as BookingContract;
+        if (reservation.reservationId === snapshot.reservationId && contract.contractId === snapshot.contractId && contract.offerId === offerId) {
+          this.#reservations.set(reservation.reservationId, reservation);
+          this.#contracts.set(contract.contractId, contract);
+        }
+      } catch {
+        // Corrupt snapshot rows are ignored; authoritative re-derivation wins.
+      }
+    }
+    for (const pspReference of this.#store.listProcessedPspReferenceIds()) {
+      const record = this.#store.findProcessedPspReference(pspReference);
+      if (!record) continue;
+      if (record.tenantId) {
+        this.#processedPspReferences.set(pspReference, { reservationId: record.reservationId, contractId: record.contractId, offerId: record.offerId, tenantId: record.tenantId });
+      } else {
+        this.#processedPspReferences.set(pspReference, { reservationId: record.reservationId, contractId: record.contractId, offerId: record.offerId });
+      }
+    }
+  }
+
+  #persistReservationAndContract(reservation: Reservation, bookingContract: BookingContract): void {
+    this.#store?.saveBookingSnapshot({
+      reservationId: reservation.reservationId,
+      contractId: bookingContract.contractId,
+      offerId: bookingContract.offerId,
+      reservationJson: JSON.stringify(reservation),
+      contractJson: JSON.stringify(bookingContract),
+      confirmedAt: reservation.confirmedAt,
+    });
+  }
+
+  #persistSession(session: CardCheckoutSession): void {
+    this.#store?.saveCheckoutSession({
+      checkoutId: session.checkoutId,
+      offerId: session.offerId,
+      pspReference: session.pspReference,
+      totalAmountDueNowKobo: session.totalAmountDueNowKobo,
+      amountKobo: session.amountKobo,
+      purpose: session.purpose,
+      currency: session.currency,
+      expiresAt: session.expiresAt,
+      status: session.status,
+    });
+  }
+
+  #persistProcessedReference(pspReference: string, value: { reservationId: string; contractId: string; offerId: string; tenantId?: string }): void {
+    this.#store?.saveProcessedPspReference({
+      pspReference,
+      reservationId: value.reservationId,
+      contractId: value.contractId,
+      offerId: value.offerId,
+      tenantId: value.tenantId ?? null,
+    });
+  }
+
+  /** ADR 0049: Initialize fresh PSP-hosted card checkout.
    */
   initializeCardCheckout(
     envelope: PlatformCommandEnvelope<{ offerId: string }>,
@@ -267,6 +332,7 @@ export class CardPaymentManager {
     this.#liveAttempts?.acquire({ offerId, method: "fresh_card", purpose, attemptId: checkoutId, startedAt: now.toISOString(), expiresAt: offer.paymentWindow.expiresAt });
     if (journey) this.#journeys!.update(offerId, journey.journeyVersion, (value) => ({ ...value, stage: purpose === "stay" ? "stay_payment_active" : "deposit_payment_active", [purpose === "stay" ? "stay" : "deposit"]: { ...(purpose === "stay" ? value.stay : value.deposit), status: "active" } }));
     this.#sessions.set(checkoutId, session);
+    this.#persistSession(session);
 
     if (this.#audit) {
       this.#audit.record({
@@ -408,7 +474,7 @@ export class CardPaymentManager {
       if (!current) throw new Error("Payment journey not found");
       if (current.stage === "confirmed" && current.finalReservationId && current.finalContractId) return { outcome: "confirmed", reservation: this.#reservations.get(current.finalReservationId)!, bookingContract: this.#contracts.get(current.finalContractId)!, ledgerEntries: this.#ledgerEntries.get(current.finalReservationId) ?? [] };
       this.#journeys.update(offer.offerId, current.journeyVersion, (value) => ({ ...value, stage: "stay_settled", stay: { ...value.stay, status: "settled", providerReference: session.pspReference, paidAt: now.toISOString() } }));
-      session.status = "completed"; this.#liveAttempts?.release(offer.offerId);
+      session.status = "completed"; this.#persistSession(session); this.#liveAttempts?.release(offer.offerId);
       const journey = this.#journeys.findByOfferId(offer.offerId); if (!journey) throw new Error("Payment journey disappeared after settlement");
       return { outcome: "deposit_required", journey };
     }
@@ -538,10 +604,13 @@ export class CardPaymentManager {
     this.#reservations.set(reservationId, reservation);
     this.#contracts.set(contractId, bookingContract);
     this.#ledgerEntries.set(reservationId, ledgerEntries);
+    this.#persistReservationAndContract(reservation, bookingContract);
     session.status = "completed";
+    this.#persistSession(session);
     if (this.#journeys) { const current = this.#journeys.findByOfferId(offer.offerId); if (current?.stage === "both_settled") this.#journeys.update(offer.offerId, current.journeyVersion, (value) => ({ ...value, stage: "confirmed", finalReservationId: reservationId, finalContractId: contractId })); }
     this.#liveAttempts?.release(offer.offerId);
     this.#processedPspReferences.set(pspReference, { reservationId, contractId, offerId: offer.offerId, tenantId: offer.tenantId });
+    this.#persistProcessedReference(pspReference, { reservationId, contractId, offerId: offer.offerId, tenantId: offer.tenantId });
 
     if (this.#audit) {
       this.#audit.record({
@@ -568,16 +637,62 @@ export class CardPaymentManager {
   getCheckoutSession(offerId: string): CardCheckoutSession | undefined {
     const sessions = [...this.#sessions.values()].filter((session) => session.offerId === offerId);
     const session = sessions.find((candidate) => candidate.status === "initiated") ?? sessions.at(-1);
-    return session ? { ...session } : undefined;
+    if (session) return { ...session };
+    const record = this.#store?.findCheckoutSessionByOfferId(offerId);
+    if (!record) return undefined;
+    const hydrated: CardCheckoutSession = {
+      checkoutId: record.checkoutId,
+      offerId: record.offerId,
+      pspReference: record.pspReference,
+      // ADR-0075: the PSP checkout URL is derived, never persisted.
+      checkoutUrl: `https://checkout.psp.example.com/pay/${record.pspReference}`,
+      totalAmountDueNowKobo: record.totalAmountDueNowKobo,
+      amountKobo: record.amountKobo,
+      purpose: record.purpose,
+      currency: record.currency,
+      expiresAt: record.expiresAt,
+      status: record.status,
+    };
+    this.#sessions.set(record.checkoutId, hydrated);
+    return { ...hydrated };
   }
 
   getCheckoutSessionByReference(pspReference: string): CardCheckoutSession | undefined {
     const session = [...this.#sessions.values()].find((candidate) => candidate.pspReference === pspReference);
-    return session ? { ...session } : undefined;
+    if (session) return { ...session };
+    const record = this.#store?.findCheckoutSessionByReference(pspReference);
+    if (!record) return undefined;
+    const hydrated: CardCheckoutSession = {
+      checkoutId: record.checkoutId,
+      offerId: record.offerId,
+      pspReference: record.pspReference,
+      checkoutUrl: `https://checkout.psp.example.com/pay/${record.pspReference}`,
+      totalAmountDueNowKobo: record.totalAmountDueNowKobo,
+      amountKobo: record.amountKobo,
+      purpose: record.purpose,
+      currency: record.currency,
+      expiresAt: record.expiresAt,
+      status: record.status,
+    };
+    this.#sessions.set(record.checkoutId, hydrated);
+    return { ...hydrated };
   }
 
   getBookingContract(offerId: string): BookingContract | undefined {
-    return [...this.#contracts.values()].find((contract) => contract.offerId === offerId);
+    const match = [...this.#contracts.values()].find((contract) => contract.offerId === offerId);
+    if (match) return match;
+    const record = this.#store?.findBookingSnapshotByOfferId(offerId);
+    if (!record) return undefined;
+    try {
+      const contract = JSON.parse(record.contractJson) as BookingContract;
+      if (contract.contractId === record.contractId && contract.offerId === offerId) {
+        this.#contracts.set(contract.contractId, contract);
+        return contract;
+      }
+      return undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   /**
