@@ -188,6 +188,7 @@ function renderSurface(surface: GuestSurfacePayload): void {
   activePayload = surface;
   activeWorkspace.replaceChildren();
   activeWorkspace.hidden = false;
+  activeWorkspace.tabIndex = -1;
   workspaceRegion.hidden = false;
   activeWorkspace.dataset.mode = presentation.mode;
   activeWorkspace.dataset.status = presentation.status;
@@ -212,6 +213,7 @@ function renderSurface(surface: GuestSurfacePayload): void {
       shellState = closeFocusedSurface(shellState);
       activeWorkspace.hidden = true;
       showReopen();
+      workspaceReopen.focus();
       trackTelemetry("focused-surface-closed");
       announce("Focused workspace closed. Conversation context preserved.");
     });
@@ -258,6 +260,7 @@ function renderSurface(surface: GuestSurfacePayload): void {
   }
   showReopen();
   activeWorkspace.scrollIntoView({ block: "nearest" });
+  activeWorkspace.focus({ preventScroll: true });
   trackTelemetry(presentation.mode === "focused-surface" ? "focused-surface-opened" : "inline-surface-rendered");
   announce(`${presentation.summary} is ready.`);
 }

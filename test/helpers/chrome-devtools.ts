@@ -28,6 +28,10 @@ export interface RealBrowserTab {
   getCookies(): Promise<readonly RealBrowserCookie[]>;
   getContent(): Promise<string>;
   close(): Promise<void>;
+  setViewport(width: number, height: number): Promise<void>;
+  setOffline(offline: boolean): Promise<void>;
+  pressKey(key: string): Promise<void>;
+  setReducedMotion(reduced: boolean): Promise<void>;
 }
 
 export interface RealBrowserInstance {
@@ -276,6 +280,23 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
       }
     }
 
+    async function setViewport(width: number, height: number): Promise<void> {
+      await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: true }, sessionId);
+    }
+
+    async function setOffline(offline: boolean): Promise<void> {
+      await send("Network.emulateNetworkConditions", { offline, latency: offline ? 0 : 20, downloadThroughput: offline ? 0 : 1_000_000, uploadThroughput: offline ? 0 : 1_000_000 }, sessionId);
+    }
+
+    async function pressKey(key: string): Promise<void> {
+      await send("Input.dispatchKeyEvent", { type: "keyDown", key }, sessionId);
+      await send("Input.dispatchKeyEvent", { type: "keyUp", key }, sessionId);
+    }
+
+    async function setReducedMotion(reduced: boolean): Promise<void> {
+      await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: reduced ? "reduce" : "no-preference" }] }, sessionId);
+    }
+
     if (initialUrl !== "about:blank") {
       await navigate(initialUrl);
     }
@@ -293,6 +314,10 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
       getCookies,
       getContent,
       close,
+      setViewport,
+      setOffline,
+      pressKey,
+      setReducedMotion,
     };
   }
 
