@@ -25,12 +25,16 @@ import {
   type ProductionRevenueReleaseRecord,
   type AuthoritativeReleaseInput,
   SqliteOperatorSessionAuthority,
+  SqliteGuestInteractionStore,
+  SqliteAvailabilityStore,
 } from "../../../domains/shortlet/src/index.js";
 import {
   createBookingRequestApplication,
+  createConditionalOfferApplication,
   type BookingRequestApplication,
   type BookingRequestArtifact,
 } from "../../../apps/web/src/index.js";
+import { InMemoryAuditLog, InMemoryTelemetry } from "../../../packages/platform-core/src/index.js";
 
 export interface LocalOwnerFixtureConfig {
   readonly databasePath: string;
@@ -111,7 +115,12 @@ export class LocalApartmentOwnerEnvironment {
   readonly accountingRepository: InMemoryRevenueAccountingRepository;
   readonly bookingStateRepository: InMemoryBookingStateRepository;
   readonly bookingRequestApp: BookingRequestApplication;
+  readonly conditionalOfferApp: ReturnType<typeof createConditionalOfferApplication>;
   readonly sessionAuthority: SqliteOperatorSessionAuthority;
+  readonly interactionStore: SqliteGuestInteractionStore;
+  readonly audit: InMemoryAuditLog;
+  readonly telemetry: InMemoryTelemetry;
+  readonly #database: DatabaseSync;
 
   #demoRequests: string[] = [];
 
@@ -121,10 +130,15 @@ export class LocalApartmentOwnerEnvironment {
 
     mkdirSync(dirname(this.config.databasePath), { recursive: true });
 
+    this.#database = new DatabaseSync(this.config.databasePath);
+    this.#database.exec("PRAGMA busy_timeout = 5000");
+    this.interactionStore = new SqliteGuestInteractionStore(this.config.databasePath, this.#database);
+    this.audit = new InMemoryAuditLog();
+    this.telemetry = new InMemoryTelemetry();
     this.grantStore = new SqliteOperatorRepresentativeGrantStore(this.config.databasePath, { clock: this.clock });
     this.sessionAuthority = new SqliteOperatorSessionAuthority(this.config.databasePath, { clock: this.clock });
     this.unitRepository = new UnitRepository();
-    this.calendar = new AvailabilityCalendar({ repository: this.unitRepository });
+    this.calendar = new AvailabilityCalendar({ repository: this.unitRepository, store: new SqliteAvailabilityStore(this.config.databasePath, this.#database) });
     this.enforcementManager = new OperatorEnforcementManager({
       clock: this.clock,
       operatorAuthority: this.grantStore,
@@ -172,6 +186,17 @@ export class LocalApartmentOwnerEnvironment {
       calendar: this.calendar,
       guestVerification,
       operatorAuthority: this.grantStore,
+      clock: this.clock,
+      store: this.interactionStore,
+      audit: this.audit,
+    });
+    this.conditionalOfferApp = createConditionalOfferApplication({
+      bookingRequestApplication: this.bookingRequestApp,
+      repository: this.unitRepository,
+      calendar: this.calendar,
+      store: this.interactionStore,
+      operatorAuthority: this.grantStore,
+      audit: this.audit,
       clock: this.clock,
     });
 
@@ -369,6 +394,61 @@ export class LocalApartmentOwnerEnvironment {
     return this.bookingRequestApp.getArtifact(requestId, this.getRepresentativePrincipal());
   }
 
+  listOperatorRequestArtifacts(principal: CommandPrincipal): readonly BookingRequestArtifact[] {
+    if (principal.role !== "operator" || !principal.id || !principal.tenantId) return [];
+    const actorId = principal.id;
+    const tenantId = principal.tenantId;
+    const requests = this.interactionStore.listBookingRequestIds().flatMap((requestId) => {
+      try {
+        const request = this.bookingRequestApp.manager.getRequest(requestId) as { operatorId?: string; tenantId?: string; status: string };
+        if (!request.operatorId || request.tenantId !== tenantId || !this.grantStore.canActForOperator({ actorId, operatorId: request.operatorId, tenantId })) return [];
+        if (!["disclosed", "confirmed", "declined", "expired"].includes(request.status)) return [];
+        const artifact = this.bookingRequestApp.getArtifact(requestId, principal);
+        try { this.audit.record({ type: "operator_request_visible", actorId: principal.id, tenantId: principal.tenantId, requestId, status: artifact.facts.status }); this.telemetry.track({ type: "operator_request_visible", principalId: principal.id, tenantId: principal.tenantId, aggregateId: requestId }); } catch { /* observability cannot block visibility */ }
+        return [artifact];
+      } catch { return []; }
+    });
+    return requests.sort((a, b) => {
+      const pending = (status: string) => status === "disclosed" ? 0 : 1;
+      return pending(a.facts.status) - pending(b.facts.status) || Date.parse(a.facts.operatorResponseDeadlineAt) - Date.parse(b.facts.operatorResponseDeadlineAt);
+    });
+  }
+
+  operatorRequestDetail(requestId: string, principal: CommandPrincipal): BookingRequestArtifact {
+    const request = this.bookingRequestApp.manager.getRequest(requestId) as { operatorId?: string; tenantId?: string };
+    if (!request.operatorId || !request.tenantId || request.tenantId !== principal.tenantId || principal.role !== "operator" || !principal.id || !this.grantStore.canActForOperator({ actorId: principal.id, operatorId: request.operatorId, tenantId: request.tenantId })) throw new Error("Operator request not found");
+    const artifact = this.bookingRequestApp.getArtifact(requestId, principal);
+    try { this.audit.record({ type: "operator_request_opened", actorId: principal.id, tenantId: principal.tenantId, requestId, status: artifact.facts.status }); this.telemetry.track({ type: "operator_request_opened", principalId: principal.id, tenantId: principal.tenantId, aggregateId: requestId }); } catch { /* observability cannot block reads */ }
+    return artifact;
+  }
+
+  confirmOperatorRequest(requestId: string, principal: CommandPrincipal): BookingRequestArtifact {
+    const artifact = this.operatorRequestDetail(requestId, principal);
+    const action = artifact.actions.find((candidate) => candidate.type === "confirm");
+    if (!action) throw new Error("Booking Request action is stale or no longer allowed");
+    try { this.audit.record({ type: "operator_confirmation_attempted", actorId: principal.id, tenantId: principal.tenantId, requestId, previousState: artifact.facts.status }); this.telemetry.track({ type: "operator_confirmation_attempted", principalId: principal.id, tenantId: principal.tenantId, aggregateId: requestId }); } catch { /* no block */ }
+    try {
+      this.bookingRequestApp.confirm({ ...action, principal, action: "confirm" });
+      this.conditionalOfferApp.issue(requestId, principal);
+    } catch (error) {
+      try { this.audit.record({ type: "operator_stale_action_rejected", actorId: principal.id, tenantId: principal.tenantId, requestId, reasonCode: /expired/i.test(String(error)) ? "expired" : "stale" }); this.telemetry.track({ type: "operator_stale_action_rejected", principalId: principal.id, tenantId: principal.tenantId, aggregateId: requestId }); } catch { /* no block */ }
+      throw error;
+    }
+    try { this.audit.record({ type: "operator_request_confirmed", actorId: principal.id, tenantId: principal.tenantId, requestId, previousState: artifact.facts.status, newState: "confirmed" }); this.telemetry.track({ type: "operator_request_confirmed", principalId: principal.id, tenantId: principal.tenantId, aggregateId: requestId }); } catch { /* no block */ }
+    return this.operatorRequestDetail(requestId, principal);
+  }
+
+  declineOperatorRequest(requestId: string, principal: CommandPrincipal, reason?: string): BookingRequestArtifact {
+    const artifact = this.operatorRequestDetail(requestId, principal);
+    const action = artifact.actions.find((candidate) => candidate.type === "decline");
+    if (!action) throw new Error("Booking Request action is stale or no longer allowed");
+    try { this.audit.record({ type: "operator_decline_attempted", actorId: principal.id, tenantId: principal.tenantId, requestId, previousState: artifact.facts.status }); this.telemetry.track({ type: "operator_decline_attempted", principalId: principal.id, tenantId: principal.tenantId, aggregateId: requestId }); } catch { /* no block */ }
+    try { this.bookingRequestApp.decline({ ...action, principal, action: "decline", ...(reason ? { reason } : {}) }); }
+    catch (error) { try { this.audit.record({ type: "operator_expired_action_rejected", actorId: principal.id, tenantId: principal.tenantId, requestId, reasonCode: /expired/i.test(String(error)) ? "expired" : "stale" }); this.telemetry.track({ type: "operator_expired_action_rejected", principalId: principal.id, tenantId: principal.tenantId, aggregateId: requestId }); } catch { /* no block */ } throw error; }
+    try { this.audit.record({ type: "operator_request_declined", actorId: principal.id, tenantId: principal.tenantId, requestId, previousState: artifact.facts.status, newState: "declined", ...(reason ? { reason } : {}) }); this.telemetry.track({ type: "operator_request_declined", principalId: principal.id, tenantId: principal.tenantId, aggregateId: requestId }); } catch { /* no block */ }
+    return this.operatorRequestDetail(requestId, principal);
+  }
+
   getStateOverview(): LocalOwnerStateOverview {
     const unit = this.unitRepository.findById(this.config.unitId);
     if (!unit) throw new Error("Fixture unit not found");
@@ -502,6 +582,7 @@ export class LocalApartmentOwnerEnvironment {
   close(): void {
     this.sessionAuthority.close();
     this.grantStore.close();
+    if (this.#database.isOpen) this.#database.close();
   }
 }
 

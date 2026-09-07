@@ -29,6 +29,20 @@ function operatorShellHtml(principal: { actorId: string; tenantId: string }): st
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Operator</title><style>body{font:16px system-ui;margin:0;padding:24px;background:#f7f7f5;color:#202124}main{max-width:640px;margin:8vh auto;background:white;border:1px solid #ddd;border-radius:12px;padding:24px}button{min-height:44px;padding:10px 18px;border-radius:8px;border:1px solid #aaa;background:white;cursor:pointer}dt{font-weight:600;margin-top:12px}dd{margin:2px 0}</style></head><body><main><h1>Operator workspace</h1><p>You are authenticated for this tenant. Operator actions remain subject to the active representative grant.</p><dl><dt>Actor reference</dt><dd>${principal.actorId}</dd><dt>Tenant reference</dt><dd>${principal.tenantId}</dd></dl><form method="post" action="/operator/logout"><button type="submit">Log out</button></form></main></body></html>`;
 }
 
+function escapeHtml(value: string): string { return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character] ?? character)); }
+function formatWat(iso: string): string { return new Intl.DateTimeFormat("en-NG", { timeZone: "Africa/Lagos", dateStyle: "medium", timeStyle: "short" }).format(new Date(iso)) + " WAT"; }
+function requestStatusLabel(status: string): string { return status === "disclosed" ? "pending" : status; }
+function operatorInboxHtml(env: LocalApartmentOwnerEnvironment, principal: { actorId: string; tenantId: string }): string {
+  const requests = env.listOperatorRequestArtifacts({ id: principal.actorId, role: "operator", tenantId: principal.tenantId });
+  const rows = requests.map((request) => `<li><a href="/operator/requests/${encodeURIComponent(request.facts.requestId)}"><strong>${escapeHtml(request.facts.requestId)}</strong></a><span>${escapeHtml(request.facts.unitId)} · ${request.facts.checkIn} to ${request.facts.checkOut} · ${request.facts.occupantCount ?? request.facts.occupants.length} occupants · ${formatKobo(request.facts.quote?.allInStayTotalKobo ?? 0)}</span><span>Status: ${requestStatusLabel(request.facts.status)} · Response deadline: ${formatWat(request.facts.operatorResponseDeadlineAt)}</span></li>`).join("");
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Operator requests</title><style>body{font:16px system-ui;margin:0;padding:16px;background:#f7f7f5;color:#202124}main{max-width:900px;margin:0 auto;background:#fff;border:1px solid #ddd;border-radius:12px;padding:20px}li{list-style:none;border:1px solid #ddd;border-radius:10px;padding:14px;margin:10px 0;display:grid;gap:6px}a{color:#155eef}button{min-height:44px;padding:10px 16px;border-radius:8px;border:1px solid #aaa;background:#fff}header{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}@media(max-width:390px){body{padding:8px}main{padding:12px}}</style></head><body><main><header><div><h1>Booking Requests</h1><p>Authenticated Operator inbox</p></div><form method="post" action="/operator/logout"><button type="submit">Log out</button></form></header><h2>Requests</h2>${rows ? `<ul>${rows}</ul>` : "<p>No Booking Requests are visible to this representative.</p>"}</main></body></html>`;
+}
+function operatorRequestHtml(env: LocalApartmentOwnerEnvironment, principal: { actorId: string; tenantId: string }, requestId: string, error = ""): string {
+  const request = env.operatorRequestDetail(requestId, { id: principal.actorId, role: "operator", tenantId: principal.tenantId });
+  const actionable = request.actions.length > 0 && request.facts.status === "disclosed";
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Booking Request ${escapeHtml(requestId)}</title><style>body{font:16px system-ui;margin:0;padding:16px;background:#f7f7f5;color:#202124}main{max-width:680px;margin:0 auto;background:#fff;border:1px solid #ddd;border-radius:12px;padding:20px}dt{font-weight:700;margin-top:12px}dd{margin:2px 0}form{display:inline-block;margin:8px 8px 0 0}button{min-height:44px;padding:10px 16px;border-radius:8px;border:1px solid #aaa;background:#fff;cursor:pointer}.confirm{background:#155eef;color:#fff}.decline{background:#b42318;color:#fff}.error{color:#b42318;border:1px solid #fda29b;padding:10px}@media(max-width:390px){body{padding:8px}main{padding:12px}}</style></head><body><main><p><a href="/operator/requests">← Back to requests</a></p><h1>Booking Request</h1>${error ? `<p class="error" role="alert">${escapeHtml(error)}</p>` : ""}<dl><dt>Request</dt><dd>${escapeHtml(request.facts.requestId)}</dd><dt>Unit</dt><dd>${escapeHtml(request.facts.unitId)}</dd><dt>Dates</dt><dd>${request.facts.checkIn} to ${request.facts.checkOut} (${request.facts.nights} nights)</dd><dt>Guest party</dt><dd>${request.facts.occupantCount ?? request.facts.occupants.length} occupants</dd><dt>All-In Stay Total</dt><dd>${formatKobo(request.facts.quote?.allInStayTotalKobo ?? 0)}</dd>${request.facts.quote?.refundableSecurityDepositKobo ? `<dt>Refundable Security Deposit</dt><dd>${formatKobo(request.facts.quote.refundableSecurityDepositKobo)}</dd>` : ""}<dt>Status</dt><dd>${requestStatusLabel(request.facts.status)}</dd><dt>Response deadline</dt><dd>${formatWat(request.facts.operatorResponseDeadlineAt)}</dd></dl>${actionable ? `<p>Confirming creates the existing Conditional Booking Offer for the Guest. Declining releases the request inventory.</p><form method="post" action="/operator/requests/${encodeURIComponent(requestId)}/confirm"><button class="confirm" type="submit">Confirm Booking Request</button></form><form method="post" action="/operator/requests/${encodeURIComponent(requestId)}/decline"><button class="decline" type="submit">Decline Booking Request</button></form>` : "<p>This request is no longer actionable.</p>"}</main></body></html>`;
+}
+
 function formatKobo(kobo: number): string {
   const naira = (kobo / 100).toLocaleString("en-NG", {
     minimumFractionDigits: 2,
@@ -421,6 +435,37 @@ export function startLocalOwnerServer(options: {
       const principal = operatorPrincipal(req, env);
       if (!principal) { res.writeHead(401, { "Location": "/operator/login", "Content-Type": "text/plain" }); res.end("Authentication required"); return; }
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(operatorShellHtml(principal)); return;
+    }
+    if (url.pathname === "/operator/requests" || url.pathname === "/operator/requests/") {
+      const principal = operatorPrincipal(req, env);
+      if (!principal) { res.writeHead(401); res.end("Authentication required"); return; }
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(operatorInboxHtml(env, principal)); return;
+    }
+    const detailMatch = url.pathname.match(/^\/operator\/requests\/([^/]+)$/);
+    if (req.method === "GET" && detailMatch) {
+      const principal = operatorPrincipal(req, env);
+      if (!principal) { res.writeHead(401); res.end("Authentication required"); return; }
+      try { res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(operatorRequestHtml(env, principal, decodeURIComponent(detailMatch[1]))); }
+      catch { res.writeHead(404); res.end("Request not found"); }
+      return;
+    }
+    const actionMatch = url.pathname.match(/^\/operator\/requests\/([^/]+)\/(confirm|decline)$/);
+    if (req.method === "POST" && actionMatch) {
+      const origin = req.headers.origin;
+      if (origin && origin !== `http://${req.headers.host ?? "localhost"}`) { res.writeHead(403); res.end("Origin rejected"); return; }
+      const principal = operatorPrincipal(req, env);
+      if (!principal) { res.writeHead(401); res.end("Authentication required"); return; }
+      const requestId = decodeURIComponent(actionMatch[1]);
+      try {
+        if (actionMatch[2] === "confirm") env.confirmOperatorRequest(requestId, { id: principal.actorId, role: "operator", tenantId: principal.tenantId });
+        else env.declineOperatorRequest(requestId, { id: principal.actorId, role: "operator", tenantId: principal.tenantId });
+        res.writeHead(303, { Location: `/operator/requests/${encodeURIComponent(requestId)}` }); res.end();
+      } catch (error) {
+        let body = "Request action rejected";
+        try { body = operatorRequestHtml(env, principal, requestId, error instanceof Error ? error.message : "Request action rejected"); } catch { /* authorization may have changed; keep generic */ }
+        if (!res.headersSent) { res.writeHead(409, { "Content-Type": body.startsWith("<!doctype") ? "text/html; charset=utf-8" : "text/plain; charset=utf-8" }); res.end(body); }
+      }
+      return;
     }
     if (req.method === "POST" && url.pathname === "/operator/logout") {
       const origin = req.headers.origin;

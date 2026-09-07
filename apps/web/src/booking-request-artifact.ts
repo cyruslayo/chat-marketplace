@@ -30,7 +30,8 @@ export interface BookingRequestArtifact {
     readonly checkOut: string;
     readonly nights: number;
     readonly primaryGuestName?: string;
-    readonly occupants: readonly string[];
+      readonly occupants: readonly string[];
+      readonly occupantCount?: number;
     readonly quote?: {
       readonly currency: string;
       readonly allInStayTotalKobo: number;
@@ -160,6 +161,7 @@ export function bookingRequestArtifactFromRequest(
       nights: request.nights,
       ...(viewer.role === "guest" && request.primaryGuest?.name ? { primaryGuestName: request.primaryGuest.name } : {}),
       occupants: Object.freeze(viewer.role === "guest" ? (request.occupants ?? []).map((occupant) => occupant.name) : []),
+      occupantCount: request.occupants?.length ?? 0,
       ...(safeQuote ? { quote: safeQuote } : {}),
       disclosedAt: request.disclosedAt,
       delivered: request.delivered,

@@ -268,8 +268,8 @@ export class BookingRequestManager {
   }
 
   getRequest(requestId: string) {
-    let req = this.#requests.get(requestId);
-    if (!req) req = this.#hydrateRequest(requestId);
+    let req = this.#requestStore ? this.#hydrateRequest(requestId) : this.#requests.get(requestId);
+    if (!req) req = this.#requests.get(requestId);
     if (!req) throw new Error(`Booking request not found: ${requestId}`);
     return req;
   }
