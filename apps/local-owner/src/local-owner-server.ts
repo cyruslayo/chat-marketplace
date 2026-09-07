@@ -6,6 +6,29 @@ import {
   type LocalOwnerStateOverview,
 } from "./local-owner-environment.js";
 
+const OPERATOR_SESSION_COOKIE = "shortlet_operator_session";
+const OPERATOR_SECRET_COOKIE = "shortlet_operator_secret";
+
+function cookieValue(req: IncomingMessage, name: string): string | null {
+  const raw = req.headers.cookie ?? "";
+  const pair = raw.split(";").map((value) => value.trim()).find((value) => value.startsWith(`${name}=`));
+  return pair ? decodeURIComponent(pair.slice(name.length + 1)) : null;
+}
+
+function operatorPrincipal(req: IncomingMessage, env: LocalApartmentOwnerEnvironment) {
+  const sessionId = cookieValue(req, OPERATOR_SESSION_COOKIE);
+  const secret = cookieValue(req, OPERATOR_SECRET_COOKIE);
+  return env.sessionAuthority.resolveSession(sessionId, secret);
+}
+
+function operatorLoginHtml(error = ""): string {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Operator sign in</title><style>body{font:16px system-ui;margin:0;padding:24px;background:#f7f7f5;color:#202124}main{max-width:420px;margin:10vh auto;background:white;border:1px solid #ddd;border-radius:12px;padding:24px}label{display:block;font-weight:600;margin:16px 0 6px}input,button{font:inherit;min-height:44px;width:100%;box-sizing:border-box;padding:10px;border-radius:8px}button{margin-top:16px;background:#155eef;color:white;border:0}.error{color:#b42318}</style></head><body><main><h1>Operator sign in</h1><p>Enter the one-time access token provided by operations.</p>${error ? `<p class="error" role="alert">${error}</p>` : ""}<form method="post" action="/operator/login"><label for="token">One-time access token</label><input id="token" name="token" autocomplete="one-time-code" required><button type="submit">Sign in</button></form></main></body></html>`;
+}
+
+function operatorShellHtml(principal: { actorId: string; tenantId: string }): string {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Operator</title><style>body{font:16px system-ui;margin:0;padding:24px;background:#f7f7f5;color:#202124}main{max-width:640px;margin:8vh auto;background:white;border:1px solid #ddd;border-radius:12px;padding:24px}button{min-height:44px;padding:10px 18px;border-radius:8px;border:1px solid #aaa;background:white;cursor:pointer}dt{font-weight:600;margin-top:12px}dd{margin:2px 0}</style></head><body><main><h1>Operator workspace</h1><p>You are authenticated for this tenant. Operator actions remain subject to the active representative grant.</p><dl><dt>Actor reference</dt><dd>${principal.actorId}</dd><dt>Tenant reference</dt><dd>${principal.tenantId}</dd></dl><form method="post" action="/operator/logout"><button type="submit">Log out</button></form></main></body></html>`;
+}
+
 function formatKobo(kobo: number): string {
   const naira = (kobo / 100).toLocaleString("en-NG", {
     minimumFractionDigits: 2,
@@ -370,12 +393,42 @@ export function renderOwnerDashboardHtml(overview: LocalOwnerStateOverview): str
 export function startLocalOwnerServer(options: {
   port?: number;
   environment?: LocalApartmentOwnerEnvironment;
+  secureCookie?: boolean;
 } = {}) {
   const port = options.port ?? 3000;
   let env = options.environment ?? new LocalApartmentOwnerEnvironment();
+  const cookieFlags = `${options.secureCookie ? "; Secure" : ""}; HttpOnly; SameSite=Lax; Path=/operator`;
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+
+    if (req.method === "GET" && url.pathname === "/operator/login") {
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(operatorLoginHtml()); return;
+    }
+    if (req.method === "POST" && url.pathname === "/operator/login") {
+      const origin = req.headers.origin;
+      if (origin && origin !== `http://${req.headers.host ?? "localhost"}`) { res.writeHead(403); res.end("Origin rejected"); return; }
+      const buffers: Buffer[] = []; for await (const chunk of req) buffers.push(Buffer.from(chunk));
+      const params = new URLSearchParams(Buffer.concat(buffers).toString("utf8"));
+      try {
+        const result = env.sessionAuthority.authenticateAccessToken(params.get("token") ?? "");
+        res.setHeader("Set-Cookie", [`${OPERATOR_SESSION_COOKIE}=${encodeURIComponent(result.sessionId)}${cookieFlags}`, `${OPERATOR_SECRET_COOKIE}=${encodeURIComponent(result.sessionSecret)}${cookieFlags}`]);
+        res.writeHead(302, { Location: "/operator" }); res.end();
+      } catch (error) { res.writeHead(401, { "Content-Type": "text/html; charset=utf-8" }); res.end(operatorLoginHtml(error instanceof Error ? error.message : "Authentication failed")); }
+      return;
+    }
+    if (url.pathname === "/operator" || url.pathname === "/operator/") {
+      const principal = operatorPrincipal(req, env);
+      if (!principal) { res.writeHead(401, { "Location": "/operator/login", "Content-Type": "text/plain" }); res.end("Authentication required"); return; }
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(operatorShellHtml(principal)); return;
+    }
+    if (req.method === "POST" && url.pathname === "/operator/logout") {
+      const origin = req.headers.origin;
+      if (origin && origin !== `http://${req.headers.host ?? "localhost"}`) { res.writeHead(403); res.end("Origin rejected"); return; }
+      const principal = operatorPrincipal(req, env); if (principal) env.sessionAuthority.revokeSession(principal.sessionId);
+      res.setHeader("Set-Cookie", [`${OPERATOR_SESSION_COOKIE}=; Max-Age=0${cookieFlags}`, `${OPERATOR_SECRET_COOKIE}=; Max-Age=0${cookieFlags}`]);
+      res.writeHead(302, { Location: "/operator/login" }); res.end(); return;
+    }
 
     if (req.method === "GET" && url.pathname === "/") {
       const overview = env.getStateOverview();

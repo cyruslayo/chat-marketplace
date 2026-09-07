@@ -24,6 +24,7 @@ import {
   type OperatorScopeAuthority,
   type ProductionRevenueReleaseRecord,
   type AuthoritativeReleaseInput,
+  SqliteOperatorSessionAuthority,
 } from "../../../domains/shortlet/src/index.js";
 import {
   createBookingRequestApplication,
@@ -110,6 +111,7 @@ export class LocalApartmentOwnerEnvironment {
   readonly accountingRepository: InMemoryRevenueAccountingRepository;
   readonly bookingStateRepository: InMemoryBookingStateRepository;
   readonly bookingRequestApp: BookingRequestApplication;
+  readonly sessionAuthority: SqliteOperatorSessionAuthority;
 
   #demoRequests: string[] = [];
 
@@ -120,6 +122,7 @@ export class LocalApartmentOwnerEnvironment {
     mkdirSync(dirname(this.config.databasePath), { recursive: true });
 
     this.grantStore = new SqliteOperatorRepresentativeGrantStore(this.config.databasePath, { clock: this.clock });
+    this.sessionAuthority = new SqliteOperatorSessionAuthority(this.config.databasePath, { clock: this.clock });
     this.unitRepository = new UnitRepository();
     this.calendar = new AvailabilityCalendar({ repository: this.unitRepository });
     this.enforcementManager = new OperatorEnforcementManager({
@@ -288,6 +291,11 @@ export class LocalApartmentOwnerEnvironment {
       role: "operator",
       tenantId: this.config.tenantId,
     };
+  }
+
+  provisionOperatorAccessToken(actorId = this.config.representativePersonId, tenantId = this.config.tenantId): string {
+    const authorized = this.grantStore.canActForOperator({ actorId, operatorId: this.config.operatorId, tenantId });
+    return this.sessionAuthority.provisionAccessToken({ actorId, tenantId, representativeAuthorized: authorized }).token;
   }
 
   createDemoIncomingBookingRequest(input: {
@@ -492,6 +500,7 @@ export class LocalApartmentOwnerEnvironment {
   }
 
   close(): void {
+    this.sessionAuthority.close();
     this.grantStore.close();
   }
 }

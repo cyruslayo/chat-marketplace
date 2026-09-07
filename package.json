@@ -8,6 +8,8 @@
     "verify:weaver": "node scripts/verify-weaver-vendor.mjs",
     "owner:local": "tsx apps/local-owner/src/cli-start.ts",
     "owner:reset": "tsx apps/local-owner/src/cli-reset.ts",
+    "operator:provision": "tsx apps/local-owner/src/cli-provision.ts",
+    "operator:revoke": "tsx apps/local-owner/src/cli-revoke.ts",
     "test:owner-local": "tsx --test test/local-apartment-owner-surface.test.ts",
     "guest:local": "node apps/local-guest/scripts/build-client.mjs && tsx apps/local-guest/src/cli-start.ts",
     "guest:assistant": "node apps/local-guest/scripts/build-client.mjs && tsx apps/local-guest/src/cli-assistant.ts",
