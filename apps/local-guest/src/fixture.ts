@@ -4,7 +4,6 @@ import { DatabaseSync } from "node:sqlite";
 import { createPlatformCommandEnvelope, InMemoryAuditLog, InMemoryTelemetry, type CommandPrincipal } from "../../../packages/platform-core/src/index.js";
 import {
   AvailabilityCalendar,
-  GuestVerificationService,
   SqliteOperatorRepresentativeGrantStore,
   SqliteGuestInteractionStore,
   SqliteBookingPaymentJourneyRepository,
@@ -42,8 +41,6 @@ export interface LocalGuestFixtureConfig {
   readonly adminId: string;
   readonly guestId: string;
   readonly guestName: string;
-  /** Local fixture switch for testing the existing verification boundary. */
-  readonly guestIdentityVerified?: boolean;
   /** Keep false only for deterministic delivery-failure fixtures. */
   readonly autoDeliverRequests?: boolean;
   /** Deterministic demo check-in; checkout is derived from requested nights. */
@@ -65,7 +62,6 @@ export const DEFAULT_LOCAL_GUEST_CONFIG: LocalGuestFixtureConfig = {
   adminId: "platform-admin-001",
   guestId: "guest-demo-101",
   guestName: "Demo Guest",
-  guestIdentityVerified: true,
   autoDeliverRequests: true,
   demoCheckIn: "2026-09-10",
   demoCheckOut: "2026-09-13",
@@ -220,21 +216,10 @@ export class LocalGuestEnvironment {
       idFactory: () => `guest-demo-${String(++this.#searchCounter).padStart(3, "0")}`,
     });
 
-    const guestVerification = new GuestVerificationService({
-      repository: this.unitRepository,
-      verificationResults: {
-        getVerificationResult: ({ tenantId, guestId }) =>
-          tenantId === this.config.tenantId && guestId === this.config.guestId
-            ? { tenantId, guestId, governmentIdVerified: this.config.guestIdentityVerified !== false }
-            : null,
-      },
-    });
-
     this.bookingRequestApp = createBookingRequestApplication({
       repository: this.unitRepository,
       calendar: this.calendar,
       audit: this.audit,
-      guestVerification,
       store: this.interactionStore,
       // ADR-0082: operator representative authority is evaluated through the
       // real server-side grant store on every consequential operator command.

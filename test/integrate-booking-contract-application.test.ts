@@ -17,7 +17,7 @@ const repository: ContractRepository = { findContractById: (id) => id === contra
 const guest = { id: "guest-app", role: "guest" as const, tenantId: "tenant-app" };
 
 import { ContractAndArrivalReleaseManager } from "../domains/shortlet/src/contract-release.js";
-function makeApp(allowAccess = false, repo = repository) { return new BookingContractApplication(new ContractAndArrivalReleaseManager({ repository: repo, policy: { canReleaseAccessInstructions: () => allowAccess } }), () => new Date("2026-08-25T00:00:00.000Z")); }
+function makeApp(allowAccess = false, repo = repository) { return new BookingContractApplication(new ContractAndArrivalReleaseManager({ repository: repo, policy: { canReleaseProtectedArrivalData: () => allowAccess, canReleaseAccessInstructions: () => allowAccess } }), () => new Date("2026-08-25T00:00:00.000Z")); }
 
 describe("Booking Contract application boundary", () => {
   it("authorizes only the tenant-scoped Primary Guest and produces a minimized artifact", () => {
@@ -34,8 +34,8 @@ describe("Booking Contract application boundary", () => {
 
   it("keeps access locked by default and releases each category only through its secure view", () => {
     const locked = makeApp().getProtectedArrivalView(contract.contractId, guest);
-    assert.equal(locked.addressAvailability, "available");
-    assert.equal(locked.fullAddress, "SECRET ADDRESS");
+    assert.equal(locked.addressAvailability, "locked");
+    assert.equal(locked.fullAddress, undefined);
     assert.equal(locked.accessInstructions, undefined);
     const open = makeApp(true).getProtectedArrivalView(contract.contractId, guest);
     assert.equal(open.accessInstructions, "SECRET DOOR CODE");

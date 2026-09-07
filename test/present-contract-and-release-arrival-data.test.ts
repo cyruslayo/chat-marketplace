@@ -85,7 +85,7 @@ describe("Issue 13: Present contract and release arrival data", () => {
   });
 
   it("AC 2: Full address and access instructions are tenant-scoped and released only at the accepted lifecycle points", () => {
-    const manager = new ContractAndArrivalReleaseManager({ repository, policy: { canReleaseAccessInstructions: () => true } });
+    const manager = new ContractAndArrivalReleaseManager({ repository, policy: { canReleaseProtectedArrivalData: () => true, canReleaseAccessInstructions: () => true } });
     const envelope = createCommandEnvelope("arrival_data.get_protected", { contractId: "ctr_13" });
 
     const arrival = manager.getProtectedArrivalData(envelope);

@@ -124,6 +124,22 @@ export interface ValidateDisclosureOptions {
   attestingPrincipalId: string;
 }
 
+export interface ValidateBookingEligibilityOptions {
+  readonly tenantId: string;
+  readonly unitId: string;
+  readonly primaryGuest: PrimaryGuest;
+  readonly occupants: readonly OvernightOccupant[];
+  readonly selfBookingAttestation: SelfBookingAttestation;
+  readonly distinctPayer?: DistinctPayer | null;
+  readonly distinctPayerAttestation?: DistinctPayerAttestation;
+  readonly attestingPrincipalId: string;
+}
+
+export interface CheckInEligibilityInput {
+  readonly tenantId: string;
+  readonly guestId: string;
+}
+
 export class GuestVerificationService {
   readonly #repository: UnitRepositoryLike | null;
   readonly #disclosures = new Map<string, { tenantId: string; projection: Readonly<Record<string, unknown>> }>();
@@ -154,17 +170,79 @@ export class GuestVerificationService {
     if (!primaryGuest || !attestingPrincipalId || attestingPrincipalId !== primaryGuest.id) {
       throw new Error("Authenticated principal must be the Primary Guest");
     }
-    const verificationResult = this.#verificationResults?.getVerificationResult({
+    const verificationResult = this.validateCheckInEligibility({ tenantId, guestId: primaryGuest.id });
+    const eligibility = this.#validateBookingRequirements({
       tenantId,
-      guestId: primaryGuest.id
+      unitId,
+      primaryGuest,
+      occupants,
+      selfBookingAttestation,
+      distinctPayer,
+      distinctPayerAttestation,
+      attestingPrincipalId,
     });
+    const projection = Object.freeze({
+      ...eligibility.projection,
+      isVerified: true,
+    });
+    const disclosureId = `disc-${crypto.randomUUID()}`;
+    this.#disclosures.set(disclosureId, { tenantId, projection });
+    return {
+      disclosureId,
+      approvedForDisclosure: true,
+      distinctPayerAttached: !!distinctPayer,
+      verificationResult,
+      selfBookingAttestationVersion: selfBookingAttestation.version,
+      distinctPayerAttestationVersion: distinctPayer ? distinctPayerAttestation?.version : undefined,
+      projection
+    };
+  }
+
+  validateBookingEligibility(options: ValidateBookingEligibilityOptions) {
+    const eligibility = this.#validateBookingRequirements(options);
+    const disclosureId = `booking-eligibility-${crypto.randomUUID()}`;
+    this.#disclosures.set(disclosureId, { tenantId: options.tenantId, projection: eligibility.projection });
+    return {
+      disclosureId,
+      approvedForDisclosure: true,
+      distinctPayerAttached: !!options.distinctPayer,
+      selfBookingAttestationVersion: options.selfBookingAttestation.version,
+      distinctPayerAttestationVersion: options.distinctPayer ? options.distinctPayerAttestation?.version : undefined,
+      projection: eligibility.projection,
+    };
+  }
+
+  validateCheckInEligibility({ tenantId, guestId }: CheckInEligibilityInput): GuestIdentityVerificationResult {
+    if (!tenantId || !guestId) throw new Error("Tenant and Guest are required for Check-In Eligibility");
+    return this.#requireIdentityVerification(tenantId, guestId);
+  }
+
+  #requireIdentityVerification(tenantId: string, guestId: string): GuestIdentityVerificationResult {
+    const verificationResult = this.#verificationResults?.getVerificationResult({ tenantId, guestId });
     if (
       !verificationResult ||
       verificationResult.tenantId !== tenantId ||
-      verificationResult.guestId !== primaryGuest.id ||
+      verificationResult.guestId !== guestId ||
       verificationResult.governmentIdVerified !== true
     ) {
       throw new Error("Unverified Primary Guest: authoritative government-ID verification is required before disclosure");
+    }
+    return verificationResult;
+  }
+
+  #validateBookingRequirements({
+    tenantId,
+    unitId,
+    primaryGuest,
+    occupants,
+    selfBookingAttestation,
+    distinctPayer = null,
+    distinctPayerAttestation,
+    attestingPrincipalId,
+  }: ValidateBookingEligibilityOptions) {
+    if (!tenantId) throw new Error("tenantId is required for disclosure");
+    if (!primaryGuest || !attestingPrincipalId || attestingPrincipalId !== primaryGuest.id) {
+      throw new Error("Authenticated principal must be the Primary Guest");
     }
     if (
       selfBookingAttestation?.accepted !== true ||
@@ -206,27 +284,15 @@ export class GuestVerificationService {
       }
     }
 
-    const disclosureId = `disc-${crypto.randomUUID()}`;
     const projection = Object.freeze({
-      disclosureId,
       unitId,
       primaryGuestId: primaryGuest.id,
       primaryGuestName: primaryGuest.name,
-      isVerified: true,
+      isVerified: false,
       occupantCount: occupants.length,
       distinctPayerAttached: !!distinctPayer
     });
-    this.#disclosures.set(disclosureId, { tenantId, projection });
-
-    return {
-      disclosureId,
-      approvedForDisclosure: true,
-      distinctPayerAttached: !!distinctPayer,
-      verificationResult,
-      selfBookingAttestationVersion: selfBookingAttestation.version,
-      distinctPayerAttestationVersion: distinctPayer ? distinctPayerAttestation?.version : undefined,
-      projection
-    };
+    return { projection };
   }
 
   getInteractionProjection(disclosureId: string) {

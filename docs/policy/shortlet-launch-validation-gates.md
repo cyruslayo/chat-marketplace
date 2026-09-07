@@ -6,7 +6,7 @@ The product and domain-policy grilling is closed through ADR-0067. The items bel
 
 1. **PSP selection and contracting** — validate settlement, refund, transfer-reference expiry, payment verification, webhook, reconciliation, and failure-handling capabilities.
 2. **Payment-channel certification** — certify each exposed payment capability under production-equivalent timing and failure conditions before guest use.
-3. **Identity and privacy readiness** — complete vendor diligence, data-flow mapping, retention controls, and the required DPIA before processing launch identities.
+3. **Identity and privacy readiness** — complete the future check-in identity and access data-flow review, retention controls, and required DPIA before processing launch identities. Booking does not require online Guest Identity Verification under ADR-0085.
 4. **Nigerian legal and tax review** — validate contracting structure, consumer terms, cancellation and remedy rules, tax treatment, withholding, data protection, and marketplace obligations.
 5. **Insurance placement** — confirm available policy wording, exclusions, limits, evidence requirements, and claims process before making insurance a launch condition.
 6. **Operator validation** — test onboarding burden, response windows, cancellation catalogue, commission, reserves, deposits, and enforcement with prospective Lagos and Abuja operators.

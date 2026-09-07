@@ -121,7 +121,7 @@ test("Drafts do not block inventory; successfully disclosed requests do so exclu
   assert.equal(postDiscloseAvailability.conflictReason, "Overlaps with Booking Request Block");
 });
 
-test("Disclosure fails closed without authoritative verification and rejects cross-principal disclosure before inventory or audit", () => {
+test("Disclosure remains fail-closed for cross-principal requests before inventory or audit", () => {
   const repository = new UnitRepository();
   seedIssue01Units(repository);
   const audit = new InMemoryAuditLog();
@@ -562,7 +562,7 @@ test("Agent, conventional web, and permitted Operator interfaces produce the sam
   assert.equal(res1.unitId, unit.id);
 });
 
-test("Booking Request disclosure always verifies guests, requires trusted tenant, and preserves minimized state", () => {
+test("Booking Request disclosure preserves booking requirements without requiring identity verification", () => {
   const repository = new UnitRepository();
   seedIssue01Units(repository);
   const audit = new InMemoryAuditLog();
@@ -591,16 +591,14 @@ test("Booking Request disclosure always verifies guests, requires trusted tenant
     checkIn: "2026-08-01",
     checkOut: "2026-08-03"
   });
-  assert.throws(
-    () => manager.discloseBookingRequest(createPlatformCommandEnvelope({
+  const unverifiedRequest = manager.discloseBookingRequest(createPlatformCommandEnvelope({
       commandName: "booking_request.disclose",
       principal: { id: "guest-unverified", role: "guest", tenantId: "tenant-lagos" },
       payload: { draftId: unverifiedDraft.draftId }
-    }), { clock }),
-    /Unverified Primary Guest/i
-  );
-  assert.equal(calendar.getAuthoritativeAvailability({ unitId: unit.id, checkIn: "2026-08-01", checkOut: "2026-08-03", clock }).isAvailable, true);
-  assert.equal(audit.entries().some((entry) => entry.type === "booking_request.disclosed"), false);
+    }), { clock });
+  assert.equal((unverifiedRequest.primaryGuest as Record<string, unknown>).isGovernmentIdVerified, undefined);
+  assert.equal(calendar.getAuthoritativeAvailability({ unitId: unit.id, checkIn: "2026-08-01", checkOut: "2026-08-03", clock }).isAvailable, false);
+  assert.equal(audit.entries().some((entry) => entry.type === "booking_request.disclosed"), true);
 
   const rawDraft = manager.createDraft({
     unitId: unit.id,
@@ -640,7 +638,7 @@ test("Booking Request disclosure always verifies guests, requires trusted tenant
   }), { clock });
   assert.equal(request.tenantId, "tenant-lagos");
   assert.equal((request.primaryGuest as Record<string, unknown>).ninNumber, undefined);
-  assert.equal(request.primaryGuest.isGovernmentIdVerified, true);
+  assert.equal((request.primaryGuest as Record<string, unknown>).isGovernmentIdVerified, undefined);
   assert.deepEqual(request.distinctPayer, { id: "payer-B", name: "Distinct Payer" });
   assert.notEqual(request.distinctPayer?.id, request.primaryGuest.id);
   assert.equal((request.distinctPayer as Record<string, unknown>).passportNumber, undefined);

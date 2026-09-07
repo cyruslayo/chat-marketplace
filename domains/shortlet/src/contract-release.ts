@@ -102,8 +102,10 @@ export class ContractAndArrivalReleaseManager {
 
   #arrivalState(contract: BookingContract, reservation: ReservationLike | null, arrival: ProtectedArrivalData | null, now: Date) {
     const confirmed = reservation?.reservationId === contract.reservationId && reservation.status === "confirmed";
-    const addressAvailable = confirmed && !!arrival?.fullAddress;
-    const accessPermitted = confirmed && !!arrival && this.#policy.canReleaseAccessInstructions({ contract, reservation: reservation as ReservationLike, now });
+    const policyInput = { contract, reservation: reservation as ReservationLike, now };
+    const protectedDataPermitted = confirmed && !!arrival && this.#policy.canReleaseProtectedArrivalData?.(policyInput) === true;
+    const addressAvailable = protectedDataPermitted && !!arrival?.fullAddress;
+    const accessPermitted = protectedDataPermitted && this.#policy.canReleaseAccessInstructions(policyInput);
     const accessAvailable = accessPermitted && !!arrival?.accessInstructions;
     return { confirmed, addressAvailable, accessAvailable, accessPermitted };
   }

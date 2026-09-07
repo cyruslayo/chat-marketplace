@@ -97,8 +97,8 @@ test("AC12–AC23 and AC37–AC39 — Operator confirmation, explicit offer acce
   } finally { close(environment); }
 });
 
-test("AC4, AC9–AC11, AC26–AC28, and AC34–AC36 — verification blocks, request outcomes are distinct, stale actions fail closed, and generated actions stay allow-listed", async () => {
-  const unverified = new LocalGuestEnvironment({ databasePath: `.scratch/local-guest/ac4-${Date.now()}.sqlite`, guestIdentityVerified: false });
+test("AC4, AC9–AC11, AC26–AC28, and AC34–AC36 — unverified guests can submit, request outcomes are distinct, stale actions fail closed, and generated actions stay allow-listed", async () => {
+  const unverified = new LocalGuestEnvironment({ databasePath: `.scratch/local-guest/ac4-${Date.now()}.sqlite` });
   try {
     const app = new LocalGuestApp(unverified);
     const threadId = "g-abcdefac4";
@@ -112,8 +112,10 @@ test("AC4, AC9–AC11, AC26–AC28, and AC34–AC36 — verification blocks, req
     assert.equal(result.ok, true); if (!result.ok) return;
     result = app.handleEvent(threadId, firstAction(result.surfaces[0]!)) as Surface;
     assert.equal(result.ok, true); if (!result.ok) return;
-    assert.match(result.surfaces[0]!.textFallback ?? "", /not reserved/i);
-    assert.equal(result.surfaces[0]!.a2uiMessages.some((message) => /verification is required/i.test(JSON.stringify(message))), true);
+    result = app.handleEvent(threadId, firstAction(result.surfaces[0]!)) as Surface;
+    assert.equal(result.ok, true); if (!result.ok) return;
+    assert.match(result.messages.join(" "), /Booking Request submitted/i);
+    assert.equal(result.surfaces[0]!.a2uiMessages.some((message) => /verification is required/i.test(JSON.stringify(message))), false);
   } finally { close(unverified); }
 
   let now = new Date("2026-09-03T10:00:00Z");

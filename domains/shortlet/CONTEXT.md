@@ -85,7 +85,7 @@ A specific, evidence-backed assertion about an operator, property, or unit, main
 _Avoid_: Verified badge, platform approved
 
 **Guest Identity Verification**:
-The platform's reusable assurance that the primary guest's government identity and minimum age have been verified, without disclosing raw identity evidence to an operator.
+The platform's reusable assurance that the primary guest's government identity and minimum age have been verified, without disclosing raw identity evidence to an operator. For the pilot it is Check-In Eligibility, not Booking Eligibility: it must be established before physical access authority is granted, while the check-in procedure is deferred.
 _Avoid_: Contact verification, operator ID check
 
 **Payer Attribution**:

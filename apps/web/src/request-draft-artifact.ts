@@ -37,7 +37,6 @@ export interface RequestDraftArtifact {
     readonly amountDueNowKobo: number;
     readonly cancellationPolicy: { readonly type: string; readonly version: string; readonly summary: string };
     readonly inventoryReserved: false;
-    readonly guestIdentityVerified: boolean;
   };
   readonly actions: readonly RequestDraftArtifactAction[];
   readonly acknowledgements: readonly string[];
@@ -58,7 +57,6 @@ export interface RequestDraftProjectionInput {
   readonly refundableSecurityDepositKobo: number;
   readonly amountDueNowKobo: number;
   readonly cancellationPolicy: { readonly type: string; readonly version: string; readonly summary: string };
-  readonly guestIdentityVerified: boolean;
   readonly view: "draft" | "review";
   readonly policyVersions?: Readonly<Record<string, string>>;
   readonly disclosures?: readonly string[];
@@ -71,7 +69,7 @@ export function requestDraftArtifactId(draftId: string): string {
 export function requestDraftArtifactFromProjection(input: RequestDraftProjectionInput, viewer: CommandPrincipal): RequestDraftArtifact {
   const id = requestDraftArtifactId(input.draftId);
   const canReview = viewer.role === "guest" && viewer.id !== "";
-  const canSubmit = canReview && input.guestIdentityVerified;
+  const canSubmit = canReview;
   const actionType: RequestDraftActionType = input.view === "review" ? "submit" : "review";
   const actions = (actionType === "review" ? canReview : canSubmit) ? [{ type: actionType, artifactId: id, draftId: input.draftId, expectedStatus: "draft" as const, projectionVersion: 1 }] : [];
   return Object.freeze({
@@ -101,7 +99,6 @@ export function requestDraftArtifactFromProjection(input: RequestDraftProjection
       amountDueNowKobo: input.amountDueNowKobo,
       cancellationPolicy: Object.freeze({ ...input.cancellationPolicy }),
       inventoryReserved: false as const,
-      guestIdentityVerified: input.guestIdentityVerified,
     }),
     actions: Object.freeze(actions.map((action) => Object.freeze(action))),
     acknowledgements: Object.freeze([]),

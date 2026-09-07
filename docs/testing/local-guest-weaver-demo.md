@@ -48,10 +48,10 @@ If `CONCIERGE_MODE=gemini` is selected without `GEMINI_API_KEY`, startup fails c
 
 1. Discovery renders authoritative results with Weaver Basic Catalog A2UI, All-In Stay Total, separate Refundable Security Deposit, inspection, and management-trust facts. The canonical Ikoyi prompt returns only the eligible Old Ikoyi Unit; a generic Lagos prompt can return both eligible fixtures.
 2. View Unit requests a server-generated Unit detail surface.
-3. Request to Book creates and discloses a real Booking Request through the guest verification and availability application paths.
+3. Request to Book creates and discloses a real Booking Request through the booking-eligibility and availability application paths; Guest Identity Verification is not required for booking.
 4. The local fixture simulates the authorized Operator representative confirming the request and issuing a Conditional Booking Offer.
 5. Accept Offer creates the payment projection. Start secure checkout uses a deterministic local PSP stub and progresses through separate stay and refundable-deposit charges; no card data or live provider is used.
-6. Verified payment commits the reservation and exposes the resulting Booking Contract projection. Arrival data remains locked in this demo.
+6. Payment commits the reservation and exposes the resulting Booking Contract projection. Guest Identity Verification remains a future Check-In Eligibility requirement, and protected arrival data remains locked in this demo.
 
 Every consequential action is emitted by Weaver and sent to the server. The browser owns only presentation and interaction projection state; the server validates the allow-listed action, current surface, identity, authorization, amount, and aggregate state.
 

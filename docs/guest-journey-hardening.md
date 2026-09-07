@@ -12,7 +12,7 @@ No later goal is considered passed before the preceding goal passes its gates.
 | --- | --- | --- |
 | 0004 | Backend owns conversation and transactions | AC1–AC16; SQLite repositories and authenticated restoration |
 | 0005, 0006 | Request to Book; contract only after acceptance and verified payment | AC2–AC7; request, offer, payment, Reservation recovery |
-| 0011–0013, 0065 | Current identity assurance; Self-Booking and payer controls; no raw evidence | AC10, AC14, AC15; revalidation and persistence allow-lists |
+| 0012–0013, 0065, 0085 | Check-In-only identity assurance; Self-Booking and payer controls; no raw evidence | Booking identity independence, access-release boundary, and persistence allow-lists |
 | 0014–0016, 0058, 0059 | Preserve versioned terms, all-in totals, separate deposit and conduct rules | AC1–AC7; persisted domain snapshots and regenerated artifacts |
 | 0039, 0040 | Central authoritative inventory; expiry does not reset | AC7–AC9; existing SQLite availability store; zero hold duplication |
 | 0041–0043 | Draft does not reserve; delivery and response clocks remain distinct | AC1–AC3, AC8, AC9; request recovery |
@@ -40,6 +40,12 @@ Store authoritative domain records separately from interaction references and
 surface lifecycle metadata. Do not serialize the frontend, model history, bearer
 session cookies, confirmation tokens, PSP checkout URLs, or identity evidence.
 Regenerate presentation from current authoritative records after authorization.
+
+Guest Identity Verification is deferred from booking eligibility to
+Check-In Eligibility by ADR-0085. The booking success path intentionally uses
+an unverified Guest. The future boundary is Reservation → Check-In Eligibility
+→ Human-Assisted Identity Verification → Access Authorization; its operational
+workflow is not implemented here.
 
 Tests must close the first HTTP server and environment, construct a new environment
 and server against the same temporary database, authenticate the same browser

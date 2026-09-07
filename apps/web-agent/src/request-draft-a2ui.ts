@@ -24,7 +24,7 @@ export function requestDraftArtifactToA2UI({ artifact, surfaceId }: { readonly a
     { id: "draft-reservation", component: "Text", text: "Inventory is not reserved. This is not a Booking Request or Reservation." },
     { id: "draft-disclosures", component: "Text", text: artifact.disclosures.join(" ") || "Terms will be revalidated before submission." },
     { id: "draft-actions", component: "Row", children: action ? ["draft-action-button"] : ["draft-blocked"] },
-    ...(!action ? [{ id: "draft-blocked", component: "Text" as const, text: facts.guestIdentityVerified ? "This Request Draft is not actionable in the current session." : "Guest Identity Verification is required before a Booking Request can be disclosed. Use the conventional verification route when available." }] : []),
+    ...(!action ? [{ id: "draft-blocked", component: "Text" as const, text: "This Request Draft is not actionable in the current session." }] : []),
     ...(action ? [{ id: "draft-action-button", component: "Button" as const, child: "draft-action-label", variant: "primary" as const, action: { event: { name: action.type === "submit" ? REQUEST_DRAFT_SUBMIT_EVENT : REQUEST_DRAFT_REVIEW_EVENT, context: { artifactId: action.artifactId, draftId: action.draftId, expectedStatus: action.expectedStatus, projectionVersion: action.projectionVersion } } }, accessibility: { label: action.type === "submit" ? "Submit Booking Request" : "Review Booking Request" } }, { id: "draft-action-label", component: "Text" as const, text: action.type === "submit" ? "Submit Booking Request" : "Review Request" }] : []),
   ];
   return [{ version: "v0.9.1", createSurface: { surfaceId, catalogId: A2UI_V091_BASIC_CATALOG_ID } }, { version: "v0.9.1", updateComponents: { surfaceId, components } }];

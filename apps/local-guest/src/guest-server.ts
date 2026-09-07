@@ -917,7 +917,6 @@ export class LocalGuestApp {
       refundableSecurityDepositKobo: quote.refundableSecurityDepositKobo,
       amountDueNowKobo: quote.totalAmountDueNowKobo,
       cancellationPolicy: { type: quote.cancellationPolicy.type, version: quote.cancellationPolicy.version, summary: quote.cancellationPolicy.policySummary },
-      guestIdentityVerified: this.#environment.config.guestIdentityVerified !== false,
       view,
       policyVersions: quote.policyVersions,
       disclosures: quote.disclosures,
@@ -933,9 +932,6 @@ export class LocalGuestApp {
       return { ok: false, code: "INVALID_CONTEXT", message: "That Request Draft is no longer valid." };
     }
     const artifact = this.#draftArtifact(thread, "review");
-    if (!artifact.facts.guestIdentityVerified) {
-      this.#emitTransition(thread, "request_draft.blocked", { aggregateType: "request_draft", aggregateId: thread.draftId, reasonCode: "VERIFICATION_REQUIRED" });
-    }
     const surfaceId = `thread-${thread.threadId}:request:review:${thread.draftId}`;
     this.#supersede(thread, REQUEST_STAGE);
     thread.activeSurfaces.set(REQUEST_STAGE, surfaceId);
@@ -966,9 +962,8 @@ export class LocalGuestApp {
       return { ok: true, messages: ["Booking Request submitted. No Reservation exists yet; the Operator must respond."], surfaces: [surface] };
     } catch (error) {
       const message = error instanceof Error ? error.message : "The Booking Request could not be submitted.";
-      const verificationBlocked = /verification|Primary Guest/i.test(message);
-      this.#emitTransition(thread, verificationBlocked ? "request_draft.blocked" : "booking_request.delivery_failed", { aggregateType: "request_draft", aggregateId: thread.draftId, reasonCode: verificationBlocked ? "VERIFICATION_REQUIRED" : "REQUEST_DELIVERY_FAILED" });
-      return { ok: false, code: verificationBlocked ? "VERIFICATION_REQUIRED" : "REQUEST_NOT_SUBMITTED", message };
+      this.#emitTransition(thread, "booking_request.delivery_failed", { aggregateType: "request_draft", aggregateId: thread.draftId, reasonCode: "REQUEST_DELIVERY_FAILED" });
+      return { ok: false, code: "REQUEST_NOT_SUBMITTED", message };
     }
   }
 

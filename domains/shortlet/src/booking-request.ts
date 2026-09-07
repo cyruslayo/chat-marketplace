@@ -292,7 +292,7 @@ export class BookingRequestManager {
       throw new Error("Authenticated principal must match the Primary Guest");
     }
 
-    const identityValidation = this.#guestVerification.validateDisclosure({
+    const eligibility = this.#guestVerification.validateBookingEligibility({
       tenantId,
       unitId: draft.unitId,
       primaryGuest: draft.primaryGuest,
@@ -399,7 +399,6 @@ export class BookingRequestManager {
       primaryGuest: {
         id: draft.primaryGuest.id,
         name: draft.primaryGuest.name,
-        isGovernmentIdVerified: identityValidation.verificationResult.governmentIdVerified
       },
       distinctPayer: draft.distinctPayer
         ? Object.freeze({
@@ -434,9 +433,9 @@ export class BookingRequestManager {
         holdId: inventoryBlock?.commitmentId,
         primaryGuestId: draft.primaryGuest.id,
         attestedByPrincipalId: principal.id,
-        selfBookingAttestationVersion: identityValidation.selfBookingAttestationVersion,
-        ...(identityValidation.distinctPayerAttestationVersion
-          ? { distinctPayerAttestationVersion: identityValidation.distinctPayerAttestationVersion }
+        selfBookingAttestationVersion: eligibility.selfBookingAttestationVersion,
+        ...(eligibility.distinctPayerAttestationVersion
+          ? { distinctPayerAttestationVersion: eligibility.distinctPayerAttestationVersion }
           : {}),
         commandEnvelopeId: envelope.commandId,
         disclosedAt: disclosedAtIso
