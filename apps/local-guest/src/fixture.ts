@@ -10,6 +10,7 @@ import {
   SqliteBookingStateRepository,
   SqliteLivePaymentAttemptRegistry,
   SqliteAvailabilityStore,
+  SqliteGuestContactRepository,
   UnitDiscoveryQuery,
   UnitRepository,
   InMemorySecurityDepositAccountingRepository,
@@ -26,6 +27,7 @@ import {
   type ConditionalOfferApplication,
   type CardPaymentApplication,
   type BookingContractApplication,
+  GuestContactApplication,
 } from "../../../apps/web/src/index.js";
 import { SELF_BOOKING_ATTESTATION_VERSION } from "../../../domains/shortlet/src/guest-verification.js";
 
@@ -41,6 +43,10 @@ export interface LocalGuestFixtureConfig {
   readonly adminId: string;
   readonly guestId: string;
   readonly guestName: string;
+  /** Test/demo seed; set null to exercise first-time contact collection. */
+  readonly initialGuestPhoneNumber?: string | null;
+  /** Test/demo seed; set null to exercise payment-time email collection. */
+  readonly initialGuestContactEmail?: string | null;
   /** Keep false only for deterministic delivery-failure fixtures. */
   readonly autoDeliverRequests?: boolean;
   /** Deterministic demo check-in; checkout is derived from requested nights. */
@@ -62,6 +68,8 @@ export const DEFAULT_LOCAL_GUEST_CONFIG: LocalGuestFixtureConfig = {
   adminId: "platform-admin-001",
   guestId: "guest-demo-101",
   guestName: "Demo Guest",
+  initialGuestPhoneNumber: "+2348012345678",
+  initialGuestContactEmail: "guest@example.com",
   autoDeliverRequests: true,
   demoCheckIn: "2026-09-10",
   demoCheckOut: "2026-09-13",
@@ -180,6 +188,7 @@ export class LocalGuestEnvironment {
   readonly contractRepository: LocalBookingContractRepository;
   readonly interactionStore: SqliteGuestInteractionStore;
   readonly livePaymentAttempts: SqliteLivePaymentAttemptRegistry;
+  readonly guestContactApp: GuestContactApplication;
   #searchCounter = 0;
   readonly #database: DatabaseSync;
 
@@ -197,6 +206,9 @@ export class LocalGuestEnvironment {
     this.#database.exec("PRAGMA busy_timeout = 5000");
     this.#database.exec("PRAGMA foreign_keys = ON");
     this.interactionStore = new SqliteGuestInteractionStore(this.config.databasePath, this.#database);
+    this.guestContactApp = new GuestContactApplication(new SqliteGuestContactRepository(this.#database));
+    if (this.config.initialGuestPhoneNumber && !this.guestContactApp.get(this.guestPrincipal())) this.guestContactApp.submitPhone({ phoneNumber: this.config.initialGuestPhoneNumber }, this.guestPrincipal());
+    if (this.config.initialGuestContactEmail && !this.guestContactApp.get(this.guestPrincipal())?.contactEmail) this.guestContactApp.submitEmail({ contactEmail: this.config.initialGuestContactEmail }, this.guestPrincipal());
     this.livePaymentAttempts = new SqliteLivePaymentAttemptRegistry(this.interactionStore);
 
     this.grantStore = new SqliteOperatorRepresentativeGrantStore(this.config.databasePath, { clock: this.clock });
@@ -225,6 +237,7 @@ export class LocalGuestEnvironment {
       // real server-side grant store on every consequential operator command.
       operatorAuthority: this.grantStore,
       clock: this.clock,
+      guestContacts: this.guestContactApp.repository,
     });
 
     this.conditionalOfferApp = createConditionalOfferApplication({
@@ -246,6 +259,7 @@ export class LocalGuestEnvironment {
       repository: this.unitRepository,
       calendar: this.calendar,
       audit: this.audit,
+      guestContacts: this.guestContactApp.repository,
       // Local deterministic PSP stub: no live PSP, no credentials. The amount
       // is resolved from the authoritative checkout session, never the client.
       pspClient: {

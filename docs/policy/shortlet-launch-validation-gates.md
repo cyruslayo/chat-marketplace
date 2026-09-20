@@ -24,3 +24,9 @@ The product and domain-policy grilling is closed through ADR-0067. The items bel
 - Tax and withholding treatment
 
 Failure of a gate must reopen only the affected policy or value; it does not implicitly reopen the full launch model.
+
+## Pilot Guest contact
+
+The pilot stores a Guest-supplied Nigerian mobile number as the primary booking-coordination contact and a Guest-supplied email address as the secondary contact and future Paystack payment email. A valid phone number is required only when a Request Draft is submitted as a Booking Request. Email is required only before payment continuation. Neither value is identity verification, authentication, authorization, or proof of ownership; no OTP, email verification, or communications automation exists.
+
+An authorized Operator representative may view the phone snapshot on the Booking Request detail surface under ADR-0082 and ADR-0086. Request lists omit contact data, and Guest email is not disclosed to Operators. Raw contact values are excluded from telemetry, general logs, audit metadata, URLs, and unrelated A2UI metadata.

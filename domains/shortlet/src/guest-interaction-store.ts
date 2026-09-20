@@ -82,6 +82,7 @@ export interface DurableBookingRequest {
   readonly confirmedAt: string | null;
   readonly declinedAt: string | null;
   readonly declineReason: string | null;
+  readonly phoneNumber: string | null;
 }
 
 export interface DurableConditionalOffer {
@@ -106,6 +107,7 @@ export interface DurableCardCheckoutSession {
   readonly amountKobo: number;
   readonly purpose: "stay" | "security_deposit";
   readonly currency: "NGN";
+  readonly contactEmail: string;
   readonly expiresAt: string;
   readonly status: "initiated" | "completed" | "expired" | "failed";
 }
@@ -202,6 +204,7 @@ interface BookingRequestRow {
   confirmed_at: string | null;
   declined_at: string | null;
   decline_reason: string | null;
+  phone_number: string | null;
 }
 
 interface ConditionalOfferRow {
@@ -226,6 +229,7 @@ interface CardCheckoutSessionRow {
   amount_kobo: number;
   purpose: string;
   currency: string;
+  contact_email: string | null;
   expires_at: string;
   status: string;
 }
@@ -351,7 +355,8 @@ export class SqliteGuestInteractionStore {
         status TEXT NOT NULL,
         confirmed_at TEXT,
         declined_at TEXT,
-        decline_reason TEXT
+        decline_reason TEXT,
+        phone_number TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_guest_requests_principal
         ON guest_booking_requests (primary_guest_id, tenant_id);
@@ -380,6 +385,7 @@ export class SqliteGuestInteractionStore {
         amount_kobo INTEGER NOT NULL,
         purpose TEXT NOT NULL,
         currency TEXT NOT NULL,
+        contact_email TEXT NOT NULL,
         expires_at TEXT NOT NULL,
         status TEXT NOT NULL
       );
@@ -427,6 +433,10 @@ export class SqliteGuestInteractionStore {
         updated_at TEXT NOT NULL
       );
     `);
+    const requestColumns = this.#database.prepare("PRAGMA table_info(guest_booking_requests)").all() as unknown as { name: string }[];
+    if (!requestColumns.some((column) => column.name === "phone_number")) this.#database.exec("ALTER TABLE guest_booking_requests ADD COLUMN phone_number TEXT");
+    const checkoutColumns = this.#database.prepare("PRAGMA table_info(guest_checkout_sessions)").all() as unknown as { name: string }[];
+    if (!checkoutColumns.some((column) => column.name === "contact_email")) this.#database.exec("ALTER TABLE guest_checkout_sessions ADD COLUMN contact_email TEXT");
   }
 
   #transaction<T>(operation: () => T): T {
@@ -582,12 +592,12 @@ export class SqliteGuestInteractionStore {
         primary_guest_name, occupants_json, check_in, check_out, nights, quote_json,
         inventory_commitment_id, disclosed_at, delivery_deadline_at,
         operator_response_deadline_at, delivered, delivered_at, status, confirmed_at,
-        declined_at, decline_reason)
+        declined_at, decline_reason, phone_number)
       VALUES ($requestId, $draftId, $unitId, $tenantId, $operatorId, $primaryGuestId,
         $primaryGuestName, $occupantsJson, $checkIn, $checkOut, $nights, $quoteJson,
         $inventoryCommitmentId, $disclosedAt, $deliveryDeadlineAt,
         $operatorResponseDeadlineAt, $delivered, $deliveredAt, $status, $confirmedAt,
-        $declinedAt, $declineReason)
+        $declinedAt, $declineReason, $phoneNumber)
       ON CONFLICT(request_id) DO UPDATE SET
         draft_id = excluded.draft_id,
         unit_id = excluded.unit_id,
@@ -609,7 +619,8 @@ export class SqliteGuestInteractionStore {
         status = excluded.status,
         confirmed_at = excluded.confirmed_at,
         declined_at = excluded.declined_at,
-        decline_reason = excluded.decline_reason
+        decline_reason = excluded.decline_reason,
+        phone_number = excluded.phone_number
     `).run({
       $requestId: request.requestId,
       $draftId: request.draftId,
@@ -633,6 +644,7 @@ export class SqliteGuestInteractionStore {
       $confirmedAt: request.confirmedAt ?? null,
       $declinedAt: request.declinedAt ?? null,
       $declineReason: request.declineReason ?? null,
+      $phoneNumber: request.phoneNumber,
     });
   }
 
@@ -662,6 +674,7 @@ export class SqliteGuestInteractionStore {
       confirmedAt: row.confirmed_at,
       declinedAt: row.declined_at,
       declineReason: row.decline_reason,
+      phoneNumber: row.phone_number,
     });
   }
 
@@ -740,9 +753,9 @@ export class SqliteGuestInteractionStore {
     this.#database.prepare(`
       INSERT INTO guest_checkout_sessions (
         checkout_id, offer_id, psp_reference, total_amount_due_now_kobo,
-        amount_kobo, purpose, currency, expires_at, status)
+        amount_kobo, purpose, currency, contact_email, expires_at, status)
       VALUES ($checkoutId, $offerId, $pspReference, $totalAmountDueNowKobo,
-        $amountKobo, $purpose, $currency, $expiresAt, $status)
+        $amountKobo, $purpose, $currency, $contactEmail, $expiresAt, $status)
       ON CONFLICT(checkout_id) DO UPDATE SET
         offer_id = excluded.offer_id,
         psp_reference = excluded.psp_reference,
@@ -750,6 +763,7 @@ export class SqliteGuestInteractionStore {
         amount_kobo = excluded.amount_kobo,
         purpose = excluded.purpose,
         currency = excluded.currency,
+        contact_email = excluded.contact_email,
         expires_at = excluded.expires_at,
         status = excluded.status
     `).run({
@@ -760,6 +774,7 @@ export class SqliteGuestInteractionStore {
       $amountKobo: session.amountKobo,
       $purpose: session.purpose,
       $currency: session.currency,
+      $contactEmail: session.contactEmail,
       $expiresAt: session.expiresAt,
       $status: session.status,
     });
@@ -776,6 +791,7 @@ export class SqliteGuestInteractionStore {
       amountKobo: row.amount_kobo,
       purpose: requiredPurpose(row.purpose),
       currency: "NGN",
+      contactEmail: row.contact_email ?? "",
       expiresAt: row.expires_at,
       status: row.status === "completed" ? "completed" : row.status === "expired" ? "expired" : row.status === "failed" ? "failed" : "initiated",
     });

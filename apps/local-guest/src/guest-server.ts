@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { A2UIServerMessage, JsonObject } from "@weaver/core";
+import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage, type JsonObject } from "@weaver/core";
 import type { WebServerEventHandoff } from "@weaver/web";
 import type { CommandPrincipal, TransitionTelemetryEvent } from "../../../packages/platform-core/src/index.js";
 import {
@@ -103,6 +103,8 @@ const REQUEST_STAGE = "request";
 const OFFER_STAGE = "offer";
 const PAYMENT_STAGE = "payment";
 const BOOKING_STAGE = "booking";
+const GUEST_PHONE_SUBMIT_EVENT = "shortlet.guest-contact.submit-phone";
+const GUEST_EMAIL_SUBMIT_EVENT = "shortlet.guest-contact.submit-email";
 
 const PENDING_ACTION_STAGE = "pending_action";
 const SHELL_TELEMETRY_EVENTS = [
@@ -125,6 +127,8 @@ const EVENT_STAGE_ALLOW_LIST: Readonly<Record<string, string>> = Object.freeze({
   "shortlet.card-payment.verify-return": PAYMENT_STAGE,
   [REQUEST_DRAFT_REVIEW_EVENT]: REQUEST_STAGE,
   [REQUEST_DRAFT_SUBMIT_EVENT]: REQUEST_STAGE,
+  [GUEST_PHONE_SUBMIT_EVENT]: REQUEST_STAGE,
+  [GUEST_EMAIL_SUBMIT_EVENT]: PAYMENT_STAGE,
   [ASSISTANT_CONFIRM_ACTION_EVENT]: PENDING_ACTION_STAGE,
   [ASSISTANT_CANCEL_ACTION_EVENT]: PENDING_ACTION_STAGE,
 });
@@ -362,6 +366,10 @@ export class LocalGuestApp {
         return this.#handleDraftReview(thread, event);
       case REQUEST_DRAFT_SUBMIT_EVENT:
         return this.#handleDraftSubmit(thread, event);
+      case GUEST_PHONE_SUBMIT_EVENT:
+        return this.#handlePhoneSubmit(thread, event);
+      case GUEST_EMAIL_SUBMIT_EVENT:
+        return this.#handleEmailSubmit(thread, event);
       default:
         return { ok: false, code: "UNSUPPORTED_EVENT", message: "That action is not available." };
     }
@@ -962,9 +970,45 @@ export class LocalGuestApp {
       return { ok: true, messages: ["Booking Request submitted. No Reservation exists yet; the Operator must respond."], surfaces: [surface] };
     } catch (error) {
       const message = error instanceof Error ? error.message : "The Booking Request could not be submitted.";
+      if (/phone number is required/i.test(message)) return this.#contactSurface(thread, "phone", event.context ?? {});
       this.#emitTransition(thread, "booking_request.delivery_failed", { aggregateType: "request_draft", aggregateId: thread.draftId, reasonCode: "REQUEST_DELIVERY_FAILED" });
       return { ok: false, code: "REQUEST_NOT_SUBMITTED", message };
     }
+  }
+
+  #contactSurface(thread: GuestThreadState, kind: "phone" | "email", resumeContext: JsonObject): GuestTurnResult {
+    const stage = kind === "phone" ? REQUEST_STAGE : PAYMENT_STAGE;
+    const surfaceId = `thread-${thread.threadId}:contact:${kind}`;
+    this.#supersede(thread, stage);
+    thread.activeSurfaces.set(stage, surfaceId);
+    const contact = this.#environment.guestContactApp.get(this.#environment.guestPrincipal());
+    const label = kind === "phone" ? "Phone number" : "Email address for payment and booking receipt";
+    const eventName = kind === "phone" ? GUEST_PHONE_SUBMIT_EVENT : GUEST_EMAIL_SUBMIT_EVENT;
+    const components: A2UIComponent[] = [
+      { id: "root", component: "Column", children: ["contact-title", "contact-help", "contact-value", "contact-save"] },
+      { id: "contact-title", component: "Text", text: label, variant: "h2" },
+      { id: "contact-help", component: "Text", text: kind === "phone" ? "We may use this for booking coordination. This does not verify ownership." : "Required before payment continuation. This does not verify ownership." },
+      { id: "contact-value", component: "TextField", label, value: { path: "/contactValue" } },
+      { id: "contact-save", component: "Button", child: "contact-save-label", variant: "primary", action: { event: { name: eventName, context: { ...resumeContext, contactValue: { path: "/contactValue" }, expectedRevision: contact?.revision ?? 0 } } }, accessibility: { label: `Save ${label}` } },
+      { id: "contact-save-label", component: "Text", text: `Save ${label}` },
+    ];
+    return { ok: true, messages: [kind === "phone" ? "Add a phone number before submitting this Booking Request." : "Add an email address before continuing to payment."], surfaces: [{ surfaceId, mode: "focused-surface", summary: label, conventionalRoute: `/guest/contact?kind=${kind}`, textFallback: `${label} is required. Open Contact details to save it.`, a2uiMessages: [{ version: "v0.9.1", createSurface: { surfaceId, catalogId: A2UI_V091_BASIC_CATALOG_ID } }, { version: "v0.9.1", updateDataModel: { surfaceId, path: "/contactValue", value: "" } }, { version: "v0.9.1", updateComponents: { surfaceId, components } }] }] };
+  }
+
+  #handlePhoneSubmit(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
+    const value = event.context?.contactValue;
+    if (typeof value !== "string") return { ok: false, code: "INVALID_INPUT", message: "Phone number is required." };
+    try { this.#environment.guestContactApp.submitPhone({ phoneNumber: value, expectedRevision: Number(event.context?.expectedRevision ?? 0) }, this.#environment.guestPrincipal()); }
+    catch (error) { return { ok: false, code: "INVALID_CONTACT", message: error instanceof Error ? error.message : "Phone number could not be saved." }; }
+    return this.#handleDraftSubmit(thread, { ...event, context: event.context });
+  }
+
+  #handleEmailSubmit(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
+    const value = event.context?.contactValue;
+    if (typeof value !== "string") return { ok: false, code: "INVALID_INPUT", message: "Email address is required." };
+    try { this.#environment.guestContactApp.submitEmail({ contactEmail: value, expectedRevision: Number(event.context?.expectedRevision ?? 0) }, this.#environment.guestPrincipal()); }
+    catch (error) { return { ok: false, code: "INVALID_CONTACT", message: error instanceof Error ? error.message : "Email address could not be saved." }; }
+    return this.#handleCardCheckout(thread, event);
   }
 
   #requestSurface(thread: GuestThreadState, requestId: string): GuestSurfacePayload {
@@ -1089,6 +1133,7 @@ export class LocalGuestApp {
       principal: environment.guestPrincipal(),
     });
     if (!resolved.ok) {
+      if (/email address is required/i.test(resolved.message)) return this.#contactSurface(thread, "email", event.context ?? {});
       return { ok: false, code: resolved.code, message: resolved.message };
     }
 
@@ -1268,6 +1313,7 @@ export function renderGuestShellHtml(): string {
     <header>
       <h1>Shortlet Concierge</h1>
       <span class="header-note">Local demo · A clearer way to find your stay</span>
+      <a href="/guest/contact">Contact details</a>
     </header>
     <main>
       <section id="transcript" aria-label="Conversation history"></section>
@@ -1302,6 +1348,17 @@ function readJsonBody(req: IncomingMessage): Promise<unknown> {
     });
     req.on("error", reject);
   });
+}
+
+function readFormBody(req: IncomingMessage): Promise<URLSearchParams> {
+  return new Promise((resolve, reject) => { let body = ""; req.setEncoding("utf8"); req.on("data", (chunk) => { body += chunk; if (body.length > 4096) reject(new Error("Form is too large")); }); req.on("end", () => resolve(new URLSearchParams(body))); req.on("error", reject); });
+}
+
+export function renderGuestContactHtml(contact: { phoneNumber: string | null; contactEmail: string | null; revision: number } | null, error = "", kind: "phone" | "email" | "both" = "both"): string {
+  const safe = (value: string) => value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!);
+  const phoneForm = kind === "email" ? "" : `<form method="post" action="/guest/contact/phone"><label for="phoneNumber">Phone number</label><p>We may use this for booking coordination.</p><input id="phoneNumber" name="phoneNumber" type="tel" inputmode="tel" autocomplete="tel" maxlength="32" required value="${safe(contact?.phoneNumber ?? "")}"><input type="hidden" name="expectedRevision" value="${contact?.revision ?? 0}"><button type="submit">Save phone number</button></form>`;
+  const emailForm = kind === "phone" ? "" : `<form method="post" action="/guest/contact/email"><label for="contactEmail">Email address for payment and booking receipt</label><input id="contactEmail" name="contactEmail" type="email" inputmode="email" autocomplete="email" maxlength="254" required value="${safe(contact?.contactEmail ?? "")}"><input type="hidden" name="expectedRevision" value="${contact?.revision ?? 0}"><button type="submit">Save email address</button></form>`;
+  return `<!doctype html><html lang="en-NG"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Guest contact</title><style>body{font:16px system-ui;margin:0;padding:12px;background:#f7f7f5;color:#202124}main{max-width:420px;margin:auto}form{margin:20px 0}label{display:block;font-weight:700;margin-bottom:6px}input,button{box-sizing:border-box;width:100%;min-height:44px;font:inherit;padding:10px;border-radius:8px}button{margin-top:10px}.error{color:#b42318}@media(max-width:320px){body{padding:8px}main{width:100%}}</style></head><body><main><h1>Guest contact</h1>${error ? `<p class="error" role="alert">${safe(error)}</p>` : ""}${phoneForm}${emailForm}</main></body></html>`;
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -1459,7 +1516,7 @@ export function startLocalGuestServer(options: {
         ? "assistant-offline"
         : "deterministic";
 
-  const env = options.environment ?? new LocalGuestEnvironment();
+  const env = options.environment ?? new LocalGuestEnvironment({ initialGuestPhoneNumber: null, initialGuestContactEmail: null });
 
   let assistantRuntime: AssistantRuntime | undefined;
   let geminiClient: GeminiConciergeClient | undefined;
@@ -1523,6 +1580,22 @@ export function startLocalGuestServer(options: {
         res.end("Guest client bundle missing; run npm run guest:local to build it.");
       }
       return;
+    }
+
+    if (url.pathname === "/guest/contact" || url.pathname === "/guest/contact/phone" || url.pathname === "/guest/contact/email") {
+      const session = resolveBrowserSession(app.environment, browserSessions, readGuestSession(req));
+      if (!session) { res.writeHead(401, { "Content-Type": "text/plain" }); res.end("Unauthorized"); return; }
+      const contactPrincipal: CommandPrincipal = { id: session.principalId, role: "guest", tenantId: session.tenantId };
+      if (req.method === "GET" && url.pathname === "/guest/contact") { const kind = url.searchParams.get("kind"); const requestedKind = kind === "phone" || kind === "email" ? kind : "both"; res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(renderGuestContactHtml(app.environment.guestContactApp.get(contactPrincipal), "", requestedKind)); return; }
+      if (req.method === "POST") {
+        try {
+          const form = await readFormBody(req);
+          const expectedRevision = Number(form.get("expectedRevision"));
+          if (url.pathname.endsWith("/phone")) app.environment.guestContactApp.submitPhone({ phoneNumber: form.get("phoneNumber") ?? "", ...(Number.isInteger(expectedRevision) ? { expectedRevision } : {}) }, contactPrincipal);
+          else app.environment.guestContactApp.submitEmail({ contactEmail: form.get("contactEmail") ?? "", ...(Number.isInteger(expectedRevision) ? { expectedRevision } : {}) }, contactPrincipal);
+          res.writeHead(303, { Location: "/guest/contact" }); res.end(); return;
+        } catch (error) { res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" }); res.end(renderGuestContactHtml(app.environment.guestContactApp.get(contactPrincipal), error instanceof Error ? error.message : "Contact could not be saved")); return; }
+      }
     }
 
     if (req.method === "GET" && url.pathname === "/api/state") {

@@ -10,6 +10,7 @@ import {
   SelfBookingAttestation,
   SELF_BOOKING_ATTESTATION_VERSION
 } from "./guest-verification.js";
+import type { GuestContactSource } from "./guest-contact.js";
 
 export function getWatTime(date: Date) {
   const formatter = new Intl.DateTimeFormat("en-GB", {
@@ -58,19 +59,22 @@ export class BookingRequestManager {
   #requests = new Map<string, any>();
   readonly #draftStore: import("./guest-interaction-store.js").SqliteGuestInteractionStore | null;
   readonly #requestStore: import("./guest-interaction-store.js").SqliteGuestInteractionStore | null;
+  readonly #guestContacts?: GuestContactSource;
 
   constructor({
     repository = null,
     audit = null,
     calendar = null,
     guestVerification,
-    store = null
+    store = null,
+    guestContacts
   }: {
     repository?: any;
     audit?: any;
     calendar?: any;
     guestVerification?: GuestVerificationService;
     store?: import("./guest-interaction-store.js").SqliteGuestInteractionStore | null;
+    guestContacts?: GuestContactSource;
   } = {}) {
     this.#repository = repository;
     this.#audit = audit;
@@ -78,6 +82,7 @@ export class BookingRequestManager {
     this.#guestVerification = guestVerification ?? new GuestVerificationService({ repository });
     this.#draftStore = store;
     this.#requestStore = store;
+    this.#guestContacts = guestContacts;
   }
 
   createDraft(
@@ -202,6 +207,7 @@ export class BookingRequestManager {
       confirmedAt: request.confirmedAt ?? null,
       declinedAt: request.declinedAt ?? null,
       declineReason: request.declineReason ?? null
+      ,phoneNumber: request.phoneNumber ?? null
     });
   }
 
@@ -237,6 +243,7 @@ export class BookingRequestManager {
       confirmedAt: record.confirmedAt,
       declinedAt: record.declinedAt,
       declineReason: record.declineReason
+      ,phoneNumber: record.phoneNumber
     };
     this.#requests.set(requestId, request);
     return request;
@@ -291,6 +298,10 @@ export class BookingRequestManager {
     if (!principal.id || principal.id !== draft.primaryGuest.id) {
       throw new Error("Authenticated principal must match the Primary Guest");
     }
+    // ADR-0085: contact is not identity assurance; it is a separate pilot
+    // Booking Request eligibility input supplied by the current Guest.
+    const contact = this.#guestContacts?.find(principal.id, tenantId);
+    if (this.#guestContacts && !contact?.phoneNumber) throw new Error("A valid phone number is required before submitting a Booking Request");
 
     const eligibility = this.#guestVerification.validateBookingEligibility({
       tenantId,
@@ -419,6 +430,7 @@ export class BookingRequestManager {
       delivered: isDelivered,
       deliveredAt: deliveredAtIso,
       status: "disclosed"
+      ,phoneNumber: contact?.phoneNumber
     };
 
     this.#requests.set(requestId, bookingRequest);

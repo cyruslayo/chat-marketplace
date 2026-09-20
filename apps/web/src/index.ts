@@ -1,4 +1,5 @@
 export * from "./browser-navigation.js";
+export * from "./guest-contact-application.js";
 export * from "./booking-request-application.js";
 export * from "./booking-contract-application.js";
 export * from "./booking-amendment-application.js";

@@ -31,6 +31,7 @@ function setup() {
       tenantId === "tenant-lagos" && (actorId === operatorId || actorId.startsWith("rep-")),
   };
   const application = createBookingRequestApplication({
+    guestContacts: { find: () => ({ guestId: "guest-101", tenantId: "tenant-lagos", phoneNumber: "+2348012345678", contactEmail: null, revision: 1 }) },
     repository,
     audit,
     calendar,

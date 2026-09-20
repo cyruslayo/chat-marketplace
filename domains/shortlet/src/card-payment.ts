@@ -41,6 +41,7 @@ export interface CardCheckoutSession {
   readonly amountKobo: number;
   readonly purpose: "stay" | "security_deposit";
   readonly currency: "NGN";
+  readonly contactEmail: string;
   readonly expiresAt: string;
   status: "initiated" | "completed" | "expired" | "failed";
 }
@@ -162,6 +163,7 @@ export interface CardPaymentManagerOptions {
   readonly securityDepositAccounting?: SecurityDepositAccountingRepository;
   readonly compensationRefundProvider?: BookingPaymentCompensationPort;
   readonly store?: import("./guest-interaction-store.js").SqliteGuestInteractionStore | null;
+  readonly guestContacts?: import("./guest-contact.js").GuestContactSource;
 }
 
 export class CardPaymentManager {
@@ -177,6 +179,7 @@ export class CardPaymentManager {
   readonly #securityDepositAccounting?: SecurityDepositAccountingRepository;
   readonly #compensationRefundProvider?: CardPaymentManagerOptions["compensationRefundProvider"];
   readonly #store?: CardPaymentManagerOptions["store"];
+  readonly #guestContacts?: CardPaymentManagerOptions["guestContacts"];
 
   readonly #sessions = new Map<string, CardCheckoutSession>();
   readonly #reservations = new Map<string, Reservation>();
@@ -200,6 +203,7 @@ export class CardPaymentManager {
     this.#securityDepositAccounting = options.securityDepositAccounting;
     this.#compensationRefundProvider = options.compensationRefundProvider;
     this.#store = options.store ?? null;
+    this.#guestContacts = options.guestContacts;
     if (this.#store) this.#rehydrateFromStore();
   }
 
@@ -250,6 +254,7 @@ export class CardPaymentManager {
       amountKobo: session.amountKobo,
       purpose: session.purpose,
       currency: session.currency,
+      contactEmail: session.contactEmail,
       expiresAt: session.expiresAt,
       status: session.status,
     });
@@ -292,6 +297,11 @@ export class CardPaymentManager {
     if (!offer.tenantId || !envelope.principal.tenantId || offer.tenantId !== envelope.principal.tenantId) {
       throw new Error("Cross-tenant offer access denied");
     }
+    // ADR-0087: payment email comes from authoritative Guest contact state;
+    // amount and currency remain server-owned offer facts.
+    const contact = this.#guestContacts?.find(expectedPayerId, offer.tenantId);
+    if (this.#guestContacts && !contact?.phoneNumber) throw new Error("A valid phone number is required before payment continuation");
+    if (this.#guestContacts && !contact?.contactEmail) throw new Error("A valid email address is required before payment continuation");
     for (const existing of this.#sessions.values()) {
       if (existing.offerId === offerId && existing.status === "initiated") throw new Error("A live checkout already exists for this offer");
     }
@@ -324,6 +334,7 @@ export class CardPaymentManager {
       amountKobo: purpose === "stay" ? (journey?.stay.amountKobo ?? offer.totalAmountDueNowKobo) : (journey?.deposit.amountKobo ?? 0),
       purpose,
       currency: "NGN",
+      contactEmail: contact?.contactEmail ?? "",
       expiresAt: offer.paymentWindow.expiresAt,
       status: "initiated"
     };
@@ -650,6 +661,7 @@ export class CardPaymentManager {
       amountKobo: record.amountKobo,
       purpose: record.purpose,
       currency: record.currency,
+      contactEmail: record.contactEmail,
       expiresAt: record.expiresAt,
       status: record.status,
     };
@@ -671,6 +683,7 @@ export class CardPaymentManager {
       amountKobo: record.amountKobo,
       purpose: record.purpose,
       currency: record.currency,
+      contactEmail: record.contactEmail,
       expiresAt: record.expiresAt,
       status: record.status,
     };

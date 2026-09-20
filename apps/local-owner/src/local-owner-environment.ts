@@ -189,6 +189,7 @@ export class LocalApartmentOwnerEnvironment {
       clock: this.clock,
       store: this.interactionStore,
       audit: this.audit,
+      guestContacts: { find: (guestId: string, tenantId: string) => ({ guestId, tenantId, phoneNumber: "+2348012345678", contactEmail: null, revision: 1 }) },
     });
     this.conditionalOfferApp = createConditionalOfferApplication({
       bookingRequestApplication: this.bookingRequestApp,
@@ -419,7 +420,8 @@ export class LocalApartmentOwnerEnvironment {
     if (!request.operatorId || !request.tenantId || request.tenantId !== principal.tenantId || principal.role !== "operator" || !principal.id || !this.grantStore.canActForOperator({ actorId: principal.id, operatorId: request.operatorId, tenantId: request.tenantId })) throw new Error("Operator request not found");
     const artifact = this.bookingRequestApp.getArtifact(requestId, principal);
     try { this.audit.record({ type: "operator_request_opened", actorId: principal.id, tenantId: principal.tenantId, requestId, status: artifact.facts.status }); this.telemetry.track({ type: "operator_request_opened", principalId: principal.id, tenantId: principal.tenantId, aggregateId: requestId }); } catch { /* observability cannot block reads */ }
-    return artifact;
+    const phoneNumber = (request as { phoneNumber?: string }).phoneNumber;
+    return phoneNumber ? Object.freeze({ ...artifact, facts: Object.freeze({ ...artifact.facts, phoneNumber }) }) : artifact;
   }
 
   confirmOperatorRequest(requestId: string, principal: CommandPrincipal): BookingRequestArtifact {

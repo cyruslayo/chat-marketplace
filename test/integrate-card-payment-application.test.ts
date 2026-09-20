@@ -10,7 +10,7 @@ const offer = { offerId: "offer-1", offerVersion: 1, requestId: "req", inventory
 test("CardPaymentApplication composes the existing ConditionalOfferManager and shares its production path", () => {
   const conditional = new ConditionalOfferApplication(Object.assign(new ConditionalOfferManager(), { getOffer: () => offer } as unknown as ConditionalOfferManager), () => new Date("2026-08-01T12:05:00.000Z"));
   const calls: string[] = [];
-  const application = createCardPaymentApplication({ conditionalOfferApplication: conditional, bookingState: new InMemoryBookingStateRepository(), clock: () => new Date("2026-08-01T12:05:00.000Z"), calendar: { transitionPaymentPendingToConfirmedBooking: () => undefined }, pspClient: { verifyTransaction: (reference) => { calls.push(reference); return { verified: true, status: "success", amountKobo: 10000, currency: "NGN", pspReference: reference, payerId: "guest" }; } } });
+  const application = createCardPaymentApplication({ guestContacts: { find: () => ({ guestId: "guest", tenantId: "tenant", phoneNumber: "+2348012345678", contactEmail: "guest@example.com", revision: 1 }) }, conditionalOfferApplication: conditional, bookingState: new InMemoryBookingStateRepository(), clock: () => new Date("2026-08-01T12:05:00.000Z"), calendar: { transitionPaymentPendingToConfirmedBooking: () => undefined }, pspClient: { verifyTransaction: (reference) => { calls.push(reference); return { verified: true, status: "success", amountKobo: 10000, currency: "NGN", pspReference: reference, payerId: "guest" }; } } });
   assert.ok(application instanceof CardPaymentApplication);
   assert.equal(application.manager, application.manager);
   const payer = { id: "guest", role: "guest" as const, tenantId: "tenant" };

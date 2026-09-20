@@ -19,7 +19,7 @@ function setup() {
   };
   const guestVerification = new GuestVerificationService({ repository, verificationResults: { getVerificationResult: ({ tenantId, guestId }) => tenantId === "tenant-lagos" && guestId.startsWith("guest-") ? { tenantId, guestId, governmentIdVerified: true } : null } });
   const clock = () => new Date("2026-07-22T10:00:00Z");
-  const bookingRequestApplication = createBookingRequestApplication({ repository, audit, calendar, guestVerification, operatorAuthority, clock });
+  const bookingRequestApplication = createBookingRequestApplication({ guestContacts: { find: () => ({ guestId: "guest-101", tenantId: "tenant-lagos", phoneNumber: "+2348012345678", contactEmail: null, revision: 1 }) }, repository, audit, calendar, guestVerification, operatorAuthority, clock });
   const application = createConditionalOfferApplication({ bookingRequestApplication, repository, audit, calendar, clock, operatorAuthority });
   return { repository, audit, calendar, bookingRequestApplication, application, unit: repository.findAll()[0], clock };
 }

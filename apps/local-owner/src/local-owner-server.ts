@@ -43,6 +43,14 @@ function operatorRequestHtml(env: LocalApartmentOwnerEnvironment, principal: { a
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Booking Request ${escapeHtml(requestId)}</title><style>body{font:16px system-ui;margin:0;padding:16px;background:#f7f7f5;color:#202124}main{max-width:680px;margin:0 auto;background:#fff;border:1px solid #ddd;border-radius:12px;padding:20px}dt{font-weight:700;margin-top:12px}dd{margin:2px 0}form{display:inline-block;margin:8px 8px 0 0}button{min-height:44px;padding:10px 16px;border-radius:8px;border:1px solid #aaa;background:#fff;cursor:pointer}.confirm{background:#155eef;color:#fff}.decline{background:#b42318;color:#fff}.error{color:#b42318;border:1px solid #fda29b;padding:10px}@media(max-width:390px){body{padding:8px}main{padding:12px}}</style></head><body><main><p><a href="/operator/requests">← Back to requests</a></p><h1>Booking Request</h1>${error ? `<p class="error" role="alert">${escapeHtml(error)}</p>` : ""}<dl><dt>Request</dt><dd>${escapeHtml(request.facts.requestId)}</dd><dt>Unit</dt><dd>${escapeHtml(request.facts.unitId)}</dd><dt>Dates</dt><dd>${request.facts.checkIn} to ${request.facts.checkOut} (${request.facts.nights} nights)</dd><dt>Guest party</dt><dd>${request.facts.occupantCount ?? request.facts.occupants.length} occupants</dd><dt>All-In Stay Total</dt><dd>${formatKobo(request.facts.quote?.allInStayTotalKobo ?? 0)}</dd>${request.facts.quote?.refundableSecurityDepositKobo ? `<dt>Refundable Security Deposit</dt><dd>${formatKobo(request.facts.quote.refundableSecurityDepositKobo)}</dd>` : ""}<dt>Status</dt><dd>${requestStatusLabel(request.facts.status)}</dd><dt>Response deadline</dt><dd>${formatWat(request.facts.operatorResponseDeadlineAt)}</dd></dl>${actionable ? `<p>Confirming creates the existing Conditional Booking Offer for the Guest. Declining releases the request inventory.</p><form method="post" action="/operator/requests/${encodeURIComponent(requestId)}/confirm"><button class="confirm" type="submit">Confirm Booking Request</button></form><form method="post" action="/operator/requests/${encodeURIComponent(requestId)}/decline"><button class="decline" type="submit">Decline Booking Request</button></form>` : "<p>This request is no longer actionable.</p>"}</main></body></html>`;
 }
 
+function operatorRequestDetailHtml(env: LocalApartmentOwnerEnvironment, principal: { actorId: string; tenantId: string }, requestId: string, error = ""): string {
+  const request = env.operatorRequestDetail(requestId, { id: principal.actorId, role: "operator", tenantId: principal.tenantId });
+  const phone = request.facts.phoneNumber;
+  const html = operatorRequestHtml(env, principal, requestId, error);
+  if (!phone) return html;
+  return html.replace("<dt>All-In Stay Total</dt>", `<dt>Phone number</dt><dd>${escapeHtml(phone)}</dd><dt>All-In Stay Total</dt>`);
+}
+
 function formatKobo(kobo: number): string {
   const naira = (kobo / 100).toLocaleString("en-NG", {
     minimumFractionDigits: 2,
@@ -445,7 +453,7 @@ export function startLocalOwnerServer(options: {
     if (req.method === "GET" && detailMatch) {
       const principal = operatorPrincipal(req, env);
       if (!principal) { res.writeHead(401); res.end("Authentication required"); return; }
-      try { res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(operatorRequestHtml(env, principal, decodeURIComponent(detailMatch[1]))); }
+      try { res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(operatorRequestDetailHtml(env, principal, decodeURIComponent(detailMatch[1]))); }
       catch { res.writeHead(404); res.end("Request not found"); }
       return;
     }
@@ -462,7 +470,7 @@ export function startLocalOwnerServer(options: {
         res.writeHead(303, { Location: `/operator/requests/${encodeURIComponent(requestId)}` }); res.end();
       } catch (error) {
         let body = "Request action rejected";
-        try { body = operatorRequestHtml(env, principal, requestId, error instanceof Error ? error.message : "Request action rejected"); } catch { /* authorization may have changed; keep generic */ }
+        try { body = operatorRequestDetailHtml(env, principal, requestId, error instanceof Error ? error.message : "Request action rejected"); } catch { /* authorization may have changed; keep generic */ }
         if (!res.headersSent) { res.writeHead(409, { "Content-Type": body.startsWith("<!doctype") ? "text/html; charset=utf-8" : "text/plain; charset=utf-8" }); res.end(body); }
       }
       return;

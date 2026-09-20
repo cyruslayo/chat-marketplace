@@ -21,6 +21,7 @@ export type BookingRequestApplicationDependencies = BookingRequestManagerDepende
   readonly operatorAuthority?: OperatorRepresentativeAuthority;
   readonly clock?: () => Date;
   readonly store?: import("../../../domains/shortlet/src/guest-interaction-store.js").SqliteGuestInteractionStore | null;
+  readonly guestContacts: import("../../../domains/shortlet/src/guest-contact.js").GuestContactSource;
 };
 
 export interface BookingRequestDecisionInput {
@@ -151,6 +152,7 @@ export class BookingRequestApplication {
 export function createBookingRequestApplication(
   dependencies: BookingRequestApplicationDependencies,
 ): BookingRequestApplication {
+  if (!dependencies.guestContacts) throw new Error("Guest contact source is required");
   const { clock, operatorAuthority, store, ...managerDependencies } = dependencies;
   return new BookingRequestApplication(
     new BookingRequestManager({ ...managerDependencies, store }),

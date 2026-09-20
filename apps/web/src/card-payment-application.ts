@@ -17,6 +17,7 @@ export interface CardPaymentApplicationOptions {
   readonly bookingState: NonNullable<CardPaymentManagerOptions["bookingState"]>;
   readonly compensationRefundProvider?: CardPaymentManagerOptions["compensationRefundProvider"];
   readonly store?: import("../../../domains/shortlet/src/guest-interaction-store.js").SqliteGuestInteractionStore | null;
+  readonly guestContacts: NonNullable<CardPaymentManagerOptions["guestContacts"]>;
 }
 
 export class CardPaymentApplication {
@@ -54,6 +55,7 @@ export class CardPaymentApplication {
 
 export function createCardPaymentApplication(options: CardPaymentApplicationOptions): CardPaymentApplication {
   if (!options.bookingState?.saveBookingAtomically || !options.bookingState.removeBookingAtomically) throw new Error("Atomic BookingState authority is required");
+  if (!options.guestContacts) throw new Error("Guest contact source is required");
   const { conditionalOfferApplication, clock = () => new Date(), ...dependencies } = options;
   return new CardPaymentApplication(new CardPaymentManager({ ...dependencies, offerManager: conditionalOfferApplication.manager }), conditionalOfferApplication, clock);
 }

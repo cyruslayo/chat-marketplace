@@ -32,6 +32,7 @@ export interface BookingRequestArtifact {
     readonly primaryGuestName?: string;
       readonly occupants: readonly string[];
       readonly occupantCount?: number;
+      readonly phoneNumber?: string;
     readonly quote?: {
       readonly currency: string;
       readonly allInStayTotalKobo: number;
