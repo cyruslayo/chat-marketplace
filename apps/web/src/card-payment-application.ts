@@ -70,6 +70,7 @@ export class CardPaymentApplication {
       currency: "NGN",
       reference: session.pspReference,
       callbackUrl: new URL("/payments/paystack/callback", `${paystackClient.configuration.callbackBaseUrl}/`).toString(),
+      payerId: trustedPayerPrincipal.id,
     });
     if (!isApprovedPaystackCheckoutUrl(initialized.authorizationUrl)) throw new Error("Paystack initialization returned an invalid checkout");
     return this.manager.updateCheckoutUrl(session.pspReference, initialized.authorizationUrl, initialized.environment);

@@ -18,6 +18,7 @@ const env = new LocalApartmentOwnerEnvironment({
   representativePersonId: actorId,
   tenantId,
   ...(operatorId ? { operatorId } : {}),
+  ...(operatorsPath ? { clock: () => new Date() } : {}),
 });
 try {
   const token = env.provisionOperatorAccessToken(actorId, tenantId);

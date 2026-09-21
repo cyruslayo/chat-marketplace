@@ -55,11 +55,14 @@ function proxyRequest(req: IncomingMessage, res: ServerResponse, port: number): 
 export function startPilotServer(options: {
   readonly port?: number;
   readonly configuration?: PilotConfiguration;
+  readonly clock?: () => Date;
   /** Test harnesses may inject a provider-shaped fake, never a deterministic PSP fallback. */
   readonly paystackClient?: PaystackClient;
 } = {}): PilotServerHandle {
   const configuration = options.configuration ?? loadPilotConfiguration();
   const paystackClient = options.paystackClient ?? new DirectPaystackClient(configuration.paystack);
+  const clock = options.clock ?? (() => new Date());
+  const demoCheckIn = new Date(clock().getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   if (paystackClient.configuration.environment !== "live" || paystackClient.configuration.callbackBaseUrl !== configuration.publicOrigin) {
     throw new Error("Pilot production composition requires a live Paystack client bound to SHORTLET_PUBLIC_ORIGIN");
   }
@@ -77,8 +80,10 @@ export function startPilotServer(options: {
     guestName: "Guest",
     initialGuestPhoneNumber: null,
     initialGuestContactEmail: null,
+    demoCheckIn,
     production: true,
     deterministicPsp: false,
+    clock,
     paystackClient,
   });
   const operatorEnvironment = new LocalApartmentOwnerEnvironment({
@@ -94,6 +99,7 @@ export function startPilotServer(options: {
     unitId: configuration.unitId,
     propertyId: configuration.propertyId,
     seedFixture: false,
+    clock,
   });
 
   const guest = startLocalGuestServer({

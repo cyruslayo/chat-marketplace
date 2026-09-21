@@ -95,6 +95,20 @@ test("AC6 — Initialization uses the authoritative amount", async () => {
   assert.equal(JSON.parse(fake.requests[0]!.body!).amount, 13000000);
 });
 
+test("Paystack initialization binds the server-authoritative Guest ID in metadata", async () => {
+  const fake = createPaystackHttpFake();
+  const client = new DirectPaystackClient({ secretKey: "sk_test_secret", environment: "test", callbackBaseUrl: "https://pilot.example" }, fake.fetcher);
+  await client.initializeTransaction({ email: "guest@example.com", amountKobo: 13000000, currency: "NGN", reference: "platform-ref", callbackUrl: "https://pilot.example/payments/paystack/callback", payerId: "guest-456" });
+  assert.deepEqual(JSON.parse(JSON.parse(fake.requests[0]!.body!).metadata), { shortlet_guest_id: "guest-456" });
+});
+
+test("Paystack verification projects the bound Guest ID from metadata", async () => {
+  const fake = createPaystackHttpFake({ transaction: { reference: "platform-ref", amount: 13000000, currency: "NGN", status: "success", domain: "test", metadata: JSON.stringify({ shortlet_guest_id: "guest-456" }) } });
+  const client = new DirectPaystackClient({ secretKey: "sk_test_secret", environment: "test", callbackBaseUrl: "https://pilot.example" }, fake.fetcher);
+  const result = await client.verifyTransaction("platform-ref");
+  assert.equal(result.payerId, "guest-456");
+});
+
 test("AC7 — Initialization sends exact NGN", async () => {
   const fake = createPaystackHttpFake();
   const client = new DirectPaystackClient({ secretKey: "sk_test_secret", environment: "test", callbackBaseUrl: "https://pilot.example" }, fake.fetcher);

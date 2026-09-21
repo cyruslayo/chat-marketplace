@@ -120,6 +120,7 @@ export interface PaystackInitializeInput {
   readonly currency: "NGN";
   readonly reference: string;
   readonly callbackUrl: string;
+  readonly payerId?: string;
 }
 
 export interface PaystackInitializeResult {
@@ -151,10 +152,19 @@ export class DirectPaystackClient implements PaystackClient {
 
   async initializeTransaction(input: PaystackInitializeInput): Promise<PaystackInitializeResult> {
     if (!Number.isSafeInteger(input.amountKobo) || input.amountKobo < 0) throw new Error("Paystack amount must be a non-negative integer in kobo");
+    const payload = {
+      email: input.email,
+      amount: input.amountKobo,
+      currency: input.currency,
+      reference: input.reference,
+      callback_url: input.callbackUrl,
+      channels: ["card"],
+      ...(input.payerId === undefined ? {} : { metadata: JSON.stringify({ shortlet_guest_id: input.payerId }) }),
+    };
     const response = await this.#fetcher(`${PAYSTACK_API_URL}/transaction/initialize`, {
       method: "POST",
       headers: { Authorization: `Bearer ${this.#configuration.secretKey}`, "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ email: input.email, amount: input.amountKobo, currency: input.currency, reference: input.reference, callback_url: input.callbackUrl, channels: ["card"] }),
+      body: JSON.stringify(payload),
     });
     const envelope = assertProviderResponse(response, await response.json(), "initialization");
     const data = recordOf(envelope.data);
@@ -178,6 +188,8 @@ export class DirectPaystackClient implements PaystackClient {
     const amountKobo = data?.amount;
     const currency = data?.currency;
     const domain = paystackEnvironment(data?.domain);
+    const metadata = typeof data?.metadata === "string" ? (() => { try { return JSON.parse(data.metadata) as unknown; } catch { return undefined; } })() : data?.metadata;
+    const payerId = recordOf(metadata)?.shortlet_guest_id;
     if (typeof returnedReference !== "string" || typeof amountKobo !== "number" || !Number.isSafeInteger(amountKobo) || typeof currency !== "string") throw new Error("Paystack verification returned an invalid transaction");
     return Object.freeze({
       verified: true,
@@ -185,6 +197,7 @@ export class DirectPaystackClient implements PaystackClient {
       amountKobo,
       currency,
       pspReference: returnedReference,
+      ...(typeof payerId === "string" && payerId !== "" ? { payerId } : {}),
       ...(domain === undefined ? {} : { environment: domain }),
       ...(recordOf(data?.card) && typeof recordOf(data?.card)?.brand === "string" && typeof recordOf(data?.card)?.last4 === "string" ? { cardMetadata: { brand: recordOf(data?.card)!.brand as string, last4: recordOf(data?.card)!.last4 as string } } : {}),
     });

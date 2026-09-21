@@ -30,6 +30,8 @@ const LOCATION_PATTERNS: readonly {
   readonly city: string;
   readonly neighbourhood?: string;
 }[] = [
+  { pattern: /\b(wuse\s*2|wuse\s*ii|wuse\s+two)\b/i, city: "Abuja", neighbourhood: "Wuse 2" },
+  { pattern: /\babuja\b/i, city: "Abuja" },
   { pattern: /\b(ikoyi|old ikoyi)\b/i, city: "Lagos", neighbourhood: "Old Ikoyi" },
   { pattern: /\b(lekki|lekki phase 1)\b/i, city: "Lagos", neighbourhood: "Lekki Phase 1" },
   { pattern: /\b(victoria island|vi)\b/i, city: "Lagos", neighbourhood: "Victoria Island" },

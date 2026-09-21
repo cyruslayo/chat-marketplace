@@ -13,6 +13,7 @@ export interface PaystackFakeTransaction {
   readonly status: string;
   readonly domain?: "test" | "live";
   readonly card?: { readonly brand: string; readonly last4: string };
+  readonly metadata?: unknown;
 }
 
 export function createPaystackHttpFake(options: { readonly transaction?: PaystackFakeTransaction; readonly authorizationUrl?: string } = {}): { readonly fetcher: PaystackHttpFetcher; readonly requests: PaystackFakeRequest[]; setTransaction(transaction: PaystackFakeTransaction): void } {

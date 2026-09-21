@@ -64,7 +64,8 @@ function cookieFrom(response: Response): string {
 
 async function setupAuthority(fixture: ProductionFixture): Promise<{ readonly token: string; readonly actorId: string }> {
   const actorId = "pilot-operator-actor";
-  const grants = new SqliteOperatorRepresentativeGrantStore(fixture.configuration.databasePath, { clock: () => new Date("2026-09-21T10:00:00Z") });
+  const clock = () => new Date();
+  const grants = new SqliteOperatorRepresentativeGrantStore(fixture.configuration.databasePath, { clock });
   grants.createGrant(createPlatformCommandEnvelope({
     commandName: "operator_representative.grant",
     principal: { id: "pilot-admin", role: "admin", tenantId: fixture.configuration.tenantId },
@@ -77,7 +78,7 @@ async function setupAuthority(fixture: ProductionFixture): Promise<{ readonly to
     },
     idempotencyKey: "pilot-test-grant",
   }));
-  const sessions = new SqliteOperatorSessionAuthority(fixture.configuration.databasePath, { clock: () => new Date("2026-09-21T10:00:00Z") });
+  const sessions = new SqliteOperatorSessionAuthority(fixture.configuration.databasePath, { clock });
   const token = sessions.provisionAccessToken({ actorId, tenantId: fixture.configuration.tenantId, representativeAuthorized: true }).token;
   sessions.close();
   grants.close();
@@ -98,6 +99,20 @@ test("AC1/AC2/AC3 — Production Guest sessions create distinct server-owned pri
     assert.deepEqual(server.guest.environment.grantStore.listGrants(), []);
     const forged = await fetch(`http://127.0.0.1:${port}/api/state?threadId=g-${crypto.randomUUID()}`, { headers: { Cookie: "shortlet_guest_session=gs-forged" } });
     assert.equal(forged.status, 401);
+  } finally {
+    await server.close();
+    await rm(fixture.directory, { recursive: true, force: true });
+  }
+});
+
+test("Production composition uses one live runtime clock across Guest and Operator environments", async () => {
+  const fixture = await productionFixture();
+  const server = startPilotServer({ port: 0, configuration: fixture.configuration, paystackClient: fixture.paystack });
+  try {
+    await server.listen();
+    const now = Date.now();
+    assert.ok(Math.abs(server.guest.environment.clock().getTime() - now) < 5_000);
+    assert.ok(Date.parse(`${server.guest.environment.config.demoCheckIn}T00:00:00Z`) > now);
   } finally {
     await server.close();
     await rm(fixture.directory, { recursive: true, force: true });
