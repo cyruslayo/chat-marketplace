@@ -3,19 +3,26 @@
 The pilot inventory import is a controlled CSV workflow. It changes inventory records only; it does not approve Operators or publish Units.
 
 1. Copy [`pilot-inventory-template.csv`](./pilot-inventory-template.csv) into Google Sheets or Excel and keep one row per entire-place Unit.
-2. Keep `operator_id` pointed at an already onboarded, authoritative Operator. The importer never creates or approves an Operator from a listing row.
-3. Run a dry run:
+2. Provision the authoritative Operator before preparing the CSV. This creates only the supply-side Operator identity; it does not create a representative grant, an authenticated session, Management Authority, inspection approval, publication authority, or payment authority:
 
    ```text
-   npm run pilot:inventory:import -- --dry-run path/to/listings.csv
+   npm run pilot:operator:create -- --operator-id operator_123 --tenant-id tenant_123 --name "Example Shortlets"
+   npm run pilot:operator:list
+   ```
+
+   Use `pilot:operator:update` only for a basic display-name correction. Keep `operator_id` pointed at one of the listed Operator IDs. The importer never creates or approves an Operator from a listing row. Set `SHORTLET_OPERATORS_PATH` for the pilot deployment; the default is `.scratch/shortlet/pilot-operators.json`.
+3. Run a dry run, scoped to the inventory tenant:
+
+   ```text
+   npm run pilot:inventory:import -- --dry-run --tenant-id tenant_123 path/to/listings.csv
    ```
 
 4. Fix every reported row error and repeat the dry run.
-5. Back up the configured inventory file before a real import. By default this is `.scratch/shortlet/pilot-inventory.json`; set `SHORTLET_INVENTORY_PATH` for the pilot deployment and back up that file together with the application SQLite file.
+5. Back up the configured inventory and Operator registry files before a real import. By default these are `.scratch/shortlet/pilot-inventory.json` and `.scratch/shortlet/pilot-operators.json`; set `SHORTLET_INVENTORY_PATH` and `SHORTLET_OPERATORS_PATH` for the pilot deployment and back up both files together with the application SQLite file.
 6. Import the corrected file:
 
    ```text
-   npm run pilot:inventory:import -- path/to/listings.csv
+   npm run pilot:inventory:import -- --tenant-id tenant_123 path/to/listings.csv
    ```
 
 7. Review the inserted/updated and publication-readiness summary. Imported Units remain unpublished unless they were already published and remain eligible after the update.
@@ -25,6 +32,14 @@ The pilot inventory import is a controlled CSV workflow. It changes inventory re
 The CSV uses NGN amounts such as `120000`, `"120,000"`, or `120000.50`. Quote amounts containing commas in the CSV. The importer converts them at the application boundary to integer kobo, rejects negative or malformed amounts, and accepts no currency other than `NGN`. Amenities and claim scopes use `|`; blocked dates use `YYYY-MM-DD/YYYY-MM-DD` pairs separated by `;`.
 
 The durable inventory repository is the existing `JsonUnitRepository`; no second Unit persistence system or fixture seed is used when `SHORTLET_INVENTORY_PATH` is configured. Current application state such as Guest interactions remains in SQLite.
+
+The durable Operator registry is the JSON `JsonOperatorRepository`. Existing inventory that already embeds Operators can be migrated explicitly, without creating Units or inferring authority, with:
+
+```text
+npm run pilot:operator:bootstrap -- --tenant-id tenant_123
+```
+
+The pilot sequence is: create a tenant if current tooling requires it, provision the Operator, create a representative grant if needed, prepare the inventory CSV, run a dry run, import Units, and publish only eligible Units through the existing path.
 
 ## Current pilot gap
 

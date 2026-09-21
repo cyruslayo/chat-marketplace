@@ -1,6 +1,7 @@
 export * from "./browse.js";
 export * from "./onboarding.js";
 export * from "./inventory-import.js";
+export * from "./operator.js";
 export * from "./availability.js";
 export * from "./availability-store.js";
 export * from "./guest-verification.js";

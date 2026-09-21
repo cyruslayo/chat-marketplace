@@ -60,6 +60,7 @@ export interface InventoryImportSummary {
 export interface InventoryImportOptions {
   readonly repository: InventoryRepository;
   readonly operatorResolver: OperatorReferenceResolver;
+  readonly tenantId?: string;
   readonly dryRun?: boolean;
   readonly clock?: () => Date;
   readonly audit?: InventoryAuditSink;
@@ -300,8 +301,13 @@ function validateRow(row: CsvRow, options: InventoryImportOptions): PreparedUnit
   if (cell(row, "neighbourhood") === "") throw new Error("neighbourhood is required");
   if (cell(row, "currency") !== "NGN") throw new Error("currency must be NGN");
 
-  const resolved = options.operatorResolver.findById(cell(row, "operator_id"));
-  if (!resolved || resolved.id !== cell(row, "operator_id")) throw new Error(`Operator ${cell(row, "operator_id")} was not found in the authoritative Operator records`);
+  const operatorId = cell(row, "operator_id");
+  const resolved = options.operatorResolver.findById(operatorId);
+  if (!resolved || resolved.id !== operatorId) throw new Error(`Operator ${operatorId} was not found in the authoritative Operator records`);
+  // ADR-0010/0065: an inventory row cannot cross the authoritative Operator tenant boundary.
+  if (options.tenantId !== undefined && resolved.tenantId !== options.tenantId) {
+    throw new Error(`Operator ${operatorId} does not belong to tenant ${options.tenantId}`);
+  }
 
   const existingById = options.repository.findById(unitId);
   const existingByExternalId = options.repository.findAll().find((unit) => unit.externalListingId === cell(row, "external_listing_id"));
@@ -321,6 +327,15 @@ export function operatorResolverFromUnitRepository(repository: { findAll(): Unit
       });
       const operator = asObject(found?.operator);
       return operator && typeof operator.id === "string" ? operator as OperatorReference : null;
+    },
+  };
+}
+
+export function operatorResolverFromRepository(repository: { findById(id: string): { readonly id: string } | null }): OperatorReferenceResolver {
+  return {
+    findById(id: string): OperatorReference | null {
+      const operator = repository.findById(id);
+      return operator ? { ...operator } as OperatorReference : null;
     },
   };
 }

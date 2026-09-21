@@ -1,19 +1,24 @@
 import { readFileSync } from "node:fs";
-import { JsonUnitRepository, importInventoryCsv, operatorResolverFromUnitRepository } from "../../../domains/shortlet/src/index.js";
+import { JsonOperatorRepository, JsonUnitRepository, importInventoryCsv, operatorResolverFromRepository } from "../../../domains/shortlet/src/index.js";
 
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
-const positional = args.filter((argument) => argument !== "--dry-run");
+const tenantIndex = args.indexOf("--tenant-id");
+const tenantId = tenantIndex >= 0 ? args[tenantIndex + 1] : process.env.SHORTLET_TENANT_ID;
+const positional = args.filter((argument, index) => argument !== "--dry-run" && argument !== "--tenant-id" && index !== tenantIndex + 1);
 const inputPath = positional[0];
-if (!inputPath || positional.length > 1) {
-  console.error("Usage: npm run pilot:inventory:import -- [--dry-run] path/to/listings.csv");
+if (!inputPath || positional.length > 1 || !tenantId || tenantId.startsWith("--")) {
+  console.error("Usage: npm run pilot:inventory:import -- [--dry-run] --tenant-id tenant_123 path/to/listings.csv");
   process.exitCode = 2;
 } else {
   const inventoryPath = process.env.SHORTLET_INVENTORY_PATH ?? ".scratch/shortlet/pilot-inventory.json";
+  const operatorPath = process.env.SHORTLET_OPERATORS_PATH ?? ".scratch/shortlet/pilot-operators.json";
   const repository = new JsonUnitRepository(inventoryPath);
+  const operators = new JsonOperatorRepository(operatorPath);
   const result = importInventoryCsv(readFileSync(inputPath, "utf8"), {
     repository,
-    operatorResolver: operatorResolverFromUnitRepository(repository),
+    operatorResolver: operatorResolverFromRepository(operators),
+    tenantId,
     dryRun,
   });
 
