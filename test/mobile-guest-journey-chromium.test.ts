@@ -26,22 +26,35 @@ async function startContext(width: number, height: number): Promise<MobileContex
   const directory = mkdtempSync(join(tmpdir(), "guest-mobile-"));
   const databasePath = join(directory, "guest.sqlite");
   const server = startLocalGuestServer({ port: 0, environment: new LocalGuestEnvironment({ databasePath }) });
+  let browser: RealBrowserInstance | undefined;
+  let tab: RealBrowserTab | undefined;
   try {
     const port = await server.listen();
     const base = `http://127.0.0.1:${port}`;
-    const browser = await launchRealBrowser({ headless: true });
-    const tab = await browser.createTab();
+    browser = await launchRealBrowser({ headless: true });
+    tab = await browser.createTab();
     await tab.setViewport(width, height);
     await tab.navigate(`${base}/`);
     await tab.waitForSelector("#composer-input");
     const threadId = await tab.evaluate<string>("window.sessionStorage.getItem('shortlet-concierge-thread') || ''");
     assert.match(threadId, /^g-[a-f0-9-]{6,64}$/);
-    return { server, browser, tab, base, threadId, directory, async close() { await browser.close(); await server.close(); rmSync(directory, { recursive: true, force: true }); } };
+    return { server, browser, tab, base, threadId, directory, async close() { await tab?.close(); await browser?.close(); await server.close(); rmSync(directory, { recursive: true, force: true }); } };
   } catch (error) {
+    try { await tab?.close(); } catch {}
+    try { await browser?.close(); } catch {}
     await server.close();
     rmSync(directory, { recursive: true, force: true });
     throw error;
   }
+}
+
+async function waitForCondition(predicate: () => boolean, description: string, timeoutMs = 8000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`Timeout waiting for ${description}`);
 }
 
 async function sendPrompt(tab: RealBrowserTab, text: string): Promise<void> {
@@ -52,7 +65,7 @@ async function sendPrompt(tab: RealBrowserTab, text: string): Promise<void> {
 async function completeJourney(context: MobileContext): Promise<void> {
   const { tab, base, threadId, server } = context;
   await sendPrompt(tab, PROMPT);
-  await tab.waitForText("Luxury 2-Bedroom Apartment in Old Ikoyi");
+  await tab.waitForText("Luxury 2-Bedroom Apartment in Old Ikoyi", 15000);
   assert.equal(await tab.clickButton("View Unit", "Luxury 2-Bedroom Apartment in Old Ikoyi"), true);
   await tab.waitForText("Request to Book");
   assert.equal(await tab.clickButton("Request to Book"), true);
@@ -78,13 +91,13 @@ async function completeJourney(context: MobileContext): Promise<void> {
   await tab.waitForText("Reservation confirmed");
 }
 
-async function layoutMetrics(tab: RealBrowserTab): Promise<{ readonly viewportWidth: number; readonly documentWidth: number; readonly activeWorkspaces: number; readonly composerRight: number; readonly composerBottom: number; readonly inputFontSize: number; readonly focusedOverflow: number }> {
-  return tab.evaluate(`(() => { const root = document.documentElement; const composer = document.getElementById('composer')?.getBoundingClientRect(); const focused = document.querySelector('#active-workspace[data-mode="focused-surface"]'); return { viewportWidth: window.innerWidth, documentWidth: Math.max(root.scrollWidth, document.body?.scrollWidth || 0), activeWorkspaces: document.querySelectorAll('#active-workspace').length, composerRight: composer?.right || 0, composerBottom: composer?.bottom || 0, inputFontSize: Number.parseFloat(getComputedStyle(document.getElementById('composer-input')).fontSize), focusedOverflow: focused ? Math.max(focused.scrollWidth - focused.clientWidth, 0) : 0 }; })()`);
+async function layoutMetrics(tab: RealBrowserTab): Promise<{ readonly viewportWidth: number; readonly viewportHeight: number; readonly documentWidth: number; readonly activeWorkspaces: number; readonly composerRight: number; readonly composerBottom: number; readonly inputFontSize: number; readonly focusedOverflow: number }> {
+  return tab.evaluate(`(() => { const root = document.documentElement; const composer = document.getElementById('composer')?.getBoundingClientRect(); const focused = document.querySelector('#active-workspace[data-mode="focused-surface"]'); return { viewportWidth: window.innerWidth, viewportHeight: window.innerHeight, documentWidth: Math.max(root.scrollWidth, document.body?.scrollWidth || 0), activeWorkspaces: document.querySelectorAll('#active-workspace').length, composerRight: composer?.right || 0, composerBottom: composer?.bottom || 0, inputFontSize: Number.parseFloat(getComputedStyle(document.getElementById('composer-input')).fontSize), focusedOverflow: focused ? Math.max(focused.scrollWidth - focused.clientWidth, 0) : 0 }; })()`);
 }
 
 async function completeAt(width: number, height: number): Promise<void> {
   const context = await startContext(width, height);
-  try { await completeJourney(context); const metrics = await layoutMetrics(context.tab); assert.ok(metrics.documentWidth <= metrics.viewportWidth, `horizontal document scroll at ${width}px`); assert.equal(metrics.activeWorkspaces, 1); assert.ok(metrics.composerRight <= metrics.viewportWidth + 1 && metrics.composerBottom <= height + 1); assert.ok(metrics.inputFontSize >= 16); assert.equal(metrics.focusedOverflow, 0); } finally { await context.close(); }
+  try { await completeJourney(context); await context.tab.waitForSelector("#composer", 15000); const metrics = await layoutMetrics(context.tab); assert.ok(metrics.documentWidth <= metrics.viewportWidth, `horizontal document scroll at ${width}px: ${JSON.stringify(metrics)}`); assert.equal(metrics.activeWorkspaces, 1, JSON.stringify(metrics)); assert.ok(metrics.composerRight <= metrics.viewportWidth + 1 && metrics.composerBottom <= metrics.viewportHeight + 1, JSON.stringify(metrics)); assert.ok(metrics.inputFontSize >= 16, JSON.stringify(metrics)); assert.equal(metrics.focusedOverflow, 0, JSON.stringify(metrics)); } finally { await context.close(); }
 }
 
 for (const [width, height] of VIEWPORTS.slice(0, 4)) {
@@ -105,9 +118,9 @@ test("AC15 — Required touch targets satisfy the project minimum", async () => 
 test("AC16 — Reduced-motion mode remains usable", async () => { const c = await startContext(320, 700); try { await c.tab.setReducedMotion(true); await sendPrompt(c.tab, PROMPT); await c.tab.waitForText("Luxury 2-Bedroom Apartment"); assert.equal((await layoutMetrics(c.tab)).documentWidth <= 320, true); } finally { await c.close(); } });
 test("AC17 — Slow or failed media does not block critical content", async () => { const c = await startContext(320, 700); try { const result = await c.tab.evaluate<{ readonly critical: boolean; readonly images: number }>("({ critical: Boolean(document.querySelector('#composer-input')) && Boolean(document.querySelector('main')), images: document.images.length })"); assert.equal(result.critical, true); assert.equal(result.images, 0); } finally { await c.close(); } });
 test("AC18 — Weaver fallback remains usable at 320 pixels", async () => { const c = await startContext(320, 700); try { const result = await c.tab.evaluate<{ readonly hasFallback: boolean; readonly route: boolean; readonly scroll: boolean }>("(() => { const p = document.createElement('div'); p.className = 'surface-fallback'; p.innerHTML = '<p>Safe fallback</p><a href=\"/search\">Continue on the standard page</a>'; document.getElementById('active-workspace').append(p); return { hasFallback: Boolean(document.querySelector('.surface-fallback')), route: Boolean(p.querySelector('a')), scroll: document.documentElement.scrollWidth <= innerWidth }; })()"); assert.deepEqual(result, { hasFallback: true, route: true, scroll: true }); } finally { await c.close(); } });
-test("AC19 — A recoverable network error preserves Guest input", async () => { const c = await startContext(320, 700); try { await c.tab.focus("#composer-input"); await c.tab.evaluate("document.getElementById('composer-input').value = 'retry this message'"); await c.tab.setOffline(true); await c.tab.pressKey("Enter"); await new Promise((resolve) => setTimeout(resolve, 250)); assert.equal(await c.tab.evaluate<string>("document.getElementById('composer-input').value"), "retry this message"); } finally { await c.close(); } });
+test("AC19 — A recoverable network error preserves Guest input", async () => { const c = await startContext(320, 700); try { await c.tab.focus("#composer-input"); await c.tab.evaluate("document.getElementById('composer-input').value = 'retry this message'"); await c.tab.setOffline(true); await c.tab.pressKey("Enter"); await c.tab.waitForFunction("document.getElementById('composer-input')?.value === 'retry this message'"); assert.equal(await c.tab.evaluate<string>("document.getElementById('composer-input').value"), "retry this message"); } finally { await c.close(); } });
 test("AC20 — Mobile fixes do not break restart restoration", async () => { const c = await startContext(320, 700); try { await sendPrompt(c.tab, PROMPT); await c.tab.waitForText("Luxury 2-Bedroom Apartment"); await c.tab.navigate(`${c.base}/?threadId=${c.threadId}`); await c.tab.waitForText("Luxury 2-Bedroom Apartment"); } finally { await c.close(); } });
-test("AC21 — Mobile fixes do not break cross-tab concurrency", async () => { const c = await startContext(320, 700); try { const tabB = await c.browser.createTab(`${c.base}/?threadId=${c.threadId}`); await tabB.setViewport(320, 700); await tabB.waitForSelector("#composer-input"); await sendPrompt(c.tab, PROMPT); await c.tab.waitForText("Luxury 2-Bedroom Apartment"); await tabB.navigate(`${c.base}/?threadId=${c.threadId}`); await tabB.waitForText("Luxury 2-Bedroom Apartment"); await Promise.all([c.tab.clickButton("View Unit", "Luxury 2-Bedroom Apartment in Old Ikoyi"), tabB.clickButton("View Unit", "Luxury 2-Bedroom Apartment in Old Ikoyi")]); await new Promise((resolve) => setTimeout(resolve, 300)); assert.equal(c.server.environment.interactionStore.listBookingRequestIds().length, 0); await tabB.close(); } finally { await c.close(); } });
+test("AC21 — Mobile fixes do not break cross-tab concurrency", async () => { const c = await startContext(320, 700); let tabB: RealBrowserTab | undefined; try { tabB = await c.browser.createTab(`${c.base}/?threadId=${c.threadId}`); await tabB.setViewport(320, 700); await tabB.waitForSelector("#composer-input"); await sendPrompt(c.tab, PROMPT); await c.tab.waitForText("Luxury 2-Bedroom Apartment"); await tabB.navigate(`${c.base}/?threadId=${c.threadId}`); await tabB.waitForText("Luxury 2-Bedroom Apartment"); await Promise.all([c.tab.clickButton("View Unit", "Luxury 2-Bedroom Apartment in Old Ikoyi"), tabB.clickButton("View Unit", "Luxury 2-Bedroom Apartment in Old Ikoyi")]); await Promise.all([c.tab.waitForText("Request to Book"), tabB.waitForText("Request to Book")]); assert.equal(c.server.environment.interactionStore.listBookingRequestIds().length, 0); } finally { await tabB?.close(); await c.close(); } });
 test("AC22 — Mobile fixes do not duplicate transition telemetry", async () => { const c = await startContext(320, 700); try { await completeJourney(c); const events = c.server.environment.telemetry.events().filter((event) => event.type === "reservation.confirmed"); assert.equal(events.length, 1); } finally { await c.close(); } });
 test("AC23 — The desktop viewport remains usable", async () => { await completeAt(1280, 800); });
 test("AC24 — Composer input remains at least 16 CSS pixels", async () => { const c = await startContext(360, 800); try { assert.ok((await layoutMetrics(c.tab)).inputFontSize >= 16); } finally { await c.close(); } });

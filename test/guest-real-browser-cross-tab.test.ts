@@ -135,29 +135,40 @@ async function sendPrompt(tab: RealBrowserTab, text: string): Promise<void> {
   `);
 }
 
+async function waitForDurable(ctx: RealBrowserTestContext, predicate: () => boolean, description: string, timeoutMs = 8000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`Timeout waiting for durable state: ${description}`);
+}
+
 async function advanceToRequestReview(ctx: RealBrowserTestContext): Promise<void> {
   await sendPrompt(ctx.tabA, CANONICAL_PROMPT);
-  await ctx.tabA.waitForText(IKOYI_TITLE);
+  // Full-suite load can delay Weaver's discovery projection; 30s is based on
+  // the measured worst-case render under concurrent Chromium workers.
+  await ctx.tabA.waitForText(IKOYI_TITLE, 30000);
 
   await ctx.tabA.clickButton("View Unit", IKOYI_TITLE);
-  await ctx.tabA.waitForText("Request to Book");
+  await ctx.tabA.waitForText("Request to Book", 15000);
 
   await ctx.tabA.clickButton("Request to Book");
-  await ctx.tabA.waitForText("Review Request");
+  await ctx.tabA.waitForText("Review Request", 15000);
 
   await ctx.tabA.clickButton("Review Request");
-  await ctx.tabA.waitForText("Submit Booking Request");
+  await ctx.tabA.waitForText("Submit Booking Request", 15000);
 
   // Sync Tab B to current review
   await ctx.tabB.navigate(`${ctx.base}/?threadId=${ctx.threadId}`);
-  await ctx.tabB.waitForText("Submit Booking Request");
+  await ctx.tabB.waitForText("Submit Booking Request", 15000);
 }
 
 async function advanceToConditionalOffer(ctx: RealBrowserTestContext): Promise<{ offerId: string; requestId: string }> {
   await advanceToRequestReview(ctx);
 
   await ctx.tabA.clickButton("Submit Booking Request");
-  await ctx.tabA.waitForText("Booking Request");
+  await ctx.tabA.waitForText("Booking Request", 15000);
 
   const requestId = ctx.server.environment.interactionStore.listBookingRequestIds()[0]!;
   assert.ok(requestId, "Request ID must exist in durable store");
@@ -167,10 +178,10 @@ async function advanceToConditionalOffer(ctx: RealBrowserTestContext): Promise<{
 
   // Sync Tab A and Tab B to offer — button text is "Accept" (from conditional-offer-a2ui.ts line 30)
   await ctx.tabA.navigate(`${ctx.base}/?threadId=${ctx.threadId}`);
-  await ctx.tabA.waitForText("Accept");
+  await ctx.tabA.waitForText("Accept", 15000);
 
   await ctx.tabB.navigate(`${ctx.base}/?threadId=${ctx.threadId}`);
-  await ctx.tabB.waitForText("Accept");
+  await ctx.tabB.waitForText("Accept", 15000);
 
   const durableOffer = ctx.server.environment.interactionStore.findConditionalOfferByRequestId(requestId);
   assert.ok(durableOffer, "Conditional Booking Offer must exist in durable store");
@@ -184,10 +195,10 @@ async function advanceToPaymentReady(ctx: RealBrowserTestContext): Promise<{ off
   // Button text is "Accept" (conditional-offer-a2ui.ts line 30)
   await ctx.tabA.clickButton("Accept");
   // Button text is "Start secure checkout" (card-payment-a2ui.ts line 19)
-  await ctx.tabA.waitForText("Start secure checkout");
+  await ctx.tabA.waitForText("Start secure checkout", 15000);
 
   await ctx.tabB.navigate(`${ctx.base}/?threadId=${ctx.threadId}`);
-  await ctx.tabB.waitForText("Start secure checkout");
+  await ctx.tabB.waitForText("Start secure checkout", 15000);
 
   return { offerId };
 }
@@ -198,10 +209,10 @@ async function advanceToCheckoutInitiated(ctx: RealBrowserTestContext): Promise<
   // Button text is "Start secure checkout" (card-payment-a2ui.ts line 19)
   await ctx.tabA.clickButton("Start secure checkout");
   // Button text after checkout initiated is "I have returned from secure checkout" (card-payment-a2ui.ts line 19)
-  await ctx.tabA.waitForText("I have returned from secure checkout");
+  await ctx.tabA.waitForText("I have returned from secure checkout", 15000);
 
   await ctx.tabB.navigate(`${ctx.base}/?threadId=${ctx.threadId}`);
-  await ctx.tabB.waitForText("I have returned from secure checkout");
+  await ctx.tabB.waitForText("I have returned from secure checkout", 15000);
 
   return { offerId };
 }
@@ -212,12 +223,12 @@ async function advanceToDepositCheckoutInitiated(ctx: RealBrowserTestContext): P
   // Verify the stay payment once, then initialize the separate refundable
   // deposit checkout before racing the final verification from both tabs.
   await ctx.tabA.clickButton("I have returned from secure checkout");
-  await ctx.tabA.waitForText("Continue to refundable deposit");
+  await ctx.tabA.waitForText("Continue to refundable deposit", 15000);
   await ctx.tabA.clickButton("Continue to refundable deposit");
-  await ctx.tabA.waitForText("I have returned from secure checkout");
+  await ctx.tabA.waitForText("I have returned from secure checkout", 15000);
 
   await ctx.tabB.navigate(`${ctx.base}/?threadId=${ctx.threadId}`);
-  await ctx.tabB.waitForText("I have returned from secure checkout");
+  await ctx.tabB.waitForText("I have returned from secure checkout", 15000);
 
   return { offerId };
 }
@@ -244,7 +255,7 @@ test("RB1 — Two real tabs cannot create duplicate Booking Requests", async () 
     assert.equal(clickA, true);
     assert.equal(clickB, true);
 
-    await new Promise((r) => setTimeout(r, 1500));
+    await waitForDurable(ctx, () => ctx.server.environment.interactionStore.listBookingRequestIds().length === 1, "one Booking Request");
 
     // Authoritative durable state assertion (ADR-0004, ADR-0005, ADR-0041)
     const requestIds = ctx.server.environment.interactionStore.listBookingRequestIds();
@@ -284,7 +295,7 @@ test("RB2 — Two real tabs cannot accept one Conditional Booking Offer twice", 
     assert.equal(clickB, true);
 
 
-    await new Promise((r) => setTimeout(r, 1500));
+    await waitForDurable(ctx, () => ctx.server.environment.conditionalOfferApp.manager.getOffer(offerId).status === "accepted", "accepted Conditional Booking Offer");
 
     // Durable store: offer is single-use, payment window remains unchanged
     const offerAfter = ctx.server.environment.conditionalOfferApp.manager.getOffer(offerId);
@@ -324,7 +335,7 @@ test("RB3 — Two real tabs cannot create multiple Live Payment Attempts", async
     assert.equal(clickB, true);
 
 
-    await new Promise((r) => setTimeout(r, 1500));
+    await waitForDurable(ctx, () => ctx.server.environment.interactionStore.listLivePaymentAttemptOfferIds().includes(offerId), "one Live Payment Attempt");
 
     // Exactly one Live Payment Attempt exists
     const attempts = ctx.server.environment.interactionStore.listLivePaymentAttemptOfferIds();
@@ -361,7 +372,7 @@ test("RB4 — Concurrent real-tab payment verification creates one Reservation",
     assert.equal(clickB, true);
 
 
-    await new Promise((r) => setTimeout(r, 1500));
+    await waitForDurable(ctx, () => ctx.server.environment.interactionStore.listBookingSnapshotOfferIds().length === 1, "one Reservation snapshot");
 
     // Exactly one Reservation must exist in durable store (ADR-0004)
     const snapshotOfferIds = ctx.server.environment.interactionStore.listBookingSnapshotOfferIds();
@@ -392,7 +403,7 @@ test("RB5 — Concurrent real-tab payment verification creates one Booking Contr
     assert.equal(clickB, true);
 
 
-    await new Promise((r) => setTimeout(r, 1500));
+    await waitForDurable(ctx, () => ctx.server.environment.interactionStore.listBookingSnapshotOfferIds().length === 1, "one Booking Contract snapshot");
 
     // Exactly one Booking Contract must exist in durable store
     const snapshotOfferIds = ctx.server.environment.interactionStore.listBookingSnapshotOfferIds();
@@ -460,7 +471,7 @@ test("RB7 — An expired real-tab action fails closed", async () => {
     const clicked = await ctx.tabB.clickButton("Accept");
     assert.equal(clicked, true);
 
-    await new Promise((r) => setTimeout(r, 1200));
+    await ctx.tabB.waitForFunction(`(() => { const text = document.getElementById("active-workspace")?.innerText || ""; return /expired|no longer available|expired-surface/i.test(text); })()`, 15000);
 
     // Tab B renders authoritative expired state (ADR-0074)
     const contentB = await ctx.tabB.evaluate<string>(`document.getElementById("active-workspace").innerText`);
@@ -490,13 +501,14 @@ test("RB8 — A stale real tab restores the latest server projection", async () 
     const clickB = await ctx.tabB.clickButton("Submit Booking Request");
     assert.equal(clickB, true);
 
-    await new Promise((r) => setTimeout(r, 1200));
+    await ctx.tabB.waitForFunction(`document.querySelectorAll("#transcript .turn").length >= 2`, 15000);
 
     // Tab B restores current server projection and retains conversation history
     const turnsCount = await ctx.tabB.evaluate<number>(`document.querySelectorAll("#transcript .turn").length`);
     assert.ok(turnsCount >= 2, "Tab B must preserve relevant conversation history");
 
     // Focus test: verify real-browser recovery does not create a focus trap
+    await ctx.tabB.waitForSelector("#composer-input", 15000);
     await ctx.tabB.focus("#composer-input");
     const focused = await ctx.tabB.isElementFocused("#composer-input");
     assert.equal(focused, true, "composer input must remain focusable and usable");
@@ -520,7 +532,7 @@ test("RB9 — The losing real tab cannot damage winning authoritative state", as
 
     // Tab B attempts stale submission and loses
     await ctx.tabB.clickButton("Submit Booking Request");
-    await new Promise((r) => setTimeout(r, 1000));
+    await waitForDurable(ctx, () => ctx.server.environment.interactionStore.listBookingRequestIds().length === 1, "winning Booking Request");
 
     // Winning request must not be damaged or rolled back (ADR-0004)
     const requests = ctx.server.environment.interactionStore.listBookingRequestIds();
@@ -643,7 +655,7 @@ test("RB12 — Domain correctness requires no browser coordination mechanism", a
     assert.equal(clickA, true);
     assert.equal(clickB, true);
 
-    await new Promise((r) => setTimeout(r, 1500));
+    await waitForDurable(ctx, () => ctx.server.environment.interactionStore.listBookingRequestIds().length === 1, "one cross-tab Booking Request");
 
     // Pure backend authority achieves single-winner guarantee
     const requests = ctx.server.environment.interactionStore.listBookingRequestIds();

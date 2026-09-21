@@ -1287,7 +1287,7 @@ export function renderGuestShellHtml(): string {
     .workspace-heading-text { min-width: 0; display: grid; gap: 2px; }
     .workspace-heading-text strong { font-size: 17px; overflow-wrap: anywhere; }
     .eyebrow { color: var(--accent); font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
-    .workspace-close, #workspace-reopen { min-height: 44px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; color: var(--text); background: var(--surface-soft); cursor: pointer; }
+    .workspace-close, #workspace-reopen, .contact-link { min-height: 44px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; color: var(--text); background: var(--surface-soft); cursor: pointer; }
     .workspace-close:hover, #workspace-reopen:hover { border-color: var(--accent); }
     .workspace-status { margin: 0 0 12px; color: var(--text-muted); font-size: 13px; }
     .status-stale, .status-expired, .status-deleted, .status-fallback { color: var(--danger); }
@@ -1313,7 +1313,7 @@ export function renderGuestShellHtml(): string {
     <header>
       <h1>Shortlet Concierge</h1>
       <span class="header-note">Local demo · A clearer way to find your stay</span>
-      <a href="/guest/contact">Contact details</a>
+      <a class="contact-link" href="/guest/contact">Contact details</a>
     </header>
     <main>
       <section id="transcript" aria-label="Conversation history"></section>

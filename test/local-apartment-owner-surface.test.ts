@@ -21,6 +21,10 @@ test("Local Apartment Owner Experience — Full End-to-End Verification", async 
     databasePath: dbPath,
     clock,
   });
+  t.after(async () => {
+    try { env.close(); } catch {}
+    await rm(testDir, { recursive: true, force: true });
+  });
 
   await t.test("1. Representative Authority and Operator Identity verification", () => {
     const overview = env.getStateOverview();
@@ -267,6 +271,4 @@ test("Local Apartment Owner Experience — Full End-to-End Verification", async 
     }
   });
 
-  env.close();
-  await rm(testDir, { recursive: true, force: true });
 });

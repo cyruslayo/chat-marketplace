@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer } from "node:net";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -22,6 +22,7 @@ export interface RealBrowserTab {
   evaluate<T = unknown>(expression: string): Promise<T>;
   waitForSelector(selector: string, timeoutMs?: number): Promise<void>;
   waitForText(text: string, timeoutMs?: number): Promise<void>;
+  waitForFunction(expression: string, timeoutMs?: number): Promise<void>;
   clickButton(labelText: string, accessibleLabel?: string): Promise<boolean>;
   focus(selector: string): Promise<void>;
   isElementFocused(selector: string): Promise<boolean>;
@@ -41,6 +42,13 @@ export interface RealBrowserInstance {
   close(): Promise<void>;
 }
 
+function redactDiagnostics(value: string): string {
+  return value
+    .replace(/(?:\+?234|0)\d[\d\s().-]{8,}/g, "[redacted-phone]")
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[redacted-email]")
+    .replace(/(?:shortlet_guest_session|shortlet_operator_session|shortlet_operator_secret)=[^;\s]+/gi, "$1=[redacted-cookie]");
+}
+
 async function getAvailablePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const srv = createServer();
@@ -52,7 +60,29 @@ async function getAvailablePort(): Promise<number> {
   });
 }
 
+const BROWSER_LOCK_DIR = join(tmpdir(), "chat-marketplace-real-browser.lock");
+
+async function acquireBrowserLock(): Promise<() => void> {
+  for (;;) {
+    try {
+      mkdirSync(BROWSER_LOCK_DIR);
+      writeFileSync(join(BROWSER_LOCK_DIR, "owner"), String(process.pid), "utf8");
+      return () => { try { rmSync(BROWSER_LOCK_DIR, { recursive: true, force: true }); } catch {} };
+    } catch {
+      try {
+        const owner = Number(readFileSync(join(BROWSER_LOCK_DIR, "owner"), "utf8"));
+        if (!Number.isInteger(owner) || owner <= 0) throw new Error("invalid lock owner");
+        try { process.kill(owner, 0); } catch { rmSync(BROWSER_LOCK_DIR, { recursive: true, force: true }); continue; }
+      } catch {
+        try { rmSync(BROWSER_LOCK_DIR, { recursive: true, force: true }); } catch {}
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+}
+
 export async function launchRealBrowser(options: { headless?: boolean } = {}): Promise<RealBrowserInstance> {
+  const releaseBrowserLock = await acquireBrowserLock();
   const headless = options.headless ?? true;
   const port = await getAvailablePort();
   const userDataDir = mkdtempSync(join(tmpdir(), "guest-chrome-"));
@@ -84,6 +114,7 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
   ].filter(Boolean);
 
   const proc: ChildProcess = spawn(CHROME_PATH, args, { stdio: "ignore" });
+  const targetIds = new Set<string>();
 
   let wsUrl = "";
   for (let attempt = 0; attempt < 40; attempt++) {
@@ -105,6 +136,7 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
   if (!wsUrl) {
     proc.kill();
     try { rmSync(userDataDir, { recursive: true, force: true }); } catch {}
+    releaseBrowserLock();
     throw new Error(`Failed to connect to Chrome DevTools on port ${port}`);
   }
 
@@ -175,11 +207,7 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
       eventListeners.add(listener);
       try {
         await send("Page.navigate", { url }, sessionId);
-        await Promise.race([
-          loadPromise,
-          new Promise((r) => setTimeout(r, 4000)),
-        ]);
-        await new Promise((r) => setTimeout(r, 200));
+        await Promise.race([loadPromise, new Promise((r) => setTimeout(r, 4000))]);
       } finally {
         eventListeners.delete(listener);
       }
@@ -221,28 +249,46 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
       }
       const details = await evaluate<string>("document.body ? document.body.innerText.slice(0, 500) : '<no body>'").catch(() => "<unavailable>");
       const url = await evaluate<string>("location.href").catch(() => "<unavailable>");
-      throw new Error(`Timeout waiting for text: ${text} at ${url}; body: ${details.replace(/\\s+/g, " ")}`);
+      throw new Error(`Timeout waiting for text: ${text} at ${url}; body: ${redactDiagnostics(details.replace(/\\s+/g, " "))}`);
+    }
+
+    async function waitForFunction(expression: string, timeoutMs = 8000): Promise<void> {
+      const start = Date.now();
+      while (Date.now() - start < timeoutMs) {
+        if (await evaluate<boolean>(`Boolean(${expression})`)) return;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      const url = await evaluate<string>("location.href").catch(() => "<unavailable>");
+      const details = await evaluate<string>("document.body ? document.body.innerText.slice(0, 500) : '<no body>'").catch(() => "<unavailable>");
+      throw new Error(`Timeout waiting for browser condition at ${url}; body: ${redactDiagnostics(details.replace(/\\s+/g, " "))}`);
     }
 
     async function clickButton(labelText: string, accessibleLabel?: string): Promise<boolean> {
       const code = `
         (() => {
           const buttons = Array.from(document.querySelectorAll("button"));
-          const button = buttons.find((b) => {
+          const matches = buttons.filter((b) => {
             const match = b.textContent && b.textContent.includes(${JSON.stringify(labelText)});
-            if (!match) return false;
+            return Boolean(match);
+          });
+          const button = matches.find((b) => {
             ${accessibleLabel ? `
             const card = b.closest('[data-a2ui-component="Card"]');
-            return card && card.textContent && card.textContent.includes(${JSON.stringify(accessibleLabel.replace(/^View /, ""))});
+            return Boolean(card && card.textContent && card.textContent.includes(${JSON.stringify(accessibleLabel.replace(/^View /, ""))}));
             ` : "return true;"}
-          });
+          }) || (matches.length === 1 ? matches[0] : null);
           if (!button) return false;
           button.scrollIntoView({ block: "center" });
           button.click();
           return true;
         })()
       `;
-      return evaluate<boolean>(code);
+      const deadline = Date.now() + 8000;
+      while (Date.now() < deadline) {
+        if (await evaluate<boolean>(code)) return true;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      return false;
     }
 
     async function focus(selector: string): Promise<void> {
@@ -280,6 +326,8 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
       }
     }
 
+    targetIds.add(targetId);
+
     async function setViewport(width: number, height: number): Promise<void> {
       await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: true }, sessionId);
     }
@@ -308,6 +356,7 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
       evaluate,
       waitForSelector,
       waitForText,
+      waitForFunction,
       clickButton,
       focus,
       isElementFocused,
@@ -322,15 +371,27 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
   }
 
   async function close(): Promise<void> {
-    try {
-      ws.close();
-    } catch {}
-    try {
-      proc.kill("SIGKILL");
-    } catch {}
-    try {
-      rmSync(userDataDir, { recursive: true, force: true });
-    } catch {}
+    for (const targetId of [...targetIds]) {
+      try { await send("Target.closeTarget", { targetId }); } catch {}
+      targetIds.delete(targetId);
+    }
+    await new Promise<void>((resolve) => {
+      if (ws.readyState === WebSocket.CLOSED) { resolve(); return; }
+      let settled = false;
+      const finish = () => { if (settled) return; settled = true; clearTimeout(fallback); resolve(); };
+      const fallback = setTimeout(finish, 1000);
+      ws.addEventListener("close", finish, { once: true });
+      try { ws.close(); } catch { finish(); }
+    });
+    if (proc.exitCode === null) {
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, 2000);
+        proc.once("exit", () => { clearTimeout(timer); resolve(); });
+        try { proc.kill("SIGKILL"); } catch { clearTimeout(timer); resolve(); }
+      });
+    }
+    try { rmSync(userDataDir, { recursive: true, force: true }); } catch {}
+    releaseBrowserLock();
   }
 
   return {
