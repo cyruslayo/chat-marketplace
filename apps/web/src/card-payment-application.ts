@@ -1,4 +1,4 @@
-import { CardPaymentManager, type CardCheckoutSession, type CardPaymentManagerOptions } from "../../../domains/shortlet/src/index.js";
+import { CardPaymentManager, type CardCheckoutSession, type CardPaymentManagerOptions, type PSPVerifyResult, type PaystackClient, isApprovedPaystackCheckoutUrl } from "../../../domains/shortlet/src/index.js";
 import { createPlatformCommandEnvelope, type CommandPrincipal } from "../../../packages/platform-core/src/index.js";
 import type { ConditionalOfferApplication } from "./conditional-offer-application.js";
 import { cardPaymentArtifactFromState, type CardPaymentArtifact } from "./card-payment-artifact.js";
@@ -8,7 +8,7 @@ export interface CardPaymentApplicationOptions {
   readonly repository?: CardPaymentManagerOptions["repository"];
   readonly calendar?: CardPaymentManagerOptions["calendar"];
   readonly audit?: CardPaymentManagerOptions["audit"];
-  readonly pspClient: NonNullable<CardPaymentManagerOptions["pspClient"]>;
+  readonly pspClient?: CardPaymentManagerOptions["pspClient"];
   readonly liveAttempts?: CardPaymentManagerOptions["liveAttempts"];
   readonly clock?: () => Date;
   readonly journeyRepository?: import("../../../domains/shortlet/src/booking-payment-journey.js").BookingPaymentJourneyRepository;
@@ -18,17 +18,20 @@ export interface CardPaymentApplicationOptions {
   readonly compensationRefundProvider?: CardPaymentManagerOptions["compensationRefundProvider"];
   readonly store?: import("../../../domains/shortlet/src/guest-interaction-store.js").SqliteGuestInteractionStore | null;
   readonly guestContacts: NonNullable<CardPaymentManagerOptions["guestContacts"]>;
+  readonly paystackClient?: PaystackClient;
 }
 
 export class CardPaymentApplication {
   readonly manager: CardPaymentManager;
   readonly #conditionalOfferApplication: ConditionalOfferApplication;
   readonly #clock: () => Date;
+  readonly #paystackClient?: PaystackClient;
 
-  constructor(manager: CardPaymentManager, conditionalOfferApplication: ConditionalOfferApplication, clock: () => Date) {
+  constructor(manager: CardPaymentManager, conditionalOfferApplication: ConditionalOfferApplication, clock: () => Date, paystackClient?: PaystackClient) {
     this.manager = manager;
     this.#conditionalOfferApplication = conditionalOfferApplication;
     this.#clock = clock;
+    this.#paystackClient = paystackClient;
   }
 
   getArtifact(offerId: string, viewer: CommandPrincipal): CardPaymentArtifact {
@@ -51,11 +54,42 @@ export class CardPaymentApplication {
     const envelope = createPlatformCommandEnvelope({ commandName: "card_payment.verify_and_confirm", principal: trustedServerPrincipal, payload: { offerId: session.offerId, pspReference } });
     return this.manager.verifyAndConfirmCardPayment(envelope, { clock: this.#clock });
   }
+
+  async initializePaystackCheckout(offerId: string, trustedPayerPrincipal: CommandPrincipal, providerOverride?: PaystackClient): Promise<CardCheckoutSession> {
+    const paystackClient = providerOverride ?? this.#paystackClient;
+    if (!paystackClient) throw new Error("Paystack checkout is not configured");
+    const envelope = createPlatformCommandEnvelope({ commandName: "card_payment.initialize_checkout", principal: trustedPayerPrincipal, payload: { offerId } });
+    const existing = this.manager.getCheckoutSession(offerId);
+    if (existing?.status === "initiated" && existing.providerEnvironment === paystackClient.configuration.environment && existing.checkoutUrl.startsWith("https://checkout.paystack.com/")) return existing;
+    const session = existing?.status === "initiated"
+      ? existing
+      : this.manager.initializeCardCheckout(envelope, { clock: this.#clock, providerEnvironment: paystackClient.configuration.environment, reuseExisting: true });
+    const initialized = await paystackClient.initializeTransaction({
+      email: session.contactEmail,
+      amountKobo: session.amountKobo,
+      currency: "NGN",
+      reference: session.pspReference,
+      callbackUrl: new URL("/payments/paystack/callback", `${paystackClient.configuration.callbackBaseUrl}/`).toString(),
+    });
+    if (!isApprovedPaystackCheckoutUrl(initialized.authorizationUrl)) throw new Error("Paystack initialization returned an invalid checkout");
+    return this.manager.updateCheckoutUrl(session.pspReference, initialized.authorizationUrl, initialized.environment);
+  }
+
+  async verifyAndConfirmPaystack(pspReference: string, trustedServerPrincipal: CommandPrincipal, providerOverride?: PaystackClient) {
+    const paystackClient = providerOverride ?? this.#paystackClient;
+    if (!paystackClient) throw new Error("Paystack checkout is not configured");
+    const session = this.manager.getCheckoutSessionByReference(pspReference);
+    if (!session) throw new Error("Unknown PSP reference");
+    const result: PSPVerifyResult = await paystackClient.verifyTransaction(pspReference);
+    const envelope = createPlatformCommandEnvelope({ commandName: "card_payment.verify_and_confirm", principal: trustedServerPrincipal, payload: { offerId: session.offerId, pspReference } });
+    return this.manager.verifyAndConfirmCardPaymentWithProviderResult(envelope, result, { clock: this.#clock });
+  }
 }
 
 export function createCardPaymentApplication(options: CardPaymentApplicationOptions): CardPaymentApplication {
   if (!options.bookingState?.saveBookingAtomically || !options.bookingState.removeBookingAtomically) throw new Error("Atomic BookingState authority is required");
   if (!options.guestContacts) throw new Error("Guest contact source is required");
   const { conditionalOfferApplication, clock = () => new Date(), ...dependencies } = options;
-  return new CardPaymentApplication(new CardPaymentManager({ ...dependencies, offerManager: conditionalOfferApplication.manager }), conditionalOfferApplication, clock);
+  const { paystackClient, ...managerDependencies } = dependencies;
+  return new CardPaymentApplication(new CardPaymentManager({ ...managerDependencies, offerManager: conditionalOfferApplication.manager }), conditionalOfferApplication, clock, paystackClient);
 }

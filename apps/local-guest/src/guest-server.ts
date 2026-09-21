@@ -49,6 +49,7 @@ import {
   type GuestPersistentProjection,
 } from "./guest-projection.js";
 import { hashSessionSecret } from "../../../domains/shortlet/src/index.js";
+import { DirectPaystackClient, isApprovedPaystackCheckoutUrl, loadPaystackConfiguration, type PaystackClient } from "../../../domains/shortlet/src/index.js";
 import { interpretStayRequest } from "./concierge.js";
 import { createGeminiConciergeClient, handleGeminiTurn, type GeminiConciergeClient } from "./gemini-concierge.js";
 import type { Content } from "@google/genai";
@@ -299,6 +300,41 @@ export class LocalGuestApp {
     const decorated = this.#decorateResult(result);
     if (decorated.ok) this.#rememberResult(threadId, undefined, decorated);
     return decorated;
+  }
+
+  async handleEventAsync(threadId: string, payload: unknown): Promise<GuestTurnResult> {
+    const event = readEventPayload(payload);
+    if (this.#environment.config.paystackClient && event?.name === "shortlet.card-payment.initialize-checkout") {
+      const result = await this.#handlePaystackCardCheckout(threadId, event);
+      const decorated = this.#decorateResult(result);
+      if (decorated.ok) this.#rememberResult(threadId, undefined, decorated);
+      return decorated;
+    }
+    return this.handleEvent(threadId, payload);
+  }
+
+  async #handlePaystackCardCheckout(threadId: string, event: GuestEventPayload): Promise<GuestTurnResult> {
+    if (!this.#environment.config.paystackClient) return { ok: false, code: "PAYSTACK_UNAVAILABLE", message: "Secure card checkout is unavailable." };
+    if (!threadId || !THREAD_ID_PATTERN.test(threadId)) return { ok: false, code: "INVALID_THREAD", message: "Unknown conversation." };
+    const thread = this.#threads.get(threadId) ?? this.#loadThread(threadId);
+    if (!thread) return { ok: false, code: "UNKNOWN_THREAD", message: "Unknown conversation." };
+    const activeSurfaceId = thread.activeSurfaces.get(PAYMENT_STAGE);
+    if (!activeSurfaceId || activeSurfaceId !== event.surfaceId) return { ok: false, code: "STALE_SURFACE", message: "That action is no longer available; please use the current options." };
+    const resolved = resolveCardPaymentServerEvent({ event: this.#handoff(event), application: this.#environment.cardPaymentApp, principal: this.#environment.guestPrincipal() });
+    if (!resolved.ok) return resolved;
+    try {
+      const session = await this.#environment.cardPaymentApp.initializePaystackCheckout(thread.offerId!, this.#environment.guestPrincipal(), this.#environment.config.paystackClient);
+      const artifact = this.#environment.cardPaymentApp.getArtifact(thread.offerId!, this.#environment.guestPrincipal());
+      const surfaceId = `thread-${thread.threadId}:payment:checkout:${session.checkoutId}`;
+      this.#supersede(thread, PAYMENT_STAGE);
+      thread.activeSurfaces.set(PAYMENT_STAGE, surfaceId);
+      this.#emitTransition(thread, "payment.handoff.opened", { aggregateType: "payment", aggregateId: thread.offerId!, surfaceId });
+      this.#emitTransition(thread, "payment.attempt.initialized", { aggregateType: "payment_attempt", aggregateId: session.checkoutId, correlationId: thread.offerId! });
+      return { ok: true, messages: ["Secure checkout is ready. Payment credentials stay on the PSP-hosted page; return here for backend verification."], surfaces: [{ surfaceId, mode: "focused-surface", summary: "Payment handoff", conventionalRoute: `/payments/offers/${encodeURIComponent(thread.offerId!)}/continue`, textFallback: `Payment status: ${artifact.facts.status}. Amount Due Now: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}. Payment deadline: ${formatWAT(artifact.facts.paymentWindowExpiresAt)}. Continue at the secure Paystack checkout: ${session.checkoutUrl}`, a2uiMessages: cardPaymentArtifactToA2UI({ artifact, surfaceId }) }] };
+    } catch (error) {
+      if (/email address is required/i.test(error instanceof Error ? error.message : "")) return this.#contactSurface(thread, "email", event.context ?? {});
+      return { ok: false, code: "ACTION_NOT_AUTHORIZED", message: "The secure card checkout could not be started." };
+    }
   }
 
   #handleEvent(threadId: string, payload: unknown): GuestTurnResult {
@@ -604,6 +640,17 @@ export class LocalGuestApp {
       }
       if (projection.activeStage === PAYMENT_STAGE && projection.offerId) {
         const artifact = environment.cardPaymentApp.getArtifact(projection.offerId, environment.guestPrincipal());
+        if (artifact.facts.status === "confirmed") {
+          const snapshot = environment.interactionStore.findBookingSnapshotByOfferId(projection.offerId);
+          if (snapshot) {
+            const contract = JSON.parse(snapshot.contractJson) as { contractId: string };
+            const bookingSurfaceId = `thread-${thread.threadId}:booking:${contract.contractId}`;
+            const contractArtifact = environment.contractApp.getArtifact(contract.contractId, environment.guestPrincipal());
+            thread.activeSurfaces.delete(PAYMENT_STAGE);
+            thread.activeSurfaces.set(BOOKING_STAGE, bookingSurfaceId);
+            return { surfaceId: bookingSurfaceId, mode: "focused-surface", summary: "Reservation confirmed", conventionalRoute: conventionalBookingContractRoute(contract.contractId), textFallback: `Reservation confirmed for ${contractArtifact.facts.checkIn} to ${contractArtifact.facts.checkOut}. Reservation reference: ${contractArtifact.facts.reservationId}.`, a2uiMessages: bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: bookingSurfaceId }) };
+          }
+        }
         if (artifact.facts.status === "expired") {
           const expiredId = `thread-${thread.threadId}:payment:expired:${projection.offerId}`;
           thread.activeSurfaces.set(PAYMENT_STAGE, expiredId);
@@ -1350,6 +1397,15 @@ function readJsonBody(req: IncomingMessage): Promise<unknown> {
   });
 }
 
+function readRawBody(req: IncomingMessage): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (chunk: Buffer) => chunks.push(chunk));
+    req.on("end", () => resolve(Buffer.concat(chunks)));
+    req.on("error", reject);
+  });
+}
+
 function readFormBody(req: IncomingMessage): Promise<URLSearchParams> {
   return new Promise((resolve, reject) => { let body = ""; req.setEncoding("utf8"); req.on("data", (chunk) => { body += chunk; if (body.length > 4096) reject(new Error("Form is too large")); }); req.on("end", () => resolve(new URLSearchParams(body))); req.on("error", reject); });
 }
@@ -1490,6 +1546,19 @@ interface BrowserSession {
   readonly threadIds: Set<string>;
 }
 
+function findGuestThreadForOffer(env: LocalGuestEnvironment, offerId: string, principal: { readonly id: string; readonly tenantId?: string }): string | null {
+  if (!principal.tenantId) return null;
+  for (const thread of env.interactionStore.findThreadsForPrincipal(principal.id, principal.tenantId)) {
+    try {
+      const projection: unknown = JSON.parse(thread.threadJson);
+      if (projection !== null && typeof projection === "object" && !Array.isArray(projection) && (projection as { offerId?: unknown }).offerId === offerId) return thread.threadId;
+    } catch {
+      // Corrupt thread projections are not eligible callback targets.
+    }
+  }
+  return null;
+}
+
 export interface LocalGuestServerHandle {
   readonly port: number;
   readonly app: LocalGuestApp;
@@ -1506,6 +1575,7 @@ export function startLocalGuestServer(options: {
   geminiClient?: GeminiConciergeClient;
   modelClient?: AssistantModelClient;
   conciergeMode?: "deterministic" | "gemini" | "assistant-offline";
+  paystackClient?: PaystackClient;
 } = {}): LocalGuestServerHandle {
   const port = options.port ?? LOCAL_GUEST_PORT;
   const rawMode = options.conciergeMode ?? process.env.CONCIERGE_MODE;
@@ -1516,7 +1586,12 @@ export function startLocalGuestServer(options: {
         ? "assistant-offline"
         : "deterministic";
 
-  const env = options.environment ?? new LocalGuestEnvironment({ initialGuestPhoneNumber: null, initialGuestContactEmail: null });
+  const configuredPaystack = options.paystackClient ?? (() => {
+    const configuration = loadPaystackConfiguration();
+    return configuration ? new DirectPaystackClient(configuration) : undefined;
+  })();
+  const env = options.environment ?? new LocalGuestEnvironment({ initialGuestPhoneNumber: null, initialGuestContactEmail: null, ...(configuredPaystack === undefined ? {} : { paystackClient: configuredPaystack }) });
+  const paystackClient = configuredPaystack ?? env.config.paystackClient;
 
   let assistantRuntime: AssistantRuntime | undefined;
   let geminiClient: GeminiConciergeClient | undefined;
@@ -1578,6 +1653,77 @@ export function startLocalGuestServer(options: {
       } catch {
         res.writeHead(500, { "Content-Type": "text/plain" });
         res.end("Guest client bundle missing; run npm run guest:local to build it.");
+      }
+      return;
+    }
+
+    const continuationMatch = /^\/payments\/offers\/([^/]+)\/continue$/.exec(url.pathname);
+    if (req.method === "GET" && continuationMatch) {
+      // ADR-0087: payment initialization is a server-owned continuation, not
+      // a browser-selected amount, currency, reference, callback, or URL.
+      const session = resolveBrowserSession(app.environment, browserSessions, readGuestSession(req));
+      if (!session) { sendJson(res, 401, { ok: false, code: "AUTHENTICATION_REQUIRED" }); return; }
+      if (!paystackClient) { sendJson(res, 503, { ok: false, code: "PAYSTACK_UNAVAILABLE" }); return; }
+      let offerId: string;
+      try { offerId = decodeURIComponent(continuationMatch[1]!); } catch { sendJson(res, 400, { ok: false, code: "INVALID_OFFER" }); return; }
+      try {
+        const principal: CommandPrincipal = { id: session.principalId, role: "guest", tenantId: session.tenantId };
+        const checkout = await app.environment.cardPaymentApp.initializePaystackCheckout(offerId, principal, paystackClient);
+        if (!isApprovedPaystackCheckoutUrl(checkout.checkoutUrl)) { sendJson(res, 502, { ok: false, code: "INVALID_CHECKOUT_URL" }); return; }
+        res.writeHead(303, { Location: checkout.checkoutUrl }); res.end();
+      } catch {
+        sendJson(res, 400, { ok: false, code: "PAYMENT_CONTINUATION_REJECTED" });
+      }
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/payments/paystack/callback") {
+      // ADR-0087: a callback is only a return signal; verification below is
+      // the sole path allowed to advance the existing payment transition.
+      if (!paystackClient) { sendJson(res, 503, { ok: false, code: "PAYSTACK_UNAVAILABLE" }); return; }
+      const session = resolveBrowserSession(app.environment, browserSessions, readGuestSession(req));
+      const reference = url.searchParams.get("reference");
+      if (!session || !reference) { sendJson(res, 400, { ok: false, code: "PAYMENT_CALLBACK_INVALID" }); return; }
+      const checkout = app.environment.cardPaymentApp.manager.getCheckoutSessionByReference(reference);
+      if (!checkout) { sendJson(res, 400, { ok: false, code: "PAYMENT_CALLBACK_UNKNOWN" }); return; }
+      const principal: CommandPrincipal = { id: session.principalId, role: "guest", tenantId: session.tenantId };
+      try {
+        // Resolving the artifact first binds the provider reference to the
+        // authenticated Guest and tenant before any server verification.
+        const callbackOffer = app.environment.conditionalOfferApp.manager.getOffer(checkout.offerId);
+        const expectedPayerId = callbackOffer.parties.distinctPayer?.id ?? callbackOffer.parties.primaryGuest.id;
+        if (!principal.id || principal.id !== expectedPayerId || !principal.tenantId || !callbackOffer.tenantId || principal.tenantId !== callbackOffer.tenantId) throw new Error("Payment callback is not authorized for this Guest");
+        app.environment.cardPaymentApp.getArtifact(checkout.offerId, principal);
+        const threadId = findGuestThreadForOffer(app.environment, checkout.offerId, principal);
+        if (!threadId) { sendJson(res, 404, { ok: false, code: "PAYMENT_CALLBACK_THREAD_UNKNOWN" }); return; }
+        await app.environment.cardPaymentApp.verifyAndConfirmPaystack(reference, app.environment.systemPrincipal(), paystackClient);
+        res.writeHead(303, { Location: `/?threadId=${encodeURIComponent(threadId)}` }); res.end();
+      } catch {
+        const threadId = findGuestThreadForOffer(app.environment, checkout.offerId, principal);
+        if (threadId) { res.writeHead(303, { Location: `/?threadId=${encodeURIComponent(threadId)}` }); res.end(); }
+        else sendJson(res, 400, { ok: false, code: "PAYMENT_CALLBACK_REJECTED" });
+      }
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/webhooks/paystack") {
+      // ADR-0087: validate the raw signed body before parsing event meaning.
+      if (!paystackClient) { sendJson(res, 503, { ok: false, code: "PAYSTACK_UNAVAILABLE" }); return; }
+      try {
+        const rawBody = await readRawBody(req);
+        if (!paystackClient.verifyWebhookSignature(rawBody, typeof req.headers["x-paystack-signature"] === "string" ? req.headers["x-paystack-signature"] : undefined)) { sendJson(res, 401, { ok: false, code: "INVALID_WEBHOOK_SIGNATURE" }); return; }
+        const parsed: unknown = JSON.parse(rawBody.toString("utf8"));
+        if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) { sendJson(res, 400, { ok: false, code: "INVALID_WEBHOOK" }); return; }
+        const event = parsed as { event?: unknown; data?: unknown };
+        if (event.event !== "charge.success") { sendJson(res, 200, { ok: true, ignored: true }); return; }
+        const data = event.data !== null && typeof event.data === "object" && !Array.isArray(event.data) ? event.data as { reference?: unknown } : undefined;
+        if (typeof data?.reference !== "string" || data.reference === "") { sendJson(res, 400, { ok: false, code: "INVALID_WEBHOOK" }); return; }
+        const checkout = app.environment.cardPaymentApp.manager.getCheckoutSessionByReference(data.reference);
+        if (!checkout) { sendJson(res, 200, { ok: true, ignored: true }); return; }
+        try { await app.environment.cardPaymentApp.verifyAndConfirmPaystack(data.reference, app.environment.systemPrincipal(), paystackClient); } catch { /* the authoritative unresolved/failed state is retained */ }
+        sendJson(res, 200, { ok: true });
+      } catch {
+        sendJson(res, 400, { ok: false, code: "INVALID_WEBHOOK" });
       }
       return;
     }
@@ -1667,7 +1813,7 @@ export function startLocalGuestServer(options: {
           sendJson(res, 200, await app.handleTurn(threadId, text));
           return;
         }
-        sendJson(res, 200, app.handleEvent(threadId, body));
+        sendJson(res, 200, await app.handleEventAsync(threadId, body));
       } catch (error) {
         sendJson(res, 500, {
           ok: false,

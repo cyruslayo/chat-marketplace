@@ -108,6 +108,7 @@ export interface DurableCardCheckoutSession {
   readonly purpose: "stay" | "security_deposit";
   readonly currency: "NGN";
   readonly contactEmail: string;
+  readonly providerEnvironment?: "test" | "live";
   readonly expiresAt: string;
   readonly status: "initiated" | "completed" | "expired" | "failed";
 }
@@ -230,6 +231,7 @@ interface CardCheckoutSessionRow {
   purpose: string;
   currency: string;
   contact_email: string | null;
+  provider_environment: string | null;
   expires_at: string;
   status: string;
 }
@@ -386,6 +388,7 @@ export class SqliteGuestInteractionStore {
         purpose TEXT NOT NULL,
         currency TEXT NOT NULL,
         contact_email TEXT NOT NULL,
+        provider_environment TEXT,
         expires_at TEXT NOT NULL,
         status TEXT NOT NULL
       );
@@ -437,6 +440,7 @@ export class SqliteGuestInteractionStore {
     if (!requestColumns.some((column) => column.name === "phone_number")) this.#database.exec("ALTER TABLE guest_booking_requests ADD COLUMN phone_number TEXT");
     const checkoutColumns = this.#database.prepare("PRAGMA table_info(guest_checkout_sessions)").all() as unknown as { name: string }[];
     if (!checkoutColumns.some((column) => column.name === "contact_email")) this.#database.exec("ALTER TABLE guest_checkout_sessions ADD COLUMN contact_email TEXT");
+    if (!checkoutColumns.some((column) => column.name === "provider_environment")) this.#database.exec("ALTER TABLE guest_checkout_sessions ADD COLUMN provider_environment TEXT");
   }
 
   #transaction<T>(operation: () => T): T {
@@ -753,9 +757,9 @@ export class SqliteGuestInteractionStore {
     this.#database.prepare(`
       INSERT INTO guest_checkout_sessions (
         checkout_id, offer_id, psp_reference, total_amount_due_now_kobo,
-        amount_kobo, purpose, currency, contact_email, expires_at, status)
+        amount_kobo, purpose, currency, contact_email, provider_environment, expires_at, status)
       VALUES ($checkoutId, $offerId, $pspReference, $totalAmountDueNowKobo,
-        $amountKobo, $purpose, $currency, $contactEmail, $expiresAt, $status)
+        $amountKobo, $purpose, $currency, $contactEmail, $providerEnvironment, $expiresAt, $status)
       ON CONFLICT(checkout_id) DO UPDATE SET
         offer_id = excluded.offer_id,
         psp_reference = excluded.psp_reference,
@@ -764,6 +768,7 @@ export class SqliteGuestInteractionStore {
         purpose = excluded.purpose,
         currency = excluded.currency,
         contact_email = excluded.contact_email,
+        provider_environment = excluded.provider_environment,
         expires_at = excluded.expires_at,
         status = excluded.status
     `).run({
@@ -775,6 +780,7 @@ export class SqliteGuestInteractionStore {
       $purpose: session.purpose,
       $currency: session.currency,
       $contactEmail: session.contactEmail,
+      $providerEnvironment: session.providerEnvironment ?? null,
       $expiresAt: session.expiresAt,
       $status: session.status,
     });
@@ -792,6 +798,7 @@ export class SqliteGuestInteractionStore {
       purpose: requiredPurpose(row.purpose),
       currency: "NGN",
       contactEmail: row.contact_email ?? "",
+      ...(row.provider_environment === "test" || row.provider_environment === "live" ? { providerEnvironment: row.provider_environment } : {}),
       expiresAt: row.expires_at,
       status: row.status === "completed" ? "completed" : row.status === "expired" ? "expired" : row.status === "failed" ? "failed" : "initiated",
     });

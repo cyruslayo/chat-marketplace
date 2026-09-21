@@ -14,6 +14,7 @@ import {
   UnitDiscoveryQuery,
   UnitRepository,
   InMemorySecurityDepositAccountingRepository,
+  type PaystackClient,
   type BookingContract,
   type ContractRepository,
   type ReservationLike,
@@ -56,6 +57,7 @@ export interface LocalGuestFixtureConfig {
   readonly clock?: () => Date;
   /** Local PSP fixture port, also used to prove pending/failed restart paths. */
   readonly verifyPayment?: (reference: string, amountKobo: number) => import("../../../domains/shortlet/src/card-payment.js").PSPVerifyResult;
+  readonly paystackClient?: PaystackClient;
 }
 
 export const DEFAULT_LOCAL_GUEST_CONFIG: LocalGuestFixtureConfig = {
@@ -293,6 +295,7 @@ export class LocalGuestEnvironment {
       },
       bookingState,
       clock: this.clock,
+      ...(this.config.paystackClient === undefined ? {} : { paystackClient: this.config.paystackClient }),
     });
 
     this.contractApp = createBookingContractApplication({

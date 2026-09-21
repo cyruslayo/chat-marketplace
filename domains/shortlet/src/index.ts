@@ -9,6 +9,7 @@ export * from "./same-day-turnover.js";
 export * from "./booking-request.js";
 export * from "./conditional-offer.js";
 export * from "./card-payment.js";
+export * from "./paystack.js";
 export * from "./human-risk-review.js";
 export * from "./bank-transfer.js";
 export * from "./contract-release.js";

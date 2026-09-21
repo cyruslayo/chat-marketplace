@@ -42,6 +42,7 @@ export interface CardCheckoutSession {
   readonly purpose: "stay" | "security_deposit";
   readonly currency: "NGN";
   readonly contactEmail: string;
+  readonly providerEnvironment?: "test" | "live";
   readonly expiresAt: string;
   status: "initiated" | "completed" | "expired" | "failed";
 }
@@ -117,11 +118,12 @@ export interface LedgerEntry {
 
 export interface PSPVerifyResult {
   readonly verified: boolean;
-  readonly status: "success" | "pending" | "failed";
+  readonly status: "success" | "abandoned" | "failed" | "ongoing" | "pending" | "processing" | "reversed" | "queued" | "unknown";
   readonly amountKobo: number;
   readonly currency: string;
   readonly pspReference: string;
   readonly payerId?: string;
+  readonly environment?: "test" | "live";
   readonly cardMetadata?: { readonly brand: string; readonly last4: string };
   readonly failureReason?: string;
 }
@@ -255,6 +257,7 @@ export class CardPaymentManager {
       purpose: session.purpose,
       currency: session.currency,
       contactEmail: session.contactEmail,
+      ...(session.providerEnvironment === undefined ? {} : { providerEnvironment: session.providerEnvironment }),
       expiresAt: session.expiresAt,
       status: session.status,
     });
@@ -274,7 +277,7 @@ export class CardPaymentManager {
    */
   initializeCardCheckout(
     envelope: PlatformCommandEnvelope<{ offerId: string }>,
-    { clock = () => new Date() }: { clock?: () => Date } = {}
+    { clock = () => new Date(), providerEnvironment, reuseExisting = false }: { clock?: () => Date; providerEnvironment?: "test" | "live"; reuseExisting?: boolean } = {}
   ): CardCheckoutSession {
     if (!envelope || envelope.commandName !== "card_payment.initialize_checkout") {
       throw new Error("Invalid envelope: commandName must be 'card_payment.initialize_checkout'");
@@ -302,8 +305,10 @@ export class CardPaymentManager {
     const contact = this.#guestContacts?.find(expectedPayerId, offer.tenantId);
     if (this.#guestContacts && !contact?.phoneNumber) throw new Error("A valid phone number is required before payment continuation");
     if (this.#guestContacts && !contact?.contactEmail) throw new Error("A valid email address is required before payment continuation");
-    for (const existing of this.#sessions.values()) {
-      if (existing.offerId === offerId && existing.status === "initiated") throw new Error("A live checkout already exists for this offer");
+    const existing = this.getCheckoutSession(offerId);
+    if (existing?.status === "initiated") {
+      if (reuseExisting) return existing;
+      throw new Error("A live checkout already exists for this offer");
     }
     if (offer.status !== "accepted") {
       throw new Error(`Checkout initialization requires an accepted offer (current status: '${offer.status}')`);
@@ -335,6 +340,7 @@ export class CardPaymentManager {
       purpose,
       currency: "NGN",
       contactEmail: contact?.contactEmail ?? "",
+      ...(providerEnvironment === undefined ? {} : { providerEnvironment }),
       expiresAt: offer.paymentWindow.expiresAt,
       status: "initiated"
     };
@@ -361,12 +367,23 @@ export class CardPaymentManager {
     return { ...session };
   }
 
+  /** Updates only the server-held hosted checkout result for an existing attempt. */
+  updateCheckoutUrl(pspReference: string, checkoutUrl: string, providerEnvironment: "test" | "live"): CardCheckoutSession {
+    const session = this.getCheckoutSessionByReference(pspReference);
+    if (!session) throw new Error("PSP reference is not bound to an authoritative checkout session");
+    const next: CardCheckoutSession = { ...session, checkoutUrl, providerEnvironment };
+    this.#sessions.set(next.checkoutId, next);
+    this.#persistSession(next);
+    return { ...next };
+  }
+
   /**
    * ADR 0002, 0044, 0046, 0050: Server-side payment verification and atomic commitment.
    */
   verifyAndConfirmCardPayment(
     envelope: PlatformCommandEnvelope<{ offerId: string; pspReference: string }>,
-    options?: { clock?: () => Date }
+    options?: { clock?: () => Date },
+    providerResult?: PSPVerifyResult,
   ): CardPaymentVerificationOutcome { const { clock = () => new Date() } = options ?? {};
     if (!envelope || envelope.commandName !== "card_payment.verify_and_confirm") {
       throw new Error("Invalid envelope: commandName must be 'card_payment.verify_and_confirm'");
@@ -414,8 +431,8 @@ export class CardPaymentManager {
     const now = clock();
 
     // Verification from PSP
-    let pspResult: PSPVerifyResult | undefined;
-    try { pspResult = this.#pspClient?.verifyTransaction(pspReference); } catch (error) { if (session.purpose === "security_deposit") this.#compensateStay(offerId); throw error; }
+    let pspResult: PSPVerifyResult | undefined = providerResult;
+    try { pspResult ??= this.#pspClient?.verifyTransaction(pspReference); } catch (error) { if (session.purpose === "security_deposit") this.#compensateStay(offerId); throw error; }
     if (!pspResult) {
       if (session.purpose === "security_deposit") this.#compensateStay(offerId);
       throw new Error("Server-side payment verification failed: No PSP result available");
@@ -425,15 +442,16 @@ export class CardPaymentManager {
       if (session.purpose === "security_deposit" && pspResult.status === "failed") this.#compensateStay(offerId);
 
       // Check Payment-Processing Grace (ADR 0044)
-      if (pspResult.status === "pending") {
+      if (["ongoing", "pending", "processing", "queued"].includes(pspResult.status)) {
         const paymentWindowEnd = new Date(offer.paymentWindow.expiresAt).getTime();
         const graceEnd = paymentWindowEnd + 10 * 60 * 1000; // +10 min grace
         if (now.getTime() <= graceEnd) {
+          this.#markPaymentProcessing(offerId, session.purpose);
           throw new Error("Payment is currently processing under Payment-Processing Grace period");
         }
         if (session.purpose === "security_deposit") this.#compensateStay(offerId);
       }
-      throw new Error(`Server-side payment verification failed: ${pspResult.failureReason ?? "PSP transaction unsuccessful"}`);
+      throw new Error(`Server-side payment verification failed: ${pspResult.status === "unknown" ? "Unknown PSP payment state" : pspResult.failureReason ?? "PSP transaction unsuccessful"}`);
     }
 
     // AC 2: Independently verify booking, amount, currency, reference, payer, and unexpired inventory state
@@ -450,6 +468,10 @@ export class CardPaymentManager {
       rejectDeposit(`Reference verification failed: Expected ${pspReference}, got ${pspResult.pspReference}`);
     }
 
+    if (session.providerEnvironment !== undefined && pspResult.environment !== session.providerEnvironment) {
+      rejectDeposit(`Environment verification failed: Expected ${session.providerEnvironment}, got ${pspResult.environment ?? "unknown"}`);
+    }
+
     // Verify Payer Attribution (ADR 0013, 0050)
     const expectedPayerId = offer.parties.distinctPayer?.id ?? offer.parties.primaryGuest.id;
     if (!pspResult.payerId || pspResult.payerId !== expectedPayerId) {
@@ -460,6 +482,7 @@ export class CardPaymentManager {
     const paymentWindowEnd = new Date(offer.paymentWindow.expiresAt).getTime();
     const graceEnd = paymentWindowEnd + 10 * 60 * 1000; // 10 minutes grace for pending
     if (now.getTime() > graceEnd) {
+      this.#markLatePaymentReconciliation(offerId, pspReference, pspResult.amountKobo, now);
       rejectDeposit("Payment verification failed: Payment Window and Grace period have expired");
     }
 
@@ -640,9 +663,50 @@ export class CardPaymentManager {
     return { outcome: "confirmed", reservation, bookingContract, ledgerEntries: Object.freeze(ledgerEntries) };
   }
 
+  verifyAndConfirmCardPaymentWithProviderResult(
+    envelope: PlatformCommandEnvelope<{ offerId: string; pspReference: string }>,
+    providerResult: PSPVerifyResult,
+    options?: { clock?: () => Date },
+  ): CardPaymentVerificationOutcome {
+    return this.verifyAndConfirmCardPayment(envelope, options, providerResult);
+  }
+
   #compensateDeposit(offerId: string, now: Date): void { if (!this.#securityDepositAccounting || !this.#compensationRefundProvider) return; const collection = this.#securityDepositAccounting.getByOfferId(offerId); if (!collection || !collection.providerReference || collection.status === "refunded" || collection.status === "reconciliation_required") return; const obligationId = `payment-compensation:${offerId}:deposit`; try { const refund = this.#compensationRefundProvider.refundOrGet({ obligationId, offerId, paymentMethod: collection.paymentMethod, originalPaymentReference: collection.providerReference, amountKobo: collection.amountKobo, currency: "NGN" }); if (!refund.refundId || refund.amountKobo !== collection.amountKobo || refund.currency !== "NGN" || !["pending", "settled", "failed"].includes(refund.status)) throw new Error("Deposit compensation provider mismatch"); const updated = refund.status === "pending" ? this.#securityDepositAccounting.markRefundPending(collection.collectionId) : this.#securityDepositAccounting.refund(collection.collectionId, { refundedAt: now.toISOString(), refundSucceeded: refund.status === "settled" }); this.#setDepositCompensation(offerId, updated.collectionId, refund.status === "pending" ? "pending" : refund.status === "settled" ? "settled" : "reconciliation_required", refund.refundId, collection.providerReference, collection.amountKobo); } catch { const updated = this.#securityDepositAccounting.refund(collection.collectionId, { refundedAt: now.toISOString(), refundSucceeded: false }); this.#setDepositCompensation(offerId, updated.collectionId, "reconciliation_required", undefined, collection.providerReference, collection.amountKobo); } }
   #setDepositCompensation(offerId: string, collectionId: string, status: "pending" | "settled" | "reconciliation_required", refundId: string | undefined, reference: string, amountKobo: number): void { const journey = this.#journeys?.findByOfferId(offerId); if (!journey) return; this.#journeys!.update(offerId, journey.journeyVersion, (value) => { const deposit = { ...value.compensation.deposit, required: true, status, collectionId, refundId, obligationId: `payment-compensation:${offerId}:deposit`, originalPaymentReference: reference, amountKobo, currency: "NGN" as const }; const compensation = { ...value.compensation, deposit, status: deriveCompensationStatus({ ...value.compensation, deposit }) }; return { ...value, stage: compensation.status === "pending" ? "compensation_pending" : compensation.status === "reconciliation_required" ? "reconciliation_required" : "compensated", compensation }; }); }
   #markFinalizationReconciliation(offerId: string): void { const journey = this.#journeys?.findByOfferId(offerId); if (journey) this.#journeys!.update(offerId, journey.journeyVersion, (value) => ({ ...value, stage: "reconciliation_required", compensation: { ...value.compensation, status: "reconciliation_required" } })); }
+  #markLatePaymentReconciliation(offerId: string, reference: string, amountKobo: number, now: Date): void {
+    // Pilot exception to historical ADR-0045 execution: retain the successful
+    // reference and expose manual reconciliation; do not call a refund API.
+    const journey = this.#journeys?.findByOfferId(offerId);
+    if (!journey || (journey.compensation.stay.status === "reconciliation_required" && journey.compensation.stay.originalPaymentReference === reference)) return;
+    try {
+      this.#journeys!.update(offerId, journey.journeyVersion, (value) => ({
+        ...value,
+        stage: "reconciliation_required",
+        compensation: {
+          ...value.compensation,
+          status: "reconciliation_required",
+          stay: { ...value.compensation.stay, required: true, status: "reconciliation_required", obligationId: `payment-reconciliation:${offerId}`, originalPaymentReference: reference, amountKobo, currency: "NGN" },
+        },
+      }));
+      this.#audit?.record({ type: "card_payment.manual_reconciliation_required", offerId, pspReference: reference, amountKobo, recordedAt: now.toISOString() });
+    } catch {
+      // A concurrent callback/webhook may have won the journey version race.
+    }
+  }
+  #markPaymentProcessing(offerId: string, purpose: "stay" | "security_deposit"): void {
+    const journey = this.#journeys?.findByOfferId(offerId);
+    if (!journey) return;
+    try {
+      this.#journeys!.update(offerId, journey.journeyVersion, (value) => ({
+        ...value,
+        stage: purpose === "stay" ? "stay_payment_processing" : "deposit_payment_processing",
+        [purpose === "stay" ? "stay" : "deposit"]: { ...(purpose === "stay" ? value.stay : value.deposit), status: "processing" },
+      }));
+    } catch {
+      // A concurrent verification may already have advanced the journey.
+    }
+  }
   #compensateStay(offerId: string): void { const journey = this.#journeys?.findByOfferId(offerId); if (!journey || journey.compensation.stay.status === "settled" || journey.compensation.stay.status === "reconciliation_required") return; const reference = journey.stay.providerReference; const obligationId = `payment-compensation:${offerId}:stay`; if (!reference || !this.#compensationRefundProvider) { this.#journeys?.update(offerId, journey.journeyVersion, (value) => ({ ...value, stage: "reconciliation_required", compensation: { ...value.compensation, stay: { ...value.compensation.stay, required: true, status: "reconciliation_required", obligationId, originalPaymentReference: reference, amountKobo: journey.stay.amountKobo, currency: "NGN" }, status: "reconciliation_required" } })); return; } let refund: ReturnType<BookingPaymentCompensationPort["refundOrGet"]>; try { refund = this.#compensationRefundProvider.refundOrGet({ obligationId, offerId, paymentMethod: "fresh_card", originalPaymentReference: reference, amountKobo: journey.stay.amountKobo, currency: "NGN" }); if (!refund.refundId || refund.amountKobo !== journey.stay.amountKobo || refund.currency !== "NGN" || !["pending", "settled", "failed"].includes(refund.status)) throw new Error("Compensation provider mismatch"); } catch { this.#journeys?.update(offerId, journey.journeyVersion, (value) => ({ ...value, stage: "reconciliation_required", compensation: { ...value.compensation, stay: { ...value.compensation.stay, required: true, status: "reconciliation_required", obligationId, originalPaymentReference: reference, amountKobo: journey.stay.amountKobo, currency: "NGN" }, status: "reconciliation_required" } })); return; } const pending = refund.status === "pending"; this.#journeys?.update(offerId, journey.journeyVersion, (value) => { const stay = { ...value.compensation.stay, required: true, status: pending ? "pending" as const : refund.status === "failed" ? "reconciliation_required" as const : "settled" as const, refundId: refund.refundId, obligationId, originalPaymentReference: reference, amountKobo: journey.stay.amountKobo, currency: "NGN" as const }; const compensation = { ...value.compensation, stay, status: deriveCompensationStatus({ ...value.compensation, stay }) }; return { ...value, stage: compensation.status === "pending" ? "compensation_pending" : compensation.status === "reconciliation_required" ? "reconciliation_required" : "compensated", compensation }; }); }
   getPaymentJourney(offerId: string) { return this.#journeys?.findByOfferId(offerId) ?? null; }
   getCheckoutSession(offerId: string): CardCheckoutSession | undefined {
@@ -662,6 +726,7 @@ export class CardPaymentManager {
       purpose: record.purpose,
       currency: record.currency,
       contactEmail: record.contactEmail,
+      ...(record.providerEnvironment === undefined ? {} : { providerEnvironment: record.providerEnvironment }),
       expiresAt: record.expiresAt,
       status: record.status,
     };
@@ -684,6 +749,7 @@ export class CardPaymentManager {
       purpose: record.purpose,
       currency: record.currency,
       contactEmail: record.contactEmail,
+      ...(record.providerEnvironment === undefined ? {} : { providerEnvironment: record.providerEnvironment }),
       expiresAt: record.expiresAt,
       status: record.status,
     };
