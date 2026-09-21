@@ -53,7 +53,7 @@ test("publication succeeds when all operator, unit, authority, inspection, licen
     description: "A bright entire-place apartment in Ikeja GRA with reliable power.",
     bathrooms: 2,
     amenities: ["wifi", "generator"],
-    price: { nightlyKobo: 9000000, mandatoryFeesKobo: 1000000, refundableSecurityDepositKobo: 5000000, version: "v1" }
+    price: { nightlyKobo: 9000000, mandatoryFeesKobo: 1000000, refundableSecurityDepositKobo: 2000000, version: "v1" }
   });
 
   grantManagementAuthority(repository, unit.id, {

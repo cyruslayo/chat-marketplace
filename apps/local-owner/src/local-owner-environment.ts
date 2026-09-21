@@ -244,7 +244,7 @@ export class LocalApartmentOwnerEnvironment {
       price: {
         nightlyKobo: 12000000, // ₦120,000 / night
         mandatoryFeesKobo: 1000000, // ₦10,000 cleaning & service
-        refundableSecurityDepositKobo: 5000000, // ₦50,000 deposit
+        refundableSecurityDepositKobo: 2000000, // ₦20,000 deposit
         version: "price-ikoyi-v1",
       },
       operator: {
@@ -503,7 +503,7 @@ export class LocalApartmentOwnerEnvironment {
         applicableWithholdingKobo: 0,
         preReleaseRefundOrCreditKobo: 0,
         bookingOffsetsKobo: 0,
-        securityDepositKobo: 5000000,
+        securityDepositKobo: 2000000,
         platformRemittedTaxesKobo: 0,
         platformOwnedFeesKobo: 0,
         passThroughKobo: 0,

@@ -250,7 +250,7 @@ test("Weaver-generated View Unit action round-trips through the server and repla
     const rendered = unitTarget.textContent ?? "";
     assert.ok(rendered.includes(IKOYI_TITLE));
     assert.ok(rendered.includes(`All-In Stay Total: ${ALL_IN_TOTAL_NGN}`));
-    assert.ok(rendered.includes("Refundable Security Deposit: ₦50,000"));
+    assert.ok(rendered.includes("Refundable Security Deposit: ₦20,000"));
     assert.ok(rendered.includes("Request to Book"), "unit detail exposes the Request to Book action");
   } finally {
     await journey.server.close();
@@ -298,8 +298,8 @@ test("Guest Request Draft remains separate from Booking Request until review and
     const offerText = offerTarget.textContent ?? "";
     assert.ok(offerText.includes("Conditional Booking Offer"));
     assert.ok(offerText.includes(`All-In Stay Total: ${ALL_IN_TOTAL_NGN}`));
-    assert.ok(offerText.includes("Refundable Security Deposit: ₦50,000.00"));
-    assert.ok(offerText.includes("Amount Due Now: ₦420,000.00"));
+    assert.ok(offerText.includes("Refundable Security Deposit: ₦20,000.00"));
+    assert.ok(offerText.includes("Amount Due Now: ₦390,000.00"));
     assert.ok(offerText.includes("Cancellation:"));
     assert.ok(offerText.includes("Payment Window expires:"));
     assert.ok([...offerTarget.querySelectorAll("button")].some((button) => button.textContent?.includes("Accept")));

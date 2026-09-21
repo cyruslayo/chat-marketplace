@@ -70,7 +70,7 @@ function csvRow(overrides: Record<string, string> = {}) {
     bathrooms: "2",
     nightly_price_ngn: "120000",
     mandatory_fees_ngn: "10000",
-    refundable_security_deposit_ngn: "50000",
+    refundable_security_deposit_ngn: "20000",
     currency: "NGN",
     amenities: "wifi|generator|parking",
     photo_urls: "",

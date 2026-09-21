@@ -403,7 +403,7 @@ export class LocalGuestEnvironment {
       price: {
         nightlyKobo: 12000000,
         mandatoryFeesKobo: 1000000,
-        refundableSecurityDepositKobo: 5000000,
+        refundableSecurityDepositKobo: 2000000,
         version: "price-ikoyi-v1",
       },
       operator,
@@ -453,7 +453,7 @@ export class LocalGuestEnvironment {
       price: {
         nightlyKobo: 6500000,
         mandatoryFeesKobo: 500000,
-        refundableSecurityDepositKobo: 3000000,
+        refundableSecurityDepositKobo: 1000000,
         version: "price-lekki-v1",
       },
       operator,

@@ -365,7 +365,7 @@ export function seedIssue01Units(repository: any): void {
     capacity: 4, bedrooms: 2, bathrooms: 2,
     description: "A bright entire-place apartment with a quiet living room and reliable power.",
     amenities: ["wifi", "generator", "parking"], published: true,
-    price: { nightlyKobo: 8500000, mandatoryFeesKobo: 1000000, refundableSecurityDepositKobo: 5000000, version: "price-1" },
+    price: { nightlyKobo: 8500000, mandatoryFeesKobo: 1000000, refundableSecurityDepositKobo: 2000000, version: "price-1" },
     operator: {
       id: "operator-001", status: "approved", approvedAt: "2026-01-10", legalForm: "private-company-limited-by-shares",
       cacVerified: true, responsiblePersonsVerified: true, beneficialOwnersVerified: true, paymentProviderApproved: true,

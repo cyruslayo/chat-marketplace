@@ -32,7 +32,7 @@ test("date, party-size, location, amenity, and price filters return only eligibl
   assert.deepEqual(results.facts.results.map((unit: any) => unit.id), ["unit-lagos-001"]);
   assert.equal(results.facts.results[0].trust.inspection.status, "current");
   assert.equal(results.facts.results[0].price.allInStayTotalKobo, 18000000);
-  assert.equal(results.facts.results[0].price.amountDueNowKobo, 23000000);
+  assert.equal(results.facts.results[0].price.amountDueNowKobo, 20000000);
   assert.equal(results.schemaVersion, "shortlet.discovery/v1");
   assert.equal(results.sensitivity, "public");
 });

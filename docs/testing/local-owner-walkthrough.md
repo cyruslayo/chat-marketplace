@@ -22,7 +22,7 @@ When you launch `npm run owner:local`, the environment automatically seeds one h
 | **Representative Person** | `Babatunde Adeleke` (`person-owner-001`) | Holds an explicit, active `operator_actions` grant in SQLite (ADR 0072, ADR 0075). |
 | **Apartment Unit** | `Luxury 2-Bedroom Apartment in Old Ikoyi` (`unit-lagos-ikoyi-001`) | Entire Place occupancy model in Lagos, capacity 4 (ADR 0021). |
 | **Inspection & Authority** | `passed` & `verified` | Satisfies all 9 physical inspection safety scopes & 8 management authority permissions (ADR 0021). |
-| **Pricing & Terms** | ₦120,000 / night, ₦10,000 mandatory charges, ₦50,000 deposit | Complies with All-In pricing and refundable deposit rules (ADR 0016, ADR 0026). |
+| **Pricing & Terms** | ₦120,000 / night, ₦10,000 mandatory charges, ₦20,000 deposit | Complies with All-In pricing and refundable deposit rules (ADR 0016, ADR 0026). |
 | **Trust Tier & Commission** | `preferred` (10% commission) | Evaluated from $\ge 30$ bookings and $\ge 98\%$ reliability with zero active misconduct (ADR 0083). |
 
 ---

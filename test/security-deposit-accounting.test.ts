@@ -22,6 +22,15 @@ test("Issue 25 production snapshot and accounting are fail-closed, separate, and
   assert.equal(repo.getByReservationId("reservation-25")?.refundableBalanceKobo, 0);
 });
 
+test("ADR-0063 rejects a configured deposit above the lower percentage/size cap and accepts the boundary", () => {
+  assert.throws(
+    () => calculateSecurityDepositPolicySnapshot({ accommodationSubtotalKobo: 17_000_000, bedrooms: 2, configuredDepositKobo: 5_000_000 }),
+    /configured deposit exceeds the platform policy cap/
+  );
+  const valid = calculateSecurityDepositPolicySnapshot({ accommodationSubtotalKobo: 17_000_000, bedrooms: 2, configuredDepositKobo: 4_250_000 });
+  assert.equal(valid.amountKobo, 4_250_000);
+});
+
 test("Issue 25 cancellation adapter refunds the bound deposit source separately", () => {
   const repo = new InMemorySecurityDepositAccountingRepository(); const snapshot = calculateSecurityDepositPolicySnapshot({ accommodationSubtotalKobo: 40_000_000, bedrooms: 1, configuredDepositKobo: 4_000_000 }); const created = repo.createOrGet({ offerId: "offer-cancel-25", snapshot, paymentMethod: "fresh_card" }); repo.recordCollection(created.collectionId, { providerReference: "successful-deposit-ref", collectedAt: "2026-08-01T00:00:00Z" }); repo.bind(created.collectionId, { reservationId: "reservation-cancel-25", contractId: "contract-cancel-25" }); let source = ""; const adapter = createSecurityDepositCancellationRefundAdapter({ accounting: repo, refunds: { refundOrGet: (input) => { source = input.originalPaymentReference; return { refundId: "deposit-refund-25", status: "settled", amountKobo: input.amountKobo, currency: "NGN" }; } }, clock: () => new Date("2026-08-02T00:00:00Z") }); const result = adapter.initiateOrGetRefund({ cancellationId: "cancellation:reservation-cancel-25", reservationId: "reservation-cancel-25", collectionId: created.collectionId, amountKobo: snapshot.amountKobo, currency: "NGN" }); assert.equal(source, "successful-deposit-ref"); assert.equal(result.status, "settled"); assert.equal(repo.getByReservationId("reservation-cancel-25")?.refundableBalanceKobo, 0); assert.equal(repo.journals().length, 2);
 });
