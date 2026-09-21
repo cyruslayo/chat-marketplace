@@ -6,10 +6,11 @@ import test from "node:test";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { startLocalGuestServer, type LocalGuestServerHandle } from "../apps/local-guest/src/guest-server.js";
 import { launchRealBrowser, type RealBrowserInstance, type RealBrowserTab } from "./helpers/chrome-devtools.js";
+import { startImageFixtureServer, type ImageFixtureServer } from "./helpers/image-fixtures.js";
 
 const PHOTO_URLS = [
-  "https://images.example/synthetic-cover.jpg",
-  "https://images.example/synthetic-living-room.jpg",
+  "https://images.example/synthetic-cover.png",
+  "https://images.example/synthetic-living-room.png",
 ];
 
 interface Context {
@@ -22,6 +23,7 @@ interface Context {
   readonly unitId: string;
   readonly unitTitle: string;
   readonly unitDescription: string;
+  readonly imageFixture: ImageFixtureServer;
   close(): Promise<void>;
 }
 
@@ -33,28 +35,87 @@ async function createContext(width: number): Promise<Context> {
   const unitDescription = "A bright, quiet apartment with a spacious living room, reliable power, secure parking, natural light, and room for a comfortable short stay.\n\nGuests have easy access to the surrounding neighbourhood and practical everyday amenities.";
   environment.unitRepository.save({ ...unit, description: unitDescription, bathrooms: 2, photoUrls: PHOTO_URLS });
   const server = startLocalGuestServer({ port: 0, environment });
-  const browser = await launchRealBrowser({ headless: true });
-  const port = await server.listen();
-  const base = `http://127.0.0.1:${port}`;
-  const tab = await browser.createTab();
-  await tab.setViewport(width, 800);
-  return {
-    directory,
-    environment,
-    server,
-    browser,
-    tab,
-    base,
-    unitId: unit.id,
-    unitTitle: unit.title,
-    unitDescription,
-    async close() {
-      await tab.close();
-      await browser.close();
-      await server.close();
+  const imageFixture = startImageFixtureServer();
+  let browser: RealBrowserInstance | undefined;
+  let tab: RealBrowserTab | undefined;
+  let disposeImageInterception: (() => Promise<void>) | undefined;
+  let closed = false;
+  const cleanup = async (): Promise<void> => {
+    if (closed) return;
+    closed = true;
+    try {
+      try { await disposeImageInterception?.(); } catch {}
+      try { await tab?.close(); } catch {}
+      try { await browser?.close({ releaseLock: false }); } catch {}
+      try { await server.close(); } catch {}
+      try { await imageFixture.close(); } catch {}
       rmSync(directory, { recursive: true, force: true });
-    },
+    } finally {
+      browser?.releaseLock();
+    }
   };
+  try {
+    await imageFixture.listen();
+    const port = await server.listen();
+    const base = `http://127.0.0.1:${port}`;
+    browser = await launchRealBrowser({ headless: true });
+    tab = await browser.createTab();
+    await tab.setViewport(width, 800);
+    disposeImageInterception = await tab.interceptRequests((url) => imageFixture.respond(url));
+    return {
+      directory,
+      environment,
+      server,
+      browser,
+      tab,
+      base,
+      unitId: unit.id,
+      unitTitle: unit.title,
+      unitDescription,
+      imageFixture,
+      close: cleanup,
+    };
+  } catch (error) {
+    await cleanup();
+    throw error;
+  }
+}
+
+async function waitForImageReadiness(tab: RealBrowserTab, expectedCount: number, description: string): Promise<void> {
+  const expression = `(() => { const images = [...document.images]; return images.length === ${expectedCount} && images.every((img) => img.complete && img.naturalWidth > 0 && img.naturalHeight > 0); })()`;
+  try {
+    await tab.waitForFunction(expression, 15000);
+  } catch (error) {
+    const diagnostics = await tab.evaluate(`(() => ({
+      url: location.origin + location.pathname,
+      images: [...document.images].map((img) => {
+        try { const parsed = new URL(img.currentSrc || img.src, location.href); return { src: parsed.host + parsed.pathname, complete: img.complete, naturalWidth: img.naturalWidth, naturalHeight: img.naturalHeight }; }
+        catch { return { src: "[invalid-url]", complete: img.complete, naturalWidth: img.naturalWidth, naturalHeight: img.naturalHeight }; }
+      }),
+      fallback: Boolean(document.querySelector('.photo-fallback')),
+      viewportWidth: innerWidth,
+      documentWidth: document.documentElement.scrollWidth,
+    }))()`).catch(() => ({ unavailable: true }));
+    throw new Error(`Timed out waiting for ${description}: ${JSON.stringify(diagnostics)}`, { cause: error });
+  }
+}
+
+async function waitForBrokenImageFallback(tab: RealBrowserTab): Promise<void> {
+  try {
+    await tab.waitForFunction("Boolean([...document.querySelectorAll('.photo-fallback')].some((element) => element.textContent?.includes('Photo unavailable')))", 15000);
+  } catch (error) {
+    const diagnostics = await tab.evaluate(`(() => ({
+      url: location.origin + location.pathname,
+      images: [...document.images].map((img) => {
+        try { const parsed = new URL(img.currentSrc || img.src, location.href); return { src: parsed.host + parsed.pathname, complete: img.complete, naturalWidth: img.naturalWidth, naturalHeight: img.naturalHeight }; }
+        catch { return { src: "[invalid-url]", complete: img.complete, naturalWidth: img.naturalWidth, naturalHeight: img.naturalHeight }; }
+      }),
+      fallbackText: [...document.querySelectorAll('.photo-fallback')].map((element) => element.textContent ?? ""),
+      viewportWidth: innerWidth,
+      documentWidth: document.documentElement.scrollWidth,
+    }))()`).catch(() => ({ unavailable: true }));
+    throw new Error(`Timed out waiting for broken-image fallback: ${JSON.stringify(diagnostics)}`, { cause: error });
+  }
 }
 
 async function sendSearch(context: Context): Promise<void> {
@@ -69,12 +130,14 @@ for (const width of [320, 390]) {
     const context = await createContext(width);
     try {
       await sendSearch(context);
+      await waitForImageReadiness(context.tab, 1, "the discovery primary image");
       const discovery = await context.tab.evaluate<{ readonly images: number; readonly src: string | null; readonly documentWidth: number }>("(() => ({ images: document.images.length, src: document.querySelector('img')?.getAttribute('src') || null, documentWidth: document.documentElement.scrollWidth }))()");
       assert.equal(discovery.images, 1);
       assert.equal(discovery.src, PHOTO_URLS[0]);
       assert.ok(discovery.documentWidth <= width);
 
-      await context.tab.evaluate("document.querySelector('img')?.dispatchEvent(new Event('error'))");
+      await context.tab.evaluate(`(() => { const image = document.querySelector('img'); if (!(image instanceof HTMLImageElement)) throw new Error('Primary listing image is missing'); image.src = ${JSON.stringify(context.imageFixture.brokenUrl)}; })()`);
+      await waitForBrokenImageFallback(context.tab);
       const afterFailure = await context.tab.evaluate<{ readonly critical: boolean; readonly fallback: boolean; readonly documentWidth: number }>(`({ critical: document.body.innerText.includes(${JSON.stringify(context.unitTitle)}), fallback: document.body.innerText.includes('Photo unavailable'), documentWidth: document.documentElement.scrollWidth })`);
       assert.equal(afterFailure.critical, true);
       assert.equal(afterFailure.fallback, true);
@@ -82,6 +145,8 @@ for (const width of [320, 390]) {
 
       await context.tab.navigate(`${context.base}/stays/${context.unitId}`);
       await context.tab.waitForText(context.unitTitle);
+      await context.tab.evaluate("[...document.images].forEach((image) => image.scrollIntoView({ block: 'center' }))");
+      await waitForImageReadiness(context.tab, 2, "the Unit-detail gallery");
       await context.tab.setOffline(true);
       const detail = await context.tab.evaluate<{ readonly images: number; readonly referrerPolicies: string[]; readonly documentWidth: number; readonly critical: boolean; readonly description: boolean; readonly bathrooms: boolean }>(`(() => ({ images: document.images.length, referrerPolicies: [...document.images].map((img) => img.referrerPolicy), documentWidth: document.documentElement.scrollWidth, critical: document.body.innerText.includes(${JSON.stringify(context.unitTitle)}) && document.body.innerText.includes('Price'), description: document.body.innerText.includes(${JSON.stringify(context.unitDescription)}), bathrooms: document.body.innerText.includes('Bathrooms: 2') }))()`);
       assert.equal(detail.images, 2);
