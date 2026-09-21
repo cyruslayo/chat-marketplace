@@ -31,6 +31,8 @@ The pilot inventory import is a controlled CSV workflow. It changes inventory re
 
 The CSV uses NGN amounts such as `120000`, `"120,000"`, or `120000.50`. Quote amounts containing commas in the CSV. The importer converts them at the application boundary to integer kobo, rejects negative or malformed amounts, and accepts no currency other than `NGN`. Amenities and claim scopes use `|`; blocked dates use `YYYY-MM-DD/YYYY-MM-DD` pairs separated by `;`.
 
+For listing photos, host each image at a public HTTPS location, then put its URL(s) in `photo_urls`, separated by `|` (for example, `https://images.example/cover.jpg|https://images.example/living-room.jpg`). The first URL is the listing cover/primary photo. A Unit may have zero photos, but the importer reports zero-photo listings for operations; no more than 12 URLs are accepted. Run the dry run first, import the corrected file, and verify the photos on Guest discovery and the Unit detail page. The importer validates URL shape and obvious internal hosts but never fetches images.
+
 The durable inventory repository is the existing `JsonUnitRepository`; no second Unit persistence system or fixture seed is used when `SHORTLET_INVENTORY_PATH` is configured. Current application state such as Guest interactions remains in SQLite.
 
 The durable Operator registry is the JSON `JsonOperatorRepository`. Existing inventory that already embeds Operators can be migrated explicitly, without creating Units or inferring authority, with:
@@ -40,7 +42,3 @@ npm run pilot:operator:bootstrap -- --tenant-id tenant_123
 ```
 
 The pilot sequence is: create a tenant if current tooling requires it, provision the Operator, create a representative grant if needed, prepare the inventory CSV, run a dry run, import Units, and publish only eligible Units through the existing path.
-
-## Current pilot gap
-
-The current Unit model does not carry bathrooms, listing descriptions, or listing media/photos. The importer intentionally does not invent or silently discard those fields. A media/listing-content capability is still required for a fully usable apartment marketplace.

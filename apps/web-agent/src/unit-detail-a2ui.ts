@@ -51,6 +51,7 @@ export function unitDetailToA2UI({
       component: "Column",
       children: [
         `${prefix}-title`, `${prefix}-location`, `${prefix}-capacity`, `${prefix}-amenities`,
+        ...(unit.photoUrls.length > 0 ? unit.photoUrls.map((_, index) => `${prefix}-photo-${index}`) : []),
         `${prefix}-stay-dates`, `${prefix}-divider`, `${prefix}-price`, `${prefix}-deposit`,
         `${prefix}-inspection`, `${prefix}-inspection-dates`, `${prefix}-authority`,
         `${prefix}-disclosure`, `${prefix}-actions`,
@@ -60,6 +61,12 @@ export function unitDetailToA2UI({
     { id: `${prefix}-location`, component: "Text", text: `${unit.location.neighbourhood}, ${unit.location.city}` },
     { id: `${prefix}-capacity`, component: "Text", text: `Capacity: ${unit.capacity} guests · ${unit.trust.occupancyModel}` },
     { id: `${prefix}-amenities`, component: "Text", text: `Amenities: ${unit.amenities.join(", ")}` },
+    ...unit.photoUrls.map((url, index) => ({
+      id: `${prefix}-photo-${index}`,
+      component: "Image" as const,
+      url,
+      description: `Photo ${index + 1} of ${unit.title}`,
+    })),
     { id: `${prefix}-stay-dates`, component: "Text", text: `Stay: ${checkIn} to ${checkOut}` },
     { id: `${prefix}-divider`, component: "Divider", axis: "horizontal" },
     { id: `${prefix}-price`, component: "Text", text: `All-In Stay Total: ${formatNgnKobo(unit.price.allInStayTotalKobo ?? unit.price.nightlyKobo)}` },

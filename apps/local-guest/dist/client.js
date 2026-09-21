@@ -8588,6 +8588,37 @@ Known schemas:
   function isRecord3(value) {
     return value !== null && typeof value === "object" && !Array.isArray(value);
   }
+  function isSafeImageUrl(value) {
+    try {
+      const parsed = new URL(value);
+      const hostname = parsed.hostname.toLowerCase().replace(/\.$/, "");
+      if (parsed.protocol !== "https:" || parsed.username !== "" || parsed.password !== "") return false;
+      if (hostname === "localhost" || hostname.endsWith(".localhost") || hostname.endsWith(".local") || hostname.endsWith(".internal") || hostname.endsWith(".lan")) return false;
+      if (hostname.includes(":") || hostname.startsWith("[")) return false;
+      if (/^(0\.|10\.|127\.|169\.254\.|192\.0\.0\.|192\.168\.|198\.(18|19)\.|224\.)/.test(hostname)) return false;
+      if (/^100\.(6[4-9]|[78]\d|9\d)\./.test(hostname)) return false;
+      if (/^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) return false;
+      if (hostname === "::1" || hostname.startsWith("fc") || hostname.startsWith("fd") || hostname.startsWith("fe8")) return false;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  function enhanceListingImages(mount) {
+    for (const [index, image] of [...mount.querySelectorAll("img")].entries()) {
+      image.referrerPolicy = "no-referrer";
+      image.decoding = "async";
+      image.loading = index === 0 ? "eager" : "lazy";
+      image.addEventListener("error", () => {
+        const fallback2 = document.createElement("div");
+        fallback2.className = "photo-fallback";
+        fallback2.setAttribute("role", "img");
+        fallback2.setAttribute("aria-label", `${image.alt || "Listing photo"} unavailable`);
+        fallback2.textContent = "Photo unavailable";
+        image.replaceWith(fallback2);
+      }, { once: true });
+    }
+  }
   function isSafeInternalRoute(value) {
     if (typeof value !== "string" || value === "" || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) return false;
     try {
@@ -8762,6 +8793,7 @@ Known schemas:
       showReopen();
       return;
     }
+    enhanceListingImages(mount);
     showReopen();
     activeWorkspace.scrollIntoView({ block: "nearest" });
     activeWorkspace.focus({ preventScroll: true });
@@ -8856,9 +8888,14 @@ Known schemas:
       announce("The action could not be sent. Please try again.", true);
     }
   }
-  var created = createBasicWebRuntime({ rendering: { onServerEvent: (event) => {
-    void sendEvent(event.message.action);
-  } } });
+  var created = createBasicWebRuntime({
+    basic: {
+      resourcePolicy: ({ kind, url }) => kind === "image" && isSafeImageUrl(url) ? url : void 0
+    },
+    rendering: { onServerEvent: (event) => {
+      void sendEvent(event.message.action);
+    } }
+  });
   if (!created.ok) {
     addTurn("assistant", "The interface runtime could not start. Please reload the page.");
     announce("The interface runtime could not start. Please reload the page.", true);

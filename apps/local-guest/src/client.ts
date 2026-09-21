@@ -65,6 +65,40 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+function isSafeImageUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    const hostname = parsed.hostname.toLowerCase().replace(/\.$/, "");
+    if (parsed.protocol !== "https:" || parsed.username !== "" || parsed.password !== "") return false;
+    if (hostname === "localhost" || hostname.endsWith(".localhost") || hostname.endsWith(".local")
+      || hostname.endsWith(".internal") || hostname.endsWith(".lan")) return false;
+    if (hostname.includes(":") || hostname.startsWith("[")) return false;
+    if (/^(0\.|10\.|127\.|169\.254\.|192\.0\.0\.|192\.168\.|198\.(18|19)\.|224\.)/.test(hostname)) return false;
+    if (/^100\.(6[4-9]|[78]\d|9\d)\./.test(hostname)) return false;
+    if (/^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) return false;
+    if (hostname === "::1" || hostname.startsWith("fc") || hostname.startsWith("fd") || hostname.startsWith("fe8")) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function enhanceListingImages(mount: HTMLElement): void {
+  for (const [index, image] of [...mount.querySelectorAll("img")].entries()) {
+    image.referrerPolicy = "no-referrer";
+    image.decoding = "async";
+    image.loading = index === 0 ? "eager" : "lazy";
+    image.addEventListener("error", () => {
+      const fallback = document.createElement("div");
+      fallback.className = "photo-fallback";
+      fallback.setAttribute("role", "img");
+      fallback.setAttribute("aria-label", `${image.alt || "Listing photo"} unavailable`);
+      fallback.textContent = "Photo unavailable";
+      image.replaceWith(fallback);
+    }, { once: true });
+  }
+}
+
 function isSafeInternalRoute(value: unknown): value is string {
   if (typeof value !== "string" || value === "" || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) return false;
   try { return new URL(value, window.location.origin).origin === window.location.origin; } catch { return false; }
@@ -258,6 +292,7 @@ function renderSurface(surface: GuestSurfacePayload): void {
     showReopen();
     return;
   }
+  enhanceListingImages(mount);
   showReopen();
   activeWorkspace.scrollIntoView({ block: "nearest" });
   activeWorkspace.focus({ preventScroll: true });
@@ -354,7 +389,12 @@ async function sendEvent(action: { readonly name: string; readonly surfaceId: st
   catch { addTurn("assistant", "The action could not be sent. Please try again."); announce("The action could not be sent. Please try again.", true); }
 }
 
-const created = createBasicWebRuntime({ rendering: { onServerEvent: (event) => { void sendEvent(event.message.action); } } });
+const created = createBasicWebRuntime({
+  basic: {
+    resourcePolicy: ({ kind, url }) => kind === "image" && isSafeImageUrl(url) ? url : undefined,
+  },
+  rendering: { onServerEvent: (event) => { void sendEvent(event.message.action); } },
+});
 if (!created.ok) {
   addTurn("assistant", "The interface runtime could not start. Please reload the page.");
   announce("The interface runtime could not start. Please reload the page.", true);

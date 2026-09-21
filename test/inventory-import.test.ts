@@ -71,6 +71,7 @@ function csvRow(overrides: Record<string, string> = {}) {
     refundable_security_deposit_ngn: "50000",
     currency: "NGN",
     amenities: "wifi|generator|parking",
+    photo_urls: "",
     blocked_dates: "2026-12-24/2026-12-26",
     inspection_status: "passed",
     inspection_date: "2026-08-01",
@@ -236,6 +237,94 @@ test("AC15 — a published imported Abuja Unit appears in Guest discovery", () =
   publishUnit(repository, "unit-abuja-001", { clock: () => NOW });
   const results = new UnitDiscoveryQuery({ repository, audit: { record() {} }, telemetry: { track() {} }, clock: () => NOW }).search({ location: "Abuja" });
   assert.deepEqual(results.facts.results.map((unit: { id: string }) => unit.id), ["unit-abuja-001"]);
+});
+
+test("AC1/AC2/AC3/AC4 — valid imported photos preserve ordered URLs and make the first URL primary", () => {
+  const { repository } = setup();
+  const result = run(repository, csv([csvRow({ photo_urls: "https://images.example/cover.jpg|https://images.example/second.jpg" }).line]));
+  assert.equal(result.invalid, 0);
+  assert.deepEqual(repository.findById("unit-import-001")?.photoUrls, [
+    "https://images.example/cover.jpg",
+    "https://images.example/second.jpg",
+  ]);
+  assert.equal(repository.findById("unit-import-001")?.photoUrls[0], "https://images.example/cover.jpg");
+});
+
+test("AC5 — importing more than 12 photos is rejected", () => {
+  const { repository } = setup();
+  const urls = Array.from({ length: 13 }, (_, index) => `https://images.example/${index}.jpg`).join("|");
+  const result = run(repository, csv([csvRow({ photo_urls: urls }).line]));
+  assert.equal(result.invalid, 1);
+  assert.match(result.errors[0]?.message ?? "", /at most 12 photo URLs/);
+});
+
+test("AC6/AC7/AC8 — HTTP, malformed, localhost, and internal photo URLs are rejected", () => {
+  for (const photoUrl of [
+    "http://images.example/photo.jpg",
+    "not-a-url",
+    "https://localhost/photo.jpg",
+    "https://127.0.0.1/photo.jpg",
+    "https://10.0.0.4/photo.jpg",
+  ]) {
+    const { repository } = setup();
+    const result = run(repository, csv([csvRow({ photo_urls: photoUrl }).line]));
+    assert.equal(result.invalid, 1, photoUrl);
+    assert.equal(repository.findById("unit-import-001"), null, photoUrl);
+  }
+});
+
+test("AC9 — dry-run validates photos without fetching or writing them", () => {
+  const { repository } = setup();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (() => { throw new Error("photo import must not fetch remote images"); }) as typeof fetch;
+  try {
+    const result = run(repository, csv([csvRow({ photo_urls: "https://images.example/photo.jpg" }).line]), { dryRun: true });
+    assert.equal(result.valid, 1);
+    assert.equal(result.imported, 0);
+    assert.equal(repository.findById("unit-import-001"), null);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("AC10 — re-importing unchanged photos is idempotent", () => {
+  const { repository } = setup();
+  const contents = csv([csvRow({ photo_urls: "https://images.example/photo.jpg" }).line]);
+  assert.equal(run(repository, contents).inserted, 1);
+  const second = run(repository, contents);
+  assert.equal(second.unchanged, 1);
+  assert.equal(second.imported, 0);
+});
+
+test("AC11 — re-import can add, remove, and reorder photos", () => {
+  const { repository } = setup();
+  run(repository, csv([csvRow({ photo_urls: "https://images.example/a.jpg|https://images.example/b.jpg" }).line]));
+  run(repository, csv([csvRow({ photo_urls: "https://images.example/b.jpg|https://images.example/c.jpg" }).line]));
+  assert.deepEqual(repository.findById("unit-import-001")?.photoUrls, [
+    "https://images.example/b.jpg",
+    "https://images.example/c.jpg",
+  ]);
+});
+
+test("AC12 — imported photos survive a JSON repository restart", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "inventory-photo-restart-"));
+  const file = join(directory, "units.json");
+  try {
+    const first = new JsonUnitRepository(file);
+    anchor(first as unknown as UnitRepository);
+    run(first as unknown as UnitRepository, csv([csvRow({ photo_urls: "https://images.example/restart.jpg" }).line]));
+    const restarted = new JsonUnitRepository(file);
+    assert.deepEqual(restarted.findById("unit-import-001")?.photoUrls, ["https://images.example/restart.jpg"]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("AC9 — duplicate photo URLs are reported by dry-run", () => {
+  const { repository } = setup();
+  const result = run(repository, csv([csvRow({ photo_urls: "https://images.example/a.jpg|https://images.example/a.jpg" }).line]), { dryRun: true });
+  assert.equal(result.invalid, 1);
+  assert.match(result.errors[0]?.message ?? "", /duplicate photo URL/);
 });
 
 test("AC16 — imported data survives restart", async () => {

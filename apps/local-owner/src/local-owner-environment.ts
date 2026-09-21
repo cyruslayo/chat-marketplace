@@ -236,6 +236,7 @@ export class LocalApartmentOwnerEnvironment {
       occupancyModel: "entire-place",
       capacity: 4,
       amenities: ["wifi", "24_7_power_generator", "parking", "air_conditioning", "security_guard", "swimming_pool"],
+      photoUrls: [],
       published: true,
       price: {
         nightlyKobo: 12000000, // ₦120,000 / night

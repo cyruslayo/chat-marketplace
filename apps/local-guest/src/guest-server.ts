@@ -34,7 +34,7 @@ import {
 } from "../../../apps/web/src/presentation.js";
 import { resolveConditionalOfferServerEvent } from "../../../apps/web/src/conditional-offer-actions.js";
 import { resolveCardPaymentServerEvent } from "../../../apps/web/src/card-payment-actions.js";
-import { createStayQuote, type Unit } from "../../../domains/shortlet/src/index.js";
+import { createStayQuote, isEligibleUnit, normalizePhotoUrls, type Unit } from "../../../domains/shortlet/src/index.js";
 import { requestDraftArtifactFromProjection, requestDraftArtifactId } from "../../../apps/web/src/request-draft-artifact.js";
 import type { RequestDraftArtifact } from "../../../apps/web/src/request-draft-artifact.js";
 import type { CardPaymentApplication } from "../../../apps/web/src/card-payment-application.js";
@@ -1339,6 +1339,8 @@ export function renderGuestShellHtml(): string {
     .workspace-status { margin: 0 0 12px; color: var(--text-muted); font-size: 13px; }
     .status-stale, .status-expired, .status-deleted, .status-fallback { color: var(--danger); }
     .weaver-mount { min-width: 0; overflow-x: auto; }
+    .weaver-mount img { display: block; width: 100%; max-width: 100%; height: auto; min-height: 120px; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 12px; background: var(--surface-soft); }
+    .photo-fallback { min-height: 120px; display: grid; place-items: center; padding: 18px; border-radius: 12px; background: var(--surface-soft); color: var(--text-muted); text-align: center; }
     .surface-fallback { border-left: 4px solid var(--focus); padding: 4px 0 4px 12px; }
     .surface-fallback p { margin: 0 0 10px; }
     .fallback-link { color: var(--accent); font-weight: 700; }
@@ -1395,6 +1397,15 @@ function readJsonBody(req: IncomingMessage): Promise<unknown> {
     });
     req.on("error", reject);
   });
+}
+
+export function renderConventionalUnitDetailHtml(unit: Unit): string {
+  const safe = (value: string) => value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!);
+  const photos = normalizePhotoUrls(unit.photoUrls);
+  const photoMarkup = photos.length === 0
+    ? `<p class="photo-fallback" role="status">Photos are not available for this Unit yet.</p>`
+    : `<div class="gallery" aria-label="Photos of ${safe(unit.title)}">${photos.map((url, index) => `<img src="${safe(url)}" alt="Photo ${index + 1} of ${safe(unit.title)}" loading="${index === 0 ? "eager" : "lazy"}" decoding="async" width="800" height="600" referrerpolicy="no-referrer">`).join("")}</div>`;
+  return `<!doctype html><html lang="en-NG"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${safe(unit.title)}</title><style>*{box-sizing:border-box}body{margin:0;background:#f5f5f0;color:#1c2520;font:16px/1.5 system-ui,sans-serif}main{width:min(100% - 28px,760px);margin:0 auto;padding:24px 0 40px}h1{font-size:clamp(1.5rem,6vw,2.25rem);line-height:1.15;margin:0 0 8px}p{margin:8px 0}.muted{color:#5e6a63}.gallery{display:grid;gap:12px;margin-top:20px}.gallery img{display:block;width:100%;height:auto;aspect-ratio:4/3;object-fit:cover;border-radius:12px;background:#ecece5}.photo-fallback{display:grid;place-items:center;min-height:120px;padding:18px;border-radius:12px;background:#ecece5;color:#5e6a63;text-align:center}a{display:inline-flex;align-items:center;min-height:44px;margin-top:22px;color:#0c6b4f;font-weight:700}@media(max-width:320px){main{width:calc(100% - 16px);padding-top:16px}}</style></head><body><main><h1>${safe(unit.title)}</h1><p>${safe(unit.location.neighbourhood)}, ${safe(unit.location.city)}</p><p>Price: ${formatNgnKobo(unit.price.nightlyKobo)} per night</p><p class="muted">Capacity: ${unit.capacity} guests · Entire Place</p>${photoMarkup}<a href="/">Continue to Request to Book</a></main></body></html>`;
 }
 
 function readRawBody(req: IncomingMessage): Promise<Buffer> {
@@ -1546,6 +1557,12 @@ interface BrowserSession {
   readonly threadIds: Set<string>;
 }
 
+const GUEST_HTML_HEADERS = {
+  "Content-Type": "text/html; charset=utf-8",
+  "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' https:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+  "Referrer-Policy": "no-referrer",
+} as const;
+
 function findGuestThreadForOffer(env: LocalGuestEnvironment, offerId: string, principal: { readonly id: string; readonly tenantId?: string }): string | null {
   if (!principal.tenantId) return null;
   for (const thread of env.interactionStore.findThreadsForPrincipal(principal.id, principal.tenantId)) {
@@ -1640,8 +1657,19 @@ export function startLocalGuestServer(options: {
       } else {
         registerBrowserSession(app.environment, browserSessions, issueGuestSession(res));
       }
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.writeHead(200, GUEST_HTML_HEADERS);
       res.end(renderGuestShellHtml());
+      return;
+    }
+
+    const conventionalUnitMatch = /^\/stays\/([^/]+)$/.exec(url.pathname);
+    if (req.method === "GET" && conventionalUnitMatch) {
+      let unitId: string;
+      try { unitId = decodeURIComponent(conventionalUnitMatch[1]!); } catch { res.writeHead(400, { "Content-Type": "text/plain" }); res.end("Invalid Unit"); return; }
+      const unit = app.environment.unitRepository.findById(unitId);
+      if (!unit || !isEligibleUnit(unit, app.environment.clock())) { res.writeHead(404, { "Content-Type": "text/plain" }); res.end("Unit not found"); return; }
+      res.writeHead(200, GUEST_HTML_HEADERS);
+      res.end(renderConventionalUnitDetailHtml(unit));
       return;
     }
 
@@ -1732,7 +1760,7 @@ export function startLocalGuestServer(options: {
       const session = resolveBrowserSession(app.environment, browserSessions, readGuestSession(req));
       if (!session) { res.writeHead(401, { "Content-Type": "text/plain" }); res.end("Unauthorized"); return; }
       const contactPrincipal: CommandPrincipal = { id: session.principalId, role: "guest", tenantId: session.tenantId };
-      if (req.method === "GET" && url.pathname === "/guest/contact") { const kind = url.searchParams.get("kind"); const requestedKind = kind === "phone" || kind === "email" ? kind : "both"; res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(renderGuestContactHtml(app.environment.guestContactApp.get(contactPrincipal), "", requestedKind)); return; }
+      if (req.method === "GET" && url.pathname === "/guest/contact") { const kind = url.searchParams.get("kind"); const requestedKind = kind === "phone" || kind === "email" ? kind : "both"; res.writeHead(200, GUEST_HTML_HEADERS); res.end(renderGuestContactHtml(app.environment.guestContactApp.get(contactPrincipal), "", requestedKind)); return; }
       if (req.method === "POST") {
         try {
           const form = await readFormBody(req);
@@ -1740,7 +1768,7 @@ export function startLocalGuestServer(options: {
           if (url.pathname.endsWith("/phone")) app.environment.guestContactApp.submitPhone({ phoneNumber: form.get("phoneNumber") ?? "", ...(Number.isInteger(expectedRevision) ? { expectedRevision } : {}) }, contactPrincipal);
           else app.environment.guestContactApp.submitEmail({ contactEmail: form.get("contactEmail") ?? "", ...(Number.isInteger(expectedRevision) ? { expectedRevision } : {}) }, contactPrincipal);
           res.writeHead(303, { Location: "/guest/contact" }); res.end(); return;
-        } catch (error) { res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" }); res.end(renderGuestContactHtml(app.environment.guestContactApp.get(contactPrincipal), error instanceof Error ? error.message : "Contact could not be saved")); return; }
+        } catch (error) { res.writeHead(400, GUEST_HTML_HEADERS); res.end(renderGuestContactHtml(app.environment.guestContactApp.get(contactPrincipal), error instanceof Error ? error.message : "Contact could not be saved")); return; }
       }
     }
 

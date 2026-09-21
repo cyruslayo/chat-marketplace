@@ -31,6 +31,7 @@ if (!inputPath || positional.length > 1 || !tenantId || tenantId.startsWith("--"
   console.log(`Imported: ${result.imported}`);
   console.log(`Publication-ready: ${result.publicationReady}`);
   console.log(`Unpublished/ineligible: ${result.unpublishedIneligible}`);
+  console.log(`Zero-photo listings: ${result.zeroPhotoListings}`);
   for (const error of result.errors) console.error(`Row ${error.row}: ${error.message}`);
   if (result.invalid > 0) process.exitCode = 1;
 }

@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { calculateTaxKobo } from "./quote.js";
+import { normalizePhotoUrls } from "./photo-url.js";
 
 const LAGOS_TIME_ZONE = "Africa/Lagos";
 const SUPPORTED_LOCATIONS = new Set(["Lagos", "Abuja"]);
@@ -31,6 +32,7 @@ export interface Unit {
   capacity: number;
   bedrooms?: number;
   amenities: string[];
+  photoUrls: string[];
   published: boolean;
   price: {
     nightlyKobo: number;
@@ -112,6 +114,13 @@ function claimCoversCheckout(claim: any, today: string, checkout: string, accept
   }
 }
 
+export type UnitInput = Omit<Unit, "photoUrls"> & { readonly photoUrls?: readonly string[] };
+export type UnitSaveInput = UnitInput | Partial<Unit>;
+
+function normalizeUnit(unit: UnitInput): Unit {
+  return { ...unit, photoUrls: normalizePhotoUrls(unit.photoUrls) };
+}
+
 function authorityCoversCheckout(authority: any, propertyId: string, today: string, checkout: string): boolean {
   return claimCoversCheckout(authority, today, checkout)
     && authority.propertyId === propertyId
@@ -168,9 +177,15 @@ export function isEligibleUnit(unit: any, now: Date = new Date(), dateRange?: El
 
 export class UnitRepository {
   #units = new Map<string, any>();
-  save(unit: any): void { this.#units.set(unit.id, structuredClone(unit)); }
-  findAll(): any[] { return [...this.#units.values()].map((unit) => structuredClone(unit)); }
-  findById(id: string): any { const unit = this.#units.get(id); return unit ? structuredClone(unit) : null; }
+  save(unit: UnitSaveInput): void {
+    if (!unit.id) throw new TypeError("Unit id is required");
+    const current = this.#units.get(unit.id);
+    if (!current && (!unit.propertyId || !unit.title || !unit.location || !unit.occupancyModel || !unit.price)) throw new TypeError("A new Unit requires its complete record");
+    const normalized = normalizeUnit({ ...current, ...unit } as UnitInput);
+    this.#units.set(normalized.id, structuredClone(normalized));
+  }
+  findAll(): any[] { return [...this.#units.values()].map((unit) => structuredClone(normalizeUnit(unit as UnitInput))); }
+  findById(id: string): any { const unit = this.#units.get(id); return unit ? structuredClone(normalizeUnit(unit as UnitInput)) : null; }
 }
 
 export class JsonUnitRepository {
@@ -180,12 +195,20 @@ export class JsonUnitRepository {
     mkdirSync(dirname(filePath), { recursive: true });
     if (!readFileSafe(filePath)) writeFileSync(filePath, "[]", "utf8");
   }
-  save(unit: any): void {
-    const units = this.findAll().filter((candidate: any) => candidate.id !== unit.id);
-    writeFileSync(this.filePath, JSON.stringify([...units, unit], null, 2), "utf8");
+  save(unit: UnitSaveInput): void {
+    if (!unit.id) throw new TypeError("Unit id is required");
+    const current = this.findById(unit.id);
+    if (!current && (!unit.propertyId || !unit.title || !unit.location || !unit.occupancyModel || !unit.price)) throw new TypeError("A new Unit requires its complete record");
+    const normalized = normalizeUnit({ ...current, ...unit } as UnitInput);
+    const units = this.findAll().filter((candidate) => candidate.id !== normalized.id);
+    writeFileSync(this.filePath, JSON.stringify([...units, normalized], null, 2), "utf8");
   }
-  findAll(): any[] { return JSON.parse(readFileSync(this.filePath, "utf8")).map((unit: any) => structuredClone(unit)); }
-  findById(id: string): any { return this.findAll().find((unit: any) => unit.id === id) ?? null; }
+  findAll(): any[] {
+    const parsed: unknown = JSON.parse(readFileSync(this.filePath, "utf8"));
+    if (!Array.isArray(parsed)) throw new TypeError("Unit repository file must contain an array");
+    return parsed.map((unit) => structuredClone(normalizeUnit(unit as UnitInput)));
+  }
+  findById(id: string): any { return this.findAll().find((unit) => unit.id === id) ?? null; }
 }
 
 function readFileSafe(filePath: string): string | null {
@@ -214,6 +237,7 @@ export function toDiscoveryProjection(unit: Unit, dateRange: StayDateRange | nul
     id: unit.id, title: unit.title,
     location: { city: unit.location.city, neighbourhood: unit.location.neighbourhood },
     capacity: unit.capacity, amenities: [...unit.amenities],
+    photoUrls: [...normalizePhotoUrls(unit.photoUrls)],
     price: {
       nightlyKobo: unit.price.nightlyKobo,
       allInStayTotalKobo: allInTotal,

@@ -32,6 +32,7 @@ export interface DiscoveryUnitProjection {
   readonly location: DiscoveryLocationProjection;
   readonly capacity: number;
   readonly amenities: readonly string[];
+  readonly photoUrls: readonly string[];
   readonly price: DiscoveryPriceProjection;
   readonly trust: {
     readonly inspection: DiscoveryInspectionProjection;
@@ -101,15 +102,22 @@ function unitComponents(
       { id: `${prefix}-card`, component: "Card", child: `${prefix}-content` },
       {
         id: `${prefix}-content`,
-        component: "Column",
+      component: "Column",
         children: [
-          `${prefix}-title`, `${prefix}-location`, `${prefix}-capacity`, `${prefix}-amenities`,
+          `${prefix}-title`, `${prefix}-location`, ...(unit.photoUrls.length > 0 ? [`${prefix}-primary-photo`] : []),
+          `${prefix}-capacity`, `${prefix}-amenities`,
           `${prefix}-divider`, `${prefix}-prices`, `${prefix}-inspection`, `${prefix}-inspection-dates`,
           ...(canViewUnit ? [`${prefix}-view-button`] : []),
         ],
       },
       { id: `${prefix}-title`, component: "Text", text: unit.title, variant: "h3" },
       { id: `${prefix}-location`, component: "Text", text: `${unit.location.neighbourhood}, ${unit.location.city}` },
+      ...(unit.photoUrls.length > 0 ? [{
+        id: `${prefix}-primary-photo`,
+        component: "Image" as const,
+        url: unit.photoUrls[0]!,
+        description: `Photo of ${unit.title}`,
+      }] : []),
       { id: `${prefix}-capacity`, component: "Text", text: `Capacity: ${unit.capacity} guests` },
       { id: `${prefix}-amenities`, component: "Text", text: `Amenities: ${unit.amenities.join(", ")}` },
       { id: `${prefix}-divider`, component: "Divider", axis: "horizontal" },
