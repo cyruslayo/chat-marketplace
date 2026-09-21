@@ -454,7 +454,7 @@ export class LocalGuestApp {
     const aggregateId = fields.aggregateId ?? fields.correlationId;
     const event: TransitionTelemetryEvent = {
       type, eventVersion: "1", timestamp: this.#environment.clock().toISOString(),
-      tenantId: this.#environment.config.tenantId, principalId: this.#environment.config.guestId,
+      tenantId: this.#environment.config.tenantId, principalId: this.#environment.guestPrincipal().id,
       threadId: thread.threadId, transitionKey: `${type}:${thread.threadId}:${fields.aggregateType ?? "interaction"}:${aggregateId ?? "none"}`,
       ...(aggregateId === undefined ? {} : { aggregateId }), ...fields,
     };
@@ -467,7 +467,7 @@ export class LocalGuestApp {
     const activeStage = this.#stageForSurfaceId(current?.surfaceId ?? "") ?? this.#inferActiveStage(thread);
     environment.interactionStore.saveThread({
       threadId: thread.threadId,
-      principalId: environment.config.guestId,
+      principalId: environment.guestPrincipal().id,
       tenantId: environment.config.tenantId,
       threadJson: JSON.stringify(this.#projectionFor(thread, activeStage)),
     });
@@ -525,7 +525,7 @@ export class LocalGuestApp {
     const environment = this.#environment;
     const record = environment.interactionStore.findThread(threadId);
     if (!record) return null;
-    if (record.principalId !== environment.config.guestId || record.tenantId !== environment.config.tenantId) {
+    if (record.principalId !== environment.guestPrincipal().id || record.tenantId !== environment.config.tenantId) {
       return null;
     }
     let projection: GuestPersistentProjection | null = null;
@@ -919,7 +919,7 @@ export class LocalGuestApp {
     const draft = environment.bookingRequestApp.createDraft(
       {
         unitId: detail.unitId,
-        primaryGuest: { id: environment.config.guestId, name: environment.config.guestName },
+        primaryGuest: { id: environment.guestPrincipal().id, name: environment.config.guestName },
         occupants: environment.demoOccupants(this.#partySizeFor(thread)),
         selfBookingAttestation: environment.selfBookingAttestation(),
         ...this.#stayDatesFor(thread),
@@ -1444,10 +1444,17 @@ function readGuestSession(req: IncomingMessage): string | null | undefined {
   return GUEST_SESSION_PATTERN.test(value) ? value : null;
 }
 
-function issueGuestSession(res: ServerResponse): string {
+function issueGuestSession(res: ServerResponse, secureCookie: boolean): string {
   const sessionId = `gs-${crypto.randomUUID()}`;
-  res.setHeader("Set-Cookie", `${GUEST_SESSION_COOKIE}=${sessionId}; HttpOnly; SameSite=Lax; Path=/`);
+  res.setHeader("Set-Cookie", `${GUEST_SESSION_COOKIE}=${sessionId};${secureCookie ? " Secure;" : ""} HttpOnly; SameSite=Lax; Path=/`);
   return sessionId;
+}
+
+function browserOriginAccepted(req: IncomingMessage, publicOrigin: string | undefined): boolean {
+  const origin = req.headers.origin;
+  if (origin === undefined) return true;
+  const expected = publicOrigin ?? `http://${req.headers.host ?? "localhost"}`;
+  return origin === expected;
 }
 
 /**
@@ -1461,17 +1468,18 @@ function resolveBrowserSession(
   env: LocalGuestEnvironment,
   cache: Map<string, BrowserSession>,
   sessionId: string | null | undefined,
+  expectedPrincipalId?: string,
 ): BrowserSession | null {
   if (sessionId === null || typeof sessionId !== "string") return null;
   const sessionKey = hashSessionSecret(sessionId);
   const cached = cache.get(sessionKey);
   if (cached) {
-    if (cached.principalId !== env.config.guestId || cached.tenantId !== env.config.tenantId) return null;
+    if ((expectedPrincipalId !== undefined && cached.principalId !== expectedPrincipalId) || cached.tenantId !== env.config.tenantId) return null;
     return cached;
   }
   const binding = env.interactionStore.findSessionBinding(sessionKey);
   if (!binding) return null;
-  if (binding.principalId !== env.config.guestId || binding.tenantId !== env.config.tenantId) return null;
+  if ((expectedPrincipalId !== undefined && binding.principalId !== expectedPrincipalId) || binding.tenantId !== env.config.tenantId) return null;
   const session: BrowserSession = {
     sessionKey,
     principalId: binding.principalId,
@@ -1489,10 +1497,12 @@ function bindBrowserThread(
   cache: Map<string, BrowserSession>,
   req: IncomingMessage,
   threadId: string,
+  requireSession = false,
 ): boolean {
   const sessionId = readGuestSession(req);
   if (sessionId === null) return false;
   if (sessionId === undefined) {
+    if (requireSession) return false;
     // No browser session cookie at all: the deterministic demo accepts an
     // anonymous turn (legacy local behavior). The thread is still persisted
     // under the demo principal so it is restorable.
@@ -1508,13 +1518,13 @@ function bindBrowserThread(
     }
     return true;
   }
-  const session = resolveBrowserSession(env, cache, sessionId);
+  const session = resolveBrowserSession(env, cache, sessionId, env.config.guestId);
   if (!session) return false;
-  session.threadIds.add(threadId);
   // The thread row is owned by the principal/tenant (ADR-0070); persisting it
   // makes the thread re-derivable after a restart by the same session binding.
   const record = env.interactionStore.findThread(threadId);
   if (record) {
+    if (record.principalId !== session.principalId || record.tenantId !== session.tenantId) return false;
     env.interactionStore.saveThread({
       threadId,
       principalId: session.principalId,
@@ -1522,6 +1532,7 @@ function bindBrowserThread(
       threadJson: record.threadJson,
     });
   }
+  session.threadIds.add(threadId);
   return true;
 }
 
@@ -1529,12 +1540,12 @@ function registerBrowserSession(
   env: LocalGuestEnvironment,
   cache: Map<string, BrowserSession>,
   sessionId: string,
+  principalId = env.config.guestId,
 ): BrowserSession {
-  const principal = env.guestPrincipal();
   const sessionKey = hashSessionSecret(sessionId);
   const session: BrowserSession = {
     sessionKey,
-    principalId: principal.id,
+    principalId,
     tenantId: env.config.tenantId,
     threadIds: new Set(),
   };
@@ -1544,7 +1555,7 @@ function registerBrowserSession(
   env.interactionStore.saveSessionBinding({
     sessionId: sessionKey,
     sessionSecretHash: sessionKey,
-    principalId: principal.id,
+    principalId,
     tenantId: env.config.tenantId,
   });
   return session;
@@ -1593,6 +1604,11 @@ export function startLocalGuestServer(options: {
   modelClient?: AssistantModelClient;
   conciergeMode?: "deterministic" | "gemini" | "assistant-offline";
   paystackClient?: PaystackClient;
+  /** Production-only deployment controls. Local fixture defaults remain unchanged. */
+  production?: boolean;
+  publicOrigin?: string;
+  secureCookie?: boolean;
+  sessionScopedGuestPrincipals?: boolean;
 } = {}): LocalGuestServerHandle {
   const port = options.port ?? LOCAL_GUEST_PORT;
   const rawMode = options.conciergeMode ?? process.env.CONCIERGE_MODE;
@@ -1607,7 +1623,17 @@ export function startLocalGuestServer(options: {
     const configuration = loadPaystackConfiguration();
     return configuration ? new DirectPaystackClient(configuration) : undefined;
   })();
-  const env = options.environment ?? new LocalGuestEnvironment({ initialGuestPhoneNumber: null, initialGuestContactEmail: null, ...(configuredPaystack === undefined ? {} : { paystackClient: configuredPaystack }) });
+  const production = options.production === true;
+  const sessionScopedGuestPrincipals = options.sessionScopedGuestPrincipals === true;
+  if (production && !options.publicOrigin) throw new Error("Production Guest server requires SHORTLET_PUBLIC_ORIGIN");
+  const secureCookie = options.secureCookie ?? production;
+  const env = options.environment ?? new LocalGuestEnvironment({
+    initialGuestPhoneNumber: null,
+    initialGuestContactEmail: null,
+    production,
+    deterministicPsp: !production,
+    ...(configuredPaystack === undefined ? {} : { paystackClient: configuredPaystack }),
+  });
   const paystackClient = configuredPaystack ?? env.config.paystackClient;
 
   let assistantRuntime: AssistantRuntime | undefined;
@@ -1629,16 +1655,46 @@ export function startLocalGuestServer(options: {
     }
   }
 
-  const app = new LocalGuestApp(env, { geminiClient, assistantRuntime });
+  const defaultApp = new LocalGuestApp(env, { geminiClient, assistantRuntime });
   const browserSessions = new Map<string, BrowserSession>();
+  const sessionRuntimes = new Map<string, { readonly environment: LocalGuestEnvironment; readonly app: LocalGuestApp }>();
+  const runtimeForSession = (session: BrowserSession): { readonly environment: LocalGuestEnvironment; readonly app: LocalGuestApp } => {
+    if (!sessionScopedGuestPrincipals) return { environment: env, app: defaultApp };
+    const existing = sessionRuntimes.get(session.sessionKey);
+    if (existing) return existing;
+    const runtimeEnvironment = new LocalGuestEnvironment({
+      ...env.config,
+      guestId: session.principalId,
+      initialGuestPhoneNumber: null,
+      initialGuestContactEmail: null,
+      production,
+      deterministicPsp: !production,
+      ...(paystackClient === undefined ? {} : { paystackClient }),
+    });
+    const runtime = { environment: runtimeEnvironment, app: new LocalGuestApp(runtimeEnvironment) };
+    sessionRuntimes.set(session.sessionKey, runtime);
+    return runtime;
+  };
   const clientScriptPath = options.clientScriptPath
     ?? join(dirname(fileURLToPath(import.meta.url)), "..", "dist", "client.js");
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+    const rawSession = readGuestSession(req);
+    let requestSession: BrowserSession | null = null;
+    if (rawSession !== undefined && rawSession !== null) {
+      requestSession = resolveBrowserSession(env, browserSessions, rawSession, sessionScopedGuestPrincipals ? undefined : env.config.guestId);
+      if (!requestSession && sessionScopedGuestPrincipals && url.pathname !== "/client.js" && !url.pathname.startsWith("/stays/")) {
+        sendJson(res, 401, { ok: false, code: "AUTHENTICATION_REQUIRED" });
+        return;
+      }
+    }
+    const requestRuntime = requestSession ? runtimeForSession(requestSession) : { environment: env, app: defaultApp };
+    // This shadowed application is the same existing Guest application code,
+    // selected by the server-owned browser session in production.
+    const app = requestRuntime.app;
 
     if (req.method === "GET" && url.pathname === "/") {
-      const rawSession = readGuestSession(req);
       if (rawSession === null) {
         // A malformed session cookie is rejected, never silently replaced.
         res.writeHead(401, { "Content-Type": "text/plain" });
@@ -1648,14 +1704,17 @@ export function startLocalGuestServer(options: {
       if (rawSession !== undefined) {
         // A well-formed cookie must resolve to a durable binding; an unknown
         // id is rejected rather than silently minted into a new session.
-        const resolved = resolveBrowserSession(app.environment, browserSessions, rawSession);
+        const resolved = resolveBrowserSession(app.environment, browserSessions, rawSession, sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId);
         if (!resolved) {
           res.writeHead(401, { "Content-Type": "text/plain" });
           res.end("Unauthorized");
           return;
         }
       } else {
-        registerBrowserSession(app.environment, browserSessions, issueGuestSession(res));
+        const sessionId = issueGuestSession(res, secureCookie);
+        const principalId = sessionScopedGuestPrincipals ? `guest-${crypto.randomUUID()}` : app.environment.config.guestId;
+        const registered = registerBrowserSession(env, browserSessions, sessionId, principalId);
+        if (sessionScopedGuestPrincipals) runtimeForSession(registered);
       }
       res.writeHead(200, GUEST_HTML_HEADERS);
       res.end(renderGuestShellHtml());
@@ -1689,7 +1748,7 @@ export function startLocalGuestServer(options: {
     if (req.method === "GET" && continuationMatch) {
       // ADR-0087: payment initialization is a server-owned continuation, not
       // a browser-selected amount, currency, reference, callback, or URL.
-      const session = resolveBrowserSession(app.environment, browserSessions, readGuestSession(req));
+      const session = resolveBrowserSession(env, browserSessions, readGuestSession(req), sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId);
       if (!session) { sendJson(res, 401, { ok: false, code: "AUTHENTICATION_REQUIRED" }); return; }
       if (!paystackClient) { sendJson(res, 503, { ok: false, code: "PAYSTACK_UNAVAILABLE" }); return; }
       let offerId: string;
@@ -1709,7 +1768,7 @@ export function startLocalGuestServer(options: {
       // ADR-0087: a callback is only a return signal; verification below is
       // the sole path allowed to advance the existing payment transition.
       if (!paystackClient) { sendJson(res, 503, { ok: false, code: "PAYSTACK_UNAVAILABLE" }); return; }
-      const session = resolveBrowserSession(app.environment, browserSessions, readGuestSession(req));
+      const session = resolveBrowserSession(env, browserSessions, readGuestSession(req), sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId);
       const reference = url.searchParams.get("reference");
       if (!session || !reference) { sendJson(res, 400, { ok: false, code: "PAYMENT_CALLBACK_INVALID" }); return; }
       const checkout = app.environment.cardPaymentApp.manager.getCheckoutSessionByReference(reference);
@@ -1757,11 +1816,12 @@ export function startLocalGuestServer(options: {
     }
 
     if (url.pathname === "/guest/contact" || url.pathname === "/guest/contact/phone" || url.pathname === "/guest/contact/email") {
-      const session = resolveBrowserSession(app.environment, browserSessions, readGuestSession(req));
+      const session = resolveBrowserSession(env, browserSessions, readGuestSession(req), sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId);
       if (!session) { res.writeHead(401, { "Content-Type": "text/plain" }); res.end("Unauthorized"); return; }
       const contactPrincipal: CommandPrincipal = { id: session.principalId, role: "guest", tenantId: session.tenantId };
       if (req.method === "GET" && url.pathname === "/guest/contact") { const kind = url.searchParams.get("kind"); const requestedKind = kind === "phone" || kind === "email" ? kind : "both"; res.writeHead(200, GUEST_HTML_HEADERS); res.end(renderGuestContactHtml(app.environment.guestContactApp.get(contactPrincipal), "", requestedKind)); return; }
       if (req.method === "POST") {
+        if (!browserOriginAccepted(req, options.publicOrigin)) { res.writeHead(403); res.end("Origin rejected"); return; }
         try {
           const form = await readFormBody(req);
           const expectedRevision = Number(form.get("expectedRevision"));
@@ -1801,6 +1861,7 @@ export function startLocalGuestServer(options: {
     }
 
     if (req.method === "POST" && url.pathname === "/api/telemetry") {
+      if (!browserOriginAccepted(req, options.publicOrigin)) { res.writeHead(403); res.end("Origin rejected"); return; }
       try {
         const body = await readJsonBody(req);
         const event = body !== null && typeof body === "object" && !Array.isArray(body)
@@ -1814,7 +1875,8 @@ export function startLocalGuestServer(options: {
       return;
     }
 
-    if (req.method === "POST" && (url.pathname === "/api/turn" || url.pathname === "/api/event" || url.pathname === "/api/reset")) {
+    if (req.method === "POST" && (url.pathname === "/api/turn" || url.pathname === "/api/event" || (!production && url.pathname === "/api/reset"))) {
+      if (!browserOriginAccepted(req, options.publicOrigin)) { res.writeHead(403); res.end("Origin rejected"); return; }
       try {
         const body = await readJsonBody(req);
         if (url.pathname === "/api/reset") {
@@ -1828,7 +1890,7 @@ export function startLocalGuestServer(options: {
           sendJson(res, 400, { ok: false, code: "INVALID_THREAD", message: "threadId is required." });
           return;
         }
-        if (!bindBrowserThread(app.environment, browserSessions, req, threadId)) {
+        if (!bindBrowserThread(app.environment, browserSessions, req, threadId, sessionScopedGuestPrincipals)) {
           sendJson(res, 401, { ok: false, code: "AUTHENTICATION_REQUIRED", message: "Conversation access requires an active browser session." });
           return;
         }
@@ -1858,9 +1920,9 @@ export function startLocalGuestServer(options: {
 
   return {
     port,
-    app,
+    app: defaultApp,
     get environment() {
-      return app.environment;
+      return defaultApp.environment;
     },
     listen: () =>
       new Promise<number>((resolve) => {
@@ -1872,7 +1934,8 @@ export function startLocalGuestServer(options: {
       }),
     close: () =>
       new Promise<void>((resolve) => {
-        app.environment.close();
+        for (const runtime of sessionRuntimes.values()) runtime.environment.close();
+        defaultApp.environment.close();
         // Fetch clients may leave keep-alive sockets open after a response;
         // close them before waiting for the server callback so test and CLI
         // shutdowns are deterministic.

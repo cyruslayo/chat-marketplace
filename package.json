@@ -8,6 +8,7 @@
     "verify:weaver": "node scripts/verify-weaver-vendor.mjs",
     "owner:local": "tsx apps/local-owner/src/cli-start.ts",
     "owner:reset": "tsx apps/local-owner/src/cli-reset.ts",
+    "pilot:start": "tsx apps/pilot/src/cli-start.ts",
     "operator:provision": "tsx apps/local-owner/src/cli-provision.ts",
     "operator:revoke": "tsx apps/local-owner/src/cli-revoke.ts",
     "pilot:operator:create": "tsx apps/shortlet-ops/src/cli-operator-create.ts",

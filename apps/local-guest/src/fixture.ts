@@ -61,6 +61,9 @@ export interface LocalGuestFixtureConfig {
   /** Local PSP fixture port, also used to prove pending/failed restart paths. */
   readonly verifyPayment?: (reference: string, amountKobo: number) => import("../../../domains/shortlet/src/card-payment.js").PSPVerifyResult;
   readonly paystackClient?: PaystackClient;
+  /** Production composition disables the deterministic PSP and requires Paystack. */
+  readonly production?: boolean;
+  readonly deterministicPsp?: boolean;
 }
 
 export const DEFAULT_LOCAL_GUEST_CONFIG: LocalGuestFixtureConfig = {
@@ -79,6 +82,8 @@ export const DEFAULT_LOCAL_GUEST_CONFIG: LocalGuestFixtureConfig = {
   autoDeliverRequests: true,
   demoCheckIn: "2026-09-10",
   demoCheckOut: "2026-09-13",
+  production: false,
+  deterministicPsp: true,
 };
 
 const INSPECTION_SCOPE = [
@@ -200,6 +205,9 @@ export class LocalGuestEnvironment {
 
   constructor(config: Partial<LocalGuestFixtureConfig> = {}) {
     this.config = { ...DEFAULT_LOCAL_GUEST_CONFIG, ...config };
+    if (this.config.production && !this.config.paystackClient) {
+      throw new Error("Production Guest composition requires Paystack configuration");
+    }
     this.clock = this.config.clock ?? (() => new Date("2026-09-03T10:00:00Z"));
 
     mkdirSync(dirname(this.config.databasePath), { recursive: true });
@@ -266,27 +274,29 @@ export class LocalGuestEnvironment {
       calendar: this.calendar,
       audit: this.audit,
       guestContacts: this.guestContactApp.repository,
-      // Local deterministic PSP stub: no live PSP, no credentials. The amount
-      // is resolved from the authoritative checkout session, never the client.
-      pspClient: {
-        verifyTransaction: (pspReference: string) => {
-          const session = this.cardPaymentApp.manager.getCheckoutSessionByReference(pspReference);
-          if (this.config.verifyPayment) return this.config.verifyPayment(pspReference, session?.amountKobo ?? 0);
-          return {
-            verified: true,
-            status: "success",
-            amountKobo: session?.amountKobo ?? 0,
-            currency: "NGN",
-            pspReference,
-            payerId: this.config.guestId,
-          };
+      ...(this.config.deterministicPsp === false ? {} : {
+        // Local deterministic PSP stub: no live PSP, no credentials. The amount
+        // is resolved from the authoritative checkout session, never the client.
+        pspClient: {
+          verifyTransaction: (pspReference: string) => {
+            const session = this.cardPaymentApp.manager.getCheckoutSessionByReference(pspReference);
+            if (this.config.verifyPayment) return this.config.verifyPayment(pspReference, session?.amountKobo ?? 0);
+            return {
+              verified: true,
+              status: "success" as const,
+              amountKobo: session?.amountKobo ?? 0,
+              currency: "NGN",
+              pspReference,
+              payerId: this.config.guestId,
+            };
+          },
         },
-      },
+      }),
       journeyRepository,
       liveAttempts: this.livePaymentAttempts,
       store: this.interactionStore,
       securityDepositAccounting: new InMemorySecurityDepositAccountingRepository(),
-      securityDepositCapability: {
+      ...(this.config.deterministicPsp === false ? {} : { securityDepositCapability: {
         getCapability: ({ paymentMethod }) => ({
           capabilityVersion: "local-demo-security-deposit-v1",
           enabled: true,
@@ -296,7 +306,7 @@ export class LocalGuestEnvironment {
           collectionModel: "separate_actual_charge",
           paymentMethod,
         }),
-      },
+      } }),
       bookingState,
       clock: this.clock,
       ...(this.config.paystackClient === undefined ? {} : { paystackClient: this.config.paystackClient }),
@@ -308,7 +318,7 @@ export class LocalGuestEnvironment {
     });
 
     if (!this.config.inventoryPath) this.#seedUnits();
-    this.#seedRepresentativeGrant();
+    if (!this.config.production) this.#seedRepresentativeGrant();
   }
 
   guestPrincipal(): CommandPrincipal {

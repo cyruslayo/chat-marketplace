@@ -33,6 +33,8 @@ export interface RealBrowserTab {
   setOffline(offline: boolean): Promise<void>;
   pressKey(key: string): Promise<void>;
   setReducedMotion(reduced: boolean): Promise<void>;
+  setExtraHeaders(headers: Readonly<Record<string, string>>): Promise<void>;
+  overrideOrigin(origin: string): Promise<() => Promise<void>>;
   interceptRequests(interceptor: (url: string) => Promise<{
     readonly status: number;
     readonly headers: readonly { readonly name: string; readonly value: string }[];
@@ -370,6 +372,34 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
       await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: reduced ? "reduce" : "no-preference" }] }, sessionId);
     }
 
+    async function setExtraHeaders(headers: Readonly<Record<string, string>>): Promise<void> {
+      await send("Network.setExtraHTTPHeaders", { headers }, sessionId);
+    }
+
+    async function overrideOrigin(origin: string): Promise<() => Promise<void>> {
+      await send("Fetch.enable", { patterns: [{ requestStage: "Request" }] }, sessionId);
+      let active = true;
+      const listener = (event: { method: string; params?: unknown; sessionId?: string }) => {
+        if (!active || event.sessionId !== sessionId || event.method !== "Fetch.requestPaused") return;
+        const params = event.params;
+        if (params === null || typeof params !== "object" || Array.isArray(params)) return;
+        const record = params as { requestId?: unknown; request?: { headers?: unknown } };
+        if (typeof record.requestId !== "string" || record.request?.headers === null || typeof record.request?.headers !== "object" || Array.isArray(record.request.headers)) return;
+        const headers = Object.entries(record.request.headers as Record<string, unknown>)
+          .filter(([name]) => name.toLowerCase() !== "origin")
+          .map(([name, value]) => ({ name, value: String(value) }));
+        headers.push({ name: "Origin", value: origin });
+        void send("Fetch.continueRequest", { requestId: record.requestId, headers }, sessionId).catch(() => undefined);
+      };
+      eventListeners.add(listener);
+      return async () => {
+        if (!active) return;
+        active = false;
+        eventListeners.delete(listener);
+        try { await send("Fetch.disable", {}, sessionId); } catch { /* tab may already be closed */ }
+      };
+    }
+
     async function interceptRequests(
       interceptor: (url: string) => Promise<{
         readonly status: number;
@@ -436,6 +466,8 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
       setOffline,
       pressKey,
       setReducedMotion,
+      setExtraHeaders,
+      overrideOrigin,
       interceptRequests,
     };
   }

@@ -416,10 +416,19 @@ export function startLocalOwnerServer(options: {
   port?: number;
   environment?: LocalApartmentOwnerEnvironment;
   secureCookie?: boolean;
+  publicOrigin?: string;
+  production?: boolean;
 } = {}) {
   const port = options.port ?? 3000;
   let env = options.environment ?? new LocalApartmentOwnerEnvironment();
-  const cookieFlags = `${options.secureCookie ? "; Secure" : ""}; HttpOnly; SameSite=Lax; Path=/operator`;
+  const production = options.production === true;
+  if (production && !options.publicOrigin) throw new Error("Production Operator server requires SHORTLET_PUBLIC_ORIGIN");
+  const cookieFlags = `${(options.secureCookie ?? production) ? "; Secure" : ""}; HttpOnly; SameSite=Lax; Path=/operator`;
+  const browserOriginAccepted = (req: IncomingMessage): boolean => {
+    const origin = req.headers.origin;
+    if (origin === undefined) return true;
+    return origin === (options.publicOrigin ?? `http://${req.headers.host ?? "localhost"}`);
+  };
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
@@ -428,8 +437,7 @@ export function startLocalOwnerServer(options: {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(operatorLoginHtml()); return;
     }
     if (req.method === "POST" && url.pathname === "/operator/login") {
-      const origin = req.headers.origin;
-      if (origin && origin !== `http://${req.headers.host ?? "localhost"}`) { res.writeHead(403); res.end("Origin rejected"); return; }
+      if (!browserOriginAccepted(req)) { res.writeHead(403); res.end("Origin rejected"); return; }
       const buffers: Buffer[] = []; for await (const chunk of req) buffers.push(Buffer.from(chunk));
       const params = new URLSearchParams(Buffer.concat(buffers).toString("utf8"));
       try {
@@ -459,8 +467,7 @@ export function startLocalOwnerServer(options: {
     }
     const actionMatch = url.pathname.match(/^\/operator\/requests\/([^/]+)\/(confirm|decline)$/);
     if (req.method === "POST" && actionMatch) {
-      const origin = req.headers.origin;
-      if (origin && origin !== `http://${req.headers.host ?? "localhost"}`) { res.writeHead(403); res.end("Origin rejected"); return; }
+      if (!browserOriginAccepted(req)) { res.writeHead(403); res.end("Origin rejected"); return; }
       const principal = operatorPrincipal(req, env);
       if (!principal) { res.writeHead(401); res.end("Authentication required"); return; }
       const requestId = decodeURIComponent(actionMatch[1]);
@@ -476,14 +483,13 @@ export function startLocalOwnerServer(options: {
       return;
     }
     if (req.method === "POST" && url.pathname === "/operator/logout") {
-      const origin = req.headers.origin;
-      if (origin && origin !== `http://${req.headers.host ?? "localhost"}`) { res.writeHead(403); res.end("Origin rejected"); return; }
+      if (!browserOriginAccepted(req)) { res.writeHead(403); res.end("Origin rejected"); return; }
       const principal = operatorPrincipal(req, env); if (principal) env.sessionAuthority.revokeSession(principal.sessionId);
       res.setHeader("Set-Cookie", [`${OPERATOR_SESSION_COOKIE}=; Max-Age=0${cookieFlags}`, `${OPERATOR_SECRET_COOKIE}=; Max-Age=0${cookieFlags}`]);
       res.writeHead(302, { Location: "/operator/login" }); res.end(); return;
     }
 
-    if (req.method === "GET" && url.pathname === "/") {
+    if (!production && req.method === "GET" && url.pathname === "/") {
       const overview = env.getStateOverview();
       const html = renderOwnerDashboardHtml(overview);
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
@@ -491,14 +497,14 @@ export function startLocalOwnerServer(options: {
       return;
     }
 
-    if (req.method === "GET" && url.pathname === "/api/state") {
+    if (!production && req.method === "GET" && url.pathname === "/api/state") {
       const overview = env.getStateOverview();
       res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
       res.end(JSON.stringify(overview, null, 2));
       return;
     }
 
-    if (req.method === "POST") {
+    if (!production && req.method === "POST") {
       const buffers: Buffer[] = [];
       for await (const chunk of req) {
         buffers.push(Buffer.from(chunk));

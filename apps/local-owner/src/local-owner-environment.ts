@@ -27,6 +27,9 @@ import {
   SqliteOperatorSessionAuthority,
   SqliteGuestInteractionStore,
   SqliteAvailabilityStore,
+  JsonUnitRepository,
+  JsonOperatorRepository,
+  type OperatorRepository,
 } from "../../../domains/shortlet/src/index.js";
 import {
   createBookingRequestApplication,
@@ -46,6 +49,9 @@ export interface LocalOwnerFixtureConfig {
   readonly adminId: string;
   readonly unitId: string;
   readonly propertyId: string;
+  readonly inventoryPath?: string;
+  readonly operatorsPath?: string;
+  readonly seedFixture?: boolean;
   readonly clock?: () => Date;
 }
 
@@ -59,6 +65,7 @@ export const DEFAULT_LOCAL_OWNER_CONFIG: LocalOwnerFixtureConfig = {
   adminId: "platform-admin-001",
   unitId: "unit-lagos-ikoyi-001",
   propertyId: "property-lagos-ikoyi-001",
+  seedFixture: true,
 };
 
 export interface LocalOwnerStateOverview {
@@ -104,7 +111,8 @@ export interface LocalOwnerStateOverview {
 export class LocalApartmentOwnerEnvironment {
   readonly config: LocalOwnerFixtureConfig;
   readonly clock: () => Date;
-  readonly unitRepository: UnitRepository;
+  readonly unitRepository: UnitRepository | JsonUnitRepository;
+  readonly operatorRepository: OperatorRepository | null;
   readonly calendar: AvailabilityCalendar;
   readonly grantStore: SqliteOperatorRepresentativeGrantStore;
   readonly enforcementManager: OperatorEnforcementManager;
@@ -137,7 +145,8 @@ export class LocalApartmentOwnerEnvironment {
     this.telemetry = new InMemoryTelemetry();
     this.grantStore = new SqliteOperatorRepresentativeGrantStore(this.config.databasePath, { clock: this.clock });
     this.sessionAuthority = new SqliteOperatorSessionAuthority(this.config.databasePath, { clock: this.clock });
-    this.unitRepository = new UnitRepository();
+    this.unitRepository = this.config.inventoryPath ? new JsonUnitRepository(this.config.inventoryPath) : new UnitRepository();
+    this.operatorRepository = this.config.operatorsPath ? new JsonOperatorRepository(this.config.operatorsPath, { clock: this.clock }) : null;
     this.calendar = new AvailabilityCalendar({ repository: this.unitRepository, store: new SqliteAvailabilityStore(this.config.databasePath, this.#database) });
     this.enforcementManager = new OperatorEnforcementManager({
       clock: this.clock,
@@ -201,7 +210,7 @@ export class LocalApartmentOwnerEnvironment {
       clock: this.clock,
     });
 
-    this.#seedFixture();
+    if (this.config.seedFixture !== false) this.#seedFixture();
   }
 
   #seedFixture(): void {
