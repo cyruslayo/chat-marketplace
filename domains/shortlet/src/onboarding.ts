@@ -11,6 +11,10 @@ export const REQUIRED_INSPECTION_SCOPE: readonly string[] = Object.freeze([
   "listing-accuracy", "current-media"
 ]);
 
+export interface UnitOnboardingAuditSink {
+  record(entry: Record<string, unknown>): void;
+}
+
 function findUnitOrThrow(repository: any, unitId: string): any {
   const units = repository.findAll();
   const unit = units.find((u: any) => u.id === unitId);
@@ -205,15 +209,17 @@ export function flagMaterialUnitChange(repository: any, unitId: string) {
   return structuredClone(unit);
 }
 
-export function publishUnit(repository: any, unitId: string, { clock = () => new Date() }: { clock?: () => Date } = {}) {
+export function publishUnit(repository: any, unitId: string, { clock = () => new Date(), audit }: { clock?: () => Date; audit?: UnitOnboardingAuditSink } = {}) {
   const unit = findUnitOrThrow(repository, unitId);
 
+  audit?.record({ type: "unit.publication.attempted", unitId });
   const now = clock();
   const status = getUnitOnboardingStatus(unit, now);
 
   if (!status.eligibleForPublication) {
     unit.published = false;
     repository.save(unit);
+    audit?.record({ type: "unit.publication.blocked", unitId, blockers: [...status.blockers] });
     throw new Error(`Unit publication failed: ${status.blockers.join("; ")}`);
   }
 
@@ -231,7 +237,7 @@ export function getUnitOnboardingStatus(unit: any, now: Date | string = new Date
   if (!unit.operator || unit.operator.status !== "approved") {
     blockers.push("Operator not approved");
   }
-  if (unit.operator?.approvalExpiresAt && unit.operator.approvalExpiresAt < latestCheckout) {
+  if (!unit.operator?.approvalExpiresAt || unit.operator.approvalExpiresAt < latestCheckout) {
     blockers.push("Operator approval expired");
   }
   if (!unit.operator?.cacVerified || !unit.operator?.responsiblePersonsVerified || !unit.operator?.beneficialOwnersVerified) {
@@ -241,28 +247,28 @@ export function getUnitOnboardingStatus(unit: any, now: Date | string = new Date
     blockers.push("Operator settlement/payment provider not verified");
   }
 
-  if (!unit.inspection || unit.inspection.status !== "passed" || (unit.inspection.expiresAt && unit.inspection.expiresAt < latestCheckout)) {
+  if (!unit.inspection || unit.inspection.status !== "passed" || !unit.inspection.inspectedAt || !unit.inspection.expiresAt || unit.inspection.expiresAt < latestCheckout) {
     blockers.push("Physical inspection expired or invalid");
   }
-  if (unit.inspection?.materialChangePending) {
+  if (unit.inspection && unit.inspection.materialChangePending !== false) {
     blockers.push("Material unit change pending reinspection");
   }
   if (unit.inspection && REQUIRED_INSPECTION_SCOPE.some((item) => !unit.inspection.scope?.includes(item))) {
     blockers.push("Physical inspection scope incomplete");
   }
 
-  if (!unit.managementAuthority || unit.managementAuthority.status !== "verified" || (unit.managementAuthority.expiresAt && unit.managementAuthority.expiresAt < latestCheckout)) {
+  if (!unit.managementAuthority || unit.managementAuthority.status !== "verified" || !unit.managementAuthority.verifiedAt || !unit.managementAuthority.expiresAt || unit.managementAuthority.expiresAt < latestCheckout) {
     blockers.push("Management authority missing, invalid or expired");
   }
   if (unit.managementAuthority && REQUIRED_AUTHORITY_PERMISSIONS.some((p) => !unit.managementAuthority.permissions?.includes(p))) {
     blockers.push("Management authority permissions incomplete");
   }
 
-  if (!unit.regulatory?.licensing || unit.regulatory.licensing.status !== "verified" || (unit.regulatory.licensing.expiresAt && unit.regulatory.licensing.expiresAt < latestCheckout)) {
+  if (!unit.regulatory?.licensing || unit.regulatory.licensing.status !== "verified" || !unit.regulatory.licensing.verifiedAt || !unit.regulatory.licensing.expiresAt || unit.regulatory.licensing.expiresAt < latestCheckout) {
     blockers.push("Licensing missing, invalid or expired");
   }
 
-  if (!unit.regulatory?.insurance || unit.regulatory.insurance.status !== "verified" || (unit.regulatory.insurance.expiresAt && unit.regulatory.insurance.expiresAt < latestCheckout)) {
+  if (!unit.regulatory?.insurance || unit.regulatory.insurance.status !== "verified" || !unit.regulatory.insurance.verifiedAt || !unit.regulatory.insurance.expiresAt || unit.regulatory.insurance.expiresAt < latestCheckout) {
     blockers.push("Insurance missing, invalid or expired");
   }
   if (unit.regulatory?.insurance?.publicLiabilityPerOccurrenceKobo != null && unit.regulatory.insurance.publicLiabilityPerOccurrenceKobo < 1000000000) {

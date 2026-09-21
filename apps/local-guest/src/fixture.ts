@@ -13,6 +13,7 @@ import {
   SqliteGuestContactRepository,
   UnitDiscoveryQuery,
   UnitRepository,
+  JsonUnitRepository,
   InMemorySecurityDepositAccountingRepository,
   type PaystackClient,
   type BookingContract,
@@ -36,6 +37,8 @@ export const LOCAL_GUEST_PORT = 3001;
 
 export interface LocalGuestFixtureConfig {
   readonly databasePath: string;
+  /** Optional durable pilot inventory. When set, deterministic fixture seeding is disabled. */
+  readonly inventoryPath?: string | null;
   readonly tenantId: string;
   readonly operatorId: string;
   readonly operatorName: string;
@@ -62,6 +65,7 @@ export interface LocalGuestFixtureConfig {
 
 export const DEFAULT_LOCAL_GUEST_CONFIG: LocalGuestFixtureConfig = {
   databasePath: ".scratch/local-guest/guest_fixture.sqlite",
+  inventoryPath: process.env.SHORTLET_INVENTORY_PATH ?? null,
   tenantId: "tenant-lagos-internal",
   operatorId: "op-lagos-owner-001",
   operatorName: "Eko Prime Living Ltd",
@@ -177,7 +181,7 @@ class LocalBookingContractRepository implements ContractRepository {
 export class LocalGuestEnvironment {
   readonly config: LocalGuestFixtureConfig;
   readonly clock: () => Date;
-  readonly unitRepository: UnitRepository;
+  readonly unitRepository: UnitRepository | JsonUnitRepository;
   readonly calendar: AvailabilityCalendar;
   readonly grantStore: SqliteOperatorRepresentativeGrantStore;
   readonly audit: InMemoryAuditLog;
@@ -214,7 +218,7 @@ export class LocalGuestEnvironment {
     this.livePaymentAttempts = new SqliteLivePaymentAttemptRegistry(this.interactionStore);
 
     this.grantStore = new SqliteOperatorRepresentativeGrantStore(this.config.databasePath, { clock: this.clock });
-    this.unitRepository = new UnitRepository();
+    this.unitRepository = this.config.inventoryPath ? new JsonUnitRepository(this.config.inventoryPath) : new UnitRepository();
     this.calendar = new AvailabilityCalendar({
       repository: this.unitRepository,
       store: new SqliteAvailabilityStore(this.config.databasePath, this.#database),
@@ -303,7 +307,7 @@ export class LocalGuestEnvironment {
       clock: this.clock,
     });
 
-    this.#seedUnits();
+    if (!this.config.inventoryPath) this.#seedUnits();
     this.#seedRepresentativeGrant();
   }
 

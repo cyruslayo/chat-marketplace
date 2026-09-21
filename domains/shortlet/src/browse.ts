@@ -23,11 +23,13 @@ export interface BlockedDateRange {
 
 export interface Unit {
   id: string;
+  externalListingId?: string;
   propertyId: string;
   title: string;
   location: { city: string; neighbourhood: string };
   occupancyModel: string;
   capacity: number;
+  bedrooms?: number;
   amenities: string[];
   published: boolean;
   price: {
@@ -101,9 +103,13 @@ export class StayDateRange {
 }
 
 function claimCoversCheckout(claim: any, today: string, checkout: string, acceptedStatus = "verified"): boolean {
-  return claim?.status === acceptedStatus
-    && dateKeyInLagos(claim.verifiedAt, "claim.verifiedAt") <= today
-    && dateKeyInLagos(claim.expiresAt, "claim.expiresAt") >= checkout;
+  if (claim?.status !== acceptedStatus || typeof claim.verifiedAt !== "string" || typeof claim.expiresAt !== "string") return false;
+  try {
+    return dateKeyInLagos(claim.verifiedAt, "claim.verifiedAt") <= today
+      && dateKeyInLagos(claim.expiresAt, "claim.expiresAt") >= checkout;
+  } catch {
+    return false;
+  }
 }
 
 function authorityCoversCheckout(authority: any, propertyId: string, today: string, checkout: string): boolean {
@@ -113,15 +119,32 @@ function authorityCoversCheckout(authority: any, propertyId: string, today: stri
 }
 
 function operatorIsEligible(operator: any, today: string, checkout: string): boolean {
-  return operator?.status === "approved"
+  if (operator?.status !== "approved"
+    || typeof operator.approvedAt !== "string"
+    || typeof operator.approvalExpiresAt !== "string") return false;
+  try {
+    return operator?.status === "approved"
     && ["business-name", "private-company-limited-by-shares"].includes(operator.legalForm)
     && operator.cacVerified === true
     && operator.responsiblePersonsVerified === true
     && operator.beneficialOwnersVerified === true
     && operator.paymentProviderApproved === true
     && operator.settlementAccountVerified === true
-    && dateKeyInLagos(operator.approvedAt, "operator.approvedAt") <= today
-    && dateKeyInLagos(operator.approvalExpiresAt, "operator.approvalExpiresAt") >= checkout;
+      && dateKeyInLagos(operator.approvedAt, "operator.approvedAt") <= today
+      && dateKeyInLagos(operator.approvalExpiresAt, "operator.approvalExpiresAt") >= checkout;
+  } catch {
+    return false;
+  }
+}
+
+function inspectionCoversCheckout(inspection: any, today: string, checkout: string): boolean {
+  if (inspection?.status !== "passed" || typeof inspection.inspectedAt !== "string" || typeof inspection.expiresAt !== "string") return false;
+  try {
+    return dateKeyInLagos(inspection.inspectedAt, "inspection.inspectedAt") <= today
+      && dateKeyInLagos(inspection.expiresAt, "inspection.expiresAt") >= checkout;
+  } catch {
+    return false;
+  }
 }
 
 export function isEligibleUnit(unit: any, now: Date = new Date(), dateRange?: EligibilityThrough | null): boolean {
@@ -132,9 +155,8 @@ export function isEligibleUnit(unit: any, now: Date = new Date(), dateRange?: El
     && SUPPORTED_LOCATIONS.has(unit.location?.city)
     && operatorIsEligible(unit.operator, today, checkout)
     && unit.inspection?.status === "passed"
-    && unit.inspection.materialChangePending !== true
-    && dateKeyInLagos(unit.inspection.inspectedAt, "inspection.inspectedAt") <= today
-    && dateKeyInLagos(unit.inspection.expiresAt, "inspection.expiresAt") >= checkout
+    && unit.inspection.materialChangePending === false
+    && inspectionCoversCheckout(unit.inspection, today, checkout)
     && INSPECTION_SCOPE.every((item) => unit.inspection.scope?.includes(item))
     && authorityCoversCheckout(unit.managementAuthority, unit.propertyId, today, checkout)
     && claimCoversCheckout(unit.regulatory?.licensing, today, checkout)
