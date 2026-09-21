@@ -33,6 +33,8 @@ The CSV uses NGN amounts such as `120000`, `"120,000"`, or `120000.50`. Quote am
 
 For listing photos, host each image at a public HTTPS location, then put its URL(s) in `photo_urls`, separated by `|` (for example, `https://images.example/cover.jpg|https://images.example/living-room.jpg`). The first URL is the listing cover/primary photo. A Unit may have zero photos, but the importer reports zero-photo listings for operations; no more than 12 URLs are accepted. Run the dry run first, import the corrected file, and verify the photos on Guest discovery and the Unit detail page. The importer validates URL shape and obvious internal hosts but never fetches images.
 
+Each pilot row must also include a useful plain-text `description` and an integer `bathrooms` count of at least `1`. Descriptions may contain normal paragraph breaks but not HTML, control characters, or embedded links, and are limited to 2,000 characters. Dry-run reports missing or invalid descriptions and bathroom counts before any Unit is written.
+
 The durable inventory repository is the existing `JsonUnitRepository`; no second Unit persistence system or fixture seed is used when `SHORTLET_INVENTORY_PATH` is configured. Current application state such as Guest interactions remains in SQLite.
 
 The durable Operator registry is the JSON `JsonOperatorRepository`. Existing inventory that already embeds Operators can be migrated explicitly, without creating Units or inferring authority, with:

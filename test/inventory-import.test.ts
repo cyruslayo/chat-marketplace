@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -62,10 +62,12 @@ function csvRow(overrides: Record<string, string> = {}) {
     property_id: "property-import-001",
     operator_id: "operator-pilot-001",
     title: "Bright apartment in Ikeja",
+    description: "A bright entire-place apartment with a quiet living room and reliable power.",
     city: "Lagos",
     neighbourhood: "Ikeja",
     capacity: "4",
     bedrooms: "2",
+    bathrooms: "2",
     nightly_price_ngn: "120000",
     mandatory_fees_ngn: "10000",
     refundable_security_deposit_ngn: "50000",
@@ -248,6 +250,49 @@ test("AC1/AC2/AC3/AC4 — valid imported photos preserve ordered URLs and make t
     "https://images.example/second.jpg",
   ]);
   assert.equal(repository.findById("unit-import-001")?.photoUrls[0], "https://images.example/cover.jpg");
+  assert.equal(repository.findById("unit-import-001")?.description, "A bright entire-place apartment with a quiet living room and reliable power.");
+  assert.equal(repository.findById("unit-import-001")?.bathrooms, 2);
+});
+
+test("AC1 — a Unit imports with valid description and bathroom count", () => {
+  const { repository } = setup();
+  const result = run(repository, csv([csvRow().line]));
+  assert.equal(result.invalid, 0);
+  assert.equal(repository.findById("unit-import-001")?.description, "A bright entire-place apartment with a quiet living room and reliable power.");
+  assert.equal(repository.findById("unit-import-001")?.bathrooms, 2);
+});
+
+test("AC2 — missing description fails import and does not write the Unit", () => {
+  const { repository } = setup();
+  const result = run(repository, csv([csvRow({ description: "" }).line]));
+  assert.equal(result.invalid, 1);
+  assert.match(result.errors[0]?.message ?? "", /description is required/);
+  assert.equal(repository.findById("unit-import-001"), null);
+});
+
+test("AC3 — overlong description is rejected", () => {
+  const { repository } = setup();
+  const result = run(repository, csv([csvRow({ description: "x".repeat(2001) }).line]));
+  assert.equal(result.invalid, 1);
+  assert.match(result.errors[0]?.message ?? "", /description must be at most 2000 characters/);
+});
+
+test("AC4 — unsafe description markup is rejected safely", () => {
+  for (const description of ["<script>alert(1)</script>", "See https://unsafe.example/listing"]) {
+    const { repository } = setup();
+    const result = run(repository, csv([csvRow({ description }).line]));
+    assert.equal(result.invalid, 1, description);
+    assert.equal(repository.findById("unit-import-001"), null, description);
+  }
+});
+
+test("AC6 — invalid bathroom count is rejected", () => {
+  for (const bathrooms of ["0", "1.5", "two"]) {
+    const { repository } = setup();
+    const result = run(repository, csv([csvRow({ bathrooms }).line]));
+    assert.equal(result.invalid, 1, bathrooms);
+    assert.match(result.errors[0]?.message ?? "", /bathrooms/);
+  }
 });
 
 test("AC5 — importing more than 12 photos is rejected", () => {
@@ -296,6 +341,24 @@ test("AC10 — re-importing unchanged photos is idempotent", () => {
   assert.equal(second.imported, 0);
 });
 
+test("AC9 — re-importing unchanged description and bathroom values is idempotent", () => {
+  const { repository } = setup();
+  const contents = csv([csvRow().line]);
+  assert.equal(run(repository, contents).inserted, 1);
+  const second = run(repository, contents);
+  assert.equal(second.unchanged, 1);
+  assert.equal(second.imported, 0);
+});
+
+test("AC10/AC11 — re-import updates description and bathroom count", () => {
+  const { repository } = setup();
+  run(repository, csv([csvRow().line]));
+  const result = run(repository, csv([csvRow({ description: "Updated listing copy.", bathrooms: "3" }).line]));
+  assert.equal(result.updated, 1);
+  assert.equal(repository.findById("unit-import-001")?.description, "Updated listing copy.");
+  assert.equal(repository.findById("unit-import-001")?.bathrooms, 3);
+});
+
 test("AC11 — re-import can add, remove, and reorder photos", () => {
   const { repository } = setup();
   run(repository, csv([csvRow({ photo_urls: "https://images.example/a.jpg|https://images.example/b.jpg" }).line]));
@@ -315,6 +378,52 @@ test("AC12 — imported photos survive a JSON repository restart", async () => {
     run(first as unknown as UnitRepository, csv([csvRow({ photo_urls: "https://images.example/restart.jpg" }).line]));
     const restarted = new JsonUnitRepository(file);
     assert.deepEqual(restarted.findById("unit-import-001")?.photoUrls, ["https://images.example/restart.jpg"]);
+    assert.equal(restarted.findById("unit-import-001")?.description, "A bright entire-place apartment with a quiet living room and reliable power.");
+    assert.equal(restarted.findById("unit-import-001")?.bathrooms, 2);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("AC7/AC8 — description and bathroom count survive a JSON repository restart", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "inventory-details-restart-"));
+  const file = join(directory, "units.json");
+  try {
+    const first = new JsonUnitRepository(file);
+    anchor(first as unknown as UnitRepository);
+    run(first as unknown as UnitRepository, csv([csvRow().line]));
+    const restarted = new JsonUnitRepository(file);
+    assert.equal(restarted.findById("unit-import-001")?.description, "A bright entire-place apartment with a quiet living room and reliable power.");
+    assert.equal(restarted.findById("unit-import-001")?.bathrooms, 2);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("Legacy Units load with safe missing-detail defaults and remain incomplete", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "inventory-legacy-details-"));
+  const file = join(directory, "units.json");
+  try {
+    await writeFile(file, JSON.stringify([{
+      id: "legacy-unit",
+      propertyId: "legacy-property",
+      title: "Legacy Unit",
+      location: { city: "Lagos", neighbourhood: "Ikeja" },
+      occupancyModel: "entire-place",
+      capacity: 2,
+      amenities: [],
+      photoUrls: [],
+      published: true,
+      price: { nightlyKobo: 1, refundableSecurityDepositKobo: 0, version: "legacy" },
+      operator: {},
+      inspection: null,
+      managementAuthority: null,
+      regulatory: null,
+      blockedDates: [],
+    }]));
+    const legacy = new JsonUnitRepository(file).findById("legacy-unit");
+    assert.equal(legacy?.description, "");
+    assert.equal(legacy?.bathrooms, 0);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

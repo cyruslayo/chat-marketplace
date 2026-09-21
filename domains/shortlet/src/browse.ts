@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { calculateTaxKobo } from "./quote.js";
 import { normalizePhotoUrls } from "./photo-url.js";
+import { normalizeBathroomCount, normalizeListingDescription } from "./listing-details.js";
 
 const LAGOS_TIME_ZONE = "Africa/Lagos";
 const SUPPORTED_LOCATIONS = new Set(["Lagos", "Abuja"]);
@@ -31,6 +32,8 @@ export interface Unit {
   occupancyModel: string;
   capacity: number;
   bedrooms?: number;
+  description: string;
+  bathrooms: number;
   amenities: string[];
   photoUrls: string[];
   published: boolean;
@@ -114,11 +117,20 @@ function claimCoversCheckout(claim: any, today: string, checkout: string, accept
   }
 }
 
-export type UnitInput = Omit<Unit, "photoUrls"> & { readonly photoUrls?: readonly string[] };
+export type UnitInput = Omit<Unit, "photoUrls" | "description" | "bathrooms"> & {
+  readonly description?: string;
+  readonly bathrooms?: number;
+  readonly photoUrls?: readonly string[];
+};
 export type UnitSaveInput = UnitInput | Partial<Unit>;
 
 function normalizeUnit(unit: UnitInput): Unit {
-  return { ...unit, photoUrls: normalizePhotoUrls(unit.photoUrls) };
+  return {
+    ...unit,
+    description: normalizeListingDescription(unit.description),
+    bathrooms: normalizeBathroomCount(unit.bathrooms),
+    photoUrls: normalizePhotoUrls(unit.photoUrls),
+  };
 }
 
 function authorityCoversCheckout(authority: any, propertyId: string, today: string, checkout: string): boolean {
@@ -161,6 +173,8 @@ export function isEligibleUnit(unit: any, now: Date = new Date(), dateRange?: El
   const checkout = dateRange?.checkOut ?? dateKeyInLagos(now, "now");
   return unit.published === true
     && unit.occupancyModel === "entire-place"
+    && typeof unit.description === "string" && unit.description.trim() !== ""
+    && Number.isSafeInteger(unit.bathrooms) && unit.bathrooms >= 1
     && SUPPORTED_LOCATIONS.has(unit.location?.city)
     && operatorIsEligible(unit.operator, today, checkout)
     && unit.inspection?.status === "passed"
@@ -236,7 +250,8 @@ export function toDiscoveryProjection(unit: Unit, dateRange: StayDateRange | nul
   return deepFreeze({
     id: unit.id, title: unit.title,
     location: { city: unit.location.city, neighbourhood: unit.location.neighbourhood },
-    capacity: unit.capacity, amenities: [...unit.amenities],
+    capacity: unit.capacity, bedrooms: unit.bedrooms, bathrooms: unit.bathrooms,
+    description: unit.description, amenities: [...unit.amenities],
     photoUrls: [...normalizePhotoUrls(unit.photoUrls)],
     price: {
       nightlyKobo: unit.price.nightlyKobo,
@@ -347,7 +362,9 @@ export function seedIssue01Units(repository: any): void {
     id: "unit-lagos-001", propertyId: "property-lagos-001",
     title: "Sunlit 2-bedroom apartment in Ikeja",
     location: { city: "Lagos", neighbourhood: "Ikeja" }, occupancyModel: "entire-place",
-    capacity: 4, amenities: ["wifi", "generator", "parking"], published: true,
+    capacity: 4, bedrooms: 2, bathrooms: 2,
+    description: "A bright entire-place apartment with a quiet living room and reliable power.",
+    amenities: ["wifi", "generator", "parking"], published: true,
     price: { nightlyKobo: 8500000, mandatoryFeesKobo: 1000000, refundableSecurityDepositKobo: 5000000, version: "price-1" },
     operator: {
       id: "operator-001", status: "approved", approvedAt: "2026-01-10", legalForm: "private-company-limited-by-shares",

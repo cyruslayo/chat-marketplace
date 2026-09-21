@@ -50,6 +50,8 @@ test("publication succeeds when all operator, unit, authority, inspection, licen
     location: { city: "Lagos", neighbourhood: "Ikeja GRA" },
     occupancyModel: "entire-place",
     capacity: 4,
+    description: "A bright entire-place apartment in Ikeja GRA with reliable power.",
+    bathrooms: 2,
     amenities: ["wifi", "generator"],
     price: { nightlyKobo: 9000000, mandatoryFeesKobo: 1000000, refundableSecurityDepositKobo: 5000000, version: "v1" }
   });
@@ -194,4 +196,26 @@ test("operators and staff see actionable status without raw evidence exposure", 
 
   assert.equal(status.rawCACDocuments, undefined);
   assert.equal(status.beneficialOwnerDetails, undefined);
+});
+
+test("AC12 — publication eligibility handles missing description correctly", () => {
+  const { repository } = setup();
+  seedIssue01Units(repository);
+  const unit = repository.findById("unit-lagos-001");
+  assert.ok(unit);
+  repository.save({ ...unit, description: "" });
+  const status = getUnitOnboardingStatus(repository.findById("unit-lagos-001"), new Date("2026-07-22T00:00:00Z"));
+  assert.equal(status.eligibleForPublication, false);
+  assert.match(status.blockers.join("; "), /description/i);
+});
+
+test("AC13 — publication eligibility handles missing bathroom count correctly", () => {
+  const { repository } = setup();
+  seedIssue01Units(repository);
+  const unit = repository.findById("unit-lagos-001");
+  assert.ok(unit);
+  repository.save({ ...unit, bathrooms: 0 });
+  const status = getUnitOnboardingStatus(repository.findById("unit-lagos-001"), new Date("2026-07-22T00:00:00Z"));
+  assert.equal(status.eligibleForPublication, false);
+  assert.match(status.blockers.join("; "), /bathroom/i);
 });

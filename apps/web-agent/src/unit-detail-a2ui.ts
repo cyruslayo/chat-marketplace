@@ -50,7 +50,7 @@ export function unitDetailToA2UI({
       id: "root",
       component: "Column",
       children: [
-        `${prefix}-title`, `${prefix}-location`, `${prefix}-capacity`, `${prefix}-amenities`,
+        `${prefix}-title`, `${prefix}-location`, `${prefix}-rooms`, `${prefix}-description`, `${prefix}-amenities`,
         ...(unit.photoUrls.length > 0 ? unit.photoUrls.map((_, index) => `${prefix}-photo-${index}`) : []),
         `${prefix}-stay-dates`, `${prefix}-divider`, `${prefix}-price`, `${prefix}-deposit`,
         `${prefix}-inspection`, `${prefix}-inspection-dates`, `${prefix}-authority`,
@@ -59,7 +59,8 @@ export function unitDetailToA2UI({
     },
     { id: `${prefix}-title`, component: "Text", text: unit.title, variant: "h2" },
     { id: `${prefix}-location`, component: "Text", text: `${unit.location.neighbourhood}, ${unit.location.city}` },
-    { id: `${prefix}-capacity`, component: "Text", text: `Capacity: ${unit.capacity} guests · ${unit.trust.occupancyModel}` },
+    { id: `${prefix}-rooms`, component: "Text", text: `Bedrooms: ${unit.bedrooms ?? "Not provided"} · Bathrooms: ${unit.bathrooms} · Capacity: ${unit.capacity} guests · ${unit.trust.occupancyModel}` },
+    { id: `${prefix}-description`, component: "Text", text: unit.description },
     { id: `${prefix}-amenities`, component: "Text", text: `Amenities: ${unit.amenities.join(", ")}` },
     ...unit.photoUrls.map((url, index) => ({
       id: `${prefix}-photo-${index}`,

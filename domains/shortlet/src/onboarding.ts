@@ -78,6 +78,8 @@ export interface RegisterUnitOptions {
   location: any;
   occupancyModel?: string;
   capacity: number;
+  description?: string;
+  bathrooms?: number;
   amenities?: string[];
   price: any;
   blockedDates?: any[];
@@ -91,6 +93,8 @@ export function registerUnit(repository: any, {
   location,
   occupancyModel = "entire-place",
   capacity,
+  description = "",
+  bathrooms = 0,
   amenities = [],
   price,
   blockedDates = []
@@ -103,6 +107,8 @@ export function registerUnit(repository: any, {
     location,
     occupancyModel,
     capacity,
+    description,
+    bathrooms,
     amenities,
     price,
     published: false,
@@ -233,6 +239,13 @@ export function getUnitOnboardingStatus(unit: any, now: Date | string = new Date
   const today = typeof now === "string" ? now : nowDate.toISOString().slice(0, 10);
   const latestCheckout = latestPossibleCheckoutDate(nowDate);
   const blockers: string[] = [];
+
+  if (typeof unit.description !== "string" || unit.description.trim() === "") {
+    blockers.push("Listing description missing");
+  }
+  if (!Number.isSafeInteger(unit.bathrooms) || unit.bathrooms < 1) {
+    blockers.push("Bathroom count missing or invalid");
+  }
 
   if (!unit.operator || unit.operator.status !== "approved") {
     blockers.push("Operator not approved");

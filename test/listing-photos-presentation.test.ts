@@ -18,7 +18,12 @@ function artifactWithPhotos(photoUrls: readonly string[]) {
   seedIssue01Units(repository);
   const unit = repository.findById("unit-lagos-001");
   assert.ok(unit);
-  repository.save({ ...unit, photoUrls: [...photoUrls] });
+  repository.save({
+    ...unit,
+    description: "A bright, quiet apartment with a spacious living room and reliable power.",
+    bathrooms: 2,
+    photoUrls: [...photoUrls],
+  });
   return new UnitDiscoveryQuery({
     repository,
     audit: new InMemoryAuditLog(),
@@ -84,6 +89,21 @@ test("AC16 — Unit detail presents all stored photos in order", () => {
   assert.deepEqual(images.map((image) => image.url), PHOTO_URLS);
 });
 
+test("AC14/AC15 — Unit detail presents description and bathroom count", () => {
+  const artifact = artifactWithPhotos([]);
+  const unit = artifact.facts.results[0]!;
+  const messages = unitDetailToA2UI({
+    unit,
+    checkIn: "2026-10-01",
+    checkOut: "2026-10-03",
+    surfaceId: "photo-detail-facts",
+    action: { artifactId: artifact.id, unitId: unit.id, projectionVersion: artifact.projectionVersion },
+  });
+  const text = JSON.stringify(messages);
+  assert.match(text, /A bright, quiet apartment with a spacious living room and reliable power/);
+  assert.match(text, /Bathrooms: 2/);
+});
+
 test("AC18/AC19/AC22 — conventional detail exposes the same photos with safe referrer policy and no secrets", () => {
   const artifact = artifactWithPhotos(PHOTO_URLS);
   const unit = artifact.facts.results[0]!;
@@ -95,4 +115,6 @@ test("AC18/AC19/AC22 — conventional detail exposes the same photos with safe r
   assert.match(html, /Sunlit 2-bedroom apartment in Ikeja/);
   assert.match(html, /Ikeja/);
   assert.match(html, /₦/);
+  assert.match(html, /A bright, quiet apartment with a spacious living room and reliable power/);
+  assert.match(html, /Bathrooms: 2/);
 });

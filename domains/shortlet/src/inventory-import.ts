@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { getUnitOnboardingStatus } from "./onboarding.js";
 import type { Unit } from "./browse.js";
 import { normalizePhotoUrls } from "./photo-url.js";
+import { normalizeListingDescription } from "./listing-details.js";
 
 const SUPPORTED_CITIES = new Set(["Lagos", "Abuja"]);
 const REQUIRED_HEADERS = [
@@ -17,6 +18,7 @@ export const PILOT_INVENTORY_HEADERS = Object.freeze([
   "licensing_status", "licensing_date", "licensing_expiry",
   "insurance_status", "insurance_date", "insurance_expiry", "insurance_public_liability_ngn", "insurance_annual_aggregate_ngn", "insurance_property_cover_verified",
   "cancellation_policy",
+  "description", "bathrooms",
   "photo_urls",
 ] as const);
 
@@ -264,6 +266,8 @@ function buildUnit(row: CsvRow, operator: OperatorReference): Unit {
     throw new Error("cancellation_policy must be flexible, standard, or firm");
   }
   const bedrooms = parseInteger(cell(row, "bedrooms"), "bedrooms", 0);
+  const description = normalizeListingDescription(cell(row, "description"), true);
+  const bathrooms = parseInteger(cell(row, "bathrooms"), "bathrooms", 1) ?? (() => { throw new Error("bathrooms is required"); })();
   const photoUrls = normalizePhotoUrls(splitList(cell(row, "photo_urls")));
   const priceVersion = `inventory-import-${unitId}`;
   return {
@@ -275,6 +279,8 @@ function buildUnit(row: CsvRow, operator: OperatorReference): Unit {
     occupancyModel: "entire-place",
     capacity: parseInteger(cell(row, "capacity"), "capacity", 1) ?? (() => { throw new Error("capacity is required"); })(),
     ...(bedrooms === undefined ? {} : { bedrooms }),
+    description,
+    bathrooms,
     amenities: splitList(cell(row, "amenities")),
     photoUrls,
     published: false,

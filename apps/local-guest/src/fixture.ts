@@ -395,6 +395,9 @@ export class LocalGuestEnvironment {
       location: { city: "Lagos", neighbourhood: "Old Ikoyi" },
       occupancyModel: "entire-place",
       capacity: 4,
+      bedrooms: 2,
+      bathrooms: 2,
+      description: "A bright, quiet apartment with a spacious living room and reliable power.",
       amenities: ["wifi", "24_7_power_generator", "parking", "air_conditioning", "security_guard", "swimming_pool"],
       published: true,
       price: {
@@ -442,6 +445,9 @@ export class LocalGuestEnvironment {
       location: { city: "Lagos", neighbourhood: "Lekki Phase 1" },
       occupancyModel: "entire-place",
       capacity: 2,
+      bedrooms: 1,
+      bathrooms: 1,
+      description: "A serene entire-place suite with natural light, reliable power, and a calm residential setting.",
       amenities: ["wifi", "24_7_power_generator", "air_conditioning", "security_guard"],
       published: true,
       price: {

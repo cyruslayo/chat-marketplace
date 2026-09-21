@@ -31,6 +31,9 @@ export interface DiscoveryUnitProjection {
   readonly title: string;
   readonly location: DiscoveryLocationProjection;
   readonly capacity: number;
+  readonly bedrooms?: number;
+  readonly bathrooms: number;
+  readonly description: string;
   readonly amenities: readonly string[];
   readonly photoUrls: readonly string[];
   readonly price: DiscoveryPriceProjection;
@@ -105,7 +108,7 @@ function unitComponents(
       component: "Column",
         children: [
           `${prefix}-title`, `${prefix}-location`, ...(unit.photoUrls.length > 0 ? [`${prefix}-primary-photo`] : []),
-          `${prefix}-capacity`, `${prefix}-amenities`,
+          `${prefix}-rooms`, `${prefix}-amenities`,
           `${prefix}-divider`, `${prefix}-prices`, `${prefix}-inspection`, `${prefix}-inspection-dates`,
           ...(canViewUnit ? [`${prefix}-view-button`] : []),
         ],
@@ -118,7 +121,7 @@ function unitComponents(
         url: unit.photoUrls[0]!,
         description: `Photo of ${unit.title}`,
       }] : []),
-      { id: `${prefix}-capacity`, component: "Text", text: `Capacity: ${unit.capacity} guests` },
+      { id: `${prefix}-rooms`, component: "Text", text: `Bedrooms: ${unit.bedrooms ?? "Not provided"} · Bathrooms: ${unit.bathrooms} · Capacity: ${unit.capacity} guests` },
       { id: `${prefix}-amenities`, component: "Text", text: `Amenities: ${unit.amenities.join(", ")}` },
       { id: `${prefix}-divider`, component: "Divider", axis: "horizontal" },
       {

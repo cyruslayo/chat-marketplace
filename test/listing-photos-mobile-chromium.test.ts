@@ -21,6 +21,7 @@ interface Context {
   readonly base: string;
   readonly unitId: string;
   readonly unitTitle: string;
+  readonly unitDescription: string;
   close(): Promise<void>;
 }
 
@@ -29,7 +30,8 @@ async function createContext(width: number): Promise<Context> {
   const environment = new LocalGuestEnvironment({ databasePath: join(directory, "guest.sqlite") });
   const unit = environment.unitRepository.findAll()[0];
   assert.ok(unit);
-  environment.unitRepository.save({ ...unit, photoUrls: PHOTO_URLS });
+  const unitDescription = "A bright, quiet apartment with a spacious living room, reliable power, secure parking, natural light, and room for a comfortable short stay.\n\nGuests have easy access to the surrounding neighbourhood and practical everyday amenities.";
+  environment.unitRepository.save({ ...unit, description: unitDescription, bathrooms: 2, photoUrls: PHOTO_URLS });
   const server = startLocalGuestServer({ port: 0, environment });
   const browser = await launchRealBrowser({ headless: true });
   const port = await server.listen();
@@ -45,6 +47,7 @@ async function createContext(width: number): Promise<Context> {
     base,
     unitId: unit.id,
     unitTitle: unit.title,
+    unitDescription,
     async close() {
       await tab.close();
       await browser.close();
@@ -80,10 +83,12 @@ for (const width of [320, 390]) {
       await context.tab.navigate(`${context.base}/stays/${context.unitId}`);
       await context.tab.waitForText(context.unitTitle);
       await context.tab.setOffline(true);
-      const detail = await context.tab.evaluate<{ readonly images: number; readonly referrerPolicies: string[]; readonly documentWidth: number; readonly critical: boolean }>(`(() => ({ images: document.images.length, referrerPolicies: [...document.images].map((img) => img.referrerPolicy), documentWidth: document.documentElement.scrollWidth, critical: document.body.innerText.includes(${JSON.stringify(context.unitTitle)}) && document.body.innerText.includes('Price') }))()`);
+      const detail = await context.tab.evaluate<{ readonly images: number; readonly referrerPolicies: string[]; readonly documentWidth: number; readonly critical: boolean; readonly description: boolean; readonly bathrooms: boolean }>(`(() => ({ images: document.images.length, referrerPolicies: [...document.images].map((img) => img.referrerPolicy), documentWidth: document.documentElement.scrollWidth, critical: document.body.innerText.includes(${JSON.stringify(context.unitTitle)}) && document.body.innerText.includes('Price'), description: document.body.innerText.includes(${JSON.stringify(context.unitDescription)}), bathrooms: document.body.innerText.includes('Bathrooms: 2') }))()`);
       assert.equal(detail.images, 2);
       assert.deepEqual(detail.referrerPolicies, ["no-referrer", "no-referrer"]);
       assert.equal(detail.critical, true);
+      assert.equal(detail.description, true);
+      assert.equal(detail.bathrooms, true);
       assert.ok(detail.documentWidth <= width);
     } finally {
       await context.close();
