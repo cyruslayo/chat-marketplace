@@ -19,6 +19,7 @@ export interface CardPaymentApplicationOptions {
   readonly store?: import("../../../domains/shortlet/src/guest-interaction-store.js").SqliteGuestInteractionStore | null;
   readonly guestContacts: NonNullable<CardPaymentManagerOptions["guestContacts"]>;
   readonly paystackClient?: PaystackClient;
+  readonly onConfirmedOutcome?: (outcome: { readonly outcome: "confirmed"; readonly reservation: import("../../../domains/shortlet/src/index.js").Reservation; readonly bookingContract: import("../../../domains/shortlet/src/index.js").BookingContract }) => void;
 }
 
 export class CardPaymentApplication {
@@ -26,12 +27,14 @@ export class CardPaymentApplication {
   readonly #conditionalOfferApplication: ConditionalOfferApplication;
   readonly #clock: () => Date;
   readonly #paystackClient?: PaystackClient;
+  readonly #onConfirmedOutcome?: CardPaymentApplicationOptions["onConfirmedOutcome"];
 
-  constructor(manager: CardPaymentManager, conditionalOfferApplication: ConditionalOfferApplication, clock: () => Date, paystackClient?: PaystackClient) {
+  constructor(manager: CardPaymentManager, conditionalOfferApplication: ConditionalOfferApplication, clock: () => Date, paystackClient?: PaystackClient, onConfirmedOutcome?: CardPaymentApplicationOptions["onConfirmedOutcome"]) {
     this.manager = manager;
     this.#conditionalOfferApplication = conditionalOfferApplication;
     this.#clock = clock;
     this.#paystackClient = paystackClient;
+    this.#onConfirmedOutcome = onConfirmedOutcome;
   }
 
   getArtifact(offerId: string, viewer: CommandPrincipal): CardPaymentArtifact {
@@ -52,7 +55,9 @@ export class CardPaymentApplication {
     const session = this.manager.getCheckoutSessionByReference(pspReference);
     if (!session) throw new Error("Unknown PSP reference");
     const envelope = createPlatformCommandEnvelope({ commandName: "card_payment.verify_and_confirm", principal: trustedServerPrincipal, payload: { offerId: session.offerId, pspReference } });
-    return this.manager.verifyAndConfirmCardPayment(envelope, { clock: this.#clock });
+    const outcome = this.manager.verifyAndConfirmCardPayment(envelope, { clock: this.#clock });
+    if (outcome.outcome === "confirmed") this.#onConfirmedOutcome?.(outcome);
+    return outcome;
   }
 
   async initializePaystackCheckout(offerId: string, trustedPayerPrincipal: CommandPrincipal, providerOverride?: PaystackClient): Promise<CardCheckoutSession> {
@@ -83,14 +88,16 @@ export class CardPaymentApplication {
     if (!session) throw new Error("Unknown PSP reference");
     const result: PSPVerifyResult = await paystackClient.verifyTransaction(pspReference);
     const envelope = createPlatformCommandEnvelope({ commandName: "card_payment.verify_and_confirm", principal: trustedServerPrincipal, payload: { offerId: session.offerId, pspReference } });
-    return this.manager.verifyAndConfirmCardPaymentWithProviderResult(envelope, result, { clock: this.#clock });
+    const outcome = this.manager.verifyAndConfirmCardPaymentWithProviderResult(envelope, result, { clock: this.#clock });
+    if (outcome.outcome === "confirmed") this.#onConfirmedOutcome?.(outcome);
+    return outcome;
   }
 }
 
 export function createCardPaymentApplication(options: CardPaymentApplicationOptions): CardPaymentApplication {
   if (!options.bookingState?.saveBookingAtomically || !options.bookingState.removeBookingAtomically) throw new Error("Atomic BookingState authority is required");
   if (!options.guestContacts) throw new Error("Guest contact source is required");
-  const { conditionalOfferApplication, clock = () => new Date(), ...dependencies } = options;
+  const { conditionalOfferApplication, clock = () => new Date(), onConfirmedOutcome, ...dependencies } = options;
   const { paystackClient, ...managerDependencies } = dependencies;
-  return new CardPaymentApplication(new CardPaymentManager({ ...managerDependencies, offerManager: conditionalOfferApplication.manager }), conditionalOfferApplication, clock, paystackClient);
+  return new CardPaymentApplication(new CardPaymentManager({ ...managerDependencies, offerManager: conditionalOfferApplication.manager }), conditionalOfferApplication, clock, paystackClient, onConfirmedOutcome);
 }

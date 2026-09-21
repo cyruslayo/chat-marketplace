@@ -309,6 +309,7 @@ export class LocalGuestEnvironment {
       } }),
       bookingState,
       clock: this.clock,
+      onConfirmedOutcome: (outcome) => this.contractRepository.recordConfirmedOutcome(outcome.reservation, outcome.bookingContract),
       ...(this.config.paystackClient === undefined ? {} : { paystackClient: this.config.paystackClient }),
     });
 

@@ -639,6 +639,19 @@ export class LocalGuestApp {
         };
       }
       if (projection.activeStage === PAYMENT_STAGE && projection.offerId) {
+        const snapshot = environment.interactionStore.findBookingSnapshotByOfferId(projection.offerId);
+        if (snapshot) {
+          try {
+            const contract = JSON.parse(snapshot.contractJson) as { readonly contractId: string };
+            const bookingSurfaceId = `thread-${thread.threadId}:booking:${contract.contractId}`;
+            const contractArtifact = environment.contractApp.getArtifact(contract.contractId, environment.guestPrincipal());
+            thread.activeSurfaces.delete(PAYMENT_STAGE);
+            thread.activeSurfaces.set(BOOKING_STAGE, bookingSurfaceId);
+            return { surfaceId: bookingSurfaceId, mode: "focused-surface", summary: "Reservation confirmed", conventionalRoute: conventionalBookingContractRoute(contract.contractId), textFallback: `Reservation confirmed for ${contractArtifact.facts.checkIn} to ${contractArtifact.facts.checkOut}. Reservation reference: ${contractArtifact.facts.reservationId}.`, a2uiMessages: bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: bookingSurfaceId }) };
+          } catch {
+            // Keep the payment surface until the durable Contract can be read.
+          }
+        }
         const artifact = environment.cardPaymentApp.getArtifact(projection.offerId, environment.guestPrincipal());
         if (artifact.facts.status === "confirmed") {
           const snapshot = environment.interactionStore.findBookingSnapshotByOfferId(projection.offerId);
@@ -1071,7 +1084,32 @@ export class LocalGuestApp {
     };
   }
 
+  #confirmedBookingSurface(thread: GuestThreadState): GuestSurfacePayload | null {
+    if (!thread.offerId) return null;
+    const snapshot = this.#environment.interactionStore.findBookingSnapshotByOfferId(thread.offerId);
+    if (!snapshot) return null;
+    try {
+      const contract = JSON.parse(snapshot.contractJson) as { readonly contractId: string };
+      const bookingSurfaceId = `thread-${thread.threadId}:booking:${contract.contractId}`;
+      const contractArtifact = this.#environment.contractApp.getArtifact(contract.contractId, this.#environment.guestPrincipal());
+      this.#supersede(thread, PAYMENT_STAGE);
+      thread.activeSurfaces.set(BOOKING_STAGE, bookingSurfaceId);
+      return {
+        surfaceId: bookingSurfaceId,
+        mode: "focused-surface",
+        summary: "Reservation confirmed",
+        conventionalRoute: conventionalBookingContractRoute(contract.contractId),
+        textFallback: `Reservation confirmed for ${contractArtifact.facts.checkIn} to ${contractArtifact.facts.checkOut}. Reservation reference: ${contractArtifact.facts.reservationId}.`,
+        a2uiMessages: bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: bookingSurfaceId }),
+      };
+    } catch {
+      return null;
+    }
+  }
+
   #refreshWorkflow(thread: GuestThreadState): GuestTurnResult | null {
+    const confirmedSurface = this.#confirmedBookingSurface(thread);
+    if (confirmedSurface) return { ok: true, messages: [], surfaces: [confirmedSurface] };
     if (thread.offerId && thread.activeSurfaces.has(OFFER_STAGE)) {
       const offer = this.#environment.conditionalOfferApp.getArtifact(thread.offerId, this.#environment.guestPrincipal());
       if (offer.facts.status === "expired") {
@@ -1094,6 +1132,30 @@ export class LocalGuestApp {
       }
     }
     if (thread.offerId && thread.activeSurfaces.has(PAYMENT_STAGE)) {
+      const snapshot = this.#environment.interactionStore.findBookingSnapshotByOfferId(thread.offerId);
+      if (snapshot) {
+        try {
+          const contract = JSON.parse(snapshot.contractJson) as { readonly contractId: string };
+          const bookingSurfaceId = `thread-${thread.threadId}:booking:${contract.contractId}`;
+          const contractArtifact = this.#environment.contractApp.getArtifact(contract.contractId, this.#environment.guestPrincipal());
+          this.#supersede(thread, PAYMENT_STAGE);
+          thread.activeSurfaces.set(BOOKING_STAGE, bookingSurfaceId);
+          return {
+            ok: true,
+            messages: [],
+            surfaces: [{
+              surfaceId: bookingSurfaceId,
+              mode: "focused-surface",
+              summary: "Reservation confirmed",
+              conventionalRoute: conventionalBookingContractRoute(contract.contractId),
+              textFallback: `Reservation confirmed for ${contractArtifact.facts.checkIn} to ${contractArtifact.facts.checkOut}. Reservation reference: ${contractArtifact.facts.reservationId}.`,
+              a2uiMessages: bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: bookingSurfaceId }),
+            }],
+          };
+        } catch {
+          // Keep the payment surface until the durable Contract can be read.
+        }
+      }
       const payment = this.#environment.cardPaymentApp.getArtifact(thread.offerId, this.#environment.guestPrincipal());
       if (payment.facts.status === "expired") {
         const surfaceId = `thread-${thread.threadId}:payment:expired:${thread.offerId}`;
@@ -1215,7 +1277,6 @@ export class LocalGuestApp {
         this.#emitTransition(thread, "payment.verified", { aggregateType: "payment", aggregateId: thread.offerId, nextState: "deposit_required", surfaceId });
         return { ok: true, messages: ["Payment verified for the stay. A separate Refundable Security Deposit payment is required before a Reservation can exist."], surfaces: [this.#paymentSurface(thread, artifact, "Refundable Security Deposit payment required", surfaceId)] };
       }
-      environment.contractRepository.recordConfirmedOutcome(outcome.reservation, outcome.bookingContract);
       const contractArtifact = environment.contractApp.getArtifact(outcome.bookingContract.contractId, environment.guestPrincipal());
       const bookingSurfaceId = `thread-${thread.threadId}:booking:${outcome.bookingContract.contractId}`;
       this.#supersede(thread, PAYMENT_STAGE);

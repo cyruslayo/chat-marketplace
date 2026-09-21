@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -7,7 +8,7 @@ import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { loadPilotConfiguration } from "../apps/pilot/src/pilot-config.js";
 import { startPilotServer } from "../apps/pilot/src/pilot-server.js";
 import { createPlatformCommandEnvelope } from "../packages/platform-core/src/index.js";
-import { SqliteOperatorRepresentativeGrantStore, SqliteOperatorSessionAuthority, type PaystackClient, type Unit } from "../domains/shortlet/src/index.js";
+import { DirectPaystackClient, SqliteOperatorRepresentativeGrantStore, SqliteOperatorSessionAuthority, type PaystackClient, type PaystackHttpFetcher, type Unit } from "../domains/shortlet/src/index.js";
 
 const PUBLIC_ORIGIN = "https://pilot.example.com";
 
@@ -17,12 +18,14 @@ interface ProductionFixture {
   readonly paystack: PaystackClient;
 }
 
-async function productionFixture(): Promise<ProductionFixture> {
+async function productionFixture(options: { readonly noDeposit?: boolean } = {}): Promise<ProductionFixture> {
   const directory = await mkdtemp(join(tmpdir(), "shortlet-pilot-composition-"));
   const source = new LocalGuestEnvironment({ databasePath: join(directory, "source.sqlite") });
   const units = source.unitRepository.findAll() as Unit[];
   source.close();
-  const unit = units[0]!;
+  const unit = options.noDeposit
+    ? { ...units[0]!, price: { ...units[0]!.price, refundableSecurityDepositKobo: 0 } }
+    : units[0]!;
   const operator = {
     id: unit.operator.id,
     tenantId: "tenant-pilot",
@@ -33,7 +36,7 @@ async function productionFixture(): Promise<ProductionFixture> {
   };
   const inventoryPath = join(directory, "inventory.json");
   const operatorsPath = join(directory, "operators.json");
-  await writeFile(inventoryPath, JSON.stringify(units), "utf8");
+  await writeFile(inventoryPath, JSON.stringify([unit]), "utf8");
   await writeFile(operatorsPath, JSON.stringify([operator]), "utf8");
   const configuration = loadPilotConfiguration({
     SHORTLET_PUBLIC_ORIGIN: PUBLIC_ORIGIN,
@@ -50,6 +53,58 @@ async function productionFixture(): Promise<ProductionFixture> {
     verifyWebhookSignature: () => false,
   };
   return { directory, configuration, paystack };
+}
+
+function cookieFromSetCookie(response: Response): string {
+  const value = response.headers.get("set-cookie");
+  assert.ok(value);
+  return value.split(";", 1)[0]!;
+}
+
+function operatorCookie(response: Response): string {
+  const value = response.headers.get("set-cookie");
+  assert.ok(value);
+  return value.split(",").map((part) => part.trim().split(";", 1)[0]).join("; ");
+}
+
+function surfaceAction(body: unknown, label: string): { readonly surfaceId: string; readonly name: string; readonly context: Record<string, unknown>; readonly sourceComponentId: string } {
+  assert.ok(body !== null && typeof body === "object");
+  const surfaces = (body as { surfaces?: unknown }).surfaces;
+  assert.ok(Array.isArray(surfaces) && surfaces.length > 0);
+  const surface = surfaces.at(-1);
+  assert.ok(surface !== null && typeof surface === "object");
+  const record = surface as { surfaceId?: unknown; a2uiMessages?: unknown };
+  assert.equal(typeof record.surfaceId, "string");
+  assert.ok(Array.isArray(record.a2uiMessages));
+  for (const message of record.a2uiMessages) {
+    if (message === null || typeof message !== "object") continue;
+    const update = (message as { updateComponents?: { components?: unknown } }).updateComponents;
+    if (!update || !Array.isArray(update.components)) continue;
+    const components = update.components.filter((component): component is Record<string, unknown> => component !== null && typeof component === "object");
+    const textById = new Map(components.filter((component) => component.component === "Text" && typeof component.id === "string").map((component) => [component.id as string, typeof component.text === "string" ? component.text : ""]));
+    const button = components.find((component) => component.component === "Button" && typeof component.id === "string" && typeof component.child === "string" && (textById.get(component.child) ?? "").includes(label));
+    const event = button?.action;
+    if (!button || event === null || typeof event !== "object") continue;
+    const eventValue = (event as { event?: unknown }).event;
+    if (eventValue === null || typeof eventValue !== "object") continue;
+    const name = (eventValue as { name?: unknown }).name;
+    const context = (eventValue as { context?: unknown }).context;
+    if (typeof name === "string" && context !== null && typeof context === "object" && !Array.isArray(context)) {
+      return { surfaceId: record.surfaceId as string, name, context: context as Record<string, unknown>, sourceComponentId: button.id as string };
+    }
+  }
+  throw new Error(`A2UI action not found: ${label}`);
+}
+
+async function postJson(base: string, path: string, cookie: string, body: unknown, origin = PUBLIC_ORIGIN): Promise<{ status: number; body: Record<string, unknown> }> {
+  const response = await fetch(`${base}${path}`, { method: "POST", headers: { cookie: cookie, origin, "content-type": "application/json" }, body: JSON.stringify(body) });
+  return { status: response.status, body: await response.json() as Record<string, unknown> };
+}
+
+async function guestEvent(base: string, cookie: string, threadId: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const result = await postJson(base, "/api/event", cookie, { threadId, ...body });
+  assert.equal(result.status, 200);
+  return result.body;
 }
 
 async function jsonResponse(response: Response): Promise<Record<string, unknown>> {
@@ -116,6 +171,126 @@ test("Production composition uses one live runtime clock across Guest and Operat
   } finally {
     await server.close();
     await rm(fixture.directory, { recursive: true, force: true });
+  }
+});
+
+test("Production callback HTTP completion rehydrates the confirmed Reservation and Contract", async () => {
+  const fixture = await productionFixture({ noDeposit: true });
+  const clock = () => new Date("2026-09-21T10:00:00.000Z");
+  const actorId = "production-session-actor";
+  const grants = new SqliteOperatorRepresentativeGrantStore(fixture.configuration.databasePath, { clock });
+  grants.createGrant(createPlatformCommandEnvelope({
+    commandName: "operator_representative.grant",
+    principal: { id: "pilot-admin", role: "admin", tenantId: fixture.configuration.tenantId },
+    payload: {
+      actorId,
+      operatorId: fixture.configuration.operatorId,
+      expiresAtIso: "2027-01-01T00:00:00Z",
+      responsiblePersonVerifiedAtIso: "2026-01-01T00:00:00Z",
+      verificationReference: "pilot-callback-regression",
+    },
+    idempotencyKey: "pilot-callback-regression-grant",
+  }));
+  const sessions = new SqliteOperatorSessionAuthority(fixture.configuration.databasePath, { clock });
+  const operatorToken = sessions.provisionAccessToken({ actorId, tenantId: fixture.configuration.tenantId, representativeAuthorized: true }).token;
+  sessions.close();
+  grants.close();
+
+  let initializedReference = "";
+  let initializedAmount = 0;
+  let initializedPayerId = "";
+  const fetcher: PaystackHttpFetcher = async (url, init) => {
+    if (init.method === "POST") {
+      const body = JSON.parse(init.body ?? "{}") as { reference?: string; amount?: number; metadata?: string };
+      initializedReference = body.reference ?? "";
+      initializedAmount = body.amount ?? 0;
+      initializedPayerId = typeof body.metadata === "string" ? ((JSON.parse(body.metadata) as { shortlet_guest_id?: string }).shortlet_guest_id ?? "") : "";
+      return { status: 200, async json() { return { status: true, data: { authorization_url: "https://checkout.paystack.com/callback-regression", reference: initializedReference } }; } };
+    }
+    return {
+      status: 200,
+      async json() {
+        return { status: true, data: { reference: initializedReference, amount: initializedAmount, currency: "NGN", status: "success", domain: "live", metadata: JSON.stringify({ shortlet_guest_id: initializedPayerId }) } };
+      },
+    };
+  };
+  const provider = new DirectPaystackClient(fixture.configuration.paystack, fetcher);
+  const server = startPilotServer({ port: 0, configuration: fixture.configuration, paystackClient: provider, clock });
+  try {
+    const port = await server.listen();
+    const base = `http://127.0.0.1:${port}`;
+    const guestHome = await fetch(`${base}/`);
+    const guestCookie = cookieFromSetCookie(guestHome);
+    const phone = await fetch(`${base}/guest/contact/phone`, { method: "POST", headers: { cookie: guestCookie, origin: PUBLIC_ORIGIN, "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ phoneNumber: "+2348090001111", expectedRevision: "0" }), redirect: "manual" });
+    assert.equal(phone.status, 303);
+    const threadId = `g-${crypto.randomUUID()}`;
+    let turn = await postJson(base, "/api/turn", guestCookie, { threadId, text: "I need an apartment in Lagos for 2 nights for 2 people" });
+    assert.equal(turn.status, 200);
+    let action = surfaceAction(turn.body, "View Unit");
+    turn.body = await guestEvent(base, guestCookie, threadId, action);
+    action = surfaceAction(turn.body, "Request to Book");
+    turn.body = await guestEvent(base, guestCookie, threadId, action);
+    action = surfaceAction(turn.body, "Review Request");
+    turn.body = await guestEvent(base, guestCookie, threadId, action);
+    action = surfaceAction(turn.body, "Submit Booking Request");
+    turn.body = await guestEvent(base, guestCookie, threadId, action);
+
+    const login = await fetch(`${base}/operator/login`, { method: "POST", headers: { origin: PUBLIC_ORIGIN }, body: new URLSearchParams({ token: operatorToken }), redirect: "manual", signal: AbortSignal.timeout(10000) });
+    assert.equal(login.status, 302);
+    const operatorCookieHeader = operatorCookie(login);
+    const requestDatabase = new (await import("node:sqlite")).DatabaseSync(fixture.configuration.databasePath);
+    const requestId = (requestDatabase.prepare("SELECT request_id FROM guest_booking_requests ORDER BY request_id DESC LIMIT 1").get() as { request_id: string }).request_id;
+    requestDatabase.close();
+    const requestPath = `/operator/requests/${encodeURIComponent(requestId)}`;
+    const confirmed = await fetch(`${base}${requestPath}/confirm`, { method: "POST", headers: { cookie: operatorCookieHeader, origin: PUBLIC_ORIGIN }, redirect: "manual" });
+    assert.equal(confirmed.status, 303);
+
+    const afterConfirmation = await fetch(`${base}/api/state?threadId=${encodeURIComponent(threadId)}`, { headers: { cookie: guestCookie } });
+    const offerState = await afterConfirmation.json() as Record<string, unknown>;
+    action = surfaceAction(offerState, "Accept");
+    const accepted = await guestEvent(base, guestCookie, threadId, action);
+    const acceptedAction = surfaceAction(accepted, "Start secure checkout");
+    assert.equal(acceptedAction.name, "shortlet.card-payment.initialize-checkout");
+    const email = await fetch(`${base}/guest/contact/email`, { method: "POST", headers: { cookie: guestCookie, origin: PUBLIC_ORIGIN, "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ contactEmail: "callback.regression@example.test", expectedRevision: "1" }), redirect: "manual" });
+    assert.equal(email.status, 303);
+
+    const paymentState = await fetch(`${base}/api/state?threadId=${encodeURIComponent(threadId)}`, { headers: { cookie: guestCookie } });
+    const paymentProjection = await paymentState.json() as { surfaces?: readonly { conventionalRoute?: string }[] };
+    const paymentRoute = paymentProjection.surfaces?.at(-1)?.conventionalRoute;
+    assert.ok(paymentRoute?.includes("/payments/offers/"));
+    const continuation = await fetch(`${base}${paymentRoute}/continue`, { headers: { cookie: guestCookie }, redirect: "manual" });
+    assert.equal(continuation.status, 303, await continuation.text());
+    assert.equal(initializedReference !== "", true);
+
+    const callback = await fetch(`${base}/payments/paystack/callback?reference=${encodeURIComponent(initializedReference)}`, { headers: { cookie: guestCookie }, redirect: "manual" });
+    assert.equal(callback.status, 303);
+    const confirmedState = await fetch(`${base}/api/state?threadId=${encodeURIComponent(threadId)}`, { headers: { cookie: guestCookie } });
+    const confirmedProjection = await confirmedState.json() as { surfaces?: readonly { summary?: string }[] };
+    assert.equal(confirmedProjection.surfaces?.at(-1)?.summary, "Reservation confirmed");
+
+    const database = new (await import("node:sqlite")).DatabaseSync(fixture.configuration.databasePath);
+    assert.equal((database.prepare("SELECT COUNT(*) AS count FROM booking_reservations").get() as { count: number }).count, 1);
+    assert.equal((database.prepare("SELECT COUNT(*) AS count FROM booking_contracts").get() as { count: number }).count, 1);
+    database.close();
+
+    const repeated = await fetch(`${base}/payments/paystack/callback?reference=${encodeURIComponent(initializedReference)}`, { headers: { cookie: guestCookie }, redirect: "manual" });
+    assert.equal(repeated.status, 303);
+    const databaseAfterReplay = new (await import("node:sqlite")).DatabaseSync(fixture.configuration.databasePath);
+    assert.equal((databaseAfterReplay.prepare("SELECT COUNT(*) AS count FROM booking_reservations").get() as { count: number }).count, 1);
+    assert.equal((databaseAfterReplay.prepare("SELECT COUNT(*) AS count FROM booking_contracts").get() as { count: number }).count, 1);
+    databaseAfterReplay.close();
+
+    const webhookBody = JSON.stringify({ event: "charge.success", data: { reference: initializedReference } });
+    const webhookSignature = createHmac("sha512", fixture.configuration.paystack.secretKey).update(webhookBody).digest("hex");
+    const webhook = await fetch(`${base}/webhooks/paystack`, { method: "POST", headers: { "content-type": "application/json", "x-paystack-signature": webhookSignature }, body: webhookBody });
+    assert.equal(webhook.status, 200);
+    const databaseAfterWebhook = new (await import("node:sqlite")).DatabaseSync(fixture.configuration.databasePath);
+    assert.equal((databaseAfterWebhook.prepare("SELECT COUNT(*) AS count FROM booking_reservations").get() as { count: number }).count, 1);
+    assert.equal((databaseAfterWebhook.prepare("SELECT COUNT(*) AS count FROM booking_contracts").get() as { count: number }).count, 1);
+    databaseAfterWebhook.close();
+  } finally {
+    await server.close();
+    try { await rm(fixture.directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch { /* diagnostics preserve the primary failure */ }
   }
 });
 
