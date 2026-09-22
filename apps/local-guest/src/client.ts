@@ -83,6 +83,13 @@ function isSafeImageUrl(value: string): boolean {
   }
 }
 
+function safeImageResourceUrl(value: string): string | undefined {
+  if (!isSafeImageUrl(value)) return undefined;
+  const parsed = new URL(value);
+  const localBrowser = window.location.protocol === "http:" && (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost");
+  return localBrowser && parsed.hostname === "pilot-local.invalid" ? `${window.location.origin}${parsed.pathname}` : value;
+}
+
 function enhanceListingImages(mount: HTMLElement): void {
   for (const [index, image] of [...mount.querySelectorAll("img")].entries()) {
     image.referrerPolicy = "no-referrer";
@@ -293,6 +300,13 @@ function renderSurface(surface: GuestSurfacePayload): void {
     return;
   }
   enhanceListingImages(mount);
+  if (presentation.conventionalRoute) {
+    const link = document.createElement("a");
+    link.href = presentation.conventionalRoute;
+    link.className = "fallback-link";
+    link.textContent = "Continue on the standard page";
+    mount.appendChild(link);
+  }
   showReopen();
   activeWorkspace.scrollIntoView({ block: "nearest" });
   activeWorkspace.focus({ preventScroll: true });
@@ -391,7 +405,7 @@ async function sendEvent(action: { readonly name: string; readonly surfaceId: st
 
 const created = createBasicWebRuntime({
   basic: {
-    resourcePolicy: ({ kind, url }) => kind === "image" && isSafeImageUrl(url) ? url : undefined,
+    resourcePolicy: ({ kind, url }) => kind === "image" ? safeImageResourceUrl(url) : undefined,
   },
   rendering: { onServerEvent: (event) => { void sendEvent(event.message.action); } },
 });

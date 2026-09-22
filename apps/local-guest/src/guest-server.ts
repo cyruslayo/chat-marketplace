@@ -1404,7 +1404,7 @@ export function renderGuestShellHtml(): string {
     .photo-fallback { min-height: 120px; display: grid; place-items: center; padding: 18px; border-radius: 12px; background: var(--surface-soft); color: var(--text-muted); text-align: center; }
     .surface-fallback { border-left: 4px solid var(--focus); padding: 4px 0 4px 12px; }
     .surface-fallback p { margin: 0 0 10px; }
-    .fallback-link { color: var(--accent); font-weight: 700; }
+    .fallback-link { display: inline-flex; align-items: center; min-height: 44px; color: var(--accent); font-weight: 700; }
     #workspace-reopen { margin: 0 20px 14px; width: calc(100% - 40px); text-align: left; }
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
     form#composer { display: flex; align-items: flex-end; gap: 10px; padding: 12px 20px max(16px, env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: var(--surface); position: sticky; bottom: 0; z-index: 10; }
@@ -1460,12 +1460,12 @@ function readJsonBody(req: IncomingMessage): Promise<unknown> {
   });
 }
 
-export function renderConventionalUnitDetailHtml(unit: Unit): string {
+export function renderConventionalUnitDetailHtml(unit: Unit, photoUrl?: (url: string) => string): string {
   const safe = (value: string) => value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!);
   const photos = normalizePhotoUrls(unit.photoUrls);
   const photoMarkup = photos.length === 0
     ? `<p class="photo-fallback" role="status">Photos are not available for this Unit yet.</p>`
-    : `<div class="gallery" aria-label="Photos of ${safe(unit.title)}">${photos.map((url, index) => `<img src="${safe(url)}" alt="Photo ${index + 1} of ${safe(unit.title)}" loading="${index === 0 ? "eager" : "lazy"}" decoding="async" width="800" height="600" referrerpolicy="no-referrer">`).join("")}</div>`;
+    : `<div class="gallery" aria-label="Photos of ${safe(unit.title)}">${photos.map((url, index) => `<img src="${safe(photoUrl ? photoUrl(url) : url)}" alt="Photo ${index + 1} of ${safe(unit.title)}" loading="${index === 0 ? "eager" : "lazy"}" decoding="async" width="800" height="600" referrerpolicy="no-referrer">`).join("")}</div>`;
   return `<!doctype html><html lang="en-NG"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${safe(unit.title)}</title><style>*{box-sizing:border-box}body{margin:0;background:#f5f5f0;color:#1c2520;font:16px/1.5 system-ui,sans-serif}main{width:min(100% - 28px,760px);margin:0 auto;padding:24px 0 40px}h1{font-size:clamp(1.5rem,6vw,2.25rem);line-height:1.15;margin:0 0 8px}p{margin:8px 0}.muted{color:#5e6a63}.description{white-space:pre-line}.gallery{display:grid;gap:12px;margin-top:20px}.gallery img{display:block;width:100%;height:auto;aspect-ratio:4/3;object-fit:cover;border-radius:12px;background:#ecece5}.photo-fallback{display:grid;place-items:center;min-height:120px;padding:18px;border-radius:12px;background:#ecece5;color:#5e6a63;text-align:center}a{display:inline-flex;align-items:center;min-height:44px;margin-top:22px;color:#0c6b4f;font-weight:700}@media(max-width:320px){main{width:calc(100% - 16px);padding-top:16px}}</style></head><body><main><h1>${safe(unit.title)}</h1><p>${safe(unit.location.neighbourhood)}, ${safe(unit.location.city)}</p><p>Price: ${formatNgnKobo(unit.price.nightlyKobo)} per night</p><p class="muted">Bedrooms: ${unit.bedrooms ?? "Not provided"} · Bathrooms: ${unit.bathrooms} · Capacity: ${unit.capacity} guests · Entire Place</p><p class="description">${safe(unit.description)}</p>${photoMarkup}<a href="/">Continue to Request to Book</a></main></body></html>`;
 }
 
@@ -1515,6 +1515,12 @@ function browserOriginAccepted(req: IncomingMessage, publicOrigin: string | unde
   const origin = req.headers.origin;
   if (origin === undefined) return true;
   const expected = publicOrigin ?? `http://${req.headers.host ?? "localhost"}`;
+  if (origin === "null" && publicOrigin) {
+    const configured = new URL(publicOrigin);
+    return configured.protocol === "http:"
+      && (configured.hostname === "127.0.0.1" || configured.hostname === "localhost")
+      && req.headers["sec-fetch-site"] === "same-origin";
+  }
   return origin === expected;
 }
 
@@ -1670,6 +1676,11 @@ export function startLocalGuestServer(options: {
   publicOrigin?: string;
   secureCookie?: boolean;
   sessionScopedGuestPrincipals?: boolean;
+  /** Explicit local-pilot control; never enabled by production composition. */
+  localPayment?: boolean;
+  /** Explicit local-pilot photo mapping for synthetic, same-process assets. */
+  localPhotoUrl?: (url: string) => string;
+  fixtureRoutes?: boolean;
 } = {}): LocalGuestServerHandle {
   const port = options.port ?? LOCAL_GUEST_PORT;
   const rawMode = options.conciergeMode ?? process.env.CONCIERGE_MODE;
@@ -1685,6 +1696,8 @@ export function startLocalGuestServer(options: {
     return configuration ? new DirectPaystackClient(configuration) : undefined;
   })();
   const production = options.production === true;
+  const fixtureRoutes = options.fixtureRoutes ?? !production;
+  if (production && (options.localPayment || options.localPhotoUrl)) throw new Error("Production Guest composition cannot mount local pilot controls");
   const sessionScopedGuestPrincipals = options.sessionScopedGuestPrincipals === true;
   if (production && !options.publicOrigin) throw new Error("Production Guest server requires SHORTLET_PUBLIC_ORIGIN");
   const secureCookie = options.secureCookie ?? production;
@@ -1789,7 +1802,7 @@ export function startLocalGuestServer(options: {
       const unit = app.environment.unitRepository.findById(unitId);
       if (!unit || !isEligibleUnit(unit, app.environment.clock())) { res.writeHead(404, { "Content-Type": "text/plain" }); res.end("Unit not found"); return; }
       res.writeHead(200, GUEST_HTML_HEADERS);
-      res.end(renderConventionalUnitDetailHtml(unit));
+      res.end(renderConventionalUnitDetailHtml(unit, options.localPhotoUrl));
       return;
     }
 
@@ -1805,23 +1818,77 @@ export function startLocalGuestServer(options: {
       return;
     }
 
+    const paymentPageMatch = /^\/payments\/offers\/([^/]+)$/.exec(url.pathname);
+    if (req.method === "GET" && paymentPageMatch) {
+      const session = resolveBrowserSession(env, browserSessions, readGuestSession(req), sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId);
+      if (!session) { sendJson(res, 401, { ok: false, code: "AUTHENTICATION_REQUIRED" }); return; }
+      let offerId: string;
+      try { offerId = decodeURIComponent(paymentPageMatch[1]!); } catch { sendJson(res, 400, { ok: false, code: "INVALID_OFFER" }); return; }
+      try {
+        const principal: CommandPrincipal = { id: session.principalId, role: "guest", tenantId: session.tenantId };
+        const artifact = app.environment.cardPaymentApp.getArtifact(offerId, principal);
+        const label = options.localPayment ? "Continue to local demo payment" : "Continue to secure checkout";
+        res.writeHead(200, GUEST_HTML_HEADERS);
+        res.end(`<!doctype html><html lang="en-NG"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Payment continuation</title><style>body{font:16px/1.5 system-ui;margin:0;background:#f5f5f0;color:#17221c}main{max-width:560px;margin:auto;padding:32px 18px}a{display:inline-flex;align-items:center;min-height:48px;padding:0 20px;border-radius:10px;background:#0c6b4f;color:white;font-weight:700;text-decoration:none}</style></head><body><main><h1>Payment continuation</h1><p>Authoritative amount due now: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}.</p><a href="/payments/offers/${encodeURIComponent(offerId)}/continue">${label}</a></main></body></html>`);
+      } catch { sendJson(res, 404, { ok: false, code: "PAYMENT_OFFER_NOT_FOUND" }); }
+      return;
+    }
+
     const continuationMatch = /^\/payments\/offers\/([^/]+)\/continue$/.exec(url.pathname);
     if (req.method === "GET" && continuationMatch) {
       // ADR-0087: payment initialization is a server-owned continuation, not
       // a browser-selected amount, currency, reference, callback, or URL.
       const session = resolveBrowserSession(env, browserSessions, readGuestSession(req), sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId);
       if (!session) { sendJson(res, 401, { ok: false, code: "AUTHENTICATION_REQUIRED" }); return; }
-      if (!paystackClient) { sendJson(res, 503, { ok: false, code: "PAYSTACK_UNAVAILABLE" }); return; }
       let offerId: string;
       try { offerId = decodeURIComponent(continuationMatch[1]!); } catch { sendJson(res, 400, { ok: false, code: "INVALID_OFFER" }); return; }
       try {
         const principal: CommandPrincipal = { id: session.principalId, role: "guest", tenantId: session.tenantId };
+        if (options.localPayment) {
+          app.environment.cardPaymentApp.getArtifact(offerId, principal);
+          const checkout = app.environment.cardPaymentApp.manager.getCheckoutSession(offerId) ?? app.environment.cardPaymentApp.initializeCheckout(offerId, principal);
+          res.writeHead(303, { Location: `/payments/local/checkout?reference=${encodeURIComponent(checkout.pspReference)}` }); res.end();
+          return;
+        }
+        if (!paystackClient) { sendJson(res, 503, { ok: false, code: "PAYSTACK_UNAVAILABLE" }); return; }
         const checkout = await app.environment.cardPaymentApp.initializePaystackCheckout(offerId, principal, paystackClient);
         if (!isApprovedPaystackCheckoutUrl(checkout.checkoutUrl)) { sendJson(res, 502, { ok: false, code: "INVALID_CHECKOUT_URL" }); return; }
         res.writeHead(303, { Location: checkout.checkoutUrl }); res.end();
       } catch {
         sendJson(res, 400, { ok: false, code: "PAYMENT_CONTINUATION_REJECTED" });
       }
+      return;
+    }
+
+    if (options.localPayment && req.method === "GET" && url.pathname === "/payments/local/checkout") {
+      const session = resolveBrowserSession(env, browserSessions, readGuestSession(req), sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId);
+      const reference = url.searchParams.get("reference");
+      const checkout = reference ? app.environment.cardPaymentApp.manager.getCheckoutSessionByReference(reference) : null;
+      if (!session || !reference || !checkout) { sendJson(res, 400, { ok: false, code: "LOCAL_PAYMENT_INVALID" }); return; }
+      res.writeHead(200, GUEST_HTML_HEADERS);
+      res.end(`<!doctype html><html lang="en-NG"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Local demo payment</title><style>body{font:16px/1.5 system-ui;margin:0;background:#f5f5f0;color:#17221c}main{max-width:560px;margin:auto;padding:32px 18px}button{min-height:48px;padding:0 20px;border:0;border-radius:10px;background:#0c6b4f;color:white;font-weight:700}</style></head><body><main><h1>Local demo payment</h1><p>This deterministic local provider verifies the authoritative amount without collecting card details.</p><form method="post" action="/payments/local/complete"><input type="hidden" name="reference" value="${reference.replace(/[&<>'"]/g, "")}"><button type="submit">Complete local payment</button></form></main></body></html>`);
+      return;
+    }
+
+    if (options.localPayment && req.method === "POST" && url.pathname === "/payments/local/complete") {
+      if (!browserOriginAccepted(req, options.publicOrigin)) { res.writeHead(403); res.end("Origin rejected"); return; }
+      const session = resolveBrowserSession(env, browserSessions, readGuestSession(req), sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId);
+      if (!session) { sendJson(res, 401, { ok: false, code: "AUTHENTICATION_REQUIRED" }); return; }
+      const params = new URLSearchParams((await readRawBody(req)).toString("utf8"));
+      const reference = params.get("reference");
+      const checkout = reference ? app.environment.cardPaymentApp.manager.getCheckoutSessionByReference(reference) : null;
+      if (!reference || !checkout) { sendJson(res, 400, { ok: false, code: "LOCAL_PAYMENT_INVALID" }); return; }
+      const principal: CommandPrincipal = { id: session.principalId, role: "guest", tenantId: session.tenantId };
+      try {
+        const offer = app.environment.conditionalOfferApp.manager.getOffer(checkout.offerId);
+        const expectedPayerId = offer.parties.distinctPayer?.id ?? offer.parties.primaryGuest.id;
+        if (!principal.id || principal.id !== expectedPayerId || !principal.tenantId || principal.tenantId !== offer.tenantId) throw new Error("Local payment is not authorized for this Guest");
+        app.environment.cardPaymentApp.getArtifact(checkout.offerId, principal);
+        const threadId = findGuestThreadForOffer(app.environment, checkout.offerId, principal);
+        if (!threadId) throw new Error("Local payment thread is unavailable");
+        app.environment.cardPaymentApp.verifyAndConfirm(reference, app.environment.systemPrincipal());
+        res.writeHead(303, { Location: `/?threadId=${encodeURIComponent(threadId)}` }); res.end();
+      } catch { sendJson(res, 400, { ok: false, code: "LOCAL_PAYMENT_REJECTED" }); }
       return;
     }
 
@@ -1936,11 +2003,11 @@ export function startLocalGuestServer(options: {
       return;
     }
 
-    if (req.method === "POST" && (url.pathname === "/api/turn" || url.pathname === "/api/event" || (!production && url.pathname === "/api/reset"))) {
+    if (req.method === "POST" && (url.pathname === "/api/turn" || url.pathname === "/api/event" || (fixtureRoutes && url.pathname === "/api/reset"))) {
       if (!browserOriginAccepted(req, options.publicOrigin)) { res.writeHead(403); res.end("Origin rejected"); return; }
       try {
         const body = await readJsonBody(req);
-        if (url.pathname === "/api/reset") {
+        if (fixtureRoutes && url.pathname === "/api/reset") {
           app.reset();
           browserSessions.clear();
           sendJson(res, 200, { ok: true });

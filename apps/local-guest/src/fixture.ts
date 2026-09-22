@@ -64,6 +64,8 @@ export interface LocalGuestFixtureConfig {
   /** Production composition disables the deterministic PSP and requires Paystack. */
   readonly production?: boolean;
   readonly deterministicPsp?: boolean;
+  /** Composition control: local pilot authority is bootstrapped separately. */
+  readonly seedRepresentativeGrant?: boolean;
 }
 
 export const DEFAULT_LOCAL_GUEST_CONFIG: LocalGuestFixtureConfig = {
@@ -84,6 +86,7 @@ export const DEFAULT_LOCAL_GUEST_CONFIG: LocalGuestFixtureConfig = {
   demoCheckOut: "2026-09-13",
   production: false,
   deterministicPsp: true,
+  seedRepresentativeGrant: true,
 };
 
 const INSPECTION_SCOPE = [
@@ -319,7 +322,7 @@ export class LocalGuestEnvironment {
     });
 
     if (!this.config.inventoryPath) this.#seedUnits();
-    if (!this.config.production) this.#seedRepresentativeGrant();
+    if (!this.config.production && this.config.seedRepresentativeGrant !== false) this.#seedRepresentativeGrant();
   }
 
   guestPrincipal(): CommandPrincipal {

@@ -8604,6 +8604,12 @@ Known schemas:
       return false;
     }
   }
+  function safeImageResourceUrl(value) {
+    if (!isSafeImageUrl(value)) return void 0;
+    const parsed = new URL(value);
+    const localBrowser = window.location.protocol === "http:" && (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost");
+    return localBrowser && parsed.hostname === "pilot-local.invalid" ? `${window.location.origin}${parsed.pathname}` : value;
+  }
   function enhanceListingImages(mount) {
     for (const [index, image] of [...mount.querySelectorAll("img")].entries()) {
       image.referrerPolicy = "no-referrer";
@@ -8794,6 +8800,13 @@ Known schemas:
       return;
     }
     enhanceListingImages(mount);
+    if (presentation.conventionalRoute) {
+      const link = document.createElement("a");
+      link.href = presentation.conventionalRoute;
+      link.className = "fallback-link";
+      link.textContent = "Continue on the standard page";
+      mount.appendChild(link);
+    }
     showReopen();
     activeWorkspace.scrollIntoView({ block: "nearest" });
     activeWorkspace.focus({ preventScroll: true });
@@ -8890,7 +8903,7 @@ Known schemas:
   }
   var created = createBasicWebRuntime({
     basic: {
-      resourcePolicy: ({ kind, url }) => kind === "image" && isSafeImageUrl(url) ? url : void 0
+      resourcePolicy: ({ kind, url }) => kind === "image" ? safeImageResourceUrl(url) : void 0
     },
     rendering: { onServerEvent: (event) => {
       void sendEvent(event.message.action);
