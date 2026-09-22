@@ -25,7 +25,8 @@ function syntheticPhoto(name: string): string {
   const bedroom = name.includes("bedroom");
   const background = abuja ? "#d8c7aa" : "#b8c8bb";
   const accent = abuja ? "#8c5838" : "#315c4b";
-  const label = `${abuja ? "Wuse 2, Abuja" : "Old Ikoyi, Lagos"} — ${bedroom ? "Bedroom" : "Living room"}`;
+  const area = abuja ? "Wuse 2, Abuja" : name.startsWith("lekki") ? "Lekki Phase 1, Lagos" : "Old Ikoyi, Lagos";
+  const label = `${area} — ${bedroom ? "Bedroom" : "Living room"}`;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900"><rect width="1200" height="900" fill="${background}"/><rect x="85" y="105" width="1030" height="650" rx="28" fill="#f8f4ea"/><rect x="145" y="180" width="430" height="400" rx="18" fill="${accent}" opacity=".82"/><rect x="635" y="210" width="390" height="250" rx="18" fill="#e4d7c4"/><circle cx="830" cy="585" r="92" fill="${accent}" opacity=".45"/><text x="600" y="820" text-anchor="middle" font-family="system-ui,sans-serif" font-size="42" fill="#26352e">${label}</text></svg>`;
 }
 

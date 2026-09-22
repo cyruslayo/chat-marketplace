@@ -10,6 +10,7 @@ import { SqliteOperatorRepresentativeGrantStore } from "../domains/shortlet/src/
 import { startLocalPilotServer } from "../apps/pilot/src/local-pilot-server.js";
 import { bootstrapLocalPilot, issueLocalOperatorToken, localPilotPaths, resetLocalPilot } from "../apps/pilot/src/local-pilot.js";
 import { startLocalGuestServer } from "../apps/local-guest/src/guest-server.js";
+import { formatNgnKobo } from "../apps/web-agent/src/index.js";
 import type { PaystackClient } from "../domains/shortlet/src/index.js";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { launchRealBrowser, type RealBrowserInstance, type RealBrowserTab } from "./helpers/chrome-devtools.js";
@@ -18,6 +19,9 @@ const PORT = 3097;
 const BASE = `http://127.0.0.1:${PORT}`;
 let surfaceProof: { guest: number; operator: number; health: boolean; abuja: boolean; lagos: boolean; photo: boolean; resetRoute: number; demoRoute: number; resetRestricted: boolean } | undefined;
 let isolationProof: { distinct: boolean; isolated: boolean } | undefined;
+let conversationalProof: { weaver: boolean; unitIdMatches: boolean; priceMatches: boolean; durationPreserved: boolean; noRepeat: boolean } | undefined;
+let conflictProof: { intentional: boolean; preserved: boolean; noReset: boolean } | undefined;
+let mobileConversationalProof: { weaver: boolean; noOverflow: boolean } | undefined;
 let journeyProof: { request: number; attempt: number; reservation: number; contract: number; offer: boolean; phone: boolean; email: boolean; refresh: boolean; restart: boolean; operatorRestart: boolean } | undefined;
 let declineProof: { operatorDeclined: boolean; guestDeclined: boolean } | undefined;
 
@@ -33,6 +37,34 @@ async function fillAndSubmit(tab: RealBrowserTab, selector: string, value: strin
 async function sendPrompt(tab: RealBrowserTab, prompt: string): Promise<void> {
   await tab.waitForSelector("#composer-input");
   await tab.evaluate(`(() => { const input=document.getElementById('composer-input'); if (!(input instanceof HTMLInputElement)) throw new Error('composer missing'); input.value=${JSON.stringify(prompt)}; const form=document.getElementById('composer'); if (!(form instanceof HTMLFormElement)) throw new Error('composer form missing'); form.requestSubmit(); })()`);
+}
+
+interface InventoryUnit {
+  readonly id: string;
+  readonly title: string;
+  readonly location: { readonly city: string; readonly neighbourhood: string };
+  readonly price: { readonly nightlyKobo: number; readonly mandatoryFeesKobo?: number };
+}
+
+function authoritativeUnit(paths: ReturnType<typeof temporaryPaths>, unitId: string): InventoryUnit | undefined {
+  const units = JSON.parse(readFileSync(paths.inventoryPath, "utf8")) as readonly InventoryUnit[];
+  return units.find((unit) => unit.id === unitId);
+}
+
+/** Reads the authoritative server projection that Weaver mounted in the active workspace. */
+async function activeDiscoveryUnit(tab: RealBrowserTab, threadId: string): Promise<{ readonly unitId: string; readonly artifactId: string }> {
+  const components = await tab.evaluate<readonly { readonly component?: string; readonly action?: { readonly event?: { readonly name?: string; readonly context?: Record<string, unknown> } } }[]>(`fetch(${JSON.stringify(`/api/state?threadId=${encodeURIComponent(threadId)}`)}, { credentials: 'include' }).then((response) => response.json()).then((state) => (state.surfaces?.[0]?.a2uiMessages ?? []).filter((message) => message.updateComponents).flatMap((message) => message.updateComponents.components))`);
+  const button = components.find((component) => component.component === "Button" && component.action?.event?.name === "shortlet.discovery.view-unit");
+  assert.ok(button, "the active discovery surface exposes a Weaver-generated View Unit action");
+  const context = button!.action!.event!.context as { readonly unitId?: unknown; readonly artifactId?: unknown };
+  assert.equal(typeof context.unitId, "string");
+  return { unitId: context.unitId as string, artifactId: String(context.artifactId) };
+}
+
+async function threadIdOf(tab: RealBrowserTab): Promise<string> {
+  const threadId = await tab.evaluate<string>("sessionStorage.getItem('shortlet-concierge-thread') || ''");
+  assert.match(threadId, /^g-/);
+  return threadId;
 }
 
 async function clickActiveButton(tab: RealBrowserTab, label: string): Promise<void> {
@@ -96,7 +128,7 @@ async function operatorLoginAndDecision(tab: RealBrowserTab, token: string, deci
 
 test("AC1 — npm run pilot:local:bootstrap creates a usable local environment", () => {
   const paths = temporaryPaths();
-  try { assert.deepEqual([...bootstrapLocalPilot(paths).unitIds].sort(), ["unit-local-abuja-wuse2", "unit-local-lagos-ikoyi"]); }
+  try { assert.deepEqual([...bootstrapLocalPilot(paths).unitIds].sort(), ["unit-local-abuja-wuse2", "unit-local-lagos-ikoyi", "unit-local-lagos-lekki"]); }
   finally { rmSync(paths.directory, { recursive: true, force: true }); }
 });
 
@@ -231,6 +263,109 @@ test("Operator decline real-browser proof", async () => {
 });
 test("AC24 — Operator can decline a separate Booking Request", () => { assert.equal(declineProof?.operatorDeclined, true); });
 test("AC25 — Guest sees decline result", () => { assert.equal(declineProof?.guestDeclined, true); });
+
+test("Exact screenshot conversation — Lagos → 2 nights and 2 guests → Lekki renders an authoritative Weaver result", async () => {
+  const paths = temporaryPaths(); bootstrapLocalPilot(paths); const server = startLocalPilotServer({ port: PORT, paths }); const browser = await launchRealBrowser();
+  try {
+    await server.listen();
+    const guest = await browser.createTab(`${BASE}/`);
+    await guest.waitForSelector("#composer-input");
+
+    await sendPrompt(guest, "Lagos");
+    await guest.waitForText("how many guests are staying", 15000);
+    await sendPrompt(guest, "2 nights and 2 guests");
+    await guest.waitForText("Old Ikoyi", 15000);
+    await sendPrompt(guest, "Lekki");
+    await guest.waitForText("Lekki Phase 1", 15000);
+    await guest.waitForText("1 eligible Unit found", 15000);
+    await assertWeaverSurface(guest, "conversational Lekki discovery");
+
+    const transcript = await guest.evaluate<string>("document.getElementById('transcript').innerText");
+    const noRepeat = (transcript.match(/how many guests are staying/g) ?? []).length === 1
+      && (transcript.match(/how many nights you need/g) ?? []).length === 1;
+    assert.equal(noRepeat, true, `known constraints must not be requested again: ${transcript}`);
+    assert.equal((transcript.match(/where you want to stay/g) ?? []).length, 0);
+
+    const threadId = await threadIdOf(guest);
+    const surfaced = await activeDiscoveryUnit(guest, threadId);
+    assert.equal(surfaced.unitId, "unit-local-lagos-lekki");
+    const unit = authoritativeUnit(paths, surfaced.unitId);
+    assert.ok(unit, "the surfaced Unit must exist in authoritative inventory");
+    const expectedAllIn = unit.price.nightlyKobo * 2 + (unit.price.mandatoryFeesKobo ?? 0);
+    const workspaceText = await guest.evaluate<string>("document.getElementById('active-workspace').innerText");
+    assert.ok(workspaceText.includes(unit.title), "rendered surface shows the authoritative Unit title");
+    assert.ok(workspaceText.includes(`All-In Stay Total: ${formatNgnKobo(expectedAllIn)}`), `rendered surface shows the authoritative All-In Stay Total: ${workspaceText.slice(0, 400)}`);
+    const durationPreserved = workspaceText.includes("Stay: 2026-09-29 to 2026-10-01");
+    assert.equal(durationPreserved, true, "the accumulated two-night duration controls the stay dates");
+    conversationalProof = { weaver: true, unitIdMatches: true, priceMatches: true, durationPreserved, noRepeat };
+  } finally { await browser.close(); await server.close().catch(() => undefined); rmSync(paths.directory, { recursive: true, force: true }); }
+});
+test("AC5/AC17 — The exact screenshot conversation executes the authoritative Lekki search", () => { assert.equal(conversationalProof?.unitIdMatches, true); });
+test("AC6 — The completed search renders through A2UI and Weaver", () => { assert.equal(conversationalProof?.weaver, true); });
+test("AC7 — The screenshot conversation never repeats a known request", () => { assert.equal(conversationalProof?.noRepeat, true); });
+test("AC9/AC16 — The surfaced result matches authoritative inventory facts", () => { assert.equal(conversationalProof?.priceMatches, true); assert.equal(conversationalProof?.durationPreserved, true); });
+
+test("Conflicting Lagos/Wuse conversation clarifies intentionally and preserves nights and guests", async () => {
+  const paths = temporaryPaths(); bootstrapLocalPilot(paths); const server = startLocalPilotServer({ port: PORT, paths }); const browser = await launchRealBrowser();
+  try {
+    await server.listen();
+    const guest = await browser.createTab(`${BASE}/`);
+    await guest.waitForSelector("#composer-input");
+
+    await sendPrompt(guest, "Lagos");
+    await guest.waitForText("how many guests are staying", 15000);
+    await sendPrompt(guest, "2 nights and 2 guests");
+    await guest.waitForText("Old Ikoyi", 15000);
+    await sendPrompt(guest, "Wuse");
+    await guest.waitForText("Do you want Wuse in Abuja, or should I keep searching in Lagos?", 15000);
+    const transcript = await guest.evaluate<string>("document.getElementById('transcript').innerText");
+    const noReset = (transcript.match(/where you want to stay/g) ?? []).length === 0;
+    assert.equal(noReset, true, "the conflict must never fall back to a generic full-reset question");
+
+    await sendPrompt(guest, "Abuja");
+    await guest.waitForText("Wuse 2", 15000);
+    await assertWeaverSurface(guest, "Abuja discovery after conflict");
+    const workspaceText = await guest.evaluate<string>("document.getElementById('active-workspace').innerText");
+    const preserved = workspaceText.includes("Stay: 2026-09-29 to 2026-10-01");
+    assert.equal(preserved, true, "nights and guests survive the location conflict");
+    const surfaced = await activeDiscoveryUnit(guest, await threadIdOf(guest));
+    assert.equal(surfaced.unitId, "unit-local-abuja-wuse2");
+    conflictProof = { intentional: true, preserved, noReset };
+  } finally { await browser.close(); await server.close().catch(() => undefined); rmSync(paths.directory, { recursive: true, force: true }); }
+});
+test("AC10/AC11 — Lagos/Wuse conflict is handled intentionally without discarding prior fields", () => {
+  assert.equal(conflictProof?.intentional, true);
+  assert.equal(conflictProof?.preserved, true);
+  assert.equal(conflictProof?.noReset, true);
+});
+
+test("320px conversational discovery renders the Weaver Lekki surface without horizontal overflow", async () => {
+  const paths = temporaryPaths(); bootstrapLocalPilot(paths); const server = startLocalPilotServer({ port: PORT, paths }); const browser = await launchRealBrowser();
+  try {
+    await server.listen();
+    const guest = await browser.createTab();
+    await guest.setViewport(320, 800);
+    await guest.navigate(`${BASE}/`);
+    await guest.waitForSelector("#composer-input");
+    await sendPrompt(guest, "Lagos");
+    await guest.waitForText("how many guests are staying", 15000);
+    await sendPrompt(guest, "2 nights and 2 guests");
+    await guest.waitForText("Old Ikoyi", 15000);
+    await sendPrompt(guest, "Lekki");
+    await guest.waitForText("Lekki Phase 1", 15000);
+    await assertWeaverSurface(guest, "320px Lekki discovery");
+    const metrics = await guest.evaluate<{ readonly viewport: number; readonly document: number; readonly workspaces: number; readonly overflow: number }>("(() => { const root = document.documentElement; const active = document.getElementById('active-workspace'); return { viewport: innerWidth, document: Math.max(root.scrollWidth, document.body ? document.body.scrollWidth : 0), workspaces: document.querySelectorAll('#active-workspace').length, overflow: Math.max((active ? active.scrollWidth : 0) - (active ? active.clientWidth : 0), 0) }; })()");
+    assert.equal(metrics.viewport, 320);
+    assert.ok(metrics.document <= 320, JSON.stringify(metrics));
+    assert.equal(metrics.workspaces, 1);
+    assert.equal(metrics.overflow, 0, JSON.stringify(metrics));
+    mobileConversationalProof = { weaver: true, noOverflow: metrics.document <= 320 && metrics.overflow === 0 };
+  } finally { await browser.close(); await server.close().catch(() => undefined); rmSync(paths.directory, { recursive: true, force: true }); }
+});
+test("AC18 — 320px conversational discovery renders the resulting Weaver surface correctly", () => {
+  assert.equal(mobileConversationalProof?.weaver, true);
+  assert.equal(mobileConversationalProof?.noOverflow, true);
+});
 
 for (const width of [320, 390]) test(`AC${width === 320 ? 26 : 27} — ${width}px local pilot smoke passes`, async () => {
   const paths = temporaryPaths(); bootstrapLocalPilot(paths); const server = startLocalPilotServer({ port: PORT, paths }); const browser = await launchRealBrowser();

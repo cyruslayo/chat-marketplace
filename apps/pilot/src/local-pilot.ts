@@ -106,6 +106,7 @@ function inventoryCsv(): string {
   const rows: Array<Record<string, string | number>> = [
     { ...common, external_listing_id: "local-abuja-wuse-2", unit_id: "unit-local-abuja-wuse2", property_id: "property-local-abuja-wuse2", title: "Sunlit Two-Bedroom Retreat in Wuse 2", city: "Abuja", neighbourhood: "Wuse 2", capacity: 4, bedrooms: 2, nightly_price_ngn: 95000, mandatory_fees_ngn: 12000, refundable_security_deposit_ngn: 0, amenities: "wifi|24_7_power_generator|parking|air_conditioning|security_guard|workspace", description: "A calm, contemporary Entire Place near Wuse 2 dining, with reliable power, a generous lounge, and a dedicated workspace.", bathrooms: 2, photo_urls: `${LOCAL_PILOT_PHOTO_HOST}/photos/wuse-2-living.svg|${LOCAL_PILOT_PHOTO_HOST}/photos/wuse-2-bedroom.svg` },
     { ...common, external_listing_id: "local-lagos-ikoyi", unit_id: "unit-local-lagos-ikoyi", property_id: "property-local-lagos-ikoyi", title: "Garden Two-Bedroom Stay in Old Ikoyi", city: "Lagos", neighbourhood: "Old Ikoyi", capacity: 4, bedrooms: 2, nightly_price_ngn: 125000, mandatory_fees_ngn: 15000, refundable_security_deposit_ngn: 0, amenities: "wifi|24_7_power_generator|parking|air_conditioning|security_guard|swimming_pool", description: "A leafy Old Ikoyi Entire Place with a bright living room, dependable utilities, secure parking, and easy access to central Lagos.", bathrooms: 2, photo_urls: `${LOCAL_PILOT_PHOTO_HOST}/photos/ikoyi-living.svg|${LOCAL_PILOT_PHOTO_HOST}/photos/ikoyi-bedroom.svg` },
+    { ...common, external_listing_id: "local-lagos-lekki", unit_id: "unit-local-lagos-lekki", property_id: "property-local-lagos-lekki", title: "Serene One-Bedroom Suite in Lekki Phase 1", city: "Lagos", neighbourhood: "Lekki Phase 1", capacity: 2, bedrooms: 1, nightly_price_ngn: 65000, mandatory_fees_ngn: 5000, refundable_security_deposit_ngn: 0, amenities: "wifi|24_7_power_generator|air_conditioning|security_guard", description: "A calm Entire Place suite in Lekki Phase 1 with natural light, reliable power, and a quiet residential setting.", bathrooms: 1, photo_urls: `${LOCAL_PILOT_PHOTO_HOST}/photos/lekki-1-living.svg|${LOCAL_PILOT_PHOTO_HOST}/photos/lekki-1-bedroom.svg` },
   ];
   return [headers.join(","), ...rows.map((row) => headers.map((header) => csvEscape(row[header] ?? "")).join(","))].join("\n");
 }
@@ -161,5 +162,10 @@ export function assertLocalPilotReady(paths = localPilotPaths()): void {
   for (const path of [paths.databasePath, paths.inventoryPath, paths.operatorsPath]) {
     if (!existsSync(path)) throw new Error("Local pilot is not bootstrapped; run npm run pilot:local:bootstrap");
   }
-  JSON.parse(readFileSync(paths.inventoryPath, "utf8"));
+  try {
+    JSON.parse(readFileSync(paths.inventoryPath, "utf8"));
+  } catch {
+    // A corrupt inventory must fail loudly before any demo journey starts.
+    throw new Error("Local pilot inventory is not valid JSON; run npm run pilot:local:bootstrap");
+  }
 }

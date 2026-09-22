@@ -35,7 +35,7 @@ import {
 } from "../../../apps/web/src/presentation.js";
 import { resolveConditionalOfferServerEvent } from "../../../apps/web/src/conditional-offer-actions.js";
 import { CARD_PAYMENT_INITIALIZE_CHECKOUT_EVENT, resolveCardPaymentServerEvent } from "../../../apps/web/src/card-payment-actions.js";
-import { createStayQuote, isEligibleUnit, normalizePhotoUrls, type Unit, type UnitDiscoveryFilters } from "../../../domains/shortlet/src/index.js";
+import { createStayQuote, isEligibleUnit, normalizePhotoUrls, type Unit } from "../../../domains/shortlet/src/index.js";
 import { requestDraftArtifactFromProjection, requestDraftArtifactId } from "../../../apps/web/src/request-draft-artifact.js";
 import type { RequestDraftArtifact } from "../../../apps/web/src/request-draft-artifact.js";
 import type { CardPaymentApplication } from "../../../apps/web/src/card-payment-application.js";
@@ -43,7 +43,6 @@ import {
   LocalGuestEnvironment,
   LOCAL_GUEST_PORT,
   resetLocalGuestFixture,
-  type LocalGuestFixtureConfig,
 } from "./fixture.js";
 import {
   parseGuestProjection,
@@ -51,8 +50,8 @@ import {
 } from "./guest-projection.js";
 import { hashSessionSecret } from "../../../domains/shortlet/src/index.js";
 import { DirectPaystackClient, isApprovedPaystackCheckoutUrl, loadPaystackConfiguration, type PaystackClient } from "../../../domains/shortlet/src/index.js";
-import { interpretStayRequest } from "./concierge.js";
-import { createGeminiConciergeClient, handleGeminiTurn, type GeminiConciergeClient } from "./gemini-concierge.js";
+import { extractStayRequestFacts, mergeStayRequestContext, resolveStayRequestContext, type DiscoverySearchContext, type StayRequestFilters } from "./concierge.js";
+import { handleGeminiTurn, type GeminiConciergeClient } from "./gemini-concierge.js";
 import type { Content } from "@google/genai";
 import { AssistantRuntime } from "./assistant/assistant-runtime.js";
 import { ScriptedAssistantModel } from "./assistant/scripted-assistant-model.js";
@@ -140,6 +139,7 @@ const THREAD_ID_PATTERN = /^g-[a-f0-9-]{6,64}$/;
 interface GuestThreadState {
   readonly threadId: string;
   readonly geminiHistory: Content[];
+  discoveryContext: DiscoverySearchContext | null;
   discoveryArtifact: DiscoveryArtifactProjection | null;
   discoverySurfaceId: string;
   discoveryRevision: number;
@@ -261,54 +261,42 @@ export class LocalGuestApp {
       }
     }
 
-    const refinement = /^only show(?: me)?\s+(\d+|one|two|three|four)\s*[- ]?bedroom(?:s)?(?:\s+apartments?)?/i.exec(text.trim());
-    if (refinement && thread.discoveryArtifact) {
-      const prior = thread.discoveryArtifact.facts.filters;
-      const location = prior.location;
-      const checkIn = prior.checkIn;
-      const checkOut = prior.checkOut;
-      const partySize = prior.partySize;
-      if (typeof location === "string" && typeof checkIn === "string" && typeof checkOut === "string" && typeof partySize === "number") {
-        const filters: UnitDiscoveryFilters = {
-          location,
-          checkIn,
-          checkOut,
-          partySize,
-          bedrooms: ({ one: 1, two: 2, three: 3, four: 4 } as Readonly<Record<string, number>>)[refinement[1]!.toLowerCase()] ?? Number.parseInt(refinement[1]!, 10),
-          ...(typeof prior.neighbourhood === "string" ? { neighbourhood: prior.neighbourhood } : {}),
-        };
-        this.#prepareDiscovery(thread);
-        const adapter = createWeaverWebAgentAdapter({
-          query: { search: (query) => this.#environment.discoveryQuery.search(query) },
-          createSurfaceId: () => thread.discoverySurfaceId,
-        });
-        const result = adapter.search(filters);
-        thread.discoveryArtifact = result.artifact;
-        thread.activeSurfaces.set(DISCOVERY_STAGE, thread.discoverySurfaceId);
-        this.#emitTransition(thread, "unit.discovery.results_produced", { aggregateType: "discovery", aggregateId: result.artifact.id, surfaceId: thread.discoverySurfaceId });
-        return {
-          ok: true,
-          messages: [`I refined the results to ${filters.bedrooms}-bedroom Units.`],
-          surfaces: [{ surfaceId: result.surfaceId, a2uiMessages: result.a2uiMessages, mode: "inline-surface", summary: "Refined discovery results", textFallback: result.fallback.message, conventionalRoute: conventionalSearchRoute(filters) }],
-        };
-      }
+    const previousContext = thread.discoveryContext;
+    const facts = extractStayRequestFacts(text);
+    const merged = mergeStayRequestContext(previousContext, facts, text);
+    thread.discoveryContext = merged.context;
+    if (merged.conflict) {
+      // A location conflict is intentionally surfaced. No search runs until the
+      // Guest resolves it, and every other accumulated constraint is retained.
+      return { ok: true, messages: [merged.conflict.question], surfaces: [] };
+    }
+    const resolution = resolveStayRequestContext(merged.context, { demoCheckIn: this.#environment.config.demoCheckIn });
+    if (resolution.kind === "clarify") {
+      return { ok: true, messages: [resolution.reply], surfaces: [] };
     }
 
-    const interpretation = interpretStayRequest(text, {
-      demoCheckIn: this.#environment.config.demoCheckIn,
-      demoCheckOut: this.#environment.config.demoCheckOut,
-    });
-
-    if (interpretation.kind === "clarify") {
-      return { ok: true, messages: [interpretation.reply], surfaces: [] };
+    const providedFacts = Object.keys(facts).length > 0;
+    const resolvedConflict = previousContext?.pendingLocationChange !== undefined && merged.context.pendingLocationChange === undefined;
+    if (!providedFacts && !resolvedConflict && thread.discoveryArtifact) {
+      // An unrelated turn must not replace the current authoritative results.
+      return { ok: true, messages: ["Your current search results are still active. Tell me how you would like to refine them, for example: “Only show two-bedroom apartments”."], surfaces: [] };
     }
 
+    return this.#executeDiscovery(thread, resolution.filters);
+  }
+
+  /**
+   * Runs the authoritative discovery query for the accumulated context and
+   * publishes its DiscoveryArtifact through the existing A2UI/Weaver surface.
+   * The conversational layer never manufactures Units, prices or availability.
+   */
+  #executeDiscovery(thread: GuestThreadState, filters: StayRequestFilters): GuestTurnResult {
     this.#prepareDiscovery(thread);
     const adapter = createWeaverWebAgentAdapter({
-      query: { search: (filters) => this.#environment.discoveryQuery.search(filters) },
+      query: { search: (query) => this.#environment.discoveryQuery.search(query) },
       createSurfaceId: () => thread.discoverySurfaceId,
     });
-    const result = adapter.search({ ...interpretation.filters });
+    const result = adapter.search({ ...filters });
     thread.discoveryArtifact = result.artifact;
     thread.activeSurfaces.set(DISCOVERY_STAGE, thread.discoverySurfaceId);
     this.#emitTransition(thread, "unit.discovery.results_produced", { aggregateType: "discovery", aggregateId: result.artifact.id, surfaceId: thread.discoverySurfaceId });
@@ -316,7 +304,7 @@ export class LocalGuestApp {
     return {
       ok: true,
       messages: [
-        `I found ${result.artifact.facts.results.length} eligible place${result.artifact.facts.results.length === 1 ? "" : "s"} in ${interpretation.filters.location} for your stay ${interpretation.filters.checkIn} to ${interpretation.filters.checkOut}. You can view the details below.`,
+        `I found ${result.artifact.facts.results.length} eligible place${result.artifact.facts.results.length === 1 ? "" : "s"} in ${filters.location} for your stay ${filters.checkIn} to ${filters.checkOut}. You can view the details below.`,
       ],
       surfaces: [{
         surfaceId: result.surfaceId,
@@ -512,6 +500,7 @@ export class LocalGuestApp {
     return {
       version: 1,
       timeline: thread.timeline.map(({ role, text }) => ({ role, text })),
+      discoveryContext: thread.discoveryContext === null ? null : { ...thread.discoveryContext },
       discoveryArtifact: thread.discoveryArtifact,
       discoverySurfaceId: thread.discoverySurfaceId,
       discoveryRevision: thread.discoveryRevision,
@@ -573,6 +562,7 @@ export class LocalGuestApp {
     const thread: GuestThreadState = {
       threadId,
       geminiHistory: [],
+      discoveryContext: projection.discoveryContext === null ? null : { ...projection.discoveryContext },
       discoveryArtifact: projection.discoveryArtifact ? structuredClone(projection.discoveryArtifact) : null,
       discoverySurfaceId: projection.discoverySurfaceId,
       discoveryRevision: projection.discoveryRevision,
@@ -770,6 +760,7 @@ export class LocalGuestApp {
   #createThread(threadId: string): GuestThreadState {
     const thread: GuestThreadState = {
       threadId,
+      discoveryContext: null,
       discoveryArtifact: null,
       discoverySurfaceId: `thread-${threadId}:discovery:results`,
       discoveryRevision: 0,
@@ -1555,12 +1546,21 @@ function browserOriginAccepted(req: IncomingMessage, publicOrigin: string | unde
   if (origin === undefined) return true;
   const expected = publicOrigin ?? `http://${req.headers.host ?? "localhost"}`;
   if (origin === "null" && publicOrigin) {
-    const configured = new URL(publicOrigin);
-    return configured.protocol === "http:"
+    const configured = safePublicOrigin(publicOrigin);
+    return configured !== null
+      && configured.protocol === "http:"
       && (configured.hostname === "127.0.0.1" || configured.hostname === "localhost")
       && req.headers["sec-fetch-site"] === "same-origin";
   }
   return origin === expected;
+}
+
+function safePublicOrigin(value: string): URL | null {
+  try {
+    return new URL(value);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -1814,7 +1814,12 @@ export function startLocalGuestServer(options: {
         res.end("Unauthorized");
         return;
       }
-      if (rawSession !== undefined) {
+      if (rawSession === undefined) {
+        const sessionId = issueGuestSession(res, secureCookie);
+        const principalId = sessionScopedGuestPrincipals ? `guest-${crypto.randomUUID()}` : app.environment.config.guestId;
+        const registered = registerBrowserSession(env, browserSessions, sessionId, principalId);
+        if (sessionScopedGuestPrincipals) runtimeForSession(registered);
+      } else {
         // A well-formed cookie must resolve to a durable binding; an unknown
         // id is rejected rather than silently minted into a new session.
         const resolved = resolveBrowserSession(app.environment, browserSessions, rawSession, sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId);
@@ -1823,11 +1828,6 @@ export function startLocalGuestServer(options: {
           res.end("Unauthorized");
           return;
         }
-      } else {
-        const sessionId = issueGuestSession(res, secureCookie);
-        const principalId = sessionScopedGuestPrincipals ? `guest-${crypto.randomUUID()}` : app.environment.config.guestId;
-        const registered = registerBrowserSession(env, browserSessions, sessionId, principalId);
-        if (sessionScopedGuestPrincipals) runtimeForSession(registered);
       }
       res.writeHead(200, GUEST_HTML_HEADERS);
       res.end(renderGuestShellHtml());

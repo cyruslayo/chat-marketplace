@@ -102,7 +102,7 @@ Runtime data is ignored by Git and survives restart:
 
 ## Local versus production
 
-Local mode uses loopback HTTP, non-`Secure` cookies, synthetic Abuja/Wuse 2 and Lagos/Old Ikoyi Units, locally served synthetic photos, a synthetic Operator/representative grant, and a deterministic local payment provider.
+Local mode uses loopback HTTP, non-`Secure` cookies, synthetic Abuja/Wuse 2 and Lagos/Old Ikoyi plus Lagos/Lekki Phase 1 Units, locally served synthetic photos, a synthetic Operator/representative grant, and a deterministic local payment provider.
 
 Production remains `npm run pilot:start`: it requires HTTPS, `Secure` cookies, live Paystack configuration, persistent configured files, and has no fixture, deterministic-provider, or reset routes. Both modes retain distinct Guest principals, real Guest and Operator sessions, ADR-0082 representative authority, the Booking Request and Conditional Booking Offer applications, the payment state machine, Reservation and Booking Contract creation, and durable persistence.
 
