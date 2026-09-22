@@ -5,8 +5,9 @@ import {
   conditionalOfferArtifactToA2UI,
   cardPaymentArtifactToA2UI,
   bookingContractArtifactToA2UI,
-  unitDetailToA2UI,
+  unitDetailArtifactToA2UI,
 } from "../../../web-agent/src/index.js";
+import { unitDetailArtifactFromProjection } from "../../../web/src/unit-detail-artifact.js";
 import type { CommandPrincipal } from "../../../../packages/platform-core/src/index.js";
 import {
   StayDateRange,
@@ -307,17 +308,8 @@ export class AssistantRuntime {
                 new StayDateRange(checkIn, checkOut, this.#environment.clock()),
               );
 
-              const a2uiMessages = unitDetailToA2UI({
-                unit: unitProjection,
-                checkIn,
-                checkOut,
-                surfaceId,
-                action: {
-                  artifactId: candidateDiscoveryArtifactId ?? "search-guest-demo-001",
-                  unitId: stay.unitId,
-                  projectionVersion: 1,
-                },
-              });
+              const unitDetailArtifact = unitDetailArtifactFromProjection({ unit: unitProjection, checkIn, checkOut, projectionVersion: 1, viewer: this.#environment.guestPrincipal() });
+              const a2uiMessages = unitDetailArtifactToA2UI({ artifact: unitDetailArtifact, surfaceId });
 
               candidateSurfaces.push({ surfaceId, a2uiMessages });
             }

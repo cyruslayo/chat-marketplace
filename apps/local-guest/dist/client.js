@@ -8701,6 +8701,7 @@ Known schemas:
   }
   function fallback(mount, surface) {
     mount.replaceChildren();
+    mount.dataset.renderer = "fallback";
     const box = document.createElement("div");
     box.className = "surface-fallback";
     box.setAttribute("role", "alert");
@@ -8799,6 +8800,8 @@ Known schemas:
       showReopen();
       return;
     }
+    mount.dataset.renderer = "weaver";
+    mount.dataset.surfaceId = surface.surfaceId;
     enhanceListingImages(mount);
     if (presentation.conventionalRoute) {
       const link = document.createElement("a");

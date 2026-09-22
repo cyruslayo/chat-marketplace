@@ -211,6 +211,36 @@ test("Generic Lagos discovery keeps both eligible units while requested nights c
   }
 });
 
+test("AC5 — Conversational bedroom refinement replaces the active discovery surface and revokes the old action", async () => {
+  const journey = await startJourneyServer();
+  try {
+    const first = expectSuccess(
+      (await postJson(journey.base, "/api/turn", { threadId: journey.threadId, text: "Show me apartments in Ikoyi for 3 nights for 2 people" })).body,
+      "initial discovery",
+    );
+    const firstSurface = first.surfaces[0]!;
+    const firstComponents = firstSurface.a2uiMessages.filter((message): message is Extract<A2UIServerMessage, { updateComponents: unknown }> => "updateComponents" in message).flatMap((message) => message.updateComponents.components as readonly Record<string, unknown>[]);
+    const firstButton = firstComponents.find((component) => component.component === "Button" && typeof component.action === "object" && component.action !== null);
+    assert.ok(firstButton);
+    const firstAction = (firstButton.action as { event: Record<string, unknown> }).event;
+
+    const refined = expectSuccess(
+      (await postJson(journey.base, "/api/turn", { threadId: journey.threadId, text: "Only show me two-bedroom apartments" })).body,
+      "bedroom refinement",
+    );
+    assert.notEqual(refined.surfaces[0]?.surfaceId, firstSurface.surfaceId);
+    const refinedText = (() => {
+      const components = refined.surfaces[0]!.a2uiMessages.filter((message): message is Extract<A2UIServerMessage, { updateComponents: unknown }> => "updateComponents" in message).flatMap((message) => message.updateComponents.components);
+      return components.filter((component) => component.component === "Text").map((component) => component.text).join(" ");
+    })();
+    assert.match(refinedText, /Sunlit 2-bedroom apartment in Ikeja|Luxury 2-Bedroom Apartment in Old Ikoyi/);
+    const stale = await postJson(journey.base, "/api/event", { threadId: journey.threadId, name: firstAction.name, surfaceId: firstSurface.surfaceId, sourceComponentId: firstAction.sourceComponentId, timestamp: firstAction.timestamp, context: firstAction.context });
+    assert.equal(expectRejection(stale.body, "superseded discovery action").code, "STALE_SURFACE");
+  } finally {
+    await journey.server.close();
+  }
+});
+
 test("Concierge asks for missing details when input cannot be safely interpreted", async () => {
   const journey = await startJourneyServer();
   try {

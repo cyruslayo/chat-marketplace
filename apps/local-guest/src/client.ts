@@ -200,6 +200,7 @@ function presentationFor(surface: GuestSurfacePayload): SurfacePresentation {
 
 function fallback(mount: HTMLElement, surface: SurfacePresentation): void {
   mount.replaceChildren();
+  mount.dataset.renderer = "fallback";
   const box = document.createElement("div");
   box.className = "surface-fallback";
   box.setAttribute("role", "alert");
@@ -299,6 +300,8 @@ function renderSurface(surface: GuestSurfacePayload): void {
     showReopen();
     return;
   }
+  mount.dataset.renderer = "weaver";
+  mount.dataset.surfaceId = surface.surfaceId;
   enhanceListingImages(mount);
   if (presentation.conventionalRoute) {
     const link = document.createElement("a");

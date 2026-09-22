@@ -26,6 +26,7 @@ export * from "./booking-request-artifact.js";
 export * from "./booking-request-actions.js";
 export * from "./discovery-actions.js";
 export * from "./discovery-interactions.js";
+export * from "./unit-detail-artifact.js";
 export * from "./navigation.js";
 export * from "./presentation.js";
 export * from "./weaver-host.js";

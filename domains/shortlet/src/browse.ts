@@ -304,6 +304,7 @@ export interface UnitDiscoveryFilters {
   readonly partySize?: number;
   readonly minPriceKobo?: number;
   readonly maxPriceKobo?: number;
+  readonly bedrooms?: number;
 }
 
 export class UnitDiscoveryQuery {
@@ -341,6 +342,7 @@ export class UnitDiscoveryQuery {
       .filter((unit: Unit) => !filters.requiredAmenities?.length
         || filters.requiredAmenities.every((required: string) => unit.amenities.includes(required)))
       .filter((unit: any) => filters.partySize === undefined || unit.capacity >= filters.partySize)
+      .filter((unit: any) => filters.bedrooms === undefined || unit.bedrooms === filters.bedrooms)
       .filter((unit: any) => !dateRange || !unit.blockedDates.some((range: any) => dateRange.overlaps(range)))
       .filter((unit: any) => filters.minPriceKobo === undefined || (allInStayTotalKobo(unit, dateRange) ?? 0) >= filters.minPriceKobo)
       .filter((unit: any) => filters.maxPriceKobo === undefined || (allInStayTotalKobo(unit, dateRange) ?? 0) <= filters.maxPriceKobo)

@@ -40,20 +40,30 @@ async function clickActiveButton(tab: RealBrowserTab, label: string): Promise<vo
   assert.equal(clicked, true, `active button ${label} must exist`);
 }
 
+async function fillActiveTextField(tab: RealBrowserTab, value: string): Promise<void> {
+  await tab.waitForSelector("#active-workspace input");
+  await tab.evaluate(`(() => { const input=document.querySelector('#active-workspace input'); if (!(input instanceof HTMLInputElement)) throw new Error('generated input missing'); input.value=${JSON.stringify(value)}; input.dispatchEvent(new Event('input',{bubbles:true})); input.dispatchEvent(new Event('change',{bubbles:true})); input.blur(); })()`);
+}
+
+async function assertWeaverSurface(tab: RealBrowserTab, label: string): Promise<void> {
+  await tab.waitForFunction("Boolean(document.querySelector('#active-workspace .weaver-mount[data-renderer=weaver]'))", 15000);
+  const renderer = await tab.evaluate<string>("document.querySelector('#active-workspace .weaver-mount')?.dataset.renderer || ''");
+  assert.equal(renderer, "weaver", `${label} must be mounted by Weaver`);
+}
+
 async function reloadTab(tab: RealBrowserTab): Promise<void> { await tab.navigate(await tab.evaluate<string>("location.href")); }
 
 async function guestToRequest(tab: RealBrowserTab, city: "Abuja" | "Lagos", phone: string, assertPhotos = false): Promise<void> {
   await tab.navigate(`${BASE}/`);
-  await tab.navigate(`${BASE}/guest/contact`);
-  const phoneStatus = await tab.evaluate<number>(`fetch('/guest/contact/phone',{method:'POST',headers:{'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({phoneNumber:${JSON.stringify(phone)},expectedRevision:'0'}),redirect:'manual'}).then((response)=>response.status)`);
-  assert.equal(phoneStatus, 0, "same-origin manual redirect is opaque to browser fetch");
-  await tab.navigate(`${BASE}/`);
-  await sendPrompt(tab, `I need an apartment in ${city} for 2 nights for 2 people`);
+  await sendPrompt(tab, city === "Abuja" ? "Show me apartments in Wuse 2 for 2 nights for 2 people" : `I need an apartment in ${city} for 2 nights for 2 people`);
   await tab.waitForText(city === "Abuja" ? "Wuse 2" : "Old Ikoyi", 15000);
+  await assertWeaverSurface(tab, "discovery");
   if (assertPhotos) await tab.waitForFunction("document.images.length > 0 && [...document.images].every((image)=>image.complete&&image.naturalWidth>0)", 15000);
   await clickActiveButton(tab, "View Unit");
   await tab.waitForText("Request to Book", 15000);
+  await assertWeaverSurface(tab, "Unit detail");
   await clickActiveButton(tab, "Request to Book");
+  await assertWeaverSurface(tab, "Request Draft");
   try { await tab.waitForText("Review Request", 15000); }
   catch (error) {
     const diagnostics = await tab.evaluate("({active:document.getElementById('active-workspace')?.innerText, transcript:document.getElementById('transcript')?.innerText, buttons:[...document.querySelectorAll('#active-workspace button')].map((button)=>({text:button.textContent,disabled:button.disabled}))})");
@@ -61,8 +71,14 @@ async function guestToRequest(tab: RealBrowserTab, city: "Abuja" | "Lagos", phon
   }
   await clickActiveButton(tab, "Review Request");
   await tab.waitForText("Submit Booking Request", 15000);
+  await assertWeaverSurface(tab, "Booking Request review");
   await clickActiveButton(tab, "Submit Booking Request");
+  await tab.waitForText("Phone number", 15000);
+  await assertWeaverSurface(tab, "phone collection");
+  await fillActiveTextField(tab, phone);
+  await clickActiveButton(tab, "Save Phone number");
   await tab.waitForFunction(`(() => { const active=document.getElementById('active-workspace'); return Boolean(active?.innerText.includes('Booking Request') && ![...active.querySelectorAll('button')].some((button)=>button.textContent?.includes('Submit Booking Request'))); })()`, 15000);
+  await assertWeaverSurface(tab, "Booking Request status");
 }
 
 async function operatorLoginAndDecision(tab: RealBrowserTab, token: string, decision: "Confirm" | "Decline"): Promise<void> {
@@ -160,17 +176,19 @@ test("Real Chromium completes and persists the local Booking Request to Booking 
   try {
     await server.listen(); await guestToRequest(guest, "Abuja", "+2348092223344");
     await operatorLoginAndDecision(operator, issueLocalOperatorToken(paths), "Confirm");
-    await reloadTab(guest); await guest.waitForText("Conditional Booking Offer", 15000); await clickActiveButton(guest, "Accept");
+    await reloadTab(guest); await guest.waitForText("Conditional Booking Offer", 15000); await assertWeaverSurface(guest, "Conditional Booking Offer"); await clickActiveButton(guest, "Accept");
     await guest.waitForText("Start secure checkout", 15000);
-    const paymentWorkspaceUrl = await guest.evaluate<string>("location.href");
-    await guest.navigate(`${BASE}/guest/contact`); const emailStatus = await guest.evaluate<number>(`fetch('/guest/contact/email',{method:'POST',headers:{'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({contactEmail:'local.pilot@example.test',expectedRevision:'1'}),redirect:'manual'}).then((response)=>response.status)`); assert.equal(emailStatus, 0);
-    await guest.navigate(paymentWorkspaceUrl); await guest.waitForText("Start secure checkout", 15000); await clickActiveButton(guest, "Start secure checkout");
+    await assertWeaverSurface(guest, "payment ready"); await clickActiveButton(guest, "Start secure checkout");
+    await guest.waitForText("Email address for payment and booking receipt", 15000); await assertWeaverSurface(guest, "email collection");
+    await fillActiveTextField(guest, "local.pilot@example.test"); await clickActiveButton(guest, "Save Email address for payment and booking receipt");
     await guest.waitForText("Payment handoff", 15000);
+    await assertWeaverSurface(guest, "payment handoff");
     const continued = await guest.evaluate<boolean>(`(() => { const link=[...document.querySelectorAll('a')].find((candidate)=>candidate.getAttribute('href')?.includes('/payments/offers/')); if (!(link instanceof HTMLAnchorElement)) return false; link.click(); return true; })()`); assert.equal(continued, true, await guest.evaluate<string>("document.getElementById('active-workspace')?.innerText || document.body.innerText"));
     await guest.waitForText("Continue to local demo payment", 15000); const localContinuation = await guest.evaluate<boolean>(`(() => { const link=[...document.querySelectorAll('a')].find((candidate)=>candidate.textContent?.includes('Continue to local demo payment')); if (!(link instanceof HTMLAnchorElement)) return false; link.click(); return true; })()`); assert.equal(localContinuation, true);
     await guest.waitForText("Local demo payment", 15000); assert.equal(await guest.clickButton("Complete local payment"), true);
     try { await guest.waitForText("Reservation confirmed", 15000); } catch (error) { throw new Error(await guest.evaluate<string>("document.getElementById('active-workspace')?.innerText || document.body.innerText"), { cause: error }); }
     const confirmedText = await guest.evaluate<string>("document.body.innerText"); assert.match(confirmedText, /Reservation/); assert.match(confirmedText, /Contract version/);
+    await assertWeaverSurface(guest, "Reservation / Booking Contract");
     const database = new DatabaseSync(paths.databasePath);
     const request = (database.prepare("SELECT COUNT(*) count FROM guest_booking_requests").get() as { count: number }).count;
     const attempt = (database.prepare("SELECT COUNT(*) count FROM guest_live_payment_attempts").get() as { count: number }).count;

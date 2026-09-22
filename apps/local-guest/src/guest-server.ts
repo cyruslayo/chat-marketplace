@@ -12,7 +12,7 @@ import {
   conditionalOfferArtifactToA2UI,
   cardPaymentArtifactToA2UI,
   bookingContractArtifactToA2UI,
-  unitDetailToA2UI,
+  unitDetailArtifactToA2UI,
   requestDraftArtifactToA2UI,
   REQUEST_DRAFT_REVIEW_EVENT,
   REQUEST_DRAFT_SUBMIT_EVENT,
@@ -21,6 +21,7 @@ import {
   formatNgnKobo,
   type DiscoveryArtifactProjection,
 } from "../../../apps/web-agent/src/index.js";
+import { unitDetailArtifactFromProjection } from "../../../apps/web/src/unit-detail-artifact.js";
 import {
   resolveDiscoveryServerEvent,
 } from "../../../apps/web/src/discovery-actions.js";
@@ -33,8 +34,8 @@ import {
   conventionalSearchRoute,
 } from "../../../apps/web/src/presentation.js";
 import { resolveConditionalOfferServerEvent } from "../../../apps/web/src/conditional-offer-actions.js";
-import { resolveCardPaymentServerEvent } from "../../../apps/web/src/card-payment-actions.js";
-import { createStayQuote, isEligibleUnit, normalizePhotoUrls, type Unit } from "../../../domains/shortlet/src/index.js";
+import { CARD_PAYMENT_INITIALIZE_CHECKOUT_EVENT, resolveCardPaymentServerEvent } from "../../../apps/web/src/card-payment-actions.js";
+import { createStayQuote, isEligibleUnit, normalizePhotoUrls, type Unit, type UnitDiscoveryFilters } from "../../../domains/shortlet/src/index.js";
 import { requestDraftArtifactFromProjection, requestDraftArtifactId } from "../../../apps/web/src/request-draft-artifact.js";
 import type { RequestDraftArtifact } from "../../../apps/web/src/request-draft-artifact.js";
 import type { CardPaymentApplication } from "../../../apps/web/src/card-payment-application.js";
@@ -257,6 +258,39 @@ export class LocalGuestApp {
         };
       } catch {
         return { ok: false, code: "CONCIERGE_UNAVAILABLE", message: "The concierge is temporarily unavailable. Please try again." };
+      }
+    }
+
+    const refinement = /^only show(?: me)?\s+(\d+|one|two|three|four)\s*[- ]?bedroom(?:s)?(?:\s+apartments?)?/i.exec(text.trim());
+    if (refinement && thread.discoveryArtifact) {
+      const prior = thread.discoveryArtifact.facts.filters;
+      const location = prior.location;
+      const checkIn = prior.checkIn;
+      const checkOut = prior.checkOut;
+      const partySize = prior.partySize;
+      if (typeof location === "string" && typeof checkIn === "string" && typeof checkOut === "string" && typeof partySize === "number") {
+        const filters: UnitDiscoveryFilters = {
+          location,
+          checkIn,
+          checkOut,
+          partySize,
+          bedrooms: ({ one: 1, two: 2, three: 3, four: 4 } as Readonly<Record<string, number>>)[refinement[1]!.toLowerCase()] ?? Number.parseInt(refinement[1]!, 10),
+          ...(typeof prior.neighbourhood === "string" ? { neighbourhood: prior.neighbourhood } : {}),
+        };
+        this.#prepareDiscovery(thread);
+        const adapter = createWeaverWebAgentAdapter({
+          query: { search: (query) => this.#environment.discoveryQuery.search(query) },
+          createSurfaceId: () => thread.discoverySurfaceId,
+        });
+        const result = adapter.search(filters);
+        thread.discoveryArtifact = result.artifact;
+        thread.activeSurfaces.set(DISCOVERY_STAGE, thread.discoverySurfaceId);
+        this.#emitTransition(thread, "unit.discovery.results_produced", { aggregateType: "discovery", aggregateId: result.artifact.id, surfaceId: thread.discoverySurfaceId });
+        return {
+          ok: true,
+          messages: [`I refined the results to ${filters.bedrooms}-bedroom Units.`],
+          surfaces: [{ surfaceId: result.surfaceId, a2uiMessages: result.a2uiMessages, mode: "inline-surface", summary: "Refined discovery results", textFallback: result.fallback.message, conventionalRoute: conventionalSearchRoute(filters) }],
+        };
       }
     }
 
@@ -584,11 +618,9 @@ export class LocalGuestApp {
             summary: `${unit.title} details`,
             conventionalRoute: conventionalBookingRequestRoute(""),
             textFallback: `${unit.title}. ${unit.location.neighbourhood}, ${unit.location.city}. Entire Place; capacity ${unit.capacity} guests.`,
-            a2uiMessages: unitDetailToA2UI({
-              unit,
-              ...this.#stayDatesFor(thread),
+            a2uiMessages: unitDetailArtifactToA2UI({
+              artifact: unitDetailArtifactFromProjection({ unit, ...this.#stayDatesFor(thread), projectionVersion: projection.discoveryArtifact.projectionVersion, viewer: environment.guestPrincipal() }),
               surfaceId: unitSurfaceId,
-              action: { artifactId: projection.discoveryArtifact.id, unitId: unit.id, projectionVersion: projection.discoveryArtifact.projectionVersion },
             }),
           };
         }
@@ -852,7 +884,8 @@ export class LocalGuestApp {
       return { ok: false, code: "ACTION_NOT_AUTHORIZED", message: "That unit is not available." };
     }
 
-    thread.unitDetail = { unitId: unit.id, artifactId: artifact.id };
+    const unitDetailArtifact = unitDetailArtifactFromProjection({ unit, ...this.#stayDatesFor(thread), projectionVersion: artifact.projectionVersion, viewer: this.#environment.guestPrincipal() });
+    thread.unitDetail = { unitId: unit.id, artifactId: unitDetailArtifact.id };
     const surfaceId = `thread-${thread.threadId}:unit:detail`;
     // ADR-0074: selecting a Unit supersedes the discovery projection and its
     // generated actions; the linear demo has no valid back-navigation state.
@@ -870,12 +903,7 @@ export class LocalGuestApp {
           summary: `${unit.title} details`,
           conventionalRoute: resolved.effect.route,
           textFallback: `${unit.title}. ${unit.location.neighbourhood}, ${unit.location.city}. Entire Place; capacity ${unit.capacity} guests. All-In Stay Total: ${unit.price.allInStayTotalKobo === null ? "not yet quoted" : formatNgnKobo(unit.price.allInStayTotalKobo)}. Refundable Security Deposit: ${formatNgnKobo(unit.price.refundableSecurityDepositKobo)}. Inspection: ${unit.trust.inspection.status}; Management Authority: ${unit.trust.managementAuthority.status}.`,
-          a2uiMessages: unitDetailToA2UI({
-            unit,
-            ...this.#stayDatesFor(thread),
-            surfaceId,
-            action: { artifactId: artifact.id, unitId: unit.id, projectionVersion: artifact.projectionVersion },
-          }),
+          a2uiMessages: unitDetailArtifactToA2UI({ artifact: unitDetailArtifact, surfaceId }),
         },
       ],
     };
@@ -1068,7 +1096,11 @@ export class LocalGuestApp {
     if (typeof value !== "string") return { ok: false, code: "INVALID_INPUT", message: "Email address is required." };
     try { this.#environment.guestContactApp.submitEmail({ contactEmail: value, expectedRevision: Number(event.context?.expectedRevision ?? 0) }, this.#environment.guestPrincipal()); }
     catch (error) { return { ok: false, code: "INVALID_CONTACT", message: error instanceof Error ? error.message : "Email address could not be saved." }; }
-    return this.#handleCardCheckout(thread, event);
+    // Resume the server-issued payment action after the contact application
+    // commits the email. The browser-provided contact value is not a payment
+    // command and cannot alter the authoritative amount or currency.
+    const { contactValue: _contactValue, expectedRevision: _expectedRevision, ...paymentContext } = event.context ?? {};
+    return this.#handleCardCheckout(thread, { ...event, name: CARD_PAYMENT_INITIALIZE_CHECKOUT_EVENT, context: paymentContext });
   }
 
   #requestSurface(thread: GuestThreadState, requestId: string): GuestSurfacePayload {
@@ -1236,6 +1268,13 @@ export class LocalGuestApp {
       return { ok: false, code: "INVALID_ARTIFACT", message: "No payment is active for this conversation." };
     }
     const environment = this.#environment;
+    // The contact application owns email validation and persistence. Present
+    // its generated input surface before resolving the payment command so the
+    // payment resolver never has to infer a missing contact from a swallowed
+    // application error.
+    if (!environment.guestContactApp.get(environment.guestPrincipal())?.contactEmail) {
+      return this.#contactSurface(thread, "email", event.context ?? {});
+    }
     const resolved = resolveCardPaymentServerEvent({
       event: this.#handoff(event),
       application: environment.cardPaymentApp,
