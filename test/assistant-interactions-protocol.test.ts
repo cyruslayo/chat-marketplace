@@ -94,6 +94,65 @@ test("GeminiInteractionsClient maps request to Interactions API shape without li
   assert.equal(response.toolCalls?.[0]?.args.city, "Lagos");
 });
 
+test("GeminiInteractionsClient retries one API connection failure and then succeeds", async () => {
+  let attempts = 0;
+  const client = new GeminiInteractionsClient({
+    apiKey: "fake-key-offline",
+    customAi: {
+      interactions: {
+        async create(): Promise<Interactions.Interaction> {
+          attempts++;
+          if (attempts === 1) throw Object.assign(new Error("private transport detail"), { name: "APIConnectionError" });
+          return { id: "retry-success", steps: [], status: "completed" } as Interactions.Interaction;
+        },
+      },
+    },
+  });
+
+  const response = await client.generate({ systemInstruction: "test", tools: [], history: [{ role: "user", text: "hello" }] });
+
+  assert.equal(attempts, 2);
+  assert.deepEqual(response.toolCalls, undefined);
+});
+
+test("GeminiInteractionsClient does not retry non-connection provider errors", async () => {
+  let attempts = 0;
+  const providerError = Object.assign(new Error("rate limited"), { name: "APIError", status: 429 });
+  const client = new GeminiInteractionsClient({
+    apiKey: "fake-key-offline",
+    customAi: {
+      interactions: {
+        async create(): Promise<Interactions.Interaction> {
+          attempts++;
+          throw providerError;
+        },
+      },
+    },
+  });
+
+  await assert.rejects(client.generate({ systemInstruction: "test", tools: [], history: [{ role: "user", text: "hello" }] }), providerError);
+  assert.equal(attempts, 1);
+});
+
+test("GeminiInteractionsClient stops after one retry when the connection remains unavailable", async () => {
+  let attempts = 0;
+  const connectionError = Object.assign(new Error("connection unavailable"), { name: "APIConnectionError" });
+  const client = new GeminiInteractionsClient({
+    apiKey: "fake-key-offline",
+    customAi: {
+      interactions: {
+        async create(): Promise<Interactions.Interaction> {
+          attempts++;
+          throw connectionError;
+        },
+      },
+    },
+  });
+
+  await assert.rejects(client.generate({ systemInstruction: "test", tools: [], history: [{ role: "user", text: "hello" }] }), connectionError);
+  assert.equal(attempts, 2);
+});
+
 test("GeminiInteractionsClient maps tool results and model outputs accurately", async () => {
   let capturedParams: Interactions.CreateModelInteractionParamsNonStreaming | undefined;
 

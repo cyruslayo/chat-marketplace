@@ -84,6 +84,7 @@ test("No-date local demo instruction makes date optional while relative dates re
 test("Authoritative Assistant discovery supports exact bedroom refinement and supersedes the prior result surface", async () => {
   const model = new ScriptedAssistantModel([
     (request) => {
+      if (request.history.at(-1)?.role !== "user") return null;
       const latestUser = [...request.history].reverse().find((step) => step.role === "user");
       if (!latestUser) return null;
       const refinement = /two-bedroom/i.test(latestUser.text);
@@ -118,10 +119,14 @@ test("Authoritative Assistant discovery supports exact bedroom refinement and su
 test("Assistant booking intent creates an authoritative non-submitting Request Draft surface", async () => {
   const model = new ScriptedAssistantModel([
     (request) => {
+      if (request.history.at(-1)?.role !== "user") return null;
       const latestUser = [...request.history].reverse().find((step) => step.role === "user");
       if (!latestUser) return null;
       if (/book/i.test(latestUser.text)) {
         return { toolCalls: [{ id: "prepare-draft", name: "prepare_request_draft", args: { stayRef: "stay-1", nights: 2, guests: 2 } }] };
+      }
+      if (/open/i.test(latestUser.text)) {
+        return { toolCalls: [{ id: "select-first", name: "get_unit_details", args: { stayRef: "stay-1" } }] };
       }
       return { toolCalls: [{ id: "search-ikoyi", name: "search_stays", args: { city: "Lagos", neighbourhood: "Old Ikoyi", checkIn: null, nights: 2, guests: 2 } }] };
     },
@@ -129,6 +134,7 @@ test("Assistant booking intent creates an authoritative non-submitting Request D
   const { env, runtime } = createTestRuntime(model);
   try {
     await runtime.handleTurn("g-request-draft", "I need an apartment in Ikoyi for two nights for two guests.");
+    await runtime.handleTurn("g-request-draft", "Open the first one.");
     const bookingIntent = await runtime.handleTurn("g-request-draft", "I want to book the first one.");
     const thread = runtime.getThread("g-request-draft");
     assert.ok(thread.taskState.currentDraftId);
@@ -141,6 +147,176 @@ test("Assistant booking intent creates an authoritative non-submitting Request D
     const harness = setupHarness();
     harness.mountSurface(bookingIntent.surfaces![0]!.surfaceId, messages);
     assert.ok(env.bookingRequestApp.manager.getDraft(thread.taskState.currentDraftId));
+  } finally {
+    env.close();
+  }
+});
+
+test("Context-invalid get_unit_details returns a recoverable tool error without creating a Unit surface", async () => {
+  let continuationResults: readonly { readonly result: Record<string, unknown>; readonly isError?: boolean }[] = [];
+  let offeredTools: readonly string[] = [];
+  const model = new ScriptedAssistantModel([
+    (request) => {
+      if (request.history.at(-1)?.role === "user") {
+        offeredTools = request.tools.map((tool) => tool.name);
+        return { toolCalls: [{ id: "detail-without-shortlist", name: "get_unit_details", args: { stayRef: "stay-1" } }] };
+      }
+      const last = request.history.at(-1);
+      if (last?.role === "tool_results") {
+        continuationResults = last.results;
+        return { text: "Please search for stays first." };
+      }
+      return null;
+    },
+  ]);
+  const { runtime } = createTestRuntime(model);
+
+  const response = await runtime.handleTurn("g-no-shortlist-detail", "Open the first one.");
+
+  assert.equal(response.ok, true);
+  assert.equal(response.surfaces?.length, 0);
+  assert.equal(offeredTools.includes("get_unit_details"), false);
+  assert.equal(runtime.getThread("g-no-shortlist-detail").taskState.shortlist.length, 0);
+  assert.equal(runtime.getThread("g-no-shortlist-detail").taskState.selectedStayRef, undefined);
+  assert.equal(continuationResults[0]?.isError, true);
+  assert.equal(continuationResults[0]?.result.error, "invalid_tool_for_state");
+  assert.match(String(continuationResults[0]?.result.message), /current shortlist/i);
+});
+
+test("get_unit_details rejects a Unit reference outside the current shortlist", async () => {
+  const model = new ScriptedAssistantModel([
+    (request) => {
+      const last = request.history.at(-1);
+      if (last?.role === "user" && /show me/i.test(last.text)) {
+        return { toolCalls: [{ id: "authoritative-search", name: "search_stays", args: { city: "Lagos", neighbourhood: "Old Ikoyi" } }] };
+      }
+      if (last?.role === "user") return { toolCalls: [{ id: "outside-shortlist", name: "get_unit_details", args: { stayRef: "unit-invented" } }] };
+      if (last?.role === "tool_results") return { text: "That stay is not in the current results." };
+      return null;
+    },
+  ]);
+  const { runtime } = createTestRuntime(model);
+
+  await runtime.handleTurn("g-outside-shortlist", "Show me apartments in Ikoyi.");
+  const response = await runtime.handleTurn("g-outside-shortlist", "Open the invented one.");
+
+  assert.equal(response.ok, true);
+  assert.equal(response.surfaces?.length, 0);
+  assert.equal(runtime.getThread("g-outside-shortlist").taskState.selectedStayRef, undefined);
+});
+
+test("A zero-result refinement retains its authoritative DiscoveryArtifact and active surface", async () => {
+  const model = new ScriptedAssistantModel([
+    (request) => {
+      if (request.history.at(-1)?.role !== "user") return null;
+      const latestUser = [...request.history].reverse().find((step) => step.role === "user");
+      if (!latestUser) return null;
+      const empty = /zero results/i.test(latestUser.text);
+      return {
+        toolCalls: [{
+          id: empty ? "empty-refinement" : "initial-search",
+          name: "search_stays",
+          args: { city: "Lagos", neighbourhood: "Old Ikoyi", ...(empty ? { bedrooms: 99 } : {}) },
+        }],
+      };
+    },
+  ]);
+  const { runtime } = createTestRuntime(model);
+
+  const initial = await runtime.handleTurn("g-empty-refinement", "Show me apartments in Ikoyi.");
+  const priorSurfaceId = initial.surfaces?.[0]?.surfaceId;
+  const refinement = await runtime.handleTurn("g-empty-refinement", "Refine to zero results.");
+  const thread = runtime.getThread("g-empty-refinement");
+
+  assert.ok(priorSurfaceId);
+  assert.equal(refinement.ok, true);
+  assert.equal(thread.taskState.shortlist.length, 0);
+  assert.ok(refinement.surfaces?.[0]?.surfaceId);
+  assert.notEqual(refinement.surfaces?.[0]?.surfaceId, priorSurfaceId);
+  assert.ok(thread.supersededSurfaces.has(priorSurfaceId));
+  assert.equal(thread.activeSurfaces.get("discovery"), refinement.surfaces?.[0]?.surfaceId);
+  const mounted = setupHarness().mountSurface(refinement.surfaces![0]!.surfaceId, refinement.surfaces![0]!.a2uiMessages);
+  assert.ok(mounted.container.textContent?.toLowerCase().includes("no"));
+});
+
+test("A successful application projection remains returned if Gemini continuation fails", async () => {
+  let generation = 0;
+  const model = new ScriptedAssistantModel([
+    (request) => {
+      generation++;
+      if (request.history.at(-1)?.role === "user") {
+        return { toolCalls: [{ id: "search-before-disconnect", name: "search_stays", args: { city: "Lagos", neighbourhood: "Old Ikoyi" } }] };
+      }
+      throw Object.assign(new Error("untrusted provider detail"), { name: "APIConnectionError" });
+    },
+  ]);
+  const { runtime } = createTestRuntime(model);
+
+  const response = await runtime.handleTurn("g-projection-survives-model", "Show me apartments in Ikoyi.");
+  const thread = runtime.getThread("g-projection-survives-model");
+
+  assert.equal(generation, 2);
+  assert.equal(response.ok, true);
+  assert.equal(response.surfaces?.length, 1);
+  assert.ok(response.surfaces?.[0]?.surfaceId.includes(":discovery:"));
+  assert.equal(thread.taskState.shortlist.length, 1);
+  assert.equal(thread.activeSurfaces.get("discovery"), response.surfaces?.[0]?.surfaceId);
+  assert.doesNotMatch(JSON.stringify(response), /untrusted provider detail/i);
+});
+
+test("A provider failure on a later turn preserves prior conversation, shortlist, and active surface", async () => {
+  const model = new ScriptedAssistantModel([
+    (request) => {
+      const last = request.history.at(-1);
+      if (last?.role === "user" && /^Show me apartments/i.test(last.text)) {
+        return { toolCalls: [{ id: "initial-authoritative-search", name: "search_stays", args: { city: "Lagos", neighbourhood: "Old Ikoyi" } }] };
+      }
+      if (last?.role === "tool_results") return { text: "The current stays are ready below." };
+      if (last?.role === "user") throw Object.assign(new Error("transport detail"), { name: "APIConnectionError" });
+      return null;
+    },
+  ]);
+  const { runtime } = createTestRuntime(model);
+  const initial = await runtime.handleTurn("g-provider-preserves-state", "Show me apartments in Ikoyi.");
+  const thread = runtime.getThread("g-provider-preserves-state");
+  const historyBeforeFailure = [...thread.conversationHistory];
+  const shortlistBeforeFailure = [...thread.taskState.shortlist];
+  const surfaceBeforeFailure = thread.activeSurfaces.get("discovery");
+
+  const failed = await runtime.handleTurn("g-provider-preserves-state", "Only show two-bedroom apartments.");
+
+  assert.equal(initial.ok, true);
+  assert.equal(failed.ok, false);
+  assert.equal(failed.message, "The concierge is temporarily unavailable. Please try again.");
+  assert.deepEqual(thread.conversationHistory, historyBeforeFailure);
+  assert.deepEqual(thread.taskState.shortlist, shortlistBeforeFailure);
+  assert.equal(thread.activeSurfaces.get("discovery"), surfaceBeforeFailure);
+});
+
+test("prepare_request_draft without a selected current Unit is rejected without creating a draft", async () => {
+  let offeredTools: readonly string[] = [];
+  const model = new ScriptedAssistantModel([
+    (request) => {
+      const last = request.history.at(-1);
+      if (last?.role === "user" && /show me/i.test(last.text)) {
+        return { toolCalls: [{ id: "search-for-draft", name: "search_stays", args: { city: "Lagos", neighbourhood: "Old Ikoyi" } }] };
+      }
+      if (last?.role === "user") {
+        offeredTools = request.tools.map((tool) => tool.name);
+        return { toolCalls: [{ id: "draft-without-selection", name: "prepare_request_draft", args: { stayRef: "stay-1", nights: 2, guests: 2 } }] };
+      }
+      if (last?.role === "tool_results") return { text: "Open a current stay before preparing a draft." };
+      return null;
+    },
+  ]);
+  const { env, runtime } = createTestRuntime(model);
+  try {
+    await runtime.handleTurn("g-draft-without-selection", "Show me apartments in Ikoyi.");
+    const response = await runtime.handleTurn("g-draft-without-selection", "Prepare a request draft.");
+    assert.equal(response.ok, true);
+    assert.equal(response.surfaces?.length, 0);
+    assert.equal(offeredTools.includes("prepare_request_draft"), false);
+    assert.equal(runtime.getThread("g-draft-without-selection").taskState.currentDraftId, undefined);
   } finally {
     env.close();
   }
@@ -545,7 +721,7 @@ test("Server-only diagnostics identify provider, tool, and continuation stages w
 
   assert.equal(response.ok, true);
   assert.ok(events.some((event) => (event as { stage?: string }).stage === "provider_request"));
-  assert.ok(events.some((event) => (event as { stage?: string; toolName?: string }).stage === "tool_execution" && (event as { toolName?: string }).toolName === "search_stays"));
+  assert.ok(events.some((event) => (event as { stage?: string; toolName?: string }).stage === "application_operation" && (event as { toolName?: string }).toolName === "search_stays"));
   assert.ok(events.some((event) => (event as { stage?: string }).stage === "function_result_round_trip"));
   const serialized = JSON.stringify(events);
   assert.doesNotMatch(serialized, /GEMINI_API_KEY|Authorization|diagnostic-thread|Lagos for two nights|stay-1|unit-/i);
@@ -569,6 +745,7 @@ test("Server-only diagnostics safely expose provider status and code while the g
     round: 1,
     succeeded: false,
     errorClass: "Error",
+    failureClass: "PROVIDER_TRANSPORT_FAILURE",
     providerStatusCode: 429,
     providerErrorCode: "RATE_LIMITED",
   });

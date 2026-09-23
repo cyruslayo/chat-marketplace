@@ -14,7 +14,7 @@ interface ScenarioReport {
   readonly surfaceSelected: string | null;
   readonly authoritativeEntities: readonly string[];
   readonly semanticResult: "PASS" | "FAIL" | "NOT_RUN";
-  readonly failureClassification?: "MODEL/ORCHESTRATION FAILURE" | "FABRICATION FAILURE" | "AUTHORITY FAILURE" | "PRESENTATION FAILURE" | "ENVIRONMENT FAILURE";
+  readonly failureClassification?: "PROVIDER_TRANSPORT_FAILURE" | "MODEL_SELECTION_FAILURE" | "INVALID_TOOL_FOR_STATE" | "APPLICATION_OPERATION_FAILURE" | "PROJECTION_FAILURE" | "A2UI_FAILURE" | "WEAVER_FAILURE" | "FABRICATION_FAILURE" | "AUTHORITY_FAILURE";
   readonly note?: string;
 }
 
@@ -110,15 +110,18 @@ if (!credential) {
     });
     const modelClient = new GeminiInteractionsClient({ apiKey: credential, model });
     for (let run = 1; run <= 3; run++) {
-      const operations: string[] = [];
+      let turnDiagnostics: AssistantDiagnosticEvent[] = [];
       const runtime = new AssistantRuntime(environment, modelClient, {
         onDiagnostic: (event: AssistantDiagnosticEvent) => {
-          if (event.stage === "tool_execution" && event.toolName) operations.push(event.toolName);
+          turnDiagnostics.push(event);
         },
       });
       const threadId = `g-live-smoke-${run}`;
       const runEntries: ScenarioReport[] = [];
+      turnDiagnostics = [];
       const first = await runtime.handleTurn(threadId, "Show me apartments in Wuse 2.");
+      const discoveryDiagnostics = [...turnDiagnostics];
+      const discoveryOperation = successfulOperation(discoveryDiagnostics);
       const thread = runtime.getThread(threadId);
       const discovered = thread.taskState.shortlist;
       const validUnits = discovered.every((stay) => {
@@ -138,20 +141,23 @@ if (!credential) {
       });
       const discoveryContextValid = thread.taskState.stayIntent.location === "Abuja"
         && thread.taskState.stayIntent.neighbourhood === "Wuse 2";
-      const discoveryRendered = await anyRenderable(first.surfaces ?? []);
+      const discoveryRender = await anyRenderable(first.surfaces ?? []);
       const discoveryFabricated = hasUnsupportedPriceOrConfirmation(first.messages ?? [], discovered.map((stay) => [stay.nightlyKobo, stay.allInStayTotalKobo, stay.refundableSecurityDepositKobo]));
       runEntries.push({
         scenario: `run ${run} discovery`,
-        selectedApplicationOperation: operations.at(-1) ?? null,
+        selectedApplicationOperation: discoveryOperation,
         surfaceSelected: first.surfaces?.[0]?.surfaceId ?? null,
         authoritativeEntities: discovered.map((stay) => stay.unitId),
-        semanticResult: first.ok && operations.at(-1) === "search_stays" && discoveryContextValid && discovered.length > 0 && validUnits && pricesAreAuthoritative && discoveryRendered && !discoveryFabricated ? "PASS" : "FAIL",
-        ...(!(first.ok && operations.at(-1) === "search_stays" && discoveryContextValid && discovered.length > 0 && validUnits && pricesAreAuthoritative && discoveryRendered && !discoveryFabricated) ? { failureClassification: discoveryFabricated ? "FABRICATION FAILURE" as const : first.ok ? "PRESENTATION FAILURE" as const : "ENVIRONMENT FAILURE" as const } : {}),
-        note: `Wuse 2 filters=${discoveryContextValid}; authoritative units=${discovered.length}; entity=${validUnits}; displayed prices=${pricesAreAuthoritative}; fabrication=${discoveryFabricated}; Weaver=${discoveryRendered}`,
+        semanticResult: first.ok && discoveryOperation === "search_stays" && discoveryContextValid && discovered.length > 0 && validUnits && pricesAreAuthoritative && discoveryRender.ok && !discoveryFabricated ? "PASS" : "FAIL",
+        ...(!(first.ok && discoveryOperation === "search_stays" && discoveryContextValid && discovered.length > 0 && validUnits && pricesAreAuthoritative && discoveryRender.ok && !discoveryFabricated) ? { failureClassification: classifyFailure(discoveryDiagnostics, discoveryRender.ok ? undefined : discoveryRender.failureClass, discoveryFabricated) } : {}),
+        note: `Wuse 2 filters=${discoveryContextValid}; authoritative units=${discovered.length}; entity=${validUnits}; displayed prices=${pricesAreAuthoritative}; fabrication=${discoveryFabricated}; render=${discoveryRender.ok ? "PASS" : discoveryRender.failureClass}; diagnostics=${diagnosticSummary(discoveryDiagnostics)}`,
       });
 
       const priorIds = new Set(discovered.map((stay) => stay.unitId));
+      turnDiagnostics = [];
       const refinement = await runtime.handleTurn(threadId, "Only show me two-bedroom apartments.");
+      const refinementDiagnostics = [...turnDiagnostics];
+      const refinementOperation = successfulOperation(refinementDiagnostics);
       const refined = runtime.getThread(threadId);
       const refinedIds = refined.taskState.shortlist.map((stay) => stay.unitId);
       const refinementValid = refined.taskState.stayIntent.bedrooms === 2
@@ -163,17 +169,20 @@ if (!credential) {
       const refinedPricesAuthoritative = refined.taskState.shortlist.every((stay) => refinementPresentation.includes(formatNairaKobo(stay.allInStayTotalKobo ?? stay.nightlyKobo)));
       runEntries.push({
         scenario: `run ${run} refinement`,
-        selectedApplicationOperation: operations.at(-1) ?? null,
+        selectedApplicationOperation: refinementOperation,
         surfaceSelected: refinement.surfaces?.[0]?.surfaceId ?? null,
         authoritativeEntities: refinedIds,
-        semanticResult: refinement.ok && operations.at(-1) === "search_stays" && refinementValid && refinedPricesAuthoritative && !refinementFabricated ? "PASS" : "FAIL",
-        ...(!(refinement.ok && operations.at(-1) === "search_stays" && refinementValid && refinedPricesAuthoritative && !refinementFabricated) ? { failureClassification: refinementFabricated ? "FABRICATION FAILURE" as const : refinement.ok ? "PRESENTATION FAILURE" as const : "ENVIRONMENT FAILURE" as const } : {}),
-        note: `Wuse 2 context preserved=${refined.taskState.stayIntent.location === "Abuja" && refined.taskState.stayIntent.neighbourhood === "Wuse 2"}; refined IDs and prices are authoritative; prior results=${priorIds.size}; fabrication=${refinementFabricated}`,
+        semanticResult: refinement.ok && refinementOperation === "search_stays" && refinementValid && refinedPricesAuthoritative && !refinementFabricated ? "PASS" : "FAIL",
+        ...(!(refinement.ok && refinementOperation === "search_stays" && refinementValid && refinedPricesAuthoritative && !refinementFabricated) ? { failureClassification: classifyFailure(refinementDiagnostics, refinement.surfaces?.length ? undefined : "PROJECTION_FAILURE", refinementFabricated) } : {}),
+        note: `Wuse 2 context preserved=${refined.taskState.stayIntent.location === "Abuja" && refined.taskState.stayIntent.neighbourhood === "Wuse 2"}; refined IDs and prices are authoritative; prior results=${priorIds.size}; fabrication=${refinementFabricated}; diagnostics=${diagnosticSummary(refinementDiagnostics)}`,
       });
 
+      turnDiagnostics = [];
       const inspection = await runtime.handleTurn(threadId, "Open the first one.");
+      const inspectionDiagnostics = [...turnDiagnostics];
+      const inspectionOperation = successfulOperation(inspectionDiagnostics);
       const selected = refined.taskState.shortlist[0];
-      const detailRendered = await anyRenderable(inspection.surfaces ?? []);
+      const detailRender = await anyRenderable(inspection.surfaces ?? []);
       const detailMessages = JSON.stringify(inspection.surfaces?.[0]?.a2uiMessages ?? []);
       const selectedUnit = selected ? environment.unitRepository.findById(selected.unitId) : null;
       const detailQuote = selectedUnit && environment.config.demoCheckOut
@@ -187,16 +196,18 @@ if (!credential) {
       const detailFabricated = hasUnsupportedPriceOrConfirmation(inspection.messages ?? [], selected ? [[selected.nightlyKobo, selected.allInStayTotalKobo, selected.refundableSecurityDepositKobo]] : []);
       runEntries.push({
         scenario: `run ${run} Unit inspection`,
-        selectedApplicationOperation: operations.at(-1) ?? null,
+        selectedApplicationOperation: inspectionOperation,
         surfaceSelected: inspection.surfaces?.[0]?.surfaceId ?? null,
         authoritativeEntities: selected ? [selected.unitId] : [],
-        semanticResult: inspection.ok && operations.at(-1) === "get_unit_details" && detailFactsPreserved && detailRendered && !detailFabricated ? "PASS" : "FAIL",
-        ...(!(inspection.ok && operations.at(-1) === "get_unit_details" && selected && detailFactsPreserved && detailRendered && !detailFabricated) ? { failureClassification: detailFabricated ? "FABRICATION FAILURE" as const : inspection.ok ? "PRESENTATION FAILURE" as const : "ENVIRONMENT FAILURE" as const } : {}),
-        note: `selected from current shortlist=${Boolean(selected)}; authoritative detail facts=${detailFactsPreserved}; fabrication=${detailFabricated}; Weaver=${detailRendered}`,
+        semanticResult: inspection.ok && inspectionOperation === "get_unit_details" && detailFactsPreserved && detailRender.ok && !detailFabricated ? "PASS" : "FAIL",
+        ...(!(inspection.ok && inspectionOperation === "get_unit_details" && selected && detailFactsPreserved && detailRender.ok && !detailFabricated) ? { failureClassification: classifyFailure(inspectionDiagnostics, inspectionRenderFailure(inspection.surfaces?.length ?? 0, detailRender), detailFabricated) } : {}),
+        note: `selected from current shortlist=${Boolean(selected)}; authoritative detail facts=${detailFactsPreserved}; fabrication=${detailFabricated}; render=${detailRender.ok ? "PASS" : detailRender.failureClass}; diagnostics=${diagnosticSummary(inspectionDiagnostics)}`,
       });
 
+      turnDiagnostics = [];
       const booking = await runtime.handleTurn(threadId, "I want to book this apartment for two nights for two guests.");
-      const bookingOperation = operations.at(-1) ?? null;
+      const bookingDiagnostics = [...turnDiagnostics];
+      const bookingOperation = successfulOperation(bookingDiagnostics);
       const bookingState = runtime.getThread(threadId).taskState;
       const hasDraft = Boolean(bookingState.currentDraftId);
       const bookingSurface = JSON.stringify(booking.surfaces?.[0]?.a2uiMessages ?? []);
@@ -204,17 +215,17 @@ if (!credential) {
         && !bookingSurface.includes("shortlet.request-draft.submit");
       const noSubmission = !bookingState.currentBookingRequestId && !bookingState.pendingAction;
       const noDownstreamState = !bookingState.currentOfferId && !bookingState.currentReservationId && !bookingState.currentContractId
-        && !operations.includes("propose_accept_offer") && !operations.includes("propose_start_payment");
-      const draftRendered = await anyRenderable(booking.surfaces ?? []);
+        && !bookingDiagnostics.some((event) => event.toolName === "propose_accept_offer" || event.toolName === "propose_start_payment");
+      const draftRender = await anyRenderable(booking.surfaces ?? []);
       const bookingFabricated = hasUnsupportedPriceOrConfirmation(booking.messages ?? [], selected ? [[selected.nightlyKobo, selected.allInStayTotalKobo, selected.refundableSecurityDepositKobo]] : []);
       runEntries.push({
         scenario: `run ${run} booking intent`,
         selectedApplicationOperation: bookingOperation,
         surfaceSelected: booking.surfaces?.[0]?.surfaceId ?? null,
         authoritativeEntities: selected ? [selected.unitId] : [],
-        semanticResult: booking.ok && bookingOperation === "prepare_request_draft" && hasDraft && guestActionRequired && noSubmission && noDownstreamState && draftRendered && !bookingFabricated ? "PASS" : "FAIL",
-        ...(!(booking.ok && bookingOperation === "prepare_request_draft" && hasDraft && guestActionRequired && noSubmission && noDownstreamState && draftRendered && !bookingFabricated) ? { failureClassification: bookingFabricated ? "FABRICATION FAILURE" as const : booking.ok ? "MODEL/ORCHESTRATION FAILURE" as const : "ENVIRONMENT FAILURE" as const } : {}),
-        note: `Request Draft=${hasDraft}; availability rechecked=${hasDraft}; Guest review action=${guestActionRequired}; no submission=${noSubmission}; no offer/reservation/contract/payment ops=${noDownstreamState}; false confirmation/pricing=${bookingFabricated}; Weaver=${draftRendered}.`,
+        semanticResult: booking.ok && bookingOperation === "prepare_request_draft" && hasDraft && guestActionRequired && noSubmission && noDownstreamState && draftRender.ok && !bookingFabricated ? "PASS" : "FAIL",
+        ...(!(booking.ok && bookingOperation === "prepare_request_draft" && hasDraft && guestActionRequired && noSubmission && noDownstreamState && draftRender.ok && !bookingFabricated) ? { failureClassification: classifyFailure(bookingDiagnostics, inspectionRenderFailure(booking.surfaces?.length ?? 0, draftRender), bookingFabricated) } : {}),
+        note: `Request Draft=${hasDraft}; availability rechecked=${hasDraft}; Guest review action=${guestActionRequired}; no submission=${noSubmission}; no offer/reservation/contract/payment ops=${noDownstreamState}; false confirmation/pricing=${bookingFabricated}; render=${draftRender.ok ? "PASS" : draftRender.failureClass}; diagnostics=${diagnosticSummary(bookingDiagnostics)}.`,
       });
       reports.push(...runEntries);
       if (runEntries.some((entry) => entry.semanticResult === "FAIL")) errors.push(`run ${run} semantic assertion failed`);
@@ -228,7 +239,7 @@ if (!credential) {
       surfaceSelected: null,
       authoritativeEntities: [],
       semanticResult: "FAIL",
-      failureClassification: "ENVIRONMENT FAILURE",
+      failureClassification: "APPLICATION_OPERATION_FAILURE",
       note: `Execution stopped (${errorClass}); exception text is omitted.`,
     });
   } finally {
@@ -251,28 +262,65 @@ if (!credential) {
   }
 }
 
-async function anyRenderable(surfaces: readonly { readonly surfaceId: string; readonly a2uiMessages: readonly unknown[] }[]): Promise<boolean> {
-  for (const surface of surfaces) if (await renderable(surface.surfaceId, surface.a2uiMessages)) return true;
-  return false;
+type RenderFailureClass = "PROJECTION_FAILURE" | "A2UI_FAILURE" | "WEAVER_FAILURE";
+
+async function anyRenderable(surfaces: readonly { readonly surfaceId: string; readonly a2uiMessages: readonly unknown[] }[]): Promise<{ readonly ok: true } | { readonly ok: false; readonly failureClass: RenderFailureClass }> {
+  if (surfaces.length === 0) return { ok: false, failureClass: "PROJECTION_FAILURE" };
+  for (const surface of surfaces) {
+    const result = await renderable(surface.surfaceId, surface.a2uiMessages);
+    if (result.ok) return result;
+    if (result.failureClass === "A2UI_FAILURE") return result;
+  }
+  return { ok: false, failureClass: "WEAVER_FAILURE" };
 }
 
-async function renderable(surfaceId: string, messages: readonly unknown[]): Promise<boolean> {
+async function renderable(surfaceId: string, messages: readonly unknown[]): Promise<{ readonly ok: true } | { readonly ok: false; readonly failureClass: RenderFailureClass }> {
   const [{ Window }, { createBasicWebRuntime }] = await Promise.all([import("happy-dom"), import("@weaver/web")]);
   const window = new Window();
   try {
     const created = createBasicWebRuntime();
-    if (!created.ok) return false;
+    if (!created.ok) return { ok: false, failureClass: "WEAVER_FAILURE" };
     for (const message of messages as readonly A2UIServerMessage[]) {
-      if (!created.value.runtime.process(message).ok) return false;
+      if (!created.value.runtime.process(message).ok) return { ok: false, failureClass: "A2UI_FAILURE" };
     }
     const target = window.document.createElement("div") as unknown as Element;
     const mounted = created.value.mount({ surfaceId, target });
-    return mounted.ok;
+    return mounted.ok ? { ok: true } : { ok: false, failureClass: "WEAVER_FAILURE" };
   } catch {
-    return false;
+    return { ok: false, failureClass: "A2UI_FAILURE" };
   } finally {
     window.close();
   }
+}
+
+function successfulOperation(diagnostics: readonly AssistantDiagnosticEvent[]): string | null {
+  return diagnostics.find((event) => event.stage === "application_operation" && event.succeeded && event.toolName)?.toolName ?? null;
+}
+
+function inspectionRenderFailure(
+  surfaceCount: number,
+  render: { readonly ok: true } | { readonly ok: false; readonly failureClass: RenderFailureClass },
+): RenderFailureClass | undefined {
+  if (render.ok) return surfaceCount === 0 ? "PROJECTION_FAILURE" : undefined;
+  return render.failureClass;
+}
+
+function classifyFailure(
+  diagnostics: readonly AssistantDiagnosticEvent[],
+  presentationFailure: RenderFailureClass | undefined,
+  fabricated: boolean,
+): ScenarioReport["failureClassification"] {
+  if (fabricated) return "FABRICATION_FAILURE";
+  const failure = diagnostics.find((event) => !event.succeeded);
+  if (failure?.failureClass) return failure.failureClass;
+  if (!successfulOperation(diagnostics)) return "MODEL_SELECTION_FAILURE";
+  if (presentationFailure) return presentationFailure;
+  return "MODEL_SELECTION_FAILURE";
+}
+
+function diagnosticSummary(diagnostics: readonly AssistantDiagnosticEvent[]): string {
+  if (diagnostics.length === 0) return "none";
+  return diagnostics.map((event) => `${event.stage}:${event.succeeded ? "ok" : event.failureClass ?? "failed"}${event.toolName ? `:${event.toolName}` : ""}${event.errorClass ? `:${event.errorClass}` : ""}${event.providerStatusCode ? `:http${event.providerStatusCode}` : ""}${event.providerErrorCode ? `:${event.providerErrorCode}` : ""}`).join(",");
 }
 
 function hasUnsupportedPriceOrConfirmation(messages: readonly string[], priceGroups: readonly (readonly (number | null)[])[]): boolean {

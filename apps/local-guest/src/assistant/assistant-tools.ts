@@ -166,6 +166,64 @@ export const ASSISTANT_TOOL_DEFINITIONS: readonly AssistantToolDefinition[] = [
   },
 ];
 
+export function assistantToolsForState(taskState: AssistantTaskState): readonly AssistantToolDefinition[] {
+  const currentSelectedStay = taskState.shortlist.find((stay) => stay.stayRef === taskState.selectedStayRef);
+  return ASSISTANT_TOOL_DEFINITIONS.filter((tool) => {
+    switch (tool.name) {
+      case "get_unit_details":
+      case "compare_stays":
+      case "explain_stay_price":
+      case "propose_request_to_book":
+        return taskState.shortlist.length > 0;
+      case "prepare_request_draft":
+        return currentSelectedStay !== undefined;
+      case "propose_accept_offer":
+        return taskState.currentOfferId !== undefined;
+      case "propose_start_payment":
+        return taskState.currentOfferId !== undefined;
+      default:
+        return true;
+    }
+  });
+}
+
+export interface AssistantToolPreconditionFailure {
+  readonly code: "invalid_tool_for_state" | "invalid_reference";
+  readonly message: string;
+}
+
+export function validateAssistantToolCall(
+  name: string,
+  args: Record<string, unknown>,
+  taskState: AssistantTaskState,
+): AssistantToolPreconditionFailure | undefined {
+  if (!ASSISTANT_TOOL_DEFINITIONS.some((tool) => tool.name === name)) {
+    return { code: "invalid_tool_for_state", message: "That operation is not available for the current Guest workflow." };
+  }
+
+  if (name === "get_unit_details") {
+    if (taskState.shortlist.length === 0) {
+      return { code: "invalid_tool_for_state", message: "A current shortlist is required before opening a stay." };
+    }
+    const stayRef = typeof args.stayRef === "string" ? args.stayRef.trim() : "";
+    if (!taskState.shortlist.some((stay) => stay.stayRef === stayRef)) {
+      return { code: "invalid_reference", message: "That stay reference is not in the current shortlist." };
+    }
+  }
+
+  if (name === "prepare_request_draft") {
+    const selectedStay = taskState.shortlist.find((stay) => stay.stayRef === taskState.selectedStayRef);
+    if (!selectedStay) {
+      return { code: "invalid_tool_for_state", message: "Open a stay from the current shortlist before preparing a Request Draft." };
+    }
+    if (args.stayRef !== selectedStay.stayRef) {
+      return { code: "invalid_reference", message: "The requested stay is not the currently selected stay." };
+    }
+  }
+
+  return undefined;
+}
+
 export interface SearchStaysToolArgs {
   city: string;
   neighbourhood?: string | null;
@@ -263,6 +321,10 @@ export function executeAssistantTool(
   args: Record<string, unknown>,
   context: AssistantToolContext,
 ): AssistantToolExecutionResult {
+  const preconditionFailure = validateAssistantToolCall(name, args, context.taskState);
+  if (preconditionFailure) {
+    throw Object.assign(new Error(preconditionFailure.message), { code: preconditionFailure.code });
+  }
   const definition = ASSISTANT_TOOL_DEFINITIONS.find((t) => t.name === name);
   if (!definition) {
     throw new Error(`Unknown tool: '${name}'. Allowed tools: ${ASSISTANT_TOOL_DEFINITIONS.map((t) => t.name).join(", ")}`);
@@ -363,7 +425,7 @@ export function executeAssistantTool(
         ...(requiredAmenities !== undefined ? { requiredAmenities } : {}),
       };
       taskState.shortlist = shortlist;
-      taskState.selectedStayRef = shortlist[0]?.stayRef;
+      taskState.selectedStayRef = undefined;
 
       // Minimized public result representation for model
       const publicSummaries = shortlist.map((ref) => ({
@@ -401,6 +463,9 @@ export function executeAssistantTool(
       const stay = taskState.shortlist.find((s) => s.stayRef === stayRef);
       if (!stay) {
         throw new Error(`Stay reference '${stayRef}' is not in the current shortlist.`);
+      }
+      if (!context.environment.unitRepository.findById(stay.unitId)) {
+        throw new Error("The selected Unit no longer exists.");
       }
       taskState.selectedStayRef = stay.stayRef;
       return {

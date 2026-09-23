@@ -24,8 +24,9 @@ import type {
 } from "./assistant-model.js";
 import {
   ASSISTANT_SYSTEM_INSTRUCTION,
-  ASSISTANT_TOOL_DEFINITIONS,
   executeAssistantTool,
+  assistantToolsForState,
+  validateAssistantToolCall,
   MAX_ASSISTANT_TOOL_ROUNDS,
   type AssistantToolContext,
 } from "./assistant-tools.js";
@@ -57,8 +58,21 @@ export interface AssistantTurnOutput {
 export type AssistantDiagnosticStage =
   | "provider_request"
   | "provider_response"
+  | "application_operation"
+  | "projection"
+  | "a2ui"
+  | "weaver"
   | "tool_execution"
   | "function_result_round_trip";
+
+export type AssistantFailureClass =
+  | "PROVIDER_TRANSPORT_FAILURE"
+  | "MODEL_SELECTION_FAILURE"
+  | "INVALID_TOOL_FOR_STATE"
+  | "APPLICATION_OPERATION_FAILURE"
+  | "PROJECTION_FAILURE"
+  | "A2UI_FAILURE"
+  | "WEAVER_FAILURE";
 
 export interface AssistantDiagnosticEvent {
   readonly stage: AssistantDiagnosticStage;
@@ -69,6 +83,7 @@ export interface AssistantDiagnosticEvent {
   readonly errorClass?: string;
   readonly providerStatusCode?: number;
   readonly providerErrorCode?: string;
+  readonly failureClass?: AssistantFailureClass;
 }
 
 export interface AssistantRuntimeOptions {
@@ -206,6 +221,7 @@ export class AssistantRuntime {
     let finalAssistantReply: string | undefined;
     let activeStage: AssistantDiagnosticStage = "provider_request";
     let activeToolName: string | undefined;
+    let hasSuccessfulApplicationOperation = false;
 
     try {
       while (round < MAX_ASSISTANT_TOOL_ROUNDS) {
@@ -215,7 +231,7 @@ export class AssistantRuntime {
         activeStage = isFunctionResultContinuation ? "function_result_round_trip" : "provider_request";
         const modelResponse = await this.#modelClient.generate({
           systemInstruction: ASSISTANT_SYSTEM_INSTRUCTION,
-          tools: ASSISTANT_TOOL_DEFINITIONS,
+          tools: assistantToolsForState(candidateTaskState),
           history: candidateHistory,
           timeoutMs: 20_000,
         });
@@ -249,6 +265,23 @@ export class AssistantRuntime {
         for (const call of modelResponse.toolCalls) {
           activeStage = "tool_execution";
           activeToolName = call.name;
+          const invalidCall = validateAssistantToolCall(call.name, call.args, candidateTaskState);
+          if (invalidCall) {
+            this.#diagnose({
+              stage: "tool_execution",
+              round,
+              toolName: call.name,
+              succeeded: false,
+              failureClass: invalidCall.code === "invalid_tool_for_state" ? "INVALID_TOOL_FOR_STATE" : "MODEL_SELECTION_FAILURE",
+            });
+            toolResults.push({
+              callId: call.id,
+              name: call.name,
+              result: { error: invalidCall.code, message: invalidCall.message },
+              isError: true,
+            });
+            continue;
+          }
           const toolContext: AssistantToolContext = {
             environment: this.#environment,
             taskState: candidateTaskState,
@@ -258,10 +291,12 @@ export class AssistantRuntime {
             demoCheckIn: this.#environment.config.demoCheckIn,
           };
 
+          activeStage = "application_operation";
           const execution = executeAssistantTool(call.name, call.args, toolContext);
+          hasSuccessfulApplicationOperation = true;
           const resultCount = getSafeResultCount(execution.result);
           this.#diagnose({
-            stage: "tool_execution",
+            stage: activeStage,
             round,
             toolName: call.name,
             succeeded: true,
@@ -273,7 +308,8 @@ export class AssistantRuntime {
             result: execution.result,
           });
 
-          // Handle UI generation for tools
+          // Application projections are generated server-side from authoritative operation results.
+          activeStage = "projection";
           if (call.name === "search_stays") {
             // Supersede any previous search or details
             supersede(DISCOVERY_STAGE);
@@ -285,6 +321,7 @@ export class AssistantRuntime {
             candidateDiscoveryArtifactId = execution.discoveryArtifact.id;
             const surfaceId = `thread-${threadId}:discovery:${execution.discoveryArtifact.id}`;
             candidateActiveSurfaces.set(DISCOVERY_STAGE, surfaceId);
+            activeStage = "a2ui";
             candidateSurfaces.push({
               surfaceId,
               a2uiMessages: discoveryArtifactToA2UI({ artifact: execution.discoveryArtifact, surfaceId }),
@@ -309,6 +346,7 @@ export class AssistantRuntime {
               );
 
               const unitDetailArtifact = unitDetailArtifactFromProjection({ unit: unitProjection, checkIn, checkOut, projectionVersion: 1, viewer: this.#environment.guestPrincipal() });
+              activeStage = "a2ui";
               const a2uiMessages = unitDetailArtifactToA2UI({ artifact: unitDetailArtifact, surfaceId });
 
               candidateSurfaces.push({ surfaceId, a2uiMessages });
@@ -319,6 +357,7 @@ export class AssistantRuntime {
             supersede(UNIT_STAGE);
             supersede(REQUEST_STAGE);
             candidateActiveSurfaces.set(REQUEST_STAGE, surface.surfaceId);
+            activeStage = "a2ui";
             candidateSurfaces.push({ surfaceId: surface.surfaceId, a2uiMessages: surface.a2uiMessages });
           } else if (execution.pendingActionCreated) {
             // Consequential action proposed -> create confirmation card surface
@@ -327,6 +366,7 @@ export class AssistantRuntime {
             supersede(PENDING_ACTION_STAGE);
             candidateActiveSurfaces.set(PENDING_ACTION_STAGE, surfaceId);
 
+            activeStage = "a2ui";
             const a2uiMessages = pendingActionToA2UI({
               action,
               surfaceId,
@@ -375,6 +415,17 @@ export class AssistantRuntime {
       };
     } catch (error) {
       this.#diagnose(createFailureDiagnostic(activeStage, round, activeToolName, error));
+      if (hasSuccessfulApplicationOperation && candidateSurfaces.length > 0) {
+        const message = fallbackForProjectedOperation(candidateSurfaces[0]?.surfaceId ?? "");
+        candidateHistory.push({ role: "assistant", text: message });
+        thread.taskState = candidateTaskState;
+        thread.conversationHistory.length = 0;
+        thread.conversationHistory.push(...candidateHistory);
+        thread.activeSurfaces = candidateActiveSurfaces;
+        thread.supersededSurfaces = candidateSuperseded;
+        thread.discoveryArtifactId = candidateDiscoveryArtifactId;
+        return { ok: true, messages: [message], surfaces: candidateSurfaces };
+      }
       // Rollback: thread is not mutated on error
       return {
         ok: false,
@@ -800,7 +851,39 @@ function createFailureDiagnostic(
     succeeded: false,
     ...(toolName ? { toolName } : {}),
     errorClass: error instanceof Error ? error.constructor.name : typeof error,
+    failureClass: classifyFailure(stage, error),
     ...(safeStatus !== undefined ? { providerStatusCode: safeStatus } : {}),
     ...(safeCode !== undefined ? { providerErrorCode: safeCode } : {}),
   };
+}
+
+function classifyFailure(stage: AssistantDiagnosticStage, error: unknown): AssistantFailureClass {
+  const errorClass = error instanceof Error ? error.constructor.name : "";
+  const providerStatus = typeof error === "object" && error !== null && "status" in error
+    && typeof error.status === "number";
+  if ((stage === "provider_request" || stage === "function_result_round_trip")
+    && (errorClass === "APIConnectionError" || errorClass === "RateLimitError" || errorClass === "APIError" || providerStatus)) {
+    return "PROVIDER_TRANSPORT_FAILURE";
+  }
+  switch (stage) {
+    case "provider_response":
+      return "MODEL_SELECTION_FAILURE";
+    case "application_operation":
+      return "APPLICATION_OPERATION_FAILURE";
+    case "projection":
+      return "PROJECTION_FAILURE";
+    case "a2ui":
+      return "A2UI_FAILURE";
+    case "weaver":
+      return "WEAVER_FAILURE";
+    default:
+      return "MODEL_SELECTION_FAILURE";
+  }
+}
+
+function fallbackForProjectedOperation(surfaceId: string): string {
+  if (surfaceId.includes(":discovery:")) return "Your current search results are ready below. You can refine them or open a stay.";
+  if (surfaceId.includes(":unit:")) return "The selected stay details are ready below.";
+  if (surfaceId.includes(":request:draft:")) return "Your Request Draft is ready to review below. It has not been submitted.";
+  return "The requested information is ready below.";
 }

@@ -16,7 +16,11 @@ export const DEFAULT_GEMINI_TIMEOUT_MS = 20_000;
 
 interface InteractionRequestOptions {
   readonly timeout?: number;
+  readonly maxRetries?: number;
 }
+
+const MAX_CONNECTION_RETRIES = 1;
+const CONNECTION_RETRY_DELAY_MS = 100;
 
 interface InteractionTransport {
   create(
@@ -75,7 +79,7 @@ export class GeminiInteractionsClient implements AssistantModelClient {
     } else {
       const ai = new GoogleGenAI({ apiKey: config.apiKey });
       this.#interactions = {
-        create: (params, options) => ai.interactions.create({ ...params, stream: false }, options),
+        create: (params, options) => ai.interactions.create({ ...params, stream: false }, { ...options, maxRetries: 0 }),
       };
     }
     this.#model = config.model ?? process.env.GEMINI_MODEL ?? DEFAULT_GEMINI_MODEL;
@@ -108,8 +112,22 @@ export class GeminiInteractionsClient implements AssistantModelClient {
       timeout: request.timeoutMs ?? this.#timeoutMs,
     };
 
-    const interaction = await this.#interactions.create(params, options);
+    const interaction = await this.#createWithBoundedConnectionRetry(params, options);
     return this.#parseInteractionResponse(interaction);
+  }
+
+  async #createWithBoundedConnectionRetry(
+    params: Interactions.CreateModelInteractionParamsNonStreaming,
+    options: InteractionRequestOptions,
+  ): Promise<Interactions.Interaction> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.#interactions.create(params, options);
+      } catch (error) {
+        if (attempt >= MAX_CONNECTION_RETRIES || !isRetryableConnectionError(error)) throw error;
+        await new Promise<void>((resolve) => setTimeout(resolve, CONNECTION_RETRY_DELAY_MS));
+      }
+    }
   }
 
   #mapHistoryToInteractionsInput(history: readonly AssistantConversationStep[]): Interactions.Step[] {
@@ -229,6 +247,10 @@ export class GeminiInteractionsClient implements AssistantModelClient {
       rawStep: steps,
     };
   }
+}
+
+function isRetryableConnectionError(error: unknown): boolean {
+  return error instanceof Error && error.name === "APIConnectionError";
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
