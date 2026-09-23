@@ -15,6 +15,7 @@ export interface AssistantStayReference {
   readonly city: string;
   readonly neighbourhood: string;
   readonly capacity: number;
+  readonly bedrooms?: number;
   readonly amenities: readonly string[];
   readonly nightlyKobo: number;
   readonly allInStayTotalKobo: number | null;
@@ -32,6 +33,7 @@ export interface AssistantStayIntent {
   checkOut?: string;
   nights?: number;
   partySize?: number;
+  bedrooms?: number;
   maxBudgetKobo?: number;
   requiredAmenities?: readonly string[];
 }
@@ -41,6 +43,7 @@ export interface AssistantTaskState {
   stayIntent: AssistantStayIntent;
   shortlist: readonly AssistantStayReference[];
   selectedStayRef?: string;
+  currentDraftId?: string;
   currentBookingRequestId?: string;
   currentOfferId?: string;
   currentReservationId?: string;

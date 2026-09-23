@@ -42,7 +42,8 @@ export function startLocalPilotServer(options: { readonly port?: number; readonl
     databasePath: paths.databasePath, inventoryPath: paths.inventoryPath, tenantId: LOCAL_PILOT_TENANT_ID,
     operatorId: LOCAL_PILOT_OPERATOR_ID, operatorName: LOCAL_PILOT_OPERATOR_NAME, representativePersonId: LOCAL_PILOT_ACTOR_ID,
     representativePersonName: "Local Pilot Representative", adminId: "admin-local-pilot", guestId: "guest-local-bootstrap",
-    guestName: "Local Guest", initialGuestPhoneNumber: null, initialGuestContactEmail: null, demoCheckIn, production: false,
+    guestName: "Local Guest", initialGuestPhoneNumber: null, initialGuestContactEmail: null, demoCheckIn,
+    ...(process.env.CONCIERGE_MODE === "gemini" ? { demoCheckOut: "2026-10-01" } : {}), production: false,
     deterministicPsp: true, seedRepresentativeGrant: false, clock,
   });
   const operatorEnvironment = new LocalApartmentOwnerEnvironment({

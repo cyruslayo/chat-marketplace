@@ -2,3 +2,4 @@ node_modules/
 .scratch/shortlet/
 .scratch/pilot-local/
 .scratch/pilot-acceptance-rodney/
+.scratch/pilot-agent-smoke/

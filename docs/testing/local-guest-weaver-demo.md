@@ -44,6 +44,38 @@ CONCIERGE_MODE=gemini npm run guest:local
 
 If `CONCIERGE_MODE=gemini` is selected without `GEMINI_API_KEY`, startup fails clearly. Deterministic tests never call Gemini.
 
+## Optional local pilot live-agent smoke
+
+This explicit smoke is separate from `npm test`, `npm run check`, `npm run verify:weaver`, and `pilot:acceptance:rodney`. It uses the already-bootstrapped local pilot inventory and the existing Gemini `AssistantModelClient` adapter. It makes three short model runs; API usage may incur cost.
+
+PowerShell:
+
+```powershell
+$env:GEMINI_API_KEY = "<key>"
+$env:GEMINI_MODEL = "gemini-3.8-flash"
+npm run pilot:local:agent-smoke
+```
+
+The command does not start or reset the pilot, and it does not submit a Booking Request or start payment. Without `GEMINI_API_KEY`, it exits successfully with `Live-agent smoke not run — credentials unavailable` and writes a `NOT_RUN` report. Runtime artifacts are written under `.scratch/pilot-agent-smoke/` and are ignored by Git. Reports contain semantic summaries only, not prompts, model prose, or credentials.
+
+The live browser can use the same existing Guest interface and local inventory:
+
+```powershell
+$env:GEMINI_API_KEY = "<key>"
+$env:GEMINI_MODEL = "gemini-3.8-flash"
+$env:CONCIERGE_MODE = "gemini"
+npm run pilot:local
+```
+
+Then use the Guest conversation with these prompts, in order:
+
+1. `Show me apartments in Wuse 2.`
+2. `Only show me two-bedroom apartments.`
+3. `Open the first one.`
+4. `I want to book this apartment for two nights for two guests.`
+
+`GEMINI_API_KEY` remains server-side. The local pilot continues to use its local payment provider; this smoke stops after the non-submitting Request Draft, before Operator or payment workflows. Location-only discovery does not require invented dates or party details; availability is rechecked authoritatively when the Request Draft is prepared.
+
 ## Journey stages
 
 1. Discovery renders authoritative results with Weaver Basic Catalog A2UI, All-In Stay Total, separate Refundable Security Deposit, inspection, and management-trust facts. The canonical Ikoyi prompt returns only the eligible Old Ikoyi Unit; a generic Lagos prompt can return both eligible fixtures.

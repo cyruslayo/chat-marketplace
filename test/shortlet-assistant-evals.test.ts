@@ -77,8 +77,73 @@ test("Eval 2: Clarification when essential search info is missing", async () => 
 
 test("No-date local demo instruction makes date optional while relative dates require YYYY-MM-DD", () => {
   assert.match(ASSISTANT_SYSTEM_INSTRUCTION, /check-in date is optional for this local demo/i);
-  assert.match(ASSISTANT_SYSTEM_INSTRUCTION, /checkIn: null/i);
+  assert.match(ASSISTANT_SYSTEM_INSTRUCTION, /discovery-only requests, location and optional filters suffice/i);
   assert.match(ASSISTANT_SYSTEM_INSTRUCTION, /relative date[\s\S]*YYYY-MM-DD/i);
+});
+
+test("Authoritative Assistant discovery supports exact bedroom refinement and supersedes the prior result surface", async () => {
+  const model = new ScriptedAssistantModel([
+    (request) => {
+      const latestUser = [...request.history].reverse().find((step) => step.role === "user");
+      if (!latestUser) return null;
+      const refinement = /two-bedroom/i.test(latestUser.text);
+      return {
+        toolCalls: [{
+          id: refinement ? "wuse-bedroom-refinement" : "wuse-initial-search",
+          name: "search_stays",
+          args: {
+            city: "Abuja",
+            neighbourhood: "Wuse 2",
+            ...(refinement ? { bedrooms: 2 } : {}),
+          },
+        }],
+      };
+    },
+  ]);
+  const { runtime } = createTestRuntime(model);
+  const initial = await runtime.handleTurn("g-bedroom-filter", "Show me apartments in Wuse 2.");
+  const priorSurfaceId = initial.surfaces?.[0]?.surfaceId;
+  assert.ok(priorSurfaceId);
+  const refinement = await runtime.handleTurn("g-bedroom-filter", "Only show me two-bedroom apartments.");
+  const thread = runtime.getThread("g-bedroom-filter");
+  assert.equal(thread.taskState.stayIntent.location, "Abuja");
+  assert.equal(thread.taskState.stayIntent.neighbourhood, "Wuse 2");
+  assert.equal(thread.taskState.stayIntent.bedrooms, 2);
+  assert.ok(thread.taskState.shortlist.every((stay) => stay.bedrooms === 2));
+  assert.ok(refinement.surfaces?.[0]?.surfaceId);
+  assert.notEqual(refinement.surfaces[0]!.surfaceId, priorSurfaceId);
+  assert.ok(thread.supersededSurfaces.has(priorSurfaceId));
+});
+
+test("Assistant booking intent creates an authoritative non-submitting Request Draft surface", async () => {
+  const model = new ScriptedAssistantModel([
+    (request) => {
+      const latestUser = [...request.history].reverse().find((step) => step.role === "user");
+      if (!latestUser) return null;
+      if (/book/i.test(latestUser.text)) {
+        return { toolCalls: [{ id: "prepare-draft", name: "prepare_request_draft", args: { stayRef: "stay-1", nights: 2, guests: 2 } }] };
+      }
+      return { toolCalls: [{ id: "search-ikoyi", name: "search_stays", args: { city: "Lagos", neighbourhood: "Old Ikoyi", checkIn: null, nights: 2, guests: 2 } }] };
+    },
+  ]);
+  const { env, runtime } = createTestRuntime(model);
+  try {
+    await runtime.handleTurn("g-request-draft", "I need an apartment in Ikoyi for two nights for two guests.");
+    const bookingIntent = await runtime.handleTurn("g-request-draft", "I want to book the first one.");
+    const thread = runtime.getThread("g-request-draft");
+    assert.ok(thread.taskState.currentDraftId);
+    assert.equal(thread.taskState.currentBookingRequestId ?? null, null);
+    assert.equal(thread.taskState.pendingAction ?? null, null);
+    assert.ok(bookingIntent.surfaces?.[0]?.surfaceId.includes(":request:draft:"));
+    const messages = bookingIntent.surfaces?.[0]?.a2uiMessages ?? [];
+    assert.match(JSON.stringify(messages), /shortlet\.request-draft\.review/);
+    assert.doesNotMatch(JSON.stringify(messages), /shortlet\.request-draft\.submit/);
+    const harness = setupHarness();
+    harness.mountSurface(bookingIntent.surfaces![0]!.surfaceId, messages);
+    assert.ok(env.bookingRequestApp.manager.getDraft(thread.taskState.currentDraftId));
+  } finally {
+    env.close();
+  }
 });
 
 test("Authoritative search normalizes Lagos and Abuja case-insensitively without accepting other cities", async () => {

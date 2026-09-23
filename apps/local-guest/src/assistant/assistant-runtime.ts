@@ -275,7 +275,6 @@ export class AssistantRuntime {
 
           // Handle UI generation for tools
           if (call.name === "search_stays") {
-            const surfaceId = `thread-${threadId}:discovery:results`;
             // Supersede any previous search or details
             supersede(DISCOVERY_STAGE);
             supersede(UNIT_STAGE);
@@ -284,6 +283,7 @@ export class AssistantRuntime {
               throw new Error("Authoritative discovery did not return an artifact");
             }
             candidateDiscoveryArtifactId = execution.discoveryArtifact.id;
+            const surfaceId = `thread-${threadId}:discovery:${execution.discoveryArtifact.id}`;
             candidateActiveSurfaces.set(DISCOVERY_STAGE, surfaceId);
             candidateSurfaces.push({
               surfaceId,
@@ -313,6 +313,13 @@ export class AssistantRuntime {
 
               candidateSurfaces.push({ surfaceId, a2uiMessages });
             }
+          } else if (execution.requestDraftSurface) {
+            const surface = execution.requestDraftSurface;
+            supersede(DISCOVERY_STAGE);
+            supersede(UNIT_STAGE);
+            supersede(REQUEST_STAGE);
+            candidateActiveSurfaces.set(REQUEST_STAGE, surface.surfaceId);
+            candidateSurfaces.push({ surfaceId: surface.surfaceId, a2uiMessages: surface.a2uiMessages });
           } else if (execution.pendingActionCreated) {
             // Consequential action proposed -> create confirmation card surface
             const action = execution.pendingActionCreated;

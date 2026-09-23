@@ -1755,22 +1755,23 @@ export function startLocalGuestServer(options: {
   const paystackClient = configuredPaystack ?? env.config.paystackClient;
 
   let assistantRuntime: AssistantRuntime | undefined;
+  let assistantModelClient: AssistantModelClient | undefined;
   let geminiClient: GeminiConciergeClient | undefined;
 
   if (mode === "assistant-offline") {
-    const modelClient = options.modelClient ?? new ScriptedAssistantModel();
-    assistantRuntime = new AssistantRuntime(env, modelClient);
+    assistantModelClient = options.modelClient ?? new ScriptedAssistantModel();
+    assistantRuntime = new AssistantRuntime(env, assistantModelClient);
   } else if (mode === "gemini") {
     if (options.modelClient) {
-      assistantRuntime = new AssistantRuntime(env, options.modelClient);
+      assistantModelClient = options.modelClient;
     } else {
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) {
         throw new Error("CONCIERGE_MODE=gemini requires GEMINI_API_KEY");
       }
-      const client = new GeminiInteractionsClient({ apiKey });
-      assistantRuntime = new AssistantRuntime(env, client);
+      assistantModelClient = new GeminiInteractionsClient({ apiKey, model: process.env.GEMINI_MODEL?.trim() || undefined });
     }
+    assistantRuntime = new AssistantRuntime(env, assistantModelClient);
   }
 
   const defaultApp = new LocalGuestApp(env, { geminiClient, assistantRuntime });
@@ -1789,7 +1790,12 @@ export function startLocalGuestServer(options: {
       deterministicPsp: !production,
       ...(paystackClient === undefined ? {} : { paystackClient }),
     });
-    const runtime = { environment: runtimeEnvironment, app: new LocalGuestApp(runtimeEnvironment) };
+    const runtime = {
+      environment: runtimeEnvironment,
+      app: new LocalGuestApp(runtimeEnvironment, {
+        ...(assistantModelClient ? { assistantRuntime: new AssistantRuntime(runtimeEnvironment, assistantModelClient) } : {}),
+      }),
+    };
     sessionRuntimes.set(session.sessionKey, runtime);
     return runtime;
   };
