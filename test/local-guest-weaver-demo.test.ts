@@ -273,7 +273,7 @@ test("Weaver-generated View Unit action round-trips through the server and repla
     const [eventResponse] = await journey.relayEvents();
     const unitResponse = expectSuccess(eventResponse, "view-unit event");
     const unitSurface = unitResponse.surfaces[0]!;
-    assert.match(unitSurface.surfaceId, /:unit:detail$/);
+    assert.match(unitSurface.surfaceId, /:unit:detail:\d+$/);
 
     journey.harness.mountSurface(unitSurface.surfaceId, unitSurface.a2uiMessages as readonly A2UIServerMessage[]);
     const unitTarget = journey.harness.mounted[1]!.target;

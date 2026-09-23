@@ -104,6 +104,11 @@ const REQUEST_STAGE = "request";
 const OFFER_STAGE = "offer";
 const PAYMENT_STAGE = "payment";
 const BOOKING_STAGE = "booking";
+
+function unitDetailSurfaceId(threadId: string, discoveryRevision: number): string {
+  // ADR-0074: a newly selected detail is a new surface lifecycle; Weaver rejects duplicate createSurface IDs.
+  return `thread-${threadId}:unit:detail:${discoveryRevision}`;
+}
 const GUEST_PHONE_SUBMIT_EVENT = "shortlet.guest-contact.submit-phone";
 const GUEST_EMAIL_SUBMIT_EVENT = "shortlet.guest-contact.submit-email";
 
@@ -600,7 +605,7 @@ export class LocalGuestApp {
       if (projection.activeStage === UNIT_STAGE && projection.unitDetail && projection.discoveryArtifact) {
         const unit = projection.discoveryArtifact.facts.results.find((candidate) => candidate.id === projection.unitDetail?.unitId);
         if (unit) {
-          const unitSurfaceId = `thread-${thread.threadId}:unit:detail`;
+          const unitSurfaceId = unitDetailSurfaceId(thread.threadId, projection.discoveryRevision);
           thread.activeSurfaces.set(UNIT_STAGE, unitSurfaceId);
           return {
             surfaceId: unitSurfaceId,
@@ -877,7 +882,7 @@ export class LocalGuestApp {
 
     const unitDetailArtifact = unitDetailArtifactFromProjection({ unit, ...this.#stayDatesFor(thread), projectionVersion: artifact.projectionVersion, viewer: this.#environment.guestPrincipal() });
     thread.unitDetail = { unitId: unit.id, artifactId: unitDetailArtifact.id };
-    const surfaceId = `thread-${thread.threadId}:unit:detail`;
+    const surfaceId = unitDetailSurfaceId(thread.threadId, thread.discoveryRevision);
     // ADR-0074: selecting a Unit supersedes the discovery projection and its
     // generated actions; the linear demo has no valid back-navigation state.
     this.#supersede(thread, DISCOVERY_STAGE);
