@@ -89,6 +89,12 @@ npm run pilot:local:bootstrap
 
 It cannot target production paths and no reset HTTP route is mounted.
 
+## Rodney browser acceptance (Windows)
+
+PowerShell 7, Chrome, and the external `rodney` CLI are required; Rodney is not an npm dependency. Run `npm run pilot:acceptance:rodney -- --Reset` for a clean local run; `--Reset` explicitly resets and bootstraps local pilot data. By default the harness starts and stops its own `pilot:local` server. Use `--UseExistingServer` with a healthy manually started server to leave that server untouched; restart persistence is skipped in this mode. Guest A, Guest B, and Operator use separate Rodney homes beneath `.scratch/pilot-acceptance-rodney/sessions/`. Reports, screenshots, logs, and sessions are kept under `.scratch/pilot-acceptance-rodney/`.
+
+The verified Rodney v0.4.0 executable advertises `start --show` in top-level help but rejects it at runtime, so `--ShowBrowser` falls back to headless acceptance. Rodney screenshot `-w`/`-h` changes screenshot dimensions but did not change CSS `window.innerWidth` or `documentElement.clientWidth` in this environment. The 320px/390px behavioral viewport checks are therefore reported as **SKIPPED**, not passed.
+
 ## Data location
 
 Runtime data is ignored by Git and survives restart:

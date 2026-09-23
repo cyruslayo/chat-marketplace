@@ -13,6 +13,7 @@
     "pilot:local:bootstrap": "tsx apps/pilot/src/cli-local-bootstrap.ts",
     "pilot:local:reset": "tsx apps/pilot/src/cli-local-reset.ts",
     "pilot:local:operator-token": "tsx apps/pilot/src/cli-local-operator-token.ts",
+    "pilot:acceptance:rodney": "pwsh -NoProfile -File scripts/pilot-acceptance-rodney.ps1",
     "operator:provision": "tsx apps/local-owner/src/cli-provision.ts",
     "operator:revoke": "tsx apps/local-owner/src/cli-revoke.ts",
     "pilot:operator:create": "tsx apps/shortlet-ops/src/cli-operator-create.ts",
