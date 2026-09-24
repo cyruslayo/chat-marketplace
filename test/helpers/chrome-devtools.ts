@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer } from "node:net";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -13,6 +13,11 @@ export interface RealBrowserCookie {
   readonly path: string;
   readonly httpOnly?: boolean;
   readonly sameSite?: string;
+}
+
+export interface RealBrowserAccessibilityNode {
+  readonly role: string;
+  readonly name: string;
 }
 
 export interface RealBrowserTab {
@@ -28,6 +33,7 @@ export interface RealBrowserTab {
   isElementFocused(selector: string): Promise<boolean>;
   getCookies(): Promise<readonly RealBrowserCookie[]>;
   getContent(): Promise<string>;
+  getAccessibilityTree(): Promise<readonly RealBrowserAccessibilityNode[]>;
   captureScreenshot(): Promise<Uint8Array>;
   close(): Promise<void>;
   setViewport(width: number, height: number): Promise<void>;
@@ -85,11 +91,21 @@ async function acquireBrowserLock(): Promise<() => void> {
   for (;;) {
     try {
       mkdirSync(BROWSER_LOCK_DIR);
-      writeFileSync(join(BROWSER_LOCK_DIR, "owner"), String(process.pid), "utf8");
-      return () => { try { rmSync(BROWSER_LOCK_DIR, { recursive: true, force: true }); } catch {} };
+      const ownerPath = join(BROWSER_LOCK_DIR, "owner");
+      writeFileSync(ownerPath, String(process.pid), "utf8");
+      const heartbeat = setInterval(() => {
+        try { utimesSync(ownerPath, new Date(), new Date()); } catch { clearInterval(heartbeat); }
+      }, 1_000);
+      heartbeat.unref();
+      return () => { clearInterval(heartbeat); try { rmSync(BROWSER_LOCK_DIR, { recursive: true, force: true }); } catch {} };
     } catch {
       try {
-        const owner = Number(readFileSync(join(BROWSER_LOCK_DIR, "owner"), "utf8"));
+        const ownerPath = join(BROWSER_LOCK_DIR, "owner");
+        if (Date.now() - statSync(ownerPath).mtimeMs > 8_000) {
+          rmSync(BROWSER_LOCK_DIR, { recursive: true, force: true });
+          continue;
+        }
+        const owner = Number(readFileSync(ownerPath, "utf8"));
         if (!Number.isInteger(owner) || owner <= 0) throw new Error("invalid lock owner");
         try { process.kill(owner, 0); } catch { rmSync(BROWSER_LOCK_DIR, { recursive: true, force: true }); continue; }
       } catch {
@@ -349,6 +365,14 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
       return evaluate<string>("document.documentElement.outerHTML");
     }
 
+    async function getAccessibilityTree(): Promise<readonly RealBrowserAccessibilityNode[]> {
+      const result = await send<{ nodes: readonly { readonly ignored?: boolean; readonly role?: { readonly value?: unknown }; readonly name?: { readonly value?: unknown } }[] }>("Accessibility.getFullAXTree", {}, sessionId);
+      return result.nodes.filter((node) => node.ignored !== true).map((node) => ({
+        role: typeof node.role?.value === "string" ? node.role.value : "",
+        name: typeof node.name?.value === "string" ? node.name.value : "",
+      }));
+    }
+
     async function captureScreenshot(): Promise<Uint8Array> {
       const result = await send<{ data: string }>("Page.captureScreenshot", { format: "png", captureBeyondViewport: false }, sessionId);
       return Buffer.from(result.data, "base64");
@@ -356,9 +380,14 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
 
     async function close(): Promise<void> {
       try {
-        await send("Target.closeTarget", { targetId });
+        await Promise.race([
+          send("Target.closeTarget", { targetId }),
+          new Promise<void>((resolve) => setTimeout(resolve, 1_000)),
+        ]);
       } catch {
         // Target may already be closed
+      } finally {
+        targetIds.delete(targetId);
       }
     }
 
@@ -375,8 +404,22 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
     }
 
     async function pressKey(key: string): Promise<void> {
-      await send("Input.dispatchKeyEvent", { type: "keyDown", key }, sessionId);
-      await send("Input.dispatchKeyEvent", { type: "keyUp", key }, sessionId);
+      const keyData: Readonly<Record<string, { readonly code: string; readonly virtualKeyCode: number }>> = {
+        Enter: { code: "Enter", virtualKeyCode: 13 },
+        Tab: { code: "Tab", virtualKeyCode: 9 },
+        Escape: { code: "Escape", virtualKeyCode: 27 },
+        ALT: { code: "AltLeft", virtualKeyCode: 18 },
+      };
+      const resolved = keyData[key];
+      const params = resolved === undefined ? { key } : {
+        key,
+        code: resolved.code,
+        windowsVirtualKeyCode: resolved.virtualKeyCode,
+        nativeVirtualKeyCode: resolved.virtualKeyCode,
+        ...(key === "Enter" ? { text: "\r", unmodifiedText: "\r" } : {}),
+      };
+      await send("Input.dispatchKeyEvent", { type: "keyDown", ...params }, sessionId);
+      await send("Input.dispatchKeyEvent", { type: "keyUp", ...params }, sessionId);
     }
 
     async function setReducedMotion(reduced: boolean): Promise<void> {
@@ -472,6 +515,7 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
       isElementFocused,
       getCookies,
       getContent,
+      getAccessibilityTree,
       captureScreenshot,
       close,
       setViewport,

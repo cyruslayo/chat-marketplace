@@ -259,7 +259,7 @@ export class LocalGuestApp {
             surfaceId: result.surfaceId,
             a2uiMessages: result.a2uiMessages,
             mode: "inline-surface",
-            summary: "Discovery results",
+            summary: discoverySummary(thread.discoveryArtifact?.facts.filters),
             conventionalRoute: conventionalSearchRoute({}),
           }],
         };
@@ -317,7 +317,7 @@ export class LocalGuestApp {
         surfaceId: result.surfaceId,
         a2uiMessages: result.a2uiMessages,
         mode: "inline-surface",
-        summary: "Discovery results",
+        summary: discoverySummary({ location: filters.location, neighbourhood: filters.neighbourhood, partySize: filters.partySize }),
         textFallback: result.fallback.message,
         conventionalRoute: result.fallback.conventionalRoute,
       }],
@@ -749,7 +749,7 @@ export class LocalGuestApp {
         return {
           surfaceId: discoverySurfaceId,
           mode: "inline-surface",
-          summary: "Discovery results",
+          summary: discoverySummary(artifact.facts.filters),
           conventionalRoute: conventionalSearchRoute({}),
           textFallback: artifact.facts.results.length === 0 ? "No eligible Units match those requirements." : `Found ${artifact.facts.results.length} eligible Units.`,
           a2uiMessages: discoveryArtifactToA2UI({ artifact, surfaceId: discoverySurfaceId }),
@@ -1386,6 +1386,17 @@ function formatWAT(iso: string): string {
   }).format(new Date(iso)) + " WAT";
 }
 
+function discoverySummary(filters: unknown): string {
+  if (filters === null || typeof filters !== "object" || Array.isArray(filters)) return "Search results";
+  const record = filters as Record<string, unknown>;
+  const location = typeof record.location === "string" ? record.location.trim() : "";
+  const neighbourhood = typeof record.neighbourhood === "string" ? record.neighbourhood.trim() : "";
+  const partySize = typeof record.partySize === "number" && Number.isSafeInteger(record.partySize) && record.partySize > 0
+    ? `${record.partySize} guests` : "";
+  const place = [neighbourhood, location].filter(Boolean).join(", ");
+  return ["Search updated", place, partySize].filter(Boolean).join(" · ");
+}
+
 export function renderGuestShellHtml(): string {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -1409,73 +1420,94 @@ export function renderGuestShellHtml(): string {
     :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
     .skip-link { position: absolute; left: 8px; top: -100px; z-index: 30; background: var(--surface); color: var(--text); padding: 10px 14px; border: 2px solid var(--focus); border-radius: 8px; }
     .skip-link:focus { top: 8px; }
-    .app { width: 100%; max-width: var(--layout-workspace-max); min-height: 100dvh; margin: 0 auto; display: flex; flex-direction: column; }
-    header {
-      display: flex; align-items: center; justify-content: space-between; gap: 12px;
-      padding: max(14px, env(safe-area-inset-top)) var(--layout-gutter-mobile) 14px;
-      border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 94%, transparent);
-      position: sticky; top: 0; z-index: 10; backdrop-filter: blur(12px);
-    }
-    header h1 { font-size: 18px; letter-spacing: -0.02em; margin: 0; font-weight: 750; }
-    .header-note { color: var(--text-muted); font-size: 12px; white-space: nowrap; }
+    .app { width: 100%; max-width: var(--layout-conversation-max); min-height: 100dvh; min-height: 100svh; margin: 0 auto; display: flex; flex-direction: column; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: max(var(--space-3), env(safe-area-inset-top)) var(--layout-gutter-mobile) var(--space-3); border-bottom: 1px solid var(--border); background: var(--surface); }
+    header h1 { font-size: var(--font-size-label); line-height: var(--font-line-label); margin: 0; font-weight: 700; }
+    .header-identity { display: flex; align-items: center; min-height: var(--control-min-target); color: var(--text); text-decoration: none; }
+    .header-note { color: var(--text-muted); font-size: var(--font-size-small); white-space: nowrap; }
     main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-    #transcript { flex: 1; min-height: 35dvh; padding: 24px var(--layout-gutter-mobile) 12px; display: flex; flex-direction: column; gap: 14px; overflow: auto; overscroll-behavior: contain; }
-    .turn { display: flex; flex-direction: column; gap: 4px; }
+    #transcript { flex: 1; min-height: 22dvh; padding: var(--space-6) var(--layout-gutter-mobile) var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); overflow: visible; }
+    .conversation-heading { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    .turn { display: flex; flex-direction: column; gap: var(--space-1); }
     .turn.user { align-items: flex-end; }
-    .bubble { max-width: min(88%, 620px); padding: 11px 14px; border-radius: 16px; font-size: 16px; white-space: pre-wrap; overflow-wrap: anywhere; }
-    .turn.assistant .bubble { background: var(--surface); border: 1px solid var(--border); border-top-left-radius: 5px; }
-    .turn.user .bubble { background: var(--user-bubble); color: var(--color-surface); border-top-right-radius: 5px; }
-    .historical-summary { width: 100%; color: var(--text-muted); font-size: 13px; padding: 9px 12px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
-    #workspace-region { padding: 0 var(--layout-gutter-mobile) 14px; }
-    #active-workspace { background: var(--color-surface-elevated); border: 1px solid var(--border); border-radius: var(--radius-workspace); padding: 16px; box-shadow: var(--elevation-active); }
+    .bubble { max-width: min(88%, 70ch); padding: var(--space-2) var(--space-3); border-radius: var(--radius-card); font-size: var(--font-size-body); line-height: var(--font-line-body); white-space: pre-wrap; overflow-wrap: anywhere; }
+    .turn.assistant .bubble { max-width: 72ch; padding-inline: 0; color: var(--text); }
+    .turn.user .bubble { background: var(--surface-soft); color: var(--text); }
+    .historical-summary { width: 100%; display: flex; align-items: center; gap: var(--space-2); color: var(--color-text-secondary); font-size: var(--font-size-small); line-height: var(--font-line-small); padding: var(--space-2) 0; border-top: 1px solid var(--border); }
+    .historical-summary::before { content: "Past"; flex: none; color: var(--color-text-muted); font-size: var(--font-size-metadata); font-weight: 600; }
+    #empty-state { max-width: 70ch; padding-block: var(--space-3) var(--space-6); }
+    #empty-state h2 { margin: 0 0 var(--space-2); font-size: var(--font-size-h2); line-height: var(--font-line-h2); }
+    #empty-state p { max-width: 64ch; margin: 0; color: var(--color-text-secondary); }
+    .prompt-suggestions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
+    .prompt-suggestion { min-height: var(--control-min-target); padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); color: var(--text); cursor: pointer; }
+    #workspace-region { padding: 0 var(--layout-gutter-mobile) var(--space-4); }
+    #active-workspace { background: var(--color-surface-elevated); border: 1px solid var(--border); border-radius: var(--radius-workspace); padding: var(--space-4); box-shadow: var(--elevation-active); }
     #active-workspace[data-mode="focused-surface"] { min-height: min(68dvh, 680px); }
-    .workspace-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 8px; }
-    .workspace-heading-text { min-width: 0; display: grid; gap: 2px; }
-    .workspace-heading-text strong { font-size: 17px; overflow-wrap: anywhere; }
-    .eyebrow { color: var(--accent); font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
-    .workspace-close, #workspace-reopen, .contact-link { min-height: var(--control-min-target); padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius-control); color: var(--text); background: var(--surface-soft); cursor: pointer; }
-    .workspace-close:hover, #workspace-reopen:hover { border-color: var(--accent); }
-    .workspace-status { margin: 0 0 12px; color: var(--text-muted); font-size: 13px; }
-    .status-stale, .status-expired, .status-deleted, .status-fallback { color: var(--danger); }
+    #active-workspace[hidden], #workspace-region[hidden], #workspace-reopen[hidden], #empty-state[hidden] { display: none; }
+    .workspace-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-3); margin-bottom: var(--space-2); }
+    .workspace-heading-text { min-width: 0; display: grid; gap: var(--space-1); }
+    .workspace-title { margin: 0; font-size: var(--font-size-h3); line-height: var(--font-line-h3); font-weight: 650; overflow-wrap: anywhere; }
+    .eyebrow { color: var(--accent); font-size: var(--font-size-metadata); font-weight: 650; }
+    .workspace-close, #workspace-reopen, .contact-link { display: inline-flex; min-height: var(--control-min-target); align-items: center; justify-content: center; padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-control); color: var(--text); background: var(--surface); text-decoration: none; cursor: pointer; }
+    .contact-link { color: var(--color-text-secondary); font-size: var(--font-size-small); }
+    .workspace-close:hover, #workspace-reopen:hover, .contact-link:hover { border-color: var(--accent); }
+    .workspace-status { margin: 0 0 var(--space-3); color: var(--color-text-secondary); font-size: var(--font-size-small); }
+    .workspace-status[data-status="stale"], .workspace-status[data-status="expired"], .workspace-status[data-status="deleted"], .workspace-status[data-status="fallback"] { padding: var(--space-2) var(--space-3); border-inline-start: 3px dashed var(--color-warning); background: var(--color-warning-surface); color: var(--color-warning); }
     .weaver-mount { min-width: 0; overflow-x: auto; }
     .weaver-mount img { display: block; width: 100%; max-width: 100%; height: auto; min-height: 120px; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--radius-card); background: var(--surface-soft); }
-    .photo-fallback { min-height: 120px; display: grid; place-items: center; padding: 18px; border-radius: 12px; background: var(--surface-soft); color: var(--text-muted); text-align: center; }
-    .surface-fallback { border-left: 4px solid var(--focus); padding: 4px 0 4px 12px; }
-    .surface-fallback p { margin: 0 0 10px; }
-    .fallback-link { display: inline-flex; align-items: center; min-height: 44px; color: var(--accent); font-weight: 700; }
-    #workspace-reopen { margin: 0 var(--layout-gutter-mobile) 14px; width: calc(100% - 2 * var(--layout-gutter-mobile)); text-align: left; }
-    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-    form#composer { display: flex; align-items: flex-end; gap: 10px; padding: 12px 20px max(16px, env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: var(--surface); position: sticky; bottom: 0; z-index: 10; }
-    #composer-input { min-width: 0; flex: 1; min-height: 48px; padding: 11px 14px; border: 1px solid var(--border); border-radius: 12px; font-size: 16px; background: var(--bg); color: var(--text); }
-    #composer-submit { min-height: 48px; min-width: 70px; padding: 10px 16px; border: 0; border-radius: var(--radius-control); background: var(--accent); color: var(--color-surface); font-weight: 750; cursor: pointer; }
-    #composer-submit:hover { background: var(--accent-hover); }
-    #composer-submit:disabled, #composer-input:disabled { cursor: wait; opacity: .65; }
+    .photo-fallback { min-height: 120px; display: grid; place-items: center; padding: var(--space-4); border-radius: var(--radius-card); background: var(--surface-soft); color: var(--text-muted); text-align: center; }
+    .surface-fallback { border-inline-start: 4px solid var(--color-warning); padding: var(--space-1) 0 var(--space-1) var(--space-3); }
+    .surface-fallback p { margin: 0 0 var(--space-2); }
+    .fallback-link { display: inline-flex; align-items: center; min-height: var(--control-min-target); color: var(--accent); font-weight: 650; }
+    #workspace-reopen { margin: 0 var(--layout-gutter-mobile) var(--space-4); width: calc(100% - 2 * var(--layout-gutter-mobile)); justify-content: flex-start; text-align: start; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+    form#composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: var(--space-2); padding: var(--space-2) var(--layout-gutter-mobile) max(var(--space-4), env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: var(--surface); position: sticky; bottom: 0; z-index: 10; }
+    #composer-label { grid-column: 1 / -1; color: var(--color-text-secondary); font-size: var(--font-size-small); line-height: var(--font-line-small); font-weight: 600; }
+    #composer-input { min-width: 0; width: 100%; min-height: var(--control-min-field); padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-control); font-size: 1rem; background: var(--bg); color: var(--text); }
+    #composer-submit { min-height: var(--control-min-field); min-width: var(--control-min-target); padding: var(--space-2) var(--space-4); border: 1px solid var(--color-action); border-radius: var(--radius-control); background: var(--accent); color: var(--color-surface); font-weight: 650; cursor: pointer; }
+    #composer-submit:hover:not(:disabled) { background: var(--accent-hover); }
+    #composer-submit:disabled { border-style: dashed; background: var(--surface-soft); color: var(--color-text-secondary); cursor: progress; }
+    #working-status { grid-column: 1 / -1; margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-small); }
     @media (min-width: 48rem) { #transcript, #workspace-region, form#composer { padding-left: var(--layout-gutter-tablet); padding-right: var(--layout-gutter-tablet); } }
-    @media (min-width: 64rem) { #transcript, #workspace-region, form#composer { padding-left: var(--layout-gutter-desktop); padding-right: var(--layout-gutter-desktop); } }
-    @media (max-width: 47.999rem) { .header-note { display: none; } }
-    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; } }
+    @media (min-width: 64rem) { .app { max-width: var(--layout-conversation-max); } #transcript, #workspace-region, form#composer { padding-left: var(--layout-gutter-desktop); padding-right: var(--layout-gutter-desktop); } }
+    @media (max-width: 47.999rem) { .header-note { display: none; } #active-workspace[data-mode="focused-surface"] { min-height: min(76dvh, 680px); scroll-margin-block: var(--space-3); } }
+    @media (max-height: 520px) { header { position: static; } #transcript { min-height: 0; } form#composer { position: sticky; } }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; } }
   </style>
 </head>
 <body>
-  <a class="skip-link" href="#composer-input">Skip to message composer</a>
+  <a class="skip-link" href="#main-content">Skip to conversation</a>
   <div class="app">
     <header>
-      <h1>Shortlet Concierge</h1>
-      <span class="header-note">Local demo · A clearer way to find your stay</span>
+      <a class="header-identity" href="/" aria-label="Shortlet home"><h1>Shortlet</h1></a>
+      <span class="header-note">Abuja · Lagos</span>
       <a class="contact-link" href="/guest/contact">Contact details</a>
     </header>
-    <main>
-      <section id="transcript" aria-label="Conversation history"></section>
+    <main id="main-content" tabindex="-1">
+      <section id="transcript" aria-labelledby="conversation-heading">
+        <h2 id="conversation-heading" class="conversation-heading">Conversation</h2>
+        <section id="empty-state" aria-labelledby="empty-state-heading">
+          <h2 id="empty-state-heading">Find a place to stay</h2>
+          <p>Tell us whether you’re looking in Abuja or Lagos, your dates or length of stay, and how many guests. The concierge can help find entire-place stays and guide your request.</p>
+          <div class="prompt-suggestions">
+            <button class="prompt-suggestion" type="button" data-prompt="I’m looking for a stay in Abuja">Explore Abuja</button>
+            <button class="prompt-suggestion" type="button" data-prompt="I’m looking for a stay in Lagos">Explore Lagos</button>
+          </div>
+        </section>
+      </section>
       <section id="workspace-region" aria-label="Current workspace" hidden>
         <div id="active-workspace" hidden></div>
       </section>
       <button id="workspace-reopen" type="button" hidden></button>
     </main>
-    <div id="announcer" class="sr-only" role="status" aria-live="polite"></div>
+    <div id="announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
     <form id="composer" aria-label="Message the concierge">
-      <input id="composer-input" type="text" autocomplete="off"
-             placeholder="Where would you like to stay?" aria-label="Message the concierge" />
+      <label id="composer-label" for="composer-input">Your message</label>
+      <input id="composer-input" name="message" type="text" autocomplete="off" enterkeyhint="send"
+             placeholder="Area, dates, guests" aria-describedby="composer-hint" />
+      <span id="composer-hint" class="sr-only">Share a city or neighbourhood, dates or nights, and number of guests.</span>
       <button id="composer-submit" type="submit">Send</button>
+      <p id="working-status" hidden></p>
     </form>
   </div>
   <script src="/client.js" defer></script>

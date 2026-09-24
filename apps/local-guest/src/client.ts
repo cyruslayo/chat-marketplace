@@ -45,6 +45,8 @@ const composerForm = requiredElement<HTMLFormElement>("composer");
 const composerInput = requiredElement<HTMLInputElement>("composer-input");
 const composerSubmit = requiredElement<HTMLButtonElement>("composer-submit");
 const announcer = requiredElement<HTMLElement>("announcer");
+const emptyState = requiredElement<HTMLElement>("empty-state");
+const workingStatus = requiredElement<HTMLElement>("working-status");
 
 function getThreadId(): string {
   try {
@@ -159,6 +161,7 @@ function announce(text: string, assertive = false): void {
 }
 
 function addTurn(role: "assistant" | "user", text: string): void {
+  emptyState.hidden = true;
   const turn = document.createElement("article");
   turn.className = `turn ${role}`;
   turn.setAttribute("aria-label", role === "user" ? "You" : "Shortlet Concierge");
@@ -171,10 +174,13 @@ function addTurn(role: "assistant" | "user", text: string): void {
 }
 
 function addHistoricalSummary(summary: ConversationShellState["historicalSummaries"][number]): void {
-  const item = document.createElement("div");
+  const item = document.createElement("p");
   item.className = "historical-summary";
-  item.setAttribute("role", "status");
-  item.textContent = `${summary.summary} · ${summary.status}`;
+  const lifecycle = summary.status === "superseded" ? "replaced by a newer workspace"
+    : summary.status === "stale" ? "no longer current"
+      : summary.status === "expired" ? "expired"
+        : summary.status === "deleted" ? "no longer available" : "text view shown";
+  item.textContent = `${summary.summary} · ${lifecycle}`;
   transcript.appendChild(item);
 }
 
@@ -203,7 +209,6 @@ function fallback(mount: HTMLElement, surface: SurfacePresentation): void {
   mount.dataset.renderer = "fallback";
   const box = document.createElement("div");
   box.className = "surface-fallback";
-  box.setAttribute("role", "alert");
   const text = document.createElement("p");
   text.textContent = surface.textFallback ?? fallbackSummary(surface);
   box.appendChild(text);
@@ -225,7 +230,7 @@ function showReopen(): void {
   if (canReopen) workspaceReopen.textContent = `Reopen ${current.summary}`;
 }
 
-function renderSurface(surface: GuestSurfacePayload): void {
+function renderSurface(surface: GuestSurfacePayload, moveFocus = false): void {
   const presentation = presentationFor(surface);
   activePayload = surface;
   activeWorkspace.replaceChildren();
@@ -242,7 +247,8 @@ function renderSurface(surface: GuestSurfacePayload): void {
   const eyebrow = document.createElement("span");
   eyebrow.className = "eyebrow";
   eyebrow.textContent = "Current workspace";
-  const title = document.createElement("strong");
+  const title = document.createElement("h2");
+  title.className = "workspace-title";
   title.textContent = presentation.summary;
   headingText.append(eyebrow, title);
   heading.appendChild(headingText);
@@ -265,7 +271,10 @@ function renderSurface(surface: GuestSurfacePayload): void {
 
   const state = document.createElement("p");
   state.className = `workspace-status status-${presentation.status}`;
-  state.textContent = presentation.status === "active" ? "Ready for your next action." : fallbackSummary(presentation);
+  state.dataset.status = presentation.status;
+  state.textContent = presentation.status === "active" ? "Current workspace · Use the details below to continue."
+    : presentation.status === "superseded" ? "Superseded · This workspace has been replaced. Use the current workspace below."
+      : fallbackSummary(presentation);
   activeWorkspace.appendChild(state);
 
   const mount = document.createElement("div");
@@ -311,10 +320,12 @@ function renderSurface(surface: GuestSurfacePayload): void {
     mount.appendChild(link);
   }
   showReopen();
-  activeWorkspace.scrollIntoView({ block: "nearest" });
-  activeWorkspace.focus({ preventScroll: true });
+  if (moveFocus) {
+    activeWorkspace.scrollIntoView({ block: "start" });
+    activeWorkspace.focus({ preventScroll: true });
+  }
   trackTelemetry(presentation.mode === "focused-surface" ? "focused-surface-opened" : "inline-surface-rendered");
-  announce(`${presentation.summary} is ready.`);
+  if (moveFocus) announce(`${presentation.summary} is now the current workspace.`);
 }
 
 function acceptSurface(surface: GuestSurfacePayload): void {
@@ -323,13 +334,17 @@ function acceptSurface(surface: GuestSurfacePayload): void {
   shellState = replaceActiveSurface(shellState, presentationFor(surface));
   if (replaced) trackTelemetry("surface-replaced");
   for (const summary of shellState.historicalSummaries.slice(before)) addHistoricalSummary(summary);
-  renderSurface(surface);
+  renderSurface(surface, replaced);
 }
 
 function renderSurfaces(surfaces: readonly GuestSurfacePayload[]): void {
   for (const historical of surfaces.slice(0, -1)) {
     const presentation = presentationFor(historical);
-    addHistoricalSummary({ surfaceId: historical.surfaceId, status: "superseded", summary: presentation.summary });
+    addHistoricalSummary({
+      surfaceId: historical.surfaceId,
+      status: presentation.status === "active" ? "superseded" : presentation.status,
+      summary: presentation.summary,
+    });
   }
   const current = surfaces.at(-1);
   if (current) acceptSurface(current);
@@ -374,11 +389,12 @@ async function postJson(path: string, body?: unknown): Promise<GuestResponse> {
 
 function setLoading(next: boolean): void {
   isLoading = next;
-  composerInput.disabled = next;
   composerSubmit.disabled = next;
   composerForm.setAttribute("aria-busy", String(next));
-  composerSubmit.textContent = next ? "Sending…" : "Send";
-  if (next) announce("Sending your message…");
+  composerSubmit.textContent = next ? "Working…" : "Send";
+  workingStatus.hidden = !next;
+  workingStatus.textContent = next ? "Working on your request… Your current workspace remains available." : "";
+  if (next) announce("Message sent. The concierge is working on your request.");
 }
 
 async function sendTurn(text: string): Promise<void> {
@@ -386,8 +402,7 @@ async function sendTurn(text: string): Promise<void> {
   setLoading(true);
   try {
     if (renderResponse(await postJson("/api/turn", { threadId, text }))) {
-      composerInput.value = "";
-      composerInput.focus();
+      if (composerInput.value.trim() === text) composerInput.value = "";
     }
   } catch {
     addTurn("assistant", "The concierge is temporarily unavailable. Your message is still in the composer; please try again.");
@@ -421,8 +436,20 @@ const weaver = created.value;
 
 workspaceReopen.addEventListener("click", () => {
   shellState = reopenFocusedSurface(shellState);
-  if (activePayload) renderSurface(activePayload);
+  if (activePayload) {
+    renderSurface(activePayload, true);
+    activeWorkspace.focus({ preventScroll: true });
+  }
 });
+
+for (const suggestion of document.querySelectorAll<HTMLButtonElement>(".prompt-suggestion[data-prompt]")) {
+  suggestion.addEventListener("click", () => {
+    const text = suggestion.dataset.prompt?.trim();
+    if (!text || isLoading) return;
+    addTurn("user", text);
+    void sendTurn(text);
+  });
+}
 composerForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const text = composerInput.value.trim();
@@ -442,6 +469,4 @@ async function restoreServerState(): Promise<boolean> {
   } catch { return false; }
 }
 
-void restoreServerState().then((restored) => {
-  if (!restored) addTurn("assistant", "Hi! I'm the Shortlet concierge. Tell me where you'd like to stay, for how long, and how many guests — for example: “I need an apartment in Ikoyi for 3 nights for 2 people”.");
-});
+void restoreServerState();

@@ -28,6 +28,9 @@ test("one primary rich surface can be active", () => {
   assert.equal(second.activeSurface?.surfaceId, "surface-b");
   assert.equal(second.historicalSummaries.length, 1);
   assert.equal(second.historicalSummaries[0]?.surfaceId, "surface-a");
+  assert.equal(second.historicalSummaries[0]?.summary, "Discovery results");
+  assert.equal(second.historicalSummaries[0]?.status, "superseded");
+  assert.equal(canUseSurfaceActions(second.historicalSummaries[0]!.status), false);
 });
 
 test("a same-identity surface revision replaces content without duplicating history", () => {

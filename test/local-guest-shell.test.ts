@@ -9,10 +9,16 @@ test("mobile conversation shell keeps one timeline, one workspace slot, and a te
   const html = renderGuestShellHtml();
 
   assert.match(html, /viewport-fit=cover/);
-  assert.match(html, /id="transcript"[^>]+aria-label="Conversation history"/);
+  assert.match(html, /id="transcript"[^>]+aria-labelledby="conversation-heading"/);
   assert.match(html, /id="active-workspace"/);
   assert.match(html, /id="composer-input"/);
   assert.match(html, /id="composer-submit"/);
+  assert.match(html, /<label id="composer-label" for="composer-input">Your message<\/label>/);
+  assert.match(html, /id="main-content" tabindex="-1"/);
+  assert.match(html, /id="announcer"[^>]+aria-live="polite"/);
+  assert.match(html, /Explore Abuja/);
+  assert.match(html, /Explore Lagos/);
+  assert.doesNotMatch(html, /Local demo/);
   assert.match(html, /100dvh/);
   assert.match(html, /prefers-reduced-motion/);
   assert.doesNotMatch(html, /microphone|speech recognition|voice input/i);
@@ -32,6 +38,7 @@ test("server-backed state restores the conversation timeline and latest workspac
     assert.equal(snapshot.timeline[0]?.text, "I need an apartment in Ikoyi for 3 nights for 2 people");
     assert.equal(snapshot.surfaces.length, 1);
     assert.equal(snapshot.surfaces[0]?.mode, "inline-surface");
+    assert.match(snapshot.surfaces[0]?.summary ?? "", /Search updated.*Ikoyi.*2 guests/);
 
     await app.handleTurn(threadId, "I need a place");
     const afterTextOnlyTurn = app.getState(threadId);
