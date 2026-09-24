@@ -62,6 +62,8 @@ import {
   ASSISTANT_CANCEL_ACTION_EVENT,
 } from "./assistant/pending-action-a2ui.js";
 
+const SHORTLET_FOUNDATION_CSS = readFileSync(new URL("../../web/src/shortlet-foundations.css", import.meta.url), "utf8");
+
 export interface GuestSurfacePayload {
   readonly surfaceId: string;
   readonly a2uiMessages: readonly A2UIServerMessage[];
@@ -1391,65 +1393,67 @@ export function renderGuestShellHtml(): string {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Shortlet Concierge</title>
+  <link rel="stylesheet" href="/shortlet-foundations.css">
   <style>
     :root {
-      --bg: #f5f5f0; --surface: #fff; --surface-soft: #ecece5;
-      --border: #d8d8cf; --text: #1c2520; --text-muted: #5e6a63;
-      --accent: #0c6b4f; --accent-hover: #09563f; --user-bubble: #145f4a;
-      --focus: #b45f06; --danger: #a83232;
+      --bg: var(--color-canvas); --surface: var(--color-surface); --surface-soft: var(--color-surface-subtle);
+      --border: var(--color-border); --text: var(--color-text); --text-muted: var(--color-text-muted);
+      --accent: var(--color-action); --accent-hover: var(--color-action-hover); --user-bubble: var(--color-action);
+      --focus: var(--color-focus); --danger: var(--color-danger);
     }
     * { box-sizing: border-box; }
     html { background: var(--bg); }
-    body { background: var(--bg); color: var(--text); font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0; line-height: 1.5; }
+    body { background: var(--bg); color: var(--text); font-family: var(--font-sans); margin: 0; line-height: 1.5; }
     button, input { font: inherit; }
     button, a { -webkit-tap-highlight-color: transparent; }
-    :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+    :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
     .skip-link { position: absolute; left: 8px; top: -100px; z-index: 30; background: var(--surface); color: var(--text); padding: 10px 14px; border: 2px solid var(--focus); border-radius: 8px; }
     .skip-link:focus { top: 8px; }
-    .app { width: 100%; max-width: 760px; min-height: 100dvh; margin: 0 auto; display: flex; flex-direction: column; }
+    .app { width: 100%; max-width: var(--layout-workspace-max); min-height: 100dvh; margin: 0 auto; display: flex; flex-direction: column; }
     header {
       display: flex; align-items: center; justify-content: space-between; gap: 12px;
-      padding: max(14px, env(safe-area-inset-top)) 20px 14px;
+      padding: max(14px, env(safe-area-inset-top)) var(--layout-gutter-mobile) 14px;
       border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 94%, transparent);
       position: sticky; top: 0; z-index: 10; backdrop-filter: blur(12px);
     }
     header h1 { font-size: 18px; letter-spacing: -0.02em; margin: 0; font-weight: 750; }
     .header-note { color: var(--text-muted); font-size: 12px; white-space: nowrap; }
     main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-    #transcript { flex: 1; min-height: 35dvh; padding: 24px 20px 12px; display: flex; flex-direction: column; gap: 14px; overflow: auto; overscroll-behavior: contain; }
+    #transcript { flex: 1; min-height: 35dvh; padding: 24px var(--layout-gutter-mobile) 12px; display: flex; flex-direction: column; gap: 14px; overflow: auto; overscroll-behavior: contain; }
     .turn { display: flex; flex-direction: column; gap: 4px; }
     .turn.user { align-items: flex-end; }
     .bubble { max-width: min(88%, 620px); padding: 11px 14px; border-radius: 16px; font-size: 16px; white-space: pre-wrap; overflow-wrap: anywhere; }
     .turn.assistant .bubble { background: var(--surface); border: 1px solid var(--border); border-top-left-radius: 5px; }
-    .turn.user .bubble { background: var(--user-bubble); color: #fff; border-top-right-radius: 5px; }
+    .turn.user .bubble { background: var(--user-bubble); color: var(--color-surface); border-top-right-radius: 5px; }
     .historical-summary { width: 100%; color: var(--text-muted); font-size: 13px; padding: 9px 12px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
-    #workspace-region { padding: 0 20px 14px; }
-    #active-workspace { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 16px; box-shadow: 0 8px 24px rgba(20, 40, 30, 0.07); }
+    #workspace-region { padding: 0 var(--layout-gutter-mobile) 14px; }
+    #active-workspace { background: var(--color-surface-elevated); border: 1px solid var(--border); border-radius: var(--radius-workspace); padding: 16px; box-shadow: var(--elevation-active); }
     #active-workspace[data-mode="focused-surface"] { min-height: min(68dvh, 680px); }
     .workspace-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 8px; }
     .workspace-heading-text { min-width: 0; display: grid; gap: 2px; }
     .workspace-heading-text strong { font-size: 17px; overflow-wrap: anywhere; }
     .eyebrow { color: var(--accent); font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
-    .workspace-close, #workspace-reopen, .contact-link { min-height: 44px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; color: var(--text); background: var(--surface-soft); cursor: pointer; }
+    .workspace-close, #workspace-reopen, .contact-link { min-height: var(--control-min-target); padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius-control); color: var(--text); background: var(--surface-soft); cursor: pointer; }
     .workspace-close:hover, #workspace-reopen:hover { border-color: var(--accent); }
     .workspace-status { margin: 0 0 12px; color: var(--text-muted); font-size: 13px; }
     .status-stale, .status-expired, .status-deleted, .status-fallback { color: var(--danger); }
     .weaver-mount { min-width: 0; overflow-x: auto; }
-    .weaver-mount img { display: block; width: 100%; max-width: 100%; height: auto; min-height: 120px; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 12px; background: var(--surface-soft); }
+    .weaver-mount img { display: block; width: 100%; max-width: 100%; height: auto; min-height: 120px; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--radius-card); background: var(--surface-soft); }
     .photo-fallback { min-height: 120px; display: grid; place-items: center; padding: 18px; border-radius: 12px; background: var(--surface-soft); color: var(--text-muted); text-align: center; }
     .surface-fallback { border-left: 4px solid var(--focus); padding: 4px 0 4px 12px; }
     .surface-fallback p { margin: 0 0 10px; }
     .fallback-link { display: inline-flex; align-items: center; min-height: 44px; color: var(--accent); font-weight: 700; }
-    #workspace-reopen { margin: 0 20px 14px; width: calc(100% - 40px); text-align: left; }
+    #workspace-reopen { margin: 0 var(--layout-gutter-mobile) 14px; width: calc(100% - 2 * var(--layout-gutter-mobile)); text-align: left; }
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
     form#composer { display: flex; align-items: flex-end; gap: 10px; padding: 12px 20px max(16px, env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: var(--surface); position: sticky; bottom: 0; z-index: 10; }
     #composer-input { min-width: 0; flex: 1; min-height: 48px; padding: 11px 14px; border: 1px solid var(--border); border-radius: 12px; font-size: 16px; background: var(--bg); color: var(--text); }
-    #composer-submit { min-height: 48px; min-width: 70px; padding: 10px 16px; border: 0; border-radius: 12px; background: var(--accent); color: #fff; font-weight: 750; cursor: pointer; }
+    #composer-submit { min-height: 48px; min-width: 70px; padding: 10px 16px; border: 0; border-radius: var(--radius-control); background: var(--accent); color: var(--color-surface); font-weight: 750; cursor: pointer; }
     #composer-submit:hover { background: var(--accent-hover); }
     #composer-submit:disabled, #composer-input:disabled { cursor: wait; opacity: .65; }
-    @media (min-width: 700px) { #transcript { padding-left: 32px; padding-right: 32px; } #workspace-region { padding-left: 32px; padding-right: 32px; } form#composer { padding-left: 32px; padding-right: 32px; } }
-    @media (max-width: 420px) { header { padding-left: 14px; padding-right: 14px; } .header-note { display: none; } #transcript { padding: 18px 14px 10px; } #workspace-region { padding-left: 14px; padding-right: 14px; } #active-workspace { padding: 13px; border-radius: 15px; } form#composer { padding-left: 14px; padding-right: 14px; } #workspace-reopen { margin-left: 14px; width: calc(100% - 28px); margin-right: 14px; } .bubble { max-width: 94%; } }
-    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; } }
+    @media (min-width: 48rem) { #transcript, #workspace-region, form#composer { padding-left: var(--layout-gutter-tablet); padding-right: var(--layout-gutter-tablet); } }
+    @media (min-width: 64rem) { #transcript, #workspace-region, form#composer { padding-left: var(--layout-gutter-desktop); padding-right: var(--layout-gutter-desktop); } }
+    @media (max-width: 47.999rem) { .header-note { display: none; } }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; } }
   </style>
 </head>
 <body>
@@ -1501,7 +1505,7 @@ export function renderConventionalUnitDetailHtml(unit: Unit, photoUrl?: (url: st
   const photoMarkup = photos.length === 0
     ? `<p class="photo-fallback" role="status">Photos are not available for this Unit yet.</p>`
     : `<div class="gallery" aria-label="Photos of ${safe(unit.title)}">${photos.map((url, index) => `<img src="${safe(photoUrl ? photoUrl(url) : url)}" alt="Photo ${index + 1} of ${safe(unit.title)}" loading="${index === 0 ? "eager" : "lazy"}" decoding="async" width="800" height="600" referrerpolicy="no-referrer">`).join("")}</div>`;
-  return `<!doctype html><html lang="en-NG"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${safe(unit.title)}</title><style>*{box-sizing:border-box}body{margin:0;background:#f5f5f0;color:#1c2520;font:16px/1.5 system-ui,sans-serif}main{width:min(100% - 28px,760px);margin:0 auto;padding:24px 0 40px}h1{font-size:clamp(1.5rem,6vw,2.25rem);line-height:1.15;margin:0 0 8px}p{margin:8px 0}.muted{color:#5e6a63}.description{white-space:pre-line}.gallery{display:grid;gap:12px;margin-top:20px}.gallery img{display:block;width:100%;height:auto;aspect-ratio:4/3;object-fit:cover;border-radius:12px;background:#ecece5}.photo-fallback{display:grid;place-items:center;min-height:120px;padding:18px;border-radius:12px;background:#ecece5;color:#5e6a63;text-align:center}a{display:inline-flex;align-items:center;min-height:44px;margin-top:22px;color:#0c6b4f;font-weight:700}@media(max-width:320px){main{width:calc(100% - 16px);padding-top:16px}}</style></head><body><main><h1>${safe(unit.title)}</h1><p>${safe(unit.location.neighbourhood)}, ${safe(unit.location.city)}</p><p>Price: ${formatNgnKobo(unit.price.nightlyKobo)} per night</p><p class="muted">Bedrooms: ${unit.bedrooms ?? "Not provided"} · Bathrooms: ${unit.bathrooms} · Capacity: ${unit.capacity} guests · Entire Place</p><p class="description">${safe(unit.description)}</p>${photoMarkup}<a href="/">Continue to Request to Book</a></main></body></html>`;
+  return `<!doctype html><html lang="en-NG"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${safe(unit.title)}</title><link rel="stylesheet" href="/shortlet-foundations.css"><style>main{width:min(100% - 2 * var(--layout-gutter-mobile),var(--layout-workspace-max));margin:0 auto;padding:24px 0 40px}h1{font-size:var(--font-size-h1);line-height:var(--font-line-h1);margin:0 0 8px}p{margin:8px 0}.muted{color:var(--color-text-muted)}.description{white-space:pre-line}.gallery{display:grid;gap:12px;margin-top:20px}.gallery img{display:block;width:100%;height:auto;aspect-ratio:4/3;object-fit:cover;border-radius:var(--radius-card);background:var(--color-surface-subtle)}.photo-fallback{display:grid;place-items:center;min-height:120px;padding:18px;border-radius:var(--radius-card);background:var(--color-surface-subtle);color:var(--color-text-secondary);text-align:center}a{display:inline-flex;align-items:center;min-height:var(--control-min-target);margin-top:22px;color:var(--color-action);font-weight:700}</style></head><body><main><h1>${safe(unit.title)}</h1><p>${safe(unit.location.neighbourhood)}, ${safe(unit.location.city)}</p><p>Price: ${formatNgnKobo(unit.price.nightlyKobo)} per night</p><p class="muted">Bedrooms: ${unit.bedrooms ?? "Not provided"} · Bathrooms: ${unit.bathrooms} · Capacity: ${unit.capacity} guests · Entire Place</p><p class="description">${safe(unit.description)}</p>${photoMarkup}<a href="/">Continue to Request to Book</a></main></body></html>`;
 }
 
 function readRawBody(req: IncomingMessage): Promise<Buffer> {
@@ -1521,7 +1525,7 @@ export function renderGuestContactHtml(contact: { phoneNumber: string | null; co
   const safe = (value: string) => value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!);
   const phoneForm = kind === "email" ? "" : `<form method="post" action="/guest/contact/phone"><label for="phoneNumber">Phone number</label><p>We may use this for booking coordination.</p><input id="phoneNumber" name="phoneNumber" type="tel" inputmode="tel" autocomplete="tel" maxlength="32" required value="${safe(contact?.phoneNumber ?? "")}"><input type="hidden" name="expectedRevision" value="${contact?.revision ?? 0}"><button type="submit">Save phone number</button></form>`;
   const emailForm = kind === "phone" ? "" : `<form method="post" action="/guest/contact/email"><label for="contactEmail">Email address for payment and booking receipt</label><input id="contactEmail" name="contactEmail" type="email" inputmode="email" autocomplete="email" maxlength="254" required value="${safe(contact?.contactEmail ?? "")}"><input type="hidden" name="expectedRevision" value="${contact?.revision ?? 0}"><button type="submit">Save email address</button></form>`;
-  return `<!doctype html><html lang="en-NG"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Guest contact</title><style>body{font:16px system-ui;margin:0;padding:12px;background:#f7f7f5;color:#202124}main{max-width:420px;margin:auto}form{margin:20px 0}label{display:block;font-weight:700;margin-bottom:6px}input,button{box-sizing:border-box;width:100%;min-height:44px;font:inherit;padding:10px;border-radius:8px}button{margin-top:10px}.error{color:#b42318}@media(max-width:320px){body{padding:8px}main{width:100%}}</style></head><body><main><h1>Guest contact</h1>${error ? `<p class="error" role="alert">${safe(error)}</p>` : ""}${phoneForm}${emailForm}</main></body></html>`;
+  return `<!doctype html><html lang="en-NG"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Guest contact</title><link rel="stylesheet" href="/shortlet-foundations.css"><style>body{padding:var(--layout-gutter-mobile)}main{max-width:420px;margin:auto}form{margin:20px 0}label{display:block;font-weight:700;margin-bottom:6px}input,button{box-sizing:border-box;width:100%;min-height:var(--control-min-field);font:inherit;padding:10px;border-radius:var(--radius-control)}button{margin-top:10px}.error{color:var(--color-danger)}</style></head><body><main><h1>Guest contact</h1>${error ? `<p class="error" role="alert">${safe(error)}</p>` : ""}${phoneForm}${emailForm}</main></body></html>`;
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -1681,7 +1685,8 @@ interface BrowserSession {
 
 const GUEST_HTML_HEADERS = {
   "Content-Type": "text/html; charset=utf-8",
-  "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' https:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+  // ADR-0078: serve the local accessible foundation while keeping remote styles disallowed.
+  "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
   "Referrer-Policy": "no-referrer",
 } as const;
 
@@ -1818,6 +1823,12 @@ export function startLocalGuestServer(options: {
     // selected by the server-owned browser session in production.
     const app = requestRuntime.app;
 
+    if (req.method === "GET" && url.pathname === "/shortlet-foundations.css") {
+      res.writeHead(200, { "Content-Type": "text/css; charset=utf-8", "Cache-Control": "public, max-age=3600" });
+      res.end(SHORTLET_FOUNDATION_CSS);
+      return;
+    }
+
     if (req.method === "GET" && url.pathname === "/") {
       if (rawSession === null) {
         // A malformed session cookie is rejected, never silently replaced.
@@ -1879,7 +1890,7 @@ export function startLocalGuestServer(options: {
         const artifact = app.environment.cardPaymentApp.getArtifact(offerId, principal);
         const label = options.localPayment ? "Continue to local demo payment" : "Continue to secure checkout";
         res.writeHead(200, GUEST_HTML_HEADERS);
-        res.end(`<!doctype html><html lang="en-NG"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Payment continuation</title><style>body{font:16px/1.5 system-ui;margin:0;background:#f5f5f0;color:#17221c}main{max-width:560px;margin:auto;padding:32px 18px}a{display:inline-flex;align-items:center;min-height:48px;padding:0 20px;border-radius:10px;background:#0c6b4f;color:white;font-weight:700;text-decoration:none}</style></head><body><main><h1>Payment continuation</h1><p>Authoritative amount due now: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}.</p><a href="/payments/offers/${encodeURIComponent(offerId)}/continue">${label}</a></main></body></html>`);
+        res.end(`<!doctype html><html lang="en-NG"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Payment continuation</title><link rel="stylesheet" href="/shortlet-foundations.css"><style>main{max-width:560px;margin:auto;padding:32px var(--layout-gutter-mobile)}a{display:inline-flex;align-items:center;min-height:var(--control-min-target);padding:0 20px;border-radius:var(--radius-control);background:var(--color-action);color:var(--color-surface);font-weight:700;text-decoration:none}</style></head><body><main><h1>Payment continuation</h1><p>Authoritative amount due now: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}.</p><a href="/payments/offers/${encodeURIComponent(offerId)}/continue">${label}</a></main></body></html>`);
       } catch { sendJson(res, 404, { ok: false, code: "PAYMENT_OFFER_NOT_FOUND" }); }
       return;
     }
@@ -1916,7 +1927,7 @@ export function startLocalGuestServer(options: {
       const checkout = reference ? app.environment.cardPaymentApp.manager.getCheckoutSessionByReference(reference) : null;
       if (!session || !reference || !checkout) { sendJson(res, 400, { ok: false, code: "LOCAL_PAYMENT_INVALID" }); return; }
       res.writeHead(200, GUEST_HTML_HEADERS);
-      res.end(`<!doctype html><html lang="en-NG"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Local demo payment</title><style>body{font:16px/1.5 system-ui;margin:0;background:#f5f5f0;color:#17221c}main{max-width:560px;margin:auto;padding:32px 18px}button{min-height:48px;padding:0 20px;border:0;border-radius:10px;background:#0c6b4f;color:white;font-weight:700}</style></head><body><main><h1>Local demo payment</h1><p>This deterministic local provider verifies the authoritative amount without collecting card details.</p><form method="post" action="/payments/local/complete"><input type="hidden" name="reference" value="${reference.replace(/[&<>'"]/g, "")}"><button type="submit">Complete local payment</button></form></main></body></html>`);
+      res.end(`<!doctype html><html lang="en-NG"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Local demo payment</title><link rel="stylesheet" href="/shortlet-foundations.css"><style>main{max-width:560px;margin:auto;padding:32px var(--layout-gutter-mobile)}button{min-height:var(--control-min-target);padding:0 20px;border:1px solid var(--color-action);border-radius:var(--radius-control);background:var(--color-action);color:var(--color-surface);font-weight:700}</style></head><body><main><h1>Local demo payment</h1><p>This deterministic local provider verifies the authoritative amount without collecting card details.</p><form method="post" action="/payments/local/complete"><input type="hidden" name="reference" value="${reference.replace(/[&<>'"]/g, "")}"><button type="submit">Complete local payment</button></form></main></body></html>`);
       return;
     }
 

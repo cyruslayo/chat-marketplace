@@ -143,6 +143,10 @@ Inventory is conceptual only. “Basic Catalog expressive” means the informati
 - Payment status is textual (`Payment pending`, `Payment verified`, `Reconciliation in progress`) with semantics and exact amount; do not use green-only success or spinner-only pending.
 - At 320px and 200% zoom, reflow without horizontal page scroll for ordinary text, price breakdown, Operator action labels and form errors. Respect `prefers-reduced-motion`; ensure status shapes and focus indicator meet 3:1 non-text contrast.
 
+### Foundation implementation entry points
+
+The shared semantic tokens and opt-in presentation primitives live in `apps/web/src/shortlet-foundations.css`. Conventional Guest and Operator pages consume it through `/shortlet-foundations.css`; use the semantic variables for approved roles and the `ui-*` classes for reusable controls, status, money and image treatments. Weaver Basic Catalog content inherits the document typography, text color and focus indication where browser semantics permit; keep its renderer and component tree untouched, and verify generated controls in the rendered accessibility tree before relying on generated labels or component-specific styling.
+
 ### Performance design acceptance
 
 - First useful text (city entry, current stage, result title/total) precedes nonessential inventory imagery. Set image width/height or `aspect-ratio` and reserve placeholder size. `srcset`/`sizes` align to card/detail rendering width; lazy-load offscreen images, never lazy-load the above-fold lead image.

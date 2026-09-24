@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { readFileSync } from "node:fs";
 import {
   LocalApartmentOwnerEnvironment,
   resetLocalOwnerFixture,
@@ -8,6 +9,7 @@ import {
 
 const OPERATOR_SESSION_COOKIE = "shortlet_operator_session";
 const OPERATOR_SECRET_COOKIE = "shortlet_operator_secret";
+const SHORTLET_FOUNDATION_CSS = readFileSync(new URL("../../web/src/shortlet-foundations.css", import.meta.url), "utf8");
 
 function cookieValue(req: IncomingMessage, name: string): string | null {
   const raw = req.headers.cookie ?? "";
@@ -22,14 +24,31 @@ function operatorPrincipal(req: IncomingMessage, env: LocalApartmentOwnerEnviron
 }
 
 function operatorLoginHtml(error = ""): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Operator sign in</title><style>body{font:16px system-ui;margin:0;padding:24px;background:#f7f7f5;color:#202124}main{max-width:420px;margin:10vh auto;background:white;border:1px solid #ddd;border-radius:12px;padding:24px}label{display:block;font-weight:600;margin:16px 0 6px}input,button{font:inherit;min-height:44px;width:100%;box-sizing:border-box;padding:10px;border-radius:8px}button{margin-top:16px;background:#155eef;color:white;border:0}.error{color:#b42318}</style></head><body><main><h1>Operator sign in</h1><p>Enter the one-time access token provided by operations.</p>${error ? `<p class="error" role="alert">${error}</p>` : ""}<form method="post" action="/operator/login"><label for="token">One-time access token</label><input id="token" name="token" autocomplete="one-time-code" required><button type="submit">Sign in</button></form></main></body></html>`;
+  return `<!doctype html><html lang="en-NG"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Operator sign in</title><style>body{padding:var(--layout-gutter-mobile)}main{max-width:420px;margin:10vh auto;background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-card);padding:24px}label{display:block;color:var(--color-text);font-weight:600;margin:16px 0 6px}input,button{font:inherit;min-height:var(--control-min-field);width:100%;box-sizing:border-box;padding:10px;border-radius:var(--radius-control)}input{border:1px solid var(--color-border);background:var(--color-surface);color:var(--color-text)}button{margin-top:16px;border:1px solid var(--color-action);background:var(--color-action);color:var(--color-surface);font-weight:600;cursor:pointer}.error{color:var(--color-danger)}</style></head><body><main><h1>Operator sign in</h1><p>Enter the one-time access token provided by operations.</p>${error ? `<p class="error" role="alert">${error}</p>` : ""}<form method="post" action="/operator/login"><label for="token">One-time access token</label><input id="token" name="token" autocomplete="one-time-code" required><button type="submit">Sign in</button></form></main></body></html>`;
 }
 
 function operatorShellHtml(principal: { actorId: string; tenantId: string }): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Operator</title><style>body{font:16px system-ui;margin:0;padding:24px;background:#f7f7f5;color:#202124}main{max-width:640px;margin:8vh auto;background:white;border:1px solid #ddd;border-radius:12px;padding:24px}button{min-height:44px;padding:10px 18px;border-radius:8px;border:1px solid #aaa;background:white;cursor:pointer}dt{font-weight:600;margin-top:12px}dd{margin:2px 0}</style></head><body><main><h1>Operator workspace</h1><p>You are authenticated for this tenant. Operator actions remain subject to the active representative grant.</p><dl><dt>Actor reference</dt><dd>${principal.actorId}</dd><dt>Tenant reference</dt><dd>${principal.tenantId}</dd></dl><form method="post" action="/operator/logout"><button type="submit">Log out</button></form></main></body></html>`;
+  return `<!doctype html><html lang="en-NG"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Operator</title><style>body{padding:var(--layout-gutter-mobile)}main{max-width:640px;margin:8vh auto;background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-card);padding:24px}button{min-height:var(--control-min-target);padding:10px 18px;border-radius:var(--radius-control);border:1px solid var(--color-border);background:var(--color-surface);color:var(--color-text);cursor:pointer}dt{font-weight:600;margin-top:12px}dd{margin:2px 0}</style></head><body><main><h1>Operator workspace</h1><p>You are authenticated for this tenant. Operator actions remain subject to the active representative grant.</p><dl><dt>Actor reference</dt><dd>${principal.actorId}</dd><dt>Tenant reference</dt><dd>${principal.tenantId}</dd></dl><form method="post" action="/operator/logout"><button type="submit">Log out</button></form></main></body></html>`;
 }
 
 function escapeHtml(value: string): string { return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character] ?? character)); }
+function withFoundationStyles(html: string): string {
+  return html.replace("</head>", `<link rel="stylesheet" href="/shortlet-foundations.css"><style>
+    body { font-family: var(--font-sans); background: var(--color-canvas); color: var(--color-text); }
+    main { background: var(--color-surface); border-color: var(--color-border); border-radius: var(--radius-card); }
+    a { display: inline-flex; min-block-size: var(--control-min-target); align-items: center; color: var(--color-action); }
+    button, input { font: inherit; }
+    button { border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-text); border-color: var(--color-border); }
+    form[action="/operator/login"] button, .confirm { background: var(--color-action); color: var(--color-surface); border-color: var(--color-action); }
+    .decline { background: var(--color-danger-surface); color: var(--color-danger); border-color: var(--color-danger); }
+    .decline:hover { background: var(--color-danger); color: var(--color-surface); }
+    .decline:active { background: var(--color-danger); color: var(--color-surface); }
+    .error { color: var(--color-danger); border-color: var(--color-danger); }
+    li { border-color: var(--color-border); border-radius: var(--radius-control); }
+    input { color: var(--color-text); border-color: var(--color-border); }
+    @media (max-width: 23rem) { body { padding: var(--space-4); } main { max-width: 100%; padding: var(--space-4); } }
+  </style></head>`);
+}
 function formatWat(iso: string): string { return new Intl.DateTimeFormat("en-NG", { timeZone: "Africa/Lagos", dateStyle: "medium", timeStyle: "short" }).format(new Date(iso)) + " WAT"; }
 function requestStatusLabel(status: string): string { return status === "disclosed" ? "pending" : status; }
 function operatorInboxHtml(env: LocalApartmentOwnerEnvironment, principal: { actorId: string; tenantId: string }): string {
@@ -433,8 +452,14 @@ export function startLocalOwnerServer(options: {
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
+    if (req.method === "GET" && url.pathname === "/shortlet-foundations.css") {
+      res.writeHead(200, { "Content-Type": "text/css; charset=utf-8", "Cache-Control": "public, max-age=3600" });
+      res.end(SHORTLET_FOUNDATION_CSS);
+      return;
+    }
+
     if (req.method === "GET" && url.pathname === "/operator/login") {
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(operatorLoginHtml()); return;
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(withFoundationStyles(operatorLoginHtml())); return;
     }
     if (req.method === "POST" && url.pathname === "/operator/login") {
       if (!browserOriginAccepted(req)) { res.writeHead(403); res.end("Origin rejected"); return; }
@@ -444,24 +469,24 @@ export function startLocalOwnerServer(options: {
         const result = env.sessionAuthority.authenticateAccessToken(params.get("token") ?? "");
         res.setHeader("Set-Cookie", [`${OPERATOR_SESSION_COOKIE}=${encodeURIComponent(result.sessionId)}${cookieFlags}`, `${OPERATOR_SECRET_COOKIE}=${encodeURIComponent(result.sessionSecret)}${cookieFlags}`]);
         res.writeHead(302, { Location: "/operator" }); res.end();
-      } catch (error) { res.writeHead(401, { "Content-Type": "text/html; charset=utf-8" }); res.end(operatorLoginHtml(error instanceof Error ? error.message : "Authentication failed")); }
+      } catch (error) { res.writeHead(401, { "Content-Type": "text/html; charset=utf-8" }); res.end(withFoundationStyles(operatorLoginHtml(error instanceof Error ? error.message : "Authentication failed"))); }
       return;
     }
     if (url.pathname === "/operator" || url.pathname === "/operator/") {
       const principal = operatorPrincipal(req, env);
       if (!principal) { res.writeHead(401, { "Location": "/operator/login", "Content-Type": "text/plain" }); res.end("Authentication required"); return; }
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(operatorShellHtml(principal)); return;
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(withFoundationStyles(operatorShellHtml(principal))); return;
     }
     if (url.pathname === "/operator/requests" || url.pathname === "/operator/requests/") {
       const principal = operatorPrincipal(req, env);
       if (!principal) { res.writeHead(401); res.end("Authentication required"); return; }
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(operatorInboxHtml(env, principal)); return;
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(withFoundationStyles(operatorInboxHtml(env, principal))); return;
     }
     const detailMatch = url.pathname.match(/^\/operator\/requests\/([^/]+)$/);
     if (req.method === "GET" && detailMatch) {
       const principal = operatorPrincipal(req, env);
       if (!principal) { res.writeHead(401); res.end("Authentication required"); return; }
-      try { res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(operatorRequestDetailHtml(env, principal, decodeURIComponent(detailMatch[1]))); }
+      try { res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(withFoundationStyles(operatorRequestDetailHtml(env, principal, decodeURIComponent(detailMatch[1])))); }
       catch { res.writeHead(404); res.end("Request not found"); }
       return;
     }
@@ -478,7 +503,7 @@ export function startLocalOwnerServer(options: {
       } catch (error) {
         let body = "Request action rejected";
         try { body = operatorRequestDetailHtml(env, principal, requestId, error instanceof Error ? error.message : "Request action rejected"); } catch { /* authorization may have changed; keep generic */ }
-        if (!res.headersSent) { res.writeHead(409, { "Content-Type": body.startsWith("<!doctype") ? "text/html; charset=utf-8" : "text/plain; charset=utf-8" }); res.end(body); }
+        if (!res.headersSent) { res.writeHead(409, { "Content-Type": body.startsWith("<!doctype") ? "text/html; charset=utf-8" : "text/plain; charset=utf-8" }); res.end(body.startsWith("<!doctype") ? withFoundationStyles(body) : body); }
       }
       return;
     }

@@ -318,11 +318,12 @@ test("AC39 — Guest contact email is not exposed unnecessarily", () => {
 
 test("AC40 — Payment continuation remains usable at 320px", () => {
   assert.match(renderGuestShellHtml(), /viewport-fit=cover/);
-  assert.match(renderGuestShellHtml(), /@media \(max-width: 420px\)/);
+  assert.match(renderGuestShellHtml(), /--layout-gutter-mobile/);
+  assert.match(renderGuestShellHtml(), /env\(safe-area-inset-bottom\)/);
 });
 
 test("AC41 — Payment callback restoration remains usable at 320px", () => {
-  assert.match(renderGuestShellHtml(), /@media \(max-width: 420px\)/);
+  assert.match(renderGuestShellHtml(), /--layout-gutter-mobile/);
   assert.match(renderGuestShellHtml(), /workspace-reopen/);
 });
 

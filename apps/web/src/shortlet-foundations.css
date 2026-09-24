@@ -1,0 +1,243 @@
+/* Shared Shortlet presentation foundation. Values follow the approved design direction. */
+:root {
+  color-scheme: light;
+
+  --color-canvas: #F6F5F0;
+  --color-surface: #FFFFFF;
+  --color-surface-subtle: #EEECE5;
+  --color-surface-elevated: #FFFFFF;
+  --color-text: #1D2923;
+  --color-text-secondary: #49574E;
+  --color-text-muted: #5D6A62;
+  --color-border: #747C75;
+  --color-action: #0B5C46;
+  --color-action-hover: #084735;
+  --color-action-pressed: #063A2C;
+  --color-focus: #995300;
+  --color-success: #176B49;
+  --color-success-surface: #EAF4EE;
+  --color-warning: #7A4C00;
+  --color-warning-surface: #FFF2D6;
+  --color-danger: #A12B2B;
+  --color-danger-surface: #FCECEC;
+  --color-info: #185F83;
+  --color-info-surface: #EAF3F8;
+
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-size-display: 2.5rem;
+  --font-line-display: 1.15;
+  --font-size-h1: 2rem;
+  --font-line-h1: 1.1875;
+  --font-size-h2: 1.5rem;
+  --font-line-h2: 1.25;
+  --font-size-h3: 1.1875rem;
+  --font-line-h3: 1.3684;
+  --font-size-body: 1rem;
+  --font-line-body: 1.5;
+  --font-size-small: 0.875rem;
+  --font-line-small: 1.4286;
+  --font-size-metadata: 0.75rem;
+  --font-line-metadata: 1.3333;
+  --font-size-label: 0.9375rem;
+  --font-line-label: 1.3333;
+  --font-size-money-total: 1.5rem;
+  --font-line-money-total: 1.25;
+  --font-size-money-detail: 1rem;
+  --font-line-money-detail: 1.5;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+
+  --radius-small: 0.25rem;
+  --radius-control: 0.5rem;
+  --radius-card: 0.75rem;
+  --radius-workspace: 1rem;
+  --elevation-active: 0 0.5rem 1.5rem rgb(29 41 35 / 8%);
+
+  --layout-gutter-mobile: 1rem;
+  --layout-gutter-tablet: 1.5rem;
+  --layout-gutter-desktop: 2rem;
+  --layout-app-max: 70rem;
+  --layout-conversation-max: 45rem;
+  --layout-workspace-max: 47.5rem;
+  --layout-landing-max: 75rem;
+  --layout-readable-max: 80ch;
+
+  --control-min-target: 2.75rem;
+  --control-min-field: 3rem;
+}
+
+/* Behavior thresholds map the approved 320/390, ~768 and 1024px+ layout steps. */
+@media (max-width: 47.999rem) {
+  :root {
+    --font-size-display: 2rem;
+    --font-line-display: 1.1875;
+    --font-size-h1: 1.75rem;
+    --font-line-h1: 1.2143;
+  }
+}
+
+@media (min-width: 23.0625rem) and (max-width: 47.999rem) {
+  :root { --layout-gutter-mobile: 1.125rem; }
+}
+
+@media (min-width: 48rem) and (max-width: 63.999rem) {
+  :root { --layout-gutter-mobile: var(--layout-gutter-tablet); }
+}
+
+@media (min-width: 64rem) {
+  :root { --layout-gutter-mobile: var(--layout-gutter-desktop); }
+}
+
+@layer shortlet-foundation {
+  html {
+    min-inline-size: 0;
+    background: var(--color-canvas);
+    scroll-padding-block: var(--space-4);
+  }
+
+  body {
+    min-inline-size: 0;
+    margin: 0;
+    background: var(--color-canvas);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: var(--font-size-body);
+    line-height: var(--font-line-body);
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    overflow-wrap: break-word;
+  }
+
+  :where(h1, h2, h3) { color: var(--color-text); text-wrap: balance; }
+  :where(h1) { font-size: var(--font-size-h1); line-height: var(--font-line-h1); font-weight: 700; }
+  :where(h2) { font-size: var(--font-size-h2); line-height: var(--font-line-h2); font-weight: 650; }
+  :where(h3) { font-size: var(--font-size-h3); line-height: var(--font-line-h3); font-weight: 650; }
+  :where(.ui-display) { font-size: var(--font-size-display); line-height: var(--font-line-display); font-weight: 700; }
+
+  :where(*, *::before, *::after) { box-sizing: border-box; }
+  :where(img, picture, video, canvas, svg) { max-inline-size: 100%; }
+  :where(img, video) { block-size: auto; }
+  :where(button, input, textarea, select) { font: inherit; }
+  :where(button, a, input, textarea, select, summary, [tabindex]:not([tabindex="-1"])) {
+    scroll-margin-block: var(--space-4);
+  }
+
+  :where(a) { color: var(--color-action); text-underline-offset: 0.16em; }
+  :where(a:hover) { color: var(--color-action-hover); }
+  :where(p, li, dd) { overflow-wrap: anywhere; }
+
+  :where(:focus-visible) {
+    outline: 3px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+
+  .ui-button {
+    display: inline-flex;
+    min-inline-size: var(--control-min-target);
+    min-block-size: var(--control-min-target);
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-4);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-control);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-size: var(--font-size-label);
+    line-height: var(--font-line-label);
+    font-weight: 600;
+    text-align: center;
+    text-decoration: none;
+    cursor: pointer;
+  }
+
+  .ui-button--primary {
+    border-color: var(--color-action);
+    background: var(--color-action);
+    color: var(--color-surface);
+  }
+  .ui-button--secondary { background: var(--color-surface-subtle); }
+  .ui-button--quiet { border-color: transparent; background: transparent; color: var(--color-action); }
+  .ui-button--destructive { border-color: var(--color-danger); background: var(--color-danger-surface); color: var(--color-danger); }
+  .ui-button:hover:not(:disabled, [aria-disabled="true"], [data-loading="true"]) { border-color: var(--color-action-hover); }
+  .ui-button--primary:hover:not(:disabled, [aria-disabled="true"], [data-loading="true"]) { background: var(--color-action-hover); color: var(--color-surface); }
+  .ui-button--destructive:hover:not(:disabled, [aria-disabled="true"], [data-loading="true"]) { background: var(--color-danger); color: var(--color-surface); text-decoration: underline; text-decoration-thickness: 0.12em; }
+  .ui-button:active:not(:disabled, [aria-disabled="true"], [data-loading="true"]) { background: var(--color-action-pressed); color: var(--color-surface); }
+  .ui-button--destructive:active:not(:disabled, [aria-disabled="true"], [data-loading="true"]) { background: var(--color-danger); color: var(--color-surface); }
+  .ui-button:disabled, .ui-button[aria-disabled="true"] { border-style: dashed; color: var(--color-text-secondary); cursor: not-allowed; }
+  .ui-button[data-loading="true"] { cursor: progress; }
+
+  .ui-field { display: grid; gap: var(--space-2); min-inline-size: 0; }
+  .ui-field__label { color: var(--color-text); font-size: var(--font-size-label); line-height: var(--font-line-label); font-weight: 600; }
+  .ui-field input, .ui-field textarea, .ui-field select {
+    inline-size: 100%;
+    min-block-size: var(--control-min-field);
+    padding: var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-control);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-size: 1rem;
+  }
+  .ui-field textarea { min-block-size: 6rem; resize: vertical; }
+  .ui-field :disabled { border-style: dashed; background: var(--color-surface-subtle); color: var(--color-text-secondary); cursor: not-allowed; }
+  .ui-field :user-invalid, .ui-field [aria-invalid="true"] { border: 2px solid var(--color-danger); }
+  .ui-field__hint { color: var(--color-text-secondary); font-size: var(--font-size-small); line-height: var(--font-line-small); }
+  .ui-field__error { color: var(--color-danger); font-size: var(--font-size-small); line-height: var(--font-line-small); font-weight: 600; }
+
+  .ui-status {
+    display: inline-flex;
+    min-block-size: 1.75rem;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid currentColor;
+    border-radius: var(--radius-small);
+    font-weight: 600;
+  }
+  .ui-status::before { content: ""; inline-size: 0.625rem; block-size: 0.625rem; flex: none; border: 2px solid currentColor; border-radius: 50%; }
+  .ui-status--neutral { color: var(--color-text-secondary); background: var(--color-surface-subtle); }
+  .ui-status--info { color: var(--color-info); background: var(--color-info-surface); }
+  .ui-status--success { color: var(--color-success); background: var(--color-success-surface); }
+  .ui-status--warning { color: var(--color-warning); background: var(--color-warning-surface); }
+  .ui-status--danger { color: var(--color-danger); background: var(--color-danger-surface); }
+  .ui-status--stale { border-style: dashed; text-decoration: line-through; }
+
+  .ui-money-total { color: var(--color-text); font-size: var(--font-size-money-total); line-height: var(--font-line-money-total); font-weight: 700; font-variant-numeric: tabular-nums; }
+  .ui-money-detail { color: var(--color-text-secondary); font-size: var(--font-size-money-detail); line-height: var(--font-line-money-detail); font-variant-numeric: tabular-nums; }
+  .ui-money-metadata { color: var(--color-text-muted); font-size: var(--font-size-small); line-height: var(--font-line-small); font-variant-numeric: tabular-nums; }
+
+  .ui-image-frame {
+    display: grid;
+    min-inline-size: 0;
+    aspect-ratio: 4 / 3;
+    place-items: center;
+    overflow: hidden;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    background: var(--color-surface-subtle);
+    color: var(--color-text-secondary);
+  }
+  .ui-image-frame img { display: block; inline-size: 100%; block-size: 100%; object-fit: cover; }
+
+  .ui-readable { max-inline-size: var(--layout-readable-max); }
+  .ui-stale { border-inline-start: 0.25rem dashed var(--color-warning); padding-inline-start: var(--space-3); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto !important; }
+  :where(*, *::before, *::after) { scroll-behavior: auto !important; }
+}
+
+@media (forced-colors: active) {
+  :where(:focus-visible) { outline-color: Highlight; }
+  .ui-button, .ui-field input, .ui-field textarea, .ui-field select, .ui-status, .ui-image-frame { border-color: CanvasText; }
+  .ui-status, .ui-button--primary, .ui-button--destructive { forced-color-adjust: auto; }
+}

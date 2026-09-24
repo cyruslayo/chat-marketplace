@@ -28,8 +28,10 @@ export interface RealBrowserTab {
   isElementFocused(selector: string): Promise<boolean>;
   getCookies(): Promise<readonly RealBrowserCookie[]>;
   getContent(): Promise<string>;
+  captureScreenshot(): Promise<Uint8Array>;
   close(): Promise<void>;
   setViewport(width: number, height: number): Promise<void>;
+  setCssViewport(width: number, height: number): Promise<void>;
   setOffline(offline: boolean): Promise<void>;
   pressKey(key: string): Promise<void>;
   setReducedMotion(reduced: boolean): Promise<void>;
@@ -347,6 +349,11 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
       return evaluate<string>("document.documentElement.outerHTML");
     }
 
+    async function captureScreenshot(): Promise<Uint8Array> {
+      const result = await send<{ data: string }>("Page.captureScreenshot", { format: "png", captureBeyondViewport: false }, sessionId);
+      return Buffer.from(result.data, "base64");
+    }
+
     async function close(): Promise<void> {
       try {
         await send("Target.closeTarget", { targetId });
@@ -357,6 +364,10 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
 
     async function setViewport(width: number, height: number): Promise<void> {
       await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: true }, sessionId);
+    }
+
+    async function setCssViewport(width: number, height: number): Promise<void> {
+      await send("Emulation.setDeviceMetricsOverride", { width, height, screenWidth: width, screenHeight: height, deviceScaleFactor: 1, mobile: false }, sessionId);
     }
 
     async function setOffline(offline: boolean): Promise<void> {
@@ -461,8 +472,10 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
       isElementFocused,
       getCookies,
       getContent,
+      captureScreenshot,
       close,
       setViewport,
+      setCssViewport,
       setOffline,
       pressKey,
       setReducedMotion,
