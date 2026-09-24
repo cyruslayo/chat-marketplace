@@ -90,7 +90,7 @@ async function guestToRequest(tab: RealBrowserTab, city: "Abuja" | "Lagos", phon
   await sendPrompt(tab, city === "Abuja" ? "Show me apartments in Wuse 2 for 2 nights for 2 people" : `I need an apartment in ${city} for 2 nights for 2 people`);
   await tab.waitForText(city === "Abuja" ? "Wuse 2" : "Old Ikoyi", 15000);
   await assertWeaverSurface(tab, "discovery");
-  if (assertPhotos) await tab.waitForFunction("document.images.length > 0 && [...document.images].every((image)=>image.complete&&image.naturalWidth>0)", 15000);
+  if (assertPhotos) await tab.waitForFunction("document.body.innerText.includes('Photo unavailable')", 15000);
   await clickActiveButton(tab, "View Unit");
   await tab.waitForText("Request to Book", 15000);
   await assertWeaverSurface(tab, "Unit detail");
@@ -163,7 +163,8 @@ test("One-origin local surfaces, health, cities, photos, and safety boundaries h
     const guest = (await fetch(`${BASE}/`)).status; const operator = (await fetch(`${BASE}/operator/`)).status;
     const health = (await (await fetch(`${BASE}/healthz`)).json() as { ok: boolean }).ok;
     const abuja = /Wuse 2/.test(await (await fetch(`${BASE}/stays/unit-local-abuja-wuse2`)).text()); const lagos = /Old Ikoyi/.test(await (await fetch(`${BASE}/stays/unit-local-lagos-ikoyi`)).text());
-    const photo = /image\/svg/.test((await fetch(`${BASE}/photos/wuse-2-living.svg`)).headers.get("content-type") ?? "");
+    const photoResponse = await fetch(`${BASE}/photos/wuse-2-living.svg`);
+    const photo = photoResponse.status === 404 && /No approved local property photo/.test(await photoResponse.text());
     const resetRoute = (await fetch(`${BASE}/api/reset`, { method: "POST", headers: { origin: BASE } })).status; const demoRoute = (await fetch(`${BASE}/action/demo-request`, { method: "POST" })).status;
     surfaceProof = { guest, operator, health, abuja, lagos, photo, resetRoute, demoRoute, resetRestricted: false };
   } finally { await server.close(); rmSync(paths.directory, { recursive: true, force: true }); }
@@ -174,7 +175,7 @@ test("AC5 — Local pilot serves Guest and Operator surfaces from one origin", (
 test("AC6 — Health endpoint works", () => { assert.equal(surfaceProof?.health, true); });
 test("AC9 — Abuja listing is discoverable", () => { assert.equal(surfaceProof?.abuja, true); });
 test("AC10 — Lagos listing is discoverable", () => { assert.equal(surfaceProof?.lagos, true); });
-test("AC11 — Listing photos render locally", () => { assert.equal(surfaceProof?.photo, true); });
+test("AC11 — Missing local listing photos fail safely instead of showing an illustration", () => { assert.equal(surfaceProof?.photo, true); });
 test("AC28 — Local reset affects only local pilot data", () => { assert.equal(surfaceProof?.resetRestricted, true); });
 test("AC29 — Production fixture/demo/reset safety remains unchanged", () => { assert.equal(surfaceProof?.resetRoute, 404); assert.equal(surfaceProof?.demoRoute, 404); });
 test("AC30 — Production deterministic PSP isolation remains unchanged", () => { assert.throws(() => startLocalGuestServer({ production: true, publicOrigin: "https://pilot.example.test", localPayment: true }), /cannot mount local pilot controls/); });
@@ -277,7 +278,7 @@ test("Exact screenshot conversation — Lagos → 2 nights and 2 guests → Lekk
     await guest.waitForText("Old Ikoyi", 15000);
     await sendPrompt(guest, "Lekki");
     await guest.waitForText("Lekki Phase 1", 15000);
-    await guest.waitForText("1 eligible Unit found", 15000);
+    await guest.waitForText("1 stay to explore", 15000);
     await assertWeaverSurface(guest, "conversational Lekki discovery");
 
     const transcript = await guest.evaluate<string>("document.getElementById('transcript').innerText");
@@ -294,8 +295,8 @@ test("Exact screenshot conversation — Lagos → 2 nights and 2 guests → Lekk
     const expectedAllIn = unit.price.nightlyKobo * 2 + (unit.price.mandatoryFeesKobo ?? 0);
     const workspaceText = await guest.evaluate<string>("document.getElementById('active-workspace').innerText");
     assert.ok(workspaceText.includes(unit.title), "rendered surface shows the authoritative Unit title");
-    assert.ok(workspaceText.includes(`All-In Stay Total: ${formatNgnKobo(expectedAllIn)}`), `rendered surface shows the authoritative All-In Stay Total: ${workspaceText.slice(0, 400)}`);
-    const durationPreserved = workspaceText.includes("Stay: 2026-09-29 to 2026-10-01");
+    assert.match(workspaceText, new RegExp(`All-In Stay Total\\s+${formatNgnKobo(expectedAllIn)}`), `rendered surface shows the authoritative All-In Stay Total: ${workspaceText.slice(0, 400)}`);
+    const durationPreserved = workspaceText.includes("29 Sept 2026 – 1 Oct 2026");
     assert.equal(durationPreserved, true, "the accumulated two-night duration controls the stay dates");
     conversationalProof = { weaver: true, unitIdMatches: true, priceMatches: true, durationPreserved, noRepeat };
   } finally { await browser.close(); await server.close().catch(() => undefined); rmSync(paths.directory, { recursive: true, force: true }); }
@@ -326,7 +327,7 @@ test("Conflicting Lagos/Wuse conversation clarifies intentionally and preserves 
     await guest.waitForText("Wuse 2", 15000);
     await assertWeaverSurface(guest, "Abuja discovery after conflict");
     const workspaceText = await guest.evaluate<string>("document.getElementById('active-workspace').innerText");
-    const preserved = workspaceText.includes("Stay: 2026-09-29 to 2026-10-01");
+    const preserved = workspaceText.includes("29 Sept 2026 – 1 Oct 2026");
     assert.equal(preserved, true, "nights and guests survive the location conflict");
     const surfaced = await activeDiscoveryUnit(guest, await threadIdOf(guest));
     assert.equal(surfaced.unitId, "unit-local-abuja-wuse2");

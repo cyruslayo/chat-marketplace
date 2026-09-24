@@ -72,7 +72,7 @@ test("AC15/AC17 — failed media leaves critical listing text and Request to Boo
   const target = window.document.createElement("div");
   assert.equal(host.mount({ surfaceId: "photo-detail", target: target as unknown as Element }).ok, true);
   assert.match(target.textContent ?? "", /Sunlit 2-bedroom apartment in Ikeja/);
-  assert.match(target.textContent ?? "", /Ikeja, Lagos/);
+  assert.match(target.textContent ?? "", /Lagos/);
   assert.match(target.textContent ?? "", /Request to Book/);
 });
 
@@ -101,7 +101,7 @@ test("AC14/AC15 — Unit detail presents description and bathroom count", () => 
   });
   const text = JSON.stringify(messages);
   assert.match(text, /A bright, quiet apartment with a spacious living room and reliable power/);
-  assert.match(text, /Bathrooms: 2/);
+  assert.match(text, /2 bathrooms/);
 });
 
 test("AC18/AC19/AC22 — conventional detail exposes the same photos with safe referrer policy and no secrets", () => {

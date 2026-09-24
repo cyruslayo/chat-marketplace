@@ -97,6 +97,7 @@ function enhanceListingImages(mount: HTMLElement): void {
     image.referrerPolicy = "no-referrer";
     image.decoding = "async";
     image.loading = index === 0 ? "eager" : "lazy";
+    if (index === 0) image.fetchPriority = "high";
     image.addEventListener("error", () => {
       const fallback = document.createElement("div");
       fallback.className = "photo-fallback";

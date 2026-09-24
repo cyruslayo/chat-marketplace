@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -123,13 +124,38 @@ test("Authoritative Old Ikoyi Unit detail renders through Weaver in real Chromiu
 
     const rendered = await tab.evaluate<string>("document.querySelector('#active-workspace .weaver-mount[data-renderer=weaver]')?.innerText || ''");
     assert.match(rendered, /Garden Two-Bedroom Stay in Old Ikoyi/);
-    assert.match(rendered, /Old Ikoyi, Lagos/);
-    assert.match(rendered, /Bedrooms: 2/);
-    assert.match(rendered, /Bathrooms: 2/);
-    assert.match(rendered, /Capacity: 4 guests/);
-    assert.ok(rendered.includes(`All-In Stay Total: ${formatNgnKobo(allInKobo)}`), "rendered all-in price matches authoritative inventory");
+    assert.match(rendered, /Lagos/);
+    assert.match(rendered, /2 bedrooms/);
+    assert.match(rendered, /2 bathrooms/);
+    assert.match(rendered, /Sleeps 4/);
+    assert.match(rendered, new RegExp(`All-In Stay Total\\s+${formatNgnKobo(allInKobo)}`), "rendered all-in price matches authoritative inventory");
     assert.doesNotMatch(await tab.evaluate<string>("document.body.innerText"), /The workspace could not be displayed safely/);
     assert.ok(oldDetail.summary?.includes(authoritative.title));
+
+    const accessibilityTree = await tab.getAccessibilityTree();
+    assert.ok(accessibilityTree.some((node) => node.role === "button" && node.name === "Request to Book"), "Request to Book has a usable browser accessibility name");
+    for (const width of [320, 390, 768, 1280]) {
+      await tab.setCssViewport(width, 900);
+      const metrics: { readonly innerWidth: number; readonly clientWidth: number; readonly scrollWidth: number } = await tab.evaluate("({innerWidth: window.innerWidth, clientWidth: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth})");
+      assert.equal(metrics.innerWidth, width, `Chromium CSS viewport is ${width}px`);
+      if (width < 400) assert.ok(metrics.scrollWidth <= metrics.clientWidth, `Unit detail has no horizontal document overflow at ${width}px: ${JSON.stringify(metrics)}`);
+      const evidenceDirectory = ".scratch/ui-phase3-discovery-detail";
+      mkdirSync(evidenceDirectory, { recursive: true });
+      const fileName = width === 320 ? "07-unit-detail-320.png" : width === 768 ? "08-unit-detail-768.png" : width === 1280 ? "10-unit-detail-1280.png" : "05-unit-detail-ikoyi-390.png";
+      writeFileSync(`${evidenceDirectory}/${fileName}`, await tab.captureScreenshot());
+    }
+
+    await tab.setCssViewport(390, 844);
+    await tab.focus("#active-workspace button");
+    writeFileSync(".scratch/ui-phase3-discovery-detail/12-focus-accessibility.png", await tab.captureScreenshot());
+    assert.ok((await tab.getAccessibilityTree()).some((node) => node.role === "heading" && node.name === authoritative.title), "Unit title is exposed as a heading in the browser accessibility tree");
+    assert.equal(await tab.clickButton("Back to conversation"), true);
+    await sendPrompt(tab, "Old Ikoyi", "Garden Two-Bedroom Stay in Old Ikoyi");
+    assert.equal(await tab.clickButton("View Unit", "View Garden Two-Bedroom Stay in Old Ikoyi"), true);
+    await tab.waitForText("Garden Two-Bedroom Stay in Old Ikoyi details", 15000);
+    const repeated = await currentSurface(tab);
+    assert.notEqual(repeated.surfaceId, lekkiDetail.surfaceId, "reopening Old Ikoyi retains a distinct detail surface identity");
+    assert.notEqual(repeated.surfaceId, oldDetail.surfaceId, "repeated Old Ikoyi details do not collide with the prior surface revision");
 
     async function assertDiscoveryUnit(expectedUnitId: string): Promise<void> {
       const components = await tab!.evaluate<readonly { readonly component?: string; readonly action?: { readonly event?: { readonly context?: Record<string, unknown> } } }[]>(`fetch('/api/state?threadId='+encodeURIComponent(sessionStorage.getItem('shortlet-concierge-thread')),{credentials:'include'}).then((response)=>response.json()).then((state)=>state.surfaces?.[0]?.a2uiMessages.filter((message)=>message.updateComponents).flatMap((message)=>message.updateComponents.components) ?? [])`);

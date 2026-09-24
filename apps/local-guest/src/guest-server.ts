@@ -1453,9 +1453,13 @@ export function renderGuestShellHtml(): string {
     .workspace-close:hover, #workspace-reopen:hover, .contact-link:hover { border-color: var(--accent); }
     .workspace-status { margin: 0 0 var(--space-3); color: var(--color-text-secondary); font-size: var(--font-size-small); }
     .workspace-status[data-status="stale"], .workspace-status[data-status="expired"], .workspace-status[data-status="deleted"], .workspace-status[data-status="fallback"] { padding: var(--space-2) var(--space-3); border-inline-start: 3px dashed var(--color-warning); background: var(--color-warning-surface); color: var(--color-warning); }
-    .weaver-mount { min-width: 0; overflow-x: auto; }
+    .weaver-mount { min-width: 0; max-width: 100%; overflow: visible; }
     .weaver-mount img { display: block; width: 100%; max-width: 100%; height: auto; min-height: 120px; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--radius-card); background: var(--surface-soft); }
-    .photo-fallback { min-height: 120px; display: grid; place-items: center; padding: var(--space-4); border-radius: var(--radius-card); background: var(--surface-soft); color: var(--text-muted); text-align: center; }
+    .photo-fallback { width: 100%; min-height: 120px; aspect-ratio: 4 / 3; display: grid; place-items: center; padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface-soft); color: var(--text-muted); text-align: center; }
+    .weaver-mount small[data-a2ui-component="Text"] { color: var(--color-text-secondary); font-size: var(--font-size-small) !important; font-style: normal !important; line-height: var(--font-line-small); }
+    .weaver-mount button[data-a2ui-variant="primary"] { min-width: var(--control-min-target); min-height: var(--control-min-target); border-color: var(--color-action) !important; background-color: var(--color-action) !important; color: var(--color-surface) !important; font: 600 var(--font-size-label)/var(--font-line-label) var(--font-sans); }
+    .weaver-mount button[data-a2ui-variant="primary"]:hover { background-color: var(--color-action-hover) !important; }
+    .weaver-mount button[data-a2ui-variant="primary"]:active { background-color: var(--color-action-pressed) !important; }
     .surface-fallback { border-inline-start: 4px solid var(--color-warning); padding: var(--space-1) 0 var(--space-1) var(--space-3); }
     .surface-fallback p { margin: 0 0 var(--space-2); }
     .fallback-link { display: inline-flex; align-items: center; min-height: var(--control-min-target); color: var(--accent); font-weight: 650; }

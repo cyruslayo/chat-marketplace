@@ -90,19 +90,21 @@ test("AC2: a non-empty artifact resolves to a ready Weaver surface with meaningf
   if (!surface.ok) throw new Error("Surface resolution failed");
   assert.equal(surface.value.tree.ready, true);
   const text = resolvedText(runtime).join("\n");
-  assert.match(text, /1 eligible Unit/);
+  assert.match(text, /1 stay to explore/);
   assert.match(text, /Sunlit 2-bedroom apartment in Ikeja/);
-  assert.match(text, /Ikeja, Lagos/);
-  assert.match(text, /4 guests/);
-  assert.match(text, /wifi, generator, parking/);
-  assert.match(text, /Inspection: current/);
+  assert.match(text, /Lagos/);
+  assert.match(text, /Sleeps 4/);
+  assert.match(text, /Wi-Fi · Backup power · Secure parking/);
+  assert.doesNotMatch(text, /24_7_power_generator|Inspection: current/);
+  assert.doesNotMatch(text, /Refundable Security Deposit: ₦0/);
 });
 
 test("AC3: dated pricing displays the canonical All-In Stay Total", () => {
   const artifact = datedArtifact();
   assert.equal(artifact.facts.results[0].price.allInStayTotalKobo, 18_000_000);
   const text = resolvedText(processMessages(discoveryArtifactToA2UI({ artifact, surfaceId: SURFACE_ID }))).join("\n");
-  assert.match(text, /All-In Stay Total: ₦180,000/);
+  assert.match(text, /All-In Stay Total/);
+  assert.match(text, /₦180,000/);
   assert.doesNotMatch(text, /All-In Stay Total: ₦85,000/);
 });
 
@@ -110,9 +112,10 @@ test("AC4: undated pricing is clearly indicative", () => {
   const artifact = createQuery().search({ location: "Lagos" });
   assert.equal(artifact.facts.results[0].price.allInStayTotalKobo, null);
   const text = resolvedText(processMessages(discoveryArtifactToA2UI({ artifact, surfaceId: SURFACE_ID }))).join("\n");
-  assert.match(text, /Indicative nightly rate: ₦85,000/);
+  assert.match(text, /Indicative nightly rate\n₦85,000/);
   assert.doesNotMatch(text, /All-In Stay Total: ₦85,000/);
   assert.match(text, /Rates without dates and party size are indicative/);
+  assert.match(text, /Refundable Security Deposit: ₦20,000/);
 });
 
 test("AC5: a zero-result artifact resolves successfully without View Unit actions", () => {
@@ -120,7 +123,9 @@ test("AC5: a zero-result artifact resolves successfully without View Unit action
   const messages = discoveryArtifactToA2UI({ artifact, surfaceId: SURFACE_ID });
   const runtime = processMessages(messages);
   assert.equal(runtime.resolveSurface(SURFACE_ID).ok, true);
-  assert.match(resolvedText(runtime).join("\n"), /No eligible Units match those requirements/);
+  assert.match(resolvedText(runtime).join("\n"), /No current matches/);
+  assert.match(resolvedText(runtime).join("\n"), /Search: Abuja/);
+  assert.match(resolvedText(runtime).join("\n"), /Try another neighbourhood, dates, or guest count/);
   assert.equal(updateComponents(messages).some((component) => component.component === "Button"), false);
 });
 

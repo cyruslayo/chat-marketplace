@@ -55,12 +55,15 @@ test("AC6 — Unit detail artifact converts to valid A2UI and mounts in Weaver",
   assert.equal(host.mount({ surfaceId: "unit-detail-proof", target: target as unknown as Element }).ok, true);
   const text = target.textContent ?? "";
   assert.match(text, /Sunlit 2-bedroom apartment in Ikeja/);
-  assert.match(text, /Ikeja, Lagos/);
-  assert.match(text, /Bedrooms: 2/);
-  assert.match(text, /Bathrooms: 2/);
-  assert.match(text, /Capacity: 4 guests/);
-  assert.match(text, /Amenities: .*wifi/);
+  assert.match(text, /Lagos/);
+  assert.match(text, /2 bedrooms/);
+  assert.match(text, /2 bathrooms/);
+  assert.match(text, /Sleeps 4/);
+  assert.match(text, /Wi-Fi/);
   assert.match(text, /Request to Book/);
+  assert.match(text, /Physical inspection completed on 15 Jan 2026/);
+  assert.match(text, /entire place possession/);
+  assert.doesNotMatch(text, /Management authority|24_7_power_generator|Refundable Security Deposit: ₦0/);
 });
 
 test("AC25 — Unit detail conventional presentation remains a separate parity path", () => {

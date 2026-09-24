@@ -74,8 +74,8 @@ test("AC2 — Real discovery rendering", () => {
   const mounted = host.mount({ surfaceId: DISCOVERY_SURFACE_ID, target });
   assert.equal(mounted.ok, true);
   assert.match(target.textContent ?? "", /Sunlit 2-bedroom apartment in Ikeja/);
-  assert.match(target.textContent ?? "", /Ikeja, Lagos/);
-  assert.match(target.textContent ?? "", /All-In Stay Total: ₦180,000/);
+  assert.match(target.textContent ?? "", /Lagos/);
+  assert.match(target.textContent ?? "", /All-In Stay Total\s*₦180,000/);
   assert.match(target.textContent ?? "", /View Unit/);
 });
 
@@ -104,7 +104,8 @@ test("AC4 — Zero results", () => {
   processSuccessfully(host, discoveryArtifactToA2UI({ artifact, surfaceId: DISCOVERY_SURFACE_ID }));
   const { target } = targetElement();
   assert.equal(host.mount({ surfaceId: DISCOVERY_SURFACE_ID, target }).ok, true);
-  assert.match(target.textContent ?? "", /No eligible Units match those requirements/);
+  assert.match(target.textContent ?? "", /No current matches/);
+  assert.match(target.textContent ?? "", /Search: Abuja/);
   assert.equal([...target.querySelectorAll("button")].some((button) => button.textContent?.includes("View Unit")), false);
 });
 

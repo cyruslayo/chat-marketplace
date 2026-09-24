@@ -169,12 +169,12 @@ test("Guest natural-language turn produces an authoritative discovery artifact r
     );
     const target = journey.harness.mounted[0]!.target;
     const rendered = target.textContent ?? "";
-    assert.ok(rendered.includes("1 eligible Unit found"), "rendered Weaver surface shows the filtered result summary");
+    assert.ok(rendered.includes("1 stay to explore"), "rendered Weaver surface shows the filtered result summary");
     assert.ok(rendered.includes(IKOYI_TITLE), "rendered Weaver surface shows the Ikoyi unit card");
     assert.equal(rendered.includes(LEKKI_TITLE), false, "neighbourhood filter excludes the Lekki unit");
-    assert.ok(rendered.includes(`All-In Stay Total: ${ALL_IN_TOTAL_NGN}`), "rendered surface shows all-in pricing");
-    assert.ok(rendered.includes("2026-09-10") && rendered.includes("2026-09-13"), "requested three nights control the stay dates");
-    assert.ok(rendered.includes("Inspection: current"), "rendered surface shows trust information");
+    assert.ok(rendered.includes("All-In Stay Total") && rendered.includes(ALL_IN_TOTAL_NGN), "rendered surface shows all-in pricing");
+    assert.ok(rendered.includes("10 Sept 2026") && rendered.includes("13 Sept 2026"), "requested three nights control the stay dates");
+    assert.ok(rendered.includes("Wi-Fi") && !rendered.includes("security_guard"), "discovery facts use human-readable amenity labels");
   } finally {
     await journey.server.close();
   }
@@ -189,7 +189,7 @@ test("Generic Lagos discovery keeps both eligible units while requested nights c
     );
     journey.harness.mountSurface(lagos.surfaces[0]!.surfaceId, lagos.surfaces[0]!.a2uiMessages);
     const lagosText = journey.harness.mounted[0]!.target.textContent ?? "";
-    assert.ok(lagosText.includes("2 eligible Units found"));
+    assert.ok(lagosText.includes("2 stays to explore"));
     assert.ok(lagosText.includes(IKOYI_TITLE) && lagosText.includes(LEKKI_TITLE));
 
     const fiveNightJourney = await startJourneyServer();
@@ -200,7 +200,7 @@ test("Generic Lagos discovery keeps both eligible units while requested nights c
       );
       fiveNightJourney.harness.mountSurface(five.surfaces[0]!.surfaceId, five.surfaces[0]!.a2uiMessages);
       const fiveText = fiveNightJourney.harness.mounted[0]!.target.textContent ?? "";
-      assert.ok(fiveText.includes("2026-09-15"), "five nights produce a five-day checkout");
+      assert.ok(fiveText.includes("15 Sept 2026"), "five nights produce a five-day checkout");
       assert.ok(fiveText.includes("₦610,000"), "five nights use the authoritative calculated stay total");
       assert.equal(fiveText.includes("₦370,000"), false);
     } finally {
@@ -279,7 +279,7 @@ test("Weaver-generated View Unit action round-trips through the server and repla
     const unitTarget = journey.harness.mounted[1]!.target;
     const rendered = unitTarget.textContent ?? "";
     assert.ok(rendered.includes(IKOYI_TITLE));
-    assert.ok(rendered.includes(`All-In Stay Total: ${ALL_IN_TOTAL_NGN}`));
+    assert.ok(rendered.includes("All-In Stay Total") && rendered.includes(ALL_IN_TOTAL_NGN));
     assert.ok(rendered.includes("Refundable Security Deposit: ₦20,000"));
     assert.ok(rendered.includes("Request to Book"), "unit detail exposes the Request to Book action");
   } finally {

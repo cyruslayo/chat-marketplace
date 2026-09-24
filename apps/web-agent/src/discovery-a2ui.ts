@@ -3,6 +3,7 @@ import {
   type A2UIComponent,
   type A2UIServerMessage,
 } from "@weaver/core";
+import { formatGuestDate, guestAmenityLabel, guestOccupancyLabel } from "./guest-content.js";
 
 export interface DiscoveryLocationProjection {
   readonly city: string;
@@ -95,9 +96,20 @@ function unitComponents(
   canViewUnit: boolean,
 ): { readonly cardId: string; readonly components: readonly A2UIComponent[] } {
   const prefix = `unit-${unit.id}`;
-  const priceText = unit.price.allInStayTotalKobo === null
-    ? `Indicative nightly rate: ${formatNgnKobo(unit.price.nightlyKobo)}`
-    : `All-In Stay Total: ${formatNgnKobo(unit.price.allInStayTotalKobo)}`;
+  const location = unit.title.toLocaleLowerCase().includes(unit.location.neighbourhood.toLocaleLowerCase())
+    ? unit.location.city
+    : `${unit.location.neighbourhood}, ${unit.location.city}`;
+  const facts = [
+    ...(unit.bedrooms === undefined ? [] : [`${unit.bedrooms} ${unit.bedrooms === 1 ? "bedroom" : "bedrooms"}`]),
+    `${unit.bathrooms} ${unit.bathrooms === 1 ? "bathroom" : "bathrooms"}`,
+    `Sleeps ${unit.capacity}`,
+    guestOccupancyLabel(unit.trust.occupancyModel),
+  ].filter((fact): fact is string => fact !== undefined);
+  const highlights = unit.amenities.slice(0, 3);
+  const allInLabel = unit.price.allInStayTotalKobo === null ? "Indicative nightly rate" : "All-In Stay Total";
+  const allInAmount = unit.price.allInStayTotalKobo === null
+    ? unit.price.nightlyKobo
+    : unit.price.allInStayTotalKobo;
 
   return {
     cardId: `${prefix}-card`,
@@ -105,44 +117,46 @@ function unitComponents(
       { id: `${prefix}-card`, component: "Card", child: `${prefix}-content` },
       {
         id: `${prefix}-content`,
-      component: "Column",
+        component: "Column",
         children: [
-          `${prefix}-title`, `${prefix}-location`, ...(unit.photoUrls.length > 0 ? [`${prefix}-primary-photo`] : []),
-          `${prefix}-rooms`, `${prefix}-amenities`,
-          `${prefix}-divider`, `${prefix}-prices`, `${prefix}-inspection`, `${prefix}-inspection-dates`,
+          ...(unit.photoUrls.length > 0 ? [`${prefix}-primary-photo`] : [`${prefix}-photo-unavailable`]),
+          `${prefix}-title`, `${prefix}-location`, `${prefix}-facts`,
+          ...(highlights.length > 0 ? [`${prefix}-amenities`] : []),
+          `${prefix}-divider`, `${prefix}-price-label`, `${prefix}-price`,
+          ...(unit.price.refundableSecurityDepositKobo > 0 ? [`${prefix}-deposit`] : []),
           ...(canViewUnit ? [`${prefix}-view-button`] : []),
         ],
       },
       { id: `${prefix}-title`, component: "Text", text: unit.title, variant: "h3" },
-      { id: `${prefix}-location`, component: "Text", text: `${unit.location.neighbourhood}, ${unit.location.city}` },
+      { id: `${prefix}-location`, component: "Text", text: location, variant: "caption" },
       ...(unit.photoUrls.length > 0 ? [{
         id: `${prefix}-primary-photo`,
         component: "Image" as const,
         url: unit.photoUrls[0]!,
-        description: `Photo of ${unit.title}`,
+        description: `${unit.title} in ${unit.location.neighbourhood}, ${unit.location.city}`,
       }] : []),
-      { id: `${prefix}-rooms`, component: "Text", text: `Bedrooms: ${unit.bedrooms ?? "Not provided"} · Bathrooms: ${unit.bathrooms} · Capacity: ${unit.capacity} guests` },
-      { id: `${prefix}-amenities`, component: "Text", text: `Amenities: ${unit.amenities.join(", ")}` },
+      ...(unit.photoUrls.length === 0 ? [{
+        id: `${prefix}-photo-unavailable`,
+        component: "Text" as const,
+        text: "No property photos are available yet.",
+        variant: "caption" as const,
+      }] : []),
+      { id: `${prefix}-facts`, component: "Text", text: facts.join(" · ") },
+      ...(highlights.length > 0 ? [{
+        id: `${prefix}-amenities`,
+        component: "Text" as const,
+        text: highlights.map(guestAmenityLabel).join(" · "),
+        variant: "caption" as const,
+      }] : []),
       { id: `${prefix}-divider`, component: "Divider", axis: "horizontal" },
-      {
-        id: `${prefix}-prices`,
-        component: "Row",
-        children: [`${prefix}-price`, `${prefix}-deposit`],
-        justify: "spaceBetween",
-      },
-      { id: `${prefix}-price`, component: "Text", text: priceText },
-      {
+      { id: `${prefix}-price-label`, component: "Text", text: allInLabel, variant: "caption" },
+      { id: `${prefix}-price`, component: "Text", text: formatNgnKobo(allInAmount), variant: "h3" },
+      ...(unit.price.refundableSecurityDepositKobo > 0 ? [{
         id: `${prefix}-deposit`,
-        component: "Text",
+        component: "Text" as const,
         text: `Refundable Security Deposit: ${formatNgnKobo(unit.price.refundableSecurityDepositKobo)}`,
-      },
-      { id: `${prefix}-inspection`, component: "Text", text: `Inspection: ${unit.trust.inspection.status}` },
-      {
-        id: `${prefix}-inspection-dates`,
-        component: "Text",
-        text: `Inspected: ${unit.trust.inspection.inspectedAt}; current through: ${unit.trust.inspection.expiresAt}`,
-        variant: "caption",
-      },
+        variant: "caption" as const,
+      }] : []),
       ...(canViewUnit ? [
         {
           id: `${prefix}-view-button`,
@@ -172,22 +186,23 @@ export function discoveryArtifactToA2UI({
     unit,
     artifact.actions.some((action) => action.type === "view-unit" && action.unitId === unit.id),
   ));
-  const dateSummary = typeof artifact.facts.filters.checkIn === "string" && typeof artifact.facts.filters.checkOut === "string"
-    ? ` Stay: ${artifact.facts.filters.checkIn} to ${artifact.facts.filters.checkOut}.`
-    : "";
+  const checkIn = typeof artifact.facts.filters.checkIn === "string" ? formatGuestDate(artifact.facts.filters.checkIn) : undefined;
+  const checkOut = typeof artifact.facts.filters.checkOut === "string" ? formatGuestDate(artifact.facts.filters.checkOut) : undefined;
+  const dateSummary = checkIn && checkOut ? ` · ${checkIn} – ${checkOut}` : "";
+  const context = discoveryContext(artifact.facts.filters);
   const resultSummary = artifact.facts.results.length === 0
-    ? `No eligible Units match those requirements.${dateSummary}`
-    : `${artifact.facts.results.length} eligible Unit${artifact.facts.results.length === 1 ? "" : "s"} found.${dateSummary}`;
+    ? "No current matches"
+    : `${artifact.facts.results.length} stay${artifact.facts.results.length === 1 ? "" : "s"} to explore`;
   const disclosureIds = artifact.disclosures.map((_, index) => `disclosure-${index}`);
   const resultListId = "result-list";
   const seeAllId = "see-all-results";
-  const rootChildren = ["result-summary", resultListId, ...(unitGroups.length > 1 ? [seeAllId] : []), ...disclosureIds];
+  const rootChildren = ["result-summary", "search-context", resultListId, ...(unitGroups.length === 1 ? [] : unitGroups.length > 1 ? [seeAllId] : []), ...(unitGroups.length === 0 ? ["zero-result-guidance"] : []), ...disclosureIds];
   const components: A2UIComponent[] = [
     { id: "root", component: "Column", children: rootChildren },
     { id: "result-summary", component: "Text", text: resultSummary, variant: "h2" },
-    // A single horizontally browsable result sequence keeps discovery compact
-    // on mobile while preserving every result in the active workspace.
-    { id: resultListId, component: "Row", children: unitGroups.map((group) => group.cardId) },
+    { id: "search-context", component: "Text", text: `${context}${dateSummary}`.trim(), variant: "caption" },
+    { id: resultListId, component: "Column", children: unitGroups.map((group) => group.cardId) },
+    ...(unitGroups.length === 0 ? [{ id: "zero-result-guidance", component: "Text" as const, text: "Try another neighbourhood, dates, or guest count in your message. Your search details are still here to refine.", variant: "body" as const }] : []),
     ...(unitGroups.length > 1 ? [
       {
         id: seeAllId,
@@ -218,4 +233,13 @@ export function discoveryArtifactToA2UI({
       updateComponents: { surfaceId, components },
     },
   ];
+}
+
+function discoveryContext(filters: Readonly<Record<string, unknown>>): string {
+  const location = typeof filters.neighbourhood === "string"
+    ? filters.neighbourhood
+    : typeof filters.location === "string" ? filters.location : undefined;
+  const partySize = typeof filters.partySize === "number" ? `${filters.partySize} ${filters.partySize === 1 ? "guest" : "guests"}` : undefined;
+  const details = [location, partySize].filter((value): value is string => value !== undefined);
+  return details.length > 0 ? `Search: ${details.join(" · ")}` : "Search results for your request";
 }

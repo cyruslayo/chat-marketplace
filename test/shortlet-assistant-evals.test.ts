@@ -383,8 +383,9 @@ test("Unit detail surface projects inspection facts from the authoritative Unit"
 
   assert.equal(response.ok, true);
   const payload = JSON.stringify(response.surfaces?.[0]?.a2uiMessages);
-  assert.match(payload, /2026-02-01T00:00:00Z/);
-  assert.match(payload, /2027-02-01T00:00:00Z/);
+  assert.match(payload, /Physical inspection completed on 1 Feb 2026/);
+  assert.match(payload, /Inspection expiry: 1 Feb 2027/);
+  assert.match(payload, /entire place possession/);
   assert.doesNotMatch(payload, /2026-01-15T00:00:00Z/);
 });
 
