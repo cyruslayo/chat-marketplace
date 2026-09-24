@@ -18,6 +18,7 @@ export interface BookingContractArtifact {
     readonly reservationId: string;
     readonly offerId: string;
     readonly unitId: string;
+    readonly unitTitle?: string;
     readonly primaryGuest: { readonly id: string; readonly name: string };
     readonly accommodationProvider: { readonly id: string; readonly name?: string };
     readonly checkIn: string;

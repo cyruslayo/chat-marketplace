@@ -1,11 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { launchRealBrowser, type RealBrowserInstance, type RealBrowserTab } from "./helpers/chrome-devtools.js";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { startLocalGuestServer, type LocalGuestServerHandle } from "../apps/local-guest/src/guest-server.js";
+import type { PSPVerifyResult } from "../domains/shortlet/src/index.js";
 
 const PROMPT = "I need an apartment in Ikoyi for 3 nights for 2 people";
 const VIEWPORTS = [
@@ -19,13 +20,14 @@ interface MobileContext {
   readonly base: string;
   readonly threadId: string;
   readonly directory: string;
+  readonly width: number;
   close(): Promise<void>;
 }
 
-async function startContext(width: number, height: number): Promise<MobileContext> {
+async function startContext(width: number, height: number, verifyPayment?: (reference: string, amountKobo: number) => PSPVerifyResult): Promise<MobileContext> {
   const directory = mkdtempSync(join(tmpdir(), "guest-mobile-"));
   const databasePath = join(directory, "guest.sqlite");
-  const server = startLocalGuestServer({ port: 0, environment: new LocalGuestEnvironment({ databasePath }) });
+  const server = startLocalGuestServer({ port: 0, environment: new LocalGuestEnvironment({ databasePath, initialGuestPhoneNumber: null, initialGuestContactEmail: null, ...(verifyPayment ? { verifyPayment } : {}) }) });
   let browser: RealBrowserInstance | undefined;
   let tab: RealBrowserTab | undefined;
   try {
@@ -38,7 +40,7 @@ async function startContext(width: number, height: number): Promise<MobileContex
     await tab.waitForSelector("#composer-input");
     const threadId = await tab.evaluate<string>("window.sessionStorage.getItem('shortlet-concierge-thread') || ''");
     assert.match(threadId, /^g-[a-f0-9-]{6,64}$/);
-    return { server, browser, tab, base, threadId, directory, async close() { await tab?.close(); await browser?.close(); await server.close(); rmSync(directory, { recursive: true, force: true }); } };
+    return { server, browser, tab, base, threadId, directory, width, async close() { await tab?.close(); await browser?.close(); await server.close(); rmSync(directory, { recursive: true, force: true }); } };
   } catch (error) {
     try { await tab?.close(); } catch {}
     try { await browser?.close(); } catch {}
@@ -62,33 +64,86 @@ async function sendPrompt(tab: RealBrowserTab, text: string): Promise<void> {
   await tab.evaluate(`(() => { const input = document.getElementById('composer-input'); if (!(input instanceof HTMLInputElement)) throw new Error('composer missing'); input.value = ${JSON.stringify(text)}; input.dispatchEvent(new Event('input', { bubbles: true })); const form = document.getElementById('composer'); if (!(form instanceof HTMLFormElement)) throw new Error('form missing'); form.requestSubmit(); })()`);
 }
 
-async function completeJourney(context: MobileContext): Promise<void> {
+async function capturePhase4(context: MobileContext, state: string): Promise<void> {
+  if (![320, 390, 768, 1280].includes(context.width)) return;
+  const directory = join(process.cwd(), ".scratch", "ui-phase4-booking-payment");
+  mkdirSync(directory, { recursive: true });
+  await context.tab.evaluate("document.getElementById('active-workspace')?.scrollIntoView({ block: 'start', behavior: 'instant' })");
+  const image = await context.tab.captureScreenshot();
+  writeFileSync(join(directory, `${context.width}-${state}.png`), Buffer.from(image));
+}
+
+async function completeJourney(context: MobileContext, recoverFromPendingPayment = false): Promise<void> {
   const { tab, base, threadId, server } = context;
   await sendPrompt(tab, PROMPT);
   await tab.waitForText("Luxury 2-Bedroom Apartment in Old Ikoyi", 15000);
   assert.equal(await tab.clickButton("View Unit", "Luxury 2-Bedroom Apartment in Old Ikoyi"), true);
   await tab.waitForText("Request to Book");
   assert.equal(await tab.clickButton("Request to Book"), true);
-  await tab.waitForText("Review Request");
-  assert.equal(await tab.clickButton("Review Request"), true);
+  await tab.waitForText("Review request");
+  await capturePhase4(context, "request-draft");
+  assert.equal(await tab.clickButton("Review request"), true);
+  await tab.waitForText("Phone number");
+  await capturePhase4(context, "phone-contact");
+  const phoneField = await tab.evaluate<{ readonly labeled: boolean; readonly described: boolean; readonly type: string; readonly required: boolean }>("(() => { const input = document.querySelector('.weaver-mount input'); const label = input && document.querySelector(`label[for=\"${input.id}\"]`); return { labeled: Boolean(label && label.textContent?.includes('Phone number')), described: Boolean(input?.getAttribute('aria-describedby')), type: input?.type || '', required: Boolean(input?.required) }; })()");
+  assert.deepEqual(phoneField, { labeled: true, described: true, type: "tel", required: true });
+  const phoneNodes = await tab.getAccessibilityTree();
+  assert.ok(phoneNodes.some((node) => node.role === "textbox" && node.name === "Phone number"));
+  await tab.evaluate("(() => { const input = document.querySelector('.weaver-mount input'); if (!(input instanceof HTMLInputElement)) throw new Error('phone input missing'); input.value = '123'; input.dispatchEvent(new Event('input', { bubbles: true })); })()");
+  assert.equal(await tab.clickButton("Save Phone number"), true);
+  await tab.waitForText("valid Nigerian mobile number");
+  const phoneError = await tab.evaluate<{ readonly retained: string; readonly invalid: string | null; readonly description: string | null }>("(() => { const input = document.querySelector('.weaver-mount input'); return { retained: input?.value || '', invalid: input?.getAttribute('aria-invalid') || null, description: input?.getAttribute('aria-describedby') || null }; })()");
+  assert.equal(phoneError.retained, "123");
+  assert.equal(phoneError.invalid, "true");
+  assert.match(phoneError.description ?? "", /guest-contact-phone-help guest-contact-phone-error/);
+  await capturePhase4(context, "phone-error");
+  await tab.evaluate("(() => { const input = document.querySelector('.weaver-mount input'); if (!(input instanceof HTMLInputElement)) throw new Error('phone input missing'); input.value = '+234 801 234 5678'; input.dispatchEvent(new Event('input', { bubbles: true })); })()");
+  assert.equal(await tab.clickButton("Save Phone number"), true);
+  await tab.waitForText("Review Booking Request");
+  await capturePhase4(context, "booking-review");
   await tab.waitForText("Submit Booking Request");
   assert.equal(await tab.clickButton("Submit Booking Request"), true);
   await tab.waitForText("Booking Request");
+  await capturePhase4(context, "request-submitted");
   const requestId = server.environment.interactionStore.listBookingRequestIds()[0];
   assert.ok(requestId);
   server.environment.simulateOperatorAcceptance(requestId);
   await tab.navigate(`${base}/?threadId=${threadId}`);
   await tab.waitForText("Accept");
+  await capturePhase4(context, "conditional-offer");
   assert.equal(await tab.clickButton("Accept"), true);
-  await tab.waitForText("Start secure checkout");
-  assert.equal(await tab.clickButton("Start secure checkout"), true);
-  await tab.waitForText("I have returned from secure checkout");
-  assert.equal(await tab.clickButton("I have returned from secure checkout"), true);
+  await tab.waitForText("Continue to checkout");
+  await capturePhase4(context, "payment-ready");
+  assert.equal(await tab.clickButton("Continue to checkout"), true);
+  await tab.waitForText("Email address");
+  await capturePhase4(context, "email-contact");
+  const emailField = await tab.evaluate<{ readonly type: string; readonly required: boolean; readonly described: boolean }>("(() => { const input = document.querySelector('.weaver-mount input'); return { type: input?.type || '', required: Boolean(input?.required), described: Boolean(input?.getAttribute('aria-describedby')) }; })()");
+  assert.deepEqual(emailField, { type: "email", required: true, described: true });
+  await tab.evaluate("(() => { const input = document.querySelector('.weaver-mount input'); if (!(input instanceof HTMLInputElement)) throw new Error('email input missing'); input.value = 'guest'; input.dispatchEvent(new Event('input', { bubbles: true })); })()");
+  assert.equal(await tab.clickButton("Save Email address"), true);
+  await tab.waitForText("valid email address");
+  const emailError = await tab.evaluate<{ readonly retained: string; readonly invalid: string | null }>("(() => { const input = document.querySelector('.weaver-mount input'); return { retained: input?.value || '', invalid: input?.getAttribute('aria-invalid') || null }; })()");
+  assert.deepEqual(emailError, { retained: "guest", invalid: "true" });
+  await capturePhase4(context, "email-error");
+  await tab.evaluate("(() => { const input = document.querySelector('.weaver-mount input'); if (!(input instanceof HTMLInputElement)) throw new Error('email input missing'); input.value = 'guest@example.com'; input.dispatchEvent(new Event('input', { bubbles: true })); })()");
+  assert.equal(await tab.clickButton("Save Email address"), true);
+  await tab.waitForText("Check payment status");
+  await capturePhase4(context, "payment-handoff");
+  assert.equal(await tab.clickButton("Check payment status"), true);
+  if (recoverFromPendingPayment) {
+    await tab.waitForText("Payment processing · Checking payment");
+    await capturePhase4(context, "payment-processing");
+    assert.doesNotMatch(await tab.evaluate<string>("document.getElementById('active-workspace')?.innerText || ''"), /Reservation confirmed/);
+    assert.equal(await tab.clickButton("Check payment status"), true);
+  }
   await tab.waitForText("Continue to refundable deposit");
+  await capturePhase4(context, "deposit-payment-required");
   assert.equal(await tab.clickButton("Continue to refundable deposit"), true);
-  await tab.waitForText("I have returned from secure checkout");
-  assert.equal(await tab.clickButton("I have returned from secure checkout"), true);
+  await tab.waitForText("Check payment status");
+  await capturePhase4(context, "deposit-handoff");
+  assert.equal(await tab.clickButton("Check payment status"), true);
   await tab.waitForText("Reservation confirmed");
+  await capturePhase4(context, "confirmed-booking");
 }
 
 async function layoutMetrics(tab: RealBrowserTab): Promise<{ readonly viewportWidth: number; readonly viewportHeight: number; readonly documentWidth: number; readonly activeWorkspaces: number; readonly composerRight: number; readonly composerBottom: number; readonly inputFontSize: number; readonly focusedOverflow: number }> {
@@ -130,5 +185,14 @@ test("AC24 — Composer input remains at least 16 CSS pixels", async () => { con
 test("AC25 — One main landmark and meaningful headings are present", async () => { const c = await startContext(390, 844); try { const result = await c.tab.evaluate<{ readonly main: number; readonly h1: number; readonly labelledControls: number }>("({ main: document.querySelectorAll('main').length, h1: document.querySelectorAll('h1').length, labelledControls: [...document.querySelectorAll('button,input,a')].filter((e) => Boolean(e.textContent?.trim() || e.getAttribute('aria-label') || e.getAttribute('title'))).length })"); assert.equal(result.main, 1); assert.equal(result.h1, 1); assert.ok(result.labelledControls > 0); } finally { await c.close(); } });
 test("AC26 — Safe-area and sticky composer geometry stay within the viewport", async () => { const c = await startContext(430, 932); try { const m = await layoutMetrics(c.tab); assert.ok(m.composerRight <= 430 && m.composerBottom <= 932); } finally { await c.close(); } });
 test("AC30 — The Guest shell remains a single centered column at a true 768px viewport", async () => { const c = await startContext(768, 900); try { const m = await c.tab.evaluate<{ readonly viewport: number; readonly document: number; readonly appWidth: number; readonly main: number }>("(() => { const root = document.documentElement; return { viewport: innerWidth, document: root.scrollWidth, appWidth: document.querySelector('.app').getBoundingClientRect().width, main: document.querySelectorAll('main').length }; })()"); assert.equal(m.viewport, 768); assert.ok(m.document <= 768); assert.ok(m.appWidth <= 720); assert.equal(m.main, 1); } finally { await c.close(); } });
+test("AC40 — The booking/payment journey works at a true 768px viewport", async () => { await completeAt(768, 900); });
+test("AC41 — Pending payment stays unconfirmed and recovers through authoritative verification", async () => {
+  let verificationCount = 0;
+  const context = await startContext(320, 700, (reference, amountKobo) => {
+    verificationCount += 1;
+    return { verified: verificationCount > 1, status: verificationCount > 1 ? "success" : "pending", amountKobo, currency: "NGN", pspReference: reference, payerId: "guest-demo-101" };
+  });
+  try { await completeJourney(context, true); assert.equal(verificationCount, 3); } finally { await context.close(); }
+});
 test("AC31 — Chromium accessibility tree exposes the shell landmarks, composer label and prompt controls", async () => { const c = await startContext(390, 844); try { const nodes = await c.tab.getAccessibilityTree(); assert.ok(nodes.some((node) => node.role === "main")); assert.ok(nodes.some((node) => node.role === "heading" && node.name === "Shortlet")); assert.ok(nodes.some((node) => node.role === "textbox" && node.name === "Your message")); assert.ok(nodes.some((node) => node.role === "button" && node.name === "Send")); assert.ok(nodes.some((node) => node.role === "button" && node.name === "Explore Abuja")); assert.ok(nodes.some((node) => node.role === "link" && node.name === "Contact details")); } finally { await c.close(); } });
 test("AC32 — Composer remains visible and focused when the viewport height is reduced", async () => { const c = await startContext(390, 844); try { await c.tab.setViewport(390, 480); await c.tab.focus("#composer-input"); const state = await c.tab.evaluate<{ readonly focused: boolean; readonly top: number; readonly bottom: number; readonly height: number; readonly inputBottom: number }>("(() => { const form = document.getElementById('composer').getBoundingClientRect(); const input = document.getElementById('composer-input').getBoundingClientRect(); return { focused: document.activeElement?.id === 'composer-input', top: form.top, bottom: form.bottom, height: innerHeight, inputBottom: input.bottom }; })()"); assert.equal(state.focused, true); assert.ok(state.bottom <= state.height + 1, JSON.stringify(state)); assert.ok(state.inputBottom <= state.height + 1, JSON.stringify(state)); } finally { await c.close(); } });

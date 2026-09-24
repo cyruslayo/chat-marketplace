@@ -15,6 +15,7 @@ export interface SurfacePresentation {
   readonly summary: string;
   readonly textFallback?: string;
   readonly conventionalRoute?: string;
+  readonly conventionalRouteLabel?: string;
 }
 
 export interface HistoricalSurfaceSummary {

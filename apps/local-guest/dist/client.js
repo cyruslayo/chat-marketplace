@@ -8617,6 +8617,7 @@ Known schemas:
       image.referrerPolicy = "no-referrer";
       image.decoding = "async";
       image.loading = index === 0 ? "eager" : "lazy";
+      if (index === 0) image.fetchPriority = "high";
       image.addEventListener("error", () => {
         const fallback2 = document.createElement("div");
         fallback2.className = "photo-fallback";
@@ -8641,6 +8642,7 @@ Known schemas:
     if (value.status !== void 0 && (typeof value.status !== "string" || !["active", "superseded", "stale", "expired", "deleted", "fallback"].includes(value.status))) return false;
     if (value.summary !== void 0 && typeof value.summary !== "string") return false;
     if (value.textFallback !== void 0 && typeof value.textFallback !== "string") return false;
+    if (value.conventionalRouteLabel !== void 0 && typeof value.conventionalRouteLabel !== "string") return false;
     return value.conventionalRoute === void 0 || isSafeInternalRoute(value.conventionalRoute);
   }
   function readGuestResponse(value) {
@@ -8699,7 +8701,8 @@ Known schemas:
       status: surface.status ?? "fallback",
       summary: surface.summary ?? (mode === "focused-surface" ? "Focused workspace" : "Conversation workspace"),
       ...surface.textFallback === void 0 ? {} : { textFallback: surface.textFallback },
-      ...surface.conventionalRoute === void 0 ? {} : { conventionalRoute: surface.conventionalRoute }
+      ...surface.conventionalRoute === void 0 ? {} : { conventionalRoute: surface.conventionalRoute },
+      ...surface.conventionalRouteLabel === void 0 ? {} : { conventionalRouteLabel: surface.conventionalRouteLabel }
     };
   }
   function fallback(mount, surface) {
@@ -8714,7 +8717,7 @@ Known schemas:
       const link = document.createElement("a");
       link.href = surface.conventionalRoute;
       link.className = "fallback-link";
-      link.textContent = "Continue on the standard page";
+      link.textContent = surface.conventionalRouteLabel ?? "Continue on the standard page";
       box.appendChild(link);
       trackTelemetry("conventional-route-fallback");
     }
@@ -8725,6 +8728,31 @@ Known schemas:
     const canReopen = current?.mode === "focused-surface" && current.status === "active" && activePayload !== void 0;
     workspaceReopen.hidden = !canReopen || shellState.focusedSurfaceOpen;
     if (canReopen) workspaceReopen.textContent = `Reopen ${current.summary}`;
+  }
+  function enhanceGuestContactField(mount) {
+    const wrapper = mount.querySelector('[data-a2ui-component="TextField"]');
+    const label = wrapper?.querySelector("label");
+    const input = wrapper?.querySelector("input");
+    if (!wrapper || !label || !input) return;
+    const labelText = label.textContent?.trim() ?? "";
+    const kind = /^phone number/i.test(labelText) ? "phone" : /^email address/i.test(labelText) ? "email" : void 0;
+    if (!kind) return;
+    const hint = wrapper.previousElementSibling instanceof HTMLElement ? wrapper.previousElementSibling : void 0;
+    if (hint?.dataset.a2uiComponent === "Text") {
+      hint.id = `guest-contact-${kind}-help`;
+      input.setAttribute("aria-describedby", hint.id);
+    }
+    input.required = true;
+    input.type = kind === "phone" ? "tel" : "email";
+    input.inputMode = kind === "phone" ? "tel" : "email";
+    input.autocomplete = kind === "phone" ? "tel" : "email";
+    const error2 = wrapper.nextElementSibling instanceof HTMLElement && wrapper.nextElementSibling.textContent?.trim().startsWith("Error:") ? wrapper.nextElementSibling : void 0;
+    if (error2) {
+      error2.id = `guest-contact-${kind}-error`;
+      error2.setAttribute("role", "alert");
+      input.setAttribute("aria-describedby", [input.getAttribute("aria-describedby"), error2.id].filter(Boolean).join(" "));
+      input.setAttribute("aria-invalid", "true");
+    }
   }
   function renderSurface(surface, moveFocus = false) {
     const presentation = presentationFor(surface);
@@ -8806,12 +8834,13 @@ Known schemas:
     }
     mount.dataset.renderer = "weaver";
     mount.dataset.surfaceId = surface.surfaceId;
+    enhanceGuestContactField(mount);
     enhanceListingImages(mount);
     if (presentation.conventionalRoute) {
       const link = document.createElement("a");
       link.href = presentation.conventionalRoute;
       link.className = "fallback-link";
-      link.textContent = "Continue on the standard page";
+      link.textContent = surface.conventionalRouteLabel ?? "Continue on the standard page";
       mount.appendChild(link);
     }
     showReopen();

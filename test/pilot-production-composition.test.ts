@@ -230,7 +230,7 @@ test("Production callback HTTP completion rehydrates the confirmed Reservation a
     turn.body = await guestEvent(base, guestCookie, threadId, action);
     action = surfaceAction(turn.body, "Request to Book");
     turn.body = await guestEvent(base, guestCookie, threadId, action);
-    action = surfaceAction(turn.body, "Review Request");
+    action = surfaceAction(turn.body, "Review request");
     turn.body = await guestEvent(base, guestCookie, threadId, action);
     action = surfaceAction(turn.body, "Submit Booking Request");
     turn.body = await guestEvent(base, guestCookie, threadId, action);
@@ -249,7 +249,7 @@ test("Production callback HTTP completion rehydrates the confirmed Reservation a
     const offerState = await afterConfirmation.json() as Record<string, unknown>;
     action = surfaceAction(offerState, "Accept");
     const accepted = await guestEvent(base, guestCookie, threadId, action);
-    const acceptedAction = surfaceAction(accepted, "Start secure checkout");
+    const acceptedAction = surfaceAction(accepted, "Continue to checkout");
     assert.equal(acceptedAction.name, "shortlet.card-payment.initialize-checkout");
     const email = await fetch(`${base}/guest/contact/email`, { method: "POST", headers: { cookie: guestCookie, origin: PUBLIC_ORIGIN, "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ contactEmail: "callback.regression@example.test", expectedRevision: "1" }), redirect: "manual" });
     assert.equal(email.status, 303);

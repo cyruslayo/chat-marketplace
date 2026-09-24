@@ -19,6 +19,10 @@ import {
   REQUEST_TO_BOOK_EVENT,
   SEE_ALL_DISCOVERY_EVENT,
   formatNgnKobo,
+  formatBookingDeadline,
+  formatStayDates,
+  guestRequestStatus,
+  guestPaymentStatus,
   type DiscoveryArtifactProjection,
 } from "../../../apps/web-agent/src/index.js";
 import { unitDetailArtifactFromProjection } from "../../../apps/web/src/unit-detail-artifact.js";
@@ -38,6 +42,8 @@ import { CARD_PAYMENT_INITIALIZE_CHECKOUT_EVENT, resolveCardPaymentServerEvent }
 import { createStayQuote, isEligibleUnit, normalizePhotoUrls, type Unit } from "../../../domains/shortlet/src/index.js";
 import { requestDraftArtifactFromProjection, requestDraftArtifactId } from "../../../apps/web/src/request-draft-artifact.js";
 import type { RequestDraftArtifact } from "../../../apps/web/src/request-draft-artifact.js";
+import type { ConditionalOfferArtifact } from "../../../apps/web/src/conditional-offer-artifact.js";
+import type { BookingContractArtifact } from "../../../apps/web/src/booking-contract-artifact.js";
 import type { CardPaymentApplication } from "../../../apps/web/src/card-payment-application.js";
 import {
   LocalGuestEnvironment,
@@ -72,6 +78,7 @@ export interface GuestSurfacePayload {
   readonly summary?: string;
   readonly textFallback?: string;
   readonly conventionalRoute?: string;
+  readonly conventionalRouteLabel?: string;
 }
 
 export interface GuestTimelineEntry {
@@ -359,7 +366,7 @@ export class LocalGuestApp {
       thread.activeSurfaces.set(PAYMENT_STAGE, surfaceId);
       this.#emitTransition(thread, "payment.handoff.opened", { aggregateType: "payment", aggregateId: thread.offerId!, surfaceId });
       this.#emitTransition(thread, "payment.attempt.initialized", { aggregateType: "payment_attempt", aggregateId: session.checkoutId, correlationId: thread.offerId! });
-      return { ok: true, messages: ["Secure checkout is ready. Payment credentials stay on the PSP-hosted page; return here for backend verification."], surfaces: [{ surfaceId, mode: "focused-surface", summary: "Payment handoff", conventionalRoute: `/payments/offers/${encodeURIComponent(thread.offerId!)}/continue`, textFallback: `Payment status: ${artifact.facts.status}. Amount Due Now: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}. Payment deadline: ${formatWAT(artifact.facts.paymentWindowExpiresAt)}. Continue at the secure Paystack checkout: ${session.checkoutUrl}`, a2uiMessages: cardPaymentArtifactToA2UI({ artifact, surfaceId }) }] };
+      return { ok: true, messages: ["Hosted card checkout is ready. Payment has not succeeded; your booking details remain available when you return."], surfaces: [{ surfaceId, mode: "focused-surface", summary: "Payment handoff", conventionalRoute: `/payments/offers/${encodeURIComponent(thread.offerId!)}/continue`, conventionalRouteLabel: `Continue to hosted checkout · ${formatNgnKobo(artifact.facts.amountDueNowKobo)}`, textFallback: `You will leave Shortlet temporarily for hosted card checkout. ${artifact.facts.allInStayTotalKobo === undefined ? "" : `All-In Stay Total: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. `}${artifact.facts.refundableSecurityDepositKobo ? `Refundable Security Deposit (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}Amount Due Now: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}. ${formatWAT(artifact.facts.paymentWindowExpiresAt)}. Payment has not succeeded and the booking is not confirmed. Your booking details will be retained when you return.`, a2uiMessages: cardPaymentArtifactToA2UI({ artifact, surfaceId }) }] };
     } catch (error) {
       if (/email address is required/i.test(error instanceof Error ? error.message : "")) return this.#contactSurface(thread, "email", event.context ?? {});
       return { ok: false, code: "ACTION_NOT_AUTHORIZED", message: "The secure card checkout could not be started." };
@@ -663,7 +670,7 @@ export class LocalGuestApp {
           summary: offerArtifact.facts.status === "expired" ? "Conditional Booking Offer expired" : "Conditional Booking Offer",
           status: offerArtifact.facts.status === "expired" ? "expired" : "active",
           conventionalRoute: conventionalConditionalOfferRoute(projection.offerId),
-          textFallback: `Conditional Booking Offer for ${offerArtifact.facts.unitTitle}. Amount Due Now: ${formatNgnKobo(offerArtifact.facts.totalAmountDueNowKobo)}. Payment deadline: ${formatWAT(offerArtifact.facts.paymentWindowExpiresAt)}.`,
+          textFallback: this.#offerFallback(offerArtifact),
           a2uiMessages: conditionalOfferArtifactToA2UI({ artifact: offerArtifact, surfaceId: offerSurfaceId }),
         };
       }
@@ -673,10 +680,10 @@ export class LocalGuestApp {
           try {
             const contract = JSON.parse(snapshot.contractJson) as { readonly contractId: string };
             const bookingSurfaceId = `thread-${thread.threadId}:booking:${contract.contractId}`;
-            const contractArtifact = environment.contractApp.getArtifact(contract.contractId, environment.guestPrincipal());
+            const contractArtifact = this.#contractArtifact(contract.contractId);
             thread.activeSurfaces.delete(PAYMENT_STAGE);
             thread.activeSurfaces.set(BOOKING_STAGE, bookingSurfaceId);
-            return { surfaceId: bookingSurfaceId, mode: "focused-surface", summary: "Reservation confirmed", conventionalRoute: conventionalBookingContractRoute(contract.contractId), textFallback: `Reservation confirmed for ${contractArtifact.facts.checkIn} to ${contractArtifact.facts.checkOut}. Reservation reference: ${contractArtifact.facts.reservationId}.`, a2uiMessages: bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: bookingSurfaceId }) };
+            return { surfaceId: bookingSurfaceId, mode: "focused-surface", summary: "Reservation confirmed", conventionalRoute: conventionalBookingContractRoute(contract.contractId), textFallback: this.#confirmedBookingFallback(contractArtifact), a2uiMessages: bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: bookingSurfaceId }) };
           } catch {
             // Keep the payment surface until the durable Contract can be read.
           }
@@ -687,10 +694,10 @@ export class LocalGuestApp {
           if (snapshot) {
             const contract = JSON.parse(snapshot.contractJson) as { contractId: string };
             const bookingSurfaceId = `thread-${thread.threadId}:booking:${contract.contractId}`;
-            const contractArtifact = environment.contractApp.getArtifact(contract.contractId, environment.guestPrincipal());
+            const contractArtifact = this.#contractArtifact(contract.contractId);
             thread.activeSurfaces.delete(PAYMENT_STAGE);
             thread.activeSurfaces.set(BOOKING_STAGE, bookingSurfaceId);
-            return { surfaceId: bookingSurfaceId, mode: "focused-surface", summary: "Reservation confirmed", conventionalRoute: conventionalBookingContractRoute(contract.contractId), textFallback: `Reservation confirmed for ${contractArtifact.facts.checkIn} to ${contractArtifact.facts.checkOut}. Reservation reference: ${contractArtifact.facts.reservationId}.`, a2uiMessages: bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: bookingSurfaceId }) };
+            return { surfaceId: bookingSurfaceId, mode: "focused-surface", summary: "Reservation confirmed", conventionalRoute: conventionalBookingContractRoute(contract.contractId), textFallback: this.#confirmedBookingFallback(contractArtifact), a2uiMessages: bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: bookingSurfaceId }) };
           }
         }
         if (artifact.facts.status === "expired") {
@@ -705,19 +712,19 @@ export class LocalGuestApp {
         if (storedSurfaceId.includes(":payment:result:") || artifact.facts.journeyStage === "stay_payment_processing") {
           const processingId = storedSurfaceId.includes(":payment:result:") ? storedSurfaceId : `thread-${thread.threadId}:payment:result:${projection.offerId}`;
           thread.activeSurfaces.set(PAYMENT_STAGE, processingId);
-          return { ...this.#paymentSurface(thread, artifact, "Payment processing", processingId), textFallback: `Payment status: ${artifact.facts.status}. Amount Due Now: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}. Payment deadline: ${formatWAT(artifact.facts.paymentWindowExpiresAt)}.` };
+          return this.#paymentSurface(thread, artifact, "Checking payment", processingId);
         }
         if (artifact.facts.status === "deposit_required" || storedSurfaceId.includes(":deposit-")) {
           const depositId = `thread-${thread.threadId}:payment:deposit-ready:${projection.offerId}`;
           thread.activeSurfaces.set(PAYMENT_STAGE, depositId);
-          return { ...this.#paymentSurface(thread, artifact, "Refundable Security Deposit payment required", depositId), textFallback: `Payment status: deposit_required. Amount Due Now: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}. Payment deadline: ${formatWAT(artifact.facts.paymentWindowExpiresAt)}.` };
+          return this.#paymentSurface(thread, artifact, "Refundable Security Deposit payment required", depositId);
         }
         const session = environment.cardPaymentApp.manager.getCheckoutSession(projection.offerId);
         if (artifact.facts.status === "checkout_initiated" || (session && session.status === "initiated")) {
           const checkoutId = session?.checkoutId ?? (storedSurfaceId.includes(":checkout:") ? storedSurfaceId.split(":checkout:").at(-1) ?? "restored" : "restored");
           const checkoutSurfaceId = `thread-${thread.threadId}:payment:checkout:${checkoutId}`;
           thread.activeSurfaces.set(PAYMENT_STAGE, checkoutSurfaceId);
-          return { ...this.#paymentSurface(thread, artifact, "Payment handoff", checkoutSurfaceId), textFallback: `Payment status: ${artifact.facts.status}. Amount Due Now: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}. Payment deadline: ${formatWAT(artifact.facts.paymentWindowExpiresAt)}.` };
+          return this.#paymentSurface(thread, artifact, "Payment handoff", checkoutSurfaceId);
         }
         const readyId = storedSurfaceId.includes(":payment:ready:") ? storedSurfaceId : `thread-${thread.threadId}:payment:ready:${projection.offerId}`;
         thread.activeSurfaces.set(PAYMENT_STAGE, readyId);
@@ -730,14 +737,14 @@ export class LocalGuestApp {
           const bookingSurfaceId = surfaceId.includes(":booking:")
             ? surfaceId
             : `thread-${thread.threadId}:booking:${contract.contractId}`;
-          const contractArtifact = environment.contractApp.getArtifact(contract.contractId, environment.guestPrincipal());
+          const contractArtifact = this.#contractArtifact(contract.contractId);
           thread.activeSurfaces.set(BOOKING_STAGE, bookingSurfaceId);
           return {
             surfaceId: bookingSurfaceId,
             mode: "focused-surface",
             summary: "Reservation confirmed",
             conventionalRoute: conventionalBookingContractRoute(contract.contractId),
-            textFallback: `Reservation confirmed for ${contractArtifact.facts.checkIn} to ${contractArtifact.facts.checkOut}. Reservation reference: ${contractArtifact.facts.reservationId}.`,
+            textFallback: this.#confirmedBookingFallback(contractArtifact),
             a2uiMessages: bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: bookingSurfaceId }),
           };
         }
@@ -1018,12 +1025,17 @@ export class LocalGuestApp {
   }
 
   #draftFallback(artifact: RequestDraftArtifact): string {
-    return `${artifact.facts.unitTitle}. Stay: ${artifact.facts.checkIn} to ${artifact.facts.checkOut} (${artifact.facts.nights} nights). All-In Stay Total: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. Refundable Security Deposit: ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. Amount Due Now if confirmed: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}. Inventory is not reserved.`;
+    const review = artifact.actions[0]?.type === "submit";
+    return `${review ? "Review · Not submitted" : "Draft · Not reserved"}. ${artifact.facts.unitTitle}. Stay: ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)} (${artifact.facts.nights} nights). All-In Stay Total: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. ${artifact.facts.refundableSecurityDepositKobo > 0 ? `Refundable Security Deposit (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}${review ? `Amount Due Now: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}. Submitting this request does not confirm the stay. ` : "This is not a Booking Request or Reservation. Availability is not promised. "}Inventory is not reserved.`;
   }
 
   #handleDraftReview(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
     if (!thread.draftId || event.context?.artifactId !== requestDraftArtifactId(thread.draftId) || event.context?.draftId !== thread.draftId) {
       return { ok: false, code: "INVALID_CONTEXT", message: "That Request Draft is no longer valid." };
+    }
+    if (!this.#environment.guestContactApp.get(this.#environment.guestPrincipal())?.phoneNumber) {
+      // ADR-0085: collect a coordination contact only; Guest identity checks remain a check-in eligibility step.
+      return this.#contactSurface(thread, "phone", { ...event.context, resumeAction: "review" });
     }
     const artifact = this.#draftArtifact(thread, "review");
     const surfaceId = `thread-${thread.threadId}:request:review:${thread.draftId}`;
@@ -1062,38 +1074,50 @@ export class LocalGuestApp {
     }
   }
 
-  #contactSurface(thread: GuestThreadState, kind: "phone" | "email", resumeContext: JsonObject): GuestTurnResult {
+  #contactSurface(thread: GuestThreadState, kind: "phone" | "email", resumeContext: JsonObject, input: { readonly value?: string; readonly error?: string } = {}): GuestTurnResult {
     const stage = kind === "phone" ? REQUEST_STAGE : PAYMENT_STAGE;
-    const surfaceId = `thread-${thread.threadId}:contact:${kind}`;
+    const surfaceId = `thread-${thread.threadId}:contact:${kind}:${crypto.randomUUID()}`;
     this.#supersede(thread, stage);
     thread.activeSurfaces.set(stage, surfaceId);
     const contact = this.#environment.guestContactApp.get(this.#environment.guestPrincipal());
-    const label = kind === "phone" ? "Phone number" : "Email address for payment and booking receipt";
+    const baseLabel = kind === "phone" ? "Phone number" : "Email address";
+    const label = input.error ? `${baseLabel} — ${input.error}` : baseLabel;
     const eventName = kind === "phone" ? GUEST_PHONE_SUBMIT_EVENT : GUEST_EMAIL_SUBMIT_EVENT;
     const components: A2UIComponent[] = [
-      { id: "root", component: "Column", children: ["contact-title", "contact-help", "contact-value", "contact-save"] },
-      { id: "contact-title", component: "Text", text: label, variant: "h2" },
-      { id: "contact-help", component: "Text", text: kind === "phone" ? "We may use this for booking coordination. This does not verify ownership." : "Required before payment continuation. This does not verify ownership." },
-      { id: "contact-value", component: "TextField", label, value: { path: "/contactValue" } },
+      { id: "root", component: "Column", children: ["contact-title", "contact-help", "contact-value", ...(input.error ? ["contact-error"] : []), "contact-save"] },
+      { id: "contact-title", component: "Text", text: baseLabel, variant: "h2" },
+      { id: "contact-help", component: "Text", text: kind === "phone" ? "Required to send a Booking Request. Use a Nigerian mobile number in +234 format; for example +234 801 234 5678. Phone is for booking coordination, not identity verification." : "Required to start hosted card checkout and send a payment receipt. This email is not your account identity." },
+      { id: "contact-value", component: "TextField", label, value: { path: "/contactValue" }, accessibility: { label: baseLabel } },
+      ...(input.error ? [{ id: "contact-error", component: "Text" as const, text: `Error: ${input.error}` }] : []),
       { id: "contact-save", component: "Button", child: "contact-save-label", variant: "primary", action: { event: { name: eventName, context: { ...resumeContext, contactValue: { path: "/contactValue" }, expectedRevision: contact?.revision ?? 0 } } }, accessibility: { label: `Save ${label}` } },
       { id: "contact-save-label", component: "Text", text: `Save ${label}` },
     ];
-    return { ok: true, messages: [kind === "phone" ? "Add a phone number before submitting this Booking Request." : "Add an email address before continuing to payment."], surfaces: [{ surfaceId, mode: "focused-surface", summary: label, conventionalRoute: `/guest/contact?kind=${kind}`, textFallback: `${label} is required. Open Contact details to save it.`, a2uiMessages: [{ version: "v0.9.1", createSurface: { surfaceId, catalogId: A2UI_V091_BASIC_CATALOG_ID } }, { version: "v0.9.1", updateDataModel: { surfaceId, path: "/contactValue", value: "" } }, { version: "v0.9.1", updateComponents: { surfaceId, components } }] }] };
+    const currentValue = input.value ?? (kind === "phone" ? contact?.phoneNumber : contact?.contactEmail) ?? "";
+    return { ok: true, messages: [input.error ? `Check the ${kind === "phone" ? "phone number" : "email address"} below and try again.` : kind === "phone" ? "Add a phone number before reviewing this Booking Request." : "Add an email address before continuing to payment."], surfaces: [{ surfaceId, mode: "focused-surface", summary: baseLabel, conventionalRoute: `/guest/contact?kind=${kind}`, textFallback: `${baseLabel} is required. ${kind === "phone" ? "Use a Nigerian mobile number, for example +234 801 234 5678." : "It is used to initialize hosted checkout and send your receipt."} Open Contact details to save it.`, a2uiMessages: [{ version: "v0.9.1", createSurface: { surfaceId, catalogId: A2UI_V091_BASIC_CATALOG_ID } }, { version: "v0.9.1", updateDataModel: { surfaceId, path: "/contactValue", value: currentValue } }, { version: "v0.9.1", updateComponents: { surfaceId, components } }] }] };
   }
 
   #handlePhoneSubmit(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
     const value = event.context?.contactValue;
     if (typeof value !== "string") return { ok: false, code: "INVALID_INPUT", message: "Phone number is required." };
     try { this.#environment.guestContactApp.submitPhone({ phoneNumber: value, expectedRevision: Number(event.context?.expectedRevision ?? 0) }, this.#environment.guestPrincipal()); }
-    catch (error) { return { ok: false, code: "INVALID_CONTACT", message: error instanceof Error ? error.message : "Phone number could not be saved." }; }
-    return this.#handleDraftSubmit(thread, { ...event, context: event.context });
+    catch (error) {
+      const { contactValue: _contactValue, expectedRevision: _expectedRevision, ...resumeContext } = event.context ?? {};
+      return this.#contactSurface(thread, "phone", resumeContext, { value, error: error instanceof Error ? error.message : "Phone number could not be saved." });
+    }
+    const { contactValue: _contactValue, expectedRevision: _expectedRevision, resumeAction, ...resumeContext } = event.context ?? {};
+    return resumeAction === "review"
+      ? this.#handleDraftReview(thread, { ...event, name: REQUEST_DRAFT_REVIEW_EVENT, context: resumeContext })
+      : this.#handleDraftSubmit(thread, { ...event, context: resumeContext });
   }
 
   #handleEmailSubmit(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
     const value = event.context?.contactValue;
     if (typeof value !== "string") return { ok: false, code: "INVALID_INPUT", message: "Email address is required." };
     try { this.#environment.guestContactApp.submitEmail({ contactEmail: value, expectedRevision: Number(event.context?.expectedRevision ?? 0) }, this.#environment.guestPrincipal()); }
-    catch (error) { return { ok: false, code: "INVALID_CONTACT", message: error instanceof Error ? error.message : "Email address could not be saved." }; }
+    catch (error) {
+      const { contactValue: _contactValue, expectedRevision: _expectedRevision, ...resumeContext } = event.context ?? {};
+      return this.#contactSurface(thread, "email", resumeContext, { value, error: error instanceof Error ? error.message : "Email address could not be saved." });
+    }
     // Resume the server-issued payment action after the contact application
     // commits the email. The browser-provided contact value is not a payment
     // command and cannot alter the authoritative amount or currency.
@@ -1102,16 +1126,40 @@ export class LocalGuestApp {
   }
 
   #requestSurface(thread: GuestThreadState, requestId: string): GuestSurfacePayload {
-    const artifact = this.#environment.bookingRequestApp.getArtifact(requestId, this.#environment.guestPrincipal());
+    const baseArtifact = this.#environment.bookingRequestApp.getArtifact(requestId, this.#environment.guestPrincipal());
+    const unit = this.#environment.unitRepository.findById(baseArtifact.facts.unitId);
+    const artifact = unit ? { ...baseArtifact, facts: { ...baseArtifact.facts, unitTitle: unit.title } } : baseArtifact;
+    const status = guestRequestStatus(artifact.facts.status, artifact.facts.delivered);
     const surfaceId = `thread-${thread.threadId}:request:${requestId}`;
     return {
       surfaceId,
       mode: "focused-surface",
-      summary: "Booking Request status",
+      summary: status.label,
       conventionalRoute: conventionalBookingRequestRoute(requestId),
-      textFallback: `Booking Request status: ${artifact.facts.status}. Stay: ${artifact.facts.checkIn} to ${artifact.facts.checkOut}. Operator response deadline: ${formatWAT(artifact.facts.operatorResponseDeadlineAt)}. No Reservation exists yet.`,
+      textFallback: `${status.label}. ${artifact.facts.unitTitle ?? "Your selected Unit"}. Stay: ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)} (${artifact.facts.nights} nights). ${artifact.facts.quote ? `All-In Stay Total: ${formatNgnKobo(artifact.facts.quote.allInStayTotalKobo)}. ${artifact.facts.quote.refundableSecurityDepositKobo > 0 ? `Refundable Security Deposit (separate): ${formatNgnKobo(artifact.facts.quote.refundableSecurityDepositKobo)}. ` : ""}` : ""}${artifact.facts.status === "disclosed" && artifact.facts.delivered ? `Operator response deadline: ${formatWAT(artifact.facts.operatorResponseDeadlineAt)}.` : ""} ${status.detail}`,
       a2uiMessages: bookingRequestArtifactToA2UI({ artifact, surfaceId }),
     };
+  }
+
+  #contractArtifact(contractId: string): BookingContractArtifact {
+    const artifact = this.#environment.contractApp.getArtifact(contractId, this.#environment.guestPrincipal());
+    const unit = this.#environment.unitRepository.findById(artifact.facts.unitId);
+    return unit ? { ...artifact, facts: { ...artifact.facts, unitTitle: unit.title } } : artifact;
+  }
+
+  #confirmedBookingFallback(artifact: BookingContractArtifact): string {
+    const access = artifact.facts.accessAvailability === "available"
+      ? "Access details are available in secure booking details; reservation confirmation does not itself grant physical access."
+      : "Access details will be shared when the authorized check-in disclosure policy permits; reservation confirmation does not itself grant physical access.";
+    return `Booking confirmed for ${artifact.facts.unitTitle ?? "your stay"}. Stay: ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)} (${artifact.facts.nights} nights); ${artifact.facts.occupants.length} ${artifact.facts.occupants.length === 1 ? "guest" : "guests"}. ${artifact.facts.allInStayTotalKobo === undefined ? "" : `All-In Stay Total: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. `}${artifact.facts.refundableSecurityDepositKobo ? `Refundable Security Deposit (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}Payment verified: ${formatNgnKobo(artifact.facts.amountPaidKobo)}. Reservation and Booking Contract are confirmed. ${access} Reservation reference: ${artifact.facts.reservationId}.`;
+  }
+
+  #offerFallback(artifact: ConditionalOfferArtifact): string {
+    const status = artifact.facts.status === "issued" ? "Offer available · Operator confirmed availability"
+      : artifact.facts.status === "accepted" ? "Offer accepted · Payment required"
+        : artifact.facts.status === "expired" ? "Offer expired"
+          : artifact.facts.status === "stale" ? "Offer no longer current" : "Offer withdrawn";
+    return `${status}. ${artifact.facts.unitTitle}. Stay: ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)} (${artifact.facts.nights} nights). All-In Stay Total: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. ${artifact.facts.refundableSecurityDepositKobo > 0 ? `Refundable Security Deposit (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}Amount Due Now: ${formatNgnKobo(artifact.facts.totalAmountDueNowKobo)}. ${formatBookingDeadline(artifact.facts.paymentWindowExpiresAt)}. This Offer is not a confirmed Reservation.`;
   }
 
   #confirmedBookingSurface(thread: GuestThreadState): GuestSurfacePayload | null {
@@ -1121,7 +1169,7 @@ export class LocalGuestApp {
     try {
       const contract = JSON.parse(snapshot.contractJson) as { readonly contractId: string };
       const bookingSurfaceId = `thread-${thread.threadId}:booking:${contract.contractId}`;
-      const contractArtifact = this.#environment.contractApp.getArtifact(contract.contractId, this.#environment.guestPrincipal());
+      const contractArtifact = this.#contractArtifact(contract.contractId);
       this.#supersede(thread, PAYMENT_STAGE);
       thread.activeSurfaces.set(BOOKING_STAGE, bookingSurfaceId);
       return {
@@ -1129,7 +1177,7 @@ export class LocalGuestApp {
         mode: "focused-surface",
         summary: "Reservation confirmed",
         conventionalRoute: conventionalBookingContractRoute(contract.contractId),
-        textFallback: `Reservation confirmed for ${contractArtifact.facts.checkIn} to ${contractArtifact.facts.checkOut}. Reservation reference: ${contractArtifact.facts.reservationId}.`,
+        textFallback: this.#confirmedBookingFallback(contractArtifact),
         a2uiMessages: bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: bookingSurfaceId }),
       };
     } catch {
@@ -1155,7 +1203,7 @@ export class LocalGuestApp {
             summary: "Conditional Booking Offer expired",
             status: "expired",
             conventionalRoute: conventionalConditionalOfferRoute(thread.offerId),
-            textFallback: `Conditional Booking Offer for ${offer.facts.unitTitle}. Payment Window expired. No Reservation exists.`,
+            textFallback: this.#offerFallback(offer),
             a2uiMessages: conditionalOfferArtifactToA2UI({ artifact: offer, surfaceId }),
           }],
         };
@@ -1219,7 +1267,7 @@ export class LocalGuestApp {
       const offerArtifact = this.#environment.conditionalOfferApp.getArtifact(offerId, this.#environment.guestPrincipal());
       this.#emitTransition(thread, "booking_request.confirmed", { aggregateType: "booking_request", aggregateId: thread.requestId, nextState: "confirmed", correlationId: offerId });
       this.#emitTransition(thread, "conditional_booking_offer.shown", { aggregateType: "conditional_booking_offer", aggregateId: offerId, correlationId: thread.requestId, surfaceId });
-      return { ok: true, messages: ["Operator confirmed availability. Review the Conditional Booking Offer; payment is still required."], surfaces: [{ surfaceId, mode: "focused-surface", summary: "Conditional Booking Offer", conventionalRoute: conventionalConditionalOfferRoute(offerId), textFallback: `Conditional Booking Offer for ${offerArtifact.facts.unitTitle}. Amount Due Now: ${formatNgnKobo(offerArtifact.facts.totalAmountDueNowKobo)}. Payment deadline: ${formatWAT(offerArtifact.facts.paymentWindowExpiresAt)}.`, a2uiMessages: conditionalOfferArtifactToA2UI({ artifact: offerArtifact, surfaceId }) }] };
+      return { ok: true, messages: ["Operator confirmed availability. Review the Conditional Booking Offer; payment is still required."], surfaces: [{ surfaceId, mode: "focused-surface", summary: "Conditional Booking Offer", conventionalRoute: conventionalConditionalOfferRoute(offerId), textFallback: this.#offerFallback(offerArtifact), a2uiMessages: conditionalOfferArtifactToA2UI({ artifact: offerArtifact, surfaceId }) }] };
     }
     if (["declined", "expired", "delivery_failed"].includes(artifact.facts.status)) {
       this.#supersede(thread, REQUEST_STAGE);
@@ -1256,7 +1304,7 @@ export class LocalGuestApp {
       ok: true,
       messages: ["Offer accepted. Complete the secure card payment to confirm your booking."],
       surfaces: [
-        { surfaceId: paymentSurfaceId, mode: "focused-surface", summary: "Secure payment", conventionalRoute: conventionalCardPaymentRoute(offerId), textFallback: `Payment status: ${paymentArtifact.facts.status}. ${paymentArtifact.facts.unit}. Stay: ${paymentArtifact.facts.checkIn} to ${paymentArtifact.facts.checkOut}. Amount Due Now: ${formatNgnKobo(paymentArtifact.facts.amountDueNowKobo)}. Payment deadline: ${paymentArtifact.facts.paymentWindowExpiresAt}.`, a2uiMessages: cardPaymentArtifactToA2UI({ artifact: paymentArtifact, surfaceId: paymentSurfaceId }) },
+        this.#paymentSurface(thread, paymentArtifact, "Payment required", paymentSurfaceId),
       ],
     };
   }
@@ -1293,7 +1341,7 @@ export class LocalGuestApp {
     thread.activeSurfaces.set(PAYMENT_STAGE, surfaceId);
     this.#emitTransition(thread, "payment.handoff.opened", { aggregateType: "payment", aggregateId: thread.offerId, surfaceId });
     this.#emitTransition(thread, "payment.attempt.initialized", { aggregateType: "payment_attempt", aggregateId: session.checkoutId, correlationId: thread.offerId });
-    return { ok: true, messages: ["Secure checkout is ready. Payment credentials stay on the PSP-hosted page; return here for backend verification."], surfaces: [{ surfaceId, mode: "focused-surface", summary: "Payment handoff", conventionalRoute: conventionalCardPaymentRoute(thread.offerId), textFallback: `Payment status: ${artifact.facts.status}. Amount Due Now: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}. Payment deadline: ${formatWAT(artifact.facts.paymentWindowExpiresAt)}. Continue at the secure PSP checkout: ${session.checkoutUrl}`, a2uiMessages: cardPaymentArtifactToA2UI({ artifact, surfaceId }) }] };
+    return { ok: true, messages: ["Payment checkout is ready. Payment has not succeeded; your booking details remain available when you return."], surfaces: [{ surfaceId, mode: "focused-surface", summary: "Payment handoff", conventionalRoute: conventionalCardPaymentRoute(thread.offerId), conventionalRouteLabel: `Continue to payment · ${formatNgnKobo(artifact.facts.amountDueNowKobo)}`, textFallback: `Payment handoff ready for ${artifact.facts.unit}, ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)}. ${artifact.facts.allInStayTotalKobo === undefined ? "" : `All-In Stay Total: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. `}${artifact.facts.refundableSecurityDepositKobo ? `Refundable Security Deposit (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}Amount Due Now: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}. ${formatWAT(artifact.facts.paymentWindowExpiresAt)}. Payment has not succeeded and the booking is not confirmed. Your booking details will be retained when you return.`, a2uiMessages: cardPaymentArtifactToA2UI({ artifact, surfaceId }) }] };
   }
 
   #handlePaymentReturn(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
@@ -1314,13 +1362,13 @@ export class LocalGuestApp {
         this.#emitTransition(thread, "payment.verified", { aggregateType: "payment", aggregateId: thread.offerId, nextState: "deposit_required", surfaceId });
         return { ok: true, messages: ["Payment verified for the stay. A separate Refundable Security Deposit payment is required before a Reservation can exist."], surfaces: [this.#paymentSurface(thread, artifact, "Refundable Security Deposit payment required", surfaceId)] };
       }
-      const contractArtifact = environment.contractApp.getArtifact(outcome.bookingContract.contractId, environment.guestPrincipal());
+      const contractArtifact = this.#contractArtifact(outcome.bookingContract.contractId);
       const bookingSurfaceId = `thread-${thread.threadId}:booking:${outcome.bookingContract.contractId}`;
       this.#supersede(thread, PAYMENT_STAGE);
       thread.activeSurfaces.set(BOOKING_STAGE, bookingSurfaceId);
       this.#emitTransition(thread, "payment.verified", { aggregateType: "payment", aggregateId: thread.offerId, nextState: "verified", surfaceId: bookingSurfaceId });
       this.#emitTransition(thread, "reservation.confirmed", { aggregateType: "reservation", aggregateId: outcome.reservation.reservationId, correlationId: thread.offerId, nextState: "confirmed" });
-      return { ok: true, messages: ["Payment verified and the Reservation was committed. Your stay is confirmed."], surfaces: [{ surfaceId: bookingSurfaceId, mode: "focused-surface", summary: "Reservation confirmed", conventionalRoute: conventionalBookingContractRoute(outcome.bookingContract.contractId), textFallback: `Reservation confirmed for ${contractArtifact.facts.checkIn} to ${contractArtifact.facts.checkOut}. Reservation reference: ${contractArtifact.facts.reservationId}.`, a2uiMessages: bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: bookingSurfaceId }) }] };
+      return { ok: true, messages: ["Payment verified and the Reservation was committed. Your stay is confirmed."], surfaces: [{ surfaceId: bookingSurfaceId, mode: "focused-surface", summary: "Reservation confirmed", conventionalRoute: conventionalBookingContractRoute(outcome.bookingContract.contractId), textFallback: this.#confirmedBookingFallback(contractArtifact), a2uiMessages: bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: bookingSurfaceId }) }] };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Payment verification did not complete.";
       const artifact = environment.cardPaymentApp.getArtifact(thread.offerId, environment.guestPrincipal());
@@ -1335,7 +1383,14 @@ export class LocalGuestApp {
   }
 
   #paymentSurface(thread: GuestThreadState, artifact: ReturnType<CardPaymentApplication["getArtifact"]>, summary: string, surfaceId: string): GuestSurfacePayload {
-    return { surfaceId, mode: "focused-surface", summary, conventionalRoute: conventionalCardPaymentRoute(thread.offerId!), textFallback: `Payment status: ${artifact.facts.status}. Amount Due Now: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}. Payment deadline: ${formatWAT(artifact.facts.paymentWindowExpiresAt)}.`, a2uiMessages: cardPaymentArtifactToA2UI({ artifact, surfaceId }) };
+    const processing = artifact.facts.journeyStage === "stay_payment_processing" || artifact.facts.journeyStage === "deposit_payment_processing";
+    const status = guestPaymentStatus(artifact.facts.status, processing);
+    const routeLabel = processing ? "Return to payment status"
+      : artifact.facts.status === "ready" ? "Open payment details"
+        : artifact.facts.status === "checkout_initiated" ? `Continue to hosted checkout · ${formatNgnKobo(artifact.facts.amountDueNowKobo)}`
+          : artifact.facts.status === "deposit_required" ? `Continue to refundable deposit · ${formatNgnKobo(artifact.facts.amountDueNowKobo)}`
+            : "View payment status";
+    return { surfaceId, mode: "focused-surface", summary, conventionalRoute: conventionalCardPaymentRoute(thread.offerId!), conventionalRouteLabel: routeLabel, textFallback: `${status.label}. ${artifact.facts.unit}, ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)}. ${artifact.facts.allInStayTotalKobo === undefined ? "" : `All-In Stay Total: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. `}${artifact.facts.refundableSecurityDepositKobo ? `Refundable Security Deposit (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}Amount Due Now: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}. ${formatWAT(artifact.facts.paymentWindowExpiresAt)}. ${status.detail}`, a2uiMessages: cardPaymentArtifactToA2UI({ artifact, surfaceId }) };
   }
 
   #partySizeFor(thread: GuestThreadState): number {
@@ -1381,9 +1436,7 @@ function readEventPayload(payload: unknown): GuestEventPayload | undefined {
 }
 
 function formatWAT(iso: string): string {
-  return new Intl.DateTimeFormat("en-NG", {
-    timeZone: "Africa/Lagos", dateStyle: "medium", timeStyle: "short", hour12: false,
-  }).format(new Date(iso)) + " WAT";
+  return formatBookingDeadline(iso).replace(/^Pay by /, "");
 }
 
 function discoverySummary(filters: unknown): string {
@@ -1454,6 +1507,9 @@ export function renderGuestShellHtml(): string {
     .workspace-status { margin: 0 0 var(--space-3); color: var(--color-text-secondary); font-size: var(--font-size-small); }
     .workspace-status[data-status="stale"], .workspace-status[data-status="expired"], .workspace-status[data-status="deleted"], .workspace-status[data-status="fallback"] { padding: var(--space-2) var(--space-3); border-inline-start: 3px dashed var(--color-warning); background: var(--color-warning-surface); color: var(--color-warning); }
     .weaver-mount { min-width: 0; max-width: 100%; overflow: visible; }
+    .weaver-mount [data-a2ui-component="Text"][data-a2ui-variant="h1"] { font-size: var(--font-size-display) !important; line-height: var(--font-line-display) !important; font-weight: 700 !important; }
+    .weaver-mount [data-a2ui-component="Text"][data-a2ui-variant="h2"] { font-size: var(--font-size-h2) !important; line-height: var(--font-line-h2) !important; font-weight: 650 !important; }
+    .weaver-mount [data-a2ui-component="Text"][data-a2ui-variant="h3"] { font-size: var(--font-size-h3) !important; line-height: var(--font-line-h3) !important; font-weight: 650 !important; }
     .weaver-mount img { display: block; width: 100%; max-width: 100%; height: auto; min-height: 120px; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--radius-card); background: var(--surface-soft); }
     .photo-fallback { width: 100%; min-height: 120px; aspect-ratio: 4 / 3; display: grid; place-items: center; padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface-soft); color: var(--text-muted); text-align: center; }
     .weaver-mount small[data-a2ui-component="Text"] { color: var(--color-text-secondary); font-size: var(--font-size-small) !important; font-style: normal !important; line-height: var(--font-line-small); }
@@ -1557,11 +1613,16 @@ function readFormBody(req: IncomingMessage): Promise<URLSearchParams> {
   return new Promise((resolve, reject) => { let body = ""; req.setEncoding("utf8"); req.on("data", (chunk) => { body += chunk; if (body.length > 4096) reject(new Error("Form is too large")); }); req.on("end", () => resolve(new URLSearchParams(body))); req.on("error", reject); });
 }
 
-export function renderGuestContactHtml(contact: { phoneNumber: string | null; contactEmail: string | null; revision: number } | null, error = "", kind: "phone" | "email" | "both" = "both"): string {
+export function renderGuestContactHtml(contact: { phoneNumber: string | null; contactEmail: string | null; revision: number } | null, error = "", kind: "phone" | "email" | "both" = "both", entered: { readonly phoneNumber?: string; readonly contactEmail?: string } = {}): string {
   const safe = (value: string) => value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!);
-  const phoneForm = kind === "email" ? "" : `<form method="post" action="/guest/contact/phone"><label for="phoneNumber">Phone number</label><p>We may use this for booking coordination.</p><input id="phoneNumber" name="phoneNumber" type="tel" inputmode="tel" autocomplete="tel" maxlength="32" required value="${safe(contact?.phoneNumber ?? "")}"><input type="hidden" name="expectedRevision" value="${contact?.revision ?? 0}"><button type="submit">Save phone number</button></form>`;
-  const emailForm = kind === "phone" ? "" : `<form method="post" action="/guest/contact/email"><label for="contactEmail">Email address for payment and booking receipt</label><input id="contactEmail" name="contactEmail" type="email" inputmode="email" autocomplete="email" maxlength="254" required value="${safe(contact?.contactEmail ?? "")}"><input type="hidden" name="expectedRevision" value="${contact?.revision ?? 0}"><button type="submit">Save email address</button></form>`;
-  return `<!doctype html><html lang="en-NG"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Guest contact</title><link rel="stylesheet" href="/shortlet-foundations.css"><style>body{padding:var(--layout-gutter-mobile)}main{max-width:420px;margin:auto}form{margin:20px 0}label{display:block;font-weight:700;margin-bottom:6px}input,button{box-sizing:border-box;width:100%;min-height:var(--control-min-field);font:inherit;padding:10px;border-radius:var(--radius-control)}button{margin-top:10px}.error{color:var(--color-danger)}</style></head><body><main><h1>Guest contact</h1>${error ? `<p class="error" role="alert">${safe(error)}</p>` : ""}${phoneForm}${emailForm}</main></body></html>`;
+  const phoneError = kind === "phone" ? error : "";
+  const emailError = kind === "email" ? error : "";
+  const phoneValue = entered.phoneNumber ?? contact?.phoneNumber ?? "";
+  const emailValue = entered.contactEmail ?? contact?.contactEmail ?? "";
+  const phoneForm = kind === "email" ? "" : `<form method="post" action="/guest/contact/phone"><div class="field"><label for="phoneNumber">Phone number <span aria-hidden="true">*</span></label><p id="phoneNumber-help">Required before you send a Booking Request. Use a Nigerian mobile number: +234 E.164 format. Example: +234 801 234 5678 or 0801 234 5678. This is for booking coordination, not identity verification.</p><input id="phoneNumber" name="phoneNumber" type="tel" inputmode="tel" autocomplete="tel" enterkeyhint="done" maxlength="32" required aria-describedby="phoneNumber-help${phoneError ? " phoneNumber-error" : ""}"${phoneError ? " aria-invalid=\"true\"" : ""} value="${safe(phoneValue)}">${phoneError ? `<p id="phoneNumber-error" class="field-error" role="alert">${safe(phoneError)}</p>` : ""}</div><input type="hidden" name="expectedRevision" value="${contact?.revision ?? 0}"><button type="submit">Save phone number</button></form>`;
+  const emailForm = kind === "phone" ? "" : `<form method="post" action="/guest/contact/email"><div class="field"><label for="contactEmail">Email address <span aria-hidden="true">*</span></label><p id="contactEmail-help">Required to initialize hosted card checkout and send your payment receipt. This email is not your account identity.</p><input id="contactEmail" name="contactEmail" type="email" inputmode="email" autocomplete="email" enterkeyhint="done" maxlength="254" required aria-describedby="contactEmail-help${emailError ? " contactEmail-error" : ""}"${emailError ? " aria-invalid=\"true\"" : ""} value="${safe(emailValue)}">${emailError ? `<p id="contactEmail-error" class="field-error" role="alert">${safe(emailError)}</p>` : ""}</div><input type="hidden" name="expectedRevision" value="${contact?.revision ?? 0}"><button type="submit">Save email address</button></form>`;
+  const generalError = error && kind === "both" ? `<p class="field-error" role="alert">${safe(error)}</p>` : "";
+  return `<!doctype html><html lang="en-NG"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Guest contact</title><link rel="stylesheet" href="/shortlet-foundations.css"><style>body{padding:var(--layout-gutter-mobile)}main{max-width:420px;margin:auto}form{margin:20px 0}.field{display:grid;gap:8px;margin-bottom:16px}label{display:block;font-weight:700}input,button{box-sizing:border-box;width:100%;min-height:var(--control-min-field);font:inherit;padding:10px;border-radius:var(--radius-control)}input:focus-visible,button:focus-visible{outline:3px solid var(--color-focus);outline-offset:2px}button{min-height:var(--control-min-target);margin-top:10px;border:1px solid var(--color-action);background:var(--color-action);color:var(--color-surface);font-weight:700;cursor:pointer}.field p{margin:0}.field-error{color:var(--color-danger);font-weight:600}</style></head><body><main><h1>Guest contact</h1>${generalError}${phoneForm}${emailForm}</main></body></html>`;
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -1924,9 +1985,35 @@ export function startLocalGuestServer(options: {
       try {
         const principal: CommandPrincipal = { id: session.principalId, role: "guest", tenantId: session.tenantId };
         const artifact = app.environment.cardPaymentApp.getArtifact(offerId, principal);
-        const label = options.localPayment ? "Continue to local demo payment" : "Continue to secure checkout";
+        const processing = artifact.facts.journeyStage === "stay_payment_processing" || artifact.facts.journeyStage === "deposit_payment_processing";
+        const status = guestPaymentStatus(artifact.facts.status, processing);
+        const contactEmailMissing = !app.environment.guestContactApp.get(principal)?.contactEmail;
+        const threadId = findGuestThreadForOffer(app.environment, offerId, principal);
+        const href = contactEmailMissing && artifact.facts.status === "ready"
+          ? "/guest/contact?kind=email"
+          : processing && threadId
+            ? `/?threadId=${encodeURIComponent(threadId)}`
+            : `/payments/offers/${encodeURIComponent(offerId)}/continue`;
+        const label = contactEmailMissing && artifact.facts.status === "ready"
+          ? "Add email address to continue"
+          : processing
+            ? "Return to booking status"
+            : options.localPayment
+              ? "Continue to local demo payment"
+              : "Continue to hosted card checkout";
+        const canContinue = artifact.actions.length > 0 && (artifact.facts.status !== "ready" || contactEmailMissing || !processing);
+        const escapeHtmlText = (value: string): string => value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!);
+        const facts = [
+          `<p class="unit">${escapeHtmlText(artifact.facts.unit)}</p>`,
+          `<p>Stay: ${escapeHtmlText(artifact.facts.checkIn)} to ${escapeHtmlText(artifact.facts.checkOut)}</p>`,
+          ...(artifact.facts.allInStayTotalKobo === undefined ? [] : [`<p>All-In Stay Total: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}</p>`]),
+          ...(artifact.facts.refundableSecurityDepositKobo === undefined || artifact.facts.refundableSecurityDepositKobo <= 0 ? [] : [`<p>Refundable Security Deposit (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}</p>`]),
+          `<p class="amount">Amount Due Now: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}</p>`,
+          `<p>${formatWAT(artifact.facts.paymentWindowExpiresAt)}</p>`,
+          `<p>${escapeHtmlText(status.detail)}</p>`,
+        ].join("");
         res.writeHead(200, GUEST_HTML_HEADERS);
-        res.end(`<!doctype html><html lang="en-NG"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Payment continuation</title><link rel="stylesheet" href="/shortlet-foundations.css"><style>main{max-width:560px;margin:auto;padding:32px var(--layout-gutter-mobile)}a{display:inline-flex;align-items:center;min-height:var(--control-min-target);padding:0 20px;border-radius:var(--radius-control);background:var(--color-action);color:var(--color-surface);font-weight:700;text-decoration:none}</style></head><body><main><h1>Payment continuation</h1><p>Authoritative amount due now: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}.</p><a href="/payments/offers/${encodeURIComponent(offerId)}/continue">${label}</a></main></body></html>`);
+        res.end(`<!doctype html><html lang="en-NG"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtmlText(status.label)} · Shortlet</title><link rel="stylesheet" href="/shortlet-foundations.css"><style>main{width:min(100% - 2 * var(--layout-gutter-mobile),36rem);margin:auto;padding:32px 0}p{overflow-wrap:anywhere}.unit{font-size:var(--font-size-h3);font-weight:650}.amount{font-size:var(--font-size-money-total);font-weight:700}a{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:10px 20px;border-radius:var(--radius-control);background:var(--color-action);color:var(--color-surface);font-weight:700;text-decoration:none}a:focus-visible{outline:3px solid var(--color-focus);outline-offset:2px}</style></head><body><main><h1>${escapeHtmlText(status.label)}</h1>${facts}${canContinue ? `<a href="${href}">${label}</a>` : ""}</main></body></html>`);
       } catch { sendJson(res, 404, { ok: false, code: "PAYMENT_OFFER_NOT_FOUND" }); }
       return;
     }
@@ -2047,13 +2134,19 @@ export function startLocalGuestServer(options: {
       if (req.method === "GET" && url.pathname === "/guest/contact") { const kind = url.searchParams.get("kind"); const requestedKind = kind === "phone" || kind === "email" ? kind : "both"; res.writeHead(200, GUEST_HTML_HEADERS); res.end(renderGuestContactHtml(app.environment.guestContactApp.get(contactPrincipal), "", requestedKind)); return; }
       if (req.method === "POST") {
         if (!browserOriginAccepted(req, options.publicOrigin)) { res.writeHead(403); res.end("Origin rejected"); return; }
+        let submittedValue = "";
+        const contactKind = url.pathname.endsWith("/phone") ? "phone" : "email";
         try {
           const form = await readFormBody(req);
           const expectedRevision = Number(form.get("expectedRevision"));
-          if (url.pathname.endsWith("/phone")) app.environment.guestContactApp.submitPhone({ phoneNumber: form.get("phoneNumber") ?? "", ...(Number.isInteger(expectedRevision) ? { expectedRevision } : {}) }, contactPrincipal);
-          else app.environment.guestContactApp.submitEmail({ contactEmail: form.get("contactEmail") ?? "", ...(Number.isInteger(expectedRevision) ? { expectedRevision } : {}) }, contactPrincipal);
+          if (contactKind === "phone") { submittedValue = form.get("phoneNumber") ?? ""; app.environment.guestContactApp.submitPhone({ phoneNumber: submittedValue, ...(Number.isInteger(expectedRevision) ? { expectedRevision } : {}) }, contactPrincipal); }
+          else { submittedValue = form.get("contactEmail") ?? ""; app.environment.guestContactApp.submitEmail({ contactEmail: submittedValue, ...(Number.isInteger(expectedRevision) ? { expectedRevision } : {}) }, contactPrincipal); }
           res.writeHead(303, { Location: "/guest/contact" }); res.end(); return;
-        } catch (error) { res.writeHead(400, GUEST_HTML_HEADERS); res.end(renderGuestContactHtml(app.environment.guestContactApp.get(contactPrincipal), error instanceof Error ? error.message : "Contact could not be saved")); return; }
+        } catch (error) {
+          res.writeHead(400, GUEST_HTML_HEADERS);
+          res.end(renderGuestContactHtml(app.environment.guestContactApp.get(contactPrincipal), error instanceof Error ? error.message : "Contact could not be saved", contactKind, contactKind === "phone" ? { phoneNumber: submittedValue } : { contactEmail: submittedValue }));
+          return;
+        }
       }
     }
 

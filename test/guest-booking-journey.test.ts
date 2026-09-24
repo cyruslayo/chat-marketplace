@@ -78,7 +78,8 @@ test("AC12–AC23 and AC37–AC39 — Operator confirmation, explicit offer acce
     assert.match(result.surfaces[0]!.summary ?? "", /payment/i);
     result = event(app, threadId, result.surfaces[0]!) as Surface;
     assert.equal(result.ok, true); if (!result.ok) return;
-    assert.match(result.surfaces[0]!.textFallback ?? "", /checkout_initiated/i);
+    assert.match(result.surfaces[0]!.textFallback ?? "", /payment handoff ready|payment has not succeeded/i);
+    assert.doesNotMatch(result.surfaces[0]!.textFallback ?? "", /checkout_initiated|Payment status:/i);
     const stayHandoff = result.surfaces[0]!;
     result = event(app, threadId, stayHandoff) as Surface;
     assert.equal(result.ok, true); if (!result.ok) return;
@@ -163,7 +164,7 @@ test("AC9–AC11 — delivery failure, Operator decline, and Operator timeout re
       const state = app.getState(threadId);
       assert.ok(state);
       assert.match(state!.surfaces[0]!.textFallback ?? "", scenario.expected);
-      assert.equal(state!.surfaces[0]!.a2uiMessages.some((message) => JSON.stringify(message).includes("Start secure checkout")), false);
+      assert.equal(state!.surfaces[0]!.a2uiMessages.some((message) => JSON.stringify(message).includes("Continue to checkout")), false);
     } finally { close(environment); }
   }
 });

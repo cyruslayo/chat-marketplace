@@ -25,6 +25,7 @@ export interface BookingRequestArtifact {
   readonly facts: {
     readonly requestId: string;
     readonly unitId: string;
+    readonly unitTitle?: string;
     readonly status: string;
     readonly checkIn: string;
     readonly checkOut: string;
@@ -58,6 +59,7 @@ export interface BookingRequestArtifact {
 export interface BookingRequestProjectionInput {
   readonly requestId: string;
   readonly unitId: string;
+  readonly unitTitle?: string;
   readonly tenantId?: string;
   readonly operatorId?: string;
   readonly primaryGuest?: { readonly id: string; readonly name: string };
@@ -156,6 +158,7 @@ export function bookingRequestArtifactFromRequest(
     facts: Object.freeze({
       requestId: request.requestId,
       unitId: request.unitId,
+      ...(request.unitTitle ? { unitTitle: request.unitTitle } : {}),
       status: request.status,
       checkIn: request.checkIn,
       checkOut: request.checkOut,

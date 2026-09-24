@@ -30,7 +30,7 @@ test("AC6 — Payment processing restores without duplicate payment verification
     assert.equal(verifications, 1);
     await f.restart();
     const state = await f.state(); assert.equal(state.ok, true);
-    if (state.ok) assert.match(state.surfaces[0]?.summary ?? "", /processing/i);
+    if (state.ok) assert.match(state.surfaces[0]?.summary ?? "", /processing|checking payment/i);
     await f.state();
     assert.equal(verifications, 1);
   } finally { await f.close(); }
@@ -115,7 +115,7 @@ test("AC10 — A restored stale surface fails closed", async () => {
     await f.restart();
     assert.equal((await f.send("/api/event", stale)).ok, false);
     const state = await f.state(); assert.equal(state.ok, true);
-    if (state.ok) assert.match(state.surfaces[0]?.summary ?? "", /Booking Request/);
+    if (state.ok) assert.match(state.surfaces[0]?.summary ?? "", /Booking Request|Request sent/);
   } finally { await f.close(); }
 });
 

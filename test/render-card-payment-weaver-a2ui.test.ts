@@ -14,11 +14,12 @@ test("Card payment A2UI is deterministic, v0.9.1 Basic Catalog, and never render
   const ready = cardPaymentArtifactToA2UI({ artifact: artifact("ready"), surfaceId: "surface" });
   assert.equal(ready[0] && "createSurface" in ready[0] ? ready[0].createSurface.catalogId : undefined, A2UI_V091_BASIC_CATALOG_ID);
   assert.deepEqual(ready, cardPaymentArtifactToA2UI({ artifact: artifact("ready"), surfaceId: "surface" }));
-  assert.match(text(ready), /NGN 100.00/);
-  assert.match(text(ready), /Start secure checkout/);
+  assert.match(text(ready), /Amount Due Now: ₦100/);
+  assert.match(text(ready), /Continue to checkout · ₦100/);
   assert.doesNotMatch(text(ready), /pan|cvv|cvc|pin|otp|token|mark paid/i);
-  assert.doesNotMatch(text(cardPaymentArtifactToA2UI({ artifact: artifact("ready", false), surfaceId: "surface" })), /Start secure checkout/);
-  assert.match(text(cardPaymentArtifactToA2UI({ artifact: artifact("checkout_initiated"), surfaceId: "surface" })), /https:\/\/checkout\.example/);
+  assert.doesNotMatch(text(cardPaymentArtifactToA2UI({ artifact: artifact("ready", false), surfaceId: "surface" })), /Continue to checkout/);
+  assert.match(text(cardPaymentArtifactToA2UI({ artifact: artifact("checkout_initiated"), surfaceId: "surface" })), /Payment has not succeeded/);
+  assert.doesNotMatch(text(cardPaymentArtifactToA2UI({ artifact: artifact("checkout_initiated"), surfaceId: "surface" })), /https:\/\/checkout\.example|Continue to checkout/);
   assert.doesNotMatch(text(cardPaymentArtifactToA2UI({ artifact: artifact("checkout_initiated"), surfaceId: "surface" })), /mark paid|card number|cvv/i);
   const confirmed = text(cardPaymentArtifactToA2UI({ artifact: artifact("confirmed"), surfaceId: "surface" }));
   assert.match(confirmed, /Booking confirmed|reservation|contract|Mastercard|8888/i);

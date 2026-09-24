@@ -306,8 +306,8 @@ test("Guest Request Draft remains separate from Booking Request until review and
     assert.match(draftResponse.surfaces[0]!.surfaceId, /:request:draft:/);
     journey.harness.mountSurface(draftResponse.surfaces[0]!.surfaceId, draftResponse.surfaces[0]!.a2uiMessages as readonly A2UIServerMessage[]);
     const draftTarget = journey.harness.mounted[2]!.target;
-    assert.ok((draftTarget.textContent ?? "").includes("Inventory is not reserved"));
-    assert.ok(journey.harness.clickButton(draftTarget, "Review Request"));
+    assert.match(draftTarget.textContent ?? "", /inventory is not reserved/i);
+    assert.ok(journey.harness.clickButton(draftTarget, "Review request"));
     const [reviewEvent] = await journey.relayEvents();
     const reviewResponse = expectSuccess(reviewEvent, "request review");
     journey.harness.mountSurface(reviewResponse.surfaces[0]!.surfaceId, reviewResponse.surfaces[0]!.a2uiMessages as readonly A2UIServerMessage[]);
@@ -328,10 +328,10 @@ test("Guest Request Draft remains separate from Booking Request until review and
     const offerText = offerTarget.textContent ?? "";
     assert.ok(offerText.includes("Conditional Booking Offer"));
     assert.ok(offerText.includes(`All-In Stay Total: ${ALL_IN_TOTAL_NGN}`));
-    assert.ok(offerText.includes("Refundable Security Deposit: ₦20,000.00"));
-    assert.ok(offerText.includes("Amount Due Now: ₦390,000.00"));
+    assert.ok(offerText.includes("Refundable Security Deposit (separate): ₦20,000"));
+    assert.ok(offerText.includes("Amount Due Now: ₦390,000"));
     assert.ok(offerText.includes("Cancellation:"));
-    assert.ok(offerText.includes("Payment Window expires:"));
+    assert.match(offerText, /Pay by .* WAT/);
     assert.ok([...offerTarget.querySelectorAll("button")].some((button) => button.textContent?.includes("Accept")));
   } finally {
     await journey.server.close();
@@ -355,7 +355,7 @@ test("Weaver-generated offer acceptance, PSP handoff, verified payment, and Rese
     const [draftEvent] = await journey.relayEvents();
     const draftResponse = expectSuccess(draftEvent, "request draft");
     journey.harness.mountSurface(draftResponse.surfaces[0]!.surfaceId, draftResponse.surfaces[0]!.a2uiMessages as readonly A2UIServerMessage[]);
-    assert.ok(journey.harness.clickButton(journey.harness.mounted[2]!.target, "Review Request"));
+    assert.ok(journey.harness.clickButton(journey.harness.mounted[2]!.target, "Review request"));
     const [reviewEvent] = await journey.relayEvents();
     const reviewResponse = expectSuccess(reviewEvent, "request review");
     journey.harness.mountSurface(reviewResponse.surfaces[0]!.surfaceId, reviewResponse.surfaces[0]!.a2uiMessages as readonly A2UIServerMessage[]);
@@ -377,20 +377,20 @@ test("Weaver-generated offer acceptance, PSP handoff, verified payment, and Rese
     journey.harness.mountSurface(paymentSurface.surfaceId, paymentSurface.a2uiMessages as readonly A2UIServerMessage[]);
     const paymentTarget = journey.harness.mounted[5]!.target;
     const paymentText = paymentTarget.textContent ?? "";
-    assert.ok(paymentText.includes("Payment status: ready"), "payment surface comes from the real CardPaymentApplication");
+    assert.ok(paymentText.includes("Payment required"), "payment surface comes from the real CardPaymentApplication");
     assert.ok(
-      [...paymentTarget.querySelectorAll("button")].some((button) => button.textContent?.includes("Start secure checkout")),
+      [...paymentTarget.querySelectorAll("button")].some((button) => button.textContent?.includes("Continue to checkout")),
     );
 
     // Start the local deterministic checkout.
-    assert.ok(journey.harness.clickButton(paymentTarget, "Start secure checkout"));
+    assert.ok(journey.harness.clickButton(paymentTarget, "Continue to checkout"));
     const paymentInitializeAction = { ...journey.harness.events[0]! };
     const [checkoutEvent] = await journey.relayEvents();
     const checkoutResponse = expectSuccess(checkoutEvent, "card checkout");
     const handoff = checkoutResponse.surfaces[0]!;
     journey.harness.mountSurface(handoff.surfaceId, handoff.a2uiMessages as readonly A2UIServerMessage[]);
-    assert.ok((journey.harness.mounted[6]!.target.textContent ?? "").includes("Payment status: checkout_initiated"));
-    assert.ok(journey.harness.clickButton(journey.harness.mounted[6]!.target, "I have returned from secure checkout"));
+    assert.ok((journey.harness.mounted[6]!.target.textContent ?? "").includes("Payment handoff ready"));
+    assert.ok(journey.harness.clickButton(journey.harness.mounted[6]!.target, "Check payment status"));
     const [returnEvent] = await journey.relayEvents();
     const depositResponse = expectSuccess(returnEvent, "verified stay payment");
     assert.ok(depositResponse.messages[0]!.includes("separate Refundable Security Deposit"));
@@ -399,7 +399,7 @@ test("Weaver-generated offer acceptance, PSP handoff, verified payment, and Rese
     const [depositInitEvent] = await journey.relayEvents();
     const depositInit = expectSuccess(depositInitEvent, "deposit checkout");
     journey.harness.mountSurface(depositInit.surfaces[0]!.surfaceId, depositInit.surfaces[0]!.a2uiMessages as readonly A2UIServerMessage[]);
-    assert.ok(journey.harness.clickButton(journey.harness.mounted[8]!.target, "I have returned from secure checkout"));
+    assert.ok(journey.harness.clickButton(journey.harness.mounted[8]!.target, "Check payment status"));
     const [finalEvent] = await journey.relayEvents();
     const bookingResponse = expectSuccess(finalEvent, "verified deposit and reservation commit");
     const bookingSurface = bookingResponse.surfaces[0]!;

@@ -154,9 +154,9 @@ async function advanceToRequestReview(ctx: RealBrowserTestContext): Promise<void
   await ctx.tabA.waitForText("Request to Book", 15000);
 
   await ctx.tabA.clickButton("Request to Book");
-  await ctx.tabA.waitForText("Review Request", 15000);
+  await ctx.tabA.waitForText("Review request", 15000);
 
-  await ctx.tabA.clickButton("Review Request");
+  await ctx.tabA.clickButton("Review request");
   await ctx.tabA.waitForText("Submit Booking Request", 15000);
 
   // Sync Tab B to current review
@@ -194,11 +194,11 @@ async function advanceToPaymentReady(ctx: RealBrowserTestContext): Promise<{ off
 
   // Button text is "Accept" (conditional-offer-a2ui.ts line 30)
   await ctx.tabA.clickButton("Accept");
-  // Button text is "Start secure checkout" (card-payment-a2ui.ts line 19)
-  await ctx.tabA.waitForText("Start secure checkout", 15000);
+  // The amount-bearing label distinguishes the current payment action.
+  await ctx.tabA.waitForText("Continue to checkout", 15000);
 
   await ctx.tabB.navigate(`${ctx.base}/?threadId=${ctx.threadId}`);
-  await ctx.tabB.waitForText("Start secure checkout", 15000);
+  await ctx.tabB.waitForText("Continue to checkout", 15000);
 
   return { offerId };
 }
@@ -206,13 +206,11 @@ async function advanceToPaymentReady(ctx: RealBrowserTestContext): Promise<{ off
 async function advanceToCheckoutInitiated(ctx: RealBrowserTestContext): Promise<{ offerId: string }> {
   const { offerId } = await advanceToPaymentReady(ctx);
 
-  // Button text is "Start secure checkout" (card-payment-a2ui.ts line 19)
-  await ctx.tabA.clickButton("Start secure checkout");
-  // Button text after checkout initiated is "I have returned from secure checkout" (card-payment-a2ui.ts line 19)
-  await ctx.tabA.waitForText("I have returned from secure checkout", 15000);
+  await ctx.tabA.clickButton("Continue to checkout");
+  await ctx.tabA.waitForText("Check payment status", 15000);
 
   await ctx.tabB.navigate(`${ctx.base}/?threadId=${ctx.threadId}`);
-  await ctx.tabB.waitForText("I have returned from secure checkout", 15000);
+  await ctx.tabB.waitForText("Check payment status", 15000);
 
   return { offerId };
 }
@@ -222,13 +220,13 @@ async function advanceToDepositCheckoutInitiated(ctx: RealBrowserTestContext): P
 
   // Verify the stay payment once, then initialize the separate refundable
   // deposit checkout before racing the final verification from both tabs.
-  await ctx.tabA.clickButton("I have returned from secure checkout");
+  await ctx.tabA.clickButton("Check payment status");
   await ctx.tabA.waitForText("Continue to refundable deposit", 15000);
   await ctx.tabA.clickButton("Continue to refundable deposit");
-  await ctx.tabA.waitForText("I have returned from secure checkout", 15000);
+  await ctx.tabA.waitForText("Check payment status", 15000);
 
   await ctx.tabB.navigate(`${ctx.base}/?threadId=${ctx.threadId}`);
-  await ctx.tabB.waitForText("I have returned from secure checkout", 15000);
+  await ctx.tabB.waitForText("Check payment status", 15000);
 
   return { offerId };
 }
@@ -326,10 +324,10 @@ test("RB3 — Two real tabs cannot create multiple Live Payment Attempts", async
     const windowExpiresBefore = offer.paymentWindow.expiresAt;
 
     // Trigger payment initialization concurrently from both tabs (ADR-0046)
-    // Button text is "Start secure checkout" (card-payment-a2ui.ts line 19)
+    // Both tabs use the amount-bearing checkout action.
     const [clickA, clickB] = await Promise.all([
-      ctx.tabA.clickButton("Start secure checkout"),
-      ctx.tabB.clickButton("Start secure checkout"),
+      ctx.tabA.clickButton("Continue to checkout"),
+      ctx.tabB.clickButton("Continue to checkout"),
     ]);
     assert.equal(clickA, true);
     assert.equal(clickB, true);
@@ -363,10 +361,10 @@ test("RB4 — Concurrent real-tab payment verification creates one Reservation",
     const { offerId } = await advanceToDepositCheckoutInitiated(ctx);
 
     // Concurrently trigger return/verification from both tabs
-    // Button text is "I have returned from secure checkout" (card-payment-a2ui.ts line 19)
+    // Both tabs can request authoritative payment verification.
     const [clickA, clickB] = await Promise.all([
-      ctx.tabA.clickButton("I have returned from secure checkout"),
-      ctx.tabB.clickButton("I have returned from secure checkout"),
+      ctx.tabA.clickButton("Check payment status"),
+      ctx.tabB.clickButton("Check payment status"),
     ]);
     assert.equal(clickA, true);
     assert.equal(clickB, true);
@@ -394,10 +392,9 @@ test("RB5 — Concurrent real-tab payment verification creates one Booking Contr
   try {
     const { offerId } = await advanceToDepositCheckoutInitiated(ctx);
 
-    // Button text is "I have returned from secure checkout" (card-payment-a2ui.ts line 19)
     const [clickA, clickB] = await Promise.all([
-      ctx.tabA.clickButton("I have returned from secure checkout"),
-      ctx.tabB.clickButton("I have returned from secure checkout"),
+      ctx.tabA.clickButton("Check payment status"),
+      ctx.tabB.clickButton("Check payment status"),
     ]);
     assert.equal(clickA, true);
     assert.equal(clickB, true);

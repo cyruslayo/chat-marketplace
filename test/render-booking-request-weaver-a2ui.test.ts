@@ -47,17 +47,17 @@ test("Booking Request A2UI is deterministic, Basic Catalog v0.9.1, and status-aw
   const undeliveredArtifact = artifact("disclosed", [], false);
   assert.equal(undeliveredArtifact.projectionVersion, 2);
   const undelivered = bookingRequestArtifactToA2UI({ artifact: undeliveredArtifact, surfaceId: "booking-surface" });
-  assert.match(JSON.stringify(undelivered), /Delivery: pending/);
+  assert.match(JSON.stringify(undelivered), /Sending Booking Request/);
   assert.doesNotMatch(JSON.stringify(undelivered), /Confirm|Decline/);
 
-  assert.match(JSON.stringify(first), /All-In Stay Total: ₦100,000\.00/);
+  assert.match(JSON.stringify(first), /All-In Stay Total: ₦100,000/);
   const usd = bookingRequestArtifactToA2UI({ artifact: artifact("disclosed", [], true, "USD"), surfaceId: "booking-surface" });
-  assert.match(JSON.stringify(usd), /USD 100,000\.00/);
+  assert.match(JSON.stringify(usd), /USD 100,000/);
   assert.doesNotMatch(JSON.stringify(usd), /₦/);
 
-  for (const status of ["confirmed", "declined", "expired", "delivery_failed"]) {
+  for (const [status, label] of [["confirmed", /Operator confirmed availability/], ["declined", /Request declined/], ["expired", /Request expired/], ["delivery_failed", /Request could not be delivered/]] as const) {
     const terminal = bookingRequestArtifactToA2UI({ artifact: artifact(status), surfaceId: "booking-surface" });
-    assert.match(JSON.stringify(terminal), new RegExp(status));
+    assert.match(JSON.stringify(terminal), label);
     assert.doesNotMatch(JSON.stringify(terminal), /Confirm|Decline/);
   }
 

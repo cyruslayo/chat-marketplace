@@ -170,13 +170,13 @@ test("AC1 — Two tabs cannot create duplicate Booking Requests", async () => {
     assert.equal(draftRes.body.ok, true);
     ctx.tabA.mountSurface(draftRes.body.surfaces[0]!.surfaceId, draftRes.body.surfaces[0]!.a2uiMessages);
 
-    ctx.tabA.clickButton(ctx.tabA.mounted[2]!.target, "Review Request");
+    ctx.tabA.clickButton(ctx.tabA.mounted[2]!.target, "Review request");
     const reviewEvent = ctx.tabA.takeFirstEvent()!;
     const reviewRes = await ctx.send("/api/event", reviewEvent);
     assert.equal(reviewRes.body.ok, true);
     const reviewSurface = reviewRes.body.surfaces[0] as GuestSurfacePayload;
 
-    // Both Tab A and Tab B now have the Review Request surface mounted
+    // Both Tab A and Tab B now have the Review request surface mounted
     ctx.tabA.mountSurface(reviewSurface.surfaceId, reviewSurface.a2uiMessages);
     ctx.tabB.mountSurface(reviewSurface.surfaceId, reviewSurface.a2uiMessages);
 
@@ -227,7 +227,7 @@ test("AC2 — A stale Request review action fails closed", async () => {
     const draftRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(draftRes.body.surfaces[0]!.surfaceId, draftRes.body.surfaces[0]!.a2uiMessages);
 
-    ctx.tabA.clickButton(ctx.tabA.mounted[2]!.target, "Review Request");
+    ctx.tabA.clickButton(ctx.tabA.mounted[2]!.target, "Review request");
     const reviewRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     const reviewSurface = reviewRes.body.surfaces[0] as GuestSurfacePayload;
 
@@ -266,7 +266,7 @@ test("AC3 — Two tabs cannot accept one Conditional Booking Offer twice", async
     ctx.tabA.clickButton(ctx.tabA.mounted[1]!.target, "Request to Book");
     const draftRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(draftRes.body.surfaces[0]!.surfaceId, draftRes.body.surfaces[0]!.a2uiMessages);
-    ctx.tabA.clickButton(ctx.tabA.mounted[2]!.target, "Review Request");
+    ctx.tabA.clickButton(ctx.tabA.mounted[2]!.target, "Review request");
     const reviewRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(reviewRes.body.surfaces[0]!.surfaceId, reviewRes.body.surfaces[0]!.a2uiMessages);
     ctx.tabA.clickButton(ctx.tabA.mounted[3]!.target, "Submit Booking Request");
@@ -328,7 +328,7 @@ test("AC4 — A stale Conditional Booking Offer action fails closed", async () =
     ctx.tabA.clickButton(ctx.tabA.mounted[1]!.target, "Request to Book");
     const draftRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(draftRes.body.surfaces[0]!.surfaceId, draftRes.body.surfaces[0]!.a2uiMessages);
-    ctx.tabA.clickButton(ctx.tabA.mounted[2]!.target, "Review Request");
+    ctx.tabA.clickButton(ctx.tabA.mounted[2]!.target, "Review request");
     const reviewRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(reviewRes.body.surfaces[0]!.surfaceId, reviewRes.body.surfaces[0]!.a2uiMessages);
     ctx.tabA.clickButton(ctx.tabA.mounted[3]!.target, "Submit Booking Request");
@@ -376,7 +376,7 @@ test("AC5 — Two tabs cannot create multiple Live Payment Attempts", async () =
     ctx.tabA.clickButton(ctx.tabA.mounted[1]!.target, "Request to Book");
     const draftRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(draftRes.body.surfaces[0]!.surfaceId, draftRes.body.surfaces[0]!.a2uiMessages);
-    ctx.tabA.clickButton(ctx.tabA.mounted[2]!.target, "Review Request");
+    ctx.tabA.clickButton(ctx.tabA.mounted[2]!.target, "Review request");
     const reviewRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(reviewRes.body.surfaces[0]!.surfaceId, reviewRes.body.surfaces[0]!.a2uiMessages);
     ctx.tabA.clickButton(ctx.tabA.mounted[3]!.target, "Submit Booking Request");
@@ -399,9 +399,9 @@ test("AC5 — Two tabs cannot create multiple Live Payment Attempts", async () =
     ctx.tabA.mountSurface(paymentReadySurface.surfaceId, paymentReadySurface.a2uiMessages);
     ctx.tabB.mountSurface(paymentReadySurface.surfaceId, paymentReadySurface.a2uiMessages);
 
-    // Both tabs click "Start secure checkout" simultaneously
-    ctx.tabA.clickButton(ctx.tabA.mounted[5]!.target, "Start secure checkout");
-    ctx.tabB.clickButton(ctx.tabB.mounted[0]!.target, "Start secure checkout");
+    // Both tabs click the current amount-bearing checkout action simultaneously.
+    ctx.tabA.clickButton(ctx.tabA.mounted[5]!.target, "Continue to checkout");
+    ctx.tabB.clickButton(ctx.tabB.mounted[0]!.target, "Continue to checkout");
 
     const checkoutActionA = ctx.tabA.takeFirstEvent()!;
     const checkoutActionB = ctx.tabB.takeFirstEvent()!;
@@ -440,7 +440,7 @@ test("AC6 — Concurrent payment verification creates at most one Reservation", 
     ctx.tabA.clickButton(ctx.tabA.mounted[1]!.target, "Request to Book");
     const draftRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(draftRes.body.surfaces[0]!.surfaceId, draftRes.body.surfaces[0]!.a2uiMessages);
-    ctx.tabA.clickButton(ctx.tabA.mounted[2]!.target, "Review Request");
+    ctx.tabA.clickButton(ctx.tabA.mounted[2]!.target, "Review request");
     const reviewRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(reviewRes.body.surfaces[0]!.surfaceId, reviewRes.body.surfaces[0]!.a2uiMessages);
     ctx.tabA.clickButton(ctx.tabA.mounted[3]!.target, "Submit Booking Request");
@@ -457,13 +457,13 @@ test("AC6 — Concurrent payment verification creates at most one Reservation", 
     ctx.tabA.clickButton(ctx.tabA.mounted[4]!.target, "Accept");
     const paymentReadyRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(paymentReadyRes.body.surfaces[0]!.surfaceId, paymentReadyRes.body.surfaces[0]!.a2uiMessages);
-    ctx.tabA.clickButton(ctx.tabA.mounted[5]!.target, "Start secure checkout");
+    ctx.tabA.clickButton(ctx.tabA.mounted[5]!.target, "Continue to checkout");
     const handoffRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     assert.equal(handoffRes.body.ok, true);
 
     // Verify stay payment
     ctx.tabA.mountSurface(handoffRes.body.surfaces[0]!.surfaceId, handoffRes.body.surfaces[0]!.a2uiMessages);
-    ctx.tabA.clickButton(ctx.tabA.mounted[6]!.target, "I have returned from secure checkout");
+    ctx.tabA.clickButton(ctx.tabA.mounted[6]!.target, "Check payment status");
     const depositReadyRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     assert.equal(depositReadyRes.body.ok, true);
 
@@ -478,9 +478,9 @@ test("AC6 — Concurrent payment verification creates at most one Reservation", 
     ctx.tabA.mountSurface(depositHandoffSurface.surfaceId, depositHandoffSurface.a2uiMessages);
     ctx.tabB.mountSurface(depositHandoffSurface.surfaceId, depositHandoffSurface.a2uiMessages);
 
-    // Both tabs click "I have returned from secure checkout" simultaneously
-    ctx.tabA.clickButton(ctx.tabA.mounted[8]!.target, "I have returned from secure checkout");
-    ctx.tabB.clickButton(ctx.tabB.mounted[0]!.target, "I have returned from secure checkout");
+    // Both tabs request authoritative payment verification simultaneously.
+    ctx.tabA.clickButton(ctx.tabA.mounted[8]!.target, "Check payment status");
+    ctx.tabB.clickButton(ctx.tabB.mounted[0]!.target, "Check payment status");
 
     const returnA = ctx.tabA.takeFirstEvent()!;
     const returnB = ctx.tabB.takeFirstEvent()!;
@@ -517,7 +517,7 @@ test("AC7 — Concurrent payment verification creates at most one Booking Contra
     ctx.tabA.clickButton(ctx.tabA.mounted[1]!.target, "Request to Book");
     const draftRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(draftRes.body.surfaces[0]!.surfaceId, draftRes.body.surfaces[0]!.a2uiMessages);
-    ctx.tabA.clickButton(ctx.tabA.mounted[2]!.target, "Review Request");
+    ctx.tabA.clickButton(ctx.tabA.mounted[2]!.target, "Review request");
     const reviewRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(reviewRes.body.surfaces[0]!.surfaceId, reviewRes.body.surfaces[0]!.a2uiMessages);
     ctx.tabA.clickButton(ctx.tabA.mounted[3]!.target, "Submit Booking Request");
@@ -534,12 +534,12 @@ test("AC7 — Concurrent payment verification creates at most one Booking Contra
     ctx.tabA.clickButton(ctx.tabA.mounted[4]!.target, "Accept");
     const paymentReadyRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(paymentReadyRes.body.surfaces[0]!.surfaceId, paymentReadyRes.body.surfaces[0]!.a2uiMessages);
-    ctx.tabA.clickButton(ctx.tabA.mounted[5]!.target, "Start secure checkout");
+    ctx.tabA.clickButton(ctx.tabA.mounted[5]!.target, "Continue to checkout");
     const handoffRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
 
     // Verify stay payment
     ctx.tabA.mountSurface(handoffRes.body.surfaces[0]!.surfaceId, handoffRes.body.surfaces[0]!.a2uiMessages);
-    ctx.tabA.clickButton(ctx.tabA.mounted[6]!.target, "I have returned from secure checkout");
+    ctx.tabA.clickButton(ctx.tabA.mounted[6]!.target, "Check payment status");
     const depositReadyRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
 
     // Initialize deposit checkout
@@ -551,8 +551,8 @@ test("AC7 — Concurrent payment verification creates at most one Booking Contra
     ctx.tabA.mountSurface(depositHandoffSurface.surfaceId, depositHandoffSurface.a2uiMessages);
     ctx.tabB.mountSurface(depositHandoffSurface.surfaceId, depositHandoffSurface.a2uiMessages);
 
-    ctx.tabA.clickButton(ctx.tabA.mounted[8]!.target, "I have returned from secure checkout");
-    ctx.tabB.clickButton(ctx.tabB.mounted[0]!.target, "I have returned from secure checkout");
+    ctx.tabA.clickButton(ctx.tabA.mounted[8]!.target, "Check payment status");
+    ctx.tabB.clickButton(ctx.tabB.mounted[0]!.target, "Check payment status");
 
     const [resA, resB] = await Promise.all([
       ctx.send("/api/event", ctx.tabA.takeFirstEvent()!),
@@ -617,7 +617,7 @@ test("AC9 — An expired action from another tab fails closed", async () => {
     ctx.tabA.clickButton(ctx.tabA.mounted[1]!.target, "Request to Book");
     const draftRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(draftRes.body.surfaces[0]!.surfaceId, draftRes.body.surfaces[0]!.a2uiMessages);
-    ctx.tabA.clickButton(ctx.tabA.mounted[2]!.target, "Review Request");
+    ctx.tabA.clickButton(ctx.tabA.mounted[2]!.target, "Review request");
     const reviewRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(reviewRes.body.surfaces[0]!.surfaceId, reviewRes.body.surfaces[0]!.a2uiMessages);
     ctx.tabA.clickButton(ctx.tabA.mounted[3]!.target, "Submit Booking Request");
@@ -689,7 +689,7 @@ test("AC10 — A stale tab restores the latest authoritative server projection",
 
     // Tab B can now mount the restored surface and proceed safely
     ctx.tabB.mountSurface(restored.surfaces[0]!.surfaceId, restored.surfaces[0]!.a2uiMessages);
-    assert.ok(ctx.tabB.mounted[1]!.target.textContent?.includes("Inventory is not reserved"));
+    assert.match(ctx.tabB.mounted[1]!.target.textContent ?? "", /inventory is not reserved/i);
   } finally {
     await ctx.close();
   }
@@ -709,7 +709,7 @@ test("AC11 — A losing stale action does not damage winning authoritative state
     ctx.tabA.clickButton(ctx.tabA.mounted[1]!.target, "Request to Book");
     const draftRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(draftRes.body.surfaces[0]!.surfaceId, draftRes.body.surfaces[0]!.a2uiMessages);
-    ctx.tabA.clickButton(ctx.tabA.mounted[2]!.target, "Review Request");
+    ctx.tabA.clickButton(ctx.tabA.mounted[2]!.target, "Review request");
     const reviewRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     const reviewSurface = reviewRes.body.surfaces[0] as GuestSurfacePayload;
 
@@ -754,7 +754,7 @@ test("AC12 — Cross-tab request races do not duplicate inventory commitments", 
     ctx.tabA.clickButton(ctx.tabA.mounted[1]!.target, "Request to Book");
     const draftRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(draftRes.body.surfaces[0]!.surfaceId, draftRes.body.surfaces[0]!.a2uiMessages);
-    ctx.tabA.clickButton(ctx.tabA.mounted[2]!.target, "Review Request");
+    ctx.tabA.clickButton(ctx.tabA.mounted[2]!.target, "Review request");
     const reviewRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     const reviewSurface = reviewRes.body.surfaces[0] as GuestSurfacePayload;
 
@@ -801,7 +801,7 @@ test("AC13 — Cross-tab payment races do not reset the Payment Window", async (
     ctx.tabA.clickButton(ctx.tabA.mounted[1]!.target, "Request to Book");
     const draftRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(draftRes.body.surfaces[0]!.surfaceId, draftRes.body.surfaces[0]!.a2uiMessages);
-    ctx.tabA.clickButton(ctx.tabA.mounted[2]!.target, "Review Request");
+    ctx.tabA.clickButton(ctx.tabA.mounted[2]!.target, "Review request");
     const reviewRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(reviewRes.body.surfaces[0]!.surfaceId, reviewRes.body.surfaces[0]!.a2uiMessages);
     ctx.tabA.clickButton(ctx.tabA.mounted[3]!.target, "Submit Booking Request");
@@ -828,8 +828,8 @@ test("AC13 — Cross-tab payment races do not reset the Payment Window", async (
     ctx.tabA.mountSurface(paymentReadySurface.surfaceId, paymentReadySurface.a2uiMessages);
     ctx.tabB.mountSurface(paymentReadySurface.surfaceId, paymentReadySurface.a2uiMessages);
 
-    ctx.tabA.clickButton(ctx.tabA.mounted[5]!.target, "Start secure checkout");
-    ctx.tabB.clickButton(ctx.tabB.mounted[0]!.target, "Start secure checkout");
+    ctx.tabA.clickButton(ctx.tabA.mounted[5]!.target, "Continue to checkout");
+    ctx.tabB.clickButton(ctx.tabB.mounted[0]!.target, "Continue to checkout");
 
     await Promise.all([
       ctx.send("/api/event", ctx.tabA.takeFirstEvent()!),
@@ -939,7 +939,7 @@ test("AC16 — Server restart with two tabs does not replay consequential comman
     ctx.tabA.clickButton(ctx.tabA.mounted[1]!.target, "Request to Book");
     const draftRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(draftRes.body.surfaces[0]!.surfaceId, draftRes.body.surfaces[0]!.a2uiMessages);
-    ctx.tabA.clickButton(ctx.tabA.mounted[2]!.target, "Review Request");
+    ctx.tabA.clickButton(ctx.tabA.mounted[2]!.target, "Review request");
     const reviewRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(reviewRes.body.surfaces[0]!.surfaceId, reviewRes.body.surfaces[0]!.a2uiMessages);
     ctx.tabA.clickButton(ctx.tabA.mounted[3]!.target, "Submit Booking Request");
@@ -1001,7 +1001,7 @@ test("AC17 — Browser coordination is not required for domain correctness", asy
     ctx.tabA.clickButton(ctx.tabA.mounted[1]!.target, "Request to Book");
     const draftRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(draftRes.body.surfaces[0]!.surfaceId, draftRes.body.surfaces[0]!.a2uiMessages);
-    ctx.tabA.clickButton(ctx.tabA.mounted[2]!.target, "Review Request");
+    ctx.tabA.clickButton(ctx.tabA.mounted[2]!.target, "Review request");
     const reviewRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     const reviewSurface = reviewRes.body.surfaces[0] as GuestSurfacePayload;
 
