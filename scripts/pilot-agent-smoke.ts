@@ -1,12 +1,28 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { GoogleGenAI } from "@google/genai";
 import type { A2UIServerMessage } from "@weaver/core";
 import type { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import type { AssistantDiagnosticEvent } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import type { AssistantConversationStep } from "../apps/local-guest/src/assistant/assistant-model.js";
+import {
+  DEFAULT_PROVIDER_REQUEST_BUDGET_PER_JOURNEY,
+  ProviderRequestBudget,
+  parsePilotAgentSmokeRuns,
+  providerStopReason as getProviderStopReason,
+} from "./pilot-agent-smoke-budget.js";
 
 const reportDirectory = resolve(".scratch/pilot-agent-smoke");
 const model = process.env.GEMINI_MODEL?.trim() || "gemini-3.8-flash";
 const credential = process.env.GEMINI_API_KEY;
+const configuredJourneys = parsePilotAgentSmokeRuns(process.argv.slice(2), process.env.PILOT_AGENT_SMOKE_RUNS);
+const requestBudget = new ProviderRequestBudget(configuredJourneys, DEFAULT_PROVIDER_REQUEST_BUDGET_PER_JOURNEY);
+const providerRequestsPerTurn: ProviderTurnUsage[] = [];
+let activeProviderTurn: ActiveProviderTurn | null = null;
+let budgetExceeded = false;
+let rateLimitOccurred = false;
+let journeysAttempted = 0;
+let providerStopClassification: "PROVIDER_RATE_LIMITED" | "PROVIDER_REQUEST_BUDGET_EXCEEDED" | null = null;
 
 interface ScenarioReport {
   readonly scenario: string;
@@ -14,8 +30,20 @@ interface ScenarioReport {
   readonly surfaceSelected: string | null;
   readonly authoritativeEntities: readonly string[];
   readonly semanticResult: "PASS" | "FAIL" | "NOT_RUN";
-  readonly failureClassification?: "PROVIDER_TRANSPORT_FAILURE" | "MODEL_SELECTION_FAILURE" | "INVALID_TOOL_FOR_STATE" | "APPLICATION_OPERATION_FAILURE" | "PROJECTION_FAILURE" | "A2UI_FAILURE" | "WEAVER_FAILURE" | "FABRICATION_FAILURE" | "AUTHORITY_FAILURE";
+  readonly failureClassification?: "PROVIDER_RATE_LIMITED" | "PROVIDER_REQUEST_BUDGET_EXCEEDED" | "PROVIDER_TRANSPORT_FAILURE" | "MODEL_SELECTION_FAILURE" | "INVALID_TOOL_FOR_STATE" | "APPLICATION_OPERATION_FAILURE" | "PROJECTION_FAILURE" | "A2UI_FAILURE" | "WEAVER_FAILURE" | "FABRICATION_FAILURE" | "AUTHORITY_FAILURE";
   readonly note?: string;
+}
+
+interface ProviderTurnUsage {
+  readonly journey: number;
+  readonly turn: string;
+  readonly providerRequests: number;
+}
+
+interface ActiveProviderTurn {
+  readonly journey: number;
+  readonly turn: string;
+  providerRequests: number;
 }
 
 const scenarios = [
@@ -25,7 +53,7 @@ const scenarios = [
   "booking intent",
 ];
 
-async function writeReports(result: "NOT_RUN" | "PASS" | "FAIL", entries: readonly ScenarioReport[], note: string): Promise<void> {
+async function writeReports(result: "NOT_RUN" | "PASS" | "FAIL", entries: readonly ScenarioReport[], note: string, journeysAttempted: number): Promise<void> {
   await mkdir(reportDirectory, { recursive: true });
   const report = {
     generatedAt: new Date().toISOString(),
@@ -33,6 +61,17 @@ async function writeReports(result: "NOT_RUN" | "PASS" | "FAIL", entries: readon
     model,
     result,
     credentialConfigured: Boolean(credential),
+    configuredJourneyCount: configuredJourneys,
+    journeysActuallyAttempted: journeysAttempted,
+    totalGeminiProviderRequests: requestBudget.totalRequests,
+    providerRequestsPerTurn,
+    providerRequestBudget: {
+      perJourney: requestBudget.maxRequestsPerJourney,
+      total: requestBudget.maxRequests,
+    },
+    providerRequestBudgetExceeded: budgetExceeded,
+    rateLimitOccurred,
+    providerStopClassification,
     scenarios: entries,
     note,
   };
@@ -44,6 +83,14 @@ async function writeReports(result: "NOT_RUN" | "PASS" | "FAIL", entries: readon
     `- Model: ${model}`,
     `- Result: ${result}`,
     `- Credential configured: ${Boolean(credential)}`,
+    `- Configured journeys: ${configuredJourneys}`,
+    `- Journeys actually attempted: ${journeysAttempted}`,
+    `- Total Gemini provider requests: ${requestBudget.totalRequests}`,
+    `- Provider requests per turn: ${providerRequestsPerTurn.map((usage) => `journey ${usage.journey} ${usage.turn}=${usage.providerRequests}`).join(", ") || "none"}`,
+    `- Provider request budget: ${requestBudget.maxRequests} total (${requestBudget.maxRequestsPerJourney} per journey)`,
+    `- Provider request budget exceeded: ${budgetExceeded}`,
+    `- HTTP 429 occurred: ${rateLimitOccurred}`,
+    `- Provider stop classification: ${providerStopClassification ?? "none"}`,
     `- Note: ${note}`,
     "",
     "| Scenario | Operation | Surface | Authoritative entities | Result | Classification |",
@@ -57,14 +104,15 @@ async function writeReports(result: "NOT_RUN" | "PASS" | "FAIL", entries: readon
 }
 
 if (!credential) {
-  const entries: ScenarioReport[] = scenarios.map((scenario) => ({
-    scenario,
-    selectedApplicationOperation: null,
-    surfaceSelected: null,
-    authoritativeEntities: [],
-    semanticResult: "NOT_RUN",
-  }));
-  await writeReports("NOT_RUN", entries, "Live-agent smoke not run — credentials unavailable");
+  const entries: ScenarioReport[] = Array.from({ length: configuredJourneys }, (_, index) =>
+    scenarios.map((scenario) => ({
+      scenario: `run ${index + 1} ${scenario}`,
+      selectedApplicationOperation: null,
+      surfaceSelected: null,
+      authoritativeEntities: [],
+      semanticResult: "NOT_RUN" as const,
+    }))).flat();
+  await writeReports("NOT_RUN", entries, "Live-agent smoke not run — credentials unavailable", journeysAttempted);
   console.log("Live-agent smoke not run — credentials unavailable");
 } else {
   const [fixtureModule, runtimeModule, modelModule, pilotModule, shortletModule] = await Promise.all([
@@ -108,8 +156,29 @@ if (!credential) {
       seedRepresentativeGrant: false,
       clock: localPilotClock(paths),
     });
-    const modelClient = new GeminiInteractionsClient({ apiKey: credential, model });
-    for (let run = 1; run <= 3; run++) {
+    const googleAi = new GoogleGenAI({ apiKey: credential });
+    const modelClient = new GeminiInteractionsClient({
+      apiKey: credential,
+      model,
+      customAi: {
+        interactions: {
+          create: async (params, options) => {
+            const currentTurn = activeProviderTurn;
+            if (!currentTurn || !requestBudget.reserve(currentTurn.journey)) {
+              budgetExceeded = true;
+              throw new ProviderRequestBudgetExceededError();
+            }
+            currentTurn.providerRequests++;
+            return googleAi.interactions.create(
+              { ...params, stream: false },
+              { ...options, maxRetries: 0 },
+            );
+          },
+        },
+      },
+    });
+    journeyLoop: for (let run = 1; run <= configuredJourneys; run++) {
+      journeysAttempted++;
       let turnDiagnostics: AssistantDiagnosticEvent[] = [];
       const runtime = new AssistantRuntime(environment, modelClient, {
         onDiagnostic: (event: AssistantDiagnosticEvent) => {
@@ -118,8 +187,18 @@ if (!credential) {
       });
       const threadId = `g-live-smoke-${run}`;
       const runEntries: ScenarioReport[] = [];
+      const invokeTurn = async (turn: string, text: string) => {
+        const usage: ActiveProviderTurn = { journey: run, turn, providerRequests: 0 };
+        activeProviderTurn = usage;
+        try {
+          return await runtime.handleTurn(threadId, text);
+        } finally {
+          providerRequestsPerTurn.push({ journey: run, turn, providerRequests: usage.providerRequests });
+          activeProviderTurn = null;
+        }
+      };
       turnDiagnostics = [];
-      const first = await runtime.handleTurn(threadId, "Show me apartments in Wuse 2.");
+      const first = await invokeTurn("discovery", "Show me apartments in Wuse 2.");
       const discoveryDiagnostics = [...turnDiagnostics];
       const discoveryOperation = successfulOperation(discoveryDiagnostics);
       const thread = runtime.getThread(threadId);
@@ -141,21 +220,31 @@ if (!credential) {
       });
       const discoveryContextValid = thread.taskState.stayIntent.location === "Abuja"
         && thread.taskState.stayIntent.neighbourhood === "Wuse 2";
+      const discoveryArtifactPresent = Boolean(thread.discoveryArtifactId
+        && first.surfaces?.[0]?.surfaceId.endsWith(thread.discoveryArtifactId));
       const discoveryRender = await anyRenderable(first.surfaces ?? []);
       const discoveryFabricated = hasUnsupportedPriceOrConfirmation(first.messages ?? [], discovered.map((stay) => [stay.nightlyKobo, stay.allInStayTotalKobo, stay.refundableSecurityDepositKobo]));
+      const discoveryStopReason = providerStopReason(discoveryDiagnostics, budgetExceeded);
+      if (discoveryStopReason === "PROVIDER_RATE_LIMITED") rateLimitOccurred = true;
       runEntries.push({
         scenario: `run ${run} discovery`,
         selectedApplicationOperation: discoveryOperation,
         surfaceSelected: first.surfaces?.[0]?.surfaceId ?? null,
         authoritativeEntities: discovered.map((stay) => stay.unitId),
-        semanticResult: first.ok && discoveryOperation === "search_stays" && discoveryContextValid && discovered.length > 0 && validUnits && pricesAreAuthoritative && discoveryRender.ok && !discoveryFabricated ? "PASS" : "FAIL",
-        ...(!(first.ok && discoveryOperation === "search_stays" && discoveryContextValid && discovered.length > 0 && validUnits && pricesAreAuthoritative && discoveryRender.ok && !discoveryFabricated) ? { failureClassification: classifyFailure(discoveryDiagnostics, discoveryRender.ok ? undefined : discoveryRender.failureClass, discoveryFabricated) } : {}),
-        note: `Wuse 2 filters=${discoveryContextValid}; authoritative units=${discovered.length}; entity=${validUnits}; displayed prices=${pricesAreAuthoritative}; fabrication=${discoveryFabricated}; render=${discoveryRender.ok ? "PASS" : discoveryRender.failureClass}; diagnostics=${diagnosticSummary(discoveryDiagnostics)}`,
+        semanticResult: first.ok && discoveryOperation === "search_stays" && discoveryContextValid && discovered.length > 0 && validUnits && discoveryArtifactPresent && pricesAreAuthoritative && discoveryRender.ok && !discoveryFabricated ? "PASS" : "FAIL",
+        ...(!(first.ok && discoveryOperation === "search_stays" && discoveryContextValid && discovered.length > 0 && validUnits && discoveryArtifactPresent && pricesAreAuthoritative && discoveryRender.ok && !discoveryFabricated) ? { failureClassification: classifyFailure(discoveryDiagnostics, discoveryRender.ok ? undefined : discoveryRender.failureClass, discoveryFabricated, discoveryStopReason) } : {}),
+        note: `Wuse 2 filters=${discoveryContextValid}; authoritative units=${discovered.length}; entity=${validUnits}; InteractionArtifact=${discoveryArtifactPresent}; displayed prices=${pricesAreAuthoritative}; fabrication=${discoveryFabricated}; render=${discoveryRender.ok ? "PASS" : discoveryRender.failureClass}; diagnostics=${diagnosticSummary(discoveryDiagnostics)}`,
       });
+      if (discoveryStopReason) {
+        providerStopClassification = discoveryStopReason;
+        errors.push(`run ${run} stopped: ${discoveryStopReason}`);
+        reports.push(...runEntries, ...notRunScenarios(run, scenarios.slice(1), discoveryStopReason, providerRequestsPerTurn));
+        break journeyLoop;
+      }
 
       const priorIds = new Set(discovered.map((stay) => stay.unitId));
       turnDiagnostics = [];
-      const refinement = await runtime.handleTurn(threadId, "Only show me two-bedroom apartments.");
+      const refinement = await invokeTurn("refinement", "Only show me two-bedroom apartments.");
       const refinementDiagnostics = [...turnDiagnostics];
       const refinementOperation = successfulOperation(refinementDiagnostics);
       const refined = runtime.getThread(threadId);
@@ -167,21 +256,32 @@ if (!credential) {
       const refinementFabricated = hasUnsupportedPriceOrConfirmation(refinement.messages ?? [], refined.taskState.shortlist.map((stay) => [stay.nightlyKobo, stay.allInStayTotalKobo, stay.refundableSecurityDepositKobo]));
       const refinementPresentation = JSON.stringify(refinement.surfaces?.[0]?.a2uiMessages ?? []);
       const refinedPricesAuthoritative = refined.taskState.shortlist.every((stay) => refinementPresentation.includes(formatNairaKobo(stay.allInStayTotalKobo ?? stay.nightlyKobo)));
+      const refinementRender = await anyRenderable(refinement.surfaces ?? []);
+      const refinementStopReason = providerStopReason(refinementDiagnostics, budgetExceeded);
+      if (refinementStopReason === "PROVIDER_RATE_LIMITED") rateLimitOccurred = true;
       runEntries.push({
         scenario: `run ${run} refinement`,
         selectedApplicationOperation: refinementOperation,
         surfaceSelected: refinement.surfaces?.[0]?.surfaceId ?? null,
         authoritativeEntities: refinedIds,
-        semanticResult: refinement.ok && refinementOperation === "search_stays" && refinementValid && refinedPricesAuthoritative && !refinementFabricated ? "PASS" : "FAIL",
-        ...(!(refinement.ok && refinementOperation === "search_stays" && refinementValid && refinedPricesAuthoritative && !refinementFabricated) ? { failureClassification: classifyFailure(refinementDiagnostics, refinement.surfaces?.length ? undefined : "PROJECTION_FAILURE", refinementFabricated) } : {}),
-        note: `Wuse 2 context preserved=${refined.taskState.stayIntent.location === "Abuja" && refined.taskState.stayIntent.neighbourhood === "Wuse 2"}; refined IDs and prices are authoritative; prior results=${priorIds.size}; fabrication=${refinementFabricated}; diagnostics=${diagnosticSummary(refinementDiagnostics)}`,
+        semanticResult: refinement.ok && refinementOperation === "search_stays" && refinementValid && refinedPricesAuthoritative && refinementRender.ok && !refinementFabricated ? "PASS" : "FAIL",
+        ...(!(refinement.ok && refinementOperation === "search_stays" && refinementValid && refinedPricesAuthoritative && refinementRender.ok && !refinementFabricated) ? { failureClassification: classifyFailure(refinementDiagnostics, refinementRender.ok ? undefined : refinementRender.failureClass, refinementFabricated, refinementStopReason) } : {}),
+        note: `Wuse 2 context preserved=${refined.taskState.stayIntent.location === "Abuja" && refined.taskState.stayIntent.neighbourhood === "Wuse 2"}; refined IDs and prices are authoritative; prior results=${priorIds.size}; zero-result projection valid=${refinedIds.length > 0 || (refinement.surfaces?.length === 1 && refinementRender.ok)}; fabrication=${refinementFabricated}; render=${refinementRender.ok ? "PASS" : refinementRender.failureClass}; diagnostics=${diagnosticSummary(refinementDiagnostics)}`,
       });
+      if (refinementStopReason) {
+        providerStopClassification = refinementStopReason;
+        errors.push(`run ${run} stopped: ${refinementStopReason}`);
+        reports.push(...runEntries, ...notRunScenarios(run, scenarios.slice(2), refinementStopReason, providerRequestsPerTurn));
+        break journeyLoop;
+      }
 
       turnDiagnostics = [];
-      const inspection = await runtime.handleTurn(threadId, "Open the first one.");
+      const inspectionHistoryStart = runtime.getThread(threadId).conversationHistory.length;
+      const inspection = await invokeTurn("unit inspection", "Open the first one.");
       const inspectionDiagnostics = [...turnDiagnostics];
       const inspectionOperation = successfulOperation(inspectionDiagnostics);
       const selected = refined.taskState.shortlist[0];
+      const inspectionToolResult = latestToolResult(runtime.getThread(threadId).conversationHistory, "get_unit_details", inspectionHistoryStart);
       const detailRender = await anyRenderable(inspection.surfaces ?? []);
       const detailMessages = JSON.stringify(inspection.surfaces?.[0]?.a2uiMessages ?? []);
       const selectedUnit = selected ? environment.unitRepository.findById(selected.unitId) : null;
@@ -189,44 +289,76 @@ if (!credential) {
         ? createStayQuote({ unit: selectedUnit, checkIn: environment.config.demoCheckIn, checkOut: environment.config.demoCheckOut, partySize: 1, clock: environment.clock })
         : null;
       const detailFactsPreserved = Boolean(selected)
+        && inspectionToolResult?.stayRef === selected!.stayRef
         && detailMessages.includes(selected!.title)
         && detailMessages.includes(selected!.neighbourhood)
         && detailMessages.includes(selected!.city)
         && Boolean(detailQuote && detailMessages.includes(formatNairaKobo(detailQuote.allInStayTotalKobo)));
       const detailFabricated = hasUnsupportedPriceOrConfirmation(inspection.messages ?? [], selected ? [[selected.nightlyKobo, selected.allInStayTotalKobo, selected.refundableSecurityDepositKobo]] : []);
+      const inspectionStopReason = providerStopReason(inspectionDiagnostics, budgetExceeded);
+      if (inspectionStopReason === "PROVIDER_RATE_LIMITED") rateLimitOccurred = true;
       runEntries.push({
         scenario: `run ${run} Unit inspection`,
         selectedApplicationOperation: inspectionOperation,
         surfaceSelected: inspection.surfaces?.[0]?.surfaceId ?? null,
         authoritativeEntities: selected ? [selected.unitId] : [],
         semanticResult: inspection.ok && inspectionOperation === "get_unit_details" && detailFactsPreserved && detailRender.ok && !detailFabricated ? "PASS" : "FAIL",
-        ...(!(inspection.ok && inspectionOperation === "get_unit_details" && selected && detailFactsPreserved && detailRender.ok && !detailFabricated) ? { failureClassification: classifyFailure(inspectionDiagnostics, inspectionRenderFailure(inspection.surfaces?.length ?? 0, detailRender), detailFabricated) } : {}),
+        ...(!(inspection.ok && inspectionOperation === "get_unit_details" && selected && detailFactsPreserved && detailRender.ok && !detailFabricated) ? { failureClassification: classifyFailure(inspectionDiagnostics, inspectionRenderFailure(inspection.surfaces?.length ?? 0, detailRender), detailFabricated, inspectionStopReason) } : {}),
         note: `selected from current shortlist=${Boolean(selected)}; authoritative detail facts=${detailFactsPreserved}; fabrication=${detailFabricated}; render=${detailRender.ok ? "PASS" : detailRender.failureClass}; diagnostics=${diagnosticSummary(inspectionDiagnostics)}`,
       });
+      if (inspectionStopReason) {
+        providerStopClassification = inspectionStopReason;
+        errors.push(`run ${run} stopped: ${inspectionStopReason}`);
+        reports.push(...runEntries, ...notRunScenarios(run, scenarios.slice(3), inspectionStopReason, providerRequestsPerTurn));
+        break journeyLoop;
+      }
 
       turnDiagnostics = [];
-      const booking = await runtime.handleTurn(threadId, "I want to book this apartment for two nights for two guests.");
+      const bookingHistoryStart = runtime.getThread(threadId).conversationHistory.length;
+      const booking = await invokeTurn("booking intent", "I want to book this apartment for two nights for two guests.");
       const bookingDiagnostics = [...turnDiagnostics];
       const bookingOperation = successfulOperation(bookingDiagnostics);
-      const bookingState = runtime.getThread(threadId).taskState;
+      const bookingThread = runtime.getThread(threadId);
+      const bookingState = bookingThread.taskState;
       const hasDraft = Boolean(bookingState.currentDraftId);
       const bookingSurface = JSON.stringify(booking.surfaces?.[0]?.a2uiMessages ?? []);
       const guestActionRequired = bookingSurface.includes("shortlet.request-draft.review")
         && !bookingSurface.includes("shortlet.request-draft.submit");
+      const bookingToolResult = latestToolResult(bookingThread.conversationHistory, "prepare_request_draft", bookingHistoryStart);
+      const availabilityRechecked = bookingToolResult?.operation === "request_draft.create"
+        && bookingToolResult.created === true
+        && bookingToolResult.availabilityChecked === true
+        && bookingToolResult.inventoryReserved === false;
+      const bookingCheckIn = refined.taskState.stayIntent.checkIn ?? environment.config.demoCheckIn;
+      const bookingCheckOutDate = new Date(`${bookingCheckIn}T00:00:00Z`);
+      bookingCheckOutDate.setUTCDate(bookingCheckOutDate.getUTCDate() + 2);
+      const bookingCheckOut = bookingCheckOutDate.toISOString().slice(0, 10);
+      const bookingQuote = selectedUnit
+        ? createStayQuote({ unit: selectedUnit, checkIn: bookingCheckIn, checkOut: bookingCheckOut, partySize: 2, clock: environment.clock })
+        : null;
+      const bookingPriceAuthoritative = Boolean(bookingQuote && bookingSurface.includes(formatNairaKobo(bookingQuote.allInStayTotalKobo)));
       const noSubmission = !bookingState.currentBookingRequestId && !bookingState.pendingAction;
       const noDownstreamState = !bookingState.currentOfferId && !bookingState.currentReservationId && !bookingState.currentContractId
         && !bookingDiagnostics.some((event) => event.toolName === "propose_accept_offer" || event.toolName === "propose_start_payment");
       const draftRender = await anyRenderable(booking.surfaces ?? []);
       const bookingFabricated = hasUnsupportedPriceOrConfirmation(booking.messages ?? [], selected ? [[selected.nightlyKobo, selected.allInStayTotalKobo, selected.refundableSecurityDepositKobo]] : []);
+      const bookingStopReason = providerStopReason(bookingDiagnostics, budgetExceeded);
+      if (bookingStopReason === "PROVIDER_RATE_LIMITED") rateLimitOccurred = true;
       runEntries.push({
         scenario: `run ${run} booking intent`,
         selectedApplicationOperation: bookingOperation,
         surfaceSelected: booking.surfaces?.[0]?.surfaceId ?? null,
         authoritativeEntities: selected ? [selected.unitId] : [],
-        semanticResult: booking.ok && bookingOperation === "prepare_request_draft" && hasDraft && guestActionRequired && noSubmission && noDownstreamState && draftRender.ok && !bookingFabricated ? "PASS" : "FAIL",
-        ...(!(booking.ok && bookingOperation === "prepare_request_draft" && hasDraft && guestActionRequired && noSubmission && noDownstreamState && draftRender.ok && !bookingFabricated) ? { failureClassification: classifyFailure(bookingDiagnostics, inspectionRenderFailure(booking.surfaces?.length ?? 0, draftRender), bookingFabricated) } : {}),
-        note: `Request Draft=${hasDraft}; availability rechecked=${hasDraft}; Guest review action=${guestActionRequired}; no submission=${noSubmission}; no offer/reservation/contract/payment ops=${noDownstreamState}; false confirmation/pricing=${bookingFabricated}; render=${draftRender.ok ? "PASS" : draftRender.failureClass}; diagnostics=${diagnosticSummary(bookingDiagnostics)}.`,
+        semanticResult: booking.ok && bookingOperation === "prepare_request_draft" && hasDraft && availabilityRechecked && bookingPriceAuthoritative && guestActionRequired && noSubmission && noDownstreamState && draftRender.ok && !bookingFabricated ? "PASS" : "FAIL",
+        ...(!(booking.ok && bookingOperation === "prepare_request_draft" && hasDraft && availabilityRechecked && bookingPriceAuthoritative && guestActionRequired && noSubmission && noDownstreamState && draftRender.ok && !bookingFabricated) ? { failureClassification: classifyFailure(bookingDiagnostics, inspectionRenderFailure(booking.surfaces?.length ?? 0, draftRender), bookingFabricated, bookingStopReason) } : {}),
+        note: `Request Draft=${hasDraft}; availability rechecked=${availabilityRechecked}; application price intact=${bookingPriceAuthoritative}; Guest review action=${guestActionRequired}; no submission=${noSubmission}; no offer/reservation/contract/payment ops=${noDownstreamState}; false confirmation/pricing=${bookingFabricated}; render=${draftRender.ok ? "PASS" : draftRender.failureClass}; diagnostics=${diagnosticSummary(bookingDiagnostics)}.`,
       });
+      if (bookingStopReason) {
+        providerStopClassification = bookingStopReason;
+        errors.push(`run ${run} stopped: ${bookingStopReason}`);
+        reports.push(...runEntries);
+        break journeyLoop;
+      }
       reports.push(...runEntries);
       if (runEntries.some((entry) => entry.semanticResult === "FAIL")) errors.push(`run ${run} semantic assertion failed`);
     }
@@ -253,7 +385,7 @@ if (!credential) {
     }
   }
   const failed = errors.length > 0;
-  await writeReports(failed ? "FAIL" : "PASS", reports, failed ? errors.join("; ") : "All semantic assertions passed.");
+  await writeReports(failed ? "FAIL" : "PASS", reports, failed ? errors.join("; ") : "All semantic assertions passed.", journeysAttempted);
   if (failed) {
     console.error("Live-agent smoke failed; see .scratch/pilot-agent-smoke/agent-smoke-report.md");
     process.exitCode = 1;
@@ -297,6 +429,48 @@ function successfulOperation(diagnostics: readonly AssistantDiagnosticEvent[]): 
   return diagnostics.find((event) => event.stage === "application_operation" && event.succeeded && event.toolName)?.toolName ?? null;
 }
 
+function latestToolResult(history: readonly AssistantConversationStep[], name: string, startIndex: number): Record<string, unknown> | undefined {
+  for (let index = history.length - 1; index >= startIndex; index--) {
+    const step = history[index];
+    if (step?.role !== "tool_results") continue;
+    const result = step.results.find((candidate) => candidate.name === name)?.result;
+    if (result) return result;
+  }
+  return undefined;
+}
+
+function providerStopReason(
+  diagnostics: readonly AssistantDiagnosticEvent[],
+  didExceedBudget: boolean,
+): "PROVIDER_RATE_LIMITED" | "PROVIDER_REQUEST_BUDGET_EXCEEDED" | undefined {
+  const failedProviderRequest = diagnostics.find((event) => event.providerStatusCode !== undefined || event.errorClass !== undefined);
+  return getProviderStopReason({
+    providerStatusCode: failedProviderRequest?.providerStatusCode,
+    providerErrorClass: failedProviderRequest?.errorClass,
+    budgetExceeded: didExceedBudget,
+  });
+}
+
+function notRunScenarios(
+  journey: number,
+  remainingScenarios: readonly string[],
+  stopReason: "PROVIDER_RATE_LIMITED" | "PROVIDER_REQUEST_BUDGET_EXCEEDED",
+  usage: ProviderTurnUsage[],
+): ScenarioReport[] {
+  return remainingScenarios.map((scenario) => {
+    usage.push({ journey, turn: scenario, providerRequests: 0 });
+    return {
+      scenario: `run ${journey} ${scenario}`,
+      selectedApplicationOperation: null,
+      surfaceSelected: null,
+      authoritativeEntities: [],
+      semanticResult: "NOT_RUN",
+      failureClassification: stopReason,
+      note: `Not attempted after ${stopReason}.`,
+    };
+  });
+}
+
 function inspectionRenderFailure(
   surfaceCount: number,
   render: { readonly ok: true } | { readonly ok: false; readonly failureClass: RenderFailureClass },
@@ -309,7 +483,9 @@ function classifyFailure(
   diagnostics: readonly AssistantDiagnosticEvent[],
   presentationFailure: RenderFailureClass | undefined,
   fabricated: boolean,
+  providerStopReason?: "PROVIDER_RATE_LIMITED" | "PROVIDER_REQUEST_BUDGET_EXCEEDED",
 ): ScenarioReport["failureClassification"] {
+  if (providerStopReason) return providerStopReason;
   if (fabricated) return "FABRICATION_FAILURE";
   const failure = diagnostics.find((event) => !event.succeeded);
   if (failure?.failureClass) return failure.failureClass;
@@ -321,6 +497,13 @@ function classifyFailure(
 function diagnosticSummary(diagnostics: readonly AssistantDiagnosticEvent[]): string {
   if (diagnostics.length === 0) return "none";
   return diagnostics.map((event) => `${event.stage}:${event.succeeded ? "ok" : event.failureClass ?? "failed"}${event.toolName ? `:${event.toolName}` : ""}${event.errorClass ? `:${event.errorClass}` : ""}${event.providerStatusCode ? `:http${event.providerStatusCode}` : ""}${event.providerErrorCode ? `:${event.providerErrorCode}` : ""}`).join(",");
+}
+
+class ProviderRequestBudgetExceededError extends Error {
+  constructor() {
+    super("Live smoke provider request budget exhausted");
+    this.name = "ProviderRequestBudgetExceededError";
+  }
 }
 
 function hasUnsupportedPriceOrConfirmation(messages: readonly string[], priceGroups: readonly (readonly (number | null)[])[]): boolean {

@@ -46,7 +46,7 @@ If `CONCIERGE_MODE=gemini` is selected without `GEMINI_API_KEY`, startup fails c
 
 ## Optional local pilot live-agent smoke
 
-This explicit smoke is separate from `npm test`, `npm run check`, `npm run verify:weaver`, and `pilot:acceptance:rodney`. It uses the already-bootstrapped local pilot inventory and the existing Gemini `AssistantModelClient` adapter. It makes three short model runs; API usage may incur cost.
+This explicit smoke is separate from `npm test`, `npm run check`, `npm run verify:weaver`, and `pilot:acceptance:rodney`. It uses the already-bootstrapped local pilot inventory and the existing Gemini `AssistantModelClient` adapter. By default it makes one four-turn journey with a hard limit of 10 Gemini provider requests (two requests per turn plus two continuation calls); API usage may incur cost. The request count includes bounded connection retries.
 
 PowerShell:
 
@@ -56,7 +56,13 @@ $env:GEMINI_MODEL = "gemini-3.8-flash"
 npm run pilot:local:agent-smoke
 ```
 
-The command does not start or reset the pilot, and it does not submit a Booking Request or start payment. Without `GEMINI_API_KEY`, it exits successfully with `Live-agent smoke not run — credentials unavailable` and writes a `NOT_RUN` report. Runtime artifacts are written under `.scratch/pilot-agent-smoke/` and are ignored by Git. Reports contain semantic summaries only, not prompts, model prose, or credentials.
+Free-tier guidance: run one smoke journey, avoid repeated runs, and run the browser session only after the smoke succeeds. Use `--runs 3` only for deliberate variability testing; `PILOT_AGENT_SMOKE_RUNS=3` is also supported. A provider HTTP 429 stops the smoke immediately without another request. The command does not start or reset the pilot, and it does not submit a Booking Request or start payment. Without `GEMINI_API_KEY`, it exits successfully with `Live-agent smoke not run — credentials unavailable` and writes a `NOT_RUN` report. Runtime artifacts are written under `.scratch/pilot-agent-smoke/` and are ignored by Git. Reports include journey and per-turn request counts plus sanitized provider status, never prompts, model prose, authorization headers, or credentials.
+
+For deliberate variability testing only:
+
+```powershell
+npm run pilot:local:agent-smoke -- --runs 3
+```
 
 The live browser can use the same existing Guest interface and local inventory:
 
@@ -75,6 +81,8 @@ Then use the Guest conversation with these prompts, in order:
 4. `I want to book this apartment for two nights for two guests.`
 
 `GEMINI_API_KEY` remains server-side. The local pilot continues to use its local payment provider; this smoke stops after the non-submitting Request Draft, before Operator or payment workflows. Location-only discovery does not require invented dates or party details; availability is rechecked authoritatively when the Request Draft is prepared.
+
+The browser session is a separate, explicit validation step and is not launched by the smoke command. Start it only after the programmatic smoke succeeds; it makes its own Gemini requests.
 
 ## Journey stages
 
