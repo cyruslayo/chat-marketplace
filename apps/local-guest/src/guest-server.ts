@@ -62,7 +62,7 @@ import {
 } from "./guest-projection.js";
 import { hashSessionSecret } from "../../../domains/shortlet/src/index.js";
 import { DirectPaystackClient, isApprovedPaystackCheckoutUrl, loadPaystackConfiguration, type PaystackClient } from "../../../domains/shortlet/src/index.js";
-import { extractStayRequestFacts, formatGuestDay, mergeStayRequestContext, resolveStayRequestContext, type DiscoverySearchContext, type StayRequestFilters } from "./concierge.js";
+import { extractStayRequestFacts, formatGuestDay, mergeStayRequestContext, resolveStayRequestContext, unsupportedPreferenceNote, type DiscoverySearchContext, type StayRequestFilters } from "./concierge.js";
 import { handleGeminiTurn, type GeminiConciergeClient } from "./gemini-concierge.js";
 import type { Content } from "@google/genai";
 import { AssistantRuntime } from "./assistant/assistant-runtime.js";
@@ -289,25 +289,28 @@ export class LocalGuestApp {
     const facts = extractStayRequestFacts(text, { now: this.#environment.clock() });
     const merged = mergeStayRequestContext(previousContext, facts, text);
     thread.discoveryContext = merged.context;
+    // Issue 02 AC3: an unfilterable preference is acknowledged on every reply.
+    const note = unsupportedPreferenceNote(facts.unsupportedPreferences);
+    const acknowledged = (result: GuestTurnResult): GuestTurnResult => note !== undefined && result.ok ? { ...result, messages: [...result.messages, note] } : result;
     if (merged.conflict) {
       // A location conflict is intentionally surfaced. No search runs until the
       // Guest resolves it, and every other accumulated constraint is retained.
-      return { ok: true, messages: [merged.conflict.question], surfaces: [] };
+      return acknowledged({ ok: true, messages: [merged.conflict.question], surfaces: [] });
     }
     const resolution = resolveStayRequestContext(merged.context, { now: this.#environment.clock() });
     if (resolution.kind !== "search") {
       // Clarifications, date confirmations and limit refusals never run a search.
-      return { ok: true, messages: [resolution.reply], surfaces: [] };
+      return acknowledged({ ok: true, messages: [resolution.reply], surfaces: [] });
     }
 
-    const providedFacts = Object.keys(facts).length > 0 || merged.confirmedDates === true;
+    const providedFacts = Object.keys(facts).some((key) => key !== "unsupportedPreferences") || merged.confirmedDates === true;
     const resolvedConflict = previousContext?.pendingLocationChange !== undefined && merged.context.pendingLocationChange === undefined;
     if (!providedFacts && !resolvedConflict && thread.discoveryArtifact) {
       // An unrelated turn must not replace the current authoritative results.
-      return { ok: true, messages: ["Your current search results are still active. Tell me how you would like to refine them, for example: “Only show two-bedroom apartments”."], surfaces: [] };
+      return acknowledged({ ok: true, messages: ["Your current search results are still active. Tell me how you would like to refine them, for example: “Only show two-bedroom apartments”."], surfaces: [] });
     }
 
-    return this.#executeDiscovery(thread, resolution.filters);
+    return acknowledged(this.#executeDiscovery(thread, resolution.filters));
   }
 
   /**

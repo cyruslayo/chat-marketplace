@@ -87,6 +87,8 @@ export interface StayRequestFacts {
   readonly partySize?: number;
   readonly bedrooms?: number;
   readonly dates?: StayRequestDates;
+  /** Preferences the Guest asked for that discovery cannot filter by yet (issue 02 AC3). */
+  readonly unsupportedPreferences?: readonly string[];
 }
 
 export interface StayRequestConflict {
@@ -137,6 +139,24 @@ const AFFIRMATION_PATTERN = /^(?:yes|yeah|yep|yup|sure|ok|okay|okey|go ahead|do 
 const SOLO_PATTERN = /\b(?:just|only)\s+(?:me|myself)\b|\bby myself\b|\bon my own\b|\bsolo\b/i;
 const PAIR_PATTERN = /\b(?:me|myself)\s+and\s+my\s+(?:wife|husband|partner|girlfriend|boyfriend|fianc[eé]e?|friend|colleague|sister|brother|mum|mom|dad|son|daughter)\b|\bmy\s+(?:wife|husband|partner)\s+and\s+(?:i|me)\b|\b(?:a|as a)\s+couple\b|\b(?:the\s+)?two of us\b/i;
 
+// Preferences discovery cannot filter by yet. They are acknowledged, never
+// silently dropped and never applied (issue 02 AC3); area, dates, guests and
+// bedrooms are the only filterable criteria.
+const UNSUPPORTED_PREFERENCES: readonly { readonly pattern: RegExp; readonly label: string }[] = [
+  { pattern: /\b(quiet|peaceful)\b/i, label: "quiet" },
+  { pattern: /\b(?:swimming\s+)?pool\b/i, label: "pool" },
+  { pattern: /\bgym\b/i, label: "gym" },
+  { pattern: /\bparking\b/i, label: "parking" },
+  { pattern: /\b(?:wi-?fi|internet)\b/i, label: "Wi-Fi" },
+  { pattern: /\bbalcony\b/i, label: "balcony" },
+  { pattern: /\b(?:sea|ocean|lagoon|water)\s+view\b/i, label: "view" },
+  { pattern: /\bpets?\b|\bpet-friendly\b/i, label: "pets" },
+  { pattern: /\b(?:cheap|affordable|budget|luxury|luxurious)\b/i, label: "price level" },
+  { pattern: /\b(?:generator|24\/7 power|constant power|steady power)\b/i, label: "power backup" },
+  { pattern: /\bkitchen\b/i, label: "kitchen" },
+  { pattern: /\b(?:workspace|desk)\b/i, label: "workspace" },
+];
+
 const MONTHS: Readonly<Record<string, number>> = {
   jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3, apr: 4, april: 4, may: 5,
   jun: 6, june: 6, jul: 7, july: 7, aug: 8, august: 8, sep: 9, sept: 9, september: 9,
@@ -170,7 +190,8 @@ function weekdayOf(dateIso: string): number {
 
 /** "Fri 4 Sept 2026": every resolved date is shown back concretely (issue 01). */
 export function formatGuestDay(dateIso: string): string {
-  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", weekday: "short", day: "numeric", month: "short", year: "numeric" })
+  // ADR-0077: en-NG dates across channels.
+  const parts = new Intl.DateTimeFormat("en-NG", { timeZone: "UTC", weekday: "short", day: "numeric", month: "short", year: "numeric" })
     .formatToParts(new Date(`${dateIso}T00:00:00Z`));
   const part = (type: Intl.DateTimeFormatPartTypes): string => parts.find((candidate) => candidate.type === type)?.value ?? "";
   return `${part("weekday")} ${part("day")} ${part("month")} ${part("year")}`;
@@ -314,13 +335,23 @@ export function extractStayRequestFacts(text: string, options: { readonly now?: 
       : PAIR_PATTERN.test(normalized) ? 2 : undefined;
   const bedroomsToken = bedroomsMatch?.[1]?.toLowerCase();
   const bedrooms = bedroomsToken === undefined ? undefined : (BEDROOM_WORDS[bedroomsToken] ?? Number.parseInt(bedroomsToken, 10));
+  const unsupportedPreferences = UNSUPPORTED_PREFERENCES.filter((preference) => preference.pattern.test(normalized)).map((preference) => preference.label);
   return {
     ...(location === undefined ? {} : { location }),
     ...(nights === undefined || Number.isNaN(nights) || nights < 1 ? {} : { nights }),
     ...(partySize === undefined || Number.isNaN(partySize) || partySize < 1 ? {} : { partySize }),
     ...(bedrooms === undefined || Number.isNaN(bedrooms) || bedrooms < 1 ? {} : { bedrooms }),
     ...(dates === undefined ? {} : { dates }),
+    ...(unsupportedPreferences.length === 0 ? {} : { unsupportedPreferences }),
   };
+}
+
+/** Acknowledges preferences that cannot be applied, so nothing is silently dropped. */
+export function unsupportedPreferenceNote(labels: readonly string[] | undefined): string | undefined {
+  if (labels === undefined || labels.length === 0) return undefined;
+  const quoted = labels.map((label) => `“${label}”`);
+  const list = quoted.length === 1 ? quoted[0]! : `${quoted.slice(0, -1).join(", ")} or ${quoted.at(-1)}`;
+  return `I can't filter by ${list} yet, so ${labels.length === 1 ? "it isn't" : "they aren't"} applied to the search.`;
 }
 
 function locationMatches(candidate: StayRequestLocation | PendingLocationChange, target: { readonly city: string; readonly neighbourhood?: string }): boolean {
@@ -420,12 +451,30 @@ export function mergeStayRequestContext(
   return { context, ...(conflict === undefined ? {} : { conflict }), ...(confirmedDates ? { confirmedDates } : {}) };
 }
 
+/**
+ * Every criterion the server-owned context holds (ADR-0004), in guest words.
+ * Unconfirmed dates are marked as still to confirm.
+ */
+function knownCriteria(context: DiscoverySearchContext): string[] {
+  const criteria: string[] = [];
+  if (context.city !== undefined) criteria.push(context.neighbourhood === undefined ? context.city : `${context.neighbourhood}, ${context.city}`);
+  if (context.partySize !== undefined) criteria.push(`${context.partySize} ${context.partySize === 1 ? "guest" : "guests"}`);
+  if (context.checkIn !== undefined) {
+    const stay = context.nights === undefined
+      ? `arriving ${formatGuestDay(context.checkIn)}`
+      : `${formatGuestDay(context.checkIn)} to ${formatGuestDay(addCalendarDays(context.checkIn, context.nights))}`;
+    criteria.push(context.datesConfirmed === true ? stay : `${stay} (to confirm)`);
+  }
+  if (context.nights !== undefined) criteria.push(`${context.nights} ${context.nights === 1 ? "night" : "nights"}`);
+  if (context.bedrooms !== undefined) criteria.push(`${context.bedrooms} ${context.bedrooms === 1 ? "bedroom" : "bedrooms"}`);
+  return criteria;
+}
+
+/** Restates what is understood, then asks only for the next missing criterion (issue 02). */
 function clarifyReply(context: DiscoverySearchContext, missing: readonly string[]): string {
-  const known = context.city !== undefined || context.nights !== undefined || context.partySize !== undefined || context.checkIn !== undefined;
-  const ask = missing.length === 1
-    ? `Could you tell me ${missing[0]}?`
-    : `Could you tell me ${missing.slice(0, -1).join(", ")} and ${missing.at(-1)}?`;
-  return known ? `Thanks — I've kept what you've already told me. ${ask}` : `I can help you find a place. ${ask}`;
+  const criteria = knownCriteria(context);
+  const ask = `Could you tell me ${missing[0]}?`;
+  return criteria.length > 0 ? `So far I have: ${criteria.join(" · ")}. ${ask}` : `I can help you find a place. ${ask}`;
 }
 
 /**
@@ -462,10 +511,11 @@ export function resolveStayRequestContext(
     if (refusal !== undefined) return { kind: "refuse", reply: refusal };
   }
   const missing: string[] = [];
+  // Asked one at a time in this order: where, who, when, how long.
   if (city === undefined) missing.push("where you want to stay (for example: Ikoyi or Lekki, Lagos)");
+  if (partySize === undefined) missing.push("how many guests are staying");
   if (checkIn === undefined) missing.push("what date you arrive (for example: 10 Sept or this Friday)");
   if (nights === undefined) missing.push("how many nights you need");
-  if (partySize === undefined) missing.push("how many guests are staying");
   if (city === undefined || checkIn === undefined || nights === undefined || partySize === undefined) {
     return { kind: "clarify", missing, reply: clarifyReply(context, missing) };
   }

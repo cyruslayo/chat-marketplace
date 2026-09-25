@@ -285,7 +285,8 @@ test("Exact screenshot conversation — Lagos → 2 nights from 29 Sept and 2 gu
 
     const transcript = await guest.evaluate<string>("document.getElementById('transcript').innerText");
     const noRepeat = (transcript.match(/how many guests are staying/g) ?? []).length === 1
-      && (transcript.match(/how many nights you need/g) ?? []).length === 1;
+      // Issue 02 asks one criterion at a time; nights arrive before they are asked for.
+      && (transcript.match(/how many nights you need/g) ?? []).length <= 1;
     assert.equal(noRepeat, true, `known constraints must not be requested again: ${transcript}`);
     assert.equal((transcript.match(/where you want to stay/g) ?? []).length, 0);
 
