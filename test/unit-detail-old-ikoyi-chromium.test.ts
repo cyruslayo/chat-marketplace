@@ -80,7 +80,7 @@ test("Authoritative Old Ikoyi Unit detail renders through Weaver in real Chromiu
     await tab.waitForSelector("#composer-input");
 
     await sendPrompt(tab, "Lagos", "how many guests are staying");
-    await sendPrompt(tab, "2 nights and 2 guests", "Old Ikoyi");
+    await sendPrompt(tab, "2 nights from 29 Sept and 2 guests", "Old Ikoyi");
     await sendPrompt(tab, "Lekki", "Lekki Phase 1");
     const weaver = createWeaverWebHost();
 

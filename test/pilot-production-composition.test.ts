@@ -224,7 +224,9 @@ test("Production callback HTTP completion rehydrates the confirmed Reservation a
     const phone = await fetch(`${base}/guest/contact/phone`, { method: "POST", headers: { cookie: guestCookie, origin: PUBLIC_ORIGIN, "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ phoneNumber: "+2348090001111", expectedRevision: "0" }), redirect: "manual" });
     assert.equal(phone.status, 303);
     const threadId = `g-${crypto.randomUUID()}`;
-    let turn = await postJson(base, "/api/turn", guestCookie, { threadId, text: "I need an apartment in Lagos for 2 nights for 2 people" });
+    // Production runs on the live clock, so the explicit arrival date is a week from today (issue 01: dates are never assumed).
+    const arrival = new Date(Date.now() + 7 * 86_400_000).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "Africa/Lagos" });
+    let turn = await postJson(base, "/api/turn", guestCookie, { threadId, text: `I need an apartment in Lagos from ${arrival} for 2 nights for 2 people` });
     assert.equal(turn.status, 200);
     let action = surfaceAction(turn.body, "View apartment");
     turn.body = await guestEvent(base, guestCookie, threadId, action);

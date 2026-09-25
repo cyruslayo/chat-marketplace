@@ -28,7 +28,7 @@ test("AC1–AC8 — Guest discovery, Unit inspection, Request Draft, review, dis
   try {
     const app = new LocalGuestApp(environment);
     const threadId = "g-abcdefac1";
-    const discovery = await app.handleTurn(threadId, "I need an apartment in Ikoyi for 3 nights for 2 people");
+    const discovery = await app.handleTurn(threadId, "I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people");
     assert.equal(discovery.ok, true);
     if (!discovery.ok) return;
     const inspection = event(app, threadId, discovery.surfaces[0]!);
@@ -59,7 +59,7 @@ test("AC3: Retrying a command event does not create a second Booking Request", a
   try {
     const app = new LocalGuestApp(environment);
     const threadId = "g-abcdefac33";
-    let result = await app.handleTurn(threadId, "I need an apartment in Ikoyi for 3 nights for 2 people");
+    let result = await app.handleTurn(threadId, "I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people");
     assert.equal(result.ok, true); if (!result.ok) return;
     for (let step = 0; step < 3; step++) {
       result = app.handleEvent(threadId, firstAction(result.surfaces[0]!)) as Surface;
@@ -81,7 +81,7 @@ test("AC12–AC23 and AC37–AC39 — Operator confirmation, explicit offer acce
   try {
     const app = new LocalGuestApp(environment);
     const threadId = "g-abcdefac12";
-    let result = await app.handleTurn(threadId, "I need an apartment in Ikoyi for 3 nights for 2 people");
+    let result = await app.handleTurn(threadId, "I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people");
     assert.equal(result.ok, true); if (!result.ok) return;
     result = event(app, threadId, result.surfaces[0]!) as Surface;
     assert.equal(result.ok, true); if (!result.ok) return;
@@ -126,7 +126,7 @@ test("AC4, AC9–AC11, AC26–AC28, and AC34–AC36 — unverified guests can su
   try {
     const app = new LocalGuestApp(unverified);
     const threadId = "g-abcdefac4";
-    let result = await app.handleTurn(threadId, "I need an apartment in Ikoyi for 3 nights for 2 people");
+    let result = await app.handleTurn(threadId, "I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people");
     assert.equal(result.ok, true); if (!result.ok) return;
     const discovery = result.surfaces[0]!;
     result = app.handleEvent(threadId, firstAction(discovery)) as Surface;
@@ -147,7 +147,7 @@ test("AC4, AC9–AC11, AC26–AC28, and AC34–AC36 — unverified guests can su
   try {
     const app = new LocalGuestApp(timeoutEnvironment);
     const threadId = "g-abcdefac11";
-    let result = await app.handleTurn(threadId, "I need an apartment in Ikoyi for 3 nights for 2 people");
+    let result = await app.handleTurn(threadId, "I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people");
     assert.equal(result.ok, true); if (!result.ok) return;
     result = app.handleEvent(threadId, firstAction(result.surfaces[0]!)) as Surface;
     result = app.handleEvent(threadId, firstAction(result.surfaces[0]!)) as Surface;
@@ -177,7 +177,7 @@ test("AC9–AC11 — delivery failure, Operator decline, and Operator timeout re
     try {
       const app = new LocalGuestApp(environment);
       const threadId = `g-${scenario.name === "delivery" ? "deadbeef1" : scenario.name === "decline" ? "deadbeef2" : "deadbeef3"}`;
-      let result = await app.handleTurn(threadId, "I need an apartment in Ikoyi for 3 nights for 2 people");
+      let result = await app.handleTurn(threadId, "I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people");
       assert.equal(result.ok, true); if (!result.ok) continue;
       for (let step = 0; step < 4; step++) { result = app.handleEvent(threadId, firstAction(result.surfaces[0]!)) as Surface; assert.equal(result.ok, true); if (!result.ok) break; }
       if (!result.ok) continue;

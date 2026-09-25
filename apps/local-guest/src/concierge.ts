@@ -14,6 +14,8 @@
  * facts found in the latest message.
  */
 
+import { BOOKING_HORIZON_DAYS, MAX_STAY_NIGHTS, dateKeyInLagos } from "../../../domains/shortlet/src/index.js";
+
 export interface StayRequestFilters {
   readonly location: string;
   readonly neighbourhood?: string;
@@ -24,14 +26,11 @@ export interface StayRequestFilters {
   readonly bedrooms?: number;
 }
 
-export type StayRequestInterpretation =
-  | { readonly kind: "search"; readonly filters: StayRequestFilters }
-  | { readonly kind: "clarify"; readonly missing: readonly string[]; readonly reply: string };
+export type StayRequestInterpretation = StayRequestResolution;
 
 export interface ConciergeOptions {
-  readonly demoCheckIn: string;
-  /** Retained for callers that supplied the old fixed-date option; ignored. */
-  readonly demoCheckOut?: string;
+  /** The injected clock; every date phrase resolves against Africa/Lagos "today". */
+  readonly now: Date;
 }
 
 /** A location explicitly named by the Guest, with the phrase they used. */
@@ -65,6 +64,20 @@ export interface DiscoverySearchContext {
   readonly partySize?: number;
   readonly bedrooms?: number;
   readonly pendingLocationChange?: PendingLocationChange;
+  /** Arrival date (YYYY-MM-DD, Africa/Lagos). Never assumed; only given or confirmed. */
+  readonly checkIn?: string;
+  /** False while a resolved relative phrase ("this weekend") awaits the Guest's yes. */
+  readonly datesConfirmed?: boolean;
+}
+
+/**
+ * Dates understood from one message. `given` dates were typed as calendar
+ * dates; resolved relative phrases must be shown back and confirmed first.
+ */
+export interface StayRequestDates {
+  readonly checkIn: string;
+  readonly checkOut?: string;
+  readonly given: boolean;
 }
 
 /** Facts understood from a single Guest message. Every field is optional. */
@@ -73,6 +86,7 @@ export interface StayRequestFacts {
   readonly nights?: number;
   readonly partySize?: number;
   readonly bedrooms?: number;
+  readonly dates?: StayRequestDates;
 }
 
 export interface StayRequestConflict {
@@ -83,11 +97,17 @@ export interface StayRequestConflict {
 export interface StayRequestMergeOutcome {
   readonly context: DiscoverySearchContext;
   readonly conflict?: StayRequestConflict;
+  /** True when this turn confirmed dates that were waiting for the Guest's yes. */
+  readonly confirmedDates?: boolean;
 }
 
 export type StayRequestResolution =
   | { readonly kind: "search"; readonly filters: StayRequestFilters }
-  | { readonly kind: "clarify"; readonly missing: readonly string[]; readonly reply: string };
+  | { readonly kind: "clarify"; readonly missing: readonly string[]; readonly reply: string }
+  /** Resolved dates are shown back as concrete dates; no search runs until confirmed. */
+  | { readonly kind: "confirm"; readonly filters: StayRequestFilters; readonly reply: string }
+  /** Dates outside launch limits (ADR-0023, ADR-0055), explained with the limit. */
+  | { readonly kind: "refuse"; readonly reply: string };
 
 const LOCATION_PATTERNS: readonly {
   readonly pattern: RegExp;
@@ -113,11 +133,108 @@ const CORRECTION_PATTERN = /\b(actually|instead|rather|change (?:it )?to|change 
 const KEEP_PATTERN = /\b(keep|stay (?:with|in)|stick with|remain in|leave it|no)\b/i;
 const AFFIRMATION_PATTERN = /^(?:yes|yeah|yep|yup|sure|ok|okay|okey|go ahead|do it|confirm|confirmed|that works|sounds good)\b/i;
 
-function addCalendarDays(dateIso: string, nights: number): string {
-  const date = new Date(`${dateIso}T00:00:00Z`);
-  if (!Number.isFinite(date.getTime())) throw new TypeError("demoCheckIn must be an ISO calendar date");
-  date.setUTCDate(date.getUTCDate() + nights);
-  return date.toISOString().slice(0, 10);
+// Plain party phrases (issue 01 AC4). An explicit count ("4 guests") always wins.
+const SOLO_PATTERN = /\b(?:just|only)\s+(?:me|myself)\b|\bby myself\b|\bon my own\b|\bsolo\b/i;
+const PAIR_PATTERN = /\b(?:me|myself)\s+and\s+my\s+(?:wife|husband|partner|girlfriend|boyfriend|fianc[eé]e?|friend|colleague|sister|brother|mum|mom|dad|son|daughter)\b|\bmy\s+(?:wife|husband|partner)\s+and\s+(?:i|me)\b|\b(?:a|as a)\s+couple\b|\b(?:the\s+)?two of us\b/i;
+
+const MONTHS: Readonly<Record<string, number>> = {
+  jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3, apr: 4, april: 4, may: 5,
+  jun: 6, june: 6, jul: 7, july: 7, aug: 8, august: 8, sep: 9, sept: 9, september: 9,
+  oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12,
+};
+const MONTH_NAME = "jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?";
+const ORDINAL = "(?:st|nd|rd|th)?";
+const DAY_MONTH_RANGE = new RegExp(`\\b(\\d{1,2})${ORDINAL}\\s*(?:-|–|—|to|until|till)\\s*(\\d{1,2})${ORDINAL}\\s+(?:of\\s+)?(${MONTH_NAME})\\b`, "i");
+const DAY_MONTH = new RegExp(`\\b(\\d{1,2})${ORDINAL}\\s+(?:of\\s+)?(${MONTH_NAME})\\b`, "gi");
+// "May" leads too many ordinary sentences ("may 2 people stay"), so month-first dates skip it.
+const MONTH_DAY = new RegExp(`\\b(${MONTH_NAME.replace("|may|", "|")})\\.?\\s+(\\d{1,2})${ORDINAL}\\b`, "gi");
+const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"] as const;
+const WEEKDAY_PATTERN = /\b(this\s+|next\s+|on\s+)?(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/i;
+
+function dayNumber(dateIso: string): number {
+  const [year, month, day] = dateIso.split("-").map(Number);
+  return Date.UTC(year!, month! - 1, day!) / 86_400_000;
+}
+
+function fromDayNumber(day: number): string {
+  return new Date(day * 86_400_000).toISOString().slice(0, 10);
+}
+
+function addCalendarDays(dateIso: string, days: number): string {
+  return fromDayNumber(dayNumber(dateIso) + days);
+}
+
+function weekdayOf(dateIso: string): number {
+  return new Date(`${dateIso}T00:00:00Z`).getUTCDay();
+}
+
+/** "Fri 4 Sept 2026": every resolved date is shown back concretely (issue 01). */
+export function formatGuestDay(dateIso: string): string {
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", weekday: "short", day: "numeric", month: "short", year: "numeric" })
+    .formatToParts(new Date(`${dateIso}T00:00:00Z`));
+  const part = (type: Intl.DateTimeFormatPartTypes): string => parts.find((candidate) => candidate.type === type)?.value ?? "";
+  return `${part("weekday")} ${part("day")} ${part("month")} ${part("year")}`;
+}
+
+/** The next occurrence of a day and month on or after today (Africa/Lagos). */
+function calendarDate(day: number, month: number, today: string): string | undefined {
+  const year = Number(today.slice(0, 4));
+  for (const candidateYear of [year, year + 1]) {
+    const candidate = `${candidateYear}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const parsed = new Date(`${candidate}T00:00:00Z`);
+    if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== candidate) return undefined;
+    if (candidate >= today) return candidate;
+  }
+  return undefined;
+}
+
+function explicitDates(text: string, today: string): StayRequestDates | undefined {
+  const range = DAY_MONTH_RANGE.exec(text);
+  if (range) {
+    const month = MONTHS[range[3]!.toLowerCase()];
+    const checkIn = month === undefined ? undefined : calendarDate(Number(range[1]), month, today);
+    const checkOutDay = month === undefined ? undefined : calendarDate(Number(range[2]), month, checkIn ?? today);
+    if (checkIn !== undefined && checkOutDay !== undefined) return { checkIn, checkOut: checkOutDay, given: true };
+  }
+  const mentions: { readonly index: number; readonly date: string }[] = [];
+  for (const match of text.matchAll(DAY_MONTH)) {
+    const month = MONTHS[match[2]!.toLowerCase()];
+    const date = month === undefined ? undefined : calendarDate(Number(match[1]), month, today);
+    if (date !== undefined) mentions.push({ index: match.index ?? 0, date });
+  }
+  for (const match of text.matchAll(MONTH_DAY)) {
+    const month = MONTHS[match[1]!.toLowerCase()];
+    const date = month === undefined ? undefined : calendarDate(Number(match[2]), month, today);
+    if (date !== undefined) mentions.push({ index: match.index ?? 0, date });
+  }
+  mentions.sort((left, right) => left.index - right.index);
+  const [first, second] = mentions;
+  if (first === undefined) return undefined;
+  if (second !== undefined && second.date > first.date) return { checkIn: first.date, checkOut: second.date, given: true };
+  return { checkIn: first.date, given: true };
+}
+
+function relativeDates(text: string, today: string): StayRequestDates | undefined {
+  if (/\b(?:tonight|today)\b/i.test(text)) return { checkIn: today, given: false };
+  if (/\btomorrow\b/i.test(text)) return { checkIn: addCalendarDays(today, 1), given: false };
+  const weekend = /\b(this\s+|next\s+)?weekend\b/i.exec(text);
+  if (weekend) {
+    // Friday check-in, Sunday check-out, on or after the injected clock.
+    const friday = addCalendarDays(today, (5 - weekdayOf(today) + 7) % 7);
+    const checkIn = /next/i.test(weekend[1] ?? "") ? addCalendarDays(friday, 7) : friday;
+    return { checkIn, checkOut: addCalendarDays(checkIn, 2), given: false };
+  }
+  const weekday = WEEKDAY_PATTERN.exec(text);
+  if (weekday) {
+    const target = WEEKDAYS.indexOf(weekday[2]!.toLowerCase() as typeof WEEKDAYS[number]);
+    if (/next/i.test(weekday[1] ?? "")) {
+      // "next Friday" is that weekday in the following Monday-start week.
+      const nextMonday = addCalendarDays(today, 7 - ((weekdayOf(today) + 6) % 7));
+      return { checkIn: addCalendarDays(nextMonday, (target + 6) % 7), given: false };
+    }
+    return { checkIn: addCalendarDays(today, (target - weekdayOf(today) + 7) % 7), given: false };
+  }
+  return undefined;
 }
 
 /** Builds a context object without ever materialising `undefined` keys. */
@@ -128,6 +245,8 @@ function buildContext(parts: {
   readonly partySize?: number;
   readonly bedrooms?: number;
   readonly pendingLocationChange?: PendingLocationChange;
+  readonly checkIn?: string;
+  readonly datesConfirmed?: boolean;
 }): DiscoverySearchContext {
   return {
     ...(parts.city === undefined ? {} : { city: parts.city }),
@@ -136,6 +255,7 @@ function buildContext(parts: {
     ...(parts.partySize === undefined ? {} : { partySize: parts.partySize }),
     ...(parts.bedrooms === undefined ? {} : { bedrooms: parts.bedrooms }),
     ...(parts.pendingLocationChange === undefined ? {} : { pendingLocationChange: parts.pendingLocationChange }),
+    ...(parts.checkIn === undefined ? {} : { checkIn: parts.checkIn, datesConfirmed: parts.datesConfirmed === true }),
   };
 }
 
@@ -145,6 +265,8 @@ function scalarParts(context: DiscoverySearchContext): {
   readonly nights?: number;
   readonly partySize?: number;
   readonly bedrooms?: number;
+  readonly checkIn?: string;
+  readonly datesConfirmed?: boolean;
 } {
   return {
     ...(context.city === undefined ? {} : { city: context.city }),
@@ -152,6 +274,7 @@ function scalarParts(context: DiscoverySearchContext): {
     ...(context.nights === undefined ? {} : { nights: context.nights }),
     ...(context.partySize === undefined ? {} : { partySize: context.partySize }),
     ...(context.bedrooms === undefined ? {} : { bedrooms: context.bedrooms }),
+    ...(context.checkIn === undefined ? {} : { checkIn: context.checkIn, datesConfirmed: context.datesConfirmed === true }),
   };
 }
 
@@ -174,14 +297,21 @@ export function resolveLocationMention(text: string): StayRequestLocation | unde
  * Extracts only the facts present in one message. Missing facts stay missing;
  * they are never inferred from, or replaced by, the rest of the conversation.
  */
-export function extractStayRequestFacts(text: string): StayRequestFacts {
+export function extractStayRequestFacts(text: string, options: { readonly now?: Date } = {}): StayRequestFacts {
   const normalized = text.trim();
   const location = resolveLocationMention(normalized);
   const nightsMatch = NIGHTS_PATTERN.exec(normalized);
   const guestsMatch = GUESTS_PATTERN.exec(normalized);
   const bedroomsMatch = BEDROOMS_PATTERN.exec(normalized);
-  const nights = nightsMatch ? Number.parseInt(nightsMatch[1] ?? "", 10) : undefined;
-  const partySize = guestsMatch ? Number.parseInt(guestsMatch[1] ?? "", 10) : undefined;
+  const rangeDates = options.now === undefined ? undefined : explicitDates(normalized, dateKeyInLagos(options.now, "now"));
+  const dates = rangeDates ?? (options.now === undefined ? undefined : relativeDates(normalized, dateKeyInLagos(options.now, "now")));
+  // A check-out date fixes the number of nights; otherwise use the nights the Guest typed.
+  const nights = dates?.checkOut !== undefined
+    ? dayNumber(dates.checkOut) - dayNumber(dates.checkIn)
+    : nightsMatch ? Number.parseInt(nightsMatch[1] ?? "", 10) : undefined;
+  const partySize = guestsMatch ? Number.parseInt(guestsMatch[1] ?? "", 10)
+    : SOLO_PATTERN.test(normalized) ? 1
+      : PAIR_PATTERN.test(normalized) ? 2 : undefined;
   const bedroomsToken = bedroomsMatch?.[1]?.toLowerCase();
   const bedrooms = bedroomsToken === undefined ? undefined : (BEDROOM_WORDS[bedroomsToken] ?? Number.parseInt(bedroomsToken, 10));
   return {
@@ -189,6 +319,7 @@ export function extractStayRequestFacts(text: string): StayRequestFacts {
     ...(nights === undefined || Number.isNaN(nights) || nights < 1 ? {} : { nights }),
     ...(partySize === undefined || Number.isNaN(partySize) || partySize < 1 ? {} : { partySize }),
     ...(bedrooms === undefined || Number.isNaN(bedrooms) || bedrooms < 1 ? {} : { bedrooms }),
+    ...(dates === undefined ? {} : { dates }),
   };
 }
 
@@ -266,24 +397,31 @@ export function mergeStayRequestContext(
     conflict = { pending, question: locationConflictQuestion(pending, context) };
   }
 
-  // 3. Merge scalar facts; whichever slot was supplied is replaced, the rest
+  // 3. A plain "yes" confirms dates that were shown back and are awaiting the
+  //    Guest (issue 01 AC1). New dates in this turn replace them instead.
+  const confirmedDates = facts.dates === undefined && context.checkIn !== undefined
+    && context.datesConfirmed !== true && AFFIRMATION_PATTERN.test(text.trim());
+
+  // 4. Merge scalar facts; whichever slot was supplied is replaced, the rest
   //    are preserved.
   context = buildContext({
     ...scalarParts(context),
     ...(facts.nights === undefined ? {} : { nights: facts.nights }),
     ...(facts.partySize === undefined ? {} : { partySize: facts.partySize }),
     ...(facts.bedrooms === undefined ? {} : { bedrooms: facts.bedrooms }),
+    ...(facts.dates === undefined ? {} : { checkIn: facts.dates.checkIn, datesConfirmed: facts.dates.given }),
+    ...(confirmedDates ? { datesConfirmed: true } : {}),
     ...(context.pendingLocationChange === undefined ? {} : { pendingLocationChange: context.pendingLocationChange }),
   });
 
   if (conflict === undefined && context.pendingLocationChange !== undefined) {
     conflict = { pending: context.pendingLocationChange, question: locationConflictQuestion(context.pendingLocationChange, context) };
   }
-  return { context, ...(conflict === undefined ? {} : { conflict }) };
+  return { context, ...(conflict === undefined ? {} : { conflict }), ...(confirmedDates ? { confirmedDates } : {}) };
 }
 
 function clarifyReply(context: DiscoverySearchContext, missing: readonly string[]): string {
-  const known = context.city !== undefined || context.nights !== undefined || context.partySize !== undefined;
+  const known = context.city !== undefined || context.nights !== undefined || context.partySize !== undefined || context.checkIn !== undefined;
   const ask = missing.length === 1
     ? `Could you tell me ${missing[0]}?`
     : `Could you tell me ${missing.slice(0, -1).join(", ")} and ${missing.at(-1)}?`;
@@ -294,31 +432,61 @@ function clarifyReply(context: DiscoverySearchContext, missing: readonly string[
  * Decides whether the accumulated context can execute an authoritative
  * discovery query, or which missing inputs still have to be asked for.
  */
+/** Refuses dates outside launch limits with a plain statement of the limit. */
+function dateLimitRefusal(checkIn: string, nights: number, today: string): string | undefined {
+  // ADR-0023: one through fourteen nights.
+  if (nights > MAX_STAY_NIGHTS) return `Stays can be at most ${MAX_STAY_NIGHTS} nights. Please choose ${MAX_STAY_NIGHTS} nights or fewer.`;
+  if (checkIn < today) return "That arrival date has already passed. Please choose today or a later date.";
+  // ADR-0055: the horizon limits check-in only; a stay may end after day 90.
+  const latestArrival = addCalendarDays(today, BOOKING_HORIZON_DAYS);
+  if (checkIn > latestArrival) return `Arrival dates can be at most ${BOOKING_HORIZON_DAYS} days ahead, so the latest arrival is ${formatGuestDay(latestArrival)}. Please choose an earlier date.`;
+  return undefined;
+}
+
+/**
+ * Decides whether the accumulated context can execute an authoritative
+ * discovery query, or which missing inputs still have to be asked for. Dates
+ * are never assumed: they are given by the Guest or confirmed by them.
+ */
 export function resolveStayRequestContext(
   context: DiscoverySearchContext,
-  options: { readonly demoCheckIn: string },
+  options: { readonly now: Date },
 ): StayRequestResolution {
   const city = context.city;
   const nights = context.nights;
   const partySize = context.partySize;
+  const checkIn = context.checkIn;
+  const today = dateKeyInLagos(options.now, "now");
+  if (checkIn !== undefined && nights !== undefined) {
+    const refusal = dateLimitRefusal(checkIn, nights, today);
+    if (refusal !== undefined) return { kind: "refuse", reply: refusal };
+  }
   const missing: string[] = [];
   if (city === undefined) missing.push("where you want to stay (for example: Ikoyi or Lekki, Lagos)");
+  if (checkIn === undefined) missing.push("what date you arrive (for example: 10 Sept or this Friday)");
   if (nights === undefined) missing.push("how many nights you need");
   if (partySize === undefined) missing.push("how many guests are staying");
-  if (city === undefined || nights === undefined || partySize === undefined) {
+  if (city === undefined || checkIn === undefined || nights === undefined || partySize === undefined) {
     return { kind: "clarify", missing, reply: clarifyReply(context, missing) };
   }
-  return {
-    kind: "search",
-    filters: {
-      location: city,
-      ...(context.neighbourhood === undefined ? {} : { neighbourhood: context.neighbourhood }),
-      checkIn: options.demoCheckIn,
-      checkOut: addCalendarDays(options.demoCheckIn, nights),
-      partySize,
-      ...(context.bedrooms === undefined ? {} : { bedrooms: context.bedrooms }),
-    },
+  const checkOut = addCalendarDays(checkIn, nights);
+  const filters: StayRequestFilters = {
+    location: city,
+    ...(context.neighbourhood === undefined ? {} : { neighbourhood: context.neighbourhood }),
+    checkIn,
+    checkOut,
+    partySize,
+    ...(context.bedrooms === undefined ? {} : { bedrooms: context.bedrooms }),
   };
+  if (context.datesConfirmed !== true) {
+    const place = context.neighbourhood ?? city;
+    return {
+      kind: "confirm",
+      filters,
+      reply: `Just to check: arriving ${formatGuestDay(checkIn)} and leaving ${formatGuestDay(checkOut)} (${nights} ${nights === 1 ? "night" : "nights"}), ${partySize} ${partySize === 1 ? "guest" : "guests"} in ${place}. Shall I search these dates? Reply "yes", or tell me different dates.`,
+    };
+  }
+  return { kind: "search", filters };
 }
 
 /**
@@ -327,10 +495,8 @@ export function resolveStayRequestContext(
  * earlier turns are never discarded.
  */
 export function interpretStayRequest(text: string, options: ConciergeOptions): StayRequestInterpretation {
-  const merged = mergeStayRequestContext(null, extractStayRequestFacts(text), text);
-  const resolution = resolveStayRequestContext(merged.context, { demoCheckIn: options.demoCheckIn });
-  if (resolution.kind === "search") return { kind: "search", filters: resolution.filters };
-  return { kind: "clarify", missing: resolution.missing, reply: resolution.reply };
+  const merged = mergeStayRequestContext(null, extractStayRequestFacts(text, { now: options.now }), text);
+  return resolveStayRequestContext(merged.context, { now: options.now });
 }
 
 /**
@@ -346,6 +512,8 @@ export function parseDiscoverySearchContext(value: unknown): DiscoverySearchCont
     candidate === undefined || (typeof candidate === "number" && Number.isInteger(candidate) && candidate >= 1);
   if (!optionalString(record.city) || !optionalString(record.neighbourhood)) return null;
   if (!optionalPositiveInteger(record.nights) || !optionalPositiveInteger(record.partySize) || !optionalPositiveInteger(record.bedrooms)) return null;
+  if (record.checkIn !== undefined && (typeof record.checkIn !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(record.checkIn))) return null;
+  if (record.datesConfirmed !== undefined && typeof record.datesConfirmed !== "boolean") return null;
   let pending: PendingLocationChange | undefined;
   const rawPending = record.pendingLocationChange;
   if (rawPending !== undefined && rawPending !== null) {
@@ -366,5 +534,6 @@ export function parseDiscoverySearchContext(value: unknown): DiscoverySearchCont
     ...(typeof record.partySize === "number" ? { partySize: record.partySize } : {}),
     ...(typeof record.bedrooms === "number" ? { bedrooms: record.bedrooms } : {}),
     ...(pending === undefined ? {} : { pendingLocationChange: pending }),
+    ...(typeof record.checkIn === "string" ? { checkIn: record.checkIn, datesConfirmed: record.datesConfirmed === true } : {}),
   });
 }

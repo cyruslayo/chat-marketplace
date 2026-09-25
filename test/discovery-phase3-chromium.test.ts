@@ -34,7 +34,7 @@ test("Phase 3 discovery renders Wuse, Lekki, zero-result and fallback states wit
     tab = await browser.createTab(`${BASE}/`);
     await tab.setCssViewport(390, 844);
     await sendPrompt(tab, "Abuja", "how many guests are staying");
-    await sendPrompt(tab, "2 nights and 2 guests", "Sunlit Two-Bedroom Retreat in Wuse 2");
+    await sendPrompt(tab, "2 nights from 29 Sept and 2 guests", "Sunlit Two-Bedroom Retreat in Wuse 2");
     await tab.evaluate("document.querySelector('#active-workspace')?.scrollIntoView({block:'start'})");
     await tab.setCssViewport(390, 1200);
     await capture(tab, "01-discovery-wuse-390.png");
@@ -60,7 +60,7 @@ test("Phase 3 discovery renders Wuse, Lekki, zero-result and fallback states wit
     lagosTab = await browser.createTab(`${BASE}/`);
     await lagosTab.setCssViewport(390, 844);
     await sendPrompt(lagosTab, "Lagos", "how many guests are staying");
-    await sendPrompt(lagosTab, "2 nights and 2 guests", "2 eligible places");
+    await sendPrompt(lagosTab, "2 nights from 29 Sept and 2 guests", "2 eligible places");
     await lagosTab.evaluate("document.querySelector('#active-workspace')?.scrollIntoView({block:'start'})");
     await capture(lagosTab, "02-discovery-lekki-390.png");
     await lagosTab.setCssViewport(1280, 900);
@@ -77,7 +77,7 @@ test("Phase 3 discovery renders Wuse, Lekki, zero-result and fallback states wit
       ? { status: 404, headers: [{ name: "Content-Type", value: "image/svg+xml" }], body: new Uint8Array() }
       : undefined);
     await sendPrompt(oldIkoyiTab, "Lagos", "how many guests are staying");
-    await sendPrompt(oldIkoyiTab, "2 nights and 2 guests", "2 eligible places");
+    await sendPrompt(oldIkoyiTab, "2 nights from 29 Sept and 2 guests", "2 eligible places");
     await sendPrompt(oldIkoyiTab, "Old Ikoyi", "Garden Two-Bedroom Stay in Old Ikoyi");
     await oldIkoyiTab.evaluate("document.querySelector('#active-workspace')?.scrollIntoView({block:'start'})");
     await oldIkoyiTab.waitForFunction("document.querySelectorAll('#active-workspace .photo-fallback').length > 0", 8000);

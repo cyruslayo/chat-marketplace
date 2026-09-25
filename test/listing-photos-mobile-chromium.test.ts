@@ -121,7 +121,7 @@ async function waitForBrokenImageFallback(tab: RealBrowserTab): Promise<void> {
 async function sendSearch(context: Context): Promise<void> {
   await context.tab.navigate(`${context.base}/`);
   await context.tab.waitForSelector("#composer-input");
-  await context.tab.evaluate(`(() => { const input = document.getElementById('composer-input'); input.value = 'I need an apartment in Lagos for 2 nights for 2 people'; document.getElementById('composer').requestSubmit(); })()`);
+  await context.tab.evaluate(`(() => { const input = document.getElementById('composer-input'); input.value = 'I need an apartment in Lagos from 10 Sept for 2 nights for 2 people'; document.getElementById('composer').requestSubmit(); })()`);
   await context.tab.waitForText(context.unitTitle);
 }
 

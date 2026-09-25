@@ -59,7 +59,7 @@ function journey(): Promise<JourneyCapture> {
 
     const empty = await restartFixture();
     try {
-      const search = await empty.send("/api/turn", { text: "I need an apartment in Abuja for 2 nights for 2 people" });
+      const search = await empty.send("/api/turn", { text: "I need an apartment in Abuja from 10 Sept for 2 nights for 2 people" });
       assert.equal(search.ok, true); if (!search.ok) throw new Error("search failed");
       emptySearch = search;
     } finally { await empty.close(); }

@@ -62,13 +62,13 @@ test("server-backed state restores the conversation timeline and latest workspac
   try {
     const app = new LocalGuestApp(environment);
     const threadId = "g-abcdef123456";
-    const result = await app.handleTurn(threadId, "I need an apartment in Ikoyi for 3 nights for 2 people");
+    const result = await app.handleTurn(threadId, "I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people");
     assert.equal(result.ok, true);
 
     const snapshot = app.getState(threadId);
     assert.ok(snapshot);
     assert.deepEqual(snapshot.timeline.map((entry) => entry.role), ["user", "assistant"]);
-    assert.equal(snapshot.timeline[0]?.text, "I need an apartment in Ikoyi for 3 nights for 2 people");
+    assert.equal(snapshot.timeline[0]?.text, "I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people");
     assert.equal(snapshot.surfaces.length, 1);
     assert.equal(snapshot.surfaces[0]?.mode, "inline-surface");
     assert.match(snapshot.surfaces[0]?.summary ?? "", /Search updated.*Ikoyi.*2 guests/);
@@ -87,7 +87,7 @@ test("discovery preview expands into one focused results workspace through a rev
   try {
     const app = new LocalGuestApp(environment);
     const threadId = "g-fedcba654321";
-    const turn = await app.handleTurn(threadId, "I need an apartment in Lagos for 3 nights for 2 people");
+    const turn = await app.handleTurn(threadId, "I need an apartment in Lagos from 10 Sept for 3 nights for 2 people");
     assert.equal(turn.ok, true);
     if (!turn.ok) return;
     const update = turn.surfaces[0]?.a2uiMessages.find((message): message is Extract<A2UIServerMessage, { updateComponents: unknown }> => "updateComponents" in message);
@@ -136,7 +136,7 @@ test("HTTP refresh state requires the server-issued browser session and cannot e
     const turn = await fetch(`${base}/api/turn`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Cookie: cookie!.split(";")[0]! },
-      body: JSON.stringify({ threadId, text: "I need an apartment in Ikoyi for 3 nights for 2 people" }),
+      body: JSON.stringify({ threadId, text: "I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people" }),
     });
     assert.equal(turn.status, 200);
 

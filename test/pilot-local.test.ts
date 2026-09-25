@@ -87,7 +87,7 @@ async function reloadTab(tab: RealBrowserTab): Promise<void> { await tab.navigat
 
 async function guestToRequest(tab: RealBrowserTab, city: "Abuja" | "Lagos", phone: string, assertPhotos = false): Promise<void> {
   await tab.navigate(`${BASE}/`);
-  await sendPrompt(tab, city === "Abuja" ? "Show me apartments in Wuse 2 for 2 nights for 2 people" : `I need an apartment in ${city} for 2 nights for 2 people`);
+  await sendPrompt(tab, city === "Abuja" ? "Show me apartments in Wuse 2 from 29 Sept for 2 nights for 2 people" : `I need an apartment in ${city} from 29 Sept for 2 nights for 2 people`);
   await tab.waitForText(city === "Abuja" ? "Wuse 2" : "Old Ikoyi", 15000);
   await assertWeaverSurface(tab, "discovery");
   if (assertPhotos) await tab.waitForFunction("document.body.innerText.includes('Photo unavailable')", 15000);
@@ -267,7 +267,7 @@ test("Operator decline real-browser proof", async () => {
 test("AC24 — Operator can decline a separate Booking Request", () => { assert.equal(declineProof?.operatorDeclined, true); });
 test("AC25 — Guest sees decline result", () => { assert.equal(declineProof?.guestDeclined, true); });
 
-test("Exact screenshot conversation — Lagos → 2 nights and 2 guests → Lekki renders an authoritative Weaver result", async () => {
+test("Exact screenshot conversation — Lagos → 2 nights from 29 Sept and 2 guests → Lekki renders an authoritative Weaver result", async () => {
   const paths = temporaryPaths(); bootstrapLocalPilot(paths); const server = startLocalPilotServer({ port: PORT, paths }); const browser = await launchRealBrowser();
   try {
     await server.listen();
@@ -276,7 +276,7 @@ test("Exact screenshot conversation — Lagos → 2 nights and 2 guests → Lekk
 
     await sendPrompt(guest, "Lagos");
     await guest.waitForText("how many guests are staying", 15000);
-    await sendPrompt(guest, "2 nights and 2 guests");
+    await sendPrompt(guest, "2 nights from 29 Sept and 2 guests");
     await guest.waitForText("Old Ikoyi", 15000);
     await sendPrompt(guest, "Lekki");
     await guest.waitForText("Lekki Phase 1", 15000);
@@ -317,7 +317,7 @@ test("Conflicting Lagos/Wuse conversation clarifies intentionally and preserves 
 
     await sendPrompt(guest, "Lagos");
     await guest.waitForText("how many guests are staying", 15000);
-    await sendPrompt(guest, "2 nights and 2 guests");
+    await sendPrompt(guest, "2 nights from 29 Sept and 2 guests");
     await guest.waitForText("Old Ikoyi", 15000);
     await sendPrompt(guest, "Wuse");
     await guest.waitForText("Do you want Wuse in Abuja, or should I keep searching in Lagos?", 15000);
@@ -352,7 +352,7 @@ test("320px conversational discovery renders the Weaver Lekki surface without ho
     await guest.waitForSelector("#composer-input");
     await sendPrompt(guest, "Lagos");
     await guest.waitForText("how many guests are staying", 15000);
-    await sendPrompt(guest, "2 nights and 2 guests");
+    await sendPrompt(guest, "2 nights from 29 Sept and 2 guests");
     await guest.waitForText("Old Ikoyi", 15000);
     await sendPrompt(guest, "Lekki");
     await guest.waitForText("Lekki Phase 1", 15000);
