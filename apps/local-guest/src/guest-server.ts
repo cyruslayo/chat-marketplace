@@ -26,6 +26,7 @@ import {
   type DiscoveryArtifactProjection,
 } from "../../../apps/web-agent/src/index.js";
 import { unitDetailArtifactFromProjection } from "../../../apps/web/src/unit-detail-artifact.js";
+import { errorPage, escapeHtml, icon, pageShell, prefersHtml } from "../../../apps/web/src/ui-kit.js";
 import {
   resolveDiscoveryServerEvent,
 } from "../../../apps/web/src/discovery-actions.js";
@@ -1459,7 +1460,7 @@ function discoverySummary(filters: unknown): string {
 
 export function renderGuestShellHtml(): string {
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en-NG" data-theme="system">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -1478,11 +1479,11 @@ export function renderGuestShellHtml(): string {
     button, input { font: inherit; }
     button, a { -webkit-tap-highlight-color: transparent; }
     :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
-    .skip-link { position: absolute; left: 8px; top: -100px; z-index: 30; background: var(--surface); color: var(--text); padding: 10px 14px; border: 2px solid var(--focus); border-radius: 8px; }
-    .skip-link:focus { top: 8px; }
+    .skip-link { position: absolute; left: var(--space-2); top: -100px; z-index: var(--layer-skip-link); background: var(--surface); color: var(--text); padding: var(--space-2) var(--space-3); border: 2px solid var(--focus); border-radius: var(--radius-control); }
+    .skip-link:focus { top: var(--space-2); }
     .app { width: 100%; max-width: var(--layout-conversation-max); min-height: 100dvh; min-height: 100svh; margin: 0 auto; display: flex; flex-direction: column; }
     header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: max(var(--space-3), env(safe-area-inset-top)) var(--layout-gutter-mobile) var(--space-3); border-bottom: 1px solid var(--border); background: var(--surface); }
-    header h1 { font-size: var(--font-size-label); line-height: var(--font-line-label); margin: 0; font-weight: 700; }
+    header h1 { margin: 0; font-family: var(--font-display); font-size: 1.25rem; line-height: 1.2; font-weight: 600; letter-spacing: -0.005em; }
     .header-identity { display: flex; align-items: center; min-height: var(--control-min-target); color: var(--text); text-decoration: none; }
     .header-note { color: var(--text-muted); font-size: var(--font-size-small); white-space: nowrap; }
     main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
@@ -1495,10 +1496,9 @@ export function renderGuestShellHtml(): string {
     .turn.user .bubble { background: var(--surface-soft); color: var(--text); }
     .historical-summary { width: 100%; display: flex; align-items: center; gap: var(--space-2); color: var(--color-text-secondary); font-size: var(--font-size-small); line-height: var(--font-line-small); padding: var(--space-2) 0; border-top: 1px solid var(--border); }
     #empty-state { max-width: 70ch; padding-block: var(--space-3) var(--space-6); }
-    #empty-state h2 { margin: 0 0 var(--space-2); font-size: var(--font-size-h2); line-height: var(--font-line-h2); }
+    #empty-state h2 { margin: 0 0 var(--space-2); font-family: var(--font-display); font-size: var(--font-size-h1); line-height: var(--font-line-h1); font-weight: 600; }
     #empty-state p { max-width: 64ch; margin: 0; color: var(--color-text-secondary); }
     .prompt-suggestions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
-    .prompt-suggestion { min-height: var(--control-min-target); padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); color: var(--text); cursor: pointer; }
     #workspace-region { padding: 0 var(--layout-gutter-mobile) var(--space-4); }
     #active-workspace { background: var(--color-surface-elevated); border: 1px solid var(--border); border-radius: var(--radius-workspace); padding: var(--space-4); box-shadow: var(--elevation-active); }
     #active-workspace[hidden], #workspace-region[hidden], #workspace-reopen[hidden], #empty-state[hidden] { display: none; }
@@ -1513,7 +1513,7 @@ export function renderGuestShellHtml(): string {
     .workspace-status { margin: 0 0 var(--space-3); color: var(--color-text-secondary); font-size: var(--font-size-small); }
     .workspace-status[data-status="stale"], .workspace-status[data-status="expired"], .workspace-status[data-status="deleted"], .workspace-status[data-status="fallback"] { padding: var(--space-2) var(--space-3); border-inline-start: 3px dashed var(--color-warning); background: var(--color-warning-surface); color: var(--color-warning); }
     .weaver-mount { min-width: 0; max-width: 100%; overflow: visible; }
-    .workspace-arrival { animation: workspace-enter 180ms ease-out both; }
+    .workspace-arrival { animation: workspace-enter var(--duration-base) var(--ease-enter) both; }
     @keyframes workspace-enter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
     .weaver-mount h1[data-a2ui-component="Text"] { font-size: var(--font-size-display) !important; line-height: var(--font-line-display) !important; font-weight: 700 !important; margin: 0 !important; }
     .weaver-mount h2[data-a2ui-component="Text"] { font-size: var(--font-size-h2) !important; line-height: var(--font-line-h2) !important; font-weight: 650 !important; margin: 0 !important; }
@@ -1522,9 +1522,11 @@ export function renderGuestShellHtml(): string {
     .photo-fallback { width: 100%; min-width: 0; min-height: 120px; aspect-ratio: 4 / 3; display: grid; place-items: center; padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface-soft); color: var(--color-text-secondary); text-align: center; }
     .weaver-mount small[data-a2ui-component="Text"] { margin: 0 !important; color: var(--color-text-secondary); font-size: var(--font-size-small) !important; font-style: normal !important; line-height: var(--font-line-small); }
     .weaver-mount p[data-a2ui-component="Text"] { margin: 0 !important; }
-    .weaver-mount button[data-a2ui-variant="primary"] { min-width: var(--control-min-target); min-height: var(--control-min-target); border-color: var(--color-action) !important; background-color: var(--color-action) !important; color: var(--color-surface) !important; font: 600 var(--font-size-label)/var(--font-line-label) var(--font-sans); }
-    .weaver-mount button[data-a2ui-variant="primary"]:hover { background-color: var(--color-action-hover) !important; }
-    .weaver-mount button[data-a2ui-variant="primary"]:active { background-color: var(--color-action-pressed) !important; }
+    .weaver-mount button[data-a2ui-variant="primary"] { min-width: var(--control-min-target); min-height: var(--control-min-target); font: 600 var(--font-size-label)/var(--font-line-label) var(--font-sans); }
+    .weaver-mount button[data-a2ui-variant="primary"]:hover { --a2ui-color-primary: var(--color-action-hover); }
+    .weaver-mount button[data-a2ui-variant="primary"]:active { --a2ui-color-primary: var(--color-action-pressed); }
+    .weaver-mount button[data-loading="true"] { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); cursor: progress; }
+    .weaver-mount button[data-loading="true"]::before { content: ""; inline-size: 1em; block-size: 1em; flex: none; border: 2px solid currentColor; border-inline-end-color: transparent; border-radius: var(--radius-round); animation: ui-spin 700ms linear infinite; }
     .weaver-mount button.guest-action:not([data-a2ui-variant="primary"]) { min-width: var(--control-min-target); min-height: var(--control-min-target); padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); color: var(--text); font: 600 var(--font-size-label)/var(--font-line-label) var(--font-sans); cursor: pointer; }
     .weaver-mount button.guest-action:not([data-a2ui-variant="primary"]):hover { border-color: var(--accent); background: var(--surface-soft); }
     .weaver-mount .guest-field { width: 100%; min-width: 0; min-height: var(--control-min-field); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); color: var(--text); font-size: 1rem; }
@@ -1534,17 +1536,17 @@ export function renderGuestShellHtml(): string {
     .guest-status--danger { color: var(--color-danger); background: var(--color-danger-surface); }
     .empty-state-title { margin-block: var(--space-2); }
     .stay-grid { display: grid !important; grid-template-columns: minmax(0, 1fr); gap: var(--space-4) !important; min-width: 0; }
-    .stay-card { min-width: 0; overflow: hidden; padding: 0 !important; border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface); }
+    .stay-card { min-width: 0; overflow: hidden; padding: 0 !important; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-card); background: var(--surface); }
     .stay-card__body { display: grid !important; min-width: 0; gap: var(--space-2) !important; padding: var(--space-3); }
     .stay-card__body > * { min-width: 0; margin: 0 !important; }
     .stay-card__body > img { width: 100% !important; max-width: none !important; margin: 0 !important; object-fit: cover !important; }
-    .stay-card__title { margin: 0 !important; font-size: var(--font-size-h3) !important; line-height: var(--font-line-h3) !important; font-weight: 650 !important; }
+    .stay-card__title { margin: 0 !important; font-family: var(--font-display); font-size: var(--font-size-h3) !important; line-height: var(--font-line-h3) !important; font-weight: 600 !important; }
     .stay-card__location, .stay-card__amenities { color: var(--color-text-secondary); }
     .stay-card__facts { margin: 0; color: var(--color-text-secondary); }
     .stay-card__price-area { display: grid !important; gap: var(--space-1) !important; margin: 0 !important; }
     .stay-card__price-area > * { margin: 0 !important; }
     .stay-card__price-label { color: var(--color-text-secondary); font-size: var(--font-size-small) !important; line-height: var(--font-line-small) !important; }
-    .stay-card__price-total, .stay-card__body h3.stay-card__price-total { margin: 0 !important; font-size: var(--font-size-money-total) !important; line-height: var(--font-line-money-total) !important; font-variant-numeric: tabular-nums; }
+    .stay-card__price-total, .stay-card__body h3.stay-card__price-total { margin: 0 !important; font-family: var(--font-display); font-size: var(--font-size-money-total) !important; line-height: var(--font-line-money-total) !important; font-variant-numeric: tabular-nums; }
     .stay-card__action { width: 100%; margin-top: var(--space-2); }
     .unit-detail-root { display: grid !important; min-width: 0; gap: var(--space-4) !important; }
     .unit-gallery { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr); gap: var(--space-2); }
@@ -1553,13 +1555,13 @@ export function renderGuestShellHtml(): string {
     .unit-photo-missing { display: grid; min-height: 10rem; place-items: center; margin: 0; color: var(--color-text-secondary); text-align: center; }
     .unit-overview { display: grid; min-width: 0; gap: var(--space-2); }
     .unit-overview > * { margin: 0 !important; }
-    .unit-title { margin: 0 !important; overflow-wrap: anywhere; font-size: var(--font-size-h2) !important; line-height: var(--font-line-h2) !important; font-weight: 650 !important; }
+    .unit-title { margin: 0 !important; overflow-wrap: anywhere; font-family: var(--font-display); font-size: var(--font-size-h2) !important; line-height: var(--font-line-h2) !important; font-weight: 600 !important; }
     .unit-location, .unit-dates { color: var(--color-text-secondary); }
     .unit-facts { margin: 0 !important; font-weight: 600; }
     .unit-price-group { display: grid; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface-soft); }
     .unit-price-group > * { margin: 0 !important; }
     .unit-price-label { color: var(--color-text-secondary); font-size: var(--font-size-small) !important; line-height: var(--font-line-small) !important; }
-    .unit-price-total { margin: 0 !important; font-size: var(--font-size-money-total) !important; line-height: var(--font-line-money-total) !important; font-variant-numeric: tabular-nums; }
+    .unit-price-total { margin: 0 !important; font-family: var(--font-display); font-size: var(--font-size-money-total) !important; line-height: var(--font-line-money-total) !important; font-variant-numeric: tabular-nums; }
     .unit-description, .unit-amenities, .unit-supporting-info { display: grid; min-width: 0; gap: var(--space-2); padding-top: var(--space-3); border-top: 1px solid var(--border); }
     .unit-description > :first-child, .unit-amenities > :first-child { margin: 0 !important; font-size: var(--font-size-h3) !important; line-height: var(--font-line-h3) !important; }
     .unit-description p { margin: 0 !important; max-width: 70ch; }
@@ -1578,13 +1580,12 @@ export function renderGuestShellHtml(): string {
     form#composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: var(--space-2); padding: var(--space-2) var(--layout-gutter-mobile) max(var(--space-4), env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: var(--surface); position: sticky; bottom: 0; z-index: 10; }
     #composer-label { grid-column: 1 / -1; color: var(--color-text-secondary); font-size: var(--font-size-small); line-height: var(--font-line-small); font-weight: 600; }
     #composer-input { min-width: 0; width: 100%; min-height: var(--control-min-field); padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-control); font-size: 1rem; background: var(--bg); color: var(--text); }
-    #composer-submit { min-height: var(--control-min-field); min-width: var(--control-min-target); padding: var(--space-2) var(--space-4); border: 1px solid var(--color-action); border-radius: var(--radius-control); background: var(--accent); color: var(--color-surface); font-weight: 650; cursor: pointer; }
+    #composer-submit { min-height: var(--control-min-field); }
     form#composer[data-focused="true"] { gap: var(--space-1) var(--space-2); padding-block: var(--space-1) max(var(--space-2), env(safe-area-inset-bottom)); background: var(--bg); }
     form#composer[data-focused="true"] #composer-label { font-weight: 400; }
     form#composer[data-focused="true"] #composer-input { min-height: 2.75rem; background: var(--surface); }
     form#composer[data-focused="true"] #composer-submit { min-height: 2.75rem; }
-    #composer-submit:hover:not(:disabled) { background: var(--accent-hover); }
-    #composer-submit:disabled { border-style: dashed; background: var(--surface-soft); color: var(--color-text-secondary); cursor: progress; }
+    #composer-submit:disabled { background: var(--surface-soft); cursor: progress; }
     #working-status { grid-column: 1 / -1; margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-small); }
     @media (min-width: 48rem) {
       #transcript, #workspace-region, form#composer { padding-left: var(--layout-gutter-tablet); padding-right: var(--layout-gutter-tablet); }
@@ -1613,8 +1614,8 @@ export function renderGuestShellHtml(): string {
           <h2 id="empty-state-heading">Find a place to stay</h2>
           <p>Start with a city, your dates (or length of stay), and number of guests. We’ll find available entire-place stays and guide you through requesting one.</p>
           <div class="prompt-suggestions">
-            <button class="prompt-suggestion" type="button" data-prompt="I’m looking for a stay in Abuja">Explore Abuja</button>
-            <button class="prompt-suggestion" type="button" data-prompt="I’m looking for a stay in Lagos">Explore Lagos</button>
+            <button class="prompt-suggestion ui-chip" type="button" data-prompt="I’m looking for a stay in Abuja">Explore Abuja</button>
+            <button class="prompt-suggestion ui-chip" type="button" data-prompt="I’m looking for a stay in Lagos">Explore Lagos</button>
           </div>
         </section>
       </section>
@@ -1629,7 +1630,7 @@ export function renderGuestShellHtml(): string {
       <input id="composer-input" name="message" type="text" autocomplete="off" enterkeyhint="send"
              placeholder="Area, dates, guests" aria-describedby="composer-hint" />
       <span id="composer-hint" class="sr-only">Share a city or neighbourhood, dates or nights, and number of guests.</span>
-      <button id="composer-submit" type="submit">Send</button>
+      <button id="composer-submit" class="ui-button ui-button--primary" type="submit">Send</button>
       <p id="working-status" hidden></p>
     </form>
   </div>
@@ -1655,12 +1656,15 @@ function readJsonBody(req: IncomingMessage): Promise<unknown> {
 }
 
 export function renderConventionalUnitDetailHtml(unit: Unit, photoUrl?: (url: string) => string): string {
-  const safe = (value: string) => value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!);
   const photos = normalizePhotoUrls(unit.photoUrls);
   const photoMarkup = photos.length === 0
-    ? `<p class="photo-fallback" role="status">Photos are not available for this Unit yet.</p>`
-    : `<div class="gallery" aria-label="Photos of ${safe(unit.title)}">${photos.map((url, index) => `<img src="${safe(photoUrl ? photoUrl(url) : url)}" alt="Photo ${index + 1} of ${safe(unit.title)}" loading="${index === 0 ? "eager" : "lazy"}" decoding="async" width="800" height="600" referrerpolicy="no-referrer">`).join("")}</div>`;
-  return `<!doctype html><html lang="en-NG"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${safe(unit.title)}</title><link rel="stylesheet" href="/shortlet-foundations.css"><style>main{width:min(100% - 2 * var(--layout-gutter-mobile),var(--layout-workspace-max));margin:0 auto;padding:24px 0 40px}h1{font-size:var(--font-size-h1);line-height:var(--font-line-h1);margin:0 0 8px}p{margin:8px 0}.muted{color:var(--color-text-muted)}.description{white-space:pre-line}.gallery{display:grid;gap:12px;margin-top:20px}.gallery img{display:block;width:100%;height:auto;aspect-ratio:4/3;object-fit:cover;border-radius:var(--radius-card);background:var(--color-surface-subtle)}.photo-fallback{display:grid;place-items:center;min-height:120px;padding:18px;border-radius:var(--radius-card);background:var(--color-surface-subtle);color:var(--color-text-secondary);text-align:center}a{display:inline-flex;align-items:center;min-height:var(--control-min-target);margin-top:22px;color:var(--color-action);font-weight:700}</style></head><body><main><h1>${safe(unit.title)}</h1><p>${safe(unit.location.neighbourhood)}, ${safe(unit.location.city)}</p><p>Price: ${formatNgnKobo(unit.price.nightlyKobo)} per night</p><p class="muted">Bedrooms: ${unit.bedrooms ?? "Not provided"} · Bathrooms: ${unit.bathrooms} · Capacity: ${unit.capacity} guests · Entire Place</p><p class="description">${safe(unit.description)}</p>${photoMarkup}<a href="/">Continue to Request to Book</a></main></body></html>`;
+    ? `<p class="ui-image-frame" role="status">Photos are not available for this Unit yet.</p>`
+    : `<div class="unit-page-gallery" aria-label="Photos of ${escapeHtml(unit.title)}">${photos.map((url, index) => `<div class="ui-image-frame"><img src="${escapeHtml(photoUrl ? photoUrl(url) : url)}" alt="Photo ${index + 1} of ${escapeHtml(unit.title)}" loading="${index === 0 ? "eager" : "lazy"}" decoding="async" width="800" height="600" referrerpolicy="no-referrer"></div>`).join("")}</div>`;
+  return pageShell({
+    title: unit.title,
+    style: ".unit-page-gallery{display:grid;gap:var(--space-3)}@media (min-width:48rem){.unit-page-gallery{grid-template-columns:repeat(2,minmax(0,1fr))}.unit-page-gallery>:first-child{grid-column:1/-1}}.ui-panel p{margin:0}.unit-page-description{white-space:pre-line}",
+    body: `<header class="ui-page__header"><p class="ui-eyebrow">Entire place</p><h1>${escapeHtml(unit.title)}</h1><p>${escapeHtml(unit.location.neighbourhood)}, ${escapeHtml(unit.location.city)}</p></header>${photoMarkup}<section class="ui-panel" aria-label="Stay facts"><div><p class="ui-field__hint">Price per night (indicative)</p><p class="ui-money-total">${formatNgnKobo(unit.price.nightlyKobo)} <span class="ui-money-metadata">per night</span></p></div><p class="ui-money-metadata">Bedrooms: ${unit.bedrooms ?? "Not provided"} · Bathrooms: ${unit.bathrooms} · Capacity: ${unit.capacity} guests · Entire Place</p><p class="unit-page-description">${escapeHtml(unit.description)}</p><div class="ui-row"><a class="ui-button ui-button--primary" href="/">Continue to Request to Book</a></div></section>`,
+  });
 }
 
 function readRawBody(req: IncomingMessage): Promise<Buffer> {
@@ -1677,15 +1681,37 @@ function readFormBody(req: IncomingMessage): Promise<URLSearchParams> {
 }
 
 export function renderGuestContactHtml(contact: { phoneNumber: string | null; contactEmail: string | null; revision: number } | null, error = "", kind: "phone" | "email" | "both" = "both", entered: { readonly phoneNumber?: string; readonly contactEmail?: string } = {}): string {
-  const safe = (value: string) => value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!);
+  const safe = escapeHtml;
   const phoneError = kind === "phone" ? error : "";
   const emailError = kind === "email" ? error : "";
   const phoneValue = entered.phoneNumber ?? contact?.phoneNumber ?? "";
   const emailValue = entered.contactEmail ?? contact?.contactEmail ?? "";
-  const phoneForm = kind === "email" ? "" : `<form method="post" action="/guest/contact/phone"><div class="field"><label for="phoneNumber">Phone number <span aria-hidden="true">*</span></label><p id="phoneNumber-help">Required before you send a Booking Request. Use a Nigerian mobile number: +234 E.164 format. Example: +234 801 234 5678 or 0801 234 5678. This is for booking coordination, not identity verification.</p><input id="phoneNumber" name="phoneNumber" type="tel" inputmode="tel" autocomplete="tel" enterkeyhint="done" maxlength="32" required aria-describedby="phoneNumber-help${phoneError ? " phoneNumber-error" : ""}"${phoneError ? " aria-invalid=\"true\"" : ""} value="${safe(phoneValue)}">${phoneError ? `<p id="phoneNumber-error" class="field-error" role="alert">${safe(phoneError)}</p>` : ""}</div><input type="hidden" name="expectedRevision" value="${contact?.revision ?? 0}"><button type="submit">Save phone number</button></form>`;
-  const emailForm = kind === "phone" ? "" : `<form method="post" action="/guest/contact/email"><div class="field"><label for="contactEmail">Email address <span aria-hidden="true">*</span></label><p id="contactEmail-help">Required to initialize hosted card checkout and send your payment receipt. This email is not your account identity.</p><input id="contactEmail" name="contactEmail" type="email" inputmode="email" autocomplete="email" enterkeyhint="done" maxlength="254" required aria-describedby="contactEmail-help${emailError ? " contactEmail-error" : ""}"${emailError ? " aria-invalid=\"true\"" : ""} value="${safe(emailValue)}">${emailError ? `<p id="contactEmail-error" class="field-error" role="alert">${safe(emailError)}</p>` : ""}</div><input type="hidden" name="expectedRevision" value="${contact?.revision ?? 0}"><button type="submit">Save email address</button></form>`;
-  const generalError = error && kind === "both" ? `<p class="field-error" role="alert">${safe(error)}</p>` : "";
-  return `<!doctype html><html lang="en-NG"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Guest contact</title><link rel="stylesheet" href="/shortlet-foundations.css"><style>body{padding:var(--layout-gutter-mobile)}main{max-width:420px;margin:auto}form{margin:20px 0}.field{display:grid;gap:8px;margin-bottom:16px}label{display:block;font-weight:700}input,button{box-sizing:border-box;width:100%;min-height:var(--control-min-field);font:inherit;padding:10px;border-radius:var(--radius-control)}input:focus-visible,button:focus-visible{outline:3px solid var(--color-focus);outline-offset:2px}button{min-height:var(--control-min-target);margin-top:10px;border:1px solid var(--color-action);background:var(--color-action);color:var(--color-surface);font-weight:700;cursor:pointer}.field p{margin:0}.field-error{color:var(--color-danger);font-weight:600}</style></head><body><main><h1>Guest contact</h1>${generalError}${phoneForm}${emailForm}</main></body></html>`;
+  const phoneForm = kind === "email" ? "" : `<form class="ui-panel" method="post" action="/guest/contact/phone"><div class="ui-field"><label class="ui-field__label" for="phoneNumber">Phone number <span aria-hidden="true">*</span></label><p class="ui-field__hint" id="phoneNumber-help">Required before you send a Booking Request. Use a Nigerian mobile number: +234 E.164 format. Example: +234 801 234 5678 or 0801 234 5678. This is for booking coordination, not identity verification.</p><input id="phoneNumber" name="phoneNumber" type="tel" inputmode="tel" autocomplete="tel" enterkeyhint="done" maxlength="32" required aria-describedby="phoneNumber-help${phoneError ? " phoneNumber-error" : ""}"${phoneError ? " aria-invalid=\"true\"" : ""} value="${safe(phoneValue)}">${phoneError ? `<p id="phoneNumber-error" class="ui-field__error" role="alert">${safe(phoneError)}</p>` : ""}</div><input type="hidden" name="expectedRevision" value="${contact?.revision ?? 0}"><button class="ui-button ui-button--primary ui-button--block" type="submit">Save phone number</button></form>`;
+  const emailForm = kind === "phone" ? "" : `<form class="ui-panel" method="post" action="/guest/contact/email"><div class="ui-field"><label class="ui-field__label" for="contactEmail">Email address <span aria-hidden="true">*</span></label><p class="ui-field__hint" id="contactEmail-help">Required to initialize hosted card checkout and send your payment receipt. This email is not your account identity.</p><input id="contactEmail" name="contactEmail" type="email" inputmode="email" autocomplete="email" enterkeyhint="done" maxlength="254" required aria-describedby="contactEmail-help${emailError ? " contactEmail-error" : ""}"${emailError ? " aria-invalid=\"true\"" : ""} value="${safe(emailValue)}">${emailError ? `<p id="contactEmail-error" class="ui-field__error" role="alert">${safe(emailError)}</p>` : ""}</div><input type="hidden" name="expectedRevision" value="${contact?.revision ?? 0}"><button class="ui-button ui-button--primary ui-button--block" type="submit">Save email address</button></form>`;
+  const generalError = error && kind === "both" ? `<p class="ui-banner ui-banner--danger" role="alert">${icon("alert")}<span>${safe(error)}</span></p>` : "";
+  return pageShell({
+    title: "Guest contact",
+    width: "narrow",
+    body: `<header class="ui-page__header"><h1>Guest contact</h1><p>Used only to coordinate your booking and payment.</p></header>${generalError}${phoneForm}${emailForm}`,
+  });
+}
+
+const PAGE_ERROR_COPY: Readonly<Record<string, { readonly title: string; readonly message: string }>> = {
+  AUTHENTICATION_REQUIRED: { title: "Open this from your conversation", message: "This page needs the browser session you used to chat with the concierge. Return to the conversation and follow the link from there." },
+  INVALID_OFFER: { title: "This payment link isn't valid", message: "The link is incomplete or has been changed. Return to the conversation for the current booking status." },
+  PAYMENT_OFFER_NOT_FOUND: { title: "We couldn't find this booking offer", message: "It may have expired or belong to a different conversation. Return to the conversation for the current booking status." },
+  PAYMENT_CONTINUATION_REJECTED: { title: "Payment can't continue right now", message: "No payment was taken. The offer may have expired or already been paid. Return to the conversation for the current booking status." },
+  PAYSTACK_UNAVAILABLE: { title: "Card checkout is unavailable", message: "No payment was taken. Try again in a few minutes from your conversation." },
+  INVALID_CHECKOUT_URL: { title: "Card checkout is unavailable", message: "No payment was taken. Try again in a few minutes from your conversation." },
+  LOCAL_PAYMENT_INVALID: { title: "This demo payment link isn't valid", message: "Start the payment again from your conversation." },
+};
+
+/** Page routes answer browser navigations with a styled page and API clients with JSON. */
+function sendPageError(req: IncomingMessage, res: ServerResponse, status: number, code: string): void {
+  const copy = PAGE_ERROR_COPY[code];
+  if (!copy || !prefersHtml(req.headers.accept)) { sendJson(res, status, { ok: false, code }); return; }
+  res.writeHead(status, GUEST_HTML_HEADERS);
+  res.end(errorPage({ status, code, title: copy.title, message: copy.message, action: { href: "/", label: "Back to your conversation" } }));
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -2042,9 +2068,9 @@ export function startLocalGuestServer(options: {
     const paymentPageMatch = /^\/payments\/offers\/([^/]+)$/.exec(url.pathname);
     if (req.method === "GET" && paymentPageMatch) {
       const session = resolveBrowserSession(env, browserSessions, readGuestSession(req), sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId);
-      if (!session) { sendJson(res, 401, { ok: false, code: "AUTHENTICATION_REQUIRED" }); return; }
+      if (!session) { sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED"); return; }
       let offerId: string;
-      try { offerId = decodeURIComponent(paymentPageMatch[1]!); } catch { sendJson(res, 400, { ok: false, code: "INVALID_OFFER" }); return; }
+      try { offerId = decodeURIComponent(paymentPageMatch[1]!); } catch { sendPageError(req, res, 400, "INVALID_OFFER"); return; }
       try {
         const principal: CommandPrincipal = { id: session.principalId, role: "guest", tenantId: session.tenantId };
         const artifact = app.environment.cardPaymentApp.getArtifact(offerId, principal);
@@ -2065,22 +2091,27 @@ export function startLocalGuestServer(options: {
               ? "Continue to local demo payment"
               : "Continue to hosted card checkout";
         const canContinue = artifact.actions.length > 0 && (artifact.facts.status !== "ready" || contactEmailMissing || !processing);
-        const escapeHtmlText = (value: string): string => value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!);
+        const escapeHtmlText = escapeHtml;
         const componentAmount = artifact.facts.currentComponentAmountKobo ?? (artifact.facts.status === "ready" ? artifact.facts.allInStayTotalKobo : artifact.facts.refundableSecurityDepositKobo);
         const componentLabel = artifact.facts.status === "deposit_required" || artifact.facts.currentComponent === "security_deposit" ? "Next payment · refundable deposit" : "Next payment · stay payment";
         const facts = [
-          `<p class="unit">${escapeHtmlText(artifact.facts.unit)}</p>`,
-          `<p>Stay: ${escapeHtmlText(artifact.facts.checkIn)} to ${escapeHtmlText(artifact.facts.checkOut)}</p>`,
+          `<p class="payment-unit">${escapeHtmlText(artifact.facts.unit)}</p>`,
+          `<p>Stay: ${escapeHtmlText(formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut))}</p>`,
           ...(artifact.facts.allInStayTotalKobo === undefined ? [] : [`<p>Stay total: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}</p>`]),
           ...(artifact.facts.refundableSecurityDepositKobo === undefined || artifact.facts.refundableSecurityDepositKobo <= 0 ? [] : [`<p>Refundable deposit (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}</p>`]),
-          `<p class="amount">Total to complete booking: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}</p>`,
+          `<p class="ui-money-total">Total to complete booking: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}</p>`,
           ...(componentAmount === undefined ? [] : [`<p>${componentLabel}: ${formatNgnKobo(componentAmount)}</p>`]),
           `<p>${formatWAT(artifact.facts.paymentWindowExpiresAt)}</p>`,
           `<p>${escapeHtmlText(status.detail)}</p>`,
         ].join("");
         res.writeHead(200, GUEST_HTML_HEADERS);
-        res.end(`<!doctype html><html lang="en-NG"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtmlText(status.label)} · Shortlet</title><link rel="stylesheet" href="/shortlet-foundations.css"><style>main{width:min(100% - 2 * var(--layout-gutter-mobile),36rem);margin:auto;padding:32px 0}p{overflow-wrap:anywhere}.unit{font-size:var(--font-size-h3);font-weight:650}.amount{font-size:var(--font-size-money-total);font-weight:700}a{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:10px 20px;border-radius:var(--radius-control);background:var(--color-action);color:var(--color-surface);font-weight:700;text-decoration:none}a:focus-visible{outline:3px solid var(--color-focus);outline-offset:2px}</style></head><body><main><h1>${escapeHtmlText(status.label)}</h1>${facts}${canContinue ? `<a href="${href}">${label}</a>` : ""}</main></body></html>`);
-      } catch { sendJson(res, 404, { ok: false, code: "PAYMENT_OFFER_NOT_FOUND" }); }
+        res.end(pageShell({
+          title: `${status.label} · Shortlet`,
+          width: "narrow",
+          style: ".payment-unit{font-family:var(--font-display);font-size:var(--font-size-h3);line-height:var(--font-line-h3);font-weight:600}.ui-panel p{margin:0}",
+          body: `<header class="ui-page__header"><p class="ui-eyebrow">Booking payment</p><h1>${escapeHtmlText(status.label)}</h1></header><section class="ui-panel">${facts}${canContinue ? `<a class="ui-button ui-button--primary ui-button--block" href="${href}">${label}</a>` : ""}</section>`,
+        }));
+      } catch { sendPageError(req, res, 404, "PAYMENT_OFFER_NOT_FOUND"); }
       return;
     }
 
@@ -2089,9 +2120,9 @@ export function startLocalGuestServer(options: {
       // ADR-0087: payment initialization is a server-owned continuation, not
       // a browser-selected amount, currency, reference, callback, or URL.
       const session = resolveBrowserSession(env, browserSessions, readGuestSession(req), sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId);
-      if (!session) { sendJson(res, 401, { ok: false, code: "AUTHENTICATION_REQUIRED" }); return; }
+      if (!session) { sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED"); return; }
       let offerId: string;
-      try { offerId = decodeURIComponent(continuationMatch[1]!); } catch { sendJson(res, 400, { ok: false, code: "INVALID_OFFER" }); return; }
+      try { offerId = decodeURIComponent(continuationMatch[1]!); } catch { sendPageError(req, res, 400, "INVALID_OFFER"); return; }
       try {
         const principal: CommandPrincipal = { id: session.principalId, role: "guest", tenantId: session.tenantId };
         if (options.localPayment) {
@@ -2100,12 +2131,12 @@ export function startLocalGuestServer(options: {
           res.writeHead(303, { Location: `/payments/local/checkout?reference=${encodeURIComponent(checkout.pspReference)}` }); res.end();
           return;
         }
-        if (!paystackClient) { sendJson(res, 503, { ok: false, code: "PAYSTACK_UNAVAILABLE" }); return; }
+        if (!paystackClient) { sendPageError(req, res, 503, "PAYSTACK_UNAVAILABLE"); return; }
         const checkout = await app.environment.cardPaymentApp.initializePaystackCheckout(offerId, principal, paystackClient);
-        if (!isApprovedPaystackCheckoutUrl(checkout.checkoutUrl)) { sendJson(res, 502, { ok: false, code: "INVALID_CHECKOUT_URL" }); return; }
+        if (!isApprovedPaystackCheckoutUrl(checkout.checkoutUrl)) { sendPageError(req, res, 502, "INVALID_CHECKOUT_URL"); return; }
         res.writeHead(303, { Location: checkout.checkoutUrl }); res.end();
       } catch {
-        sendJson(res, 400, { ok: false, code: "PAYMENT_CONTINUATION_REJECTED" });
+        sendPageError(req, res, 400, "PAYMENT_CONTINUATION_REJECTED");
       }
       return;
     }
@@ -2114,9 +2145,13 @@ export function startLocalGuestServer(options: {
       const session = resolveBrowserSession(env, browserSessions, readGuestSession(req), sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId);
       const reference = url.searchParams.get("reference");
       const checkout = reference ? app.environment.cardPaymentApp.manager.getCheckoutSessionByReference(reference) : null;
-      if (!session || !reference || !checkout) { sendJson(res, 400, { ok: false, code: "LOCAL_PAYMENT_INVALID" }); return; }
+      if (!session || !reference || !checkout) { sendPageError(req, res, 400, "LOCAL_PAYMENT_INVALID"); return; }
       res.writeHead(200, GUEST_HTML_HEADERS);
-      res.end(`<!doctype html><html lang="en-NG"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Local demo payment</title><link rel="stylesheet" href="/shortlet-foundations.css"><style>main{max-width:560px;margin:auto;padding:32px var(--layout-gutter-mobile)}button{min-height:var(--control-min-target);padding:0 20px;border:1px solid var(--color-action);border-radius:var(--radius-control);background:var(--color-action);color:var(--color-surface);font-weight:700}</style></head><body><main><h1>Local demo payment</h1><p>This deterministic local provider verifies the authoritative amount without collecting card details.</p><form method="post" action="/payments/local/complete"><input type="hidden" name="reference" value="${reference.replace(/[&<>'"]/g, "")}"><button type="submit">Complete local payment</button></form></main></body></html>`);
+      res.end(pageShell({
+        title: "Local demo payment",
+        width: "narrow",
+        body: `<header class="ui-page__header"><p class="ui-eyebrow">Local pilot only</p><h1>Local demo payment</h1><p>This deterministic local provider verifies the authoritative amount without collecting card details.</p></header><form class="ui-panel" method="post" action="/payments/local/complete"><input type="hidden" name="reference" value="${reference.replace(/[&<>'"]/g, "")}"><button class="ui-button ui-button--primary ui-button--block" type="submit">Complete local payment</button></form>`,
+      }));
       return;
     }
 

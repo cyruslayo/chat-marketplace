@@ -3,6 +3,7 @@ import {
   type A2UIComponent,
   type A2UIServerMessage,
 } from "@weaver/core";
+import { formatMoney } from "../../web/src/ui-kit.js";
 import { formatGuestDate, guestAmenityLabel, guestOccupancyLabel } from "./guest-content.js";
 
 export interface DiscoveryLocationProjection {
@@ -78,16 +79,9 @@ export interface DiscoveryArtifactToA2UIInput {
 export const VIEW_UNIT_EVENT = "shortlet.discovery.view-unit";
 export const SEE_ALL_DISCOVERY_EVENT = "shortlet.discovery.see-all";
 
+/** Kept as the Guest-surface name; the shared formatter lives in apps/web/src/ui-kit.ts. */
 export function formatNgnKobo(kobo: number): string {
-  const sign = kobo < 0 ? "-" : "";
-  const absoluteKobo = Math.abs(kobo);
-  const wholeNaira = Math.floor(absoluteKobo / 100);
-  const remainderKobo = absoluteKobo % 100;
-  const digits = String(wholeNaira);
-  const firstGroupLength = digits.length % 3 || 3;
-  const grouped = [digits.slice(0, firstGroupLength), ...digits.slice(firstGroupLength).match(/.{3}/g) ?? []].join(",");
-  const fraction = remainderKobo === 0 ? "" : `.${String(remainderKobo).padStart(2, "0")}`;
-  return `${sign}₦${grouped}${fraction}`;
+  return formatMoney(kobo);
 }
 
 function unitComponents(

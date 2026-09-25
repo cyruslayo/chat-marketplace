@@ -98,7 +98,7 @@ test("Guest and Operator conventional surfaces load the shared stylesheet", asyn
 
   const operatorLogin = await fetch(`http://127.0.0.1:${ownerPort}/operator/login`).then((response) => response.text());
   assert.match(operatorLogin, /href="\/shortlet-foundations\.css"/);
-  assert.match(operatorLogin, /--color-action/);
+  assert.match(operatorLogin, /class="ui-button ui-button--primary[^"]*" type="submit">Sign in/);
   const operatorCss = await fetch(`http://127.0.0.1:${ownerPort}/shortlet-foundations.css`);
   assert.equal(operatorCss.headers.get("content-type"), "text/css; charset=utf-8");
 });
