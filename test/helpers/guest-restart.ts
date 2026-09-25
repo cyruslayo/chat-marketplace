@@ -18,11 +18,13 @@ export function guestAction(surface: GuestSurfacePayload) {
 export const stages = ["discovery", "inspection", "draft", "review", "pending", "offer", "payment-ready", "handoff", "deposit-ready", "deposit-handoff", "confirmed"] as const;
 export type RestartStage = typeof stages[number];
 
-export async function restartFixture(config: Partial<LocalGuestFixtureConfig> = {}) {
+type GuestServerOptions = Omit<NonNullable<Parameters<typeof startLocalGuestServer>[0]>, "port" | "environment">;
+
+export async function restartFixture(config: Partial<LocalGuestFixtureConfig> = {}, serverOptions: GuestServerOptions = {}) {
   const directory = mkdtempSync(join(tmpdir(), "guest-restart-"));
   const databasePath = join(directory, "guest.sqlite");
   let now = new Date("2026-09-03T10:00:00Z");
-  let server = startLocalGuestServer({ port: 0, environment: new LocalGuestEnvironment({ ...config, databasePath, clock: () => now }) });
+  let server = startLocalGuestServer({ ...serverOptions, port: 0, environment: new LocalGuestEnvironment({ ...config, databasePath, clock: () => now }) });
   let base = `http://127.0.0.1:${await server.listen()}`;
   const home = await fetch(base);
   const cookie = home.headers.get("set-cookie")?.split(";")[0];
@@ -42,6 +44,7 @@ export async function restartFixture(config: Partial<LocalGuestFixtureConfig> = 
   return {
     databasePath, directory, cookie, threadId, actions, send, state,
     get environment() { return server.environment; },
+    get base() { return base; },
     setTime(value: string) { now = new Date(value); },
     async advance(target: RestartStage, onStage?: (stage: RestartStage, result: GuestTurnSuccess) => void | Promise<void>) {
       const discovery = await send("/api/turn", { text: "I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people" });
@@ -68,7 +71,7 @@ export async function restartFixture(config: Partial<LocalGuestFixtureConfig> = 
       await server.close();
       // A new server, environment, repositories, managers and connections. No
       // application instance or runtime map is retained across this boundary.
-      server = startLocalGuestServer({ port: 0, environment: new LocalGuestEnvironment({ ...config, ...overrides, databasePath, clock: () => now }) });
+      server = startLocalGuestServer({ ...serverOptions, port: 0, environment: new LocalGuestEnvironment({ ...config, ...overrides, databasePath, clock: () => now }) });
       base = `http://127.0.0.1:${await server.listen()}`;
       const response = await fetch(base, { headers: { cookie } });
       await response.text();
