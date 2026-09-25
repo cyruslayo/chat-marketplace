@@ -8855,6 +8855,12 @@ Known schemas:
       return false;
     }
   }
+  function isStringList(value) {
+    return Array.isArray(value) && value.every((item) => typeof item === "string");
+  }
+  function isWaitingState(value) {
+    return isRecord3(value) && ["operator-response", "offer-payment-window", "payment-window"].includes(String(value.kind)) && typeof value.heading === "string" && typeof value.deadlineText === "string" && typeof value.deadlineAt === "string" && Number.isFinite(Date.parse(value.deadlineAt)) && typeof value.serverNow === "string" && Number.isFinite(Date.parse(value.serverNow)) && isStringList(value.outcomes) && isStringList(value.meanwhile);
+  }
   function isSurfacePayload(value) {
     if (!isRecord3(value) || typeof value.surfaceId !== "string" || value.surfaceId.trim() === "" || !Array.isArray(value.a2uiMessages)) return false;
     if (value.mode !== void 0 && value.mode !== "text" && value.mode !== "inline-surface" && value.mode !== "focused-surface") return false;
@@ -8862,6 +8868,7 @@ Known schemas:
     if (value.summary !== void 0 && typeof value.summary !== "string") return false;
     if (value.textFallback !== void 0 && typeof value.textFallback !== "string") return false;
     if (value.conventionalRouteLabel !== void 0 && typeof value.conventionalRouteLabel !== "string") return false;
+    if (value.waiting !== void 0 && !isWaitingState(value.waiting)) return false;
     return value.conventionalRoute === void 0 || isSafeInternalRoute(value.conventionalRoute);
   }
   var JOURNEY_STATE_TEXT = {
@@ -9019,7 +9026,75 @@ Known schemas:
     synchronize();
     new MutationObserver(synchronize).observe(mount, { childList: true, subtree: true, characterData: true });
   }
+  var countdownTimer;
+  var lastWaitingRefetch = Number.NEGATIVE_INFINITY;
+  var WAITING_REFETCH_GAP_MS = 5e3;
+  function stopCountdown() {
+    if (countdownTimer !== void 0) clearInterval(countdownTimer);
+    countdownTimer = void 0;
+  }
+  function formatRemaining(ms) {
+    if (ms <= 0) return "Checking the latest status\u2026";
+    const minutes = Math.ceil(ms / 6e4);
+    if (minutes <= 1) return "Less than 1 min left";
+    return minutes < 60 ? `${minutes} min left` : `${Math.floor(minutes / 60)} h ${minutes % 60} min left`;
+  }
+  function refetchWaitingState() {
+    const wait = Math.max(0, WAITING_REFETCH_GAP_MS - (performance.now() - lastWaitingRefetch));
+    setTimeout(() => {
+      lastWaitingRefetch = performance.now();
+      void refreshServerState();
+    }, wait);
+  }
+  function startCountdown(waiting, output) {
+    stopCountdown();
+    const remainingAtReceipt = Date.parse(waiting.deadlineAt) - Date.parse(waiting.serverNow);
+    const receivedAt = performance.now();
+    const tick = () => {
+      const remaining = remainingAtReceipt - (performance.now() - receivedAt);
+      output.textContent = formatRemaining(remaining);
+      if (remaining <= 0) {
+        stopCountdown();
+        refetchWaitingState();
+      }
+    };
+    tick();
+    if (remainingAtReceipt > 0) countdownTimer = setInterval(tick, 1e3);
+  }
+  function renderWaiting(waiting) {
+    const panel = document.createElement("section");
+    panel.className = "waiting-panel";
+    panel.dataset.waiting = waiting.kind;
+    panel.setAttribute("aria-label", waiting.heading);
+    const heading = document.createElement("h3");
+    heading.textContent = waiting.heading;
+    const deadline = document.createElement("p");
+    deadline.className = "waiting-deadline";
+    const absolute = document.createElement("span");
+    absolute.className = "waiting-deadline-time";
+    absolute.textContent = waiting.deadlineText;
+    const countdown = document.createElement("span");
+    countdown.className = "waiting-countdown";
+    deadline.append(absolute, " \xB7 ", countdown);
+    const nextLabel = document.createElement("p");
+    nextLabel.className = "waiting-label";
+    nextLabel.textContent = "What happens next";
+    const list = (items, className) => {
+      const element = document.createElement("ul");
+      element.className = className;
+      for (const item of items) {
+        const entry = document.createElement("li");
+        entry.textContent = item;
+        element.appendChild(entry);
+      }
+      return element;
+    };
+    panel.append(heading, deadline, nextLabel, list(waiting.outcomes, "waiting-outcomes"), list(waiting.meanwhile, "waiting-meanwhile"));
+    startCountdown(waiting, countdown);
+    return panel;
+  }
   function renderSurface(surface, moveFocus = false) {
+    stopCountdown();
     const presentation = presentationFor(surface);
     composerForm.dataset.focused = presentation.mode === "focused-surface" ? "true" : "false";
     activePayload = surface;
@@ -9069,6 +9144,7 @@ Known schemas:
       state.textContent = statusMessage;
       activeWorkspace.appendChild(state);
     }
+    if (surface.waiting && presentation.status === "active") activeWorkspace.appendChild(renderWaiting(surface.waiting));
     const mount = document.createElement("div");
     mount.className = "weaver-mount";
     activeWorkspace.appendChild(mount);
@@ -9343,5 +9419,8 @@ Known schemas:
       return false;
     }
   }
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && activePayload?.waiting) void refreshServerState();
+  });
   void restoreServerState();
 })();

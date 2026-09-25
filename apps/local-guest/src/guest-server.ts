@@ -27,6 +27,8 @@ import {
   GUEST_GLOSSARY,
   GUEST_JOURNEY,
   GUEST_RECEIPTS,
+  guestWaitingCopy,
+  type GuestWaitingKind,
   accommodationProviderLine,
   guestOperatorName,
   guestReservationStatus,
@@ -93,6 +95,23 @@ export interface GuestSurfacePayload {
   readonly textFallback?: string;
   readonly conventionalRoute?: string;
   readonly conventionalRouteLabel?: string;
+  /** Issue 10: present only while the Guest waits on a server-owned deadline. */
+  readonly waiting?: GuestWaitingState;
+}
+
+/**
+ * Issue 10 / ADR-0079: the browser counts down from `serverNow` to
+ * `deadlineAt`, both from the server, and never owns the deadline itself.
+ */
+export interface GuestWaitingState {
+  readonly kind: GuestWaitingKind;
+  readonly heading: string;
+  readonly deadlineAt: string;
+  /** The absolute WAT deadline (ADR-0078), shown alongside the countdown. */
+  readonly deadlineText: string;
+  readonly serverNow: string;
+  readonly outcomes: readonly string[];
+  readonly meanwhile: readonly string[];
 }
 
 export interface GuestTimelineEntry {
@@ -659,16 +678,69 @@ export class LocalGuestApp {
       ok: true,
       threadId,
       timeline: [...thread.timeline],
-      surfaces: [...normalized.surfaces],
+      surfaces: this.#withWaiting(thread, normalized.surfaces),
       ...(journey === undefined ? {} : { journey }),
     };
   }
 
+  /**
+   * Adds the response-time projections (journey rail, waiting state) to a
+   * result. They are derived per response and never stored with the thread.
+   */
   #withJourney(threadId: string, result: GuestTurnResult): GuestTurnResult {
     if (!result.ok || this.#assistantRuntime) return result;
     const thread = this.#threads.get(threadId);
-    const journey = thread ? this.#journeyFor(thread) : undefined;
-    return journey === undefined ? result : { ...result, journey };
+    if (!thread) return result;
+    const journey = this.#journeyFor(thread);
+    const surfaces = this.#withWaiting(thread, result.surfaces);
+    return { ...result, surfaces, ...(journey === undefined ? {} : { journey }) };
+  }
+
+  #withWaiting(thread: GuestThreadState, surfaces: readonly GuestSurfacePayload[]): GuestSurfacePayload[] {
+    return surfaces.map((surface, index) => {
+      if (index !== surfaces.length - 1) return surface;
+      const waiting = this.#waitingFor(thread, surface);
+      return waiting === undefined ? surface : { ...surface, waiting };
+    });
+  }
+
+  /**
+   * Issue 10: the waiting state for the current surface, read from the
+   * authoritative artifact so the deadline is the server's (ADR-0079). Only a
+   * delivered request awaiting the Operator (ADR-0041) and an open Payment
+   * Window (ADR-0044) wait on a deadline; everything else has none.
+   */
+  #waitingFor(thread: GuestThreadState, surface: GuestSurfacePayload): GuestWaitingState | undefined {
+    if (surface.status !== undefined && surface.status !== "active") return undefined;
+    const environment = this.#environment;
+    const guest = environment.guestPrincipal();
+    const now = environment.clock();
+    const open = (deadlineAt: string): boolean => new Date(deadlineAt).getTime() > now.getTime();
+    const state = (kind: GuestWaitingKind, deadlineAt: string, deadlineText: string): GuestWaitingState => {
+      const copy = guestWaitingCopy(kind, this.#currentUnit(thread)?.operator?.name);
+      return { kind, heading: copy.heading, deadlineAt, deadlineText, serverNow: now.toISOString(), outcomes: copy.outcomes, meanwhile: copy.meanwhile };
+    };
+    try {
+      if (thread.requestId && !thread.offerId && surface.surfaceId === `thread-${thread.threadId}:request:${thread.requestId}`) {
+        const facts = environment.bookingRequestApp.getArtifact(thread.requestId, guest).facts;
+        if (facts.status !== "disclosed" || !facts.delivered || !open(facts.operatorResponseDeadlineAt)) return undefined;
+        return state("operator-response", facts.operatorResponseDeadlineAt, `Response due by ${formatWAT(facts.operatorResponseDeadlineAt)}`);
+      }
+      if (thread.offerId && surface.surfaceId === `thread-${thread.threadId}:offer:${thread.offerId}`) {
+        const facts = environment.conditionalOfferApp.getArtifact(thread.offerId, guest).facts;
+        if (facts.status !== "issued" || !open(facts.paymentWindowExpiresAt)) return undefined;
+        return state("offer-payment-window", facts.paymentWindowExpiresAt, formatBookingDeadline(facts.paymentWindowExpiresAt));
+      }
+      if (thread.offerId && surface.surfaceId.includes(":payment:")) {
+        const facts = environment.cardPaymentApp.getArtifact(thread.offerId, guest).facts;
+        // A payment already processing may be in its grace period (ADR-0044); it has no guest countdown.
+        if (!["ready", "checkout_initiated", "deposit_required"].includes(facts.status) || surface.surfaceId.includes(":payment:result:") || !open(facts.paymentWindowExpiresAt)) return undefined;
+        return state("payment-window", facts.paymentWindowExpiresAt, formatBookingDeadline(facts.paymentWindowExpiresAt));
+      }
+    } catch {
+      return undefined;
+    }
+    return undefined;
   }
 
   /**
@@ -1814,6 +1886,14 @@ export function renderGuestShellHtml(): string {
     .workspace-close:hover, #workspace-reopen:hover, .contact-link:hover { border-color: var(--accent); }
     .workspace-status { margin: 0 0 var(--space-3); color: var(--color-text-secondary); font-size: var(--font-size-small); }
     .workspace-status[data-status="stale"], .workspace-status[data-status="expired"], .workspace-status[data-status="deleted"], .workspace-status[data-status="fallback"] { padding: var(--space-2) var(--space-3); border-inline-start: 3px dashed var(--color-warning); background: var(--color-warning-surface); color: var(--color-warning); }
+    .waiting-panel { display: grid; gap: var(--space-2); margin: 0 0 var(--space-4); padding: var(--space-3); border: 1px solid var(--color-border-subtle); border-inline-start: 4px solid var(--color-info); border-radius: var(--radius-card); background: var(--color-info-surface); }
+    .waiting-panel h3 { margin: 0; font-size: var(--font-size-h3); line-height: var(--font-line-h3); font-weight: 650; }
+    .waiting-panel p, .waiting-panel ul { margin: 0; }
+    .waiting-panel ul { display: grid; gap: var(--space-1); padding-inline-start: var(--space-5); }
+    .waiting-deadline { font-weight: 600; font-variant-numeric: tabular-nums; }
+    .waiting-countdown { color: var(--color-info); }
+    .waiting-label { color: var(--color-text-secondary); font-size: var(--font-size-small); font-weight: 600; }
+    .waiting-meanwhile { color: var(--color-text-secondary); }
     .weaver-mount { min-width: 0; max-width: 100%; overflow: visible; }
     .workspace-arrival { animation: workspace-enter var(--duration-base) var(--ease-enter) both; }
     @keyframes workspace-enter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
@@ -1990,11 +2070,18 @@ function renderJourneyRailHtml(journey: GuestJourney | undefined): string {
   return `<nav class="no-js-journey" aria-label="${GUEST_JOURNEY.railLabel}"><ol>${steps}</ol></nav>`;
 }
 
+/** Issue 10 / ADR-0080: without JavaScript the absolute deadline stands in for the countdown. */
+function renderWaitingHtml(waiting: GuestWaitingState | undefined): string {
+  if (!waiting) return "";
+  const list = (items: readonly string[]): string => `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+  return `<div class="no-js-waiting" data-waiting="${waiting.kind}"><h3>${escapeHtml(waiting.heading)}</h3><p>${escapeHtml(waiting.deadlineText)}</p><p>What happens next</p>${list(waiting.outcomes)}${list(waiting.meanwhile)}</div>`;
+}
+
 export function renderNoScriptConversationHtml(input: { readonly threadId: string; readonly timeline: readonly GuestTimelineEntry[]; readonly surfaces: readonly GuestSurfacePayload[]; readonly journey?: GuestJourney; readonly error?: string; readonly draft?: string }): string {
   const turns = input.timeline.map((entry) => entry.role === "receipt"
     ? `<li class="no-js-receipt" data-role="receipt"><p>${icon("check")} ${escapeHtml(entry.text)}</p></li>`
     : `<li class="ui-panel no-js-turn" data-role="${entry.role}"><p class="ui-eyebrow">${entry.role === "user" ? "You" : "Shortlet Concierge"}</p><p>${escapeHtml(entry.text)}</p></li>`).join("");
-  const surfaces = input.surfaces.filter((surface) => surface.status !== "deleted" && surface.status !== "superseded").map((surface) => `<section class="ui-panel" aria-label="${escapeHtml(surface.summary ?? "Current details")}">${surface.summary ? `<h2>${escapeHtml(surface.summary)}</h2>` : ""}${surface.textFallback ? `<p>${escapeHtml(surface.textFallback)}</p>` : ""}${surface.conventionalRoute ? `<a class="ui-button ui-button--primary" href="${escapeHtml(surface.conventionalRoute)}">${escapeHtml(surface.conventionalRouteLabel ?? "Open full details")}</a>` : ""}</section>`).join("");
+  const surfaces = input.surfaces.filter((surface) => surface.status !== "deleted" && surface.status !== "superseded").map((surface) => `<section class="ui-panel" aria-label="${escapeHtml(surface.summary ?? "Current details")}">${surface.summary ? `<h2>${escapeHtml(surface.summary)}</h2>` : ""}${surface.textFallback ? `<p>${escapeHtml(surface.textFallback)}</p>` : ""}${renderWaitingHtml(surface.waiting)}${surface.conventionalRoute ? `<a class="ui-button ui-button--primary" href="${escapeHtml(surface.conventionalRoute)}">${escapeHtml(surface.conventionalRouteLabel ?? "Open full details")}</a>` : ""}</section>`).join("");
   const error = input.error ? `<p id="composer-error" class="ui-field__error" role="alert">${escapeHtml(input.error)}</p>` : "";
   return pageShell({
     title: "Conversation · Shortlet",
