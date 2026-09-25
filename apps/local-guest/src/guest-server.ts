@@ -17,6 +17,7 @@ import {
   REQUEST_DRAFT_REVIEW_EVENT,
   REQUEST_DRAFT_SUBMIT_EVENT,
   REQUEST_TO_BOOK_EVENT,
+  BACK_TO_RESULTS_EVENT,
   SEE_ALL_DISCOVERY_EVENT,
   formatNgnKobo,
   formatBookingDeadline,
@@ -24,6 +25,7 @@ import {
   guestRequestStatus,
   guestPaymentStatus,
   GUEST_GLOSSARY,
+  GUEST_JOURNEY,
   GUEST_RECEIPTS,
   accommodationProviderLine,
   guestOperatorName,
@@ -61,6 +63,7 @@ import {
   LOCAL_GUEST_PORT,
   resetLocalGuestFixture,
 } from "./fixture.js";
+import { projectJourney, type GuestJourney } from "./journey-rail.js";
 import {
   parseGuestProjection,
   type GuestPersistentProjection,
@@ -103,6 +106,8 @@ export interface GuestStateSnapshot {
   readonly threadId: string;
   readonly timeline: readonly GuestTimelineEntry[];
   readonly surfaces: readonly GuestSurfacePayload[];
+  /** Issue 08: the journey rail, derived from authoritative state on every read. */
+  readonly journey?: GuestJourney;
 }
 
 export interface GuestTurnSuccess {
@@ -111,6 +116,7 @@ export interface GuestTurnSuccess {
   /** Completed-action receipts, rendered as quiet timeline markers. */
   readonly receipts?: readonly string[];
   readonly surfaces: readonly GuestSurfacePayload[];
+  readonly journey?: GuestJourney;
 }
 
 export interface GuestRejection {
@@ -172,6 +178,7 @@ const EVENT_STAGE_ALLOW_LIST: Readonly<Record<string, string>> = Object.freeze({
   "shortlet.discovery.view-unit": DISCOVERY_STAGE,
   [SEE_ALL_DISCOVERY_EVENT]: DISCOVERY_STAGE,
   [REQUEST_TO_BOOK_EVENT]: UNIT_STAGE,
+  [BACK_TO_RESULTS_EVENT]: UNIT_STAGE,
   "shortlet.conditional-offer.accept": OFFER_STAGE,
   "shortlet.card-payment.initialize-checkout": PAYMENT_STAGE,
   "shortlet.card-payment.verify-return": PAYMENT_STAGE,
@@ -237,7 +244,7 @@ export class LocalGuestApp {
     const result = await this.#handleTurn(threadId, text);
     const decorated = this.#decorateResult(result);
     if (decorated.ok) this.#rememberResult(threadId, text, decorated);
-    return decorated;
+    return this.#withJourney(threadId, decorated);
   }
 
   async #handleTurn(threadId: string, text: string): Promise<GuestTurnResult> {
@@ -440,7 +447,7 @@ export class LocalGuestApp {
     const result = this.#handleEvent(threadId, payload);
     const decorated = this.#decorateResult(result);
     if (decorated.ok) this.#rememberResult(threadId, undefined, decorated);
-    return decorated;
+    return this.#withJourney(threadId, decorated);
   }
 
   async handleEventAsync(threadId: string, payload: unknown): Promise<GuestTurnResult> {
@@ -449,7 +456,7 @@ export class LocalGuestApp {
       const result = await this.#handlePaystackCardCheckout(threadId, event);
       const decorated = this.#decorateResult(result);
       if (decorated.ok) this.#rememberResult(threadId, undefined, decorated);
-      return decorated;
+      return this.#withJourney(threadId, decorated);
     }
     return this.handleEvent(threadId, payload);
   }
@@ -535,6 +542,8 @@ export class LocalGuestApp {
         return this.#handleViewUnit(thread, event);
       case REQUEST_TO_BOOK_EVENT:
         return this.#handleRequestToBook(thread, event);
+      case BACK_TO_RESULTS_EVENT:
+        return this.#handleBackToResults(thread, event);
       case "shortlet.conditional-offer.accept":
         return this.#handleOfferAccept(thread, event);
       case "shortlet.card-payment.initialize-checkout":
@@ -645,12 +654,65 @@ export class LocalGuestApp {
     if (priorSurfaceId !== undefined && thread.lastSurfaces.at(-1)?.surfaceId !== priorSurfaceId) {
       this.#emitTransition(thread, "interaction.cross_tab_recovery_occurred", { aggregateType: "interaction_thread", aggregateId: threadId });
     }
+    const journey = this.#journeyFor(thread);
     return {
       ok: true,
       threadId,
       timeline: [...thread.timeline],
       surfaces: [...normalized.surfaces],
+      ...(journey === undefined ? {} : { journey }),
     };
+  }
+
+  #withJourney(threadId: string, result: GuestTurnResult): GuestTurnResult {
+    if (!result.ok || this.#assistantRuntime) return result;
+    const thread = this.#threads.get(threadId);
+    const journey = thread ? this.#journeyFor(thread) : undefined;
+    return journey === undefined ? result : { ...result, journey };
+  }
+
+  /**
+   * Issue 08: where the Guest is on the request-to-book journey (ADR-0005).
+   * Read from the authoritative artifacts on every call, so a passed deadline
+   * shows as expired without waiting for a background job. Reading never
+   * issues a command (ADR-0079).
+   */
+  #journeyFor(thread: GuestThreadState): GuestJourney | undefined {
+    const environment = this.#environment;
+    const guest = environment.guestPrincipal();
+    try {
+      if (thread.offerId) {
+        // ADR-0005: "Confirmed" only once the durable Booking Contract exists.
+        if (environment.interactionStore.findBookingSnapshotByOfferId(thread.offerId)) return projectJourney("confirmed");
+        const offer = environment.conditionalOfferApp.getArtifact(thread.offerId, guest).facts.status;
+        if (offer === "accepted" || thread.activeSurfaces.has(PAYMENT_STAGE)) {
+          const payment = environment.cardPaymentApp.getArtifact(thread.offerId, guest).facts.status;
+          if (payment === "expired" || payment === "failed") {
+            return projectJourney("pay", { kind: payment, label: guestPaymentStatus(payment).label.split(" · ")[0]! });
+          }
+          return projectJourney("pay");
+        }
+        if (offer === "expired") return projectJourney("offer", { kind: "expired", label: "Offer expired" });
+        if (offer === "stale") return projectJourney("offer", { kind: "closed", label: "Offer no longer current" });
+        if (offer === "revoked") return projectJourney("offer", { kind: "closed", label: "Offer withdrawn" });
+        return projectJourney("offer");
+      }
+      if (thread.requestId) {
+        const request = environment.bookingRequestApp.getArtifact(thread.requestId, guest).facts;
+        const label = guestRequestStatus(request.status, request.delivered).label;
+        if (request.status === "declined") return projectJourney("request", { kind: "declined", label });
+        if (request.status === "expired") return projectJourney("request", { kind: "expired", label });
+        if (request.status === "delivery_failed") return projectJourney("request", { kind: "not-delivered", label });
+        return projectJourney("request");
+      }
+    } catch {
+      // An unreadable record never shows progress it cannot prove.
+      return undefined;
+    }
+    if (thread.activeSurfaces.has(UNIT_STAGE)) return projectJourney("stay");
+    if (thread.draftId) return projectJourney("request");
+    if (thread.discoveryArtifact) return projectJourney("search");
+    return undefined;
   }
 
   recordShellTelemetry(event: unknown): boolean {
@@ -799,6 +861,7 @@ export class LocalGuestApp {
             a2uiMessages: unitDetailArtifactToA2UI({
               artifact: unitDetailArtifactFromProjection({ unit, ...this.#stayDatesFor(thread), projectionVersion: projection.discoveryArtifact.projectionVersion, viewer: environment.guestPrincipal() }),
               surfaceId: unitSurfaceId,
+              backToResults: { artifactId: projection.discoveryArtifact.id },
             }),
           };
         }
@@ -924,18 +987,8 @@ export class LocalGuestApp {
         }
       }
       if (projection.activeStage === DISCOVERY_STAGE && projection.discoveryArtifact) {
-        const artifact = projection.discoveryArtifact;
-        const discoverySurfaceId = projection.discoverySurfaceId;
-        thread.activeSurfaces.set(DISCOVERY_STAGE, discoverySurfaceId);
-        return {
-          surfaceId: discoverySurfaceId,
-          mode: "inline-surface",
-          summary: discoverySummary(artifact.facts.filters),
-          // ADR-0080: the restored fallback keeps the same criteria as the live one.
-          conventionalRoute: conventionalSearchRoute(artifact.facts.filters),
-          textFallback: discoveryFallbackMessage(artifact),
-          a2uiMessages: discoveryArtifactToA2UI({ artifact, surfaceId: discoverySurfaceId }),
-        };
+        thread.activeSurfaces.set(DISCOVERY_STAGE, projection.discoverySurfaceId);
+        return discoverySurface(projection.discoveryArtifact, projection.discoverySurfaceId);
       }
       return null;
     } catch {
@@ -1069,7 +1122,8 @@ export class LocalGuestApp {
     thread.unitDetail = { unitId: unit.id, artifactId: unitDetailArtifact.id };
     const surfaceId = unitDetailSurfaceId(thread.threadId, thread.discoveryRevision);
     // ADR-0074: selecting a Unit supersedes the discovery projection and its
-    // generated actions; the linear demo has no valid back-navigation state.
+    // generated actions. "Back to results" re-presents the same artifact as a
+    // new surface lifecycle (issue 08).
     this.#supersede(thread, DISCOVERY_STAGE);
     thread.activeSurfaces.set(UNIT_STAGE, surfaceId);
     this.#emitTransition(thread, "unit.selected", { aggregateType: "unit", aggregateId: unit.id, surfaceId });
@@ -1084,7 +1138,7 @@ export class LocalGuestApp {
           summary: `${unit.title} details`,
           conventionalRoute: resolved.effect.route,
           textFallback: `${unit.title}. ${unit.location.neighbourhood}, ${unit.location.city}. Entire Place; capacity ${unit.capacity} guests. ${GUEST_GLOSSARY.allInStayTotal}: ${unit.price.allInStayTotalKobo === null ? "not yet quoted" : formatNgnKobo(unit.price.allInStayTotalKobo)}. ${GUEST_GLOSSARY.refundableSecurityDeposit}: ${formatNgnKobo(unit.price.refundableSecurityDepositKobo)}. Inspection: ${unit.trust.inspection.status}; Management Authority: ${unit.trust.managementAuthority.status}.`,
-          a2uiMessages: unitDetailArtifactToA2UI({ artifact: unitDetailArtifact, surfaceId }),
+          a2uiMessages: unitDetailArtifactToA2UI({ artifact: unitDetailArtifact, surfaceId, backToResults: { artifactId: artifact.id } }),
         },
       ],
     };
@@ -1113,6 +1167,29 @@ export class LocalGuestApp {
         a2uiMessages: discoveryArtifactToA2UI({ artifact, surfaceId }),
       }],
     };
+  }
+
+  /**
+   * Issue 08: from stay detail, return to the results of the same search. The
+   * stored artifact is re-presented, so the criteria and results are the ones
+   * the Guest saw; no new search runs (ADR-0079). Every check fails closed.
+   */
+  #handleBackToResults(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
+    // AC4 / ADR-0005: going back never touches a sent Booking Request or offer.
+    if (thread.requestId || thread.offerId) return { ok: false, code: "STALE_SURFACE", message: "That action is no longer available; please use the current options." };
+    const artifact = thread.discoveryArtifact;
+    if (!artifact) return { ok: false, code: "INVALID_ARTIFACT", message: "No search is active for this conversation." };
+    const context = event.context;
+    if (!context || typeof context !== "object" || Array.isArray(context)
+      || Object.keys(context).length !== 1 || context.artifactId !== artifact.id) {
+      return { ok: false, code: "INVALID_CONTEXT", message: "Those search results are no longer available." };
+    }
+    // ADR-0074: a new discovery revision, so the old unit surface's actions go stale.
+    this.#prepareDiscovery(thread);
+    thread.unitDetail = null;
+    thread.activeSurfaces.set(DISCOVERY_STAGE, thread.discoverySurfaceId);
+    this.#emitTransition(thread, "unit.discovery.results_restored", { aggregateType: "discovery", aggregateId: artifact.id, surfaceId: thread.discoverySurfaceId });
+    return { ok: true, messages: ["Here are your search results again."], surfaces: [discoverySurface(artifact, thread.discoverySurfaceId)] };
   }
 
   #handleRequestToBook(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
@@ -1623,6 +1700,19 @@ function formatWAT(iso: string): string {
   return formatBookingDeadline(iso).replace(/^Pay by /, "");
 }
 
+/** The discovery surface for a stored artifact; restoring and going back present it identically. */
+function discoverySurface(artifact: DiscoveryArtifactProjection, surfaceId: string): GuestSurfacePayload {
+  return {
+    surfaceId,
+    mode: "inline-surface",
+    summary: discoverySummary(artifact.facts.filters),
+    // ADR-0080: the re-presented fallback keeps the same criteria as the live one.
+    conventionalRoute: conventionalSearchRoute(artifact.facts.filters),
+    textFallback: discoveryFallbackMessage(artifact),
+    a2uiMessages: discoveryArtifactToA2UI({ artifact, surfaceId }),
+  };
+}
+
 function discoverySummary(filters: unknown): string {
   if (filters === null || typeof filters !== "object" || Array.isArray(filters)) return "Search results";
   const record = filters as Record<string, unknown>;
@@ -1662,6 +1752,18 @@ export function renderGuestShellHtml(): string {
     header h1 { margin: 0; font-family: var(--font-display); font-size: 1.25rem; line-height: 1.2; font-weight: 600; letter-spacing: -0.005em; }
     .header-identity { display: flex; align-items: center; min-height: var(--control-min-target); color: var(--text); text-decoration: none; }
     .header-note { color: var(--text-muted); font-size: var(--font-size-small); white-space: nowrap; }
+    /* Issue 08: one compact line; it scrolls inside itself, never the page (ADR-0078). */
+    #journey-rail { padding: var(--space-2) var(--layout-gutter-mobile); border-bottom: 1px solid var(--border); background: var(--surface); }
+    #journey-rail[hidden] { display: none; }
+    /* position: relative keeps the visually hidden state text inside the scroller. */
+    #journey-rail ol { position: relative; display: flex; align-items: center; gap: var(--space-2); margin: 0; padding: 0; list-style: none; overflow-x: auto; scrollbar-width: none; }
+    #journey-rail li { flex: none; display: flex; align-items: center; gap: var(--space-2); color: var(--color-text-secondary); font-size: var(--font-size-small); line-height: var(--font-line-small); white-space: nowrap; }
+    #journey-rail li + li::before { content: ""; inline-size: var(--space-3); border-top: 1px solid var(--border); }
+    #journey-rail li[data-state="done"] { color: var(--text); }
+    #journey-rail li[data-state="current"] { color: var(--accent); font-weight: 650; }
+    #journey-rail li[data-state="failed"] { color: var(--color-warning); font-weight: 650; }
+    #journey-rail li[data-state="failed"][data-tone="danger"] { color: var(--color-danger); }
+    @media (max-width: 29.999rem) { #journey-rail ol, #journey-rail li { gap: var(--space-1); } #journey-rail li + li::before { inline-size: var(--space-2); } }
     main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
     /* ADR-0078: keep the conversation independently scrollable at the 320px launch viewport. */
     #transcript { flex: 1 1 0; min-height: 22dvh; padding: var(--space-6) var(--layout-gutter-mobile) var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; }
@@ -1766,12 +1868,12 @@ export function renderGuestShellHtml(): string {
     #composer-submit:disabled { background: var(--surface-soft); cursor: progress; }
     #working-status { grid-column: 1 / -1; margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-small); }
     @media (min-width: 48rem) {
-      #transcript, #workspace-region, form#composer { padding-left: var(--layout-gutter-tablet); padding-right: var(--layout-gutter-tablet); }
+      #transcript, #workspace-region, form#composer, #journey-rail { padding-left: var(--layout-gutter-tablet); padding-right: var(--layout-gutter-tablet); }
       .stay-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .unit-gallery--mosaic { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .unit-gallery--mosaic img:first-of-type { grid-column: 1 / -1; }
     }
-    @media (min-width: 64rem) { .app { max-width: var(--layout-conversation-max); } #transcript, #workspace-region, form#composer { padding-left: var(--layout-gutter-desktop); padding-right: var(--layout-gutter-desktop); } }
+    @media (min-width: 64rem) { .app { max-width: var(--layout-conversation-max); } #transcript, #workspace-region, form#composer, #journey-rail { padding-left: var(--layout-gutter-desktop); padding-right: var(--layout-gutter-desktop); } }
     @media (max-width: 47.999rem) { .header-note { display: none; } #active-workspace[data-mode="focused-surface"] { scroll-margin-block: var(--space-3); } }
     @media (max-height: 520px) { header { position: static; } #transcript { min-height: 0; } form#composer { position: sticky; } }
     @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; } }
@@ -1785,6 +1887,7 @@ export function renderGuestShellHtml(): string {
       <span class="header-note">Abuja · Lagos</span>
       <a class="contact-link" href="/guest/contact">Contact details</a>
     </header>
+    <nav id="journey-rail" aria-label="${GUEST_JOURNEY.railLabel}" hidden><ol></ol></nav>
     <main id="main-content" tabindex="-1">
       <section id="transcript" role="log" aria-live="polite" aria-relevant="additions" aria-labelledby="conversation-heading">
         <h2 id="conversation-heading" class="conversation-heading">Conversation</h2>
@@ -1854,7 +1957,18 @@ const MAX_TURN_TEXT_LENGTH = 2000;
  * JavaScript. Surfaces are shown by their text fallback and conventional
  * route (ADR-0080), with the same link label the client uses.
  */
-export function renderNoScriptConversationHtml(input: { readonly threadId: string; readonly timeline: readonly GuestTimelineEntry[]; readonly surfaces: readonly GuestSurfacePayload[]; readonly error?: string; readonly draft?: string }): string {
+const JOURNEY_STATE_TEXT: Readonly<Record<GuestJourney["steps"][number]["state"], string>> = {
+  done: "completed", current: "current step", failed: "not completed", upcoming: "not started",
+};
+
+/** Issue 08 / ADR-0080: the no-JS page shows the same journey rail as the live shell. */
+function renderJourneyRailHtml(journey: GuestJourney | undefined): string {
+  if (!journey) return "";
+  const steps = journey.steps.map((step) => `<li data-state="${step.state}"${step.state === "current" ? " aria-current=\"step\"" : ""}>${escapeHtml(step.label)}<span class="journey-state"> (${JOURNEY_STATE_TEXT[step.state]})</span></li>`).join("");
+  return `<nav class="no-js-journey" aria-label="${GUEST_JOURNEY.railLabel}"><ol>${steps}</ol></nav>`;
+}
+
+export function renderNoScriptConversationHtml(input: { readonly threadId: string; readonly timeline: readonly GuestTimelineEntry[]; readonly surfaces: readonly GuestSurfacePayload[]; readonly journey?: GuestJourney; readonly error?: string; readonly draft?: string }): string {
   const turns = input.timeline.map((entry) => entry.role === "receipt"
     ? `<li class="no-js-receipt" data-role="receipt"><p>${icon("check")} ${escapeHtml(entry.text)}</p></li>`
     : `<li class="ui-panel no-js-turn" data-role="${entry.role}"><p class="ui-eyebrow">${entry.role === "user" ? "You" : "Shortlet Concierge"}</p><p>${escapeHtml(entry.text)}</p></li>`).join("");
@@ -1863,8 +1977,8 @@ export function renderNoScriptConversationHtml(input: { readonly threadId: strin
   return pageShell({
     title: "Conversation · Shortlet",
     width: "narrow",
-    style: ".no-js-transcript{list-style:none;margin:0;padding:0;display:grid;gap:var(--space-3)}.no-js-transcript p,.ui-panel p{margin:0}.ui-panel h2{margin:0;font-size:var(--font-size-h3);line-height:var(--font-line-h3)}.no-js-turn[data-role=user]{background:var(--surface-soft)}.no-js-receipt p{display:flex;gap:var(--space-2);align-items:center;color:var(--color-text-secondary)}",
-    body: `<header class="ui-page__header" data-page="conversation"><p class="ui-eyebrow">Shortlet</p><h1>Conversation</h1></header>${turns ? `<ol class="no-js-transcript" aria-label="Conversation">${turns}</ol>` : ""}${surfaces}<form class="ui-panel" method="post" action="/conversation" aria-label="Message the concierge"><div class="ui-field"><label class="ui-field__label" for="composer-input">Your message</label><p class="ui-field__hint" id="composer-hint">Share a city or neighbourhood, dates or nights, and number of guests.</p><input id="composer-input" name="message" type="text" autocomplete="off" enterkeyhint="send" maxlength="${MAX_TURN_TEXT_LENGTH}" required aria-describedby="composer-hint${error ? " composer-error" : ""}"${error ? " aria-invalid=\"true\"" : ""} value="${escapeHtml(input.draft ?? "")}">${error}</div><input type="hidden" name="threadId" value="${escapeHtml(input.threadId)}"><button class="ui-button ui-button--primary ui-button--block" type="submit">Send</button></form>`,
+    style: ".no-js-transcript{list-style:none;margin:0;padding:0;display:grid;gap:var(--space-3)}.no-js-transcript p,.ui-panel p{margin:0}.ui-panel h2{margin:0;font-size:var(--font-size-h3);line-height:var(--font-line-h3)}.no-js-turn[data-role=user]{background:var(--surface-soft)}.no-js-receipt p{display:flex;gap:var(--space-2);align-items:center;color:var(--color-text-secondary)}.no-js-journey ol{display:flex;flex-wrap:wrap;gap:var(--space-1) var(--space-3);margin:0;padding:0;list-style:none;font-size:var(--font-size-small)}.no-js-journey li{color:var(--color-text-secondary)}.no-js-journey li[data-state=current],.no-js-journey li[data-state=failed]{color:var(--color-text);font-weight:650}.journey-state{position:absolute;inline-size:1px;block-size:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}",
+    body: `<header class="ui-page__header" data-page="conversation"><p class="ui-eyebrow">Shortlet</p><h1>Conversation</h1></header>${renderJourneyRailHtml(input.journey)}${turns ? `<ol class="no-js-transcript" aria-label="Conversation">${turns}</ol>` : ""}${surfaces}<form class="ui-panel" method="post" action="/conversation" aria-label="Message the concierge"><div class="ui-field"><label class="ui-field__label" for="composer-input">Your message</label><p class="ui-field__hint" id="composer-hint">Share a city or neighbourhood, dates or nights, and number of guests.</p><input id="composer-input" name="message" type="text" autocomplete="off" enterkeyhint="send" maxlength="${MAX_TURN_TEXT_LENGTH}" required aria-describedby="composer-hint${error ? " composer-error" : ""}"${error ? " aria-invalid=\"true\"" : ""} value="${escapeHtml(input.draft ?? "")}">${error}</div><input type="hidden" name="threadId" value="${escapeHtml(input.threadId)}"><button class="ui-button ui-button--primary ui-button--block" type="submit">Send</button></form>`,
   });
 }
 
@@ -2554,7 +2668,7 @@ export function startLocalGuestServer(options: {
         if (!THREAD_ID_PATTERN.test(threadId)) { sendPageError(req, res, 400, "INVALID_CONVERSATION"); return; }
         const state = session.threadIds.has(threadId) ? app.getState(threadId) : undefined;
         res.writeHead(200, GUEST_HTML_HEADERS);
-        res.end(renderNoScriptConversationHtml({ threadId, timeline: state?.timeline ?? [], surfaces: state?.surfaces ?? [] }));
+        res.end(renderNoScriptConversationHtml({ threadId, timeline: state?.timeline ?? [], surfaces: state?.surfaces ?? [], journey: state?.journey }));
         return;
       }
       if (!browserOriginAccepted(req, options.publicOrigin)) { res.writeHead(403); res.end("Origin rejected"); return; }
@@ -2568,7 +2682,7 @@ export function startLocalGuestServer(options: {
       if (text.trim() === "" || text.length > MAX_TURN_TEXT_LENGTH) {
         const state = app.getState(threadId);
         res.writeHead(400, GUEST_HTML_HEADERS);
-        res.end(renderNoScriptConversationHtml({ threadId, timeline: state?.timeline ?? [], surfaces: state?.surfaces ?? [], error: "Type a short message to send.", draft: text.slice(0, MAX_TURN_TEXT_LENGTH) }));
+        res.end(renderNoScriptConversationHtml({ threadId, timeline: state?.timeline ?? [], surfaces: state?.surfaces ?? [], journey: state?.journey, error: "Type a short message to send.", draft: text.slice(0, MAX_TURN_TEXT_LENGTH) }));
         return;
       }
       const result = await app.handleTurn(threadId, text);
@@ -2576,7 +2690,7 @@ export function startLocalGuestServer(options: {
         // The same rejection the JavaScript client announces, keeping the draft.
         const state = app.getState(threadId);
         res.writeHead(422, GUEST_HTML_HEADERS);
-        res.end(renderNoScriptConversationHtml({ threadId, timeline: state?.timeline ?? [], surfaces: state?.surfaces ?? [], error: result.message, draft: text }));
+        res.end(renderNoScriptConversationHtml({ threadId, timeline: state?.timeline ?? [], surfaces: state?.surfaces ?? [], journey: state?.journey, error: result.message, draft: text }));
         return;
       }
       // Post/redirect/get: refreshing the transcript never re-sends the turn.
