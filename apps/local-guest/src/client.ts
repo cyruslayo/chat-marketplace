@@ -322,6 +322,18 @@ function addTurn(role: "assistant" | "user", text: string): void {
   });
 }
 
+function addRetryTurn(text: string, retry: () => void): void {
+  addTurn("assistant", text);
+  const turn = transcript.lastElementChild;
+  if (!(turn instanceof HTMLElement)) return;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "ui-button retry-action";
+  button.textContent = "Retry";
+  button.addEventListener("click", retry, { once: true });
+  turn.appendChild(button);
+}
+
 function addHistoricalSummary(summary: ConversationShellState["historicalSummaries"][number]): void {
   const item = document.createElement("p");
   item.className = "historical-summary";
@@ -582,7 +594,11 @@ async function postJson(path: string, body?: unknown): Promise<GuestResponse> {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    // ADR-0079 bounds establishment; aborting the client wait never rolls back
+    // a command that the server may already have committed.
+    signal: AbortSignal.timeout(10_000),
   });
+  if (!response.ok) throw new Error(`Guest request failed with HTTP ${response.status}`);
   return readGuestResponse(await response.json());
 }
 
@@ -604,7 +620,7 @@ async function sendTurn(text: string): Promise<void> {
       if (composerInput.value.trim() === text) composerInput.value = "";
     }
   } catch {
-    addTurn("assistant", "The concierge is temporarily unavailable. Your message is still in the composer; please try again.");
+    addRetryTurn("The concierge is temporarily unavailable. Your message is still in the composer; please try again.", () => { void sendTurn(text); });
     announce("The concierge is temporarily unavailable. Your message remains in the composer.", true);
   } finally { setLoading(false); }
 }
@@ -625,7 +641,10 @@ async function sendEvent(action: { readonly name: string; readonly surfaceId: st
   control?.setAttribute("aria-busy", "true");
   activeWorkspace.setAttribute("aria-busy", "true");
   try { renderResponse(await postJson("/api/event", { threadId, ...action })); }
-  catch { addTurn("assistant", "The action could not be sent. Please try again."); announce("The action could not be sent. Please try again.", true); }
+  catch {
+    addRetryTurn("The action could not be sent. Please try again.", () => { void sendEvent(action); });
+    announce("The action could not be sent. Please try again.", true);
+  }
   finally {
     eventInFlight = false;
     control?.removeAttribute("data-loading");
