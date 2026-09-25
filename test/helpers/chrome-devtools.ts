@@ -41,6 +41,10 @@ export interface RealBrowserTab {
   setOffline(offline: boolean): Promise<void>;
   pressKey(key: string): Promise<void>;
   setReducedMotion(reduced: boolean): Promise<void>;
+  /** Disables page scripts, as a browser with JavaScript turned off would (issue 06c). */
+  setJavaScriptEnabled(enabled: boolean): Promise<void>;
+  /** Types text into the focused element through the input pipeline, without page scripts. */
+  insertText(text: string): Promise<void>;
   setExtraHeaders(headers: Readonly<Record<string, string>>): Promise<void>;
   overrideOrigin(origin: string): Promise<() => Promise<void>>;
   interceptRequests(interceptor: (url: string) => Promise<{
@@ -422,6 +426,14 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
       await send("Input.dispatchKeyEvent", { type: "keyUp", ...params }, sessionId);
     }
 
+    async function setJavaScriptEnabled(enabled: boolean): Promise<void> {
+      await send("Emulation.setScriptExecutionDisabled", { value: !enabled }, sessionId);
+    }
+
+    async function insertText(text: string): Promise<void> {
+      await send("Input.insertText", { text }, sessionId);
+    }
+
     async function setReducedMotion(reduced: boolean): Promise<void> {
       await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: reduced ? "reduce" : "no-preference" }] }, sessionId);
     }
@@ -523,6 +535,8 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
       setOffline,
       pressKey,
       setReducedMotion,
+      setJavaScriptEnabled,
+      insertText,
       setExtraHeaders,
       overrideOrigin,
       interceptRequests,

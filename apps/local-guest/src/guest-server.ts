@@ -1804,7 +1804,8 @@ export function renderGuestShellHtml(): string {
     </main>
     <div id="announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
     <div id="error-announcer" class="sr-only" role="alert" aria-live="assertive" aria-atomic="true"></div>
-    <form id="composer" aria-label="Message the concierge">
+    <form id="composer" method="post" action="/conversation" aria-label="Message the concierge">
+      <input type="hidden" name="threadId" value="" />
       <label id="composer-label" for="composer-input">Your message</label>
       <input id="composer-input" name="message" type="text" autocomplete="off" enterkeyhint="send"
              placeholder="Area, dates, guests" aria-describedby="composer-hint" />
@@ -1843,6 +1844,27 @@ export function renderConventionalUnitDetailHtml(unit: Unit, photoUrl?: (url: st
     title: unit.title,
     style: ".unit-page-gallery{display:grid;gap:var(--space-3)}@media (min-width:48rem){.unit-page-gallery{grid-template-columns:repeat(2,minmax(0,1fr))}.unit-page-gallery>:first-child{grid-column:1/-1}}.ui-panel p{margin:0}.unit-page-description{white-space:pre-line}",
     body: `<header class="ui-page__header"><p class="ui-eyebrow">Entire place</p><h1>${escapeHtml(unit.title)}</h1><p>${escapeHtml(unit.location.neighbourhood)}, ${escapeHtml(unit.location.city)}</p></header>${photoMarkup}<section class="ui-panel" aria-label="Stay facts"><div><p class="ui-field__hint">Price per night (indicative)</p><p class="ui-money-total">${formatNgnKobo(unit.price.nightlyKobo)} <span class="ui-money-metadata">per night</span></p></div><p class="ui-money-metadata">Bedrooms: ${unit.bedrooms ?? "Not provided"} · Bathrooms: ${unit.bathrooms} · Capacity: ${unit.capacity} guests · Entire Place</p><p class="unit-page-description">${escapeHtml(unit.description)}</p><div class="ui-row"><a class="ui-button ui-button--primary" href="/">Continue to Request to Book</a></div></section>`,
+  });
+}
+
+const MAX_TURN_TEXT_LENGTH = 2000;
+
+/**
+ * Issue 06c: the server-rendered conversation for browsers without
+ * JavaScript. Surfaces are shown by their text fallback and conventional
+ * route (ADR-0080), with the same link label the client uses.
+ */
+export function renderNoScriptConversationHtml(input: { readonly threadId: string; readonly timeline: readonly GuestTimelineEntry[]; readonly surfaces: readonly GuestSurfacePayload[]; readonly error?: string; readonly draft?: string }): string {
+  const turns = input.timeline.map((entry) => entry.role === "receipt"
+    ? `<li class="no-js-receipt" data-role="receipt"><p>${icon("check")} ${escapeHtml(entry.text)}</p></li>`
+    : `<li class="ui-panel no-js-turn" data-role="${entry.role}"><p class="ui-eyebrow">${entry.role === "user" ? "You" : "Shortlet Concierge"}</p><p>${escapeHtml(entry.text)}</p></li>`).join("");
+  const surfaces = input.surfaces.filter((surface) => surface.status !== "deleted" && surface.status !== "superseded").map((surface) => `<section class="ui-panel" aria-label="${escapeHtml(surface.summary ?? "Current details")}">${surface.summary ? `<h2>${escapeHtml(surface.summary)}</h2>` : ""}${surface.textFallback ? `<p>${escapeHtml(surface.textFallback)}</p>` : ""}${surface.conventionalRoute ? `<a class="ui-button ui-button--primary" href="${escapeHtml(surface.conventionalRoute)}">${escapeHtml(surface.conventionalRouteLabel ?? "Open full details")}</a>` : ""}</section>`).join("");
+  const error = input.error ? `<p id="composer-error" class="ui-field__error" role="alert">${escapeHtml(input.error)}</p>` : "";
+  return pageShell({
+    title: "Conversation · Shortlet",
+    width: "narrow",
+    style: ".no-js-transcript{list-style:none;margin:0;padding:0;display:grid;gap:var(--space-3)}.no-js-transcript p,.ui-panel p{margin:0}.ui-panel h2{margin:0;font-size:var(--font-size-h3);line-height:var(--font-line-h3)}.no-js-turn[data-role=user]{background:var(--surface-soft)}.no-js-receipt p{display:flex;gap:var(--space-2);align-items:center;color:var(--color-text-secondary)}",
+    body: `<header class="ui-page__header" data-page="conversation"><p class="ui-eyebrow">Shortlet</p><h1>Conversation</h1></header>${turns ? `<ol class="no-js-transcript" aria-label="Conversation">${turns}</ol>` : ""}${surfaces}<form class="ui-panel" method="post" action="/conversation" aria-label="Message the concierge"><div class="ui-field"><label class="ui-field__label" for="composer-input">Your message</label><p class="ui-field__hint" id="composer-hint">Share a city or neighbourhood, dates or nights, and number of guests.</p><input id="composer-input" name="message" type="text" autocomplete="off" enterkeyhint="send" maxlength="${MAX_TURN_TEXT_LENGTH}" required aria-describedby="composer-hint${error ? " composer-error" : ""}"${error ? " aria-invalid=\"true\"" : ""} value="${escapeHtml(input.draft ?? "")}">${error}</div><input type="hidden" name="threadId" value="${escapeHtml(input.threadId)}"><button class="ui-button ui-button--primary ui-button--block" type="submit">Send</button></form>`,
   });
 }
 
@@ -1941,6 +1963,7 @@ const PAGE_ERROR_COPY: Readonly<Record<string, { readonly title: string; readonl
   LOCAL_PAYMENT_INVALID: { title: "This demo payment link isn't valid", message: "Start the payment again from your conversation." },
   INVALID_BOOKING_LINK: { title: "This booking link isn't valid", message: "The link is incomplete or has been changed. Return to the conversation for the current booking status." },
   BOOKING_RECORD_NOT_FOUND: { title: "We couldn't find this booking", message: "It may belong to a different conversation. Return to the conversation for the current booking status." },
+  INVALID_CONVERSATION: { title: "This conversation link isn't valid", message: "The link is incomplete or has been changed. Start again from the conversation." },
   SEARCH_INVALID: { title: "This search link isn't valid", message: "The link is incomplete or has been changed. Return to the conversation and search again." },
 };
 
@@ -2111,7 +2134,10 @@ const GUEST_HTML_HEADERS = {
   "Content-Type": "text/html; charset=utf-8",
   // ADR-0078: serve the local accessible foundation while keeping remote styles disallowed.
   "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
-  "Referrer-Policy": "no-referrer",
+  // Issue 06c: "same-origin" (not "no-referrer") so a same-origin form post
+  // carries a real Origin for browserOriginAccepted; cross-origin requests
+  // still send no referrer.
+  "Referrer-Policy": "same-origin",
 } as const;
 
 function findGuestThreadForOffer(env: LocalGuestEnvironment, offerId: string, principal: { readonly id: string; readonly tenantId?: string }): string | null {
@@ -2515,6 +2541,48 @@ export function startLocalGuestServer(options: {
           return;
         }
       }
+    }
+
+    if (url.pathname === "/conversation" && (req.method === "GET" || req.method === "POST")) {
+      // Issue 06c / ADR-0080: the composer works without JavaScript. The turn
+      // runs through the same handleTurn as /api/turn, and the browser session
+      // must own the thread (ADR-0070). Message text is never logged (ADR-0075).
+      const session = resolveBrowserSession(env, browserSessions, readGuestSession(req), sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId);
+      if (req.method === "GET") {
+        if (!session) { sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED"); return; }
+        const threadId = url.searchParams.get("threadId") ?? "";
+        if (!THREAD_ID_PATTERN.test(threadId)) { sendPageError(req, res, 400, "INVALID_CONVERSATION"); return; }
+        const state = session.threadIds.has(threadId) ? app.getState(threadId) : undefined;
+        res.writeHead(200, GUEST_HTML_HEADERS);
+        res.end(renderNoScriptConversationHtml({ threadId, timeline: state?.timeline ?? [], surfaces: state?.surfaces ?? [] }));
+        return;
+      }
+      if (!browserOriginAccepted(req, options.publicOrigin)) { res.writeHead(403); res.end("Origin rejected"); return; }
+      let form: URLSearchParams;
+      try { form = await readFormBody(req); } catch { sendPageError(req, res, 400, "INVALID_CONVERSATION"); return; }
+      const submittedThreadId = form.get("threadId") ?? "";
+      if (submittedThreadId !== "" && !THREAD_ID_PATTERN.test(submittedThreadId)) { sendPageError(req, res, 400, "INVALID_CONVERSATION"); return; }
+      const threadId = submittedThreadId === "" ? `g-${crypto.randomUUID()}` : submittedThreadId;
+      if (!session || !bindBrowserThread(app.environment, browserSessions, req, threadId, true)) { sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED"); return; }
+      const text = form.get("message") ?? "";
+      if (text.trim() === "" || text.length > MAX_TURN_TEXT_LENGTH) {
+        const state = app.getState(threadId);
+        res.writeHead(400, GUEST_HTML_HEADERS);
+        res.end(renderNoScriptConversationHtml({ threadId, timeline: state?.timeline ?? [], surfaces: state?.surfaces ?? [], error: "Type a short message to send.", draft: text.slice(0, MAX_TURN_TEXT_LENGTH) }));
+        return;
+      }
+      const result = await app.handleTurn(threadId, text);
+      if (!result.ok) {
+        // The same rejection the JavaScript client announces, keeping the draft.
+        const state = app.getState(threadId);
+        res.writeHead(422, GUEST_HTML_HEADERS);
+        res.end(renderNoScriptConversationHtml({ threadId, timeline: state?.timeline ?? [], surfaces: state?.surfaces ?? [], error: result.message, draft: text }));
+        return;
+      }
+      // Post/redirect/get: refreshing the transcript never re-sends the turn.
+      res.writeHead(303, { Location: `/conversation?threadId=${encodeURIComponent(threadId)}` });
+      res.end();
+      return;
     }
 
     if (req.method === "GET" && url.pathname === "/api/state") {
