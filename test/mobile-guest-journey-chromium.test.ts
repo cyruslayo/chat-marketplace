@@ -64,6 +64,129 @@ async function sendPrompt(tab: RealBrowserTab, text: string): Promise<void> {
   await tab.evaluate(`(() => { const input = document.getElementById('composer-input'); if (!(input instanceof HTMLInputElement)) throw new Error('composer missing'); input.value = ${JSON.stringify(text)}; input.dispatchEvent(new Event('input', { bubbles: true })); const form = document.getElementById('composer'); if (!(form instanceof HTMLFormElement)) throw new Error('form missing'); form.requestSubmit(); })()`);
 }
 
+async function assertNamedButton(tab: RealBrowserTab, name: string): Promise<void> {
+  const nodes = await tab.getAccessibilityTree();
+  assert.ok(nodes.some((node) => node.role === "button" && node.name === name), `Expected named button ${name}`);
+}
+
+test("AC1: Request to Book, Review request, Submit, Accept and checkout actions have role=button with a name", async () => {
+  const c = await startContext(390, 844);
+  try {
+    await sendPrompt(c.tab, PROMPT);
+    await c.tab.waitForText("Luxury 2-Bedroom Apartment");
+    await c.tab.clickButton("View Unit", "Luxury 2-Bedroom Apartment in Old Ikoyi");
+    await c.tab.waitForText("Request to Book");
+    await assertNamedButton(c.tab, "Request to Book");
+    await c.tab.clickButton("Request to Book");
+    await c.tab.waitForText("Review request");
+    await assertNamedButton(c.tab, "Review request");
+    await c.tab.clickButton("Review request");
+    await c.tab.waitForText("Phone number");
+    await c.tab.evaluate("(() => { const input = document.querySelector('.weaver-mount input'); input.value = '+234 801 234 5678'; input.dispatchEvent(new Event('input', { bubbles: true })); })()");
+    await assertNamedButton(c.tab, "Save phone number");
+    await c.tab.clickButton("Save phone number");
+    await c.tab.waitForText("Submit Booking Request");
+    await assertNamedButton(c.tab, "Submit Booking Request");
+    await c.tab.clickButton("Submit Booking Request");
+    await c.tab.waitForText("Booking Request");
+    const requestId = c.server.environment.interactionStore.listBookingRequestIds()[0];
+    assert.ok(requestId);
+    c.server.environment.simulateOperatorAcceptance(requestId);
+    await c.tab.navigate(`${c.base}/?threadId=${c.threadId}`);
+    await c.tab.waitForText("Accept");
+    const offerActions = await c.tab.getAccessibilityTree();
+    assert.ok(offerActions.some((node) => node.role === "button" && /accept/i.test(node.name)), "Accept action must be a named button");
+    await c.tab.clickButton("Accept");
+    await c.tab.waitForText("Continue to stay payment");
+    const checkoutActions = await c.tab.getAccessibilityTree();
+    assert.ok(checkoutActions.some((node) => node.role === "button" && node.name.startsWith("Continue to stay payment")), "Checkout action must be a named button");
+  } finally { await c.close(); }
+});
+
+test("AC2: No button lacks an accessible name", async () => {
+  const c = await startContext(390, 844);
+  try {
+    for (const phase of ["initial", "discovery", "focused workspace", "closed workspace"] as const) {
+      if (phase === "discovery") {
+        await sendPrompt(c.tab, PROMPT);
+        await c.tab.waitForText("Luxury 2-Bedroom Apartment");
+      } else if (phase === "focused workspace") {
+        await c.tab.clickButton("View Unit", "Luxury 2-Bedroom Apartment in Old Ikoyi");
+        await c.tab.waitForText("Request to Book");
+      } else if (phase === "closed workspace") {
+        await c.tab.clickButton("Back to conversation");
+        await c.tab.waitForSelector("#workspace-reopen:not([hidden])");
+      }
+      const unnamed = await c.tab.evaluate<readonly string[]>("[...document.querySelectorAll('button')].filter((button) => button.getClientRects().length > 0 && !(button.innerText || button.getAttribute('aria-label') || button.getAttribute('aria-labelledby')?.trim())).map((button) => button.outerHTML)");
+      assert.deepEqual(unnamed, [], `Unnamed button in ${phase}`);
+      const accessibilityNodes = await c.tab.getAccessibilityTree();
+      assert.deepEqual(accessibilityNodes.filter((node) => node.role === "button" && node.name.trim() === ""), [], `Unnamed accessibility-tree button in ${phase}`);
+    }
+  } finally { await c.close(); }
+});
+
+test("AC3: New assistant turns are announced politely; errors are announced assertively", async () => {
+  const c = await startContext(390, 844);
+  try {
+    const regions = await c.tab.evaluate<readonly { readonly id: string; readonly live: string | null; readonly role: string | null }[]>("[...document.querySelectorAll('[aria-live], [role=alert]')].map((node) => ({ id: node.id, live: node.getAttribute('aria-live'), role: node.getAttribute('role') }))");
+    assert.ok(regions.some((region) => region.id === "announcer" && region.live === "polite"));
+    assert.ok(regions.some((region) => region.id === "error-announcer" && region.live === "assertive"));
+    assert.equal(await c.tab.evaluate<string>("document.getElementById('transcript')?.getAttribute('role') || ''"), "log");
+    await sendPrompt(c.tab, PROMPT);
+    await c.tab.waitForText("Luxury 2-Bedroom Apartment");
+    await c.tab.waitForFunction("Boolean(document.querySelector('#transcript .turn.assistant'))");
+    assert.match(await c.tab.evaluate<string>("document.querySelector('#transcript .turn.assistant')?.textContent || ''"), /stay|apartment|Ikoyi/i);
+    await c.tab.setOffline(true);
+    await c.tab.evaluate("(() => { const input = document.getElementById('composer-input'); input.value = 'network failure check'; document.getElementById('composer').requestSubmit(); })()");
+    await c.tab.waitForText("temporarily unavailable");
+    assert.match(await c.tab.evaluate<string>("document.getElementById('error-announcer')?.textContent || ''"), /temporarily unavailable/i);
+    assert.doesNotMatch(await c.tab.evaluate<string>("document.getElementById('announcer')?.textContent || ''"), /temporarily unavailable/i);
+  } finally { await c.close(); }
+});
+
+test("AC4: Escape closes the focused workspace and moves focus back to the control that opened it", async () => {
+  const c = await startContext(390, 844);
+  try {
+    await sendPrompt(c.tab, PROMPT);
+    await c.tab.waitForText("Luxury 2-Bedroom Apartment");
+    await c.tab.clickButton("View Unit", "Luxury 2-Bedroom Apartment in Old Ikoyi");
+    await c.tab.waitForText("Request to Book");
+    await c.tab.clickButton("Back to conversation");
+    await c.tab.waitForFunction("document.getElementById('active-workspace')?.hidden === true");
+    await c.tab.pressKey("Enter");
+    await c.tab.waitForFunction("document.getElementById('active-workspace')?.hidden === false");
+    await c.tab.focus("#composer-input");
+    await c.tab.pressKey("Escape");
+    assert.equal(await c.tab.evaluate<boolean>("document.getElementById('active-workspace').hidden"), false, "Escape outside the focused workspace must leave it open");
+    await c.tab.focus(".workspace-close");
+    await c.tab.pressKey("Escape");
+    const closed = await c.tab.evaluate<{ readonly hidden: boolean; readonly focus: string }>("({ hidden: document.getElementById('active-workspace').hidden, focus: document.activeElement?.id || '' })");
+    assert.deepEqual(closed, { hidden: true, focus: "workspace-reopen" });
+    await c.tab.pressKey("Escape");
+    assert.equal(await c.tab.evaluate<boolean>("document.getElementById('active-workspace').hidden"), true, "Escape outside an open focused workspace must not change workspace state");
+  } finally { await c.close(); }
+});
+
+test("AC5: New turns scroll into view inside the transcript at 320px and 1280px", async () => {
+  for (const width of [320, 1280] as const) {
+    const c = await startContext(width, width === 320 ? 700 : 800);
+    try {
+      await sendPrompt(c.tab, PROMPT);
+      await c.tab.waitForFunction("document.querySelectorAll('#transcript .turn.assistant').length >= 1");
+      if (width === 1280) {
+        for (let turn = 2; turn <= 4; turn++) {
+          await sendPrompt(c.tab, PROMPT);
+          await c.tab.waitForFunction(`document.querySelectorAll('#transcript .turn.assistant').length >= ${turn}`);
+        }
+      }
+      const visibility = await c.tab.evaluate<{ readonly scrollHeight: number; readonly clientHeight: number; readonly scrollTop: number; readonly mainHeight: number; readonly appHeight: number; readonly lastTop: number; readonly lastBottom: number; readonly containerTop: number; readonly containerBottom: number }>("(() => { const transcript = document.getElementById('transcript'); const last = transcript.querySelector('.turn.assistant:last-of-type'); const container = transcript.getBoundingClientRect(); const turn = last.getBoundingClientRect(); return { scrollHeight: transcript.scrollHeight, clientHeight: transcript.clientHeight, scrollTop: transcript.scrollTop, mainHeight: document.querySelector('main').clientHeight, appHeight: document.querySelector('.app').clientHeight, lastTop: turn.top, lastBottom: turn.bottom, containerTop: container.top, containerBottom: container.bottom }; })()");
+      assert.ok(visibility.scrollHeight > visibility.clientHeight, `Transcript did not become a scroll container at ${width}px: ${JSON.stringify(visibility)}`);
+      assert.ok(visibility.scrollTop > 0, `Transcript did not automatically scroll to the new turn at ${width}px: ${JSON.stringify(visibility)}`);
+      assert.ok(visibility.lastTop >= visibility.containerTop - 1 && visibility.lastBottom <= visibility.containerBottom + 1, `Latest turn is outside transcript at ${width}px: ${JSON.stringify(visibility)}`);
+    } finally { await c.close(); }
+  }
+});
+
 async function capturePhase4(context: MobileContext, state: string): Promise<void> {
   if (![320, 390, 768, 1280].includes(context.width)) return;
   const directory = join(process.cwd(), ".scratch", "ui-recovery", "recovered");

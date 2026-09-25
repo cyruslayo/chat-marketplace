@@ -50,6 +50,7 @@ const composerForm = requiredElement<HTMLFormElement>("composer");
 const composerInput = requiredElement<HTMLInputElement>("composer-input");
 const composerSubmit = requiredElement<HTMLButtonElement>("composer-submit");
 const announcer = requiredElement<HTMLElement>("announcer");
+const errorAnnouncer = requiredElement<HTMLElement>("error-announcer");
 const emptyState = requiredElement<HTMLElement>("empty-state");
 const workingStatus = requiredElement<HTMLElement>("working-status");
 
@@ -276,6 +277,7 @@ let activePayload: GuestSurfacePayload | undefined;
 let isLoading = false;
 let eventInFlight = false;
 let lastActivatedControl: HTMLElement | undefined;
+let workspaceOpener: HTMLElement | undefined;
 
 type ShellTelemetryEvent =
   | "text-response-rendered"
@@ -299,8 +301,9 @@ function trackTelemetry(event: ShellTelemetryEvent): void {
 }
 
 function announce(text: string, assertive = false): void {
-  announcer.setAttribute("aria-live", assertive ? "assertive" : "polite");
-  announcer.textContent = text;
+  // ADR-0078: separate polite progress from assertive errors so normal turns
+  // never upgrade the live region's urgency.
+  (assertive ? errorAnnouncer : announcer).textContent = text;
 }
 
 function addTurn(role: "assistant" | "user", text: string): void {
@@ -314,6 +317,9 @@ function addTurn(role: "assistant" | "user", text: string): void {
   turn.appendChild(bubble);
   transcript.appendChild(turn);
   transcript.scrollTop = transcript.scrollHeight;
+  requestAnimationFrame(() => {
+    if (turn.isConnected) transcript.scrollTop = transcript.scrollHeight;
+  });
 }
 
 function addHistoricalSummary(summary: ConversationShellState["historicalSummaries"][number]): void {
@@ -345,6 +351,7 @@ function presentationFor(surface: GuestSurfacePayload): SurfacePresentation {
 }
 
 function fallback(mount: HTMLElement, surface: SurfacePresentation): void {
+  // ADR-0074: retain safe explanatory text and conventional navigation when rich UI cannot mount.
   mount.replaceChildren();
   mount.dataset.renderer = "fallback";
   const box = document.createElement("div");
@@ -443,7 +450,8 @@ function renderSurface(surface: GuestSurfacePayload, moveFocus = false): void {
       composerForm.dataset.focused = "false";
       activeWorkspace.hidden = true;
       showReopen();
-      workspaceReopen.focus();
+      workspaceOpener = workspaceReopen;
+      workspaceOpener.focus({ preventScroll: true });
       trackTelemetry("focused-surface-closed");
       announce("Returned to the conversation. Your stay details are still here.");
     });
@@ -645,11 +653,29 @@ if (!created.ok) {
 const weaver = created.value;
 
 workspaceReopen.addEventListener("click", () => {
+  workspaceOpener = workspaceReopen;
   shellState = reopenFocusedSurface(shellState);
   if (activePayload) {
     renderSurface(activePayload, true);
     activeWorkspace.querySelector<HTMLElement>(".workspace-close")?.focus({ preventScroll: true });
   }
+});
+
+// ADR-0078: focused workspaces are keyboard-dismissible and restore focus to
+// their opener; Escape elsewhere in the page leaves the conversation intact.
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || activeWorkspace.hidden || !activeWorkspace.contains(document.activeElement)) return;
+  if (shellState.activeSurface?.mode !== "focused-surface" || !shellState.focusedSurfaceOpen) return;
+  event.preventDefault();
+  shellState = closeFocusedSurface(shellState);
+  composerForm.dataset.focused = "false";
+  activeWorkspace.hidden = true;
+  showReopen();
+  const target = workspaceOpener?.isConnected && !workspaceOpener.hidden ? workspaceOpener : workspaceReopen;
+  target.focus({ preventScroll: true });
+  workspaceOpener = target;
+  trackTelemetry("focused-surface-closed");
+  announce("Returned to the conversation. Your stay details are still here.");
 });
 
 for (const suggestion of document.querySelectorAll<HTMLButtonElement>(".prompt-suggestion[data-prompt]")) {
