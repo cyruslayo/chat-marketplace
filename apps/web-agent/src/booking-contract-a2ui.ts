@@ -15,7 +15,7 @@ export function bookingContractArtifactToA2UI({ artifact, surfaceId }: { readonl
   // contract projection confirms the collection is held.
   const depositCollected = facts.securityDeposit?.status === "held" && (facts.refundableSecurityDepositKobo ?? 0) > 0;
   const components: A2UIComponent[] = [
-    { id: "root", component: "Column", children: ["booking-contract-title", "booking-contract-status", "booking-contract-unit", "booking-contract-stay", "booking-contract-party", "booking-contract-paid", ...(depositCollected ? ["booking-contract-deposit"] : []), "booking-contract-arrival", "booking-contract-details", "booking-contract-checkout", "booking-contract-policies", "booking-contract-references"] },
+    { id: "root", component: "Column", children: ["booking-contract-title", "booking-contract-status", "booking-contract-unit", "booking-contract-stay", "booking-contract-party", "booking-contract-paid", ...(depositCollected ? ["booking-contract-deposit"] : []), "booking-contract-arrival", "booking-contract-checkout", "booking-contract-policies", "booking-contract-references"] },
     { id: "booking-contract-title", component: "Text", text: "Booking confirmed", variant: "h2" },
     { id: "booking-contract-status", component: "Text", text: "Reservation confirmed" },
     { id: "booking-contract-unit", component: "Text", text: facts.unitTitle ?? "Your confirmed stay", variant: "h3" },
@@ -24,7 +24,6 @@ export function bookingContractArtifactToA2UI({ artifact, surfaceId }: { readonl
     { id: "booking-contract-paid", component: "Text", text: `Stay payment verified: ${formatBookingMoney(facts.amountPaidKobo)}` },
     ...(depositCollected ? [{ id: "booking-contract-deposit", component: "Text" as const, text: `Refundable deposit collected: ${formatBookingMoney(facts.refundableSecurityDepositKobo!)}` }] : []),
     { id: "booking-contract-arrival", component: "Text", text: accessText },
-    { id: "booking-contract-details", component: "Text", text: "Booking details", variant: "h3" },
     { id: "booking-contract-checkout", component: "Text", text: `Checkout time: ${facts.checkout?.time ?? "11:00"} WAT` },
     { id: "booking-contract-policies", component: "Text", text: `Cancellation terms: ${facts.cancellationPolicy?.summary ?? "See your Booking Contract."} House rules: ${facts.guestConductRules.join("; ") || "See your Booking Contract."}` },
     { id: "booking-contract-references", component: "Text", text: `Booking reference and full contract are in your booking details.${facts.cardMetadata ? ` Card ending ${facts.cardMetadata.last4}.` : ""}` },

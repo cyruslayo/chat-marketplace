@@ -108,14 +108,7 @@ function enhanceListingImages(mount: HTMLElement): void {
       fallback.className = "photo-fallback";
       fallback.setAttribute("role", "img");
       fallback.setAttribute("aria-label", `${image.alt || "Property photo"} unavailable`);
-      const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-      icon.setAttribute("viewBox", "0 0 24 24");
-      icon.setAttribute("aria-hidden", "true");
-      icon.setAttribute("focusable", "false");
-      icon.innerHTML = '<path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5z" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="9" cy="9" r="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m5 17 4.5-4.5 3 3L15 13l4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>';
-      const label = document.createElement("span");
-      label.textContent = "Photo unavailable";
-      fallback.append(icon, label);
+      fallback.textContent = "Photo unavailable";
       image.replaceWith(fallback);
     };
     image.addEventListener("load", () => image.classList.add("is-loaded"), { once: true });
@@ -198,16 +191,7 @@ function organizeUnitDetail(mount: HTMLElement): void {
   }
   const action = root.querySelector<HTMLElement>(":scope > [data-a2ui-component=\"Row\"]");
   action?.classList.add("unit-actions");
-  const priceGroup = root.querySelector<HTMLElement>(":scope > .unit-price-group");
-  const hero = document.createElement("div");
-  hero.className = "unit-hero";
-  const summary = document.createElement("div");
-  summary.className = "unit-summary";
-  if (gallery) hero.appendChild(gallery);
-  for (const element of [overview, priceGroup, action]) if (element) summary.appendChild(element);
-  hero.appendChild(summary);
-  root.insertBefore(hero, root.firstChild);
-  const grouped = new Set<Element>([hero, ...(overview ? [overview] : []), ...(priceGroup ? [priceGroup] : []), ...(action ? [action] : []), ...root.querySelectorAll(":scope > .unit-description, :scope > .unit-amenities")]);
+  const grouped = new Set<Element>([gallery, ...(overview ? [overview] : []), ...root.querySelectorAll(":scope > .unit-price-group, :scope > .unit-description, :scope > .unit-amenities")]);
   const supporting = [...root.children].filter((child) => child !== action && !grouped.has(child));
   wrapDirectChildren(root, "unit-supporting-info", supporting);
 }

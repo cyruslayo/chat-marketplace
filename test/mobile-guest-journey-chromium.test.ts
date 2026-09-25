@@ -66,7 +66,7 @@ async function sendPrompt(tab: RealBrowserTab, text: string): Promise<void> {
 
 async function capturePhase4(context: MobileContext, state: string): Promise<void> {
   if (![320, 390, 768, 1280].includes(context.width)) return;
-  const directory = join(process.cwd(), ".scratch", "ui-agency-polish", "iteration-2");
+  const directory = join(process.cwd(), ".scratch", "ui-recovery", "recovered");
   mkdirSync(directory, { recursive: true });
   await context.tab.evaluate("document.getElementById('active-workspace')?.scrollIntoView({ block: 'start', behavior: 'instant' })");
   await context.tab.waitForFunction("document.querySelector('#active-workspace')?.getAnimations().every((animation) => animation.playState !== 'running') ?? true", 3000);
@@ -79,6 +79,7 @@ async function completeJourney(context: MobileContext, recoverFromPendingPayment
   await capturePhase4(context, "empty-state");
   await sendPrompt(tab, PROMPT);
   await tab.waitForText("Luxury 2-Bedroom Apartment in Old Ikoyi", 15000);
+  await capturePhase4(context, "discovery");
   assert.equal(await tab.clickButton("View Unit", "Luxury 2-Bedroom Apartment in Old Ikoyi"), true);
   await tab.waitForText("Request to Book");
   await capturePhase4(context, "unit-detail");
@@ -193,7 +194,7 @@ test("AC30 — The Guest shell remains a single centered column at a true 768px 
 test("AC40 — The booking/payment journey works at a true 768px viewport", async () => { await completeAt(768, 900); });
 test("AC41 — Pending payment stays unconfirmed and recovers through authoritative verification", async () => {
   let verificationCount = 0;
-  const context = await startContext(320, 700, (reference, amountKobo) => {
+  const context = await startContext(390, 844, (reference, amountKobo) => {
     verificationCount += 1;
     return { verified: verificationCount > 1, status: verificationCount > 1 ? "success" : "pending", amountKobo, currency: "NGN", pspReference: reference, payerId: "guest-demo-101" };
   });
