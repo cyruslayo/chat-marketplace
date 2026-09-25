@@ -62,7 +62,7 @@ import {
 } from "./guest-projection.js";
 import { hashSessionSecret } from "../../../domains/shortlet/src/index.js";
 import { DirectPaystackClient, isApprovedPaystackCheckoutUrl, loadPaystackConfiguration, type PaystackClient } from "../../../domains/shortlet/src/index.js";
-import { extractStayRequestFacts, mergeStayRequestContext, resolveStayRequestContext, type DiscoverySearchContext, type StayRequestFilters } from "./concierge.js";
+import { extractStayRequestFacts, formatGuestDay, mergeStayRequestContext, resolveStayRequestContext, type DiscoverySearchContext, type StayRequestFilters } from "./concierge.js";
 import { handleGeminiTurn, type GeminiConciergeClient } from "./gemini-concierge.js";
 import type { Content } from "@google/genai";
 import { AssistantRuntime } from "./assistant/assistant-runtime.js";
@@ -285,7 +285,8 @@ export class LocalGuestApp {
     }
 
     const previousContext = thread.discoveryContext;
-    const facts = extractStayRequestFacts(text);
+    // Issue 01: dates resolve against the injected clock and are never assumed.
+    const facts = extractStayRequestFacts(text, { now: this.#environment.clock() });
     const merged = mergeStayRequestContext(previousContext, facts, text);
     thread.discoveryContext = merged.context;
     if (merged.conflict) {
@@ -293,12 +294,13 @@ export class LocalGuestApp {
       // Guest resolves it, and every other accumulated constraint is retained.
       return { ok: true, messages: [merged.conflict.question], surfaces: [] };
     }
-    const resolution = resolveStayRequestContext(merged.context, { demoCheckIn: this.#environment.config.demoCheckIn });
-    if (resolution.kind === "clarify") {
+    const resolution = resolveStayRequestContext(merged.context, { now: this.#environment.clock() });
+    if (resolution.kind !== "search") {
+      // Clarifications, date confirmations and limit refusals never run a search.
       return { ok: true, messages: [resolution.reply], surfaces: [] };
     }
 
-    const providedFacts = Object.keys(facts).length > 0;
+    const providedFacts = Object.keys(facts).length > 0 || merged.confirmedDates === true;
     const resolvedConflict = previousContext?.pendingLocationChange !== undefined && merged.context.pendingLocationChange === undefined;
     if (!providedFacts && !resolvedConflict && thread.discoveryArtifact) {
       // An unrelated turn must not replace the current authoritative results.
@@ -327,7 +329,7 @@ export class LocalGuestApp {
     return {
       ok: true,
       messages: [
-        `I found ${result.artifact.facts.results.length} eligible place${result.artifact.facts.results.length === 1 ? "" : "s"} in ${filters.location} for your stay ${filters.checkIn} to ${filters.checkOut}. You can view the details below.`,
+        `I found ${result.artifact.facts.results.length} eligible place${result.artifact.facts.results.length === 1 ? "" : "s"} in ${filters.location} for your stay from ${formatGuestDay(filters.checkIn)} to ${formatGuestDay(filters.checkOut)}. You can view the details below.`,
       ],
       surfaces: [{
         surfaceId: result.surfaceId,

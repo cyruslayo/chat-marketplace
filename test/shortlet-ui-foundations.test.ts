@@ -159,7 +159,7 @@ test("Real Chromium renders foundation without narrow viewport overflow and expo
   await writeFile(join(evidenceDirectory, "focus-visible.png"), await focusGuest.captureScreenshot());
 
   await guest.setCssViewport(390, 900);
-  await guest.evaluate("(() => { const input = document.querySelector('#composer-input'); if (!input) throw new Error('composer missing'); input.value = 'I need an apartment in Ikoyi for 3 nights for 2 people'; document.querySelector('#composer').requestSubmit(); })()");
+  await guest.evaluate("(() => { const input = document.querySelector('#composer-input'); if (!input) throw new Error('composer missing'); input.value = 'I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people'; document.querySelector('#composer').requestSubmit(); })()");
   await guest.waitForText("eligible Unit found");
   await writeFile(join(evidenceDirectory, "guest-weaver-390.png"), await guest.captureScreenshot());
 

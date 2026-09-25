@@ -31,7 +31,7 @@ async function completeUnverifiedJourney() {
   const app = new LocalGuestApp(environment);
   const threadId = `g-${crypto.randomUUID()}`;
   const stages: Extract<Result, { readonly ok: true }>[] = [];
-  let result = succeed(await app.handleTurn(threadId, "I need an apartment in Ikoyi for 3 nights for 2 people")); stages.push(result);
+  let result = succeed(await app.handleTurn(threadId, "I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people")); stages.push(result);
   result = succeed(app.handleEvent(threadId, action(result.surfaces[0]!))); stages.push(result);
   result = succeed(app.handleEvent(threadId, action(result.surfaces[0]!))); stages.push(result);
   result = succeed(app.handleEvent(threadId, action(result.surfaces[0]!))); stages.push(result);

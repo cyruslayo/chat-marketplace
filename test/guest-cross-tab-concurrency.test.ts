@@ -20,7 +20,7 @@ import {
 } from "../apps/local-guest/src/guest-server.js";
 import { LocalGuestEnvironment, type LocalGuestFixtureConfig } from "../apps/local-guest/src/fixture.js";
 
-const CANONICAL_PROMPT = "I need an apartment in Ikoyi for 3 nights for 2 people";
+const CANONICAL_PROMPT = "I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people";
 const IKOYI_TITLE = "Luxury 2-Bedroom Apartment in Old Ikoyi";
 
 interface BrowserTabHarness {

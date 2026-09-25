@@ -26,7 +26,7 @@ import { restartFixture } from "./helpers/guest-restart.js";
  * process-restart evidence (the in-memory process was destroyed), not a reset
  * of one live instance.
  */
-const CANONICAL_PROMPT = "I need an apartment in Ikoyi for 3 nights for 2 people";
+const CANONICAL_PROMPT = "I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people";
 
 interface BrowserHarness {
   readonly events: A2UIClientActionMessage["action"][];

@@ -45,7 +45,7 @@ test("Paystack callback and handoff routes restore authoritative state in real C
     const port = await server.listen();
     const base = `http://127.0.0.1:${port}`;
     const threadId = `g-${crypto.randomUUID()}`;
-    let turn = await server.app.handleTurn(threadId, "I need an apartment in Ikoyi for 3 nights for 2 people");
+    let turn = await server.app.handleTurn(threadId, "I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people");
     if (!turn.ok) throw new Error(turn.message);
     turn = await server.app.handleEventAsync(threadId, firstAction(turn.surfaces[0]!));
     if (!turn.ok) throw new Error(turn.message);

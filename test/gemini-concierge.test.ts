@@ -70,7 +70,7 @@ test("Deterministic concierge remains the default and does not require GEMINI_AP
   const environment = new LocalGuestEnvironment();
   try {
     const app = new LocalGuestApp(environment);
-    const result = await app.handleTurn("g-abcdef02", "I need an apartment in Ikoyi for 3 nights for 2 people");
+    const result = await app.handleTurn("g-abcdef02", "I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people");
     assert.equal(result.ok, true);
     if (result.ok) assert.equal(result.surfaces.length, 1);
   } finally { environment.close(); }

@@ -20,6 +20,7 @@ import {
 import { restartFixture } from "./helpers/guest-restart.js";
 
 const DEMO_CHECK_IN = "2026-09-10";
+const FIXTURE_NOW = new Date("2026-09-03T10:00:00Z");
 
 interface RecordedFilters {
   readonly location?: string;
@@ -191,7 +192,7 @@ function converse(...messages: readonly string[]): DiscoverySearchContext {
   for (const message of messages) {
     context = mergeStayRequestContext(
       context,
-      extractStayRequestFacts(message),
+      extractStayRequestFacts(message, { now: FIXTURE_NOW }),
       message,
     ).context;
   }
@@ -207,27 +208,27 @@ test("AC1 — A city supplied on one turn persists to the next turn", () => {
   assert.equal(first.context.city, "Lagos");
   const second = mergeStayRequestContext(
     first.context,
-    extractStayRequestFacts("2 nights and 2 guests"),
+    extractStayRequestFacts("2 nights from 10 Sept and 2 guests"),
   );
   assert.equal(second.context.city, "Lagos");
 });
 
 test("AC2 — Night count supplied on one turn persists", () => {
-  const context = converse("Lagos", "2 nights and 2 guests", "Lekki");
+  const context = converse("Lagos", "2 nights from 10 Sept and 2 guests", "Lekki");
   assert.equal(context.nights, 2);
 });
 
 test("AC3 — Guest count supplied on one turn persists", () => {
-  const context = converse("Lagos", "2 nights and 2 guests", "Lekki");
+  const context = converse("Lagos", "2 nights from 10 Sept and 2 guests", "Lekki");
   assert.equal(context.partySize, 2);
 });
 
 test("AC4 — Neighbourhood supplied later completes the existing search", () => {
-  const context = converse("Lagos", "2 nights and 2 guests", "Lekki");
+  const context = converse("Lagos", "2 nights from 10 Sept and 2 guests", "Lekki");
   assert.equal(context.city, "Lagos");
   assert.equal(context.neighbourhood, "Lekki Phase 1");
   assert.deepEqual(
-    resolveStayRequestContext(context, { demoCheckIn: DEMO_CHECK_IN }),
+    resolveStayRequestContext(context, { now: FIXTURE_NOW }),
     {
       kind: "search",
       filters: {
@@ -259,7 +260,7 @@ test("Natural partial turn orders accumulate when their meaning is unambiguous",
 });
 
 test("AC8 — Changing neighbourhood preserves duration and guest count", () => {
-  const context = converse("Lagos", "2 nights and 2 guests", "Lekki");
+  const context = converse("Lagos", "2 nights from 10 Sept and 2 guests", "Lekki");
   const changed = mergeStayRequestContext(
     context,
     extractStayRequestFacts("Ikoyi"),
@@ -270,7 +271,7 @@ test("AC8 — Changing neighbourhood preserves duration and guest count", () => 
 });
 
 test("AC9 — Changing duration preserves location and guest count", () => {
-  const context = converse("Lagos", "2 nights and 2 guests", "Lekki");
+  const context = converse("Lagos", "2 nights from 10 Sept and 2 guests", "Lekki");
   const corrected = mergeStayRequestContext(
     context,
     extractStayRequestFacts("Actually make it 3 nights."),
@@ -282,7 +283,7 @@ test("AC9 — Changing duration preserves location and guest count", () => {
 });
 
 test("AC10/AC11 — A conflicting location is held, never silently applied", () => {
-  const context = converse("Lagos", "2 nights and 2 guests");
+  const context = converse("Lagos", "2 nights from 10 Sept and 2 guests");
   const merged = mergeStayRequestContext(
     context,
     extractStayRequestFacts("Wuse"),
@@ -300,7 +301,7 @@ test("AC10/AC11 — A conflicting location is held, never silently applied", () 
 
 test("AC10/AC11 — Confirming the pending location preserves unrelated fields", () => {
   const conflict = mergeStayRequestContext(
-    converse("Lagos", "2 nights and 2 guests"),
+    converse("Lagos", "2 nights from 10 Sept and 2 guests"),
     extractStayRequestFacts("Wuse"),
   );
   const confirmed = mergeStayRequestContext(
@@ -313,12 +314,14 @@ test("AC10/AC11 — Confirming the pending location preserves unrelated fields",
     city: "Abuja",
     nights: 2,
     partySize: 2,
+    checkIn: "2026-09-10",
+    datesConfirmed: true,
   });
 });
 
 test("AC10/AC11 — Keeping the established city preserves unrelated fields", () => {
   const conflict = mergeStayRequestContext(
-    converse("Lagos", "2 nights and 2 guests"),
+    converse("Lagos", "2 nights from 10 Sept and 2 guests"),
     extractStayRequestFacts("Wuse"),
   );
   const kept = mergeStayRequestContext(
@@ -327,13 +330,13 @@ test("AC10/AC11 — Keeping the established city preserves unrelated fields", ()
     "keep Lagos",
   );
   assert.equal(kept.conflict, undefined);
-  assert.deepEqual(kept.context, { city: "Lagos", nights: 2, partySize: 2 });
+  assert.deepEqual(kept.context, { city: "Lagos", nights: 2, partySize: 2, checkIn: "2026-09-10", datesConfirmed: true });
 });
 
 test("AC16 — The parser never produces apartment facts", () => {
   for (const message of [
     "Lagos",
-    "2 nights and 2 guests",
+    "2 nights from 10 Sept and 2 guests",
     "Lekki",
     "Only show two bedrooms.",
     "Wuse",
@@ -355,7 +358,7 @@ test("AC16 — The parser never produces apartment facts", () => {
 // End-to-end deterministic conversation through the real Guest application.
 // ---------------------------------------------------------------------------
 
-test("AC5/AC6/AC17 — Lagos → 2 nights and 2 guests → Lekki executes an authoritative discovery surface", async () => {
+test("AC5/AC6/AC17 — Lagos → 2 nights from 10 Sept and 2 guests → Lekki executes an authoritative discovery surface", async () => {
   const conversation = await startConversation();
   try {
     const threadId = newThreadId();
@@ -375,7 +378,7 @@ test("AC5/AC6/AC17 — Lagos → 2 nights and 2 guests → Lekki executes an aut
     assert.doesNotMatch(city.messages.join(" "), /where you want to stay/);
 
     const stay = expectSuccess(
-      await conversation.turn(threadId, "2 nights and 2 guests"),
+      await conversation.turn(threadId, "2 nights from 10 Sept and 2 guests"),
       "nights and guests turn",
     );
     assert.doesNotMatch(
@@ -427,7 +430,7 @@ test("AC7 — Known information is never requested again", async () => {
     );
     assert.doesNotMatch(first.messages.join(" "), /where you want to stay/);
     const second = expectSuccess(
-      await conversation.turn(threadId, "2 nights"),
+      await conversation.turn(threadId, "2 nights from 10 Sept"),
       "nights",
     );
     assert.doesNotMatch(second.messages.join(" "), /where you want to stay/);
@@ -449,7 +452,7 @@ test("AC10/AC11 — Lagos → nights/guests → Wuse clarifies and keeps nights 
     const threadId = newThreadId();
     expectSuccess(await conversation.turn(threadId, "Lagos"), "Lagos");
     expectSuccess(
-      await conversation.turn(threadId, "2 nights and 2 guests"),
+      await conversation.turn(threadId, "2 nights from 10 Sept and 2 guests"),
       "nights and guests",
     );
     const conflict = expectSuccess(
@@ -503,7 +506,7 @@ test("AC10/AC11 — The Guest can keep the established city after a conflict", a
     const threadId = newThreadId();
     expectSuccess(await conversation.turn(threadId, "Lagos"), "Lagos");
     expectSuccess(
-      await conversation.turn(threadId, "2 nights and 2 guests"),
+      await conversation.turn(threadId, "2 nights from 10 Sept and 2 guests"),
       "nights and guests",
     );
     expectSuccess(await conversation.turn(threadId, "Wuse"), "Wuse");
@@ -529,7 +532,7 @@ test("AC8/AC9/AC12 — Corrections and refinements preserve the rest of the sear
     const threadId = newThreadId();
     expectSuccess(await conversation.turn(threadId, "Lagos"), "Lagos");
     expectSuccess(
-      await conversation.turn(threadId, "2 nights and 2 guests"),
+      await conversation.turn(threadId, "2 nights from 10 Sept and 2 guests"),
       "nights and guests",
     );
     const discovery = expectSuccess(
@@ -599,7 +602,7 @@ test("AC13 — Superseded result actions remain invalid", async () => {
     const threadId = newThreadId();
     expectSuccess(await conversation.turn(threadId, "Lagos"), "Lagos");
     expectSuccess(
-      await conversation.turn(threadId, "2 nights and 2 guests"),
+      await conversation.turn(threadId, "2 nights from 10 Sept and 2 guests"),
       "nights and guests",
     );
     const first = expectSuccess(
@@ -636,7 +639,7 @@ test("AC14 — Guest threads keep independent search context", async () => {
     const threadB = newThreadId();
     expectSuccess(await conversation.turn(threadA, "Lagos"), "A Lagos");
     expectSuccess(
-      await conversation.turn(threadA, "2 nights and 2 guests"),
+      await conversation.turn(threadA, "2 nights from 10 Sept and 2 guests"),
       "A nights and guests",
     );
     // Thread B has no accumulated context; it must still be asked for a location.
@@ -700,7 +703,7 @@ test("AC15 — Restart preserves an incomplete conversational search context", a
     assert.equal(first.surfaces.length, 0);
     await fixture.restart();
     const second = expectSuccess(
-      await fixture.send("/api/turn", { text: "2 nights and 2 guests" }),
+      await fixture.send("/api/turn", { text: "2 nights from 10 Sept and 2 guests" }),
       "nights and guests",
     );
     assert.doesNotMatch(second.messages.join(" "), /where you want to stay/);
@@ -757,11 +760,11 @@ test("AC14/AC15 — Restart keeps two Guest threads' search contexts separate", 
     await (await fetch(base, { headers: { cookie } })).text();
 
     expectSuccess(
-      await turn(threadA, "2 nights and 2 guests"),
+      await turn(threadA, "2 nights from 10 Sept and 2 guests"),
       "A nights and guests",
     );
     expectSuccess(
-      await turn(threadB, "2 nights and 2 guests"),
+      await turn(threadB, "2 nights from 10 Sept and 2 guests"),
       "B nights and guests",
     );
     expectSuccess(await turn(threadA, "Lekki"), "A Lekki");

@@ -6,8 +6,10 @@ import { normalizeBathroomCount, normalizeListingDescription } from "./listing-d
 
 const LAGOS_TIME_ZONE = "Africa/Lagos";
 const SUPPORTED_LOCATIONS = new Set(["Lagos", "Abuja"]);
-const MAX_STAY_NIGHTS = 14;
-const BOOKING_HORIZON_DAYS = 90;
+/** ADR-0023: launch Short Stays are one through fourteen nights. */
+export const MAX_STAY_NIGHTS = 14;
+/** ADR-0055: check-in falls within a rolling 90-day horizon in Africa/Lagos time. */
+export const BOOKING_HORIZON_DAYS = 90;
 const AUTHORITY_PERMISSIONS = [
   "advertise", "accept-bookings", "contract-guests", "provide-access",
   "collect-revenue", "manage-cancellations", "issue-refunds", "manage-incidents"
@@ -59,7 +61,7 @@ function asDate(value: any, field: string): Date {
   return date;
 }
 
-function dateKeyInLagos(value: any, field: string): string {
+export function dateKeyInLagos(value: any, field: string): string {
   if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
   const date = value instanceof Date ? value : asDate(value, field);
   const parts = new Intl.DateTimeFormat("en-GB", {

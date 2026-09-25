@@ -8,7 +8,7 @@ import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { startLocalGuestServer, type LocalGuestServerHandle } from "../apps/local-guest/src/guest-server.js";
 import type { PSPVerifyResult } from "../domains/shortlet/src/index.js";
 
-const PROMPT = "I need an apartment in Ikoyi for 3 nights for 2 people";
+const PROMPT = "I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people";
 const VIEWPORTS = [
   [320, 700], [360, 800], [390, 844], [430, 932], [1280, 800],
 ] as const;

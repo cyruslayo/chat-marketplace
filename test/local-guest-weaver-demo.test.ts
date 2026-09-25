@@ -10,7 +10,7 @@ import {
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import type { A2UIServerMessage, A2UIClientActionMessage } from "@weaver/core";
 
-const CANONICAL_PROMPT = "I need an apartment in Ikoyi for 3 nights for 2 people";
+const CANONICAL_PROMPT = "I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people";
 const IKOYI_TITLE = "Luxury 2-Bedroom Apartment in Old Ikoyi";
 const LEKKI_TITLE = "Serene 1-Bedroom Suite in Lekki Phase 1";
 const ALL_IN_TOTAL_NGN = "₦370,000"; // 3 nights x ₦120,000 + ₦10,000 mandatory fees
@@ -184,7 +184,7 @@ test("Generic Lagos discovery keeps both eligible units while requested nights c
   const journey = await startJourneyServer();
   try {
     const lagos = expectSuccess(
-      (await postJson(journey.base, "/api/turn", { threadId: journey.threadId, text: "I need an apartment in Lagos for 3 nights for 2 people" })).body,
+      (await postJson(journey.base, "/api/turn", { threadId: journey.threadId, text: "I need an apartment in Lagos from 10 Sept for 3 nights for 2 people" })).body,
       "generic Lagos turn",
     );
     journey.harness.mountSurface(lagos.surfaces[0]!.surfaceId, lagos.surfaces[0]!.a2uiMessages);
@@ -195,7 +195,7 @@ test("Generic Lagos discovery keeps both eligible units while requested nights c
     const fiveNightJourney = await startJourneyServer();
     try {
       const five = expectSuccess(
-        (await postJson(fiveNightJourney.base, "/api/turn", { threadId: fiveNightJourney.threadId, text: "I need an apartment in Ikoyi for 5 nights for 2 people" })).body,
+        (await postJson(fiveNightJourney.base, "/api/turn", { threadId: fiveNightJourney.threadId, text: "I need an apartment in Ikoyi from 10 Sept for 5 nights for 2 people" })).body,
         "five-night Ikoyi turn",
       );
       fiveNightJourney.harness.mountSurface(five.surfaces[0]!.surfaceId, five.surfaces[0]!.a2uiMessages);
@@ -215,7 +215,7 @@ test("AC5 — Conversational bedroom refinement replaces the active discovery su
   const journey = await startJourneyServer();
   try {
     const first = expectSuccess(
-      (await postJson(journey.base, "/api/turn", { threadId: journey.threadId, text: "Show me apartments in Ikoyi for 3 nights for 2 people" })).body,
+      (await postJson(journey.base, "/api/turn", { threadId: journey.threadId, text: "Show me apartments in Ikoyi from 10 Sept for 3 nights for 2 people" })).body,
       "initial discovery",
     );
     const firstSurface = first.surfaces[0]!;

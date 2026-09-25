@@ -44,7 +44,7 @@ export async function restartFixture(config: Partial<LocalGuestFixtureConfig> = 
     get environment() { return server.environment; },
     setTime(value: string) { now = new Date(value); },
     async advance(target: RestartStage, onStage?: (stage: RestartStage, result: GuestTurnSuccess) => void) {
-      const discovery = await send("/api/turn", { text: "I need an apartment in Ikoyi for 3 nights for 2 people" });
+      const discovery = await send("/api/turn", { text: "I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people" });
       assert.equal(discovery.ok, true);
       result = discovery;
       onStage?.("discovery", result);
