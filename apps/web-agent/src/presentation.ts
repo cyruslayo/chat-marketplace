@@ -79,14 +79,15 @@ import { conventionalBookingAmendmentRoute } from "../../web/src/presentation.js
 import { GUEST_GLOSSARY } from "./guest-content.js";
 export function createBookingAmendmentWebAgentAdapter(options: { readonly application: BookingAmendmentApplication; readonly principal: CommandPrincipal; readonly createSurfaceId: (artifactId: string) => string }) { return Object.freeze({ get(contractId: string) { const artifact: BookingAmendmentArtifact = options.application.getArtifact(contractId, options.principal); const surfaceId = options.createSurfaceId(artifact.id); return Object.freeze({ channel: "web-agent" as const, artifact, surfaceId, a2uiMessages: bookingAmendmentArtifactToA2UI({ artifact, surfaceId }), fallback: Object.freeze({ message: "Booking Amendment", conventionalRoute: conventionalBookingAmendmentRoute(contractId) }) }); } }); }
 
-function fallbackMessage(artifact: any): string {
+/** The one discovery count line, shared by the concierge fallback and the conventional search page. */
+export function discoveryFallbackMessage(artifact: { readonly facts: { readonly results: readonly unknown[] } }): string {
   const count = artifact.facts.results.length;
   return count === 0 ? `No eligible ${GUEST_GLOSSARY.units} match those requirements.` : `Found ${count} eligible ${count === 1 ? GUEST_GLOSSARY.unit : GUEST_GLOSSARY.units}.`;
 }
 
 export function conversationalSearch(query: any, filters: any) {
   const artifact = query.search(filters);
-  return { channel: "web-agent" as const, message: fallbackMessage(artifact), artifact };
+  return { channel: "web-agent" as const, message: discoveryFallbackMessage(artifact), artifact };
 }
 
 export interface WeaverDiscoveryQueryPort {
@@ -105,7 +106,7 @@ export function createWeaverWebAgentAdapter({ query, createSurfaceId }: CreateWe
       const surfaceId = createSurfaceId(artifact.id);
       const a2uiMessages = discoveryArtifactToA2UI({ artifact, surfaceId });
       const fallback = Object.freeze({
-        message: fallbackMessage(artifact),
+        message: discoveryFallbackMessage(artifact),
         conventionalRoute: conventionalSearchRoute(filters),
       });
       return Object.freeze({

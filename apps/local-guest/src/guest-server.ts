@@ -29,6 +29,7 @@ import {
   guestOperatorName,
   guestReservationStatus,
   guestAmenityLabel,
+  discoveryFallbackMessage,
   type DiscoveryArtifactProjection,
 } from "../../../apps/web-agent/src/index.js";
 import { unitDetailArtifactFromProjection } from "../../../apps/web/src/unit-detail-artifact.js";
@@ -702,7 +703,8 @@ export class LocalGuestApp {
             surfaceId: unitSurfaceId,
             mode: "focused-surface",
             summary: `${unit.title} details`,
-            conventionalRoute: conventionalBookingRequestRoute(""),
+            // ADR-0080: the restored unit keeps its conventional unit route.
+            conventionalRoute: projection.discoveryArtifact.actions.find((action) => action.type === "view-unit" && action.unitId === unit.id)?.conventionalRoute,
             textFallback: `${unit.title}. ${unit.location.neighbourhood}, ${unit.location.city}. Entire Place; capacity ${unit.capacity} guests.`,
             a2uiMessages: unitDetailArtifactToA2UI({
               artifact: unitDetailArtifactFromProjection({ unit, ...this.#stayDatesFor(thread), projectionVersion: projection.discoveryArtifact.projectionVersion, viewer: environment.guestPrincipal() }),
@@ -839,8 +841,9 @@ export class LocalGuestApp {
           surfaceId: discoverySurfaceId,
           mode: "inline-surface",
           summary: discoverySummary(artifact.facts.filters),
-          conventionalRoute: conventionalSearchRoute({}),
-          textFallback: artifact.facts.results.length === 0 ? `No eligible ${GUEST_GLOSSARY.units} match those requirements.` : `Found ${artifact.facts.results.length} eligible ${artifact.facts.results.length === 1 ? GUEST_GLOSSARY.unit : GUEST_GLOSSARY.units}.`,
+          // ADR-0080: the restored fallback keeps the same criteria as the live one.
+          conventionalRoute: conventionalSearchRoute(artifact.facts.filters),
+          textFallback: discoveryFallbackMessage(artifact),
           a2uiMessages: discoveryArtifactToA2UI({ artifact, surfaceId: discoverySurfaceId }),
         };
       }
@@ -1016,9 +1019,7 @@ export class LocalGuestApp {
         mode: "focused-surface",
         summary: "All discovery results",
         conventionalRoute: conventionalSearchRoute(filters),
-        textFallback: artifact.facts.results.length === 0
-          ? `No eligible ${GUEST_GLOSSARY.units} match those requirements.`
-          : `Found ${artifact.facts.results.length} eligible ${artifact.facts.results.length === 1 ? GUEST_GLOSSARY.unit : GUEST_GLOSSARY.units}.`,
+        textFallback: discoveryFallbackMessage(artifact),
         a2uiMessages: discoveryArtifactToA2UI({ artifact, surfaceId }),
       }],
     };
@@ -1755,6 +1756,37 @@ export function renderConventionalUnitDetailHtml(unit: Unit, photoUrl?: (url: st
   });
 }
 
+/** Only the criteria `conventionalSearchRoute` builds for the guest app; anything else fails closed (ADR-0080). */
+const SEARCH_TEXT_KEYS = ["location", "neighbourhood", "checkIn", "checkOut"] as const;
+const SEARCH_COUNT_KEYS = ["partySize", "bedrooms"] as const;
+
+export function parseConventionalSearchQuery(params: URLSearchParams): Readonly<Record<string, string | number>> | null {
+  const filters: Record<string, string | number> = {};
+  for (const [key, value] of params) {
+    if (Object.hasOwn(filters, key) || value.trim() === "") return null;
+    if ((SEARCH_TEXT_KEYS as readonly string[]).includes(key)) filters[key] = value.trim();
+    else if ((SEARCH_COUNT_KEYS as readonly string[]).includes(key) && /^\d{1,3}$/.test(value)) filters[key] = Number(value);
+    else return null;
+  }
+  return filters;
+}
+
+export function renderConventionalSearchHtml(artifact: DiscoveryArtifactProjection): string {
+  const cards = artifact.facts.results.map((unit) => {
+    const route = artifact.actions.find((action) => action.type === "view-unit" && action.unitId === unit.id)?.conventionalRoute ?? `/stays/${encodeURIComponent(unit.id)}`;
+    const total = unit.price.allInStayTotalKobo === null ? "not yet quoted" : formatNgnKobo(unit.price.allInStayTotalKobo);
+    return `<li class="ui-panel" data-unit-id="${escapeHtml(unit.id)}"><h2><a href="${escapeHtml(route)}">${escapeHtml(unit.title)}</a></h2><p>${escapeHtml(unit.location.neighbourhood)}, ${escapeHtml(unit.location.city)} · Entire Place · capacity ${unit.capacity} guests</p><p class="ui-money-total">${GUEST_GLOSSARY.allInStayTotal}: ${total}</p><p class="ui-money-metadata">${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(unit.price.refundableSecurityDepositKobo)}</p><a class="ui-button" href="${escapeHtml(route)}">${GUEST_GLOSSARY.viewUnit}<span class="sr-only">: ${escapeHtml(unit.title)}</span></a></li>`;
+  }).join("");
+  const { checkIn, checkOut } = artifact.facts.filters;
+  const stay = typeof checkIn === "string" && typeof checkOut === "string" ? formatStayDates(checkIn, checkOut) : "";
+  const summary = [discoverySummary(artifact.facts.filters).replace(/^Search updated( · )?/, ""), stay].filter(Boolean).join(" · ");
+  return pageShell({
+    title: "Search results · Shortlet",
+    style: ".stay-results{list-style:none;margin:0;padding:0;display:grid;gap:var(--space-3)}.stay-results h2{margin:0;font-size:var(--font-size-h3);line-height:var(--font-line-h3)}.stay-results p{margin:0}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}",
+    body: `<header class="ui-page__header" data-page="stay-search"><p class="ui-eyebrow">Search results</p><h1>${escapeHtml(discoveryFallbackMessage(artifact))}</h1>${summary ? `<p>${escapeHtml(summary)}</p>` : ""}</header>${cards ? `<ul class="stay-results">${cards}</ul>` : ""}<p><a class="ui-button ui-button--primary" href="/">Back to your conversation</a></p>`,
+  });
+}
+
 function readRawBody(req: IncomingMessage): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
@@ -1792,6 +1824,7 @@ const PAGE_ERROR_COPY: Readonly<Record<string, { readonly title: string; readonl
   PAYSTACK_UNAVAILABLE: { title: "Card checkout is unavailable", message: "No payment was taken. Try again in a few minutes from your conversation." },
   INVALID_CHECKOUT_URL: { title: "Card checkout is unavailable", message: "No payment was taken. Try again in a few minutes from your conversation." },
   LOCAL_PAYMENT_INVALID: { title: "This demo payment link isn't valid", message: "Start the payment again from your conversation." },
+  SEARCH_INVALID: { title: "This search link isn't valid", message: "The link is incomplete or has been changed. Return to the conversation and search again." },
 };
 
 /** Page routes answer browser navigations with a styled page and API clients with JSON. */
@@ -2127,6 +2160,18 @@ export function startLocalGuestServer(options: {
       }
       res.writeHead(200, GUEST_HTML_HEADERS);
       res.end(renderGuestShellHtml());
+      return;
+    }
+
+    // ADR-0080: conventional search parity. Matched before the unit route so
+    // "search" is never read as a unit id.
+    if (req.method === "GET" && url.pathname === "/stays/search") {
+      const filters = parseConventionalSearchQuery(url.searchParams);
+      let artifact: DiscoveryArtifactProjection | null = null;
+      try { artifact = filters === null ? null : app.environment.discoveryQuery.search(filters); } catch { artifact = null; }
+      if (!artifact) { sendPageError(req, res, 400, "SEARCH_INVALID"); return; }
+      res.writeHead(200, GUEST_HTML_HEADERS);
+      res.end(renderConventionalSearchHtml(artifact));
       return;
     }
 
