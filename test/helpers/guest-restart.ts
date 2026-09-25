@@ -43,10 +43,11 @@ export async function restartFixture(config: Partial<LocalGuestFixtureConfig> = 
     databasePath, directory, cookie, threadId, actions, send, state,
     get environment() { return server.environment; },
     setTime(value: string) { now = new Date(value); },
-    async advance(target: RestartStage) {
+    async advance(target: RestartStage, onStage?: (stage: RestartStage, result: GuestTurnSuccess) => void) {
       const discovery = await send("/api/turn", { text: "I need an apartment in Ikoyi for 3 nights for 2 people" });
       assert.equal(discovery.ok, true);
       result = discovery;
+      onStage?.("discovery", result);
       for (let index = 1; index <= stages.indexOf(target); index++) {
         if (stages[index] === "offer") {
           const requestId = result.surfaces[0]!.surfaceId.split(":").at(-1)!;
@@ -59,6 +60,7 @@ export async function restartFixture(config: Partial<LocalGuestFixtureConfig> = 
           assert.equal(next.ok, true);
           result = next;
         }
+        onStage?.(stages[index]!, result);
       }
       return result;
     },

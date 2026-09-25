@@ -4,6 +4,7 @@
  * browser never owns booking state or executes generated business logic.
  */
 import { createBasicWebRuntime } from "@weaver/web";
+import { GUEST_GLOSSARY } from "../../web-agent/src/guest-content.js";
 import {
   canUseSurfaceActions,
   closeFocusedSurface,
@@ -32,8 +33,8 @@ interface GuestSurfacePayload {
   readonly conventionalRoute?: string;
   readonly conventionalRouteLabel?: string;
 }
-interface GuestTimelineEntry { readonly role: "assistant" | "user"; readonly text: string; }
-interface GuestResponse { readonly ok: boolean; readonly code?: string; readonly message?: string; readonly messages?: readonly string[]; readonly surfaces?: readonly GuestSurfacePayload[]; }
+interface GuestTimelineEntry { readonly role: "assistant" | "user" | "receipt"; readonly text: string; }
+interface GuestResponse { readonly ok: boolean; readonly code?: string; readonly message?: string; readonly messages?: readonly string[]; readonly receipts?: readonly string[]; readonly surfaces?: readonly GuestSurfacePayload[]; }
 interface GuestStateResponse extends GuestResponse { readonly timeline?: readonly GuestTimelineEntry[]; }
 
 function requiredElement<T extends HTMLElement>(id: string): T {
@@ -155,7 +156,7 @@ function organizeUnitDetail(mount: HTMLElement): void {
   const children = [...root.children];
   const title = children.find((child) => child.tagName === "H2" && !/^(₦|NGN\b)/.test(child.textContent?.trim() ?? ""));
   const amount = children.find((child) => child !== title && child.tagName === "H2" && /^(₦|NGN\b)/.test(child.textContent?.trim() ?? ""));
-  const priceLabel = children.find((child) => /^(All-In Stay Total|Indicative nightly rate)/.test(child.textContent?.trim() ?? ""));
+  const priceLabel = children.find((child) => isPriceLabel(child.textContent?.trim() ?? ""));
   const location = children.find((child) => child.tagName === "SMALL" && child !== priceLabel);
   const facts = children.find((child) => child.tagName === "P" && child !== title);
   const dates = children.find((child) => child.tagName === "SMALL" && child !== location && child !== priceLabel && !/^(Refundable|Amount Due|Nightly|Mandatory)/.test(child.textContent?.trim() ?? ""));
@@ -220,7 +221,7 @@ function decorateDiscoveryCards(mount: HTMLElement): void {
     children.find((child) => child.tagName === "P")?.classList.add("stay-card__facts");
     smalls[1]?.classList.add("stay-card__amenities");
 
-    const priceLabel = children.find((child) => /^(All-In Stay Total|Indicative nightly rate)/.test(child.textContent?.trim() ?? ""));
+    const priceLabel = children.find((child) => isPriceLabel(child.textContent?.trim() ?? ""));
     const action = children.find((child) => child.tagName === "BUTTON");
     if (priceLabel) {
       const priceStart = children.indexOf(priceLabel);
@@ -249,6 +250,10 @@ function enhanceSurfacePresentation(mount: HTMLElement, kind: string): void {
   if (kind === "unit-detail") organizeUnitDetail(mount);
 }
 
+function isPriceLabel(text: string): boolean {
+  return text.startsWith(GUEST_GLOSSARY.allInStayTotal) || text.startsWith("Indicative nightly rate");
+}
+
 function isSafeInternalRoute(value: unknown): value is string {
   if (typeof value !== "string" || value === "" || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) return false;
   try { return new URL(value, window.location.origin).origin === window.location.origin; } catch { return false; }
@@ -267,6 +272,7 @@ function isSurfacePayload(value: unknown): value is GuestSurfacePayload {
 function readGuestResponse(value: unknown): GuestResponse {
   if (!isRecord(value) || typeof value.ok !== "boolean") throw new Error("Invalid server response");
   if (value.messages !== undefined && (!Array.isArray(value.messages) || value.messages.some((message) => typeof message !== "string"))) throw new Error("Invalid response messages");
+  if (value.receipts !== undefined && (!Array.isArray(value.receipts) || value.receipts.some((receipt) => typeof receipt !== "string"))) throw new Error("Invalid response receipts");
   if (value.surfaces !== undefined && (!Array.isArray(value.surfaces) || value.surfaces.some((surface) => !isSurfacePayload(surface)))) throw new Error("Invalid response surface");
   return value as unknown as GuestResponse;
 }
@@ -334,11 +340,27 @@ function addRetryTurn(text: string, retry: () => void): void {
   turn.appendChild(button);
 }
 
-function addHistoricalSummary(summary: ConversationShellState["historicalSummaries"][number]): void {
+function addMarker(text: string, className: string): void {
+  if (text === "") return;
+  emptyState.hidden = true;
   const item = document.createElement("p");
-  item.className = "historical-summary";
-  item.textContent = formatGuestHistorySummary(summary.summary, summary.status);
+  item.className = className;
+  item.textContent = text;
   transcript.appendChild(item);
+}
+
+function addHistoricalSummary(summary: ConversationShellState["historicalSummaries"][number]): void {
+  addMarker(formatGuestHistorySummary(summary.summary, summary.status), "historical-summary");
+}
+
+// Issue 07: a receipt records a completed action as a quiet marker, not an assistant turn.
+function addReceipt(text: string): void {
+  addMarker(text, "historical-summary receipt-marker");
+}
+
+function addTimelineEntry(entry: GuestTimelineEntry): void {
+  if (entry.role === "receipt") addReceipt(entry.text);
+  else addTurn(entry.role, entry.text);
 }
 
 function modeFor(surface: GuestSurfacePayload): PresentationMode {
@@ -577,6 +599,8 @@ function renderResponse(response: GuestResponse): boolean {
   if ((response.messages ?? []).length > 0) trackTelemetry("text-response-rendered");
   const surfaces = response.surfaces ?? [];
   renderSurfaces(surfaces);
+  // Receipts follow the markers for the steps they complete.
+  for (const receipt of response.receipts ?? []) addReceipt(receipt);
   return true;
 }
 
@@ -717,7 +741,7 @@ async function restoreServerState(): Promise<boolean> {
   try {
     const response = await postJson(`/api/state?threadId=${encodeURIComponent(threadId)}`) as GuestStateResponse;
     if (!response.ok || !response.timeline || response.timeline.length === 0) return false;
-    for (const entry of response.timeline) addTurn(entry.role, entry.text);
+    for (const entry of response.timeline) addTimelineEntry(entry);
     renderSurfaces(response.surfaces ?? []);
     announce("Your conversation has been restored.");
     return true;

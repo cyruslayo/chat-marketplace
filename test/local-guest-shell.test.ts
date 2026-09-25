@@ -31,7 +31,7 @@ test("mobile conversation shell keeps one timeline, one workspace slot, and a te
 test("Guest history keeps useful meaning without exposing workspace lifecycle terminology", () => {
   assert.equal(formatGuestHistorySummary("Search updated · Old Ikoyi · 2 guests", "superseded"), "Searched Old Ikoyi · 2 guests");
   assert.equal(formatGuestHistorySummary("Garden Two-Bedroom Stay in Old Ikoyi details", "superseded"), "Viewed Garden Two-Bedroom Stay in Old Ikoyi");
-  assert.equal(formatGuestHistorySummary("Request Draft", "superseded"), "Draft created");
+  assert.equal(formatGuestHistorySummary("Request Draft", "superseded"), "", "the Draft created receipt already marks this step");
   assert.equal(formatGuestHistorySummary("Request review", "superseded"), "Booking details reviewed");
   assert.match(formatGuestHistorySummary("Search updated · Lagos · 2 guests", "stale"), /Searched Lagos.*may have changed/);
   assert.match(formatGuestHistorySummary("Payment handoff", "fallback"), /hosted checkout.*details unavailable/);

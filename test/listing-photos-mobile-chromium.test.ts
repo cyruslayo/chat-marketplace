@@ -175,7 +175,7 @@ test("AC14 — zero-photo conventional listing remains usable in Chromium", asyn
     assert.ok(unit);
     context.environment.unitRepository.save({ ...unit, photoUrls: [] });
     await context.tab.navigate(`${context.base}/stays/${unit.id}`);
-    await context.tab.waitForText("Photos are not available for this Unit yet.");
+    await context.tab.waitForText("Photos are not available for this apartment yet.");
     const result = await context.tab.evaluate<{ readonly images: number; readonly overflow: boolean; readonly critical: boolean }>(`({ images: document.images.length, overflow: document.documentElement.scrollWidth > innerWidth, critical: document.body.innerText.includes('Price') && document.body.innerText.includes(${JSON.stringify(context.unitTitle)}) })`);
     assert.deepEqual(result, { images: 0, overflow: false, critical: true });
   } finally {

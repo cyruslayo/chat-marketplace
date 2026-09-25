@@ -1,5 +1,6 @@
 import { formatNgnKobo } from "./discovery-a2ui.js";
 import type { CardPaymentStatus } from "../../web/src/card-payment-artifact.js";
+import { GUEST_GLOSSARY, guestReservationStatus } from "./guest-content.js";
 
 export type BookingProgressStage = "request" | "operator-review" | "offer" | "payment" | "payment-processing" | "confirmed";
 
@@ -45,8 +46,8 @@ export function formatStayDates(checkIn: string, checkOut: string): string {
 
 export function bookingProgressText(stage: BookingProgressStage): string {
   const sequences: Readonly<Record<BookingProgressStage, string>> = {
-    request: "Next: Send your request to ask the Operator to confirm availability. Your dates are not reserved yet.",
-    "operator-review": "The Operator is reviewing your request. A stay is not confirmed yet.",
+    request: "Next: Send your request to ask the Operator to confirm availability.",
+    "operator-review": "The Operator is reviewing your request.",
     offer: "Next: Review the offer and decide whether to accept it.",
     payment: "Next: Complete secure payment in the hosted checkout to confirm your stay.",
     "payment-processing": "Payment is being checked. Your stay is not confirmed yet; do not submit another payment.",
@@ -55,22 +56,23 @@ export function bookingProgressText(stage: BookingProgressStage): string {
   return sequences[stage];
 }
 
+// Issue 07 AC1: the detail carries the surface's single reservation-status line.
 export function guestRequestStatus(status: string, delivered: boolean): { readonly label: string; readonly progress?: BookingProgressStage; readonly detail: string } {
-  if (status === "disclosed" && delivered) return { label: "Request sent · Waiting for Operator response", progress: "operator-review", detail: "This is not yet a Reservation. The disclosed Booking Request blocks the requested dates during its response window." };
-  if (status === "disclosed") return { label: "Sending Booking Request", progress: "operator-review", detail: "The application is completing delivery. No Operator response is recorded yet." };
-  if (status === "confirmed") return { label: "Operator confirmed availability · Offer being prepared", progress: "offer", detail: "This is not yet a Reservation. Payment is required after you accept the Conditional Offer." };
-  if (status === "declined") return { label: "Request declined", detail: "No Reservation exists and no payment is due. You can continue searching for another stay." };
-  if (status === "expired") return { label: "Request expired", detail: "The request response window ended. Inventory is no longer reserved and no Reservation exists." };
-  if (status === "delivery_failed") return { label: "Request could not be delivered", detail: "Nothing remains reserved. This was not an Operator decline; no Reservation exists." };
-  if (status === "draft") return { label: "Draft · Not reserved", progress: "request", detail: "This Request Draft is not a Reservation and does not block inventory." };
-  return { label: "Booking Request status unavailable", detail: "Refresh the current booking status before taking another action." };
+  if (status === "disclosed" && delivered) return { label: "Request sent · Waiting for Operator response", progress: "operator-review", detail: guestReservationStatus("request-sent") };
+  if (status === "disclosed") return { label: `Sending ${GUEST_GLOSSARY.bookingRequest}`, progress: "operator-review", detail: guestReservationStatus("request-delivering") };
+  if (status === "confirmed") return { label: "Operator confirmed availability · Offer being prepared", progress: "offer", detail: guestReservationStatus("operator-confirmed") };
+  if (status === "declined") return { label: "Request declined", detail: guestReservationStatus("request-declined") };
+  if (status === "expired") return { label: "Request expired", detail: guestReservationStatus("request-expired") };
+  if (status === "delivery_failed") return { label: "Request could not be delivered", detail: guestReservationStatus("request-not-delivered") };
+  if (status === "draft") return { label: GUEST_GLOSSARY.requestDraftStatus, progress: "request", detail: guestReservationStatus("draft") };
+  return { label: `${GUEST_GLOSSARY.bookingRequest} status unavailable`, detail: "Refresh the current booking status before taking another action." };
 }
 
 export function guestPaymentStatus(status: CardPaymentStatus, processing = false): { readonly label: string; readonly detail: string; readonly progress?: BookingProgressStage } {
   if (status === "ready") return { label: "Payment required", detail: "Continue to the designated payment checkout. Payment has not succeeded and the booking is not confirmed.", progress: "payment" };
   if (status === "checkout_initiated" && processing) return { label: "Payment processing · Checking payment", detail: "We are checking the provider’s payment confirmation. Do not submit another payment while this result is pending. The booking is not confirmed until payment is verified and a Reservation exists.", progress: "payment-processing" };
   if (status === "checkout_initiated") return { label: "Payment handoff ready · Payment not yet verified", detail: "Continue the current payment attempt. Payment has not succeeded and your booking is not confirmed. Your booking details will be retained when you return. Do not start another payment while this attempt is pending.", progress: "payment" };
-  if (status === "deposit_required") return { label: "Payment required · Refundable Security Deposit", detail: "The stay payment is verified. A separate refundable security deposit payment is still required before a Reservation can exist.", progress: "payment" };
+  if (status === "deposit_required") return { label: `Payment required · ${GUEST_GLOSSARY.refundableSecurityDeposit}`, detail: `The stay payment is verified. A separate ${GUEST_GLOSSARY.refundableSecurityDeposit} payment is still required before a Reservation can exist.`, progress: "payment" };
   if (status === "reconciliation_required" || status === "compensation_pending") return { label: "Payment requires review · Booking not confirmed", detail: "This payment needs review. Your booking is not confirmed. Do not submit another payment while this payment is under review." };
   if (status === "compensated") return { label: "Payment review update available", detail: "The payment attempt is closed and no Reservation exists. Check the current booking details before taking another action." };
   if (status === "expired") return { label: "Payment window expired · Booking not confirmed", detail: "The Payment Window expired. This payment action is no longer available; no Reservation exists." };

@@ -76,17 +76,17 @@ test("AC2 — Real discovery rendering", () => {
   assert.match(target.textContent ?? "", /Sunlit 2-bedroom apartment in Ikeja/);
   assert.match(target.textContent ?? "", /Lagos/);
   assert.match(target.textContent ?? "", /All-In Stay Total\s*₦180,000/);
-  assert.match(target.textContent ?? "", /View Unit/);
+  assert.match(target.textContent ?? "", /View apartment/);
 });
 
-test("AC3 — View Unit event handoff", () => {
+test("AC3 — View apartment event handoff", () => {
   const events: WebServerEventHandoff[] = [];
   const host = createWeaverWebHost({ onServerEvent: (event) => events.push(event) });
   const artifact = datedArtifact();
   processSuccessfully(host, discoveryArtifactToA2UI({ artifact, surfaceId: DISCOVERY_SURFACE_ID }));
   const { window, target } = targetElement();
   assert.equal(host.mount({ surfaceId: DISCOVERY_SURFACE_ID, target }).ok, true);
-  const button = [...target.querySelectorAll("button")].find((candidate) => candidate.textContent?.includes("View Unit"));
+  const button = [...target.querySelectorAll("button")].find((candidate) => candidate.textContent?.includes("View apartment"));
   assert.ok(button);
   button.dispatchEvent(new window.Event("click", { bubbles: true }) as unknown as Event);
   assert.equal(events.length, 1);
@@ -106,7 +106,7 @@ test("AC4 — Zero results", () => {
   assert.equal(host.mount({ surfaceId: DISCOVERY_SURFACE_ID, target }).ok, true);
   assert.match(target.textContent ?? "", /No stays match this search/);
   assert.match(target.textContent ?? "", /Your search: Abuja/);
-  assert.equal([...target.querySelectorAll("button")].some((button) => button.textContent?.includes("View Unit")), false);
+  assert.equal([...target.querySelectorAll("button")].some((button) => button.textContent?.includes("View apartment")), false);
 });
 
 test("AC5 — Invalid A2UI fails closed", () => {

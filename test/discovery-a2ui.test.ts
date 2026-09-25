@@ -118,7 +118,7 @@ test("AC4: undated pricing is clearly indicative", () => {
   assert.match(text, /Refundable Security Deposit: ₦20,000/);
 });
 
-test("AC5: a zero-result artifact resolves successfully without View Unit actions", () => {
+test("AC5: a zero-result artifact resolves successfully without View apartment actions", () => {
   const artifact = createQuery().search({ location: "Abuja" });
   const messages = discoveryArtifactToA2UI({ artifact, surfaceId: SURFACE_ID });
   const runtime = processMessages(messages);
@@ -129,7 +129,7 @@ test("AC5: a zero-result artifact resolves successfully without View Unit action
   assert.equal(updateComponents(messages).some((component) => component.component === "Button"), false);
 });
 
-test("AC6: the View Unit event contains only approved correlation context", () => {
+test("AC6: the View apartment event contains only approved correlation context", () => {
   const artifact = datedArtifact();
   const buttons = updateComponents(discoveryArtifactToA2UI({ artifact, surfaceId: SURFACE_ID }))
     .filter((component) => component.component === "Button");
@@ -173,7 +173,7 @@ test("AC10: the generated surface uses the canonical Basic Catalog identifier", 
   assert.equal(message.createSurface.catalogId, A2UI_V091_BASIC_CATALOG_ID);
 });
 
-test("AC12: missing canonical action removes the View Unit affordance", () => {
+test("AC12: missing canonical action removes the View apartment affordance", () => {
   const original = datedArtifact();
   const artifact = { ...original, actions: [] };
   const messages = discoveryArtifactToA2UI({ artifact, surfaceId: SURFACE_ID });
@@ -181,7 +181,7 @@ test("AC12: missing canonical action removes the View Unit affordance", () => {
 
   assert.equal(components.some((component) => component.component === "Text" && component.text === original.facts.results[0].title), true);
   assert.equal(components.some((component) => component.component === "Button"), false);
-  assert.equal(components.some((component) => component.component === "Text" && component.text === "View Unit"), false);
+  assert.equal(components.some((component) => component.component === "Text" && component.text === "View apartment"), false);
   processMessages(messages);
 });
 

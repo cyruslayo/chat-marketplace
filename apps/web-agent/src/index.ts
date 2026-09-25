@@ -18,3 +18,4 @@ export * from "./relocation-a2ui.js";
 export * from "./revenue-release-a2ui.js";
 export * from "./protection-fund-a2ui.js";
 export * from "./booking-presentation.js";
+export * from "./guest-content.js";

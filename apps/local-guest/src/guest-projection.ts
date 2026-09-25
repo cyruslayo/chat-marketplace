@@ -14,7 +14,7 @@ import { parseDiscoverySearchContext, type DiscoverySearchContext } from "./conc
  */
 export interface GuestPersistentProjection {
   readonly version: 1;
-  readonly timeline: readonly { readonly role: "assistant" | "user"; readonly text: string }[];
+  readonly timeline: readonly { readonly role: "assistant" | "user" | "receipt"; readonly text: string }[];
   /** Accumulated conversational discovery context (ADR-0004, ADR-0074). */
   readonly discoveryContext: DiscoverySearchContext | null;
   readonly discoveryArtifact: DiscoveryArtifactProjection | null;
@@ -29,10 +29,10 @@ export interface GuestPersistentProjection {
   readonly activeSurfaceId: string | null;
 }
 
-export function isPersistentTimelineEntry(value: unknown): value is { readonly role: "assistant" | "user"; readonly text: string } {
+export function isPersistentTimelineEntry(value: unknown): value is { readonly role: "assistant" | "user" | "receipt"; readonly text: string } {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
-  return (record.role === "assistant" || record.role === "user") && typeof record.text === "string";
+  return (record.role === "assistant" || record.role === "user" || record.role === "receipt") && typeof record.text === "string";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

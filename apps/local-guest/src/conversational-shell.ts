@@ -91,7 +91,8 @@ export function formatGuestHistorySummary(summary: string, status: HistoricalSur
   const activity = search ? `Searched ${search[1]}`
     : /^(Discovery results|All discovery results)$/.test(summary) ? "Viewed stays for your search"
       : summary.endsWith(" details") ? `Viewed ${summary.slice(0, -" details".length)}`
-        : summary === "Request Draft" ? "Draft created"
+        // The "Draft created" receipt already marks this step (issue 07 AC4).
+        : summary === "Request Draft" ? (status === "superseded" ? "" : "Your request")
           : summary === "Request review" ? "Booking details reviewed"
             : summary === "Request outcome" ? "Booking request update"
               : summary.includes("Conditional Booking Offer") ? "Booking offer received"

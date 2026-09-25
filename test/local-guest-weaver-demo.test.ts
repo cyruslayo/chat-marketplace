@@ -255,7 +255,7 @@ test("Concierge asks for missing details when input cannot be safely interpreted
   }
 });
 
-test("Weaver-generated View Unit action round-trips through the server and replaces or adds the next dynamic surface", async () => {
+test("Weaver-generated View apartment action round-trips through the server and replaces or adds the next dynamic surface", async () => {
   const journey = await startJourneyServer();
   try {
     const turn = expectSuccess(
@@ -266,8 +266,8 @@ test("Weaver-generated View Unit action round-trips through the server and repla
     const discoveryTarget = journey.harness.mounted[0]!.target;
 
     assert.ok(
-      journey.harness.clickButton(discoveryTarget, "View Unit", `View ${IKOYI_TITLE}`),
-      "the generated discovery surface exposes a View Unit action",
+      journey.harness.clickButton(discoveryTarget, "View apartment", `View ${IKOYI_TITLE}`),
+      "the generated discovery surface exposes a View apartment action",
     );
     assert.equal(journey.harness.events[0]?.context && (journey.harness.events[0].context as Record<string, unknown>).unitId, "unit-lagos-ikoyi-001");
     const [eventResponse] = await journey.relayEvents();
@@ -295,7 +295,7 @@ test("Guest Request Draft remains separate from Booking Request until review and
       "turn",
     );
     journey.harness.mountSurface(turn.surfaces[0]!.surfaceId, turn.surfaces[0]!.a2uiMessages as readonly A2UIServerMessage[]);
-    assert.ok(journey.harness.clickButton(journey.harness.mounted[0]!.target, "View Unit", `View ${IKOYI_TITLE}`));
+    assert.ok(journey.harness.clickButton(journey.harness.mounted[0]!.target, "View apartment", `View ${IKOYI_TITLE}`));
     const [unitEvent] = await journey.relayEvents();
     const unitResponse = expectSuccess(unitEvent, "view-unit");
     journey.harness.mountSurface(unitResponse.surfaces[0]!.surfaceId, unitResponse.surfaces[0]!.a2uiMessages as readonly A2UIServerMessage[]);
@@ -306,7 +306,7 @@ test("Guest Request Draft remains separate from Booking Request until review and
     assert.match(draftResponse.surfaces[0]!.surfaceId, /:request:draft:/);
     journey.harness.mountSurface(draftResponse.surfaces[0]!.surfaceId, draftResponse.surfaces[0]!.a2uiMessages as readonly A2UIServerMessage[]);
     const draftTarget = journey.harness.mounted[2]!.target;
-    assert.match(draftTarget.textContent ?? "", /dates are not held yet/i);
+    assert.match(draftTarget.textContent ?? "", /Your dates are not reserved/i);
     assert.ok(journey.harness.clickButton(draftTarget, "Review request"));
     const [reviewEvent] = await journey.relayEvents();
     const reviewResponse = expectSuccess(reviewEvent, "request review");
@@ -314,7 +314,7 @@ test("Guest Request Draft remains separate from Booking Request until review and
     assert.ok(journey.harness.clickButton(journey.harness.mounted[3]!.target, "Submit Booking Request"));
     const [submitEvent] = await journey.relayEvents();
     const pendingResponse = expectSuccess(submitEvent, "booking request submission");
-    assert.ok(pendingResponse.messages.some((message: string) => message.includes("No Reservation exists yet")));
+    assert.deepEqual(pendingResponse.receipts, ["Booking Request sent"]);
     assert.match(pendingResponse.surfaces[0]!.surfaceId, /:request:req-/);
     assert.ok((pendingResponse.surfaces[0]!.textFallback ?? "").includes("Operator response deadline"));
 
@@ -347,7 +347,7 @@ test("Weaver-generated offer acceptance, PSP handoff, verified payment, and Rese
       "turn",
     );
     journey.harness.mountSurface(turn.surfaces[0]!.surfaceId, turn.surfaces[0]!.a2uiMessages as readonly A2UIServerMessage[]);
-    assert.ok(journey.harness.clickButton(journey.harness.mounted[0]!.target, "View Unit", `View ${IKOYI_TITLE}`));
+    assert.ok(journey.harness.clickButton(journey.harness.mounted[0]!.target, "View apartment", `View ${IKOYI_TITLE}`));
     const [unitEvent] = await journey.relayEvents();
     const unitResponse = expectSuccess(unitEvent, "view-unit");
     journey.harness.mountSurface(unitResponse.surfaces[0]!.surfaceId, unitResponse.surfaces[0]!.a2uiMessages as readonly A2UIServerMessage[]);
@@ -395,7 +395,7 @@ test("Weaver-generated offer acceptance, PSP handoff, verified payment, and Rese
     const depositResponse = expectSuccess(returnEvent, "verified stay payment");
     assert.ok(depositResponse.messages[0]!.includes("separate Refundable Security Deposit"));
     journey.harness.mountSurface(depositResponse.surfaces[0]!.surfaceId, depositResponse.surfaces[0]!.a2uiMessages as readonly A2UIServerMessage[]);
-    assert.ok(journey.harness.clickButton(journey.harness.mounted[7]!.target, "Continue to refundable deposit"));
+    assert.ok(journey.harness.clickButton(journey.harness.mounted[7]!.target, "Continue to Refundable Security Deposit"));
     const [depositInitEvent] = await journey.relayEvents();
     const depositInit = expectSuccess(depositInitEvent, "deposit checkout");
     journey.harness.mountSurface(depositInit.surfaces[0]!.surfaceId, depositInit.surfaces[0]!.a2uiMessages as readonly A2UIServerMessage[]);
@@ -405,7 +405,7 @@ test("Weaver-generated offer acceptance, PSP handoff, verified payment, and Rese
     const bookingSurface = bookingResponse.surfaces[0]!;
     journey.harness.mountSurface(bookingSurface.surfaceId, bookingSurface.a2uiMessages as readonly A2UIServerMessage[]);
     const contractText = journey.harness.mounted[9]!.target.textContent ?? "";
-    assert.ok(contractText.includes("Booking confirmed"));
+    assert.ok(contractText.includes("Reservation confirmed"));
     assert.ok(contractText.includes(IKOYI_TITLE) || contractText.includes("unit-lagos-ikoyi-001"));
 
     const replayOffer = await postJson(journey.base, "/api/event", { threadId: journey.threadId, ...offerAcceptAction });
@@ -425,7 +425,7 @@ test("Unknown or stale generated events fail closed", async () => {
       "turn",
     );
     journey.harness.mountSurface(turn.surfaces[0]!.surfaceId, turn.surfaces[0]!.a2uiMessages as readonly A2UIServerMessage[]);
-    assert.ok(journey.harness.clickButton(journey.harness.mounted[0]!.target, "View Unit", `View ${IKOYI_TITLE}`));
+    assert.ok(journey.harness.clickButton(journey.harness.mounted[0]!.target, "View apartment", `View ${IKOYI_TITLE}`));
     const viewUnitAction = { ...journey.harness.events[0]! };
     const [viewUnitEvent] = await journey.relayEvents();
 
@@ -462,7 +462,7 @@ test("Unknown or stale generated events fail closed", async () => {
     expectRejection(unlistedUnit.body, "unlisted unit id");
     assert.equal(unlistedUnit.body.code, "STALE_SURFACE");
 
-    // Replaying the genuine Weaver-generated View Unit action against the
+    // Replaying the genuine Weaver-generated View apartment action against the
     // superseded discovery surface fails closed once the journey advances.
     const unitResponse = expectSuccess(viewUnitEvent, "view-unit");
     journey.harness.mountSurface(unitResponse.surfaces[0]!.surfaceId, unitResponse.surfaces[0]!.a2uiMessages as readonly A2UIServerMessage[]);

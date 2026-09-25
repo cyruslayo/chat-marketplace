@@ -9,6 +9,7 @@ import {
 } from "../../web/src/booking-request-actions.js";
 import type { BookingRequestArtifact } from "../../web/src/booking-request-artifact.js";
 import { bookingProgressText, formatBookingDateTime, formatBookingDeadline, formatBookingMoney, formatStayDates, guestRequestStatus } from "./booking-presentation.js";
+import { GUEST_GLOSSARY } from "./guest-content.js";
 
 export interface BookingRequestArtifactToA2UIInput {
   readonly artifact: BookingRequestArtifact;
@@ -60,12 +61,12 @@ export function bookingRequestArtifactToA2UI({
       : "";
   const details: A2UIComponent[] = [
     { id: "root", component: "Column", children: ["booking-request-title", "booking-request-status", "booking-request-unit", "booking-request-dates", "booking-request-party", ...(quote ? ["booking-request-total", ...(quote.refundableSecurityDepositKobo > 0 ? ["booking-request-deposit"] : [])] : []), ...(facts.status === "disclosed" && facts.delivered ? ["booking-request-sent"] : []), ...(status.progress ? ["booking-request-progress"] : []), "booking-request-detail", ...(deadlineText ? ["booking-request-deadline"] : []), "booking-request-actions"] },
-    { id: "booking-request-title", component: "Text", text: facts.status === "declined" ? "Request declined" : facts.status === "expired" ? "Request expired" : "Booking Request", variant: "h2" },
+    { id: "booking-request-title", component: "Text", text: facts.status === "declined" ? "Request declined" : facts.status === "expired" ? "Request expired" : GUEST_GLOSSARY.bookingRequest, variant: "h2" },
     { id: "booking-request-status", component: "Text", text: status.label },
-    { id: "booking-request-unit", component: "Text", text: facts.unitTitle ?? "Your selected Unit", variant: "h3" },
+    { id: "booking-request-unit", component: "Text", text: facts.unitTitle ?? `Your selected ${GUEST_GLOSSARY.unit}`, variant: "h3" },
     { id: "booking-request-dates", component: "Text", text: `Stay: ${formatStayDates(facts.checkIn, facts.checkOut)} (${facts.nights} nights)` },
     { id: "booking-request-party", component: "Text", text: `${facts.occupantCount ?? facts.occupants.length} ${(facts.occupantCount ?? facts.occupants.length) === 1 ? "guest" : "guests"}` },
-    ...(quote ? [{ id: "booking-request-total", component: "Text" as const, text: `All-In Stay Total: ${formatBookingMoney(quote.allInStayTotalKobo, quote.currency)}`, variant: "h3" as const }, ...(quote.refundableSecurityDepositKobo > 0 ? [{ id: "booking-request-deposit", component: "Text" as const, text: `Refundable Security Deposit (separate): ${formatBookingMoney(quote.refundableSecurityDepositKobo, quote.currency)}` }] : [])] : []),
+    ...(quote ? [{ id: "booking-request-total", component: "Text" as const, text: `${GUEST_GLOSSARY.allInStayTotal}: ${formatBookingMoney(quote.allInStayTotalKobo, quote.currency)}`, variant: "h3" as const }, ...(quote.refundableSecurityDepositKobo > 0 ? [{ id: "booking-request-deposit", component: "Text" as const, text: `${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatBookingMoney(quote.refundableSecurityDepositKobo, quote.currency)}` }] : [])] : []),
     ...(status.progress ? [{ id: "booking-request-progress", component: "Text" as const, text: bookingProgressText(status.progress) }] : []),
     ...(facts.status === "disclosed" && facts.delivered ? [{ id: "booking-request-sent", component: "Text" as const, text: `Request sent: ${formatBookingDateTime(facts.disclosedAt)}` }] : []),
     { id: "booking-request-detail", component: "Text", text: status.detail },

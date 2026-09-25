@@ -78,7 +78,7 @@ test("D, E and M. Conditional Offer shows absolute WAT expiry and offers one dir
   assert.match(text, /Pay by .* WAT, 24 Sept 2026/i);
   assert.match(text, /All-In Stay Total: ₦202,000/);
   assert.match(text, /Refundable Security Deposit \(separate\): ₦50,000/);
-  assert.match(text, /not confirmed/i);
+  assert.match(text, /becomes a Reservation only after payment is verified/i);
   const buttons = messages.flatMap((message) => "updateComponents" in message ? message.updateComponents.components : []).filter((component) => component.component === "Button");
   assert.equal(buttons.length, 1);
   assert.match(JSON.stringify(buttons), /Accept.*Offer|Accept Conditional Booking Offer/i);
@@ -92,8 +92,8 @@ test("I and N. Payment-required surface states amount due and never claims payme
   assert.match(text, /Payment required/i);
   assert.match(text, /Total to complete booking: ₦252,000/);
   assert.match(text, /Next payment: stay payment · ₦202,000/);
-  assert.match(text, /Stay total: ₦202,000/);
-  assert.match(text, /Refundable deposit: ₦50,000/);
+  assert.match(text, /All-In Stay Total: ₦202,000/);
+  assert.match(text, /Refundable Security Deposit: ₦50,000/);
   assert.match(text, /Continue to stay payment · ₦202,000/i);
   assert.doesNotMatch(text, /Payment status: ready|Payment succeeded|Booking confirmed|Reservation confirmed/i);
 });
@@ -127,10 +127,10 @@ test("J2. Payment processing is recoverable while reconciliation and failure rem
 
 test("K. Confirmed booking presents reservation and contract facts without leading with identifiers", () => {
   const text = componentText(bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: "confirmed" }));
-  assert.match(text, /Booking confirmed/);
+  assert.match(text, /Reservation confirmed/);
   assert.match(text, /24–27 Sept 2026/);
   assert.match(text, /Stay payment verified: ₦202,000/);
-  assert.match(text, /Refundable deposit collected: ₦50,000/);
+  assert.match(text, /Refundable Security Deposit collected: ₦50,000/);
   assert.match(text, /Booking reference/);
   assert.match(text, /access.*not available|access.*authorized|not.*access/i);
   assert.match(text, /booking details/i);
@@ -150,14 +150,14 @@ test("Payment checkout shows the exact current component amount separately from 
   const deposit = { ...paymentArtifact("deposit_required"), facts: { ...paymentArtifact("deposit_required").facts, currentComponent: "security_deposit" as const, currentComponentAmountKobo: 5000000 } };
   const text = componentText(cardPaymentArtifactToA2UI({ artifact: deposit, surfaceId: "deposit-required" }));
   assert.match(text, /Total to complete booking: ₦252,000/);
-  assert.match(text, /Next payment: refundable deposit · ₦50,000/);
+  assert.match(text, /Next payment: Refundable Security Deposit · ₦50,000/);
   assert.doesNotMatch(text, /Amount Due Now: ₦252,000/);
 });
 
 test("Confirmed booking summary distinguishes stay payment from a separately collected deposit", () => {
   const text = componentText(bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: "confirmed-money" }));
   assert.match(text, /Stay payment verified: ₦202,000/);
-  assert.match(text, /Refundable deposit collected: ₦50,000/);
+  assert.match(text, /Refundable Security Deposit collected: ₦50,000/);
   assert.doesNotMatch(text, /Payment verified: ₦252,000/);
 });
 
@@ -175,7 +175,7 @@ test("L. Declined Booking Request has no payment, acceptance or confirmation act
   const messages = bookingRequestArtifactToA2UI({ artifact: requestArtifact("declined"), surfaceId: "declined" });
   const text = componentText(messages);
   assert.match(text, /Request declined/i);
-  assert.match(text, /no Reservation exists/i);
+  assert.match(text, /No Reservation was made/i);
   assert.match(text, /no payment is due/i);
   assert.doesNotMatch(JSON.stringify(messages), /Start secure checkout|Continue to secure payment|Accept Conditional Booking Offer|Confirm booking/i);
 });

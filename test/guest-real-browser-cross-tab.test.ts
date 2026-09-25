@@ -150,7 +150,7 @@ async function advanceToRequestReview(ctx: RealBrowserTestContext): Promise<void
   // the measured worst-case render under concurrent Chromium workers.
   await ctx.tabA.waitForText(IKOYI_TITLE, 30000);
 
-  await ctx.tabA.clickButton("View Unit", IKOYI_TITLE);
+  await ctx.tabA.clickButton("View apartment", IKOYI_TITLE);
   await ctx.tabA.waitForText("Request to Book", 15000);
 
   await ctx.tabA.clickButton("Request to Book");
@@ -221,8 +221,8 @@ async function advanceToDepositCheckoutInitiated(ctx: RealBrowserTestContext): P
   // Verify the stay payment once, then initialize the separate refundable
   // deposit checkout before racing the final verification from both tabs.
   await ctx.tabA.clickButton("Check payment status");
-  await ctx.tabA.waitForText("Continue to refundable deposit", 15000);
-  await ctx.tabA.clickButton("Continue to refundable deposit");
+  await ctx.tabA.waitForText("Continue to Refundable Security Deposit", 15000);
+  await ctx.tabA.clickButton("Continue to Refundable Security Deposit");
   await ctx.tabA.waitForText("Check payment status", 15000);
 
   await ctx.tabB.navigate(`${ctx.base}/?threadId=${ctx.threadId}`);
@@ -431,11 +431,11 @@ test("RB6 — A superseded real-tab action fails closed", async () => {
     await ctx.tabB.waitForText(IKOYI_TITLE);
 
     // Tab A advances the workflow to unit details
-    await ctx.tabA.clickButton("View Unit", IKOYI_TITLE);
+    await ctx.tabA.clickButton("View apartment", IKOYI_TITLE);
     await ctx.tabA.waitForText("Request to Book");
 
-    // Leave Tab B untouched, then click stale "View Unit" on Tab B
-    const clickB = await ctx.tabB.clickButton("View Unit", IKOYI_TITLE);
+    // Leave Tab B untouched, then click stale "View apartment" on Tab B
+    const clickB = await ctx.tabB.clickButton("View apartment", IKOYI_TITLE);
     assert.equal(clickB, true);
 
     // Server rejects stale action (ADR-0074: fail closed), then refreshes the

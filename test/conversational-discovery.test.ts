@@ -411,7 +411,7 @@ test("AC5/AC6/AC17 — Lagos → 2 nights and 2 guests → Lekki executes an aut
       ["unit-lagos-lekki-002"],
     );
     assert.deepEqual(renderedUnitIds(surface), ["unit-lagos-lekki-002"]);
-    assert.match(surface.textFallback ?? "", /Found 1 eligible Unit/);
+    assert.match(surface.textFallback ?? "", /Found 1 eligible apartment/);
   } finally {
     await conversation.close();
   }
