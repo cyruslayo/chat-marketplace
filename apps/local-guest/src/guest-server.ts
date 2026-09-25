@@ -28,6 +28,7 @@ import {
   accommodationProviderLine,
   guestOperatorName,
   guestReservationStatus,
+  guestAmenityLabel,
   type DiscoveryArtifactProjection,
 } from "../../../apps/web-agent/src/index.js";
 import { unitDetailArtifactFromProjection } from "../../../apps/web/src/unit-detail-artifact.js";
@@ -62,7 +63,7 @@ import {
 } from "./guest-projection.js";
 import { hashSessionSecret } from "../../../domains/shortlet/src/index.js";
 import { DirectPaystackClient, isApprovedPaystackCheckoutUrl, loadPaystackConfiguration, type PaystackClient } from "../../../domains/shortlet/src/index.js";
-import { extractStayRequestFacts, formatGuestDay, mergeStayRequestContext, resolveStayRequestContext, unsupportedPreferenceNote, type DiscoverySearchContext, type StayRequestFilters } from "./concierge.js";
+import { amenityQuestions, extractStayRequestFacts, formatGuestDay, mergeStayRequestContext, resolveStayRequestContext, stayChangeRequested, unsupportedPreferenceNote, type DiscoverySearchContext, type StayRequestFilters } from "./concierge.js";
 import { handleGeminiTurn, type GeminiConciergeClient } from "./gemini-concierge.js";
 import type { Content } from "@google/genai";
 import { AssistantRuntime } from "./assistant/assistant-runtime.js";
@@ -159,6 +160,9 @@ const EVENT_STAGE_ALLOW_LIST: Readonly<Record<string, string>> = Object.freeze({
 
 const THREAD_ID_PATTERN = /^g-[a-f0-9-]{6,64}$/;
 
+/** Where the Guest is in the journey, for stage-aware free-text replies (issue 04a). */
+type GuestStage = "discovery" | "unit" | "draft" | "request" | "offer" | "payment" | "booking";
+
 interface GuestThreadState {
   readonly threadId: string;
   readonly geminiHistory: Content[];
@@ -230,13 +234,15 @@ export class LocalGuestApp {
 
     const thread = this.#threads.get(threadId) ?? this.#loadThread(threadId) ?? this.#createThread(threadId);
     const refreshed = this.#refreshWorkflow(thread);
+    // Issue 04a AC1: every message gets a reply for the stage the Guest is in,
+    // including when a refresh re-presents the current surface.
+    const stageReply = this.#stageReply(thread, text);
     if (refreshed) {
-      if (refreshed.ok && refreshed.surfaces.length > 0) this.#rememberResult(threadId, undefined, refreshed);
-      return refreshed;
+      if (!refreshed.ok) return refreshed;
+      const messages = [...refreshed.messages, ...(stageReply ?? [])];
+      return { ...refreshed, messages: messages.length > 0 ? messages : [this.#capabilityReply(this.#guestStage(thread), this.#currentUnit(thread))] };
     }
-    if (thread.offerId || thread.activeSurfaces.has(PAYMENT_STAGE) || thread.activeSurfaces.has(BOOKING_STAGE)) {
-      return { ok: true, messages: ["Your booking details are still here. Finish that step or return to it to continue."], surfaces: [] };
-    }
+    if (stageReply) return { ok: true, messages: stageReply, surfaces: [] };
     if (this.#geminiClient) {
       try {
         const live = await handleGeminiTurn({
@@ -311,6 +317,66 @@ export class LocalGuestApp {
     }
 
     return acknowledged(this.#executeDiscovery(thread, resolution.filters));
+  }
+
+  #guestStage(thread: GuestThreadState): GuestStage {
+    if (thread.activeSurfaces.has(BOOKING_STAGE)) return "booking";
+    if (thread.activeSurfaces.has(PAYMENT_STAGE)) return "payment";
+    if (thread.offerId) return "offer";
+    if (thread.requestId) return "request";
+    if (thread.draftId) return "draft";
+    if (thread.unitDetail) return "unit";
+    return "discovery";
+  }
+
+  #currentUnit(thread: GuestThreadState): Unit | null {
+    const unitId = thread.unitDetail?.unitId
+      ?? (thread.requestId ? this.#environment.bookingRequestApp.getArtifact(thread.requestId, this.#environment.guestPrincipal()).facts.unitId : undefined);
+    return unitId === undefined ? null : this.#environment.unitRepository.findById(unitId) as Unit | null;
+  }
+
+  /**
+   * The deterministic reply for a free-text turn once an apartment is chosen.
+   * Facility questions are answered only from `unit.amenities`; guest text is
+   * untrusted and never echoed (ADR-0075). Returns null before booking starts
+   * when the turn should continue as discovery.
+   */
+  #stageReply(thread: GuestThreadState, text: string): string[] | null {
+    const stage = this.#guestStage(thread);
+    const unit = this.#currentUnit(thread);
+    const answers = unit === null ? [] : amenityQuestions(text).map((question) => {
+      const listed = question.ids.find((id) => unit.amenities.includes(id));
+      return listed === undefined
+        ? `${question.label} isn't listed for ${unit.title}, so I can't confirm it.`
+        : `Yes: ${unit.title} lists ${guestAmenityLabel(listed)}.`;
+    });
+    const facts = extractStayRequestFacts(text, { now: this.#environment.clock() });
+    if (stage === "discovery" || stage === "unit" || stage === "draft") {
+      // Draft changes belong to issue 14; a turn with new stay facts stays in discovery.
+      const hasStayFacts = Object.keys(facts).some((key) => key !== "unsupportedPreferences");
+      return answers.length > 0 && !hasStayFacts ? answers : null;
+    }
+    const change = stayChangeRequested(facts, text) ? [this.#changeExplanation(stage, unit)] : [];
+    const replies = [...change, ...answers];
+    return replies.length > 0 ? replies : [this.#capabilityReply(stage, unit)];
+  }
+
+  /** ADR-0005/0060: after submission nothing changes silently; say why or how. */
+  #changeExplanation(stage: "request" | "offer" | "payment" | "booking", unit: Unit | null): string {
+    const operator = guestOperatorName(unit?.operator?.name);
+    if (stage === "request") return `A sent ${GUEST_GLOSSARY.bookingRequest} can't be changed while ${operator} reviews it. If ${operator} confirms, you can choose not to accept the offer at no cost and search again with new details. Nothing has been changed.`;
+    if (stage === "offer") return `A ${GUEST_GLOSSARY.conditionalBookingOffer} can't be changed. You can choose not to accept it at no cost and search again with new details. Nothing has been changed.`;
+    if (stage === "payment") return "An accepted offer can't be changed from this conversation. Nothing has been changed.";
+    return `Changes to a confirmed ${GUEST_GLOSSARY.reservation} are made as a booking amendment, which re-checks availability and price. I can't start one from this conversation yet. Nothing has been changed.`;
+  }
+
+  #capabilityReply(stage: GuestStage, unit: Unit | null): string {
+    const about = unit === null ? "" : ` I can also answer questions about ${unit.title}, such as parking or Wi-Fi.`;
+    if (stage === "request") return `Your ${GUEST_GLOSSARY.bookingRequest} is with ${guestOperatorName(unit?.operator?.name)} for review; the details are in the workspace.${about}`;
+    if (stage === "offer") return `Your ${GUEST_GLOSSARY.conditionalBookingOffer} is in the workspace. Review it and accept it there if it suits you.${about}`;
+    if (stage === "payment") return `Your payment step is in the workspace.${about}`;
+    if (stage === "booking") return `Your booking details are in the workspace.${about}`;
+    return `Your current details are in the workspace.${about}`;
   }
 
   /**

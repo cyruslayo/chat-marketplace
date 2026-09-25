@@ -251,6 +251,35 @@ test("AC4: Receipts render as markers, not assistant turns, live and after reloa
   } finally { await c.close(); }
 });
 
+test("AC5: A free-text turn with a live surface open does not demote that surface to the fallback", async () => {
+  const c = await startContext(375, 812);
+  const renderer = "document.querySelector('#active-workspace .weaver-mount')?.dataset.renderer ?? ''";
+  try {
+    await sendPrompt(c.tab, PROMPT);
+    await c.tab.waitForText("Luxury 2-Bedroom Apartment");
+    assert.equal(await c.tab.clickButton("View apartment", "Luxury 2-Bedroom Apartment in Old Ikoyi"), true);
+    await c.tab.waitForText("Request to Book");
+    assert.equal(await c.tab.clickButton("Request to Book"), true);
+    await c.tab.waitForText("Review request");
+    assert.equal(await c.tab.clickButton("Review request"), true);
+    await c.tab.waitForText("Phone number");
+    await c.tab.evaluate("(() => { const input = document.querySelector('.weaver-mount input'); input.value = '+234 801 234 5678'; input.dispatchEvent(new Event('input', { bubbles: true })); })()");
+    assert.equal(await c.tab.clickButton("Save phone number"), true);
+    await c.tab.waitForText("Submit Booking Request");
+    assert.equal(await c.tab.clickButton("Submit Booking Request"), true);
+    await c.tab.waitForText("Waiting for Operator response");
+    assert.equal(await c.tab.evaluate<string>(renderer), "weaver");
+
+    // The refresh re-presents the same request surface; it must stay rich and actionable.
+    await sendPrompt(c.tab, "actually can we make it 5 nights? and is there parking?");
+    await c.tab.waitForText("lists Secure parking");
+    assert.equal(await c.tab.evaluate<string>(renderer), "weaver", "the live surface is not demoted to the fallback");
+    assert.equal(await c.tab.evaluate<number>("document.querySelectorAll('#active-workspace .surface-fallback').length"), 0);
+    assert.equal(await c.tab.evaluate<string>("document.getElementById('error-announcer')?.textContent ?? ''"), "");
+    assert.match(await c.tab.evaluate<string>("document.getElementById('active-workspace').innerText"), /Waiting for Operator response/);
+  } finally { await c.close(); }
+});
+
 async function capturePhase4(context: MobileContext, state: string): Promise<void> {
   if (![320, 390, 768, 1280].includes(context.width)) return;
   const directory = join(process.cwd(), ".scratch", "ui-recovery", "recovered");

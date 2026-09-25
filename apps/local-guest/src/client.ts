@@ -284,6 +284,7 @@ let isLoading = false;
 let eventInFlight = false;
 let lastActivatedControl: HTMLElement | undefined;
 let workspaceOpener: HTMLElement | undefined;
+const createdSurfaceIds = new Set<string>();
 
 type ShellTelemetryEvent =
   | "text-response-rendered"
@@ -513,8 +514,16 @@ function renderSurface(surface: GuestSurfacePayload, moveFocus = false): void {
   }
   if (presentation.status === "fallback") { trackTelemetry("fallback-rendered"); fallback(mount, presentation); showReopen(); return; }
 
+  if (createdSurfaceIds.has(surface.surfaceId)) {
+    // ADR-0074: a refreshed server projection re-creates a surface this page
+    // already holds. Weaver rejects duplicate createSurface ids, so the local
+    // copy is removed first instead of falling back (issue 04a AC5).
+    weaver.runtime.process({ version: "v0.9.1", deleteSurface: { surfaceId: surface.surfaceId } });
+    createdSurfaceIds.delete(surface.surfaceId);
+  }
   for (const message of surface.a2uiMessages) {
     const processed = weaver.runtime.process(message);
+    if (processed.ok && isRecord(message) && "createSurface" in message) createdSurfaceIds.add(surface.surfaceId);
     if (!processed.ok) {
       trackTelemetry("weaver-rendering-failure");
       trackTelemetry("fallback-rendered");
@@ -548,7 +557,10 @@ function renderSurface(surface: GuestSurfacePayload, moveFocus = false): void {
   showReopen();
   if (moveFocus) {
     activeWorkspace.scrollIntoView({ block: "start" });
-    const focusTarget = activeWorkspace.querySelector<HTMLElement>(".workspace-close, .workspace-heading h2, .weaver-mount h1, .weaver-mount h2, .weaver-mount h3, .weaver-mount button");
+    // Priority order, not document order: the heading precedes the close control in the DOM.
+    const focusTarget = [".workspace-close", ".workspace-heading h2", ".weaver-mount h1", ".weaver-mount h2", ".weaver-mount h3", ".weaver-mount button"]
+      .map((selector) => activeWorkspace.querySelector<HTMLElement>(selector))
+      .find((element): element is HTMLElement => element !== null);
     if (focusTarget) {
       if (!focusTarget.matches("button, a, input, textarea, select, [tabindex]")) focusTarget.tabIndex = -1;
       focusTarget.classList.add("workspace-focus-target");

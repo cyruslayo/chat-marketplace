@@ -346,6 +346,35 @@ export function extractStayRequestFacts(text: string, options: { readonly now?: 
   };
 }
 
+// Questions about a Unit's facilities, answered only from `unit.amenities`
+// (issue 04a AC2). An entry without ids is never listed by the catalogue, so
+// the answer is always that it isn't listed.
+const AMENITY_QUESTIONS: readonly { readonly pattern: RegExp; readonly label: string; readonly ids: readonly string[] }[] = [
+  { pattern: /\bparking\b/i, label: "Parking", ids: ["parking"] },
+  { pattern: /\b(?:swimming\s+)?pool\b/i, label: "A pool", ids: ["swimming_pool"] },
+  { pattern: /\b(?:wi-?fi|internet)\b/i, label: "Wi-Fi", ids: ["wifi"] },
+  { pattern: /\b(?:generator|backup power|24\/7 power|light|power)\b/i, label: "Backup power", ids: ["24_7_power_generator", "generator"] },
+  { pattern: /\b(?:security|guards?)\b/i, label: "On-site security", ids: ["security_guard"] },
+  { pattern: /\b(?:air[- ]?con(?:ditioning)?|a\/c|ac)\b/i, label: "Air conditioning", ids: ["air_conditioning"] },
+  { pattern: /\b(?:workspace|desk)\b/i, label: "A workspace", ids: ["workspace"] },
+  { pattern: /\bgym\b/i, label: "A gym", ids: [] },
+  { pattern: /\bkitchen\b/i, label: "A kitchen", ids: [] },
+  { pattern: /\bbalcony\b/i, label: "A balcony", ids: [] },
+];
+const QUESTION_PATTERN = /\?|\b(?:is there|are there|does (?:it|the (?:apartment|place|flat)) have|do (?:you|they) have|has it got|what about)\b/i;
+const CHANGE_PATTERN = /\b(?:make it|change|extend|shorten|move (?:it|the dates)|add (?:a|another|one more) night|fewer nights|more nights)\b/i;
+
+/** Facility questions in a message, in the order the catalogue lists them. */
+export function amenityQuestions(text: string): readonly { readonly label: string; readonly ids: readonly string[] }[] {
+  if (!QUESTION_PATTERN.test(text)) return [];
+  return AMENITY_QUESTIONS.filter((question) => question.pattern.test(text)).map(({ label, ids }) => ({ label, ids }));
+}
+
+/** True when a message asks to change the stay (dates, nights, guests or area). */
+export function stayChangeRequested(facts: StayRequestFacts, text: string): boolean {
+  return facts.dates !== undefined || facts.nights !== undefined || facts.partySize !== undefined || facts.location !== undefined || CHANGE_PATTERN.test(text);
+}
+
 /** Acknowledges preferences that cannot be applied, so nothing is silently dropped. */
 export function unsupportedPreferenceNote(labels: readonly string[] | undefined): string | undefined {
   if (labels === undefined || labels.length === 0) return undefined;

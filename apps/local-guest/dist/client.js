@@ -8867,6 +8867,7 @@ Known schemas:
   var eventInFlight = false;
   var lastActivatedControl;
   var workspaceOpener;
+  var createdSurfaceIds = /* @__PURE__ */ new Set();
   function trackTelemetry(event) {
     void fetch("/api/telemetry", {
       method: "POST",
@@ -9061,8 +9062,13 @@ Known schemas:
       showReopen();
       return;
     }
+    if (createdSurfaceIds.has(surface.surfaceId)) {
+      weaver.runtime.process({ version: "v0.9.1", deleteSurface: { surfaceId: surface.surfaceId } });
+      createdSurfaceIds.delete(surface.surfaceId);
+    }
     for (const message of surface.a2uiMessages) {
       const processed = weaver.runtime.process(message);
+      if (processed.ok && isRecord3(message) && "createSurface" in message) createdSurfaceIds.add(surface.surfaceId);
       if (!processed.ok) {
         trackTelemetry("weaver-rendering-failure");
         trackTelemetry("fallback-rendered");
@@ -9096,7 +9102,7 @@ Known schemas:
     showReopen();
     if (moveFocus) {
       activeWorkspace.scrollIntoView({ block: "start" });
-      const focusTarget = activeWorkspace.querySelector(".workspace-close, .workspace-heading h2, .weaver-mount h1, .weaver-mount h2, .weaver-mount h3, .weaver-mount button");
+      const focusTarget = [".workspace-close", ".workspace-heading h2", ".weaver-mount h1", ".weaver-mount h2", ".weaver-mount h3", ".weaver-mount button"].map((selector) => activeWorkspace.querySelector(selector)).find((element) => element !== null);
       if (focusTarget) {
         if (!focusTarget.matches("button, a, input, textarea, select, [tabindex]")) focusTarget.tabIndex = -1;
         focusTarget.classList.add("workspace-focus-target");
