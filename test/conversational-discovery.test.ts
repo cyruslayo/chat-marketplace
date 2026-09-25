@@ -371,10 +371,8 @@ test("AC5/AC6/AC17 — Lagos → 2 nights from 10 Sept and 2 guests → Lekki ex
       0,
       "an incomplete search must not render a surface",
     );
-    assert.match(
-      city.messages.join(" "),
-      /how many nights you need and how many guests are staying/,
-    );
+    // Issue 02: one missing criterion is asked at a time, after restating the area.
+    assert.match(city.messages.join(" "), /So far I have: Lagos\. Could you tell me how many guests are staying\?/);
     assert.doesNotMatch(city.messages.join(" "), /where you want to stay/);
 
     const stay = expectSuccess(
