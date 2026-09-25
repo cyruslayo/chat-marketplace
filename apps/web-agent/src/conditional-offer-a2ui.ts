@@ -21,7 +21,7 @@ export function conditionalOfferArtifactToA2UI({ artifact, surfaceId }: { readon
     { id: "conditional-offer-expiry", component: "Text", text: `${formatBookingDeadline(facts.paymentWindowExpiresAt)}. This deadline comes from the current offer.` },
     { id: "conditional-offer-total", component: "Text", text: `All-In Stay Total: ${formatBookingMoney(facts.allInStayTotalKobo)}`, variant: "h3" },
     { id: "conditional-offer-deposit", component: "Text", text: `Refundable Security Deposit (separate): ${formatBookingMoney(facts.refundableSecurityDepositKobo)}` },
-    { id: "conditional-offer-due", component: "Text", text: `Amount Due Now: ${formatBookingMoney(facts.totalAmountDueNowKobo)}` },
+    { id: "conditional-offer-due", component: "Text", text: `Total to complete booking: ${formatBookingMoney(facts.totalAmountDueNowKobo)}` },
     { id: "conditional-offer-progress", component: "Text", text: bookingProgressText("offer") },
     { id: "conditional-offer-consequence", component: "Text", text: facts.status === "issued" ? "Accept this Conditional Offer to continue to payment. The booking is not confirmed until payment is verified and a Reservation exists." : "A confirmed Reservation exists only after payment is verified and the application creates it." },
     { id: "conditional-offer-cancellation", component: "Text", text: `Cancellation: ${facts.cancellationPolicy.summary} (${facts.cancellationPolicy.version})` },

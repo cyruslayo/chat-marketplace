@@ -19,6 +19,8 @@ test("mobile conversation shell keeps one timeline, one workspace slot, and a te
   assert.match(html, /id="announcer"[^>]+aria-live="polite"/);
   assert.match(html, /Explore Abuja/);
   assert.match(html, /Explore Lagos/);
+  assert.match(html, /Start with a city, your dates/);
+  assert.match(html, /available entire-place stays/);
   assert.doesNotMatch(html, /Local demo/);
   assert.match(html, /100dvh/);
   assert.match(html, /prefers-reduced-motion/);
@@ -29,15 +31,30 @@ test("mobile conversation shell keeps one timeline, one workspace slot, and a te
 test("Guest history keeps useful meaning without exposing workspace lifecycle terminology", () => {
   assert.equal(formatGuestHistorySummary("Search updated · Old Ikoyi · 2 guests", "superseded"), "Searched Old Ikoyi · 2 guests");
   assert.equal(formatGuestHistorySummary("Garden Two-Bedroom Stay in Old Ikoyi details", "superseded"), "Viewed Garden Two-Bedroom Stay in Old Ikoyi");
-  assert.equal(formatGuestHistorySummary("Request Draft", "superseded"), "Prepared booking details");
+  assert.equal(formatGuestHistorySummary("Request Draft", "superseded"), "Draft created");
+  assert.equal(formatGuestHistorySummary("Request review", "superseded"), "Booking details reviewed");
   assert.match(formatGuestHistorySummary("Search updated · Lagos · 2 guests", "stale"), /Searched Lagos.*may have changed/);
   assert.match(formatGuestHistorySummary("Payment handoff", "fallback"), /hosted checkout.*details unavailable/);
   assert.equal(guestSurfaceStatusMessage("active"), "");
-  assert.match(guestSurfaceStatusMessage("superseded"), /replaced and are read-only/i);
+  assert.match(guestSurfaceStatusMessage("superseded"), /no longer current/i);
   assert.match(guestSurfaceStatusMessage("stale"), /details may have changed/i);
   assert.match(guestSurfaceStatusMessage("expired"), /expired/i);
   assert.match(guestSurfaceStatusMessage("deleted"), /no longer available/i);
   assert.doesNotMatch(guestSurfaceStatusMessage("fallback"), /workspace|fallback/i);
+});
+
+test("Focused workspaces have no persistent focus frame and keep visible focus on a real control", () => {
+  const html = renderGuestShellHtml();
+  assert.doesNotMatch(html, /#active-workspace:focus|#active-workspace\[tabindex[^]]*\]:focus-visible/);
+  assert.match(html, /:focus-visible\s*\{\s*outline:\s*3px solid/);
+  assert.doesNotMatch(html, /outline:\s*(?:none|0)\s*!important/i);
+});
+
+test("The shell supports focused-workspace composer de-emphasis without hiding message entry", () => {
+  const html = renderGuestShellHtml();
+  assert.match(html, /form#composer\[data-focused="true"\]/);
+  assert.match(html, /id="composer-input"/);
+  assert.match(html, /id="composer-submit"/);
 });
 
 test("server-backed state restores the conversation timeline and latest workspace projection", async () => {

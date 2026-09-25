@@ -366,7 +366,9 @@ export class LocalGuestApp {
       thread.activeSurfaces.set(PAYMENT_STAGE, surfaceId);
       this.#emitTransition(thread, "payment.handoff.opened", { aggregateType: "payment", aggregateId: thread.offerId!, surfaceId });
       this.#emitTransition(thread, "payment.attempt.initialized", { aggregateType: "payment_attempt", aggregateId: session.checkoutId, correlationId: thread.offerId! });
-      return { ok: true, messages: ["Hosted card checkout is ready. Payment has not succeeded; your booking details remain available when you return."], surfaces: [{ surfaceId, mode: "focused-surface", summary: "Payment handoff", conventionalRoute: `/payments/offers/${encodeURIComponent(thread.offerId!)}/continue`, conventionalRouteLabel: `Continue to hosted checkout · ${formatNgnKobo(artifact.facts.amountDueNowKobo)}`, textFallback: `You will leave Shortlet temporarily for hosted card checkout. ${artifact.facts.allInStayTotalKobo === undefined ? "" : `All-In Stay Total: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. `}${artifact.facts.refundableSecurityDepositKobo ? `Refundable Security Deposit (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}Amount Due Now: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}. ${formatWAT(artifact.facts.paymentWindowExpiresAt)}. Payment has not succeeded and the booking is not confirmed. Your booking details will be retained when you return.`, a2uiMessages: cardPaymentArtifactToA2UI({ artifact, surfaceId }) }] };
+      const checkoutAmount = artifact.facts.currentComponentAmountKobo ?? artifact.facts.allInStayTotalKobo ?? artifact.facts.amountDueNowKobo;
+      const checkoutPurpose = artifact.facts.currentComponent === "security_deposit" ? "refundable deposit" : "stay payment";
+      return { ok: true, messages: ["Hosted card checkout is ready. Payment has not succeeded; your booking details remain available when you return."], surfaces: [{ surfaceId, mode: "focused-surface", summary: "Payment handoff", conventionalRoute: `/payments/offers/${encodeURIComponent(thread.offerId!)}/continue`, conventionalRouteLabel: `Continue to ${checkoutPurpose} · ${formatNgnKobo(checkoutAmount)}`, textFallback: `You will leave Shortlet temporarily for hosted card checkout. ${artifact.facts.allInStayTotalKobo === undefined ? "" : `Stay total: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. `}${artifact.facts.refundableSecurityDepositKobo ? `Refundable deposit (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}Next payment: ${formatNgnKobo(checkoutAmount)}. ${formatWAT(artifact.facts.paymentWindowExpiresAt)}. Payment has not succeeded and the booking is not confirmed. Your booking details will be retained when you return.`, a2uiMessages: cardPaymentArtifactToA2UI({ artifact, surfaceId }) }] };
     } catch (error) {
       if (/email address is required/i.test(error instanceof Error ? error.message : "")) return this.#contactSurface(thread, "email", event.context ?? {});
       return { ok: false, code: "ACTION_NOT_AUTHORIZED", message: "The secure card checkout could not be started." };
@@ -703,7 +705,7 @@ export class LocalGuestApp {
         if (artifact.facts.status === "expired") {
           const expiredId = `thread-${thread.threadId}:payment:expired:${projection.offerId}`;
           thread.activeSurfaces.set(PAYMENT_STAGE, expiredId);
-          return { ...this.#paymentSurface(thread, artifact, "Payment Window expired", expiredId), status: "expired", textFallback: `Payment Window expired. Amount Due Now: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}. No Reservation exists.` };
+          return { ...this.#paymentSurface(thread, artifact, "Payment Window expired", expiredId), status: "expired", textFallback: `Payment window expired. Total to complete booking: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}. No Reservation exists.` };
         }
         const storedSurfaceId = projection.activeSurfaceId ?? "";
         // The stored surface id is the authoritative pointer to the exact
@@ -1026,7 +1028,7 @@ export class LocalGuestApp {
 
   #draftFallback(artifact: RequestDraftArtifact): string {
     const review = artifact.actions[0]?.type === "submit";
-    return `${review ? "Review · Not submitted" : "Draft · Not reserved"}. ${artifact.facts.unitTitle}. Stay: ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)} (${artifact.facts.nights} nights). All-In Stay Total: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. ${artifact.facts.refundableSecurityDepositKobo > 0 ? `Refundable Security Deposit (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}${review ? `Amount Due Now: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}. Submitting this request does not confirm the stay. ` : "This is not a Booking Request or Reservation. Availability is not promised. "}Inventory is not reserved.`;
+    return `${review ? "Booking details reviewed · not submitted" : "Request draft · not reserved"}. ${artifact.facts.unitTitle}. ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)} · ${artifact.facts.nights} ${artifact.facts.nights === 1 ? "night" : "nights"} · ${artifact.facts.occupants.length} ${artifact.facts.occupants.length === 1 ? "guest" : "guests"}. Stay total: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. ${artifact.facts.refundableSecurityDepositKobo > 0 ? `Refundable deposit (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}${review ? `Total to complete booking if confirmed: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}. Availability and price are checked again when you send the request. ` : "Review these details before you send the request. Dates are not held yet. "}Cancellation terms: ${artifact.facts.cancellationPolicy.summary}.`;
   }
 
   #handleDraftReview(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
@@ -1081,19 +1083,20 @@ export class LocalGuestApp {
     thread.activeSurfaces.set(stage, surfaceId);
     const contact = this.#environment.guestContactApp.get(this.#environment.guestPrincipal());
     const baseLabel = kind === "phone" ? "Phone number" : "Email address";
-    const label = input.error ? `${baseLabel} — ${input.error}` : baseLabel;
+    const saveLabel = kind === "phone" ? "Save phone number" : "Save email address";
     const eventName = kind === "phone" ? GUEST_PHONE_SUBMIT_EVENT : GUEST_EMAIL_SUBMIT_EVENT;
     const components: A2UIComponent[] = [
       { id: "root", component: "Column", children: ["contact-title", "contact-help", "contact-value", ...(input.error ? ["contact-error"] : []), "contact-save"] },
       { id: "contact-title", component: "Text", text: baseLabel, variant: "h2" },
       { id: "contact-help", component: "Text", text: kind === "phone" ? "Required to send a Booking Request. Use a Nigerian mobile number in +234 format; for example +234 801 234 5678. Phone is for booking coordination, not identity verification." : "Required to start hosted card checkout and send a payment receipt. This email is not your account identity." },
-      { id: "contact-value", component: "TextField", label, value: { path: "/contactValue" }, accessibility: { label: baseLabel } },
-      ...(input.error ? [{ id: "contact-error", component: "Text" as const, text: `Error: ${input.error}` }] : []),
-      { id: "contact-save", component: "Button", child: "contact-save-label", variant: "primary", action: { event: { name: eventName, context: { ...resumeContext, contactValue: { path: "/contactValue" }, expectedRevision: contact?.revision ?? 0 } } }, accessibility: { label: `Save ${label}` } },
-      { id: "contact-save-label", component: "Text", text: `Save ${label}` },
+      { id: "contact-value", component: "TextField", label: baseLabel, value: { path: "/contactValue" }, accessibility: { label: baseLabel } },
+      ...(input.error ? [{ id: "contact-error", component: "Text" as const, text: input.error }] : []),
+      { id: "contact-save", component: "Button", child: "contact-save-label", variant: "primary", action: { event: { name: eventName, context: { ...resumeContext, contactValue: { path: "/contactValue" }, expectedRevision: contact?.revision ?? 0 } } }, accessibility: { label: saveLabel } },
+      { id: "contact-save-label", component: "Text", text: saveLabel },
     ];
     const currentValue = input.value ?? (kind === "phone" ? contact?.phoneNumber : contact?.contactEmail) ?? "";
-    return { ok: true, messages: [input.error ? `Check the ${kind === "phone" ? "phone number" : "email address"} below and try again.` : kind === "phone" ? "Add a phone number before reviewing this Booking Request." : "Add an email address before continuing to payment."], surfaces: [{ surfaceId, mode: "focused-surface", summary: baseLabel, conventionalRoute: `/guest/contact?kind=${kind}`, textFallback: `${baseLabel} is required. ${kind === "phone" ? "Use a Nigerian mobile number, for example +234 801 234 5678." : "It is used to initialize hosted checkout and send your receipt."} Open Contact details to save it.`, a2uiMessages: [{ version: "v0.9.1", createSurface: { surfaceId, catalogId: A2UI_V091_BASIC_CATALOG_ID } }, { version: "v0.9.1", updateDataModel: { surfaceId, path: "/contactValue", value: currentValue } }, { version: "v0.9.1", updateComponents: { surfaceId, components } }] }] };
+    const prompt = input.error ? "Please correct the field below." : kind === "phone" ? "Add a phone number to send your Booking Request." : "Add an email address to continue to payment.";
+    return { ok: true, messages: [prompt], surfaces: [{ surfaceId, mode: "focused-surface", summary: baseLabel, conventionalRoute: `/guest/contact?kind=${kind}`, conventionalRouteLabel: kind === "phone" ? "Edit phone number" : "Edit email address", textFallback: `${baseLabel} is required. ${kind === "phone" ? "Use a Nigerian mobile number, for example +234 801 234 5678." : "It is used for checkout and your receipt."} Open Contact details to save it.`, a2uiMessages: [{ version: "v0.9.1", createSurface: { surfaceId, catalogId: A2UI_V091_BASIC_CATALOG_ID } }, { version: "v0.9.1", updateDataModel: { surfaceId, path: "/contactValue", value: currentValue } }, { version: "v0.9.1", updateComponents: { surfaceId, components } }] }] };
   }
 
   #handlePhoneSubmit(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
@@ -1149,9 +1152,10 @@ export class LocalGuestApp {
 
   #confirmedBookingFallback(artifact: BookingContractArtifact): string {
     const access = artifact.facts.accessAvailability === "available"
-      ? "Access details are available in secure booking details; reservation confirmation does not itself grant physical access."
-      : "Access details will be shared when the authorized check-in disclosure policy permits; reservation confirmation does not itself grant physical access.";
-    return `Booking confirmed for ${artifact.facts.unitTitle ?? "your stay"}. Stay: ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)} (${artifact.facts.nights} nights); ${artifact.facts.occupants.length} ${artifact.facts.occupants.length === 1 ? "guest" : "guests"}. ${artifact.facts.allInStayTotalKobo === undefined ? "" : `All-In Stay Total: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. `}${artifact.facts.refundableSecurityDepositKobo ? `Refundable Security Deposit (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}Payment verified: ${formatNgnKobo(artifact.facts.amountPaidKobo)}. Reservation and Booking Contract are confirmed. ${access} Reservation reference: ${artifact.facts.reservationId}.`;
+      ? "Access details are in secure booking details."
+      : "Check-in details will be shared when they are ready. A confirmed booking does not itself grant physical access.";
+    const depositCollected = artifact.facts.securityDeposit?.status === "held" && (artifact.facts.refundableSecurityDepositKobo ?? 0) > 0;
+    return `Booking confirmed for ${artifact.facts.unitTitle ?? "your stay"}. ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)} · ${artifact.facts.nights} ${artifact.facts.nights === 1 ? "night" : "nights"}; ${artifact.facts.occupants.length} ${artifact.facts.occupants.length === 1 ? "guest" : "guests"}. ${artifact.facts.amountPaidKobo ? `Stay payment verified: ${formatNgnKobo(artifact.facts.amountPaidKobo)}. ` : ""}${depositCollected ? `Refundable deposit collected: ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo!)}. ` : ""}${access} Your booking reference and full contract are in booking details.`;
   }
 
   #offerFallback(artifact: ConditionalOfferArtifact): string {
@@ -1159,7 +1163,7 @@ export class LocalGuestApp {
       : artifact.facts.status === "accepted" ? "Offer accepted · Payment required"
         : artifact.facts.status === "expired" ? "Offer expired"
           : artifact.facts.status === "stale" ? "Offer no longer current" : "Offer withdrawn";
-    return `${status}. ${artifact.facts.unitTitle}. Stay: ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)} (${artifact.facts.nights} nights). All-In Stay Total: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. ${artifact.facts.refundableSecurityDepositKobo > 0 ? `Refundable Security Deposit (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}Amount Due Now: ${formatNgnKobo(artifact.facts.totalAmountDueNowKobo)}. ${formatBookingDeadline(artifact.facts.paymentWindowExpiresAt)}. This Offer is not a confirmed Reservation.`;
+    return `${status}. ${artifact.facts.unitTitle}. ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)} · ${artifact.facts.nights} ${artifact.facts.nights === 1 ? "night" : "nights"}. Stay total: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. ${artifact.facts.refundableSecurityDepositKobo > 0 ? `Refundable deposit (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}Total to complete booking: ${formatNgnKobo(artifact.facts.totalAmountDueNowKobo)}. ${formatBookingDeadline(artifact.facts.paymentWindowExpiresAt)}. This Offer is not a confirmed Reservation.`;
   }
 
   #confirmedBookingSurface(thread: GuestThreadState): GuestSurfacePayload | null {
@@ -1240,7 +1244,7 @@ export class LocalGuestApp {
         this.#supersede(thread, PAYMENT_STAGE);
         thread.activeSurfaces.set(PAYMENT_STAGE, surfaceId);
         this.#emitTransition(thread, "payment.expired", { aggregateType: "payment_window", aggregateId: thread.offerId, reasonCode: "PAYMENT_EXPIRED", surfaceId });
-        return { ok: true, messages: ["The Payment Window expired. Payment authority has been removed; no Reservation exists."], surfaces: [{ ...this.#paymentSurface(thread, payment, "Payment Window expired", surfaceId), status: "expired", textFallback: `Payment Window expired. Amount Due Now: ${formatNgnKobo(payment.facts.amountDueNowKobo)}. No Reservation exists.` }] };
+        return { ok: true, messages: ["The Payment Window expired. Payment authority has been removed; no Reservation exists."], surfaces: [{ ...this.#paymentSurface(thread, payment, "Payment Window expired", surfaceId), status: "expired", textFallback: `Payment window expired. Total to complete booking: ${formatNgnKobo(payment.facts.amountDueNowKobo)}. No Reservation exists.` }] };
       }
     }
     if (!thread.requestId || thread.offerId) return null;
@@ -1341,7 +1345,9 @@ export class LocalGuestApp {
     thread.activeSurfaces.set(PAYMENT_STAGE, surfaceId);
     this.#emitTransition(thread, "payment.handoff.opened", { aggregateType: "payment", aggregateId: thread.offerId, surfaceId });
     this.#emitTransition(thread, "payment.attempt.initialized", { aggregateType: "payment_attempt", aggregateId: session.checkoutId, correlationId: thread.offerId });
-    return { ok: true, messages: ["Payment checkout is ready. Payment has not succeeded; your booking details remain available when you return."], surfaces: [{ surfaceId, mode: "focused-surface", summary: "Payment handoff", conventionalRoute: conventionalCardPaymentRoute(thread.offerId), conventionalRouteLabel: `Continue to payment · ${formatNgnKobo(artifact.facts.amountDueNowKobo)}`, textFallback: `Payment handoff ready for ${artifact.facts.unit}, ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)}. ${artifact.facts.allInStayTotalKobo === undefined ? "" : `All-In Stay Total: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. `}${artifact.facts.refundableSecurityDepositKobo ? `Refundable Security Deposit (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}Amount Due Now: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}. ${formatWAT(artifact.facts.paymentWindowExpiresAt)}. Payment has not succeeded and the booking is not confirmed. Your booking details will be retained when you return.`, a2uiMessages: cardPaymentArtifactToA2UI({ artifact, surfaceId }) }] };
+    const checkoutAmount = artifact.facts.currentComponentAmountKobo ?? (artifact.facts.currentComponent === "security_deposit" ? artifact.facts.refundableSecurityDepositKobo : artifact.facts.allInStayTotalKobo) ?? artifact.facts.amountDueNowKobo;
+    const checkoutPurpose = artifact.facts.currentComponent === "security_deposit" ? "refundable deposit" : "stay payment";
+    return { ok: true, messages: ["Payment checkout is ready. Payment has not succeeded; your booking details remain available when you return."], surfaces: [{ surfaceId, mode: "focused-surface", summary: "Payment handoff", conventionalRoute: conventionalCardPaymentRoute(thread.offerId), conventionalRouteLabel: `Continue to ${checkoutPurpose} · ${formatNgnKobo(checkoutAmount)}`, textFallback: `Payment handoff ready for ${artifact.facts.unit}, ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)}. ${artifact.facts.allInStayTotalKobo === undefined ? "" : `Stay total: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. `}${artifact.facts.refundableSecurityDepositKobo ? `Refundable deposit (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}Next payment: ${formatNgnKobo(checkoutAmount)}. ${formatWAT(artifact.facts.paymentWindowExpiresAt)}. Payment has not succeeded and the booking is not confirmed. Your booking details will be retained when you return.`, a2uiMessages: cardPaymentArtifactToA2UI({ artifact, surfaceId }) }] };
   }
 
   #handlePaymentReturn(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
@@ -1385,12 +1391,13 @@ export class LocalGuestApp {
   #paymentSurface(thread: GuestThreadState, artifact: ReturnType<CardPaymentApplication["getArtifact"]>, summary: string, surfaceId: string): GuestSurfacePayload {
     const processing = artifact.facts.journeyStage === "stay_payment_processing" || artifact.facts.journeyStage === "deposit_payment_processing";
     const status = guestPaymentStatus(artifact.facts.status, processing);
+    const currentAmount = artifact.facts.currentComponentAmountKobo ?? (artifact.facts.status === "ready" ? artifact.facts.allInStayTotalKobo : undefined);
     const routeLabel = processing ? "Return to payment status"
       : artifact.facts.status === "ready" ? "Open payment details"
-        : artifact.facts.status === "checkout_initiated" ? `Continue to hosted checkout · ${formatNgnKobo(artifact.facts.amountDueNowKobo)}`
-          : artifact.facts.status === "deposit_required" ? `Continue to refundable deposit · ${formatNgnKobo(artifact.facts.amountDueNowKobo)}`
+        : artifact.facts.status === "checkout_initiated" ? `Continue to ${artifact.facts.currentComponent === "security_deposit" ? "refundable deposit" : "stay payment"} · ${formatNgnKobo(currentAmount ?? artifact.facts.amountDueNowKobo)}`
+          : artifact.facts.status === "deposit_required" ? `Continue to refundable deposit · ${formatNgnKobo(currentAmount ?? artifact.facts.refundableSecurityDepositKobo ?? artifact.facts.amountDueNowKobo)}`
             : "View payment status";
-    return { surfaceId, mode: "focused-surface", summary, conventionalRoute: conventionalCardPaymentRoute(thread.offerId!), conventionalRouteLabel: routeLabel, textFallback: `${status.label}. ${artifact.facts.unit}, ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)}. ${artifact.facts.allInStayTotalKobo === undefined ? "" : `All-In Stay Total: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. `}${artifact.facts.refundableSecurityDepositKobo ? `Refundable Security Deposit (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}Amount Due Now: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}. ${formatWAT(artifact.facts.paymentWindowExpiresAt)}. ${status.detail}`, a2uiMessages: cardPaymentArtifactToA2UI({ artifact, surfaceId }) };
+    return { surfaceId, mode: "focused-surface", summary, conventionalRoute: conventionalCardPaymentRoute(thread.offerId!), conventionalRouteLabel: routeLabel, textFallback: `${status.label}. ${artifact.facts.unit}, ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)}. ${artifact.facts.allInStayTotalKobo === undefined ? "" : `Stay total: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. `}${artifact.facts.refundableSecurityDepositKobo ? `Refundable deposit (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}${currentAmount === undefined ? "" : `Current payment: ${formatNgnKobo(currentAmount)}. `}${formatWAT(artifact.facts.paymentWindowExpiresAt)}. ${status.detail}`, a2uiMessages: cardPaymentArtifactToA2UI({ artifact, surfaceId }) };
   }
 
   #partySizeFor(thread: GuestThreadState): number {
@@ -1484,26 +1491,27 @@ export function renderGuestShellHtml(): string {
     .turn { display: flex; flex-direction: column; gap: var(--space-1); }
     .turn.user { align-items: flex-end; }
     .bubble { max-width: min(88%, 70ch); padding: var(--space-2) var(--space-3); border-radius: var(--radius-card); font-size: var(--font-size-body); line-height: var(--font-line-body); white-space: pre-wrap; overflow-wrap: anywhere; }
-    .turn.assistant .bubble { max-width: 72ch; padding-inline: 0; color: var(--text); }
+    .turn.assistant .bubble { max-width: 66ch; padding: 0; color: var(--text); }
     .turn.user .bubble { background: var(--surface-soft); color: var(--text); }
-    .historical-summary { width: 100%; display: flex; align-items: center; gap: var(--space-2); color: var(--color-text-secondary); font-size: var(--font-size-small); line-height: var(--font-line-small); padding: var(--space-2) 0; border-top: 1px solid var(--border); }
+    .historical-summary { width: 100%; display: flex; align-items: center; gap: var(--space-2); color: var(--color-text-muted); font-size: var(--font-size-small); line-height: var(--font-line-small); padding: var(--space-1) 0; }
     #empty-state { max-width: 70ch; padding-block: var(--space-3) var(--space-6); }
     #empty-state h2 { margin: 0 0 var(--space-2); font-size: var(--font-size-h2); line-height: var(--font-line-h2); }
     #empty-state p { max-width: 64ch; margin: 0; color: var(--color-text-secondary); }
     .prompt-suggestions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
     .prompt-suggestion { min-height: var(--control-min-target); padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); color: var(--text); cursor: pointer; }
     #workspace-region { padding: 0 var(--layout-gutter-mobile) var(--space-4); }
-    #active-workspace { background: var(--color-surface-elevated); border: 1px solid var(--border); border-radius: var(--radius-workspace); padding: var(--space-4); box-shadow: var(--elevation-active); }
+    #active-workspace { min-width: 0; background: var(--color-surface-elevated); border: 0; border-radius: 0; padding: var(--space-2) var(--space-4) var(--space-6); box-shadow: none; }
     #active-workspace[hidden], #workspace-region[hidden], #workspace-reopen[hidden], #empty-state[hidden] { display: none; }
     .workspace-heading { display: flex; justify-content: flex-start; align-items: flex-start; gap: var(--space-3); margin-bottom: var(--space-2); }
     .workspace-heading--inline-surface { margin-bottom: 0; }
     .workspace-heading-text { min-width: 0; display: grid; gap: var(--space-1); }
     .workspace-title { margin: 0; font-size: var(--font-size-h3); line-height: var(--font-line-h3); font-weight: 650; overflow-wrap: anywhere; }
     .eyebrow { color: var(--accent); font-size: var(--font-size-metadata); font-weight: 650; }
-    .workspace-close, #workspace-reopen, .contact-link { display: inline-flex; min-height: var(--control-min-target); align-items: center; justify-content: center; padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-control); color: var(--text); background: var(--surface); text-decoration: none; cursor: pointer; }
+    .workspace-close, #workspace-reopen, .contact-link { display: inline-flex; min-width: var(--control-min-target); min-height: var(--control-min-target); align-items: center; justify-content: center; padding: var(--space-2) var(--space-3); border: 1px solid transparent; border-radius: var(--radius-control); color: var(--color-text-secondary); background: transparent; text-decoration: none; cursor: pointer; }
     .contact-link { color: var(--color-text-secondary); font-size: var(--font-size-small); }
-    .workspace-close:hover, #workspace-reopen:hover, .contact-link:hover { border-color: var(--accent); }
+    .workspace-close:hover, #workspace-reopen:hover, .contact-link:hover { border-color: var(--border); background: var(--surface); color: var(--text); }
     .workspace-status { margin: 0 0 var(--space-3); color: var(--color-text-secondary); font-size: var(--font-size-small); }
+    .workspace-focus-target:is(h1, h2, h3):focus { outline: none; }
     .workspace-status[data-status="stale"], .workspace-status[data-status="expired"], .workspace-status[data-status="deleted"], .workspace-status[data-status="fallback"] { padding: var(--space-2) var(--space-3); border-inline-start: 3px dashed var(--color-warning); background: var(--color-warning-surface); color: var(--color-warning); }
     .weaver-mount { min-width: 0; max-width: 100%; overflow: visible; }
     .workspace-arrival { animation: workspace-enter 180ms ease-out both; }
@@ -1521,43 +1529,46 @@ export function renderGuestShellHtml(): string {
     .weaver-mount button.guest-action:not([data-a2ui-variant="primary"]) { min-width: var(--control-min-target); min-height: var(--control-min-target); padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); color: var(--text); font: 600 var(--font-size-label)/var(--font-line-label) var(--font-sans); cursor: pointer; }
     .weaver-mount button.guest-action:not([data-a2ui-variant="primary"]):hover { border-color: var(--accent); background: var(--surface-soft); }
     .weaver-mount .guest-field { width: 100%; min-width: 0; min-height: var(--control-min-field); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); color: var(--text); font-size: 1rem; }
-    .guest-status { display: block; max-width: 70ch; margin: var(--space-2) 0 !important; padding: var(--space-2) var(--space-3); border: 1px solid currentColor; border-inline-start-width: 4px; border-radius: var(--radius-control); color: var(--color-info); background: var(--color-info-surface); font-weight: 600; }
+    .guest-status { display: flex; align-items: center; gap: var(--space-2); max-width: 70ch; margin: var(--space-2) 0 !important; padding: 0; border: 0; border-radius: 0; color: var(--color-info); background: transparent; font-weight: 550; }
+    .guest-status::before { content: ""; width: .5rem; height: .5rem; flex: none; border: 2px solid currentColor; border-radius: 50%; }
     .guest-status--success { color: var(--color-success); background: var(--color-success-surface); }
     .guest-status--warning { color: var(--color-warning); background: var(--color-warning-surface); }
     .guest-status--danger { color: var(--color-danger); background: var(--color-danger-surface); }
     .empty-state-title { margin-block: var(--space-2); }
     .stay-grid { display: grid !important; grid-template-columns: minmax(0, 1fr); gap: var(--space-4) !important; min-width: 0; }
-    .stay-card { min-width: 0; overflow: hidden; padding: 0 !important; border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface); }
-    .stay-card__body { display: grid !important; min-width: 0; gap: var(--space-2) !important; padding: var(--space-3); }
+    .stay-card { min-width: 0; overflow: hidden; padding: 0 !important; border: 0; border-radius: 0; background: transparent; }
+    .stay-card__body { display: grid !important; min-width: 0; gap: var(--space-2) !important; padding: 0; }
     .stay-card__body > * { min-width: 0; margin: 0 !important; }
-    .stay-card__body > img { width: 100% !important; max-width: none !important; margin: 0 !important; object-fit: cover !important; }
+    .stay-card__body > img, .stay-card__body > .photo-fallback { width: 100% !important; max-width: none !important; margin: 0 0 var(--space-2) !important; aspect-ratio: 1.45 / 1; object-fit: cover !important; border: 0; border-radius: var(--radius-control); }
     .stay-card__title { margin: 0 !important; font-size: var(--font-size-h3) !important; line-height: var(--font-line-h3) !important; font-weight: 650 !important; }
     .stay-card__location, .stay-card__amenities { color: var(--color-text-secondary); }
     .stay-card__facts { margin: 0; color: var(--color-text-secondary); }
-    .stay-card__price-area { display: grid !important; gap: var(--space-1) !important; margin: 0 !important; }
+    .stay-card__price-area { display: grid !important; gap: var(--space-1) !important; margin: var(--space-2) 0 0 !important; }
     .stay-card__price-area > * { margin: 0 !important; }
     .stay-card__price-label { color: var(--color-text-secondary); font-size: var(--font-size-small) !important; line-height: var(--font-line-small) !important; }
     .stay-card__price-total, .stay-card__body h3.stay-card__price-total { margin: 0 !important; font-size: var(--font-size-money-total) !important; line-height: var(--font-line-money-total) !important; font-variant-numeric: tabular-nums; }
     .stay-card__action { width: 100%; margin-top: var(--space-2); }
-    .unit-detail-root { display: grid !important; min-width: 0; gap: var(--space-4) !important; }
+    .unit-detail-root { display: grid !important; min-width: 0; gap: var(--space-6) !important; }
+    .unit-hero { display: grid; min-width: 0; gap: var(--space-4); }
+    .unit-summary { display: grid; min-width: 0; align-content: start; gap: var(--space-3); }
     .unit-gallery { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr); gap: var(--space-2); }
     .unit-gallery > img { width: 100% !important; max-width: none !important; min-width: 0; margin: 0 !important; object-fit: cover !important; }
-    .unit-gallery--fallback { padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface-soft); }
-    .unit-photo-missing { display: grid; min-height: 10rem; place-items: center; margin: 0; color: var(--color-text-secondary); text-align: center; }
+    .unit-gallery--fallback { min-height: 0; }
+    .unit-photo-missing { display: grid; min-height: 5rem; place-items: center; margin: 0; padding: var(--space-3); border-radius: var(--radius-control); background: var(--surface-soft); color: var(--color-text-secondary); text-align: center; }
     .unit-overview { display: grid; min-width: 0; gap: var(--space-2); }
     .unit-overview > * { margin: 0 !important; }
     .unit-title { margin: 0 !important; overflow-wrap: anywhere; font-size: var(--font-size-h2) !important; line-height: var(--font-line-h2) !important; font-weight: 650 !important; }
     .unit-location, .unit-dates { color: var(--color-text-secondary); }
     .unit-facts { margin: 0 !important; font-weight: 600; }
-    .unit-price-group { display: grid; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface-soft); }
+    .unit-price-group { display: grid; gap: var(--space-1); padding: var(--space-3) 0 0; border: 0; border-radius: 0; background: transparent; }
     .unit-price-group > * { margin: 0 !important; }
     .unit-price-label { color: var(--color-text-secondary); font-size: var(--font-size-small) !important; line-height: var(--font-line-small) !important; }
     .unit-price-total { margin: 0 !important; font-size: var(--font-size-money-total) !important; line-height: var(--font-line-money-total) !important; font-variant-numeric: tabular-nums; }
-    .unit-description, .unit-amenities, .unit-supporting-info { display: grid; min-width: 0; gap: var(--space-2); padding-top: var(--space-3); border-top: 1px solid var(--border); }
+    .unit-description, .unit-amenities, .unit-supporting-info { display: grid; min-width: 0; gap: var(--space-2); padding-top: var(--space-4); }
     .unit-description > :first-child, .unit-amenities > :first-child { margin: 0 !important; font-size: var(--font-size-h3) !important; line-height: var(--font-line-h3) !important; }
     .unit-description p { margin: 0 !important; max-width: 70ch; }
     .unit-amenities [data-a2ui-component="Column"] { display: flex !important; flex-wrap: wrap !important; gap: var(--space-2) !important; }
-    .unit-amenities [data-a2ui-component="Column"] > * { max-width: 100%; margin: 0 !important; padding: var(--space-1) var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-small); background: var(--surface); overflow-wrap: anywhere; }
+    .unit-amenities [data-a2ui-component="Column"] > * { max-width: 100%; margin: 0 !important; padding: 0; border: 0; border-radius: 0; background: transparent; overflow-wrap: anywhere; }
     .unit-supporting-info { color: var(--color-text-secondary); }
     .unit-supporting-info > * { margin: 0 !important; }
     .unit-actions { display: flex; min-width: 0; flex-wrap: wrap; gap: var(--space-2); }
@@ -1565,9 +1576,14 @@ export function renderGuestShellHtml(): string {
     .surface-fallback { border-inline-start: 4px solid var(--color-warning); padding: var(--space-1) 0 var(--space-1) var(--space-3); }
     .surface-fallback p { margin: 0 0 var(--space-2); }
     .fallback-link { display: inline-flex; align-items: center; min-height: var(--control-min-target); color: var(--accent); font-weight: 650; }
+    .guest-field-error { margin: var(--space-2) 0 !important; color: var(--color-danger); }
     #workspace-reopen { margin: 0 var(--layout-gutter-mobile) var(--space-4); width: calc(100% - 2 * var(--layout-gutter-mobile)); justify-content: flex-start; text-align: start; }
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
     form#composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: var(--space-2); padding: var(--space-2) var(--layout-gutter-mobile) max(var(--space-4), env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: var(--surface); position: sticky; bottom: 0; z-index: 10; }
+    form#composer[data-focused="true"] { gap: var(--space-1) var(--space-2); padding-block: var(--space-1) max(var(--space-2), env(safe-area-inset-bottom)); background: var(--bg); }
+    form#composer[data-focused="true"] #composer-label { font-weight: 400; }
+    form#composer[data-focused="true"] #composer-input { min-height: 2.75rem; background: var(--surface); }
+    form#composer[data-focused="true"] #composer-submit { min-height: 2.75rem; }
     #composer-label { grid-column: 1 / -1; color: var(--color-text-secondary); font-size: var(--font-size-small); line-height: var(--font-line-small); font-weight: 600; }
     #composer-input { min-width: 0; width: 100%; min-height: var(--control-min-field); padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-control); font-size: 1rem; background: var(--bg); color: var(--text); }
     #composer-submit { min-height: var(--control-min-field); min-width: var(--control-min-target); padding: var(--space-2) var(--space-4); border: 1px solid var(--color-action); border-radius: var(--radius-control); background: var(--accent); color: var(--color-surface); font-weight: 650; cursor: pointer; }
@@ -1577,10 +1593,13 @@ export function renderGuestShellHtml(): string {
     @media (min-width: 48rem) {
       #transcript, #workspace-region, form#composer { padding-left: var(--layout-gutter-tablet); padding-right: var(--layout-gutter-tablet); }
       .stay-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .unit-gallery--mosaic { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .unit-gallery--mosaic img:first-of-type { grid-column: 1 / -1; }
+      .unit-gallery--mosaic { grid-template-columns: minmax(0, 1fr) minmax(4rem, .32fr); grid-template-rows: minmax(0, 1fr); align-items: stretch; }
+      .unit-gallery--mosaic img:first-of-type { grid-column: 1; grid-row: 1; aspect-ratio: 1.3 / 1; height: 100% !important; }
+      .unit-gallery--mosaic img:not(:first-of-type) { grid-column: 2; grid-row: 1; aspect-ratio: auto; height: 100% !important; }
+      .unit-gallery--mosaic img:not(:first-of-type):not(:nth-of-type(2)) { display: none; }
+      .unit-hero { grid-template-columns: minmax(0, 1fr); }
     }
-    @media (min-width: 64rem) { .app { max-width: var(--layout-conversation-max); } #transcript, #workspace-region, form#composer { padding-left: var(--layout-gutter-desktop); padding-right: var(--layout-gutter-desktop); } }
+    @media (min-width: 64rem) { .app { max-width: var(--layout-app-max); } #transcript { width: min(100%, 56rem); margin-inline: auto; } #workspace-region { width: 100%; max-width: var(--layout-app-max); margin-inline: auto; } #transcript, #workspace-region, form#composer { padding-left: var(--layout-gutter-desktop); padding-right: var(--layout-gutter-desktop); } #active-workspace { padding-inline: 0; } .unit-hero { grid-template-columns: minmax(0, 1.15fr) minmax(20rem, .85fr); gap: var(--space-8); align-items: start; } .unit-gallery--mosaic { grid-template-columns: minmax(0, 1fr) minmax(6rem, .34fr); grid-template-rows: minmax(17rem, 1fr); } .unit-gallery--mosaic img:first-of-type { aspect-ratio: 1.15 / 1; } .unit-gallery--mosaic img:not(:first-of-type) { aspect-ratio: auto; } }
     @media (max-width: 47.999rem) { .header-note { display: none; } #active-workspace[data-mode="focused-surface"] { scroll-margin-block: var(--space-3); } }
     @media (max-height: 520px) { header { position: static; } #transcript { min-height: 0; } form#composer { position: sticky; } }
     @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; } }
@@ -1599,7 +1618,7 @@ export function renderGuestShellHtml(): string {
         <h2 id="conversation-heading" class="conversation-heading">Conversation</h2>
         <section id="empty-state" aria-labelledby="empty-state-heading">
           <h2 id="empty-state-heading">Find a place to stay</h2>
-          <p>Tell us whether you’re looking in Abuja or Lagos, your dates or length of stay, and how many guests. The concierge can help find entire-place stays and guide your request.</p>
+          <p>Start with a city, your dates (or length of stay), and number of guests. We’ll find available entire-place stays and guide you through requesting one.</p>
           <div class="prompt-suggestions">
             <button class="prompt-suggestion" type="button" data-prompt="I’m looking for a stay in Abuja">Explore Abuja</button>
             <button class="prompt-suggestion" type="button" data-prompt="I’m looking for a stay in Lagos">Explore Lagos</button>
@@ -2054,12 +2073,15 @@ export function startLocalGuestServer(options: {
               : "Continue to hosted card checkout";
         const canContinue = artifact.actions.length > 0 && (artifact.facts.status !== "ready" || contactEmailMissing || !processing);
         const escapeHtmlText = (value: string): string => value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!);
+        const componentAmount = artifact.facts.currentComponentAmountKobo ?? (artifact.facts.status === "ready" ? artifact.facts.allInStayTotalKobo : artifact.facts.refundableSecurityDepositKobo);
+        const componentLabel = artifact.facts.status === "deposit_required" || artifact.facts.currentComponent === "security_deposit" ? "Next payment · refundable deposit" : "Next payment · stay payment";
         const facts = [
           `<p class="unit">${escapeHtmlText(artifact.facts.unit)}</p>`,
           `<p>Stay: ${escapeHtmlText(artifact.facts.checkIn)} to ${escapeHtmlText(artifact.facts.checkOut)}</p>`,
-          ...(artifact.facts.allInStayTotalKobo === undefined ? [] : [`<p>All-In Stay Total: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}</p>`]),
-          ...(artifact.facts.refundableSecurityDepositKobo === undefined || artifact.facts.refundableSecurityDepositKobo <= 0 ? [] : [`<p>Refundable Security Deposit (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}</p>`]),
-          `<p class="amount">Amount Due Now: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}</p>`,
+          ...(artifact.facts.allInStayTotalKobo === undefined ? [] : [`<p>Stay total: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}</p>`]),
+          ...(artifact.facts.refundableSecurityDepositKobo === undefined || artifact.facts.refundableSecurityDepositKobo <= 0 ? [] : [`<p>Refundable deposit (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}</p>`]),
+          `<p class="amount">Total to complete booking: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}</p>`,
+          ...(componentAmount === undefined ? [] : [`<p>${componentLabel}: ${formatNgnKobo(componentAmount)}</p>`]),
           `<p>${formatWAT(artifact.facts.paymentWindowExpiresAt)}</p>`,
           `<p>${escapeHtmlText(status.detail)}</p>`,
         ].join("");

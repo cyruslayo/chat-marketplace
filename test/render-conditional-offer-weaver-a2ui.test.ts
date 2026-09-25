@@ -33,7 +33,7 @@ test("Conditional Offer A2UI is deterministic, Basic Catalog v0.9.1, and only au
   assert.match(JSON.stringify(first), /Conditional Booking Offer/);
   assert.match(JSON.stringify(first), /All-In Stay Total: ₦100,000/);
   assert.match(JSON.stringify(first), /Refundable Security Deposit \(separate\): ₦20,000/);
-  assert.match(JSON.stringify(first), /Amount Due Now: ₦120,000/);
+  assert.match(JSON.stringify(first), /Total to complete booking: ₦120,000/);
   assert.match(JSON.stringify(first), /Pay by .* WAT/);
   assert.match(JSON.stringify(first), /Accept/);
   const visibleText = first.flatMap((message) => "updateComponents" in message ? message.updateComponents.components : []).filter((component) => component.component === "Text").map((component) => "text" in component ? component.text : "").join(" ");

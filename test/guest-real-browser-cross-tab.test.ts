@@ -195,10 +195,10 @@ async function advanceToPaymentReady(ctx: RealBrowserTestContext): Promise<{ off
   // Button text is "Accept" (conditional-offer-a2ui.ts line 30)
   await ctx.tabA.clickButton("Accept");
   // The amount-bearing label distinguishes the current payment action.
-  await ctx.tabA.waitForText("Continue to checkout", 15000);
+  await ctx.tabA.waitForText("Continue to stay payment", 15000);
 
   await ctx.tabB.navigate(`${ctx.base}/?threadId=${ctx.threadId}`);
-  await ctx.tabB.waitForText("Continue to checkout", 15000);
+  await ctx.tabB.waitForText("Continue to stay payment", 15000);
 
   return { offerId };
 }
@@ -206,7 +206,7 @@ async function advanceToPaymentReady(ctx: RealBrowserTestContext): Promise<{ off
 async function advanceToCheckoutInitiated(ctx: RealBrowserTestContext): Promise<{ offerId: string }> {
   const { offerId } = await advanceToPaymentReady(ctx);
 
-  await ctx.tabA.clickButton("Continue to checkout");
+  await ctx.tabA.clickButton("Continue to stay payment");
   await ctx.tabA.waitForText("Check payment status", 15000);
 
   await ctx.tabB.navigate(`${ctx.base}/?threadId=${ctx.threadId}`);
@@ -326,8 +326,8 @@ test("RB3 — Two real tabs cannot create multiple Live Payment Attempts", async
     // Trigger payment initialization concurrently from both tabs (ADR-0046)
     // Both tabs use the amount-bearing checkout action.
     const [clickA, clickB] = await Promise.all([
-      ctx.tabA.clickButton("Continue to checkout"),
-      ctx.tabB.clickButton("Continue to checkout"),
+      ctx.tabA.clickButton("Continue to stay payment"),
+      ctx.tabB.clickButton("Continue to stay payment"),
     ]);
     assert.equal(clickA, true);
     assert.equal(clickB, true);

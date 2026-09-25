@@ -91,8 +91,8 @@ export function formatGuestHistorySummary(summary: string, status: HistoricalSur
   const activity = search ? `Searched ${search[1]}`
     : /^(Discovery results|All discovery results)$/.test(summary) ? "Viewed stays for your search"
       : summary.endsWith(" details") ? `Viewed ${summary.slice(0, -" details".length)}`
-        : summary === "Request Draft" ? "Prepared booking details"
-          : summary === "Request review" ? "Reviewed booking details"
+        : summary === "Request Draft" ? "Draft created"
+          : summary === "Request review" ? "Booking details reviewed"
             : summary === "Request outcome" ? "Booking request update"
               : summary.includes("Conditional Booking Offer") ? "Booking offer received"
                 : summary === "Payment handoff" ? "Opened hosted checkout"
@@ -118,8 +118,8 @@ export function guestSurfaceHeading(summary: string): string {
 
 export function guestSurfaceStatusMessage(status: SurfaceLifecycleStatus): string {
   if (status === "active") return "";
-  if (status === "superseded") return "These details have been replaced and are read-only.";
-  if (status === "stale") return "These details may have changed. This version is read-only.";
+  if (status === "superseded") return "Earlier details · no longer current";
+  if (status === "stale") return "These details may have changed. Check the latest version before continuing.";
   if (status === "expired") return "These booking details have expired. Check the latest status before continuing.";
   if (status === "deleted") return "These details are no longer available.";
   return "Some details could not be shown. Continue in the conversation for help.";

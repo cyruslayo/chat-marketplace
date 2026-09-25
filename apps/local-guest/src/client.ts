@@ -108,7 +108,14 @@ function enhanceListingImages(mount: HTMLElement): void {
       fallback.className = "photo-fallback";
       fallback.setAttribute("role", "img");
       fallback.setAttribute("aria-label", `${image.alt || "Property photo"} unavailable`);
-      fallback.textContent = "Photo unavailable";
+      const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      icon.setAttribute("viewBox", "0 0 24 24");
+      icon.setAttribute("aria-hidden", "true");
+      icon.setAttribute("focusable", "false");
+      icon.innerHTML = '<path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5z" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="9" cy="9" r="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m5 17 4.5-4.5 3 3L15 13l4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>';
+      const label = document.createElement("span");
+      label.textContent = "Photo unavailable";
+      fallback.append(icon, label);
       image.replaceWith(fallback);
     };
     image.addEventListener("load", () => image.classList.add("is-loaded"), { once: true });
@@ -191,7 +198,16 @@ function organizeUnitDetail(mount: HTMLElement): void {
   }
   const action = root.querySelector<HTMLElement>(":scope > [data-a2ui-component=\"Row\"]");
   action?.classList.add("unit-actions");
-  const grouped = new Set<Element>([gallery, ...(overview ? [overview] : []), ...root.querySelectorAll(":scope > .unit-price-group, :scope > .unit-description, :scope > .unit-amenities")]);
+  const priceGroup = root.querySelector<HTMLElement>(":scope > .unit-price-group");
+  const hero = document.createElement("div");
+  hero.className = "unit-hero";
+  const summary = document.createElement("div");
+  summary.className = "unit-summary";
+  if (gallery) hero.appendChild(gallery);
+  for (const element of [overview, priceGroup, action]) if (element) summary.appendChild(element);
+  hero.appendChild(summary);
+  root.insertBefore(hero, root.firstChild);
+  const grouped = new Set<Element>([hero, ...(overview ? [overview] : []), ...(priceGroup ? [priceGroup] : []), ...(action ? [action] : []), ...root.querySelectorAll(":scope > .unit-description, :scope > .unit-amenities")]);
   const supporting = [...root.children].filter((child) => child !== action && !grouped.has(child));
   wrapDirectChildren(root, "unit-supporting-info", supporting);
 }
@@ -239,7 +255,7 @@ function enhanceSurfacePresentation(mount: HTMLElement, kind: string): void {
   for (const text of mount.querySelectorAll<HTMLElement>('[data-a2ui-component="Text"]')) {
     const value = text.textContent?.trim() ?? "";
     const isHeading = /^H[1-6]$/.test(text.tagName);
-    if (!isHeading && /^(Request sent|Request declined|Request expired|Offer available|Offer accepted|Offer expired|Payment required|Payment processing|Payment was not verified|Payment requires review|Booking confirmed|Reservation and Booking Contract are confirmed)/i.test(value)) {
+    if (!isHeading && /^(Request sent|Request declined|Request expired|Offer available|Offer accepted|Offer expired|Payment required|Payment processing|Payment was not verified|Payment requires review|Booking confirmed|Reservation confirmed|Reservation and Booking Contract are confirmed)/i.test(value)) {
       text.classList.add("guest-status");
       if (/declined|not verified|requires review/i.test(value)) text.classList.add("guest-status--danger");
       else if (/expired|processing|payment required/i.test(value)) text.classList.add("guest-status--warning");
@@ -358,7 +374,7 @@ function fallback(mount: HTMLElement, surface: SurfacePresentation): void {
     const link = document.createElement("a");
     link.href = surface.conventionalRoute;
     link.className = "fallback-link";
-    link.textContent = surface.conventionalRouteLabel ?? "Continue on the standard page";
+    link.textContent = surface.conventionalRouteLabel ?? "Open full details";
     box.appendChild(link);
     trackTelemetry("conventional-route-fallback");
   }
@@ -373,37 +389,42 @@ function showReopen(): void {
 }
 
 function enhanceGuestContactField(mount: HTMLElement): void {
-  const wrapper = mount.querySelector<HTMLElement>('[data-a2ui-component="TextField"]');
-  const label = wrapper?.querySelector<HTMLLabelElement>("label");
-  const input = wrapper?.querySelector<HTMLInputElement>("input");
-  if (!wrapper || !label || !input) return;
-  const labelText = label.textContent?.trim() ?? "";
-  const kind = /^phone number/i.test(labelText) ? "phone" : /^email address/i.test(labelText) ? "email" : undefined;
-  if (!kind) return;
+  const synchronize = (): void => {
+    const wrapper = mount.querySelector<HTMLElement>('[data-a2ui-component="TextField"]');
+    const label = wrapper?.querySelector<HTMLLabelElement>("label");
+    const input = wrapper?.querySelector<HTMLInputElement>("input");
+    if (!wrapper || !label || !input) return;
+    const labelText = label.textContent?.trim() ?? "";
+    const kind = /^phone number/i.test(labelText) ? "phone" : /^email address/i.test(labelText) ? "email" : undefined;
+    if (!kind) return;
 
-  const hint = wrapper.previousElementSibling instanceof HTMLElement ? wrapper.previousElementSibling : undefined;
-  if (hint?.dataset.a2uiComponent === "Text") {
-    hint.id = `guest-contact-${kind}-help`;
-    input.setAttribute("aria-describedby", hint.id);
-  }
-  input.required = true;
-  input.type = kind === "phone" ? "tel" : "email";
-  input.inputMode = kind === "phone" ? "tel" : "email";
-  input.autocomplete = kind === "phone" ? "tel" : "email";
-
-  const error = wrapper.nextElementSibling instanceof HTMLElement && wrapper.nextElementSibling.textContent?.trim().startsWith("Error:")
-    ? wrapper.nextElementSibling
-    : undefined;
-  if (error) {
-    error.id = `guest-contact-${kind}-error`;
-    error.setAttribute("role", "alert");
-    input.setAttribute("aria-describedby", [input.getAttribute("aria-describedby"), error.id].filter(Boolean).join(" "));
-    input.setAttribute("aria-invalid", "true");
-  }
+    const hint = wrapper.previousElementSibling instanceof HTMLElement && wrapper.previousElementSibling.dataset.a2uiComponent === "Text"
+      ? wrapper.previousElementSibling
+      : undefined;
+    const error = wrapper.nextElementSibling instanceof HTMLElement && wrapper.nextElementSibling.dataset.a2uiComponent === "Text"
+      ? wrapper.nextElementSibling
+      : undefined;
+    if (hint) hint.id = `guest-contact-${kind}-help`;
+    input.required = true;
+    input.type = kind === "phone" ? "tel" : "email";
+    input.inputMode = kind === "phone" ? "tel" : "email";
+    input.autocomplete = kind === "phone" ? "tel" : "email";
+    if (error) {
+      error.id = `guest-contact-${kind}-error`;
+      error.setAttribute("role", "alert");
+      error.classList.add("guest-field-error");
+    }
+    input.setAttribute("aria-describedby", [hint?.id, error?.id].filter(Boolean).join(" "));
+    if (error) input.setAttribute("aria-invalid", "true");
+    else input.removeAttribute("aria-invalid");
+  };
+  synchronize();
+  new MutationObserver(synchronize).observe(mount, { childList: true, subtree: true, characterData: true });
 }
 
 function renderSurface(surface: GuestSurfacePayload, moveFocus = false): void {
   const presentation = presentationFor(surface);
+  composerForm.dataset.focused = presentation.mode === "focused-surface" ? "true" : "false";
   activePayload = surface;
   activeWorkspace.replaceChildren();
   activeWorkspace.hidden = false;
@@ -437,6 +458,7 @@ function renderSurface(surface: GuestSurfacePayload, moveFocus = false): void {
     close.append("Back to conversation");
     close.addEventListener("click", () => {
       shellState = closeFocusedSurface(shellState);
+      composerForm.dataset.focused = "false";
       activeWorkspace.hidden = true;
       showReopen();
       workspaceReopen.focus();
@@ -496,13 +518,20 @@ function renderSurface(surface: GuestSurfacePayload, moveFocus = false): void {
     const link = document.createElement("a");
     link.href = presentation.conventionalRoute;
     link.className = "fallback-link";
-    link.textContent = surface.conventionalRouteLabel ?? "Continue on the standard page";
+    link.textContent = surface.conventionalRouteLabel ?? "Open full details";
     mount.appendChild(link);
   }
   showReopen();
   if (moveFocus) {
     activeWorkspace.scrollIntoView({ block: "start" });
-    activeWorkspace.focus({ preventScroll: true });
+    const focusTarget = activeWorkspace.querySelector<HTMLElement>(".workspace-close, .workspace-heading h2, .weaver-mount h1, .weaver-mount h2, .weaver-mount h3, .weaver-mount button");
+    if (focusTarget) {
+      if (!focusTarget.matches("button, a, input, textarea, select, [tabindex]")) focusTarget.tabIndex = -1;
+      focusTarget.classList.add("workspace-focus-target");
+      requestAnimationFrame(() => {
+        if (focusTarget.isConnected && !activeWorkspace.hidden) focusTarget.focus({ preventScroll: true });
+      });
+    }
   }
   trackTelemetry(presentation.mode === "focused-surface" ? "focused-surface-opened" : "inline-surface-rendered");
   if (moveFocus) announce(`${guestSurfaceHeading(presentation.summary)} is ready.`);
@@ -618,7 +647,7 @@ workspaceReopen.addEventListener("click", () => {
   shellState = reopenFocusedSurface(shellState);
   if (activePayload) {
     renderSurface(activePayload, true);
-    activeWorkspace.focus({ preventScroll: true });
+    activeWorkspace.querySelector<HTMLElement>(".workspace-close")?.focus({ preventScroll: true });
   }
 });
 

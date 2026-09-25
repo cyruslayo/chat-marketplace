@@ -8548,7 +8548,7 @@ Known schemas:
     if (status === "expired") return /offer/i.test(summary) ? "Offer expired" : "Booking details expired";
     if (status === "deleted") return "Details no longer available";
     const search = /^Search updated\s*·\s*(.*)$/.exec(summary);
-    const activity = search ? `Searched ${search[1]}` : /^(Discovery results|All discovery results)$/.test(summary) ? "Viewed stays for your search" : summary.endsWith(" details") ? `Viewed ${summary.slice(0, -" details".length)}` : summary === "Request Draft" ? "Prepared booking details" : summary === "Request review" ? "Reviewed booking details" : summary === "Request outcome" ? "Booking request update" : summary.includes("Conditional Booking Offer") ? "Booking offer received" : summary === "Payment handoff" ? "Opened hosted checkout" : summary === "Reservation confirmed" ? "Stay confirmed" : /workspace|booking/i.test(summary) ? "Booking details updated" : summary;
+    const activity = search ? `Searched ${search[1]}` : /^(Discovery results|All discovery results)$/.test(summary) ? "Viewed stays for your search" : summary.endsWith(" details") ? `Viewed ${summary.slice(0, -" details".length)}` : summary === "Request Draft" ? "Draft created" : summary === "Request review" ? "Booking details reviewed" : summary === "Request outcome" ? "Booking request update" : summary.includes("Conditional Booking Offer") ? "Booking offer received" : summary === "Payment handoff" ? "Opened hosted checkout" : summary === "Reservation confirmed" ? "Stay confirmed" : /workspace|booking/i.test(summary) ? "Booking details updated" : summary;
     if (status === "stale") return `${activity} \xB7 details may have changed`;
     if (status === "fallback") return `${activity} \xB7 details unavailable`;
     return activity;
@@ -8565,8 +8565,8 @@ Known schemas:
   }
   function guestSurfaceStatusMessage(status) {
     if (status === "active") return "";
-    if (status === "superseded") return "These details have been replaced and are read-only.";
-    if (status === "stale") return "These details may have changed. This version is read-only.";
+    if (status === "superseded") return "Earlier details \xB7 no longer current";
+    if (status === "stale") return "These details may have changed. Check the latest version before continuing.";
     if (status === "expired") return "These booking details have expired. Check the latest status before continuing.";
     if (status === "deleted") return "These details are no longer available.";
     return "Some details could not be shown. Continue in the conversation for help.";
@@ -8647,7 +8647,14 @@ Known schemas:
         fallback2.className = "photo-fallback";
         fallback2.setAttribute("role", "img");
         fallback2.setAttribute("aria-label", `${image.alt || "Property photo"} unavailable`);
-        fallback2.textContent = "Photo unavailable";
+        const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        icon.setAttribute("viewBox", "0 0 24 24");
+        icon.setAttribute("aria-hidden", "true");
+        icon.setAttribute("focusable", "false");
+        icon.innerHTML = '<path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5z" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="9" cy="9" r="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m5 17 4.5-4.5 3 3L15 13l4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>';
+        const label = document.createElement("span");
+        label.textContent = "Photo unavailable";
+        fallback2.append(icon, label);
         image.replaceWith(fallback2);
       };
       image.addEventListener("load", () => image.classList.add("is-loaded"), { once: true });
@@ -8722,7 +8729,16 @@ Known schemas:
     }
     const action = root.querySelector(':scope > [data-a2ui-component="Row"]');
     action?.classList.add("unit-actions");
-    const grouped = /* @__PURE__ */ new Set([gallery, ...overview ? [overview] : [], ...root.querySelectorAll(":scope > .unit-price-group, :scope > .unit-description, :scope > .unit-amenities")]);
+    const priceGroup = root.querySelector(":scope > .unit-price-group");
+    const hero = document.createElement("div");
+    hero.className = "unit-hero";
+    const summary = document.createElement("div");
+    summary.className = "unit-summary";
+    if (gallery) hero.appendChild(gallery);
+    for (const element of [overview, priceGroup, action]) if (element) summary.appendChild(element);
+    hero.appendChild(summary);
+    root.insertBefore(hero, root.firstChild);
+    const grouped = /* @__PURE__ */ new Set([hero, ...overview ? [overview] : [], ...priceGroup ? [priceGroup] : [], ...action ? [action] : [], ...root.querySelectorAll(":scope > .unit-description, :scope > .unit-amenities")]);
     const supporting = [...root.children].filter((child) => child !== action && !grouped.has(child));
     wrapDirectChildren(root, "unit-supporting-info", supporting);
   }
@@ -8767,7 +8783,7 @@ Known schemas:
     for (const text of mount.querySelectorAll('[data-a2ui-component="Text"]')) {
       const value = text.textContent?.trim() ?? "";
       const isHeading = /^H[1-6]$/.test(text.tagName);
-      if (!isHeading && /^(Request sent|Request declined|Request expired|Offer available|Offer accepted|Offer expired|Payment required|Payment processing|Payment was not verified|Payment requires review|Booking confirmed|Reservation and Booking Contract are confirmed)/i.test(value)) {
+      if (!isHeading && /^(Request sent|Request declined|Request expired|Offer available|Offer accepted|Offer expired|Payment required|Payment processing|Payment was not verified|Payment requires review|Booking confirmed|Reservation confirmed|Reservation and Booking Contract are confirmed)/i.test(value)) {
         text.classList.add("guest-status");
         if (/declined|not verified|requires review/i.test(value)) text.classList.add("guest-status--danger");
         else if (/expired|processing|payment required/i.test(value)) text.classList.add("guest-status--warning");
@@ -8867,7 +8883,7 @@ Known schemas:
       const link = document.createElement("a");
       link.href = surface.conventionalRoute;
       link.className = "fallback-link";
-      link.textContent = surface.conventionalRouteLabel ?? "Continue on the standard page";
+      link.textContent = surface.conventionalRouteLabel ?? "Open full details";
       box.appendChild(link);
       trackTelemetry("conventional-route-fallback");
     }
@@ -8880,32 +8896,36 @@ Known schemas:
     if (canReopen) workspaceReopen.textContent = `Return to ${guestSurfaceHeading(current.summary).toLocaleLowerCase()}`;
   }
   function enhanceGuestContactField(mount) {
-    const wrapper = mount.querySelector('[data-a2ui-component="TextField"]');
-    const label = wrapper?.querySelector("label");
-    const input = wrapper?.querySelector("input");
-    if (!wrapper || !label || !input) return;
-    const labelText = label.textContent?.trim() ?? "";
-    const kind = /^phone number/i.test(labelText) ? "phone" : /^email address/i.test(labelText) ? "email" : void 0;
-    if (!kind) return;
-    const hint = wrapper.previousElementSibling instanceof HTMLElement ? wrapper.previousElementSibling : void 0;
-    if (hint?.dataset.a2uiComponent === "Text") {
-      hint.id = `guest-contact-${kind}-help`;
-      input.setAttribute("aria-describedby", hint.id);
-    }
-    input.required = true;
-    input.type = kind === "phone" ? "tel" : "email";
-    input.inputMode = kind === "phone" ? "tel" : "email";
-    input.autocomplete = kind === "phone" ? "tel" : "email";
-    const error2 = wrapper.nextElementSibling instanceof HTMLElement && wrapper.nextElementSibling.textContent?.trim().startsWith("Error:") ? wrapper.nextElementSibling : void 0;
-    if (error2) {
-      error2.id = `guest-contact-${kind}-error`;
-      error2.setAttribute("role", "alert");
-      input.setAttribute("aria-describedby", [input.getAttribute("aria-describedby"), error2.id].filter(Boolean).join(" "));
-      input.setAttribute("aria-invalid", "true");
-    }
+    const synchronize = () => {
+      const wrapper = mount.querySelector('[data-a2ui-component="TextField"]');
+      const label = wrapper?.querySelector("label");
+      const input = wrapper?.querySelector("input");
+      if (!wrapper || !label || !input) return;
+      const labelText = label.textContent?.trim() ?? "";
+      const kind = /^phone number/i.test(labelText) ? "phone" : /^email address/i.test(labelText) ? "email" : void 0;
+      if (!kind) return;
+      const hint = wrapper.previousElementSibling instanceof HTMLElement && wrapper.previousElementSibling.dataset.a2uiComponent === "Text" ? wrapper.previousElementSibling : void 0;
+      const error2 = wrapper.nextElementSibling instanceof HTMLElement && wrapper.nextElementSibling.dataset.a2uiComponent === "Text" ? wrapper.nextElementSibling : void 0;
+      if (hint) hint.id = `guest-contact-${kind}-help`;
+      input.required = true;
+      input.type = kind === "phone" ? "tel" : "email";
+      input.inputMode = kind === "phone" ? "tel" : "email";
+      input.autocomplete = kind === "phone" ? "tel" : "email";
+      if (error2) {
+        error2.id = `guest-contact-${kind}-error`;
+        error2.setAttribute("role", "alert");
+        error2.classList.add("guest-field-error");
+      }
+      input.setAttribute("aria-describedby", [hint?.id, error2?.id].filter(Boolean).join(" "));
+      if (error2) input.setAttribute("aria-invalid", "true");
+      else input.removeAttribute("aria-invalid");
+    };
+    synchronize();
+    new MutationObserver(synchronize).observe(mount, { childList: true, subtree: true, characterData: true });
   }
   function renderSurface(surface, moveFocus = false) {
     const presentation = presentationFor(surface);
+    composerForm.dataset.focused = presentation.mode === "focused-surface" ? "true" : "false";
     activePayload = surface;
     activeWorkspace.replaceChildren();
     activeWorkspace.hidden = false;
@@ -8934,6 +8954,7 @@ Known schemas:
       close.append("Back to conversation");
       close.addEventListener("click", () => {
         shellState = closeFocusedSurface(shellState);
+        composerForm.dataset.focused = "false";
         activeWorkspace.hidden = true;
         showReopen();
         workspaceReopen.focus();
@@ -8995,13 +9016,20 @@ Known schemas:
       const link = document.createElement("a");
       link.href = presentation.conventionalRoute;
       link.className = "fallback-link";
-      link.textContent = surface.conventionalRouteLabel ?? "Continue on the standard page";
+      link.textContent = surface.conventionalRouteLabel ?? "Open full details";
       mount.appendChild(link);
     }
     showReopen();
     if (moveFocus) {
       activeWorkspace.scrollIntoView({ block: "start" });
-      activeWorkspace.focus({ preventScroll: true });
+      const focusTarget = activeWorkspace.querySelector(".workspace-close, .workspace-heading h2, .weaver-mount h1, .weaver-mount h2, .weaver-mount h3, .weaver-mount button");
+      if (focusTarget) {
+        if (!focusTarget.matches("button, a, input, textarea, select, [tabindex]")) focusTarget.tabIndex = -1;
+        focusTarget.classList.add("workspace-focus-target");
+        requestAnimationFrame(() => {
+          if (focusTarget.isConnected && !activeWorkspace.hidden) focusTarget.focus({ preventScroll: true });
+        });
+      }
     }
     trackTelemetry(presentation.mode === "focused-surface" ? "focused-surface-opened" : "inline-surface-rendered");
     if (moveFocus) announce(`${guestSurfaceHeading(presentation.summary)} is ready.`);
@@ -9116,7 +9144,7 @@ Known schemas:
     shellState = reopenFocusedSurface(shellState);
     if (activePayload) {
       renderSurface(activePayload, true);
-      activeWorkspace.focus({ preventScroll: true });
+      activeWorkspace.querySelector(".workspace-close")?.focus({ preventScroll: true });
     }
   });
   for (const suggestion of document.querySelectorAll(".prompt-suggestion[data-prompt]")) {

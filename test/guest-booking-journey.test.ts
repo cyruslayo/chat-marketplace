@@ -164,7 +164,7 @@ test("AC9–AC11 — delivery failure, Operator decline, and Operator timeout re
       const state = app.getState(threadId);
       assert.ok(state);
       assert.match(state!.surfaces[0]!.textFallback ?? "", scenario.expected);
-      assert.equal(state!.surfaces[0]!.a2uiMessages.some((message) => JSON.stringify(message).includes("Continue to checkout")), false);
+      assert.equal(state!.surfaces[0]!.a2uiMessages.some((message) => JSON.stringify(message).includes("Continue to stay payment")), false);
     } finally { close(environment); }
   }
 });

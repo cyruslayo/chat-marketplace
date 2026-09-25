@@ -306,7 +306,7 @@ test("Guest Request Draft remains separate from Booking Request until review and
     assert.match(draftResponse.surfaces[0]!.surfaceId, /:request:draft:/);
     journey.harness.mountSurface(draftResponse.surfaces[0]!.surfaceId, draftResponse.surfaces[0]!.a2uiMessages as readonly A2UIServerMessage[]);
     const draftTarget = journey.harness.mounted[2]!.target;
-    assert.match(draftTarget.textContent ?? "", /inventory is not reserved/i);
+    assert.match(draftTarget.textContent ?? "", /dates are not held yet/i);
     assert.ok(journey.harness.clickButton(draftTarget, "Review request"));
     const [reviewEvent] = await journey.relayEvents();
     const reviewResponse = expectSuccess(reviewEvent, "request review");
@@ -329,7 +329,7 @@ test("Guest Request Draft remains separate from Booking Request until review and
     assert.ok(offerText.includes("Conditional Booking Offer"));
     assert.ok(offerText.includes(`All-In Stay Total: ${ALL_IN_TOTAL_NGN}`));
     assert.ok(offerText.includes("Refundable Security Deposit (separate): ₦20,000"));
-    assert.ok(offerText.includes("Amount Due Now: ₦390,000"));
+    assert.ok(offerText.includes("Total to complete booking: ₦390,000"));
     assert.ok(offerText.includes("Cancellation:"));
     assert.match(offerText, /Pay by .* WAT/);
     assert.ok([...offerTarget.querySelectorAll("button")].some((button) => button.textContent?.includes("Accept")));
@@ -379,11 +379,11 @@ test("Weaver-generated offer acceptance, PSP handoff, verified payment, and Rese
     const paymentText = paymentTarget.textContent ?? "";
     assert.ok(paymentText.includes("Payment required"), "payment surface comes from the real CardPaymentApplication");
     assert.ok(
-      [...paymentTarget.querySelectorAll("button")].some((button) => button.textContent?.includes("Continue to checkout")),
+      [...paymentTarget.querySelectorAll("button")].some((button) => button.textContent?.includes("Continue to stay payment · ₦370,000")),
     );
 
     // Start the local deterministic checkout.
-    assert.ok(journey.harness.clickButton(paymentTarget, "Continue to checkout"));
+    assert.ok(journey.harness.clickButton(paymentTarget, "Continue to stay payment"));
     const paymentInitializeAction = { ...journey.harness.events[0]! };
     const [checkoutEvent] = await journey.relayEvents();
     const checkoutResponse = expectSuccess(checkoutEvent, "card checkout");

@@ -400,8 +400,8 @@ test("AC5 — Two tabs cannot create multiple Live Payment Attempts", async () =
     ctx.tabB.mountSurface(paymentReadySurface.surfaceId, paymentReadySurface.a2uiMessages);
 
     // Both tabs click the current amount-bearing checkout action simultaneously.
-    ctx.tabA.clickButton(ctx.tabA.mounted[5]!.target, "Continue to checkout");
-    ctx.tabB.clickButton(ctx.tabB.mounted[0]!.target, "Continue to checkout");
+    ctx.tabA.clickButton(ctx.tabA.mounted[5]!.target, "Continue to stay payment");
+    ctx.tabB.clickButton(ctx.tabB.mounted[0]!.target, "Continue to stay payment");
 
     const checkoutActionA = ctx.tabA.takeFirstEvent()!;
     const checkoutActionB = ctx.tabB.takeFirstEvent()!;
@@ -457,7 +457,7 @@ test("AC6 — Concurrent payment verification creates at most one Reservation", 
     ctx.tabA.clickButton(ctx.tabA.mounted[4]!.target, "Accept");
     const paymentReadyRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(paymentReadyRes.body.surfaces[0]!.surfaceId, paymentReadyRes.body.surfaces[0]!.a2uiMessages);
-    ctx.tabA.clickButton(ctx.tabA.mounted[5]!.target, "Continue to checkout");
+    ctx.tabA.clickButton(ctx.tabA.mounted[5]!.target, "Continue to stay payment");
     const handoffRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     assert.equal(handoffRes.body.ok, true);
 
@@ -534,7 +534,7 @@ test("AC7 — Concurrent payment verification creates at most one Booking Contra
     ctx.tabA.clickButton(ctx.tabA.mounted[4]!.target, "Accept");
     const paymentReadyRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(paymentReadyRes.body.surfaces[0]!.surfaceId, paymentReadyRes.body.surfaces[0]!.a2uiMessages);
-    ctx.tabA.clickButton(ctx.tabA.mounted[5]!.target, "Continue to checkout");
+    ctx.tabA.clickButton(ctx.tabA.mounted[5]!.target, "Continue to stay payment");
     const handoffRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
 
     // Verify stay payment
@@ -689,7 +689,7 @@ test("AC10 — A stale tab restores the latest authoritative server projection",
 
     // Tab B can now mount the restored surface and proceed safely
     ctx.tabB.mountSurface(restored.surfaces[0]!.surfaceId, restored.surfaces[0]!.a2uiMessages);
-    assert.match(ctx.tabB.mounted[1]!.target.textContent ?? "", /inventory is not reserved/i);
+    assert.match(ctx.tabB.mounted[1]!.target.textContent ?? "", /dates are not held yet/i);
   } finally {
     await ctx.close();
   }
@@ -828,8 +828,8 @@ test("AC13 — Cross-tab payment races do not reset the Payment Window", async (
     ctx.tabA.mountSurface(paymentReadySurface.surfaceId, paymentReadySurface.a2uiMessages);
     ctx.tabB.mountSurface(paymentReadySurface.surfaceId, paymentReadySurface.a2uiMessages);
 
-    ctx.tabA.clickButton(ctx.tabA.mounted[5]!.target, "Continue to checkout");
-    ctx.tabB.clickButton(ctx.tabB.mounted[0]!.target, "Continue to checkout");
+    ctx.tabA.clickButton(ctx.tabA.mounted[5]!.target, "Continue to stay payment");
+    ctx.tabB.clickButton(ctx.tabB.mounted[0]!.target, "Continue to stay payment");
 
     await Promise.all([
       ctx.send("/api/event", ctx.tabA.takeFirstEvent()!),

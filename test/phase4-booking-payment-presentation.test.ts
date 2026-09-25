@@ -35,14 +35,14 @@ const offerArtifact = (status: ConditionalOfferArtifact["facts"]["status"], acti
 
 const paymentArtifact = (status: CardPaymentArtifact["facts"]["status"], journeyStage?: string): CardPaymentArtifact => ({
   id: "card-payment:offer-1", kind: "shortlet.card-payment", schemaVersion: "shortlet.card-payment/v1", projectionVersion: status === "ready" ? 1 : 2,
-  facts: { offerId: "offer-1", status, unit: "Garden Stay, Ikoyi", unitId: "unit-1", checkIn: "2026-09-24", checkOut: "2026-09-27", amountDueNowKobo: 25200000, allInStayTotalKobo: 20200000, refundableSecurityDepositKobo: 5000000, currency: "NGN", paymentWindowExpiresAt: "2026-09-24T19:30:00.000Z", ...(journeyStage === undefined ? {} : { journeyStage }), ...(status === "checkout_initiated" ? { checkoutId: "checkout-1", checkoutUrl: "https://checkout.paystack.com/example" } : {}) },
+  facts: { offerId: "offer-1", status, unit: "Garden Stay, Ikoyi", unitId: "unit-1", checkIn: "2026-09-24", checkOut: "2026-09-27", amountDueNowKobo: 25200000, allInStayTotalKobo: 20200000, refundableSecurityDepositKobo: 5000000, currentComponent: journeyStage?.startsWith("deposit") || journeyStage === "stay_settled" ? "security_deposit" : "stay", currentComponentAmountKobo: journeyStage?.startsWith("deposit") || journeyStage === "stay_settled" ? 5000000 : 20200000, currency: "NGN", paymentWindowExpiresAt: "2026-09-24T19:30:00.000Z", ...(journeyStage === undefined ? {} : { journeyStage }), ...(status === "checkout_initiated" ? { checkoutId: "checkout-1", checkoutUrl: "https://checkout.paystack.com/example" } : {}) },
   actions: status === "ready" || status === "checkout_initiated" ? [{ type: status === "ready" ? "initialize_checkout" : "verify_return", artifactId: "card-payment:offer-1", offerId: "offer-1", expectedStatus: status, projectionVersion: status === "ready" ? 1 : 2 }] : [], sensitivity: "booking-sensitive",
 });
 
 const contractArtifact: BookingContractArtifact = {
   id: "booking-contract:contract-1", kind: "shortlet.booking-contract", schemaVersion: "shortlet.booking-contract/v1", projectionVersion: 1,
   domainReferences: [], policyVersions: {}, disclosures: [],
-  facts: { contractId: "contract-1", reservationId: "reservation-1", offerId: "offer-1", unitId: "unit-1", primaryGuest: { id: "guest-1", name: "Ada Guest" }, accommodationProvider: { id: "provider-1", name: "Provider" }, checkIn: "2026-09-24", checkOut: "2026-09-27", nights: 3, occupants: ["Ada Guest", "Tunde Guest"], allInStayTotalKobo: 20200000, refundableSecurityDepositKobo: 5000000, amountPaidKobo: 20200000, currency: "NGN", paymentMethod: "fresh_card", guestConductRules: [], contractVersion: 1, addressAvailability: "locked", accessAvailability: "locked" },
+  facts: { contractId: "contract-1", reservationId: "reservation-1", offerId: "offer-1", unitId: "unit-1", primaryGuest: { id: "guest-1", name: "Ada Guest" }, accommodationProvider: { id: "provider-1", name: "Provider" }, checkIn: "2026-09-24", checkOut: "2026-09-27", nights: 3, occupants: ["Ada Guest", "Tunde Guest"], allInStayTotalKobo: 20200000, refundableSecurityDepositKobo: 5000000, securityDeposit: { policyVersion: "deposit-v1", amountKobo: 5000000, currency: "NGN", collectionId: "collection-1", status: "held" }, amountPaidKobo: 20200000, currency: "NGN", paymentMethod: "fresh_card", guestConductRules: [], contractVersion: 1, addressAvailability: "locked", accessAvailability: "locked" },
   sensitivity: "booking-sensitive",
 };
 
@@ -50,7 +50,8 @@ test("A. Request Draft explicitly says it is not reserved or confirmed", () => {
   const text = componentText(requestDraftArtifactToA2UI({ artifact: draftArtifact("draft"), surfaceId: "draft" }));
   assert.match(text, /Draft/i);
   assert.match(text, /not reserved/i);
-  assert.match(text, /not a Booking Request or Reservation/i);
+  assert.match(text, /not reserved|does not reserve/i);
+  assert.doesNotMatch(text, /authoritative request flow|inventory is not reserved/i);
   assert.doesNotMatch(text, /Booking confirmed/i);
 });
 
@@ -89,10 +90,11 @@ test("D, E and M. Conditional Offer shows absolute WAT expiry and offers one dir
 test("I and N. Payment-required surface states amount due and never claims payment success", () => {
   const text = componentText(cardPaymentArtifactToA2UI({ artifact: paymentArtifact("ready"), surfaceId: "payment" }));
   assert.match(text, /Payment required/i);
-  assert.match(text, /Amount Due Now: ₦252,000/);
-  assert.match(text, /All-In Stay Total: ₦202,000/);
-  assert.match(text, /Refundable Security Deposit \(separate\): ₦50,000/);
-  assert.match(text, /Continue to checkout · ₦252,000/i);
+  assert.match(text, /Total to complete booking: ₦252,000/);
+  assert.match(text, /Next payment: stay payment · ₦202,000/);
+  assert.match(text, /Stay total: ₦202,000/);
+  assert.match(text, /Refundable deposit: ₦50,000/);
+  assert.match(text, /Continue to stay payment · ₦202,000/i);
   assert.doesNotMatch(text, /Payment status: ready|Payment succeeded|Booking confirmed|Reservation confirmed/i);
 });
 
@@ -108,8 +110,10 @@ test("J. Payment handoff identifies the pending attempt and does not imply succe
 test("J2. Payment processing is recoverable while reconciliation and failure remain non-actionable", () => {
   const processingMessages = cardPaymentArtifactToA2UI({ artifact: paymentArtifact("checkout_initiated", "stay_payment_processing"), surfaceId: "processing" });
   const processingText = componentText(processingMessages);
-  assert.match(processingText, /Payment processing · Checking payment/);
-  assert.match(processingText, /Do not submit another payment/);
+  assert.match(processingText, /Payment being checked.*Payment processing/);
+  assert.match(processingText, /do not submit another payment/i);
+  assert.match(processingText, /Stay payment being checked · ₦202,000/);
+  assert.doesNotMatch(processingText, /Total to complete booking: ₦252,000.*Total to complete booking: ₦252,000/);
   assert.doesNotMatch(processingText, /Booking confirmed|Reservation confirmed/i);
   assert.match(JSON.stringify(processingMessages), /Check payment status/);
 
@@ -125,12 +129,36 @@ test("K. Confirmed booking presents reservation and contract facts without leadi
   const text = componentText(bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: "confirmed" }));
   assert.match(text, /Booking confirmed/);
   assert.match(text, /24–27 Sept 2026/);
-  assert.match(text, /All-In Stay Total: ₦202,000/);
-  assert.match(text, /Refundable Security Deposit \(separate\): ₦50,000/);
-  assert.match(text, /Reservation.*confirmed|Reservation reference/i);
+  assert.match(text, /Stay payment verified: ₦202,000/);
+  assert.match(text, /Refundable deposit collected: ₦50,000/);
+  assert.match(text, /Booking reference/);
   assert.match(text, /access.*not available|access.*authorized|not.*access/i);
   assert.match(text, /booking details/i);
   assert.doesNotMatch(text, /reservation-1|contract-1|unit-1/);
+});
+
+test("Draft uses a concise stay summary and humanizes placeholder guest names", () => {
+  const artifact = { ...draftArtifact("draft"), facts: { ...draftArtifact("draft").facts, primaryGuestName: "Guest", occupants: ["Guest", "Companion 1"] } };
+  const text = componentText(requestDraftArtifactToA2UI({ artifact, surfaceId: "humanized-draft" }));
+  assert.match(text, /2 guests/);
+  assert.doesNotMatch(text, /Primary Guest: Guest|Companion 1|Prepared booking details/);
+  assert.match(text, /What happens next/);
+  assert.match(text, /Review request/);
+});
+
+test("Payment checkout shows the exact current component amount separately from the total requirement", () => {
+  const deposit = { ...paymentArtifact("deposit_required"), facts: { ...paymentArtifact("deposit_required").facts, currentComponent: "security_deposit" as const, currentComponentAmountKobo: 5000000 } };
+  const text = componentText(cardPaymentArtifactToA2UI({ artifact: deposit, surfaceId: "deposit-required" }));
+  assert.match(text, /Total to complete booking: ₦252,000/);
+  assert.match(text, /Next payment: refundable deposit · ₦50,000/);
+  assert.doesNotMatch(text, /Amount Due Now: ₦252,000/);
+});
+
+test("Confirmed booking summary distinguishes stay payment from a separately collected deposit", () => {
+  const text = componentText(bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: "confirmed-money" }));
+  assert.match(text, /Stay payment verified: ₦202,000/);
+  assert.match(text, /Refundable deposit collected: ₦50,000/);
+  assert.doesNotMatch(text, /Payment verified: ₦252,000/);
 });
 
 test("Guest progress uses concise next-step language instead of internal workflow labels", () => {
@@ -162,6 +190,9 @@ test("F and G. Conventional phone and email fields preserve values and associate
   assert.match(email, /for="contactEmail"/);
   assert.match(email, /guest@example.com/);
   assert.match(email, /aria-describedby="contactEmail-help contactEmail-error"/);
+  assert.match(html, /<button type="submit">Save phone number<\/button>/);
+  assert.match(email, /<button type="submit">Save email address<\/button>/);
+  assert.doesNotMatch(html, /Save phone number.*Enter a valid|Phone number — Enter a valid/i);
 });
 
 test("P. Every booking and payment surface remains Weaver Basic Catalog compatible", () => {

@@ -66,7 +66,7 @@ async function sendPrompt(tab: RealBrowserTab, text: string): Promise<void> {
 
 async function capturePhase4(context: MobileContext, state: string): Promise<void> {
   if (![320, 390, 768, 1280].includes(context.width)) return;
-  const directory = join(process.cwd(), ".scratch", "ui-phase4-booking-payment");
+  const directory = join(process.cwd(), ".scratch", "ui-agency-polish", "iteration-2");
   mkdirSync(directory, { recursive: true });
   await context.tab.evaluate("document.getElementById('active-workspace')?.scrollIntoView({ block: 'start', behavior: 'instant' })");
   await context.tab.waitForFunction("document.querySelector('#active-workspace')?.getAnimations().every((animation) => animation.playState !== 'running') ?? true", 3000);
@@ -76,10 +76,12 @@ async function capturePhase4(context: MobileContext, state: string): Promise<voi
 
 async function completeJourney(context: MobileContext, recoverFromPendingPayment = false): Promise<void> {
   const { tab, base, threadId, server } = context;
+  await capturePhase4(context, "empty-state");
   await sendPrompt(tab, PROMPT);
   await tab.waitForText("Luxury 2-Bedroom Apartment in Old Ikoyi", 15000);
   assert.equal(await tab.clickButton("View Unit", "Luxury 2-Bedroom Apartment in Old Ikoyi"), true);
   await tab.waitForText("Request to Book");
+  await capturePhase4(context, "unit-detail");
   assert.equal(await tab.clickButton("Request to Book"), true);
   await tab.waitForText("Review request");
   await capturePhase4(context, "request-draft");
@@ -91,15 +93,15 @@ async function completeJourney(context: MobileContext, recoverFromPendingPayment
   const phoneNodes = await tab.getAccessibilityTree();
   assert.ok(phoneNodes.some((node) => node.role === "textbox" && node.name === "Phone number"));
   await tab.evaluate("(() => { const input = document.querySelector('.weaver-mount input'); if (!(input instanceof HTMLInputElement)) throw new Error('phone input missing'); input.value = '123'; input.dispatchEvent(new Event('input', { bubbles: true })); })()");
-  assert.equal(await tab.clickButton("Save Phone number"), true);
+  assert.equal(await tab.clickButton("Save phone number"), true);
   await tab.waitForText("valid Nigerian mobile number");
   const phoneError = await tab.evaluate<{ readonly retained: string; readonly invalid: string | null; readonly description: string | null }>("(() => { const input = document.querySelector('.weaver-mount input'); return { retained: input?.value || '', invalid: input?.getAttribute('aria-invalid') || null, description: input?.getAttribute('aria-describedby') || null }; })()");
   assert.equal(phoneError.retained, "123");
-  assert.equal(phoneError.invalid, "true");
+  assert.equal(phoneError.invalid, "true", await tab.evaluate("document.querySelector('.weaver-mount')?.innerHTML || 'missing mount'"));
   assert.match(phoneError.description ?? "", /guest-contact-phone-help guest-contact-phone-error/);
   await capturePhase4(context, "phone-error");
   await tab.evaluate("(() => { const input = document.querySelector('.weaver-mount input'); if (!(input instanceof HTMLInputElement)) throw new Error('phone input missing'); input.value = '+234 801 234 5678'; input.dispatchEvent(new Event('input', { bubbles: true })); })()");
-  assert.equal(await tab.clickButton("Save Phone number"), true);
+  assert.equal(await tab.clickButton("Save phone number"), true);
   await tab.waitForText("Review Booking Request");
   await capturePhase4(context, "booking-review");
   await tab.waitForText("Submit Booking Request");
@@ -113,26 +115,26 @@ async function completeJourney(context: MobileContext, recoverFromPendingPayment
   await tab.waitForText("Accept");
   await capturePhase4(context, "conditional-offer");
   assert.equal(await tab.clickButton("Accept"), true);
-  await tab.waitForText("Continue to checkout");
+  await tab.waitForText("Continue to stay payment");
   await capturePhase4(context, "payment-ready");
-  assert.equal(await tab.clickButton("Continue to checkout"), true);
+  assert.equal(await tab.clickButton("Continue to stay payment"), true);
   await tab.waitForText("Email address");
   await capturePhase4(context, "email-contact");
   const emailField = await tab.evaluate<{ readonly type: string; readonly required: boolean; readonly described: boolean }>("(() => { const input = document.querySelector('.weaver-mount input'); return { type: input?.type || '', required: Boolean(input?.required), described: Boolean(input?.getAttribute('aria-describedby')) }; })()");
   assert.deepEqual(emailField, { type: "email", required: true, described: true });
   await tab.evaluate("(() => { const input = document.querySelector('.weaver-mount input'); if (!(input instanceof HTMLInputElement)) throw new Error('email input missing'); input.value = 'guest'; input.dispatchEvent(new Event('input', { bubbles: true })); })()");
-  assert.equal(await tab.clickButton("Save Email address"), true);
+  assert.equal(await tab.clickButton("Save email address"), true);
   await tab.waitForText("valid email address");
   const emailError = await tab.evaluate<{ readonly retained: string; readonly invalid: string | null }>("(() => { const input = document.querySelector('.weaver-mount input'); return { retained: input?.value || '', invalid: input?.getAttribute('aria-invalid') || null }; })()");
   assert.deepEqual(emailError, { retained: "guest", invalid: "true" });
   await capturePhase4(context, "email-error");
   await tab.evaluate("(() => { const input = document.querySelector('.weaver-mount input'); if (!(input instanceof HTMLInputElement)) throw new Error('email input missing'); input.value = 'guest@example.com'; input.dispatchEvent(new Event('input', { bubbles: true })); })()");
-  assert.equal(await tab.clickButton("Save Email address"), true);
+  assert.equal(await tab.clickButton("Save email address"), true);
   await tab.waitForText("Check payment status");
   await capturePhase4(context, "payment-handoff");
   assert.equal(await tab.clickButton("Check payment status"), true);
   if (recoverFromPendingPayment) {
-    await tab.waitForText("Payment processing · Checking payment");
+    await tab.waitForText("Payment being checked");
     await capturePhase4(context, "payment-processing");
     assert.doesNotMatch(await tab.evaluate<string>("document.getElementById('active-workspace')?.innerText || ''"), /Booking confirmed|Reservation confirmed/);
     assert.equal(await tab.clickButton("Check payment status"), true);
@@ -144,7 +146,7 @@ async function completeJourney(context: MobileContext, recoverFromPendingPayment
   await capturePhase4(context, "deposit-handoff");
   assert.equal(await tab.clickButton("Check payment status"), true);
   await tab.waitForText("Booking confirmed");
-  const confirmationPresentation = await tab.evaluate<{ readonly titleUsesStatusTreatment: boolean; readonly statusUsesSuccessTreatment: boolean }>("(() => { const texts=[...document.querySelectorAll('#active-workspace [data-a2ui-component=\"Text\"]')]; const title=texts.find((node)=>node.textContent?.trim()==='Booking confirmed'); const status=texts.find((node)=>node.textContent?.trim()==='Reservation and Booking Contract are confirmed'); return { titleUsesStatusTreatment:Boolean(title?.classList.contains('guest-status')), statusUsesSuccessTreatment:Boolean(status?.classList.contains('guest-status--success')) }; })()");
+  const confirmationPresentation = await tab.evaluate<{ readonly titleUsesStatusTreatment: boolean; readonly statusUsesSuccessTreatment: boolean }>("(() => { const texts=[...document.querySelectorAll('#active-workspace [data-a2ui-component=\"Text\"]')]; const title=texts.find((node)=>node.textContent?.trim()==='Booking confirmed'); const status=texts.find((node)=>node.textContent?.trim()==='Reservation confirmed'); return { titleUsesStatusTreatment:Boolean(title?.classList.contains('guest-status')), statusUsesSuccessTreatment:Boolean(status?.classList.contains('guest-status--success')) }; })()");
   assert.deepEqual(confirmationPresentation, { titleUsesStatusTreatment: false, statusUsesSuccessTreatment: true });
   await capturePhase4(context, "confirmed-booking");
 }
@@ -172,14 +174,14 @@ test("AC10 — Large NGN values do not overflow", async () => { const c = await 
 test("AC11 — Long deadlines do not overflow", async () => { const c = await startContext(320, 700); try { const result = await c.tab.evaluate<{ readonly overflow: number }>("(() => { const s = document.createElement('p'); s.textContent = 'Payment deadline: Wednesday, 30 September 2026 at 23:59:59 WAT (Africa/Lagos)'; s.style.overflowWrap = 'anywhere'; document.body.append(s); return { overflow: Math.max(s.scrollWidth - document.documentElement.clientWidth, 0) }; })()"); assert.equal(result.overflow, 0); } finally { await c.close(); } });
 test("AC12 — Back navigation preserves authoritative workflow state", async () => { const c = await startContext(320, 700); try { await sendPrompt(c.tab, PROMPT); await c.tab.waitForText("Luxury 2-Bedroom Apartment"); await c.tab.clickButton("View Unit", "Luxury 2-Bedroom Apartment in Old Ikoyi"); await c.tab.waitForText("Request to Book"); await c.tab.evaluate("history.pushState({}, '', location.href + '&mobile-back-test=1')"); await c.tab.pressKey("ALT"); await c.tab.navigate(`${c.base}/?threadId=${c.threadId}`); await c.tab.waitForText("Request to Book"); assert.match(await c.tab.evaluate<string>("document.body.innerText"), /Request to Book/); } finally { await c.close(); } });
 test("AC13 — Keyboard-only navigation has no focus trap", async () => { const c = await startContext(320, 700); try { await c.tab.focus("#composer-input"); const seen = new Set<string>(); for (let i = 0; i < 14; i++) { await c.tab.pressKey("Tab"); seen.add(await c.tab.evaluate<string>("document.activeElement?.id || document.activeElement?.textContent?.slice(0, 30) || ''")); } assert.ok(seen.size > 2); assert.equal(await c.tab.isElementFocused("#composer-input"), false); } finally { await c.close(); } });
-test("AC14 — Surface replacement preserves usable focus", async () => { const c = await startContext(320, 700); try { await sendPrompt(c.tab, PROMPT); await c.tab.waitForText("Luxury 2-Bedroom Apartment"); await c.tab.clickButton("View Unit", "Luxury 2-Bedroom Apartment in Old Ikoyi"); await c.tab.waitForText("Request to Book"); assert.ok(await c.tab.evaluate<boolean>("Boolean(document.querySelector('#active-workspace:focus, #active-workspace button:focus, #composer-input:focus, #active-workspace [tabindex=\"0\"]:focus'))")); } finally { await c.close(); } });
+test("AC14 — Surface replacement preserves usable focus", async () => { const c = await startContext(320, 700); try { await sendPrompt(c.tab, PROMPT); await c.tab.waitForText("Luxury 2-Bedroom Apartment"); await c.tab.clickButton("View Unit", "Luxury 2-Bedroom Apartment in Old Ikoyi"); await c.tab.waitForText("Request to Book"); assert.ok(await c.tab.evaluate<boolean>("Boolean(document.querySelector('#active-workspace .workspace-focus-target:focus, #active-workspace button:focus, #composer-input:focus'))")); } finally { await c.close(); } });
 test("AC15 — Required touch targets satisfy the project minimum", async () => { const c = await startContext(320, 700); try { await sendPrompt(c.tab, PROMPT); await c.tab.waitForText("Luxury 2-Bedroom Apartment"); const targets = await c.tab.evaluate<readonly { readonly label: string; readonly width: number; readonly height: number }[]>("[...document.querySelectorAll('button, input, a')].filter((e) => e.getClientRects().length > 0).map((e) => { const r = e.getBoundingClientRect(); return { label: e.textContent || e.getAttribute('aria-label') || '', width: r.width, height: r.height }; }).filter((x) => x.label.trim())"); for (const target of targets) assert.ok(target.width >= 44 && target.height >= 44, `${target.label} is ${target.width}x${target.height}`); } finally { await c.close(); } });
 test("AC16 — Reduced-motion mode remains usable", async () => { const c = await startContext(320, 700); try { await c.tab.setReducedMotion(true); await sendPrompt(c.tab, PROMPT); await c.tab.waitForText("Luxury 2-Bedroom Apartment"); assert.equal((await layoutMetrics(c.tab)).documentWidth <= 320, true); } finally { await c.close(); } });
 test("AC17 — Slow or failed media does not block critical content", async () => { const c = await startContext(320, 700); try { const result = await c.tab.evaluate<{ readonly critical: boolean; readonly images: number }>("({ critical: Boolean(document.querySelector('#composer-input')) && Boolean(document.querySelector('main')), images: document.images.length })"); assert.equal(result.critical, true); assert.equal(result.images, 0); } finally { await c.close(); } });
 test("AC18 — Weaver fallback remains usable at 320 pixels", async () => { const c = await startContext(320, 700); try { const result = await c.tab.evaluate<{ readonly hasFallback: boolean; readonly route: boolean; readonly scroll: boolean }>("(() => { const p = document.createElement('div'); p.className = 'surface-fallback'; p.innerHTML = '<p>Safe fallback</p><a href=\"/search\">Continue on the standard page</a>'; document.getElementById('active-workspace').append(p); return { hasFallback: Boolean(document.querySelector('.surface-fallback')), route: Boolean(p.querySelector('a')), scroll: document.documentElement.scrollWidth <= innerWidth }; })()"); assert.deepEqual(result, { hasFallback: true, route: true, scroll: true }); } finally { await c.close(); } });
 test("AC19 — A recoverable network error preserves Guest input", async () => { const c = await startContext(320, 700); try { await c.tab.focus("#composer-input"); await c.tab.evaluate("document.getElementById('composer-input').value = 'retry this message'"); await c.tab.setOffline(true); await c.tab.pressKey("Enter"); await c.tab.waitForFunction("document.getElementById('composer-input')?.value === 'retry this message'"); assert.equal(await c.tab.evaluate<string>("document.getElementById('composer-input').value"), "retry this message"); } finally { await c.close(); } });
 test("AC28 — Provider/network failure retains the current authoritative workspace", async () => { const c = await startContext(390, 844); try { await sendPrompt(c.tab, PROMPT); await c.tab.waitForText("Luxury 2-Bedroom Apartment"); await c.tab.setOffline(true); await c.tab.evaluate("(() => { const input = document.getElementById('composer-input'); input.value = 'check another area'; document.getElementById('composer').requestSubmit(); })()"); await c.tab.waitForText("temporarily unavailable"); const retained = await c.tab.evaluate<boolean>("Boolean(document.querySelector('#active-workspace[data-status=active] .weaver-mount[data-renderer=weaver]'))"); assert.equal(retained, true); assert.match(await c.tab.evaluate<string>("document.getElementById('composer-input').value"), /check another area/); } finally { await c.close(); } });
-test("AC29 — Focused workspace closes and reopens from the keyboard", async () => { const c = await startContext(390, 844); try { await sendPrompt(c.tab, PROMPT); await c.tab.waitForText("Luxury 2-Bedroom Apartment"); await c.tab.clickButton("View Unit", "Luxury 2-Bedroom Apartment in Old Ikoyi"); await c.tab.waitForText("Request to Book"); await c.tab.focus(".workspace-close"); await c.tab.pressKey("Enter"); const closed = await c.tab.evaluate<{ readonly hidden: boolean; readonly focus: string }>("({ hidden: document.getElementById('active-workspace').hidden, focus: document.activeElement?.id || '' })"); assert.deepEqual(closed, { hidden: true, focus: 'workspace-reopen' }); await c.tab.pressKey("Enter"); const reopened = await c.tab.evaluate<{ readonly hidden: boolean; readonly focus: string }>("({ hidden: document.getElementById('active-workspace').hidden, focus: document.activeElement?.id || '' })"); assert.deepEqual(reopened, { hidden: false, focus: 'active-workspace' }); } finally { await c.close(); } });
+test("AC29 — Focused workspace closes and reopens from the keyboard", async () => { const c = await startContext(390, 844); try { await sendPrompt(c.tab, PROMPT); await c.tab.waitForText("Luxury 2-Bedroom Apartment"); await c.tab.clickButton("View Unit", "Luxury 2-Bedroom Apartment in Old Ikoyi"); await c.tab.waitForText("Request to Book"); await c.tab.focus(".workspace-close"); await c.tab.pressKey("Enter"); const closed = await c.tab.evaluate<{ readonly hidden: boolean; readonly focus: string }>("({ hidden: document.getElementById('active-workspace').hidden, focus: document.activeElement?.id || '' })"); assert.deepEqual(closed, { hidden: true, focus: 'workspace-reopen' }); await c.tab.pressKey("Enter"); const reopened = await c.tab.evaluate<{ readonly hidden: boolean; readonly active: string; readonly closeExists: boolean; readonly closeClass: string }>("(() => ({ hidden: document.getElementById('active-workspace').hidden, active: document.activeElement?.outerHTML.slice(0, 120) || '', closeExists: Boolean(document.querySelector('.workspace-close')), closeClass: document.querySelector('.workspace-close')?.className || '' }))()"); assert.equal(reopened.hidden, false); assert.ok(reopened.closeExists, JSON.stringify(reopened)); assert.ok(reopened.active.includes('workspace-close'), JSON.stringify(reopened)); } finally { await c.close(); } });
 test("AC20 — Mobile fixes do not break restart restoration", async () => { const c = await startContext(320, 700); try { await sendPrompt(c.tab, PROMPT); await c.tab.waitForText("Luxury 2-Bedroom Apartment"); await c.tab.navigate(`${c.base}/?threadId=${c.threadId}`); await c.tab.waitForText("Luxury 2-Bedroom Apartment"); } finally { await c.close(); } });
 test("AC21 — Mobile fixes do not break cross-tab concurrency", async () => { const c = await startContext(320, 700); let tabB: RealBrowserTab | undefined; try { tabB = await c.browser.createTab(`${c.base}/?threadId=${c.threadId}`); await tabB.setViewport(320, 700); await tabB.waitForSelector("#composer-input"); await sendPrompt(c.tab, PROMPT); await c.tab.waitForText("Luxury 2-Bedroom Apartment"); await tabB.navigate(`${c.base}/?threadId=${c.threadId}`); await tabB.waitForText("Luxury 2-Bedroom Apartment"); await Promise.all([c.tab.clickButton("View Unit", "Luxury 2-Bedroom Apartment in Old Ikoyi"), tabB.clickButton("View Unit", "Luxury 2-Bedroom Apartment in Old Ikoyi")]); await Promise.all([c.tab.waitForText("Request to Book"), tabB.waitForText("Request to Book")]); assert.equal(c.server.environment.interactionStore.listBookingRequestIds().length, 0); } finally { await tabB?.close(); await c.close(); } });
 test("AC22 — Mobile fixes do not duplicate transition telemetry", async () => { const c = await startContext(320, 700); try { await completeJourney(c); const events = c.server.environment.telemetry.events().filter((event) => event.type === "reservation.confirmed"); assert.equal(events.length, 1); } finally { await c.close(); } });

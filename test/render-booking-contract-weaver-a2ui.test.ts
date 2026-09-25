@@ -12,7 +12,7 @@ describe("Booking Contract Weaver presentation", () => {
     assert.equal(messages[0] && "createSurface" in messages[0] ? messages[0].createSurface.catalogId : undefined, A2UI_V091_BASIC_CATALOG_ID);
     const text = JSON.stringify(messages);
     assert.match(text, /Booking confirmed|Provider|2026-09-01|Visa|Captured cancellation terms/);
-    assert.match(text, /available in secure booking details|will be released/);
+    assert.match(text, /access details are in secure booking details|check-in details will be shared/i);
     assert.doesNotMatch(text, /fullAddress|accessInstructions|SECRET|door code|gate code/i);
     assert.deepEqual(messages, bookingContractArtifactToA2UI({ artifact, surfaceId: "surface-a2ui" }));
   });
