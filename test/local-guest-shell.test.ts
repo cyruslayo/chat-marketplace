@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { LocalGuestApp, renderGuestShellHtml, startLocalGuestServer } from "../apps/local-guest/src/guest-server.js";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
+import { formatGuestHistorySummary, guestSurfaceStatusMessage } from "../apps/local-guest/src/conversational-shell.js";
 import { SEE_ALL_DISCOVERY_EVENT } from "../apps/web-agent/src/discovery-a2ui.js";
 import type { A2UIServerMessage } from "@weaver/core";
 
@@ -22,6 +23,21 @@ test("mobile conversation shell keeps one timeline, one workspace slot, and a te
   assert.match(html, /100dvh/);
   assert.match(html, /prefers-reduced-motion/);
   assert.doesNotMatch(html, /microphone|speech recognition|voice input/i);
+  assert.doesNotMatch(html, /Current workspace|Search updated|replaced by a newer workspace|Use the details below to continue|>Past</);
+});
+
+test("Guest history keeps useful meaning without exposing workspace lifecycle terminology", () => {
+  assert.equal(formatGuestHistorySummary("Search updated · Old Ikoyi · 2 guests", "superseded"), "Searched Old Ikoyi · 2 guests");
+  assert.equal(formatGuestHistorySummary("Garden Two-Bedroom Stay in Old Ikoyi details", "superseded"), "Viewed Garden Two-Bedroom Stay in Old Ikoyi");
+  assert.equal(formatGuestHistorySummary("Request Draft", "superseded"), "Prepared booking details");
+  assert.match(formatGuestHistorySummary("Search updated · Lagos · 2 guests", "stale"), /Searched Lagos.*may have changed/);
+  assert.match(formatGuestHistorySummary("Payment handoff", "fallback"), /hosted checkout.*details unavailable/);
+  assert.equal(guestSurfaceStatusMessage("active"), "");
+  assert.match(guestSurfaceStatusMessage("superseded"), /replaced and are read-only/i);
+  assert.match(guestSurfaceStatusMessage("stale"), /details may have changed/i);
+  assert.match(guestSurfaceStatusMessage("expired"), /expired/i);
+  assert.match(guestSurfaceStatusMessage("deleted"), /no longer available/i);
+  assert.doesNotMatch(guestSurfaceStatusMessage("fallback"), /workspace|fallback/i);
 });
 
 test("server-backed state restores the conversation timeline and latest workspace projection", async () => {

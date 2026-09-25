@@ -8544,13 +8544,36 @@ Known schemas:
   function canUseSurfaceActions(status) {
     return status === "active";
   }
+  function formatGuestHistorySummary(summary, status) {
+    if (status === "expired") return /offer/i.test(summary) ? "Offer expired" : "Booking details expired";
+    if (status === "deleted") return "Details no longer available";
+    const search = /^Search updated\s*·\s*(.*)$/.exec(summary);
+    const activity = search ? `Searched ${search[1]}` : /^(Discovery results|All discovery results)$/.test(summary) ? "Viewed stays for your search" : summary.endsWith(" details") ? `Viewed ${summary.slice(0, -" details".length)}` : summary === "Request Draft" ? "Prepared booking details" : summary === "Request review" ? "Reviewed booking details" : summary === "Request outcome" ? "Booking request update" : summary.includes("Conditional Booking Offer") ? "Booking offer received" : summary === "Payment handoff" ? "Opened hosted checkout" : summary === "Reservation confirmed" ? "Stay confirmed" : /workspace|booking/i.test(summary) ? "Booking details updated" : summary;
+    if (status === "stale") return `${activity} \xB7 details may have changed`;
+    if (status === "fallback") return `${activity} \xB7 details unavailable`;
+    return activity;
+  }
+  function guestSurfaceHeading(summary) {
+    if (/search|discovery/i.test(summary)) return "Stays for your search";
+    if (/details$/i.test(summary) || /unit/i.test(summary)) return "Stay details";
+    if (/draft|request review/i.test(summary)) return "Your booking details";
+    if (/offer/i.test(summary)) return "Booking offer";
+    if (/payment|checkout/i.test(summary)) return "Hosted checkout";
+    if (/confirm|reservation/i.test(summary)) return "Booking confirmed";
+    if (/phone|email|contact/i.test(summary)) return "Your contact details";
+    return "Booking details";
+  }
+  function guestSurfaceStatusMessage(status) {
+    if (status === "active") return "";
+    if (status === "superseded") return "These details have been replaced and are read-only.";
+    if (status === "stale") return "These details may have changed. This version is read-only.";
+    if (status === "expired") return "These booking details have expired. Check the latest status before continuing.";
+    if (status === "deleted") return "These details are no longer available.";
+    return "Some details could not be shown. Continue in the conversation for help.";
+  }
   function fallbackSummary(surface) {
-    if (surface.status === "fallback") return surface.summary;
-    if (surface.status === "stale") return "This workspace is out of date. Refresh to continue.";
-    if (surface.status === "expired") return "This workspace has expired. Refresh to continue.";
-    if (surface.status === "deleted") return "This workspace is no longer available.";
-    if (surface.status === "superseded") return "This workspace has been replaced by a newer one.";
-    return surface.summary;
+    if (surface.status === "fallback") return surface.textFallback ?? surface.summary;
+    return guestSurfaceStatusMessage(surface.status) || surface.summary;
   }
 
   // apps/local-guest/src/client.ts
@@ -8614,19 +8637,147 @@ Known schemas:
   }
   function enhanceListingImages(mount) {
     for (const [index, image] of [...mount.querySelectorAll("img")].entries()) {
+      image.classList.add("guest-photo");
       image.referrerPolicy = "no-referrer";
       image.decoding = "async";
       image.loading = index === 0 ? "eager" : "lazy";
       if (index === 0) image.fetchPriority = "high";
-      image.addEventListener("error", () => {
+      const failed = () => {
         const fallback2 = document.createElement("div");
         fallback2.className = "photo-fallback";
         fallback2.setAttribute("role", "img");
-        fallback2.setAttribute("aria-label", `${image.alt || "Listing photo"} unavailable`);
+        fallback2.setAttribute("aria-label", `${image.alt || "Property photo"} unavailable`);
         fallback2.textContent = "Photo unavailable";
         image.replaceWith(fallback2);
-      }, { once: true });
+      };
+      image.addEventListener("load", () => image.classList.add("is-loaded"), { once: true });
+      image.addEventListener("error", failed, { once: true });
+      if (image.complete && image.naturalWidth > 0) image.classList.add("is-loaded");
+      else if (image.complete) failed();
     }
+  }
+  function wrapDirectChildren(parent, className, children) {
+    if (children.length === 0) return void 0;
+    const wrapper = document.createElement("div");
+    wrapper.className = className;
+    parent.insertBefore(wrapper, children[0]);
+    for (const child of children) wrapper.appendChild(child);
+    return wrapper;
+  }
+  function organizeUnitDetail(mount) {
+    const root = mount.querySelector('[data-a2ui-component="Column"]');
+    if (!root) return;
+    root.classList.add("unit-detail-root");
+    const gallery = document.createElement("div");
+    gallery.className = "unit-gallery";
+    gallery.setAttribute("role", "group");
+    gallery.setAttribute("aria-label", "Property photos");
+    while (root.firstElementChild instanceof HTMLImageElement) gallery.appendChild(root.firstElementChild);
+    const noPhotos = root.firstElementChild;
+    if (noPhotos instanceof HTMLElement && noPhotos.matches('[data-a2ui-component="Text"]') && /no property photos/i.test(noPhotos.textContent ?? "")) {
+      noPhotos.classList.add("unit-photo-missing");
+      gallery.appendChild(noPhotos);
+    }
+    if (gallery.childElementCount > 0) {
+      const photos = [...gallery.children].filter((child) => child instanceof HTMLImageElement);
+      if (photos.length === 0) gallery.classList.add("unit-gallery--fallback");
+      if (photos.length > 1) gallery.classList.add("unit-gallery--mosaic");
+      root.insertBefore(gallery, root.firstChild);
+    }
+    const children = [...root.children];
+    const title = children.find((child) => child.tagName === "H2" && !/^(₦|NGN\b)/.test(child.textContent?.trim() ?? ""));
+    const amount = children.find((child) => child !== title && child.tagName === "H2" && /^(₦|NGN\b)/.test(child.textContent?.trim() ?? ""));
+    const priceLabel = children.find((child) => /^(All-In Stay Total|Indicative nightly rate)/.test(child.textContent?.trim() ?? ""));
+    const location2 = children.find((child) => child.tagName === "SMALL" && child !== priceLabel);
+    const facts = children.find((child) => child.tagName === "P" && child !== title);
+    const dates = children.find((child) => child.tagName === "SMALL" && child !== location2 && child !== priceLabel && !/^(Refundable|Amount Due|Nightly|Mandatory)/.test(child.textContent?.trim() ?? ""));
+    for (const [element, className] of [[title, "unit-title"], [location2, "unit-location"], [facts, "unit-facts"], [dates, "unit-dates"]]) {
+      element?.classList.add(className);
+    }
+    const overview = wrapDirectChildren(root, "unit-overview", [title, location2, facts, dates].filter((element) => element !== void 0));
+    if (overview) {
+      overview.setAttribute("role", "group");
+      overview.setAttribute("aria-label", "Stay overview");
+    }
+    if (priceLabel) {
+      priceLabel.classList.add("unit-price-label");
+      amount?.classList.add("unit-price-total");
+      const descriptionHeading = children.find((child) => /^(About this place|Amenities)$/.test(child.textContent?.trim() ?? ""));
+      const endIndex = descriptionHeading ? children.indexOf(descriptionHeading) : children.length;
+      const startIndex = children.indexOf(priceLabel);
+      const priceNodes = children.slice(startIndex, endIndex).filter((child) => child.parentElement === root);
+      wrapDirectChildren(root, "unit-price-group", priceNodes);
+    }
+    const afterPrice = [...root.children];
+    const about = afterPrice.find((child) => child.textContent?.trim() === "About this place");
+    if (about) {
+      const description = about.nextElementSibling;
+      wrapDirectChildren(root, "unit-description", [about, ...description ? [description] : []]);
+    }
+    const afterDescription = [...root.children];
+    const amenitiesHeading = afterDescription.find((child) => child.textContent?.trim() === "Amenities");
+    if (amenitiesHeading) {
+      const amenities = amenitiesHeading.nextElementSibling;
+      wrapDirectChildren(root, "unit-amenities", [amenitiesHeading, ...amenities ? [amenities] : []]);
+    }
+    const action = root.querySelector(':scope > [data-a2ui-component="Row"]');
+    action?.classList.add("unit-actions");
+    const grouped = /* @__PURE__ */ new Set([gallery, ...overview ? [overview] : [], ...root.querySelectorAll(":scope > .unit-price-group, :scope > .unit-description, :scope > .unit-amenities")]);
+    const supporting = [...root.children].filter((child) => child !== action && !grouped.has(child));
+    wrapDirectChildren(root, "unit-supporting-info", supporting);
+  }
+  function decorateDiscoveryCards(mount) {
+    for (const card of mount.querySelectorAll('[data-a2ui-component="Card"]')) {
+      card.classList.add("stay-card");
+      card.setAttribute("role", "listitem");
+      const list = card.parentElement;
+      if (list instanceof HTMLElement) {
+        list.classList.add("stay-grid");
+        list.setAttribute("role", "list");
+        list.setAttribute("aria-label", "Stay search results");
+      }
+      const body = card.querySelector(':scope > [data-weaver-mount] > [data-a2ui-component="Column"], :scope > [data-a2ui-component="Column"]');
+      if (!body) continue;
+      body.classList.add("stay-card__body");
+      const children = [...body.children];
+      const headings = children.filter((child) => child.tagName === "H3");
+      const smalls = children.filter((child) => child.tagName === "SMALL");
+      headings[0]?.classList.add("stay-card__title");
+      const location2 = smalls[0];
+      location2?.classList.add("stay-card__location");
+      children.find((child) => child.tagName === "P")?.classList.add("stay-card__facts");
+      smalls[1]?.classList.add("stay-card__amenities");
+      const priceLabel = children.find((child) => /^(All-In Stay Total|Indicative nightly rate)/.test(child.textContent?.trim() ?? ""));
+      const action = children.find((child) => child.tagName === "BUTTON");
+      if (priceLabel) {
+        const priceStart = children.indexOf(priceLabel);
+        const priceNodes = children.slice(priceStart, action ? children.indexOf(action) + 1 : void 0);
+        const price = priceNodes.find((child) => child.tagName === "H3" && /^(₦|NGN\b)/.test(child.textContent?.trim() ?? ""));
+        priceLabel.classList.add("stay-card__price-label");
+        price?.classList.add("stay-card__price-total");
+        if (action) action.classList.add("stay-card__action");
+        wrapDirectChildren(body, "stay-card__price-area", priceNodes);
+      }
+    }
+  }
+  function enhanceSurfacePresentation(mount, kind) {
+    mount.dataset.surfaceKind = kind;
+    for (const button of mount.querySelectorAll("button")) button.classList.add("guest-action");
+    for (const field of mount.querySelectorAll("input, textarea, select")) field.classList.add("guest-field");
+    for (const text of mount.querySelectorAll('[data-a2ui-component="Text"]')) {
+      const value = text.textContent?.trim() ?? "";
+      const isHeading = /^H[1-6]$/.test(text.tagName);
+      if (!isHeading && /^(Request sent|Request declined|Request expired|Offer available|Offer accepted|Offer expired|Payment required|Payment processing|Payment was not verified|Payment requires review|Booking confirmed|Reservation and Booking Contract are confirmed)/i.test(value)) {
+        text.classList.add("guest-status");
+        if (/declined|not verified|requires review/i.test(value)) text.classList.add("guest-status--danger");
+        else if (/expired|processing|payment required/i.test(value)) text.classList.add("guest-status--warning");
+        else if (/confirmed|accepted/i.test(value)) text.classList.add("guest-status--success");
+        else text.classList.add("guest-status--info");
+      }
+      if (/^No stays match|^No current matches/i.test(value)) text.classList.add("empty-state-title");
+    }
+    if (kind === "discovery") decorateDiscoveryCards(mount);
+    if (kind === "unit-detail") organizeUnitDetail(mount);
   }
   function isSafeInternalRoute(value) {
     if (typeof value !== "string" || value === "" || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) return false;
@@ -8683,8 +8834,7 @@ Known schemas:
   function addHistoricalSummary(summary) {
     const item = document.createElement("p");
     item.className = "historical-summary";
-    const lifecycle = summary.status === "superseded" ? "replaced by a newer workspace" : summary.status === "stale" ? "no longer current" : summary.status === "expired" ? "expired" : summary.status === "deleted" ? "no longer available" : "text view shown";
-    item.textContent = `${summary.summary} \xB7 ${lifecycle}`;
+    item.textContent = formatGuestHistorySummary(summary.summary, summary.status);
     transcript.appendChild(item);
   }
   function modeFor(surface) {
@@ -8699,7 +8849,7 @@ Known schemas:
       // Missing authority metadata is unsafe: the browser must not infer that
       // a rich surface is actionable (ADR-0074).
       status: surface.status ?? "fallback",
-      summary: surface.summary ?? (mode === "focused-surface" ? "Focused workspace" : "Conversation workspace"),
+      summary: surface.summary ?? (mode === "focused-surface" ? "Stay details" : "Stays for your search"),
       ...surface.textFallback === void 0 ? {} : { textFallback: surface.textFallback },
       ...surface.conventionalRoute === void 0 ? {} : { conventionalRoute: surface.conventionalRoute },
       ...surface.conventionalRouteLabel === void 0 ? {} : { conventionalRouteLabel: surface.conventionalRouteLabel }
@@ -8727,7 +8877,7 @@ Known schemas:
     const current = shellState.activeSurface;
     const canReopen = current?.mode === "focused-surface" && current.status === "active" && activePayload !== void 0;
     workspaceReopen.hidden = !canReopen || shellState.focusedSurfaceOpen;
-    if (canReopen) workspaceReopen.textContent = `Reopen ${current.summary}`;
+    if (canReopen) workspaceReopen.textContent = `Return to ${guestSurfaceHeading(current.summary).toLocaleLowerCase()}`;
   }
   function enhanceGuestContactField(mount) {
     const wrapper = mount.querySelector('[data-a2ui-component="TextField"]');
@@ -8763,42 +8913,46 @@ Known schemas:
     workspaceRegion.hidden = false;
     activeWorkspace.dataset.mode = presentation.mode;
     activeWorkspace.dataset.status = presentation.status;
+    activeWorkspace.dataset.surfaceKind = surface.surfaceId.includes(":unit:") ? "unit-detail" : surface.surfaceId.includes(":discovery:") ? "discovery" : surface.surfaceId.includes(":payment:") || surface.surfaceId.includes(":offer:") ? "payment" : surface.surfaceId.includes(":request:") ? "booking" : "general";
+    activeWorkspace.classList.remove("workspace-arrival");
+    void activeWorkspace.offsetWidth;
+    activeWorkspace.classList.add("workspace-arrival");
     const heading = document.createElement("div");
-    heading.className = "workspace-heading";
-    const headingText = document.createElement("div");
-    headingText.className = "workspace-heading-text";
-    const eyebrow = document.createElement("span");
-    eyebrow.className = "eyebrow";
-    eyebrow.textContent = "Current workspace";
+    heading.className = `workspace-heading workspace-heading--${presentation.mode}`;
     const title = document.createElement("h2");
-    title.className = "workspace-title";
-    title.textContent = presentation.summary;
-    headingText.append(eyebrow, title);
-    heading.appendChild(headingText);
+    title.className = "sr-only";
+    title.textContent = guestSurfaceHeading(presentation.summary);
+    heading.appendChild(title);
     if (presentation.mode === "focused-surface") {
       const close = document.createElement("button");
       close.type = "button";
-      close.className = "workspace-close";
-      close.textContent = "Back to conversation";
+      close.className = "workspace-close ui-button ui-button--quiet";
+      const arrow = document.createElement("span");
+      arrow.setAttribute("aria-hidden", "true");
+      arrow.textContent = "\u2190";
+      close.appendChild(arrow);
+      close.append("Back to conversation");
       close.addEventListener("click", () => {
         shellState = closeFocusedSurface(shellState);
         activeWorkspace.hidden = true;
         showReopen();
         workspaceReopen.focus();
         trackTelemetry("focused-surface-closed");
-        announce("Focused workspace closed. Conversation context preserved.");
+        announce("Returned to the conversation. Your stay details are still here.");
       });
       heading.appendChild(close);
     }
     activeWorkspace.appendChild(heading);
-    const state = document.createElement("p");
-    state.className = `workspace-status status-${presentation.status}`;
-    state.dataset.status = presentation.status;
-    state.textContent = presentation.status === "active" ? "Current workspace \xB7 Use the details below to continue." : presentation.status === "superseded" ? "Superseded \xB7 This workspace has been replaced. Use the current workspace below." : fallbackSummary(presentation);
-    activeWorkspace.appendChild(state);
+    const statusMessage = guestSurfaceStatusMessage(presentation.status);
+    if (statusMessage) {
+      const state = document.createElement("p");
+      state.className = `workspace-status status-${presentation.status}`;
+      state.dataset.status = presentation.status;
+      state.textContent = statusMessage;
+      activeWorkspace.appendChild(state);
+    }
     const mount = document.createElement("div");
     mount.className = "weaver-mount";
-    mount.setAttribute("aria-label", presentation.summary);
     activeWorkspace.appendChild(mount);
     if (presentation.status === "stale") trackTelemetry("stale-surface-encountered");
     if (presentation.status === "expired") trackTelemetry("expired-surface-encountered");
@@ -8834,6 +8988,7 @@ Known schemas:
     }
     mount.dataset.renderer = "weaver";
     mount.dataset.surfaceId = surface.surfaceId;
+    enhanceSurfacePresentation(mount, activeWorkspace.dataset.surfaceKind ?? "general");
     enhanceGuestContactField(mount);
     enhanceListingImages(mount);
     if (presentation.conventionalRoute) {
@@ -8849,7 +9004,7 @@ Known schemas:
       activeWorkspace.focus({ preventScroll: true });
     }
     trackTelemetry(presentation.mode === "focused-surface" ? "focused-surface-opened" : "inline-surface-rendered");
-    if (moveFocus) announce(`${presentation.summary} is now the current workspace.`);
+    if (moveFocus) announce(`${guestSurfaceHeading(presentation.summary)} is ready.`);
   }
   function acceptSurface(surface) {
     const before = shellState.historicalSummaries.length;
@@ -8912,7 +9067,7 @@ Known schemas:
     composerForm.setAttribute("aria-busy", String(next));
     composerSubmit.textContent = next ? "Working\u2026" : "Send";
     workingStatus.hidden = !next;
-    workingStatus.textContent = next ? "Working on your request\u2026 Your current workspace remains available." : "";
+    workingStatus.textContent = next ? "Working on your request\u2026 Your stay details will stay here." : "";
     if (next) announce("Message sent. The concierge is working on your request.");
   }
   async function sendTurn(text) {

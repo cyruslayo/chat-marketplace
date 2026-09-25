@@ -191,7 +191,7 @@ export function discoveryArtifactToA2UI({
   const dateSummary = checkIn && checkOut ? ` · ${checkIn} – ${checkOut}` : "";
   const context = discoveryContext(artifact.facts.filters);
   const resultSummary = artifact.facts.results.length === 0
-    ? "No current matches"
+    ? "No stays match this search"
     : `${artifact.facts.results.length} stay${artifact.facts.results.length === 1 ? "" : "s"} to explore`;
   const disclosureIds = artifact.disclosures.map((_, index) => `disclosure-${index}`);
   const resultListId = "result-list";
@@ -241,5 +241,5 @@ function discoveryContext(filters: Readonly<Record<string, unknown>>): string {
     : typeof filters.location === "string" ? filters.location : undefined;
   const partySize = typeof filters.partySize === "number" ? `${filters.partySize} ${filters.partySize === 1 ? "guest" : "guests"}` : undefined;
   const details = [location, partySize].filter((value): value is string => value !== undefined);
-  return details.length > 0 ? `Search: ${details.join(" · ")}` : "Search results for your request";
+  return details.length > 0 ? `Your search: ${details.join(" · ")}` : "Your search details";
 }

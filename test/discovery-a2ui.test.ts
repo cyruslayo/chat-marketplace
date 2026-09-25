@@ -123,8 +123,8 @@ test("AC5: a zero-result artifact resolves successfully without View Unit action
   const messages = discoveryArtifactToA2UI({ artifact, surfaceId: SURFACE_ID });
   const runtime = processMessages(messages);
   assert.equal(runtime.resolveSurface(SURFACE_ID).ok, true);
-  assert.match(resolvedText(runtime).join("\n"), /No current matches/);
-  assert.match(resolvedText(runtime).join("\n"), /Search: Abuja/);
+  assert.match(resolvedText(runtime).join("\n"), /No stays match this search/);
+  assert.match(resolvedText(runtime).join("\n"), /Your search: Abuja/);
   assert.match(resolvedText(runtime).join("\n"), /Try another neighbourhood, dates, or guest count/);
   assert.equal(updateComponents(messages).some((component) => component.component === "Button"), false);
 });

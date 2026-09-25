@@ -83,11 +83,49 @@ export function canUseSurfaceActions(status: SurfaceLifecycleStatus): boolean {
   return status === "active";
 }
 
+export function formatGuestHistorySummary(summary: string, status: HistoricalSurfaceSummary["status"]): string {
+  if (status === "expired") return /offer/i.test(summary) ? "Offer expired" : "Booking details expired";
+  if (status === "deleted") return "Details no longer available";
+
+  const search = /^Search updated\s*·\s*(.*)$/.exec(summary);
+  const activity = search ? `Searched ${search[1]}`
+    : /^(Discovery results|All discovery results)$/.test(summary) ? "Viewed stays for your search"
+      : summary.endsWith(" details") ? `Viewed ${summary.slice(0, -" details".length)}`
+        : summary === "Request Draft" ? "Prepared booking details"
+          : summary === "Request review" ? "Reviewed booking details"
+            : summary === "Request outcome" ? "Booking request update"
+              : summary.includes("Conditional Booking Offer") ? "Booking offer received"
+                : summary === "Payment handoff" ? "Opened hosted checkout"
+                  : summary === "Reservation confirmed" ? "Stay confirmed"
+                    : /workspace|booking/i.test(summary) ? "Booking details updated"
+                      : summary;
+
+  if (status === "stale") return `${activity} · details may have changed`;
+  if (status === "fallback") return `${activity} · details unavailable`;
+  return activity;
+}
+
+export function guestSurfaceHeading(summary: string): string {
+  if (/search|discovery/i.test(summary)) return "Stays for your search";
+  if (/details$/i.test(summary) || /unit/i.test(summary)) return "Stay details";
+  if (/draft|request review/i.test(summary)) return "Your booking details";
+  if (/offer/i.test(summary)) return "Booking offer";
+  if (/payment|checkout/i.test(summary)) return "Hosted checkout";
+  if (/confirm|reservation/i.test(summary)) return "Booking confirmed";
+  if (/phone|email|contact/i.test(summary)) return "Your contact details";
+  return "Booking details";
+}
+
+export function guestSurfaceStatusMessage(status: SurfaceLifecycleStatus): string {
+  if (status === "active") return "";
+  if (status === "superseded") return "These details have been replaced and are read-only.";
+  if (status === "stale") return "These details may have changed. This version is read-only.";
+  if (status === "expired") return "These booking details have expired. Check the latest status before continuing.";
+  if (status === "deleted") return "These details are no longer available.";
+  return "Some details could not be shown. Continue in the conversation for help.";
+}
+
 export function fallbackSummary(surface: SurfacePresentation): string {
-  if (surface.status === "fallback") return surface.summary;
-  if (surface.status === "stale") return "This workspace is out of date. Refresh to continue.";
-  if (surface.status === "expired") return "This workspace has expired. Refresh to continue.";
-  if (surface.status === "deleted") return "This workspace is no longer available.";
-  if (surface.status === "superseded") return "This workspace has been replaced by a newer one.";
-  return surface.summary;
+  if (surface.status === "fallback") return surface.textFallback ?? surface.summary;
+  return guestSurfaceStatusMessage(surface.status) || surface.summary;
 }

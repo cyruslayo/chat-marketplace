@@ -104,8 +104,8 @@ test("AC4 — Zero results", () => {
   processSuccessfully(host, discoveryArtifactToA2UI({ artifact, surfaceId: DISCOVERY_SURFACE_ID }));
   const { target } = targetElement();
   assert.equal(host.mount({ surfaceId: DISCOVERY_SURFACE_ID, target }).ok, true);
-  assert.match(target.textContent ?? "", /No current matches/);
-  assert.match(target.textContent ?? "", /Search: Abuja/);
+  assert.match(target.textContent ?? "", /No stays match this search/);
+  assert.match(target.textContent ?? "", /Your search: Abuja/);
   assert.equal([...target.querySelectorAll("button")].some((button) => button.textContent?.includes("View Unit")), false);
 });
 

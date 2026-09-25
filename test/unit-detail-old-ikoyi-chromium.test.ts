@@ -88,7 +88,7 @@ test("Authoritative Old Ikoyi Unit detail renders through Weaver in real Chromiu
     const lekkiDiscovery = await currentSurface(tab);
     assert.equal(weaver.process(validateMessages(lekkiDiscovery.a2uiMessages)).ok, true);
     assert.equal(await tab.clickButton("View Unit", "View Serene One-Bedroom Suite in Lekki Phase 1"), true);
-    await tab.waitForText("Serene One-Bedroom Suite in Lekki Phase 1 details", 15000);
+    await tab.waitForFunction("document.querySelector('#active-workspace[data-surface-kind=unit-detail] .weaver-mount')?.textContent?.includes('Serene One-Bedroom Suite in Lekki Phase 1') === true", 15000);
     const lekkiDetail = await currentSurface(tab);
     assert.equal(weaver.process(validateMessages(lekkiDetail.a2uiMessages)).ok, true, "the first Unit detail is accepted by Weaver Core and Basic Catalog");
 
@@ -97,7 +97,7 @@ test("Authoritative Old Ikoyi Unit detail renders through Weaver in real Chromiu
     const oldDiscovery = await currentSurface(tab);
     assert.equal(weaver.process(validateMessages(oldDiscovery.a2uiMessages)).ok, true);
     assert.equal(await tab.clickButton("View Unit", "View Garden Two-Bedroom Stay in Old Ikoyi"), true);
-    await tab.waitForText("Garden Two-Bedroom Stay in Old Ikoyi details", 15000);
+    await tab.waitForFunction("document.querySelector('#active-workspace[data-surface-kind=unit-detail] .weaver-mount')?.textContent?.includes('Garden Two-Bedroom Stay in Old Ikoyi') === true", 15000);
 
     const oldDetail = await currentSurface(tab);
     assert.notEqual(oldDetail.surfaceId, lekkiDetail.surfaceId, "each selected Unit detail has its own Weaver surface identity");
@@ -152,7 +152,7 @@ test("Authoritative Old Ikoyi Unit detail renders through Weaver in real Chromiu
     assert.equal(await tab.clickButton("Back to conversation"), true);
     await sendPrompt(tab, "Old Ikoyi", "Garden Two-Bedroom Stay in Old Ikoyi");
     assert.equal(await tab.clickButton("View Unit", "View Garden Two-Bedroom Stay in Old Ikoyi"), true);
-    await tab.waitForText("Garden Two-Bedroom Stay in Old Ikoyi details", 15000);
+    await tab.waitForFunction("document.querySelector('#active-workspace[data-surface-kind=unit-detail] .weaver-mount')?.textContent?.includes('Garden Two-Bedroom Stay in Old Ikoyi') === true", 15000);
     const repeated = await currentSurface(tab);
     assert.notEqual(repeated.surfaceId, lekkiDetail.surfaceId, "reopening Old Ikoyi retains a distinct detail surface identity");
     assert.notEqual(repeated.surfaceId, oldDetail.surfaceId, "repeated Old Ikoyi details do not collide with the prior surface revision");

@@ -40,6 +40,10 @@ test("Phase 3 discovery renders Wuse, Lekki, zero-result and fallback states wit
     await capture(tab, "01-discovery-wuse-390.png");
     const names = await tab.getAccessibilityTree();
     assert.ok(names.some((node) => node.role === "button" && node.name === "View Unit"), "View Unit is named in the browser accessibility tree");
+    assert.ok(names.some((node) => node.role === "list" && node.name === "Stay search results"), "discovery results expose list semantics");
+    assert.ok(names.some((node) => node.role === "listitem"), "each stay is exposed as a list item");
+    const cardLayout = await tab.evaluate<{ readonly body: boolean; readonly price: boolean; readonly action: boolean }>("(() => { const card=document.querySelector('.stay-card'); return {body:Boolean(card?.querySelector('.stay-card__body')),price:Boolean(card?.querySelector('.stay-card__price-area .stay-card__price-total')),action:Boolean(card?.querySelector('.stay-card__action'))}; })()");
+    assert.deepEqual(cardLayout, { body: true, price: true, action: true }, "discovery card roles are grouped into one clear comparison surface");
     await assertNoOverflow(tab, 390);
     await tab.setCssViewport(320, 1200);
     await assertNoOverflow(tab, 320);
@@ -47,7 +51,9 @@ test("Phase 3 discovery renders Wuse, Lekki, zero-result and fallback states wit
     await tab.setCssViewport(390, 844);
 
     assert.equal(await tab.clickButton("View Unit", "View Sunlit Two-Bedroom Retreat in Wuse 2"), true);
-    await tab.waitForText("Sunlit Two-Bedroom Retreat in Wuse 2 details", 15000);
+    await tab.waitForFunction("document.querySelector('#active-workspace[data-surface-kind=unit-detail] .weaver-mount[data-renderer=weaver]')?.textContent?.includes('Sunlit Two-Bedroom Retreat in Wuse 2') === true", 15000);
+    const detailLayout = await tab.evaluate<{ readonly gallery: boolean; readonly overview: boolean; readonly price: boolean; readonly action: boolean }>("({gallery:Boolean(document.querySelector('.unit-gallery')),overview:Boolean(document.querySelector('.unit-overview[role=group]')),price:Boolean(document.querySelector('.unit-price-group .unit-price-total')),action:Boolean(document.querySelector('.unit-actions button'))})");
+    assert.deepEqual(detailLayout, { gallery: true, overview: true, price: true, action: true }, "Unit detail keeps its gallery, stay summary, total and request action in a stable order");
     await capture(tab, "04-unit-detail-wuse-390.png");
     assert.ok((await tab.getAccessibilityTree()).some((node) => node.role === "button" && node.name === "Request to Book"));
 
@@ -62,8 +68,8 @@ test("Phase 3 discovery renders Wuse, Lekki, zero-result and fallback states wit
     await lagosTab.setCssViewport(390, 844);
     await sendPrompt(lagosTab, "Only show me three bedrooms", "0 eligible places");
     await capture(lagosTab, "03-zero-results-390.png");
-    assert.ok(await lagosTab.evaluate<boolean>("document.querySelector('#active-workspace')?.innerText.includes('No current matches') === true"));
-    assert.ok(await lagosTab.evaluate<boolean>("document.querySelector('#active-workspace')?.innerText.includes('Search: Lagos') === true"), "zero results retain visible search context");
+    assert.ok(await lagosTab.evaluate<boolean>("document.querySelector('#active-workspace')?.innerText.includes('No stays match this search') === true"));
+    assert.ok(await lagosTab.evaluate<boolean>("document.querySelector('#active-workspace')?.innerText.includes('Your search: Lagos') === true"), "zero results retain visible search context");
 
     oldIkoyiTab = await browser.createTab(`${BASE}/`);
     await oldIkoyiTab.setCssViewport(390, 844);

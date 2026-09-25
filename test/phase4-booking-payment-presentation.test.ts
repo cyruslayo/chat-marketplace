@@ -6,6 +6,7 @@ import { cardPaymentArtifactFromState } from "../apps/web/src/card-payment-artif
 import type { BookingContractArtifact, BookingRequestArtifact, CardPaymentArtifact, ConditionalOfferArtifact } from "../apps/web/src/index.js";
 import type { RequestDraftArtifact } from "../apps/web/src/request-draft-artifact.js";
 import { renderGuestContactHtml } from "../apps/local-guest/src/guest-server.js";
+import { bookingProgressText } from "../apps/web-agent/src/booking-presentation.js";
 
 function componentText(messages: readonly A2UIServerMessage[]): string {
   return messages.flatMap((message) => "updateComponents" in message ? message.updateComponents.components : []).filter((component) => component.component === "Text").map((component) => "text" in component && typeof component.text === "string" ? component.text : "").join(" ");
@@ -128,7 +129,18 @@ test("K. Confirmed booking presents reservation and contract facts without leadi
   assert.match(text, /Refundable Security Deposit \(separate\): ₦50,000/);
   assert.match(text, /Reservation.*confirmed|Reservation reference/i);
   assert.match(text, /access.*not available|access.*authorized|not.*access/i);
-  assert.ok(text.indexOf("Booking confirmed") < text.indexOf("reservation-1"));
+  assert.match(text, /booking details/i);
+  assert.doesNotMatch(text, /reservation-1|contract-1|unit-1/);
+});
+
+test("Guest progress uses concise next-step language instead of internal workflow labels", () => {
+  const copy = ["request", "operator-review", "offer", "payment", "payment-processing", "confirmed"]
+    .map((stage) => bookingProgressText(stage as Parameters<typeof bookingProgressText>[0]))
+    .join(" ");
+  assert.match(copy, /Send your request/);
+  assert.match(copy, /operator is reviewing/i);
+  assert.match(copy, /complete secure payment/i);
+  assert.doesNotMatch(copy, /Booking progress|Request Draft|Current:|operator-review|Conditional Offer →/i);
 });
 
 test("L. Declined Booking Request has no payment, acceptance or confirmation action", () => {

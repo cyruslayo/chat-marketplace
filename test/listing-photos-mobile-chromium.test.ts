@@ -138,9 +138,16 @@ for (const width of [320, 390]) {
 
       await context.tab.evaluate(`(() => { const image = document.querySelector('img'); if (!(image instanceof HTMLImageElement)) throw new Error('Primary listing image is missing'); image.src = ${JSON.stringify(context.imageFixture.brokenUrl)}; })()`);
       await waitForBrokenImageFallback(context.tab);
-      const afterFailure = await context.tab.evaluate<{ readonly critical: boolean; readonly fallback: boolean; readonly documentWidth: number }>(`({ critical: document.body.innerText.includes(${JSON.stringify(context.unitTitle)}), fallback: document.body.innerText.includes('Photo unavailable'), documentWidth: document.documentElement.scrollWidth })`);
+      const afterFailure = await context.tab.evaluate<{ readonly critical: boolean; readonly fallback: boolean; readonly fallbackBox: { readonly width: number; readonly height: number; readonly role: string | null; readonly name: string | null } | null; readonly documentWidth: number }>(`(() => { const box = document.querySelector('.photo-fallback'); const rect = box?.getBoundingClientRect(); return { critical: document.body.innerText.includes(${JSON.stringify(context.unitTitle)}), fallback: document.body.innerText.includes('Photo unavailable'), fallbackBox: box && rect ? { width: rect.width, height: rect.height, role: box.getAttribute('role'), name: box.getAttribute('aria-label') } : null, documentWidth: document.documentElement.scrollWidth }; })()`);
       assert.equal(afterFailure.critical, true);
       assert.equal(afterFailure.fallback, true);
+      assert.ok(afterFailure.fallbackBox);
+      assert.ok(afterFailure.fallbackBox.width >= 200 && afterFailure.fallbackBox.height >= 150, JSON.stringify(afterFailure.fallbackBox));
+      assert.equal(afterFailure.fallbackBox.role, "img");
+      assert.ok(afterFailure.fallbackBox.name?.includes(context.unitTitle));
+      const accessibilityTree = await context.tab.getAccessibilityTree();
+      const namedPhotoNodes = accessibilityTree.filter((node) => node.name.includes(context.unitTitle));
+      assert.ok(accessibilityTree.some((node) => (node.role === "img" || node.role === "image") && node.name.includes(context.unitTitle) && /unavailable/i.test(node.name)), JSON.stringify(namedPhotoNodes));
       assert.ok(afterFailure.documentWidth <= width);
 
       await context.tab.navigate(`${context.base}/stays/${context.unitId}`);

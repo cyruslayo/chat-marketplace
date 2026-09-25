@@ -221,8 +221,8 @@ test("Real Chromium completes and persists the local Booking Request to Booking 
     const continued = await guest.evaluate<boolean>(`(() => { const link=[...document.querySelectorAll('a')].find((candidate)=>candidate.getAttribute('href')?.includes('/payments/offers/')); if (!(link instanceof HTMLAnchorElement)) return false; link.click(); return true; })()`); assert.equal(continued, true);
     await guest.waitForText("Continue to local demo payment", 15000); const localContinuation = await guest.evaluate<boolean>(`(() => { const link=[...document.querySelectorAll('a')].find((candidate)=>candidate.textContent?.includes('Continue to local demo payment')); if (!(link instanceof HTMLAnchorElement)) return false; link.click(); return true; })()`); assert.equal(localContinuation, true);
     await guest.waitForText("Local demo payment", 15000); assert.equal(await guest.clickButton("Complete local payment"), true);
-    try { await guest.waitForText("Reservation confirmed", 15000); } catch (error) { throw new Error(await guest.evaluate<string>("document.getElementById('active-workspace')?.innerText || document.body.innerText"), { cause: error }); }
-    const confirmedText = await guest.evaluate<string>("document.body.innerText"); assert.match(confirmedText, /Reservation/); assert.match(confirmedText, /Contract version/);
+    try { await guest.waitForText("Booking confirmed", 15000); } catch (error) { throw new Error(await guest.evaluate<string>("document.getElementById('active-workspace')?.innerText || document.body.innerText"), { cause: error }); }
+    const confirmedText = await guest.evaluate<string>("document.body.innerText"); assert.match(confirmedText, /Reservation and Booking Contract are confirmed/);
     await assertWeaverSurface(guest, "Reservation / Booking Contract");
     const database = new DatabaseSync(paths.databasePath);
     const request = (database.prepare("SELECT COUNT(*) count FROM guest_booking_requests").get() as { count: number }).count;
@@ -231,9 +231,9 @@ test("Real Chromium completes and persists the local Booking Request to Booking 
     const contract = (database.prepare("SELECT COUNT(*) count FROM booking_contracts").get() as { count: number }).count;
     const contact = database.prepare("SELECT phone_number, contact_email FROM guest_contacts LIMIT 1").get() as { phone_number?: string; contact_email?: string } | undefined;
     database.close();
-    await reloadTab(guest); await guest.waitForText("Reservation confirmed", 15000); const refresh = true;
+    await reloadTab(guest); await guest.waitForText("Booking confirmed", 15000); const refresh = true;
     await server.close(); server = startLocalPilotServer({ port: PORT, paths }); await server.listen();
-    await reloadTab(guest); await guest.waitForText("Reservation confirmed", 15000); const restart = true;
+    await reloadTab(guest); await guest.waitForText("Booking confirmed", 15000); const restart = true;
     await reloadTab(operator); await operator.waitForText("confirmed", 15000); const operatorRestart = true;
     journeyProof = { request, attempt, reservation, contract, offer: confirmedText.includes("Booking confirmed"), phone: Boolean(contact?.phone_number), email: contact?.contact_email === "local.pilot@example.test", refresh, restart, operatorRestart };
   } finally { await browser.close(); await server.close().catch(() => undefined); rmSync(paths.directory, { recursive: true, force: true }); }
@@ -380,8 +380,8 @@ for (const width of [320, 390]) test(`AC${width === 320 ? 26 : 27} — ${width}p
     const emailStatus = await guest.evaluate<number>(`fetch('/guest/contact/email',{method:'POST',headers:{'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({contactEmail:${JSON.stringify(`mobile.${width}@example.test`)},expectedRevision:'1'}),redirect:'manual'}).then((response)=>response.status)`); assert.equal(emailStatus, 0);
     await guest.navigate(workspace); await guest.waitForText("Continue to checkout", 15000); await clickActiveButton(guest, "Continue to checkout"); await guest.waitForText("Continue to payment", 15000);
     const standard = await guest.evaluate<string>(`[...document.querySelectorAll('a')].find((link)=>link.textContent?.includes('Continue to payment'))?.href || ''`); assert.ok(standard); await guest.navigate(standard); await guest.waitForText("Continue to local demo payment", 15000);
-    const local = await guest.evaluate<string>(`[...document.querySelectorAll('a')].find((link)=>link.textContent?.includes('Continue to local demo payment'))?.href || ''`); assert.ok(local); await guest.navigate(local); await guest.waitForText("Local demo payment", 15000); assert.equal(await guest.clickButton("Complete local payment"), true); await guest.waitForText("Reservation confirmed", 15000);
-    const metrics = await guest.evaluate<{ viewport: number; document: number; phone: boolean; reservation: boolean }>(`({viewport:innerWidth,document:document.documentElement.scrollWidth,phone:document.body.innerText.includes('Booking Request'),reservation:document.body.innerText.includes('Reservation confirmed')})`);
+    const local = await guest.evaluate<string>(`[...document.querySelectorAll('a')].find((link)=>link.textContent?.includes('Continue to local demo payment'))?.href || ''`); assert.ok(local); await guest.navigate(local); await guest.waitForText("Local demo payment", 15000); assert.equal(await guest.clickButton("Complete local payment"), true); await guest.waitForText("Booking confirmed", 15000);
+    const metrics = await guest.evaluate<{ viewport: number; document: number; phone: boolean; reservation: boolean }>(`({viewport:innerWidth,document:document.documentElement.scrollWidth,phone:document.body.innerText.includes('Booking Request'),reservation:document.body.innerText.includes('Booking confirmed')})`);
     const database = new DatabaseSync(paths.databasePath);
     const contact = database.prepare("SELECT contact_email FROM guest_contacts LIMIT 1").get() as { contact_email?: string } | undefined;
     database.close();

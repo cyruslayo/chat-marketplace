@@ -166,6 +166,8 @@
   .ui-button--secondary { background: var(--color-surface-subtle); }
   .ui-button--quiet { border-color: transparent; background: transparent; color: var(--color-action); }
   .ui-button--destructive { border-color: var(--color-danger); background: var(--color-danger-surface); color: var(--color-danger); }
+  .ui-button--secondary:hover:not(:disabled, [aria-disabled="true"], [data-loading="true"]) { background: var(--color-surface); }
+  .ui-button--quiet:hover:not(:disabled, [aria-disabled="true"], [data-loading="true"]) { background: var(--color-surface-subtle); }
   .ui-button:hover:not(:disabled, [aria-disabled="true"], [data-loading="true"]) { border-color: var(--color-action-hover); }
   .ui-button--primary:hover:not(:disabled, [aria-disabled="true"], [data-loading="true"]) { background: var(--color-action-hover); color: var(--color-surface); }
   .ui-button--destructive:hover:not(:disabled, [aria-disabled="true"], [data-loading="true"]) { background: var(--color-danger); color: var(--color-surface); text-decoration: underline; text-decoration-thickness: 0.12em; }
@@ -208,7 +210,7 @@
   .ui-status--success { color: var(--color-success); background: var(--color-success-surface); }
   .ui-status--warning { color: var(--color-warning); background: var(--color-warning-surface); }
   .ui-status--danger { color: var(--color-danger); background: var(--color-danger-surface); }
-  .ui-status--stale { border-style: dashed; text-decoration: line-through; }
+  .ui-status--stale { border-style: dashed; }
 
   .ui-money-total { color: var(--color-text); font-size: var(--font-size-money-total); line-height: var(--font-line-money-total); font-weight: 700; font-variant-numeric: tabular-nums; }
   .ui-money-detail { color: var(--color-text-secondary); font-size: var(--font-size-money-detail); line-height: var(--font-line-money-detail); font-variant-numeric: tabular-nums; }

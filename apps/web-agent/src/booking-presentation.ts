@@ -45,12 +45,12 @@ export function formatStayDates(checkIn: string, checkOut: string): string {
 
 export function bookingProgressText(stage: BookingProgressStage): string {
   const sequences: Readonly<Record<BookingProgressStage, string>> = {
-    request: "Booking progress: Request Draft → Booking Request → Operator review → Conditional Offer → Payment → Reservation. Current: Request Draft.",
-    "operator-review": "Booking progress: Booking Request → Operator review → Conditional Offer → Payment → Reservation. Current: Operator review.",
-    offer: "Booking progress: Conditional Offer → Payment → Reservation. Current: Conditional Offer.",
-    payment: "Booking progress: Payment → Reservation. Current: Payment.",
-    "payment-processing": "Booking progress: Payment → Reservation. Current: Payment processing; Reservation is not confirmed.",
-    confirmed: "Booking progress complete: payment verified and Reservation confirmed.",
+    request: "Next: Send your request to ask the Operator to confirm availability. Your dates are not reserved yet.",
+    "operator-review": "The Operator is reviewing your request. A stay is not confirmed yet.",
+    offer: "Next: Review the offer and decide whether to accept it.",
+    payment: "Next: Complete secure payment in the hosted checkout to confirm your stay.",
+    "payment-processing": "Payment is being checked. Your stay is not confirmed yet; do not submit another payment.",
+    confirmed: "Payment verified. Your stay is confirmed.",
   };
   return sequences[stage];
 }

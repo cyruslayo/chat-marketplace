@@ -21,7 +21,7 @@ export function bookingContractArtifactToA2UI({ artifact, surfaceId }: { readonl
     { id: "booking-contract-arrival", component: "Text", text: accessText },
     { id: "booking-contract-checkout", component: "Text", text: `Checkout time: ${facts.checkout?.time ?? "11:00"} WAT` },
     { id: "booking-contract-policies", component: "Text", text: `Cancellation terms: ${facts.cancellationPolicy?.summary ?? "captured in your Booking Contract"}; Guest conduct: ${facts.guestConductRules.join("; ") || "captured in your Booking Contract"}` },
-    { id: "booking-contract-references", component: "Text", text: `Booking references: Reservation ${facts.reservationId} · Contract version ${facts.contractVersion}${facts.cardMetadata ? ` · Card ending ${facts.cardMetadata.last4}` : ""}` },
+    { id: "booking-contract-references", component: "Text", text: `Your booking details are saved.${facts.cardMetadata ? ` Payment card ending ${facts.cardMetadata.last4}.` : ""}` },
   ];
   return [{ version: "v0.9.1", createSurface: { surfaceId, catalogId: A2UI_V091_BASIC_CATALOG_ID } }, { version: "v0.9.1", updateComponents: { surfaceId, components } }];
 }
