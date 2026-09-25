@@ -44,6 +44,9 @@ import {
   conventionalCardPaymentRoute,
   conventionalConditionalOfferRoute,
   conventionalSearchRoute,
+  getConventionalBookingContractView,
+  getConventionalBookingRequestView,
+  getConventionalConditionalOfferView,
 } from "../../../apps/web/src/presentation.js";
 import { resolveConditionalOfferServerEvent } from "../../../apps/web/src/conditional-offer-actions.js";
 import { CARD_PAYMENT_INITIALIZE_CHECKOUT_EVENT, resolveCardPaymentServerEvent } from "../../../apps/web/src/card-payment-actions.js";
@@ -117,6 +120,27 @@ export interface GuestRejection {
 }
 
 export type GuestTurnResult = GuestTurnSuccess | GuestRejection;
+
+/** Issue 06b: the booking records that have an owner-checked conventional page (ADR-0080). */
+export type ConventionalBookingPageKind = "draft" | "request" | "offer" | "contract";
+
+export interface ConventionalBookingPage {
+  readonly threadId: string;
+  readonly summary: string;
+  readonly textFallback: string;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/** Fails closed unless the record's Primary Guest and tenant are the principal's (ADR-0070). */
+function primaryGuestIs(record: unknown, principal: CommandPrincipal): boolean {
+  if (!isPlainRecord(record) || !isPlainRecord(record.primaryGuest)) return false;
+  const guestId = record.primaryGuest.id;
+  return typeof guestId === "string" && !!principal.id && guestId === principal.id
+    && typeof record.tenantId === "string" && !!principal.tenantId && record.tenantId === principal.tenantId;
+}
 
 const DISCOVERY_STAGE = "discovery";
 const UNIT_STAGE = "unit";
@@ -537,6 +561,72 @@ export class LocalGuestApp {
     this.#environment.close();
     resetLocalGuestFixture(config.databasePath);
     this.#environment = new LocalGuestEnvironment(config);
+  }
+
+  /**
+   * Issue 06b: an owner-checked conventional booking page (ADR-0080 parity).
+   * Every check fails closed to null: the principal must be this runtime's
+   * Guest, the record must be correlated by one of the Guest's own threads,
+   * and the domain record must name the Guest (ADR-0070). Reads go through the
+   * conventional view functions, never an agent-only path (ADR-0072).
+   */
+  conventionalBookingPage(kind: ConventionalBookingPageKind, id: string, principal: CommandPrincipal): ConventionalBookingPage | null {
+    const environment = this.#environment;
+    const guest = environment.guestPrincipal();
+    if (principal.role !== "guest" || !principal.id || principal.id !== guest.id || !principal.tenantId || principal.tenantId !== environment.config.tenantId || id === "") return null;
+    try {
+      for (const record of environment.interactionStore.findThreadsForPrincipal(principal.id, principal.tenantId)) {
+        let projection: GuestPersistentProjection | null = null;
+        try { projection = parseGuestProjection(JSON.parse(record.threadJson) as unknown); } catch { projection = null; }
+        if (!projection) continue;
+        const correlated = kind === "draft" ? projection.draftId === id
+          : kind === "request" ? projection.requestId === id
+            : kind === "offer" ? projection.offerId === id
+              : !!projection.offerId && this.#snapshotContractId(projection.offerId) === id;
+        if (!correlated) continue;
+        const thread = this.#threads.get(record.threadId) ?? this.#loadThread(record.threadId);
+        if (!thread) return null;
+        return this.#bookingPage(thread, kind, id, principal);
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  }
+
+  #snapshotContractId(offerId: string): string | null {
+    const snapshot = this.#environment.interactionStore.findBookingSnapshotByOfferId(offerId);
+    if (!snapshot) return null;
+    const contract: unknown = JSON.parse(snapshot.contractJson);
+    return isPlainRecord(contract) && typeof contract.contractId === "string" ? contract.contractId : null;
+  }
+
+  #bookingPage(thread: GuestThreadState, kind: ConventionalBookingPageKind, id: string, principal: CommandPrincipal): ConventionalBookingPage | null {
+    const environment = this.#environment;
+    if (kind === "draft") {
+      const draft: unknown = environment.bookingRequestApp.manager.getDraft(id);
+      if (!isPlainRecord(draft) || !isPlainRecord(draft.primaryGuest) || draft.primaryGuest.id !== principal.id) return null;
+      // The page mirrors the view the thread is on: the draft, or its review.
+      const review = thread.activeSurfaces.get(REQUEST_STAGE)?.includes(":request:review:") === true;
+      return { threadId: thread.threadId, summary: review ? "Request review" : "Request Draft", textFallback: this.#draftFallback(this.#draftArtifact(thread, review ? "review" : "draft")) };
+    }
+    if (kind === "request") {
+      getConventionalBookingRequestView(environment.bookingRequestApp, id, principal);
+      if (!primaryGuestIs(environment.bookingRequestApp.manager.getRequest(id), principal)) return null;
+      const surface = this.#requestSurface(thread, id);
+      return { threadId: thread.threadId, summary: surface.summary ?? GUEST_GLOSSARY.bookingRequest, textFallback: surface.textFallback ?? "" };
+    }
+    if (kind === "offer") {
+      const offer = environment.conditionalOfferApp.manager.getOffer(id);
+      const payerId = offer.parties.distinctPayer?.id;
+      const isParty = !!principal.id && (offer.parties.primaryGuest.id === principal.id || (!!payerId && payerId === principal.id));
+      if (!isParty || !offer.tenantId || offer.tenantId !== principal.tenantId) return null;
+      const { artifact } = getConventionalConditionalOfferView(environment.conditionalOfferApp, id, principal);
+      return { threadId: thread.threadId, summary: artifact.facts.status === "expired" ? `${GUEST_GLOSSARY.conditionalBookingOffer} expired` : GUEST_GLOSSARY.conditionalBookingOffer, textFallback: this.#offerFallback(artifact) };
+    }
+    // The contract view is authorized by the domain for the contract's parties.
+    getConventionalBookingContractView(environment.contractApp, id, principal);
+    return { threadId: thread.threadId, summary: "Reservation confirmed", textFallback: this.#confirmedBookingFallback(this.#contractArtifact(id)) };
   }
 
   getState(threadId: string): GuestStateSnapshot | undefined {
@@ -1756,6 +1846,31 @@ export function renderConventionalUnitDetailHtml(unit: Unit, photoUrl?: (url: st
   });
 }
 
+/** The booking routes built by `apps/web/src/presentation.ts`; drafts are matched before requests. */
+const CONVENTIONAL_BOOKING_ROUTES: readonly (readonly [ConventionalBookingPageKind, RegExp])[] = [
+  ["draft", /^\/booking-requests\/drafts\/([^/]+)$/],
+  ["request", /^\/booking-requests\/([^/]+)$/],
+  ["offer", /^\/conditional-offers\/([^/]+)$/],
+  ["contract", /^\/booking-contracts\/([^/]+)$/],
+];
+
+function matchConventionalBookingRoute(pathname: string): { readonly kind: ConventionalBookingPageKind; readonly encodedId: string } | null {
+  for (const [kind, pattern] of CONVENTIONAL_BOOKING_ROUTES) {
+    const match = pattern.exec(pathname);
+    if (match && !(kind === "request" && match[1] === "drafts")) return { kind, encodedId: match[1]! };
+  }
+  return null;
+}
+
+export function renderConventionalBookingHtml(page: ConventionalBookingPage): string {
+  return pageShell({
+    title: `${page.summary} · Shortlet`,
+    width: "narrow",
+    style: ".ui-panel p{margin:0}",
+    body: `<header class="ui-page__header" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h1>${escapeHtml(page.summary)}</h1></header><section class="ui-panel"><p>${escapeHtml(page.textFallback)}</p><a class="ui-button ui-button--primary ui-button--block" href="/?threadId=${encodeURIComponent(page.threadId)}">Back to your conversation</a></section>`,
+  });
+}
+
 /** Only the criteria `conventionalSearchRoute` builds for the guest app; anything else fails closed (ADR-0080). */
 const SEARCH_TEXT_KEYS = ["location", "neighbourhood", "checkIn", "checkOut"] as const;
 const SEARCH_COUNT_KEYS = ["partySize", "bedrooms"] as const;
@@ -1824,6 +1939,8 @@ const PAGE_ERROR_COPY: Readonly<Record<string, { readonly title: string; readonl
   PAYSTACK_UNAVAILABLE: { title: "Card checkout is unavailable", message: "No payment was taken. Try again in a few minutes from your conversation." },
   INVALID_CHECKOUT_URL: { title: "Card checkout is unavailable", message: "No payment was taken. Try again in a few minutes from your conversation." },
   LOCAL_PAYMENT_INVALID: { title: "This demo payment link isn't valid", message: "Start the payment again from your conversation." },
+  INVALID_BOOKING_LINK: { title: "This booking link isn't valid", message: "The link is incomplete or has been changed. Return to the conversation for the current booking status." },
+  BOOKING_RECORD_NOT_FOUND: { title: "We couldn't find this booking", message: "It may belong to a different conversation. Return to the conversation for the current booking status." },
   SEARCH_INVALID: { title: "This search link isn't valid", message: "The link is incomplete or has been changed. Return to the conversation and search again." },
 };
 
@@ -2183,6 +2300,22 @@ export function startLocalGuestServer(options: {
       if (!unit || !isEligibleUnit(unit, app.environment.clock())) { res.writeHead(404, { "Content-Type": "text/plain" }); res.end("Apartment not found"); return; }
       res.writeHead(200, GUEST_HTML_HEADERS);
       res.end(renderConventionalUnitDetailHtml(unit, options.localPhotoUrl));
+      return;
+    }
+
+    const bookingPageMatch = req.method === "GET" ? matchConventionalBookingRoute(url.pathname) : null;
+    if (bookingPageMatch) {
+      // ADR-0070/0080: booking records are never public. Unlike /stays/*,
+      // these routes need the owner's browser session and re-check ownership.
+      const session = resolveBrowserSession(env, browserSessions, readGuestSession(req), sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId);
+      if (!session) { sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED"); return; }
+      let recordId: string;
+      try { recordId = decodeURIComponent(bookingPageMatch.encodedId); } catch { sendPageError(req, res, 400, "INVALID_BOOKING_LINK"); return; }
+      const principal: CommandPrincipal = { id: session.principalId, role: "guest", tenantId: session.tenantId };
+      const bookingPage = app.conventionalBookingPage(bookingPageMatch.kind, recordId, principal);
+      if (!bookingPage) { sendPageError(req, res, 404, "BOOKING_RECORD_NOT_FOUND"); return; }
+      res.writeHead(200, GUEST_HTML_HEADERS);
+      res.end(renderConventionalBookingHtml(bookingPage));
       return;
     }
 
