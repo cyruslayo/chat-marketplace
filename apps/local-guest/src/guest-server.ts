@@ -1481,13 +1481,14 @@ export function renderGuestShellHtml(): string {
     :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
     .skip-link { position: absolute; left: var(--space-2); top: -100px; z-index: var(--layer-skip-link); background: var(--surface); color: var(--text); padding: var(--space-2) var(--space-3); border: 2px solid var(--focus); border-radius: var(--radius-control); }
     .skip-link:focus { top: var(--space-2); }
-    .app { width: 100%; max-width: var(--layout-conversation-max); min-height: 100dvh; min-height: 100svh; margin: 0 auto; display: flex; flex-direction: column; }
+    .app { width: 100%; max-width: var(--layout-conversation-max); height: 100dvh; height: 100svh; min-height: 0; margin: 0 auto; display: flex; flex-direction: column; }
     header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: max(var(--space-3), env(safe-area-inset-top)) var(--layout-gutter-mobile) var(--space-3); border-bottom: 1px solid var(--border); background: var(--surface); }
     header h1 { margin: 0; font-family: var(--font-display); font-size: 1.25rem; line-height: 1.2; font-weight: 600; letter-spacing: -0.005em; }
     .header-identity { display: flex; align-items: center; min-height: var(--control-min-target); color: var(--text); text-decoration: none; }
     .header-note { color: var(--text-muted); font-size: var(--font-size-small); white-space: nowrap; }
     main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-    #transcript { flex: 1; min-height: 22dvh; padding: var(--space-6) var(--layout-gutter-mobile) var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); overflow: visible; }
+    /* ADR-0078: keep the conversation independently scrollable at the 320px launch viewport. */
+    #transcript { flex: 1 1 0; min-height: 22dvh; padding: var(--space-6) var(--layout-gutter-mobile) var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; }
     .conversation-heading { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     .turn { display: flex; flex-direction: column; gap: var(--space-1); }
     .turn.user { align-items: flex-end; }
@@ -1499,7 +1500,7 @@ export function renderGuestShellHtml(): string {
     #empty-state h2 { margin: 0 0 var(--space-2); font-family: var(--font-display); font-size: var(--font-size-h1); line-height: var(--font-line-h1); font-weight: 600; }
     #empty-state p { max-width: 64ch; margin: 0; color: var(--color-text-secondary); }
     .prompt-suggestions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
-    #workspace-region { padding: 0 var(--layout-gutter-mobile) var(--space-4); }
+    #workspace-region { min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 0 var(--layout-gutter-mobile) var(--space-4); }
     #active-workspace { background: var(--color-surface-elevated); border: 1px solid var(--border); border-radius: var(--radius-workspace); padding: var(--space-4); box-shadow: var(--elevation-active); }
     #active-workspace[hidden], #workspace-region[hidden], #workspace-reopen[hidden], #empty-state[hidden] { display: none; }
     .workspace-heading { display: flex; justify-content: flex-start; align-items: flex-start; gap: var(--space-3); margin-bottom: var(--space-2); }
@@ -1608,7 +1609,7 @@ export function renderGuestShellHtml(): string {
       <a class="contact-link" href="/guest/contact">Contact details</a>
     </header>
     <main id="main-content" tabindex="-1">
-      <section id="transcript" aria-labelledby="conversation-heading">
+      <section id="transcript" role="log" aria-live="polite" aria-relevant="additions" aria-labelledby="conversation-heading">
         <h2 id="conversation-heading" class="conversation-heading">Conversation</h2>
         <section id="empty-state" aria-labelledby="empty-state-heading">
           <h2 id="empty-state-heading">Find a place to stay</h2>
@@ -1622,9 +1623,10 @@ export function renderGuestShellHtml(): string {
       <section id="workspace-region" aria-label="Current stay details" hidden>
         <div id="active-workspace" hidden></div>
       </section>
-      <button id="workspace-reopen" type="button" hidden></button>
+      <button id="workspace-reopen" type="button" hidden>Return to your current stay details</button>
     </main>
     <div id="announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+    <div id="error-announcer" class="sr-only" role="alert" aria-live="assertive" aria-atomic="true"></div>
     <form id="composer" aria-label="Message the concierge">
       <label id="composer-label" for="composer-input">Your message</label>
       <input id="composer-input" name="message" type="text" autocomplete="off" enterkeyhint="send"

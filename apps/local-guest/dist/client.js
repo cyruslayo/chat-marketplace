@@ -8610,6 +8610,7 @@ Known schemas:
   var composerInput = requiredElement("composer-input");
   var composerSubmit = requiredElement("composer-submit");
   var announcer = requiredElement("announcer");
+  var errorAnnouncer = requiredElement("error-announcer");
   var emptyState = requiredElement("empty-state");
   var workingStatus = requiredElement("working-status");
   function getThreadId() {
@@ -8823,6 +8824,7 @@ Known schemas:
   var isLoading = false;
   var eventInFlight = false;
   var lastActivatedControl;
+  var workspaceOpener;
   function trackTelemetry(event) {
     void fetch("/api/telemetry", {
       method: "POST",
@@ -8833,8 +8835,7 @@ Known schemas:
     });
   }
   function announce(text, assertive = false) {
-    announcer.setAttribute("aria-live", assertive ? "assertive" : "polite");
-    announcer.textContent = text;
+    (assertive ? errorAnnouncer : announcer).textContent = text;
   }
   function addTurn(role, text) {
     emptyState.hidden = true;
@@ -8847,6 +8848,9 @@ Known schemas:
     turn.appendChild(bubble);
     transcript.appendChild(turn);
     transcript.scrollTop = transcript.scrollHeight;
+    requestAnimationFrame(() => {
+      if (turn.isConnected) transcript.scrollTop = transcript.scrollHeight;
+    });
   }
   function addHistoricalSummary(summary) {
     const item = document.createElement("p");
@@ -8958,7 +8962,8 @@ Known schemas:
         composerForm.dataset.focused = "false";
         activeWorkspace.hidden = true;
         showReopen();
-        workspaceReopen.focus();
+        workspaceOpener = workspaceReopen;
+        workspaceOpener.focus({ preventScroll: true });
         trackTelemetry("focused-surface-closed");
         announce("Returned to the conversation. Your stay details are still here.");
       });
@@ -9157,11 +9162,26 @@ Known schemas:
   }
   var weaver = created.value;
   workspaceReopen.addEventListener("click", () => {
+    workspaceOpener = workspaceReopen;
     shellState = reopenFocusedSurface(shellState);
     if (activePayload) {
       renderSurface(activePayload, true);
       activeWorkspace.querySelector(".workspace-close")?.focus({ preventScroll: true });
     }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || activeWorkspace.hidden || !activeWorkspace.contains(document.activeElement)) return;
+    if (shellState.activeSurface?.mode !== "focused-surface" || !shellState.focusedSurfaceOpen) return;
+    event.preventDefault();
+    shellState = closeFocusedSurface(shellState);
+    composerForm.dataset.focused = "false";
+    activeWorkspace.hidden = true;
+    showReopen();
+    const target = workspaceOpener?.isConnected && !workspaceOpener.hidden ? workspaceOpener : workspaceReopen;
+    target.focus({ preventScroll: true });
+    workspaceOpener = target;
+    trackTelemetry("focused-surface-closed");
+    announce("Returned to the conversation. Your stay details are still here.");
   });
   for (const suggestion of document.querySelectorAll(".prompt-suggestion[data-prompt]")) {
     suggestion.addEventListener("click", () => {
