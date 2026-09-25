@@ -7,7 +7,8 @@ Effort map for the chat-first UX audit of the deterministic guest demo (`npm run
 
 ## Delivery rules
 
-- **One slice = one branch `ux/sN-<slug>` = one PR.** Review and merge each slice before the next one starts.
+- **One slice = one branch `ux/sN-<slug>` = one PR.** Slices are stacked: each branch starts from the previous slice's branch, and each PR targets the branch below it (user decision, 25 Sept 2026).
+- **Review per milestone:** the user reviews and merges the stack at the end of each milestone (M1 after S6, M2 after S7c, M3 after S12, M4 after S14). Review feedback is fixed on the lowest affected branch and rebased upward before the next milestone starts. S7a–S7c may run as a parallel stack off the S3 branch.
 - **Tests first:** one named `test()` per acceptance criterion, including its failure paths.
 - **Checks:** `npm run check` and `npm test` must pass, apart from the known failures below.
 - **Walkthrough:** check the change on :3001 at 375px and 1280px.
