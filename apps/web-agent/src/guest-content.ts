@@ -1,3 +1,107 @@
+/**
+ * Guest vocabulary (ADR-0077): every guest surface reads its labels from this
+ * one module so wording never changes surface by surface. Domain code, types
+ * and CONTEXT.md terms stay canonical; this is presentation only.
+ */
+export const GUEST_GLOSSARY = Object.freeze({
+  // ADR-0015 and ADR-0016: canonical money labels, never shortened.
+  allInStayTotal: "All-In Stay Total",
+  refundableSecurityDeposit: "Refundable Security Deposit",
+  // ADR-0005: a Booking Request is never presented as a Reservation.
+  bookingRequest: "Booking Request",
+  reservation: "Reservation",
+  conditionalBookingOffer: "Conditional Booking Offer",
+  offerReadyHeading: "Your offer is ready",
+  // CONTEXT.md defines a Unit as a self-contained apartment or house. Launch
+  // inventory is apartments; derive the noun from the Unit type if houses appear.
+  unit: "apartment",
+  units: "apartments",
+  viewUnit: "View apartment",
+  requestDraftStatus: "Not sent yet",
+  // ADR-0015 revalidation before request submission, stated plainly.
+  revalidation: "We re-check price and availability when you send",
+  operatorFallback: "the Operator",
+});
+
+/** Internal or avoided terms that never appear in guest copy (CONTEXT.md, ADR-0016). */
+export const GUEST_FORBIDDEN_TERMS: readonly RegExp[] = Object.freeze([
+  /\brevalidated\b/i,
+  /\bcontrolled catalogue\b/i,
+  /\bguest liability\b/i,
+  /\bescrow\b/i,
+  /\bhosts?\b/i,
+]);
+
+/** Timeline markers for completed guest actions; rendered quietly, never as assistant turns. */
+export const GUEST_RECEIPTS = Object.freeze({
+  draftCreated: "Draft created",
+  requestSent: "Booking Request sent",
+  offerAccepted: "Offer accepted",
+  paymentVerified: "Payment verified",
+});
+
+export function guestOperatorName(name: string | undefined): string {
+  return name?.trim() || GUEST_GLOSSARY.operatorFallback;
+}
+
+/** ADR-0006: names the contracting party only where the contract can form. */
+export function accommodationProviderLine(operatorName: string | undefined): string {
+  return `Provided by ${guestOperatorName(operatorName)} (your accommodation provider)`;
+}
+
+export type GuestReservationStage =
+  | "draft"
+  | "request-delivering"
+  | "request-sent"
+  | "operator-confirmed"
+  | "request-declined"
+  | "request-expired"
+  | "request-not-delivered"
+  | "offer-issued"
+  | "offer-accepted"
+  | "offer-closed"
+  | "confirmed";
+
+/**
+ * The single reservation-status statement for each guest surface (issue 07
+ * AC1). ADR-0005/0006: a Reservation exists only after verified payment and
+ * atomic commit, so every earlier stage says which record applies.
+ */
+export function guestReservationStatus(stage: GuestReservationStage): string {
+  switch (stage) {
+    case "draft": return `${GUEST_GLOSSARY.requestDraftStatus} · Your dates are not reserved`;
+    case "request-delivering": return "Your request is being delivered. It is not yet a Reservation.";
+    case "request-sent": return "This is a Booking Request, not yet a Reservation. It blocks the requested dates during the response window.";
+    case "operator-confirmed": return "This is not yet a Reservation. Payment is required after you accept the Conditional Booking Offer.";
+    case "request-declined": return "No Reservation was made and no payment is due. You can continue searching for another stay.";
+    case "request-expired": return "The response window ended. No Reservation was made.";
+    case "request-not-delivered": return "This was not an Operator decline. No Reservation was made.";
+    case "offer-issued": return "Accept this Conditional Booking Offer to continue to payment. It becomes a Reservation only after payment is verified.";
+    case "offer-accepted": return "It becomes a Reservation only after payment is verified.";
+    case "offer-closed": return "No Reservation was made from this offer.";
+    case "confirmed": return "Reservation confirmed";
+  }
+}
+
+const RESERVATION_STATUS_PATTERN = /\breserv(?:e|ed|ation)s?\b|\b(?:booking|stay)(?: is)? (?:not (?:yet )?)?confirmed\b|\bdates are not held\b/gi;
+
+/** Counts reservation-status statements across the lines of one guest surface. */
+export function guestReservationStatusCount(lines: readonly string[]): number {
+  return lines.reduce((count, line) => count + (line.match(RESERVATION_STATUS_PATTERN)?.length ?? 0), 0);
+}
+
+// Domain quote disclosures carry internal ledger and catalogue terms. The domain
+// text is unchanged; guests see the same obligation in plain words (approved
+// 25 Sept 2026; ADR-0015 optional extras, ADR-0016 separate deposit collection).
+const GUEST_DISCLOSURE_WORDING: ReadonlyArray<{ readonly domain: RegExp; readonly guest: string }> = [
+  { domain: /^Refundable Security Deposit is quoted separately and held as guest liability\.?$/, guest: `${GUEST_GLOSSARY.refundableSecurityDeposit} is quoted and collected separately from the stay payment.` },
+  { domain: /^Optional services come strictly from the controlled catalogue with no off-platform payment\.?$/, guest: "Optional services are added only when you select them, with no off-platform payment." },
+];
+
+export function guestDisclosure(text: string): string {
+  return GUEST_DISCLOSURE_WORDING.find((entry) => entry.domain.test(text.trim()))?.guest ?? text;
+}
+
 const AMENITY_LABELS: Readonly<Record<string, string>> = {
   "24_7_power_generator": "24/7 backup power",
   air_conditioning: "Air conditioning",

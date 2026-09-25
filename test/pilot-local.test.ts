@@ -55,7 +55,7 @@ function authoritativeUnit(paths: ReturnType<typeof temporaryPaths>, unitId: str
 async function activeDiscoveryUnit(tab: RealBrowserTab, threadId: string): Promise<{ readonly unitId: string; readonly artifactId: string }> {
   const components = await tab.evaluate<readonly { readonly component?: string; readonly action?: { readonly event?: { readonly name?: string; readonly context?: Record<string, unknown> } } }[]>(`fetch(${JSON.stringify(`/api/state?threadId=${encodeURIComponent(threadId)}`)}, { credentials: 'include' }).then((response) => response.json()).then((state) => (state.surfaces?.[0]?.a2uiMessages ?? []).filter((message) => message.updateComponents).flatMap((message) => message.updateComponents.components))`);
   const button = components.find((component) => component.component === "Button" && component.action?.event?.name === "shortlet.discovery.view-unit");
-  assert.ok(button, "the active discovery surface exposes a Weaver-generated View Unit action");
+  assert.ok(button, "the active discovery surface exposes a Weaver-generated View apartment action");
   const context = button!.action!.event!.context as { readonly unitId?: unknown; readonly artifactId?: unknown };
   assert.equal(typeof context.unitId, "string");
   return { unitId: context.unitId as string, artifactId: String(context.artifactId) };
@@ -91,7 +91,7 @@ async function guestToRequest(tab: RealBrowserTab, city: "Abuja" | "Lagos", phon
   await tab.waitForText(city === "Abuja" ? "Wuse 2" : "Old Ikoyi", 15000);
   await assertWeaverSurface(tab, "discovery");
   if (assertPhotos) await tab.waitForFunction("document.body.innerText.includes('Photo unavailable')", 15000);
-  await clickActiveButton(tab, "View Unit");
+  await clickActiveButton(tab, "View apartment");
   await tab.waitForText("Request to Book", 15000);
   await assertWeaverSurface(tab, "Unit detail");
   await clickActiveButton(tab, "Request to Book");

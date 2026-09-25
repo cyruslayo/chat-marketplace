@@ -131,7 +131,7 @@ test("default web-agent presentation exposes deterministic A2UI with conventiona
   assert.deepEqual(result.artifact.facts, conventional.artifact.facts);
   assert.equal(result.channel, "web-agent");
   assert.equal(conventional.channel, "web");
-  assert.equal(result.fallback.message, "Found 1 eligible Unit.");
+  assert.equal(result.fallback.message, "Found 1 eligible apartment.");
   assert.equal(result.fallback.conventionalRoute, conventionalSearchRoute(filters));
   assert.ok(result.a2uiMessages.length > 0);
   assert.equal(result.surfaceId, "application-surface");

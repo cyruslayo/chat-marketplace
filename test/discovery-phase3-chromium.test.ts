@@ -39,7 +39,7 @@ test("Phase 3 discovery renders Wuse, Lekki, zero-result and fallback states wit
     await tab.setCssViewport(390, 1200);
     await capture(tab, "01-discovery-wuse-390.png");
     const names = await tab.getAccessibilityTree();
-    assert.ok(names.some((node) => node.role === "button" && node.name === "View Unit"), "View Unit is named in the browser accessibility tree");
+    assert.ok(names.some((node) => node.role === "button" && node.name === "View apartment"), "View apartment is named in the browser accessibility tree");
     assert.ok(names.some((node) => node.role === "list" && node.name === "Stay search results"), "discovery results expose list semantics");
     assert.ok(names.some((node) => node.role === "listitem"), "each stay is exposed as a list item");
     const cardLayout = await tab.evaluate<{ readonly body: boolean; readonly price: boolean; readonly action: boolean }>("(() => { const card=document.querySelector('.stay-card'); return {body:Boolean(card?.querySelector('.stay-card__body')),price:Boolean(card?.querySelector('.stay-card__price-area .stay-card__price-total')),action:Boolean(card?.querySelector('.stay-card__action'))}; })()");
@@ -50,7 +50,7 @@ test("Phase 3 discovery renders Wuse, Lekki, zero-result and fallback states wit
     await capture(tab, "06-discovery-320.png");
     await tab.setCssViewport(390, 844);
 
-    assert.equal(await tab.clickButton("View Unit", "View Sunlit Two-Bedroom Retreat in Wuse 2"), true);
+    assert.equal(await tab.clickButton("View apartment", "View Sunlit Two-Bedroom Retreat in Wuse 2"), true);
     await tab.waitForFunction("document.querySelector('#active-workspace[data-surface-kind=unit-detail] .weaver-mount[data-renderer=weaver]')?.textContent?.includes('Sunlit Two-Bedroom Retreat in Wuse 2') === true", 15000);
     const detailLayout = await tab.evaluate<{ readonly gallery: boolean; readonly overview: boolean; readonly price: boolean; readonly action: boolean }>("({gallery:Boolean(document.querySelector('.unit-gallery')),overview:Boolean(document.querySelector('.unit-overview[role=group]')),price:Boolean(document.querySelector('.unit-price-group .unit-price-total')),action:Boolean(document.querySelector('.unit-actions button'))})");
     assert.deepEqual(detailLayout, { gallery: true, overview: true, price: true, action: true }, "Unit detail keeps its gallery, stay summary, total and request action in a stable order");

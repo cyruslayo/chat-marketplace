@@ -7,7 +7,8 @@ Effort map for the chat-first UX audit of the deterministic guest demo (`npm run
 
 ## Delivery rules
 
-- **One slice = one branch `ux/sN-<slug>` = one PR.** Review and merge each slice before the next one starts.
+- **One slice = one branch `ux/sN-<slug>` = one PR.** Slices are stacked: each branch starts from the previous slice's branch, and each PR targets the branch below it (user decision, 25 Sept 2026).
+- **Review per milestone:** the user reviews and merges the stack at the end of each milestone (M1 after S6, M2 after S7c, M3 after S12, M4 after S14). Review feedback is fixed on the lowest affected branch and rebased upward before the next milestone starts. S7a–S7c may run as a parallel stack off the S3 branch.
 - **Tests first:** one named `test()` per acceptance criterion, including its failure paths.
 - **Checks:** `npm run check` and `npm test` must pass, apart from the known failures below.
 - **Walkthrough:** check the change on :3001 at 375px and 1280px.
@@ -74,4 +75,5 @@ A failure outside this list blocks a slice.
 ## Context pointers (append as slices resolve)
 
 - S1 accessibility semantics: [issue 05](issues/05-a11y-semantics.md) — named native action buttons, polite conversation log, assertive error announcements, focused-workspace Escape and focus return, and scrollable transcript/workspace regions.
-- S2 liveness: [issue 12](issues/12-liveness.md) — the working indicator is announced once, requests time out after 10 s (`postJson`), and a one-shot Retry re-sends the same turn or event while the composer keeps the draft. Flaky under full-suite load: `listing-photos-mobile-chromium.test.ts` 390px image wait.
+- S2 liveness: [issue 12](issues/12-liveness.md) — the working indicator is announced once, requests time out after 10 s (`postJson`), and a one-shot Retry re-sends the same turn or event while the composer keeps the draft. Flaky under full-suite load: `listing-photos-mobile-chromium.test.ts` 390px image wait, `pilot-local` screenshot conversation, and the mobile S1 AC1 walk.
+- S3 glossary and copy: [issue 07](issues/07-copy-pass.md) — `GUEST_GLOSSARY` in `apps/web-agent/src/guest-content.ts` is the one source of guest wording, with `guestReservationStatus` (one status line per surface), `accommodationProviderLine`, `guestDisclosure` and `GUEST_RECEIPTS`. Receipts travel as `receipts` on turn results and `role: "receipt"` timeline entries. The branch is stacked on S2.

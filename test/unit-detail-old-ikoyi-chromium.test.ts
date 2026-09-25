@@ -87,7 +87,7 @@ test("Authoritative Old Ikoyi Unit detail renders through Weaver in real Chromiu
     await assertDiscoveryUnit("unit-local-lagos-lekki");
     const lekkiDiscovery = await currentSurface(tab);
     assert.equal(weaver.process(validateMessages(lekkiDiscovery.a2uiMessages)).ok, true);
-    assert.equal(await tab.clickButton("View Unit", "View Serene One-Bedroom Suite in Lekki Phase 1"), true);
+    assert.equal(await tab.clickButton("View apartment", "View Serene One-Bedroom Suite in Lekki Phase 1"), true);
     await tab.waitForFunction("document.querySelector('#active-workspace[data-surface-kind=unit-detail] .weaver-mount')?.textContent?.includes('Serene One-Bedroom Suite in Lekki Phase 1') === true", 15000);
     const lekkiDetail = await currentSurface(tab);
     assert.equal(weaver.process(validateMessages(lekkiDetail.a2uiMessages)).ok, true, "the first Unit detail is accepted by Weaver Core and Basic Catalog");
@@ -96,7 +96,7 @@ test("Authoritative Old Ikoyi Unit detail renders through Weaver in real Chromiu
     await sendPrompt(tab, "Old Ikoyi", "Garden Two-Bedroom Stay in Old Ikoyi");
     const oldDiscovery = await currentSurface(tab);
     assert.equal(weaver.process(validateMessages(oldDiscovery.a2uiMessages)).ok, true);
-    assert.equal(await tab.clickButton("View Unit", "View Garden Two-Bedroom Stay in Old Ikoyi"), true);
+    assert.equal(await tab.clickButton("View apartment", "View Garden Two-Bedroom Stay in Old Ikoyi"), true);
     await tab.waitForFunction("document.querySelector('#active-workspace[data-surface-kind=unit-detail] .weaver-mount')?.textContent?.includes('Garden Two-Bedroom Stay in Old Ikoyi') === true", 15000);
 
     const oldDetail = await currentSurface(tab);
@@ -151,7 +151,7 @@ test("Authoritative Old Ikoyi Unit detail renders through Weaver in real Chromiu
     assert.ok((await tab.getAccessibilityTree()).some((node) => node.role === "heading" && node.name === authoritative.title), "Unit title is exposed as a heading in the browser accessibility tree");
     assert.equal(await tab.clickButton("Back to conversation"), true);
     await sendPrompt(tab, "Old Ikoyi", "Garden Two-Bedroom Stay in Old Ikoyi");
-    assert.equal(await tab.clickButton("View Unit", "View Garden Two-Bedroom Stay in Old Ikoyi"), true);
+    assert.equal(await tab.clickButton("View apartment", "View Garden Two-Bedroom Stay in Old Ikoyi"), true);
     await tab.waitForFunction("document.querySelector('#active-workspace[data-surface-kind=unit-detail] .weaver-mount')?.textContent?.includes('Garden Two-Bedroom Stay in Old Ikoyi') === true", 15000);
     const repeated = await currentSurface(tab);
     assert.notEqual(repeated.surfaceId, lekkiDetail.surfaceId, "reopening Old Ikoyi retains a distinct detail surface identity");
@@ -160,7 +160,7 @@ test("Authoritative Old Ikoyi Unit detail renders through Weaver in real Chromiu
     async function assertDiscoveryUnit(expectedUnitId: string): Promise<void> {
       const components = await tab!.evaluate<readonly { readonly component?: string; readonly action?: { readonly event?: { readonly context?: Record<string, unknown> } } }[]>(`fetch('/api/state?threadId='+encodeURIComponent(sessionStorage.getItem('shortlet-concierge-thread')),{credentials:'include'}).then((response)=>response.json()).then((state)=>state.surfaces?.[0]?.a2uiMessages.filter((message)=>message.updateComponents).flatMap((message)=>message.updateComponents.components) ?? [])`);
       const action = components.find((component) => component.component === "Button" && component.action?.event?.context?.unitId === expectedUnitId);
-      assert.ok(action, `authoritative discovery exposes the expected View Unit action for ${expectedUnitId}`);
+      assert.ok(action, `authoritative discovery exposes the expected View apartment action for ${expectedUnitId}`);
     }
   } finally {
     await tab?.close();

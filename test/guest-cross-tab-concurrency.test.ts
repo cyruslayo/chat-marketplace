@@ -158,7 +158,7 @@ test("AC1 — Two tabs cannot create duplicate Booking Requests", async () => {
     ctx.tabB.mountSurface(discoverySurface.surfaceId, discoverySurface.a2uiMessages);
 
     // Tab A inspects unit and advances to draft review
-    ctx.tabA.clickButton(ctx.tabA.mounted[0]!.target, "View Unit", `View ${IKOYI_TITLE}`);
+    ctx.tabA.clickButton(ctx.tabA.mounted[0]!.target, "View apartment", `View ${IKOYI_TITLE}`);
     const unitEvent = ctx.tabA.takeFirstEvent()!;
     const unitRes = await ctx.send("/api/event", unitEvent);
     assert.equal(unitRes.body.ok, true);
@@ -219,7 +219,7 @@ test("AC2 — A stale Request review action fails closed", async () => {
     assert.equal(turn.body.ok, true);
     ctx.tabA.mountSurface(turn.body.surfaces[0]!.surfaceId, turn.body.surfaces[0]!.a2uiMessages);
 
-    ctx.tabA.clickButton(ctx.tabA.mounted[0]!.target, "View Unit", `View ${IKOYI_TITLE}`);
+    ctx.tabA.clickButton(ctx.tabA.mounted[0]!.target, "View apartment", `View ${IKOYI_TITLE}`);
     const unitRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(unitRes.body.surfaces[0]!.surfaceId, unitRes.body.surfaces[0]!.a2uiMessages);
 
@@ -260,7 +260,7 @@ test("AC3 — Two tabs cannot accept one Conditional Booking Offer twice", async
   try {
     const turn = await ctx.send("/api/turn", { text: CANONICAL_PROMPT });
     ctx.tabA.mountSurface(turn.body.surfaces[0]!.surfaceId, turn.body.surfaces[0]!.a2uiMessages);
-    ctx.tabA.clickButton(ctx.tabA.mounted[0]!.target, "View Unit", `View ${IKOYI_TITLE}`);
+    ctx.tabA.clickButton(ctx.tabA.mounted[0]!.target, "View apartment", `View ${IKOYI_TITLE}`);
     const unitRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(unitRes.body.surfaces[0]!.surfaceId, unitRes.body.surfaces[0]!.a2uiMessages);
     ctx.tabA.clickButton(ctx.tabA.mounted[1]!.target, "Request to Book");
@@ -322,7 +322,7 @@ test("AC4 — A stale Conditional Booking Offer action fails closed", async () =
   try {
     const turn = await ctx.send("/api/turn", { text: CANONICAL_PROMPT });
     ctx.tabA.mountSurface(turn.body.surfaces[0]!.surfaceId, turn.body.surfaces[0]!.a2uiMessages);
-    ctx.tabA.clickButton(ctx.tabA.mounted[0]!.target, "View Unit", `View ${IKOYI_TITLE}`);
+    ctx.tabA.clickButton(ctx.tabA.mounted[0]!.target, "View apartment", `View ${IKOYI_TITLE}`);
     const unitRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(unitRes.body.surfaces[0]!.surfaceId, unitRes.body.surfaces[0]!.a2uiMessages);
     ctx.tabA.clickButton(ctx.tabA.mounted[1]!.target, "Request to Book");
@@ -370,7 +370,7 @@ test("AC5 — Two tabs cannot create multiple Live Payment Attempts", async () =
   try {
     const turn = await ctx.send("/api/turn", { text: CANONICAL_PROMPT });
     ctx.tabA.mountSurface(turn.body.surfaces[0]!.surfaceId, turn.body.surfaces[0]!.a2uiMessages);
-    ctx.tabA.clickButton(ctx.tabA.mounted[0]!.target, "View Unit", `View ${IKOYI_TITLE}`);
+    ctx.tabA.clickButton(ctx.tabA.mounted[0]!.target, "View apartment", `View ${IKOYI_TITLE}`);
     const unitRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(unitRes.body.surfaces[0]!.surfaceId, unitRes.body.surfaces[0]!.a2uiMessages);
     ctx.tabA.clickButton(ctx.tabA.mounted[1]!.target, "Request to Book");
@@ -434,7 +434,7 @@ test("AC6 — Concurrent payment verification creates at most one Reservation", 
   try {
     const turn = await ctx.send("/api/turn", { text: CANONICAL_PROMPT });
     ctx.tabA.mountSurface(turn.body.surfaces[0]!.surfaceId, turn.body.surfaces[0]!.a2uiMessages);
-    ctx.tabA.clickButton(ctx.tabA.mounted[0]!.target, "View Unit", `View ${IKOYI_TITLE}`);
+    ctx.tabA.clickButton(ctx.tabA.mounted[0]!.target, "View apartment", `View ${IKOYI_TITLE}`);
     const unitRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(unitRes.body.surfaces[0]!.surfaceId, unitRes.body.surfaces[0]!.a2uiMessages);
     ctx.tabA.clickButton(ctx.tabA.mounted[1]!.target, "Request to Book");
@@ -469,7 +469,7 @@ test("AC6 — Concurrent payment verification creates at most one Reservation", 
 
     // Initialize deposit checkout
     ctx.tabA.mountSurface(depositReadyRes.body.surfaces[0]!.surfaceId, depositReadyRes.body.surfaces[0]!.a2uiMessages);
-    ctx.tabA.clickButton(ctx.tabA.mounted[7]!.target, "Continue to refundable deposit");
+    ctx.tabA.clickButton(ctx.tabA.mounted[7]!.target, "Continue to Refundable Security Deposit");
     const depositHandoffRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     assert.equal(depositHandoffRes.body.ok, true);
     const depositHandoffSurface = depositHandoffRes.body.surfaces[0] as GuestSurfacePayload;
@@ -511,7 +511,7 @@ test("AC7 — Concurrent payment verification creates at most one Booking Contra
   try {
     const turn = await ctx.send("/api/turn", { text: CANONICAL_PROMPT });
     ctx.tabA.mountSurface(turn.body.surfaces[0]!.surfaceId, turn.body.surfaces[0]!.a2uiMessages);
-    ctx.tabA.clickButton(ctx.tabA.mounted[0]!.target, "View Unit", `View ${IKOYI_TITLE}`);
+    ctx.tabA.clickButton(ctx.tabA.mounted[0]!.target, "View apartment", `View ${IKOYI_TITLE}`);
     const unitRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(unitRes.body.surfaces[0]!.surfaceId, unitRes.body.surfaces[0]!.a2uiMessages);
     ctx.tabA.clickButton(ctx.tabA.mounted[1]!.target, "Request to Book");
@@ -544,7 +544,7 @@ test("AC7 — Concurrent payment verification creates at most one Booking Contra
 
     // Initialize deposit checkout
     ctx.tabA.mountSurface(depositReadyRes.body.surfaces[0]!.surfaceId, depositReadyRes.body.surfaces[0]!.a2uiMessages);
-    ctx.tabA.clickButton(ctx.tabA.mounted[7]!.target, "Continue to refundable deposit");
+    ctx.tabA.clickButton(ctx.tabA.mounted[7]!.target, "Continue to Refundable Security Deposit");
     const depositHandoffRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     const depositHandoffSurface = depositHandoffRes.body.surfaces[0] as GuestSurfacePayload;
 
@@ -586,12 +586,12 @@ test("AC8 — A superseded surface action from another tab fails closed", async 
     ctx.tabB.mountSurface(discoverySurface.surfaceId, discoverySurface.a2uiMessages);
 
     // Tab A advances to unit inspection
-    ctx.tabA.clickButton(ctx.tabA.mounted[0]!.target, "View Unit", `View ${IKOYI_TITLE}`);
+    ctx.tabA.clickButton(ctx.tabA.mounted[0]!.target, "View apartment", `View ${IKOYI_TITLE}`);
     const unitRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     assert.equal(unitRes.body.ok, true);
 
     // Tab B now clicks on the discovery surface that has been superseded by Tab A's action
-    ctx.tabB.clickButton(ctx.tabB.mounted[0]!.target, "View Unit", `View ${IKOYI_TITLE}`);
+    ctx.tabB.clickButton(ctx.tabB.mounted[0]!.target, "View apartment", `View ${IKOYI_TITLE}`);
     const supersededAction = ctx.tabB.takeFirstEvent()!;
     const supersededRes = await ctx.send("/api/event", supersededAction);
 
@@ -611,7 +611,7 @@ test("AC9 — An expired action from another tab fails closed", async () => {
   try {
     const turn = await ctx.send("/api/turn", { text: CANONICAL_PROMPT });
     ctx.tabA.mountSurface(turn.body.surfaces[0]!.surfaceId, turn.body.surfaces[0]!.a2uiMessages);
-    ctx.tabA.clickButton(ctx.tabA.mounted[0]!.target, "View Unit", `View ${IKOYI_TITLE}`);
+    ctx.tabA.clickButton(ctx.tabA.mounted[0]!.target, "View apartment", `View ${IKOYI_TITLE}`);
     const unitRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(unitRes.body.surfaces[0]!.surfaceId, unitRes.body.surfaces[0]!.a2uiMessages);
     ctx.tabA.clickButton(ctx.tabA.mounted[1]!.target, "Request to Book");
@@ -662,7 +662,7 @@ test("AC10 — A stale tab restores the latest authoritative server projection",
     ctx.tabB.mountSurface(discoverySurface.surfaceId, discoverySurface.a2uiMessages);
 
     // Tab A advances through unit detail and draft
-    ctx.tabA.clickButton(ctx.tabA.mounted[0]!.target, "View Unit", `View ${IKOYI_TITLE}`);
+    ctx.tabA.clickButton(ctx.tabA.mounted[0]!.target, "View apartment", `View ${IKOYI_TITLE}`);
     const unitRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(unitRes.body.surfaces[0]!.surfaceId, unitRes.body.surfaces[0]!.a2uiMessages);
     ctx.tabA.clickButton(ctx.tabA.mounted[1]!.target, "Request to Book");
@@ -670,7 +670,7 @@ test("AC10 — A stale tab restores the latest authoritative server projection",
     assert.equal(draftRes.body.ok, true);
 
     // Tab B receives a rejection when clicking its stale button
-    ctx.tabB.clickButton(ctx.tabB.mounted[0]!.target, "View Unit", `View ${IKOYI_TITLE}`);
+    ctx.tabB.clickButton(ctx.tabB.mounted[0]!.target, "View apartment", `View ${IKOYI_TITLE}`);
     const staleAction = ctx.tabB.takeFirstEvent()!;
     const staleRes = await ctx.send("/api/event", staleAction);
     assert.equal(staleRes.body.ok, false);
@@ -689,7 +689,7 @@ test("AC10 — A stale tab restores the latest authoritative server projection",
 
     // Tab B can now mount the restored surface and proceed safely
     ctx.tabB.mountSurface(restored.surfaces[0]!.surfaceId, restored.surfaces[0]!.a2uiMessages);
-    assert.match(ctx.tabB.mounted[1]!.target.textContent ?? "", /dates are not held yet/i);
+    assert.match(ctx.tabB.mounted[1]!.target.textContent ?? "", /Your dates are not reserved/i);
   } finally {
     await ctx.close();
   }
@@ -703,7 +703,7 @@ test("AC11 — A losing stale action does not damage winning authoritative state
   try {
     const turn = await ctx.send("/api/turn", { text: CANONICAL_PROMPT });
     ctx.tabA.mountSurface(turn.body.surfaces[0]!.surfaceId, turn.body.surfaces[0]!.a2uiMessages);
-    ctx.tabA.clickButton(ctx.tabA.mounted[0]!.target, "View Unit", `View ${IKOYI_TITLE}`);
+    ctx.tabA.clickButton(ctx.tabA.mounted[0]!.target, "View apartment", `View ${IKOYI_TITLE}`);
     const unitRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(unitRes.body.surfaces[0]!.surfaceId, unitRes.body.surfaces[0]!.a2uiMessages);
     ctx.tabA.clickButton(ctx.tabA.mounted[1]!.target, "Request to Book");
@@ -748,7 +748,7 @@ test("AC12 — Cross-tab request races do not duplicate inventory commitments", 
   try {
     const turn = await ctx.send("/api/turn", { text: CANONICAL_PROMPT });
     ctx.tabA.mountSurface(turn.body.surfaces[0]!.surfaceId, turn.body.surfaces[0]!.a2uiMessages);
-    ctx.tabA.clickButton(ctx.tabA.mounted[0]!.target, "View Unit", `View ${IKOYI_TITLE}`);
+    ctx.tabA.clickButton(ctx.tabA.mounted[0]!.target, "View apartment", `View ${IKOYI_TITLE}`);
     const unitRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(unitRes.body.surfaces[0]!.surfaceId, unitRes.body.surfaces[0]!.a2uiMessages);
     ctx.tabA.clickButton(ctx.tabA.mounted[1]!.target, "Request to Book");
@@ -795,7 +795,7 @@ test("AC13 — Cross-tab payment races do not reset the Payment Window", async (
   try {
     const turn = await ctx.send("/api/turn", { text: CANONICAL_PROMPT });
     ctx.tabA.mountSurface(turn.body.surfaces[0]!.surfaceId, turn.body.surfaces[0]!.a2uiMessages);
-    ctx.tabA.clickButton(ctx.tabA.mounted[0]!.target, "View Unit", `View ${IKOYI_TITLE}`);
+    ctx.tabA.clickButton(ctx.tabA.mounted[0]!.target, "View apartment", `View ${IKOYI_TITLE}`);
     const unitRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(unitRes.body.surfaces[0]!.surfaceId, unitRes.body.surfaces[0]!.a2uiMessages);
     ctx.tabA.clickButton(ctx.tabA.mounted[1]!.target, "Request to Book");
@@ -857,11 +857,11 @@ test("AC14 — Cross-tab recovery does not automatically repeat rejected actions
     ctx.tabB.mountSurface(discoverySurface.surfaceId, discoverySurface.a2uiMessages);
 
     // Tab A advances
-    ctx.tabA.clickButton(ctx.tabA.mounted[0]!.target, "View Unit", `View ${IKOYI_TITLE}`);
+    ctx.tabA.clickButton(ctx.tabA.mounted[0]!.target, "View apartment", `View ${IKOYI_TITLE}`);
     await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
 
     // Tab B performs an action on superseded surface
-    ctx.tabB.clickButton(ctx.tabB.mounted[0]!.target, "View Unit", `View ${IKOYI_TITLE}`);
+    ctx.tabB.clickButton(ctx.tabB.mounted[0]!.target, "View apartment", `View ${IKOYI_TITLE}`);
     const staleAction = ctx.tabB.takeFirstEvent()!;
     const staleRes = await ctx.send("/api/event", staleAction);
     assert.equal(staleRes.body.ok, false);
@@ -886,7 +886,7 @@ test("AC15 — Two tabs restore safely after a server restart", async () => {
   try {
     const turn = await ctx.send("/api/turn", { text: CANONICAL_PROMPT });
     ctx.tabA.mountSurface(turn.body.surfaces[0]!.surfaceId, turn.body.surfaces[0]!.a2uiMessages);
-    ctx.tabA.clickButton(ctx.tabA.mounted[0]!.target, "View Unit", `View ${IKOYI_TITLE}`);
+    ctx.tabA.clickButton(ctx.tabA.mounted[0]!.target, "View apartment", `View ${IKOYI_TITLE}`);
     const unitRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(unitRes.body.surfaces[0]!.surfaceId, unitRes.body.surfaces[0]!.a2uiMessages);
     ctx.tabA.clickButton(ctx.tabA.mounted[1]!.target, "Request to Book");
@@ -933,7 +933,7 @@ test("AC16 — Server restart with two tabs does not replay consequential comman
   try {
     const turn = await ctx.send("/api/turn", { text: CANONICAL_PROMPT });
     ctx.tabA.mountSurface(turn.body.surfaces[0]!.surfaceId, turn.body.surfaces[0]!.a2uiMessages);
-    ctx.tabA.clickButton(ctx.tabA.mounted[0]!.target, "View Unit", `View ${IKOYI_TITLE}`);
+    ctx.tabA.clickButton(ctx.tabA.mounted[0]!.target, "View apartment", `View ${IKOYI_TITLE}`);
     const unitRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(unitRes.body.surfaces[0]!.surfaceId, unitRes.body.surfaces[0]!.a2uiMessages);
     ctx.tabA.clickButton(ctx.tabA.mounted[1]!.target, "Request to Book");
@@ -995,7 +995,7 @@ test("AC17 — Browser coordination is not required for domain correctness", asy
   try {
     const turn = await ctx.send("/api/turn", { text: CANONICAL_PROMPT });
     ctx.tabA.mountSurface(turn.body.surfaces[0]!.surfaceId, turn.body.surfaces[0]!.a2uiMessages);
-    ctx.tabA.clickButton(ctx.tabA.mounted[0]!.target, "View Unit", `View ${IKOYI_TITLE}`);
+    ctx.tabA.clickButton(ctx.tabA.mounted[0]!.target, "View apartment", `View ${IKOYI_TITLE}`);
     const unitRes = await ctx.send("/api/event", ctx.tabA.takeFirstEvent()!);
     ctx.tabA.mountSurface(unitRes.body.surfaces[0]!.surfaceId, unitRes.body.surfaces[0]!.a2uiMessages);
     ctx.tabA.clickButton(ctx.tabA.mounted[1]!.target, "Request to Book");

@@ -23,6 +23,11 @@ import {
   formatStayDates,
   guestRequestStatus,
   guestPaymentStatus,
+  GUEST_GLOSSARY,
+  GUEST_RECEIPTS,
+  accommodationProviderLine,
+  guestOperatorName,
+  guestReservationStatus,
   type DiscoveryArtifactProjection,
 } from "../../../apps/web-agent/src/index.js";
 import { unitDetailArtifactFromProjection } from "../../../apps/web/src/unit-detail-artifact.js";
@@ -83,7 +88,8 @@ export interface GuestSurfacePayload {
 }
 
 export interface GuestTimelineEntry {
-  readonly role: "assistant" | "user";
+  /** "receipt" entries are completed-action markers, never assistant turns (issue 07). */
+  readonly role: "assistant" | "user" | "receipt";
   readonly text: string;
 }
 
@@ -97,6 +103,8 @@ export interface GuestStateSnapshot {
 export interface GuestTurnSuccess {
   readonly ok: true;
   readonly messages: readonly string[];
+  /** Completed-action receipts, rendered as quiet timeline markers. */
+  readonly receipts?: readonly string[];
   readonly surfaces: readonly GuestSurfacePayload[];
 }
 
@@ -368,8 +376,8 @@ export class LocalGuestApp {
       this.#emitTransition(thread, "payment.handoff.opened", { aggregateType: "payment", aggregateId: thread.offerId!, surfaceId });
       this.#emitTransition(thread, "payment.attempt.initialized", { aggregateType: "payment_attempt", aggregateId: session.checkoutId, correlationId: thread.offerId! });
       const checkoutAmount = artifact.facts.currentComponentAmountKobo ?? artifact.facts.allInStayTotalKobo ?? artifact.facts.amountDueNowKobo;
-      const checkoutPurpose = artifact.facts.currentComponent === "security_deposit" ? "refundable deposit" : "stay payment";
-      return { ok: true, messages: ["Hosted card checkout is ready. Payment has not succeeded; your booking details remain available when you return."], surfaces: [{ surfaceId, mode: "focused-surface", summary: "Payment handoff", conventionalRoute: `/payments/offers/${encodeURIComponent(thread.offerId!)}/continue`, conventionalRouteLabel: `Continue to ${checkoutPurpose} · ${formatNgnKobo(checkoutAmount)}`, textFallback: `You will leave Shortlet temporarily for hosted card checkout. ${artifact.facts.allInStayTotalKobo === undefined ? "" : `Stay total: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. `}${artifact.facts.refundableSecurityDepositKobo ? `Refundable deposit (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}Next payment: ${formatNgnKobo(checkoutAmount)}. ${formatWAT(artifact.facts.paymentWindowExpiresAt)}. Payment has not succeeded and the booking is not confirmed. Your booking details will be retained when you return.`, a2uiMessages: cardPaymentArtifactToA2UI({ artifact, surfaceId }) }] };
+      const checkoutPurpose = artifact.facts.currentComponent === "security_deposit" ? GUEST_GLOSSARY.refundableSecurityDeposit : "stay payment";
+      return { ok: true, messages: ["Hosted card checkout is ready. Payment has not succeeded; your booking details remain available when you return."], surfaces: [{ surfaceId, mode: "focused-surface", summary: "Payment handoff", conventionalRoute: `/payments/offers/${encodeURIComponent(thread.offerId!)}/continue`, conventionalRouteLabel: `Continue to ${checkoutPurpose} · ${formatNgnKobo(checkoutAmount)}`, textFallback: `You will leave Shortlet temporarily for hosted card checkout. ${artifact.facts.allInStayTotalKobo === undefined ? "" : `${GUEST_GLOSSARY.allInStayTotal}: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. `}${artifact.facts.refundableSecurityDepositKobo ? `${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}Next payment: ${formatNgnKobo(checkoutAmount)}. ${formatWAT(artifact.facts.paymentWindowExpiresAt)}. Payment has not succeeded and the booking is not confirmed. Your booking details will be retained when you return.`, a2uiMessages: cardPaymentArtifactToA2UI({ artifact, surfaceId }) }] };
     } catch (error) {
       if (/email address is required/i.test(error instanceof Error ? error.message : "")) return this.#contactSurface(thread, "email", event.context ?? {});
       return { ok: false, code: "ACTION_NOT_AUTHORIZED", message: "The secure card checkout could not be started." };
@@ -720,7 +728,7 @@ export class LocalGuestApp {
         if (artifact.facts.status === "deposit_required" || storedSurfaceId.includes(":deposit-")) {
           const depositId = `thread-${thread.threadId}:payment:deposit-ready:${projection.offerId}`;
           thread.activeSurfaces.set(PAYMENT_STAGE, depositId);
-          return this.#paymentSurface(thread, artifact, "Refundable Security Deposit payment required", depositId);
+          return this.#paymentSurface(thread, artifact, `${GUEST_GLOSSARY.refundableSecurityDeposit} payment required`, depositId);
         }
         const session = environment.cardPaymentApp.manager.getCheckoutSession(projection.offerId);
         if (artifact.facts.status === "checkout_initiated" || (session && session.status === "initiated")) {
@@ -761,7 +769,7 @@ export class LocalGuestApp {
           mode: "inline-surface",
           summary: discoverySummary(artifact.facts.filters),
           conventionalRoute: conventionalSearchRoute({}),
-          textFallback: artifact.facts.results.length === 0 ? "No eligible Units match those requirements." : `Found ${artifact.facts.results.length} eligible Units.`,
+          textFallback: artifact.facts.results.length === 0 ? `No eligible ${GUEST_GLOSSARY.units} match those requirements.` : `Found ${artifact.facts.results.length} eligible ${artifact.facts.results.length === 1 ? GUEST_GLOSSARY.unit : GUEST_GLOSSARY.units}.`,
           a2uiMessages: discoveryArtifactToA2UI({ artifact, surfaceId: discoverySurfaceId }),
         };
       }
@@ -824,6 +832,7 @@ export class LocalGuestApp {
       if (tail?.role === "assistant" && tail.text === message) continue;
       thread.timeline.push({ role: "assistant", text: message });
     }
+    for (const receipt of result.receipts ?? []) thread.timeline.push({ role: "receipt", text: receipt });
     // A text-only turn changes the transcript but does not supersede the
     // current server-backed workspace (ADR-0074).
     if (result.surfaces.length > 0) thread.lastSurfaces = [...result.surfaces];
@@ -889,7 +898,7 @@ export class LocalGuestApp {
     }
     const unit = artifact.facts.results.find((candidate) => candidate.id === resolved.effect.unitId);
     if (!unit) {
-      return { ok: false, code: "ACTION_NOT_AUTHORIZED", message: "That unit is not available." };
+      return { ok: false, code: "ACTION_NOT_AUTHORIZED", message: `That ${GUEST_GLOSSARY.unit} is not available.` };
     }
 
     const unitDetailArtifact = unitDetailArtifactFromProjection({ unit, ...this.#stayDatesFor(thread), projectionVersion: artifact.projectionVersion, viewer: this.#environment.guestPrincipal() });
@@ -910,7 +919,7 @@ export class LocalGuestApp {
           mode: "focused-surface",
           summary: `${unit.title} details`,
           conventionalRoute: resolved.effect.route,
-          textFallback: `${unit.title}. ${unit.location.neighbourhood}, ${unit.location.city}. Entire Place; capacity ${unit.capacity} guests. All-In Stay Total: ${unit.price.allInStayTotalKobo === null ? "not yet quoted" : formatNgnKobo(unit.price.allInStayTotalKobo)}. Refundable Security Deposit: ${formatNgnKobo(unit.price.refundableSecurityDepositKobo)}. Inspection: ${unit.trust.inspection.status}; Management Authority: ${unit.trust.managementAuthority.status}.`,
+          textFallback: `${unit.title}. ${unit.location.neighbourhood}, ${unit.location.city}. Entire Place; capacity ${unit.capacity} guests. ${GUEST_GLOSSARY.allInStayTotal}: ${unit.price.allInStayTotalKobo === null ? "not yet quoted" : formatNgnKobo(unit.price.allInStayTotalKobo)}. ${GUEST_GLOSSARY.refundableSecurityDeposit}: ${formatNgnKobo(unit.price.refundableSecurityDepositKobo)}. Inspection: ${unit.trust.inspection.status}; Management Authority: ${unit.trust.managementAuthority.status}.`,
           a2uiMessages: unitDetailArtifactToA2UI({ artifact: unitDetailArtifact, surfaceId }),
         },
       ],
@@ -930,15 +939,15 @@ export class LocalGuestApp {
     const filters = artifact.facts.filters;
     return {
       ok: true,
-      messages: ["Here are all the matching Units."],
+      messages: [`Here are all the matching ${GUEST_GLOSSARY.units}.`],
       surfaces: [{
         surfaceId,
         mode: "focused-surface",
         summary: "All discovery results",
         conventionalRoute: conventionalSearchRoute(filters),
         textFallback: artifact.facts.results.length === 0
-          ? "No eligible Units match those requirements."
-          : `Found ${artifact.facts.results.length} eligible Units.`,
+          ? `No eligible ${GUEST_GLOSSARY.units} match those requirements.`
+          : `Found ${artifact.facts.results.length} eligible ${artifact.facts.results.length === 1 ? GUEST_GLOSSARY.unit : GUEST_GLOSSARY.units}.`,
         a2uiMessages: discoveryArtifactToA2UI({ artifact, surfaceId }),
       }],
     };
@@ -960,7 +969,7 @@ export class LocalGuestApp {
       this.#supersede(thread, UNIT_STAGE);
       thread.activeSurfaces.set(REQUEST_STAGE, surfaceId);
       this.#emitTransition(thread, "request_draft.resumed", { aggregateType: "request_draft", aggregateId: thread.draftId, surfaceId });
-      return { ok: true, messages: ["Your existing Request Draft is ready to continue. Dates are not reserved."], surfaces: [{ surfaceId, mode: "focused-surface", summary: "Request Draft", conventionalRoute: conventionalRequestDraftRoute(thread.draftId), textFallback: this.#draftFallback(artifact), a2uiMessages: requestDraftArtifactToA2UI({ artifact, surfaceId }) }] };
+      return { ok: true, messages: ["Your request is ready to continue."], surfaces: [{ surfaceId, mode: "focused-surface", summary: "Request Draft", conventionalRoute: conventionalRequestDraftRoute(thread.draftId), textFallback: this.#draftFallback(artifact), a2uiMessages: requestDraftArtifactToA2UI({ artifact, surfaceId }) }] };
     }
 
     const environment = this.#environment;
@@ -985,7 +994,8 @@ export class LocalGuestApp {
 
     return {
       ok: true,
-      messages: ["Your Request Draft is ready. Dates are not reserved until you submit a revalidated Booking Request."],
+      messages: [],
+      receipts: [GUEST_RECEIPTS.draftCreated],
       surfaces: [
         { surfaceId: requestSurfaceId, mode: "focused-surface", summary: "Request Draft", conventionalRoute: conventionalRequestDraftRoute(draft.draftId), textFallback: this.#draftFallback(artifact), a2uiMessages: requestDraftArtifactToA2UI({ artifact, surfaceId: requestSurfaceId }) },
       ],
@@ -999,7 +1009,7 @@ export class LocalGuestApp {
       readonly occupants: readonly { readonly name: string }[]; readonly checkIn: string; readonly checkOut: string;
     };
     const unit = this.#environment.unitRepository.findById(draft.unitId) as Unit | null;
-    if (!unit) throw new Error("The selected Unit is no longer available.");
+    if (!unit) throw new Error(`The selected ${GUEST_GLOSSARY.unit} is no longer available.`);
     const quote = createStayQuote({
       unit,
       checkIn: draft.checkIn,
@@ -1029,7 +1039,9 @@ export class LocalGuestApp {
 
   #draftFallback(artifact: RequestDraftArtifact): string {
     const review = artifact.actions[0]?.type === "submit";
-    return `${review ? "Booking details reviewed · not submitted" : "Request draft · not reserved"}. ${artifact.facts.unitTitle}. ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)} · ${artifact.facts.nights} ${artifact.facts.nights === 1 ? "night" : "nights"} · ${artifact.facts.occupants.length} ${artifact.facts.occupants.length === 1 ? "guest" : "guests"}. Stay total: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. ${artifact.facts.refundableSecurityDepositKobo > 0 ? `Refundable deposit (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}${review ? `Total to complete booking if confirmed: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}. Availability and price are checked again when you send the request. ` : "Review these details before you send the request. Dates are not held yet. "}Cancellation terms: ${artifact.facts.cancellationPolicy.summary}.`;
+    const { facts } = artifact;
+    // Issue 07 AC1: one reservation-status statement; ADR-0006 provider only on review.
+    return `${guestReservationStatus("draft")}. ${facts.unitTitle}. ${review ? `${accommodationProviderLine(facts.operatorName)}. ` : ""}${formatStayDates(facts.checkIn, facts.checkOut)} · ${facts.nights} ${facts.nights === 1 ? "night" : "nights"} · ${facts.occupants.length} ${facts.occupants.length === 1 ? "guest" : "guests"}. ${GUEST_GLOSSARY.allInStayTotal}: ${formatNgnKobo(facts.allInStayTotalKobo)}. ${facts.refundableSecurityDepositKobo > 0 ? `${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(facts.refundableSecurityDepositKobo)}. ` : ""}${review ? `Total to complete booking if confirmed: ${formatNgnKobo(facts.amountDueNowKobo)}. ${GUEST_GLOSSARY.revalidation}. ` : "Review these details before you send the request. "}Cancellation terms: ${facts.cancellationPolicy.summary}.`;
   }
 
   #handleDraftReview(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
@@ -1047,7 +1059,7 @@ export class LocalGuestApp {
     this.#emitTransition(thread, "request_draft.review.opened", { aggregateType: "request_draft", aggregateId: thread.draftId, surfaceId });
     return {
       ok: true,
-      messages: ["Review the complete request terms. Nothing is reserved until you submit."],
+      messages: ["Review the complete request terms."],
       surfaces: [{ surfaceId, mode: "focused-surface", summary: "Request review", conventionalRoute: conventionalRequestDraftRoute(thread.draftId), textFallback: this.#draftFallback(artifact), a2uiMessages: requestDraftArtifactToA2UI({ artifact, surfaceId }) }],
     };
   }
@@ -1068,7 +1080,8 @@ export class LocalGuestApp {
       const surface = this.#requestSurface(thread, disclosed.requestId);
       thread.activeSurfaces.set(REQUEST_STAGE, surface.surfaceId);
       this.#emitTransition(thread, "booking_request.submitted", { aggregateType: "booking_request", aggregateId: disclosed.requestId, correlationId: thread.draftId, surfaceId: surface.surfaceId });
-      return { ok: true, messages: ["Booking Request submitted. No Reservation exists yet; the Operator must respond."], surfaces: [surface] };
+      // Issue 07: the Operator is named where known; the surface carries the reservation status.
+      return { ok: true, messages: [`Next, ${guestOperatorName(currentTerms.facts.operatorName)} will confirm availability before payment is due.`], receipts: [GUEST_RECEIPTS.requestSent], surfaces: [surface] };
     } catch (error) {
       const message = error instanceof Error ? error.message : "The Booking Request could not be submitted.";
       if (/phone number is required/i.test(message)) return this.#contactSurface(thread, "phone", event.context ?? {});
@@ -1140,7 +1153,7 @@ export class LocalGuestApp {
       mode: "focused-surface",
       summary: status.label,
       conventionalRoute: conventionalBookingRequestRoute(requestId),
-      textFallback: `${status.label}. ${artifact.facts.unitTitle ?? "Your selected Unit"}. Stay: ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)} (${artifact.facts.nights} nights). ${artifact.facts.quote ? `All-In Stay Total: ${formatNgnKobo(artifact.facts.quote.allInStayTotalKobo)}. ${artifact.facts.quote.refundableSecurityDepositKobo > 0 ? `Refundable Security Deposit (separate): ${formatNgnKobo(artifact.facts.quote.refundableSecurityDepositKobo)}. ` : ""}` : ""}${artifact.facts.status === "disclosed" && artifact.facts.delivered ? `Operator response deadline: ${formatWAT(artifact.facts.operatorResponseDeadlineAt)}.` : ""} ${status.detail}`,
+      textFallback: `${status.label}. ${artifact.facts.unitTitle ?? `Your selected ${GUEST_GLOSSARY.unit}`}. Stay: ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)} (${artifact.facts.nights} nights). ${artifact.facts.quote ? `${GUEST_GLOSSARY.allInStayTotal}: ${formatNgnKobo(artifact.facts.quote.allInStayTotalKobo)}. ${artifact.facts.quote.refundableSecurityDepositKobo > 0 ? `${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(artifact.facts.quote.refundableSecurityDepositKobo)}. ` : ""}` : ""}${artifact.facts.status === "disclosed" && artifact.facts.delivered ? `Operator response deadline: ${formatWAT(artifact.facts.operatorResponseDeadlineAt)}.` : ""} ${status.detail}`,
       a2uiMessages: bookingRequestArtifactToA2UI({ artifact, surfaceId }),
     };
   }
@@ -1156,7 +1169,7 @@ export class LocalGuestApp {
       ? "Access details are in secure booking details."
       : "Check-in details will be shared when they are ready. A confirmed booking does not itself grant physical access.";
     const depositCollected = artifact.facts.securityDeposit?.status === "held" && (artifact.facts.refundableSecurityDepositKobo ?? 0) > 0;
-    return `Booking confirmed for ${artifact.facts.unitTitle ?? "your stay"}. ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)} · ${artifact.facts.nights} ${artifact.facts.nights === 1 ? "night" : "nights"}; ${artifact.facts.occupants.length} ${artifact.facts.occupants.length === 1 ? "guest" : "guests"}. ${artifact.facts.amountPaidKobo ? `Stay payment verified: ${formatNgnKobo(artifact.facts.amountPaidKobo)}. ` : ""}${depositCollected ? `Refundable deposit collected: ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo!)}. ` : ""}${access} Your booking reference and full contract are in booking details.`;
+    return `Booking confirmed for ${artifact.facts.unitTitle ?? "your stay"}. ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)} · ${artifact.facts.nights} ${artifact.facts.nights === 1 ? "night" : "nights"}; ${artifact.facts.occupants.length} ${artifact.facts.occupants.length === 1 ? "guest" : "guests"}. ${artifact.facts.amountPaidKobo ? `Stay payment verified: ${formatNgnKobo(artifact.facts.amountPaidKobo)}. ` : ""}${depositCollected ? `${GUEST_GLOSSARY.refundableSecurityDeposit} collected: ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo!)}. ` : ""}${access} Your booking reference and full contract are in booking details.`;
   }
 
   #offerFallback(artifact: ConditionalOfferArtifact): string {
@@ -1164,7 +1177,7 @@ export class LocalGuestApp {
       : artifact.facts.status === "accepted" ? "Offer accepted · Payment required"
         : artifact.facts.status === "expired" ? "Offer expired"
           : artifact.facts.status === "stale" ? "Offer no longer current" : "Offer withdrawn";
-    return `${status}. ${artifact.facts.unitTitle}. ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)} · ${artifact.facts.nights} ${artifact.facts.nights === 1 ? "night" : "nights"}. Stay total: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. ${artifact.facts.refundableSecurityDepositKobo > 0 ? `Refundable deposit (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}Total to complete booking: ${formatNgnKobo(artifact.facts.totalAmountDueNowKobo)}. ${formatBookingDeadline(artifact.facts.paymentWindowExpiresAt)}. This Offer is not a confirmed Reservation.`;
+    return `${status}. ${artifact.facts.unitTitle}. ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)} · ${artifact.facts.nights} ${artifact.facts.nights === 1 ? "night" : "nights"}. ${GUEST_GLOSSARY.allInStayTotal}: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. ${artifact.facts.refundableSecurityDepositKobo > 0 ? `${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}Total to complete booking: ${formatNgnKobo(artifact.facts.totalAmountDueNowKobo)}. ${formatBookingDeadline(artifact.facts.paymentWindowExpiresAt)}. ${guestReservationStatus(artifact.facts.status === "issued" ? "offer-issued" : artifact.facts.status === "accepted" ? "offer-accepted" : "offer-closed")}`;
   }
 
   #confirmedBookingSurface(thread: GuestThreadState): GuestSurfacePayload | null {
@@ -1201,7 +1214,7 @@ export class LocalGuestApp {
         this.#emitTransition(thread, "conditional_booking_offer.expired", { aggregateType: "conditional_booking_offer", aggregateId: thread.offerId, reasonCode: "OFFER_EXPIRED", surfaceId });
         return {
           ok: true,
-          messages: ["The Conditional Booking Offer expired. Payment authority has been removed; no Reservation exists."],
+          messages: ["The Conditional Booking Offer expired. Payment authority has been removed."],
           surfaces: [{
             surfaceId,
             mode: "focused-surface",
@@ -1220,7 +1233,7 @@ export class LocalGuestApp {
         try {
           const contract = JSON.parse(snapshot.contractJson) as { readonly contractId: string };
           const bookingSurfaceId = `thread-${thread.threadId}:booking:${contract.contractId}`;
-          const contractArtifact = this.#environment.contractApp.getArtifact(contract.contractId, this.#environment.guestPrincipal());
+          const contractArtifact = this.#contractArtifact(contract.contractId);
           this.#supersede(thread, PAYMENT_STAGE);
           thread.activeSurfaces.set(BOOKING_STAGE, bookingSurfaceId);
           return {
@@ -1231,7 +1244,7 @@ export class LocalGuestApp {
               mode: "focused-surface",
               summary: "Reservation confirmed",
               conventionalRoute: conventionalBookingContractRoute(contract.contractId),
-              textFallback: `Reservation confirmed for ${contractArtifact.facts.checkIn} to ${contractArtifact.facts.checkOut}. Reservation reference: ${contractArtifact.facts.reservationId}.`,
+              textFallback: this.#confirmedBookingFallback(contractArtifact),
               a2uiMessages: bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: bookingSurfaceId }),
             }],
           };
@@ -1278,7 +1291,7 @@ export class LocalGuestApp {
       this.#supersede(thread, REQUEST_STAGE);
       const type = artifact.facts.status === "declined" ? "booking_request.declined" : artifact.facts.status === "expired" ? "booking_request.timed_out" : "booking_request.delivery_failed";
       this.#emitTransition(thread, type, { aggregateType: "booking_request", aggregateId: thread.requestId, reasonCode: artifact.facts.status === "declined" ? "OPERATOR_DECLINED" : artifact.facts.status === "expired" ? "OPERATOR_TIMEOUT" : "REQUEST_DELIVERY_FAILED" });
-      return { ok: true, messages: [artifact.facts.status === "declined" ? "The Operator declined the request. No Reservation was created and no payment was taken." : artifact.facts.status === "expired" ? "The Booking Request expired. Inventory is no longer reserved and no Reservation exists." : "The Booking Request could not be delivered successfully. Nothing remains reserved; this was not an Operator decline."], surfaces: [{ ...this.#requestSurface(thread, thread.requestId), mode: "inline-surface", summary: "Request outcome", status: "fallback" }] };
+      return { ok: true, messages: [artifact.facts.status === "declined" ? "The Operator declined the request. No payment was taken." : artifact.facts.status === "expired" ? "The Booking Request expired before the Operator responded." : "The Booking Request could not be delivered."], surfaces: [{ ...this.#requestSurface(thread, thread.requestId), mode: "inline-surface", summary: "Request outcome", status: "fallback" }] };
     }
     return { ok: true, messages: [], surfaces: [this.#requestSurface(thread, thread.requestId)] };
   }
@@ -1307,7 +1320,8 @@ export class LocalGuestApp {
     const paymentArtifact = this.#environment.cardPaymentApp.getArtifact(offerId, this.#environment.guestPrincipal());
     return {
       ok: true,
-      messages: ["Offer accepted. Complete the secure card payment to confirm your booking."],
+      messages: ["Complete the secure card payment to confirm your booking."],
+      receipts: [GUEST_RECEIPTS.offerAccepted],
       surfaces: [
         this.#paymentSurface(thread, paymentArtifact, "Payment required", paymentSurfaceId),
       ],
@@ -1347,8 +1361,8 @@ export class LocalGuestApp {
     this.#emitTransition(thread, "payment.handoff.opened", { aggregateType: "payment", aggregateId: thread.offerId, surfaceId });
     this.#emitTransition(thread, "payment.attempt.initialized", { aggregateType: "payment_attempt", aggregateId: session.checkoutId, correlationId: thread.offerId });
     const checkoutAmount = artifact.facts.currentComponentAmountKobo ?? (artifact.facts.currentComponent === "security_deposit" ? artifact.facts.refundableSecurityDepositKobo : artifact.facts.allInStayTotalKobo) ?? artifact.facts.amountDueNowKobo;
-    const checkoutPurpose = artifact.facts.currentComponent === "security_deposit" ? "refundable deposit" : "stay payment";
-    return { ok: true, messages: ["Payment checkout is ready. Payment has not succeeded; your booking details remain available when you return."], surfaces: [{ surfaceId, mode: "focused-surface", summary: "Payment handoff", conventionalRoute: conventionalCardPaymentRoute(thread.offerId), conventionalRouteLabel: `Continue to ${checkoutPurpose} · ${formatNgnKobo(checkoutAmount)}`, textFallback: `Payment handoff ready for ${artifact.facts.unit}, ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)}. ${artifact.facts.allInStayTotalKobo === undefined ? "" : `Stay total: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. `}${artifact.facts.refundableSecurityDepositKobo ? `Refundable deposit (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}Next payment: ${formatNgnKobo(checkoutAmount)}. ${formatWAT(artifact.facts.paymentWindowExpiresAt)}. Payment has not succeeded and the booking is not confirmed. Your booking details will be retained when you return.`, a2uiMessages: cardPaymentArtifactToA2UI({ artifact, surfaceId }) }] };
+    const checkoutPurpose = artifact.facts.currentComponent === "security_deposit" ? GUEST_GLOSSARY.refundableSecurityDeposit : "stay payment";
+    return { ok: true, messages: ["Payment checkout is ready. Payment has not succeeded; your booking details remain available when you return."], surfaces: [{ surfaceId, mode: "focused-surface", summary: "Payment handoff", conventionalRoute: conventionalCardPaymentRoute(thread.offerId), conventionalRouteLabel: `Continue to ${checkoutPurpose} · ${formatNgnKobo(checkoutAmount)}`, textFallback: `Payment handoff ready for ${artifact.facts.unit}, ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)}. ${artifact.facts.allInStayTotalKobo === undefined ? "" : `${GUEST_GLOSSARY.allInStayTotal}: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. `}${artifact.facts.refundableSecurityDepositKobo ? `${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}Next payment: ${formatNgnKobo(checkoutAmount)}. ${formatWAT(artifact.facts.paymentWindowExpiresAt)}. Payment has not succeeded and the booking is not confirmed. Your booking details will be retained when you return.`, a2uiMessages: cardPaymentArtifactToA2UI({ artifact, surfaceId }) }] };
   }
 
   #handlePaymentReturn(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
@@ -1367,7 +1381,7 @@ export class LocalGuestApp {
         this.#supersede(thread, PAYMENT_STAGE);
         thread.activeSurfaces.set(PAYMENT_STAGE, surfaceId);
         this.#emitTransition(thread, "payment.verified", { aggregateType: "payment", aggregateId: thread.offerId, nextState: "deposit_required", surfaceId });
-        return { ok: true, messages: ["Payment verified for the stay. A separate Refundable Security Deposit payment is required before a Reservation can exist."], surfaces: [this.#paymentSurface(thread, artifact, "Refundable Security Deposit payment required", surfaceId)] };
+        return { ok: true, messages: [`Payment verified for the stay. A separate ${GUEST_GLOSSARY.refundableSecurityDeposit} payment is required before a Reservation can exist.`], surfaces: [this.#paymentSurface(thread, artifact, `${GUEST_GLOSSARY.refundableSecurityDeposit} payment required`, surfaceId)] };
       }
       const contractArtifact = this.#contractArtifact(outcome.bookingContract.contractId);
       const bookingSurfaceId = `thread-${thread.threadId}:booking:${outcome.bookingContract.contractId}`;
@@ -1375,7 +1389,7 @@ export class LocalGuestApp {
       thread.activeSurfaces.set(BOOKING_STAGE, bookingSurfaceId);
       this.#emitTransition(thread, "payment.verified", { aggregateType: "payment", aggregateId: thread.offerId, nextState: "verified", surfaceId: bookingSurfaceId });
       this.#emitTransition(thread, "reservation.confirmed", { aggregateType: "reservation", aggregateId: outcome.reservation.reservationId, correlationId: thread.offerId, nextState: "confirmed" });
-      return { ok: true, messages: ["Payment verified and the Reservation was committed. Your stay is confirmed."], surfaces: [{ surfaceId: bookingSurfaceId, mode: "focused-surface", summary: "Reservation confirmed", conventionalRoute: conventionalBookingContractRoute(outcome.bookingContract.contractId), textFallback: this.#confirmedBookingFallback(contractArtifact), a2uiMessages: bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: bookingSurfaceId }) }] };
+      return { ok: true, messages: [], receipts: [GUEST_RECEIPTS.paymentVerified], surfaces: [{ surfaceId: bookingSurfaceId, mode: "focused-surface", summary: "Reservation confirmed", conventionalRoute: conventionalBookingContractRoute(outcome.bookingContract.contractId), textFallback: this.#confirmedBookingFallback(contractArtifact), a2uiMessages: bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: bookingSurfaceId }) }] };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Payment verification did not complete.";
       const artifact = environment.cardPaymentApp.getArtifact(thread.offerId, environment.guestPrincipal());
@@ -1395,10 +1409,10 @@ export class LocalGuestApp {
     const currentAmount = artifact.facts.currentComponentAmountKobo ?? (artifact.facts.status === "ready" ? artifact.facts.allInStayTotalKobo : undefined);
     const routeLabel = processing ? "Return to payment status"
       : artifact.facts.status === "ready" ? "Open payment details"
-        : artifact.facts.status === "checkout_initiated" ? `Continue to ${artifact.facts.currentComponent === "security_deposit" ? "refundable deposit" : "stay payment"} · ${formatNgnKobo(currentAmount ?? artifact.facts.amountDueNowKobo)}`
-          : artifact.facts.status === "deposit_required" ? `Continue to refundable deposit · ${formatNgnKobo(currentAmount ?? artifact.facts.refundableSecurityDepositKobo ?? artifact.facts.amountDueNowKobo)}`
+        : artifact.facts.status === "checkout_initiated" ? `Continue to ${artifact.facts.currentComponent === "security_deposit" ? GUEST_GLOSSARY.refundableSecurityDeposit : "stay payment"} · ${formatNgnKobo(currentAmount ?? artifact.facts.amountDueNowKobo)}`
+          : artifact.facts.status === "deposit_required" ? `Continue to ${GUEST_GLOSSARY.refundableSecurityDeposit} · ${formatNgnKobo(currentAmount ?? artifact.facts.refundableSecurityDepositKobo ?? artifact.facts.amountDueNowKobo)}`
             : "View payment status";
-    return { surfaceId, mode: "focused-surface", summary, conventionalRoute: conventionalCardPaymentRoute(thread.offerId!), conventionalRouteLabel: routeLabel, textFallback: `${status.label}. ${artifact.facts.unit}, ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)}. ${artifact.facts.allInStayTotalKobo === undefined ? "" : `Stay total: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. `}${artifact.facts.refundableSecurityDepositKobo ? `Refundable deposit (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}${currentAmount === undefined ? "" : `Current payment: ${formatNgnKobo(currentAmount)}. `}${formatWAT(artifact.facts.paymentWindowExpiresAt)}. ${status.detail}`, a2uiMessages: cardPaymentArtifactToA2UI({ artifact, surfaceId }) };
+    return { surfaceId, mode: "focused-surface", summary, conventionalRoute: conventionalCardPaymentRoute(thread.offerId!), conventionalRouteLabel: routeLabel, textFallback: `${status.label}. ${artifact.facts.unit}, ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)}. ${artifact.facts.allInStayTotalKobo === undefined ? "" : `${GUEST_GLOSSARY.allInStayTotal}: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. `}${artifact.facts.refundableSecurityDepositKobo ? `${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}${currentAmount === undefined ? "" : `Current payment: ${formatNgnKobo(currentAmount)}. `}${formatWAT(artifact.facts.paymentWindowExpiresAt)}. ${status.detail}`, a2uiMessages: cardPaymentArtifactToA2UI({ artifact, surfaceId }) };
   }
 
   #partySizeFor(thread: GuestThreadState): number {
@@ -1661,7 +1675,7 @@ function readJsonBody(req: IncomingMessage): Promise<unknown> {
 export function renderConventionalUnitDetailHtml(unit: Unit, photoUrl?: (url: string) => string): string {
   const photos = normalizePhotoUrls(unit.photoUrls);
   const photoMarkup = photos.length === 0
-    ? `<p class="ui-image-frame" role="status">Photos are not available for this Unit yet.</p>`
+    ? `<p class="ui-image-frame" role="status">Photos are not available for this ${GUEST_GLOSSARY.unit} yet.</p>`
     : `<div class="unit-page-gallery" aria-label="Photos of ${escapeHtml(unit.title)}">${photos.map((url, index) => `<div class="ui-image-frame"><img src="${escapeHtml(photoUrl ? photoUrl(url) : url)}" alt="Photo ${index + 1} of ${escapeHtml(unit.title)}" loading="${index === 0 ? "eager" : "lazy"}" decoding="async" width="800" height="600" referrerpolicy="no-referrer"></div>`).join("")}</div>`;
   return pageShell({
     title: unit.title,
@@ -2048,9 +2062,9 @@ export function startLocalGuestServer(options: {
     const conventionalUnitMatch = /^\/stays\/([^/]+)$/.exec(url.pathname);
     if (req.method === "GET" && conventionalUnitMatch) {
       let unitId: string;
-      try { unitId = decodeURIComponent(conventionalUnitMatch[1]!); } catch { res.writeHead(400, { "Content-Type": "text/plain" }); res.end("Invalid Unit"); return; }
+      try { unitId = decodeURIComponent(conventionalUnitMatch[1]!); } catch { res.writeHead(400, { "Content-Type": "text/plain" }); res.end("Invalid apartment"); return; }
       const unit = app.environment.unitRepository.findById(unitId);
-      if (!unit || !isEligibleUnit(unit, app.environment.clock())) { res.writeHead(404, { "Content-Type": "text/plain" }); res.end("Unit not found"); return; }
+      if (!unit || !isEligibleUnit(unit, app.environment.clock())) { res.writeHead(404, { "Content-Type": "text/plain" }); res.end("Apartment not found"); return; }
       res.writeHead(200, GUEST_HTML_HEADERS);
       res.end(renderConventionalUnitDetailHtml(unit, options.localPhotoUrl));
       return;
@@ -2096,12 +2110,12 @@ export function startLocalGuestServer(options: {
         const canContinue = artifact.actions.length > 0 && (artifact.facts.status !== "ready" || contactEmailMissing || !processing);
         const escapeHtmlText = escapeHtml;
         const componentAmount = artifact.facts.currentComponentAmountKobo ?? (artifact.facts.status === "ready" ? artifact.facts.allInStayTotalKobo : artifact.facts.refundableSecurityDepositKobo);
-        const componentLabel = artifact.facts.status === "deposit_required" || artifact.facts.currentComponent === "security_deposit" ? "Next payment · refundable deposit" : "Next payment · stay payment";
+        const componentLabel = artifact.facts.status === "deposit_required" || artifact.facts.currentComponent === "security_deposit" ? `Next payment · ${GUEST_GLOSSARY.refundableSecurityDeposit}` : "Next payment · stay payment";
         const facts = [
           `<p class="payment-unit">${escapeHtmlText(artifact.facts.unit)}</p>`,
           `<p>Stay: ${escapeHtmlText(formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut))}</p>`,
-          ...(artifact.facts.allInStayTotalKobo === undefined ? [] : [`<p>Stay total: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}</p>`]),
-          ...(artifact.facts.refundableSecurityDepositKobo === undefined || artifact.facts.refundableSecurityDepositKobo <= 0 ? [] : [`<p>Refundable deposit (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}</p>`]),
+          ...(artifact.facts.allInStayTotalKobo === undefined ? [] : [`<p>${GUEST_GLOSSARY.allInStayTotal}: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}</p>`]),
+          ...(artifact.facts.refundableSecurityDepositKobo === undefined || artifact.facts.refundableSecurityDepositKobo <= 0 ? [] : [`<p>${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}</p>`]),
           `<p class="ui-money-total">Total to complete booking: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}</p>`,
           ...(componentAmount === undefined ? [] : [`<p>${componentLabel}: ${formatNgnKobo(componentAmount)}</p>`]),
           `<p>${formatWAT(artifact.facts.paymentWindowExpiresAt)}</p>`,

@@ -117,8 +117,8 @@ test("AC5 — Canonical artifact facts remain unchanged", () => {
 });
 
 test("AC6 — Deterministic fallback narration", () => {
-  assert.equal(createAdapter().search(DATED_FILTERS).fallback.message, "Found 1 eligible Unit.");
-  assert.equal(createAdapter().search({ location: "Abuja" }).fallback.message, "No eligible Units match those requirements.");
+  assert.equal(createAdapter().search(DATED_FILTERS).fallback.message, "Found 1 eligible apartment.");
+  assert.equal(createAdapter().search({ location: "Abuja" }).fallback.message, "No eligible apartments match those requirements.");
 });
 
 test("AC7 — Conventional parity retained", () => {
@@ -134,7 +134,7 @@ test("AC8 — Runtime/provider independence", async () => {
 test("AC10 — Zero results still produce valid A2UI", () => {
   const result = createAdapter().search({ location: "Abuja" });
   assert.equal(result.artifact.facts.results.length, 0);
-  assert.equal(result.fallback.message, "No eligible Units match those requirements.");
+  assert.equal(result.fallback.message, "No eligible apartments match those requirements.");
   processMessages(result.a2uiMessages, result.surfaceId);
 });
 

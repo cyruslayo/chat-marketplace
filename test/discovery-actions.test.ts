@@ -264,7 +264,7 @@ test("AC12 — Real Weaver click resolves through handler", () => {
   const window = new Window({ url: "https://app.example/stays/search" });
   const target = window.document.createElement("div") as unknown as Element;
   assert.equal(host.mount({ surfaceId: "task-5-real-click", target }).ok, true);
-  const button = [...target.querySelectorAll("button")].find((candidate) => candidate.textContent?.includes("View Unit"));
+  const button = [...target.querySelectorAll("button")].find((candidate) => candidate.textContent?.includes("View apartment"));
   assert.ok(button);
   const locationBefore = window.location.href;
   button.dispatchEvent(new window.Event("click", { bubbles: true }) as unknown as Event);
@@ -277,7 +277,7 @@ test("AC12 — Real Weaver click resolves through handler", () => {
   assert.equal(window.location.href, locationBefore);
 });
 
-test("View Unit is a presentation effect and does not use PlatformCommandEnvelope", () => {
+test("View apartment is a presentation effect and does not use PlatformCommandEnvelope", () => {
   const source = readFileSync(new URL("../apps/web/src/discovery-actions.ts", import.meta.url), "utf8");
   assert.doesNotMatch(source, /platform-core|PlatformCommandEnvelope|createPlatformCommandEnvelope/);
   const result = resolveDiscoveryServerEvent({ event: event(), artifact: discoveryArtifact() });

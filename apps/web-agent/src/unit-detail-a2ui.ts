@@ -5,7 +5,7 @@ import {
 } from "@weaver/core";
 import { formatNgnKobo, type DiscoveryUnitProjection } from "./discovery-a2ui.js";
 import { unitDetailArtifactFromProjection, type UnitDetailArtifact } from "../../web/src/unit-detail-artifact.js";
-import { formatGuestDate, guestAmenityLabel, guestInspectionDisclosure, guestOccupancyLabel } from "./guest-content.js";
+import { GUEST_GLOSSARY, formatGuestDate, guestAmenityLabel, guestInspectionDisclosure, guestOccupancyLabel } from "./guest-content.js";
 
 export const REQUEST_TO_BOOK_EVENT = "shortlet.unit-detail.request-to-book";
 
@@ -36,7 +36,7 @@ export function unitDetailArtifactToA2UI({ artifact, surfaceId }: { readonly art
     `${facts.bathrooms} ${facts.bathrooms === 1 ? "bathroom" : "bathrooms"}`,
     `Sleeps ${facts.capacity}`,
   ].filter((value): value is string => value !== undefined);
-  const allInLabel = facts.price.allInStayTotalKobo === null ? "Indicative nightly rate" : "All-In Stay Total";
+  const allInLabel = facts.price.allInStayTotalKobo === null ? "Indicative nightly rate" : GUEST_GLOSSARY.allInStayTotal;
   const allInAmount = facts.price.allInStayTotalKobo ?? facts.price.nightlyKobo;
   const inspectionDisclosure = guestInspectionDisclosure(facts.inspection);
   const nightRate = facts.price.allInStayTotalKobo === null
@@ -66,7 +66,7 @@ export function unitDetailArtifactToA2UI({ artifact, surfaceId }: { readonly art
     { id: `${prefix}-price`, component: "Text", text: formatNgnKobo(allInAmount), variant: "h2" },
     ...(nightRate ? [{ id: `${prefix}-nightly-rate`, component: "Text" as const, text: nightRate, variant: "caption" as const }] : []),
     ...(facts.price.mandatoryFeesKobo > 0 ? [{ id: `${prefix}-fees`, component: "Text" as const, text: `Mandatory fees included: ${formatNgnKobo(facts.price.mandatoryFeesKobo)}`, variant: "caption" as const }] : []),
-    ...(facts.price.refundableSecurityDepositKobo > 0 ? [{ id: `${prefix}-deposit`, component: "Text" as const, text: `Refundable Security Deposit: ${formatNgnKobo(facts.price.refundableSecurityDepositKobo)}`, variant: "caption" as const }] : []),
+    ...(facts.price.refundableSecurityDepositKobo > 0 ? [{ id: `${prefix}-deposit`, component: "Text" as const, text: `${GUEST_GLOSSARY.refundableSecurityDeposit}: ${formatNgnKobo(facts.price.refundableSecurityDepositKobo)}`, variant: "caption" as const }] : []),
     ...(facts.price.amountDueNowKobo === null ? [] : [{ id: `${prefix}-amount-due`, component: "Text" as const, text: `Amount Due Now: ${formatNgnKobo(facts.price.amountDueNowKobo)}`, variant: "caption" as const }]),
     { id: `${prefix}-description-heading`, component: "Text", text: "About this place", variant: "h3" },
     { id: `${prefix}-description`, component: "Text", text: facts.description },
@@ -76,7 +76,7 @@ export function unitDetailArtifactToA2UI({ artifact, surfaceId }: { readonly art
     ...photoIds.map((id, index) => ({ id, component: "Image" as const, url: facts.photos[index]!, description: `${facts.title} in ${facts.neighbourhood}, ${facts.city}${index === 0 ? " — main view" : ` — view ${index + 1}`}` })),
     ...(photoIds.length === 0 ? [{ id: `${prefix}-photo-unavailable`, component: "Text" as const, text: "No property photos are available yet.", variant: "caption" as const }] : []),
     ...(inspectionDisclosure ? [{ id: `${prefix}-inspection`, component: "Text" as const, text: inspectionDisclosure, variant: "caption" as const }] : []),
-    { id: `${prefix}-disclosure`, component: "Text", text: "Request to Book starts a request for Operator confirmation. Viewing this Unit does not reserve dates, and this action does not confirm a Reservation.", variant: "caption" },
+    { id: `${prefix}-disclosure`, component: "Text", text: `Request to Book starts a request for Operator confirmation. Viewing this ${GUEST_GLOSSARY.unit} does not reserve dates or create a Reservation.`, variant: "caption" },
     { id: `${prefix}-actions`, component: "Row", children: action ? [`${prefix}-request-button`] : [] },
     ...(action ? [
       { id: `${prefix}-request-button`, component: "Button" as const, child: `${prefix}-request-label`, variant: "primary" as const, action: { event: { name: REQUEST_TO_BOOK_EVENT, context: { artifactId: action.artifactId, unitId: action.unitId, projectionVersion: action.projectionVersion } } }, accessibility: { label: `Request to Book ${facts.title}` } },

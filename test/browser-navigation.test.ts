@@ -92,7 +92,7 @@ test("AC3 — Real browser Location can be supplied", () => {
 test("AC4 — Complete Weaver flow performs actual browser navigation", () => {
   const { artifact, target, window } = createBrowserFlow();
   const action = authorizedAction(artifact);
-  const button = [...target.querySelectorAll("button")].find((candidate) => candidate.textContent?.includes("View Unit"));
+  const button = [...target.querySelectorAll("button")].find((candidate) => candidate.textContent?.includes("View apartment"));
   assert.ok(button);
   button.dispatchEvent(new window.Event("click", { bubbles: true }) as unknown as Event);
   assert.equal(window.location.pathname, new URL(action.conventionalRoute, START_URL).pathname);

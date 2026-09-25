@@ -4,7 +4,7 @@ import {
   type A2UIServerMessage,
 } from "@weaver/core";
 import { formatMoney } from "../../web/src/ui-kit.js";
-import { formatGuestDate, guestAmenityLabel, guestOccupancyLabel } from "./guest-content.js";
+import { GUEST_GLOSSARY, formatGuestDate, guestAmenityLabel, guestOccupancyLabel } from "./guest-content.js";
 
 export interface DiscoveryLocationProjection {
   readonly city: string;
@@ -100,7 +100,7 @@ function unitComponents(
     guestOccupancyLabel(unit.trust.occupancyModel),
   ].filter((fact): fact is string => fact !== undefined);
   const highlights = unit.amenities.slice(0, 3);
-  const allInLabel = unit.price.allInStayTotalKobo === null ? "Indicative nightly rate" : "All-In Stay Total";
+  const allInLabel = unit.price.allInStayTotalKobo === null ? "Indicative nightly rate" : GUEST_GLOSSARY.allInStayTotal;
   const allInAmount = unit.price.allInStayTotalKobo === null
     ? unit.price.nightlyKobo
     : unit.price.allInStayTotalKobo;
@@ -148,7 +148,7 @@ function unitComponents(
       ...(unit.price.refundableSecurityDepositKobo > 0 ? [{
         id: `${prefix}-deposit`,
         component: "Text" as const,
-        text: `Refundable Security Deposit: ${formatNgnKobo(unit.price.refundableSecurityDepositKobo)}`,
+        text: `${GUEST_GLOSSARY.refundableSecurityDeposit}: ${formatNgnKobo(unit.price.refundableSecurityDepositKobo)}`,
         variant: "caption" as const,
       }] : []),
       ...(canViewUnit ? [
@@ -165,7 +165,7 @@ function unitComponents(
           },
           accessibility: { label: `View ${unit.title}` },
         },
-        { id: `${prefix}-view-label`, component: "Text" as const, text: "View Unit" },
+        { id: `${prefix}-view-label`, component: "Text" as const, text: GUEST_GLOSSARY.viewUnit },
       ] : []),
     ],
   };

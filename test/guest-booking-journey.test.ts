@@ -48,7 +48,8 @@ test("AC1–AC8 — Guest discovery, Unit inspection, Request Draft, review, dis
     if (!pending.ok) return;
     assert.match(pending.surfaces[0]!.surfaceId, /:request:req-/);
     assert.match(pending.surfaces[0]!.textFallback ?? "", /Operator response deadline.*WAT/i);
-    assert.match(pending.messages.join(" "), /No Reservation exists yet/i);
+    assert.deepEqual(pending.receipts, ["Booking Request sent"]);
+    assert.match(pending.messages.join(" "), /will confirm availability/i);
     assert.equal(environment.calendar.getAuthoritativeAvailability({ unitId: "unit-lagos-ikoyi-001", checkIn: "2026-09-10", checkOut: "2026-09-13", clock: environment.clock }).isAvailable, false);
   } finally { close(environment); }
 });
@@ -112,11 +113,11 @@ test("AC12–AC23 and AC37–AC39 — Operator confirmation, explicit offer acce
     assert.equal(result.ok, true); if (!result.ok) return;
     result = event(app, threadId, result.surfaces[0]!) as Surface;
     assert.equal(result.ok, true); if (!result.ok) return;
-    assert.match(result.messages.join(" "), /Reservation.*committed/i);
+    assert.deepEqual(result.receipts, ["Payment verified"]);
     assert.match(result.surfaces[0]!.summary ?? "", /Reservation confirmed/i);
     const restored = app.getState(threadId);
     assert.equal(restored?.surfaces[0]?.surfaceId, result.surfaces[0]!.surfaceId);
-    assert.equal(restored?.timeline.some((entry) => /Reservation was committed|stay is confirmed/i.test(entry.text)), true);
+    assert.equal(restored?.timeline.some((entry) => entry.role === "receipt" && entry.text === "Payment verified"), true);
   } finally { close(environment); }
 });
 
@@ -137,7 +138,7 @@ test("AC4, AC9–AC11, AC26–AC28, and AC34–AC36 — unverified guests can su
     assert.equal(result.ok, true); if (!result.ok) return;
     result = app.handleEvent(threadId, firstAction(result.surfaces[0]!)) as Surface;
     assert.equal(result.ok, true); if (!result.ok) return;
-    assert.match(result.messages.join(" "), /Booking Request submitted/i);
+    assert.deepEqual(result.receipts, ["Booking Request sent"]);
     assert.equal(result.surfaces[0]!.a2uiMessages.some((message) => /verification is required/i.test(JSON.stringify(message))), false);
   } finally { close(unverified); }
 

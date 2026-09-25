@@ -92,7 +92,7 @@ test("AC3 — Real Weaver click reaches navigator", () => {
   const window = new Window({ url: "https://app.example/stays/search" });
   const target = window.document.createElement("div") as unknown as Element;
   assert.equal(host.mount({ surfaceId: SURFACE_ID, target }).ok, true);
-  const button = [...target.querySelectorAll("button")].find((candidate) => candidate.textContent?.includes("View Unit"));
+  const button = [...target.querySelectorAll("button")].find((candidate) => candidate.textContent?.includes("View apartment"));
   assert.ok(button);
   button.dispatchEvent(new window.Event("click", { bubbles: true }) as unknown as Event);
   assert.deepEqual(navigator.routes, [action.conventionalRoute]);
@@ -158,7 +158,7 @@ test("AC9 — Composition does not use browser globals", () => {
   assert.doesNotMatch(sources, /window\.location|document\.location|history\.pushState|history\.replaceState|window\.open/);
 });
 
-test("AC10 — View Unit still does not use PlatformCommandEnvelope", () => {
+test("AC10 — View apartment still does not use PlatformCommandEnvelope", () => {
   const sources = ["navigation.ts", "discovery-interactions.ts"].map((file) =>
     readFileSync(new URL(`../apps/web/src/${file}`, import.meta.url), "utf8")
   ).join("\n");

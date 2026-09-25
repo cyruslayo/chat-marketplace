@@ -8507,6 +8507,44 @@ Known schemas:
     return { ok: true, value: facade };
   }
 
+  // apps/web-agent/src/guest-content.ts
+  var GUEST_GLOSSARY = Object.freeze({
+    // ADR-0015 and ADR-0016: canonical money labels, never shortened.
+    allInStayTotal: "All-In Stay Total",
+    refundableSecurityDeposit: "Refundable Security Deposit",
+    // ADR-0005: a Booking Request is never presented as a Reservation.
+    bookingRequest: "Booking Request",
+    reservation: "Reservation",
+    conditionalBookingOffer: "Conditional Booking Offer",
+    offerReadyHeading: "Your offer is ready",
+    // CONTEXT.md defines a Unit as a self-contained apartment or house. Launch
+    // inventory is apartments; derive the noun from the Unit type if houses appear.
+    unit: "apartment",
+    units: "apartments",
+    viewUnit: "View apartment",
+    requestDraftStatus: "Not sent yet",
+    // ADR-0015 revalidation before request submission, stated plainly.
+    revalidation: "We re-check price and availability when you send",
+    operatorFallback: "the Operator"
+  });
+  var GUEST_FORBIDDEN_TERMS = Object.freeze([
+    /\brevalidated\b/i,
+    /\bcontrolled catalogue\b/i,
+    /\bguest liability\b/i,
+    /\bescrow\b/i,
+    /\bhosts?\b/i
+  ]);
+  var GUEST_RECEIPTS = Object.freeze({
+    draftCreated: "Draft created",
+    requestSent: "Booking Request sent",
+    offerAccepted: "Offer accepted",
+    paymentVerified: "Payment verified"
+  });
+  var GUEST_DISCLOSURE_WORDING = [
+    { domain: /^Refundable Security Deposit is quoted separately and held as guest liability\.?$/, guest: `${GUEST_GLOSSARY.refundableSecurityDeposit} is quoted and collected separately from the stay payment.` },
+    { domain: /^Optional services come strictly from the controlled catalogue with no off-platform payment\.?$/, guest: "Optional services are added only when you select them, with no off-platform payment." }
+  ];
+
   // apps/local-guest/src/conversational-shell.ts
   function createConversationShellState() {
     return { historicalSummaries: [], focusedSurfaceOpen: false };
@@ -8548,7 +8586,7 @@ Known schemas:
     if (status === "expired") return /offer/i.test(summary) ? "Offer expired" : "Booking details expired";
     if (status === "deleted") return "Details no longer available";
     const search = /^Search updated\s*·\s*(.*)$/.exec(summary);
-    const activity = search ? `Searched ${search[1]}` : /^(Discovery results|All discovery results)$/.test(summary) ? "Viewed stays for your search" : summary.endsWith(" details") ? `Viewed ${summary.slice(0, -" details".length)}` : summary === "Request Draft" ? "Draft created" : summary === "Request review" ? "Booking details reviewed" : summary === "Request outcome" ? "Booking request update" : summary.includes("Conditional Booking Offer") ? "Booking offer received" : summary === "Payment handoff" ? "Opened hosted checkout" : summary === "Reservation confirmed" ? "Stay confirmed" : /workspace|booking/i.test(summary) ? "Booking details updated" : summary;
+    const activity = search ? `Searched ${search[1]}` : /^(Discovery results|All discovery results)$/.test(summary) ? "Viewed stays for your search" : summary.endsWith(" details") ? `Viewed ${summary.slice(0, -" details".length)}` : summary === "Request Draft" ? status === "superseded" ? "" : "Your request" : summary === "Request review" ? "Booking details reviewed" : summary === "Request outcome" ? "Booking request update" : summary.includes("Conditional Booking Offer") ? "Booking offer received" : summary === "Payment handoff" ? "Opened hosted checkout" : summary === "Reservation confirmed" ? "Stay confirmed" : /workspace|booking/i.test(summary) ? "Booking details updated" : summary;
     if (status === "stale") return `${activity} \xB7 details may have changed`;
     if (status === "fallback") return `${activity} \xB7 details unavailable`;
     return activity;
@@ -8708,7 +8746,7 @@ Known schemas:
     const children = [...root.children];
     const title = children.find((child) => child.tagName === "H2" && !/^(₦|NGN\b)/.test(child.textContent?.trim() ?? ""));
     const amount = children.find((child) => child !== title && child.tagName === "H2" && /^(₦|NGN\b)/.test(child.textContent?.trim() ?? ""));
-    const priceLabel = children.find((child) => /^(All-In Stay Total|Indicative nightly rate)/.test(child.textContent?.trim() ?? ""));
+    const priceLabel = children.find((child) => isPriceLabel(child.textContent?.trim() ?? ""));
     const location2 = children.find((child) => child.tagName === "SMALL" && child !== priceLabel);
     const facts = children.find((child) => child.tagName === "P" && child !== title);
     const dates = children.find((child) => child.tagName === "SMALL" && child !== location2 && child !== priceLabel && !/^(Refundable|Amount Due|Nightly|Mandatory)/.test(child.textContent?.trim() ?? ""));
@@ -8768,7 +8806,7 @@ Known schemas:
       location2?.classList.add("stay-card__location");
       children.find((child) => child.tagName === "P")?.classList.add("stay-card__facts");
       smalls[1]?.classList.add("stay-card__amenities");
-      const priceLabel = children.find((child) => /^(All-In Stay Total|Indicative nightly rate)/.test(child.textContent?.trim() ?? ""));
+      const priceLabel = children.find((child) => isPriceLabel(child.textContent?.trim() ?? ""));
       const action = children.find((child) => child.tagName === "BUTTON");
       if (priceLabel) {
         const priceStart = children.indexOf(priceLabel);
@@ -8795,6 +8833,9 @@ Known schemas:
     if (kind === "discovery") decorateDiscoveryCards(mount);
     if (kind === "unit-detail") organizeUnitDetail(mount);
   }
+  function isPriceLabel(text) {
+    return text.startsWith(GUEST_GLOSSARY.allInStayTotal) || text.startsWith("Indicative nightly rate");
+  }
   function isSafeInternalRoute(value) {
     if (typeof value !== "string" || value === "" || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) return false;
     try {
@@ -8815,6 +8856,7 @@ Known schemas:
   function readGuestResponse(value) {
     if (!isRecord3(value) || typeof value.ok !== "boolean") throw new Error("Invalid server response");
     if (value.messages !== void 0 && (!Array.isArray(value.messages) || value.messages.some((message) => typeof message !== "string"))) throw new Error("Invalid response messages");
+    if (value.receipts !== void 0 && (!Array.isArray(value.receipts) || value.receipts.some((receipt) => typeof receipt !== "string"))) throw new Error("Invalid response receipts");
     if (value.surfaces !== void 0 && (!Array.isArray(value.surfaces) || value.surfaces.some((surface) => !isSurfacePayload(surface)))) throw new Error("Invalid response surface");
     return value;
   }
@@ -8866,11 +8908,23 @@ Known schemas:
     }, { once: true });
     turn.appendChild(button);
   }
-  function addHistoricalSummary(summary) {
+  function addMarker(text, className) {
+    if (text === "") return;
+    emptyState.hidden = true;
     const item = document.createElement("p");
-    item.className = "historical-summary";
-    item.textContent = formatGuestHistorySummary(summary.summary, summary.status);
+    item.className = className;
+    item.textContent = text;
     transcript.appendChild(item);
+  }
+  function addHistoricalSummary(summary) {
+    addMarker(formatGuestHistorySummary(summary.summary, summary.status), "historical-summary");
+  }
+  function addReceipt(text) {
+    addMarker(text, "historical-summary receipt-marker");
+  }
+  function addTimelineEntry(entry) {
+    if (entry.role === "receipt") addReceipt(entry.text);
+    else addTurn(entry.role, entry.text);
   }
   function modeFor(surface) {
     if (surface.mode) return surface.mode;
@@ -9090,6 +9144,7 @@ Known schemas:
     if ((response.messages ?? []).length > 0) trackTelemetry("text-response-rendered");
     const surfaces = response.surfaces ?? [];
     renderSurfaces(surfaces);
+    for (const receipt of response.receipts ?? []) addReceipt(receipt);
     return true;
   }
   async function refreshServerState() {
@@ -9224,7 +9279,7 @@ Known schemas:
     try {
       const response = await postJson(`/api/state?threadId=${encodeURIComponent(threadId)}`);
       if (!response.ok || !response.timeline || response.timeline.length === 0) return false;
-      for (const entry of response.timeline) addTurn(entry.role, entry.text);
+      for (const entry of response.timeline) addTimelineEntry(entry);
       renderSurfaces(response.surfaces ?? []);
       announce("Your conversation has been restored.");
       return true;

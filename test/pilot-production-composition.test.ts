@@ -226,7 +226,7 @@ test("Production callback HTTP completion rehydrates the confirmed Reservation a
     const threadId = `g-${crypto.randomUUID()}`;
     let turn = await postJson(base, "/api/turn", guestCookie, { threadId, text: "I need an apartment in Lagos for 2 nights for 2 people" });
     assert.equal(turn.status, 200);
-    let action = surfaceAction(turn.body, "View Unit");
+    let action = surfaceAction(turn.body, "View apartment");
     turn.body = await guestEvent(base, guestCookie, threadId, action);
     action = surfaceAction(turn.body, "Request to Book");
     turn.body = await guestEvent(base, guestCookie, threadId, action);
