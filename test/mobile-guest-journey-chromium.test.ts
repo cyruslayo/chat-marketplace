@@ -187,6 +187,49 @@ test("AC5: New turns scroll into view inside the transcript at 320px and 1280px"
   }
 });
 
+test("AC1: A pending turn shows an indicator that is announced once", async () => {
+  const c = await startContext(390, 844);
+  try {
+    const stopIntercepting = await c.tab.interceptRequests(async (url) => {
+      if (!url.endsWith("/api/turn")) return undefined;
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return { status: 200, headers: [{ name: "Content-Type", value: "application/json" }], body: Buffer.from(JSON.stringify({ ok: true, messages: ["Turn complete."], surfaces: [] })) };
+    });
+    try {
+      await c.tab.evaluate("window.__pendingAnnouncements = 0; new MutationObserver(() => { if (document.getElementById('announcer').textContent.includes('working on your request')) window.__pendingAnnouncements++; }).observe(document.getElementById('announcer'), { childList: true, characterData: true, subtree: true })");
+      await sendPrompt(c.tab, "A pending message");
+      await c.tab.waitForText("Working on your request", 1000);
+      assert.equal(await c.tab.evaluate<string>("document.getElementById('working-status').hidden"), false);
+      await c.tab.waitForText("Turn complete.");
+      assert.equal(await c.tab.evaluate<number>("window.__pendingAnnouncements"), 1);
+    } finally { await stopIntercepting(); }
+  } finally { await c.close(); }
+});
+
+test("AC2: A turn that times out shows Retry and keeps the text", async () => {
+  const c = await startContext(390, 844);
+  try {
+    let attempts = 0;
+    const stopIntercepting = await c.tab.interceptRequests(async (url) => {
+      if (!url.endsWith("/api/turn")) return undefined;
+      attempts++;
+      return attempts === 1
+        ? await new Promise((resolve) => setTimeout(() => resolve({ status: 200, headers: [{ name: "Content-Type", value: "application/json" }], body: Buffer.from(JSON.stringify({ ok: true, messages: ["Late response."], surfaces: [] })) }), 11_000))
+        : { status: 200, headers: [{ name: "Content-Type", value: "application/json" }], body: Buffer.from(JSON.stringify({ ok: true, messages: ["Retry complete."], surfaces: [] })) };
+    });
+    try {
+      await sendPrompt(c.tab, "Keep this draft on failure");
+      await c.tab.waitForText("Retry", 12_000);
+      assert.equal(await c.tab.evaluate<string>("document.getElementById('composer-input').value"), "Keep this draft on failure");
+      assert.equal(await c.tab.clickButton("Retry"), true);
+      await c.tab.waitForText("Retry complete.");
+      assert.equal(attempts, 2);
+      assert.equal(await c.tab.evaluate<number>("[...document.querySelectorAll('button')].filter((b) => b.textContent === 'Retry').length"), 0, "a used Retry control is removed");
+      assert.equal(await c.tab.evaluate<string>("document.getElementById('composer-input').value"), "");
+    } finally { await stopIntercepting(); }
+  } finally { await c.close(); }
+});
+
 async function capturePhase4(context: MobileContext, state: string): Promise<void> {
   if (![320, 390, 768, 1280].includes(context.width)) return;
   const directory = join(process.cwd(), ".scratch", "ui-recovery", "recovered");

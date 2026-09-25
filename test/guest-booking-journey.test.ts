@@ -53,6 +53,28 @@ test("AC1–AC8 — Guest discovery, Unit inspection, Request Draft, review, dis
   } finally { close(environment); }
 });
 
+test("AC3: Retrying a command event does not create a second Booking Request", async () => {
+  const environment = new LocalGuestEnvironment({ databasePath: `.scratch/local-guest/ac3-liveness-${Date.now()}.sqlite` });
+  try {
+    const app = new LocalGuestApp(environment);
+    const threadId = "g-abcdefac33";
+    let result = await app.handleTurn(threadId, "I need an apartment in Ikoyi for 3 nights for 2 people");
+    assert.equal(result.ok, true); if (!result.ok) return;
+    for (let step = 0; step < 3; step++) {
+      result = app.handleEvent(threadId, firstAction(result.surfaces[0]!)) as Surface;
+      assert.equal(result.ok, true); if (!result.ok) return;
+    }
+    const review = result.surfaces[0]!;
+    const submitted = app.handleEvent(threadId, firstAction(review));
+    assert.equal(submitted.ok, true);
+    assert.equal(environment.interactionStore.listBookingRequestIds().length, 1);
+
+    const retried = app.handleEvent(threadId, firstAction(review));
+    assert.equal(retried.ok, false, "a repeated event from the old review surface must fail closed");
+    assert.equal(environment.interactionStore.listBookingRequestIds().length, 1);
+  } finally { close(environment); }
+});
+
 test("AC12–AC23 and AC37–AC39 — Operator confirmation, explicit offer acceptance, PSP return verification, staged payment, reservation commit, and refresh restoration are authoritative", async () => {
   const environment = new LocalGuestEnvironment({ databasePath: `.scratch/local-guest/ac12-${Date.now()}.sqlite` });
   try {

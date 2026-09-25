@@ -1495,6 +1495,7 @@ export function renderGuestShellHtml(): string {
     .bubble { max-width: min(88%, 70ch); padding: var(--space-2) var(--space-3); border-radius: var(--radius-card); font-size: var(--font-size-body); line-height: var(--font-line-body); white-space: pre-wrap; overflow-wrap: anywhere; }
     .turn.assistant .bubble { max-width: 72ch; padding-inline: 0; color: var(--text); }
     .turn.user .bubble { background: var(--surface-soft); color: var(--text); }
+    .retry-action { align-self: flex-start; min-height: 44px; }
     .historical-summary { width: 100%; display: flex; align-items: center; gap: var(--space-2); color: var(--color-text-secondary); font-size: var(--font-size-small); line-height: var(--font-line-small); padding: var(--space-2) 0; border-top: 1px solid var(--border); }
     #empty-state { max-width: 70ch; padding-block: var(--space-3) var(--space-6); }
     #empty-state h2 { margin: 0 0 var(--space-2); font-family: var(--font-display); font-size: var(--font-size-h1); line-height: var(--font-line-h1); font-weight: 600; }

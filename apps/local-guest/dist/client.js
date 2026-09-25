@@ -8852,6 +8852,20 @@ Known schemas:
       if (turn.isConnected) transcript.scrollTop = transcript.scrollHeight;
     });
   }
+  function addRetryTurn(text, retry) {
+    addTurn("assistant", text);
+    const turn = transcript.lastElementChild;
+    if (!(turn instanceof HTMLElement)) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ui-button retry-action";
+    button.textContent = "Retry";
+    button.addEventListener("click", () => {
+      button.remove();
+      retry();
+    }, { once: true });
+    turn.appendChild(button);
+  }
   function addHistoricalSummary(summary) {
     const item = document.createElement("p");
     item.className = "historical-summary";
@@ -9091,8 +9105,12 @@ Known schemas:
     const response = await fetch(path, body === void 0 ? {} : {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      // ADR-0079 bounds establishment; aborting the client wait never rolls back
+      // a command that the server may already have committed.
+      signal: AbortSignal.timeout(1e4)
     });
+    if (!response.ok) throw new Error(`Guest request failed with HTTP ${response.status}`);
     return readGuestResponse(await response.json());
   }
   function setLoading(next) {
@@ -9112,7 +9130,9 @@ Known schemas:
         if (composerInput.value.trim() === text) composerInput.value = "";
       }
     } catch {
-      addTurn("assistant", "The concierge is temporarily unavailable. Your message is still in the composer; please try again.");
+      addRetryTurn("The concierge is temporarily unavailable. Your message is still in the composer; please try again.", () => {
+        void sendTurn(text);
+      });
       announce("The concierge is temporarily unavailable. Your message remains in the composer.", true);
     } finally {
       setLoading(false);
@@ -9134,7 +9154,9 @@ Known schemas:
     try {
       renderResponse(await postJson("/api/event", { threadId, ...action }));
     } catch {
-      addTurn("assistant", "The action could not be sent. Please try again.");
+      addRetryTurn("The action could not be sent. Please try again.", () => {
+        void sendEvent(action);
+      });
       announce("The action could not be sent. Please try again.", true);
     } finally {
       eventInFlight = false;
