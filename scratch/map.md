@@ -72,3 +72,5 @@ A failure outside this list blocks a slice.
 - [13](issues/13-thread-control.md) is delivered by 13a and 13b.
 
 ## Context pointers (append as slices resolve)
+
+- S1 accessibility semantics: [issue 05](issues/05-a11y-semantics.md) — named native action buttons, polite conversation log, assertive error announcements, focused-workspace Escape and focus return, and scrollable transcript/workspace regions.
