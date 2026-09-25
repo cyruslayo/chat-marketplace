@@ -8571,6 +8571,26 @@ Known schemas:
     if (status === "deleted") return "These details are no longer available.";
     return "Some details could not be shown. Continue in the conversation for help.";
   }
+  var GUEST_STATUS_HEADLINES = [
+    { prefix: "Payment was not verified", tone: "danger" },
+    { prefix: "Payment requires review", tone: "danger" },
+    { prefix: "Request declined", tone: "danger" },
+    { prefix: "Request expired", tone: "warning" },
+    { prefix: "Offer expired", tone: "warning" },
+    { prefix: "Offer accepted \xB7 Payment required", tone: "warning" },
+    { prefix: "Payment required", tone: "warning" },
+    { prefix: "Payment processing", tone: "warning" },
+    { prefix: "Offer accepted", tone: "success" },
+    { prefix: "Booking confirmed", tone: "success" },
+    { prefix: "Reservation confirmed", tone: "success" },
+    { prefix: "Reservation and Booking Contract are confirmed", tone: "success" },
+    { prefix: "Request sent", tone: "info" },
+    { prefix: "Offer available", tone: "info" }
+  ];
+  function guestStatusTone(text) {
+    const value = text.trim();
+    return GUEST_STATUS_HEADLINES.find((entry) => value.startsWith(entry.prefix))?.tone;
+  }
   function fallbackSummary(surface) {
     if (surface.status === "fallback") return surface.textFallback ?? surface.summary;
     return guestSurfaceStatusMessage(surface.status) || surface.summary;
@@ -8767,13 +8787,8 @@ Known schemas:
     for (const text of mount.querySelectorAll('[data-a2ui-component="Text"]')) {
       const value = text.textContent?.trim() ?? "";
       const isHeading = /^H[1-6]$/.test(text.tagName);
-      if (!isHeading && /^(Request sent|Request declined|Request expired|Offer available|Offer accepted|Offer expired|Payment required|Payment processing|Payment was not verified|Payment requires review|Booking confirmed|Reservation confirmed|Reservation and Booking Contract are confirmed)/i.test(value)) {
-        text.classList.add("guest-status");
-        if (/declined|not verified|requires review/i.test(value)) text.classList.add("guest-status--danger");
-        else if (/expired|processing|payment required/i.test(value)) text.classList.add("guest-status--warning");
-        else if (/confirmed|accepted/i.test(value)) text.classList.add("guest-status--success");
-        else text.classList.add("guest-status--info");
-      }
+      const tone = isHeading ? void 0 : guestStatusTone(value);
+      if (tone) text.classList.add("guest-status", `guest-status--${tone}`);
       if (/^No stays match|^No current matches/i.test(value)) text.classList.add("empty-state-title");
     }
     if (kind === "discovery") decorateDiscoveryCards(mount);
@@ -8806,6 +8821,8 @@ Known schemas:
   var shellState = createConversationShellState();
   var activePayload;
   var isLoading = false;
+  var eventInFlight = false;
+  var lastActivatedControl;
   function trackTelemetry(event) {
     void fetch("/api/telemetry", {
       method: "POST",
@@ -9103,13 +9120,28 @@ Known schemas:
       announce("That action is no longer available. The workspace has been kept safe.", true);
       return;
     }
+    if (eventInFlight) return;
+    eventInFlight = true;
+    const control = lastActivatedControl?.isConnected && activeWorkspace.contains(lastActivatedControl) ? lastActivatedControl : void 0;
+    control?.setAttribute("data-loading", "true");
+    control?.setAttribute("aria-busy", "true");
+    activeWorkspace.setAttribute("aria-busy", "true");
     try {
       renderResponse(await postJson("/api/event", { threadId, ...action }));
     } catch {
       addTurn("assistant", "The action could not be sent. Please try again.");
       announce("The action could not be sent. Please try again.", true);
+    } finally {
+      eventInFlight = false;
+      control?.removeAttribute("data-loading");
+      control?.removeAttribute("aria-busy");
+      activeWorkspace.removeAttribute("aria-busy");
     }
   }
+  activeWorkspace.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target.closest("button") : null;
+    if (target) lastActivatedControl = target;
+  }, { capture: true });
   var created = createBasicWebRuntime({
     basic: {
       resourcePolicy: ({ kind, url }) => kind === "image" ? safeImageResourceUrl(url) : void 0

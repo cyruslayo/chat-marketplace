@@ -125,6 +125,36 @@ export function guestSurfaceStatusMessage(status: SurfaceLifecycleStatus): strin
   return "Some details could not be shown. Continue in the conversation for help.";
 }
 
+export type GuestStatusTone = "info" | "success" | "warning" | "danger";
+
+/**
+ * Booking-lifecycle headlines emitted by the A2UI builders, mapped to one status tone.
+ * First matching prefix wins, so the more specific prefixes come first. A test checks
+ * that every headline the builders emit is listed here, so a copy change fails the test
+ * suite and cannot silently change the colour.
+ */
+export const GUEST_STATUS_HEADLINES: ReadonlyArray<{ readonly prefix: string; readonly tone: GuestStatusTone }> = [
+  { prefix: "Payment was not verified", tone: "danger" },
+  { prefix: "Payment requires review", tone: "danger" },
+  { prefix: "Request declined", tone: "danger" },
+  { prefix: "Request expired", tone: "warning" },
+  { prefix: "Offer expired", tone: "warning" },
+  { prefix: "Offer accepted · Payment required", tone: "warning" },
+  { prefix: "Payment required", tone: "warning" },
+  { prefix: "Payment processing", tone: "warning" },
+  { prefix: "Offer accepted", tone: "success" },
+  { prefix: "Booking confirmed", tone: "success" },
+  { prefix: "Reservation confirmed", tone: "success" },
+  { prefix: "Reservation and Booking Contract are confirmed", tone: "success" },
+  { prefix: "Request sent", tone: "info" },
+  { prefix: "Offer available", tone: "info" },
+];
+
+export function guestStatusTone(text: string): GuestStatusTone | undefined {
+  const value = text.trim();
+  return GUEST_STATUS_HEADLINES.find((entry) => value.startsWith(entry.prefix))?.tone;
+}
+
 export function fallbackSummary(surface: SurfacePresentation): string {
   if (surface.status === "fallback") return surface.textFallback ?? surface.summary;
   return guestSurfaceStatusMessage(surface.status) || surface.summary;

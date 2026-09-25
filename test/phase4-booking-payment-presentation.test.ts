@@ -190,8 +190,8 @@ test("F and G. Conventional phone and email fields preserve values and associate
   assert.match(email, /for="contactEmail"/);
   assert.match(email, /guest@example.com/);
   assert.match(email, /aria-describedby="contactEmail-help contactEmail-error"/);
-  assert.match(html, /<button type="submit">Save phone number<\/button>/);
-  assert.match(email, /<button type="submit">Save email address<\/button>/);
+  assert.match(html, /<button [^>]*type="submit">Save phone number<\/button>/);
+  assert.match(email, /<button [^>]*type="submit">Save email address<\/button>/);
   assert.doesNotMatch(html, /Save phone number.*Enter a valid|Phone number — Enter a valid/i);
 });
 

@@ -204,7 +204,7 @@ test("Local Apartment Owner Experience — Full End-to-End Verification", async 
       assert.match(htmlText, /Shortlet Apartment Owner Dashboard/);
       assert.match(htmlText, /Eko Prime Living Ltd/);
       assert.match(htmlText, /Luxury 2-Bedroom Apartment in Old Ikoyi/);
-      assert.match(htmlText, /₦120,000\.00/);
+      assert.match(htmlText, /₦120,000(?![.\d])/);
 
       // Test GET /api/state (JSON API)
       const jsonRes = await fetch(`http://localhost:${actualPort}/api/state`);

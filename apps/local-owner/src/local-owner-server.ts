@@ -6,6 +6,8 @@ import {
   DEFAULT_LOCAL_OWNER_CONFIG,
   type LocalOwnerStateOverview,
 } from "./local-owner-environment.js";
+import { escapeHtml, formatMoney, icon, pageShell, type StatusTone } from "../../web/src/ui-kit.js";
+import { formatStayDates } from "../../web-agent/src/booking-presentation.js";
 
 const OPERATOR_SESSION_COOKIE = "shortlet_operator_session";
 const OPERATOR_SECRET_COOKIE = "shortlet_operator_secret";
@@ -24,42 +26,78 @@ function operatorPrincipal(req: IncomingMessage, env: LocalApartmentOwnerEnviron
 }
 
 function operatorLoginHtml(error = ""): string {
-  return `<!doctype html><html lang="en-NG"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Operator sign in</title><style>body{padding:var(--layout-gutter-mobile)}main{max-width:420px;margin:10vh auto;background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-card);padding:24px}label{display:block;color:var(--color-text);font-weight:600;margin:16px 0 6px}input,button{font:inherit;min-height:var(--control-min-field);width:100%;box-sizing:border-box;padding:10px;border-radius:var(--radius-control)}input{border:1px solid var(--color-border);background:var(--color-surface);color:var(--color-text)}button{margin-top:16px;border:1px solid var(--color-action);background:var(--color-action);color:var(--color-surface);font-weight:600;cursor:pointer}.error{color:var(--color-danger)}</style></head><body><main><h1>Operator sign in</h1><p>Enter the one-time access token provided by operations.</p>${error ? `<p class="error" role="alert">${error}</p>` : ""}<form method="post" action="/operator/login"><label for="token">One-time access token</label><input id="token" name="token" autocomplete="one-time-code" required><button type="submit">Sign in</button></form></main></body></html>`;
+  return pageShell({
+    title: "Operator sign in",
+    width: "narrow",
+    body: `<header class="ui-page__header"><p class="ui-eyebrow">Shortlet Operator</p><h1>Operator sign in</h1><p>Enter the one-time access token provided by operations.</p></header>${error ? `<p class="ui-banner ui-banner--danger" role="alert">${icon("alert")}<span>${escapeHtml(error)}</span></p>` : ""}<form class="ui-panel" method="post" action="/operator/login"><div class="ui-field"><label class="ui-field__label" for="token">One-time access token</label><input id="token" name="token" autocomplete="one-time-code" required></div><button class="ui-button ui-button--primary ui-button--block" type="submit">Sign in</button></form>`,
+  });
+}
+
+function logoutForm(): string {
+  return `<form method="post" action="/operator/logout"><button class="ui-button ui-button--quiet" type="submit">Log out</button></form>`;
 }
 
 function operatorShellHtml(principal: { actorId: string; tenantId: string }): string {
-  return `<!doctype html><html lang="en-NG"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Operator</title><style>body{padding:var(--layout-gutter-mobile)}main{max-width:640px;margin:8vh auto;background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-card);padding:24px}button{min-height:var(--control-min-target);padding:10px 18px;border-radius:var(--radius-control);border:1px solid var(--color-border);background:var(--color-surface);color:var(--color-text);cursor:pointer}dt{font-weight:600;margin-top:12px}dd{margin:2px 0}</style></head><body><main><h1>Operator workspace</h1><p>You are authenticated for this tenant. Operator actions remain subject to the active representative grant.</p><dl><dt>Actor reference</dt><dd>${principal.actorId}</dd><dt>Tenant reference</dt><dd>${principal.tenantId}</dd></dl><form method="post" action="/operator/logout"><button type="submit">Log out</button></form></main></body></html>`;
+  return pageShell({
+    title: "Operator",
+    body: `<header class="ui-page__header"><p class="ui-eyebrow">Shortlet Operator</p><h1>Operator workspace</h1><p>You are authenticated for this tenant. Operator actions remain subject to the active representative grant.</p></header><section class="ui-panel"><dl class="ui-facts"><dt>Actor reference</dt><dd>${escapeHtml(principal.actorId)}</dd><dt>Tenant reference</dt><dd>${escapeHtml(principal.tenantId)}</dd></dl><div class="ui-row"><a class="ui-button ui-button--primary" href="/operator/requests">${icon("inbox")}Open Booking Requests</a>${logoutForm()}</div></section>`,
+  });
 }
 
-function escapeHtml(value: string): string { return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character] ?? character)); }
-function withFoundationStyles(html: string): string {
-  return html.replace("</head>", `<link rel="stylesheet" href="/shortlet-foundations.css"><style>
-    body { font-family: var(--font-sans); background: var(--color-canvas); color: var(--color-text); }
-    main { background: var(--color-surface); border-color: var(--color-border); border-radius: var(--radius-card); }
-    a { display: inline-flex; min-block-size: var(--control-min-target); align-items: center; color: var(--color-action); }
-    button, input { font: inherit; }
-    button { border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-text); border-color: var(--color-border); }
-    form[action="/operator/login"] button, .confirm { background: var(--color-action); color: var(--color-surface); border-color: var(--color-action); }
-    .decline { background: var(--color-danger-surface); color: var(--color-danger); border-color: var(--color-danger); }
-    .decline:hover { background: var(--color-danger); color: var(--color-surface); }
-    .decline:active { background: var(--color-danger); color: var(--color-surface); }
-    .error { color: var(--color-danger); border-color: var(--color-danger); }
-    li { border-color: var(--color-border); border-radius: var(--radius-control); }
-    input { color: var(--color-text); border-color: var(--color-border); }
-    @media (max-width: 23rem) { body { padding: var(--space-4); } main { max-width: 100%; padding: var(--space-4); } }
-  </style></head>`);
-}
 function formatWat(iso: string): string { return new Intl.DateTimeFormat("en-NG", { timeZone: "Africa/Lagos", dateStyle: "medium", timeStyle: "short" }).format(new Date(iso)) + " WAT"; }
-function requestStatusLabel(status: string): string { return status === "disclosed" ? "pending" : status; }
+
+/** Operator-facing lifecycle labels. The raw domain status stays in data-status for tooling. */
+function requestStatus(status: string): { readonly label: string; readonly tone: StatusTone } {
+  if (status === "disclosed") return { label: "Awaiting your response", tone: "info" };
+  if (status === "confirmed") return { label: "Request confirmed", tone: "success" };
+  if (status === "declined") return { label: "Request declined", tone: "danger" };
+  if (status === "expired") return { label: "Request expired", tone: "warning" };
+  return { label: `Request ${status}`, tone: "neutral" };
+}
+
+function requestBadge(status: string): string {
+  const { label, tone } = requestStatus(status);
+  return `<span class="ui-status ui-status--${tone}" data-status="${escapeHtml(status)}">${escapeHtml(label)}</span>`;
+}
+
+function guestParty(facts: { readonly occupantCount?: number; readonly occupants: readonly string[] }): string {
+  const count = facts.occupantCount ?? facts.occupants.length;
+  return `${count} ${count === 1 ? "occupant" : "occupants"}`;
+}
+
 function operatorInboxHtml(env: LocalApartmentOwnerEnvironment, principal: { actorId: string; tenantId: string }): string {
   const requests = env.listOperatorRequestArtifacts({ id: principal.actorId, role: "operator", tenantId: principal.tenantId });
-  const rows = requests.map((request) => `<li><a href="/operator/requests/${encodeURIComponent(request.facts.requestId)}"><strong>${escapeHtml(request.facts.requestId)}</strong></a><span>${escapeHtml(request.facts.unitId)} · ${request.facts.checkIn} to ${request.facts.checkOut} · ${request.facts.occupantCount ?? request.facts.occupants.length} occupants · ${formatKobo(request.facts.quote?.allInStayTotalKobo ?? 0)}</span><span>Status: ${requestStatusLabel(request.facts.status)} · Response deadline: ${formatWat(request.facts.operatorResponseDeadlineAt)}</span></li>`).join("");
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Operator requests</title><style>body{font:16px system-ui;margin:0;padding:16px;background:#f7f7f5;color:#202124}main{max-width:900px;margin:0 auto;background:#fff;border:1px solid #ddd;border-radius:12px;padding:20px}li{list-style:none;border:1px solid #ddd;border-radius:10px;padding:14px;margin:10px 0;display:grid;gap:6px}a{color:#155eef}button{min-height:44px;padding:10px 16px;border-radius:8px;border:1px solid #aaa;background:#fff}header{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}@media(max-width:390px){body{padding:8px}main{padding:12px}}</style></head><body><main><header><div><h1>Booking Requests</h1><p>Authenticated Operator inbox</p></div><form method="post" action="/operator/logout"><button type="submit">Log out</button></form></header><h2>Requests</h2>${rows ? `<ul>${rows}</ul>` : "<p>No Booking Requests are visible to this representative.</p>"}</main></body></html>`;
+  const awaiting = requests.filter((request) => request.facts.status === "disclosed").length;
+  const rows = requests.map((request) => {
+    const facts = request.facts;
+    const who = facts.primaryGuestName ? `${escapeHtml(facts.primaryGuestName)} · ` : "";
+    const place = escapeHtml(facts.unitTitle ?? facts.unitId);
+    return `<li><a class="ui-list__row" href="/operator/requests/${encodeURIComponent(facts.requestId)}" aria-describedby="deadline-${escapeHtml(facts.requestId)}"><span class="ui-list__primary">${who}${place}</span><span class="ui-list__aside">${formatMoney(facts.quote?.allInStayTotalKobo ?? 0)}</span><span class="ui-list__secondary">${escapeHtml(formatStayDates(facts.checkIn, facts.checkOut))} · ${facts.nights} ${facts.nights === 1 ? "night" : "nights"} · ${guestParty(facts)}</span><span class="ui-list__status">${requestBadge(facts.status)}</span><span class="ui-list__secondary" id="deadline-${escapeHtml(facts.requestId)}">Respond by ${formatWat(facts.operatorResponseDeadlineAt)}</span></a></li>`;
+  }).join("");
+  const summary = requests.length === 0 ? "" : `<p>${awaiting === 0 ? "Nothing needs a response right now." : `${awaiting} ${awaiting === 1 ? "request needs" : "requests need"} your response.`}</p>`;
+  const list = rows
+    ? `<ul class="ui-list">${rows}</ul>`
+    : `<section class="ui-panel ui-empty"><div class="ui-empty__art">${icon("inbox")}</div><h2>No Booking Requests yet</h2><p>No Booking Requests are visible to this representative. New requests appear here as soon as a Guest sends one.</p></section>`;
+  return pageShell({
+    title: "Operator requests",
+    body: `<header class="ui-page__header"><div class="ui-row" style="justify-content:space-between"><p class="ui-eyebrow">Shortlet Operator</p>${logoutForm()}</div><h1>Booking Requests</h1>${summary}</header><h2 class="ui-sr-only">Requests</h2>${list}`,
+  });
 }
+
 function operatorRequestHtml(env: LocalApartmentOwnerEnvironment, principal: { actorId: string; tenantId: string }, requestId: string, error = ""): string {
   const request = env.operatorRequestDetail(requestId, { id: principal.actorId, role: "operator", tenantId: principal.tenantId });
-  const actionable = request.actions.length > 0 && request.facts.status === "disclosed";
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Booking Request ${escapeHtml(requestId)}</title><style>body{font:16px system-ui;margin:0;padding:16px;background:#f7f7f5;color:#202124}main{max-width:680px;margin:0 auto;background:#fff;border:1px solid #ddd;border-radius:12px;padding:20px}dt{font-weight:700;margin-top:12px}dd{margin:2px 0}form{display:inline-block;margin:8px 8px 0 0}button{min-height:44px;padding:10px 16px;border-radius:8px;border:1px solid #aaa;background:#fff;cursor:pointer}.confirm{background:#155eef;color:#fff}.decline{background:#b42318;color:#fff}.error{color:#b42318;border:1px solid #fda29b;padding:10px}@media(max-width:390px){body{padding:8px}main{padding:12px}}</style></head><body><main><p><a href="/operator/requests">← Back to requests</a></p><h1>Booking Request</h1>${error ? `<p class="error" role="alert">${escapeHtml(error)}</p>` : ""}<dl><dt>Request</dt><dd>${escapeHtml(request.facts.requestId)}</dd><dt>Unit</dt><dd>${escapeHtml(request.facts.unitId)}</dd><dt>Dates</dt><dd>${request.facts.checkIn} to ${request.facts.checkOut} (${request.facts.nights} nights)</dd><dt>Guest party</dt><dd>${request.facts.occupantCount ?? request.facts.occupants.length} occupants</dd><dt>All-In Stay Total</dt><dd>${formatKobo(request.facts.quote?.allInStayTotalKobo ?? 0)}</dd>${request.facts.quote?.refundableSecurityDepositKobo ? `<dt>Refundable Security Deposit</dt><dd>${formatKobo(request.facts.quote.refundableSecurityDepositKobo)}</dd>` : ""}<dt>Status</dt><dd>${requestStatusLabel(request.facts.status)}</dd><dt>Response deadline</dt><dd>${formatWat(request.facts.operatorResponseDeadlineAt)}</dd></dl>${actionable ? `<p>Confirming creates the existing Conditional Booking Offer for the Guest. Declining releases the request inventory.</p><form method="post" action="/operator/requests/${encodeURIComponent(requestId)}/confirm"><button class="confirm" type="submit">Confirm Booking Request</button></form><form method="post" action="/operator/requests/${encodeURIComponent(requestId)}/decline"><button class="decline" type="submit">Decline Booking Request</button></form>` : "<p>This request is no longer actionable.</p>"}</main></body></html>`;
+  const facts = request.facts;
+  const actionable = request.actions.length > 0 && facts.status === "disclosed";
+  const action = (kind: "confirm" | "decline") => `/operator/requests/${encodeURIComponent(requestId)}/${kind}`;
+  // Declining is irreversible for the Guest, so it sits behind a disclosure that restates the consequence.
+  const decisions = actionable
+    ? `<section class="ui-panel" aria-labelledby="decision-heading"><h2 id="decision-heading">Your decision</h2><p>Confirming creates the existing Conditional Booking Offer for the Guest. Declining releases the request inventory.</p><form method="post" action="${action("confirm")}"><button class="ui-button ui-button--primary ui-button--block" type="submit">Confirm Booking Request</button></form><details class="ui-confirm"><summary>Decline this request…</summary><div class="ui-confirm__body"><p>The Guest will be told these dates are not available and the held inventory is released. This cannot be undone.</p><form method="post" action="${action("decline")}"><button class="ui-button ui-button--destructive ui-button--block" type="submit">Decline Booking Request</button></form></div></details></section>`
+    : `<p class="ui-banner">${icon("info")}<span>This request is no longer actionable.</span></p>`;
+  return pageShell({
+    title: `Booking Request · ${facts.unitTitle ?? requestId}`,
+    style: ".ui-panel h2{margin:0;font-size:var(--font-size-h3);line-height:var(--font-line-h3)}.ui-panel p{margin:0}",
+    body: `<p><a class="ui-button ui-button--quiet" href="/operator/requests">${icon("arrow-left")}Back to requests</a></p><header class="ui-page__header"><p class="ui-eyebrow">Booking Request</p><h1>${escapeHtml(facts.unitTitle ?? facts.unitId)}</h1><div class="ui-row">${requestBadge(facts.status)}</div></header>${error ? `<p class="ui-banner ui-banner--danger" role="alert">${icon("alert")}<span>${escapeHtml(error)}</span></p>` : ""}<section class="ui-panel" aria-label="Request facts"><dl class="ui-facts"><dt>Request</dt><dd>${escapeHtml(facts.requestId)}</dd><dt>Unit</dt><dd>${escapeHtml(facts.unitId)}</dd><dt>Dates</dt><dd><time datetime="${escapeHtml(facts.checkIn)}">${escapeHtml(facts.checkIn)}</time> to <time datetime="${escapeHtml(facts.checkOut)}">${escapeHtml(facts.checkOut)}</time> (${facts.nights} nights)</dd><dt>Guest party</dt><dd>${guestParty(facts)}</dd><dt>All-In Stay Total</dt><dd class="ui-money-total">${formatMoney(facts.quote?.allInStayTotalKobo ?? 0)}</dd>${facts.quote?.refundableSecurityDepositKobo ? `<dt>Refundable Security Deposit</dt><dd>${formatMoney(facts.quote.refundableSecurityDepositKobo)}</dd>` : ""}<dt>Response deadline</dt><dd>${formatWat(facts.operatorResponseDeadlineAt)}</dd></dl></section>${decisions}`,
+  });
 }
 
 function operatorRequestDetailHtml(env: LocalApartmentOwnerEnvironment, principal: { actorId: string; tenantId: string }, requestId: string, error = ""): string {
@@ -70,37 +108,31 @@ function operatorRequestDetailHtml(env: LocalApartmentOwnerEnvironment, principa
   return html.replace("<dt>All-In Stay Total</dt>", `<dt>Phone number</dt><dd>${escapeHtml(phone)}</dd><dt>All-In Stay Total</dt>`);
 }
 
-function formatKobo(kobo: number): string {
-  const naira = (kobo / 100).toLocaleString("en-NG", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-  return `₦${naira}`;
-}
+const formatKobo = formatMoney;
 
 export function renderOwnerDashboardHtml(overview: LocalOwnerStateOverview): string {
   const latestRequest = overview.pendingRequests[overview.pendingRequests.length - 1];
 
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en-NG" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Shortlet Marketplace — Local Apartment Owner Test Surface</title>
+  <link rel="stylesheet" href="/shortlet-foundations.css">
   <style>
     :root {
-      --bg: #0d1117;
-      --card-bg: #161b22;
-      --border: #30363d;
-      --text: #c9d1d9;
-      --text-heading: #f0f6fc;
-      --accent: #238636;
-      --accent-hover: #2ea043;
-      --danger: #da3633;
-      --danger-hover: #f85149;
-      --warning: #d29922;
-      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      /* Developer-only surface: the shared dark roles from shortlet-foundations.css. */
+      --bg: var(--color-canvas);
+      --card-bg: var(--color-surface);
+      --border: var(--color-border-subtle);
+      --text: var(--color-text-secondary);
+      --text-heading: var(--color-text);
+      --text-muted: var(--color-text-muted);
+      --accent: var(--color-action);
+      --accent-hover: var(--color-action-hover);
+      --danger: var(--color-danger);
+      --warning: var(--color-warning);
     }
     body {
       background-color: var(--bg);
@@ -130,15 +162,15 @@ export function renderOwnerDashboardHtml(overview: LocalOwnerStateOverview): str
     .badge {
       display: inline-block;
       padding: 4px 8px;
-      border-radius: 6px;
+      border-radius: var(--radius-control);
       font-size: 12px;
       font-weight: 600;
       text-transform: uppercase;
     }
-    .badge-success { background: #23863633; color: #3fb950; border: 1px solid #238636; }
-    .badge-warning { background: #d2992233; color: #e3b341; border: 1px solid #d29922; }
-    .badge-info { background: #388bfd33; color: #58a6ff; border: 1px solid #388bfd; }
-    .badge-danger { background: #da363333; color: #f85149; border: 1px solid #da3633; }
+    .badge-success { background: var(--color-success-surface); color: var(--color-success); border: 1px solid var(--color-success-border); }
+    .badge-warning { background: var(--color-warning-surface); color: var(--color-warning); border: 1px solid var(--color-warning-border); }
+    .badge-info { background: var(--color-info-surface); color: var(--color-info); border: 1px solid var(--color-info-border); }
+    .badge-danger { background: var(--color-danger-surface); color: var(--color-danger); border: 1px solid var(--color-danger-border); }
     
     .grid {
       display: grid;
@@ -149,7 +181,7 @@ export function renderOwnerDashboardHtml(overview: LocalOwnerStateOverview): str
     .card {
       background: var(--card-bg);
       border: 1px solid var(--border);
-      border-radius: 8px;
+      border-radius: var(--radius-card);
       padding: 20px;
     }
     .card h2 {
@@ -169,14 +201,16 @@ export function renderOwnerDashboardHtml(overview: LocalOwnerStateOverview): str
       margin-bottom: 8px;
       font-size: 14px;
     }
-    .meta-label { color: #8b949e; }
+    .meta-label { color: var(--text-muted); }
+    .muted { color: var(--text-muted); font-size: var(--font-size-small); }
+    .positive { color: var(--color-success); }
     .meta-value { color: var(--text-heading); font-weight: 500; }
     .mono { font-family: var(--font-mono); }
     
     .actions-panel {
       background: var(--card-bg);
       border: 1px solid var(--border);
-      border-radius: 8px;
+      border-radius: var(--radius-card);
       padding: 20px;
       margin-bottom: 24px;
     }
@@ -185,17 +219,17 @@ export function renderOwnerDashboardHtml(overview: LocalOwnerStateOverview): str
       padding: 8px 16px;
       font-size: 14px;
       font-weight: 600;
-      border-radius: 6px;
+      border-radius: var(--radius-control);
       cursor: pointer;
       border: none;
       text-decoration: none;
     }
-    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary { background: var(--accent); color: var(--color-on-action); }
     .btn-primary:hover { background: var(--accent-hover); }
-    .btn-danger { background: var(--danger); color: #fff; }
-    .btn-danger:hover { background: var(--danger-hover); }
-    .btn-secondary { background: #21262d; color: var(--text); border: 1px solid var(--border); }
-    .btn-secondary:hover { background: #30363d; }
+    .btn-danger { background: var(--color-danger-surface); color: var(--danger); border: 1px solid var(--color-danger-border); }
+    .btn-danger:hover { background: var(--color-danger-border); }
+    .btn-secondary { background: var(--color-surface-subtle); color: var(--text); border: 1px solid var(--color-border); }
+    .btn-secondary:hover { background: var(--color-surface-elevated); }
     
     .btn-group {
       display: flex;
@@ -205,21 +239,21 @@ export function renderOwnerDashboardHtml(overview: LocalOwnerStateOverview): str
     
     .request-box {
       border: 1px solid var(--border);
-      border-radius: 6px;
+      border-radius: var(--radius-control);
       padding: 16px;
-      background: #0d1117;
+      background: var(--bg);
       margin-top: 12px;
     }
     
     pre {
-      background: #0d1117;
+      background: var(--bg);
       padding: 12px;
-      border-radius: 6px;
+      border-radius: var(--radius-control);
       border: 1px solid var(--border);
       font-family: var(--font-mono);
       font-size: 12px;
       overflow-x: auto;
-      color: #8b949e;
+      color: var(--text-muted);
     }
   </style>
 </head>
@@ -228,7 +262,7 @@ export function renderOwnerDashboardHtml(overview: LocalOwnerStateOverview): str
     <header>
       <div>
         <h1>Shortlet Apartment Owner Dashboard</h1>
-        <div style="font-size: 14px; color: #8b949e;">Local Developer Simulation & Testing Experience (Local Owner Ready)</div>
+        <div class="muted">Local Developer Simulation & Testing Experience (Local Owner Ready)</div>
       </div>
       <div>
         <span class="badge badge-success">Localhost Fixture Active</span>
@@ -336,7 +370,7 @@ export function renderOwnerDashboardHtml(overview: LocalOwnerStateOverview): str
         </div>
         <div class="meta-row">
           <span class="meta-label">Ordinary Settlement (100%):</span>
-          <span class="meta-value" style="color: #3fb950;">${formatKobo(overview.payoutProjections.payableNowKobo)}</span>
+          <span class="meta-value positive">${formatKobo(overview.payoutProjections.payableNowKobo)}</span>
         </div>
         <div class="meta-row">
           <span class="meta-label">Routine Reserve:</span>
@@ -396,7 +430,7 @@ export function renderOwnerDashboardHtml(overview: LocalOwnerStateOverview): str
             </div>
           `
               : `
-            <div style="margin-top: 12px; color: #8b949e; font-size: 14px;">
+            <div class="muted" style="margin-top: 12px;">
               Request finalized with status <strong>${latestRequest.facts.status}</strong>.
             </div>
           `
@@ -404,7 +438,7 @@ export function renderOwnerDashboardHtml(overview: LocalOwnerStateOverview): str
         </div>
       `
           : `
-        <p style="color: #8b949e;">No demo booking requests active. Click below to simulate a verified incoming guest request.</p>
+        <p class="muted">No demo booking requests active. Click below to simulate a verified incoming guest request.</p>
         <form method="POST" action="/action/demo-request">
           <button type="submit" class="btn btn-secondary">Generate Demo Booking Request</button>
         </form>
@@ -416,14 +450,14 @@ export function renderOwnerDashboardHtml(overview: LocalOwnerStateOverview): str
           <button type="submit" class="btn btn-secondary">New Demo Request</button>
         </form>
         <form method="POST" action="/action/reset">
-          <button type="submit" class="btn btn-secondary" style="color: #f85149;">Reset Fixture</button>
+          <button type="submit" class="btn btn-danger">Reset Fixture</button>
         </form>
       </div>
     </div>
 
     <!-- API State Payload JSON -->
     <details>
-      <summary style="cursor: pointer; color: #8b949e; font-size: 14px; margin-bottom: 8px;">View Authoritative Local State JSON</summary>
+      <summary class="muted" style="cursor: pointer; margin-bottom: 8px;">View Authoritative Local State JSON</summary>
       <pre>${JSON.stringify(overview, null, 2)}</pre>
     </details>
   </div>
@@ -459,7 +493,7 @@ export function startLocalOwnerServer(options: {
     }
 
     if (req.method === "GET" && url.pathname === "/operator/login") {
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(withFoundationStyles(operatorLoginHtml())); return;
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(operatorLoginHtml()); return;
     }
     if (req.method === "POST" && url.pathname === "/operator/login") {
       if (!browserOriginAccepted(req)) { res.writeHead(403); res.end("Origin rejected"); return; }
@@ -469,24 +503,24 @@ export function startLocalOwnerServer(options: {
         const result = env.sessionAuthority.authenticateAccessToken(params.get("token") ?? "");
         res.setHeader("Set-Cookie", [`${OPERATOR_SESSION_COOKIE}=${encodeURIComponent(result.sessionId)}${cookieFlags}`, `${OPERATOR_SECRET_COOKIE}=${encodeURIComponent(result.sessionSecret)}${cookieFlags}`]);
         res.writeHead(302, { Location: "/operator" }); res.end();
-      } catch (error) { res.writeHead(401, { "Content-Type": "text/html; charset=utf-8" }); res.end(withFoundationStyles(operatorLoginHtml(error instanceof Error ? error.message : "Authentication failed"))); }
+      } catch (error) { res.writeHead(401, { "Content-Type": "text/html; charset=utf-8" }); res.end(operatorLoginHtml(error instanceof Error ? error.message : "Authentication failed")); }
       return;
     }
     if (url.pathname === "/operator" || url.pathname === "/operator/") {
       const principal = operatorPrincipal(req, env);
       if (!principal) { res.writeHead(401, { "Location": "/operator/login", "Content-Type": "text/plain" }); res.end("Authentication required"); return; }
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(withFoundationStyles(operatorShellHtml(principal))); return;
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(operatorShellHtml(principal)); return;
     }
     if (url.pathname === "/operator/requests" || url.pathname === "/operator/requests/") {
       const principal = operatorPrincipal(req, env);
       if (!principal) { res.writeHead(401); res.end("Authentication required"); return; }
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(withFoundationStyles(operatorInboxHtml(env, principal))); return;
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(operatorInboxHtml(env, principal)); return;
     }
     const detailMatch = url.pathname.match(/^\/operator\/requests\/([^/]+)$/);
     if (req.method === "GET" && detailMatch) {
       const principal = operatorPrincipal(req, env);
       if (!principal) { res.writeHead(401); res.end("Authentication required"); return; }
-      try { res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(withFoundationStyles(operatorRequestDetailHtml(env, principal, decodeURIComponent(detailMatch[1])))); }
+      try { res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(operatorRequestDetailHtml(env, principal, decodeURIComponent(detailMatch[1]))); }
       catch { res.writeHead(404); res.end("Request not found"); }
       return;
     }
@@ -503,7 +537,7 @@ export function startLocalOwnerServer(options: {
       } catch (error) {
         let body = "Request action rejected";
         try { body = operatorRequestDetailHtml(env, principal, requestId, error instanceof Error ? error.message : "Request action rejected"); } catch { /* authorization may have changed; keep generic */ }
-        if (!res.headersSent) { res.writeHead(409, { "Content-Type": body.startsWith("<!doctype") ? "text/html; charset=utf-8" : "text/plain; charset=utf-8" }); res.end(body.startsWith("<!doctype") ? withFoundationStyles(body) : body); }
+        if (!res.headersSent) { res.writeHead(409, { "Content-Type": body.startsWith("<!doctype") ? "text/html; charset=utf-8" : "text/plain; charset=utf-8" }); res.end(body); }
       }
       return;
     }

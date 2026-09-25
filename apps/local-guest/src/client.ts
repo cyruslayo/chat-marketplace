@@ -12,6 +12,7 @@ import {
   formatGuestHistorySummary,
   guestSurfaceHeading,
   guestSurfaceStatusMessage,
+  guestStatusTone,
   markActiveSurfaceStatus,
   replaceActiveSurface,
   reopenFocusedSurface,
@@ -239,13 +240,8 @@ function enhanceSurfacePresentation(mount: HTMLElement, kind: string): void {
   for (const text of mount.querySelectorAll<HTMLElement>('[data-a2ui-component="Text"]')) {
     const value = text.textContent?.trim() ?? "";
     const isHeading = /^H[1-6]$/.test(text.tagName);
-    if (!isHeading && /^(Request sent|Request declined|Request expired|Offer available|Offer accepted|Offer expired|Payment required|Payment processing|Payment was not verified|Payment requires review|Booking confirmed|Reservation confirmed|Reservation and Booking Contract are confirmed)/i.test(value)) {
-      text.classList.add("guest-status");
-      if (/declined|not verified|requires review/i.test(value)) text.classList.add("guest-status--danger");
-      else if (/expired|processing|payment required/i.test(value)) text.classList.add("guest-status--warning");
-      else if (/confirmed|accepted/i.test(value)) text.classList.add("guest-status--success");
-      else text.classList.add("guest-status--info");
-    }
+    const tone = isHeading ? undefined : guestStatusTone(value);
+    if (tone) text.classList.add("guest-status", `guest-status--${tone}`);
     if (/^No stays match|^No current matches/i.test(value)) text.classList.add("empty-state-title");
   }
   if (kind === "discovery") decorateDiscoveryCards(mount);
@@ -278,6 +274,8 @@ const threadId = getThreadId();
 let shellState: ConversationShellState = createConversationShellState();
 let activePayload: GuestSurfacePayload | undefined;
 let isLoading = false;
+let eventInFlight = false;
+let lastActivatedControl: HTMLElement | undefined;
 
 type ShellTelemetryEvent =
   | "text-response-rendered"
@@ -610,9 +608,28 @@ async function sendEvent(action: { readonly name: string; readonly surfaceId: st
     announce("That action is no longer available. The workspace has been kept safe.", true);
     return;
   }
+  // One surface action at a time: a second tap while the first is pending must not
+  // submit twice. The activated button shows the shared ui-button loading state.
+  if (eventInFlight) return;
+  eventInFlight = true;
+  const control = lastActivatedControl?.isConnected && activeWorkspace.contains(lastActivatedControl) ? lastActivatedControl : undefined;
+  control?.setAttribute("data-loading", "true");
+  control?.setAttribute("aria-busy", "true");
+  activeWorkspace.setAttribute("aria-busy", "true");
   try { renderResponse(await postJson("/api/event", { threadId, ...action })); }
   catch { addTurn("assistant", "The action could not be sent. Please try again."); announce("The action could not be sent. Please try again.", true); }
+  finally {
+    eventInFlight = false;
+    control?.removeAttribute("data-loading");
+    control?.removeAttribute("aria-busy");
+    activeWorkspace.removeAttribute("aria-busy");
+  }
 }
+
+activeWorkspace.addEventListener("click", (event) => {
+  const target = event.target instanceof Element ? event.target.closest<HTMLElement>("button") : null;
+  if (target) lastActivatedControl = target;
+}, { capture: true });
 
 const created = createBasicWebRuntime({
   basic: {

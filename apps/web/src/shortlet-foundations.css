@@ -1,7 +1,32 @@
-/* Shared Shortlet presentation foundation. Values follow the approved design direction. */
+/* Shared Shortlet presentation foundation (design system v2).
+   Light values follow the approved design direction and stay authoritative; v2 adds
+   primitives, the missing semantic roles, opt-in dark mode, the Weaver/A2UI theme bridge
+   and the shared ui-* components. Pages opt into dark mode with
+   <html data-theme="system"> (follows the OS) or data-theme="dark" (forced). */
 :root {
   color-scheme: light;
 
+  /* Primitive ramps. Components must use the semantic roles below, not these. */
+  --green-50: #EEF6F2;
+  --green-100: #D5EBE0;
+  --green-400: #5CC49A;
+  --green-700: #0B5C46;
+  --green-800: #084735;
+  --green-900: #063A2C;
+  --green-950: #06150F;
+  --sand-50: #F6F5F0;
+  --sand-100: #EEECE5;
+  --sand-200: #E0DDD3;
+  --sand-500: #747C75;
+  --sand-600: #5D6A62;
+  --sand-700: #49574E;
+  --sand-900: #1D2923;
+  --sand-950: #111814;
+  --clay-100: #F7E6D8;
+  --clay-400: #E59A6A;
+  --clay-700: #8A4318;
+
+  /* Semantic roles (light). */
   --color-canvas: #F6F5F0;
   --color-surface: #FFFFFF;
   --color-surface-subtle: #EEECE5;
@@ -10,20 +35,33 @@
   --color-text-secondary: #49574E;
   --color-text-muted: #5D6A62;
   --color-border: #747C75;
+  --color-border-subtle: #D9D6CC;
   --color-action: #0B5C46;
   --color-action-hover: #084735;
   --color-action-pressed: #063A2C;
+  --color-on-action: #FFFFFF;
+  --color-action-subtle: #EEF6F2;
+  --color-accent: #8A4318;
+  --color-accent-subtle: #F7E6D8;
   --color-focus: #995300;
   --color-success: #176B49;
   --color-success-surface: #EAF4EE;
+  --color-success-border: #A9D3BD;
   --color-warning: #7A4C00;
   --color-warning-surface: #FFF2D6;
+  --color-warning-border: #EBC77F;
   --color-danger: #A12B2B;
   --color-danger-surface: #FCECEC;
+  --color-danger-border: #EDB1B1;
   --color-info: #185F83;
   --color-info-surface: #EAF3F8;
+  --color-info-border: #A8CDE0;
 
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  /* Display serif for place names, page titles and money totals. System faces only:
+     no third-party font request (privacy, ADR-0078 text-before-media). */
+  --font-display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
   --font-size-display: 2.5rem;
   --font-line-display: 1.15;
   --font-size-h1: 2rem;
@@ -45,12 +83,15 @@
   --font-size-money-detail: 1rem;
   --font-line-money-detail: 1.5;
 
+  /* Spacing: --space-N is N × 4px. */
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
   --space-4: 1rem;
+  --space-5: 1.25rem;
   --space-6: 1.5rem;
   --space-8: 2rem;
+  --space-10: 2.5rem;
   --space-12: 3rem;
   --space-16: 4rem;
 
@@ -58,7 +99,23 @@
   --radius-control: 0.5rem;
   --radius-card: 0.75rem;
   --radius-workspace: 1rem;
+  --radius-hero: 1.5rem;
+  --radius-round: 50%;
+
+  --elevation-raised: 0 1px 2px rgb(29 41 35 / 6%), 0 1px 1px rgb(29 41 35 / 4%);
   --elevation-active: 0 0.5rem 1.5rem rgb(29 41 35 / 8%);
+  --elevation-overlay: 0 1rem 2.5rem rgb(29 41 35 / 14%), 0 0.25rem 0.625rem rgb(29 41 35 / 6%);
+
+  --duration-instant: 80ms;
+  --duration-fast: 140ms;
+  --duration-base: 200ms;
+  --duration-slow: 320ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-enter: cubic-bezier(0, 0, 0, 1);
+
+  --layer-sticky: 10;
+  --layer-skip-link: 30;
+  --layer-dialog: 50;
 
   --layout-gutter-mobile: 1rem;
   --layout-gutter-tablet: 1.5rem;
@@ -71,6 +128,82 @@
 
   --control-min-target: 2.75rem;
   --control-min-field: 3rem;
+}
+
+/* Dark roles. Every text pair keeps ≥4.5:1 and every control edge ≥3:1
+   (asserted in test/shortlet-ui-foundations.test.ts). */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-canvas: #111814;
+  --color-surface: #18211C;
+  --color-surface-subtle: #212C26;
+  --color-surface-elevated: #26322B;
+  --color-text: #E6EBE5;
+  --color-text-secondary: #C3CCC5;
+  --color-text-muted: #A3AFA7;
+  --color-border: #6B776F;
+  --color-border-subtle: #323E37;
+  --color-action: #5CC49A;
+  --color-action-hover: #78D2AD;
+  --color-action-pressed: #94DDBF;
+  --color-on-action: #06150F;
+  --color-action-subtle: #15342A;
+  --color-accent: #E59A6A;
+  --color-accent-subtle: #3A2518;
+  --color-focus: #F2A554;
+  --color-success: #72D3A2;
+  --color-success-surface: #13301F;
+  --color-success-border: #2C5B41;
+  --color-warning: #F2C46E;
+  --color-warning-surface: #33280F;
+  --color-warning-border: #65501F;
+  --color-danger: #F4A09C;
+  --color-danger-surface: #3B1A19;
+  --color-danger-border: #6E3432;
+  --color-info: #86C6EA;
+  --color-info-surface: #10283A;
+  --color-info-border: #2A5170;
+  --elevation-raised: 0 1px 2px rgb(0 0 0 / 40%);
+  --elevation-active: 0 0.5rem 1.5rem rgb(0 0 0 / 45%), 0 0 0 1px rgb(255 255 255 / 4%);
+  --elevation-overlay: 0 1rem 2.75rem rgb(0 0 0 / 55%), 0 0 0 1px rgb(255 255 255 / 5%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"] {
+    color-scheme: dark;
+    --color-canvas: #111814;
+    --color-surface: #18211C;
+    --color-surface-subtle: #212C26;
+    --color-surface-elevated: #26322B;
+    --color-text: #E6EBE5;
+    --color-text-secondary: #C3CCC5;
+    --color-text-muted: #A3AFA7;
+    --color-border: #6B776F;
+    --color-border-subtle: #323E37;
+    --color-action: #5CC49A;
+    --color-action-hover: #78D2AD;
+    --color-action-pressed: #94DDBF;
+    --color-on-action: #06150F;
+    --color-action-subtle: #15342A;
+    --color-accent: #E59A6A;
+    --color-accent-subtle: #3A2518;
+    --color-focus: #F2A554;
+    --color-success: #72D3A2;
+    --color-success-surface: #13301F;
+    --color-success-border: #2C5B41;
+    --color-warning: #F2C46E;
+    --color-warning-surface: #33280F;
+    --color-warning-border: #65501F;
+    --color-danger: #F4A09C;
+    --color-danger-surface: #3B1A19;
+    --color-danger-border: #6E3432;
+    --color-info: #86C6EA;
+    --color-info-surface: #10283A;
+    --color-info-border: #2A5170;
+    --elevation-raised: 0 1px 2px rgb(0 0 0 / 40%);
+    --elevation-active: 0 0.5rem 1.5rem rgb(0 0 0 / 45%), 0 0 0 1px rgb(255 255 255 / 4%);
+    --elevation-overlay: 0 1rem 2.75rem rgb(0 0 0 / 55%), 0 0 0 1px rgb(255 255 255 / 5%);
+  }
 }
 
 /* Behavior thresholds map the approved 320/390, ~768 and 1024px+ layout steps. */
@@ -120,6 +253,8 @@
   :where(h2) { font-size: var(--font-size-h2); line-height: var(--font-line-h2); font-weight: 650; }
   :where(h3) { font-size: var(--font-size-h3); line-height: var(--font-line-h3); font-weight: 650; }
   :where(.ui-display) { font-size: var(--font-size-display); line-height: var(--font-line-display); font-weight: 700; }
+  :where(.ui-serif) { font-family: var(--font-display); font-weight: 600; letter-spacing: -0.005em; }
+  :where(.ui-eyebrow) { color: var(--color-text-muted); font-size: var(--font-size-metadata); line-height: var(--font-line-metadata); font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; }
 
   :where(*, *::before, *::after) { box-sizing: border-box; }
   :where(img, picture, video, canvas, svg) { max-inline-size: 100%; }
@@ -137,6 +272,20 @@
     outline: 3px solid var(--color-focus);
     outline-offset: 2px;
   }
+
+  .ui-sr-only { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+  /* Page scaffold for server-rendered conventional pages (see apps/web/src/ui-kit.ts). */
+  .ui-page { inline-size: min(100% - 2 * var(--layout-gutter-mobile), var(--layout-workspace-max)); margin-inline: auto; padding-block: var(--space-6) var(--space-10); display: grid; gap: var(--space-6); align-content: start; }
+  .ui-page--narrow { inline-size: min(100% - 2 * var(--layout-gutter-mobile), 30rem); }
+  .ui-page__header { display: grid; gap: var(--space-2); }
+  .ui-page__header h1 { margin: 0; font-family: var(--font-display); font-weight: 600; }
+  .ui-page__header p { margin: 0; color: var(--color-text-secondary); }
+  .ui-panel { display: grid; gap: var(--space-4); padding: var(--space-5); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-card); background: var(--color-surface); }
+  .ui-stack { display: grid; gap: var(--space-4); }
+  .ui-row { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+
+  .ui-icon { inline-size: 1.25em; block-size: 1.25em; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 
   .ui-button {
     display: inline-flex;
@@ -156,25 +305,39 @@
     text-align: center;
     text-decoration: none;
     cursor: pointer;
+    transition: background-color var(--duration-fast) var(--ease-standard), border-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
   }
 
   .ui-button--primary {
     border-color: var(--color-action);
     background: var(--color-action);
-    color: var(--color-surface);
+    color: var(--color-on-action);
   }
   .ui-button--secondary { background: var(--color-surface-subtle); }
   .ui-button--quiet { border-color: transparent; background: transparent; color: var(--color-action); }
   .ui-button--destructive { border-color: var(--color-danger); background: var(--color-danger-surface); color: var(--color-danger); }
+  .ui-button--block { inline-size: 100%; }
+  .ui-button--small { min-block-size: 2.25rem; padding-inline: var(--space-3); font-size: var(--font-size-small); }
   .ui-button--secondary:hover:not(:disabled, [aria-disabled="true"], [data-loading="true"]) { background: var(--color-surface); }
   .ui-button--quiet:hover:not(:disabled, [aria-disabled="true"], [data-loading="true"]) { background: var(--color-surface-subtle); }
   .ui-button:hover:not(:disabled, [aria-disabled="true"], [data-loading="true"]) { border-color: var(--color-action-hover); }
-  .ui-button--primary:hover:not(:disabled, [aria-disabled="true"], [data-loading="true"]) { background: var(--color-action-hover); color: var(--color-surface); }
-  .ui-button--destructive:hover:not(:disabled, [aria-disabled="true"], [data-loading="true"]) { background: var(--color-danger); color: var(--color-surface); text-decoration: underline; text-decoration-thickness: 0.12em; }
-  .ui-button:active:not(:disabled, [aria-disabled="true"], [data-loading="true"]) { background: var(--color-action-pressed); color: var(--color-surface); }
+  .ui-button--primary:hover:not(:disabled, [aria-disabled="true"], [data-loading="true"]) { background: var(--color-action-hover); color: var(--color-on-action); }
+  .ui-button--destructive:hover:not(:disabled, [aria-disabled="true"], [data-loading="true"]) { border-color: var(--color-danger); background: var(--color-danger); color: var(--color-surface); text-decoration: underline; text-decoration-thickness: 0.12em; }
+  .ui-button:active:not(:disabled, [aria-disabled="true"], [data-loading="true"]) { background: var(--color-action-pressed); color: var(--color-on-action); }
   .ui-button--destructive:active:not(:disabled, [aria-disabled="true"], [data-loading="true"]) { background: var(--color-danger); color: var(--color-surface); }
   .ui-button:disabled, .ui-button[aria-disabled="true"] { border-style: dashed; color: var(--color-text-secondary); cursor: not-allowed; }
   .ui-button[data-loading="true"] { cursor: progress; }
+  .ui-button[data-loading="true"]::before {
+    content: "";
+    inline-size: 1em;
+    block-size: 1em;
+    flex: none;
+    border: 2px solid currentColor;
+    border-inline-end-color: transparent;
+    border-radius: var(--radius-round);
+    animation: ui-spin 700ms linear infinite;
+  }
+  @keyframes ui-spin { to { transform: rotate(360deg); } }
 
   .ui-field { display: grid; gap: var(--space-2); min-inline-size: 0; }
   .ui-field__label { color: var(--color-text); font-size: var(--font-size-label); line-height: var(--font-line-label); font-weight: 600; }
@@ -191,8 +354,26 @@
   .ui-field textarea { min-block-size: 6rem; resize: vertical; }
   .ui-field :disabled { border-style: dashed; background: var(--color-surface-subtle); color: var(--color-text-secondary); cursor: not-allowed; }
   .ui-field :user-invalid, .ui-field [aria-invalid="true"] { border: 2px solid var(--color-danger); }
-  .ui-field__hint { color: var(--color-text-secondary); font-size: var(--font-size-small); line-height: var(--font-line-small); }
-  .ui-field__error { color: var(--color-danger); font-size: var(--font-size-small); line-height: var(--font-line-small); font-weight: 600; }
+  .ui-field__hint { margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-small); line-height: var(--font-line-small); }
+  .ui-field__error { margin: 0; color: var(--color-danger); font-size: var(--font-size-small); line-height: var(--font-line-small); font-weight: 600; }
+
+  .ui-chip {
+    display: inline-flex;
+    min-block-size: var(--control-min-target);
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-control);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-size: var(--font-size-small);
+    line-height: var(--font-line-small);
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .ui-chip:hover { border-color: var(--color-action); background: var(--color-action-subtle); }
+  .ui-chip[aria-pressed="true"], .ui-chip:has(input:checked) { border-color: var(--color-action); background: var(--color-action-subtle); color: var(--color-action); }
 
   .ui-status {
     display: inline-flex;
@@ -202,9 +383,11 @@
     padding: var(--space-1) var(--space-2);
     border: 1px solid currentColor;
     border-radius: var(--radius-small);
+    font-size: var(--font-size-small);
+    line-height: var(--font-line-small);
     font-weight: 600;
   }
-  .ui-status::before { content: ""; inline-size: 0.625rem; block-size: 0.625rem; flex: none; border: 2px solid currentColor; border-radius: 50%; }
+  .ui-status::before { content: ""; inline-size: 0.625rem; block-size: 0.625rem; flex: none; border: 2px solid currentColor; border-radius: var(--radius-round); }
   .ui-status--neutral { color: var(--color-text-secondary); background: var(--color-surface-subtle); }
   .ui-status--info { color: var(--color-info); background: var(--color-info-surface); }
   .ui-status--success { color: var(--color-success); background: var(--color-success-surface); }
@@ -212,9 +395,48 @@
   .ui-status--danger { color: var(--color-danger); background: var(--color-danger-surface); }
   .ui-status--stale { border-style: dashed; }
 
-  .ui-money-total { color: var(--color-text); font-size: var(--font-size-money-total); line-height: var(--font-line-money-total); font-weight: 700; font-variant-numeric: tabular-nums; }
+  .ui-banner { display: flex; gap: var(--space-3); align-items: flex-start; margin: 0; padding: var(--space-3) var(--space-4); border: 1px solid var(--color-info-border); border-radius: var(--radius-card); background: var(--color-info-surface); color: var(--color-text); }
+  .ui-banner > .ui-icon { margin-block-start: 0.125rem; color: var(--color-info); }
+  .ui-banner--success { border-color: var(--color-success-border); background: var(--color-success-surface); }
+  .ui-banner--success > .ui-icon { color: var(--color-success); }
+  .ui-banner--warning { border-color: var(--color-warning-border); background: var(--color-warning-surface); }
+  .ui-banner--warning > .ui-icon { color: var(--color-warning); }
+  .ui-banner--danger { border-color: var(--color-danger-border); background: var(--color-danger-surface); }
+  .ui-banner--danger > .ui-icon { color: var(--color-danger); }
+
+  .ui-money-total { color: var(--color-text); font-family: var(--font-display); font-size: var(--font-size-money-total); line-height: var(--font-line-money-total); font-weight: 700; font-variant-numeric: tabular-nums lining-nums; }
   .ui-money-detail { color: var(--color-text-secondary); font-size: var(--font-size-money-detail); line-height: var(--font-line-money-detail); font-variant-numeric: tabular-nums; }
   .ui-money-metadata { color: var(--color-text-muted); font-size: var(--font-size-small); line-height: var(--font-line-small); font-variant-numeric: tabular-nums; }
+
+  .ui-facts { display: grid; grid-template-columns: minmax(8rem, max-content) minmax(0, 1fr); gap: var(--space-2) var(--space-4); margin: 0; }
+  .ui-facts dt { color: var(--color-text-secondary); font-size: var(--font-size-small); line-height: var(--font-line-body); }
+  .ui-facts dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+  @media (max-width: 29.999rem) { .ui-facts { grid-template-columns: minmax(0, 1fr); gap: 0; } .ui-facts dd { margin-block-end: var(--space-3); } }
+
+  .ui-list { display: grid; margin: 0; padding: 0; list-style: none; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-card); background: var(--color-surface); overflow: hidden; }
+  .ui-list > li + li { border-block-start: 1px solid var(--color-border-subtle); }
+  .ui-list__row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-1) var(--space-4); min-block-size: var(--control-min-target); padding: var(--space-4) var(--space-5); color: inherit; text-decoration: none; }
+  a.ui-list__row:hover { background: var(--color-surface-subtle); color: inherit; }
+  .ui-list__primary { font-weight: 650; color: var(--color-text); }
+  .ui-list__secondary { grid-column: 1 / -1; color: var(--color-text-muted); font-size: var(--font-size-small); line-height: var(--font-line-small); }
+  .ui-list__aside { justify-self: end; text-align: end; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .ui-list__status { grid-column: 1 / -1; justify-self: start; }
+
+  .ui-empty { display: grid; justify-items: center; gap: var(--space-3); padding: var(--space-8) var(--space-4); text-align: center; }
+  .ui-empty__art { display: grid; inline-size: 3.5rem; block-size: 3.5rem; place-items: center; border-radius: var(--radius-workspace); background: var(--color-action-subtle); color: var(--color-action); }
+  .ui-empty__art .ui-icon { inline-size: 1.75rem; block-size: 1.75rem; }
+  .ui-empty h1, .ui-empty h2 { margin: 0; font-family: var(--font-display); font-weight: 600; }
+  .ui-empty p { max-inline-size: 42ch; margin: 0; color: var(--color-text-secondary); }
+
+  .ui-confirm { border: 1px solid var(--color-danger-border); border-radius: var(--radius-card); background: var(--color-surface); }
+  .ui-confirm > summary { display: flex; min-block-size: var(--control-min-target); align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-4); color: var(--color-danger); font-weight: 600; cursor: pointer; list-style: none; }
+  .ui-confirm > summary::-webkit-details-marker { display: none; }
+  .ui-confirm[open] > summary { border-block-end: 1px solid var(--color-danger-border); }
+  .ui-confirm__body { display: grid; gap: var(--space-3); padding: var(--space-4); }
+  .ui-confirm__body p { margin: 0; color: var(--color-text-secondary); }
+
+  .ui-skeleton { border-radius: var(--radius-small); background: linear-gradient(90deg, var(--color-surface-subtle) 0, var(--color-surface) 40%, var(--color-surface-subtle) 80%) 0 0 / 200% 100%; animation: ui-shimmer 1.4s linear infinite; }
+  @keyframes ui-shimmer { to { background-position: -200% 0; } }
 
   .ui-image-frame {
     display: grid;
@@ -231,15 +453,30 @@
 
   .ui-readable { max-inline-size: var(--layout-readable-max); }
   .ui-stale { border-inline-start: 0.25rem dashed var(--color-warning); padding-inline-start: var(--space-3); }
+
+  /* Weaver/A2UI theme bridge. Weaver's Basic Catalog writes inline styles that read these
+     custom properties, so theming them replaces its blue (#17e) defaults at the source. */
+  .weaver-mount {
+    --a2ui-color-primary: var(--color-action);
+    --a2ui-color-on-primary: var(--color-on-action);
+    --a2ui-color-outline: var(--color-border);
+    --a2ui-color-control: var(--color-surface-subtle);
+    --a2ui-card-shadow: none;
+    --a2ui-space: var(--space-2);
+    --a2ui-radius: var(--radius-control);
+  }
+  /* Weaver hard-codes a 999px pill radius inline on chip options; the direction reserves
+     round shapes for status dots, so an inline-beating override is the only lever here. */
+  .weaver-mount label[style*="999px"] { border-radius: var(--radius-control) !important; min-block-size: var(--control-min-target); gap: var(--space-2); }
 }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto !important; }
-  :where(*, *::before, *::after) { scroll-behavior: auto !important; }
+  :where(*, *::before, *::after) { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
 
 @media (forced-colors: active) {
   :where(:focus-visible) { outline-color: Highlight; }
-  .ui-button, .ui-field input, .ui-field textarea, .ui-field select, .ui-status, .ui-image-frame { border-color: CanvasText; }
+  .ui-button, .ui-field input, .ui-field textarea, .ui-field select, .ui-status, .ui-image-frame, .ui-chip, .ui-banner, .ui-list, .ui-confirm { border-color: CanvasText; }
   .ui-status, .ui-button--primary, .ui-button--destructive { forced-color-adjust: auto; }
 }
