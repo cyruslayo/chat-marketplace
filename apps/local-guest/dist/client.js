@@ -8860,7 +8860,10 @@ Known schemas:
     button.type = "button";
     button.className = "ui-button retry-action";
     button.textContent = "Retry";
-    button.addEventListener("click", retry, { once: true });
+    button.addEventListener("click", () => {
+      button.remove();
+      retry();
+    }, { once: true });
     turn.appendChild(button);
   }
   function addHistoricalSummary(summary) {

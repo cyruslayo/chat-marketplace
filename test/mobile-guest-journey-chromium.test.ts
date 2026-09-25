@@ -224,6 +224,7 @@ test("AC2: A turn that times out shows Retry and keeps the text", async () => {
       assert.equal(await c.tab.clickButton("Retry"), true);
       await c.tab.waitForText("Retry complete.");
       assert.equal(attempts, 2);
+      assert.equal(await c.tab.evaluate<number>("[...document.querySelectorAll('button')].filter((b) => b.textContent === 'Retry').length"), 0, "a used Retry control is removed");
       assert.equal(await c.tab.evaluate<string>("document.getElementById('composer-input').value"), "");
     } finally { await stopIntercepting(); }
   } finally { await c.close(); }

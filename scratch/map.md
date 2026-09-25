@@ -74,3 +74,4 @@ A failure outside this list blocks a slice.
 ## Context pointers (append as slices resolve)
 
 - S1 accessibility semantics: [issue 05](issues/05-a11y-semantics.md) — named native action buttons, polite conversation log, assertive error announcements, focused-workspace Escape and focus return, and scrollable transcript/workspace regions.
+- S2 liveness: [issue 12](issues/12-liveness.md) — the working indicator is announced once, requests time out after 10 s (`postJson`), and a one-shot Retry re-sends the same turn or event while the composer keeps the draft. Flaky under full-suite load: `listing-photos-mobile-chromium.test.ts` 390px image wait.
