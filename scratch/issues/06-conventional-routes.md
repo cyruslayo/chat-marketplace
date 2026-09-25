@@ -1,6 +1,6 @@
 # Serve fallback routes; composer without JavaScript
 
-Status: split
+Status: resolved
 Type: epic
 Findings: F9 (see ../PRD.md)
 
