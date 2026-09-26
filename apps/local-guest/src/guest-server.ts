@@ -2174,6 +2174,37 @@ export function renderGuestShellHtml(): string {
     }
     @media (min-width: 64rem) { .app { max-width: var(--layout-conversation-max); } #transcript, #workspace-region, form#composer, #journey-rail, #criteria-strip { padding-left: var(--layout-gutter-desktop); padding-right: var(--layout-gutter-desktop); } }
     @media (max-width: 47.999rem) { .header-note { display: none; } #active-workspace[data-mode="focused-surface"] { scroll-margin-block: var(--space-3); } }
+    /*
+     * Issue 09 AC1: at 64rem and wider, an open workspace takes the second
+     * column beside the transcript, starting at the top (no dead space). The
+     * strip and composer stay under the transcript so chat remains live.
+     */
+    @media (min-width: 64rem) {
+      .app:has(#active-workspace:not([hidden])) { max-width: var(--layout-app-max); }
+      main:has(#active-workspace:not([hidden])) {
+        display: grid;
+        grid-template-columns: minmax(22rem, 1fr) minmax(0, 1.25fr);
+        grid-template-rows: minmax(0, 1fr) auto auto auto;
+        grid-template-areas: "transcript workspace" "reopen workspace" "strip workspace" "composer workspace";
+      }
+      main:has(#active-workspace:not([hidden])) > #transcript { grid-area: transcript; }
+      main:has(#active-workspace:not([hidden])) > #workspace-reopen { grid-area: reopen; }
+      main:has(#active-workspace:not([hidden])) > #criteria-strip { grid-area: strip; }
+      main:has(#active-workspace:not([hidden])) > form#composer { grid-area: composer; }
+      main:has(#active-workspace:not([hidden])) > #workspace-region { grid-area: workspace; min-height: 0; padding-block: var(--space-4); border-inline-start: 1px solid var(--border); }
+    }
+    /*
+     * Issue 09 AC2: below 64rem a focused workspace is a full-screen sheet
+     * above the conversation. It stops at the composer, which stays usable
+     * (AC3); header Back and browser Back both close it.
+     */
+    @media (max-width: 63.999rem) {
+      #workspace-region:has(> #active-workspace[data-mode="focused-surface"][data-status="active"]:not([hidden])) {
+        position: fixed; inset: 0 0 var(--composer-block-size, 0px) 0; z-index: var(--layer-sticky); padding: max(var(--space-3), env(safe-area-inset-top)) var(--layout-gutter-mobile) var(--space-4); background: var(--bg);
+      }
+      #workspace-region:has(> #active-workspace[data-mode="focused-surface"][data-status="active"]:not([hidden])) .workspace-heading--focused-surface { position: sticky; top: calc(-1 * var(--space-3)); z-index: 1; margin-inline: calc(-1 * var(--space-4)); padding: var(--space-2) var(--space-4); background: var(--color-surface-elevated); }
+      form#composer { z-index: calc(var(--layer-sticky) + 1); }
+    }
     @media (max-height: 520px) { header { position: static; } #transcript { min-height: 0; } form#composer { position: sticky; } }
     @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; } }
   </style>
@@ -2203,29 +2234,29 @@ export function renderGuestShellHtml(): string {
         <div id="active-workspace" hidden></div>
       </section>
       <button id="workspace-reopen" type="button" hidden>Return to your current stay details</button>
+      <section id="criteria-strip" aria-label="Your search" hidden>
+        <div class="criteria-compact">
+          <p id="criteria-summary" class="criteria-summary"></p>
+          <button id="criteria-toggle" class="criteria-toggle ui-button ui-button--quiet" type="button" aria-expanded="false" aria-controls="criteria-panel">Edit search</button>
+        </div>
+        <div id="criteria-panel">
+          <div class="criteria-chips"></div>
+          <form id="criteria-editor" hidden novalidate></form>
+        </div>
+        <p id="criteria-status" class="criteria-status" role="alert"></p>
+      </section>
+      <form id="composer" method="post" action="/conversation" aria-label="Message the concierge">
+        <input type="hidden" name="threadId" value="" />
+        <label id="composer-label" for="composer-input">Your message</label>
+        <input id="composer-input" name="message" type="text" autocomplete="off" enterkeyhint="send"
+               placeholder="Area, dates, guests" aria-describedby="composer-hint" />
+        <span id="composer-hint" class="sr-only">Share a city or neighbourhood, dates or nights, and number of guests.</span>
+        <button id="composer-submit" class="ui-button ui-button--primary" type="submit">Send</button>
+        <p id="working-status" hidden></p>
+      </form>
     </main>
     <div id="announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
     <div id="error-announcer" class="sr-only" role="alert" aria-live="assertive" aria-atomic="true"></div>
-    <section id="criteria-strip" aria-label="Your search" hidden>
-      <div class="criteria-compact">
-        <p id="criteria-summary" class="criteria-summary"></p>
-        <button id="criteria-toggle" class="criteria-toggle ui-button ui-button--quiet" type="button" aria-expanded="false" aria-controls="criteria-panel">Edit search</button>
-      </div>
-      <div id="criteria-panel">
-        <div class="criteria-chips"></div>
-        <form id="criteria-editor" hidden novalidate></form>
-      </div>
-      <p id="criteria-status" class="criteria-status" role="alert"></p>
-    </section>
-    <form id="composer" method="post" action="/conversation" aria-label="Message the concierge">
-      <input type="hidden" name="threadId" value="" />
-      <label id="composer-label" for="composer-input">Your message</label>
-      <input id="composer-input" name="message" type="text" autocomplete="off" enterkeyhint="send"
-             placeholder="Area, dates, guests" aria-describedby="composer-hint" />
-      <span id="composer-hint" class="sr-only">Share a city or neighbourhood, dates or nights, and number of guests.</span>
-      <button id="composer-submit" class="ui-button ui-button--primary" type="submit">Send</button>
-      <p id="working-status" hidden></p>
-    </form>
   </div>
   <script src="/client.js" defer></script>
 </body>

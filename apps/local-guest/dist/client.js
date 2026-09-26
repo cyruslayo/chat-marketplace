@@ -9108,6 +9108,36 @@ Known schemas:
     startCountdown(waiting, countdown);
     return panel;
   }
+  var sheetQuery = window.matchMedia("(max-width: 63.999rem)");
+  var sheetInHistory = false;
+  function isSheetState(state) {
+    return isRecord3(state) && state.shortletSheet === true;
+  }
+  function sheetOpen() {
+    return sheetQuery.matches && shellState.activeSurface?.mode === "focused-surface" && shellState.focusedSurfaceOpen && !activeWorkspace.hidden;
+  }
+  function syncSheetHistory() {
+    const open = sheetOpen();
+    if (open && !sheetInHistory) {
+      history.pushState({ ...isRecord3(history.state) ? history.state : {}, shortletSheet: true }, "");
+      sheetInHistory = true;
+    } else if (!open && sheetInHistory) {
+      sheetInHistory = false;
+      if (isSheetState(history.state)) history.back();
+    }
+  }
+  function closeWorkspace(focusTarget) {
+    shellState = closeFocusedSurface(shellState);
+    composerForm.dataset.focused = "false";
+    activeWorkspace.hidden = true;
+    showReopen();
+    const target = focusTarget.isConnected && !focusTarget.hidden ? focusTarget : workspaceReopen;
+    target.focus({ preventScroll: true });
+    workspaceOpener = target;
+    syncSheetHistory();
+    trackTelemetry("focused-surface-closed");
+    announce("Returned to the conversation. Your stay details are still here.");
+  }
   function renderSurface(surface, moveFocus = false) {
     stopCountdown();
     const presentation = presentationFor(surface);
@@ -9138,16 +9168,7 @@ Known schemas:
       arrow.textContent = "\u2190";
       close.appendChild(arrow);
       close.append("Back to conversation");
-      close.addEventListener("click", () => {
-        shellState = closeFocusedSurface(shellState);
-        composerForm.dataset.focused = "false";
-        activeWorkspace.hidden = true;
-        showReopen();
-        workspaceOpener = workspaceReopen;
-        workspaceOpener.focus({ preventScroll: true });
-        trackTelemetry("focused-surface-closed");
-        announce("Returned to the conversation. Your stay details are still here.");
-      });
+      close.addEventListener("click", () => closeWorkspace(workspaceReopen));
       heading.appendChild(close);
     }
     activeWorkspace.appendChild(heading);
@@ -9226,6 +9247,7 @@ Known schemas:
     }
     trackTelemetry(presentation.mode === "focused-surface" ? "focused-surface-opened" : "inline-surface-rendered");
     if (moveFocus) announce(`${guestSurfaceHeading(presentation.summary)} is ready.`);
+    syncSheetHistory();
   }
   function acceptSurface(surface) {
     const before = shellState.historicalSummaries.length;
@@ -9234,6 +9256,7 @@ Known schemas:
     if (replaced) trackTelemetry("surface-replaced");
     for (const summary of shellState.historicalSummaries.slice(before)) addHistoricalSummary(summary);
     renderSurface(surface, replaced);
+    syncSheetHistory();
   }
   function renderSurfaces(surfaces) {
     for (const historical of surfaces.slice(0, -1)) {
@@ -9653,16 +9676,17 @@ Known schemas:
     if (event.key !== "Escape" || activeWorkspace.hidden || !activeWorkspace.contains(document.activeElement)) return;
     if (shellState.activeSurface?.mode !== "focused-surface" || !shellState.focusedSurfaceOpen) return;
     event.preventDefault();
-    shellState = closeFocusedSurface(shellState);
-    composerForm.dataset.focused = "false";
-    activeWorkspace.hidden = true;
-    showReopen();
-    const target = workspaceOpener?.isConnected && !workspaceOpener.hidden ? workspaceOpener : workspaceReopen;
-    target.focus({ preventScroll: true });
-    workspaceOpener = target;
-    trackTelemetry("focused-surface-closed");
-    announce("Returned to the conversation. Your stay details are still here.");
+    closeWorkspace(workspaceOpener?.isConnected && !workspaceOpener.hidden ? workspaceOpener : workspaceReopen);
   });
+  window.addEventListener("popstate", () => {
+    if (!sheetInHistory || isSheetState(history.state)) return;
+    sheetInHistory = false;
+    closeWorkspace(workspaceReopen);
+  });
+  new ResizeObserver(() => {
+    document.documentElement.style.setProperty("--composer-block-size", `${Math.ceil(composerForm.getBoundingClientRect().height)}px`);
+  }).observe(composerForm);
+  sheetQuery.addEventListener("change", syncSheetHistory);
   for (const suggestion of document.querySelectorAll(".prompt-suggestion[data-prompt]")) {
     suggestion.addEventListener("click", () => {
       const text = suggestion.dataset.prompt?.trim();
