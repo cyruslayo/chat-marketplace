@@ -594,6 +594,48 @@ function renderWaiting(waiting: GuestWaitingState): HTMLElement {
   return panel;
 }
 
+/**
+ * Issue 09: below 64rem a focused workspace is a full-screen sheet. While it
+ * is open the page holds one extra history entry, so browser Back closes the
+ * sheet (AC2). Closing it any other way removes that entry again.
+ */
+const sheetQuery = window.matchMedia("(max-width: 63.999rem)");
+// Review fix: a reload keeps history.state, so an open sheet already owns this entry.
+let sheetInHistory = isSheetState(history.state);
+
+function isSheetState(state: unknown): boolean {
+  return isRecord(state) && state.shortletSheet === true;
+}
+
+function sheetOpen(): boolean {
+  return sheetQuery.matches && shellState.activeSurface?.mode === "focused-surface" && shellState.focusedSurfaceOpen && !activeWorkspace.hidden;
+}
+
+function syncSheetHistory(): void {
+  const open = sheetOpen();
+  if (open && !sheetInHistory) {
+    history.pushState({ ...(isRecord(history.state) ? history.state : {}), shortletSheet: true }, "");
+    sheetInHistory = true;
+  } else if (!open && sheetInHistory) {
+    sheetInHistory = false;
+    if (isSheetState(history.state)) history.back();
+  }
+}
+
+/** Closes the focused workspace (header Back, Escape or browser Back) and returns focus. */
+function closeWorkspace(focusTarget: HTMLElement): void {
+  shellState = closeFocusedSurface(shellState);
+  composerForm.dataset.focused = "false";
+  activeWorkspace.hidden = true;
+  showReopen();
+  const target = focusTarget.isConnected && !focusTarget.hidden ? focusTarget : workspaceReopen;
+  target.focus({ preventScroll: true });
+  workspaceOpener = target;
+  syncSheetHistory();
+  trackTelemetry("focused-surface-closed");
+  announce("Returned to the conversation. Your stay details are still here.");
+}
+
 function renderSurface(surface: GuestSurfacePayload, moveFocus = false): void {
   stopCountdown();
   const presentation = presentationFor(surface);
@@ -629,16 +671,7 @@ function renderSurface(surface: GuestSurfacePayload, moveFocus = false): void {
     arrow.textContent = "←";
     close.appendChild(arrow);
     close.append("Back to conversation");
-    close.addEventListener("click", () => {
-      shellState = closeFocusedSurface(shellState);
-      composerForm.dataset.focused = "false";
-      activeWorkspace.hidden = true;
-      showReopen();
-      workspaceOpener = workspaceReopen;
-      workspaceOpener.focus({ preventScroll: true });
-      trackTelemetry("focused-surface-closed");
-      announce("Returned to the conversation. Your stay details are still here.");
-    });
+    close.addEventListener("click", () => closeWorkspace(workspaceReopen));
     heading.appendChild(close);
   }
   activeWorkspace.appendChild(heading);
@@ -721,6 +754,7 @@ function renderSurface(surface: GuestSurfacePayload, moveFocus = false): void {
   }
   trackTelemetry(presentation.mode === "focused-surface" ? "focused-surface-opened" : "inline-surface-rendered");
   if (moveFocus) announce(`${guestSurfaceHeading(presentation.summary)} is ready.`);
+  syncSheetHistory();
 }
 
 function acceptSurface(surface: GuestSurfacePayload): void {
@@ -730,6 +764,7 @@ function acceptSurface(surface: GuestSurfacePayload): void {
   if (replaced) trackTelemetry("surface-replaced");
   for (const summary of shellState.historicalSummaries.slice(before)) addHistoricalSummary(summary);
   renderSurface(surface, replaced);
+  syncSheetHistory();
 }
 
 function renderSurfaces(surfaces: readonly GuestSurfacePayload[]): void {
@@ -1176,16 +1211,21 @@ document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape" || activeWorkspace.hidden || !activeWorkspace.contains(document.activeElement)) return;
   if (shellState.activeSurface?.mode !== "focused-surface" || !shellState.focusedSurfaceOpen) return;
   event.preventDefault();
-  shellState = closeFocusedSurface(shellState);
-  composerForm.dataset.focused = "false";
-  activeWorkspace.hidden = true;
-  showReopen();
-  const target = workspaceOpener?.isConnected && !workspaceOpener.hidden ? workspaceOpener : workspaceReopen;
-  target.focus({ preventScroll: true });
-  workspaceOpener = target;
-  trackTelemetry("focused-surface-closed");
-  announce("Returned to the conversation. Your stay details are still here.");
+  closeWorkspace(workspaceOpener?.isConnected && !workspaceOpener.hidden ? workspaceOpener : workspaceReopen);
 });
+
+// Issue 09 AC2: browser Back closes the open sheet instead of leaving the page.
+window.addEventListener("popstate", () => {
+  if (!sheetInHistory || isSheetState(history.state)) return;
+  sheetInHistory = false;
+  closeWorkspace(workspaceReopen);
+});
+
+// The sheet stops at the composer, so its height is shared with the CSS.
+new ResizeObserver(() => {
+  document.documentElement.style.setProperty("--composer-block-size", `${Math.ceil(composerForm.getBoundingClientRect().height)}px`);
+}).observe(composerForm);
+sheetQuery.addEventListener("change", syncSheetHistory);
 
 for (const suggestion of document.querySelectorAll<HTMLButtonElement>(".prompt-suggestion[data-prompt]")) {
   suggestion.addEventListener("click", () => {
