@@ -281,12 +281,15 @@ export function toDiscoveryProjection(unit: Unit, dateRange: StayDateRange | nul
   });
 }
 
-function createInteractionArtifact({ id, filters, results }: { id: string; filters: any; results: any[] }) {
+/** ADR-0015: the indicative-rate caveat applies only while dates or party size are unknown (issue 11 AC2). */
+export const INDICATIVE_RATES_DISCLOSURE = "Rates without dates and party size are indicative; dated results show the All-In Stay Total.";
+
+function createInteractionArtifact({ id, filters, results, quoted }: { id: string; filters: any; results: any[]; quoted: boolean }) {
   return deepFreeze({
     id, kind: "shortlet.discovery-results", schemaVersion: "shortlet.discovery/v1", projectionVersion: 1,
     domainReferences: results.map((unit: any) => ({ type: "Unit", id: unit.id })),
     policyVersions: { eligibility: "launch-2026-07", pricing: "all-in/v1" },
-    disclosures: ["Rates without dates and party size are indicative; dated results show the All-In Stay Total."],
+    disclosures: quoted ? [] : [INDICATIVE_RATES_DISCLOSURE],
     facts: { filters: Object.freeze({ ...filters }), results: Object.freeze(results) },
     amounts: results.map((unit: any) => ({ unitId: unit.id, ...unit.price })),
     actions: results.map((unit: any) => ({ type: "view-unit", unitId: unit.id, conventionalRoute: `/stays/${unit.id}` })),
@@ -362,7 +365,7 @@ export class UnitDiscoveryQuery {
     // Every result has a total here: price filters dropped units without one.
     if (filters.maxPriceKobo !== undefined) results.sort((left: DiscoveryProjection, right: DiscoveryProjection) => (left.price.allInStayTotalKobo ?? 0) - (right.price.allInStayTotalKobo ?? 0));
     const queryId = `search-${this.idFactory()}`;
-    const artifact = createInteractionArtifact({ id: queryId, filters, results });
+    const artifact = createInteractionArtifact({ id: queryId, filters, results, quoted: dateRange !== null && filters.partySize !== undefined });
     this.audit.record({ type: "unit.search", queryId, filters: { ...filters }, resultUnitIds: results.map((unit: any) => unit.id) });
     try {
       this.telemetry.track({ type: "unit.search.completed", queryId, resultCount: results.length });
