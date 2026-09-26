@@ -1,3 +1,7 @@
+---
+status: superseded by ADR-0089
+---
+
 # Offer risk-equivalent operator payout plans
 
 Curated launch operators choose between two transparent, risk-equivalent Payout Plans. Fast Payout makes 90% of Operator Net payable after the 24-hour protection window and contributes 10% to booking-specific Rolling Reserve tranches eligible for review 30 days after checkout. Full Post-Stay Payout uses no routine percentage reserve and makes 100% payable 24 hours after checkout. Neither plan changes the booking's single Revenue Release; it controls account-level settlement availability.

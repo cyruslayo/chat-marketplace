@@ -1,3 +1,7 @@
+---
+status: amended by ADR-0090 (manual bank transfer uses a 60-minute verification hold instead of grace)
+---
+
 # Limit payment reservation to twenty plus ten minutes
 
 Operator confirmation opens one 20-minute Payment Window with an exclusive inventory block and designated PSP transaction. No new attempt, channel switch, reference, transfer instruction, or checkout reopening may begin after the deadline. A reminder occurs at 15 minutes. Only server-verified success for the correct unused reference, exact NGN amount, merchant relationship, and still-eligible booking confirms the reservation idempotently.
