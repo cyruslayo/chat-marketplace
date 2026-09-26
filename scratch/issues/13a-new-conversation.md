@@ -46,3 +46,6 @@ AC numbers are kept from the parent issue for traceability.
   - `test/guest-new-conversation-chromium.test.ts`: at 375px and 1280px, the confirmation, cancel by button and by Escape, and the new thread with its notice; at 320px, no confirmation without live work, and no horizontal scroll.
   - `sendRequest` moved to `test/helpers/guest-browser.ts` and is shared with the waiting-states browser test.
 - Verification: `npm run check` passed. `npm test`: 1,157 passed, 1 failed, 1 skipped. The failure was cross-tab RB1, which is known-flaky under load, and it passed when rerun alone. Walkthrough on :3001 at 375px, 1280px and 320px.
+- **Review fix (M4 review, 26 Sept 2026).** A thread records its offer only on its next refresh. So when the Operator confirmed while the Guest's tab was closed, an expired Conditional Booking Offer was still listed as a live Booking Request.
+  - `committedWork` now adopts the durable offer for a confirmed request (`findConditionalOfferByRequestId`, read-only; it never issues one) and judges that offer.
+  - Test: "an offer the original tab never saw is judged as the offer, and an expired one is not live".

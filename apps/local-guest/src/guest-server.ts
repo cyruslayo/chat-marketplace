@@ -724,8 +724,13 @@ export class LocalGuestApp {
     const work: GuestCommittedWork[] = [];
     try {
       for (const record of environment.interactionStore.findThreadsForPrincipal(principal.id, principal.tenantId)) {
-        const thread = this.#threads.get(record.threadId) ?? this.#loadThread(record.threadId);
-        if (!thread || (!thread.requestId && !thread.offerId)) continue;
+        const loaded = this.#threads.get(record.threadId) ?? this.#loadThread(record.threadId);
+        if (!loaded || (!loaded.requestId && !loaded.offerId)) continue;
+        // A thread records its offer only on its next refresh, and this read
+        // never issues one (ADR-0079). Judge the durable offer for a confirmed
+        // request so an expired offer is never called a live request.
+        const offerId = loaded.offerId ?? (loaded.requestId ? environment.interactionStore.findConditionalOfferByRequestId(loaded.requestId)?.offerId ?? null : null);
+        const thread: GuestThreadState = offerId === loaded.offerId ? loaded : { ...loaded, offerId };
         const journey = this.#journeyFor(thread);
         if (journey === undefined || journey.outcome !== undefined) continue;
         const unitTitle = this.#currentUnit(thread)?.title;

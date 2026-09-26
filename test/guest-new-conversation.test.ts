@@ -100,6 +100,22 @@ test("AC1 failure path: a declined or expired Booking Request is not listed as l
   } finally { await expired.close(); }
 });
 
+test("AC1 failure path: an offer the original tab never saw is judged as the offer, and an expired one is not live", async () => {
+  const fixture = await restartFixture();
+  try {
+    const pending = await fixture.advance("pending");
+    const requestId = pending.surfaces[0]!.surfaceId.split(":").at(-1)!;
+    // The Operator confirms while the Guest's tab is closed: no refresh records the offer.
+    const { offerId } = fixture.environment.simulateOperatorAcceptance(requestId);
+    const live = (await committedWork(fixture)).body.committedWork;
+    assert.deepEqual(live?.map((entry) => [entry.kind, entry.route]), [["offer", `/conditional-offers/${encodeURIComponent(offerId)}`]]);
+    // Past the Payment Window nothing is live, so nothing is called active.
+    fixture.setTime("2026-09-03T10:31:00Z");
+    assert.equal(fixture.environment.conditionalOfferApp.getArtifact(offerId, fixture.environment.guestPrincipal()).facts.status, "expired");
+    assert.deepEqual((await committedWork(fixture)).body.committedWork, []);
+  } finally { await fixture.close(); }
+});
+
 test("AC1 failure path: committed work is never listed for another principal or without a session", async () => {
   const fixture = await restartFixture();
   try {
