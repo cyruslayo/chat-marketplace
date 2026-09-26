@@ -333,13 +333,13 @@ export function resolveLocationMention(text: string): StayRequestLocation | unde
   return undefined;
 }
 
-/**
- * Extracts only the facts present in one message. Missing facts stay missing;
- * they are never inferred from, or replaced by, the rest of the conversation.
- */
 const NAIRA_AMOUNT = "(₦|ngn\\s*|n(?=\\d))?\\s*(\\d{1,3}(?:,\\d{3})+|\\d+(?:\\.\\d+)?)\\s*(k|m|million|thousand)?\\b\\s*(naira)?";
 const PER_NIGHT = "(\\s*(?:a|per|\\/|each|every)\\s*night)?";
-const BUDGET_PATTERN = new RegExp(`\\b(?:budget(?:\\s+is|\\s+of)?|under|below|max(?:imum)?|up to|no more than|not more than|less than)\\s*:?\\s*${NAIRA_AMOUNT}${PER_NIGHT}`, "gi");
+// Words a Guest puts between "budget" and the amount ("my budget is around ₦400k").
+const BUDGET_FILLER = "(?:\\s+(?:is|of|about|around|roughly|approximately|approx\\.?|at most|max|maximum))*";
+const BUDGET_PATTERN = new RegExp(`\\b(?:budget${BUDGET_FILLER}|under|below|max(?:imum)?|up to|no more than|not more than|less than)\\s*:?\\s*${NAIRA_AMOUNT}${PER_NIGHT}`, "gi");
+// The amount first: "₦400k budget", "500,000 naira total budget".
+const AMOUNT_BUDGET_PATTERN = new RegExp(`${NAIRA_AMOUNT}${PER_NIGHT}\\s+(?:total\\s+)?budget\\b`, "gi");
 const PRICED_NIGHT_PATTERN = new RegExp(`(₦|ngn\\s*)\\s*(\\d{1,3}(?:,\\d{3})+|\\d+(?:\\.\\d+)?)\\s*(k|m|million|thousand)?\\b\\s*(naira)?(\\s*(?:a|per|\\/|each|every)\\s*night)`, "gi");
 const AMOUNT_MULTIPLIERS: Readonly<Record<string, number>> = { k: 1_000, thousand: 1_000, m: 1_000_000, million: 1_000_000 };
 
@@ -349,7 +349,7 @@ const AMOUNT_MULTIPLIERS: Readonly<Record<string, number>> = { k: 1_000, thousan
  * needs a currency mark, a k/m multiplier, "naira", or at least ₦1,000.
  */
 function extractBudget(text: string): StayBudget | undefined {
-  for (const match of [...text.matchAll(BUDGET_PATTERN), ...text.matchAll(PRICED_NIGHT_PATTERN)]) {
+  for (const match of [...text.matchAll(BUDGET_PATTERN), ...text.matchAll(AMOUNT_BUDGET_PATTERN), ...text.matchAll(PRICED_NIGHT_PATTERN)]) {
     const [, currency, digits, multiplier, naira, perNight] = match;
     const value = Number.parseFloat((digits ?? "").replaceAll(",", "")) * (multiplier ? AMOUNT_MULTIPLIERS[multiplier.toLowerCase()] ?? 1 : 1);
     if (!Number.isFinite(value) || value <= 0) continue;
@@ -385,6 +385,10 @@ export function stayBudgetKobo(context: DiscoverySearchContext): number | undefi
   return context.nights === undefined ? undefined : context.budget.kobo * context.nights;
 }
 
+/**
+ * Extracts only the facts present in one message. Missing facts stay missing;
+ * they are never inferred from, or replaced by, the rest of the conversation.
+ */
 export function extractStayRequestFacts(text: string, options: { readonly now?: Date } = {}): StayRequestFacts {
   const normalized = text.trim();
   const location = resolveLocationMention(normalized);

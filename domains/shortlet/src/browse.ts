@@ -251,6 +251,9 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
+/** The public discovery projection of one Unit. */
+export type DiscoveryProjection = ReturnType<typeof toDiscoveryProjection>;
+
 export function toDiscoveryProjection(unit: Unit, dateRange: StayDateRange | null) {
   const allInTotal = allInStayTotalKobo(unit, dateRange);
   return deepFreeze({
@@ -356,7 +359,8 @@ export class UnitDiscoveryQuery {
       .filter((unit: any) => filters.maxPriceKobo === undefined || withinPrice(allInStayTotalKobo(unit, dateRange), (total) => total <= filters.maxPriceKobo!))
       .map((unit: any) => toDiscoveryProjection(unit, dateRange));
     // ADR-0015: with a budget, results are ranked by All-In Stay Total (stable).
-    if (filters.maxPriceKobo !== undefined) results.sort((left: any, right: any) => left.price.allInStayTotalKobo - right.price.allInStayTotalKobo);
+    // Every result has a total here: price filters dropped units without one.
+    if (filters.maxPriceKobo !== undefined) results.sort((left: DiscoveryProjection, right: DiscoveryProjection) => (left.price.allInStayTotalKobo ?? 0) - (right.price.allInStayTotalKobo ?? 0));
     const queryId = `search-${this.idFactory()}`;
     const artifact = createInteractionArtifact({ id: queryId, filters, results });
     this.audit.record({ type: "unit.search", queryId, filters: { ...filters }, resultUnitIds: results.map((unit: any) => unit.id) });

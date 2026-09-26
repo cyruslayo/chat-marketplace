@@ -80,6 +80,13 @@ test("AC7: A nightly budget is converted to a stay total using the current night
     assert.deepEqual(extractStayRequestFacts("budget of 500k naira").budget, { kobo: 50_000_000, per: "stay" });
     assert.deepEqual(extractStayRequestFacts("₦60,000 per night please").budget, { kobo: 6_000_000, per: "night" });
     assert.equal(extractStayRequestFacts("my budget is ₦500k").unsupportedPreferences, undefined, "a stated amount is not an unsupported preference");
+    // Review fix: filler words and amount-first phrasings are budgets too, not "price level".
+    for (const phrase of ["budget around ₦400k", "my budget is about 400k", "₦400k budget", "400,000 naira total budget"]) {
+      const facts = extractStayRequestFacts(phrase);
+      assert.deepEqual(facts.budget, { kobo: 40_000_000, per: "stay" }, phrase);
+      assert.equal(facts.unsupportedPreferences, undefined, phrase);
+    }
+    assert.equal(extractStayRequestFacts("a budget-friendly place for 3 nights").budget, undefined);
   } finally { await fixture.close(); }
 });
 
