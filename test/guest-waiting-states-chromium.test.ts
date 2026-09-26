@@ -1,26 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { launchRealBrowser, type RealBrowserInstance, type RealBrowserTab } from "./helpers/chrome-devtools.js";
+import { launchRealBrowser, type RealBrowserTab } from "./helpers/chrome-devtools.js";
+import { sendRequest } from "./helpers/guest-browser.js";
 import { restartFixture } from "./helpers/guest-restart.js";
-
-type Fixture = Awaited<ReturnType<typeof restartFixture>>;
-
-/** Drives the real shell to a sent Booking Request that awaits the Operator. */
-async function sendRequest(browser: RealBrowserInstance, fixture: Fixture): Promise<RealBrowserTab> {
-  const tab = await browser.createTab();
-  await tab.setViewport(375, 812);
-  await tab.navigate(`${fixture.base}/`);
-  await tab.focus("#composer-input");
-  await tab.insertText("I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people");
-  await tab.pressKey("Enter");
-  for (const [button, next] of [["View apartment", "Request to Book"], ["Request to Book", "Review request"], ["Review request", "Submit Booking Request"], ["Submit Booking Request", "Waiting for"]] as const) {
-    await tab.waitForText(button, 10_000);
-    assert.equal(await tab.clickButton(button), true, button);
-    await tab.waitForText(next, 10_000);
-  }
-  await tab.waitForSelector(".waiting-panel[data-waiting=\"operator-response\"]", 10_000);
-  return tab;
-}
 
 const panelText = (tab: RealBrowserTab) => tab.evaluate<{ readonly deadline: string; readonly countdown: string }>(
   "({ deadline: document.querySelector('.waiting-deadline-time')?.textContent ?? '', countdown: document.querySelector('.waiting-countdown')?.textContent ?? '' })",

@@ -4,7 +4,7 @@
  * browser never owns booking state or executes generated business logic.
  */
 import { createBasicWebRuntime } from "@weaver/web";
-import { GUEST_GLOSSARY } from "../../web-agent/src/guest-content.js";
+import { GUEST_GLOSSARY, GUEST_NEW_CONVERSATION, guestNewConversationCopy, type GuestCommittedWorkKind } from "../../web-agent/src/guest-content.js";
 import {
   canUseSurfaceActions,
   closeFocusedSurface,
@@ -57,6 +57,7 @@ interface GuestCriteria {
   readonly areas: readonly { readonly id: string; readonly label: string }[];
 }
 interface GuestResponse { readonly ok: boolean; readonly code?: string; readonly message?: string; readonly messages?: readonly string[]; readonly receipts?: readonly string[]; readonly surfaces?: readonly GuestSurfacePayload[]; readonly journey?: GuestJourney; readonly criteria?: GuestCriteria; readonly quickReplies?: readonly string[]; }
+interface GuestCommittedWork { readonly kind: GuestCommittedWorkKind; readonly threadId: string; readonly route: string; readonly unitTitle?: string; }
 interface GuestStateResponse extends GuestResponse { readonly timeline?: readonly GuestTimelineEntry[]; }
 
 function requiredElement<T extends HTMLElement>(id: string): T {
@@ -82,6 +83,10 @@ const criteriaEditor = requiredElement<HTMLFormElement>("criteria-editor");
 const criteriaStatus = requiredElement<HTMLElement>("criteria-status");
 const criteriaToggle = requiredElement<HTMLButtonElement>("criteria-toggle");
 const criteriaSummary = requiredElement<HTMLElement>("criteria-summary");
+const newConversationButton = requiredElement<HTMLButtonElement>("new-conversation");
+const newConversationConfirm = requiredElement<HTMLElement>("new-conversation-confirm");
+const newConversationStart = requiredElement<HTMLButtonElement>("new-conversation-start");
+const newConversationCancel = requiredElement<HTMLButtonElement>("new-conversation-cancel");
 
 function getThreadId(): string {
   try {
@@ -1257,9 +1262,99 @@ async function restoreServerState(): Promise<boolean> {
   } catch { return false; }
 }
 
+function isCommittedWork(value: unknown): value is GuestCommittedWork {
+  return isRecord(value)
+    && (value.kind === "request" || value.kind === "offer" || value.kind === "reservation")
+    && typeof value.threadId === "string"
+    && typeof value.route === "string" && value.route.startsWith("/")
+    && (value.unitTitle === undefined || typeof value.unitTitle === "string");
+}
+
+/** Issue 13a: the Guest's live work, or null when it can't be read. */
+async function fetchCommittedWork(): Promise<readonly GuestCommittedWork[] | null> {
+  try {
+    const response = await fetch("/api/committed-work", { signal: AbortSignal.timeout(10_000) });
+    if (!response.ok) return null;
+    const body: unknown = await response.json();
+    if (!isRecord(body) || body.ok !== true || !Array.isArray(body.committedWork) || !body.committedWork.every(isCommittedWork)) return null;
+    return body.committedWork;
+  } catch { return null; }
+}
+
+function committedWorkNote(work: GuestCommittedWork, text: string): HTMLElement {
+  const note = document.createElement("div");
+  note.className = "committed-work";
+  note.dataset.kind = work.kind;
+  const line = document.createElement("p");
+  line.textContent = text;
+  const link = document.createElement("a");
+  link.className = "contact-link";
+  link.href = work.route;
+  link.textContent = guestNewConversationCopy(work.kind, work.unitTitle).link;
+  note.append(line, link);
+  return note;
+}
+
+/**
+ * Issue 13a: a new conversation only switches the thread id this tab uses.
+ * It never calls /api/reset and sends no command, so a Booking Request,
+ * offer or Reservation is never withdrawn or cancelled (ADR-0079).
+ */
+function startNewConversation(): void {
+  const next = `g-${crypto.randomUUID()}`;
+  try {
+    window.sessionStorage.setItem("shortlet-concierge-thread", next);
+    window.location.replace("/");
+  } catch {
+    window.location.replace(`/?threadId=${encodeURIComponent(next)}`);
+  }
+}
+
+function closeNewConversationConfirm(): void {
+  newConversationConfirm.hidden = true;
+  newConversationButton.setAttribute("aria-expanded", "false");
+  newConversationButton.focus();
+}
+
+newConversationButton.setAttribute("aria-controls", "new-conversation-confirm");
+newConversationButton.setAttribute("aria-expanded", "false");
+newConversationButton.addEventListener("click", async () => {
+  if (!newConversationConfirm.hidden) { closeNewConversationConfirm(); return; }
+  newConversationButton.disabled = true;
+  const work = await fetchCommittedWork();
+  newConversationButton.disabled = false;
+  if (work !== null && work.length === 0) { startNewConversation(); return; }
+  // ADR-0072: live work gets an in-page confirmation that states the effect.
+  const items = newConversationConfirm.querySelector<HTMLElement>(".new-conversation-items");
+  if (items) {
+    items.replaceChildren(...(work === null
+      ? [Object.assign(document.createElement("p"), { textContent: GUEST_NEW_CONVERSATION.unknown })]
+      : work.map((entry) => committedWorkNote(entry, guestNewConversationCopy(entry.kind, entry.unitTitle).confirm))));
+  }
+  newConversationConfirm.hidden = false;
+  newConversationButton.setAttribute("aria-expanded", "true");
+  newConversationStart.focus();
+});
+newConversationStart.addEventListener("click", startNewConversation);
+newConversationCancel.addEventListener("click", closeNewConversationConfirm);
+newConversationConfirm.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  event.preventDefault();
+  closeNewConversationConfirm();
+});
+
+/** Issue 13a AC1: an empty conversation says the Guest's live work is unaffected. */
+async function showCommittedWorkElsewhere(): Promise<void> {
+  const work = (await fetchCommittedWork())?.filter((entry) => entry.threadId !== threadId) ?? [];
+  if (work.length === 0 || transcript.querySelector(".committed-work")) return;
+  const heading = transcript.querySelector("#conversation-heading");
+  const notes = work.map((entry) => committedWorkNote(entry, guestNewConversationCopy(entry.kind, entry.unitTitle).stillActive));
+  if (heading) heading.after(...notes); else transcript.prepend(...notes);
+}
+
 // Issue 10: a tab that was hidden may have missed its deadline; ask the server.
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && activePayload?.waiting) void refreshServerState();
 });
 
-void restoreServerState();
+void restoreServerState().then((restored) => { if (!restored) void showCommittedWorkElsewhere(); });

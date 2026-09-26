@@ -29,6 +29,9 @@ import {
   GUEST_RECEIPTS,
   guestWaitingCopy,
   type GuestWaitingKind,
+  type GuestCommittedWorkKind,
+  guestNewConversationCopy,
+  GUEST_NEW_CONVERSATION,
   accommodationProviderLine,
   guestOperatorName,
   guestReservationStatus,
@@ -169,6 +172,14 @@ export type GuestTurnResult = GuestTurnSuccess | GuestRejection;
 
 /** Issue 06b: the booking records that have an owner-checked conventional page (ADR-0080). */
 export type ConventionalBookingPageKind = "draft" | "request" | "offer" | "contract";
+
+/** Issue 13a: a live request, offer or Reservation in one of the Guest's threads. */
+export interface GuestCommittedWork {
+  readonly kind: GuestCommittedWorkKind;
+  readonly threadId: string;
+  readonly route: string;
+  readonly unitTitle?: string;
+}
 
 export interface ConventionalBookingPage {
   readonly threadId: string;
@@ -697,6 +708,46 @@ export class LocalGuestApp {
       return null;
     }
     return null;
+  }
+
+  /**
+   * Issue 13a: the Guest's live committed work across all of their threads,
+   * so a new conversation can say it is unaffected (ADR-0079). Read-only and
+   * derived from the authoritative artifacts via the journey projection; an
+   * unreadable, failed or expired record is never listed. Fails closed to an
+   * empty list for any principal that is not this runtime's Guest (ADR-0070).
+   */
+  committedWork(principal: CommandPrincipal): GuestCommittedWork[] {
+    const environment = this.#environment;
+    const guest = environment.guestPrincipal();
+    if (principal.role !== "guest" || !principal.id || principal.id !== guest.id || !principal.tenantId || principal.tenantId !== environment.config.tenantId) return [];
+    const work: GuestCommittedWork[] = [];
+    try {
+      for (const record of environment.interactionStore.findThreadsForPrincipal(principal.id, principal.tenantId)) {
+        const loaded = this.#threads.get(record.threadId) ?? this.#loadThread(record.threadId);
+        if (!loaded || (!loaded.requestId && !loaded.offerId)) continue;
+        // A thread records its offer only on its next refresh, and this read
+        // never issues one (ADR-0079). Judge the durable offer for a confirmed
+        // request so an expired offer is never called a live request.
+        const offerId = loaded.offerId ?? (loaded.requestId ? environment.interactionStore.findConditionalOfferByRequestId(loaded.requestId)?.offerId ?? null : null);
+        const thread: GuestThreadState = offerId === loaded.offerId ? loaded : { ...loaded, offerId };
+        const journey = this.#journeyFor(thread);
+        if (journey === undefined || journey.outcome !== undefined) continue;
+        const unitTitle = this.#currentUnit(thread)?.title;
+        const base = { threadId: thread.threadId, ...(unitTitle === undefined ? {} : { unitTitle }) };
+        if (journey.current === "confirmed" && thread.offerId) {
+          const contractId = this.#snapshotContractId(thread.offerId);
+          if (contractId !== null) work.push({ ...base, kind: "reservation", route: conventionalBookingContractRoute(contractId) });
+        } else if ((journey.current === "offer" || journey.current === "pay") && thread.offerId) {
+          work.push({ ...base, kind: "offer", route: conventionalConditionalOfferRoute(thread.offerId) });
+        } else if (journey.current === "request" && thread.requestId) {
+          work.push({ ...base, kind: "request", route: conventionalBookingRequestRoute(thread.requestId) });
+        }
+      }
+    } catch {
+      return [];
+    }
+    return work;
   }
 
   #snapshotContractId(offerId: string): string | null {
@@ -2011,6 +2062,21 @@ export function renderGuestShellHtml(): string {
     header h1 { margin: 0; font-family: var(--font-display); font-size: 1.25rem; line-height: 1.2; font-weight: 600; letter-spacing: -0.005em; }
     .header-identity { display: flex; align-items: center; min-height: var(--control-min-target); color: var(--text); text-decoration: none; }
     .header-note { color: var(--text-muted); font-size: var(--font-size-small); white-space: nowrap; }
+    /* Issue 13a: the header controls wrap rather than scroll at 320px (ADR-0078). */
+    .header-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); min-width: 0; }
+    .header-plus { display: none; }
+    /* The visible label shortens on phones; the accessible name stays "New conversation" (WCAG 2.5.3). */
+    @media (max-width: 29.999rem) {
+      .header-plus { display: inline; margin-inline-end: 0.25em; }
+      .header-long { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    }
+    #new-conversation-confirm { display: grid; gap: var(--space-3); padding: var(--space-3) var(--layout-gutter-mobile); border-bottom: 1px solid var(--border); background: var(--surface); }
+    #new-conversation-confirm[hidden] { display: none; }
+    #new-conversation-confirm h2 { margin: 0; font-size: var(--font-size-h3, 1.125rem); }
+    .new-conversation-items p { margin: 0 0 var(--space-2); }
+    .new-conversation-actions, .committed-work { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+    .committed-work { margin: 0 0 var(--space-3); color: var(--color-text-secondary); font-size: var(--font-size-small); }
+    .committed-work p { margin: 0; }
     /* Issue 08: one compact line; it scrolls inside itself, never the page (ADR-0078). */
     #journey-rail { padding: var(--space-2) var(--layout-gutter-mobile); border-bottom: 1px solid var(--border); background: var(--surface); }
     #journey-rail[hidden] { display: none; }
@@ -2215,8 +2281,19 @@ export function renderGuestShellHtml(): string {
     <header>
       <a class="header-identity" href="/" aria-label="Shortlet home"><h1>Shortlet</h1></a>
       <span class="header-note">Abuja · Lagos</span>
-      <a class="contact-link" href="/guest/contact">Contact details</a>
+      <div class="header-actions">
+        <button id="new-conversation" class="contact-link" type="button"><span class="header-plus" aria-hidden="true">+</span><span>New<span class="header-long"> conversation</span></span></button>
+        <a class="contact-link" href="/guest/contact">Contact details</a>
+      </div>
     </header>
+    <section id="new-conversation-confirm" role="group" aria-labelledby="new-conversation-heading" hidden>
+      <h2 id="new-conversation-heading">${GUEST_NEW_CONVERSATION.confirmHeading}</h2>
+      <div class="new-conversation-items"></div>
+      <div class="new-conversation-actions">
+        <button id="new-conversation-start" class="ui-button ui-button--primary" type="button">${GUEST_NEW_CONVERSATION.confirm}</button>
+        <button id="new-conversation-cancel" class="ui-button" type="button">${GUEST_NEW_CONVERSATION.cancel}</button>
+      </div>
+    </section>
     <nav id="journey-rail" aria-label="${GUEST_JOURNEY.railLabel}" hidden><ol></ol></nav>
     <main id="main-content" tabindex="-1">
       <section id="transcript" role="log" aria-live="polite" aria-relevant="additions" aria-labelledby="conversation-heading">
@@ -2316,17 +2393,23 @@ function renderWaitingHtml(waiting: GuestWaitingState | undefined): string {
   return `<div class="no-js-waiting" data-waiting="${waiting.kind}"><h3>${escapeHtml(waiting.heading)}</h3><p>${escapeHtml(waiting.deadlineText)}</p><p>What happens next</p>${list(waiting.outcomes)}${list(waiting.meanwhile)}</div>`;
 }
 
-export function renderNoScriptConversationHtml(input: { readonly threadId: string; readonly timeline: readonly GuestTimelineEntry[]; readonly surfaces: readonly GuestSurfacePayload[]; readonly journey?: GuestJourney; readonly error?: string; readonly draft?: string }): string {
+export function renderNoScriptConversationHtml(input: { readonly threadId: string; readonly timeline: readonly GuestTimelineEntry[]; readonly surfaces: readonly GuestSurfacePayload[]; readonly journey?: GuestJourney; readonly error?: string; readonly draft?: string; readonly committedWork?: readonly GuestCommittedWork[] }): string {
   const turns = input.timeline.map((entry) => entry.role === "receipt"
     ? `<li class="no-js-receipt" data-role="receipt"><p>${icon("check")} ${escapeHtml(entry.text)}</p></li>`
     : `<li class="ui-panel no-js-turn" data-role="${entry.role}"><p class="ui-eyebrow">${entry.role === "user" ? "You" : "Shortlet Concierge"}</p><p>${escapeHtml(entry.text)}</p></li>`).join("");
   const surfaces = input.surfaces.filter((surface) => surface.status !== "deleted" && surface.status !== "superseded").map((surface) => `<section class="ui-panel" aria-label="${escapeHtml(surface.summary ?? "Current details")}">${surface.summary ? `<h2>${escapeHtml(surface.summary)}</h2>` : ""}${surface.textFallback ? `<p>${escapeHtml(surface.textFallback)}</p>` : ""}${renderWaitingHtml(surface.waiting)}${surface.conventionalRoute ? `<a class="ui-button ui-button--primary" href="${escapeHtml(surface.conventionalRoute)}">${escapeHtml(surface.conventionalRouteLabel ?? "Open full details")}</a>` : ""}</section>`).join("");
   const error = input.error ? `<p id="composer-error" class="ui-field__error" role="alert">${escapeHtml(input.error)}</p>` : "";
+  // Issue 13a / ADR-0080: a new conversation without JavaScript still says the
+  // Guest's live work elsewhere is unaffected, and links to it.
+  const committed = input.timeline.length > 0 ? "" : (input.committedWork ?? []).filter((work) => work.threadId !== input.threadId).map((work) => {
+    const copy = guestNewConversationCopy(work.kind, work.unitTitle);
+    return `<section class="ui-panel committed-work" data-kind="${work.kind}"><p>${escapeHtml(copy.stillActive)}</p><a class="ui-button" href="${escapeHtml(work.route)}">${escapeHtml(copy.link)}</a></section>`;
+  }).join("");
   return pageShell({
     title: "Conversation · Shortlet",
     width: "narrow",
     style: ".no-js-transcript{list-style:none;margin:0;padding:0;display:grid;gap:var(--space-3)}.no-js-transcript p,.ui-panel p{margin:0}.ui-panel h2{margin:0;font-size:var(--font-size-h3);line-height:var(--font-line-h3)}.no-js-turn[data-role=user]{background:var(--surface-soft)}.no-js-receipt p{display:flex;gap:var(--space-2);align-items:center;color:var(--color-text-secondary)}.no-js-journey ol{display:flex;flex-wrap:wrap;gap:var(--space-1) var(--space-3);margin:0;padding:0;list-style:none;font-size:var(--font-size-small)}.no-js-journey li{color:var(--color-text-secondary)}.no-js-journey li[data-state=current],.no-js-journey li[data-state=failed]{color:var(--color-text);font-weight:650}.journey-state{position:absolute;inline-size:1px;block-size:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}",
-    body: `<header class="ui-page__header" data-page="conversation"><p class="ui-eyebrow">Shortlet</p><h1>Conversation</h1></header>${renderJourneyRailHtml(input.journey)}${turns ? `<ol class="no-js-transcript" aria-label="Conversation">${turns}</ol>` : ""}${surfaces}<form class="ui-panel" method="post" action="/conversation" aria-label="Message the concierge"><div class="ui-field"><label class="ui-field__label" for="composer-input">Your message</label><p class="ui-field__hint" id="composer-hint">Share a city or neighbourhood, dates or nights, and number of guests.</p><input id="composer-input" name="message" type="text" autocomplete="off" enterkeyhint="send" maxlength="${MAX_TURN_TEXT_LENGTH}" required aria-describedby="composer-hint${error ? " composer-error" : ""}"${error ? " aria-invalid=\"true\"" : ""} value="${escapeHtml(input.draft ?? "")}">${error}</div><input type="hidden" name="threadId" value="${escapeHtml(input.threadId)}"><button class="ui-button ui-button--primary ui-button--block" type="submit">Send</button></form>`,
+    body: `<header class="ui-page__header" data-page="conversation"><p class="ui-eyebrow">Shortlet</p><h1>Conversation</h1><p><a class="ui-button" href="/conversation">${GUEST_NEW_CONVERSATION.control}</a></p></header>${committed}${renderJourneyRailHtml(input.journey)}${turns ? `<ol class="no-js-transcript" aria-label="Conversation">${turns}</ol>` : ""}${surfaces}<form class="ui-panel" method="post" action="/conversation" aria-label="Message the concierge"><div class="ui-field"><label class="ui-field__label" for="composer-input">Your message</label><p class="ui-field__hint" id="composer-hint">Share a city or neighbourhood, dates or nights, and number of guests.</p><input id="composer-input" name="message" type="text" autocomplete="off" enterkeyhint="send" maxlength="${MAX_TURN_TEXT_LENGTH}" required aria-describedby="composer-hint${error ? " composer-error" : ""}"${error ? " aria-invalid=\"true\"" : ""} value="${escapeHtml(input.draft ?? "")}">${error}</div><input type="hidden" name="threadId" value="${escapeHtml(input.threadId)}"><button class="ui-button ui-button--primary ui-button--block" type="submit">Send</button></form>`,
   });
 }
 
@@ -3041,11 +3124,19 @@ export function startLocalGuestServer(options: {
       const session = resolveBrowserSession(env, browserSessions, readGuestSession(req), sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId);
       if (req.method === "GET") {
         if (!session) { sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED"); return; }
+        // Issue 13a: no thread id starts a new, empty conversation. Only an id
+        // is minted; nothing is written and no earlier work changes (ADR-0079).
+        if (!url.searchParams.has("threadId")) {
+          res.writeHead(303, { Location: `/conversation?threadId=${encodeURIComponent(`g-${crypto.randomUUID()}`)}` });
+          res.end();
+          return;
+        }
         const threadId = url.searchParams.get("threadId") ?? "";
         if (!THREAD_ID_PATTERN.test(threadId)) { sendPageError(req, res, 400, "INVALID_CONVERSATION"); return; }
         const state = session.threadIds.has(threadId) ? app.getState(threadId) : undefined;
+        const committedWork = app.committedWork({ id: session.principalId, role: "guest", tenantId: session.tenantId });
         res.writeHead(200, GUEST_HTML_HEADERS);
-        res.end(renderNoScriptConversationHtml({ threadId, timeline: state?.timeline ?? [], surfaces: state?.surfaces ?? [], journey: state?.journey }));
+        res.end(renderNoScriptConversationHtml({ threadId, timeline: state?.timeline ?? [], surfaces: state?.surfaces ?? [], journey: state?.journey, committedWork }));
         return;
       }
       if (!browserOriginAccepted(req, options.publicOrigin)) { res.writeHead(403); res.end("Origin rejected"); return; }
@@ -3073,6 +3164,17 @@ export function startLocalGuestServer(options: {
       // Post/redirect/get: refreshing the transcript never re-sends the turn.
       res.writeHead(303, { Location: `/conversation?threadId=${encodeURIComponent(threadId)}` });
       res.end();
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/committed-work") {
+      // Issue 13a: principal-scoped, never keyed by a client-supplied thread id.
+      const session = resolveBrowserSession(app.environment, browserSessions, readGuestSession(req), sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId);
+      if (!session) {
+        sendJson(res, 401, { ok: false, code: "AUTHENTICATION_REQUIRED", message: "Conversation access requires an active browser session." });
+        return;
+      }
+      sendJson(res, 200, { ok: true, committedWork: app.committedWork({ id: session.principalId, role: "guest", tenantId: session.tenantId }) });
       return;
     }
 

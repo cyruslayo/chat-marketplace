@@ -8550,6 +8550,28 @@ Known schemas:
     confirmed: "Confirmed",
     backToResults: "Back to results"
   });
+  var COMMITTED_WORK_NAMES = {
+    request: GUEST_GLOSSARY.bookingRequest,
+    offer: GUEST_GLOSSARY.conditionalBookingOffer,
+    reservation: GUEST_GLOSSARY.reservation
+  };
+  function guestNewConversationCopy(kind, unitTitle) {
+    const name = COMMITTED_WORK_NAMES[kind];
+    const item = `${name}${unitTitle === void 0 ? "" : ` for ${unitTitle}`}`;
+    return {
+      confirm: `Starting a new conversation doesn't withdraw or cancel your ${item}. It stays as it is, and you can still open it.`,
+      stillActive: `Your ${item} is still active. Starting this conversation didn't change it.`,
+      link: `View your ${name}`
+    };
+  }
+  var GUEST_NEW_CONVERSATION = Object.freeze({
+    control: "New conversation",
+    confirmHeading: "Start a new conversation?",
+    confirm: "Start new conversation",
+    cancel: "Stay here",
+    // Shown when the live-work check can't be read; still true under ADR-0079.
+    unknown: "Starting a new conversation doesn't withdraw or cancel anything you've already sent."
+  });
   var GUEST_DISCLOSURE_WORDING = [
     { domain: /^Refundable Security Deposit is quoted separately and held as guest liability\.?$/, guest: `${GUEST_GLOSSARY.refundableSecurityDeposit} is quoted and collected separately from the stay payment.` },
     { domain: /^Optional services come strictly from the controlled catalogue with no off-platform payment\.?$/, guest: "Optional services are added only when you select them, with no off-platform payment." }
@@ -8667,6 +8689,10 @@ Known schemas:
   var criteriaStatus = requiredElement("criteria-status");
   var criteriaToggle = requiredElement("criteria-toggle");
   var criteriaSummary = requiredElement("criteria-summary");
+  var newConversationButton = requiredElement("new-conversation");
+  var newConversationConfirm = requiredElement("new-conversation-confirm");
+  var newConversationStart = requiredElement("new-conversation-start");
+  var newConversationCancel = requiredElement("new-conversation-cancel");
   function getThreadId() {
     try {
       const urlParam = new URLSearchParams(window.location.search).get("threadId");
@@ -9717,8 +9743,88 @@ Known schemas:
       return false;
     }
   }
+  function isCommittedWork(value) {
+    return isRecord3(value) && (value.kind === "request" || value.kind === "offer" || value.kind === "reservation") && typeof value.threadId === "string" && typeof value.route === "string" && value.route.startsWith("/") && (value.unitTitle === void 0 || typeof value.unitTitle === "string");
+  }
+  async function fetchCommittedWork() {
+    try {
+      const response = await fetch("/api/committed-work", { signal: AbortSignal.timeout(1e4) });
+      if (!response.ok) return null;
+      const body = await response.json();
+      if (!isRecord3(body) || body.ok !== true || !Array.isArray(body.committedWork) || !body.committedWork.every(isCommittedWork)) return null;
+      return body.committedWork;
+    } catch {
+      return null;
+    }
+  }
+  function committedWorkNote(work, text) {
+    const note = document.createElement("div");
+    note.className = "committed-work";
+    note.dataset.kind = work.kind;
+    const line = document.createElement("p");
+    line.textContent = text;
+    const link = document.createElement("a");
+    link.className = "contact-link";
+    link.href = work.route;
+    link.textContent = guestNewConversationCopy(work.kind, work.unitTitle).link;
+    note.append(line, link);
+    return note;
+  }
+  function startNewConversation() {
+    const next = `g-${crypto.randomUUID()}`;
+    try {
+      window.sessionStorage.setItem("shortlet-concierge-thread", next);
+      window.location.replace("/");
+    } catch {
+      window.location.replace(`/?threadId=${encodeURIComponent(next)}`);
+    }
+  }
+  function closeNewConversationConfirm() {
+    newConversationConfirm.hidden = true;
+    newConversationButton.setAttribute("aria-expanded", "false");
+    newConversationButton.focus();
+  }
+  newConversationButton.setAttribute("aria-controls", "new-conversation-confirm");
+  newConversationButton.setAttribute("aria-expanded", "false");
+  newConversationButton.addEventListener("click", async () => {
+    if (!newConversationConfirm.hidden) {
+      closeNewConversationConfirm();
+      return;
+    }
+    newConversationButton.disabled = true;
+    const work = await fetchCommittedWork();
+    newConversationButton.disabled = false;
+    if (work !== null && work.length === 0) {
+      startNewConversation();
+      return;
+    }
+    const items = newConversationConfirm.querySelector(".new-conversation-items");
+    if (items) {
+      items.replaceChildren(...work === null ? [Object.assign(document.createElement("p"), { textContent: GUEST_NEW_CONVERSATION.unknown })] : work.map((entry) => committedWorkNote(entry, guestNewConversationCopy(entry.kind, entry.unitTitle).confirm)));
+    }
+    newConversationConfirm.hidden = false;
+    newConversationButton.setAttribute("aria-expanded", "true");
+    newConversationStart.focus();
+  });
+  newConversationStart.addEventListener("click", startNewConversation);
+  newConversationCancel.addEventListener("click", closeNewConversationConfirm);
+  newConversationConfirm.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    closeNewConversationConfirm();
+  });
+  async function showCommittedWorkElsewhere() {
+    const work = (await fetchCommittedWork())?.filter((entry) => entry.threadId !== threadId) ?? [];
+    if (work.length === 0 || transcript.querySelector(".committed-work")) return;
+    const heading = transcript.querySelector("#conversation-heading");
+    const notes = work.map((entry) => committedWorkNote(entry, guestNewConversationCopy(entry.kind, entry.unitTitle).stillActive));
+    if (heading) heading.after(...notes);
+    else transcript.prepend(...notes);
+  }
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && activePayload?.waiting) void refreshServerState();
   });
-  void restoreServerState();
+  void restoreServerState().then((restored) => {
+    if (!restored) void showCommittedWorkElsewhere();
+  });
 })();

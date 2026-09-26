@@ -55,7 +55,39 @@ export const GUEST_JOURNEY = Object.freeze({
   backToResults: "Back to results",
 });
 
-export type GuestWaitingKind = "operator-response" | "offer-payment-window" | "payment-window";
+/** Issue 13a: committed work a new conversation leaves untouched (ADR-0079). */
+export type GuestCommittedWorkKind = "request" | "offer" | "reservation";
+
+const COMMITTED_WORK_NAMES: Readonly<Record<GuestCommittedWorkKind, string>> = {
+  request: GUEST_GLOSSARY.bookingRequest,
+  offer: GUEST_GLOSSARY.conditionalBookingOffer,
+  reservation: GUEST_GLOSSARY.reservation,
+};
+
+/**
+ * Issue 13a AC1: starting a new conversation never withdraws or cancels a
+ * Booking Request, offer or Reservation (ADR-0079), and the page says so.
+ */
+export function guestNewConversationCopy(kind: GuestCommittedWorkKind, unitTitle?: string): { readonly confirm: string; readonly stillActive: string; readonly link: string } {
+  const name = COMMITTED_WORK_NAMES[kind];
+  const item = `${name}${unitTitle === undefined ? "" : ` for ${unitTitle}`}`;
+  return {
+    confirm: `Starting a new conversation doesn't withdraw or cancel your ${item}. It stays as it is, and you can still open it.`,
+    stillActive: `Your ${item} is still active. Starting this conversation didn't change it.`,
+    link: `View your ${name}`,
+  };
+}
+
+export const GUEST_NEW_CONVERSATION = Object.freeze({
+  control: "New conversation",
+  confirmHeading: "Start a new conversation?",
+  confirm: "Start new conversation",
+  cancel: "Stay here",
+  // Shown when the live-work check can't be read; still true under ADR-0079.
+  unknown: "Starting a new conversation doesn't withdraw or cancel anything you've already sent.",
+});
+
+export type GuestWaitingKind ="operator-response" | "offer-payment-window" | "payment-window";
 
 export interface GuestWaitingCopy {
   readonly heading: string;
