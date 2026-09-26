@@ -600,7 +600,8 @@ function renderWaiting(waiting: GuestWaitingState): HTMLElement {
  * sheet (AC2). Closing it any other way removes that entry again.
  */
 const sheetQuery = window.matchMedia("(max-width: 63.999rem)");
-let sheetInHistory = false;
+// Review fix: a reload keeps history.state, so an open sheet already owns this entry.
+let sheetInHistory = isSheetState(history.state);
 
 function isSheetState(state: unknown): boolean {
   return isRecord(state) && state.shortletSheet === true;

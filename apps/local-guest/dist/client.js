@@ -9109,7 +9109,7 @@ Known schemas:
     return panel;
   }
   var sheetQuery = window.matchMedia("(max-width: 63.999rem)");
-  var sheetInHistory = false;
+  var sheetInHistory = isSheetState(history.state);
   function isSheetState(state) {
     return isRecord3(state) && state.shortletSheet === true;
   }

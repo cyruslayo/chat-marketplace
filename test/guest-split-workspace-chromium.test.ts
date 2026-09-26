@@ -99,6 +99,30 @@ test("AC2: At 375px, the workspace opens as a sheet, and both browser Back and h
   }
 });
 
+test("Review fix: after a reload with the sheet open, one browser Back still closes it", async () => {
+  const fixture = await restartFixture();
+  const browser = await launchRealBrowser();
+  try {
+    const tab = await openShell(browser, fixture.base, 375, 812);
+    await send(tab, SEARCH);
+    await tab.waitForSelector("#active-workspace .stay-card", 10_000);
+    assert.equal(await tab.clickButton("View apartment"), true);
+    await tab.waitForSelector("#active-workspace[data-mode=\"focused-surface\"]:not([hidden])", 10_000);
+    const length = await tab.evaluate<number>("history.length");
+
+    await tab.evaluate("location.reload()");
+    await tab.waitForSelector("#active-workspace[data-mode=\"focused-surface\"]:not([hidden])", 10_000);
+    // Failure path: before the fix the restored sheet pushed a second entry.
+    assert.equal(await tab.evaluate<number>("history.length"), length);
+    await tab.evaluate("history.back()");
+    await tab.waitForFunction("document.getElementById('active-workspace').hidden === true", 5_000);
+    assert.match(await tab.evaluate<string>("location.pathname"), /^\/$/);
+  } finally {
+    await browser.close();
+    await fixture.close();
+  }
+});
+
 test("AC3: Sending a message while the workspace is open keeps it open and updates it where relevant", async () => {
   const fixture = await restartFixture();
   const browser = await launchRealBrowser();
