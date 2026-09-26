@@ -8851,15 +8851,27 @@ Known schemas:
       children.find((child) => child.tagName === "P")?.classList.add("stay-card__facts");
       smalls[1]?.classList.add("stay-card__amenities");
       const priceLabel = children.find((child) => isPriceLabel(child.textContent?.trim() ?? ""));
-      const action = children.find((child) => child.tagName === "BUTTON");
+      const buttons = children.filter((child) => child.tagName === "BUTTON");
+      const action = buttons[0];
+      const lastAction = buttons.at(-1);
       if (priceLabel) {
         const priceStart = children.indexOf(priceLabel);
-        const priceNodes = children.slice(priceStart, action ? children.indexOf(action) + 1 : void 0);
+        const priceNodes = children.slice(priceStart, lastAction ? children.indexOf(lastAction) + 1 : void 0);
         const price = priceNodes.find((child) => child.tagName === "H3" && /^(₦|NGN\b)/.test(child.textContent?.trim() ?? ""));
         priceLabel.classList.add("stay-card__price-label");
         price?.classList.add("stay-card__price-total");
         if (action) action.classList.add("stay-card__action");
+        for (const extra of buttons.slice(1)) extra.classList.add("stay-card__compare");
         wrapDirectChildren(body, "stay-card__price-area", priceNodes);
+      }
+    }
+  }
+  function decorateComparison(mount) {
+    for (const row of mount.querySelectorAll('[data-a2ui-component="Row"]')) {
+      row.classList.add("compare-row");
+      for (const cell of row.querySelectorAll(':scope > [data-a2ui-component="Column"], :scope > [data-weaver-mount] > [data-a2ui-component="Column"]')) {
+        cell.classList.add("compare-cell");
+        cell.querySelector("small")?.classList.add("compare-cell__unit");
       }
     }
   }
@@ -8875,6 +8887,7 @@ Known schemas:
       if (/^No stays match|^No current matches/i.test(value)) text.classList.add("empty-state-title");
     }
     if (kind === "discovery") decorateDiscoveryCards(mount);
+    if (kind === "compare") decorateComparison(mount);
     if (kind === "unit-detail") organizeUnitDetail(mount);
   }
   function isPriceLabel(text) {
@@ -9175,7 +9188,7 @@ Known schemas:
     workspaceRegion.hidden = false;
     activeWorkspace.dataset.mode = presentation.mode;
     activeWorkspace.dataset.status = presentation.status;
-    activeWorkspace.dataset.surfaceKind = surface.surfaceId.includes(":unit:") ? "unit-detail" : surface.surfaceId.includes(":discovery:") ? "discovery" : surface.surfaceId.includes(":payment:") || surface.surfaceId.includes(":offer:") ? "payment" : surface.surfaceId.includes(":request:") ? "booking" : "general";
+    activeWorkspace.dataset.surfaceKind = surface.surfaceId.includes(":unit:") ? "unit-detail" : surface.surfaceId.includes(":compare:") ? "compare" : surface.surfaceId.includes(":discovery:") ? "discovery" : surface.surfaceId.includes(":payment:") || surface.surfaceId.includes(":offer:") ? "payment" : surface.surfaceId.includes(":request:") ? "booking" : "general";
     activeWorkspace.classList.remove("workspace-arrival");
     void activeWorkspace.offsetWidth;
     activeWorkspace.classList.add("workspace-arrival");

@@ -74,10 +74,18 @@ export interface DiscoveryArtifactProjection {
 export interface DiscoveryArtifactToA2UIInput {
   readonly artifact: DiscoveryArtifactProjection;
   readonly surfaceId: string;
+  /** Issue 13b: the result already picked for comparison, if any. */
+  readonly compareSelection?: string;
 }
 
 export const VIEW_UNIT_EVENT = "shortlet.discovery.view-unit";
 export const SEE_ALL_DISCOVERY_EVENT = "shortlet.discovery.see-all";
+/** Issue 13b: pick (or un-pick) a result; the second pick opens the comparison. */
+export const COMPARE_UNIT_EVENT = "shortlet.discovery.compare";
+/** Issue 13b: from the comparison, re-present the same search results. */
+export const COMPARE_BACK_EVENT = "shortlet.discovery.compare.back-to-results";
+/** Presentation only: the comparison is two-up (issue 13b). */
+export const COMPARE_SIZE = 2;
 
 /** Kept as the Guest-surface name; the shared formatter lives in apps/web/src/ui-kit.ts. */
 export function formatNgnKobo(kobo: number): string {
@@ -136,12 +144,38 @@ function budgetNote(unit: DiscoveryUnitProjection, budgetKobo: number | undefine
     : within;
 }
 
+interface CompareControl {
+  /** The result already picked, if any. */
+  readonly selected?: DiscoveryUnitProjection;
+}
+
+function compareButton(artifactId: string, unit: DiscoveryUnitProjection, prefix: string, compare: CompareControl): readonly A2UIComponent[] {
+  const picked = compare.selected?.id === unit.id;
+  // WCAG 2.5.3: each accessible name starts with the visible label.
+  const label = picked ? "Remove from compare" : "Compare";
+  const accessible = picked
+    ? `Remove from compare: ${unit.title}`
+    : compare.selected === undefined ? `Compare: ${unit.title}` : `Compare: ${unit.title} with ${compare.selected.title}`;
+  return [
+    {
+      id: `${prefix}-compare-button`,
+      component: "Button",
+      child: `${prefix}-compare-label`,
+      variant: "borderless",
+      action: { event: { name: COMPARE_UNIT_EVENT, context: { artifactId, unitId: unit.id } } },
+      accessibility: { label: accessible },
+    },
+    { id: `${prefix}-compare-label`, component: "Text", text: label },
+  ];
+}
+
 function unitComponents(
   artifactId: string,
   unit: DiscoveryUnitProjection,
   canViewUnit: boolean,
   filters: Readonly<Record<string, unknown>>,
   budgetKobo?: number,
+  compare?: CompareControl,
 ): { readonly cardId: string; readonly components: readonly A2UIComponent[] } {
   const prefix = `unit-${unit.id}`;
   const location = unit.title.toLocaleLowerCase().includes(unit.location.neighbourhood.toLocaleLowerCase())
@@ -177,6 +211,7 @@ function unitComponents(
           ...(unit.price.refundableSecurityDepositKobo > 0 ? [`${prefix}-deposit`] : []),
           ...(budget === undefined ? [] : [`${prefix}-budget`]),
           ...(canViewUnit ? [`${prefix}-view-button`] : []),
+          ...(compare === undefined ? [] : [`${prefix}-compare-button`]),
         ],
       },
       { id: `${prefix}-title`, component: "Text", text: unit.title, variant: "h3" },
@@ -227,6 +262,7 @@ function unitComponents(
         },
         { id: `${prefix}-view-label`, component: "Text" as const, text: GUEST_GLOSSARY.viewUnit },
       ] : []),
+      ...(compare === undefined ? [] : compareButton(artifactId, unit, prefix, compare)),
     ],
   };
 }
@@ -234,13 +270,18 @@ function unitComponents(
 export function discoveryArtifactToA2UI({
   artifact,
   surfaceId,
+  compareSelection,
 }: DiscoveryArtifactToA2UIInput): readonly A2UIServerMessage[] {
+  // Issue 13b: comparing needs at least two results; a stale pick is ignored.
+  const selected = artifact.facts.results.find((unit) => unit.id === compareSelection);
+  const compare: CompareControl | undefined = artifact.facts.results.length >= COMPARE_SIZE ? (selected === undefined ? {} : { selected }) : undefined;
   const unitGroups = artifact.facts.results.map((unit) => unitComponents(
     artifact.id,
     unit,
     artifact.actions.some((action) => action.type === "view-unit" && action.unitId === unit.id),
     artifact.facts.filters,
     typeof artifact.facts.filters.maxPriceKobo === "number" ? artifact.facts.filters.maxPriceKobo : undefined,
+    compare,
   ));
   const checkIn = typeof artifact.facts.filters.checkIn === "string" ? formatGuestDate(artifact.facts.filters.checkIn) : undefined;
   const checkOut = typeof artifact.facts.filters.checkOut === "string" ? formatGuestDate(artifact.facts.filters.checkOut) : undefined;
@@ -288,6 +329,108 @@ export function discoveryArtifactToA2UI({
       version: "v0.9.1",
       updateComponents: { surfaceId, components },
     },
+  ];
+}
+
+export interface CompareArtifactToA2UIInput {
+  readonly artifact: DiscoveryArtifactProjection;
+  readonly unitIds: readonly [string, string];
+  readonly surfaceId: string;
+}
+
+export interface CompareAttribute {
+  readonly key: string;
+  readonly label: string;
+  readonly value: (unit: DiscoveryUnitProjection) => string;
+}
+
+/**
+ * Issue 13b: every compared attribute, in one fixed order so the two stays
+ * line up. Price is the All-In Stay Total (ADR-0015); the deposit is its own
+ * row, never folded into the price (ADR-0016).
+ */
+export const COMPARE_ATTRIBUTES: readonly CompareAttribute[] = [
+  {
+    key: "price",
+    label: GUEST_GLOSSARY.allInStayTotal,
+    value: (unit) => unit.price.allInStayTotalKobo === null
+      ? `Not yet quoted · Indicative nightly rate ${formatNgnKobo(unit.price.nightlyKobo)}`
+      : formatNgnKobo(unit.price.allInStayTotalKobo),
+  },
+  {
+    key: "deposit",
+    label: GUEST_GLOSSARY.refundableSecurityDeposit,
+    value: (unit) => unit.price.refundableSecurityDepositKobo > 0 ? `${formatNgnKobo(unit.price.refundableSecurityDepositKobo)}, paid separately` : "None",
+  },
+  {
+    key: "capacity",
+    label: "Capacity",
+    value: (unit) => [
+      `Sleeps ${unit.capacity}`,
+      ...(unit.bedrooms === undefined ? [] : [`${unit.bedrooms} ${unit.bedrooms === 1 ? "bedroom" : "bedrooms"}`]),
+      `${unit.bathrooms} ${unit.bathrooms === 1 ? "bathroom" : "bathrooms"}`,
+    ].join(" · "),
+  },
+  {
+    key: "amenities",
+    label: "Amenities",
+    value: (unit) => unit.amenities.length === 0 ? "None listed" : unit.amenities.map(guestAmenityLabel).join(" · "),
+  },
+];
+
+/** Plain-text comparison for fallbacks and conventional pages. */
+export function compareFallbackText(units: readonly DiscoveryUnitProjection[]): string {
+  return units.map((unit) => `${unit.title}: ${COMPARE_ATTRIBUTES.map((attribute) => `${attribute.label} ${attribute.value(unit)}`).join("; ")}.`).join(" ");
+}
+
+/**
+ * Issue 13b AC2: two results side by side, one row per attribute. Each cell
+ * repeats its stay's name so a stacked cell still says what it describes;
+ * the shell stacks the rows at narrow widths (AC3, ADR-0078). Basic Catalog
+ * components only (ADR-0073, ADR-0081). Throws on a unit the artifact lacks:
+ * the caller has already validated both against the stored artifact.
+ */
+export function compareArtifactToA2UI({ artifact, unitIds, surfaceId }: CompareArtifactToA2UIInput): readonly A2UIServerMessage[] {
+  const units = unitIds.map((id) => {
+    const unit = artifact.facts.results.find((candidate) => candidate.id === id);
+    if (unit === undefined) throw new Error("Compared stay is not in these results");
+    return unit;
+  });
+  const rows = COMPARE_ATTRIBUTES.flatMap((attribute): A2UIComponent[] => [
+    { id: `compare-${attribute.key}-label`, component: "Text", text: attribute.label, variant: "h3" },
+    { id: `compare-${attribute.key}-row`, component: "Row", children: units.map((_, index) => `compare-${attribute.key}-${index}`) },
+    ...units.flatMap((unit, index): A2UIComponent[] => [
+      { id: `compare-${attribute.key}-${index}`, component: "Column", children: [`compare-${attribute.key}-${index}-unit`, `compare-${attribute.key}-${index}-value`] },
+      { id: `compare-${attribute.key}-${index}-unit`, component: "Text", text: unit.title, variant: "caption" },
+      { id: `compare-${attribute.key}-${index}-value`, component: "Text", text: attribute.value(unit), variant: "body" },
+    ]),
+  ]);
+  const checkIn = typeof artifact.facts.filters.checkIn === "string" ? formatGuestDate(artifact.facts.filters.checkIn) : undefined;
+  const checkOut = typeof artifact.facts.filters.checkOut === "string" ? formatGuestDate(artifact.facts.filters.checkOut) : undefined;
+  const context = `${discoveryContext(artifact.facts.filters)}${checkIn && checkOut ? ` · ${checkIn} – ${checkOut}` : ""}`.trim();
+  const disclosureIds = artifact.disclosures.map((_, index) => `compare-disclosure-${index}`);
+  const components: A2UIComponent[] = [
+    {
+      id: "root",
+      component: "Column",
+      children: ["compare-heading", ...(context === "" ? [] : ["compare-context"]), ...COMPARE_ATTRIBUTES.flatMap((attribute) => [`compare-${attribute.key}-label`, `compare-${attribute.key}-row`]), ...disclosureIds, "compare-back"],
+    },
+    { id: "compare-heading", component: "Text", text: `Compare ${units.length} stays`, variant: "h2" },
+    ...(context === "" ? [] : [{ id: "compare-context", component: "Text" as const, text: context, variant: "caption" as const }]),
+    ...rows,
+    ...artifact.disclosures.map((disclosure, index): A2UIComponent => ({ id: `compare-disclosure-${index}`, component: "Text", text: disclosure, variant: "caption" })),
+    {
+      id: "compare-back",
+      component: "Button",
+      child: "compare-back-label",
+      variant: "primary",
+      action: { event: { name: COMPARE_BACK_EVENT, context: { artifactId: artifact.id } } },
+    },
+    { id: "compare-back-label", component: "Text", text: "Back to results" },
+  ];
+  return [
+    { version: "v0.9.1", createSurface: { surfaceId, catalogId: A2UI_V091_BASIC_CATALOG_ID } },
+    { version: "v0.9.1", updateComponents: { surfaceId, components } },
   ];
 }
 
