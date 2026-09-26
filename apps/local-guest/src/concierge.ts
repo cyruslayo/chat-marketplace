@@ -15,6 +15,17 @@
  */
 
 import { BOOKING_HORIZON_DAYS, MAX_STAY_NIGHTS, dateKeyInLagos } from "../../../domains/shortlet/src/index.js";
+import { formatNgnKobo } from "../../web-agent/src/discovery-a2ui.js";
+
+/**
+ * Issue 03b / ADR-0015: a budget is compared with the All-In Stay Total and
+ * never includes the Refundable Security Deposit (ADR-0016). A nightly budget
+ * is kept as nightly and converted with the current nights at search time.
+ */
+export interface StayBudget {
+  readonly kobo: number;
+  readonly per: "stay" | "night";
+}
 
 export interface StayRequestFilters {
   readonly location: string;
@@ -24,6 +35,8 @@ export interface StayRequestFilters {
   readonly partySize: number;
   /** Optional conversational refinement (for example "only show two bedrooms"). */
   readonly bedrooms?: number;
+  /** Issue 03b: the budget as an All-In Stay Total for these dates (ADR-0015). */
+  readonly maxPriceKobo?: number;
 }
 
 export type StayRequestInterpretation = StayRequestResolution;
@@ -68,6 +81,7 @@ export interface DiscoverySearchContext {
   readonly checkIn?: string;
   /** False while a resolved relative phrase ("this weekend") awaits the Guest's yes. */
   readonly datesConfirmed?: boolean;
+  readonly budget?: StayBudget;
 }
 
 /**
@@ -87,6 +101,7 @@ export interface StayRequestFacts {
   readonly partySize?: number;
   readonly bedrooms?: number;
   readonly dates?: StayRequestDates;
+  readonly budget?: StayBudget;
   /** Preferences the Guest asked for that discovery cannot filter by yet (issue 02 AC3). */
   readonly unsupportedPreferences?: readonly string[];
 }
@@ -268,8 +283,10 @@ function buildContext(parts: {
   readonly pendingLocationChange?: PendingLocationChange;
   readonly checkIn?: string;
   readonly datesConfirmed?: boolean;
+  readonly budget?: StayBudget;
 }): DiscoverySearchContext {
   return {
+    ...(parts.budget === undefined ? {} : { budget: { kobo: parts.budget.kobo, per: parts.budget.per } }),
     ...(parts.city === undefined ? {} : { city: parts.city }),
     ...(parts.neighbourhood === undefined ? {} : { neighbourhood: parts.neighbourhood }),
     ...(parts.nights === undefined ? {} : { nights: parts.nights }),
@@ -288,8 +305,10 @@ function scalarParts(context: DiscoverySearchContext): {
   readonly bedrooms?: number;
   readonly checkIn?: string;
   readonly datesConfirmed?: boolean;
+  readonly budget?: StayBudget;
 } {
   return {
+    ...(context.budget === undefined ? {} : { budget: context.budget }),
     ...(context.city === undefined ? {} : { city: context.city }),
     ...(context.neighbourhood === undefined ? {} : { neighbourhood: context.neighbourhood }),
     ...(context.nights === undefined ? {} : { nights: context.nights }),
@@ -318,6 +337,54 @@ export function resolveLocationMention(text: string): StayRequestLocation | unde
  * Extracts only the facts present in one message. Missing facts stay missing;
  * they are never inferred from, or replaced by, the rest of the conversation.
  */
+const NAIRA_AMOUNT = "(₦|ngn\\s*|n(?=\\d))?\\s*(\\d{1,3}(?:,\\d{3})+|\\d+(?:\\.\\d+)?)\\s*(k|m|million|thousand)?\\b\\s*(naira)?";
+const PER_NIGHT = "(\\s*(?:a|per|\\/|each|every)\\s*night)?";
+const BUDGET_PATTERN = new RegExp(`\\b(?:budget(?:\\s+is|\\s+of)?|under|below|max(?:imum)?|up to|no more than|not more than|less than)\\s*:?\\s*${NAIRA_AMOUNT}${PER_NIGHT}`, "gi");
+const PRICED_NIGHT_PATTERN = new RegExp(`(₦|ngn\\s*)\\s*(\\d{1,3}(?:,\\d{3})+|\\d+(?:\\.\\d+)?)\\s*(k|m|million|thousand)?\\b\\s*(naira)?(\\s*(?:a|per|\\/|each|every)\\s*night)`, "gi");
+const AMOUNT_MULTIPLIERS: Readonly<Record<string, number>> = { k: 1_000, thousand: 1_000, m: 1_000_000, million: 1_000_000 };
+
+/**
+ * Issue 03b: "budget ₦500k", "under 200,000 naira", "₦60k a night". A bare
+ * small number ("under 3 nights", "max 4 guests") is never read as money: it
+ * needs a currency mark, a k/m multiplier, "naira", or at least ₦1,000.
+ */
+function extractBudget(text: string): StayBudget | undefined {
+  for (const match of [...text.matchAll(BUDGET_PATTERN), ...text.matchAll(PRICED_NIGHT_PATTERN)]) {
+    const [, currency, digits, multiplier, naira, perNight] = match;
+    const value = Number.parseFloat((digits ?? "").replaceAll(",", "")) * (multiplier ? AMOUNT_MULTIPLIERS[multiplier.toLowerCase()] ?? 1 : 1);
+    if (!Number.isFinite(value) || value <= 0) continue;
+    if (!currency && !multiplier && !naira && value < 1_000) continue;
+    return { kobo: Math.round(value * 100), per: perNight ? "night" : "stay" };
+  }
+  return undefined;
+}
+
+/**
+ * The budget as shown back to the Guest (approved decision, 25 Sept 2026):
+ * converted to a stay total with the current nights and "all fees
+ * included". It is qualified with "About" until arrival, nights and party size
+ * are all known, because only then can an All-In Stay Total be quoted
+ * (ADR-0015).
+ */
+export function budgetLabel(context: DiscoverySearchContext): string | undefined {
+  const budget = context.budget;
+  if (!budget) return undefined;
+  const nights = context.nights;
+  if (budget.per === "night" && nights === undefined) return `About ${formatNgnKobo(budget.kobo)} a night`;
+  const total = budget.per === "night" && nights !== undefined ? budget.kobo * nights : budget.kobo;
+  const stay = nights === undefined ? "" : ` for ${nights} ${nights === 1 ? "night" : "nights"}`;
+  const text = `${formatNgnKobo(total)} total${stay}, all fees included`;
+  const quotable = context.checkIn !== undefined && nights !== undefined && context.partySize !== undefined;
+  return quotable ? text : `About ${text}`;
+}
+
+/** The budget as an All-In Stay Total for the current nights, or undefined without both. */
+export function stayBudgetKobo(context: DiscoverySearchContext): number | undefined {
+  if (!context.budget) return undefined;
+  if (context.budget.per === "stay") return context.budget.kobo;
+  return context.nights === undefined ? undefined : context.budget.kobo * context.nights;
+}
+
 export function extractStayRequestFacts(text: string, options: { readonly now?: Date } = {}): StayRequestFacts {
   const normalized = text.trim();
   const location = resolveLocationMention(normalized);
@@ -335,8 +402,13 @@ export function extractStayRequestFacts(text: string, options: { readonly now?: 
       : PAIR_PATTERN.test(normalized) ? 2 : undefined;
   const bedroomsToken = bedroomsMatch?.[1]?.toLowerCase();
   const bedrooms = bedroomsToken === undefined ? undefined : (BEDROOM_WORDS[bedroomsToken] ?? Number.parseInt(bedroomsToken, 10));
-  const unsupportedPreferences = UNSUPPORTED_PREFERENCES.filter((preference) => preference.pattern.test(normalized)).map((preference) => preference.label);
+  const budget = extractBudget(normalized);
+  // A stated amount is a supported budget (issue 03b), not an unfilterable "price level".
+  const unsupportedPreferences = UNSUPPORTED_PREFERENCES.filter((preference) => preference.pattern.test(normalized))
+    .map((preference) => preference.label)
+    .filter((label) => budget === undefined || label !== "price level");
   return {
+    ...(budget === undefined ? {} : { budget }),
     ...(location === undefined ? {} : { location }),
     ...(nights === undefined || Number.isNaN(nights) || nights < 1 ? {} : { nights }),
     ...(partySize === undefined || Number.isNaN(partySize) || partySize < 1 ? {} : { partySize }),
@@ -469,6 +541,7 @@ export function mergeStayRequestContext(
     ...(facts.nights === undefined ? {} : { nights: facts.nights }),
     ...(facts.partySize === undefined ? {} : { partySize: facts.partySize }),
     ...(facts.bedrooms === undefined ? {} : { bedrooms: facts.bedrooms }),
+    ...(facts.budget === undefined ? {} : { budget: facts.budget }),
     ...(facts.dates === undefined ? {} : { checkIn: facts.dates.checkIn, datesConfirmed: facts.dates.given }),
     ...(confirmedDates ? { datesConfirmed: true } : {}),
     ...(context.pendingLocationChange === undefined ? {} : { pendingLocationChange: context.pendingLocationChange }),
@@ -496,6 +569,8 @@ function knownCriteria(context: DiscoverySearchContext): string[] {
   }
   if (context.nights !== undefined) criteria.push(`${context.nights} ${context.nights === 1 ? "night" : "nights"}`);
   if (context.bedrooms !== undefined) criteria.push(`${context.bedrooms} ${context.bedrooms === 1 ? "bedroom" : "bedrooms"}`);
+  const budget = budgetLabel(context);
+  if (budget !== undefined) criteria.push(`budget ${budget.startsWith("About") ? `about ${budget.slice("About ".length)}` : budget}`);
   return criteria;
 }
 
@@ -556,6 +631,8 @@ export function resolveStayRequestContext(
     checkOut,
     partySize,
     ...(context.bedrooms === undefined ? {} : { bedrooms: context.bedrooms }),
+    // ADR-0015: the budget filters on the All-In Stay Total for these nights.
+    ...(context.budget === undefined ? {} : { maxPriceKobo: stayBudgetKobo(context)! }),
   };
   if (context.datesConfirmed !== true) {
     const place = context.neighbourhood ?? city;
@@ -590,7 +667,8 @@ export function searchAreaFor(context: DiscoverySearchContext): typeof SEARCH_AR
 export type CriteriaEdit =
   | { readonly field: "where"; readonly area: string }
   | { readonly field: "when"; readonly checkIn: string; readonly nights: number }
-  | { readonly field: "guests"; readonly partySize: number };
+  | { readonly field: "guests"; readonly partySize: number }
+  | { readonly field: "budget"; readonly budget: StayBudget | null };
 
 /**
  * Applies one strip edit to the accumulated context (issue 03a). A chip's
@@ -608,6 +686,11 @@ export function applyCriteriaEdit(context: DiscoverySearchContext | null, edit: 
     return buildContext({ ...rest, city: area.city, ...(area.neighbourhood === undefined ? {} : { neighbourhood: area.neighbourhood }) });
   }
   if (edit.field === "when") return buildContext({ ...current, checkIn: edit.checkIn, nights: edit.nights, datesConfirmed: true });
+  if (edit.field === "budget") {
+    // A null budget removes it.
+    const { budget: _budget, ...rest } = current;
+    return buildContext(edit.budget === null ? rest : { ...rest, budget: edit.budget });
+  }
   return buildContext({ ...current, partySize: edit.partySize });
 }
 
@@ -636,6 +719,14 @@ export function parseDiscoverySearchContext(value: unknown): DiscoverySearchCont
   if (!optionalPositiveInteger(record.nights) || !optionalPositiveInteger(record.partySize) || !optionalPositiveInteger(record.bedrooms)) return null;
   if (record.checkIn !== undefined && (typeof record.checkIn !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(record.checkIn))) return null;
   if (record.datesConfirmed !== undefined && typeof record.datesConfirmed !== "boolean") return null;
+  const rawBudget = record.budget;
+  let budget: StayBudget | undefined;
+  if (rawBudget !== undefined) {
+    if (typeof rawBudget !== "object" || rawBudget === null || Array.isArray(rawBudget)) return null;
+    const budgetRecord = rawBudget as Record<string, unknown>;
+    if (!optionalPositiveInteger(budgetRecord.kobo) || budgetRecord.kobo === undefined || (budgetRecord.per !== "stay" && budgetRecord.per !== "night")) return null;
+    budget = { kobo: budgetRecord.kobo as number, per: budgetRecord.per };
+  }
   let pending: PendingLocationChange | undefined;
   const rawPending = record.pendingLocationChange;
   if (rawPending !== undefined && rawPending !== null) {
@@ -657,5 +748,6 @@ export function parseDiscoverySearchContext(value: unknown): DiscoverySearchCont
     ...(typeof record.bedrooms === "number" ? { bedrooms: record.bedrooms } : {}),
     ...(pending === undefined ? {} : { pendingLocationChange: pending }),
     ...(typeof record.checkIn === "string" ? { checkIn: record.checkIn, datesConfirmed: record.datesConfirmed === true } : {}),
+    ...(budget === undefined ? {} : { budget }),
   });
 }

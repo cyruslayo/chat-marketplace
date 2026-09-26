@@ -53,6 +53,7 @@ interface GuestCriteria {
   readonly where?: { readonly area?: string; readonly label: string };
   readonly when?: { readonly checkIn?: string; readonly nights?: number; readonly label: string };
   readonly guests?: { readonly count: number; readonly label: string };
+  readonly budget?: { readonly naira: number; readonly per: "stay" | "night"; readonly label: string };
   readonly areas: readonly { readonly id: string; readonly label: string }[];
 }
 interface GuestResponse { readonly ok: boolean; readonly code?: string; readonly message?: string; readonly messages?: readonly string[]; readonly receipts?: readonly string[]; readonly surfaces?: readonly GuestSurfacePayload[]; readonly journey?: GuestJourney; readonly criteria?: GuestCriteria; }
@@ -324,7 +325,7 @@ function isCriteria(value: unknown): value is GuestCriteria {
   if (!isRecord(value) || typeof value.key !== "string" || typeof value.editable !== "boolean" || typeof value.canUndo !== "boolean") return false;
   if (!Array.isArray(value.areas) || !value.areas.every((area) => isRecord(area) && typeof area.id === "string" && typeof area.label === "string")) return false;
   const labelled = (field: unknown): boolean => field === undefined || (isRecord(field) && typeof field.label === "string");
-  return labelled(value.where) && labelled(value.when) && labelled(value.guests);
+  return labelled(value.where) && labelled(value.when) && labelled(value.guests) && labelled(value.budget);
 }
 
 function readGuestResponse(value: unknown): GuestResponse {
@@ -772,9 +773,9 @@ function renderJourney(journey: GuestJourney | undefined): void {
   if (current) list.scrollLeft = Math.max(0, current.offsetLeft - list.offsetLeft - list.clientWidth / 2 + current.offsetWidth / 2);
 }
 
-type CriteriaField = "where" | "when" | "guests";
-const CRITERIA_FIELDS: readonly CriteriaField[] = ["where", "when", "guests"];
-const CRITERIA_NAMES: Readonly<Record<CriteriaField, string>> = { where: "Where", when: "When", guests: "Guests" };
+type CriteriaField = "where" | "when" | "guests" | "budget";
+const CRITERIA_FIELDS: readonly CriteriaField[] = ["where", "when", "guests", "budget"];
+const CRITERIA_NAMES: Readonly<Record<CriteriaField, string>> = { where: "Where", when: "When", guests: "Guests", budget: "Budget" };
 const CRITERIA_EDIT_EVENT = "shortlet.criteria.edit";
 const CRITERIA_UNDO_EVENT = "shortlet.criteria.undo";
 let currentCriteria: GuestCriteria | undefined;
@@ -888,8 +889,24 @@ function openCriteriaEditor(target: CriteriaField): void {
     date.required = true;
     if (criteria.when?.checkIn) date.value = criteria.when.checkIn;
     criteriaEditor.append(field("Arrival date", date), field("Nights", numberInput("criteria-nights", "nights", criteria.when?.nights)));
-  } else {
+  } else if (target === "guests") {
     criteriaEditor.appendChild(field("Guests", numberInput("criteria-guests", "partySize", criteria.guests?.count)));
+  } else {
+    // Issue 03b / ADR-0015: the budget is compared with the All-In Stay Total, never the deposit.
+    const per = document.createElement("select");
+    per.id = "criteria-budget-per";
+    per.name = "per";
+    for (const [value, label] of [["stay", "Total for the stay"], ["night", "Per night"]] as const) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = label;
+      option.selected = (criteria.budget?.per ?? "stay") === value;
+      per.appendChild(option);
+    }
+    const hint = document.createElement("p");
+    hint.className = "ui-field__hint";
+    hint.textContent = `Compared with the ${GUEST_GLOSSARY.allInStayTotal}, all fees included. The ${GUEST_GLOSSARY.refundableSecurityDeposit} is separate.`;
+    criteriaEditor.append(field("Budget (₦)", numberInput("criteria-budget", "naira", criteria.budget?.naira)), field("Budget is", per), hint);
   }
   const actions = document.createElement("div");
   actions.className = "criteria-editor-actions";
@@ -903,6 +920,14 @@ function openCriteriaEditor(target: CriteriaField): void {
   cancel.textContent = "Cancel";
   cancel.addEventListener("click", () => closeCriteriaEditor(true));
   actions.append(submit, cancel);
+  if (target === "budget" && criteria.budget) {
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "ui-button ui-button--quiet";
+    remove.textContent = "Remove budget";
+    remove.addEventListener("click", () => { void sendCriteriaEvent(CRITERIA_EDIT_EVENT, { field: "budget", clear: true, basedOn: criteria.key }); });
+    actions.appendChild(remove);
+  }
   criteriaEditor.appendChild(actions);
   criteriaEditor.hidden = false;
   for (const chip of criteriaStrip.querySelectorAll<HTMLElement>(".criteria-chip")) chip.setAttribute("aria-expanded", String(chip.dataset.field === target));
@@ -919,7 +944,7 @@ function closeCriteriaEditor(returnFocus: boolean): void {
   if (returnFocus && closed) criteriaStrip.querySelector<HTMLElement>(`.criteria-chip[data-field="${closed}"]`)?.focus();
 }
 
-async function sendCriteriaEvent(name: string, context: Readonly<Record<string, string | number>>): Promise<void> {
+async function sendCriteriaEvent(name: string, context: Readonly<Record<string, string | number | boolean>>): Promise<void> {
   if (criteriaInFlight || isLoading) return;
   criteriaInFlight = true;
   criteriaStrip.setAttribute("aria-busy", "true");
@@ -964,10 +989,14 @@ criteriaEditor.addEventListener("submit", (event) => {
     const nights = whole("nights");
     if (checkIn === "" || nights === undefined) { criteriaStatus.textContent = "Enter an arrival date and a whole number of nights."; return; }
     void sendCriteriaEvent(CRITERIA_EDIT_EVENT, { field: "when", checkIn, nights, basedOn: criteria.key });
-  } else {
+  } else if (target === "guests") {
     const partySize = whole("partySize");
     if (partySize === undefined) { criteriaStatus.textContent = "Enter a whole number of guests."; return; }
     void sendCriteriaEvent(CRITERIA_EDIT_EVENT, { field: "guests", partySize, basedOn: criteria.key });
+  } else {
+    const naira = whole("naira");
+    if (naira === undefined) { criteriaStatus.textContent = "Enter a budget in whole naira."; return; }
+    void sendCriteriaEvent(CRITERIA_EDIT_EVENT, { field: "budget", naira, per: data.get("per") === "night" ? "night" : "stay", basedOn: criteria.key });
   }
 });
 

@@ -72,7 +72,7 @@ import {
 } from "./guest-projection.js";
 import { hashSessionSecret } from "../../../domains/shortlet/src/index.js";
 import { DirectPaystackClient, isApprovedPaystackCheckoutUrl, loadPaystackConfiguration, type PaystackClient } from "../../../domains/shortlet/src/index.js";
-import { applyCriteriaEdit, searchAreaFor, SEARCH_AREAS, type CriteriaEdit } from "./concierge.js";
+import { applyCriteriaEdit, budgetLabel, searchAreaFor, SEARCH_AREAS, type CriteriaEdit } from "./concierge.js";
 import { amenityQuestions, extractStayRequestFacts, formatGuestDay, mergeStayRequestContext, resolveStayRequestContext, stayChangeRequested, unsupportedPreferenceNote, type DiscoverySearchContext, type StayRequestFilters } from "./concierge.js";
 import { handleGeminiTurn, type GeminiConciergeClient } from "./gemini-concierge.js";
 import type { Content } from "@google/genai";
@@ -152,6 +152,8 @@ export interface GuestCriteria {
   readonly where?: { readonly area?: string; readonly label: string };
   readonly when?: { readonly checkIn?: string; readonly nights?: number; readonly label: string };
   readonly guests?: { readonly count: number; readonly label: string };
+  /** Issue 03b: always an All-In Stay Total comparison; "About" until it can be quoted. */
+  readonly budget?: { readonly naira: number; readonly per: "stay" | "night"; readonly label: string };
   readonly areas: readonly { readonly id: string; readonly label: string }[];
 }
 
@@ -211,10 +213,13 @@ export function criteriaSurfaceId(threadId: string): string {
 
 function criteriaKey(context: DiscoverySearchContext | null): string {
   return JSON.stringify([context?.city ?? null, context?.neighbourhood ?? null, context?.checkIn ?? null, context?.nights ?? null,
-    context?.datesConfirmed ?? null, context?.partySize ?? null, context?.bedrooms ?? null, context?.pendingLocationChange?.label ?? null]);
+    context?.datesConfirmed ?? null, context?.partySize ?? null, context?.bedrooms ?? null, context?.pendingLocationChange?.label ?? null,
+    context?.budget?.kobo ?? null, context?.budget?.per ?? null]);
 }
 
 const CALENDAR_DATE = /^\d{4}-\d{2}-\d{2}$/;
+/** An input sanity bound (safe kobo arithmetic), not a pricing policy. */
+const MAX_BUDGET_NAIRA = 1_000_000_000;
 
 function isPositiveInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 1;
@@ -229,6 +234,12 @@ function readCriteriaEdit(context: Readonly<Record<string, unknown>>): CriteriaE
     return { field: "when", checkIn: context.checkIn, nights: context.nights };
   }
   if (context.field === "guests" && keys === "basedOn,field,partySize" && isPositiveInteger(context.partySize)) return { field: "guests", partySize: context.partySize };
+  // Issue 03b: a whole-naira budget, for the stay or per night; `clear` removes it.
+  if (context.field === "budget" && keys === "basedOn,field,naira,per" && isPositiveInteger(context.naira) && context.naira <= MAX_BUDGET_NAIRA
+    && (context.per === "stay" || context.per === "night")) {
+    return { field: "budget", budget: { kobo: context.naira * 100, per: context.per } };
+  }
+  if (context.field === "budget" && keys === "basedOn,clear,field" && context.clear === true) return { field: "budget", budget: null };
   return null;
 }
 const SHELL_TELEMETRY_EVENTS = [
@@ -507,7 +518,7 @@ export class LocalGuestApp {
     return {
       ok: true,
       messages: [
-        `I found ${result.artifact.facts.results.length} eligible place${result.artifact.facts.results.length === 1 ? "" : "s"} in ${filters.location} for your stay from ${formatGuestDay(filters.checkIn)} to ${formatGuestDay(filters.checkOut)}. You can view the details below.`,
+        `I found ${result.artifact.facts.results.length} eligible place${result.artifact.facts.results.length === 1 ? "" : "s"} in ${filters.location}${filters.maxPriceKobo === undefined ? "" : ` within your ${formatNgnKobo(filters.maxPriceKobo)} budget (${GUEST_GLOSSARY.allInStayTotal})`} for your stay from ${formatGuestDay(filters.checkIn)} to ${formatGuestDay(filters.checkOut)}. You can view the details below.`,
       ],
       surfaces: [{
         surfaceId: result.surfaceId,
@@ -1425,12 +1436,15 @@ export class LocalGuestApp {
       label: context.checkIn !== undefined && context.datesConfirmed !== true ? `${whenLabel} (to confirm)` : whenLabel,
     };
     const guests = context.partySize === undefined ? undefined : { count: context.partySize, label: `${context.partySize} ${context.partySize === 1 ? "guest" : "guests"}` };
-    if (!where && !when && !guests) return undefined;
+    const budgetText = budgetLabel(context);
+    const budget = context.budget === undefined || budgetText === undefined ? undefined
+      : { naira: Math.round(context.budget.kobo / 100), per: context.budget.per, label: budgetText };
+    if (!where && !when && !guests && !budget) return undefined;
     return {
       key: criteriaKey(context),
       editable: !thread.requestId && !thread.offerId,
       canUndo: thread.searchHistory.length >= 2 && !thread.requestId && !thread.offerId,
-      ...(where ? { where } : {}), ...(when ? { when } : {}), ...(guests ? { guests } : {}),
+      ...(where ? { where } : {}), ...(when ? { when } : {}), ...(guests ? { guests } : {}), ...(budget ? { budget } : {}),
       areas: SEARCH_AREAS.map(({ id, label }) => ({ id, label })),
     };
   }
@@ -2112,7 +2126,7 @@ export function renderGuestShellHtml(): string {
     #criteria-strip { display: grid; gap: var(--space-2); padding: var(--space-2) var(--layout-gutter-mobile) 0; border-top: 1px solid var(--border); background: var(--surface); }
     #criteria-strip[hidden], #criteria-editor[hidden] { display: none; }
     .criteria-chips { display: flex; flex-wrap: wrap; gap: var(--space-2); min-width: 0; }
-    .criteria-chip { position: relative; min-height: var(--control-min-target); max-width: 100%; overflow-wrap: anywhere; text-align: start; }
+    .criteria-chip { position: relative; min-height: var(--control-min-target); min-width: var(--control-min-target); justify-content: center; max-width: 100%; overflow-wrap: anywhere; text-align: start; }
     /* Narrow screens keep the field names for screen readers only, so the strip stays short. */
     @media (max-width: 29.999rem) { .criteria-chip { padding-inline: var(--space-2); font-size: var(--font-size-small); } .criteria-chip .criteria-chip-name { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } }
     .criteria-chip .criteria-chip-name { color: var(--color-text-secondary); font-weight: 400; }
@@ -2313,7 +2327,19 @@ const SEARCH_COUNT_KEYS = ["partySize", "bedrooms"] as const;
 export function parseConventionalSearchQuery(params: URLSearchParams): Readonly<Record<string, string | number>> | null {
   const filters: Record<string, string | number> = {};
   for (const [key, value] of params) {
+    // Issue 03b: the form's budget (whole naira) is optional, so an empty one means none.
+    if (key === "budget") {
+      if (value.trim() === "") continue;
+      if (!/^\d{1,10}$/.test(value) || Number(value) < 1 || params.has("maxPriceKobo") || params.getAll("budget").length > 1) return null;
+      filters.maxPriceKobo = Number(value) * 100;
+      continue;
+    }
     if (Object.hasOwn(filters, key) || value.trim() === "") return null;
+    if (key === "maxPriceKobo") {
+      if (!/^\d{1,12}$/.test(value) || Number(value) < 1) return null;
+      filters.maxPriceKobo = Number(value);
+      continue;
+    }
     if (key === "area") {
       // Issue 03a / ADR-0080: the search form's Where field, from the same list as the strip.
       const area = SEARCH_AREAS.find((candidate) => candidate.id === value);
@@ -2345,6 +2371,7 @@ export function renderConventionalSearchHtml(artifact: DiscoveryArtifactProjecti
     + `<div class="ui-field"><label class="ui-field__label" for="search-check-in">Arrival date</label><input class="ui-input" id="search-check-in" name="checkIn" type="date" required value="${text(filters.checkIn)}"></div>`
     + `<div class="ui-field"><label class="ui-field__label" for="search-check-out">Departure date</label><input class="ui-input" id="search-check-out" name="checkOut" type="date" required value="${text(filters.checkOut)}"></div>`
     + `<div class="ui-field"><label class="ui-field__label" for="search-guests">Guests</label><input class="ui-input" id="search-guests" name="partySize" type="number" min="1" inputmode="numeric" required value="${typeof filters.partySize === "number" ? filters.partySize : ""}"></div>`
+    + `<div class="ui-field"><label class="ui-field__label" for="search-budget">Budget for the stay (₦, optional)</label><p class="ui-field__hint" id="search-budget-hint">Compared with the ${GUEST_GLOSSARY.allInStayTotal}. The ${GUEST_GLOSSARY.refundableSecurityDeposit} is separate.</p><input class="ui-input" id="search-budget" name="budget" type="number" min="1" step="1" inputmode="numeric" aria-describedby="search-budget-hint" value="${typeof filters.maxPriceKobo === "number" ? Math.round(filters.maxPriceKobo / 100) : ""}"></div>`
     + `<button class="ui-button ui-button--primary" type="submit">Update search</button></form>`;
   return pageShell({
     title: "Search results · Shortlet",
