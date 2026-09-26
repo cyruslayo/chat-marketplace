@@ -8536,6 +8536,8 @@ Known schemas:
   ]);
   var GUEST_RECEIPTS = Object.freeze({
     draftCreated: "Draft created",
+    // Issue 14: the Guest accepted a replacement Request Draft.
+    draftUpdated: "Draft updated",
     requestSent: "Booking Request sent",
     offerAccepted: "Offer accepted",
     paymentVerified: "Payment verified"
