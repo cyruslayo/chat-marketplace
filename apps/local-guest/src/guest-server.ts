@@ -2124,6 +2124,19 @@ export function renderGuestShellHtml(): string {
     .criteria-editor-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
     .criteria-editor-actions button { min-height: var(--control-min-target); }
     .criteria-status { margin: 0; color: var(--color-danger); font-size: var(--font-size-small); }
+    #criteria-panel { display: grid; gap: var(--space-2); min-width: 0; }
+    /*
+     * Review decision (M3): on phones the strip is a one-line summary of the
+     * filled criteria with an "Edit search" toggle; the chips, editor and undo
+     * open under it. Wider screens always show the chips.
+     */
+    .criteria-compact { display: none; }
+    @media (max-width: 47.999rem) {
+      .criteria-compact { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+      .criteria-summary { flex: 1; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-secondary); font-size: var(--font-size-small); }
+      .criteria-toggle { flex: none; min-height: var(--control-min-target); }
+      #criteria-strip:not([data-expanded="true"]) #criteria-panel { display: none; }
+    }
     .criteria-status:empty { display: none; }
     form#composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: var(--space-2); padding: var(--space-2) var(--layout-gutter-mobile) max(var(--space-4), env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: var(--surface); position: sticky; bottom: 0; z-index: 10; }
     #composer-label { grid-column: 1 / -1; color: var(--color-text-secondary); font-size: var(--font-size-small); line-height: var(--font-line-small); font-weight: 600; }
@@ -2176,8 +2189,14 @@ export function renderGuestShellHtml(): string {
     <div id="announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
     <div id="error-announcer" class="sr-only" role="alert" aria-live="assertive" aria-atomic="true"></div>
     <section id="criteria-strip" aria-label="Your search" hidden>
-      <div class="criteria-chips"></div>
-      <form id="criteria-editor" hidden novalidate></form>
+      <div class="criteria-compact">
+        <p id="criteria-summary" class="criteria-summary"></p>
+        <button id="criteria-toggle" class="criteria-toggle ui-button ui-button--quiet" type="button" aria-expanded="false" aria-controls="criteria-panel">Edit search</button>
+      </div>
+      <div id="criteria-panel">
+        <div class="criteria-chips"></div>
+        <form id="criteria-editor" hidden novalidate></form>
+      </div>
       <p id="criteria-status" class="criteria-status" role="alert"></p>
     </section>
     <form id="composer" method="post" action="/conversation" aria-label="Message the concierge">

@@ -8665,6 +8665,8 @@ Known schemas:
   var criteriaStrip = requiredElement("criteria-strip");
   var criteriaEditor = requiredElement("criteria-editor");
   var criteriaStatus = requiredElement("criteria-status");
+  var criteriaToggle = requiredElement("criteria-toggle");
+  var criteriaSummary = requiredElement("criteria-summary");
   function getThreadId() {
     try {
       const urlParam = new URLSearchParams(window.location.search).get("threadId");
@@ -9308,9 +9310,21 @@ Known schemas:
       });
       chips.appendChild(undo);
     }
+    criteriaSummary.textContent = CRITERIA_FIELDS.map((name) => criteria[name]?.label).filter((label) => label !== void 0).join(" \xB7 ");
     criteriaStrip.hidden = false;
     if (!criteria.editable) closeCriteriaEditor(false);
   }
+  function setCriteriaExpanded(expanded) {
+    criteriaStrip.dataset.expanded = String(expanded);
+    criteriaToggle.setAttribute("aria-expanded", String(expanded));
+    criteriaToggle.textContent = expanded ? "Done" : "Edit search";
+    if (!expanded) closeCriteriaEditor(false);
+  }
+  criteriaToggle.addEventListener("click", () => {
+    const expand = criteriaStrip.dataset.expanded !== "true";
+    setCriteriaExpanded(expand);
+    if (expand) criteriaStrip.querySelector(".criteria-chip:not(:disabled)")?.focus();
+  });
   function field(labelText, control) {
     const wrapper = document.createElement("div");
     wrapper.className = "ui-field";
@@ -9403,6 +9417,7 @@ Known schemas:
       }
       criteriaStatus.textContent = "";
       closeCriteriaEditor(false);
+      setCriteriaExpanded(false);
       renderResponse(response);
     } catch {
       criteriaStatus.textContent = "The change could not be sent. Please try again.";

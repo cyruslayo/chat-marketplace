@@ -79,6 +79,8 @@ const journeyRail = requiredElement<HTMLElement>("journey-rail");
 const criteriaStrip = requiredElement<HTMLElement>("criteria-strip");
 const criteriaEditor = requiredElement<HTMLFormElement>("criteria-editor");
 const criteriaStatus = requiredElement<HTMLElement>("criteria-status");
+const criteriaToggle = requiredElement<HTMLButtonElement>("criteria-toggle");
+const criteriaSummary = requiredElement<HTMLElement>("criteria-summary");
 
 function getThreadId(): string {
   try {
@@ -815,9 +817,25 @@ function renderCriteria(criteria: GuestCriteria | undefined): void {
     undo.addEventListener("click", () => { void sendCriteriaEvent(CRITERIA_UNDO_EVENT, { basedOn: criteria.key }); });
     chips.appendChild(undo);
   }
+  // The compact summary lists only the filled criteria (phones).
+  criteriaSummary.textContent = CRITERIA_FIELDS.map((name) => criteria[name]?.label).filter((label): label is string => label !== undefined).join(" · ");
   criteriaStrip.hidden = false;
   if (!criteria.editable) closeCriteriaEditor(false);
 }
+
+/** Phones: expands or collapses the chips under the one-line summary. */
+function setCriteriaExpanded(expanded: boolean): void {
+  criteriaStrip.dataset.expanded = String(expanded);
+  criteriaToggle.setAttribute("aria-expanded", String(expanded));
+  criteriaToggle.textContent = expanded ? "Done" : "Edit search";
+  if (!expanded) closeCriteriaEditor(false);
+}
+
+criteriaToggle.addEventListener("click", () => {
+  const expand = criteriaStrip.dataset.expanded !== "true";
+  setCriteriaExpanded(expand);
+  if (expand) criteriaStrip.querySelector<HTMLElement>(".criteria-chip:not(:disabled)")?.focus();
+});
 
 function field(labelText: string, control: HTMLInputElement | HTMLSelectElement): HTMLElement {
   const wrapper = document.createElement("div");
@@ -917,6 +935,8 @@ async function sendCriteriaEvent(name: string, context: Readonly<Record<string, 
     }
     criteriaStatus.textContent = "";
     closeCriteriaEditor(false);
+    // A completed change folds the strip back into its summary on phones.
+    setCriteriaExpanded(false);
     renderResponse(response);
   } catch {
     criteriaStatus.textContent = "The change could not be sent. Please try again.";
