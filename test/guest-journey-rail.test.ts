@@ -219,7 +219,9 @@ test("Review fix: Request to Book after changing the search starts a draft for t
   try {
     const draft = await fixture.advance("draft");
     const firstDraftId = draft.surfaces[0]!.surfaceId.split(":").at(-1)!;
-    const research = success(await fixture.send("/api/turn", { text: "actually make it 3 guests" }));
+    // Issue 14: a bare "make it 3 guests" on a draft now proposes a replacement
+    // draft; naming the place is still a new search, which this fix covers.
+    const research = success(await fixture.send("/api/turn", { text: "actually make it 3 guests in Old Ikoyi" }));
     assert.equal(research.journey?.current, "search", "a kept draft is not shown as progress while searching");
     const detail = success(await fixture.send("/api/event", guestAction(research.surfaces[0]!)));
     const next = success(await fixture.send("/api/event", guestAction(detail.surfaces[0]!, REQUEST_TO_BOOK_EVENT)));
@@ -235,7 +237,7 @@ test("Review fix: Request to Book after changing the search starts a draft for t
   try {
     const draft = await same.advance("draft");
     const draftId = draft.surfaces[0]!.surfaceId.split(":").at(-1)!;
-    const research = success(await same.send("/api/turn", { text: "actually make it 2 guests" }));
+    const research = success(await same.send("/api/turn", { text: "actually make it 2 guests in Old Ikoyi" }));
     const detail = success(await same.send("/api/event", guestAction(research.surfaces[0]!)));
     const resumed = success(await same.send("/api/event", guestAction(detail.surfaces[0]!, REQUEST_TO_BOOK_EVENT)));
     assert.equal(resumed.surfaces[0]!.surfaceId.split(":").at(-1), draftId);

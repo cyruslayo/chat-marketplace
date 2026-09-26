@@ -35,6 +35,8 @@ export const GUEST_FORBIDDEN_TERMS: readonly RegExp[] = Object.freeze([
 /** Timeline markers for completed guest actions; rendered quietly, never as assistant turns. */
 export const GUEST_RECEIPTS = Object.freeze({
   draftCreated: "Draft created",
+  // Issue 14: the Guest accepted a replacement Request Draft.
+  draftUpdated: "Draft updated",
   requestSent: "Booking Request sent",
   offerAccepted: "Offer accepted",
   paymentVerified: "Payment verified",
