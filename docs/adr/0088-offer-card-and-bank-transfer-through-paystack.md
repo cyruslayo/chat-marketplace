@@ -1,3 +1,7 @@
+---
+status: extended by ADR-0090 (manual bank transfer as a third option)
+---
+
 # Offer card and bank transfer through Paystack
 
 ## Context
