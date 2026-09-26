@@ -258,15 +258,33 @@ function decorateDiscoveryCards(mount: HTMLElement): void {
     smalls[1]?.classList.add("stay-card__amenities");
 
     const priceLabel = children.find((child) => isPriceLabel(child.textContent?.trim() ?? ""));
-    const action = children.find((child) => child.tagName === "BUTTON");
+    const buttons = children.filter((child) => child.tagName === "BUTTON");
+    const action = buttons[0];
+    // Issue 13b: the Compare control follows View apartment inside the price area.
+    const lastAction = buttons.at(-1);
     if (priceLabel) {
       const priceStart = children.indexOf(priceLabel);
-      const priceNodes = children.slice(priceStart, action ? children.indexOf(action) + 1 : undefined);
+      const priceNodes = children.slice(priceStart, lastAction ? children.indexOf(lastAction) + 1 : undefined);
       const price = priceNodes.find((child) => child.tagName === "H3" && /^(₦|NGN\b)/.test(child.textContent?.trim() ?? ""));
       priceLabel.classList.add("stay-card__price-label");
       price?.classList.add("stay-card__price-total");
       if (action) action.classList.add("stay-card__action");
+      for (const extra of buttons.slice(1)) extra.classList.add("stay-card__compare");
       wrapDirectChildren(body, "stay-card__price-area", priceNodes);
+    }
+  }
+}
+
+/**
+ * Issue 13b: each attribute row holds one cell per stay. The shell lays the
+ * cells out side by side and stacks them at narrow widths (AC3, ADR-0078).
+ */
+function decorateComparison(mount: HTMLElement): void {
+  for (const row of mount.querySelectorAll<HTMLElement>('[data-a2ui-component="Row"]')) {
+    row.classList.add("compare-row");
+    for (const cell of row.querySelectorAll<HTMLElement>(':scope > [data-a2ui-component="Column"], :scope > [data-weaver-mount] > [data-a2ui-component="Column"]')) {
+      cell.classList.add("compare-cell");
+      cell.querySelector("small")?.classList.add("compare-cell__unit");
     }
   }
 }
@@ -283,6 +301,7 @@ function enhanceSurfacePresentation(mount: HTMLElement, kind: string): void {
     if (/^No stays match|^No current matches/i.test(value)) text.classList.add("empty-state-title");
   }
   if (kind === "discovery") decorateDiscoveryCards(mount);
+  if (kind === "compare") decorateComparison(mount);
   if (kind === "unit-detail") organizeUnitDetail(mount);
 }
 
@@ -653,6 +672,7 @@ function renderSurface(surface: GuestSurfacePayload, moveFocus = false): void {
   activeWorkspace.dataset.mode = presentation.mode;
   activeWorkspace.dataset.status = presentation.status;
   activeWorkspace.dataset.surfaceKind = surface.surfaceId.includes(":unit:") ? "unit-detail"
+    : surface.surfaceId.includes(":compare:") ? "compare"
     : surface.surfaceId.includes(":discovery:") ? "discovery"
       : surface.surfaceId.includes(":payment:") || surface.surfaceId.includes(":offer:") ? "payment"
         : surface.surfaceId.includes(":request:") ? "booking"

@@ -19,6 +19,10 @@ import {
   REQUEST_TO_BOOK_EVENT,
   BACK_TO_RESULTS_EVENT,
   SEE_ALL_DISCOVERY_EVENT,
+  COMPARE_UNIT_EVENT,
+  COMPARE_BACK_EVENT,
+  compareArtifactToA2UI,
+  compareFallbackText,
   formatNgnKobo,
   formatBookingDeadline,
   formatStayDates,
@@ -205,6 +209,8 @@ const REQUEST_STAGE = "request";
 const OFFER_STAGE = "offer";
 const PAYMENT_STAGE = "payment";
 const BOOKING_STAGE = "booking";
+/** Issue 13b: the two-up comparison opened from results. */
+const COMPARE_STAGE = "compare";
 
 function unitDetailSurfaceId(threadId: string, discoveryRevision: number): string {
   // ADR-0074: a newly selected detail is a new surface lifecycle; Weaver rejects duplicate createSurface IDs.
@@ -269,6 +275,8 @@ type ShellTelemetryEvent = typeof SHELL_TELEMETRY_EVENTS[number];
 const EVENT_STAGE_ALLOW_LIST: Readonly<Record<string, string>> = Object.freeze({
   "shortlet.discovery.view-unit": DISCOVERY_STAGE,
   [SEE_ALL_DISCOVERY_EVENT]: DISCOVERY_STAGE,
+  [COMPARE_UNIT_EVENT]: DISCOVERY_STAGE,
+  [COMPARE_BACK_EVENT]: COMPARE_STAGE,
   [REQUEST_TO_BOOK_EVENT]: UNIT_STAGE,
   [BACK_TO_RESULTS_EVENT]: UNIT_STAGE,
   "shortlet.conditional-offer.accept": OFFER_STAGE,
@@ -308,6 +316,8 @@ interface GuestThreadState {
   lastSurfaces: GuestSurfacePayload[];
   /** Issue 03a: the criteria of each executed search, oldest first (for "Undo last change"). */
   searchHistory: DiscoverySearchContext[];
+  /** Issue 13b: the result picked for comparison. Presentation only, never persisted. */
+  compareSelection: string | null;
 }
 
 export class LocalGuestApp {
@@ -641,6 +651,10 @@ export class LocalGuestApp {
     switch (event.name) {
       case SEE_ALL_DISCOVERY_EVENT:
         return this.#handleSeeAllDiscovery(thread, event);
+      case COMPARE_UNIT_EVENT:
+        return this.#handleCompare(thread, event);
+      case COMPARE_BACK_EVENT:
+        return this.#handleCompareBack(thread, event);
       case "shortlet.discovery.view-unit":
         return this.#handleViewUnit(thread, event);
       case REQUEST_TO_BOOK_EVENT:
@@ -969,7 +983,8 @@ export class LocalGuestApp {
   }
 
   #stageForSurfaceId(surfaceId: string): string | null {
-    if (surfaceId.includes(":discovery:")) return DISCOVERY_STAGE;
+    // Issue 13b: a comparison is restored as the results it was opened from.
+    if (surfaceId.includes(":discovery:") || surfaceId.includes(":compare:")) return DISCOVERY_STAGE;
     if (surfaceId.includes(":unit:")) return UNIT_STAGE;
     if (surfaceId.includes(":request:draft:") || surfaceId.includes(":request:review:")) return REQUEST_STAGE;
     if (surfaceId.includes(":request:req-") || surfaceId.includes(":request:")) return REQUEST_STAGE;
@@ -1031,6 +1046,7 @@ export class LocalGuestApp {
       timeline: projection.timeline.map(({ role, text }) => ({ role, text })),
       lastSurfaces: [],
       searchHistory: projection.searchHistory.map((context) => ({ ...context })),
+      compareSelection: null,
     };
     this.#threads.set(threadId, thread);
     const restored = this.#restoreCurrentSurface(thread, projection);
@@ -1224,6 +1240,7 @@ export class LocalGuestApp {
       timeline: [],
       lastSurfaces: [],
       searchHistory: [],
+      compareSelection: null,
     };
     this.#threads.set(threadId, thread);
     return thread;
@@ -1240,6 +1257,8 @@ export class LocalGuestApp {
   #prepareDiscovery(thread: GuestThreadState): void {
     this.#supersede(thread, UNIT_STAGE);
     this.#supersede(thread, DISCOVERY_STAGE);
+    this.#supersede(thread, COMPARE_STAGE);
+    thread.compareSelection = null;
     // New results end the earlier stay's inspection; replies must not keep
     // answering about an apartment that is no longer on screen.
     thread.unitDetail = null;
@@ -1374,9 +1393,81 @@ export class LocalGuestApp {
         summary: "All discovery results",
         conventionalRoute: conventionalSearchRoute(filters),
         textFallback: discoveryFallbackMessage(artifact),
-        a2uiMessages: discoveryArtifactToA2UI({ artifact, surfaceId }),
+        a2uiMessages: discoveryArtifactToA2UI({ artifact, surfaceId, compareSelection: thread.compareSelection ?? undefined }),
       }],
     };
+  }
+
+  /**
+   * Issue 13b: Compare on a result. The first pick re-presents the same
+   * results with that stay marked; the same stay again un-picks it; a second
+   * stay opens the two-up comparison. Presentation only: no domain command
+   * runs (ADR-0072). Context is checked exactly against the stored artifact.
+   */
+  #handleCompare(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
+    const artifact = thread.discoveryArtifact;
+    const context = event.context;
+    if (!artifact || !context || typeof context !== "object" || Array.isArray(context)
+      || Object.keys(context).sort().join(",") !== "artifactId,unitId" || context.artifactId !== artifact.id || typeof context.unitId !== "string") {
+      return { ok: false, code: "INVALID_CONTEXT", message: "Those search results are no longer available." };
+    }
+    const unitId = context.unitId;
+    const unit = artifact.facts.results.find((candidate) => candidate.id === unitId);
+    if (!unit || artifact.facts.results.length < 2) {
+      return { ok: false, code: "INVALID_CONTEXT", message: `That ${GUEST_GLOSSARY.unit} is not in these results.` };
+    }
+    const selected = thread.compareSelection === null ? undefined : artifact.facts.results.find((candidate) => candidate.id === thread.compareSelection);
+    const surfaceId = event.surfaceId;
+    const results = (message: string): GuestTurnResult => ({
+      ok: true,
+      messages: [message],
+      surfaces: [{
+        ...discoverySurface(artifact, surfaceId, thread.compareSelection ?? undefined),
+        ...(surfaceId.endsWith(":discovery:focused") ? { mode: "focused-surface" as const, summary: "All discovery results" } : {}),
+      }],
+    });
+    if (selected === undefined) {
+      thread.compareSelection = unit.id;
+      return results(`Choose one more stay to compare with ${unit.title}.`);
+    }
+    if (selected.id === unit.id) {
+      thread.compareSelection = null;
+      return results(`${unit.title} is no longer selected to compare.`);
+    }
+    thread.compareSelection = null;
+    const compareSurfaceId = `thread-${thread.threadId}:compare:${thread.discoveryRevision}`;
+    // ADR-0074: the comparison replaces the results; "Back to results" re-presents them.
+    this.#supersede(thread, DISCOVERY_STAGE);
+    this.#supersede(thread, COMPARE_STAGE);
+    thread.activeSurfaces.set(COMPARE_STAGE, compareSurfaceId);
+    this.#emitTransition(thread, "unit.discovery.compared", { aggregateType: "discovery", aggregateId: artifact.id, surfaceId: compareSurfaceId });
+    const units = [selected, unit] as const;
+    return {
+      ok: true,
+      messages: [`Here are ${selected.title} and ${unit.title} side by side.`],
+      surfaces: [{
+        surfaceId: compareSurfaceId,
+        mode: "focused-surface",
+        summary: "Compare stays",
+        conventionalRoute: conventionalSearchRoute(artifact.facts.filters),
+        textFallback: compareFallbackText(units),
+        a2uiMessages: compareArtifactToA2UI({ artifact, unitIds: [selected.id, unit.id], surfaceId: compareSurfaceId }),
+      }],
+    };
+  }
+
+  /** Issue 13b: leave the comparison for the same results (no new search, ADR-0079). */
+  #handleCompareBack(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
+    const artifact = thread.discoveryArtifact;
+    const context = event.context;
+    if (!artifact || !context || typeof context !== "object" || Array.isArray(context)
+      || Object.keys(context).length !== 1 || context.artifactId !== artifact.id) {
+      return { ok: false, code: "INVALID_CONTEXT", message: "Those search results are no longer available." };
+    }
+    this.#prepareDiscovery(thread);
+    thread.activeSurfaces.set(DISCOVERY_STAGE, thread.discoverySurfaceId);
+    this.#emitTransition(thread, "unit.discovery.results_restored", { aggregateType: "discovery", aggregateId: artifact.id, surfaceId: thread.discoverySurfaceId });
+    return { ok: true, messages: ["Here are your search results again."], surfaces: [discoverySurface(artifact, thread.discoverySurfaceId)] };
   }
 
   /**
@@ -2011,7 +2102,7 @@ function formatWAT(iso: string): string {
 }
 
 /** The discovery surface for a stored artifact; restoring and going back present it identically. */
-function discoverySurface(artifact: DiscoveryArtifactProjection, surfaceId: string): GuestSurfacePayload {
+function discoverySurface(artifact: DiscoveryArtifactProjection, surfaceId: string, compareSelection?: string): GuestSurfacePayload {
   return {
     surfaceId,
     mode: "inline-surface",
@@ -2019,7 +2110,7 @@ function discoverySurface(artifact: DiscoveryArtifactProjection, surfaceId: stri
     // ADR-0080: the re-presented fallback keeps the same criteria as the live one.
     conventionalRoute: conventionalSearchRoute(artifact.facts.filters),
     textFallback: discoveryFallbackMessage(artifact),
-    a2uiMessages: discoveryArtifactToA2UI({ artifact, surfaceId }),
+    a2uiMessages: discoveryArtifactToA2UI({ artifact, surfaceId, compareSelection }),
   };
 }
 
@@ -2164,6 +2255,14 @@ export function renderGuestShellHtml(): string {
     .stay-card__price-label { color: var(--color-text-secondary); font-size: var(--font-size-small) !important; line-height: var(--font-line-small) !important; }
     .stay-card__price-total, .stay-card__body h3.stay-card__price-total { margin: 0 !important; font-family: var(--font-display); font-size: var(--font-size-money-total) !important; line-height: var(--font-line-money-total) !important; font-variant-numeric: tabular-nums; }
     .stay-card__action { width: 100%; margin-top: var(--space-2); }
+    .stay-card__compare { width: 100%; }
+    /* Issue 13b: one row per attribute, one cell per stay, aligned by row. */
+    .compare-row { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: var(--space-3) !important; margin: 0 0 var(--space-3) !important; }
+    .compare-cell { min-width: 0; margin: 0 !important; padding: var(--space-2) var(--space-3) !important; border: 1px solid var(--border); border-radius: var(--radius-control); overflow-wrap: anywhere; }
+    .compare-cell > * { margin: 0 !important; }
+    .compare-cell__unit { display: block; color: var(--color-text-secondary); }
+    /* AC3 / ADR-0078: at narrow widths the stays stack under each attribute. */
+    @media (max-width: 29.999rem) { .compare-row { grid-template-columns: minmax(0, 1fr) !important; gap: var(--space-2) !important; } }
     .unit-detail-root { display: grid !important; min-width: 0; gap: var(--space-4) !important; }
     .unit-gallery { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr); gap: var(--space-2); }
     .unit-gallery > img { width: 100% !important; max-width: none !important; min-width: 0; margin: 0 !important; object-fit: cover !important; }
