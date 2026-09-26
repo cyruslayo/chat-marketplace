@@ -5,6 +5,8 @@ export const OPERATOR_ACCESS_TOKEN_LIFETIME_MS = 30 * 60 * 1000;
 export const OPERATOR_SESSION_LIFETIME_MS = 12 * 60 * 60 * 1000;
 
 export interface OperatorAuthenticatedPrincipal { readonly actorId: string; readonly tenantId: string; readonly sessionId: string; }
+/** Why no principal was resolved. `missing` also covers an unknown session or a wrong secret. */
+export type OperatorSessionRejection = "missing" | "expired" | "revoked";
 export interface OperatorAuditSink { record(entry: Record<string, string | number>): void; }
 export interface OperatorTelemetrySink { record(entry: Record<string, string | number>): void; }
 
@@ -66,6 +68,19 @@ export class SqliteOperatorSessionAuthority {
     const row = this.#db.prepare("SELECT * FROM operator_sessions WHERE session_id = $id").get({ $id: sessionIdInput }) as { session_id: string; session_secret_hash: string; actor_id: string; tenant_id: string; expires_at: string; revoked_at: string | null } | undefined;
     if (!row || row.revoked_at || this.#now().getTime() >= Date.parse(row.expires_at) || hashOperatorSecret(sessionSecretInput) !== row.session_secret_hash) { if (row && !row.revoked_at && this.#now().getTime() >= Date.parse(row.expires_at)) this.#emit("operator.session.rejected", { sessionId: row.session_id, reasonCode: "session_expired" }); return null; }
     return { actorId: row.actor_id, tenantId: row.tenant_id, sessionId: row.session_id };
+  }
+
+  /**
+   * Why a session cannot be used, for the sign-in page (B1 AC3). Fails closed: a reason is only given when
+   * the presented secret matches, so a guessed or forged cookie learns nothing and reads as `missing`.
+   */
+  sessionRejection(sessionIdInput: string | null | undefined, sessionSecretInput: string | null | undefined): OperatorSessionRejection {
+    if (!sessionIdInput || !sessionSecretInput) return "missing";
+    const row = this.#db.prepare("SELECT session_secret_hash, expires_at, revoked_at FROM operator_sessions WHERE session_id = $id").get({ $id: sessionIdInput }) as { session_secret_hash: string; expires_at: string; revoked_at: string | null } | undefined;
+    if (!row || hashOperatorSecret(sessionSecretInput) !== row.session_secret_hash) return "missing";
+    if (row.revoked_at) return "revoked";
+    if (this.#now().getTime() >= Date.parse(row.expires_at)) return "expired";
+    return "missing";
   }
 
   revokeSession(sessionId: string): void { const now = this.#now().toISOString(); this.#db.prepare("UPDATE operator_sessions SET revoked_at = $at WHERE session_id = $id AND revoked_at IS NULL").run({ $at: now, $id: sessionId }); this.#emit("operator.session.revoked", { sessionId }); }

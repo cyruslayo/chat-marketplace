@@ -6,7 +6,8 @@ import { join } from "node:path";
 import { crossOriginPost, operatorGet, operatorPost, revokeOperatorSession, revokeRepresentativeGrant, signInOperator, signOutOperator, startOperatorServer, type OperatorServer, type OperatorSession } from "./helpers/operator-session.js";
 
 // Each B1–B3 action must test these failure paths (map delivery rules; ADR 0082, ADR 0086).
-// These tests pin today's server behaviour; B1 changes what an expired session sees.
+// Since B1, a page GET without a usable session is a 303 to sign-in (with a fixed reason when known);
+// an action POST without one stays a 401.
 
 async function signedIn(start = "2026-09-03T10:00:00Z") {
   const dir = await mkdtemp(join(tmpdir(), "operator-session-helper-"));
@@ -28,44 +29,48 @@ test("The helper signs in: a signed-in operator can open the inbox and the reque
   } finally { await done(f); }
 });
 
-test("No session: reads and actions are refused with 401", async () => {
+async function redirectsToSignIn(response: Response, location = "/operator/login") {
+  assert.equal(response.status, 303);
+  assert.equal(response.headers.get("location"), location);
+}
+
+test("No session: pages go to sign-in and actions are refused with 401", async () => {
   const f = await signedIn();
   try {
-    assert.equal((await operatorGet(f.session, "/operator", "")).status, 401);
-    assert.equal((await operatorGet(f.session, "/operator/requests", "")).status, 401);
+    await redirectsToSignIn(await operatorGet(f.session, "/operator", ""));
+    await redirectsToSignIn(await operatorGet(f.session, "/operator/requests", ""));
     assert.equal((await operatorPost(f.session, `/operator/requests/${f.requestId}/confirm`, "")).status, 401);
     assert.equal(status(f), "disclosed");
   } finally { await done(f); }
 });
 
-test("Logout: the old cookie is refused with 401", async () => {
+test("Logout: the old cookie is sent to sign-in and refused for actions", async () => {
   const f = await signedIn();
   try {
     const out = await signOutOperator(f.session);
     assert.equal(out.status, 302);
     assert.match(out.headers.get("set-cookie") ?? "", /Max-Age=0/);
-    assert.equal((await operatorGet(f.session, "/operator/requests")).status, 401);
+    await redirectsToSignIn(await operatorGet(f.session, "/operator/requests"), "/operator/login?reason=signed-out");
     assert.equal((await operatorPost(f.session, `/operator/requests/${f.requestId}/confirm`)).status, 401);
   } finally { await done(f); }
 });
 
-test("Revoked session: a session revoked server-side is refused with 401", async () => {
+test("Revoked session: a session revoked server-side is sent to sign-in and refused for actions", async () => {
   const f = await signedIn();
   try {
     revokeOperatorSession(f.server.environment, f.session.cookie);
-    assert.equal((await operatorGet(f.session, "/operator/requests")).status, 401);
+    await redirectsToSignIn(await operatorGet(f.session, "/operator/requests"), "/operator/login?reason=signed-out");
     assert.equal((await operatorPost(f.session, `/operator/requests/${f.requestId}/confirm`)).status, 401);
   } finally { await done(f); }
 });
 
-test("Expired session: after the 12-hour session lifetime (ADR 0086) the cookie is refused with 401", async () => {
+test("Expired session: after the 12-hour session lifetime (ADR 0086) the cookie is sent to sign-in and refused for actions", async () => {
   const f = await signedIn();
   try {
     f.advance(12 * 60 * 60 * 1000);
-    const response = await operatorGet(f.session, "/operator");
-    assert.equal(response.status, 401);
-    assert.equal(response.headers.get("location"), "/operator/login");
-    assert.equal((await operatorGet(f.session, "/operator/requests")).status, 401);
+    await redirectsToSignIn(await operatorGet(f.session, "/operator"), "/operator/login?reason=expired");
+    await redirectsToSignIn(await operatorGet(f.session, "/operator/requests"), "/operator/login?reason=expired");
+    assert.equal((await operatorPost(f.session, `/operator/requests/${f.requestId}/confirm`)).status, 401);
   } finally { await done(f); }
 });
 

@@ -1,3 +1,6 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { LocalApartmentOwnerEnvironment, startLocalOwnerServer, type LocalOwnerFixtureConfig } from "../../apps/local-owner/src/index.js";
 import type { OperatorRepresentativeGrant } from "../../domains/shortlet/src/index.js";
 import { createPlatformCommandEnvelope } from "../../packages/platform-core/src/index.js";
@@ -28,6 +31,32 @@ export async function startOperatorServer(config: Partial<LocalOwnerFixtureConfi
   return { environment, port, base: `http://localhost:${port}`, close: () => server.close() };
 }
 
+/** A signed-in operator over a fresh temporary database, with a clock the test moves forward. */
+export interface SignedInOperator {
+  readonly server: OperatorServer;
+  readonly session: OperatorSession;
+  /** Moves the shared server clock forward (deadlines, reminders, session expiry). */
+  advance(ms: number): void;
+  now(): Date;
+  /** Closes the server and removes the database. */
+  close(): Promise<void>;
+}
+
+/** Starts a server on a temp database with a controlled clock and signs the fixture representative in. */
+export async function startSignedInOperator(options: { readonly start?: string; readonly config?: Partial<LocalOwnerFixtureConfig> } = {}): Promise<SignedInOperator> {
+  const dir = await mkdtemp(join(tmpdir(), "operator-"));
+  let current = new Date(options.start ?? "2026-09-03T10:00:00Z");
+  const server = await startOperatorServer({ ...options.config, databasePath: join(dir, "operator.sqlite"), clock: () => current });
+  const session: OperatorSession = { base: server.base, cookie: await signInOperator(server) };
+  return {
+    server,
+    session,
+    advance(ms) { current = new Date(current.getTime() + ms); },
+    now: () => current,
+    async close() { await server.close(); await rm(dir, { recursive: true, force: true }); },
+  };
+}
+
 /** POSTs a token to `/operator/login` and returns the raw response (302 on success). */
 export function postOperatorLogin(target: OperatorTarget, token: string, options: { readonly origin?: string; readonly signal?: AbortSignal } = {}): Promise<Response> {
   return fetch(`${target.base}/operator/login`, { method: "POST", headers: options.origin === undefined ? {} : { origin: options.origin }, body: new URLSearchParams({ token }), redirect: "manual", ...(options.signal === undefined ? {} : { signal: options.signal }) });
@@ -50,9 +79,9 @@ function cookieHeaders(cookie: string, headers: Readonly<Record<string, string>>
   return cookie ? { cookie, ...headers } : { ...headers };
 }
 
-/** GET as the signed-in operator. Pass `cookie: ""` to send no session. */
+/** GET as the signed-in operator, without following redirects (so a sign-in redirect is visible). Pass `cookie: ""` to send no session. */
 export function operatorGet(session: OperatorSession, path: string, cookie = session.cookie, headers: Readonly<Record<string, string>> = {}): Promise<Response> {
-  return fetch(`${session.base}${path}`, { headers: cookieHeaders(cookie, headers) });
+  return fetch(`${session.base}${path}`, { headers: cookieHeaders(cookie, headers), redirect: "manual" });
 }
 
 /** POST as the signed-in operator, without following redirects. Pass `cookie: ""` to send no session. */

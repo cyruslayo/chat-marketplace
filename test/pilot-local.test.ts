@@ -118,7 +118,7 @@ async function guestToRequest(tab: RealBrowserTab, city: "Abuja" | "Lagos", phon
 async function operatorLoginAndDecision(tab: RealBrowserTab, token: string, decision: "Confirm" | "Decline"): Promise<void> {
   await tab.navigate(`${BASE}/operator/login`);
   await fillAndSubmit(tab, "#token", token);
-  await tab.waitForText("Operator workspace", 15000);
+  await tab.waitForText("Waiting on you", 15000);
   await tab.navigate(`${BASE}/operator/requests`);
   await tab.waitForText("Booking Requests", 15000);
   const opened = await tab.evaluate<boolean>(`(() => { const link=[...document.querySelectorAll('a')].find((candidate)=>candidate.getAttribute('href')?.startsWith('/operator/requests/')); if (!(link instanceof HTMLAnchorElement)) return false; link.click(); return true; })()`);
@@ -162,7 +162,7 @@ test("One-origin local surfaces, health, cities, photos, and safety boundaries h
   const paths = temporaryPaths(); bootstrapLocalPilot(paths); const server = startLocalPilotServer({ port: PORT, paths });
   try {
     await server.listen();
-    const guest = (await fetch(`${BASE}/`)).status; const operator = (await fetch(`${BASE}/operator/`)).status;
+    const guest = (await fetch(`${BASE}/`)).status; const operator = (await fetch(`${BASE}/operator/`, { redirect: "manual" })).status;
     const health = (await (await fetch(`${BASE}/healthz`)).json() as { ok: boolean }).ok;
     const abuja = /Wuse 2/.test(await (await fetch(`${BASE}/stays/unit-local-abuja-wuse2`)).text()); const lagos = /Old Ikoyi/.test(await (await fetch(`${BASE}/stays/unit-local-lagos-ikoyi`)).text());
     const photoResponse = await fetch(`${BASE}/photos/wuse-2-living.svg`);
@@ -173,7 +173,7 @@ test("One-origin local surfaces, health, cities, photos, and safety boundaries h
   assert.throws(() => resetLocalPilot(paths), /restricted/); surfaceProof = { ...surfaceProof!, resetRestricted: true };
 });
 
-test("AC5 — Local pilot serves Guest and Operator surfaces from one origin", () => { assert.equal(surfaceProof?.guest, 200); assert.equal(surfaceProof?.operator, 401); });
+test("AC5 — Local pilot serves Guest and Operator surfaces from one origin", () => { assert.equal(surfaceProof?.guest, 200); assert.equal(surfaceProof?.operator, 303); });
 test("AC6 — Health endpoint works", () => { assert.equal(surfaceProof?.health, true); });
 test("AC9 — Abuja listing is discoverable", () => { assert.equal(surfaceProof?.abuja, true); });
 test("AC10 — Lagos listing is discoverable", () => { assert.equal(surfaceProof?.lagos, true); });
