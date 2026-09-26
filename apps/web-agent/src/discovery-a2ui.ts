@@ -84,6 +84,41 @@ export function formatNgnKobo(kobo: number): string {
   return formatMoney(kobo);
 }
 
+/** Where each fit reason comes from on the unit (issue 11 AC1). */
+export type FitReasonSource = "capacity" | "bedrooms" | "amenities" | "trust.inspection";
+
+export interface FitReason {
+  readonly text: string;
+  readonly source: FitReasonSource;
+}
+
+const POWER_AMENITIES = ["24_7_power_generator", "generator"] as const;
+const MAX_FIT_REASONS = 3;
+
+/**
+ * Issue 11 AC1: up to three reasons a unit fits the search, each read from
+ * one unit field against the criteria. Nothing is inferred: a unit without
+ * the field gets no reason. The inspection reason is a dated, specific claim
+ * (ADR-0008, ADR-0066), never a generic "verified".
+ */
+export function fitReasons(unit: DiscoveryUnitProjection, filters: Readonly<Record<string, unknown>>): readonly FitReason[] {
+  const reasons: FitReason[] = [];
+  const partySize = typeof filters.partySize === "number" ? filters.partySize : undefined;
+  if (partySize !== undefined && Number.isInteger(unit.capacity) && unit.capacity >= partySize) {
+    reasons.push({ source: "capacity", text: unit.capacity === partySize ? `Sleeps ${partySize} exactly` : `Room for ${partySize} (sleeps ${unit.capacity})` });
+  }
+  if (typeof filters.bedrooms === "number" && unit.bedrooms === filters.bedrooms) {
+    reasons.push({ source: "bedrooms", text: `${unit.bedrooms} ${unit.bedrooms === 1 ? "bedroom" : "bedrooms"}, as asked` });
+  }
+  const power = POWER_AMENITIES.find((amenity) => unit.amenities.includes(amenity));
+  if (power !== undefined) reasons.push({ source: "amenities", text: guestAmenityLabel(power) });
+  const inspected = formatGuestDate(unit.trust.inspection.inspectedAt);
+  if ((unit.trust.inspection.status === "current" || unit.trust.inspection.status === "passed") && inspected !== undefined) {
+    reasons.push({ source: "trust.inspection", text: `Physically inspected ${inspected}` });
+  }
+  return reasons.slice(0, MAX_FIT_REASONS);
+}
+
 /**
  * Issue 03b / ADR-0015: a result is described as within budget only when it
  * has an All-In Stay Total at or under the budget. The Refundable Security
@@ -105,6 +140,7 @@ function unitComponents(
   artifactId: string,
   unit: DiscoveryUnitProjection,
   canViewUnit: boolean,
+  filters: Readonly<Record<string, unknown>>,
   budgetKobo?: number,
 ): { readonly cardId: string; readonly components: readonly A2UIComponent[] } {
   const prefix = `unit-${unit.id}`;
@@ -123,6 +159,7 @@ function unitComponents(
     ? unit.price.nightlyKobo
     : unit.price.allInStayTotalKobo;
   const budget = budgetNote(unit, budgetKobo);
+  const fit = fitReasons(unit, filters);
 
   return {
     cardId: `${prefix}-card`,
@@ -134,6 +171,7 @@ function unitComponents(
         children: [
           ...(unit.photoUrls.length > 0 ? [`${prefix}-primary-photo`] : [`${prefix}-photo-unavailable`]),
           `${prefix}-title`, `${prefix}-location`, `${prefix}-facts`,
+          ...(fit.length > 0 ? [`${prefix}-fit`] : []),
           ...(highlights.length > 0 ? [`${prefix}-amenities`] : []),
           `${prefix}-divider`, `${prefix}-price-label`, `${prefix}-price`,
           ...(unit.price.refundableSecurityDepositKobo > 0 ? [`${prefix}-deposit`] : []),
@@ -156,6 +194,7 @@ function unitComponents(
         variant: "caption" as const,
       }] : []),
       { id: `${prefix}-facts`, component: "Text", text: facts.join(" · ") },
+      ...(fit.length > 0 ? [{ id: `${prefix}-fit`, component: "Text" as const, text: `Why it fits: ${fit.map((reason) => reason.text).join(" · ")}`, variant: "caption" as const }] : []),
       ...(highlights.length > 0 ? [{
         id: `${prefix}-amenities`,
         component: "Text" as const,
@@ -200,6 +239,7 @@ export function discoveryArtifactToA2UI({
     artifact.id,
     unit,
     artifact.actions.some((action) => action.type === "view-unit" && action.unitId === unit.id),
+    artifact.facts.filters,
     typeof artifact.facts.filters.maxPriceKobo === "number" ? artifact.facts.filters.maxPriceKobo : undefined,
   ));
   const checkIn = typeof artifact.facts.filters.checkIn === "string" ? formatGuestDate(artifact.facts.filters.checkIn) : undefined;

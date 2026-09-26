@@ -8816,7 +8816,9 @@ Known schemas:
       body.classList.add("stay-card__body");
       const children = [...body.children];
       const headings = children.filter((child) => child.tagName === "H3");
-      const smalls = children.filter((child) => child.tagName === "SMALL");
+      const fit = children.find((child) => child.tagName === "SMALL" && (child.textContent ?? "").startsWith("Why it fits:"));
+      fit?.classList.add("stay-card__fit");
+      const smalls = children.filter((child) => child.tagName === "SMALL" && child !== fit);
       headings[0]?.classList.add("stay-card__title");
       const location2 = smalls[0];
       location2?.classList.add("stay-card__location");
@@ -8899,6 +8901,7 @@ Known schemas:
     if (value.surfaces !== void 0 && (!Array.isArray(value.surfaces) || value.surfaces.some((surface) => !isSurfacePayload(surface)))) throw new Error("Invalid response surface");
     if (value.journey !== void 0 && !isJourney(value.journey)) throw new Error("Invalid response journey");
     if (value.criteria !== void 0 && !isCriteria(value.criteria)) throw new Error("Invalid response criteria");
+    if (value.quickReplies !== void 0 && !isStringList(value.quickReplies)) throw new Error("Invalid response quick replies");
     return value;
   }
   var threadId = getThreadId();
@@ -9271,6 +9274,7 @@ Known schemas:
   }
   var CRITERIA_FIELDS = ["where", "when", "guests", "budget"];
   var CRITERIA_NAMES = { where: "Where", when: "When", guests: "Guests", budget: "Budget" };
+  var CRITERIA_EMPTY = { where: "Add area", when: "Add dates", guests: "Add guests", budget: "Add budget" };
   var CRITERIA_EDIT_EVENT = "shortlet.criteria.edit";
   var CRITERIA_UNDO_EVENT = "shortlet.criteria.undo";
   var currentCriteria;
@@ -9292,7 +9296,7 @@ Known schemas:
       const name = document.createElement("span");
       name.className = "criteria-chip-name";
       name.textContent = `${CRITERIA_NAMES[field2]}: `;
-      chip.append(name, criteria[field2]?.label ?? "Add");
+      chip.append(name, criteria[field2]?.label ?? CRITERIA_EMPTY[field2]);
       chip.disabled = !criteria.editable;
       chip.addEventListener("click", () => {
         if (openCriteriaField === field2) closeCriteriaEditor(true);
@@ -9494,6 +9498,32 @@ Known schemas:
     event.stopPropagation();
     closeCriteriaEditor(true);
   });
+  function clearQuickReplies() {
+    for (const group of transcript.querySelectorAll(".quick-replies")) group.remove();
+  }
+  function renderQuickReplies(replies) {
+    clearQuickReplies();
+    if (!replies || replies.length === 0) return;
+    const group = document.createElement("div");
+    group.className = "quick-replies";
+    group.setAttribute("role", "group");
+    group.setAttribute("aria-label", "Suggested replies");
+    for (const text of replies) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "ui-chip quick-reply";
+      button.textContent = text;
+      button.addEventListener("click", () => {
+        if (isLoading) return;
+        clearQuickReplies();
+        addTurn("user", text);
+        void sendTurn(text);
+      });
+      group.appendChild(button);
+    }
+    transcript.appendChild(group);
+    transcript.scrollTop = transcript.scrollHeight;
+  }
   function renderResponse(response) {
     if (!response.ok) {
       const message = response.message ?? "That action could not be completed.";
@@ -9509,6 +9539,7 @@ Known schemas:
     renderJourney(response.journey);
     renderCriteria(response.criteria);
     for (const message of response.messages ?? []) addTurn("assistant", message);
+    renderQuickReplies(response.quickReplies);
     if ((response.messages ?? []).length > 0) trackTelemetry("text-response-rendered");
     const surfaces = response.surfaces ?? [];
     renderSurfaces(surfaces);
@@ -9644,6 +9675,7 @@ Known schemas:
     event.preventDefault();
     const text = composerInput.value.trim();
     if (text === "" || isLoading) return;
+    clearQuickReplies();
     addTurn("user", text);
     void sendTurn(text);
   });

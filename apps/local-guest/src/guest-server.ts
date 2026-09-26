@@ -72,7 +72,7 @@ import {
 } from "./guest-projection.js";
 import { hashSessionSecret } from "../../../domains/shortlet/src/index.js";
 import { DirectPaystackClient, isApprovedPaystackCheckoutUrl, loadPaystackConfiguration, type PaystackClient } from "../../../domains/shortlet/src/index.js";
-import { applyCriteriaEdit, budgetLabel, searchAreaFor, SEARCH_AREAS, type CriteriaEdit } from "./concierge.js";
+import { applyCriteriaEdit, budgetLabel, quickRepliesFor, searchAreaFor, SEARCH_AREAS, type CriteriaEdit } from "./concierge.js";
 import { amenityQuestions, extractStayRequestFacts, formatGuestDay, mergeStayRequestContext, resolveStayRequestContext, stayChangeRequested, unsupportedPreferenceNote, type DiscoverySearchContext, type StayRequestFilters } from "./concierge.js";
 import { handleGeminiTurn, type GeminiConciergeClient } from "./gemini-concierge.js";
 import type { Content } from "@google/genai";
@@ -139,6 +139,8 @@ export interface GuestTurnSuccess {
   readonly surfaces: readonly GuestSurfacePayload[];
   readonly journey?: GuestJourney;
   readonly criteria?: GuestCriteria;
+  /** Issue 11 AC3: one-tap answers to the criterion the reply just asked for. */
+  readonly quickReplies?: readonly string[];
 }
 
 /**
@@ -421,7 +423,7 @@ export class LocalGuestApp {
     const resolution = resolveStayRequestContext(merged.context, { now: this.#environment.clock() });
     if (resolution.kind !== "search") {
       // Clarifications, date confirmations and limit refusals never run a search.
-      return acknowledged({ ok: true, messages: [resolution.reply], surfaces: [] });
+      return acknowledged({ ok: true, messages: [resolution.reply], surfaces: [], ...(resolution.kind === "clarify" ? { quickReplies: quickRepliesFor(resolution.next) } : {}) });
     }
 
     const providedFacts = Object.keys(facts).some((key) => key !== "unsupportedPreferences") || merged.confirmedDates === true;
@@ -1395,7 +1397,7 @@ export class LocalGuestApp {
     const resolution = resolveStayRequestContext(next, { now: this.#environment.clock() });
     if (resolution.kind === "refuse") return { ok: false, code: "CRITERIA_REJECTED", message: resolution.reply };
     thread.discoveryContext = next;
-    if (resolution.kind !== "search") return { ok: true, messages: [resolution.reply], surfaces: [] };
+    if (resolution.kind !== "search") return { ok: true, messages: [resolution.reply], surfaces: [], ...(resolution.kind === "clarify" ? { quickReplies: quickRepliesFor(resolution.next) } : {}) };
     return this.#executeDiscovery(thread, resolution.filters);
   }
 
@@ -2036,6 +2038,8 @@ export function renderGuestShellHtml(): string {
     #empty-state h2 { margin: 0 0 var(--space-2); font-family: var(--font-display); font-size: var(--font-size-h1); line-height: var(--font-line-h1); font-weight: 600; }
     #empty-state p { max-width: 64ch; margin: 0; color: var(--color-text-secondary); }
     .prompt-suggestions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
+    .quick-replies { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+    .quick-reply { min-width: var(--control-min-target); justify-content: center; }
     #workspace-region { min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 0 var(--layout-gutter-mobile) var(--space-4); }
     #active-workspace { background: var(--color-surface-elevated); border: 1px solid var(--border); border-radius: var(--radius-workspace); padding: var(--space-4); box-shadow: var(--elevation-active); }
     #active-workspace[hidden], #workspace-region[hidden], #workspace-reopen[hidden], #empty-state[hidden] { display: none; }
@@ -2081,12 +2085,13 @@ export function renderGuestShellHtml(): string {
     .guest-status--danger { color: var(--color-danger); background: var(--color-danger-surface); }
     .empty-state-title { margin-block: var(--space-2); }
     .stay-grid { display: grid !important; grid-template-columns: minmax(0, 1fr); gap: var(--space-4) !important; min-width: 0; }
-    .stay-card { min-width: 0; overflow: hidden; padding: 0 !important; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-card); background: var(--surface); }
+    .stay-card { min-width: 0; overflow: hidden; margin: 0 !important; padding: 0 !important; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-card); background: var(--surface); }
     .stay-card__body { display: grid !important; min-width: 0; gap: var(--space-2) !important; padding: var(--space-3); }
     .stay-card__body > * { min-width: 0; margin: 0 !important; }
     .stay-card__body > img { width: 100% !important; max-width: none !important; margin: 0 !important; object-fit: cover !important; }
     .stay-card__title { margin: 0 !important; font-family: var(--font-display); font-size: var(--font-size-h3) !important; line-height: var(--font-line-h3) !important; font-weight: 600 !important; }
     .stay-card__location, .stay-card__amenities { color: var(--color-text-secondary); }
+    .stay-card__fit { color: var(--color-success); font-weight: 600; }
     .stay-card__facts { margin: 0; color: var(--color-text-secondary); }
     .stay-card__price-area { display: grid !important; gap: var(--space-1) !important; margin: 0 !important; }
     .stay-card__price-area > * { margin: 0 !important; }
@@ -2164,7 +2169,6 @@ export function renderGuestShellHtml(): string {
     #working-status { grid-column: 1 / -1; margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-small); }
     @media (min-width: 48rem) {
       #transcript, #workspace-region, form#composer, #journey-rail, #criteria-strip { padding-left: var(--layout-gutter-tablet); padding-right: var(--layout-gutter-tablet); }
-      .stay-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .unit-gallery--mosaic { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .unit-gallery--mosaic img:first-of-type { grid-column: 1 / -1; }
     }

@@ -56,7 +56,7 @@ interface GuestCriteria {
   readonly budget?: { readonly naira: number; readonly per: "stay" | "night"; readonly label: string };
   readonly areas: readonly { readonly id: string; readonly label: string }[];
 }
-interface GuestResponse { readonly ok: boolean; readonly code?: string; readonly message?: string; readonly messages?: readonly string[]; readonly receipts?: readonly string[]; readonly surfaces?: readonly GuestSurfacePayload[]; readonly journey?: GuestJourney; readonly criteria?: GuestCriteria; }
+interface GuestResponse { readonly ok: boolean; readonly code?: string; readonly message?: string; readonly messages?: readonly string[]; readonly receipts?: readonly string[]; readonly surfaces?: readonly GuestSurfacePayload[]; readonly journey?: GuestJourney; readonly criteria?: GuestCriteria; readonly quickReplies?: readonly string[]; }
 interface GuestStateResponse extends GuestResponse { readonly timeline?: readonly GuestTimelineEntry[]; }
 
 function requiredElement<T extends HTMLElement>(id: string): T {
@@ -242,7 +242,10 @@ function decorateDiscoveryCards(mount: HTMLElement): void {
     body.classList.add("stay-card__body");
     const children = [...body.children];
     const headings = children.filter((child) => child.tagName === "H3");
-    const smalls = children.filter((child) => child.tagName === "SMALL");
+    // Issue 11: the fit-reason caption is matched by its text, not its position.
+    const fit = children.find((child) => child.tagName === "SMALL" && (child.textContent ?? "").startsWith("Why it fits:"));
+    fit?.classList.add("stay-card__fit");
+    const smalls = children.filter((child) => child.tagName === "SMALL" && child !== fit);
     headings[0]?.classList.add("stay-card__title");
     const location = smalls[0];
     location?.classList.add("stay-card__location");
@@ -335,6 +338,7 @@ function readGuestResponse(value: unknown): GuestResponse {
   if (value.surfaces !== undefined && (!Array.isArray(value.surfaces) || value.surfaces.some((surface) => !isSurfacePayload(surface)))) throw new Error("Invalid response surface");
   if (value.journey !== undefined && !isJourney(value.journey)) throw new Error("Invalid response journey");
   if (value.criteria !== undefined && !isCriteria(value.criteria)) throw new Error("Invalid response criteria");
+  if (value.quickReplies !== undefined && !isStringList(value.quickReplies)) throw new Error("Invalid response quick replies");
   return value as unknown as GuestResponse;
 }
 
@@ -776,6 +780,7 @@ function renderJourney(journey: GuestJourney | undefined): void {
 type CriteriaField = "where" | "when" | "guests" | "budget";
 const CRITERIA_FIELDS: readonly CriteriaField[] = ["where", "when", "guests", "budget"];
 const CRITERIA_NAMES: Readonly<Record<CriteriaField, string>> = { where: "Where", when: "When", guests: "Guests", budget: "Budget" };
+const CRITERIA_EMPTY: Readonly<Record<CriteriaField, string>> = { where: "Add area", when: "Add dates", guests: "Add guests", budget: "Add budget" };
 const CRITERIA_EDIT_EVENT = "shortlet.criteria.edit";
 const CRITERIA_UNDO_EVENT = "shortlet.criteria.undo";
 let currentCriteria: GuestCriteria | undefined;
@@ -802,7 +807,8 @@ function renderCriteria(criteria: GuestCriteria | undefined): void {
     const name = document.createElement("span");
     name.className = "criteria-chip-name";
     name.textContent = `${CRITERIA_NAMES[field]}: `;
-    chip.append(name, criteria[field]?.label ?? "Add");
+    // An empty chip names what it adds, since narrow screens hide the field name.
+    chip.append(name, criteria[field]?.label ?? CRITERIA_EMPTY[field]);
     chip.disabled = !criteria.editable;
     chip.addEventListener("click", () => {
       if (openCriteriaField === field) closeCriteriaEditor(true);
@@ -1007,6 +1013,38 @@ criteriaEditor.addEventListener("keydown", (event) => {
   closeCriteriaEditor(true);
 });
 
+function clearQuickReplies(): void {
+  for (const group of transcript.querySelectorAll(".quick-replies")) group.remove();
+}
+
+/**
+ * Issue 11 AC3: one-tap answers to the question just asked. Tapping one sends
+ * it as the Guest's own message; the server interprets it like typed text.
+ */
+function renderQuickReplies(replies: readonly string[] | undefined): void {
+  clearQuickReplies();
+  if (!replies || replies.length === 0) return;
+  const group = document.createElement("div");
+  group.className = "quick-replies";
+  group.setAttribute("role", "group");
+  group.setAttribute("aria-label", "Suggested replies");
+  for (const text of replies) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ui-chip quick-reply";
+    button.textContent = text;
+    button.addEventListener("click", () => {
+      if (isLoading) return;
+      clearQuickReplies();
+      addTurn("user", text);
+      void sendTurn(text);
+    });
+    group.appendChild(button);
+  }
+  transcript.appendChild(group);
+  transcript.scrollTop = transcript.scrollHeight;
+}
+
 function renderResponse(response: GuestResponse): boolean {
   if (!response.ok) {
     const message = response.message ?? "That action could not be completed.";
@@ -1022,6 +1060,7 @@ function renderResponse(response: GuestResponse): boolean {
   renderJourney(response.journey);
   renderCriteria(response.criteria);
   for (const message of response.messages ?? []) addTurn("assistant", message);
+  renderQuickReplies(response.quickReplies);
   if ((response.messages ?? []).length > 0) trackTelemetry("text-response-rendered");
   const surfaces = response.surfaces ?? [];
   renderSurfaces(surfaces);
@@ -1160,6 +1199,7 @@ composerForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const text = composerInput.value.trim();
   if (text === "" || isLoading) return;
+  clearQuickReplies();
   addTurn("user", text);
   void sendTurn(text);
 });

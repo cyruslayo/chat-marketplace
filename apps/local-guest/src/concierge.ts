@@ -118,9 +118,26 @@ export interface StayRequestMergeOutcome {
   readonly confirmedDates?: boolean;
 }
 
+/** The criteria asked for, in asking order: where, who, when, how long (issue 02). */
+export type StayCriterion = "where" | "who" | "when" | "nights";
+
+/**
+ * Issue 11 AC3: one-tap answers to the criterion just asked for. Every reply
+ * is a phrase this interpreter already understands, so tapping it fills that
+ * criterion; relative dates still go through the confirmation step (issue 01).
+ */
+export function quickRepliesFor(next: StayCriterion): readonly string[] {
+  switch (next) {
+    case "where": return SEARCH_AREAS.filter((area) => area.neighbourhood !== undefined).map((area) => area.label);
+    case "who": return ["Just me", "2 guests", "3 guests", "4 guests"];
+    case "when": return ["This weekend", "Next weekend", "Next Friday"];
+    case "nights": return ["1 night", "2 nights", "3 nights", "7 nights"];
+  }
+}
+
 export type StayRequestResolution =
   | { readonly kind: "search"; readonly filters: StayRequestFilters }
-  | { readonly kind: "clarify"; readonly missing: readonly string[]; readonly reply: string }
+  | { readonly kind: "clarify"; readonly missing: readonly string[]; readonly next: StayCriterion; readonly reply: string }
   /** Resolved dates are shown back as concrete dates; no search runs until confirmed. */
   | { readonly kind: "confirm"; readonly filters: StayRequestFilters; readonly reply: string }
   /** Dates outside launch limits (ADR-0023, ADR-0055), explained with the limit. */
@@ -625,7 +642,8 @@ export function resolveStayRequestContext(
   if (checkIn === undefined) missing.push("what date you arrive (for example: 10 Sept or this Friday)");
   if (nights === undefined) missing.push("how many nights you need");
   if (city === undefined || checkIn === undefined || nights === undefined || partySize === undefined) {
-    return { kind: "clarify", missing, reply: clarifyReply(context, missing) };
+    const next: StayCriterion = city === undefined ? "where" : partySize === undefined ? "who" : checkIn === undefined ? "when" : "nights";
+    return { kind: "clarify", missing, next, reply: clarifyReply(context, missing) };
   }
   const checkOut = addCalendarDays(checkIn, nights);
   const filters: StayRequestFilters = {
