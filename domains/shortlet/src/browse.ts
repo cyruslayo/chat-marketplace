@@ -232,6 +232,10 @@ function readFileSafe(filePath: string): string | null {
   catch (error: any) { if (error.code === "ENOENT") return null; throw error; }
 }
 
+function withinPrice(total: number | null, test: (total: number) => boolean): boolean {
+  return total !== null && Number.isFinite(total) && test(total);
+}
+
 export function allInStayTotalKobo(unit: any, dateRange: StayDateRange | null): number | null {
   if (!dateRange) return null;
   const base = unit.price.nightlyKobo * dateRange.nights + (unit.price.mandatoryFeesKobo ?? 0);
@@ -246,6 +250,9 @@ function deepFreeze<T>(value: T): T {
   }
   return value;
 }
+
+/** The public discovery projection of one Unit. */
+export type DiscoveryProjection = ReturnType<typeof toDiscoveryProjection>;
 
 export function toDiscoveryProjection(unit: Unit, dateRange: StayDateRange | null) {
   const allInTotal = allInStayTotalKobo(unit, dateRange);
@@ -346,9 +353,14 @@ export class UnitDiscoveryQuery {
       .filter((unit: any) => filters.partySize === undefined || unit.capacity >= filters.partySize)
       .filter((unit: any) => filters.bedrooms === undefined || unit.bedrooms === filters.bedrooms)
       .filter((unit: any) => !dateRange || !unit.blockedDates.some((range: any) => dateRange.overlaps(range)))
-      .filter((unit: any) => filters.minPriceKobo === undefined || (allInStayTotalKobo(unit, dateRange) ?? 0) >= filters.minPriceKobo)
-      .filter((unit: any) => filters.maxPriceKobo === undefined || (allInStayTotalKobo(unit, dateRange) ?? 0) <= filters.maxPriceKobo)
+      // ADR-0015: price filters compare the All-In Stay Total. A unit without
+      // one fails closed; it never passes a budget as if it were free.
+      .filter((unit: any) => filters.minPriceKobo === undefined || withinPrice(allInStayTotalKobo(unit, dateRange), (total) => total >= filters.minPriceKobo!))
+      .filter((unit: any) => filters.maxPriceKobo === undefined || withinPrice(allInStayTotalKobo(unit, dateRange), (total) => total <= filters.maxPriceKobo!))
       .map((unit: any) => toDiscoveryProjection(unit, dateRange));
+    // ADR-0015: with a budget, results are ranked by All-In Stay Total (stable).
+    // Every result has a total here: price filters dropped units without one.
+    if (filters.maxPriceKobo !== undefined) results.sort((left: DiscoveryProjection, right: DiscoveryProjection) => (left.price.allInStayTotalKobo ?? 0) - (right.price.allInStayTotalKobo ?? 0));
     const queryId = `search-${this.idFactory()}`;
     const artifact = createInteractionArtifact({ id: queryId, filters, results });
     this.audit.record({ type: "unit.search", queryId, filters: { ...filters }, resultUnitIds: results.map((unit: any) => unit.id) });

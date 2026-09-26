@@ -84,10 +84,28 @@ export function formatNgnKobo(kobo: number): string {
   return formatMoney(kobo);
 }
 
+/**
+ * Issue 03b / ADR-0015: a result is described as within budget only when it
+ * has an All-In Stay Total at or under the budget. The Refundable Security
+ * Deposit is never part of that comparison (ADR-0016); when it takes the cash
+ * needed over the budget, the card says so and shows the total to complete
+ * booking.
+ */
+function budgetNote(unit: DiscoveryUnitProjection, budgetKobo: number | undefined): string | undefined {
+  const total = unit.price.allInStayTotalKobo;
+  if (budgetKobo === undefined || total === null || total > budgetKobo) return undefined;
+  const within = `Within your ${formatNgnKobo(budgetKobo)} budget (${GUEST_GLOSSARY.allInStayTotal}).`;
+  const deposit = unit.price.refundableSecurityDepositKobo;
+  return deposit > 0 && total + deposit > budgetKobo
+    ? `${within} The ${GUEST_GLOSSARY.refundableSecurityDeposit} is paid separately, so the total to complete booking is ${formatNgnKobo(total + deposit)}.`
+    : within;
+}
+
 function unitComponents(
   artifactId: string,
   unit: DiscoveryUnitProjection,
   canViewUnit: boolean,
+  budgetKobo?: number,
 ): { readonly cardId: string; readonly components: readonly A2UIComponent[] } {
   const prefix = `unit-${unit.id}`;
   const location = unit.title.toLocaleLowerCase().includes(unit.location.neighbourhood.toLocaleLowerCase())
@@ -104,6 +122,7 @@ function unitComponents(
   const allInAmount = unit.price.allInStayTotalKobo === null
     ? unit.price.nightlyKobo
     : unit.price.allInStayTotalKobo;
+  const budget = budgetNote(unit, budgetKobo);
 
   return {
     cardId: `${prefix}-card`,
@@ -118,6 +137,7 @@ function unitComponents(
           ...(highlights.length > 0 ? [`${prefix}-amenities`] : []),
           `${prefix}-divider`, `${prefix}-price-label`, `${prefix}-price`,
           ...(unit.price.refundableSecurityDepositKobo > 0 ? [`${prefix}-deposit`] : []),
+          ...(budget === undefined ? [] : [`${prefix}-budget`]),
           ...(canViewUnit ? [`${prefix}-view-button`] : []),
         ],
       },
@@ -151,6 +171,7 @@ function unitComponents(
         text: `${GUEST_GLOSSARY.refundableSecurityDeposit}: ${formatNgnKobo(unit.price.refundableSecurityDepositKobo)}`,
         variant: "caption" as const,
       }] : []),
+      ...(budget === undefined ? [] : [{ id: `${prefix}-budget`, component: "Text" as const, text: budget, variant: "caption" as const }]),
       ...(canViewUnit ? [
         {
           id: `${prefix}-view-button`,
@@ -179,6 +200,7 @@ export function discoveryArtifactToA2UI({
     artifact.id,
     unit,
     artifact.actions.some((action) => action.type === "view-unit" && action.unitId === unit.id),
+    typeof artifact.facts.filters.maxPriceKobo === "number" ? artifact.facts.filters.maxPriceKobo : undefined,
   ));
   const checkIn = typeof artifact.facts.filters.checkIn === "string" ? formatGuestDate(artifact.facts.filters.checkIn) : undefined;
   const checkOut = typeof artifact.facts.filters.checkOut === "string" ? formatGuestDate(artifact.facts.filters.checkOut) : undefined;
@@ -234,6 +256,7 @@ function discoveryContext(filters: Readonly<Record<string, unknown>>): string {
     ? filters.neighbourhood
     : typeof filters.location === "string" ? filters.location : undefined;
   const partySize = typeof filters.partySize === "number" ? `${filters.partySize} ${filters.partySize === 1 ? "guest" : "guests"}` : undefined;
-  const details = [location, partySize].filter((value): value is string => value !== undefined);
+  const budget = typeof filters.maxPriceKobo === "number" ? `budget ${formatNgnKobo(filters.maxPriceKobo)}` : undefined;
+  const details = [location, partySize, budget].filter((value): value is string => value !== undefined);
   return details.length > 0 ? `Your search: ${details.join(" · ")}` : "Your search details";
 }

@@ -8890,7 +8890,7 @@ Known schemas:
     if (!isRecord3(value) || typeof value.key !== "string" || typeof value.editable !== "boolean" || typeof value.canUndo !== "boolean") return false;
     if (!Array.isArray(value.areas) || !value.areas.every((area) => isRecord3(area) && typeof area.id === "string" && typeof area.label === "string")) return false;
     const labelled = (field2) => field2 === void 0 || isRecord3(field2) && typeof field2.label === "string";
-    return labelled(value.where) && labelled(value.when) && labelled(value.guests);
+    return labelled(value.where) && labelled(value.when) && labelled(value.guests) && labelled(value.budget);
   }
   function readGuestResponse(value) {
     if (!isRecord3(value) || typeof value.ok !== "boolean") throw new Error("Invalid server response");
@@ -9269,8 +9269,8 @@ Known schemas:
     journeyRail.hidden = false;
     if (current) list.scrollLeft = Math.max(0, current.offsetLeft - list.offsetLeft - list.clientWidth / 2 + current.offsetWidth / 2);
   }
-  var CRITERIA_FIELDS = ["where", "when", "guests"];
-  var CRITERIA_NAMES = { where: "Where", when: "When", guests: "Guests" };
+  var CRITERIA_FIELDS = ["where", "when", "guests", "budget"];
+  var CRITERIA_NAMES = { where: "Where", when: "When", guests: "Guests", budget: "Budget" };
   var CRITERIA_EDIT_EVENT = "shortlet.criteria.edit";
   var CRITERIA_UNDO_EVENT = "shortlet.criteria.undo";
   var currentCriteria;
@@ -9374,8 +9374,23 @@ Known schemas:
       date2.required = true;
       if (criteria.when?.checkIn) date2.value = criteria.when.checkIn;
       criteriaEditor.append(field("Arrival date", date2), field("Nights", numberInput("criteria-nights", "nights", criteria.when?.nights)));
-    } else {
+    } else if (target === "guests") {
       criteriaEditor.appendChild(field("Guests", numberInput("criteria-guests", "partySize", criteria.guests?.count)));
+    } else {
+      const per = document.createElement("select");
+      per.id = "criteria-budget-per";
+      per.name = "per";
+      for (const [value, label] of [["stay", "Total for the stay"], ["night", "Per night"]]) {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = label;
+        option.selected = (criteria.budget?.per ?? "stay") === value;
+        per.appendChild(option);
+      }
+      const hint = document.createElement("p");
+      hint.className = "ui-field__hint";
+      hint.textContent = `Compared with the ${GUEST_GLOSSARY.allInStayTotal}, all fees included. The ${GUEST_GLOSSARY.refundableSecurityDeposit} is separate.`;
+      criteriaEditor.append(field("Budget (\u20A6)", numberInput("criteria-budget", "naira", criteria.budget?.naira)), field("Budget is", per), hint);
     }
     const actions = document.createElement("div");
     actions.className = "criteria-editor-actions";
@@ -9389,6 +9404,16 @@ Known schemas:
     cancel.textContent = "Cancel";
     cancel.addEventListener("click", () => closeCriteriaEditor(true));
     actions.append(submit, cancel);
+    if (target === "budget" && criteria.budget) {
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "ui-button ui-button--quiet";
+      remove.textContent = "Remove budget";
+      remove.addEventListener("click", () => {
+        void sendCriteriaEvent(CRITERIA_EDIT_EVENT, { field: "budget", clear: true, basedOn: criteria.key });
+      });
+      actions.appendChild(remove);
+    }
     criteriaEditor.appendChild(actions);
     criteriaEditor.hidden = false;
     for (const chip of criteriaStrip.querySelectorAll(".criteria-chip")) chip.setAttribute("aria-expanded", String(chip.dataset.field === target));
@@ -9447,13 +9472,20 @@ Known schemas:
         return;
       }
       void sendCriteriaEvent(CRITERIA_EDIT_EVENT, { field: "when", checkIn, nights, basedOn: criteria.key });
-    } else {
+    } else if (target === "guests") {
       const partySize = whole("partySize");
       if (partySize === void 0) {
         criteriaStatus.textContent = "Enter a whole number of guests.";
         return;
       }
       void sendCriteriaEvent(CRITERIA_EDIT_EVENT, { field: "guests", partySize, basedOn: criteria.key });
+    } else {
+      const naira = whole("naira");
+      if (naira === void 0) {
+        criteriaStatus.textContent = "Enter a budget in whole naira.";
+        return;
+      }
+      void sendCriteriaEvent(CRITERIA_EDIT_EVENT, { field: "budget", naira, per: data.get("per") === "night" ? "night" : "stay", basedOn: criteria.key });
     }
   });
   criteriaEditor.addEventListener("keydown", (event) => {
