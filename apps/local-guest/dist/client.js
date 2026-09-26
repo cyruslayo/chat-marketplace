@@ -8662,6 +8662,11 @@ Known schemas:
   var emptyState = requiredElement("empty-state");
   var workingStatus = requiredElement("working-status");
   var journeyRail = requiredElement("journey-rail");
+  var criteriaStrip = requiredElement("criteria-strip");
+  var criteriaEditor = requiredElement("criteria-editor");
+  var criteriaStatus = requiredElement("criteria-status");
+  var criteriaToggle = requiredElement("criteria-toggle");
+  var criteriaSummary = requiredElement("criteria-summary");
   function getThreadId() {
     try {
       const urlParam = new URLSearchParams(window.location.search).get("threadId");
@@ -8833,7 +8838,7 @@ Known schemas:
   function enhanceSurfacePresentation(mount, kind) {
     mount.dataset.surfaceKind = kind;
     for (const button of mount.querySelectorAll("button")) button.classList.add("guest-action");
-    for (const field of mount.querySelectorAll("input, textarea, select")) field.classList.add("guest-field");
+    for (const field2 of mount.querySelectorAll("input, textarea, select")) field2.classList.add("guest-field");
     for (const text of mount.querySelectorAll('[data-a2ui-component="Text"]')) {
       const value = text.textContent?.trim() ?? "";
       const isHeading = /^H[1-6]$/.test(text.tagName);
@@ -8881,12 +8886,19 @@ Known schemas:
     if (!isRecord3(value) || typeof value.current !== "string" || !Array.isArray(value.steps) || value.steps.length === 0) return false;
     return value.steps.every((step) => isRecord3(step) && typeof step.id === "string" && typeof step.label === "string" && typeof step.state === "string" && step.state in JOURNEY_STATE_TEXT);
   }
+  function isCriteria(value) {
+    if (!isRecord3(value) || typeof value.key !== "string" || typeof value.editable !== "boolean" || typeof value.canUndo !== "boolean") return false;
+    if (!Array.isArray(value.areas) || !value.areas.every((area) => isRecord3(area) && typeof area.id === "string" && typeof area.label === "string")) return false;
+    const labelled = (field2) => field2 === void 0 || isRecord3(field2) && typeof field2.label === "string";
+    return labelled(value.where) && labelled(value.when) && labelled(value.guests);
+  }
   function readGuestResponse(value) {
     if (!isRecord3(value) || typeof value.ok !== "boolean") throw new Error("Invalid server response");
     if (value.messages !== void 0 && (!Array.isArray(value.messages) || value.messages.some((message) => typeof message !== "string"))) throw new Error("Invalid response messages");
     if (value.receipts !== void 0 && (!Array.isArray(value.receipts) || value.receipts.some((receipt) => typeof receipt !== "string"))) throw new Error("Invalid response receipts");
     if (value.surfaces !== void 0 && (!Array.isArray(value.surfaces) || value.surfaces.some((surface) => !isSurfacePayload(surface)))) throw new Error("Invalid response surface");
     if (value.journey !== void 0 && !isJourney(value.journey)) throw new Error("Invalid response journey");
+    if (value.criteria !== void 0 && !isCriteria(value.criteria)) throw new Error("Invalid response criteria");
     return value;
   }
   var threadId = getThreadId();
@@ -9257,6 +9269,199 @@ Known schemas:
     journeyRail.hidden = false;
     if (current) list.scrollLeft = Math.max(0, current.offsetLeft - list.offsetLeft - list.clientWidth / 2 + current.offsetWidth / 2);
   }
+  var CRITERIA_FIELDS = ["where", "when", "guests"];
+  var CRITERIA_NAMES = { where: "Where", when: "When", guests: "Guests" };
+  var CRITERIA_EDIT_EVENT = "shortlet.criteria.edit";
+  var CRITERIA_UNDO_EVENT = "shortlet.criteria.undo";
+  var currentCriteria;
+  var openCriteriaField;
+  var criteriaInFlight = false;
+  function renderCriteria(criteria) {
+    if (!criteria) return;
+    currentCriteria = criteria;
+    const chips = criteriaStrip.querySelector(".criteria-chips");
+    if (!chips) return;
+    chips.replaceChildren();
+    for (const field2 of CRITERIA_FIELDS) {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "ui-chip criteria-chip";
+      chip.dataset.field = field2;
+      chip.setAttribute("aria-expanded", String(openCriteriaField === field2));
+      chip.setAttribute("aria-controls", "criteria-editor");
+      const name = document.createElement("span");
+      name.className = "criteria-chip-name";
+      name.textContent = `${CRITERIA_NAMES[field2]}: `;
+      chip.append(name, criteria[field2]?.label ?? "Add");
+      chip.disabled = !criteria.editable;
+      chip.addEventListener("click", () => {
+        if (openCriteriaField === field2) closeCriteriaEditor(true);
+        else openCriteriaEditor(field2);
+      });
+      chips.appendChild(chip);
+    }
+    if (criteria.canUndo) {
+      const undo = document.createElement("button");
+      undo.type = "button";
+      undo.className = "criteria-undo";
+      undo.textContent = "Undo last change";
+      undo.addEventListener("click", () => {
+        void sendCriteriaEvent(CRITERIA_UNDO_EVENT, { basedOn: criteria.key });
+      });
+      chips.appendChild(undo);
+    }
+    criteriaSummary.textContent = CRITERIA_FIELDS.map((name) => criteria[name]?.label).filter((label) => label !== void 0).join(" \xB7 ");
+    criteriaStrip.hidden = false;
+    if (!criteria.editable) closeCriteriaEditor(false);
+  }
+  function setCriteriaExpanded(expanded) {
+    criteriaStrip.dataset.expanded = String(expanded);
+    criteriaToggle.setAttribute("aria-expanded", String(expanded));
+    criteriaToggle.textContent = expanded ? "Done" : "Edit search";
+    if (!expanded) closeCriteriaEditor(false);
+  }
+  criteriaToggle.addEventListener("click", () => {
+    const expand = criteriaStrip.dataset.expanded !== "true";
+    setCriteriaExpanded(expand);
+    if (expand) criteriaStrip.querySelector(".criteria-chip:not(:disabled)")?.focus();
+  });
+  function field(labelText, control) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "ui-field";
+    const label = document.createElement("label");
+    label.className = "ui-field__label";
+    label.htmlFor = control.id;
+    label.textContent = labelText;
+    wrapper.append(label, control);
+    return wrapper;
+  }
+  function numberInput(id, name, value) {
+    const input = document.createElement("input");
+    input.id = id;
+    input.name = name;
+    input.type = "number";
+    input.min = "1";
+    input.step = "1";
+    input.inputMode = "numeric";
+    input.required = true;
+    if (value !== void 0) input.value = String(value);
+    return input;
+  }
+  function openCriteriaEditor(target) {
+    const criteria = currentCriteria;
+    if (!criteria?.editable) return;
+    openCriteriaField = target;
+    criteriaStatus.textContent = "";
+    criteriaEditor.replaceChildren();
+    criteriaEditor.setAttribute("aria-label", `Change ${CRITERIA_NAMES[target].toLocaleLowerCase()}`);
+    if (target === "where") {
+      const select = document.createElement("select");
+      select.id = "criteria-area";
+      select.name = "area";
+      for (const area of criteria.areas) {
+        const option = document.createElement("option");
+        option.value = area.id;
+        option.textContent = area.label;
+        option.selected = area.id === criteria.where?.area;
+        select.appendChild(option);
+      }
+      criteriaEditor.appendChild(field("Where", select));
+    } else if (target === "when") {
+      const date2 = document.createElement("input");
+      date2.id = "criteria-check-in";
+      date2.name = "checkIn";
+      date2.type = "date";
+      date2.required = true;
+      if (criteria.when?.checkIn) date2.value = criteria.when.checkIn;
+      criteriaEditor.append(field("Arrival date", date2), field("Nights", numberInput("criteria-nights", "nights", criteria.when?.nights)));
+    } else {
+      criteriaEditor.appendChild(field("Guests", numberInput("criteria-guests", "partySize", criteria.guests?.count)));
+    }
+    const actions = document.createElement("div");
+    actions.className = "criteria-editor-actions";
+    const submit = document.createElement("button");
+    submit.type = "submit";
+    submit.className = "ui-button ui-button--primary";
+    submit.textContent = "Update search";
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "ui-button ui-button--quiet";
+    cancel.textContent = "Cancel";
+    cancel.addEventListener("click", () => closeCriteriaEditor(true));
+    actions.append(submit, cancel);
+    criteriaEditor.appendChild(actions);
+    criteriaEditor.hidden = false;
+    for (const chip of criteriaStrip.querySelectorAll(".criteria-chip")) chip.setAttribute("aria-expanded", String(chip.dataset.field === target));
+    criteriaEditor.querySelector("input, select")?.focus();
+  }
+  function closeCriteriaEditor(returnFocus) {
+    const closed = openCriteriaField;
+    openCriteriaField = void 0;
+    criteriaEditor.hidden = true;
+    criteriaEditor.replaceChildren();
+    for (const chip of criteriaStrip.querySelectorAll(".criteria-chip")) chip.setAttribute("aria-expanded", "false");
+    if (returnFocus && closed) criteriaStrip.querySelector(`.criteria-chip[data-field="${closed}"]`)?.focus();
+  }
+  async function sendCriteriaEvent(name, context) {
+    if (criteriaInFlight || isLoading) return;
+    criteriaInFlight = true;
+    criteriaStrip.setAttribute("aria-busy", "true");
+    const submit = criteriaEditor.querySelector('button[type="submit"]');
+    if (submit) submit.disabled = true;
+    try {
+      const response = await postJson("/api/event", { threadId, name, surfaceId: `thread-${threadId}:criteria`, sourceComponentId: "criteria-strip", timestamp: (/* @__PURE__ */ new Date()).toISOString(), context });
+      if (!response.ok) {
+        criteriaStatus.textContent = response.message ?? "That change could not be applied.";
+        if (response.code === "STALE_SURFACE" || response.code === "CRITERIA_LOCKED") void refreshServerState();
+        return;
+      }
+      criteriaStatus.textContent = "";
+      closeCriteriaEditor(false);
+      setCriteriaExpanded(false);
+      renderResponse(response);
+    } catch {
+      criteriaStatus.textContent = "The change could not be sent. Please try again.";
+    } finally {
+      criteriaInFlight = false;
+      criteriaStrip.removeAttribute("aria-busy");
+      if (submit?.isConnected) submit.disabled = false;
+    }
+  }
+  criteriaEditor.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const target = openCriteriaField;
+    const criteria = currentCriteria;
+    if (!target || !criteria) return;
+    const data = new FormData(criteriaEditor);
+    const whole = (name) => {
+      const value = Number(data.get(name));
+      return Number.isInteger(value) && value >= 1 ? value : void 0;
+    };
+    if (target === "where") {
+      void sendCriteriaEvent(CRITERIA_EDIT_EVENT, { field: "where", area: String(data.get("area") ?? ""), basedOn: criteria.key });
+    } else if (target === "when") {
+      const checkIn = String(data.get("checkIn") ?? "");
+      const nights = whole("nights");
+      if (checkIn === "" || nights === void 0) {
+        criteriaStatus.textContent = "Enter an arrival date and a whole number of nights.";
+        return;
+      }
+      void sendCriteriaEvent(CRITERIA_EDIT_EVENT, { field: "when", checkIn, nights, basedOn: criteria.key });
+    } else {
+      const partySize = whole("partySize");
+      if (partySize === void 0) {
+        criteriaStatus.textContent = "Enter a whole number of guests.";
+        return;
+      }
+      void sendCriteriaEvent(CRITERIA_EDIT_EVENT, { field: "guests", partySize, basedOn: criteria.key });
+    }
+  });
+  criteriaEditor.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    event.stopPropagation();
+    closeCriteriaEditor(true);
+  });
   function renderResponse(response) {
     if (!response.ok) {
       const message = response.message ?? "That action could not be completed.";
@@ -9270,6 +9475,7 @@ Known schemas:
       return false;
     }
     renderJourney(response.journey);
+    renderCriteria(response.criteria);
     for (const message of response.messages ?? []) addTurn("assistant", message);
     if ((response.messages ?? []).length > 0) trackTelemetry("text-response-rendered");
     const surfaces = response.surfaces ?? [];
@@ -9280,7 +9486,10 @@ Known schemas:
   async function refreshServerState() {
     try {
       const response = await postJson(`/api/state?threadId=${encodeURIComponent(threadId)}`);
-      if (response.ok) renderJourney(response.journey);
+      if (response.ok) {
+        renderJourney(response.journey);
+        renderCriteria(response.criteria);
+      }
       if (response.ok && response.surfaces && response.surfaces.length > 0) {
         renderSurfaces(response.surfaces);
       }
@@ -9412,6 +9621,7 @@ Known schemas:
       if (!response.ok || !response.timeline || response.timeline.length === 0) return false;
       for (const entry of response.timeline) addTimelineEntry(entry);
       renderJourney(response.journey);
+      renderCriteria(response.criteria);
       renderSurfaces(response.surfaces ?? []);
       announce("Your conversation has been restored.");
       return true;

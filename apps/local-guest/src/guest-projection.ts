@@ -27,6 +27,11 @@ export interface GuestPersistentProjection {
   readonly offerId: string | null;
   readonly activeStage: string | null;
   readonly activeSurfaceId: string | null;
+  /**
+   * Issue 03a: the criteria of each executed search, oldest first; the last
+   * is the current results' criteria. "Undo last change" steps back one.
+   */
+  readonly searchHistory: readonly DiscoverySearchContext[];
 }
 
 export function isPersistentTimelineEntry(value: unknown): value is { readonly role: "assistant" | "user" | "receipt"; readonly text: string } {
@@ -95,6 +100,10 @@ export function parseGuestProjection(value: unknown): GuestPersistentProjection 
   if (!unitDetail.valid) return null;
   const draftQuote = optionalField(value.draftQuote, asDraftQuote);
   if (!draftQuote.valid) return null;
+  // Projections stored before issue 03a have no history; that is an empty one.
+  if (value.searchHistory !== undefined && !Array.isArray(value.searchHistory)) return null;
+  const parsedHistory = ((value.searchHistory ?? []) as readonly unknown[]).map(parseDiscoverySearchContext);
+  if (parsedHistory.some((entry) => entry === null)) return null;
   return Object.freeze({
     version: 1,
     timeline: Object.freeze(value.timeline.map((entry) => Object.freeze({ role: entry.role, text: entry.text }))),
@@ -109,5 +118,6 @@ export function parseGuestProjection(value: unknown): GuestPersistentProjection 
     offerId: value.offerId,
     activeStage: value.activeStage,
     activeSurfaceId: value.activeSurfaceId,
+    searchHistory: Object.freeze(parsedHistory.filter((entry): entry is DiscoverySearchContext => entry !== null)),
   });
 }

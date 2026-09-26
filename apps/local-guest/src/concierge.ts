@@ -569,6 +569,49 @@ export function resolveStayRequestContext(
 }
 
 /**
+ * Issue 03a: the areas a Guest can pick on the criteria strip and on the
+ * conventional search form (ADR-0080). They are the locations the concierge
+ * already understands in free text; no new inventory area is invented here.
+ */
+export const SEARCH_AREAS: readonly { readonly id: string; readonly label: string; readonly city: string; readonly neighbourhood?: string }[] = Object.freeze([
+  { id: "abuja", label: "Abuja (all areas)", city: "Abuja" },
+  { id: "wuse-2", label: "Wuse 2, Abuja", city: "Abuja", neighbourhood: "Wuse 2" },
+  { id: "lagos", label: "Lagos (all areas)", city: "Lagos" },
+  { id: "old-ikoyi", label: "Old Ikoyi, Lagos", city: "Lagos", neighbourhood: "Old Ikoyi" },
+  { id: "lekki-phase-1", label: "Lekki Phase 1, Lagos", city: "Lagos", neighbourhood: "Lekki Phase 1" },
+  { id: "victoria-island", label: "Victoria Island, Lagos", city: "Lagos", neighbourhood: "Victoria Island" },
+]);
+
+export function searchAreaFor(context: DiscoverySearchContext): typeof SEARCH_AREAS[number] | undefined {
+  if (context.city === undefined) return undefined;
+  return SEARCH_AREAS.find((area) => area.city === context.city && area.neighbourhood === context.neighbourhood);
+}
+
+export type CriteriaEdit =
+  | { readonly field: "where"; readonly area: string }
+  | { readonly field: "when"; readonly checkIn: string; readonly nights: number }
+  | { readonly field: "guests"; readonly partySize: number };
+
+/**
+ * Applies one strip edit to the accumulated context (issue 03a). A chip's
+ * dates are typed calendar dates, so they count as confirmed (issue 01).
+ * Returns null for an unknown area; policy limits are checked afterwards by
+ * `resolveStayRequestContext`, like any other criteria.
+ */
+export function applyCriteriaEdit(context: DiscoverySearchContext | null, edit: CriteriaEdit): DiscoverySearchContext | null {
+  const current = context ?? {};
+  if (edit.field === "where") {
+    const area = SEARCH_AREAS.find((candidate) => candidate.id === edit.area);
+    if (!area) return null;
+    // Picking an area answers any open location question.
+    const { pendingLocationChange: _pending, neighbourhood: _neighbourhood, ...rest } = current;
+    return buildContext({ ...rest, city: area.city, ...(area.neighbourhood === undefined ? {} : { neighbourhood: area.neighbourhood }) });
+  }
+  if (edit.field === "when") return buildContext({ ...current, checkIn: edit.checkIn, nights: edit.nights, datesConfirmed: true });
+  return buildContext({ ...current, partySize: edit.partySize });
+}
+
+/**
  * Single-message compatibility entry point: extract, merge against an empty
  * context and resolve. Multi-turn callers must use the merge/resolve pair so
  * earlier turns are never discarded.
