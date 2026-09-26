@@ -200,3 +200,45 @@ test("The no-JS conversation page shows the same journey rail (ADR-0080)", () =>
   assert.doesNotMatch(html, /aria-current/);
   assert.doesNotMatch(renderNoScriptConversationHtml({ threadId: "g-abcdef12", timeline: [], surfaces: [] }), /<nav class="no-js-journey"/);
 });
+
+test("Review fix: a new search forgets the stay viewed before it", async () => {
+  const fixture = await restartFixture();
+  try {
+    await fixture.advance("inspection");
+    const research = success(await fixture.send("/api/turn", { text: "actually make it 3 guests" }));
+    assert.match(research.surfaces[0]!.surfaceId, /:discovery:results:2$/);
+    assert.equal(research.journey?.current, "search");
+    // Failure path: before the fix this answered from the Old Ikoyi stay no longer on screen.
+    const reply = success(await fixture.send("/api/turn", { text: "is there parking?" }));
+    assert.doesNotMatch(reply.messages.join(" "), /Luxury 2-Bedroom Apartment in Old Ikoyi lists/);
+  } finally { await fixture.close(); }
+});
+
+test("Review fix: Request to Book after changing the search starts a draft for the new stay", async () => {
+  const fixture = await restartFixture();
+  try {
+    const draft = await fixture.advance("draft");
+    const firstDraftId = draft.surfaces[0]!.surfaceId.split(":").at(-1)!;
+    const research = success(await fixture.send("/api/turn", { text: "actually make it 3 guests" }));
+    assert.equal(research.journey?.current, "search", "a kept draft is not shown as progress while searching");
+    const detail = success(await fixture.send("/api/event", guestAction(research.surfaces[0]!)));
+    const next = success(await fixture.send("/api/event", guestAction(detail.surfaces[0]!, REQUEST_TO_BOOK_EVENT)));
+    const secondDraftId = next.surfaces[0]!.surfaceId.split(":").at(-1)!;
+    assert.notEqual(secondDraftId, firstDraftId);
+    const record = fixture.environment.bookingRequestApp.manager.getDraft(secondDraftId);
+    assert.equal(record.occupants.length, 3, "the new draft is for the new party size");
+    assert.equal(next.journey?.current, "request");
+  } finally { await fixture.close(); }
+
+  // Failure path: an unchanged stay still resumes the same draft.
+  const same = await restartFixture();
+  try {
+    const draft = await same.advance("draft");
+    const draftId = draft.surfaces[0]!.surfaceId.split(":").at(-1)!;
+    const research = success(await same.send("/api/turn", { text: "actually make it 2 guests" }));
+    const detail = success(await same.send("/api/event", guestAction(research.surfaces[0]!)));
+    const resumed = success(await same.send("/api/event", guestAction(detail.surfaces[0]!, REQUEST_TO_BOOK_EVENT)));
+    assert.equal(resumed.surfaces[0]!.surfaceId.split(":").at(-1), draftId);
+    assert.match(resumed.messages.join(" "), /ready to continue/);
+  } finally { await same.close(); }
+});

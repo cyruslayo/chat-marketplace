@@ -710,7 +710,8 @@ export class LocalGuestApp {
       return undefined;
     }
     if (thread.activeSurfaces.has(UNIT_STAGE)) return projectJourney("stay");
-    if (thread.draftId) return projectJourney("request");
+    // A kept draft counts only while it is the surface on screen, not after a new search.
+    if (thread.draftId && this.#stageForSurfaceId(thread.lastSurfaces.at(-1)?.surfaceId ?? "") === REQUEST_STAGE) return projectJourney("request");
     if (thread.discoveryArtifact) return projectJourney("search");
     return undefined;
   }
@@ -1033,6 +1034,9 @@ export class LocalGuestApp {
   #prepareDiscovery(thread: GuestThreadState): void {
     this.#supersede(thread, UNIT_STAGE);
     this.#supersede(thread, DISCOVERY_STAGE);
+    // New results end the earlier stay's inspection; replies must not keep
+    // answering about an apartment that is no longer on screen.
+    thread.unitDetail = null;
     thread.discoveryRevision += 1;
     thread.discoverySurfaceId = thread.discoveryRevision === 1
       ? `thread-${thread.threadId}:discovery:results`
@@ -1192,6 +1196,24 @@ export class LocalGuestApp {
     return { ok: true, messages: ["Here are your search results again."], surfaces: [discoverySurface(artifact, thread.discoverySurfaceId)] };
   }
 
+  /**
+   * A kept Request Draft is resumed only for the same apartment, dates and
+   * party. After the Guest changes the search, Request to Book starts a new
+   * draft: a Request Draft blocks nothing and promises nothing (CONTEXT.md),
+   * so replacing it never releases or changes anything.
+   */
+  #draftMatchesStay(thread: GuestThreadState, unitId: string): boolean {
+    if (!thread.draftId) return false;
+    try {
+      const draft = this.#environment.bookingRequestApp.manager.getDraft(thread.draftId);
+      const stay = this.#stayDatesFor(thread);
+      return draft.unitId === unitId && draft.checkIn === stay.checkIn && draft.checkOut === stay.checkOut
+        && draft.occupants.length === this.#partySizeFor(thread);
+    } catch {
+      return false;
+    }
+  }
+
   #handleRequestToBook(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
     const detail = thread.unitDetail;
     const context = event.context;
@@ -1202,7 +1224,7 @@ export class LocalGuestApp {
     }
     if (thread.requestId || thread.offerId) return { ok: false, code: "STALE_SURFACE", message: "A Booking Request already exists for this conversation." };
 
-    if (thread.draftId) {
+    if (thread.draftId && this.#draftMatchesStay(thread, detail.unitId)) {
       const surfaceId = `thread-${thread.threadId}:request:draft:${thread.draftId}`;
       const artifact = this.#draftArtifact(thread, "draft");
       this.#supersede(thread, UNIT_STAGE);
