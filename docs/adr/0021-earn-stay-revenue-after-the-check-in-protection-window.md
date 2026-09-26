@@ -1,3 +1,7 @@
+---
+status: superseded by ADR-0089
+---
+
 # Earn stay revenue after the check-in protection window
 
 The operator's net accommodation revenue remains pending until 24 hours after Verified Access, provided no Blocking Fulfilment Complaint is open. The platform commission is unearned until the same event; processor fees are recognized separately when incurred. If operator-caused access is late, the window starts late. A guest's voluntary late arrival may instead use verified evidence that valid access was available as agreed.

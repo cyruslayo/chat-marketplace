@@ -1,3 +1,7 @@
+---
+status: superseded by ADR-0089
+---
+
 # Use one revenue release per launch booking
 
 Every supported one-to-fourteen-night reservation has one full booking-level Revenue Release 24 hours after Verified Access. Release requires verified payment and contract formation, an elapsed protection window, an active operator payment account, and no blocking fulfilment, safety, payment-dispute, fraud, compliance, reversal, or refund condition. Launch does not accrue or release operator revenue nightly or in instalments; any future extended-stay product must define staged rules.

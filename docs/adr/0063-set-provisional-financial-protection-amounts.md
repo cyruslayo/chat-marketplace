@@ -1,3 +1,7 @@
+---
+status: partially superseded by ADR-0089 (payout choices and tier settlement terms)
+---
+
 # Set provisional financial-protection amounts
 
 Security deposits are capped at the lower of 25% of accommodation subtotal and ₦100,000 for studios/one-bedroom, ₦150,000 for two-bedroom, or ₦250,000 for larger units. Failed claim notification permits independent review at Day 14, reserves an approved award through Day 45, preserves guest late appeal through Day 90, and then closes absent fraud, regulator, court or legal hold.
