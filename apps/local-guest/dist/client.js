@@ -8540,6 +8540,16 @@ Known schemas:
     offerAccepted: "Offer accepted",
     paymentVerified: "Payment verified"
   });
+  var GUEST_JOURNEY = Object.freeze({
+    railLabel: "Booking progress",
+    search: "Search",
+    stay: "Stay",
+    request: "Request",
+    offer: "Offer",
+    pay: "Pay",
+    confirmed: "Confirmed",
+    backToResults: "Back to results"
+  });
   var GUEST_DISCLOSURE_WORDING = [
     { domain: /^Refundable Security Deposit is quoted separately and held as guest liability\.?$/, guest: `${GUEST_GLOSSARY.refundableSecurityDeposit} is quoted and collected separately from the stay payment.` },
     { domain: /^Optional services come strictly from the controlled catalogue with no off-platform payment\.?$/, guest: "Optional services are added only when you select them, with no off-platform payment." }
@@ -8651,6 +8661,7 @@ Known schemas:
   var errorAnnouncer = requiredElement("error-announcer");
   var emptyState = requiredElement("empty-state");
   var workingStatus = requiredElement("working-status");
+  var journeyRail = requiredElement("journey-rail");
   function getThreadId() {
     try {
       const urlParam = new URLSearchParams(window.location.search).get("threadId");
@@ -8853,11 +8864,22 @@ Known schemas:
     if (value.conventionalRouteLabel !== void 0 && typeof value.conventionalRouteLabel !== "string") return false;
     return value.conventionalRoute === void 0 || isSafeInternalRoute(value.conventionalRoute);
   }
+  var JOURNEY_STATE_TEXT = {
+    done: "completed",
+    current: "current step",
+    failed: "not completed",
+    upcoming: "not started"
+  };
+  function isJourney(value) {
+    if (!isRecord3(value) || typeof value.current !== "string" || !Array.isArray(value.steps) || value.steps.length === 0) return false;
+    return value.steps.every((step) => isRecord3(step) && typeof step.id === "string" && typeof step.label === "string" && typeof step.state === "string" && step.state in JOURNEY_STATE_TEXT);
+  }
   function readGuestResponse(value) {
     if (!isRecord3(value) || typeof value.ok !== "boolean") throw new Error("Invalid server response");
     if (value.messages !== void 0 && (!Array.isArray(value.messages) || value.messages.some((message) => typeof message !== "string"))) throw new Error("Invalid response messages");
     if (value.receipts !== void 0 && (!Array.isArray(value.receipts) || value.receipts.some((receipt) => typeof receipt !== "string"))) throw new Error("Invalid response receipts");
     if (value.surfaces !== void 0 && (!Array.isArray(value.surfaces) || value.surfaces.some((surface) => !isSurfacePayload(surface)))) throw new Error("Invalid response surface");
+    if (value.journey !== void 0 && !isJourney(value.journey)) throw new Error("Invalid response journey");
     return value;
   }
   var threadId = getThreadId();
@@ -9134,6 +9156,31 @@ Known schemas:
     const current = surfaces.at(-1);
     if (current) acceptSurface(current);
   }
+  function renderJourney(journey) {
+    if (!journey) return;
+    const list = document.createElement("ol");
+    let current;
+    for (const step of journey.steps) {
+      const item = document.createElement("li");
+      item.dataset.step = step.id;
+      item.dataset.state = step.state;
+      const tone = step.state === "failed" ? guestStatusTone(step.label) : void 0;
+      if (tone) item.dataset.tone = tone;
+      item.append(step.label);
+      const state = document.createElement("span");
+      state.className = "sr-only";
+      state.textContent = ` (${JOURNEY_STATE_TEXT[step.state]})`;
+      item.appendChild(state);
+      if (step.state === "current" || step.state === "failed") {
+        if (step.state === "current") item.setAttribute("aria-current", "step");
+        current = item;
+      }
+      list.appendChild(item);
+    }
+    journeyRail.replaceChildren(list);
+    journeyRail.hidden = false;
+    if (current) list.scrollLeft = Math.max(0, current.offsetLeft - list.offsetLeft - list.clientWidth / 2 + current.offsetWidth / 2);
+  }
   function renderResponse(response) {
     if (!response.ok) {
       const message = response.message ?? "That action could not be completed.";
@@ -9146,6 +9193,7 @@ Known schemas:
       announce(message, true);
       return false;
     }
+    renderJourney(response.journey);
     for (const message of response.messages ?? []) addTurn("assistant", message);
     if ((response.messages ?? []).length > 0) trackTelemetry("text-response-rendered");
     const surfaces = response.surfaces ?? [];
@@ -9156,6 +9204,7 @@ Known schemas:
   async function refreshServerState() {
     try {
       const response = await postJson(`/api/state?threadId=${encodeURIComponent(threadId)}`);
+      if (response.ok) renderJourney(response.journey);
       if (response.ok && response.surfaces && response.surfaces.length > 0) {
         renderSurfaces(response.surfaces);
       }
@@ -9286,6 +9335,7 @@ Known schemas:
       const response = await postJson(`/api/state?threadId=${encodeURIComponent(threadId)}`);
       if (!response.ok || !response.timeline || response.timeline.length === 0) return false;
       for (const entry of response.timeline) addTimelineEntry(entry);
+      renderJourney(response.journey);
       renderSurfaces(response.surfaces ?? []);
       announce("Your conversation has been restored.");
       return true;

@@ -34,7 +34,9 @@ interface GuestSurfacePayload {
   readonly conventionalRouteLabel?: string;
 }
 interface GuestTimelineEntry { readonly role: "assistant" | "user" | "receipt"; readonly text: string; }
-interface GuestResponse { readonly ok: boolean; readonly code?: string; readonly message?: string; readonly messages?: readonly string[]; readonly receipts?: readonly string[]; readonly surfaces?: readonly GuestSurfacePayload[]; }
+type JourneyStepState = "done" | "current" | "failed" | "upcoming";
+interface GuestJourney { readonly current: string; readonly steps: readonly { readonly id: string; readonly label: string; readonly state: JourneyStepState }[]; }
+interface GuestResponse { readonly ok: boolean; readonly code?: string; readonly message?: string; readonly messages?: readonly string[]; readonly receipts?: readonly string[]; readonly surfaces?: readonly GuestSurfacePayload[]; readonly journey?: GuestJourney; }
 interface GuestStateResponse extends GuestResponse { readonly timeline?: readonly GuestTimelineEntry[]; }
 
 function requiredElement<T extends HTMLElement>(id: string): T {
@@ -54,6 +56,7 @@ const announcer = requiredElement<HTMLElement>("announcer");
 const errorAnnouncer = requiredElement<HTMLElement>("error-announcer");
 const emptyState = requiredElement<HTMLElement>("empty-state");
 const workingStatus = requiredElement<HTMLElement>("working-status");
+const journeyRail = requiredElement<HTMLElement>("journey-rail");
 
 function getThreadId(): string {
   try {
@@ -269,11 +272,22 @@ function isSurfacePayload(value: unknown): value is GuestSurfacePayload {
   return value.conventionalRoute === undefined || isSafeInternalRoute(value.conventionalRoute);
 }
 
+const JOURNEY_STATE_TEXT: Readonly<Record<JourneyStepState, string>> = {
+  done: "completed", current: "current step", failed: "not completed", upcoming: "not started",
+};
+
+function isJourney(value: unknown): value is GuestJourney {
+  if (!isRecord(value) || typeof value.current !== "string" || !Array.isArray(value.steps) || value.steps.length === 0) return false;
+  return value.steps.every((step) => isRecord(step) && typeof step.id === "string" && typeof step.label === "string"
+    && typeof step.state === "string" && step.state in JOURNEY_STATE_TEXT);
+}
+
 function readGuestResponse(value: unknown): GuestResponse {
   if (!isRecord(value) || typeof value.ok !== "boolean") throw new Error("Invalid server response");
   if (value.messages !== undefined && (!Array.isArray(value.messages) || value.messages.some((message) => typeof message !== "string"))) throw new Error("Invalid response messages");
   if (value.receipts !== undefined && (!Array.isArray(value.receipts) || value.receipts.some((receipt) => typeof receipt !== "string"))) throw new Error("Invalid response receipts");
   if (value.surfaces !== undefined && (!Array.isArray(value.surfaces) || value.surfaces.some((surface) => !isSurfacePayload(surface)))) throw new Error("Invalid response surface");
+  if (value.journey !== undefined && !isJourney(value.journey)) throw new Error("Invalid response journey");
   return value as unknown as GuestResponse;
 }
 
@@ -595,6 +609,38 @@ function renderSurfaces(surfaces: readonly GuestSurfacePayload[]): void {
   if (current) acceptSurface(current);
 }
 
+/**
+ * Issue 08: the journey rail mirrors the server's projection; the browser
+ * never advances it. State is spoken as text, not only shown as colour
+ * (ADR-0078). Not announced itself: the conversation log carries the turn.
+ */
+function renderJourney(journey: GuestJourney | undefined): void {
+  if (!journey) return;
+  const list = document.createElement("ol");
+  let current: HTMLElement | undefined;
+  for (const step of journey.steps) {
+    const item = document.createElement("li");
+    item.dataset.step = step.id;
+    item.dataset.state = step.state;
+    const tone = step.state === "failed" ? guestStatusTone(step.label) : undefined;
+    if (tone) item.dataset.tone = tone;
+    item.append(step.label);
+    const state = document.createElement("span");
+    state.className = "sr-only";
+    state.textContent = ` (${JOURNEY_STATE_TEXT[step.state]})`;
+    item.appendChild(state);
+    if (step.state === "current" || step.state === "failed") {
+      if (step.state === "current") item.setAttribute("aria-current", "step");
+      current = item;
+    }
+    list.appendChild(item);
+  }
+  journeyRail.replaceChildren(list);
+  journeyRail.hidden = false;
+  // Keep the current step visible at 320px without scrolling the page.
+  if (current) list.scrollLeft = Math.max(0, current.offsetLeft - list.offsetLeft - list.clientWidth / 2 + current.offsetWidth / 2);
+}
+
 function renderResponse(response: GuestResponse): boolean {
   if (!response.ok) {
     const message = response.message ?? "That action could not be completed.";
@@ -607,6 +653,7 @@ function renderResponse(response: GuestResponse): boolean {
     announce(message, true);
     return false;
   }
+  renderJourney(response.journey);
   for (const message of response.messages ?? []) addTurn("assistant", message);
   if ((response.messages ?? []).length > 0) trackTelemetry("text-response-rendered");
   const surfaces = response.surfaces ?? [];
@@ -619,6 +666,7 @@ function renderResponse(response: GuestResponse): boolean {
 async function refreshServerState(): Promise<void> {
   try {
     const response = await postJson(`/api/state?threadId=${encodeURIComponent(threadId)}`) as GuestStateResponse;
+    if (response.ok) renderJourney(response.journey);
     if (response.ok && response.surfaces && response.surfaces.length > 0) {
       renderSurfaces(response.surfaces);
     }
@@ -754,6 +802,7 @@ async function restoreServerState(): Promise<boolean> {
     const response = await postJson(`/api/state?threadId=${encodeURIComponent(threadId)}`) as GuestStateResponse;
     if (!response.ok || !response.timeline || response.timeline.length === 0) return false;
     for (const entry of response.timeline) addTimelineEntry(entry);
+    renderJourney(response.journey);
     renderSurfaces(response.surfaces ?? []);
     announce("Your conversation has been restored.");
     return true;

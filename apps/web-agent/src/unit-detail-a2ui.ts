@@ -5,9 +5,11 @@ import {
 } from "@weaver/core";
 import { formatNgnKobo, type DiscoveryUnitProjection } from "./discovery-a2ui.js";
 import { unitDetailArtifactFromProjection, type UnitDetailArtifact } from "../../web/src/unit-detail-artifact.js";
-import { GUEST_GLOSSARY, formatGuestDate, guestAmenityLabel, guestInspectionDisclosure, guestOccupancyLabel } from "./guest-content.js";
+import { GUEST_GLOSSARY, GUEST_JOURNEY, formatGuestDate, guestAmenityLabel, guestInspectionDisclosure, guestOccupancyLabel } from "./guest-content.js";
 
 export const REQUEST_TO_BOOK_EVENT = "shortlet.unit-detail.request-to-book";
+/** Issue 08: returns to the results of the same search; the server validates the discovery artifact id. */
+export const BACK_TO_RESULTS_EVENT = "shortlet.unit-detail.back-to-results";
 
 export interface UnitDetailActionContext {
   readonly artifactId: string;
@@ -23,7 +25,12 @@ export interface UnitDetailToA2UIInput {
   readonly action: UnitDetailActionContext;
 }
 
-export function unitDetailArtifactToA2UI({ artifact, surfaceId }: { readonly artifact: UnitDetailArtifact; readonly surfaceId: string }): readonly A2UIServerMessage[] {
+export function unitDetailArtifactToA2UI({ artifact, surfaceId, backToResults }: {
+  readonly artifact: UnitDetailArtifact;
+  readonly surfaceId: string;
+  /** The discovery artifact the Guest came from; omitted when there are no results to return to. */
+  readonly backToResults?: { readonly artifactId: string };
+}): readonly A2UIServerMessage[] {
   const { facts } = artifact;
   const action = artifact.actions.find((candidate) => candidate.type === "request-to-book");
   const prefix = "unit-detail";
@@ -77,10 +84,14 @@ export function unitDetailArtifactToA2UI({ artifact, surfaceId }: { readonly art
     ...(photoIds.length === 0 ? [{ id: `${prefix}-photo-unavailable`, component: "Text" as const, text: "No property photos are available yet.", variant: "caption" as const }] : []),
     ...(inspectionDisclosure ? [{ id: `${prefix}-inspection`, component: "Text" as const, text: inspectionDisclosure, variant: "caption" as const }] : []),
     { id: `${prefix}-disclosure`, component: "Text", text: `Request to Book starts a request for Operator confirmation. Viewing this ${GUEST_GLOSSARY.unit} does not reserve dates or create a Reservation.`, variant: "caption" },
-    { id: `${prefix}-actions`, component: "Row", children: action ? [`${prefix}-request-button`] : [] },
+    { id: `${prefix}-actions`, component: "Row", children: [...(action ? [`${prefix}-request-button`] : []), ...(backToResults ? [`${prefix}-back-button`] : [])] },
     ...(action ? [
       { id: `${prefix}-request-button`, component: "Button" as const, child: `${prefix}-request-label`, variant: "primary" as const, action: { event: { name: REQUEST_TO_BOOK_EVENT, context: { artifactId: action.artifactId, unitId: action.unitId, projectionVersion: action.projectionVersion } } }, accessibility: { label: `Request to Book ${facts.title}` } },
       { id: `${prefix}-request-label`, component: "Text" as const, text: "Request to Book" },
+    ] : []),
+    ...(backToResults ? [
+      { id: `${prefix}-back-button`, component: "Button" as const, child: `${prefix}-back-label`, action: { event: { name: BACK_TO_RESULTS_EVENT, context: { artifactId: backToResults.artifactId } } } },
+      { id: `${prefix}-back-label`, component: "Text" as const, text: GUEST_JOURNEY.backToResults },
     ] : []),
   ];
   return [

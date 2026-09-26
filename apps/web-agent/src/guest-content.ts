@@ -40,6 +40,21 @@ export const GUEST_RECEIPTS = Object.freeze({
   paymentVerified: "Payment verified",
 });
 
+/**
+ * Journey rail step names (issue 08). ADR-0005: "Confirmed" names the verified
+ * Reservation only; every earlier step is a request-to-book stage.
+ */
+export const GUEST_JOURNEY = Object.freeze({
+  railLabel: "Booking progress",
+  search: "Search",
+  stay: "Stay",
+  request: "Request",
+  offer: "Offer",
+  pay: "Pay",
+  confirmed: "Confirmed",
+  backToResults: "Back to results",
+});
+
 export function guestOperatorName(name: string | undefined): string {
   return name?.trim() || GUEST_GLOSSARY.operatorFallback;
 }

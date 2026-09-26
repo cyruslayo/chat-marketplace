@@ -6,11 +6,12 @@ import type { A2UIServerMessage } from "@weaver/core";
 import { LocalGuestEnvironment, type LocalGuestFixtureConfig } from "../../apps/local-guest/src/fixture.js";
 import { startLocalGuestServer, type GuestStateSnapshot, type GuestSurfacePayload, type GuestTurnResult, type GuestTurnSuccess } from "../../apps/local-guest/src/guest-server.js";
 
-export function guestAction(surface: GuestSurfacePayload) {
+/** The surface's first action button, or the one that sends `name`. */
+export function guestAction(surface: GuestSurfacePayload, name?: string) {
   const update = surface.a2uiMessages.find((message): message is Extract<A2UIServerMessage, { updateComponents: unknown }> => "updateComponents" in message);
   assert.ok(update);
   const components = update.updateComponents.components as readonly { component: string; action?: { event?: { name?: unknown; context?: unknown } } }[];
-  const event = components.find((component) => component.component === "Button" && component.action?.event)?.action?.event;
+  const event = components.find((component) => component.component === "Button" && component.action?.event && (name === undefined || component.action.event.name === name))?.action?.event;
   assert.ok(event && typeof event.name === "string" && event.context && typeof event.context === "object");
   return { name: event.name, context: event.context, surfaceId: surface.surfaceId, sourceComponentId: "restart-test", timestamp: new Date().toISOString() };
 }
