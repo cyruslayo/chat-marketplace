@@ -55,6 +55,55 @@ export const GUEST_JOURNEY = Object.freeze({
   backToResults: "Back to results",
 });
 
+export type GuestWaitingKind = "operator-response" | "offer-payment-window" | "payment-window";
+
+export interface GuestWaitingCopy {
+  readonly heading: string;
+  readonly outcomes: readonly string[];
+  readonly meanwhile: readonly string[];
+}
+
+/**
+ * Issue 10: what happens next in each waiting state. Every outcome traces to
+ * an ADR: 0005 (an offer after confirmation; nothing charged or reserved until
+ * verified payment), 0041 (decline or timeout releases the dates), 0044 (the
+ * Payment Window deadline) and 0045 (late payments are refunded). There is no
+ * withdrawal at launch; the free exit is leaving the offer unaccepted
+ * (decision approved 25 Sept 2026).
+ */
+export function guestWaitingCopy(kind: GuestWaitingKind, operatorName: string | undefined): GuestWaitingCopy {
+  const operator = guestOperatorName(operatorName);
+  const keepChatting = "You can keep chatting here while you wait.";
+  if (kind === "operator-response") {
+    return {
+      heading: `Waiting for ${operator} to respond`,
+      outcomes: [
+        `If ${operator} confirms, you'll get a ${GUEST_GLOSSARY.conditionalBookingOffer} to review and accept.`,
+        `If ${operator} declines, no payment is due and you can search again.`,
+        "If there's no response by the deadline, the request expires and the dates are released.",
+      ],
+      meanwhile: [
+        "Nothing is charged until you accept an offer and pay.",
+        "If you change your mind, you can leave the offer unaccepted. When it expires, the dates are released.",
+        keepChatting,
+      ],
+    };
+  }
+  const outcomes = [
+    "If payment is verified before the deadline, you'll get your booking confirmation.",
+    "If the deadline passes, the Payment Window expires and the dates are released.",
+    "A payment that completes after the deadline is refunded and doesn't confirm the booking.",
+  ];
+  if (kind === "offer-payment-window") {
+    return {
+      heading: "Time left to accept and pay",
+      outcomes,
+      meanwhile: ["Nothing is charged until you accept this offer and pay. If you leave it unaccepted, it expires at the deadline.", keepChatting],
+    };
+  }
+  return { heading: "Time left to pay", outcomes, meanwhile: [keepChatting] };
+}
+
 export function guestOperatorName(name: string | undefined): string {
   return name?.trim() || GUEST_GLOSSARY.operatorFallback;
 }

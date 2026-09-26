@@ -32,6 +32,16 @@ interface GuestSurfacePayload {
   readonly textFallback?: string;
   readonly conventionalRoute?: string;
   readonly conventionalRouteLabel?: string;
+  readonly waiting?: GuestWaitingState;
+}
+interface GuestWaitingState {
+  readonly kind: string;
+  readonly heading: string;
+  readonly deadlineAt: string;
+  readonly deadlineText: string;
+  readonly serverNow: string;
+  readonly outcomes: readonly string[];
+  readonly meanwhile: readonly string[];
 }
 interface GuestTimelineEntry { readonly role: "assistant" | "user" | "receipt"; readonly text: string; }
 type JourneyStepState = "done" | "current" | "failed" | "upcoming";
@@ -262,6 +272,19 @@ function isSafeInternalRoute(value: unknown): value is string {
   try { return new URL(value, window.location.origin).origin === window.location.origin; } catch { return false; }
 }
 
+function isStringList(value: unknown): value is readonly string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function isWaitingState(value: unknown): value is GuestWaitingState {
+  return isRecord(value)
+    && ["operator-response", "offer-payment-window", "payment-window"].includes(String(value.kind))
+    && typeof value.heading === "string" && typeof value.deadlineText === "string"
+    && typeof value.deadlineAt === "string" && Number.isFinite(Date.parse(value.deadlineAt))
+    && typeof value.serverNow === "string" && Number.isFinite(Date.parse(value.serverNow))
+    && isStringList(value.outcomes) && isStringList(value.meanwhile);
+}
+
 function isSurfacePayload(value: unknown): value is GuestSurfacePayload {
   if (!isRecord(value) || typeof value.surfaceId !== "string" || value.surfaceId.trim() === "" || !Array.isArray(value.a2uiMessages)) return false;
   if (value.mode !== undefined && value.mode !== "text" && value.mode !== "inline-surface" && value.mode !== "focused-surface") return false;
@@ -269,6 +292,7 @@ function isSurfacePayload(value: unknown): value is GuestSurfacePayload {
   if (value.summary !== undefined && typeof value.summary !== "string") return false;
   if (value.textFallback !== undefined && typeof value.textFallback !== "string") return false;
   if (value.conventionalRouteLabel !== undefined && typeof value.conventionalRouteLabel !== "string") return false;
+  if (value.waiting !== undefined && !isWaitingState(value.waiting)) return false;
   return value.conventionalRoute === undefined || isSafeInternalRoute(value.conventionalRoute);
 }
 
@@ -460,7 +484,91 @@ function enhanceGuestContactField(mount: HTMLElement): void {
   new MutationObserver(synchronize).observe(mount, { childList: true, subtree: true, characterData: true });
 }
 
+let countdownTimer: ReturnType<typeof setInterval> | undefined;
+let lastWaitingRefetch = Number.NEGATIVE_INFINITY;
+const WAITING_REFETCH_GAP_MS = 5_000;
+
+function stopCountdown(): void {
+  if (countdownTimer !== undefined) clearInterval(countdownTimer);
+  countdownTimer = undefined;
+}
+
+function formatRemaining(ms: number): string {
+  if (ms <= 0) return "Checking the latest status…";
+  const minutes = Math.ceil(ms / 60_000);
+  if (minutes <= 1) return "Less than 1 min left";
+  return minutes < 60 ? `${minutes} min left` : `${Math.floor(minutes / 60)} h ${minutes % 60} min left`;
+}
+
+/**
+ * Issue 10 AC2 / ADR-0079: at zero the browser asks the server for the
+ * authoritative state; it never marks anything expired itself. Refetches are
+ * spaced so a deadline on the boundary cannot loop.
+ */
+function refetchWaitingState(): void {
+  const wait = Math.max(0, WAITING_REFETCH_GAP_MS - (performance.now() - lastWaitingRefetch));
+  setTimeout(() => {
+    lastWaitingRefetch = performance.now();
+    void refreshServerState();
+  }, wait);
+}
+
+/**
+ * Issue 10 AC1: the remaining time is the server's deadline minus the
+ * server's own clock, then counted down with the monotonic clock. Changing
+ * the device clock moves neither the countdown nor the displayed deadline.
+ */
+function startCountdown(waiting: GuestWaitingState, output: HTMLElement): void {
+  stopCountdown();
+  const remainingAtReceipt = Date.parse(waiting.deadlineAt) - Date.parse(waiting.serverNow);
+  const receivedAt = performance.now();
+  const tick = (): void => {
+    const remaining = remainingAtReceipt - (performance.now() - receivedAt);
+    output.textContent = formatRemaining(remaining);
+    if (remaining <= 0) {
+      stopCountdown();
+      refetchWaitingState();
+    }
+  };
+  tick();
+  if (remainingAtReceipt > 0) countdownTimer = setInterval(tick, 1_000);
+}
+
+function renderWaiting(waiting: GuestWaitingState): HTMLElement {
+  const panel = document.createElement("section");
+  panel.className = "waiting-panel";
+  panel.dataset.waiting = waiting.kind;
+  panel.setAttribute("aria-label", waiting.heading);
+  const heading = document.createElement("h3");
+  heading.textContent = waiting.heading;
+  const deadline = document.createElement("p");
+  deadline.className = "waiting-deadline";
+  const absolute = document.createElement("span");
+  absolute.className = "waiting-deadline-time";
+  absolute.textContent = waiting.deadlineText;
+  const countdown = document.createElement("span");
+  countdown.className = "waiting-countdown";
+  deadline.append(absolute, " · ", countdown);
+  const nextLabel = document.createElement("p");
+  nextLabel.className = "waiting-label";
+  nextLabel.textContent = "What happens next";
+  const list = (items: readonly string[], className: string): HTMLElement => {
+    const element = document.createElement("ul");
+    element.className = className;
+    for (const item of items) {
+      const entry = document.createElement("li");
+      entry.textContent = item;
+      element.appendChild(entry);
+    }
+    return element;
+  };
+  panel.append(heading, deadline, nextLabel, list(waiting.outcomes, "waiting-outcomes"), list(waiting.meanwhile, "waiting-meanwhile"));
+  startCountdown(waiting, countdown);
+  return panel;
+}
+
 function renderSurface(surface: GuestSurfacePayload, moveFocus = false): void {
+  stopCountdown();
   const presentation = presentationFor(surface);
   composerForm.dataset.focused = presentation.mode === "focused-surface" ? "true" : "false";
   activePayload = surface;
@@ -516,6 +624,7 @@ function renderSurface(surface: GuestSurfacePayload, moveFocus = false): void {
     state.textContent = statusMessage;
     activeWorkspace.appendChild(state);
   }
+  if (surface.waiting && presentation.status === "active") activeWorkspace.appendChild(renderWaiting(surface.waiting));
 
   const mount = document.createElement("div");
   mount.className = "weaver-mount";
@@ -808,5 +917,10 @@ async function restoreServerState(): Promise<boolean> {
     return true;
   } catch { return false; }
 }
+
+// Issue 10: a tab that was hidden may have missed its deadline; ask the server.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && activePayload?.waiting) void refreshServerState();
+});
 
 void restoreServerState();
