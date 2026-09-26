@@ -1740,17 +1740,27 @@ export class LocalGuestApp {
     const now = this.#environment.clock();
     const facts = extractStayRequestFacts(text, { now });
     if (facts.location !== undefined) return null;
-    const merged = mergeStayRequestContext(thread.draftChangeContext ?? thread.discoveryContext, facts, text);
+    // A date check lasts one turn, as its reply says: "yes", or different
+    // dates. Any other turn drops it, so a later change never builds on
+    // dates the Guest didn't confirm.
+    const pendingDates = thread.draftChangeContext;
+    thread.draftChangeContext = null;
+    const onPending = pendingDates === null ? null : mergeStayRequestContext(pendingDates, facts, text);
+    const merged = onPending !== null && (onPending.confirmedDates === true || facts.dates !== undefined)
+      ? onPending
+      : mergeStayRequestContext(thread.discoveryContext, facts, text);
     const changed = facts.nights !== undefined || facts.partySize !== undefined || facts.dates !== undefined || merged.confirmedDates === true;
     if (!changed || merged.conflict) return null;
     const unchanged = "Your Request Draft is unchanged.";
     const resolution = resolveStayRequestContext(merged.context, { now });
     if (resolution.kind === "confirm") {
-      // Issue 01: relative dates are confirmed before anything is quoted.
+      // Issue 01: relative dates are confirmed before anything is quoted. The
+      // wording is the discovery check's, but "yes" updates the draft here.
       thread.draftChangeContext = merged.context;
-      return { ok: true, messages: [resolution.reply, unchanged], surfaces: [] };
+      const { checkIn, checkOut, partySize } = resolution.filters;
+      const nights = Math.round((Date.parse(`${checkOut}T00:00:00Z`) - Date.parse(`${checkIn}T00:00:00Z`)) / 86_400_000);
+      return { ok: true, messages: [`Just to check: arriving ${formatGuestDay(checkIn)} and leaving ${formatGuestDay(checkOut)} (${nights} ${nights === 1 ? "night" : "nights"}), ${partySize} ${partySize === 1 ? "guest" : "guests"}. Shall I show your Request Draft with these dates? Reply "yes", or tell me different dates.`, unchanged], surfaces: [] };
     }
-    thread.draftChangeContext = null;
     // The 14-night and 90-day refusals are the discovery ones, unchanged.
     if (resolution.kind !== "search") return { ok: true, messages: [resolution.reply, unchanged], surfaces: [] };
     const draft = this.#environment.bookingRequestApp.manager.getDraft(thread.draftId);

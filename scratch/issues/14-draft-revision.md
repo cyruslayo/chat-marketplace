@@ -74,3 +74,7 @@ AC numbers are kept from the parent issue for traceability.
   - One failure was the M3 test above, now updated and passing.
   - The other was `pilot-local` AC4 (`spawnSync ETIMEDOUT`), which is known-flaky and passed when rerun alone.
   - Walkthrough on :3001 at 375px and 1280px: Lekki, 2 → 3 nights (₦135,000 → ₦200,000), accept, then the new 3-night draft.
+- **Review fixes (M4 review, 26 Sept 2026).**
+  - A date check on a draft now lasts one turn: "yes" or different dates. Any other turn drops it. Before, "no" followed by "make it 4 nights" re-asked about the unconfirmed Friday.
+  - The check now reads "Shall I show your Request Draft with these dates?" instead of offering a search, because "yes" updates the draft.
+  - Tests: an unconfirmed date check is dropped; different dates are used; the check's wording.
