@@ -72,6 +72,7 @@ import {
 } from "./guest-projection.js";
 import { hashSessionSecret } from "../../../domains/shortlet/src/index.js";
 import { DirectPaystackClient, isApprovedPaystackCheckoutUrl, loadPaystackConfiguration, type PaystackClient } from "../../../domains/shortlet/src/index.js";
+import { applyCriteriaEdit, searchAreaFor, SEARCH_AREAS, type CriteriaEdit } from "./concierge.js";
 import { amenityQuestions, extractStayRequestFacts, formatGuestDay, mergeStayRequestContext, resolveStayRequestContext, stayChangeRequested, unsupportedPreferenceNote, type DiscoverySearchContext, type StayRequestFilters } from "./concierge.js";
 import { handleGeminiTurn, type GeminiConciergeClient } from "./gemini-concierge.js";
 import type { Content } from "@google/genai";
@@ -127,6 +128,7 @@ export interface GuestStateSnapshot {
   readonly surfaces: readonly GuestSurfacePayload[];
   /** Issue 08: the journey rail, derived from authoritative state on every read. */
   readonly journey?: GuestJourney;
+  readonly criteria?: GuestCriteria;
 }
 
 export interface GuestTurnSuccess {
@@ -136,6 +138,21 @@ export interface GuestTurnSuccess {
   readonly receipts?: readonly string[];
   readonly surfaces: readonly GuestSurfacePayload[];
   readonly journey?: GuestJourney;
+  readonly criteria?: GuestCriteria;
+}
+
+/**
+ * Issue 03a: the server's current search criteria for the strip (ADR-0004).
+ * `key` fingerprints them; an edit based on other criteria fails closed.
+ */
+export interface GuestCriteria {
+  readonly key: string;
+  readonly editable: boolean;
+  readonly canUndo: boolean;
+  readonly where?: { readonly area?: string; readonly label: string };
+  readonly when?: { readonly checkIn?: string; readonly nights?: number; readonly label: string };
+  readonly guests?: { readonly count: number; readonly label: string };
+  readonly areas: readonly { readonly id: string; readonly label: string }[];
 }
 
 export interface GuestRejection {
@@ -182,6 +199,38 @@ const GUEST_PHONE_SUBMIT_EVENT = "shortlet.guest-contact.submit-phone";
 const GUEST_EMAIL_SUBMIT_EVENT = "shortlet.guest-contact.submit-email";
 
 const PENDING_ACTION_STAGE = "pending_action";
+/** Issue 03a: the criteria strip is shell chrome with one server-known id per thread. */
+const CRITERIA_STAGE = "criteria";
+export const CRITERIA_EDIT_EVENT = "shortlet.criteria.edit";
+export const CRITERIA_UNDO_EVENT = "shortlet.criteria.undo";
+const MAX_SEARCH_HISTORY = 11;
+
+export function criteriaSurfaceId(threadId: string): string {
+  return `thread-${threadId}:criteria`;
+}
+
+function criteriaKey(context: DiscoverySearchContext | null): string {
+  return JSON.stringify([context?.city ?? null, context?.neighbourhood ?? null, context?.checkIn ?? null, context?.nights ?? null,
+    context?.datesConfirmed ?? null, context?.partySize ?? null, context?.bedrooms ?? null, context?.pendingLocationChange?.label ?? null]);
+}
+
+const CALENDAR_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 1;
+}
+
+/** Reads one strip edit; anything but the exact expected shape fails closed (ADR-0072). */
+function readCriteriaEdit(context: Readonly<Record<string, unknown>>): CriteriaEdit | null {
+  const keys = Object.keys(context).sort().join(",");
+  if (context.field === "where" && keys === "area,basedOn,field" && typeof context.area === "string") return { field: "where", area: context.area };
+  if (context.field === "when" && keys === "basedOn,checkIn,field,nights" && typeof context.checkIn === "string" && CALENDAR_DATE.test(context.checkIn)
+    && !Number.isNaN(Date.parse(`${context.checkIn}T00:00:00Z`)) && new Date(`${context.checkIn}T00:00:00Z`).toISOString().startsWith(context.checkIn) && isPositiveInteger(context.nights)) {
+    return { field: "when", checkIn: context.checkIn, nights: context.nights };
+  }
+  if (context.field === "guests" && keys === "basedOn,field,partySize" && isPositiveInteger(context.partySize)) return { field: "guests", partySize: context.partySize };
+  return null;
+}
 const SHELL_TELEMETRY_EVENTS = [
   "text-response-rendered", "inline-surface-rendered", "focused-surface-opened", "focused-surface-closed",
   "surface-replaced", "stale-surface-encountered", "expired-surface-encountered", "fallback-rendered",
@@ -205,6 +254,8 @@ const EVENT_STAGE_ALLOW_LIST: Readonly<Record<string, string>> = Object.freeze({
   [REQUEST_DRAFT_SUBMIT_EVENT]: REQUEST_STAGE,
   [GUEST_PHONE_SUBMIT_EVENT]: REQUEST_STAGE,
   [GUEST_EMAIL_SUBMIT_EVENT]: PAYMENT_STAGE,
+  [CRITERIA_EDIT_EVENT]: CRITERIA_STAGE,
+  [CRITERIA_UNDO_EVENT]: CRITERIA_STAGE,
   [ASSISTANT_CONFIRM_ACTION_EVENT]: PENDING_ACTION_STAGE,
   [ASSISTANT_CANCEL_ACTION_EVENT]: PENDING_ACTION_STAGE,
 });
@@ -231,6 +282,8 @@ interface GuestThreadState {
   geminiLastSearch: { readonly surfaceId: string; readonly a2uiMessages: readonly A2UIServerMessage[] } | null;
   timeline: GuestTimelineEntry[];
   lastSurfaces: GuestSurfacePayload[];
+  /** Issue 03a: the criteria of each executed search, oldest first (for "Undo last change"). */
+  searchHistory: DiscoverySearchContext[];
 }
 
 export class LocalGuestApp {
@@ -435,7 +488,12 @@ export class LocalGuestApp {
    * publishes its DiscoveryArtifact through the existing A2UI/Weaver surface.
    * The conversational layer never manufactures Units, prices or availability.
    */
-  #executeDiscovery(thread: GuestThreadState, filters: StayRequestFilters): GuestTurnResult {
+  #executeDiscovery(thread: GuestThreadState, filters: StayRequestFilters, options: { readonly recordHistory?: boolean } = {}): GuestTurnResult {
+    if (options.recordHistory !== false && thread.discoveryContext) {
+      thread.searchHistory.push({ ...thread.discoveryContext });
+      // A storage bound for the durable projection, not a Guest-facing policy.
+      if (thread.searchHistory.length > MAX_SEARCH_HISTORY) thread.searchHistory.splice(0, thread.searchHistory.length - MAX_SEARCH_HISTORY);
+    }
     this.#prepareDiscovery(thread);
     const adapter = createWeaverWebAgentAdapter({
       query: { search: (query) => this.#environment.discoveryQuery.search(query) },
@@ -538,6 +596,8 @@ export class LocalGuestApp {
     if (!stage) {
       return { ok: false, code: "UNSUPPORTED_EVENT", message: "That action is not available." };
     }
+    // The strip exists once the thread has criteria; its freshness is checked by `basedOn`.
+    if (stage === CRITERIA_STAGE && thread.discoveryContext) thread.activeSurfaces.set(CRITERIA_STAGE, criteriaSurfaceId(thread.threadId));
     const activeSurfaceId = thread.activeSurfaces.get(stage);
     if (!activeSurfaceId || activeSurfaceId !== event.surfaceId) {
       const duplicate = event.name === "shortlet.card-payment.verify-return" && thread.activeSurfaces.has(BOOKING_STAGE);
@@ -563,6 +623,10 @@ export class LocalGuestApp {
         return this.#handleRequestToBook(thread, event);
       case BACK_TO_RESULTS_EVENT:
         return this.#handleBackToResults(thread, event);
+      case CRITERIA_EDIT_EVENT:
+        return this.#handleCriteriaEdit(thread, event);
+      case CRITERIA_UNDO_EVENT:
+        return this.#handleCriteriaUndo(thread, event);
       case "shortlet.conditional-offer.accept":
         return this.#handleOfferAccept(thread, event);
       case "shortlet.card-payment.initialize-checkout":
@@ -674,12 +738,14 @@ export class LocalGuestApp {
       this.#emitTransition(thread, "interaction.cross_tab_recovery_occurred", { aggregateType: "interaction_thread", aggregateId: threadId });
     }
     const journey = this.#journeyFor(thread);
+    const criteria = this.#criteriaFor(thread);
     return {
       ok: true,
       threadId,
       timeline: [...thread.timeline],
       surfaces: this.#withWaiting(thread, normalized.surfaces),
       ...(journey === undefined ? {} : { journey }),
+      ...(criteria === undefined ? {} : { criteria }),
     };
   }
 
@@ -692,8 +758,9 @@ export class LocalGuestApp {
     const thread = this.#threads.get(threadId);
     if (!thread) return result;
     const journey = this.#journeyFor(thread);
+    const criteria = this.#criteriaFor(thread);
     const surfaces = this.#withWaiting(thread, result.surfaces);
-    return { ...result, surfaces, ...(journey === undefined ? {} : { journey }) };
+    return { ...result, surfaces, ...(journey === undefined ? {} : { journey }), ...(criteria === undefined ? {} : { criteria }) };
   }
 
   #withWaiting(thread: GuestThreadState, surfaces: readonly GuestSurfacePayload[]): GuestSurfacePayload[] {
@@ -833,6 +900,7 @@ export class LocalGuestApp {
       offerId: thread.offerId,
       activeStage,
       activeSurfaceId: current?.surfaceId ?? null,
+      searchHistory: thread.searchHistory.map((context) => ({ ...context })),
     };
   }
 
@@ -898,6 +966,7 @@ export class LocalGuestApp {
       geminiLastSearch: null,
       timeline: projection.timeline.map(({ role, text }) => ({ role, text })),
       lastSurfaces: [],
+      searchHistory: projection.searchHistory.map((context) => ({ ...context })),
     };
     this.#threads.set(threadId, thread);
     const restored = this.#restoreCurrentSurface(thread, projection);
@@ -1090,6 +1159,7 @@ export class LocalGuestApp {
       geminiLastSearch: null,
       timeline: [],
       lastSurfaces: [],
+      searchHistory: [],
     };
     this.#threads.set(threadId, thread);
     return thread;
@@ -1284,6 +1354,85 @@ export class LocalGuestApp {
     } catch {
       return false;
     }
+  }
+
+  /** Fails closed unless the edit is based on the criteria the server holds now. */
+  #criteriaGuard(thread: GuestThreadState, event: GuestEventPayload): GuestRejection | null {
+    if (thread.requestId || thread.offerId) {
+      // ADR-0005: a sent Booking Request is never changed by a search edit.
+      const stage = this.#guestStage(thread);
+      const explained = stage === "request" || stage === "offer" || stage === "payment" || stage === "booking" ? stage : "request";
+      return { ok: false, code: "CRITERIA_LOCKED", message: this.#changeExplanation(explained, this.#currentUnit(thread)) };
+    }
+    if (!event.context || event.context.basedOn !== criteriaKey(thread.discoveryContext)) {
+      return { ok: false, code: "STALE_SURFACE", message: "Your search has changed since this was opened. Check the current search and try again." };
+    }
+    return null;
+  }
+
+  /**
+   * Issue 03a AC2/AC3: one strip edit. The server applies it to its own
+   * criteria and re-runs the authoritative search (ADR-0004); an edit that
+   * breaks a stay limit is refused with the limit and changes nothing.
+   */
+  #handleCriteriaEdit(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
+    const guard = this.#criteriaGuard(thread, event);
+    if (guard) return guard;
+    const edit = readCriteriaEdit(event.context ?? {});
+    const next = edit === null ? null : applyCriteriaEdit(thread.discoveryContext, edit);
+    if (next === null) return { ok: false, code: "INVALID_CRITERIA", message: "That change could not be applied. Check the value and try again." };
+    const resolution = resolveStayRequestContext(next, { now: this.#environment.clock() });
+    if (resolution.kind === "refuse") return { ok: false, code: "CRITERIA_REJECTED", message: resolution.reply };
+    thread.discoveryContext = next;
+    if (resolution.kind !== "search") return { ok: true, messages: [resolution.reply], surfaces: [] };
+    return this.#executeDiscovery(thread, resolution.filters);
+  }
+
+  /** Issue 03a AC4: restores the previous search's criteria and re-runs it. */
+  #handleCriteriaUndo(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
+    const guard = this.#criteriaGuard(thread, event);
+    if (guard) return guard;
+    if (Object.keys(event.context ?? {}).length !== 1) return { ok: false, code: "INVALID_CRITERIA", message: "That change could not be applied. Check the value and try again." };
+    const previous = thread.searchHistory.at(-2);
+    if (!previous) return { ok: false, code: "NOTHING_TO_UNDO", message: "There is no earlier search to go back to." };
+    const resolution = resolveStayRequestContext(previous, { now: this.#environment.clock() });
+    // Dates that have since passed are refused like any other edit.
+    if (resolution.kind !== "search") return { ok: false, code: "CRITERIA_REJECTED", message: resolution.reply };
+    thread.searchHistory.pop();
+    thread.discoveryContext = { ...previous };
+    const result = this.#executeDiscovery(thread, resolution.filters, { recordHistory: false });
+    return result.ok ? { ...result, messages: ["I've undone your last change.", ...result.messages] } : result;
+  }
+
+  /** Issue 03a AC1: the strip mirrors the server's criteria after every response. */
+  #criteriaFor(thread: GuestThreadState): GuestCriteria | undefined {
+    const context = thread.discoveryContext;
+    if (!context) return undefined;
+    const area = searchAreaFor(context);
+    const where = context.city === undefined ? undefined : {
+      ...(area === undefined ? {} : { area: area.id }),
+      label: area?.label ?? [context.neighbourhood, context.city].filter(Boolean).join(", "),
+    };
+    const nights = context.nights;
+    const nightsLabel = nights === undefined ? "" : `${nights} ${nights === 1 ? "night" : "nights"}`;
+    const checkOut = context.checkIn !== undefined && nights !== undefined
+      ? new Date(Date.parse(`${context.checkIn}T00:00:00Z`) + nights * 86_400_000).toISOString().slice(0, 10) : undefined;
+    const whenLabel = context.checkIn !== undefined && checkOut !== undefined ? `${formatStayDates(context.checkIn, checkOut)} · ${nightsLabel}`
+      : context.checkIn !== undefined ? `From ${formatGuestDay(context.checkIn)}` : nightsLabel;
+    const when = whenLabel === "" ? undefined : {
+      ...(context.checkIn === undefined ? {} : { checkIn: context.checkIn }),
+      ...(nights === undefined ? {} : { nights }),
+      label: context.checkIn !== undefined && context.datesConfirmed !== true ? `${whenLabel} (to confirm)` : whenLabel,
+    };
+    const guests = context.partySize === undefined ? undefined : { count: context.partySize, label: `${context.partySize} ${context.partySize === 1 ? "guest" : "guests"}` };
+    if (!where && !when && !guests) return undefined;
+    return {
+      key: criteriaKey(context),
+      editable: !thread.requestId && !thread.offerId,
+      canUndo: thread.searchHistory.length >= 2 && !thread.requestId && !thread.offerId,
+      ...(where ? { where } : {}), ...(when ? { when } : {}), ...(guests ? { guests } : {}),
+      areas: SEARCH_AREAS.map(({ id, label }) => ({ id, label })),
+    };
   }
 
   #handleRequestToBook(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
@@ -1959,6 +2108,23 @@ export function renderGuestShellHtml(): string {
     .guest-field-error { margin: var(--space-2) 0 !important; color: var(--color-danger); }
     #workspace-reopen { margin: 0 var(--layout-gutter-mobile) var(--space-4); width: calc(100% - 2 * var(--layout-gutter-mobile)); justify-content: flex-start; text-align: start; }
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+    /* Issue 03a: the criteria strip sits above the composer; chips wrap, never scroll the page (ADR-0078). */
+    #criteria-strip { display: grid; gap: var(--space-2); padding: var(--space-2) var(--layout-gutter-mobile) 0; border-top: 1px solid var(--border); background: var(--surface); }
+    #criteria-strip[hidden], #criteria-editor[hidden] { display: none; }
+    .criteria-chips { display: flex; flex-wrap: wrap; gap: var(--space-2); min-width: 0; }
+    .criteria-chip { position: relative; min-height: var(--control-min-target); max-width: 100%; overflow-wrap: anywhere; text-align: start; }
+    /* Narrow screens keep the field names for screen readers only, so the strip stays short. */
+    @media (max-width: 29.999rem) { .criteria-chip { padding-inline: var(--space-2); font-size: var(--font-size-small); } .criteria-chip .criteria-chip-name { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } }
+    .criteria-chip .criteria-chip-name { color: var(--color-text-secondary); font-weight: 400; }
+    .criteria-chip[aria-expanded="true"] { border-color: var(--color-action); }
+    .criteria-undo { min-height: var(--control-min-target); padding-inline: var(--space-2); border: 0; background: none; color: var(--accent); font-weight: 650; text-decoration: underline; cursor: pointer; }
+    #criteria-editor { display: grid; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--color-surface-elevated); }
+    #criteria-editor .ui-field { display: grid; gap: var(--space-1); min-width: 0; }
+    #criteria-editor input, #criteria-editor select { width: 100%; min-width: 0; min-height: var(--control-min-field); }
+    .criteria-editor-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+    .criteria-editor-actions button { min-height: var(--control-min-target); }
+    .criteria-status { margin: 0; color: var(--color-danger); font-size: var(--font-size-small); }
+    .criteria-status:empty { display: none; }
     form#composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: var(--space-2); padding: var(--space-2) var(--layout-gutter-mobile) max(var(--space-4), env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: var(--surface); position: sticky; bottom: 0; z-index: 10; }
     #composer-label { grid-column: 1 / -1; color: var(--color-text-secondary); font-size: var(--font-size-small); line-height: var(--font-line-small); font-weight: 600; }
     #composer-input { min-width: 0; width: 100%; min-height: var(--control-min-field); padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-control); font-size: 1rem; background: var(--bg); color: var(--text); }
@@ -1970,12 +2136,12 @@ export function renderGuestShellHtml(): string {
     #composer-submit:disabled { background: var(--surface-soft); cursor: progress; }
     #working-status { grid-column: 1 / -1; margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-small); }
     @media (min-width: 48rem) {
-      #transcript, #workspace-region, form#composer, #journey-rail { padding-left: var(--layout-gutter-tablet); padding-right: var(--layout-gutter-tablet); }
+      #transcript, #workspace-region, form#composer, #journey-rail, #criteria-strip { padding-left: var(--layout-gutter-tablet); padding-right: var(--layout-gutter-tablet); }
       .stay-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .unit-gallery--mosaic { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .unit-gallery--mosaic img:first-of-type { grid-column: 1 / -1; }
     }
-    @media (min-width: 64rem) { .app { max-width: var(--layout-conversation-max); } #transcript, #workspace-region, form#composer, #journey-rail { padding-left: var(--layout-gutter-desktop); padding-right: var(--layout-gutter-desktop); } }
+    @media (min-width: 64rem) { .app { max-width: var(--layout-conversation-max); } #transcript, #workspace-region, form#composer, #journey-rail, #criteria-strip { padding-left: var(--layout-gutter-desktop); padding-right: var(--layout-gutter-desktop); } }
     @media (max-width: 47.999rem) { .header-note { display: none; } #active-workspace[data-mode="focused-surface"] { scroll-margin-block: var(--space-3); } }
     @media (max-height: 520px) { header { position: static; } #transcript { min-height: 0; } form#composer { position: sticky; } }
     @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; } }
@@ -2009,6 +2175,11 @@ export function renderGuestShellHtml(): string {
     </main>
     <div id="announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
     <div id="error-announcer" class="sr-only" role="alert" aria-live="assertive" aria-atomic="true"></div>
+    <section id="criteria-strip" aria-label="Your search" hidden>
+      <div class="criteria-chips"></div>
+      <form id="criteria-editor" hidden novalidate></form>
+      <p id="criteria-status" class="criteria-status" role="alert"></p>
+    </section>
     <form id="composer" method="post" action="/conversation" aria-label="Message the concierge">
       <input type="hidden" name="threadId" value="" />
       <label id="composer-label" for="composer-input">Your message</label>
@@ -2124,7 +2295,13 @@ export function parseConventionalSearchQuery(params: URLSearchParams): Readonly<
   const filters: Record<string, string | number> = {};
   for (const [key, value] of params) {
     if (Object.hasOwn(filters, key) || value.trim() === "") return null;
-    if ((SEARCH_TEXT_KEYS as readonly string[]).includes(key)) filters[key] = value.trim();
+    if (key === "area") {
+      // Issue 03a / ADR-0080: the search form's Where field, from the same list as the strip.
+      const area = SEARCH_AREAS.find((candidate) => candidate.id === value);
+      if (!area || params.has("location") || params.has("neighbourhood") || params.getAll("area").length > 1) return null;
+      filters.location = area.city;
+      if (area.neighbourhood !== undefined) filters.neighbourhood = area.neighbourhood;
+    } else if ((SEARCH_TEXT_KEYS as readonly string[]).includes(key)) filters[key] = value.trim();
     else if ((SEARCH_COUNT_KEYS as readonly string[]).includes(key) && /^\d{1,3}$/.test(value)) filters[key] = Number(value);
     else return null;
   }
@@ -2140,10 +2317,20 @@ export function renderConventionalSearchHtml(artifact: DiscoveryArtifactProjecti
   const { checkIn, checkOut } = artifact.facts.filters;
   const stay = typeof checkIn === "string" && typeof checkOut === "string" ? formatStayDates(checkIn, checkOut) : "";
   const summary = [discoverySummary(artifact.facts.filters).replace(/^Search updated( · )?/, ""), stay].filter(Boolean).join(" · ");
+  const filters = artifact.facts.filters as Readonly<Record<string, unknown>>;
+  const currentArea = SEARCH_AREAS.find((area) => area.city === filters.location && area.neighbourhood === filters.neighbourhood)?.id;
+  const text = (value: unknown): string => typeof value === "string" ? escapeHtml(value) : "";
+  // Issue 03a / ADR-0080: the strip's Where, When and Guests, editable without JavaScript.
+  const form = `<form class="ui-panel search-form" method="get" action="/stays/search" aria-label="Change your search">`
+    + `<div class="ui-field"><label class="ui-field__label" for="search-area">Where</label><select class="ui-input" id="search-area" name="area" required>${SEARCH_AREAS.map((area) => `<option value="${area.id}"${area.id === currentArea ? " selected" : ""}>${escapeHtml(area.label)}</option>`).join("")}</select></div>`
+    + `<div class="ui-field"><label class="ui-field__label" for="search-check-in">Arrival date</label><input class="ui-input" id="search-check-in" name="checkIn" type="date" required value="${text(filters.checkIn)}"></div>`
+    + `<div class="ui-field"><label class="ui-field__label" for="search-check-out">Departure date</label><input class="ui-input" id="search-check-out" name="checkOut" type="date" required value="${text(filters.checkOut)}"></div>`
+    + `<div class="ui-field"><label class="ui-field__label" for="search-guests">Guests</label><input class="ui-input" id="search-guests" name="partySize" type="number" min="1" inputmode="numeric" required value="${typeof filters.partySize === "number" ? filters.partySize : ""}"></div>`
+    + `<button class="ui-button ui-button--primary" type="submit">Update search</button></form>`;
   return pageShell({
     title: "Search results · Shortlet",
-    style: ".stay-results{list-style:none;margin:0;padding:0;display:grid;gap:var(--space-3)}.stay-results h2{margin:0;font-size:var(--font-size-h3);line-height:var(--font-line-h3)}.stay-results p{margin:0}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}",
-    body: `<header class="ui-page__header" data-page="stay-search"><p class="ui-eyebrow">Search results</p><h1>${escapeHtml(discoveryFallbackMessage(artifact))}</h1>${summary ? `<p>${escapeHtml(summary)}</p>` : ""}</header>${cards ? `<ul class="stay-results">${cards}</ul>` : ""}<p><a class="ui-button ui-button--primary" href="/">Back to your conversation</a></p>`,
+    style: ".search-form{display:grid;gap:var(--space-3)}.stay-results{list-style:none;margin:0;padding:0;display:grid;gap:var(--space-3)}.stay-results h2{margin:0;font-size:var(--font-size-h3);line-height:var(--font-line-h3)}.stay-results p{margin:0}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}",
+    body: `<header class="ui-page__header" data-page="stay-search"><p class="ui-eyebrow">Search results</p><h1>${escapeHtml(discoveryFallbackMessage(artifact))}</h1>${summary ? `<p>${escapeHtml(summary)}</p>` : ""}</header>${form}${cards ? `<ul class="stay-results">${cards}</ul>` : ""}<p><a class="ui-button ui-button--primary" href="/">Back to your conversation</a></p>`,
   });
 }
 

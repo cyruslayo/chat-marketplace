@@ -46,7 +46,16 @@ interface GuestWaitingState {
 interface GuestTimelineEntry { readonly role: "assistant" | "user" | "receipt"; readonly text: string; }
 type JourneyStepState = "done" | "current" | "failed" | "upcoming";
 interface GuestJourney { readonly current: string; readonly steps: readonly { readonly id: string; readonly label: string; readonly state: JourneyStepState }[]; }
-interface GuestResponse { readonly ok: boolean; readonly code?: string; readonly message?: string; readonly messages?: readonly string[]; readonly receipts?: readonly string[]; readonly surfaces?: readonly GuestSurfacePayload[]; readonly journey?: GuestJourney; }
+interface GuestCriteria {
+  readonly key: string;
+  readonly editable: boolean;
+  readonly canUndo: boolean;
+  readonly where?: { readonly area?: string; readonly label: string };
+  readonly when?: { readonly checkIn?: string; readonly nights?: number; readonly label: string };
+  readonly guests?: { readonly count: number; readonly label: string };
+  readonly areas: readonly { readonly id: string; readonly label: string }[];
+}
+interface GuestResponse { readonly ok: boolean; readonly code?: string; readonly message?: string; readonly messages?: readonly string[]; readonly receipts?: readonly string[]; readonly surfaces?: readonly GuestSurfacePayload[]; readonly journey?: GuestJourney; readonly criteria?: GuestCriteria; }
 interface GuestStateResponse extends GuestResponse { readonly timeline?: readonly GuestTimelineEntry[]; }
 
 function requiredElement<T extends HTMLElement>(id: string): T {
@@ -67,6 +76,9 @@ const errorAnnouncer = requiredElement<HTMLElement>("error-announcer");
 const emptyState = requiredElement<HTMLElement>("empty-state");
 const workingStatus = requiredElement<HTMLElement>("working-status");
 const journeyRail = requiredElement<HTMLElement>("journey-rail");
+const criteriaStrip = requiredElement<HTMLElement>("criteria-strip");
+const criteriaEditor = requiredElement<HTMLFormElement>("criteria-editor");
+const criteriaStatus = requiredElement<HTMLElement>("criteria-status");
 
 function getThreadId(): string {
   try {
@@ -306,12 +318,20 @@ function isJourney(value: unknown): value is GuestJourney {
     && typeof step.state === "string" && step.state in JOURNEY_STATE_TEXT);
 }
 
+function isCriteria(value: unknown): value is GuestCriteria {
+  if (!isRecord(value) || typeof value.key !== "string" || typeof value.editable !== "boolean" || typeof value.canUndo !== "boolean") return false;
+  if (!Array.isArray(value.areas) || !value.areas.every((area) => isRecord(area) && typeof area.id === "string" && typeof area.label === "string")) return false;
+  const labelled = (field: unknown): boolean => field === undefined || (isRecord(field) && typeof field.label === "string");
+  return labelled(value.where) && labelled(value.when) && labelled(value.guests);
+}
+
 function readGuestResponse(value: unknown): GuestResponse {
   if (!isRecord(value) || typeof value.ok !== "boolean") throw new Error("Invalid server response");
   if (value.messages !== undefined && (!Array.isArray(value.messages) || value.messages.some((message) => typeof message !== "string"))) throw new Error("Invalid response messages");
   if (value.receipts !== undefined && (!Array.isArray(value.receipts) || value.receipts.some((receipt) => typeof receipt !== "string"))) throw new Error("Invalid response receipts");
   if (value.surfaces !== undefined && (!Array.isArray(value.surfaces) || value.surfaces.some((surface) => !isSurfacePayload(surface)))) throw new Error("Invalid response surface");
   if (value.journey !== undefined && !isJourney(value.journey)) throw new Error("Invalid response journey");
+  if (value.criteria !== undefined && !isCriteria(value.criteria)) throw new Error("Invalid response criteria");
   return value as unknown as GuestResponse;
 }
 
@@ -750,6 +770,194 @@ function renderJourney(journey: GuestJourney | undefined): void {
   if (current) list.scrollLeft = Math.max(0, current.offsetLeft - list.offsetLeft - list.clientWidth / 2 + current.offsetWidth / 2);
 }
 
+type CriteriaField = "where" | "when" | "guests";
+const CRITERIA_FIELDS: readonly CriteriaField[] = ["where", "when", "guests"];
+const CRITERIA_NAMES: Readonly<Record<CriteriaField, string>> = { where: "Where", when: "When", guests: "Guests" };
+const CRITERIA_EDIT_EVENT = "shortlet.criteria.edit";
+const CRITERIA_UNDO_EVENT = "shortlet.criteria.undo";
+let currentCriteria: GuestCriteria | undefined;
+let openCriteriaField: CriteriaField | undefined;
+let criteriaInFlight = false;
+
+/**
+ * Issue 03a: the strip shows the server's criteria (ADR-0004). The browser
+ * never searches itself; each edit is an event the server applies and checks.
+ */
+function renderCriteria(criteria: GuestCriteria | undefined): void {
+  if (!criteria) return;
+  currentCriteria = criteria;
+  const chips = criteriaStrip.querySelector<HTMLElement>(".criteria-chips");
+  if (!chips) return;
+  chips.replaceChildren();
+  for (const field of CRITERIA_FIELDS) {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "ui-chip criteria-chip";
+    chip.dataset.field = field;
+    chip.setAttribute("aria-expanded", String(openCriteriaField === field));
+    chip.setAttribute("aria-controls", "criteria-editor");
+    const name = document.createElement("span");
+    name.className = "criteria-chip-name";
+    name.textContent = `${CRITERIA_NAMES[field]}: `;
+    chip.append(name, criteria[field]?.label ?? "Add");
+    chip.disabled = !criteria.editable;
+    chip.addEventListener("click", () => {
+      if (openCriteriaField === field) closeCriteriaEditor(true);
+      else openCriteriaEditor(field);
+    });
+    chips.appendChild(chip);
+  }
+  if (criteria.canUndo) {
+    const undo = document.createElement("button");
+    undo.type = "button";
+    undo.className = "criteria-undo";
+    undo.textContent = "Undo last change";
+    undo.addEventListener("click", () => { void sendCriteriaEvent(CRITERIA_UNDO_EVENT, { basedOn: criteria.key }); });
+    chips.appendChild(undo);
+  }
+  criteriaStrip.hidden = false;
+  if (!criteria.editable) closeCriteriaEditor(false);
+}
+
+function field(labelText: string, control: HTMLInputElement | HTMLSelectElement): HTMLElement {
+  const wrapper = document.createElement("div");
+  wrapper.className = "ui-field";
+  const label = document.createElement("label");
+  label.className = "ui-field__label";
+  label.htmlFor = control.id;
+  label.textContent = labelText;
+  wrapper.append(label, control);
+  return wrapper;
+}
+
+function numberInput(id: string, name: string, value: number | undefined): HTMLInputElement {
+  const input = document.createElement("input");
+  input.id = id;
+  input.name = name;
+  input.type = "number";
+  input.min = "1";
+  input.step = "1";
+  input.inputMode = "numeric";
+  input.required = true;
+  if (value !== undefined) input.value = String(value);
+  return input;
+}
+
+function openCriteriaEditor(target: CriteriaField): void {
+  const criteria = currentCriteria;
+  if (!criteria?.editable) return;
+  openCriteriaField = target;
+  criteriaStatus.textContent = "";
+  criteriaEditor.replaceChildren();
+  criteriaEditor.setAttribute("aria-label", `Change ${CRITERIA_NAMES[target].toLocaleLowerCase()}`);
+  if (target === "where") {
+    const select = document.createElement("select");
+    select.id = "criteria-area";
+    select.name = "area";
+    for (const area of criteria.areas) {
+      const option = document.createElement("option");
+      option.value = area.id;
+      option.textContent = area.label;
+      option.selected = area.id === criteria.where?.area;
+      select.appendChild(option);
+    }
+    criteriaEditor.appendChild(field("Where", select));
+  } else if (target === "when") {
+    const date = document.createElement("input");
+    date.id = "criteria-check-in";
+    date.name = "checkIn";
+    date.type = "date";
+    date.required = true;
+    if (criteria.when?.checkIn) date.value = criteria.when.checkIn;
+    criteriaEditor.append(field("Arrival date", date), field("Nights", numberInput("criteria-nights", "nights", criteria.when?.nights)));
+  } else {
+    criteriaEditor.appendChild(field("Guests", numberInput("criteria-guests", "partySize", criteria.guests?.count)));
+  }
+  const actions = document.createElement("div");
+  actions.className = "criteria-editor-actions";
+  const submit = document.createElement("button");
+  submit.type = "submit";
+  submit.className = "ui-button ui-button--primary";
+  submit.textContent = "Update search";
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.className = "ui-button ui-button--quiet";
+  cancel.textContent = "Cancel";
+  cancel.addEventListener("click", () => closeCriteriaEditor(true));
+  actions.append(submit, cancel);
+  criteriaEditor.appendChild(actions);
+  criteriaEditor.hidden = false;
+  for (const chip of criteriaStrip.querySelectorAll<HTMLElement>(".criteria-chip")) chip.setAttribute("aria-expanded", String(chip.dataset.field === target));
+  criteriaEditor.querySelector<HTMLElement>("input, select")?.focus();
+}
+
+function closeCriteriaEditor(returnFocus: boolean): void {
+  const closed = openCriteriaField;
+  openCriteriaField = undefined;
+  criteriaEditor.hidden = true;
+  criteriaEditor.replaceChildren();
+  for (const chip of criteriaStrip.querySelectorAll<HTMLElement>(".criteria-chip")) chip.setAttribute("aria-expanded", "false");
+  // ADR-0078: focus returns to the chip that opened the editor.
+  if (returnFocus && closed) criteriaStrip.querySelector<HTMLElement>(`.criteria-chip[data-field="${closed}"]`)?.focus();
+}
+
+async function sendCriteriaEvent(name: string, context: Readonly<Record<string, string | number>>): Promise<void> {
+  if (criteriaInFlight || isLoading) return;
+  criteriaInFlight = true;
+  criteriaStrip.setAttribute("aria-busy", "true");
+  const submit = criteriaEditor.querySelector<HTMLButtonElement>('button[type="submit"]');
+  if (submit) submit.disabled = true;
+  try {
+    const response = await postJson("/api/event", { threadId, name, surfaceId: `thread-${threadId}:criteria`, sourceComponentId: "criteria-strip", timestamp: new Date().toISOString(), context });
+    if (!response.ok) {
+      // AC3: a refused edit is explained next to the strip; the criteria stay as they were.
+      criteriaStatus.textContent = response.message ?? "That change could not be applied.";
+      if (response.code === "STALE_SURFACE" || response.code === "CRITERIA_LOCKED") void refreshServerState();
+      return;
+    }
+    criteriaStatus.textContent = "";
+    closeCriteriaEditor(false);
+    renderResponse(response);
+  } catch {
+    criteriaStatus.textContent = "The change could not be sent. Please try again.";
+  } finally {
+    criteriaInFlight = false;
+    criteriaStrip.removeAttribute("aria-busy");
+    if (submit?.isConnected) submit.disabled = false;
+  }
+}
+
+criteriaEditor.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const target = openCriteriaField;
+  const criteria = currentCriteria;
+  if (!target || !criteria) return;
+  const data = new FormData(criteriaEditor);
+  const whole = (name: string): number | undefined => {
+    const value = Number(data.get(name));
+    return Number.isInteger(value) && value >= 1 ? value : undefined;
+  };
+  if (target === "where") {
+    void sendCriteriaEvent(CRITERIA_EDIT_EVENT, { field: "where", area: String(data.get("area") ?? ""), basedOn: criteria.key });
+  } else if (target === "when") {
+    const checkIn = String(data.get("checkIn") ?? "");
+    const nights = whole("nights");
+    if (checkIn === "" || nights === undefined) { criteriaStatus.textContent = "Enter an arrival date and a whole number of nights."; return; }
+    void sendCriteriaEvent(CRITERIA_EDIT_EVENT, { field: "when", checkIn, nights, basedOn: criteria.key });
+  } else {
+    const partySize = whole("partySize");
+    if (partySize === undefined) { criteriaStatus.textContent = "Enter a whole number of guests."; return; }
+    void sendCriteriaEvent(CRITERIA_EDIT_EVENT, { field: "guests", partySize, basedOn: criteria.key });
+  }
+});
+
+criteriaEditor.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  event.preventDefault();
+  event.stopPropagation();
+  closeCriteriaEditor(true);
+});
+
 function renderResponse(response: GuestResponse): boolean {
   if (!response.ok) {
     const message = response.message ?? "That action could not be completed.";
@@ -763,6 +971,7 @@ function renderResponse(response: GuestResponse): boolean {
     return false;
   }
   renderJourney(response.journey);
+  renderCriteria(response.criteria);
   for (const message of response.messages ?? []) addTurn("assistant", message);
   if ((response.messages ?? []).length > 0) trackTelemetry("text-response-rendered");
   const surfaces = response.surfaces ?? [];
@@ -775,7 +984,7 @@ function renderResponse(response: GuestResponse): boolean {
 async function refreshServerState(): Promise<void> {
   try {
     const response = await postJson(`/api/state?threadId=${encodeURIComponent(threadId)}`) as GuestStateResponse;
-    if (response.ok) renderJourney(response.journey);
+    if (response.ok) { renderJourney(response.journey); renderCriteria(response.criteria); }
     if (response.ok && response.surfaces && response.surfaces.length > 0) {
       renderSurfaces(response.surfaces);
     }
@@ -912,6 +1121,7 @@ async function restoreServerState(): Promise<boolean> {
     if (!response.ok || !response.timeline || response.timeline.length === 0) return false;
     for (const entry of response.timeline) addTimelineEntry(entry);
     renderJourney(response.journey);
+    renderCriteria(response.criteria);
     renderSurfaces(response.surfaces ?? []);
     announce("Your conversation has been restored.");
     return true;

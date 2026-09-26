@@ -412,6 +412,7 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
         Enter: { code: "Enter", virtualKeyCode: 13 },
         Tab: { code: "Tab", virtualKeyCode: 9 },
         Escape: { code: "Escape", virtualKeyCode: 27 },
+        Backspace: { code: "Backspace", virtualKeyCode: 8 },
         ALT: { code: "AltLeft", virtualKeyCode: 18 },
       };
       const resolved = keyData[key];
