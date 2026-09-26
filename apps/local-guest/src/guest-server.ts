@@ -20,6 +20,11 @@ import {
   BACK_TO_RESULTS_EVENT,
   SEE_ALL_DISCOVERY_EVENT,
   COMPARE_UNIT_EVENT,
+  DRAFT_REPLACEMENT_ACCEPT_EVENT,
+  DRAFT_REPLACEMENT_KEEP_EVENT,
+  draftReplacementToA2UI,
+  draftReplacementFallback,
+  type DraftStayTerms,
   COMPARE_BACK_EVENT,
   compareArtifactToA2UI,
   compareFallbackText,
@@ -211,6 +216,8 @@ const PAYMENT_STAGE = "payment";
 const BOOKING_STAGE = "booking";
 /** Issue 13b: the two-up comparison opened from results. */
 const COMPARE_STAGE = "compare";
+/** Issue 14: a proposed replacement Request Draft awaiting the Guest's choice. */
+const DRAFT_REPLACEMENT_STAGE = "draft_replacement";
 
 function unitDetailSurfaceId(threadId: string, discoveryRevision: number): string {
   // ADR-0074: a newly selected detail is a new surface lifecycle; Weaver rejects duplicate createSurface IDs.
@@ -277,6 +284,8 @@ const EVENT_STAGE_ALLOW_LIST: Readonly<Record<string, string>> = Object.freeze({
   [SEE_ALL_DISCOVERY_EVENT]: DISCOVERY_STAGE,
   [COMPARE_UNIT_EVENT]: DISCOVERY_STAGE,
   [COMPARE_BACK_EVENT]: COMPARE_STAGE,
+  [DRAFT_REPLACEMENT_ACCEPT_EVENT]: DRAFT_REPLACEMENT_STAGE,
+  [DRAFT_REPLACEMENT_KEEP_EVENT]: DRAFT_REPLACEMENT_STAGE,
   [REQUEST_TO_BOOK_EVENT]: UNIT_STAGE,
   [BACK_TO_RESULTS_EVENT]: UNIT_STAGE,
   "shortlet.conditional-offer.accept": OFFER_STAGE,
@@ -318,6 +327,30 @@ interface GuestThreadState {
   searchHistory: DiscoverySearchContext[];
   /** Issue 13b: the result picked for comparison. Presentation only, never persisted. */
   compareSelection: string | null;
+  /** Issue 14: a change to the draft's stay that awaits a date confirmation. In memory only. */
+  draftChangeContext: DiscoverySearchContext | null;
+  /** Issue 14: the proposed replacement Request Draft. In memory only; a restart shows the current draft. */
+  pendingDraftReplacement: PendingDraftReplacement | null;
+}
+
+/** The stay a replacement Request Draft would cover (issue 14). */
+interface DraftReplacementStay {
+  readonly location: string;
+  readonly neighbourhood?: string;
+  readonly checkIn: string;
+  readonly checkOut: string;
+  readonly partySize: number;
+}
+
+interface PendingDraftReplacement {
+  readonly basedOnDraftId: string;
+  readonly basedOn: string;
+  readonly unitId: string;
+  readonly stay: DraftReplacementStay;
+  readonly filters: StayRequestFilters;
+  readonly context: DiscoverySearchContext;
+  readonly proposed: DraftStayTerms;
+  readonly surfaceId: string;
 }
 
 export class LocalGuestApp {
@@ -381,6 +414,8 @@ export class LocalGuestApp {
       return { ...refreshed, messages: messages.length > 0 ? messages : [this.#capabilityReply(this.#guestStage(thread), this.#currentUnit(thread))] };
     }
     if (stageReply) return { ok: true, messages: stageReply, surfaces: [] };
+    const replacement = this.#proposeDraftReplacement(thread, text);
+    if (replacement) return replacement;
     if (this.#geminiClient) {
       try {
         const live = await handleGeminiTurn({
@@ -655,6 +690,10 @@ export class LocalGuestApp {
         return this.#handleCompare(thread, event);
       case COMPARE_BACK_EVENT:
         return this.#handleCompareBack(thread, event);
+      case DRAFT_REPLACEMENT_ACCEPT_EVENT:
+        return this.#handleDraftReplacementAccept(thread, event);
+      case DRAFT_REPLACEMENT_KEEP_EVENT:
+        return this.#handleDraftReplacementKeep(thread, event);
       case "shortlet.discovery.view-unit":
         return this.#handleViewUnit(thread, event);
       case REQUEST_TO_BOOK_EVENT:
@@ -1047,6 +1086,8 @@ export class LocalGuestApp {
       lastSurfaces: [],
       searchHistory: projection.searchHistory.map((context) => ({ ...context })),
       compareSelection: null,
+      draftChangeContext: null,
+      pendingDraftReplacement: null,
     };
     this.#threads.set(threadId, thread);
     const restored = this.#restoreCurrentSurface(thread, projection);
@@ -1241,6 +1282,8 @@ export class LocalGuestApp {
       lastSurfaces: [],
       searchHistory: [],
       compareSelection: null,
+      draftChangeContext: null,
+      pendingDraftReplacement: null,
     };
     this.#threads.set(threadId, thread);
     return thread;
@@ -1259,6 +1302,12 @@ export class LocalGuestApp {
     this.#supersede(thread, DISCOVERY_STAGE);
     this.#supersede(thread, COMPARE_STAGE);
     thread.compareSelection = null;
+    // Issue 14 / M3: a new search forgets the draft on screen, so its Review
+    // and Submit go stale. Resuming the same stay re-presents it.
+    if (!thread.requestId && !thread.offerId) this.#supersede(thread, REQUEST_STAGE);
+    this.#supersede(thread, DRAFT_REPLACEMENT_STAGE);
+    thread.draftChangeContext = null;
+    thread.pendingDraftReplacement = null;
     // New results end the earlier stay's inspection; replies must not keep
     // answering about an apartment that is no longer on screen.
     thread.unitDetail = null;
@@ -1675,6 +1724,187 @@ export class LocalGuestApp {
       policyVersions: quote.policyVersions,
       disclosures: quote.disclosures,
     }, this.#environment.guestPrincipal());
+  }
+
+  /**
+   * Issue 14 AC3: "make it 3 nights" on a Request Draft proposes a re-quoted
+   * replacement that needs the Guest's confirmation. A draft blocks nothing
+   * and promises nothing (CONTEXT.md), so this is not an ADR-0060 amendment;
+   * the replacement quote may be accepted or declined without penalty
+   * (ADR-0015). Returns null when the turn is not a change to the draft's
+   * stay, so a new place still runs a new search.
+   */
+  #proposeDraftReplacement(thread: GuestThreadState, text: string): GuestTurnResult | null {
+    const onScreen = thread.activeSurfaces.get(REQUEST_STAGE) ?? "";
+    if (!thread.draftId || thread.requestId || thread.offerId || !(onScreen.includes(":request:draft:") || onScreen.includes(":request:review:"))) return null;
+    const now = this.#environment.clock();
+    const facts = extractStayRequestFacts(text, { now });
+    if (facts.location !== undefined) return null;
+    // A date check lasts one turn, as its reply says: "yes", or different
+    // dates. Any other turn drops it, so a later change never builds on
+    // dates the Guest didn't confirm.
+    const pendingDates = thread.draftChangeContext;
+    thread.draftChangeContext = null;
+    const onPending = pendingDates === null ? null : mergeStayRequestContext(pendingDates, facts, text);
+    const merged = onPending !== null && (onPending.confirmedDates === true || facts.dates !== undefined)
+      ? onPending
+      : mergeStayRequestContext(thread.discoveryContext, facts, text);
+    const changed = facts.nights !== undefined || facts.partySize !== undefined || facts.dates !== undefined || merged.confirmedDates === true;
+    if (!changed || merged.conflict) return null;
+    const unchanged = "Your Request Draft is unchanged.";
+    const resolution = resolveStayRequestContext(merged.context, { now });
+    if (resolution.kind === "confirm") {
+      // Issue 01: relative dates are confirmed before anything is quoted. The
+      // wording is the discovery check's, but "yes" updates the draft here.
+      thread.draftChangeContext = merged.context;
+      const { checkIn, checkOut, partySize } = resolution.filters;
+      const nights = Math.round((Date.parse(`${checkOut}T00:00:00Z`) - Date.parse(`${checkIn}T00:00:00Z`)) / 86_400_000);
+      return { ok: true, messages: [`Just to check: arriving ${formatGuestDay(checkIn)} and leaving ${formatGuestDay(checkOut)} (${nights} ${nights === 1 ? "night" : "nights"}), ${partySize} ${partySize === 1 ? "guest" : "guests"}. Shall I show your Request Draft with these dates? Reply "yes", or tell me different dates.`, unchanged], surfaces: [] };
+    }
+    // The 14-night and 90-day refusals are the discovery ones, unchanged.
+    if (resolution.kind !== "search") return { ok: true, messages: [resolution.reply, unchanged], surfaces: [] };
+    const draft = this.#environment.bookingRequestApp.manager.getDraft(thread.draftId);
+    const { filters } = resolution;
+    const stay: DraftReplacementStay = { location: filters.location, ...(filters.neighbourhood === undefined ? {} : { neighbourhood: filters.neighbourhood }), checkIn: filters.checkIn, checkOut: filters.checkOut, partySize: filters.partySize };
+    if (stay.checkIn === draft.checkIn && stay.checkOut === draft.checkOut && stay.partySize === draft.occupants.length) {
+      return { ok: true, messages: [`Your Request Draft already covers ${formatStayDates(stay.checkIn, stay.checkOut)} for ${stay.partySize} ${stay.partySize === 1 ? "guest" : "guests"}.`], surfaces: [] };
+    }
+    const proposal = this.#replacementTerms(draft.unitId, stay);
+    if (proposal === null) return { ok: true, messages: [this.#replacementUnavailable(draft.unitId, stay), unchanged], surfaces: [] };
+    return this.#presentDraftReplacement(thread, { unitId: draft.unitId, stay, filters, context: merged.context, proposed: proposal }, "Here is your Request Draft with the new details. It changes only if you choose “Use the new details”.");
+  }
+
+  /** ADR-0015: the same deterministic quote as the draft; null when the unit can't take the stay. */
+  #replacementTerms(unitId: string, stay: DraftReplacementStay): DraftStayTerms | null {
+    const environment = this.#environment;
+    // Revalidate availability and capacity for the stay itself, not budget or bedroom preferences.
+    const results = environment.discoveryQuery.search({ ...stay }).facts.results;
+    const unit = environment.unitRepository.findById(unitId) as Unit | null;
+    if (!unit || !results.some((candidate) => candidate.id === unitId)) return null;
+    const quote = createStayQuote({ unit, checkIn: stay.checkIn, checkOut: stay.checkOut, partySize: stay.partySize, clock: environment.clock });
+    return {
+      checkIn: quote.checkIn,
+      checkOut: quote.checkOut,
+      nights: quote.nights,
+      partySize: stay.partySize,
+      allInStayTotalKobo: quote.allInStayTotalKobo,
+      refundableSecurityDepositKobo: quote.refundableSecurityDepositKobo,
+      amountDueNowKobo: quote.totalAmountDueNowKobo,
+    };
+  }
+
+  #replacementUnavailable(unitId: string, stay: DraftReplacementStay): string {
+    const title = (this.#environment.unitRepository.findById(unitId) as Unit | null)?.title ?? `This ${GUEST_GLOSSARY.unit}`;
+    return `${title} isn't available for ${formatStayDates(stay.checkIn, stay.checkOut)} for ${stay.partySize} ${stay.partySize === 1 ? "guest" : "guests"}.`;
+  }
+
+  #presentDraftReplacement(thread: GuestThreadState, change: Omit<PendingDraftReplacement, "basedOnDraftId" | "basedOn" | "surfaceId">, message: string): GuestTurnResult {
+    const draftId = thread.draftId;
+    if (!draftId) throw new Error("No Request Draft is active");
+    const current = this.#draftArtifact(thread, "draft").facts;
+    const surfaceId = `thread-${thread.threadId}:request:replacement:${draftId}`;
+    const basedOn = JSON.stringify([draftId, change.unitId, change.proposed]);
+    this.#supersede(thread, DRAFT_REPLACEMENT_STAGE);
+    thread.activeSurfaces.set(DRAFT_REPLACEMENT_STAGE, surfaceId);
+    thread.pendingDraftReplacement = { ...change, basedOnDraftId: draftId, basedOn, surfaceId };
+    this.#emitTransition(thread, "request_draft.replacement_proposed", { aggregateType: "request_draft", aggregateId: draftId, surfaceId });
+    const proposal = {
+      draftId,
+      basedOn,
+      unitTitle: current.unitTitle,
+      current: { checkIn: current.checkIn, checkOut: current.checkOut, nights: current.nights, partySize: current.occupants.length, allInStayTotalKobo: current.allInStayTotalKobo, refundableSecurityDepositKobo: current.refundableSecurityDepositKobo, amountDueNowKobo: current.amountDueNowKobo },
+      proposed: change.proposed,
+    };
+    return {
+      ok: true,
+      messages: [message],
+      surfaces: [{ surfaceId, mode: "focused-surface", summary: "Change Request Draft", conventionalRoute: conventionalRequestDraftRoute(draftId), textFallback: draftReplacementFallback(proposal), a2uiMessages: draftReplacementToA2UI({ proposal, surfaceId }) }],
+    };
+  }
+
+  /** The current draft surface, re-presented as it was (draft or review). */
+  #currentDraftSurface(thread: GuestThreadState): GuestSurfacePayload {
+    const draftId = thread.draftId;
+    if (!draftId) throw new Error("No Request Draft is active");
+    const surfaceId = thread.activeSurfaces.get(REQUEST_STAGE) ?? `thread-${thread.threadId}:request:draft:${draftId}`;
+    const review = surfaceId.includes(":request:review:");
+    thread.activeSurfaces.set(REQUEST_STAGE, surfaceId);
+    const artifact = this.#draftArtifact(thread, review ? "review" : "draft");
+    return { surfaceId, mode: "focused-surface", summary: review ? "Request review" : "Request Draft", conventionalRoute: conventionalRequestDraftRoute(draftId), textFallback: this.#draftFallback(artifact), a2uiMessages: requestDraftArtifactToA2UI({ artifact, surfaceId }) };
+  }
+
+  /**
+   * Issue 14: accepting the replacement re-checks the stay and the quote
+   * (ADR-0015), then creates a new Request Draft through the platform
+   * command (ADR-0072). The old draft's surfaces go stale; the old draft
+   * blocked nothing, so nothing is released. Every check fails closed.
+   */
+  #handleDraftReplacementAccept(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
+    const pending = thread.pendingDraftReplacement;
+    const context = event.context;
+    if (!pending || !thread.draftId || thread.requestId || thread.offerId || !isPlainRecord(context)
+      || Object.keys(context).sort().join(",") !== "basedOn,draftId"
+      || context.draftId !== thread.draftId || pending.basedOnDraftId !== thread.draftId || context.basedOn !== pending.basedOn) {
+      return { ok: false, code: "INVALID_CONTEXT", message: "That change to your Request Draft is no longer valid." };
+    }
+    const fresh = this.#replacementTerms(pending.unitId, pending.stay);
+    if (fresh === null) {
+      thread.pendingDraftReplacement = null;
+      this.#supersede(thread, DRAFT_REPLACEMENT_STAGE);
+      return { ok: true, messages: [this.#replacementUnavailable(pending.unitId, pending.stay), "Your Request Draft is unchanged."], surfaces: [this.#currentDraftSurface(thread)] };
+    }
+    if (JSON.stringify(fresh) !== JSON.stringify(pending.proposed)) {
+      return this.#presentDraftReplacement(thread, { ...pending, proposed: fresh }, "The price changed before you chose. Here are the updated details; your Request Draft is unchanged until you choose.");
+    }
+    const environment = this.#environment;
+    const guest = environment.guestPrincipal();
+    const replaced = thread.draftId;
+    const draft = environment.bookingRequestApp.createDraft({
+      unitId: pending.unitId,
+      primaryGuest: { id: guest.id, name: environment.config.guestName },
+      occupants: environment.demoOccupants(pending.stay.partySize),
+      selfBookingAttestation: environment.selfBookingAttestation(),
+      checkIn: pending.stay.checkIn,
+      checkOut: pending.stay.checkOut,
+    }, guest);
+    this.#supersede(thread, REQUEST_STAGE);
+    this.#supersede(thread, DRAFT_REPLACEMENT_STAGE);
+    thread.pendingDraftReplacement = null;
+    // The conversation's criteria and stored results follow the accepted stay,
+    // so the criteria strip, undo and resuming the draft all agree.
+    if (thread.discoveryContext) {
+      thread.searchHistory.push({ ...thread.discoveryContext });
+      if (thread.searchHistory.length > MAX_SEARCH_HISTORY) thread.searchHistory.splice(0, thread.searchHistory.length - MAX_SEARCH_HISTORY);
+    }
+    thread.discoveryContext = pending.context;
+    thread.discoveryArtifact = environment.discoveryQuery.search({ ...pending.filters });
+    thread.draftId = draft.draftId;
+    const surfaceId = `thread-${thread.threadId}:request:draft:${draft.draftId}`;
+    thread.activeSurfaces.set(REQUEST_STAGE, surfaceId);
+    const artifact = this.#draftArtifact(thread, "draft");
+    thread.draftQuote = { allInStayTotalKobo: artifact.facts.allInStayTotalKobo, refundableSecurityDepositKobo: artifact.facts.refundableSecurityDepositKobo, amountDueNowKobo: artifact.facts.amountDueNowKobo };
+    this.#emitTransition(thread, "request_draft.replaced", { aggregateType: "request_draft", aggregateId: draft.draftId, correlationId: replaced, surfaceId });
+    const { stay } = pending;
+    return {
+      ok: true,
+      messages: [`Your Request Draft now covers ${formatStayDates(stay.checkIn, stay.checkOut)} for ${stay.partySize} ${stay.partySize === 1 ? "guest" : "guests"}. Review it before you send it.`],
+      receipts: [GUEST_RECEIPTS.draftUpdated],
+      surfaces: [{ surfaceId, mode: "focused-surface", summary: "Request Draft", conventionalRoute: conventionalRequestDraftRoute(draft.draftId), textFallback: this.#draftFallback(artifact), a2uiMessages: requestDraftArtifactToA2UI({ artifact, surfaceId }) }],
+    };
+  }
+
+  /** Issue 14: keeping the current draft is free and changes nothing (ADR-0015). */
+  #handleDraftReplacementKeep(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
+    const pending = thread.pendingDraftReplacement;
+    const context = event.context;
+    if (!pending || !thread.draftId || !isPlainRecord(context) || Object.keys(context).join(",") !== "draftId"
+      || context.draftId !== thread.draftId || pending.basedOnDraftId !== thread.draftId) {
+      return { ok: false, code: "INVALID_CONTEXT", message: "That change to your Request Draft is no longer valid." };
+    }
+    thread.pendingDraftReplacement = null;
+    this.#supersede(thread, DRAFT_REPLACEMENT_STAGE);
+    this.#emitTransition(thread, "request_draft.replacement_declined", { aggregateType: "request_draft", aggregateId: thread.draftId, surfaceId: event.surfaceId });
+    return { ok: true, messages: ["Your Request Draft is unchanged."], surfaces: [this.#currentDraftSurface(thread)] };
   }
 
   #draftFallback(artifact: RequestDraftArtifact): string {

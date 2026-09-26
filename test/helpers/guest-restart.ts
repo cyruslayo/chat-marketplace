@@ -48,8 +48,8 @@ export async function restartFixture(config: Partial<LocalGuestFixtureConfig> = 
     get base() { return base; },
     get app() { return server.app; },
     setTime(value: string) { now = new Date(value); },
-    async advance(target: RestartStage, onStage?: (stage: RestartStage, result: GuestTurnSuccess) => void | Promise<void>) {
-      const discovery = await send("/api/turn", { text: "I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people" });
+    async advance(target: RestartStage, onStage?: (stage: RestartStage, result: GuestTurnSuccess) => void | Promise<void>, text = "I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people") {
+      const discovery = await send("/api/turn", { text });
       assert.equal(discovery.ok, true);
       result = discovery;
       await onStage?.("discovery", result);
