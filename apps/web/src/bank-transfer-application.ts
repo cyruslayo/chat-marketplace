@@ -16,6 +16,10 @@ export interface BankTransferPaymentApplicationOptions {
   readonly securityDepositAccounting?: BankTransferPaymentManagerOptions["securityDepositAccounting"];
   readonly bookingState: NonNullable<BankTransferPaymentManagerOptions["bookingState"]>;
   readonly compensationRefundProvider?: BankTransferPaymentManagerOptions["compensationRefundProvider"];
+  readonly sessionStore?: BankTransferPaymentManagerOptions["sessionStore"];
+  readonly store?: BankTransferPaymentManagerOptions["store"];
+  /** Records a confirmed Reservation for the Guest's booking pages, as the card path does. */
+  readonly onConfirmedOutcome?: (outcome: { readonly reservation: import("../../../domains/shortlet/src/index.js").Reservation; readonly bookingContract: import("../../../domains/shortlet/src/index.js").BookingContract }) => void;
 }
 
 export class BankTransferPaymentApplication {
@@ -23,7 +27,12 @@ export class BankTransferPaymentApplication {
   readonly #conditionalOfferApplication: ConditionalOfferApplication;
   readonly #clock: () => Date;
   readonly #providerClient: BankTransferPaymentManagerOptions["providerClient"];
-  constructor(manager: BankTransferPaymentManager, conditionalOfferApplication: ConditionalOfferApplication, clock: () => Date, providerClient: BankTransferPaymentManagerOptions["providerClient"]) { this.manager = manager; this.#conditionalOfferApplication = conditionalOfferApplication; this.#clock = clock; this.#providerClient = providerClient; }
+  readonly #onConfirmedOutcome?: BankTransferPaymentApplicationOptions["onConfirmedOutcome"];
+  constructor(manager: BankTransferPaymentManager, conditionalOfferApplication: ConditionalOfferApplication, clock: () => Date, providerClient: BankTransferPaymentManagerOptions["providerClient"], onConfirmedOutcome?: BankTransferPaymentApplicationOptions["onConfirmedOutcome"]) { this.manager = manager; this.#conditionalOfferApplication = conditionalOfferApplication; this.#clock = clock; this.#providerClient = providerClient; this.#onConfirmedOutcome = onConfirmedOutcome; }
+  #recordConfirmed<T extends { readonly outcome: string; readonly reservation?: import("../../../domains/shortlet/src/index.js").Reservation; readonly bookingContract?: import("../../../domains/shortlet/src/index.js").BookingContract }>(outcome: T): T {
+    if (outcome.outcome === "confirmed" && outcome.reservation && outcome.bookingContract) this.#onConfirmedOutcome?.({ reservation: outcome.reservation, bookingContract: outcome.bookingContract });
+    return outcome;
+  }
   getArtifact(offerId: string, viewer: CommandPrincipal): BankTransferArtifact {
     const offer = this.#conditionalOfferApplication.manager.getOffer(offerId);
     const session = this.manager.getSession(offerId); const contract = this.manager.getBookingContract(offerId);
@@ -33,7 +42,7 @@ export class BankTransferPaymentApplication {
     return this.manager.initializeBankTransfer(createPlatformCommandEnvelope({ commandName: "bank_transfer.initialize", principal: trustedPayerPrincipal, payload: { offerId } }), { clock: this.#clock });
   }
   verifyAndProcess(transferReference: string, trustedServerPrincipal: CommandPrincipal) {
-    return this.manager.verifyAndProcessTransfer(createPlatformCommandEnvelope({ commandName: "bank_transfer.verify_and_process", principal: trustedServerPrincipal, payload: { transferReference } }), { clock: this.#clock });
+    return this.#recordConfirmed(this.manager.verifyAndProcessTransfer(createPlatformCommandEnvelope({ commandName: "bank_transfer.verify_and_process", principal: trustedServerPrincipal, payload: { transferReference } }), { clock: this.#clock }));
   }
   /**
    * Verifies with the provider server-side, awaiting a network provider when it has one (Paystack), then processes
@@ -42,10 +51,10 @@ export class BankTransferPaymentApplication {
   async verifyAndProcessFromProvider(transferReference: string, trustedServerPrincipal: CommandPrincipal) {
     const envelope = createPlatformCommandEnvelope({ commandName: "bank_transfer.verify_and_process", principal: trustedServerPrincipal, payload: { transferReference } });
     const provider = this.#providerClient;
-    if (!provider.verifyTransferAsync) return this.manager.verifyAndProcessTransfer(envelope, { clock: this.#clock });
+    if (!provider.verifyTransferAsync) return this.#recordConfirmed(this.manager.verifyAndProcessTransfer(envelope, { clock: this.#clock }));
     if (!this.manager.getSessionByReference(transferReference)) throw new Error("Unknown transfer reference");
     const result = await provider.verifyTransferAsync(transferReference);
-    return this.manager.verifyAndProcessTransferWithProviderResult(envelope, result, { clock: this.#clock });
+    return this.#recordConfirmed(this.manager.verifyAndProcessTransferWithProviderResult(envelope, result, { clock: this.#clock }));
   }
   resolveExpiry(offerId: string, trustedServerPrincipal: CommandPrincipal) {
     return this.manager.resolveExpiry(offerId, trustedServerPrincipal, { clock: this.#clock });
@@ -54,6 +63,6 @@ export class BankTransferPaymentApplication {
 
 export function createBankTransferPaymentApplication(options: BankTransferPaymentApplicationOptions): BankTransferPaymentApplication {
   if (!options.bookingState?.saveBookingAtomically || !options.bookingState.removeBookingAtomically) throw new Error("Atomic BookingState authority is required");
-  const { conditionalOfferApplication, clock = () => new Date(), ...dependencies } = options;
-  return new BankTransferPaymentApplication(new BankTransferPaymentManager({ ...dependencies, offerManager: conditionalOfferApplication.manager }), conditionalOfferApplication, clock, dependencies.providerClient);
+  const { conditionalOfferApplication, clock = () => new Date(), onConfirmedOutcome, ...dependencies } = options;
+  return new BankTransferPaymentApplication(new BankTransferPaymentManager({ ...dependencies, offerManager: conditionalOfferApplication.manager }), conditionalOfferApplication, clock, dependencies.providerClient, onConfirmedOutcome);
 }

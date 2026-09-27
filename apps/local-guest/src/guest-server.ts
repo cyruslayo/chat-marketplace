@@ -83,7 +83,7 @@ import {
   type GuestPersistentProjection,
 } from "./guest-projection.js";
 import { hashSessionSecret } from "../../../domains/shortlet/src/index.js";
-import { DirectPaystackClient, isApprovedPaystackCheckoutUrl, loadPaystackConfiguration, type PaystackClient } from "../../../domains/shortlet/src/index.js";
+import { BankTransferProviderError, DirectPaystackClient, isApprovedPaystackCheckoutUrl, loadPaystackConfiguration, type BankTransferCheckoutSession, type PaystackClient } from "../../../domains/shortlet/src/index.js";
 import { applyCriteriaEdit, budgetLabel, quickRepliesFor, searchAreaFor, SEARCH_AREAS, type CriteriaEdit } from "./concierge.js";
 import { amenityQuestions, extractStayRequestFacts, formatGuestDay, mergeStayRequestContext, resolveStayRequestContext, stayChangeRequested, unsupportedPreferenceNote, type DiscoverySearchContext, type StayRequestFilters } from "./concierge.js";
 import { handleGeminiTurn, type GeminiConciergeClient } from "./gemini-concierge.js";
@@ -2861,6 +2861,9 @@ const PAGE_ERROR_COPY: Readonly<Record<string, { readonly title: string; readonl
   INVALID_OFFER: { title: "This payment link isn't valid", message: "The link is incomplete or has been changed. Return to the conversation for the current booking status." },
   PAYMENT_OFFER_NOT_FOUND: { title: "We couldn't find this booking offer", message: "It may have expired or belong to a different conversation. Return to the conversation for the current booking status." },
   PAYMENT_CONTINUATION_REJECTED: { title: "Payment can't continue right now", message: "No payment was taken. The offer may have expired or already been paid. Return to the conversation for the current booking status." },
+  TRANSFER_UNAVAILABLE: { title: "Bank transfer is unavailable", message: "No transfer account was issued and no payment was taken. Go back and pay by card, or try again in a few minutes." },
+  TRANSFER_REJECTED: { title: "Bank transfer can't start", message: "No transfer account was issued. The offer may have expired or another payment may already be in progress. Return to the conversation for the current booking status." },
+  TRANSFER_IN_PROGRESS: { title: "Your bank transfer is still open", message: "You chose bank transfer, so card payment is unavailable until the transfer account expires. Transfer the exact amount to the account shown, or wait for it to expire." },
   PAYSTACK_UNAVAILABLE: { title: "Card checkout is unavailable", message: "No payment was taken. Try again in a few minutes from your conversation." },
   INVALID_CHECKOUT_URL: { title: "Card checkout is unavailable", message: "No payment was taken. Try again in a few minutes from your conversation." },
   LOCAL_PAYMENT_INVALID: { title: "This demo payment link isn't valid", message: "Start the payment again from your conversation." },
@@ -2876,6 +2879,51 @@ function sendPageError(req: IncomingMessage, res: ServerResponse, status: number
   if (!copy || !prefersHtml(req.headers.accept)) { sendJson(res, status, { ok: false, code }); return; }
   res.writeHead(status, GUEST_HTML_HEADERS);
   res.end(errorPage({ status, code, title: copy.title, message: copy.message, action: { href: "/", label: "Back to your conversation" } }));
+}
+
+/**
+ * The payment choice (P3, ADR 0088). It states before the choice that a transfer account keeps the payment slot
+ * while it can be paid (ADR 0046). Plain form and link: works without JavaScript (ADR 0080).
+ */
+function transferChoiceHtml(offerId: string, cardHref: string, cardLabel: string): string {
+  return `<h2>How would you like to pay?</h2><p>If you choose bank transfer, you can't switch to card until the transfer account expires.</p><form method="post" action="/payments/offers/${encodeURIComponent(offerId)}/transfer"><button class="ui-button ui-button--primary ui-button--block" type="submit">Pay by bank transfer</button></form><a class="ui-button ui-button--secondary ui-button--block" href="${cardHref}">${escapeHtml(cardLabel)}</a>`;
+}
+
+/**
+ * The bank transfer screen (P3, ADR 0088): the provider's bank and account, the exact amount and the absolute WAT
+ * deadline with time left. It never says the booking is confirmed until a Reservation exists (ADR 0005). No JavaScript.
+ */
+export function renderTransferPageHtml(input: {
+  readonly transfer: BankTransferCheckoutSession;
+  readonly now: Date;
+  readonly contract: { readonly contractId: string } | null;
+  readonly threadId: string | null;
+  readonly localPayment: boolean;
+}): string {
+  const { transfer, now } = input;
+  const back = input.threadId ? `<a class="ui-button ui-button--block" href="/?threadId=${encodeURIComponent(input.threadId)}">Return to your conversation</a>` : "";
+  const shell = (heading: string, body: string) => pageShell({
+    title: `${heading} · Shortlet`,
+    width: "narrow",
+    style: ".transfer-account{font-family:var(--font-mono);font-size:var(--font-size-h3);letter-spacing:0.05em;overflow-wrap:anywhere}.ui-panel p{margin:0}",
+    body: `<header class="ui-page__header"><p class="ui-eyebrow">Booking payment · Bank transfer</p><h1>${escapeHtml(heading)}</h1></header><section class="ui-panel">${body}</section>`,
+  });
+  if (input.contract) {
+    return shell("Payment received", `<p>Your transfer arrived and your ${GUEST_GLOSSARY.reservation} is confirmed.</p><a class="ui-button ui-button--primary ui-button--block" href="${conventionalBookingContractRoute(input.contract.contractId)}">View your ${GUEST_GLOSSARY.reservation}</a>${back}`);
+  }
+  const payable = (transfer.status === "initiated" || transfer.status === "processing_in_grace") && now.getTime() < Date.parse(transfer.expiresAt);
+  if (transfer.status === "processing_in_grace") {
+    return shell("Your transfer is processing", `<p>Your bank has started the transfer. It has not arrived yet and no ${GUEST_GLOSSARY.reservation} exists yet.</p>${back}`);
+  }
+  if (!payable) {
+    // ADR 0045/0047: the account stopped at the deadline; money sent afterwards is refunded in full and never books.
+    return shell("This transfer account has expired", `<p>No ${GUEST_GLOSSARY.reservation} was made. Money sent after the deadline is refunded in full.</p>${back}`);
+  }
+  const minutes = Math.max(0, Math.ceil((Date.parse(transfer.expiresAt) - now.getTime()) / 60_000));
+  const local = input.localPayment
+    ? `<form method="post" action="/payments/local/transfer/complete"><input type="hidden" name="reference" value="${escapeHtml(transfer.transferReference)}"><button class="ui-button ui-button--block" type="submit">Complete local demo transfer</button></form>`
+    : "";
+  return shell("Transfer to complete your booking", `<dl class="ui-facts"><dt>Bank</dt><dd>${escapeHtml(transfer.bankName)}</dd><dt>Account number</dt><dd class="transfer-account">${escapeHtml(transfer.accountNumber)}</dd><dt>Exact amount</dt><dd class="ui-money-total">${formatNgnKobo(transfer.amountKobo)}</dd><dt>Transfer by</dt><dd><time datetime="${escapeHtml(transfer.expiresAt)}">${escapeHtml(formatWAT(transfer.expiresAt))}</time> · ${minutes} ${minutes === 1 ? "minute" : "minutes"} left</dd></dl><p>Transfer the exact amount. Your booking confirms automatically once the transfer arrives.</p><p>This account is for this booking only and stops accepting payment at the deadline.</p>${local}${back}`);
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -3269,6 +3317,7 @@ export function startLocalGuestServer(options: {
       try {
         const principal: CommandPrincipal = { id: session.principalId, role: "guest", tenantId: session.tenantId };
         const artifact = app.environment.cardPaymentApp.getArtifact(offerId, principal);
+        if (app.environment.bankTransferApp?.manager.getSession(offerId)) { res.writeHead(303, { Location: `/payments/offers/${encodeURIComponent(offerId)}/transfer` }); res.end(); return; }
         const processing = artifact.facts.journeyStage === "stay_payment_processing" || artifact.facts.journeyStage === "deposit_payment_processing";
         const status = guestPaymentStatus(artifact.facts.status, processing);
         const contactEmailMissing = !app.environment.guestContactApp.get(principal)?.contactEmail;
@@ -3286,6 +3335,8 @@ export function startLocalGuestServer(options: {
               ? "Continue to local demo payment"
               : "Continue to hosted card checkout";
         const canContinue = artifact.actions.length > 0 && (artifact.facts.status !== "ready" || contactEmailMissing || !processing);
+        // P3: before any attempt, with an email on file, the Guest chooses the method (ADR 0088).
+        const offerTransferChoice = app.environment.bankTransferApp !== null && artifact.facts.status === "ready" && !contactEmailMissing && !processing;
         const escapeHtmlText = escapeHtml;
         const componentAmount = artifact.facts.currentComponentAmountKobo ?? (artifact.facts.status === "ready" ? artifact.facts.allInStayTotalKobo : artifact.facts.refundableSecurityDepositKobo);
         const componentLabel = artifact.facts.status === "deposit_required" || artifact.facts.currentComponent === "security_deposit" ? `Next payment · ${GUEST_GLOSSARY.refundableSecurityDeposit}` : "Next payment · stay payment";
@@ -3304,9 +3355,54 @@ export function startLocalGuestServer(options: {
           title: `${status.label} · Shortlet`,
           width: "narrow",
           style: ".payment-unit{font-family:var(--font-display);font-size:var(--font-size-h3);line-height:var(--font-line-h3);font-weight:600}.ui-panel p{margin:0}",
-          body: `<header class="ui-page__header"><p class="ui-eyebrow">Booking payment</p><h1>${escapeHtmlText(status.label)}</h1></header><section class="ui-panel">${facts}${canContinue ? `<a class="ui-button ui-button--primary ui-button--block" href="${href}">${label}</a>` : ""}</section>`,
+          body: `<header class="ui-page__header"><p class="ui-eyebrow">Booking payment</p><h1>${escapeHtmlText(status.label)}</h1></header><section class="ui-panel">${facts}${!canContinue ? "" : offerTransferChoice ? transferChoiceHtml(offerId, href, options.localPayment ? "Pay by card (local demo)" : "Pay by card") : `<a class="ui-button ui-button--primary ui-button--block" href="${href}">${label}</a>`}</section>`,
         }));
       } catch { sendPageError(req, res, 404, "PAYMENT_OFFER_NOT_FOUND"); }
+      return;
+    }
+
+    // P3: the Guest chooses bank transfer (ADR 0088). Server-owned: the offer, amount and reference never come from the browser.
+    const transferMatch = /^\/payments\/offers\/([^/]+)\/transfer$/.exec(url.pathname);
+    if (transferMatch && (req.method === "POST" || req.method === "GET")) {
+      if (req.method === "POST" && !browserOriginAccepted(req, options.publicOrigin)) { res.writeHead(403); res.end("Origin rejected"); return; }
+      const session = resolveBrowserSession(env, browserSessions, readGuestSession(req), sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId);
+      if (!session) { sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED"); return; }
+      let offerId: string;
+      try { offerId = decodeURIComponent(transferMatch[1]!); } catch { sendPageError(req, res, 400, "INVALID_OFFER"); return; }
+      const transfers = app.environment.bankTransferApp;
+      if (!transfers) { sendPageError(req, res, 404, "TRANSFER_UNAVAILABLE"); return; }
+      const principal: CommandPrincipal = { id: session.principalId, role: "guest", tenantId: session.tenantId };
+      let transferOffer: ReturnType<typeof app.environment.conditionalOfferApp.manager.getOffer>;
+      try { transferOffer = app.environment.conditionalOfferApp.manager.getOffer(offerId); } catch { sendPageError(req, res, 404, "PAYMENT_OFFER_NOT_FOUND"); return; }
+      const payerId = transferOffer.parties.distinctPayer?.id ?? transferOffer.parties.primaryGuest.id;
+      if (!principal.id || principal.id !== payerId || !principal.tenantId || principal.tenantId !== transferOffer.tenantId) { sendPageError(req, res, 404, "PAYMENT_OFFER_NOT_FOUND"); return; }
+      const transferPage = `/payments/offers/${encodeURIComponent(offerId)}/transfer`;
+      if (req.method === "POST") {
+        try { await transfers.initializeTransfer(offerId, principal); }
+        catch (error) { sendPageError(req, res, 409, error instanceof BankTransferProviderError ? "TRANSFER_UNAVAILABLE" : "TRANSFER_REJECTED"); return; }
+        res.writeHead(303, { Location: transferPage }); res.end();
+        return;
+      }
+      const transfer = transfers.manager.getSession(offerId);
+      if (!transfer) { res.writeHead(303, { Location: `/payments/offers/${encodeURIComponent(offerId)}` }); res.end(); return; }
+      res.writeHead(200, GUEST_HTML_HEADERS);
+      res.end(renderTransferPageHtml({ transfer, now: app.environment.clock(), contract: transfers.manager.getBookingContract(offerId) ?? null, threadId: findGuestThreadForOffer(app.environment, offerId, principal), localPayment: options.localPayment === true }));
+      return;
+    }
+
+    if (options.localPayment && req.method === "POST" && url.pathname === "/payments/local/transfer/complete") {
+      // Local pilot only: plays the Guest's bank sending the exact amount to the local provider's account.
+      if (!browserOriginAccepted(req, options.publicOrigin)) { res.writeHead(403); res.end("Origin rejected"); return; }
+      const session = resolveBrowserSession(env, browserSessions, readGuestSession(req), sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId);
+      if (!session) { sendJson(res, 401, { ok: false, code: "AUTHENTICATION_REQUIRED" }); return; }
+      const reference = new URLSearchParams((await readRawBody(req)).toString("utf8")).get("reference") ?? "";
+      const transfers = app.environment.bankTransferApp;
+      const transfer = reference && transfers ? transfers.manager.getSessionByReference(reference) : undefined;
+      if (!transfers || !transfer) { sendJson(res, 400, { ok: false, code: "LOCAL_PAYMENT_INVALID" }); return; }
+      const localOffer = app.environment.conditionalOfferApp.manager.getOffer(transfer.offerId);
+      if (session.principalId !== (localOffer.parties.distinctPayer?.id ?? localOffer.parties.primaryGuest.id) || session.tenantId !== localOffer.tenantId) { sendJson(res, 400, { ok: false, code: "LOCAL_PAYMENT_INVALID" }); return; }
+      try { await transfers.verifyAndProcessFromProvider(reference, app.environment.systemPrincipal()); } catch { /* the authoritative state is re-read on the transfer page */ }
+      res.writeHead(303, { Location: `/payments/offers/${encodeURIComponent(transfer.offerId)}/transfer` }); res.end();
       return;
     }
 
@@ -3318,6 +3414,12 @@ export function startLocalGuestServer(options: {
       if (!session) { sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED"); return; }
       let offerId: string;
       try { offerId = decodeURIComponent(continuationMatch[1]!); } catch { sendPageError(req, res, 400, "INVALID_OFFER"); return; }
+      const liveTransfer = app.environment.bankTransferApp?.manager.getSession(offerId);
+      if (liveTransfer && (liveTransfer.status === "initiated" || liveTransfer.status === "processing_in_grace") && app.environment.clock().getTime() < Date.parse(liveTransfer.graceEndsAt)) {
+        // ADR 0046/0088: a transfer that can still be paid holds the one Live Payment Attempt; no switch to card.
+        sendPageError(req, res, 409, "TRANSFER_IN_PROGRESS");
+        return;
+      }
       try {
         const principal: CommandPrincipal = { id: session.principalId, role: "guest", tenantId: session.tenantId };
         if (options.localPayment) {

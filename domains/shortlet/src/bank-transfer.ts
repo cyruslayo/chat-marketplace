@@ -88,6 +88,47 @@ export interface BankTransferProviderClient {
 
 export type BankTransferProcessOutcome = { outcome: Outcome; reservation?: Reservation; bookingContract?: BookingContract; ledgerEntries?: readonly LedgerEntry[]; refundRecord?: BankTransferRefundRecord; reconciliationRecord?: BankTransferReconciliationRecord };
 
+/**
+ * Durable Expiring Bank Transfer sessions (P3), so a restart keeps the Guest's account instructions and the webhook
+ * still recognises the reference. Stores what the provider issued; never logged (ADR 0075).
+ */
+export interface BankTransferSessionStore {
+  save(session: BankTransferCheckoutSession): void;
+  findByReference(transferReference: string): BankTransferCheckoutSession | null;
+  /** The offer's most recent session (the deposit transfer follows the stay transfer). */
+  findLatestByOffer(offerId: string): BankTransferCheckoutSession | null;
+}
+
+function parseSession(json: string): BankTransferCheckoutSession | null {
+  try {
+    const parsed: unknown = JSON.parse(json);
+    if (typeof parsed !== "object" || parsed === null) return null;
+    const record = parsed as Record<string, unknown>;
+    return typeof record.transferReference === "string" && typeof record.offerId === "string" && typeof record.status === "string" ? parsed as BankTransferCheckoutSession : null;
+  } catch { return null; }
+}
+
+export class SqliteBankTransferSessionStore implements BankTransferSessionStore {
+  readonly #database: import("node:sqlite").DatabaseSync;
+  constructor(database: import("node:sqlite").DatabaseSync) {
+    this.#database = database;
+    this.#database.exec("CREATE TABLE IF NOT EXISTS bank_transfer_sessions (transfer_reference TEXT PRIMARY KEY, offer_id TEXT NOT NULL, seq INTEGER NOT NULL, session_json TEXT NOT NULL); CREATE INDEX IF NOT EXISTS idx_bank_transfer_sessions_offer ON bank_transfer_sessions (offer_id, seq)");
+  }
+  save(session: BankTransferCheckoutSession): void {
+    const existing = this.#database.prepare("SELECT seq FROM bank_transfer_sessions WHERE transfer_reference = $reference").get({ $reference: session.transferReference }) as { seq?: number } | undefined;
+    const seq = existing?.seq ?? ((this.#database.prepare("SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM bank_transfer_sessions").get() as { next: number }).next);
+    this.#database.prepare("INSERT INTO bank_transfer_sessions (transfer_reference, offer_id, seq, session_json) VALUES ($reference, $offerId, $seq, $json) ON CONFLICT(transfer_reference) DO UPDATE SET session_json = excluded.session_json").run({ $reference: session.transferReference, $offerId: session.offerId, $seq: seq, $json: JSON.stringify(session) });
+  }
+  findByReference(transferReference: string): BankTransferCheckoutSession | null {
+    const row = this.#database.prepare("SELECT session_json FROM bank_transfer_sessions WHERE transfer_reference = $reference").get({ $reference: transferReference }) as { session_json?: string } | undefined;
+    return row?.session_json ? parseSession(row.session_json) : null;
+  }
+  findLatestByOffer(offerId: string): BankTransferCheckoutSession | null {
+    const row = this.#database.prepare("SELECT session_json FROM bank_transfer_sessions WHERE offer_id = $offerId ORDER BY seq DESC LIMIT 1").get({ $offerId: offerId }) as { session_json?: string } | undefined;
+    return row?.session_json ? parseSession(row.session_json) : null;
+  }
+}
+
 /** The provider could not issue a usable account. Nothing was recorded and no attempt holds the slot. */
 export class BankTransferProviderError extends Error {
   constructor(message: string) { super(message); this.name = "BankTransferProviderError"; }
@@ -106,6 +147,13 @@ export interface BankTransferPaymentManagerOptions {
   /** The payer's email for the provider comes from authoritative Guest contact state, never the client (ADR 0075). */
   readonly guestContacts: import("./guest-contact.js").GuestContactSource;
   readonly liveAttempts?: import("./payment-attempt.js").LivePaymentAttemptRegistryPort;
+  /** Durable sessions (P3). Without it sessions live only in this process. */
+  readonly sessionStore?: BankTransferSessionStore;
+  /**
+   * The shared interaction store. A confirmed transfer writes the same booking snapshot as a card payment, so the
+   * Guest's booking pages and the back office (B4) see the Reservation (ADR 0005).
+   */
+  readonly store?: import("./guest-interaction-store.js").SqliteGuestInteractionStore | null;
   readonly bookingState?: BookingStateRepository;
   readonly journeyRepository?: BookingPaymentJourneyRepository;
   readonly securityDepositCapability?: SecurityDepositCollectionCapabilityProvider;
@@ -130,6 +178,8 @@ export class BankTransferPaymentManager {
   readonly #providerClient: BankTransferProviderClient;
   readonly #liveAttempts?: BankTransferPaymentManagerOptions["liveAttempts"];
   readonly #guestContacts: BankTransferPaymentManagerOptions["guestContacts"];
+  readonly #sessionStore?: BankTransferSessionStore;
+  readonly #store?: BankTransferPaymentManagerOptions["store"];
   /** In-flight provider requests per offer, so concurrent starts share one account (ADR 0046). */
   readonly #pendingInitializations = new Map<string, Promise<BankTransferCheckoutSession>>();
   readonly #bookingState?: BookingStateRepository;
@@ -149,7 +199,27 @@ export class BankTransferPaymentManager {
   constructor(options: BankTransferPaymentManagerOptions) {
     if (!options.offerManager || !options.providerClient || !options.guestContacts) throw new Error("offerManager, providerClient and guestContacts are required for BankTransferPaymentManager");
     this.#guestContacts = options.guestContacts;
+    this.#sessionStore = options.sessionStore;
+    this.#store = options.store;
     this.#offerManager = options.offerManager; this.#calendar = options.calendar; this.#audit = options.audit; this.#providerClient = options.providerClient; this.#liveAttempts = options.liveAttempts; this.#bookingState = options.bookingState; this.#journeys = options.journeyRepository; this.#securityDepositCapability = options.securityDepositCapability; this.#securityDepositAccounting = options.securityDepositAccounting; this.#compensationRefundProvider = options.compensationRefundProvider;
+  }
+
+  /** The offer's current session, re-read from the durable store when there is one (another process may have written it). */
+  #sessionForOffer(offerId: string): BankTransferCheckoutSession | undefined {
+    const stored = this.#sessionStore?.findLatestByOffer(offerId);
+    if (stored) { this.#sessionsByOffer.set(offerId, stored); this.#sessionsByReference.set(stored.transferReference, stored); }
+    return this.#sessionsByOffer.get(offerId);
+  }
+  #sessionForReference(reference: string): BankTransferCheckoutSession | undefined {
+    const stored = this.#sessionStore?.findByReference(reference);
+    if (stored) this.#sessionsByReference.set(reference, stored);
+    return this.#sessionsByReference.get(reference);
+  }
+  /** Every session change goes through here, so both indexes and the durable store agree. */
+  #put(session: BankTransferCheckoutSession): void {
+    this.#sessionsByOffer.set(session.offerId, session);
+    this.#sessionsByReference.set(session.transferReference, session);
+    this.#sessionStore?.save(session);
   }
 
   /**
@@ -167,7 +237,7 @@ export class BankTransferPaymentManager {
     if (offer.status !== "accepted") throw new Error("Bank transfer initialization requires an accepted offer");
     const now = clock(); const deadline = new Date(offer.paymentWindow.expiresAt).getTime(); const existingJourney = this.#journeys?.findByOfferId(offer.offerId);
     if (now.getTime() >= deadline) { if (existingJourney?.stage === "stay_settled") this.#compensateStay(offer.offerId); throw new Error("Payment window has expired; cannot initialize bank transfer"); }
-    const existing = this.#sessionsByOffer.get(offer.offerId);
+    const existing = this.#sessionForOffer(offer.offerId);
     if (existing && (existing.status === "initiated" || existing.status === "processing_in_grace")) return { ...existing };
     const pending = this.#pendingInitializations.get(offer.offerId);
     if (pending) return { ...(await pending) };
@@ -214,15 +284,15 @@ export class BankTransferPaymentManager {
       graceEndsAt: new Date(deadline + GRACE_MS).toISOString(), status: "initiated"
     };
     if (purpose === "security_deposit") this.#securityDepositAccounting!.createOrGet({ offerId: offer.offerId, snapshot: journey!.requiredDeposit!, paymentMethod: "bank_transfer" });
-    this.#liveAttempts?.acquire({ offerId: offer.offerId, method: "bank_transfer", purpose, attemptId: session.checkoutId, startedAt: issuedAt.toISOString(), expiresAt: session.graceEndsAt }); if (journey) this.#journeys!.update(offer.offerId, journey.journeyVersion, (value) => ({ ...value, stage: purpose === "stay" ? "stay_payment_active" : "deposit_payment_active", [purpose === "stay" ? "stay" : "deposit"]: { ...(purpose === "stay" ? value.stay : value.deposit), status: "active" } })); this.#sessionsByOffer.set(offer.offerId, session); this.#sessionsByReference.set(transferReference, session);
+    this.#liveAttempts?.acquire({ offerId: offer.offerId, method: "bank_transfer", purpose, attemptId: session.checkoutId, startedAt: issuedAt.toISOString(), expiresAt: session.graceEndsAt }); if (journey) this.#journeys!.update(offer.offerId, journey.journeyVersion, (value) => ({ ...value, stage: purpose === "stay" ? "stay_payment_active" : "deposit_payment_active", [purpose === "stay" ? "stay" : "deposit"]: { ...(purpose === "stay" ? value.stay : value.deposit), status: "active" } })); this.#put(session);
     // ADR 0075: ids and times only; never the account number.
     this.#audit?.record({ type: "bank_transfer.initialized", checkoutId: session.checkoutId, offerId: offer.offerId, commandEnvelopeId: envelope.commandId, initiatedAt: issuedAt.toISOString() });
     return session;
   }
 
   getPaymentJourney(offerId: string) { return this.#journeys?.findByOfferId(offerId) ?? null; }
-  getSession(offerId: string): BankTransferCheckoutSession | undefined { const s = this.#sessionsByOffer.get(offerId); return s ? { ...s } : undefined; }
-  getSessionByReference(reference: string): BankTransferCheckoutSession | undefined { const s = this.#sessionsByReference.get(reference); return s ? { ...s } : undefined; }
+  getSession(offerId: string): BankTransferCheckoutSession | undefined { const s = this.#sessionForOffer(offerId); return s ? { ...s } : undefined; }
+  getSessionByReference(reference: string): BankTransferCheckoutSession | undefined { const s = this.#sessionForReference(reference); return s ? { ...s } : undefined; }
   getBookingContract(offerId: string): BookingContract | undefined { return [...this.#contracts.values()].find((c) => c.offerId === offerId); }
   getRefundRecord(offerId: string): BankTransferRefundRecord | undefined { return [...this.#refundRecords.values()].find((r) => r.offerId === offerId); }
   getReconciliationRecord(offerId: string): BankTransferReconciliationRecord | undefined { return [...this.#reconciliationRecords.values()].find((r) => r.offerId === offerId); }
@@ -238,13 +308,13 @@ export class BankTransferPaymentManager {
   }
 
   resolveExpiry(offerId: string, principal: CommandPrincipal, { clock = () => new Date() }: { clock?: () => Date } = {}): BankTransferCheckoutSession {
-    const offer = this.#offerManager.getOffer(offerId); assertServer(principal, offer); const session = this.#sessionsByOffer.get(offerId);
+    const offer = this.#offerManager.getOffer(offerId); assertServer(principal, offer); const session = this.#sessionForOffer(offerId);
     if (!session) throw new Error("No bank transfer session");
     const now = clock(); if (now.getTime() < new Date(session.graceEndsAt).getTime()) throw new Error("Payment release deadline has not been reached");
     if (session.status === "expired" || session.status === "refunded") return { ...session };
     this.#calendar?.releasePaymentPending?.(offer.inventoryCommitmentId, { clock: () => now });
     if (session.purpose === "security_deposit") this.#compensateStay(offerId);
-    const expired = { ...session, status: "expired" as const }; this.#liveAttempts?.release(offerId); this.#sessionsByOffer.set(offerId, expired); this.#sessionsByReference.set(session.transferReference, expired);
+    const expired = { ...session, status: "expired" as const }; this.#liveAttempts?.release(offerId); this.#put(expired);
     this.#audit?.record({ type: "bank_transfer.expired", offerId, checkoutId: session.checkoutId, commandEnvelopeId: principal.id, expiredAt: now.toISOString() });
     return { ...expired };
   }
@@ -264,7 +334,7 @@ export class BankTransferPaymentManager {
   #process(envelope: PlatformCommandEnvelope<{ transferReference: string }>, obtain: (reference: string) => BankTransferProviderResult, { clock = () => new Date() }: { clock?: () => Date } = {}): BankTransferProcessOutcome {
     if (!envelope || envelope.commandName !== "bank_transfer.verify_and_process") throw new Error("Invalid bank transfer verification command");
     if (Object.keys(envelope.payload ?? {}).length !== 1 || !envelope.payload.transferReference) throw new Error("Verification accepts only transferReference");
-    const session = this.#sessionsByReference.get(envelope.payload.transferReference); if (!session) throw new Error("Unknown transfer reference");
+    const session = this.#sessionForReference(envelope.payload.transferReference); if (!session) throw new Error("Unknown transfer reference");
     const offer = this.#offerManager.getOffer(session.offerId); assertServer(envelope.principal, offer);
     const processed = this.#processedReferences.get(session.transferReference);
     if (processed) {
@@ -272,6 +342,9 @@ export class BankTransferPaymentManager {
       if (processed.outcome === "confirmed" && processed.reservationId && processed.contractId) return { outcome: "confirmed", reservation: this.#reservations.get(processed.reservationId), bookingContract: this.#contracts.get(processed.contractId), ledgerEntries: this.#ledgerEntries.get(processed.reservationId) };
       if (processed.outcome === "late_payment_refunded" && processed.refundId && processed.reconciliationId) return { outcome: "late_payment_refunded", refundRecord: this.#refundRecords.get(processed.refundId), reconciliationRecord: this.#reconciliationRecords.get(processed.reconciliationId) };
     }
+    // After a restart the in-memory processed record is gone; the durable session status still says it is done.
+    // Re-running confirmation would roll back a live booking on failure, so a finished reference is never reprocessed.
+    if (!processed && (session.status === "completed" || session.status === "refunded")) throw new Error("Transfer reference was already processed");
     let result: BankTransferProviderResult;
     try { result = obtain(session.transferReference); this.#validateProvider(session, offer, result); } catch (error) { if (session.purpose === "security_deposit") this.#compensateStay(offer.offerId); throw error; }
     const now = clock(); const deadline = new Date(session.expiresAt).getTime(); const graceEnd = new Date(session.graceEndsAt).getTime();
@@ -279,7 +352,7 @@ export class BankTransferPaymentManager {
       if (now.getTime() >= graceEnd) { this.resolveExpiry(offer.offerId, envelope.principal, { clock }); return { outcome: "expired" }; }
       const updated = { ...session, status: "processing_in_grace" as const, processingStartedAt: result.processingStartedAt };
       if (now.getTime() >= deadline) this.#calendar?.extendPaymentPending?.(offer.inventoryCommitmentId, session.graceEndsAt, { clock: () => now });
-      this.#sessionsByOffer.set(offer.offerId, updated); this.#sessionsByReference.set(session.transferReference, updated); return { outcome: "processing_in_grace" };
+      this.#put(updated); return { outcome: "processing_in_grace" };
     }
     const eligibleSuccess = result.status === "success" && (now.getTime() < deadline || (session.processingStartedAt !== undefined && now.getTime() < graceEnd));
     if (result.status === "success" && !eligibleSuccess) return this.#lateRefund(offer, session, result, envelope, now);
@@ -287,7 +360,7 @@ export class BankTransferPaymentManager {
     if (session.purpose === "stay" && offer.securityDeposit && offer.securityDeposit.amountKobo > 0 && this.#journeys) {
       const current = this.#journeys.findByOfferId(offer.offerId); if (!current) throw new Error("Payment journey not found"); if (current.stage === "confirmed" && current.finalReservationId && current.finalContractId) return { outcome: "confirmed", reservation: this.#reservations.get(current.finalReservationId), bookingContract: this.#contracts.get(current.finalContractId), ledgerEntries: this.#ledgerEntries.get(current.finalReservationId) };
       this.#journeys.update(offer.offerId, current.journeyVersion, (value) => ({ ...value, stage: "stay_settled", stay: { ...value.stay, status: "settled", providerReference: session.transferReference, paidAt: now.toISOString() } }));
-      this.#sessionsByOffer.set(offer.offerId, { ...session, status: "completed" }); this.#liveAttempts?.release(offer.offerId); return { outcome: "deposit_required" };
+      this.#put({ ...session, status: "completed" }); this.#liveAttempts?.release(offer.offerId); return { outcome: "deposit_required" };
     }
     const compensationJourney = this.#journeys?.findByOfferId(offer.offerId);
     if (session.purpose === "security_deposit" && compensationJourney?.compensation.deposit.required) {
@@ -311,6 +384,7 @@ export class BankTransferPaymentManager {
       this.#calendar.transitionPaymentPendingToConfirmedBooking({ commitmentId: offer.inventoryCommitmentId, unitId: offer.unitId, start: offer.dates.checkIn, end: offer.dates.checkOut, clock: () => now });
       inventoryConfirmed = true;
       this.#bookingState?.saveBookingAtomically({ contract: bookingContract, reservation });
+      this.#store?.saveBookingSnapshot({ reservationId, contractId, offerId: offer.offerId, reservationJson: JSON.stringify(reservation), contractJson: JSON.stringify(bookingContract), confirmedAt: reservation.confirmedAt });
       if (session.purpose === "security_deposit") { const collection = this.#securityDepositAccounting?.getByOfferId(offer.offerId); if (!collection) throw new Error("Deposit collection record not found"); this.#securityDepositAccounting!.bind(collection.collectionId, { reservationId, contractId }); }
     } catch (error) {
       let rollbackFailed = false;
@@ -320,7 +394,7 @@ export class BankTransferPaymentManager {
       if (rollbackFailed) this.#markFinalizationReconciliation(offer.offerId);
       throw error;
     }
-    this.#reservations.set(reservationId, reservation); this.#contracts.set(contractId, bookingContract); this.#ledgerEntries.set(reservationId, ledgerEntries); this.#sessionsByOffer.set(offer.offerId, { ...session, status: "completed" }); if (this.#journeys) { const current = this.#journeys.findByOfferId(offer.offerId); if (current?.stage === "both_settled") this.#journeys.update(offer.offerId, current.journeyVersion, (value) => ({ ...value, stage: "confirmed", finalReservationId: reservationId, finalContractId: contractId })); } this.#liveAttempts?.release(offer.offerId); this.#processedReferences.set(session.transferReference, { offerId: offer.offerId, tenantId: offer.tenantId, outcome: "confirmed", reservationId, contractId });
+    this.#reservations.set(reservationId, reservation); this.#contracts.set(contractId, bookingContract); this.#ledgerEntries.set(reservationId, ledgerEntries); this.#put({ ...session, status: "completed" }); if (this.#journeys) { const current = this.#journeys.findByOfferId(offer.offerId); if (current?.stage === "both_settled") this.#journeys.update(offer.offerId, current.journeyVersion, (value) => ({ ...value, stage: "confirmed", finalReservationId: reservationId, finalContractId: contractId })); } this.#liveAttempts?.release(offer.offerId); this.#processedReferences.set(session.transferReference, { offerId: offer.offerId, tenantId: offer.tenantId, outcome: "confirmed", reservationId, contractId });
     return { outcome: "confirmed", reservation, bookingContract, ledgerEntries: Object.freeze(ledgerEntries) };
   }
 
@@ -333,7 +407,7 @@ export class BankTransferPaymentManager {
     const refundId = `ref_${deterministicSuffix(session.transferReference)}`; const reconciliationId = `rec_${deterministicSuffix(session.transferReference)}`;
     const refundRecord: BankTransferRefundRecord = { refundId, offerId: offer.offerId, transferReference: session.transferReference, amountKobo: result.amountKobo, currency: "NGN", reason: "late_payment_after_expiry", status: "initiated", createdAt: now.toISOString() };
     const reconciliationRecord: BankTransferReconciliationRecord = { reconciliationId, offerId: offer.offerId, transferReference: session.transferReference, amountKobo: result.amountKobo, status: "quarantined_for_refund", createdAt: now.toISOString() };
-    this.#liveAttempts?.release(offer.offerId); if (session.purpose === "security_deposit") this.#compensateStay(offer.offerId); this.#refundRecords.set(refundId, refundRecord); this.#reconciliationRecords.set(reconciliationId, reconciliationRecord); this.#processedReferences.set(session.transferReference, { offerId: offer.offerId, tenantId: offer.tenantId, outcome: "late_payment_refunded", refundId, reconciliationId }); this.#sessionsByOffer.set(offer.offerId, { ...session, status: "refunded" });
+    this.#liveAttempts?.release(offer.offerId); if (session.purpose === "security_deposit") this.#compensateStay(offer.offerId); this.#refundRecords.set(refundId, refundRecord); this.#reconciliationRecords.set(reconciliationId, reconciliationRecord); this.#processedReferences.set(session.transferReference, { offerId: offer.offerId, tenantId: offer.tenantId, outcome: "late_payment_refunded", refundId, reconciliationId }); this.#put({ ...session, status: "refunded" });
     this.#audit?.record({ type: "bank_transfer.late_payment_refunded", offerId: offer.offerId, commandEnvelopeId: envelope.commandId, refundId, reconciliationId, timestamp: now.toISOString() });
     return { outcome: "late_payment_refunded" as const, refundRecord, reconciliationRecord };
   }
