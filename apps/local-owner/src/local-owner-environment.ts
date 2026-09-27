@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import { createHash } from "node:crypto";
 import { existsSync, unlinkSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { createPlatformCommandEnvelope, type CommandPrincipal } from "../../../packages/platform-core/src/index.js";
@@ -29,11 +30,24 @@ import {
   SqliteAvailabilityStore,
   JsonUnitRepository,
   JsonOperatorRepository,
+  SqliteBookingPaymentJourneyRepository,
+  SqliteBookingStateRepository,
+  SqliteCheckInSupportStore,
+  contractualCheckInWindow,
+  isSupportVerificationBasis,
+  ownerPayableDueAt,
+  type AccessStatus,
+  type CheckInSupportState,
+  type ComplaintCategory,
+  type ContractualCheckInWindow,
   type OperatorRepository,
 } from "../../../domains/shortlet/src/index.js";
+import { bookingPaymentMethod, offerRecordFromJson, projectBookingStage, type BookingPaymentMethod, type BookingStage, type BookingStageProjection } from "./booking-projection.js";
 import {
   createBookingRequestApplication,
   createConditionalOfferApplication,
+  createCheckInSupportApplication,
+  type CheckInSupportApplication,
   type BookingRequestApplication,
   type BookingRequestArtifact,
 } from "../../../apps/web/src/index.js";
@@ -81,6 +95,64 @@ export class OperatorDecisionInputError extends Error {
     super(problem === "attestation_required" ? "Explicit re-attestation is required to confirm" : "A decline reason is required");
     this.name = "OperatorDecisionInputError";
   }
+}
+
+/** A confirmed Booking Request as the back office lists it (B4). Labels only: no ids beyond the request, no payment details (ADR 0075). */
+export interface OperatorBooking extends BookingStageProjection {
+  readonly requestId: string;
+  readonly ownerName: string;
+  readonly apartmentTitle: string;
+  readonly checkIn: string;
+  readonly checkOut: string;
+  readonly nights: number;
+  readonly partySize: number;
+  readonly allInStayTotalKobo: number | null;
+}
+
+/** A confirmed Reservation's snapshot facts and check-in state (B5). No card, reference or account values (ADR 0075). */
+export interface OperatorReservation extends OperatorBooking {
+  readonly reservationId: string;
+  /** The Guest's phone, for coordination only (ADR 0075). */
+  readonly phoneNumber: string | null;
+  readonly checkInWindow: ContractualCheckInWindow | null;
+  readonly checkoutTime: string | null;
+  readonly amountPaidKobo: number;
+  readonly paidWith: BookingPaymentMethod | null;
+  readonly accessStatus: AccessStatus;
+  readonly accessRecordedAt: string | null;
+  readonly openComplaints: readonly ComplaintCategory[];
+  /** Null until Verified Access, and while any Blocking Fulfilment Complaint is open (ADR 0089). */
+  readonly ownerPayableDueAt: string | null;
+  /** The version the check-in forms carry (ADR 0072). */
+  readonly version: string;
+}
+
+/**
+ * Blocking Fulfilment Complaint categories as the back office names them. The codes are the domain's; the words
+ * follow CONTEXT.md (access, substitution, habitability, safety, authority). Fixed list, no free text (ADR 0091).
+ */
+export const COMPLAINT_CATEGORY_LABELS: Readonly<Record<ComplaintCategory, string>> = Object.freeze({
+  access_failure: "Access failure",
+  habitability_failure: "Habitability failure",
+  substitution: "Substitution",
+  safety_issue: "Safety issue",
+  authority_defect: "Authority defect",
+});
+export function isComplaintCategory(value: unknown): value is ComplaintCategory {
+  return typeof value === "string" && Object.hasOwn(COMPLAINT_CATEGORY_LABELS, value);
+}
+
+export type CheckInInputProblem = "basis_required" | "category_required";
+/** A check-in form was incomplete. Nothing was recorded. */
+export class CheckInInputError extends Error {
+  constructor(readonly problem: CheckInInputProblem) {
+    super(problem === "basis_required" ? "Choose how access was verified" : "Choose a complaint category");
+    this.name = "CheckInInputError";
+  }
+}
+/** The Reservation changed since the form was rendered (ADR 0072). Nothing was recorded. */
+export class CheckInStaleError extends Error {
+  constructor() { super("This Reservation changed since you opened it"); this.name = "CheckInStaleError"; }
 }
 
 export const DEFAULT_LOCAL_OWNER_CONFIG: LocalOwnerFixtureConfig = {
@@ -158,6 +230,11 @@ export class LocalApartmentOwnerEnvironment {
   readonly telemetry: InMemoryTelemetry;
   readonly #database: DatabaseSync;
 
+  /** Read-only here: the committed Reservation's current status (B4). The Guest side writes it. */
+  readonly #bookingState: SqliteBookingStateRepository;
+  /** Durable check-in state shared with every process on this database (B5). */
+  readonly #checkInStore: SqliteCheckInSupportStore;
+
   #demoRequests: string[] = [];
 
   constructor(config: Partial<LocalOwnerFixtureConfig> = {}) {
@@ -169,6 +246,8 @@ export class LocalApartmentOwnerEnvironment {
     this.#database = new DatabaseSync(this.config.databasePath);
     this.#database.exec("PRAGMA busy_timeout = 5000");
     this.interactionStore = new SqliteGuestInteractionStore(this.config.databasePath, this.#database);
+    this.#bookingState = new SqliteBookingStateRepository(this.#database, this.config.databasePath);
+    this.#checkInStore = new SqliteCheckInSupportStore(this.#database);
     this.audit = new InMemoryAuditLog();
     this.telemetry = new InMemoryTelemetry();
     this.grantStore = new SqliteOperatorRepresentativeGrantStore(this.config.databasePath, { clock: this.clock });
@@ -326,6 +405,7 @@ export class LocalApartmentOwnerEnvironment {
         },
       },
       blockedDates: [],
+      checkInWindow: { earliestAccessTime: "14:00", latestPermittedArrival: "22:00", timezone: "Africa/Lagos" }, // ADR 0031 launch boundary
     };
 
     this.unitRepository.save(seededUnit);
@@ -540,6 +620,171 @@ export class LocalApartmentOwnerEnvironment {
     try {
       this.audit.record({ type: "calendar_accuracy_event", impactClass: "unavailable_request_decline", requestId, unitId: request.unitId, operatorId: request.operatorId, tenantId: request.tenantId, reasonCode: "dates_not_available", occurredAt: this.clock().toISOString() });
     } catch { /* observability cannot undo a completed decline */ }
+  }
+
+  /**
+   * Every confirmed Booking Request for an owner you hold a grant for (ADR 0082), with its stage read from the
+   * authoritative records the Guest side writes to the shared database. Read on each call, never cached, so a payment
+   * recorded by another process shows on the next view. Read-only: no command is issued.
+   */
+  listOperatorBookings(principal: CommandPrincipal): readonly OperatorBooking[] {
+    if (principal.role !== "operator" || !principal.id || !principal.tenantId) return [];
+    const journeys = new SqliteBookingPaymentJourneyRepository(this.#database, this.config.databasePath);
+    const now = this.clock();
+    const bookings = this.interactionStore.listBookingRequestIds().flatMap((requestId) => {
+      try {
+        const booking = this.#bookingFor(requestId, principal, journeys, now);
+        return booking ? [booking] : [];
+      } catch { return []; }
+    });
+    const rank: Record<BookingStage, number> = { offer_not_issued: 0, offer_issued: 1, awaiting_payment: 1, reservation_confirmed: 2, ended: 3 };
+    // Open payments first, soonest deadline first; then Reservations by check-in; then ended bookings.
+    const key = (booking: OperatorBooking) => rank[booking.stage] === 1 ? Date.parse(booking.graceEndsAt ?? booking.paymentDeadlineAt ?? "") : Date.parse(booking.checkIn);
+    return bookings.sort((a, b) => rank[a.stage] - rank[b.stage] || key(a) - key(b));
+  }
+
+  /** One booking, or "Booking not found" for an unknown id, an unconfirmed request, or an owner you do not act for (ADR 0082). */
+  operatorBooking(requestId: string, principal: CommandPrincipal): OperatorBooking {
+    const booking = this.#bookingFor(requestId, principal, new SqliteBookingPaymentJourneyRepository(this.#database, this.config.databasePath), this.clock());
+    if (!booking) throw new Error("Booking not found");
+    return booking;
+  }
+
+  #bookingFor(requestId: string, principal: CommandPrincipal, journeys: SqliteBookingPaymentJourneyRepository, now: Date): OperatorBooking | null {
+    if (principal.role !== "operator" || !principal.id || !principal.tenantId) return null;
+    let request: { operatorId?: string; tenantId?: string; status: string; checkIn: string; checkOut: string; nights: number; occupants: readonly unknown[]; quote?: { allInStayTotalKobo?: number } };
+    try { request = this.bookingRequestApp.manager.getRequest(requestId) as typeof request; } catch { return null; }
+    // Fail closed: a missing owner, tenant or grant is not found (ADR 0082).
+    if (!request.operatorId || !request.tenantId || request.tenantId !== principal.tenantId || !this.grantStore.canActForOperator({ actorId: principal.id, operatorId: request.operatorId, tenantId: request.tenantId })) return null;
+    if (request.status !== "confirmed") return null;
+    const storedOffer = this.interactionStore.findConditionalOfferByRequestId(requestId);
+    const offer = storedOffer ? offerRecordFromJson(storedOffer.offerJson) : null;
+    const journey = offer ? journeys.findByOfferId(offer.offerId) : null;
+    const reservationId = offer ? this.interactionStore.findBookingSnapshotByOfferId(offer.offerId)?.reservationId : undefined;
+    const reservation = reservationId ? this.#bookingState.findReservationById(reservationId) : null;
+    const projection = projectBookingStage({
+      offer,
+      journey,
+      attemptMethod: offer ? this.interactionStore.findLivePaymentAttemptByOfferId(offer.offerId)?.method ?? null : null,
+      // A snapshot without a live row still records a verified, committed Reservation (ADR 0005).
+      reservationStatus: reservation?.status ?? (reservationId ? "confirmed" : null),
+      now,
+    });
+    return Object.freeze({
+      requestId,
+      ...this.requestLabels(requestId),
+      checkIn: request.checkIn,
+      checkOut: request.checkOut,
+      nights: request.nights,
+      partySize: request.occupants.length,
+      // ADR 0077: the amount is the offer's captured quote, falling back to the request's; never recalculated.
+      allInStayTotalKobo: offer?.allInStayTotalKobo ?? request.quote?.allInStayTotalKobo ?? null,
+      ...projection,
+    });
+  }
+
+  /**
+   * A Reservation's snapshot facts and check-in state (B5). Grant-checked through `operatorBooking` (ADR 0082);
+   * "Booking not found" unless the booking is a confirmed Reservation. Facts come from the Booking Contract,
+   * never from the unit or a recalculation (ADR 0077).
+   */
+  operatorReservation(requestId: string, principal: CommandPrincipal): OperatorReservation {
+    const booking = this.operatorBooking(requestId, principal);
+    if (booking.stage !== "reservation_confirmed") throw new Error("Booking not found");
+    const offer = this.interactionStore.findConditionalOfferByRequestId(requestId);
+    const reservationId = offer ? this.interactionStore.findBookingSnapshotByOfferId(offer.offerId)?.reservationId : undefined;
+    const reservation = reservationId ? this.#bookingState.findReservationById(reservationId) : null;
+    const contract = reservation ? this.#bookingState.findContractById(reservation.contractId) : null;
+    if (!reservation || !contract) throw new Error("Booking not found");
+    const request = this.bookingRequestApp.manager.getRequest(requestId) as { phoneNumber?: string | null };
+    const checkIn = this.#checkInState(reservation.reservationId);
+    const openComplaints = checkIn.complaints.filter((complaint) => complaint.status !== "resolved").map((complaint) => complaint.category);
+    const accessRecorded = checkIn.result?.status === "verified_access" || checkIn.result?.status === "late_voluntary_arrival";
+    const protectionWindowStartsAt = accessRecorded ? checkIn.result?.protectionWindowStartsAt ?? null : null;
+    // ADR 0072: the version the check-in forms were rendered from; any change to access or complaints makes it stale.
+    const version = createHash("sha256").update(JSON.stringify([checkIn.result?.status ?? "awaiting_access", checkIn.result?.verifiedAt ?? "", checkIn.complaints.map((complaint) => `${complaint.complaintId}:${complaint.status}`)])).digest("hex").slice(0, 16);
+    return Object.freeze({
+      ...booking,
+      reservationId: reservation.reservationId,
+      phoneNumber: request.phoneNumber ?? null,
+      checkInWindow: contractualCheckInWindow(contract.checkInWindow),
+      checkoutTime: contract.checkout?.time ?? null,
+      amountPaidKobo: contract.paymentDetails.amountKobo,
+      paidWith: bookingPaymentMethod(contract.paymentDetails.paymentMethod),
+      accessStatus: checkIn.result?.status ?? "awaiting_access",
+      accessRecordedAt: accessRecorded ? checkIn.result?.verifiedAt ?? null : null,
+      openComplaints: Object.freeze(openComplaints),
+      // ADR 0089: due 24 hours after Verified Access, and only while no Blocking Fulfilment Complaint is open.
+      ownerPayableDueAt: protectionWindowStartsAt && openComplaints.length === 0 ? ownerPayableDueAt(protectionWindowStartsAt) : null,
+      version,
+    });
+  }
+
+  /**
+   * Records Verified Access as platform support (ADR 0091): an `authorized_staff` principal for the signed-in actor,
+   * only after the owner grant check, with a documented basis. The domain refuses a repeat or a record before the
+   * Contractual Check-In Window (ADR 0022, 0031).
+   */
+  recordVerifiedAccess(requestId: string, principal: CommandPrincipal, input: { readonly basis: string; readonly basedOnVersion: string }): OperatorReservation {
+    if (!isSupportVerificationBasis(input.basis)) throw new CheckInInputError("basis_required");
+    const basis = input.basis;
+    return this.#checkInCommand(requestId, principal, input.basedOnVersion, "operator_verified_access_recorded", (app, reservationId, staff) => {
+      app.recordSupportVerification({ reservationId, provisionedAt: this.clock().toISOString(), validAccess: true, failedAccess: false, positiveAtContractualCheckIn: false, basis }, staff);
+      return { basis };
+    });
+  }
+
+  /** Reports a Blocking Fulfilment Complaint as platform support (ADR 0091): a fixed category, no free text (ADR 0075). */
+  reportBlockingComplaint(requestId: string, principal: CommandPrincipal, input: { readonly category: string; readonly basedOnVersion: string }): OperatorReservation {
+    if (!isComplaintCategory(input.category)) throw new CheckInInputError("category_required");
+    const category = input.category;
+    return this.#checkInCommand(requestId, principal, input.basedOnVersion, "operator_blocking_complaint_reported", (app, reservationId, staff) => {
+      app.reportBlockingComplaintAsSupport(reservationId, category, staff);
+      return { category };
+    });
+  }
+
+  #checkInCommand(requestId: string, principal: CommandPrincipal, basedOnVersion: string, auditType: string, run: (app: CheckInSupportApplication, reservationId: string, staff: CommandPrincipal) => Record<string, string>): OperatorReservation {
+    // Grant, tenant and Reservation checks first; a missing or revoked grant is "Booking not found" (ADR 0082).
+    const current = this.operatorReservation(requestId, principal);
+    if (!principal.id || !principal.tenantId) throw new Error("Booking not found");
+    if (basedOnVersion !== current.version) throw new CheckInStaleError();
+    const staff: CommandPrincipal = { id: principal.id, role: "authorized_staff", tenantId: principal.tenantId };
+    const app = this.#checkInSupport(staff.id);
+    // ADR 0030: support is scheduled for the window before check-in is recorded; the signed-in user is the responder.
+    try { app.manager.projectCheckInStatus(current.reservationId); } catch { app.scheduleSupport(current.reservationId, staff); }
+    const codes = run(app, current.reservationId, staff);
+    try { this.audit.record({ type: auditType, actorId: principal.id, tenantId: principal.tenantId, requestId, reservationId: current.reservationId, ...codes, occurredAt: this.clock().toISOString() }); } catch { /* observability cannot undo a recorded fact */ }
+    return this.operatorReservation(requestId, principal);
+  }
+
+  /** Check-in state read fresh from the shared store (another process may have written it). */
+  #checkInState(reservationId: string): Pick<CheckInSupportState, "result" | "complaints"> {
+    const state = this.#checkInStore.load(reservationId);
+    return { result: state?.result ?? null, complaints: state?.complaints ?? [] };
+  }
+
+  /**
+   * A check-in application over the durable store. Built per command: all state lives in SQLite, so nothing is cached.
+   * The window comes from the Booking Contract's snapshot and fails closed when the contract has none (ADR 0031).
+   */
+  #checkInSupport(responderId: string): CheckInSupportApplication {
+    return createCheckInSupportApplication({
+      store: this.#checkInStore,
+      clock: this.clock,
+      audit: this.audit,
+      windowProvider: {
+        getWindow: (reservationId: string) => {
+          const reservation = this.#bookingState.findReservationById(reservationId);
+          const contract = reservation ? this.#bookingState.findContractById(reservation.contractId) : null;
+          const window = contractualCheckInWindow(contract?.checkInWindow);
+          if (!contract || !window) throw new Error("This Reservation has no Contractual Check-In Window on file");
+          return { checkInDate: contract.dates.checkIn, earliestAccessTime: window.earliestAccessTime, latestPermittedArrival: window.latestPermittedArrival, timezone: window.timezone };
+        },
+      },
+      // Pilot coverage: the signed-in platform-support user responds; the platform admin is the backup (ADR 0030).
+      assignmentProvider: { assign: () => ({ assignedResponderId: responderId, backupResponderId: this.config.adminId }) },
+    });
   }
 
   getStateOverview(): LocalOwnerStateOverview {

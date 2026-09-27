@@ -1,6 +1,13 @@
 import { createHash } from "node:crypto";
 import type { SecurityDepositPolicySnapshot } from "./security-deposit.js";
 
+/** ADR 0044: one Payment-Processing Grace of at most 10 minutes after the Payment Window deadline, never repeated. */
+export const PAYMENT_PROCESSING_GRACE_MINUTES = 10;
+/** The latest instant a designated in-flight transaction may still confirm (ADR 0044). */
+export function paymentProcessingGraceEndsAt(paymentWindowDeadlineIso: string): string {
+  return new Date(Date.parse(paymentWindowDeadlineIso) + PAYMENT_PROCESSING_GRACE_MINUTES * 60_000).toISOString();
+}
+
 export type BookingPaymentStage = "ready" | "stay_payment_active" | "stay_payment_processing" | "stay_settled" | "deposit_payment_active" | "deposit_payment_processing" | "both_settled" | "confirmed" | "compensation_pending" | "compensated" | "reconciliation_required" | "failed" | "expired";
 export interface BookingPaymentCompensationPort { refundOrGet(input: { obligationId: string; offerId: string; paymentMethod: "fresh_card" | "bank_transfer"; originalPaymentReference: string; amountKobo: number; currency: "NGN" }): { refundId: string; status: "pending" | "settled" | "failed"; amountKobo: number; currency: string }; }
 export type PaymentComponentStatus = "unpaid" | "active" | "processing" | "settled" | "failed";

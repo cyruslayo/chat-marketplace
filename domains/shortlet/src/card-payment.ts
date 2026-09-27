@@ -1,7 +1,7 @@
 import { PlatformCommandEnvelope } from "../../../packages/platform-core/src/index.js";
 import { ConditionalBookingOffer } from "./conditional-offer.js";
 import type { BookingStateRepository } from "./booking-state.js";
-import { deriveCompensationStatus, type BookingPaymentJourneyRepository, type BookingPaymentCompensationPort } from "./booking-payment-journey.js";
+import { deriveCompensationStatus, PAYMENT_PROCESSING_GRACE_MINUTES, type BookingPaymentJourneyRepository, type BookingPaymentCompensationPort } from "./booking-payment-journey.js";
 import { assertSecurityDepositCollectionAvailable, type SecurityDepositCollectionCapabilityProvider } from "./security-deposit.js";
 import type { GuestConductPolicySnapshot } from "./guest-conduct.js";
 import type { SecurityDepositPolicySnapshot } from "./security-deposit.js";
@@ -88,6 +88,8 @@ export interface BookingContract {
       };
   readonly createdAt: string;
   readonly contractVersion: number;
+  /** ADR 0031: the Contractual Check-In Window captured from the offer. */
+  readonly checkInWindow?: import("./checkin-support.js").ContractualCheckInWindow;
   readonly checkout?: { readonly time: "11:00" | "12:00" | "13:00" | "14:00"; readonly timezone: "Africa/Lagos"; readonly source: "contractual" | "checkout_amendment"; readonly amendmentId?: string; readonly amendmentVersion?: number | string };
   readonly financialSummary?: { readonly originalBookingTotalKobo: number; readonly currentContractTotalKobo: number; readonly currency: "NGN"; readonly amendmentAdjustments: readonly { readonly amendmentId: string; readonly type: "additional_collection" | "refund" | "none"; readonly amountKobo: number; readonly currency: "NGN"; readonly settlementId?: string; readonly settledAt?: string; readonly quoteId: string; readonly quoteVersion: string | number }[] };
 }
@@ -444,7 +446,7 @@ export class CardPaymentManager {
       // Check Payment-Processing Grace (ADR 0044)
       if (["ongoing", "pending", "processing", "queued"].includes(pspResult.status)) {
         const paymentWindowEnd = new Date(offer.paymentWindow.expiresAt).getTime();
-        const graceEnd = paymentWindowEnd + 10 * 60 * 1000; // +10 min grace
+        const graceEnd = paymentWindowEnd + PAYMENT_PROCESSING_GRACE_MINUTES * 60_000;
         if (now.getTime() <= graceEnd) {
           this.#markPaymentProcessing(offerId, session.purpose);
           throw new Error("Payment is currently processing under Payment-Processing Grace period");
@@ -480,7 +482,7 @@ export class CardPaymentManager {
 
     // Expiry check (Payment Window + Grace)
     const paymentWindowEnd = new Date(offer.paymentWindow.expiresAt).getTime();
-    const graceEnd = paymentWindowEnd + 10 * 60 * 1000; // 10 minutes grace for pending
+    const graceEnd = paymentWindowEnd + PAYMENT_PROCESSING_GRACE_MINUTES * 60_000;
     if (now.getTime() > graceEnd) {
       this.#markLatePaymentReconciliation(offerId, pspReference, pspResult.amountKobo, now);
       rejectDeposit("Payment verification failed: Payment Window and Grace period have expired");
@@ -566,6 +568,7 @@ export class CardPaymentManager {
       createdAt: now.toISOString(),
       contractVersion: 1,
       checkout: { time: "11:00", timezone: "Africa/Lagos", source: "contractual" },
+      ...(offer.checkInWindow ? { checkInWindow: offer.checkInWindow } : {}),
       financialSummary: { originalBookingTotalKobo: offer.totalAmountDueNowKobo, currentContractTotalKobo: offer.totalAmountDueNowKobo, currency: "NGN", amendmentAdjustments: [] }
     };
 

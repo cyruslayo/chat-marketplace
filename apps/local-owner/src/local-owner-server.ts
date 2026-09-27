@@ -8,7 +8,14 @@ import {
   resetLocalOwnerFixture,
   DEFAULT_LOCAL_OWNER_CONFIG,
   type LocalOwnerStateOverview,
+  type OperatorBooking,
+  type OperatorReservation,
+  COMPLAINT_CATEGORY_LABELS,
+  CheckInInputError,
+  CheckInStaleError,
 } from "./local-owner-environment.js";
+import { SUPPORT_VERIFICATION_BASES, type AccessStatus, type ComplaintCategory, type SupportVerificationBasis } from "../../../domains/shortlet/src/index.js";
+import { BOOKING_ENDED_REASONS, BOOKING_PAYMENT_METHOD_LABELS, BOOKING_STAGE_LABELS, type BookingStage } from "./booking-projection.js";
 import { escapeHtml, formatMoney, icon, pageShell, type StatusTone } from "../../web/src/ui-kit.js";
 import { OPERATOR_RESPONSE_REMINDER_MINUTES, operatorResponseReminderDue, type OperatorAuthenticatedPrincipal } from "../../../domains/shortlet/src/index.js";
 import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
@@ -248,6 +255,141 @@ function operatorRequestHtml(env: LocalApartmentOwnerEnvironment, principal: Ope
     viewer: viewer(env, principal),
     current: "requests",
     body: `<p><a class="ui-button ui-button--quiet" href="/operator/requests">${icon("arrow-left")}Back to requests</a></p><header class="ui-page__header" data-request-id="${escapeHtml(facts.requestId)}"><p class="ui-eyebrow">Booking Request</p><h1>${escapeHtml(labels.apartmentTitle)}</h1><div class="ui-row">${requestBadge(facts.status, facts.delivered)}</div></header>${error ? `<p class="ui-banner ui-banner--danger" role="alert">${icon("alert")}<span>${escapeHtml(error)}</span></p>` : ""}<section class="ui-panel" aria-label="Request facts"><dl class="ui-facts"><dt>Owner</dt><dd>${escapeHtml(labels.ownerName)}</dd><dt>Apartment</dt><dd>${escapeHtml(labels.apartmentTitle)}</dd><dt>Dates</dt><dd><time datetime="${escapeHtml(facts.checkIn)}">${escapeHtml(facts.checkIn)}</time> to <time datetime="${escapeHtml(facts.checkOut)}">${escapeHtml(facts.checkOut)}</time> (${facts.nights} nights)</dd><dt>Guest party</dt><dd>${guestParty(facts)}</dd>${phone}<dt>All-In Stay Total</dt><dd class="ui-money-total">${formatMoney(facts.quote?.allInStayTotalKobo ?? 0)}</dd>${facts.quote?.refundableSecurityDepositKobo ? `<dt>Refundable Security Deposit</dt><dd>${formatMoney(facts.quote.refundableSecurityDepositKobo)}</dd>` : ""}<dt>Response deadline</dt><dd>${watTime(facts.operatorResponseDeadlineAt)}</dd></dl></section>${decisions}`,
+  });
+}
+
+const BOOKING_TONES: Readonly<Record<BookingStage, StatusTone>> = { offer_not_issued: "warning", offer_issued: "info", awaiting_payment: "info", reservation_confirmed: "success", ended: "neutral" };
+
+function bookingBadge(booking: OperatorBooking): string {
+  return `<span class="ui-status ui-status--${BOOKING_TONES[booking.stage]}">${escapeHtml(BOOKING_STAGE_LABELS[booking.stage])}</span>`;
+}
+
+function bookingPaymentMethod(booking: OperatorBooking): string {
+  return booking.paymentMethod ? BOOKING_PAYMENT_METHOD_LABELS[booking.paymentMethod] : "Not chosen yet";
+}
+
+/**
+ * What the booking is waiting for, or why it ended. Deadlines are the projected instants as absolute WAT (ADR 0044, 0077).
+ * An ended booking gives only its reason: never a card, account, reference or contact detail (ADR 0075).
+ */
+function bookingTiming(booking: OperatorBooking): string {
+  if (booking.stage === "ended" && booking.endedReason) return escapeHtml(BOOKING_ENDED_REASONS[booking.endedReason]);
+  if ((booking.stage === "offer_issued" || booking.stage === "awaiting_payment") && booking.paymentDeadlineAt) {
+    return booking.graceEndsAt ? `Payment-Processing Grace until ${watTime(booking.graceEndsAt)}` : `Pay by ${watTime(booking.paymentDeadlineAt)}`;
+  }
+  return "";
+}
+
+function bookingTotal(booking: OperatorBooking): string {
+  return booking.allInStayTotalKobo === null ? "" : formatMoney(booking.allInStayTotalKobo);
+}
+
+function operatorBookingsHtml(env: LocalApartmentOwnerEnvironment, principal: OperatorPrincipal): string {
+  // Re-read on every view from the authoritative records; expiry resolves lazily against server time (ADR 0077).
+  const bookings = env.listOperatorBookings(commandPrincipal(principal));
+  const rows = bookings.map((booking) => {
+    const timing = bookingTiming(booking);
+    const timingId = `booking-timing-${encodeURIComponent(booking.requestId)}`;
+    return `<li class="bo-booking" data-request-id="${escapeHtml(booking.requestId)}" data-stage="${booking.stage}"><a class="ui-list__row" href="/operator/bookings/${encodeURIComponent(booking.requestId)}"${timing ? ` aria-describedby="${escapeHtml(timingId)}"` : ""}><span class="ui-list__primary">${escapeHtml(booking.apartmentTitle)}</span><span class="ui-list__aside"><span class="ui-sr-only">All-In Stay Total </span>${bookingTotal(booking)}</span><span class="ui-list__secondary">${escapeHtml(booking.ownerName)} · ${escapeHtml(formatStayDates(booking.checkIn, booking.checkOut))} · Payment method: ${escapeHtml(bookingPaymentMethod(booking))}</span><span class="ui-list__status">${bookingBadge(booking)}</span>${timing ? `<span class="bo-booking__timing" id="${escapeHtml(timingId)}">${timing}</span>` : ""}</a></li>`;
+  }).join("");
+  const list = rows
+    ? `<ul class="ui-list">${rows}</ul>`
+    : `<section class="ui-panel ui-empty"><div class="ui-empty__art">${icon("calendar")}</div><h2>No bookings yet</h2><p>A Booking Request appears here once you confirm it.</p></section>`;
+  const summary = bookings.length === 0 ? "" : `<p>Each confirmed request, with its payment and whether it became a Reservation.</p>`;
+  return backOfficePage({
+    title: "Bookings",
+    viewer: viewer(env, principal),
+    current: "bookings",
+    style: BOOKING_STYLE,
+    body: `<header class="ui-page__header"><h1>Bookings</h1>${summary}</header><h2 class="ui-sr-only">Bookings</h2>${list}`,
+  });
+}
+
+const BOOKING_STYLE = ".bo-booking__timing{grid-column:1/-1;color:var(--color-text-secondary)}";
+
+const ACCESS_STATUS_LABELS: Readonly<Record<AccessStatus, string>> = {
+  awaiting_access: "Awaiting Verified Access",
+  verified_access: "Verified Access recorded",
+  late_voluntary_arrival: "Verified Access recorded (late voluntary arrival)",
+  failed_access: "Access failed",
+  // ADR 0022: conflicting evidence needs a human fulfilment review, which the back office does not resolve.
+  under_human_review: "Under human fulfilment review",
+};
+
+/**
+ * Check-in forms (ADR 0091): Verified Access needs one documented basis, and a complaint one fixed category.
+ * No free text; each form carries the version it was rendered from (ADR 0072). Works without JavaScript (ADR 0080).
+ */
+function checkInFormsHtml(reservation: OperatorReservation): string {
+  const action = (kind: "verified-access" | "blocking-complaint") => `/operator/bookings/${encodeURIComponent(reservation.requestId)}/${kind}`;
+  const versionField = `<input type="hidden" name="basedOnVersion" value="${escapeHtml(reservation.version)}">`;
+  const bases = (Object.keys(SUPPORT_VERIFICATION_BASES) as SupportVerificationBasis[]).map((code) => `<label class="bo-choice"><input type="radio" name="basis" value="${code}" required> ${escapeHtml(SUPPORT_VERIFICATION_BASES[code])}</label>`).join("");
+  const categories = (Object.keys(COMPLAINT_CATEGORY_LABELS) as ComplaintCategory[]).map((code) => `<label class="bo-choice"><input type="radio" name="category" value="${code}" required> ${escapeHtml(COMPLAINT_CATEGORY_LABELS[code])}</label>`).join("");
+  const access = reservation.accessStatus === "awaiting_access"
+    ? `<form method="post" action="${action("verified-access")}" class="ui-stack">${versionField}<h3>Record Verified Access</h3><fieldset class="bo-reasons"><legend>How was access verified?</legend>${bases}</fieldset><p>The owner's word alone is not enough to record Verified Access.</p><button class="ui-button ui-button--primary ui-button--block" type="submit">Record Verified Access</button></form>`
+    : "";
+  const complaint = `<details class="ui-confirm"><summary>Report a Blocking Fulfilment Complaint…</summary><div class="ui-confirm__body"><form method="post" action="${action("blocking-complaint")}" class="ui-stack">${versionField}<fieldset class="bo-reasons"><legend>Category</legend>${categories}</fieldset><p>While the complaint is open, the owner payable is not due.</p><button class="ui-button ui-button--destructive ui-button--block" type="submit">Report complaint</button></form></div></details>`;
+  return `<section class="ui-panel" aria-labelledby="checkin-heading"><h2 id="checkin-heading">Check-in</h2>${access}${complaint}</section>`;
+}
+
+function operatorReservationHtml(env: LocalApartmentOwnerEnvironment, principal: OperatorPrincipal, requestId: string, error = ""): string {
+  const reservation = env.operatorReservation(requestId, commandPrincipal(principal));
+  const window = reservation.checkInWindow ? `${reservation.checkInWindow.earliestAccessTime}–${reservation.checkInWindow.latestPermittedArrival} WAT` : "Not on file";
+  const payable = reservation.openComplaints.length > 0
+    ? "Not due while a Blocking Fulfilment Complaint is open"
+    : reservation.ownerPayableDueAt ? `Due ${watTime(reservation.ownerPayableDueAt)}` : "Not due until Verified Access is recorded";
+  const complaints = reservation.openComplaints.map((category) => `<dt>Open Blocking Fulfilment Complaint</dt><dd>${escapeHtml(COMPLAINT_CATEGORY_LABELS[category])}</dd>`).join("");
+  const facts = `<dl class="ui-facts"><dt>Owner</dt><dd>${escapeHtml(reservation.ownerName)}</dd><dt>Apartment</dt><dd>${escapeHtml(reservation.apartmentTitle)}</dd><dt>Dates</dt><dd>${escapeHtml(formatStayDates(reservation.checkIn, reservation.checkOut))} (${reservation.nights} ${reservation.nights === 1 ? "night" : "nights"})</dd><dt>Guest party</dt><dd>${reservation.partySize} ${reservation.partySize === 1 ? "occupant" : "occupants"}</dd><dt>Arrival window</dt><dd>${escapeHtml(window)}</dd><dt>Checkout</dt><dd>${reservation.checkoutTime ? `${escapeHtml(reservation.checkoutTime)} WAT` : "Not on file"}</dd>${reservation.phoneNumber ? `<dt>Guest phone</dt><dd>${escapeHtml(reservation.phoneNumber)}</dd>` : ""}<dt>Amount paid</dt><dd class="ui-money-total">${formatMoney(reservation.amountPaidKobo)}</dd><dt>Payment method</dt><dd>${escapeHtml(reservation.paidWith ? BOOKING_PAYMENT_METHOD_LABELS[reservation.paidWith] : "Not on file")}</dd></dl>`;
+  const status = `<dl class="ui-facts"><dt>Check-in</dt><dd>${escapeHtml(ACCESS_STATUS_LABELS[reservation.accessStatus])}</dd>${complaints}<dt>Owner payable</dt><dd>${payable}</dd></dl>`;
+  return backOfficePage({
+    title: `Reservation · ${reservation.apartmentTitle}`,
+    viewer: viewer(env, principal),
+    current: "bookings",
+    style: DECISION_STYLE,
+    body: `<p><a class="ui-button ui-button--quiet" href="/operator/bookings">${icon("arrow-left")}Back to bookings</a></p><header class="ui-page__header"><p class="ui-eyebrow">Reservation</p><h1>${escapeHtml(reservation.apartmentTitle)}</h1><div class="ui-row">${bookingBadge(reservation)}</div></header>${error ? `<p class="ui-banner ui-banner--danger" role="alert">${icon("alert")}<span>${escapeHtml(error)}</span></p>` : ""}<section class="ui-panel" aria-label="Reservation facts">${facts}</section><section class="ui-panel" aria-label="Check-in status">${status}</section>${checkInFormsHtml(reservation)}`,
+  });
+}
+
+/** Only the fields each check-in form sends are accepted, so no free text can ride along (ADR 0075, 0091). */
+function checkInFromForm(kind: "verified-access" | "blocking-complaint", body: string): { readonly basedOnVersion: string; readonly value: string } {
+  const params = new URLSearchParams(body);
+  const field = kind === "verified-access" ? "basis" : "category";
+  const keys = [...params.keys()];
+  if (keys.some((key) => key !== "basedOnVersion" && key !== field) || new Set(keys).size !== keys.length) throw new DecisionFormError("Unexpected check-in fields");
+  const version = params.get("basedOnVersion") ?? "";
+  if (!/^[0-9a-f]{16}$/.test(version)) throw new DecisionFormError("Missing check-in version");
+  return { basedOnVersion: version, value: params.get(field) ?? "" };
+}
+
+/** Why a check-in action was refused, in plain words. Domain refusals keep their own wording (ADR 0091). */
+function checkInRefusal(error: unknown): string {
+  if (error instanceof CheckInInputError) return `${error.message}. Nothing was recorded.`;
+  if (error instanceof DecisionFormError) return "This form could not be read. Review the Reservation and try again. Nothing was recorded.";
+  if (error instanceof CheckInStaleError) return "This Reservation changed since you opened it. Review it and try again. Nothing was recorded.";
+  const message = error instanceof Error ? error.message : "";
+  const known = ["Verified Access cannot be recorded before the Contractual Check-In Window begins", "Verified Access is already recorded for this Reservation", "This Reservation has no Contractual Check-In Window on file"].find((text) => message.includes(text));
+  return known ? `${known}. Nothing was recorded.` : "This action could not be completed. Nothing was recorded.";
+}
+
+function operatorBookingHtml(env: LocalApartmentOwnerEnvironment, principal: OperatorPrincipal, requestId: string): string {
+  const booking = env.operatorBooking(requestId, commandPrincipal(principal));
+  if (booking.stage === "reservation_confirmed") return operatorReservationHtml(env, principal, requestId);
+  const timing = bookingTiming(booking);
+  const total = bookingTotal(booking);
+  return backOfficePage({
+    title: `Booking · ${booking.apartmentTitle}`,
+    viewer: viewer(env, principal),
+    current: "bookings",
+    body: `<p><a class="ui-button ui-button--quiet" href="/operator/bookings">${icon("arrow-left")}Back to bookings</a></p><header class="ui-page__header"><p class="ui-eyebrow">Booking</p><h1>${escapeHtml(booking.apartmentTitle)}</h1><div class="ui-row">${bookingBadge(booking)}</div></header><section class="ui-panel" aria-label="Booking facts"><dl class="ui-facts"><dt>Owner</dt><dd>${escapeHtml(booking.ownerName)}</dd><dt>Apartment</dt><dd>${escapeHtml(booking.apartmentTitle)}</dd><dt>Dates</dt><dd>${escapeHtml(formatStayDates(booking.checkIn, booking.checkOut))} (${booking.nights} ${booking.nights === 1 ? "night" : "nights"})</dd><dt>Guest party</dt><dd>${booking.partySize} ${booking.partySize === 1 ? "occupant" : "occupants"}</dd>${total ? `<dt>All-In Stay Total</dt><dd class="ui-money-total">${total}</dd>` : ""}<dt>Stage</dt><dd>${escapeHtml(BOOKING_STAGE_LABELS[booking.stage])}</dd><dt>Payment method</dt><dd>${escapeHtml(bookingPaymentMethod(booking))}</dd>${timing ? `<dt>${booking.stage === "ended" ? "Outcome" : "Payment deadline"}</dt><dd>${timing}</dd>` : ""}</dl></section>`,
+  });
+}
+
+function bookingNotFoundHtml(env: LocalApartmentOwnerEnvironment, principal: OperatorPrincipal): string {
+  return backOfficePage({
+    title: "Not found",
+    viewer: viewer(env, principal),
+    current: "bookings",
+    body: `<section class="ui-panel ui-empty"><div class="ui-empty__art">${icon("search")}</div><h1>Booking not found</h1><p>This booking does not exist, or you no longer act for its owner.</p><a class="ui-button ui-button--primary" href="/operator/bookings">Back to bookings</a></section>`,
   });
 }
 
@@ -680,6 +822,43 @@ export function startLocalOwnerServer(options: {
       try { body = operatorRequestHtml(env, principal, decodeURIComponent(detailMatch[1]!)); }
       catch { res.writeHead(404, { "Content-Type": "text/html; charset=utf-8" }); res.end(operatorNotFoundHtml(env, principal)); return; }
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(body);
+      return;
+    }
+    // Bookings are read-only (B4): GET only, so there is no command to forge.
+    if (req.method === "GET" && (url.pathname === "/operator/bookings" || url.pathname === "/operator/bookings/")) {
+      page((principal) => operatorBookingsHtml(env, principal)); return;
+    }
+    const bookingMatch = url.pathname.match(/^\/operator\/bookings\/([^/]+)$/);
+    if (req.method === "GET" && bookingMatch) {
+      const principal = operatorPrincipal(req, env);
+      if (!principal) { res.writeHead(303, { Location: signInLocation(req, env) }); res.end(); return; }
+      let body: string;
+      // Unknown, unconfirmed, and another owner's booking (ADR 0082) all look the same: not found.
+      try { body = operatorBookingHtml(env, principal, decodeURIComponent(bookingMatch[1]!)); }
+      catch { res.writeHead(404, { "Content-Type": "text/html; charset=utf-8" }); res.end(bookingNotFoundHtml(env, principal)); return; }
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(body);
+      return;
+    }
+    const checkInMatch = url.pathname.match(/^\/operator\/bookings\/([^/]+)\/(verified-access|blocking-complaint)$/);
+    if (req.method === "POST" && checkInMatch) {
+      if (!browserOriginAccepted(req)) { res.writeHead(403); res.end("Origin rejected"); return; }
+      const principal = operatorPrincipal(req, env);
+      if (!principal) { res.writeHead(401); res.end("Authentication required"); return; }
+      const requestId = decodeURIComponent(checkInMatch[1]!);
+      const kind = checkInMatch[2] === "verified-access" ? "verified-access" : "blocking-complaint";
+      try {
+        const form = checkInFromForm(kind, await readForm(req));
+        if (kind === "verified-access") env.recordVerifiedAccess(requestId, commandPrincipal(principal), { basis: form.value, basedOnVersion: form.basedOnVersion });
+        else env.reportBlockingComplaint(requestId, commandPrincipal(principal), { category: form.value, basedOnVersion: form.basedOnVersion });
+        res.writeHead(303, { Location: `/operator/bookings/${encodeURIComponent(requestId)}` }); res.end();
+      } catch (error) {
+        // Refused actions record nothing and re-render the current state. Unknown, not a Reservation, or a lost grant: not found (ADR 0082).
+        let body: string;
+        try { body = operatorReservationHtml(env, principal, requestId, checkInRefusal(error)); }
+        catch { if (!res.headersSent) { res.writeHead(404, { "Content-Type": "text/html; charset=utf-8" }); res.end(bookingNotFoundHtml(env, principal)); } return; }
+        const statusCode = error instanceof CheckInInputError || error instanceof DecisionFormError ? 400 : 409;
+        if (!res.headersSent) { res.writeHead(statusCode, { "Content-Type": "text/html; charset=utf-8" }); res.end(body); }
+      }
       return;
     }
     const actionMatch = url.pathname.match(/^\/operator\/requests\/([^/]+)\/(confirm|decline)$/);
