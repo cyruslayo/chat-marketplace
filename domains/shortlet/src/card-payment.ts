@@ -1,7 +1,7 @@
 import { PlatformCommandEnvelope } from "../../../packages/platform-core/src/index.js";
 import { ConditionalBookingOffer } from "./conditional-offer.js";
 import type { BookingStateRepository } from "./booking-state.js";
-import { deriveCompensationStatus, type BookingPaymentJourneyRepository, type BookingPaymentCompensationPort } from "./booking-payment-journey.js";
+import { deriveCompensationStatus, PAYMENT_PROCESSING_GRACE_MINUTES, type BookingPaymentJourneyRepository, type BookingPaymentCompensationPort } from "./booking-payment-journey.js";
 import { assertSecurityDepositCollectionAvailable, type SecurityDepositCollectionCapabilityProvider } from "./security-deposit.js";
 import type { GuestConductPolicySnapshot } from "./guest-conduct.js";
 import type { SecurityDepositPolicySnapshot } from "./security-deposit.js";
@@ -444,7 +444,7 @@ export class CardPaymentManager {
       // Check Payment-Processing Grace (ADR 0044)
       if (["ongoing", "pending", "processing", "queued"].includes(pspResult.status)) {
         const paymentWindowEnd = new Date(offer.paymentWindow.expiresAt).getTime();
-        const graceEnd = paymentWindowEnd + 10 * 60 * 1000; // +10 min grace
+        const graceEnd = paymentWindowEnd + PAYMENT_PROCESSING_GRACE_MINUTES * 60_000;
         if (now.getTime() <= graceEnd) {
           this.#markPaymentProcessing(offerId, session.purpose);
           throw new Error("Payment is currently processing under Payment-Processing Grace period");
@@ -480,7 +480,7 @@ export class CardPaymentManager {
 
     // Expiry check (Payment Window + Grace)
     const paymentWindowEnd = new Date(offer.paymentWindow.expiresAt).getTime();
-    const graceEnd = paymentWindowEnd + 10 * 60 * 1000; // 10 minutes grace for pending
+    const graceEnd = paymentWindowEnd + PAYMENT_PROCESSING_GRACE_MINUTES * 60_000;
     if (now.getTime() > graceEnd) {
       this.#markLatePaymentReconciliation(offerId, pspReference, pspResult.amountKobo, now);
       rejectDeposit("Payment verification failed: Payment Window and Grace period have expired");
