@@ -128,8 +128,8 @@ export function revokeOperatorSession(environment: LocalApartmentOwnerEnvironmen
 }
 
 /** Revokes every active representative grant of the fixture representative for the fixture owner (ADR 0082), as the platform admin. */
-export function revokeRepresentativeGrant(environment: LocalApartmentOwnerEnvironment): OperatorRepresentativeGrant[] {
-  const { adminId, tenantId, operatorId, representativePersonId } = environment.config;
+export function revokeRepresentativeGrant(environment: LocalApartmentOwnerEnvironment, operatorId = environment.config.operatorId): OperatorRepresentativeGrant[] {
+  const { adminId, tenantId, representativePersonId } = environment.config;
   const active = environment.grantStore.listGrants().filter((grant) => grant.actorId === representativePersonId && grant.operatorId === operatorId && !grant.revokedAtIso);
   if (active.length === 0) throw new Error("No active representative grant to revoke");
   return active.map((grant) => environment.grantStore.revokeGrant(createPlatformCommandEnvelope({ commandName: "operator_representative.revoke", principal: { id: adminId, role: "admin", tenantId }, payload: { grantId: grant.grantId } })));

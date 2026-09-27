@@ -111,6 +111,26 @@ export function ownerSettlementFor(terms: UnitOwnerTerms, nights: number): Owner
   });
 }
 
+/** Reads a stored quote's owner settlement (P4); null for a quote captured before owner payables existed. */
+export function ownerSettlementFromQuote(quote: unknown): OwnerSettlementSnapshot | null {
+  if (quote === null || typeof quote !== "object") return null;
+  const raw = (quote as { readonly ownerSettlement?: unknown }).ownerSettlement;
+  if (raw === null || typeof raw !== "object") return null;
+  const value = raw as Record<string, unknown>;
+  const agreed = value.agreed !== null && typeof value.agreed === "object" ? value.agreed as Record<string, unknown> : null;
+  if (!isNonNegativeKobo(value.ownerPayableKobo) || !isNonNegativeKobo(value.marginKobo) || !isNonNegativeKobo(value.marginBasisPoints)
+    || !agreed || !isNonNegativeKobo(agreed.nightlyKobo) || !isNonNegativeKobo(agreed.mandatoryChargesKobo)
+    || typeof value.nights !== "number" || !Number.isSafeInteger(value.nights) || value.nights < 1 || value.currency !== "NGN") return null;
+  return Object.freeze({
+    ownerPayableKobo: value.ownerPayableKobo,
+    marginKobo: value.marginKobo,
+    marginBasisPoints: value.marginBasisPoints,
+    agreed: Object.freeze({ nightlyKobo: agreed.nightlyKobo, mandatoryChargesKobo: agreed.mandatoryChargesKobo }),
+    nights: value.nights,
+    currency: "NGN" as const,
+  });
+}
+
 /**
  * Builds a Unit price from owner terms, so fixtures and imports derive the
  * Guest price the same way the quote checks it.
