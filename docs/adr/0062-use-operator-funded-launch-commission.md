@@ -1,3 +1,7 @@
+---
+status: superseded by ADR-0089
+---
+
 # Use operator-funded launch commission
 
 Launch charges operators commission on nightly accommodation, mandatory non-tax property charges, operator-supplied optional services, and retained cancellation consideration, with no separate guest platform fee. The provisional standard rate is 12%; Founding Operators receive 8% for six months after first completed stay, then qualifying Preferred operators receive 10% and others 12%, with 30 days' notice for prospective changes and no retroactive booking effect.
