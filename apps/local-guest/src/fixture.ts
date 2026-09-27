@@ -18,6 +18,7 @@ import {
   UnitDiscoveryQuery,
   UnitRepository,
   JsonUnitRepository,
+  unitPriceFromOwnerTerms,
   InMemorySecurityDepositAccountingRepository,
   type PaystackClient,
   type BookingContract,
@@ -498,12 +499,14 @@ export class LocalGuestEnvironment {
       description: "A bright, quiet apartment with a spacious living room and reliable power.",
       amenities: ["wifi", "24_7_power_generator", "parking", "air_conditioning", "security_guard", "swimming_pool"],
       published: true,
-      price: {
-        nightlyKobo: 12000000,
-        mandatoryFeesKobo: 1000000,
+      // ADR 0089: owner agreed ₦100,000/night + ₦8,333.34 charges at a 20% margin; the Guest sees ₦120,000 + ₦10,000.
+      price: unitPriceFromOwnerTerms({
+        ownerNightlyKobo: 10000000,
+        ownerMandatoryChargesKobo: 833334,
+        marginBasisPoints: 2000,
         refundableSecurityDepositKobo: 2000000,
         version: "price-ikoyi-v1",
-      },
+      }),
       operator,
       inspection: {
         id: "inspection-ikoyi-001",
@@ -549,12 +552,14 @@ export class LocalGuestEnvironment {
       description: "A serene entire-place suite with natural light, reliable power, and a calm residential setting.",
       amenities: ["wifi", "24_7_power_generator", "air_conditioning", "security_guard"],
       published: true,
-      price: {
-        nightlyKobo: 6500000,
-        mandatoryFeesKobo: 500000,
+      // ADR 0089: owner agreed amounts at a 20% margin; the Guest sees ₦65,000 + ₦5,000.
+      price: unitPriceFromOwnerTerms({
+        ownerNightlyKobo: 5416667,
+        ownerMandatoryChargesKobo: 416667,
+        marginBasisPoints: 2000,
         refundableSecurityDepositKobo: 1000000,
         version: "price-lekki-v1",
-      },
+      }),
       operator,
       inspection: {
         id: "inspection-lekki-002",

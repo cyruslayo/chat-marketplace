@@ -4,13 +4,16 @@ import type { Unit } from "./browse.js";
 import { normalizePhotoUrls } from "./photo-url.js";
 import { normalizeListingDescription } from "./listing-details.js";
 import { contractualCheckInWindow } from "./checkin-support.js";
+import { OwnerTermsError, parseMarginPercent, unitPriceFromOwnerTerms } from "./owner-terms.js";
 
 const SUPPORTED_CITIES = new Set(["Lagos", "Abuja"]);
 const REQUIRED_HEADERS = [
   "external_listing_id", "unit_id", "property_id", "operator_id", "title", "city", "neighbourhood",
-  "capacity", "bedrooms", "nightly_price_ngn", "mandatory_fees_ngn", "refundable_security_deposit_ngn",
+  "capacity", "bedrooms", "owner_nightly_ngn", "owner_mandatory_charges_ngn", "margin_percent", "refundable_security_deposit_ngn",
   "currency", "amenities", "blocked_dates",
 ] as const;
+/** ADR 0089: the Guest price is derived from the owner's agreed amounts and the margin, never entered directly. */
+const RETIRED_PRICE_HEADERS = ["nightly_price_ngn", "mandatory_fees_ngn"] as const;
 
 export const PILOT_INVENTORY_HEADERS = Object.freeze([
   ...REQUIRED_HEADERS,
@@ -161,6 +164,8 @@ function parseCsv(contents: string): { readonly headers: readonly string[]; read
   if (duplicates.length > 0 || headers.some((header) => header.length === 0)) throw new Error("CSV header contains a blank or duplicate column");
   const missing = REQUIRED_HEADERS.filter((header) => !headers.includes(header));
   if (missing.length > 0) throw new Error(`CSV is missing required columns: ${missing.join(", ")}`);
+  const retired = RETIRED_PRICE_HEADERS.filter((header) => headers.includes(header));
+  if (retired.length > 0) throw new Error(`CSV columns ${retired.join(", ")} are replaced by owner_nightly_ngn, owner_mandatory_charges_ngn and margin_percent`);
 
   const parsedRows = rows.slice(1).map((values, index) => {
     const record: Record<string, string> = {};
@@ -240,6 +245,20 @@ function claim(row: CsvRow, fields: { readonly status: string; readonly verified
   };
 }
 
+function ownerNightlyKobo(row: CsvRow): number {
+  const kobo = parseMoneyKobo(cell(row, "owner_nightly_ngn"), "owner_nightly_ngn", true);
+  if (kobo === 0) throw new Error("owner_nightly_ngn must be more than zero");
+  return kobo;
+}
+
+function marginBasisPoints(row: CsvRow): number {
+  try {
+    return parseMarginPercent(cell(row, "margin_percent"));
+  } catch (error) {
+    throw new Error(error instanceof OwnerTermsError ? error.message : "margin_percent is invalid");
+  }
+}
+
 function buildUnit(row: CsvRow, operator: OperatorReference): Unit {
   const unitId = cell(row, "unit_id");
   const inspection = hasAny(row, ["inspection_status", "inspection_date", "inspection_expiry", "inspection_scope", "inspection_material_change_pending"])
@@ -293,12 +312,14 @@ function buildUnit(row: CsvRow, operator: OperatorReference): Unit {
     amenities: splitList(cell(row, "amenities")),
     photoUrls,
     published: false,
-    price: {
-      nightlyKobo: parseMoneyKobo(cell(row, "nightly_price_ngn"), "nightly_price_ngn", true),
-      mandatoryFeesKobo: parseMoneyKobo(cell(row, "mandatory_fees_ngn"), "mandatory_fees_ngn"),
+    // ADR 0089 (P4 AC3): a unit missing its agreed amounts or margin rate fails closed here.
+    price: unitPriceFromOwnerTerms({
+      ownerNightlyKobo: ownerNightlyKobo(row),
+      ownerMandatoryChargesKobo: parseMoneyKobo(cell(row, "owner_mandatory_charges_ngn"), "owner_mandatory_charges_ngn", true),
+      marginBasisPoints: marginBasisPoints(row),
       refundableSecurityDepositKobo: parseMoneyKobo(cell(row, "refundable_security_deposit_ngn"), "refundable_security_deposit_ngn", true),
       version: priceVersion,
-    },
+    }),
     operator,
     inspection,
     managementAuthority: authority,

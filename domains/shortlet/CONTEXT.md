@@ -342,6 +342,22 @@ _Avoid_: Late arrival, missed check-in message
 A versioned, mutually accepted change to material Booking Contract terms that becomes authoritative only after all required availability, risk, payment, and operational checks succeed.
 _Avoid_: Chat agreement, profile edit, operator promise
 
+**Owner's Agreed Amounts**:
+The nightly rate and any mandatory charges the platform agreed with a unit's owner; versioned unit configuration from which the Guest price is derived (ADR 0089).
+_Avoid_: Guest price, nightly rate shown to guests
+
+**Margin**:
+The platform's revenue on a booking, charged on top of the Owner's Agreed Amounts at the unit's margin rate and included in the All-In Stay Total; earned when the Owner Payable becomes due (ADR 0089).
+_Avoid_: Commission, guest fee, service fee
+
+**Owner Payable**:
+The Owner's Agreed Amounts for a booking, captured in the booking snapshot at confirmation and never recalculated; due 24 hours after Verified Access with no Blocking Fulfilment Complaint open, and changed only by the booking's cancellation policy outcome (ADR 0089).
+_Avoid_: Operator Net, Revenue Release, payout
+
+**Owner Payout**:
+A payment the platform makes to an owner against one booking's Owner Payable, recorded with its date, amount and reference (ADR 0089).
+_Avoid_: Automatic payout, settlement, transfer
+
 **Mid-Stay Failure**:
 An operator- or property-attributable defect arising during occupancy whose contractual remedy is determined from its severity, duration, effect on use, and cure.
 _Avoid_: Guest preference, ordinary support request

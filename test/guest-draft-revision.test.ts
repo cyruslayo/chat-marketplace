@@ -11,6 +11,7 @@ import {
 } from "../apps/web-agent/src/index.js";
 import type { GuestSurfacePayload, GuestTurnResult, GuestTurnSuccess } from "../apps/local-guest/src/guest-server.js";
 import { guestAction, restartFixture } from "./helpers/guest-restart.js";
+import { repricedByOwner } from "./helpers/owner-terms.js";
 
 const TWO_NIGHTS = "I need an apartment in Ikoyi from 10 Sept for 2 nights for 2 people";
 
@@ -161,7 +162,7 @@ test("AC3 failure path: a price change before accepting re-proposes instead of r
     const proposal = success(await fixture.send("/api/turn", { text: "make it 3 nights" })).surfaces[0]!;
     const unitId = fixture.environment.bookingRequestApp.manager.getDraft(draftId).unitId;
     const unit = fixture.environment.unitRepository.findById(unitId) as Unit;
-    fixture.environment.unitRepository.save({ id: unitId, price: { ...unit.price, nightlyKobo: unit.price.nightlyKobo + 1_000_000 } });
+    fixture.environment.unitRepository.save({ id: unitId, price: repricedByOwner(unit.price, { ownerNightlyKobo: unit.price.ownerTerms!.agreed.nightlyKobo + 1_000_000 }) });
     const reproposed = success(await fixture.send("/api/event", guestAction(proposal, DRAFT_REPLACEMENT_ACCEPT_EVENT)));
     assert.match(reproposed.messages[0]!, /^The price changed before you chose\./);
     assert.match(reproposed.surfaces[0]!.surfaceId, /:request:replacement:/);

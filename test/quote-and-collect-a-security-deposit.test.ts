@@ -6,6 +6,7 @@ import {
   SecurityDepositManager
 } from "../domains/shortlet/src/security-deposit.js";
 import { createStayQuote } from "../domains/shortlet/src/quote.js";
+import { unitPriceFromOwnerTerms } from "../domains/shortlet/src/owner-terms.js";
 
 describe("Issue 25: Quote and collect a capped Refundable Security Deposit", () => {
   it("AC 1: Studio/one-bedroom (₦100,000 cap), two-bedroom (₦150,000 cap), larger-Unit (₦250,000 cap), and 25% accommodation limit are tested exactly", () => {
@@ -35,10 +36,9 @@ describe("Issue 25: Quote and collect a capped Refundable Security Deposit", () 
     const unit = {
       id: "unit_25",
       bedrooms: 2,
-      price: {
-        nightlyKobo: 40000000, // ₦400,000/night x 2 nights = ₦800,000 accommodation subtotal (25% = ₦200,000)
-        refundableSecurityDepositKobo: 15000000 // Requested deposit capped at ₦150,000
-      }
+      // ₦400,000/night x 2 nights = ₦800,000 accommodation subtotal (25% = ₦200,000); requested deposit capped at ₦150,000.
+      // ADR 0089: the owner agreed ₦333,333.34/night at a 20% margin.
+      price: unitPriceFromOwnerTerms({ ownerNightlyKobo: 33333334, ownerMandatoryChargesKobo: 0, marginBasisPoints: 2000, refundableSecurityDepositKobo: 15000000, version: "price-v1" })
     };
 
     const quote = createStayQuote({

@@ -4,6 +4,7 @@ import { calculateTaxKobo } from "./quote.js";
 import { normalizePhotoUrls } from "./photo-url.js";
 import { normalizeBathroomCount, normalizeListingDescription } from "./listing-details.js";
 import type { ContractualCheckInWindow } from "./checkin-support.js";
+import { unitPriceFromOwnerTerms, type UnitOwnerTerms } from "./owner-terms.js";
 
 const LAGOS_TIME_ZONE = "Africa/Lagos";
 const SUPPORTED_LOCATIONS = new Set(["Lagos", "Abuja"]);
@@ -46,6 +47,8 @@ export interface Unit {
     refundableSecurityDepositKobo: number;
     version: string;
     taxConfig?: any;
+    /** ADR 0089: the owner's agreed amounts and margin rate; the Guest price above derives from them. */
+    ownerTerms?: UnitOwnerTerms;
   };
   operator: any;
   inspection: any;
@@ -387,7 +390,8 @@ export function seedIssue01Units(repository: any): void {
     capacity: 4, bedrooms: 2, bathrooms: 2,
     description: "A bright entire-place apartment with a quiet living room and reliable power.",
     amenities: ["wifi", "generator", "parking"], published: true,
-    price: { nightlyKobo: 8500000, mandatoryFeesKobo: 1000000, refundableSecurityDepositKobo: 2000000, version: "price-1" },
+    // ADR 0089: owner agreed amounts at a 20% margin; the Guest sees ₦85,000 + ₦10,000.
+    price: unitPriceFromOwnerTerms({ ownerNightlyKobo: 7083334, ownerMandatoryChargesKobo: 833334, marginBasisPoints: 2000, refundableSecurityDepositKobo: 2000000, version: "price-1" }),
     operator: {
       id: "operator-001", status: "approved", approvedAt: "2026-01-10", legalForm: "private-company-limited-by-shares",
       cacVerified: true, responsiblePersonsVerified: true, beneficialOwnersVerified: true, paymentProviderApproved: true,

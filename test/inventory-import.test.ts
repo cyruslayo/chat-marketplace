@@ -68,8 +68,10 @@ function csvRow(overrides: Record<string, string> = {}) {
     capacity: "4",
     bedrooms: "2",
     bathrooms: "2",
-    nightly_price_ngn: "120000",
-    mandatory_fees_ngn: "10000",
+    // ADR 0089: ₦100,000 + ₦8,333.34 agreed at a 20% margin; the Guest price is ₦120,000 + ₦10,000.
+    owner_nightly_ngn: "100000",
+    owner_mandatory_charges_ngn: "8333.34",
+    margin_percent: "20",
     refundable_security_deposit_ngn: "20000",
     currency: "NGN",
     amenities: "wifi|generator|parking",
@@ -152,7 +154,7 @@ test("AC4 — a changed Unit updates the existing record", () => {
   const { repository } = setup();
   const first = csvRow();
   run(repository, csv([first.line]));
-  const changed = csvRow({ title: "Updated Ikeja apartment", nightly_price_ngn: "135000", neighbourhood: "GRA Ikeja" });
+  const changed = csvRow({ title: "Updated Ikeja apartment", owner_nightly_ngn: "112500", neighbourhood: "GRA Ikeja" });
   const result = run(repository, csv([changed.line]));
   assert.equal(result.updated, 1);
   assert.equal(repository.findById("unit-import-001")?.title, "Updated Ikeja apartment");
@@ -177,9 +179,9 @@ test("AC6 — unsupported cities are rejected", () => {
 
 test("AC7 — invalid money is rejected", () => {
   const { repository } = setup();
-  const result = run(repository, csv([csvRow({ nightly_price_ngn: "-120000" }).line]));
+  const result = run(repository, csv([csvRow({ owner_nightly_ngn: "-120000" }).line]));
   assert.equal(result.invalid, 1);
-  assert.match(result.errors[0]?.message ?? "", /nightly_price_ngn.*non-negative|money/i);
+  assert.match(result.errors[0]?.message ?? "", /owner_nightly_ngn.*non-negative|money/i);
 });
 
 test("AC8 — missing Operator references fail safely", () => {
