@@ -8,6 +8,7 @@ import {
   SqliteGuestInteractionStore,
   SqliteBookingPaymentJourneyRepository,
   SqliteBookingStateRepository,
+  SqliteBankTransferSessionStore,
   SqliteLivePaymentAttemptRegistry,
   SqliteAvailabilityStore,
   SqliteGuestContactRepository,
@@ -332,11 +333,11 @@ export class LocalGuestEnvironment {
     const transferProvider = this.config.deterministicPsp === false
       ? this.config.bankTransferProvider ?? null
       : new LocalBankTransferProvider({
-        payerFor: (reference) => {
+        lookup: (reference) => {
           const session = this.bankTransferApp?.manager.getSessionByReference(reference);
           if (!session) return undefined;
           const offer = this.conditionalOfferApp.manager.getOffer(session.offerId);
-          return offer.parties.distinctPayer?.id ?? offer.parties.primaryGuest.id;
+          return { amountKobo: session.amountKobo, payerId: offer.parties.distinctPayer?.id ?? offer.parties.primaryGuest.id };
         },
       });
     this.bankTransferApp = transferProvider === null ? null : createBankTransferPaymentApplication({
@@ -344,6 +345,9 @@ export class LocalGuestEnvironment {
       calendar: this.calendar,
       audit: this.audit,
       providerClient: transferProvider,
+      sessionStore: new SqliteBankTransferSessionStore(this.#database),
+      store: this.interactionStore,
+      onConfirmedOutcome: (outcome) => this.contractRepository.recordConfirmedOutcome(outcome.reservation, outcome.bookingContract),
       guestContacts: this.guestContactApp.repository,
       liveAttempts: this.livePaymentAttempts,
       journeyRepository,
