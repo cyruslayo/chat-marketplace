@@ -8,6 +8,7 @@ export interface BankTransferPaymentApplicationOptions {
   readonly calendar?: BankTransferPaymentManagerOptions["calendar"];
   readonly audit?: BankTransferPaymentManagerOptions["audit"];
   readonly providerClient: BankTransferPaymentManagerOptions["providerClient"];
+  readonly guestContacts: BankTransferPaymentManagerOptions["guestContacts"];
   readonly liveAttempts?: BankTransferPaymentManagerOptions["liveAttempts"];
   readonly clock?: () => Date;
   readonly journeyRepository?: BankTransferPaymentManagerOptions["journeyRepository"];
@@ -27,7 +28,7 @@ export class BankTransferPaymentApplication {
     const session = this.manager.getSession(offerId); const contract = this.manager.getBookingContract(offerId);
     return bankTransferArtifactFromState({ offer, viewer, session, contract, journey: this.manager.getPaymentJourney(offerId), refundRecord: this.manager.getRefundRecord(offerId), reconciliationRecord: this.manager.getReconciliationRecord(offerId), now: this.#clock() });
   }
-  initializeTransfer(offerId: string, trustedPayerPrincipal: CommandPrincipal): BankTransferCheckoutSession {
+  initializeTransfer(offerId: string, trustedPayerPrincipal: CommandPrincipal): Promise<BankTransferCheckoutSession> {
     return this.manager.initializeBankTransfer(createPlatformCommandEnvelope({ commandName: "bank_transfer.initialize", principal: trustedPayerPrincipal, payload: { offerId } }), { clock: this.#clock });
   }
   verifyAndProcess(transferReference: string, trustedServerPrincipal: CommandPrincipal) {

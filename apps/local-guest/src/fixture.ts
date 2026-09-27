@@ -24,6 +24,8 @@ import {
   createBookingRequestApplication,
   createConditionalOfferApplication,
   createCardPaymentApplication,
+  createBankTransferPaymentApplication,
+  type BankTransferPaymentApplication,
   createBookingContractApplication,
   type BookingRequestApplication,
   type ConditionalOfferApplication,
@@ -32,6 +34,7 @@ import {
   GuestContactApplication,
 } from "../../../apps/web/src/index.js";
 import { SELF_BOOKING_ATTESTATION_VERSION } from "../../../domains/shortlet/src/guest-verification.js";
+import { LocalBankTransferProvider } from "./local-bank-transfer-provider.js";
 
 export const LOCAL_GUEST_PORT = 3001;
 
@@ -198,6 +201,11 @@ export class LocalGuestEnvironment {
   readonly bookingRequestApp: BookingRequestApplication;
   readonly conditionalOfferApp: ConditionalOfferApplication;
   readonly cardPaymentApp: CardPaymentApplication;
+  /**
+   * Bank transfer through the provider port (P1, ADR 0047). Composed with the deterministic local provider only;
+   * production has none until the Paystack adapter (P2), so a transfer can never start with an invented account.
+   */
+  readonly bankTransferApp: BankTransferPaymentApplication | null;
   readonly contractApp: BookingContractApplication;
   readonly contractRepository: LocalBookingContractRepository;
   readonly interactionStore: SqliteGuestInteractionStore;
@@ -314,6 +322,37 @@ export class LocalGuestEnvironment {
       clock: this.clock,
       onConfirmedOutcome: (outcome) => this.contractRepository.recordConfirmedOutcome(outcome.reservation, outcome.bookingContract),
       ...(this.config.paystackClient === undefined ? {} : { paystackClient: this.config.paystackClient }),
+    });
+
+    this.bankTransferApp = this.config.deterministicPsp === false ? null : createBankTransferPaymentApplication({
+      conditionalOfferApplication: this.conditionalOfferApp,
+      calendar: this.calendar,
+      audit: this.audit,
+      providerClient: new LocalBankTransferProvider({
+        payerFor: (reference) => {
+          const session = this.bankTransferApp?.manager.getSessionByReference(reference);
+          if (!session) return undefined;
+          const offer = this.conditionalOfferApp.manager.getOffer(session.offerId);
+          return offer.parties.distinctPayer?.id ?? offer.parties.primaryGuest.id;
+        },
+      }),
+      guestContacts: this.guestContactApp.repository,
+      liveAttempts: this.livePaymentAttempts,
+      journeyRepository,
+      bookingState,
+      securityDepositAccounting: new InMemorySecurityDepositAccountingRepository(),
+      securityDepositCapability: {
+        getCapability: ({ paymentMethod }) => ({
+          capabilityVersion: "local-demo-security-deposit-v1",
+          enabled: true,
+          pspProviderId: "local-demo-psp",
+          pspApproved: true,
+          counselApproved: true,
+          collectionModel: "separate_actual_charge",
+          paymentMethod,
+        }),
+      },
+      clock: this.clock,
     });
 
     this.contractApp = createBookingContractApplication({
