@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   UnitRepository,
   seedIssue01Units,
+  unitPriceFromOwnerTerms,
   onboardOperator,
   registerUnit,
   recordPhysicalInspection,
@@ -53,7 +54,8 @@ test("publication succeeds when all operator, unit, authority, inspection, licen
     description: "A bright entire-place apartment in Ikeja GRA with reliable power.",
     bathrooms: 2,
     amenities: ["wifi", "generator"],
-    price: { nightlyKobo: 9000000, mandatoryFeesKobo: 1000000, refundableSecurityDepositKobo: 2000000, version: "v1" }
+    // ADR 0089: the Guest sees ₦90,000 + ₦10,000 (owner amounts at a 20% margin).
+    price: unitPriceFromOwnerTerms({ ownerNightlyKobo: 7500000, ownerMandatoryChargesKobo: 833334, marginBasisPoints: 2000, refundableSecurityDepositKobo: 2000000, version: "v1" })
   });
 
   grantManagementAuthority(repository, unit.id, {

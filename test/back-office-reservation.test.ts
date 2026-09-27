@@ -4,6 +4,7 @@ import { FOREIGN_ORIGIN, decideRequest, operatorGet, operatorPost, revokeReprese
 import { TEST_CARD_LAST4, TEST_PAYER_EMAIL, guestCardPayments } from "./helpers/guest-card-payment.js";
 import { formatWat } from "../apps/local-owner/src/back-office-view.js";
 import { formatMoney } from "../apps/web/src/ui-kit.js";
+import { repricedByOwner } from "./helpers/owner-terms.js";
 
 // B5 — Reservation detail and recording check-in (scratch/operator-dashboard/issues/05-reservation-and-check-in.md).
 
@@ -86,7 +87,7 @@ test("AC1 — The Reservation page shows the owner, apartment, stay dates, party
 
     // The unit changes after booking; the Reservation keeps its snapshot (ADR 0077).
     const unit = env.unitRepository.findById(env.config.unitId)!;
-    env.unitRepository.save({ ...unit, price: { ...unit.price, nightlyKobo: unit.price.nightlyKobo * 2 }, checkInWindow: { earliestAccessTime: "16:00", latestPermittedArrival: "18:00", timezone: "Africa/Lagos" } });
+    env.unitRepository.save({ ...unit, price: repricedByOwner(unit.price, { ownerNightlyKobo: unit.price.ownerTerms!.agreed.nightlyKobo * 2 }), checkInWindow: { earliestAccessTime: "16:00", latestPermittedArrival: "18:00", timezone: "Africa/Lagos" } });
     const after = await page(f, id);
     assert.ok(after.text.includes("Arrival window 14:00–22:00 WAT"));
     assert.ok(after.text.includes(`Amount paid ${formatMoney(contract.amountPaidKobo)}`));

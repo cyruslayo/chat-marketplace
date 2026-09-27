@@ -1,4 +1,5 @@
 import { StayDateRange } from "./browse.js";
+import { ownerSettlementFor, unitOwnerTerms } from "./owner-terms.js";
 import { calculateSecurityDepositPolicySnapshot, calculateRefundableSecurityDeposit, SECURITY_DEPOSIT_POLICY_VERSION, type SecurityDepositPolicySnapshot } from "./security-deposit.js";
 
 export interface OptionalServiceCatalogueItem {
@@ -198,6 +199,9 @@ export function createStayQuote({
     throw new RangeError(`Party size (${partySize}) exceeds unit capacity (${unit.capacity})`);
   }
 
+  // ADR 0089 (P4 AC3): a unit without owner agreed amounts and a margin rate cannot be quoted.
+  const ownerSettlement = ownerSettlementFor(unitOwnerTerms(unit), nights);
+
   const accommodationKobo = unit.price.nightlyKobo * nights;
   const mandatoryFeesKobo = unit.price.mandatoryFeesKobo ?? 0;
 
@@ -281,6 +285,8 @@ export function createStayQuote({
     totalAmountDueNowKobo,
     cancellationPolicy,
     revenueClassification,
+    // ADR 0089: back-office only; guest projections show the one All-In Stay Total.
+    ownerSettlement,
     policyVersions: Object.freeze({
       eligibility: "launch-2026-07",
       pricing: "all-in/v1",

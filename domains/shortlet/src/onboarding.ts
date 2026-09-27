@@ -1,4 +1,5 @@
 import { isEligibleUnit, latestPossibleCheckoutDate } from "./browse.js";
+import { unitOwnerTerms } from "./owner-terms.js";
 
 export const REQUIRED_AUTHORITY_PERMISSIONS: readonly string[] = Object.freeze([
   "advertise", "accept-bookings", "contract-guests", "provide-access",
@@ -245,6 +246,13 @@ export function getUnitOnboardingStatus(unit: any, now: Date | string = new Date
   }
   if (!Number.isSafeInteger(unit.bathrooms) || unit.bathrooms < 1) {
     blockers.push("Bathroom count missing or invalid");
+  }
+
+  // ADR 0089: a unit is sold only at a price derived from the owner's agreed amounts and its margin rate.
+  try {
+    unitOwnerTerms(unit);
+  } catch {
+    blockers.push("Owner agreed amounts or margin rate missing");
   }
 
   if (!unit.operator || unit.operator.status !== "approved") {

@@ -43,6 +43,7 @@ import {
   contractualCheckInWindow,
   isSupportVerificationBasis,
   ownerPayableDueAt,
+  unitPriceFromOwnerTerms,
   type AccessStatus,
   type CheckInSupportState,
   type ComplaintCategory,
@@ -383,12 +384,15 @@ export class LocalApartmentOwnerEnvironment {
       amenities: ["wifi", "24_7_power_generator", "parking", "air_conditioning", "security_guard", "swimming_pool"],
       photoUrls: [],
       published: true,
-      price: {
-        nightlyKobo: 12000000, // ₦120,000 / night
-        mandatoryFeesKobo: 1000000, // ₦10,000 cleaning & service
-        refundableSecurityDepositKobo: 2000000, // ₦20,000 deposit
+      // ADR 0089: owner agreed ₦100,000/night + ₦8,333.34 charges at a 20% margin;
+      // the Guest sees ₦120,000 / night + ₦10,000 cleaning & service, and a ₦20,000 deposit.
+      price: unitPriceFromOwnerTerms({
+        ownerNightlyKobo: 10000000,
+        ownerMandatoryChargesKobo: 833334,
+        marginBasisPoints: 2000,
+        refundableSecurityDepositKobo: 2000000,
         version: "price-ikoyi-v1",
-      },
+      }),
       operator: {
         id: this.config.operatorId,
         name: this.config.operatorName,
