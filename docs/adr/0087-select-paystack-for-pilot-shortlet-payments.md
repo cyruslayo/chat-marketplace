@@ -1,3 +1,7 @@
+---
+status: amended by ADR-0088 (card-only scope replaced by card and bank transfer)
+---
+
 # Select Paystack for pilot Shortlet payments
 
 ## Context

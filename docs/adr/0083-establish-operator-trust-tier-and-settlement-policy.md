@@ -1,3 +1,7 @@
+---
+status: superseded by ADR-0089
+---
+
 # Establish Operator Trust Tier and settlement policy
 
 ## Context
