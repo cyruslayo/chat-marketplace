@@ -22,7 +22,8 @@ export class BankTransferPaymentApplication {
   readonly manager: BankTransferPaymentManager;
   readonly #conditionalOfferApplication: ConditionalOfferApplication;
   readonly #clock: () => Date;
-  constructor(manager: BankTransferPaymentManager, conditionalOfferApplication: ConditionalOfferApplication, clock: () => Date) { this.manager = manager; this.#conditionalOfferApplication = conditionalOfferApplication; this.#clock = clock; }
+  readonly #providerClient: BankTransferPaymentManagerOptions["providerClient"];
+  constructor(manager: BankTransferPaymentManager, conditionalOfferApplication: ConditionalOfferApplication, clock: () => Date, providerClient: BankTransferPaymentManagerOptions["providerClient"]) { this.manager = manager; this.#conditionalOfferApplication = conditionalOfferApplication; this.#clock = clock; this.#providerClient = providerClient; }
   getArtifact(offerId: string, viewer: CommandPrincipal): BankTransferArtifact {
     const offer = this.#conditionalOfferApplication.manager.getOffer(offerId);
     const session = this.manager.getSession(offerId); const contract = this.manager.getBookingContract(offerId);
@@ -34,6 +35,18 @@ export class BankTransferPaymentApplication {
   verifyAndProcess(transferReference: string, trustedServerPrincipal: CommandPrincipal) {
     return this.manager.verifyAndProcessTransfer(createPlatformCommandEnvelope({ commandName: "bank_transfer.verify_and_process", principal: trustedServerPrincipal, payload: { transferReference } }), { clock: this.#clock });
   }
+  /**
+   * Verifies with the provider server-side, awaiting a network provider when it has one (Paystack), then processes
+   * the result. Used by the signed webhook; a client callback never confirms (ADR 0047).
+   */
+  async verifyAndProcessFromProvider(transferReference: string, trustedServerPrincipal: CommandPrincipal) {
+    const envelope = createPlatformCommandEnvelope({ commandName: "bank_transfer.verify_and_process", principal: trustedServerPrincipal, payload: { transferReference } });
+    const provider = this.#providerClient;
+    if (!provider.verifyTransferAsync) return this.manager.verifyAndProcessTransfer(envelope, { clock: this.#clock });
+    if (!this.manager.getSessionByReference(transferReference)) throw new Error("Unknown transfer reference");
+    const result = await provider.verifyTransferAsync(transferReference);
+    return this.manager.verifyAndProcessTransferWithProviderResult(envelope, result, { clock: this.#clock });
+  }
   resolveExpiry(offerId: string, trustedServerPrincipal: CommandPrincipal) {
     return this.manager.resolveExpiry(offerId, trustedServerPrincipal, { clock: this.#clock });
   }
@@ -42,5 +55,5 @@ export class BankTransferPaymentApplication {
 export function createBankTransferPaymentApplication(options: BankTransferPaymentApplicationOptions): BankTransferPaymentApplication {
   if (!options.bookingState?.saveBookingAtomically || !options.bookingState.removeBookingAtomically) throw new Error("Atomic BookingState authority is required");
   const { conditionalOfferApplication, clock = () => new Date(), ...dependencies } = options;
-  return new BankTransferPaymentApplication(new BankTransferPaymentManager({ ...dependencies, offerManager: conditionalOfferApplication.manager }), conditionalOfferApplication, clock);
+  return new BankTransferPaymentApplication(new BankTransferPaymentManager({ ...dependencies, offerManager: conditionalOfferApplication.manager }), conditionalOfferApplication, clock, dependencies.providerClient);
 }

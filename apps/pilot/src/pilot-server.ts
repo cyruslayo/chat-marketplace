@@ -4,7 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import { LocalGuestEnvironment } from "../../local-guest/src/fixture.js";
 import { startLocalGuestServer, type LocalGuestServerHandle } from "../../local-guest/src/guest-server.js";
 import { LocalApartmentOwnerEnvironment, startLocalOwnerServer } from "../../local-owner/src/index.js";
-import { DirectPaystackClient, type PaystackClient } from "../../../domains/shortlet/src/index.js";
+import { DirectPaystackClient, PaystackBankTransferClient, type PaystackClient } from "../../../domains/shortlet/src/index.js";
 import { loadPilotConfiguration, type PilotConfiguration } from "./pilot-config.js";
 
 export interface PilotServerHandle {
@@ -85,6 +85,8 @@ export function startPilotServer(options: {
     deterministicPsp: false,
     clock,
     paystackClient,
+    // ADR 0088: Pay with Transfer only when explicitly enabled after certification.
+    ...(configuration.paystackTransfersEnabled ? { bankTransferProvider: new PaystackBankTransferClient(configuration.paystack, { clock }) } : {}),
   });
   const operatorEnvironment = new LocalApartmentOwnerEnvironment({
     databasePath: configuration.databasePath,

@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { PSPVerifyResult } from "./card-payment.js";
+import type { BankTransferAccountRequest, BankTransferProviderClient, BankTransferProviderResult, ProviderTransferAccount } from "./bank-transfer.js";
 
 export type PaystackEnvironment = "test" | "live";
 
@@ -209,5 +210,76 @@ export class DirectPaystackClient implements PaystackClient {
     const provided = Buffer.from(signature, "hex");
     const actual = Buffer.from(expected, "hex");
     return provided.length === actual.length && timingSafeEqual(provided, actual);
+  }
+}
+
+/** Paystack raises any Pay with Transfer expiry under 15 minutes to 15 (ADR 0088), so a shorter deadline cannot be honoured. */
+export const PAYSTACK_TRANSFER_MINIMUM_EXPIRY_MINUTES = 15;
+
+function transferStatus(status: PSPVerifyResult["status"]): BankTransferProviderResult["status"] {
+  if (status === "success") return "success";
+  if (status === "ongoing" || status === "pending" || status === "processing" || status === "queued") return "pending";
+  return "failed";
+}
+
+/**
+ * Paystack Pay with Transfer behind the provider-neutral transfer port (ADR 0088, P2): a Charge API `bank_transfer`
+ * charge whose `account_expires_at` is the Payment Window deadline. Paystack verifies over HTTP, so verification is
+ * `verifyTransferAsync`; the synchronous port method refuses. Never logs the key, account numbers or bodies (ADR 0075).
+ */
+export class PaystackBankTransferClient implements BankTransferProviderClient {
+  readonly #configuration: PaystackConfiguration;
+  readonly #fetcher: PaystackHttpFetcher;
+  readonly #clock: () => Date;
+  readonly #transactions: DirectPaystackClient;
+
+  constructor(configuration: PaystackConfiguration, options: { readonly fetcher?: PaystackHttpFetcher; readonly clock?: () => Date } = {}) {
+    this.#configuration = configuration;
+    this.#fetcher = options.fetcher ?? defaultFetcher;
+    this.#clock = options.clock ?? (() => new Date());
+    this.#transactions = new DirectPaystackClient(configuration, this.#fetcher);
+  }
+
+  async createTransferAccount(request: BankTransferAccountRequest): Promise<ProviderTransferAccount> {
+    if (!Number.isSafeInteger(request.amountKobo) || request.amountKobo <= 0) throw new Error("Paystack amount must be a positive integer in kobo");
+    // ADR 0088: Paystack would silently extend a shorter expiry past the deadline, so fail closed instead.
+    const remaining = Date.parse(request.expiresAt) - this.#clock().getTime();
+    if (!Number.isFinite(remaining) || remaining < PAYSTACK_TRANSFER_MINIMUM_EXPIRY_MINUTES * 60_000) throw new Error("The Payment Window deadline is too close for a Paystack transfer account");
+    const response = await this.#fetcher(`${PAYSTACK_API_URL}/charge`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${this.#configuration.secretKey}`, "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        email: request.email,
+        amount: request.amountKobo,
+        currency: request.currency,
+        reference: request.reference,
+        bank_transfer: { account_expires_at: request.expiresAt },
+        ...(request.payerId === undefined ? {} : { metadata: JSON.stringify({ shortlet_guest_id: request.payerId }) }),
+      }),
+    });
+    const envelope = assertProviderResponse(response, await response.json(), "transfer charge");
+    const data = recordOf(envelope.data);
+    const bank = recordOf(data?.bank);
+    if (data?.status !== "pending_bank_transfer" || data.reference !== request.reference || typeof data.account_number !== "string" || typeof bank?.name !== "string" || typeof data.account_expires_at !== "string") {
+      throw new Error("Paystack transfer charge returned an invalid account");
+    }
+    return Object.freeze({ bankName: bank.name, accountNumber: data.account_number, reference: data.reference, expiresAt: data.account_expires_at });
+  }
+
+  verifyTransfer(): BankTransferProviderResult {
+    throw new Error("Paystack transfers are verified with verifyTransferAsync");
+  }
+
+  /** Server-side double check of a transfer against the provider's transaction record (ADR 0047). */
+  async verifyTransferAsync(reference: string): Promise<BankTransferProviderResult> {
+    const result = await this.#transactions.verifyTransaction(reference);
+    return Object.freeze({
+      verified: result.verified && result.environment === this.#configuration.environment,
+      status: transferStatus(result.status),
+      amountKobo: result.amountKobo,
+      currency: result.currency,
+      pspReference: result.pspReference,
+      ...(result.payerId === undefined ? {} : { payerId: result.payerId }),
+    });
   }
 }

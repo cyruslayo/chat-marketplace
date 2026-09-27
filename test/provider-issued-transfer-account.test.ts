@@ -48,7 +48,7 @@ test("AC1 — Starting a bank transfer returns the bank name, account number and
   const session = await s.start();
   assert.equal(s.requests.length, 1);
   const [request] = s.requests;
-  assert.deepEqual(request, { reference: session.transferReference, amountKobo: 25_123_400, currency: "NGN", expiresAt: DEADLINE, email: TEST_TRANSFER_EMAIL });
+  assert.deepEqual(request, { reference: session.transferReference, amountKobo: 25_123_400, currency: "NGN", expiresAt: DEADLINE, email: TEST_TRANSFER_EMAIL, payerId: guest.id });
   assert.equal(session.bankName, "Wema Bank");
   assert.equal(session.accountNumber, "9988776655");
   assert.equal(session.expiresAt, "2026-09-01T12:19:00.000Z", "the provider's expiry, not the platform's");

@@ -16,6 +16,8 @@ export interface PilotEnvironmentSource extends PaystackEnvironmentSource {
   readonly SHORTLET_INVENTORY_PATH?: string;
   readonly SHORTLET_OPERATORS_PATH?: string;
   readonly SHORTLET_TENANT_ID?: string;
+  /** "enabled" switches on Paystack Pay with Transfer; only after the ADR 0047 certification passes (ADR 0088). */
+  readonly SHORTLET_PAYSTACK_TRANSFERS?: string;
 }
 
 export interface PilotConfiguration {
@@ -29,6 +31,8 @@ export interface PilotConfiguration {
   readonly unitId: string;
   readonly propertyId: string;
   readonly paystack: PaystackConfiguration;
+  /** Off unless explicitly enabled after certification (ADR 0088 activation). */
+  readonly paystackTransfersEnabled: boolean;
 }
 
 function required(source: PilotEnvironmentSource, key: keyof PilotEnvironmentSource): string {
@@ -55,6 +59,16 @@ function operatorForUnit(unit: Unit, operators: readonly OperatorRecord[]): Oper
   const operator = operators.find((candidate) => candidate.id === unit.operator.id);
   if (!operator) throw new Error(`Inventory Operator ${unit.operator.id} is missing from SHORTLET_OPERATORS_PATH`);
   return operator;
+}
+
+/**
+ * ADR 0088 activation switch for Paystack Pay with Transfer. Unset or "disabled" is off; "enabled" is on. Anything
+ * else fails closed, so a typo can never switch transfers on.
+ */
+export function paystackTransfersEnabled(value: string | undefined): boolean {
+  const setting = value?.trim() ?? "";
+  if (setting !== "" && setting !== "enabled" && setting !== "disabled") throw new Error("SHORTLET_PAYSTACK_TRANSFERS must be enabled or disabled");
+  return setting === "enabled";
 }
 
 export function loadPilotConfiguration(source: PilotEnvironmentSource = process.env): PilotConfiguration {
@@ -85,6 +99,7 @@ export function loadPilotConfiguration(source: PilotEnvironmentSource = process.
   if (paystack.callbackBaseUrl !== origin) throw new Error("Paystack callback origin must match SHORTLET_PUBLIC_ORIGIN");
 
   return Object.freeze({
+    paystackTransfersEnabled: paystackTransfersEnabled(source.SHORTLET_PAYSTACK_TRANSFERS),
     publicOrigin: origin,
     databasePath,
     inventoryPath,
