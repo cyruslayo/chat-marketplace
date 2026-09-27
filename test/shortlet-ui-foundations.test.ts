@@ -167,7 +167,7 @@ test("Real Chromium renders foundation without narrow viewport overflow and expo
   await writeFile(join(evidenceDirectory, "operator-login.png"), await operator.captureScreenshot());
   const accessToken = ownerEnvironment.provisionOperatorAccessToken();
   await operator.evaluate(`(() => { const field = document.querySelector('#token'); field.value = ${JSON.stringify(accessToken)}; document.querySelector('form').requestSubmit(); })()`);
-  await operator.waitForText("Operator workspace");
+  await operator.waitForText("Waiting on you");
   await operator.navigate(`http://127.0.0.1:${ownerPort}/operator/requests`);
   await operator.waitForText("Booking Requests");
   const operatorTargets = await operator.evaluate<{ logout: number; font: string }>(

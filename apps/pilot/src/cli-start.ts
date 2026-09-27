@@ -1,15 +1,10 @@
 import { startPilotServer } from "./pilot-server.js";
+import { productionPilotStartupLines } from "./startup-banner.js";
 
 const server = startPilotServer({ port: Number.parseInt(process.env.PORT ?? "3000", 10) });
 const port = await server.listen();
 
-console.log(`Shortlet pilot initialized`);
-console.log(`environment=production`);
-console.log(`publicOrigin=${server.configuration.publicOrigin}`);
-console.log(`paystackEnvironment=${server.configuration.paystack.environment}`);
-console.log(`status=ready`);
-console.log(`health=/healthz`);
-console.log(`listeningPort=${port}`);
+for (const line of productionPilotStartupLines({ publicOrigin: server.configuration.publicOrigin, paystackEnvironment: server.configuration.paystack.environment, port })) console.log(line);
 
 const shutdown = async (): Promise<void> => {
   await server.close();

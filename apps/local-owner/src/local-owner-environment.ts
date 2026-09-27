@@ -55,6 +55,10 @@ export interface LocalOwnerFixtureConfig {
   readonly clock?: () => Date;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
 export const DEFAULT_LOCAL_OWNER_CONFIG: LocalOwnerFixtureConfig = {
   databasePath: ".scratch/local-owner/owner_fixture.sqlite",
   tenantId: "tenant-lagos-internal",
@@ -406,6 +410,27 @@ export class LocalApartmentOwnerEnvironment {
     });
 
     return this.bookingRequestApp.getArtifact(requestId, this.getRepresentativePrincipal());
+  }
+
+  /** Your name for the back-office header. Never an actor id (ADR 0075); an unknown actor gets a neutral label. */
+  representativeDisplayName(actorId: string): string {
+    return actorId === this.config.representativePersonId ? this.config.representativePersonName : "Signed-in representative";
+  }
+
+  /**
+   * Owner and apartment names for a request, so no page labels work by id (B1 AC1).
+   * Callers must already hold the request through a grant-checked read (`listOperatorRequestArtifacts` or `operatorRequestDetail`).
+   */
+  requestLabels(requestId: string): { readonly ownerName: string; readonly apartmentTitle: string } {
+    const request = this.bookingRequestApp.manager.getRequest(requestId) as { operatorId?: string; unitId?: string };
+    const unit: unknown = request.unitId ? this.unitRepository.findById(request.unitId) : null;
+    const unitRecord = isRecord(unit) ? unit : {};
+    const unitOperator = isRecord(unitRecord.operator) ? unitRecord.operator : {};
+    const ownerName = (request.operatorId ? this.operatorRepository?.findById(request.operatorId)?.name : undefined)
+      ?? (typeof unitOperator.name === "string" && unitOperator.name ? unitOperator.name : undefined)
+      ?? (request.operatorId === this.config.operatorId ? this.config.operatorName : "Owner name not on file");
+    const apartmentTitle = typeof unitRecord.title === "string" && unitRecord.title ? unitRecord.title : "Apartment name not on file";
+    return Object.freeze({ ownerName, apartmentTitle });
   }
 
   listOperatorRequestArtifacts(principal: CommandPrincipal): readonly BookingRequestArtifact[] {

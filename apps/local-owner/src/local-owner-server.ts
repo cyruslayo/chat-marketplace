@@ -7,6 +7,9 @@ import {
   type LocalOwnerStateOverview,
 } from "./local-owner-environment.js";
 import { escapeHtml, formatMoney, icon, pageShell, type StatusTone } from "../../web/src/ui-kit.js";
+import type { OperatorAuthenticatedPrincipal } from "../../../domains/shortlet/src/index.js";
+import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
+import { backOfficePage, SIGN_IN_REASONS, signInReason, watTime, type BackOfficeViewer, type SignInReason } from "./back-office-view.js";
 import { formatStayDates } from "../../web-agent/src/booking-presentation.js";
 
 const OPERATOR_SESSION_COOKIE = "shortlet_operator_session";
@@ -19,32 +22,81 @@ function cookieValue(req: IncomingMessage, name: string): string | null {
   return pair ? decodeURIComponent(pair.slice(name.length + 1)) : null;
 }
 
-function operatorPrincipal(req: IncomingMessage, env: LocalApartmentOwnerEnvironment) {
-  const sessionId = cookieValue(req, OPERATOR_SESSION_COOKIE);
-  const secret = cookieValue(req, OPERATOR_SECRET_COOKIE);
-  return env.sessionAuthority.resolveSession(sessionId, secret);
+function operatorPrincipal(req: IncomingMessage, env: LocalApartmentOwnerEnvironment): OperatorAuthenticatedPrincipal | null {
+  return env.sessionAuthority.resolveSession(cookieValue(req, OPERATOR_SESSION_COOKIE), cookieValue(req, OPERATOR_SECRET_COOKIE));
 }
 
-function operatorLoginHtml(error = ""): string {
+/** Where a page request without a usable session goes: sign-in, with a fixed reason code when there is one (ADR 0086). */
+function signInLocation(req: IncomingMessage, env: LocalApartmentOwnerEnvironment): string {
+  const rejection = env.sessionAuthority.sessionRejection(cookieValue(req, OPERATOR_SESSION_COOKIE), cookieValue(req, OPERATOR_SECRET_COOKIE));
+  const reason: SignInReason | null = rejection === "expired" ? "expired" : rejection === "revoked" ? "signed-out" : null;
+  return reason ? `/operator/login?reason=${reason}` : "/operator/login";
+}
+
+type OperatorPrincipal = OperatorAuthenticatedPrincipal;
+
+function commandPrincipal(principal: OperatorPrincipal): CommandPrincipal {
+  return { id: principal.actorId, role: "operator", tenantId: principal.tenantId };
+}
+
+function viewer(env: LocalApartmentOwnerEnvironment, principal: OperatorPrincipal): BackOfficeViewer {
+  return { name: env.representativeDisplayName(principal.actorId) };
+}
+
+function operatorLoginHtml(error = "", reason: SignInReason | null = null): string {
+  const notice = error
+    ? `<p class="ui-banner ui-banner--danger" role="alert">${icon("alert")}<span>${escapeHtml(error)}</span></p>`
+    : reason ? `<p class="ui-banner" role="status">${icon("info")}<span>${escapeHtml(SIGN_IN_REASONS[reason])}</span></p>` : "";
   return pageShell({
     title: "Operator sign in",
     width: "narrow",
-    body: `<header class="ui-page__header"><p class="ui-eyebrow">Shortlet Operator</p><h1>Operator sign in</h1><p>Enter the one-time access token provided by operations.</p></header>${error ? `<p class="ui-banner ui-banner--danger" role="alert">${icon("alert")}<span>${escapeHtml(error)}</span></p>` : ""}<form class="ui-panel" method="post" action="/operator/login"><div class="ui-field"><label class="ui-field__label" for="token">One-time access token</label><input id="token" name="token" autocomplete="one-time-code" required></div><button class="ui-button ui-button--primary ui-button--block" type="submit">Sign in</button></form>`,
+    body: `<header class="ui-page__header"><p class="ui-eyebrow">Shortlet back office</p><h1>Operator sign in</h1><p>Enter the one-time access token provided by operations.</p></header>${notice}<form class="ui-panel" method="post" action="/operator/login"><div class="ui-field"><label class="ui-field__label" for="token">One-time access token</label><input id="token" name="token" autocomplete="one-time-code" required></div><button class="ui-button ui-button--primary ui-button--block" type="submit">Sign in</button></form>`,
   });
 }
 
-function logoutForm(): string {
-  return `<form method="post" action="/operator/logout"><button class="ui-button ui-button--quiet" type="submit">Log out</button></form>`;
+/**
+ * Something waiting on you, with the instant it is due. Later slices add kinds here
+ * (manual transfers to verify, B6; owner payouts due, B7) and a builder in `waitingItems`.
+ */
+interface WaitingItem {
+  readonly kind: "request";
+  readonly href: string;
+  readonly title: string;
+  readonly ownerName: string;
+  readonly apartmentTitle: string;
+  /** Projected ISO instant, never recalculated (ADR 0077). */
+  readonly dueAt: string;
+  readonly dueLabel: string;
 }
 
-function operatorShellHtml(principal: { actorId: string; tenantId: string }): string {
-  return pageShell({
-    title: "Operator",
-    body: `<header class="ui-page__header"><p class="ui-eyebrow">Shortlet Operator</p><h1>Operator workspace</h1><p>You are authenticated for this tenant. Operator actions remain subject to the active representative grant.</p></header><section class="ui-panel"><dl class="ui-facts"><dt>Actor reference</dt><dd>${escapeHtml(principal.actorId)}</dd><dt>Tenant reference</dt><dd>${escapeHtml(principal.tenantId)}</dd></dl><div class="ui-row"><a class="ui-button ui-button--primary" href="/operator/requests">${icon("inbox")}Open Booking Requests</a>${logoutForm()}</div></section>`,
+function waitingItems(env: LocalApartmentOwnerEnvironment, principal: OperatorPrincipal): readonly WaitingItem[] {
+  // listOperatorRequestArtifacts re-checks the grant per owner (ADR 0082) and resolves expiry lazily on read.
+  const requests: WaitingItem[] = env.listOperatorRequestArtifacts(commandPrincipal(principal))
+    .filter((request) => request.facts.status === "disclosed" && request.actions.length > 0)
+    .map((request) => ({
+      kind: "request",
+      href: `/operator/requests/${encodeURIComponent(request.facts.requestId)}`,
+      title: "Booking Request to answer",
+      ...env.requestLabels(request.facts.requestId),
+      dueAt: request.facts.operatorResponseDeadlineAt,
+      dueLabel: "Respond by",
+    }));
+  return [...requests].sort((a, b) => Date.parse(a.dueAt) - Date.parse(b.dueAt));
+}
+
+function operatorHomeHtml(env: LocalApartmentOwnerEnvironment, principal: OperatorPrincipal): string {
+  const items = waitingItems(env, principal);
+  const list = items.length === 0
+    ? `<section class="ui-panel ui-empty"><div class="ui-empty__art">${icon("check")}</div><h2>Nothing is waiting on you</h2><p>New Booking Requests appear here as soon as a Guest sends one.</p></section>`
+    : `<ol class="bo-waiting">${items.map((item) => `<li class="bo-waiting__item" data-kind="${item.kind}"><a href="${escapeHtml(item.href)}"><span class="bo-waiting__title">${escapeHtml(item.title)}</span><span>${escapeHtml(item.apartmentTitle)}</span><span>${escapeHtml(item.ownerName)}</span><span>${escapeHtml(item.dueLabel)} ${watTime(item.dueAt)}</span></a></li>`).join("")}</ol>`;
+  const summary = items.length === 0 ? "" : `<p>${items.length} ${items.length === 1 ? "item is" : "items are"} waiting on you, soonest deadline first.</p>`;
+  return backOfficePage({
+    title: "Home",
+    viewer: viewer(env, principal),
+    current: "home",
+    body: `<header class="ui-page__header"><h1>Waiting on you</h1>${summary}</header>${list}`,
   });
 }
-
-function formatWat(iso: string): string { return new Intl.DateTimeFormat("en-NG", { timeZone: "Africa/Lagos", dateStyle: "medium", timeStyle: "short" }).format(new Date(iso)) + " WAT"; }
 
 /** Operator-facing lifecycle labels. The raw domain status stays in data-status for tooling. */
 function requestStatus(status: string): { readonly label: string; readonly tone: StatusTone } {
@@ -65,47 +117,54 @@ function guestParty(facts: { readonly occupantCount?: number; readonly occupants
   return `${count} ${count === 1 ? "occupant" : "occupants"}`;
 }
 
-function operatorInboxHtml(env: LocalApartmentOwnerEnvironment, principal: { actorId: string; tenantId: string }): string {
-  const requests = env.listOperatorRequestArtifacts({ id: principal.actorId, role: "operator", tenantId: principal.tenantId });
+function operatorInboxHtml(env: LocalApartmentOwnerEnvironment, principal: OperatorPrincipal): string {
+  const requests = env.listOperatorRequestArtifacts(commandPrincipal(principal));
   const awaiting = requests.filter((request) => request.facts.status === "disclosed").length;
   const rows = requests.map((request) => {
     const facts = request.facts;
+    const labels = env.requestLabels(facts.requestId);
     const who = facts.primaryGuestName ? `${escapeHtml(facts.primaryGuestName)} · ` : "";
-    const place = escapeHtml(facts.unitTitle ?? facts.unitId);
-    return `<li><a class="ui-list__row" href="/operator/requests/${encodeURIComponent(facts.requestId)}" aria-describedby="deadline-${escapeHtml(facts.requestId)}"><span class="ui-list__primary">${who}${place}</span><span class="ui-list__aside">${formatMoney(facts.quote?.allInStayTotalKobo ?? 0)}</span><span class="ui-list__secondary">${escapeHtml(formatStayDates(facts.checkIn, facts.checkOut))} · ${facts.nights} ${facts.nights === 1 ? "night" : "nights"} · ${guestParty(facts)}</span><span class="ui-list__status">${requestBadge(facts.status)}</span><span class="ui-list__secondary" id="deadline-${escapeHtml(facts.requestId)}">Respond by ${formatWat(facts.operatorResponseDeadlineAt)}</span></a></li>`;
+    const deadlineId = `deadline-${encodeURIComponent(facts.requestId)}`;
+    return `<li><a class="ui-list__row" href="/operator/requests/${encodeURIComponent(facts.requestId)}" data-request-id="${escapeHtml(facts.requestId)}" aria-describedby="${escapeHtml(deadlineId)}"><span class="ui-list__primary">${who}${escapeHtml(labels.apartmentTitle)}</span><span class="ui-list__aside">${formatMoney(facts.quote?.allInStayTotalKobo ?? 0)}</span><span class="ui-list__secondary">${escapeHtml(labels.ownerName)} · ${escapeHtml(formatStayDates(facts.checkIn, facts.checkOut))} · ${facts.nights} ${facts.nights === 1 ? "night" : "nights"} · ${guestParty(facts)}</span><span class="ui-list__status">${requestBadge(facts.status)}</span><span class="ui-list__secondary" id="${escapeHtml(deadlineId)}">Respond by ${watTime(facts.operatorResponseDeadlineAt)}</span></a></li>`;
   }).join("");
   const summary = requests.length === 0 ? "" : `<p>${awaiting === 0 ? "Nothing needs a response right now." : `${awaiting} ${awaiting === 1 ? "request needs" : "requests need"} your response.`}</p>`;
   const list = rows
     ? `<ul class="ui-list">${rows}</ul>`
     : `<section class="ui-panel ui-empty"><div class="ui-empty__art">${icon("inbox")}</div><h2>No Booking Requests yet</h2><p>No Booking Requests are visible to this representative. New requests appear here as soon as a Guest sends one.</p></section>`;
-  return pageShell({
-    title: "Operator requests",
-    body: `<header class="ui-page__header"><div class="ui-row" style="justify-content:space-between"><p class="ui-eyebrow">Shortlet Operator</p>${logoutForm()}</div><h1>Booking Requests</h1>${summary}</header><h2 class="ui-sr-only">Requests</h2>${list}`,
+  return backOfficePage({
+    title: "Requests",
+    viewer: viewer(env, principal),
+    current: "requests",
+    body: `<header class="ui-page__header"><h1>Booking Requests</h1>${summary}</header><h2 class="ui-sr-only">Requests</h2>${list}`,
   });
 }
 
-function operatorRequestHtml(env: LocalApartmentOwnerEnvironment, principal: { actorId: string; tenantId: string }, requestId: string, error = ""): string {
-  const request = env.operatorRequestDetail(requestId, { id: principal.actorId, role: "operator", tenantId: principal.tenantId });
+function operatorRequestHtml(env: LocalApartmentOwnerEnvironment, principal: OperatorPrincipal, requestId: string, error = ""): string {
+  const request = env.operatorRequestDetail(requestId, commandPrincipal(principal));
   const facts = request.facts;
+  const labels = env.requestLabels(requestId);
   const actionable = request.actions.length > 0 && facts.status === "disclosed";
   const action = (kind: "confirm" | "decline") => `/operator/requests/${encodeURIComponent(requestId)}/${kind}`;
   // Declining is irreversible for the Guest, so it sits behind a disclosure that restates the consequence.
   const decisions = actionable
     ? `<section class="ui-panel" aria-labelledby="decision-heading"><h2 id="decision-heading">Your decision</h2><p>Confirming creates the existing Conditional Booking Offer for the Guest. Declining releases the request inventory.</p><form method="post" action="${action("confirm")}"><button class="ui-button ui-button--primary ui-button--block" type="submit">Confirm Booking Request</button></form><details class="ui-confirm"><summary>Decline this request…</summary><div class="ui-confirm__body"><p>The Guest will be told these dates are not available and the held inventory is released. This cannot be undone.</p><form method="post" action="${action("decline")}"><button class="ui-button ui-button--destructive ui-button--block" type="submit">Decline Booking Request</button></form></div></details></section>`
     : `<p class="ui-banner">${icon("info")}<span>This request is no longer actionable.</span></p>`;
-  return pageShell({
-    title: `Booking Request · ${facts.unitTitle ?? requestId}`,
-    style: ".ui-panel h2{margin:0;font-size:var(--font-size-h3);line-height:var(--font-line-h3)}.ui-panel p{margin:0}",
-    body: `<p><a class="ui-button ui-button--quiet" href="/operator/requests">${icon("arrow-left")}Back to requests</a></p><header class="ui-page__header"><p class="ui-eyebrow">Booking Request</p><h1>${escapeHtml(facts.unitTitle ?? facts.unitId)}</h1><div class="ui-row">${requestBadge(facts.status)}</div></header>${error ? `<p class="ui-banner ui-banner--danger" role="alert">${icon("alert")}<span>${escapeHtml(error)}</span></p>` : ""}<section class="ui-panel" aria-label="Request facts"><dl class="ui-facts"><dt>Request</dt><dd>${escapeHtml(facts.requestId)}</dd><dt>Unit</dt><dd>${escapeHtml(facts.unitId)}</dd><dt>Dates</dt><dd><time datetime="${escapeHtml(facts.checkIn)}">${escapeHtml(facts.checkIn)}</time> to <time datetime="${escapeHtml(facts.checkOut)}">${escapeHtml(facts.checkOut)}</time> (${facts.nights} nights)</dd><dt>Guest party</dt><dd>${guestParty(facts)}</dd><dt>All-In Stay Total</dt><dd class="ui-money-total">${formatMoney(facts.quote?.allInStayTotalKobo ?? 0)}</dd>${facts.quote?.refundableSecurityDepositKobo ? `<dt>Refundable Security Deposit</dt><dd>${formatMoney(facts.quote.refundableSecurityDepositKobo)}</dd>` : ""}<dt>Response deadline</dt><dd>${formatWat(facts.operatorResponseDeadlineAt)}</dd></dl></section>${decisions}`,
+  const phone = facts.phoneNumber ? `<dt>Phone number</dt><dd>${escapeHtml(facts.phoneNumber)}</dd>` : "";
+  return backOfficePage({
+    title: `Booking Request · ${labels.apartmentTitle}`,
+    viewer: viewer(env, principal),
+    current: "requests",
+    body: `<p><a class="ui-button ui-button--quiet" href="/operator/requests">${icon("arrow-left")}Back to requests</a></p><header class="ui-page__header" data-request-id="${escapeHtml(facts.requestId)}"><p class="ui-eyebrow">Booking Request</p><h1>${escapeHtml(labels.apartmentTitle)}</h1><div class="ui-row">${requestBadge(facts.status)}</div></header>${error ? `<p class="ui-banner ui-banner--danger" role="alert">${icon("alert")}<span>${escapeHtml(error)}</span></p>` : ""}<section class="ui-panel" aria-label="Request facts"><dl class="ui-facts"><dt>Owner</dt><dd>${escapeHtml(labels.ownerName)}</dd><dt>Apartment</dt><dd>${escapeHtml(labels.apartmentTitle)}</dd><dt>Dates</dt><dd><time datetime="${escapeHtml(facts.checkIn)}">${escapeHtml(facts.checkIn)}</time> to <time datetime="${escapeHtml(facts.checkOut)}">${escapeHtml(facts.checkOut)}</time> (${facts.nights} nights)</dd><dt>Guest party</dt><dd>${guestParty(facts)}</dd>${phone}<dt>All-In Stay Total</dt><dd class="ui-money-total">${formatMoney(facts.quote?.allInStayTotalKobo ?? 0)}</dd>${facts.quote?.refundableSecurityDepositKobo ? `<dt>Refundable Security Deposit</dt><dd>${formatMoney(facts.quote.refundableSecurityDepositKobo)}</dd>` : ""}<dt>Response deadline</dt><dd>${watTime(facts.operatorResponseDeadlineAt)}</dd></dl></section>${decisions}`,
   });
 }
 
-function operatorRequestDetailHtml(env: LocalApartmentOwnerEnvironment, principal: { actorId: string; tenantId: string }, requestId: string, error = ""): string {
-  const request = env.operatorRequestDetail(requestId, { id: principal.actorId, role: "operator", tenantId: principal.tenantId });
-  const phone = request.facts.phoneNumber;
-  const html = operatorRequestHtml(env, principal, requestId, error);
-  if (!phone) return html;
-  return html.replace("<dt>All-In Stay Total</dt>", `<dt>Phone number</dt><dd>${escapeHtml(phone)}</dd><dt>All-In Stay Total</dt>`);
+function operatorNotFoundHtml(env: LocalApartmentOwnerEnvironment, principal: OperatorPrincipal): string {
+  return backOfficePage({
+    title: "Not found",
+    viewer: viewer(env, principal),
+    current: "requests",
+    body: `<section class="ui-panel ui-empty"><div class="ui-empty__art">${icon("search")}</div><h1>Request not found</h1><p>This Booking Request does not exist, or you no longer act for its owner.</p><a class="ui-button ui-button--primary" href="/operator/requests">Back to requests</a></section>`,
+  });
 }
 
 const formatKobo = formatMoney;
@@ -493,7 +552,7 @@ export function startLocalOwnerServer(options: {
     }
 
     if (req.method === "GET" && url.pathname === "/operator/login") {
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(operatorLoginHtml()); return;
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(operatorLoginHtml("", signInReason(url.searchParams.get("reason")))); return;
     }
     if (req.method === "POST" && url.pathname === "/operator/login") {
       if (!browserOriginAccepted(req)) { res.writeHead(403); res.end("Origin rejected"); return; }
@@ -506,22 +565,28 @@ export function startLocalOwnerServer(options: {
       } catch (error) { res.writeHead(401, { "Content-Type": "text/html; charset=utf-8" }); res.end(operatorLoginHtml(error instanceof Error ? error.message : "Authentication failed")); }
       return;
     }
-    if (url.pathname === "/operator" || url.pathname === "/operator/") {
+
+    // Back-office pages fail closed (ADR 0086): a page without a usable session goes to sign-in with a fixed reason.
+    const page = (render: (principal: OperatorPrincipal) => string): void => {
       const principal = operatorPrincipal(req, env);
-      if (!principal) { res.writeHead(401, { "Location": "/operator/login", "Content-Type": "text/plain" }); res.end("Authentication required"); return; }
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(operatorShellHtml(principal)); return;
+      if (!principal) { res.writeHead(303, { Location: signInLocation(req, env) }); res.end(); return; }
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(render(principal));
+    };
+    if (req.method === "GET" && (url.pathname === "/operator" || url.pathname === "/operator/")) {
+      page((principal) => operatorHomeHtml(env, principal)); return;
     }
-    if (url.pathname === "/operator/requests" || url.pathname === "/operator/requests/") {
-      const principal = operatorPrincipal(req, env);
-      if (!principal) { res.writeHead(401); res.end("Authentication required"); return; }
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(operatorInboxHtml(env, principal)); return;
+    if (req.method === "GET" && (url.pathname === "/operator/requests" || url.pathname === "/operator/requests/")) {
+      page((principal) => operatorInboxHtml(env, principal)); return;
     }
     const detailMatch = url.pathname.match(/^\/operator\/requests\/([^/]+)$/);
     if (req.method === "GET" && detailMatch) {
       const principal = operatorPrincipal(req, env);
-      if (!principal) { res.writeHead(401); res.end("Authentication required"); return; }
-      try { res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(operatorRequestDetailHtml(env, principal, decodeURIComponent(detailMatch[1]))); }
-      catch { res.writeHead(404); res.end("Request not found"); }
+      if (!principal) { res.writeHead(303, { Location: signInLocation(req, env) }); res.end(); return; }
+      let body: string;
+      // An unknown request and one whose owner grant was revoked (ADR 0082) look the same: not found.
+      try { body = operatorRequestHtml(env, principal, decodeURIComponent(detailMatch[1]!)); }
+      catch { res.writeHead(404, { "Content-Type": "text/html; charset=utf-8" }); res.end(operatorNotFoundHtml(env, principal)); return; }
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(body);
       return;
     }
     const actionMatch = url.pathname.match(/^\/operator\/requests\/([^/]+)\/(confirm|decline)$/);
@@ -529,14 +594,14 @@ export function startLocalOwnerServer(options: {
       if (!browserOriginAccepted(req)) { res.writeHead(403); res.end("Origin rejected"); return; }
       const principal = operatorPrincipal(req, env);
       if (!principal) { res.writeHead(401); res.end("Authentication required"); return; }
-      const requestId = decodeURIComponent(actionMatch[1]);
+      const requestId = decodeURIComponent(actionMatch[1]!);
       try {
-        if (actionMatch[2] === "confirm") env.confirmOperatorRequest(requestId, { id: principal.actorId, role: "operator", tenantId: principal.tenantId });
-        else env.declineOperatorRequest(requestId, { id: principal.actorId, role: "operator", tenantId: principal.tenantId });
+        if (actionMatch[2] === "confirm") env.confirmOperatorRequest(requestId, commandPrincipal(principal));
+        else env.declineOperatorRequest(requestId, commandPrincipal(principal));
         res.writeHead(303, { Location: `/operator/requests/${encodeURIComponent(requestId)}` }); res.end();
       } catch (error) {
         let body = "Request action rejected";
-        try { body = operatorRequestDetailHtml(env, principal, requestId, error instanceof Error ? error.message : "Request action rejected"); } catch { /* authorization may have changed; keep generic */ }
+        try { body = operatorRequestHtml(env, principal, requestId, error instanceof Error ? error.message : "Request action rejected"); } catch { /* authorization may have changed; keep generic */ }
         if (!res.headersSent) { res.writeHead(409, { "Content-Type": body.startsWith("<!doctype") ? "text/html; charset=utf-8" : "text/plain; charset=utf-8" }); res.end(body); }
       }
       return;
