@@ -123,8 +123,12 @@ async function operatorLoginAndDecision(tab: RealBrowserTab, token: string, deci
   await tab.waitForText("Booking Requests", 15000);
   const opened = await tab.evaluate<boolean>(`(() => { const link=[...document.querySelectorAll('a')].find((candidate)=>candidate.getAttribute('href')?.startsWith('/operator/requests/')); if (!(link instanceof HTMLAnchorElement)) return false; link.click(); return true; })()`);
   assert.equal(opened, true, await tab.evaluate<string>("document.body.innerText"));
-  await tab.waitForText("Booking Request", 15000);
-  assert.equal(await tab.clickButton(`${decision} Booking Request`), true);
+  await tab.waitForText("Your decision", 15000);
+  // B3: confirm needs the explicit re-attestation; decline needs a D1 reason code.
+  await tab.evaluate<boolean>(decision === "Confirm"
+    ? `(() => { const box = document.querySelector('input[name="attest"]'); box.checked = true; return box.checked; })()`
+    : `(() => { document.querySelector('details.ui-confirm').open = true; const reason = document.querySelector('input[name="reason"][value="dates_not_available"]'); reason.checked = true; return reason.checked; })()`);
+  assert.equal(await tab.clickButton(decision === "Confirm" ? "Confirm for" : "Decline Booking Request"), true);
   await tab.waitForText(decision === "Confirm" ? "confirmed" : "declined", 15000);
 }
 

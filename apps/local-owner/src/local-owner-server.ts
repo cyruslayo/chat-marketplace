@@ -1,6 +1,9 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFileSync } from "node:fs";
 import {
+  DECLINE_REASONS,
+  OperatorDecisionInputError,
+  type DeclineReasonCode,
   LocalApartmentOwnerEnvironment,
   resetLocalOwnerFixture,
   DEFAULT_LOCAL_OWNER_CONFIG,
@@ -174,19 +177,74 @@ function operatorInboxHtml(env: LocalApartmentOwnerEnvironment, principal: Opera
   });
 }
 
+/**
+ * Confirm re-attests the ADR 0041 facts for the named owner behind an explicit affirmative; decline takes a D1
+ * reason code only. Both carry the version they were rendered from (ADR 0072). Works without JavaScript (ADR 0080).
+ */
+function decisionFormsHtml(requestId: string, ownerName: string, allInStayTotalKobo: number, version: number): string {
+  const action = (kind: "confirm" | "decline") => `/operator/requests/${encodeURIComponent(requestId)}/${kind}`;
+  const owner = escapeHtml(ownerName);
+  const versionField = `<input type="hidden" name="basedOnVersion" value="${version}">`;
+  // ADR 0041: "Confirmation explicitly re-attests availability, price, included services, arrival, maintenance, access, and absence of external conflict."
+  // Items are the ADR's own words; only the price carries this request's amount.
+  const attested = ["Availability", `Price (All-In Stay Total ${formatMoney(allInStayTotalKobo)})`, "Included services", "Arrival", "Maintenance", "Access", "No external conflict"]
+    .map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+  const reasons = (Object.keys(DECLINE_REASONS) as DeclineReasonCode[]).map((code) => `<label class="bo-choice"><input type="radio" name="reason" value="${code}" required> ${escapeHtml(DECLINE_REASONS[code])}</label>`).join("");
+  // Declining is irreversible for the Guest, so it sits behind a disclosure that restates the consequence.
+  return `<section class="ui-panel" aria-labelledby="decision-heading"><h2 id="decision-heading">Your decision</h2>`
+    + `<form method="post" action="${action("confirm")}" class="ui-stack">${versionField}<h3>Confirm on behalf of ${owner}</h3><p>By confirming you re-attest, on behalf of ${owner}:</p><ul class="bo-attest">${attested}</ul><p>Confirming creates a Conditional Booking Offer for the Guest. The stay becomes a Reservation only after the Guest pays.</p><label class="bo-choice"><input type="checkbox" name="attest" value="yes" required> I have checked each of these with ${owner} and attest to them on their behalf.</label><button class="ui-button ui-button--primary ui-button--block" type="submit">Confirm for ${owner}</button></form>`
+    + `<details class="ui-confirm"><summary>Decline this request…</summary><div class="ui-confirm__body"><form method="post" action="${action("decline")}" class="ui-stack">${versionField}<fieldset class="bo-reasons"><legend>Reason</legend>${reasons}</fieldset><p>Declining releases these dates immediately. The Guest never sees the reason.</p><button class="ui-button ui-button--destructive ui-button--block" type="submit">Decline Booking Request</button></form></div></details></section>`;
+}
+
+const DECISION_STYLE = ".bo-attest{margin:0;padding-inline-start:var(--space-5);display:grid;gap:var(--space-1)}.bo-choice{display:flex;gap:var(--space-3);align-items:flex-start;min-block-size:var(--control-min-target);padding-block:var(--space-2);cursor:pointer}.bo-choice input{inline-size:1.5rem;block-size:1.5rem;flex:none;margin:0}.bo-reasons{border:0;margin:0;padding:0;display:grid;gap:var(--space-1)}.bo-reasons legend{font-weight:600;padding:0}.ui-panel h3{margin:0;font-size:var(--font-size-body)}";
+
+/** Why a decision was refused, in plain words, from the request's current state (B3 AC4). */
+function refusalNotice(env: LocalApartmentOwnerEnvironment, principal: OperatorPrincipal, requestId: string, error: unknown): string {
+  if (error instanceof OperatorDecisionInputError) {
+    return error.problem === "attestation_required"
+      ? `Tick the box to attest these facts for ${env.requestLabels(requestId).ownerName} before confirming. Nothing was changed.`
+      : "Choose Dates not available or Other reason before declining. Nothing was changed.";
+  }
+  if (error instanceof DecisionFormError) return "This form could not be read. Review the request and decide again. Nothing was changed.";
+  const status = env.operatorRequestDetail(requestId, commandPrincipal(principal)).facts.status;
+  if (status === "confirmed" || status === "declined") return `This request is already ${status}. Your decision was not applied.`;
+  if (status === "expired") return "This request has expired. Your decision was not applied.";
+  if (status === "delivery_failed") return "This request failed delivery. Your decision was not applied.";
+  return "This request changed since you opened it. Review it and decide again.";
+}
+
+class DecisionFormError extends Error {}
+
+/** Only the fields each form sends are accepted, so no free text can ride along (ADR 0075, D1). */
+function decisionFromForm(kind: "confirm" | "decline", body: string): { readonly basedOnVersion: number; readonly attested: boolean; readonly reason: string } {
+  const params = new URLSearchParams(body);
+  const allowed = kind === "confirm" ? ["basedOnVersion", "attest"] : ["basedOnVersion", "reason"];
+  const keys = [...params.keys()];
+  if (keys.some((key) => !allowed.includes(key)) || new Set(keys).size !== keys.length) throw new DecisionFormError("Unexpected decision fields");
+  const version = params.get("basedOnVersion") ?? "";
+  if (!/^\d{1,6}$/.test(version)) throw new DecisionFormError("Missing decision version");
+  return { basedOnVersion: Number(version), attested: params.get("attest") === "yes", reason: params.get("reason") ?? "" };
+}
+
+async function readForm(req: IncomingMessage, limit = 4096): Promise<string> {
+  const buffers: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) { const buffer = Buffer.from(chunk); size += buffer.length; if (size > limit) throw new DecisionFormError("Form too large"); buffers.push(buffer); }
+  return Buffer.concat(buffers).toString("utf8");
+}
+
 function operatorRequestHtml(env: LocalApartmentOwnerEnvironment, principal: OperatorPrincipal, requestId: string, error = ""): string {
   const request = env.operatorRequestDetail(requestId, commandPrincipal(principal));
   const facts = request.facts;
   const labels = env.requestLabels(requestId);
-  const actionable = request.actions.length > 0 && facts.status === "disclosed";
-  const action = (kind: "confirm" | "decline") => `/operator/requests/${encodeURIComponent(requestId)}/${kind}`;
-  // Declining is irreversible for the Guest, so it sits behind a disclosure that restates the consequence.
-  const decisions = actionable
-    ? `<section class="ui-panel" aria-labelledby="decision-heading"><h2 id="decision-heading">Your decision</h2><p>Confirming creates the existing Conditional Booking Offer for the Guest. Declining releases the request inventory.</p><form method="post" action="${action("confirm")}"><button class="ui-button ui-button--primary ui-button--block" type="submit">Confirm Booking Request</button></form><details class="ui-confirm"><summary>Decline this request…</summary><div class="ui-confirm__body"><p>The Guest will be told these dates are not available and the held inventory is released. This cannot be undone.</p><form method="post" action="${action("decline")}"><button class="ui-button ui-button--destructive ui-button--block" type="submit">Decline Booking Request</button></form></div></details></section>`
+  const decision = request.actions.find((candidate) => candidate.type === "confirm");
+  const decisions = decision && facts.status === "disclosed"
+    ? decisionFormsHtml(requestId, labels.ownerName, facts.quote?.allInStayTotalKobo ?? 0, decision.projectionVersion)
     : `<p class="ui-banner">${icon("info")}<span>This request is no longer actionable.</span></p>`;
   const phone = facts.phoneNumber ? `<dt>Phone number</dt><dd>${escapeHtml(facts.phoneNumber)}</dd>` : "";
   return backOfficePage({
     title: `Booking Request · ${labels.apartmentTitle}`,
+    style: DECISION_STYLE,
     viewer: viewer(env, principal),
     current: "requests",
     body: `<p><a class="ui-button ui-button--quiet" href="/operator/requests">${icon("arrow-left")}Back to requests</a></p><header class="ui-page__header" data-request-id="${escapeHtml(facts.requestId)}"><p class="ui-eyebrow">Booking Request</p><h1>${escapeHtml(labels.apartmentTitle)}</h1><div class="ui-row">${requestBadge(facts.status, facts.delivered)}</div></header>${error ? `<p class="ui-banner ui-banner--danger" role="alert">${icon("alert")}<span>${escapeHtml(error)}</span></p>` : ""}<section class="ui-panel" aria-label="Request facts"><dl class="ui-facts"><dt>Owner</dt><dd>${escapeHtml(labels.ownerName)}</dd><dt>Apartment</dt><dd>${escapeHtml(labels.apartmentTitle)}</dd><dt>Dates</dt><dd><time datetime="${escapeHtml(facts.checkIn)}">${escapeHtml(facts.checkIn)}</time> to <time datetime="${escapeHtml(facts.checkOut)}">${escapeHtml(facts.checkOut)}</time> (${facts.nights} nights)</dd><dt>Guest party</dt><dd>${guestParty(facts)}</dd>${phone}<dt>All-In Stay Total</dt><dd class="ui-money-total">${formatMoney(facts.quote?.allInStayTotalKobo ?? 0)}</dd>${facts.quote?.refundableSecurityDepositKobo ? `<dt>Refundable Security Deposit</dt><dd>${formatMoney(facts.quote.refundableSecurityDepositKobo)}</dd>` : ""}<dt>Response deadline</dt><dd>${watTime(facts.operatorResponseDeadlineAt)}</dd></dl></section>${decisions}`,
@@ -630,14 +688,18 @@ export function startLocalOwnerServer(options: {
       const principal = operatorPrincipal(req, env);
       if (!principal) { res.writeHead(401); res.end("Authentication required"); return; }
       const requestId = decodeURIComponent(actionMatch[1]!);
+      const kind = actionMatch[2] === "confirm" ? "confirm" : "decline";
       try {
-        if (actionMatch[2] === "confirm") env.confirmOperatorRequest(requestId, commandPrincipal(principal));
-        else env.declineOperatorRequest(requestId, commandPrincipal(principal));
+        const form = decisionFromForm(kind, await readForm(req));
+        if (kind === "confirm") env.confirmOperatorRequest(requestId, commandPrincipal(principal), { attested: form.attested, basedOnVersion: form.basedOnVersion });
+        else env.declineOperatorRequest(requestId, commandPrincipal(principal), { reason: form.reason, basedOnVersion: form.basedOnVersion });
         res.writeHead(303, { Location: `/operator/requests/${encodeURIComponent(requestId)}` }); res.end();
       } catch (error) {
+        // Refused decisions change nothing and re-render the current state (B3 AC4). A grant lost mid-flight stays generic.
+        const statusCode = error instanceof OperatorDecisionInputError || error instanceof DecisionFormError ? 400 : 409;
         let body = "Request action rejected";
-        try { body = operatorRequestHtml(env, principal, requestId, error instanceof Error ? error.message : "Request action rejected"); } catch { /* authorization may have changed; keep generic */ }
-        if (!res.headersSent) { res.writeHead(409, { "Content-Type": body.startsWith("<!doctype") ? "text/html; charset=utf-8" : "text/plain; charset=utf-8" }); res.end(body); }
+        try { body = operatorRequestHtml(env, principal, requestId, refusalNotice(env, principal, requestId, error)); } catch { /* authorization may have changed; keep generic */ }
+        if (!res.headersSent) { res.writeHead(statusCode, { "Content-Type": body.startsWith("<!doctype") ? "text/html; charset=utf-8" : "text/plain; charset=utf-8" }); res.end(body); }
       }
       return;
     }

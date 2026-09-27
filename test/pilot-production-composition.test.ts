@@ -240,7 +240,8 @@ test("Production callback HTTP completion rehydrates the confirmed Reservation a
     const requestId = (requestDatabase.prepare("SELECT request_id FROM guest_booking_requests ORDER BY request_id DESC LIMIT 1").get() as { request_id: string }).request_id;
     requestDatabase.close();
     const requestPath = `/operator/requests/${encodeURIComponent(requestId)}`;
-    const confirmed = await fetch(`${base}${requestPath}/confirm`, { method: "POST", headers: { cookie: operatorCookieHeader, origin: PUBLIC_ORIGIN }, redirect: "manual" });
+    const basedOnVersion = (await (await fetch(`${base}${requestPath}`, { headers: { cookie: operatorCookieHeader } })).text()).match(/name="basedOnVersion" value="(\d+)"/)?.[1] ?? "";
+    const confirmed = await fetch(`${base}${requestPath}/confirm`, { method: "POST", headers: { cookie: operatorCookieHeader, origin: PUBLIC_ORIGIN }, body: new URLSearchParams({ basedOnVersion, attest: "yes" }), redirect: "manual" });
     assert.equal(confirmed.status, 303);
 
     const afterConfirmation = await fetch(`${base}/api/state?threadId=${encodeURIComponent(threadId)}`, { headers: { cookie: guestCookie } });

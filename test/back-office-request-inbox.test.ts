@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { crossOriginPost, operatorGet, operatorPost, revokeRepresentativeGrant, startSignedInOperator, type SignedInOperator } from "./helpers/operator-session.js";
+import { crossOriginPost, decideRequest, operatorGet, operatorPost, revokeRepresentativeGrant, startSignedInOperator, type SignedInOperator } from "./helpers/operator-session.js";
 import { formatMoney } from "../apps/web/src/ui-kit.js";
 import { formatStayDates } from "../apps/web-agent/src/booking-presentation.js";
 import { OPERATOR_RESPONSE_REMINDER_MINUTES, OPERATOR_RESPONSE_WINDOW_MINUTES } from "../domains/shortlet/src/index.js";
@@ -93,7 +93,7 @@ test("AC2 — A request whose window has passed shows as expired on the next rea
     assert.equal(status(f, id), "expired", "the read resolved expiry lazily");
 
     // It cannot be confirmed, and the refusal changes nothing.
-    const refused = await operatorPost(f.session, `/operator/requests/${id}/confirm`);
+    const refused = await decideRequest(f.session, id, "confirm", { basedOnVersion: "3" });
     assert.equal(refused.status, 409);
     assert.equal(status(f, id), "expired");
     assert.doesNotMatch(await (await operatorGet(f.session, `/operator/requests/${id}`)).text(), /action="[^"]*\/confirm"/);
@@ -134,7 +134,7 @@ test("AC3 — A request that failed delivery is shown as Delivery Failed, never 
 
     // It is not waiting on you, and it cannot be decided.
     assert.doesNotMatch(await (await operatorGet(f.session, "/operator")).text(), new RegExp(id));
-    assert.equal((await operatorPost(f.session, `/operator/requests/${id}/confirm`)).status, 409);
+    assert.equal((await decideRequest(f.session, id, "confirm", { basedOnVersion: "3" })).status, 409);
     assert.equal(status(f, id), "delivery_failed");
   } finally { await f.close(); }
 });

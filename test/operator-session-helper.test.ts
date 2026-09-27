@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { crossOriginPost, operatorGet, operatorPost, revokeOperatorSession, revokeRepresentativeGrant, signInOperator, signOutOperator, startOperatorServer, type OperatorServer, type OperatorSession } from "./helpers/operator-session.js";
+import { crossOriginPost, decideRequest, operatorGet, operatorPost, revokeOperatorSession, revokeRepresentativeGrant, signInOperator, signOutOperator, startOperatorServer, type OperatorServer, type OperatorSession } from "./helpers/operator-session.js";
 
 // Each B1–B3 action must test these failure paths (map delivery rules; ADR 0082, ADR 0086).
 // Since B1, a page GET without a usable session is a 303 to sign-in (with a fixed reason when known);
@@ -89,7 +89,7 @@ test("Revoked grant: a confirm is refused and the request stays pending (ADR 008
   try {
     const revoked = revokeRepresentativeGrant(f.server.environment);
     assert.ok(revoked.length > 0 && revoked.every((grant) => grant.revokedAtIso));
-    assert.equal((await operatorPost(f.session, `/operator/requests/${f.requestId}/confirm`)).status, 409);
+    assert.equal((await decideRequest(f.session, f.requestId, "confirm", { basedOnVersion: "3" })).status, 409);
     assert.equal(status(f), "disclosed");
   } finally { await done(f); }
 });

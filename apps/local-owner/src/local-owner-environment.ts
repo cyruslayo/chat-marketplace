@@ -59,6 +59,30 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+/** Decision D1: the only decline reasons, with no free text (ADR 0075). The Guest never sees them. */
+export const DECLINE_REASONS = Object.freeze({
+  dates_not_available: "Dates not available",
+  other_reason: "Other reason",
+} as const);
+export type DeclineReasonCode = keyof typeof DECLINE_REASONS;
+export function isDeclineReasonCode(value: unknown): value is DeclineReasonCode {
+  return typeof value === "string" && Object.hasOwn(DECLINE_REASONS, value);
+}
+
+/** What the confirm form submits: the explicit re-attestation and the version it was rendered from. */
+export interface OperatorConfirmDecision { readonly attested: boolean; readonly basedOnVersion: number }
+/** What the decline form submits: a D1 reason code and the version it was rendered from. */
+export interface OperatorDeclineDecision { readonly reason: string; readonly basedOnVersion: number }
+
+export type OperatorDecisionInputProblem = "attestation_required" | "reason_required";
+/** A decision form was incomplete. Nothing was changed. */
+export class OperatorDecisionInputError extends Error {
+  constructor(readonly problem: OperatorDecisionInputProblem) {
+    super(problem === "attestation_required" ? "Explicit re-attestation is required to confirm" : "A decline reason is required");
+    this.name = "OperatorDecisionInputError";
+  }
+}
+
 export const DEFAULT_LOCAL_OWNER_CONFIG: LocalOwnerFixtureConfig = {
   databasePath: ".scratch/local-owner/owner_fixture.sqlite",
   tenantId: "tenant-lagos-internal",
@@ -466,13 +490,19 @@ export class LocalApartmentOwnerEnvironment {
     return phoneNumber ? Object.freeze({ ...artifact, facts: Object.freeze({ ...artifact.facts, phoneNumber }) }) : artifact;
   }
 
-  confirmOperatorRequest(requestId: string, principal: CommandPrincipal): BookingRequestArtifact {
+  /**
+   * Confirms on the owner's behalf. Fails closed unless you explicitly re-attested the ADR 0041 facts, and only
+   * at the version the form was rendered from (ADR 0072), so a stale tab or a repeat can never issue a second offer.
+   */
+  confirmOperatorRequest(requestId: string, principal: CommandPrincipal, decision: OperatorConfirmDecision): BookingRequestArtifact {
+    if (decision.attested !== true) throw new OperatorDecisionInputError("attestation_required");
     const artifact = this.operatorRequestDetail(requestId, principal);
     const action = artifact.actions.find((candidate) => candidate.type === "confirm");
     if (!action) throw new Error("Booking Request action is stale or no longer allowed");
     try { this.audit.record({ type: "operator_confirmation_attempted", actorId: principal.id, tenantId: principal.tenantId, requestId, previousState: artifact.facts.status }); this.telemetry.track({ type: "operator_confirmation_attempted", principalId: principal.id, tenantId: principal.tenantId, aggregateId: requestId }); } catch { /* no block */ }
     try {
-      this.bookingRequestApp.confirm({ ...action, principal, action: "confirm" });
+      // The expected version is the one you saw, not the current one (ADR 0072).
+      this.bookingRequestApp.confirm({ ...action, projectionVersion: decision.basedOnVersion, principal, action: "confirm" });
       this.conditionalOfferApp.issue(requestId, principal);
     } catch (error) {
       try { this.audit.record({ type: "operator_stale_action_rejected", actorId: principal.id, tenantId: principal.tenantId, requestId, reasonCode: /expired/i.test(String(error)) ? "expired" : "stale" }); this.telemetry.track({ type: "operator_stale_action_rejected", principalId: principal.id, tenantId: principal.tenantId, aggregateId: requestId }); } catch { /* no block */ }
@@ -482,15 +512,34 @@ export class LocalApartmentOwnerEnvironment {
     return this.operatorRequestDetail(requestId, principal);
   }
 
-  declineOperatorRequest(requestId: string, principal: CommandPrincipal, reason?: string): BookingRequestArtifact {
+  /**
+   * Declines with one of the two D1 reason codes; there is no free text (ADR 0075). The domain releases the dates
+   * immediately (ADR 0041). "Dates not available" also records a calendar-accuracy event (ADR 0039).
+   */
+  declineOperatorRequest(requestId: string, principal: CommandPrincipal, decision: OperatorDeclineDecision): BookingRequestArtifact {
+    if (!isDeclineReasonCode(decision.reason)) throw new OperatorDecisionInputError("reason_required");
     const artifact = this.operatorRequestDetail(requestId, principal);
     const action = artifact.actions.find((candidate) => candidate.type === "decline");
     if (!action) throw new Error("Booking Request action is stale or no longer allowed");
     try { this.audit.record({ type: "operator_decline_attempted", actorId: principal.id, tenantId: principal.tenantId, requestId, previousState: artifact.facts.status }); this.telemetry.track({ type: "operator_decline_attempted", principalId: principal.id, tenantId: principal.tenantId, aggregateId: requestId }); } catch { /* no block */ }
-    try { this.bookingRequestApp.decline({ ...action, principal, action: "decline", ...(reason ? { reason } : {}) }); }
+    try { this.bookingRequestApp.decline({ ...action, projectionVersion: decision.basedOnVersion, principal, action: "decline", reason: decision.reason }); }
     catch (error) { try { this.audit.record({ type: "operator_expired_action_rejected", actorId: principal.id, tenantId: principal.tenantId, requestId, reasonCode: /expired/i.test(String(error)) ? "expired" : "stale" }); this.telemetry.track({ type: "operator_expired_action_rejected", principalId: principal.id, tenantId: principal.tenantId, aggregateId: requestId }); } catch { /* no block */ } throw error; }
-    try { this.audit.record({ type: "operator_request_declined", actorId: principal.id, tenantId: principal.tenantId, requestId, previousState: artifact.facts.status, newState: "declined", ...(reason ? { reason } : {}) }); this.telemetry.track({ type: "operator_request_declined", principalId: principal.id, tenantId: principal.tenantId, aggregateId: requestId }); } catch { /* no block */ }
+    try { this.audit.record({ type: "operator_request_declined", actorId: principal.id, tenantId: principal.tenantId, requestId, previousState: artifact.facts.status, newState: "declined", reasonCode: decision.reason }); this.telemetry.track({ type: "operator_request_declined", principalId: principal.id, tenantId: principal.tenantId, aggregateId: requestId }); } catch { /* no block */ }
+    if (decision.reason === "dates_not_available") this.#recordCalendarAccuracyEvent(requestId);
     return this.operatorRequestDetail(requestId, principal);
+  }
+
+  /**
+   * ADR 0039: declining an unconfirmed request because the dates were not available is a calendar-accuracy event.
+   * Recorded in the append-only audit, not as an enforcement incident: severity and attribution are human
+   * enforcement judgments (ADR 0064) that no ADR fixes for this impact class. Minimal by design (ADR 0075):
+   * ids, time and reason code only; no free text and no guest data.
+   */
+  #recordCalendarAccuracyEvent(requestId: string): void {
+    const request = this.bookingRequestApp.manager.getRequest(requestId) as { unitId?: string; operatorId?: string; tenantId?: string };
+    try {
+      this.audit.record({ type: "calendar_accuracy_event", impactClass: "unavailable_request_decline", requestId, unitId: request.unitId, operatorId: request.operatorId, tenantId: request.tenantId, reasonCode: "dates_not_available", occurredAt: this.clock().toISOString() });
+    } catch { /* observability cannot undo a completed decline */ }
   }
 
   getStateOverview(): LocalOwnerStateOverview {

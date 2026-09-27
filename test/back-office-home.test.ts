@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { crossOriginPost, operatorGet, operatorPost, revokeOperatorSession, revokeRepresentativeGrant, signOutOperator, startSignedInOperator, type SignedInOperator } from "./helpers/operator-session.js";
+import { crossOriginPost, decideRequest, operatorGet, operatorPost, revokeOperatorSession, renderedDecisionVersion, revokeRepresentativeGrant, signOutOperator, startSignedInOperator, type SignedInOperator } from "./helpers/operator-session.js";
 import { localPilotStartupLines, productionPilotStartupLines } from "../apps/pilot/src/startup-banner.js";
 
 // B1 — back-office shell and "waiting on you" home (scratch/operator-dashboard/issues/01-back-office-home.md).
@@ -148,9 +148,10 @@ test("AC3 — An expired or revoked session lands on sign-in with a plain reason
     header(await missing.text());
 
     // Revoked grant (ADR 0082): the owner's work leaves home and the action is denied.
+    const version = await renderedDecisionVersion(f.session, requestId);
     revokeRepresentativeGrant(f.server.environment);
     assert.match(visibleText(await (await operatorGet(f.session, "/operator")).text()), /Nothing is waiting on you/);
-    assert.equal((await operatorPost(f.session, `/operator/requests/${requestId}/confirm`)).status, 409);
+    assert.equal((await decideRequest(f.session, requestId, "confirm", { basedOnVersion: version })).status, 409);
     assert.equal(status(), "disclosed");
 
     // Logout still works and lands on sign-in.
