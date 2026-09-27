@@ -3,7 +3,7 @@ import type { PlatformCommandEnvelope, CommandPrincipal } from "../../../package
 import type { ConditionalBookingOffer } from "./conditional-offer.js";
 import type { BookingContract, LedgerEntry, Reservation } from "./card-payment.js";
 import type { BookingStateRepository } from "./booking-state.js";
-import { deriveCompensationStatus, type BookingPaymentJourneyRepository, type BookingPaymentCompensationPort } from "./booking-payment-journey.js";
+import { deriveCompensationStatus, PAYMENT_PROCESSING_GRACE_MINUTES, type BookingPaymentJourneyRepository, type BookingPaymentCompensationPort } from "./booking-payment-journey.js";
 import { assertSecurityDepositCollectionAvailable, type SecurityDepositCollectionCapabilityProvider } from "./security-deposit.js";
 import type { SecurityDepositAccountingRepository } from "./security-deposit-accounting.js";
 
@@ -83,7 +83,7 @@ export interface BankTransferPaymentManagerOptions {
 type Outcome = "confirmed" | "deposit_required" | "processing_in_grace" | "late_payment_refunded" | "failed" | "expired";
 type Processed = { offerId: string; tenantId?: string; outcome: Outcome; reservationId?: string; contractId?: string; refundId?: string; reconciliationId?: string };
 
-const GRACE_MS = 10 * 60 * 1000; // ADR-0044: one ten-minute grace after the twenty-minute Payment Window.
+const GRACE_MS = PAYMENT_PROCESSING_GRACE_MINUTES * 60_000; // ADR-0044: one grace after the twenty-minute Payment Window.
 function deterministicSuffix(value: string): string { return createHash("sha256").update(value).digest("hex").slice(0, 12); }
 function authorizedPayer(offer: ConditionalBookingOffer): string { return offer.parties.distinctPayer?.id ?? offer.parties.primaryGuest.id; }
 function assertServer(principal: CommandPrincipal, offer: ConditionalBookingOffer): void {

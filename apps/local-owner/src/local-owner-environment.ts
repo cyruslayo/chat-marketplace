@@ -29,8 +29,11 @@ import {
   SqliteAvailabilityStore,
   JsonUnitRepository,
   JsonOperatorRepository,
+  SqliteBookingPaymentJourneyRepository,
+  SqliteBookingStateRepository,
   type OperatorRepository,
 } from "../../../domains/shortlet/src/index.js";
+import { offerRecordFromJson, projectBookingStage, type BookingStage, type BookingStageProjection } from "./booking-projection.js";
 import {
   createBookingRequestApplication,
   createConditionalOfferApplication,
@@ -81,6 +84,18 @@ export class OperatorDecisionInputError extends Error {
     super(problem === "attestation_required" ? "Explicit re-attestation is required to confirm" : "A decline reason is required");
     this.name = "OperatorDecisionInputError";
   }
+}
+
+/** A confirmed Booking Request as the back office lists it (B4). Labels only: no ids beyond the request, no payment details (ADR 0075). */
+export interface OperatorBooking extends BookingStageProjection {
+  readonly requestId: string;
+  readonly ownerName: string;
+  readonly apartmentTitle: string;
+  readonly checkIn: string;
+  readonly checkOut: string;
+  readonly nights: number;
+  readonly partySize: number;
+  readonly allInStayTotalKobo: number | null;
 }
 
 export const DEFAULT_LOCAL_OWNER_CONFIG: LocalOwnerFixtureConfig = {
@@ -158,6 +173,9 @@ export class LocalApartmentOwnerEnvironment {
   readonly telemetry: InMemoryTelemetry;
   readonly #database: DatabaseSync;
 
+  /** Read-only here: the committed Reservation's current status (B4). The Guest side writes it. */
+  readonly #bookingState: SqliteBookingStateRepository;
+
   #demoRequests: string[] = [];
 
   constructor(config: Partial<LocalOwnerFixtureConfig> = {}) {
@@ -169,6 +187,7 @@ export class LocalApartmentOwnerEnvironment {
     this.#database = new DatabaseSync(this.config.databasePath);
     this.#database.exec("PRAGMA busy_timeout = 5000");
     this.interactionStore = new SqliteGuestInteractionStore(this.config.databasePath, this.#database);
+    this.#bookingState = new SqliteBookingStateRepository(this.#database, this.config.databasePath);
     this.audit = new InMemoryAuditLog();
     this.telemetry = new InMemoryTelemetry();
     this.grantStore = new SqliteOperatorRepresentativeGrantStore(this.config.databasePath, { clock: this.clock });
@@ -540,6 +559,67 @@ export class LocalApartmentOwnerEnvironment {
     try {
       this.audit.record({ type: "calendar_accuracy_event", impactClass: "unavailable_request_decline", requestId, unitId: request.unitId, operatorId: request.operatorId, tenantId: request.tenantId, reasonCode: "dates_not_available", occurredAt: this.clock().toISOString() });
     } catch { /* observability cannot undo a completed decline */ }
+  }
+
+  /**
+   * Every confirmed Booking Request for an owner you hold a grant for (ADR 0082), with its stage read from the
+   * authoritative records the Guest side writes to the shared database. Read on each call, never cached, so a payment
+   * recorded by another process shows on the next view. Read-only: no command is issued.
+   */
+  listOperatorBookings(principal: CommandPrincipal): readonly OperatorBooking[] {
+    if (principal.role !== "operator" || !principal.id || !principal.tenantId) return [];
+    const journeys = new SqliteBookingPaymentJourneyRepository(this.#database, this.config.databasePath);
+    const now = this.clock();
+    const bookings = this.interactionStore.listBookingRequestIds().flatMap((requestId) => {
+      try {
+        const booking = this.#bookingFor(requestId, principal, journeys, now);
+        return booking ? [booking] : [];
+      } catch { return []; }
+    });
+    const rank: Record<BookingStage, number> = { offer_not_issued: 0, offer_issued: 1, awaiting_payment: 1, reservation_confirmed: 2, ended: 3 };
+    // Open payments first, soonest deadline first; then Reservations by check-in; then ended bookings.
+    const key = (booking: OperatorBooking) => rank[booking.stage] === 1 ? Date.parse(booking.graceEndsAt ?? booking.paymentDeadlineAt ?? "") : Date.parse(booking.checkIn);
+    return bookings.sort((a, b) => rank[a.stage] - rank[b.stage] || key(a) - key(b));
+  }
+
+  /** One booking, or "Booking not found" for an unknown id, an unconfirmed request, or an owner you do not act for (ADR 0082). */
+  operatorBooking(requestId: string, principal: CommandPrincipal): OperatorBooking {
+    const booking = this.#bookingFor(requestId, principal, new SqliteBookingPaymentJourneyRepository(this.#database, this.config.databasePath), this.clock());
+    if (!booking) throw new Error("Booking not found");
+    return booking;
+  }
+
+  #bookingFor(requestId: string, principal: CommandPrincipal, journeys: SqliteBookingPaymentJourneyRepository, now: Date): OperatorBooking | null {
+    if (principal.role !== "operator" || !principal.id || !principal.tenantId) return null;
+    let request: { operatorId?: string; tenantId?: string; status: string; checkIn: string; checkOut: string; nights: number; occupants: readonly unknown[]; quote?: { allInStayTotalKobo?: number } };
+    try { request = this.bookingRequestApp.manager.getRequest(requestId) as typeof request; } catch { return null; }
+    // Fail closed: a missing owner, tenant or grant is not found (ADR 0082).
+    if (!request.operatorId || !request.tenantId || request.tenantId !== principal.tenantId || !this.grantStore.canActForOperator({ actorId: principal.id, operatorId: request.operatorId, tenantId: request.tenantId })) return null;
+    if (request.status !== "confirmed") return null;
+    const storedOffer = this.interactionStore.findConditionalOfferByRequestId(requestId);
+    const offer = storedOffer ? offerRecordFromJson(storedOffer.offerJson) : null;
+    const journey = offer ? journeys.findByOfferId(offer.offerId) : null;
+    const reservationId = offer ? this.interactionStore.findBookingSnapshotByOfferId(offer.offerId)?.reservationId : undefined;
+    const reservation = reservationId ? this.#bookingState.findReservationById(reservationId) : null;
+    const projection = projectBookingStage({
+      offer,
+      journey,
+      attemptMethod: offer ? this.interactionStore.findLivePaymentAttemptByOfferId(offer.offerId)?.method ?? null : null,
+      // A snapshot without a live row still records a verified, committed Reservation (ADR 0005).
+      reservationStatus: reservation?.status ?? (reservationId ? "confirmed" : null),
+      now,
+    });
+    return Object.freeze({
+      requestId,
+      ...this.requestLabels(requestId),
+      checkIn: request.checkIn,
+      checkOut: request.checkOut,
+      nights: request.nights,
+      partySize: request.occupants.length,
+      // ADR 0077: the amount is the offer's captured quote, falling back to the request's; never recalculated.
+      allInStayTotalKobo: offer?.allInStayTotalKobo ?? request.quote?.allInStayTotalKobo ?? null,
+      ...projection,
+    });
   }
 
   getStateOverview(): LocalOwnerStateOverview {

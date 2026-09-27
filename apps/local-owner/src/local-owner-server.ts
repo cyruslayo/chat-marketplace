@@ -8,7 +8,9 @@ import {
   resetLocalOwnerFixture,
   DEFAULT_LOCAL_OWNER_CONFIG,
   type LocalOwnerStateOverview,
+  type OperatorBooking,
 } from "./local-owner-environment.js";
+import { BOOKING_ENDED_REASONS, BOOKING_PAYMENT_METHOD_LABELS, BOOKING_STAGE_LABELS, type BookingStage } from "./booking-projection.js";
 import { escapeHtml, formatMoney, icon, pageShell, type StatusTone } from "../../web/src/ui-kit.js";
 import { OPERATOR_RESPONSE_REMINDER_MINUTES, operatorResponseReminderDue, type OperatorAuthenticatedPrincipal } from "../../../domains/shortlet/src/index.js";
 import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
@@ -248,6 +250,76 @@ function operatorRequestHtml(env: LocalApartmentOwnerEnvironment, principal: Ope
     viewer: viewer(env, principal),
     current: "requests",
     body: `<p><a class="ui-button ui-button--quiet" href="/operator/requests">${icon("arrow-left")}Back to requests</a></p><header class="ui-page__header" data-request-id="${escapeHtml(facts.requestId)}"><p class="ui-eyebrow">Booking Request</p><h1>${escapeHtml(labels.apartmentTitle)}</h1><div class="ui-row">${requestBadge(facts.status, facts.delivered)}</div></header>${error ? `<p class="ui-banner ui-banner--danger" role="alert">${icon("alert")}<span>${escapeHtml(error)}</span></p>` : ""}<section class="ui-panel" aria-label="Request facts"><dl class="ui-facts"><dt>Owner</dt><dd>${escapeHtml(labels.ownerName)}</dd><dt>Apartment</dt><dd>${escapeHtml(labels.apartmentTitle)}</dd><dt>Dates</dt><dd><time datetime="${escapeHtml(facts.checkIn)}">${escapeHtml(facts.checkIn)}</time> to <time datetime="${escapeHtml(facts.checkOut)}">${escapeHtml(facts.checkOut)}</time> (${facts.nights} nights)</dd><dt>Guest party</dt><dd>${guestParty(facts)}</dd>${phone}<dt>All-In Stay Total</dt><dd class="ui-money-total">${formatMoney(facts.quote?.allInStayTotalKobo ?? 0)}</dd>${facts.quote?.refundableSecurityDepositKobo ? `<dt>Refundable Security Deposit</dt><dd>${formatMoney(facts.quote.refundableSecurityDepositKobo)}</dd>` : ""}<dt>Response deadline</dt><dd>${watTime(facts.operatorResponseDeadlineAt)}</dd></dl></section>${decisions}`,
+  });
+}
+
+const BOOKING_TONES: Readonly<Record<BookingStage, StatusTone>> = { offer_not_issued: "warning", offer_issued: "info", awaiting_payment: "info", reservation_confirmed: "success", ended: "neutral" };
+
+function bookingBadge(booking: OperatorBooking): string {
+  return `<span class="ui-status ui-status--${BOOKING_TONES[booking.stage]}">${escapeHtml(BOOKING_STAGE_LABELS[booking.stage])}</span>`;
+}
+
+function bookingPaymentMethod(booking: OperatorBooking): string {
+  return booking.paymentMethod ? BOOKING_PAYMENT_METHOD_LABELS[booking.paymentMethod] : "Not chosen yet";
+}
+
+/**
+ * What the booking is waiting for, or why it ended. Deadlines are the projected instants as absolute WAT (ADR 0044, 0077).
+ * An ended booking gives only its reason: never a card, account, reference or contact detail (ADR 0075).
+ */
+function bookingTiming(booking: OperatorBooking): string {
+  if (booking.stage === "ended" && booking.endedReason) return escapeHtml(BOOKING_ENDED_REASONS[booking.endedReason]);
+  if ((booking.stage === "offer_issued" || booking.stage === "awaiting_payment") && booking.paymentDeadlineAt) {
+    return booking.graceEndsAt ? `Payment-Processing Grace until ${watTime(booking.graceEndsAt)}` : `Pay by ${watTime(booking.paymentDeadlineAt)}`;
+  }
+  return "";
+}
+
+function bookingTotal(booking: OperatorBooking): string {
+  return booking.allInStayTotalKobo === null ? "" : formatMoney(booking.allInStayTotalKobo);
+}
+
+function operatorBookingsHtml(env: LocalApartmentOwnerEnvironment, principal: OperatorPrincipal): string {
+  // Re-read on every view from the authoritative records; expiry resolves lazily against server time (ADR 0077).
+  const bookings = env.listOperatorBookings(commandPrincipal(principal));
+  const rows = bookings.map((booking) => {
+    const timing = bookingTiming(booking);
+    const timingId = `booking-timing-${encodeURIComponent(booking.requestId)}`;
+    return `<li class="bo-booking" data-request-id="${escapeHtml(booking.requestId)}" data-stage="${booking.stage}"><a class="ui-list__row" href="/operator/bookings/${encodeURIComponent(booking.requestId)}"${timing ? ` aria-describedby="${escapeHtml(timingId)}"` : ""}><span class="ui-list__primary">${escapeHtml(booking.apartmentTitle)}</span><span class="ui-list__aside"><span class="ui-sr-only">All-In Stay Total </span>${bookingTotal(booking)}</span><span class="ui-list__secondary">${escapeHtml(booking.ownerName)} · ${escapeHtml(formatStayDates(booking.checkIn, booking.checkOut))} · Payment method: ${escapeHtml(bookingPaymentMethod(booking))}</span><span class="ui-list__status">${bookingBadge(booking)}</span>${timing ? `<span class="bo-booking__timing" id="${escapeHtml(timingId)}">${timing}</span>` : ""}</a></li>`;
+  }).join("");
+  const list = rows
+    ? `<ul class="ui-list">${rows}</ul>`
+    : `<section class="ui-panel ui-empty"><div class="ui-empty__art">${icon("calendar")}</div><h2>No bookings yet</h2><p>A Booking Request appears here once you confirm it.</p></section>`;
+  const summary = bookings.length === 0 ? "" : `<p>Each confirmed request, with its payment and whether it became a Reservation.</p>`;
+  return backOfficePage({
+    title: "Bookings",
+    viewer: viewer(env, principal),
+    current: "bookings",
+    style: BOOKING_STYLE,
+    body: `<header class="ui-page__header"><h1>Bookings</h1>${summary}</header><h2 class="ui-sr-only">Bookings</h2>${list}`,
+  });
+}
+
+const BOOKING_STYLE = ".bo-booking__timing{grid-column:1/-1;color:var(--color-text-secondary)}";
+
+function operatorBookingHtml(env: LocalApartmentOwnerEnvironment, principal: OperatorPrincipal, requestId: string): string {
+  const booking = env.operatorBooking(requestId, commandPrincipal(principal));
+  const timing = bookingTiming(booking);
+  const total = bookingTotal(booking);
+  return backOfficePage({
+    title: `Booking · ${booking.apartmentTitle}`,
+    viewer: viewer(env, principal),
+    current: "bookings",
+    body: `<p><a class="ui-button ui-button--quiet" href="/operator/bookings">${icon("arrow-left")}Back to bookings</a></p><header class="ui-page__header"><p class="ui-eyebrow">Booking</p><h1>${escapeHtml(booking.apartmentTitle)}</h1><div class="ui-row">${bookingBadge(booking)}</div></header><section class="ui-panel" aria-label="Booking facts"><dl class="ui-facts"><dt>Owner</dt><dd>${escapeHtml(booking.ownerName)}</dd><dt>Apartment</dt><dd>${escapeHtml(booking.apartmentTitle)}</dd><dt>Dates</dt><dd>${escapeHtml(formatStayDates(booking.checkIn, booking.checkOut))} (${booking.nights} ${booking.nights === 1 ? "night" : "nights"})</dd><dt>Guest party</dt><dd>${booking.partySize} ${booking.partySize === 1 ? "occupant" : "occupants"}</dd>${total ? `<dt>All-In Stay Total</dt><dd class="ui-money-total">${total}</dd>` : ""}<dt>Stage</dt><dd>${escapeHtml(BOOKING_STAGE_LABELS[booking.stage])}</dd><dt>Payment method</dt><dd>${escapeHtml(bookingPaymentMethod(booking))}</dd>${timing ? `<dt>${booking.stage === "ended" ? "Outcome" : "Payment deadline"}</dt><dd>${timing}</dd>` : ""}</dl></section>`,
+  });
+}
+
+function bookingNotFoundHtml(env: LocalApartmentOwnerEnvironment, principal: OperatorPrincipal): string {
+  return backOfficePage({
+    title: "Not found",
+    viewer: viewer(env, principal),
+    current: "bookings",
+    body: `<section class="ui-panel ui-empty"><div class="ui-empty__art">${icon("search")}</div><h1>Booking not found</h1><p>This booking does not exist, or you no longer act for its owner.</p><a class="ui-button ui-button--primary" href="/operator/bookings">Back to bookings</a></section>`,
   });
 }
 
@@ -679,6 +751,21 @@ export function startLocalOwnerServer(options: {
       // An unknown request and one whose owner grant was revoked (ADR 0082) look the same: not found.
       try { body = operatorRequestHtml(env, principal, decodeURIComponent(detailMatch[1]!)); }
       catch { res.writeHead(404, { "Content-Type": "text/html; charset=utf-8" }); res.end(operatorNotFoundHtml(env, principal)); return; }
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(body);
+      return;
+    }
+    // Bookings are read-only (B4): GET only, so there is no command to forge.
+    if (req.method === "GET" && (url.pathname === "/operator/bookings" || url.pathname === "/operator/bookings/")) {
+      page((principal) => operatorBookingsHtml(env, principal)); return;
+    }
+    const bookingMatch = url.pathname.match(/^\/operator\/bookings\/([^/]+)$/);
+    if (req.method === "GET" && bookingMatch) {
+      const principal = operatorPrincipal(req, env);
+      if (!principal) { res.writeHead(303, { Location: signInLocation(req, env) }); res.end(); return; }
+      let body: string;
+      // Unknown, unconfirmed, and another owner's booking (ADR 0082) all look the same: not found.
+      try { body = operatorBookingHtml(env, principal, decodeURIComponent(bookingMatch[1]!)); }
+      catch { res.writeHead(404, { "Content-Type": "text/html; charset=utf-8" }); res.end(bookingNotFoundHtml(env, principal)); return; }
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(body);
       return;
     }
