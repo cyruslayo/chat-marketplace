@@ -11,11 +11,12 @@ import {
   type OperatorBooking,
   type OperatorReservation,
   type OperatorManualTransfer,
+  type OperatorOwnerPayable,
   COMPLAINT_CATEGORY_LABELS,
   CheckInInputError,
   CheckInStaleError,
 } from "./local-owner-environment.js";
-import { ManualTransferError, SUPPORT_VERIFICATION_BASES, type AccessStatus, type ComplaintCategory, type ManualTransferStatus, type SupportVerificationBasis } from "../../../domains/shortlet/src/index.js";
+import { ManualTransferError, OwnerPayoutError, SUPPORT_VERIFICATION_BASES, type OwnerPayableStatus, type AccessStatus, type ComplaintCategory, type ManualTransferStatus, type SupportVerificationBasis } from "../../../domains/shortlet/src/index.js";
 import { BOOKING_ENDED_REASONS, BOOKING_PAYMENT_METHOD_LABELS, BOOKING_STAGE_LABELS, type BookingStage } from "./booking-projection.js";
 import { escapeHtml, formatMoney, icon, pageShell, type StatusTone } from "../../web/src/ui-kit.js";
 import { OPERATOR_RESPONSE_REMINDER_MINUTES, operatorResponseReminderDue, type OperatorAuthenticatedPrincipal } from "../../../domains/shortlet/src/index.js";
@@ -70,7 +71,7 @@ function operatorLoginHtml(error = "", reason: SignInReason | null = null): stri
  * (manual transfers to verify, B6; owner payouts due, B7) and a builder in `waitingItems`.
  */
 interface WaitingItem {
-  readonly kind: "request" | "manual_transfer";
+  readonly kind: "request" | "manual_transfer" | "owner_payout";
   readonly href: string;
   readonly title: string;
   readonly ownerName: string;
@@ -104,7 +105,18 @@ function waitingItems(env: LocalApartmentOwnerEnvironment, principal: OperatorPr
       dueAt: item.transfer.verificationDeadlineAt,
       dueLabel: "Verify by",
     }));
-  return [...requests, ...transfers].sort((a, b) => Date.parse(a.dueAt) - Date.parse(b.dueAt));
+  // B7: an owner payable that is due, at its due time (ADR 0089).
+  const payouts: WaitingItem[] = env.listOwnerPayables(commandPrincipal(principal))
+    .flatMap((item) => item.payable?.status === "due" && item.payable.dueAt ? [{
+      kind: "owner_payout" as const,
+      href: `/operator/payouts#payable-${encodeURIComponent(item.requestId)}`,
+      title: "Owner payout due",
+      ownerName: item.ownerName,
+      apartmentTitle: item.apartmentTitle,
+      dueAt: item.payable.dueAt,
+      dueLabel: "Due",
+    }] : []);
+  return [...requests, ...transfers, ...payouts].sort((a, b) => Date.parse(a.dueAt) - Date.parse(b.dueAt));
 }
 
 function operatorHomeHtml(env: LocalApartmentOwnerEnvironment, principal: OperatorPrincipal): string {
@@ -457,6 +469,107 @@ function operatorTransfersHtml(env: LocalApartmentOwnerEnvironment, principal: O
     style: DECISION_STYLE + TRANSFER_STYLE,
     body: `<header class="ui-page__header"><h1>Manual transfers</h1><p>${waiting === 0 ? "Nothing is waiting for your check." : `${waiting} ${waiting === 1 ? "transfer is" : "transfers are"} waiting for your check, soonest deadline first.`}</p></header>${alert}${list}`,
   });
+}
+
+const PAYABLE_STATUS: Readonly<Record<OwnerPayableStatus, { readonly label: string; readonly tone: StatusTone }>> = {
+  not_yet_due: { label: "Not yet due", tone: "neutral" },
+  due: { label: "Due", tone: "warning" },
+  paused: { label: "Paused", tone: "danger" },
+  paid: { label: "Paid", tone: "success" },
+  nothing_owed: { label: "Nothing owed", tone: "neutral" },
+};
+
+/** A payout date (YYYY-MM-DD, entered in WAT) in the back office's date style. */
+function formatPayoutDate(date: string): string {
+  return new Intl.DateTimeFormat("en-NG", { timeZone: "UTC", dateStyle: "medium" }).format(new Date(`${date}T00:00:00Z`));
+}
+
+/** Today in WAT, for the payout date's upper bound. */
+function lagosToday(now: Date): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Lagos", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+}
+
+/** When the payable is due, in the words of ADR 0089 (and B7's cancellation decision). */
+function payableDue(item: OperatorOwnerPayable): string {
+  const payable = item.payable!;
+  if (payable.status === "nothing_owed") return "Nothing is owed";
+  if (payable.cancelled && payable.dueAt) return `${watTime(payable.dueAt)}, when the cancellation outcome was posted`;
+  if (payable.status === "paused") return "Not due while a Blocking Fulfilment Complaint is open";
+  if (payable.dueAt) return watTime(payable.dueAt);
+  return "24 hours after Verified Access, once it is recorded";
+}
+
+/**
+ * One Reservation's owner payable (B7, ADR 0089). Amounts come from the confirmation snapshot and the ledger, never
+ * the unit. The payout form appears only while the payable is due, and carries the version it was rendered from (ADR 0072).
+ */
+function ownerPayableCard(item: OperatorOwnerPayable, now: Date): string {
+  const id = escapeHtml(item.requestId);
+  const stay = `<dt>Stay</dt><dd>${escapeHtml(formatStayDates(item.checkIn, item.checkOut))} (${item.nights} ${item.nights === 1 ? "night" : "nights"})</dd>`;
+  const received = `<dt>Amount received</dt><dd>${formatMoney(item.amountReceivedKobo)}</dd>`;
+  if (!item.payable) {
+    return `<li class="bo-payable" id="payable-${id}" data-request-id="${id}" data-status="not_captured"><article class="ui-panel ui-stack"><h3>${escapeHtml(item.apartmentTitle)}</h3><dl class="ui-facts">${stay}${received}<dt>Owner payable</dt><dd>Not captured: this booking was confirmed before owner payables were recorded</dd></dl></article></li>`;
+  }
+  const payable = item.payable;
+  const status = PAYABLE_STATUS[payable.status];
+  const cancellation = payable.cancelled
+    ? `<dt>Cancellation</dt><dd>Cancelled under the cancellation policy. Captured at confirmation: ${formatMoney(payable.captured.ownerPayableKobo)} owner payable, ${formatMoney(payable.captured.marginKobo)} margin.</dd>`
+    : "";
+  const paid = payable.payouts.length === 0 ? "" : `<dt>Paid</dt><dd><ul class="bo-payouts">${payable.payouts.map((payout) => `<li>${formatMoney(payout.amountKobo)} paid ${escapeHtml(formatPayoutDate(payout.paidOn))}, reference <span class="bo-reference">${escapeHtml(payout.reference)}</span></li>`).join("")}</ul></dd>`;
+  const outstanding = payable.paidKobo > 0 && payable.outstandingKobo > 0 ? `<dt>Still to pay</dt><dd>${formatMoney(payable.outstandingKobo)}</dd>` : "";
+  const facts = `<dl class="ui-facts">${stay}${received}<dt>Owner payable</dt><dd class="ui-money-total">${formatMoney(payable.ownerPayableKobo)}</dd><dt>Your margin</dt><dd>${formatMoney(payable.marginKobo)}</dd>${cancellation}<dt>Due</dt><dd>${payableDue(item)}</dd><dt>Status</dt><dd>${escapeHtml(status.label)}</dd>${paid}${outstanding}</dl>`;
+  const form = payable.status === "due"
+    ? `<form method="post" action="/operator/payouts/${encodeURIComponent(item.requestId)}" class="ui-stack"><input type="hidden" name="basedOnVersion" value="${escapeHtml(payable.version)}"><h4>Record a payout</h4><p>Record it after you have paid the owner by bank transfer or Paystack Transfers.</p><div class="ui-field"><label class="ui-field__label" for="amount-${id}">Amount paid (₦)</label><input id="amount-${id}" name="amount" inputmode="decimal" autocomplete="off" required></div><div class="ui-field"><label class="ui-field__label" for="paid-on-${id}">Date paid</label><input id="paid-on-${id}" name="paidOn" type="date" max="${lagosToday(now)}" required></div><div class="ui-field"><label class="ui-field__label" for="reference-${id}">Payment reference</label><input id="reference-${id}" name="reference" autocomplete="off" required></div><button class="ui-button ui-button--primary ui-button--block" type="submit">Record payout</button></form>`
+    : "";
+  return `<li class="bo-payable" id="payable-${id}" data-request-id="${id}" data-status="${payable.status}"><article class="ui-panel ui-stack"><div class="ui-row"><span class="ui-status ui-status--${status.tone}">${escapeHtml(status.label)}</span></div><h3>${escapeHtml(item.apartmentTitle)}</h3>${facts}${form}</article></li>`;
+}
+
+const PAYOUT_STYLE = ".bo-owner{display:grid;gap:var(--space-3)}.bo-owner h2{margin:0}.bo-payables{display:grid;gap:var(--space-4);margin:0;padding:0;list-style:none}.bo-payouts{margin:0;padding-inline-start:var(--space-5)}.bo-reference{font-family:var(--font-mono);overflow-wrap:anywhere}.ui-panel h4{margin:0;font-size:var(--font-size-body)}";
+
+/** B7: what you owe each owner, grouped by owner with totals (ADR 0089). Re-read on every view; status is lazy. */
+function operatorPayoutsHtml(env: LocalApartmentOwnerEnvironment, principal: OperatorPrincipal, error = "", focusRequestId = ""): string {
+  const items = env.listOwnerPayables(commandPrincipal(principal));
+  const now = env.clock();
+  const owners = new Map<string, OperatorOwnerPayable[]>();
+  for (const item of items) owners.set(item.ownerId, [...(owners.get(item.ownerId) ?? []), item]);
+  const sections = [...owners.values()].map((group, index) => {
+    const sum = (pick: (item: OperatorOwnerPayable) => number) => group.reduce((total, item) => total + (item.payable ? pick(item) : 0), 0);
+    const due = sum((item) => item.payable!.status === "due" ? item.payable!.outstandingKobo : 0);
+    const paid = sum((item) => item.payable!.paidKobo);
+    // A paused payable is not due yet either; it is counted here until the complaint is resolved.
+    const notYetDue = sum((item) => item.payable!.status === "not_yet_due" || item.payable!.status === "paused" ? item.payable!.outstandingKobo : 0);
+    return `<section class="bo-owner" aria-labelledby="owner-${index}"><h2 id="owner-${index}">${escapeHtml(group[0]!.ownerName)}</h2><dl class="ui-facts bo-owner-totals"><dt>Due now</dt><dd data-total="due">${formatMoney(due)}</dd><dt>Paid</dt><dd data-total="paid">${formatMoney(paid)}</dd><dt>Not yet due</dt><dd data-total="not_yet_due">${formatMoney(notYetDue)}</dd></dl><ol class="bo-payables">${group.map((item) => ownerPayableCard(item, now)).join("")}</ol></section>`;
+  }).join("");
+  const list = items.length === 0
+    ? `<section class="ui-panel ui-empty"><div class="ui-empty__art">${icon("users")}</div><h2>No owner payables yet</h2><p>A Reservation appears here once the Guest has paid.</p></section>`
+    : sections;
+  const alert = error ? `<p class="ui-banner ui-banner--danger" role="alert"${focusRequestId ? ` data-request-id="${escapeHtml(focusRequestId)}"` : ""}>${icon("alert")}<span>${escapeHtml(error)}</span></p>` : "";
+  return backOfficePage({
+    title: "Payouts",
+    viewer: viewer(env, principal),
+    current: "payouts",
+    style: PAYOUT_STYLE,
+    body: `<header class="ui-page__header"><h1>Owner payouts</h1><p>What you owe each owner: the owner payable is due 24 hours after Verified Access, while no Blocking Fulfilment Complaint is open.</p></header>${alert}${list}`,
+  });
+}
+
+class PayoutFormError extends Error {}
+
+/** Only the payout form's own fields (ADR 0075): no owner bank details can ride along. */
+function payoutForm(body: string): { readonly basedOnVersion: string; readonly amount: string; readonly paidOn: string; readonly reference: string } {
+  const params = new URLSearchParams(body);
+  const keys = [...params.keys()];
+  if (keys.some((key) => !["basedOnVersion", "amount", "paidOn", "reference"].includes(key)) || new Set(keys).size !== keys.length) throw new PayoutFormError("Unexpected fields");
+  const version = params.get("basedOnVersion") ?? "";
+  if (!/^[0-9a-f]{16}$/.test(version)) throw new PayoutFormError("Missing version");
+  return { basedOnVersion: version, amount: params.get("amount") ?? "", paidOn: params.get("paidOn") ?? "", reference: params.get("reference") ?? "" };
+}
+
+/** Plain words for a refused payout; nothing was recorded. */
+function payoutRefusal(error: unknown): { readonly status: number; readonly message: string } {
+  if (error instanceof PayoutFormError) return { status: 400, message: "This form could not be read. Review the payable and try again. Nothing was recorded." };
+  if (error instanceof OwnerPayoutError) return { status: error.isInput ? 400 : 409, message: `${error.message}. Nothing was recorded.` };
+  return { status: 409, message: "This payout could not be recorded. Nothing was recorded." };
 }
 
 class TransferFormError extends Error {}
@@ -980,6 +1093,31 @@ export function startLocalOwnerServer(options: {
         const refusal = transferRefusal(error);
         let body = "Transfer action rejected";
         try { body = operatorTransfersHtml(env, principal, refusal.message, transferId); } catch { /* keep generic */ }
+        if (!res.headersSent) { res.writeHead(refusal.status, { "Content-Type": body.startsWith("<!doctype") ? "text/html; charset=utf-8" : "text/plain; charset=utf-8" }); res.end(body); }
+      }
+      return;
+    }
+    // B7: owner payouts (ADR 0089). The page fails closed to sign-in; the payout action to 401 (ADR 0086).
+    if (req.method === "GET" && (url.pathname === "/operator/payouts" || url.pathname === "/operator/payouts/")) {
+      page((principal) => operatorPayoutsHtml(env, principal)); return;
+    }
+    const payoutMatch = url.pathname.match(/^\/operator\/payouts\/([^/]+)$/);
+    if (req.method === "POST" && payoutMatch) {
+      if (!browserOriginAccepted(req)) { res.writeHead(403); res.end("Origin rejected"); return; }
+      const principal = operatorPrincipal(req, env);
+      if (!principal) { res.writeHead(401); res.end("Authentication required"); return; }
+      const requestId = decodeURIComponent(payoutMatch[1]!);
+      const who = commandPrincipal(principal);
+      // Unknown, not a Reservation, or another owner's (ADR 0082): not found, before any form is read.
+      try { env.ownerPayable(requestId, who); } catch { res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }); res.end("Booking not found"); return; }
+      try {
+        const form = payoutForm(await readForm(req));
+        env.recordOwnerPayout(requestId, who, form);
+        res.writeHead(303, { Location: `/operator/payouts#payable-${encodeURIComponent(requestId)}` }); res.end();
+      } catch (error) {
+        const refusal = payoutRefusal(error);
+        let body = "Payout rejected";
+        try { body = operatorPayoutsHtml(env, principal, refusal.message, requestId); } catch { /* keep generic */ }
         if (!res.headersSent) { res.writeHead(refusal.status, { "Content-Type": body.startsWith("<!doctype") ? "text/html; charset=utf-8" : "text/plain; charset=utf-8" }); res.end(body); }
       }
       return;

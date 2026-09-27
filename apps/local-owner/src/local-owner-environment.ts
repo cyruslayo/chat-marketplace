@@ -44,6 +44,12 @@ import {
   isSupportVerificationBasis,
   ownerPayableDueAt,
   unitPriceFromOwnerTerms,
+  ownerSettlementFromQuote,
+  projectOwnerPayable,
+  recordOwnerPayout,
+  OwnerPayoutError,
+  SqliteOwnerPayableLedger,
+  type OwnerPayableProjection,
   type AccessStatus,
   type CheckInSupportState,
   type ComplaintCategory,
@@ -133,6 +139,25 @@ export interface OperatorReservation extends OperatorBooking {
   readonly ownerPayableDueAt: string | null;
   /** The version the check-in forms carry (ADR 0072). */
   readonly version: string;
+}
+
+/**
+ * A Reservation's owner payable as the back office shows it (B7, ADR 0089). Names, amounts and dates only:
+ * no owner bank details are held, and none are logged (ADR 0075).
+ */
+export interface OperatorOwnerPayable {
+  readonly requestId: string;
+  readonly reservationId: string;
+  readonly ownerId: string;
+  readonly ownerName: string;
+  readonly apartmentTitle: string;
+  readonly checkIn: string;
+  readonly checkOut: string;
+  readonly nights: number;
+  /** What the Guest paid, from the Booking Contract. */
+  readonly amountReceivedKobo: number;
+  /** Null for a booking confirmed before owner payables were captured (P4): there is no snapshot to pay from. */
+  readonly payable: OwnerPayableProjection | null;
 }
 
 /**
@@ -260,6 +285,8 @@ export class LocalApartmentOwnerEnvironment {
   readonly #checkInStore: SqliteCheckInSupportStore;
   /** Manual transfers and receipts the Guest process writes (P5); verified here (B6). */
   readonly #manualTransferStore: SqliteManualTransferStore;
+  /** Cancellation outcomes and owner payouts (B7, ADR 0089); the cancellation ledger port posts here. */
+  readonly ownerPayableLedger: SqliteOwnerPayableLedger;
 
   #demoRequests: string[] = [];
 
@@ -275,6 +302,7 @@ export class LocalApartmentOwnerEnvironment {
     this.#bookingState = new SqliteBookingStateRepository(this.#database, this.config.databasePath);
     this.#checkInStore = new SqliteCheckInSupportStore(this.#database);
     this.#manualTransferStore = new SqliteManualTransferStore(this.#database);
+    this.ownerPayableLedger = new SqliteOwnerPayableLedger(this.#database, this.clock);
     this.audit = new InMemoryAuditLog();
     this.telemetry = new InMemoryTelemetry();
     this.grantStore = new SqliteOperatorRepresentativeGrantStore(this.config.databasePath, { clock: this.clock });
@@ -483,6 +511,8 @@ export class LocalApartmentOwnerEnvironment {
     partySize?: number;
     /** False leaves the request in Delivery Pending (ADR 0043), for testing Delivery Failed. */
     delivered?: boolean;
+    /** Another unit you hold a grant for; the fixture unit by default. */
+    unitId?: string;
   } = {}): BookingRequestArtifact {
     const guestId = input.guestId ?? "demo-guest-101";
     const guestPrincipal: CommandPrincipal = {
@@ -493,7 +523,7 @@ export class LocalApartmentOwnerEnvironment {
 
     const draft = this.bookingRequestApp.createDraft(
       {
-        unitId: this.config.unitId,
+        unitId: input.unitId ?? this.config.unitId,
         primaryGuest: { id: guestId, name: input.guestName ?? "Dr. Kemi Balogun" },
         occupants: [{ name: input.guestName ?? "Dr. Kemi Balogun" }],
         selfBookingAttestation: { accepted: true, version: "self-booking-v1" },
@@ -788,6 +818,83 @@ export class LocalApartmentOwnerEnvironment {
     const codes = run(app, current.reservationId, staff);
     try { this.audit.record({ type: auditType, actorId: principal.id, tenantId: principal.tenantId, requestId, reservationId: current.reservationId, ...codes, occurredAt: this.clock().toISOString() }); } catch { /* observability cannot undo a recorded fact */ }
     return this.operatorReservation(requestId, principal);
+  }
+
+  /**
+   * Owner payables for every Reservation of an owner you hold a grant for (B7, ADR 0082, 0089), read fresh from the
+   * snapshot and the ledger on each call. Status is evaluated against the clock here, never stored.
+   */
+  listOwnerPayables(principal: CommandPrincipal): readonly OperatorOwnerPayable[] {
+    const now = this.clock();
+    return this.listOperatorBookings(principal)
+      .flatMap((booking) => { const payable = this.#ownerPayableFor(booking, now); return payable ? [payable] : []; })
+      .sort((a, b) => a.ownerName.localeCompare(b.ownerName) || Date.parse(a.checkIn) - Date.parse(b.checkIn));
+  }
+
+  /** One Reservation's owner payable; "Booking not found" when unknown, not a Reservation, or not an owner you act for. */
+  ownerPayable(requestId: string, principal: CommandPrincipal): OperatorOwnerPayable {
+    const payable = this.#ownerPayableFor(this.operatorBooking(requestId, principal), this.clock());
+    if (!payable) throw new Error("Booking not found");
+    return payable;
+  }
+
+  /**
+   * B7 AC3: records a payout you made against a due owner payable (ADR 0089), idempotent per reference (ADR 0072).
+   * The audit keeps ids and the amount only; the payment reference stays out of it (ADR 0075).
+   */
+  recordOwnerPayout(requestId: string, principal: CommandPrincipal, input: { readonly amount: string; readonly paidOn: string; readonly reference: string; readonly basedOnVersion: string }): OperatorOwnerPayable {
+    const current = this.ownerPayable(requestId, principal);
+    if (!current.payable) throw new OwnerPayoutError("not_due");
+    const now = this.clock();
+    const { payout, replayed } = recordOwnerPayout({
+      ledger: this.ownerPayableLedger,
+      reservationId: current.reservationId,
+      payable: current.payable,
+      basedOnVersion: input.basedOnVersion,
+      amountKobo: parseNairaToKobo(input.amount),
+      paidOn: input.paidOn.trim(),
+      reference: input.reference,
+      recordedBy: principal.id!,
+      now,
+    });
+    if (!replayed) {
+      try { this.audit.record({ type: "operator_owner_payout_recorded", actorId: principal.id, tenantId: principal.tenantId, requestId, reservationId: current.reservationId, payoutId: payout.payoutId, amountKobo: payout.amountKobo, paidOn: payout.paidOn, occurredAt: now.toISOString() }); } catch { /* observability cannot undo a recorded payout */ }
+    }
+    return this.ownerPayable(requestId, principal);
+  }
+
+  #ownerPayableFor(booking: OperatorBooking, now: Date): OperatorOwnerPayable | null {
+    const storedOffer = this.interactionStore.findConditionalOfferByRequestId(booking.requestId);
+    const snapshot = storedOffer ? this.interactionStore.findBookingSnapshotByOfferId(storedOffer.offerId) : null;
+    const reservation = snapshot ? this.#bookingState.findReservationById(snapshot.reservationId) : null;
+    const contract = reservation ? this.#bookingState.findContractById(reservation.contractId) : null;
+    // Only a Reservation received money and owes an owner anything (ADR 0005).
+    if (!snapshot || !reservation || !contract) return null;
+    const request = this.bookingRequestApp.manager.getRequest(booking.requestId) as { operatorId?: string };
+    if (!request.operatorId) return null;
+    // ADR 0077: the owner payable and margin captured at confirmation (P4), never recalculated from the unit.
+    const settlement = ownerSettlementFromQuote(contract.quote);
+    const checkIn = this.#checkInState(reservation.reservationId);
+    const accessRecorded = checkIn.result?.status === "verified_access" || checkIn.result?.status === "late_voluntary_arrival";
+    return Object.freeze({
+      requestId: booking.requestId,
+      reservationId: reservation.reservationId,
+      ownerId: request.operatorId,
+      ownerName: booking.ownerName,
+      apartmentTitle: booking.apartmentTitle,
+      checkIn: booking.checkIn,
+      checkOut: booking.checkOut,
+      nights: booking.nights,
+      amountReceivedKobo: contract.paymentDetails.amountKobo,
+      payable: settlement ? projectOwnerPayable({
+        settlement,
+        protectionWindowStartsAt: accessRecorded ? checkIn.result?.protectionWindowStartsAt ?? null : null,
+        blockingComplaintOpen: checkIn.complaints.some((complaint) => complaint.status !== "resolved"),
+        cancellation: this.ownerPayableLedger.findCancellation(reservation.reservationId),
+        payouts: this.ownerPayableLedger.listPayouts(reservation.reservationId),
+        now,
+      }) : null,
+    });
   }
 
   /** Check-in state read fresh from the shared store (another process may have written it). */
