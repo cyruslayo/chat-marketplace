@@ -28,10 +28,16 @@ const OPERATOR_SESSION_COOKIE = "shortlet_operator_session";
 const OPERATOR_SECRET_COOKIE = "shortlet_operator_secret";
 const SHORTLET_FOUNDATION_CSS = readFileSync(new URL("../../web/src/shortlet-foundations.css", import.meta.url), "utf8");
 
+/** A malformed cookie is no cookie: the request is treated as signed out, never as a server error (ADR 0086). */
 function cookieValue(req: IncomingMessage, name: string): string | null {
   const raw = req.headers.cookie ?? "";
   const pair = raw.split(";").map((value) => value.trim()).find((value) => value.startsWith(`${name}=`));
-  return pair ? decodeURIComponent(pair.slice(name.length + 1)) : null;
+  return pair ? pathSegment(pair.slice(name.length + 1)) : null;
+}
+
+/** Decodes one URL-encoded value; null when it is malformed, so callers answer 404 instead of throwing. */
+function pathSegment(encoded: string): string | null {
+  try { return decodeURIComponent(encoded); } catch { return null; }
 }
 
 function operatorPrincipal(req: IncomingMessage, env: LocalApartmentOwnerEnvironment): OperatorAuthenticatedPrincipal | null {
@@ -988,7 +994,7 @@ export function startLocalOwnerServer(options: {
     return origin === (options.publicOrigin ?? `http://${req.headers.host ?? "localhost"}`);
   };
 
-  const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
+  const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
     if (req.method === "GET" && url.pathname === "/shortlet-foundations.css") {
@@ -1016,7 +1022,7 @@ export function startLocalOwnerServer(options: {
     const page = (render: (principal: OperatorPrincipal) => string): void => {
       const principal = operatorPrincipal(req, env);
       if (!principal) { res.writeHead(303, { Location: signInLocation(req, env) }); res.end(); return; }
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(render(principal));
+      const body = render(principal); res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(body);
     };
     if (req.method === "GET" && (url.pathname === "/operator" || url.pathname === "/operator/")) {
       page((principal) => operatorHomeHtml(env, principal)); return;
@@ -1078,7 +1084,8 @@ export function startLocalOwnerServer(options: {
       if (!browserOriginAccepted(req)) { res.writeHead(403); res.end("Origin rejected"); return; }
       const principal = operatorPrincipal(req, env);
       if (!principal) { res.writeHead(401); res.end("Authentication required"); return; }
-      const transferId = decodeURIComponent(transferAction[1]!);
+      const transferId = pathSegment(transferAction[1]!);
+      if (transferId === null) { res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }); res.end("Not found"); return; }
       const kind = transferAction[2] === "confirm" ? "confirm" : transferAction[2] === "reject" ? "reject" : "late-credit";
       const who = commandPrincipal(principal);
       // A transfer you cannot see (unknown, or another owner's) is not found, before any form is read (ADR 0082).
@@ -1106,7 +1113,8 @@ export function startLocalOwnerServer(options: {
       if (!browserOriginAccepted(req)) { res.writeHead(403); res.end("Origin rejected"); return; }
       const principal = operatorPrincipal(req, env);
       if (!principal) { res.writeHead(401); res.end("Authentication required"); return; }
-      const requestId = decodeURIComponent(payoutMatch[1]!);
+      const requestId = pathSegment(payoutMatch[1]!);
+      if (requestId === null) { res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }); res.end("Not found"); return; }
       const who = commandPrincipal(principal);
       // Unknown, not a Reservation, or another owner's (ADR 0082): not found, before any form is read.
       try { env.ownerPayable(requestId, who); } catch { res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }); res.end("Booking not found"); return; }
@@ -1127,7 +1135,8 @@ export function startLocalOwnerServer(options: {
       if (!browserOriginAccepted(req)) { res.writeHead(403); res.end("Origin rejected"); return; }
       const principal = operatorPrincipal(req, env);
       if (!principal) { res.writeHead(401); res.end("Authentication required"); return; }
-      const requestId = decodeURIComponent(checkInMatch[1]!);
+      const requestId = pathSegment(checkInMatch[1]!);
+      if (requestId === null) { res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }); res.end("Not found"); return; }
       const kind = checkInMatch[2] === "verified-access" ? "verified-access" : "blocking-complaint";
       try {
         const form = checkInFromForm(kind, await readForm(req));
@@ -1149,7 +1158,8 @@ export function startLocalOwnerServer(options: {
       if (!browserOriginAccepted(req)) { res.writeHead(403); res.end("Origin rejected"); return; }
       const principal = operatorPrincipal(req, env);
       if (!principal) { res.writeHead(401); res.end("Authentication required"); return; }
-      const requestId = decodeURIComponent(actionMatch[1]!);
+      const requestId = pathSegment(actionMatch[1]!);
+      if (requestId === null) { res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }); res.end("Not found"); return; }
       const kind = actionMatch[2] === "confirm" ? "confirm" : "decline";
       try {
         const form = decisionFromForm(kind, await readForm(req));
@@ -1234,6 +1244,15 @@ export function startLocalOwnerServer(options: {
 
     res.writeHead(404, { "Content-Type": "text/plain" });
     res.end("Not Found");
+  };
+
+  // One bad request must never stop the back office: an unexpected error answers 500 and the server keeps serving.
+  // Nothing about the request is logged (ADR 0075).
+  const server = createServer((req: IncomingMessage, res: ServerResponse) => {
+    handle(req, res).catch(() => {
+      if (!res.headersSent) { res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" }); res.end("Something went wrong"); }
+      else res.destroy();
+    });
   });
 
   return {
