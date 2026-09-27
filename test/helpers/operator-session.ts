@@ -84,9 +84,30 @@ export function operatorGet(session: OperatorSession, path: string, cookie = ses
   return fetch(`${session.base}${path}`, { headers: cookieHeaders(cookie, headers), redirect: "manual" });
 }
 
-/** POST as the signed-in operator, without following redirects. Pass `cookie: ""` to send no session. */
-export function operatorPost(session: OperatorSession, path: string, cookie = session.cookie, headers: Readonly<Record<string, string>> = {}): Promise<Response> {
-  return fetch(`${session.base}${path}`, { method: "POST", headers: cookieHeaders(cookie, headers), redirect: "manual" });
+/** POST as the signed-in operator, without following redirects. Pass `cookie: ""` to send no session, and `form` for a urlencoded body. */
+export function operatorPost(session: OperatorSession, path: string, cookie = session.cookie, headers: Readonly<Record<string, string>> = {}, form?: Readonly<Record<string, string>>): Promise<Response> {
+  return fetch(`${session.base}${path}`, { method: "POST", headers: cookieHeaders(cookie, headers), redirect: "manual", ...(form === undefined ? {} : { body: new URLSearchParams(form) }) });
+}
+
+/** The decline reason codes the back office accepts (decision D1). */
+export type TestDeclineReason = "dates_not_available" | "other_reason";
+
+/** Reads the version a request's decision forms were rendered from (B3 AC4). Throws if the page has no decision form. */
+export async function renderedDecisionVersion(session: OperatorSession, requestId: string): Promise<string> {
+  const html = await (await operatorGet(session, `/operator/requests/${encodeURIComponent(requestId)}`)).text();
+  const version = html.match(/name="basedOnVersion" value="(\d+)"/)?.[1];
+  if (!version) throw new Error("Request page has no decision form");
+  return version;
+}
+
+/**
+ * Submits the confirm or decline form as a browser would: attested, with a reason, at the rendered version.
+ * Override any field (or pass `basedOnVersion`) to exercise refusals.
+ */
+export async function decideRequest(session: OperatorSession, requestId: string, decision: "confirm" | "decline", options: { readonly reason?: TestDeclineReason; readonly basedOnVersion?: string; readonly form?: Readonly<Record<string, string>>; readonly cookie?: string } = {}): Promise<Response> {
+  const basedOnVersion = options.basedOnVersion ?? await renderedDecisionVersion(session, requestId).catch(() => "0");
+  const form = { basedOnVersion, ...(decision === "confirm" ? { attest: "yes" } : { reason: options.reason ?? "dates_not_available" }), ...options.form };
+  return operatorPost(session, `/operator/requests/${encodeURIComponent(requestId)}/${decision}`, options.cookie ?? session.cookie, {}, form);
 }
 
 /** POST with a valid session but a foreign `Origin` header. */
