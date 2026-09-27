@@ -6,7 +6,7 @@ import { escapeHtml, icon, pageShell, type IconName } from "../../web/src/ui-kit
  * Back-office-only rules use `bo-` classes here; shortlet-foundations.css and Guest pages are unchanged.
  */
 
-export type BackOfficeSection = "home" | "requests" | "bookings";
+export type BackOfficeSection = "home" | "requests" | "bookings" | "transfers";
 
 interface NavLink { readonly section: BackOfficeSection; readonly href: string; readonly label: string; readonly icon: IconName }
 
@@ -15,6 +15,7 @@ export const BACK_OFFICE_NAV: readonly NavLink[] = Object.freeze([
   { section: "home", href: "/operator", label: "Home", icon: "home" },
   { section: "requests", href: "/operator/requests", label: "Requests", icon: "inbox" },
   { section: "bookings", href: "/operator/bookings", label: "Bookings", icon: "calendar" },
+  { section: "transfers", href: "/operator/transfers", label: "Transfers", icon: "card" },
 ]);
 
 /** ADR 0078: 44px targets (--control-min-target) and a header that wraps at 320px instead of scrolling. */

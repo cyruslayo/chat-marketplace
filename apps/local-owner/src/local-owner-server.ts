@@ -10,11 +10,12 @@ import {
   type LocalOwnerStateOverview,
   type OperatorBooking,
   type OperatorReservation,
+  type OperatorManualTransfer,
   COMPLAINT_CATEGORY_LABELS,
   CheckInInputError,
   CheckInStaleError,
 } from "./local-owner-environment.js";
-import { SUPPORT_VERIFICATION_BASES, type AccessStatus, type ComplaintCategory, type SupportVerificationBasis } from "../../../domains/shortlet/src/index.js";
+import { ManualTransferError, SUPPORT_VERIFICATION_BASES, type AccessStatus, type ComplaintCategory, type ManualTransferStatus, type SupportVerificationBasis } from "../../../domains/shortlet/src/index.js";
 import { BOOKING_ENDED_REASONS, BOOKING_PAYMENT_METHOD_LABELS, BOOKING_STAGE_LABELS, type BookingStage } from "./booking-projection.js";
 import { escapeHtml, formatMoney, icon, pageShell, type StatusTone } from "../../web/src/ui-kit.js";
 import { OPERATOR_RESPONSE_REMINDER_MINUTES, operatorResponseReminderDue, type OperatorAuthenticatedPrincipal } from "../../../domains/shortlet/src/index.js";
@@ -69,7 +70,7 @@ function operatorLoginHtml(error = "", reason: SignInReason | null = null): stri
  * (manual transfers to verify, B6; owner payouts due, B7) and a builder in `waitingItems`.
  */
 interface WaitingItem {
-  readonly kind: "request";
+  readonly kind: "request" | "manual_transfer";
   readonly href: string;
   readonly title: string;
   readonly ownerName: string;
@@ -91,7 +92,19 @@ function waitingItems(env: LocalApartmentOwnerEnvironment, principal: OperatorPr
       dueAt: request.facts.operatorResponseDeadlineAt,
       dueLabel: "Respond by",
     }));
-  return [...requests].sort((a, b) => Date.parse(a.dueAt) - Date.parse(b.dueAt));
+  // B6: a manual transfer waiting for your check is due at its verification deadline (ADR 0090).
+  const transfers: WaitingItem[] = env.listOperatorManualTransfers(commandPrincipal(principal))
+    .filter((item) => item.transfer.status === "awaiting_verification")
+    .map((item) => ({
+      kind: "manual_transfer",
+      href: `/operator/transfers#transfer-${encodeURIComponent(item.transfer.transferId)}`,
+      title: "Manual transfer to verify",
+      ownerName: item.ownerName,
+      apartmentTitle: item.apartmentTitle,
+      dueAt: item.transfer.verificationDeadlineAt,
+      dueLabel: "Verify by",
+    }));
+  return [...requests, ...transfers].sort((a, b) => Date.parse(a.dueAt) - Date.parse(b.dueAt));
 }
 
 function operatorHomeHtml(env: LocalApartmentOwnerEnvironment, principal: OperatorPrincipal): string {
@@ -274,6 +287,7 @@ function bookingPaymentMethod(booking: OperatorBooking): string {
  */
 function bookingTiming(booking: OperatorBooking): string {
   if (booking.stage === "ended" && booking.endedReason) return escapeHtml(BOOKING_ENDED_REASONS[booking.endedReason]);
+  if (booking.stage === "awaiting_payment" && booking.checkBy) return `Awaiting your check by ${watTime(booking.checkBy)}`;
   if ((booking.stage === "offer_issued" || booking.stage === "awaiting_payment") && booking.paymentDeadlineAt) {
     return booking.graceEndsAt ? `Payment-Processing Grace until ${watTime(booking.graceEndsAt)}` : `Pay by ${watTime(booking.paymentDeadlineAt)}`;
   }
@@ -382,6 +396,90 @@ function operatorBookingHtml(env: LocalApartmentOwnerEnvironment, principal: Ope
     current: "bookings",
     body: `<p><a class="ui-button ui-button--quiet" href="/operator/bookings">${icon("arrow-left")}Back to bookings</a></p><header class="ui-page__header"><p class="ui-eyebrow">Booking</p><h1>${escapeHtml(booking.apartmentTitle)}</h1><div class="ui-row">${bookingBadge(booking)}</div></header><section class="ui-panel" aria-label="Booking facts"><dl class="ui-facts"><dt>Owner</dt><dd>${escapeHtml(booking.ownerName)}</dd><dt>Apartment</dt><dd>${escapeHtml(booking.apartmentTitle)}</dd><dt>Dates</dt><dd>${escapeHtml(formatStayDates(booking.checkIn, booking.checkOut))} (${booking.nights} ${booking.nights === 1 ? "night" : "nights"})</dd><dt>Guest party</dt><dd>${booking.partySize} ${booking.partySize === 1 ? "occupant" : "occupants"}</dd>${total ? `<dt>All-In Stay Total</dt><dd class="ui-money-total">${total}</dd>` : ""}<dt>Stage</dt><dd>${escapeHtml(BOOKING_STAGE_LABELS[booking.stage])}</dd><dt>Payment method</dt><dd>${escapeHtml(bookingPaymentMethod(booking))}</dd>${timing ? `<dt>${booking.stage === "ended" ? "Outcome" : "Payment deadline"}</dt><dd>${timing}</dd>` : ""}</dl></section>`,
   });
+}
+
+
+const TRANSFER_REJECTION_REASONS: Readonly<Record<"not_received" | "amount_mismatch", string>> = {
+  // ADR 0090: rejection is for money that didn't arrive or doesn't match.
+  not_received: "Not received",
+  amount_mismatch: "Amount doesn't match",
+};
+
+const TRANSFER_STATUS: Readonly<Record<ManualTransferStatus, { readonly label: string; readonly tone: StatusTone }>> = {
+  awaiting_verification: { label: "Waiting for your check", tone: "info" },
+  awaiting_receipt: { label: "Waiting for the Guest's receipt", tone: "neutral" },
+  confirmed: { label: "Confirmed", tone: "success" },
+  rejected: { label: "Declined", tone: "danger" },
+  expired: { label: "Expired", tone: "warning" },
+};
+
+/**
+ * One manual transfer and what you can do with it (B6, ADR 0090). You confirm only after seeing the matching credit;
+ * the receipt is evidence for finding it. Every form carries the version it was rendered from (ADR 0072).
+ */
+function manualTransferCard(item: OperatorManualTransfer): string {
+  const { transfer } = item;
+  const id = encodeURIComponent(transfer.transferId);
+  const status = TRANSFER_STATUS[transfer.status];
+  const version = `<input type="hidden" name="expectedVersion" value="${transfer.version}">`;
+  const receipt = transfer.receipt && !transfer.receiptDeletedAt
+    ? `<dt>Receipt</dt><dd>Uploaded ${watTime(transfer.receipt.uploadedAt)}<br><a class="ui-button ui-button--secondary bo-receipt" href="/operator/transfers/${id}/receipt" target="_blank" rel="noopener">View receipt</a></dd>`
+    : transfer.receiptDeletedAt ? `<dt>Receipt</dt><dd>Deleted after 90 days</dd>` : "";
+  const deadline = transfer.status === "awaiting_verification" ? `<dt>Verify by</dt><dd>${watTime(transfer.verificationDeadlineAt)}</dd>`
+    : transfer.status === "awaiting_receipt" ? `<dt>Guest must pay and upload by</dt><dd>${watTime(transfer.paymentDeadlineAt)}</dd>` : "";
+  const decided = transfer.decision?.kind === "confirmed" ? `<dt>Outcome</dt><dd>Payment confirmed ${watTime(transfer.decision.decidedAt)}; Reservation made</dd>`
+    : transfer.decision?.kind === "rejected" ? `<dt>Outcome</dt><dd>Declined (${escapeHtml(TRANSFER_REJECTION_REASONS[transfer.decision.reason])}) ${watTime(transfer.decision.decidedAt)}; no Reservation</dd>`
+      : transfer.status === "expired" ? `<dt>Outcome</dt><dd>Not verified in time; dates released, no Reservation</dd>` : "";
+  const refund = transfer.refundOwed ? `<dt>Refund</dt><dd>Money received ${watTime(transfer.refundOwed.recordedAt)}: ${formatMoney(transfer.refundOwed.amountReceivedKobo)} is owed back to the Guest in full</dd>` : "";
+  const facts = `<dl class="ui-facts"><dt>Owner</dt><dd>${escapeHtml(item.ownerName)}</dd><dt>Apartment</dt><dd>${escapeHtml(item.apartmentTitle)}</dd><dt>Exact amount</dt><dd class="ui-money-total">${formatMoney(transfer.amountKobo)}</dd><dt>Booking reference</dt><dd class="bo-reference">${escapeHtml(transfer.bookingReference)}</dd>${receipt}${deadline}${decided}${refund}</dl>`;
+  const actions = transfer.status === "awaiting_verification"
+    ? `<form method="post" action="/operator/transfers/${id}/confirm" class="ui-stack">${version}<h3>Confirm payment</h3><p>Confirm only after you see the matching credit in the business account. The receipt alone is not proof of payment.</p><div class="ui-field"><label class="ui-field__label" for="ref-${id}">Bank transaction reference</label><input id="ref-${id}" name="bankTransactionReference" autocomplete="off" required></div><div class="ui-field"><label class="ui-field__label" for="amount-${id}">Amount received (₦)</label><input id="amount-${id}" name="amountReceived" inputmode="decimal" autocomplete="off" required></div><button class="ui-button ui-button--primary ui-button--block" type="submit">Confirm payment</button></form>`
+      + `<details class="ui-confirm"><summary>Decline this transfer…</summary><div class="ui-confirm__body"><form method="post" action="/operator/transfers/${id}/reject" class="ui-stack">${version}<fieldset class="bo-reasons"><legend>Reason</legend>${(Object.keys(TRANSFER_REJECTION_REASONS) as (keyof typeof TRANSFER_REJECTION_REASONS)[]).map((code) => `<label class="bo-choice"><input type="radio" name="reason" value="${code}" required> ${escapeHtml(TRANSFER_REJECTION_REASONS[code])}</label>`).join("")}</fieldset><p>Declining releases the dates and tells the Guest no Reservation was made. Any money received is refunded in full.</p><button class="ui-button ui-button--destructive ui-button--block" type="submit">Decline transfer</button></form></div></details>`
+    : (transfer.status === "expired" || transfer.status === "rejected") && !transfer.refundOwed
+      ? `<details class="ui-confirm"><summary>Money arrived after all…</summary><div class="ui-confirm__body"><form method="post" action="/operator/transfers/${id}/late-credit" class="ui-stack">${version}<p>Money for this transfer never confirms the booking. Record it here so it is refunded in full.</p><div class="ui-field"><label class="ui-field__label" for="late-ref-${id}">Bank transaction reference</label><input id="late-ref-${id}" name="bankTransactionReference" autocomplete="off" required></div><div class="ui-field"><label class="ui-field__label" for="late-amount-${id}">Amount received (₦)</label><input id="late-amount-${id}" name="amountReceived" inputmode="decimal" autocomplete="off" required></div><button class="ui-button ui-button--block" type="submit">Record for refund</button></form></div></details>`
+      : "";
+  return `<li class="bo-transfer" id="transfer-${escapeHtml(transfer.transferId)}" data-transfer-id="${escapeHtml(transfer.transferId)}" data-status="${transfer.status}"><article class="ui-panel ui-stack"><div class="ui-row"><span class="ui-status ui-status--${status.tone}">${escapeHtml(status.label)}</span></div>${facts}${actions}</article></li>`;
+}
+
+const TRANSFER_STYLE = ".bo-receipt{margin-block-start:var(--space-2)}.bo-transfers{display:grid;gap:var(--space-4);margin:0;padding:0;list-style:none}.bo-reference{font-family:var(--font-mono);overflow-wrap:anywhere}";
+
+function operatorTransfersHtml(env: LocalApartmentOwnerEnvironment, principal: OperatorPrincipal, error = "", focusTransferId = ""): string {
+  const items = env.listOperatorManualTransfers(commandPrincipal(principal));
+  const waiting = items.filter((item) => item.transfer.status === "awaiting_verification").length;
+  const list = items.length === 0
+    ? `<section class="ui-panel ui-empty"><div class="ui-empty__art">${icon("check")}</div><h2>No manual transfers</h2><p>A manual bank transfer appears here once a Guest chooses it.</p></section>`
+    : `<ol class="bo-transfers">${items.map(manualTransferCard).join("")}</ol>`;
+  const alert = error ? `<p class="ui-banner ui-banner--danger" role="alert"${focusTransferId ? ` data-transfer-id="${escapeHtml(focusTransferId)}"` : ""}>${icon("alert")}<span>${escapeHtml(error)}</span></p>` : "";
+  return backOfficePage({
+    title: "Transfers",
+    viewer: viewer(env, principal),
+    current: "transfers",
+    style: DECISION_STYLE + TRANSFER_STYLE,
+    body: `<header class="ui-page__header"><h1>Manual transfers</h1><p>${waiting === 0 ? "Nothing is waiting for your check." : `${waiting} ${waiting === 1 ? "transfer is" : "transfers are"} waiting for your check, soonest deadline first.`}</p></header>${alert}${list}`,
+  });
+}
+
+class TransferFormError extends Error {}
+
+/** Only each form's own fields; the reference and amount are the only free-text inputs (ADR 0090 requires them). */
+function transferForm(kind: "confirm" | "reject" | "late-credit", body: string): { readonly expectedVersion: number; readonly bankTransactionReference: string; readonly amountReceived: string; readonly reason: string } {
+  const params = new URLSearchParams(body);
+  const allowed = kind === "reject" ? ["expectedVersion", "reason"] : ["expectedVersion", "bankTransactionReference", "amountReceived"];
+  const keys = [...params.keys()];
+  if (keys.some((key) => !allowed.includes(key)) || new Set(keys).size !== keys.length) throw new TransferFormError("Unexpected fields");
+  const version = params.get("expectedVersion") ?? "";
+  if (!/^\d{1,6}$/.test(version)) throw new TransferFormError("Missing version");
+  return { expectedVersion: Number(version), bankTransactionReference: params.get("bankTransactionReference") ?? "", amountReceived: params.get("amountReceived") ?? "", reason: params.get("reason") ?? "" };
+}
+
+/** Plain words for a refused transfer action; nothing was changed. */
+function transferRefusal(error: unknown): { readonly status: number; readonly message: string } {
+  if (error instanceof TransferFormError) return { status: 400, message: "This form could not be read. Review the transfer and try again. Nothing was changed." };
+  if (error instanceof ManualTransferError) {
+    const input = ["bank_reference_required", "amount_required", "reason_required"].includes(error.problem);
+    return { status: input ? 400 : 409, message: `${error.message}. Nothing was changed.` };
+  }
+  return { status: 409, message: "This action could not be completed. Nothing was changed." };
 }
 
 function bookingNotFoundHtml(env: LocalApartmentOwnerEnvironment, principal: OperatorPrincipal): string {
@@ -837,6 +935,53 @@ export function startLocalOwnerServer(options: {
       try { body = operatorBookingHtml(env, principal, decodeURIComponent(bookingMatch[1]!)); }
       catch { res.writeHead(404, { "Content-Type": "text/html; charset=utf-8" }); res.end(bookingNotFoundHtml(env, principal)); return; }
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(body);
+      return;
+    }
+    // B6: manual transfers (ADR 0090). Pages fail closed to sign-in; actions to 401 (ADR 0086).
+    if (req.method === "GET" && (url.pathname === "/operator/transfers" || url.pathname === "/operator/transfers/")) {
+      page((principal) => operatorTransfersHtml(env, principal)); return;
+    }
+    const receiptMatch = url.pathname.match(/^\/operator\/transfers\/([^/]+)\/receipt$/);
+    if (req.method === "GET" && receiptMatch) {
+      const principal = operatorPrincipal(req, env);
+      if (!principal) { res.writeHead(303, { Location: signInLocation(req, env) }); res.end(); return; }
+      let receipt: ReturnType<LocalApartmentOwnerEnvironment["manualTransferReceipt"]> = null;
+      try { receipt = env.manualTransferReceipt(decodeURIComponent(receiptMatch[1]!), commandPrincipal(principal)); } catch { receipt = null; }
+      // Unknown, deleted, or another owner's receipt all look the same (ADR 0082, 0090).
+      if (!receipt) { res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" }); res.end("Receipt not found"); return; }
+      res.writeHead(200, {
+        "Content-Type": receipt.contentType,
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+        // Images display inline; a PDF downloads rather than run in a viewer.
+        "Content-Disposition": receipt.contentType === "application/pdf" ? "attachment; filename=\"receipt.pdf\"" : "inline",
+        "Content-Security-Policy": "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'",
+      });
+      res.end(receipt.bytes);
+      return;
+    }
+    const transferAction = url.pathname.match(/^\/operator\/transfers\/([^/]+)\/(confirm|reject|late-credit)$/);
+    if (req.method === "POST" && transferAction) {
+      if (!browserOriginAccepted(req)) { res.writeHead(403); res.end("Origin rejected"); return; }
+      const principal = operatorPrincipal(req, env);
+      if (!principal) { res.writeHead(401); res.end("Authentication required"); return; }
+      const transferId = decodeURIComponent(transferAction[1]!);
+      const kind = transferAction[2] === "confirm" ? "confirm" : transferAction[2] === "reject" ? "reject" : "late-credit";
+      const who = commandPrincipal(principal);
+      // A transfer you cannot see (unknown, or another owner's) is not found, before any form is read (ADR 0082).
+      try { env.operatorManualTransfer(transferId, who); } catch { res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }); res.end("Transfer not found"); return; }
+      try {
+        const form = transferForm(kind, await readForm(req));
+        if (kind === "confirm") env.confirmManualTransfer(transferId, who, form);
+        else if (kind === "reject") env.rejectManualTransfer(transferId, who, form);
+        else env.recordManualLateCredit(transferId, who, form);
+        res.writeHead(303, { Location: `/operator/transfers#transfer-${encodeURIComponent(transferId)}` }); res.end();
+      } catch (error) {
+        const refusal = transferRefusal(error);
+        let body = "Transfer action rejected";
+        try { body = operatorTransfersHtml(env, principal, refusal.message, transferId); } catch { /* keep generic */ }
+        if (!res.headersSent) { res.writeHead(refusal.status, { "Content-Type": body.startsWith("<!doctype") ? "text/html; charset=utf-8" : "text/plain; charset=utf-8" }); res.end(body); }
+      }
       return;
     }
     const checkInMatch = url.pathname.match(/^\/operator\/bookings\/([^/]+)\/(verified-access|blocking-complaint)$/);
