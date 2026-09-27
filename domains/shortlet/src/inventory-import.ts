@@ -3,6 +3,7 @@ import { getUnitOnboardingStatus } from "./onboarding.js";
 import type { Unit } from "./browse.js";
 import { normalizePhotoUrls } from "./photo-url.js";
 import { normalizeListingDescription } from "./listing-details.js";
+import { contractualCheckInWindow } from "./checkin-support.js";
 
 const SUPPORTED_CITIES = new Set(["Lagos", "Abuja"]);
 const REQUIRED_HEADERS = [
@@ -20,6 +21,7 @@ export const PILOT_INVENTORY_HEADERS = Object.freeze([
   "cancellation_policy",
   "description", "bathrooms",
   "photo_urls",
+  "check_in_earliest_access", "check_in_latest_arrival",
 ] as const);
 
 type InventoryHeader = typeof PILOT_INVENTORY_HEADERS[number];
@@ -269,6 +271,13 @@ function buildUnit(row: CsvRow, operator: OperatorReference): Unit {
   const description = normalizeListingDescription(cell(row, "description"), true);
   const bathrooms = parseInteger(cell(row, "bathrooms"), "bathrooms", 1) ?? (() => { throw new Error("bathrooms is required"); })();
   const photoUrls = normalizePhotoUrls(splitList(cell(row, "photo_urls")));
+  // ADR 0031: optional here, but a window that is given must be complete and inside 2:00 PM–10:00 PM WAT.
+  const earliestAccess = cell(row, "check_in_earliest_access");
+  const latestArrival = cell(row, "check_in_latest_arrival");
+  const checkInWindow = earliestAccess === "" && latestArrival === "" ? null : contractualCheckInWindow({ earliestAccessTime: earliestAccess, latestPermittedArrival: latestArrival, timezone: "Africa/Lagos" });
+  if ((earliestAccess !== "" || latestArrival !== "") && checkInWindow === null) {
+    throw new Error("check_in_earliest_access and check_in_latest_arrival must be HH:MM between 14:00 and 22:00 WAT, earliest first");
+  }
   const priceVersion = `inventory-import-${unitId}`;
   return {
     id: unitId,
@@ -296,6 +305,7 @@ function buildUnit(row: CsvRow, operator: OperatorReference): Unit {
     regulatory: (licensing || insurance) ? { licensing, insurance } : null,
     blockedDates: parseBlockedDates(cell(row, "blocked_dates")),
     ...(cancellationPolicy === "" ? {} : { cancellationPolicy: { type: cancellationPolicy, version: "cancellation-v1" } }),
+    ...(checkInWindow === null ? {} : { checkInWindow }),
   };
 }
 

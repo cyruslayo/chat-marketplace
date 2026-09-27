@@ -88,6 +88,8 @@ export interface BookingContract {
       };
   readonly createdAt: string;
   readonly contractVersion: number;
+  /** ADR 0031: the Contractual Check-In Window captured from the offer. */
+  readonly checkInWindow?: import("./checkin-support.js").ContractualCheckInWindow;
   readonly checkout?: { readonly time: "11:00" | "12:00" | "13:00" | "14:00"; readonly timezone: "Africa/Lagos"; readonly source: "contractual" | "checkout_amendment"; readonly amendmentId?: string; readonly amendmentVersion?: number | string };
   readonly financialSummary?: { readonly originalBookingTotalKobo: number; readonly currentContractTotalKobo: number; readonly currency: "NGN"; readonly amendmentAdjustments: readonly { readonly amendmentId: string; readonly type: "additional_collection" | "refund" | "none"; readonly amountKobo: number; readonly currency: "NGN"; readonly settlementId?: string; readonly settledAt?: string; readonly quoteId: string; readonly quoteVersion: string | number }[] };
 }
@@ -566,6 +568,7 @@ export class CardPaymentManager {
       createdAt: now.toISOString(),
       contractVersion: 1,
       checkout: { time: "11:00", timezone: "Africa/Lagos", source: "contractual" },
+      ...(offer.checkInWindow ? { checkInWindow: offer.checkInWindow } : {}),
       financialSummary: { originalBookingTotalKobo: offer.totalAmountDueNowKobo, currentContractTotalKobo: offer.totalAmountDueNowKobo, currency: "NGN", amendmentAdjustments: [] }
     };
 

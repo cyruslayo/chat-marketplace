@@ -89,11 +89,15 @@ export interface BookingStageProjection {
   readonly endedReason: BookingEndedReason | null;
 }
 
-function paymentMethod(journey: BookingPaymentJourney | null, attemptMethod: string | null): BookingPaymentMethod | null {
-  const method = journey?.paymentMethod ?? attemptMethod;
+/** The back-office method for a domain payment method code; unknown codes have none. */
+export function bookingPaymentMethod(method: string | null | undefined): BookingPaymentMethod | null {
   if (method === "fresh_card") return "card";
   if (method === "bank_transfer") return "paystack_transfer";
   return null;
+}
+
+function paymentMethod(journey: BookingPaymentJourney | null, attemptMethod: string | null): BookingPaymentMethod | null {
+  return bookingPaymentMethod(journey?.paymentMethod ?? attemptMethod);
 }
 
 const PROCESSING_STAGES: ReadonlySet<string> = new Set(["stay_payment_processing", "deposit_payment_processing"]);

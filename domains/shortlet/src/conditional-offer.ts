@@ -5,6 +5,7 @@ import { createGuestConductPolicySnapshot, type GuestConductPolicySnapshot, type
 import type { SecurityDepositPolicySnapshot } from "./security-deposit.js";
 import * as crypto from "node:crypto";
 import type { OperatorRepresentativeAuthority } from "./operator-representative-authority.js";
+import { contractualCheckInWindow, type ContractualCheckInWindow } from "./checkin-support.js";
 
 
 export interface ConfirmationTokenPayload {
@@ -85,6 +86,8 @@ export interface ConditionalBookingOffer {
     durationMinutes: number;
     expiresAt: string;
   };
+  /** ADR 0031: the unit's Contractual Check-In Window at issue, never re-read from the unit afterwards. */
+  readonly checkInWindow?: ContractualCheckInWindow;
   status: "issued" | "accepted" | "expired" | "stale" | "revoked";
   issuedAt: string;
   acceptedAt?: string;
@@ -218,6 +221,12 @@ export class ConditionalOfferManager {
       policyVersions: Object.freeze({ ...recalculatedQuote.policyVersions, cancellation: request.quote.cancellationPolicy.version })
     });
 
+    // ADR 0031: a published window must be valid to be captured; a malformed one fails closed.
+    const checkInWindow = unit.checkInWindow === undefined ? null : contractualCheckInWindow(unit.checkInWindow);
+    if (unit.checkInWindow !== undefined && checkInWindow === null) {
+      throw new Error("Offer creation failed: the unit's Contractual Check-In Window is invalid");
+    }
+
     const offerId = `offer-${crypto.randomUUID()}`;
     const offerVersion = 1;
     const paymentWindowDurationMinutes = 20; // ADR 0044
@@ -301,6 +310,7 @@ export class ConditionalOfferManager {
         durationMinutes: paymentWindowDurationMinutes,
         expiresAt: paymentWindowExpiresAt
       }),
+      ...(checkInWindow ? { checkInWindow } : {}),
       status: "issued",
       issuedAt: now.toISOString(),
       confirmationToken,

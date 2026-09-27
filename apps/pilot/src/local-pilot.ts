@@ -92,7 +92,7 @@ function inventoryCsv(): string {
     "management_authority_status", "management_authority_date", "management_authority_expiry", "management_authority_permissions",
     "licensing_status", "licensing_date", "licensing_expiry", "insurance_status", "insurance_date", "insurance_expiry",
     "insurance_public_liability_ngn", "insurance_annual_aggregate_ngn", "insurance_property_cover_verified", "cancellation_policy",
-    "description", "bathrooms", "photo_urls",
+    "description", "bathrooms", "photo_urls", "check_in_earliest_access", "check_in_latest_arrival",
   ];
   const common = {
     operator_id: LOCAL_PILOT_OPERATOR_ID, currency: "NGN", blocked_dates: "", inspection_status: "passed", inspection_date: "2026-09-01",
@@ -102,6 +102,8 @@ function inventoryCsv(): string {
     licensing_status: "verified", licensing_date: "2026-09-01", licensing_expiry: "2027-09-30", insurance_status: "verified",
     insurance_date: "2026-09-01", insurance_expiry: "2027-09-30", insurance_public_liability_ngn: "10000000",
     insurance_annual_aggregate_ngn: "20000000", insurance_property_cover_verified: "true", cancellation_policy: "standard",
+    // ADR 0031: the launch arrival boundary; each unit may narrow it.
+    check_in_earliest_access: "14:00", check_in_latest_arrival: "22:00",
   };
   const rows: Array<Record<string, string | number>> = [
     { ...common, external_listing_id: "local-abuja-wuse-2", unit_id: "unit-local-abuja-wuse2", property_id: "property-local-abuja-wuse2", title: "Sunlit Two-Bedroom Retreat in Wuse 2", city: "Abuja", neighbourhood: "Wuse 2", capacity: 4, bedrooms: 2, nightly_price_ngn: 95000, mandatory_fees_ngn: 12000, refundable_security_deposit_ngn: 0, amenities: "wifi|24_7_power_generator|parking|air_conditioning|security_guard|workspace", description: "A calm, contemporary Entire Place near Wuse 2 dining, with reliable power, a generous lounge, and a dedicated workspace.", bathrooms: 2, photo_urls: `${LOCAL_PILOT_PHOTO_HOST}/photos/wuse-2-living.svg|${LOCAL_PILOT_PHOTO_HOST}/photos/wuse-2-bedroom.svg` },

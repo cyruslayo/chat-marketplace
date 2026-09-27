@@ -450,6 +450,7 @@ export class LocalGuestEnvironment {
         },
       },
       blockedDates: [],
+      checkInWindow: { earliestAccessTime: "14:00", latestPermittedArrival: "22:00", timezone: "Africa/Lagos" }, // ADR 0031 launch boundary
     });
 
     this.unitRepository.save({
@@ -500,6 +501,7 @@ export class LocalGuestEnvironment {
         },
       },
       blockedDates: [],
+      checkInWindow: { earliestAccessTime: "14:00", latestPermittedArrival: "22:00", timezone: "Africa/Lagos" }, // ADR 0031 launch boundary
     });
   }
 
