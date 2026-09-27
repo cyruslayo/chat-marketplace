@@ -83,6 +83,10 @@ import {
   type GuestPersistentProjection,
 } from "./guest-projection.js";
 import { hashSessionSecret } from "../../../domains/shortlet/src/index.js";
+import { multipartBoundary, multipartFile } from "./multipart.js";
+import { DEFAULT_RECEIPT_MAX_BYTES } from "./fixture.js";
+import { createPlatformCommandEnvelope as createManualTransferCommand } from "../../../packages/platform-core/src/index.js";
+import { ManualTransferError, type ManualTransfer } from "../../../domains/shortlet/src/index.js";
 import { BankTransferProviderError, DirectPaystackClient, isApprovedPaystackCheckoutUrl, loadPaystackConfiguration, type BankTransferCheckoutSession, type PaystackClient } from "../../../domains/shortlet/src/index.js";
 import { applyCriteriaEdit, budgetLabel, quickRepliesFor, searchAreaFor, SEARCH_AREAS, type CriteriaEdit } from "./concierge.js";
 import { amenityQuestions, extractStayRequestFacts, formatGuestDay, mergeStayRequestContext, resolveStayRequestContext, stayChangeRequested, unsupportedPreferenceNote, type DiscoverySearchContext, type StayRequestFilters } from "./concierge.js";
@@ -2863,6 +2867,9 @@ const PAGE_ERROR_COPY: Readonly<Record<string, { readonly title: string; readonl
   PAYMENT_CONTINUATION_REJECTED: { title: "Payment can't continue right now", message: "No payment was taken. The offer may have expired or already been paid. Return to the conversation for the current booking status." },
   TRANSFER_UNAVAILABLE: { title: "Bank transfer is unavailable", message: "No transfer account was issued and no payment was taken. Go back and pay by card, or try again in a few minutes." },
   TRANSFER_REJECTED: { title: "Bank transfer can't start", message: "No transfer account was issued. The offer may have expired or another payment may already be in progress. Return to the conversation for the current booking status." },
+  MANUAL_TRANSFER_UNAVAILABLE: { title: "Manual bank transfer is unavailable", message: "No payment was taken. Go back and choose another way to pay." },
+  MANUAL_TRANSFER_REJECTED: { title: "Manual bank transfer can't start", message: "Manual bank transfer is only offered when we can check your payment between 8:00 AM and 8:00 PM WAT, and only while no other payment is in progress. No payment was taken." },
+  MANUAL_TRANSFER_IN_PROGRESS: { title: "Your manual bank transfer is still open", message: "You chose manual bank transfer, so other payment methods are unavailable until it is confirmed, declined or expires." },
   TRANSFER_IN_PROGRESS: { title: "Your bank transfer is still open", message: "You chose bank transfer, so card payment is unavailable until the transfer account expires. Transfer the exact amount to the account shown, or wait for it to expire." },
   PAYSTACK_UNAVAILABLE: { title: "Card checkout is unavailable", message: "No payment was taken. Try again in a few minutes from your conversation." },
   INVALID_CHECKOUT_URL: { title: "Card checkout is unavailable", message: "No payment was taken. Try again in a few minutes from your conversation." },
@@ -2885,8 +2892,65 @@ function sendPageError(req: IncomingMessage, res: ServerResponse, status: number
  * The payment choice (P3, ADR 0088). It states before the choice that a transfer account keeps the payment slot
  * while it can be paid (ADR 0046). Plain form and link: works without JavaScript (ADR 0080).
  */
-function transferChoiceHtml(offerId: string, cardHref: string, cardLabel: string): string {
-  return `<h2>How would you like to pay?</h2><p>If you choose bank transfer, you can't switch to card until the transfer account expires.</p><form method="post" action="/payments/offers/${encodeURIComponent(offerId)}/transfer"><button class="ui-button ui-button--primary ui-button--block" type="submit">Pay by bank transfer</button></form><a class="ui-button ui-button--secondary ui-button--block" href="${cardHref}">${escapeHtml(cardLabel)}</a>`;
+function transferChoiceHtml(offerId: string, cardHref: string, cardLabel: string, methods: { readonly providerTransfer: boolean; readonly manualTransfer: boolean }): string {
+  const base = `/payments/offers/${encodeURIComponent(offerId)}`;
+  const transfer = methods.providerTransfer ? `<form method="post" action="${base}/transfer"><button class="ui-button ui-button--primary ui-button--block" type="submit">Pay by bank transfer</button></form>` : "";
+  // ADR 0090: the third option, after card and provider transfer; the money, not the receipt, confirms.
+  const manual = methods.manualTransfer ? `<form method="post" action="${base}/manual-transfer"><button class="ui-button ui-button--secondary ui-button--block" type="submit">Pay by manual bank transfer</button></form><p>Manual bank transfer: pay our business account and upload your receipt. Your booking confirms only after we check the money has arrived.</p>` : "";
+  const switching = methods.providerTransfer
+    ? "If you choose bank transfer, you can't switch to card until the transfer account expires."
+    : "If you choose manual bank transfer, you can't switch to card until it expires or is declined.";
+  return `<h2>How would you like to pay?</h2><p>${switching}${methods.providerTransfer && methods.manualTransfer ? " The same applies to manual bank transfer." : ""}</p>${transfer}<a class="ui-button ui-button--secondary ui-button--block" href="${cardHref}">${escapeHtml(cardLabel)}</a>${manual}`;
+}
+
+/**
+ * The manual transfer page (P5, ADR 0090): the business account, the exact amount, the unique booking reference and
+ * the absolute WAT deadline; then one receipt upload. It says plainly that the booking confirms only after the money
+ * is checked, never on the receipt (ADR 0005, 0090). A plain multipart form: no JavaScript (ADR 0080).
+ */
+export function renderManualTransferPageHtml(input: {
+  readonly transfer: ManualTransfer;
+  readonly now: Date;
+  readonly receiptMaxBytes: number;
+  readonly error: string;
+  readonly threadId: string | null;
+  readonly contractId: string | null;
+}): string {
+  const { transfer, now } = input;
+  const back = input.threadId ? `<a class="ui-button ui-button--block" href="/?threadId=${encodeURIComponent(input.threadId)}">Return to your conversation</a>` : "";
+  const alert = input.error ? `<p class="ui-banner ui-banner--danger" role="alert">${icon("alert")}<span>${escapeHtml(input.error)}</span></p>` : "";
+  const shell = (heading: string, body: string) => pageShell({
+    title: `${heading} · Shortlet`,
+    width: "narrow",
+    style: ".transfer-account,.transfer-reference{font-family:var(--font-mono);font-size:var(--font-size-h3);letter-spacing:0.05em;overflow-wrap:anywhere}.ui-panel p{margin:0}",
+    body: `<header class="ui-page__header"><p class="ui-eyebrow">Booking payment · Manual bank transfer</p><h1>${escapeHtml(heading)}</h1></header>${alert}<section class="ui-panel">${body}</section>`,
+  });
+  const at = (iso: string) => `<time datetime="${escapeHtml(iso)}">${escapeHtml(formatWAT(iso))}</time>`;
+  if (transfer.status === "confirmed") {
+    return shell("Payment received", `<p>We found your transfer in our account. Your ${GUEST_GLOSSARY.reservation} is confirmed.</p>${input.contractId ? `<a class="ui-button ui-button--primary ui-button--block" href="${conventionalBookingContractRoute(input.contractId)}">View your ${GUEST_GLOSSARY.reservation}</a>` : ""}${back}`);
+  }
+  if (transfer.status === "rejected" || transfer.status === "expired") {
+    // ADR 0090/0045: no Reservation; any money received for this attempt is refunded in full.
+    return shell("No Reservation was made", `<p>${transfer.status === "rejected" ? "We couldn't match your transfer to this booking." : "The deadline passed before your payment was confirmed."} Any money we received for this booking is refunded in full.</p>${back}`);
+  }
+  if (transfer.status === "awaiting_verification") {
+    return shell("Waiting for payment check", `<p>We received your receipt. Your booking confirms only after we see the money in our account and check it. We will check by ${at(transfer.verificationDeadlineAt)}.</p><p>Your dates are held until then. No ${GUEST_GLOSSARY.reservation} exists yet.</p>${back}`);
+  }
+  const minutes = Math.max(0, Math.ceil((Date.parse(transfer.paymentDeadlineAt) - now.getTime()) / 60_000));
+  const limitMb = Math.floor(input.receiptMaxBytes / (1024 * 1024));
+  return shell("Transfer and upload your receipt", `<dl class="ui-facts"><dt>Bank</dt><dd>${escapeHtml(transfer.account.bankName)}</dd><dt>Account name</dt><dd>${escapeHtml(transfer.account.accountName)}</dd><dt>Account number</dt><dd class="transfer-account">${escapeHtml(transfer.account.accountNumber)}</dd><dt>Exact amount</dt><dd class="ui-money-total">${formatNgnKobo(transfer.amountKobo)}</dd><dt>Booking reference</dt><dd class="transfer-reference">${escapeHtml(transfer.bookingReference)}</dd><dt>Transfer and upload by</dt><dd>${at(transfer.paymentDeadlineAt)} · ${minutes} ${minutes === 1 ? "minute" : "minutes"} left</dd></dl><p>Include the booking reference with your transfer. Your booking confirms only after we see the money in our account and check it; the receipt alone doesn't confirm it.</p><form method="post" action="/payments/offers/${encodeURIComponent(transfer.offerId)}/manual-transfer/receipt" enctype="multipart/form-data" class="ui-stack"><div class="ui-field"><label class="ui-field__label" for="receipt">Transfer receipt (photo or PDF, up to ${limitMb} MB)</label><input id="receipt" name="receipt" type="file" accept="image/jpeg,image/png,application/pdf" required></div><button class="ui-button ui-button--primary ui-button--block" type="submit">Upload receipt</button></form>${back}`);
+}
+
+/** Reads a request body, refusing (and discarding) anything over `limit` bytes. */
+function readBoundedBody(req: IncomingMessage, limit: number): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    let refused = false;
+    req.on("data", (chunk: Buffer) => { if (refused) return; size += chunk.length; if (size > limit) { refused = true; chunks.length = 0; reject(new Error("Body too large")); req.resume(); return; } chunks.push(chunk); });
+    req.on("end", () => { if (!refused) resolve(Buffer.concat(chunks)); });
+    req.on("error", reject);
+  });
 }
 
 /**
@@ -3317,6 +3381,7 @@ export function startLocalGuestServer(options: {
       try {
         const principal: CommandPrincipal = { id: session.principalId, role: "guest", tenantId: session.tenantId };
         const artifact = app.environment.cardPaymentApp.getArtifact(offerId, principal);
+        if (app.environment.manualTransfers?.current(offerId, app.environment.clock())) { res.writeHead(303, { Location: `/payments/offers/${encodeURIComponent(offerId)}/manual-transfer` }); res.end(); return; }
         if (app.environment.bankTransferApp?.manager.getSession(offerId)) { res.writeHead(303, { Location: `/payments/offers/${encodeURIComponent(offerId)}/transfer` }); res.end(); return; }
         const processing = artifact.facts.journeyStage === "stay_payment_processing" || artifact.facts.journeyStage === "deposit_payment_processing";
         const status = guestPaymentStatus(artifact.facts.status, processing);
@@ -3336,7 +3401,8 @@ export function startLocalGuestServer(options: {
               : "Continue to hosted card checkout";
         const canContinue = artifact.actions.length > 0 && (artifact.facts.status !== "ready" || contactEmailMissing || !processing);
         // P3: before any attempt, with an email on file, the Guest chooses the method (ADR 0088).
-        const offerTransferChoice = app.environment.bankTransferApp !== null && artifact.facts.status === "ready" && !contactEmailMissing && !processing;
+        const manualOffered = app.environment.manualTransfers?.isOffered(offerId, app.environment.clock()) === true;
+        const offerTransferChoice = (app.environment.bankTransferApp !== null || manualOffered) && artifact.facts.status === "ready" && !contactEmailMissing && !processing;
         const escapeHtmlText = escapeHtml;
         const componentAmount = artifact.facts.currentComponentAmountKobo ?? (artifact.facts.status === "ready" ? artifact.facts.allInStayTotalKobo : artifact.facts.refundableSecurityDepositKobo);
         const componentLabel = artifact.facts.status === "deposit_required" || artifact.facts.currentComponent === "security_deposit" ? `Next payment · ${GUEST_GLOSSARY.refundableSecurityDeposit}` : "Next payment · stay payment";
@@ -3355,9 +3421,66 @@ export function startLocalGuestServer(options: {
           title: `${status.label} · Shortlet`,
           width: "narrow",
           style: ".payment-unit{font-family:var(--font-display);font-size:var(--font-size-h3);line-height:var(--font-line-h3);font-weight:600}.ui-panel p{margin:0}",
-          body: `<header class="ui-page__header"><p class="ui-eyebrow">Booking payment</p><h1>${escapeHtmlText(status.label)}</h1></header><section class="ui-panel">${facts}${!canContinue ? "" : offerTransferChoice ? transferChoiceHtml(offerId, href, options.localPayment ? "Pay by card (local demo)" : "Pay by card") : `<a class="ui-button ui-button--primary ui-button--block" href="${href}">${label}</a>`}</section>`,
+          body: `<header class="ui-page__header"><p class="ui-eyebrow">Booking payment</p><h1>${escapeHtmlText(status.label)}</h1></header><section class="ui-panel">${facts}${!canContinue ? "" : offerTransferChoice ? transferChoiceHtml(offerId, href, options.localPayment ? "Pay by card (local demo)" : "Pay by card", { providerTransfer: app.environment.bankTransferApp !== null, manualTransfer: manualOffered }) : `<a class="ui-button ui-button--primary ui-button--block" href="${href}">${label}</a>`}</section>`,
         }));
       } catch { sendPageError(req, res, 404, "PAYMENT_OFFER_NOT_FOUND"); }
+      return;
+    }
+
+    // P5: manual bank transfer with receipt (ADR 0090). The receipt is evidence only; the back office confirms (B6).
+    const manualMatch = /^\/payments\/offers\/([^/]+)\/manual-transfer(\/receipt)?$/.exec(url.pathname);
+    if (manualMatch && (req.method === "POST" || (req.method === "GET" && !manualMatch[2]))) {
+      if (req.method === "POST" && !browserOriginAccepted(req, options.publicOrigin)) { res.writeHead(403); res.end("Origin rejected"); return; }
+      const session = resolveBrowserSession(env, browserSessions, readGuestSession(req), sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId);
+      if (!session) { sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED"); return; }
+      let offerId: string;
+      try { offerId = decodeURIComponent(manualMatch[1]!); } catch { sendPageError(req, res, 400, "INVALID_OFFER"); return; }
+      const manual = app.environment.manualTransfers;
+      if (!manual) { sendPageError(req, res, 404, "MANUAL_TRANSFER_UNAVAILABLE"); return; }
+      const principal: CommandPrincipal = { id: session.principalId, role: "guest", tenantId: session.tenantId };
+      let manualOffer: ReturnType<typeof app.environment.conditionalOfferApp.manager.getOffer>;
+      try { manualOffer = app.environment.conditionalOfferApp.manager.getOffer(offerId); } catch { sendPageError(req, res, 404, "PAYMENT_OFFER_NOT_FOUND"); return; }
+      const payerId = manualOffer.parties.distinctPayer?.id ?? manualOffer.parties.primaryGuest.id;
+      if (!principal.id || principal.id !== payerId || !principal.tenantId || principal.tenantId !== manualOffer.tenantId) { sendPageError(req, res, 404, "PAYMENT_OFFER_NOT_FOUND"); return; }
+      const manualPage = `/payments/offers/${encodeURIComponent(offerId)}/manual-transfer`;
+      const receiptMaxBytes = app.environment.config.receiptMaxBytes ?? DEFAULT_RECEIPT_MAX_BYTES;
+      const render = (status: number, error = "") => {
+        const transfer = manual.current(offerId, app.environment.clock());
+        if (!transfer) { res.writeHead(303, { Location: `/payments/offers/${encodeURIComponent(offerId)}` }); res.end(); return; }
+        res.writeHead(status, GUEST_HTML_HEADERS);
+        res.end(renderManualTransferPageHtml({ transfer, now: app.environment.clock(), receiptMaxBytes, error, threadId: findGuestThreadForOffer(app.environment, offerId, principal), contractId: transfer.decision?.kind === "confirmed" ? transfer.decision.contractId : null }));
+      };
+      if (req.method === "GET") { render(200); return; }
+      if (!manualMatch[2]) {
+        try { manual.start(createManualTransferCommand({ commandName: "manual_transfer.start", principal, payload: { offerId } }), app.environment.clock); }
+        catch { sendPageError(req, res, 409, "MANUAL_TRANSFER_REJECTED"); return; }
+        res.writeHead(303, { Location: manualPage }); res.end();
+        return;
+      }
+      // Receipt upload: a bounded body, one file field; nothing is stored on any refusal (ADR 0075, 0090).
+      const boundary = multipartBoundary(req.headers["content-type"]);
+      const declared = Number(req.headers["content-length"] ?? "0");
+      const bodyLimit = receiptMaxBytes + 16 * 1024;
+      if (!boundary) { req.resume(); render(400, "Choose a receipt file to upload."); return; }
+      if (Number.isFinite(declared) && declared > bodyLimit) { req.resume(); render(413, "That file is too large. Upload a smaller photo or PDF of your receipt."); return; }
+      let body: Buffer;
+      try { body = await readBoundedBody(req, bodyLimit); } catch { render(413, "That file is too large. Upload a smaller photo or PDF of your receipt."); return; }
+      let bytes: Buffer | null;
+      try { bytes = multipartFile(body, boundary, "receipt"); } catch { render(400, "The upload could not be read. Choose your receipt file again."); return; }
+      try {
+        manual.uploadReceipt(createManualTransferCommand({ commandName: "manual_transfer.upload_receipt", principal, payload: { offerId } }), { bytes: bytes ?? Buffer.alloc(0) }, app.environment.clock);
+      } catch (error) {
+        const problem = error instanceof ManualTransferError ? error.problem : "no_transfer";
+        const message = problem === "receipt_type_not_allowed" ? "Upload a photo (JPEG or PNG) or a PDF of your receipt."
+          : problem === "receipt_too_large" ? "That file is too large. Upload a smaller photo or PDF of your receipt."
+            : problem === "receipt_empty" ? "Choose a receipt file to upload."
+              : problem === "payment_window_closed" ? "The deadline has passed, so the receipt was not accepted. No Reservation was made."
+                : problem === "receipt_already_uploaded" ? "Your receipt was already received."
+                  : "The receipt was not accepted. No payment was recorded.";
+        render(problem === "receipt_too_large" ? 413 : problem === "payment_window_closed" || problem === "receipt_already_uploaded" || problem === "no_transfer" || problem === "not_payer" ? 409 : 400, message);
+        return;
+      }
+      res.writeHead(303, { Location: manualPage }); res.end();
       return;
     }
 
@@ -3414,6 +3537,8 @@ export function startLocalGuestServer(options: {
       if (!session) { sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED"); return; }
       let offerId: string;
       try { offerId = decodeURIComponent(continuationMatch[1]!); } catch { sendPageError(req, res, 400, "INVALID_OFFER"); return; }
+      const openManual = app.environment.manualTransfers?.current(offerId, app.environment.clock());
+      if (openManual && (openManual.status === "awaiting_receipt" || openManual.status === "awaiting_verification")) { sendPageError(req, res, 409, "MANUAL_TRANSFER_IN_PROGRESS"); return; }
       const liveTransfer = app.environment.bankTransferApp?.manager.getSession(offerId);
       if (liveTransfer && (liveTransfer.status === "initiated" || liveTransfer.status === "processing_in_grace") && app.environment.clock().getTime() < Date.parse(liveTransfer.graceEndsAt)) {
         // ADR 0046/0088: a transfer that can still be paid holds the one Live Payment Attempt; no switch to card.

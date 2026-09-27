@@ -1,43 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
-import { startLocalGuestServer } from "../apps/local-guest/src/guest-server.js";
+import { rmSync } from "node:fs";
 import { LOCAL_TRANSFER_BANK_NAME } from "../apps/local-guest/src/local-bank-transfer-provider.js";
 import { formatNgnKobo } from "../apps/web-agent/src/discovery-a2ui.js";
 import { formatBookingDeadline } from "../apps/web-agent/src/booking-presentation.js";
-import type { Unit } from "../domains/shortlet/src/index.js";
+import { guestPaymentPage, visibleText } from "./helpers/guest-payment-page.js";
 
 // P3 — the Guest chooses card or transfer (.scratch/guest-payments/issues/03-guest-payment-choice.md).
 
-function visibleText(html: string): string {
-  return html.replace(/<script[\s\S]*?<\/script>/g, " ").replace(/<style[\s\S]*?<\/style>/g, " ").replace(/<[^>]*>/g, " ").replace(/&amp;/g, "&").replace(/&#39;/g, "'").replace(/\s+/g, " ");
-}
-
-/** A Guest with an accepted, zero-deposit offer (ADR 0089), served by the local pilot server with the local providers. */
-async function guestWithOffer(dir = mkdtempSync(join(tmpdir(), "p3-choice-")), existing?: { readonly offerId: string }) {
-  const env = new LocalGuestEnvironment({ databasePath: join(dir, "guest.sqlite"), initialGuestPhoneNumber: "+2348012345678", initialGuestContactEmail: "guest@example.test", clock: () => new Date("2026-09-03T10:02:00.000Z") });
-  let offerId = existing?.offerId ?? "";
-  if (!existing) {
-    const unit = env.unitRepository.findById("unit-lagos-ikoyi-001") as Unit;
-    env.unitRepository.save({ ...unit, price: { ...unit.price, refundableSecurityDepositKobo: 0 } });
-    const draft = env.bookingRequestApp.createDraft({ unitId: unit.id, primaryGuest: { id: env.config.guestId, name: env.config.guestName }, occupants: env.demoOccupants(2), selfBookingAttestation: env.selfBookingAttestation(), checkIn: "2026-09-10", checkOut: "2026-09-13" }, env.guestPrincipal());
-    const request = env.bookingRequestApp.disclose(draft.draftId, env.guestPrincipal());
-    offerId = env.simulateOperatorAcceptance(request.requestId).offerId;
-    const offer = env.conditionalOfferApp.manager.getOffer(offerId);
-    env.conditionalOfferApp.accept({ offerId, confirmationToken: offer.confirmationToken, expectedVersion: offer.offerVersion, principal: env.guestPrincipal() });
-  }
-  const server = startLocalGuestServer({ port: 0, environment: env, localPayment: true, conciergeMode: "deterministic" });
-  const port = await server.listen();
-  const base = `http://127.0.0.1:${port}`;
-  const cookie = (await fetch(`${base}/`)).headers.get("set-cookie")?.split(";")[0] ?? "";
-  const get = (path: string) => fetch(`${base}${path}`, { headers: { cookie, accept: "text/html" }, redirect: "manual" });
-  const post = (path: string, body: Record<string, string> = {}, headers: Record<string, string> = {}) => fetch(`${base}${path}`, { method: "POST", headers: { cookie, accept: "text/html", "content-type": "application/x-www-form-urlencoded", ...headers }, body: new URLSearchParams(body), redirect: "manual" });
-  const paymentPage = `/payments/offers/${encodeURIComponent(offerId)}`;
-  return { env, dir, offerId, get, post, paymentPage, transferPage: `${paymentPage}/transfer`, close: async (keep = false) => { await server.close(); if (!keep) rmSync(dir, { recursive: true, force: true }); } };
+/** The shared Guest payment page fixture plus this slice's transfer screen path. */
+async function guestWithOffer(dir?: string, existing?: { readonly offerId: string }) {
+  const g = await guestPaymentPage({ ...(dir === undefined ? {} : { dir }), ...(existing === undefined ? {} : { existing }) });
+  return { ...g, transferPage: `${g.paymentPage}/transfer` };
 }
 
 test("AC1 — After accepting the offer the Guest can choose bank transfer or card, and each leads to its payment path", async () => {

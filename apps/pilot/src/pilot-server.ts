@@ -87,6 +87,9 @@ export function startPilotServer(options: {
     paystackClient,
     // ADR 0088: Pay with Transfer only when explicitly enabled after certification.
     ...(configuration.paystackTransfersEnabled ? { bankTransferProvider: new PaystackBankTransferClient(configuration.paystack, { clock }) } : {}),
+    // ADR 0090: manual transfer only when the business account is configured.
+    manualTransferAccount: configuration.manualTransferAccount,
+    ...(configuration.receiptMaxBytes === null ? {} : { receiptMaxBytes: configuration.receiptMaxBytes }),
   });
   const operatorEnvironment = new LocalApartmentOwnerEnvironment({
     databasePath: configuration.databasePath,
