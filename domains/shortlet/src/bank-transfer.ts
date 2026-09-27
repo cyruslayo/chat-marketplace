@@ -58,8 +58,33 @@ export interface BankTransferReconciliationRecord {
   readonly createdAt: string;
 }
 
+/** What the platform asks the provider for: one expiring account bound to this booking reference and exact amount (ADR 0047). */
+export interface BankTransferAccountRequest {
+  readonly reference: string;
+  readonly amountKobo: number;
+  readonly currency: "NGN";
+  /** The Payment Window deadline; the account must stop being payable by then (ADR 0044, 0047). */
+  readonly expiresAt: string;
+  readonly email: string;
+}
+
+/** The provider-issued account. The platform never derives account details itself (ADR 0047). */
+export interface ProviderTransferAccount {
+  readonly bankName: string;
+  readonly accountNumber: string;
+  readonly reference: string;
+  /** The provider's own expiry for the account; never later than the Payment Window deadline. */
+  readonly expiresAt: string;
+}
+
 export interface BankTransferProviderClient {
+  createTransferAccount(request: BankTransferAccountRequest): Promise<ProviderTransferAccount>;
   verifyTransfer(transferReference: string): BankTransferProviderResult;
+}
+
+/** The provider could not issue a usable account. Nothing was recorded and no attempt holds the slot. */
+export class BankTransferProviderError extends Error {
+  constructor(message: string) { super(message); this.name = "BankTransferProviderError"; }
 }
 
 export interface BankTransferPaymentManagerOptions {
@@ -72,7 +97,9 @@ export interface BankTransferPaymentManagerOptions {
   };
   readonly audit?: { record(entry: Record<string, unknown>): void };
   readonly providerClient: BankTransferProviderClient;
-  readonly liveAttempts?: import("./payment-attempt.js").LivePaymentAttemptRegistry;
+  /** The payer's email for the provider comes from authoritative Guest contact state, never the client (ADR 0075). */
+  readonly guestContacts: import("./guest-contact.js").GuestContactSource;
+  readonly liveAttempts?: import("./payment-attempt.js").LivePaymentAttemptRegistryPort;
   readonly bookingState?: BookingStateRepository;
   readonly journeyRepository?: BookingPaymentJourneyRepository;
   readonly securityDepositCapability?: SecurityDepositCollectionCapabilityProvider;
@@ -96,6 +123,9 @@ export class BankTransferPaymentManager {
   readonly #audit?: BankTransferPaymentManagerOptions["audit"];
   readonly #providerClient: BankTransferProviderClient;
   readonly #liveAttempts?: BankTransferPaymentManagerOptions["liveAttempts"];
+  readonly #guestContacts: BankTransferPaymentManagerOptions["guestContacts"];
+  /** In-flight provider requests per offer, so concurrent starts share one account (ADR 0046). */
+  readonly #pendingInitializations = new Map<string, Promise<BankTransferCheckoutSession>>();
   readonly #bookingState?: BookingStateRepository;
   readonly #journeys?: BookingPaymentJourneyRepository;
   readonly #securityDepositCapability?: SecurityDepositCollectionCapabilityProvider;
@@ -111,11 +141,18 @@ export class BankTransferPaymentManager {
   readonly #processedReferences = new Map<string, Processed>();
 
   constructor(options: BankTransferPaymentManagerOptions) {
-    if (!options.offerManager || !options.providerClient) throw new Error("offerManager and providerClient are required for BankTransferPaymentManager");
+    if (!options.offerManager || !options.providerClient || !options.guestContacts) throw new Error("offerManager, providerClient and guestContacts are required for BankTransferPaymentManager");
+    this.#guestContacts = options.guestContacts;
     this.#offerManager = options.offerManager; this.#calendar = options.calendar; this.#audit = options.audit; this.#providerClient = options.providerClient; this.#liveAttempts = options.liveAttempts; this.#bookingState = options.bookingState; this.#journeys = options.journeyRepository; this.#securityDepositCapability = options.securityDepositCapability; this.#securityDepositAccounting = options.securityDepositAccounting; this.#compensationRefundProvider = options.compensationRefundProvider;
   }
 
-  initializeBankTransfer(envelope: PlatformCommandEnvelope<{ offerId: string }>, { clock = () => new Date() }: { clock?: () => Date } = {}): BankTransferCheckoutSession {
+  /**
+   * Starts (or returns) the booking's Expiring Bank Transfer. The account comes from the provider for this booking's
+   * reference and exact amount (ADR 0047); a provider error, a mismatched answer, or an expiry later than the Payment
+   * Window deadline fails closed with nothing recorded. While a transfer is payable it owns the one Live Payment
+   * Attempt, and starting again returns the same account (ADR 0046).
+   */
+  async initializeBankTransfer(envelope: PlatformCommandEnvelope<{ offerId: string }>, { clock = () => new Date() }: { clock?: () => Date } = {}): Promise<BankTransferCheckoutSession> {
     if (!envelope || envelope.commandName !== "bank_transfer.initialize") throw new Error("Invalid bank transfer initialization command");
     if (Object.keys(envelope.payload ?? {}).length !== 1 || !envelope.payload.offerId) throw new Error("Initialization accepts only offerId");
     const offer = this.#offerManager.getOffer(envelope.payload.offerId);
@@ -126,21 +163,55 @@ export class BankTransferPaymentManager {
     if (now.getTime() >= deadline) { if (existingJourney?.stage === "stay_settled") this.#compensateStay(offer.offerId); throw new Error("Payment window has expired; cannot initialize bank transfer"); }
     const existing = this.#sessionsByOffer.get(offer.offerId);
     if (existing && (existing.status === "initiated" || existing.status === "processing_in_grace")) return { ...existing };
+    const pending = this.#pendingInitializations.get(offer.offerId);
+    if (pending) return { ...(await pending) };
+    const started = this.#startTransfer(offer, envelope, clock, existingJourney);
+    this.#pendingInitializations.set(offer.offerId, started);
+    try { return { ...(await started) }; } finally { this.#pendingInitializations.delete(offer.offerId); }
+  }
+
+  async #startTransfer(offer: ConditionalBookingOffer, envelope: PlatformCommandEnvelope<{ offerId: string }>, clock: () => Date, existingJourney: ReturnType<BookingPaymentJourneyRepository["findByOfferId"]> | undefined): Promise<BankTransferCheckoutSession> {
+    const now = clock(); const deadline = new Date(offer.paymentWindow.expiresAt).getTime();
     if (offer.securityDeposit && offer.securityDeposit.amountKobo > 0 && (!this.#securityDepositCapability || !this.#journeys || !this.#securityDepositAccounting)) throw new Error("Refundable Security Deposit collection unavailable");
     if (offer.securityDeposit && offer.securityDeposit.amountKobo > 0) assertSecurityDepositCollectionAvailable(this.#securityDepositCapability!, "bank_transfer");
-    const journey = this.#journeys?.createIfAbsent({ offerId: offer.offerId, paymentMethod: "bank_transfer", originalPaymentDeadline: offer.paymentWindow.expiresAt, stayAmountKobo: typeof offer.quote?.allInStayTotalKobo === "number" ? offer.quote.allInStayTotalKobo : offer.totalAmountDueNowKobo - (offer.refundableSecurityDepositKobo ?? 0), deposit: offer.securityDeposit ?? null });
-    const purpose = journey?.stage === "stay_settled" ? "security_deposit" as const : "stay" as const;
+    // ADR 0046: another method's live attempt keeps the slot; ask the provider for nothing.
+    const holder = this.#liveAttempts?.current(offer.offerId, now);
+    if (holder) throw new Error(`A live ${holder.method} ${holder.purpose} payment attempt already owns this offer`);
+    const contact = this.#guestContacts.find(authorizedPayer(offer), offer.tenantId!);
+    if (!contact?.contactEmail) throw new Error("A valid email address is required before payment continuation");
+    const stayAmountKobo = typeof offer.quote?.allInStayTotalKobo === "number" ? offer.quote.allInStayTotalKobo : offer.totalAmountDueNowKobo - (offer.refundableSecurityDepositKobo ?? 0);
+    const purpose = existingJourney?.stage === "stay_settled" ? "security_deposit" as const : "stay" as const;
+    // Same amounts as the journey records: without a journey repository the stay component is the whole amount due now.
+    const amountKobo = purpose === "stay" ? (existingJourney?.stay.amountKobo ?? (this.#journeys ? stayAmountKobo : offer.totalAmountDueNowKobo)) : (existingJourney?.deposit.amountKobo ?? 0);
     const transferReference = `exp_trf_${deterministicSuffix(`${offer.offerId}:${envelope.commandId}:${purpose}`)}`;
+
+    let account: ProviderTransferAccount;
+    try {
+      account = await this.#providerClient.createTransferAccount({ reference: transferReference, amountKobo, currency: "NGN", expiresAt: offer.paymentWindow.expiresAt, email: contact.contactEmail });
+    } catch {
+      throw new BankTransferProviderError("The payment provider could not issue a transfer account");
+    }
+    // ADR 0047: the account must be this booking's, and must stop being payable no later than the Payment Window deadline.
+    const accountExpiry = typeof account?.expiresAt === "string" ? Date.parse(account.expiresAt) : Number.NaN;
+    if (!account || account.reference !== transferReference || typeof account.bankName !== "string" || account.bankName.trim() === "" || typeof account.accountNumber !== "string" || !/^\d{6,20}$/.test(account.accountNumber)) {
+      throw new BankTransferProviderError("The payment provider returned an unusable transfer account");
+    }
+    const issuedAt = clock();
+    if (!Number.isFinite(accountExpiry) || accountExpiry > deadline) throw new BankTransferProviderError("The transfer account would stay payable after the Payment Window deadline");
+    if (accountExpiry <= issuedAt.getTime() || issuedAt.getTime() >= deadline) throw new BankTransferProviderError("The transfer account expired before it could be used");
+
+    const journey = this.#journeys?.createIfAbsent({ offerId: offer.offerId, paymentMethod: "bank_transfer", originalPaymentDeadline: offer.paymentWindow.expiresAt, stayAmountKobo, deposit: offer.securityDeposit ?? null });
     const session: BankTransferCheckoutSession = {
       checkoutId: `chk_trf_${deterministicSuffix(transferReference)}`, offerId: offer.offerId, transferReference,
-      bankName: "Concierge Reserve Bank (GTBank)", accountNumber: `012${deterministicSuffix(offer.tenantId).slice(0, 7)}`,
-      totalAmountDueNowKobo: offer.totalAmountDueNowKobo, amountKobo: purpose === "stay" ? (journey?.stay.amountKobo ?? offer.totalAmountDueNowKobo) : (journey?.deposit.amountKobo ?? 0), purpose, currency: "NGN", expiresAt: offer.paymentWindow.expiresAt,
+      bankName: account.bankName.trim(), accountNumber: account.accountNumber,
+      totalAmountDueNowKobo: offer.totalAmountDueNowKobo, amountKobo, purpose, currency: "NGN", expiresAt: new Date(accountExpiry).toISOString(),
       graceEndsAt: new Date(deadline + GRACE_MS).toISOString(), status: "initiated"
     };
     if (purpose === "security_deposit") this.#securityDepositAccounting!.createOrGet({ offerId: offer.offerId, snapshot: journey!.requiredDeposit!, paymentMethod: "bank_transfer" });
-    this.#liveAttempts?.acquire({ offerId: offer.offerId, method: "bank_transfer", purpose, attemptId: session.checkoutId, startedAt: now.toISOString(), expiresAt: session.graceEndsAt }); if (journey) this.#journeys!.update(offer.offerId, journey.journeyVersion, (value) => ({ ...value, stage: purpose === "stay" ? "stay_payment_active" : "deposit_payment_active", [purpose === "stay" ? "stay" : "deposit"]: { ...(purpose === "stay" ? value.stay : value.deposit), status: "active" } })); this.#sessionsByOffer.set(offer.offerId, session); this.#sessionsByReference.set(transferReference, session);
-    this.#audit?.record({ type: "bank_transfer.initialized", checkoutId: session.checkoutId, offerId: offer.offerId, commandEnvelopeId: envelope.commandId, initiatedAt: now.toISOString() });
-    return { ...session };
+    this.#liveAttempts?.acquire({ offerId: offer.offerId, method: "bank_transfer", purpose, attemptId: session.checkoutId, startedAt: issuedAt.toISOString(), expiresAt: session.graceEndsAt }); if (journey) this.#journeys!.update(offer.offerId, journey.journeyVersion, (value) => ({ ...value, stage: purpose === "stay" ? "stay_payment_active" : "deposit_payment_active", [purpose === "stay" ? "stay" : "deposit"]: { ...(purpose === "stay" ? value.stay : value.deposit), status: "active" } })); this.#sessionsByOffer.set(offer.offerId, session); this.#sessionsByReference.set(transferReference, session);
+    // ADR 0075: ids and times only; never the account number.
+    this.#audit?.record({ type: "bank_transfer.initialized", checkoutId: session.checkoutId, offerId: offer.offerId, commandEnvelopeId: envelope.commandId, initiatedAt: issuedAt.toISOString() });
+    return session;
   }
 
   getPaymentJourney(offerId: string) { return this.#journeys?.findByOfferId(offerId) ?? null; }

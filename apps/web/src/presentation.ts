@@ -108,8 +108,8 @@ export function getConventionalBankTransferView(application: BankTransferPayment
   return Object.freeze({ route: conventionalBankTransferRoute(offerId), artifact: application.getArtifact(offerId, principal) });
 }
 
-export function initializeConventionalBankTransfer(application: BankTransferPaymentApplication, offerId: string, principal: CommandPrincipal): { readonly route: string; readonly artifact: BankTransferArtifact } {
-  application.initializeTransfer(offerId, principal);
+export async function initializeConventionalBankTransfer(application: BankTransferPaymentApplication, offerId: string, principal: CommandPrincipal): Promise<{ readonly route: string; readonly artifact: BankTransferArtifact }> {
+  await application.initializeTransfer(offerId, principal);
   return getConventionalBankTransferView(application, offerId, principal);
 }
 
