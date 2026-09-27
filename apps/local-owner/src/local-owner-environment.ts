@@ -33,6 +33,13 @@ import {
   SqliteBookingPaymentJourneyRepository,
   SqliteBookingStateRepository,
   SqliteCheckInSupportStore,
+  SqliteManualTransferStore,
+  SqliteLivePaymentAttemptRegistry,
+  ManualTransferManager,
+  ManualTransferError,
+  type ManualTransfer,
+  type ManualTransferStatus,
+  type ReceiptContentType,
   contractualCheckInWindow,
   isSupportVerificationBasis,
   ownerPayableDueAt,
@@ -155,6 +162,22 @@ export class CheckInStaleError extends Error {
   constructor() { super("This Reservation changed since you opened it"); this.name = "CheckInStaleError"; }
 }
 
+/** A manual transfer with the owner and apartment names (B6). */
+export interface OperatorManualTransfer {
+  readonly transfer: ManualTransfer;
+  readonly ownerName: string;
+  readonly apartmentTitle: string;
+}
+
+/** Naira as typed in the back office ("250000", "250,000", "₦250,000.50") to exact kobo; null when unreadable. */
+export function parseNairaToKobo(value: string): number | null {
+  const cleaned = value.trim().replace(/^₦\s*/, "").replace(/,/g, "");
+  const match = /^(\d{1,12})(?:\.(\d{1,2}))?$/.exec(cleaned);
+  if (!match) return null;
+  const kobo = Number(match[1]) * 100 + Number((match[2] ?? "0").padEnd(2, "0"));
+  return Number.isSafeInteger(kobo) && kobo > 0 ? kobo : null;
+}
+
 export const DEFAULT_LOCAL_OWNER_CONFIG: LocalOwnerFixtureConfig = {
   databasePath: ".scratch/local-owner/owner_fixture.sqlite",
   tenantId: "tenant-lagos-internal",
@@ -234,6 +257,8 @@ export class LocalApartmentOwnerEnvironment {
   readonly #bookingState: SqliteBookingStateRepository;
   /** Durable check-in state shared with every process on this database (B5). */
   readonly #checkInStore: SqliteCheckInSupportStore;
+  /** Manual transfers and receipts the Guest process writes (P5); verified here (B6). */
+  readonly #manualTransferStore: SqliteManualTransferStore;
 
   #demoRequests: string[] = [];
 
@@ -248,6 +273,7 @@ export class LocalApartmentOwnerEnvironment {
     this.interactionStore = new SqliteGuestInteractionStore(this.config.databasePath, this.#database);
     this.#bookingState = new SqliteBookingStateRepository(this.#database, this.config.databasePath);
     this.#checkInStore = new SqliteCheckInSupportStore(this.#database);
+    this.#manualTransferStore = new SqliteManualTransferStore(this.#database);
     this.audit = new InMemoryAuditLog();
     this.telemetry = new InMemoryTelemetry();
     this.grantStore = new SqliteOperatorRepresentativeGrantStore(this.config.databasePath, { clock: this.clock });
@@ -662,7 +688,9 @@ export class LocalApartmentOwnerEnvironment {
     const journey = offer ? journeys.findByOfferId(offer.offerId) : null;
     const reservationId = offer ? this.interactionStore.findBookingSnapshotByOfferId(offer.offerId)?.reservationId : undefined;
     const reservation = reservationId ? this.#bookingState.findReservationById(reservationId) : null;
+    const manual = offer ? this.#manualTransfers().current(offer.offerId, now) : null;
     const projection = projectBookingStage({
+      manualTransfer: manual ? { status: manual.status, verificationDeadlineAt: manual.verificationDeadlineAt, hasReceipt: manual.receipt !== undefined, refundOwed: manual.refundOwed !== undefined } : null,
       offer,
       journey,
       attemptMethod: offer ? this.interactionStore.findLivePaymentAttemptByOfferId(offer.offerId)?.method ?? null : null,
@@ -710,7 +738,7 @@ export class LocalApartmentOwnerEnvironment {
       checkInWindow: contractualCheckInWindow(contract.checkInWindow),
       checkoutTime: contract.checkout?.time ?? null,
       amountPaidKobo: contract.paymentDetails.amountKobo,
-      paidWith: bookingPaymentMethod(contract.paymentDetails.paymentMethod),
+      paidWith: bookingPaymentMethod(contract.paymentDetails.paymentMethod, contract.paymentDetails.paymentMethod === "bank_transfer" ? contract.paymentDetails.channel : undefined),
       accessStatus: checkIn.result?.status ?? "awaiting_access",
       accessRecordedAt: accessRecorded ? checkIn.result?.verifiedAt ?? null : null,
       openComplaints: Object.freeze(openComplaints),
@@ -784,6 +812,89 @@ export class LocalApartmentOwnerEnvironment {
       },
       // Pilot coverage: the signed-in platform-support user responds; the platform admin is the backup (ADR 0030).
       assignmentProvider: { assign: () => ({ assignedResponderId: responderId, backupResponderId: this.config.adminId }) },
+    });
+  }
+
+  /**
+   * Manual transfers for owners you hold a grant for (B6, ADR 0082, 0090), read fresh on every call. Due deadlines
+   * are evaluated lazily; receipts past retention are purged first (ADR 0090). Waiting for your check comes first,
+   * soonest verification deadline first.
+   */
+  listOperatorManualTransfers(principal: CommandPrincipal): readonly OperatorManualTransfer[] {
+    const manager = this.#manualTransfers();
+    const now = this.clock();
+    try { manager.purgeReceipts(now); } catch { /* retention retries on the next read */ }
+    const rank: Record<ManualTransferStatus, number> = { awaiting_verification: 0, awaiting_receipt: 1, expired: 2, rejected: 2, confirmed: 3 };
+    const due = (transfer: ManualTransfer) => Date.parse(transfer.status === "awaiting_receipt" ? transfer.paymentDeadlineAt : transfer.verificationDeadlineAt);
+    return manager.list(now)
+      .filter((transfer) => this.#actsFor(transfer, principal))
+      .sort((a, b) => rank[a.status] - rank[b.status] || (rank[a.status] < 2 ? due(a) - due(b) : Date.parse(b.closedAt ?? b.startedAt) - Date.parse(a.closedAt ?? a.startedAt)))
+      .map((transfer) => this.#labelled(transfer));
+  }
+
+  /** One manual transfer; "Transfer not found" for an unknown id or an owner you do not act for (ADR 0082). */
+  operatorManualTransfer(transferId: string, principal: CommandPrincipal): OperatorManualTransfer {
+    const transfer = this.#manualTransfers().find(transferId, this.clock());
+    if (!transfer || !this.#actsFor(transfer, principal)) throw new Error("Transfer not found");
+    return this.#labelled(transfer);
+  }
+
+  /**
+   * The receipt, only for a signed-in grant holder for the transfer's owner (ADR 0090). Never logged: the audit
+   * records only that it was opened (ADR 0075).
+   */
+  manualTransferReceipt(transferId: string, principal: CommandPrincipal): { readonly contentType: ReceiptContentType; readonly bytes: Buffer } | null {
+    const { transfer } = this.operatorManualTransfer(transferId, principal);
+    const receipt = this.#manualTransfers().readReceipt(transfer);
+    if (receipt) { try { this.audit.record({ type: "operator_receipt_opened", actorId: principal.id, tenantId: principal.tenantId, transferId, occurredAt: this.clock().toISOString() }); } catch { /* no block */ } }
+    return receipt;
+  }
+
+  /** B6 AC2: confirm after seeing the matching credit; exact amount; one bank reference per booking (ADR 0090, 0072). */
+  confirmManualTransfer(transferId: string, principal: CommandPrincipal, input: { readonly bankTransactionReference: string; readonly amountReceived: string; readonly expectedVersion: number }): OperatorManualTransfer {
+    this.operatorManualTransfer(transferId, principal);
+    const amountReceivedKobo = parseNairaToKobo(input.amountReceived);
+    if (amountReceivedKobo === null) throw new ManualTransferError("amount_required", "Enter the amount received in naira, for example 250,000");
+    const decided = this.#manualTransfers().confirm(transferId, principal.id!, { bankTransactionReference: input.bankTransactionReference, amountReceivedKobo, expectedVersion: input.expectedVersion }, this.clock);
+    return this.#labelled(decided);
+  }
+
+  /** B6 AC3: the money didn't arrive or doesn't match; the dates are released and the Guest told no Reservation was made. */
+  rejectManualTransfer(transferId: string, principal: CommandPrincipal, input: { readonly reason: string; readonly expectedVersion: number }): OperatorManualTransfer {
+    this.operatorManualTransfer(transferId, principal);
+    return this.#labelled(this.#manualTransfers().reject(transferId, principal.id!, input, this.clock));
+  }
+
+  /** B6 AC4: money for an expired or declined transfer is recorded as a full refund owed; it never confirms (ADR 0045). */
+  recordManualLateCredit(transferId: string, principal: CommandPrincipal, input: { readonly bankTransactionReference: string; readonly amountReceived: string; readonly expectedVersion: number }): OperatorManualTransfer {
+    this.operatorManualTransfer(transferId, principal);
+    const amountReceivedKobo = parseNairaToKobo(input.amountReceived);
+    if (amountReceivedKobo === null) throw new ManualTransferError("amount_required", "Enter the amount received in naira, for example 250,000");
+    return this.#labelled(this.#manualTransfers().recordLateCredit(transferId, principal.id!, { bankTransactionReference: input.bankTransactionReference, amountReceivedKobo, expectedVersion: input.expectedVersion }, this.clock));
+  }
+
+  #actsFor(transfer: ManualTransfer, principal: CommandPrincipal): boolean {
+    return principal.role === "operator" && !!principal.id && !!principal.tenantId && transfer.tenantId === principal.tenantId
+      && this.grantStore.canActForOperator({ actorId: principal.id, operatorId: transfer.operatorId, tenantId: transfer.tenantId });
+  }
+
+  #labelled(transfer: ManualTransfer): OperatorManualTransfer {
+    return Object.freeze({ transfer, ...this.requestLabels(transfer.requestId) });
+  }
+
+  /**
+   * A manager over the shared database, built per call so nothing is cached across processes. The live attempt
+   * registry is fresh too: the Guest process may have written it since.
+   */
+  #manualTransfers(): ManualTransferManager {
+    return new ManualTransferManager({
+      offerManager: this.conditionalOfferApp.manager,
+      store: this.#manualTransferStore,
+      account: null,
+      liveAttempts: new SqliteLivePaymentAttemptRegistry(this.interactionStore),
+      calendar: this.calendar,
+      audit: this.audit,
+      bookings: { bookingState: this.#bookingState, snapshots: this.interactionStore, calendar: this.calendar },
     });
   }
 

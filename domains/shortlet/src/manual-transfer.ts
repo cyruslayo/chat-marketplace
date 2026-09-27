@@ -2,6 +2,8 @@ import { createHash, randomBytes } from "node:crypto";
 import type { PlatformCommandEnvelope } from "../../../packages/platform-core/src/index.js";
 import type { ConditionalBookingOffer } from "./conditional-offer.js";
 import type { LivePaymentAttemptRegistryPort } from "./payment-attempt.js";
+import type { BookingContract, Reservation } from "./card-payment.js";
+import type { BookingStateRepository } from "./booking-state.js";
 
 /**
  * Manual bank transfer with receipt upload (ADR 0090, P5). The Guest pays the business account and uploads a
@@ -62,6 +64,8 @@ export interface ManualTransfer {
   readonly receiptDeletedAt?: string;
   /** Set by the back office (B6). */
   readonly decision?: ManualTransferDecision;
+  /** B6 AC4, ADR 0045: money that arrived after the transfer closed; owed back to the Guest in full. */
+  readonly refundOwed?: { readonly bankTransactionReference: string; readonly amountReceivedKobo: number; readonly recordedAt: string; readonly recordedBy: string };
 }
 
 export type ManualTransferRejectionReason = "not_received" | "amount_mismatch";
@@ -80,7 +84,20 @@ export type ManualTransferProblem =
   | "receipt_already_uploaded"
   | "receipt_type_not_allowed"
   | "receipt_too_large"
-  | "receipt_empty";
+  | "receipt_empty"
+  | "no_receipt"
+  | "stale"
+  | "already_confirmed"
+  | "already_rejected"
+  | "expired"
+  | "bank_reference_required"
+  | "bank_reference_used"
+  | "amount_required"
+  | "amount_mismatch"
+  | "dates_released"
+  | "reason_required"
+  | "not_closed"
+  | "refund_already_recorded";
 
 /** A manual transfer command was refused. Nothing was recorded. */
 export class ManualTransferError extends Error {
@@ -202,15 +219,31 @@ export interface ManualTransferManagerOptions {
     holdPaymentPendingUntil?(commitmentId: string, expiresAt: string, options?: { clock?: () => Date }): void;
   };
   readonly audit?: { record(entry: Record<string, unknown>): void };
-  /** ADR 0090: "a configured size limit". */
-  readonly receiptMaxBytes: number;
+  /** ADR 0090: "a configured size limit". Only the Guest side uploads, so the back office may omit it. */
+  readonly receiptMaxBytes?: number;
+  /** B6: what confirming a verified transfer writes. Only the back office composes it. */
+  readonly bookings?: {
+    readonly bookingState: BookingStateRepository;
+    readonly snapshots: { saveBookingSnapshot(snapshot: { reservationId: string; contractId: string; offerId: string; reservationJson: string; contractJson: string; confirmedAt: string }): void };
+    readonly calendar: {
+      transitionPaymentPendingToConfirmedBooking(input: { commitmentId: string; unitId: string; start: string; end: string; clock: () => Date }): unknown;
+      releaseConfirmedBooking?(input: { commitmentId: string; unitId: string; start: string; end: string; clock: () => Date }): void;
+    };
+  };
+}
+
+/** A bank transaction reference as written on a statement: trimmed, spaces collapsed, upper case; "" when unusable. */
+export function normalizeBankReference(value: string): string {
+  const normalized = value.trim().replace(/\s+/g, " ").toUpperCase();
+  return /^[A-Z0-9][A-Z0-9 /._-]{3,63}$/.test(normalized) ? normalized : "";
 }
 
 export class ManualTransferManager {
   readonly #o: ManualTransferManagerOptions;
 
   constructor(options: ManualTransferManagerOptions) {
-    if (!options.offerManager || !options.store || !Number.isSafeInteger(options.receiptMaxBytes) || options.receiptMaxBytes <= 0) throw new Error("offerManager, store and a positive receiptMaxBytes are required");
+    if (!options.offerManager || !options.store) throw new Error("offerManager and store are required");
+    if (options.receiptMaxBytes !== undefined && (!Number.isSafeInteger(options.receiptMaxBytes) || options.receiptMaxBytes <= 0)) throw new Error("receiptMaxBytes must be a positive whole number");
     this.#o = options;
   }
 
@@ -267,6 +300,7 @@ export class ManualTransferManager {
     if (transfer.status === "expired") throw new ManualTransferError("payment_window_closed", "The Payment Window has closed");
     if (transfer.status !== "awaiting_receipt") throw new ManualTransferError("receipt_already_uploaded", "A receipt was already uploaded");
     if (file.bytes.length === 0) throw new ManualTransferError("receipt_empty", "The receipt file is empty");
+    if (this.#o.receiptMaxBytes === undefined) throw new Error("Receipt uploads are not composed here");
     if (file.bytes.length > this.#o.receiptMaxBytes) throw new ManualTransferError("receipt_too_large", "The receipt file is too large");
     const contentType = sniffReceiptType(file.bytes);
     if (!contentType) throw new ManualTransferError("receipt_type_not_allowed", "Upload a JPEG, PNG or PDF receipt");
@@ -340,6 +374,104 @@ export class ManualTransferManager {
       deleted += 1;
     }
     return deleted;
+  }
+
+
+  /**
+   * B6, ADR 0090: a back-office user confirms only after seeing the matching credit in the business account. The
+   * received amount must equal the booking amount exactly; a bank transaction reference confirms at most one
+   * booking; a transfer confirms once (ADR 0072). The receipt never confirms anything by itself.
+   */
+  confirm(transferId: string, staffId: string, input: { readonly bankTransactionReference: string; readonly amountReceivedKobo: number; readonly expectedVersion: number }, clock: () => Date = () => new Date()): ManualTransfer {
+    const now = clock();
+    const transfer = this.#decidable(transferId, input.expectedVersion, now);
+    const reference = normalizeBankReference(input.bankTransactionReference);
+    if (!reference) throw new ManualTransferError("bank_reference_required", "Enter the bank transaction reference from your statement");
+    if (!Number.isSafeInteger(input.amountReceivedKobo) || input.amountReceivedKobo <= 0) throw new ManualTransferError("amount_required", "Enter the amount received");
+    if (input.amountReceivedKobo !== transfer.amountKobo) throw new ManualTransferError("amount_mismatch", "The amount received does not match the booking amount exactly");
+    if (this.#o.store.list().some((other) => other.decision?.kind === "confirmed" && normalizeBankReference(other.decision.bankTransactionReference) === reference)) {
+      throw new ManualTransferError("bank_reference_used", "This bank transaction reference already confirmed another booking");
+    }
+    const bookings = this.#o.bookings;
+    if (!bookings) throw new Error("Booking confirmation is not composed");
+    const offer = this.#o.offerManager.getOffer(transfer.offerId);
+    const reservationId = `res_mtr_${createHash("sha256").update(transfer.transferId).digest("hex").slice(0, 12)}`;
+    const contractId = `ctr_mtr_${createHash("sha256").update(transfer.transferId).digest("hex").slice(0, 12)}`;
+    const reservation: Reservation = { reservationId, contractId, unitId: offer.unitId, primaryGuestId: offer.parties.primaryGuest.id, dates: { checkIn: offer.dates.checkIn, checkOut: offer.dates.checkOut }, status: "confirmed", confirmedAt: now.toISOString(), inventoryCommitmentId: offer.inventoryCommitmentId };
+    const contract: BookingContract = {
+      contractId, reservationId, offerId: offer.offerId, unitId: offer.unitId, tenantId: offer.tenantId, parties: offer.parties, dates: offer.dates, occupants: offer.occupants, quote: offer.quote, totalAmountDueNowKobo: offer.totalAmountDueNowKobo,
+      policies: offer.policies, disclosures: offer.disclosures,
+      paymentDetails: { paymentMethod: "bank_transfer", channel: "manual_transfer", transferReference: reference, amountKobo: input.amountReceivedKobo, currency: "NGN", paidAt: now.toISOString() },
+      createdAt: now.toISOString(), contractVersion: 1, checkout: { time: "11:00", timezone: "Africa/Lagos", source: "contractual" },
+      ...(offer.checkInWindow ? { checkInWindow: offer.checkInWindow } : {}),
+      financialSummary: { originalBookingTotalKobo: offer.totalAmountDueNowKobo, currentContractTotalKobo: offer.totalAmountDueNowKobo, currency: "NGN", amendmentAdjustments: [] },
+    };
+    // Race-safe: either the dates move to a confirmed booking and the records commit, or nothing does (ADR 0045).
+    try { bookings.calendar.transitionPaymentPendingToConfirmedBooking({ commitmentId: offer.inventoryCommitmentId, unitId: offer.unitId, start: offer.dates.checkIn, end: offer.dates.checkOut, clock: () => now }); }
+    catch { throw new ManualTransferError("dates_released", "The dates are no longer held for this booking"); }
+    try {
+      bookings.bookingState.saveBookingAtomically({ contract, reservation });
+      bookings.snapshots.saveBookingSnapshot({ reservationId, contractId, offerId: offer.offerId, reservationJson: JSON.stringify(reservation), contractJson: JSON.stringify(contract), confirmedAt: reservation.confirmedAt });
+    } catch (error) {
+      try { bookings.calendar.releaseConfirmedBooking?.({ commitmentId: offer.inventoryCommitmentId, unitId: offer.unitId, start: offer.dates.checkIn, end: offer.dates.checkOut, clock: () => now }); } catch { /* reconciliation picks this up */ }
+      try { bookings.bookingState.removeBookingAtomically({ contractId, reservationId }); } catch { /* reconciliation picks this up */ }
+      throw error;
+    }
+    const decided = this.saveDecision(transfer, "confirmed", { kind: "confirmed", bankTransactionReference: reference, amountReceivedKobo: input.amountReceivedKobo, decidedAt: now.toISOString(), decidedBy: staffId, reservationId, contractId });
+    this.#releaseSlot(transfer.offerId, now);
+    // ADR 0075: ids and times only; the bank reference stays on the transfer record, never in the audit.
+    this.#o.audit?.record({ type: "manual_transfer.confirmed", transferId, offerId: transfer.offerId, reservationId, decidedBy: staffId, decidedAt: now.toISOString() });
+    return decided;
+  }
+
+  /** B6, ADR 0090: the money didn't arrive or doesn't match. Releases the dates; no Reservation is made. */
+  reject(transferId: string, staffId: string, input: { readonly reason: string; readonly expectedVersion: number }, clock: () => Date = () => new Date()): ManualTransfer {
+    const now = clock();
+    if (input.reason !== "not_received" && input.reason !== "amount_mismatch") throw new ManualTransferError("reason_required", "Choose Not received or Amount doesn't match");
+    const transfer = this.#decidable(transferId, input.expectedVersion, now);
+    try {
+      const offer = this.#o.offerManager.getOffer(transfer.offerId);
+      this.#o.calendar?.releasePaymentPending?.(offer.inventoryCommitmentId, { clock: () => now });
+    } catch { /* already released */ }
+    const decided = this.saveDecision(transfer, "rejected", { kind: "rejected", reason: input.reason, decidedAt: now.toISOString(), decidedBy: staffId });
+    this.#releaseSlot(transfer.offerId, now);
+    this.#o.audit?.record({ type: "manual_transfer.rejected", transferId, offerId: transfer.offerId, reasonCode: input.reason, decidedBy: staffId, decidedAt: now.toISOString() });
+    return decided;
+  }
+
+  /**
+   * B6 AC4, ADR 0045: money that arrives for a transfer that expired or was rejected never confirms the booking; it
+   * is recorded as a full refund owed to the Guest.
+   */
+  recordLateCredit(transferId: string, staffId: string, input: { readonly bankTransactionReference: string; readonly amountReceivedKobo: number; readonly expectedVersion: number }, clock: () => Date = () => new Date()): ManualTransfer {
+    const now = clock();
+    const transfer = this.find(transferId, now);
+    if (!transfer) throw new ManualTransferError("no_transfer", "Manual transfer not found");
+    if (transfer.version !== input.expectedVersion) throw new ManualTransferError("stale", "This transfer changed since you opened it");
+    if (transfer.status !== "expired" && transfer.status !== "rejected") throw new ManualTransferError("not_closed", "Only money for an expired or declined transfer is recorded for refund");
+    if (transfer.refundOwed) throw new ManualTransferError("refund_already_recorded", "A refund is already recorded for this transfer");
+    const reference = normalizeBankReference(input.bankTransactionReference);
+    if (!reference) throw new ManualTransferError("bank_reference_required", "Enter the bank transaction reference from your statement");
+    if (!Number.isSafeInteger(input.amountReceivedKobo) || input.amountReceivedKobo <= 0) throw new ManualTransferError("amount_required", "Enter the amount received");
+    const updated: ManualTransfer = { ...transfer, refundOwed: { bankTransactionReference: reference, amountReceivedKobo: input.amountReceivedKobo, recordedAt: now.toISOString(), recordedBy: staffId }, version: transfer.version + 1 };
+    this.#o.store.save(updated);
+    this.#o.audit?.record({ type: "manual_transfer.late_credit_recorded", transferId, offerId: transfer.offerId, recordedBy: staffId, recordedAt: now.toISOString() });
+    return updated;
+  }
+
+  #decidable(transferId: string, expectedVersion: number, now: Date): ManualTransfer {
+    const transfer = this.find(transferId, now);
+    if (!transfer) throw new ManualTransferError("no_transfer", "Manual transfer not found");
+    if (transfer.status === "confirmed") throw new ManualTransferError("already_confirmed", "This transfer is already confirmed");
+    if (transfer.status === "rejected") throw new ManualTransferError("already_rejected", "This transfer was already declined");
+    if (transfer.status === "expired") throw new ManualTransferError("expired", "This transfer expired before it was verified; any money received is refunded in full");
+    if (transfer.status !== "awaiting_verification") throw new ManualTransferError("no_receipt", "The Guest has not uploaded a receipt yet");
+    if (transfer.version !== expectedVersion) throw new ManualTransferError("stale", "This transfer changed since you opened it");
+    return transfer;
+  }
+
+  #releaseSlot(offerId: string, now: Date): void {
+    if (this.#o.liveAttempts?.current(offerId, now)?.method === "manual_transfer") this.#o.liveAttempts.release(offerId);
   }
 
   /** Persists a back-office decision (B6). */

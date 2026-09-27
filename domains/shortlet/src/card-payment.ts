@@ -80,6 +80,8 @@ export interface BookingContract {
       }
     | {
         readonly paymentMethod: "bank_transfer";
+        /** Set for a manual transfer verified by the back office (ADR 0090); absent for a provider transfer. */
+        readonly channel?: "manual_transfer";
         readonly transferReference: string;
         readonly amountKobo: number;
         readonly currency: "NGN";

@@ -7,7 +7,7 @@ import { paymentProcessingGraceEndsAt, type BookingPaymentJourney } from "../../
 
 export type BookingStage = "offer_not_issued" | "offer_issued" | "awaiting_payment" | "reservation_confirmed" | "ended";
 
-export type BookingPaymentMethod = "card" | "paystack_transfer";
+export type BookingPaymentMethod = "card" | "paystack_transfer" | "manual_transfer";
 
 export type BookingEndedReason =
   | "offer_expired"
@@ -18,7 +18,9 @@ export type BookingEndedReason =
   | "refund_started"
   | "refunded"
   | "reservation_cancelled"
-  | "no_show";
+  | "no_show"
+  | "transfer_declined"
+  | "transfer_not_verified";
 
 /** Operator-facing words for each ended reason. Money wording follows ADR 0044/0045: a started refund is never described as received. */
 export const BOOKING_ENDED_REASONS: Readonly<Record<BookingEndedReason, string>> = Object.freeze({
@@ -31,6 +33,9 @@ export const BOOKING_ENDED_REASONS: Readonly<Record<BookingEndedReason, string>>
   refunded: "Payment refunded in full",
   reservation_cancelled: "Reservation cancelled",
   no_show: "No-show",
+  // ADR 0090: a declined or unverified manual transfer makes no Reservation; money received is refunded in full.
+  transfer_declined: "The manual transfer was declined; no Reservation was made",
+  transfer_not_verified: "The manual transfer was not verified in time; any money received is refunded in full",
 });
 
 export const BOOKING_STAGE_LABELS: Readonly<Record<BookingStage, string>> = Object.freeze({
@@ -44,6 +49,7 @@ export const BOOKING_STAGE_LABELS: Readonly<Record<BookingStage, string>> = Obje
 export const BOOKING_PAYMENT_METHOD_LABELS: Readonly<Record<BookingPaymentMethod, string>> = Object.freeze({
   card: "Card",
   paystack_transfer: "Paystack transfer",
+  manual_transfer: "Manual transfer",
 });
 
 /** The fields of a stored Conditional Booking Offer this projection reads. */
@@ -76,6 +82,8 @@ export interface BookingStageInput {
   readonly attemptMethod: string | null;
   /** The current status of the committed Reservation, if one exists. */
   readonly reservationStatus: string | null;
+  /** The offer's manual transfer (ADR 0090), already evaluated lazily against the clock. */
+  readonly manualTransfer?: { readonly status: string; readonly verificationDeadlineAt: string; readonly hasReceipt: boolean; readonly refundOwed: boolean } | null;
   readonly now: Date;
 }
 
@@ -86,11 +94,14 @@ export interface BookingStageProjection {
   readonly paymentDeadlineAt: string | null;
   /** Set only while a designated in-flight transaction holds its one Payment-Processing Grace (ADR 0044). */
   readonly graceEndsAt: string | null;
+  /** Set while a manual transfer waits for your check: its verification deadline (ADR 0090). */
+  readonly checkBy: string | null;
   readonly endedReason: BookingEndedReason | null;
 }
 
 /** The back-office method for a domain payment method code; unknown codes have none. */
-export function bookingPaymentMethod(method: string | null | undefined): BookingPaymentMethod | null {
+export function bookingPaymentMethod(method: string | null | undefined, channel?: string): BookingPaymentMethod | null {
+  if (method === "manual_transfer" || channel === "manual_transfer") return "manual_transfer";
   if (method === "fresh_card") return "card";
   if (method === "bank_transfer") return "paystack_transfer";
   return null;
@@ -104,16 +115,24 @@ const PROCESSING_STAGES: ReadonlySet<string> = new Set(["stay_payment_processing
 
 export function projectBookingStage(input: BookingStageInput): BookingStageProjection {
   const { offer, journey, now } = input;
-  const method = paymentMethod(journey, input.attemptMethod);
+  const manual = input.manualTransfer ?? null;
+  const method = manual ? "manual_transfer" : paymentMethod(journey, input.attemptMethod);
   const deadline = offer?.paymentWindowExpiresAt ?? null;
-  const result = (stage: BookingStage, endedReason: BookingEndedReason | null = null, graceEndsAt: string | null = null): BookingStageProjection =>
-    Object.freeze({ stage, paymentMethod: method, paymentDeadlineAt: deadline, graceEndsAt, endedReason });
+  const result = (stage: BookingStage, endedReason: BookingEndedReason | null = null, graceEndsAt: string | null = null, checkBy: string | null = null): BookingStageProjection =>
+    Object.freeze({ stage, paymentMethod: method, paymentDeadlineAt: deadline, graceEndsAt, endedReason, checkBy });
 
   // ADR 0005: a Reservation exists only after verified payment, so only a committed Reservation is "confirmed".
   if (input.reservationStatus === "confirmed") return result("reservation_confirmed");
   if (input.reservationStatus === "cancelled") return result("ended", "reservation_cancelled");
   if (input.reservationStatus === "no_show") return result("ended", "no_show");
   if (!offer || deadline === null) return result("offer_not_issued");
+
+  // ADR 0090: a manual transfer's own lifecycle decides; its 60-minute verification hold outlasts the Payment Window.
+  if (manual) {
+    if (manual.status === "awaiting_verification") return result("awaiting_payment", null, null, manual.verificationDeadlineAt);
+    if (manual.status === "rejected") return result("ended", manual.refundOwed ? "late_payment" : "transfer_declined");
+    if (manual.status === "expired") return result("ended", manual.refundOwed ? "late_payment" : manual.hasReceipt ? "transfer_not_verified" : "payment_window_expired");
+  }
 
   // Money already returned or owed back ends the booking, whatever the clock says (ADR 0045).
   const compensation = journey?.compensation;

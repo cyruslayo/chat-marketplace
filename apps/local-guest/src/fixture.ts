@@ -160,7 +160,10 @@ class LocalBookingContractRepository implements ContractRepository {
   }
 
   #rowContract(contractId: string): BookingContract | null {
-    const row = this.#database.prepare("SELECT contract_json FROM local_booking_contracts WHERE contract_id = $id").get({ $id: contractId }) as { contract_json?: string } | undefined;
+    // A booking the back office confirmed (a verified manual transfer, B6) is written to the shared booking tables
+    // by that process; read it from there when this process never recorded it.
+    const row = (this.#database.prepare("SELECT contract_json FROM local_booking_contracts WHERE contract_id = $id").get({ $id: contractId })
+      ?? this.#sharedRow("SELECT contract_json FROM booking_contracts WHERE contract_id = $id", contractId)) as { contract_json?: string } | undefined;
     if (!row || typeof row.contract_json !== "string") return null;
     try {
       const parsed: unknown = JSON.parse(row.contract_json);
@@ -186,6 +189,10 @@ class LocalBookingContractRepository implements ContractRepository {
     return this.#rowContract(contractId);
   }
 
+  #sharedRow(sql: string, id: string): unknown {
+    try { return this.#database.prepare(sql).get({ $id: id }); } catch { return undefined; }
+  }
+
   findArrivalDataByContractId(_contractId: string): null {
     // Arrival data stays locked in the local demo; the protected view
     // (full address / access instructions) is not part of this milestone.
@@ -193,7 +200,8 @@ class LocalBookingContractRepository implements ContractRepository {
   }
 
   findReservationById(reservationId: string): ReservationLike | null {
-    const row = this.#database.prepare("SELECT reservation_json FROM local_booking_reservations WHERE reservation_id = $id").get({ $id: reservationId }) as { reservation_json?: string } | undefined;
+    const row = (this.#database.prepare("SELECT reservation_json FROM local_booking_reservations WHERE reservation_id = $id").get({ $id: reservationId })
+      ?? this.#sharedRow("SELECT reservation_json FROM booking_reservations WHERE reservation_id = $id", reservationId)) as { reservation_json?: string } | undefined;
     if (!row || typeof row.reservation_json !== "string") return null;
     try {
       const parsed: unknown = JSON.parse(row.reservation_json);
