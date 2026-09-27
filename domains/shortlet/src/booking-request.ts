@@ -12,6 +12,26 @@ import {
 } from "./guest-verification.js";
 import type { GuestContactSource } from "./guest-contact.js";
 
+/** ADR 0043: Delivery Pending lasts at most five minutes (the Technical Delivery Window). */
+export const TECHNICAL_DELIVERY_WINDOW_MINUTES = 5;
+/** ADR 0041: a disclosed Booking Request blocks inventory for 30 minutes while the operator responds. */
+export const OPERATOR_RESPONSE_WINDOW_MINUTES = 30;
+/** ADR 0041: reminders at 10 and 25 minutes into the response window (in-page only for now, decision D2). */
+export const OPERATOR_RESPONSE_REMINDER_MINUTES: readonly number[] = Object.freeze([10, 25]);
+
+/**
+ * The latest reminder reached for a request awaiting a response, measured back from its projected deadline
+ * so it can never disagree with the deadline shown (ADR 0077). Evaluated lazily against the caller's clock.
+ */
+export function operatorResponseReminderDue(request: { readonly status: string; readonly delivered: boolean; readonly operatorResponseDeadlineAt: string }, now: Date): number | null {
+  if (request.status !== "disclosed" || !request.delivered) return null;
+  const deadline = Date.parse(request.operatorResponseDeadlineAt);
+  if (!Number.isFinite(deadline) || now.getTime() >= deadline) return null;
+  const elapsedMinutes = OPERATOR_RESPONSE_WINDOW_MINUTES - (deadline - now.getTime()) / 60_000;
+  const reached = OPERATOR_RESPONSE_REMINDER_MINUTES.filter((minute) => elapsedMinutes >= minute);
+  return reached.length === 0 ? null : reached[reached.length - 1]!;
+}
+
 export function getWatTime(date: Date) {
   const formatter = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Africa/Lagos",
@@ -395,8 +415,8 @@ export class BookingRequestManager {
 
     const requestId = `req-${crypto.randomUUID()}`;
     const disclosedAtIso = now.toISOString();
-    const deliveryDeadlineIso = new Date(now.getTime() + 5 * 60 * 1000).toISOString();
-    const operatorResponseDeadlineIso = new Date(now.getTime() + 30 * 60 * 1000).toISOString();
+    const deliveryDeadlineIso = new Date(now.getTime() + TECHNICAL_DELIVERY_WINDOW_MINUTES * 60 * 1000).toISOString();
+    const operatorResponseDeadlineIso = new Date(now.getTime() + OPERATOR_RESPONSE_WINDOW_MINUTES * 60 * 1000).toISOString();
 
     const isDelivered = autoDeliver;
     const deliveredAtIso = autoDeliver ? disclosedAtIso : null;

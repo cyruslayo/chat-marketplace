@@ -347,6 +347,8 @@ export class LocalApartmentOwnerEnvironment {
     checkIn?: string;
     checkOut?: string;
     partySize?: number;
+    /** False leaves the request in Delivery Pending (ADR 0043), for testing Delivery Failed. */
+    delivered?: boolean;
   } = {}): BookingRequestArtifact {
     const guestId = input.guestId ?? "demo-guest-101";
     const guestPrincipal: CommandPrincipal = {
@@ -367,7 +369,7 @@ export class LocalApartmentOwnerEnvironment {
       guestPrincipal
     );
 
-    const disclosed = this.bookingRequestApp.disclose(draft.draftId, guestPrincipal, true);
+    const disclosed = this.bookingRequestApp.disclose(draft.draftId, guestPrincipal, input.delivered ?? true);
     this.#demoRequests.push(disclosed.requestId);
 
     return this.bookingRequestApp.getArtifact(disclosed.requestId, this.getRepresentativePrincipal());
@@ -441,15 +443,17 @@ export class LocalApartmentOwnerEnvironment {
       try {
         const request = this.bookingRequestApp.manager.getRequest(requestId) as { operatorId?: string; tenantId?: string; status: string };
         if (!request.operatorId || request.tenantId !== tenantId || !this.grantStore.canActForOperator({ actorId, operatorId: request.operatorId, tenantId })) return [];
-        if (!["disclosed", "confirmed", "declined", "expired"].includes(request.status)) return [];
+        // Delivery Failed stays visible as its own state, never as a missed response (ADR 0043).
+        if (!["disclosed", "confirmed", "declined", "expired", "delivery_failed"].includes(request.status)) return [];
         const artifact = this.bookingRequestApp.getArtifact(requestId, principal);
         try { this.audit.record({ type: "operator_request_visible", actorId: principal.id, tenantId: principal.tenantId, requestId, status: artifact.facts.status }); this.telemetry.track({ type: "operator_request_visible", principalId: principal.id, tenantId: principal.tenantId, aggregateId: requestId }); } catch { /* observability cannot block visibility */ }
         return [artifact];
       } catch { return []; }
     });
+    // Requests awaiting your response come first, soonest projected deadline first (B2 AC1, ADR 0077).
     return requests.sort((a, b) => {
-      const pending = (status: string) => status === "disclosed" ? 0 : 1;
-      return pending(a.facts.status) - pending(b.facts.status) || Date.parse(a.facts.operatorResponseDeadlineAt) - Date.parse(b.facts.operatorResponseDeadlineAt);
+      const pending = (artifact: BookingRequestArtifact) => artifact.facts.status === "disclosed" ? (artifact.facts.delivered ? 0 : 1) : 2;
+      return pending(a) - pending(b) || Date.parse(a.facts.operatorResponseDeadlineAt) - Date.parse(b.facts.operatorResponseDeadlineAt);
     });
   }
 

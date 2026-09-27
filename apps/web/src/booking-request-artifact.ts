@@ -116,16 +116,11 @@ export function bookingRequestArtifactFromRequest(
     })
     : undefined;
 
-  let canDecide = false;
-  if (viewer.role === "operator" && request.status === "disclosed" && request.delivered && request.operatorId && !!request.tenantId && request.tenantId === viewer.tenantId && !!viewer.id) {
-    if (operatorAuthority) {
-      canDecide = operatorAuthority.canActForOperator({
-        actorId: viewer.id,
-        operatorId: request.operatorId,
-        tenantId: request.tenantId,
-      });
-    }
-  }
+  // The operator sees the primary Guest's name only while it holds an active grant for this owner (ADR 0082);
+  // occupant names stay Guest-only (ADR 0075).
+  const operatorGranted = viewer.role === "operator" && !!request.operatorId && !!request.tenantId && request.tenantId === viewer.tenantId && !!viewer.id && !!operatorAuthority
+    && operatorAuthority.canActForOperator({ actorId: viewer.id, operatorId: request.operatorId, tenantId: request.tenantId });
+  const canDecide = operatorGranted && request.status === "disclosed" && request.delivered;
 
   const actions: readonly BookingRequestArtifactAction[] = canDecide
     ? ["confirm", "decline"].map((type) => Object.freeze({
@@ -163,7 +158,7 @@ export function bookingRequestArtifactFromRequest(
       checkIn: request.checkIn,
       checkOut: request.checkOut,
       nights: request.nights,
-      ...(viewer.role === "guest" && request.primaryGuest?.name ? { primaryGuestName: request.primaryGuest.name } : {}),
+      ...((viewer.role === "guest" || operatorGranted) && request.primaryGuest?.name ? { primaryGuestName: request.primaryGuest.name } : {}),
       occupants: Object.freeze(viewer.role === "guest" ? (request.occupants ?? []).map((occupant) => occupant.name) : []),
       occupantCount: request.occupants?.length ?? 0,
       ...(safeQuote ? { quote: safeQuote } : {}),

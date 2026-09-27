@@ -7,7 +7,7 @@ import {
   type LocalOwnerStateOverview,
 } from "./local-owner-environment.js";
 import { escapeHtml, formatMoney, icon, pageShell, type StatusTone } from "../../web/src/ui-kit.js";
-import type { OperatorAuthenticatedPrincipal } from "../../../domains/shortlet/src/index.js";
+import { OPERATOR_RESPONSE_REMINDER_MINUTES, operatorResponseReminderDue, type OperatorAuthenticatedPrincipal } from "../../../domains/shortlet/src/index.js";
 import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
 import { backOfficePage, SIGN_IN_REASONS, signInReason, watTime, type BackOfficeViewer, type SignInReason } from "./back-office-view.js";
 import { formatStayDates } from "../../web-agent/src/booking-presentation.js";
@@ -99,16 +99,18 @@ function operatorHomeHtml(env: LocalApartmentOwnerEnvironment, principal: Operat
 }
 
 /** Operator-facing lifecycle labels. The raw domain status stays in data-status for tooling. */
-function requestStatus(status: string): { readonly label: string; readonly tone: StatusTone } {
-  if (status === "disclosed") return { label: "Awaiting your response", tone: "info" };
+function requestStatus(status: string, delivered = true): { readonly label: string; readonly tone: StatusTone } {
+  if (status === "disclosed") return delivered ? { label: "Awaiting your response", tone: "info" } : { label: "Delivery pending", tone: "neutral" };
   if (status === "confirmed") return { label: "Request confirmed", tone: "success" };
   if (status === "declined") return { label: "Request declined", tone: "danger" };
   if (status === "expired") return { label: "Request expired", tone: "warning" };
+  // ADR 0043: a failed delivery is its own state; it never started your clock and is not a missed response.
+  if (status === "delivery_failed") return { label: "Delivery Failed", tone: "stale" };
   return { label: `Request ${status}`, tone: "neutral" };
 }
 
-function requestBadge(status: string): string {
-  const { label, tone } = requestStatus(status);
+function requestBadge(status: string, delivered = true): string {
+  const { label, tone } = requestStatus(status, delivered);
   return `<span class="ui-status ui-status--${tone}" data-status="${escapeHtml(status)}">${escapeHtml(label)}</span>`;
 }
 
@@ -117,17 +119,49 @@ function guestParty(facts: { readonly occupantCount?: number; readonly occupants
   return `${count} ${count === 1 ? "occupant" : "occupants"}`;
 }
 
+function minutesLeft(deadlineIso: string, now: Date): number {
+  return Math.max(0, Math.ceil((Date.parse(deadlineIso) - now.getTime()) / 60_000));
+}
+
+function minutesPhrase(minutes: number): string {
+  return `${minutes} ${minutes === 1 ? "minute" : "minutes"} left`;
+}
+
+/** In-page reminder wording (decision D2); the offsets themselves live in the domain (ADR 0041). */
+function reminderLabel(reminder: number, left: number): string {
+  const last = OPERATOR_RESPONSE_REMINDER_MINUTES[OPERATOR_RESPONSE_REMINDER_MINUTES.length - 1];
+  return `${reminder === last ? "Final reminder" : "Reminder"}: ${minutesPhrase(left)}`;
+}
+
+/**
+ * Speaks the page's reminder summary once per reminder: a re-render with the same key stays silent.
+ * Progressive enhancement only; without JavaScript the rows still show each reminder and absolute deadline.
+ */
+const REMINDER_ANNOUNCER = `(() => { const region = document.getElementById("bo-reminders"); if (!region) return; const announceKey = region.dataset.announceKey; const text = region.dataset.announce; if (!announceKey || !text) return; let spoken = []; try { spoken = JSON.parse(sessionStorage.getItem("bo-reminders-spoken") || "[]"); } catch { spoken = []; } const fresh = announceKey.split(" ").filter((key) => !spoken.includes(key)); if (fresh.length === 0) return; setTimeout(() => { region.textContent = text; }, 250); try { sessionStorage.setItem("bo-reminders-spoken", JSON.stringify([...spoken, ...fresh].slice(-200))); } catch { /* storage may be unavailable */ } })();`;
+
 function operatorInboxHtml(env: LocalApartmentOwnerEnvironment, principal: OperatorPrincipal): string {
+  // Read time is server time from the injected clock (ADR 0077); the list read also resolves expiry lazily.
   const requests = env.listOperatorRequestArtifacts(commandPrincipal(principal));
-  const awaiting = requests.filter((request) => request.facts.status === "disclosed").length;
+  const now = env.clock();
+  const awaiting = requests.filter((request) => request.facts.status === "disclosed" && request.facts.delivered).length;
+  const reminders: { readonly requestId: string; readonly reminder: number }[] = [];
   const rows = requests.map((request) => {
     const facts = request.facts;
     const labels = env.requestLabels(facts.requestId);
-    const who = facts.primaryGuestName ? `${escapeHtml(facts.primaryGuestName)} · ` : "";
+    const awaitingResponse = facts.status === "disclosed" && facts.delivered;
+    const reminder = operatorResponseReminderDue(facts, now);
+    if (reminder !== null) reminders.push({ requestId: facts.requestId, reminder });
+    const left = minutesLeft(facts.operatorResponseDeadlineAt, now);
     const deadlineId = `deadline-${encodeURIComponent(facts.requestId)}`;
-    return `<li><a class="ui-list__row" href="/operator/requests/${encodeURIComponent(facts.requestId)}" data-request-id="${escapeHtml(facts.requestId)}" aria-describedby="${escapeHtml(deadlineId)}"><span class="ui-list__primary">${who}${escapeHtml(labels.apartmentTitle)}</span><span class="ui-list__aside">${formatMoney(facts.quote?.allInStayTotalKobo ?? 0)}</span><span class="ui-list__secondary">${escapeHtml(labels.ownerName)} · ${escapeHtml(formatStayDates(facts.checkIn, facts.checkOut))} · ${facts.nights} ${facts.nights === 1 ? "night" : "nights"} · ${guestParty(facts)}</span><span class="ui-list__status">${requestBadge(facts.status)}</span><span class="ui-list__secondary" id="${escapeHtml(deadlineId)}">Respond by ${watTime(facts.operatorResponseDeadlineAt)}</span></a></li>`;
+    const timing = awaitingResponse
+      ? `<span class="bo-request__deadline" id="${escapeHtml(deadlineId)}">Respond by ${watTime(facts.operatorResponseDeadlineAt)} · ${reminder === null ? minutesPhrase(left) : `<strong class="bo-request__reminder">${escapeHtml(reminderLabel(reminder, left))}</strong>`}</span>`
+      : "";
+    const guest = facts.primaryGuestName ? `${escapeHtml(facts.primaryGuestName)} · ` : "";
+    return `<li class="bo-request" data-request-id="${escapeHtml(facts.requestId)}"${reminder === null ? "" : ` data-reminder="${reminder}"`}><a class="ui-list__row" href="/operator/requests/${encodeURIComponent(facts.requestId)}"${timing ? ` aria-describedby="${escapeHtml(deadlineId)}"` : ""}><span class="ui-list__primary">${guest}${escapeHtml(labels.apartmentTitle)}</span><span class="ui-list__aside"><span class="ui-sr-only">All-In Stay Total </span>${formatMoney(facts.quote?.allInStayTotalKobo ?? 0)}</span><span class="ui-list__secondary">${escapeHtml(labels.ownerName)} · ${escapeHtml(formatStayDates(facts.checkIn, facts.checkOut))} · ${facts.nights} ${facts.nights === 1 ? "night" : "nights"} · ${guestParty(facts)}</span><span class="ui-list__status">${requestBadge(facts.status, facts.delivered)}</span>${timing}</a></li>`;
   }).join("");
   const summary = requests.length === 0 ? "" : `<p>${awaiting === 0 ? "Nothing needs a response right now." : `${awaiting} ${awaiting === 1 ? "request needs" : "requests need"} your response.`}</p>`;
+  const announce = reminders.length === 0 ? "" : `${reminders.length} ${reminders.length === 1 ? "request has" : "requests have"} reached a reminder. Answer the soonest deadline first.`;
+  const liveRegion = `<p id="bo-reminders" class="ui-sr-only" role="status" data-announce="${escapeHtml(announce)}" data-announce-key="${escapeHtml(reminders.map((item) => `${item.requestId}:${item.reminder}`).join(" "))}"></p>`;
   const list = rows
     ? `<ul class="ui-list">${rows}</ul>`
     : `<section class="ui-panel ui-empty"><div class="ui-empty__art">${icon("inbox")}</div><h2>No Booking Requests yet</h2><p>No Booking Requests are visible to this representative. New requests appear here as soon as a Guest sends one.</p></section>`;
@@ -135,7 +169,8 @@ function operatorInboxHtml(env: LocalApartmentOwnerEnvironment, principal: Opera
     title: "Requests",
     viewer: viewer(env, principal),
     current: "requests",
-    body: `<header class="ui-page__header"><h1>Booking Requests</h1>${summary}</header><h2 class="ui-sr-only">Requests</h2>${list}`,
+    style: ".bo-request__deadline{grid-column:1/-1;color:var(--color-text-secondary)}.bo-request[data-reminder] .bo-request__reminder{color:var(--color-warning)}",
+    body: `<header class="ui-page__header"><h1>Booking Requests</h1>${summary}</header>${liveRegion}<h2 class="ui-sr-only">Requests</h2>${list}<script>${REMINDER_ANNOUNCER}</script>`,
   });
 }
 
@@ -154,7 +189,7 @@ function operatorRequestHtml(env: LocalApartmentOwnerEnvironment, principal: Ope
     title: `Booking Request · ${labels.apartmentTitle}`,
     viewer: viewer(env, principal),
     current: "requests",
-    body: `<p><a class="ui-button ui-button--quiet" href="/operator/requests">${icon("arrow-left")}Back to requests</a></p><header class="ui-page__header" data-request-id="${escapeHtml(facts.requestId)}"><p class="ui-eyebrow">Booking Request</p><h1>${escapeHtml(labels.apartmentTitle)}</h1><div class="ui-row">${requestBadge(facts.status)}</div></header>${error ? `<p class="ui-banner ui-banner--danger" role="alert">${icon("alert")}<span>${escapeHtml(error)}</span></p>` : ""}<section class="ui-panel" aria-label="Request facts"><dl class="ui-facts"><dt>Owner</dt><dd>${escapeHtml(labels.ownerName)}</dd><dt>Apartment</dt><dd>${escapeHtml(labels.apartmentTitle)}</dd><dt>Dates</dt><dd><time datetime="${escapeHtml(facts.checkIn)}">${escapeHtml(facts.checkIn)}</time> to <time datetime="${escapeHtml(facts.checkOut)}">${escapeHtml(facts.checkOut)}</time> (${facts.nights} nights)</dd><dt>Guest party</dt><dd>${guestParty(facts)}</dd>${phone}<dt>All-In Stay Total</dt><dd class="ui-money-total">${formatMoney(facts.quote?.allInStayTotalKobo ?? 0)}</dd>${facts.quote?.refundableSecurityDepositKobo ? `<dt>Refundable Security Deposit</dt><dd>${formatMoney(facts.quote.refundableSecurityDepositKobo)}</dd>` : ""}<dt>Response deadline</dt><dd>${watTime(facts.operatorResponseDeadlineAt)}</dd></dl></section>${decisions}`,
+    body: `<p><a class="ui-button ui-button--quiet" href="/operator/requests">${icon("arrow-left")}Back to requests</a></p><header class="ui-page__header" data-request-id="${escapeHtml(facts.requestId)}"><p class="ui-eyebrow">Booking Request</p><h1>${escapeHtml(labels.apartmentTitle)}</h1><div class="ui-row">${requestBadge(facts.status, facts.delivered)}</div></header>${error ? `<p class="ui-banner ui-banner--danger" role="alert">${icon("alert")}<span>${escapeHtml(error)}</span></p>` : ""}<section class="ui-panel" aria-label="Request facts"><dl class="ui-facts"><dt>Owner</dt><dd>${escapeHtml(labels.ownerName)}</dd><dt>Apartment</dt><dd>${escapeHtml(labels.apartmentTitle)}</dd><dt>Dates</dt><dd><time datetime="${escapeHtml(facts.checkIn)}">${escapeHtml(facts.checkIn)}</time> to <time datetime="${escapeHtml(facts.checkOut)}">${escapeHtml(facts.checkOut)}</time> (${facts.nights} nights)</dd><dt>Guest party</dt><dd>${guestParty(facts)}</dd>${phone}<dt>All-In Stay Total</dt><dd class="ui-money-total">${formatMoney(facts.quote?.allInStayTotalKobo ?? 0)}</dd>${facts.quote?.refundableSecurityDepositKobo ? `<dt>Refundable Security Deposit</dt><dd>${formatMoney(facts.quote.refundableSecurityDepositKobo)}</dd>` : ""}<dt>Response deadline</dt><dd>${watTime(facts.operatorResponseDeadlineAt)}</dd></dl></section>${decisions}`,
   });
 }
 
