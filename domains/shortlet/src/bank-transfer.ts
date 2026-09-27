@@ -66,6 +66,8 @@ export interface BankTransferAccountRequest {
   /** The Payment Window deadline; the account must stop being payable by then (ADR 0044, 0047). */
   readonly expiresAt: string;
   readonly email: string;
+  /** The authoritative payer, bound in provider metadata so verification can attribute the sender (ADR 0013). */
+  readonly payerId?: string;
 }
 
 /** The provider-issued account. The platform never derives account details itself (ADR 0047). */
@@ -80,7 +82,11 @@ export interface ProviderTransferAccount {
 export interface BankTransferProviderClient {
   createTransferAccount(request: BankTransferAccountRequest): Promise<ProviderTransferAccount>;
   verifyTransfer(transferReference: string): BankTransferProviderResult;
+  /** Providers that verify over the network (Paystack) implement this; the server awaits it before processing. */
+  verifyTransferAsync?(transferReference: string): Promise<BankTransferProviderResult>;
 }
+
+export type BankTransferProcessOutcome = { outcome: Outcome; reservation?: Reservation; bookingContract?: BookingContract; ledgerEntries?: readonly LedgerEntry[]; refundRecord?: BankTransferRefundRecord; reconciliationRecord?: BankTransferReconciliationRecord };
 
 /** The provider could not issue a usable account. Nothing was recorded and no attempt holds the slot. */
 export class BankTransferProviderError extends Error {
@@ -187,7 +193,7 @@ export class BankTransferPaymentManager {
 
     let account: ProviderTransferAccount;
     try {
-      account = await this.#providerClient.createTransferAccount({ reference: transferReference, amountKobo, currency: "NGN", expiresAt: offer.paymentWindow.expiresAt, email: contact.contactEmail });
+      account = await this.#providerClient.createTransferAccount({ reference: transferReference, amountKobo, currency: "NGN", expiresAt: offer.paymentWindow.expiresAt, email: contact.contactEmail, payerId: authorizedPayer(offer) });
     } catch {
       throw new BankTransferProviderError("The payment provider could not issue a transfer account");
     }
@@ -243,7 +249,19 @@ export class BankTransferPaymentManager {
     return { ...expired };
   }
 
-  verifyAndProcessTransfer(envelope: PlatformCommandEnvelope<{ transferReference: string }>, { clock = () => new Date() }: { clock?: () => Date } = {}): { outcome: Outcome; reservation?: Reservation; bookingContract?: BookingContract; ledgerEntries?: readonly LedgerEntry[]; refundRecord?: BankTransferRefundRecord; reconciliationRecord?: BankTransferReconciliationRecord } {
+  verifyAndProcessTransfer(envelope: PlatformCommandEnvelope<{ transferReference: string }>, options: { clock?: () => Date } = {}): BankTransferProcessOutcome {
+    return this.#process(envelope, (reference) => this.#providerClient.verifyTransfer(reference), options);
+  }
+
+  /**
+   * Processes a result the server fetched from an asynchronous provider (Paystack, P2). The result is validated
+   * exactly as a synchronous one: designated reference, exact amount and currency, authorized payer (ADR 0047).
+   */
+  verifyAndProcessTransferWithProviderResult(envelope: PlatformCommandEnvelope<{ transferReference: string }>, result: BankTransferProviderResult, options: { clock?: () => Date } = {}): BankTransferProcessOutcome {
+    return this.#process(envelope, () => result, options);
+  }
+
+  #process(envelope: PlatformCommandEnvelope<{ transferReference: string }>, obtain: (reference: string) => BankTransferProviderResult, { clock = () => new Date() }: { clock?: () => Date } = {}): BankTransferProcessOutcome {
     if (!envelope || envelope.commandName !== "bank_transfer.verify_and_process") throw new Error("Invalid bank transfer verification command");
     if (Object.keys(envelope.payload ?? {}).length !== 1 || !envelope.payload.transferReference) throw new Error("Verification accepts only transferReference");
     const session = this.#sessionsByReference.get(envelope.payload.transferReference); if (!session) throw new Error("Unknown transfer reference");
@@ -255,7 +273,7 @@ export class BankTransferPaymentManager {
       if (processed.outcome === "late_payment_refunded" && processed.refundId && processed.reconciliationId) return { outcome: "late_payment_refunded", refundRecord: this.#refundRecords.get(processed.refundId), reconciliationRecord: this.#reconciliationRecords.get(processed.reconciliationId) };
     }
     let result: BankTransferProviderResult;
-    try { result = this.#providerClient.verifyTransfer(session.transferReference); this.#validateProvider(session, offer, result); } catch (error) { if (session.purpose === "security_deposit") this.#compensateStay(offer.offerId); throw error; }
+    try { result = obtain(session.transferReference); this.#validateProvider(session, offer, result); } catch (error) { if (session.purpose === "security_deposit") this.#compensateStay(offer.offerId); throw error; }
     const now = clock(); const deadline = new Date(session.expiresAt).getTime(); const graceEnd = new Date(session.graceEndsAt).getTime();
     if (result.status === "pending") {
       if (now.getTime() >= graceEnd) { this.resolveExpiry(offer.offerId, envelope.principal, { clock }); return { outcome: "expired" }; }

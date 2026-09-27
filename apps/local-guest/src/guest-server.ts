@@ -3414,7 +3414,15 @@ export function startLocalGuestServer(options: {
         const data = event.data !== null && typeof event.data === "object" && !Array.isArray(event.data) ? event.data as { reference?: unknown } : undefined;
         if (typeof data?.reference !== "string" || data.reference === "") { sendJson(res, 400, { ok: false, code: "INVALID_WEBHOOK" }); return; }
         const checkout = app.environment.cardPaymentApp.manager.getCheckoutSessionByReference(data.reference);
-        if (!checkout) { sendJson(res, 200, { ok: true, ignored: true }); return; }
+        if (!checkout) {
+          // P2: a Pay with Transfer reference. The signed event is only a prompt; the server re-verifies with
+          // Paystack and processes once (ADR 0047). Late money is recorded for a full refund (ADR 0045).
+          const transfers = app.environment.bankTransferApp;
+          if (!transfers?.manager.getSessionByReference(data.reference)) { sendJson(res, 200, { ok: true, ignored: true }); return; }
+          try { await transfers.verifyAndProcessFromProvider(data.reference, app.environment.systemPrincipal()); } catch { /* the authoritative unresolved/failed state is retained */ }
+          sendJson(res, 200, { ok: true });
+          return;
+        }
         try { await app.environment.cardPaymentApp.verifyAndConfirmPaystack(data.reference, app.environment.systemPrincipal(), paystackClient); } catch { /* the authoritative unresolved/failed state is retained */ }
         sendJson(res, 200, { ok: true });
       } catch {

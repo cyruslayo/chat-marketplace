@@ -64,6 +64,11 @@ export interface LocalGuestFixtureConfig {
   /** Local PSP fixture port, also used to prove pending/failed restart paths. */
   readonly verifyPayment?: (reference: string, amountKobo: number) => import("../../../domains/shortlet/src/card-payment.js").PSPVerifyResult;
   readonly paystackClient?: PaystackClient;
+  /**
+   * The production transfer provider (Paystack Pay with Transfer, P2). Pass it only once the ADR 0047 certification
+   * has passed in Paystack test mode (ADR 0088 activation); without it production offers no bank transfer.
+   */
+  readonly bankTransferProvider?: import("../../../domains/shortlet/src/index.js").BankTransferProviderClient;
   /** Production composition disables the deterministic PSP and requires Paystack. */
   readonly production?: boolean;
   readonly deterministicPsp?: boolean;
@@ -324,18 +329,21 @@ export class LocalGuestEnvironment {
       ...(this.config.paystackClient === undefined ? {} : { paystackClient: this.config.paystackClient }),
     });
 
-    this.bankTransferApp = this.config.deterministicPsp === false ? null : createBankTransferPaymentApplication({
-      conditionalOfferApplication: this.conditionalOfferApp,
-      calendar: this.calendar,
-      audit: this.audit,
-      providerClient: new LocalBankTransferProvider({
+    const transferProvider = this.config.deterministicPsp === false
+      ? this.config.bankTransferProvider ?? null
+      : new LocalBankTransferProvider({
         payerFor: (reference) => {
           const session = this.bankTransferApp?.manager.getSessionByReference(reference);
           if (!session) return undefined;
           const offer = this.conditionalOfferApp.manager.getOffer(session.offerId);
           return offer.parties.distinctPayer?.id ?? offer.parties.primaryGuest.id;
         },
-      }),
+      });
+    this.bankTransferApp = transferProvider === null ? null : createBankTransferPaymentApplication({
+      conditionalOfferApplication: this.conditionalOfferApp,
+      calendar: this.calendar,
+      audit: this.audit,
+      providerClient: transferProvider,
       guestContacts: this.guestContactApp.repository,
       liveAttempts: this.livePaymentAttempts,
       journeyRepository,
