@@ -9,6 +9,9 @@ import {
   SqliteBookingPaymentJourneyRepository,
   SqliteBookingStateRepository,
   SqliteBankTransferSessionStore,
+  ManualTransferManager,
+  SqliteManualTransferStore,
+  type ManualTransferAccount,
   SqliteLivePaymentAttemptRegistry,
   SqliteAvailabilityStore,
   SqliteGuestContactRepository,
@@ -38,6 +41,9 @@ import { SELF_BOOKING_ATTESTATION_VERSION } from "../../../domains/shortlet/src/
 import { LocalBankTransferProvider } from "./local-bank-transfer-provider.js";
 
 export const LOCAL_GUEST_PORT = 3001;
+
+/** Default receipt size limit (5 MiB); a configuration default, overridable per deployment (ADR 0090). */
+export const DEFAULT_RECEIPT_MAX_BYTES = 5 * 1024 * 1024;
 
 export interface LocalGuestFixtureConfig {
   readonly databasePath: string;
@@ -70,6 +76,13 @@ export interface LocalGuestFixtureConfig {
    * has passed in Paystack test mode (ADR 0088 activation); without it production offers no bank transfer.
    */
   readonly bankTransferProvider?: import("../../../domains/shortlet/src/index.js").BankTransferProviderClient;
+  /**
+   * The one business account for manual bank transfer (ADR 0090). Configuration, never code; without it manual
+   * transfer is never offered.
+   */
+  readonly manualTransferAccount?: ManualTransferAccount | null;
+  /** ADR 0090 "a configured size limit" for receipts. Defaults to DEFAULT_RECEIPT_MAX_BYTES. */
+  readonly receiptMaxBytes?: number;
   /** Production composition disables the deterministic PSP and requires Paystack. */
   readonly production?: boolean;
   readonly deterministicPsp?: boolean;
@@ -212,6 +225,8 @@ export class LocalGuestEnvironment {
    * production has none until the Paystack adapter (P2), so a transfer can never start with an invented account.
    */
   readonly bankTransferApp: BankTransferPaymentApplication | null;
+  /** Manual bank transfer with receipt (P5, ADR 0090); null unless a business account is configured. */
+  readonly manualTransfers: ManualTransferManager | null;
   readonly contractApp: BookingContractApplication;
   readonly contractRepository: LocalBookingContractRepository;
   readonly interactionStore: SqliteGuestInteractionStore;
@@ -366,6 +381,16 @@ export class LocalGuestEnvironment {
       },
       clock: this.clock,
     });
+
+    this.manualTransfers = this.config.manualTransferAccount ? new ManualTransferManager({
+      offerManager: this.conditionalOfferApp.manager,
+      store: new SqliteManualTransferStore(this.#database),
+      account: this.config.manualTransferAccount,
+      liveAttempts: this.livePaymentAttempts,
+      calendar: this.calendar,
+      audit: this.audit,
+      receiptMaxBytes: this.config.receiptMaxBytes ?? DEFAULT_RECEIPT_MAX_BYTES,
+    }) : null;
 
     this.contractApp = createBookingContractApplication({
       repository: this.contractRepository,

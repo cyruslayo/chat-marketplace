@@ -1,6 +1,6 @@
 import type { SqliteGuestInteractionStore } from "./guest-interaction-store.js";
 
-export type LivePaymentMethod = "fresh_card" | "bank_transfer" | "ussd";
+export type LivePaymentMethod = "fresh_card" | "bank_transfer" | "ussd" | "manual_transfer";
 export type PaymentPurpose = "stay" | "security_deposit";
 export type LivePaymentAttemptStatus = "active" | "terminal";
 export interface LivePaymentAttempt { readonly offerId: string; readonly method: LivePaymentMethod; readonly attemptId: string; readonly purpose: PaymentPurpose; readonly status: LivePaymentAttemptStatus; readonly startedAt: string; readonly expiresAt: string; }
@@ -23,7 +23,7 @@ export class LivePaymentAttemptRegistry implements LivePaymentAttemptRegistryPor
 }
 
 function isLivePaymentMethod(value: unknown): value is LivePaymentMethod {
-  return value === "fresh_card" || value === "bank_transfer" || value === "ussd";
+  return value === "fresh_card" || value === "bank_transfer" || value === "ussd" || value === "manual_transfer";
 }
 
 function isPaymentPurpose(value: unknown): value is PaymentPurpose {

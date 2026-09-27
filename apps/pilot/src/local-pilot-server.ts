@@ -35,6 +35,8 @@ export function startLocalPilotServer(options: { readonly port?: number; readonl
     guestName: "Local Guest", initialGuestPhoneNumber: null, initialGuestContactEmail: null, demoCheckIn,
     ...(process.env.CONCIERGE_MODE === "gemini" ? { demoCheckOut: "2026-10-01" } : {}), production: false,
     deterministicPsp: true, seedRepresentativeGrant: false, clock,
+    // Local pilot only: a clearly fictional business account so manual transfer can be walked through (ADR 0090).
+    manualTransferAccount: { bankName: "Local Demo Bank", accountName: "Shortlet Local Demo", accountNumber: "0000000000" },
   });
   const operatorEnvironment = new LocalApartmentOwnerEnvironment({
     databasePath: paths.databasePath, inventoryPath: paths.inventoryPath, operatorsPath: paths.operatorsPath,

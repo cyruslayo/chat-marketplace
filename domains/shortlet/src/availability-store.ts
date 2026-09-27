@@ -271,6 +271,18 @@ export class SqliteAvailabilityStore {
     });
   }
 
+  /**
+   * ADR 0090: a manual transfer's verification hold keeps a still-active Payment Pending block until the verification
+   * deadline. Only while active and unexpired, and only forward; it never revives an expired or released block.
+   */
+  holdPaymentPendingUntil(commitmentId: string, expiresAt: string, now: string): void {
+    this.#withWriteTransaction(() => {
+      this.#expireStale(now);
+      const result = this.#database.prepare(`UPDATE availability_commitments SET expires_at = $expiresAt WHERE commitment_id = $commitmentId AND kind = 'payment_pending' AND state = 'active' AND expires_at > $now AND expires_at <= $expiresAt`).run({ $commitmentId: commitmentId, $expiresAt: expiresAt, $now: now });
+      if (result.changes !== 1) throw new Error("Payment Pending commitment is no longer active");
+    });
+  }
+
   transitionPaymentPendingToConfirmedBooking({ commitmentId, unitId, start, end, now }: { commitmentId: string; unitId: string; start: string; end: string; now: string }): AvailabilityCommitment {
     return this.#withWriteTransaction(() => {
       this.#expireStale(now);

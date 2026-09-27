@@ -7,6 +7,7 @@ import {
   type OperatorRecord,
   type PaystackConfiguration,
   type PaystackEnvironmentSource,
+  type ManualTransferAccount,
   type Unit,
 } from "../../../domains/shortlet/src/index.js";
 
@@ -18,6 +19,12 @@ export interface PilotEnvironmentSource extends PaystackEnvironmentSource {
   readonly SHORTLET_TENANT_ID?: string;
   /** "enabled" switches on Paystack Pay with Transfer; only after the ADR 0047 certification passes (ADR 0088). */
   readonly SHORTLET_PAYSTACK_TRANSFERS?: string;
+  /** ADR 0090: the one business account for manual bank transfer. All three or none. */
+  readonly SHORTLET_MANUAL_TRANSFER_BANK_NAME?: string;
+  readonly SHORTLET_MANUAL_TRANSFER_ACCOUNT_NAME?: string;
+  readonly SHORTLET_MANUAL_TRANSFER_ACCOUNT_NUMBER?: string;
+  /** ADR 0090 "a configured size limit" for receipts, in bytes. */
+  readonly SHORTLET_RECEIPT_MAX_BYTES?: string;
 }
 
 export interface PilotConfiguration {
@@ -33,6 +40,9 @@ export interface PilotConfiguration {
   readonly paystack: PaystackConfiguration;
   /** Off unless explicitly enabled after certification (ADR 0088 activation). */
   readonly paystackTransfersEnabled: boolean;
+  /** Null: manual transfer is not offered. */
+  readonly manualTransferAccount: ManualTransferAccount | null;
+  readonly receiptMaxBytes: number | null;
 }
 
 function required(source: PilotEnvironmentSource, key: keyof PilotEnvironmentSource): string {
@@ -71,6 +81,23 @@ export function paystackTransfersEnabled(value: string | undefined): boolean {
   return setting === "enabled";
 }
 
+/** ADR 0090: the business account is configuration. A partial account fails startup rather than half-offering the method. */
+export function manualTransferAccount(source: PilotEnvironmentSource): ManualTransferAccount | null {
+  const bankName = source.SHORTLET_MANUAL_TRANSFER_BANK_NAME?.trim() ?? "";
+  const accountName = source.SHORTLET_MANUAL_TRANSFER_ACCOUNT_NAME?.trim() ?? "";
+  const accountNumber = source.SHORTLET_MANUAL_TRANSFER_ACCOUNT_NUMBER?.trim() ?? "";
+  if (!bankName && !accountName && !accountNumber) return null;
+  if (!bankName || !accountName || !/^\d{10}$/.test(accountNumber)) throw new Error("SHORTLET_MANUAL_TRANSFER_BANK_NAME, _ACCOUNT_NAME and a ten-digit _ACCOUNT_NUMBER must all be set, or none");
+  return Object.freeze({ bankName, accountName, accountNumber });
+}
+
+export function receiptMaxBytes(value: string | undefined): number | null {
+  const setting = value?.trim() ?? "";
+  if (setting === "") return null;
+  if (!/^\d+$/.test(setting) || Number(setting) <= 0 || !Number.isSafeInteger(Number(setting))) throw new Error("SHORTLET_RECEIPT_MAX_BYTES must be a positive whole number of bytes");
+  return Number(setting);
+}
+
 export function loadPilotConfiguration(source: PilotEnvironmentSource = process.env): PilotConfiguration {
   const origin = publicOrigin(required(source, "SHORTLET_PUBLIC_ORIGIN"));
   const databasePath = required(source, "SHORTLET_DB_PATH");
@@ -100,6 +127,8 @@ export function loadPilotConfiguration(source: PilotEnvironmentSource = process.
 
   return Object.freeze({
     paystackTransfersEnabled: paystackTransfersEnabled(source.SHORTLET_PAYSTACK_TRANSFERS),
+    manualTransferAccount: manualTransferAccount(source),
+    receiptMaxBytes: receiptMaxBytes(source.SHORTLET_RECEIPT_MAX_BYTES),
     publicOrigin: origin,
     databasePath,
     inventoryPath,
