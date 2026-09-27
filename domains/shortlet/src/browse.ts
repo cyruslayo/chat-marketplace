@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 import { calculateTaxKobo } from "./quote.js";
 import { normalizePhotoUrls } from "./photo-url.js";
 import { normalizeBathroomCount, normalizeListingDescription } from "./listing-details.js";
+import type { ContractualCheckInWindow } from "./checkin-support.js";
 
 const LAGOS_TIME_ZONE = "Africa/Lagos";
 const SUPPORTED_LOCATIONS = new Set(["Lagos", "Abuja"]);
@@ -53,6 +54,8 @@ export interface Unit {
   blockedDates: BlockedDateRange[];
   cancellationPolicy?: any;
   sameDayTurnover?: any;
+  /** ADR 0031: the unit's Contractual Check-In Window, captured by each offer. */
+  checkInWindow?: ContractualCheckInWindow;
 }
 
 function asDate(value: any, field: string): Date {
