@@ -9,6 +9,7 @@ import { loadPilotConfiguration } from "../apps/pilot/src/pilot-config.js";
 import { startPilotServer } from "../apps/pilot/src/pilot-server.js";
 import { createPlatformCommandEnvelope } from "../packages/platform-core/src/index.js";
 import { DirectPaystackClient, SqliteOperatorRepresentativeGrantStore, SqliteOperatorSessionAuthority, type PaystackClient, type PaystackHttpFetcher, type Unit } from "../domains/shortlet/src/index.js";
+import { operatorCookieFrom, postOperatorLogin } from "./helpers/operator-session.js";
 
 const PUBLIC_ORIGIN = "https://pilot.example.com";
 
@@ -59,12 +60,6 @@ function cookieFromSetCookie(response: Response): string {
   const value = response.headers.get("set-cookie");
   assert.ok(value);
   return value.split(";", 1)[0]!;
-}
-
-function operatorCookie(response: Response): string {
-  const value = response.headers.get("set-cookie");
-  assert.ok(value);
-  return value.split(",").map((part) => part.trim().split(";", 1)[0]).join("; ");
 }
 
 function surfaceAction(body: unknown, label: string): { readonly surfaceId: string; readonly name: string; readonly context: Record<string, unknown>; readonly sourceComponentId: string } {
@@ -237,9 +232,10 @@ test("Production callback HTTP completion rehydrates the confirmed Reservation a
     action = surfaceAction(turn.body, "Submit Booking Request");
     turn.body = await guestEvent(base, guestCookie, threadId, action);
 
-    const login = await fetch(`${base}/operator/login`, { method: "POST", headers: { origin: PUBLIC_ORIGIN }, body: new URLSearchParams({ token: operatorToken }), redirect: "manual", signal: AbortSignal.timeout(10000) });
+    const login = await postOperatorLogin({ base }, operatorToken, { origin: PUBLIC_ORIGIN, signal: AbortSignal.timeout(10000) });
     assert.equal(login.status, 302);
-    const operatorCookieHeader = operatorCookie(login);
+    const operatorCookieHeader = operatorCookieFrom(login);
+    assert.ok(operatorCookieHeader);
     const requestDatabase = new (await import("node:sqlite")).DatabaseSync(fixture.configuration.databasePath);
     const requestId = (requestDatabase.prepare("SELECT request_id FROM guest_booking_requests ORDER BY request_id DESC LIMIT 1").get() as { request_id: string }).request_id;
     requestDatabase.close();
@@ -337,13 +333,13 @@ test("AC8/AC18/AC19/AC20/AC22/AC23/AC24/AC26/AC27 — Production Operator shares
     const health = await fetch(`${base}/healthz`);
     assert.equal(health.status, 200);
     assert.deepEqual(await jsonResponse(health), { ok: true });
-    const login = await fetch(`${base}/operator/login`, { method: "POST", headers: { Origin: PUBLIC_ORIGIN }, body: new URLSearchParams({ token: authority.token }), redirect: "manual" });
+    const login = await postOperatorLogin({ base }, authority.token, { origin: PUBLIC_ORIGIN });
     assert.equal(login.status, 302);
     const operatorCookieHeader = login.headers.get("set-cookie") ?? "";
     assert.match(operatorCookieHeader, /Secure/);
     assert.match(operatorCookieHeader, /HttpOnly/);
     assert.match(operatorCookieHeader, /SameSite=Lax/);
-    cookie = operatorCookieHeader.split(",").map((value) => value.trim().split(";", 1)[0]).join("; ");
+    cookie = operatorCookieFrom(login);
     assert.equal((await fetch(`${base}/operator/requests`, { headers: { Cookie: cookie } })).status, 200);
     assert.equal((await fetch(`${base}/`, { headers: { Cookie: cookie } })).status, 200);
     const healthBody = JSON.stringify(await jsonResponse(await fetch(`${base}/healthz`)));
