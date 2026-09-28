@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "tsx --test test/*.test.ts",
+    "test": "node scripts/run-tests.mjs",
     "check": "tsc --noEmit",
     "verify:weaver": "node scripts/verify-weaver-vendor.mjs",
     "owner:local": "tsx apps/local-owner/src/cli-start.ts",

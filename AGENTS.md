@@ -4,7 +4,7 @@
 
 - **Language**: TypeScript (`tsconfig.json`, target `ES2022`, module resolution `NodeNext`).
 - **Type Checking**: Run `npm run check` (`tsc --noEmit`) regularly to ensure zero type errors.
-- **Testing**: Run `npm test` (`tsx --test test/*.test.ts`) to execute unit tests.
+- **Testing**: Run `npm test` (`node scripts/run-tests.mjs`) to execute unit tests. It runs `tsx --test` on the non-browser files concurrently, then on the real-Chrome files one at a time.
 - **Coding standards**: See `docs/agents/coding-standards.md`. These rules are a hard gate — no `any` in domain types, no invented policy strings, no bearer credentials in logs, search before inventing a new pattern.
 
 ### Issue tracker
