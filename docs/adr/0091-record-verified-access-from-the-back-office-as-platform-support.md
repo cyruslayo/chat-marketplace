@@ -33,6 +33,12 @@ A signed-in back-office user records check-in as **platform support**, not as th
 - **Dismissing a complaint** (added 28 Sept 2026, back-office issue 10). The same user may dismiss an open complaint that did not hold up, choosing one fixed reason: "Fixed, and the Guest stayed" or "Not borne out on review". There is no free text, and the grant is checked as for reporting.
   - An upheld complaint is not dismissed. It stays open until a cancellation or remedy outcome is recorded, since under ADR 0089 only that outcome changes the owner payable.
   - Once no complaint is open, the owner payable is due 24 hours after Verified Access, or at the dismissal if that is later. Dismissing does not restart the protection window.
+- **Upholding a complaint** (added 28 Sept 2026, back-office issue 14). The same user may uphold an open complaint by choosing the first night the failure affected. The stay ends from that night.
+  - **Refund only in the pilot.** Relocation (ADR 0028, 0029) needs the Guest Protection Fund, which is out of launch scope (ADR 0089).
+  - **The Guest's refund follows ADR 0061:** 100% of the contracted nightly price for each night from the first affected night to checkout. When the first night is affected, everything paid is refunded. Once a night was used, mandatory charges count as delivered; this is the pilot reading of "attributable undelivered charges".
+  - **The owner payable.** The outcome is posted as the booking's cancellation outcome, so the owner payable is the owner's share of what is kept, due at once (ADR 0089). A payout already above it is an Owner Overpayment.
+  - **Paying the refund.** You refund the Guest from the Paystack dashboard or by bank transfer, then record it with its date, amount and reference. There is no automated refund.
+  - **One per stay.** A stay has one upheld outcome, and its dates are not released automatically.
 - **Audit.** Each record keeps only the actor, Reservation, basis or category code, status transition and time (ADR 0075).
 
 ## Status of earlier decisions

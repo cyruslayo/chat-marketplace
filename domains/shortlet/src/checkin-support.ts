@@ -68,6 +68,9 @@ export function isComplaintDismissalReason(value: unknown): value is ComplaintDi
   return typeof value === "string" && (COMPLAINT_DISMISSAL_REASONS as readonly string[]).includes(value);
 }
 
+/** How a complaint was closed: dismissed with a reason (issue 10), or upheld (issue 14). */
+export type ComplaintResolution = ComplaintDismissalReason | "upheld";
+
 /** When the last complaint was dismissed, or null. The owner payable is not due before it (issue 10, ADR 0089). */
 export function lastComplaintResolvedAt(complaints: readonly Pick<BlockingFulfilmentComplaint, "status" | "resolvedAt">[]): string | null {
   return complaints.reduce<string | null>((latest, complaint) => complaint.status === "resolved" && complaint.resolvedAt && (!latest || complaint.resolvedAt > latest) ? complaint.resolvedAt : latest, null);
@@ -81,7 +84,9 @@ export interface BlockingFulfilmentComplaint {
   readonly revenueHeld: true;
   /** Set when platform support dismisses the complaint (issue 10): when, and the fixed reason code. */
   readonly resolvedAt?: string;
-  readonly resolution?: ComplaintDismissalReason;
+  readonly resolution?: ComplaintResolution;
+  /** For an upheld complaint (issue 14): the first night the failure affected, YYYY-MM-DD. */
+  readonly upheldFromNight?: string;
   readonly safeSummary?: string;
   readonly evidenceReferences: readonly string[];
   readonly openedAt: string;
@@ -349,6 +354,25 @@ export class CheckInSupportManager {
     this.#complaints.set(envelope.payload.reservationId, complaints.map((candidate) => candidate === complaint ? resolved : candidate)); this.#persist(envelope.payload.reservationId);
     this.#audit?.record({ type: "checkin_support.blocking_complaint_dismissed", complaintId: resolved.complaintId, reservationId: resolved.reservationId, reason: envelope.payload.reason, resolvedAt: resolved.resolvedAt, source: "support" });
     return { ...resolved };
+  }
+  /**
+   * Issue 14: platform support upholds an open complaint, which ends the stay from the first affected night
+   * (ADR 0061, 0028). One upheld outcome per stay; the refund and the owner payable are recorded by the caller.
+   */
+  upholdBlockingComplaintAsSupport(envelope: PlatformCommandEnvelope<{ reservationId: string; complaintId: string; firstAffectedNight: string }>, clock: () => Date = () => new Date()): BlockingFulfilmentComplaint {
+    if (!envelope || envelope.commandName !== "checkin_support.support_uphold_complaint" || !VALID_ROLES.has(envelope.principal.role)) throw new Error("Authorized support is required to uphold a blocking complaint");
+    if (Object.keys(envelope.payload).some((key) => !["reservationId", "complaintId", "firstAffectedNight"].includes(key))) throw new Error("Complaint upholding accepts only reservationId, complaintId and firstAffectedNight");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(envelope.payload.firstAffectedNight)) throw new Error("A first affected night is required");
+    this.#hydrate(envelope.payload.reservationId);
+    const complaints = this.#complaints.get(envelope.payload.reservationId) ?? [];
+    if (complaints.some((candidate) => candidate.resolution === "upheld")) throw new Error("This stay already has an upheld outcome");
+    const complaint = complaints.find((candidate) => candidate.complaintId === envelope.payload.complaintId);
+    if (!complaint) throw new Error("Blocking complaint not found");
+    if (complaint.status === "resolved") throw new Error("Blocking complaint is already resolved");
+    const upheld: BlockingFulfilmentComplaint = { ...complaint, status: "resolved", resolvedAt: clock().toISOString(), resolution: "upheld", upheldFromNight: envelope.payload.firstAffectedNight };
+    this.#complaints.set(envelope.payload.reservationId, complaints.map((candidate) => candidate === complaint ? upheld : candidate)); this.#persist(envelope.payload.reservationId);
+    this.#audit?.record({ type: "checkin_support.blocking_complaint_upheld", complaintId: upheld.complaintId, reservationId: upheld.reservationId, firstAffectedNight: upheld.upheldFromNight, resolvedAt: upheld.resolvedAt, source: "support" });
+    return { ...upheld };
   }
   /** One id per complaint: a category reported again after a dismissal gets a numbered id. */
   #complaintId(reservationId: string, category: ComplaintCategory): string {

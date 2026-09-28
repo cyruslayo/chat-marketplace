@@ -24,7 +24,7 @@ import {
   CheckInInputError,
   CheckInStaleError,
 } from "./local-owner-environment.js";
-import { ManualTransferError, OwnerPayoutError, OwnerRecoveryError, type ComplaintDismissalReason, addCalendarDays, type CalendarDayState, SUPPORT_VERIFICATION_BASES, type OwnerPayableStatus, type AccessStatus, type ComplaintCategory, type ManualTransferStatus, type SupportVerificationBasis } from "../../../domains/shortlet/src/index.js";
+import { ManualTransferError, OwnerPayoutError, OwnerRecoveryError, GuestRefundError, type ComplaintDismissalReason, addCalendarDays, type CalendarDayState, SUPPORT_VERIFICATION_BASES, type OwnerPayableStatus, type AccessStatus, type ComplaintCategory, type ManualTransferStatus, type SupportVerificationBasis } from "../../../domains/shortlet/src/index.js";
 import { BOOKING_ENDED_REASONS, BOOKING_PAYMENT_METHOD_LABELS, BOOKING_STAGE_LABELS, type BookingStage } from "./booking-projection.js";
 import { escapeHtml, formatMoney, icon, pageShell, type StatusTone } from "../../web/src/ui-kit.js";
 import { OPERATOR_RESPONSE_REMINDER_MINUTES, operatorResponseReminderDue, type OperatorAuthenticatedPrincipal } from "../../../domains/shortlet/src/index.js";
@@ -85,7 +85,7 @@ function operatorLoginHtml(error = "", reason: SignInReason | null = null): stri
  * (manual transfers to verify, B6; owner payouts due, B7) and a builder in `waitingItems`.
  */
 interface WaitingItem {
-  readonly kind: "request" | "manual_transfer" | "owner_payout" | "owner_overpayment";
+  readonly kind: "request" | "manual_transfer" | "owner_payout" | "owner_overpayment" | "guest_refund";
   readonly href: string;
   readonly title: string;
   readonly ownerName: string;
@@ -141,7 +141,17 @@ function waitingItems(env: LocalApartmentOwnerEnvironment, principal: OperatorPr
       dueAt: item.payable.dueAt,
       dueLabel: "Over-paid since",
     }] : []);
-  return [...requests, ...transfers, ...payouts, ...overpayments].sort((a, b) => Date.parse(a.dueAt) - Date.parse(b.dueAt));
+  // Issue 14: a refund owed to the Guest after an upheld complaint, from when the outcome was recorded.
+  const refunds: WaitingItem[] = env.listGuestRefundsOwed(commandPrincipal(principal)).map((reservation) => ({
+    kind: "guest_refund",
+    href: `/operator/bookings/${encodeURIComponent(reservation.requestId)}`,
+    title: "Refund owed to the Guest",
+    ownerName: reservation.ownerName,
+    apartmentTitle: reservation.apartmentTitle,
+    dueAt: reservation.stayOutcome!.endedAt,
+    dueLabel: "Owed since",
+  }));
+  return [...requests, ...transfers, ...payouts, ...overpayments, ...refunds].sort((a, b) => Date.parse(a.dueAt) - Date.parse(b.dueAt));
 }
 
 function operatorHomeHtml(env: LocalApartmentOwnerEnvironment, principal: OperatorPrincipal): string {
@@ -392,28 +402,62 @@ function dismissComplaintForm(reservation: OperatorReservation, complaintId: str
   return `<details class="ui-confirm"><summary>Dismiss this complaint…</summary><div class="ui-confirm__body"><form method="post" action="/operator/bookings/${encodeURIComponent(reservation.requestId)}/blocking-complaint/${encodeURIComponent(complaintId)}/dismiss" class="ui-stack"><input type="hidden" name="basedOnVersion" value="${escapeHtml(reservation.version)}"><fieldset class="bo-reasons"><legend>Why is the complaint closed?</legend>${reasons}</fieldset><p>Only dismiss a complaint that did not hold up. If it was upheld, leave it open: the owner payable stays paused until the cancellation or remedy is recorded.</p><button class="ui-button ui-button--secondary ui-button--block" type="submit">Dismiss complaint</button></form></div></details>`;
 }
 
+/** The stay's nights, first to last, YYYY-MM-DD: check-in up to, not including, checkout. */
+function stayNights(checkIn: string, checkOut: string): readonly string[] {
+  const nights: string[] = [];
+  for (let night = checkIn; night < checkOut; night = addCalendarDays(night, 1)) nights.push(night);
+  return nights;
+}
+
+/**
+ * Issue 14: uphold a complaint by choosing the first affected night; the stay ends from it with a refund (ADR 0061,
+ * 0028). Refund only in the pilot: relocation needs the Guest Protection Fund, out of launch scope (ADR 0089).
+ */
+function upholdComplaintForm(reservation: OperatorReservation, complaintId: string): string {
+  const nights = stayNights(reservation.checkIn, reservation.checkOut).map((night, index) => `<label class="bo-choice"><input type="radio" name="firstNight" value="${night}" required> ${escapeHtml(formatNight(night))}${index === 0 ? " (first night: everything paid is refunded)" : ""}</label>`).join("");
+  return `<details class="ui-confirm"><summary>Uphold this complaint…</summary><div class="ui-confirm__body"><form method="post" action="/operator/bookings/${encodeURIComponent(reservation.requestId)}/blocking-complaint/${encodeURIComponent(complaintId)}/uphold" class="ui-stack"><input type="hidden" name="basedOnVersion" value="${escapeHtml(reservation.version)}"><fieldset class="bo-reasons"><legend>First night the failure affected</legend>${nights}</fieldset><p>The stay ends from that night. The Guest is owed 100% of the nightly price for each night from it to checkout, and you refund them yourself. The owner keeps their share of the nights before it.</p><button class="ui-button ui-button--destructive ui-button--block" type="submit">Uphold and end the stay</button></form></div></details>`;
+}
+
+/** Issue 14: the upheld outcome, the Guest's refund and the form to record it. */
+function stayOutcomeHtml(reservation: OperatorReservation): string {
+  const outcome = reservation.stayOutcome;
+  if (!outcome) return "";
+  const refunds = outcome.refunds.length === 0 ? "" : `<dt>Refunded</dt><dd><ul class="bo-payouts">${outcome.refunds.map((refund) => `<li>${formatMoney(refund.amountKobo)} refunded ${escapeHtml(formatPayoutDate(refund.refundedOn))}, reference <span class="bo-reference">${escapeHtml(refund.reference)}</span></li>`).join("")}</ul></dd>`;
+  const remaining = outcome.refundOutstandingKobo === 0 ? `<dt>Guest refund</dt><dd>Refunded in full</dd>`
+    : outcome.refundedKobo > 0 ? `<dt>Still to refund</dt><dd>${formatMoney(outcome.refundOutstandingKobo)}</dd>` : "";
+  return `<dt>Blocking Fulfilment Complaint upheld</dt><dd>The stay ended from the night of ${escapeHtml(formatNight(outcome.firstAffectedNight))}</dd><dt>Refund owed to the Guest</dt><dd class="ui-money-total">${formatMoney(outcome.refundKobo)}</dd>${refunds}${remaining}`;
+}
+
+function guestRefundForm(reservation: OperatorReservation, now: Date): string {
+  if (!reservation.stayOutcome || reservation.stayOutcome.refundOutstandingKobo === 0) return "";
+  const id = escapeHtml(reservation.requestId);
+  return `<section class="ui-panel" aria-labelledby="refund-heading"><form method="post" action="/operator/bookings/${encodeURIComponent(reservation.requestId)}/guest-refund" class="ui-stack"><input type="hidden" name="basedOnVersion" value="${escapeHtml(reservation.version)}"><h2 id="refund-heading">Record the Guest's refund</h2><p>Refund the Guest from the Paystack dashboard for a card payment, or by bank transfer, then record it here. ${formatMoney(reservation.stayOutcome.refundOutstandingKobo)} is still to refund.</p><div class="ui-field"><label class="ui-field__label" for="refund-amount-${id}">Amount refunded (₦)</label><input id="refund-amount-${id}" name="amount" inputmode="decimal" autocomplete="off" required></div><div class="ui-field"><label class="ui-field__label" for="refunded-on-${id}">Date refunded</label><input id="refunded-on-${id}" name="refundedOn" type="date" max="${lagosToday(now)}" required></div><div class="ui-field"><label class="ui-field__label" for="refund-reference-${id}">Refund reference</label><input id="refund-reference-${id}" name="reference" autocomplete="off" required></div><button class="ui-button ui-button--primary ui-button--block" type="submit">Record refund</button></form></section>`;
+}
+
 function operatorReservationHtml(env: LocalApartmentOwnerEnvironment, principal: OperatorPrincipal, requestId: string, error = ""): string {
   const reservation = env.operatorReservation(requestId, commandPrincipal(principal));
   const window = reservation.checkInWindow ? `${reservation.checkInWindow.earliestAccessTime}–${reservation.checkInWindow.latestPermittedArrival} WAT` : "Not on file";
-  const payable = reservation.openComplaints.length > 0
+  const payable = reservation.stayOutcome && reservation.ownerPayableDueAt
+    ? `Due ${watTime(reservation.ownerPayableDueAt)}, when the upheld outcome was recorded`
+    : reservation.openComplaints.length > 0
     ? "Not due while a Blocking Fulfilment Complaint is open"
     : reservation.ownerPayableDueAt ? `Due ${watTime(reservation.ownerPayableDueAt)}` : "Not due until Verified Access is recorded";
-  const complaints = reservation.openComplaints.map((complaint) => `<dt>Open Blocking Fulfilment Complaint</dt><dd>${escapeHtml(COMPLAINT_CATEGORY_LABELS[complaint.category])}${dismissComplaintForm(reservation, complaint.complaintId)}</dd>`).join("");
+  const complaints = reservation.openComplaints.map((complaint) => `<dt>Open Blocking Fulfilment Complaint</dt><dd>${escapeHtml(COMPLAINT_CATEGORY_LABELS[complaint.category])}${dismissComplaintForm(reservation, complaint.complaintId)}${reservation.stayOutcome ? "" : upholdComplaintForm(reservation, complaint.complaintId)}</dd>`).join("");
   const facts = `<dl class="ui-facts"><dt>Owner</dt><dd>${escapeHtml(reservation.ownerName)}</dd><dt>Apartment</dt><dd>${escapeHtml(reservation.apartmentTitle)}</dd><dt>Dates</dt><dd>${escapeHtml(formatStayDates(reservation.checkIn, reservation.checkOut))} (${reservation.nights} ${reservation.nights === 1 ? "night" : "nights"})</dd><dt>Guest party</dt><dd>${reservation.partySize} ${reservation.partySize === 1 ? "occupant" : "occupants"}</dd><dt>Arrival window</dt><dd>${escapeHtml(window)}</dd><dt>Checkout</dt><dd>${reservation.checkoutTime ? `${escapeHtml(reservation.checkoutTime)} WAT` : "Not on file"}</dd>${reservation.phoneNumber ? `<dt>Guest phone</dt><dd>${escapeHtml(reservation.phoneNumber)}</dd>` : ""}<dt>Amount paid</dt><dd class="ui-money-total">${formatMoney(reservation.amountPaidKobo)}</dd><dt>Payment method</dt><dd>${escapeHtml(reservation.paidWith ? BOOKING_PAYMENT_METHOD_LABELS[reservation.paidWith] : "Not on file")}</dd></dl>`;
-  const status = `<dl class="ui-facts"><dt>Check-in</dt><dd>${escapeHtml(ACCESS_STATUS_LABELS[reservation.accessStatus])}</dd>${complaints}<dt>Owner payable</dt><dd>${payable}</dd></dl>`;
+  const status = `<dl class="ui-facts"><dt>Check-in</dt><dd>${escapeHtml(ACCESS_STATUS_LABELS[reservation.accessStatus])}</dd>${complaints}${stayOutcomeHtml(reservation)}<dt>Owner payable</dt><dd>${payable}</dd></dl>`;
   return backOfficePage({
     title: `Reservation · ${reservation.apartmentTitle}`,
     viewer: viewer(env, principal),
     current: "bookings",
     style: DECISION_STYLE,
-    body: `<p><a class="ui-button ui-button--quiet" href="/operator/bookings">${icon("arrow-left")}Back to bookings</a></p><header class="ui-page__header"><p class="ui-eyebrow">Reservation</p><h1>${escapeHtml(reservation.apartmentTitle)}</h1><div class="ui-row">${bookingBadge(reservation)}</div></header>${error ? `<p class="ui-banner ui-banner--danger" role="alert">${icon("alert")}<span>${escapeHtml(error)}</span></p>` : ""}<section class="ui-panel" aria-label="Reservation facts">${facts}</section><section class="ui-panel" aria-label="Check-in status">${status}</section>${checkInFormsHtml(reservation)}`,
+    body: `<p><a class="ui-button ui-button--quiet" href="/operator/bookings">${icon("arrow-left")}Back to bookings</a></p><header class="ui-page__header"><p class="ui-eyebrow">Reservation</p><h1>${escapeHtml(reservation.apartmentTitle)}</h1><div class="ui-row">${bookingBadge(reservation)}</div></header>${error ? `<p class="ui-banner ui-banner--danger" role="alert">${icon("alert")}<span>${escapeHtml(error)}</span></p>` : ""}<section class="ui-panel" aria-label="Reservation facts">${facts}</section><section class="ui-panel" aria-label="Check-in status">${status}</section>${guestRefundForm(reservation, env.clock())}${checkInFormsHtml(reservation)}`,
   });
 }
 
 /** Only the fields each check-in form sends are accepted, so no free text can ride along (ADR 0075, 0091). */
-function checkInFromForm(kind: "verified-access" | "blocking-complaint" | "dismiss", body: string): { readonly basedOnVersion: string; readonly value: string } {
+function checkInFromForm(kind: "verified-access" | "blocking-complaint" | "dismiss" | "uphold", body: string): { readonly basedOnVersion: string; readonly value: string } {
   const params = new URLSearchParams(body);
-  const field = kind === "verified-access" ? "basis" : kind === "blocking-complaint" ? "category" : "reason";
+  const field = kind === "verified-access" ? "basis" : kind === "blocking-complaint" ? "category" : kind === "dismiss" ? "reason" : "firstNight";
   const keys = [...params.keys()];
   if (keys.some((key) => key !== "basedOnVersion" && key !== field) || new Set(keys).size !== keys.length) throw new DecisionFormError("Unexpected check-in fields");
   const version = params.get("basedOnVersion") ?? "";
@@ -421,12 +465,22 @@ function checkInFromForm(kind: "verified-access" | "blocking-complaint" | "dismi
   return { basedOnVersion: version, value: params.get(field) ?? "" };
 }
 
+/** Only the Guest refund form's own fields (ADR 0075). */
+function guestRefundFromForm(body: string): { readonly basedOnVersion: string; readonly amount: string; readonly refundedOn: string; readonly reference: string } {
+  const params = new URLSearchParams(body);
+  const keys = [...params.keys()];
+  if (keys.some((key) => !["basedOnVersion", "amount", "refundedOn", "reference"].includes(key)) || new Set(keys).size !== keys.length) throw new DecisionFormError("Unexpected refund fields");
+  const version = params.get("basedOnVersion") ?? "";
+  if (!/^[0-9a-f]{16}$/.test(version)) throw new DecisionFormError("Missing refund version");
+  return { basedOnVersion: version, amount: params.get("amount") ?? "", refundedOn: params.get("refundedOn") ?? "", reference: params.get("reference") ?? "" };
+}
+
 /** Why a check-in action was refused, in plain words. Domain refusals keep their own wording (ADR 0091). */
 function checkInRefusal(error: unknown): string {
   if (error instanceof CheckInInputError) return `${error.message}. Nothing was recorded.`;
   if (error instanceof DecisionFormError) return "This form could not be read. Review the Reservation and try again. Nothing was recorded.";
   if (error instanceof CheckInStaleError) return "This Reservation changed since you opened it. Review it and try again. Nothing was recorded.";
-  if (error instanceof CheckInRefusedError) return `${error.message}. Nothing was recorded.`;
+  if (error instanceof CheckInRefusedError || error instanceof GuestRefundError) return `${error.message}. Nothing was recorded.`;
   const message = error instanceof Error ? error.message : "";
   const known = ["Verified Access cannot be recorded before the Contractual Check-In Window begins", "Verified Access is already recorded for this Reservation", "This Reservation has no Contractual Check-In Window on file"].find((text) => message.includes(text));
   return known ? `${known}. Nothing was recorded.` : "This action could not be completed. Nothing was recorded.";
@@ -550,7 +604,7 @@ function ownerPayableCard(item: OperatorOwnerPayable, now: Date, ownerOverpaidKo
   const payable = item.payable;
   const status = PAYABLE_STATUS[payable.status];
   const cancellation = payable.cancelled
-    ? `<dt>Cancellation</dt><dd>Cancelled under the cancellation policy. Captured at confirmation: ${formatMoney(payable.captured.ownerPayableKobo)} owner payable, ${formatMoney(payable.captured.marginKobo)} margin.</dd>`
+    ? `<dt>Cancellation</dt><dd>${payable.cancellationLiability === "operator_failure" ? "Ended by an upheld Blocking Fulfilment Complaint." : "Cancelled under the cancellation policy."} Captured at confirmation: ${formatMoney(payable.captured.ownerPayableKobo)} owner payable, ${formatMoney(payable.captured.marginKobo)} margin.</dd>`
     : "";
   const paid = payable.payouts.length === 0 ? "" : `<dt>Paid</dt><dd><ul class="bo-payouts">${payable.payouts.map((payout) => `<li>${formatMoney(payout.amountKobo)} paid ${escapeHtml(formatPayoutDate(payout.paidOn))}, reference <span class="bo-reference">${escapeHtml(payout.reference)}</span></li>`).join("")}</ul></dd>`;
   const outstanding = payable.paidKobo > 0 && payable.outstandingKobo > 0 ? `<dt>Still to pay</dt><dd>${formatMoney(payable.outstandingKobo)}</dd>` : "";
@@ -1320,7 +1374,8 @@ export function startLocalOwnerServer(options: {
       return;
     }
     // Issue 10: dismiss an open complaint. Same guards and refusals as the other check-in actions (ADR 0086, 0082).
-    const dismissMatch = url.pathname.match(/^\/operator\/bookings\/([^/]+)\/blocking-complaint\/([^/]+)\/dismiss$/);
+    // Issue 14: uphold is the same shape; the refund route follows.
+    const dismissMatch = url.pathname.match(/^\/operator\/bookings\/([^/]+)\/blocking-complaint\/([^/]+)\/(dismiss|uphold)$/);
     if (req.method === "POST" && dismissMatch) {
       if (!browserOriginAccepted(req)) { res.writeHead(403); res.end("Origin rejected"); return; }
       const principal = operatorPrincipal(req, env);
@@ -1329,14 +1384,36 @@ export function startLocalOwnerServer(options: {
       const complaintId = pathSegment(dismissMatch[2]!);
       if (requestId === null || complaintId === null) { res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }); res.end("Not found"); return; }
       try {
-        const form = checkInFromForm("dismiss", await readForm(req));
-        env.dismissBlockingComplaint(requestId, commandPrincipal(principal), { complaintId, reason: form.value, basedOnVersion: form.basedOnVersion });
+        const kind = dismissMatch[3] === "uphold" ? "uphold" : "dismiss";
+        const form = checkInFromForm(kind, await readForm(req));
+        if (kind === "uphold") env.upholdBlockingComplaint(requestId, commandPrincipal(principal), { complaintId, firstAffectedNight: form.value, basedOnVersion: form.basedOnVersion });
+        else env.dismissBlockingComplaint(requestId, commandPrincipal(principal), { complaintId, reason: form.value, basedOnVersion: form.basedOnVersion });
         res.writeHead(303, { Location: `/operator/bookings/${encodeURIComponent(requestId)}` }); res.end();
       } catch (error) {
         let body: string;
         try { body = operatorReservationHtml(env, principal, requestId, checkInRefusal(error)); }
         catch { if (!res.headersSent) { res.writeHead(404, { "Content-Type": "text/html; charset=utf-8" }); res.end(bookingNotFoundHtml(env, principal)); } return; }
         const statusCode = error instanceof CheckInInputError || error instanceof DecisionFormError ? 400 : 409;
+        if (!res.headersSent) { res.writeHead(statusCode, { "Content-Type": "text/html; charset=utf-8" }); res.end(body); }
+      }
+      return;
+    }
+    // Issue 14: record the Guest's refund after an upheld complaint. Same guards as the other Reservation actions.
+    const guestRefundMatch = url.pathname.match(/^\/operator\/bookings\/([^/]+)\/guest-refund$/);
+    if (req.method === "POST" && guestRefundMatch) {
+      if (!browserOriginAccepted(req)) { res.writeHead(403); res.end("Origin rejected"); return; }
+      const principal = operatorPrincipal(req, env);
+      if (!principal) { res.writeHead(401); res.end("Authentication required"); return; }
+      const requestId = pathSegment(guestRefundMatch[1]!);
+      if (requestId === null) { res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }); res.end("Not found"); return; }
+      try {
+        env.recordGuestRefund(requestId, commandPrincipal(principal), guestRefundFromForm(await readForm(req)));
+        res.writeHead(303, { Location: `/operator/bookings/${encodeURIComponent(requestId)}` }); res.end();
+      } catch (error) {
+        let body: string;
+        try { body = operatorReservationHtml(env, principal, requestId, checkInRefusal(error)); }
+        catch { if (!res.headersSent) { res.writeHead(404, { "Content-Type": "text/html; charset=utf-8" }); res.end(bookingNotFoundHtml(env, principal)); } return; }
+        const statusCode = error instanceof DecisionFormError || (error instanceof GuestRefundError && error.isInput) ? 400 : 409;
         if (!res.headersSent) { res.writeHead(statusCode, { "Content-Type": "text/html; charset=utf-8" }); res.end(body); }
       }
       return;
