@@ -87,7 +87,7 @@ function csvEscape(value: string | number): string {
 function inventoryCsv(): string {
   const headers = [
     "external_listing_id", "unit_id", "property_id", "operator_id", "title", "city", "neighbourhood", "capacity", "bedrooms",
-    "owner_nightly_ngn", "owner_mandatory_charges_ngn", "margin_percent", "refundable_security_deposit_ngn", "currency", "amenities", "blocked_dates",
+    "owner_nightly_ngn", "owner_mandatory_charges_ngn", "margin_percent", "refundable_security_deposit_ngn", "currency", "amenities",
     "inspection_status", "inspection_date", "inspection_expiry", "inspection_scope", "inspection_material_change_pending",
     "management_authority_status", "management_authority_date", "management_authority_expiry", "management_authority_permissions",
     "licensing_status", "licensing_date", "licensing_expiry", "insurance_status", "insurance_date", "insurance_expiry",
@@ -97,7 +97,7 @@ function inventoryCsv(): string {
   // ADR 0089: owner agreed amounts at a 25% margin; Guests see ₦95,000 + ₦12,000, ₦125,000 + ₦15,000 and ₦65,000 + ₦5,000.
   const common = {
     margin_percent: 25,
-    operator_id: LOCAL_PILOT_OPERATOR_ID, currency: "NGN", blocked_dates: "", inspection_status: "passed", inspection_date: "2026-09-01",
+    operator_id: LOCAL_PILOT_OPERATOR_ID, currency: "NGN", inspection_status: "passed", inspection_date: "2026-09-01",
     inspection_expiry: "2027-09-30", inspection_scope: "entire-place-possession|structure-and-sanitation|fire-and-emergency-readiness|electrical-and-utilities|locks-and-privacy|access-controls|cameras|listing-accuracy|current-media",
     inspection_material_change_pending: "false", management_authority_status: "verified", management_authority_date: "2026-09-01",
     management_authority_expiry: "2027-09-30", management_authority_permissions: "advertise|accept-bookings|contract-guests|provide-access|collect-revenue|manage-cancellations|issue-refunds|manage-incidents",
