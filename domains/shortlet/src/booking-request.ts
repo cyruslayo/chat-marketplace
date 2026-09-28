@@ -402,6 +402,14 @@ export class BookingRequestManager {
       }
     }
 
+    const deliveryDeadlineIso = new Date(now.getTime() + TECHNICAL_DELIVERY_WINDOW_MINUTES * 60 * 1000).toISOString();
+    // ADR 0041/0043: the 30-minute response window starts only when a delivery channel accepts. Until then no response
+    // deadline exists: the field holds the 5-minute delivery deadline, is never shown as a response deadline (every
+    // projection checks `delivered`), and is never enforced as a timeout. `markDelivered` starts the fresh window.
+    const operatorResponseDeadlineIso = autoDeliver
+      ? new Date(now.getTime() + OPERATOR_RESPONSE_WINDOW_MINUTES * 60 * 1000).toISOString()
+      : deliveryDeadlineIso;
+
     let inventoryBlock = null;
     if (this.#calendar) {
       inventoryBlock = this.#calendar.createBookingRequestBlock({
@@ -409,14 +417,14 @@ export class BookingRequestManager {
         holderId: draft.primaryGuest.id,
         start: draft.checkIn,
         end: draft.checkOut,
+        // In Delivery Pending the block lasts at most the delivery window (ADR 0043).
+        expiresAt: operatorResponseDeadlineIso,
         clock: () => now
       });
     }
 
     const requestId = `req-${crypto.randomUUID()}`;
     const disclosedAtIso = now.toISOString();
-    const deliveryDeadlineIso = new Date(now.getTime() + TECHNICAL_DELIVERY_WINDOW_MINUTES * 60 * 1000).toISOString();
-    const operatorResponseDeadlineIso = new Date(now.getTime() + OPERATOR_RESPONSE_WINDOW_MINUTES * 60 * 1000).toISOString();
 
     const isDelivered = autoDeliver;
     const deliveredAtIso = autoDeliver ? disclosedAtIso : null;
@@ -515,8 +523,14 @@ export class BookingRequestManager {
       throw new Error("Technical delivery deadline (5 minutes) expired; request delivery failed");
     }
 
+    // ADR 0043: acceptance starts a fresh full 30-minute window, and the exclusive block is held for all of it (ADR 0041).
+    const operatorResponseDeadlineIso = new Date(now.getTime() + OPERATOR_RESPONSE_WINDOW_MINUTES * 60 * 1000).toISOString();
+    if (req.inventoryCommitmentId && this.#calendar) {
+      this.#calendar.extendBookingRequestBlock(req.inventoryCommitmentId, operatorResponseDeadlineIso, { clock: () => now });
+    }
     req.delivered = true;
     req.deliveredAt = now.toISOString();
+    req.operatorResponseDeadlineAt = operatorResponseDeadlineIso;
     this.#persistRequest(req);
 
     if (this.#audit) {
@@ -578,6 +592,8 @@ export class BookingRequestManager {
     if (req.status !== "disclosed") {
       return req;
     }
+    // ADR 0041: an undelivered request never times out on the owner; past its delivery window it is Delivery Failed.
+    if (!req.delivered) return this.checkAndResolveDeliveryFailure(envelope, { clock });
 
     const now = clock();
     if (now.getTime() >= new Date(req.operatorResponseDeadlineAt).getTime()) {

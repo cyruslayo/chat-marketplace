@@ -260,6 +260,15 @@ export class SqliteAvailabilityStore {
     });
   }
 
+  /** Only an active, unexpired request block, and only forward: an expired or released block is never revived. */
+  extendBookingRequestBlock(commitmentId: string, expiresAt: string, now: string): void {
+    this.#withWriteTransaction(() => {
+      this.#expireStale(now);
+      const result = this.#database.prepare(`UPDATE availability_commitments SET expires_at = $expiresAt WHERE commitment_id = $commitmentId AND kind = 'booking_request_block' AND state = 'active' AND expires_at > $now AND expires_at <= $expiresAt`).run({ $commitmentId: commitmentId, $expiresAt: expiresAt, $now: now });
+      if (result.changes !== 1) throw new Error("Booking request block is no longer active");
+    });
+  }
+
   releaseBookingRequestBlock(commitmentId: string, now: string): void {
     this.#withWriteTransaction(() => {
       this.#expireStale(now);

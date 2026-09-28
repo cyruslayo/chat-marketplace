@@ -13,26 +13,9 @@ import {
   RestrictedIdentityStore,
   BookingRequestManager
 } from "../domains/shortlet/src/index.js";
+import { setupBookingRequestManager } from "./helpers/booking-request-manager.js";
 
-function setup() {
-  const repository = new UnitRepository();
-  seedIssue01Units(repository);
-  const audit = new InMemoryAuditLog();
-  const calendar = new AvailabilityCalendar({ repository, audit });
-  const identityStore = new RestrictedIdentityStore();
-  const verificationResults: GuestIdentityVerificationResultSource = {
-    getVerificationResult: ({ tenantId, guestId }) => ({ tenantId, guestId, governmentIdVerified: true })
-  };
-  const guestVerification = new GuestVerificationService({ repository, verificationResults });
-  const manager = new BookingRequestManager({
-    repository,
-    audit,
-    calendar,
-    guestVerification
-  });
-  const unit = repository.findAll()[0];
-  return { repository, audit, calendar, identityStore, guestVerification, manager, unit };
-}
+const setup = setupBookingRequestManager;
 
 test("Undelivered Booking Requests reject both Operator decisions", () => {
   const { manager, unit } = setup();
