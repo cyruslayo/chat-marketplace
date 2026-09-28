@@ -4,6 +4,7 @@
  * browser never owns booking state or executes generated business logic.
  */
 import { createBasicWebRuntime } from "@weaver/web";
+import { buildListingGallery, enhanceListingGallery, watchPhotoFailure } from "./listing-gallery.js";
 import { GUEST_GLOSSARY, GUEST_NEW_CONVERSATION, guestNewConversationCopy, type GuestCommittedWorkKind } from "../../web-agent/src/guest-content.js";
 import {
   canUseSurfaceActions,
@@ -139,19 +140,10 @@ function enhanceListingImages(mount: HTMLElement): void {
     image.decoding = "async";
     image.loading = index === 0 ? "eager" : "lazy";
     if (index === 0) image.fetchPriority = "high";
-    const failed = (): void => {
-      const fallback = document.createElement("div");
-      fallback.className = "photo-fallback";
-      fallback.setAttribute("role", "img");
-      fallback.setAttribute("aria-label", `${image.alt || "Property photo"} unavailable`);
-      fallback.textContent = "Photo unavailable";
-      image.replaceWith(fallback);
-    };
-    image.addEventListener("load", () => image.classList.add("is-loaded"), { once: true });
-    image.addEventListener("error", failed, { once: true });
-    if (image.complete && image.naturalWidth > 0) image.classList.add("is-loaded");
-    else if (image.complete) failed();
+    watchPhotoFailure(image);
   }
+  // Guest gallery issue 01: the strip count, "Show all" and the full-screen viewer (presentation only, ADR 0072).
+  for (const gallery of mount.querySelectorAll<HTMLElement>(".listing-gallery")) enhanceListingGallery(gallery);
 }
 
 function wrapDirectChildren(parent: HTMLElement, className: string, children: readonly Element[]): HTMLElement | undefined {
@@ -169,21 +161,26 @@ function organizeUnitDetail(mount: HTMLElement): void {
   if (!root) return;
   root.classList.add("unit-detail-root");
 
-  const gallery = document.createElement("div");
-  gallery.className = "unit-gallery";
-  gallery.setAttribute("role", "group");
-  gallery.setAttribute("aria-label", "Property photos");
-  while (root.firstElementChild instanceof HTMLImageElement) gallery.appendChild(root.firstElementChild);
-  const noPhotos = root.firstElementChild;
-  if (noPhotos instanceof HTMLElement && noPhotos.matches('[data-a2ui-component="Text"]') && /no property photos/i.test(noPhotos.textContent ?? "")) {
-    noPhotos.classList.add("unit-photo-missing");
-    gallery.appendChild(noPhotos);
+  // Guest gallery issue 01: the photos Weaver rendered become the shared listing gallery, as on the full page.
+  const images: HTMLImageElement[] = [];
+  for (const child of root.children) {
+    if (!(child instanceof HTMLImageElement)) break;
+    images.push(child);
   }
-  if (gallery.childElementCount > 0) {
-    const photos = [...gallery.children].filter((child) => child instanceof HTMLImageElement);
-    if (photos.length === 0) gallery.classList.add("unit-gallery--fallback");
-    if (photos.length > 1) gallery.classList.add("unit-gallery--mosaic");
-    root.insertBefore(gallery, root.firstChild);
+  const unitTitle = [...root.children].find((child) => child.tagName === "H2" && !/^(₦|NGN\b)/.test(child.textContent?.trim() ?? ""))?.textContent?.trim() || "this apartment";
+  if (images.length > 0) {
+    root.insertBefore(buildListingGallery(document, unitTitle, images), root.firstChild);
+  } else {
+    const noPhotos = root.firstElementChild;
+    if (noPhotos instanceof HTMLElement && noPhotos.matches('[data-a2ui-component="Text"]') && /no property photos/i.test(noPhotos.textContent ?? "")) {
+      const fallback = document.createElement("div");
+      fallback.className = "unit-gallery unit-gallery--fallback";
+      fallback.setAttribute("role", "group");
+      fallback.setAttribute("aria-label", "Property photos");
+      noPhotos.classList.add("unit-photo-missing");
+      root.insertBefore(fallback, noPhotos);
+      fallback.appendChild(noPhotos);
+    }
   }
 
   const children = [...root.children];
@@ -227,7 +224,7 @@ function organizeUnitDetail(mount: HTMLElement): void {
   }
   const action = root.querySelector<HTMLElement>(":scope > [data-a2ui-component=\"Row\"]");
   action?.classList.add("unit-actions");
-  const grouped = new Set<Element>([gallery, ...(overview ? [overview] : []), ...root.querySelectorAll(":scope > .unit-price-group, :scope > .unit-description, :scope > .unit-amenities")]);
+  const grouped = new Set<Element>([...(overview ? [overview] : []), ...root.querySelectorAll(":scope > .listing-gallery, :scope > .unit-gallery, :scope > .unit-price-group, :scope > .unit-description, :scope > .unit-amenities")]);
   const supporting = [...root.children].filter((child) => child !== action && !grouped.has(child));
   wrapDirectChildren(root, "unit-supporting-info", supporting);
 }
