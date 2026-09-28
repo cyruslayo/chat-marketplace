@@ -16,10 +16,10 @@ export function localPilotStartupLines(input: { readonly port: number; readonly 
 }
 
 /** Startup lines for the production pilot. Secrets and keys never appear here (ADR 0075). */
-export function productionPilotStartupLines(input: { readonly publicOrigin: string; readonly paystackEnvironment: string; readonly port: number; readonly concierge?: ConciergeConfiguration }): readonly string[] {
+export function productionPilotStartupLines(input: { readonly publicOrigin: string; readonly paystackEnvironment: string; readonly port: number; readonly concierge?: ConciergeConfiguration; readonly deployment?: "production" | "staging" }): readonly string[] {
   return [
     "Shortlet pilot initialized",
-    "environment=production",
+    `environment=${input.deployment ?? "production"}`,
     `publicOrigin=${input.publicOrigin}`,
     `paystackEnvironment=${input.paystackEnvironment}`,
     ...(input.concierge ? conciergeStartupFields(input.concierge) : []),

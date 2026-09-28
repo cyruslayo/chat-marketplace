@@ -50,7 +50,7 @@ async function productionFixture(options: { readonly noDeposit?: boolean; readon
     ...options.environment,
   });
   const paystack: PaystackClient = {
-    configuration: { environment: "live", callbackBaseUrl: PUBLIC_ORIGIN },
+    configuration: { environment: configuration.paystack.environment, callbackBaseUrl: PUBLIC_ORIGIN },
     initializeTransaction: async () => { throw new Error("Paystack network is not part of this test"); },
     verifyTransaction: async () => { throw new Error("Paystack network is not part of this test"); },
     verifyWebhookSignature: () => false,
@@ -412,6 +412,171 @@ test("AC14/AC15/AC16/AC17/AC28 — Production configuration rejects deterministi
     assert.throws(() => loadPilotConfiguration({ ...base, SHORTLET_PUBLIC_ORIGIN: "http://pilot.example.com", PAYSTACK_SECRET_KEY: "secret", PAYSTACK_ENVIRONMENT: "live" }), /HTTPS/);
     assert.throws(() => loadPilotConfiguration({ ...base, SHORTLET_PUBLIC_ORIGIN: PUBLIC_ORIGIN, PAYSTACK_ENVIRONMENT: "live" }), /PAYSTACK_SECRET_KEY/);
     assert.throws(() => loadPilotConfiguration({ ...base, SHORTLET_PUBLIC_ORIGIN: PUBLIC_ORIGIN, PAYSTACK_SECRET_KEY: "secret", PAYSTACK_ENVIRONMENT: "test" }), /live/);
+  } finally {
+    await rm(fixture.directory, { recursive: true, force: true });
+  }
+});
+
+// Launch-readiness issue 22: the closed beta runs the production composition on Paystack test keys.
+const BETA_INVITE_CODE = "beta-invite-offline";
+const STAGING_ENVIRONMENT = {
+  SHORTLET_DEPLOYMENT: "staging",
+  SHORTLET_BETA_INVITE_CODE: BETA_INVITE_CODE,
+  PAYSTACK_SECRET_KEY: "sk_test_offline-only",
+  PAYSTACK_ENVIRONMENT: "test",
+} as const;
+
+async function withStagingServer(run: (base: string, fixture: ProductionFixture) => Promise<void>): Promise<void> {
+  const fixture = await productionFixture({ environment: STAGING_ENVIRONMENT });
+  const server = startPilotServer({ port: 0, configuration: fixture.configuration, paystackClient: fixture.paystack });
+  try {
+    await run(`http://127.0.0.1:${await server.listen()}`, fixture);
+  } finally {
+    await server.close();
+    await rm(fixture.directory, { recursive: true, force: true });
+  }
+}
+
+async function enterBeta(base: string): Promise<string> {
+  const entered = await fetch(`${base}/?invite=${BETA_INVITE_CODE}`, { redirect: "manual" });
+  assert.equal(entered.status, 303);
+  return cookieFrom(entered);
+}
+
+test("Staging starts with Paystack test keys", async () => {
+  await withStagingServer(async (base, fixture) => {
+    assert.equal(fixture.configuration.deployment, "staging");
+    assert.equal(fixture.configuration.paystack.environment, "test");
+    const health = await fetch(`${base}/healthz`);
+    assert.equal(health.status, 200);
+    assert.deepEqual(await health.json(), { ok: true });
+  });
+  const fixture = await productionFixture();
+  try {
+    const base = { SHORTLET_PUBLIC_ORIGIN: PUBLIC_ORIGIN, SHORTLET_DB_PATH: fixture.configuration.databasePath, SHORTLET_INVENTORY_PATH: fixture.configuration.inventoryPath, SHORTLET_OPERATORS_PATH: fixture.configuration.operatorsPath };
+    // A beta that says payments are tests must never hold live keys.
+    assert.throws(() => loadPilotConfiguration({ ...base, ...STAGING_ENVIRONMENT, PAYSTACK_SECRET_KEY: "sk_live_x", PAYSTACK_ENVIRONMENT: "live" }), /Staging requires PAYSTACK_ENVIRONMENT=test/);
+    const staging = loadPilotConfiguration({ ...base, ...STAGING_ENVIRONMENT });
+    assert.throws(() => startPilotServer({ port: 0, configuration: staging, paystackClient: fixture.paystack }), /test Paystack client/);
+  } finally {
+    await rm(fixture.directory, { recursive: true, force: true });
+  }
+});
+
+test("Production still refuses Paystack test keys", async () => {
+  const fixture = await productionFixture();
+  try {
+    const base = { SHORTLET_PUBLIC_ORIGIN: PUBLIC_ORIGIN, SHORTLET_DB_PATH: fixture.configuration.databasePath, SHORTLET_INVENTORY_PATH: fixture.configuration.inventoryPath, SHORTLET_OPERATORS_PATH: fixture.configuration.operatorsPath };
+    assert.throws(() => loadPilotConfiguration({ ...base, PAYSTACK_SECRET_KEY: "sk_test_x", PAYSTACK_ENVIRONMENT: "test" }), /live/);
+    assert.throws(() => loadPilotConfiguration({ ...base, SHORTLET_DEPLOYMENT: "production", PAYSTACK_SECRET_KEY: "sk_test_x", PAYSTACK_ENVIRONMENT: "test" }), /live/);
+    const testClient: PaystackClient = { ...fixture.paystack, configuration: { environment: "test", callbackBaseUrl: PUBLIC_ORIGIN } };
+    assert.throws(() => startPilotServer({ port: 0, configuration: fixture.configuration, paystackClient: testClient }), /live Paystack client/);
+  } finally {
+    await rm(fixture.directory, { recursive: true, force: true });
+  }
+});
+
+test("Any SHORTLET_DEPLOYMENT value other than production or staging fails startup; unset means production", async () => {
+  const fixture = await productionFixture();
+  try {
+    assert.equal(fixture.configuration.deployment, "production");
+    assert.equal(fixture.configuration.betaInviteCode, null);
+    const base = { SHORTLET_PUBLIC_ORIGIN: PUBLIC_ORIGIN, SHORTLET_DB_PATH: fixture.configuration.databasePath, SHORTLET_INVENTORY_PATH: fixture.configuration.inventoryPath, SHORTLET_OPERATORS_PATH: fixture.configuration.operatorsPath, PAYSTACK_SECRET_KEY: "sk_live_x", PAYSTACK_ENVIRONMENT: "live" };
+    assert.equal(loadPilotConfiguration({ ...base, SHORTLET_DEPLOYMENT: "production" }).deployment, "production");
+    for (const value of ["Staging", "stage", "beta", "dev", "test"]) {
+      assert.throws(() => loadPilotConfiguration({ ...base, SHORTLET_DEPLOYMENT: value }), /SHORTLET_DEPLOYMENT must be production or staging/, value);
+    }
+  } finally {
+    await rm(fixture.directory, { recursive: true, force: true });
+  }
+});
+
+test("Staging still requires an HTTPS public origin and persistent paths, and mounts no fixture routes", async () => {
+  const fixture = await productionFixture();
+  try {
+    const base = { ...STAGING_ENVIRONMENT, SHORTLET_PUBLIC_ORIGIN: PUBLIC_ORIGIN, SHORTLET_DB_PATH: fixture.configuration.databasePath, SHORTLET_INVENTORY_PATH: fixture.configuration.inventoryPath, SHORTLET_OPERATORS_PATH: fixture.configuration.operatorsPath };
+    assert.throws(() => loadPilotConfiguration({ ...base, SHORTLET_PUBLIC_ORIGIN: "http://beta.example.com" }), /HTTPS/);
+    assert.throws(() => loadPilotConfiguration({ ...base, SHORTLET_DB_PATH: "relative/pilot.sqlite" }), /absolute/);
+    assert.throws(() => loadPilotConfiguration({ ...base, SHORTLET_INVENTORY_PATH: join(fixture.directory, "missing.json") }), /existing persistent file/);
+  } finally {
+    await rm(fixture.directory, { recursive: true, force: true });
+  }
+  await withStagingServer(async (base) => {
+    const guest = await enterBeta(base);
+    assert.equal((await fetch(`${base}/api/reset`, { method: "POST", headers: { Cookie: guest, Origin: PUBLIC_ORIGIN } })).status, 404);
+    assert.equal((await fetch(`${base}/action/demo-request`, { method: "POST" })).status, 404);
+    assert.equal((await fetch(`${base}/action/reset`, { method: "POST" })).status, 404);
+    const cookie = (await fetch(`${base}/?invite=${BETA_INVITE_CODE}`, { redirect: "manual" })).headers.get("set-cookie") ?? "";
+    assert.match(cookie, /Secure/);
+    assert.match(cookie, /HttpOnly/);
+  });
+});
+
+test("Every staging guest and operator page shows the beta banner", async () => {
+  await withStagingServer(async (base, fixture) => {
+    const guest = await enterBeta(base);
+    const pages: readonly (readonly [string, RequestInit])[] = [
+      ["/", {}],
+      ["/", { headers: { Cookie: guest } }],
+      [`/stays/${encodeURIComponent(fixture.configuration.unitId)}`, { headers: { Cookie: guest } }],
+      // An error page: an invalid search renders the conventional HTML error page.
+      ["/stays/search?city=", { headers: { Cookie: guest, Accept: "text/html" } }],
+      ["/operator/login", {}],
+    ];
+    for (const [path, init] of pages) {
+      const response = await fetch(`${base}${path}`, init);
+      assert.match(response.headers.get("content-type") ?? "", /text\/html/, path);
+      const html = await response.text();
+      assert.match(html, /<body[^>]*><div role="note" data-beta-banner[^>]*>Beta: test payments only\. No real bookings are made\.<\/div>/, path);
+      assert.equal(Number(response.headers.get("content-length")), Buffer.byteLength(html), path);
+    }
+    // JSON and scripts pass through untouched.
+    const state = await fetch(`${base}/api/state?threadId=g-${crypto.randomUUID()}`, { headers: { Cookie: guest } });
+    assert.doesNotMatch(await state.text(), /data-beta-banner/);
+  });
+  const fixture = await productionFixture();
+  const server = startPilotServer({ port: 0, configuration: fixture.configuration, paystackClient: fixture.paystack });
+  try {
+    const base = `http://127.0.0.1:${await server.listen()}`;
+    for (const path of ["/", "/operator/login"]) {
+      assert.doesNotMatch(await (await fetch(`${base}${path}`)).text(), /data-beta-banner/, path);
+    }
+  } finally {
+    await server.close();
+    await rm(fixture.directory, { recursive: true, force: true });
+  }
+});
+
+test("Staging requires a configured invite code before a guest session starts", async () => {
+  await withStagingServer(async (base) => {
+    const gate = await fetch(`${base}/`, { redirect: "manual" });
+    assert.equal(gate.status, 200);
+    assert.equal(gate.headers.get("set-cookie"), null);
+    assert.match(await gate.text(), /name="invite"/);
+
+    const wrong = await fetch(`${base}/?invite=not-the-code`, { redirect: "manual" });
+    assert.equal(wrong.status, 403);
+    assert.equal(wrong.headers.get("set-cookie"), null);
+    assert.match(await wrong.text(), /That invite code is not valid/);
+
+    const noSession = await postJson(base, "/api/turn", "", { threadId: `g-${crypto.randomUUID()}`, text: "Lagos" });
+    assert.notEqual(noSession.status, 200);
+
+    const entered = await fetch(`${base}/?invite=${BETA_INVITE_CODE}`, { redirect: "manual" });
+    assert.equal(entered.status, 303);
+    assert.equal(entered.headers.get("location"), "/");
+    const guest = cookieFrom(entered);
+    const shell = await fetch(`${base}/`, { headers: { Cookie: guest }, redirect: "manual" });
+    assert.equal(shell.status, 200);
+    assert.doesNotMatch(await shell.text(), /name="invite"/);
+  });
+
+  const fixture = await productionFixture();
+  try {
+    const base = { SHORTLET_PUBLIC_ORIGIN: PUBLIC_ORIGIN, SHORTLET_DB_PATH: fixture.configuration.databasePath, SHORTLET_INVENTORY_PATH: fixture.configuration.inventoryPath, SHORTLET_OPERATORS_PATH: fixture.configuration.operatorsPath };
+    assert.throws(() => loadPilotConfiguration({ ...base, ...STAGING_ENVIRONMENT, SHORTLET_BETA_INVITE_CODE: "" }), /SHORTLET_BETA_INVITE_CODE is required/);
+    assert.throws(() => loadPilotConfiguration({ ...base, ...STAGING_ENVIRONMENT, SHORTLET_BETA_INVITE_CODE: "two words" }), /must not contain spaces/);
+    assert.throws(() => loadPilotConfiguration({ ...base, PAYSTACK_SECRET_KEY: "sk_live_x", PAYSTACK_ENVIRONMENT: "live", SHORTLET_BETA_INVITE_CODE: "code" }), /only used when SHORTLET_DEPLOYMENT=staging/);
   } finally {
     await rm(fixture.directory, { recursive: true, force: true });
   }
