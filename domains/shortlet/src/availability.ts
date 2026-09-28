@@ -159,7 +159,11 @@ export class AvailabilityCalendar {
     this.#store.releaseOperatorHold(commitmentId, clock().toISOString());
   }
 
-  createBookingRequestBlock({ unitId, holderId, start, end, clock = () => new Date() }: { unitId: string; holderId: string; start: DateValue; end: DateValue; clock?: Clock }) {
+  /**
+   * ADR 0041: a disclosed request's exclusive block. It lasts 30 minutes by default; a request still in Delivery
+   * Pending passes its 5-minute delivery deadline instead (ADR 0043) and is extended on acceptance.
+   */
+  createBookingRequestBlock({ unitId, holderId, start, end, expiresAt, clock = () => new Date() }: { unitId: string; holderId: string; start: DateValue; end: DateValue; expiresAt?: DateValue; clock?: Clock }) {
     const now = clock();
     const commitment = this.#store.create({
       commitmentId: `brb-${crypto.randomUUID()}`,
@@ -168,11 +172,16 @@ export class AvailabilityCalendar {
       start: dateValue(start),
       end: dateValue(end),
       createdAt: now.toISOString(),
-      expiresAt: new Date(now.getTime() + 30 * 60 * 1000).toISOString(),
+      expiresAt: expiresAt === undefined ? new Date(now.getTime() + 30 * 60 * 1000).toISOString() : dateValue(expiresAt),
       holderId
     });
     if (!commitment.expiresAt) throw new Error("Booking request block must expire");
     return { commitmentId: commitment.commitmentId, unitId: commitment.unitId, holderId: commitment.holderId ?? holderId, start, end, createdAt: commitment.createdAt, expiresAt: commitment.expiresAt };
+  }
+
+  /** Issue 09 (ADR 0043): on delivery, move a still-active request block forward to the fresh response deadline. */
+  extendBookingRequestBlock(commitmentId: string, expiresAt: DateValue, { clock = () => new Date() }: { clock?: Clock } = {}): void {
+    this.#store.extendBookingRequestBlock(commitmentId, dateValue(expiresAt), clock().toISOString());
   }
 
   releaseBookingRequestBlock(commitmentId: string, { clock = () => new Date() }: { clock?: Clock } = {}): void {
