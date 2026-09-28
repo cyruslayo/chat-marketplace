@@ -44,7 +44,7 @@ export function startImageFixtureServer(): ImageFixtureServer {
       res.end("ok");
       return;
     }
-    if (path === "/synthetic-cover.png" || path === "/synthetic-living-room.png") {
+    if (path === "/synthetic-cover.png" || path === "/synthetic-living-room.png" || /^\/photo-\d{1,2}\.png$/.test(path)) {
       res.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "no-store" });
       res.end(IMAGE_BYTES);
       return;
