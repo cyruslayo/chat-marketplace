@@ -122,7 +122,8 @@ async function operatorLoginAndDecision(tab: RealBrowserTab, token: string, deci
   await tab.navigate(`${BASE}/operator/requests`);
   await tab.waitForText("Booking Requests", 15000);
   const opened = await tab.evaluate<boolean>(`(() => { const link=[...document.querySelectorAll('a')].find((candidate)=>candidate.getAttribute('href')?.startsWith('/operator/requests/')); if (!(link instanceof HTMLAnchorElement)) return false; link.click(); return true; })()`);
-  assert.equal(opened, true, await tab.evaluate<string>("document.body.innerText"));
+  // Read the page only on failure: after a successful click, the page is mid-navigation and has no body.
+  if (!opened) assert.fail(`No Booking Request link: ${await tab.evaluate<string>("document.body?.innerText ?? ''")}`);
   await tab.waitForText("Your decision", 15000);
   // B3: confirm needs the explicit re-attestation; decline needs a D1 reason code.
   await tab.evaluate<boolean>(decision === "Confirm"

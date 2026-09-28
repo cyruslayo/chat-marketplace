@@ -135,6 +135,11 @@ async function sendPrompt(tab: RealBrowserTab, text: string): Promise<void> {
   `);
 }
 
+/** A setup step's click must land; a silent miss would surface later as an unrelated text timeout. */
+async function click(tab: RealBrowserTab, label: string, cardLabel?: string): Promise<void> {
+  assert.equal(await tab.clickButton(label, cardLabel), true, `button "${label}" was not found`);
+}
+
 async function waitForDurable(ctx: RealBrowserTestContext, predicate: () => boolean, description: string, timeoutMs = 8000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -150,13 +155,13 @@ async function advanceToRequestReview(ctx: RealBrowserTestContext): Promise<void
   // the measured worst-case render under concurrent Chromium workers.
   await ctx.tabA.waitForText(IKOYI_TITLE, 30000);
 
-  await ctx.tabA.clickButton("View apartment", IKOYI_TITLE);
+  await click(ctx.tabA, "View apartment", IKOYI_TITLE);
   await ctx.tabA.waitForText("Request to Book", 15000);
 
-  await ctx.tabA.clickButton("Request to Book");
+  await click(ctx.tabA, "Request to Book");
   await ctx.tabA.waitForText("Review request", 15000);
 
-  await ctx.tabA.clickButton("Review request");
+  await click(ctx.tabA, "Review request");
   await ctx.tabA.waitForText("Submit Booking Request", 15000);
 
   // Sync Tab B to current review
@@ -167,7 +172,7 @@ async function advanceToRequestReview(ctx: RealBrowserTestContext): Promise<void
 async function advanceToConditionalOffer(ctx: RealBrowserTestContext): Promise<{ offerId: string; requestId: string }> {
   await advanceToRequestReview(ctx);
 
-  await ctx.tabA.clickButton("Submit Booking Request");
+  await click(ctx.tabA, "Submit Booking Request");
   await ctx.tabA.waitForText("Booking Request", 15000);
 
   const requestId = ctx.server.environment.interactionStore.listBookingRequestIds()[0]!;
@@ -193,7 +198,7 @@ async function advanceToPaymentReady(ctx: RealBrowserTestContext): Promise<{ off
   const { offerId } = await advanceToConditionalOffer(ctx);
 
   // Button text is "Accept" (conditional-offer-a2ui.ts line 30)
-  await ctx.tabA.clickButton("Accept");
+  await click(ctx.tabA, "Accept");
   // The amount-bearing label distinguishes the current payment action.
   await ctx.tabA.waitForText("Continue to stay payment", 15000);
 
@@ -206,7 +211,7 @@ async function advanceToPaymentReady(ctx: RealBrowserTestContext): Promise<{ off
 async function advanceToCheckoutInitiated(ctx: RealBrowserTestContext): Promise<{ offerId: string }> {
   const { offerId } = await advanceToPaymentReady(ctx);
 
-  await ctx.tabA.clickButton("Continue to stay payment");
+  await click(ctx.tabA, "Continue to stay payment");
   await ctx.tabA.waitForText("Check payment status", 15000);
 
   await ctx.tabB.navigate(`${ctx.base}/?threadId=${ctx.threadId}`);
@@ -220,9 +225,9 @@ async function advanceToDepositCheckoutInitiated(ctx: RealBrowserTestContext): P
 
   // Verify the stay payment once, then initialize the separate refundable
   // deposit checkout before racing the final verification from both tabs.
-  await ctx.tabA.clickButton("Check payment status");
+  await click(ctx.tabA, "Check payment status");
   await ctx.tabA.waitForText("Continue to Refundable Security Deposit", 15000);
-  await ctx.tabA.clickButton("Continue to Refundable Security Deposit");
+  await click(ctx.tabA, "Continue to Refundable Security Deposit");
   await ctx.tabA.waitForText("Check payment status", 15000);
 
   await ctx.tabB.navigate(`${ctx.base}/?threadId=${ctx.threadId}`);

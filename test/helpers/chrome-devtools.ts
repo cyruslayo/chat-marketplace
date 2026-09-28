@@ -342,13 +342,25 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
     }
 
     async function focus(selector: string): Promise<void> {
-      await evaluate<void>(`
-        (() => {
-          const el = document.querySelector(${JSON.stringify(selector)});
-          if (el && typeof el.focus === "function") el.focus();
-        })()
-      `);
-      await waitForFunction(`document.activeElement === document.querySelector(${JSON.stringify(selector)})`, 8000);
+      // Re-focus on every poll: a surface that just rendered moves focus to itself one animation frame later
+      // (apps/local-guest/src/client.ts), which can land after a single focus() call. Focus must hold across two
+      // consecutive polls; a persistent trap still fails.
+      const refocus = `(() => {
+        const el = document.querySelector(${JSON.stringify(selector)});
+        const held = Boolean(el) && document.activeElement === el;
+        if (el && !held && typeof el.focus === "function") el.focus();
+        return held;
+      })()`;
+      const deadline = Date.now() + 8000;
+      let heldPolls = 0;
+      while (Date.now() < deadline) {
+        heldPolls = await evaluate<boolean>(refocus) ? heldPolls + 1 : 0;
+        if (heldPolls >= 2) return;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      const url = await evaluate<string>("location.href").catch(() => "<unavailable>");
+      const active = await evaluate<string>("document.activeElement ? document.activeElement.tagName + (document.activeElement.id ? '#' + document.activeElement.id : '') + '.' + document.activeElement.className : '<none>'").catch(() => "<unavailable>");
+      throw new Error(`Timeout focusing ${selector} at ${safeDiagnosticUrl(url)}; focus is on ${active}`);
     }
 
     async function isElementFocused(selector: string): Promise<boolean> {
