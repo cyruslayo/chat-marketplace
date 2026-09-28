@@ -4,7 +4,7 @@ import { productionPilotStartupLines } from "./startup-banner.js";
 const server = startPilotServer({ port: Number.parseInt(process.env.PORT ?? "3000", 10) });
 const port = await server.listen();
 
-for (const line of productionPilotStartupLines({ publicOrigin: server.configuration.publicOrigin, paystackEnvironment: server.configuration.paystack.environment, port })) console.log(line);
+for (const line of productionPilotStartupLines({ publicOrigin: server.configuration.publicOrigin, paystackEnvironment: server.configuration.paystack.environment, port, concierge: server.configuration.concierge })) console.log(line);
 
 const shutdown = async (): Promise<void> => {
   await server.close();

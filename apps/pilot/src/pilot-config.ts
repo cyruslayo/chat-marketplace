@@ -10,8 +10,9 @@ import {
   type ManualTransferAccount,
   type Unit,
 } from "../../../domains/shortlet/src/index.js";
+import { loadConciergeConfiguration, type ConciergeConfiguration, type ConciergeEnvironmentSource } from "../../local-guest/src/assistant/concierge-configuration.js";
 
-export interface PilotEnvironmentSource extends PaystackEnvironmentSource {
+export interface PilotEnvironmentSource extends PaystackEnvironmentSource, ConciergeEnvironmentSource {
   readonly SHORTLET_PUBLIC_ORIGIN?: string;
   readonly SHORTLET_DB_PATH?: string;
   readonly SHORTLET_INVENTORY_PATH?: string;
@@ -43,6 +44,8 @@ export interface PilotConfiguration {
   /** Null: manual transfer is not offered. */
   readonly manualTransferAccount: ManualTransferAccount | null;
   readonly receiptMaxBytes: number | null;
+  /** Validated at startup so a mistyped CONCIERGE_MODE can never silently switch the AI concierge off. */
+  readonly concierge: ConciergeConfiguration;
 }
 
 function required(source: PilotEnvironmentSource, key: keyof PilotEnvironmentSource): string {
@@ -125,7 +128,10 @@ export function loadPilotConfiguration(source: PilotEnvironmentSource = process.
   if (!paystack) throw new Error("Live Paystack configuration is required for pilot production startup");
   if (paystack.callbackBaseUrl !== origin) throw new Error("Paystack callback origin must match SHORTLET_PUBLIC_ORIGIN");
 
+  const concierge = loadConciergeConfiguration(source);
+
   return Object.freeze({
+    concierge,
     paystackTransfersEnabled: paystackTransfersEnabled(source.SHORTLET_PAYSTACK_TRANSFERS),
     manualTransferAccount: manualTransferAccount(source),
     receiptMaxBytes: receiptMaxBytes(source.SHORTLET_RECEIPT_MAX_BYTES),

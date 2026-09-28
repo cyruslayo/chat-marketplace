@@ -6,6 +6,8 @@ import { startLocalGuestServer, type LocalGuestServerHandle } from "../../local-
 import { LocalApartmentOwnerEnvironment, startLocalOwnerServer } from "../../local-owner/src/index.js";
 import { DirectPaystackClient, PaystackBankTransferClient, type PaystackClient } from "../../../domains/shortlet/src/index.js";
 import { loadPilotConfiguration, type PilotConfiguration } from "./pilot-config.js";
+import type { AssistantModelClient } from "../../local-guest/src/assistant/assistant-model.js";
+import { createConciergeModelClient } from "../../local-guest/src/assistant/concierge-configuration.js";
 
 export interface PilotServerHandle {
   readonly port: number;
@@ -58,6 +60,8 @@ export function startPilotServer(options: {
   readonly clock?: () => Date;
   /** Test harnesses may inject a provider-shaped fake, never a deterministic PSP fallback. */
   readonly paystackClient?: PaystackClient;
+  /** Test harnesses may inject a provider-shaped fake model client in place of the configured provider. */
+  readonly modelClient?: AssistantModelClient;
 } = {}): PilotServerHandle {
   const configuration = options.configuration ?? loadPilotConfiguration();
   const paystackClient = options.paystackClient ?? new DirectPaystackClient(configuration.paystack);
@@ -107,9 +111,13 @@ export function startPilotServer(options: {
     clock,
   });
 
+  const modelClient = options.modelClient ?? createConciergeModelClient(configuration.concierge);
   const guest = startLocalGuestServer({
     port: 0,
     environment: guestEnvironment,
+    // Explicit, so production never falls back to reading CONCIERGE_MODE from the process environment.
+    conciergeMode: configuration.concierge.mode,
+    ...(modelClient ? { modelClient } : {}),
     production: true,
     publicOrigin: configuration.publicOrigin,
     secureCookie: true,

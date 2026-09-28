@@ -26,6 +26,32 @@ Required production environment variables:
 callback origin is derived from `SHORTLET_PUBLIC_ORIGIN`. If supplied, it must
 match that origin exactly.
 
+## Concierge model
+
+The concierge settings are validated at startup, and the startup banner prints
+`concierge=`, `model=` and `fallback=` (never keys or base URLs, ADR 0075).
+Check the banner after every deploy.
+
+- `CONCIERGE_MODE` — `deterministic` (the default when unset; no model),
+  `gemini`, or `openai-compatible`. Any other value fails startup, so a typo
+  can never silently switch the AI concierge off.
+- `gemini` requires `GEMINI_API_KEY`. `GEMINI_MODEL` and
+  `GEMINI_THINKING_LEVEL` (`minimal`, `low`, `medium` or `high`) are optional.
+- `openai-compatible` requires `LLM_API_KEY`, an HTTPS `LLM_BASE_URL` and
+  `LLM_MODEL`. `LLM_PROVIDER_LABEL` (lowercase, for example `deepseek`) names
+  the provider in the banner. DeepSeek: `LLM_BASE_URL=https://api.deepseek.com`,
+  `LLM_MODEL=deepseek-chat`. OpenAI: `LLM_BASE_URL=https://api.openai.com/v1`.
+- `CONCIERGE_FALLBACK=openai-compatible` (only with `CONCIERGE_MODE=gemini`)
+  sends a turn to the `LLM_*` provider when Gemini is unavailable: a connection
+  failure or timeout, a rate limit, or a server error. Other failures fail
+  closed as before. Conventional search and booking routes never depend on the
+  model (ADR 0080).
+
+Before enabling a provider or changing a model, run the agent smoke against it
+(`npm run pilot:local:agent-smoke`) and the assistant evals (ADR 0079). DeepSeek
+processes guest conversation text outside Nigeria; do not enable it for real
+guests until counsel has cleared the data transfer (launch-readiness issue 03).
+
 ## Persistent files and public paths
 
 Persist the SQLite file, inventory JSON, and Operator JSON across restarts.

@@ -33,7 +33,7 @@ export function startLocalPilotServer(options: { readonly port?: number; readonl
     operatorId: LOCAL_PILOT_OPERATOR_ID, operatorName: LOCAL_PILOT_OPERATOR_NAME, representativePersonId: LOCAL_PILOT_ACTOR_ID,
     representativePersonName: "Local Pilot Representative", adminId: "admin-local-pilot", guestId: "guest-local-bootstrap",
     guestName: "Local Guest", initialGuestPhoneNumber: null, initialGuestContactEmail: null, demoCheckIn,
-    ...(process.env.CONCIERGE_MODE === "gemini" ? { demoCheckOut: "2026-10-01" } : {}), production: false,
+    ...(process.env.CONCIERGE_MODE === "gemini" || process.env.CONCIERGE_MODE === "openai-compatible" ? { demoCheckOut: "2026-10-01" } : {}), production: false,
     deterministicPsp: true, seedRepresentativeGrant: false, clock,
     // Local pilot only: a clearly fictional business account so manual transfer can be walked through (ADR 0090).
     manualTransferAccount: { bankName: "Local Demo Bank", accountName: "Shortlet Local Demo", accountNumber: "0000000000" },
