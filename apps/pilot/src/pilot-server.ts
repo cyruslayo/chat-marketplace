@@ -34,7 +34,15 @@ function sendHealth(res: ServerResponse, configuration: PilotConfiguration, init
   res.end(JSON.stringify({ ok: healthy }));
 }
 
-function proxyRequest(req: IncomingMessage, res: ServerResponse, port: number): void {
+/** Staging marks every Guest and Operator page so nobody mistakes the beta for real bookings (issue 22). */
+export const BETA_BANNER_TEXT = "Beta: test payments only. No real bookings are made.";
+const BETA_BANNER_HTML = `<div role="note" data-beta-banner style="margin:0;padding:0.5rem 1rem;background:#fff4ce;color:#3d2f00;border-bottom:1px solid #d9b800;font:600 0.875rem/1.4 system-ui,sans-serif;text-align:center">${BETA_BANNER_TEXT}</div>`;
+
+export function withBetaBanner(html: string): string {
+  return html.replace(/<body\b[^>]*>/i, (body) => `${body}${BETA_BANNER_HTML}`);
+}
+
+function proxyRequest(req: IncomingMessage, res: ServerResponse, port: number, transformHtml?: (html: string) => string): void {
   const upstream = httpRequest({
     hostname: "127.0.0.1",
     port,
@@ -42,8 +50,26 @@ function proxyRequest(req: IncomingMessage, res: ServerResponse, port: number): 
     method: req.method,
     headers: { ...req.headers, host: `127.0.0.1:${port}` },
   }, (upstreamResponse) => {
-    res.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
-    upstreamResponse.pipe(res);
+    const status = upstreamResponse.statusCode ?? 502;
+    const isHtml = /^text\/html\b/i.test(String(upstreamResponse.headers["content-type"] ?? ""));
+    if (!transformHtml || !isHtml || req.method === "HEAD" || upstreamResponse.headers["content-encoding"]) {
+      res.writeHead(status, upstreamResponse.headers);
+      upstreamResponse.pipe(res);
+      return;
+    }
+    const chunks: Buffer[] = [];
+    upstreamResponse.on("data", (chunk: Buffer) => chunks.push(chunk));
+    upstreamResponse.on("end", () => {
+      const body = Buffer.from(transformHtml(Buffer.concat(chunks).toString("utf8")), "utf8");
+      const headers = { ...upstreamResponse.headers, "content-length": String(body.length) };
+      delete headers["transfer-encoding"];
+      res.writeHead(status, headers);
+      res.end(body);
+    });
+    upstreamResponse.on("error", () => {
+      if (!res.headersSent) res.writeHead(502, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end();
+    });
   });
   upstream.on("error", () => {
     if (!res.headersSent) {
@@ -67,9 +93,14 @@ export function startPilotServer(options: {
   const paystackClient = options.paystackClient ?? new DirectPaystackClient(configuration.paystack);
   const clock = options.clock ?? (() => new Date());
   const demoCheckIn = new Date(clock().getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  if (paystackClient.configuration.environment !== "live" || paystackClient.configuration.callbackBaseUrl !== configuration.publicOrigin) {
-    throw new Error("Pilot production composition requires a live Paystack client bound to SHORTLET_PUBLIC_ORIGIN");
+  // Production takes only live Paystack; staging (the closed beta) takes only test Paystack (issue 22).
+  const expectedPaystackEnvironment = configuration.deployment === "staging" ? "test" : "live";
+  if (paystackClient.configuration.environment !== expectedPaystackEnvironment || paystackClient.configuration.callbackBaseUrl !== configuration.publicOrigin) {
+    throw new Error(configuration.deployment === "staging"
+      ? "Pilot staging composition requires a test Paystack client bound to SHORTLET_PUBLIC_ORIGIN"
+      : "Pilot production composition requires a live Paystack client bound to SHORTLET_PUBLIC_ORIGIN");
   }
+  const transformHtml = configuration.deployment === "staging" ? withBetaBanner : undefined;
 
   const guestEnvironment = new LocalGuestEnvironment({
     databasePath: configuration.databasePath,
@@ -118,6 +149,7 @@ export function startPilotServer(options: {
     // Explicit, so production never falls back to reading CONCIERGE_MODE from the process environment.
     conciergeMode: configuration.concierge.mode,
     ...(modelClient ? { modelClient } : {}),
+    ...(configuration.betaInviteCode === null ? {} : { betaInviteCode: configuration.betaInviteCode }),
     production: true,
     publicOrigin: configuration.publicOrigin,
     secureCookie: true,
@@ -142,10 +174,10 @@ export function startPilotServer(options: {
       return;
     }
     if (url.pathname === "/operator" || url.pathname.startsWith("/operator/")) {
-      proxyRequest(req, res, ownerPort);
+      proxyRequest(req, res, ownerPort, transformHtml);
       return;
     }
-    proxyRequest(req, res, guestPort);
+    proxyRequest(req, res, guestPort, transformHtml);
   });
 
   return {

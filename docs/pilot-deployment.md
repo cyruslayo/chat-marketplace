@@ -6,10 +6,14 @@ port and trusts only the configured public origin for browser-origin checks.
 
 ## Runtime and start
 
-- Node.js with the repository's supported `node:sqlite` runtime.
-- Install dependencies with `npm ci`.
-- Validate/build with `npm run check`.
+- Node.js 22.13.0 or later (`node:sqlite` without a flag); `.nvmrc` pins the
+  tested version.
+- Install runtime dependencies with `npm ci --omit=dev` (with
+  `NODE_ENV=production`, plain `npm ci` does the same).
+- Build the Guest browser bundle with `npm run build`, on every deploy.
 - Start with `npm run pilot:start`.
+- Run `npm run check` and `npm test` before deploying, on a machine with the
+  development dependencies installed; the server does not need them.
 
 Required production environment variables:
 
@@ -25,6 +29,26 @@ Required production environment variables:
 `PAYSTACK_CALLBACK_BASE_URL` is not needed by the pilot entry point; the
 callback origin is derived from `SHORTLET_PUBLIC_ORIGIN`. If supplied, it must
 match that origin exactly.
+
+## Staging (closed beta)
+
+`SHORTLET_DEPLOYMENT=staging` runs the same production composition for the
+invite-only beta on Paystack test keys. Unset means `production`; any other
+value fails startup.
+
+- Staging requires `PAYSTACK_ENVIRONMENT=test` and a `sk_test_` key, and
+  refuses live keys. Production refuses test keys, as before.
+- Staging still requires an HTTPS `SHORTLET_PUBLIC_ORIGIN`, persistent paths
+  and secure cookies, and mounts no fixture routes.
+- Every Guest and Operator page shows "Beta: test payments only. No real
+  bookings are made."
+- `SHORTLET_BETA_INVITE_CODE` is required (no spaces). A new Guest session
+  starts only from `https://<beta-host>/?invite=<code>`; the code is dropped
+  from the address bar once the session exists. Anyone without it sees the
+  invite form. Production refuses this setting.
+- Run staging on its own host, data directory and environment file, never
+  sharing the production database. Point the Paystack **test** dashboard
+  webhook at `https://<beta-host>/webhooks/paystack`.
 
 ## Concierge model
 

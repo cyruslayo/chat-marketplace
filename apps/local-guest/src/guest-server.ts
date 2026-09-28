@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -3008,6 +3009,22 @@ function readGuestSession(req: IncomingMessage): string | null | undefined {
   return GUEST_SESSION_PATTERN.test(value) ? value : null;
 }
 
+/** Compares digests so neither the code's length nor its content leaks through timing. */
+function betaInviteCodeMatches(offered: string, expected: string): boolean {
+  const digest = (value: string) => createHash("sha256").update(value, "utf8").digest();
+  return timingSafeEqual(digest(offered.trim()), digest(expected));
+}
+
+/** Staging beta gate (launch-readiness issue 22). A plain GET form, so it works without JavaScript (ADR 0080). */
+export function renderBetaInviteHtml(rejected: boolean): string {
+  const error = rejected ? `<p id="invite-error" class="ui-field__error" role="alert">That invite code is not valid. Check the invite link you were sent.</p>` : "";
+  return pageShell({
+    title: "Shortlet beta",
+    width: "narrow",
+    body: `<header class="ui-page__header"><p class="ui-eyebrow">Shortlet</p><h1>Shortlet beta</h1><p>This beta is open to invited testers. Open the invite link you were sent, or enter your invite code.</p></header><form class="ui-panel" method="get" action="/"><div class="ui-field"><label class="ui-field__label" for="invite">Invite code</label><input id="invite" name="invite" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="200" required${rejected ? ` aria-invalid="true" aria-describedby="invite-error"` : ""}>${error}</div><button class="ui-button ui-button--primary ui-button--block" type="submit">Continue</button></form>`,
+  });
+}
+
 function issueGuestSession(res: ServerResponse, secureCookie: boolean): string {
   const sessionId = `gs-${crypto.randomUUID()}`;
   res.setHeader("Set-Cookie", `${GUEST_SESSION_COOKIE}=${sessionId};${secureCookie ? " Secure;" : ""} HttpOnly; SameSite=Lax; Path=/`);
@@ -3192,6 +3209,8 @@ export function startLocalGuestServer(options: {
   publicOrigin?: string;
   secureCookie?: boolean;
   sessionScopedGuestPrincipals?: boolean;
+  /** Staging beta gate: when set, a new Guest session needs `/?invite=<code>` (issue 22). */
+  betaInviteCode?: string;
   /** Explicit local-pilot control; never enabled by production composition. */
   localPayment?: boolean;
   /** Explicit local-pilot photo mapping for synthetic, same-process assets. */
@@ -3300,10 +3319,23 @@ export function startLocalGuestServer(options: {
         return;
       }
       if (rawSession === undefined) {
+        // Staging beta: no Guest session starts without the invite code (issue 22).
+        const offeredInvite = url.searchParams.get("invite");
+        if (options.betaInviteCode !== undefined && (offeredInvite === null || !betaInviteCodeMatches(offeredInvite, options.betaInviteCode))) {
+          res.writeHead(offeredInvite === null ? 200 : 403, GUEST_HTML_HEADERS);
+          res.end(renderBetaInviteHtml(offeredInvite !== null));
+          return;
+        }
         const sessionId = issueGuestSession(res, secureCookie);
         const principalId = sessionScopedGuestPrincipals ? `guest-${crypto.randomUUID()}` : app.environment.config.guestId;
         const registered = registerBrowserSession(env, browserSessions, sessionId, principalId);
         if (sessionScopedGuestPrincipals) runtimeForSession(registered);
+        if (options.betaInviteCode !== undefined) {
+          // Drop the code from the address bar and history once the session exists.
+          res.writeHead(303, { Location: "/", "Cache-Control": "no-store" });
+          res.end();
+          return;
+        }
       } else {
         // A well-formed cookie must resolve to a durable binding; an unknown
         // id is rejected rather than silently minted into a new session.

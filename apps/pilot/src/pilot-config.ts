@@ -26,9 +26,19 @@ export interface PilotEnvironmentSource extends PaystackEnvironmentSource, Conci
   readonly SHORTLET_MANUAL_TRANSFER_ACCOUNT_NUMBER?: string;
   /** ADR 0090 "a configured size limit" for receipts, in bytes. */
   readonly SHORTLET_RECEIPT_MAX_BYTES?: string;
+  /** "production" (the default) or "staging": the closed beta on Paystack test keys (launch-readiness issue 22). */
+  readonly SHORTLET_DEPLOYMENT?: string;
+  /** Staging only: the code invited testers need before a Guest session starts. */
+  readonly SHORTLET_BETA_INVITE_CODE?: string;
 }
 
+export type PilotDeployment = "production" | "staging";
+
 export interface PilotConfiguration {
+  /** Staging takes only Paystack test keys and shows the beta banner; production takes only live keys. */
+  readonly deployment: PilotDeployment;
+  /** Staging: required before a Guest session starts. Production: always null. */
+  readonly betaInviteCode: string | null;
   readonly publicOrigin: string;
   readonly databasePath: string;
   readonly inventoryPath: string;
@@ -101,7 +111,28 @@ export function receiptMaxBytes(value: string | undefined): number | null {
   return Number(setting);
 }
 
+/** Unset means production. Anything other than production or staging fails closed. */
+export function pilotDeployment(value: string | undefined): PilotDeployment {
+  const setting = value?.trim() ?? "";
+  if (setting === "" || setting === "production") return "production";
+  if (setting === "staging") return "staging";
+  throw new Error("SHORTLET_DEPLOYMENT must be production or staging");
+}
+
+/** The beta gate exists only in staging: it is required there and refused in production. */
+export function betaInviteCode(deployment: PilotDeployment, value: string | undefined): string | null {
+  const code = value?.trim() ?? "";
+  if (deployment === "production") {
+    if (code !== "") throw new Error("SHORTLET_BETA_INVITE_CODE is only used when SHORTLET_DEPLOYMENT=staging");
+    return null;
+  }
+  if (code === "" || /\s/.test(code)) throw new Error("SHORTLET_BETA_INVITE_CODE is required for staging and must not contain spaces");
+  return code;
+}
+
 export function loadPilotConfiguration(source: PilotEnvironmentSource = process.env): PilotConfiguration {
+  const deployment = pilotDeployment(source.SHORTLET_DEPLOYMENT);
+  const inviteCode = betaInviteCode(deployment, source.SHORTLET_BETA_INVITE_CODE);
   const origin = publicOrigin(required(source, "SHORTLET_PUBLIC_ORIGIN"));
   const databasePath = required(source, "SHORTLET_DB_PATH");
   const inventoryPath = required(source, "SHORTLET_INVENTORY_PATH");
@@ -124,13 +155,18 @@ export function loadPilotConfiguration(source: PilotEnvironmentSource = process.
     ...source,
     PAYSTACK_CALLBACK_BASE_URL: source.PAYSTACK_CALLBACK_BASE_URL?.trim() || origin,
   };
-  const paystack = loadPaystackConfiguration(paystackSource, { runtime: "production" });
+  // Production keeps the live-only rule (ADR 0087). Staging is the closed beta and takes test keys only, so no real
+  // money can move behind a banner that says payments are tests.
+  const paystack = loadPaystackConfiguration(paystackSource, { runtime: deployment === "staging" ? "test" : "production" });
   if (!paystack) throw new Error("Live Paystack configuration is required for pilot production startup");
+  if (deployment === "staging" && paystack.environment !== "test") throw new Error("Staging requires PAYSTACK_ENVIRONMENT=test");
   if (paystack.callbackBaseUrl !== origin) throw new Error("Paystack callback origin must match SHORTLET_PUBLIC_ORIGIN");
 
   const concierge = loadConciergeConfiguration(source);
 
   return Object.freeze({
+    deployment,
+    betaInviteCode: inviteCode,
     concierge,
     paystackTransfersEnabled: paystackTransfersEnabled(source.SHORTLET_PAYSTACK_TRANSFERS),
     manualTransferAccount: manualTransferAccount(source),

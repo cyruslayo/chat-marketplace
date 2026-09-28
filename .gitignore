@@ -3,3 +3,5 @@ node_modules/
 .scratch/pilot-local/
 .scratch/pilot-acceptance-rodney/
 .scratch/pilot-agent-smoke/
+# Rehearsal certificates, keys and databases must never be committed.
+.scratch/pilot-rehearsal-*/
