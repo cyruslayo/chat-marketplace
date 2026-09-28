@@ -10,6 +10,7 @@ import { startPilotServer } from "../apps/pilot/src/pilot-server.js";
 import { createPlatformCommandEnvelope } from "../packages/platform-core/src/index.js";
 import { DirectPaystackClient, SqliteOperatorRepresentativeGrantStore, SqliteOperatorSessionAuthority, type PaystackClient, type PaystackHttpFetcher, type Unit } from "../domains/shortlet/src/index.js";
 import { operatorCookieFrom, postOperatorLogin } from "./helpers/operator-session.js";
+import type { AssistantModelClient, AssistantModelRequest } from "../apps/local-guest/src/assistant/assistant-model.js";
 
 const PUBLIC_ORIGIN = "https://pilot.example.com";
 
@@ -19,7 +20,7 @@ interface ProductionFixture {
   readonly paystack: PaystackClient;
 }
 
-async function productionFixture(options: { readonly noDeposit?: boolean } = {}): Promise<ProductionFixture> {
+async function productionFixture(options: { readonly noDeposit?: boolean; readonly environment?: Readonly<Record<string, string>> } = {}): Promise<ProductionFixture> {
   const directory = await mkdtemp(join(tmpdir(), "shortlet-pilot-composition-"));
   const source = new LocalGuestEnvironment({ databasePath: join(directory, "source.sqlite") });
   const units = source.unitRepository.findAll() as Unit[];
@@ -46,6 +47,7 @@ async function productionFixture(options: { readonly noDeposit?: boolean } = {})
     SHORTLET_OPERATORS_PATH: operatorsPath,
     PAYSTACK_SECRET_KEY: "sk_live_test-only",
     PAYSTACK_ENVIRONMENT: "live",
+    ...options.environment,
   });
   const paystack: PaystackClient = {
     configuration: { environment: "live", callbackBaseUrl: PUBLIC_ORIGIN },
@@ -358,6 +360,44 @@ test("AC8/AC18/AC19/AC20/AC22/AC23/AC24/AC26/AC27 — Production Operator shares
       try { await first.close(); } catch { /* already closed after restart assertion */ }
     }
     await rm(fixture.directory, { recursive: true, force: true });
+  }
+});
+
+test("The production pilot passes the concierge mode and model client to the guest server explicitly", async () => {
+  const previousMode = process.env.CONCIERGE_MODE;
+  const previousKey = process.env.GEMINI_API_KEY;
+  // A process environment that disagrees with the validated configuration must be ignored.
+  process.env.CONCIERGE_MODE = "gemini";
+  delete process.env.GEMINI_API_KEY;
+  const deterministic = await productionFixture();
+  const configured = await productionFixture({ environment: { CONCIERGE_MODE: "gemini", GEMINI_API_KEY: "gemini-offline-key" } });
+  try {
+    assert.equal(deterministic.configuration.concierge.mode, "deterministic");
+    const plain = startPilotServer({ port: 0, configuration: deterministic.configuration, paystackClient: deterministic.paystack });
+    await plain.listen();
+    await plain.close();
+
+    const requests: AssistantModelRequest[] = [];
+    const modelClient: AssistantModelClient = {
+      generate: async (request) => { requests.push(request); return { text: "Which city are you visiting?" }; },
+    };
+    process.env.CONCIERGE_MODE = "deterministic";
+    const server = startPilotServer({ port: 0, configuration: configured.configuration, paystackClient: configured.paystack, modelClient });
+    try {
+      const port = await server.listen();
+      const base = `http://127.0.0.1:${port}`;
+      const guestCookie = cookieFrom(await fetch(`${base}/`));
+      const turn = await postJson(base, "/api/turn", guestCookie, { threadId: `g-${crypto.randomUUID()}`, text: "Hello" });
+      assert.equal(turn.status, 200);
+      assert.ok(requests.length > 0, "the configured model client answered the turn");
+    } finally {
+      await server.close();
+    }
+  } finally {
+    if (previousMode === undefined) delete process.env.CONCIERGE_MODE; else process.env.CONCIERGE_MODE = previousMode;
+    if (previousKey !== undefined) process.env.GEMINI_API_KEY = previousKey;
+    await rm(deterministic.directory, { recursive: true, force: true });
+    await rm(configured.directory, { recursive: true, force: true });
   }
 });
 

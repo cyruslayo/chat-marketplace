@@ -13,8 +13,11 @@ import {
 } from "./pilot-agent-smoke-budget.js";
 
 const reportDirectory = resolve(".scratch/pilot-agent-smoke");
-const model = process.env.GEMINI_MODEL?.trim() || "gemini-3.8-flash";
-const credential = process.env.GEMINI_API_KEY;
+// CONCIERGE_MODE=openai-compatible smokes the LLM_* provider (DeepSeek or OpenAI); anything else smokes Gemini.
+const openAiCompatible = process.env.CONCIERGE_MODE?.trim() === "openai-compatible";
+const providerName = openAiCompatible ? process.env.LLM_PROVIDER_LABEL?.trim() || "openai-compatible" : "Google Gemini";
+const model = openAiCompatible ? process.env.LLM_MODEL?.trim() ?? "" : process.env.GEMINI_MODEL?.trim() || "gemini-3.8-flash";
+const credential = openAiCompatible ? process.env.LLM_API_KEY : process.env.GEMINI_API_KEY;
 const configuredJourneys = parsePilotAgentSmokeRuns(process.argv.slice(2), process.env.PILOT_AGENT_SMOKE_RUNS);
 const requestBudget = new ProviderRequestBudget(configuredJourneys, DEFAULT_PROVIDER_REQUEST_BUDGET_PER_JOURNEY);
 const providerRequestsPerTurn: ProviderTurnUsage[] = [];
@@ -57,7 +60,7 @@ async function writeReports(result: "NOT_RUN" | "PASS" | "FAIL", entries: readon
   await mkdir(reportDirectory, { recursive: true });
   const report = {
     generatedAt: new Date().toISOString(),
-    provider: "Google Gemini",
+    provider: providerName,
     model,
     result,
     credentialConfigured: Boolean(credential),
@@ -79,13 +82,13 @@ async function writeReports(result: "NOT_RUN" | "PASS" | "FAIL", entries: readon
   const lines = [
     "# Local pilot live-agent smoke",
     "",
-    `- Provider: Google Gemini`,
+    `- Provider: ${providerName}`,
     `- Model: ${model}`,
     `- Result: ${result}`,
     `- Credential configured: ${Boolean(credential)}`,
     `- Configured journeys: ${configuredJourneys}`,
     `- Journeys actually attempted: ${journeysAttempted}`,
-    `- Total Gemini provider requests: ${requestBudget.totalRequests}`,
+    `- Total provider requests: ${requestBudget.totalRequests}`,
     `- Provider requests per turn: ${providerRequestsPerTurn.map((usage) => `journey ${usage.journey} ${usage.turn}=${usage.providerRequests}`).join(", ") || "none"}`,
     `- Provider request budget: ${requestBudget.maxRequests} total (${requestBudget.maxRequestsPerJourney} per journey)`,
     `- Provider request budget exceeded: ${budgetExceeded}`,
@@ -115,16 +118,18 @@ if (!credential) {
   await writeReports("NOT_RUN", entries, "Live-agent smoke not run — credentials unavailable", journeysAttempted);
   console.log("Live-agent smoke not run — credentials unavailable");
 } else {
-  const [fixtureModule, runtimeModule, modelModule, pilotModule, shortletModule] = await Promise.all([
+  const [fixtureModule, runtimeModule, modelModule, openAiModule, pilotModule, shortletModule] = await Promise.all([
     import("../apps/local-guest/src/fixture.js"),
     import("../apps/local-guest/src/assistant/assistant-runtime.js"),
     import("../apps/local-guest/src/assistant/gemini-interactions-client.js"),
+    import("../apps/local-guest/src/assistant/openai-compatible-client.js"),
     import("../apps/pilot/src/local-pilot.js"),
     import("../domains/shortlet/src/index.js"),
   ]);
   const { LocalGuestEnvironment } = fixtureModule;
   const { AssistantRuntime } = runtimeModule;
   const { GeminiInteractionsClient } = modelModule;
+  const { OpenAiCompatibleClient } = openAiModule;
   const { LOCAL_PILOT_ACTOR_ID, LOCAL_PILOT_OPERATOR_ID, LOCAL_PILOT_OPERATOR_NAME, LOCAL_PILOT_TENANT_ID, assertLocalPilotReady, localPilotClock, localPilotPaths } = pilotModule;
   const { createStayQuote } = shortletModule;
   const reports: ScenarioReport[] = [];
@@ -156,27 +161,42 @@ if (!credential) {
       seedRepresentativeGrant: false,
       clock: localPilotClock(paths),
     });
-    const googleAi = new GoogleGenAI({ apiKey: credential });
-    const modelClient = new GeminiInteractionsClient({
-      apiKey: credential,
-      model,
-      customAi: {
-        interactions: {
-          create: async (params, options) => {
-            const currentTurn = activeProviderTurn;
-            if (!currentTurn || !requestBudget.reserve(currentTurn.journey)) {
-              budgetExceeded = true;
-              throw new ProviderRequestBudgetExceededError();
-            }
-            currentTurn.providerRequests++;
-            return googleAi.interactions.create(
-              { ...params, stream: false },
-              { ...options, maxRetries: 0 },
-            );
-          },
+    const reserveProviderRequest = (): void => {
+      const currentTurn = activeProviderTurn;
+      if (!currentTurn || !requestBudget.reserve(currentTurn.journey)) {
+        budgetExceeded = true;
+        throw new ProviderRequestBudgetExceededError();
+      }
+      currentTurn.providerRequests++;
+    };
+    const modelClient = openAiCompatible
+      ? new OpenAiCompatibleClient({
+        apiKey: credential,
+        baseUrl: process.env.LLM_BASE_URL?.trim() ?? "",
+        model,
+        fetch: async (input, init) => {
+          reserveProviderRequest();
+          return fetch(input, init);
         },
-      },
-    });
+      })
+      : (() => {
+        const googleAi = new GoogleGenAI({ apiKey: credential });
+        return new GeminiInteractionsClient({
+          apiKey: credential,
+          model,
+          customAi: {
+            interactions: {
+              create: async (params, options) => {
+                reserveProviderRequest();
+                return googleAi.interactions.create(
+                  { ...params, stream: false },
+                  { ...options, maxRetries: 0 },
+                );
+              },
+            },
+          },
+        });
+      })();
     journeyLoop: for (let run = 1; run <= configuredJourneys; run++) {
       journeysAttempted++;
       let turnDiagnostics: AssistantDiagnosticEvent[] = [];

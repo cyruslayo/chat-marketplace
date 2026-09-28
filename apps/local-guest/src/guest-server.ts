@@ -94,7 +94,7 @@ import { handleGeminiTurn, type GeminiConciergeClient } from "./gemini-concierge
 import type { Content } from "@google/genai";
 import { AssistantRuntime } from "./assistant/assistant-runtime.js";
 import { ScriptedAssistantModel } from "./assistant/scripted-assistant-model.js";
-import { GeminiInteractionsClient } from "./assistant/gemini-interactions-client.js";
+import { createConciergeModelClient, loadConciergeConfiguration } from "./assistant/concierge-configuration.js";
 import type { AssistantModelClient } from "./assistant/assistant-model.js";
 import {
   ASSISTANT_CONFIRM_ACTION_EVENT,
@@ -3183,7 +3183,7 @@ export function startLocalGuestServer(options: {
   clientScriptPath?: string;
   geminiClient?: GeminiConciergeClient;
   modelClient?: AssistantModelClient;
-  conciergeMode?: "deterministic" | "gemini" | "assistant-offline";
+  conciergeMode?: "deterministic" | "gemini" | "openai-compatible" | "assistant-offline";
   paystackClient?: PaystackClient;
   /** Production-only deployment controls. Local fixture defaults remain unchanged. */
   production?: boolean;
@@ -3198,9 +3198,9 @@ export function startLocalGuestServer(options: {
 } = {}): LocalGuestServerHandle {
   const port = options.port ?? LOCAL_GUEST_PORT;
   const rawMode = options.conciergeMode ?? process.env.CONCIERGE_MODE;
-  const mode: "deterministic" | "gemini" | "assistant-offline" =
-    rawMode === "gemini"
-      ? "gemini"
+  const mode: "deterministic" | "gemini" | "openai-compatible" | "assistant-offline" =
+    rawMode === "gemini" || rawMode === "openai-compatible"
+      ? rawMode
       : rawMode === "assistant-offline"
         ? "assistant-offline"
         : "deterministic";
@@ -3231,16 +3231,11 @@ export function startLocalGuestServer(options: {
   if (mode === "assistant-offline") {
     assistantModelClient = options.modelClient ?? new ScriptedAssistantModel();
     assistantRuntime = new AssistantRuntime(env, assistantModelClient);
-  } else if (mode === "gemini") {
-    if (options.modelClient) {
-      assistantModelClient = options.modelClient;
-    } else {
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) {
-        throw new Error("CONCIERGE_MODE=gemini requires GEMINI_API_KEY");
-      }
-      assistantModelClient = new GeminiInteractionsClient({ apiKey, model: process.env.GEMINI_MODEL?.trim() || undefined });
-    }
+  } else if (mode === "gemini" || mode === "openai-compatible") {
+    // The production pilot passes a validated client; development commands read the same settings from the environment.
+    assistantModelClient = options.modelClient
+      ?? createConciergeModelClient(loadConciergeConfiguration({ ...process.env, CONCIERGE_MODE: mode }));
+    if (!assistantModelClient) throw new Error(`CONCIERGE_MODE=${mode} requires a model client`);
     assistantRuntime = new AssistantRuntime(env, assistantModelClient);
   }
 
