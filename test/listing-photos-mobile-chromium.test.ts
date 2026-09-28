@@ -1,85 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import test from "node:test";
-import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
-import { startLocalGuestServer, type LocalGuestServerHandle } from "../apps/local-guest/src/guest-server.js";
-import { launchRealBrowser, type RealBrowserInstance, type RealBrowserTab } from "./helpers/chrome-devtools.js";
-import { startImageFixtureServer, type ImageFixtureServer } from "./helpers/image-fixtures.js";
+import type { RealBrowserTab } from "./helpers/chrome-devtools.js";
+import { createListingPhotoContext, type ListingPhotoContext as Context } from "./helpers/listing-photo-browser.js";
 
 const PHOTO_URLS = [
   "https://images.example/synthetic-cover.png",
   "https://images.example/synthetic-living-room.png",
 ];
-
-interface Context {
-  readonly directory: string;
-  readonly environment: LocalGuestEnvironment;
-  readonly server: LocalGuestServerHandle;
-  readonly browser: RealBrowserInstance;
-  readonly tab: RealBrowserTab;
-  readonly base: string;
-  readonly unitId: string;
-  readonly unitTitle: string;
-  readonly unitDescription: string;
-  readonly imageFixture: ImageFixtureServer;
-  close(): Promise<void>;
-}
-
-async function createContext(width: number): Promise<Context> {
-  const directory = mkdtempSync(join(tmpdir(), "listing-photos-browser-"));
-  const environment = new LocalGuestEnvironment({ databasePath: join(directory, "guest.sqlite") });
-  const unit = environment.unitRepository.findAll()[0];
-  assert.ok(unit);
-  const unitDescription = "A bright, quiet apartment with a spacious living room, reliable power, secure parking, natural light, and room for a comfortable short stay.\n\nGuests have easy access to the surrounding neighbourhood and practical everyday amenities.";
-  environment.unitRepository.save({ ...unit, description: unitDescription, bathrooms: 2, photoUrls: PHOTO_URLS });
-  const server = startLocalGuestServer({ port: 0, environment });
-  const imageFixture = startImageFixtureServer();
-  let browser: RealBrowserInstance | undefined;
-  let tab: RealBrowserTab | undefined;
-  let disposeImageInterception: (() => Promise<void>) | undefined;
-  let closed = false;
-  const cleanup = async (): Promise<void> => {
-    if (closed) return;
-    closed = true;
-    try {
-      try { await disposeImageInterception?.(); } catch {}
-      try { await tab?.close(); } catch {}
-      try { await browser?.close({ releaseLock: false }); } catch {}
-      try { await server.close(); } catch {}
-      try { await imageFixture.close(); } catch {}
-      rmSync(directory, { recursive: true, force: true });
-    } finally {
-      browser?.releaseLock();
-    }
-  };
-  try {
-    await imageFixture.listen();
-    const port = await server.listen();
-    const base = `http://127.0.0.1:${port}`;
-    browser = await launchRealBrowser({ headless: true });
-    tab = await browser.createTab();
-    await tab.setViewport(width, 800);
-    disposeImageInterception = await tab.interceptRequests((url) => imageFixture.respond(url));
-    return {
-      directory,
-      environment,
-      server,
-      browser,
-      tab,
-      base,
-      unitId: unit.id,
-      unitTitle: unit.title,
-      unitDescription,
-      imageFixture,
-      close: cleanup,
-    };
-  } catch (error) {
-    await cleanup();
-    throw error;
-  }
-}
 
 async function waitForImageReadiness(tab: RealBrowserTab, expectedCount: number, description: string): Promise<void> {
   const expression = `(() => { const images = [...document.images]; return images.length === ${expectedCount} && images.every((img) => img.complete && img.naturalWidth > 0 && img.naturalHeight > 0); })()`;
@@ -127,7 +54,7 @@ async function sendSearch(context: Context): Promise<void> {
 
 for (const width of [320, 390]) {
   test(`AC13/AC15/AC20/AC21 — photo discovery and broken-image fallback remain usable at ${width}px`, async () => {
-    const context = await createContext(width);
+    const context = await createListingPhotoContext(PHOTO_URLS, width);
     try {
       await sendSearch(context);
       await waitForImageReadiness(context.tab, 1, "the discovery primary image");
@@ -169,7 +96,7 @@ for (const width of [320, 390]) {
 }
 
 test("AC14 — zero-photo conventional listing remains usable in Chromium", async () => {
-  const context = await createContext(390);
+  const context = await createListingPhotoContext(PHOTO_URLS, 390);
   try {
     const unit = context.environment.unitRepository.findAll()[0];
     assert.ok(unit);
