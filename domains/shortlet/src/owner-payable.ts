@@ -55,6 +55,8 @@ export interface OwnerPayableProjection {
   readonly ownerPayableKobo: number;
   readonly marginKobo: number;
   readonly cancelled: boolean;
+  /** The cancellation outcome's liability, e.g. "operator_failure" for an upheld complaint (issue 14); null if none. */
+  readonly cancellationLiability: string | null;
   readonly dueAt: string | null;
   readonly status: OwnerPayableStatus;
   /** Every payout recorded, before recoveries. */
@@ -125,6 +127,7 @@ export function projectOwnerPayable(input: OwnerPayableInput): OwnerPayableProje
     ownerPayableKobo: owed.ownerPayableKobo,
     marginKobo: owed.marginKobo,
     cancelled: input.cancellation !== null,
+    cancellationLiability: input.cancellation?.liability ?? null,
     dueAt,
     status,
     paidKobo,
@@ -165,6 +168,9 @@ export interface OwnerPayableLedger {
   /** Fails if the reservation already has a payout with this reference. */
   insertPayout(payout: OwnerPayout): void;
   listRecoveries(reservationId: string): readonly OwnerRecovery[];
+  listGuestRefunds(reservationId: string): readonly GuestRefund[];
+  /** Fails if the reservation already has a Guest refund with this reference. */
+  insertGuestRefund(refund: GuestRefund): void;
   /** Fails if the reservation already has a recovery with this reference. */
   insertRecovery(recovery: OwnerRecovery): void;
 }
@@ -284,6 +290,107 @@ export function recordOwnerRecovery(input: {
   return { recovery, replayed: false };
 }
 
+/**
+ * Issue 14 (decided 28 Sept 2026, ADR 0061, 0028): the Guest's refund when a Blocking Fulfilment Complaint is upheld.
+ * 100% of each night's contracted nightly price from the first affected night to checkout; when the first night is
+ * affected, no night was used and everything paid is refunded. Mandatory charges count as delivered once a night was
+ * used (the pilot reading of ADR 0061's "attributable undelivered charges").
+ */
+export class UpheldOutcomeError extends Error {
+  constructor(readonly problem: "night_outside_stay" | "nightly_price_missing") { super(problem === "night_outside_stay" ? "Choose the first affected night of the stay" : "This booking has no contracted nightly price on file"); this.name = "UpheldOutcomeError"; }
+}
+
+export function upheldStayRefund(input: { readonly quote: unknown; readonly amountPaidKobo: number; readonly checkIn: string; readonly checkOut: string; readonly firstAffectedNight: string }): { readonly refundKobo: number; readonly affectedNights: number } {
+  const night = input.firstAffectedNight;
+  if (!validDate(night) || night < input.checkIn || night >= input.checkOut) throw new UpheldOutcomeError("night_outside_stay");
+  const affectedNights = Math.round((Date.parse(`${input.checkOut}T00:00:00Z`) - Date.parse(`${night}T00:00:00Z`)) / 86_400_000);
+  if (night === input.checkIn) return Object.freeze({ refundKobo: input.amountPaidKobo, affectedNights });
+  const lineItems = input.quote !== null && typeof input.quote === "object" ? (input.quote as { readonly lineItems?: unknown }).lineItems : undefined;
+  const nightlyKobo = lineItems !== null && typeof lineItems === "object" ? (lineItems as { readonly nightlyKobo?: unknown }).nightlyKobo : undefined;
+  if (typeof nightlyKobo !== "number" || !Number.isSafeInteger(nightlyKobo) || nightlyKobo < 0) throw new UpheldOutcomeError("nightly_price_missing");
+  return Object.freeze({ refundKobo: Math.min(input.amountPaidKobo, nightlyKobo * affectedNights), affectedNights });
+}
+
+/** A refund you paid the Guest after an upheld complaint (issue 14). The reference is never audited or logged (ADR 0075). */
+export interface GuestRefund {
+  readonly refundId: string;
+  readonly reservationId: string;
+  readonly amountKobo: number;
+  /** The date you refunded the Guest, YYYY-MM-DD in WAT. */
+  readonly refundedOn: string;
+  readonly reference: string;
+  readonly recordedAt: string;
+  readonly recordedBy: string;
+}
+
+export type GuestRefundProblem = "amount_required" | "date_required" | "reference_required" | "nothing_owed" | "exceeds_owed" | "reference_used" | "stale";
+
+const GUEST_REFUND_MESSAGES: Readonly<Record<GuestRefundProblem, string>> = {
+  amount_required: "Enter the amount refunded in naira, for example 240,000",
+  date_required: "Enter the date you refunded the Guest, not later than today",
+  reference_required: "Enter the refund reference from Paystack or your bank",
+  nothing_owed: "No refund is owed to the Guest on this booking",
+  exceeds_owed: "The amount is more than is owed to the Guest",
+  reference_used: "That reference is already recorded for this booking with a different amount or date",
+  stale: "This Reservation changed since you opened it",
+};
+
+export class GuestRefundError extends Error {
+  constructor(readonly problem: GuestRefundProblem) { super(GUEST_REFUND_MESSAGES[problem]); this.name = "GuestRefundError"; }
+  /** A problem with what was typed (400), rather than with the booking's state (409). */
+  get isInput(): boolean { return this.problem === "amount_required" || this.problem === "date_required" || this.problem === "reference_required"; }
+}
+
+/**
+ * Issue 14: record a refund you paid the Guest after an upheld complaint. You pay it from the Paystack dashboard or by
+ * bank transfer; the platform records it. Replay-safe per reference (ADR 0072); never more than is still owed.
+ */
+export function recordGuestRefund(input: {
+  readonly ledger: OwnerPayableLedger;
+  readonly reservationId: string;
+  /** The refund the upheld outcome fixed, or 0 when there is none. */
+  readonly owedKobo: number;
+  readonly refunds: readonly GuestRefund[];
+  readonly basedOnVersion: string;
+  readonly currentVersion: string;
+  readonly amountKobo: number | null;
+  readonly refundedOn: string;
+  readonly reference: string;
+  readonly recordedBy: string;
+  readonly now: Date;
+}): { readonly refund: GuestRefund; readonly replayed: boolean } {
+  const reference = normalizeBankReference(input.reference);
+  if (input.amountKobo === null || !Number.isSafeInteger(input.amountKobo) || input.amountKobo <= 0) throw new GuestRefundError("amount_required");
+  if (!validDate(input.refundedOn) || input.refundedOn > lagosDate(input.now)) throw new GuestRefundError("date_required");
+  if (reference === "") throw new GuestRefundError("reference_required");
+  const earlier = input.refunds.find((refund) => refund.reference === reference);
+  if (earlier) {
+    if (earlier.amountKobo === input.amountKobo && earlier.refundedOn === input.refundedOn) return { refund: earlier, replayed: true };
+    throw new GuestRefundError("reference_used");
+  }
+  if (input.basedOnVersion !== input.currentVersion) throw new GuestRefundError("stale");
+  const outstanding = input.owedKobo - input.refunds.reduce((sum, refund) => sum + refund.amountKobo, 0);
+  if (outstanding <= 0) throw new GuestRefundError("nothing_owed");
+  if (input.amountKobo > outstanding) throw new GuestRefundError("exceeds_owed");
+  const refund: GuestRefund = Object.freeze({
+    refundId: `guest-refund-${randomUUID()}`,
+    reservationId: input.reservationId,
+    amountKobo: input.amountKobo,
+    refundedOn: input.refundedOn,
+    reference,
+    recordedAt: input.now.toISOString(),
+    recordedBy: input.recordedBy,
+  });
+  input.ledger.insertGuestRefund(refund);
+  return { refund, replayed: false };
+}
+
+function isGuestRefundRow(value: unknown): value is { refund_id: string; reservation_id: string; amount_kobo: number; refunded_on: string; reference: string; recorded_at: string; recorded_by: string } {
+  const row = value as Record<string, unknown> | undefined;
+  return !!row && typeof row.refund_id === "string" && typeof row.reservation_id === "string" && typeof row.amount_kobo === "number"
+    && typeof row.refunded_on === "string" && typeof row.reference === "string" && typeof row.recorded_at === "string" && typeof row.recorded_by === "string";
+}
+
 function isRecoveryRow(value: unknown): value is { recovery_id: string; reservation_id: string; amount_kobo: number; received_on: string; reference: string; recorded_at: string; recorded_by: string } {
   const row = value as Record<string, unknown> | undefined;
   return !!row && typeof row.recovery_id === "string" && typeof row.reservation_id === "string" && typeof row.amount_kobo === "number"
@@ -313,6 +420,7 @@ export class SqliteOwnerPayableLedger implements OwnerPayableLedger {
       CREATE TABLE IF NOT EXISTS owner_payable_cancellations (reservation_id TEXT PRIMARY KEY, cancellation_id TEXT NOT NULL UNIQUE, liability TEXT NOT NULL, refund_kobo INTEGER NOT NULL, retained_base_kobo INTEGER NOT NULL, posted_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS owner_payouts (payout_id TEXT PRIMARY KEY, reservation_id TEXT NOT NULL, amount_kobo INTEGER NOT NULL, paid_on TEXT NOT NULL, reference TEXT NOT NULL, recorded_at TEXT NOT NULL, recorded_by TEXT NOT NULL, UNIQUE (reservation_id, reference));
       CREATE INDEX IF NOT EXISTS idx_owner_payouts_reservation ON owner_payouts (reservation_id, recorded_at);
+      CREATE TABLE IF NOT EXISTS guest_refunds (refund_id TEXT PRIMARY KEY, reservation_id TEXT NOT NULL, amount_kobo INTEGER NOT NULL, refunded_on TEXT NOT NULL, reference TEXT NOT NULL, recorded_at TEXT NOT NULL, recorded_by TEXT NOT NULL, UNIQUE (reservation_id, reference));
       CREATE TABLE IF NOT EXISTS owner_payout_recoveries (recovery_id TEXT PRIMARY KEY, reservation_id TEXT NOT NULL, amount_kobo INTEGER NOT NULL, received_on TEXT NOT NULL, reference TEXT NOT NULL, recorded_at TEXT NOT NULL, recorded_by TEXT NOT NULL, UNIQUE (reservation_id, reference));
     `);
   }
@@ -338,6 +446,14 @@ export class SqliteOwnerPayableLedger implements OwnerPayableLedger {
   listRecoveries(reservationId: string): readonly OwnerRecovery[] {
     const rows: unknown[] = this.#database.prepare("SELECT * FROM owner_payout_recoveries WHERE reservation_id = $id ORDER BY recorded_at, recovery_id").all({ $id: reservationId });
     return rows.filter(isRecoveryRow).map((row) => Object.freeze({ recoveryId: row.recovery_id, reservationId: row.reservation_id, amountKobo: row.amount_kobo, receivedOn: row.received_on, reference: row.reference, recordedAt: row.recorded_at, recordedBy: row.recorded_by }));
+  }
+  listGuestRefunds(reservationId: string): readonly GuestRefund[] {
+    const rows: unknown[] = this.#database.prepare("SELECT * FROM guest_refunds WHERE reservation_id = $id ORDER BY recorded_at, refund_id").all({ $id: reservationId });
+    return rows.filter(isGuestRefundRow).map((row) => Object.freeze({ refundId: row.refund_id, reservationId: row.reservation_id, amountKobo: row.amount_kobo, refundedOn: row.refunded_on, reference: row.reference, recordedAt: row.recorded_at, recordedBy: row.recorded_by }));
+  }
+  insertGuestRefund(refund: GuestRefund): void {
+    this.#database.prepare("INSERT INTO guest_refunds (refund_id, reservation_id, amount_kobo, refunded_on, reference, recorded_at, recorded_by) VALUES ($id, $reservationId, $amount, $refundedOn, $reference, $recordedAt, $recordedBy)")
+      .run({ $id: refund.refundId, $reservationId: refund.reservationId, $amount: refund.amountKobo, $refundedOn: refund.refundedOn, $reference: refund.reference, $recordedAt: refund.recordedAt, $recordedBy: refund.recordedBy });
   }
   insertRecovery(recovery: OwnerRecovery): void {
     this.#database.prepare("INSERT INTO owner_payout_recoveries (recovery_id, reservation_id, amount_kobo, received_on, reference, recorded_at, recorded_by) VALUES ($id, $reservationId, $amount, $receivedOn, $reference, $recordedAt, $recordedBy)")

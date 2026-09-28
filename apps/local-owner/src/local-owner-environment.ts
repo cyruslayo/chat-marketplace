@@ -48,6 +48,10 @@ import {
   projectOwnerPayable,
   recordOwnerPayout,
   recordOwnerRecovery,
+  recordGuestRefund,
+  upheldStayRefund,
+  UpheldOutcomeError,
+  type GuestRefund,
   OwnerPayoutError,
   OwnerRecoveryError,
   SqliteOwnerPayableLedger,
@@ -152,6 +156,8 @@ export interface OperatorReservation extends OperatorBooking {
    * is the later of 24 hours after Verified Access and the dismissal (issue 10).
    */
   readonly ownerPayableDueAt: string | null;
+  /** Issue 14: the stay's upheld outcome and the Guest's refund, or null while no complaint has been upheld. */
+  readonly stayOutcome: OperatorStayOutcome | null;
   /** The version the check-in forms carry (ADR 0072). */
   readonly version: string;
 }
@@ -190,11 +196,11 @@ export function isComplaintCategory(value: unknown): value is ComplaintCategory 
   return typeof value === "string" && Object.hasOwn(COMPLAINT_CATEGORY_LABELS, value);
 }
 
-export type CheckInInputProblem = "basis_required" | "category_required" | "dismissal_reason_required";
+export type CheckInInputProblem = "basis_required" | "category_required" | "dismissal_reason_required" | "affected_night_required";
 /** A check-in form was incomplete. Nothing was recorded. */
 export class CheckInInputError extends Error {
   constructor(readonly problem: CheckInInputProblem) {
-    super(problem === "basis_required" ? "Choose how access was verified" : problem === "category_required" ? "Choose a complaint category" : "Choose why the complaint is closed");
+    super(problem === "basis_required" ? "Choose how access was verified" : problem === "category_required" ? "Choose a complaint category" : problem === "dismissal_reason_required" ? "Choose why the complaint is closed" : "Choose the first affected night of the stay");
     this.name = "CheckInInputError";
   }
 }
@@ -206,6 +212,18 @@ export const COMPLAINT_DISMISSAL_LABELS: Readonly<Record<ComplaintDismissalReaso
 });
 
 /** A check-in action refused because of the complaint's own state; nothing is recorded (409). */
+/** An upheld Blocking Fulfilment Complaint ended the stay (issue 14, ADR 0061, 0028). */
+export interface OperatorStayOutcome {
+  readonly complaintId: string;
+  readonly firstAffectedNight: string;
+  /** When the outcome was posted: the owner payable is due from then (ADR 0089). */
+  readonly endedAt: string;
+  readonly refundKobo: number;
+  readonly refundedKobo: number;
+  readonly refundOutstandingKobo: number;
+  readonly refunds: readonly GuestRefund[];
+}
+
 export class CheckInRefusedError extends Error {
   constructor(message: string) { super(message); this.name = "CheckInRefusedError"; }
 }
@@ -875,7 +893,10 @@ export class LocalApartmentOwnerEnvironment {
     const accessRecorded = checkIn.result?.status === "verified_access" || checkIn.result?.status === "late_voluntary_arrival";
     const protectionWindowStartsAt = accessRecorded ? checkIn.result?.protectionWindowStartsAt ?? null : null;
     // ADR 0072: the version the check-in forms were rendered from; any change to access or complaints makes it stale.
-    const version = createHash("sha256").update(JSON.stringify([checkIn.result?.status ?? "awaiting_access", checkIn.result?.verifiedAt ?? "", checkIn.complaints.map((complaint) => `${complaint.complaintId}:${complaint.status}`)])).digest("hex").slice(0, 16);
+    const stayOutcome = this.#stayOutcome(reservation.reservationId, checkIn.complaints);
+    // ADR 0072: the version the check-in and refund forms were rendered from; any change to access, complaints or the
+    // Guest's refunds makes it stale.
+    const version = createHash("sha256").update(JSON.stringify([checkIn.result?.status ?? "awaiting_access", checkIn.result?.verifiedAt ?? "", checkIn.complaints.map((complaint) => `${complaint.complaintId}:${complaint.status}`), stayOutcome?.refunds.map((refund) => refund.refundId) ?? []])).digest("hex").slice(0, 16);
     return Object.freeze({
       ...booking,
       reservationId: reservation.reservationId,
@@ -889,7 +910,10 @@ export class LocalApartmentOwnerEnvironment {
       openComplaints: Object.freeze(openComplaints),
       // ADR 0089: due 24 hours after Verified Access, and only while no Blocking Fulfilment Complaint is open.
       // Issue 10: after a dismissal, not before it.
-      ownerPayableDueAt: protectionWindowStartsAt && openComplaints.length === 0 ? [ownerPayableDueAt(protectionWindowStartsAt), lastComplaintResolvedAt(checkIn.complaints) ?? ""].sort().at(-1)! : null,
+      // Issue 14: an upheld outcome ends the stay, and the owner payable is due when it was posted.
+      ownerPayableDueAt: stayOutcome ? stayOutcome.endedAt
+        : protectionWindowStartsAt && openComplaints.length === 0 ? [ownerPayableDueAt(protectionWindowStartsAt), lastComplaintResolvedAt(checkIn.complaints) ?? ""].sort().at(-1)! : null,
+      stayOutcome,
       version,
     });
   }
@@ -934,7 +958,94 @@ export class LocalApartmentOwnerEnvironment {
     });
   }
 
-  #checkInCommand(requestId: string, principal: CommandPrincipal, basedOnVersion: string, auditType: string, run: (app: CheckInSupportApplication, reservationId: string, staff: CommandPrincipal) => Record<string, string>): OperatorReservation {
+  /**
+   * Issue 14: upholds an open complaint as platform support (ADR 0091). The stay ends from the first affected night;
+   * the Guest's refund is fixed by ADR 0061 and posted as the booking's cancellation outcome, so the owner payable
+   * becomes the owner's share of what is kept (ADR 0089). The stay's dates stay held: a unit with a failure is not
+   * reopened for booking automatically. One upheld outcome per stay.
+   */
+  upholdBlockingComplaint(requestId: string, principal: CommandPrincipal, input: { readonly complaintId: string; readonly firstAffectedNight: string; readonly basedOnVersion: string }): OperatorReservation {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.firstAffectedNight)) throw new CheckInInputError("affected_night_required");
+    return this.#checkInCommand(requestId, principal, input.basedOnVersion, "operator_blocking_complaint_upheld", (app, reservationId, staff) => {
+      const complaints = this.#checkInState(reservationId).complaints;
+      if (complaints.some((candidate) => candidate.resolution === "upheld") || this.ownerPayableLedger.findCancellation(reservationId)) throw new CheckInRefusedError("This stay already has an upheld outcome");
+      const complaint = complaints.find((candidate) => candidate.complaintId === input.complaintId);
+      if (!complaint) throw new CheckInRefusedError("This complaint is not on this Reservation");
+      if (complaint.status === "resolved") throw new CheckInRefusedError("This complaint is already closed");
+      const reservation = this.#bookingState.findReservationById(reservationId);
+      const contract = reservation ? this.#bookingState.findContractById(reservation.contractId) : null;
+      if (!contract) throw new Error("Booking not found");
+      let refund: { readonly refundKobo: number };
+      try {
+        refund = upheldStayRefund({ quote: contract.quote, amountPaidKobo: contract.paymentDetails.amountKobo, checkIn: contract.dates.checkIn, checkOut: contract.dates.checkOut, firstAffectedNight: input.firstAffectedNight });
+      } catch (error) {
+        if (error instanceof UpheldOutcomeError && error.problem === "night_outside_stay") throw new CheckInInputError("affected_night_required");
+        throw error;
+      }
+      app.upholdBlockingComplaintAsSupport(reservationId, complaint.complaintId, input.firstAffectedNight, staff);
+      // ADR 0089: the refund changes the owner payable only as a cancellation outcome, over the Cancellation Base.
+      const settlement = ownerSettlementFromQuote(contract.quote);
+      const base = settlement ? settlement.ownerPayableKobo + settlement.marginKobo : contract.paymentDetails.amountKobo;
+      this.ownerPayableLedger.postCancellation({ cancellationId: `upheld:${complaint.complaintId}`, reservationId, liability: "operator_failure", amountKobo: refund.refundKobo, retainedCancellationBaseKobo: Math.max(0, base - refund.refundKobo), retainedCommissionKobo: 0, currency: "NGN" });
+      return { complaintId: complaint.complaintId, firstAffectedNight: input.firstAffectedNight, refundKobo: refund.refundKobo };
+    });
+  }
+
+  /**
+   * Issue 14: records a refund you paid the Guest after an upheld complaint, idempotent per reference (ADR 0072).
+   * The audit keeps ids, the amount and the date; never the reference (ADR 0075).
+   */
+  recordGuestRefund(requestId: string, principal: CommandPrincipal, input: { readonly amount: string; readonly refundedOn: string; readonly reference: string; readonly basedOnVersion: string }): OperatorReservation {
+    const current = this.operatorReservation(requestId, principal);
+    const now = this.clock();
+    const { refund, replayed } = recordGuestRefund({
+      ledger: this.ownerPayableLedger,
+      reservationId: current.reservationId,
+      owedKobo: current.stayOutcome?.refundKobo ?? 0,
+      refunds: current.stayOutcome?.refunds ?? [],
+      basedOnVersion: input.basedOnVersion,
+      currentVersion: current.version,
+      amountKobo: parseNairaToKobo(input.amount),
+      refundedOn: input.refundedOn.trim(),
+      reference: input.reference,
+      recordedBy: principal.id!,
+      now,
+    });
+    if (!replayed) {
+      try { this.audit.record({ type: "operator_guest_refund_recorded", actorId: principal.id, tenantId: principal.tenantId, requestId, reservationId: current.reservationId, refundId: refund.refundId, amountKobo: refund.amountKobo, refundedOn: refund.refundedOn, occurredAt: now.toISOString() }); } catch { /* observability cannot undo a recorded refund */ }
+    }
+    return this.operatorReservation(requestId, principal);
+  }
+
+  /** Reservations you act for with a refund still owed to the Guest (issue 14), for Home. */
+  listGuestRefundsOwed(principal: CommandPrincipal): readonly OperatorReservation[] {
+    return this.listOperatorBookings(principal).flatMap((booking) => {
+      if (booking.stage !== "reservation_confirmed") return [];
+      try {
+        const reservation = this.operatorReservation(booking.requestId, principal);
+        return reservation.stayOutcome && reservation.stayOutcome.refundOutstandingKobo > 0 ? [reservation] : [];
+      } catch { return []; }
+    });
+  }
+
+  #stayOutcome(reservationId: string, complaints: readonly { readonly complaintId: string; readonly resolution?: string; readonly upheldFromNight?: string }[]): OperatorStayOutcome | null {
+    const upheld = complaints.find((complaint) => complaint.resolution === "upheld");
+    const cancellation = this.ownerPayableLedger.findCancellation(reservationId);
+    if (!upheld || !upheld.upheldFromNight || !cancellation) return null;
+    const refunds = this.ownerPayableLedger.listGuestRefunds(reservationId);
+    const refundedKobo = refunds.reduce((sum, refund) => sum + refund.amountKobo, 0);
+    return Object.freeze({
+      complaintId: upheld.complaintId,
+      firstAffectedNight: upheld.upheldFromNight,
+      endedAt: cancellation.postedAt,
+      refundKobo: cancellation.refundKobo,
+      refundedKobo,
+      refundOutstandingKobo: Math.max(0, cancellation.refundKobo - refundedKobo),
+      refunds: Object.freeze([...refunds]),
+    });
+  }
+
+  #checkInCommand(requestId: string, principal: CommandPrincipal, basedOnVersion: string, auditType: string, run: (app: CheckInSupportApplication, reservationId: string, staff: CommandPrincipal) => Record<string, string | number>): OperatorReservation {
     // Grant, tenant and Reservation checks first; a missing or revoked grant is "Booking not found" (ADR 0082).
     const current = this.operatorReservation(requestId, principal);
     if (!principal.id || !principal.tenantId) throw new Error("Booking not found");
