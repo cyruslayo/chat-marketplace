@@ -24,7 +24,7 @@ import {
   CheckInInputError,
   CheckInStaleError,
 } from "./local-owner-environment.js";
-import { ManualTransferError, OwnerPayoutError, type ComplaintDismissalReason, addCalendarDays, type CalendarDayState, SUPPORT_VERIFICATION_BASES, type OwnerPayableStatus, type AccessStatus, type ComplaintCategory, type ManualTransferStatus, type SupportVerificationBasis } from "../../../domains/shortlet/src/index.js";
+import { ManualTransferError, OwnerPayoutError, OwnerRecoveryError, type ComplaintDismissalReason, addCalendarDays, type CalendarDayState, SUPPORT_VERIFICATION_BASES, type OwnerPayableStatus, type AccessStatus, type ComplaintCategory, type ManualTransferStatus, type SupportVerificationBasis } from "../../../domains/shortlet/src/index.js";
 import { BOOKING_ENDED_REASONS, BOOKING_PAYMENT_METHOD_LABELS, BOOKING_STAGE_LABELS, type BookingStage } from "./booking-projection.js";
 import { escapeHtml, formatMoney, icon, pageShell, type StatusTone } from "../../web/src/ui-kit.js";
 import { OPERATOR_RESPONSE_REMINDER_MINUTES, operatorResponseReminderDue, type OperatorAuthenticatedPrincipal } from "../../../domains/shortlet/src/index.js";
@@ -85,7 +85,7 @@ function operatorLoginHtml(error = "", reason: SignInReason | null = null): stri
  * (manual transfers to verify, B6; owner payouts due, B7) and a builder in `waitingItems`.
  */
 interface WaitingItem {
-  readonly kind: "request" | "manual_transfer" | "owner_payout";
+  readonly kind: "request" | "manual_transfer" | "owner_payout" | "owner_overpayment";
   readonly href: string;
   readonly title: string;
   readonly ownerName: string;
@@ -130,7 +130,18 @@ function waitingItems(env: LocalApartmentOwnerEnvironment, principal: OperatorPr
       dueAt: item.payable.dueAt,
       dueLabel: "Due",
     }] : []);
-  return [...requests, ...transfers, ...payouts].sort((a, b) => Date.parse(a.dueAt) - Date.parse(b.dueAt));
+  // Issue 11: an Owner Overpayment to recover, listed from when the later cancellation outcome was posted.
+  const overpayments: WaitingItem[] = env.listOwnerPayables(commandPrincipal(principal))
+    .flatMap((item) => item.payable?.status === "overpaid" && item.payable.dueAt ? [{
+      kind: "owner_overpayment" as const,
+      href: `/operator/payouts#payable-${encodeURIComponent(item.requestId)}`,
+      title: "Owner over-payment to recover",
+      ownerName: item.ownerName,
+      apartmentTitle: item.apartmentTitle,
+      dueAt: item.payable.dueAt,
+      dueLabel: "Over-paid since",
+    }] : []);
+  return [...requests, ...transfers, ...payouts, ...overpayments].sort((a, b) => Date.parse(a.dueAt) - Date.parse(b.dueAt));
 }
 
 function operatorHomeHtml(env: LocalApartmentOwnerEnvironment, principal: OperatorPrincipal): string {
@@ -499,6 +510,7 @@ const PAYABLE_STATUS: Readonly<Record<OwnerPayableStatus, { readonly label: stri
   not_yet_due: { label: "Not yet due", tone: "neutral" },
   due: { label: "Due", tone: "warning" },
   paused: { label: "Paused", tone: "danger" },
+  overpaid: { label: "Over-paid", tone: "danger" },
   paid: { label: "Paid", tone: "success" },
   nothing_owed: { label: "Nothing owed", tone: "neutral" },
 };
@@ -517,6 +529,7 @@ function lagosToday(now: Date): string {
 function payableDue(item: OperatorOwnerPayable): string {
   const payable = item.payable!;
   if (payable.status === "nothing_owed") return "Nothing is owed";
+  if (payable.status === "overpaid") return "Paid; a later cancellation outcome left the owner owed less";
   if (payable.cancelled && payable.dueAt) return `${watTime(payable.dueAt)}, when the cancellation outcome was posted`;
   if (payable.status === "paused") return "Not due while a Blocking Fulfilment Complaint is open";
   if (payable.dueAt) return watTime(payable.dueAt);
@@ -527,7 +540,7 @@ function payableDue(item: OperatorOwnerPayable): string {
  * One Reservation's owner payable (B7, ADR 0089). Amounts come from the confirmation snapshot and the ledger, never
  * the unit. The payout form appears only while the payable is due, and carries the version it was rendered from (ADR 0072).
  */
-function ownerPayableCard(item: OperatorOwnerPayable, now: Date): string {
+function ownerPayableCard(item: OperatorOwnerPayable, now: Date, ownerOverpaidKobo = 0): string {
   const id = escapeHtml(item.requestId);
   const stay = `<dt>Stay</dt><dd>${escapeHtml(formatStayDates(item.checkIn, item.checkOut))} (${item.nights} ${item.nights === 1 ? "night" : "nights"})</dd>`;
   const received = `<dt>Amount received</dt><dd>${formatMoney(item.amountReceivedKobo)}</dd>`;
@@ -541,11 +554,19 @@ function ownerPayableCard(item: OperatorOwnerPayable, now: Date): string {
     : "";
   const paid = payable.payouts.length === 0 ? "" : `<dt>Paid</dt><dd><ul class="bo-payouts">${payable.payouts.map((payout) => `<li>${formatMoney(payout.amountKobo)} paid ${escapeHtml(formatPayoutDate(payout.paidOn))}, reference <span class="bo-reference">${escapeHtml(payout.reference)}</span></li>`).join("")}</ul></dd>`;
   const outstanding = payable.paidKobo > 0 && payable.outstandingKobo > 0 ? `<dt>Still to pay</dt><dd>${formatMoney(payable.outstandingKobo)}</dd>` : "";
-  const facts = `<dl class="ui-facts">${stay}${received}<dt>Owner payable</dt><dd class="ui-money-total">${formatMoney(payable.ownerPayableKobo)}</dd><dt>Your margin</dt><dd>${formatMoney(payable.marginKobo)}</dd>${cancellation}<dt>Due</dt><dd>${payableDue(item)}</dd><dt>Status</dt><dd>${escapeHtml(status.label)}</dd>${paid}${outstanding}</dl>`;
-  const form = payable.status === "due"
-    ? `<form method="post" action="/operator/payouts/${encodeURIComponent(item.requestId)}" class="ui-stack"><input type="hidden" name="basedOnVersion" value="${escapeHtml(payable.version)}"><h4>Record a payout</h4><p>Record it after you have paid the owner by bank transfer or Paystack Transfers.</p><div class="ui-field"><label class="ui-field__label" for="amount-${id}">Amount paid (₦)</label><input id="amount-${id}" name="amount" inputmode="decimal" autocomplete="off" required></div><div class="ui-field"><label class="ui-field__label" for="paid-on-${id}">Date paid</label><input id="paid-on-${id}" name="paidOn" type="date" max="${lagosToday(now)}" required></div><div class="ui-field"><label class="ui-field__label" for="reference-${id}">Payment reference</label><input id="reference-${id}" name="reference" autocomplete="off" required></div><button class="ui-button ui-button--primary ui-button--block" type="submit">Record payout</button></form>`
+  // Issue 11: an Owner Overpayment and what the owner has paid back.
+  const recovered = payable.recoveries.length === 0 ? "" : `<dt>Recovered</dt><dd><ul class="bo-payouts">${payable.recoveries.map((recovery) => `<li>${formatMoney(recovery.amountKobo)} received ${escapeHtml(formatPayoutDate(recovery.receivedOn))}, reference <span class="bo-reference">${escapeHtml(recovery.reference)}</span></li>`).join("")}</ul></dd>`;
+  const overpaid = payable.overpaidKobo > 0 ? `<dt>Over-paid</dt><dd>${formatMoney(payable.overpaidKobo)}</dd>` : "";
+  const facts = `<dl class="ui-facts">${stay}${received}<dt>Owner payable</dt><dd class="ui-money-total">${formatMoney(payable.ownerPayableKobo)}</dd><dt>Your margin</dt><dd>${formatMoney(payable.marginKobo)}</dd>${cancellation}<dt>Due</dt><dd>${payableDue(item)}</dd><dt>Status</dt><dd>${escapeHtml(status.label)}</dd>${paid}${recovered}${outstanding}${overpaid}</dl>`;
+  // Issue 11: warn, never hold, when the owner has an unrecovered Owner Overpayment on another booking.
+  const warning = ownerOverpaidKobo > 0 ? `<p class="ui-banner ui-banner--warning">${icon("alert")}<span>${escapeHtml(item.ownerName)} has ${formatMoney(ownerOverpaidKobo)} over-paid that is not yet recovered. You can still pay this payable.</span></p>` : "";
+  const recovery = payable.status === "overpaid"
+    ? `<form method="post" action="/operator/payouts/${encodeURIComponent(item.requestId)}/recovery" class="ui-stack"><input type="hidden" name="basedOnVersion" value="${escapeHtml(payable.version)}"><h4>Record a recovery</h4><p>Ask the owner to pay back the over-paid amount, then record it here. Nothing is taken from their other payables.</p><div class="ui-field"><label class="ui-field__label" for="recovered-${id}">Amount recovered (₦)</label><input id="recovered-${id}" name="amount" inputmode="decimal" autocomplete="off" required></div><div class="ui-field"><label class="ui-field__label" for="received-on-${id}">Date received</label><input id="received-on-${id}" name="receivedOn" type="date" max="${lagosToday(now)}" required></div><div class="ui-field"><label class="ui-field__label" for="recovery-reference-${id}">Payment reference</label><input id="recovery-reference-${id}" name="reference" autocomplete="off" required></div><button class="ui-button ui-button--primary ui-button--block" type="submit">Record recovery</button></form>`
     : "";
-  return `<li class="bo-payable" id="payable-${id}" data-request-id="${id}" data-status="${payable.status}"><article class="ui-panel ui-stack"><div class="ui-row"><span class="ui-status ui-status--${status.tone}">${escapeHtml(status.label)}</span></div><h3>${escapeHtml(item.apartmentTitle)}</h3>${facts}${form}</article></li>`;
+  const form = payable.status === "due"
+    ? `<form method="post" action="/operator/payouts/${encodeURIComponent(item.requestId)}" class="ui-stack"><input type="hidden" name="basedOnVersion" value="${escapeHtml(payable.version)}"><h4>Record a payout</h4>${warning}<p>Record it after you have paid the owner by bank transfer or Paystack Transfers.</p><div class="ui-field"><label class="ui-field__label" for="amount-${id}">Amount paid (₦)</label><input id="amount-${id}" name="amount" inputmode="decimal" autocomplete="off" required></div><div class="ui-field"><label class="ui-field__label" for="paid-on-${id}">Date paid</label><input id="paid-on-${id}" name="paidOn" type="date" max="${lagosToday(now)}" required></div><div class="ui-field"><label class="ui-field__label" for="reference-${id}">Payment reference</label><input id="reference-${id}" name="reference" autocomplete="off" required></div><button class="ui-button ui-button--primary ui-button--block" type="submit">Record payout</button></form>`
+    : "";
+  return `<li class="bo-payable" id="payable-${id}" data-request-id="${id}" data-status="${payable.status}"><article class="ui-panel ui-stack"><div class="ui-row"><span class="ui-status ui-status--${status.tone}">${escapeHtml(status.label)}</span></div><h3>${escapeHtml(item.apartmentTitle)}</h3>${facts}${form}${recovery}</article></li>`;
 }
 
 const PAYOUT_STYLE = ".bo-owner{display:grid;gap:var(--space-3)}.bo-owner h2{margin:0}.bo-payables{display:grid;gap:var(--space-4);margin:0;padding:0;list-style:none}.bo-payouts{margin:0;padding-inline-start:var(--space-5)}.bo-reference{font-family:var(--font-mono);overflow-wrap:anywhere}.ui-panel h4{margin:0;font-size:var(--font-size-body)}";
@@ -559,10 +580,12 @@ function operatorPayoutsHtml(env: LocalApartmentOwnerEnvironment, principal: Ope
   const sections = [...owners.values()].map((group, index) => {
     const sum = (pick: (item: OperatorOwnerPayable) => number) => group.reduce((total, item) => total + (item.payable ? pick(item) : 0), 0);
     const due = sum((item) => item.payable!.status === "due" ? item.payable!.outstandingKobo : 0);
-    const paid = sum((item) => item.payable!.paidKobo);
+    // Issue 11: "Paid" is net of recoveries; an unrecovered Owner Overpayment is its own total, never due now.
+    const paid = sum((item) => item.payable!.paidKobo - item.payable!.recoveredKobo);
+    const overpaid = sum((item) => item.payable!.overpaidKobo);
     // A paused payable is not due yet either; it is counted here until the complaint is resolved.
     const notYetDue = sum((item) => item.payable!.status === "not_yet_due" || item.payable!.status === "paused" ? item.payable!.outstandingKobo : 0);
-    return `<section class="bo-owner" aria-labelledby="owner-${index}"><h2 id="owner-${index}">${escapeHtml(group[0]!.ownerName)}</h2><dl class="ui-facts bo-owner-totals"><dt>Due now</dt><dd data-total="due">${formatMoney(due)}</dd><dt>Paid</dt><dd data-total="paid">${formatMoney(paid)}</dd><dt>Not yet due</dt><dd data-total="not_yet_due">${formatMoney(notYetDue)}</dd></dl><ol class="bo-payables">${group.map((item) => ownerPayableCard(item, now)).join("")}</ol></section>`;
+    return `<section class="bo-owner" aria-labelledby="owner-${index}"><h2 id="owner-${index}">${escapeHtml(group[0]!.ownerName)}</h2><dl class="ui-facts bo-owner-totals"><dt>Due now</dt><dd data-total="due">${formatMoney(due)}</dd><dt>Paid</dt><dd data-total="paid">${formatMoney(paid)}</dd><dt>Not yet due</dt><dd data-total="not_yet_due">${formatMoney(notYetDue)}</dd>${overpaid > 0 ? `<dt>Over-paid</dt><dd data-total="overpaid">${formatMoney(overpaid)}</dd>` : ""}</dl><ol class="bo-payables">${group.map((item) => ownerPayableCard(item, now, overpaid)).join("")}</ol></section>`;
   }).join("");
   const list = items.length === 0
     ? `<section class="ui-panel ui-empty"><div class="ui-empty__art">${icon("users")}</div><h2>No owner payables yet</h2><p>A Reservation appears here once the Guest has paid.</p></section>`
@@ -579,6 +602,16 @@ function operatorPayoutsHtml(env: LocalApartmentOwnerEnvironment, principal: Ope
 
 class PayoutFormError extends Error {}
 
+/** Only the recovery form's own fields (ADR 0075). */
+function recoveryForm(body: string): { readonly basedOnVersion: string; readonly amount: string; readonly receivedOn: string; readonly reference: string } {
+  const params = new URLSearchParams(body);
+  const keys = [...params.keys()];
+  if (keys.some((key) => !["basedOnVersion", "amount", "receivedOn", "reference"].includes(key)) || new Set(keys).size !== keys.length) throw new PayoutFormError("Unexpected fields");
+  const version = params.get("basedOnVersion") ?? "";
+  if (!/^[0-9a-f]{16}$/.test(version)) throw new PayoutFormError("Missing version");
+  return { basedOnVersion: version, amount: params.get("amount") ?? "", receivedOn: params.get("receivedOn") ?? "", reference: params.get("reference") ?? "" };
+}
+
 /** Only the payout form's own fields (ADR 0075): no owner bank details can ride along. */
 function payoutForm(body: string): { readonly basedOnVersion: string; readonly amount: string; readonly paidOn: string; readonly reference: string } {
   const params = new URLSearchParams(body);
@@ -592,7 +625,7 @@ function payoutForm(body: string): { readonly basedOnVersion: string; readonly a
 /** Plain words for a refused payout; nothing was recorded. */
 function payoutRefusal(error: unknown): { readonly status: number; readonly message: string } {
   if (error instanceof PayoutFormError) return { status: 400, message: "This form could not be read. Review the payable and try again. Nothing was recorded." };
-  if (error instanceof OwnerPayoutError) return { status: error.isInput ? 400 : 409, message: `${error.message}. Nothing was recorded.` };
+  if (error instanceof OwnerPayoutError || error instanceof OwnerRecoveryError) return { status: error.isInput ? 400 : 409, message: `${error.message}. Nothing was recorded.` };
   return { status: 409, message: "This payout could not be recorded. Nothing was recorded." };
 }
 
@@ -1305,6 +1338,27 @@ export function startLocalOwnerServer(options: {
         catch { if (!res.headersSent) { res.writeHead(404, { "Content-Type": "text/html; charset=utf-8" }); res.end(bookingNotFoundHtml(env, principal)); } return; }
         const statusCode = error instanceof CheckInInputError || error instanceof DecisionFormError ? 400 : 409;
         if (!res.headersSent) { res.writeHead(statusCode, { "Content-Type": "text/html; charset=utf-8" }); res.end(body); }
+      }
+      return;
+    }
+    // Issue 11: record an owner's recovery of an Owner Overpayment. Same guards as a payout (ADR 0082, 0086, 0072).
+    const recoveryMatch = url.pathname.match(/^\/operator\/payouts\/([^/]+)\/recovery$/);
+    if (req.method === "POST" && recoveryMatch) {
+      if (!browserOriginAccepted(req)) { res.writeHead(403); res.end("Origin rejected"); return; }
+      const principal = operatorPrincipal(req, env);
+      if (!principal) { res.writeHead(401); res.end("Authentication required"); return; }
+      const requestId = pathSegment(recoveryMatch[1]!);
+      if (requestId === null) { res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }); res.end("Not found"); return; }
+      const who = commandPrincipal(principal);
+      try { env.ownerPayable(requestId, who); } catch { res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }); res.end("Booking not found"); return; }
+      try {
+        env.recordOwnerRecovery(requestId, who, recoveryForm(await readForm(req)));
+        res.writeHead(303, { Location: `/operator/payouts#payable-${encodeURIComponent(requestId)}` }); res.end();
+      } catch (error) {
+        const refusal = payoutRefusal(error);
+        let body = "Recovery rejected";
+        try { body = operatorPayoutsHtml(env, principal, refusal.message, requestId); } catch { /* keep generic */ }
+        if (!res.headersSent) { res.writeHead(refusal.status, { "Content-Type": body.startsWith("<!doctype") ? "text/html; charset=utf-8" : "text/plain; charset=utf-8" }); res.end(body); }
       }
       return;
     }
