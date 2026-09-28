@@ -30,6 +30,9 @@ A signed-in back-office user records check-in as **platform support**, not as th
 - **What does not count.** The owner's or the owner's staff's word alone is an operator declaration (ADR 0022). It is not a basis, and the form says so.
 - **Timing.** Verified Access cannot be recorded before the Reservation's Contractual Check-In Window begins (ADR 0022, ADR 0031), and cannot be recorded twice. The protection window starts at the later of contractual check-in and access provision (ADR 0022).
 - **Complaints.** The same user may report a Blocking Fulfilment Complaint from a fixed category list, with no free text. While it is open, the owner payable is not due (ADR 0089).
+- **Dismissing a complaint** (added 28 Sept 2026, back-office issue 10). The same user may dismiss an open complaint that did not hold up, choosing one fixed reason: "Fixed, and the Guest stayed" or "Not borne out on review". There is no free text, and the grant is checked as for reporting.
+  - An upheld complaint is not dismissed. It stays open until a cancellation or remedy outcome is recorded, since under ADR 0089 only that outcome changes the owner payable.
+  - Once no complaint is open, the owner payable is due 24 hours after Verified Access, or at the dismissal if that is later. Dismissing does not restart the protection window.
 - **Audit.** Each record keeps only the actor, Reservation, basis or category code, status transition and time (ADR 0075).
 
 ## Status of earlier decisions

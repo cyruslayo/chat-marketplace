@@ -54,6 +54,8 @@ export interface OwnerPayableInput {
   /** When the protection window started (Verified Access), or null. */
   readonly protectionWindowStartsAt: string | null;
   readonly blockingComplaintOpen: boolean;
+  /** When the last complaint was dismissed, or null (issue 10). */
+  readonly complaintResolvedAt?: string | null;
   readonly cancellation: OwnerPayableCancellation | null;
   readonly payouts: readonly OwnerPayout[];
   readonly now: Date;
@@ -72,14 +74,19 @@ export function ownerShareAfterCancellation(settlement: Pick<OwnerSettlementSnap
   return { ownerPayableKobo: Math.min(settlement.ownerPayableKobo, retained - marginKobo), marginKobo };
 }
 
+function laterOf(a: string, b: string | null): string {
+  return b !== null && Date.parse(b) > Date.parse(a) ? b : a;
+}
+
 export function projectOwnerPayable(input: OwnerPayableInput): OwnerPayableProjection {
   const captured = { ownerPayableKobo: input.settlement.ownerPayableKobo, marginKobo: input.settlement.marginKobo };
   const owed = input.cancellation ? ownerShareAfterCancellation(captured, input.cancellation.retainedCancellationBaseKobo) : captured;
   const paidKobo = input.payouts.reduce((sum, payout) => sum + payout.amountKobo, 0);
   const outstandingKobo = Math.max(0, owed.ownerPayableKobo - paidKobo);
   // ADR 0089: 24 hours after Verified Access with no Blocking Fulfilment Complaint open; after a cancellation, when posted.
+  // Issue 10 (decided 28 Sept 2026): a complaint dismissed later makes it due at the dismissal, not a fresh window.
   const dueAt = input.cancellation ? input.cancellation.postedAt
-    : input.protectionWindowStartsAt && !input.blockingComplaintOpen ? ownerPayableDueAt(input.protectionWindowStartsAt) : null;
+    : input.protectionWindowStartsAt && !input.blockingComplaintOpen ? laterOf(ownerPayableDueAt(input.protectionWindowStartsAt), input.complaintResolvedAt ?? null) : null;
   const status: OwnerPayableStatus = owed.ownerPayableKobo === 0 ? "nothing_owed"
     : outstandingKobo === 0 ? "paid"
       : !input.cancellation && input.blockingComplaintOpen ? "paused"

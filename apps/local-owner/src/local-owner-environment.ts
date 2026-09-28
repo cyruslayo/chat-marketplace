@@ -53,6 +53,9 @@ import {
   type AccessStatus,
   type CheckInSupportState,
   type ComplaintCategory,
+  type ComplaintDismissalReason,
+  isComplaintDismissalReason,
+  lastComplaintResolvedAt,
   type ContractualCheckInWindow,
   type OperatorRepository,
   AvailabilityConflictError,
@@ -141,8 +144,11 @@ export interface OperatorReservation extends OperatorBooking {
   readonly paidWith: BookingPaymentMethod | null;
   readonly accessStatus: AccessStatus;
   readonly accessRecordedAt: string | null;
-  readonly openComplaints: readonly ComplaintCategory[];
-  /** Null until Verified Access, and while any Blocking Fulfilment Complaint is open (ADR 0089). */
+  readonly openComplaints: readonly { readonly complaintId: string; readonly category: ComplaintCategory }[];
+  /**
+   * Null until Verified Access, and while any Blocking Fulfilment Complaint is open (ADR 0089). After a dismissal it
+   * is the later of 24 hours after Verified Access and the dismissal (issue 10).
+   */
   readonly ownerPayableDueAt: string | null;
   /** The version the check-in forms carry (ADR 0072). */
   readonly version: string;
@@ -182,15 +188,26 @@ export function isComplaintCategory(value: unknown): value is ComplaintCategory 
   return typeof value === "string" && Object.hasOwn(COMPLAINT_CATEGORY_LABELS, value);
 }
 
-export type CheckInInputProblem = "basis_required" | "category_required";
+export type CheckInInputProblem = "basis_required" | "category_required" | "dismissal_reason_required";
 /** A check-in form was incomplete. Nothing was recorded. */
 export class CheckInInputError extends Error {
   constructor(readonly problem: CheckInInputProblem) {
-    super(problem === "basis_required" ? "Choose how access was verified" : "Choose a complaint category");
+    super(problem === "basis_required" ? "Choose how access was verified" : problem === "category_required" ? "Choose a complaint category" : "Choose why the complaint is closed");
     this.name = "CheckInInputError";
   }
 }
 /** The Reservation changed since the form was rendered (ADR 0072). Nothing was recorded. */
+/** Why you closed a complaint (issue 10): codes from the domain, labels here. An upheld complaint is not dismissed. */
+export const COMPLAINT_DISMISSAL_LABELS: Readonly<Record<ComplaintDismissalReason, string>> = Object.freeze({
+  cured: "Fixed, and the Guest stayed",
+  not_borne_out: "Not borne out on review",
+});
+
+/** A check-in action refused because of the complaint's own state; nothing is recorded (409). */
+export class CheckInRefusedError extends Error {
+  constructor(message: string) { super(message); this.name = "CheckInRefusedError"; }
+}
+
 export class CheckInStaleError extends Error {
   constructor() { super("This Reservation changed since you opened it"); this.name = "CheckInStaleError"; }
 }
@@ -852,7 +869,7 @@ export class LocalApartmentOwnerEnvironment {
     if (!reservation || !contract) throw new Error("Booking not found");
     const request = this.bookingRequestApp.manager.getRequest(requestId) as { phoneNumber?: string | null };
     const checkIn = this.#checkInState(reservation.reservationId);
-    const openComplaints = checkIn.complaints.filter((complaint) => complaint.status !== "resolved").map((complaint) => complaint.category);
+    const openComplaints = checkIn.complaints.filter((complaint) => complaint.status !== "resolved").map((complaint) => Object.freeze({ complaintId: complaint.complaintId, category: complaint.category }));
     const accessRecorded = checkIn.result?.status === "verified_access" || checkIn.result?.status === "late_voluntary_arrival";
     const protectionWindowStartsAt = accessRecorded ? checkIn.result?.protectionWindowStartsAt ?? null : null;
     // ADR 0072: the version the check-in forms were rendered from; any change to access or complaints makes it stale.
@@ -869,7 +886,8 @@ export class LocalApartmentOwnerEnvironment {
       accessRecordedAt: accessRecorded ? checkIn.result?.verifiedAt ?? null : null,
       openComplaints: Object.freeze(openComplaints),
       // ADR 0089: due 24 hours after Verified Access, and only while no Blocking Fulfilment Complaint is open.
-      ownerPayableDueAt: protectionWindowStartsAt && openComplaints.length === 0 ? ownerPayableDueAt(protectionWindowStartsAt) : null,
+      // Issue 10: after a dismissal, not before it.
+      ownerPayableDueAt: protectionWindowStartsAt && openComplaints.length === 0 ? [ownerPayableDueAt(protectionWindowStartsAt), lastComplaintResolvedAt(checkIn.complaints) ?? ""].sort().at(-1)! : null,
       version,
     });
   }
@@ -895,6 +913,22 @@ export class LocalApartmentOwnerEnvironment {
     return this.#checkInCommand(requestId, principal, input.basedOnVersion, "operator_blocking_complaint_reported", (app, reservationId, staff) => {
       app.reportBlockingComplaintAsSupport(reservationId, category, staff);
       return { category };
+    });
+  }
+
+  /**
+   * Issue 10: dismisses an open complaint that did not hold up, as platform support (ADR 0091), with a fixed reason and
+   * no free text (ADR 0075). The owner payable then follows ADR 0089 (see `projectOwnerPayable`).
+   */
+  dismissBlockingComplaint(requestId: string, principal: CommandPrincipal, input: { readonly complaintId: string; readonly reason: string; readonly basedOnVersion: string }): OperatorReservation {
+    if (!isComplaintDismissalReason(input.reason)) throw new CheckInInputError("dismissal_reason_required");
+    const reason = input.reason;
+    return this.#checkInCommand(requestId, principal, input.basedOnVersion, "operator_blocking_complaint_dismissed", (app, reservationId, staff) => {
+      const complaint = this.#checkInState(reservationId).complaints.find((candidate) => candidate.complaintId === input.complaintId);
+      if (!complaint) throw new CheckInRefusedError("This complaint is not on this Reservation");
+      if (complaint.status === "resolved") throw new CheckInRefusedError("This complaint is already closed");
+      app.dismissBlockingComplaintAsSupport(reservationId, complaint.complaintId, reason, staff);
+      return { complaintId: complaint.complaintId, reason };
     });
   }
 
@@ -982,6 +1016,7 @@ export class LocalApartmentOwnerEnvironment {
         settlement,
         protectionWindowStartsAt: accessRecorded ? checkIn.result?.protectionWindowStartsAt ?? null : null,
         blockingComplaintOpen: checkIn.complaints.some((complaint) => complaint.status !== "resolved"),
+        complaintResolvedAt: lastComplaintResolvedAt(checkIn.complaints),
         cancellation: this.ownerPayableLedger.findCancellation(reservation.reservationId),
         payouts: this.ownerPayableLedger.listPayouts(reservation.reservationId),
         now,
