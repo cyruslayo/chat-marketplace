@@ -6,9 +6,10 @@ import { join } from "node:path";
 import { loadPilotConfiguration } from "../apps/pilot/src/pilot-config.js";
 import { startPilotServer } from "../apps/pilot/src/pilot-server.js";
 import { createPlatformCommandEnvelope } from "../packages/platform-core/src/index.js";
-import { DirectPaystackClient, SqliteOperatorRepresentativeGrantStore, SqliteOperatorSessionAuthority, type PaystackClient, type PaystackHttpFetcher } from "../domains/shortlet/src/index.js";
+import { SqliteOperatorRepresentativeGrantStore, SqliteOperatorSessionAuthority, type PaystackClient } from "../domains/shortlet/src/index.js";
 import { operatorCookieFrom, postOperatorLogin } from "./helpers/operator-session.js";
 import { PUBLIC_ORIGIN, productionFixture, type ProductionFixture } from "./helpers/pilot-fixture.js";
+import { approvingPaystack, guestEvent, postJson, provisionOperatorToken, surfaceAction } from "./helpers/guest-journey.js";
 import type { AssistantModelClient, AssistantModelRequest } from "../apps/local-guest/src/assistant/assistant-model.js";
 
 
@@ -18,45 +19,6 @@ function cookieFromSetCookie(response: Response): string {
   return value.split(";", 1)[0]!;
 }
 
-function surfaceAction(body: unknown, label: string): { readonly surfaceId: string; readonly name: string; readonly context: Record<string, unknown>; readonly sourceComponentId: string } {
-  assert.ok(body !== null && typeof body === "object");
-  const surfaces = (body as { surfaces?: unknown }).surfaces;
-  assert.ok(Array.isArray(surfaces) && surfaces.length > 0);
-  const surface = surfaces.at(-1);
-  assert.ok(surface !== null && typeof surface === "object");
-  const record = surface as { surfaceId?: unknown; a2uiMessages?: unknown };
-  assert.equal(typeof record.surfaceId, "string");
-  assert.ok(Array.isArray(record.a2uiMessages));
-  for (const message of record.a2uiMessages) {
-    if (message === null || typeof message !== "object") continue;
-    const update = (message as { updateComponents?: { components?: unknown } }).updateComponents;
-    if (!update || !Array.isArray(update.components)) continue;
-    const components = update.components.filter((component): component is Record<string, unknown> => component !== null && typeof component === "object");
-    const textById = new Map(components.filter((component) => component.component === "Text" && typeof component.id === "string").map((component) => [component.id as string, typeof component.text === "string" ? component.text : ""]));
-    const button = components.find((component) => component.component === "Button" && typeof component.id === "string" && typeof component.child === "string" && (textById.get(component.child) ?? "").includes(label));
-    const event = button?.action;
-    if (!button || event === null || typeof event !== "object") continue;
-    const eventValue = (event as { event?: unknown }).event;
-    if (eventValue === null || typeof eventValue !== "object") continue;
-    const name = (eventValue as { name?: unknown }).name;
-    const context = (eventValue as { context?: unknown }).context;
-    if (typeof name === "string" && context !== null && typeof context === "object" && !Array.isArray(context)) {
-      return { surfaceId: record.surfaceId as string, name, context: context as Record<string, unknown>, sourceComponentId: button.id as string };
-    }
-  }
-  throw new Error(`A2UI action not found: ${label}`);
-}
-
-async function postJson(base: string, path: string, cookie: string, body: unknown, origin = PUBLIC_ORIGIN): Promise<{ status: number; body: Record<string, unknown> }> {
-  const response = await fetch(`${base}${path}`, { method: "POST", headers: { cookie: cookie, origin, "content-type": "application/json" }, body: JSON.stringify(body) });
-  return { status: response.status, body: await response.json() as Record<string, unknown> };
-}
-
-async function guestEvent(base: string, cookie: string, threadId: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const result = await postJson(base, "/api/event", cookie, { threadId, ...body });
-  assert.equal(result.status, 200);
-  return result.body;
-}
 
 async function jsonResponse(response: Response): Promise<Record<string, unknown>> {
   return await response.json() as Record<string, unknown>;
@@ -128,44 +90,8 @@ test("Production composition uses one live runtime clock across Guest and Operat
 test("Production callback HTTP completion rehydrates the confirmed Reservation and Contract", async () => {
   const fixture = await productionFixture({ noDeposit: true });
   const clock = () => new Date("2026-09-21T10:00:00.000Z");
-  const actorId = "production-session-actor";
-  const grants = new SqliteOperatorRepresentativeGrantStore(fixture.configuration.databasePath, { clock });
-  grants.createGrant(createPlatformCommandEnvelope({
-    commandName: "operator_representative.grant",
-    principal: { id: "pilot-admin", role: "admin", tenantId: fixture.configuration.tenantId },
-    payload: {
-      actorId,
-      operatorId: fixture.configuration.operatorId,
-      expiresAtIso: "2027-01-01T00:00:00Z",
-      responsiblePersonVerifiedAtIso: "2026-01-01T00:00:00Z",
-      verificationReference: "pilot-callback-regression",
-    },
-    idempotencyKey: "pilot-callback-regression-grant",
-  }));
-  const sessions = new SqliteOperatorSessionAuthority(fixture.configuration.databasePath, { clock });
-  const operatorToken = sessions.provisionAccessToken({ actorId, tenantId: fixture.configuration.tenantId, representativeAuthorized: true }).token;
-  sessions.close();
-  grants.close();
-
-  let initializedReference = "";
-  let initializedAmount = 0;
-  let initializedPayerId = "";
-  const fetcher: PaystackHttpFetcher = async (url, init) => {
-    if (init.method === "POST") {
-      const body = JSON.parse(init.body ?? "{}") as { reference?: string; amount?: number; metadata?: string };
-      initializedReference = body.reference ?? "";
-      initializedAmount = body.amount ?? 0;
-      initializedPayerId = typeof body.metadata === "string" ? ((JSON.parse(body.metadata) as { shortlet_guest_id?: string }).shortlet_guest_id ?? "") : "";
-      return { status: 200, async json() { return { status: true, data: { authorization_url: "https://checkout.paystack.com/callback-regression", reference: initializedReference } }; } };
-    }
-    return {
-      status: 200,
-      async json() {
-        return { status: true, data: { reference: initializedReference, amount: initializedAmount, currency: "NGN", status: "success", domain: "live", metadata: JSON.stringify({ shortlet_guest_id: initializedPayerId }) } };
-      },
-    };
-  };
-  const provider = new DirectPaystackClient(fixture.configuration.paystack, fetcher);
+  const operatorToken = provisionOperatorToken(fixture, clock, "pilot-callback-regression");
+  const { provider, initializedReference: reference } = approvingPaystack(fixture);
   const server = startPilotServer({ port: 0, configuration: fixture.configuration, paystackClient: provider, clock });
   try {
     const port = await server.listen();
@@ -215,9 +141,9 @@ test("Production callback HTTP completion rehydrates the confirmed Reservation a
     assert.ok(paymentRoute?.includes("/payments/offers/"));
     const continuation = await fetch(`${base}${paymentRoute}/continue`, { headers: { cookie: guestCookie }, redirect: "manual" });
     assert.equal(continuation.status, 303, await continuation.text());
-    assert.equal(initializedReference !== "", true);
+    assert.equal(reference() !== "", true);
 
-    const callback = await fetch(`${base}/payments/paystack/callback?reference=${encodeURIComponent(initializedReference)}`, { headers: { cookie: guestCookie }, redirect: "manual" });
+    const callback = await fetch(`${base}/payments/paystack/callback?reference=${encodeURIComponent(reference())}`, { headers: { cookie: guestCookie }, redirect: "manual" });
     assert.equal(callback.status, 303);
     const confirmedState = await fetch(`${base}/api/state?threadId=${encodeURIComponent(threadId)}`, { headers: { cookie: guestCookie } });
     const confirmedProjection = await confirmedState.json() as { surfaces?: readonly { summary?: string }[] };
@@ -228,14 +154,14 @@ test("Production callback HTTP completion rehydrates the confirmed Reservation a
     assert.equal((database.prepare("SELECT COUNT(*) AS count FROM booking_contracts").get() as { count: number }).count, 1);
     database.close();
 
-    const repeated = await fetch(`${base}/payments/paystack/callback?reference=${encodeURIComponent(initializedReference)}`, { headers: { cookie: guestCookie }, redirect: "manual" });
+    const repeated = await fetch(`${base}/payments/paystack/callback?reference=${encodeURIComponent(reference())}`, { headers: { cookie: guestCookie }, redirect: "manual" });
     assert.equal(repeated.status, 303);
     const databaseAfterReplay = new (await import("node:sqlite")).DatabaseSync(fixture.configuration.databasePath);
     assert.equal((databaseAfterReplay.prepare("SELECT COUNT(*) AS count FROM booking_reservations").get() as { count: number }).count, 1);
     assert.equal((databaseAfterReplay.prepare("SELECT COUNT(*) AS count FROM booking_contracts").get() as { count: number }).count, 1);
     databaseAfterReplay.close();
 
-    const webhookBody = JSON.stringify({ event: "charge.success", data: { reference: initializedReference } });
+    const webhookBody = JSON.stringify({ event: "charge.success", data: { reference: reference() } });
     const webhookSignature = createHmac("sha512", fixture.configuration.paystack.secretKey).update(webhookBody).digest("hex");
     const webhook = await fetch(`${base}/webhooks/paystack`, { method: "POST", headers: { "content-type": "application/json", "x-paystack-signature": webhookSignature }, body: webhookBody });
     assert.equal(webhook.status, 200);
