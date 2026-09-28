@@ -50,6 +50,60 @@ value fails startup.
   sharing the production database. Point the Paystack **test** dashboard
   webhook at `https://<beta-host>/webhooks/paystack`.
 
+## Email notifications (Resend)
+
+Set all three, or none (none disables notifications and the startup banner says
+`notifications=disabled`). Run the closed beta and the pilot with them set:
+without them nobody is alerted when a Booking Request arrives.
+
+- `RESEND_API_KEY` — from the Resend dashboard, supplied as a secret.
+- `SHORTLET_NOTIFICATION_FROM` — a sender on a domain verified in Resend, for
+  example `Shortlet <bookings@yourdomain>`.
+- `SHORTLET_OPERATOR_ALERT_EMAILS` — comma-separated addresses of the people
+  covering the response window (ADR 0042, launch-readiness issue 09).
+- `SHORTLET_NOTIFICATION_SWEEP_SECONDS` — optional, default 30.
+
+Every sweep reads the database and sends each email once (recorded in
+`pilot_notifications`; Resend receives a stable `Idempotency-Key`):
+
+- Operator alerts: a new delivered Booking Request, and the 10- and 25-minute
+  reminders of the 30-minute response window (ADR 0041).
+- Guest emails, only when the Guest gave an email address: request sent, offer
+  made, payment confirmed, request declined, expired or not delivered.
+
+Emails carry the apartment, dates, party size, amount, deadlines and a link, and
+never guest names, phone numbers, identity or payment details (ADR 0075). A
+failed send is retried on later sweeps, up to five attempts, and never changes
+booking state. Events older than 24 hours when first seen are not announced, so a
+first deploy does not email history.
+
+## Guardrails
+
+The pilot's front server applies hourly limits per client address, and per
+Guest session for chat. The client address is the rightmost `X-Forwarded-For`
+entry the reverse proxy adds; the pilot only listens on loopback. A refused
+request gets HTTP 429 with `Retry-After` and uses up no allowance. Every value
+is a positive whole number; unset uses the default.
+
+| Setting | Default | Limits |
+|---|---|---|
+| `SHORTLET_CHAT_TURNS_PER_SESSION_PER_HOUR` | 60 | chat turns per Guest session |
+| `SHORTLET_CHAT_TURNS_PER_ADDRESS_PER_HOUR` | 600 | chat turns per client address |
+| `SHORTLET_NEW_SESSIONS_PER_ADDRESS_PER_HOUR` | 120 | new Guest sessions (and beta invite attempts) per address |
+| `SHORTLET_OPERATOR_LOGINS_PER_ADDRESS_PER_HOUR` | 10 | Operator sign-in attempts per address |
+| `CONCIERGE_DAILY_MODEL_CALL_CAP` | 3000 | model calls per day (midnight Africa/Lagos) |
+| `SHORTLET_GUEST_RUNTIME_IDLE_MINUTES` | 30 | idle time before a session's in-memory runtime is closed |
+
+Nigerian mobile carriers put many subscribers behind one address, which is why
+the per-address limits are high; raise them before a public campaign. When the
+daily model-call cap is spent, new chat turns use the deterministic concierge
+until midnight; search and booking pages are unaffected (ADR 0080). A closed
+session runtime is rebuilt from SQLite on the Guest's next request; only the
+in-memory assistant conversation is lost.
+
+Request bodies are capped: 64 KiB for chat and event JSON, 256 KiB for Paystack
+webhook and callback bodies, and 4 KiB for the Operator sign-in form (HTTP 413).
+
 ## Concierge model
 
 The concierge settings are validated at startup, and the startup banner prints

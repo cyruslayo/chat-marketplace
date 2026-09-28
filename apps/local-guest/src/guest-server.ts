@@ -97,6 +97,7 @@ import type { Content } from "@google/genai";
 import { AssistantRuntime } from "./assistant/assistant-runtime.js";
 import { ScriptedAssistantModel } from "./assistant/scripted-assistant-model.js";
 import { createConciergeModelClient, loadConciergeConfiguration } from "./assistant/concierge-configuration.js";
+import { BudgetedModelClient, type ModelCallBudget } from "./assistant/model-call-budget.js";
 import type { AssistantModelClient } from "./assistant/assistant-model.js";
 import {
   ASSISTANT_CONFIRM_ACTION_EVENT,
@@ -364,17 +365,21 @@ export class LocalGuestApp {
   readonly #threads = new Map<string, GuestThreadState>();
   readonly #geminiClient: GeminiConciergeClient | null;
   readonly #assistantRuntime: AssistantRuntime | null;
+  readonly #modelCallBudget: ModelCallBudget | null;
 
   constructor(
     environment: LocalGuestEnvironment,
     options: {
       readonly geminiClient?: GeminiConciergeClient;
       readonly assistantRuntime?: AssistantRuntime;
+      /** Issue 19: once the daily cap is spent, new turns use the deterministic concierge (ADR 0080). */
+      readonly modelCallBudget?: ModelCallBudget;
     } = {},
   ) {
     this.#environment = environment;
     this.#geminiClient = options.geminiClient ?? null;
     this.#assistantRuntime = options.assistantRuntime ?? null;
+    this.#modelCallBudget = options.modelCallBudget ?? null;
   }
 
   get environment(): LocalGuestEnvironment {
@@ -397,7 +402,7 @@ export class LocalGuestApp {
       return { ok: false, code: "INVALID_THREAD", message: "Unknown conversation." };
     }
 
-    if (this.#assistantRuntime) {
+    if (this.#assistantRuntime && (this.#modelCallBudget?.hasCapacity() ?? true)) {
       const output = await this.#assistantRuntime.handleTurn(threadId, text);
       if (!output.ok) {
         return { ok: false, code: output.code ?? "CONCIERGE_UNAVAILABLE", message: output.message ?? "The assistant is unavailable." };
@@ -2672,20 +2677,21 @@ export function renderGuestShellHtml(): string {
 </html>`;
 }
 
-function readJsonBody(req: IncomingMessage): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    req.on("data", (chunk: Buffer) => chunks.push(chunk));
-    req.on("end", () => {
-      try {
-        const raw = Buffer.concat(chunks).toString("utf8");
-        resolve(raw === "" ? {} : JSON.parse(raw));
-      } catch (error) {
-        reject(error instanceof Error ? error : new Error("Invalid JSON body"));
-      }
-    });
-    req.on("error", reject);
-  });
+/**
+ * Issue 19: request bodies are read with a ceiling so one request cannot hold unbounded memory. A chat turn is at
+ * most MAX_TURN_TEXT_LENGTH characters and an A2UI event a small context object, so 64 KiB leaves wide headroom;
+ * Paystack webhook and callback bodies are small signed JSON or form payloads.
+ */
+export const JSON_BODY_LIMIT_BYTES = 64 * 1024;
+export const PROVIDER_BODY_LIMIT_BYTES = 256 * 1024;
+
+async function readJsonBody(req: IncomingMessage): Promise<unknown> {
+  const raw = (await readBoundedBody(req, JSON_BODY_LIMIT_BYTES)).toString("utf8");
+  try {
+    return raw === "" ? {} : JSON.parse(raw);
+  } catch (error) {
+    throw error instanceof Error ? error : new Error("Invalid JSON body");
+  }
 }
 
 export function renderConventionalUnitDetailHtml(unit: Unit, photoUrl?: (url: string) => string): string {
@@ -2833,12 +2839,7 @@ export function renderConventionalSearchHtml(artifact: DiscoveryArtifactProjecti
 }
 
 function readRawBody(req: IncomingMessage): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    req.on("data", (chunk: Buffer) => chunks.push(chunk));
-    req.on("end", () => resolve(Buffer.concat(chunks)));
-    req.on("error", reject);
-  });
+  return readBoundedBody(req, PROVIDER_BODY_LIMIT_BYTES);
 }
 
 function readFormBody(req: IncomingMessage): Promise<URLSearchParams> {
@@ -2943,12 +2944,16 @@ export function renderManualTransferPageHtml(input: {
 }
 
 /** Reads a request body, refusing (and discarding) anything over `limit` bytes. */
+export class BodyTooLargeError extends Error {
+  constructor() { super("Body too large"); }
+}
+
 function readBoundedBody(req: IncomingMessage, limit: number): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
     let refused = false;
-    req.on("data", (chunk: Buffer) => { if (refused) return; size += chunk.length; if (size > limit) { refused = true; chunks.length = 0; reject(new Error("Body too large")); req.resume(); return; } chunks.push(chunk); });
+    req.on("data", (chunk: Buffer) => { if (refused) return; size += chunk.length; if (size > limit) { refused = true; chunks.length = 0; reject(new BodyTooLargeError()); req.resume(); return; } chunks.push(chunk); });
     req.on("end", () => { if (!refused) resolve(Buffer.concat(chunks)); });
     req.on("error", reject);
   });
@@ -3192,6 +3197,8 @@ export interface LocalGuestServerHandle {
   readonly app: LocalGuestApp;
   /** The live environment; a fresh one is installed by /api/reset. */
   readonly environment: LocalGuestEnvironment;
+  /** Issue 19: open per-session runtimes (each holds a SQLite connection); idle ones are evicted. */
+  readonly activeSessionRuntimes: number;
   listen(): Promise<number>;
   close(): Promise<void>;
 }
@@ -3216,8 +3223,16 @@ export function startLocalGuestServer(options: {
   /** Explicit local-pilot photo mapping for synthetic, same-process assets. */
   localPhotoUrl?: (url: string) => string;
   fixtureRoutes?: boolean;
+  /** Issue 19: daily cap on model calls; when it is spent, turns use the deterministic concierge. */
+  modelCallBudget?: ModelCallBudget;
+  /** Issue 19: a session's runtime (environment, SQLite connection, assistant memory) is closed after this idle time. */
+  sessionRuntimeIdleMs?: number;
 } = {}): LocalGuestServerHandle {
   const port = options.port ?? LOCAL_GUEST_PORT;
+  const sessionRuntimeIdleMs = options.sessionRuntimeIdleMs ?? null;
+  if (sessionRuntimeIdleMs !== null && (!Number.isSafeInteger(sessionRuntimeIdleMs) || sessionRuntimeIdleMs < 1)) {
+    throw new Error("sessionRuntimeIdleMs must be a positive whole number of milliseconds");
+  }
   const rawMode = options.conciergeMode ?? process.env.CONCIERGE_MODE;
   const mode: "deterministic" | "gemini" | "openai-compatible" | "assistant-offline" =
     rawMode === "gemini" || rawMode === "openai-compatible"
@@ -3257,16 +3272,33 @@ export function startLocalGuestServer(options: {
     assistantModelClient = options.modelClient
       ?? createConciergeModelClient(loadConciergeConfiguration({ ...process.env, CONCIERGE_MODE: mode }));
     if (!assistantModelClient) throw new Error(`CONCIERGE_MODE=${mode} requires a model client`);
+    if (options.modelCallBudget) assistantModelClient = new BudgetedModelClient(assistantModelClient, options.modelCallBudget);
     assistantRuntime = new AssistantRuntime(env, assistantModelClient);
   }
+  const modelCallBudget = options.modelCallBudget ? { modelCallBudget: options.modelCallBudget } : {};
 
-  const defaultApp = new LocalGuestApp(env, { geminiClient, assistantRuntime });
+  const defaultApp = new LocalGuestApp(env, { geminiClient, assistantRuntime, ...modelCallBudget });
   const browserSessions = new Map<string, BrowserSession>();
-  const sessionRuntimes = new Map<string, { readonly environment: LocalGuestEnvironment; readonly app: LocalGuestApp }>();
+  const sessionRuntimes = new Map<string, { readonly environment: LocalGuestEnvironment; readonly app: LocalGuestApp; lastUsedMs: number }>();
+  // Durable state lives in SQLite, so an evicted session's runtime is rebuilt on its next request, exactly as after a
+  // restart. Only the in-memory assistant conversation is lost.
+  const evictIdleRuntimes = (nowMs: number): void => {
+    if (sessionRuntimeIdleMs === null) return;
+    for (const [key, runtime] of sessionRuntimes) {
+      if (nowMs - runtime.lastUsedMs < sessionRuntimeIdleMs) continue;
+      sessionRuntimes.delete(key);
+      runtime.environment.close();
+    }
+  };
   const runtimeForSession = (session: BrowserSession): { readonly environment: LocalGuestEnvironment; readonly app: LocalGuestApp } => {
     if (!sessionScopedGuestPrincipals) return { environment: env, app: defaultApp };
+    const nowMs = env.clock().getTime();
+    evictIdleRuntimes(nowMs);
     const existing = sessionRuntimes.get(session.sessionKey);
-    if (existing) return existing;
+    if (existing) {
+      existing.lastUsedMs = nowMs;
+      return existing;
+    }
     const runtimeEnvironment = new LocalGuestEnvironment({
       ...env.config,
       guestId: session.principalId,
@@ -3280,7 +3312,9 @@ export function startLocalGuestServer(options: {
       environment: runtimeEnvironment,
       app: new LocalGuestApp(runtimeEnvironment, {
         ...(assistantModelClient ? { assistantRuntime: new AssistantRuntime(runtimeEnvironment, assistantModelClient) } : {}),
+        ...modelCallBudget,
       }),
+      lastUsedMs: nowMs,
     };
     sessionRuntimes.set(session.sessionKey, runtime);
     return runtime;
@@ -3694,8 +3728,8 @@ export function startLocalGuestServer(options: {
         }
         try { await app.environment.cardPaymentApp.verifyAndConfirmPaystack(data.reference, app.environment.systemPrincipal(), paystackClient); } catch { /* the authoritative unresolved/failed state is retained */ }
         sendJson(res, 200, { ok: true });
-      } catch {
-        sendJson(res, 400, { ok: false, code: "INVALID_WEBHOOK" });
+      } catch (error) {
+        sendJson(res, error instanceof BodyTooLargeError ? 413 : 400, { ok: false, code: error instanceof BodyTooLargeError ? "BODY_TOO_LARGE" : "INVALID_WEBHOOK" });
       }
       return;
     }
@@ -3857,11 +3891,10 @@ export function startLocalGuestServer(options: {
         }
         sendJson(res, 200, await app.handleEventAsync(threadId, body));
       } catch (error) {
-        sendJson(res, 500, {
-          ok: false,
-          code: "INTERNAL_ERROR",
-          message: error instanceof Error ? error.message : "Unexpected server error.",
-        });
+        if (error instanceof BodyTooLargeError) { sendJson(res, 413, { ok: false, code: "BODY_TOO_LARGE", message: "That request is too large." }); return; }
+        if (error instanceof SyntaxError) { sendJson(res, 400, { ok: false, code: "INVALID_JSON", message: "The request could not be read." }); return; }
+        // Issue 19: internal error text can carry domain or provider detail, so it never reaches the browser (ADR 0075).
+        sendJson(res, 500, { ok: false, code: "INTERNAL_ERROR", message: "Something went wrong. Please try again." });
       }
       return;
     }
@@ -3875,6 +3908,9 @@ export function startLocalGuestServer(options: {
     app: defaultApp,
     get environment() {
       return defaultApp.environment;
+    },
+    get activeSessionRuntimes() {
+      return sessionRuntimes.size;
     },
     listen: () =>
       new Promise<number>((resolve) => {

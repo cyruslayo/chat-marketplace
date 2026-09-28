@@ -16,13 +16,15 @@ export function localPilotStartupLines(input: { readonly port: number; readonly 
 }
 
 /** Startup lines for the production pilot. Secrets and keys never appear here (ADR 0075). */
-export function productionPilotStartupLines(input: { readonly publicOrigin: string; readonly paystackEnvironment: string; readonly port: number; readonly concierge?: ConciergeConfiguration; readonly deployment?: "production" | "staging" }): readonly string[] {
+export function productionPilotStartupLines(input: { readonly publicOrigin: string; readonly paystackEnvironment: string; readonly port: number; readonly concierge?: ConciergeConfiguration; readonly deployment?: "production" | "staging"; readonly notifications?: { readonly operatorAlertEmails: readonly string[] } | null }): readonly string[] {
   return [
     "Shortlet pilot initialized",
     `environment=${input.deployment ?? "production"}`,
     `publicOrigin=${input.publicOrigin}`,
     `paystackEnvironment=${input.paystackEnvironment}`,
     ...(input.concierge ? conciergeStartupFields(input.concierge) : []),
+    // Issue 23: the count of alert recipients, never their addresses (ADR 0075).
+    ...(input.notifications === undefined ? [] : [input.notifications === null ? "notifications=disabled" : `notifications=resend operatorAlertRecipients=${input.notifications.operatorAlertEmails.length}`]),
     "status=ready",
     "health=/healthz",
     `operatorLogin=${new URL(OPERATOR_LOGIN_PATH, input.publicOrigin).href}`,

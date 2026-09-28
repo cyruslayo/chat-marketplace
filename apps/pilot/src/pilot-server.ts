@@ -1,5 +1,5 @@
 import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { LocalGuestEnvironment } from "../../local-guest/src/fixture.js";
 import { startLocalGuestServer, type LocalGuestServerHandle } from "../../local-guest/src/guest-server.js";
@@ -8,11 +8,18 @@ import { DirectPaystackClient, PaystackBankTransferClient, type PaystackClient }
 import { loadPilotConfiguration, type PilotConfiguration } from "./pilot-config.js";
 import type { AssistantModelClient } from "../../local-guest/src/assistant/assistant-model.js";
 import { createConciergeModelClient } from "../../local-guest/src/assistant/concierge-configuration.js";
+import { ModelCallBudget } from "../../local-guest/src/assistant/model-call-budget.js";
+import { errorPage } from "../../web/src/ui-kit.js";
+import { SlidingWindowRateLimiter } from "./rate-limiter.js";
+import { ResendEmailSender, type EmailSender } from "./notifications/email-sender.js";
+import { PilotNotifier } from "./notifications/pilot-notifier.js";
 
 export interface PilotServerHandle {
   readonly port: number;
   readonly configuration: PilotConfiguration;
   readonly guest: LocalGuestServerHandle;
+  /** Issue 23: null when notifications are not configured. */
+  readonly notifier: PilotNotifier | null;
   listen(): Promise<number>;
   close(): Promise<void>;
 }
@@ -80,6 +87,67 @@ function proxyRequest(req: IncomingMessage, res: ServerResponse, port: number, t
   req.pipe(upstream);
 }
 
+const GUEST_SESSION_COOKIE = "shortlet_guest_session";
+const HOUR_MS = 60 * 60 * 1000;
+
+/**
+ * The address the request came from. The pilot listens on loopback behind the HTTPS reverse proxy
+ * (docs/pilot-deployment.md), which appends the client address to X-Forwarded-For; the rightmost entry is the one
+ * the proxy saw, so a client cannot choose its own key by sending the header.
+ */
+export function clientAddress(req: IncomingMessage): string {
+  const forwarded = req.headers["x-forwarded-for"];
+  const header = Array.isArray(forwarded) ? forwarded.join(",") : forwarded;
+  const last = header?.split(",").map((part) => part.trim()).filter((part) => part !== "").at(-1);
+  return last ?? req.socket.remoteAddress ?? "unknown";
+}
+
+function guestSessionKey(req: IncomingMessage): string | null {
+  const value = String(req.headers.cookie ?? "").split(";").map((part) => part.trim()).find((part) => part.startsWith(`${GUEST_SESSION_COOKIE}=`))?.slice(GUEST_SESSION_COOKIE.length + 1);
+  // Keyed by digest so raw session identifiers are not kept as limiter keys.
+  return value ? createHash("sha256").update(value).digest("hex") : null;
+}
+
+/** Issue 19: refuses chat turns, new Guest sessions and Operator sign-ins beyond the configured hourly limits. */
+function requestGuard(configuration: PilotConfiguration, clock: () => Date): (req: IncomingMessage, url: URL) => { readonly retryAfterSeconds: number } | null {
+  const { limits } = configuration;
+  const turnsPerSession = new SlidingWindowRateLimiter({ limit: limits.chatTurnsPerSessionPerHour, windowMs: HOUR_MS }, clock);
+  const turnsPerAddress = new SlidingWindowRateLimiter({ limit: limits.chatTurnsPerAddressPerHour, windowMs: HOUR_MS }, clock);
+  const sessionsPerAddress = new SlidingWindowRateLimiter({ limit: limits.newSessionsPerAddressPerHour, windowMs: HOUR_MS }, clock);
+  const loginsPerAddress = new SlidingWindowRateLimiter({ limit: limits.operatorLoginsPerAddressPerHour, windowMs: HOUR_MS }, clock);
+  return (req, url) => {
+    const address = clientAddress(req);
+    const refused = (result: ReturnType<SlidingWindowRateLimiter["tryConsume"]>) => result.allowed ? null : { retryAfterSeconds: result.retryAfterSeconds };
+    if (req.method === "POST" && (url.pathname === "/api/turn" || url.pathname === "/conversation")) {
+      // Both limits are checked before either is charged, so a refused turn uses up neither allowance.
+      const session = guestSessionKey(req);
+      const waits = [turnsPerAddress.retryAfterSeconds(address), session ? turnsPerSession.retryAfterSeconds(session) : null]
+        .filter((wait): wait is number => wait !== null);
+      if (waits.length > 0) return { retryAfterSeconds: Math.max(...waits) };
+      turnsPerAddress.record(address);
+      if (session) turnsPerSession.record(session);
+      return null;
+    }
+    // A new Guest session starts at GET / without a session cookie; in staging this also bounds invite-code guessing.
+    if (req.method === "GET" && url.pathname === "/" && guestSessionKey(req) === null) return refused(sessionsPerAddress.tryConsume(address));
+    if (req.method === "POST" && url.pathname === "/operator/login") return refused(loginsPerAddress.tryConsume(address));
+    return null;
+  };
+}
+
+function sendRateLimited(req: IncomingMessage, res: ServerResponse, url: URL, retryAfterSeconds: number, transformHtml?: (html: string) => string): void {
+  req.resume();
+  const headers = { "Retry-After": String(retryAfterSeconds), "Cache-Control": "no-store" };
+  if (url.pathname.startsWith("/api/")) {
+    res.writeHead(429, { ...headers, "Content-Type": "application/json; charset=utf-8" });
+    res.end(JSON.stringify({ ok: false, code: "RATE_LIMITED", message: "Too many requests. Please wait a moment and try again." }));
+    return;
+  }
+  const html = errorPage({ status: 429, code: "RATE_LIMITED", title: "Please slow down", message: "Too many requests came from here in a short time. Wait a few minutes, then try again.", action: { href: url.pathname.startsWith("/operator") ? "/operator/login" : "/", label: "Try again" } });
+  res.writeHead(429, { ...headers, "Content-Type": "text/html; charset=utf-8" });
+  res.end(transformHtml ? transformHtml(html) : html);
+}
+
 export function startPilotServer(options: {
   readonly port?: number;
   readonly configuration?: PilotConfiguration;
@@ -88,6 +156,8 @@ export function startPilotServer(options: {
   readonly paystackClient?: PaystackClient;
   /** Test harnesses may inject a provider-shaped fake model client in place of the configured provider. */
   readonly modelClient?: AssistantModelClient;
+  /** Test harnesses may inject a fake email sender in place of Resend; notifications must still be configured. */
+  readonly emailSender?: EmailSender;
 } = {}): PilotServerHandle {
   const configuration = options.configuration ?? loadPilotConfiguration();
   const paystackClient = options.paystackClient ?? new DirectPaystackClient(configuration.paystack);
@@ -155,6 +225,8 @@ export function startPilotServer(options: {
     secureCookie: true,
     sessionScopedGuestPrincipals: true,
     paystackClient,
+    modelCallBudget: new ModelCallBudget(configuration.limits.dailyModelCallCap, clock),
+    sessionRuntimeIdleMs: configuration.limits.sessionRuntimeIdleMinutes * 60_000,
   });
   const owner = startLocalOwnerServer({
     port: 0,
@@ -164,6 +236,26 @@ export function startPilotServer(options: {
     secureCookie: true,
   });
 
+  const guard = requestGuard(configuration, clock);
+
+  // Issue 23: email notifications, swept from durable state on an interval once the server is listening.
+  const notifier = configuration.notifications
+    ? new PilotNotifier({
+      databasePath: configuration.databasePath,
+      publicOrigin: configuration.publicOrigin,
+      sender: options.emailSender ?? new ResendEmailSender({ apiKey: configuration.notifications.resendApiKey, from: configuration.notifications.from }),
+      operatorAlertEmails: configuration.notifications.operatorAlertEmails,
+      unitTitle: (unitId) => {
+        const unit: unknown = guestEnvironment.unitRepository.findById(unitId);
+        const title = unit !== null && typeof unit === "object" ? (unit as { title?: unknown }).title : undefined;
+        return typeof title === "string" && title.trim() !== "" ? title : "your apartment";
+      },
+      clock,
+    })
+    : null;
+  let notificationTimer: ReturnType<typeof setInterval> | null = null;
+  let inFlightSweep: Promise<unknown> = Promise.resolve();
+
   let guestPort = 0;
   let ownerPort = 0;
   let initialized = false;
@@ -171,6 +263,11 @@ export function startPilotServer(options: {
     const url = new URL(req.url ?? "/", configuration.publicOrigin);
     if (req.method === "GET" && url.pathname === "/healthz") {
       sendHealth(res, configuration, initialized);
+      return;
+    }
+    const refusal = guard(req, url);
+    if (refusal) {
+      sendRateLimited(req, res, url, refusal.retryAfterSeconds, transformHtml);
       return;
     }
     if (url.pathname === "/operator" || url.pathname.startsWith("/operator/")) {
@@ -184,6 +281,7 @@ export function startPilotServer(options: {
     port: options.port ?? 0,
     configuration,
     guest,
+    notifier,
     listen: async () => {
       guestPort = await guest.listen();
       ownerPort = await owner.listen();
@@ -192,11 +290,18 @@ export function startPilotServer(options: {
         server.listen(options.port ?? 0, "127.0.0.1", () => resolve());
       });
       initialized = true;
+      if (notifier && configuration.notifications) {
+        notificationTimer = setInterval(() => { inFlightSweep = notifier.sweep(); }, configuration.notifications.sweepSeconds * 1000);
+        notificationTimer.unref();
+      }
       const address = server.address();
       return typeof address === "object" && address ? address.port : options.port ?? 0;
     },
     close: async () => {
       initialized = false;
+      if (notificationTimer) clearInterval(notificationTimer);
+      await inFlightSweep;
+      notifier?.close();
       server.closeIdleConnections?.();
       server.closeAllConnections?.();
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));

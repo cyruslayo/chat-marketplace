@@ -32,6 +32,18 @@ export function operatorResponseReminderDue(request: { readonly status: string; 
   return reached.length === 0 ? null : reached[reached.length - 1]!;
 }
 
+/**
+ * The status a stored Booking Request has at `now`, applying the same lazy deadlines as `checkAndResolveExpiry`
+ * without mutating or persisting anything: an undelivered request past its delivery deadline is Delivery Failed
+ * (ADR 0043), and a delivered one past its response deadline is expired (ADR 0041). For read-only observers such
+ * as notifications, which must not depend on some other read having resolved the expiry first.
+ */
+export function projectBookingRequestStatus(request: { readonly status: string; readonly delivered: boolean; readonly deliveryDeadlineAt: string; readonly operatorResponseDeadlineAt: string }, now: Date): string {
+  if (request.status !== "disclosed") return request.status;
+  if (!request.delivered) return now.getTime() >= Date.parse(request.deliveryDeadlineAt) ? "delivery_failed" : "disclosed";
+  return now.getTime() >= Date.parse(request.operatorResponseDeadlineAt) ? "expired" : "disclosed";
+}
+
 export function getWatTime(date: Date) {
   const formatter = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Africa/Lagos",
