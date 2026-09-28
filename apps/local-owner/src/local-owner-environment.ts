@@ -55,6 +55,13 @@ import {
   type ComplaintCategory,
   type ContractualCheckInWindow,
   type OperatorRepository,
+  AvailabilityConflictError,
+  addCalendarDays,
+  operatorBlockConflict,
+  projectCalendarDays,
+  type AvailabilityCommitment,
+  type CalendarDay,
+  type OperatorBlockConflict,
 } from "../../../domains/shortlet/src/index.js";
 import { bookingPaymentMethod, offerRecordFromJson, projectBookingStage, type BookingPaymentMethod, type BookingStage, type BookingStageProjection } from "./booking-projection.js";
 import {
@@ -202,6 +209,91 @@ export function parseNairaToKobo(value: string): number | null {
   if (!match) return null;
   const kobo = Number(match[1]) * 100 + Number((match[2] ?? "0").padEnd(2, "0"));
   return Number.isSafeInteger(kobo) && kobo > 0 ? kobo : null;
+}
+
+/**
+ * Why an owner's dates are taken: the Operator Block reasons in domains/shortlet/CONTEXT.md. No free text, so no
+ * external guest or commercial detail is recorded (ADR 0039, 0075). Blocks carrying these codes are the back office's.
+ */
+export const BLOCK_REASONS = Object.freeze({
+  off_platform_booking: "Off-platform booking",
+  owner_use: "Owner use",
+  maintenance: "Maintenance",
+  other_operator_reason: "Another operator-controlled reason",
+});
+export type BlockReasonCode = keyof typeof BLOCK_REASONS;
+export function isBlockReasonCode(value: unknown): value is BlockReasonCode {
+  return typeof value === "string" && Object.hasOwn(BLOCK_REASONS, value);
+}
+
+/** How many nights one calendar page shows. Presentation only: four weeks. */
+export const CALENDAR_WINDOW_NIGHTS = 28;
+
+export interface OperatorCalendarBlock {
+  readonly blockId: string;
+  readonly firstNight: string;
+  readonly lastNight: string;
+  readonly reasonLabel: string;
+  /** Only blocks added from the back office can be removed here; the platform's own (ADR 0036) cannot. */
+  readonly removable: boolean;
+}
+
+/** One apartment's calendar (B8), read fresh from the authoritative Availability Calendar on each view (ADR 0039). */
+export interface OperatorApartmentCalendar {
+  readonly unitId: string;
+  readonly apartmentTitle: string;
+  readonly ownerId: string;
+  readonly ownerName: string;
+  readonly days: readonly CalendarDay[];
+  readonly blocks: readonly OperatorCalendarBlock[];
+  /** The version a block or remove form carries (ADR 0072): changes whenever any commitment on the unit does. */
+  readonly version: string;
+}
+
+export type CalendarInputProblem = "dates_required" | "dates_order" | "date_past" | "reason_required";
+
+const CALENDAR_INPUT_MESSAGES: Readonly<Record<CalendarInputProblem, string>> = {
+  dates_required: "Enter the first and last blocked nights",
+  dates_order: "The last night must be on or after the first night",
+  date_past: "The first night cannot be before today",
+  reason_required: "Choose why the dates are blocked",
+};
+
+export class CalendarInputError extends Error {
+  constructor(readonly problem: CalendarInputProblem) { super(CALENDAR_INPUT_MESSAGES[problem]); this.name = "CalendarInputError"; }
+}
+
+export type CalendarRefusalProblem = OperatorBlockConflict | "stale" | "block_not_found" | "already_removed" | "platform_block";
+
+/** ADR 0039 conflict outcomes, in its words. */
+const CALENDAR_REFUSAL_MESSAGES: Readonly<Record<CalendarRefusalProblem, string>> = {
+  request_pending: "A Booking Request is waiting for your answer on these dates. Decline it first, then block the dates",
+  payment_pending: "These dates are confirmed and awaiting payment (Payment Pending). A block cannot displace them: this needs human handling",
+  booked: "These dates are booked. A booked stay cannot be overridden",
+  blocked: "These dates are already blocked",
+  held: "These dates are under an Operator Hold",
+  stale: "The calendar changed since you opened it. Review it and try again",
+  block_not_found: "This block is not on this apartment's calendar",
+  already_removed: "This block was already removed",
+  platform_block: "This block was set by the platform and cannot be removed here",
+};
+
+export class CalendarRefusalError extends Error {
+  /** For `request_pending`: the Booking Request to decline first. */
+  constructor(readonly problem: CalendarRefusalProblem, readonly requestId: string | null = null) { super(CALENDAR_REFUSAL_MESSAGES[problem]); this.name = "CalendarRefusalError"; }
+}
+
+interface ApartmentRecord { readonly unitId: string; readonly title: string; readonly ownerId: string; readonly ownerName: string }
+
+const CALENDAR_DATE = /^\d{4}-\d{2}-\d{2}$/;
+export function isCalendarDate(value: string): boolean {
+  // A real date only: 31 Sept rolls over to 1 Oct and 13 is no month, so neither round-trips.
+  return CALENDAR_DATE.test(value) && Number.isFinite(Date.parse(`${value}T00:00:00Z`)) && addCalendarDays(value, 0) === value;
+}
+
+/** Today in WAT (ADR 0078), YYYY-MM-DD. */
+export function lagosCalendarDate(now: Date): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Lagos", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
 }
 
 export const DEFAULT_LOCAL_OWNER_CONFIG: LocalOwnerFixtureConfig = {
@@ -1007,6 +1099,150 @@ export class LocalApartmentOwnerEnvironment {
       audit: this.audit,
       bookings: { bookingState: this.#bookingState, snapshots: this.interactionStore, calendar: this.calendar },
     });
+  }
+
+  /**
+   * B8: a calendar for each apartment of an owner you hold a grant for (ADR 0082), from `from` for
+   * CALENDAR_WINDOW_NIGHTS nights. Owners and apartments sort by name. Read on every view; expiry is lazy (ADR 0039).
+   */
+  listOperatorCalendars(principal: CommandPrincipal, from: string): readonly OperatorApartmentCalendar[] {
+    return this.#apartmentsYouActFor(principal)
+      .sort((a, b) => a.ownerName.localeCompare(b.ownerName) || a.title.localeCompare(b.title))
+      .map((apartment) => this.#calendarFor(apartment, from));
+  }
+
+  /** One apartment's calendar, or "Apartment not found" for an unknown unit or an owner you do not act for (ADR 0082). */
+  operatorCalendar(unitId: string, principal: CommandPrincipal, from: string): OperatorApartmentCalendar {
+    return this.#calendarFor(this.#apartment(unitId, principal), from);
+  }
+
+  /**
+   * Blocks the nights an owner tells you are taken, first to last night inclusive. ADR 0039: it takes effect at once
+   * with nothing overlapping, and never displaces a commitment. A replay of the same block records nothing new, and a
+   * stale form is refused (ADR 0072).
+   */
+  blockOperatorDates(unitId: string, principal: CommandPrincipal, input: { readonly firstNight: string; readonly lastNight: string; readonly reason: string; readonly basedOnVersion: string }): OperatorApartmentCalendar {
+    if (!isCalendarDate(input.firstNight) || !isCalendarDate(input.lastNight)) throw new CalendarInputError("dates_required");
+    if (input.lastNight < input.firstNight) throw new CalendarInputError("dates_order");
+    if (input.firstNight < lagosCalendarDate(this.clock())) throw new CalendarInputError("date_past");
+    if (!isBlockReasonCode(input.reason)) throw new CalendarInputError("reason_required");
+    const apartment = this.#apartment(unitId, principal);
+    const start = input.firstNight;
+    const end = addCalendarDays(input.lastNight, 1);
+    const overlapping = this.calendar.listActiveCommitments({ unitId, start, end, clock: this.clock });
+    const replay = overlapping.some((commitment) => commitment.kind === "operator_block" && commitment.start === start && commitment.end === end && commitment.reason === input.reason);
+    if (replay) return this.#calendarFor(apartment, start);
+    if (input.basedOnVersion !== this.#calendarVersion(unitId)) throw new CalendarRefusalError("stale");
+    const found = operatorBlockConflict(overlapping);
+    if (found) {
+      this.#recordCalendar({ type: "operator_block_refused", unitId, actorId: principal.id, tenantId: principal.tenantId, conflict: found.conflict, start, end });
+      throw new CalendarRefusalError(found.conflict, found.conflict === "request_pending" ? this.#requestHolding(found.commitment) : null);
+    }
+    let blockId: string;
+    try {
+      blockId = this.calendar.addOperatorBlock({ unitId, operatorId: apartment.ownerId, start, end, reason: input.reason, clock: this.clock }).blockId;
+    } catch (error) {
+      // Another process took the dates between the read and the write: the form is stale.
+      if (error instanceof AvailabilityConflictError) throw new CalendarRefusalError("stale");
+      throw error;
+    }
+    this.#recordCalendar({ type: "operator_block_added", unitId, blockId, actorId: principal.id, tenantId: principal.tenantId, start, end, reasonCode: input.reason });
+    return this.#calendarFor(apartment, start);
+  }
+
+  /**
+   * Removes a block added from the back office; its nights become available unless another commitment holds them.
+   * Returns the removed block's first night. A block already removed, unknown, or set by the platform is refused.
+   */
+  removeOperatorBlock(unitId: string, blockId: string, principal: CommandPrincipal, input: { readonly basedOnVersion: string }): string {
+    this.#apartment(unitId, principal);
+    const block = this.calendar.findCommitment(blockId, { clock: this.clock });
+    if (!block || block.unitId !== unitId || block.kind !== "operator_block") throw new CalendarRefusalError("block_not_found");
+    if (block.state !== "active") throw new CalendarRefusalError("already_removed");
+    // Only back-office blocks carry a BLOCK_REASONS code; the platform's own, such as turnover protection (ADR 0036), stay.
+    if (!isBlockReasonCode(block.reason)) throw new CalendarRefusalError("platform_block");
+    if (input.basedOnVersion !== this.#calendarVersion(unitId)) throw new CalendarRefusalError("stale");
+    this.calendar.releaseOperatorBlock(blockId, { clock: this.clock });
+    this.#recordCalendar({ type: "operator_block_removed", unitId, blockId, actorId: principal.id, tenantId: principal.tenantId, start: block.start, end: block.end });
+    return block.start;
+  }
+
+  /** Units whose owner you hold a grant for. Repository rows are loosely typed, so each is narrowed. */
+  #apartmentsYouActFor(principal: CommandPrincipal): ApartmentRecord[] {
+    if (principal.role !== "operator" || !principal.id || !principal.tenantId) return [];
+    const actorId = principal.id;
+    const tenantId = principal.tenantId;
+    const units: unknown[] = this.unitRepository.findAll();
+    return units.flatMap((unit) => {
+      if (!isRecord(unit) || typeof unit.id !== "string" || !isRecord(unit.operator) || typeof unit.operator.id !== "string") return [];
+      const ownerId = unit.operator.id;
+      // Fail closed: no grant for this owner in your tenant, no calendar (ADR 0082).
+      if (!this.grantStore.canActForOperator({ actorId, operatorId: ownerId, tenantId })) return [];
+      const ownerName = this.operatorRepository?.findById(ownerId)?.name
+        ?? (typeof unit.operator.name === "string" && unit.operator.name ? unit.operator.name : "Owner name not on file");
+      const title = typeof unit.title === "string" && unit.title ? unit.title : "Apartment name not on file";
+      return [{ unitId: unit.id, title, ownerId, ownerName }];
+    });
+  }
+
+  #apartment(unitId: string, principal: CommandPrincipal): ApartmentRecord {
+    const apartment = this.#apartmentsYouActFor(principal).find((candidate) => candidate.unitId === unitId);
+    if (!apartment) throw new Error("Apartment not found");
+    return apartment;
+  }
+
+  /** Every active commitment on the unit, in any date range. */
+  #allActive(unitId: string): AvailabilityCommitment[] {
+    return this.calendar.listActiveCommitments({ unitId, start: "0000-01-01", end: "9999-12-31", clock: this.clock });
+  }
+
+  #calendarVersion(unitId: string, active = this.#allActive(unitId)): string {
+    const key = active.map((commitment) => [commitment.commitmentId, commitment.kind, commitment.start, commitment.end]).sort((a, b) => a[0]!.localeCompare(b[0]!));
+    return createHash("sha256").update(JSON.stringify(key)).digest("hex").slice(0, 16);
+  }
+
+  #calendarFor(apartment: ApartmentRecord, from: string): OperatorApartmentCalendar {
+    const active = this.#allActive(apartment.unitId);
+    const nights = Array.from({ length: CALENDAR_WINDOW_NIGHTS }, (_, index) => addCalendarDays(from, index));
+    const windowEnd = addCalendarDays(from, CALENDAR_WINDOW_NIGHTS);
+    const blocks = active
+      .filter((commitment) => commitment.kind === "operator_block" && commitment.start.slice(0, 10) < windowEnd && from < commitment.end.slice(0, 10))
+      .sort((a, b) => a.start.localeCompare(b.start))
+      .map((commitment) => Object.freeze({
+        blockId: commitment.commitmentId,
+        firstNight: commitment.start.slice(0, 10),
+        lastNight: addCalendarDays(commitment.end.slice(0, 10), -1),
+        reasonLabel: isBlockReasonCode(commitment.reason) ? BLOCK_REASONS[commitment.reason] : "Set by the platform",
+        removable: isBlockReasonCode(commitment.reason),
+      }));
+    return Object.freeze({
+      unitId: apartment.unitId,
+      apartmentTitle: apartment.title,
+      ownerId: apartment.ownerId,
+      ownerName: apartment.ownerName,
+      days: Object.freeze(projectCalendarDays(active, nights)),
+      blocks: Object.freeze(blocks),
+      version: this.#calendarVersion(apartment.unitId, active),
+    });
+  }
+
+  /** The unconfirmed Booking Request holding these dates, so the refusal can link to it. */
+  #requestHolding(commitment: AvailabilityCommitment): string | null {
+    for (const requestId of this.interactionStore.listBookingRequestIds()) {
+      try {
+        const request = this.bookingRequestApp.manager.getRequest(requestId) as { inventoryCommitmentId?: string };
+        if (request.inventoryCommitmentId === commitment.commitmentId) return requestId;
+      } catch { /* an unreadable request links nowhere */ }
+    }
+    return null;
+  }
+
+  /** Append-only and minimal (ADR 0075): ids, dates and codes, never free text. Observability cannot undo a command. */
+  #recordCalendar(entry: Record<string, unknown>): void {
+    try {
+      this.audit.record({ ...entry, occurredAt: this.clock().toISOString() });
+      this.telemetry.track({ type: String(entry.type), principalId: String(entry.actorId ?? ""), tenantId: String(entry.tenantId ?? ""), aggregateId: String(entry.unitId ?? "") });
+    } catch { /* observability cannot block the calendar */ }
   }
 
   getStateOverview(): LocalOwnerStateOverview {

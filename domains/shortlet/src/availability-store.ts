@@ -225,6 +225,41 @@ export class SqliteAvailabilityStore {
     });
   }
 
+  /** One commitment in any state, or null. Read-only apart from lazy expiry. */
+  findCommitment(commitmentId: string, now: string): AvailabilityCommitment | null {
+    return this.#withWriteTransaction(() => {
+      this.#expireStale(now);
+      const row = this.#database.prepare(`
+        SELECT commitment_id, unit_id, kind, start_date, end_date, state,
+               created_at, expires_at, extension_count, operator_id, holder_id, reason
+        FROM availability_commitments
+        WHERE commitment_id = $commitmentId
+      `).get({ $commitmentId: commitmentId }) as CommitmentRow | undefined;
+      return row ? project(row) : null;
+    });
+  }
+
+  /** B8: releases an active Operator Block. Anything else, or a block already released, is refused. */
+  releaseOperatorBlock(commitmentId: string, now: string): AvailabilityCommitment {
+    return this.#withWriteTransaction(() => {
+      this.#expireStale(now);
+      const row = this.#database.prepare(`
+        SELECT commitment_id, unit_id, kind, start_date, end_date, state,
+               created_at, expires_at, extension_count, operator_id, holder_id, reason
+        FROM availability_commitments
+        WHERE commitment_id = $commitmentId
+      `).get({ $commitmentId: commitmentId }) as CommitmentRow | undefined;
+      if (!row || row.kind !== "operator_block") throw new Error("Availability commitment is not an Operator Block");
+      if (row.state !== "active") throw new Error("Operator Block is no longer active");
+      this.#database.prepare(`
+        UPDATE availability_commitments
+        SET state = 'released', released_at = $now
+        WHERE commitment_id = $commitmentId AND kind = 'operator_block' AND state = 'active'
+      `).run({ $commitmentId: commitmentId, $now: now });
+      return project({ ...row, state: "released" });
+    });
+  }
+
   releaseBookingRequestBlock(commitmentId: string, now: string): void {
     this.#withWriteTransaction(() => {
       this.#expireStale(now);

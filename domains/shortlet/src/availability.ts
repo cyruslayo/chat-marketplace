@@ -94,6 +94,39 @@ export class AvailabilityCalendar {
     };
   }
 
+  /**
+   * B8: releases an active Operator Block and takes the same range out of the discovery projection, so Guests can
+   * find the dates again. Other commitments on those dates are untouched and still hold them (ADR 0039).
+   */
+  releaseOperatorBlock(commitmentId: string, { clock = () => new Date() }: { clock?: Clock } = {}): AvailabilityCommitment {
+    const released = this.#store.releaseOperatorBlock(commitmentId, clock().toISOString());
+    if (this.#audit) {
+      this.#audit.record({ type: "availability.operator_block_released", unitId: released.unitId, commitmentId, start: released.start, end: released.end });
+    }
+    if (this.#repository) {
+      const unit = this.#repository.findById
+        ? this.#repository.findById(released.unitId)
+        : this.#repository.findAll?.().find((candidate) => candidate.id === released.unitId) ?? null;
+      const ranges = unit?.blockedDates ?? [];
+      const index = ranges.findIndex((range) => dateValue(range.start) === released.start && dateValue(range.end) === released.end);
+      if (unit && index >= 0) {
+        unit.blockedDates = [...ranges.slice(0, index), ...ranges.slice(index + 1)];
+        this.#repository.save(unit);
+      }
+    }
+    return released;
+  }
+
+  /** Every active commitment overlapping [start, end), with expiry evaluated against the clock first. */
+  listActiveCommitments({ unitId, start, end, clock = () => new Date() }: { unitId: string; start: DateValue; end: DateValue; clock?: Clock }): AvailabilityCommitment[] {
+    return this.#store.findActive(unitId, dateValue(start), dateValue(end), clock().toISOString());
+  }
+
+  /** One commitment in any state, or null. */
+  findCommitment(commitmentId: string, { clock = () => new Date() }: { clock?: Clock } = {}): AvailabilityCommitment | null {
+    return this.#store.findCommitment(commitmentId, clock().toISOString());
+  }
+
   createOperatorHold({ unitId, operatorId, start, end, clock = () => new Date() }: { unitId: string; operatorId: string; start: DateValue; end: DateValue; clock?: Clock }) {
     const createdAt = clock();
     const hold = this.#store.create({
@@ -213,6 +246,60 @@ export class AvailabilityCalendar {
     }
     return { isAvailable: true, unitId, checkIn, checkOut };
   }
+}
+
+/** A night's state on the back-office calendar (B8). Each maps from one commitment kind (ADR 0039, 0040). */
+export type CalendarDayState = "available" | "request_pending" | "payment_pending" | "booked" | "blocked" | "held";
+
+export interface CalendarDay {
+  /** The night, YYYY-MM-DD: the stay's check-in day up to, not including, check-out. */
+  readonly date: string;
+  readonly state: CalendarDayState;
+}
+
+const DAY_STATE: Readonly<Record<AvailabilityCommitmentKind, CalendarDayState>> = {
+  booking_request_block: "request_pending",
+  payment_pending: "payment_pending",
+  confirmed_booking: "booked",
+  operator_block: "blocked",
+  operator_hold: "held",
+};
+
+/** Hardest to displace first (ADR 0039): a paid booking, then a confirmed request, then an unconfirmed one. */
+const DAY_PRECEDENCE: readonly CalendarDayState[] = ["booked", "payment_pending", "request_pending", "blocked", "held"];
+
+function dayKey(value: string): string {
+  return value.slice(0, 10);
+}
+
+/** The YYYY-MM-DD date `days` after `date` (negative for before). */
+export function addCalendarDays(date: string, days: number): string {
+  return new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** Each night's state from active commitments. A night with none is available. */
+export function projectCalendarDays(commitments: readonly AvailabilityCommitment[], nights: readonly string[]): CalendarDay[] {
+  return nights.map((date) => {
+    const states = commitments
+      .filter((commitment) => dayKey(commitment.start) <= date && date < dayKey(commitment.end))
+      .map((commitment) => DAY_STATE[commitment.kind]);
+    return { date, state: DAY_PRECEDENCE.find((state) => states.includes(state)) ?? "available" };
+  });
+}
+
+export type OperatorBlockConflict = Exclude<CalendarDayState, "available">;
+
+/**
+ * ADR 0039: a new Operator Block never silently displaces a commitment. It takes effect only with none overlapping.
+ * An unconfirmed request must be declined first; a confirmed (Payment Pending) one needs human incident handling;
+ * a paid booking cannot be overridden. ADR 0040: a block does not replace an Operator Hold.
+ */
+export function operatorBlockConflict(overlapping: readonly AvailabilityCommitment[]): { readonly conflict: OperatorBlockConflict; readonly commitment: AvailabilityCommitment } | null {
+  for (const conflict of DAY_PRECEDENCE) {
+    const commitment = overlapping.find((candidate) => DAY_STATE[candidate.kind] === conflict);
+    if (commitment) return { conflict: conflict as OperatorBlockConflict, commitment };
+  }
+  return null;
 }
 
 export { AvailabilityConflictError };

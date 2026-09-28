@@ -12,11 +12,17 @@ import {
   type OperatorReservation,
   type OperatorManualTransfer,
   type OperatorOwnerPayable,
+  type OperatorApartmentCalendar,
+  BLOCK_REASONS,
+  CalendarInputError,
+  CalendarRefusalError,
+  isCalendarDate,
+  lagosCalendarDate,
   COMPLAINT_CATEGORY_LABELS,
   CheckInInputError,
   CheckInStaleError,
 } from "./local-owner-environment.js";
-import { ManualTransferError, OwnerPayoutError, SUPPORT_VERIFICATION_BASES, type OwnerPayableStatus, type AccessStatus, type ComplaintCategory, type ManualTransferStatus, type SupportVerificationBasis } from "../../../domains/shortlet/src/index.js";
+import { ManualTransferError, OwnerPayoutError, addCalendarDays, type CalendarDayState, SUPPORT_VERIFICATION_BASES, type OwnerPayableStatus, type AccessStatus, type ComplaintCategory, type ManualTransferStatus, type SupportVerificationBasis } from "../../../domains/shortlet/src/index.js";
 import { BOOKING_ENDED_REASONS, BOOKING_PAYMENT_METHOD_LABELS, BOOKING_STAGE_LABELS, type BookingStage } from "./booking-projection.js";
 import { escapeHtml, formatMoney, icon, pageShell, type StatusTone } from "../../web/src/ui-kit.js";
 import { OPERATOR_RESPONSE_REMINDER_MINUTES, operatorResponseReminderDue, type OperatorAuthenticatedPrincipal } from "../../../domains/shortlet/src/index.js";
@@ -578,6 +584,109 @@ function payoutRefusal(error: unknown): { readonly status: number; readonly mess
   return { status: 409, message: "This payout could not be recorded. Nothing was recorded." };
 }
 
+/** Each night's state in words, with a tone as a second cue: never colour alone (ADR 0078). */
+const CALENDAR_DAY_STATUS: Readonly<Record<CalendarDayState, { readonly label: string; readonly tone: StatusTone }>> = {
+  available: { label: "Available", tone: "success" },
+  request_pending: { label: "Request pending", tone: "warning" },
+  payment_pending: { label: "Payment Pending", tone: "info" },
+  booked: { label: "Booked", tone: "neutral" },
+  blocked: { label: "Blocked", tone: "stale" },
+  held: { label: "Operator Hold", tone: "stale" },
+};
+
+/** A calendar night (YYYY-MM-DD) with its weekday, e.g. "Thu, 24 Sept 2026". */
+function formatNight(date: string): string {
+  return new Intl.DateTimeFormat("en-NG", { timeZone: "UTC", weekday: "short", day: "numeric", month: "short", year: "numeric" }).format(new Date(`${date}T00:00:00Z`));
+}
+
+function calendarBlockForm(calendar: OperatorApartmentCalendar, today: string): string {
+  const id = escapeHtml(calendar.unitId);
+  const reasons = Object.entries(BLOCK_REASONS).map(([code, label]) => `<label class="bo-choice"><input type="radio" name="reason" value="${code}" required><span>${escapeHtml(label)}</span></label>`).join("");
+  return `<form method="post" action="/operator/calendar/${encodeURIComponent(calendar.unitId)}/blocks" class="ui-stack"><input type="hidden" name="basedOnVersion" value="${escapeHtml(calendar.version)}"><h4>Block dates</h4><p>Block the nights the owner tells you are taken. A block never displaces a Booking Request, a Payment Pending stay or a booked stay.</p><div class="ui-field"><label class="ui-field__label" for="first-night-${id}">First blocked night</label><input id="first-night-${id}" name="firstNight" type="date" min="${today}" required></div><div class="ui-field"><label class="ui-field__label" for="last-night-${id}">Last blocked night</label><input id="last-night-${id}" name="lastNight" type="date" min="${today}" required></div><fieldset class="bo-reasons"><legend>Why are the dates taken?</legend>${reasons}</fieldset><button class="ui-button ui-button--primary ui-button--block" type="submit">Block these nights</button></form>`;
+}
+
+function calendarBlocksList(calendar: OperatorApartmentCalendar): string {
+  if (calendar.blocks.length === 0) return "";
+  const items = calendar.blocks.map((block) => {
+    const range = block.firstNight === block.lastNight
+      ? `${escapeHtml(formatPayoutDate(block.firstNight))} (one night)`
+      : `${escapeHtml(formatPayoutDate(block.firstNight))} to ${escapeHtml(formatPayoutDate(block.lastNight))}`;
+    const remove = block.removable
+      ? `<form method="post" action="/operator/calendar/${encodeURIComponent(calendar.unitId)}/blocks/${encodeURIComponent(block.blockId)}/remove"><input type="hidden" name="basedOnVersion" value="${escapeHtml(calendar.version)}"><button class="ui-button ui-button--secondary" type="submit">Remove block<span class="ui-sr-only">: ${range}</span></button></form>`
+      : "";
+    return `<li class="bo-block" data-block-id="${escapeHtml(block.blockId)}"><p>${range} <span>· ${escapeHtml(block.reasonLabel)}</span></p>${remove}</li>`;
+  }).join("");
+  return `<h4>Blocks in these weeks</h4><ul class="bo-blocks">${items}</ul>`;
+}
+
+/** One apartment: a table of nights (a header per column and per row, ADR 0078), its blocks, and the block form. */
+function apartmentCalendar(calendar: OperatorApartmentCalendar, today: string): string {
+  const id = escapeHtml(calendar.unitId);
+  const rows = calendar.days.map((day) => {
+    const status = CALENDAR_DAY_STATUS[day.state];
+    return `<tr data-date="${day.date}" data-state="${day.state}"><th scope="row">${escapeHtml(formatNight(day.date))}</th><td><span class="ui-status ui-status--${status.tone}">${escapeHtml(status.label)}</span></td></tr>`;
+  }).join("");
+  const first = calendar.days[0]!.date;
+  const last = calendar.days[calendar.days.length - 1]!.date;
+  const table = `<table class="bo-calendar"><caption>Nights from ${escapeHtml(formatPayoutDate(first))} to ${escapeHtml(formatPayoutDate(last))}</caption><thead><tr><th scope="col">Night</th><th scope="col">State</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return `<article class="ui-panel ui-stack bo-apartment" id="unit-${id}" data-unit-id="${id}"><h3>${escapeHtml(calendar.apartmentTitle)}</h3>${table}${calendarBlocksList(calendar)}${calendarBlockForm(calendar, today)}</article>`;
+}
+
+const CALENDAR_STYLE = `${DECISION_STYLE}.bo-owner{display:grid;gap:var(--space-3)}.bo-owner h2{margin:0}.bo-calendar{inline-size:100%;border-collapse:collapse}.bo-calendar caption{text-align:start;font-weight:600;padding-block-end:var(--space-2)}.bo-calendar th,.bo-calendar td{text-align:start;padding:var(--space-2);border-block-end:1px solid var(--color-border-subtle)}.bo-calendar tbody th{font-weight:400}.bo-blocks{display:grid;gap:var(--space-2);margin:0;padding:0;list-style:none}.bo-block{display:flex;flex-wrap:wrap;gap:var(--space-2);align-items:center;justify-content:space-between}.bo-block p{margin:0}.bo-pager{display:flex;flex-wrap:wrap;gap:var(--space-2)}.ui-panel h4{margin:0;font-size:var(--font-size-body)}`;
+
+/** The first night a calendar page shows: a real date from the query, or today in WAT. */
+function calendarFrom(url: URL, now: Date): string {
+  const from = url.searchParams.get("from") ?? "";
+  return isCalendarDate(from) ? from : lagosCalendarDate(now);
+}
+
+/**
+ * B8: every apartment you act for, grouped by owner, with each night's state from the authoritative Availability
+ * Calendar (ADR 0039). The alert carries a refused action's reason; for a pending request, a link to decline it.
+ */
+function operatorCalendarHtml(env: LocalApartmentOwnerEnvironment, principal: OperatorPrincipal, from: string, alert = "", declineRequestId: string | null = null): string {
+  const today = lagosCalendarDate(env.clock());
+  const calendars = env.listOperatorCalendars(commandPrincipal(principal), from);
+  const owners = new Map<string, OperatorApartmentCalendar[]>();
+  for (const calendar of calendars) owners.set(calendar.ownerId, [...(owners.get(calendar.ownerId) ?? []), calendar]);
+  const sections = [...owners.values()].map((group, index) => `<section class="bo-owner" aria-labelledby="owner-${index}"><h2 id="owner-${index}">${escapeHtml(group[0]!.ownerName)}</h2>${group.map((calendar) => apartmentCalendar(calendar, today)).join("")}</section>`).join("");
+  const list = calendars.length === 0
+    ? `<section class="ui-panel ui-empty"><div class="ui-empty__art">${icon("calendar")}</div><h2>No apartments yet</h2><p>An apartment appears here once you act for its owner.</p></section>`
+    : sections;
+  const pager = `<nav class="bo-pager" aria-label="Calendar weeks"><a class="ui-button ui-button--quiet" href="/operator/calendar?from=${addCalendarDays(from, -28)}">Earlier four weeks</a><a class="ui-button ui-button--quiet" href="/operator/calendar">Today</a><a class="ui-button ui-button--quiet" href="/operator/calendar?from=${addCalendarDays(from, 28)}">Later four weeks</a></nav>`;
+  const decline = declineRequestId ? ` <a href="/operator/requests/${encodeURIComponent(declineRequestId)}">Open the Booking Request</a>` : "";
+  const banner = alert ? `<p class="ui-banner ui-banner--danger" role="alert">${icon("alert")}<span>${escapeHtml(alert)}${decline}</span></p>` : "";
+  return backOfficePage({
+    title: "Calendar",
+    viewer: viewer(env, principal),
+    current: "calendar",
+    style: CALENDAR_STYLE,
+    body: `<header class="ui-page__header"><h1>Calendar</h1><p>Each apartment's nights from the Availability Calendar: Available, Request pending, Payment Pending, Booked or Blocked.</p></header>${banner}${pager}${list}`,
+  });
+}
+
+class CalendarFormError extends Error {}
+
+/** Only each form's own fields: no free text rides along (ADR 0075). */
+function calendarForm(kind: "block" | "remove", body: string): { readonly basedOnVersion: string; readonly firstNight: string; readonly lastNight: string; readonly reason: string } {
+  const params = new URLSearchParams(body);
+  const allowed = kind === "block" ? ["basedOnVersion", "firstNight", "lastNight", "reason"] : ["basedOnVersion"];
+  const keys = [...params.keys()];
+  if (keys.some((key) => !allowed.includes(key)) || new Set(keys).size !== keys.length) throw new CalendarFormError("Unexpected fields");
+  const version = params.get("basedOnVersion") ?? "";
+  if (!/^[0-9a-f]{16}$/.test(version)) throw new CalendarFormError("Missing version");
+  return { basedOnVersion: version, firstNight: params.get("firstNight") ?? "", lastNight: params.get("lastNight") ?? "", reason: params.get("reason") ?? "" };
+}
+
+/** Plain words for a refused calendar action; nothing was recorded. */
+function calendarRefusal(kind: "block" | "remove", error: unknown): { readonly status: number; readonly message: string; readonly requestId: string | null } {
+  const nothing = kind === "block" ? "Nothing was blocked." : "Nothing was changed.";
+  if (error instanceof CalendarFormError) return { status: 400, message: `This form could not be read. Review the calendar and try again. ${nothing}`, requestId: null };
+  if (error instanceof CalendarInputError) return { status: 400, message: `${error.message}. ${nothing}`, requestId: null };
+  if (error instanceof CalendarRefusalError) return { status: 409, message: `${error.message}. ${nothing}`, requestId: error.requestId };
+  return { status: 409, message: `This action could not be completed. ${nothing}`, requestId: null };
+}
+
 class TransferFormError extends Error {}
 
 /** Only each form's own fields; the reference and amount are the only free-text inputs (ADR 0090 requires them). */
@@ -1126,6 +1235,41 @@ export function startLocalOwnerServer(options: {
         const refusal = payoutRefusal(error);
         let body = "Payout rejected";
         try { body = operatorPayoutsHtml(env, principal, refusal.message, requestId); } catch { /* keep generic */ }
+        if (!res.headersSent) { res.writeHead(refusal.status, { "Content-Type": body.startsWith("<!doctype") ? "text/html; charset=utf-8" : "text/plain; charset=utf-8" }); res.end(body); }
+      }
+      return;
+    }
+    // B8: calendar and date blocks (ADR 0039). The page fails closed to sign-in; the actions to 401 (ADR 0086).
+    if (req.method === "GET" && (url.pathname === "/operator/calendar" || url.pathname === "/operator/calendar/")) {
+      page((principal) => operatorCalendarHtml(env, principal, calendarFrom(url, env.clock()))); return;
+    }
+    const calendarAction = url.pathname.match(/^\/operator\/calendar\/([^/]+)\/blocks(?:\/([^/]+)\/remove)?$/);
+    if (req.method === "POST" && calendarAction) {
+      if (!browserOriginAccepted(req)) { res.writeHead(403); res.end("Origin rejected"); return; }
+      const principal = operatorPrincipal(req, env);
+      if (!principal) { res.writeHead(401); res.end("Authentication required"); return; }
+      const unitId = pathSegment(calendarAction[1]!);
+      const blockId = calendarAction[2] === undefined ? null : pathSegment(calendarAction[2]);
+      if (unitId === null || (calendarAction[2] !== undefined && blockId === null)) { res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }); res.end("Not found"); return; }
+      const who = commandPrincipal(principal);
+      const today = lagosCalendarDate(env.clock());
+      // Unknown, or an owner you do not act for (ADR 0082): not found, before any form is read.
+      try { env.operatorCalendar(unitId, who, today); } catch { res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }); res.end("Apartment not found"); return; }
+      const kind = blockId === null ? "block" : "remove";
+      let from = today;
+      try {
+        const form = calendarForm(kind, await readForm(req));
+        if (blockId === null) {
+          if (isCalendarDate(form.firstNight)) from = form.firstNight;
+          env.blockOperatorDates(unitId, who, form);
+        } else {
+          from = env.removeOperatorBlock(unitId, blockId, who, form).slice(0, 10);
+        }
+        res.writeHead(303, { Location: `/operator/calendar?from=${from}#unit-${encodeURIComponent(unitId)}` }); res.end();
+      } catch (error) {
+        const refusal = calendarRefusal(kind, error);
+        let body = "Calendar action rejected";
+        try { body = operatorCalendarHtml(env, principal, from, refusal.message, refusal.requestId); } catch { /* keep generic */ }
         if (!res.headersSent) { res.writeHead(refusal.status, { "Content-Type": body.startsWith("<!doctype") ? "text/html; charset=utf-8" : "text/plain; charset=utf-8" }); res.end(body); }
       }
       return;
