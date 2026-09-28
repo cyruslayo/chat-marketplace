@@ -1,10 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createPlatformCommandEnvelope } from "../packages/platform-core/src/index.js";
 import { CancellationNoShowManager, type BookingContract, type OwnerSettlementSnapshot } from "../domains/shortlet/src/index.js";
 import { FOREIGN_ORIGIN, decideRequest, operatorGet, operatorPost, revokeRepresentativeGrant, signInOperator, startSignedInOperator, type SignedInOperator } from "./helpers/operator-session.js";
 import { TEST_CARD_LAST4, TEST_PAYER_EMAIL, guestCardPayments } from "./helpers/guest-card-payment.js";
 import { repricedByOwner } from "./helpers/owner-terms.js";
+import { SECOND_OWNER, SECOND_OWNER_ID, SECOND_UNIT_ID, addSecondOwner as addSecondOwnerTo, visibleText } from "./helpers/back-office-page.js";
 import { formatWat } from "../apps/local-owner/src/back-office-view.js";
 import { formatMoney } from "../apps/web/src/ui-kit.js";
 
@@ -13,15 +13,8 @@ import { formatMoney } from "../apps/web/src/ui-kit.js";
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const OWNER = "Eko Prime Living Ltd";
-const SECOND_OWNER = "Adaeze Homes Ltd";
-const SECOND_OWNER_ID = "op-lagos-owner-002";
-const SECOND_UNIT_ID = "unit-lagos-ikoyi-002";
 /** The fixture unit's Contractual Check-In Window (ADR 0031) opens 2:00 PM WAT on the check-in date. */
 const windowOpens = (checkIn: string) => new Date(`${checkIn}T13:00:00Z`);
-
-function visibleText(html: string): string {
-  return html.replace(/<script[\s\S]*?<\/script>/g, " ").replace(/<style[\s\S]*?<\/style>/g, " ").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
-}
 
 /** A jump of days outlives the 12-hour session (ADR 0086), so tests sign in again after moving the clock. */
 const cookies = new WeakMap<SignedInOperator, string>();
@@ -67,25 +60,7 @@ function contractOf(f: SignedInOperator, id: string): BookingContract {
   return JSON.parse(env.interactionStore.findBookingSnapshotByOfferId(JSON.parse(offer.offerJson).offerId)!.contractJson) as BookingContract;
 }
 
-/** A second owner you also hold a grant for (ADR 0082), with its own apartment. */
-function addSecondOwner(f: SignedInOperator) {
-  const env = f.server.environment;
-  const unit = env.unitRepository.findById(env.config.unitId)!;
-  env.unitRepository.save({
-    ...unit,
-    id: SECOND_UNIT_ID,
-    title: "Garden Flat in Old Ikoyi",
-    operator: { ...unit.operator, id: SECOND_OWNER_ID, name: SECOND_OWNER },
-    // ADR 0089: ₦80,000/night agreed at 15%.
-    price: repricedByOwner(unit.price, { ownerNightlyKobo: 8_000_000, ownerMandatoryChargesKobo: 0, marginBasisPoints: 1500, version: "price-owner-2" }),
-  });
-  env.grantStore.createGrant(createPlatformCommandEnvelope({
-    commandName: "operator_representative.grant",
-    principal: { id: env.config.adminId, role: "admin", tenantId: env.config.tenantId },
-    payload: { actorId: env.config.representativePersonId, operatorId: SECOND_OWNER_ID, expiresAtIso: "2027-01-01T00:00:00Z", responsiblePersonVerifiedAtIso: "2026-08-01T00:00:00Z", verificationReference: "verif-ref-owner-2" },
-    idempotencyKey: "grant-owner-2",
-  }));
-}
+const addSecondOwner = (f: SignedInOperator) => addSecondOwnerTo(f.server.environment);
 
 async function payoutsPage(f: SignedInOperator, cookie = cookieOf(f)): Promise<{ status: number; html: string; text: string }> {
   const response = await operatorGet(f.session, "/operator/payouts", cookie);
