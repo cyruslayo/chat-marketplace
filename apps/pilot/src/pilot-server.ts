@@ -11,11 +11,15 @@ import { createConciergeModelClient } from "../../local-guest/src/assistant/conc
 import { ModelCallBudget } from "../../local-guest/src/assistant/model-call-budget.js";
 import { errorPage } from "../../web/src/ui-kit.js";
 import { SlidingWindowRateLimiter } from "./rate-limiter.js";
+import { ResendEmailSender, type EmailSender } from "./notifications/email-sender.js";
+import { PilotNotifier } from "./notifications/pilot-notifier.js";
 
 export interface PilotServerHandle {
   readonly port: number;
   readonly configuration: PilotConfiguration;
   readonly guest: LocalGuestServerHandle;
+  /** Issue 23: null when notifications are not configured. */
+  readonly notifier: PilotNotifier | null;
   listen(): Promise<number>;
   close(): Promise<void>;
 }
@@ -152,6 +156,8 @@ export function startPilotServer(options: {
   readonly paystackClient?: PaystackClient;
   /** Test harnesses may inject a provider-shaped fake model client in place of the configured provider. */
   readonly modelClient?: AssistantModelClient;
+  /** Test harnesses may inject a fake email sender in place of Resend; notifications must still be configured. */
+  readonly emailSender?: EmailSender;
 } = {}): PilotServerHandle {
   const configuration = options.configuration ?? loadPilotConfiguration();
   const paystackClient = options.paystackClient ?? new DirectPaystackClient(configuration.paystack);
@@ -232,6 +238,24 @@ export function startPilotServer(options: {
 
   const guard = requestGuard(configuration, clock);
 
+  // Issue 23: email notifications, swept from durable state on an interval once the server is listening.
+  const notifier = configuration.notifications
+    ? new PilotNotifier({
+      databasePath: configuration.databasePath,
+      publicOrigin: configuration.publicOrigin,
+      sender: options.emailSender ?? new ResendEmailSender({ apiKey: configuration.notifications.resendApiKey, from: configuration.notifications.from }),
+      operatorAlertEmails: configuration.notifications.operatorAlertEmails,
+      unitTitle: (unitId) => {
+        const unit: unknown = guestEnvironment.unitRepository.findById(unitId);
+        const title = unit !== null && typeof unit === "object" ? (unit as { title?: unknown }).title : undefined;
+        return typeof title === "string" && title.trim() !== "" ? title : "your apartment";
+      },
+      clock,
+    })
+    : null;
+  let notificationTimer: ReturnType<typeof setInterval> | null = null;
+  let inFlightSweep: Promise<unknown> = Promise.resolve();
+
   let guestPort = 0;
   let ownerPort = 0;
   let initialized = false;
@@ -257,6 +281,7 @@ export function startPilotServer(options: {
     port: options.port ?? 0,
     configuration,
     guest,
+    notifier,
     listen: async () => {
       guestPort = await guest.listen();
       ownerPort = await owner.listen();
@@ -265,11 +290,18 @@ export function startPilotServer(options: {
         server.listen(options.port ?? 0, "127.0.0.1", () => resolve());
       });
       initialized = true;
+      if (notifier && configuration.notifications) {
+        notificationTimer = setInterval(() => { inFlightSweep = notifier.sweep(); }, configuration.notifications.sweepSeconds * 1000);
+        notificationTimer.unref();
+      }
       const address = server.address();
       return typeof address === "object" && address ? address.port : options.port ?? 0;
     },
     close: async () => {
       initialized = false;
+      if (notificationTimer) clearInterval(notificationTimer);
+      await inFlightSweep;
+      notifier?.close();
       server.closeIdleConnections?.();
       server.closeAllConnections?.();
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));

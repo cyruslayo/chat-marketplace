@@ -50,6 +50,33 @@ value fails startup.
   sharing the production database. Point the Paystack **test** dashboard
   webhook at `https://<beta-host>/webhooks/paystack`.
 
+## Email notifications (Resend)
+
+Set all three, or none (none disables notifications and the startup banner says
+`notifications=disabled`). Run the closed beta and the pilot with them set:
+without them nobody is alerted when a Booking Request arrives.
+
+- `RESEND_API_KEY` — from the Resend dashboard, supplied as a secret.
+- `SHORTLET_NOTIFICATION_FROM` — a sender on a domain verified in Resend, for
+  example `Shortlet <bookings@yourdomain>`.
+- `SHORTLET_OPERATOR_ALERT_EMAILS` — comma-separated addresses of the people
+  covering the response window (ADR 0042, launch-readiness issue 09).
+- `SHORTLET_NOTIFICATION_SWEEP_SECONDS` — optional, default 30.
+
+Every sweep reads the database and sends each email once (recorded in
+`pilot_notifications`; Resend receives a stable `Idempotency-Key`):
+
+- Operator alerts: a new delivered Booking Request, and the 10- and 25-minute
+  reminders of the 30-minute response window (ADR 0041).
+- Guest emails, only when the Guest gave an email address: request sent, offer
+  made, payment confirmed, request declined, expired or not delivered.
+
+Emails carry the apartment, dates, party size, amount, deadlines and a link, and
+never guest names, phone numbers, identity or payment details (ADR 0075). A
+failed send is retried on later sweeps, up to five attempts, and never changes
+booking state. Events older than 24 hours when first seen are not announced, so a
+first deploy does not email history.
+
 ## Guardrails
 
 The pilot's front server applies hourly limits per client address, and per

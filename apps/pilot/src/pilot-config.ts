@@ -7,6 +7,7 @@ import {
   type OperatorRecord,
   type PaystackConfiguration,
   type PaystackEnvironmentSource,
+  normalizeContactEmail,
   type ManualTransferAccount,
   type Unit,
 } from "../../../domains/shortlet/src/index.js";
@@ -37,6 +38,44 @@ export interface PilotEnvironmentSource extends PaystackEnvironmentSource, Conci
   readonly SHORTLET_OPERATOR_LOGINS_PER_ADDRESS_PER_HOUR?: string;
   readonly SHORTLET_GUEST_RUNTIME_IDLE_MINUTES?: string;
   readonly CONCIERGE_DAILY_MODEL_CALL_CAP?: string;
+  /** Issue 23: Resend email notifications. The key, sender and Operator alert list are all set, or none. */
+  readonly RESEND_API_KEY?: string;
+  readonly SHORTLET_NOTIFICATION_FROM?: string;
+  /** Comma-separated addresses of the people covering the response window (ADR 0042). */
+  readonly SHORTLET_OPERATOR_ALERT_EMAILS?: string;
+  readonly SHORTLET_NOTIFICATION_SWEEP_SECONDS?: string;
+}
+
+export interface PilotNotificationConfiguration {
+  readonly resendApiKey: string;
+  readonly from: string;
+  readonly operatorAlertEmails: readonly string[];
+  readonly sweepSeconds: number;
+}
+
+/** Default pause between notification sweeps; well inside the 10-minute first reminder (ADR 0041). */
+export const DEFAULT_NOTIFICATION_SWEEP_SECONDS = 30;
+
+/** Issue 23: all three settings or none, so notifications are never half-configured. None means disabled. */
+export function notificationConfiguration(source: PilotEnvironmentSource): PilotNotificationConfiguration | null {
+  const resendApiKey = source.RESEND_API_KEY?.trim() ?? "";
+  const from = source.SHORTLET_NOTIFICATION_FROM?.trim() ?? "";
+  const alertList = source.SHORTLET_OPERATOR_ALERT_EMAILS?.trim() ?? "";
+  if (!resendApiKey && !from && !alertList) return null;
+  if (!resendApiKey || !from || !alertList) throw new Error("RESEND_API_KEY, SHORTLET_NOTIFICATION_FROM and SHORTLET_OPERATOR_ALERT_EMAILS must all be set, or none");
+  // "Name <address>" or a bare address; the address must be valid either way.
+  const fromAddress = /<([^<>]+)>\s*$/.exec(from)?.[1] ?? from;
+  try { normalizeContactEmail(fromAddress); } catch { throw new Error("SHORTLET_NOTIFICATION_FROM must be an email address or Name <address>"); }
+  const operatorAlertEmails = alertList.split(",").map((entry) => entry.trim()).filter((entry) => entry !== "").map((entry) => {
+    try { return normalizeContactEmail(entry); } catch { throw new Error("SHORTLET_OPERATOR_ALERT_EMAILS must be a comma-separated list of email addresses"); }
+  });
+  if (operatorAlertEmails.length === 0) throw new Error("SHORTLET_OPERATOR_ALERT_EMAILS must name at least one address");
+  return Object.freeze({
+    resendApiKey,
+    from,
+    operatorAlertEmails: Object.freeze(operatorAlertEmails),
+    sweepSeconds: positiveWholeNumber(source.SHORTLET_NOTIFICATION_SWEEP_SECONDS, "SHORTLET_NOTIFICATION_SWEEP_SECONDS", DEFAULT_NOTIFICATION_SWEEP_SECONDS),
+  });
 }
 
 /**
@@ -98,6 +137,8 @@ export interface PilotConfiguration {
   readonly concierge: ConciergeConfiguration;
   /** Issue 19: rate limits, the daily model-call cap and the idle session-runtime lifetime. */
   readonly limits: PilotLimits;
+  /** Issue 23: null means email notifications are disabled (the startup banner says so). */
+  readonly notifications: PilotNotificationConfiguration | null;
 }
 
 function required(source: PilotEnvironmentSource, key: keyof PilotEnvironmentSource): string {
@@ -211,6 +252,7 @@ export function loadPilotConfiguration(source: PilotEnvironmentSource = process.
     betaInviteCode: inviteCode,
     concierge,
     limits: pilotLimits(source),
+    notifications: notificationConfiguration(source),
     paystackTransfersEnabled: paystackTransfersEnabled(source.SHORTLET_PAYSTACK_TRANSFERS),
     manualTransferAccount: manualTransferAccount(source),
     receiptMaxBytes: receiptMaxBytes(source.SHORTLET_RECEIPT_MAX_BYTES),
