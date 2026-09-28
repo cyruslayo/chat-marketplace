@@ -354,6 +354,10 @@ _Avoid_: Commission, guest fee, service fee
 The Owner's Agreed Amounts for a booking, captured in the booking snapshot at confirmation and never recalculated; due 24 hours after Verified Access with no Blocking Fulfilment Complaint open, and changed only by the booking's cancellation policy outcome (ADR 0089).
 _Avoid_: Operator Net, Revenue Release, payout
 
+**Owner Overpayment**:
+The amount by which the payouts recorded for a booking, net of recoveries, exceed its Owner Payable after a later cancellation policy outcome. It is recovered from the owner outside the platform and recorded with its date, amount and reference (back-office issue 11).
+_Avoid_: Negative balance, clawback, set-off
+
 **Owner Payout**:
 A payment the platform makes to an owner against one booking's Owner Payable, recorded with its date, amount and reference (ADR 0089).
 _Avoid_: Automatic payout, settlement, transfer

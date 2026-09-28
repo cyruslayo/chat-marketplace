@@ -1,10 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { CancellationNoShowManager, type BookingContract, type OwnerSettlementSnapshot } from "../domains/shortlet/src/index.js";
+import { CancellationNoShowManager } from "../domains/shortlet/src/index.js";
 import { FOREIGN_ORIGIN, decideRequest, operatorGet, operatorPost, revokeRepresentativeGrant, startSignedInOperator, type SignedInOperator } from "./helpers/operator-session.js";
 import { TEST_CARD_LAST4, TEST_PAYER_EMAIL } from "./helpers/guest-card-payment.js";
 import { repricedByOwner } from "./helpers/owner-terms.js";
 import { cookieOf, openComplaint, principal, recordAccess, reservation, travelTo, windowOpens } from "./helpers/back-office-reservation.js";
+import { contractOf, naira, ownerTotals, pay, payableRow, payoutRecords, payoutVersion, payoutsPage, settlement } from "./helpers/back-office-payouts.js";
 import { SECOND_OWNER, SECOND_OWNER_ID, SECOND_UNIT_ID, addSecondOwner as addSecondOwnerTo, visibleText } from "./helpers/back-office-page.js";
 import { formatWat } from "../apps/local-owner/src/back-office-view.js";
 import { formatMoney } from "../apps/web/src/ui-kit.js";
@@ -14,53 +15,8 @@ import { formatMoney } from "../apps/web/src/ui-kit.js";
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const OWNER = "Eko Prime Living Ltd";
-/** The settlement captured at confirmation (P4), read straight from the stored offer. */
-function settlement(f: SignedInOperator, id: string): OwnerSettlementSnapshot {
-  const offer = f.server.environment.interactionStore.findConditionalOfferByRequestId(id);
-  assert.ok(offer);
-  return (JSON.parse(offer.offerJson) as { quote: { ownerSettlement: OwnerSettlementSnapshot } }).quote.ownerSettlement;
-}
-
-function contractOf(f: SignedInOperator, id: string): BookingContract {
-  const env = f.server.environment;
-  const offer = env.interactionStore.findConditionalOfferByRequestId(id)!;
-  return JSON.parse(env.interactionStore.findBookingSnapshotByOfferId(JSON.parse(offer.offerJson).offerId)!.contractJson) as BookingContract;
-}
-
 const addSecondOwner = (f: SignedInOperator) => addSecondOwnerTo(f.server.environment);
 
-async function payoutsPage(f: SignedInOperator, cookie = cookieOf(f)): Promise<{ status: number; html: string; text: string }> {
-  const response = await operatorGet(f.session, "/operator/payouts", cookie);
-  const html = await response.text();
-  return { status: response.status, html, text: visibleText(html) };
-}
-
-function payableRow(html: string, id: string): { readonly status: string; readonly text: string; readonly html: string } {
-  const match = html.match(new RegExp(`<li class="bo-payable" id="payable-${id}" data-request-id="${id}" data-status="([^"]+)">([\\s\\S]*?)</li>`));
-  assert.ok(match, `payable ${id} is listed`);
-  return { status: match[1]!, text: visibleText(match[2]!), html: match[2]! };
-}
-
-function ownerTotals(html: string, ownerName: string): { readonly due: string; readonly paid: string; readonly notYetDue: string } {
-  const section = [...html.matchAll(/<section class="bo-owner"[\s\S]*?<\/section>/g)].map((m) => m[0]).find((s) => s.includes(`<h2>${ownerName}</h2>`) || s.includes(`>${ownerName}</h2>`));
-  assert.ok(section, `owner section for ${ownerName}`);
-  const total = (kind: string) => visibleText(section.match(new RegExp(`<dd data-total="${kind}">([\\s\\S]*?)</dd>`))?.[1] ?? "").trim();
-  return { due: total("due"), paid: total("paid"), notYetDue: total("not_yet_due") };
-}
-
-function payoutVersion(html: string, id: string): string {
-  const value = payableRow(html, id).html.match(/name="basedOnVersion" value="([^"]+)"/)?.[1];
-  assert.ok(value, `payout form for ${id}`);
-  return value;
-}
-
-async function pay(f: SignedInOperator, id: string, fields: { amount: string; paidOn: string; reference: string }, options: { cookie?: string; origin?: string; basedOnVersion?: string } = {}): Promise<Response> {
-  const basedOnVersion = options.basedOnVersion ?? payoutVersion((await payoutsPage(f)).html, id);
-  return operatorPost(f.session, `/operator/payouts/${encodeURIComponent(id)}`, options.cookie ?? cookieOf(f), options.origin ? { origin: options.origin } : {}, { basedOnVersion, ...fields });
-}
-
-const payoutRecords = (f: SignedInOperator) => f.server.environment.audit.entries().filter((entry) => entry.type === "operator_owner_payout_recorded").length;
-const naira = (kobo: number) => (kobo / 100).toFixed(2);
 
 test("AC1 — Each booking shows the amount received, the owner payable, your margin, the due date and the status (not yet due, due, paused, or paid), all from the booking snapshot and the ledger", async () => {
   const f = await startSignedInOperator();
@@ -162,11 +118,13 @@ test("AC2 — For each owner, the page totals what is due now, what has been pai
       due: formatMoney(settlement(f, due).ownerPayableKobo - 5_000_000),
       paid: formatMoney(settlement(f, paid).ownerPayableKobo + 5_000_000),
       notYetDue: formatMoney(settlement(f, notYet).ownerPayableKobo),
+      overpaid: "", // shown only when an owner has an Owner Overpayment (issue 11)
     });
     assert.deepEqual(ownerTotals(html, SECOND_OWNER), {
       due: formatMoney(settlement(f, secondDue).ownerPayableKobo),
       paid: formatMoney(0),
       notYetDue: formatMoney(settlement(f, secondNotYet).ownerPayableKobo),
+      overpaid: "",
     });
     assert.equal(settlement(f, secondDue).ownerPayableKobo, 8_000_000, "the second owner's own agreed amount");
     // Each owner's bookings sit under that owner.

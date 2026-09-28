@@ -47,7 +47,9 @@ import {
   ownerSettlementFromQuote,
   projectOwnerPayable,
   recordOwnerPayout,
+  recordOwnerRecovery,
   OwnerPayoutError,
+  OwnerRecoveryError,
   SqliteOwnerPayableLedger,
   type OwnerPayableProjection,
   type AccessStatus,
@@ -989,6 +991,31 @@ export class LocalApartmentOwnerEnvironment {
     return this.ownerPayable(requestId, principal);
   }
 
+  /**
+   * Issue 11: records money an owner paid back against an Owner Overpayment, idempotent per reference (ADR 0072).
+   * Nothing is offset or withheld (decided 28 Sept 2026). The audit keeps ids and the amount; never the reference (ADR 0075).
+   */
+  recordOwnerRecovery(requestId: string, principal: CommandPrincipal, input: { readonly amount: string; readonly receivedOn: string; readonly reference: string; readonly basedOnVersion: string }): OperatorOwnerPayable {
+    const current = this.ownerPayable(requestId, principal);
+    if (!current.payable) throw new OwnerRecoveryError("not_overpaid");
+    const now = this.clock();
+    const { recovery, replayed } = recordOwnerRecovery({
+      ledger: this.ownerPayableLedger,
+      reservationId: current.reservationId,
+      payable: current.payable,
+      basedOnVersion: input.basedOnVersion,
+      amountKobo: parseNairaToKobo(input.amount),
+      receivedOn: input.receivedOn.trim(),
+      reference: input.reference,
+      recordedBy: principal.id!,
+      now,
+    });
+    if (!replayed) {
+      try { this.audit.record({ type: "operator_owner_recovery_recorded", actorId: principal.id, tenantId: principal.tenantId, requestId, reservationId: current.reservationId, recoveryId: recovery.recoveryId, amountKobo: recovery.amountKobo, receivedOn: recovery.receivedOn, occurredAt: now.toISOString() }); } catch { /* observability cannot undo a recorded recovery */ }
+    }
+    return this.ownerPayable(requestId, principal);
+  }
+
   #ownerPayableFor(booking: OperatorBooking, now: Date): OperatorOwnerPayable | null {
     const storedOffer = this.interactionStore.findConditionalOfferByRequestId(booking.requestId);
     const snapshot = storedOffer ? this.interactionStore.findBookingSnapshotByOfferId(storedOffer.offerId) : null;
@@ -1019,6 +1046,7 @@ export class LocalApartmentOwnerEnvironment {
         complaintResolvedAt: lastComplaintResolvedAt(checkIn.complaints),
         cancellation: this.ownerPayableLedger.findCancellation(reservation.reservationId),
         payouts: this.ownerPayableLedger.listPayouts(reservation.reservationId),
+        recoveries: this.ownerPayableLedger.listRecoveries(reservation.reservationId),
         now,
       }) : null,
     });
