@@ -10,10 +10,15 @@ const SUPPORTED_CITIES = new Set(["Lagos", "Abuja"]);
 const REQUIRED_HEADERS = [
   "external_listing_id", "unit_id", "property_id", "operator_id", "title", "city", "neighbourhood",
   "capacity", "bedrooms", "owner_nightly_ngn", "owner_mandatory_charges_ngn", "margin_percent", "refundable_security_deposit_ngn",
-  "currency", "amenities", "blocked_dates",
+  "currency", "amenities",
 ] as const;
 /** ADR 0089: the Guest price is derived from the owner's agreed amounts and the margin, never entered directly. */
 const RETIRED_PRICE_HEADERS = ["nightly_price_ngn", "mandatory_fees_ngn"] as const;
+/**
+ * ADR 0039: blocked dates are entered only in the back-office calendar, the one Availability Calendar (issue 13).
+ * An empty column is accepted so existing sheets still import; a value in it is refused per row.
+ */
+const RETIRED_BLOCKED_DATES_HEADER = "blocked_dates";
 
 export const PILOT_INVENTORY_HEADERS = Object.freeze([
   ...REQUIRED_HEADERS,
@@ -216,18 +221,6 @@ function splitList(value: string): string[] {
   return value.split("|").map((item) => item.trim()).filter((item) => item.length > 0);
 }
 
-function parseBlockedDates(value: string): Array<{ start: string; end: string }> {
-  if (value === "") return [];
-  return value.split(";").map((range) => {
-    const [startValue, endValue, ...extra] = range.split("/").map((item) => item.trim());
-    if (!startValue || !endValue || extra.length > 0) throw new Error("blocked_dates must use start/end pairs separated by semicolons");
-    const start = parseDate(startValue, "blocked_dates.start");
-    const end = parseDate(endValue, "blocked_dates.end");
-    if (!start || !end || start >= end) throw new Error("blocked_dates ranges must end after they start");
-    return { start, end };
-  });
-}
-
 function hasAny(row: CsvRow, fields: readonly string[]): boolean {
   return fields.some((field) => cell(row, field) !== "");
 }
@@ -324,7 +317,8 @@ function buildUnit(row: CsvRow, operator: OperatorReference): Unit {
     inspection,
     managementAuthority: authority,
     regulatory: (licensing || insurance) ? { licensing, insurance } : null,
-    blockedDates: parseBlockedDates(cell(row, "blocked_dates")),
+    // Filled from the existing Unit on save: it is the discovery projection of back-office blocks.
+    blockedDates: [],
     ...(cancellationPolicy === "" ? {} : { cancellationPolicy: { type: cancellationPolicy, version: "cancellation-v1" } }),
     ...(checkInWindow === null ? {} : { checkInWindow }),
   };
@@ -332,6 +326,7 @@ function buildUnit(row: CsvRow, operator: OperatorReference): Unit {
 
 function validateRow(row: CsvRow, options: InventoryImportOptions): PreparedUnit {
   if (row.values.__row_error) throw new Error(row.values.__row_error);
+  if ((row.values[RETIRED_BLOCKED_DATES_HEADER] ?? "").trim() !== "") throw new Error("blocked_dates is retired: block dates in the back-office calendar instead");
   const unitId = cell(row, "unit_id");
   if (unitId === "") throw new Error("unit_id is required");
   if (cell(row, "external_listing_id") === "") throw new Error("external_listing_id is required");
@@ -411,7 +406,8 @@ export function importInventoryCsv(contents: string, options: InventoryImportOpt
     for (const preparedUnit of prepared) {
       const existing = options.repository.findById(preparedUnit.unit.id);
       const readiness = getUnitOnboardingStatus(preparedUnit.unit, clock());
-      const toSave = { ...preparedUnit.unit, published: existing?.published === true && readiness.eligibleForPublication };
+      // The sheet never carries blocks (issue 13): a re-import keeps the ones the back-office calendar projected (ADR 0039).
+      const toSave = { ...preparedUnit.unit, blockedDates: existing?.blockedDates ?? [], published: existing?.published === true && readiness.eligibleForPublication };
       if (!existing) {
         options.repository.save(toSave);
         inserted += 1;

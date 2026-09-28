@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
+  AvailabilityCalendar,
   JsonUnitRepository,
   UnitDiscoveryQuery,
   UnitRepository,
@@ -76,7 +77,8 @@ function csvRow(overrides: Record<string, string> = {}) {
     currency: "NGN",
     amenities: "wifi|generator|parking",
     photo_urls: "",
-    blocked_dates: "2026-12-24/2026-12-26",
+    // Retired (issue 13): dates are blocked in the back-office calendar. An empty column is still accepted.
+    blocked_dates: "",
     inspection_status: "passed",
     inspection_date: "2026-08-01",
     inspection_expiry: "2027-08-01",
@@ -100,7 +102,7 @@ function csvRow(overrides: Record<string, string> = {}) {
   };
   const headers = Object.keys(values);
   const escape = (value: string) => `"${value.replaceAll('"', '""')}"`;
-  return { headers, line: headers.map((header) => escape(values[header] ?? "")).join(",") };
+  return { headers, values, line: headers.map((header) => escape(values[header] ?? "")).join(",") };
 }
 
 function csv(rows: string[]) {
@@ -520,4 +522,54 @@ test("publication attempts and blocks are audited without evidence payloads", ()
   assert.match(JSON.stringify(audit.entries), /unit.publication.attempted/);
   assert.match(JSON.stringify(audit.entries), /unit.publication.blocked/);
   assert.doesNotMatch(JSON.stringify(audit.entries), /inspection_scope|insurance_public|evidence/i);
+});
+
+// Issue 13 (.scratch/operator-dashboard/issues/13-imported-blocks-outside-the-calendar.md, ADR 0039): blocked dates
+// are entered only in the back-office calendar; the import no longer carries them.
+
+/** The sheet with one column left out entirely. */
+function csvWithout(column: string, rows: readonly Record<string, string>[]): string {
+  const headers = csvRow().headers.filter((header) => header !== column);
+  const escape = (value: string) => `"${value.replaceAll('"', '""')}"`;
+  return [headers.join(","), ...rows.map((overrides) => {
+    const { values } = csvRow(overrides);
+    return headers.map((header) => escape(values[header] ?? "")).join(",");
+  })].join("\n");
+}
+
+test("Issue 13 AC1 — A sheet without a blocked_dates column imports; the column is no longer required", () => {
+  const { repository } = setup();
+  const result = run(repository, csvWithout("blocked_dates", [{}]));
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.inserted, 1);
+  assert.deepEqual(repository.findById("unit-import-001")?.blockedDates, []);
+});
+
+test("Issue 13 AC2 — A row with a value in blocked_dates is refused with an error saying to block dates in the back-office calendar, and nothing from that row is written", () => {
+  const { repository } = setup();
+  const result = run(repository, csv([csvRow({ blocked_dates: "2026-12-24/2026-12-26" }).line, csvRow({ unit_id: "unit-import-002", external_listing_id: "sheet-lagos-002" }).line]));
+  assert.equal(result.invalid, 1);
+  assert.equal(result.errors[0]!.row, 2);
+  assert.match(result.errors[0]!.message, /blocked_dates is retired: block dates in the back-office calendar/);
+  assert.equal(repository.findById("unit-import-001"), null, "the refused row wrote nothing");
+  assert.equal(result.inserted, 1, "other rows still import");
+  // A dry run reports the same refusal.
+  assert.match(run(setup().repository, csv([csvRow({ blocked_dates: "2026-12-24/2026-12-26" }).line]), { dryRun: true }).errors[0]!.message, /back-office calendar/);
+});
+
+test("Issue 13 AC3 — Re-importing a Unit keeps the blocks added in the back-office calendar, and an unchanged row still counts as unchanged", () => {
+  const { repository } = setup();
+  const contents = csv([csvRow().line]);
+  run(repository, contents);
+  // A block added in the back office writes the discovery projection (AvailabilityCalendar.addOperatorBlock).
+  const calendar = new AvailabilityCalendar({ repository });
+  calendar.addOperatorBlock({ unitId: "unit-import-001", operatorId: "operator-pilot-001", start: "2026-10-01", end: "2026-10-03", reason: "owner_use", clock: () => NOW });
+  const unchanged = run(repository, contents);
+  assert.equal(unchanged.unchanged, 1);
+  assert.deepEqual(repository.findById("unit-import-001")?.blockedDates, [{ start: "2026-10-01", end: "2026-10-03" }]);
+  // A changed row updates the Unit and still keeps the block.
+  const updated = run(repository, csv([csvRow({ title: "Updated Ikeja apartment" }).line]));
+  assert.equal(updated.updated, 1);
+  assert.equal(repository.findById("unit-import-001")?.title, "Updated Ikeja apartment");
+  assert.deepEqual(repository.findById("unit-import-001")?.blockedDates, [{ start: "2026-10-01", end: "2026-10-03" }]);
 });
