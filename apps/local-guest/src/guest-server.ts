@@ -91,7 +91,7 @@ import { createPlatformCommandEnvelope as createManualTransferCommand } from "..
 import { ManualTransferError, type ManualTransfer } from "../../../domains/shortlet/src/index.js";
 import { BankTransferProviderError, DirectPaystackClient, isApprovedPaystackCheckoutUrl, loadPaystackConfiguration, type BankTransferCheckoutSession, type PaystackClient } from "../../../domains/shortlet/src/index.js";
 import { applyCriteriaEdit, budgetLabel, quickRepliesFor, searchAreaFor, SEARCH_AREAS, type CriteriaEdit } from "./concierge.js";
-import { amenityQuestions, extractStayRequestFacts, formatGuestDay, mergeStayRequestContext, resolveStayRequestContext, stayChangeRequested, unsupportedPreferenceNote, type DiscoverySearchContext, type StayRequestFilters } from "./concierge.js";
+import { amenityQuestions, extractStayRequestFacts, formatGuestDay, mergeStayRequestContext, resolveStayRequestContext, stayChangeRequested, unsupportedPreferenceNote, viewResultIntent, type DiscoverySearchContext, type StayRequestFilters } from "./concierge.js";
 import { handleGeminiTurn, type GeminiConciergeClient } from "./gemini-concierge.js";
 import type { Content } from "@google/genai";
 import { AssistantRuntime } from "./assistant/assistant-runtime.js";
@@ -496,6 +496,9 @@ export class LocalGuestApp {
     const providedFacts = Object.keys(facts).some((key) => key !== "unsupportedPreferences") || merged.confirmedDates === true;
     const resolvedConflict = previousContext?.pendingLocationChange !== undefined && merged.context.pendingLocationChange === undefined;
     if (!providedFacts && !resolvedConflict && thread.discoveryArtifact) {
+      // Issue 10 (C4): "show me the apartment" opens a result, or asks which one, instead of being ignored.
+      const viewIntent = viewResultIntent(text);
+      if (viewIntent) return acknowledged(this.#viewResultFromChat(thread, thread.discoveryArtifact, viewIntent.position));
       // An unrelated turn must not replace the current authoritative results.
       return acknowledged({ ok: true, messages: ["Your current search results are still active. Tell me how you would like to refine them, for example: “Only show two-bedroom apartments”."], surfaces: [] });
     }
@@ -1406,7 +1409,37 @@ export class LocalGuestApp {
     if (!unit) {
       return { ok: false, code: "ACTION_NOT_AUTHORIZED", message: `That ${GUEST_GLOSSARY.unit} is not available.` };
     }
+    return this.#openUnitDetail(thread, artifact, unit, resolved.effect.route);
+  }
 
+  /**
+   * A typed request to open a result. The Unit is chosen from the authoritative results in the order they are shown;
+   * with several results and none named, the concierge asks which one rather than guessing.
+   */
+  #viewResultFromChat(thread: GuestThreadState, artifact: DiscoveryArtifactProjection, position: number | "last" | null): GuestTurnResult {
+    const results = artifact.facts.results;
+    const ordinalLabels = ["The first one", "The second one", "The third one"];
+    const askWhich = (message: string): GuestTurnResult => ({ ok: true, messages: [message], surfaces: [], quickReplies: ordinalLabels.slice(0, Math.min(results.length, ordinalLabels.length)) });
+    if (results.length === 0) {
+      return { ok: true, messages: [`There is no ${GUEST_GLOSSARY.unit} to show for this search yet. Tell me how you would like to change it.`], surfaces: [] };
+    }
+    const index = position === "last" ? results.length - 1 : position === null ? (results.length === 1 ? 0 : -1) : position - 1;
+    if (position === null && index === -1) {
+      return askWhich(`I found ${results.length} places. Which one would you like to see? Say “the first one” or “the second one”, or choose ${GUEST_GLOSSARY.viewUnit} on a result.`);
+    }
+    const unit = results[index];
+    if (!unit) {
+      return askWhich(`This search has ${results.length} ${results.length === 1 ? "place" : "places"}. Which one would you like to see?`);
+    }
+    const route = artifact.actions.find((action) => action.type === "view-unit" && action.unitId === unit.id)?.conventionalRoute ?? `/stays/${encodeURIComponent(unit.id)}`;
+    return this.#openUnitDetail(thread, artifact, unit, route);
+  }
+
+  /**
+   * Opens a Unit from the authoritative discovery artifact, for the generated View action and for the same request
+   * typed in chat (issue 10, finding C4). Callers pick the Unit from `artifact.facts.results`, never from client input.
+   */
+  #openUnitDetail(thread: GuestThreadState, artifact: DiscoveryArtifactProjection, unit: DiscoveryArtifactProjection["facts"]["results"][number], route: string): GuestTurnResult {
     const unitDetailArtifact = unitDetailArtifactFromProjection({ unit, ...this.#stayDatesFor(thread), projectionVersion: artifact.projectionVersion, viewer: this.#environment.guestPrincipal() });
     thread.unitDetail = { unitId: unit.id, artifactId: unitDetailArtifact.id };
     const surfaceId = unitDetailSurfaceId(thread.threadId, thread.discoveryRevision);
@@ -1425,7 +1458,7 @@ export class LocalGuestApp {
           surfaceId,
           mode: "focused-surface",
           summary: `${unit.title} details`,
-          conventionalRoute: resolved.effect.route,
+          conventionalRoute: route,
           textFallback: `${unit.title}. ${unit.location.neighbourhood}, ${unit.location.city}. Entire Place; capacity ${unit.capacity} guests. ${GUEST_GLOSSARY.allInStayTotal}: ${unit.price.allInStayTotalKobo === null ? "not yet quoted" : formatNgnKobo(unit.price.allInStayTotalKobo)}. ${GUEST_GLOSSARY.refundableSecurityDeposit}: ${formatNgnKobo(unit.price.refundableSecurityDepositKobo)}. Inspection: ${unit.trust.inspection.status}; Management Authority: ${unit.trust.managementAuthority.status}.`,
           a2uiMessages: unitDetailArtifactToA2UI({ artifact: unitDetailArtifact, surfaceId, backToResults: { artifactId: artifact.id } }),
         },
