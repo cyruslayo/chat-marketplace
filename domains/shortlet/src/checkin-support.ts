@@ -58,12 +58,30 @@ export interface VerifiedAccessResult {
   readonly protectionWindowStartsAt?: string;
 }
 
+/**
+ * Why platform support closed a complaint that did not hold up (issue 10, decided 28 Sept 2026). An upheld complaint
+ * is not dismissed: it stays open until a cancellation or remedy outcome is recorded (ADR 0089).
+ */
+export const COMPLAINT_DISMISSAL_REASONS = ["cured", "not_borne_out"] as const;
+export type ComplaintDismissalReason = typeof COMPLAINT_DISMISSAL_REASONS[number];
+export function isComplaintDismissalReason(value: unknown): value is ComplaintDismissalReason {
+  return typeof value === "string" && (COMPLAINT_DISMISSAL_REASONS as readonly string[]).includes(value);
+}
+
+/** When the last complaint was dismissed, or null. The owner payable is not due before it (issue 10, ADR 0089). */
+export function lastComplaintResolvedAt(complaints: readonly Pick<BlockingFulfilmentComplaint, "status" | "resolvedAt">[]): string | null {
+  return complaints.reduce<string | null>((latest, complaint) => complaint.status === "resolved" && complaint.resolvedAt && (!latest || complaint.resolvedAt > latest) ? complaint.resolvedAt : latest, null);
+}
+
 export interface BlockingFulfilmentComplaint {
   readonly complaintId: string;
   readonly reservationId: string;
   readonly category: ComplaintCategory;
   readonly status: "open" | "under_human_review" | "resolved";
   readonly revenueHeld: true;
+  /** Set when platform support dismisses the complaint (issue 10): when, and the fixed reason code. */
+  readonly resolvedAt?: string;
+  readonly resolution?: ComplaintDismissalReason;
   readonly safeSummary?: string;
   readonly evidenceReferences: readonly string[];
   readonly openedAt: string;
@@ -292,7 +310,7 @@ export class CheckInSupportManager {
     this.#assertReservation(envelope.payload.reservationId, envelope.principal); this.#hydrate(envelope.payload.reservationId); this.#requireScheduled(envelope.payload.reservationId);
     const existing = (this.#complaints.get(envelope.payload.reservationId) ?? []).find((c) => c.status !== "resolved" && c.category === envelope.payload.category);
     if (existing) return { ...existing };
-    const now = clock(); const complaint: BlockingFulfilmentComplaint = { complaintId: `cmpl_${envelope.payload.reservationId}_${envelope.payload.category}`, reservationId: envelope.payload.reservationId, category: envelope.payload.category, status: "open", revenueHeld: true, ...(envelope.payload.safeSummary ? { safeSummary: envelope.payload.safeSummary.slice(0, 500) } : {}), evidenceReferences: Object.freeze([...(envelope.payload.evidenceReferences ?? [])].slice(0, 10)), openedAt: now.toISOString() };
+    const now = clock(); const complaint: BlockingFulfilmentComplaint = { complaintId: this.#complaintId(envelope.payload.reservationId, envelope.payload.category), reservationId: envelope.payload.reservationId, category: envelope.payload.category, status: "open", revenueHeld: true, ...(envelope.payload.safeSummary ? { safeSummary: envelope.payload.safeSummary.slice(0, 500) } : {}), evidenceReferences: Object.freeze([...(envelope.payload.evidenceReferences ?? [])].slice(0, 10)), openedAt: now.toISOString() };
     this.#complaints.set(envelope.payload.reservationId, [...(this.#complaints.get(envelope.payload.reservationId) ?? []), complaint]); this.#persist(envelope.payload.reservationId);
     this.#ownership?.requestHumanOwnership({ reservationId: complaint.reservationId, category: complaint.category, minimizedContext: { complaintId: complaint.complaintId, ...(complaint.safeSummary ? { safeSummary: complaint.safeSummary } : {}) } });
     this.#audit?.record({ type: "checkin_support.blocking_complaint_raised", complaintId: complaint.complaintId, reservationId: complaint.reservationId, complaintType: complaint.category, raisedAt: complaint.openedAt });
@@ -308,11 +326,37 @@ export class CheckInSupportManager {
     this.#hydrate(envelope.payload.reservationId); this.#requireScheduled(envelope.payload.reservationId);
     const existing = (this.#complaints.get(envelope.payload.reservationId) ?? []).find((c) => c.status !== "resolved" && c.category === envelope.payload.category);
     if (existing) return { ...existing };
-    const now = clock(); const complaint: BlockingFulfilmentComplaint = { complaintId: `cmpl_${envelope.payload.reservationId}_${envelope.payload.category}`, reservationId: envelope.payload.reservationId, category: envelope.payload.category, status: "open", revenueHeld: true, evidenceReferences: Object.freeze([]), openedAt: now.toISOString() };
+    const now = clock(); const complaint: BlockingFulfilmentComplaint = { complaintId: this.#complaintId(envelope.payload.reservationId, envelope.payload.category), reservationId: envelope.payload.reservationId, category: envelope.payload.category, status: "open", revenueHeld: true, evidenceReferences: Object.freeze([]), openedAt: now.toISOString() };
     this.#complaints.set(envelope.payload.reservationId, [...(this.#complaints.get(envelope.payload.reservationId) ?? []), complaint]); this.#persist(envelope.payload.reservationId);
     this.#ownership?.requestHumanOwnership({ reservationId: complaint.reservationId, category: complaint.category, minimizedContext: { complaintId: complaint.complaintId } });
     this.#audit?.record({ type: "checkin_support.blocking_complaint_raised", complaintId: complaint.complaintId, reservationId: complaint.reservationId, complaintType: complaint.category, raisedAt: complaint.openedAt, source: "support" });
     return { ...complaint };
+  }
+  /**
+   * Issue 10: platform support dismisses an open complaint that did not hold up, with a fixed reason and no free text
+   * (ADR 0075, 0091). Unknown or already-closed complaints are refused.
+   */
+  dismissBlockingComplaintAsSupport(envelope: PlatformCommandEnvelope<{ reservationId: string; complaintId: string; reason: ComplaintDismissalReason }>, clock: () => Date = () => new Date()): BlockingFulfilmentComplaint {
+    if (!envelope || envelope.commandName !== "checkin_support.support_dismiss_complaint" || !VALID_ROLES.has(envelope.principal.role)) throw new Error("Authorized support is required to dismiss a blocking complaint");
+    if (Object.keys(envelope.payload).some((key) => !["reservationId", "complaintId", "reason"].includes(key))) throw new Error("Complaint dismissal accepts only reservationId, complaintId and reason");
+    if (!isComplaintDismissalReason(envelope.payload.reason)) throw new Error("Unknown complaint dismissal reason");
+    this.#hydrate(envelope.payload.reservationId);
+    const complaints = this.#complaints.get(envelope.payload.reservationId) ?? [];
+    const complaint = complaints.find((candidate) => candidate.complaintId === envelope.payload.complaintId);
+    if (!complaint) throw new Error("Blocking complaint not found");
+    if (complaint.status === "resolved") throw new Error("Blocking complaint is already resolved");
+    const resolved: BlockingFulfilmentComplaint = { ...complaint, status: "resolved", resolvedAt: clock().toISOString(), resolution: envelope.payload.reason };
+    this.#complaints.set(envelope.payload.reservationId, complaints.map((candidate) => candidate === complaint ? resolved : candidate)); this.#persist(envelope.payload.reservationId);
+    this.#audit?.record({ type: "checkin_support.blocking_complaint_dismissed", complaintId: resolved.complaintId, reservationId: resolved.reservationId, reason: envelope.payload.reason, resolvedAt: resolved.resolvedAt, source: "support" });
+    return { ...resolved };
+  }
+  /** One id per complaint: a category reported again after a dismissal gets a numbered id. */
+  #complaintId(reservationId: string, category: ComplaintCategory): string {
+    const base = `cmpl_${reservationId}_${category}`;
+    const taken = new Set((this.#complaints.get(reservationId) ?? []).map((complaint) => complaint.complaintId));
+    let id = base;
+    for (let n = 2; taken.has(id); n += 1) id = `${base}_${n}`;
+    return id;
   }
   hasUnresolvedBlockingComplaint(reservationId: string): boolean { this.#hydrate(reservationId); return (this.#complaints.get(reservationId) ?? []).some((c) => c.status !== "resolved"); }
   projectCheckInStatusForGuest(reservationId: string, principal: CommandPrincipal) {

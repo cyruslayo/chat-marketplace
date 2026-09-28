@@ -19,10 +19,12 @@ import {
   isCalendarDate,
   lagosCalendarDate,
   COMPLAINT_CATEGORY_LABELS,
+  COMPLAINT_DISMISSAL_LABELS,
+  CheckInRefusedError,
   CheckInInputError,
   CheckInStaleError,
 } from "./local-owner-environment.js";
-import { ManualTransferError, OwnerPayoutError, addCalendarDays, type CalendarDayState, SUPPORT_VERIFICATION_BASES, type OwnerPayableStatus, type AccessStatus, type ComplaintCategory, type ManualTransferStatus, type SupportVerificationBasis } from "../../../domains/shortlet/src/index.js";
+import { ManualTransferError, OwnerPayoutError, type ComplaintDismissalReason, addCalendarDays, type CalendarDayState, SUPPORT_VERIFICATION_BASES, type OwnerPayableStatus, type AccessStatus, type ComplaintCategory, type ManualTransferStatus, type SupportVerificationBasis } from "../../../domains/shortlet/src/index.js";
 import { BOOKING_ENDED_REASONS, BOOKING_PAYMENT_METHOD_LABELS, BOOKING_STAGE_LABELS, type BookingStage } from "./booking-projection.js";
 import { escapeHtml, formatMoney, icon, pageShell, type StatusTone } from "../../web/src/ui-kit.js";
 import { OPERATOR_RESPONSE_REMINDER_MINUTES, operatorResponseReminderDue, type OperatorAuthenticatedPrincipal } from "../../../domains/shortlet/src/index.js";
@@ -370,13 +372,22 @@ function checkInFormsHtml(reservation: OperatorReservation): string {
   return `<section class="ui-panel" aria-labelledby="checkin-heading"><h2 id="checkin-heading">Check-in</h2>${access}${complaint}</section>`;
 }
 
+/**
+ * Issue 10: close an open complaint that did not hold up, with one fixed reason and no free text (ADR 0075, 0091).
+ * An upheld complaint is not dismissed here; it stays open until its cancellation or remedy is recorded (ADR 0089).
+ */
+function dismissComplaintForm(reservation: OperatorReservation, complaintId: string): string {
+  const reasons = (Object.keys(COMPLAINT_DISMISSAL_LABELS) as ComplaintDismissalReason[]).map((code) => `<label class="bo-choice"><input type="radio" name="reason" value="${code}" required> ${escapeHtml(COMPLAINT_DISMISSAL_LABELS[code])}</label>`).join("");
+  return `<details class="ui-confirm"><summary>Dismiss this complaint…</summary><div class="ui-confirm__body"><form method="post" action="/operator/bookings/${encodeURIComponent(reservation.requestId)}/blocking-complaint/${encodeURIComponent(complaintId)}/dismiss" class="ui-stack"><input type="hidden" name="basedOnVersion" value="${escapeHtml(reservation.version)}"><fieldset class="bo-reasons"><legend>Why is the complaint closed?</legend>${reasons}</fieldset><p>Only dismiss a complaint that did not hold up. If it was upheld, leave it open: the owner payable stays paused until the cancellation or remedy is recorded.</p><button class="ui-button ui-button--secondary ui-button--block" type="submit">Dismiss complaint</button></form></div></details>`;
+}
+
 function operatorReservationHtml(env: LocalApartmentOwnerEnvironment, principal: OperatorPrincipal, requestId: string, error = ""): string {
   const reservation = env.operatorReservation(requestId, commandPrincipal(principal));
   const window = reservation.checkInWindow ? `${reservation.checkInWindow.earliestAccessTime}–${reservation.checkInWindow.latestPermittedArrival} WAT` : "Not on file";
   const payable = reservation.openComplaints.length > 0
     ? "Not due while a Blocking Fulfilment Complaint is open"
     : reservation.ownerPayableDueAt ? `Due ${watTime(reservation.ownerPayableDueAt)}` : "Not due until Verified Access is recorded";
-  const complaints = reservation.openComplaints.map((category) => `<dt>Open Blocking Fulfilment Complaint</dt><dd>${escapeHtml(COMPLAINT_CATEGORY_LABELS[category])}</dd>`).join("");
+  const complaints = reservation.openComplaints.map((complaint) => `<dt>Open Blocking Fulfilment Complaint</dt><dd>${escapeHtml(COMPLAINT_CATEGORY_LABELS[complaint.category])}${dismissComplaintForm(reservation, complaint.complaintId)}</dd>`).join("");
   const facts = `<dl class="ui-facts"><dt>Owner</dt><dd>${escapeHtml(reservation.ownerName)}</dd><dt>Apartment</dt><dd>${escapeHtml(reservation.apartmentTitle)}</dd><dt>Dates</dt><dd>${escapeHtml(formatStayDates(reservation.checkIn, reservation.checkOut))} (${reservation.nights} ${reservation.nights === 1 ? "night" : "nights"})</dd><dt>Guest party</dt><dd>${reservation.partySize} ${reservation.partySize === 1 ? "occupant" : "occupants"}</dd><dt>Arrival window</dt><dd>${escapeHtml(window)}</dd><dt>Checkout</dt><dd>${reservation.checkoutTime ? `${escapeHtml(reservation.checkoutTime)} WAT` : "Not on file"}</dd>${reservation.phoneNumber ? `<dt>Guest phone</dt><dd>${escapeHtml(reservation.phoneNumber)}</dd>` : ""}<dt>Amount paid</dt><dd class="ui-money-total">${formatMoney(reservation.amountPaidKobo)}</dd><dt>Payment method</dt><dd>${escapeHtml(reservation.paidWith ? BOOKING_PAYMENT_METHOD_LABELS[reservation.paidWith] : "Not on file")}</dd></dl>`;
   const status = `<dl class="ui-facts"><dt>Check-in</dt><dd>${escapeHtml(ACCESS_STATUS_LABELS[reservation.accessStatus])}</dd>${complaints}<dt>Owner payable</dt><dd>${payable}</dd></dl>`;
   return backOfficePage({
@@ -389,9 +400,9 @@ function operatorReservationHtml(env: LocalApartmentOwnerEnvironment, principal:
 }
 
 /** Only the fields each check-in form sends are accepted, so no free text can ride along (ADR 0075, 0091). */
-function checkInFromForm(kind: "verified-access" | "blocking-complaint", body: string): { readonly basedOnVersion: string; readonly value: string } {
+function checkInFromForm(kind: "verified-access" | "blocking-complaint" | "dismiss", body: string): { readonly basedOnVersion: string; readonly value: string } {
   const params = new URLSearchParams(body);
-  const field = kind === "verified-access" ? "basis" : "category";
+  const field = kind === "verified-access" ? "basis" : kind === "blocking-complaint" ? "category" : "reason";
   const keys = [...params.keys()];
   if (keys.some((key) => key !== "basedOnVersion" && key !== field) || new Set(keys).size !== keys.length) throw new DecisionFormError("Unexpected check-in fields");
   const version = params.get("basedOnVersion") ?? "";
@@ -404,6 +415,7 @@ function checkInRefusal(error: unknown): string {
   if (error instanceof CheckInInputError) return `${error.message}. Nothing was recorded.`;
   if (error instanceof DecisionFormError) return "This form could not be read. Review the Reservation and try again. Nothing was recorded.";
   if (error instanceof CheckInStaleError) return "This Reservation changed since you opened it. Review it and try again. Nothing was recorded.";
+  if (error instanceof CheckInRefusedError) return `${error.message}. Nothing was recorded.`;
   const message = error instanceof Error ? error.message : "";
   const known = ["Verified Access cannot be recorded before the Contractual Check-In Window begins", "Verified Access is already recorded for this Reservation", "This Reservation has no Contractual Check-In Window on file"].find((text) => message.includes(text));
   return known ? `${known}. Nothing was recorded.` : "This action could not be completed. Nothing was recorded.";
@@ -1271,6 +1283,28 @@ export function startLocalOwnerServer(options: {
         let body = "Calendar action rejected";
         try { body = operatorCalendarHtml(env, principal, from, refusal.message, refusal.requestId); } catch { /* keep generic */ }
         if (!res.headersSent) { res.writeHead(refusal.status, { "Content-Type": body.startsWith("<!doctype") ? "text/html; charset=utf-8" : "text/plain; charset=utf-8" }); res.end(body); }
+      }
+      return;
+    }
+    // Issue 10: dismiss an open complaint. Same guards and refusals as the other check-in actions (ADR 0086, 0082).
+    const dismissMatch = url.pathname.match(/^\/operator\/bookings\/([^/]+)\/blocking-complaint\/([^/]+)\/dismiss$/);
+    if (req.method === "POST" && dismissMatch) {
+      if (!browserOriginAccepted(req)) { res.writeHead(403); res.end("Origin rejected"); return; }
+      const principal = operatorPrincipal(req, env);
+      if (!principal) { res.writeHead(401); res.end("Authentication required"); return; }
+      const requestId = pathSegment(dismissMatch[1]!);
+      const complaintId = pathSegment(dismissMatch[2]!);
+      if (requestId === null || complaintId === null) { res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }); res.end("Not found"); return; }
+      try {
+        const form = checkInFromForm("dismiss", await readForm(req));
+        env.dismissBlockingComplaint(requestId, commandPrincipal(principal), { complaintId, reason: form.value, basedOnVersion: form.basedOnVersion });
+        res.writeHead(303, { Location: `/operator/bookings/${encodeURIComponent(requestId)}` }); res.end();
+      } catch (error) {
+        let body: string;
+        try { body = operatorReservationHtml(env, principal, requestId, checkInRefusal(error)); }
+        catch { if (!res.headersSent) { res.writeHead(404, { "Content-Type": "text/html; charset=utf-8" }); res.end(bookingNotFoundHtml(env, principal)); } return; }
+        const statusCode = error instanceof CheckInInputError || error instanceof DecisionFormError ? 400 : 409;
+        if (!res.headersSent) { res.writeHead(statusCode, { "Content-Type": "text/html; charset=utf-8" }); res.end(body); }
       }
       return;
     }

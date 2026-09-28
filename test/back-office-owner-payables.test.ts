@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { CancellationNoShowManager, type BookingContract, type OwnerSettlementSnapshot } from "../domains/shortlet/src/index.js";
-import { FOREIGN_ORIGIN, decideRequest, operatorGet, operatorPost, revokeRepresentativeGrant, signInOperator, startSignedInOperator, type SignedInOperator } from "./helpers/operator-session.js";
-import { TEST_CARD_LAST4, TEST_PAYER_EMAIL, guestCardPayments } from "./helpers/guest-card-payment.js";
+import { FOREIGN_ORIGIN, decideRequest, operatorGet, operatorPost, revokeRepresentativeGrant, startSignedInOperator, type SignedInOperator } from "./helpers/operator-session.js";
+import { TEST_CARD_LAST4, TEST_PAYER_EMAIL } from "./helpers/guest-card-payment.js";
 import { repricedByOwner } from "./helpers/owner-terms.js";
+import { cookieOf, openComplaint, principal, recordAccess, reservation, travelTo, windowOpens } from "./helpers/back-office-reservation.js";
 import { SECOND_OWNER, SECOND_OWNER_ID, SECOND_UNIT_ID, addSecondOwner as addSecondOwnerTo, visibleText } from "./helpers/back-office-page.js";
 import { formatWat } from "../apps/local-owner/src/back-office-view.js";
 import { formatMoney } from "../apps/web/src/ui-kit.js";
@@ -13,40 +14,6 @@ import { formatMoney } from "../apps/web/src/ui-kit.js";
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const OWNER = "Eko Prime Living Ltd";
-/** The fixture unit's Contractual Check-In Window (ADR 0031) opens 2:00 PM WAT on the check-in date. */
-const windowOpens = (checkIn: string) => new Date(`${checkIn}T13:00:00Z`);
-
-/** A jump of days outlives the 12-hour session (ADR 0086), so tests sign in again after moving the clock. */
-const cookies = new WeakMap<SignedInOperator, string>();
-const cookieOf = (f: SignedInOperator) => cookies.get(f) ?? f.session.cookie;
-async function travelTo(f: SignedInOperator, instant: Date) {
-  f.advance(instant.getTime() - f.now().getTime());
-  cookies.set(f, await signInOperator(f.server));
-}
-
-let guests = 0;
-/** A paid Reservation, confirmed in the back office and paid by card on the Guest side. */
-async function reservation(f: SignedInOperator, checkIn: string, checkOut: string, unitId?: string): Promise<string> {
-  guests += 1;
-  const id = f.server.environment.createDemoIncomingBookingRequest({ guestId: `payable-guest-${guests}`, guestName: `Payable Guest ${guests}`, checkIn, checkOut, ...(unitId ? { unitId } : {}) }).facts.requestId;
-  assert.equal((await decideRequest({ ...f.session, cookie: cookieOf(f) }, id, "confirm")).status, 303);
-  const guest = guestCardPayments(f.server.environment);
-  try { guest.pay(id); } finally { guest.close(); }
-  return id;
-}
-
-const principal = (f: SignedInOperator) => f.server.environment.getRepresentativePrincipal();
-
-function recordAccess(f: SignedInOperator, id: string) {
-  const env = f.server.environment;
-  env.recordVerifiedAccess(id, principal(f), { basis: "guest_confirmed_directly", basedOnVersion: env.operatorReservation(id, principal(f)).version });
-}
-
-function openComplaint(f: SignedInOperator, id: string) {
-  const env = f.server.environment;
-  env.reportBlockingComplaint(id, principal(f), { category: "habitability_failure", basedOnVersion: env.operatorReservation(id, principal(f)).version });
-}
-
 /** The settlement captured at confirmation (P4), read straight from the stored offer. */
 function settlement(f: SignedInOperator, id: string): OwnerSettlementSnapshot {
   const offer = f.server.environment.interactionStore.findConditionalOfferByRequestId(id);
