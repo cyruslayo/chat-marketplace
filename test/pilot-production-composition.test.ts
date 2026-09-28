@@ -1,62 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
-import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { loadPilotConfiguration } from "../apps/pilot/src/pilot-config.js";
 import { startPilotServer } from "../apps/pilot/src/pilot-server.js";
 import { createPlatformCommandEnvelope } from "../packages/platform-core/src/index.js";
-import { DirectPaystackClient, SqliteOperatorRepresentativeGrantStore, SqliteOperatorSessionAuthority, type PaystackClient, type PaystackHttpFetcher, type Unit } from "../domains/shortlet/src/index.js";
+import { DirectPaystackClient, SqliteOperatorRepresentativeGrantStore, SqliteOperatorSessionAuthority, type PaystackClient, type PaystackHttpFetcher } from "../domains/shortlet/src/index.js";
 import { operatorCookieFrom, postOperatorLogin } from "./helpers/operator-session.js";
+import { PUBLIC_ORIGIN, productionFixture, type ProductionFixture } from "./helpers/pilot-fixture.js";
 import type { AssistantModelClient, AssistantModelRequest } from "../apps/local-guest/src/assistant/assistant-model.js";
 
-const PUBLIC_ORIGIN = "https://pilot.example.com";
-
-interface ProductionFixture {
-  readonly directory: string;
-  readonly configuration: ReturnType<typeof loadPilotConfiguration>;
-  readonly paystack: PaystackClient;
-}
-
-async function productionFixture(options: { readonly noDeposit?: boolean; readonly environment?: Readonly<Record<string, string>> } = {}): Promise<ProductionFixture> {
-  const directory = await mkdtemp(join(tmpdir(), "shortlet-pilot-composition-"));
-  const source = new LocalGuestEnvironment({ databasePath: join(directory, "source.sqlite") });
-  const units = source.unitRepository.findAll() as Unit[];
-  source.close();
-  const unit = options.noDeposit
-    ? { ...units[0]!, price: { ...units[0]!.price, refundableSecurityDepositKobo: 0 } }
-    : units[0]!;
-  const operator = {
-    id: unit.operator.id,
-    tenantId: "tenant-pilot",
-    name: unit.operator.name,
-    status: unit.operator.status,
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-  };
-  const inventoryPath = join(directory, "inventory.json");
-  const operatorsPath = join(directory, "operators.json");
-  await writeFile(inventoryPath, JSON.stringify([unit]), "utf8");
-  await writeFile(operatorsPath, JSON.stringify([operator]), "utf8");
-  const configuration = loadPilotConfiguration({
-    SHORTLET_PUBLIC_ORIGIN: PUBLIC_ORIGIN,
-    SHORTLET_DB_PATH: join(directory, "pilot.sqlite"),
-    SHORTLET_INVENTORY_PATH: inventoryPath,
-    SHORTLET_OPERATORS_PATH: operatorsPath,
-    PAYSTACK_SECRET_KEY: "sk_live_test-only",
-    PAYSTACK_ENVIRONMENT: "live",
-    ...options.environment,
-  });
-  const paystack: PaystackClient = {
-    configuration: { environment: configuration.paystack.environment, callbackBaseUrl: PUBLIC_ORIGIN },
-    initializeTransaction: async () => { throw new Error("Paystack network is not part of this test"); },
-    verifyTransaction: async () => { throw new Error("Paystack network is not part of this test"); },
-    verifyWebhookSignature: () => false,
-  };
-  return { directory, configuration, paystack };
-}
 
 function cookieFromSetCookie(response: Response): string {
   const value = response.headers.get("set-cookie");

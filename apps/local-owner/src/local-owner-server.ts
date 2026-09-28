@@ -1216,8 +1216,9 @@ export function startLocalOwnerServer(options: {
     }
     if (req.method === "POST" && url.pathname === "/operator/login") {
       if (!browserOriginAccepted(req)) { res.writeHead(403); res.end("Origin rejected"); return; }
-      const buffers: Buffer[] = []; for await (const chunk of req) buffers.push(Buffer.from(chunk));
-      const params = new URLSearchParams(Buffer.concat(buffers).toString("utf8"));
+      // Issue 19: the login form is one token field, so the shared 4 KiB form ceiling applies.
+      let params: URLSearchParams;
+      try { params = new URLSearchParams(await readForm(req)); } catch { res.writeHead(413, { "Content-Type": "text/html; charset=utf-8" }); res.end(operatorLoginHtml("That sign-in request is too large.")); return; }
       try {
         const result = env.sessionAuthority.authenticateAccessToken(params.get("token") ?? "");
         res.setHeader("Set-Cookie", [`${OPERATOR_SESSION_COOKIE}=${encodeURIComponent(result.sessionId)}${cookieFlags}`, `${OPERATOR_SECRET_COOKIE}=${encodeURIComponent(result.sessionSecret)}${cookieFlags}`]);

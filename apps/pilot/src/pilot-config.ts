@@ -30,6 +30,46 @@ export interface PilotEnvironmentSource extends PaystackEnvironmentSource, Conci
   readonly SHORTLET_DEPLOYMENT?: string;
   /** Staging only: the code invited testers need before a Guest session starts. */
   readonly SHORTLET_BETA_INVITE_CODE?: string;
+  /** Issue 19 guardrails; each is a positive whole number and has a documented default. */
+  readonly SHORTLET_CHAT_TURNS_PER_SESSION_PER_HOUR?: string;
+  readonly SHORTLET_CHAT_TURNS_PER_ADDRESS_PER_HOUR?: string;
+  readonly SHORTLET_NEW_SESSIONS_PER_ADDRESS_PER_HOUR?: string;
+  readonly SHORTLET_OPERATOR_LOGINS_PER_ADDRESS_PER_HOUR?: string;
+  readonly SHORTLET_GUEST_RUNTIME_IDLE_MINUTES?: string;
+  readonly CONCIERGE_DAILY_MODEL_CALL_CAP?: string;
+}
+
+/**
+ * Issue 19 defaults. They are operational guardrails, not domain policy: generous for one person chatting, and
+ * above what a shared mobile-carrier address serves during the closed beta. Override per deployment.
+ */
+export const PILOT_LIMIT_DEFAULTS = Object.freeze({
+  chatTurnsPerSessionPerHour: 60,
+  chatTurnsPerAddressPerHour: 600,
+  newSessionsPerAddressPerHour: 120,
+  operatorLoginsPerAddressPerHour: 10,
+  sessionRuntimeIdleMinutes: 30,
+  dailyModelCallCap: 3000,
+});
+
+export type PilotLimits = { readonly [Key in keyof typeof PILOT_LIMIT_DEFAULTS]: number };
+
+function positiveWholeNumber(value: string | undefined, key: string, fallback: number): number {
+  const setting = value?.trim() ?? "";
+  if (setting === "") return fallback;
+  if (!/^\d+$/.test(setting) || Number(setting) < 1 || !Number.isSafeInteger(Number(setting))) throw new Error(`${key} must be a positive whole number`);
+  return Number(setting);
+}
+
+export function pilotLimits(source: PilotEnvironmentSource): PilotLimits {
+  return Object.freeze({
+    chatTurnsPerSessionPerHour: positiveWholeNumber(source.SHORTLET_CHAT_TURNS_PER_SESSION_PER_HOUR, "SHORTLET_CHAT_TURNS_PER_SESSION_PER_HOUR", PILOT_LIMIT_DEFAULTS.chatTurnsPerSessionPerHour),
+    chatTurnsPerAddressPerHour: positiveWholeNumber(source.SHORTLET_CHAT_TURNS_PER_ADDRESS_PER_HOUR, "SHORTLET_CHAT_TURNS_PER_ADDRESS_PER_HOUR", PILOT_LIMIT_DEFAULTS.chatTurnsPerAddressPerHour),
+    newSessionsPerAddressPerHour: positiveWholeNumber(source.SHORTLET_NEW_SESSIONS_PER_ADDRESS_PER_HOUR, "SHORTLET_NEW_SESSIONS_PER_ADDRESS_PER_HOUR", PILOT_LIMIT_DEFAULTS.newSessionsPerAddressPerHour),
+    operatorLoginsPerAddressPerHour: positiveWholeNumber(source.SHORTLET_OPERATOR_LOGINS_PER_ADDRESS_PER_HOUR, "SHORTLET_OPERATOR_LOGINS_PER_ADDRESS_PER_HOUR", PILOT_LIMIT_DEFAULTS.operatorLoginsPerAddressPerHour),
+    sessionRuntimeIdleMinutes: positiveWholeNumber(source.SHORTLET_GUEST_RUNTIME_IDLE_MINUTES, "SHORTLET_GUEST_RUNTIME_IDLE_MINUTES", PILOT_LIMIT_DEFAULTS.sessionRuntimeIdleMinutes),
+    dailyModelCallCap: positiveWholeNumber(source.CONCIERGE_DAILY_MODEL_CALL_CAP, "CONCIERGE_DAILY_MODEL_CALL_CAP", PILOT_LIMIT_DEFAULTS.dailyModelCallCap),
+  });
 }
 
 export type PilotDeployment = "production" | "staging";
@@ -56,6 +96,8 @@ export interface PilotConfiguration {
   readonly receiptMaxBytes: number | null;
   /** Validated at startup so a mistyped CONCIERGE_MODE can never silently switch the AI concierge off. */
   readonly concierge: ConciergeConfiguration;
+  /** Issue 19: rate limits, the daily model-call cap and the idle session-runtime lifetime. */
+  readonly limits: PilotLimits;
 }
 
 function required(source: PilotEnvironmentSource, key: keyof PilotEnvironmentSource): string {
@@ -168,6 +210,7 @@ export function loadPilotConfiguration(source: PilotEnvironmentSource = process.
     deployment,
     betaInviteCode: inviteCode,
     concierge,
+    limits: pilotLimits(source),
     paystackTransfersEnabled: paystackTransfersEnabled(source.SHORTLET_PAYSTACK_TRANSFERS),
     manualTransferAccount: manualTransferAccount(source),
     receiptMaxBytes: receiptMaxBytes(source.SHORTLET_RECEIPT_MAX_BYTES),
