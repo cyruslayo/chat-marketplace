@@ -68,6 +68,7 @@ import {
 import { resolveConditionalOfferServerEvent } from "../../../apps/web/src/conditional-offer-actions.js";
 import { CARD_PAYMENT_INITIALIZE_CHECKOUT_EVENT, resolveCardPaymentServerEvent } from "../../../apps/web/src/card-payment-actions.js";
 import { createStayQuote, isEligibleUnit, normalizePhotoUrls, type Unit } from "../../../domains/shortlet/src/index.js";
+import { LISTING_GALLERY_STYLE, listingGalleryHtml } from "./listing-gallery.js";
 import { requestDraftArtifactFromProjection, requestDraftArtifactId } from "../../../apps/web/src/request-draft-artifact.js";
 import type { RequestDraftArtifact } from "../../../apps/web/src/request-draft-artifact.js";
 import type { ConditionalOfferArtifact } from "../../../apps/web/src/conditional-offer-artifact.js";
@@ -2499,8 +2500,7 @@ export function renderGuestShellHtml(): string {
     /* AC3 / ADR-0078: at narrow widths the stays stack under each attribute. */
     @media (max-width: 29.999rem) { .compare-row { grid-template-columns: minmax(0, 1fr) !important; gap: var(--space-2) !important; } }
     .unit-detail-root { display: grid !important; min-width: 0; gap: var(--space-4) !important; }
-    .unit-gallery { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr); gap: var(--space-2); }
-    .unit-gallery > img { width: 100% !important; max-width: none !important; min-width: 0; margin: 0 !important; object-fit: cover !important; }
+    ${LISTING_GALLERY_STYLE}
     .unit-gallery--fallback { padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface-soft); }
     .unit-photo-missing { display: grid; min-height: 10rem; place-items: center; margin: 0; color: var(--color-text-secondary); text-align: center; }
     .unit-overview { display: grid; min-width: 0; gap: var(--space-2); }
@@ -2569,8 +2569,6 @@ export function renderGuestShellHtml(): string {
     #working-status { grid-column: 1 / -1; margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-small); }
     @media (min-width: 48rem) {
       #transcript, #workspace-region, form#composer, #journey-rail, #criteria-strip { padding-left: var(--layout-gutter-tablet); padding-right: var(--layout-gutter-tablet); }
-      .unit-gallery--mosaic { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .unit-gallery--mosaic img:first-of-type { grid-column: 1 / -1; }
     }
     @media (min-width: 64rem) { .app { max-width: var(--layout-conversation-max); } #transcript, #workspace-region, form#composer, #journey-rail, #criteria-strip { padding-left: var(--layout-gutter-desktop); padding-right: var(--layout-gutter-desktop); } }
     @media (max-width: 47.999rem) { .header-note { display: none; } #active-workspace[data-mode="focused-surface"] { scroll-margin-block: var(--space-3); } }
@@ -2692,12 +2690,14 @@ function readJsonBody(req: IncomingMessage): Promise<unknown> {
 
 export function renderConventionalUnitDetailHtml(unit: Unit, photoUrl?: (url: string) => string): string {
   const photos = normalizePhotoUrls(unit.photoUrls);
+  // Guest gallery issue 01: the shared gallery. Every photo shows and links to its full image without JavaScript
+  // (ADR 0080); /gallery.js adds the strip count, "Show all" and the full-screen viewer.
   const photoMarkup = photos.length === 0
     ? `<p class="ui-image-frame" role="status">Photos are not available for this ${GUEST_GLOSSARY.unit} yet.</p>`
-    : `<div class="unit-page-gallery" aria-label="Photos of ${escapeHtml(unit.title)}">${photos.map((url, index) => `<div class="ui-image-frame"><img src="${escapeHtml(photoUrl ? photoUrl(url) : url)}" alt="Photo ${index + 1} of ${escapeHtml(unit.title)}" loading="${index === 0 ? "eager" : "lazy"}" decoding="async" width="800" height="600" referrerpolicy="no-referrer"></div>`).join("")}</div>`;
+    : `${listingGalleryHtml({ title: unit.title, photos: photos.map((url, index) => ({ src: photoUrl ? photoUrl(url) : url, alt: `Photo ${index + 1} of ${unit.title}` })) })}<script src="/gallery.js" defer></script>`;
   return pageShell({
     title: unit.title,
-    style: ".unit-page-gallery{display:grid;gap:var(--space-3)}@media (min-width:48rem){.unit-page-gallery{grid-template-columns:repeat(2,minmax(0,1fr))}.unit-page-gallery>:first-child{grid-column:1/-1}}.ui-panel p{margin:0}.unit-page-description{white-space:pre-line}",
+    style: `${LISTING_GALLERY_STYLE}.ui-panel p{margin:0}.unit-page-description{white-space:pre-line}`,
     body: `<header class="ui-page__header"><p class="ui-eyebrow">Entire place</p><h1>${escapeHtml(unit.title)}</h1><p>${escapeHtml(unit.location.neighbourhood)}, ${escapeHtml(unit.location.city)}</p></header>${photoMarkup}<section class="ui-panel" aria-label="Stay facts"><div><p class="ui-field__hint">Price per night (indicative)</p><p class="ui-money-total">${formatNgnKobo(unit.price.nightlyKobo)} <span class="ui-money-metadata">per night</span></p></div><p class="ui-money-metadata">Bedrooms: ${unit.bedrooms ?? "Not provided"} · Bathrooms: ${unit.bathrooms} · Capacity: ${unit.capacity} guests · Entire Place</p><p class="unit-page-description">${escapeHtml(unit.description)}</p><div class="ui-row"><a class="ui-button ui-button--primary" href="/">Continue to Request to Book</a></div></section>`,
   });
 }
@@ -2997,6 +2997,8 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
 }
 
 const GUEST_SESSION_COOKIE = "shortlet_guest_session";
+/** Static assets the public /stays/* pages load; never refused for a stale session. */
+const PUBLIC_GUEST_PATHS: ReadonlySet<string> = new Set(["/client.js", "/gallery.js", "/shortlet-foundations.css"]);
 const GUEST_SESSION_PATTERN = /^gs-[a-f0-9-]{36}$/;
 
 function readGuestSession(req: IncomingMessage): string | null | undefined {
@@ -3292,7 +3294,8 @@ export function startLocalGuestServer(options: {
     let requestSession: BrowserSession | null = null;
     if (rawSession !== undefined && rawSession !== null) {
       requestSession = resolveBrowserSession(env, browserSessions, rawSession, sessionScopedGuestPrincipals ? undefined : env.config.guestId);
-      if (!requestSession && sessionScopedGuestPrincipals && url.pathname !== "/client.js" && !url.pathname.startsWith("/stays/")) {
+      // Public pages and their static assets load for anyone, even with an expired or unknown session cookie.
+      if (!requestSession && sessionScopedGuestPrincipals && !PUBLIC_GUEST_PATHS.has(url.pathname) && !url.pathname.startsWith("/stays/")) {
         sendJson(res, 401, { ok: false, code: "AUTHENTICATION_REQUIRED" });
         return;
       }
@@ -3387,6 +3390,18 @@ export function startLocalGuestServer(options: {
       return;
     }
 
+    // Guest gallery issue 01: the full apartment page's script. Public, like /stays/* itself.
+    if (req.method === "GET" && url.pathname === "/gallery.js") {
+      try {
+        const script = readFileSync(join(dirname(clientScriptPath), "gallery.js"), "utf8");
+        res.writeHead(200, { "Content-Type": "text/javascript; charset=utf-8" });
+        res.end(script);
+      } catch {
+        res.writeHead(404, { "Content-Type": "text/plain" });
+        res.end("Gallery script missing; run npm run guest:local to build it.");
+      }
+      return;
+    }
     if (req.method === "GET" && url.pathname === "/client.js") {
       try {
         const script = readFileSync(clientScriptPath, "utf8");

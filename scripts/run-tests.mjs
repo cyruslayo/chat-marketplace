@@ -11,7 +11,15 @@ import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const tsx = join(root, "node_modules", "tsx", "dist", "cli.mjs");
 const files = readdirSync(join(root, "test")).filter((name) => name.endsWith(".test.ts")).sort().map((name) => `test/${name}`);
-const drivesBrowser = (file) => readFileSync(join(root, file), "utf8").includes("launchRealBrowser");
+// A file drives a real Chrome if it calls launchRealBrowser itself or imports a helper that does
+// (for example test/helpers/listing-photo-browser.ts).
+const browserHelpers = readdirSync(join(root, "test", "helpers"))
+  .filter((name) => name.endsWith(".ts") && name !== "chrome-devtools.ts" && readFileSync(join(root, "test", "helpers", name), "utf8").includes("launchRealBrowser"))
+  .map((name) => `./helpers/${name.replace(/\.ts$/, ".js")}`);
+const drivesBrowser = (file) => {
+  const source = readFileSync(join(root, file), "utf8");
+  return source.includes("launchRealBrowser") || browserHelpers.some((helper) => source.includes(`"${helper}"`));
+};
 const browserFiles = files.filter(drivesBrowser);
 const otherFiles = files.filter((file) => !browserFiles.includes(file));
 const extra = process.argv.slice(2);
