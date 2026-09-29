@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { restartFixture } from "./helpers/guest-restart.js";
@@ -69,14 +70,16 @@ test("Warm editorial conventional stay cards lead with real photos and separate 
     const first = artifact.facts.results[0]!;
     const withPhoto = { ...artifact, facts: { ...artifact.facts, results: [{ ...first, photoUrls: ["https://images.example/stay.jpg"] }, ...artifact.facts.results.slice(1)] } };
     const html = renderConventionalSearchHtml(withPhoto, () => "/photos/stay.jpg");
-    assert.match(html, /class="stay-card-photo" src="\/photos\/stay.jpg"/);
+    assert.match(html, /class="ui-stay-card__photo" src="\/photos\/stay.jpg"/);
     assert.match(html, /referrerpolicy="no-referrer"/);
     assert.match(html, /alt="Photo of /);
-    assert.match(html, /class="stay-card-facts"/);
+    assert.match(html, /class="ui-stay-card__facts"/);
     assert.match(html, /All-In Stay Total(?: for \d+ nights?)? · all-in/);
     assert.match(html, /Refundable Security Deposit \(separate\):/);
-    assert.match(html, /aspect-ratio:4\/3/);
-    assert.match(html, /border-radius:var\(--radius-card\)/);
+    // The card styling is the shared kit, not inline page CSS (guest-ui-consistency issue 02).
+    const foundations = await readFile(new URL("../apps/web/src/shortlet-foundations.css", import.meta.url), "utf8");
+    assert.match(foundations, /\.ui-stay-card__photo \{[^}]*aspect-ratio: 4 \/ 3/);
+    assert.match(foundations, /\.ui-stay-card__photo \{[^}]*border-radius: var\(--radius-card\)/);
     assert.doesNotMatch(html, /Verified badge|★/);
   } finally { await fixture.close(); }
 });

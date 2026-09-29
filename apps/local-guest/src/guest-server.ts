@@ -51,6 +51,7 @@ import {
 } from "../../../apps/web-agent/src/index.js";
 import { unitDetailArtifactFromProjection } from "../../../apps/web/src/unit-detail-artifact.js";
 import { errorPage, escapeHtml, icon, pageShell, prefersHtml } from "../../../apps/web/src/ui-kit.js";
+import { bankDetailsHtml, deadlineBannerHtml, formatWAT, priceBreakdownHtml, stayCardHtml, stayTicketHtml, type StayTicketFacts } from "./guest-kit.js";
 import {
   resolveDiscoveryServerEvent,
 } from "../../../apps/web/src/discovery-actions.js";
@@ -218,35 +219,7 @@ export interface ConventionalStayDetails {
   readonly amountPaidKobo?: number;
 }
 
-interface GuestStayTicketFacts {
-  readonly unitTitle: string;
-  readonly checkIn: string;
-  readonly checkOut: string;
-  readonly nights: number;
-  readonly guestCount?: number;
-}
-
-const GUEST_STAY_PAYMENT_STYLE = ".ui-panel p{margin:0}.ui-ticket h2{margin:0;color:var(--color-text-on-inverse);font-family:var(--font-display);font-size:var(--font-size-h3);line-height:var(--font-line-h3)}.ui-price-breakdown{gap:var(--space-3)}.ui-price-breakdown__due{padding:var(--space-3);border:0;border-radius:var(--radius-control);background:var(--color-surface-inverse);color:var(--color-text-on-inverse);font-weight:650}.ui-price-breakdown__paid{padding-block-start:var(--space-3);border-block-start:1px solid var(--color-border-subtle);font-weight:650}.guest-editorial .ui-button--primary,.guest-editorial .ui-button--block{border-radius:var(--radius-pill)}";
-
-// Hidden until /payment.js reveals it: without JavaScript the account number stays plain, selectable text (ADR 0080).
-function copyAccountNumberHtml(accountNumber: string): string {
-  return ` <button class="ui-button ui-button--secondary transfer-copy" type="button" data-copy-text="${escapeHtml(accountNumber)}" hidden>Copy account number</button><span class="ui-field__hint transfer-copy-status" role="status" data-copy-status></span>`;
-}
-
-function formatTicketDate(value: string): string {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
-  const date = new Date(`${value}T00:00:00.000Z`);
-  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("en-NG", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(date);
-}
-
-function renderStayTicketHtml(facts: GuestStayTicketFacts): string {
-  const guests = facts.guestCount === undefined ? "" : ` · ${facts.guestCount} ${facts.guestCount === 1 ? "guest" : "guests"}`;
-  return `<section class="ui-ticket" aria-label="Your stay"><div><p class="ui-field__hint">Your stay</p><h2>${escapeHtml(facts.unitTitle)}</h2></div><div class="ui-ticket__dates"><div class="ui-ticket__date"><span class="ui-ticket__day">${escapeHtml(facts.checkIn.slice(8, 10))}</span><time datetime="${escapeHtml(facts.checkIn)}">${escapeHtml(formatTicketDate(facts.checkIn))}</time></div><span aria-hidden="true">→</span><div class="ui-ticket__date"><span class="ui-ticket__day">${escapeHtml(facts.checkOut.slice(8, 10))}</span><time datetime="${escapeHtml(facts.checkOut)}">${escapeHtml(formatTicketDate(facts.checkOut))}</time></div></div><p>${facts.nights} ${facts.nights === 1 ? "night" : "nights"}${guests}</p></section>`;
-}
-
-function renderPriceBreakdownHtml(input: { readonly allInStayTotalKobo?: number; readonly refundableSecurityDepositKobo?: number; readonly amountDueNowKobo?: number; readonly amountPaidKobo?: number; readonly heading?: string }): string {
-  return `<section class="ui-panel ui-price-breakdown" aria-label="Price breakdown">${input.heading ? `<p class="ui-field__hint">${escapeHtml(input.heading)}</p>` : ""}${input.allInStayTotalKobo === undefined ? "" : `<div><p class="ui-field__hint">${GUEST_GLOSSARY.allInStayTotal}</p><p class="ui-money-total">${formatNgnKobo(input.allInStayTotalKobo)}</p></div>`}${input.refundableSecurityDepositKobo === undefined || input.refundableSecurityDepositKobo <= 0 ? "" : `<p>${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(input.refundableSecurityDepositKobo)}</p>`}${input.amountDueNowKobo === undefined ? "" : `<p class="ui-price-breakdown__due">Amount due now: ${formatNgnKobo(input.amountDueNowKobo)}</p>`}${input.amountPaidKobo === undefined ? "" : `<p class="ui-price-breakdown__paid">Amount paid: ${formatNgnKobo(input.amountPaidKobo)}</p>`}</section>`;
-}
+type GuestStayTicketFacts = StayTicketFacts;
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -2420,10 +2393,6 @@ function readEventPayload(payload: unknown): GuestEventPayload | undefined {
   };
 }
 
-function formatWAT(iso: string): string {
-  return formatBookingDeadline(iso).replace(/^Pay by /, "");
-}
-
 /** The discovery surface for a stored artifact; restoring and going back present it identically. */
 function discoverySurface(artifact: DiscoveryArtifactProjection, surfaceId: string, compareSelection?: string): GuestSurfacePayload {
   return {
@@ -2864,11 +2833,10 @@ function matchConventionalBookingRoute(pathname: string): { readonly kind: Conve
 
 export function renderConventionalBookingHtml(page: ConventionalBookingPage): string {
   const stay = page.stay;
-  const ticket = stay ? `${renderStayTicketHtml(stay)}${renderPriceBreakdownHtml({ ...(stay.allInStayTotalKobo === undefined ? {} : { allInStayTotalKobo: stay.allInStayTotalKobo }), ...(stay.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: stay.refundableSecurityDepositKobo }), ...(stay.amountDueNowKobo === undefined ? {} : { amountDueNowKobo: stay.amountDueNowKobo, ...(stay.amountDueNowIsConditional ? { heading: "If your request is accepted" } : {}) }), ...(stay.amountPaidKobo === undefined ? {} : { amountPaidKobo: stay.amountPaidKobo }) })}` : "";
+  const ticket = stay ? `${stayTicketHtml(stay)}${priceBreakdownHtml({ ...(stay.allInStayTotalKobo === undefined ? {} : { allInStayTotalKobo: stay.allInStayTotalKobo }), ...(stay.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: stay.refundableSecurityDepositKobo }), ...(stay.amountDueNowKobo === undefined ? {} : { amountDueNowKobo: stay.amountDueNowKobo, ...(stay.amountDueNowIsConditional ? { heading: "If your request is accepted" } : {}) }), ...(stay.amountPaidKobo === undefined ? {} : { amountPaidKobo: stay.amountPaidKobo }) })}` : "";
   return pageShell({
     title: `${page.summary} · Shortlet`,
     width: "narrow",
-    style: GUEST_STAY_PAYMENT_STYLE,
     body: `<div class="guest-editorial"><header class="ui-page__header" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h1>${escapeHtml(page.summary)}</h1></header>${ticket}<section class="ui-panel"><p>${escapeHtml(page.textFallback)}</p><a class="ui-button ui-button--primary ui-button--block" href="/?threadId=${encodeURIComponent(page.threadId)}">Back to your conversation</a></section></div>`,
   });
 }
@@ -2916,15 +2884,11 @@ function quotedNightCount(checkIn: unknown, checkOut: unknown): number | undefin
 
 export function renderConventionalSearchHtml(artifact: DiscoveryArtifactProjection, photoUrl?: (url: string) => string): string {
   const { checkIn, checkOut } = artifact.facts.filters;
+  const nights = quotedNightCount(checkIn, checkOut);
   const cards = artifact.facts.results.map((unit) => {
     const route = artifact.actions.find((action) => action.type === "view-unit" && action.unitId === unit.id)?.conventionalRoute ?? `/stays/${encodeURIComponent(unit.id)}`;
-    const total = unit.price.allInStayTotalKobo === null ? "not yet quoted" : formatNgnKobo(unit.price.allInStayTotalKobo);
     const photo = unit.photoUrls[0];
-    const photoMarkup = photo
-      ? `<img class="stay-card-photo" src="${escapeHtml(photoUrl ? photoUrl(photo) : photo)}" alt="Photo of ${escapeHtml(unit.title)}" width="800" height="600" loading="lazy" decoding="async" referrerpolicy="no-referrer">`
-      : `<div class="stay-card-photo stay-card-photo--empty" role="img" aria-label="Photos are not available for ${escapeHtml(unit.title)}">Photos not available</div>`;
-    const nights = quotedNightCount(checkIn, checkOut);
-    return `<li class="ui-panel stay-result guest-editorial" data-unit-id="${escapeHtml(unit.id)}">${photoMarkup}<p class="stay-card-location">${escapeHtml(unit.location.neighbourhood)}, ${escapeHtml(unit.location.city)}</p><h2 class="stay-card-title"><a href="${escapeHtml(route)}">${escapeHtml(unit.title)}</a></h2><div class="stay-card-facts" aria-label="Stay facts"><span>${unit.bedrooms ?? "Bedrooms not provided"} ${unit.bedrooms === 1 ? "bedroom" : "bedrooms"}</span><span>${unit.bathrooms} ${unit.bathrooms === 1 ? "bathroom" : "bathrooms"}</span><span>Entire Place · ${unit.capacity} guests</span></div><div class="stay-card-price"><p class="ui-field__hint">${GUEST_GLOSSARY.allInStayTotal}${nights === undefined ? "" : ` for ${nights} ${nights === 1 ? "night" : "nights"}`} · all-in</p><p class="ui-money-total">${total}</p><p class="ui-money-metadata">${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(unit.price.refundableSecurityDepositKobo)}</p><a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(route)}">${GUEST_GLOSSARY.viewUnit}<span class="sr-only">: ${escapeHtml(unit.title)}</span></a></div></li>`;
+    return `<li class="stay-result" data-unit-id="${escapeHtml(unit.id)}">${stayCardHtml({ href: route, title: unit.title, neighbourhood: unit.location.neighbourhood, city: unit.location.city, allInStayTotalKobo: unit.price.allInStayTotalKobo, refundableSecurityDepositKobo: unit.price.refundableSecurityDepositKobo, bedrooms: unit.bedrooms ?? null, bathrooms: unit.bathrooms, capacity: unit.capacity, ...(nights === undefined ? {} : { nights }), ...(photo === undefined ? {} : { photoSrc: photoUrl ? photoUrl(photo) : photo }) })}</li>`;
   }).join("");
   const stay = typeof checkIn === "string" && typeof checkOut === "string" ? formatStayDates(checkIn, checkOut) : "";
   const summary = [discoverySummary(artifact.facts.filters).replace(/^Search updated( · )?/, ""), stay].filter(Boolean).join(" · ");
@@ -2941,7 +2905,7 @@ export function renderConventionalSearchHtml(artifact: DiscoveryArtifactProjecti
     + `<button class="ui-button ui-button--primary" type="submit">Update search</button></form>`;
   return pageShell({
     title: "Search results · Shortlet",
-    style: ".search-form{display:grid;gap:var(--space-3)}.stay-results{list-style:none;margin:0;padding:0;display:grid;gap:var(--space-4)}.stay-result{gap:var(--space-3);padding:var(--space-3);border-radius:var(--radius-workspace)}.stay-card-photo{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:var(--radius-card);background:var(--color-surface-subtle)}.stay-card-photo--empty{display:grid;place-items:center;color:var(--color-text-secondary)}.stay-card-location,.stay-card-facts{color:var(--color-text-secondary)}.stay-card-facts{display:flex;flex-wrap:wrap;gap:var(--space-2)}.stay-card-facts span{display:inline-flex;min-block-size:var(--control-min-target);align-items:center;padding:var(--space-2) var(--space-3);border:1px solid var(--color-border-subtle);border-radius:var(--radius-pill);background:var(--color-surface-subtle);font-size:var(--font-size-small)}.stay-card-title{margin:0;font-family:var(--font-heading);font-size:var(--font-size-h3);line-height:var(--font-line-h3)}.stay-result p{margin:0}.stay-card-price{display:grid;gap:var(--space-1);padding-block-start:var(--space-3);border-block-start:1px solid var(--color-border-subtle)}.guest-editorial .ui-button--primary,.guest-editorial .ui-button--block{border-radius:var(--radius-pill)}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}",
+    style: ".search-form{display:grid;gap:var(--space-3)}.stay-results{list-style:none;margin:0;padding:0;display:grid;gap:var(--space-4)}",
     body: `<div class="guest-editorial"><header class="ui-page__header" data-page="stay-search"><p class="ui-eyebrow">Search results</p><h1>${escapeHtml(discoveryFallbackMessage(artifact))}</h1>${summary ? `<p>${escapeHtml(summary)}</p>` : ""}</header>${form}${cards ? `<ul class="stay-results" aria-label="Stay search results">${cards}</ul>` : ""}<p><a class="ui-button ui-button--primary" href="/">Back to your conversation</a></p></div>`,
   });
 }
@@ -3035,8 +2999,7 @@ export function renderManualTransferPageHtml(input: {
   const shell = (heading: string, body: string) => pageShell({
     title: `${heading} · Shortlet`,
     width: "narrow",
-    style: `.transfer-account,.transfer-reference{font-family:var(--font-mono);font-size:var(--font-size-h3);letter-spacing:0.05em;overflow-wrap:anywhere}.transfer-copy{display:flex;inline-size:fit-content;margin-block-start:var(--space-2);font-family:var(--font-sans);font-size:var(--font-size-small);letter-spacing:normal}.transfer-copy[hidden]{display:none}.transfer-copy-status{display:block;font-family:var(--font-sans);letter-spacing:normal}${GUEST_STAY_PAYMENT_STYLE}`,
-    body: `<div class="guest-editorial"><header class="ui-page__header"><p class="ui-eyebrow">Booking payment · Manual bank transfer</p><h1>${escapeHtml(heading)}</h1></header>${input.stay ? renderStayTicketHtml(input.stay) : ""}${input.allInStayTotalKobo === undefined ? "" : renderPriceBreakdownHtml({ allInStayTotalKobo: input.allInStayTotalKobo, ...(input.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: input.refundableSecurityDepositKobo }), amountDueNowKobo: transfer.amountKobo })}${alert}<section class="ui-panel">${body}</section></div><script src="/payment.js" defer></script>`,
+    body: `<div class="guest-editorial"><header class="ui-page__header"><p class="ui-eyebrow">Booking payment · Manual bank transfer</p><h1>${escapeHtml(heading)}</h1></header>${input.stay ? stayTicketHtml(input.stay) : ""}${input.allInStayTotalKobo === undefined ? "" : priceBreakdownHtml({ allInStayTotalKobo: input.allInStayTotalKobo, ...(input.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: input.refundableSecurityDepositKobo }), amountDueNowKobo: transfer.amountKobo })}${alert}<section class="ui-panel">${body}</section></div><script src="/payment.js" defer></script>`,
   });
   const at = (iso: string) => `<time datetime="${escapeHtml(iso)}">${escapeHtml(formatWAT(iso))}</time>`;
   if (transfer.status === "confirmed") {
@@ -3049,9 +3012,8 @@ export function renderManualTransferPageHtml(input: {
   if (transfer.status === "awaiting_verification") {
     return shell("Waiting for payment check", `<p>We received your receipt. Your booking confirms only after we see the money in our account and check it. We will check by ${at(transfer.verificationDeadlineAt)}.</p><p>Your dates are held until then. No ${GUEST_GLOSSARY.reservation} exists yet.</p>${back}`);
   }
-  const minutes = Math.max(0, Math.ceil((Date.parse(transfer.paymentDeadlineAt) - now.getTime()) / 60_000));
   const limitMb = Math.floor(input.receiptMaxBytes / (1024 * 1024));
-  return shell("Transfer and upload your receipt", `<p class="ui-banner ui-banner--warning payment-deadline">${icon("clock")}<span>Transfer and upload by ${at(transfer.paymentDeadlineAt)} · ${minutes} ${minutes === 1 ? "minute" : "minutes"} left</span></p><dl class="ui-facts"><dt>Bank</dt><dd>${escapeHtml(transfer.account.bankName)}</dd><dt>Account name</dt><dd>${escapeHtml(transfer.account.accountName)}</dd><dt>Account number</dt><dd class="transfer-account">${escapeHtml(transfer.account.accountNumber)}${copyAccountNumberHtml(transfer.account.accountNumber)}</dd><dt>Exact amount</dt><dd class="ui-money-total">${formatNgnKobo(transfer.amountKobo)}</dd><dt>Booking reference</dt><dd class="transfer-reference">${escapeHtml(transfer.bookingReference)}</dd></dl><p>Include the booking reference with your transfer. Your booking confirms only after we see the money in our account and check it; the receipt alone doesn't confirm it.</p><form method="post" action="/payments/offers/${encodeURIComponent(transfer.offerId)}/manual-transfer/receipt" enctype="multipart/form-data" class="ui-stack"><div class="ui-field"><label class="ui-field__label" for="receipt">Transfer receipt (photo or PDF, up to ${limitMb} MB)</label><input id="receipt" name="receipt" type="file" accept="image/jpeg,image/png,application/pdf" required></div><button class="ui-button ui-button--primary ui-button--block" type="submit">Upload receipt</button></form>${back}`);
+  return shell("Transfer and upload your receipt", `${deadlineBannerHtml({ label: "Transfer and upload by", deadlineIso: transfer.paymentDeadlineAt, now })}${bankDetailsHtml({ bankName: transfer.account.bankName, accountName: transfer.account.accountName, accountNumber: transfer.account.accountNumber, amountKobo: transfer.amountKobo, bookingReference: transfer.bookingReference })}<p>Include the booking reference with your transfer. Your booking confirms only after we see the money in our account and check it; the receipt alone doesn't confirm it.</p><form method="post" action="/payments/offers/${encodeURIComponent(transfer.offerId)}/manual-transfer/receipt" enctype="multipart/form-data" class="ui-stack"><div class="ui-field"><label class="ui-field__label" for="receipt">Transfer receipt (photo or PDF, up to ${limitMb} MB)</label><input id="receipt" name="receipt" type="file" accept="image/jpeg,image/png,application/pdf" required></div><button class="ui-button ui-button--primary ui-button--block" type="submit">Upload receipt</button></form>${back}`);
 }
 
 /** Reads a request body, refusing (and discarding) anything over `limit` bytes. */
@@ -3090,8 +3052,7 @@ export function renderTransferPageHtml(input: {
   const shell = (heading: string, body: string) => pageShell({
     title: `${heading} · Shortlet`,
     width: "narrow",
-    style: `.transfer-account{font-family:var(--font-mono);font-size:var(--font-size-h3);letter-spacing:0.05em;overflow-wrap:anywhere}.transfer-copy{display:flex;inline-size:fit-content;margin-block-start:var(--space-2);font-family:var(--font-sans);font-size:var(--font-size-small);letter-spacing:normal}.transfer-copy[hidden]{display:none}.transfer-copy-status{display:block;font-family:var(--font-sans);letter-spacing:normal}${GUEST_STAY_PAYMENT_STYLE}`,
-    body: `<div class="guest-editorial"><header class="ui-page__header"><p class="ui-eyebrow">Booking payment · Bank transfer</p><h1>${escapeHtml(heading)}</h1></header>${input.stay ? renderStayTicketHtml(input.stay) : ""}${input.allInStayTotalKobo === undefined ? "" : renderPriceBreakdownHtml({ allInStayTotalKobo: input.allInStayTotalKobo, ...(input.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: input.refundableSecurityDepositKobo }), amountDueNowKobo: input.amountDueNowKobo })}<section class="ui-panel">${body}</section></div><script src="/payment.js" defer></script>`,
+    body: `<div class="guest-editorial"><header class="ui-page__header"><p class="ui-eyebrow">Booking payment · Bank transfer</p><h1>${escapeHtml(heading)}</h1></header>${input.stay ? stayTicketHtml(input.stay) : ""}${input.allInStayTotalKobo === undefined ? "" : priceBreakdownHtml({ allInStayTotalKobo: input.allInStayTotalKobo, ...(input.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: input.refundableSecurityDepositKobo }), amountDueNowKobo: input.amountDueNowKobo })}<section class="ui-panel">${body}</section></div><script src="/payment.js" defer></script>`,
   });
   if (input.contract) {
     return shell("Payment received", `<p>Your transfer arrived and your ${GUEST_GLOSSARY.reservation} is confirmed.</p><a class="ui-button ui-button--primary ui-button--block" href="${conventionalBookingContractRoute(input.contract.contractId)}">View your ${GUEST_GLOSSARY.reservation}</a>${back}`);
@@ -3104,11 +3065,10 @@ export function renderTransferPageHtml(input: {
     // ADR 0045/0047: the account stopped at the deadline; money sent afterwards is refunded in full and never books.
     return shell("This transfer account has expired", `<p>No ${GUEST_GLOSSARY.reservation} was made. Money sent after the deadline is refunded in full.</p>${back}`);
   }
-  const minutes = Math.max(0, Math.ceil((Date.parse(transfer.expiresAt) - now.getTime()) / 60_000));
   const local = input.localPayment
     ? `<form method="post" action="/payments/local/transfer/complete"><input type="hidden" name="reference" value="${escapeHtml(transfer.transferReference)}"><button class="ui-button ui-button--block" type="submit">Complete local demo transfer</button></form>`
     : "";
-  return shell("Transfer to complete your booking", `<p class="ui-banner ui-banner--warning payment-deadline">${icon("clock")}<span>Transfer by <time datetime="${escapeHtml(transfer.expiresAt)}">${escapeHtml(formatWAT(transfer.expiresAt))}</time> · ${minutes} ${minutes === 1 ? "minute" : "minutes"} left</span></p><dl class="ui-facts"><dt>Bank</dt><dd>${escapeHtml(transfer.bankName)}</dd><dt>Account number</dt><dd class="transfer-account">${escapeHtml(transfer.accountNumber)}${copyAccountNumberHtml(transfer.accountNumber)}</dd><dt>Exact amount</dt><dd class="ui-money-total">${formatNgnKobo(transfer.amountKobo)}</dd></dl><p>Transfer the exact amount. Your booking confirms automatically once the transfer arrives.</p><p>This account is for this booking only and stops accepting payment at the deadline.</p>${local}${back}`);
+  return shell("Transfer to complete your booking", `${deadlineBannerHtml({ label: "Transfer by", deadlineIso: transfer.expiresAt, now })}${bankDetailsHtml({ bankName: transfer.bankName, accountNumber: transfer.accountNumber, amountKobo: transfer.amountKobo })}<p>Transfer the exact amount. Your booking confirms automatically once the transfer arrives.</p><p>This account is for this booking only and stops accepting payment at the deadline.</p>${local}${back}`);
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -3610,16 +3570,15 @@ export function startLocalGuestServer(options: {
         const offerFacts = app.environment.conditionalOfferApp.getArtifact(offerId, principal).facts;
         const componentAmount = artifact.facts.currentComponentAmountKobo ?? (artifact.facts.status === "ready" ? artifact.facts.allInStayTotalKobo : artifact.facts.refundableSecurityDepositKobo);
         const componentLabel = artifact.facts.status === "deposit_required" || artifact.facts.currentComponent === "security_deposit" ? `Next payment · ${GUEST_GLOSSARY.refundableSecurityDeposit}` : "Next payment · stay payment";
-        const ticket = renderStayTicketHtml({ unitTitle: artifact.facts.unit, checkIn: artifact.facts.checkIn, checkOut: artifact.facts.checkOut, nights: quotedNightCount(artifact.facts.checkIn, artifact.facts.checkOut) ?? 0, guestCount: offerFacts.occupants.length });
-        const breakdown = renderPriceBreakdownHtml({ ...(artifact.facts.allInStayTotalKobo === undefined ? {} : { allInStayTotalKobo: artifact.facts.allInStayTotalKobo }), ...(artifact.facts.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: artifact.facts.refundableSecurityDepositKobo }), amountDueNowKobo: artifact.facts.amountDueNowKobo });
-        const countdown = Math.max(0, Math.ceil((Date.parse(artifact.facts.paymentWindowExpiresAt) - app.environment.clock().getTime()) / 60_000));
-        const deadline = `<p class="ui-banner ui-banner--warning payment-deadline">${icon("clock")}<span>Pay by ${escapeHtmlText(formatWAT(artifact.facts.paymentWindowExpiresAt))} · ${countdown} ${countdown === 1 ? "minute" : "minutes"} left</span></p>`;
+        const ticket = stayTicketHtml({ unitTitle: artifact.facts.unit, checkIn: artifact.facts.checkIn, checkOut: artifact.facts.checkOut, nights: quotedNightCount(artifact.facts.checkIn, artifact.facts.checkOut) ?? 0, guestCount: offerFacts.occupants.length });
+        const breakdown = priceBreakdownHtml({ ...(artifact.facts.allInStayTotalKobo === undefined ? {} : { allInStayTotalKobo: artifact.facts.allInStayTotalKobo }), ...(artifact.facts.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: artifact.facts.refundableSecurityDepositKobo }), amountDueNowKobo: artifact.facts.amountDueNowKobo });
+        const deadline = deadlineBannerHtml({ label: "Pay by", deadlineIso: artifact.facts.paymentWindowExpiresAt, now: app.environment.clock() });
         const facts = `${ticket}${breakdown}${componentAmount === undefined ? "" : `<p class="payment-current-component">${escapeHtmlText(componentLabel)}: ${formatNgnKobo(componentAmount)}</p>`}${deadline}<p>${escapeHtmlText(status.detail)}</p>`;
         res.writeHead(200, GUEST_HTML_HEADERS);
         res.end(pageShell({
           title: `${status.label} · Shortlet`,
           width: "narrow",
-          style: `.payment-unit{font-family:var(--font-display);font-size:var(--font-size-h3);line-height:var(--font-line-h3);font-weight:600}.payment-deadline{align-items:center}.payment-current-component{font-weight:650}.payment-methods{display:grid;gap:var(--space-2)}${GUEST_STAY_PAYMENT_STYLE}`,
+          style: `.payment-unit{font-family:var(--font-display);font-size:var(--font-size-h3);line-height:var(--font-line-h3);font-weight:600}.payment-current-component{font-weight:650}.payment-methods{display:grid;gap:var(--space-2)}`,
           body: `<div class="guest-editorial"><header class="ui-page__header"><p class="ui-eyebrow">Booking payment</p><h1>${escapeHtmlText(status.label)}</h1></header>${facts}${!canContinue ? "" : offerTransferChoice ? `<section class="ui-panel payment-methods" aria-label="Choose how to pay">${transferChoiceHtml(offerId, href, options.localPayment ? "Pay by card (local demo)" : "Pay by card", { providerTransfer: app.environment.bankTransferApp !== null, manualTransfer: manualOffered })}</section>` : `<a class="ui-button ui-button--primary ui-button--block" href="${href}">${label}</a>`}</div>`,
         }));
       } catch { sendPageError(req, res, 404, "PAYMENT_OFFER_NOT_FOUND"); }

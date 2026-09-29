@@ -1,6 +1,6 @@
 # Kit foundations: CSS components, icons and server HTML helpers
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 01
 Requested: 29 Sept 2026
@@ -43,3 +43,18 @@ Every later issue draws screens from one kit. Today the parts are spread across 
 0015 (breakdown order), 0031/0032 (times only from the projection), 0078 (contrast, 44px, focus ring), 0075 (no URLs with secrets in helpers).
 
 ## Comments
+
+## Answer
+
+Landed on `ui/guest-consistency`.
+
+- **CSS (AC1, AC6).** `apps/web/src/shortlet-foundations.css` now defines the kit as `ui-*` classes, in one block headed "Guest UI kit": `.ui-appbar`, `.ui-icon-button`, `.ui-rail(-nav)` (`li[data-state]` done/current/failed), `.ui-chip--add`, pressed chips, `.ui-fact`, `.ui-stay-card`, `.ui-result-row`, `.ui-tiles`, price breakdown parts, `.ui-steps`, `.ui-segmented`, `.ui-facts--stacked`, `.transfer-*`, `.ui-upload`, `.ui-link`, action bar sum. The ticket was rewritten with label/name/day/arrow/foot parts, `.ui-banner--neutral` was added, and banners now take their tinted text colour. Guest-editorial buttons and status tags are pills. Tokens only; no hex added and no existing value changed. The kit's bugs are handled: `.ui-facts dd.ui-money-total` fixes the dd-outranks-money bug, and there is no `.sl a`-style rule. The unit detail hero/sheet and compare rows still live in the chat shell CSS and move in issues 05 and 06.
+- **Icons (AC3).** `ui-kit.ts` gained pin, bed, bath, arrow-right, chevron-right, copy, plus, message-plus, photo, bank, upload, grid, doc (`arrow-left` and `arrow-up` already existed).
+- **Helpers (AC4, AC5).** New `apps/local-guest/src/guest-kit.ts`: `stayTicketHtml`, `priceBreakdownHtml`, `deadlineBannerHtml`, `stepsHtml`, `statusHtml`, `bankDetailsHtml`, `copyAccountNumberHtml`, `stayCardHtml`, `resultRowHtml`, `railHtml`, `appBarHtml`, plus `formatWAT`, `minutesUntil`, `formatTicketDate`. `guest-server.ts` no longer has its own ticket, breakdown, copy-button, WAT and minutes code. Conventional booking, search, payment, transfer and manual-transfer pages render through the helpers, and `GUEST_STAY_PAYMENT_STYLE` and the inline transfer/search styles are gone (the payment and booking pages keep only tiny layout rules). Deadline banner text is unchanged ("Pay by / Transfer by / Transfer and upload by <WAT> · N minutes left").
+- **Unchanged text (AC5).** The ticket adds "Check-in"/"Check-out" labels and a weekday in the dates ("Thu, 10 Sept 2026") as the issue specifies; no times are shown, because the projections carry none (ADR 0031/0032). The existing tests pass. Edits were class/location updates only: `stay-card-photo`/`stay-card-facts` became `ui-stay-card__photo`/`__facts`, and three assertions that read inline page CSS now read the same rules in `shortlet-foundations.css`.
+- **Tests (one per AC).** `test/guest-kit.test.ts`: AC1 (components defined, tokens only), AC2 (29 text/background pairs in light and dark), AC3 (icons), AC4 (a `<script>` string in every helper's fields is escaped), AC6 (pills use `--radius-pill`), plus ticket-label/time, breakdown order (ADR 0015), deadline minutes and rail tests.
+- **Verification.** `npm run check` clean; `npm test`: phase 1 1187/1187, phase 2 (real Chrome) 129 pass, 0 fail, 1 skipped. Screenshots: `screenshots/02/`, no horizontal overflow at 320/390/768/1280.
+
+## Comments
+
+ADRs read for this issue: 0015 (total, deposit, amount line order in `priceBreakdownHtml`), 0031/0032 (ticket times are optional inputs, none invented), 0075 (`photoSrc` is a caller-supplied proxied URL with `referrerpolicy="no-referrer"`; helpers build no URLs), 0078 (44px targets, focus ring, contrast test), 0080 (copy button stays `hidden` until `/payment.js`; the segmented control is a radio group). The chat shell's own markup for `.stay-card`, compare and unit detail still comes from Weaver output; issues 03 to 06 bring it onto these classes.

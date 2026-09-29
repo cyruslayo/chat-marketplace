@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { rmSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { LOCAL_TRANSFER_BANK_NAME } from "../apps/local-guest/src/local-bank-transfer-provider.js";
 import { formatNgnKobo } from "../apps/web-agent/src/discovery-a2ui.js";
 import { formatBookingDeadline } from "../apps/web-agent/src/booking-presentation.js";
@@ -125,6 +126,7 @@ test("AC4 — The transfer and card paths both work at 320px and without JavaScr
     // The only script is the optional copy-account-number enhancement; the page works without it (ADR 0080).
     assert.doesNotMatch(transfer.replace('<script src="/payment.js" defer></script>', ""), /<script/);
     // Long account numbers wrap rather than widen the page at 320px.
-    assert.match(transfer, /\.transfer-account\{[^}]*overflow-wrap:anywhere/);
+    assert.match(await readFile(new URL("../apps/web/src/shortlet-foundations.css", import.meta.url), "utf8"), /\.transfer-account, \.transfer-reference \{[^}]*overflow-wrap: anywhere/);
+    assert.match(transfer, /class="transfer-account"/);
   } finally { await g.close(); }
 });

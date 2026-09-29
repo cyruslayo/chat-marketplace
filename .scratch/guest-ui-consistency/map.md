@@ -32,3 +32,4 @@ Issue 12 needs a human answer. Issue 09 ships with today's amounts and labels if
 ## Context pointers
 (Append one line per resolved issue: what landed and where.)
 - 01: `ui/editorial-refinement` merged with `origin/main` (PR 96 open, unmerged); effort branch `ui/guest-consistency` cut from it; `guest-ui-walkthrough` in `.claude/launch.json`; discovery notes for issue 05 in `issues/01-start-from-up-to-date-main.md`. Screenshots: `screenshots/01/`.
+- 02: kit CSS in `apps/web/src/shortlet-foundations.css` ("Guest UI kit" block), icons in `apps/web/src/ui-kit.ts`, server helpers in `apps/local-guest/src/guest-kit.ts` (pages now render through them); tests in `test/guest-kit.test.ts`. Screenshots: `screenshots/02/`.

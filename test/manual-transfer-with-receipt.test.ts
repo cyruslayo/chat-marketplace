@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { formatNgnKobo } from "../apps/web-agent/src/discovery-a2ui.js";
 import { formatBookingDeadline } from "../apps/web-agent/src/booking-presentation.js";
@@ -172,6 +173,7 @@ test("AC5 — Upload works without JavaScript and at 320px", async () => {
     assert.match(html, /ui-price-breakdown/);
     assert.match(html, /<form method="post" action="[^"]+\/manual-transfer\/receipt" enctype="multipart\/form-data"/);
     assert.match(html, /<input id="receipt" name="receipt" type="file" accept="image\/jpeg,image\/png,application\/pdf" required>/);
-    assert.match(html, /\.transfer-account,\.transfer-reference\{[^}]*overflow-wrap:anywhere/);
+    assert.match(await readFile(new URL("../apps/web/src/shortlet-foundations.css", import.meta.url), "utf8"), /\.transfer-account, \.transfer-reference \{[^}]*overflow-wrap: anywhere/);
+    assert.match(html, /class="transfer-account"/);
   } finally { await g.close(); }
 });
