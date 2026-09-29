@@ -6,7 +6,8 @@
 import { createBasicWebRuntime } from "@weaver/web";
 import { icon } from "../../web/src/ui-kit.js";
 import { buildListingGallery, enhanceListingGallery, watchPhotoFailure } from "./listing-gallery.js";
-import { GUEST_GLOSSARY, GUEST_NEW_CONVERSATION, guestNewConversationCopy, type GuestCommittedWorkKind } from "../../web-agent/src/guest-content.js";
+import { GUEST_FACT_LABELS, GUEST_GLOSSARY, GUEST_NEW_CONVERSATION, guestFactValue, guestNewConversationCopy, type GuestCommittedWorkKind } from "../../web-agent/src/guest-content.js";
+import { breakdownHtml, ticketHtml } from "./guest-kit.js";
 import {
   canUseSurfaceActions,
   closeFocusedSurface,
@@ -190,7 +191,7 @@ function organizeUnitDetail(mount: HTMLElement): void {
   const priceLabel = children.find((child) => isPriceLabel(child.textContent?.trim() ?? ""));
   const location = children.find((child) => child.tagName === "SMALL" && child !== priceLabel);
   const facts = children.find((child) => child.tagName === "P" && child !== title);
-  const dates = children.find((child) => child.tagName === "SMALL" && child !== location && child !== priceLabel && !/^(Refundable|Amount Due|Nightly|Mandatory)/.test(child.textContent?.trim() ?? ""));
+  const dates = children.find((child) => guestFactValue(child.textContent ?? "", GUEST_FACT_LABELS.stayDates) !== undefined);
 
   for (const [element, className] of [[title, "unit-title"], [location, "unit-location"], [facts, "unit-facts"], [dates, "unit-dates"]] as const) {
     element?.classList.add(className);
@@ -256,26 +257,69 @@ function organizeUnitDetail(mount: HTMLElement): void {
   }
 }
 
+/** The first child whose text is the fact `label`, with its value: facts are found only through the shared label table. */
+function findFact(children: readonly Element[], label: string): { readonly element: Element; readonly value: string } | undefined {
+  for (const child of children) {
+    const value = guestFactValue(child.textContent ?? "", label);
+    if (value !== undefined) return { element: child, value };
+  }
+  return undefined;
+}
+
+/** The day of the month in a ticket date such as "Thu, 10 Sept 2026": its first whole-number word. */
+function dayNumeral(date: string): string | undefined {
+  return date.replaceAll(",", " ").split(" ").find((word) => word !== "" && Number.isInteger(Number(word)));
+}
+
+/**
+ * Swaps the Weaver elements that carry one booking fact each for the shared kit markup (guest-kit.ts), so a surface in
+ * the chat has the same DOM, classes and text as its standalone page. Presentation only (ADR 0072).
+ */
+function replaceWithKitMarkup(root: HTMLElement, html: string, consumed: readonly (Element | undefined)[]): void {
+  const present = consumed.filter((element): element is Element => element !== undefined && element.parentElement === root);
+  const template = document.createElement("template");
+  template.innerHTML = html;
+  const markup = template.content.firstElementChild;
+  if (present.length === 0 || markup === null) return;
+  root.insertBefore(markup, present[0]!);
+  for (const element of present) element.remove();
+}
+
+/**
+ * Guest UI consistency issue 04: facts are found only through GUEST_FACT_LABELS, never by matching free wording. If a fact
+ * is missing (no quote yet, an older surface) nothing partial is built and the surface stays as Weaver rendered it.
+ */
 function organizeBookingTicket(mount: HTMLElement): void {
   const root = mount.querySelector<HTMLElement>('[data-a2ui-component="Column"]');
   if (!root) return;
   const children = [...root.children];
-  const title = children.find((child) => child.tagName === "H3" && !/^(₦|NGN\b)/.test(child.textContent?.trim() ?? ""));
-  if (!title) return;
-  const date = children.find((child) => child !== title && /^(?:Stay(?: dates?)?:|(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),?\s)/i.test(child.textContent?.trim() ?? ""));
-  const party = children.find((child) => child !== title && child !== date && /^(?:Guests?:|\d+\s+(?:guest|occupant))/i.test(child.textContent?.trim() ?? ""));
-  const ticket = wrapDirectChildren(root, "ui-ticket", [title, date, party].filter((element): element is Element => element !== undefined));
-  if (ticket) {
-    ticket.setAttribute("role", "group");
-    ticket.setAttribute("aria-label", "Your stay");
+  const title = children.find((child) => child.tagName === "H3" && guestFactValue(child.textContent ?? "", GUEST_FACT_LABELS.allInStayTotal) === undefined);
+  const checkIn = findFact(children, GUEST_FACT_LABELS.checkIn);
+  const checkOut = findFact(children, GUEST_FACT_LABELS.checkOut);
+  const stay = findFact(children, GUEST_FACT_LABELS.stay);
+  const checkInDay = checkIn === undefined ? undefined : dayNumeral(checkIn.value);
+  const checkOutDay = checkOut === undefined ? undefined : dayNumeral(checkOut.value);
+  if (title && checkIn && checkOut && stay && checkInDay && checkOutDay) {
+    replaceWithKitMarkup(root, ticketHtml({
+      title: title.textContent?.trim() ?? "",
+      checkIn: { day: checkInDay, date: checkIn.value },
+      checkOut: { day: checkOutDay, date: checkOut.value },
+      foot: stay.value,
+    }), [title, checkIn.element, checkOut.element, stay.element]);
   }
-  const amountLabel = children.find((child) => (child.textContent?.trim() ?? "").startsWith(GUEST_GLOSSARY.allInStayTotal));
-  const amount = children.find((child) => child !== title && /^(₦|NGN\b)/.test(child.textContent?.trim() ?? ""));
-  const deposit = children.find((child) => (child.textContent?.trim() ?? "").startsWith(GUEST_GLOSSARY.refundableSecurityDeposit));
-  const due = children.find((child) => /^(?:Total to complete booking|Amount Due Now|Amount due now|Amount paid)/i.test(child.textContent?.trim() ?? ""));
-  const priceNodes = [amountLabel, amount, deposit, due].filter((element): element is Element => element !== undefined && element.parentElement === root);
-  const breakdown = wrapDirectChildren(root, "ui-panel ui-price-breakdown", priceNodes);
-  if (breakdown) breakdown.setAttribute("aria-label", "Price breakdown");
+  const total = findFact(children, GUEST_FACT_LABELS.allInStayTotal);
+  if (!total) return;
+  const deposit = findFact(children, GUEST_FACT_LABELS.refundableSecurityDeposit);
+  const due = findFact(children, GUEST_FACT_LABELS.amountDueNow);
+  const paid = findFact(children, GUEST_FACT_LABELS.amountPaid);
+  const condition = children.find((child) => child.textContent?.trim() === GUEST_FACT_LABELS.ifRequestAccepted);
+  replaceWithKitMarkup(root, breakdownHtml({
+    ...(condition ? { condition: GUEST_FACT_LABELS.ifRequestAccepted } : {}),
+    total: total.value,
+    ...(deposit ? { deposit: deposit.value } : {}),
+    ...(due ? { due: due.value } : {}),
+    ...(paid ? { paid: paid.value } : {}),
+  }), [condition, total.element, deposit?.element, due?.element, paid?.element]);
 }
 
 function decorateDiscoveryCards(mount: HTMLElement): void {
@@ -732,7 +776,7 @@ function renderSurface(surface: GuestSurfacePayload, moveFocus = false): void {
     : surface.surfaceId.includes(":compare:") ? "compare"
     : surface.surfaceId.includes(":discovery:") ? "discovery"
       : surface.surfaceId.includes(":payment:") || surface.surfaceId.includes(":offer:") ? "payment"
-        : surface.surfaceId.includes(":request:") ? "booking"
+        : surface.surfaceId.includes(":request:") || surface.surfaceId.includes(":booking:") ? "booking"
           : "general";
   activeWorkspace.classList.remove("workspace-arrival");
   void activeWorkspace.offsetWidth;

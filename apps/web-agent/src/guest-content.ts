@@ -250,3 +250,37 @@ export function formatGuestDate(value: string): string | undefined {
     timeZone: "UTC",
   }).format(date);
 }
+
+/**
+ * Guest UI consistency issue 04: the one table of labels a presented booking fact starts with. The A2UI builders emit each
+ * fact as its own Text "<label>: <value>", and the chat organizers in client.ts find facts only through these labels, so a
+ * wording change cannot silently drop a surface back to Weaver's default look. Every label is existing copy or a glossary term.
+ */
+export const GUEST_FACT_LABELS = Object.freeze({
+  checkIn: "Check-in",
+  checkOut: "Check-out",
+  /** "Stay: 3 nights · 2 guests": the length of the stay and the party, as the ticket's foot line. */
+  stay: "Stay",
+  stayDates: "Stay dates",
+  /** Named occupants, shown under the ticket only when the Guest gave real names. */
+  guests: "Guests",
+  allInStayTotal: GUEST_GLOSSARY.allInStayTotal,
+  refundableSecurityDeposit: `${GUEST_GLOSSARY.refundableSecurityDeposit} (separate)`,
+  /** Stands alone above the money facts while the amount is due only once the Operator accepts. */
+  ifRequestAccepted: "If your request is accepted",
+  amountDueNow: "Amount due now",
+  amountPaid: "Amount paid",
+  nextPayment: "Next payment",
+  fitReason: "Why it fits",
+});
+
+export function guestFact(label: string, value: string): string {
+  return `${label}: ${value}`;
+}
+
+/** The value of a fact Text that starts with `label`, or undefined when the text is not that fact. */
+export function guestFactValue(text: string, label: string): string | undefined {
+  const prefix = `${label}: `;
+  const trimmed = text.trim();
+  return trimmed.startsWith(prefix) ? trimmed.slice(prefix.length) : undefined;
+}

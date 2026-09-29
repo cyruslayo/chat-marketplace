@@ -1,8 +1,8 @@
 import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage } from "@weaver/core";
 import { BANK_TRANSFER_INITIALIZE_EVENT } from "../../web/src/bank-transfer-actions.js";
 import type { BankTransferArtifact } from "../../web/src/bank-transfer-artifact.js";
-import { formatBookingDeadline, formatBookingMoney } from "./booking-presentation.js";
-import { GUEST_GLOSSARY } from "./guest-content.js";
+import { formatBookingDeadline, formatBookingMoney, nightsBetween, ticketFactComponents, ticketFactIds } from "./booking-presentation.js";
+import { GUEST_FACT_LABELS, GUEST_GLOSSARY, guestFact } from "./guest-content.js";
 
 /** Guest words for each transfer state (P3). The raw status stays in the artifact, never in guest copy. */
 const TRANSFER_STATUS_LABELS: Readonly<Record<string, string>> = Object.freeze({
@@ -27,14 +27,24 @@ export function bankTransferArtifactToA2UI({ artifact, surfaceId }: { readonly a
           : facts.status === "late_payment_refund_pending" || facts.status === "late_payment_refunded" ? `Your payment arrived after the deadline, so no ${GUEST_GLOSSARY.reservation} was made. Refund of the full amount: ${facts.status === "late_payment_refunded" ? "completed" : "started"}.`
             : facts.status === "expired" ? `The transfer account expired. No ${GUEST_GLOSSARY.reservation} was made.`
               : "Transfer the exact amount shown before the deadline.";
-  const amounts = facts.status === "confirmed"
-    ? `Paid: ${money(facts.amountPaidKobo ?? 0)}`
-    : `${facts.allInStayTotalKobo === undefined ? "" : `${GUEST_GLOSSARY.allInStayTotal}: ${money(facts.allInStayTotalKobo)}; `}${facts.refundableSecurityDepositKobo ? `${GUEST_GLOSSARY.refundableSecurityDeposit}: ${money(facts.refundableSecurityDepositKobo)}; ` : ""}Total to complete booking: ${money(facts.amountDueNowKobo)}${facts.currentComponent ? `; Next payment: ${facts.currentComponent === "stay" ? "stay payment" : GUEST_GLOSSARY.refundableSecurityDeposit} · ${money(facts.currentComponentAmountKobo ?? 0)}` : ""}`;
+  // Guest UI consistency issue 04: each amount is its own label-prefixed Text, in canonical order (ADR 0015):
+  // All-In Stay Total, the separate deposit, then one amount line (or what was paid once confirmed).
+  const moneyComponents: A2UIComponent[] = [
+    ...(facts.allInStayTotalKobo === undefined ? [] : [{ id: "bank-transfer-total", component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.allInStayTotal, money(facts.allInStayTotalKobo)) }]),
+    ...(facts.refundableSecurityDepositKobo ? [{ id: "bank-transfer-deposit", component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.refundableSecurityDeposit, money(facts.refundableSecurityDepositKobo)) }] : []),
+    facts.status === "confirmed"
+      ? { id: "bank-transfer-paid", component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.amountPaid, money(facts.amountPaidKobo ?? 0)) }
+      : { id: "bank-transfer-due", component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.amountDueNow, money(facts.amountDueNowKobo)) },
+    ...(facts.status !== "confirmed" && facts.currentComponent ? [{ id: "bank-transfer-next", component: "Text" as const, text: `${GUEST_FACT_LABELS.nextPayment}: ${facts.currentComponent === "stay" ? "stay payment" : GUEST_GLOSSARY.refundableSecurityDeposit} · ${money(facts.currentComponentAmountKobo ?? 0)}` }] : []),
+  ];
+  const moneyIds = moneyComponents.map((component) => component.id);
   const components: A2UIComponent[] = [
-    { id: "bank-transfer-root", component: "Column", children: ["bank-transfer-title", "bank-transfer-status", "bank-transfer-amount", "bank-transfer-deadline", "bank-transfer-content", "bank-transfer-actions"] },
+    { id: "bank-transfer-root", component: "Column", children: ["bank-transfer-title", "bank-transfer-status", "bank-transfer-unit", ...ticketFactIds("bank-transfer"), ...moneyIds, "bank-transfer-deadline", "bank-transfer-content", "bank-transfer-actions"] },
     { id: "bank-transfer-title", component: "Text", text: facts.status === "confirmed" ? `${GUEST_GLOSSARY.reservation} confirmed` : "Bank transfer payment", variant: "h2" },
     { id: "bank-transfer-status", component: "Text", text: TRANSFER_STATUS_LABELS[facts.status] ?? "Bank transfer payment" },
-    { id: "bank-transfer-amount", component: "Text", text: amounts },
+    { id: "bank-transfer-unit", component: "Text", text: facts.unit, variant: "h3" },
+    ...ticketFactComponents("bank-transfer", { checkIn: facts.checkIn, checkOut: facts.checkOut, nights: nightsBetween(facts.checkIn, facts.checkOut), ...(facts.occupantCount === undefined ? {} : { guestCount: facts.occupantCount }) }),
+    ...moneyComponents,
     { id: "bank-transfer-deadline", component: "Text", text: formatBookingDeadline(facts.paymentWindowExpiresAt) },
     { id: "bank-transfer-content", component: "Text", text: content },
     { id: "bank-transfer-actions", component: "Row", children: artifact.actions.length ? ["bank-transfer-initialize"] : [] },

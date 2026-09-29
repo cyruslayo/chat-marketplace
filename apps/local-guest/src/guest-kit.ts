@@ -3,9 +3,9 @@
  * pages call these helpers, and the chat organizers in client.ts produce the same DOM and classes from Weaver output.
  * Styling lives in apps/web/src/shortlet-foundations.css (`ui-*`). Every value is escaped here; helpers never build URLs.
  */
-import { GUEST_GLOSSARY, GUEST_JOURNEY } from "../../web-agent/src/guest-content.js";
+import { GUEST_FACT_LABELS, GUEST_GLOSSARY, GUEST_JOURNEY } from "../../web-agent/src/guest-content.js";
 import { formatNgnKobo } from "../../web-agent/src/discovery-a2ui.js";
-import { formatBookingDeadline } from "../../web-agent/src/booking-presentation.js";
+import { formatBookingDeadline, formatStayFoot, formatTicketDate } from "../../web-agent/src/booking-presentation.js";
 import { escapeHtml, icon, statusBadge, type IconName } from "../../web/src/ui-kit.js";
 import { projectJourney, type GuestJourney, type JourneyStep, type JourneyStepState } from "./journey-rail.js";
 import { guestStatusTone } from "./conversational-shell.js";
@@ -20,13 +20,6 @@ export function minutesUntil(deadlineIso: string, now: Date): number {
   return Math.max(0, Math.ceil((Date.parse(deadlineIso) - now.getTime()) / 60_000));
 }
 
-/** "Sat, 3 Oct 2026" for a plain calendar date; anything else is shown as given. */
-export function formatTicketDate(value: string): string {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
-  const date = new Date(`${value}T00:00:00.000Z`);
-  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("en-NG", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(date);
-}
-
 export interface StayTicketFacts {
   readonly unitTitle: string;
   readonly checkIn: string;
@@ -38,16 +31,37 @@ export interface StayTicketFacts {
   readonly checkoutTime?: string;
 }
 
-const CHECK_IN_LABEL = "Check-in";
-const CHECK_OUT_LABEL = "Check-out";
+const CHECK_IN_LABEL = GUEST_FACT_LABELS.checkIn;
+const CHECK_OUT_LABEL = GUEST_FACT_LABELS.checkOut;
 
-function ticketDate(label: string, value: string, time: string | undefined, end: boolean): string {
-  return `<div class="ui-ticket__date${end ? " ui-ticket__date--end" : ""}"><span class="ui-ticket__label">${label}</span><span class="ui-ticket__day">${escapeHtml(value.slice(8, 10))}</span><time datetime="${escapeHtml(value)}">${escapeHtml(formatTicketDate(value))}</time>${time === undefined ? "" : `<span class="ui-ticket__time">${escapeHtml(time)}</span>`}</div>`;
+export interface TicketDatePart {
+  readonly day: string;
+  readonly date: string;
+  readonly datetime?: string;
+  /** Shown only when supplied by the policy projection (ADR 0031/0032). */
+  readonly time?: string;
+}
+
+/** The ticket's display text. The chat organizers build it from the label-prefixed Text components, the pages from the projection. */
+export interface TicketParts {
+  readonly title: string;
+  readonly checkIn: TicketDatePart;
+  readonly checkOut: TicketDatePart;
+  readonly foot: string;
+}
+
+function ticketDate(label: string, part: TicketDatePart, end: boolean): string {
+  const time = part.datetime === undefined ? `<time>${escapeHtml(part.date)}</time>` : `<time datetime="${escapeHtml(part.datetime)}">${escapeHtml(part.date)}</time>`;
+  return `<div class="ui-ticket__date${end ? " ui-ticket__date--end" : ""}"><span class="ui-ticket__label">${label}</span><span class="ui-ticket__day">${escapeHtml(part.day)}</span>${time}${part.time === undefined ? "" : `<span class="ui-ticket__time">${escapeHtml(part.time)}</span>`}</div>`;
+}
+
+export function ticketHtml(parts: TicketParts): string {
+  return `<section class="ui-ticket" aria-label="Your stay"><div><p class="ui-ticket__label">Your stay</p><h2 class="ui-ticket__name">${escapeHtml(parts.title)}</h2></div><div class="ui-ticket__dates">${ticketDate(CHECK_IN_LABEL, parts.checkIn, false)}<span class="ui-ticket__arrow" aria-hidden="true">→</span>${ticketDate(CHECK_OUT_LABEL, parts.checkOut, true)}</div><p class="ui-ticket__foot">${escapeHtml(parts.foot)}</p></section>`;
 }
 
 export function stayTicketHtml(facts: StayTicketFacts): string {
-  const guests = facts.guestCount === undefined ? "" : ` · ${facts.guestCount} ${facts.guestCount === 1 ? "guest" : "guests"}`;
-  return `<section class="ui-ticket" aria-label="Your stay"><div><p class="ui-ticket__label">Your stay</p><h2 class="ui-ticket__name">${escapeHtml(facts.unitTitle)}</h2></div><div class="ui-ticket__dates">${ticketDate(CHECK_IN_LABEL, facts.checkIn, facts.arrivalTime, false)}<span class="ui-ticket__arrow" aria-hidden="true">→</span>${ticketDate(CHECK_OUT_LABEL, facts.checkOut, facts.checkoutTime, true)}</div><p class="ui-ticket__foot">${facts.nights} ${facts.nights === 1 ? "night" : "nights"}${guests}</p></section>`;
+  const part = (iso: string, time: string | undefined): TicketDatePart => ({ day: iso.slice(8, 10), date: formatTicketDate(iso), datetime: iso, ...(time === undefined ? {} : { time }) });
+  return ticketHtml({ title: facts.unitTitle, checkIn: part(facts.checkIn, facts.arrivalTime), checkOut: part(facts.checkOut, facts.checkoutTime), foot: formatStayFoot(facts.nights, facts.guestCount) });
 }
 
 export interface PriceBreakdownInput {
@@ -59,14 +73,33 @@ export interface PriceBreakdownInput {
   readonly heading?: string;
 }
 
+/** The breakdown's display text: money already formatted, in the order the section shows it (ADR 0015). */
+export interface BreakdownParts {
+  readonly condition?: string;
+  readonly total?: string;
+  readonly deposit?: string;
+  readonly due?: string;
+  readonly paid?: string;
+}
+
+export function breakdownHtml(parts: BreakdownParts): string {
+  const money = (value: string): string => `<span class="ui-price-breakdown__value">${escapeHtml(value)}</span>`;
+  const total = parts.total === undefined ? "" : `<div><p class="ui-price-breakdown__label">${GUEST_FACT_LABELS.allInStayTotal}</p><p class="ui-money-total">${escapeHtml(parts.total)}</p></div>`;
+  const deposit = parts.deposit === undefined ? "" : `<p class="ui-price-breakdown__row">${GUEST_FACT_LABELS.refundableSecurityDeposit}: ${money(parts.deposit)}</p>`;
+  const due = parts.due === undefined ? "" : `<p class="ui-price-breakdown__due">${GUEST_FACT_LABELS.amountDueNow}: ${money(parts.due)}</p>`;
+  const paid = parts.paid === undefined ? "" : `<p class="ui-price-breakdown__paid">${GUEST_FACT_LABELS.amountPaid}: ${money(parts.paid)}</p>`;
+  return `<section class="ui-panel ui-price-breakdown" aria-label="Price breakdown">${parts.condition ? `<p class="ui-price-breakdown__condition">${escapeHtml(parts.condition)}</p>` : ""}${total}${deposit}${due}${paid}</section>`;
+}
+
 /** ADR 0015: the All-In Stay Total leads, the deposit is separate, then one amount line. */
 export function priceBreakdownHtml(input: PriceBreakdownInput): string {
-  const money = (kobo: number): string => `<span class="ui-price-breakdown__value">${formatNgnKobo(kobo)}</span>`;
-  const total = input.allInStayTotalKobo === undefined ? "" : `<div><p class="ui-price-breakdown__label">${GUEST_GLOSSARY.allInStayTotal}</p><p class="ui-money-total">${formatNgnKobo(input.allInStayTotalKobo)}</p></div>`;
-  const deposit = input.refundableSecurityDepositKobo === undefined || input.refundableSecurityDepositKobo <= 0 ? "" : `<p class="ui-price-breakdown__row">${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${money(input.refundableSecurityDepositKobo)}</p>`;
-  const due = input.amountDueNowKobo === undefined ? "" : `<p class="ui-price-breakdown__due">Amount due now: ${money(input.amountDueNowKobo)}</p>`;
-  const paid = input.amountPaidKobo === undefined ? "" : `<p class="ui-price-breakdown__paid">Amount paid: ${money(input.amountPaidKobo)}</p>`;
-  return `<section class="ui-panel ui-price-breakdown" aria-label="Price breakdown">${input.heading ? `<p class="ui-price-breakdown__condition">${escapeHtml(input.heading)}</p>` : ""}${total}${deposit}${due}${paid}</section>`;
+  return breakdownHtml({
+    ...(input.heading ? { condition: input.heading } : {}),
+    ...(input.allInStayTotalKobo === undefined ? {} : { total: formatNgnKobo(input.allInStayTotalKobo) }),
+    ...(input.refundableSecurityDepositKobo === undefined || input.refundableSecurityDepositKobo <= 0 ? {} : { deposit: formatNgnKobo(input.refundableSecurityDepositKobo) }),
+    ...(input.amountDueNowKobo === undefined ? {} : { due: formatNgnKobo(input.amountDueNowKobo) }),
+    ...(input.amountPaidKobo === undefined ? {} : { paid: formatNgnKobo(input.amountPaidKobo) }),
+  });
 }
 
 /** One deadline style for every screen: an absolute WAT time plus the time left (ADR 0078). */

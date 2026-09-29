@@ -8508,6 +8508,20 @@ Known schemas:
   }
 
   // apps/web/src/ui-kit.ts
+  function escapeHtml(value) {
+    return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
+  }
+  function formatMoney(kobo) {
+    const sign = kobo < 0 ? "-" : "";
+    const absoluteKobo = Math.abs(kobo);
+    const wholeNaira = Math.floor(absoluteKobo / 100);
+    const remainderKobo = absoluteKobo % 100;
+    const digits = String(wholeNaira);
+    const firstGroupLength = digits.length % 3 || 3;
+    const grouped = [digits.slice(0, firstGroupLength), ...digits.slice(firstGroupLength).match(/.{3}/g) ?? []].join(",");
+    const fraction = remainderKobo === 0 ? "" : `.${String(remainderKobo).padStart(2, "0")}`;
+    return `${sign}\u20A6${grouped}${fraction}`;
+  }
   var ICON_PATHS = {
     "arrow-left": '<path d="M19 12H5M11 18l-6-6 6-6"/>',
     "arrow-right": '<path d="M5 12h14M13 18l6-6M13 6l6 6"/>',
@@ -8858,6 +8872,74 @@ Known schemas:
     { domain: /^Refundable Security Deposit is quoted separately and held as guest liability\.?$/, guest: `${GUEST_GLOSSARY.refundableSecurityDeposit} is quoted and collected separately from the stay payment.` },
     { domain: /^Optional services come strictly from the controlled catalogue with no off-platform payment\.?$/, guest: "Optional services are added only when you select them, with no off-platform payment." }
   ];
+  var AMENITY_LABELS = {
+    "24_7_power_generator": "24/7 backup power",
+    air_conditioning: "Air conditioning",
+    generator: "Backup power",
+    parking: "Secure parking",
+    security_guard: "On-site security",
+    swimming_pool: "Swimming pool",
+    wifi: "Wi-Fi",
+    workspace: "Dedicated workspace"
+  };
+  function guestAmenityLabel(identifier) {
+    const acceptedLabel = AMENITY_LABELS[identifier];
+    if (acceptedLabel) return acceptedLabel;
+    return identifier.replaceAll("_", " ").replaceAll("-", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+  }
+  var GUEST_FACT_LABELS = Object.freeze({
+    checkIn: "Check-in",
+    checkOut: "Check-out",
+    /** "Stay: 3 nights · 2 guests": the length of the stay and the party, as the ticket's foot line. */
+    stay: "Stay",
+    stayDates: "Stay dates",
+    /** Named occupants, shown under the ticket only when the Guest gave real names. */
+    guests: "Guests",
+    allInStayTotal: GUEST_GLOSSARY.allInStayTotal,
+    refundableSecurityDeposit: `${GUEST_GLOSSARY.refundableSecurityDeposit} (separate)`,
+    /** Stands alone above the money facts while the amount is due only once the Operator accepts. */
+    ifRequestAccepted: "If your request is accepted",
+    amountDueNow: "Amount due now",
+    amountPaid: "Amount paid",
+    nextPayment: "Next payment",
+    fitReason: "Why it fits"
+  });
+  function guestFactValue(text, label) {
+    const prefix = `${label}: `;
+    const trimmed = text.trim();
+    return trimmed.startsWith(prefix) ? trimmed.slice(prefix.length) : void 0;
+  }
+
+  // apps/web-agent/src/discovery-a2ui.ts
+  function formatNgnKobo(kobo) {
+    return formatMoney(kobo);
+  }
+  var COMPARE_ATTRIBUTES = [
+    {
+      key: "price",
+      label: GUEST_GLOSSARY.allInStayTotal,
+      value: (unit) => unit.price.allInStayTotalKobo === null ? `Not yet quoted \xB7 Indicative nightly rate ${formatNgnKobo(unit.price.nightlyKobo)}` : formatNgnKobo(unit.price.allInStayTotalKobo)
+    },
+    {
+      key: "deposit",
+      label: GUEST_GLOSSARY.refundableSecurityDeposit,
+      value: (unit) => unit.price.refundableSecurityDepositKobo > 0 ? `${formatNgnKobo(unit.price.refundableSecurityDepositKobo)}, paid separately` : "None"
+    },
+    {
+      key: "capacity",
+      label: "Capacity",
+      value: (unit) => [
+        `Sleeps ${unit.capacity}`,
+        ...unit.bedrooms === void 0 ? [] : [`${unit.bedrooms} ${unit.bedrooms === 1 ? "bedroom" : "bedrooms"}`],
+        `${unit.bathrooms} ${unit.bathrooms === 1 ? "bathroom" : "bathrooms"}`
+      ].join(" \xB7 ")
+    },
+    {
+      key: "amenities",
+      label: "Amenities",
+      value: (unit) => unit.amenities.length === 0 ? "None listed" : unit.amenities.map(guestAmenityLabel).join(" \xB7 ")
+    }
+  ];
 
   // apps/local-guest/src/conversational-shell.ts
   function createConversationShellState() {
@@ -8946,6 +9028,25 @@ Known schemas:
   function fallbackSummary(surface) {
     if (surface.status === "fallback") return surface.textFallback ?? surface.summary;
     return guestSurfaceStatusMessage(surface.status) || surface.summary;
+  }
+
+  // apps/local-guest/src/guest-kit.ts
+  var CHECK_IN_LABEL = GUEST_FACT_LABELS.checkIn;
+  var CHECK_OUT_LABEL = GUEST_FACT_LABELS.checkOut;
+  function ticketDate(label, part, end) {
+    const time2 = part.datetime === void 0 ? `<time>${escapeHtml(part.date)}</time>` : `<time datetime="${escapeHtml(part.datetime)}">${escapeHtml(part.date)}</time>`;
+    return `<div class="ui-ticket__date${end ? " ui-ticket__date--end" : ""}"><span class="ui-ticket__label">${label}</span><span class="ui-ticket__day">${escapeHtml(part.day)}</span>${time2}${part.time === void 0 ? "" : `<span class="ui-ticket__time">${escapeHtml(part.time)}</span>`}</div>`;
+  }
+  function ticketHtml(parts) {
+    return `<section class="ui-ticket" aria-label="Your stay"><div><p class="ui-ticket__label">Your stay</p><h2 class="ui-ticket__name">${escapeHtml(parts.title)}</h2></div><div class="ui-ticket__dates">${ticketDate(CHECK_IN_LABEL, parts.checkIn, false)}<span class="ui-ticket__arrow" aria-hidden="true">\u2192</span>${ticketDate(CHECK_OUT_LABEL, parts.checkOut, true)}</div><p class="ui-ticket__foot">${escapeHtml(parts.foot)}</p></section>`;
+  }
+  function breakdownHtml(parts) {
+    const money = (value) => `<span class="ui-price-breakdown__value">${escapeHtml(value)}</span>`;
+    const total = parts.total === void 0 ? "" : `<div><p class="ui-price-breakdown__label">${GUEST_FACT_LABELS.allInStayTotal}</p><p class="ui-money-total">${escapeHtml(parts.total)}</p></div>`;
+    const deposit = parts.deposit === void 0 ? "" : `<p class="ui-price-breakdown__row">${GUEST_FACT_LABELS.refundableSecurityDeposit}: ${money(parts.deposit)}</p>`;
+    const due = parts.due === void 0 ? "" : `<p class="ui-price-breakdown__due">${GUEST_FACT_LABELS.amountDueNow}: ${money(parts.due)}</p>`;
+    const paid = parts.paid === void 0 ? "" : `<p class="ui-price-breakdown__paid">${GUEST_FACT_LABELS.amountPaid}: ${money(parts.paid)}</p>`;
+    return `<section class="ui-panel ui-price-breakdown" aria-label="Price breakdown">${parts.condition ? `<p class="ui-price-breakdown__condition">${escapeHtml(parts.condition)}</p>` : ""}${total}${deposit}${due}${paid}</section>`;
   }
 
   // apps/local-guest/src/client.ts
@@ -9067,7 +9168,7 @@ Known schemas:
     const priceLabel = children.find((child) => isPriceLabel(child.textContent?.trim() ?? ""));
     const location2 = children.find((child) => child.tagName === "SMALL" && child !== priceLabel);
     const facts = children.find((child) => child.tagName === "P" && child !== title);
-    const dates = children.find((child) => child.tagName === "SMALL" && child !== location2 && child !== priceLabel && !/^(Refundable|Amount Due|Nightly|Mandatory)/.test(child.textContent?.trim() ?? ""));
+    const dates = children.find((child) => guestFactValue(child.textContent ?? "", GUEST_FACT_LABELS.stayDates) !== void 0);
     for (const [element, className] of [[title, "unit-title"], [location2, "unit-location"], [facts, "unit-facts"], [dates, "unit-dates"]]) {
       element?.classList.add(className);
     }
@@ -9129,26 +9230,56 @@ Known schemas:
       root.appendChild(bar);
     }
   }
+  function findFact(children, label) {
+    for (const child of children) {
+      const value = guestFactValue(child.textContent ?? "", label);
+      if (value !== void 0) return { element: child, value };
+    }
+    return void 0;
+  }
+  function dayNumeral(date2) {
+    return date2.replaceAll(",", " ").split(" ").find((word) => word !== "" && Number.isInteger(Number(word)));
+  }
+  function replaceWithKitMarkup(root, html, consumed) {
+    const present = consumed.filter((element) => element !== void 0 && element.parentElement === root);
+    const template = document.createElement("template");
+    template.innerHTML = html;
+    const markup = template.content.firstElementChild;
+    if (present.length === 0 || markup === null) return;
+    root.insertBefore(markup, present[0]);
+    for (const element of present) element.remove();
+  }
   function organizeBookingTicket(mount) {
     const root = mount.querySelector('[data-a2ui-component="Column"]');
     if (!root) return;
     const children = [...root.children];
-    const title = children.find((child) => child.tagName === "H3" && !/^(₦|NGN\b)/.test(child.textContent?.trim() ?? ""));
-    if (!title) return;
-    const date2 = children.find((child) => child !== title && /^(?:Stay(?: dates?)?:|(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),?\s)/i.test(child.textContent?.trim() ?? ""));
-    const party = children.find((child) => child !== title && child !== date2 && /^(?:Guests?:|\d+\s+(?:guest|occupant))/i.test(child.textContent?.trim() ?? ""));
-    const ticket = wrapDirectChildren(root, "ui-ticket", [title, date2, party].filter((element) => element !== void 0));
-    if (ticket) {
-      ticket.setAttribute("role", "group");
-      ticket.setAttribute("aria-label", "Your stay");
+    const title = children.find((child) => child.tagName === "H3" && guestFactValue(child.textContent ?? "", GUEST_FACT_LABELS.allInStayTotal) === void 0);
+    const checkIn = findFact(children, GUEST_FACT_LABELS.checkIn);
+    const checkOut = findFact(children, GUEST_FACT_LABELS.checkOut);
+    const stay = findFact(children, GUEST_FACT_LABELS.stay);
+    const checkInDay = checkIn === void 0 ? void 0 : dayNumeral(checkIn.value);
+    const checkOutDay = checkOut === void 0 ? void 0 : dayNumeral(checkOut.value);
+    if (title && checkIn && checkOut && stay && checkInDay && checkOutDay) {
+      replaceWithKitMarkup(root, ticketHtml({
+        title: title.textContent?.trim() ?? "",
+        checkIn: { day: checkInDay, date: checkIn.value },
+        checkOut: { day: checkOutDay, date: checkOut.value },
+        foot: stay.value
+      }), [title, checkIn.element, checkOut.element, stay.element]);
     }
-    const amountLabel = children.find((child) => (child.textContent?.trim() ?? "").startsWith(GUEST_GLOSSARY.allInStayTotal));
-    const amount = children.find((child) => child !== title && /^(₦|NGN\b)/.test(child.textContent?.trim() ?? ""));
-    const deposit = children.find((child) => (child.textContent?.trim() ?? "").startsWith(GUEST_GLOSSARY.refundableSecurityDeposit));
-    const due = children.find((child) => /^(?:Total to complete booking|Amount Due Now|Amount due now|Amount paid)/i.test(child.textContent?.trim() ?? ""));
-    const priceNodes = [amountLabel, amount, deposit, due].filter((element) => element !== void 0 && element.parentElement === root);
-    const breakdown = wrapDirectChildren(root, "ui-panel ui-price-breakdown", priceNodes);
-    if (breakdown) breakdown.setAttribute("aria-label", "Price breakdown");
+    const total = findFact(children, GUEST_FACT_LABELS.allInStayTotal);
+    if (!total) return;
+    const deposit = findFact(children, GUEST_FACT_LABELS.refundableSecurityDeposit);
+    const due = findFact(children, GUEST_FACT_LABELS.amountDueNow);
+    const paid = findFact(children, GUEST_FACT_LABELS.amountPaid);
+    const condition = children.find((child) => child.textContent?.trim() === GUEST_FACT_LABELS.ifRequestAccepted);
+    replaceWithKitMarkup(root, breakdownHtml({
+      ...condition ? { condition: GUEST_FACT_LABELS.ifRequestAccepted } : {},
+      total: total.value,
+      ...deposit ? { deposit: deposit.value } : {},
+      ...due ? { due: due.value } : {},
+      ...paid ? { paid: paid.value } : {}
+    }), [condition, total.element, deposit?.element, due?.element, paid?.element]);
   }
   function decorateDiscoveryCards(mount) {
     for (const card of mount.querySelectorAll('[data-a2ui-component="Card"]')) {
@@ -9522,7 +9653,7 @@ Known schemas:
     workspaceRegion.hidden = false;
     activeWorkspace.dataset.mode = presentation.mode;
     activeWorkspace.dataset.status = presentation.status;
-    activeWorkspace.dataset.surfaceKind = surface.surfaceId.includes(":unit:") ? "unit-detail" : surface.surfaceId.includes(":compare:") ? "compare" : surface.surfaceId.includes(":discovery:") ? "discovery" : surface.surfaceId.includes(":payment:") || surface.surfaceId.includes(":offer:") ? "payment" : surface.surfaceId.includes(":request:") ? "booking" : "general";
+    activeWorkspace.dataset.surfaceKind = surface.surfaceId.includes(":unit:") ? "unit-detail" : surface.surfaceId.includes(":compare:") ? "compare" : surface.surfaceId.includes(":discovery:") ? "discovery" : surface.surfaceId.includes(":payment:") || surface.surfaceId.includes(":offer:") ? "payment" : surface.surfaceId.includes(":request:") || surface.surfaceId.includes(":booking:") ? "booking" : "general";
     activeWorkspace.classList.remove("workspace-arrival");
     void activeWorkspace.offsetWidth;
     activeWorkspace.classList.add("workspace-arrival");

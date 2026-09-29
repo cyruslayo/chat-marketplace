@@ -329,7 +329,7 @@ test("Guest Request Draft remains separate from Booking Request until review and
     assert.ok(offerText.includes("Conditional Booking Offer"));
     assert.ok(offerText.includes(`All-In Stay Total: ${ALL_IN_TOTAL_NGN}`));
     assert.ok(offerText.includes("Refundable Security Deposit (separate): ₦20,000"));
-    assert.ok(offerText.includes("Total to complete booking: ₦390,000"));
+    assert.ok(offerText.includes("Amount due now: ₦390,000"));
     assert.ok(offerText.includes("Cancellation:"));
     assert.match(offerText, /Pay by .* WAT/);
     assert.ok([...offerTarget.querySelectorAll("button")].some((button) => button.textContent?.includes("Accept")));

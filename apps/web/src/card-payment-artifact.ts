@@ -29,6 +29,8 @@ export interface CardPaymentArtifact {
     readonly unitId: string;
     readonly checkIn: string;
     readonly checkOut: string;
+    /** The number of guests in the offer, so the payment ticket can show the party (guest UI consistency issue 04). */
+    readonly occupantCount?: number;
     readonly amountDueNowKobo: number;
     readonly allInStayTotalKobo?: number;
     readonly refundableSecurityDepositKobo?: number;
@@ -67,7 +69,7 @@ export function cardPaymentArtifactFromState({
   journey,
   now,
 }: {
-  readonly offer: { offerId: string; unitId: string; unit: { title: string }; dates: { checkIn: string; checkOut: string }; totalAmountDueNowKobo: number; refundableSecurityDepositKobo?: number; securityDeposit?: { policyVersion: string }; quote?: { allInStayTotalKobo?: number }; paymentWindow: { expiresAt: string }; status: string; parties: { primaryGuest: { id: string; name: string }; distinctPayer?: { id: string; name: string } | null }; tenantId?: string };
+  readonly offer: { offerId: string; unitId: string; unit: { title: string }; dates: { checkIn: string; checkOut: string }; occupants?: readonly unknown[]; totalAmountDueNowKobo: number; refundableSecurityDepositKobo?: number; securityDeposit?: { policyVersion: string }; quote?: { allInStayTotalKobo?: number }; paymentWindow: { expiresAt: string }; status: string; parties: { primaryGuest: { id: string; name: string }; distinctPayer?: { id: string; name: string } | null }; tenantId?: string };
   readonly viewer: CommandPrincipal;
   readonly session?: CardCheckoutSession;
   readonly reservation?: Reservation;
@@ -88,6 +90,7 @@ export function cardPaymentArtifactFromState({
     unitId: offer.unitId,
     checkIn: offer.dates.checkIn,
     checkOut: offer.dates.checkOut,
+    ...(offer.occupants === undefined ? {} : { occupantCount: offer.occupants.length }),
     amountDueNowKobo: offer.totalAmountDueNowKobo,
     ...(offer.quote?.allInStayTotalKobo === undefined ? {} : { allInStayTotalKobo: offer.quote.allInStayTotalKobo }),
     ...(offer.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: offer.refundableSecurityDepositKobo }),

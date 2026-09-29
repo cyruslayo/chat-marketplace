@@ -34,6 +34,7 @@ import {
   formatStayDates,
   guestRequestStatus,
   guestPaymentStatus,
+  GUEST_FACT_LABELS,
   GUEST_GLOSSARY,
   GUEST_JOURNEY,
   GUEST_RECEIPTS,
@@ -1256,7 +1257,7 @@ export class LocalGuestApp {
         if (artifact.facts.status === "expired") {
           const expiredId = `thread-${thread.threadId}:payment:expired:${projection.offerId}`;
           thread.activeSurfaces.set(PAYMENT_STAGE, expiredId);
-          return { ...this.#paymentSurface(thread, artifact, "Payment Window expired", expiredId), status: "expired", textFallback: `Payment window expired. Total to complete booking: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}. No Reservation exists.` };
+          return { ...this.#paymentSurface(thread, artifact, "Payment Window expired", expiredId), status: "expired", textFallback: `Payment window expired. ${GUEST_FACT_LABELS.amountDueNow}: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}. No Reservation exists.` };
         }
         const storedSurfaceId = projection.activeSurfaceId ?? "";
         // The stored surface id is the authoritative pointer to the exact
@@ -1994,7 +1995,7 @@ export class LocalGuestApp {
     const review = artifact.actions[0]?.type === "submit";
     const { facts } = artifact;
     // Issue 07 AC1: one reservation-status statement; ADR-0006 provider only on review.
-    return `${guestReservationStatus("draft")}. ${facts.unitTitle}. ${review ? `${accommodationProviderLine(facts.operatorName)}. ` : ""}${formatStayDates(facts.checkIn, facts.checkOut)} · ${facts.nights} ${facts.nights === 1 ? "night" : "nights"} · ${facts.occupants.length} ${facts.occupants.length === 1 ? "guest" : "guests"}. ${GUEST_GLOSSARY.allInStayTotal}: ${formatNgnKobo(facts.allInStayTotalKobo)}. ${facts.refundableSecurityDepositKobo > 0 ? `${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(facts.refundableSecurityDepositKobo)}. ` : ""}${review ? `Total to complete booking if confirmed: ${formatNgnKobo(facts.amountDueNowKobo)}. ${GUEST_GLOSSARY.revalidation}. ` : "Review these details before you send the request. "}Cancellation terms: ${facts.cancellationPolicy.summary}.`;
+    return `${guestReservationStatus("draft")}. ${facts.unitTitle}. ${review ? `${accommodationProviderLine(facts.operatorName)}. ` : ""}${formatStayDates(facts.checkIn, facts.checkOut)} · ${facts.nights} ${facts.nights === 1 ? "night" : "nights"} · ${facts.occupants.length} ${facts.occupants.length === 1 ? "guest" : "guests"}. ${GUEST_GLOSSARY.allInStayTotal}: ${formatNgnKobo(facts.allInStayTotalKobo)}. ${facts.refundableSecurityDepositKobo > 0 ? `${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(facts.refundableSecurityDepositKobo)}. ` : ""}${review ? `${GUEST_FACT_LABELS.ifRequestAccepted}. ${GUEST_FACT_LABELS.amountDueNow}: ${formatNgnKobo(facts.amountDueNowKobo)}. ${GUEST_GLOSSARY.revalidation}. ` : "Review these details before you send the request. "}Cancellation terms: ${facts.cancellationPolicy.summary}.`;
   }
 
   #handleDraftReview(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
@@ -2106,7 +2107,7 @@ export class LocalGuestApp {
       mode: "focused-surface",
       summary: status.label,
       conventionalRoute: conventionalBookingRequestRoute(requestId),
-      textFallback: `${status.label}. ${artifact.facts.unitTitle ?? `Your selected ${GUEST_GLOSSARY.unit}`}. Stay: ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)} (${artifact.facts.nights} nights). ${artifact.facts.quote ? `${GUEST_GLOSSARY.allInStayTotal}: ${formatNgnKobo(artifact.facts.quote.allInStayTotalKobo)}. ${artifact.facts.quote.refundableSecurityDepositKobo > 0 ? `${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(artifact.facts.quote.refundableSecurityDepositKobo)}. ` : ""}` : ""}${artifact.facts.status === "disclosed" && artifact.facts.delivered ? `Operator response deadline: ${formatWAT(artifact.facts.operatorResponseDeadlineAt)}.` : ""} ${status.detail}`,
+      textFallback: `${status.label}. ${artifact.facts.unitTitle ?? `Your selected ${GUEST_GLOSSARY.unit}`}. Stay: ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)} (${artifact.facts.nights} nights). ${artifact.facts.quote ? `${GUEST_GLOSSARY.allInStayTotal}: ${formatNgnKobo(artifact.facts.quote.allInStayTotalKobo)}. ${artifact.facts.quote.refundableSecurityDepositKobo > 0 ? `${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(artifact.facts.quote.refundableSecurityDepositKobo)}. ` : ""}${GUEST_FACT_LABELS.ifRequestAccepted}. ${GUEST_FACT_LABELS.amountDueNow}: ${formatNgnKobo(artifact.facts.quote.totalAmountDueNowKobo)}. ` : ""}${artifact.facts.status === "disclosed" && artifact.facts.delivered ? `Operator response deadline: ${formatWAT(artifact.facts.operatorResponseDeadlineAt)}.` : ""} ${status.detail}`,
       a2uiMessages: bookingRequestArtifactToA2UI({ artifact, surfaceId }),
     };
   }
@@ -2122,7 +2123,7 @@ export class LocalGuestApp {
       ? "Access details are in secure booking details."
       : "Check-in details will be shared when they are ready. A confirmed booking does not itself grant physical access.";
     const depositCollected = artifact.facts.securityDeposit?.status === "held" && (artifact.facts.refundableSecurityDepositKobo ?? 0) > 0;
-    return `Booking confirmed for ${artifact.facts.unitTitle ?? "your stay"}. ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)} · ${artifact.facts.nights} ${artifact.facts.nights === 1 ? "night" : "nights"}; ${artifact.facts.occupants.length} ${artifact.facts.occupants.length === 1 ? "guest" : "guests"}. ${artifact.facts.amountPaidKobo ? `Stay payment verified: ${formatNgnKobo(artifact.facts.amountPaidKobo)}. ` : ""}${depositCollected ? `${GUEST_GLOSSARY.refundableSecurityDeposit} collected: ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo!)}. ` : ""}${access} Your booking reference and full contract are in booking details.`;
+    return `Booking confirmed for ${artifact.facts.unitTitle ?? "your stay"}. ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)} · ${artifact.facts.nights} ${artifact.facts.nights === 1 ? "night" : "nights"}; ${artifact.facts.occupants.length} ${artifact.facts.occupants.length === 1 ? "guest" : "guests"}. ${artifact.facts.amountPaidKobo ? `${GUEST_FACT_LABELS.amountPaid}: ${formatNgnKobo(artifact.facts.amountPaidKobo)}. ` : ""}${depositCollected ? `${GUEST_GLOSSARY.refundableSecurityDeposit} collected: ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo!)}. ` : ""}${access} Your booking reference and full contract are in booking details.`;
   }
 
   #offerFallback(artifact: ConditionalOfferArtifact): string {
@@ -2130,7 +2131,7 @@ export class LocalGuestApp {
       : artifact.facts.status === "accepted" ? "Offer accepted · Payment required"
         : artifact.facts.status === "expired" ? "Offer expired"
           : artifact.facts.status === "stale" ? "Offer no longer current" : "Offer withdrawn";
-    return `${status}. ${artifact.facts.unitTitle}. ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)} · ${artifact.facts.nights} ${artifact.facts.nights === 1 ? "night" : "nights"}. ${GUEST_GLOSSARY.allInStayTotal}: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. ${artifact.facts.refundableSecurityDepositKobo > 0 ? `${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}Total to complete booking: ${formatNgnKobo(artifact.facts.totalAmountDueNowKobo)}. ${formatBookingDeadline(artifact.facts.paymentWindowExpiresAt)}. ${guestReservationStatus(artifact.facts.status === "issued" ? "offer-issued" : artifact.facts.status === "accepted" ? "offer-accepted" : "offer-closed")}`;
+    return `${status}. ${artifact.facts.unitTitle}. ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)} · ${artifact.facts.nights} ${artifact.facts.nights === 1 ? "night" : "nights"}. ${GUEST_GLOSSARY.allInStayTotal}: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. ${artifact.facts.refundableSecurityDepositKobo > 0 ? `${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}${GUEST_FACT_LABELS.amountDueNow}: ${formatNgnKobo(artifact.facts.totalAmountDueNowKobo)}. ${formatBookingDeadline(artifact.facts.paymentWindowExpiresAt)}. ${guestReservationStatus(artifact.facts.status === "issued" ? "offer-issued" : artifact.facts.status === "accepted" ? "offer-accepted" : "offer-closed")}`;
   }
 
   #confirmedBookingSurface(thread: GuestThreadState): GuestSurfacePayload | null {
@@ -2365,7 +2366,7 @@ export class LocalGuestApp {
         : artifact.facts.status === "checkout_initiated" ? `Continue to ${artifact.facts.currentComponent === "security_deposit" ? GUEST_GLOSSARY.refundableSecurityDeposit : "stay payment"} · ${formatNgnKobo(currentAmount ?? artifact.facts.amountDueNowKobo)}`
           : artifact.facts.status === "deposit_required" ? `Continue to ${GUEST_GLOSSARY.refundableSecurityDeposit} · ${formatNgnKobo(currentAmount ?? artifact.facts.refundableSecurityDepositKobo ?? artifact.facts.amountDueNowKobo)}`
             : "View payment status";
-    return { surfaceId, mode: "focused-surface", summary, conventionalRoute: conventionalCardPaymentRoute(thread.offerId!), conventionalRouteLabel: routeLabel, textFallback: `${status.label}. ${artifact.facts.unit}, ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)}. ${artifact.facts.allInStayTotalKobo === undefined ? "" : `${GUEST_GLOSSARY.allInStayTotal}: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. `}${artifact.facts.refundableSecurityDepositKobo ? `${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}${currentAmount === undefined ? "" : `Current payment: ${formatNgnKobo(currentAmount)}. `}${formatWAT(artifact.facts.paymentWindowExpiresAt)}. ${status.detail}`, a2uiMessages: cardPaymentArtifactToA2UI({ artifact, surfaceId }) };
+    return { surfaceId, mode: "focused-surface", summary, conventionalRoute: conventionalCardPaymentRoute(thread.offerId!), conventionalRouteLabel: routeLabel, textFallback: `${status.label}. ${artifact.facts.unit}, ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)}. ${artifact.facts.allInStayTotalKobo === undefined ? "" : `${GUEST_GLOSSARY.allInStayTotal}: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. `}${artifact.facts.refundableSecurityDepositKobo ? `${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}${artifact.facts.status === "ready" || artifact.facts.status === "deposit_required" ? `${GUEST_FACT_LABELS.amountDueNow}: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}. ` : ""}${currentAmount === undefined ? "" : `Current payment: ${formatNgnKobo(currentAmount)}. `}${formatWAT(artifact.facts.paymentWindowExpiresAt)}. ${status.detail}`, a2uiMessages: cardPaymentArtifactToA2UI({ artifact, surfaceId }) };
   }
 
   #partySizeFor(thread: GuestThreadState): number {

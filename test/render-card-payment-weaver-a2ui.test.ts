@@ -14,7 +14,7 @@ test("Card payment A2UI is deterministic, v0.9.1 Basic Catalog, and never render
   const ready = cardPaymentArtifactToA2UI({ artifact: artifact("ready"), surfaceId: "surface" });
   assert.equal(ready[0] && "createSurface" in ready[0] ? ready[0].createSurface.catalogId : undefined, A2UI_V091_BASIC_CATALOG_ID);
   assert.deepEqual(ready, cardPaymentArtifactToA2UI({ artifact: artifact("ready"), surfaceId: "surface" }));
-  assert.match(text(ready), /Total to complete booking: ₦100/);
+  assert.match(text(ready), /Amount due now: ₦100/);
   assert.match(text(ready), /Continue to stay payment · ₦100/);
   assert.doesNotMatch(text(ready), /pan|cvv|cvc|pin|otp|token|mark paid/i);
   assert.doesNotMatch(text(cardPaymentArtifactToA2UI({ artifact: artifact("ready", false), surfaceId: "surface" })), /Continue to stay payment/);

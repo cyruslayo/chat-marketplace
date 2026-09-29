@@ -2,8 +2,8 @@ import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage 
 import { CARD_PAYMENT_INITIALIZE_CHECKOUT_EVENT, CARD_PAYMENT_VERIFY_RETURN_EVENT } from "../../web/src/card-payment-actions.js";
 import type { CardPaymentArtifact } from "../../web/src/card-payment-artifact.js";
 
-import { bookingProgressText, formatBookingDeadline, formatBookingMoney, formatStayDates, guestPaymentStatus } from "./booking-presentation.js";
-import { GUEST_GLOSSARY } from "./guest-content.js";
+import { bookingProgressText, formatBookingDeadline, formatBookingMoney, guestPaymentStatus, nightsBetween, ticketFactComponents, ticketFactIds } from "./booking-presentation.js";
+import { GUEST_FACT_LABELS, GUEST_GLOSSARY, guestFact } from "./guest-content.js";
 
 export function cardPaymentArtifactToA2UI({ artifact, surfaceId }: { readonly artifact: CardPaymentArtifact; readonly surfaceId: string }): readonly A2UIServerMessage[] {
   const { facts } = artifact;
@@ -19,7 +19,7 @@ export function cardPaymentArtifactToA2UI({ artifact, surfaceId }: { readonly ar
       : undefined);
   const componentLabel = component === "security_deposit" ? GUEST_GLOSSARY.refundableSecurityDeposit : "stay payment";
   const componentText = component && componentAmount !== undefined
-    ? `${isProcessing ? (component === "security_deposit" ? GUEST_GLOSSARY.refundableSecurityDeposit : "Stay payment") + " being checked" : `Next payment: ${componentLabel}`} · ${formatBookingMoney(componentAmount)}`
+    ? `${isProcessing ? (component === "security_deposit" ? GUEST_GLOSSARY.refundableSecurityDeposit : "Stay payment") + " being checked" : `${GUEST_FACT_LABELS.nextPayment}: ${componentLabel}`} · ${formatBookingMoney(componentAmount)}`
     : undefined;
   const showTotalRequirement = facts.status === "ready" || facts.status === "deposit_required";
   const paymentBody = facts.status === "confirmed"
@@ -35,7 +35,7 @@ export function cardPaymentArtifactToA2UI({ artifact, surfaceId }: { readonly ar
       : `Continue to stay payment · ${formatBookingMoney(actionAmount)}`;
   const components: A2UIComponent[] = [
     { id: "root", component: "Column", children: [
-      "card-payment-title", "card-payment-status", "card-payment-unit", "card-payment-dates",
+      "card-payment-title", "card-payment-status", "card-payment-unit", ...ticketFactIds("card-payment"),
       ...(facts.allInStayTotalKobo === undefined ? [] : ["card-payment-total"]),
       ...(facts.refundableSecurityDepositKobo === undefined || facts.refundableSecurityDepositKobo <= 0 ? [] : ["card-payment-deposit"]),
       ...(showTotalRequirement ? ["card-payment-amount-due"] : []),
@@ -45,10 +45,10 @@ export function cardPaymentArtifactToA2UI({ artifact, surfaceId }: { readonly ar
     { id: "card-payment-title", component: "Text", text: facts.status === "confirmed" ? "Booking confirmed" : isProcessing ? "Payment being checked" : facts.status === "ready" || facts.status === "deposit_required" ? "Payment required" : facts.status === "reconciliation_required" || facts.status === "compensation_pending" ? "Payment under review" : "Payment status", variant: "h2" },
     { id: "card-payment-status", component: "Text", text: facts.status === "confirmed" ? "Payment verified" : isProcessing ? "Payment processing" : facts.status === "ready" ? "Secure checkout is available" : facts.status === "deposit_required" ? "Stay payment verified" : paymentStatus.label },
     { id: "card-payment-unit", component: "Text", text: facts.unit, variant: "h3" },
-    { id: "card-payment-dates", component: "Text", text: formatStayDates(facts.checkIn, facts.checkOut) },
-    ...(facts.allInStayTotalKobo === undefined ? [] : [{ id: "card-payment-total", component: "Text" as const, text: `${GUEST_GLOSSARY.allInStayTotal}: ${formatBookingMoney(facts.allInStayTotalKobo)}`, variant: "h3" as const }]),
-    ...(facts.refundableSecurityDepositKobo === undefined || facts.refundableSecurityDepositKobo <= 0 ? [] : [{ id: "card-payment-deposit", component: "Text" as const, text: `${GUEST_GLOSSARY.refundableSecurityDeposit}: ${formatBookingMoney(facts.refundableSecurityDepositKobo)}` }]),
-    ...(showTotalRequirement ? [{ id: "card-payment-amount-due", component: "Text" as const, text: `Total to complete booking: ${formatBookingMoney(facts.amountDueNowKobo)}` }] : []),
+    ...ticketFactComponents("card-payment", { checkIn: facts.checkIn, checkOut: facts.checkOut, nights: nightsBetween(facts.checkIn, facts.checkOut), ...(facts.occupantCount === undefined ? {} : { guestCount: facts.occupantCount }) }),
+    ...(facts.allInStayTotalKobo === undefined ? [] : [{ id: "card-payment-total", component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.allInStayTotal, formatBookingMoney(facts.allInStayTotalKobo)), variant: "h3" as const }]),
+    ...(facts.refundableSecurityDepositKobo === undefined || facts.refundableSecurityDepositKobo <= 0 ? [] : [{ id: "card-payment-deposit", component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.refundableSecurityDeposit, formatBookingMoney(facts.refundableSecurityDepositKobo)) }]),
+    ...(showTotalRequirement ? [{ id: "card-payment-amount-due", component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.amountDueNow, formatBookingMoney(facts.amountDueNowKobo)) }] : []),
     ...(componentText ? [{ id: "card-payment-component", component: "Text" as const, text: componentText }] : []),
     { id: "card-payment-deadline", component: "Text", text: formatBookingDeadline(facts.paymentWindowExpiresAt) },
     ...(stage ? [{ id: "card-payment-progress", component: "Text" as const, text: bookingProgressText(stage) }] : []),

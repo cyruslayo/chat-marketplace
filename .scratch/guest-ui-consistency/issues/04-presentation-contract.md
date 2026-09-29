@@ -1,6 +1,6 @@
 # A stable presentation contract between the A2UI builders and the chat organizers
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 02
 Requested: 29 Sept 2026
@@ -37,3 +37,21 @@ When a builder changes wording, the chat silently falls back to Weaver's default
 0073/0081 (Basic Catalog only), 0072 (organizers are reversible presentation only), 0080 (text fallbacks), 0015 (order).
 
 ## Comments
+
+## Answer
+
+Landed on `ui/guest-consistency`.
+
+- **Label table.** `GUEST_FACT_LABELS` (frozen) in `apps/web-agent/src/guest-content.ts`, plus `guestFact` and `guestFactValue`: check-in, check-out, stay ("Stay: 3 nights · 2 guests"), stay dates, All-In Stay Total, Refundable Security Deposit (separate), "If your request is accepted", amount due now, amount paid, next payment, guests, fit reason. Every label is existing copy or a glossary term. `booking-presentation.ts` gained `formatTicketDate`, `formatStayFoot`, `nightsBetween`, `ticketFactComponents` and `ticketFactIds`, shared by the builders and by `guest-kit.ts`.
+- **Builders (AC1).** Request draft, booking request, conditional offer, card payment, booking contract and bank transfer each emit check-in, check-out and stay as separate label-prefixed `Text`s, then the money facts in the order [condition], All-In Stay Total, deposit, amount line, in canonical position. New facts on the way: the booking request and contract now carry the whole breakdown (they lacked the amount line and the total respectively), and `CardPaymentArtifact` and `BankTransferArtifact` gained an optional `occupantCount` so the payment ticket can show the party. The Basic Catalog is unchanged. Named guests stay visible as a separate `Guests: names` line under the ticket (draft and contract), since the ticket shows only the count, as in the design.
+- **Organizers (AC2, AC3, AC4).** `client.ts` `organizeBookingTicket` finds facts only through `guestFactValue(text, GUEST_FACT_LABELS.*)` and replaces them with `ticketHtml` and `breakdownHtml` from `guest-kit.ts`, the same functions the standalone pages use (`stayTicketHtml` and `priceBreakdownHtml` are thin wrappers over them). The kind switch now sends the confirmation (`:booking:`) through the organizer as well. A missing fact builds nothing partial. In `organizeUnitDetail`, the Stay dates line is found by its label, not by excluding other wording.
+- **Fallbacks (AC5).** The text fallbacks now say "Amount due now" and "Amount paid", and the request, draft-review and payment fallbacks state the amount line and, for a request, "If your request is accepted".
+- **Tests.** `test/guest-presentation-contract.test.ts`: one test per builder for AC1 (six), AC2 (no regex line in the client mentions booking-fact wording; the client does not spell the labels itself), AC5, and a table test. `test/guest-presentation-parity-chromium.test.ts`: AC3 (the ticket and price breakdown in the workspace equal the conventional page's for review, offer, payment and confirmed, HTML-identical after dropping `datetime`) and AC4 (the response is rewritten without Check-out: no ticket, the Weaver text stays visible, the surface is active, nothing announced as an error). Existing assertions changed for the new wording only: `phase4-booking-payment-presentation`, `render-card-payment-weaver-a2ui`, `render-conditional-offer-weaver-a2ui`, `local-guest-weaver-demo`.
+- **Verification.** `npm run check` clean; `npm test`: phase 1 1200/1200, phase 2 (real Chrome) 133 pass, 0 fail, 1 skip. Screenshots: `screenshots/04/`.
+
+## Comments
+
+- **Label change (please confirm).** The offer, card payment and draft used "Total to complete booking (if confirmed)" and the contract "Stay payment verified"; the approved design and the standalone pages use "Amount due now" and "Amount paid", so those are now the only labels. Amounts are unchanged; what "Amount due now" and "Amount paid" mean is issue 12.
+- **B and H test.** It passed only by accident, because its `not.*confirmed` regex matched "Total to complete booking if confirmed"; it now asserts "Your dates are not reserved".
+- **Not in this issue.** `decorateDiscoveryCards` still finds the card location as the first `<small>` (the discovery builder's location has no label; issue 05 redesigns the card and settles it), and `draft-replacement-a2ui` keeps its "Total to complete booking if confirmed" line (issue 07 territory). The bank transfer builder is not surfaced in the chat at all today, so it is tested directly.
+- ADRs: 0073/0081 (Basic Catalog only, no new component type), 0072 (the organizer only re-arranges text the server already sent), 0080 (text fallbacks complete), 0015 (total, deposit, amount line order asserted per builder), 0006 (provider line untouched).

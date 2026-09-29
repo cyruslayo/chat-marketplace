@@ -5,7 +5,7 @@ import {
 } from "@weaver/core";
 import { formatNgnKobo, type DiscoveryUnitProjection } from "./discovery-a2ui.js";
 import { unitDetailArtifactFromProjection, type UnitDetailArtifact } from "../../web/src/unit-detail-artifact.js";
-import { GUEST_GLOSSARY, GUEST_JOURNEY, formatGuestDate, guestAmenityLabel, guestInspectionDisclosure, guestOccupancyLabel } from "./guest-content.js";
+import { GUEST_FACT_LABELS, GUEST_GLOSSARY, GUEST_JOURNEY, formatGuestDate, guestAmenityLabel, guestFact, guestInspectionDisclosure, guestOccupancyLabel } from "./guest-content.js";
 
 export const REQUEST_TO_BOOK_EVENT = "shortlet.unit-detail.request-to-book";
 /** Issue 08: returns to the results of the same search; the server validates the discovery artifact id. */
@@ -49,7 +49,7 @@ export function unitDetailArtifactToA2UI({ artifact, surfaceId, backToResults }:
   const nightRate = facts.price.allInStayTotalKobo === null
     ? undefined
     : `Nightly rate: ${formatNgnKobo(facts.price.nightlyKobo)}`;
-  const stayDates = `Stay dates: ${formatGuestDate(facts.checkIn) ?? facts.checkIn} to ${formatGuestDate(facts.checkOut) ?? facts.checkOut}`;
+  const stayDates = guestFact(GUEST_FACT_LABELS.stayDates, `${formatGuestDate(facts.checkIn) ?? facts.checkIn} to ${formatGuestDate(facts.checkOut) ?? facts.checkOut}`);
   const amenityIds = facts.amenities.map((_, index) => `${prefix}-amenity-${index}`);
   const inspectionId = inspectionDisclosure === undefined ? [] : [`${prefix}-inspection`];
   const depositId = facts.price.refundableSecurityDepositKobo > 0 ? [`${prefix}-deposit`] : [];
@@ -74,7 +74,7 @@ export function unitDetailArtifactToA2UI({ artifact, surfaceId, backToResults }:
     ...(nightRate ? [{ id: `${prefix}-nightly-rate`, component: "Text" as const, text: nightRate, variant: "caption" as const }] : []),
     ...(facts.price.mandatoryFeesKobo > 0 ? [{ id: `${prefix}-fees`, component: "Text" as const, text: `Mandatory fees included: ${formatNgnKobo(facts.price.mandatoryFeesKobo)}`, variant: "caption" as const }] : []),
     ...(facts.price.refundableSecurityDepositKobo > 0 ? [{ id: `${prefix}-deposit`, component: "Text" as const, text: `${GUEST_GLOSSARY.refundableSecurityDeposit}: ${formatNgnKobo(facts.price.refundableSecurityDepositKobo)}`, variant: "caption" as const }] : []),
-    ...(facts.price.amountDueNowKobo === null ? [] : [{ id: `${prefix}-amount-due`, component: "Text" as const, text: `Amount Due Now: ${formatNgnKobo(facts.price.amountDueNowKobo)}`, variant: "caption" as const }]),
+    ...(facts.price.amountDueNowKobo === null ? [] : [{ id: `${prefix}-amount-due`, component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.amountDueNow, formatNgnKobo(facts.price.amountDueNowKobo)), variant: "caption" as const }]),
     { id: `${prefix}-description-heading`, component: "Text", text: "About this place", variant: "h3" },
     { id: `${prefix}-description`, component: "Text", text: facts.description },
     { id: `${prefix}-amenities-heading`, component: "Text", text: "Amenities", variant: "h3" },

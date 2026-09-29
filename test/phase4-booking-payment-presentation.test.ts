@@ -57,8 +57,8 @@ test("A. Request Draft explicitly says it is not reserved or confirmed", () => {
 
 test("B and H. Booking review preserves Unit, dates, guests and separate All-In Stay Total and deposit", () => {
   const text = componentText(requestDraftArtifactToA2UI({ artifact: draftArtifact("review"), surfaceId: "review" }));
-  for (const fact of ["Garden Stay, Ikoyi", "24–27 Sept 2026", "Ada Guest", "Tunde Guest", "All-In Stay Total: ₦202,000", "Refundable Security Deposit (separate): ₦50,000"]) assert.ok(text.includes(fact), `review includes ${fact}`);
-  assert.match(text, /does not yet confirm|not.*confirmed/i);
+  for (const fact of ["Garden Stay, Ikoyi", "Check-in: Thu, 24 Sept 2026", "Check-out: Sun, 27 Sept 2026", "Ada Guest", "Tunde Guest", "All-In Stay Total: ₦202,000", "Refundable Security Deposit (separate): ₦50,000"]) assert.ok(text.includes(fact), `review includes ${fact}`);
+  assert.match(text, /Your dates are not reserved/i);
 });
 
 test("C and N. Submitted Booking Request uses human status language and absolute WAT deadline", () => {
@@ -90,10 +90,10 @@ test("D, E and M. Conditional Offer shows absolute WAT expiry and offers one dir
 test("I and N. Payment-required surface states amount due and never claims payment success", () => {
   const text = componentText(cardPaymentArtifactToA2UI({ artifact: paymentArtifact("ready"), surfaceId: "payment" }));
   assert.match(text, /Payment required/i);
-  assert.match(text, /Total to complete booking: ₦252,000/);
+  assert.match(text, /Amount due now: ₦252,000/);
   assert.match(text, /Next payment: stay payment · ₦202,000/);
   assert.match(text, /All-In Stay Total: ₦202,000/);
-  assert.match(text, /Refundable Security Deposit: ₦50,000/);
+  assert.match(text, /Refundable Security Deposit \(separate\): ₦50,000/);
   assert.match(text, /Continue to stay payment · ₦202,000/i);
   assert.doesNotMatch(text, /Payment status: ready|Payment succeeded|Booking confirmed|Reservation confirmed/i);
 });
@@ -113,7 +113,7 @@ test("J2. Payment processing is recoverable while reconciliation and failure rem
   assert.match(processingText, /Payment being checked.*Payment processing/);
   assert.match(processingText, /do not submit another payment/i);
   assert.match(processingText, /Stay payment being checked · ₦202,000/);
-  assert.doesNotMatch(processingText, /Total to complete booking: ₦252,000.*Total to complete booking: ₦252,000/);
+  assert.doesNotMatch(processingText, /Amount due now: ₦252,000.*Amount due now: ₦252,000/);
   assert.doesNotMatch(processingText, /Booking confirmed|Reservation confirmed/i);
   assert.match(JSON.stringify(processingMessages), /Check payment status/);
 
@@ -128,8 +128,9 @@ test("J2. Payment processing is recoverable while reconciliation and failure rem
 test("K. Confirmed booking presents reservation and contract facts without leading with identifiers", () => {
   const text = componentText(bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: "confirmed" }));
   assert.match(text, /Reservation confirmed/);
-  assert.match(text, /24–27 Sept 2026/);
-  assert.match(text, /Stay payment verified: ₦202,000/);
+  assert.match(text, /Check-in: Thu, 24 Sept 2026/);
+  assert.match(text, /Check-out: Sun, 27 Sept 2026/);
+  assert.match(text, /Amount paid: ₦202,000/);
   assert.match(text, /Refundable Security Deposit collected: ₦50,000/);
   assert.match(text, /Booking reference/);
   assert.match(text, /access.*not available|access.*authorized|not.*access/i);
@@ -149,14 +150,14 @@ test("Draft uses a concise stay summary and humanizes placeholder guest names", 
 test("Payment checkout shows the exact current component amount separately from the total requirement", () => {
   const deposit = { ...paymentArtifact("deposit_required"), facts: { ...paymentArtifact("deposit_required").facts, currentComponent: "security_deposit" as const, currentComponentAmountKobo: 5000000 } };
   const text = componentText(cardPaymentArtifactToA2UI({ artifact: deposit, surfaceId: "deposit-required" }));
-  assert.match(text, /Total to complete booking: ₦252,000/);
+  assert.match(text, /Amount due now: ₦252,000/);
   assert.match(text, /Next payment: Refundable Security Deposit · ₦50,000/);
   assert.doesNotMatch(text, /Amount Due Now: ₦252,000/);
 });
 
 test("Confirmed booking summary distinguishes stay payment from a separately collected deposit", () => {
   const text = componentText(bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: "confirmed-money" }));
-  assert.match(text, /Stay payment verified: ₦202,000/);
+  assert.match(text, /Amount paid: ₦202,000/);
   assert.match(text, /Refundable Security Deposit collected: ₦50,000/);
   assert.doesNotMatch(text, /Payment verified: ₦252,000/);
 });

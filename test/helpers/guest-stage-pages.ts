@@ -62,3 +62,28 @@ export async function withStagePage<T>(spec: StagePageSpec, run: (context: Stage
 export function railSteps(html: string): readonly (readonly [string, string])[] {
   return [...html.matchAll(/<li data-step="([a-z]+)" data-state="([a-z]+)"/g)].map((match) => [match[1]!, match[2]!] as const);
 }
+
+interface A2UIUpdate { readonly updateComponents: { readonly components: readonly { readonly id: string; readonly component: string; readonly text?: string; readonly children?: readonly string[] }[] } }
+
+/** The text of each Text component a surface's root Column lists, in the order the surface shows them. */
+export function surfaceTexts(surface: { readonly a2uiMessages: readonly unknown[] }): readonly string[] {
+  const update = surface.a2uiMessages.find((message): message is A2UIUpdate => typeof message === "object" && message !== null && "updateComponents" in message);
+  if (!update) return [];
+  const components = update.updateComponents.components;
+  const root = components.find((component) => component.component === "Column" && component.children !== undefined);
+  return (root?.children ?? []).flatMap((id) => {
+    const component = components.find((candidate) => candidate.id === id);
+    return component?.component === "Text" && component.text !== undefined ? [component.text] : [];
+  });
+}
+
+/** Asserts `labels` each lead one Text, in this order, and returns those Texts. */
+export function factsInOrder(texts: readonly string[], labels: readonly string[]): readonly string[] {
+  let from = 0;
+  return labels.map((label) => {
+    const index = texts.findIndex((text, position) => position >= from && (text === label || text.startsWith(`${label}: `)));
+    if (index < 0) throw new Error(`No Text starts with "${label}" after position ${from} in: ${JSON.stringify(texts)}`);
+    from = index + 1;
+    return texts[index]!;
+  });
+}

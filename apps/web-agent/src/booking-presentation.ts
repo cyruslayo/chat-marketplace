@@ -1,6 +1,7 @@
 import { formatNgnKobo } from "./discovery-a2ui.js";
 import type { CardPaymentStatus } from "../../web/src/card-payment-artifact.js";
-import { GUEST_GLOSSARY, guestReservationStatus } from "./guest-content.js";
+import type { A2UIComponent } from "@weaver/core";
+import { GUEST_FACT_LABELS, GUEST_GLOSSARY, guestFact, guestReservationStatus } from "./guest-content.js";
 
 export type BookingProgressStage = "request" | "operator-review" | "offer" | "payment" | "payment-processing" | "confirmed";
 
@@ -83,4 +84,35 @@ export function guestPaymentStatus(status: CardPaymentStatus, processing = false
 export function formatBookingMoney(kobo: number, currency = "NGN"): string {
   const ngnAmount = formatNgnKobo(kobo);
   return currency === "NGN" ? ngnAmount : `${currency} ${ngnAmount.slice(1)}`;
+}
+
+/** "Sat, 3 Oct 2026" for a plain calendar date; anything else is shown as given. */
+export function formatTicketDate(value: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("en-NG", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(date);
+}
+
+/** The ticket's foot line, shared by the standalone pages and the A2UI builders: "3 nights · 2 guests". */
+export function formatStayFoot(nights: number, guestCount?: number): string {
+  const guests = guestCount === undefined ? "" : ` · ${guestCount} ${guestCount === 1 ? "guest" : "guests"}`;
+  return `${nights} ${nights === 1 ? "night" : "nights"}${guests}`;
+}
+
+/** The three ticket facts of a booking surface as separate Text components: check-in, check-out, stay and party. */
+export function ticketFactComponents(prefix: string, stay: { readonly checkIn: string; readonly checkOut: string; readonly nights: number; readonly guestCount?: number }): readonly A2UIComponent[] {
+  return [
+    { id: `${prefix}-check-in`, component: "Text", text: guestFact(GUEST_FACT_LABELS.checkIn, formatTicketDate(stay.checkIn)) },
+    { id: `${prefix}-check-out`, component: "Text", text: guestFact(GUEST_FACT_LABELS.checkOut, formatTicketDate(stay.checkOut)) },
+    { id: `${prefix}-stay`, component: "Text", text: guestFact(GUEST_FACT_LABELS.stay, formatStayFoot(stay.nights, stay.guestCount)) },
+  ];
+}
+
+export function ticketFactIds(prefix: string): readonly string[] {
+  return [`${prefix}-check-in`, `${prefix}-check-out`, `${prefix}-stay`];
+}
+
+/** Whole nights between two plain calendar dates (0 when they are not a valid stay). */
+export function nightsBetween(checkIn: string, checkOut: string): number {
+  return Math.max(0, Math.round((Date.parse(`${checkOut}T00:00:00Z`) - Date.parse(`${checkIn}T00:00:00Z`)) / 86_400_000));
 }
