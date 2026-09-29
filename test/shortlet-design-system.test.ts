@@ -49,6 +49,8 @@ test("Dark roles keep text at 4.5:1 and control edges and focus at 3:1", async (
       ["secondary / canvas", t("--color-text-secondary"), t("--color-canvas"), 4.5],
       ["muted / surface-subtle", t("--color-text-muted"), t("--color-surface-subtle"), 4.5],
       ["on-action / action", t("--color-on-action"), t("--color-action"), 4.5],
+      ["on-inverse / inverse surface", t("--color-text-on-inverse"), t("--color-surface-inverse"), 4.5],
+      ["muted on-inverse / inverse surface", t("--color-text-on-inverse-muted"), t("--color-surface-inverse"), 4.5],
       ["action link / surface", t("--color-action"), t("--color-surface"), 4.5],
       ["accent / surface", t("--color-accent"), t("--color-surface"), 4.5],
       ["border / surface", t("--color-border"), t("--color-surface"), 3],
@@ -63,9 +65,18 @@ test("Dark roles keep text at 4.5:1 and control edges and focus at 3:1", async (
       assert.ok(ratio >= minimum, `dark ${label} meets ${minimum}:1 (actual ${ratio.toFixed(2)}:1)`);
     }
   }
+  assert.equal(tokenIn(forced, "--color-surface-inverse").toUpperCase(), "#0E2A21");
+  assert.equal(tokenIn(forced, "--color-border-inverse").toUpperCase(), "#2F6B55");
+  assert.equal(tokenIn(forced, "--color-accent-on-inverse").toUpperCase(), "#5CC49A");
   // Every dark role must also exist in the light :root so no colour is dark-only.
   const light = css.slice(0, css.indexOf(':root[data-theme="dark"]'));
   for (const name of forced.match(/--color-[a-z-]+(?=:)/g) ?? []) assert.match(light, new RegExp(`${name}:`), `${name} has a light value`);
+  assert.match(light, /--font-heading:\s*var\(--font-display\)/);
+  assert.match(css, /\.guest-editorial :where\(h1, h2, h3\) \{ font-family: var\(--font-heading\); \}/);
+  assert.match(light, /--radius-sheet:\s*var\(--radius-hero\)/);
+  assert.match(css, /\.ui-ticket\s*\{/);
+  assert.match(css, /\.ui-facts--chips\s*\{/);
+  assert.match(css, /\.ui-action-bar\s*\{/);
 });
 
 test("Weaver reads the shared tokens through the --a2ui-* bridge instead of colour overrides", async () => {

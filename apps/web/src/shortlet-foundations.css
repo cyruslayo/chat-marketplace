@@ -31,6 +31,11 @@
   --color-surface: #FFFFFF;
   --color-surface-subtle: #EEECE5;
   --color-surface-elevated: #FFFFFF;
+  --color-surface-inverse: #063A2C;
+  --color-surface-viewer: #111814;
+  --color-text-on-viewer: #FFFFFF;
+  --color-border-inverse: #0B5C46;
+  --color-accent-on-inverse: #5CC49A;
   --color-text: #1D2923;
   --color-text-secondary: #49574E;
   --color-text-muted: #5D6A62;
@@ -40,6 +45,8 @@
   --color-action-hover: #084735;
   --color-action-pressed: #063A2C;
   --color-on-action: #FFFFFF;
+  --color-text-on-inverse: #FFFFFF;
+  --color-text-on-inverse-muted: #D5EBE0;
   --color-action-subtle: #EEF6F2;
   --color-accent: #8A4318;
   --color-accent-subtle: #F7E6D8;
@@ -61,6 +68,7 @@
   /* Display serif for place names, page titles and money totals. System faces only:
      no third-party font request (privacy, ADR-0078 text-before-media). */
   --font-display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+  --font-heading: var(--font-display);
   --font-mono: ui-monospace, "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
   --font-size-display: 2.5rem;
   --font-line-display: 1.15;
@@ -100,6 +108,7 @@
   --radius-card: 0.75rem;
   --radius-workspace: 1rem;
   --radius-hero: 1.5rem;
+  --radius-sheet: var(--radius-hero);
   --radius-round: 50%;
 
   --elevation-raised: 0 1px 2px rgb(29 41 35 / 6%), 0 1px 1px rgb(29 41 35 / 4%);
@@ -138,6 +147,11 @@
   --color-surface: #18211C;
   --color-surface-subtle: #212C26;
   --color-surface-elevated: #26322B;
+  --color-surface-inverse: #0E2A21;
+  --color-surface-viewer: #06150F;
+  --color-text-on-viewer: #E6EBE5;
+  --color-border-inverse: #2F6B55;
+  --color-accent-on-inverse: #5CC49A;
   --color-text: #E6EBE5;
   --color-text-secondary: #C3CCC5;
   --color-text-muted: #A3AFA7;
@@ -147,6 +161,8 @@
   --color-action-hover: #78D2AD;
   --color-action-pressed: #94DDBF;
   --color-on-action: #06150F;
+  --color-text-on-inverse: #E6EBE5;
+  --color-text-on-inverse-muted: #9FD9BF;
   --color-action-subtle: #15342A;
   --color-accent: #E59A6A;
   --color-accent-subtle: #3A2518;
@@ -175,6 +191,11 @@
     --color-surface: #18211C;
     --color-surface-subtle: #212C26;
     --color-surface-elevated: #26322B;
+    --color-surface-inverse: #0E2A21;
+    --color-surface-viewer: #06150F;
+    --color-text-on-viewer: #E6EBE5;
+    --color-border-inverse: #2F6B55;
+    --color-accent-on-inverse: #5CC49A;
     --color-text: #E6EBE5;
     --color-text-secondary: #C3CCC5;
     --color-text-muted: #A3AFA7;
@@ -184,6 +205,8 @@
     --color-action-hover: #78D2AD;
     --color-action-pressed: #94DDBF;
     --color-on-action: #06150F;
+    --color-text-on-inverse: #E6EBE5;
+    --color-text-on-inverse-muted: #9FD9BF;
     --color-action-subtle: #15342A;
     --color-accent: #E59A6A;
     --color-accent-subtle: #3A2518;
@@ -375,6 +398,24 @@
   .ui-chip:hover { border-color: var(--color-action); background: var(--color-action-subtle); }
   .ui-chip[aria-pressed="true"], .ui-chip:has(input:checked) { border-color: var(--color-action); background: var(--color-action-subtle); color: var(--color-action); }
 
+  /* Guest editorial surfaces opt into these roles; the shared foundations remain neutral by default. */
+  .guest-editorial :where(h1, h2, h3) { font-family: var(--font-heading); }
+  .ui-ticket { display: grid; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--color-border-inverse); border-radius: var(--radius-workspace); background: var(--color-surface-inverse); color: var(--color-text-on-inverse); }
+  .ui-ticket :where(p, small, dt, .ui-money-metadata) { color: var(--color-text-on-inverse-muted); }
+  .ui-ticket :where(h2, h3, dd, strong) { color: var(--color-text-on-inverse); }
+  .ui-ticket__dates { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: var(--space-3); align-items: center; }
+  .ui-ticket__date:last-child { text-align: end; }
+  .ui-ticket__dates > [aria-hidden="true"] { color: var(--color-accent-on-inverse); }
+  .ui-ticket__day { display: block; color: var(--color-text-on-inverse); font-family: var(--font-display); font-size: var(--font-size-display); line-height: var(--font-line-display); font-variant-numeric: tabular-nums; }
+  :where(.guest-editorial .ui-chip, .guest-editorial .ui-button--primary, .guest-editorial .ui-button--block) { border-radius: var(--radius-round); }
+  .ui-facts--chips { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0; }
+  .ui-facts--chips > :where(div, span) { display: inline-flex; min-block-size: var(--control-min-target); align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-round); background: var(--color-surface-subtle); }
+  .ui-facts--chips dt { color: var(--color-text-secondary); font-size: var(--font-size-small); }
+  .ui-facts--chips dd { margin: 0; font-weight: 600; }
+  .ui-action-bar { position: sticky; inset-block-end: 0; z-index: var(--layer-sticky); display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); margin-inline: calc(-1 * var(--layout-gutter-mobile)); padding: var(--space-3) var(--layout-gutter-mobile) calc(var(--space-3) + env(safe-area-inset-bottom)); border-block-start: 1px solid var(--color-border-subtle); background: var(--color-surface-elevated); box-shadow: var(--elevation-active); }
+  .ui-action-bar > * { min-width: 0; }
+  .ui-action-bar .ui-button { flex: 1 1 12rem; }
+
   .ui-status {
     display: inline-flex;
     min-block-size: 1.75rem;
@@ -465,9 +506,8 @@
     --a2ui-space: var(--space-2);
     --a2ui-radius: var(--radius-control);
   }
-  /* Weaver hard-codes a 999px pill radius inline on chip options; the direction reserves
-     round shapes for status dots, so an inline-beating override is the only lever here. */
-  .weaver-mount label[style*="999px"] { border-radius: var(--radius-control) !important; min-block-size: var(--control-min-target); gap: var(--space-2); }
+  /* Compact Weaver criteria controls use pills; other form controls retain the standard radius. */
+  .weaver-mount label[style*="999px"] { border-radius: var(--radius-round) !important; min-block-size: var(--control-min-target); gap: var(--space-2); }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -188,7 +188,15 @@ function unitComponents(
     guestOccupancyLabel(unit.trust.occupancyModel),
   ].filter((fact): fact is string => fact !== undefined);
   const highlights = unit.amenities.slice(0, 3);
+  const checkIn = typeof filters.checkIn === "string" ? filters.checkIn : undefined;
+  const checkOut = typeof filters.checkOut === "string" ? filters.checkOut : undefined;
+  const nights = checkIn && checkOut && /^\d{4}-\d{2}-\d{2}$/.test(checkIn) && /^\d{4}-\d{2}-\d{2}$/.test(checkOut)
+    ? (Date.parse(`${checkOut}T00:00:00Z`) - Date.parse(`${checkIn}T00:00:00Z`)) / 86_400_000
+    : undefined;
   const allInLabel = unit.price.allInStayTotalKobo === null ? "Indicative nightly rate" : GUEST_GLOSSARY.allInStayTotal;
+  const stayPeriodLabel = unit.price.allInStayTotalKobo !== null && typeof nights === "number" && Number.isInteger(nights) && nights > 0
+    ? `For ${nights} ${nights === 1 ? "night" : "nights"} · all-in`
+    : undefined;
   const allInAmount = unit.price.allInStayTotalKobo === null
     ? unit.price.nightlyKobo
     : unit.price.allInStayTotalKobo;
@@ -207,7 +215,7 @@ function unitComponents(
           `${prefix}-title`, `${prefix}-location`, `${prefix}-facts`,
           ...(fit.length > 0 ? [`${prefix}-fit`] : []),
           ...(highlights.length > 0 ? [`${prefix}-amenities`] : []),
-          `${prefix}-divider`, `${prefix}-price-label`, `${prefix}-price`,
+          `${prefix}-divider`, `${prefix}-price-label`, `${prefix}-price`, ...(stayPeriodLabel ? [`${prefix}-price-period`] : []),
           ...(unit.price.refundableSecurityDepositKobo > 0 ? [`${prefix}-deposit`] : []),
           ...(budget === undefined ? [] : [`${prefix}-budget`]),
           ...(canViewUnit ? [`${prefix}-view-button`] : []),
@@ -239,6 +247,7 @@ function unitComponents(
       { id: `${prefix}-divider`, component: "Divider", axis: "horizontal" },
       { id: `${prefix}-price-label`, component: "Text", text: allInLabel, variant: "caption" },
       { id: `${prefix}-price`, component: "Text", text: formatNgnKobo(allInAmount), variant: "h3" },
+      ...(stayPeriodLabel ? [{ id: `${prefix}-price-period`, component: "Text" as const, text: stayPeriodLabel, variant: "caption" as const }] : []),
       ...(unit.price.refundableSecurityDepositKobo > 0 ? [{
         id: `${prefix}-deposit`,
         component: "Text" as const,

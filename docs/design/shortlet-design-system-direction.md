@@ -6,7 +6,7 @@ This specification translates the UI audit into implementable presentation rules
 
 **Residential hospitality with editorial restraint:** real Abuja/Lagos accommodation photography is the emotional entry point; a quiet warm-paper background and deep green action color create a composed host-like welcome; ink-dark type, generous labels and clear amounts make consequential decisions feel precise. It should look like a considered Nigerian accommodation service, not a generic chatbot, SaaS dashboard, luxury hotel campaign, Airbnb imitation or AI gradient demo.
 
-Density is low at first entry, medium for cards and detail, deliberately high only for a side-by-side comparison or full booking review. Use whitespace around the next action, not around every metadata item. Photography is large enough to show interior character, but never covers price, accessibility text or state. Use flat tonal surfaces and thin borders; reserve one restrained elevation for the active workspace and sticky action layer. Motion is brief and nonessential (surface crossfade/height changes only if reduced motion is respected); no ambient animations, glass, glow or auto-rotating carousel. Brand color is roughly a minority accent against paper, white and ink. Use warm neutral/canvas tones; don't encode Abuja/Lagos in unrelated bright city colors.
+Density is low at first entry, medium for cards and detail, deliberately high only for a side-by-side comparison or full booking review. Use whitespace around the next action, not around every metadata item. Photography is large enough to show interior character, but never covers price, accessibility text or state. Use flat tonal surfaces and thin borders; reserve one restrained elevation for the active workspace and sticky action layer. Motion is brief and nonessential (surface crossfade/height changes only if reduced motion is respected); no ambient animations, glass, glow or auto-rotating carousel. Glass and blur are excluded because contrast over photos becomes unpredictable and adds rendering cost on constrained devices (ADR-0078). Brand color is roughly a minority accent against paper, white and ink. Use warm neutral/canvas tones; don't encode Abuja/Lagos in unrelated bright city colors.
 
 ## Governing principles
 
@@ -29,6 +29,7 @@ Semantic roles define use; the palette is a starting application proposal. Contr
 | --- | --- | --- |
 | Canvas/background | `#F6F5F0` | Main warm neutral; content doesn't sit on an image background. |
 | Primary surface | `#FFFFFF` | Cards, input fill, readable text panels. |
+| Inverse surface | `#063A2C` (dark theme: `#0E2A21`) | Guest stay ticket; text uses paired on-inverse roles. |
 | Secondary surface | `#EEECE5` | Grouped info, neutral subpanels and subtle control background. |
 | Elevated/focused surface | `#FFFFFF` | Same white plus border and restrained shadow; only active workspace/sticky layer. |
 | Primary text | `#1D2923` | About 15.1:1 against white, 13.8:1 against canvas. |
@@ -48,7 +49,7 @@ For focus/status/border shapes, maintain at least 3:1 against adjacent colors pe
 
 ### Type system
 
-Use local/system stack: `system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`. Avoid requiring a remote font or many weights on Nigerian networks. If brand later selects a webfont, subset WOFF2, use `font-display: swap`, retain the stack fallback, and prove its value through rendered comparison before adding it.
+Use local/system stack: `system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif` for body text and the local/system display serif for headings and stay names. Avoid requiring a remote font or many weights on Nigerian networks. If brand later selects a webfont, subset WOFF2, use `font-display: swap`, retain the stack fallback, and prove its value through rendered comparison before adding it.
 
 | Token | Size / line height | Weight and role |
 | --- | --- | --- |
@@ -68,7 +69,7 @@ Use tabular numerals for aligned prices/deadlines where available. Keep prose le
 
 Spacing scale: `4, 8, 12, 16, 24, 32, 48, 64px` (4px base); standard body rhythm 16px, between card sections 24px, outer mobile gutter 16px, desktop section spacing 48–64px. Avoid inconsistent micro-spacing introduced by arbitrary component margins.
 
-Radius: `4px` small field/subtle label detail; `8px` controls/small media; `12px` cards/photos; `16px` one top-level workspace/featured section. No 999px pills for cards or full-size controls. A small badge may be fully rounded only if that does not erase semantic distinction.
+Radius: `4px` small field/subtle label detail; `8px` standard controls/small media; `12px` cards/photos; `16px` top-level workspace/featured section; `24px` overlapping summary sheet. Compact criteria chips and guest primary calls to action may be fully rounded; cards and large controls are not pills. Status badges remain distinct and semantic.
 
 Elevation: default use tonal surfaces + 1px border, no shadow. Active workspace and sticky mobile action layer may use one broad, low-opacity shadow (`0 8px 24px rgba(29,41,35,.08)`) with a visible border. Hover doesn't depend on lift. No nested card-within-card treatment; group details by divider/heading.
 

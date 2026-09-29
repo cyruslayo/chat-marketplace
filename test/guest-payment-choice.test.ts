@@ -21,6 +21,9 @@ test("AC1 — After accepting the offer the Guest can choose bank transfer or ca
   try {
     const html = await (await g.get(g.paymentPage)).text();
     const text = visibleText(html);
+    assert.match(html, /class="ui-ticket" aria-label="Your stay"/);
+    assert.match(html, /class="[^"]*ui-price-breakdown[^"]*" aria-label="Price breakdown"/);
+    assert.match(html, /class="ui-banner ui-banner--warning payment-deadline"/);
     assert.match(text, /How would you like to pay\?/);
     assert.match(html, new RegExp(`<form method="post" action="${g.paymentPage.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/transfer"><button[^>]*type="submit">Pay by bank transfer</button></form>`));
     assert.match(html, new RegExp(`<a[^>]*href="${g.paymentPage.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/continue"[^>]*>Pay by card`));
@@ -55,7 +58,12 @@ test("AC2 — The transfer screen shows the bank, account number, exact amount, 
   try {
     assert.equal((await g.post(`${g.paymentPage}/transfer`)).status, 303);
     const session = g.env.bankTransferApp!.manager.getSession(g.offerId)!;
-    const text = visibleText(await (await g.get(g.transferPage)).text());
+    const transferHtml = await (await g.get(g.transferPage)).text();
+    const text = visibleText(transferHtml);
+    assert.match(transferHtml, /class="ui-ticket" aria-label="Your stay"/);
+    assert.match(transferHtml, /class="[^"]*ui-price-breakdown[^"]*" aria-label="Price breakdown"/);
+    assert.match(transferHtml, /class="ui-banner ui-banner--warning payment-deadline"/);
+    assert.match(text, /\d+ nights? · \d+ guests?/);
     assert.ok(text.includes(`Bank ${LOCAL_TRANSFER_BANK_NAME}`), "bank");
     assert.ok(text.includes(`Account number ${session.accountNumber}`), "account number");
     assert.ok(text.includes(`Exact amount ${formatNgnKobo(session.amountKobo)}`), "exact amount");

@@ -199,6 +199,41 @@ export interface ConventionalBookingPage {
   readonly threadId: string;
   readonly summary: string;
   readonly textFallback: string;
+  readonly stay?: ConventionalStayDetails;
+}
+
+export interface ConventionalStayDetails {
+  readonly unitTitle: string;
+  readonly checkIn: string;
+  readonly checkOut: string;
+  readonly nights: number;
+  readonly guestCount: number;
+  readonly allInStayTotalKobo?: number;
+  readonly refundableSecurityDepositKobo?: number;
+  readonly amountDueNowKobo?: number;
+}
+
+interface GuestStayTicketFacts {
+  readonly unitTitle: string;
+  readonly checkIn: string;
+  readonly checkOut: string;
+  readonly nights: number;
+  readonly guestCount?: number;
+}
+
+function formatTicketDate(value: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("en-NG", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(date);
+}
+
+function renderStayTicketHtml(facts: GuestStayTicketFacts): string {
+  const guests = facts.guestCount === undefined ? "" : ` · ${facts.guestCount} ${facts.guestCount === 1 ? "guest" : "guests"}`;
+  return `<section class="ui-ticket" aria-label="Your stay"><div><p class="ui-field__hint">Your stay</p><h2>${escapeHtml(facts.unitTitle)}</h2></div><div class="ui-ticket__dates"><div class="ui-ticket__date"><span class="ui-ticket__day">${escapeHtml(facts.checkIn.slice(8, 10))}</span><time datetime="${escapeHtml(facts.checkIn)}">${escapeHtml(formatTicketDate(facts.checkIn))}</time></div><span aria-hidden="true">→</span><div class="ui-ticket__date"><span class="ui-ticket__day">${escapeHtml(facts.checkOut.slice(8, 10))}</span><time datetime="${escapeHtml(facts.checkOut)}">${escapeHtml(formatTicketDate(facts.checkOut))}</time></div></div><p>${facts.nights} ${facts.nights === 1 ? "night" : "nights"}${guests}</p></section>`;
+}
+
+function renderPriceBreakdownHtml(input: { readonly allInStayTotalKobo?: number; readonly refundableSecurityDepositKobo?: number; readonly amountDueNowKobo?: number; readonly heading?: string }): string {
+  return `<section class="ui-panel ui-price-breakdown" aria-label="Price breakdown">${input.heading ? `<p class="ui-field__hint">${escapeHtml(input.heading)}</p>` : ""}${input.allInStayTotalKobo === undefined ? "" : `<div><p class="ui-field__hint">${GUEST_GLOSSARY.allInStayTotal}</p><p class="ui-money-total">${formatNgnKobo(input.allInStayTotalKobo)}</p></div>`}${input.refundableSecurityDepositKobo === undefined || input.refundableSecurityDepositKobo <= 0 ? "" : `<p>${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(input.refundableSecurityDepositKobo)}</p>`}${input.amountDueNowKobo === undefined ? "" : `<p class="ui-price-breakdown__due">Amount due now: ${formatNgnKobo(input.amountDueNowKobo)}</p>`}</section>`;
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -822,13 +857,16 @@ export class LocalGuestApp {
       if (!isPlainRecord(draft) || !isPlainRecord(draft.primaryGuest) || draft.primaryGuest.id !== principal.id) return null;
       // The page mirrors the view the thread is on: the draft, or its review.
       const review = thread.activeSurfaces.get(REQUEST_STAGE)?.includes(":request:review:") === true;
-      return { threadId: thread.threadId, summary: review ? "Request review" : "Request Draft", textFallback: this.#draftFallback(this.#draftArtifact(thread, review ? "review" : "draft")) };
+      const artifact = this.#draftArtifact(thread, review ? "review" : "draft");
+      return { threadId: thread.threadId, summary: review ? "Request review" : "Request Draft", textFallback: this.#draftFallback(artifact), stay: { unitTitle: artifact.facts.unitTitle, checkIn: artifact.facts.checkIn, checkOut: artifact.facts.checkOut, nights: artifact.facts.nights, guestCount: artifact.facts.occupants.length, allInStayTotalKobo: artifact.facts.allInStayTotalKobo, refundableSecurityDepositKobo: artifact.facts.refundableSecurityDepositKobo, ...(review ? { amountDueNowKobo: artifact.facts.amountDueNowKobo } : {}) } };
     }
     if (kind === "request") {
       getConventionalBookingRequestView(environment.bookingRequestApp, id, principal);
       if (!primaryGuestIs(environment.bookingRequestApp.manager.getRequest(id), principal)) return null;
       const surface = this.#requestSurface(thread, id);
-      return { threadId: thread.threadId, summary: surface.summary ?? GUEST_GLOSSARY.bookingRequest, textFallback: surface.textFallback ?? "" };
+      const artifact = environment.bookingRequestApp.getArtifact(id, principal);
+      const unit = environment.unitRepository.findById(artifact.facts.unitId);
+      return { threadId: thread.threadId, summary: surface.summary ?? GUEST_GLOSSARY.bookingRequest, textFallback: surface.textFallback ?? "", stay: { unitTitle: unit?.title ?? `Your selected ${GUEST_GLOSSARY.unit}`, checkIn: artifact.facts.checkIn, checkOut: artifact.facts.checkOut, nights: artifact.facts.nights, guestCount: artifact.facts.occupants.length, ...(artifact.facts.quote ? { allInStayTotalKobo: artifact.facts.quote.allInStayTotalKobo, refundableSecurityDepositKobo: artifact.facts.quote.refundableSecurityDepositKobo } : {}) } };
     }
     if (kind === "offer") {
       const offer = environment.conditionalOfferApp.manager.getOffer(id);
@@ -836,11 +874,12 @@ export class LocalGuestApp {
       const isParty = !!principal.id && (offer.parties.primaryGuest.id === principal.id || (!!payerId && payerId === principal.id));
       if (!isParty || !offer.tenantId || offer.tenantId !== principal.tenantId) return null;
       const { artifact } = getConventionalConditionalOfferView(environment.conditionalOfferApp, id, principal);
-      return { threadId: thread.threadId, summary: artifact.facts.status === "expired" ? `${GUEST_GLOSSARY.conditionalBookingOffer} expired` : GUEST_GLOSSARY.conditionalBookingOffer, textFallback: this.#offerFallback(artifact) };
+      return { threadId: thread.threadId, summary: artifact.facts.status === "expired" ? `${GUEST_GLOSSARY.conditionalBookingOffer} expired` : GUEST_GLOSSARY.conditionalBookingOffer, textFallback: this.#offerFallback(artifact), stay: { unitTitle: artifact.facts.unitTitle, checkIn: artifact.facts.checkIn, checkOut: artifact.facts.checkOut, nights: artifact.facts.nights, guestCount: artifact.facts.occupants.length, allInStayTotalKobo: artifact.facts.allInStayTotalKobo, refundableSecurityDepositKobo: artifact.facts.refundableSecurityDepositKobo, amountDueNowKobo: artifact.facts.totalAmountDueNowKobo } };
     }
     // The contract view is authorized by the domain for the contract's parties.
     getConventionalBookingContractView(environment.contractApp, id, principal);
-    return { threadId: thread.threadId, summary: "Reservation confirmed", textFallback: this.#confirmedBookingFallback(this.#contractArtifact(id)) };
+    const artifact = this.#contractArtifact(id);
+    return { threadId: thread.threadId, summary: "Reservation confirmed", textFallback: this.#confirmedBookingFallback(artifact), stay: { unitTitle: artifact.facts.unitTitle ?? `Your ${GUEST_GLOSSARY.unit}`, checkIn: artifact.facts.checkIn, checkOut: artifact.facts.checkOut, nights: artifact.facts.nights, guestCount: artifact.facts.occupants.length, ...(artifact.facts.allInStayTotalKobo === undefined ? {} : { allInStayTotalKobo: artifact.facts.allInStayTotalKobo }), ...(artifact.facts.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: artifact.facts.refundableSecurityDepositKobo }) } };
   }
 
   getState(threadId: string): GuestStateSnapshot | undefined {
@@ -2407,14 +2446,14 @@ export function renderGuestShellHtml(): string {
     #journey-rail { padding: var(--space-2) var(--layout-gutter-mobile); border-bottom: 1px solid var(--border); background: var(--surface); }
     #journey-rail[hidden] { display: none; }
     /* position: relative keeps the visually hidden state text inside the scroller. */
-    #journey-rail ol { position: relative; display: flex; align-items: center; gap: var(--space-2); margin: 0; padding: 0; list-style: none; overflow-x: auto; scrollbar-width: none; }
-    #journey-rail li { flex: none; display: flex; align-items: center; gap: var(--space-2); color: var(--color-text-secondary); font-size: var(--font-size-small); line-height: var(--font-line-small); white-space: nowrap; }
-    #journey-rail li + li::before { content: ""; inline-size: var(--space-3); border-top: 1px solid var(--border); }
-    #journey-rail li[data-state="done"] { color: var(--text); }
-    #journey-rail li[data-state="current"] { color: var(--accent); font-weight: 650; }
-    #journey-rail li[data-state="failed"] { color: var(--color-warning); font-weight: 650; }
-    #journey-rail li[data-state="failed"][data-tone="danger"] { color: var(--color-danger); }
-    @media (max-width: 29.999rem) { #journey-rail ol, #journey-rail li { gap: var(--space-1); } #journey-rail li + li::before { inline-size: var(--space-2); } }
+    #journey-rail ol { display: flex; align-items: stretch; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
+    #journey-rail li { flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center; padding-block-start: var(--space-2); border-block-start: 3px solid var(--color-border-subtle); color: var(--color-text-secondary); font-size: var(--font-size-small); line-height: var(--font-line-small); text-align: center; overflow-wrap: anywhere; }
+    #journey-rail li + li::before { content: none; }
+    #journey-rail li[data-state="done"] { border-color: var(--color-action); color: var(--text); }
+    #journey-rail li[data-state="current"] { border-color: var(--accent); color: var(--accent); font-weight: 650; }
+    #journey-rail li[data-state="failed"] { border-color: var(--color-warning); color: var(--color-warning); font-weight: 650; }
+    #journey-rail li[data-state="failed"][data-tone="danger"] { border-color: var(--color-danger); color: var(--color-danger); }
+    @media (max-width: 29.999rem) { #journey-rail ol { flex-wrap: wrap; } #journey-rail li { flex-basis: calc(33.333% - var(--space-1)); } }
     main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
     /* ADR-0078: keep the conversation independently scrollable at the 320px launch viewport. */
     #transcript { flex: 1 1 0; min-height: 22dvh; padding: var(--space-6) var(--layout-gutter-mobile) var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; }
@@ -2423,7 +2462,7 @@ export function renderGuestShellHtml(): string {
     .turn.user { align-items: flex-end; }
     .bubble { max-width: min(88%, 70ch); padding: var(--space-2) var(--space-3); border-radius: var(--radius-card); font-size: var(--font-size-body); line-height: var(--font-line-body); white-space: pre-wrap; overflow-wrap: anywhere; }
     .turn.assistant .bubble { max-width: 72ch; padding-inline: 0; color: var(--text); }
-    .turn.user .bubble { background: var(--surface-soft); color: var(--text); }
+    .turn.user .bubble { background: var(--color-action-subtle); color: var(--text); border-radius: var(--radius-card) var(--radius-card) var(--radius-small) var(--radius-card); }
     .retry-action { align-self: flex-start; min-height: 44px; }
     .historical-summary { width: 100%; display: flex; align-items: center; gap: var(--space-2); color: var(--color-text-secondary); font-size: var(--font-size-small); line-height: var(--font-line-small); padding: var(--space-2) 0; border-top: 1px solid var(--border); }
     #empty-state { max-width: 70ch; padding-block: var(--space-3) var(--space-6); }
@@ -2456,9 +2495,9 @@ export function renderGuestShellHtml(): string {
     .weaver-mount { min-width: 0; max-width: 100%; overflow: visible; }
     .workspace-arrival { animation: workspace-enter var(--duration-base) var(--ease-enter) both; }
     @keyframes workspace-enter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
-    .weaver-mount h1[data-a2ui-component="Text"] { font-size: var(--font-size-display) !important; line-height: var(--font-line-display) !important; font-weight: 700 !important; margin: 0 !important; }
-    .weaver-mount h2[data-a2ui-component="Text"] { font-size: var(--font-size-h2) !important; line-height: var(--font-line-h2) !important; font-weight: 650 !important; margin: 0 !important; }
-    .weaver-mount h3[data-a2ui-component="Text"] { font-size: var(--font-size-h3) !important; line-height: var(--font-line-h3) !important; font-weight: 650 !important; margin: 0 !important; }
+    .weaver-mount h1[data-a2ui-component="Text"] { font-family: var(--font-heading); font-size: var(--font-size-display) !important; line-height: var(--font-line-display) !important; font-weight: 700 !important; margin: 0 !important; }
+    .weaver-mount h2[data-a2ui-component="Text"] { font-family: var(--font-heading); font-size: var(--font-size-h2) !important; line-height: var(--font-line-h2) !important; font-weight: 650 !important; margin: 0 !important; }
+    .weaver-mount h3[data-a2ui-component="Text"] { font-family: var(--font-heading); font-size: var(--font-size-h3) !important; line-height: var(--font-line-h3) !important; font-weight: 650 !important; margin: 0 !important; }
     .weaver-mount img { display: block; width: 100%; max-width: 100%; height: auto; min-height: 120px; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--radius-card); background: var(--surface-soft); }
     .photo-fallback { width: 100%; min-width: 0; min-height: 120px; aspect-ratio: 4 / 3; display: grid; place-items: center; padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface-soft); color: var(--color-text-secondary); text-align: center; }
     .weaver-mount small[data-a2ui-component="Text"] { margin: 0 !important; color: var(--color-text-secondary); font-size: var(--font-size-small) !important; font-style: normal !important; line-height: var(--font-line-small); }
@@ -2484,7 +2523,9 @@ export function renderGuestShellHtml(): string {
     .stay-card__title { margin: 0 !important; font-family: var(--font-display); font-size: var(--font-size-h3) !important; line-height: var(--font-line-h3) !important; font-weight: 600 !important; }
     .stay-card__location, .stay-card__amenities { color: var(--color-text-secondary); }
     .stay-card__fit { color: var(--color-success); font-weight: 600; }
-    .stay-card__facts { margin: 0; color: var(--color-text-secondary); }
+    .stay-card__facts { display: flex !important; flex-wrap: wrap; gap: var(--space-2); margin: 0; color: var(--color-text-secondary); }
+    .stay-card__facts > span { display: inline-flex; min-block-size: var(--control-min-target); align-items: center; padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-round); background: var(--color-surface-subtle); font-size: var(--font-size-small); }
+    .stay-card__deposit { color: var(--color-text-secondary); font-size: var(--font-size-small) !important; }
     .stay-card__price-area { display: grid !important; gap: var(--space-1) !important; margin: 0 !important; }
     .stay-card__price-area > * { margin: 0 !important; }
     .stay-card__price-label { color: var(--color-text-secondary); font-size: var(--font-size-small) !important; line-height: var(--font-line-small) !important; }
@@ -2502,11 +2543,13 @@ export function renderGuestShellHtml(): string {
     ${LISTING_GALLERY_STYLE}
     .unit-gallery--fallback { padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface-soft); }
     .unit-photo-missing { display: grid; min-height: 10rem; place-items: center; margin: 0; color: var(--color-text-secondary); text-align: center; }
-    .unit-overview { display: grid; min-width: 0; gap: var(--space-2); }
+    .unit-overview { position: relative; z-index: 1; display: grid; min-width: 0; gap: var(--space-3); margin-block-start: calc(-1 * var(--space-6)); padding: var(--space-5); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-sheet) var(--radius-sheet) var(--radius-card) var(--radius-card); background: var(--color-surface); box-shadow: var(--elevation-active); }
     .unit-overview > * { margin: 0 !important; }
     .unit-title { margin: 0 !important; overflow-wrap: anywhere; font-family: var(--font-display); font-size: var(--font-size-h2) !important; line-height: var(--font-line-h2) !important; font-weight: 600 !important; }
     .unit-location, .unit-dates { color: var(--color-text-secondary); }
     .unit-facts { margin: 0 !important; font-weight: 600; }
+    .unit-facts--chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+    .unit-facts--chips > span { min-block-size: var(--control-min-target); display: inline-flex; align-items: center; padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-round); background: var(--color-surface-subtle); color: var(--color-text-secondary); font-size: var(--font-size-small); }
     .unit-price-group { display: grid; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface-soft); }
     .unit-price-group > * { margin: 0 !important; }
     .unit-price-label { color: var(--color-text-secondary); font-size: var(--font-size-small) !important; line-height: var(--font-line-small) !important; }
@@ -2519,6 +2562,10 @@ export function renderGuestShellHtml(): string {
     .unit-supporting-info { color: var(--color-text-secondary); }
     .unit-supporting-info > * { margin: 0 !important; }
     .unit-actions { display: flex; min-width: 0; flex-wrap: wrap; gap: var(--space-2); }
+    .unit-action-bar { margin-inline: calc(-1 * var(--space-4)); padding-inline: var(--space-4); }
+    .unit-action-bar > p { margin: 0; }
+    .unit-action-bar .unit-actions { flex: 1 1 12rem; }
+    .unit-action-bar .unit-actions button { width: 100%; }
     .unit-actions button { flex: 1 1 14rem; }
     .surface-fallback { border-inline-start: 4px solid var(--color-warning); padding: var(--space-1) 0 var(--space-1) var(--space-3); }
     .surface-fallback p { margin: 0 0 var(--space-2); }
@@ -2530,7 +2577,8 @@ export function renderGuestShellHtml(): string {
     #criteria-strip { display: grid; gap: var(--space-2); padding: var(--space-2) var(--layout-gutter-mobile) 0; border-top: 1px solid var(--border); background: var(--surface); }
     #criteria-strip[hidden], #criteria-editor[hidden] { display: none; }
     .criteria-chips { display: flex; flex-wrap: wrap; gap: var(--space-2); min-width: 0; }
-    .criteria-chip { position: relative; min-height: var(--control-min-target); min-width: var(--control-min-target); justify-content: center; max-width: 100%; overflow-wrap: anywhere; text-align: start; }
+    .criteria-chip { position: relative; min-height: var(--control-min-target); min-width: var(--control-min-target); justify-content: center; max-width: 100%; overflow-wrap: anywhere; text-align: start; border-radius: var(--radius-round); }
+    .criteria-chip[data-empty="true"] { border-style: dashed; }
     /* Narrow screens keep the field names for screen readers only, so the strip stays short. */
     @media (max-width: 29.999rem) { .criteria-chip { padding-inline: var(--space-2); font-size: var(--font-size-small); } .criteria-chip .criteria-chip-name { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } }
     .criteria-chip .criteria-chip-name { color: var(--color-text-secondary); font-weight: 400; }
@@ -2558,8 +2606,8 @@ export function renderGuestShellHtml(): string {
     .criteria-status:empty { display: none; }
     form#composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: var(--space-2); padding: var(--space-2) var(--layout-gutter-mobile) max(var(--space-4), env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: var(--surface); position: sticky; bottom: 0; z-index: 10; }
     #composer-label { grid-column: 1 / -1; color: var(--color-text-secondary); font-size: var(--font-size-small); line-height: var(--font-line-small); font-weight: 600; }
-    #composer-input { min-width: 0; width: 100%; min-height: var(--control-min-field); padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-control); font-size: 1rem; background: var(--bg); color: var(--text); }
-    #composer-submit { min-height: var(--control-min-field); }
+    #composer-input { min-width: 0; width: 100%; min-height: var(--control-min-field); padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-round); font-size: 1rem; background: var(--bg); color: var(--text); }
+    #composer-submit { inline-size: 3rem; min-inline-size: 3rem; min-height: 3rem; padding: 0; border-radius: var(--radius-round); }
     form#composer[data-focused="true"] { gap: var(--space-1) var(--space-2); padding-block: var(--space-1) max(var(--space-2), env(safe-area-inset-bottom)); background: var(--bg); }
     form#composer[data-focused="true"] #composer-label { font-weight: 400; }
     form#composer[data-focused="true"] #composer-input { min-height: 2.75rem; background: var(--surface); }
@@ -2659,7 +2707,7 @@ export function renderGuestShellHtml(): string {
         <input id="composer-input" name="message" type="text" autocomplete="off" enterkeyhint="send"
                placeholder="Area, dates, guests" aria-describedby="composer-hint" />
         <span id="composer-hint" class="sr-only">Share a city or neighbourhood, dates or nights, and number of guests.</span>
-        <button id="composer-submit" class="ui-button ui-button--primary" type="submit">Send</button>
+        <button id="composer-submit" class="ui-button ui-button--primary" type="submit" aria-label="Send">${icon("arrow-up")}</button>
         <p id="working-status" hidden></p>
       </form>
     </main>
@@ -2696,8 +2744,8 @@ export function renderConventionalUnitDetailHtml(unit: Unit, photoUrl?: (url: st
     : `${listingGalleryHtml({ title: unit.title, photos: photos.map((url, index) => ({ src: photoUrl ? photoUrl(url) : url, alt: `Photo ${index + 1} of ${unit.title}` })) })}<script src="/gallery.js" defer></script>`;
   return pageShell({
     title: unit.title,
-    style: `${LISTING_GALLERY_STYLE}.ui-panel p{margin:0}.unit-page-description{white-space:pre-line}`,
-    body: `<header class="ui-page__header"><p class="ui-eyebrow">Entire place</p><h1>${escapeHtml(unit.title)}</h1><p>${escapeHtml(unit.location.neighbourhood)}, ${escapeHtml(unit.location.city)}</p></header>${photoMarkup}<section class="ui-panel" aria-label="Stay facts"><div><p class="ui-field__hint">Price per night (indicative)</p><p class="ui-money-total">${formatNgnKobo(unit.price.nightlyKobo)} <span class="ui-money-metadata">per night</span></p></div><p class="ui-money-metadata">Bedrooms: ${unit.bedrooms ?? "Not provided"} · Bathrooms: ${unit.bathrooms} · Capacity: ${unit.capacity} guests · Entire Place</p><p class="unit-page-description">${escapeHtml(unit.description)}</p><div class="ui-row"><a class="ui-button ui-button--primary" href="/">Continue to Request to Book</a></div></section>`,
+    style: `${LISTING_GALLERY_STYLE}.unit-detail-sheet{position:relative;z-index:1;display:grid;gap:var(--space-4);margin-block-start:calc(-1 * var(--space-6));padding:var(--space-5);border:1px solid var(--color-border-subtle);border-radius:var(--radius-sheet) var(--radius-sheet) var(--radius-card) var(--radius-card);background:var(--color-surface);box-shadow:var(--elevation-active)}.unit-detail-sheet h1,.unit-detail-sheet p{margin:0}.unit-detail-location{color:var(--color-text-secondary)}.unit-detail-description{white-space:pre-line}.unit-detail-page{display:grid;gap:var(--space-4)}.unit-detail-page .listing-gallery{z-index:0}.unit-detail-page .ui-action-bar{position:sticky}.unit-detail-page .ui-ticket{margin-block:var(--space-2)}.stay-results{list-style:none;margin:0;padding:0;display:grid;gap:var(--space-4)}.stay-card-photo{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:var(--radius-card);background:var(--color-surface-subtle)}.stay-card-photo--empty{display:grid;place-items:center;color:var(--color-text-secondary)}.stay-card-facts{display:flex;flex-wrap:wrap;gap:var(--space-2)}.stay-card-facts span{display:inline-flex;min-block-size:2.75rem;align-items:center;padding:var(--space-2) var(--space-3);border:1px solid var(--color-border-subtle);border-radius:var(--radius-round);background:var(--color-surface-subtle);font-size:var(--font-size-small)}.stay-card-price{display:grid;gap:var(--space-1);padding-block-start:var(--space-3);border-block-start:1px solid var(--color-border-subtle)}.stay-card-price p{margin:0}.guest-editorial .ui-button--primary,.guest-editorial .ui-button--block{border-radius:var(--radius-round)}.ui-panel p{margin:0}`,
+    body: `<div class="guest-editorial unit-detail-page">${photoMarkup}<section class="unit-detail-sheet" aria-label="Stay details"><header class="ui-page__header"><p class="ui-eyebrow">Entire place</p><h1>${escapeHtml(unit.title)}</h1><p class="unit-detail-location">${escapeHtml(unit.location.neighbourhood)}, ${escapeHtml(unit.location.city)} · exact address after payment</p></header><div class="ui-facts ui-facts--chips" role="list" aria-label="Stay facts"><span role="listitem">Bedrooms: ${unit.bedrooms ?? "Not provided"}</span><span role="listitem">Bathrooms: ${unit.bathrooms}</span><span role="listitem">Capacity: ${unit.capacity} guests</span><span role="listitem">Occupancy: Entire Place</span></div><div class="unit-detail-price"><p class="ui-field__hint">Price per night (indicative)</p><p class="ui-money-total">${formatNgnKobo(unit.price.nightlyKobo)} <span class="ui-money-metadata">per night · dates not yet quoted</span></p></div><p class="unit-detail-description">${escapeHtml(unit.description)}</p></section><div class="ui-action-bar"><p><span class="ui-field__hint">Price per night (indicative)</span><br><strong>${formatNgnKobo(unit.price.nightlyKobo)}</strong></p><a class="ui-button ui-button--primary ui-button--block" href="/">Continue to Request to Book</a></div></div>`,
   });
 }
 
@@ -2763,11 +2811,13 @@ function matchConventionalBookingRoute(pathname: string): { readonly kind: Conve
 }
 
 export function renderConventionalBookingHtml(page: ConventionalBookingPage): string {
+  const stay = page.stay;
+  const ticket = stay ? `${renderStayTicketHtml(stay)}${renderPriceBreakdownHtml({ ...(stay.allInStayTotalKobo === undefined ? {} : { allInStayTotalKobo: stay.allInStayTotalKobo }), ...(stay.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: stay.refundableSecurityDepositKobo }), ...(stay.amountDueNowKobo === undefined ? {} : { amountDueNowKobo: stay.amountDueNowKobo, heading: "If your request is accepted" }) })}` : "";
   return pageShell({
     title: `${page.summary} · Shortlet`,
     width: "narrow",
-    style: ".ui-panel p{margin:0}",
-    body: `<header class="ui-page__header" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h1>${escapeHtml(page.summary)}</h1></header><section class="ui-panel"><p>${escapeHtml(page.textFallback)}</p><a class="ui-button ui-button--primary ui-button--block" href="/?threadId=${encodeURIComponent(page.threadId)}">Back to your conversation</a></section>`,
+    style: ".ui-panel p{margin:0}.ui-ticket h2{margin:0;color:var(--color-text-on-inverse);font-family:var(--font-display);font-size:var(--font-size-h3);line-height:var(--font-line-h3)}.ui-price-breakdown{gap:var(--space-3)}.ui-price-breakdown__due{padding-block-start:var(--space-3);border-block-start:1px solid var(--color-border-subtle);font-weight:650}.guest-editorial .ui-button--primary,.guest-editorial .ui-button--block{border-radius:var(--radius-round)}",
+    body: `<div class="guest-editorial"><header class="ui-page__header" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h1>${escapeHtml(page.summary)}</h1></header>${ticket}<section class="ui-panel"><p>${escapeHtml(page.textFallback)}</p><a class="ui-button ui-button--primary ui-button--block" href="/?threadId=${encodeURIComponent(page.threadId)}">Back to your conversation</a></section></div>`,
   });
 }
 
@@ -2804,13 +2854,26 @@ export function parseConventionalSearchQuery(params: URLSearchParams): Readonly<
   return filters;
 }
 
-export function renderConventionalSearchHtml(artifact: DiscoveryArtifactProjection): string {
+function quotedNightCount(checkIn: unknown, checkOut: unknown): number | undefined {
+  if (typeof checkIn !== "string" || typeof checkOut !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(checkIn) || !/^\d{4}-\d{2}-\d{2}$/.test(checkOut)) return undefined;
+  const start = Date.parse(`${checkIn}T00:00:00Z`);
+  const end = Date.parse(`${checkOut}T00:00:00Z`);
+  const nights = (end - start) / 86_400_000;
+  return Number.isInteger(nights) && nights > 0 ? nights : undefined;
+}
+
+export function renderConventionalSearchHtml(artifact: DiscoveryArtifactProjection, photoUrl?: (url: string) => string): string {
+  const { checkIn, checkOut } = artifact.facts.filters;
   const cards = artifact.facts.results.map((unit) => {
     const route = artifact.actions.find((action) => action.type === "view-unit" && action.unitId === unit.id)?.conventionalRoute ?? `/stays/${encodeURIComponent(unit.id)}`;
     const total = unit.price.allInStayTotalKobo === null ? "not yet quoted" : formatNgnKobo(unit.price.allInStayTotalKobo);
-    return `<li class="ui-panel" data-unit-id="${escapeHtml(unit.id)}"><h2><a href="${escapeHtml(route)}">${escapeHtml(unit.title)}</a></h2><p>${escapeHtml(unit.location.neighbourhood)}, ${escapeHtml(unit.location.city)} · Entire Place · capacity ${unit.capacity} guests</p><p class="ui-money-total">${GUEST_GLOSSARY.allInStayTotal}: ${total}</p><p class="ui-money-metadata">${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(unit.price.refundableSecurityDepositKobo)}</p><a class="ui-button" href="${escapeHtml(route)}">${GUEST_GLOSSARY.viewUnit}<span class="sr-only">: ${escapeHtml(unit.title)}</span></a></li>`;
+    const photo = unit.photoUrls[0];
+    const photoMarkup = photo
+      ? `<img class="stay-card-photo" src="${escapeHtml(photoUrl ? photoUrl(photo) : photo)}" alt="Photo of ${escapeHtml(unit.title)}" width="800" height="600" loading="lazy" decoding="async" referrerpolicy="no-referrer">`
+      : `<div class="stay-card-photo stay-card-photo--empty" role="img" aria-label="Photos are not available for ${escapeHtml(unit.title)}">Photos not available</div>`;
+    const nights = quotedNightCount(checkIn, checkOut);
+    return `<li class="ui-panel stay-result guest-editorial" data-unit-id="${escapeHtml(unit.id)}">${photoMarkup}<p class="stay-card-location">${escapeHtml(unit.location.neighbourhood)}, ${escapeHtml(unit.location.city)}</p><h2 class="stay-card-title"><a href="${escapeHtml(route)}">${escapeHtml(unit.title)}</a></h2><div class="stay-card-facts" aria-label="Stay facts"><span>${unit.bedrooms ?? "Bedrooms not provided"} ${unit.bedrooms === 1 ? "bedroom" : "bedrooms"}</span><span>${unit.bathrooms} ${unit.bathrooms === 1 ? "bathroom" : "bathrooms"}</span><span>Entire Place · ${unit.capacity} guests</span></div><div class="stay-card-price"><p class="ui-field__hint">${GUEST_GLOSSARY.allInStayTotal}${nights === undefined ? "" : ` for ${nights} ${nights === 1 ? "night" : "nights"}`} · all-in</p><p class="ui-money-total">${total}</p><p class="ui-money-metadata">${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(unit.price.refundableSecurityDepositKobo)}</p><a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(route)}">${GUEST_GLOSSARY.viewUnit}<span class="sr-only">: ${escapeHtml(unit.title)}</span></a></div></li>`;
   }).join("");
-  const { checkIn, checkOut } = artifact.facts.filters;
   const stay = typeof checkIn === "string" && typeof checkOut === "string" ? formatStayDates(checkIn, checkOut) : "";
   const summary = [discoverySummary(artifact.facts.filters).replace(/^Search updated( · )?/, ""), stay].filter(Boolean).join(" · ");
   const filters = artifact.facts.filters as Readonly<Record<string, unknown>>;
@@ -2826,8 +2889,8 @@ export function renderConventionalSearchHtml(artifact: DiscoveryArtifactProjecti
     + `<button class="ui-button ui-button--primary" type="submit">Update search</button></form>`;
   return pageShell({
     title: "Search results · Shortlet",
-    style: ".search-form{display:grid;gap:var(--space-3)}.stay-results{list-style:none;margin:0;padding:0;display:grid;gap:var(--space-3)}.stay-results h2{margin:0;font-size:var(--font-size-h3);line-height:var(--font-line-h3)}.stay-results p{margin:0}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}",
-    body: `<header class="ui-page__header" data-page="stay-search"><p class="ui-eyebrow">Search results</p><h1>${escapeHtml(discoveryFallbackMessage(artifact))}</h1>${summary ? `<p>${escapeHtml(summary)}</p>` : ""}</header>${form}${cards ? `<ul class="stay-results">${cards}</ul>` : ""}<p><a class="ui-button ui-button--primary" href="/">Back to your conversation</a></p>`,
+    style: ".search-form{display:grid;gap:var(--space-3)}.stay-results{list-style:none;margin:0;padding:0;display:grid;gap:var(--space-4)}.stay-result{gap:var(--space-3);padding:var(--space-3);border-radius:var(--radius-workspace)}.stay-card-photo{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:var(--radius-card);background:var(--color-surface-subtle)}.stay-card-photo--empty{display:grid;place-items:center;color:var(--color-text-secondary)}.stay-card-location,.stay-card-facts{color:var(--color-text-secondary)}.stay-card-facts{display:flex;flex-wrap:wrap;gap:var(--space-2)}.stay-card-facts span{display:inline-flex;min-block-size:var(--control-min-target);align-items:center;padding:var(--space-2) var(--space-3);border:1px solid var(--color-border-subtle);border-radius:var(--radius-round);background:var(--color-surface-subtle);font-size:var(--font-size-small)}.stay-card-title{margin:0;font-family:var(--font-heading);font-size:var(--font-size-h3);line-height:var(--font-line-h3)}.stay-result p{margin:0}.stay-card-price{display:grid;gap:var(--space-1);padding-block-start:var(--space-3);border-block-start:1px solid var(--color-border-subtle)}.guest-editorial .ui-button--primary,.guest-editorial .ui-button--block{border-radius:var(--radius-round)}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}",
+    body: `<div class="guest-editorial"><header class="ui-page__header" data-page="stay-search"><p class="ui-eyebrow">Search results</p><h1>${escapeHtml(discoveryFallbackMessage(artifact))}</h1>${summary ? `<p>${escapeHtml(summary)}</p>` : ""}</header>${form}${cards ? `<ul class="stay-results" aria-label="Stay search results">${cards}</ul>` : ""}<p><a class="ui-button ui-button--primary" href="/">Back to your conversation</a></p></div>`,
   });
 }
 
@@ -2915,6 +2978,9 @@ export function renderManualTransferPageHtml(input: {
   readonly error: string;
   readonly threadId: string | null;
   readonly contractId: string | null;
+  readonly stay?: GuestStayTicketFacts;
+  readonly allInStayTotalKobo?: number;
+  readonly refundableSecurityDepositKobo?: number;
 }): string {
   const { transfer, now } = input;
   const back = input.threadId ? `<a class="ui-button ui-button--block" href="/?threadId=${encodeURIComponent(input.threadId)}">Return to your conversation</a>` : "";
@@ -2922,8 +2988,8 @@ export function renderManualTransferPageHtml(input: {
   const shell = (heading: string, body: string) => pageShell({
     title: `${heading} · Shortlet`,
     width: "narrow",
-    style: ".transfer-account,.transfer-reference{font-family:var(--font-mono);font-size:var(--font-size-h3);letter-spacing:0.05em;overflow-wrap:anywhere}.ui-panel p{margin:0}",
-    body: `<header class="ui-page__header"><p class="ui-eyebrow">Booking payment · Manual bank transfer</p><h1>${escapeHtml(heading)}</h1></header>${alert}<section class="ui-panel">${body}</section>`,
+    style: ".transfer-account,.transfer-reference{font-family:var(--font-mono);font-size:var(--font-size-h3);letter-spacing:0.05em;overflow-wrap:anywhere}.ui-panel p{margin:0}.ui-ticket h2{margin:0;color:var(--color-text-on-inverse);font-family:var(--font-display);font-size:var(--font-size-h3);line-height:var(--font-line-h3)}.ui-price-breakdown{gap:var(--space-3)}.ui-price-breakdown__due{padding-block-start:var(--space-3);border-block-start:1px solid var(--color-border-subtle);font-weight:650}.guest-editorial .ui-button--primary,.guest-editorial .ui-button--block{border-radius:var(--radius-round)}",
+    body: `<div class="guest-editorial"><header class="ui-page__header"><p class="ui-eyebrow">Booking payment · Manual bank transfer</p><h1>${escapeHtml(heading)}</h1></header>${input.stay ? renderStayTicketHtml(input.stay) : ""}${input.allInStayTotalKobo === undefined ? "" : renderPriceBreakdownHtml({ allInStayTotalKobo: input.allInStayTotalKobo, ...(input.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: input.refundableSecurityDepositKobo }), amountDueNowKobo: transfer.amountKobo })}${alert}<section class="ui-panel">${body}</section></div>`,
   });
   const at = (iso: string) => `<time datetime="${escapeHtml(iso)}">${escapeHtml(formatWAT(iso))}</time>`;
   if (transfer.status === "confirmed") {
@@ -2938,7 +3004,7 @@ export function renderManualTransferPageHtml(input: {
   }
   const minutes = Math.max(0, Math.ceil((Date.parse(transfer.paymentDeadlineAt) - now.getTime()) / 60_000));
   const limitMb = Math.floor(input.receiptMaxBytes / (1024 * 1024));
-  return shell("Transfer and upload your receipt", `<dl class="ui-facts"><dt>Bank</dt><dd>${escapeHtml(transfer.account.bankName)}</dd><dt>Account name</dt><dd>${escapeHtml(transfer.account.accountName)}</dd><dt>Account number</dt><dd class="transfer-account">${escapeHtml(transfer.account.accountNumber)}</dd><dt>Exact amount</dt><dd class="ui-money-total">${formatNgnKobo(transfer.amountKobo)}</dd><dt>Booking reference</dt><dd class="transfer-reference">${escapeHtml(transfer.bookingReference)}</dd><dt>Transfer and upload by</dt><dd>${at(transfer.paymentDeadlineAt)} · ${minutes} ${minutes === 1 ? "minute" : "minutes"} left</dd></dl><p>Include the booking reference with your transfer. Your booking confirms only after we see the money in our account and check it; the receipt alone doesn't confirm it.</p><form method="post" action="/payments/offers/${encodeURIComponent(transfer.offerId)}/manual-transfer/receipt" enctype="multipart/form-data" class="ui-stack"><div class="ui-field"><label class="ui-field__label" for="receipt">Transfer receipt (photo or PDF, up to ${limitMb} MB)</label><input id="receipt" name="receipt" type="file" accept="image/jpeg,image/png,application/pdf" required></div><button class="ui-button ui-button--primary ui-button--block" type="submit">Upload receipt</button></form>${back}`);
+  return shell("Transfer and upload your receipt", `<dl class="ui-facts"><dt>Bank</dt><dd>${escapeHtml(transfer.account.bankName)}</dd><dt>Account name</dt><dd>${escapeHtml(transfer.account.accountName)}</dd><dt>Account number</dt><dd class="transfer-account">${escapeHtml(transfer.account.accountNumber)}</dd><dt>Exact amount</dt><dd class="ui-money-total">${formatNgnKobo(transfer.amountKobo)}</dd><dt>Booking reference</dt><dd class="transfer-reference">${escapeHtml(transfer.bookingReference)}</dd></dl><p class="ui-banner ui-banner--warning payment-deadline">${icon("clock")}<span>Transfer and upload by ${at(transfer.paymentDeadlineAt)} · ${minutes} ${minutes === 1 ? "minute" : "minutes"} left</span></p><p>Include the booking reference with your transfer. Your booking confirms only after we see the money in our account and check it; the receipt alone doesn't confirm it.</p><form method="post" action="/payments/offers/${encodeURIComponent(transfer.offerId)}/manual-transfer/receipt" enctype="multipart/form-data" class="ui-stack"><div class="ui-field"><label class="ui-field__label" for="receipt">Transfer receipt (photo or PDF, up to ${limitMb} MB)</label><input id="receipt" name="receipt" type="file" accept="image/jpeg,image/png,application/pdf" required></div><button class="ui-button ui-button--primary ui-button--block" type="submit">Upload receipt</button></form>${back}`);
 }
 
 /** Reads a request body, refusing (and discarding) anything over `limit` bytes. */
@@ -2963,14 +3029,18 @@ export function renderTransferPageHtml(input: {
   readonly contract: { readonly contractId: string } | null;
   readonly threadId: string | null;
   readonly localPayment: boolean;
+  readonly stay?: GuestStayTicketFacts;
+  readonly allInStayTotalKobo?: number;
+  readonly refundableSecurityDepositKobo?: number;
+  readonly amountDueNowKobo?: number;
 }): string {
   const { transfer, now } = input;
   const back = input.threadId ? `<a class="ui-button ui-button--block" href="/?threadId=${encodeURIComponent(input.threadId)}">Return to your conversation</a>` : "";
   const shell = (heading: string, body: string) => pageShell({
     title: `${heading} · Shortlet`,
     width: "narrow",
-    style: ".transfer-account{font-family:var(--font-mono);font-size:var(--font-size-h3);letter-spacing:0.05em;overflow-wrap:anywhere}.ui-panel p{margin:0}",
-    body: `<header class="ui-page__header"><p class="ui-eyebrow">Booking payment · Bank transfer</p><h1>${escapeHtml(heading)}</h1></header><section class="ui-panel">${body}</section>`,
+    style: ".transfer-account{font-family:var(--font-mono);font-size:var(--font-size-h3);letter-spacing:0.05em;overflow-wrap:anywhere}.ui-panel p{margin:0}.ui-ticket h2{margin:0;color:var(--color-text-on-inverse);font-family:var(--font-display);font-size:var(--font-size-h3);line-height:var(--font-line-h3)}.ui-price-breakdown{gap:var(--space-3)}.ui-price-breakdown__due{padding-block-start:var(--space-3);border-block-start:1px solid var(--color-border-subtle);font-weight:650}.guest-editorial .ui-button--primary,.guest-editorial .ui-button--block{border-radius:var(--radius-round)}",
+    body: `<div class="guest-editorial"><header class="ui-page__header"><p class="ui-eyebrow">Booking payment · Bank transfer</p><h1>${escapeHtml(heading)}</h1></header>${input.stay ? renderStayTicketHtml(input.stay) : ""}${input.allInStayTotalKobo === undefined ? "" : renderPriceBreakdownHtml({ allInStayTotalKobo: input.allInStayTotalKobo, ...(input.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: input.refundableSecurityDepositKobo }), amountDueNowKobo: input.amountDueNowKobo })}<section class="ui-panel">${body}</section></div>`,
   });
   if (input.contract) {
     return shell("Payment received", `<p>Your transfer arrived and your ${GUEST_GLOSSARY.reservation} is confirmed.</p><a class="ui-button ui-button--primary ui-button--block" href="${conventionalBookingContractRoute(input.contract.contractId)}">View your ${GUEST_GLOSSARY.reservation}</a>${back}`);
@@ -2987,7 +3057,7 @@ export function renderTransferPageHtml(input: {
   const local = input.localPayment
     ? `<form method="post" action="/payments/local/transfer/complete"><input type="hidden" name="reference" value="${escapeHtml(transfer.transferReference)}"><button class="ui-button ui-button--block" type="submit">Complete local demo transfer</button></form>`
     : "";
-  return shell("Transfer to complete your booking", `<dl class="ui-facts"><dt>Bank</dt><dd>${escapeHtml(transfer.bankName)}</dd><dt>Account number</dt><dd class="transfer-account">${escapeHtml(transfer.accountNumber)}</dd><dt>Exact amount</dt><dd class="ui-money-total">${formatNgnKobo(transfer.amountKobo)}</dd><dt>Transfer by</dt><dd><time datetime="${escapeHtml(transfer.expiresAt)}">${escapeHtml(formatWAT(transfer.expiresAt))}</time> · ${minutes} ${minutes === 1 ? "minute" : "minutes"} left</dd></dl><p>Transfer the exact amount. Your booking confirms automatically once the transfer arrives.</p><p>This account is for this booking only and stops accepting payment at the deadline.</p>${local}${back}`);
+  return shell("Transfer to complete your booking", `<dl class="ui-facts"><dt>Bank</dt><dd>${escapeHtml(transfer.bankName)}</dd><dt>Account number</dt><dd class="transfer-account">${escapeHtml(transfer.accountNumber)}</dd><dt>Exact amount</dt><dd class="ui-money-total">${formatNgnKobo(transfer.amountKobo)}</dd></dl><p class="ui-banner ui-banner--warning payment-deadline">${icon("clock")}<span>Transfer by <time datetime="${escapeHtml(transfer.expiresAt)}">${escapeHtml(formatWAT(transfer.expiresAt))}</time> · ${minutes} ${minutes === 1 ? "minute" : "minutes"} left</span></p><p>Transfer the exact amount. Your booking confirms automatically once the transfer arrives.</p><p>This account is for this booking only and stops accepting payment at the deadline.</p>${local}${back}`);
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -3332,7 +3402,7 @@ export function startLocalGuestServer(options: {
       try { artifact = filters === null ? null : app.environment.discoveryQuery.search(filters); } catch { artifact = null; }
       if (!artifact) { sendPageError(req, res, 400, "SEARCH_INVALID"); return; }
       res.writeHead(200, GUEST_HTML_HEADERS);
-      res.end(renderConventionalSearchHtml(artifact));
+      res.end(renderConventionalSearchHtml(artifact, options.localPhotoUrl));
       return;
     }
 
@@ -3419,24 +3489,20 @@ export function startLocalGuestServer(options: {
         const manualOffered = app.environment.manualTransfers?.isOffered(offerId, app.environment.clock()) === true;
         const offerTransferChoice = (app.environment.bankTransferApp !== null || manualOffered) && artifact.facts.status === "ready" && !contactEmailMissing && !processing;
         const escapeHtmlText = escapeHtml;
+        const offerFacts = app.environment.conditionalOfferApp.getArtifact(offerId, principal).facts;
         const componentAmount = artifact.facts.currentComponentAmountKobo ?? (artifact.facts.status === "ready" ? artifact.facts.allInStayTotalKobo : artifact.facts.refundableSecurityDepositKobo);
         const componentLabel = artifact.facts.status === "deposit_required" || artifact.facts.currentComponent === "security_deposit" ? `Next payment · ${GUEST_GLOSSARY.refundableSecurityDeposit}` : "Next payment · stay payment";
-        const facts = [
-          `<p class="payment-unit">${escapeHtmlText(artifact.facts.unit)}</p>`,
-          `<p>Stay: ${escapeHtmlText(formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut))}</p>`,
-          ...(artifact.facts.allInStayTotalKobo === undefined ? [] : [`<p>${GUEST_GLOSSARY.allInStayTotal}: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}</p>`]),
-          ...(artifact.facts.refundableSecurityDepositKobo === undefined || artifact.facts.refundableSecurityDepositKobo <= 0 ? [] : [`<p>${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}</p>`]),
-          `<p class="ui-money-total">Total to complete booking: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}</p>`,
-          ...(componentAmount === undefined ? [] : [`<p>${componentLabel}: ${formatNgnKobo(componentAmount)}</p>`]),
-          `<p>${formatWAT(artifact.facts.paymentWindowExpiresAt)}</p>`,
-          `<p>${escapeHtmlText(status.detail)}</p>`,
-        ].join("");
+        const ticket = renderStayTicketHtml({ unitTitle: artifact.facts.unit, checkIn: artifact.facts.checkIn, checkOut: artifact.facts.checkOut, nights: quotedNightCount(artifact.facts.checkIn, artifact.facts.checkOut) ?? 0, guestCount: offerFacts.occupants.length });
+        const breakdown = renderPriceBreakdownHtml({ ...(artifact.facts.allInStayTotalKobo === undefined ? {} : { allInStayTotalKobo: artifact.facts.allInStayTotalKobo }), ...(artifact.facts.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: artifact.facts.refundableSecurityDepositKobo }), amountDueNowKobo: artifact.facts.amountDueNowKobo });
+        const countdown = Math.max(0, Math.ceil((Date.parse(artifact.facts.paymentWindowExpiresAt) - app.environment.clock().getTime()) / 60_000));
+        const deadline = `<p class="ui-banner ui-banner--warning payment-deadline">${icon("clock")}<span>Pay by ${escapeHtmlText(formatWAT(artifact.facts.paymentWindowExpiresAt))} · ${countdown} ${countdown === 1 ? "minute" : "minutes"} left</span></p>`;
+        const facts = `${ticket}${breakdown}${componentAmount === undefined ? "" : `<p class="payment-current-component">${escapeHtmlText(componentLabel)}: ${formatNgnKobo(componentAmount)}</p>`}${deadline}<p>${escapeHtmlText(status.detail)}</p>`;
         res.writeHead(200, GUEST_HTML_HEADERS);
         res.end(pageShell({
           title: `${status.label} · Shortlet`,
           width: "narrow",
-          style: ".payment-unit{font-family:var(--font-display);font-size:var(--font-size-h3);line-height:var(--font-line-h3);font-weight:600}.ui-panel p{margin:0}",
-          body: `<header class="ui-page__header"><p class="ui-eyebrow">Booking payment</p><h1>${escapeHtmlText(status.label)}</h1></header><section class="ui-panel">${facts}${!canContinue ? "" : offerTransferChoice ? transferChoiceHtml(offerId, href, options.localPayment ? "Pay by card (local demo)" : "Pay by card", { providerTransfer: app.environment.bankTransferApp !== null, manualTransfer: manualOffered }) : `<a class="ui-button ui-button--primary ui-button--block" href="${href}">${label}</a>`}</section>`,
+          style: ".payment-unit{font-family:var(--font-display);font-size:var(--font-size-h3);line-height:var(--font-line-h3);font-weight:600}.ui-panel p{margin:0}.ui-ticket h2{margin:0;color:var(--color-text-on-inverse);font-family:var(--font-display);font-size:var(--font-size-h3);line-height:var(--font-line-h3)}.ui-price-breakdown{gap:var(--space-3)}.ui-price-breakdown__due{padding-block-start:var(--space-3);border-block-start:1px solid var(--color-border-subtle);font-weight:650}.payment-deadline{align-items:center}.payment-current-component{font-weight:650}.payment-methods{display:grid;gap:var(--space-2)}.guest-editorial .ui-button--primary,.guest-editorial .ui-button--block{border-radius:var(--radius-round)}",
+          body: `<div class="guest-editorial"><header class="ui-page__header"><p class="ui-eyebrow">Booking payment</p><h1>${escapeHtmlText(status.label)}</h1></header>${facts}${!canContinue ? "" : offerTransferChoice ? `<section class="ui-panel payment-methods" aria-label="Choose how to pay">${transferChoiceHtml(offerId, href, options.localPayment ? "Pay by card (local demo)" : "Pay by card", { providerTransfer: app.environment.bankTransferApp !== null, manualTransfer: manualOffered })}</section>` : `<a class="ui-button ui-button--primary ui-button--block" href="${href}">${label}</a>`}</div>`,
         }));
       } catch { sendPageError(req, res, 404, "PAYMENT_OFFER_NOT_FOUND"); }
       return;
@@ -3462,8 +3528,10 @@ export function startLocalGuestServer(options: {
       const render = (status: number, error = "") => {
         const transfer = manual.current(offerId, app.environment.clock());
         if (!transfer) { res.writeHead(303, { Location: `/payments/offers/${encodeURIComponent(offerId)}` }); res.end(); return; }
+        const paymentFacts = app.environment.cardPaymentApp.getArtifact(offerId, principal).facts;
         res.writeHead(status, GUEST_HTML_HEADERS);
-        res.end(renderManualTransferPageHtml({ transfer, now: app.environment.clock(), receiptMaxBytes, error, threadId: findGuestThreadForOffer(app.environment, offerId, principal), contractId: transfer.decision?.kind === "confirmed" ? transfer.decision.contractId : null }));
+        const offerFacts = app.environment.conditionalOfferApp.getArtifact(offerId, principal).facts;
+        res.end(renderManualTransferPageHtml({ transfer, now: app.environment.clock(), receiptMaxBytes, error, threadId: findGuestThreadForOffer(app.environment, offerId, principal), contractId: transfer.decision?.kind === "confirmed" ? transfer.decision.contractId : null, stay: { unitTitle: paymentFacts.unit, checkIn: paymentFacts.checkIn, checkOut: paymentFacts.checkOut, nights: quotedNightCount(paymentFacts.checkIn, paymentFacts.checkOut) ?? 0, guestCount: offerFacts.occupants.length }, ...(paymentFacts.allInStayTotalKobo === undefined ? {} : { allInStayTotalKobo: paymentFacts.allInStayTotalKobo }), ...(paymentFacts.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: paymentFacts.refundableSecurityDepositKobo }) }));
       };
       if (req.method === "GET") { render(200); return; }
       if (!manualMatch[2]) {
@@ -3523,8 +3591,10 @@ export function startLocalGuestServer(options: {
       }
       const transfer = transfers.manager.getSession(offerId);
       if (!transfer) { res.writeHead(303, { Location: `/payments/offers/${encodeURIComponent(offerId)}` }); res.end(); return; }
+      const paymentFacts = app.environment.cardPaymentApp.getArtifact(offerId, principal).facts;
+      const offerFacts = app.environment.conditionalOfferApp.getArtifact(offerId, principal).facts;
       res.writeHead(200, GUEST_HTML_HEADERS);
-      res.end(renderTransferPageHtml({ transfer, now: app.environment.clock(), contract: transfers.manager.getBookingContract(offerId) ?? null, threadId: findGuestThreadForOffer(app.environment, offerId, principal), localPayment: options.localPayment === true }));
+      res.end(renderTransferPageHtml({ transfer, now: app.environment.clock(), contract: transfers.manager.getBookingContract(offerId) ?? null, threadId: findGuestThreadForOffer(app.environment, offerId, principal), localPayment: options.localPayment === true, stay: { unitTitle: paymentFacts.unit, checkIn: paymentFacts.checkIn, checkOut: paymentFacts.checkOut, nights: quotedNightCount(paymentFacts.checkIn, paymentFacts.checkOut) ?? 0, guestCount: offerFacts.occupants.length }, ...(paymentFacts.allInStayTotalKobo === undefined ? {} : { allInStayTotalKobo: paymentFacts.allInStayTotalKobo }), ...(paymentFacts.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: paymentFacts.refundableSecurityDepositKobo }), amountDueNowKobo: paymentFacts.amountDueNowKobo }));
       return;
     }
 

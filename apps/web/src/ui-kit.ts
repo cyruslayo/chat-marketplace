@@ -26,6 +26,7 @@ export function formatMoney(kobo: number): string {
 
 const ICON_PATHS = {
   "arrow-left": '<path d="M19 12H5M11 18l-6-6 6-6"/>',
+  "arrow-up": '<path d="M12 19V5M6 11l6-6 6 6"/>',
   alert: '<path d="M12 3.5 2.5 20h19Z"/><path d="M12 10v4.5M12 17.2v.1"/>',
   calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
   card: '<rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="M2.5 10h19M6.5 15h4"/>',

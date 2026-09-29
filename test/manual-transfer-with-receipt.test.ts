@@ -159,6 +159,8 @@ test("AC5 — Upload works without JavaScript and at 320px", async () => {
     await g.post(manualPage(g));
     const html = await (await g.get(manualPage(g))).text();
     assert.doesNotMatch(html, /<script/);
+    assert.match(html, /class="ui-ticket" aria-label="Your stay"/);
+    assert.match(html, /ui-price-breakdown/);
     assert.match(html, /<form method="post" action="[^"]+\/manual-transfer\/receipt" enctype="multipart\/form-data"/);
     assert.match(html, /<input id="receipt" name="receipt" type="file" accept="image\/jpeg,image\/png,application\/pdf" required>/);
     assert.match(html, /\.transfer-account,\.transfer-reference\{[^}]*overflow-wrap:anywhere/);

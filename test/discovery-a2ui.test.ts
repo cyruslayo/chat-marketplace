@@ -104,6 +104,7 @@ test("AC3: dated pricing displays the canonical All-In Stay Total", () => {
   assert.equal(artifact.facts.results[0].price.allInStayTotalKobo, 18_000_000);
   const text = resolvedText(processMessages(discoveryArtifactToA2UI({ artifact, surfaceId: SURFACE_ID }))).join("\n");
   assert.match(text, /All-In Stay Total/);
+  assert.match(text, /All-In Stay Total\n₦180,000\nFor 2 nights · all-in/);
   assert.match(text, /₦180,000/);
   assert.doesNotMatch(text, /All-In Stay Total: ₦85,000/);
 });

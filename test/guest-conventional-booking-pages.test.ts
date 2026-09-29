@@ -54,6 +54,8 @@ test("AC1 (booking part): each booking conventionalRoute the guest app emits ret
       const response = await page(`${fixture.base}${route}`, fixture.cookie);
       assert.equal(response.status, 200, route);
       assert.match(response.body, /data-page="booking-record"/, route);
+      assert.match(response.body, /class="ui-ticket" aria-label="Your stay"/, route);
+      assert.match(response.body, /class="[^"]*ui-price-breakdown[^"]*" aria-label="Price breakdown"/, route);
       assert.ok(response.body.includes(summary), `${route} shows "${summary}"`);
       assert.ok(response.body.includes(`href="/?threadId=${fixture.threadId}"`), `${route} links back to its conversation`);
     });

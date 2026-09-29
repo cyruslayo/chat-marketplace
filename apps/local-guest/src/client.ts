@@ -194,6 +194,18 @@ function organizeUnitDetail(mount: HTMLElement): void {
   for (const [element, className] of [[title, "unit-title"], [location, "unit-location"], [facts, "unit-facts"], [dates, "unit-dates"]] as const) {
     element?.classList.add(className);
   }
+  if (facts) {
+    const factLabels = (facts.textContent ?? "").split(" · ").map((label) => label.trim()).filter(Boolean);
+    if (factLabels.length > 1) {
+      const chips = factLabels.map((label) => {
+        const chip = document.createElement("span");
+        chip.textContent = label;
+        return chip;
+      });
+      facts.replaceChildren(...chips);
+      facts.classList.add("unit-facts--chips");
+    }
+  }
   const overview = wrapDirectChildren(root, "unit-overview", [title, location, facts, dates].filter((element): element is Element => element !== undefined));
   if (overview) {
     overview.setAttribute("role", "group");
@@ -227,6 +239,42 @@ function organizeUnitDetail(mount: HTMLElement): void {
   const grouped = new Set<Element>([...(overview ? [overview] : []), ...root.querySelectorAll(":scope > .listing-gallery, :scope > .unit-gallery, :scope > .unit-price-group, :scope > .unit-description, :scope > .unit-amenities")]);
   const supporting = [...root.children].filter((child) => child !== action && !grouped.has(child));
   wrapDirectChildren(root, "unit-supporting-info", supporting);
+  if (action) {
+    const bar = document.createElement("div");
+    bar.className = "ui-action-bar unit-action-bar";
+    const priceGroup = root.querySelector<HTMLElement>(":scope > .unit-price-group");
+    const label = priceGroup?.querySelector<HTMLElement>(".unit-price-label");
+    const total = priceGroup?.querySelector<HTMLElement>(".unit-price-total");
+    if (label && total) {
+      const price = document.createElement("p");
+      price.append(label.cloneNode(true), document.createElement("br"), total.cloneNode(true));
+      bar.appendChild(price);
+    }
+    bar.appendChild(action);
+    root.appendChild(bar);
+  }
+}
+
+function organizeBookingTicket(mount: HTMLElement): void {
+  const root = mount.querySelector<HTMLElement>('[data-a2ui-component="Column"]');
+  if (!root) return;
+  const children = [...root.children];
+  const title = children.find((child) => child.tagName === "H3" && !/^(₦|NGN\b)/.test(child.textContent?.trim() ?? ""));
+  if (!title) return;
+  const date = children.find((child) => child !== title && /^(?:Stay(?: dates?)?:|(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),?\s)/i.test(child.textContent?.trim() ?? ""));
+  const party = children.find((child) => child !== title && child !== date && /^(?:Guests?:|\d+\s+(?:guest|occupant))/i.test(child.textContent?.trim() ?? ""));
+  const ticket = wrapDirectChildren(root, "ui-ticket", [title, date, party].filter((element): element is Element => element !== undefined));
+  if (ticket) {
+    ticket.setAttribute("role", "group");
+    ticket.setAttribute("aria-label", "Your stay");
+  }
+  const amountLabel = children.find((child) => (child.textContent?.trim() ?? "").startsWith(GUEST_GLOSSARY.allInStayTotal));
+  const amount = children.find((child) => child !== title && /^(₦|NGN\b)/.test(child.textContent?.trim() ?? ""));
+  const deposit = children.find((child) => (child.textContent?.trim() ?? "").startsWith(GUEST_GLOSSARY.refundableSecurityDeposit));
+  const due = children.find((child) => /^(?:Total to complete booking|Amount Due Now|Amount due now)/i.test(child.textContent?.trim() ?? ""));
+  const priceNodes = [amountLabel, amount, deposit, due].filter((element): element is Element => element !== undefined && element.parentElement === root);
+  const breakdown = wrapDirectChildren(root, "ui-panel ui-price-breakdown", priceNodes);
+  if (breakdown) breakdown.setAttribute("aria-label", "Price breakdown");
 }
 
 function decorateDiscoveryCards(mount: HTMLElement): void {
@@ -251,7 +299,17 @@ function decorateDiscoveryCards(mount: HTMLElement): void {
     headings[0]?.classList.add("stay-card__title");
     const location = smalls[0];
     location?.classList.add("stay-card__location");
-    children.find((child) => child.tagName === "P")?.classList.add("stay-card__facts");
+    const factLine = children.find((child) => child.tagName === "P");
+    factLine?.classList.add("stay-card__facts");
+    if (factLine) {
+      const labels = (factLine.textContent ?? "").split(" · ").map((label) => label.trim()).filter(Boolean);
+      if (labels.length > 1) factLine.replaceChildren(...labels.map((label) => {
+        const chip = document.createElement("span");
+        chip.textContent = label;
+        return chip;
+      }));
+    }
+    children.find((child) => (child.textContent ?? "").startsWith(GUEST_GLOSSARY.refundableSecurityDeposit))?.classList.add("stay-card__deposit");
     smalls[1]?.classList.add("stay-card__amenities");
 
     const priceLabel = children.find((child) => isPriceLabel(child.textContent?.trim() ?? ""));
@@ -300,6 +358,7 @@ function enhanceSurfacePresentation(mount: HTMLElement, kind: string): void {
   if (kind === "discovery") decorateDiscoveryCards(mount);
   if (kind === "compare") decorateComparison(mount);
   if (kind === "unit-detail") organizeUnitDetail(mount);
+  if (kind === "booking" || kind === "payment") organizeBookingTicket(mount);
 }
 
 function isPriceLabel(text: string): boolean {
@@ -859,6 +918,7 @@ function renderCriteria(criteria: GuestCriteria | undefined): void {
     chip.type = "button";
     chip.className = "ui-chip criteria-chip";
     chip.dataset.field = field;
+    chip.dataset.empty = String(criteria[field] === undefined);
     chip.setAttribute("aria-expanded", String(openCriteriaField === field));
     chip.setAttribute("aria-controls", "criteria-editor");
     const name = document.createElement("span");

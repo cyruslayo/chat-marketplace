@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { restartFixture } from "./helpers/guest-restart.js";
+import { renderConventionalSearchHtml } from "../apps/local-guest/src/guest-server.js";
 
 async function get(url: string, cookie?: string): Promise<{ status: number; body: string }> {
   const response = await fetch(url, { headers: { accept: "text/html", ...(cookie ? { cookie } : {}) } });
@@ -56,6 +57,27 @@ test("AC1 (search part): /stays/search built by the guest app returns 200 with t
       assert.equal(rejected.status, 400, invalid);
       assert.match(rejected.body, /data-error-code="SEARCH_INVALID"/, invalid);
     }
+  } finally { await fixture.close(); }
+});
+
+test("Warm editorial conventional stay cards lead with real photos and separate all-in and deposit facts", async () => {
+  const fixture = await restartFixture();
+  try {
+    const discovery = await fixture.advance("discovery");
+    const route = discovery.surfaces[0]!.conventionalRoute!;
+    const artifact = fixture.environment.discoveryQuery.search(searchFilters(route));
+    const first = artifact.facts.results[0]!;
+    const withPhoto = { ...artifact, facts: { ...artifact.facts, results: [{ ...first, photoUrls: ["https://images.example/stay.jpg"] }, ...artifact.facts.results.slice(1)] } };
+    const html = renderConventionalSearchHtml(withPhoto, () => "/photos/stay.jpg");
+    assert.match(html, /class="stay-card-photo" src="\/photos\/stay.jpg"/);
+    assert.match(html, /referrerpolicy="no-referrer"/);
+    assert.match(html, /alt="Photo of /);
+    assert.match(html, /class="stay-card-facts"/);
+    assert.match(html, /All-In Stay Total(?: for \d+ nights?)? · all-in/);
+    assert.match(html, /Refundable Security Deposit \(separate\):/);
+    assert.match(html, /aspect-ratio:4\/3/);
+    assert.match(html, /border-radius:var\(--radius-card\)/);
+    assert.doesNotMatch(html, /Verified badge|★/);
   } finally { await fixture.close(); }
 });
 
