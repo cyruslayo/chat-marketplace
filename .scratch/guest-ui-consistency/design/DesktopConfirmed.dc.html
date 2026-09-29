@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Desktop confirmed</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="kit.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>body{margin:0}</style>
+</helmet>
+<div class="sl {{theme}}" style="width: 1280px; height: 800px">
+<header class="topbar" style="padding-inline: 32px"><span class="brand">Shortlet</span><span class="grow"></span><a class="textbtn" href="#"><i class="ic ic-message" aria-hidden="true"></i>New conversation</a></header>
+<ol class="rail" aria-label="Booking progress" style="padding-inline: 32px"><li class="done">Search</li><li class="done">Stay</li><li class="done">Request</li><li class="done">Offer</li><li class="done">Pay</li><li class="now">Confirmed</li></ol>
+<div class="split">
+<section class="chat" aria-label="Conversation">
+<div class="transcript">
+<p class="marker">Payment verified</p>
+<p class="who">Concierge</p>
+<p class="bot">You’re booked: Luxury 2-Bedroom Apartment in Old Ikoyi, 10–13 Sept. I’ll share check-in details here when they’re ready.</p>
+</div>
+<div class="criteria"><div class="chips"><span class="chip"><i class="ic ic-pin" aria-hidden="true"></i>Old Ikoyi</span><span class="chip"><i class="ic ic-calendar" aria-hidden="true"></i>10–13 Sept · 3 nights</span><span class="chip"><i class="ic ic-users" aria-hidden="true"></i>2 guests</span></div></div>
+<form class="composer"><input class="field" type="text" placeholder="Ask about your stay…" aria-label="Your message"><button class="send" type="button" aria-label="Send"><i class="ic ic-up" aria-hidden="true"></i></button></form>
+</section>
+<section class="work" aria-label="Workspace">
+<div class="inner">
+<div class="head"><p class="eyebrow">Your booking</p><h1 class="h1">Reservation confirmed</h1><span class="status ok"><i class="ic ic-check" aria-hidden="true"></i>Stay payment verified</span></div>
+<section class="ticket" aria-label="Your stay"><div><p class="lab">Your stay</p><p class="name">Luxury 2-Bedroom Apartment in Old Ikoyi</p></div><div class="dates"><div><p class="lab">Check-in</p><p class="day">10</p><p class="date">Thu, 10 Sept 2026</p></div><i class="ic ic-right arrow" aria-hidden="true"></i><div class="end"><p class="lab">Check-out</p><p class="day">13</p><p class="date">Sun, 13 Sept 2026</p></div></div><p class="foot">3 nights · 2 guests · Booking reference <span class="mono">SL-67J8NRV7</span></p></section>
+<section class="breakdown" aria-label="Price breakdown"><div class="row"><span>All-In Stay Total · 3 nights</span><span class="v">₦370,000</span></div><div class="row"><span>Refundable Security Deposit collected</span><span class="v">₦20,000</span></div><div class="paid"><span>Amount paid</span><span>₦370,000</span></div></section>
+<a class="btn alt" href="#" style="align-self: flex-start"><i class="ic ic-doc" aria-hidden="true"></i>View booking details</a>
+</div>
+</section>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+renderVals() {
+return { theme: this.props.dark ? 'dark' : '' };
+}
+}
+</script>
+</body>
+</html>

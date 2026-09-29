@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>No Reservation was made</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="kit.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>body{margin:0}</style>
+</helmet>
+<div class="sl {{theme}}" style="width: 390px; height: 900px">
+<header class="topbar"><a class="iconbtn" href="#" aria-label="Back to your conversation"><i class="ic ic-left" aria-hidden="true"></i></a><span class="brand">Shortlet</span><span class="grow"></span></header>
+<ol class="rail" aria-label="Booking progress"><li class="done">Search</li><li class="done">Stay</li><li class="done">Request</li><li class="done">Offer</li><li class="now">Pay</li><li>Confirmed</li></ol>
+<main class="main">
+<div class="head"><p class="eyebrow">Booking payment · Bank transfer</p><h1 class="h1">No Reservation was made</h1><span class="status bad">Transfer account expired</span></div>
+<p class="banner bad"><i class="ic ic-alert" aria-hidden="true"></i><span><b>The account expired at 11:22 am WAT, 3 Sept 2026</b>No payment arrived before the deadline, so the dates were released.</span></p>
+<p class="small">If you sent money after the deadline, it will be refunded. A late payment doesn’t confirm the booking.</p>
+<div class="actions"><a class="btn block" href="#">Back to your conversation</a><a class="btn alt block" href="#">Find other stays</a></div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":390,"height":900}}'>
+class Component extends DCLogic {
+renderVals() {
+return { theme: this.props.dark ? 'dark' : '' };
+}
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Manual bank transfer</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="kit.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>body{margin:0}</style>
+</helmet>
+<div class="sl {{theme}}" style="width: 390px; height: 1500px">
+<header class="topbar"><a class="iconbtn" href="#" aria-label="Back to your conversation"><i class="ic ic-left" aria-hidden="true"></i></a><span class="brand">Shortlet</span><span class="grow"></span></header>
+<ol class="rail" aria-label="Booking progress"><li class="done">Search</li><li class="done">Stay</li><li class="done">Request</li><li class="done">Offer</li><li class="now">Pay</li><li>Confirmed</li></ol>
+<main class="main">
+<div class="head"><p class="eyebrow">Booking payment · Manual bank transfer</p><h1 class="h1">Transfer and upload your receipt</h1></div>
+<p class="banner warn"><i class="ic ic-clock" aria-hidden="true"></i><span><b>Transfer and upload by 11:20 am WAT, 3 Sept 2026</b>20 minutes left</span></p>
+<section class="ticket" aria-label="Your stay"><div><p class="lab">Your stay</p><p class="name">Luxury 2-Bedroom Apartment in Old Ikoyi</p></div><div class="dates"><div><p class="lab">Check-in</p><p class="day">10</p><p class="date">Thu, 10 Sept 2026</p></div><i class="ic ic-right arrow" aria-hidden="true"></i><div class="end"><p class="lab">Check-out</p><p class="day">13</p><p class="date">Sun, 13 Sept 2026</p></div></div><p class="foot">3 nights · 2 guests · Entire place</p></section>
+<section class="card" aria-label="Transfer details">
+<dl class="facts">
+<div><dt>Exact amount</dt><dd class="money">₦370,000</dd></div>
+<div><dt>Bank</dt><dd>Test Business Bank</dd></div>
+<div><dt>Account name</dt><dd>Shortlet Test Ltd</dd></div>
+<div><dt>Account number</dt><dd class="copyrow"><span class="acct">1234567890</span><button class="textbtn" type="button"><i class="ic ic-copy" aria-hidden="true"></i>Copy</button><span class="copied" role="status"><i class="ic ic-check" aria-hidden="true"></i>Account number copied</span></dd></div>
+<div><dt>Booking reference</dt><dd class="acct" style="font-size: 18px">SL-67J8NRV7</dd></div>
+</dl>
+<hr class="divider">
+<p class="small">Include the booking reference with your transfer. Your booking confirms only after we see the money in our account and check it. The receipt alone doesn’t confirm it.</p>
+</section>
+<section class="card" aria-label="Upload your receipt">
+<h2 class="h2">Upload your receipt</h2>
+<label class="upload"><i class="ic ic-upload" aria-hidden="true"></i>Choose a photo or PDF, up to 5 MB<input type="file" accept="image/jpeg,image/png,application/pdf" style="position: absolute; width: 1px; height: 1px; opacity: 0"></label>
+<a class="btn block" href="#">Upload receipt</a>
+</section>
+</main>
+<div class="actionbar"><a class="btn alt block" href="#">Back to your conversation</a></div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":390,"height":1500}}'>
+class Component extends DCLogic {
+renderVals() {
+return { theme: this.props.dark ? 'dark' : '' };
+}
+}
+</script>
+</body>
+</html>

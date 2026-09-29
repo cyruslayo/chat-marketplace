@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Chat home</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="kit.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>body{margin:0}</style>
+</helmet>
+<div class="sl {{theme}}" style="width: 390px; height: 844px">
+<header class="topbar"><span class="brand">Shortlet</span><span class="grow"></span><a class="textbtn" href="#"><i class="ic ic-message" aria-hidden="true"></i>New conversation</a></header>
+<ol class="rail" aria-label="Booking progress"><li class="now">Search</li><li>Stay</li><li>Request</li><li>Offer</li><li>Pay</li><li>Confirmed</li></ol>
+<main class="transcript">
+<div class="head" style="padding: 12px 0 8px">
+<p class="eyebrow">Lagos · Abuja</p>
+<h1 class="h1">Where would you like to stay?</h1>
+<p class="lede">Tell me the area, your dates and how many guests. I’ll show apartments you can book, with the all-in price for your dates.</p>
+</div>
+<p class="who">Concierge</p>
+<p class="bot">Hello. For example: “2-bed in Ikoyi from 10 Sept for 3 nights, 2 of us.”</p>
+</main>
+<div class="criteria"><div class="chips"><span class="chip add"><i class="ic ic-plus" aria-hidden="true"></i>Where</span><span class="chip add"><i class="ic ic-plus" aria-hidden="true"></i>When</span><span class="chip add"><i class="ic ic-plus" aria-hidden="true"></i>Guests</span><span class="chip add"><i class="ic ic-plus" aria-hidden="true"></i>Budget</span></div></div>
+<form class="composer"><input class="field" type="text" placeholder="Area, dates, guests" aria-label="Your message"><button class="send" type="button" aria-label="Send"><i class="ic ic-up" aria-hidden="true"></i></button></form>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+renderVals() {
+return { theme: this.props.dark ? 'dark' : '' };
+}
+}
+</script>
+</body>
+</html>

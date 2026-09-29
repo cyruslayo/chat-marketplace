@@ -1,0 +1,355 @@
+{
+  "v": 3,
+  "createdOnFiles": {
+    "v": 1,
+    "at": "2026-09-29T14:00:00Z"
+  },
+  "title": "Guest UI consistency",
+  "launch": {
+    "view": "canvas"
+  },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 1280,
+      "h": 1500,
+      "title": "Component kit"
+    },
+    "ChatHome.dc.html": {
+      "x": 0,
+      "y": 1880,
+      "w": 390,
+      "h": 844,
+      "title": "1 · Chat home"
+    },
+    "ChatResults.dc.html": {
+      "x": 470,
+      "y": 1880,
+      "w": 390,
+      "h": 870,
+      "title": "2 · Discovery results in chat"
+    },
+    "Compare.dc.html": {
+      "x": 940,
+      "y": 1880,
+      "w": 390,
+      "h": 900,
+      "title": "3 · Compare stays"
+    },
+    "Search.dc.html": {
+      "x": 1410,
+      "y": 1880,
+      "w": 390,
+      "h": 1640,
+      "title": "4 · Search page"
+    },
+    "UnitDetail.dc.html": {
+      "x": 1880,
+      "y": 1880,
+      "w": 390,
+      "h": 1120,
+      "title": "5 · Unit detail"
+    },
+    "RequestDraft.dc.html": {
+      "x": 0,
+      "y": 3880,
+      "w": 390,
+      "h": 1100,
+      "title": "6 · Request draft"
+    },
+    "RequestReview.dc.html": {
+      "x": 470,
+      "y": 3880,
+      "w": 390,
+      "h": 1260,
+      "title": "7 · Request review"
+    },
+    "RequestSent.dc.html": {
+      "x": 940,
+      "y": 3880,
+      "w": 390,
+      "h": 1150,
+      "title": "8 · Request sent"
+    },
+    "RequestOutcome.dc.html": {
+      "x": 1410,
+      "y": 3880,
+      "w": 390,
+      "h": 844,
+      "title": "9 · Request not accepted"
+    },
+    "Offer.dc.html": {
+      "x": 0,
+      "y": 5520,
+      "w": 390,
+      "h": 1240,
+      "title": "10 · Conditional Booking Offer"
+    },
+    "OfferExpired.dc.html": {
+      "x": 470,
+      "y": 5520,
+      "w": 390,
+      "h": 1000,
+      "title": "11 · Offer expired"
+    },
+    "PaymentChoice.dc.html": {
+      "x": 0,
+      "y": 7160,
+      "w": 390,
+      "h": 1280,
+      "title": "12 · Payment choice"
+    },
+    "CardHandoff.dc.html": {
+      "x": 470,
+      "y": 7160,
+      "w": 390,
+      "h": 1000,
+      "title": "13 · Card checkout handoff"
+    },
+    "BankTransfer.dc.html": {
+      "x": 940,
+      "y": 7160,
+      "w": 390,
+      "h": 1180,
+      "title": "14 · Bank transfer"
+    },
+    "ManualTransfer.dc.html": {
+      "x": 1410,
+      "y": 7160,
+      "w": 390,
+      "h": 1500,
+      "title": "15 · Manual bank transfer"
+    },
+    "PaymentWaiting.dc.html": {
+      "x": 1880,
+      "y": 7160,
+      "w": 390,
+      "h": 1100,
+      "title": "16 · Waiting for payment check"
+    },
+    "NoReservation.dc.html": {
+      "x": 2350,
+      "y": 7160,
+      "w": 390,
+      "h": 900,
+      "title": "17 · No Reservation was made"
+    },
+    "Confirmed.dc.html": {
+      "x": 0,
+      "y": 9040,
+      "w": 390,
+      "h": 1320,
+      "title": "18 · Reservation confirmed"
+    },
+    "ErrorPage.dc.html": {
+      "x": 470,
+      "y": 9040,
+      "w": 390,
+      "h": 844,
+      "title": "Error page"
+    },
+    "NoJsConversation.dc.html": {
+      "x": 940,
+      "y": 9040,
+      "w": 390,
+      "h": 844,
+      "title": "Conversation without JavaScript"
+    },
+    "DesktopDiscovery.dc.html": {
+      "x": 0,
+      "y": 10740,
+      "w": 1280,
+      "h": 800,
+      "title": "Desktop · Discovery"
+    },
+    "DesktopReview.dc.html": {
+      "x": 1360,
+      "y": 10740,
+      "w": 1280,
+      "h": 800,
+      "title": "Desktop · Request review"
+    },
+    "DesktopPayment.dc.html": {
+      "x": 2720,
+      "y": 10740,
+      "w": 1280,
+      "h": 800,
+      "title": "Desktop · Bank transfer"
+    },
+    "DesktopConfirmed.dc.html": {
+      "x": 4080,
+      "y": 10740,
+      "w": 1280,
+      "h": 800,
+      "title": "Desktop · Confirmed"
+    },
+    "DarkMode.dc.html": {
+      "x": 0,
+      "y": 11920,
+      "w": 1680,
+      "h": 1320,
+      "title": "Dark mode · same screens"
+    }
+  },
+  "order": [
+    "Main.dc.html",
+    "ChatHome.dc.html",
+    "ChatResults.dc.html",
+    "Compare.dc.html",
+    "Search.dc.html",
+    "UnitDetail.dc.html",
+    "RequestDraft.dc.html",
+    "RequestReview.dc.html",
+    "RequestSent.dc.html",
+    "RequestOutcome.dc.html",
+    "Offer.dc.html",
+    "OfferExpired.dc.html",
+    "PaymentChoice.dc.html",
+    "CardHandoff.dc.html",
+    "BankTransfer.dc.html",
+    "ManualTransfer.dc.html",
+    "PaymentWaiting.dc.html",
+    "NoReservation.dc.html",
+    "Confirmed.dc.html",
+    "ErrorPage.dc.html",
+    "NoJsConversation.dc.html",
+    "DesktopDiscovery.dc.html",
+    "DesktopReview.dc.html",
+    "DesktopPayment.dc.html",
+    "DesktopConfirmed.dc.html",
+    "DarkMode.dc.html"
+  ],
+  "notes": {
+    "kitTitle": {
+      "x": 0,
+      "y": -300,
+      "text": "One kit, every guest screen",
+      "kind": "title1",
+      "maxW": 1280
+    },
+    "kitNote": {
+      "x": -620,
+      "y": 0,
+      "w": 520,
+      "size": "m",
+      "fill": "teal",
+      "text": "Every screen below uses only these components. The chat workspace and the standalone page show the SAME screen: same top bar, journey rail, stay ticket, price breakdown and deadline banner. Only the way you arrive differs (the chat opens it in the workspace; a link opens it as a page). Tokens come straight from apps/web/src/shortlet-foundations.css."
+    },
+    "discoverTitle": {
+      "x": 0,
+      "y": 1620,
+      "text": "Discover",
+      "kind": "title1",
+      "maxW": 2270
+    },
+    "discoverNote": {
+      "x": -620,
+      "y": 1880,
+      "w": 520,
+      "size": "m",
+      "fill": "gray",
+      "text": "Chat and search share one stay card and one compact result row. The All-In Stay Total leads; the Refundable Security Deposit is always a separate line (ADR 0015). Location is neighbourhood-level; no ratings, badges or price-pin map (ADR 0066)."
+    },
+    "requestTitle": {
+      "x": 0,
+      "y": 3620,
+      "text": "Request",
+      "kind": "title1",
+      "maxW": 1800
+    },
+    "requestNote": {
+      "x": -620,
+      "y": 3880,
+      "w": 520,
+      "size": "m",
+      "fill": "gray",
+      "text": "Before the owner accepts, nothing is payable: the breakdown carries the 'If your request is accepted' tag. The stay ticket is identical on every booking screen from here to confirmation."
+    },
+    "offerTitle": {
+      "x": 0,
+      "y": 5260,
+      "text": "Offer",
+      "kind": "title1",
+      "maxW": 860
+    },
+    "offerNote": {
+      "x": -620,
+      "y": 5520,
+      "w": 520,
+      "size": "m",
+      "fill": "gray",
+      "text": "Deadlines always use the one warning banner: absolute WAT time plus the time left. This replaces the blue 'Time left to pay' box the chat workspace shows today."
+    },
+    "payTitle": {
+      "x": 0,
+      "y": 6900,
+      "text": "Pay",
+      "kind": "title1",
+      "maxW": 2740
+    },
+    "payNote": {
+      "x": -620,
+      "y": 7160,
+      "w": 520,
+      "size": "m",
+      "fill": "gray",
+      "text": "One payment layout for card, bank transfer and manual transfer: ticket, breakdown, deadline banner, then one bank-details card (no card inside a card). Manual bank transfer stays an option (ADR 0090)."
+    },
+    "amountDecision": {
+      "x": -620,
+      "y": 7820,
+      "w": 520,
+      "size": "m",
+      "fill": "orange",
+      "text": "OPEN DECISION (not resolved here): 'Amount due now' means ₦390,000 (stay + deposit) on the payment choice screen, but ₦370,000 (the stay payment alone) on the transfer screens. 'Amount paid' on confirmation also shows the stay payment only. These screens show today's values; pick one meaning before build."
+    },
+    "doneTitle": {
+      "x": 0,
+      "y": 8780,
+      "text": "Confirmed and system",
+      "kind": "title1",
+      "maxW": 1330
+    },
+    "doneNote": {
+      "x": -620,
+      "y": 9040,
+      "w": 520,
+      "size": "m",
+      "fill": "gray",
+      "text": "Errors and the no-JavaScript conversation use the same frame and components, so a guest never lands on a page that looks like another product (ADR 0080)."
+    },
+    "deskTitle": {
+      "x": 0,
+      "y": 10480,
+      "text": "Desktop: conversation left, workspace right",
+      "kind": "title1",
+      "maxW": 5360
+    },
+    "deskNote": {
+      "x": -620,
+      "y": 10740,
+      "w": 520,
+      "size": "m",
+      "fill": "gray",
+      "text": "The workspace pane holds exactly the phone screens' content, at a 560px reading width."
+    },
+    "darkTitle": {
+      "x": 0,
+      "y": 11660,
+      "text": "Dark mode",
+      "kind": "title1",
+      "maxW": 1680
+    },
+    "darkNote": {
+      "x": -620,
+      "y": 11920,
+      "w": 520,
+      "size": "m",
+      "fill": "gray",
+      "text": "The same four screens with the Dark tweak on: mint action, deep-green ticket with a visible border. Every artboard has a Dark tweak."
+    }
+  },
+  "designSystems": []
+}

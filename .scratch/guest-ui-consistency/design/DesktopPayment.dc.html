@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Desktop bank transfer</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="kit.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>body{margin:0}</style>
+</helmet>
+<div class="sl {{theme}}" style="width: 1280px; height: 800px">
+<header class="topbar" style="padding-inline: 32px"><span class="brand">Shortlet</span><span class="grow"></span><a class="textbtn" href="#"><i class="ic ic-message" aria-hidden="true"></i>New conversation</a></header>
+<ol class="rail" aria-label="Booking progress" style="padding-inline: 32px"><li class="done">Search</li><li class="done">Stay</li><li class="done">Request</li><li class="done">Offer</li><li class="now">Pay</li><li>Confirmed</li></ol>
+<div class="split">
+<section class="chat" aria-label="Conversation">
+<div class="transcript">
+<p class="who">Concierge</p>
+<p class="bot">The provider confirmed your dates. Pay by 11:20 am WAT to complete your booking.</p>
+<p class="marker">Offer accepted</p>
+<p class="me">I’ll pay by bank transfer</p>
+<p class="who">Concierge</p>
+<p class="bot">Here’s your transfer account. It’s for this booking only.</p>
+</div>
+<div class="criteria"><div class="chips"><span class="chip"><i class="ic ic-pin" aria-hidden="true"></i>Old Ikoyi</span><span class="chip"><i class="ic ic-calendar" aria-hidden="true"></i>10–13 Sept · 3 nights</span><span class="chip"><i class="ic ic-users" aria-hidden="true"></i>2 guests</span></div></div>
+<form class="composer"><input class="field" type="text" placeholder="You can keep chatting while you pay…" aria-label="Your message"><button class="send" type="button" aria-label="Send"><i class="ic ic-up" aria-hidden="true"></i></button></form>
+</section>
+<section class="work" aria-label="Workspace">
+<div class="inner">
+<div class="head"><p class="eyebrow">Booking payment · Bank transfer</p><h1 class="h1">Transfer to complete your booking</h1></div>
+<p class="banner warn"><i class="ic ic-clock" aria-hidden="true"></i><span><b>Transfer by 11:22 am WAT, 3 Sept 2026</b>20 minutes left. This account stops accepting payment then.</span></p>
+<section class="card" aria-label="Transfer details">
+<dl class="facts" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px">
+<div><dt>Exact amount</dt><dd class="money">₦370,000</dd></div>
+<div><dt>Bank</dt><dd>Local Demo Bank</dd></div>
+<div style="grid-column: span 2"><dt>Account number</dt><dd class="copyrow"><span class="acct">8722581460</span><button class="textbtn" type="button"><i class="ic ic-copy" aria-hidden="true"></i>Copy</button></dd></div>
+</dl>
+<hr class="divider">
+<p class="hint">Your booking confirms automatically once the transfer arrives.</p>
+</section>
+<span class="status wait">Waiting for your transfer</span>
+</div>
+</section>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+renderVals() {
+return { theme: this.props.dark ? 'dark' : '' };
+}
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Discovery results in chat</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="kit.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>body{margin:0}</style>
+</helmet>
+<div class="sl {{theme}}" style="width: 390px; height: 870px">
+<header class="topbar"><span class="brand">Shortlet</span><span class="grow"></span><a class="textbtn" href="#"><i class="ic ic-message" aria-hidden="true"></i>New conversation</a></header>
+<ol class="rail" aria-label="Booking progress"><li class="done">Search</li><li class="now">Stay</li><li>Request</li><li>Offer</li><li>Pay</li><li>Confirmed</li></ol>
+<main class="transcript">
+<p class="me">I need an apartment in Lagos from 10 Sept for 3 nights for 2 people</p>
+<p class="who">Concierge</p>
+<p class="bot">I found 2 eligible apartments in Lagos for Thu 10 to Sun 13 Sept, 3 nights, 2 guests. Prices are all-in for your dates.</p>
+<a class="result" href="#"><span class="thumb"><i class="ic ic-photo" aria-hidden="true"></i></span><span style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px"><span class="t">Luxury 2-Bedroom Apartment in Old Ikoyi</span><span class="p">₦370,000 <span>all-in · 3 nights</span></span></span><i class="ic ic-chevron" aria-hidden="true"></i></a>
+<a class="result" href="#"><span class="thumb"><i class="ic ic-photo" aria-hidden="true"></i></span><span style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px"><span class="t">Serene 1-Bedroom Suite in Lekki Phase 1</span><span class="p">₦200,000 <span>all-in · 3 nights</span></span></span><i class="ic ic-chevron" aria-hidden="true"></i></a>
+<a class="link" href="#" style="align-self: flex-start">See both side by side<i class="ic ic-right" aria-hidden="true"></i></a>
+</main>
+<div class="criteria"><div class="chips"><span class="chip"><i class="ic ic-pin" aria-hidden="true"></i>Lagos</span><span class="chip"><i class="ic ic-calendar" aria-hidden="true"></i>10–13 Sept · 3 nights</span><span class="chip"><i class="ic ic-users" aria-hidden="true"></i>2 guests</span><span class="chip add"><i class="ic ic-plus" aria-hidden="true"></i>Budget</span></div></div>
+<form class="composer"><input class="field" type="text" placeholder="Ask about these stays…" aria-label="Your message"><button class="send" type="button" aria-label="Send"><i class="ic ic-up" aria-hidden="true"></i></button></form>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":390,"height":870}}'>
+class Component extends DCLogic {
+renderVals() {
+return { theme: this.props.dark ? 'dark' : '' };
+}
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dark mode</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="kit.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>body{margin:0}</style>
+</helmet>
+<div style="width: 1680px; height: 1320px; display: flex; gap: 40px; align-items: flex-start; background: #0B100D">
+<dc-import name="ChatResults" dark="{{yes}}" hint-size="390px,870px"></dc-import>
+<dc-import name="RequestReview" dark="{{yes}}" hint-size="390px,1260px"></dc-import>
+<dc-import name="ManualTransfer" dark="{{yes}}" hint-size="390px,1500px"></dc-import>
+<dc-import name="Confirmed" dark="{{yes}}" hint-size="390px,1320px"></dc-import>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1680,"height":1320}}'>
+class Component extends DCLogic {
+renderVals() {
+return { yes: true };
+}
+}
+</script>
+</body>
+</html>

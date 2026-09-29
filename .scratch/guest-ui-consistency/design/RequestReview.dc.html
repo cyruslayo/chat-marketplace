@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Request review</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="kit.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>body{margin:0}</style>
+</helmet>
+<div class="sl {{theme}}" style="width: 390px; height: 1260px">
+<header class="topbar"><a class="iconbtn" href="#" aria-label="Back to your conversation"><i class="ic ic-left" aria-hidden="true"></i></a><span class="brand">Shortlet</span><span class="grow"></span></header>
+<ol class="rail" aria-label="Booking progress"><li class="done">Search</li><li class="done">Stay</li><li class="now">Request</li><li>Offer</li><li>Pay</li><li>Confirmed</li></ol>
+<main class="main">
+<div class="head"><p class="eyebrow">Booking Request</p><h1 class="h1">Review your request</h1><span class="status">Not sent yet · your dates are not reserved</span></div>
+<section class="ticket" aria-label="Your stay"><div><p class="lab">Your stay</p><p class="name">Luxury 2-Bedroom Apartment in Old Ikoyi</p></div><div class="dates"><div><p class="lab">Check-in</p><p class="day">10</p><p class="date">Thu, 10 Sept 2026</p></div><i class="ic ic-right arrow" aria-hidden="true"></i><div class="end"><p class="lab">Check-out</p><p class="day">13</p><p class="date">Sun, 13 Sept 2026</p></div></div><p class="foot">3 nights · 2 guests · Entire place</p></section>
+<section class="breakdown" aria-label="Price breakdown"><span class="cond"><i class="ic ic-info" aria-hidden="true"></i>If your request is accepted</span><div><p class="meta">All-In Stay Total · 3 nights</p><p class="money">₦370,000</p></div><div class="row"><span>Refundable Security Deposit (separate)</span><span class="v">₦20,000</span></div><div class="due"><span>Amount due now</span><span>₦390,000</span></div></section>
+<section class="card" aria-label="What happens next"><h2 class="h2">What happens next</h2><ol class="steps"><li>Eko Prime Living Ltd, your accommodation provider, confirms the apartment is free for your dates.</li><li>You get a Conditional Booking Offer here and in your conversation.</li><li>You pay before the offer’s deadline. Your dates are held only once you pay.</li></ol></section>
+<p class="hint">We re-check the price and availability when the provider responds.</p>
+</main>
+<div class="actionbar"><div class="sum"><b>₦370,000</b><span class="meta">All-in · 3 nights</span></div><a class="btn" href="#">Send request</a></div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":390,"height":1260}}'>
+class Component extends DCLogic {
+renderVals() {
+return { theme: this.props.dark ? 'dark' : '' };
+}
+}
+</script>
+</body>
+</html>
