@@ -151,12 +151,19 @@ export interface StayCardParts {
   readonly deposit?: string;
   /** A photo URL the caller already routed through the no-referrer photo proxy (ADR 0075). */
   readonly photoSrc?: string;
+  /** How many photos the stay has; two or more show the "1 / N" badge over the photo. */
+  readonly photoCount?: number;
+}
+
+function photoCountHtml(count: number | undefined): string {
+  if (count === undefined || !Number.isInteger(count) || count < 2) return "";
+  return `<span class="ui-stay-card__count">${icon("grid")}<span aria-hidden="true">1 / ${count}</span><span class="ui-sr-only">${count} photos</span></span>`;
 }
 
 function stayPhotoHtml(parts: StayCardParts): string {
   return parts.photoSrc === undefined
     ? `<div class="ui-stay-card__photo ui-stay-card__photo--empty" role="img" aria-label="Photos are not available for ${escapeHtml(parts.title)}">${icon("photo")}Photos not available</div>`
-    : `<img class="ui-stay-card__photo" src="${escapeHtml(parts.photoSrc)}" alt="Photo of ${escapeHtml(parts.title)}" width="800" height="600" loading="lazy" decoding="async" referrerpolicy="no-referrer">`;
+    : `<div class="ui-stay-card__media"><img class="ui-stay-card__photo" src="${escapeHtml(parts.photoSrc)}" alt="Photo of ${escapeHtml(parts.title)}" width="800" height="600" loading="lazy" decoding="async" referrerpolicy="no-referrer">${photoCountHtml(parts.photoCount)}</div>`;
 }
 
 /** What is inside a stay card; the chat puts this inside Weaver's Card element, the pages inside an article. */
@@ -194,6 +201,7 @@ export interface StayPreview {
   readonly refundableSecurityDepositKobo: number;
   readonly nights?: number;
   readonly photoSrc?: string;
+  readonly photoCount?: number;
   readonly unitId?: string;
 }
 
@@ -211,6 +219,7 @@ export function stayCardParts(preview: StayPreview): StayCardParts {
     totalLabel: stayTotalLabel(preview.allInStayTotalKobo !== null, preview.nights),
     ...(preview.refundableSecurityDepositKobo > 0 ? { deposit: formatNgnKobo(preview.refundableSecurityDepositKobo) } : {}),
     ...(preview.photoSrc === undefined ? {} : { photoSrc: preview.photoSrc }),
+    ...(preview.photoCount === undefined ? {} : { photoCount: preview.photoCount }),
   };
 }
 

@@ -8888,7 +8888,13 @@ Known schemas:
     amountDueNow: "Amount due now",
     amountPaid: "Amount paid",
     nextPayment: "Next payment",
-    fitReason: "Why it fits"
+    fitReason: "Why it fits",
+    /** "Photos: 7" on a discovery card; the stay card shows it as the "1 / 7" badge over the photo. */
+    photos: "Photos"
+  });
+  var GUEST_COMPARE_LABELS = Object.freeze({
+    pick: "Compare",
+    unpick: "Remove from compare"
   });
   function guestFactValue(text, label) {
     const prefix = `${label}: `;
@@ -9024,8 +9030,12 @@ Known schemas:
     const paid = parts.paid === void 0 ? "" : `<p class="ui-price-breakdown__paid">${GUEST_FACT_LABELS.amountPaid}: ${money(parts.paid)}</p>`;
     return `<section class="ui-panel ui-price-breakdown" aria-label="Price breakdown">${parts.condition ? `<p class="ui-price-breakdown__condition">${escapeHtml(parts.condition)}</p>` : ""}${total}${deposit}${due}${paid}</section>`;
   }
+  function photoCountHtml(count) {
+    if (count === void 0 || !Number.isInteger(count) || count < 2) return "";
+    return `<span class="ui-stay-card__count">${icon("grid")}<span aria-hidden="true">1 / ${count}</span><span class="ui-sr-only">${count} photos</span></span>`;
+  }
   function stayPhotoHtml(parts) {
-    return parts.photoSrc === void 0 ? `<div class="ui-stay-card__photo ui-stay-card__photo--empty" role="img" aria-label="Photos are not available for ${escapeHtml(parts.title)}">${icon("photo")}Photos not available</div>` : `<img class="ui-stay-card__photo" src="${escapeHtml(parts.photoSrc)}" alt="Photo of ${escapeHtml(parts.title)}" width="800" height="600" loading="lazy" decoding="async" referrerpolicy="no-referrer">`;
+    return parts.photoSrc === void 0 ? `<div class="ui-stay-card__photo ui-stay-card__photo--empty" role="img" aria-label="Photos are not available for ${escapeHtml(parts.title)}">${icon("photo")}Photos not available</div>` : `<div class="ui-stay-card__media"><img class="ui-stay-card__photo" src="${escapeHtml(parts.photoSrc)}" alt="Photo of ${escapeHtml(parts.title)}" width="800" height="600" loading="lazy" decoding="async" referrerpolicy="no-referrer">${photoCountHtml(parts.photoCount)}</div>`;
   }
   function stayCardInnerHtml(parts) {
     const href = escapeHtml(parts.href);
@@ -9316,6 +9326,8 @@ Known schemas:
       if (!title || !where || !factLine || !priceLabel || !price) continue;
       const deposit = findFact(children, GUEST_FACT_LABELS.refundableSecurityDeposit);
       const fit = findFact(children, GUEST_FACT_LABELS.fitReason);
+      const photos = findFact(children, GUEST_FACT_LABELS.photos);
+      const photoCount = photos === void 0 ? void 0 : Number(photos.value);
       const image = children.find((child) => child instanceof HTMLImageElement);
       const buttons = children.filter((child) => child instanceof HTMLButtonElement);
       const view = buttons[0];
@@ -9327,9 +9339,10 @@ Known schemas:
         total: price.textContent?.trim() ?? "",
         totalLabel: priceLabel.textContent?.trim() ?? "",
         ...deposit ? { deposit: deposit.value } : {},
-        ...image?.src ? { photoSrc: image.src } : {}
+        ...image?.src ? { photoSrc: image.src } : {},
+        ...photoCount === void 0 ? {} : { photoCount }
       };
-      const known = /* @__PURE__ */ new Set([title, where.element, factLine, priceLabel, price, deposit?.element, fit?.element, image, ...buttons]);
+      const known = /* @__PURE__ */ new Set([title, where.element, factLine, priceLabel, price, deposit?.element, fit?.element, photos?.element, image, ...buttons]);
       const extras = children.filter((child) => !known.has(child) && child.getAttribute("data-a2ui-component") !== "Divider");
       const template = document.createElement("template");
       template.innerHTML = stayCardInnerHtml(parts);
@@ -9368,26 +9381,44 @@ Known schemas:
         rowList.appendChild(item);
       }
       listElement.before(rowList);
-      if (rows.length >= 2) {
+      if (rows.length === 2) {
         const both = document.createElement("button");
         both.type = "button";
         both.className = "ui-link ui-result-rows__compare";
         both.insertAdjacentHTML("beforeend", `See both side by side${icon("arrow-right")}`);
-        both.addEventListener("click", () => void compareFirstTwo());
+        both.addEventListener("click", () => void compareBoth());
         rowList.after(both);
       }
     }
   }
-  async function compareFirstTwo() {
-    const compareButton = (index) => activeWorkspace.querySelectorAll(".ui-stay-card")[index]?.querySelector(".stay-card__compare") ?? null;
-    compareButton(0)?.click();
-    for (let waited = 0; waited < 5e3; waited += 50) {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      const first = compareButton(0);
-      if (first?.textContent?.trim() === "Remove from compare") {
-        compareButton(1)?.click();
-        return;
+  var comparingBoth = false;
+  async function compareBoth() {
+    if (comparingBoth) return;
+    comparingBoth = true;
+    const compareButtons = () => [...activeWorkspace.querySelectorAll(".ui-stay-card")].map((card) => card.querySelector(".stay-card__compare"));
+    const picked = (button) => button?.textContent?.trim() === GUEST_COMPARE_LABELS.unpick;
+    try {
+      const [first, second] = compareButtons();
+      if (first && second) {
+        if (picked(first) || picked(second)) {
+          (picked(first) ? second : first).click();
+          return;
+        }
+        first.click();
+        for (let waited = 0; waited < 1e4; waited += 50) {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          const [fresh, next] = compareButtons();
+          if (picked(fresh) && next) {
+            next.click();
+            return;
+          }
+        }
       }
+      const message = "The comparison could not be opened. Open See all results and choose Compare on each stay.";
+      addTurn("assistant", message);
+      announce(message, true);
+    } finally {
+      comparingBoth = false;
     }
   }
   function decorateComparison(mount) {

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { launchRealBrowser, type RealBrowserTab } from "./helpers/chrome-devtools.js";
 import { restartFixture } from "./helpers/guest-restart.js";
+import { createListingPhotoContext } from "./helpers/listing-photo-browser.js";
 
 const SEARCH = "/stays/search?area=old-ikoyi&checkIn=2026-09-10&checkOut=2026-09-13&partySize=2";
 const STAY = "I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people";
@@ -120,5 +121,66 @@ test("AC5 (browser): with JavaScript off, View apartment on the search page is a
     await tab.evaluate("document.querySelector('.ui-stay-card__view').click()");
     await tab.waitForFunction("location.pathname.startsWith('/stays/unit-')", 10_000);
     assert.equal(await tab.evaluate<boolean>("document.body.textContent.includes('Luxury 2-Bedroom Apartment in Old Ikoyi')"), true);
+  } finally { await browser.close(); await fixture.close(); }
+});
+
+test("Photo count: the chat card and the search page card both show \"1 / N\" for a stay with several photos", async () => {
+  const context = await createListingPhotoContext(["https://images.example/photo-1.png", "https://images.example/photo-2.png", "https://images.example/photo-3.png"], 1280, 900);
+  try {
+    await context.tab.navigate(`${context.base}/`);
+    await context.tab.focus("#composer-input");
+    await context.tab.insertText(STAY);
+    await context.tab.pressKey("Enter");
+    await context.tab.waitForSelector("#active-workspace .ui-stay-card .ui-stay-card__count", 15_000);
+    const counts = await context.tab.evaluate<{ chat: string | null; page: string | null }>(`(async () => {
+      const html = await (await fetch(${JSON.stringify(SEARCH)})).text();
+      const page = new DOMParser().parseFromString(html, "text/html").querySelector(".ui-stay-card__count");
+      return { chat: document.querySelector("#active-workspace .ui-stay-card__count")?.outerHTML ?? null, page: page?.outerHTML ?? null };
+    })()`);
+    assert.ok(counts.chat?.includes("1 / 3"), "the chat card counts the stay's photos");
+    assert.equal(counts.chat, counts.page);
+    // The Photos fact is folded into the badge, not left as a line of its own.
+    assert.equal(await context.tab.evaluate<boolean>("document.querySelector('#active-workspace .ui-stay-card').innerText.includes('Photos: 3')"), false);
+  } finally { await context.close(); }
+});
+
+async function lagosRowsAt390(tab: RealBrowserTab, base: string): Promise<void> {
+  await tab.setViewport(390, 900);
+  await tab.navigate(`${base}/`);
+  await tab.focus("#composer-input");
+  await tab.insertText("I need an apartment in Lagos from 10 Sept for 3 nights for 2 people");
+  await tab.pressKey("Enter");
+  await tab.waitForSelector("#active-workspace .ui-result-row", 15_000);
+}
+
+test("See both side by side opens the comparison even when one of the two stays is already picked to compare", async () => {
+  const fixture = await restartFixture();
+  const browser = await launchRealBrowser();
+  try {
+    const tab = await browser.createTab();
+    await lagosRowsAt390(tab, fixture.base);
+    // The guest picked the first stay from "See all results" earlier; its card now says "Remove from compare".
+    await tab.evaluate("document.querySelectorAll('#active-workspace .stay-card__compare')[0].click()");
+    await tab.waitForFunction("document.querySelectorAll('#active-workspace .stay-card__compare')[0]?.textContent.trim() === 'Remove from compare'", 15_000);
+    await tab.waitForSelector("#active-workspace .ui-result-rows__compare", 15_000);
+    assert.equal(await tab.clickButton("See both side by side"), true);
+    await tab.waitForSelector("#active-workspace .ui-compare", 15_000);
+    assert.equal(await tab.evaluate<number>("document.querySelectorAll('#active-workspace .ui-compare__head').length"), 2);
+  } finally { await browser.close(); await fixture.close(); }
+});
+
+test("With three or more results there is no \"See both side by side\"; See all results leads to each stay's Compare", async () => {
+  const fixture = await restartFixture();
+  const browser = await launchRealBrowser();
+  try {
+    const [first] = fixture.environment.unitRepository.findAll();
+    assert.ok(first);
+    fixture.environment.unitRepository.save({ ...first, id: "unit-lagos-ikoyi-003", title: "Garden 2-Bedroom Apartment in Old Ikoyi" });
+    const tab = await browser.createTab();
+    await lagosRowsAt390(tab, fixture.base);
+    assert.equal(await tab.evaluate<number>("document.querySelectorAll('#active-workspace .ui-result-row').length"), 3);
+    assert.equal(await tab.evaluate<number>("document.querySelectorAll('#active-workspace .ui-result-rows__compare').length"), 0);
+    assert.equal(await tab.clickButton("See all results"), true);
+    await tab.waitForFunction("[...document.querySelectorAll('#active-workspace .stay-card__compare')].filter((button) => button.getClientRects().length > 0).length === 3", 15_000);
   } finally { await browser.close(); await fixture.close(); }
 });

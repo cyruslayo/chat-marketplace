@@ -4,7 +4,7 @@ import {
   type A2UIServerMessage,
 } from "@weaver/core";
 import { formatMoney } from "../../web/src/ui-kit.js";
-import { GUEST_FACT_LABELS, GUEST_GLOSSARY, formatGuestDate, guestAmenityLabel, guestFact, stayTotalLabel } from "./guest-content.js";
+import { GUEST_COMPARE_LABELS, GUEST_FACT_LABELS, GUEST_GLOSSARY, formatGuestDate, guestAmenityLabel, guestFact, stayTotalLabel } from "./guest-content.js";
 
 export interface DiscoveryLocationProjection {
   readonly city: string;
@@ -152,9 +152,9 @@ interface CompareControl {
 function compareButton(artifactId: string, unit: DiscoveryUnitProjection, prefix: string, compare: CompareControl): readonly A2UIComponent[] {
   const picked = compare.selected?.id === unit.id;
   // WCAG 2.5.3: each accessible name starts with the visible label.
-  const label = picked ? "Remove from compare" : "Compare";
+  const label = picked ? GUEST_COMPARE_LABELS.unpick : GUEST_COMPARE_LABELS.pick;
   const accessible = picked
-    ? `Remove from compare: ${unit.title}`
+    ? `${GUEST_COMPARE_LABELS.unpick}: ${unit.title}`
     : compare.selected === undefined ? `Compare: ${unit.title}` : `Compare: ${unit.title} with ${compare.selected.title}`;
   return [
     {
@@ -207,6 +207,7 @@ function unitComponents(
         component: "Column",
         children: [
           ...(unit.photoUrls.length > 0 ? [`${prefix}-primary-photo`] : [`${prefix}-photo-unavailable`]),
+          ...(unit.photoUrls.length > 1 ? [`${prefix}-photo-count`] : []),
           `${prefix}-title`, `${prefix}-location`, `${prefix}-facts`,
           ...(fit.length > 0 ? [`${prefix}-fit`] : []),
           ...(highlights.length > 0 ? [`${prefix}-amenities`] : []),
@@ -225,6 +226,8 @@ function unitComponents(
         url: unit.photoUrls[0]!,
         description: `${unit.title} in ${unit.location.neighbourhood}, ${unit.location.city}`,
       }] : []),
+      // The chat card's "1 / N" badge, so it counts the same photos as the search page's card.
+      ...(unit.photoUrls.length > 1 ? [{ id: `${prefix}-photo-count`, component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.photos, String(unit.photoUrls.length)), variant: "caption" as const }] : []),
       ...(unit.photoUrls.length === 0 ? [{
         id: `${prefix}-photo-unavailable`,
         component: "Text" as const,

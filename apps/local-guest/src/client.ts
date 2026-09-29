@@ -6,7 +6,7 @@
 import { createBasicWebRuntime } from "@weaver/web";
 import { icon } from "../../web/src/ui-kit.js";
 import { buildListingGallery, enhanceListingGallery, watchPhotoFailure } from "./listing-gallery.js";
-import { GUEST_FACT_LABELS, GUEST_GLOSSARY, GUEST_NEW_CONVERSATION, guestFactValue, guestNewConversationCopy, type GuestCommittedWorkKind } from "../../web-agent/src/guest-content.js";
+import { GUEST_COMPARE_LABELS, GUEST_FACT_LABELS, GUEST_GLOSSARY, GUEST_NEW_CONVERSATION, guestFactValue, guestNewConversationCopy, type GuestCommittedWorkKind } from "../../web-agent/src/guest-content.js";
 import { breakdownHtml, resultRowPartsHtml, stayCardInnerHtml, ticketHtml, type StayCardParts } from "./guest-kit.js";
 import {
   canUseSurfaceActions,
@@ -378,6 +378,8 @@ function decorateDiscoveryCards(mount: HTMLElement): void {
     if (!title || !where || !factLine || !priceLabel || !price) continue;
     const deposit = findFact(children, GUEST_FACT_LABELS.refundableSecurityDeposit);
     const fit = findFact(children, GUEST_FACT_LABELS.fitReason);
+    const photos = findFact(children, GUEST_FACT_LABELS.photos);
+    const photoCount = photos === undefined ? undefined : Number(photos.value);
     const image = children.find((child): child is HTMLImageElement => child instanceof HTMLImageElement);
     const buttons = children.filter((child): child is HTMLButtonElement => child instanceof HTMLButtonElement);
     const view = buttons[0];
@@ -390,9 +392,10 @@ function decorateDiscoveryCards(mount: HTMLElement): void {
       totalLabel: priceLabel.textContent?.trim() ?? "",
       ...(deposit ? { deposit: deposit.value } : {}),
       ...(image?.src ? { photoSrc: image.src } : {}),
+      ...(photoCount === undefined ? {} : { photoCount }),
     };
     // Whatever else Weaver rendered (the fit reason, amenity highlights, a budget note) stays, after the facts.
-    const known = new Set<Element | undefined>([title, where.element, factLine, priceLabel, price, deposit?.element, fit?.element, image, ...buttons]);
+    const known = new Set<Element | undefined>([title, where.element, factLine, priceLabel, price, deposit?.element, fit?.element, photos?.element, image, ...buttons]);
     const extras = children.filter((child) => !known.has(child) && child.getAttribute("data-a2ui-component") !== "Divider");
     const template = document.createElement("template");
     template.innerHTML = stayCardInnerHtml(parts);
@@ -432,29 +435,53 @@ function decorateDiscoveryCards(mount: HTMLElement): void {
       rowList.appendChild(item);
     }
     listElement.before(rowList);
-    if (rows.length >= 2) {
+    // "Both" only when there are exactly two; with more, "See all results" leads to each stay's Compare.
+    if (rows.length === 2) {
       const both = document.createElement("button");
       both.type = "button";
       both.className = "ui-link ui-result-rows__compare";
       both.insertAdjacentHTML("beforeend", `See both side by side${icon("arrow-right")}`);
-      both.addEventListener("click", () => void compareFirstTwo());
+      both.addEventListener("click", () => void compareBoth());
       rowList.after(both);
     }
   }
 }
 
-/** Picks the first two results in turn, exactly as the two Compare buttons would, so the server opens the comparison. */
-async function compareFirstTwo(): Promise<void> {
-  const compareButton = (index: number): HTMLButtonElement | null => activeWorkspace.querySelectorAll<HTMLElement>(".ui-stay-card")[index]?.querySelector<HTMLButtonElement>(".stay-card__compare") ?? null;
-  compareButton(0)?.click();
-  // The server re-presents the results with the first stay marked; the second pick follows on the fresh surface.
-  for (let waited = 0; waited < 5000; waited += 50) {
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    const first = compareButton(0);
-    if (first?.textContent?.trim() === "Remove from compare") {
-      compareButton(1)?.click();
-      return;
+let comparingBoth = false;
+
+/**
+ * "See both side by side": picks the two results as their Compare buttons would, so the server opens the comparison.
+ * If one is already picked, only the other is picked; picking it again would un-pick it (issue 13b).
+ */
+async function compareBoth(): Promise<void> {
+  if (comparingBoth) return;
+  comparingBoth = true;
+  const compareButtons = (): (HTMLButtonElement | null)[] => [...activeWorkspace.querySelectorAll<HTMLElement>(".ui-stay-card")].map((card) => card.querySelector<HTMLButtonElement>(".stay-card__compare"));
+  const picked = (button: HTMLButtonElement | null | undefined): boolean => button?.textContent?.trim() === GUEST_COMPARE_LABELS.unpick;
+  try {
+    const [first, second] = compareButtons();
+    if (first && second) {
+      if (picked(first) || picked(second)) {
+        (picked(first) ? second : first).click();
+        return;
+      }
+      first.click();
+      // The server re-presents the results with the first stay picked; the second pick goes to the fresh surface.
+      for (let waited = 0; waited < 10_000; waited += 50) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        const [fresh, next] = compareButtons();
+        if (picked(fresh) && next) {
+          next.click();
+          return;
+        }
+      }
     }
+    // Never silent: say what happened and where the per-stay Compare is.
+    const message = "The comparison could not be opened. Open See all results and choose Compare on each stay.";
+    addTurn("assistant", message);
+    announce(message, true);
+  } finally {
+    comparingBoth = false;
   }
 }
 

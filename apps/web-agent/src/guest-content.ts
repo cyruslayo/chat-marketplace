@@ -273,6 +273,14 @@ export const GUEST_FACT_LABELS = Object.freeze({
   amountPaid: "Amount paid",
   nextPayment: "Next payment",
   fitReason: "Why it fits",
+  /** "Photos: 7" on a discovery card; the stay card shows it as the "1 / 7" badge over the photo. */
+  photos: "Photos",
+});
+
+/** The Compare control on a discovery result, before and after the Guest picks that stay (issue 13b). */
+export const GUEST_COMPARE_LABELS = Object.freeze({
+  pick: "Compare",
+  unpick: "Remove from compare",
 });
 
 export function guestFact(label: string, value: string): string {
