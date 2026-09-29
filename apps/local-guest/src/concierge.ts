@@ -773,3 +773,32 @@ export function parseDiscoverySearchContext(value: unknown): DiscoverySearchCont
     ...(budget === undefined ? {} : { budget }),
   });
 }
+
+const VIEW_VERB_PATTERN = /\b(?:show(?:\s+me)?|see|view|open|look at|tell me (?:more )?about|more (?:details|info(?:rmation)?) (?:on|about|for)|details (?:of|for|on))\b/i;
+const VIEW_OBJECT_PATTERN = /\b(?:apartment|place|flat|unit|listing|one|it|that|this)\b/i;
+/** A list request ("show me other apartments", "show me cheaper places") refines the search instead of opening one. */
+const LIST_REQUEST_PATTERN = /\b(?:other|others|another|different|cheaper|all|apartments|places|flats|listings|options)\b/i;
+const ORDINAL_WORDS: Readonly<Record<string, number>> = Object.freeze({ first: 1, "1st": 1, second: 2, "2nd": 2, third: 3, "3rd": 3, fourth: 4, "4th": 4, fifth: 5, "5th": 5 });
+const ORDINAL_WORD_PATTERN = /\b(first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th|last)\b/i;
+const NUMBERED_PATTERN = /\b(?:number|no\.?|option|result|#)\s*(\d{1,2})\b|#(\d{1,2})\b/i;
+const BARE_CHOICE_PATTERN = /^\s*(?:the\s+)?(first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th|last)(?:\s+(?:one|apartment|place))?(?:\s+please)?\s*[.!]?\s*$/i;
+
+/**
+ * Issue 10 (finding C4): "show me the apartment", "show me the first one", "tell me more about the second one".
+ * Returns which displayed result the Guest asked to open (1-based; `last` when they said "last"), `null` when they
+ * named none, or `undefined` when the message is not a request to open a result.
+ */
+export function viewResultIntent(text: string): { readonly position: number | "last" | null } | undefined {
+  // A bare choice such as "The first one" (the quick replies offered when the concierge asks which one) needs no verb.
+  const bareChoice = BARE_CHOICE_PATTERN.exec(text)?.[1]?.toLowerCase();
+  if (bareChoice !== undefined) return bareChoice === "last" ? { position: "last" } : { position: ORDINAL_WORDS[bareChoice]! };
+  if (!VIEW_VERB_PATTERN.test(text)) return undefined;
+  const ordinal = ORDINAL_WORD_PATTERN.exec(text)?.[1]?.toLowerCase();
+  const numbered = NUMBERED_PATTERN.exec(text);
+  const number = numbered ? Number(numbered[1] ?? numbered[2]) : undefined;
+  if (ordinal === "last") return { position: "last" };
+  if (ordinal !== undefined) return { position: ORDINAL_WORDS[ordinal]! };
+  if (number !== undefined && number >= 1) return { position: number };
+  if (LIST_REQUEST_PATTERN.test(text) || !VIEW_OBJECT_PATTERN.test(text)) return undefined;
+  return { position: null };
+}
