@@ -1296,20 +1296,6 @@ document.addEventListener("keydown", (event) => {
   closeWorkspace(workspaceOpener?.isConnected && !workspaceOpener.hidden ? workspaceOpener : workspaceReopen);
 });
 
-document.addEventListener("click", async (event) => {
-  const target = event.target;
-  if (!(target instanceof Element)) return;
-  const button = target.closest<HTMLButtonElement>("button[data-copy-text]");
-  if (!button) return;
-  try {
-    await navigator.clipboard.writeText(button.dataset.copyText ?? "");
-    button.textContent = "Copied";
-    window.setTimeout(() => { button.textContent = "Copy account number"; }, 1800);
-  } catch {
-    button.textContent = "Copy unavailable";
-  }
-});
-
 // Issue 09 AC2: browser Back closes the open sheet instead of leaving the page.
 window.addEventListener("popstate", () => {
   if (!sheetInHistory || isSheetState(history.state)) return;

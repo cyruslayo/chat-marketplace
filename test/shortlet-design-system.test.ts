@@ -74,6 +74,11 @@ test("Dark roles keep text at 4.5:1 and control edges and focus at 3:1", async (
   assert.match(light, /--font-heading:\s*var\(--font-display\)/);
   assert.match(css, /\.guest-editorial :where\(h1, h2, h3\) \{ font-family: var\(--font-heading\); \}/);
   assert.match(light, /--radius-sheet:\s*var\(--radius-hero\)/);
+  // Pills use fully rounded ends; the 50% circle radius would stretch a wide chip or button into an ellipse.
+  assert.match(light, /--radius-pill:\s*999px/);
+  assert.doesNotMatch(css, /(ui-chip|ui-button--primary|ui-facts--chips)[^}]*border-radius: var\(--radius-round\)/);
+  // The page-level editorial wrapper keeps the page's section spacing.
+  assert.match(css, /:where\(\.ui-page > \.guest-editorial\) \{ display: grid; gap: var\(--space-6\);/);
   assert.match(css, /\.ui-ticket\s*\{/);
   assert.match(css, /\.ui-facts--chips\s*\{/);
   assert.match(css, /\.ui-action-bar\s*\{/);

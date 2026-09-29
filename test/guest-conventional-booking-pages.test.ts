@@ -57,8 +57,17 @@ test("AC1 (booking part): each booking conventionalRoute the guest app emits ret
       assert.match(response.body, /class="ui-ticket" aria-label="Your stay"/, route);
       assert.match(response.body, /class="[^"]*ui-price-breakdown[^"]*" aria-label="Price breakdown"/, route);
       const kind = bookingKind(route)?.[0];
-      if (kind === "request" || kind === "offer" || (kind === "draft" && summary === "Request review")) assert.match(response.body, /Amount due now:/, route);
-      if (kind === "contract") assert.match(response.body, /Amount paid:/, route);
+      // Before the owner accepts, nothing is payable yet: the amount is labelled as due only on acceptance.
+      const beforeAcceptance = kind === "request" || (kind === "draft" && summary === "Request review");
+      if (beforeAcceptance) assert.match(response.body, /If your request is accepted<\/p>.*Amount due now:/s, route);
+      if (kind === "offer") {
+        assert.match(response.body, /Amount due now:/, route);
+        assert.doesNotMatch(response.body, /If your request is accepted/, route);
+      }
+      if (kind === "contract") {
+        assert.match(response.body, /Amount paid:/, route);
+        assert.doesNotMatch(response.body, /Amount due now:/, route);
+      }
       assert.ok(response.body.includes(summary), `${route} shows "${summary}"`);
       assert.ok(response.body.includes(`href="/?threadId=${fixture.threadId}"`), `${route} links back to its conversation`);
     });

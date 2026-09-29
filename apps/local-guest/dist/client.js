@@ -8517,7 +8517,7 @@ Known schemas:
     ".listing-gallery__open{position:relative;display:block;height:100%;border-radius:var(--radius-card);overflow:hidden;background:var(--color-surface-subtle)}",
     ".listing-gallery__open:focus-visible{outline:3px solid var(--color-focus);outline-offset:-3px}",
     ".listing-gallery__open img,.listing-gallery__open .photo-fallback{display:block;width:100%!important;height:100%!important;max-width:none!important;min-height:0!important;margin:0!important;aspect-ratio:4/3;object-fit:cover!important;border-radius:0!important}",
-    ".listing-gallery__count{justify-self:end;margin:0;padding:var(--space-1) var(--space-3);border-radius:var(--radius-round);background:var(--color-surface-subtle);color:var(--color-text-secondary);font-size:var(--font-size-small)}",
+    ".listing-gallery__count{justify-self:end;margin:0;padding:var(--space-1) var(--space-3);border-radius:var(--radius-pill);background:var(--color-surface-subtle);color:var(--color-text-secondary);font-size:var(--font-size-small)}",
     ".listing-gallery__all{justify-self:start;min-height:var(--control-min-target)}",
     ".listing-gallery__all[hidden]{display:none}",
     "@container (min-width:30rem){",
@@ -8533,10 +8533,10 @@ Known schemas:
     ".listing-gallery__count{display:none}",
     ".listing-gallery.is-enhanced .listing-gallery__item:nth-child(n+6){display:none}",
     ".listing-gallery__item[data-more]{position:relative}",
-    ".listing-gallery__item[data-more]::after{content:attr(data-more);position:absolute;inset:0;display:grid;place-items:center;background:rgb(0 0 0/.45);color:#fff;font-weight:650;border-radius:var(--radius-card);pointer-events:none}",
+    ".listing-gallery__item[data-more]::after{content:attr(data-more);position:absolute;inset:0;display:grid;place-items:center;background:rgb(0 0 0/.45);color:var(--color-text-on-viewer);font-weight:650;border-radius:var(--radius-card);pointer-events:none}",
     "}",
     // The viewer: full screen, one photo at a time, swipe or step through; opened only by the script.
-    ".listing-viewer{inset:0;width:100%;max-width:none;height:100%;max-height:none;margin:0;padding:0;border:0;background:rgb(10 12 10/.96);color:#fff}",
+    ".listing-viewer{inset:0;width:100%;max-width:none;height:100%;max-height:none;margin:0;padding:0;border:0;background:var(--color-surface-viewer);color:var(--color-text-on-viewer)}",
     ".listing-viewer::backdrop{background:rgb(0 0 0/.6)}",
     ".listing-viewer[open]{display:grid;grid-template-rows:auto minmax(0,1fr)}",
     ".listing-viewer__bar{display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);padding:var(--space-2) var(--space-3)}",
@@ -8545,7 +8545,7 @@ Known schemas:
     ".listing-viewer__item{flex:0 0 100%;display:flex;align-items:center;justify-content:center;height:100%;min-width:0;padding:var(--space-2) var(--space-12);box-sizing:border-box;scroll-snap-align:start}",
     "@media (max-width:40rem){.listing-viewer__item{padding-inline:var(--space-2)}}",
     ".listing-viewer__item img{display:block;max-width:100%;max-height:100%;width:auto;height:auto;min-height:0;object-fit:contain}",
-    ".listing-viewer button{min-width:var(--control-min-target);min-height:var(--control-min-target);border:1px solid rgb(255 255 255/.5);border-radius:var(--radius-round);background:rgb(0 0 0/.55);color:#fff;font-size:1.25rem;cursor:pointer}",
+    ".listing-viewer button{min-width:var(--control-min-target);min-height:var(--control-min-target);border:1px solid currentColor;border-radius:var(--radius-pill);background:var(--color-surface-viewer);color:var(--color-text-on-viewer);font-size:1.25rem;cursor:pointer}",
     ".listing-viewer button:focus-visible{outline:3px solid var(--color-focus);outline-offset:2px}",
     ".listing-viewer button:disabled{opacity:.35;cursor:default}",
     ".listing-viewer__prev,.listing-viewer__next{position:absolute;top:50%;transform:translateY(-50%)}",
@@ -9038,6 +9038,18 @@ Known schemas:
     for (const [element, className] of [[title, "unit-title"], [location2, "unit-location"], [facts, "unit-facts"], [dates, "unit-dates"]]) {
       element?.classList.add(className);
     }
+    if (facts) {
+      const factLabels = (facts.textContent ?? "").split(" \xB7 ").map((label) => label.trim()).filter(Boolean);
+      if (factLabels.length > 1) {
+        const chips = factLabels.map((label) => {
+          const chip = document.createElement("span");
+          chip.textContent = label;
+          return chip;
+        });
+        facts.replaceChildren(...chips);
+        facts.classList.add("unit-facts--chips");
+      }
+    }
     const overview = wrapDirectChildren(root, "unit-overview", [title, location2, facts, dates].filter((element) => element !== void 0));
     if (overview) {
       overview.setAttribute("role", "group");
@@ -9069,6 +9081,41 @@ Known schemas:
     const grouped = /* @__PURE__ */ new Set([...overview ? [overview] : [], ...root.querySelectorAll(":scope > .listing-gallery, :scope > .unit-gallery, :scope > .unit-price-group, :scope > .unit-description, :scope > .unit-amenities")]);
     const supporting = [...root.children].filter((child) => child !== action && !grouped.has(child));
     wrapDirectChildren(root, "unit-supporting-info", supporting);
+    if (action) {
+      const bar = document.createElement("div");
+      bar.className = "ui-action-bar unit-action-bar";
+      const priceGroup = root.querySelector(":scope > .unit-price-group");
+      const label = priceGroup?.querySelector(".unit-price-label");
+      const total = priceGroup?.querySelector(".unit-price-total");
+      if (label && total) {
+        const price = document.createElement("p");
+        price.append(label.cloneNode(true), document.createElement("br"), total.cloneNode(true));
+        bar.appendChild(price);
+      }
+      bar.appendChild(action);
+      root.appendChild(bar);
+    }
+  }
+  function organizeBookingTicket(mount) {
+    const root = mount.querySelector('[data-a2ui-component="Column"]');
+    if (!root) return;
+    const children = [...root.children];
+    const title = children.find((child) => child.tagName === "H3" && !/^(₦|NGN\b)/.test(child.textContent?.trim() ?? ""));
+    if (!title) return;
+    const date2 = children.find((child) => child !== title && /^(?:Stay(?: dates?)?:|(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),?\s)/i.test(child.textContent?.trim() ?? ""));
+    const party = children.find((child) => child !== title && child !== date2 && /^(?:Guests?:|\d+\s+(?:guest|occupant))/i.test(child.textContent?.trim() ?? ""));
+    const ticket = wrapDirectChildren(root, "ui-ticket", [title, date2, party].filter((element) => element !== void 0));
+    if (ticket) {
+      ticket.setAttribute("role", "group");
+      ticket.setAttribute("aria-label", "Your stay");
+    }
+    const amountLabel = children.find((child) => (child.textContent?.trim() ?? "").startsWith(GUEST_GLOSSARY.allInStayTotal));
+    const amount = children.find((child) => child !== title && /^(₦|NGN\b)/.test(child.textContent?.trim() ?? ""));
+    const deposit = children.find((child) => (child.textContent?.trim() ?? "").startsWith(GUEST_GLOSSARY.refundableSecurityDeposit));
+    const due = children.find((child) => /^(?:Total to complete booking|Amount Due Now|Amount due now|Amount paid)/i.test(child.textContent?.trim() ?? ""));
+    const priceNodes = [amountLabel, amount, deposit, due].filter((element) => element !== void 0 && element.parentElement === root);
+    const breakdown = wrapDirectChildren(root, "ui-panel ui-price-breakdown", priceNodes);
+    if (breakdown) breakdown.setAttribute("aria-label", "Price breakdown");
   }
   function decorateDiscoveryCards(mount) {
     for (const card of mount.querySelectorAll('[data-a2ui-component="Card"]')) {
@@ -9091,7 +9138,17 @@ Known schemas:
       headings[0]?.classList.add("stay-card__title");
       const location2 = smalls[0];
       location2?.classList.add("stay-card__location");
-      children.find((child) => child.tagName === "P")?.classList.add("stay-card__facts");
+      const factLine = children.find((child) => child.tagName === "P");
+      factLine?.classList.add("stay-card__facts");
+      if (factLine) {
+        const labels = (factLine.textContent ?? "").split(" \xB7 ").map((label) => label.trim()).filter(Boolean);
+        if (labels.length > 1) factLine.replaceChildren(...labels.map((label) => {
+          const chip = document.createElement("span");
+          chip.textContent = label;
+          return chip;
+        }));
+      }
+      children.find((child) => (child.textContent ?? "").startsWith(GUEST_GLOSSARY.refundableSecurityDeposit))?.classList.add("stay-card__deposit");
       smalls[1]?.classList.add("stay-card__amenities");
       const priceLabel = children.find((child) => isPriceLabel(child.textContent?.trim() ?? ""));
       const buttons = children.filter((child) => child.tagName === "BUTTON");
@@ -9132,6 +9189,7 @@ Known schemas:
     if (kind === "discovery") decorateDiscoveryCards(mount);
     if (kind === "compare") decorateComparison(mount);
     if (kind === "unit-detail") organizeUnitDetail(mount);
+    if (kind === "booking" || kind === "payment") organizeBookingTicket(mount);
   }
   function isPriceLabel(text) {
     return text.startsWith(GUEST_GLOSSARY.allInStayTotal) || text.startsWith("Indicative nightly rate");
@@ -9596,6 +9654,7 @@ Known schemas:
       chip.type = "button";
       chip.className = "ui-chip criteria-chip";
       chip.dataset.field = field2;
+      chip.dataset.empty = String(criteria[field2] === void 0);
       chip.setAttribute("aria-expanded", String(openCriteriaField === field2));
       chip.setAttribute("aria-controls", "criteria-editor");
       const name = document.createElement("span");

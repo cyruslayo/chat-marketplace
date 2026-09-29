@@ -211,6 +211,8 @@ export interface ConventionalStayDetails {
   readonly allInStayTotalKobo?: number;
   readonly refundableSecurityDepositKobo?: number;
   readonly amountDueNowKobo?: number;
+  /** True while the amount is due only once the owner accepts: a request, or its review before sending. */
+  readonly amountDueNowIsConditional?: boolean;
   readonly amountPaidKobo?: number;
 }
 
@@ -222,7 +224,12 @@ interface GuestStayTicketFacts {
   readonly guestCount?: number;
 }
 
-const GUEST_STAY_PAYMENT_STYLE = ".ui-panel p{margin:0}.ui-ticket h2{margin:0;color:var(--color-text-on-inverse);font-family:var(--font-display);font-size:var(--font-size-h3);line-height:var(--font-line-h3)}.ui-price-breakdown{gap:var(--space-3)}.ui-price-breakdown__due{padding:var(--space-3);border:0;border-radius:var(--radius-control);background:var(--color-surface-inverse);color:var(--color-text-on-inverse);font-weight:650}.ui-price-breakdown__paid{padding-block-start:var(--space-3);border-block-start:1px solid var(--color-border-subtle);font-weight:650}.guest-editorial .ui-button--primary,.guest-editorial .ui-button--block{border-radius:var(--radius-round)}";
+const GUEST_STAY_PAYMENT_STYLE = ".ui-panel p{margin:0}.ui-ticket h2{margin:0;color:var(--color-text-on-inverse);font-family:var(--font-display);font-size:var(--font-size-h3);line-height:var(--font-line-h3)}.ui-price-breakdown{gap:var(--space-3)}.ui-price-breakdown__due{padding:var(--space-3);border:0;border-radius:var(--radius-control);background:var(--color-surface-inverse);color:var(--color-text-on-inverse);font-weight:650}.ui-price-breakdown__paid{padding-block-start:var(--space-3);border-block-start:1px solid var(--color-border-subtle);font-weight:650}.guest-editorial .ui-button--primary,.guest-editorial .ui-button--block{border-radius:var(--radius-pill)}";
+
+// Hidden until /payment.js reveals it: without JavaScript the account number stays plain, selectable text (ADR 0080).
+function copyAccountNumberHtml(accountNumber: string): string {
+  return ` <button class="ui-button ui-button--secondary transfer-copy" type="button" data-copy-text="${escapeHtml(accountNumber)}" hidden>Copy account number</button><span class="ui-field__hint transfer-copy-status" role="status" data-copy-status></span>`;
+}
 
 function formatTicketDate(value: string): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
@@ -861,7 +868,7 @@ export class LocalGuestApp {
       // The page mirrors the view the thread is on: the draft, or its review.
       const review = thread.activeSurfaces.get(REQUEST_STAGE)?.includes(":request:review:") === true;
       const artifact = this.#draftArtifact(thread, review ? "review" : "draft");
-      return { threadId: thread.threadId, summary: review ? "Request review" : "Request Draft", textFallback: this.#draftFallback(artifact), stay: { unitTitle: artifact.facts.unitTitle, checkIn: artifact.facts.checkIn, checkOut: artifact.facts.checkOut, nights: artifact.facts.nights, guestCount: artifact.facts.occupants.length, allInStayTotalKobo: artifact.facts.allInStayTotalKobo, refundableSecurityDepositKobo: artifact.facts.refundableSecurityDepositKobo, ...(review ? { amountDueNowKobo: artifact.facts.amountDueNowKobo } : {}) } };
+      return { threadId: thread.threadId, summary: review ? "Request review" : "Request Draft", textFallback: this.#draftFallback(artifact), stay: { unitTitle: artifact.facts.unitTitle, checkIn: artifact.facts.checkIn, checkOut: artifact.facts.checkOut, nights: artifact.facts.nights, guestCount: artifact.facts.occupants.length, allInStayTotalKobo: artifact.facts.allInStayTotalKobo, refundableSecurityDepositKobo: artifact.facts.refundableSecurityDepositKobo, ...(review ? { amountDueNowKobo: artifact.facts.amountDueNowKobo, amountDueNowIsConditional: true } : {}) } };
     }
     if (kind === "request") {
       getConventionalBookingRequestView(environment.bookingRequestApp, id, principal);
@@ -869,7 +876,7 @@ export class LocalGuestApp {
       const surface = this.#requestSurface(thread, id);
       const artifact = environment.bookingRequestApp.getArtifact(id, principal);
       const unit = environment.unitRepository.findById(artifact.facts.unitId);
-      return { threadId: thread.threadId, summary: surface.summary ?? GUEST_GLOSSARY.bookingRequest, textFallback: surface.textFallback ?? "", stay: { unitTitle: unit?.title ?? `Your selected ${GUEST_GLOSSARY.unit}`, checkIn: artifact.facts.checkIn, checkOut: artifact.facts.checkOut, nights: artifact.facts.nights, guestCount: artifact.facts.occupants.length, ...(artifact.facts.quote ? { allInStayTotalKobo: artifact.facts.quote.allInStayTotalKobo, refundableSecurityDepositKobo: artifact.facts.quote.refundableSecurityDepositKobo, amountDueNowKobo: artifact.facts.quote.totalAmountDueNowKobo } : {}) } };
+      return { threadId: thread.threadId, summary: surface.summary ?? GUEST_GLOSSARY.bookingRequest, textFallback: surface.textFallback ?? "", stay: { unitTitle: unit?.title ?? `Your selected ${GUEST_GLOSSARY.unit}`, checkIn: artifact.facts.checkIn, checkOut: artifact.facts.checkOut, nights: artifact.facts.nights, guestCount: artifact.facts.occupants.length, ...(artifact.facts.quote ? { allInStayTotalKobo: artifact.facts.quote.allInStayTotalKobo, refundableSecurityDepositKobo: artifact.facts.quote.refundableSecurityDepositKobo, amountDueNowKobo: artifact.facts.quote.totalAmountDueNowKobo, amountDueNowIsConditional: true } : {}) } };
     }
     if (kind === "offer") {
       const offer = environment.conditionalOfferApp.manager.getOffer(id);
@@ -2505,11 +2512,13 @@ export function renderGuestShellHtml(): string {
     .photo-fallback { width: 100%; min-width: 0; min-height: 120px; aspect-ratio: 4 / 3; display: grid; place-items: center; padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface-soft); color: var(--color-text-secondary); text-align: center; }
     .weaver-mount small[data-a2ui-component="Text"] { margin: 0 !important; color: var(--color-text-secondary); font-size: var(--font-size-small) !important; font-style: normal !important; line-height: var(--font-line-small); }
     .weaver-mount p[data-a2ui-component="Text"] { margin: 0 !important; }
+    /* With the Text margins reset, a Column's children need the gap to keep lines and cards apart. */
+    .weaver-mount [data-a2ui-component="Column"] { gap: var(--space-2); }
     .weaver-mount button[data-a2ui-variant="primary"] { min-width: var(--control-min-target); min-height: var(--control-min-target); font: 600 var(--font-size-label)/var(--font-line-label) var(--font-sans); }
     .weaver-mount button[data-a2ui-variant="primary"]:hover { --a2ui-color-primary: var(--color-action-hover); }
     .weaver-mount button[data-a2ui-variant="primary"]:active { --a2ui-color-primary: var(--color-action-pressed); }
     .weaver-mount button[data-loading="true"] { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); cursor: progress; }
-    .weaver-mount button[data-loading="true"]::before { content: ""; inline-size: 1em; block-size: 1em; flex: none; border: 2px solid currentColor; border-inline-end-color: transparent; border-radius: var(--radius-round); animation: ui-spin 700ms linear infinite; }
+    .weaver-mount button[data-loading="true"]::before { content: ""; inline-size: 1em; block-size: 1em; flex: none; border: 2px solid currentColor; border-inline-end-color: transparent; border-radius: var(--radius-pill); animation: ui-spin 700ms linear infinite; }
     .weaver-mount button.guest-action:not([data-a2ui-variant="primary"]) { min-width: var(--control-min-target); min-height: var(--control-min-target); padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); color: var(--text); font: 600 var(--font-size-label)/var(--font-line-label) var(--font-sans); cursor: pointer; }
     .weaver-mount button.guest-action:not([data-a2ui-variant="primary"]):hover { border-color: var(--accent); background: var(--surface-soft); }
     .weaver-mount .guest-field { width: 100%; min-width: 0; min-height: var(--control-min-field); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); color: var(--text); font-size: 1rem; }
@@ -2527,7 +2536,7 @@ export function renderGuestShellHtml(): string {
     .stay-card__location, .stay-card__amenities { color: var(--color-text-secondary); }
     .stay-card__fit { color: var(--color-success); font-weight: 600; }
     .stay-card__facts { display: flex !important; flex-wrap: wrap; gap: var(--space-2); margin: 0; color: var(--color-text-secondary); }
-    .stay-card__facts > span { display: inline-flex; min-block-size: var(--control-min-target); align-items: center; padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-round); background: var(--color-surface-subtle); font-size: var(--font-size-small); }
+    .stay-card__facts > span { display: inline-flex; min-block-size: var(--control-min-target); align-items: center; padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-pill); background: var(--color-surface-subtle); font-size: var(--font-size-small); }
     .stay-card__deposit { color: var(--color-text-secondary); font-size: var(--font-size-small) !important; }
     .stay-card__price-area { display: grid !important; gap: var(--space-1) !important; margin: 0 !important; }
     .stay-card__price-area > * { margin: 0 !important; }
@@ -2552,7 +2561,7 @@ export function renderGuestShellHtml(): string {
     .unit-location, .unit-dates { color: var(--color-text-secondary); }
     .unit-facts { margin: 0 !important; font-weight: 600; }
     .unit-facts--chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-    .unit-facts--chips > span { min-block-size: var(--control-min-target); display: inline-flex; align-items: center; padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-round); background: var(--color-surface-subtle); color: var(--color-text-secondary); font-size: var(--font-size-small); }
+    .unit-facts--chips > span { min-block-size: var(--control-min-target); display: inline-flex; align-items: center; padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-pill); background: var(--color-surface-subtle); color: var(--color-text-secondary); font-size: var(--font-size-small); }
     .unit-price-group { display: grid; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface-soft); }
     .unit-price-group > * { margin: 0 !important; }
     .unit-price-label { color: var(--color-text-secondary); font-size: var(--font-size-small) !important; line-height: var(--font-line-small) !important; }
@@ -2580,7 +2589,7 @@ export function renderGuestShellHtml(): string {
     #criteria-strip { display: grid; gap: var(--space-2); padding: var(--space-2) var(--layout-gutter-mobile) 0; border-top: 1px solid var(--border); background: var(--surface); }
     #criteria-strip[hidden], #criteria-editor[hidden] { display: none; }
     .criteria-chips { display: flex; flex-wrap: wrap; gap: var(--space-2); min-width: 0; }
-    .criteria-chip { position: relative; min-height: var(--control-min-target); min-width: var(--control-min-target); justify-content: center; max-width: 100%; overflow-wrap: anywhere; text-align: start; border-radius: var(--radius-round); }
+    .criteria-chip { position: relative; min-height: var(--control-min-target); min-width: var(--control-min-target); justify-content: center; max-width: 100%; overflow-wrap: anywhere; text-align: start; border-radius: var(--radius-pill); }
     .criteria-chip[data-empty="true"] { border-style: dashed; }
     /* Narrow screens keep the field names for screen readers only, so the strip stays short. */
     @media (max-width: 29.999rem) { .criteria-chip { padding-inline: var(--space-2); font-size: var(--font-size-small); } .criteria-chip .criteria-chip-name { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } }
@@ -2609,8 +2618,8 @@ export function renderGuestShellHtml(): string {
     .criteria-status:empty { display: none; }
     form#composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: var(--space-2); padding: var(--space-2) var(--layout-gutter-mobile) max(var(--space-4), env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: var(--surface); position: sticky; bottom: 0; z-index: 10; }
     #composer-label { grid-column: 1 / -1; color: var(--color-text-secondary); font-size: var(--font-size-small); line-height: var(--font-line-small); font-weight: 600; }
-    #composer-input { min-width: 0; width: 100%; min-height: var(--control-min-field); padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-round); font-size: 1rem; background: var(--bg); color: var(--text); }
-    #composer-submit { inline-size: 3rem; min-inline-size: 3rem; min-height: 3rem; padding: 0; border-radius: var(--radius-round); }
+    #composer-input { min-width: 0; width: 100%; min-height: var(--control-min-field); padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-pill); font-size: 1rem; background: var(--bg); color: var(--text); }
+    #composer-submit { inline-size: 3rem; min-inline-size: 3rem; min-height: 3rem; padding: 0; border-radius: var(--radius-pill); }
     form#composer[data-focused="true"] { gap: var(--space-1) var(--space-2); padding-block: var(--space-1) max(var(--space-2), env(safe-area-inset-bottom)); background: var(--bg); }
     form#composer[data-focused="true"] #composer-label { font-weight: 400; }
     form#composer[data-focused="true"] #composer-input { min-height: 2.75rem; background: var(--surface); }
@@ -2747,7 +2756,7 @@ export function renderConventionalUnitDetailHtml(unit: Unit, photoUrl?: (url: st
     : `${listingGalleryHtml({ title: unit.title, photos: photos.map((url, index) => ({ src: photoUrl ? photoUrl(url) : url, alt: `Photo ${index + 1} of ${unit.title}` })) })}<script src="/gallery.js" defer></script>`;
   return pageShell({
     title: unit.title,
-    style: `${LISTING_GALLERY_STYLE}.unit-detail-sheet{position:relative;z-index:1;display:grid;gap:var(--space-4);margin-block-start:calc(-1 * var(--space-6));padding:var(--space-5);border:1px solid var(--color-border-subtle);border-radius:var(--radius-sheet) var(--radius-sheet) var(--radius-card) var(--radius-card);background:var(--color-surface);box-shadow:var(--elevation-active)}.unit-detail-sheet h1,.unit-detail-sheet p{margin:0}.unit-detail-location{color:var(--color-text-secondary)}.unit-detail-description{white-space:pre-line}.unit-detail-page{display:grid;gap:var(--space-4)}.unit-detail-page .listing-gallery{z-index:0}.unit-detail-page .ui-action-bar{position:sticky}.unit-detail-page .ui-ticket{margin-block:var(--space-2)}.stay-results{list-style:none;margin:0;padding:0;display:grid;gap:var(--space-4)}.stay-card-photo{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:var(--radius-card);background:var(--color-surface-subtle)}.stay-card-photo--empty{display:grid;place-items:center;color:var(--color-text-secondary)}.stay-card-facts{display:flex;flex-wrap:wrap;gap:var(--space-2)}.stay-card-facts span{display:inline-flex;min-block-size:2.75rem;align-items:center;padding:var(--space-2) var(--space-3);border:1px solid var(--color-border-subtle);border-radius:var(--radius-round);background:var(--color-surface-subtle);font-size:var(--font-size-small)}.stay-card-price{display:grid;gap:var(--space-1);padding-block-start:var(--space-3);border-block-start:1px solid var(--color-border-subtle)}.stay-card-price p{margin:0}.guest-editorial .ui-button--primary,.guest-editorial .ui-button--block{border-radius:var(--radius-round)}.ui-panel p{margin:0}`,
+    style: `${LISTING_GALLERY_STYLE}.unit-detail-sheet{position:relative;z-index:1;display:grid;gap:var(--space-4);margin-block-start:calc(-1 * var(--space-6));padding:var(--space-5);border:1px solid var(--color-border-subtle);border-radius:var(--radius-sheet) var(--radius-sheet) var(--radius-card) var(--radius-card);background:var(--color-surface);box-shadow:var(--elevation-active)}.unit-detail-sheet h1,.unit-detail-sheet p{margin:0}.unit-detail-location{color:var(--color-text-secondary)}.unit-detail-description{white-space:pre-line}.unit-detail-page{display:grid;gap:var(--space-4)}.unit-detail-page .listing-gallery{z-index:0}.unit-detail-page .ui-action-bar{position:sticky}.unit-detail-page .ui-ticket{margin-block:var(--space-2)}.stay-results{list-style:none;margin:0;padding:0;display:grid;gap:var(--space-4)}.stay-card-photo{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:var(--radius-card);background:var(--color-surface-subtle)}.stay-card-photo--empty{display:grid;place-items:center;color:var(--color-text-secondary)}.stay-card-facts{display:flex;flex-wrap:wrap;gap:var(--space-2)}.stay-card-facts span{display:inline-flex;min-block-size:2.75rem;align-items:center;padding:var(--space-2) var(--space-3);border:1px solid var(--color-border-subtle);border-radius:var(--radius-pill);background:var(--color-surface-subtle);font-size:var(--font-size-small)}.stay-card-price{display:grid;gap:var(--space-1);padding-block-start:var(--space-3);border-block-start:1px solid var(--color-border-subtle)}.stay-card-price p{margin:0}.guest-editorial .ui-button--primary,.guest-editorial .ui-button--block{border-radius:var(--radius-pill)}.ui-panel p{margin:0}`,
     body: `<div class="guest-editorial unit-detail-page">${photoMarkup}<section class="unit-detail-sheet" aria-label="Stay details"><header class="ui-page__header"><p class="ui-eyebrow">Entire place</p><h1>${escapeHtml(unit.title)}</h1><p class="unit-detail-location">${escapeHtml(unit.location.neighbourhood)}, ${escapeHtml(unit.location.city)} · exact address after payment</p></header><div class="ui-facts ui-facts--chips" role="list" aria-label="Stay facts"><span role="listitem">Bedrooms: ${unit.bedrooms ?? "Not provided"}</span><span role="listitem">Bathrooms: ${unit.bathrooms}</span><span role="listitem">Capacity: ${unit.capacity} guests</span><span role="listitem">Occupancy: Entire Place</span></div><div class="unit-detail-price"><p class="ui-field__hint">Price per night (indicative)</p><p class="ui-money-total">${formatNgnKobo(unit.price.nightlyKobo)} <span class="ui-money-metadata">per night · dates not yet quoted</span></p></div><p class="unit-detail-description">${escapeHtml(unit.description)}</p></section><div class="ui-action-bar"><p><span class="ui-field__hint">Price per night (indicative)</span><br><strong>${formatNgnKobo(unit.price.nightlyKobo)}</strong></p><a class="ui-button ui-button--primary ui-button--block" href="/">Continue to Request to Book</a></div></div>`,
   });
 }
@@ -2815,7 +2824,7 @@ function matchConventionalBookingRoute(pathname: string): { readonly kind: Conve
 
 export function renderConventionalBookingHtml(page: ConventionalBookingPage): string {
   const stay = page.stay;
-  const ticket = stay ? `${renderStayTicketHtml(stay)}${renderPriceBreakdownHtml({ ...(stay.allInStayTotalKobo === undefined ? {} : { allInStayTotalKobo: stay.allInStayTotalKobo }), ...(stay.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: stay.refundableSecurityDepositKobo }), ...(stay.amountDueNowKobo === undefined ? {} : { amountDueNowKobo: stay.amountDueNowKobo, ...(page.summary === "Request Draft" ? { heading: "If your request is accepted" } : {}) }), ...(stay.amountPaidKobo === undefined ? {} : { amountPaidKobo: stay.amountPaidKobo }) })}` : "";
+  const ticket = stay ? `${renderStayTicketHtml(stay)}${renderPriceBreakdownHtml({ ...(stay.allInStayTotalKobo === undefined ? {} : { allInStayTotalKobo: stay.allInStayTotalKobo }), ...(stay.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: stay.refundableSecurityDepositKobo }), ...(stay.amountDueNowKobo === undefined ? {} : { amountDueNowKobo: stay.amountDueNowKobo, ...(stay.amountDueNowIsConditional ? { heading: "If your request is accepted" } : {}) }), ...(stay.amountPaidKobo === undefined ? {} : { amountPaidKobo: stay.amountPaidKobo }) })}` : "";
   return pageShell({
     title: `${page.summary} · Shortlet`,
     width: "narrow",
@@ -2892,7 +2901,7 @@ export function renderConventionalSearchHtml(artifact: DiscoveryArtifactProjecti
     + `<button class="ui-button ui-button--primary" type="submit">Update search</button></form>`;
   return pageShell({
     title: "Search results · Shortlet",
-    style: ".search-form{display:grid;gap:var(--space-3)}.stay-results{list-style:none;margin:0;padding:0;display:grid;gap:var(--space-4)}.stay-result{gap:var(--space-3);padding:var(--space-3);border-radius:var(--radius-workspace)}.stay-card-photo{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:var(--radius-card);background:var(--color-surface-subtle)}.stay-card-photo--empty{display:grid;place-items:center;color:var(--color-text-secondary)}.stay-card-location,.stay-card-facts{color:var(--color-text-secondary)}.stay-card-facts{display:flex;flex-wrap:wrap;gap:var(--space-2)}.stay-card-facts span{display:inline-flex;min-block-size:var(--control-min-target);align-items:center;padding:var(--space-2) var(--space-3);border:1px solid var(--color-border-subtle);border-radius:var(--radius-round);background:var(--color-surface-subtle);font-size:var(--font-size-small)}.stay-card-title{margin:0;font-family:var(--font-heading);font-size:var(--font-size-h3);line-height:var(--font-line-h3)}.stay-result p{margin:0}.stay-card-price{display:grid;gap:var(--space-1);padding-block-start:var(--space-3);border-block-start:1px solid var(--color-border-subtle)}.guest-editorial .ui-button--primary,.guest-editorial .ui-button--block{border-radius:var(--radius-round)}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}",
+    style: ".search-form{display:grid;gap:var(--space-3)}.stay-results{list-style:none;margin:0;padding:0;display:grid;gap:var(--space-4)}.stay-result{gap:var(--space-3);padding:var(--space-3);border-radius:var(--radius-workspace)}.stay-card-photo{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:var(--radius-card);background:var(--color-surface-subtle)}.stay-card-photo--empty{display:grid;place-items:center;color:var(--color-text-secondary)}.stay-card-location,.stay-card-facts{color:var(--color-text-secondary)}.stay-card-facts{display:flex;flex-wrap:wrap;gap:var(--space-2)}.stay-card-facts span{display:inline-flex;min-block-size:var(--control-min-target);align-items:center;padding:var(--space-2) var(--space-3);border:1px solid var(--color-border-subtle);border-radius:var(--radius-pill);background:var(--color-surface-subtle);font-size:var(--font-size-small)}.stay-card-title{margin:0;font-family:var(--font-heading);font-size:var(--font-size-h3);line-height:var(--font-line-h3)}.stay-result p{margin:0}.stay-card-price{display:grid;gap:var(--space-1);padding-block-start:var(--space-3);border-block-start:1px solid var(--color-border-subtle)}.guest-editorial .ui-button--primary,.guest-editorial .ui-button--block{border-radius:var(--radius-pill)}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}",
     body: `<div class="guest-editorial"><header class="ui-page__header" data-page="stay-search"><p class="ui-eyebrow">Search results</p><h1>${escapeHtml(discoveryFallbackMessage(artifact))}</h1>${summary ? `<p>${escapeHtml(summary)}</p>` : ""}</header>${form}${cards ? `<ul class="stay-results" aria-label="Stay search results">${cards}</ul>` : ""}<p><a class="ui-button ui-button--primary" href="/">Back to your conversation</a></p></div>`,
   });
 }
@@ -2991,8 +3000,8 @@ export function renderManualTransferPageHtml(input: {
   const shell = (heading: string, body: string) => pageShell({
     title: `${heading} · Shortlet`,
     width: "narrow",
-    style: `.transfer-account,.transfer-reference{font-family:var(--font-mono);font-size:var(--font-size-h3);letter-spacing:0.05em;overflow-wrap:anywhere}.transfer-copy{margin-inline-start:var(--space-2);font-family:var(--font-body);font-size:var(--font-size-small);letter-spacing:normal}${GUEST_STAY_PAYMENT_STYLE}`,
-    body: `<div class="guest-editorial"><header class="ui-page__header"><p class="ui-eyebrow">Booking payment · Manual bank transfer</p><h1>${escapeHtml(heading)}</h1></header>${input.stay ? renderStayTicketHtml(input.stay) : ""}${input.allInStayTotalKobo === undefined ? "" : renderPriceBreakdownHtml({ allInStayTotalKobo: input.allInStayTotalKobo, ...(input.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: input.refundableSecurityDepositKobo }), amountDueNowKobo: transfer.amountKobo })}${alert}<section class="ui-panel">${body}</section></div>`,
+    style: `.transfer-account,.transfer-reference{font-family:var(--font-mono);font-size:var(--font-size-h3);letter-spacing:0.05em;overflow-wrap:anywhere}.transfer-copy{display:flex;inline-size:fit-content;margin-block-start:var(--space-2);font-family:var(--font-sans);font-size:var(--font-size-small);letter-spacing:normal}.transfer-copy[hidden]{display:none}.transfer-copy-status{display:block;font-family:var(--font-sans);letter-spacing:normal}${GUEST_STAY_PAYMENT_STYLE}`,
+    body: `<div class="guest-editorial"><header class="ui-page__header"><p class="ui-eyebrow">Booking payment · Manual bank transfer</p><h1>${escapeHtml(heading)}</h1></header>${input.stay ? renderStayTicketHtml(input.stay) : ""}${input.allInStayTotalKobo === undefined ? "" : renderPriceBreakdownHtml({ allInStayTotalKobo: input.allInStayTotalKobo, ...(input.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: input.refundableSecurityDepositKobo }), amountDueNowKobo: transfer.amountKobo })}${alert}<section class="ui-panel">${body}</section></div><script src="/payment.js" defer></script>`,
   });
   const at = (iso: string) => `<time datetime="${escapeHtml(iso)}">${escapeHtml(formatWAT(iso))}</time>`;
   if (transfer.status === "confirmed") {
@@ -3007,7 +3016,7 @@ export function renderManualTransferPageHtml(input: {
   }
   const minutes = Math.max(0, Math.ceil((Date.parse(transfer.paymentDeadlineAt) - now.getTime()) / 60_000));
   const limitMb = Math.floor(input.receiptMaxBytes / (1024 * 1024));
-  return shell("Transfer and upload your receipt", `<p class="ui-banner ui-banner--warning payment-deadline">${icon("clock")}<span>Transfer and upload by ${at(transfer.paymentDeadlineAt)} · ${minutes} ${minutes === 1 ? "minute" : "minutes"} left</span></p><section class="ui-panel"><dl class="ui-facts"><dt>Bank</dt><dd>${escapeHtml(transfer.account.bankName)}</dd><dt>Account name</dt><dd>${escapeHtml(transfer.account.accountName)}</dd><dt>Account number</dt><dd class="transfer-account">${escapeHtml(transfer.account.accountNumber)} <button class="ui-button ui-button--secondary transfer-copy" type="button" data-copy-text="${escapeHtml(transfer.account.accountNumber)}">Copy account number</button></dd><dt>Exact amount</dt><dd class="ui-money-total">${formatNgnKobo(transfer.amountKobo)}</dd><dt>Booking reference</dt><dd class="transfer-reference">${escapeHtml(transfer.bookingReference)}</dd></dl><p>Include the booking reference with your transfer. Your booking confirms only after we see the money in our account and check it; the receipt alone doesn't confirm it.</p><form method="post" action="/payments/offers/${encodeURIComponent(transfer.offerId)}/manual-transfer/receipt" enctype="multipart/form-data" class="ui-stack"><div class="ui-field"><label class="ui-field__label" for="receipt">Transfer receipt (photo or PDF, up to ${limitMb} MB)</label><input id="receipt" name="receipt" type="file" accept="image/jpeg,image/png,application/pdf" required></div><button class="ui-button ui-button--primary ui-button--block" type="submit">Upload receipt</button></form></section>${back}`);
+  return shell("Transfer and upload your receipt", `<p class="ui-banner ui-banner--warning payment-deadline">${icon("clock")}<span>Transfer and upload by ${at(transfer.paymentDeadlineAt)} · ${minutes} ${minutes === 1 ? "minute" : "minutes"} left</span></p><dl class="ui-facts"><dt>Bank</dt><dd>${escapeHtml(transfer.account.bankName)}</dd><dt>Account name</dt><dd>${escapeHtml(transfer.account.accountName)}</dd><dt>Account number</dt><dd class="transfer-account">${escapeHtml(transfer.account.accountNumber)}${copyAccountNumberHtml(transfer.account.accountNumber)}</dd><dt>Exact amount</dt><dd class="ui-money-total">${formatNgnKobo(transfer.amountKobo)}</dd><dt>Booking reference</dt><dd class="transfer-reference">${escapeHtml(transfer.bookingReference)}</dd></dl><p>Include the booking reference with your transfer. Your booking confirms only after we see the money in our account and check it; the receipt alone doesn't confirm it.</p><form method="post" action="/payments/offers/${encodeURIComponent(transfer.offerId)}/manual-transfer/receipt" enctype="multipart/form-data" class="ui-stack"><div class="ui-field"><label class="ui-field__label" for="receipt">Transfer receipt (photo or PDF, up to ${limitMb} MB)</label><input id="receipt" name="receipt" type="file" accept="image/jpeg,image/png,application/pdf" required></div><button class="ui-button ui-button--primary ui-button--block" type="submit">Upload receipt</button></form>${back}`);
 }
 
 /** Reads a request body, refusing (and discarding) anything over `limit` bytes. */
@@ -3042,8 +3051,8 @@ export function renderTransferPageHtml(input: {
   const shell = (heading: string, body: string) => pageShell({
     title: `${heading} · Shortlet`,
     width: "narrow",
-    style: `.transfer-account{font-family:var(--font-mono);font-size:var(--font-size-h3);letter-spacing:0.05em;overflow-wrap:anywhere}.transfer-copy{margin-inline-start:var(--space-2);font-family:var(--font-body);font-size:var(--font-size-small);letter-spacing:normal}${GUEST_STAY_PAYMENT_STYLE}`,
-    body: `<div class="guest-editorial"><header class="ui-page__header"><p class="ui-eyebrow">Booking payment · Bank transfer</p><h1>${escapeHtml(heading)}</h1></header>${input.stay ? renderStayTicketHtml(input.stay) : ""}${input.allInStayTotalKobo === undefined ? "" : renderPriceBreakdownHtml({ allInStayTotalKobo: input.allInStayTotalKobo, ...(input.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: input.refundableSecurityDepositKobo }), amountDueNowKobo: input.amountDueNowKobo })}<section class="ui-panel">${body}</section></div>`,
+    style: `.transfer-account{font-family:var(--font-mono);font-size:var(--font-size-h3);letter-spacing:0.05em;overflow-wrap:anywhere}.transfer-copy{display:flex;inline-size:fit-content;margin-block-start:var(--space-2);font-family:var(--font-sans);font-size:var(--font-size-small);letter-spacing:normal}.transfer-copy[hidden]{display:none}.transfer-copy-status{display:block;font-family:var(--font-sans);letter-spacing:normal}${GUEST_STAY_PAYMENT_STYLE}`,
+    body: `<div class="guest-editorial"><header class="ui-page__header"><p class="ui-eyebrow">Booking payment · Bank transfer</p><h1>${escapeHtml(heading)}</h1></header>${input.stay ? renderStayTicketHtml(input.stay) : ""}${input.allInStayTotalKobo === undefined ? "" : renderPriceBreakdownHtml({ allInStayTotalKobo: input.allInStayTotalKobo, ...(input.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: input.refundableSecurityDepositKobo }), amountDueNowKobo: input.amountDueNowKobo })}<section class="ui-panel">${body}</section></div><script src="/payment.js" defer></script>`,
   });
   if (input.contract) {
     return shell("Payment received", `<p>Your transfer arrived and your ${GUEST_GLOSSARY.reservation} is confirmed.</p><a class="ui-button ui-button--primary ui-button--block" href="${conventionalBookingContractRoute(input.contract.contractId)}">View your ${GUEST_GLOSSARY.reservation}</a>${back}`);
@@ -3060,7 +3069,7 @@ export function renderTransferPageHtml(input: {
   const local = input.localPayment
     ? `<form method="post" action="/payments/local/transfer/complete"><input type="hidden" name="reference" value="${escapeHtml(transfer.transferReference)}"><button class="ui-button ui-button--block" type="submit">Complete local demo transfer</button></form>`
     : "";
-  return shell("Transfer to complete your booking", `<p class="ui-banner ui-banner--warning payment-deadline">${icon("clock")}<span>Transfer by <time datetime="${escapeHtml(transfer.expiresAt)}">${escapeHtml(formatWAT(transfer.expiresAt))}</time> · ${minutes} ${minutes === 1 ? "minute" : "minutes"} left</span></p><section class="ui-panel"><dl class="ui-facts"><dt>Bank</dt><dd>${escapeHtml(transfer.bankName)}</dd><dt>Account number</dt><dd class="transfer-account">${escapeHtml(transfer.accountNumber)} <button class="ui-button ui-button--secondary transfer-copy" type="button" data-copy-text="${escapeHtml(transfer.accountNumber)}">Copy account number</button></dd><dt>Exact amount</dt><dd class="ui-money-total">${formatNgnKobo(transfer.amountKobo)}</dd></dl><p>Transfer the exact amount. Your booking confirms automatically once the transfer arrives.</p><p>This account is for this booking only and stops accepting payment at the deadline.</p>${local}</section>${back}`);
+  return shell("Transfer to complete your booking", `<p class="ui-banner ui-banner--warning payment-deadline">${icon("clock")}<span>Transfer by <time datetime="${escapeHtml(transfer.expiresAt)}">${escapeHtml(formatWAT(transfer.expiresAt))}</time> · ${minutes} ${minutes === 1 ? "minute" : "minutes"} left</span></p><dl class="ui-facts"><dt>Bank</dt><dd>${escapeHtml(transfer.bankName)}</dd><dt>Account number</dt><dd class="transfer-account">${escapeHtml(transfer.accountNumber)}${copyAccountNumberHtml(transfer.accountNumber)}</dd><dt>Exact amount</dt><dd class="ui-money-total">${formatNgnKobo(transfer.amountKobo)}</dd></dl><p>Transfer the exact amount. Your booking confirms automatically once the transfer arrives.</p><p>This account is for this booking only and stops accepting payment at the deadline.</p>${local}${back}`);
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -3070,7 +3079,7 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
 
 const GUEST_SESSION_COOKIE = "shortlet_guest_session";
 /** Static assets the public /stays/* pages load; never refused for a stale session. */
-const PUBLIC_GUEST_PATHS: ReadonlySet<string> = new Set(["/client.js", "/gallery.js", "/shortlet-foundations.css"]);
+const PUBLIC_GUEST_PATHS: ReadonlySet<string> = new Set(["/client.js", "/gallery.js", "/payment.js", "/shortlet-foundations.css"]);
 const GUEST_SESSION_PATTERN = /^gs-[a-f0-9-]{36}$/;
 
 function readGuestSession(req: IncomingMessage): string | null | undefined {
@@ -3445,6 +3454,18 @@ export function startLocalGuestServer(options: {
       } catch {
         res.writeHead(404, { "Content-Type": "text/plain" });
         res.end("Gallery script missing; run npm run guest:local to build it.");
+      }
+      return;
+    }
+    // The bank transfer pages' copy-account-number script.
+    if (req.method === "GET" && url.pathname === "/payment.js") {
+      try {
+        const script = readFileSync(join(dirname(clientScriptPath), "payment.js"), "utf8");
+        res.writeHead(200, { "Content-Type": "text/javascript; charset=utf-8" });
+        res.end(script);
+      } catch {
+        res.writeHead(404, { "Content-Type": "text/plain" });
+        res.end("Payment script missing; run npm run guest:local to build it.");
       }
       return;
     }

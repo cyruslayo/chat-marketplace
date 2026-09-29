@@ -13,6 +13,19 @@ await build({
   logLevel: "warning",
 });
 
+// The bank transfer pages' copy-account-number script.
+await build({
+  entryPoints: ["apps/local-guest/src/payment-page.ts"],
+  bundle: true,
+  format: "iife",
+  platform: "browser",
+  target: "es2022",
+  outfile: "apps/local-guest/dist/payment.js",
+  minify: false,
+  sourcemap: false,
+  logLevel: "warning",
+});
+
 await build({
   entryPoints: ["apps/local-guest/src/client.ts"],
   bundle: true,

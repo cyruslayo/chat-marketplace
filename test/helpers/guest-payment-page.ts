@@ -16,6 +16,9 @@ export interface GuestPaymentPage {
   readonly env: LocalGuestEnvironment;
   readonly dir: string;
   readonly offerId: string;
+  readonly base: string;
+  /** The Guest's browser-session cookie, for driving a real tab as the same Guest. */
+  readonly cookie: string;
   readonly paymentPage: string;
   get(path: string): Promise<Response>;
   post(path: string, body?: Record<string, string>, headers?: Record<string, string>): Promise<Response>;
@@ -56,7 +59,7 @@ export async function guestPaymentPage(options: {
   const base = `http://127.0.0.1:${port}`;
   const cookie = (await fetch(`${base}/`)).headers.get("set-cookie")?.split(";")[0] ?? "";
   return {
-    env, dir, offerId,
+    env, dir, offerId, base, cookie,
     paymentPage: `/payments/offers/${encodeURIComponent(offerId)}`,
     get: (path) => fetch(`${base}${path}`, { headers: { cookie, accept: "text/html" }, redirect: "manual" }),
     post: (path, body = {}, headers = {}) => fetch(`${base}${path}`, { method: "POST", headers: { cookie, accept: "text/html", "content-type": "application/x-www-form-urlencoded", ...headers }, body: new URLSearchParams(body), redirect: "manual" }),

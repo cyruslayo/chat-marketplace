@@ -110,6 +110,8 @@
   --radius-hero: 1.5rem;
   --radius-sheet: var(--radius-hero);
   --radius-round: 50%;
+  /* Fully rounded ends for text pills (chips, guest primary actions); 50% would draw an ellipse on a wide element. */
+  --radius-pill: 999px;
 
   --elevation-raised: 0 1px 2px rgb(29 41 35 / 6%), 0 1px 1px rgb(29 41 35 / 4%);
   --elevation-active: 0 0.5rem 1.5rem rgb(29 41 35 / 8%);
@@ -400,6 +402,8 @@
 
   /* Guest editorial surfaces opt into these roles; the shared foundations remain neutral by default. */
   .guest-editorial :where(h1, h2, h3) { font-family: var(--font-heading); }
+  /* A page-level editorial wrapper keeps the page's section rhythm; zero specificity so page layouts can override it. */
+  :where(.ui-page > .guest-editorial) { display: grid; gap: var(--space-6); align-content: start; }
   .ui-ticket { display: grid; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--color-border-inverse); border-radius: var(--radius-workspace); background: var(--color-surface-inverse); color: var(--color-text-on-inverse); }
   .ui-ticket :where(p, small, dt, .ui-money-metadata) { color: var(--color-text-on-inverse-muted); }
   .ui-ticket :where(h2, h3, dd, strong) { color: var(--color-text-on-inverse); }
@@ -407,9 +411,9 @@
   .ui-ticket__date:last-child { text-align: end; }
   .ui-ticket__dates > [aria-hidden="true"] { color: var(--color-accent-on-inverse); }
   .ui-ticket__day { display: block; color: var(--color-text-on-inverse); font-family: var(--font-display); font-size: var(--font-size-display); line-height: var(--font-line-display); font-variant-numeric: tabular-nums; }
-  :where(.guest-editorial .ui-chip, .guest-editorial .ui-button--primary, .guest-editorial .ui-button--block) { border-radius: var(--radius-round); }
-  .ui-facts--chips { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0; }
-  .ui-facts--chips > :where(div, span) { display: inline-flex; min-block-size: var(--control-min-target); align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-round); background: var(--color-surface-subtle); }
+  :where(.guest-editorial .ui-chip, .guest-editorial .ui-button--primary, .guest-editorial .ui-button--block) { border-radius: var(--radius-pill); }
+  .ui-facts.ui-facts--chips, .ui-facts--chips { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0; }
+  .ui-facts--chips > :where(div, span) { display: inline-flex; min-block-size: var(--control-min-target); align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-pill); background: var(--color-surface-subtle); }
   .ui-facts--chips dt { color: var(--color-text-secondary); font-size: var(--font-size-small); }
   .ui-facts--chips dd { margin: 0; font-weight: 600; }
   .ui-action-bar { position: sticky; inset-block-end: 0; z-index: var(--layer-sticky); display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); margin-inline: calc(-1 * var(--layout-gutter-mobile)); padding: var(--space-3) var(--layout-gutter-mobile) calc(var(--space-3) + env(safe-area-inset-bottom)); border-block-start: 1px solid var(--color-border-subtle); background: var(--color-surface-elevated); box-shadow: var(--elevation-active); }
@@ -507,7 +511,7 @@
     --a2ui-radius: var(--radius-control);
   }
   /* Compact Weaver criteria controls use pills; other form controls retain the standard radius. */
-  .weaver-mount label[style*="999px"] { border-radius: var(--radius-round) !important; min-block-size: var(--control-min-target); gap: var(--space-2); }
+  .weaver-mount label[style*="999px"] { border-radius: var(--radius-pill) !important; min-block-size: var(--control-min-target); gap: var(--space-2); }
 }
 
 @media (prefers-reduced-motion: reduce) {

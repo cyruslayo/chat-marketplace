@@ -122,7 +122,8 @@ test("AC4 — The transfer and card paths both work at 320px and without JavaScr
     assert.match(choice, /<meta name="viewport" content="width=device-width,\s*initial-scale=1/);
     assert.equal((await g.post(`${g.paymentPage}/transfer`)).status, 303);
     const transfer = await (await g.get(g.transferPage)).text();
-    assert.doesNotMatch(transfer, /<script/);
+    // The only script is the optional copy-account-number enhancement; the page works without it (ADR 0080).
+    assert.doesNotMatch(transfer.replace('<script src="/payment.js" defer></script>', ""), /<script/);
     // Long account numbers wrap rather than widen the page at 320px.
     assert.match(transfer, /\.transfer-account\{[^}]*overflow-wrap:anywhere/);
   } finally { await g.close(); }

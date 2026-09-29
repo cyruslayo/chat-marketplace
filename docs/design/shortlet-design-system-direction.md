@@ -69,7 +69,7 @@ Use tabular numerals for aligned prices/deadlines where available. Keep prose le
 
 Spacing scale: `4, 8, 12, 16, 24, 32, 48, 64px` (4px base); standard body rhythm 16px, between card sections 24px, outer mobile gutter 16px, desktop section spacing 48–64px. Avoid inconsistent micro-spacing introduced by arbitrary component margins.
 
-Radius: `4px` small field/subtle label detail; `8px` standard controls/small media; `12px` cards/photos; `16px` top-level workspace/featured section; `24px` overlapping summary sheet. Compact criteria chips and guest primary calls to action may be fully rounded; cards and large controls are not pills. Status badges remain distinct and semantic.
+Radius: `4px` small field/subtle label detail; `8px` standard controls/small media; `12px` cards/photos; `16px` top-level workspace/featured section; `24px` overlapping summary sheet. Compact criteria chips and guest primary calls to action may be fully rounded (`--radius-pill`, never the 50% `--radius-round`, which is for true circles and draws an ellipse on a wide element); cards and large controls are not pills. Status badges remain distinct and semantic.
 
 Elevation: default use tonal surfaces + 1px border, no shadow. Active workspace and sticky mobile action layer may use one broad, low-opacity shadow (`0 8px 24px rgba(29,41,35,.08)`) with a visible border. Hover doesn't depend on lift. No nested card-within-card treatment; group details by divider/heading.
 

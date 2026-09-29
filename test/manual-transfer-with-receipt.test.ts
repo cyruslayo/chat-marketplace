@@ -29,7 +29,12 @@ test("AC1 — Choosing manual transfer shows the account, the exact amount, a un
     const transferResponse = await g.get(manualPage(g));
     const transferHtml = await transferResponse.text();
     const text = visibleText(transferHtml);
-    assert.match(transferHtml, /data-copy-text="[^"]+">Copy account number/);
+    // The copy button waits, hidden, for /payment.js; without JavaScript the number stays plain text (ADR 0080).
+    assert.match(transferHtml, new RegExp(`data-copy-text="${TEST_MANUAL_ACCOUNT.accountNumber}" hidden>Copy account number`));
+    assert.match(transferHtml, /<script src="\/payment\.js" defer><\/script>/);
+    const script = await g.get("/payment.js");
+    assert.equal(script.status, 200);
+    assert.match(await script.text(), /data-copy-text/);
     for (const fact of [`Bank ${TEST_MANUAL_ACCOUNT.bankName}`, `Account name ${TEST_MANUAL_ACCOUNT.accountName}`, `Account number ${TEST_MANUAL_ACCOUNT.accountNumber}`, `Exact amount ${formatNgnKobo(transfer.amountKobo)}`, `Booking reference ${transfer.bookingReference}`, `Transfer and upload by ${wat(transfer.paymentDeadlineAt)}`]) {
       assert.ok(text.includes(fact), `shows ${fact}`);
     }
@@ -161,7 +166,8 @@ test("AC5 — Upload works without JavaScript and at 320px", async () => {
   try {
     await g.post(manualPage(g));
     const html = await (await g.get(manualPage(g))).text();
-    assert.doesNotMatch(html, /<script/);
+    // The only script is the optional copy-account-number enhancement; the upload works without it (ADR 0080).
+    assert.doesNotMatch(html.replace('<script src="/payment.js" defer></script>', ""), /<script/);
     assert.match(html, /class="ui-ticket" aria-label="Your stay"/);
     assert.match(html, /ui-price-breakdown/);
     assert.match(html, /<form method="post" action="[^"]+\/manual-transfer\/receipt" enctype="multipart\/form-data"/);
