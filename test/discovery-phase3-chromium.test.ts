@@ -39,10 +39,11 @@ test("Phase 3 discovery renders Wuse, Lekki, zero-result and fallback states wit
     await tab.setCssViewport(390, 1200);
     await capture(tab, "01-discovery-wuse-390.png");
     const names = await tab.getAccessibilityTree();
-    assert.ok(names.some((node) => node.role === "button" && node.name === "View apartment"), "View apartment is named in the browser accessibility tree");
-    assert.ok(names.some((node) => node.role === "list" && node.name === "Stay search results"), "discovery results expose list semantics");
+    // Phones show the compact result rows (issue 05): each opens its stay and names the All-In Stay Total.
+    assert.ok(names.some((node) => node.role === "link" && node.name.includes("All-In Stay Total")), "a result row is named in the browser accessibility tree");
+    assert.ok(names.some((node) => node.role === "list" && node.name === "Stays for your search"), "discovery results expose list semantics");
     assert.ok(names.some((node) => node.role === "listitem"), "each stay is exposed as a list item");
-    const cardLayout = await tab.evaluate<{ readonly body: boolean; readonly price: boolean; readonly action: boolean }>("(() => { const card=document.querySelector('.stay-card'); return {body:Boolean(card?.querySelector('.stay-card__body')),price:Boolean(card?.querySelector('.stay-card__price-area .stay-card__price-total')),action:Boolean(card?.querySelector('.stay-card__action'))}; })()");
+    const cardLayout = await tab.evaluate<{ readonly body: boolean; readonly price: boolean; readonly action: boolean }>("(() => { const card=document.querySelector('.stay-card'); return {body:Boolean(card?.querySelector('.ui-stay-card__facts')),price:Boolean(card?.querySelector('.ui-stay-card__total .ui-money-total')),action:Boolean(card?.querySelector('.ui-stay-card__view'))}; })()");
     assert.deepEqual(cardLayout, { body: true, price: true, action: true }, "discovery card roles are grouped into one clear comparison surface");
     await assertNoOverflow(tab, 390);
     await tab.setCssViewport(320, 1200);

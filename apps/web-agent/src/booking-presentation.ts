@@ -116,3 +116,4 @@ export function ticketFactIds(prefix: string): readonly string[] {
 export function nightsBetween(checkIn: string, checkOut: string): number {
   return Math.max(0, Math.round((Date.parse(`${checkOut}T00:00:00Z`) - Date.parse(`${checkIn}T00:00:00Z`)) / 86_400_000));
 }
+

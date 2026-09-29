@@ -8872,27 +8872,13 @@ Known schemas:
     { domain: /^Refundable Security Deposit is quoted separately and held as guest liability\.?$/, guest: `${GUEST_GLOSSARY.refundableSecurityDeposit} is quoted and collected separately from the stay payment.` },
     { domain: /^Optional services come strictly from the controlled catalogue with no off-platform payment\.?$/, guest: "Optional services are added only when you select them, with no off-platform payment." }
   ];
-  var AMENITY_LABELS = {
-    "24_7_power_generator": "24/7 backup power",
-    air_conditioning: "Air conditioning",
-    generator: "Backup power",
-    parking: "Secure parking",
-    security_guard: "On-site security",
-    swimming_pool: "Swimming pool",
-    wifi: "Wi-Fi",
-    workspace: "Dedicated workspace"
-  };
-  function guestAmenityLabel(identifier) {
-    const acceptedLabel = AMENITY_LABELS[identifier];
-    if (acceptedLabel) return acceptedLabel;
-    return identifier.replaceAll("_", " ").replaceAll("-", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
-  }
   var GUEST_FACT_LABELS = Object.freeze({
     checkIn: "Check-in",
     checkOut: "Check-out",
     /** "Stay: 3 nights · 2 guests": the length of the stay and the party, as the ticket's foot line. */
     stay: "Stay",
     stayDates: "Stay dates",
+    where: "Where",
     /** Named occupants, shown under the ticket only when the Guest gave real names. */
     guests: "Guests",
     allInStayTotal: GUEST_GLOSSARY.allInStayTotal,
@@ -8922,23 +8908,13 @@ Known schemas:
     },
     {
       key: "deposit",
-      label: GUEST_GLOSSARY.refundableSecurityDeposit,
-      value: (unit) => unit.price.refundableSecurityDepositKobo > 0 ? `${formatNgnKobo(unit.price.refundableSecurityDepositKobo)}, paid separately` : "None"
+      label: GUEST_FACT_LABELS.refundableSecurityDeposit,
+      value: (unit) => unit.price.refundableSecurityDepositKobo > 0 ? formatNgnKobo(unit.price.refundableSecurityDepositKobo) : "None"
     },
-    {
-      key: "capacity",
-      label: "Capacity",
-      value: (unit) => [
-        `Sleeps ${unit.capacity}`,
-        ...unit.bedrooms === void 0 ? [] : [`${unit.bedrooms} ${unit.bedrooms === 1 ? "bedroom" : "bedrooms"}`],
-        `${unit.bathrooms} ${unit.bathrooms === 1 ? "bathroom" : "bathrooms"}`
-      ].join(" \xB7 ")
-    },
-    {
-      key: "amenities",
-      label: "Amenities",
-      value: (unit) => unit.amenities.length === 0 ? "None listed" : unit.amenities.map(guestAmenityLabel).join(" \xB7 ")
-    }
+    { key: "where", label: GUEST_FACT_LABELS.where, value: (unit) => `${unit.location.neighbourhood}, ${unit.location.city}` },
+    { key: "bedrooms", label: "Bedrooms", value: (unit) => unit.bedrooms === void 0 ? "Not provided" : String(unit.bedrooms) },
+    { key: "bathrooms", label: "Bathrooms", value: (unit) => String(unit.bathrooms) },
+    { key: "sleeps", label: "Sleeps", value: (unit) => String(unit.capacity) }
   ];
 
   // apps/local-guest/src/conversational-shell.ts
@@ -9047,6 +9023,19 @@ Known schemas:
     const due = parts.due === void 0 ? "" : `<p class="ui-price-breakdown__due">${GUEST_FACT_LABELS.amountDueNow}: ${money(parts.due)}</p>`;
     const paid = parts.paid === void 0 ? "" : `<p class="ui-price-breakdown__paid">${GUEST_FACT_LABELS.amountPaid}: ${money(parts.paid)}</p>`;
     return `<section class="ui-panel ui-price-breakdown" aria-label="Price breakdown">${parts.condition ? `<p class="ui-price-breakdown__condition">${escapeHtml(parts.condition)}</p>` : ""}${total}${deposit}${due}${paid}</section>`;
+  }
+  function stayPhotoHtml(parts) {
+    return parts.photoSrc === void 0 ? `<div class="ui-stay-card__photo ui-stay-card__photo--empty" role="img" aria-label="Photos are not available for ${escapeHtml(parts.title)}">${icon("photo")}Photos not available</div>` : `<img class="ui-stay-card__photo" src="${escapeHtml(parts.photoSrc)}" alt="Photo of ${escapeHtml(parts.title)}" width="800" height="600" loading="lazy" decoding="async" referrerpolicy="no-referrer">`;
+  }
+  function stayCardInnerHtml(parts) {
+    const href = escapeHtml(parts.href);
+    const facts = parts.facts.map((fact) => `<span class="ui-fact">${icon(fact.icon)}${escapeHtml(fact.text)}</span>`).join("");
+    const deposit = parts.deposit === void 0 ? "" : `<p class="ui-money-metadata">+ ${escapeHtml(parts.deposit)} ${GUEST_FACT_LABELS.refundableSecurityDeposit}</p>`;
+    return `${stayPhotoHtml(parts)}<p class="ui-stay-card__where">${icon("pin")}${escapeHtml(parts.where)}</p><h2 class="ui-stay-card__title"><a href="${href}">${escapeHtml(parts.title)}</a></h2><div class="ui-stay-card__facts" aria-label="Stay facts">${facts}</div><div class="ui-stay-card__total"><p class="ui-money-total">${escapeHtml(parts.total)}</p><p class="ui-money-metadata">${escapeHtml(parts.totalLabel)}</p>${deposit}</div><a class="ui-button ui-button--primary ui-button--block ui-stay-card__view" href="${href}">${GUEST_GLOSSARY.viewUnit}<span class="ui-sr-only">: ${escapeHtml(parts.title)}</span></a>`;
+  }
+  function resultRowPartsHtml(parts) {
+    const thumb = parts.photoSrc === void 0 ? icon("photo") : `<img src="${escapeHtml(parts.photoSrc)}" alt="" width="64" height="64" loading="lazy" decoding="async" referrerpolicy="no-referrer">`;
+    return `<a class="ui-result-row" href="${escapeHtml(parts.href)}"><span class="ui-result-row__thumb">${thumb}</span><span class="ui-result-row__body"><span class="ui-result-row__title">${escapeHtml(parts.title)}</span><span class="ui-result-row__price">${escapeHtml(parts.total)} <span>${escapeHtml(parts.totalLabel)}</span></span></span>${icon("chevron-right")}</a>`;
   }
 
   // apps/local-guest/src/client.ts
@@ -9281,62 +9270,181 @@ Known schemas:
       ...paid ? { paid: paid.value } : {}
     }), [condition, total.element, deposit?.element, due?.element, paid?.element]);
   }
+  function viewUnitIds(payload) {
+    const ids = [];
+    for (const message of payload?.a2uiMessages ?? []) {
+      if (!isRecord3(message) || !isRecord3(message.updateComponents) || !Array.isArray(message.updateComponents.components)) continue;
+      for (const component of message.updateComponents.components) {
+        if (!isRecord3(component) || !isRecord3(component.action) || !isRecord3(component.action.event)) continue;
+        const context = component.action.event.context;
+        if (component.action.event.name === "shortlet.discovery.view-unit" && isRecord3(context) && typeof context.unitId === "string") ids.push(context.unitId);
+      }
+    }
+    return ids;
+  }
+  function factIcon(text) {
+    return text.includes("bedroom") ? "bed" : text.includes("bathroom") ? "bath" : "users";
+  }
+  function openStayFrom(link, viewButton) {
+    if (!viewButton) return;
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      viewButton.click();
+    });
+  }
   function decorateDiscoveryCards(mount) {
-    for (const card of mount.querySelectorAll('[data-a2ui-component="Card"]')) {
-      card.classList.add("stay-card");
-      card.setAttribute("role", "listitem");
+    const unitIds = viewUnitIds(activePayload);
+    const rows = [];
+    let listElement;
+    for (const [index, card] of [...mount.querySelectorAll('[data-a2ui-component="Card"]')].entries()) {
       const list = card.parentElement;
       if (list instanceof HTMLElement) {
         list.classList.add("stay-grid");
         list.setAttribute("role", "list");
         list.setAttribute("aria-label", "Stay search results");
+        listElement = list;
       }
       const body = card.querySelector(':scope > [data-weaver-mount] > [data-a2ui-component="Column"], :scope > [data-a2ui-component="Column"]');
-      if (!body) continue;
-      body.classList.add("stay-card__body");
+      const unitId = unitIds[index];
+      if (!body || unitId === void 0) continue;
       const children = [...body.children];
-      const headings = children.filter((child) => child.tagName === "H3");
-      const fit = children.find((child) => child.tagName === "SMALL" && (child.textContent ?? "").startsWith("Why it fits:"));
-      fit?.classList.add("stay-card__fit");
-      const smalls = children.filter((child) => child.tagName === "SMALL" && child !== fit);
-      headings[0]?.classList.add("stay-card__title");
-      const location2 = smalls[0];
-      location2?.classList.add("stay-card__location");
+      const title = children.find((child) => child.tagName === "H3" && !isMoney(child.textContent ?? ""));
+      const where = findFact(children, GUEST_FACT_LABELS.where);
       const factLine = children.find((child) => child.tagName === "P");
-      factLine?.classList.add("stay-card__facts");
-      if (factLine) {
-        const labels = (factLine.textContent ?? "").split(" \xB7 ").map((label) => label.trim()).filter(Boolean);
-        if (labels.length > 1) factLine.replaceChildren(...labels.map((label) => {
-          const chip = document.createElement("span");
-          chip.textContent = label;
-          return chip;
-        }));
-      }
-      children.find((child) => (child.textContent ?? "").startsWith(GUEST_GLOSSARY.refundableSecurityDeposit))?.classList.add("stay-card__deposit");
-      smalls[1]?.classList.add("stay-card__amenities");
       const priceLabel = children.find((child) => isPriceLabel(child.textContent?.trim() ?? ""));
-      const buttons = children.filter((child) => child.tagName === "BUTTON");
-      const action = buttons[0];
-      const lastAction = buttons.at(-1);
-      if (priceLabel) {
-        const priceStart = children.indexOf(priceLabel);
-        const priceNodes = children.slice(priceStart, lastAction ? children.indexOf(lastAction) + 1 : void 0);
-        const price = priceNodes.find((child) => child.tagName === "H3" && /^(₦|NGN\b)/.test(child.textContent?.trim() ?? ""));
-        priceLabel.classList.add("stay-card__price-label");
-        price?.classList.add("stay-card__price-total");
-        if (action) action.classList.add("stay-card__action");
-        for (const extra of buttons.slice(1)) extra.classList.add("stay-card__compare");
-        wrapDirectChildren(body, "stay-card__price-area", priceNodes);
+      const price = children.find((child) => child.tagName === "H3" && isMoney(child.textContent ?? ""));
+      if (!title || !where || !factLine || !priceLabel || !price) continue;
+      const deposit = findFact(children, GUEST_FACT_LABELS.refundableSecurityDeposit);
+      const fit = findFact(children, GUEST_FACT_LABELS.fitReason);
+      const image = children.find((child) => child instanceof HTMLImageElement);
+      const buttons = children.filter((child) => child instanceof HTMLButtonElement);
+      const view = buttons[0];
+      const parts = {
+        href: `/stays/${encodeURIComponent(unitId)}`,
+        title: title.textContent?.trim() ?? "",
+        where: where.value,
+        facts: (factLine.textContent ?? "").split(" \xB7 ").map((text) => text.trim()).filter(Boolean).map((text) => ({ icon: factIcon(text), text })),
+        total: price.textContent?.trim() ?? "",
+        totalLabel: priceLabel.textContent?.trim() ?? "",
+        ...deposit ? { deposit: deposit.value } : {},
+        ...image?.src ? { photoSrc: image.src } : {}
+      };
+      const known = /* @__PURE__ */ new Set([title, where.element, factLine, priceLabel, price, deposit?.element, fit?.element, image, ...buttons]);
+      const extras = children.filter((child) => !known.has(child) && child.getAttribute("data-a2ui-component") !== "Divider");
+      const template = document.createElement("template");
+      template.innerHTML = stayCardInnerHtml(parts);
+      card.replaceChildren(template.content);
+      card.classList.add("stay-card", "ui-stay-card");
+      card.setAttribute("role", "listitem");
+      const anchor = card.querySelector(".ui-stay-card__view");
+      if (view && anchor) {
+        view.classList.add("ui-button", "ui-button--primary", "ui-button--block", "ui-stay-card__view");
+        anchor.replaceWith(view);
+      } else anchor?.remove();
+      openStayFrom(card.querySelector(".ui-stay-card__title a"), view);
+      fit?.element.classList.add("stay-card__fit");
+      const facts = card.querySelector(".ui-stay-card__facts");
+      for (const extra of [...extras].reverse()) facts?.after(extra);
+      if (fit) facts?.after(fit.element);
+      for (const extra of buttons.slice(1)) {
+        extra.classList.add("stay-card__compare", "ui-link");
+        card.appendChild(extra);
+      }
+      rows.push({ html: resultRowPartsHtml(parts), view });
+    }
+    if (rows.length > 0 && listElement) {
+      const rowList = document.createElement("div");
+      rowList.className = "ui-result-rows";
+      rowList.setAttribute("role", "list");
+      rowList.setAttribute("aria-label", "Stays for your search");
+      for (const row of rows) {
+        const template = document.createElement("template");
+        template.innerHTML = row.html;
+        const link = template.content.firstElementChild;
+        openStayFrom(link, row.view);
+        const item = document.createElement("div");
+        item.setAttribute("role", "listitem");
+        item.appendChild(link);
+        rowList.appendChild(item);
+      }
+      listElement.before(rowList);
+      if (rows.length >= 2) {
+        const both = document.createElement("button");
+        both.type = "button";
+        both.className = "ui-link ui-result-rows__compare";
+        both.insertAdjacentHTML("beforeend", `See both side by side${icon("arrow-right")}`);
+        both.addEventListener("click", () => void compareFirstTwo());
+        rowList.after(both);
+      }
+    }
+  }
+  async function compareFirstTwo() {
+    const compareButton = (index) => activeWorkspace.querySelectorAll(".ui-stay-card")[index]?.querySelector(".stay-card__compare") ?? null;
+    compareButton(0)?.click();
+    for (let waited = 0; waited < 5e3; waited += 50) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const first = compareButton(0);
+      if (first?.textContent?.trim() === "Remove from compare") {
+        compareButton(1)?.click();
+        return;
       }
     }
   }
   function decorateComparison(mount) {
-    for (const row of mount.querySelectorAll('[data-a2ui-component="Row"]')) {
-      row.classList.add("compare-row");
-      for (const cell of row.querySelectorAll(':scope > [data-a2ui-component="Column"], :scope > [data-weaver-mount] > [data-a2ui-component="Column"]')) {
-        cell.classList.add("compare-cell");
+    const root = mount.querySelector('[data-a2ui-component="Column"]');
+    if (!root) return;
+    const rowElements = [...root.querySelectorAll(':scope > [data-a2ui-component="Row"]')];
+    const attributeRows = rowElements.filter((row) => row.previousElementSibling?.tagName === "H3");
+    const actionRow = rowElements.find((row) => row.querySelector("button") !== null);
+    if (attributeRows.length === 0) return;
+    const table = document.createElement("div");
+    table.className = "ui-compare";
+    table.setAttribute("role", "table");
+    table.setAttribute("aria-label", "Compare stays");
+    const line = (className) => {
+      const element = document.createElement("div");
+      element.className = `ui-compare__row compare-row ${className}`;
+      element.setAttribute("role", "row");
+      return element;
+    };
+    const cellsOf = (row) => [...row.querySelectorAll(':scope > [data-a2ui-component="Column"], :scope > [data-weaver-mount] > [data-a2ui-component="Column"]')];
+    const head = line("ui-compare__row--head");
+    const corner = document.createElement("div");
+    corner.setAttribute("role", "columnheader");
+    head.appendChild(corner);
+    for (const cell of cellsOf(attributeRows[0])) {
+      const heading = document.createElement("div");
+      heading.className = "ui-compare__head";
+      heading.setAttribute("role", "columnheader");
+      heading.textContent = cell.querySelector("small")?.textContent?.trim() ?? "";
+      head.appendChild(heading);
+    }
+    table.appendChild(head);
+    root.insertBefore(table, attributeRows[0].previousElementSibling);
+    for (const row of attributeRows) {
+      const label = row.previousElementSibling;
+      const item = line("");
+      label.classList.add("ui-compare__key");
+      label.setAttribute("role", "rowheader");
+      item.appendChild(label);
+      for (const cell of cellsOf(row)) {
+        cell.classList.add("compare-cell", "ui-compare__cell");
+        cell.setAttribute("role", "cell");
         cell.querySelector("small")?.classList.add("compare-cell__unit");
+        item.appendChild(cell);
       }
+      row.remove();
+      table.appendChild(item);
+    }
+    if (actionRow) {
+      const item = line("ui-compare__row--actions");
+      item.appendChild(document.createElement("div"));
+      for (const cell of [...actionRow.children]) {
+        cell.classList.add("ui-compare__cell");
+        item.appendChild(cell);
+      }
+      actionRow.remove();
+      table.appendChild(item);
     }
   }
   function enhanceSurfacePresentation(mount, kind) {
@@ -9354,6 +9462,10 @@ Known schemas:
     if (kind === "compare") decorateComparison(mount);
     if (kind === "unit-detail") organizeUnitDetail(mount);
     if (kind === "booking" || kind === "payment") organizeBookingTicket(mount);
+  }
+  function isMoney(text) {
+    const value = text.trim();
+    return value.startsWith("\u20A6") || value.startsWith("NGN");
   }
   function isPriceLabel(text) {
     return text.startsWith(GUEST_GLOSSARY.allInStayTotal) || text.startsWith("Indicative nightly rate");

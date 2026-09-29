@@ -6,20 +6,27 @@ import { restartFixture } from "./helpers/guest-restart.js";
 interface CellBox { readonly left: number; readonly top: number; readonly width: number }
 
 /** Every attribute row's cell boxes, in document order. */
-const cellBoxes = (tab: RealBrowserTab) => tab.evaluate<CellBox[][]>(`[...document.querySelectorAll('#active-workspace .compare-row')].map((row) =>
+const cellBoxes = (tab: RealBrowserTab) => tab.evaluate<CellBox[][]>(`[...document.querySelectorAll('#active-workspace .ui-compare__row:not(.ui-compare__row--head):not(.ui-compare__row--actions)')].map((row) =>
   [...row.querySelectorAll('.compare-cell')].map((cell) => { const box = cell.getBoundingClientRect(); return { left: Math.round(box.left), top: Math.round(box.top), width: Math.round(box.width) }; }))`);
 
 const noHorizontalScroll = (tab: RealBrowserTab) => tab.evaluate<boolean>(`document.documentElement.scrollWidth <= document.documentElement.clientWidth
   && [...document.querySelectorAll('#active-workspace, #active-workspace *')].every((element) => element.scrollWidth <= element.clientWidth + 1 || !['auto', 'scroll'].includes(getComputedStyle(element).overflowX))`);
 
-async function openComparison(tab: RealBrowserTab, base: string): Promise<void> {
+/** Wide screens use each card's Compare control; phones show result rows and "See both side by side" (issue 05). */
+async function openComparison(tab: RealBrowserTab, base: string, viaRows = false): Promise<void> {
   await tab.navigate(`${base}/`);
   await tab.focus("#composer-input");
   await tab.insertText("I need an apartment in Lagos from 10 Sept for 3 nights for 2 people");
   await tab.pressKey("Enter");
+  if (viaRows) {
+    await tab.waitForSelector("#active-workspace .ui-result-rows__compare", 10_000);
+    assert.equal(await tab.clickButton("See both side by side"), true);
+    await tab.waitForSelector("#active-workspace .compare-row .compare-cell", 15_000);
+    return;
+  }
   await tab.waitForText("Compare", 10_000);
   // Card buttons take their context from the listed card, like "View apartment".
-  const titles = await tab.evaluate<string[]>("[...document.querySelectorAll('#active-workspace .stay-card')].filter((card) => [...card.querySelectorAll('button')].some((button) => button.textContent.trim() === 'Compare')).map((card) => card.querySelector('.stay-card__title').textContent.trim())");
+  const titles = await tab.evaluate<string[]>("[...document.querySelectorAll('#active-workspace .stay-card')].filter((card) => [...card.querySelectorAll('button')].some((button) => button.textContent.trim() === 'Compare')).map((card) => card.querySelector('.ui-stay-card__title').textContent.trim())");
   assert.ok(titles.length >= 2, "each result has a Compare control");
   assert.equal(await tab.clickButton("Compare", titles[0]), true);
   await tab.waitForText("Remove from compare", 10_000);
@@ -33,9 +40,9 @@ test("AC3: At 320px, the comparison stacks attributes vertically with no horizon
   try {
     const tab = await browser.createTab();
     await tab.setCssViewport(320, 640);
-    await openComparison(tab, fixture.base);
+    await openComparison(tab, fixture.base, true);
     const rows = await cellBoxes(tab);
-    assert.equal(rows.length, 4, "price, deposit, capacity and amenities");
+    assert.equal(rows.length, 6, "price, deposit, where, bedrooms, bathrooms and sleeps");
     for (const [first, second] of rows) {
       assert.ok(first && second);
       assert.equal(first.left, second.left, "stacked cells share a left edge");
@@ -70,7 +77,7 @@ test("AC3 control: at 1280px and 375px the comparison lays the stays out as expe
 
     const phone = await browser.createTab();
     await phone.setViewport(375, 812);
-    await openComparison(phone, fixture.base);
+    await openComparison(phone, fixture.base, true);
     for (const [first, second] of await cellBoxes(phone)) {
       assert.ok(first && second);
       assert.equal(first.left, second.left);

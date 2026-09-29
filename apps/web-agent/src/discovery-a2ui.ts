@@ -4,7 +4,7 @@ import {
   type A2UIServerMessage,
 } from "@weaver/core";
 import { formatMoney } from "../../web/src/ui-kit.js";
-import { GUEST_GLOSSARY, formatGuestDate, guestAmenityLabel, guestOccupancyLabel } from "./guest-content.js";
+import { GUEST_FACT_LABELS, GUEST_GLOSSARY, formatGuestDate, guestAmenityLabel, guestFact, stayTotalLabel } from "./guest-content.js";
 
 export interface DiscoveryLocationProjection {
   readonly city: string;
@@ -178,25 +178,20 @@ function unitComponents(
   compare?: CompareControl,
 ): { readonly cardId: string; readonly components: readonly A2UIComponent[] } {
   const prefix = `unit-${unit.id}`;
-  const location = unit.title.toLocaleLowerCase().includes(unit.location.neighbourhood.toLocaleLowerCase())
-    ? unit.location.city
-    : `${unit.location.neighbourhood}, ${unit.location.city}`;
+  // Guest UI consistency issue 05: always the neighbourhood-level place (ADR 0066), so the chat card and the page say the same.
+  const location = `${unit.location.neighbourhood}, ${unit.location.city}`;
   const facts = [
     ...(unit.bedrooms === undefined ? [] : [`${unit.bedrooms} ${unit.bedrooms === 1 ? "bedroom" : "bedrooms"}`]),
     `${unit.bathrooms} ${unit.bathrooms === 1 ? "bathroom" : "bathrooms"}`,
     `Sleeps ${unit.capacity}`,
-    guestOccupancyLabel(unit.trust.occupancyModel),
-  ].filter((fact): fact is string => fact !== undefined);
+  ];
   const highlights = unit.amenities.slice(0, 3);
   const checkIn = typeof filters.checkIn === "string" ? filters.checkIn : undefined;
   const checkOut = typeof filters.checkOut === "string" ? filters.checkOut : undefined;
   const nights = checkIn && checkOut && /^\d{4}-\d{2}-\d{2}$/.test(checkIn) && /^\d{4}-\d{2}-\d{2}$/.test(checkOut)
     ? (Date.parse(`${checkOut}T00:00:00Z`) - Date.parse(`${checkIn}T00:00:00Z`)) / 86_400_000
     : undefined;
-  const allInLabel = unit.price.allInStayTotalKobo === null ? "Indicative nightly rate" : GUEST_GLOSSARY.allInStayTotal;
-  const stayPeriodLabel = unit.price.allInStayTotalKobo !== null && typeof nights === "number" && Number.isInteger(nights) && nights > 0
-    ? `For ${nights} ${nights === 1 ? "night" : "nights"} · all-in`
-    : undefined;
+  const allInLabel = stayTotalLabel(unit.price.allInStayTotalKobo !== null, typeof nights === "number" && Number.isInteger(nights) ? nights : undefined);
   const allInAmount = unit.price.allInStayTotalKobo === null
     ? unit.price.nightlyKobo
     : unit.price.allInStayTotalKobo;
@@ -215,7 +210,7 @@ function unitComponents(
           `${prefix}-title`, `${prefix}-location`, `${prefix}-facts`,
           ...(fit.length > 0 ? [`${prefix}-fit`] : []),
           ...(highlights.length > 0 ? [`${prefix}-amenities`] : []),
-          `${prefix}-divider`, `${prefix}-price-label`, `${prefix}-price`, ...(stayPeriodLabel ? [`${prefix}-price-period`] : []),
+          `${prefix}-divider`, `${prefix}-price-label`, `${prefix}-price`,
           ...(unit.price.refundableSecurityDepositKobo > 0 ? [`${prefix}-deposit`] : []),
           ...(budget === undefined ? [] : [`${prefix}-budget`]),
           ...(canViewUnit ? [`${prefix}-view-button`] : []),
@@ -223,7 +218,7 @@ function unitComponents(
         ],
       },
       { id: `${prefix}-title`, component: "Text", text: unit.title, variant: "h3" },
-      { id: `${prefix}-location`, component: "Text", text: location, variant: "caption" },
+      { id: `${prefix}-location`, component: "Text", text: guestFact(GUEST_FACT_LABELS.where, location), variant: "caption" },
       ...(unit.photoUrls.length > 0 ? [{
         id: `${prefix}-primary-photo`,
         component: "Image" as const,
@@ -247,11 +242,10 @@ function unitComponents(
       { id: `${prefix}-divider`, component: "Divider", axis: "horizontal" },
       { id: `${prefix}-price-label`, component: "Text", text: allInLabel, variant: "caption" },
       { id: `${prefix}-price`, component: "Text", text: formatNgnKobo(allInAmount), variant: "h3" },
-      ...(stayPeriodLabel ? [{ id: `${prefix}-price-period`, component: "Text" as const, text: stayPeriodLabel, variant: "caption" as const }] : []),
       ...(unit.price.refundableSecurityDepositKobo > 0 ? [{
         id: `${prefix}-deposit`,
         component: "Text" as const,
-        text: `${GUEST_GLOSSARY.refundableSecurityDeposit}: ${formatNgnKobo(unit.price.refundableSecurityDepositKobo)}`,
+        text: guestFact(GUEST_FACT_LABELS.refundableSecurityDeposit, formatNgnKobo(unit.price.refundableSecurityDepositKobo)),
         variant: "caption" as const,
       }] : []),
       ...(budget === undefined ? [] : [{ id: `${prefix}-budget`, component: "Text" as const, text: budget, variant: "caption" as const }]),
@@ -368,23 +362,13 @@ export const COMPARE_ATTRIBUTES: readonly CompareAttribute[] = [
   },
   {
     key: "deposit",
-    label: GUEST_GLOSSARY.refundableSecurityDeposit,
-    value: (unit) => unit.price.refundableSecurityDepositKobo > 0 ? `${formatNgnKobo(unit.price.refundableSecurityDepositKobo)}, paid separately` : "None",
+    label: GUEST_FACT_LABELS.refundableSecurityDeposit,
+    value: (unit) => unit.price.refundableSecurityDepositKobo > 0 ? formatNgnKobo(unit.price.refundableSecurityDepositKobo) : "None",
   },
-  {
-    key: "capacity",
-    label: "Capacity",
-    value: (unit) => [
-      `Sleeps ${unit.capacity}`,
-      ...(unit.bedrooms === undefined ? [] : [`${unit.bedrooms} ${unit.bedrooms === 1 ? "bedroom" : "bedrooms"}`]),
-      `${unit.bathrooms} ${unit.bathrooms === 1 ? "bathroom" : "bathrooms"}`,
-    ].join(" · "),
-  },
-  {
-    key: "amenities",
-    label: "Amenities",
-    value: (unit) => unit.amenities.length === 0 ? "None listed" : unit.amenities.map(guestAmenityLabel).join(" · "),
-  },
+  { key: "where", label: GUEST_FACT_LABELS.where, value: (unit) => `${unit.location.neighbourhood}, ${unit.location.city}` },
+  { key: "bedrooms", label: "Bedrooms", value: (unit) => unit.bedrooms === undefined ? "Not provided" : String(unit.bedrooms) },
+  { key: "bathrooms", label: "Bathrooms", value: (unit) => String(unit.bathrooms) },
+  { key: "sleeps", label: "Sleeps", value: (unit) => String(unit.capacity) },
 ];
 
 /** Plain-text comparison for fallbacks and conventional pages. */
@@ -422,11 +406,17 @@ export function compareArtifactToA2UI({ artifact, unitIds, surfaceId }: CompareA
     {
       id: "root",
       component: "Column",
-      children: ["compare-heading", ...(context === "" ? [] : ["compare-context"]), ...COMPARE_ATTRIBUTES.flatMap((attribute) => [`compare-${attribute.key}-label`, `compare-${attribute.key}-row`]), ...disclosureIds, "compare-back"],
+      children: ["compare-heading", ...(context === "" ? [] : ["compare-context"]), ...COMPARE_ATTRIBUTES.flatMap((attribute) => [`compare-${attribute.key}-label`, `compare-${attribute.key}-row`]), "compare-view-row", ...disclosureIds, "compare-back"],
     },
     { id: "compare-heading", component: "Text", text: `Compare ${units.length} stays`, variant: "h2" },
     ...(context === "" ? [] : [{ id: "compare-context", component: "Text" as const, text: context, variant: "caption" as const }]),
     ...rows,
+    // A "View" per stay opens it, the same event a result's View apartment sends.
+    { id: "compare-view-row", component: "Row", children: units.map((_, index) => `compare-view-${index}`) },
+    ...units.flatMap((unit, index): A2UIComponent[] => [
+      { id: `compare-view-${index}`, component: "Button", child: `compare-view-${index}-label`, action: { event: { name: VIEW_UNIT_EVENT, context: { artifactId: artifact.id, unitId: unit.id } } }, accessibility: { label: `View ${unit.title}` } },
+      { id: `compare-view-${index}-label`, component: "Text", text: "View" },
+    ]),
     ...artifact.disclosures.map((disclosure, index): A2UIComponent => ({ id: `compare-disclosure-${index}`, component: "Text", text: disclosure, variant: "caption" })),
     {
       id: "compare-back",

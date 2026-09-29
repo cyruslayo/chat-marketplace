@@ -74,8 +74,8 @@ test("Warm editorial conventional stay cards lead with real photos and separate 
     assert.match(html, /referrerpolicy="no-referrer"/);
     assert.match(html, /alt="Photo of /);
     assert.match(html, /class="ui-stay-card__facts"/);
-    assert.match(html, /All-In Stay Total(?: for \d+ nights?)? · all-in/);
-    assert.match(html, /Refundable Security Deposit \(separate\):/);
+    assert.match(html, /All-In Stay Total for \d+ nights?/);
+    assert.match(html, /\+ .[\d,]+ Refundable Security Deposit \(separate\)/);
     // The card styling is the shared kit, not inline page CSS (guest-ui-consistency issue 02).
     const foundations = await readFile(new URL("../apps/web/src/shortlet-foundations.css", import.meta.url), "utf8");
     assert.match(foundations, /\.ui-stay-card__photo \{[^}]*aspect-ratio: 4 \/ 3/);

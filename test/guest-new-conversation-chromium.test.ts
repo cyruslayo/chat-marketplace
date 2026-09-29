@@ -67,7 +67,7 @@ test("AC1 failure path: in real Chromium, with no live work, New conversation st
     await tab.focus("#composer-input");
     await tab.insertText("I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people");
     await tab.pressKey("Enter");
-    await tab.waitForText("View apartment", 10_000);
+    await tab.waitForSelector("#active-workspace .stay-card", 10_000);
     const original = await storedThread(tab);
     // ADR-0078: the header controls never scroll the page sideways at 320px.
     assert.equal(await tab.evaluate<boolean>("document.documentElement.scrollWidth <= document.documentElement.clientWidth"), true);

@@ -13,7 +13,9 @@ export async function sendRequest(browser: RealBrowserInstance, fixture: Fixture
   await tab.insertText("I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people");
   await tab.pressKey("Enter");
   for (const [button, next] of [["View apartment", "Request to Book"], ["Request to Book", "Review request"], ["Review request", "Submit Booking Request"], ["Submit Booking Request", "Waiting for"]] as const) {
-    await tab.waitForText(button, 10_000);
+    // On phones the results are compact rows and the cards stay hidden; the card's button still opens the stay (issue 05).
+    if (button === "View apartment") await tab.waitForSelector("#active-workspace .stay-card", 10_000);
+    else await tab.waitForText(button, 10_000);
     assert.equal(await tab.clickButton(button), true, button);
     await tab.waitForText(next, 10_000);
   }

@@ -703,7 +703,9 @@ export class LocalGuestApp {
     // The strip exists once the thread has criteria; its freshness is checked by `basedOn`.
     if (stage === CRITERIA_STAGE && thread.discoveryContext) thread.activeSurfaces.set(CRITERIA_STAGE, criteriaSurfaceId(thread.threadId));
     const activeSurfaceId = thread.activeSurfaces.get(stage);
-    if (!activeSurfaceId || activeSurfaceId !== event.surfaceId) {
+    // Guest UI consistency issue 05: the comparison offers a View per stay; it is the same authoritative view-unit event, sent from the current comparison.
+    const viewFromComparison = event.name === "shortlet.discovery.view-unit" && thread.activeSurfaces.get(COMPARE_STAGE) === event.surfaceId;
+    if (!viewFromComparison && (!activeSurfaceId || activeSurfaceId !== event.surfaceId)) {
       const duplicate = event.name === "shortlet.card-payment.verify-return" && thread.activeSurfaces.has(BOOKING_STAGE);
       this.#emitTransition(thread, duplicate ? "interaction.duplicate_command_rejected" : "interaction.stale_surface_rejected", {
         aggregateType: duplicate ? "payment" : "interaction_surface",
@@ -1487,6 +1489,7 @@ export class LocalGuestApp {
     // generated actions. "Back to results" re-presents the same artifact as a
     // new surface lifecycle (issue 08).
     this.#supersede(thread, DISCOVERY_STAGE);
+    this.#supersede(thread, COMPARE_STAGE);
     thread.activeSurfaces.set(UNIT_STAGE, surfaceId);
     this.#emitTransition(thread, "unit.selected", { aggregateType: "unit", aggregateId: unit.id, surfaceId });
     this.#emitTransition(thread, "unit.inspection.opened", { aggregateType: "unit", aggregateId: unit.id, surfaceId });
@@ -2536,29 +2539,15 @@ export function renderGuestShellHtml(): string {
     .guest-status--danger { color: var(--color-danger); background: var(--color-danger-surface); }
     .empty-state-title { margin-block: var(--space-2); }
     .stay-grid { display: grid !important; grid-template-columns: minmax(0, 1fr); gap: var(--space-4) !important; min-width: 0; }
-    .stay-card { min-width: 0; overflow: hidden; margin: 0 !important; padding: 0 !important; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-card); background: var(--color-surface); }
-    .stay-card__body { display: grid !important; min-width: 0; gap: var(--space-2) !important; padding: var(--space-3); }
-    .stay-card__body > * { min-width: 0; margin: 0 !important; }
-    .stay-card__body > img { width: 100% !important; max-width: none !important; margin: 0 !important; object-fit: cover !important; }
-    .stay-card__title { margin: 0 !important; font-family: var(--font-display); font-size: var(--font-size-h3) !important; line-height: var(--font-line-h3) !important; font-weight: 600 !important; }
-    .stay-card__location, .stay-card__amenities { color: var(--color-text-secondary); }
+    .stay-card { min-width: 0; margin: 0 !important; }
+    .stay-card > * { min-width: 0; }
     .stay-card__fit { color: var(--color-success); font-weight: 600; }
-    .stay-card__facts { display: flex !important; flex-wrap: wrap; gap: var(--space-2); margin: 0; color: var(--color-text-secondary); }
-    .stay-card__facts > span { display: inline-flex; min-block-size: var(--control-min-target); align-items: center; padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-pill); background: var(--color-surface-subtle); font-size: var(--font-size-small); }
-    .stay-card__deposit { color: var(--color-text-secondary); font-size: var(--font-size-small) !important; }
-    .stay-card__price-area { display: grid !important; gap: var(--space-1) !important; margin: 0 !important; }
-    .stay-card__price-area > * { margin: 0 !important; }
-    .stay-card__price-label { color: var(--color-text-secondary); font-size: var(--font-size-small) !important; line-height: var(--font-line-small) !important; }
-    .stay-card__price-total, .stay-card__body h3.stay-card__price-total { margin: 0 !important; font-family: var(--font-display); font-size: var(--font-size-money-total) !important; line-height: var(--font-line-money-total) !important; font-variant-numeric: tabular-nums; }
-    .stay-card__action { width: 100%; margin-top: var(--space-2); }
-    .stay-card__compare { width: 100%; }
-    /* Issue 13b: one row per attribute, one cell per stay, aligned by row. */
-    .compare-row { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: var(--space-3) !important; margin: 0 0 var(--space-3) !important; }
-    .compare-cell { min-width: 0; margin: 0 !important; padding: var(--space-2) var(--space-3) !important; border: 1px solid var(--color-border); border-radius: var(--radius-control); overflow-wrap: anywhere; }
-    .compare-cell > * { margin: 0 !important; }
-    .compare-cell__unit { display: block; color: var(--color-text-secondary); }
-    /* AC3 / ADR-0078: at narrow widths the stays stack under each attribute. */
-    @media (max-width: 29.999rem) { .compare-row { grid-template-columns: minmax(0, 1fr) !important; gap: var(--space-2) !important; } }
+    .stay-card__compare { justify-self: start; }
+    /* Issue 05: phones show the compact rows for the inline results; the cards open with "See all results". Wide screens show two cards per row. */
+    .ui-result-rows { margin-block-end: var(--space-3); }
+    #active-workspace[data-mode="focused-surface"] .ui-result-rows, #active-workspace[data-mode="focused-surface"] .ui-result-rows__compare { display: none; }
+    @media (max-width: 47.999rem) { #active-workspace[data-surface-kind="discovery"][data-mode="inline-surface"] .ui-result-rows ~ .stay-grid { display: none !important; } }
+    @media (min-width: 48rem) { .ui-result-rows, .ui-result-rows__compare { display: none; } #active-workspace[data-surface-kind="discovery"] .stay-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
     .unit-detail-root { display: grid !important; min-width: 0; gap: var(--space-4) !important; }
     ${LISTING_GALLERY_STYLE}
     .unit-gallery--fallback { padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface-subtle); }
@@ -2675,7 +2664,7 @@ export function renderGuestShellHtml(): string {
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to conversation</a>
-  <div class="app">
+  <div class="app guest-editorial">
     <header class="ui-appbar">
       <a class="header-identity ui-appbar__brand" href="/" aria-label="Shortlet home"><h1>Shortlet</h1></a>
       <span class="header-note">Abuja · Lagos</span>
@@ -2890,7 +2879,7 @@ export function renderConventionalSearchHtml(artifact: DiscoveryArtifactProjecti
   const cards = artifact.facts.results.map((unit) => {
     const route = artifact.actions.find((action) => action.type === "view-unit" && action.unitId === unit.id)?.conventionalRoute ?? `/stays/${encodeURIComponent(unit.id)}`;
     const photo = unit.photoUrls[0];
-    return `<li class="stay-result" data-unit-id="${escapeHtml(unit.id)}">${stayCardHtml({ href: route, title: unit.title, neighbourhood: unit.location.neighbourhood, city: unit.location.city, allInStayTotalKobo: unit.price.allInStayTotalKobo, refundableSecurityDepositKobo: unit.price.refundableSecurityDepositKobo, bedrooms: unit.bedrooms ?? null, bathrooms: unit.bathrooms, capacity: unit.capacity, ...(nights === undefined ? {} : { nights }), ...(photo === undefined ? {} : { photoSrc: photoUrl ? photoUrl(photo) : photo }) })}</li>`;
+    return `<li class="stay-result" data-unit-id="${escapeHtml(unit.id)}">${stayCardHtml({ href: route, title: unit.title, neighbourhood: unit.location.neighbourhood, city: unit.location.city, allInStayTotalKobo: unit.price.allInStayTotalKobo, refundableSecurityDepositKobo: unit.price.refundableSecurityDepositKobo, nightlyKobo: unit.price.nightlyKobo, bedrooms: unit.bedrooms ?? null, bathrooms: unit.bathrooms, capacity: unit.capacity, ...(nights === undefined ? {} : { nights }), ...(photo === undefined ? {} : { photoSrc: photoUrl ? photoUrl(photo) : photo }) })}</li>`;
   }).join("");
   const stay = typeof checkIn === "string" && typeof checkOut === "string" ? formatStayDates(checkIn, checkOut) : "";
   const summary = [discoverySummary(artifact.facts.filters).replace(/^Search updated( · )?/, ""), stay].filter(Boolean).join(" · ");
@@ -2898,18 +2887,29 @@ export function renderConventionalSearchHtml(artifact: DiscoveryArtifactProjecti
   const currentArea = SEARCH_AREAS.find((area) => area.city === filters.location && area.neighbourhood === filters.neighbourhood)?.id;
   const text = (value: unknown): string => typeof value === "string" ? escapeHtml(value) : "";
   // Issue 03a / ADR-0080: the strip's Where, When and Guests, editable without JavaScript.
-  const form = `<form class="ui-panel search-form" method="get" action="/stays/search" aria-label="Change your search">`
+  const form = `<form class="ui-panel search-form" id="change-search" method="get" action="/stays/search" aria-label="Change your search">`
     + `<div class="ui-field"><label class="ui-field__label" for="search-area">Where</label><select class="ui-input" id="search-area" name="area" required>${SEARCH_AREAS.map((area) => `<option value="${area.id}"${area.id === currentArea ? " selected" : ""}>${escapeHtml(area.label)}</option>`).join("")}</select></div>`
     + `<div class="ui-field"><label class="ui-field__label" for="search-check-in">Arrival date</label><input class="ui-input" id="search-check-in" name="checkIn" type="date" required value="${text(filters.checkIn)}"></div>`
     + `<div class="ui-field"><label class="ui-field__label" for="search-check-out">Departure date</label><input class="ui-input" id="search-check-out" name="checkOut" type="date" required value="${text(filters.checkOut)}"></div>`
     + `<div class="ui-field"><label class="ui-field__label" for="search-guests">Guests</label><input class="ui-input" id="search-guests" name="partySize" type="number" min="1" inputmode="numeric" required value="${typeof filters.partySize === "number" ? filters.partySize : ""}"></div>`
     + `<div class="ui-field"><label class="ui-field__label" for="search-budget">Budget for the stay (₦, optional)</label><p class="ui-field__hint" id="search-budget-hint">Compared with the ${GUEST_GLOSSARY.allInStayTotal}. The ${GUEST_GLOSSARY.refundableSecurityDeposit} is separate.</p><input class="ui-input" id="search-budget" name="budget" type="number" min="1" step="1" inputmode="numeric" aria-describedby="search-budget-hint" value="${typeof filters.maxPriceKobo === "number" ? Math.round(filters.maxPriceKobo / 100) : ""}"></div>`
     + `<button class="ui-button ui-button--primary" type="submit">Update search</button></form>`;
+  // Design: "N apartments in <area>", then the criteria as chips that jump to the search form below (works without JavaScript).
+  const areaLabel = SEARCH_AREAS.find((area) => area.city === filters.location && area.neighbourhood === filters.neighbourhood)?.label;
+  const count = artifact.facts.results.length;
+  const heading = count > 0 && areaLabel !== undefined ? `${count} ${count === 1 ? "apartment" : "apartments"} in ${areaLabel}` : discoveryFallbackMessage(artifact);
+  const chip = (iconName: "pin" | "calendar" | "users" | "plus", label: string, add = false): string => `<a class="ui-chip${add ? " ui-chip--add" : ""}" href="#change-search">${icon(iconName)}${escapeHtml(label)}</a>`;
+  const chips = `<div class="ui-row" role="group" aria-label="Your search">${[
+    areaLabel === undefined ? "" : chip("pin", areaLabel),
+    typeof checkIn === "string" && typeof checkOut === "string" ? chip("calendar", `${stay}${nights === undefined ? "" : ` · ${nights} ${nights === 1 ? "night" : "nights"}`}`) : "",
+    typeof filters.partySize === "number" ? chip("users", `${filters.partySize} ${filters.partySize === 1 ? "guest" : "guests"}`) : "",
+    typeof filters.maxPriceKobo === "number" ? chip("plus", `Budget ${formatNgnKobo(filters.maxPriceKobo)}`) : chip("plus", "Budget", true),
+  ].join("")}</div>`;
   return pageShell({
     title: "Search results · Shortlet",
     frame: appFrameHtml({ threadId: null, publicStep: "search" }),
     style: ".search-form{display:grid;gap:var(--space-3)}.stay-results{list-style:none;margin:0;padding:0;display:grid;gap:var(--space-4)}",
-    body: `<div class="guest-editorial"><header class="ui-page__header" data-page="stay-search"><p class="ui-eyebrow">Search results</p><h1>${escapeHtml(discoveryFallbackMessage(artifact))}</h1>${summary ? `<p>${escapeHtml(summary)}</p>` : ""}</header>${form}${cards ? `<ul class="stay-results" aria-label="Stay search results">${cards}</ul>` : ""}<p><a class="ui-button ui-button--primary" href="/">Back to your conversation</a></p></div>`,
+    body: `<div class="guest-editorial"><header class="ui-page__header" data-page="stay-search"><p class="ui-eyebrow">Stays that fit your trip</p><h1>${escapeHtml(heading)}</h1>${summary ? `<p>${escapeHtml(summary)}</p>` : ""}</header>${chips}${form}${cards ? `<ul class="stay-results" aria-label="Stay search results">${cards}</ul>` : ""}<p><a class="ui-button ui-button--primary" href="/">Back to your conversation</a></p></div>`,
   });
 }
 

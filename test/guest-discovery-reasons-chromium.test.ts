@@ -5,12 +5,14 @@ import { restartFixture } from "./helpers/guest-restart.js";
 
 /** Each card's width against the transcript column and the results list it sits in. */
 async function widths(tab: RealBrowserTab) {
-  return await tab.evaluate<{ readonly cards: readonly number[]; readonly list: number; readonly transcript: number; readonly overflow: boolean }>(`(() => {
+  return await tab.evaluate<{ readonly cards: readonly number[]; readonly rows: readonly number[]; readonly rowList: number; readonly list: number; readonly transcript: number; readonly overflow: boolean }>(`(() => {
     const list = document.querySelector('#active-workspace .stay-grid');
     const transcript = document.getElementById('transcript');
     const style = getComputedStyle(transcript);
     return {
       cards: [...document.querySelectorAll('#active-workspace .stay-card')].map((card) => card.getBoundingClientRect().width),
+      rows: [...document.querySelectorAll('#active-workspace .ui-result-row')].map((row) => row.getBoundingClientRect().width),
+      rowList: document.querySelector('#active-workspace .ui-result-rows')?.getBoundingClientRect().width ?? 0,
       list: list ? list.getBoundingClientRect().width : 0,
       transcript: transcript.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
       overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
@@ -18,7 +20,7 @@ async function widths(tab: RealBrowserTab) {
   })()`);
 }
 
-test("AC4: The card fills the transcript column width", async () => {
+test("AC4: The result rows fill the transcript column width on phones, and the cards sit two to a row on wide screens", async () => {
   const fixture = await restartFixture();
   const browser = await launchRealBrowser();
   try {
@@ -42,15 +44,19 @@ test("AC4: The card fills the transcript column width", async () => {
     await tab.waitForSelector("#active-workspace .stay-card", 10_000);
     assert.match(await tab.evaluate<string>("document.querySelector('.stay-card__fit')?.textContent ?? ''"), /^Why it fits: /);
 
-    for (const [width, height] of [[375, 812], [1280, 800]] as const) {
-      await tab.setCssViewport(width, height);
-      const measured = await widths(tab);
-      assert.ok(measured.cards.length >= 2, JSON.stringify(measured));
-      // Failure path: a two-column grid would make each card about half the list.
-      for (const card of measured.cards) assert.ok(Math.abs(card - measured.list) <= 1, `${width}px: card ${card} vs list ${measured.list}`);
-      assert.ok(measured.list >= measured.transcript - 2 * 24 - 2, `${width}px: list ${measured.list} vs transcript column ${measured.transcript}`);
-      assert.equal(measured.overflow, false);
-    }
+    // Phones show one compact row per result; wide screens show two cards per row (issue 05).
+    await tab.setCssViewport(375, 812);
+    const phone = await widths(tab);
+    assert.ok(phone.rows.length >= 2, JSON.stringify(phone));
+    for (const row of phone.rows) assert.ok(Math.abs(row - phone.rowList) <= 1, `375px: row ${row} vs list ${phone.rowList}`);
+    assert.ok(phone.rowList >= phone.transcript - 2 * 24 - 2, `375px: list ${phone.rowList} vs transcript column ${phone.transcript}`);
+    assert.equal(phone.overflow, false);
+    await tab.setCssViewport(1280, 800);
+    const wide = await widths(tab);
+    assert.ok(wide.cards.length >= 2, JSON.stringify(wide));
+    // Failure path: a single column would make each card as wide as the list.
+    for (const card of wide.cards) assert.ok(card < wide.list * 0.6, `1280px: card ${card} vs list ${wide.list}`);
+    assert.equal(wide.overflow, false);
   } finally {
     await browser.close();
     await fixture.close();

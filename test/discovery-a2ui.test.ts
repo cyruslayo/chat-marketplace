@@ -104,7 +104,7 @@ test("AC3: dated pricing displays the canonical All-In Stay Total", () => {
   assert.equal(artifact.facts.results[0].price.allInStayTotalKobo, 18_000_000);
   const text = resolvedText(processMessages(discoveryArtifactToA2UI({ artifact, surfaceId: SURFACE_ID }))).join("\n");
   assert.match(text, /All-In Stay Total/);
-  assert.match(text, /All-In Stay Total\n₦180,000\nFor 2 nights · all-in/);
+  assert.match(text, /All-In Stay Total for 2 nights\n₦180,000/);
   assert.match(text, /₦180,000/);
   assert.doesNotMatch(text, /All-In Stay Total: ₦85,000/);
 });
@@ -116,7 +116,7 @@ test("AC4: undated pricing is clearly indicative", () => {
   assert.match(text, /Indicative nightly rate\n₦85,000/);
   assert.doesNotMatch(text, /All-In Stay Total: ₦85,000/);
   assert.match(text, /Rates without dates and party size are indicative/);
-  assert.match(text, /Refundable Security Deposit: ₦20,000/);
+  assert.match(text, /Refundable Security Deposit \(separate\): ₦20,000/);
 });
 
 test("AC5: a zero-result artifact resolves successfully without View apartment actions", () => {

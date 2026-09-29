@@ -114,7 +114,7 @@ test("AC9: An apartment within budget only before its deposit is still listed, w
     const surface = result.surfaces[0]!;
     assert.deepEqual(unitIds(surface), [LEKKI, IKOYI]);
     assert.equal(note(surface, IKOYI), "Within your ₦380,000 budget (All-In Stay Total). The Refundable Security Deposit is paid separately, so the total to complete booking is ₦390,000.");
-    assert.ok(texts(surface.a2uiMessages).some((component) => component.id === `unit-${IKOYI}-deposit` && component.text === "Refundable Security Deposit: ₦20,000"));
+    assert.ok(texts(surface.a2uiMessages).some((component) => component.id === `unit-${IKOYI}-deposit` && component.text === "Refundable Security Deposit (separate): ₦20,000"));
     // Failure path: a unit whose deposit stays inside the budget gets no deposit warning.
     assert.equal(note(surface, LEKKI), "Within your ₦380,000 budget (All-In Stay Total).");
   } finally { await fixture.close(); }

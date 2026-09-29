@@ -102,7 +102,7 @@ test("AC3: icon() renders each new icon as a decorative aria-hidden inline SVG",
 });
 
 test("AC4: every guest-kit helper escapes its text fields", () => {
-  const preview = { href: `/stays/${XSS}`, title: XSS, neighbourhood: XSS, city: XSS, allInStayTotalKobo: 100_000_00, refundableSecurityDepositKobo: 50_000_00, photoSrc: `/photos/${XSS}`, unitId: XSS };
+  const preview = { href: `/stays/${XSS}`, title: XSS, neighbourhood: XSS, city: XSS, allInStayTotalKobo: 100_000_00, refundableSecurityDepositKobo: 50_000_00, bedrooms: 1, bathrooms: 1, capacity: 2, nightlyKobo: 1_000_00, nights: 2, photoSrc: `/photos/${XSS}`, unitId: XSS };
   const journey = projectJourney("request", { kind: "declined", label: XSS });
   const outputs: Readonly<Record<string, string>> = {
     ticket: stayTicketHtml({ unitTitle: XSS, checkIn: XSS, checkOut: XSS, nights: 2, guestCount: 2, arrivalTime: XSS, checkoutTime: XSS }),
@@ -111,7 +111,7 @@ test("AC4: every guest-kit helper escapes its text fields", () => {
     steps: stepsHtml([XSS]),
     status: statusHtml("warning", XSS),
     bank: bankDetailsHtml({ bankName: XSS, accountName: XSS, accountNumber: XSS, amountKobo: 100_00, bookingReference: XSS }),
-    card: stayCardHtml({ ...preview, bedrooms: 1, bathrooms: 1, capacity: 2, nights: 2 }),
+    card: stayCardHtml(preview),
     row: resultRowHtml(preview),
     rail: railHtml(journey),
     appBar: appBarHtml({ backHref: XSS, backLabel: XSS, action: { href: XSS, label: XSS, icon: "plus" } }),

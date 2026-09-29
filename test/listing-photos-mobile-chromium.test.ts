@@ -9,7 +9,7 @@ const PHOTO_URLS = [
 ];
 
 async function waitForImageReadiness(tab: RealBrowserTab, expectedCount: number, description: string): Promise<void> {
-  const expression = `(() => { const images = [...document.images]; return images.length === ${expectedCount} && images.every((img) => img.complete && img.naturalWidth > 0 && img.naturalHeight > 0); })()`;
+  const expression = `(() => { const images = [...document.images].filter((img) => img.getClientRects().length > 0); return images.length === ${expectedCount} && images.every((img) => img.complete && img.naturalWidth > 0 && img.naturalHeight > 0); })()`;
   try {
     await tab.waitForFunction(expression, 15000);
   } catch (error) {
@@ -57,13 +57,16 @@ for (const width of [320, 390]) {
     const context = await createListingPhotoContext(PHOTO_URLS, width);
     try {
       await sendSearch(context);
+      // Phones show compact rows for the inline results (issue 05); the stay card, with its photo, opens with "See all results".
+      assert.equal(await context.tab.clickButton("See all results"), true);
+      await context.tab.waitForSelector('#active-workspace[data-mode="focused-surface"] .stay-card', 10_000);
       await waitForImageReadiness(context.tab, 1, "the discovery primary image");
-      const discovery = await context.tab.evaluate<{ readonly images: number; readonly src: string | null; readonly documentWidth: number }>("(() => ({ images: document.images.length, src: document.querySelector('img')?.getAttribute('src') || null, documentWidth: document.documentElement.scrollWidth }))()");
+      const discovery = await context.tab.evaluate<{ readonly images: number; readonly src: string | null; readonly documentWidth: number }>("(() => ({ images: [...document.images].filter((img) => img.getClientRects().length > 0).length, src: [...document.images].filter((img) => img.getClientRects().length > 0)[0]?.getAttribute('src') || null, documentWidth: document.documentElement.scrollWidth }))()");
       assert.equal(discovery.images, 1);
       assert.equal(discovery.src, PHOTO_URLS[0]);
       assert.ok(discovery.documentWidth <= width);
 
-      await context.tab.evaluate(`(() => { const image = document.querySelector('img'); if (!(image instanceof HTMLImageElement)) throw new Error('Primary listing image is missing'); image.src = ${JSON.stringify(context.imageFixture.brokenUrl)}; })()`);
+      await context.tab.evaluate(`(() => { const image = [...document.images].filter((img) => img.getClientRects().length > 0)[0]; if (!(image instanceof HTMLImageElement)) throw new Error('Primary listing image is missing'); image.src = ${JSON.stringify(context.imageFixture.brokenUrl)}; })()`);
       await waitForBrokenImageFallback(context.tab);
       const afterFailure = await context.tab.evaluate<{ readonly critical: boolean; readonly fallback: boolean; readonly fallbackBox: { readonly width: number; readonly height: number; readonly role: string | null; readonly name: string | null } | null; readonly documentWidth: number }>(`(() => { const box = document.querySelector('.photo-fallback'); const rect = box?.getBoundingClientRect(); return { critical: document.body.innerText.includes(${JSON.stringify(context.unitTitle)}), fallback: document.body.innerText.includes('Photo unavailable'), fallbackBox: box && rect ? { width: rect.width, height: rect.height, role: box.getAttribute('role'), name: box.getAttribute('aria-label') } : null, documentWidth: document.documentElement.scrollWidth }; })()`);
       assert.equal(afterFailure.critical, true);

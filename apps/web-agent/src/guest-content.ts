@@ -262,6 +262,7 @@ export const GUEST_FACT_LABELS = Object.freeze({
   /** "Stay: 3 nights · 2 guests": the length of the stay and the party, as the ticket's foot line. */
   stay: "Stay",
   stayDates: "Stay dates",
+  where: "Where",
   /** Named occupants, shown under the ticket only when the Guest gave real names. */
   guests: "Guests",
   allInStayTotal: GUEST_GLOSSARY.allInStayTotal,
@@ -283,4 +284,10 @@ export function guestFactValue(text: string, label: string): string | undefined 
   const prefix = `${label}: `;
   const trimmed = text.trim();
   return trimmed.startsWith(prefix) ? trimmed.slice(prefix.length) : undefined;
+}
+
+/** The label under a stay's money figure: the All-In Stay Total for the searched nights, or the indicative nightly rate when unquoted. */
+export function stayTotalLabel(quoted: boolean, nights?: number): string {
+  if (!quoted) return "Indicative nightly rate";
+  return nights === undefined || nights <= 0 ? GUEST_GLOSSARY.allInStayTotal : `${GUEST_GLOSSARY.allInStayTotal} for ${nights} ${nights === 1 ? "night" : "nights"}`;
 }

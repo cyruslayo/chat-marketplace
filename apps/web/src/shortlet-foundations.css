@@ -446,6 +446,7 @@
   /* 320px reflow (ADR 0078): two rows of three rather than six cramped columns. */
   @media (max-width: 22.999rem) { .ui-rail { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: var(--space-2); } }
 
+  a.ui-chip { color: var(--color-text); text-decoration: none; }
   .ui-chip--add { border-style: dashed; color: var(--color-text-secondary); }
   .guest-editorial .ui-chip[aria-pressed="true"] { border-color: var(--color-action); background: var(--color-action); color: var(--color-on-action); }
   .ui-fact { display: inline-flex; min-block-size: 2rem; align-items: center; gap: var(--space-2); padding: 0 var(--space-3); border-radius: var(--radius-pill); background: var(--color-surface-subtle); color: var(--color-text-secondary); font-size: 0.8125rem; }
@@ -474,6 +475,21 @@
   .ui-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
   .ui-tiles__tile { display: flex; flex-direction: column; align-items: center; gap: var(--space-1); padding: var(--space-3) var(--space-2); border-radius: var(--radius-card); background: var(--color-surface-subtle); color: var(--color-text-secondary); font-size: 0.8125rem; text-align: center; }
   .ui-tiles__tile > .ui-icon { color: var(--color-action); }
+
+  .ui-result-rows { display: grid; gap: var(--space-3); }
+  .ui-compare { overflow: hidden; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-workspace); background: var(--color-surface); font-size: var(--font-size-small); }
+  .ui-compare__row { display: grid; grid-template-columns: 6rem repeat(2, minmax(0, 1fr)); border-block-end: 1px solid var(--color-border-subtle); }
+  .ui-compare__row:last-child { border-block-end: 0; }
+  .ui-compare__row > * { min-inline-size: 0; margin: 0; padding: var(--space-2) var(--space-3); overflow-wrap: anywhere; }
+  .ui-compare__key { background: var(--color-canvas); color: var(--color-text-muted); font: inherit; font-size: var(--font-size-metadata); }
+  .ui-compare__head { font-family: var(--font-display); font-weight: 600; }
+  .ui-compare__cell { display: flex; flex-direction: column; gap: var(--space-1); font-variant-numeric: tabular-nums; }
+  .ui-compare__cell > small { display: none; }
+  @media (max-width: 29.999rem) {
+    .ui-compare__row { grid-template-columns: minmax(0, 1fr); }
+    .ui-compare__row--head { display: none; }
+    .ui-compare__cell > small { display: block; }
+  }
 
   .ui-price-breakdown { gap: var(--space-3); }
   .ui-price-breakdown p { margin: 0; }

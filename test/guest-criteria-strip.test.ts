@@ -163,7 +163,7 @@ test("ADR-0080: the conventional search page edits the same criteria without Jav
   const fixture = await restartFixture();
   try {
     const page = await (await fetch(`${fixture.base}/stays/search?location=Lagos&neighbourhood=Old+Ikoyi&checkIn=2026-09-10&checkOut=2026-09-13&partySize=2`)).text();
-    assert.match(page, /<form class="ui-panel search-form" method="get" action="\/stays\/search"/);
+    assert.match(page, /<form class="ui-panel search-form" id="change-search" method="get" action="\/stays\/search"/);
     assert.match(page, /<option value="old-ikoyi" selected>Old Ikoyi, Lagos<\/option>/);
     assert.match(page, /name="checkIn" type="date" required value="2026-09-10"/);
     const byArea = await fetch(`${fixture.base}/stays/search?area=lekki-phase-1&checkIn=2026-09-10&checkOut=2026-09-13&partySize=2`);

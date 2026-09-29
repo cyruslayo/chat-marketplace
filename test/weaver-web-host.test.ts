@@ -75,7 +75,7 @@ test("AC2 — Real discovery rendering", () => {
   assert.equal(mounted.ok, true);
   assert.match(target.textContent ?? "", /Sunlit 2-bedroom apartment in Ikeja/);
   assert.match(target.textContent ?? "", /Lagos/);
-  assert.match(target.textContent ?? "", /All-In Stay Total\s*₦180,000/);
+  assert.match(target.textContent ?? "", /All-In Stay Total for 2 nights\s*₦180,000/);
   assert.match(target.textContent ?? "", /View apartment/);
 });
 

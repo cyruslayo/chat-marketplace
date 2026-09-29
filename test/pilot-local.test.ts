@@ -303,7 +303,7 @@ test("Exact screenshot conversation — Lagos → 2 nights from 29 Sept and 2 gu
     const expectedAllIn = unit.price.nightlyKobo * 2 + (unit.price.mandatoryFeesKobo ?? 0);
     const workspaceText = await guest.evaluate<string>("document.getElementById('active-workspace').innerText");
     assert.ok(workspaceText.includes(unit.title), "rendered surface shows the authoritative Unit title");
-    assert.match(workspaceText, new RegExp(`All-In Stay Total\\s+${formatNgnKobo(expectedAllIn)}`), `rendered surface shows the authoritative All-In Stay Total: ${workspaceText.slice(0, 400)}`);
+    assert.match(workspaceText, new RegExp(`${formatNgnKobo(expectedAllIn)}\\s+All-In Stay Total`), `rendered surface shows the authoritative All-In Stay Total: ${workspaceText.slice(0, 400)}`);
     const durationPreserved = workspaceText.includes("29 Sept 2026 – 1 Oct 2026");
     assert.equal(durationPreserved, true, "the accumulated two-night duration controls the stay dates");
     conversationalProof = { weaver: true, unitIdMatches: true, priceMatches: true, durationPreserved, noRepeat };

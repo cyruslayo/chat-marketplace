@@ -66,10 +66,10 @@ test("AC2: Choosing Compare on two results shows price, capacity and amenities a
     const results = (fixture.environment.discoveryQuery.search({ location: "Lagos", checkIn: "2026-09-10", checkOut: "2026-09-13", partySize: 2 }).facts.results) as readonly DiscoveryUnitProjection[];
     const units = [first, second].map((id) => results.find((unit) => unit.id === id)!);
 
-    // Price, capacity and amenities appear in that order, one row each.
-    const order = byId.get("root")!.children!.filter((id) => id.endsWith("-row"));
+    // Price, deposit, where, bedrooms, bathrooms and sleeps appear in that order, one row each.
+    const order = byId.get("root")!.children!.filter((id) => id.endsWith("-row") && id !== "compare-view-row");
     assert.deepEqual(order, COMPARE_ATTRIBUTES.map((attribute) => `compare-${attribute.key}-row`));
-    assert.deepEqual(COMPARE_ATTRIBUTES.map((attribute) => attribute.key), ["price", "deposit", "capacity", "amenities"]);
+    assert.deepEqual(COMPARE_ATTRIBUTES.map((attribute) => attribute.key), ["price", "deposit", "where", "bedrooms", "bathrooms", "sleeps"]);
     for (const attribute of COMPARE_ATTRIBUTES) {
       const row = byId.get(`compare-${attribute.key}-row`)!;
       assert.equal(row.component, "Row");
@@ -82,8 +82,10 @@ test("AC2: Choosing Compare on two results shows price, capacity and amenities a
     units.forEach((unit, index) => {
       // ADR-0015: the price is the All-In Stay Total for these dates and guests.
       assert.equal(byId.get(`compare-price-${index}-value`)!.text, formatNgnKobo(unit.price.allInStayTotalKobo!));
-      assert.match(byId.get(`compare-capacity-${index}-value`)!.text!, new RegExp(`^Sleeps ${unit.capacity}`));
-      assert.equal(byId.get(`compare-amenities-${index}-value`)!.text, unit.amenities.map(guestAmenityLabel).join(" · "));
+      assert.equal(byId.get(`compare-sleeps-${index}-value`)!.text, String(unit.capacity));
+      assert.equal(byId.get(`compare-where-${index}-value`)!.text, `${unit.location.neighbourhood}, ${unit.location.city}`);
+      // ADR-0016: the deposit is its own row, never folded into the price.
+      assert.equal(byId.get(`compare-deposit-${index}-value`)!.text, formatNgnKobo(unit.price.refundableSecurityDepositKobo));
     });
     assert.equal(byId.get("compare-price-label")!.text, "All-In Stay Total");
     assert.ok(view.textFallback?.includes(units[0]!.title) && view.textFallback.includes(units[1]!.title));

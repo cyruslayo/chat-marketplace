@@ -3,7 +3,7 @@
  * pages call these helpers, and the chat organizers in client.ts produce the same DOM and classes from Weaver output.
  * Styling lives in apps/web/src/shortlet-foundations.css (`ui-*`). Every value is escaped here; helpers never build URLs.
  */
-import { GUEST_FACT_LABELS, GUEST_GLOSSARY, GUEST_JOURNEY } from "../../web-agent/src/guest-content.js";
+import { GUEST_FACT_LABELS, GUEST_GLOSSARY, GUEST_JOURNEY, stayTotalLabel } from "../../web-agent/src/guest-content.js";
 import { formatNgnKobo } from "../../web-agent/src/discovery-a2ui.js";
 import { formatBookingDeadline, formatStayFoot, formatTicketDate } from "../../web-agent/src/booking-presentation.js";
 import { escapeHtml, icon, statusBadge, type IconName } from "../../web/src/ui-kit.js";
@@ -136,42 +136,90 @@ export function bankDetailsHtml(input: BankDetailsInput): string {
   return `<dl class="ui-facts ui-facts--stacked"><dt>Bank</dt><dd>${escapeHtml(input.bankName)}</dd>${input.accountName === undefined ? "" : `<dt>Account name</dt><dd>${escapeHtml(input.accountName)}</dd>`}<dt>Account number</dt><dd class="transfer-account">${escapeHtml(input.accountNumber)}${copyAccountNumberHtml(input.accountNumber)}</dd><dt>Exact amount</dt><dd class="ui-money-total">${formatNgnKobo(input.amountKobo)}</dd>${input.bookingReference === undefined ? "" : `<dt>Booking reference</dt><dd class="transfer-reference">${escapeHtml(input.bookingReference)}</dd>`}</dl>`;
 }
 
-export interface StayPreview {
+/** Display text for a stay card or result row. The chat organizer builds it from label-prefixed Texts, the pages from the projection. */
+export interface StayCardParts {
   /** A route the caller has already validated; escaped here, never built here. */
+  readonly href: string;
+  readonly title: string;
+  /** Neighbourhood-level only (ADR 0066). */
+  readonly where: string;
+  readonly facts: readonly { readonly icon: "bed" | "bath" | "users"; readonly text: string }[];
+  /** The money figure, then its label (ADR 0015: the All-In Stay Total leads). */
+  readonly total: string;
+  readonly totalLabel: string;
+  /** The deposit amount alone; rendered as "+ <amount> Refundable Security Deposit (separate)". */
+  readonly deposit?: string;
+  /** A photo URL the caller already routed through the no-referrer photo proxy (ADR 0075). */
+  readonly photoSrc?: string;
+}
+
+function stayPhotoHtml(parts: StayCardParts): string {
+  return parts.photoSrc === undefined
+    ? `<div class="ui-stay-card__photo ui-stay-card__photo--empty" role="img" aria-label="Photos are not available for ${escapeHtml(parts.title)}">${icon("photo")}Photos not available</div>`
+    : `<img class="ui-stay-card__photo" src="${escapeHtml(parts.photoSrc)}" alt="Photo of ${escapeHtml(parts.title)}" width="800" height="600" loading="lazy" decoding="async" referrerpolicy="no-referrer">`;
+}
+
+/** What is inside a stay card; the chat puts this inside Weaver's Card element, the pages inside an article. */
+export function stayCardInnerHtml(parts: StayCardParts): string {
+  const href = escapeHtml(parts.href);
+  const facts = parts.facts.map((fact) => `<span class="ui-fact">${icon(fact.icon)}${escapeHtml(fact.text)}</span>`).join("");
+  const deposit = parts.deposit === undefined ? "" : `<p class="ui-money-metadata">+ ${escapeHtml(parts.deposit)} ${GUEST_FACT_LABELS.refundableSecurityDeposit}</p>`;
+  return `${stayPhotoHtml(parts)}<p class="ui-stay-card__where">${icon("pin")}${escapeHtml(parts.where)}</p><h2 class="ui-stay-card__title"><a href="${href}">${escapeHtml(parts.title)}</a></h2><div class="ui-stay-card__facts" aria-label="Stay facts">${facts}</div><div class="ui-stay-card__total"><p class="ui-money-total">${escapeHtml(parts.total)}</p><p class="ui-money-metadata">${escapeHtml(parts.totalLabel)}</p>${deposit}</div><a class="ui-button ui-button--primary ui-button--block ui-stay-card__view" href="${href}">${GUEST_GLOSSARY.viewUnit}<span class="ui-sr-only">: ${escapeHtml(parts.title)}</span></a>`;
+}
+
+export function stayCardPartsHtml(parts: StayCardParts, unitId?: string): string {
+  return `<article class="ui-stay-card"${unitId === undefined ? "" : ` data-unit-id="${escapeHtml(unitId)}"`}>${stayCardInnerHtml(parts)}</article>`;
+}
+
+/** The compact result row: thumbnail, title, the All-In Stay Total with its label, and a chevron. */
+export function resultRowPartsHtml(parts: StayCardParts): string {
+  const thumb = parts.photoSrc === undefined
+    ? icon("photo")
+    : `<img src="${escapeHtml(parts.photoSrc)}" alt="" width="64" height="64" loading="lazy" decoding="async" referrerpolicy="no-referrer">`;
+  return `<a class="ui-result-row" href="${escapeHtml(parts.href)}"><span class="ui-result-row__thumb">${thumb}</span><span class="ui-result-row__body"><span class="ui-result-row__title">${escapeHtml(parts.title)}</span><span class="ui-result-row__price">${escapeHtml(parts.total)} <span>${escapeHtml(parts.totalLabel)}</span></span></span>${icon("chevron-right")}</a>`;
+}
+
+/** A search result as the pages know it (the projection), before it is turned into display text. */
+export interface StayPreview {
   readonly href: string;
   readonly title: string;
   readonly neighbourhood: string;
   readonly city: string;
+  readonly bedrooms: number | null;
+  readonly bathrooms: number;
+  readonly capacity: number;
   /** All-In Stay Total, or null when not yet quoted. */
   readonly allInStayTotalKobo: number | null;
+  readonly nightlyKobo: number;
   readonly refundableSecurityDepositKobo: number;
   readonly nights?: number;
-  /** A photo URL the caller already routed through the no-referrer photo proxy (ADR 0075). */
   readonly photoSrc?: string;
   readonly unitId?: string;
 }
 
-function stayPhotoHtml(preview: StayPreview): string {
-  return preview.photoSrc === undefined
-    ? `<div class="ui-stay-card__photo ui-stay-card__photo--empty" role="img" aria-label="Photos are not available for ${escapeHtml(preview.title)}">${icon("photo")}Photos not available</div>`
-    : `<img class="ui-stay-card__photo" src="${escapeHtml(preview.photoSrc)}" alt="Photo of ${escapeHtml(preview.title)}" width="800" height="600" loading="lazy" decoding="async" referrerpolicy="no-referrer">`;
+export function stayCardParts(preview: StayPreview): StayCardParts {
+  return {
+    href: preview.href,
+    title: preview.title,
+    where: `${preview.neighbourhood}, ${preview.city}`,
+    facts: [
+      ...(preview.bedrooms === null ? [] : [{ icon: "bed" as const, text: `${preview.bedrooms} ${preview.bedrooms === 1 ? "bedroom" : "bedrooms"}` }]),
+      { icon: "bath", text: `${preview.bathrooms} ${preview.bathrooms === 1 ? "bathroom" : "bathrooms"}` },
+      { icon: "users", text: `Sleeps ${preview.capacity}` },
+    ],
+    total: formatNgnKobo(preview.allInStayTotalKobo ?? preview.nightlyKobo),
+    totalLabel: stayTotalLabel(preview.allInStayTotalKobo !== null, preview.nights),
+    ...(preview.refundableSecurityDepositKobo > 0 ? { deposit: formatNgnKobo(preview.refundableSecurityDepositKobo) } : {}),
+    ...(preview.photoSrc === undefined ? {} : { photoSrc: preview.photoSrc }),
+  };
 }
 
-/** The full stay card: photo, place, facts, All-In Stay Total, deposit and one action. */
-export function stayCardHtml(preview: StayPreview & { readonly bedrooms: number | null; readonly bathrooms: number; readonly capacity: number }): string {
-  const total = preview.allInStayTotalKobo === null ? "not yet quoted" : formatNgnKobo(preview.allInStayTotalKobo);
-  const nights = preview.nights === undefined ? "" : ` for ${preview.nights} ${preview.nights === 1 ? "night" : "nights"}`;
-  const href = escapeHtml(preview.href);
-  return `<article class="ui-stay-card"${preview.unitId === undefined ? "" : ` data-unit-id="${escapeHtml(preview.unitId)}"`}>${stayPhotoHtml(preview)}<p class="ui-stay-card__where">${icon("pin")}${escapeHtml(preview.neighbourhood)}, ${escapeHtml(preview.city)}</p><h2 class="ui-stay-card__title"><a href="${href}">${escapeHtml(preview.title)}</a></h2><div class="ui-stay-card__facts" aria-label="Stay facts"><span class="ui-fact">${icon("bed")}${preview.bedrooms ?? "Bedrooms not provided"} ${preview.bedrooms === 1 ? "bedroom" : "bedrooms"}</span><span class="ui-fact">${icon("bath")}${preview.bathrooms} ${preview.bathrooms === 1 ? "bathroom" : "bathrooms"}</span><span class="ui-fact">${icon("users")}Entire Place · ${preview.capacity} guests</span></div><div class="ui-stay-card__total"><p class="ui-price-breakdown__label">${GUEST_GLOSSARY.allInStayTotal}${nights} · all-in</p><p class="ui-money-total">${total}</p><p class="ui-money-metadata">${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(preview.refundableSecurityDepositKobo)}</p><a class="ui-button ui-button--primary ui-button--block" href="${href}">${GUEST_GLOSSARY.viewUnit}<span class="ui-sr-only">: ${escapeHtml(preview.title)}</span></a></div></article>`;
+export function stayCardHtml(preview: StayPreview): string {
+  return stayCardPartsHtml(stayCardParts(preview), preview.unitId);
 }
 
-/** The compact result row used for the long list in chat results. */
 export function resultRowHtml(preview: StayPreview): string {
-  const total = preview.allInStayTotalKobo === null ? "not yet quoted" : formatNgnKobo(preview.allInStayTotalKobo);
-  const thumb = preview.photoSrc === undefined
-    ? icon("photo")
-    : `<img src="${escapeHtml(preview.photoSrc)}" alt="" width="64" height="64" loading="lazy" decoding="async" referrerpolicy="no-referrer">`;
-  return `<a class="ui-result-row" href="${escapeHtml(preview.href)}"><span class="ui-result-row__thumb">${thumb}</span><span class="ui-result-row__body"><span class="ui-result-row__title">${escapeHtml(preview.title)}</span><span class="ui-result-row__where">${escapeHtml(preview.neighbourhood)}, ${escapeHtml(preview.city)}</span><span class="ui-result-row__price">${total} <span>${GUEST_GLOSSARY.allInStayTotal}</span></span></span>${icon("chevron-right")}</a>`;
+  return resultRowPartsHtml(stayCardParts(preview));
 }
 
 const JOURNEY_STATE_TEXT: Readonly<Record<JourneyStepState, string>> = {

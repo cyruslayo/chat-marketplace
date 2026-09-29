@@ -7,7 +7,7 @@ import { createBasicWebRuntime } from "@weaver/web";
 import { icon } from "../../web/src/ui-kit.js";
 import { buildListingGallery, enhanceListingGallery, watchPhotoFailure } from "./listing-gallery.js";
 import { GUEST_FACT_LABELS, GUEST_GLOSSARY, GUEST_NEW_CONVERSATION, guestFactValue, guestNewConversationCopy, type GuestCommittedWorkKind } from "../../web-agent/src/guest-content.js";
-import { breakdownHtml, ticketHtml } from "./guest-kit.js";
+import { breakdownHtml, resultRowPartsHtml, stayCardInnerHtml, ticketHtml, type StayCardParts } from "./guest-kit.js";
 import {
   canUseSurfaceActions,
   closeFocusedSurface,
@@ -322,70 +322,201 @@ function organizeBookingTicket(mount: HTMLElement): void {
   }), [condition, total.element, deposit?.element, due?.element, paid?.element]);
 }
 
+/** The Units a discovery surface offers, in the order its cards are shown, from the view-unit actions the server generated. */
+function viewUnitIds(payload: GuestSurfacePayload | undefined): readonly string[] {
+  const ids: string[] = [];
+  for (const message of payload?.a2uiMessages ?? []) {
+    if (!isRecord(message) || !isRecord(message.updateComponents) || !Array.isArray(message.updateComponents.components)) continue;
+    for (const component of message.updateComponents.components) {
+      if (!isRecord(component) || !isRecord(component.action) || !isRecord(component.action.event)) continue;
+      const context = component.action.event.context;
+      if (component.action.event.name === "shortlet.discovery.view-unit" && isRecord(context) && typeof context.unitId === "string") ids.push(context.unitId);
+    }
+  }
+  return ids;
+}
+
+function factIcon(text: string): "bed" | "bath" | "users" {
+  return text.includes("bedroom") ? "bed" : text.includes("bathroom") ? "bath" : "users";
+}
+
+/** Sends the same view-unit event as the card's View apartment button; the link keeps working without JavaScript. */
+function openStayFrom(link: HTMLElement, viewButton: HTMLButtonElement | undefined): void {
+  if (!viewButton) return;
+  link.addEventListener("click", (event) => {
+    event.preventDefault();
+    viewButton.click();
+  });
+}
+
+/**
+ * Guest UI consistency issue 05: each Weaver stay Card becomes the shared `.ui-stay-card` (the same markup as the search
+ * page), and phones also get the compact result rows. Facts are found through the label table; a card missing a required
+ * fact is left as Weaver rendered it.
+ */
 function decorateDiscoveryCards(mount: HTMLElement): void {
-  for (const card of mount.querySelectorAll<HTMLElement>('[data-a2ui-component="Card"]')) {
-    card.classList.add("stay-card");
-    card.setAttribute("role", "listitem");
+  const unitIds = viewUnitIds(activePayload);
+  const rows: { readonly html: string; readonly view: HTMLButtonElement | undefined }[] = [];
+  let listElement: HTMLElement | undefined;
+  for (const [index, card] of [...mount.querySelectorAll<HTMLElement>('[data-a2ui-component="Card"]')].entries()) {
     const list = card.parentElement;
     if (list instanceof HTMLElement) {
       list.classList.add("stay-grid");
       list.setAttribute("role", "list");
       list.setAttribute("aria-label", "Stay search results");
+      listElement = list;
     }
     const body = card.querySelector<HTMLElement>(":scope > [data-weaver-mount] > [data-a2ui-component=\"Column\"], :scope > [data-a2ui-component=\"Column\"]");
-    if (!body) continue;
-    body.classList.add("stay-card__body");
+    const unitId = unitIds[index];
+    if (!body || unitId === undefined) continue;
     const children = [...body.children];
-    const headings = children.filter((child) => child.tagName === "H3");
-    // Issue 11: the fit-reason caption is matched by its text, not its position.
-    const fit = children.find((child) => child.tagName === "SMALL" && (child.textContent ?? "").startsWith("Why it fits:"));
-    fit?.classList.add("stay-card__fit");
-    const smalls = children.filter((child) => child.tagName === "SMALL" && child !== fit);
-    headings[0]?.classList.add("stay-card__title");
-    const location = smalls[0];
-    location?.classList.add("stay-card__location");
+    const title = children.find((child) => child.tagName === "H3" && !isMoney(child.textContent ?? ""));
+    const where = findFact(children, GUEST_FACT_LABELS.where);
     const factLine = children.find((child) => child.tagName === "P");
-    factLine?.classList.add("stay-card__facts");
-    if (factLine) {
-      const labels = (factLine.textContent ?? "").split(" · ").map((label) => label.trim()).filter(Boolean);
-      if (labels.length > 1) factLine.replaceChildren(...labels.map((label) => {
-        const chip = document.createElement("span");
-        chip.textContent = label;
-        return chip;
-      }));
-    }
-    children.find((child) => (child.textContent ?? "").startsWith(GUEST_GLOSSARY.refundableSecurityDeposit))?.classList.add("stay-card__deposit");
-    smalls[1]?.classList.add("stay-card__amenities");
-
     const priceLabel = children.find((child) => isPriceLabel(child.textContent?.trim() ?? ""));
-    const buttons = children.filter((child) => child.tagName === "BUTTON");
-    const action = buttons[0];
-    // Issue 13b: the Compare control follows View apartment inside the price area.
-    const lastAction = buttons.at(-1);
-    if (priceLabel) {
-      const priceStart = children.indexOf(priceLabel);
-      const priceNodes = children.slice(priceStart, lastAction ? children.indexOf(lastAction) + 1 : undefined);
-      const price = priceNodes.find((child) => child.tagName === "H3" && /^(₦|NGN\b)/.test(child.textContent?.trim() ?? ""));
-      priceLabel.classList.add("stay-card__price-label");
-      price?.classList.add("stay-card__price-total");
-      if (action) action.classList.add("stay-card__action");
-      for (const extra of buttons.slice(1)) extra.classList.add("stay-card__compare");
-      wrapDirectChildren(body, "stay-card__price-area", priceNodes);
+    const price = children.find((child) => child.tagName === "H3" && isMoney(child.textContent ?? ""));
+    if (!title || !where || !factLine || !priceLabel || !price) continue;
+    const deposit = findFact(children, GUEST_FACT_LABELS.refundableSecurityDeposit);
+    const fit = findFact(children, GUEST_FACT_LABELS.fitReason);
+    const image = children.find((child): child is HTMLImageElement => child instanceof HTMLImageElement);
+    const buttons = children.filter((child): child is HTMLButtonElement => child instanceof HTMLButtonElement);
+    const view = buttons[0];
+    const parts: StayCardParts = {
+      href: `/stays/${encodeURIComponent(unitId)}`,
+      title: title.textContent?.trim() ?? "",
+      where: where.value,
+      facts: (factLine.textContent ?? "").split(" · ").map((text) => text.trim()).filter(Boolean).map((text) => ({ icon: factIcon(text), text })),
+      total: price.textContent?.trim() ?? "",
+      totalLabel: priceLabel.textContent?.trim() ?? "",
+      ...(deposit ? { deposit: deposit.value } : {}),
+      ...(image?.src ? { photoSrc: image.src } : {}),
+    };
+    // Whatever else Weaver rendered (the fit reason, amenity highlights, a budget note) stays, after the facts.
+    const known = new Set<Element | undefined>([title, where.element, factLine, priceLabel, price, deposit?.element, fit?.element, image, ...buttons]);
+    const extras = children.filter((child) => !known.has(child) && child.getAttribute("data-a2ui-component") !== "Divider");
+    const template = document.createElement("template");
+    template.innerHTML = stayCardInnerHtml(parts);
+    card.replaceChildren(template.content);
+    card.classList.add("stay-card", "ui-stay-card");
+    card.setAttribute("role", "listitem");
+    const anchor = card.querySelector<HTMLAnchorElement>(".ui-stay-card__view");
+    if (view && anchor) {
+      view.classList.add("ui-button", "ui-button--primary", "ui-button--block", "ui-stay-card__view");
+      anchor.replaceWith(view);
+    } else anchor?.remove();
+    openStayFrom(card.querySelector<HTMLElement>(".ui-stay-card__title a")!, view);
+    fit?.element.classList.add("stay-card__fit");
+    const facts = card.querySelector(".ui-stay-card__facts");
+    for (const extra of [...extras].reverse()) facts?.after(extra);
+    if (fit) facts?.after(fit.element);
+    // Compare follows View apartment (issue 13b).
+    for (const extra of buttons.slice(1)) {
+      extra.classList.add("stay-card__compare", "ui-link");
+      card.appendChild(extra);
+    }
+    rows.push({ html: resultRowPartsHtml(parts), view });
+  }
+  if (rows.length > 0 && listElement) {
+    const rowList = document.createElement("div");
+    rowList.className = "ui-result-rows";
+    rowList.setAttribute("role", "list");
+    rowList.setAttribute("aria-label", "Stays for your search");
+    for (const row of rows) {
+      const template = document.createElement("template");
+      template.innerHTML = row.html;
+      const link = template.content.firstElementChild as HTMLElement;
+      openStayFrom(link, row.view);
+      const item = document.createElement("div");
+      item.setAttribute("role", "listitem");
+      item.appendChild(link);
+      rowList.appendChild(item);
+    }
+    listElement.before(rowList);
+    if (rows.length >= 2) {
+      const both = document.createElement("button");
+      both.type = "button";
+      both.className = "ui-link ui-result-rows__compare";
+      both.insertAdjacentHTML("beforeend", `See both side by side${icon("arrow-right")}`);
+      both.addEventListener("click", () => void compareFirstTwo());
+      rowList.after(both);
+    }
+  }
+}
+
+/** Picks the first two results in turn, exactly as the two Compare buttons would, so the server opens the comparison. */
+async function compareFirstTwo(): Promise<void> {
+  const compareButton = (index: number): HTMLButtonElement | null => activeWorkspace.querySelectorAll<HTMLElement>(".ui-stay-card")[index]?.querySelector<HTMLButtonElement>(".stay-card__compare") ?? null;
+  compareButton(0)?.click();
+  // The server re-presents the results with the first stay marked; the second pick follows on the fresh surface.
+  for (let waited = 0; waited < 5000; waited += 50) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const first = compareButton(0);
+    if (first?.textContent?.trim() === "Remove from compare") {
+      compareButton(1)?.click();
+      return;
     }
   }
 }
 
 /**
- * Issue 13b: each attribute row holds one cell per stay. The shell lays the
- * cells out side by side and stacks them at narrow widths (AC3, ADR-0078).
+ * Issue 05: the comparison is a table with the stays as columns and one row per attribute (a stacked list on narrow
+ * screens, ADR-0078). It rearranges the Weaver elements, which keep their events.
  */
 function decorateComparison(mount: HTMLElement): void {
-  for (const row of mount.querySelectorAll<HTMLElement>('[data-a2ui-component="Row"]')) {
-    row.classList.add("compare-row");
-    for (const cell of row.querySelectorAll<HTMLElement>(':scope > [data-a2ui-component="Column"], :scope > [data-weaver-mount] > [data-a2ui-component="Column"]')) {
-      cell.classList.add("compare-cell");
+  const root = mount.querySelector<HTMLElement>('[data-a2ui-component="Column"]');
+  if (!root) return;
+  const rowElements = [...root.querySelectorAll<HTMLElement>(':scope > [data-a2ui-component="Row"]')];
+  const attributeRows = rowElements.filter((row) => row.previousElementSibling?.tagName === "H3");
+  const actionRow = rowElements.find((row) => row.querySelector("button") !== null);
+  if (attributeRows.length === 0) return;
+  const table = document.createElement("div");
+  table.className = "ui-compare";
+  table.setAttribute("role", "table");
+  table.setAttribute("aria-label", "Compare stays");
+  const line = (className: string): HTMLElement => {
+    const element = document.createElement("div");
+    element.className = `ui-compare__row compare-row ${className}`;
+    element.setAttribute("role", "row");
+    return element;
+  };
+  const cellsOf = (row: HTMLElement): HTMLElement[] => [...row.querySelectorAll<HTMLElement>(':scope > [data-a2ui-component="Column"], :scope > [data-weaver-mount] > [data-a2ui-component="Column"]')];
+  const head = line("ui-compare__row--head");
+  const corner = document.createElement("div");
+  corner.setAttribute("role", "columnheader");
+  head.appendChild(corner);
+  for (const cell of cellsOf(attributeRows[0]!)) {
+    const heading = document.createElement("div");
+    heading.className = "ui-compare__head";
+    heading.setAttribute("role", "columnheader");
+    heading.textContent = cell.querySelector("small")?.textContent?.trim() ?? "";
+    head.appendChild(heading);
+  }
+  table.appendChild(head);
+  root.insertBefore(table, attributeRows[0]!.previousElementSibling);
+  for (const row of attributeRows) {
+    const label = row.previousElementSibling as HTMLElement;
+    const item = line("");
+    label.classList.add("ui-compare__key");
+    label.setAttribute("role", "rowheader");
+    item.appendChild(label);
+    for (const cell of cellsOf(row)) {
+      cell.classList.add("compare-cell", "ui-compare__cell");
+      cell.setAttribute("role", "cell");
       cell.querySelector("small")?.classList.add("compare-cell__unit");
+      item.appendChild(cell);
     }
+    row.remove();
+    table.appendChild(item);
+  }
+  if (actionRow) {
+    const item = line("ui-compare__row--actions");
+    item.appendChild(document.createElement("div"));
+    for (const cell of [...actionRow.children]) {
+      (cell as HTMLElement).classList.add("ui-compare__cell");
+      item.appendChild(cell);
+    }
+    actionRow.remove();
+    table.appendChild(item);
   }
 }
 
@@ -404,6 +535,11 @@ function enhanceSurfacePresentation(mount: HTMLElement, kind: string): void {
   if (kind === "compare") decorateComparison(mount);
   if (kind === "unit-detail") organizeUnitDetail(mount);
   if (kind === "booking" || kind === "payment") organizeBookingTicket(mount);
+}
+
+function isMoney(text: string): boolean {
+  const value = text.trim();
+  return value.startsWith("₦") || value.startsWith("NGN");
 }
 
 function isPriceLabel(text: string): boolean {
