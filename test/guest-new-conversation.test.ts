@@ -135,7 +135,7 @@ test("AC1 failure path: committed work is never listed for another principal or 
 
 test("The shell offers a named New conversation control and a labelled in-page confirmation", () => {
   const html = renderGuestShellHtml();
-  assert.match(html, /<button id="new-conversation" class="contact-link" type="button"><span class="header-plus" aria-hidden="true">\+<\/span><span>New<span class="header-long"> conversation<\/span><\/span><\/button>/);
+  assert.match(html, /<button id="new-conversation" class="ui-button ui-button--small ui-appbar__action" type="button"><svg class="ui-icon"[^>]*aria-hidden="true"[^>]*>.*?<\/svg><span>New<span class="header-long"> conversation<\/span><\/span><\/button>/);
   assert.match(html, /<section id="new-conversation-confirm" role="group" aria-labelledby="new-conversation-heading" hidden>/);
   assert.match(html, /<button id="new-conversation-start"[^>]*>Start new conversation<\/button>/);
   assert.match(html, /<button id="new-conversation-cancel"[^>]*>Stay here<\/button>/);

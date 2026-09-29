@@ -1,6 +1,6 @@
 # One app frame: top bar and journey rail everywhere; chat shell on foundation tokens
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 02
 Requested: 29 Sept 2026
@@ -43,3 +43,17 @@ In the design, every screen carries the same top bar (back button or "New conver
 0078 (targets, reflow, focus), 0080 (no-JS frame), 0072 (the rail stays a projection, with no client-invented state).
 
 ## Comments
+
+## Answer
+
+Landed on `ui/guest-consistency`.
+
+- **Standalone frame (AC1).** `pageShell` takes an optional `frame` placed before `<main>`. `guest-kit.ts` `appFrameHtml({ threadId, journey, publicStep })` = app bar (back icon button "Back to your conversation", serif "Shortlet" wordmark) + `railHtml`. Wired into the conventional booking pages (draft, request, offer, contract), search, unit detail, the payment page, both transfer pages and every manual-transfer state. Back goes to `/?threadId=<id>` when the page resolves a thread, else `/`. Public pages show `projectJourney("search")` or `("stay")`, nothing else. `LocalGuestApp.journeyForThread` is a new owner-checked read (ADR 0070) used by the payment and transfer pages; the booking pages carry `journey` on `ConventionalBookingPage` from `#journeyFor(thread)`.
+- **Chat shell (AC3).** The header is `.ui-appbar` with the icon "New conversation" pill (accessible name and `#new-conversation` id unchanged); `#journey-rail` is `.ui-rail-nav` > `ol.ui-rail`, and `client.ts` builds the same `li[data-step][data-state][data-tone]` and `ui-sr-only` state text as `railHtml`; empty criteria chips are dashed `ui-chip--add` chips with a plus icon; the guest bubble uses the action colour and the concierge bubble a bordered surface. `:root { --bg --surface --border --accent ... }` is gone and the shell reads `--color-*` tokens directly. The no-JS conversation page referenced `--surface-soft`, which was never defined; it now uses `--color-surface-subtle`.
+- **Rail reflow.** `.ui-rail` is six columns, and three columns x two rows below 23rem, so 320px never crams "Confirmed". Failed steps are warning-coloured, danger when `data-tone="danger"` (as before).
+- **Tests.** `test/guest-app-frame.test.ts` (AC1 across eight stage pages and the two public pages; AC2 parity of the page rail with the chat's `/api/state` journey, including a failed outcome: the expired offer; AC3 shell has no hex and no shell-local colour variable or use, plus the shared-component check) and `test/guest-app-frame-chromium.test.ts` (AC4 at 320px: no sideways scroll, app bar/rail/criteria controls >= 44px; AC5 JavaScript off: rail and back link render and the link navigates). Shared helper `test/helpers/guest-stage-pages.ts` (also used by later issues). Updated only structure assertions: `guest-new-conversation.test.ts` expects the new button markup.
+- **Verification.** `npm run check` clean. `npm test`: phase 1 1191/1191; phase 2 130 pass, 1 fail, 1 skip. The failure, `listing-gallery-chromium` AC3, hit its 10s wait under full-suite load and passes 5/5 when run alone. Screenshots: `screenshots/03/`.
+
+## Comments
+
+ADRs: 0078 (44px targets, 320px reflow, focus), 0080 (frame and back link work with JavaScript off; rail is a server render), 0072 (rail is only a projection; the client builds no state), 0070 (`journeyForThread` fails closed to undefined for anyone else's thread). Not done here on purpose: the no-JS conversation page (`renderNoScriptConversationHtml`) keeps its own header and `no-js-journey` rail until issue 10, and the local demo payment page is a pilot-only form.

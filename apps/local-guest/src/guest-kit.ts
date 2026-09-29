@@ -7,7 +7,8 @@ import { GUEST_GLOSSARY, GUEST_JOURNEY } from "../../web-agent/src/guest-content
 import { formatNgnKobo } from "../../web-agent/src/discovery-a2ui.js";
 import { formatBookingDeadline } from "../../web-agent/src/booking-presentation.js";
 import { escapeHtml, icon, statusBadge, type IconName } from "../../web/src/ui-kit.js";
-import type { GuestJourney, JourneyStepState } from "./journey-rail.js";
+import { projectJourney, type GuestJourney, type JourneyStep, type JourneyStepState } from "./journey-rail.js";
+import { guestStatusTone } from "./conversational-shell.js";
 
 /** The absolute deadline in Africa/Lagos time (ADR 0078), without the "Pay by" prefix. */
 export function formatWAT(iso: string): string {
@@ -147,7 +148,10 @@ const JOURNEY_STATE_TEXT: Readonly<Record<JourneyStepState, string>> = {
 /** The journey rail from the server's projection; `data-state` is the contract shared with the chat's rail. */
 export function railHtml(journey: GuestJourney | undefined): string {
   if (!journey) return "";
-  const steps = journey.steps.map((step) => `<li data-step="${step.id}" data-state="${step.state}"${step.state === "current" ? " aria-current=\"step\"" : ""}>${escapeHtml(step.label)}<span class="ui-sr-only"> (${JOURNEY_STATE_TEXT[step.state]})</span></li>`).join("");
+  const steps = journey.steps.map((step) => {
+    const tone = step.state === "failed" ? guestStatusTone(step.label) : undefined;
+    return `<li data-step="${step.id}" data-state="${step.state}"${tone === undefined ? "" : ` data-tone="${tone}"`}${step.state === "current" ? " aria-current=\"step\"" : ""}>${escapeHtml(step.label)}<span class="ui-sr-only"> (${JOURNEY_STATE_TEXT[step.state]})</span></li>`;
+  }).join("");
   return `<nav class="ui-rail-nav" aria-label="${GUEST_JOURNEY.railLabel}"><ol class="ui-rail">${steps}</ol></nav>`;
 }
 
@@ -161,4 +165,16 @@ export interface AppBarInput {
 export function appBarHtml(input: AppBarInput): string {
   const action = input.action === undefined ? "" : `<a class="ui-button ui-button--small ui-appbar__action" href="${escapeHtml(input.action.href)}">${icon(input.action.icon)}${escapeHtml(input.action.label)}</a>`;
   return `<header class="ui-appbar"><a class="ui-icon-button" href="${escapeHtml(input.backHref)}" aria-label="${escapeHtml(input.backLabel)}">${icon("arrow-left")}</a><a class="ui-appbar__brand" href="/">Shortlet</a><span class="ui-appbar__grow"></span>${action}</header>`;
+}
+
+const BACK_LABEL = "Back to your conversation";
+
+/**
+ * The frame every standalone guest page shares: the top bar (back to this page's own conversation, or to "/" when it has
+ * none) and the journey rail. The rail is the server's projection for the thread, or the one step a public page is on.
+ */
+export function appFrameHtml(input: { readonly threadId: string | null; readonly journey?: GuestJourney; readonly publicStep?: JourneyStep }): string {
+  const backHref = input.threadId === null ? "/" : `/?threadId=${encodeURIComponent(input.threadId)}`;
+  const journey = input.journey ?? (input.publicStep === undefined ? undefined : projectJourney(input.publicStep));
+  return `${appBarHtml({ backHref, backLabel: BACK_LABEL })}${railHtml(journey)}`;
 }

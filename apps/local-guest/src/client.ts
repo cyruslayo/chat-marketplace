@@ -4,6 +4,7 @@
  * browser never owns booking state or executes generated business logic.
  */
 import { createBasicWebRuntime } from "@weaver/web";
+import { icon } from "../../web/src/ui-kit.js";
 import { buildListingGallery, enhanceListingGallery, watchPhotoFailure } from "./listing-gallery.js";
 import { GUEST_GLOSSARY, GUEST_NEW_CONVERSATION, guestNewConversationCopy, type GuestCommittedWorkKind } from "../../web-agent/src/guest-content.js";
 import {
@@ -869,6 +870,7 @@ function renderSurfaces(surfaces: readonly GuestSurfacePayload[]): void {
 function renderJourney(journey: GuestJourney | undefined): void {
   if (!journey) return;
   const list = document.createElement("ol");
+  list.className = "ui-rail";
   let current: HTMLElement | undefined;
   for (const step of journey.steps) {
     const item = document.createElement("li");
@@ -878,7 +880,7 @@ function renderJourney(journey: GuestJourney | undefined): void {
     if (tone) item.dataset.tone = tone;
     item.append(step.label);
     const state = document.createElement("span");
-    state.className = "sr-only";
+    state.className = "ui-sr-only";
     state.textContent = ` (${JOURNEY_STATE_TEXT[step.state]})`;
     item.appendChild(state);
     if (step.state === "current" || step.state === "failed") {
@@ -916,15 +918,18 @@ function renderCriteria(criteria: GuestCriteria | undefined): void {
   for (const field of CRITERIA_FIELDS) {
     const chip = document.createElement("button");
     chip.type = "button";
-    chip.className = "ui-chip criteria-chip";
+    const empty = criteria[field] === undefined;
+    chip.className = `ui-chip criteria-chip${empty ? " ui-chip--add" : ""}`;
     chip.dataset.field = field;
-    chip.dataset.empty = String(criteria[field] === undefined);
+    chip.dataset.empty = String(empty);
     chip.setAttribute("aria-expanded", String(openCriteriaField === field));
     chip.setAttribute("aria-controls", "criteria-editor");
     const name = document.createElement("span");
     name.className = "criteria-chip-name";
     name.textContent = `${CRITERIA_NAMES[field]}: `;
     // An empty chip names what it adds, since narrow screens hide the field name.
+    // An empty criterion is a dashed "add" chip with a plus (decorative, from the shared icon set).
+    if (empty) chip.insertAdjacentHTML("afterbegin", icon("plus"));
     chip.append(name, criteria[field]?.label ?? CRITERIA_EMPTY[field]);
     chip.disabled = !criteria.editable;
     chip.addEventListener("click", () => {

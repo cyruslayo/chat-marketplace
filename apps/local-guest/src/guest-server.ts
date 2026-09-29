@@ -51,7 +51,7 @@ import {
 } from "../../../apps/web-agent/src/index.js";
 import { unitDetailArtifactFromProjection } from "../../../apps/web/src/unit-detail-artifact.js";
 import { errorPage, escapeHtml, icon, pageShell, prefersHtml } from "../../../apps/web/src/ui-kit.js";
-import { bankDetailsHtml, deadlineBannerHtml, formatWAT, priceBreakdownHtml, stayCardHtml, stayTicketHtml, type StayTicketFacts } from "./guest-kit.js";
+import { appFrameHtml, bankDetailsHtml, deadlineBannerHtml, formatWAT, priceBreakdownHtml, stayCardHtml, stayTicketHtml, type StayTicketFacts } from "./guest-kit.js";
 import {
   resolveDiscoveryServerEvent,
 } from "../../../apps/web/src/discovery-actions.js";
@@ -200,6 +200,8 @@ export interface GuestCommittedWork {
 
 export interface ConventionalBookingPage {
   readonly threadId: string;
+  /** The thread's journey rail, from the same projection the chat uses. */
+  readonly journey?: GuestJourney;
   readonly summary: string;
   readonly textFallback: string;
   readonly stay?: ConventionalStayDetails;
@@ -787,12 +789,27 @@ export class LocalGuestApp {
         if (!correlated) continue;
         const thread = this.#threads.get(record.threadId) ?? this.#loadThread(record.threadId);
         if (!thread) return null;
-        return this.#bookingPage(thread, kind, id, principal);
+        const page = this.#bookingPage(thread, kind, id, principal);
+        const journey = this.#journeyFor(thread);
+        return page === null || journey === undefined ? page : { ...page, journey };
       }
     } catch {
       return null;
     }
     return null;
+  }
+
+  /**
+   * Guest UI consistency issue 03: the journey rail for a standalone page. Only the Guest's own thread resolves
+   * (ADR-0070); anything else is undefined, and the page then shows no rail rather than someone else's progress.
+   */
+  journeyForThread(threadId: string, principal: CommandPrincipal): GuestJourney | undefined {
+    const environment = this.#environment;
+    const guest = environment.guestPrincipal();
+    if (principal.role !== "guest" || !principal.id || principal.id !== guest.id || !principal.tenantId || principal.tenantId !== environment.config.tenantId) return undefined;
+    if (!environment.interactionStore.findThreadsForPrincipal(principal.id, principal.tenantId).some((record) => record.threadId === threadId)) return undefined;
+    const thread = this.#threads.get(threadId) ?? this.#loadThread(threadId);
+    return thread === null ? undefined : this.#journeyFor(thread);
   }
 
   /**
@@ -2426,52 +2443,34 @@ export function renderGuestShellHtml(): string {
   <title>Shortlet Concierge</title>
   <link rel="stylesheet" href="/shortlet-foundations.css">
   <style>
-    :root {
-      --bg: var(--color-canvas); --surface: var(--color-surface); --surface-soft: var(--color-surface-subtle);
-      --border: var(--color-border); --text: var(--color-text); --text-muted: var(--color-text-muted);
-      --accent: var(--color-action); --accent-hover: var(--color-action-hover); --user-bubble: var(--color-action);
-      --focus: var(--color-focus); --danger: var(--color-danger);
-    }
     * { box-sizing: border-box; }
-    html { background: var(--bg); }
-    body { background: var(--bg); color: var(--text); font-family: var(--font-sans); margin: 0; line-height: 1.5; }
+    html { background: var(--color-canvas); }
+    body { background: var(--color-canvas); color: var(--color-text); font-family: var(--font-sans); margin: 0; line-height: 1.5; }
     button, input { font: inherit; }
     button, a { -webkit-tap-highlight-color: transparent; }
-    :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
-    .skip-link { position: absolute; left: var(--space-2); top: -100px; z-index: var(--layer-skip-link); background: var(--surface); color: var(--text); padding: var(--space-2) var(--space-3); border: 2px solid var(--focus); border-radius: var(--radius-control); }
+    :focus-visible { outline: 3px solid var(--color-focus); outline-offset: 2px; }
+    .skip-link { position: absolute; left: var(--space-2); top: -100px; z-index: var(--layer-skip-link); background: var(--color-surface); color: var(--color-text); padding: var(--space-2) var(--space-3); border: 2px solid var(--color-focus); border-radius: var(--radius-control); }
     .skip-link:focus { top: var(--space-2); }
     .app { width: 100%; max-width: var(--layout-conversation-max); height: 100dvh; height: 100svh; min-height: 0; margin: 0 auto; display: flex; flex-direction: column; }
-    header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: max(var(--space-3), env(safe-area-inset-top)) var(--layout-gutter-mobile) var(--space-3); border-bottom: 1px solid var(--border); background: var(--surface); }
-    header h1 { margin: 0; font-family: var(--font-display); font-size: 1.25rem; line-height: 1.2; font-weight: 600; letter-spacing: -0.005em; }
-    .header-identity { display: flex; align-items: center; min-height: var(--control-min-target); color: var(--text); text-decoration: none; }
-    .header-note { color: var(--text-muted); font-size: var(--font-size-small); white-space: nowrap; }
+    .app .ui-appbar { padding-block-start: max(var(--space-2), env(safe-area-inset-top)); }
+    .header-identity h1 { margin: 0; font: inherit; }
+    .header-identity { display: flex; align-items: center; min-height: var(--control-min-target); }
+    .header-note { color: var(--color-text-muted); font-size: var(--font-size-small); white-space: nowrap; }
     /* Issue 13a: the header controls wrap rather than scroll at 320px (ADR-0078). */
     .header-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); min-width: 0; }
-    .header-plus { display: none; }
     /* The visible label shortens on phones; the accessible name stays "New conversation" (WCAG 2.5.3). */
     @media (max-width: 29.999rem) {
-      .header-plus { display: inline; margin-inline-end: 0.25em; }
       .header-long { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     }
-    #new-conversation-confirm { display: grid; gap: var(--space-3); padding: var(--space-3) var(--layout-gutter-mobile); border-bottom: 1px solid var(--border); background: var(--surface); }
+    #new-conversation-confirm { display: grid; gap: var(--space-3); padding: var(--space-3) var(--layout-gutter-mobile); border-bottom: 1px solid var(--color-border); background: var(--color-surface); }
     #new-conversation-confirm[hidden] { display: none; }
     #new-conversation-confirm h2 { margin: 0; font-size: var(--font-size-h3, 1.125rem); }
     .new-conversation-items p { margin: 0 0 var(--space-2); }
     .new-conversation-actions, .committed-work { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
     .committed-work { margin: 0 0 var(--space-3); color: var(--color-text-secondary); font-size: var(--font-size-small); }
     .committed-work p { margin: 0; }
-    /* Issue 08: one compact line; it scrolls inside itself, never the page (ADR-0078). */
-    #journey-rail { padding: var(--space-2) var(--layout-gutter-mobile); border-bottom: 1px solid var(--border); background: var(--surface); }
+    /* Issue 08: the journey rail is the shared .ui-rail; the shell only hides it until there is a journey to show. */
     #journey-rail[hidden] { display: none; }
-    /* position: relative keeps the visually hidden state text inside the scroller. */
-    #journey-rail ol { display: flex; align-items: stretch; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
-    #journey-rail li { flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center; padding-block-start: var(--space-2); border-block-start: 3px solid var(--color-border-subtle); color: var(--color-text-secondary); font-size: var(--font-size-small); line-height: var(--font-line-small); text-align: center; overflow-wrap: anywhere; }
-    #journey-rail li + li::before { content: none; }
-    #journey-rail li[data-state="done"] { border-color: var(--color-action); color: var(--text); }
-    #journey-rail li[data-state="current"] { border-color: var(--accent); color: var(--accent); font-weight: 650; }
-    #journey-rail li[data-state="failed"] { border-color: var(--color-warning); color: var(--color-warning); font-weight: 650; }
-    #journey-rail li[data-state="failed"][data-tone="danger"] { border-color: var(--color-danger); color: var(--color-danger); }
-    @media (max-width: 29.999rem) { #journey-rail ol { flex-wrap: wrap; } #journey-rail li { flex-basis: calc(33.333% - var(--space-1)); } }
     main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
     /* ADR-0078: keep the conversation independently scrollable at the 320px launch viewport. */
     #transcript { flex: 1 1 0; min-height: 22dvh; padding: var(--space-6) var(--layout-gutter-mobile) var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; }
@@ -2479,10 +2478,10 @@ export function renderGuestShellHtml(): string {
     .turn { display: flex; flex-direction: column; gap: var(--space-1); }
     .turn.user { align-items: flex-end; }
     .bubble { max-width: min(88%, 70ch); padding: var(--space-2) var(--space-3); border-radius: var(--radius-card); font-size: var(--font-size-body); line-height: var(--font-line-body); white-space: pre-wrap; overflow-wrap: anywhere; }
-    .turn.assistant .bubble { max-width: 72ch; padding-inline: 0; color: var(--text); }
-    .turn.user .bubble { background: var(--color-action-subtle); color: var(--text); border-radius: var(--radius-card) var(--radius-card) var(--radius-small) var(--radius-card); }
+    .turn.assistant .bubble { max-width: min(90%, 72ch); background: var(--color-surface); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-small) calc(var(--radius-workspace) + 0.125rem) calc(var(--radius-workspace) + 0.125rem) calc(var(--radius-workspace) + 0.125rem); color: var(--color-text); }
+    .turn.user .bubble { background: var(--color-action); color: var(--color-on-action); border-radius: calc(var(--radius-workspace) + 0.125rem) calc(var(--radius-workspace) + 0.125rem) var(--radius-small) calc(var(--radius-workspace) + 0.125rem); }
     .retry-action { align-self: flex-start; min-height: 44px; }
-    .historical-summary { width: 100%; display: flex; align-items: center; gap: var(--space-2); color: var(--color-text-secondary); font-size: var(--font-size-small); line-height: var(--font-line-small); padding: var(--space-2) 0; border-top: 1px solid var(--border); }
+    .historical-summary { width: 100%; display: flex; align-items: center; gap: var(--space-2); color: var(--color-text-secondary); font-size: var(--font-size-small); line-height: var(--font-line-small); padding: var(--space-2) 0; border-top: 1px solid var(--color-border); }
     #empty-state { max-width: 70ch; padding-block: var(--space-3) var(--space-6); }
     #empty-state h2 { margin: 0 0 var(--space-2); font-family: var(--font-display); font-size: var(--font-size-h1); line-height: var(--font-line-h1); font-weight: 600; }
     #empty-state p { max-width: 64ch; margin: 0; color: var(--color-text-secondary); }
@@ -2490,16 +2489,16 @@ export function renderGuestShellHtml(): string {
     .quick-replies { display: flex; flex-wrap: wrap; gap: var(--space-2); }
     .quick-reply { min-width: var(--control-min-target); justify-content: center; }
     #workspace-region { min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 0 var(--layout-gutter-mobile) var(--space-4); }
-    #active-workspace { background: var(--color-surface-elevated); border: 1px solid var(--border); border-radius: var(--radius-workspace); padding: var(--space-4); box-shadow: var(--elevation-active); }
+    #active-workspace { background: var(--color-surface-elevated); border: 1px solid var(--color-border); border-radius: var(--radius-workspace); padding: var(--space-4); box-shadow: var(--elevation-active); }
     #active-workspace[hidden], #workspace-region[hidden], #workspace-reopen[hidden], #empty-state[hidden] { display: none; }
     .workspace-heading { display: flex; justify-content: flex-start; align-items: flex-start; gap: var(--space-3); margin-bottom: var(--space-2); }
     .workspace-heading--inline-surface { margin-bottom: 0; }
     .workspace-heading-text { min-width: 0; display: grid; gap: var(--space-1); }
     .workspace-title { margin: 0; font-size: var(--font-size-h3); line-height: var(--font-line-h3); font-weight: 650; overflow-wrap: anywhere; }
-    .eyebrow { color: var(--accent); font-size: var(--font-size-metadata); font-weight: 650; }
-    .workspace-close, #workspace-reopen, .contact-link { display: inline-flex; min-height: var(--control-min-target); align-items: center; justify-content: center; padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-control); color: var(--text); background: var(--surface); text-decoration: none; cursor: pointer; }
+    .eyebrow { color: var(--color-action); font-size: var(--font-size-metadata); font-weight: 650; }
+    .workspace-close, #workspace-reopen, .contact-link { display: inline-flex; min-height: var(--control-min-target); align-items: center; justify-content: center; padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-control); color: var(--color-text); background: var(--color-surface); text-decoration: none; cursor: pointer; }
     .contact-link { color: var(--color-text-secondary); font-size: var(--font-size-small); }
-    .workspace-close:hover, #workspace-reopen:hover, .contact-link:hover { border-color: var(--accent); }
+    .workspace-close:hover, #workspace-reopen:hover, .contact-link:hover { border-color: var(--color-action); }
     .workspace-status { margin: 0 0 var(--space-3); color: var(--color-text-secondary); font-size: var(--font-size-small); }
     .workspace-status[data-status="stale"], .workspace-status[data-status="expired"], .workspace-status[data-status="deleted"], .workspace-status[data-status="fallback"] { padding: var(--space-2) var(--space-3); border-inline-start: 3px dashed var(--color-warning); background: var(--color-warning-surface); color: var(--color-warning); }
     .waiting-panel { display: grid; gap: var(--space-2); margin: 0 0 var(--space-4); padding: var(--space-3); border: 1px solid var(--color-border-subtle); border-inline-start: 4px solid var(--color-info); border-radius: var(--radius-card); background: var(--color-info-surface); }
@@ -2516,8 +2515,8 @@ export function renderGuestShellHtml(): string {
     .weaver-mount h1[data-a2ui-component="Text"] { font-family: var(--font-heading); font-size: var(--font-size-display) !important; line-height: var(--font-line-display) !important; font-weight: 700 !important; margin: 0 !important; }
     .weaver-mount h2[data-a2ui-component="Text"] { font-family: var(--font-heading); font-size: var(--font-size-h2) !important; line-height: var(--font-line-h2) !important; font-weight: 650 !important; margin: 0 !important; }
     .weaver-mount h3[data-a2ui-component="Text"] { font-family: var(--font-heading); font-size: var(--font-size-h3) !important; line-height: var(--font-line-h3) !important; font-weight: 650 !important; margin: 0 !important; }
-    .weaver-mount img { display: block; width: 100%; max-width: 100%; height: auto; min-height: 120px; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--radius-card); background: var(--surface-soft); }
-    .photo-fallback { width: 100%; min-width: 0; min-height: 120px; aspect-ratio: 4 / 3; display: grid; place-items: center; padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface-soft); color: var(--color-text-secondary); text-align: center; }
+    .weaver-mount img { display: block; width: 100%; max-width: 100%; height: auto; min-height: 120px; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--radius-card); background: var(--color-surface-subtle); }
+    .photo-fallback { width: 100%; min-width: 0; min-height: 120px; aspect-ratio: 4 / 3; display: grid; place-items: center; padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface-subtle); color: var(--color-text-secondary); text-align: center; }
     .weaver-mount small[data-a2ui-component="Text"] { margin: 0 !important; color: var(--color-text-secondary); font-size: var(--font-size-small) !important; font-style: normal !important; line-height: var(--font-line-small); }
     .weaver-mount p[data-a2ui-component="Text"] { margin: 0 !important; }
     /* With the Text margins reset, a Column's children need the gap to keep lines and cards apart. */
@@ -2527,16 +2526,16 @@ export function renderGuestShellHtml(): string {
     .weaver-mount button[data-a2ui-variant="primary"]:active { --a2ui-color-primary: var(--color-action-pressed); }
     .weaver-mount button[data-loading="true"] { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); cursor: progress; }
     .weaver-mount button[data-loading="true"]::before { content: ""; inline-size: 1em; block-size: 1em; flex: none; border: 2px solid currentColor; border-inline-end-color: transparent; border-radius: var(--radius-pill); animation: ui-spin 700ms linear infinite; }
-    .weaver-mount button.guest-action:not([data-a2ui-variant="primary"]) { min-width: var(--control-min-target); min-height: var(--control-min-target); padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); color: var(--text); font: 600 var(--font-size-label)/var(--font-line-label) var(--font-sans); cursor: pointer; }
-    .weaver-mount button.guest-action:not([data-a2ui-variant="primary"]):hover { border-color: var(--accent); background: var(--surface-soft); }
-    .weaver-mount .guest-field { width: 100%; min-width: 0; min-height: var(--control-min-field); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); color: var(--text); font-size: 1rem; }
+    .weaver-mount button.guest-action:not([data-a2ui-variant="primary"]) { min-width: var(--control-min-target); min-height: var(--control-min-target); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-text); font: 600 var(--font-size-label)/var(--font-line-label) var(--font-sans); cursor: pointer; }
+    .weaver-mount button.guest-action:not([data-a2ui-variant="primary"]):hover { border-color: var(--color-action); background: var(--color-surface-subtle); }
+    .weaver-mount .guest-field { width: 100%; min-width: 0; min-height: var(--control-min-field); padding: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-text); font-size: 1rem; }
     .guest-status { display: block; max-width: 70ch; margin: var(--space-2) 0 !important; padding: var(--space-2) var(--space-3); border: 1px solid currentColor; border-inline-start-width: 4px; border-radius: var(--radius-control); color: var(--color-info); background: var(--color-info-surface); font-weight: 600; }
     .guest-status--success { color: var(--color-success); background: var(--color-success-surface); }
     .guest-status--warning { color: var(--color-warning); background: var(--color-warning-surface); }
     .guest-status--danger { color: var(--color-danger); background: var(--color-danger-surface); }
     .empty-state-title { margin-block: var(--space-2); }
     .stay-grid { display: grid !important; grid-template-columns: minmax(0, 1fr); gap: var(--space-4) !important; min-width: 0; }
-    .stay-card { min-width: 0; overflow: hidden; margin: 0 !important; padding: 0 !important; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-card); background: var(--surface); }
+    .stay-card { min-width: 0; overflow: hidden; margin: 0 !important; padding: 0 !important; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-card); background: var(--color-surface); }
     .stay-card__body { display: grid !important; min-width: 0; gap: var(--space-2) !important; padding: var(--space-3); }
     .stay-card__body > * { min-width: 0; margin: 0 !important; }
     .stay-card__body > img { width: 100% !important; max-width: none !important; margin: 0 !important; object-fit: cover !important; }
@@ -2554,14 +2553,14 @@ export function renderGuestShellHtml(): string {
     .stay-card__compare { width: 100%; }
     /* Issue 13b: one row per attribute, one cell per stay, aligned by row. */
     .compare-row { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: var(--space-3) !important; margin: 0 0 var(--space-3) !important; }
-    .compare-cell { min-width: 0; margin: 0 !important; padding: var(--space-2) var(--space-3) !important; border: 1px solid var(--border); border-radius: var(--radius-control); overflow-wrap: anywhere; }
+    .compare-cell { min-width: 0; margin: 0 !important; padding: var(--space-2) var(--space-3) !important; border: 1px solid var(--color-border); border-radius: var(--radius-control); overflow-wrap: anywhere; }
     .compare-cell > * { margin: 0 !important; }
     .compare-cell__unit { display: block; color: var(--color-text-secondary); }
     /* AC3 / ADR-0078: at narrow widths the stays stack under each attribute. */
     @media (max-width: 29.999rem) { .compare-row { grid-template-columns: minmax(0, 1fr) !important; gap: var(--space-2) !important; } }
     .unit-detail-root { display: grid !important; min-width: 0; gap: var(--space-4) !important; }
     ${LISTING_GALLERY_STYLE}
-    .unit-gallery--fallback { padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface-soft); }
+    .unit-gallery--fallback { padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface-subtle); }
     .unit-photo-missing { display: grid; min-height: 10rem; place-items: center; margin: 0; color: var(--color-text-secondary); text-align: center; }
     .unit-overview { position: relative; z-index: 1; display: grid; min-width: 0; gap: var(--space-3); margin-block-start: calc(-1 * var(--space-6)); padding: var(--space-5); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-sheet) var(--radius-sheet) var(--radius-card) var(--radius-card); background: var(--color-surface); box-shadow: var(--elevation-active); }
     .unit-overview > * { margin: 0 !important; }
@@ -2570,15 +2569,15 @@ export function renderGuestShellHtml(): string {
     .unit-facts { margin: 0 !important; font-weight: 600; }
     .unit-facts--chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
     .unit-facts--chips > span { min-block-size: var(--control-min-target); display: inline-flex; align-items: center; padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-pill); background: var(--color-surface-subtle); color: var(--color-text-secondary); font-size: var(--font-size-small); }
-    .unit-price-group { display: grid; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface-soft); }
+    .unit-price-group { display: grid; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface-subtle); }
     .unit-price-group > * { margin: 0 !important; }
     .unit-price-label { color: var(--color-text-secondary); font-size: var(--font-size-small) !important; line-height: var(--font-line-small) !important; }
     .unit-price-total { margin: 0 !important; font-family: var(--font-display); font-size: var(--font-size-money-total) !important; line-height: var(--font-line-money-total) !important; font-variant-numeric: tabular-nums; }
-    .unit-description, .unit-amenities, .unit-supporting-info { display: grid; min-width: 0; gap: var(--space-2); padding-top: var(--space-3); border-top: 1px solid var(--border); }
+    .unit-description, .unit-amenities, .unit-supporting-info { display: grid; min-width: 0; gap: var(--space-2); padding-top: var(--space-3); border-top: 1px solid var(--color-border); }
     .unit-description > :first-child, .unit-amenities > :first-child { margin: 0 !important; font-size: var(--font-size-h3) !important; line-height: var(--font-line-h3) !important; }
     .unit-description p { margin: 0 !important; max-width: 70ch; }
     .unit-amenities [data-a2ui-component="Column"] { display: flex !important; flex-wrap: wrap !important; gap: var(--space-2) !important; }
-    .unit-amenities [data-a2ui-component="Column"] > * { max-width: 100%; margin: 0 !important; padding: var(--space-1) var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-small); background: var(--surface); overflow-wrap: anywhere; }
+    .unit-amenities [data-a2ui-component="Column"] > * { max-width: 100%; margin: 0 !important; padding: var(--space-1) var(--space-2); border: 1px solid var(--color-border); border-radius: var(--radius-small); background: var(--color-surface); overflow-wrap: anywhere; }
     .unit-supporting-info { color: var(--color-text-secondary); }
     .unit-supporting-info > * { margin: 0 !important; }
     .unit-actions { display: flex; min-width: 0; flex-wrap: wrap; gap: var(--space-2); }
@@ -2589,22 +2588,21 @@ export function renderGuestShellHtml(): string {
     .unit-actions button { flex: 1 1 14rem; }
     .surface-fallback { border-inline-start: 4px solid var(--color-warning); padding: var(--space-1) 0 var(--space-1) var(--space-3); }
     .surface-fallback p { margin: 0 0 var(--space-2); }
-    .fallback-link { display: inline-flex; align-items: center; min-height: var(--control-min-target); color: var(--accent); font-weight: 650; }
+    .fallback-link { display: inline-flex; align-items: center; min-height: var(--control-min-target); color: var(--color-action); font-weight: 650; }
     .guest-field-error { margin: var(--space-2) 0 !important; color: var(--color-danger); }
     #workspace-reopen { margin: 0 var(--layout-gutter-mobile) var(--space-4); width: calc(100% - 2 * var(--layout-gutter-mobile)); justify-content: flex-start; text-align: start; }
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
     /* Issue 03a: the criteria strip sits above the composer; chips wrap, never scroll the page (ADR-0078). */
-    #criteria-strip { display: grid; gap: var(--space-2); padding: var(--space-2) var(--layout-gutter-mobile) 0; border-top: 1px solid var(--border); background: var(--surface); }
+    #criteria-strip { display: grid; gap: var(--space-2); padding: var(--space-2) var(--layout-gutter-mobile) 0; border-top: 1px solid var(--color-border); background: var(--color-surface); }
     #criteria-strip[hidden], #criteria-editor[hidden] { display: none; }
     .criteria-chips { display: flex; flex-wrap: wrap; gap: var(--space-2); min-width: 0; }
     .criteria-chip { position: relative; min-height: var(--control-min-target); min-width: var(--control-min-target); justify-content: center; max-width: 100%; overflow-wrap: anywhere; text-align: start; border-radius: var(--radius-pill); }
-    .criteria-chip[data-empty="true"] { border-style: dashed; }
     /* Narrow screens keep the field names for screen readers only, so the strip stays short. */
     @media (max-width: 29.999rem) { .criteria-chip { padding-inline: var(--space-2); font-size: var(--font-size-small); } .criteria-chip .criteria-chip-name { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } }
     .criteria-chip .criteria-chip-name { color: var(--color-text-secondary); font-weight: 400; }
     .criteria-chip[aria-expanded="true"] { border-color: var(--color-action); }
-    .criteria-undo { min-height: var(--control-min-target); padding-inline: var(--space-2); border: 0; background: none; color: var(--accent); font-weight: 650; text-decoration: underline; cursor: pointer; }
-    #criteria-editor { display: grid; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--color-surface-elevated); }
+    .criteria-undo { min-height: var(--control-min-target); padding-inline: var(--space-2); border: 0; background: none; color: var(--color-action); font-weight: 650; text-decoration: underline; cursor: pointer; }
+    #criteria-editor { display: grid; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface-elevated); }
     #criteria-editor .ui-field { display: grid; gap: var(--space-1); min-width: 0; }
     #criteria-editor input, #criteria-editor select { width: 100%; min-width: 0; min-height: var(--control-min-field); }
     .criteria-editor-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
@@ -2624,20 +2622,20 @@ export function renderGuestShellHtml(): string {
       #criteria-strip:not([data-expanded="true"]) #criteria-panel { display: none; }
     }
     .criteria-status:empty { display: none; }
-    form#composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: var(--space-2); padding: var(--space-2) var(--layout-gutter-mobile) max(var(--space-4), env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: var(--surface); position: sticky; bottom: 0; z-index: 10; }
+    form#composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: var(--space-2); padding: var(--space-2) var(--layout-gutter-mobile) max(var(--space-4), env(safe-area-inset-bottom)); border-top: 1px solid var(--color-border); background: var(--color-surface); position: sticky; bottom: 0; z-index: 10; }
     #composer-label { grid-column: 1 / -1; color: var(--color-text-secondary); font-size: var(--font-size-small); line-height: var(--font-line-small); font-weight: 600; }
-    #composer-input { min-width: 0; width: 100%; min-height: var(--control-min-field); padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-pill); font-size: 1rem; background: var(--bg); color: var(--text); }
+    #composer-input { min-width: 0; width: 100%; min-height: var(--control-min-field); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-pill); font-size: 1rem; background: var(--color-canvas); color: var(--color-text); }
     #composer-submit { inline-size: 3rem; min-inline-size: 3rem; min-height: 3rem; padding: 0; border-radius: var(--radius-pill); }
-    form#composer[data-focused="true"] { gap: var(--space-1) var(--space-2); padding-block: var(--space-1) max(var(--space-2), env(safe-area-inset-bottom)); background: var(--bg); }
+    form#composer[data-focused="true"] { gap: var(--space-1) var(--space-2); padding-block: var(--space-1) max(var(--space-2), env(safe-area-inset-bottom)); background: var(--color-canvas); }
     form#composer[data-focused="true"] #composer-label { font-weight: 400; }
-    form#composer[data-focused="true"] #composer-input { min-height: 2.75rem; background: var(--surface); }
+    form#composer[data-focused="true"] #composer-input { min-height: 2.75rem; background: var(--color-surface); }
     form#composer[data-focused="true"] #composer-submit { min-height: 2.75rem; }
-    #composer-submit:disabled { background: var(--surface-soft); cursor: progress; }
+    #composer-submit:disabled { background: var(--color-surface-subtle); cursor: progress; }
     #working-status { grid-column: 1 / -1; margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-small); }
     @media (min-width: 48rem) {
-      #transcript, #workspace-region, form#composer, #journey-rail, #criteria-strip { padding-left: var(--layout-gutter-tablet); padding-right: var(--layout-gutter-tablet); }
+      #transcript, #workspace-region, form#composer, #criteria-strip { padding-left: var(--layout-gutter-tablet); padding-right: var(--layout-gutter-tablet); }
     }
-    @media (min-width: 64rem) { .app { max-width: var(--layout-conversation-max); } #transcript, #workspace-region, form#composer, #journey-rail, #criteria-strip { padding-left: var(--layout-gutter-desktop); padding-right: var(--layout-gutter-desktop); } }
+    @media (min-width: 64rem) { .app { max-width: var(--layout-conversation-max); } #transcript, #workspace-region, form#composer, #criteria-strip { padding-left: var(--layout-gutter-desktop); padding-right: var(--layout-gutter-desktop); } }
     @media (max-width: 47.999rem) { .header-note { display: none; } #active-workspace[data-mode="focused-surface"] { scroll-margin-block: var(--space-3); } }
     /*
      * Issue 09 AC1: at 64rem and wider, an open workspace takes the second
@@ -2656,7 +2654,7 @@ export function renderGuestShellHtml(): string {
       main:has(#active-workspace:not([hidden])) > #workspace-reopen { grid-area: reopen; }
       main:has(#active-workspace:not([hidden])) > #criteria-strip { grid-area: strip; }
       main:has(#active-workspace:not([hidden])) > form#composer { grid-area: composer; }
-      main:has(#active-workspace:not([hidden])) > #workspace-region { grid-area: workspace; min-height: 0; padding-block: var(--space-4); border-inline-start: 1px solid var(--border); }
+      main:has(#active-workspace:not([hidden])) > #workspace-region { grid-area: workspace; min-height: 0; padding-block: var(--space-4); border-inline-start: 1px solid var(--color-border); }
     }
     /*
      * Issue 09 AC2: below 64rem a focused workspace is a full-screen sheet
@@ -2665,24 +2663,25 @@ export function renderGuestShellHtml(): string {
      */
     @media (max-width: 63.999rem) {
       #workspace-region:has(> #active-workspace[data-mode="focused-surface"][data-status="active"]:not([hidden])) {
-        position: fixed; inset: 0 0 var(--composer-block-size, 0px) 0; z-index: var(--layer-sticky); padding: max(var(--space-3), env(safe-area-inset-top)) var(--layout-gutter-mobile) var(--space-4); background: var(--bg);
+        position: fixed; inset: 0 0 var(--composer-block-size, 0px) 0; z-index: var(--layer-sticky); padding: max(var(--space-3), env(safe-area-inset-top)) var(--layout-gutter-mobile) var(--space-4); background: var(--color-canvas);
       }
       #workspace-region:has(> #active-workspace[data-mode="focused-surface"][data-status="active"]:not([hidden])) .workspace-heading--focused-surface { position: sticky; top: calc(-1 * var(--space-3)); z-index: 1; margin-inline: calc(-1 * var(--space-4)); padding: var(--space-2) var(--space-4); background: var(--color-surface-elevated); }
       form#composer { z-index: calc(var(--layer-sticky) + 1); }
     }
-    @media (max-height: 520px) { header { position: static; } #transcript { min-height: 0; } form#composer { position: sticky; } }
+    @media (max-height: 520px) { .ui-appbar { position: static; } #transcript { min-height: 0; } form#composer { position: sticky; } }
     @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; } }
   </style>
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to conversation</a>
   <div class="app">
-    <header>
-      <a class="header-identity" href="/" aria-label="Shortlet home"><h1>Shortlet</h1></a>
+    <header class="ui-appbar">
+      <a class="header-identity ui-appbar__brand" href="/" aria-label="Shortlet home"><h1>Shortlet</h1></a>
       <span class="header-note">Abuja · Lagos</span>
+      <span class="ui-appbar__grow"></span>
       <div class="header-actions">
-        <button id="new-conversation" class="contact-link" type="button"><span class="header-plus" aria-hidden="true">+</span><span>New<span class="header-long"> conversation</span></span></button>
-        <a class="contact-link" href="/guest/contact">Contact details</a>
+        <button id="new-conversation" class="ui-button ui-button--small ui-appbar__action" type="button">${icon("message-plus")}<span>New<span class="header-long"> conversation</span></span></button>
+        <a class="ui-button ui-button--small ui-appbar__action" href="/guest/contact">Contact details</a>
       </div>
     </header>
     <section id="new-conversation-confirm" role="group" aria-labelledby="new-conversation-heading" hidden>
@@ -2693,7 +2692,7 @@ export function renderGuestShellHtml(): string {
         <button id="new-conversation-cancel" class="ui-button" type="button">${GUEST_NEW_CONVERSATION.cancel}</button>
       </div>
     </section>
-    <nav id="journey-rail" aria-label="${GUEST_JOURNEY.railLabel}" hidden><ol></ol></nav>
+    <nav id="journey-rail" class="ui-rail-nav" aria-label="${GUEST_JOURNEY.railLabel}" hidden><ol class="ui-rail"></ol></nav>
     <main id="main-content" tabindex="-1">
       <section id="transcript" role="log" aria-live="polite" aria-relevant="additions" aria-labelledby="conversation-heading">
         <h2 id="conversation-heading" class="conversation-heading">Conversation</h2>
@@ -2765,6 +2764,7 @@ export function renderConventionalUnitDetailHtml(unit: Unit, photoUrl?: (url: st
     : `${listingGalleryHtml({ title: unit.title, photos: photos.map((url, index) => ({ src: photoUrl ? photoUrl(url) : url, alt: `Photo ${index + 1} of ${unit.title}` })) })}<script src="/gallery.js" defer></script>`;
   return pageShell({
     title: unit.title,
+    frame: appFrameHtml({ threadId: null, publicStep: "stay" }),
     style: `${LISTING_GALLERY_STYLE}.unit-detail-sheet{position:relative;z-index:1;display:grid;gap:var(--space-4);margin-block-start:calc(-1 * var(--space-6));padding:var(--space-5);border:1px solid var(--color-border-subtle);border-radius:var(--radius-sheet) var(--radius-sheet) var(--radius-card) var(--radius-card);background:var(--color-surface);box-shadow:var(--elevation-active)}.unit-detail-sheet h1,.unit-detail-sheet p{margin:0}.unit-detail-location{color:var(--color-text-secondary)}.unit-detail-description{white-space:pre-line}.unit-detail-page{display:grid;gap:var(--space-4)}.unit-detail-page .listing-gallery{z-index:0}.unit-detail-page .ui-action-bar{position:sticky}.unit-detail-page .ui-ticket{margin-block:var(--space-2)}.stay-results{list-style:none;margin:0;padding:0;display:grid;gap:var(--space-4)}.stay-card-photo{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:var(--radius-card);background:var(--color-surface-subtle)}.stay-card-photo--empty{display:grid;place-items:center;color:var(--color-text-secondary)}.stay-card-facts{display:flex;flex-wrap:wrap;gap:var(--space-2)}.stay-card-facts span{display:inline-flex;min-block-size:2.75rem;align-items:center;padding:var(--space-2) var(--space-3);border:1px solid var(--color-border-subtle);border-radius:var(--radius-pill);background:var(--color-surface-subtle);font-size:var(--font-size-small)}.stay-card-price{display:grid;gap:var(--space-1);padding-block-start:var(--space-3);border-block-start:1px solid var(--color-border-subtle)}.stay-card-price p{margin:0}.guest-editorial .ui-button--primary,.guest-editorial .ui-button--block{border-radius:var(--radius-pill)}.ui-panel p{margin:0}`,
     body: `<div class="guest-editorial unit-detail-page">${photoMarkup}<section class="unit-detail-sheet" aria-label="Stay details"><header class="ui-page__header"><p class="ui-eyebrow">Entire place</p><h1>${escapeHtml(unit.title)}</h1><p class="unit-detail-location">${escapeHtml(unit.location.neighbourhood)}, ${escapeHtml(unit.location.city)} · exact address after payment</p></header><div class="ui-facts ui-facts--chips" role="list" aria-label="Stay facts"><span role="listitem">Bedrooms: ${unit.bedrooms ?? "Not provided"}</span><span role="listitem">Bathrooms: ${unit.bathrooms}</span><span role="listitem">Capacity: ${unit.capacity} guests</span><span role="listitem">Occupancy: Entire Place</span></div><div class="unit-detail-price"><p class="ui-field__hint">Price per night (indicative)</p><p class="ui-money-total">${formatNgnKobo(unit.price.nightlyKobo)} <span class="ui-money-metadata">per night · dates not yet quoted</span></p></div><p class="unit-detail-description">${escapeHtml(unit.description)}</p></section><div class="ui-action-bar"><p><span class="ui-field__hint">Price per night (indicative)</span><br><strong>${formatNgnKobo(unit.price.nightlyKobo)}</strong></p><a class="ui-button ui-button--primary ui-button--block" href="/">Continue to Request to Book</a></div></div>`,
   });
@@ -2810,7 +2810,7 @@ export function renderNoScriptConversationHtml(input: { readonly threadId: strin
   return pageShell({
     title: "Conversation · Shortlet",
     width: "narrow",
-    style: ".no-js-transcript{list-style:none;margin:0;padding:0;display:grid;gap:var(--space-3)}.no-js-transcript p,.ui-panel p{margin:0}.ui-panel h2{margin:0;font-size:var(--font-size-h3);line-height:var(--font-line-h3)}.no-js-turn[data-role=user]{background:var(--surface-soft)}.no-js-receipt p{display:flex;gap:var(--space-2);align-items:center;color:var(--color-text-secondary)}.no-js-journey ol{display:flex;flex-wrap:wrap;gap:var(--space-1) var(--space-3);margin:0;padding:0;list-style:none;font-size:var(--font-size-small)}.no-js-journey li{color:var(--color-text-secondary)}.no-js-journey li[data-state=current],.no-js-journey li[data-state=failed]{color:var(--color-text);font-weight:650}.journey-state{position:absolute;inline-size:1px;block-size:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}",
+    style: ".no-js-transcript{list-style:none;margin:0;padding:0;display:grid;gap:var(--space-3)}.no-js-transcript p,.ui-panel p{margin:0}.ui-panel h2{margin:0;font-size:var(--font-size-h3);line-height:var(--font-line-h3)}.no-js-turn[data-role=user]{background:var(--color-surface-subtle)}.no-js-receipt p{display:flex;gap:var(--space-2);align-items:center;color:var(--color-text-secondary)}.no-js-journey ol{display:flex;flex-wrap:wrap;gap:var(--space-1) var(--space-3);margin:0;padding:0;list-style:none;font-size:var(--font-size-small)}.no-js-journey li{color:var(--color-text-secondary)}.no-js-journey li[data-state=current],.no-js-journey li[data-state=failed]{color:var(--color-text);font-weight:650}.journey-state{position:absolute;inline-size:1px;block-size:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}",
     body: `<header class="ui-page__header" data-page="conversation"><p class="ui-eyebrow">Shortlet</p><h1>Conversation</h1><p><a class="ui-button" href="/conversation">${GUEST_NEW_CONVERSATION.control}</a></p></header>${committed}${renderJourneyRailHtml(input.journey)}${turns ? `<ol class="no-js-transcript" aria-label="Conversation">${turns}</ol>` : ""}${surfaces}<form class="ui-panel" method="post" action="/conversation" aria-label="Message the concierge"><div class="ui-field"><label class="ui-field__label" for="composer-input">Your message</label><p class="ui-field__hint" id="composer-hint">Share a city or neighbourhood, dates or nights, and number of guests.</p><input id="composer-input" name="message" type="text" autocomplete="off" enterkeyhint="send" maxlength="${MAX_TURN_TEXT_LENGTH}" required aria-describedby="composer-hint${error ? " composer-error" : ""}"${error ? " aria-invalid=\"true\"" : ""} value="${escapeHtml(input.draft ?? "")}">${error}</div><input type="hidden" name="threadId" value="${escapeHtml(input.threadId)}"><button class="ui-button ui-button--primary ui-button--block" type="submit">Send</button></form>`,
   });
 }
@@ -2837,6 +2837,7 @@ export function renderConventionalBookingHtml(page: ConventionalBookingPage): st
   return pageShell({
     title: `${page.summary} · Shortlet`,
     width: "narrow",
+    frame: appFrameHtml({ threadId: page.threadId, ...(page.journey === undefined ? {} : { journey: page.journey }) }),
     body: `<div class="guest-editorial"><header class="ui-page__header" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h1>${escapeHtml(page.summary)}</h1></header>${ticket}<section class="ui-panel"><p>${escapeHtml(page.textFallback)}</p><a class="ui-button ui-button--primary ui-button--block" href="/?threadId=${encodeURIComponent(page.threadId)}">Back to your conversation</a></section></div>`,
   });
 }
@@ -2905,6 +2906,7 @@ export function renderConventionalSearchHtml(artifact: DiscoveryArtifactProjecti
     + `<button class="ui-button ui-button--primary" type="submit">Update search</button></form>`;
   return pageShell({
     title: "Search results · Shortlet",
+    frame: appFrameHtml({ threadId: null, publicStep: "search" }),
     style: ".search-form{display:grid;gap:var(--space-3)}.stay-results{list-style:none;margin:0;padding:0;display:grid;gap:var(--space-4)}",
     body: `<div class="guest-editorial"><header class="ui-page__header" data-page="stay-search"><p class="ui-eyebrow">Search results</p><h1>${escapeHtml(discoveryFallbackMessage(artifact))}</h1>${summary ? `<p>${escapeHtml(summary)}</p>` : ""}</header>${form}${cards ? `<ul class="stay-results" aria-label="Stay search results">${cards}</ul>` : ""}<p><a class="ui-button ui-button--primary" href="/">Back to your conversation</a></p></div>`,
   });
@@ -2988,6 +2990,7 @@ export function renderManualTransferPageHtml(input: {
   readonly receiptMaxBytes: number;
   readonly error: string;
   readonly threadId: string | null;
+  readonly journey?: GuestJourney;
   readonly contractId: string | null;
   readonly stay?: GuestStayTicketFacts;
   readonly allInStayTotalKobo?: number;
@@ -2999,6 +3002,7 @@ export function renderManualTransferPageHtml(input: {
   const shell = (heading: string, body: string) => pageShell({
     title: `${heading} · Shortlet`,
     width: "narrow",
+    frame: appFrameHtml({ threadId: input.threadId, ...(input.journey === undefined ? {} : { journey: input.journey }) }),
     body: `<div class="guest-editorial"><header class="ui-page__header"><p class="ui-eyebrow">Booking payment · Manual bank transfer</p><h1>${escapeHtml(heading)}</h1></header>${input.stay ? stayTicketHtml(input.stay) : ""}${input.allInStayTotalKobo === undefined ? "" : priceBreakdownHtml({ allInStayTotalKobo: input.allInStayTotalKobo, ...(input.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: input.refundableSecurityDepositKobo }), amountDueNowKobo: transfer.amountKobo })}${alert}<section class="ui-panel">${body}</section></div><script src="/payment.js" defer></script>`,
   });
   const at = (iso: string) => `<time datetime="${escapeHtml(iso)}">${escapeHtml(formatWAT(iso))}</time>`;
@@ -3041,6 +3045,7 @@ export function renderTransferPageHtml(input: {
   readonly now: Date;
   readonly contract: { readonly contractId: string } | null;
   readonly threadId: string | null;
+  readonly journey?: GuestJourney;
   readonly localPayment: boolean;
   readonly stay?: GuestStayTicketFacts;
   readonly allInStayTotalKobo?: number;
@@ -3052,6 +3057,7 @@ export function renderTransferPageHtml(input: {
   const shell = (heading: string, body: string) => pageShell({
     title: `${heading} · Shortlet`,
     width: "narrow",
+    frame: appFrameHtml({ threadId: input.threadId, ...(input.journey === undefined ? {} : { journey: input.journey }) }),
     body: `<div class="guest-editorial"><header class="ui-page__header"><p class="ui-eyebrow">Booking payment · Bank transfer</p><h1>${escapeHtml(heading)}</h1></header>${input.stay ? stayTicketHtml(input.stay) : ""}${input.allInStayTotalKobo === undefined ? "" : priceBreakdownHtml({ allInStayTotalKobo: input.allInStayTotalKobo, ...(input.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: input.refundableSecurityDepositKobo }), amountDueNowKobo: input.amountDueNowKobo })}<section class="ui-panel">${body}</section></div><script src="/payment.js" defer></script>`,
   });
   if (input.contract) {
@@ -3265,6 +3271,13 @@ function findGuestThreadForOffer(env: LocalGuestEnvironment, offerId: string, pr
     }
   }
   return null;
+}
+
+/** The conversation a payment page belongs to and its journey, for the shared app frame. */
+function threadFrame(app: LocalGuestApp, offerId: string, principal: CommandPrincipal): { readonly threadId: string | null; readonly journey?: GuestJourney } {
+  const threadId = findGuestThreadForOffer(app.environment, offerId, principal);
+  const journey = threadId === null ? undefined : app.journeyForThread(threadId, principal);
+  return { threadId, ...(journey === undefined ? {} : { journey }) };
 }
 
 export interface LocalGuestServerHandle {
@@ -3578,6 +3591,7 @@ export function startLocalGuestServer(options: {
         res.end(pageShell({
           title: `${status.label} · Shortlet`,
           width: "narrow",
+          frame: appFrameHtml(threadFrame(app, offerId, principal)),
           style: `.payment-unit{font-family:var(--font-display);font-size:var(--font-size-h3);line-height:var(--font-line-h3);font-weight:600}.payment-current-component{font-weight:650}.payment-methods{display:grid;gap:var(--space-2)}`,
           body: `<div class="guest-editorial"><header class="ui-page__header"><p class="ui-eyebrow">Booking payment</p><h1>${escapeHtmlText(status.label)}</h1></header>${facts}${!canContinue ? "" : offerTransferChoice ? `<section class="ui-panel payment-methods" aria-label="Choose how to pay">${transferChoiceHtml(offerId, href, options.localPayment ? "Pay by card (local demo)" : "Pay by card", { providerTransfer: app.environment.bankTransferApp !== null, manualTransfer: manualOffered })}</section>` : `<a class="ui-button ui-button--primary ui-button--block" href="${href}">${label}</a>`}</div>`,
         }));
@@ -3608,7 +3622,7 @@ export function startLocalGuestServer(options: {
         const paymentFacts = app.environment.cardPaymentApp.getArtifact(offerId, principal).facts;
         res.writeHead(status, GUEST_HTML_HEADERS);
         const offerFacts = app.environment.conditionalOfferApp.getArtifact(offerId, principal).facts;
-        res.end(renderManualTransferPageHtml({ transfer, now: app.environment.clock(), receiptMaxBytes, error, threadId: findGuestThreadForOffer(app.environment, offerId, principal), contractId: transfer.decision?.kind === "confirmed" ? transfer.decision.contractId : null, stay: { unitTitle: paymentFacts.unit, checkIn: paymentFacts.checkIn, checkOut: paymentFacts.checkOut, nights: quotedNightCount(paymentFacts.checkIn, paymentFacts.checkOut) ?? 0, guestCount: offerFacts.occupants.length }, ...(paymentFacts.allInStayTotalKobo === undefined ? {} : { allInStayTotalKobo: paymentFacts.allInStayTotalKobo }), ...(paymentFacts.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: paymentFacts.refundableSecurityDepositKobo }) }));
+        res.end(renderManualTransferPageHtml({ transfer, now: app.environment.clock(), receiptMaxBytes, error, ...threadFrame(app, offerId, principal), contractId: transfer.decision?.kind === "confirmed" ? transfer.decision.contractId : null, stay: { unitTitle: paymentFacts.unit, checkIn: paymentFacts.checkIn, checkOut: paymentFacts.checkOut, nights: quotedNightCount(paymentFacts.checkIn, paymentFacts.checkOut) ?? 0, guestCount: offerFacts.occupants.length }, ...(paymentFacts.allInStayTotalKobo === undefined ? {} : { allInStayTotalKobo: paymentFacts.allInStayTotalKobo }), ...(paymentFacts.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: paymentFacts.refundableSecurityDepositKobo }) }));
       };
       if (req.method === "GET") { render(200); return; }
       if (!manualMatch[2]) {
@@ -3671,7 +3685,7 @@ export function startLocalGuestServer(options: {
       const paymentFacts = app.environment.cardPaymentApp.getArtifact(offerId, principal).facts;
       const offerFacts = app.environment.conditionalOfferApp.getArtifact(offerId, principal).facts;
       res.writeHead(200, GUEST_HTML_HEADERS);
-      res.end(renderTransferPageHtml({ transfer, now: app.environment.clock(), contract: transfers.manager.getBookingContract(offerId) ?? null, threadId: findGuestThreadForOffer(app.environment, offerId, principal), localPayment: options.localPayment === true, stay: { unitTitle: paymentFacts.unit, checkIn: paymentFacts.checkIn, checkOut: paymentFacts.checkOut, nights: quotedNightCount(paymentFacts.checkIn, paymentFacts.checkOut) ?? 0, guestCount: offerFacts.occupants.length }, ...(paymentFacts.allInStayTotalKobo === undefined ? {} : { allInStayTotalKobo: paymentFacts.allInStayTotalKobo }), ...(paymentFacts.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: paymentFacts.refundableSecurityDepositKobo }), amountDueNowKobo: paymentFacts.amountDueNowKobo }));
+      res.end(renderTransferPageHtml({ transfer, now: app.environment.clock(), contract: transfers.manager.getBookingContract(offerId) ?? null, ...threadFrame(app, offerId, principal), localPayment: options.localPayment === true, stay: { unitTitle: paymentFacts.unit, checkIn: paymentFacts.checkIn, checkOut: paymentFacts.checkOut, nights: quotedNightCount(paymentFacts.checkIn, paymentFacts.checkOut) ?? 0, guestCount: offerFacts.occupants.length }, ...(paymentFacts.allInStayTotalKobo === undefined ? {} : { allInStayTotalKobo: paymentFacts.allInStayTotalKobo }), ...(paymentFacts.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: paymentFacts.refundableSecurityDepositKobo }), amountDueNowKobo: paymentFacts.amountDueNowKobo }));
       return;
     }
 

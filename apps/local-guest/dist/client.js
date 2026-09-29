@@ -8224,13 +8224,13 @@ Known schemas:
       chrome.style.gap = "var(--a2ui-space, 8px)";
       chrome.style.marginBottom = "var(--a2ui-space, 8px)";
       if (verified.iconUrl !== void 0) {
-        const icon = document2.createElement("img");
-        icon.alt = "";
-        icon.width = 24;
-        icon.height = 24;
-        icon.style.objectFit = "contain";
-        icon.src = verified.iconUrl;
-        chrome.append(icon);
+        const icon2 = document2.createElement("img");
+        icon2.alt = "";
+        icon2.width = 24;
+        icon2.height = 24;
+        icon2.style.objectFit = "contain";
+        icon2.src = verified.iconUrl;
+        chrome.append(icon2);
       }
       const name = document2.createElement("span");
       name.textContent = verified.displayName;
@@ -8505,6 +8505,39 @@ Known schemas:
       mount: (options) => surface.mount(options)
     };
     return { ok: true, value: facade };
+  }
+
+  // apps/web/src/ui-kit.ts
+  var ICON_PATHS = {
+    "arrow-left": '<path d="M19 12H5M11 18l-6-6 6-6"/>',
+    "arrow-right": '<path d="M5 12h14M13 18l6-6M13 6l6 6"/>',
+    "arrow-up": '<path d="M12 19V5M6 11l6-6 6 6"/>',
+    alert: '<path d="M12 3.5 2.5 20h19Z"/><path d="M12 10v4.5M12 17.2v.1"/>',
+    bank: '<path d="M3 21h18M3 10h18M5 6l7-3 7 3M4 10v11M20 10v11M8 14v3M12 14v3M16 14v3"/>',
+    bath: '<path d="M4 12h16a1 1 0 0 1 1 1v2a5 5 0 0 1-5 5H8a5 5 0 0 1-5-5v-2a1 1 0 0 1 1-1zM6 12V5a2 2 0 0 1 2-2h1M7 20l-1 2M17 20l1 2"/>',
+    bed: '<path d="M3 7v11M21 18v-6a3 3 0 0 0-3-3h-8v6M3 15h18"/><circle cx="6.5" cy="11.5" r="1.5"/>',
+    calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+    card: '<rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="M2.5 10h19M6.5 15h4"/>',
+    check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
+    "chevron-right": '<path d="M9 6l6 6-6 6"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
+    doc: '<path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2zM9 13h6M9 17h6"/>',
+    grid: '<rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/>',
+    home: '<path d="M3.5 11 12 4l8.5 7M5.5 9.5V20h13V9.5"/><path d="M10 20v-5.5h4V20"/>',
+    info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.8v.1"/>',
+    inbox: '<path d="M3 13h5l1.5 3h5L16 13h5"/><path d="M5.5 5h13L21 13v6H3v-6Z"/>',
+    "message-plus": '<path d="M8 9h8M8 13h5M12 21l-3-3H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v6M16 19h6M19 16v6"/>',
+    photo: '<path d="M15 8h.01"/><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 16l5-5c.9-.9 2.1-.9 3 0l5 5M14 14l1-1c.9-.9 2.1-.9 3 0l3 3"/>',
+    pin: '<path d="M12 21s-6-5.5-6-10a6 6 0 0 1 12 0c0 4.5-6 10-6 10z"/><circle cx="12" cy="11" r="2"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>',
+    search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+    upload: '<path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M7 9l5-5 5 5M12 4v12"/>',
+    users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.5 3.2-5.5 6.5-5.5s5.9 2 6.5 5.5"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.8c2 .7 3.2 2.5 3.5 5.2"/>',
+    x: '<path d="M6 6l12 12M18 6 6 18"/>'
+  };
+  function icon(name) {
+    return `<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${ICON_PATHS[name]}</svg>`;
   }
 
   // apps/local-guest/src/listing-gallery.ts
@@ -9613,6 +9646,7 @@ Known schemas:
   function renderJourney(journey) {
     if (!journey) return;
     const list = document.createElement("ol");
+    list.className = "ui-rail";
     let current;
     for (const step of journey.steps) {
       const item = document.createElement("li");
@@ -9622,7 +9656,7 @@ Known schemas:
       if (tone) item.dataset.tone = tone;
       item.append(step.label);
       const state = document.createElement("span");
-      state.className = "sr-only";
+      state.className = "ui-sr-only";
       state.textContent = ` (${JOURNEY_STATE_TEXT[step.state]})`;
       item.appendChild(state);
       if (step.state === "current" || step.state === "failed") {
@@ -9652,14 +9686,16 @@ Known schemas:
     for (const field2 of CRITERIA_FIELDS) {
       const chip = document.createElement("button");
       chip.type = "button";
-      chip.className = "ui-chip criteria-chip";
+      const empty = criteria[field2] === void 0;
+      chip.className = `ui-chip criteria-chip${empty ? " ui-chip--add" : ""}`;
       chip.dataset.field = field2;
-      chip.dataset.empty = String(criteria[field2] === void 0);
+      chip.dataset.empty = String(empty);
       chip.setAttribute("aria-expanded", String(openCriteriaField === field2));
       chip.setAttribute("aria-controls", "criteria-editor");
       const name = document.createElement("span");
       name.className = "criteria-chip-name";
       name.textContent = `${CRITERIA_NAMES[field2]}: `;
+      if (empty) chip.insertAdjacentHTML("afterbegin", icon("plus"));
       chip.append(name, criteria[field2]?.label ?? CRITERIA_EMPTY[field2]);
       chip.disabled = !criteria.editable;
       chip.addEventListener("click", () => {

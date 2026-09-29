@@ -75,13 +75,15 @@ export interface PageShellOptions {
   readonly theme?: "system" | "light" | "dark";
   /** Page-specific rules; keep these to layout that the shared components do not cover. */
   readonly style?: string;
+  /** Pre-rendered, already-escaped app frame (top bar and journey rail) placed before <main>. */
+  readonly frame?: string;
 }
 
 export function pageShell(options: PageShellOptions): string {
   const theme = options.theme ?? "system";
   const widthClass = options.width === "narrow" ? "ui-page ui-page--narrow" : "ui-page";
   const style = options.style ? `<style>${options.style}</style>` : "";
-  return `<!doctype html><html lang="en-NG" data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(options.title)}</title><link rel="stylesheet" href="/shortlet-foundations.css">${style}</head><body><main class="${widthClass}">${options.body}</main></body></html>`;
+  return `<!doctype html><html lang="en-NG" data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(options.title)}</title><link rel="stylesheet" href="/shortlet-foundations.css">${style}</head><body>${options.frame ?? ""}<main class="${widthClass}">${options.body}</main></body></html>`;
 }
 
 export interface ErrorPageOptions {
