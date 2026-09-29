@@ -56,6 +56,9 @@ test("AC1 (booking part): each booking conventionalRoute the guest app emits ret
       assert.match(response.body, /data-page="booking-record"/, route);
       assert.match(response.body, /class="ui-ticket" aria-label="Your stay"/, route);
       assert.match(response.body, /class="[^"]*ui-price-breakdown[^"]*" aria-label="Price breakdown"/, route);
+      const kind = bookingKind(route)?.[0];
+      if (kind === "request" || kind === "offer" || (kind === "draft" && summary === "Request review")) assert.match(response.body, /Amount due now:/, route);
+      if (kind === "contract") assert.match(response.body, /Amount paid:/, route);
       assert.ok(response.body.includes(summary), `${route} shows "${summary}"`);
       assert.ok(response.body.includes(`href="/?threadId=${fixture.threadId}"`), `${route} links back to its conversation`);
     });

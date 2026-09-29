@@ -26,7 +26,10 @@ test("AC1 — Choosing manual transfer shows the account, the exact amount, a un
     assert.match(choice, /Your booking confirms only after we check the money has arrived/);
     assert.equal((await g.post(manualPage(g))).status, 303);
     const transfer = g.env.manualTransfers!.current(g.offerId, g.now())!;
-    const text = visibleText(await (await g.get(manualPage(g))).text());
+    const transferResponse = await g.get(manualPage(g));
+    const transferHtml = await transferResponse.text();
+    const text = visibleText(transferHtml);
+    assert.match(transferHtml, /data-copy-text="[^"]+">Copy account number/);
     for (const fact of [`Bank ${TEST_MANUAL_ACCOUNT.bankName}`, `Account name ${TEST_MANUAL_ACCOUNT.accountName}`, `Account number ${TEST_MANUAL_ACCOUNT.accountNumber}`, `Exact amount ${formatNgnKobo(transfer.amountKobo)}`, `Booking reference ${transfer.bookingReference}`, `Transfer and upload by ${wat(transfer.paymentDeadlineAt)}`]) {
       assert.ok(text.includes(fact), `shows ${fact}`);
     }

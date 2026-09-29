@@ -271,7 +271,7 @@ function organizeBookingTicket(mount: HTMLElement): void {
   const amountLabel = children.find((child) => (child.textContent?.trim() ?? "").startsWith(GUEST_GLOSSARY.allInStayTotal));
   const amount = children.find((child) => child !== title && /^(₦|NGN\b)/.test(child.textContent?.trim() ?? ""));
   const deposit = children.find((child) => (child.textContent?.trim() ?? "").startsWith(GUEST_GLOSSARY.refundableSecurityDeposit));
-  const due = children.find((child) => /^(?:Total to complete booking|Amount Due Now|Amount due now)/i.test(child.textContent?.trim() ?? ""));
+  const due = children.find((child) => /^(?:Total to complete booking|Amount Due Now|Amount due now|Amount paid)/i.test(child.textContent?.trim() ?? ""));
   const priceNodes = [amountLabel, amount, deposit, due].filter((element): element is Element => element !== undefined && element.parentElement === root);
   const breakdown = wrapDirectChildren(root, "ui-panel ui-price-breakdown", priceNodes);
   if (breakdown) breakdown.setAttribute("aria-label", "Price breakdown");
@@ -1294,6 +1294,20 @@ document.addEventListener("keydown", (event) => {
   if (shellState.activeSurface?.mode !== "focused-surface" || !shellState.focusedSurfaceOpen) return;
   event.preventDefault();
   closeWorkspace(workspaceOpener?.isConnected && !workspaceOpener.hidden ? workspaceOpener : workspaceReopen);
+});
+
+document.addEventListener("click", async (event) => {
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  const button = target.closest<HTMLButtonElement>("button[data-copy-text]");
+  if (!button) return;
+  try {
+    await navigator.clipboard.writeText(button.dataset.copyText ?? "");
+    button.textContent = "Copied";
+    window.setTimeout(() => { button.textContent = "Copy account number"; }, 1800);
+  } catch {
+    button.textContent = "Copy unavailable";
+  }
 });
 
 // Issue 09 AC2: browser Back closes the open sheet instead of leaving the page.
