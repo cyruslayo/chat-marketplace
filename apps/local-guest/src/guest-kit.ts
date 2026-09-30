@@ -6,10 +6,12 @@
 import { GUEST_FACT_LABELS, GUEST_GLOSSARY, GUEST_JOURNEY, UNIT_DETAIL_ABOUT_HEADING, stayTotalLabel } from "../../web-agent/src/guest-content.js";
 import { formatNgnKobo } from "../../web-agent/src/discovery-a2ui.js";
 import { formatBookingDeadline, formatStayFoot, formatTicketDate } from "../../web-agent/src/booking-presentation.js";
-import { escapeHtml, icon, statusBadge, type IconName } from "../../web/src/ui-kit.js";
+import { appBarHtml, escapeHtml, icon, statusBadge } from "../../web/src/ui-kit.js";
+export { appBarHtml, type AppBarInput } from "../../web/src/ui-kit.js";
 import { projectJourney, type GuestJourney, type JourneyStep, type JourneyStepState } from "./journey-rail.js";
 import { guestStatusTone } from "./conversational-shell.js";
 import type { RequestScreenContent } from "../../web-agent/src/request-presentation.js";
+import type { ConfirmationContent } from "../../web-agent/src/confirmation-presentation.js";
 
 /** The absolute deadline in Africa/Lagos time (ADR 0078), without the "Pay by" prefix. */
 export function formatWAT(iso: string): string {
@@ -30,6 +32,7 @@ export interface StayTicketFacts {
   /** Shown only when the policy projection supplies them (ADR 0031/0032); never a default. */
   readonly arrivalTime?: string;
   readonly checkoutTime?: string;
+  readonly bookingReference?: string;
 }
 
 const CHECK_IN_LABEL = GUEST_FACT_LABELS.checkIn;
@@ -62,7 +65,7 @@ export function ticketHtml(parts: TicketParts): string {
 
 export function stayTicketHtml(facts: StayTicketFacts): string {
   const part = (iso: string, time: string | undefined): TicketDatePart => ({ day: iso.slice(8, 10), date: formatTicketDate(iso), datetime: iso, ...(time === undefined ? {} : { time }) });
-  return ticketHtml({ title: facts.unitTitle, checkIn: part(facts.checkIn, facts.arrivalTime), checkOut: part(facts.checkOut, facts.checkoutTime), foot: formatStayFoot(facts.nights, facts.guestCount) });
+  return ticketHtml({ title: facts.unitTitle, checkIn: part(facts.checkIn, facts.arrivalTime), checkOut: part(facts.checkOut, facts.checkoutTime), foot: formatStayFoot(facts.nights, facts.guestCount) + (facts.bookingReference === undefined ? "" : ` · Booking reference ${facts.bookingReference}`) });
 }
 
 export interface PriceBreakdownInput {
@@ -74,10 +77,12 @@ export interface PriceBreakdownInput {
   readonly heading?: string;
   /** The total's own label; defaults to the All-In Stay Total. The unit detail names the stay here (issue 06). */
   readonly totalLabel?: string;
+  readonly depositCollected?: boolean;
 }
 
 /** The breakdown's display text: money already formatted, in the order the section shows it (ADR 0015). */
 export interface BreakdownParts {
+  readonly depositCollected?: boolean;
   readonly condition?: string;
   readonly total?: string;
   readonly totalLabel?: string;
@@ -89,7 +94,7 @@ export interface BreakdownParts {
 export function breakdownHtml(parts: BreakdownParts): string {
   const money = (value: string): string => `<span class="ui-price-breakdown__value">${escapeHtml(value)}</span>`;
   const total = parts.total === undefined ? "" : `<div><p class="ui-price-breakdown__label">${escapeHtml(parts.totalLabel ?? GUEST_FACT_LABELS.allInStayTotal)}</p><p class="ui-money-total">${escapeHtml(parts.total)}</p></div>`;
-  const deposit = parts.deposit === undefined ? "" : `<p class="ui-price-breakdown__row">${GUEST_FACT_LABELS.refundableSecurityDeposit}: ${money(parts.deposit)}</p>`;
+  const deposit = parts.deposit === undefined ? "" : `<p class="ui-price-breakdown__row">${parts.depositCollected ? `${GUEST_GLOSSARY.refundableSecurityDeposit} collected` : GUEST_FACT_LABELS.refundableSecurityDeposit}: ${money(parts.deposit)}</p>`;
   const due = parts.due === undefined ? "" : `<p class="ui-price-breakdown__due">${GUEST_FACT_LABELS.amountDueNow}: ${money(parts.due)}</p>`;
   const paid = parts.paid === undefined ? "" : `<p class="ui-price-breakdown__paid">${GUEST_FACT_LABELS.amountPaid}: ${money(parts.paid)}</p>`;
   return `<section class="ui-panel ui-price-breakdown" aria-label="Price breakdown">${parts.condition ? `<p class="ui-price-breakdown__condition">${escapeHtml(parts.condition)}</p>` : ""}${total}${deposit}${due}${paid}</section>`;
@@ -98,6 +103,7 @@ export function breakdownHtml(parts: BreakdownParts): string {
 /** ADR 0015: the All-In Stay Total leads, the deposit is separate, then one amount line. */
 export function priceBreakdownHtml(input: PriceBreakdownInput): string {
   return breakdownHtml({
+    ...(input.depositCollected ? { depositCollected: true } : {}),
     ...(input.heading ? { condition: input.heading } : {}),
     ...(input.allInStayTotalKobo === undefined ? {} : { total: formatNgnKobo(input.allInStayTotalKobo) }),
     ...(input.totalLabel === undefined ? {} : { totalLabel: input.totalLabel }),
@@ -131,6 +137,11 @@ export function deadlineBannerHtml(input: { readonly label: string; readonly dea
 /** "What happens next": a plain numbered list. */
 export function stepsHtml(items: readonly string[]): string {
   return `<ol class="ui-steps">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>`;
+}
+
+/** Issue 10: the confirmation uses the same kit sections on the page and in the workspace. */
+export function confirmationScreenHtml(content: ConfirmationContent, ticket: string, breakdown: string): string {
+  return `<section class="confirmed-screen"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h2>Reservation confirmed</h2>${statusHtml("success", "Stay payment verified")}</header>${ticket}${breakdown}<section class="ui-panel request-next" aria-label="Before you arrive"><h2>Before you arrive</h2>${stepsHtml(content.steps)}</section><div class="request-actions"><a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(content.conversationHref)}">Back to your conversation</a><a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.detailsHref)}">View booking details</a></div><section class="ui-panel booking-details" id="booking-details" tabindex="-1"><h2>Booking details</h2><p>${escapeHtml(content.details)}</p></section></section>`;
 }
 
 /** Issue 07: one request screen layout. Slots receive only markup from this kit, never artifact-supplied HTML. */
@@ -274,18 +285,6 @@ export function railHtml(journey: GuestJourney | undefined): string {
     return `<li data-step="${step.id}" data-state="${step.state}"${tone === undefined ? "" : ` data-tone="${tone}"`}${step.state === "current" ? " aria-current=\"step\"" : ""}>${escapeHtml(step.label)}<span class="ui-sr-only"> (${JOURNEY_STATE_TEXT[step.state]})</span></li>`;
   }).join("");
   return `<nav class="ui-rail-nav" aria-label="${GUEST_JOURNEY.railLabel}"><ol class="ui-rail">${steps}</ol></nav>`;
-}
-
-export interface AppBarInput {
-  /** Where the back control goes: the page's own conversation, or "/" without one. */
-  readonly backHref: string;
-  readonly backLabel: string;
-  readonly action?: { readonly href: string; readonly label: string; readonly icon: IconName };
-}
-
-export function appBarHtml(input: AppBarInput): string {
-  const action = input.action === undefined ? "" : `<a class="ui-button ui-button--small ui-appbar__action" href="${escapeHtml(input.action.href)}">${icon(input.action.icon)}${escapeHtml(input.action.label)}</a>`;
-  return `<header class="ui-appbar"><a class="ui-icon-button" href="${escapeHtml(input.backHref)}" aria-label="${escapeHtml(input.backLabel)}">${icon("arrow-left")}</a><a class="ui-appbar__brand" href="/">Shortlet</a><span class="ui-appbar__grow"></span>${action}</header>`;
 }
 
 const BACK_LABEL = "Back to your conversation";

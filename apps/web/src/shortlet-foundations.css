@@ -530,6 +530,25 @@
 
   /* Request screens share these kit rules across the workspace and conventional route (issue 07). */
   .request-screen { display: grid; gap: var(--space-4); min-inline-size: 0; }
+  .confirmed-screen { display: grid; gap: var(--space-4); min-inline-size: 0; }
+  .confirmed-screen p, .confirmed-screen h2 { margin: 0; }
+  .confirmed-screen .ui-button, .confirmed-screen .ui-status, .ui-empty .ui-button { border-radius: var(--radius-pill); }
+  .confirmed-screen .ui-ticket__foot { overflow-wrap: anywhere; }
+  .confirmed-screen .ui-price-breakdown__value { flex-shrink: 0; white-space: nowrap; }
+  .booking-details { display: grid; gap: var(--space-3); }
+  .booking-details p { white-space: pre-line; overflow-wrap: anywhere; }
+  .no-js-conversation { display: grid; gap: var(--space-4); }
+  .no-js-transcript { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-4); }
+  .no-js-conversation .turn { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-1); }
+  .no-js-conversation .turn.user { align-items: flex-end; }
+  .no-js-conversation .turn-label { margin: 0; color: var(--color-text-muted); font-size: var(--font-size-small); }
+  .no-js-conversation .bubble { max-inline-size: min(90%, 72ch); padding: var(--space-3) var(--space-4); white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-card); background: var(--color-surface); }
+  .no-js-conversation .user .bubble { color: var(--color-on-action); background: var(--color-action); border-color: var(--color-action); }
+  .no-js-conversation .receipt-marker p { display: flex; align-items: center; gap: var(--space-2); margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-small); }
+  .no-js-surface-fallback { white-space: pre-line; overflow-wrap: anywhere; font-size: var(--font-size-small); color: var(--color-text-secondary); }
+  .no-js-conversation .composer { position: sticky; inset-block-end: 0; display: flex; align-items: end; gap: var(--space-2); padding: var(--space-3) 0; background: var(--color-canvas); }
+  .no-js-conversation .composer .ui-field { flex: 1; min-inline-size: 0; }
+  .no-js-conversation .composer .ui-button { flex: none; border-radius: var(--radius-pill); }
   .request-screen p, .request-screen h2 { margin: 0; }
   .request-head { display: grid; gap: var(--space-2); }
   .request-head > h2 { font-family: var(--font-display); font-size: var(--font-size-h1); line-height: var(--font-line-h1); font-weight: 600; }

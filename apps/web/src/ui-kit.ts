@@ -55,6 +55,17 @@ const ICON_PATHS = {
 
 export type IconName = keyof typeof ICON_PATHS;
 
+export interface AppBarInput {
+  readonly backHref: string;
+  readonly backLabel: string;
+  readonly action?: { readonly href: string; readonly label: string; readonly icon: IconName };
+}
+
+export function appBarHtml(input: AppBarInput): string {
+  const action = input.action === undefined ? "" : `<a class="ui-button ui-button--small ui-appbar__action" href="${escapeHtml(input.action.href)}">${icon(input.action.icon)}${escapeHtml(input.action.label)}</a>`;
+  return `<header class="ui-appbar"><a class="ui-icon-button" href="${escapeHtml(input.backHref)}" aria-label="${escapeHtml(input.backLabel)}">${icon("arrow-left")}</a><a class="ui-appbar__brand" href="/">Shortlet</a><span class="ui-appbar__grow"></span>${action}</header>`;
+}
+
 /** Decorative inline icon; pair with visible text or an aria-label on the control. */
 export function icon(name: IconName): string {
   return `<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${ICON_PATHS[name]}</svg>`;
@@ -97,10 +108,12 @@ export interface ErrorPageOptions {
 
 export function errorPage(options: ErrorPageOptions): string {
   const artIcon: IconName = options.status === 401 || options.status === 403 ? "info" : options.status === 404 ? "search" : "alert";
-  const action = options.action ? `<a class="ui-button ui-button--primary" href="${escapeHtml(options.action.href)}">${escapeHtml(options.action.label)}</a>` : "";
+  const recovery = options.action ?? { href: "/", label: "Back to your conversation" };
+  const action = `<a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(recovery.href)}">${escapeHtml(recovery.label)}</a>`;
   return pageShell({
     title: `${options.title} · Shortlet`,
     width: "narrow",
+    frame: appBarHtml({ backHref: recovery.href, backLabel: recovery.label }),
     body: `<section class="ui-panel ui-empty" data-error-code="${escapeHtml(options.code)}" data-status="${options.status}"><div class="ui-empty__art">${icon(artIcon)}</div><h1>${escapeHtml(options.title)}</h1><p>${escapeHtml(options.message)}</p>${action}</section>`,
   });
 }

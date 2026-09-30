@@ -9032,7 +9032,7 @@ Known schemas:
   function breakdownHtml(parts) {
     const money = (value) => `<span class="ui-price-breakdown__value">${escapeHtml(value)}</span>`;
     const total = parts.total === void 0 ? "" : `<div><p class="ui-price-breakdown__label">${escapeHtml(parts.totalLabel ?? GUEST_FACT_LABELS.allInStayTotal)}</p><p class="ui-money-total">${escapeHtml(parts.total)}</p></div>`;
-    const deposit = parts.deposit === void 0 ? "" : `<p class="ui-price-breakdown__row">${GUEST_FACT_LABELS.refundableSecurityDeposit}: ${money(parts.deposit)}</p>`;
+    const deposit = parts.deposit === void 0 ? "" : `<p class="ui-price-breakdown__row">${parts.depositCollected ? `${GUEST_GLOSSARY.refundableSecurityDeposit} collected` : GUEST_FACT_LABELS.refundableSecurityDeposit}: ${money(parts.deposit)}</p>`;
     const due = parts.due === void 0 ? "" : `<p class="ui-price-breakdown__due">${GUEST_FACT_LABELS.amountDueNow}: ${money(parts.due)}</p>`;
     const paid = parts.paid === void 0 ? "" : `<p class="ui-price-breakdown__paid">${GUEST_FACT_LABELS.amountPaid}: ${money(parts.paid)}</p>`;
     return `<section class="ui-panel ui-price-breakdown" aria-label="Price breakdown">${parts.condition ? `<p class="ui-price-breakdown__condition">${escapeHtml(parts.condition)}</p>` : ""}${total}${deposit}${due}${paid}</section>`;
@@ -9045,6 +9045,9 @@ Known schemas:
   }
   function stepsHtml(items) {
     return `<ol class="ui-steps">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>`;
+  }
+  function confirmationScreenHtml(content, ticket, breakdown) {
+    return `<section class="confirmed-screen"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h2>Reservation confirmed</h2>${statusHtml("success", "Stay payment verified")}</header>${ticket}${breakdown}<section class="ui-panel request-next" aria-label="Before you arrive"><h2>Before you arrive</h2>${stepsHtml(content.steps)}</section><div class="request-actions"><a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(content.conversationHref)}">Back to your conversation</a><a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.detailsHref)}">View booking details</a></div><section class="ui-panel booking-details" id="booking-details" tabindex="-1"><h2>Booking details</h2><p>${escapeHtml(content.details)}</p></section></section>`;
   }
   function requestScreenHtml(content, ticket, breakdown, actionTotal) {
     const form = (action, primary) => `<form method="post" action="${escapeHtml(action.path)}">${action.surfaceId === void 0 ? "" : `<input type="hidden" name="surfaceId" value="${escapeHtml(action.surfaceId)}">`}<button class="ui-button ui-button--${primary ? "primary" : "secondary"} ui-button--block" type="submit"${action.surfaceId === "" ? " disabled" : ""}>${escapeHtml(action.label)}</button></form>`;
@@ -9308,7 +9311,7 @@ Known schemas:
         title: title.textContent?.trim() ?? "",
         checkIn: { day: checkInDay, date: checkIn.value },
         checkOut: { day: checkOutDay, date: checkOut.value },
-        foot: stay.value
+        foot: stay.value + (activePayload?.confirmation ? ` \xB7 Booking reference ${activePayload.confirmation.bookingReference}` : "")
       }), [title, checkIn.element, checkOut.element, stay.element]);
     }
     const total = findFact(children, GUEST_FACT_LABELS.allInStayTotal);
@@ -9318,12 +9321,26 @@ Known schemas:
     const paid = findFact(children, GUEST_FACT_LABELS.amountPaid);
     const condition = children.find((child) => child.textContent?.trim() === GUEST_FACT_LABELS.ifRequestAccepted);
     replaceWithKitMarkup(root, breakdownHtml({
+      ...activePayload?.confirmation?.depositCollected ? { depositCollected: true } : {},
       ...condition ? { condition: GUEST_FACT_LABELS.ifRequestAccepted } : {},
       total: total.value,
       ...deposit ? { deposit: deposit.value } : {},
       ...due ? { due: due.value } : {},
       ...paid ? { paid: paid.value } : {}
     }), [condition, total.element, deposit?.element, due?.element, paid?.element]);
+  }
+  function organizeConfirmation(mount, content) {
+    const root = mount.querySelector('[data-a2ui-component="Column"]');
+    const ticket = root?.querySelector(":scope > .ui-ticket");
+    const breakdown = root?.querySelector(":scope > .ui-price-breakdown");
+    if (!root || !ticket || !breakdown) return;
+    const template = document.createElement("template");
+    template.innerHTML = confirmationScreenHtml(content, ticket.outerHTML, breakdown.outerHTML);
+    root.replaceChildren(template.content);
+    root.querySelector(".request-actions a")?.addEventListener("click", (event) => {
+      event.preventDefault();
+      closeWorkspace(workspaceReopen);
+    });
   }
   function organizeRequestScreen(mount, content) {
     const root = mount.querySelector('[data-a2ui-component="Column"]');
@@ -9577,6 +9594,7 @@ Known schemas:
     if (kind === "unit-detail") organizeUnitDetail(mount);
     if (kind === "booking" || kind === "payment") organizeBookingTicket(mount);
     if (activePayload?.requestScreen) organizeRequestScreen(mount, activePayload.requestScreen);
+    if (activePayload?.confirmation) organizeConfirmation(mount, activePayload.confirmation);
   }
   function isMoney(text) {
     const value = text.trim();
@@ -9599,6 +9617,9 @@ Known schemas:
   function isWaitingState(value) {
     return isRecord3(value) && ["operator-response", "offer-payment-window", "payment-window"].includes(String(value.kind)) && typeof value.heading === "string" && typeof value.deadlineText === "string" && typeof value.deadlineAt === "string" && Number.isFinite(Date.parse(value.deadlineAt)) && typeof value.serverNow === "string" && Number.isFinite(Date.parse(value.serverNow)) && isStringList(value.outcomes) && isStringList(value.meanwhile);
   }
+  function isConfirmation(value) {
+    return isRecord3(value) && typeof value.bookingReference === "string" && value.bookingReference !== "" && typeof value.depositCollected === "boolean" && isStringList(value.steps) && isSafeInternalRoute(value.conversationHref) && isSafeInternalRoute(value.detailsHref) && typeof value.details === "string";
+  }
   function isRequestScreen(value) {
     if (!isRecord3(value) || typeof value.state !== "string" || !["draft", "review", "sent", "not-accepted"].includes(value.state) || typeof value.tone !== "string" || !["neutral", "warning", "danger"].includes(value.tone) || typeof value.title !== "string" || typeof value.status !== "string" || !isStringList(value.steps) || !isStringList(value.notes)) return false;
     const action = (candidate) => isRecord3(candidate) && isSafeInternalRoute(candidate.path) && typeof candidate.label === "string" && (candidate.surfaceId === void 0 || typeof candidate.surfaceId === "string");
@@ -9617,6 +9638,7 @@ Known schemas:
     if (value.conventionalRouteLabel !== void 0 && typeof value.conventionalRouteLabel !== "string") return false;
     if (value.waiting !== void 0 && !isWaitingState(value.waiting)) return false;
     if (value.requestScreen !== void 0 && !isRequestScreen(value.requestScreen)) return false;
+    if (value.confirmation !== void 0 && !isConfirmation(value.confirmation)) return false;
     return value.conventionalRoute === void 0 || isSafeInternalRoute(value.conventionalRoute);
   }
   var JOURNEY_STATE_TEXT = {

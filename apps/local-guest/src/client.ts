@@ -7,7 +7,8 @@ import { createBasicWebRuntime } from "@weaver/web";
 import { icon } from "../../web/src/ui-kit.js";
 import { buildListingGallery, enhanceListingGallery, watchPhotoFailure } from "./listing-gallery.js";
 import { GUEST_COMPARE_LABELS, GUEST_FACT_LABELS, GUEST_GLOSSARY, GUEST_NEW_CONVERSATION, UNIT_DETAIL_ABOUT_HEADING, guestFactValue, guestNewConversationCopy, type GuestCommittedWorkKind } from "../../web-agent/src/guest-content.js";
-import { breakdownHtml, requestScreenHtml, resultRowPartsHtml, stayCardInnerHtml, ticketHtml, unitAboutHtml, unitTilesHtml, type StayCardParts } from "./guest-kit.js";
+import { breakdownHtml, confirmationScreenHtml, requestScreenHtml, resultRowPartsHtml, stayCardInnerHtml, ticketHtml, unitAboutHtml, unitTilesHtml, type StayCardParts } from "./guest-kit.js";
+import type { ConfirmationContent } from "../../web-agent/src/confirmation-presentation.js";
 import type { RequestScreenContent } from "../../web-agent/src/request-presentation.js";
 import {
   canUseSurfaceActions,
@@ -38,6 +39,7 @@ interface GuestSurfacePayload {
   readonly conventionalRouteLabel?: string;
   readonly waiting?: GuestWaitingState;
   readonly requestScreen?: RequestScreenContent;
+  readonly confirmation?: ConfirmationContent;
 }
 interface GuestWaitingState {
   readonly kind: string;
@@ -313,7 +315,7 @@ function organizeBookingTicket(mount: HTMLElement): void {
       title: title.textContent?.trim() ?? "",
       checkIn: { day: checkInDay, date: checkIn.value },
       checkOut: { day: checkOutDay, date: checkOut.value },
-      foot: stay.value,
+      foot: stay.value + (activePayload?.confirmation ? ` · Booking reference ${activePayload.confirmation.bookingReference}` : ""),
     }), [title, checkIn.element, checkOut.element, stay.element]);
   }
   const total = findFact(children, GUEST_FACT_LABELS.allInStayTotal);
@@ -323,12 +325,24 @@ function organizeBookingTicket(mount: HTMLElement): void {
   const paid = findFact(children, GUEST_FACT_LABELS.amountPaid);
   const condition = children.find((child) => child.textContent?.trim() === GUEST_FACT_LABELS.ifRequestAccepted);
   replaceWithKitMarkup(root, breakdownHtml({
+    ...(activePayload?.confirmation?.depositCollected ? { depositCollected: true } : {}),
     ...(condition ? { condition: GUEST_FACT_LABELS.ifRequestAccepted } : {}),
     total: total.value,
     ...(deposit ? { deposit: deposit.value } : {}),
     ...(due ? { due: due.value } : {}),
     ...(paid ? { paid: paid.value } : {}),
   }), [condition, total.element, deposit?.element, due?.element, paid?.element]);
+}
+
+function organizeConfirmation(mount: HTMLElement, content: ConfirmationContent): void {
+  const root = mount.querySelector<HTMLElement>('[data-a2ui-component="Column"]');
+  const ticket = root?.querySelector<HTMLElement>(":scope > .ui-ticket");
+  const breakdown = root?.querySelector<HTMLElement>(":scope > .ui-price-breakdown");
+  if (!root || !ticket || !breakdown) return;
+  const template = document.createElement("template");
+  template.innerHTML = confirmationScreenHtml(content, ticket.outerHTML, breakdown.outerHTML);
+  root.replaceChildren(template.content);
+  root.querySelector<HTMLAnchorElement>(".request-actions a")?.addEventListener("click", (event) => { event.preventDefault(); closeWorkspace(workspaceReopen); });
 }
 
 /** ADR-0072/0081: one kit layout; the submitted draft action still runs Weaver's original, server-bound event. */
@@ -604,6 +618,7 @@ function enhanceSurfacePresentation(mount: HTMLElement, kind: string): void {
   if (kind === "unit-detail") organizeUnitDetail(mount);
   if (kind === "booking" || kind === "payment") organizeBookingTicket(mount);
   if (activePayload?.requestScreen) organizeRequestScreen(mount, activePayload.requestScreen);
+  if (activePayload?.confirmation) organizeConfirmation(mount, activePayload.confirmation);
 }
 
 function isMoney(text: string): boolean {
@@ -633,6 +648,12 @@ function isWaitingState(value: unknown): value is GuestWaitingState {
     && isStringList(value.outcomes) && isStringList(value.meanwhile);
 }
 
+function isConfirmation(value: unknown): value is ConfirmationContent {
+  return isRecord(value) && typeof value.bookingReference === "string" && value.bookingReference !== ""
+    && typeof value.depositCollected === "boolean" && isStringList(value.steps)
+    && isSafeInternalRoute(value.conversationHref) && isSafeInternalRoute(value.detailsHref) && typeof value.details === "string";
+}
+
 function isRequestScreen(value: unknown): value is RequestScreenContent {
   if (!isRecord(value) || typeof value.state !== "string" || !["draft", "review", "sent", "not-accepted"].includes(value.state)
     || typeof value.tone !== "string" || !["neutral", "warning", "danger"].includes(value.tone)
@@ -656,6 +677,7 @@ function isSurfacePayload(value: unknown): value is GuestSurfacePayload {
   if (value.conventionalRouteLabel !== undefined && typeof value.conventionalRouteLabel !== "string") return false;
   if (value.waiting !== undefined && !isWaitingState(value.waiting)) return false;
   if (value.requestScreen !== undefined && !isRequestScreen(value.requestScreen)) return false;
+  if (value.confirmation !== undefined && !isConfirmation(value.confirmation)) return false;
   return value.conventionalRoute === undefined || isSafeInternalRoute(value.conventionalRoute);
 }
 

@@ -31,7 +31,10 @@ test("AC1: In real Chromium, starting a new conversation keeps the Booking Reque
       // Escape also cancels.
       assert.equal(await tab.clickButton("New conversation"), true);
       await tab.waitForFunction("!document.getElementById('new-conversation-confirm').hidden", 10_000);
+      await tab.waitForFunction("document.getElementById('new-conversation-confirm').contains(document.activeElement)", 10_000);
       await tab.pressKey("Escape");
+      // CDP key dispatch can complete before the page's keydown handler is observable.
+      await tab.waitForFunction("document.getElementById('new-conversation-confirm').hidden", 10_000);
       assert.equal(await tab.evaluate<boolean>("document.getElementById('new-conversation-confirm').hidden"), true);
       assert.equal(await storedThread(tab), original);
 

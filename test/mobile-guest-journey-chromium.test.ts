@@ -363,7 +363,7 @@ async function completeJourney(context: MobileContext, recoverFromPendingPayment
   await capturePhase4(context, "deposit-handoff");
   assert.equal(await tab.clickButton("Check payment status"), true);
   await tab.waitForText("Booking confirmed");
-  const confirmationPresentation = await tab.evaluate<{ readonly titleUsesStatusTreatment: boolean; readonly statusUsesSuccessTreatment: boolean }>("(() => { const texts=[...document.querySelectorAll('#active-workspace [data-a2ui-component=\"Text\"]')]; const title=texts.find((node)=>node.textContent?.trim()==='Booking confirmed'); const status=texts.find((node)=>node.textContent?.trim()==='Reservation confirmed'); return { titleUsesStatusTreatment:Boolean(title?.classList.contains('guest-status')), statusUsesSuccessTreatment:Boolean(status?.classList.contains('guest-status--success')) }; })()");
+  const confirmationPresentation = await tab.evaluate<{ readonly titleUsesStatusTreatment: boolean; readonly statusUsesSuccessTreatment: boolean }>("(() => { const screen=document.querySelector('#active-workspace .confirmed-screen'); const title=screen?.querySelector('.request-head h2'); const status=screen?.querySelector('.ui-status'); return { titleUsesStatusTreatment:Boolean(title?.classList.contains('guest-status') || title?.classList.contains('ui-status')), statusUsesSuccessTreatment:status?.textContent?.trim()==='Stay payment verified' && Boolean(status.classList.contains('ui-status--success')) }; })()");
   assert.deepEqual(confirmationPresentation, { titleUsesStatusTreatment: false, statusUsesSuccessTreatment: true });
   await capturePhase4(context, "confirmed-booking");
 }

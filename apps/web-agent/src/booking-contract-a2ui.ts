@@ -1,13 +1,12 @@
 import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage } from "@weaver/core";
 import type { BookingContractArtifact } from "../../web/src/booking-contract-artifact.js";
+import { confirmationSteps } from "./confirmation-presentation.js";
 import { formatBookingMoney, ticketFactComponents, ticketFactIds } from "./booking-presentation.js";
 import { GUEST_FACT_LABELS, GUEST_GLOSSARY, accommodationProviderLine, guestFact, guestReservationStatus } from "./guest-content.js";
 
 export function bookingContractArtifactToA2UI({ artifact, surfaceId }: { readonly artifact: BookingContractArtifact; readonly surfaceId: string }): readonly A2UIServerMessage[] {
   const { facts } = artifact;
-  const accessText = facts.accessAvailability === "available"
-    ? "Your access details are in secure booking details."
-    : "Check-in details will be shared when they are ready. A confirmed booking does not itself grant physical access.";
+  const accessText = confirmationSteps(facts).slice(0, -1).join(" ");
   const guestNames = facts.occupants.filter((name) => !/^(?:demo\s+guest|guest(?:\s*\d+)?|companion\s+\d+)$/i.test(name.trim()));
   // ADR-0015/0016/0085: only call the refundable deposit collected when the
   // contract projection confirms the collection is held.

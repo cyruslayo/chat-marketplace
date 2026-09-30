@@ -75,7 +75,8 @@ import { LISTING_GALLERY_STYLE, listingGalleryHtml } from "./listing-gallery.js"
 import { requestDraftArtifactFromProjection, requestDraftArtifactId } from "../../../apps/web/src/request-draft-artifact.js";
 import type { RequestDraftArtifact } from "../../../apps/web/src/request-draft-artifact.js";
 import { draftScreenContent, requestScreenContent, type RequestScreenContent } from "../../web-agent/src/request-presentation.js";
-import { requestScreenHtml } from "./guest-kit.js";
+import { appBarHtml, confirmationScreenHtml, railHtml, requestScreenHtml } from "./guest-kit.js";
+import { confirmationContent, type ConfirmationContent } from "../../web-agent/src/confirmation-presentation.js";
 import type { ConditionalOfferArtifact } from "../../../apps/web/src/conditional-offer-artifact.js";
 import type { BookingContractArtifact } from "../../../apps/web/src/booking-contract-artifact.js";
 import type { CardPaymentApplication } from "../../../apps/web/src/card-payment-application.js";
@@ -123,6 +124,7 @@ export interface GuestSurfacePayload {
   /** Issue 10: present only while the Guest waits on a server-owned deadline. */
   readonly waiting?: GuestWaitingState;
   readonly requestScreen?: RequestScreenContent;
+  readonly confirmation?: ConfirmationContent;
 }
 
 /**
@@ -211,6 +213,7 @@ export interface ConventionalBookingPage {
   readonly textFallback: string;
   readonly stay?: ConventionalStayDetails;
   readonly requestScreen?: RequestScreenContent;
+  readonly confirmation?: ConfirmationContent;
 }
 
 export interface ConventionalStayDetails {
@@ -924,7 +927,7 @@ export class LocalGuestApp {
     // The contract view is authorized by the domain for the contract's parties.
     getConventionalBookingContractView(environment.contractApp, id, principal);
     const artifact = this.#contractArtifact(id);
-    return { threadId: thread.threadId, summary: "Reservation confirmed", textFallback: this.#confirmedBookingFallback(artifact), stay: { unitTitle: artifact.facts.unitTitle ?? `Your ${GUEST_GLOSSARY.unit}`, checkIn: artifact.facts.checkIn, checkOut: artifact.facts.checkOut, nights: artifact.facts.nights, guestCount: artifact.facts.occupants.length, ...(artifact.facts.allInStayTotalKobo === undefined ? {} : { allInStayTotalKobo: artifact.facts.allInStayTotalKobo }), ...(artifact.facts.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: artifact.facts.refundableSecurityDepositKobo }), amountPaidKobo: artifact.facts.amountPaidKobo } };
+    return { threadId: thread.threadId, confirmation: confirmationContent(artifact, thread.threadId, conventionalBookingContractRoute(id), this.#confirmedBookingFallback(artifact)), summary: "Reservation confirmed", textFallback: this.#confirmedBookingFallback(artifact), stay: { unitTitle: artifact.facts.unitTitle ?? `Your ${GUEST_GLOSSARY.unit}`, checkIn: artifact.facts.checkIn, checkOut: artifact.facts.checkOut, nights: artifact.facts.nights, guestCount: artifact.facts.occupants.length, ...(artifact.facts.allInStayTotalKobo === undefined ? {} : { allInStayTotalKobo: artifact.facts.allInStayTotalKobo }), ...(artifact.facts.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: artifact.facts.refundableSecurityDepositKobo }), amountPaidKobo: artifact.facts.amountPaidKobo } };
   }
 
   getState(threadId: string): GuestStateSnapshot | undefined {
@@ -979,7 +982,10 @@ export class LocalGuestApp {
         : thread.requestId && surface.surfaceId === `thread-${thread.threadId}:request:${thread.requestId}`
           ? requestScreenContent(this.#environment.bookingRequestApp.getArtifact(thread.requestId, this.#environment.guestPrincipal()), conventionalBookingRequestRoute(thread.requestId), this.#currentUnit(thread)?.operator.name)
           : undefined;
-      return { ...surface, ...(waiting === undefined ? {} : { waiting }), ...(content === undefined ? {} : { requestScreen: content }) };
+      const contractId = thread.offerId ? this.#snapshotContractId(thread.offerId) : null;
+      const contract = contractId && surface.surfaceId === `thread-${thread.threadId}:booking:${contractId}` ? this.#contractArtifact(contractId) : undefined;
+      const confirmation = contract ? confirmationContent(contract, thread.threadId, conventionalBookingContractRoute(contract.facts.contractId), this.#confirmedBookingFallback(contract)) : undefined;
+      return { ...surface, ...(waiting === undefined ? {} : { waiting }), ...(content === undefined ? {} : { requestScreen: content }), ...(confirmation === undefined ? {} : { confirmation }) };
     });
   }
 
@@ -2802,15 +2808,9 @@ const MAX_TURN_TEXT_LENGTH = 2000;
  * JavaScript. Surfaces are shown by their text fallback and conventional
  * route (ADR-0080), with the same link label the client uses.
  */
-const JOURNEY_STATE_TEXT: Readonly<Record<GuestJourney["steps"][number]["state"], string>> = {
-  done: "completed", current: "current step", failed: "not completed", upcoming: "not started",
-};
-
 /** Issue 08 / ADR-0080: the no-JS page shows the same journey rail as the live shell. */
 function renderJourneyRailHtml(journey: GuestJourney | undefined): string {
-  if (!journey) return "";
-  const steps = journey.steps.map((step) => `<li data-state="${step.state}"${step.state === "current" ? " aria-current=\"step\"" : ""}>${escapeHtml(step.label)}<span class="journey-state"> (${JOURNEY_STATE_TEXT[step.state]})</span></li>`).join("");
-  return `<nav class="no-js-journey" aria-label="${GUEST_JOURNEY.railLabel}"><ol>${steps}</ol></nav>`;
+  return railHtml(journey).replace('class="ui-rail-nav"', 'class="ui-rail-nav no-js-journey"');
 }
 
 /** Issue 10 / ADR-0080: without JavaScript the absolute deadline stands in for the countdown. */
@@ -2822,9 +2822,12 @@ function renderWaitingHtml(waiting: GuestWaitingState | undefined): string {
 
 export function renderNoScriptConversationHtml(input: { readonly threadId: string; readonly timeline: readonly GuestTimelineEntry[]; readonly surfaces: readonly GuestSurfacePayload[]; readonly journey?: GuestJourney; readonly error?: string; readonly draft?: string; readonly committedWork?: readonly GuestCommittedWork[] }): string {
   const turns = input.timeline.map((entry) => entry.role === "receipt"
-    ? `<li class="no-js-receipt" data-role="receipt"><p>${icon("check")} ${escapeHtml(entry.text)}</p></li>`
-    : `<li class="ui-panel no-js-turn" data-role="${entry.role}"><p class="ui-eyebrow">${entry.role === "user" ? "You" : "Shortlet Concierge"}</p><p>${escapeHtml(entry.text)}</p></li>`).join("");
-  const surfaces = input.surfaces.filter((surface) => surface.status !== "deleted" && surface.status !== "superseded").map((surface) => `<section class="ui-panel" aria-label="${escapeHtml(surface.summary ?? "Current details")}">${surface.summary ? `<h2>${escapeHtml(surface.summary)}</h2>` : ""}${surface.textFallback ? `<p>${escapeHtml(surface.textFallback)}</p>` : ""}${renderWaitingHtml(surface.waiting)}${surface.conventionalRoute ? `<a class="ui-button ui-button--primary" href="${escapeHtml(surface.conventionalRoute)}">${escapeHtml(surface.conventionalRouteLabel ?? "Open full details")}</a>` : ""}</section>`).join("");
+    ? `<li class="no-js-receipt receipt-marker" data-role="receipt"><p>${icon("check")} ${escapeHtml(entry.text)}</p></li>`
+    : `<li class="turn ${entry.role} no-js-turn" data-role="${entry.role}"><p class="turn-label">${entry.role === "user" ? "You" : "Shortlet Concierge"}</p><div class="bubble">${escapeHtml(entry.text)}</div></li>`).join("");
+  const surfaces = input.surfaces.filter((surface) => surface.status !== "deleted" && surface.status !== "superseded").map((surface) => {
+    const content = `<span class="ui-result-row__thumb">${icon("doc")}</span><span class="ui-result-row__body"><strong class="ui-result-row__title">${escapeHtml(surface.summary ?? "Current details")}</strong>${surface.textFallback ? `<span class="no-js-surface-fallback">${escapeHtml(surface.textFallback)}</span>` : ""}<span class="ui-link">${escapeHtml(surface.conventionalRouteLabel ?? "Open full details")}</span></span>${icon("chevron-right")}`;
+    return `<section aria-label="${escapeHtml(surface.summary ?? "Current details")}">${surface.conventionalRoute ? `<a class="ui-result-row" href="${escapeHtml(surface.conventionalRoute)}">${content}</a>` : `<div class="ui-result-row">${content}</div>`}${renderWaitingHtml(surface.waiting)}</section>`;
+  }).join("");
   const error = input.error ? `<p id="composer-error" class="ui-field__error" role="alert">${escapeHtml(input.error)}</p>` : "";
   // Issue 13a / ADR-0080: a new conversation without JavaScript still says the
   // Guest's live work elsewhere is unaffected, and links to it.
@@ -2835,8 +2838,8 @@ export function renderNoScriptConversationHtml(input: { readonly threadId: strin
   return pageShell({
     title: "Conversation · Shortlet",
     width: "narrow",
-    style: ".no-js-transcript{list-style:none;margin:0;padding:0;display:grid;gap:var(--space-3)}.no-js-transcript p,.ui-panel p{margin:0}.ui-panel h2{margin:0;font-size:var(--font-size-h3);line-height:var(--font-line-h3)}.no-js-turn[data-role=user]{background:var(--color-surface-subtle)}.no-js-receipt p{display:flex;gap:var(--space-2);align-items:center;color:var(--color-text-secondary)}.no-js-journey ol{display:flex;flex-wrap:wrap;gap:var(--space-1) var(--space-3);margin:0;padding:0;list-style:none;font-size:var(--font-size-small)}.no-js-journey li{color:var(--color-text-secondary)}.no-js-journey li[data-state=current],.no-js-journey li[data-state=failed]{color:var(--color-text);font-weight:650}.journey-state{position:absolute;inline-size:1px;block-size:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}",
-    body: `<header class="ui-page__header" data-page="conversation"><p class="ui-eyebrow">Shortlet</p><h1>Conversation</h1><p><a class="ui-button" href="/conversation">${GUEST_NEW_CONVERSATION.control}</a></p></header>${committed}${renderJourneyRailHtml(input.journey)}${turns ? `<ol class="no-js-transcript" aria-label="Conversation">${turns}</ol>` : ""}${surfaces}<form class="ui-panel" method="post" action="/conversation" aria-label="Message the concierge"><div class="ui-field"><label class="ui-field__label" for="composer-input">Your message</label><p class="ui-field__hint" id="composer-hint">Share a city or neighbourhood, dates or nights, and number of guests.</p><input id="composer-input" name="message" type="text" autocomplete="off" enterkeyhint="send" maxlength="${MAX_TURN_TEXT_LENGTH}" required aria-describedby="composer-hint${error ? " composer-error" : ""}"${error ? " aria-invalid=\"true\"" : ""} value="${escapeHtml(input.draft ?? "")}">${error}</div><input type="hidden" name="threadId" value="${escapeHtml(input.threadId)}"><button class="ui-button ui-button--primary ui-button--block" type="submit">Send</button></form>`,
+    frame: `${appBarHtml({ backHref: "/", backLabel: "Back to your conversation", action: { href: "/conversation", label: GUEST_NEW_CONVERSATION.control, icon: "message-plus" } })}${renderJourneyRailHtml(input.journey)}`,
+    body: `<div class="guest-editorial no-js-conversation" data-page="conversation"><h1 class="ui-sr-only">Conversation</h1>${committed}${turns ? `<ol class="no-js-transcript" aria-label="Conversation">${turns}</ol>` : ""}${surfaces}<form id="composer" class="composer" method="post" action="/conversation" aria-label="Message the concierge"><div class="ui-field"><label class="ui-field__label" for="composer-input">Your message</label><p class="ui-field__hint" id="composer-hint">Share a city or neighbourhood, dates or nights, and number of guests.</p><input id="composer-input" name="message" type="text" autocomplete="off" enterkeyhint="send" maxlength="${MAX_TURN_TEXT_LENGTH}" required aria-describedby="composer-hint${error ? " composer-error" : ""}"${error ? " aria-invalid=\"true\"" : ""} value="${escapeHtml(input.draft ?? "")}">${error}</div><input type="hidden" name="threadId" value="${escapeHtml(input.threadId)}"><button class="ui-button ui-button--primary" type="submit">Send</button></form></div>`,
   });
 }
 
@@ -2858,13 +2861,13 @@ function matchConventionalBookingRoute(pathname: string): { readonly kind: Conve
 
 export function renderConventionalBookingHtml(page: ConventionalBookingPage): string {
   const stay = page.stay;
-  const ticket = stay ? stayTicketHtml(stay) : "";
-  const breakdown = stay ? priceBreakdownHtml({ ...(stay.allInStayTotalKobo === undefined ? {} : { allInStayTotalKobo: stay.allInStayTotalKobo }), ...(stay.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: stay.refundableSecurityDepositKobo }), ...(stay.amountDueNowKobo === undefined ? {} : { amountDueNowKobo: stay.amountDueNowKobo }), ...(stay.amountDueNowIsConditional ? { heading: GUEST_FACT_LABELS.ifRequestAccepted } : {}), ...(stay.amountPaidKobo === undefined ? {} : { amountPaidKobo: stay.amountPaidKobo }) }) : "";
+  const ticket = stay ? stayTicketHtml({ ...stay, ...(page.confirmation ? { bookingReference: page.confirmation.bookingReference } : {}) }) : "";
+  const breakdown = stay ? priceBreakdownHtml({ ...(page.confirmation ? { depositCollected: page.confirmation.depositCollected } : {}), ...(stay.allInStayTotalKobo === undefined ? {} : { allInStayTotalKobo: stay.allInStayTotalKobo }), ...(stay.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: stay.refundableSecurityDepositKobo }), ...(stay.amountDueNowKobo === undefined ? {} : { amountDueNowKobo: stay.amountDueNowKobo }), ...(stay.amountDueNowIsConditional ? { heading: GUEST_FACT_LABELS.ifRequestAccepted } : {}), ...(stay.amountPaidKobo === undefined ? {} : { amountPaidKobo: stay.amountPaidKobo }) }) : "";
   return pageShell({
     title: `${page.summary} · Shortlet`,
     width: "narrow",
     frame: appFrameHtml({ threadId: page.threadId, ...(page.journey === undefined ? {} : { journey: page.journey }) }),
-    body: page.requestScreen ? `<div class="guest-editorial">${requestScreenHtml(page.requestScreen, ticket, breakdown, stay?.allInStayTotalKobo === undefined ? undefined : formatNgnKobo(stay.allInStayTotalKobo))}</div>` : `<div class="guest-editorial"><header class="ui-page__header" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h1>${escapeHtml(page.summary)}</h1></header>${ticket}${breakdown}<section class="ui-panel"><p>${escapeHtml(page.textFallback)}</p><a class="ui-button ui-button--primary ui-button--block" href="/?threadId=${encodeURIComponent(page.threadId)}">Back to your conversation</a></section></div>`,
+    body: page.confirmation ? `<div class="guest-editorial">${confirmationScreenHtml(page.confirmation, ticket, breakdown)}</div>` : page.requestScreen ? `<div class="guest-editorial">${requestScreenHtml(page.requestScreen, ticket, breakdown, stay?.allInStayTotalKobo === undefined ? undefined : formatNgnKobo(stay.allInStayTotalKobo))}</div>` : `<div class="guest-editorial"><header class="ui-page__header" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h1>${escapeHtml(page.summary)}</h1></header>${ticket}${breakdown}<section class="ui-panel"><p>${escapeHtml(page.textFallback)}</p><a class="ui-button ui-button--primary ui-button--block" href="/?threadId=${encodeURIComponent(page.threadId)}">Back to your conversation</a></section></div>`,
   });
 }
 
@@ -2995,8 +2998,8 @@ const PAGE_ERROR_COPY: Readonly<Record<string, { readonly title: string; readonl
 
 /** Page routes answer browser navigations with a styled page and API clients with JSON. */
 function sendPageError(req: IncomingMessage, res: ServerResponse, status: number, code: string): void {
-  const copy = PAGE_ERROR_COPY[code];
-  if (!copy || !prefersHtml(req.headers.accept)) { sendJson(res, status, { ok: false, code }); return; }
+  if (!prefersHtml(req.headers.accept)) { sendJson(res, status, { ok: false, code }); return; }
+  const copy = PAGE_ERROR_COPY[code] ?? { title: "This action couldn't be completed", message: "Return to your conversation for the current options." };
   res.writeHead(status, GUEST_HTML_HEADERS);
   res.end(errorPage({ status, code, title: copy.title, message: copy.message, action: { href: "/", label: "Back to your conversation" } }));
 }
