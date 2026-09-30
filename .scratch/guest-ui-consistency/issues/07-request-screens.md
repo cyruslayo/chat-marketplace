@@ -1,6 +1,6 @@
 # Request screens: draft, review, sent, not accepted
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: 03, 04
 Requested: 29 Sept 2026
@@ -70,6 +70,8 @@ The ADR directory and all listed records were read before implementation, along 
 7. `npm run check` passes with zero errors. The final actual `npm test` run exits 0: **1210/1210 non-browser tests**, **151 Chromium passes, 1 pre-existing skip, 0 failures**. `git diff --check` is clean.
 
 ## Answer
+
+Implementation committed as `f802424`; resolved after the full-suite and Definition of Done review above.
 
 One shared request-screen layout now renders draft, review, sent and not-accepted states on both surfaces. `apps/web-agent/src/request-presentation.ts` projects shared content; `requestScreenHtml` in `guest-kit.ts` builds the kit markup. The chat uses the same layout around its label-driven ticket/breakdown while retaining Weaver's bound actions and visible loading feedback.
 
