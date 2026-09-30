@@ -1,6 +1,6 @@
 # Confirmation and system pages: confirmed, error pages, conversation without JavaScript
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: 03, 04
 Requested: 29 Sept 2026
@@ -72,6 +72,8 @@ Listed ADRs and the Shortlet/Concierge CONTEXT documents were read before implem
 7. `npm run check` and `git diff --check` are clean. Actual `npm test` exits 0 with **1372 passes, 1 pre-existing skip, zero failures**.
 
 ## Answer
+
+Implementation committed as `5b73998`; resolved after the full-suite and Definition of Done review above.
 
 Confirmation now shares one kit layout across the workspace and owner-authorized contract page, including the Reservation ID in the ticket foot, held-deposit-aware paid breakdown, existing arrival sentences as steps and navigation to readable booking details.
 
