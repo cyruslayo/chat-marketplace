@@ -16,6 +16,7 @@ try {
       await size(900);
       await tab.navigate(url);
       await tab.waitForFunction("document.readyState === 'complete'", 10_000);
+      await tab.evaluate("document.documentElement.setAttribute('data-theme', 'light')");
       await new Promise((resolve) => setTimeout(resolve, 400));
       const { height, overflow } = await tab.evaluate<{ height: number; overflow: number }>("({ height: document.documentElement.scrollHeight, overflow: document.documentElement.scrollWidth - innerWidth })");
       await size(Math.min(height, 4000));

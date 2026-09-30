@@ -280,7 +280,7 @@ test("Weaver-generated View apartment action round-trips through the server and 
     const rendered = unitTarget.textContent ?? "";
     assert.ok(rendered.includes(IKOYI_TITLE));
     assert.ok(rendered.includes("All-In Stay Total") && rendered.includes(ALL_IN_TOTAL_NGN));
-    assert.ok(rendered.includes("Refundable Security Deposit: ₦20,000"));
+    assert.ok(rendered.includes("Refundable Security Deposit (separate): ₦20,000"));
     assert.ok(rendered.includes("Request to Book"), "unit detail exposes the Request to Book action");
   } finally {
     await journey.server.close();

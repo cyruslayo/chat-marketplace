@@ -128,7 +128,8 @@ test("Authoritative Old Ikoyi Unit detail renders through Weaver in real Chromiu
     assert.match(rendered, /2 bedrooms/);
     assert.match(rendered, /2 bathrooms/);
     assert.match(rendered, /Sleeps 4/);
-    assert.match(rendered, new RegExp(`All-In Stay Total\\s+${formatNgnKobo(allInKobo)}`), "rendered all-in price matches authoritative inventory");
+    assert.ok((await tab.evaluate<string>("document.querySelector('#active-workspace .ui-price-breakdown .ui-price-breakdown__label')?.textContent ?? ''")).includes("All-In Stay Total · "), "the total is labelled for the quoted stay (ADR 0015)");
+    assert.ok(rendered.includes(formatNgnKobo(allInKobo)), "rendered all-in price matches authoritative inventory");
     assert.doesNotMatch(await tab.evaluate<string>("document.body.innerText"), /The workspace could not be displayed safely/);
     assert.ok(oldDetail.summary?.includes(authoritative.title));
 

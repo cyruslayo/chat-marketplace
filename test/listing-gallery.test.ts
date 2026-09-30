@@ -44,7 +44,7 @@ test("AC5 — The full apartment page and the chat's apartment details use the s
     const page = renderConventionalUnitDetailHtml({ ...unit, photoUrls: photos.map((photo) => photo.src) });
     assert.match(page, /<section class="listing-gallery"/, "the full page renders the shared gallery");
     assert.match(page, /class="unit-detail-sheet" aria-label="Stay details"/, "the summary sheet overlaps the gallery");
-    assert.match(page, /class="ui-facts ui-facts--chips"/, "stay facts use compact chips");
+    assert.match(page, /class="ui-tiles" aria-label="Stay facts"/, "stay facts use the kit tiles");
     assert.match(page, /class="ui-action-bar"/, "the request action stays available at the bottom");
     assert.match(page, /\.listing-gallery__track\{/, "with the shared styles");
     assert.match(page, /<script src="\/gallery\.js" defer><\/script>/, "and the shared script");

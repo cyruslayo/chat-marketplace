@@ -6,8 +6,8 @@
 import { createBasicWebRuntime } from "@weaver/web";
 import { icon } from "../../web/src/ui-kit.js";
 import { buildListingGallery, enhanceListingGallery, watchPhotoFailure } from "./listing-gallery.js";
-import { GUEST_COMPARE_LABELS, GUEST_FACT_LABELS, GUEST_GLOSSARY, GUEST_NEW_CONVERSATION, guestFactValue, guestNewConversationCopy, type GuestCommittedWorkKind } from "../../web-agent/src/guest-content.js";
-import { breakdownHtml, resultRowPartsHtml, stayCardInnerHtml, ticketHtml, type StayCardParts } from "./guest-kit.js";
+import { GUEST_COMPARE_LABELS, GUEST_FACT_LABELS, GUEST_GLOSSARY, GUEST_NEW_CONVERSATION, UNIT_DETAIL_ABOUT_HEADING, guestFactValue, guestNewConversationCopy, type GuestCommittedWorkKind } from "../../web-agent/src/guest-content.js";
+import { breakdownHtml, resultRowPartsHtml, stayCardInnerHtml, ticketHtml, unitAboutHtml, unitTilesHtml, type StayCardParts } from "./guest-kit.js";
 import {
   canUseSurfaceActions,
   closeFocusedSurface,
@@ -148,19 +148,19 @@ function enhanceListingImages(mount: HTMLElement): void {
   for (const gallery of mount.querySelectorAll<HTMLElement>(".listing-gallery")) enhanceListingGallery(gallery);
 }
 
-function wrapDirectChildren(parent: HTMLElement, className: string, children: readonly Element[]): HTMLElement | undefined {
-  if (children.length === 0) return undefined;
-  const wrapper = document.createElement("div");
-  wrapper.className = className;
-  parent.insertBefore(wrapper, children[0]!);
-  for (const child of children) wrapper.appendChild(child);
-  return wrapper;
-}
+const UNIT_TILE_FACTS = [
+  { icon: "bed", label: GUEST_FACT_LABELS.bedrooms },
+  { icon: "bath", label: GUEST_FACT_LABELS.bathrooms },
+  { icon: "users", label: GUEST_FACT_LABELS.sleeps },
+] as const;
 
 function organizeUnitDetail(mount: HTMLElement): void {
   // Weaver adds a surface mount between our target and the Basic Catalog root.
   const root = mount.querySelector<HTMLElement>('[data-a2ui-component="Column"]');
   if (!root) return;
+  const tileFacts = UNIT_TILE_FACTS.map((tile) => ({ ...tile, fact: findFact([...root.children], tile.label) }));
+  // ADR-0080: incomplete presentation facts retain the complete Weaver fallback, rather than a partial sheet.
+  if (tileFacts.some((tile) => !tile.fact || tile.fact.value.trim() === "")) return;
   root.classList.add("unit-detail-root");
 
   // Guest gallery issue 01: the photos Weaver rendered become the shared listing gallery, as on the full page.
@@ -169,91 +169,98 @@ function organizeUnitDetail(mount: HTMLElement): void {
     if (!(child instanceof HTMLImageElement)) break;
     images.push(child);
   }
-  const unitTitle = [...root.children].find((child) => child.tagName === "H2" && !/^(₦|NGN\b)/.test(child.textContent?.trim() ?? ""))?.textContent?.trim() || "this apartment";
+  const unitTitle = [...root.children].find((child) => child.tagName === "H2" && !isMoney(child.textContent ?? ""))?.textContent?.trim() || "this apartment";
+  let gallery: HTMLElement | undefined;
   if (images.length > 0) {
-    root.insertBefore(buildListingGallery(document, unitTitle, images), root.firstChild);
+    gallery = buildListingGallery(document, unitTitle, images);
   } else {
     const noPhotos = root.firstElementChild;
     if (noPhotos instanceof HTMLElement && noPhotos.matches('[data-a2ui-component="Text"]') && /no property photos/i.test(noPhotos.textContent ?? "")) {
-      const fallback = document.createElement("div");
-      fallback.className = "unit-gallery unit-gallery--fallback";
-      fallback.setAttribute("role", "group");
-      fallback.setAttribute("aria-label", "Property photos");
+      gallery = document.createElement("div");
+      gallery.className = "unit-gallery unit-gallery--fallback";
+      gallery.setAttribute("role", "group");
+      gallery.setAttribute("aria-label", "Property photos");
       noPhotos.classList.add("unit-photo-missing");
-      root.insertBefore(fallback, noPhotos);
-      fallback.appendChild(noPhotos);
+      gallery.appendChild(noPhotos);
     }
   }
 
   const children = [...root.children];
-  const title = children.find((child) => child.tagName === "H2" && !/^(₦|NGN\b)/.test(child.textContent?.trim() ?? ""));
-  const amount = children.find((child) => child !== title && child.tagName === "H2" && /^(₦|NGN\b)/.test(child.textContent?.trim() ?? ""));
+  const title = children.find((child) => child.tagName === "H2" && !isMoney(child.textContent ?? ""));
+  const amount = children.find((child) => child !== title && child.tagName === "H2" && isMoney(child.textContent ?? ""));
   const priceLabel = children.find((child) => isPriceLabel(child.textContent?.trim() ?? ""));
-  const location = children.find((child) => child.tagName === "SMALL" && child !== priceLabel);
-  const facts = children.find((child) => child.tagName === "P" && child !== title);
-  const dates = children.find((child) => guestFactValue(child.textContent ?? "", GUEST_FACT_LABELS.stayDates) !== undefined);
-
-  for (const [element, className] of [[title, "unit-title"], [location, "unit-location"], [facts, "unit-facts"], [dates, "unit-dates"]] as const) {
-    element?.classList.add(className);
-  }
-  if (facts) {
-    const factLabels = (facts.textContent ?? "").split(" · ").map((label) => label.trim()).filter(Boolean);
-    if (factLabels.length > 1) {
-      const chips = factLabels.map((label) => {
-        const chip = document.createElement("span");
-        chip.textContent = label;
-        return chip;
-      });
-      facts.replaceChildren(...chips);
-      facts.classList.add("unit-facts--chips");
-    }
-  }
-  const overview = wrapDirectChildren(root, "unit-overview", [title, location, facts, dates].filter((element): element is Element => element !== undefined));
-  if (overview) {
-    overview.setAttribute("role", "group");
-    overview.setAttribute("aria-label", "Stay overview");
-  }
-
-  if (priceLabel) {
-    priceLabel.classList.add("unit-price-label");
-    amount?.classList.add("unit-price-total");
-    const descriptionHeading = children.find((child) => /^(About this place|Amenities)$/.test(child.textContent?.trim() ?? ""));
-    const endIndex = descriptionHeading ? children.indexOf(descriptionHeading) : children.length;
-    const startIndex = children.indexOf(priceLabel);
-    const priceNodes = children.slice(startIndex, endIndex).filter((child) => child.parentElement === root);
-    wrapDirectChildren(root, "unit-price-group", priceNodes);
-  }
-
-  const afterPrice = [...root.children];
-  const about = afterPrice.find((child) => child.textContent?.trim() === "About this place");
-  if (about) {
-    const description = about.nextElementSibling;
-    wrapDirectChildren(root, "unit-description", [about, ...(description ? [description] : [])]);
-  }
-  const afterDescription = [...root.children];
-  const amenitiesHeading = afterDescription.find((child) => child.textContent?.trim() === "Amenities");
-  if (amenitiesHeading) {
-    const amenities = amenitiesHeading.nextElementSibling;
-    wrapDirectChildren(root, "unit-amenities", [amenitiesHeading, ...(amenities ? [amenities] : [])]);
-  }
+  const where = children.find((child) => child.tagName === "SMALL" && child !== priceLabel);
+  const deposit = findFact(children, GUEST_FACT_LABELS.refundableSecurityDeposit);
+  const aboutHeading = children.find((child) => child.textContent?.trim() === UNIT_DETAIL_ABOUT_HEADING);
+  const amenitiesHeading = children.find((child) => child.textContent?.trim() === "Amenities");
   const action = root.querySelector<HTMLElement>(":scope > [data-a2ui-component=\"Row\"]");
-  action?.classList.add("unit-actions");
-  const grouped = new Set<Element>([...(overview ? [overview] : []), ...root.querySelectorAll(":scope > .listing-gallery, :scope > .unit-gallery, :scope > .unit-price-group, :scope > .unit-description, :scope > .unit-amenities")]);
-  const supporting = [...root.children].filter((child) => child !== action && !grouped.has(child));
-  wrapDirectChildren(root, "unit-supporting-info", supporting);
+
+  // Issue 06: the sheet is the same DOM the standalone page renders: where, serif title, facility tiles, price, about.
+  const sheet = document.createElement("section");
+  sheet.className = "unit-detail-sheet";
+  sheet.setAttribute("aria-label", "Stay details");
+  if (where) { where.classList.add("unit-detail-location"); where.insertAdjacentHTML("afterbegin", icon("pin")); sheet.append(where); }
+  if (title) sheet.append(title);
+  {
+    const template = document.createElement("template");
+    template.innerHTML = unitTilesHtml(tileFacts.map((tile) => ({ icon: tile.icon, text: tile.fact!.value })));
+    sheet.append(template.content);
+  }
+  if (amount) {
+    const template = document.createElement("template");
+    template.innerHTML = breakdownHtml({
+      total: amount.textContent?.trim() ?? "",
+      ...(priceLabel ? { totalLabel: priceLabel.textContent?.trim() ?? "" } : {}),
+      ...(deposit ? { deposit: deposit.value } : {}),
+    });
+    sheet.append(template.content);
+  }
+  if (aboutHeading) {
+    const description = aboutHeading.nextElementSibling;
+    const text = description?.textContent ?? "";
+    aboutHeading.remove();
+    description?.remove();
+    const template = document.createElement("template");
+    template.innerHTML = unitAboutHtml(text);
+    sheet.append(template.content);
+  }
+  // Nothing partial: the facts, price and deposit elements became the sheet's kit markup and are removed.
+  for (const tile of tileFacts) tile.fact!.element.remove();
+  priceLabel?.remove();
+  amount?.remove();
+  deposit?.element.remove();
+
+  const amenitiesNodes = amenitiesHeading ? [amenitiesHeading, ...(amenitiesHeading.nextElementSibling ? [amenitiesHeading.nextElementSibling] : [])] : [];
+  const supporting = [...root.children].filter((child) => child !== action && !amenitiesNodes.includes(child));
+
+  root.replaceChildren();
+  if (gallery) root.append(gallery);
+  root.append(sheet);
+  if (amenitiesNodes.length > 0) {
+    const amenities = document.createElement("div");
+    amenities.className = "unit-amenities";
+    amenities.append(...amenitiesNodes);
+    root.append(amenities);
+  }
+  if (supporting.length > 0) {
+    const support = document.createElement("div");
+    support.className = "unit-supporting-info";
+    support.append(...supporting);
+    root.append(support);
+  }
   if (action) {
+    action.classList.add("unit-actions");
     const bar = document.createElement("div");
     bar.className = "ui-action-bar unit-action-bar";
-    const priceGroup = root.querySelector<HTMLElement>(":scope > .unit-price-group");
-    const label = priceGroup?.querySelector<HTMLElement>(".unit-price-label");
-    const total = priceGroup?.querySelector<HTMLElement>(".unit-price-total");
-    if (label && total) {
-      const price = document.createElement("p");
-      price.append(label.cloneNode(true), document.createElement("br"), total.cloneNode(true));
-      bar.appendChild(price);
-    }
-    bar.appendChild(action);
-    root.appendChild(bar);
+    const sum = document.createElement("p");
+    sum.className = "ui-action-bar__sum";
+    const total = amount?.textContent?.trim() ?? "";
+    const label = priceLabel?.textContent?.trim() ?? "";
+    if (total !== "") { const strong = document.createElement("strong"); strong.textContent = total; sum.append(strong); }
+    if (label !== "") { const meta = document.createElement("span"); meta.className = "ui-money-metadata"; meta.textContent = label; sum.append(meta); }
+    if (sum.childElementCount > 0) bar.append(sum);
+    bar.append(action);
+    root.append(bar);
   }
 }
 

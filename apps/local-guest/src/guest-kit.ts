@@ -3,7 +3,7 @@
  * pages call these helpers, and the chat organizers in client.ts produce the same DOM and classes from Weaver output.
  * Styling lives in apps/web/src/shortlet-foundations.css (`ui-*`). Every value is escaped here; helpers never build URLs.
  */
-import { GUEST_FACT_LABELS, GUEST_GLOSSARY, GUEST_JOURNEY, stayTotalLabel } from "../../web-agent/src/guest-content.js";
+import { GUEST_FACT_LABELS, GUEST_GLOSSARY, GUEST_JOURNEY, UNIT_DETAIL_ABOUT_HEADING, stayTotalLabel } from "../../web-agent/src/guest-content.js";
 import { formatNgnKobo } from "../../web-agent/src/discovery-a2ui.js";
 import { formatBookingDeadline, formatStayFoot, formatTicketDate } from "../../web-agent/src/booking-presentation.js";
 import { escapeHtml, icon, statusBadge, type IconName } from "../../web/src/ui-kit.js";
@@ -71,12 +71,15 @@ export interface PriceBreakdownInput {
   readonly amountPaidKobo?: number;
   /** A condition tag above the total, for example "If your request is accepted". */
   readonly heading?: string;
+  /** The total's own label; defaults to the All-In Stay Total. The unit detail names the stay here (issue 06). */
+  readonly totalLabel?: string;
 }
 
 /** The breakdown's display text: money already formatted, in the order the section shows it (ADR 0015). */
 export interface BreakdownParts {
   readonly condition?: string;
   readonly total?: string;
+  readonly totalLabel?: string;
   readonly deposit?: string;
   readonly due?: string;
   readonly paid?: string;
@@ -84,7 +87,7 @@ export interface BreakdownParts {
 
 export function breakdownHtml(parts: BreakdownParts): string {
   const money = (value: string): string => `<span class="ui-price-breakdown__value">${escapeHtml(value)}</span>`;
-  const total = parts.total === undefined ? "" : `<div><p class="ui-price-breakdown__label">${GUEST_FACT_LABELS.allInStayTotal}</p><p class="ui-money-total">${escapeHtml(parts.total)}</p></div>`;
+  const total = parts.total === undefined ? "" : `<div><p class="ui-price-breakdown__label">${escapeHtml(parts.totalLabel ?? GUEST_FACT_LABELS.allInStayTotal)}</p><p class="ui-money-total">${escapeHtml(parts.total)}</p></div>`;
   const deposit = parts.deposit === undefined ? "" : `<p class="ui-price-breakdown__row">${GUEST_FACT_LABELS.refundableSecurityDeposit}: ${money(parts.deposit)}</p>`;
   const due = parts.due === undefined ? "" : `<p class="ui-price-breakdown__due">${GUEST_FACT_LABELS.amountDueNow}: ${money(parts.due)}</p>`;
   const paid = parts.paid === undefined ? "" : `<p class="ui-price-breakdown__paid">${GUEST_FACT_LABELS.amountPaid}: ${money(parts.paid)}</p>`;
@@ -96,10 +99,26 @@ export function priceBreakdownHtml(input: PriceBreakdownInput): string {
   return breakdownHtml({
     ...(input.heading ? { condition: input.heading } : {}),
     ...(input.allInStayTotalKobo === undefined ? {} : { total: formatNgnKobo(input.allInStayTotalKobo) }),
+    ...(input.totalLabel === undefined ? {} : { totalLabel: input.totalLabel }),
     ...(input.refundableSecurityDepositKobo === undefined || input.refundableSecurityDepositKobo <= 0 ? {} : { deposit: formatNgnKobo(input.refundableSecurityDepositKobo) }),
     ...(input.amountDueNowKobo === undefined ? {} : { due: formatNgnKobo(input.amountDueNowKobo) }),
     ...(input.amountPaidKobo === undefined ? {} : { paid: formatNgnKobo(input.amountPaidKobo) }),
   });
+}
+
+/** Issue 06: the unit-detail sheet's facility tiles (.ui-tiles), one markup source for the page and the chat. */
+export function unitTilesHtml(tiles: readonly { readonly icon: "bed" | "bath" | "users"; readonly text: string }[]): string {
+  return `<ul class="ui-tiles" aria-label="Stay facts">${tiles.map((tile) => `<li class="ui-tiles__tile">${icon(tile.icon)}${escapeHtml(tile.text)}</li>`).join("")}</ul>`;
+}
+
+/** Issue 06: the un-quoted unit price, the labelled indicative nightly rate (ADR 0015). */
+export function unitIndicativePriceHtml(nightlyKobo: number): string {
+  return `<div class="unit-detail-price"><p class="ui-field__hint">Price per night (indicative)</p><p class="ui-money-total">${formatNgnKobo(nightlyKobo)} <span class="ui-money-metadata">per night · dates not yet quoted</span></p></div>`;
+}
+
+/** Issue 06: the unit sheet's "About" section (heading plus description), one markup source for both surfaces. */
+export function unitAboutHtml(description: string): string {
+  return `<h2 class="unit-detail-about-heading">${escapeHtml(UNIT_DETAIL_ABOUT_HEADING)}</h2><p class="unit-detail-description">${escapeHtml(description)}</p>`;
 }
 
 /** One deadline style for every screen: an absolute WAT time plus the time left (ADR 0078). */

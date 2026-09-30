@@ -5,7 +5,8 @@ import {
 } from "@weaver/core";
 import { formatNgnKobo, type DiscoveryUnitProjection } from "./discovery-a2ui.js";
 import { unitDetailArtifactFromProjection, type UnitDetailArtifact } from "../../web/src/unit-detail-artifact.js";
-import { GUEST_FACT_LABELS, GUEST_GLOSSARY, GUEST_JOURNEY, formatGuestDate, guestAmenityLabel, guestFact, guestInspectionDisclosure, guestOccupancyLabel } from "./guest-content.js";
+import { GUEST_FACT_LABELS, GUEST_GLOSSARY, GUEST_JOURNEY, UNIT_DETAIL_ABOUT_HEADING, guestAmenityLabel, guestFact, guestInspectionDisclosure } from "./guest-content.js";
+import { formatStayDates, nightsBetween, unitStayTotalLabel, unitTiles } from "./booking-presentation.js";
 
 export const REQUEST_TO_BOOK_EVENT = "shortlet.unit-detail.request-to-book";
 /** Issue 08: returns to the results of the same search; the server validates the discovery artifact id. */
@@ -34,49 +35,34 @@ export function unitDetailArtifactToA2UI({ artifact, surfaceId, backToResults }:
   const { facts } = artifact;
   const action = artifact.actions.find((candidate) => candidate.type === "request-to-book");
   const prefix = "unit-detail";
-  const location = facts.title.toLocaleLowerCase().includes(facts.neighbourhood.toLocaleLowerCase())
-    ? facts.city
-    : `${facts.neighbourhood}, ${facts.city}`;
-  const coreFacts = [
-    guestOccupancyLabel(facts.occupancyModel),
-    ...(facts.bedrooms === undefined ? [] : [`${facts.bedrooms} ${facts.bedrooms === 1 ? "bedroom" : "bedrooms"}`]),
-    `${facts.bathrooms} ${facts.bathrooms === 1 ? "bathroom" : "bathrooms"}`,
-    `Sleeps ${facts.capacity}`,
-  ].filter((value): value is string => value !== undefined);
-  const allInLabel = facts.price.allInStayTotalKobo === null ? "Indicative nightly rate" : GUEST_GLOSSARY.allInStayTotal;
+  // ADR-0066: neighbourhood-level only, the same where line the standalone page shows.
+  const location = `${facts.neighbourhood}, ${facts.city} · exact address after payment`;
+  const tiles = unitTiles(facts.bedrooms, facts.bathrooms, facts.capacity);
+  const nights = nightsBetween(facts.checkIn, facts.checkOut);
+  const quoted = facts.price.allInStayTotalKobo !== null;
+  const allInLabel = quoted ? unitStayTotalLabel(formatStayDates(facts.checkIn, facts.checkOut), nights) : "Indicative nightly rate";
   const allInAmount = facts.price.allInStayTotalKobo ?? facts.price.nightlyKobo;
   const inspectionDisclosure = guestInspectionDisclosure(facts.inspection);
-  const nightRate = facts.price.allInStayTotalKobo === null
-    ? undefined
-    : `Nightly rate: ${formatNgnKobo(facts.price.nightlyKobo)}`;
-  const stayDates = guestFact(GUEST_FACT_LABELS.stayDates, `${formatGuestDate(facts.checkIn) ?? facts.checkIn} to ${formatGuestDate(facts.checkOut) ?? facts.checkOut}`);
   const amenityIds = facts.amenities.map((_, index) => `${prefix}-amenity-${index}`);
   const inspectionId = inspectionDisclosure === undefined ? [] : [`${prefix}-inspection`];
   const depositId = facts.price.refundableSecurityDepositKobo > 0 ? [`${prefix}-deposit`] : [];
-  const nightlyRateId = nightRate === undefined ? [] : [`${prefix}-nightly-rate`];
-  const feeId = facts.price.mandatoryFeesKobo > 0 ? [`${prefix}-fees`] : [];
-  const amountDueId = facts.price.amountDueNowKobo === null ? [] : [`${prefix}-amount-due`];
   const photoIds = facts.photos.map((_, index) => `${prefix}-photo-${index}`);
   const components: A2UIComponent[] = [
     { id: "root", component: "Column", children: [
       ...(photoIds.length > 0 ? photoIds : [`${prefix}-photo-unavailable`]),
-      `${prefix}-title`, `${prefix}-location`, `${prefix}-facts`, `${prefix}-stay-dates`,
-      `${prefix}-price-label`, `${prefix}-price`, ...nightlyRateId, ...feeId, ...depositId, ...amountDueId,
-      `${prefix}-description-heading`, `${prefix}-description`, `${prefix}-amenities-heading`, `${prefix}-amenities`,
+      `${prefix}-title`, `${prefix}-location`, `${prefix}-bedrooms`, `${prefix}-bathrooms`, `${prefix}-sleeps`,
+      `${prefix}-price-label`, `${prefix}-price`, ...depositId,
+      `${prefix}-about-heading`, `${prefix}-about`, `${prefix}-amenities-heading`, `${prefix}-amenities`,
       ...inspectionId, `${prefix}-disclosure`, `${prefix}-actions`,
     ] },
     { id: `${prefix}-title`, component: "Text", text: facts.title, variant: "h2" },
     { id: `${prefix}-location`, component: "Text", text: location, variant: "caption" },
-    { id: `${prefix}-facts`, component: "Text", text: coreFacts.join(" · ") },
-    { id: `${prefix}-stay-dates`, component: "Text", text: stayDates, variant: "caption" },
+    ...tiles.map((tile, index) => ({ id: `${prefix}-${["bedrooms", "bathrooms", "sleeps"][index]}`, component: "Text" as const, text: guestFact([GUEST_FACT_LABELS.bedrooms, GUEST_FACT_LABELS.bathrooms, GUEST_FACT_LABELS.sleeps][index]!, tile.text) })),
     { id: `${prefix}-price-label`, component: "Text", text: allInLabel, variant: "caption" },
     { id: `${prefix}-price`, component: "Text", text: formatNgnKobo(allInAmount), variant: "h2" },
-    ...(nightRate ? [{ id: `${prefix}-nightly-rate`, component: "Text" as const, text: nightRate, variant: "caption" as const }] : []),
-    ...(facts.price.mandatoryFeesKobo > 0 ? [{ id: `${prefix}-fees`, component: "Text" as const, text: `Mandatory fees included: ${formatNgnKobo(facts.price.mandatoryFeesKobo)}`, variant: "caption" as const }] : []),
-    ...(facts.price.refundableSecurityDepositKobo > 0 ? [{ id: `${prefix}-deposit`, component: "Text" as const, text: `${GUEST_GLOSSARY.refundableSecurityDeposit}: ${formatNgnKobo(facts.price.refundableSecurityDepositKobo)}`, variant: "caption" as const }] : []),
-    ...(facts.price.amountDueNowKobo === null ? [] : [{ id: `${prefix}-amount-due`, component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.amountDueNow, formatNgnKobo(facts.price.amountDueNowKobo)), variant: "caption" as const }]),
-    { id: `${prefix}-description-heading`, component: "Text", text: "About this place", variant: "h3" },
-    { id: `${prefix}-description`, component: "Text", text: facts.description },
+    ...(facts.price.refundableSecurityDepositKobo > 0 ? [{ id: `${prefix}-deposit`, component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.refundableSecurityDeposit, formatNgnKobo(facts.price.refundableSecurityDepositKobo)), variant: "caption" as const }] : []),
+    { id: `${prefix}-about-heading`, component: "Text", text: UNIT_DETAIL_ABOUT_HEADING, variant: "h2" },
+    { id: `${prefix}-about`, component: "Text", text: facts.description },
     { id: `${prefix}-amenities-heading`, component: "Text", text: "Amenities", variant: "h3" },
     { id: `${prefix}-amenities`, component: "Column", children: amenityIds },
     ...facts.amenities.map((amenity, index) => ({ id: amenityIds[index]!, component: "Text" as const, text: guestAmenityLabel(amenity) })),

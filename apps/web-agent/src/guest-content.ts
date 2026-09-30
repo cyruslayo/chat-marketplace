@@ -263,6 +263,9 @@ export const GUEST_FACT_LABELS = Object.freeze({
   stay: "Stay",
   stayDates: "Stay dates",
   where: "Where",
+  bedrooms: "Bedrooms",
+  bathrooms: "Bathrooms",
+  sleeps: "Sleeps",
   /** Named occupants, shown under the ticket only when the Guest gave real names. */
   guests: "Guests",
   allInStayTotal: GUEST_GLOSSARY.allInStayTotal,
@@ -282,6 +285,9 @@ export const GUEST_COMPARE_LABELS = Object.freeze({
   pick: "Compare",
   unpick: "Remove from compare",
 });
+
+/** Guest UI consistency issue 06: the unit-detail sheet's section heading, shared by the page and the chat organizer. */
+export const UNIT_DETAIL_ABOUT_HEADING = "About this apartment";
 
 export function guestFact(label: string, value: string): string {
   return `${label}: ${value}`;

@@ -116,5 +116,6 @@ test("AC18/AC19/AC22 — conventional detail exposes the same photos with safe r
   assert.match(html, /Ikeja/);
   assert.match(html, /₦/);
   assert.match(html, /A bright, quiet apartment with a spacious living room and reliable power/);
-  assert.match(html, /Bathrooms: 2/);
+  assert.match(html, /class="ui-tiles" aria-label="Stay facts"/);
+  assert.match(html, /2 bathrooms/);
 });

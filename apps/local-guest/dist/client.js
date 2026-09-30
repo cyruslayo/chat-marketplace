@@ -8879,6 +8879,9 @@ Known schemas:
     stay: "Stay",
     stayDates: "Stay dates",
     where: "Where",
+    bedrooms: "Bedrooms",
+    bathrooms: "Bathrooms",
+    sleeps: "Sleeps",
     /** Named occupants, shown under the ticket only when the Guest gave real names. */
     guests: "Guests",
     allInStayTotal: GUEST_GLOSSARY.allInStayTotal,
@@ -8896,6 +8899,7 @@ Known schemas:
     pick: "Compare",
     unpick: "Remove from compare"
   });
+  var UNIT_DETAIL_ABOUT_HEADING = "About this apartment";
   function guestFactValue(text, label) {
     const prefix = `${label}: `;
     const trimmed = text.trim();
@@ -9024,11 +9028,17 @@ Known schemas:
   }
   function breakdownHtml(parts) {
     const money = (value) => `<span class="ui-price-breakdown__value">${escapeHtml(value)}</span>`;
-    const total = parts.total === void 0 ? "" : `<div><p class="ui-price-breakdown__label">${GUEST_FACT_LABELS.allInStayTotal}</p><p class="ui-money-total">${escapeHtml(parts.total)}</p></div>`;
+    const total = parts.total === void 0 ? "" : `<div><p class="ui-price-breakdown__label">${escapeHtml(parts.totalLabel ?? GUEST_FACT_LABELS.allInStayTotal)}</p><p class="ui-money-total">${escapeHtml(parts.total)}</p></div>`;
     const deposit = parts.deposit === void 0 ? "" : `<p class="ui-price-breakdown__row">${GUEST_FACT_LABELS.refundableSecurityDeposit}: ${money(parts.deposit)}</p>`;
     const due = parts.due === void 0 ? "" : `<p class="ui-price-breakdown__due">${GUEST_FACT_LABELS.amountDueNow}: ${money(parts.due)}</p>`;
     const paid = parts.paid === void 0 ? "" : `<p class="ui-price-breakdown__paid">${GUEST_FACT_LABELS.amountPaid}: ${money(parts.paid)}</p>`;
     return `<section class="ui-panel ui-price-breakdown" aria-label="Price breakdown">${parts.condition ? `<p class="ui-price-breakdown__condition">${escapeHtml(parts.condition)}</p>` : ""}${total}${deposit}${due}${paid}</section>`;
+  }
+  function unitTilesHtml(tiles) {
+    return `<ul class="ui-tiles" aria-label="Stay facts">${tiles.map((tile) => `<li class="ui-tiles__tile">${icon(tile.icon)}${escapeHtml(tile.text)}</li>`).join("")}</ul>`;
+  }
+  function unitAboutHtml(description) {
+    return `<h2 class="unit-detail-about-heading">${escapeHtml(UNIT_DETAIL_ABOUT_HEADING)}</h2><p class="unit-detail-description">${escapeHtml(description)}</p>`;
   }
   function photoCountHtml(count) {
     if (count === void 0 || !Number.isInteger(count) || count < 2) return "";
@@ -9129,104 +9139,121 @@ Known schemas:
     }
     for (const gallery of mount.querySelectorAll(".listing-gallery")) enhanceListingGallery(gallery);
   }
-  function wrapDirectChildren(parent, className, children) {
-    if (children.length === 0) return void 0;
-    const wrapper = document.createElement("div");
-    wrapper.className = className;
-    parent.insertBefore(wrapper, children[0]);
-    for (const child of children) wrapper.appendChild(child);
-    return wrapper;
-  }
+  var UNIT_TILE_FACTS = [
+    { icon: "bed", label: GUEST_FACT_LABELS.bedrooms },
+    { icon: "bath", label: GUEST_FACT_LABELS.bathrooms },
+    { icon: "users", label: GUEST_FACT_LABELS.sleeps }
+  ];
   function organizeUnitDetail(mount) {
     const root = mount.querySelector('[data-a2ui-component="Column"]');
     if (!root) return;
+    const tileFacts = UNIT_TILE_FACTS.map((tile) => ({ ...tile, fact: findFact([...root.children], tile.label) }));
+    if (tileFacts.some((tile) => !tile.fact || tile.fact.value.trim() === "")) return;
     root.classList.add("unit-detail-root");
     const images = [];
     for (const child of root.children) {
       if (!(child instanceof HTMLImageElement)) break;
       images.push(child);
     }
-    const unitTitle = [...root.children].find((child) => child.tagName === "H2" && !/^(₦|NGN\b)/.test(child.textContent?.trim() ?? ""))?.textContent?.trim() || "this apartment";
+    const unitTitle = [...root.children].find((child) => child.tagName === "H2" && !isMoney(child.textContent ?? ""))?.textContent?.trim() || "this apartment";
+    let gallery;
     if (images.length > 0) {
-      root.insertBefore(buildListingGallery(document, unitTitle, images), root.firstChild);
+      gallery = buildListingGallery(document, unitTitle, images);
     } else {
       const noPhotos = root.firstElementChild;
       if (noPhotos instanceof HTMLElement && noPhotos.matches('[data-a2ui-component="Text"]') && /no property photos/i.test(noPhotos.textContent ?? "")) {
-        const fallback2 = document.createElement("div");
-        fallback2.className = "unit-gallery unit-gallery--fallback";
-        fallback2.setAttribute("role", "group");
-        fallback2.setAttribute("aria-label", "Property photos");
+        gallery = document.createElement("div");
+        gallery.className = "unit-gallery unit-gallery--fallback";
+        gallery.setAttribute("role", "group");
+        gallery.setAttribute("aria-label", "Property photos");
         noPhotos.classList.add("unit-photo-missing");
-        root.insertBefore(fallback2, noPhotos);
-        fallback2.appendChild(noPhotos);
+        gallery.appendChild(noPhotos);
       }
     }
     const children = [...root.children];
-    const title = children.find((child) => child.tagName === "H2" && !/^(₦|NGN\b)/.test(child.textContent?.trim() ?? ""));
-    const amount = children.find((child) => child !== title && child.tagName === "H2" && /^(₦|NGN\b)/.test(child.textContent?.trim() ?? ""));
+    const title = children.find((child) => child.tagName === "H2" && !isMoney(child.textContent ?? ""));
+    const amount = children.find((child) => child !== title && child.tagName === "H2" && isMoney(child.textContent ?? ""));
     const priceLabel = children.find((child) => isPriceLabel(child.textContent?.trim() ?? ""));
-    const location2 = children.find((child) => child.tagName === "SMALL" && child !== priceLabel);
-    const facts = children.find((child) => child.tagName === "P" && child !== title);
-    const dates = children.find((child) => guestFactValue(child.textContent ?? "", GUEST_FACT_LABELS.stayDates) !== void 0);
-    for (const [element, className] of [[title, "unit-title"], [location2, "unit-location"], [facts, "unit-facts"], [dates, "unit-dates"]]) {
-      element?.classList.add(className);
-    }
-    if (facts) {
-      const factLabels = (facts.textContent ?? "").split(" \xB7 ").map((label) => label.trim()).filter(Boolean);
-      if (factLabels.length > 1) {
-        const chips = factLabels.map((label) => {
-          const chip = document.createElement("span");
-          chip.textContent = label;
-          return chip;
-        });
-        facts.replaceChildren(...chips);
-        facts.classList.add("unit-facts--chips");
-      }
-    }
-    const overview = wrapDirectChildren(root, "unit-overview", [title, location2, facts, dates].filter((element) => element !== void 0));
-    if (overview) {
-      overview.setAttribute("role", "group");
-      overview.setAttribute("aria-label", "Stay overview");
-    }
-    if (priceLabel) {
-      priceLabel.classList.add("unit-price-label");
-      amount?.classList.add("unit-price-total");
-      const descriptionHeading = children.find((child) => /^(About this place|Amenities)$/.test(child.textContent?.trim() ?? ""));
-      const endIndex = descriptionHeading ? children.indexOf(descriptionHeading) : children.length;
-      const startIndex = children.indexOf(priceLabel);
-      const priceNodes = children.slice(startIndex, endIndex).filter((child) => child.parentElement === root);
-      wrapDirectChildren(root, "unit-price-group", priceNodes);
-    }
-    const afterPrice = [...root.children];
-    const about = afterPrice.find((child) => child.textContent?.trim() === "About this place");
-    if (about) {
-      const description = about.nextElementSibling;
-      wrapDirectChildren(root, "unit-description", [about, ...description ? [description] : []]);
-    }
-    const afterDescription = [...root.children];
-    const amenitiesHeading = afterDescription.find((child) => child.textContent?.trim() === "Amenities");
-    if (amenitiesHeading) {
-      const amenities = amenitiesHeading.nextElementSibling;
-      wrapDirectChildren(root, "unit-amenities", [amenitiesHeading, ...amenities ? [amenities] : []]);
-    }
+    const where = children.find((child) => child.tagName === "SMALL" && child !== priceLabel);
+    const deposit = findFact(children, GUEST_FACT_LABELS.refundableSecurityDeposit);
+    const aboutHeading = children.find((child) => child.textContent?.trim() === UNIT_DETAIL_ABOUT_HEADING);
+    const amenitiesHeading = children.find((child) => child.textContent?.trim() === "Amenities");
     const action = root.querySelector(':scope > [data-a2ui-component="Row"]');
-    action?.classList.add("unit-actions");
-    const grouped = /* @__PURE__ */ new Set([...overview ? [overview] : [], ...root.querySelectorAll(":scope > .listing-gallery, :scope > .unit-gallery, :scope > .unit-price-group, :scope > .unit-description, :scope > .unit-amenities")]);
-    const supporting = [...root.children].filter((child) => child !== action && !grouped.has(child));
-    wrapDirectChildren(root, "unit-supporting-info", supporting);
+    const sheet = document.createElement("section");
+    sheet.className = "unit-detail-sheet";
+    sheet.setAttribute("aria-label", "Stay details");
+    if (where) {
+      where.classList.add("unit-detail-location");
+      where.insertAdjacentHTML("afterbegin", icon("pin"));
+      sheet.append(where);
+    }
+    if (title) sheet.append(title);
+    {
+      const template = document.createElement("template");
+      template.innerHTML = unitTilesHtml(tileFacts.map((tile) => ({ icon: tile.icon, text: tile.fact.value })));
+      sheet.append(template.content);
+    }
+    if (amount) {
+      const template = document.createElement("template");
+      template.innerHTML = breakdownHtml({
+        total: amount.textContent?.trim() ?? "",
+        ...priceLabel ? { totalLabel: priceLabel.textContent?.trim() ?? "" } : {},
+        ...deposit ? { deposit: deposit.value } : {}
+      });
+      sheet.append(template.content);
+    }
+    if (aboutHeading) {
+      const description = aboutHeading.nextElementSibling;
+      const text = description?.textContent ?? "";
+      aboutHeading.remove();
+      description?.remove();
+      const template = document.createElement("template");
+      template.innerHTML = unitAboutHtml(text);
+      sheet.append(template.content);
+    }
+    for (const tile of tileFacts) tile.fact.element.remove();
+    priceLabel?.remove();
+    amount?.remove();
+    deposit?.element.remove();
+    const amenitiesNodes = amenitiesHeading ? [amenitiesHeading, ...amenitiesHeading.nextElementSibling ? [amenitiesHeading.nextElementSibling] : []] : [];
+    const supporting = [...root.children].filter((child) => child !== action && !amenitiesNodes.includes(child));
+    root.replaceChildren();
+    if (gallery) root.append(gallery);
+    root.append(sheet);
+    if (amenitiesNodes.length > 0) {
+      const amenities = document.createElement("div");
+      amenities.className = "unit-amenities";
+      amenities.append(...amenitiesNodes);
+      root.append(amenities);
+    }
+    if (supporting.length > 0) {
+      const support = document.createElement("div");
+      support.className = "unit-supporting-info";
+      support.append(...supporting);
+      root.append(support);
+    }
     if (action) {
+      action.classList.add("unit-actions");
       const bar = document.createElement("div");
       bar.className = "ui-action-bar unit-action-bar";
-      const priceGroup = root.querySelector(":scope > .unit-price-group");
-      const label = priceGroup?.querySelector(".unit-price-label");
-      const total = priceGroup?.querySelector(".unit-price-total");
-      if (label && total) {
-        const price = document.createElement("p");
-        price.append(label.cloneNode(true), document.createElement("br"), total.cloneNode(true));
-        bar.appendChild(price);
+      const sum = document.createElement("p");
+      sum.className = "ui-action-bar__sum";
+      const total = amount?.textContent?.trim() ?? "";
+      const label = priceLabel?.textContent?.trim() ?? "";
+      if (total !== "") {
+        const strong = document.createElement("strong");
+        strong.textContent = total;
+        sum.append(strong);
       }
-      bar.appendChild(action);
-      root.appendChild(bar);
+      if (label !== "") {
+        const meta = document.createElement("span");
+        meta.className = "ui-money-metadata";
+        meta.textContent = label;
+        sum.append(meta);
+      }
+      if (sum.childElementCount > 0) bar.append(sum);
+      bar.append(action);
+      root.append(bar);
     }
   }
   function findFact(children, label) {

@@ -14,9 +14,10 @@ const stops: readonly Stop[] = [
   { port: 3025, stage: "payment-ready", label: "Manual bank transfer", start: "manual-transfer" },
   { port: 3026, stage: "payment-ready", label: "Provider bank transfer", start: "transfer" },
   { port: 3027, stage: "confirmed", label: "Reservation confirmed" },
+  { port: 3028, stage: "inspection", label: "Unit detail" },
 ];
 
-const BOOKING_ROUTE = /^\/(booking-requests|conditional-offers|booking-contracts)\//;
+const BOOKING_ROUTE = /^\/(booking-requests|conditional-offers|booking-contracts|stays)\//;
 
 for (const stop of stops) {
   const fixture = await restartFixture({ manualTransferAccount: TEST_MANUAL_ACCOUNT }, { localPayment: true });

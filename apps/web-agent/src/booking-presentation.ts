@@ -117,3 +117,27 @@ export function nightsBetween(checkIn: string, checkOut: string): number {
   return Math.max(0, Math.round((Date.parse(`${checkOut}T00:00:00Z`) - Date.parse(`${checkIn}T00:00:00Z`)) / 86_400_000));
 }
 
+/** One facility tile of the unit-detail sheet (issue 06): bedrooms, bathrooms and capacity, each with its icon. */
+export interface UnitTile {
+  readonly icon: "bed" | "bath" | "users";
+  readonly text: string;
+}
+
+/**
+ * Guest UI consistency issue 06: the unit-detail sheet's facility tiles, in one canonical order. A missing bedroom
+ * count shows "Not provided" (as the page always has). The page and the chat's builder both read this, so the tiles
+ * are one source.
+ */
+export function unitTiles(bedrooms: number | undefined, bathrooms: number, capacity: number): readonly UnitTile[] {
+  return [
+    { icon: "bed", text: bedrooms === undefined ? "Not provided" : `${bedrooms} ${bedrooms === 1 ? "bedroom" : "bedrooms"}` },
+    { icon: "bath", text: `${bathrooms} ${bathrooms === 1 ? "bathroom" : "bathrooms"}` },
+    { icon: "users", text: `Sleeps ${capacity}` },
+  ];
+}
+
+/** Issue 06: the unit-detail quoted price label, "All-In Stay Total · 10–13 Sept 2026 · 3 nights" (ADR 0015). */
+export function unitStayTotalLabel(stayDates: string, nights: number): string {
+  return `${GUEST_GLOSSARY.allInStayTotal} · ${stayDates} · ${nights} ${nights === 1 ? "night" : "nights"}`;
+}
+
