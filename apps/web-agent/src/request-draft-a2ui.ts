@@ -15,7 +15,7 @@ export function requestDraftArtifactToA2UI({ artifact, surfaceId }: { readonly a
   // Named occupants stay visible as their own labelled line (the ticket itself shows only the count).
   const guestNames = facts.occupants.filter((name) => !/^(?:demo\s+guest|guest(?:\s*\d+)?|companion\s+\d+)$/i.test(name.trim()));
   const components: A2UIComponent[] = [
-    { id: "root", component: "Column", children: ["draft-title", "draft-status", "draft-unit", ...(isReview ? ["draft-provider"] : []), ...ticketFactIds("draft"), ...(guestNames.length > 0 ? ["draft-guests"] : []), ...(isReview ? ["draft-condition"] : []), "draft-total", ...(facts.refundableSecurityDepositKobo > 0 ? ["draft-deposit"] : []), ...(isReview ? ["draft-due", "draft-revalidation"] : []), "draft-progress", "draft-cancellation", "draft-disclosures", "draft-actions"] },
+    { id: "root", component: "Column", children: ["draft-title", "draft-status", "draft-unit", ...(isReview ? ["draft-provider"] : []), ...ticketFactIds("draft"), ...(guestNames.length > 0 ? ["draft-guests"] : []), "draft-condition", "draft-total", ...(facts.refundableSecurityDepositKobo > 0 ? ["draft-deposit"] : []), ...(isReview ? ["draft-due", "draft-revalidation"] : []), "draft-progress", "draft-cancellation", "draft-disclosures", "draft-actions"] },
     { id: "draft-title", component: "Text", text: isReview ? `Review ${GUEST_GLOSSARY.bookingRequest}` : "Request Draft", variant: "h2" },
     // Issue 07 AC1: the one reservation-status line on this surface.
     { id: "draft-status", component: "Text", text: guestReservationStatus("draft") },
@@ -25,7 +25,7 @@ export function requestDraftArtifactToA2UI({ artifact, surfaceId }: { readonly a
     // Guest UI consistency issue 04: the ticket and money facts are separate label-prefixed Texts, in canonical order.
     ...ticketFactComponents("draft", { checkIn: facts.checkIn, checkOut: facts.checkOut, nights: facts.nights, guestCount: facts.occupants.length }),
     ...(guestNames.length > 0 ? [{ id: "draft-guests", component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.guests, guestNames.join(", ")) }] : []),
-    ...(isReview ? [{ id: "draft-condition", component: "Text" as const, text: GUEST_FACT_LABELS.ifRequestAccepted }] : []),
+    { id: "draft-condition", component: "Text", text: GUEST_FACT_LABELS.ifRequestAccepted },
     { id: "draft-total", component: "Text", text: guestFact(GUEST_FACT_LABELS.allInStayTotal, formatBookingMoney(facts.allInStayTotalKobo)), variant: "h3" },
     { id: "draft-deposit", component: "Text", text: guestFact(GUEST_FACT_LABELS.refundableSecurityDeposit, formatBookingMoney(facts.refundableSecurityDepositKobo)) },
     { id: "draft-due", component: "Text", text: guestFact(GUEST_FACT_LABELS.amountDueNow, formatBookingMoney(facts.amountDueNowKobo)) },

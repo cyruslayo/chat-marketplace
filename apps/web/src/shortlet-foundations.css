@@ -528,6 +528,23 @@
   .ui-action-bar__sum { display: flex; flex-direction: column; flex-grow: 1; }
   .ui-action-bar__sum > strong { font-size: 1.125rem; font-variant-numeric: tabular-nums; }
 
+  /* Request screens share these kit rules across the workspace and conventional route (issue 07). */
+  .request-screen { display: grid; gap: var(--space-4); min-inline-size: 0; }
+  .request-screen p, .request-screen h2 { margin: 0; }
+  .request-head { display: grid; gap: var(--space-2); }
+  .request-head > h2 { font-family: var(--font-display); font-size: var(--font-size-h1); line-height: var(--font-line-h1); font-weight: 600; }
+  .request-head > .ui-status { justify-self: start; max-inline-size: 100%; }
+  .request-guests, .request-next, .request-notes { display: grid; gap: var(--space-3); }
+  .request-guests > h2, .request-next > h2 { font-family: var(--font-display); font-size: var(--font-size-h3); line-height: var(--font-line-h3); }
+  .request-screen .ui-status, .request-screen .ui-button { border-radius: var(--radius-pill); }
+  .request-screen .ui-price-breakdown__value { flex-shrink: 0; white-space: nowrap; }
+  .request-notes, .request-provider, .request-deadline { color: var(--color-text-secondary); font-size: var(--font-size-small); }
+  .request-deadline { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  .request-actions { display: grid; gap: var(--space-3); }
+  .request-actions.ui-action-bar { display: flex; margin-inline: 0; border-radius: var(--radius-card); }
+  .request-actions.ui-action-bar form { flex: 1 1 12rem; }
+  .request-actions form { min-inline-size: 0; margin: 0; }
+
   .ui-status {
     display: inline-flex;
     min-block-size: 1.75rem;

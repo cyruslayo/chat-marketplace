@@ -74,6 +74,8 @@ import { createStayQuote, isEligibleUnit, normalizePhotoUrls, type Unit } from "
 import { LISTING_GALLERY_STYLE, listingGalleryHtml } from "./listing-gallery.js";
 import { requestDraftArtifactFromProjection, requestDraftArtifactId } from "../../../apps/web/src/request-draft-artifact.js";
 import type { RequestDraftArtifact } from "../../../apps/web/src/request-draft-artifact.js";
+import { draftScreenContent, requestScreenContent, type RequestScreenContent } from "../../web-agent/src/request-presentation.js";
+import { requestScreenHtml } from "./guest-kit.js";
 import type { ConditionalOfferArtifact } from "../../../apps/web/src/conditional-offer-artifact.js";
 import type { BookingContractArtifact } from "../../../apps/web/src/booking-contract-artifact.js";
 import type { CardPaymentApplication } from "../../../apps/web/src/card-payment-application.js";
@@ -120,6 +122,7 @@ export interface GuestSurfacePayload {
   readonly conventionalRouteLabel?: string;
   /** Issue 10: present only while the Guest waits on a server-owned deadline. */
   readonly waiting?: GuestWaitingState;
+  readonly requestScreen?: RequestScreenContent;
 }
 
 /**
@@ -207,6 +210,7 @@ export interface ConventionalBookingPage {
   readonly summary: string;
   readonly textFallback: string;
   readonly stay?: ConventionalStayDetails;
+  readonly requestScreen?: RequestScreenContent;
 }
 
 export interface ConventionalStayDetails {
@@ -816,6 +820,32 @@ export class LocalGuestApp {
     return thread === null ? undefined : this.#journeyFor(thread);
   }
 
+  /** ADR-0072/0080: conventional forms resolve the same current action and handler as Weaver. */
+  conventionalRequestAction(id: string, action: "review" | "submit", surfaceId: string, principal: CommandPrincipal): GuestTurnResult {
+    const page = this.conventionalBookingPage("draft", id, principal);
+    const thread = page === null ? undefined : this.#threads.get(page.threadId);
+    if (!page || !thread || thread.requestId || thread.offerId || !surfaceId
+      || thread.activeSurfaces.get(REQUEST_STAGE) !== surfaceId
+      || page.requestScreen?.primary.surfaceId !== surfaceId
+      || page.requestScreen.state !== (action === "review" ? "draft" : "review")) {
+      return { ok: false, code: "STALE_SURFACE", message: "That action is no longer available; please use the current options." };
+    }
+    const candidate = this.#draftArtifact(thread, action === "review" ? "draft" : "review").actions[0];
+    if (!candidate || candidate.type !== action) return { ok: false, code: "ACTION_NOT_AUTHORIZED", message: "That action is not available." };
+    return this.handleEvent(page.threadId, {
+      name: action === "review" ? REQUEST_DRAFT_REVIEW_EVENT : REQUEST_DRAFT_SUBMIT_EVENT,
+      surfaceId, sourceComponentId: "request-form", timestamp: this.#environment.clock().toISOString(),
+      context: { artifactId: candidate.artifactId, draftId: candidate.draftId, expectedStatus: candidate.expectedStatus, projectionVersion: candidate.projectionVersion },
+    });
+  }
+
+  conventionalRequestSearch(id: string, principal: CommandPrincipal): string | null {
+    const page = this.conventionalBookingPage("request", id, principal);
+    const thread = page === null ? undefined : this.#threads.get(page.threadId);
+    if (!page || !thread?.discoveryArtifact || page.requestScreen?.state !== "not-accepted") return null;
+    return conventionalSearchRoute(thread.discoveryArtifact.facts.filters);
+  }
+
   /**
    * Issue 13a: the Guest's live committed work across all of their threads,
    * so a new conversation can say it is unaffected (ADR-0079). Read-only and
@@ -871,7 +901,9 @@ export class LocalGuestApp {
       // The page mirrors the view the thread is on: the draft, or its review.
       const review = thread.activeSurfaces.get(REQUEST_STAGE)?.includes(":request:review:") === true;
       const artifact = this.#draftArtifact(thread, review ? "review" : "draft");
-      return { threadId: thread.threadId, summary: review ? "Request review" : "Request Draft", textFallback: this.#draftFallback(artifact), stay: { unitTitle: artifact.facts.unitTitle, checkIn: artifact.facts.checkIn, checkOut: artifact.facts.checkOut, nights: artifact.facts.nights, guestCount: artifact.facts.occupants.length, allInStayTotalKobo: artifact.facts.allInStayTotalKobo, refundableSecurityDepositKobo: artifact.facts.refundableSecurityDepositKobo, ...(review ? { amountDueNowKobo: artifact.facts.amountDueNowKobo, amountDueNowIsConditional: true } : {}) } };
+      // ADR-0074/0078: historical links remain readable, but a sent request removes the draft's material authority.
+      const surfaceId = thread.requestId || thread.offerId ? "" : thread.activeSurfaces.get(REQUEST_STAGE) ?? "";
+      return { threadId: thread.threadId, requestScreen: draftScreenContent(artifact, conventionalRequestDraftRoute(id), surfaceId, thread.threadId), summary: review ? "Request review" : "Request Draft", textFallback: this.#draftFallback(artifact), stay: { unitTitle: artifact.facts.unitTitle, checkIn: artifact.facts.checkIn, checkOut: artifact.facts.checkOut, nights: artifact.facts.nights, guestCount: artifact.facts.occupants.length, allInStayTotalKobo: artifact.facts.allInStayTotalKobo, refundableSecurityDepositKobo: artifact.facts.refundableSecurityDepositKobo, amountDueNowIsConditional: true, ...(review ? { amountDueNowKobo: artifact.facts.amountDueNowKobo } : {}) } };
     }
     if (kind === "request") {
       getConventionalBookingRequestView(environment.bookingRequestApp, id, principal);
@@ -879,7 +911,7 @@ export class LocalGuestApp {
       const surface = this.#requestSurface(thread, id);
       const artifact = environment.bookingRequestApp.getArtifact(id, principal);
       const unit = environment.unitRepository.findById(artifact.facts.unitId);
-      return { threadId: thread.threadId, summary: surface.summary ?? GUEST_GLOSSARY.bookingRequest, textFallback: surface.textFallback ?? "", stay: { unitTitle: unit?.title ?? `Your selected ${GUEST_GLOSSARY.unit}`, checkIn: artifact.facts.checkIn, checkOut: artifact.facts.checkOut, nights: artifact.facts.nights, guestCount: artifact.facts.occupants.length, ...(artifact.facts.quote ? { allInStayTotalKobo: artifact.facts.quote.allInStayTotalKobo, refundableSecurityDepositKobo: artifact.facts.quote.refundableSecurityDepositKobo, amountDueNowKobo: artifact.facts.quote.totalAmountDueNowKobo, amountDueNowIsConditional: true } : {}) } };
+      return { threadId: thread.threadId, requestScreen: requestScreenContent(artifact, conventionalBookingRequestRoute(id), unit?.operator.name), summary: surface.summary ?? GUEST_GLOSSARY.bookingRequest, textFallback: surface.textFallback ?? "", stay: { unitTitle: unit?.title ?? `Your selected ${GUEST_GLOSSARY.unit}`, checkIn: artifact.facts.checkIn, checkOut: artifact.facts.checkOut, nights: artifact.facts.nights, guestCount: artifact.facts.occupants.length, ...(artifact.facts.quote ? { allInStayTotalKobo: artifact.facts.quote.allInStayTotalKobo, refundableSecurityDepositKobo: artifact.facts.quote.refundableSecurityDepositKobo, amountDueNowKobo: artifact.facts.quote.totalAmountDueNowKobo, amountDueNowIsConditional: true } : {}) } };
     }
     if (kind === "offer") {
       const offer = environment.conditionalOfferApp.manager.getOffer(id);
@@ -941,7 +973,13 @@ export class LocalGuestApp {
     return surfaces.map((surface, index) => {
       if (index !== surfaces.length - 1) return surface;
       const waiting = this.#waitingFor(thread, surface);
-      return waiting === undefined ? surface : { ...surface, waiting };
+      const draftView = surface.surfaceId.includes(":request:draft:") ? "draft" : surface.surfaceId.includes(":request:review:") ? "review" : undefined;
+      const content = draftView && thread.draftId
+        ? draftScreenContent(this.#draftArtifact(thread, draftView), conventionalRequestDraftRoute(thread.draftId), surface.surfaceId, thread.threadId)
+        : thread.requestId && surface.surfaceId === `thread-${thread.threadId}:request:${thread.requestId}`
+          ? requestScreenContent(this.#environment.bookingRequestApp.getArtifact(thread.requestId, this.#environment.guestPrincipal()), conventionalBookingRequestRoute(thread.requestId), this.#currentUnit(thread)?.operator.name)
+          : undefined;
+      return { ...surface, ...(waiting === undefined ? {} : { waiting }), ...(content === undefined ? {} : { requestScreen: content }) };
     });
   }
 
@@ -1207,7 +1245,7 @@ export class LocalGuestApp {
       if (projection.activeStage === REQUEST_STAGE && projection.requestId) {
         const artifact = environment.bookingRequestApp.getArtifact(projection.requestId, environment.guestPrincipal());
         if (["declined", "expired", "delivery_failed"].includes(artifact.facts.status)) {
-          const outcomeSurface = { ...this.#requestSurface(thread, projection.requestId), mode: "inline-surface", summary: "Request outcome", status: "fallback" } as GuestSurfacePayload;
+          const outcomeSurface = { ...this.#requestSurface(thread, projection.requestId), mode: "inline-surface", summary: "Request outcome", status: "active" } as GuestSurfacePayload;
           thread.activeSurfaces.delete(REQUEST_STAGE);
           return outcomeSurface;
         }
@@ -1784,6 +1822,7 @@ export class LocalGuestApp {
     const draft = this.#environment.bookingRequestApp.manager.getDraft(thread.draftId) as {
       readonly draftId: string; readonly unitId: string; readonly primaryGuest: { readonly name: string };
       readonly occupants: readonly { readonly name: string }[]; readonly checkIn: string; readonly checkOut: string;
+      readonly selfBookingAttestation: { readonly accepted: boolean; readonly version: string };
     };
     const unit = this.#environment.unitRepository.findById(draft.unitId) as Unit | null;
     if (!unit) throw new Error(`The selected ${GUEST_GLOSSARY.unit} is no longer available.`);
@@ -1804,6 +1843,7 @@ export class LocalGuestApp {
       nights: quote.nights,
       primaryGuestName: draft.primaryGuest.name,
       occupants: draft.occupants.map((occupant) => occupant.name),
+      selfBookingAttestation: draft.selfBookingAttestation,
       allInStayTotalKobo: quote.allInStayTotalKobo,
       refundableSecurityDepositKobo: quote.refundableSecurityDepositKobo,
       amountDueNowKobo: quote.totalAmountDueNowKobo,
@@ -2249,7 +2289,7 @@ export class LocalGuestApp {
       this.#supersede(thread, REQUEST_STAGE);
       const type = artifact.facts.status === "declined" ? "booking_request.declined" : artifact.facts.status === "expired" ? "booking_request.timed_out" : "booking_request.delivery_failed";
       this.#emitTransition(thread, type, { aggregateType: "booking_request", aggregateId: thread.requestId, reasonCode: artifact.facts.status === "declined" ? "OPERATOR_DECLINED" : artifact.facts.status === "expired" ? "OPERATOR_TIMEOUT" : "REQUEST_DELIVERY_FAILED" });
-      return { ok: true, messages: [artifact.facts.status === "declined" ? "The Operator declined the request. No payment was taken." : artifact.facts.status === "expired" ? "The Booking Request expired before the Operator responded." : "The Booking Request could not be delivered."], surfaces: [{ ...this.#requestSurface(thread, thread.requestId), mode: "inline-surface", summary: "Request outcome", status: "fallback" }] };
+      return { ok: true, messages: [artifact.facts.status === "declined" ? "The Operator declined the request. No payment was taken." : artifact.facts.status === "expired" ? "The Booking Request expired before the Operator responded." : "The Booking Request could not be delivered."], surfaces: [{ ...this.#requestSurface(thread, thread.requestId), mode: "inline-surface", summary: "Request outcome", status: "active" }] };
     }
     return { ok: true, messages: [], surfaces: [this.#requestSurface(thread, thread.requestId)] };
   }
@@ -2818,12 +2858,13 @@ function matchConventionalBookingRoute(pathname: string): { readonly kind: Conve
 
 export function renderConventionalBookingHtml(page: ConventionalBookingPage): string {
   const stay = page.stay;
-  const ticket = stay ? `${stayTicketHtml(stay)}${priceBreakdownHtml({ ...(stay.allInStayTotalKobo === undefined ? {} : { allInStayTotalKobo: stay.allInStayTotalKobo }), ...(stay.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: stay.refundableSecurityDepositKobo }), ...(stay.amountDueNowKobo === undefined ? {} : { amountDueNowKobo: stay.amountDueNowKobo, ...(stay.amountDueNowIsConditional ? { heading: "If your request is accepted" } : {}) }), ...(stay.amountPaidKobo === undefined ? {} : { amountPaidKobo: stay.amountPaidKobo }) })}` : "";
+  const ticket = stay ? stayTicketHtml(stay) : "";
+  const breakdown = stay ? priceBreakdownHtml({ ...(stay.allInStayTotalKobo === undefined ? {} : { allInStayTotalKobo: stay.allInStayTotalKobo }), ...(stay.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: stay.refundableSecurityDepositKobo }), ...(stay.amountDueNowKobo === undefined ? {} : { amountDueNowKobo: stay.amountDueNowKobo }), ...(stay.amountDueNowIsConditional ? { heading: GUEST_FACT_LABELS.ifRequestAccepted } : {}), ...(stay.amountPaidKobo === undefined ? {} : { amountPaidKobo: stay.amountPaidKobo }) }) : "";
   return pageShell({
     title: `${page.summary} · Shortlet`,
     width: "narrow",
     frame: appFrameHtml({ threadId: page.threadId, ...(page.journey === undefined ? {} : { journey: page.journey }) }),
-    body: `<div class="guest-editorial"><header class="ui-page__header" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h1>${escapeHtml(page.summary)}</h1></header>${ticket}<section class="ui-panel"><p>${escapeHtml(page.textFallback)}</p><a class="ui-button ui-button--primary ui-button--block" href="/?threadId=${encodeURIComponent(page.threadId)}">Back to your conversation</a></section></div>`,
+    body: page.requestScreen ? `<div class="guest-editorial">${requestScreenHtml(page.requestScreen, ticket, breakdown, stay?.allInStayTotalKobo === undefined ? undefined : formatNgnKobo(stay.allInStayTotalKobo))}</div>` : `<div class="guest-editorial"><header class="ui-page__header" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h1>${escapeHtml(page.summary)}</h1></header>${ticket}${breakdown}<section class="ui-panel"><p>${escapeHtml(page.textFallback)}</p><a class="ui-button ui-button--primary ui-button--block" href="/?threadId=${encodeURIComponent(page.threadId)}">Back to your conversation</a></section></div>`,
   });
 }
 
@@ -3489,6 +3530,37 @@ export function startLocalGuestServer(options: {
       if (!unit || !isEligibleUnit(unit, app.environment.clock())) { res.writeHead(404, { "Content-Type": "text/plain" }); res.end("Apartment not found"); return; }
       res.writeHead(200, GUEST_HTML_HEADERS);
       res.end(renderConventionalUnitDetailHtml(unit, options.localPhotoUrl));
+      return;
+    }
+
+    const requestPost = /^\/(booking-requests\/drafts|booking-requests)\/([^/]+)\/(review|submit|conversation|search)$/.exec(url.pathname);
+    if (req.method === "POST" && requestPost) {
+      const session = resolveBrowserSession(env, browserSessions, readGuestSession(req), sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId);
+      if (!session) { sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED"); return; }
+      if (!browserOriginAccepted(req, options.publicOrigin)) { sendPageError(req, res, 403, "ORIGIN_REJECTED"); return; }
+      let id: string;
+      try { id = decodeURIComponent(requestPost[2]!); } catch { sendPageError(req, res, 400, "INVALID_BOOKING_LINK"); return; }
+      const kind = requestPost[1] === "booking-requests/drafts" ? "draft" : "request";
+      const principal: CommandPrincipal = { id: session.principalId, role: "guest", tenantId: session.tenantId };
+      const page = app.conventionalBookingPage(kind, id, principal);
+      if (!page) { sendPageError(req, res, 404, "BOOKING_RECORD_NOT_FOUND"); return; }
+      const action = requestPost[3];
+      let destination: string | undefined;
+      if (kind === "draft" && (action === "review" || action === "submit")) {
+        let form: URLSearchParams;
+        try { form = await readFormBody(req); } catch { sendPageError(req, res, 400, "INVALID_EVENT"); return; }
+        if ([...form.keys()].some((key) => key !== "surfaceId") || form.getAll("surfaceId").length !== 1) { sendPageError(req, res, 409, "STALE_SURFACE"); return; }
+        const result = app.conventionalRequestAction(id, action, form.get("surfaceId") ?? "", principal);
+        if (!result.ok) { sendPageError(req, res, 409, result.code); return; }
+        destination = result.surfaces.at(-1)?.conventionalRoute;
+      } else if (kind === "request" && action === "conversation") {
+        destination = `/conversation?threadId=${encodeURIComponent(page.threadId)}`;
+      } else if (kind === "request" && action === "search") {
+        destination = app.conventionalRequestSearch(id, principal) ?? undefined;
+      }
+      if (!destination) { sendPageError(req, res, 409, "ACTION_NOT_AUTHORIZED"); return; }
+      res.writeHead(303, { Location: destination, "Cache-Control": "no-store" });
+      res.end();
       return;
     }
 

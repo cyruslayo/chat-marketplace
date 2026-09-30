@@ -9,6 +9,7 @@ import { formatBookingDeadline, formatStayFoot, formatTicketDate } from "../../w
 import { escapeHtml, icon, statusBadge, type IconName } from "../../web/src/ui-kit.js";
 import { projectJourney, type GuestJourney, type JourneyStep, type JourneyStepState } from "./journey-rail.js";
 import { guestStatusTone } from "./conversational-shell.js";
+import type { RequestScreenContent } from "../../web-agent/src/request-presentation.js";
 
 /** The absolute deadline in Africa/Lagos time (ADR 0078), without the "Pay by" prefix. */
 export function formatWAT(iso: string): string {
@@ -130,6 +131,17 @@ export function deadlineBannerHtml(input: { readonly label: string; readonly dea
 /** "What happens next": a plain numbered list. */
 export function stepsHtml(items: readonly string[]): string {
   return `<ol class="ui-steps">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>`;
+}
+
+/** Issue 07: one request screen layout. Slots receive only markup from this kit, never artifact-supplied HTML. */
+export function requestScreenHtml(content: RequestScreenContent, ticket: string, breakdown: string, actionTotal?: string): string {
+  const form = (action: RequestScreenContent["primary"], primary: boolean): string => `<form method="post" action="${escapeHtml(action.path)}">${action.surfaceId === undefined ? "" : `<input type="hidden" name="surfaceId" value="${escapeHtml(action.surfaceId)}">`}<button class="ui-button ui-button--${primary ? "primary" : "secondary"} ui-button--block" type="submit"${action.surfaceId === "" ? " disabled" : ""}>${escapeHtml(action.label)}</button></form>`;
+  const who = content.guests === undefined ? "" : `<section class="ui-panel request-guests" aria-label="Who's staying"><h2>Who's staying</h2><dl class="ui-facts ui-facts--stacked"><dt>Guests</dt><dd>${escapeHtml(content.guests)}</dd>${content.selfBooking === undefined ? "" : `<dt>You're booking for yourself</dt><dd>${content.selfBooking ? "Yes" : "No"}</dd>`}</dl>${content.changeHref === undefined ? "" : `<a class="ui-link" href="${escapeHtml(content.changeHref)}">Change dates or guests${icon("arrow-right")}</a>`}</section>`;
+  const banner = content.banner === undefined ? "" : `<p class="ui-banner ui-banner--neutral">${icon("info")}<span>${escapeHtml(content.banner)}</span></p>`;
+  const deadline = content.deadline === undefined ? "" : `<p class="request-deadline"><time class="waiting-deadline-time" datetime="${escapeHtml(content.deadline.iso)}">${escapeHtml(content.deadline.text)}</time><span class="waiting-countdown"></span></p>`;
+  const editable = content.state === "draft" || content.state === "review";
+  const sum = editable && actionTotal !== undefined ? `<p class="ui-action-bar__sum"><strong>${escapeHtml(actionTotal)}</strong><span class="ui-money-metadata">${GUEST_GLOSSARY.allInStayTotal}</span></p>` : "";
+  return `<section class="request-screen" data-request-state="${content.state}"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">${GUEST_GLOSSARY.bookingRequest}</p><h2>${escapeHtml(content.title)}</h2>${statusHtml(content.tone, content.status)}</header>${banner}<div class="request-ticket">${ticket}</div>${who}<div class="request-breakdown">${breakdown}</div>${content.provider === undefined ? "" : `<p class="request-provider">${escapeHtml(content.provider)}</p>`}${content.sentAt === undefined ? "" : `<p class="ui-field__hint">${escapeHtml(content.sentAt)}</p>`}${deadline}<section class="ui-panel request-next"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>${content.notes.length ? `<div class="request-notes">${content.notes.map((note) => `<p>${escapeHtml(note)}</p>`).join("")}</div>` : ""}<div class="request-actions${editable ? " ui-action-bar" : ""}">${sum}${form(content.primary, true)}${content.secondary === undefined ? "" : form(content.secondary, false)}</div></section>`;
 }
 
 export type KitStatusTone = "success" | "warning" | "danger" | "neutral";

@@ -43,13 +43,13 @@ test("AC2: In real Chromium, at zero the UI refetches state and never marks the 
     // The server is 3 s from the deadline; a reload picks up that server time.
     fixture.setTime(new Date(deadline - 3_000).toISOString());
     await tab.navigate(`${fixture.base}/`);
-    await tab.waitForSelector(".waiting-panel", 10_000);
+    await tab.waitForSelector('.request-screen[data-waiting="operator-response"]', 10_000);
     await tab.evaluate(`(() => {
       window.__stateFetches = 0; const realFetch = window.fetch;
       window.fetch = (...args) => { if (String(args[0]).includes('/api/state')) window.__stateFetches += 1; return realFetch(...args); };
     })()`);
     await tab.waitForFunction("window.__stateFetches >= 1", 10_000);
-    await tab.waitForFunction("document.querySelector('.waiting-panel') !== null", 5_000);
+    await tab.waitForFunction("document.querySelector('.request-screen[data-waiting=\"operator-response\"]') !== null", 5_000);
     // The server still says the wait is open, so the page still says so too.
     assert.equal(await tab.evaluate<string>("document.getElementById('active-workspace').dataset.status"), "active");
     assert.equal(await tab.evaluate<boolean>("/expired/i.test(document.getElementById('active-workspace').textContent)"), false);

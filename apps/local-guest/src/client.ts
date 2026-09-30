@@ -7,7 +7,8 @@ import { createBasicWebRuntime } from "@weaver/web";
 import { icon } from "../../web/src/ui-kit.js";
 import { buildListingGallery, enhanceListingGallery, watchPhotoFailure } from "./listing-gallery.js";
 import { GUEST_COMPARE_LABELS, GUEST_FACT_LABELS, GUEST_GLOSSARY, GUEST_NEW_CONVERSATION, UNIT_DETAIL_ABOUT_HEADING, guestFactValue, guestNewConversationCopy, type GuestCommittedWorkKind } from "../../web-agent/src/guest-content.js";
-import { breakdownHtml, resultRowPartsHtml, stayCardInnerHtml, ticketHtml, unitAboutHtml, unitTilesHtml, type StayCardParts } from "./guest-kit.js";
+import { breakdownHtml, requestScreenHtml, resultRowPartsHtml, stayCardInnerHtml, ticketHtml, unitAboutHtml, unitTilesHtml, type StayCardParts } from "./guest-kit.js";
+import type { RequestScreenContent } from "../../web-agent/src/request-presentation.js";
 import {
   canUseSurfaceActions,
   closeFocusedSurface,
@@ -36,6 +37,7 @@ interface GuestSurfacePayload {
   readonly conventionalRoute?: string;
   readonly conventionalRouteLabel?: string;
   readonly waiting?: GuestWaitingState;
+  readonly requestScreen?: RequestScreenContent;
 }
 interface GuestWaitingState {
   readonly kind: string;
@@ -329,6 +331,38 @@ function organizeBookingTicket(mount: HTMLElement): void {
   }), [condition, total.element, deposit?.element, due?.element, paid?.element]);
 }
 
+/** ADR-0072/0081: one kit layout; the submitted draft action still runs Weaver's original, server-bound event. */
+function organizeRequestScreen(mount: HTMLElement, content: RequestScreenContent): void {
+  const root = mount.querySelector<HTMLElement>('[data-a2ui-component="Column"]');
+  const ticket = root?.querySelector<HTMLElement>(":scope > .ui-ticket");
+  const breakdown = root?.querySelector<HTMLElement>(":scope > .ui-price-breakdown");
+  if (!root || !ticket || !breakdown) return;
+  const originalAction = root.querySelector<HTMLButtonElement>('button');
+  if ((content.state === "draft" || content.state === "review") && !originalAction) return;
+  const template = document.createElement("template");
+  template.innerHTML = requestScreenHtml(content, ticket.outerHTML, breakdown.outerHTML, breakdown.querySelector(".ui-money-total")?.textContent ?? undefined);
+  const screen = template.content.firstElementChild as HTMLElement;
+  const primaryForm = screen.querySelector<HTMLFormElement>(".request-actions form");
+  if (originalAction && (content.state === "draft" || content.state === "review")) {
+    // Keep the runtime-owned button and its listeners, without exposing a second action to assistive technology.
+    const binding = document.createElement("div");
+    binding.hidden = true;
+    binding.append(originalAction);
+    primaryForm?.addEventListener("submit", (event) => { event.preventDefault(); if (!originalAction.disabled) originalAction.click(); });
+    root.replaceChildren(screen, binding);
+  } else root.replaceChildren(screen);
+  for (const form of screen.querySelectorAll<HTMLFormElement>(".request-actions form")) {
+    if (new URL(form.action).pathname.endsWith("/conversation")) form.addEventListener("submit", (event) => { event.preventDefault(); closeWorkspace(workspaceReopen); });
+  }
+  const change = screen.querySelector<HTMLAnchorElement>(".request-guests a");
+  change?.addEventListener("click", (event) => { event.preventDefault(); closeWorkspace(composerInput); });
+  if (activePayload?.waiting?.kind === "operator-response") {
+    screen.dataset.waiting = "operator-response";
+    const countdown = screen.querySelector<HTMLElement>(".waiting-countdown");
+    if (countdown) startCountdown(activePayload.waiting, countdown);
+  }
+}
+
 /** The Units a discovery surface offers, in the order its cards are shown, from the view-unit actions the server generated. */
 function viewUnitIds(payload: GuestSurfacePayload | undefined): readonly string[] {
   const ids: string[] = [];
@@ -569,6 +603,7 @@ function enhanceSurfacePresentation(mount: HTMLElement, kind: string): void {
   if (kind === "compare") decorateComparison(mount);
   if (kind === "unit-detail") organizeUnitDetail(mount);
   if (kind === "booking" || kind === "payment") organizeBookingTicket(mount);
+  if (activePayload?.requestScreen) organizeRequestScreen(mount, activePayload.requestScreen);
 }
 
 function isMoney(text: string): boolean {
@@ -598,6 +633,20 @@ function isWaitingState(value: unknown): value is GuestWaitingState {
     && isStringList(value.outcomes) && isStringList(value.meanwhile);
 }
 
+function isRequestScreen(value: unknown): value is RequestScreenContent {
+  if (!isRecord(value) || typeof value.state !== "string" || !["draft", "review", "sent", "not-accepted"].includes(value.state)
+    || typeof value.tone !== "string" || !["neutral", "warning", "danger"].includes(value.tone)
+    || typeof value.title !== "string" || typeof value.status !== "string" || !isStringList(value.steps) || !isStringList(value.notes)) return false;
+  const action = (candidate: unknown): boolean => isRecord(candidate) && isSafeInternalRoute(candidate.path) && typeof candidate.label === "string"
+    && (candidate.surfaceId === undefined || typeof candidate.surfaceId === "string");
+  if (!action(value.primary) || (value.secondary !== undefined && !action(value.secondary))) return false;
+  if (["banner", "provider", "guests", "sentAt"].some((key) => value[key] !== undefined && typeof value[key] !== "string")) return false;
+  if (value.selfBooking !== undefined && typeof value.selfBooking !== "boolean") return false;
+  if (value.changeHref !== undefined && !isSafeInternalRoute(value.changeHref)) return false;
+  return value.deadline === undefined || (isRecord(value.deadline) && typeof value.deadline.iso === "string"
+    && Number.isFinite(Date.parse(value.deadline.iso)) && typeof value.deadline.text === "string");
+}
+
 function isSurfacePayload(value: unknown): value is GuestSurfacePayload {
   if (!isRecord(value) || typeof value.surfaceId !== "string" || value.surfaceId.trim() === "" || !Array.isArray(value.a2uiMessages)) return false;
   if (value.mode !== undefined && value.mode !== "text" && value.mode !== "inline-surface" && value.mode !== "focused-surface") return false;
@@ -606,6 +655,7 @@ function isSurfacePayload(value: unknown): value is GuestSurfacePayload {
   if (value.textFallback !== undefined && typeof value.textFallback !== "string") return false;
   if (value.conventionalRouteLabel !== undefined && typeof value.conventionalRouteLabel !== "string") return false;
   if (value.waiting !== undefined && !isWaitingState(value.waiting)) return false;
+  if (value.requestScreen !== undefined && !isRequestScreen(value.requestScreen)) return false;
   return value.conventionalRoute === undefined || isSafeInternalRoute(value.conventionalRoute);
 }
 
@@ -980,7 +1030,7 @@ function renderSurface(surface: GuestSurfacePayload, moveFocus = false): void {
     state.textContent = statusMessage;
     activeWorkspace.appendChild(state);
   }
-  if (surface.waiting && presentation.status === "active") activeWorkspace.appendChild(renderWaiting(surface.waiting));
+  if (surface.waiting && presentation.status === "active" && !(surface.requestScreen && surface.waiting.kind === "operator-response")) activeWorkspace.appendChild(renderWaiting(surface.waiting));
 
   const mount = document.createElement("div");
   mount.className = "weaver-mount";
@@ -1024,6 +1074,10 @@ function renderSurface(surface: GuestSurfacePayload, moveFocus = false): void {
   mount.dataset.renderer = "weaver";
   mount.dataset.surfaceId = surface.surfaceId;
   enhanceSurfacePresentation(mount, activeWorkspace.dataset.surfaceKind ?? "general");
+  if (surface.requestScreen && surface.waiting?.kind === "operator-response" && presentation.status === "active" && !mount.querySelector(".request-screen")) {
+    // ADR-0074/0080: a partial older surface retains all waiting guidance as well as its readable Weaver facts.
+    mount.before(renderWaiting(surface.waiting));
+  }
   enhanceGuestContactField(mount);
   enhanceListingImages(mount);
   if (presentation.conventionalRoute) {
@@ -1481,7 +1535,7 @@ async function sendEvent(action: { readonly name: string; readonly surfaceId: st
 
 activeWorkspace.addEventListener("click", (event) => {
   const target = event.target instanceof Element ? event.target.closest<HTMLElement>("button") : null;
-  if (target) lastActivatedControl = target;
+  if (target && !target.closest("[hidden]")) lastActivatedControl = target;
 }, { capture: true });
 
 const created = createBasicWebRuntime({

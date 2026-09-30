@@ -19,6 +19,6 @@ export async function sendRequest(browser: RealBrowserInstance, fixture: Fixture
     assert.equal(await tab.clickButton(button), true, button);
     await tab.waitForText(next, 10_000);
   }
-  await tab.waitForSelector(".waiting-panel[data-waiting=\"operator-response\"]", 10_000);
+  await tab.waitForSelector(".request-screen[data-waiting=\"operator-response\"]", 10_000);
   return tab;
 }

@@ -8553,6 +8553,9 @@ Known schemas:
   function icon(name) {
     return `<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${ICON_PATHS[name]}</svg>`;
   }
+  function statusBadge(label, tone) {
+    return `<span class="ui-status ui-status--${tone}">${escapeHtml(label)}</span>`;
+  }
 
   // apps/local-guest/src/listing-gallery.ts
   var photosWord = (count) => `${count} ${count === 1 ? "photo" : "photos"}`;
@@ -9040,6 +9043,21 @@ Known schemas:
   function unitAboutHtml(description) {
     return `<h2 class="unit-detail-about-heading">${escapeHtml(UNIT_DETAIL_ABOUT_HEADING)}</h2><p class="unit-detail-description">${escapeHtml(description)}</p>`;
   }
+  function stepsHtml(items) {
+    return `<ol class="ui-steps">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>`;
+  }
+  function requestScreenHtml(content, ticket, breakdown, actionTotal) {
+    const form = (action, primary) => `<form method="post" action="${escapeHtml(action.path)}">${action.surfaceId === void 0 ? "" : `<input type="hidden" name="surfaceId" value="${escapeHtml(action.surfaceId)}">`}<button class="ui-button ui-button--${primary ? "primary" : "secondary"} ui-button--block" type="submit"${action.surfaceId === "" ? " disabled" : ""}>${escapeHtml(action.label)}</button></form>`;
+    const who = content.guests === void 0 ? "" : `<section class="ui-panel request-guests" aria-label="Who's staying"><h2>Who's staying</h2><dl class="ui-facts ui-facts--stacked"><dt>Guests</dt><dd>${escapeHtml(content.guests)}</dd>${content.selfBooking === void 0 ? "" : `<dt>You're booking for yourself</dt><dd>${content.selfBooking ? "Yes" : "No"}</dd>`}</dl>${content.changeHref === void 0 ? "" : `<a class="ui-link" href="${escapeHtml(content.changeHref)}">Change dates or guests${icon("arrow-right")}</a>`}</section>`;
+    const banner = content.banner === void 0 ? "" : `<p class="ui-banner ui-banner--neutral">${icon("info")}<span>${escapeHtml(content.banner)}</span></p>`;
+    const deadline = content.deadline === void 0 ? "" : `<p class="request-deadline"><time class="waiting-deadline-time" datetime="${escapeHtml(content.deadline.iso)}">${escapeHtml(content.deadline.text)}</time><span class="waiting-countdown"></span></p>`;
+    const editable = content.state === "draft" || content.state === "review";
+    const sum = editable && actionTotal !== void 0 ? `<p class="ui-action-bar__sum"><strong>${escapeHtml(actionTotal)}</strong><span class="ui-money-metadata">${GUEST_GLOSSARY.allInStayTotal}</span></p>` : "";
+    return `<section class="request-screen" data-request-state="${content.state}"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">${GUEST_GLOSSARY.bookingRequest}</p><h2>${escapeHtml(content.title)}</h2>${statusHtml(content.tone, content.status)}</header>${banner}<div class="request-ticket">${ticket}</div>${who}<div class="request-breakdown">${breakdown}</div>${content.provider === void 0 ? "" : `<p class="request-provider">${escapeHtml(content.provider)}</p>`}${content.sentAt === void 0 ? "" : `<p class="ui-field__hint">${escapeHtml(content.sentAt)}</p>`}${deadline}<section class="ui-panel request-next"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>${content.notes.length ? `<div class="request-notes">${content.notes.map((note) => `<p>${escapeHtml(note)}</p>`).join("")}</div>` : ""}<div class="request-actions${editable ? " ui-action-bar" : ""}">${sum}${form(content.primary, true)}${content.secondary === void 0 ? "" : form(content.secondary, false)}</div></section>`;
+  }
+  function statusHtml(tone, text) {
+    return statusBadge(text, tone);
+  }
   function photoCountHtml(count) {
     if (count === void 0 || !Number.isInteger(count) || count < 2) return "";
     return `<span class="ui-stay-card__count">${icon("grid")}<span aria-hidden="true">1 / ${count}</span><span class="ui-sr-only">${count} photos</span></span>`;
@@ -9307,6 +9325,44 @@ Known schemas:
       ...paid ? { paid: paid.value } : {}
     }), [condition, total.element, deposit?.element, due?.element, paid?.element]);
   }
+  function organizeRequestScreen(mount, content) {
+    const root = mount.querySelector('[data-a2ui-component="Column"]');
+    const ticket = root?.querySelector(":scope > .ui-ticket");
+    const breakdown = root?.querySelector(":scope > .ui-price-breakdown");
+    if (!root || !ticket || !breakdown) return;
+    const originalAction = root.querySelector("button");
+    if ((content.state === "draft" || content.state === "review") && !originalAction) return;
+    const template = document.createElement("template");
+    template.innerHTML = requestScreenHtml(content, ticket.outerHTML, breakdown.outerHTML, breakdown.querySelector(".ui-money-total")?.textContent ?? void 0);
+    const screen = template.content.firstElementChild;
+    const primaryForm = screen.querySelector(".request-actions form");
+    if (originalAction && (content.state === "draft" || content.state === "review")) {
+      const binding = document.createElement("div");
+      binding.hidden = true;
+      binding.append(originalAction);
+      primaryForm?.addEventListener("submit", (event) => {
+        event.preventDefault();
+        if (!originalAction.disabled) originalAction.click();
+      });
+      root.replaceChildren(screen, binding);
+    } else root.replaceChildren(screen);
+    for (const form of screen.querySelectorAll(".request-actions form")) {
+      if (new URL(form.action).pathname.endsWith("/conversation")) form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        closeWorkspace(workspaceReopen);
+      });
+    }
+    const change = screen.querySelector(".request-guests a");
+    change?.addEventListener("click", (event) => {
+      event.preventDefault();
+      closeWorkspace(composerInput);
+    });
+    if (activePayload?.waiting?.kind === "operator-response") {
+      screen.dataset.waiting = "operator-response";
+      const countdown = screen.querySelector(".waiting-countdown");
+      if (countdown) startCountdown(activePayload.waiting, countdown);
+    }
+  }
   function viewUnitIds(payload) {
     const ids = [];
     for (const message of payload?.a2uiMessages ?? []) {
@@ -9520,6 +9576,7 @@ Known schemas:
     if (kind === "compare") decorateComparison(mount);
     if (kind === "unit-detail") organizeUnitDetail(mount);
     if (kind === "booking" || kind === "payment") organizeBookingTicket(mount);
+    if (activePayload?.requestScreen) organizeRequestScreen(mount, activePayload.requestScreen);
   }
   function isMoney(text) {
     const value = text.trim();
@@ -9542,6 +9599,15 @@ Known schemas:
   function isWaitingState(value) {
     return isRecord3(value) && ["operator-response", "offer-payment-window", "payment-window"].includes(String(value.kind)) && typeof value.heading === "string" && typeof value.deadlineText === "string" && typeof value.deadlineAt === "string" && Number.isFinite(Date.parse(value.deadlineAt)) && typeof value.serverNow === "string" && Number.isFinite(Date.parse(value.serverNow)) && isStringList(value.outcomes) && isStringList(value.meanwhile);
   }
+  function isRequestScreen(value) {
+    if (!isRecord3(value) || typeof value.state !== "string" || !["draft", "review", "sent", "not-accepted"].includes(value.state) || typeof value.tone !== "string" || !["neutral", "warning", "danger"].includes(value.tone) || typeof value.title !== "string" || typeof value.status !== "string" || !isStringList(value.steps) || !isStringList(value.notes)) return false;
+    const action = (candidate) => isRecord3(candidate) && isSafeInternalRoute(candidate.path) && typeof candidate.label === "string" && (candidate.surfaceId === void 0 || typeof candidate.surfaceId === "string");
+    if (!action(value.primary) || value.secondary !== void 0 && !action(value.secondary)) return false;
+    if (["banner", "provider", "guests", "sentAt"].some((key3) => value[key3] !== void 0 && typeof value[key3] !== "string")) return false;
+    if (value.selfBooking !== void 0 && typeof value.selfBooking !== "boolean") return false;
+    if (value.changeHref !== void 0 && !isSafeInternalRoute(value.changeHref)) return false;
+    return value.deadline === void 0 || isRecord3(value.deadline) && typeof value.deadline.iso === "string" && Number.isFinite(Date.parse(value.deadline.iso)) && typeof value.deadline.text === "string";
+  }
   function isSurfacePayload(value) {
     if (!isRecord3(value) || typeof value.surfaceId !== "string" || value.surfaceId.trim() === "" || !Array.isArray(value.a2uiMessages)) return false;
     if (value.mode !== void 0 && value.mode !== "text" && value.mode !== "inline-surface" && value.mode !== "focused-surface") return false;
@@ -9550,6 +9616,7 @@ Known schemas:
     if (value.textFallback !== void 0 && typeof value.textFallback !== "string") return false;
     if (value.conventionalRouteLabel !== void 0 && typeof value.conventionalRouteLabel !== "string") return false;
     if (value.waiting !== void 0 && !isWaitingState(value.waiting)) return false;
+    if (value.requestScreen !== void 0 && !isRequestScreen(value.requestScreen)) return false;
     return value.conventionalRoute === void 0 || isSafeInternalRoute(value.conventionalRoute);
   }
   var JOURNEY_STATE_TEXT = {
@@ -9854,7 +9921,7 @@ Known schemas:
       state.textContent = statusMessage;
       activeWorkspace.appendChild(state);
     }
-    if (surface.waiting && presentation.status === "active") activeWorkspace.appendChild(renderWaiting(surface.waiting));
+    if (surface.waiting && presentation.status === "active" && !(surface.requestScreen && surface.waiting.kind === "operator-response")) activeWorkspace.appendChild(renderWaiting(surface.waiting));
     const mount = document.createElement("div");
     mount.className = "weaver-mount";
     activeWorkspace.appendChild(mount);
@@ -9898,6 +9965,9 @@ Known schemas:
     mount.dataset.renderer = "weaver";
     mount.dataset.surfaceId = surface.surfaceId;
     enhanceSurfacePresentation(mount, activeWorkspace.dataset.surfaceKind ?? "general");
+    if (surface.requestScreen && surface.waiting?.kind === "operator-response" && presentation.status === "active" && !mount.querySelector(".request-screen")) {
+      mount.before(renderWaiting(surface.waiting));
+    }
     enhanceGuestContactField(mount);
     enhanceListingImages(mount);
     if (presentation.conventionalRoute) {
@@ -10326,7 +10396,7 @@ Known schemas:
   }
   activeWorkspace.addEventListener("click", (event) => {
     const target = event.target instanceof Element ? event.target.closest("button") : null;
-    if (target) lastActivatedControl = target;
+    if (target && !target.closest("[hidden]")) lastActivatedControl = target;
   }, { capture: true });
   var created = createBasicWebRuntime({
     basic: {

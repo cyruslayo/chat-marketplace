@@ -31,6 +31,7 @@ export interface RequestDraftArtifact {
     readonly nights: number;
     readonly primaryGuestName: string;
     readonly occupants: readonly string[];
+    readonly selfBookingAttestation?: { readonly accepted: boolean; readonly version: string };
     readonly currency: "NGN";
     readonly allInStayTotalKobo: number;
     readonly refundableSecurityDepositKobo: number;
@@ -53,6 +54,7 @@ export interface RequestDraftProjectionInput {
   readonly nights: number;
   readonly primaryGuestName: string;
   readonly occupants: readonly string[];
+  readonly selfBookingAttestation?: { readonly accepted: boolean; readonly version: string };
   readonly allInStayTotalKobo: number;
   readonly refundableSecurityDepositKobo: number;
   readonly amountDueNowKobo: number;
@@ -93,6 +95,7 @@ export function requestDraftArtifactFromProjection(input: RequestDraftProjection
       nights: input.nights,
       primaryGuestName: input.primaryGuestName,
       occupants: Object.freeze([...input.occupants]),
+      ...(input.selfBookingAttestation === undefined ? {} : { selfBookingAttestation: Object.freeze({ ...input.selfBookingAttestation }) }),
       currency: "NGN" as const,
       allInStayTotalKobo: input.allInStayTotalKobo,
       refundableSecurityDepositKobo: input.refundableSecurityDepositKobo,
