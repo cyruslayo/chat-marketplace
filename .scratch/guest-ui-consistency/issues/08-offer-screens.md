@@ -1,6 +1,6 @@
 # Offer screens: live and expired
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: 07
 Requested: 29 Sept 2026
@@ -87,3 +87,14 @@ Rechecked both ADR tables against the final paths: shared presentation reads art
 5. **PASS:** projected amounts, payment window, policies and conduct text retained; only approved UI labels used. No policy URL synthesized. The expired neutral-banner interpretation is recorded above.
 6. **PASS:** reviewed changes add no audit logging or bearer/restricted identity material; browser tooling uses isolated fixture data and is not committed.
 7. **PASS:** final exact staged-snapshot `npm run check` and full `npm test` exit 0 with zero errors/failures; one pre-existing browser skip documented.
+
+## Answer
+
+Resolved in implementation commit `26f719b` on `ui/guest-consistency`.
+
+- `offer-presentation.ts` derives canonical live/expired offer content; `offerScreenHtml` supplies the shared chat/page banner, ticket, breakdown, policy text, steps and actions.
+- Absolute WAT deadlines/countdowns use the server payment window and lazy expiry. Acceptance is disabled during failed expiry refresh; retry recovers the authoritative expired screen.
+- Expired offers show the failed rail, no accept action, and usable conversation/search recovery. Native acceptance checks ownership/current authority and reuses the existing command; expired POST is refused. No-JS acceptance and expired recovery work.
+- AC1–AC5 and every tracker DoD item verified above. Full staged suite: 1,221 non-browser + 159 Chromium passes, one pre-existing skip, zero failures; typecheck clean. Sixteen responsive light captures committed.
+
+Intentional differences: policy text rather than invented URLs (artifact has none); approved “Accept and pay” label retains the existing accept command; expired banner is neutral, as specified. No amount/policy redesign, issue 09/11 work, push or merge. Unrelated working changes remain untouched.
