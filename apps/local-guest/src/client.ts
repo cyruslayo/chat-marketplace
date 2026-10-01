@@ -7,8 +7,16 @@ import { createBasicWebRuntime } from "@weaver/web";
 import { icon } from "../../web/src/ui-kit.js";
 import { buildListingGallery, enhanceListingGallery, watchPhotoFailure } from "./listing-gallery.js";
 import { GUEST_COMPARE_LABELS, GUEST_FACT_LABELS, GUEST_GLOSSARY, GUEST_NEW_CONVERSATION, UNIT_DETAIL_ABOUT_HEADING, guestFactValue, guestNewConversationCopy, type GuestCommittedWorkKind } from "../../web-agent/src/guest-content.js";
-import { breakdownHtml, confirmationScreenHtml, requestScreenHtml, resultRowPartsHtml, stayCardInnerHtml, ticketHtml, unitAboutHtml, unitTilesHtml, type StayCardParts } from "./guest-kit.js";
+import {
+  breakdownHtml,
+  confirmationScreenHtml,
+  offerScreenHtml,
+  requestScreenHtml,
+  resultRowPartsHtml,
+  stayCardInnerHtml, ticketHtml, unitAboutHtml, unitTilesHtml,type StayCardParts,
+} from "./guest-kit.js";
 import type { ConfirmationContent } from "../../web-agent/src/confirmation-presentation.js";
+import type { OfferScreenContent } from "../../web-agent/src/offer-presentation.js";
 import type { RequestScreenContent } from "../../web-agent/src/request-presentation.js";
 import {
   canUseSurfaceActions,
@@ -37,9 +45,10 @@ interface GuestSurfacePayload {
   readonly textFallback?: string;
   readonly conventionalRoute?: string;
   readonly conventionalRouteLabel?: string;
-  readonly waiting?: GuestWaitingState;
+readonly waiting?: GuestWaitingState;
   readonly requestScreen?: RequestScreenContent;
   readonly confirmation?: ConfirmationContent;
+  readonly offerScreen?: OfferScreenContent;
 }
 interface GuestWaitingState {
   readonly kind: string;
@@ -342,11 +351,59 @@ function organizeConfirmation(mount: HTMLElement, content: ConfirmationContent):
   const template = document.createElement("template");
   template.innerHTML = confirmationScreenHtml(content, ticket.outerHTML, breakdown.outerHTML);
   root.replaceChildren(template.content);
-  root.querySelector<HTMLAnchorElement>(".request-actions a")?.addEventListener("click", (event) => { event.preventDefault(); closeWorkspace(workspaceReopen); });
+  root.querySelector<HTMLAnchorElement>(".request-actions a")?.addEventListener("click", (event) => { event.preventDefault(); closeWorkspace(workspaceReopen);});
+}
+
+function organizeOfferScreen(
+  mount: HTMLElement,
+  content: OfferScreenContent,
+): void {
+  const root = mount.querySelector<HTMLElement>(
+    '[data-a2ui-component="Column"]',
+  );
+  const ticket = root?.querySelector<HTMLElement>(":scope > .ui-ticket");
+  const breakdown = root?.querySelector<HTMLElement>(
+    ":scope > .ui-price-breakdown",
+  );
+  if (!root || !ticket || !breakdown) return;
+  const original = root.querySelector<HTMLButtonElement>("button");
+  if (content.accept && !original) return;
+  const template = document.createElement("template");
+  template.innerHTML = offerScreenHtml(
+    content,
+    ticket.outerHTML,
+    breakdown.outerHTML,
+  );
+  const screen = template.content.firstElementChild as HTMLElement;
+  if (content.accept && original) {
+    const binding = document.createElement("div");
+    binding.hidden = true;
+    binding.append(original);
+    screen
+      .querySelector<HTMLFormElement>(".offer-actions form")
+      ?.addEventListener("submit", (event) => {
+        event.preventDefault();
+        if (!original.disabled) original.click();
+      });
+    root.replaceChildren(screen, binding);
+  } else root.replaceChildren(screen);
+  for (const form of screen.querySelectorAll<HTMLFormElement>(
+    ".offer-actions form",
+  )) {
+    if (form.getAttribute("action")?.endsWith("/conversation"))
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        closeWorkspace(workspaceReopen);
+      });
+  }
+  const countdown = screen.querySelector<HTMLElement>(".waiting-countdown");
+  if (countdown && activePayload?.waiting?.kind === "offer-payment-window")
+    startCountdown(activePayload.waiting, countdown, true);
 }
 
 /** ADR-0072/0081: one kit layout; the submitted draft action still runs Weaver's original, server-bound event. */
-function organizeRequestScreen(mount: HTMLElement, content: RequestScreenContent): void {
+function organizeRequestScreen(
+  mount: HTMLElement, content: RequestScreenContent): void {
   const root = mount.querySelector<HTMLElement>('[data-a2ui-component="Column"]');
   const ticket = root?.querySelector<HTMLElement>(":scope > .ui-ticket");
   const breakdown = root?.querySelector<HTMLElement>(":scope > .ui-price-breakdown");
@@ -617,8 +674,11 @@ function enhanceSurfacePresentation(mount: HTMLElement, kind: string): void {
   if (kind === "compare") decorateComparison(mount);
   if (kind === "unit-detail") organizeUnitDetail(mount);
   if (kind === "booking" || kind === "payment") organizeBookingTicket(mount);
-  if (activePayload?.requestScreen) organizeRequestScreen(mount, activePayload.requestScreen);
-  if (activePayload?.confirmation) organizeConfirmation(mount, activePayload.confirmation);
+  if (activePayload?.requestScreen)organizeRequestScreen(mount, activePayload.requestScreen);
+  if (activePayload?.confirmation)
+    organizeConfirmation(mount, activePayload.confirmation);
+  if (activePayload?.offerScreen)
+    organizeOfferScreen(mount, activePayload.offerScreen);
 }
 
 function isMoney(text: string): boolean {
@@ -668,17 +728,52 @@ function isRequestScreen(value: unknown): value is RequestScreenContent {
     && Number.isFinite(Date.parse(value.deadline.iso)) && typeof value.deadline.text === "string");
 }
 
+function isOfferScreen(value: unknown): value is OfferScreenContent {
+  if (
+    !isRecord(value) ||
+    !["live", "expired", "accepted", "closed"].includes(String(value.state)) ||
+    ["title", "status", "provider", "consequence", "amount"].some(
+      (key) => typeof value[key] !== "string",
+    ) ||
+    typeof value.deadlineIso !== "string" ||
+    !Number.isFinite(Date.parse(value.deadlineIso)) ||
+    typeof value.serverNow !== "string" ||
+    !Number.isFinite(Date.parse(value.serverNow)) ||
+    !isStringList(value.steps) ||
+    !isStringList(value.notes) ||
+    !isStringList(value.policies) ||
+    !isSafeInternalRoute(value.conversationPath) ||
+    (value.searchPath !== undefined && !isSafeInternalRoute(value.searchPath))
+  )
+    return false;
+  return (
+    value.accept === undefined ||
+    (value.state === "live" &&
+      isRecord(value.accept) &&
+      isSafeInternalRoute(value.accept.path) &&
+      typeof value.accept.surfaceId === "string" &&
+      value.accept.surfaceId !== "")
+  );
+}
+
 function isSurfacePayload(value: unknown): value is GuestSurfacePayload {
-  if (!isRecord(value) || typeof value.surfaceId !== "string" || value.surfaceId.trim() === "" || !Array.isArray(value.a2uiMessages)) return false;
+  if (
+    !isRecord(value) || typeof value.surfaceId !== "string" || value.surfaceId.trim() === "" || !Array.isArray(value.a2uiMessages)) return false;
   if (value.mode !== undefined && value.mode !== "text" && value.mode !== "inline-surface" && value.mode !== "focused-surface") return false;
   if (value.status !== undefined && (typeof value.status !== "string" || !["active", "superseded", "stale", "expired", "deleted", "fallback"].includes(value.status))) return false;
   if (value.summary !== undefined && typeof value.summary !== "string") return false;
   if (value.textFallback !== undefined && typeof value.textFallback !== "string") return false;
   if (value.conventionalRouteLabel !== undefined && typeof value.conventionalRouteLabel !== "string") return false;
   if (value.waiting !== undefined && !isWaitingState(value.waiting)) return false;
-  if (value.requestScreen !== undefined && !isRequestScreen(value.requestScreen)) return false;
-  if (value.confirmation !== undefined && !isConfirmation(value.confirmation)) return false;
-  return value.conventionalRoute === undefined || isSafeInternalRoute(value.conventionalRoute);
+  if (value.requestScreen !== undefined && !isRequestScreen(value.requestScreen))return false;
+  if (value.confirmation !== undefined && !isConfirmation(value.confirmation))
+    return false;
+  if (value.offerScreen !== undefined && !isOfferScreen(value.offerScreen))
+    return false;
+  return (
+    value.conventionalRoute === undefined ||
+    isSafeInternalRoute(value.conventionalRoute)
+  );
 }
 
 const JOURNEY_STATE_TEXT: Readonly<Record<JourneyStepState, string>> = {
@@ -896,32 +991,57 @@ function formatRemaining(ms: number): string {
 
 /**
  * Issue 10 AC2 / ADR-0079: at zero the browser asks the server for the
- * authoritative state; it never marks anything expired itself. Refetches are
+* authoritative state; it never marks anything expired itself. Refetches are
  * spaced so a deadline on the boundary cannot loop.
  */
-function refetchWaitingState(): void {
-  const wait = Math.max(0, WAITING_REFETCH_GAP_MS - (performance.now() - lastWaitingRefetch));
+function refetchWaitingState(retryWhile?: HTMLElement): void {
+  const wait = Math.max(
+    0,
+    WAITING_REFETCH_GAP_MS - (performance.now() - lastWaitingRefetch),
+  );
   setTimeout(() => {
     lastWaitingRefetch = performance.now();
-    void refreshServerState();
+    void refreshServerState().then((refreshed) => {
+      // ADR-0074/0079: keep expired material actions disabled during a network outage,
+      // and retry only while this offer is still the displayed projection.
+      if (!refreshed && retryWhile?.isConnected)
+        refetchWaitingState(retryWhile);
+    });
   }, wait);
 }
 
 /**
  * Issue 10 AC1: the remaining time is the server's deadline minus the
- * server's own clock, then counted down with the monotonic clock. Changing
+* server's own clock, then counted down with the monotonic clock. Changing
  * the device clock moves neither the countdown nor the displayed deadline.
  */
-function startCountdown(waiting: GuestWaitingState, output: HTMLElement): void {
+function startCountdown(
+  waiting: GuestWaitingState,
+  output: HTMLElement,
+  fullMinutes = false,
+): void {
   stopCountdown();
-  const remainingAtReceipt = Date.parse(waiting.deadlineAt) - Date.parse(waiting.serverNow);
+  const remainingAtReceipt =
+    Date.parse(waiting.deadlineAt) - Date.parse(waiting.serverNow);
   const receivedAt = performance.now();
   const tick = (): void => {
     const remaining = remainingAtReceipt - (performance.now() - receivedAt);
-    output.textContent = formatRemaining(remaining);
+    const minutes = Math.max(0, Math.ceil(remaining / 60_000));
+    output.textContent = fullMinutes
+      ? `${minutes} ${minutes === 1 ? "minute" : "minutes"} left`
+      : formatRemaining(remaining);
     if (remaining <= 0) {
       stopCountdown();
-      refetchWaitingState();
+      if (fullMinutes) {
+        // ADR-0074: disable both the visible form and retained Weaver binding;
+        // expiry itself still comes exclusively from the server projection.
+        for (const button of output
+          .closest('[data-a2ui-component="Column"]')
+          ?.querySelectorAll<HTMLButtonElement>("button") ?? [])
+          button.disabled = true;
+        output.textContent = "Checking the latest status…";
+      }
+      refetchWaitingState(fullMinutes ? output : undefined);
     }
   };
   tick();
@@ -1052,14 +1172,27 @@ function renderSurface(surface: GuestSurfacePayload, moveFocus = false): void {
     state.textContent = statusMessage;
     activeWorkspace.appendChild(state);
   }
-  if (surface.waiting && presentation.status === "active" && !(surface.requestScreen && surface.waiting.kind === "operator-response")) activeWorkspace.appendChild(renderWaiting(surface.waiting));
+if (
+    surface.waiting &&
+    presentation.status === "active" &&
+    !(surface.requestScreen && surface.waiting.kind === "operator-response") &&
+    !(surface.offerScreen && surface.waiting.kind === "offer-payment-window")
+  )
+    activeWorkspace.appendChild(renderWaiting(surface.waiting));
 
   const mount = document.createElement("div");
   mount.className = "weaver-mount";
   activeWorkspace.appendChild(mount);
-  if (presentation.status === "stale") trackTelemetry("stale-surface-encountered");
-  if (presentation.status === "expired") trackTelemetry("expired-surface-encountered");
-  if (!canUseSurfaceActions(presentation.status)) {
+  if (presentation.status === "stale")trackTelemetry("stale-surface-encountered");
+  if (presentation.status === "expired")
+    trackTelemetry("expired-surface-encountered");
+  // ADR-0074: closed offers contain no material action; their native recovery controls remain usable.
+  const offerRecovery =
+    surface.offerScreen &&
+    surface.offerScreen.state !== "live" &&
+    !surface.offerScreen.accept &&
+    presentation.status === "expired";
+  if (!canUseSurfaceActions(presentation.status) && !offerRecovery) {
     mount.setAttribute("inert", "");
     mount.setAttribute("aria-disabled", "true");
   }
@@ -1478,17 +1611,23 @@ function renderResponse(response: GuestResponse): boolean {
   renderSurfaces(surfaces);
   // Receipts follow the markers for the steps they complete.
   for (const receipt of response.receipts ?? []) addReceipt(receipt);
-  return true;
+return true;
 }
 
-async function refreshServerState(): Promise<void> {
+async function refreshServerState(): Promise<boolean> {
   try {
-    const response = await postJson(`/api/state?threadId=${encodeURIComponent(threadId)}`) as GuestStateResponse;
-    if (response.ok) { renderJourney(response.journey); renderCriteria(response.criteria); }
+    const response = (await postJson(
+      `/api/state?threadId=${encodeURIComponent(threadId)}`,
+    )) as GuestStateResponse;
+    if (response.ok) { renderJourney(response.journey); renderCriteria(response.criteria);}
     if (response.ok && response.surfaces && response.surfaces.length > 0) {
       renderSurfaces(response.surfaces);
+      return true;
     }
-  } catch { /* Recovery is best-effort over network */ }
+  } catch {
+    /* The caller may retry a deadline refresh while its safe view remains mounted. */
+  }
+  return false;
 }
 
 async function postJson(path: string, body?: unknown): Promise<GuestResponse> {

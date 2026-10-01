@@ -12,6 +12,7 @@ import { projectJourney, type GuestJourney, type JourneyStep, type JourneyStepSt
 import { guestStatusTone } from "./conversational-shell.js";
 import type { RequestScreenContent } from "../../web-agent/src/request-presentation.js";
 import type { ConfirmationContent } from "../../web-agent/src/confirmation-presentation.js";
+import type { OfferScreenContent } from "../../web-agent/src/offer-presentation.js";
 
 /** The absolute deadline in Africa/Lagos time (ADR 0078), without the "Pay by" prefix. */
 export function formatWAT(iso: string): string {
@@ -129,9 +130,50 @@ export function unitAboutHtml(description: string): string {
 }
 
 /** One deadline style for every screen: an absolute WAT time plus the time left (ADR 0078). */
-export function deadlineBannerHtml(input: { readonly label: string; readonly deadlineIso: string; readonly now: Date }): string {
+export function deadlineBannerHtml(input: {readonly label: string;
+  readonly deadlineIso: string;
+  readonly now: Date;
+  readonly countdown?: boolean;
+  readonly consequence?: string;
+}): string {
   const minutes = minutesUntil(input.deadlineIso, input.now);
-  return `<p class="ui-banner ui-banner--warning payment-deadline">${icon("clock")}<span>${escapeHtml(input.label)} <time datetime="${escapeHtml(input.deadlineIso)}">${escapeHtml(formatWAT(input.deadlineIso))}</time> · ${minutes} ${minutes === 1 ? "minute" : "minutes"} left</span></p>`;
+  const remaining = `${minutes} ${minutes === 1 ? "minute" : "minutes"} left`;
+  const deadline = `${escapeHtml(input.label)} <time datetime="${escapeHtml(input.deadlineIso)}">${escapeHtml(formatWAT(input.deadlineIso))}</time>`;
+  return `<p class="ui-banner ui-banner--warning payment-deadline${input.countdown ? " offer-deadline" : ""}">${icon("clock")}<span>${input.countdown ? `<span class="waiting-deadline-time">${deadline}</span> · <span class="waiting-countdown">${remaining}</span>` : `${deadline} · ${remaining}`}${input.consequence ? `<br>${escapeHtml(input.consequence)}` : ""}</span></p>`;
+}
+
+/** Shared live/closed offer kit. No policy URL is synthesized from policy text (ADR-0075/0077). */
+export function offerScreenHtml(
+  content: OfferScreenContent,
+  ticket: string,
+  breakdown: string,
+): string {
+  const form = (
+    path: string,
+    label: string,
+    primary: boolean,
+    surfaceId?: string,
+  ): string =>
+    `<form method="post" action="${escapeHtml(path)}">${surfaceId === undefined ? "" : `<input type="hidden" name="surfaceId" value="${escapeHtml(surfaceId)}">`}<button class="ui-button ui-button--${primary ? "primary" : "secondary"}" type="submit">${escapeHtml(label)}</button></form>`;
+  const live = content.state === "live";
+  const banner = live
+    ? deadlineBannerHtml({
+        label: "Pay by",
+        deadlineIso: content.deadlineIso,
+        now: new Date(content.serverNow),
+        countdown: true,
+        consequence: content.consequence,
+      })
+    : content.state === "expired"
+      ? `<p class="ui-banner ui-banner--neutral offer-deadline">${icon("clock")}<span>The deadline was <time datetime="${escapeHtml(content.deadlineIso)}">${escapeHtml(formatWAT(content.deadlineIso))}</time><br>${escapeHtml(content.consequence)}</span></p>`
+      : "";
+  const policies = live
+    ? `<section class="ui-panel offer-policies" aria-label="Before you pay"><h2>Before you pay</h2><p>${escapeHtml(content.provider)}</p>${content.policies.map((text) => `<p>${escapeHtml(text)}</p>`).join("")}${content.notes.map((text) => `<p>${escapeHtml(text)}</p>`).join("")}</section>`
+    : "";
+  const actions = content.accept
+    ? `<div class="ui-action-bar offer-actions"><div><strong>${escapeHtml(content.amount)}</strong><span class="ui-price-breakdown__label">Amount due now</span></div>${form(content.accept.path, "Accept and pay", true, content.accept.surfaceId)}</div>`
+    : `<div class="offer-actions request-actions">${form(content.conversationPath, "Back to your conversation", true)}${content.searchPath ? form(content.searchPath, "Find other stays", false) : ""}</div>`;
+  return `<section class="offer-screen" data-offer-state="${content.state}" data-server-now="${escapeHtml(content.serverNow)}"><header class="request-head offer-head" data-page="booking-record"><p class="ui-eyebrow">Conditional Booking Offer</p><h1>${escapeHtml(content.title)}</h1><span class="ui-status ui-status--${live ? "success" : content.state === "expired" || content.state === "closed" ? "danger" : "warning"}">${escapeHtml(content.status)}</span></header>${banner}${ticket}${live ? breakdown : ""}${policies}${content.steps.length ? `<section class="ui-panel"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>` : ""}${actions}</section>`;
 }
 
 /** "What happens next": a plain numbered list. */

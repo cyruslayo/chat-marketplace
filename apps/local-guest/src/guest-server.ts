@@ -75,8 +75,20 @@ import { LISTING_GALLERY_STYLE, listingGalleryHtml } from "./listing-gallery.js"
 import { requestDraftArtifactFromProjection, requestDraftArtifactId } from "../../../apps/web/src/request-draft-artifact.js";
 import type { RequestDraftArtifact } from "../../../apps/web/src/request-draft-artifact.js";
 import { draftScreenContent, requestScreenContent, type RequestScreenContent } from "../../web-agent/src/request-presentation.js";
-import { appBarHtml, confirmationScreenHtml, railHtml, requestScreenHtml } from "./guest-kit.js";
-import { confirmationContent, type ConfirmationContent } from "../../web-agent/src/confirmation-presentation.js";
+import {
+  appBarHtml,
+  confirmationScreenHtml,
+  offerScreenHtml,
+  railHtml,
+  requestScreenHtml,
+} from "./guest-kit.js";
+import {
+  offerScreenContent,
+  type OfferScreenContent,
+} from "../../web-agent/src/offer-presentation.js";
+import {
+  confirmationContent,
+  type ConfirmationContent, } from "../../web-agent/src/confirmation-presentation.js";
 import type { ConditionalOfferArtifact } from "../../../apps/web/src/conditional-offer-artifact.js";
 import type { BookingContractArtifact } from "../../../apps/web/src/booking-contract-artifact.js";
 import type { CardPaymentApplication } from "../../../apps/web/src/card-payment-application.js";
@@ -122,9 +134,10 @@ export interface GuestSurfacePayload {
   readonly conventionalRoute?: string;
   readonly conventionalRouteLabel?: string;
   /** Issue 10: present only while the Guest waits on a server-owned deadline. */
-  readonly waiting?: GuestWaitingState;
+readonly waiting?: GuestWaitingState;
   readonly requestScreen?: RequestScreenContent;
   readonly confirmation?: ConfirmationContent;
+  readonly offerScreen?: OfferScreenContent;
 }
 
 /**
@@ -211,9 +224,10 @@ export interface ConventionalBookingPage {
   readonly journey?: GuestJourney;
   readonly summary: string;
   readonly textFallback: string;
-  readonly stay?: ConventionalStayDetails;
+readonly stay?: ConventionalStayDetails;
   readonly requestScreen?: RequestScreenContent;
   readonly confirmation?: ConfirmationContent;
+  readonly offerScreen?: OfferScreenContent;
 }
 
 export interface ConventionalStayDetails {
@@ -839,10 +853,72 @@ export class LocalGuestApp {
       name: action === "review" ? REQUEST_DRAFT_REVIEW_EVENT : REQUEST_DRAFT_SUBMIT_EVENT,
       surfaceId, sourceComponentId: "request-form", timestamp: this.#environment.clock().toISOString(),
       context: { artifactId: candidate.artifactId, draftId: candidate.draftId, expectedStatus: candidate.expectedStatus, projectionVersion: candidate.projectionVersion },
+});
+  }
+
+  /** ADR-0072/0080: the native form resolves current server authority, then reuses the Weaver command handler. */
+  conventionalOfferAccept(
+    id: string,
+    surfaceId: string,
+    principal: CommandPrincipal,
+  ): GuestTurnResult {
+    const page = this.conventionalBookingPage("offer", id, principal);
+    const thread = page ? this.#threads.get(page.threadId) : undefined;
+    if (
+      !page ||
+      !thread ||
+      !surfaceId ||
+      thread.activeSurfaces.get(OFFER_STAGE) !== surfaceId ||
+      page.offerScreen?.accept?.surfaceId !== surfaceId
+    ) {
+      return {
+        ok: false,
+        code: "STALE_SURFACE",
+        message:
+          "That action is no longer available; please use the current options.",
+      };
+    }
+    const action = this.#environment.conditionalOfferApp.getArtifact(
+      id,
+      principal,
+    ).actions[0];
+    if (!action)
+      return {
+        ok: false,
+        code: "ACTION_NOT_AUTHORIZED",
+        message: "That action is not available.",
+      };
+    return this.handleEvent(page.threadId, {
+      name: "shortlet.conditional-offer.accept",
+      surfaceId,
+      sourceComponentId: "offer-form",
+      timestamp: this.#environment.clock().toISOString(),
+      context: {
+        artifactId: action.artifactId,
+        offerId: action.offerId,
+        expectedStatus: action.expectedStatus,
+        offerVersion: action.offerVersion,
+        projectionVersion: action.projectionVersion,
+        confirmationToken: action.confirmationToken,
+      },
     });
   }
 
-  conventionalRequestSearch(id: string, principal: CommandPrincipal): string | null {
+  conventionalOfferSearch(
+    id: string,
+    principal: CommandPrincipal,
+  ): string | null {
+    const page = this.conventionalBookingPage("offer", id, principal);
+    const thread = page ? this.#threads.get(page.threadId) : undefined;
+    if (!page?.offerScreen?.searchPath || !thread?.discoveryArtifact)
+      return null;
+    return conventionalSearchRoute(thread.discoveryArtifact.facts.filters);
+  }
+
+  conventionalRequestSearch(
+    id: string,
+    principal: CommandPrincipal,
+  ): string | null {
     const page = this.conventionalBookingPage("request", id, principal);
     const thread = page === null ? undefined : this.#threads.get(page.threadId);
     if (!page || !thread?.discoveryArtifact || page.requestScreen?.state !== "not-accepted") return null;
@@ -922,7 +998,18 @@ export class LocalGuestApp {
       const isParty = !!principal.id && (offer.parties.primaryGuest.id === principal.id || (!!payerId && payerId === principal.id));
       if (!isParty || !offer.tenantId || offer.tenantId !== principal.tenantId) return null;
       const { artifact } = getConventionalConditionalOfferView(environment.conditionalOfferApp, id, principal);
-      return { threadId: thread.threadId, summary: artifact.facts.status === "expired" ? `${GUEST_GLOSSARY.conditionalBookingOffer} expired` : GUEST_GLOSSARY.conditionalBookingOffer, textFallback: this.#offerFallback(artifact), stay: { unitTitle: artifact.facts.unitTitle, checkIn: artifact.facts.checkIn, checkOut: artifact.facts.checkOut, nights: artifact.facts.nights, guestCount: artifact.facts.occupants.length, allInStayTotalKobo: artifact.facts.allInStayTotalKobo, refundableSecurityDepositKobo: artifact.facts.refundableSecurityDepositKobo, amountDueNowKobo: artifact.facts.totalAmountDueNowKobo } };
+      return {
+        threadId: thread.threadId,
+        offerScreen: offerScreenContent(
+          artifact,
+          conventionalConditionalOfferRoute(id),
+          thread.activeSurfaces.get(OFFER_STAGE) ?? "",
+          environment.clock(),
+          formatNgnKobo(artifact.facts.totalAmountDueNowKobo),
+        ),
+        summary:
+          artifact.facts.status === "expired"
+            ? `${GUEST_GLOSSARY.conditionalBookingOffer} expired` : GUEST_GLOSSARY.conditionalBookingOffer, textFallback: this.#offerFallback(artifact), stay: { unitTitle: artifact.facts.unitTitle, checkIn: artifact.facts.checkIn, checkOut: artifact.facts.checkOut, nights: artifact.facts.nights, guestCount: artifact.facts.occupants.length, allInStayTotalKobo: artifact.facts.allInStayTotalKobo, refundableSecurityDepositKobo: artifact.facts.refundableSecurityDepositKobo, amountDueNowKobo: artifact.facts.totalAmountDueNowKobo } };
     }
     // The contract view is authorized by the domain for the contract's parties.
     getConventionalBookingContractView(environment.contractApp, id, principal);
@@ -984,8 +1071,34 @@ export class LocalGuestApp {
           : undefined;
       const contractId = thread.offerId ? this.#snapshotContractId(thread.offerId) : null;
       const contract = contractId && surface.surfaceId === `thread-${thread.threadId}:booking:${contractId}` ? this.#contractArtifact(contractId) : undefined;
-      const confirmation = contract ? confirmationContent(contract, thread.threadId, conventionalBookingContractRoute(contract.facts.contractId), this.#confirmedBookingFallback(contract)) : undefined;
-      return { ...surface, ...(waiting === undefined ? {} : { waiting }), ...(content === undefined ? {} : { requestScreen: content }), ...(confirmation === undefined ? {} : { confirmation }) };
+      const confirmation = contract ? confirmationContent(contract, thread.threadId, conventionalBookingContractRoute(contract.facts.contractId),this.#confirmedBookingFallback(contract),
+          )
+        : undefined;
+      const offer =
+        thread.offerId &&
+        surface.surfaceId ===
+          `thread-${thread.threadId}:offer:${thread.offerId}`
+          ? this.#environment.conditionalOfferApp.getArtifact(
+              thread.offerId,
+              this.#environment.guestPrincipal(),
+            )
+          : undefined;
+      const offerScreen = offer
+        ? offerScreenContent(
+            offer,
+            conventionalConditionalOfferRoute(offer.facts.offerId),
+            surface.surfaceId,
+            this.#environment.clock(),
+            formatNgnKobo(offer.facts.totalAmountDueNowKobo),
+          )
+        : undefined;
+      return {
+        ...surface,
+        ...(waiting === undefined ? {} : { waiting }),
+        ...(content === undefined ? {} : { requestScreen: content }),
+        ...(confirmation === undefined ? {} : { confirmation }),
+        ...(offerScreen === undefined ? {} : { offerScreen }),
+      };
     });
   }
 
@@ -2866,8 +2979,16 @@ export function renderConventionalBookingHtml(page: ConventionalBookingPage): st
   return pageShell({
     title: `${page.summary} · Shortlet`,
     width: "narrow",
-    frame: appFrameHtml({ threadId: page.threadId, ...(page.journey === undefined ? {} : { journey: page.journey }) }),
-    body: page.confirmation ? `<div class="guest-editorial">${confirmationScreenHtml(page.confirmation, ticket, breakdown)}</div>` : page.requestScreen ? `<div class="guest-editorial">${requestScreenHtml(page.requestScreen, ticket, breakdown, stay?.allInStayTotalKobo === undefined ? undefined : formatNgnKobo(stay.allInStayTotalKobo))}</div>` : `<div class="guest-editorial"><header class="ui-page__header" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h1>${escapeHtml(page.summary)}</h1></header>${ticket}${breakdown}<section class="ui-panel"><p>${escapeHtml(page.textFallback)}</p><a class="ui-button ui-button--primary ui-button--block" href="/?threadId=${encodeURIComponent(page.threadId)}">Back to your conversation</a></section></div>`,
+    frame: appFrameHtml({threadId: page.threadId,
+      ...(page.journey === undefined ? {} : { journey: page.journey }),
+    }),
+    body: page.offerScreen
+      ? `<div class="guest-editorial">${offerScreenHtml(page.offerScreen, ticket, breakdown)}</div><script src="/offer.js" defer></script>`
+      : page.confirmation
+        ? `<div class="guest-editorial">${confirmationScreenHtml(page.confirmation, ticket, breakdown)}</div>`
+        : page.requestScreen
+          ? `<div class="guest-editorial">${requestScreenHtml(page.requestScreen, ticket, breakdown, stay?.allInStayTotalKobo === undefined ? undefined : formatNgnKobo(stay.allInStayTotalKobo))}</div>`
+          : `<div class="guest-editorial"><header class="ui-page__header" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h1>${escapeHtml(page.summary)}</h1></header>${ticket}${breakdown}<section class="ui-panel"><p>${escapeHtml(page.textFallback)}</p><a class="ui-button ui-button--primary ui-button--block" href="/?threadId=${encodeURIComponent(page.threadId)}">Back to your conversation</a></section></div>`,
   });
 }
 
@@ -3124,7 +3245,12 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
 
 const GUEST_SESSION_COOKIE = "shortlet_guest_session";
 /** Static assets the public /stays/* pages load; never refused for a stale session. */
-const PUBLIC_GUEST_PATHS: ReadonlySet<string> = new Set(["/client.js", "/gallery.js", "/payment.js", "/shortlet-foundations.css"]);
+const PUBLIC_GUEST_PATHS: ReadonlySet<string> = new Set(["/client.js",
+  "/gallery.js",
+  "/payment.js",
+  "/offer.js",
+  "/shortlet-foundations.css",
+]);
 const GUEST_SESSION_PATTERN = /^gs-[a-f0-9-]{36}$/;
 
 function readGuestSession(req: IncomingMessage): string | null | undefined {
@@ -3564,10 +3690,91 @@ export function startLocalGuestServer(options: {
       if (!destination) { sendPageError(req, res, 409, "ACTION_NOT_AUTHORIZED"); return; }
       res.writeHead(303, { Location: destination, "Cache-Control": "no-store" });
       res.end();
-      return;
-    }
+return;
+      }
 
-    const bookingPageMatch = req.method === "GET" ? matchConventionalBookingRoute(url.pathname) : null;
+      const offerPost =
+        /^\/conditional-offers\/([^/]+)\/(accept|conversation|search)$/.exec(
+          url.pathname,
+        );
+      if (req.method === "POST" && offerPost) {
+        const session = resolveBrowserSession(
+          env,
+          browserSessions,
+          readGuestSession(req),
+          sessionScopedGuestPrincipals
+            ? undefined
+            : app.environment.config.guestId,
+        );
+        if (!session) {
+          sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
+          return;
+        }
+        if (!browserOriginAccepted(req, options.publicOrigin)) {
+          sendPageError(req, res, 403, "ORIGIN_REJECTED");
+          return;
+        }
+        let id: string;
+        try {
+          id = decodeURIComponent(offerPost[1]!);
+        } catch {
+          sendPageError(req, res, 400, "INVALID_BOOKING_LINK");
+          return;
+        }
+        const principal: CommandPrincipal = {
+          id: session.principalId,
+          role: "guest",
+          tenantId: session.tenantId,
+        };
+        const page = app.conventionalBookingPage("offer", id, principal);
+        if (!page) {
+          sendPageError(req, res, 404, "BOOKING_RECORD_NOT_FOUND");
+          return;
+        }
+        let destination: string | null = null;
+        if (offerPost[2] === "accept") {
+          let form: URLSearchParams;
+          try {
+            form = await readFormBody(req);
+          } catch {
+            sendPageError(req, res, 400, "INVALID_EVENT");
+            return;
+          }
+          if (
+            [...form.keys()].some((key) => key !== "surfaceId") ||
+            form.getAll("surfaceId").length !== 1
+          ) {
+            sendPageError(req, res, 409, "STALE_SURFACE");
+            return;
+          }
+          const result = app.conventionalOfferAccept(
+            id,
+            form.get("surfaceId") ?? "",
+            principal,
+          );
+          if (!result.ok) {
+            sendPageError(req, res, 409, result.code);
+            return;
+          }
+          destination = conventionalCardPaymentRoute(id);
+        } else if (offerPost[2] === "conversation")
+          destination = `/conversation?threadId=${encodeURIComponent(page.threadId)}`;
+        else destination = app.conventionalOfferSearch(id, principal);
+        if (!destination) {
+          sendPageError(req, res, 409, "ACTION_NOT_AUTHORIZED");
+          return;
+        }
+        res.writeHead(303, {
+          Location: destination,
+          "Cache-Control": "no-store",
+        });
+        res.end();
+        return;
+      }
+
+      const bookingPageMatch =
+        req.method === "GET"
+          ? matchConventionalBookingRoute(url.pathname) : null;
     if (bookingPageMatch) {
       // ADR-0070/0080: booking records are never public. Unlike /stays/*,
       // these routes need the owner's browser session and re-check ownership.
@@ -3593,13 +3800,22 @@ export function startLocalGuestServer(options: {
         res.writeHead(404, { "Content-Type": "text/plain" });
         res.end("Gallery script missing; run npm run guest:local to build it.");
       }
-      return;
-    }
-    // The bank transfer pages' copy-account-number script.
-    if (req.method === "GET" && url.pathname === "/payment.js") {
-      try {
-        const script = readFileSync(join(dirname(clientScriptPath), "payment.js"), "utf8");
-        res.writeHead(200, { "Content-Type": "text/javascript; charset=utf-8" });
+return;
+      }
+      // The bank transfer pages' copy-account-number script.
+      if (
+        req.method === "GET" &&
+        (url.pathname === "/payment.js" || url.pathname === "/offer.js")
+      ) {
+        try {
+          const script = readFileSync(
+            join(
+              dirname(clientScriptPath),
+              url.pathname === "/offer.js" ? "offer.js" : "payment.js",
+            ),
+            "utf8",
+          );
+          res.writeHead(200, { "Content-Type": "text/javascript; charset=utf-8" });
         res.end(script);
       } catch {
         res.writeHead(404, { "Content-Type": "text/plain" });

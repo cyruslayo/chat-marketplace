@@ -526,11 +526,55 @@
 
   .ui-link { display: inline-flex; align-items: center; gap: var(--space-2); min-block-size: var(--control-min-target); color: var(--color-action); font-size: var(--font-size-label); font-weight: 600; text-decoration: none; }
   .ui-action-bar__sum { display: flex; flex-direction: column; flex-grow: 1; }
-  .ui-action-bar__sum > strong { font-size: 1.125rem; font-variant-numeric: tabular-nums; }
+  .ui-action-bar__sum > strong { font-size: 1.125rem; font-variant-numeric: tabular-nums;}
 
   /* Request screens share these kit rules across the workspace and conventional route (issue 07). */
-  .request-screen { display: grid; gap: var(--space-4); min-inline-size: 0; }
-  .confirmed-screen { display: grid; gap: var(--space-4); min-inline-size: 0; }
+  .request-screen,
+  .offer-screen {
+    display: grid;
+    gap: var(--space-4);
+    min-inline-size: 0;
+  }
+  .offer-screen p,
+  .offer-screen h1,
+  .offer-screen h2 {
+    margin: 0;
+  }
+  .offer-head > h1 {
+    font-family: var(--font-display);
+    font-size: var(--font-size-h1);
+    line-height: var(--font-line-h1);
+    font-weight: 600;
+  }
+  .offer-screen .ui-status,
+  .offer-screen .ui-button {
+    border-radius: var(--radius-pill);
+  }
+  .offer-policies {
+    display: grid;
+    gap: var(--space-3);
+    overflow-wrap: anywhere;
+  }
+  .offer-actions form {
+    min-inline-size: 0;
+    margin: 0;
+  }
+  .offer-actions.ui-action-bar {
+    margin-inline: 0;
+    border-radius: var(--radius-card);
+  }
+  .offer-actions.ui-action-bar form {
+    flex: 1 1 12rem;
+  }
+  .offer-actions .ui-button {
+    inline-size: 100%;
+  }
+  .offer-screen .waiting-countdown {
+    color: inherit;
+  }
+  .confirmed-screen {
+    display: grid;
+    gap: var(--space-4); min-inline-size: 0; }
   .confirmed-screen p, .confirmed-screen h2 { margin: 0; }
   .confirmed-screen .ui-button, .confirmed-screen .ui-status, .ui-empty .ui-button { border-radius: var(--radius-pill); }
   .confirmed-screen .ui-ticket__foot { overflow-wrap: anywhere; }
