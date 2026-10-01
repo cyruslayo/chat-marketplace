@@ -1,6 +1,6 @@
-
+"use strict";
 (() => {
-  // node_modules/@weaver/web/dist/basic/layout.js
+  // ../chat-marketplace/node_modules/@weaver/web/dist/basic/layout.js
   function applyBasicHook(element, component) {
     element.setAttribute("data-a2ui-component", component);
   }
@@ -43,7 +43,7 @@
     return relationship.kind === "single" ? relationship.child === void 0 ? [] : [relationship.child] : relationship.children;
   }
 
-  // node_modules/@weaver/web/dist/basic/markdown.js
+  // ../chat-marketplace/node_modules/@weaver/web/dist/basic/markdown.js
   function appendText(document2, parent, text) {
     const lines = text.split("\n");
     lines.forEach((line, index) => {
@@ -106,7 +106,7 @@
     return [...output.childNodes];
   }
 
-  // node_modules/@weaver/web/dist/basic/styles.js
+  // ../chat-marketplace/node_modules/@weaver/web/dist/basic/styles.js
   var basicSpace = "var(--a2ui-space, 8px)";
   var basicRadius = "var(--a2ui-radius, 8px)";
   var basicOutline = "var(--a2ui-color-outline, rgba(0, 0, 0, 0.22))";
@@ -123,7 +123,7 @@
     appendBasicStyle(element, `border: 1px solid ${basicOutline}; border-radius: ${basicRadius}`);
   }
 
-  // node_modules/@weaver/web/dist/basic/renderers.js
+  // ../chat-marketplace/node_modules/@weaver/web/dist/basic/renderers.js
   var textElements = {
     h1: "h1",
     h2: "h2",
@@ -482,7 +482,7 @@
     return button;
   };
 
-  // node_modules/@weaver/web/dist/basic/icon.js
+  // ../chat-marketplace/node_modules/@weaver/web/dist/basic/icon.js
   var SVG_NAMESPACE = "http://www.w3.org/2000/svg";
   function createSvg(document2, svgPath) {
     const svg = document2.createElementNS(SVG_NAMESPACE, "svg");
@@ -514,7 +514,7 @@
     };
   }
 
-  // node_modules/@weaver/web/dist/basic/inputs.js
+  // ../chat-marketplace/node_modules/@weaver/web/dist/basic/inputs.js
   function createBasicInputRenderers(regexMatcher, dateTimeInputLocalValueResolver) {
     let opaqueId2 = 0;
     const nextId = (kind) => `weaver-basic-${kind}-${++opaqueId2}`;
@@ -791,7 +791,7 @@
       return "error";
     try {
       const result = matcher({ value, pattern });
-      return typeof result === "boolean" ? result ? "passed" : "failed" : "error";
+      return typeof result !== "boolean" ? "error" : result ? "passed" : "failed";
     } catch {
       return "error";
     }
@@ -874,7 +874,7 @@
       control.setAttribute(name, normalized);
   }
 
-  // node_modules/@weaver/web/dist/basic/media.js
+  // ../chat-marketplace/node_modules/@weaver/web/dist/basic/media.js
   var imageFits = {
     contain: "contain",
     cover: "cover",
@@ -966,7 +966,7 @@
     return { Image, Video, AudioPlayer };
   }
 
-  // node_modules/@weaver/web/dist/basic/createBasicCatalogRendererRegistrations.js
+  // ../chat-marketplace/node_modules/@weaver/web/dist/basic/createBasicCatalogRendererRegistrations.js
   function createBasicCatalogRendererRegistrations(options) {
     const inputs = createBasicInputRenderers(options.regexMatcher, options.dateTimeInputLocalValueResolver);
     const media = createBasicMediaRenderers(options.resourcePolicy);
@@ -992,7 +992,7 @@
     ];
   }
 
-  // node_modules/@weaver/web/dist/basic/theme.js
+  // ../chat-marketplace/node_modules/@weaver/web/dist/basic/theme.js
   function createBasicCatalogThemeAdapter(options) {
     return (input) => {
       if (input.catalogId !== options.catalogId)
@@ -1006,7 +1006,7 @@
     };
   }
 
-  // node_modules/@weaver/core/dist/data-model/clone.js
+  // ../chat-marketplace/node_modules/@weaver/core/dist/data-model/clone.js
   function cloneJson(value) {
     if (value === null || typeof value !== "object")
       return value;
@@ -1021,7 +1021,7 @@
     return JSON.stringify(left) === JSON.stringify(right);
   }
 
-  // node_modules/@weaver/core/dist/data-model/pointer.js
+  // ../chat-marketplace/node_modules/@weaver/core/dist/data-model/pointer.js
   var success = (value) => ({ ok: true, value });
   function parsePointer(path) {
     if (path === "/")
@@ -1076,7 +1076,7 @@
           return void 0;
         current = current[index];
       } else {
-        current = Object.hasOwn(current, token) ? current[token] : void 0;
+        current = Object.prototype.hasOwnProperty.call(current, token) ? current[token] : void 0;
       }
     }
     return current;
@@ -1093,7 +1093,7 @@
     return true;
   }
 
-  // node_modules/@weaver/core/dist/data-context/path.js
+  // ../chat-marketplace/node_modules/@weaver/core/dist/data-context/path.js
   var success2 = (value) => ({ ok: true, value });
   function resolveScopedPath(path, scopeTokens) {
     if (path.startsWith("/")) {
@@ -1127,7 +1127,7 @@
     return success2({ absolutePath: formatPointer(tokens), tokens });
   }
 
-  // node_modules/@weaver/core/dist/data-context/DataContext.js
+  // ../chat-marketplace/node_modules/@weaver/core/dist/data-context/DataContext.js
   var success3 = (value) => ({ ok: true, value });
   var DataContext = class _DataContext {
     #dataModel;
@@ -1199,7 +1199,7 @@
     }
   };
 
-  // node_modules/@weaver/core/dist/data-context/types.js
+  // ../chat-marketplace/node_modules/@weaver/core/dist/data-context/types.js
   function isDataPathBinding(value) {
     if (value === null || typeof value !== "object" || Array.isArray(value))
       return false;
@@ -1207,7 +1207,7 @@
     return keys.length === 1 && keys[0] === "path" && typeof value.path === "string";
   }
 
-  // node_modules/@weaver/core/dist/functions/FunctionRegistry.js
+  // ../chat-marketplace/node_modules/@weaver/core/dist/functions/FunctionRegistry.js
   var key = (catalogId, name) => JSON.stringify([catalogId, name]);
   var FunctionRegistry = class {
     #catalogs;
@@ -1265,7 +1265,7 @@
     }
   };
 
-  // node_modules/@weaver/core/dist/functions/types.js
+  // ../chat-marketplace/node_modules/@weaver/core/dist/functions/types.js
   function isFunctionCall(value) {
     if (value === null || typeof value !== "object" || Array.isArray(value))
       return false;
@@ -1282,7 +1282,7 @@
     return !("returnType" in record) || typeof record.returnType === "string" && ["string", "number", "boolean", "array", "object", "any", "void"].includes(record.returnType);
   }
 
-  // node_modules/@weaver/core/dist/functions/FunctionEvaluator.js
+  // ../chat-marketplace/node_modules/@weaver/core/dist/functions/FunctionEvaluator.js
   var MAX_DEFAULT_DEPTH = 32;
   var RecursiveFunctionFailure = class {
     error;
@@ -1540,7 +1540,7 @@
     }
   };
 
-  // node_modules/@weaver/core/dist/actions/ActionContextResolver.js
+  // ../chat-marketplace/node_modules/@weaver/core/dist/actions/ActionContextResolver.js
   function cloneJson2(value) {
     if (value === null || typeof value !== "object")
       return value;
@@ -1596,7 +1596,7 @@
     }
   };
 
-  // node_modules/@weaver/core/dist/checks/CheckEvaluator.js
+  // ../chat-marketplace/node_modules/@weaver/core/dist/checks/CheckEvaluator.js
   function actualType2(value) {
     if (value === null)
       return "null";
@@ -1740,7 +1740,7 @@
     }
   };
 
-  // node_modules/@weaver/core/dist/actions/ActionDispatcher.js
+  // ../chat-marketplace/node_modules/@weaver/core/dist/actions/ActionDispatcher.js
   function cloneJson3(value) {
     if (value === null || typeof value !== "object")
       return value;
@@ -1855,7 +1855,7 @@
     }
   };
 
-  // node_modules/@weaver/core/dist/basic-functions/formatString.js
+  // ../chat-marketplace/node_modules/@weaver/core/dist/basic-functions/formatString.js
   var _a;
   var ExpressionParser = class {
     source;
@@ -2003,7 +2003,7 @@
     throw new Error("Unterminated interpolation");
   }
 
-  // node_modules/@weaver/core/dist/basic-catalog/generated-basic-catalog.js
+  // ../chat-marketplace/node_modules/@weaver/core/dist/basic-catalog/generated-basic-catalog.js
   var A2UI_V091_BASIC_CATALOG_ID = "https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json";
   var A2UI_V091_BASIC_CATALOG = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -4549,7 +4549,7 @@
     }
   };
 
-  // node_modules/@weaver/core/dist/basic-catalog/index.js
+  // ../chat-marketplace/node_modules/@weaver/core/dist/basic-catalog/index.js
   function cloneJson4(value) {
     if (value === null || typeof value !== "object")
       return value;
@@ -4567,7 +4567,7 @@
     };
   }
 
-  // node_modules/@weaver/core/dist/catalog/schema.js
+  // ../chat-marketplace/node_modules/@weaver/core/dist/catalog/schema.js
   var A2UI_CATALOG_SCHEMA = {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     type: "object",
@@ -4587,7 +4587,7 @@
     additionalProperties: true
   };
 
-  // node_modules/@cfworker/json-schema/dist/esm/deep-compare-strict.js
+  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/deep-compare-strict.js
   function deepCompareStrict(a, b) {
     const typeofa = typeof a;
     if (typeofa !== typeof b) {
@@ -4628,7 +4628,7 @@
     return a === b;
   }
 
-  // node_modules/@cfworker/json-schema/dist/esm/pointer.js
+  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/pointer.js
   function encodePointer(p) {
     return encodeURI(escapePointer(p));
   }
@@ -4636,7 +4636,7 @@
     return p.replace(/~/g, "~0").replace(/\//g, "~1");
   }
 
-  // node_modules/@cfworker/json-schema/dist/esm/dereference.js
+  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/dereference.js
   var schemaArrayKeyword = {
     prefixItems: true,
     items: true,
@@ -4733,7 +4733,7 @@
       const url = new URL("#" + schema.$anchor, baseURI.href);
       lookup[url.href] = schema;
     }
-    for (const key3 in schema) {
+    for (let key3 in schema) {
       if (ignoredKeyword[key3]) {
         continue;
       }
@@ -4747,7 +4747,7 @@
           }
         }
       } else if (schemaMapKeyword[key3]) {
-        for (const subKey in subSchema) {
+        for (let subKey in subSchema) {
           dereference(subSchema[subKey], lookup, baseURI, `${keyBase}/${encodePointer(subKey)}`);
         }
       } else {
@@ -4757,7 +4757,7 @@
     return lookup;
   }
 
-  // node_modules/@cfworker/json-schema/dist/esm/format.js
+  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/format.js
   var DATE = /^(\d\d\d\d)-(\d\d)-(\d\d)$/;
   var DAYS = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
   var TIME = /^(\d\d):(\d\d):(\d\d)(\.\d+)?(z|[+-]\d\d(?::?\d\d)?)?$/i;
@@ -4850,18 +4850,18 @@
     }
   }
 
-  // node_modules/@cfworker/json-schema/dist/esm/types.js
+  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/types.js
   var OutputFormat;
-  ((OutputFormat2) => {
+  (function(OutputFormat2) {
     OutputFormat2[OutputFormat2["Flag"] = 1] = "Flag";
     OutputFormat2[OutputFormat2["Basic"] = 2] = "Basic";
     OutputFormat2[OutputFormat2["Detailed"] = 4] = "Detailed";
   })(OutputFormat || (OutputFormat = {}));
 
-  // node_modules/@cfworker/json-schema/dist/esm/ucs2-length.js
+  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/ucs2-length.js
   function ucs2length(s) {
     let result = 0;
-    const length2 = s.length;
+    let length2 = s.length;
     let index = 0;
     let charCode;
     while (index < length2) {
@@ -4877,7 +4877,7 @@
     return result;
   }
 
-  // node_modules/@cfworker/json-schema/dist/esm/validate.js
+  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/validate.js
   function validate(instance, schema, draft = "2019-09", lookup = dereference(schema), shortCircuit = true, recursiveAnchor = null, instanceLocation = "#", schemaLocation = "#", evaluated = /* @__PURE__ */ Object.create(null)) {
     if (schema === true) {
       return { valid: true, errors: [] };
@@ -4961,7 +4961,7 @@ Known schemas:
       }
     }
     if (Array.isArray($type)) {
-      const length2 = $type.length;
+      let length2 = $type.length;
       let valid = false;
       for (let i = 0; i < length2; i++) {
         if (instanceType === $type[i] || $type[i] === "integer" && instanceType === "number" && instance % 1 === 0 && instance === instance) {
@@ -5044,7 +5044,7 @@ Known schemas:
         });
       }
     }
-    const subEvaluateds = [];
+    let subEvaluateds = [];
     if ($anyOf !== void 0) {
       const keywordLocation = `${schemaLocation}/anyOf`;
       const errorsLength = errors.length;
@@ -5635,7 +5635,7 @@ Known schemas:
     return { valid: errors.length === 0, errors };
   }
 
-  // node_modules/@cfworker/json-schema/dist/esm/validator.js
+  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/validator.js
   var Validator = class {
     schema;
     draft;
@@ -5658,7 +5658,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@weaver/core/dist/catalog/schema-validator.js
+  // ../chat-marketplace/node_modules/@weaver/core/dist/catalog/schema-validator.js
   var DRAFT = "2020-12";
   var TYPES = /* @__PURE__ */ new Set(["null", "boolean", "object", "array", "number", "string", "integer"]);
   function pointer(location2) {
@@ -5792,7 +5792,7 @@ Known schemas:
     return visit(schema, schema);
   }
 
-  // node_modules/@weaver/core/dist/catalog/CatalogRegistry.js
+  // ../chat-marketplace/node_modules/@weaver/core/dist/catalog/CatalogRegistry.js
   var COMPONENT_ID_REF = "common_types.json#/$defs/ComponentId";
   var CHILD_LIST_REF = "common_types.json#/$defs/ChildList";
   var CHECKABLE_REF = "common_types.json#/$defs/Checkable";
@@ -6430,7 +6430,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@weaver/core/dist/component-tree/ComponentTreeResolver.js
+  // ../chat-marketplace/node_modules/@weaver/core/dist/component-tree/ComponentTreeResolver.js
   function cloneJson6(value) {
     if (value === null || typeof value !== "object")
       return value;
@@ -6575,7 +6575,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@weaver/core/dist/component-instances/ComponentInstanceResolver.js
+  // ../chat-marketplace/node_modules/@weaver/core/dist/component-instances/ComponentInstanceResolver.js
   function cloneJson7(value) {
     if (value === null || typeof value !== "object")
       return value;
@@ -6764,7 +6764,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@weaver/core/dist/component-properties/ComponentPropertyResolver.js
+  // ../chat-marketplace/node_modules/@weaver/core/dist/component-properties/ComponentPropertyResolver.js
   function cloneJson8(value) {
     if (value === null || typeof value !== "object")
       return value;
@@ -7090,7 +7090,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@weaver/core/dist/input-binding/InputBindingWriter.js
+  // ../chat-marketplace/node_modules/@weaver/core/dist/input-binding/InputBindingWriter.js
   function compatible2(kind, value) {
     switch (kind) {
       case "dynamicString":
@@ -7179,7 +7179,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@weaver/core/dist/data-model/DataModel.js
+  // ../chat-marketplace/node_modules/@weaver/core/dist/data-model/DataModel.js
   var success4 = (value) => ({ ok: true, value });
   var DataModel = class {
     #state = {};
@@ -7272,7 +7272,7 @@ Known schemas:
             return success4(void 0);
           current = current[index];
         } else {
-          current = Object.hasOwn(current, token) ? current[token] : void 0;
+          current = Object.prototype.hasOwnProperty.call(current, token) ? current[token] : void 0;
         }
       }
       return success4(current);
@@ -7313,7 +7313,7 @@ Known schemas:
           current[token] = value;
           return success4(void 0);
         }
-        if (!Object.hasOwn(current, token)) {
+        if (!Object.prototype.hasOwnProperty.call(current, token)) {
           current[token] = isArrayIndex(tokens[position + 1]) ? [] : {};
         }
         current = current[token];
@@ -7338,7 +7338,7 @@ Known schemas:
             return success4(false);
           current = current[index];
         } else {
-          if (!Object.hasOwn(current, token))
+          if (!Object.prototype.hasOwnProperty.call(current, token))
             return success4(false);
           current = current[token];
         }
@@ -7358,7 +7358,7 @@ Known schemas:
           return success4(false);
         return { ok: false, error: { code: "ARRAY_INDEX_DELETE_UNSUPPORTED", path } };
       }
-      if (!Object.hasOwn(current, target))
+      if (!Object.prototype.hasOwnProperty.call(current, target))
         return success4(false);
       delete current[target];
       return success4(true);
@@ -7399,12 +7399,12 @@ Known schemas:
     }
   };
 
-  // node_modules/@weaver/core/dist/protocol/a2ui/v0_9_1/outbound/client-capabilities.js
+  // ../chat-marketplace/node_modules/@weaver/core/dist/protocol/a2ui/v0_9_1/outbound/client-capabilities.js
   function buildA2UIClientCapabilities(input) {
     return { "v0.9": { supportedCatalogIds: [...input.supportedCatalogIds] } };
   }
 
-  // node_modules/@weaver/core/dist/protocol/a2ui/v0_9_1/outbound/validation-error.js
+  // ../chat-marketplace/node_modules/@weaver/core/dist/protocol/a2ui/v0_9_1/outbound/validation-error.js
   function buildA2UIValidationFailedClientMessage(input) {
     if (input.surfaceId.length === 0)
       throw new TypeError("surfaceId must not be empty");
@@ -7490,7 +7490,7 @@ Known schemas:
     return typeof value === "object" && value !== null && !Array.isArray(value);
   }
 
-  // node_modules/@weaver/core/dist/protocol/a2ui/v0_9_1/validation.js
+  // ../chat-marketplace/node_modules/@weaver/core/dist/protocol/a2ui/v0_9_1/validation.js
   var MESSAGE_KEYS = [
     "createSurface",
     "updateComponents",
@@ -7635,7 +7635,7 @@ Known schemas:
     }
   }
 
-  // node_modules/@weaver/core/dist/surfaces/clone.js
+  // ../chat-marketplace/node_modules/@weaver/core/dist/surfaces/clone.js
   function cloneJson9(value) {
     if (value === null || typeof value !== "object")
       return value;
@@ -7649,7 +7649,7 @@ Known schemas:
     return clone;
   }
 
-  // node_modules/@weaver/core/dist/surfaces/SurfaceStore.js
+  // ../chat-marketplace/node_modules/@weaver/core/dist/surfaces/SurfaceStore.js
   var success5 = (value) => ({ ok: true, value });
   var SurfaceStore = class {
     #surfaces = /* @__PURE__ */ new Map();
@@ -7812,7 +7812,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@weaver/core/dist/message-processor/A2UIMessageProcessor.js
+  // ../chat-marketplace/node_modules/@weaver/core/dist/message-processor/A2UIMessageProcessor.js
   var A2UIMessageProcessor = class {
     store;
     catalogs;
@@ -7871,7 +7871,7 @@ Known schemas:
       if ("updateDataModel" in message) {
         const update = message.updateDataModel;
         const path = update.path ?? "/";
-        const hasValue = Object.hasOwn(update, "value");
+        const hasValue = Object.prototype.hasOwnProperty.call(update, "value");
         const result = hasValue ? path === "/" ? this.store.replaceData(update.surfaceId, update.value) : this.store.setData(update.surfaceId, path, update.value) : this.store.deleteData(update.surfaceId, path);
         return this.withSurface("dataModelUpdated", update.surfaceId, result);
       }
@@ -7897,7 +7897,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@weaver/core/dist/runtime/WeaverRuntime.js
+  // ../chat-marketplace/node_modules/@weaver/core/dist/runtime/WeaverRuntime.js
   var WeaverRuntime = class {
     #services;
     /** @internal Construct runtimes through createWeaverRuntime(). */
@@ -8044,7 +8044,7 @@ Known schemas:
     }) };
   }
 
-  // node_modules/@weaver/web/dist/renderers/errors.js
+  // ../chat-marketplace/node_modules/@weaver/web/dist/renderers/errors.js
   var RendererRegistryConfigurationError = class extends Error {
     code = "RENDERER_ALREADY_REGISTERED";
     catalogId;
@@ -8057,7 +8057,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@weaver/web/dist/renderers/RendererRegistry.js
+  // ../chat-marketplace/node_modules/@weaver/web/dist/renderers/RendererRegistry.js
   var key2 = (catalogId, component) => JSON.stringify([catalogId, component]);
   var RendererRegistry = class {
     #renderers = /* @__PURE__ */ new Map();
@@ -8085,7 +8085,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@weaver/web/dist/surface/WebSurfaceRenderer.js
+  // ../chat-marketplace/node_modules/@weaver/web/dist/surface/WebSurfaceRenderer.js
   var identityKey = (sourceComponentId, scopePath) => JSON.stringify([sourceComponentId, scopePath]);
   var controlIdentityKey = (sourceComponentId, scopePath, localKey) => JSON.stringify([sourceComponentId, scopePath, localKey]);
   var WebSurfaceRenderer = class {
@@ -8121,11 +8121,12 @@ Known schemas:
         if (result.ok) {
           controlMetadata = nextControlMetadata;
           controls = nextControls;
-          if (result.value.ready)
+          if (!result.value.ready)
+            localState.clear();
+          else
             for (const identity of localState.keys())
               if (!renderedIdentities.has(identity))
-                localState.delete(identity); else
-            localState.clear();
+                localState.delete(identity);
           if (mounted)
             restoreFocus(focus, controls);
         }
@@ -8461,7 +8462,7 @@ Known schemas:
     return result.ok ? { ok: true, value: { ...result.value } } : structuredClone(result);
   }
 
-  // node_modules/@weaver/web/dist/basic-web-runtime/createBasicWebRuntime.js
+  // ../chat-marketplace/node_modules/@weaver/web/dist/basic-web-runtime/createBasicWebRuntime.js
   function createBasicWebRuntime(config = {}) {
     const catalogId = A2UI_V091_BASIC_CATALOG_ID;
     const runtimeCreated = createWeaverRuntime({
@@ -9046,10 +9047,7 @@ Known schemas:
     return formatBookingDeadline(iso).replace(/^Pay by /, "");
   }
   function minutesUntil(deadlineIso, now) {
-    return Math.max(
-      0,
-      Math.ceil((Date.parse(deadlineIso) - now.getTime()) / 6e4)
-    );
+    return Math.max(0, Math.ceil((Date.parse(deadlineIso) - now.getTime()) / 6e4));
   }
   var CHECK_IN_LABEL = GUEST_FACT_LABELS.checkIn;
   var CHECK_OUT_LABEL = GUEST_FACT_LABELS.checkOut;
@@ -9066,7 +9064,8 @@ Known schemas:
     const deposit = parts.deposit === void 0 ? "" : `<p class="ui-price-breakdown__row">${parts.depositCollected ? `${GUEST_GLOSSARY.refundableSecurityDeposit} collected` : GUEST_FACT_LABELS.refundableSecurityDeposit}: ${money(parts.deposit)}</p>`;
     const due = parts.due === void 0 ? "" : `<p class="ui-price-breakdown__due">${GUEST_FACT_LABELS.amountDueNow}: ${money(parts.due)}</p>`;
     const paid = parts.paid === void 0 ? "" : `<p class="ui-price-breakdown__paid">${GUEST_FACT_LABELS.amountPaid}: ${money(parts.paid)}</p>`;
-    return `<section class="ui-panel ui-price-breakdown" aria-label="Price breakdown">${parts.condition ? `<p class="ui-price-breakdown__condition">${escapeHtml(parts.condition)}</p>` : ""}${total}${deposit}${due}${paid}</section>`;
+    const next = parts.next === void 0 ? "" : `<p class="ui-price-breakdown__row payment-current-component">${GUEST_FACT_LABELS.nextPayment}: ${money(parts.next)}</p>`;
+    return `<section class="ui-panel ui-price-breakdown" aria-label="Price breakdown">${parts.condition ? `<p class="ui-price-breakdown__condition">${escapeHtml(parts.condition)}</p>` : ""}${total}${deposit}${due}${paid}${next}</section>`;
   }
   function unitTilesHtml(tiles) {
     return `<ul class="ui-tiles" aria-label="Stay facts">${tiles.map((tile) => `<li class="ui-tiles__tile">${icon(tile.icon)}${escapeHtml(tile.text)}</li>`).join("")}</ul>`;
@@ -9093,6 +9092,37 @@ Known schemas:
     const policies = live ? `<section class="ui-panel offer-policies" aria-label="Before you pay"><h2>Before you pay</h2><p>${escapeHtml(content.provider)}</p>${content.policies.map((text) => `<p>${escapeHtml(text)}</p>`).join("")}${content.notes.map((text) => `<p>${escapeHtml(text)}</p>`).join("")}</section>` : "";
     const actions = content.accept ? `<div class="ui-action-bar offer-actions"><div><strong>${escapeHtml(content.amount)}</strong><span class="ui-price-breakdown__label">Amount due now</span></div>${form(content.accept.path, "Accept and pay", true, content.accept.surfaceId)}</div>` : `<div class="offer-actions request-actions">${form(content.conversationPath, "Back to your conversation", true)}${content.searchPath ? form(content.searchPath, "Find other stays", false) : ""}</div>`;
     return `<section class="offer-screen" data-offer-state="${content.state}" data-server-now="${escapeHtml(content.serverNow)}"><header class="request-head offer-head" data-page="booking-record"><p class="ui-eyebrow">Conditional Booking Offer</p><h1>${escapeHtml(content.title)}</h1><span class="ui-status ui-status--${live ? "success" : content.state === "expired" || content.state === "closed" ? "danger" : "warning"}">${escapeHtml(content.status)}</span></header>${banner}${ticket}${live ? breakdown : ""}${policies}${content.steps.length ? `<section class="ui-panel"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>` : ""}${actions}</section>`;
+  }
+  function paymentLayoutHtml(input) {
+    const actions = input.actions === void 0 || input.actions === "" ? "" : `<div class="payment-actions ui-action-bar">${input.actions}</div>`;
+    return `<section class="payment-screen" data-payment-state="${escapeHtml(input.state)}"${input.serverNow === void 0 ? "" : ` data-server-now="${escapeHtml(input.serverNow)}"`}><header class="request-head payment-head" data-page="booking-record"><p class="ui-eyebrow">${escapeHtml(input.eyebrow)}</p><h1>${escapeHtml(input.title)}</h1>${input.status === void 0 ? "" : statusHtml(input.tone, input.status)}</header>${input.banner ?? ""}${input.ticket ?? ""}${input.breakdown ?? ""}${(input.sections ?? []).join("")}${actions}</section>`;
+  }
+  function paymentScreenHtml(content, ticket, breakdown, slots) {
+    const banner = content.deadlineIso === void 0 ? "" : deadlineBannerHtml({
+      label: "Pay by",
+      deadlineIso: content.deadlineIso,
+      now: new Date(content.serverNow),
+      ...slots.countdown ? { countdown: true } : {}
+    });
+    return paymentLayoutHtml({
+      state: content.state,
+      eyebrow: "Booking payment",
+      title: content.title,
+      tone: content.tone,
+      status: content.status,
+      banner,
+      ticket,
+      breakdown,
+      sections: [
+        `<p class="payment-explanation">${escapeHtml(content.explanation)}</p>`,
+        ...content.steps.length ? [
+          `<section class="ui-panel payment-steps"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>`
+        ] : [],
+        ...slots.sections === void 0 ? [] : [slots.sections]
+      ],
+      actions: `${slots.actions ?? ""}${content.choosePath === void 0 ? "" : `<a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.choosePath)}">Choose another way to pay</a>`}`,
+      serverNow: content.serverNow
+    });
   }
   function stepsHtml(items) {
     return `<ol class="ui-steps">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>`;
@@ -9121,9 +9151,7 @@ Known schemas:
   }
   function stayCardInnerHtml(parts) {
     const href = escapeHtml(parts.href);
-    const facts = parts.facts.map(
-      (fact) => `<span class="ui-fact">${icon(fact.icon)}${escapeHtml(fact.text)}</span>`
-    ).join("");
+    const facts = parts.facts.map((fact) => `<span class="ui-fact">${icon(fact.icon)}${escapeHtml(fact.text)}</span>`).join("");
     const deposit = parts.deposit === void 0 ? "" : `<p class="ui-money-metadata">+ ${escapeHtml(parts.deposit)} ${GUEST_FACT_LABELS.refundableSecurityDeposit}</p>`;
     return `${stayPhotoHtml(parts)}<p class="ui-stay-card__where">${icon("pin")}${escapeHtml(parts.where)}</p><h2 class="ui-stay-card__title"><a href="${href}">${escapeHtml(parts.title)}</a></h2><div class="ui-stay-card__facts" aria-label="Stay facts">${facts}</div><div class="ui-stay-card__total"><p class="ui-money-total">${escapeHtml(parts.total)}</p><p class="ui-money-metadata">${escapeHtml(parts.totalLabel)}</p>${deposit}</div><a class="ui-button ui-button--primary ui-button--block ui-stay-card__view" href="${href}">${GUEST_GLOSSARY.viewUnit}<span class="ui-sr-only">: ${escapeHtml(parts.title)}</span></a>`;
   }
@@ -9156,20 +9184,12 @@ Known schemas:
   var criteriaToggle = requiredElement("criteria-toggle");
   var criteriaSummary = requiredElement("criteria-summary");
   var newConversationButton = requiredElement("new-conversation");
-  var newConversationConfirm = requiredElement(
-    "new-conversation-confirm"
-  );
-  var newConversationStart = requiredElement(
-    "new-conversation-start"
-  );
-  var newConversationCancel = requiredElement(
-    "new-conversation-cancel"
-  );
+  var newConversationConfirm = requiredElement("new-conversation-confirm");
+  var newConversationStart = requiredElement("new-conversation-start");
+  var newConversationCancel = requiredElement("new-conversation-cancel");
   function getThreadId() {
     try {
-      const urlParam = new URLSearchParams(window.location.search).get(
-        "threadId"
-      );
+      const urlParam = new URLSearchParams(window.location.search).get("threadId");
       if (urlParam && /^g-[a-f0-9-]{6,64}$/.test(urlParam)) {
         window.sessionStorage.setItem("shortlet-concierge-thread", urlParam);
         return urlParam;
@@ -9192,19 +9212,13 @@ Known schemas:
     try {
       const parsed = new URL(value);
       const hostname = parsed.hostname.toLowerCase().replace(/\.$/, "");
-      if (parsed.protocol !== "https:" || parsed.username !== "" || parsed.password !== "")
-        return false;
-      if (hostname === "localhost" || hostname.endsWith(".localhost") || hostname.endsWith(".local") || hostname.endsWith(".internal") || hostname.endsWith(".lan"))
-        return false;
+      if (parsed.protocol !== "https:" || parsed.username !== "" || parsed.password !== "") return false;
+      if (hostname === "localhost" || hostname.endsWith(".localhost") || hostname.endsWith(".local") || hostname.endsWith(".internal") || hostname.endsWith(".lan")) return false;
       if (hostname.includes(":") || hostname.startsWith("[")) return false;
-      if (/^(0\.|10\.|127\.|169\.254\.|192\.0\.0\.|192\.168\.|198\.(18|19)\.|224\.)/.test(
-        hostname
-      ))
-        return false;
+      if (/^(0\.|10\.|127\.|169\.254\.|192\.0\.0\.|192\.168\.|198\.(18|19)\.|224\.)/.test(hostname)) return false;
       if (/^100\.(6[4-9]|[78]\d|9\d)\./.test(hostname)) return false;
       if (/^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) return false;
-      if (hostname === "::1" || hostname.startsWith("fc") || hostname.startsWith("fd") || hostname.startsWith("fe8"))
-        return false;
+      if (hostname === "::1" || hostname.startsWith("fc") || hostname.startsWith("fd") || hostname.startsWith("fe8")) return false;
       return true;
     } catch {
       return false;
@@ -9225,8 +9239,7 @@ Known schemas:
       if (index === 0) image.fetchPriority = "high";
       watchPhotoFailure(image);
     }
-    for (const gallery of mount.querySelectorAll(".listing-gallery"))
-      enhanceListingGallery(gallery);
+    for (const gallery of mount.querySelectorAll(".listing-gallery")) enhanceListingGallery(gallery);
   }
   var UNIT_TILE_FACTS = [
     { icon: "bed", label: GUEST_FACT_LABELS.bedrooms },
@@ -9234,25 +9247,17 @@ Known schemas:
     { icon: "users", label: GUEST_FACT_LABELS.sleeps }
   ];
   function organizeUnitDetail(mount) {
-    const root = mount.querySelector(
-      '[data-a2ui-component="Column"]'
-    );
+    const root = mount.querySelector('[data-a2ui-component="Column"]');
     if (!root) return;
-    const tileFacts = UNIT_TILE_FACTS.map((tile) => ({
-      ...tile,
-      fact: findFact([...root.children], tile.label)
-    }));
-    if (tileFacts.some((tile) => !tile.fact || tile.fact.value.trim() === ""))
-      return;
+    const tileFacts = UNIT_TILE_FACTS.map((tile) => ({ ...tile, fact: findFact([...root.children], tile.label) }));
+    if (tileFacts.some((tile) => !tile.fact || tile.fact.value.trim() === "")) return;
     root.classList.add("unit-detail-root");
     const images = [];
     for (const child of root.children) {
       if (!(child instanceof HTMLImageElement)) break;
       images.push(child);
     }
-    const unitTitle = [...root.children].find(
-      (child) => child.tagName === "H2" && !isMoney(child.textContent ?? "")
-    )?.textContent?.trim() || "this apartment";
+    const unitTitle = [...root.children].find((child) => child.tagName === "H2" && !isMoney(child.textContent ?? ""))?.textContent?.trim() || "this apartment";
     let gallery;
     if (images.length > 0) {
       gallery = buildListingGallery(document, unitTitle, images);
@@ -9268,31 +9273,14 @@ Known schemas:
       }
     }
     const children = [...root.children];
-    const title = children.find(
-      (child) => child.tagName === "H2" && !isMoney(child.textContent ?? "")
-    );
-    const amount = children.find(
-      (child) => child !== title && child.tagName === "H2" && isMoney(child.textContent ?? "")
-    );
-    const priceLabel = children.find(
-      (child) => isPriceLabel(child.textContent?.trim() ?? "")
-    );
-    const where = children.find(
-      (child) => child.tagName === "SMALL" && child !== priceLabel
-    );
-    const deposit = findFact(
-      children,
-      GUEST_FACT_LABELS.refundableSecurityDeposit
-    );
-    const aboutHeading = children.find(
-      (child) => child.textContent?.trim() === UNIT_DETAIL_ABOUT_HEADING
-    );
-    const amenitiesHeading = children.find(
-      (child) => child.textContent?.trim() === "Amenities"
-    );
-    const action = root.querySelector(
-      ':scope > [data-a2ui-component="Row"]'
-    );
+    const title = children.find((child) => child.tagName === "H2" && !isMoney(child.textContent ?? ""));
+    const amount = children.find((child) => child !== title && child.tagName === "H2" && isMoney(child.textContent ?? ""));
+    const priceLabel = children.find((child) => isPriceLabel(child.textContent?.trim() ?? ""));
+    const where = children.find((child) => child.tagName === "SMALL" && child !== priceLabel);
+    const deposit = findFact(children, GUEST_FACT_LABELS.refundableSecurityDeposit);
+    const aboutHeading = children.find((child) => child.textContent?.trim() === UNIT_DETAIL_ABOUT_HEADING);
+    const amenitiesHeading = children.find((child) => child.textContent?.trim() === "Amenities");
+    const action = root.querySelector(':scope > [data-a2ui-component="Row"]');
     const sheet = document.createElement("section");
     sheet.className = "unit-detail-sheet";
     sheet.setAttribute("aria-label", "Stay details");
@@ -9304,9 +9292,7 @@ Known schemas:
     if (title) sheet.append(title);
     {
       const template = document.createElement("template");
-      template.innerHTML = unitTilesHtml(
-        tileFacts.map((tile) => ({ icon: tile.icon, text: tile.fact.value }))
-      );
+      template.innerHTML = unitTilesHtml(tileFacts.map((tile) => ({ icon: tile.icon, text: tile.fact.value })));
       sheet.append(template.content);
     }
     if (amount) {
@@ -9331,13 +9317,8 @@ Known schemas:
     priceLabel?.remove();
     amount?.remove();
     deposit?.element.remove();
-    const amenitiesNodes = amenitiesHeading ? [
-      amenitiesHeading,
-      ...amenitiesHeading.nextElementSibling ? [amenitiesHeading.nextElementSibling] : []
-    ] : [];
-    const supporting = [...root.children].filter(
-      (child) => child !== action && !amenitiesNodes.includes(child)
-    );
+    const amenitiesNodes = amenitiesHeading ? [amenitiesHeading, ...amenitiesHeading.nextElementSibling ? [amenitiesHeading.nextElementSibling] : []] : [];
+    const supporting = [...root.children].filter((child) => child !== action && !amenitiesNodes.includes(child));
     root.replaceChildren();
     if (gallery) root.append(gallery);
     root.append(sheet);
@@ -9388,9 +9369,7 @@ Known schemas:
     return date2.replaceAll(",", " ").split(" ").find((word) => word !== "" && Number.isInteger(Number(word)));
   }
   function replaceWithKitMarkup(root, html, consumed) {
-    const present = consumed.filter(
-      (element) => element !== void 0 && element.parentElement === root
-    );
+    const present = consumed.filter((element) => element !== void 0 && element.parentElement === root);
     const template = document.createElement("template");
     template.innerHTML = html;
     const markup = template.content.firstElementChild;
@@ -9399,59 +9378,54 @@ Known schemas:
     for (const element of present) element.remove();
   }
   function organizeBookingTicket(mount) {
-    const root = mount.querySelector(
-      '[data-a2ui-component="Column"]'
-    );
+    const root = mount.querySelector('[data-a2ui-component="Column"]');
     if (!root) return;
     const children = [...root.children];
-    const title = children.find(
-      (child) => child.tagName === "H3" && guestFactValue(
-        child.textContent ?? "",
-        GUEST_FACT_LABELS.allInStayTotal
-      ) === void 0
-    );
+    const title = children.find((child) => child.tagName === "H3" && guestFactValue(child.textContent ?? "", GUEST_FACT_LABELS.allInStayTotal) === void 0);
     const checkIn = findFact(children, GUEST_FACT_LABELS.checkIn);
     const checkOut = findFact(children, GUEST_FACT_LABELS.checkOut);
     const stay = findFact(children, GUEST_FACT_LABELS.stay);
     const checkInDay = checkIn === void 0 ? void 0 : dayNumeral(checkIn.value);
     const checkOutDay = checkOut === void 0 ? void 0 : dayNumeral(checkOut.value);
     if (title && checkIn && checkOut && stay && checkInDay && checkOutDay) {
-      replaceWithKitMarkup(
-        root,
-        ticketHtml({
-          title: title.textContent?.trim() ?? "",
-          checkIn: { day: checkInDay, date: checkIn.value },
-          checkOut: { day: checkOutDay, date: checkOut.value },
-          foot: stay.value + (activePayload?.confirmation ? ` \xB7 Booking reference ${activePayload.confirmation.bookingReference}` : "")
-        }),
-        [title, checkIn.element, checkOut.element, stay.element]
-      );
+      replaceWithKitMarkup(root, ticketHtml({
+        title: title.textContent?.trim() ?? "",
+        checkIn: { day: checkInDay, date: checkIn.value },
+        checkOut: { day: checkOutDay, date: checkOut.value },
+        foot: stay.value + (activePayload?.confirmation ? ` \xB7 Booking reference ${activePayload.confirmation.bookingReference}` : "")
+      }), [title, checkIn.element, checkOut.element, stay.element]);
     }
     const total = findFact(children, GUEST_FACT_LABELS.allInStayTotal);
     if (!total) return;
-    const deposit = findFact(
-      children,
-      GUEST_FACT_LABELS.refundableSecurityDeposit
-    );
+    const deposit = findFact(children, GUEST_FACT_LABELS.refundableSecurityDeposit);
     const due = findFact(children, GUEST_FACT_LABELS.amountDueNow);
     const paid = findFact(children, GUEST_FACT_LABELS.amountPaid);
-    const condition = children.find(
-      (child) => child.textContent?.trim() === GUEST_FACT_LABELS.ifRequestAccepted
-    );
-    replaceWithKitMarkup(
-      root,
-      breakdownHtml({
-        ...activePayload?.confirmation?.depositCollected ? { depositCollected: true } : {},
-        ...condition ? { condition: GUEST_FACT_LABELS.ifRequestAccepted } : {},
-        total: total.value,
-        ...deposit ? { deposit: deposit.value } : {},
-        ...due ? { due: due.value } : {},
-        ...paid ? { paid: paid.value } : {}
-      }),
-      [condition, total.element, deposit?.element, due?.element, paid?.element]
-    );
+    const next = findFact(children, GUEST_FACT_LABELS.nextPayment);
+    const condition = children.find((child) => child.textContent?.trim() === GUEST_FACT_LABELS.ifRequestAccepted);
+    replaceWithKitMarkup(root, breakdownHtml({
+      ...activePayload?.confirmation?.depositCollected ? { depositCollected: true } : {},
+      ...condition ? { condition: GUEST_FACT_LABELS.ifRequestAccepted } : {},
+      total: total.value,
+      ...deposit ? { deposit: deposit.value } : {},
+      ...due ? { due: due.value } : {},
+      ...paid ? { paid: paid.value } : {},
+      ...next ? { next: next.value } : {}
+    }), [condition, total.element, deposit?.element, due?.element, paid?.element, next?.element]);
   }
   function organizeConfirmation(mount, content) {
+    const root = mount.querySelector('[data-a2ui-component="Column"]');
+    const ticket = root?.querySelector(":scope > .ui-ticket");
+    const breakdown = root?.querySelector(":scope > .ui-price-breakdown");
+    if (!root || !ticket || !breakdown) return;
+    const template = document.createElement("template");
+    template.innerHTML = confirmationScreenHtml(content, ticket.outerHTML, breakdown.outerHTML);
+    root.replaceChildren(template.content);
+    root.querySelector(".request-actions a")?.addEventListener("click", (event) => {
+      event.preventDefault();
+      closeWorkspace(workspaceReopen);
+    });
+  }
+  function organizePaymentScreen(mount, content) {
     const root = mount.querySelector(
       '[data-a2ui-component="Column"]'
     );
@@ -9459,18 +9433,26 @@ Known schemas:
     const breakdown = root?.querySelector(
       ":scope > .ui-price-breakdown"
     );
+    const actions = root?.querySelector(
+      ':scope > [data-a2ui-component="Row"]'
+    );
     if (!root || !ticket || !breakdown) return;
     const template = document.createElement("template");
-    template.innerHTML = confirmationScreenHtml(
+    template.innerHTML = paymentScreenHtml(
       content,
       ticket.outerHTML,
-      breakdown.outerHTML
+      breakdown.outerHTML,
+      {
+        countdown: true,
+        ...actions ? { actions: "<div data-payment-action-slot></div>" } : {}
+      }
     );
+    const slot = template.content.querySelector("[data-payment-action-slot]");
+    if (slot && actions) slot.replaceWith(actions);
     root.replaceChildren(template.content);
-    root.querySelector(".request-actions a")?.addEventListener("click", (event) => {
-      event.preventDefault();
-      closeWorkspace(workspaceReopen);
-    });
+    const countdown = root.querySelector(".waiting-countdown");
+    if (countdown && activePayload?.waiting?.kind === "payment-window")
+      startCountdown(activePayload.waiting, countdown, true);
   }
   function organizeOfferScreen(mount, content) {
     const root = mount.querySelector(
@@ -9514,28 +9496,16 @@ Known schemas:
       startCountdown(activePayload.waiting, countdown, true);
   }
   function organizeRequestScreen(mount, content) {
-    const root = mount.querySelector(
-      '[data-a2ui-component="Column"]'
-    );
+    const root = mount.querySelector('[data-a2ui-component="Column"]');
     const ticket = root?.querySelector(":scope > .ui-ticket");
-    const breakdown = root?.querySelector(
-      ":scope > .ui-price-breakdown"
-    );
+    const breakdown = root?.querySelector(":scope > .ui-price-breakdown");
     if (!root || !ticket || !breakdown) return;
     const originalAction = root.querySelector("button");
-    if ((content.state === "draft" || content.state === "review") && !originalAction)
-      return;
+    if ((content.state === "draft" || content.state === "review") && !originalAction) return;
     const template = document.createElement("template");
-    template.innerHTML = requestScreenHtml(
-      content,
-      ticket.outerHTML,
-      breakdown.outerHTML,
-      breakdown.querySelector(".ui-money-total")?.textContent ?? void 0
-    );
+    template.innerHTML = requestScreenHtml(content, ticket.outerHTML, breakdown.outerHTML, breakdown.querySelector(".ui-money-total")?.textContent ?? void 0);
     const screen = template.content.firstElementChild;
-    const primaryForm = screen.querySelector(
-      ".request-actions form"
-    );
+    const primaryForm = screen.querySelector(".request-actions form");
     if (originalAction && (content.state === "draft" || content.state === "review")) {
       const binding = document.createElement("div");
       binding.hidden = true;
@@ -9546,14 +9516,11 @@ Known schemas:
       });
       root.replaceChildren(screen, binding);
     } else root.replaceChildren(screen);
-    for (const form of screen.querySelectorAll(
-      ".request-actions form"
-    )) {
-      if (new URL(form.action).pathname.endsWith("/conversation"))
-        form.addEventListener("submit", (event) => {
-          event.preventDefault();
-          closeWorkspace(workspaceReopen);
-        });
+    for (const form of screen.querySelectorAll(".request-actions form")) {
+      if (new URL(form.action).pathname.endsWith("/conversation")) form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        closeWorkspace(workspaceReopen);
+      });
     }
     const change = screen.querySelector(".request-guests a");
     change?.addEventListener("click", (event) => {
@@ -9569,14 +9536,11 @@ Known schemas:
   function viewUnitIds(payload) {
     const ids = [];
     for (const message of payload?.a2uiMessages ?? []) {
-      if (!isRecord3(message) || !isRecord3(message.updateComponents) || !Array.isArray(message.updateComponents.components))
-        continue;
+      if (!isRecord3(message) || !isRecord3(message.updateComponents) || !Array.isArray(message.updateComponents.components)) continue;
       for (const component of message.updateComponents.components) {
-        if (!isRecord3(component) || !isRecord3(component.action) || !isRecord3(component.action.event))
-          continue;
+        if (!isRecord3(component) || !isRecord3(component.action) || !isRecord3(component.action.event)) continue;
         const context = component.action.event.context;
-        if (component.action.event.name === "shortlet.discovery.view-unit" && isRecord3(context) && typeof context.unitId === "string")
-          ids.push(context.unitId);
+        if (component.action.event.name === "shortlet.discovery.view-unit" && isRecord3(context) && typeof context.unitId === "string") ids.push(context.unitId);
       }
     }
     return ids;
@@ -9595,9 +9559,7 @@ Known schemas:
     const unitIds = viewUnitIds(activePayload);
     const rows = [];
     let listElement;
-    for (const [index, card] of [
-      ...mount.querySelectorAll('[data-a2ui-component="Card"]')
-    ].entries()) {
+    for (const [index, card] of [...mount.querySelectorAll('[data-a2ui-component="Card"]')].entries()) {
       const list = card.parentElement;
       if (list instanceof HTMLElement) {
         list.classList.add("stay-grid");
@@ -9605,37 +9567,22 @@ Known schemas:
         list.setAttribute("aria-label", "Stay search results");
         listElement = list;
       }
-      const body = card.querySelector(
-        ':scope > [data-weaver-mount] > [data-a2ui-component="Column"], :scope > [data-a2ui-component="Column"]'
-      );
+      const body = card.querySelector(':scope > [data-weaver-mount] > [data-a2ui-component="Column"], :scope > [data-a2ui-component="Column"]');
       const unitId = unitIds[index];
       if (!body || unitId === void 0) continue;
       const children = [...body.children];
-      const title = children.find(
-        (child) => child.tagName === "H3" && !isMoney(child.textContent ?? "")
-      );
+      const title = children.find((child) => child.tagName === "H3" && !isMoney(child.textContent ?? ""));
       const where = findFact(children, GUEST_FACT_LABELS.where);
       const factLine = children.find((child) => child.tagName === "P");
-      const priceLabel = children.find(
-        (child) => isPriceLabel(child.textContent?.trim() ?? "")
-      );
-      const price = children.find(
-        (child) => child.tagName === "H3" && isMoney(child.textContent ?? "")
-      );
+      const priceLabel = children.find((child) => isPriceLabel(child.textContent?.trim() ?? ""));
+      const price = children.find((child) => child.tagName === "H3" && isMoney(child.textContent ?? ""));
       if (!title || !where || !factLine || !priceLabel || !price) continue;
-      const deposit = findFact(
-        children,
-        GUEST_FACT_LABELS.refundableSecurityDeposit
-      );
+      const deposit = findFact(children, GUEST_FACT_LABELS.refundableSecurityDeposit);
       const fit = findFact(children, GUEST_FACT_LABELS.fitReason);
       const photos = findFact(children, GUEST_FACT_LABELS.photos);
       const photoCount = photos === void 0 ? void 0 : Number(photos.value);
-      const image = children.find(
-        (child) => child instanceof HTMLImageElement
-      );
-      const buttons = children.filter(
-        (child) => child instanceof HTMLButtonElement
-      );
+      const image = children.find((child) => child instanceof HTMLImageElement);
+      const buttons = children.filter((child) => child instanceof HTMLButtonElement);
       const view = buttons[0];
       const parts = {
         href: `/stays/${encodeURIComponent(unitId)}`,
@@ -9648,21 +9595,8 @@ Known schemas:
         ...image?.src ? { photoSrc: image.src } : {},
         ...photoCount === void 0 ? {} : { photoCount }
       };
-      const known = /* @__PURE__ */ new Set([
-        title,
-        where.element,
-        factLine,
-        priceLabel,
-        price,
-        deposit?.element,
-        fit?.element,
-        photos?.element,
-        image,
-        ...buttons
-      ]);
-      const extras = children.filter(
-        (child) => !known.has(child) && child.getAttribute("data-a2ui-component") !== "Divider"
-      );
+      const known = /* @__PURE__ */ new Set([title, where.element, factLine, priceLabel, price, deposit?.element, fit?.element, photos?.element, image, ...buttons]);
+      const extras = children.filter((child) => !known.has(child) && child.getAttribute("data-a2ui-component") !== "Divider");
       const template = document.createElement("template");
       template.innerHTML = stayCardInnerHtml(parts);
       card.replaceChildren(template.content);
@@ -9670,18 +9604,10 @@ Known schemas:
       card.setAttribute("role", "listitem");
       const anchor = card.querySelector(".ui-stay-card__view");
       if (view && anchor) {
-        view.classList.add(
-          "ui-button",
-          "ui-button--primary",
-          "ui-button--block",
-          "ui-stay-card__view"
-        );
+        view.classList.add("ui-button", "ui-button--primary", "ui-button--block", "ui-stay-card__view");
         anchor.replaceWith(view);
       } else anchor?.remove();
-      openStayFrom(
-        card.querySelector(".ui-stay-card__title a"),
-        view
-      );
+      openStayFrom(card.querySelector(".ui-stay-card__title a"), view);
       fit?.element.classList.add("stay-card__fit");
       const facts = card.querySelector(".ui-stay-card__facts");
       for (const extra of [...extras].reverse()) facts?.after(extra);
@@ -9712,10 +9638,7 @@ Known schemas:
         const both = document.createElement("button");
         both.type = "button";
         both.className = "ui-link ui-result-rows__compare";
-        both.insertAdjacentHTML(
-          "beforeend",
-          `See both side by side${icon("arrow-right")}`
-        );
+        both.insertAdjacentHTML("beforeend", `See both side by side${icon("arrow-right")}`);
         both.addEventListener("click", () => void compareBoth());
         rowList.after(both);
       }
@@ -9725,9 +9648,7 @@ Known schemas:
   async function compareBoth() {
     if (comparingBoth) return;
     comparingBoth = true;
-    const compareButtons = () => [...activeWorkspace.querySelectorAll(".ui-stay-card")].map(
-      (card) => card.querySelector(".stay-card__compare")
-    );
+    const compareButtons = () => [...activeWorkspace.querySelectorAll(".ui-stay-card")].map((card) => card.querySelector(".stay-card__compare"));
     const picked = (button) => button?.textContent?.trim() === GUEST_COMPARE_LABELS.unpick;
     try {
       const [first, second] = compareButtons();
@@ -9754,21 +9675,11 @@ Known schemas:
     }
   }
   function decorateComparison(mount) {
-    const root = mount.querySelector(
-      '[data-a2ui-component="Column"]'
-    );
+    const root = mount.querySelector('[data-a2ui-component="Column"]');
     if (!root) return;
-    const rowElements = [
-      ...root.querySelectorAll(
-        ':scope > [data-a2ui-component="Row"]'
-      )
-    ];
-    const attributeRows = rowElements.filter(
-      (row) => row.previousElementSibling?.tagName === "H3"
-    );
-    const actionRow = rowElements.find(
-      (row) => row.querySelector("button") !== null
-    );
+    const rowElements = [...root.querySelectorAll(':scope > [data-a2ui-component="Row"]')];
+    const attributeRows = rowElements.filter((row) => row.previousElementSibling?.tagName === "H3");
+    const actionRow = rowElements.find((row) => row.querySelector("button") !== null);
     if (attributeRows.length === 0) return;
     const table = document.createElement("div");
     table.className = "ui-compare";
@@ -9780,11 +9691,7 @@ Known schemas:
       element.setAttribute("role", "row");
       return element;
     };
-    const cellsOf = (row) => [
-      ...row.querySelectorAll(
-        ':scope > [data-a2ui-component="Column"], :scope > [data-weaver-mount] > [data-a2ui-component="Column"]'
-      )
-    ];
+    const cellsOf = (row) => [...row.querySelectorAll(':scope > [data-a2ui-component="Column"], :scope > [data-weaver-mount] > [data-a2ui-component="Column"]')];
     const head = line("ui-compare__row--head");
     const corner = document.createElement("div");
     corner.setAttribute("role", "columnheader");
@@ -9826,30 +9733,26 @@ Known schemas:
   }
   function enhanceSurfacePresentation(mount, kind) {
     mount.dataset.surfaceKind = kind;
-    for (const button of mount.querySelectorAll("button"))
-      button.classList.add("guest-action");
-    for (const field2 of mount.querySelectorAll("input, textarea, select"))
-      field2.classList.add("guest-field");
-    for (const text of mount.querySelectorAll(
-      '[data-a2ui-component="Text"]'
-    )) {
+    for (const button of mount.querySelectorAll("button")) button.classList.add("guest-action");
+    for (const field2 of mount.querySelectorAll("input, textarea, select")) field2.classList.add("guest-field");
+    for (const text of mount.querySelectorAll('[data-a2ui-component="Text"]')) {
       const value = text.textContent?.trim() ?? "";
       const isHeading = /^H[1-6]$/.test(text.tagName);
       const tone = isHeading ? void 0 : guestStatusTone(value);
       if (tone) text.classList.add("guest-status", `guest-status--${tone}`);
-      if (/^No stays match|^No current matches/i.test(value))
-        text.classList.add("empty-state-title");
+      if (/^No stays match|^No current matches/i.test(value)) text.classList.add("empty-state-title");
     }
     if (kind === "discovery") decorateDiscoveryCards(mount);
     if (kind === "compare") decorateComparison(mount);
     if (kind === "unit-detail") organizeUnitDetail(mount);
     if (kind === "booking" || kind === "payment") organizeBookingTicket(mount);
-    if (activePayload?.requestScreen)
-      organizeRequestScreen(mount, activePayload.requestScreen);
+    if (activePayload?.requestScreen) organizeRequestScreen(mount, activePayload.requestScreen);
     if (activePayload?.confirmation)
       organizeConfirmation(mount, activePayload.confirmation);
     if (activePayload?.offerScreen)
       organizeOfferScreen(mount, activePayload.offerScreen);
+    if (activePayload?.paymentScreen)
+      organizePaymentScreen(mount, activePayload.paymentScreen);
   }
   function isMoney(text) {
     const value = text.trim();
@@ -9859,8 +9762,7 @@ Known schemas:
     return text.startsWith(GUEST_GLOSSARY.allInStayTotal) || text.startsWith("Indicative nightly rate");
   }
   function isSafeInternalRoute(value) {
-    if (typeof value !== "string" || value === "" || !value.startsWith("/") || value.startsWith("//") || value.includes("\\"))
-      return false;
+    if (typeof value !== "string" || value === "" || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) return false;
     try {
       return new URL(value, window.location.origin).origin === window.location.origin;
     } catch {
@@ -9871,27 +9773,18 @@ Known schemas:
     return Array.isArray(value) && value.every((item) => typeof item === "string");
   }
   function isWaitingState(value) {
-    return isRecord3(value) && ["operator-response", "offer-payment-window", "payment-window"].includes(
-      String(value.kind)
-    ) && typeof value.heading === "string" && typeof value.deadlineText === "string" && typeof value.deadlineAt === "string" && Number.isFinite(Date.parse(value.deadlineAt)) && typeof value.serverNow === "string" && Number.isFinite(Date.parse(value.serverNow)) && isStringList(value.outcomes) && isStringList(value.meanwhile);
+    return isRecord3(value) && ["operator-response", "offer-payment-window", "payment-window"].includes(String(value.kind)) && typeof value.heading === "string" && typeof value.deadlineText === "string" && typeof value.deadlineAt === "string" && Number.isFinite(Date.parse(value.deadlineAt)) && typeof value.serverNow === "string" && Number.isFinite(Date.parse(value.serverNow)) && isStringList(value.outcomes) && isStringList(value.meanwhile);
   }
   function isConfirmation(value) {
     return isRecord3(value) && typeof value.bookingReference === "string" && value.bookingReference !== "" && typeof value.depositCollected === "boolean" && isStringList(value.steps) && isSafeInternalRoute(value.conversationHref) && isSafeInternalRoute(value.detailsHref) && typeof value.details === "string";
   }
   function isRequestScreen(value) {
-    if (!isRecord3(value) || typeof value.state !== "string" || !["draft", "review", "sent", "not-accepted"].includes(value.state) || typeof value.tone !== "string" || !["neutral", "warning", "danger"].includes(value.tone) || typeof value.title !== "string" || typeof value.status !== "string" || !isStringList(value.steps) || !isStringList(value.notes))
-      return false;
+    if (!isRecord3(value) || typeof value.state !== "string" || !["draft", "review", "sent", "not-accepted"].includes(value.state) || typeof value.tone !== "string" || !["neutral", "warning", "danger"].includes(value.tone) || typeof value.title !== "string" || typeof value.status !== "string" || !isStringList(value.steps) || !isStringList(value.notes)) return false;
     const action = (candidate) => isRecord3(candidate) && isSafeInternalRoute(candidate.path) && typeof candidate.label === "string" && (candidate.surfaceId === void 0 || typeof candidate.surfaceId === "string");
-    if (!action(value.primary) || value.secondary !== void 0 && !action(value.secondary))
-      return false;
-    if (["banner", "provider", "guests", "sentAt"].some(
-      (key3) => value[key3] !== void 0 && typeof value[key3] !== "string"
-    ))
-      return false;
-    if (value.selfBooking !== void 0 && typeof value.selfBooking !== "boolean")
-      return false;
-    if (value.changeHref !== void 0 && !isSafeInternalRoute(value.changeHref))
-      return false;
+    if (!action(value.primary) || value.secondary !== void 0 && !action(value.secondary)) return false;
+    if (["banner", "provider", "guests", "sentAt"].some((key3) => value[key3] !== void 0 && typeof value[key3] !== "string")) return false;
+    if (value.selfBooking !== void 0 && typeof value.selfBooking !== "boolean") return false;
+    if (value.changeHref !== void 0 && !isSafeInternalRoute(value.changeHref)) return false;
     return value.deadline === void 0 || isRecord3(value.deadline) && typeof value.deadline.iso === "string" && Number.isFinite(Date.parse(value.deadline.iso)) && typeof value.deadline.text === "string";
   }
   function isOfferScreen(value) {
@@ -9901,33 +9794,25 @@ Known schemas:
       return false;
     return value.accept === void 0 || value.state === "live" && isRecord3(value.accept) && isSafeInternalRoute(value.accept.path) && typeof value.accept.surfaceId === "string" && value.accept.surfaceId !== "";
   }
+  function isPaymentScreen(value) {
+    return isRecord3(value) && ["ready", "handoff"].includes(String(value.state)) && ["success", "warning", "danger", "neutral"].includes(String(value.tone)) && ["title", "status", "explanation"].every(
+      (key3) => typeof value[key3] === "string"
+    ) && typeof value.serverNow === "string" && Number.isFinite(Date.parse(value.serverNow)) && (value.deadlineIso === void 0 || typeof value.deadlineIso === "string" && Number.isFinite(Date.parse(value.deadlineIso))) && isStringList(value.steps) && (value.choosePath === void 0 || isSafeInternalRoute(value.choosePath));
+  }
   function isSurfacePayload(value) {
-    if (!isRecord3(value) || typeof value.surfaceId !== "string" || value.surfaceId.trim() === "" || !Array.isArray(value.a2uiMessages))
-      return false;
-    if (value.mode !== void 0 && value.mode !== "text" && value.mode !== "inline-surface" && value.mode !== "focused-surface")
-      return false;
-    if (value.status !== void 0 && (typeof value.status !== "string" || ![
-      "active",
-      "superseded",
-      "stale",
-      "expired",
-      "deleted",
-      "fallback"
-    ].includes(value.status)))
-      return false;
-    if (value.summary !== void 0 && typeof value.summary !== "string")
-      return false;
-    if (value.textFallback !== void 0 && typeof value.textFallback !== "string")
-      return false;
-    if (value.conventionalRouteLabel !== void 0 && typeof value.conventionalRouteLabel !== "string")
-      return false;
-    if (value.waiting !== void 0 && !isWaitingState(value.waiting))
-      return false;
-    if (value.requestScreen !== void 0 && !isRequestScreen(value.requestScreen))
-      return false;
+    if (!isRecord3(value) || typeof value.surfaceId !== "string" || value.surfaceId.trim() === "" || !Array.isArray(value.a2uiMessages)) return false;
+    if (value.mode !== void 0 && value.mode !== "text" && value.mode !== "inline-surface" && value.mode !== "focused-surface") return false;
+    if (value.status !== void 0 && (typeof value.status !== "string" || !["active", "superseded", "stale", "expired", "deleted", "fallback"].includes(value.status))) return false;
+    if (value.summary !== void 0 && typeof value.summary !== "string") return false;
+    if (value.textFallback !== void 0 && typeof value.textFallback !== "string") return false;
+    if (value.conventionalRouteLabel !== void 0 && typeof value.conventionalRouteLabel !== "string") return false;
+    if (value.waiting !== void 0 && !isWaitingState(value.waiting)) return false;
+    if (value.requestScreen !== void 0 && !isRequestScreen(value.requestScreen)) return false;
     if (value.confirmation !== void 0 && !isConfirmation(value.confirmation))
       return false;
     if (value.offerScreen !== void 0 && !isOfferScreen(value.offerScreen))
+      return false;
+    if (value.paymentScreen !== void 0 && !isPaymentScreen(value.paymentScreen))
       return false;
     return value.conventionalRoute === void 0 || isSafeInternalRoute(value.conventionalRoute);
   }
@@ -9938,37 +9823,23 @@ Known schemas:
     upcoming: "not started"
   };
   function isJourney(value) {
-    if (!isRecord3(value) || typeof value.current !== "string" || !Array.isArray(value.steps) || value.steps.length === 0)
-      return false;
-    return value.steps.every(
-      (step) => isRecord3(step) && typeof step.id === "string" && typeof step.label === "string" && typeof step.state === "string" && step.state in JOURNEY_STATE_TEXT
-    );
+    if (!isRecord3(value) || typeof value.current !== "string" || !Array.isArray(value.steps) || value.steps.length === 0) return false;
+    return value.steps.every((step) => isRecord3(step) && typeof step.id === "string" && typeof step.label === "string" && typeof step.state === "string" && step.state in JOURNEY_STATE_TEXT);
   }
   function isCriteria(value) {
-    if (!isRecord3(value) || typeof value.key !== "string" || typeof value.editable !== "boolean" || typeof value.canUndo !== "boolean")
-      return false;
-    if (!Array.isArray(value.areas) || !value.areas.every(
-      (area) => isRecord3(area) && typeof area.id === "string" && typeof area.label === "string"
-    ))
-      return false;
+    if (!isRecord3(value) || typeof value.key !== "string" || typeof value.editable !== "boolean" || typeof value.canUndo !== "boolean") return false;
+    if (!Array.isArray(value.areas) || !value.areas.every((area) => isRecord3(area) && typeof area.id === "string" && typeof area.label === "string")) return false;
     const labelled = (field2) => field2 === void 0 || isRecord3(field2) && typeof field2.label === "string";
     return labelled(value.where) && labelled(value.when) && labelled(value.guests) && labelled(value.budget);
   }
   function readGuestResponse(value) {
-    if (!isRecord3(value) || typeof value.ok !== "boolean")
-      throw new Error("Invalid server response");
-    if (value.messages !== void 0 && (!Array.isArray(value.messages) || value.messages.some((message) => typeof message !== "string")))
-      throw new Error("Invalid response messages");
-    if (value.receipts !== void 0 && (!Array.isArray(value.receipts) || value.receipts.some((receipt) => typeof receipt !== "string")))
-      throw new Error("Invalid response receipts");
-    if (value.surfaces !== void 0 && (!Array.isArray(value.surfaces) || value.surfaces.some((surface) => !isSurfacePayload(surface))))
-      throw new Error("Invalid response surface");
-    if (value.journey !== void 0 && !isJourney(value.journey))
-      throw new Error("Invalid response journey");
-    if (value.criteria !== void 0 && !isCriteria(value.criteria))
-      throw new Error("Invalid response criteria");
-    if (value.quickReplies !== void 0 && !isStringList(value.quickReplies))
-      throw new Error("Invalid response quick replies");
+    if (!isRecord3(value) || typeof value.ok !== "boolean") throw new Error("Invalid server response");
+    if (value.messages !== void 0 && (!Array.isArray(value.messages) || value.messages.some((message) => typeof message !== "string"))) throw new Error("Invalid response messages");
+    if (value.receipts !== void 0 && (!Array.isArray(value.receipts) || value.receipts.some((receipt) => typeof receipt !== "string"))) throw new Error("Invalid response receipts");
+    if (value.surfaces !== void 0 && (!Array.isArray(value.surfaces) || value.surfaces.some((surface) => !isSurfacePayload(surface)))) throw new Error("Invalid response surface");
+    if (value.journey !== void 0 && !isJourney(value.journey)) throw new Error("Invalid response journey");
+    if (value.criteria !== void 0 && !isCriteria(value.criteria)) throw new Error("Invalid response criteria");
+    if (value.quickReplies !== void 0 && !isStringList(value.quickReplies)) throw new Error("Invalid response quick replies");
     return value;
   }
   var threadId = getThreadId();
@@ -9995,10 +9866,7 @@ Known schemas:
     emptyState.hidden = true;
     const turn = document.createElement("article");
     turn.className = `turn ${role}`;
-    turn.setAttribute(
-      "aria-label",
-      role === "user" ? "You" : "Shortlet Concierge"
-    );
+    turn.setAttribute("aria-label", role === "user" ? "You" : "Shortlet Concierge");
     const bubble = document.createElement("div");
     bubble.className = "bubble";
     bubble.textContent = text;
@@ -10017,14 +9885,10 @@ Known schemas:
     button.type = "button";
     button.className = "ui-button retry-action";
     button.textContent = "Retry";
-    button.addEventListener(
-      "click",
-      () => {
-        button.remove();
-        retry();
-      },
-      { once: true }
-    );
+    button.addEventListener("click", () => {
+      button.remove();
+      retry();
+    }, { once: true });
     turn.appendChild(button);
   }
   function addMarker(text, className) {
@@ -10036,10 +9900,7 @@ Known schemas:
     transcript.appendChild(item);
   }
   function addHistoricalSummary(summary) {
-    addMarker(
-      formatGuestHistorySummary(summary.summary, summary.status),
-      "historical-summary"
-    );
+    addMarker(formatGuestHistorySummary(summary.summary, summary.status), "historical-summary");
   }
   function addReceipt(text) {
     addMarker(text, "historical-summary receipt-marker");
@@ -10088,14 +9949,11 @@ Known schemas:
     const current = shellState.activeSurface;
     const canReopen = current?.mode === "focused-surface" && current.status === "active" && activePayload !== void 0;
     workspaceReopen.hidden = !canReopen || shellState.focusedSurfaceOpen;
-    if (canReopen)
-      workspaceReopen.textContent = `Return to ${guestSurfaceHeading(current.summary).toLocaleLowerCase()}`;
+    if (canReopen) workspaceReopen.textContent = `Return to ${guestSurfaceHeading(current.summary).toLocaleLowerCase()}`;
   }
   function enhanceGuestContactField(mount) {
     const synchronize = () => {
-      const wrapper = mount.querySelector(
-        '[data-a2ui-component="TextField"]'
-      );
+      const wrapper = mount.querySelector('[data-a2ui-component="TextField"]');
       const label = wrapper?.querySelector("label");
       const input = wrapper?.querySelector("input");
       if (!wrapper || !label || !input) return;
@@ -10114,19 +9972,12 @@ Known schemas:
         error2.setAttribute("role", "alert");
         error2.classList.add("guest-field-error");
       }
-      input.setAttribute(
-        "aria-describedby",
-        [hint?.id, error2?.id].filter(Boolean).join(" ")
-      );
+      input.setAttribute("aria-describedby", [hint?.id, error2?.id].filter(Boolean).join(" "));
       if (error2) input.setAttribute("aria-invalid", "true");
       else input.removeAttribute("aria-invalid");
     };
     synchronize();
-    new MutationObserver(synchronize).observe(mount, {
-      childList: true,
-      subtree: true,
-      characterData: true
-    });
+    new MutationObserver(synchronize).observe(mount, { childList: true, subtree: true, characterData: true });
   }
   var countdownTimer;
   var lastWaitingRefetch = Number.NEGATIVE_INFINITY;
@@ -10149,7 +10000,8 @@ Known schemas:
     setTimeout(() => {
       lastWaitingRefetch = performance.now();
       void refreshServerState().then((refreshed) => {
-        if (!refreshed && retryWhile?.isConnected) refetchWaitingState(retryWhile);
+        if (!refreshed && retryWhile?.isConnected)
+          refetchWaitingState(retryWhile);
       });
     }, wait);
   }
@@ -10202,13 +10054,7 @@ Known schemas:
       }
       return element;
     };
-    panel.append(
-      heading,
-      deadline,
-      nextLabel,
-      list(waiting.outcomes, "waiting-outcomes"),
-      list(waiting.meanwhile, "waiting-meanwhile")
-    );
+    panel.append(heading, deadline, nextLabel, list(waiting.outcomes, "waiting-outcomes"), list(waiting.meanwhile, "waiting-meanwhile"));
     startCountdown(waiting, countdown);
     return panel;
   }
@@ -10223,13 +10069,7 @@ Known schemas:
   function syncSheetHistory() {
     const open = sheetOpen();
     if (open && !sheetInHistory) {
-      history.pushState(
-        {
-          ...isRecord3(history.state) ? history.state : {},
-          shortletSheet: true
-        },
-        ""
-      );
+      history.pushState({ ...isRecord3(history.state) ? history.state : {}, shortletSheet: true }, "");
       sheetInHistory = true;
     } else if (!open && sheetInHistory) {
       sheetInHistory = false;
@@ -10290,13 +10130,12 @@ Known schemas:
       state.textContent = statusMessage;
       activeWorkspace.appendChild(state);
     }
-    if (surface.waiting && presentation.status === "active" && !(surface.requestScreen && surface.waiting.kind === "operator-response") && !(surface.offerScreen && surface.waiting.kind === "offer-payment-window"))
+    if (surface.waiting && presentation.status === "active" && !(surface.requestScreen && surface.waiting.kind === "operator-response") && !(surface.offerScreen && surface.waiting.kind === "offer-payment-window") && !(surface.paymentScreen && surface.waiting.kind === "payment-window"))
       activeWorkspace.appendChild(renderWaiting(surface.waiting));
     const mount = document.createElement("div");
     mount.className = "weaver-mount";
     activeWorkspace.appendChild(mount);
-    if (presentation.status === "stale")
-      trackTelemetry("stale-surface-encountered");
+    if (presentation.status === "stale") trackTelemetry("stale-surface-encountered");
     if (presentation.status === "expired")
       trackTelemetry("expired-surface-encountered");
     const offerRecovery = surface.offerScreen && surface.offerScreen.state !== "live" && !surface.offerScreen.accept && presentation.status === "expired";
@@ -10311,24 +10150,17 @@ Known schemas:
       return;
     }
     if (createdSurfaceIds.has(surface.surfaceId)) {
-      weaver.runtime.process({
-        version: "v0.9.1",
-        deleteSurface: { surfaceId: surface.surfaceId }
-      });
+      weaver.runtime.process({ version: "v0.9.1", deleteSurface: { surfaceId: surface.surfaceId } });
       createdSurfaceIds.delete(surface.surfaceId);
     }
     for (const message of surface.a2uiMessages) {
       const processed = weaver.runtime.process(message);
-      if (processed.ok && isRecord3(message) && "createSurface" in message)
-        createdSurfaceIds.add(surface.surfaceId);
+      if (processed.ok && isRecord3(message) && "createSurface" in message) createdSurfaceIds.add(surface.surfaceId);
       if (!processed.ok) {
         trackTelemetry("weaver-rendering-failure");
         trackTelemetry("fallback-rendered");
         fallback(mount, { ...presentation, status: "fallback" });
-        announce(
-          "The workspace could not be displayed safely. A standard route remains available.",
-          true
-        );
+        announce("The workspace could not be displayed safely. A standard route remains available.", true);
         showReopen();
         return;
       }
@@ -10338,19 +10170,13 @@ Known schemas:
       trackTelemetry("weaver-rendering-failure");
       trackTelemetry("fallback-rendered");
       fallback(mount, { ...presentation, status: "fallback" });
-      announce(
-        "The workspace could not be displayed safely. A standard route remains available.",
-        true
-      );
+      announce("The workspace could not be displayed safely. A standard route remains available.", true);
       showReopen();
       return;
     }
     mount.dataset.renderer = "weaver";
     mount.dataset.surfaceId = surface.surfaceId;
-    enhanceSurfacePresentation(
-      mount,
-      activeWorkspace.dataset.surfaceKind ?? "general"
-    );
+    enhanceSurfacePresentation(mount, activeWorkspace.dataset.surfaceKind ?? "general");
     if (surface.requestScreen && surface.waiting?.kind === "operator-response" && presentation.status === "active" && !mount.querySelector(".request-screen")) {
       mount.before(renderWaiting(surface.waiting));
     }
@@ -10366,29 +10192,17 @@ Known schemas:
     showReopen();
     if (moveFocus) {
       activeWorkspace.scrollIntoView({ block: "start" });
-      const focusTarget = [
-        ".workspace-close",
-        ".workspace-heading h2",
-        ".weaver-mount h1",
-        ".weaver-mount h2",
-        ".weaver-mount h3",
-        ".weaver-mount button"
-      ].map((selector) => activeWorkspace.querySelector(selector)).find((element) => element !== null);
+      const focusTarget = [".workspace-close", ".workspace-heading h2", ".weaver-mount h1", ".weaver-mount h2", ".weaver-mount h3", ".weaver-mount button"].map((selector) => activeWorkspace.querySelector(selector)).find((element) => element !== null);
       if (focusTarget) {
-        if (!focusTarget.matches("button, a, input, textarea, select, [tabindex]"))
-          focusTarget.tabIndex = -1;
+        if (!focusTarget.matches("button, a, input, textarea, select, [tabindex]")) focusTarget.tabIndex = -1;
         focusTarget.classList.add("workspace-focus-target");
         requestAnimationFrame(() => {
-          if (focusTarget.isConnected && !activeWorkspace.hidden)
-            focusTarget.focus({ preventScroll: true });
+          if (focusTarget.isConnected && !activeWorkspace.hidden) focusTarget.focus({ preventScroll: true });
         });
       }
     }
-    trackTelemetry(
-      presentation.mode === "focused-surface" ? "focused-surface-opened" : "inline-surface-rendered"
-    );
-    if (moveFocus)
-      announce(`${guestSurfaceHeading(presentation.summary)} is ready.`);
+    trackTelemetry(presentation.mode === "focused-surface" ? "focused-surface-opened" : "inline-surface-rendered");
+    if (moveFocus) announce(`${guestSurfaceHeading(presentation.summary)} is ready.`);
     syncSheetHistory();
   }
   function acceptSurface(surface) {
@@ -10396,8 +10210,7 @@ Known schemas:
     const replaced = shellState.activeSurface !== void 0 && shellState.activeSurface.surfaceId !== surface.surfaceId;
     shellState = replaceActiveSurface(shellState, presentationFor(surface));
     if (replaced) trackTelemetry("surface-replaced");
-    for (const summary of shellState.historicalSummaries.slice(before))
-      addHistoricalSummary(summary);
+    for (const summary of shellState.historicalSummaries.slice(before)) addHistoricalSummary(summary);
     renderSurface(surface, replaced);
     syncSheetHistory();
   }
@@ -10437,30 +10250,11 @@ Known schemas:
     }
     journeyRail.replaceChildren(list);
     journeyRail.hidden = false;
-    if (current)
-      list.scrollLeft = Math.max(
-        0,
-        current.offsetLeft - list.offsetLeft - list.clientWidth / 2 + current.offsetWidth / 2
-      );
+    if (current) list.scrollLeft = Math.max(0, current.offsetLeft - list.offsetLeft - list.clientWidth / 2 + current.offsetWidth / 2);
   }
-  var CRITERIA_FIELDS = [
-    "where",
-    "when",
-    "guests",
-    "budget"
-  ];
-  var CRITERIA_NAMES = {
-    where: "Where",
-    when: "When",
-    guests: "Guests",
-    budget: "Budget"
-  };
-  var CRITERIA_EMPTY = {
-    where: "Add area",
-    when: "Add dates",
-    guests: "Add guests",
-    budget: "Add budget"
-  };
+  var CRITERIA_FIELDS = ["where", "when", "guests", "budget"];
+  var CRITERIA_NAMES = { where: "Where", when: "When", guests: "Guests", budget: "Budget" };
+  var CRITERIA_EMPTY = { where: "Add area", when: "Add dates", guests: "Add guests", budget: "Add budget" };
   var CRITERIA_EDIT_EVENT = "shortlet.criteria.edit";
   var CRITERIA_UNDO_EVENT = "shortlet.criteria.undo";
   var currentCriteria;
@@ -10503,9 +10297,7 @@ Known schemas:
       });
       chips.appendChild(undo);
     }
-    criteriaSummary.textContent = CRITERIA_FIELDS.map(
-      (name) => criteria[name]?.label
-    ).filter((label) => label !== void 0).join(" \xB7 ");
+    criteriaSummary.textContent = CRITERIA_FIELDS.map((name) => criteria[name]?.label).filter((label) => label !== void 0).join(" \xB7 ");
     criteriaStrip.hidden = false;
     if (!criteria.editable) closeCriteriaEditor(false);
   }
@@ -10518,8 +10310,7 @@ Known schemas:
   criteriaToggle.addEventListener("click", () => {
     const expand = criteriaStrip.dataset.expanded !== "true";
     setCriteriaExpanded(expand);
-    if (expand)
-      criteriaStrip.querySelector(".criteria-chip:not(:disabled)")?.focus();
+    if (expand) criteriaStrip.querySelector(".criteria-chip:not(:disabled)")?.focus();
   });
   function field(labelText, control) {
     const wrapper = document.createElement("div");
@@ -10549,10 +10340,7 @@ Known schemas:
     openCriteriaField = target;
     criteriaStatus.textContent = "";
     criteriaEditor.replaceChildren();
-    criteriaEditor.setAttribute(
-      "aria-label",
-      `Change ${CRITERIA_NAMES[target].toLocaleLowerCase()}`
-    );
+    criteriaEditor.setAttribute("aria-label", `Change ${CRITERIA_NAMES[target].toLocaleLowerCase()}`);
     if (target === "where") {
       const select = document.createElement("select");
       select.id = "criteria-area";
@@ -10572,28 +10360,14 @@ Known schemas:
       date2.type = "date";
       date2.required = true;
       if (criteria.when?.checkIn) date2.value = criteria.when.checkIn;
-      criteriaEditor.append(
-        field("Arrival date", date2),
-        field(
-          "Nights",
-          numberInput("criteria-nights", "nights", criteria.when?.nights)
-        )
-      );
+      criteriaEditor.append(field("Arrival date", date2), field("Nights", numberInput("criteria-nights", "nights", criteria.when?.nights)));
     } else if (target === "guests") {
-      criteriaEditor.appendChild(
-        field(
-          "Guests",
-          numberInput("criteria-guests", "partySize", criteria.guests?.count)
-        )
-      );
+      criteriaEditor.appendChild(field("Guests", numberInput("criteria-guests", "partySize", criteria.guests?.count)));
     } else {
       const per = document.createElement("select");
       per.id = "criteria-budget-per";
       per.name = "per";
-      for (const [value, label] of [
-        ["stay", "Total for the stay"],
-        ["night", "Per night"]
-      ]) {
+      for (const [value, label] of [["stay", "Total for the stay"], ["night", "Per night"]]) {
         const option = document.createElement("option");
         option.value = value;
         option.textContent = label;
@@ -10603,14 +10377,7 @@ Known schemas:
       const hint = document.createElement("p");
       hint.className = "ui-field__hint";
       hint.textContent = `Compared with the ${GUEST_GLOSSARY.allInStayTotal}, all fees included. The ${GUEST_GLOSSARY.refundableSecurityDeposit} is separate.`;
-      criteriaEditor.append(
-        field(
-          "Budget (\u20A6)",
-          numberInput("criteria-budget", "naira", criteria.budget?.naira)
-        ),
-        field("Budget is", per),
-        hint
-      );
+      criteriaEditor.append(field("Budget (\u20A6)", numberInput("criteria-budget", "naira", criteria.budget?.naira)), field("Budget is", per), hint);
     }
     const actions = document.createElement("div");
     actions.className = "criteria-editor-actions";
@@ -10630,20 +10397,13 @@ Known schemas:
       remove.className = "ui-button ui-button--quiet";
       remove.textContent = "Remove budget";
       remove.addEventListener("click", () => {
-        void sendCriteriaEvent(CRITERIA_EDIT_EVENT, {
-          field: "budget",
-          clear: true,
-          basedOn: criteria.key
-        });
+        void sendCriteriaEvent(CRITERIA_EDIT_EVENT, { field: "budget", clear: true, basedOn: criteria.key });
       });
       actions.appendChild(remove);
     }
     criteriaEditor.appendChild(actions);
     criteriaEditor.hidden = false;
-    for (const chip of criteriaStrip.querySelectorAll(
-      ".criteria-chip"
-    ))
-      chip.setAttribute("aria-expanded", String(chip.dataset.field === target));
+    for (const chip of criteriaStrip.querySelectorAll(".criteria-chip")) chip.setAttribute("aria-expanded", String(chip.dataset.field === target));
     criteriaEditor.querySelector("input, select")?.focus();
   }
   function closeCriteriaEditor(returnFocus) {
@@ -10651,34 +10411,20 @@ Known schemas:
     openCriteriaField = void 0;
     criteriaEditor.hidden = true;
     criteriaEditor.replaceChildren();
-    for (const chip of criteriaStrip.querySelectorAll(
-      ".criteria-chip"
-    ))
-      chip.setAttribute("aria-expanded", "false");
-    if (returnFocus && closed)
-      criteriaStrip.querySelector(`.criteria-chip[data-field="${closed}"]`)?.focus();
+    for (const chip of criteriaStrip.querySelectorAll(".criteria-chip")) chip.setAttribute("aria-expanded", "false");
+    if (returnFocus && closed) criteriaStrip.querySelector(`.criteria-chip[data-field="${closed}"]`)?.focus();
   }
   async function sendCriteriaEvent(name, context) {
     if (criteriaInFlight || isLoading) return;
     criteriaInFlight = true;
     criteriaStrip.setAttribute("aria-busy", "true");
-    const submit = criteriaEditor.querySelector(
-      'button[type="submit"]'
-    );
+    const submit = criteriaEditor.querySelector('button[type="submit"]');
     if (submit) submit.disabled = true;
     try {
-      const response = await postJson("/api/event", {
-        threadId,
-        name,
-        surfaceId: `thread-${threadId}:criteria`,
-        sourceComponentId: "criteria-strip",
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        context
-      });
+      const response = await postJson("/api/event", { threadId, name, surfaceId: `thread-${threadId}:criteria`, sourceComponentId: "criteria-strip", timestamp: (/* @__PURE__ */ new Date()).toISOString(), context });
       if (!response.ok) {
         criteriaStatus.textContent = response.message ?? "That change could not be applied.";
-        if (response.code === "STALE_SURFACE" || response.code === "CRITERIA_LOCKED")
-          void refreshServerState();
+        if (response.code === "STALE_SURFACE" || response.code === "CRITERIA_LOCKED") void refreshServerState();
         return;
       }
       criteriaStatus.textContent = "";
@@ -10704,11 +10450,7 @@ Known schemas:
       return Number.isInteger(value) && value >= 1 ? value : void 0;
     };
     if (target === "where") {
-      void sendCriteriaEvent(CRITERIA_EDIT_EVENT, {
-        field: "where",
-        area: String(data.get("area") ?? ""),
-        basedOn: criteria.key
-      });
+      void sendCriteriaEvent(CRITERIA_EDIT_EVENT, { field: "where", area: String(data.get("area") ?? ""), basedOn: criteria.key });
     } else if (target === "when") {
       const checkIn = String(data.get("checkIn") ?? "");
       const nights = whole("nights");
@@ -10716,35 +10458,21 @@ Known schemas:
         criteriaStatus.textContent = "Enter an arrival date and a whole number of nights.";
         return;
       }
-      void sendCriteriaEvent(CRITERIA_EDIT_EVENT, {
-        field: "when",
-        checkIn,
-        nights,
-        basedOn: criteria.key
-      });
+      void sendCriteriaEvent(CRITERIA_EDIT_EVENT, { field: "when", checkIn, nights, basedOn: criteria.key });
     } else if (target === "guests") {
       const partySize = whole("partySize");
       if (partySize === void 0) {
         criteriaStatus.textContent = "Enter a whole number of guests.";
         return;
       }
-      void sendCriteriaEvent(CRITERIA_EDIT_EVENT, {
-        field: "guests",
-        partySize,
-        basedOn: criteria.key
-      });
+      void sendCriteriaEvent(CRITERIA_EDIT_EVENT, { field: "guests", partySize, basedOn: criteria.key });
     } else {
       const naira = whole("naira");
       if (naira === void 0) {
         criteriaStatus.textContent = "Enter a budget in whole naira.";
         return;
       }
-      void sendCriteriaEvent(CRITERIA_EDIT_EVENT, {
-        field: "budget",
-        naira,
-        per: data.get("per") === "night" ? "night" : "stay",
-        basedOn: criteria.key
-      });
+      void sendCriteriaEvent(CRITERIA_EDIT_EVENT, { field: "budget", naira, per: data.get("per") === "night" ? "night" : "stay", basedOn: criteria.key });
     }
   });
   criteriaEditor.addEventListener("keydown", (event) => {
@@ -10754,8 +10482,7 @@ Known schemas:
     closeCriteriaEditor(true);
   });
   function clearQuickReplies() {
-    for (const group of transcript.querySelectorAll(".quick-replies"))
-      group.remove();
+    for (const group of transcript.querySelectorAll(".quick-replies")) group.remove();
   }
   function renderQuickReplies(replies) {
     clearQuickReplies();
@@ -10784,15 +10511,8 @@ Known schemas:
     if (!response.ok) {
       const message = response.message ?? "That action could not be completed.";
       if (response.code === "STALE_SURFACE" || response.code === "STALE_ACTION" || response.code === "EXPIRED_SURFACE") {
-        shellState = markActiveSurfaceStatus(
-          shellState,
-          response.code === "EXPIRED_SURFACE" ? "expired" : "stale"
-        );
-        if (activePayload)
-          renderSurface({
-            ...activePayload,
-            status: shellState.activeSurface?.status
-          });
+        shellState = markActiveSurfaceStatus(shellState, response.code === "EXPIRED_SURFACE" ? "expired" : "stale");
+        if (activePayload) renderSurface({ ...activePayload, status: shellState.activeSurface?.status });
         void refreshServerState();
       }
       addTurn("assistant", message);
@@ -10803,8 +10523,7 @@ Known schemas:
     renderCriteria(response.criteria);
     for (const message of response.messages ?? []) addTurn("assistant", message);
     renderQuickReplies(response.quickReplies);
-    if ((response.messages ?? []).length > 0)
-      trackTelemetry("text-response-rendered");
+    if ((response.messages ?? []).length > 0) trackTelemetry("text-response-rendered");
     const surfaces = response.surfaces ?? [];
     renderSurfaces(surfaces);
     for (const receipt of response.receipts ?? []) addReceipt(receipt);
@@ -10828,19 +10547,15 @@ Known schemas:
     return false;
   }
   async function postJson(path, body) {
-    const response = await fetch(
-      path,
-      body === void 0 ? {} : {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-        // ADR-0079 bounds establishment; aborting the client wait never rolls back
-        // a command that the server may already have committed.
-        signal: AbortSignal.timeout(1e4)
-      }
-    );
-    if (!response.ok)
-      throw new Error(`Guest request failed with HTTP ${response.status}`);
+    const response = await fetch(path, body === void 0 ? {} : {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      // ADR-0079 bounds establishment; aborting the client wait never rolls back
+      // a command that the server may already have committed.
+      signal: AbortSignal.timeout(1e4)
+    });
+    if (!response.ok) throw new Error(`Guest request failed with HTTP ${response.status}`);
     return readGuestResponse(await response.json());
   }
   function setLoading(next) {
@@ -10860,16 +10575,10 @@ Known schemas:
         if (composerInput.value.trim() === text) composerInput.value = "";
       }
     } catch {
-      addRetryTurn(
-        "The concierge is temporarily unavailable. Your message is still in the composer; please try again.",
-        () => {
-          void sendTurn(text);
-        }
-      );
-      announce(
-        "The concierge is temporarily unavailable. Your message remains in the composer.",
-        true
-      );
+      addRetryTurn("The concierge is temporarily unavailable. Your message is still in the composer; please try again.", () => {
+        void sendTurn(text);
+      });
+      announce("The concierge is temporarily unavailable. Your message remains in the composer.", true);
     } finally {
       setLoading(false);
     }
@@ -10877,21 +10586,8 @@ Known schemas:
   async function sendEvent(action) {
     const current = shellState.activeSurface;
     if (!current || current.surfaceId !== action.surfaceId || !canUseSurfaceActions(current.status)) {
-      addTurn(
-        "assistant",
-        fallbackSummary(
-          current ?? {
-            surfaceId: action.surfaceId,
-            mode: "inline-surface",
-            status: "stale",
-            summary: "This workspace"
-          }
-        )
-      );
-      announce(
-        "That action is no longer available. The workspace has been kept safe.",
-        true
-      );
+      addTurn("assistant", fallbackSummary(current ?? { surfaceId: action.surfaceId, mode: "inline-surface", status: "stale", summary: "This workspace" }));
+      announce("That action is no longer available. The workspace has been kept safe.", true);
       return;
     }
     if (eventInFlight) return;
@@ -10914,33 +10610,21 @@ Known schemas:
       activeWorkspace.removeAttribute("aria-busy");
     }
   }
-  activeWorkspace.addEventListener(
-    "click",
-    (event) => {
-      const target = event.target instanceof Element ? event.target.closest("button") : null;
-      if (target && !target.closest("[hidden]")) lastActivatedControl = target;
-    },
-    { capture: true }
-  );
+  activeWorkspace.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target.closest("button") : null;
+    if (target && !target.closest("[hidden]")) lastActivatedControl = target;
+  }, { capture: true });
   var created = createBasicWebRuntime({
     basic: {
       resourcePolicy: ({ kind, url }) => kind === "image" ? safeImageResourceUrl(url) : void 0
     },
-    rendering: {
-      onServerEvent: (event) => {
-        void sendEvent(event.message.action);
-      }
-    }
+    rendering: { onServerEvent: (event) => {
+      void sendEvent(event.message.action);
+    } }
   });
   if (!created.ok) {
-    addTurn(
-      "assistant",
-      "The interface runtime could not start. Please reload the page."
-    );
-    announce(
-      "The interface runtime could not start. Please reload the page.",
-      true
-    );
+    addTurn("assistant", "The interface runtime could not start. Please reload the page.");
+    announce("The interface runtime could not start. Please reload the page.", true);
     throw new Error("Unable to create the Weaver web runtime");
   }
   var weaver = created.value;
@@ -10953,14 +10637,10 @@ Known schemas:
     }
   });
   document.addEventListener("keydown", (event) => {
-    if (event.key !== "Escape" || activeWorkspace.hidden || !activeWorkspace.contains(document.activeElement))
-      return;
-    if (shellState.activeSurface?.mode !== "focused-surface" || !shellState.focusedSurfaceOpen)
-      return;
+    if (event.key !== "Escape" || activeWorkspace.hidden || !activeWorkspace.contains(document.activeElement)) return;
+    if (shellState.activeSurface?.mode !== "focused-surface" || !shellState.focusedSurfaceOpen) return;
     event.preventDefault();
-    closeWorkspace(
-      workspaceOpener?.isConnected && !workspaceOpener.hidden ? workspaceOpener : workspaceReopen
-    );
+    closeWorkspace(workspaceOpener?.isConnected && !workspaceOpener.hidden ? workspaceOpener : workspaceReopen);
   });
   window.addEventListener("popstate", () => {
     if (!sheetInHistory || isSheetState(history.state)) return;
@@ -10968,15 +10648,10 @@ Known schemas:
     closeWorkspace(workspaceReopen);
   });
   new ResizeObserver(() => {
-    document.documentElement.style.setProperty(
-      "--composer-block-size",
-      `${Math.ceil(composerForm.getBoundingClientRect().height)}px`
-    );
+    document.documentElement.style.setProperty("--composer-block-size", `${Math.ceil(composerForm.getBoundingClientRect().height)}px`);
   }).observe(composerForm);
   sheetQuery.addEventListener("change", syncSheetHistory);
-  for (const suggestion of document.querySelectorAll(
-    ".prompt-suggestion[data-prompt]"
-  )) {
+  for (const suggestion of document.querySelectorAll(".prompt-suggestion[data-prompt]")) {
     suggestion.addEventListener("click", () => {
       const text = suggestion.dataset.prompt?.trim();
       if (!text || isLoading) return;
@@ -10994,11 +10669,8 @@ Known schemas:
   });
   async function restoreServerState() {
     try {
-      const response = await postJson(
-        `/api/state?threadId=${encodeURIComponent(threadId)}`
-      );
-      if (!response.ok || !response.timeline || response.timeline.length === 0)
-        return false;
+      const response = await postJson(`/api/state?threadId=${encodeURIComponent(threadId)}`);
+      if (!response.ok || !response.timeline || response.timeline.length === 0) return false;
       for (const entry of response.timeline) addTimelineEntry(entry);
       renderJourney(response.journey);
       renderCriteria(response.criteria);
@@ -11014,13 +10686,10 @@ Known schemas:
   }
   async function fetchCommittedWork() {
     try {
-      const response = await fetch("/api/committed-work", {
-        signal: AbortSignal.timeout(1e4)
-      });
+      const response = await fetch("/api/committed-work", { signal: AbortSignal.timeout(1e4) });
       if (!response.ok) return null;
       const body = await response.json();
-      if (!isRecord3(body) || body.ok !== true || !Array.isArray(body.committedWork) || !body.committedWork.every(isCommittedWork))
-        return null;
+      if (!isRecord3(body) || body.ok !== true || !Array.isArray(body.committedWork) || !body.committedWork.every(isCommittedWork)) return null;
       return body.committedWork;
     } catch {
       return null;
@@ -11067,22 +10736,9 @@ Known schemas:
       startNewConversation();
       return;
     }
-    const items = newConversationConfirm.querySelector(
-      ".new-conversation-items"
-    );
+    const items = newConversationConfirm.querySelector(".new-conversation-items");
     if (items) {
-      items.replaceChildren(
-        ...work === null ? [
-          Object.assign(document.createElement("p"), {
-            textContent: GUEST_NEW_CONVERSATION.unknown
-          })
-        ] : work.map(
-          (entry) => committedWorkNote(
-            entry,
-            guestNewConversationCopy(entry.kind, entry.unitTitle).confirm
-          )
-        )
-      );
+      items.replaceChildren(...work === null ? [Object.assign(document.createElement("p"), { textContent: GUEST_NEW_CONVERSATION.unknown })] : work.map((entry) => committedWorkNote(entry, guestNewConversationCopy(entry.kind, entry.unitTitle).confirm)));
     }
     newConversationConfirm.hidden = false;
     newConversationButton.setAttribute("aria-expanded", "true");
@@ -11096,23 +10752,15 @@ Known schemas:
     closeNewConversationConfirm();
   });
   async function showCommittedWorkElsewhere() {
-    const work = (await fetchCommittedWork())?.filter(
-      (entry) => entry.threadId !== threadId
-    ) ?? [];
+    const work = (await fetchCommittedWork())?.filter((entry) => entry.threadId !== threadId) ?? [];
     if (work.length === 0 || transcript.querySelector(".committed-work")) return;
     const heading = transcript.querySelector("#conversation-heading");
-    const notes = work.map(
-      (entry) => committedWorkNote(
-        entry,
-        guestNewConversationCopy(entry.kind, entry.unitTitle).stillActive
-      )
-    );
+    const notes = work.map((entry) => committedWorkNote(entry, guestNewConversationCopy(entry.kind, entry.unitTitle).stillActive));
     if (heading) heading.after(...notes);
     else transcript.prepend(...notes);
   }
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && activePayload?.waiting)
-      void refreshServerState();
+    if (document.visibilityState === "visible" && activePayload?.waiting) void refreshServerState();
   });
   void restoreServerState().then((restored) => {
     if (!restored) void showCommittedWorkElsewhere();

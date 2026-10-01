@@ -53,7 +53,7 @@ import {
 } from "../../../apps/web-agent/src/index.js";
 import { unitDetailArtifactFromProjection } from "../../../apps/web/src/unit-detail-artifact.js";
 import { errorPage, escapeHtml, icon, pageShell, prefersHtml } from "../../../apps/web/src/ui-kit.js";
-import { appFrameHtml, bankDetailsHtml, deadlineBannerHtml, formatWAT, priceBreakdownHtml, stayCardHtml, stayTicketHtml, unitAboutHtml, unitIndicativePriceHtml, unitTilesHtml, type StayTicketFacts } from "./guest-kit.js";
+import { appFrameHtml, bankDetailsCardHtml, deadlineBannerHtml, formatWAT, paymentChoiceHtml, paymentLayoutHtml, paymentOutcomeBannerHtml, paymentRecoveryActionsHtml, paymentScreenHtml, priceBreakdownHtml, stayCardHtml, stayTicketHtml, transferSummaryHtml, uploadCardHtml, unitAboutHtml, unitIndicativePriceHtml, unitTilesHtml, type KitStatusTone, type StayTicketFacts } from "./guest-kit.js";
 import {
   resolveDiscoveryServerEvent,
 } from "../../../apps/web/src/discovery-actions.js";
@@ -82,6 +82,10 @@ import {
   railHtml,
   requestScreenHtml,
 } from "./guest-kit.js";
+import {
+  paymentScreenContent,
+  type PaymentScreenContent,
+} from "../../web-agent/src/payment-presentation.js";
 import {
   offerScreenContent,
   type OfferScreenContent,
@@ -138,6 +142,8 @@ readonly waiting?: GuestWaitingState;
   readonly requestScreen?: RequestScreenContent;
   readonly confirmation?: ConfirmationContent;
   readonly offerScreen?: OfferScreenContent;
+  /** Issue 09: the shared payment screen content for a pending card payment. */
+  readonly paymentScreen?: PaymentScreenContent;
 }
 
 /**
@@ -1083,6 +1089,7 @@ export class LocalGuestApp {
               this.#environment.guestPrincipal(),
             )
           : undefined;
+      const paymentScreen = this.#paymentScreenFor(thread, surface);
       const offerScreen = offer
         ? offerScreenContent(
             offer,
@@ -1098,8 +1105,41 @@ export class LocalGuestApp {
         ...(content === undefined ? {} : { requestScreen: content }),
         ...(confirmation === undefined ? {} : { confirmation }),
         ...(offerScreen === undefined ? {} : { offerScreen }),
+        ...(paymentScreen === undefined ? {} : { paymentScreen }),
       };
     });
+  }
+
+  /**
+   * Issue 09: the shared payment screen for a pending card payment, read from the authoritative artifact on every
+   * response (ADR-0079). Closed, processing and confirmed payments keep their existing surfaces.
+   */
+  #paymentScreenFor(
+    thread: GuestThreadState,
+    surface: GuestSurfacePayload,
+  ): PaymentScreenContent | undefined {
+    if (
+      !thread.offerId ||
+      !surface.surfaceId.includes(":payment:") ||
+      surface.surfaceId.includes(":payment:result:") ||
+      (surface.status !== undefined && surface.status !== "active")
+    )
+      return undefined;
+    try {
+      const environment = this.#environment;
+      const content = paymentScreenContent(
+        environment.cardPaymentApp.getArtifact(
+          thread.offerId,
+          environment.guestPrincipal(),
+        ),
+        environment.clock(),
+        `/payments/offers/${encodeURIComponent(thread.offerId)}`,
+        this.#currentUnit(thread)?.operator?.name,
+      );
+      return content.state === "closed" ? undefined : content;
+    } catch {
+      return undefined;
+    }
   }
 
   /**
@@ -2670,7 +2710,7 @@ export function renderGuestShellHtml(): string {
     .waiting-panel p, .waiting-panel ul { margin: 0; }
     .waiting-panel ul { display: grid; gap: var(--space-1); padding-inline-start: var(--space-5); }
     .waiting-deadline { font-weight: 600; font-variant-numeric: tabular-nums; }
-    .waiting-countdown { color: var(--color-info); }
+    .waiting-panel .waiting-countdown { color: var(--color-info); }
     .waiting-label { color: var(--color-text-secondary); font-size: var(--font-size-small); font-weight: 600; }
     .waiting-meanwhile { color: var(--color-text-secondary); }
     .weaver-mount { min-width: 0; max-width: 100%; overflow: visible; }
@@ -3106,6 +3146,11 @@ const PAGE_ERROR_COPY: Readonly<Record<string, { readonly title: string; readonl
   TRANSFER_REJECTED: { title: "Bank transfer can't start", message: "No transfer account was issued. The offer may have expired or another payment may already be in progress. Return to the conversation for the current booking status." },
   MANUAL_TRANSFER_UNAVAILABLE: { title: "Manual bank transfer is unavailable", message: "No payment was taken. Go back and choose another way to pay." },
   MANUAL_TRANSFER_REJECTED: { title: "Manual bank transfer can't start", message: "Manual bank transfer is only offered when we can check your payment between 8:00 AM and 8:00 PM WAT, and only while no other payment is in progress. No payment was taken." },
+  PAYMENT_METHOD_INVALID: {
+    title: "Choose how to pay",
+    message:
+      "Pick card or bank transfer on the payment page. No payment was started.",
+  },
   MANUAL_TRANSFER_IN_PROGRESS: { title: "Your manual bank transfer is still open", message: "You chose manual bank transfer, so other payment methods are unavailable until it is confirmed, declined or expires." },
   TRANSFER_IN_PROGRESS: { title: "Your bank transfer is still open", message: "You chose bank transfer, so card payment is unavailable until the transfer account expires. Transfer the exact amount to the account shown, or wait for it to expire." },
   PAYSTACK_UNAVAILABLE: { title: "Card checkout is unavailable", message: "No payment was taken. Try again in a few minutes from your conversation." },
@@ -3126,21 +3171,6 @@ function sendPageError(req: IncomingMessage, res: ServerResponse, status: number
 }
 
 /**
- * The payment choice (P3, ADR 0088). It states before the choice that a transfer account keeps the payment slot
- * while it can be paid (ADR 0046). Plain form and link: works without JavaScript (ADR 0080).
- */
-function transferChoiceHtml(offerId: string, cardHref: string, cardLabel: string, methods: { readonly providerTransfer: boolean; readonly manualTransfer: boolean }): string {
-  const base = `/payments/offers/${encodeURIComponent(offerId)}`;
-  const transfer = methods.providerTransfer ? `<form method="post" action="${base}/transfer"><button class="ui-button ui-button--primary ui-button--block" type="submit">Pay by bank transfer</button></form>` : "";
-  // ADR 0090: the third option, after card and provider transfer; the money, not the receipt, confirms.
-  const manual = methods.manualTransfer ? `<form method="post" action="${base}/manual-transfer"><button class="ui-button ui-button--secondary ui-button--block" type="submit">Pay by manual bank transfer</button></form><p>Manual bank transfer: pay our business account and upload your receipt. Your booking confirms only after we check the money has arrived.</p>` : "";
-  const switching = methods.providerTransfer
-    ? "If you choose bank transfer, you can't switch to card until the transfer account expires."
-    : "If you choose manual bank transfer, you can't switch to card until it expires or is declined.";
-  return `<h2>How would you like to pay?</h2><p>${switching}${methods.providerTransfer && methods.manualTransfer ? " The same applies to manual bank transfer." : ""}</p>${transfer}<a class="ui-button ui-button--secondary ui-button--block" href="${cardHref}">${escapeHtml(cardLabel)}</a>${manual}`;
-}
-
-/**
  * The manual transfer page (P5, ADR 0090): the business account, the exact amount, the unique booking reference and
  * the absolute WAT deadline; then one receipt upload. It says plainly that the booking confirms only after the money
  * is checked, never on the receipt (ADR 0005, 0090). A plain multipart form: no JavaScript (ADR 0080).
@@ -3158,27 +3188,158 @@ export function renderManualTransferPageHtml(input: {
   readonly refundableSecurityDepositKobo?: number;
 }): string {
   const { transfer, now } = input;
-  const back = input.threadId ? `<a class="ui-button ui-button--block" href="/?threadId=${encodeURIComponent(input.threadId)}">Return to your conversation</a>` : "";
-  const alert = input.error ? `<p class="ui-banner ui-banner--danger" role="alert">${icon("alert")}<span>${escapeHtml(input.error)}</span></p>` : "";
-  const shell = (heading: string, body: string) => pageShell({
-    title: `${heading} · Shortlet`,
-    width: "narrow",
-    frame: appFrameHtml({ threadId: input.threadId, ...(input.journey === undefined ? {} : { journey: input.journey }) }),
-    body: `<div class="guest-editorial"><header class="ui-page__header"><p class="ui-eyebrow">Booking payment · Manual bank transfer</p><h1>${escapeHtml(heading)}</h1></header>${input.stay ? stayTicketHtml(input.stay) : ""}${input.allInStayTotalKobo === undefined ? "" : priceBreakdownHtml({ allInStayTotalKobo: input.allInStayTotalKobo, ...(input.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: input.refundableSecurityDepositKobo }), amountDueNowKobo: transfer.amountKobo })}${alert}<section class="ui-panel">${body}</section></div><script src="/payment.js" defer></script>`,
-  });
-  const at = (iso: string) => `<time datetime="${escapeHtml(iso)}">${escapeHtml(formatWAT(iso))}</time>`;
+  const conversation = input.threadId
+    ? `/?threadId=${encodeURIComponent(input.threadId)}`
+    : "/";
+  const back = `<a class="ui-button ui-button--secondary ui-button--block" href="${conversation}">Back to your conversation</a>`;
+  const alert = input.error
+    ? `<p class="ui-banner ui-banner--danger" role="alert">${icon("alert")}<span>${escapeHtml(input.error)}</span></p>`
+    : "";
+  const screen = (
+    state: string,
+    heading: string,
+    tone: KitStatusTone,
+    status: string,
+    parts: {
+      readonly banner?: string;
+      readonly sections?: readonly string[];
+      readonly actions: string;
+    },
+  ) =>
+    pageShell({
+      title: `${heading} · Shortlet`,
+      width: "narrow",
+      frame: appFrameHtml({
+        threadId: input.threadId,
+        ...(input.journey === undefined ? {} : { journey: input.journey }),
+      }),
+      body: `<div class="guest-editorial">${paymentLayoutHtml({
+        state,
+        eyebrow: "Booking payment · Manual bank transfer",
+        title: heading,
+        tone,
+        status,
+        banner: `${alert}${parts.banner ?? ""}`,
+        ticket: input.stay ? stayTicketHtml(input.stay) : "",
+        breakdown:
+          input.allInStayTotalKobo === undefined
+            ? ""
+            : priceBreakdownHtml({
+                allInStayTotalKobo: input.allInStayTotalKobo,
+                ...(input.refundableSecurityDepositKobo === undefined
+                  ? {}
+                  : {
+                      refundableSecurityDepositKobo:
+                        input.refundableSecurityDepositKobo,
+                    }),
+                amountDueNowKobo: transfer.amountKobo,
+              }),
+        sections: parts.sections ?? [],
+        actions: parts.actions,
+      })}</div><script src="/payment.js" defer></script>`,
+    });
   if (transfer.status === "confirmed") {
-    return shell("Payment received", `<p>We found your transfer in our account. Your ${GUEST_GLOSSARY.reservation} is confirmed.</p>${input.contractId ? `<a class="ui-button ui-button--primary ui-button--block" href="${conventionalBookingContractRoute(input.contractId)}">View your ${GUEST_GLOSSARY.reservation}</a>` : ""}${back}`);
+    return screen("confirmed", "Payment received", "success", "Payment verified", {
+      sections: [
+        `<p>We found your transfer in our account. Your ${GUEST_GLOSSARY.reservation} is confirmed.</p>`,
+      ],
+      actions: `${input.contractId ? `<a class="ui-button ui-button--primary ui-button--block" href="${conventionalBookingContractRoute(input.contractId)}">View your ${GUEST_GLOSSARY.reservation}</a>` : ""}${back}`,
+    });
   }
   if (transfer.status === "rejected" || transfer.status === "expired") {
     // ADR 0090/0045: no Reservation; any money received for this attempt is refunded in full.
-    return shell("No Reservation was made", `<p>${transfer.status === "rejected" ? "We couldn't match your transfer to this booking." : "The deadline passed before your payment was confirmed."} Any money we received for this booking is refunded in full.</p>${back}`);
+    const rejected = transfer.status === "rejected";
+    return screen(
+      "closed",
+      "No Reservation was made",
+      "danger",
+      rejected ? "Transfer not matched" : "Transfer account expired",
+      {
+        banner: rejected
+          ? paymentOutcomeBannerHtml(
+              "danger",
+              "We couldn't match your transfer to this booking.",
+            )
+          : paymentOutcomeBannerHtml(
+              "danger",
+              "The deadline passed before your payment was confirmed.",
+              { label: "Expired at", iso: transfer.paymentDeadlineAt },
+            ),
+        sections: [
+          `<p>Any money we received for this booking is refunded in full.</p>`,
+        ],
+        actions: paymentRecoveryActionsHtml(conversation),
+      },
+    );
   }
   if (transfer.status === "awaiting_verification") {
-    return shell("Waiting for payment check", `<p>We received your receipt. Your booking confirms only after we see the money in our account and check it. We will check by ${at(transfer.verificationDeadlineAt)}.</p><p>Your dates are held until then. No ${GUEST_GLOSSARY.reservation} exists yet.</p>${back}`);
+    return screen(
+      "waiting",
+      "Waiting for payment check",
+      "warning",
+      "Receipt received · not confirmed yet",
+      {
+        banner: paymentOutcomeBannerHtml(
+          "neutral",
+          "Your booking confirms only after we see the money in our account and check it.",
+          { label: "We will check by", iso: transfer.verificationDeadlineAt },
+        ),
+        sections: [
+          transferSummaryHtml([
+            { label: "Transfer", value: formatNgnKobo(transfer.amountKobo) },
+            {
+              label: "Booking reference",
+              value: transfer.bookingReference,
+              mono: true,
+            },
+            ...(transfer.receipt === undefined
+              ? []
+              : [
+                  {
+                    label: "Receipt",
+                    value: `Uploaded ${formatWAT(transfer.receipt.uploadedAt)}`,
+                  },
+                ]),
+          ]),
+          `<p>We received your receipt. Your dates are held until then. No ${GUEST_GLOSSARY.reservation} exists yet.</p>`,
+        ],
+        actions: back,
+      },
+    );
   }
   const limitMb = Math.floor(input.receiptMaxBytes / (1024 * 1024));
-  return shell("Transfer and upload your receipt", `${deadlineBannerHtml({ label: "Transfer and upload by", deadlineIso: transfer.paymentDeadlineAt, now })}${bankDetailsHtml({ bankName: transfer.account.bankName, accountName: transfer.account.accountName, accountNumber: transfer.account.accountNumber, amountKobo: transfer.amountKobo, bookingReference: transfer.bookingReference })}<p>Include the booking reference with your transfer. Your booking confirms only after we see the money in our account and check it; the receipt alone doesn't confirm it.</p><form method="post" action="/payments/offers/${encodeURIComponent(transfer.offerId)}/manual-transfer/receipt" enctype="multipart/form-data" class="ui-stack"><div class="ui-field"><label class="ui-field__label" for="receipt">Transfer receipt (photo or PDF, up to ${limitMb} MB)</label><input id="receipt" name="receipt" type="file" accept="image/jpeg,image/png,application/pdf" required></div><button class="ui-button ui-button--primary ui-button--block" type="submit">Upload receipt</button></form>${back}`);
+  return screen(
+    "awaiting-receipt",
+    "Transfer and upload your receipt",
+    "warning",
+    "Waiting for your transfer",
+    {
+      banner: deadlineBannerHtml({
+        label: "Transfer and upload by",
+        deadlineIso: transfer.paymentDeadlineAt,
+        now,
+      }),
+      sections: [
+        bankDetailsCardHtml(
+          {
+            bankName: transfer.account.bankName,
+            accountName: transfer.account.accountName,
+            accountNumber: transfer.account.accountNumber,
+            amountKobo: transfer.amountKobo,
+            bookingReference: transfer.bookingReference,
+          },
+          [
+            "Include the booking reference with your transfer. Your booking confirms only after we see the money in our account and check it; the receipt alone doesn't confirm it.",
+          ],
+        ),
+        uploadCardHtml({
+          action: `/payments/offers/${encodeURIComponent(transfer.offerId)}/manual-transfer/receipt`,
+          limitMb,
+        }),
+      ],
+      actions: back,
+    },
+  );
 }
 
 /** Reads a request body, refusing (and discarding) anything over `limit` bytes. */
@@ -3214,28 +3375,134 @@ export function renderTransferPageHtml(input: {
   readonly amountDueNowKobo?: number;
 }): string {
   const { transfer, now } = input;
-  const back = input.threadId ? `<a class="ui-button ui-button--block" href="/?threadId=${encodeURIComponent(input.threadId)}">Return to your conversation</a>` : "";
-  const shell = (heading: string, body: string) => pageShell({
-    title: `${heading} · Shortlet`,
-    width: "narrow",
-    frame: appFrameHtml({ threadId: input.threadId, ...(input.journey === undefined ? {} : { journey: input.journey }) }),
-    body: `<div class="guest-editorial"><header class="ui-page__header"><p class="ui-eyebrow">Booking payment · Bank transfer</p><h1>${escapeHtml(heading)}</h1></header>${input.stay ? stayTicketHtml(input.stay) : ""}${input.allInStayTotalKobo === undefined ? "" : priceBreakdownHtml({ allInStayTotalKobo: input.allInStayTotalKobo, ...(input.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: input.refundableSecurityDepositKobo }), amountDueNowKobo: input.amountDueNowKobo })}<section class="ui-panel">${body}</section></div><script src="/payment.js" defer></script>`,
-  });
+  const conversation = input.threadId
+    ? `/?threadId=${encodeURIComponent(input.threadId)}`
+    : "/";
+  const back = `<a class="ui-button ui-button--secondary ui-button--block" href="${conversation}">Back to your conversation</a>`;
+  const screen = (
+    state: string,
+    heading: string,
+    tone: KitStatusTone,
+    status: string,
+    parts: {
+      readonly banner?: string;
+      readonly sections?: readonly string[];
+      readonly actions: string;
+    },
+  ) =>
+    pageShell({
+      title: `${heading} · Shortlet`,
+      width: "narrow",
+      frame: appFrameHtml({
+        threadId: input.threadId,
+        ...(input.journey === undefined ? {} : { journey: input.journey }),
+      }),
+      body: `<div class="guest-editorial">${paymentLayoutHtml({
+        state,
+        eyebrow: "Booking payment · Bank transfer",
+        title: heading,
+        tone,
+        status,
+        ...(parts.banner === undefined ? {} : { banner: parts.banner }),
+        ticket: input.stay ? stayTicketHtml(input.stay) : "",
+        breakdown:
+          input.allInStayTotalKobo === undefined
+            ? ""
+            : priceBreakdownHtml({
+                allInStayTotalKobo: input.allInStayTotalKobo,
+                ...(input.refundableSecurityDepositKobo === undefined
+                  ? {}
+                  : {
+                      refundableSecurityDepositKobo:
+                        input.refundableSecurityDepositKobo,
+                    }),
+                amountDueNowKobo: input.amountDueNowKobo,
+              }),
+        sections: parts.sections ?? [],
+        actions: parts.actions,
+      })}</div><script src="/payment.js" defer></script>`,
+    });
   if (input.contract) {
-    return shell("Payment received", `<p>Your transfer arrived and your ${GUEST_GLOSSARY.reservation} is confirmed.</p><a class="ui-button ui-button--primary ui-button--block" href="${conventionalBookingContractRoute(input.contract.contractId)}">View your ${GUEST_GLOSSARY.reservation}</a>${back}`);
+    return screen("confirmed", "Payment received", "success", "Payment verified", {
+      sections: [
+        `<p>Your transfer arrived and your ${GUEST_GLOSSARY.reservation} is confirmed.</p>`,
+      ],
+      actions: `<a class="ui-button ui-button--primary ui-button--block" href="${conventionalBookingContractRoute(input.contract.contractId)}">View your ${GUEST_GLOSSARY.reservation}</a>${back}`,
+    });
   }
-  const payable = (transfer.status === "initiated" || transfer.status === "processing_in_grace") && now.getTime() < Date.parse(transfer.expiresAt);
+  const payable =
+    (transfer.status === "initiated" ||
+      transfer.status === "processing_in_grace") &&
+    now.getTime() < Date.parse(transfer.expiresAt);
   if (transfer.status === "processing_in_grace") {
-    return shell("Your transfer is processing", `<p>Your bank has started the transfer. It has not arrived yet and no ${GUEST_GLOSSARY.reservation} exists yet.</p>${back}`);
+    return screen(
+      "waiting",
+      "Your transfer is processing",
+      "warning",
+      "Your transfer is processing",
+      {
+        banner: paymentOutcomeBannerHtml(
+          "neutral",
+          `Your bank has started the transfer. It has not arrived yet and no ${GUEST_GLOSSARY.reservation} exists yet.`,
+        ),
+        sections: [
+          transferSummaryHtml([
+            { label: "Transfer", value: formatNgnKobo(transfer.amountKobo) },
+          ]),
+        ],
+        actions: back,
+      },
+    );
   }
   if (!payable) {
     // ADR 0045/0047: the account stopped at the deadline; money sent afterwards is refunded in full and never books.
-    return shell("This transfer account has expired", `<p>No ${GUEST_GLOSSARY.reservation} was made. Money sent after the deadline is refunded in full.</p>${back}`);
+    return screen(
+      "closed",
+      "This transfer account has expired",
+      "danger",
+      "Transfer account expired",
+      {
+        banner: paymentOutcomeBannerHtml(
+          "danger",
+          `No ${GUEST_GLOSSARY.reservation} was made.`,
+          { label: "The transfer account expired at", iso: transfer.expiresAt },
+        ),
+        sections: [`<p>Money sent after the deadline is refunded in full.</p>`],
+        actions: paymentRecoveryActionsHtml(conversation),
+      },
+    );
   }
   const local = input.localPayment
     ? `<form method="post" action="/payments/local/transfer/complete"><input type="hidden" name="reference" value="${escapeHtml(transfer.transferReference)}"><button class="ui-button ui-button--block" type="submit">Complete local demo transfer</button></form>`
     : "";
-  return shell("Transfer to complete your booking", `${deadlineBannerHtml({ label: "Transfer by", deadlineIso: transfer.expiresAt, now })}${bankDetailsHtml({ bankName: transfer.bankName, accountNumber: transfer.accountNumber, amountKobo: transfer.amountKobo })}<p>Transfer the exact amount. Your booking confirms automatically once the transfer arrives.</p><p>This account is for this booking only and stops accepting payment at the deadline.</p>${local}${back}`);
+  return screen(
+    "awaiting-transfer",
+    "Transfer to complete your booking",
+    "warning",
+    "Waiting for your transfer",
+    {
+      banner: deadlineBannerHtml({
+        label: "Transfer by",
+        deadlineIso: transfer.expiresAt,
+        now,
+      }),
+      sections: [
+        bankDetailsCardHtml(
+          {
+            bankName: transfer.bankName,
+            accountNumber: transfer.accountNumber,
+            amountKobo: transfer.amountKobo,
+          },
+          [
+            "Transfer the exact amount. Your booking confirms automatically once the transfer arrives.",
+            "This account is for this booking only and stops accepting payment at the deadline.",
+          ],
+        ),
+        local,
+      ],
+      actions: back,
+    },
+  );
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -3836,7 +4103,50 @@ return;
     }
 
     const paymentPageMatch = /^\/payments\/offers\/([^/]+)$/.exec(url.pathname);
-    if (req.method === "GET" && paymentPageMatch) {
+      if (req.method === "POST" && paymentPageMatch) {
+        // Issue 09 AC2: one native method form. It only dispatches to the existing card continuation or transfer
+        // route (ADR 0072, 0088); an unknown or missing method starts nothing.
+        if (!browserOriginAccepted(req, options.publicOrigin)) {
+          res.writeHead(403);
+          res.end("Origin rejected");
+          return;
+        }
+        const session = resolveBrowserSession(
+          env,
+          browserSessions,
+          readGuestSession(req),
+          sessionScopedGuestPrincipals
+            ? undefined
+            : app.environment.config.guestId,
+        );
+        if (!session) {
+          sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
+          return;
+        }
+        let offerId: string;
+        try {
+          offerId = decodeURIComponent(paymentPageMatch[1]!);
+        } catch {
+          sendPageError(req, res, 400, "INVALID_OFFER");
+          return;
+        }
+        const methods = new URLSearchParams(
+          (await readRawBody(req)).toString("utf8"),
+        ).getAll("method");
+        const method = methods.length === 1 ? methods[0] : undefined;
+        if (method !== "card" && method !== "bank_transfer") {
+          sendPageError(req, res, 400, "PAYMENT_METHOD_INVALID");
+          return;
+        }
+        const base = `/payments/offers/${encodeURIComponent(offerId)}`;
+        // 307 keeps the POST, so bank transfer reaches its existing initialization route unchanged.
+        res.writeHead(method === "card" ? 303 : 307, {
+          Location: method === "card" ? `${base}/continue` : `${base}/transfer`,
+        });
+        res.end();
+        return;
+      }
+      if (req.method === "GET" && paymentPageMatch) {
       const session = resolveBrowserSession(env, browserSessions, readGuestSession(req), sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId);
       if (!session) { sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED"); return; }
       let offerId: string;
@@ -3866,22 +4176,82 @@ return;
         // P3: before any attempt, with an email on file, the Guest chooses the method (ADR 0088).
         const manualOffered = app.environment.manualTransfers?.isOffered(offerId, app.environment.clock()) === true;
         const offerTransferChoice = (app.environment.bankTransferApp !== null || manualOffered) && artifact.facts.status === "ready" && !contactEmailMissing && !processing;
-        const escapeHtmlText = escapeHtml;
-        const offerFacts = app.environment.conditionalOfferApp.getArtifact(offerId, principal).facts;
-        const componentAmount = artifact.facts.currentComponentAmountKobo ?? (artifact.facts.status === "ready" ? artifact.facts.allInStayTotalKobo : artifact.facts.refundableSecurityDepositKobo);
-        const componentLabel = artifact.facts.status === "deposit_required" || artifact.facts.currentComponent === "security_deposit" ? `Next payment · ${GUEST_GLOSSARY.refundableSecurityDeposit}` : "Next payment · stay payment";
-        const ticket = stayTicketHtml({ unitTitle: artifact.facts.unit, checkIn: artifact.facts.checkIn, checkOut: artifact.facts.checkOut, nights: quotedNightCount(artifact.facts.checkIn, artifact.facts.checkOut) ?? 0, guestCount: offerFacts.occupants.length });
-        const breakdown = priceBreakdownHtml({ ...(artifact.facts.allInStayTotalKobo === undefined ? {} : { allInStayTotalKobo: artifact.facts.allInStayTotalKobo }), ...(artifact.facts.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: artifact.facts.refundableSecurityDepositKobo }), amountDueNowKobo: artifact.facts.amountDueNowKobo });
-        const deadline = deadlineBannerHtml({ label: "Pay by", deadlineIso: artifact.facts.paymentWindowExpiresAt, now: app.environment.clock() });
-        const facts = `${ticket}${breakdown}${componentAmount === undefined ? "" : `<p class="payment-current-component">${escapeHtmlText(componentLabel)}: ${formatNgnKobo(componentAmount)}</p>`}${deadline}<p>${escapeHtmlText(status.detail)}</p>`;
-        res.writeHead(200, GUEST_HTML_HEADERS);
-        res.end(pageShell({
-          title: `${status.label} · Shortlet`,
-          width: "narrow",
-          frame: appFrameHtml(threadFrame(app, offerId, principal)),
-          style: `.payment-unit{font-family:var(--font-display);font-size:var(--font-size-h3);line-height:var(--font-line-h3);font-weight:600}.payment-current-component{font-weight:650}.payment-methods{display:grid;gap:var(--space-2)}`,
-          body: `<div class="guest-editorial"><header class="ui-page__header"><p class="ui-eyebrow">Booking payment</p><h1>${escapeHtmlText(status.label)}</h1></header>${facts}${!canContinue ? "" : offerTransferChoice ? `<section class="ui-panel payment-methods" aria-label="Choose how to pay">${transferChoiceHtml(offerId, href, options.localPayment ? "Pay by card (local demo)" : "Pay by card", { providerTransfer: app.environment.bankTransferApp !== null, manualTransfer: manualOffered })}</section>` : `<a class="ui-button ui-button--primary ui-button--block" href="${href}">${label}</a>`}</div>`,
-        }));
+          const offerFacts = app.environment.conditionalOfferApp.getArtifact(
+            offerId,
+            principal,
+          ).facts;
+          const componentAmount =
+            artifact.facts.currentComponentAmountKobo ??
+            (artifact.facts.status === "ready"
+              ? artifact.facts.allInStayTotalKobo
+              : artifact.facts.refundableSecurityDepositKobo);
+          const componentLabel =
+            artifact.facts.status === "deposit_required" ||
+            artifact.facts.currentComponent === "security_deposit"
+              ? GUEST_GLOSSARY.refundableSecurityDeposit
+              : "stay payment";
+          const ticket = stayTicketHtml({
+            unitTitle: artifact.facts.unit,
+            checkIn: artifact.facts.checkIn,
+            checkOut: artifact.facts.checkOut,
+            nights:
+              quotedNightCount(
+                artifact.facts.checkIn,
+                artifact.facts.checkOut,
+              ) ?? 0,
+            guestCount: offerFacts.occupants.length,
+          });
+          const breakdown = priceBreakdownHtml({
+            ...(artifact.facts.allInStayTotalKobo === undefined
+              ? {}
+              : { allInStayTotalKobo: artifact.facts.allInStayTotalKobo }),
+            ...(artifact.facts.refundableSecurityDepositKobo === undefined
+              ? {}
+              : {
+                  refundableSecurityDepositKobo:
+                    artifact.facts.refundableSecurityDepositKobo,
+                }),
+            amountDueNowKobo: artifact.facts.amountDueNowKobo,
+            ...(componentAmount === undefined
+              ? {}
+              : {
+                  next: `${componentLabel} · ${formatNgnKobo(componentAmount)}`,
+                }),
+          });
+          const paymentPath = `/payments/offers/${encodeURIComponent(offerId)}`;
+          const content = paymentScreenContent(
+            artifact,
+            app.environment.clock(),
+            paymentPath,
+            offerFacts.operatorName,
+          );
+          const choice = offerTransferChoice
+            ? paymentChoiceHtml({
+                action: paymentPath,
+                providerTransfer: app.environment.bankTransferApp !== null,
+                ...(manualOffered
+                  ? { manualAction: `${paymentPath}/manual-transfer` }
+                  : {}),
+                amount: formatNgnKobo(
+                  componentAmount ?? artifact.facts.amountDueNowKobo,
+                ),
+                switching:
+                  app.environment.bankTransferApp !== null
+                    ? `If you choose bank transfer, you can't switch to card until the transfer account expires.${manualOffered ? " The same applies to manual bank transfer." : ""}`
+                    : "If you choose manual bank transfer, you can't switch to card until it expires or is declined.",
+                manualCopy:
+                  "Manual bank transfer: pay our business account and upload your receipt. Your booking confirms only after we check the money has arrived.",
+              })
+            : undefined;
+          res.writeHead(200, GUEST_HTML_HEADERS);
+          res.end(
+            pageShell({
+              title: `${status.label} · Shortlet`,
+              width: "narrow",
+              frame: appFrameHtml(threadFrame(app, offerId, principal)),
+              body: `<div class="guest-editorial">${paymentScreenHtml(content, ticket, breakdown, canContinue ? (choice !== undefined ? { sections: choice } : { actions: `<a class="ui-button ui-button--primary ui-button--block" href="${href}">${label}</a>` }) : {})}</div>`,
+            }),
+          );
       } catch { sendPageError(req, res, 404, "PAYMENT_OFFER_NOT_FOUND"); }
       return;
     }

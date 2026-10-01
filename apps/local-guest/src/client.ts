@@ -11,12 +11,14 @@ import {
   breakdownHtml,
   confirmationScreenHtml,
   offerScreenHtml,
+  paymentScreenHtml,
   requestScreenHtml,
   resultRowPartsHtml,
   stayCardInnerHtml, ticketHtml, unitAboutHtml, unitTilesHtml,type StayCardParts,
 } from "./guest-kit.js";
 import type { ConfirmationContent } from "../../web-agent/src/confirmation-presentation.js";
 import type { OfferScreenContent } from "../../web-agent/src/offer-presentation.js";
+import type { PaymentScreenContent } from "../../web-agent/src/payment-presentation.js";
 import type { RequestScreenContent } from "../../web-agent/src/request-presentation.js";
 import {
   canUseSurfaceActions,
@@ -49,6 +51,7 @@ readonly waiting?: GuestWaitingState;
   readonly requestScreen?: RequestScreenContent;
   readonly confirmation?: ConfirmationContent;
   readonly offerScreen?: OfferScreenContent;
+  readonly paymentScreen?: PaymentScreenContent;
 }
 interface GuestWaitingState {
   readonly kind: string;
@@ -332,6 +335,7 @@ function organizeBookingTicket(mount: HTMLElement): void {
   const deposit = findFact(children, GUEST_FACT_LABELS.refundableSecurityDeposit);
   const due = findFact(children, GUEST_FACT_LABELS.amountDueNow);
   const paid = findFact(children, GUEST_FACT_LABELS.amountPaid);
+  const next = findFact(children, GUEST_FACT_LABELS.nextPayment);
   const condition = children.find((child) => child.textContent?.trim() === GUEST_FACT_LABELS.ifRequestAccepted);
   replaceWithKitMarkup(root, breakdownHtml({
     ...(activePayload?.confirmation?.depositCollected ? { depositCollected: true } : {}),
@@ -340,7 +344,8 @@ function organizeBookingTicket(mount: HTMLElement): void {
     ...(deposit ? { deposit: deposit.value } : {}),
     ...(due ? { due: due.value } : {}),
     ...(paid ? { paid: paid.value } : {}),
-  }), [condition, total.element, deposit?.element, due?.element, paid?.element]);
+    ...(next ? { next: next.value } : {}),
+  }), [condition, total.element, deposit?.element, due?.element, paid?.element, next?.element]);
 }
 
 function organizeConfirmation(mount: HTMLElement, content: ConfirmationContent): void {
@@ -352,6 +357,40 @@ function organizeConfirmation(mount: HTMLElement, content: ConfirmationContent):
   template.innerHTML = confirmationScreenHtml(content, ticket.outerHTML, breakdown.outerHTML);
   root.replaceChildren(template.content);
   root.querySelector<HTMLAnchorElement>(".request-actions a")?.addEventListener("click", (event) => { event.preventDefault(); closeWorkspace(workspaceReopen);});
+}
+
+/** Issue 09: one payment layout. The Weaver action row stays in the page, so its server-bound event still runs (ADR-0072). */
+function organizePaymentScreen(
+  mount: HTMLElement,
+  content: PaymentScreenContent,
+): void {
+  const root = mount.querySelector<HTMLElement>(
+    '[data-a2ui-component="Column"]',
+  );
+  const ticket = root?.querySelector<HTMLElement>(":scope > .ui-ticket");
+  const breakdown = root?.querySelector<HTMLElement>(
+    ":scope > .ui-price-breakdown",
+  );
+  const actions = root?.querySelector<HTMLElement>(
+    ':scope > [data-a2ui-component="Row"]',
+  );
+  if (!root || !ticket || !breakdown) return;
+  const template = document.createElement("template");
+  template.innerHTML = paymentScreenHtml(
+    content,
+    ticket.outerHTML,
+    breakdown.outerHTML,
+    {
+      countdown: true,
+      ...(actions ? { actions: '<div data-payment-action-slot></div>' } : {}),
+    },
+  );
+  const slot = template.content.querySelector("[data-payment-action-slot]");
+  if (slot && actions) slot.replaceWith(actions);
+  root.replaceChildren(template.content);
+  const countdown = root.querySelector<HTMLElement>(".waiting-countdown");
+  if (countdown && activePayload?.waiting?.kind === "payment-window")
+    startCountdown(activePayload.waiting, countdown, true);
 }
 
 function organizeOfferScreen(
@@ -679,6 +718,8 @@ function enhanceSurfacePresentation(mount: HTMLElement, kind: string): void {
     organizeConfirmation(mount, activePayload.confirmation);
   if (activePayload?.offerScreen)
     organizeOfferScreen(mount, activePayload.offerScreen);
+  if (activePayload?.paymentScreen)
+    organizePaymentScreen(mount, activePayload.paymentScreen);
 }
 
 function isMoney(text: string): boolean {
@@ -756,6 +797,24 @@ function isOfferScreen(value: unknown): value is OfferScreenContent {
   );
 }
 
+function isPaymentScreen(value: unknown): value is PaymentScreenContent {
+  return (
+    isRecord(value) &&
+    ["ready", "handoff"].includes(String(value.state)) &&
+    ["success", "warning", "danger", "neutral"].includes(String(value.tone)) &&
+    ["title", "status", "explanation"].every(
+      (key) => typeof value[key] === "string",
+    ) &&
+    typeof value.serverNow === "string" &&
+    Number.isFinite(Date.parse(value.serverNow)) &&
+    (value.deadlineIso === undefined ||
+      (typeof value.deadlineIso === "string" &&
+        Number.isFinite(Date.parse(value.deadlineIso)))) &&
+    isStringList(value.steps) &&
+    (value.choosePath === undefined || isSafeInternalRoute(value.choosePath))
+  );
+}
+
 function isSurfacePayload(value: unknown): value is GuestSurfacePayload {
   if (
     !isRecord(value) || typeof value.surfaceId !== "string" || value.surfaceId.trim() === "" || !Array.isArray(value.a2uiMessages)) return false;
@@ -769,6 +828,11 @@ function isSurfacePayload(value: unknown): value is GuestSurfacePayload {
   if (value.confirmation !== undefined && !isConfirmation(value.confirmation))
     return false;
   if (value.offerScreen !== undefined && !isOfferScreen(value.offerScreen))
+    return false;
+  if (
+    value.paymentScreen !== undefined &&
+    !isPaymentScreen(value.paymentScreen)
+  )
     return false;
   return (
     value.conventionalRoute === undefined ||
@@ -1176,7 +1240,8 @@ if (
     surface.waiting &&
     presentation.status === "active" &&
     !(surface.requestScreen && surface.waiting.kind === "operator-response") &&
-    !(surface.offerScreen && surface.waiting.kind === "offer-payment-window")
+    !(surface.offerScreen && surface.waiting.kind === "offer-payment-window") &&
+    !(surface.paymentScreen && surface.waiting.kind === "payment-window")
   )
     activeWorkspace.appendChild(renderWaiting(surface.waiting));
 

@@ -1,6 +1,6 @@
 # Payment screens: choice, card, bank transfer, manual transfer, waiting, no reservation
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 08
 Requested: 29 Sept 2026
@@ -48,3 +48,25 @@ The design (`design/PaymentChoice`, `CardHandoff`, `BankTransfer`, `ManualTransf
 0089, 0090, 0072, 0075 (no account data in URLs or logs), 0078, 0080.
 
 ## Comments
+
+Implemented in an isolated HEAD-based checkout so only issue-09 changes are committed. ADRs read: 0046 (one live attempt; switching rule kept), 0072 (chat action stays the Weaver server-bound event), 0075 (no account data in URLs/logs), 0078 (absolute WAT deadline + minutes left, 320px/44px), 0080 (native no-JS choice, manual option separate), 0088/0090 (card, provider transfer, manual transfer; money not receipt confirms), 0089 (amounts unchanged).
+
+| ADR | Constraint | Code path |
+| --- | --- | --- |
+| 0046/0088 | "can't switch to card" note stays, before the choice | `paymentChoiceHtml`, AC2 |
+| 0072 | method POST only dispatches (303 `/continue`, 307 `/transfer`); chat button untouched | POST `/payments/offers/:id`, `organizePaymentScreen` |
+| 0078 | every deadline `.ui-banner--warning` / danger with WAT time | `deadlineBannerHtml`, `paymentOutcomeBannerHtml` |
+| 0090 | verification deadline and receipt time from `ManualTransfer` | manual waiting screen |
+
+### Deviations / open points
+- The user's working tree has `guest-kit.ts`, `guest-server.ts`, `client.ts` and `shortlet-foundations.css` wholesale reformatted vs HEAD (pre-existing). Issue-09 changes were re-applied onto HEAD's versions of those files and verified in an isolated checkout; the working tree is untouched.
+- **Final isolated verification:** `npm run check` clean; `env -u PI_REASONING_LEVEL NODE_ENV=test npm test`: 1,226 non-browser passes, 0 failures; 160 Chromium passes. Two Chromium failures under load (`discovery-phase3-chromium`, `guest-new-conversation-chromium`, the documented flake) passed in isolation 3/3. Log: `full-test-09-staged.log`.
+- Chat has no bank-transfer or manual-transfer surface (the server never emits `bankTransferArtifactToA2UI`), so the chat copy button has nothing to attach to; copy button covered on both pages. Parity (AC1) is therefore tested chat vs page for the pending payment; other screens exist only as pages and get structure tests.
+- Card handoff keeps the existing Weaver label ("Continue to stay payment · ₦…") rather than "Pay ₦… by card" (changing it would alter the A2UI contract); "Choose another way to pay" added on the handoff state.
+- New UI labels derived from existing copy: pills "Transfer not matched" / "Transfer account expired"; "Continue · ₦…" on the choice submit. "Amount due now" still includes the deposit while the next payment excludes it (issue 12 open).
+- Choice submit for bank transfer uses a 307 to the existing `/transfer` POST.
+- Capture: `capture-09.ts`, 31 images in `screenshots/09/`; reflow and 44px targets pass.
+
+## Answer
+
+Resolved on `ui/guest-consistency`. Payment choice (native radio form, one dispatching POST), card handoff/pending payment in chat, bank transfer, manual transfer, waiting and no-reservation screens share one banner/ticket/breakdown/details/actions layout in `guest-kit.ts`; chat uses banner + `.ui-steps` instead of `.waiting-panel`. AC1–AC6 tested (`test/guest-payment-consistency*.test.ts`); deviations above.

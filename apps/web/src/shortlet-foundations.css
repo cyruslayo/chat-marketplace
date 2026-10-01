@@ -572,6 +572,66 @@
   .offer-screen .waiting-countdown {
     color: inherit;
   }
+  /* Payment screens (issue 09): one layout for the choice, transfers, waiting and no-reservation states. */
+  .payment-screen {
+    display: grid;
+    gap: var(--space-4);
+    min-inline-size: 0;
+  }
+  .payment-screen p,
+  .payment-screen h1,
+  .payment-screen h2 {
+    margin: 0;
+  }
+  .payment-head {
+    display: grid;
+    gap: var(--space-2);
+  }
+  .payment-head > h1 {
+    font-family: var(--font-display);
+    font-size: var(--font-size-h1);
+    line-height: var(--font-line-h1);
+    font-weight: 600;
+  }
+  .payment-head > .ui-status {
+    justify-self: start;
+    max-inline-size: 100%;
+  }
+  .payment-screen .waiting-countdown {
+    color: inherit;
+  }
+  .payment-steps,
+  .payment-choice,
+  .bank-details,
+  .transfer-summary {
+    display: grid;
+    gap: var(--space-3);
+    overflow-wrap: anywhere;
+  }
+  .payment-choice-form,
+  .payment-manual {
+    display: grid;
+    gap: var(--space-4);
+    min-inline-size: 0;
+    margin: 0;
+  }
+  .payment-actions.ui-action-bar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    margin-inline: 0;
+    border-radius: var(--radius-card);
+  }
+  .payment-actions .ui-button {
+    inline-size: 100%;
+  }
+  .ui-upload > span {
+    display: grid;
+    gap: var(--space-2);
+    min-inline-size: 0;
+  }
+  .ui-upload input[type="file"] {
+    max-inline-size: 100%;
+  }
   .confirmed-screen {
     display: grid;
     gap: var(--space-4); min-inline-size: 0; }

@@ -26,10 +26,14 @@ test("AC1 — After accepting the offer the Guest can choose bank transfer or ca
     assert.match(html, /class="[^"]*ui-price-breakdown[^"]*" aria-label="Price breakdown"/);
     assert.match(html, /class="ui-banner ui-banner--warning payment-deadline"/);
     assert.match(text, /How would you like to pay\?/);
-    assert.match(html, new RegExp(`<form method="post" action="${g.paymentPage.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/transfer"><button[^>]*type="submit">Pay by bank transfer</button></form>`));
-    assert.match(html, new RegExp(`<a[^>]*href="${g.paymentPage.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/continue"[^>]*>Pay by card`));
+    assert.match(html, /<fieldset class="ui-segmented"/);
+    assert.match(html, /<input type="radio" name="method" value="card" checked>/);
+    assert.match(html, /<input type="radio" name="method" value="bank_transfer">/);
 
     // Card leads to the card path.
+    const chosenCard = await g.post(g.paymentPage, { method: "card" });
+    assert.equal(chosenCard.status, 303);
+    assert.equal(chosenCard.headers.get("location"), `${g.paymentPage}/continue`);
     const card = await g.get(`${g.paymentPage}/continue`);
     assert.equal(card.status, 303);
     assert.match(card.headers.get("location") ?? "", /^\/payments\/local\/checkout\?reference=/);
@@ -38,6 +42,9 @@ test("AC1 — After accepting the offer the Guest can choose bank transfer or ca
   // Bank transfer leads to the transfer path.
   const t = await guestWithOffer();
   try {
+    const dispatched = await t.post(t.paymentPage, { method: "bank_transfer" });
+    assert.equal(dispatched.status, 307);
+    assert.equal(dispatched.headers.get("location"), t.transferPage);
     const chosen = await t.post(`${t.paymentPage}/transfer`);
     assert.equal(chosen.status, 303);
     assert.equal(chosen.headers.get("location"), t.transferPage);
@@ -99,7 +106,7 @@ test("AC3 — The page states before the choice that a transfer can't be switche
   try {
     const before = visibleText(await (await g.get(g.paymentPage)).text());
     assert.match(before, /If you choose bank transfer, you can't switch to card until the transfer account expires\./);
-    assert.ok(before.indexOf("can't switch to card") < before.indexOf("Pay by bank transfer"), "stated before the choice");
+    assert.ok(before.indexOf("can't switch to card") < before.indexOf("Bank transfer"), "stated before the choice");
 
     assert.equal((await g.post(`${g.paymentPage}/transfer`)).status, 303);
     const refused = await g.get(`${g.paymentPage}/continue`);

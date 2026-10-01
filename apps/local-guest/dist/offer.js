@@ -1,4 +1,4 @@
-
+"use strict";
 (() => {
   // apps/local-guest/src/offer-page.ts
   var offer = document.querySelector(

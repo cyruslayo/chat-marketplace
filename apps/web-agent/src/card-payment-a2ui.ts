@@ -4,10 +4,12 @@ import type { CardPaymentArtifact } from "../../web/src/card-payment-artifact.js
 
 import { bookingProgressText, formatBookingDeadline, formatBookingMoney, guestPaymentStatus, nightsBetween, ticketFactComponents, ticketFactIds } from "./booking-presentation.js";
 import { GUEST_FACT_LABELS, GUEST_GLOSSARY, guestFact } from "./guest-content.js";
+import { cardPaymentCopy, isCardPaymentProcessing } from "./payment-presentation.js";
 
 export function cardPaymentArtifactToA2UI({ artifact, surfaceId }: { readonly artifact: CardPaymentArtifact; readonly surfaceId: string }): readonly A2UIServerMessage[] {
   const { facts } = artifact;
-  const isProcessing = facts.journeyStage === "stay_payment_processing" || facts.journeyStage === "deposit_payment_processing";
+  const isProcessing = isCardPaymentProcessing(facts);
+  const copy = cardPaymentCopy(facts);
   const paymentStatus = guestPaymentStatus(facts.status, isProcessing);
   // ADR-0015/0016/0077: show the quoted full requirement separately from the
   // exact component amount on the current server-authorized checkout stage.
@@ -22,9 +24,6 @@ export function cardPaymentArtifactToA2UI({ artifact, surfaceId }: { readonly ar
     ? `${isProcessing ? (component === "security_deposit" ? GUEST_GLOSSARY.refundableSecurityDeposit : "Stay payment") + " being checked" : `${GUEST_FACT_LABELS.nextPayment}: ${componentLabel}`} · ${formatBookingMoney(componentAmount)}`
     : undefined;
   const showTotalRequirement = facts.status === "ready" || facts.status === "deposit_required";
-  const paymentBody = facts.status === "confirmed"
-    ? `${paymentStatus.detail} Booking reference is available in your booking details.`
-    : paymentStatus.detail;
   const stage = paymentStatus.progress;
   const action = artifact.actions[0];
   const actionAmount = componentAmount ?? facts.amountDueNowKobo;
@@ -42,8 +41,8 @@ export function cardPaymentArtifactToA2UI({ artifact, surfaceId }: { readonly ar
       ...(componentText ? ["card-payment-component"] : []),
       "card-payment-deadline", ...(stage ? ["card-payment-progress"] : []), "card-payment-content", "card-payment-actions",
     ] },
-    { id: "card-payment-title", component: "Text", text: facts.status === "confirmed" ? "Booking confirmed" : isProcessing ? "Payment being checked" : facts.status === "ready" || facts.status === "deposit_required" ? "Payment required" : facts.status === "reconciliation_required" || facts.status === "compensation_pending" ? "Payment under review" : "Payment status", variant: "h2" },
-    { id: "card-payment-status", component: "Text", text: facts.status === "confirmed" ? "Payment verified" : isProcessing ? "Payment processing" : facts.status === "ready" ? "Secure checkout is available" : facts.status === "deposit_required" ? "Stay payment verified" : paymentStatus.label },
+    { id: "card-payment-title", component: "Text", text: copy.title, variant: "h2" },
+    { id: "card-payment-status", component: "Text", text: copy.status },
     { id: "card-payment-unit", component: "Text", text: facts.unit, variant: "h3" },
     ...ticketFactComponents("card-payment", { checkIn: facts.checkIn, checkOut: facts.checkOut, nights: nightsBetween(facts.checkIn, facts.checkOut), ...(facts.occupantCount === undefined ? {} : { guestCount: facts.occupantCount }) }),
     ...(facts.allInStayTotalKobo === undefined ? [] : [{ id: "card-payment-total", component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.allInStayTotal, formatBookingMoney(facts.allInStayTotalKobo)), variant: "h3" as const }]),
@@ -52,15 +51,7 @@ export function cardPaymentArtifactToA2UI({ artifact, surfaceId }: { readonly ar
     ...(componentText ? [{ id: "card-payment-component", component: "Text" as const, text: componentText }] : []),
     { id: "card-payment-deadline", component: "Text", text: formatBookingDeadline(facts.paymentWindowExpiresAt) },
     ...(stage ? [{ id: "card-payment-progress", component: "Text" as const, text: bookingProgressText(stage) }] : []),
-    { id: "card-payment-content", component: "Text", text: facts.status === "confirmed"
-      ? paymentBody
-      : isProcessing
-        ? "We’re checking the payment result. Don’t submit another payment while it’s pending."
-        : facts.status === "deposit_required"
-          ? `Pay the ${GUEST_GLOSSARY.refundableSecurityDeposit} to complete the booking.`
-          : facts.status === "ready"
-            ? `The ${GUEST_GLOSSARY.refundableSecurityDeposit} is charged separately when one applies.`
-            : paymentBody },
+    { id: "card-payment-content", component: "Text", text: copy.content },
     { id: "card-payment-actions", component: "Row", children: action ? ["card-payment-action"] : [] },
     ...(action ? [
       { id: "card-payment-action", component: "Button" as const, child: "card-payment-action-label", variant: "primary" as const, action: { event: { name: action.type === "verify_return" ? CARD_PAYMENT_VERIFY_RETURN_EVENT : CARD_PAYMENT_INITIALIZE_CHECKOUT_EVENT, context: { artifactId: artifact.id, offerId: facts.offerId, expectedStatus: action.expectedStatus, expectedPurpose: action.expectedPurpose ?? "stay", ...(facts.journeyVersion === undefined ? {} : { expectedJourneyVersion: facts.journeyVersion }), ...(facts.journeyStage === undefined ? {} : { expectedStage: facts.journeyStage }), depositPolicyVersion: facts.depositPolicyVersion ?? "", projectionVersion: artifact.projectionVersion } } }, accessibility: { label: actionLabel } },

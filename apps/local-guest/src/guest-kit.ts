@@ -13,6 +13,7 @@ import { guestStatusTone } from "./conversational-shell.js";
 import type { RequestScreenContent } from "../../web-agent/src/request-presentation.js";
 import type { ConfirmationContent } from "../../web-agent/src/confirmation-presentation.js";
 import type { OfferScreenContent } from "../../web-agent/src/offer-presentation.js";
+import type { PaymentScreenContent } from "../../web-agent/src/payment-presentation.js";
 
 /** The absolute deadline in Africa/Lagos time (ADR 0078), without the "Pay by" prefix. */
 export function formatWAT(iso: string): string {
@@ -79,6 +80,8 @@ export interface PriceBreakdownInput {
   /** The total's own label; defaults to the All-In Stay Total. The unit detail names the stay here (issue 06). */
   readonly totalLabel?: string;
   readonly depositCollected?: boolean;
+  /** The component the guest pays next, for example "stay payment · ₦370,000" (issue 09). */
+  readonly next?: string;
 }
 
 /** The breakdown's display text: money already formatted, in the order the section shows it (ADR 0015). */
@@ -90,6 +93,7 @@ export interface BreakdownParts {
   readonly deposit?: string;
   readonly due?: string;
   readonly paid?: string;
+  readonly next?: string;
 }
 
 export function breakdownHtml(parts: BreakdownParts): string {
@@ -98,7 +102,8 @@ export function breakdownHtml(parts: BreakdownParts): string {
   const deposit = parts.deposit === undefined ? "" : `<p class="ui-price-breakdown__row">${parts.depositCollected ? `${GUEST_GLOSSARY.refundableSecurityDeposit} collected` : GUEST_FACT_LABELS.refundableSecurityDeposit}: ${money(parts.deposit)}</p>`;
   const due = parts.due === undefined ? "" : `<p class="ui-price-breakdown__due">${GUEST_FACT_LABELS.amountDueNow}: ${money(parts.due)}</p>`;
   const paid = parts.paid === undefined ? "" : `<p class="ui-price-breakdown__paid">${GUEST_FACT_LABELS.amountPaid}: ${money(parts.paid)}</p>`;
-  return `<section class="ui-panel ui-price-breakdown" aria-label="Price breakdown">${parts.condition ? `<p class="ui-price-breakdown__condition">${escapeHtml(parts.condition)}</p>` : ""}${total}${deposit}${due}${paid}</section>`;
+  const next = parts.next === undefined ? "" : `<p class="ui-price-breakdown__row payment-current-component">${GUEST_FACT_LABELS.nextPayment}: ${money(parts.next)}</p>`;
+  return `<section class="ui-panel ui-price-breakdown" aria-label="Price breakdown">${parts.condition ? `<p class="ui-price-breakdown__condition">${escapeHtml(parts.condition)}</p>` : ""}${total}${deposit}${due}${paid}${next}</section>`;
 }
 
 /** ADR 0015: the All-In Stay Total leads, the deposit is separate, then one amount line. */
@@ -111,6 +116,7 @@ export function priceBreakdownHtml(input: PriceBreakdownInput): string {
     ...(input.refundableSecurityDepositKobo === undefined || input.refundableSecurityDepositKobo <= 0 ? {} : { deposit: formatNgnKobo(input.refundableSecurityDepositKobo) }),
     ...(input.amountDueNowKobo === undefined ? {} : { due: formatNgnKobo(input.amountDueNowKobo) }),
     ...(input.amountPaidKobo === undefined ? {} : { paid: formatNgnKobo(input.amountPaidKobo) }),
+    ...(input.next === undefined ? {} : { next: input.next }),
   });
 }
 
@@ -174,6 +180,137 @@ export function offerScreenHtml(
     ? `<div class="ui-action-bar offer-actions"><div><strong>${escapeHtml(content.amount)}</strong><span class="ui-price-breakdown__label">Amount due now</span></div>${form(content.accept.path, "Accept and pay", true, content.accept.surfaceId)}</div>`
     : `<div class="offer-actions request-actions">${form(content.conversationPath, "Back to your conversation", true)}${content.searchPath ? form(content.searchPath, "Find other stays", false) : ""}</div>`;
   return `<section class="offer-screen" data-offer-state="${content.state}" data-server-now="${escapeHtml(content.serverNow)}"><header class="request-head offer-head" data-page="booking-record"><p class="ui-eyebrow">Conditional Booking Offer</p><h1>${escapeHtml(content.title)}</h1><span class="ui-status ui-status--${live ? "success" : content.state === "expired" || content.state === "closed" ? "danger" : "warning"}">${escapeHtml(content.status)}</span></header>${banner}${ticket}${live ? breakdown : ""}${policies}${content.steps.length ? `<section class="ui-panel"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>` : ""}${actions}</section>`;
+}
+
+/**
+ * Issue 09: the one payment layout. Head with a status pill, then the banner, ticket, breakdown, the screen's own
+ * sections and the actions. Every slot is markup from this kit, never artifact-supplied HTML.
+ */
+export function paymentLayoutHtml(input: {
+  readonly state: string;
+  readonly eyebrow: string;
+  readonly title: string;
+  readonly tone: KitStatusTone;
+  readonly status?: string;
+  readonly banner?: string;
+  readonly ticket?: string;
+  readonly breakdown?: string;
+  readonly sections?: readonly string[];
+  readonly actions?: string;
+  readonly serverNow?: string;
+}): string {
+  const actions =
+    input.actions === undefined || input.actions === ""
+      ? ""
+      : `<div class="payment-actions ui-action-bar">${input.actions}</div>`;
+  return `<section class="payment-screen" data-payment-state="${escapeHtml(input.state)}"${input.serverNow === undefined ? "" : ` data-server-now="${escapeHtml(input.serverNow)}"`}><header class="request-head payment-head" data-page="booking-record"><p class="ui-eyebrow">${escapeHtml(input.eyebrow)}</p><h1>${escapeHtml(input.title)}</h1>${input.status === undefined ? "" : statusHtml(input.tone, input.status)}</header>${input.banner ?? ""}${input.ticket ?? ""}${input.breakdown ?? ""}${(input.sections ?? []).join("")}${actions}</section>`;
+}
+
+/** The chat's and the payment page's shared screen: the deadline banner, steps and the explanation (ADR 0078). */
+export function paymentScreenHtml(
+  content: PaymentScreenContent,
+  ticket: string,
+  breakdown: string,
+  slots: {
+    readonly sections?: string;
+    readonly actions?: string;
+    readonly countdown?: boolean;
+  },
+): string {
+  const banner =
+    content.deadlineIso === undefined
+      ? ""
+      : deadlineBannerHtml({
+          label: "Pay by",
+          deadlineIso: content.deadlineIso,
+          now: new Date(content.serverNow),
+          ...(slots.countdown ? { countdown: true } : {}),
+        });
+  return paymentLayoutHtml({
+    state: content.state,
+    eyebrow: "Booking payment",
+    title: content.title,
+    tone: content.tone,
+    status: content.status,
+    banner,
+    ticket,
+    breakdown,
+    sections: [
+      `<p class="payment-explanation">${escapeHtml(content.explanation)}</p>`,
+      ...(content.steps.length
+        ? [
+            `<section class="ui-panel payment-steps"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>`,
+          ]
+        : []),
+      ...(slots.sections === undefined ? [] : [slots.sections]),
+    ],
+    actions: `${slots.actions ?? ""}${content.choosePath === undefined ? "" : `<a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.choosePath)}">Choose another way to pay</a>`}`,
+    serverNow: content.serverNow,
+  });
+}
+
+/** How to pay: a native radio group and one submit (works without JavaScript, ADR 0080), then the manual option. */
+export function paymentChoiceHtml(input: {
+  readonly action: string;
+  readonly manualAction?: string;
+  readonly providerTransfer: boolean;
+  readonly amount: string;
+  readonly switching: string;
+  readonly manualCopy: string;
+}): string {
+  const methods = input.providerTransfer
+    ? `<fieldset class="ui-segmented"><legend class="ui-sr-only">Payment method</legend><label><input type="radio" name="method" value="card" checked>${icon("card")}Card</label><label><input type="radio" name="method" value="bank_transfer">${icon("bank")}Bank transfer</label></fieldset>`
+    : `<input type="hidden" name="method" value="card">`;
+  const manual =
+    input.manualAction === undefined
+      ? ""
+      : `<form method="post" action="${escapeHtml(input.manualAction)}" class="payment-manual"><section class="ui-panel"><button class="ui-button ui-button--secondary ui-button--block" type="submit">${icon("upload")}Pay by manual bank transfer</button><p class="ui-field__hint">${escapeHtml(input.manualCopy)}</p></section></form>`;
+  return `<form method="post" action="${escapeHtml(input.action)}" class="payment-choice-form"><section class="ui-panel payment-choice" aria-label="Choose how to pay"><h2>How would you like to pay?</h2><p class="ui-field__hint">${escapeHtml(input.switching)}</p>${methods}</section><div class="payment-actions ui-action-bar"><button class="ui-button ui-button--primary ui-button--block" type="submit">Continue · ${escapeHtml(input.amount)}</button></div></form>${manual}`;
+}
+
+/** The bank-transfer details in one card (account number with its copy button, exact amount, booking-only note). */
+export function bankDetailsCardHtml(
+  input: BankDetailsInput,
+  notes: readonly string[],
+): string {
+  return `<section class="ui-panel bank-details" aria-label="Transfer details">${bankDetailsHtml(input)}${notes.map((note) => `<p class="ui-field__hint">${escapeHtml(note)}</p>`).join("")}</section>`;
+}
+
+/** A receipt or transfer summary card: label and value rows. */
+export function transferSummaryHtml(
+  rows: readonly {
+    readonly label: string;
+    readonly value: string;
+    readonly mono?: boolean;
+  }[],
+): string {
+  return `<section class="ui-panel transfer-summary" aria-label="Your transfer"><dl class="ui-facts ui-facts--stacked">${rows.map((row) => `<dt>${escapeHtml(row.label)}</dt><dd${row.mono ? ' class="transfer-reference"' : ""}>${escapeHtml(row.value)}</dd>`).join("")}</dl></section>`;
+}
+
+/** The receipt upload: a real file input inside a `.ui-upload` label; the form and limits are the existing ones. */
+export function uploadCardHtml(input: {
+  readonly action: string;
+  readonly limitMb: number;
+}): string {
+  return `<form method="post" action="${escapeHtml(input.action)}" enctype="multipart/form-data" class="ui-stack"><label class="ui-upload" for="receipt">${icon("upload")}<span>Transfer receipt (photo or PDF, up to ${input.limitMb} MB)<input id="receipt" name="receipt" type="file" accept="image/jpeg,image/png,application/pdf" required></span></label><button class="ui-button ui-button--primary ui-button--block" type="submit">Upload receipt</button></form>`;
+}
+
+/** A banner for a payment outcome: danger for no reservation, neutral for waiting states, success when received. */
+export function paymentOutcomeBannerHtml(
+  tone: "danger" | "neutral" | "success",
+  text: string,
+  at?: { readonly label: string; readonly iso: string },
+): string {
+  const time =
+    at === undefined
+      ? ""
+      : `${escapeHtml(at.label)} <time datetime="${escapeHtml(at.iso)}">${escapeHtml(formatWAT(at.iso))}</time>`;
+  return `<p class="ui-banner ui-banner--${tone}"${tone === "danger" ? ' role="alert"' : ""}>${icon(tone === "danger" ? "alert" : tone === "success" ? "check" : "clock")}<span>${time}${time && text ? "<br>" : ""}${escapeHtml(text)}</span></p>`;
+}
+
+/** The recovery actions after a payment closes with no Reservation. */
+export function paymentRecoveryActionsHtml(conversationHref: string): string {
+  return `<a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(conversationHref)}">Back to your conversation</a><a class="ui-button ui-button--secondary ui-button--block" href="/stays/search">Find other stays</a>`;
 }
 
 /** "What happens next": a plain numbered list. */
