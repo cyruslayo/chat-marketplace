@@ -136,7 +136,7 @@ test("Ticket labels and times: the ticket shows Check-in and Check-out, and time
 test("Breakdown order is total, deposit, amount line (ADR 0015) and a zero deposit is omitted", () => {
   const html = priceBreakdownHtml({ allInStayTotalKobo: 370_000_00, refundableSecurityDepositKobo: 20_000_00, amountDueNowKobo: 390_000_00 });
   assert.ok(html.indexOf("All-In Stay Total") < html.indexOf("Refundable Security Deposit"));
-  assert.ok(html.indexOf("Refundable Security Deposit") < html.indexOf("Amount due now"));
+  assert.ok(html.indexOf("Refundable Security Deposit") < html.indexOf("Total to complete booking"));
   assert.doesNotMatch(priceBreakdownHtml({ allInStayTotalKobo: 100_00, refundableSecurityDepositKobo: 0 }), /Refundable Security Deposit/);
 });
 

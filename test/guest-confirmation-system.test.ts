@@ -17,7 +17,7 @@ test("AC1: confirmation uses the Reservation ID, preserves projected amounts and
     assert.match(content.details, /Provided by/);
     assert.match(content.steps.join(" "), /does not itself grant physical access/);
     const html = await (await fetch(`${fixture.base}${path}`, { headers: { cookie: fixture.cookie } })).text();
-    assert.match(html, /Amount paid:.*₦370,000/);
+    assert.match(html, /Stay payment paid:.*₦370,000/);
     assert.match(html, /Refundable Security Deposit collected:.*₦20,000/);
   });
 });

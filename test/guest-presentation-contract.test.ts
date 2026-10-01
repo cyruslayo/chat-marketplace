@@ -93,22 +93,22 @@ test("AC2: client.ts finds booking facts through the shared label table, with no
   assert.ok(regexLines.length >= 5, "the scan sees the client's regex lines");
   const wording = /Stay|Guests?|guest|occupant|Total to complete|Amount|Refundable|Check-?in|Check-?out|Mon\||Tue\||Deposit|Paid/;
   assert.deepEqual(regexLines.filter((line) => wording.test(line)), [], "no regex mentions the presented wording of a booking fact");
-  for (const legacy of ["Total to complete booking", "Amount Due Now", "Amount due now", "Amount paid", "Stay payment verified"]) assert.ok(!source.includes(legacy), `client.ts does not spell "${legacy}" itself`);
+  for (const legacy of ["Total to complete booking", "Amount Due Now", "Amount due now", "Amount paid", "Stay payment paid", "Stay payment verified"]) assert.ok(!source.includes(legacy), `client.ts does not spell "${legacy}" itself`);
 });
 
 test("AC5: every surface's textFallback still contains the All-In Stay Total, the deposit, the amount line and the deadline", async () => {
   const stage = await stages();
   const fallbacks: ReadonlyArray<readonly [string, readonly string[]]> = [
-    ["review", ["All-In Stay Total: ₦370,000", "Refundable Security Deposit (separate): ₦20,000", "Amount due now: ₦390,000"]],
-    ["pending", ["All-In Stay Total: ₦370,000", "Refundable Security Deposit (separate): ₦20,000", "Amount due now: ₦390,000", "Operator response deadline: "]],
-    ["offer", ["All-In Stay Total: ₦370,000", "Refundable Security Deposit (separate): ₦20,000", "Amount due now: ₦390,000", "Pay by "]],
-    ["payment-ready", ["All-In Stay Total: ₦370,000", "Refundable Security Deposit (separate): ₦20,000", "Amount due now: ₦390,000", "11:20 am WAT, 3 Sept 2026"]],
-    ["confirmed", ["Amount paid: ₦370,000", "Refundable Security Deposit collected: ₦20,000"]],
+    ["review", ["All-In Stay Total: ₦370,000", "Refundable Security Deposit (separate): ₦20,000", "Total to complete booking: ₦390,000"]],
+    ["pending", ["All-In Stay Total: ₦370,000", "Refundable Security Deposit (separate): ₦20,000", "Total to complete booking: ₦390,000", "Operator response deadline: "]],
+    ["offer", ["All-In Stay Total: ₦370,000", "Refundable Security Deposit (separate): ₦20,000", "Total to complete booking: ₦390,000", "Pay by "]],
+    ["payment-ready", ["All-In Stay Total: ₦370,000", "Refundable Security Deposit (separate): ₦20,000", "Total to complete booking: ₦390,000", "11:20 am WAT, 3 Sept 2026"]],
+    ["confirmed", ["Stay payment paid: ₦370,000", "Refundable Security Deposit collected: ₦20,000"]],
   ];
   for (const [name, required] of fallbacks) {
     const fallback = stage[name]!.textFallback ?? "";
     for (const text of required) assert.ok(fallback.includes(text), `${name} fallback contains "${text}": ${fallback}`);
   }
   // Failure path: a surface's fallback never carries a label the A2UI no longer uses.
-  for (const surface of Object.values(stage)) assert.doesNotMatch(surface.textFallback ?? "", /Total to complete booking|Stay payment verified/);
+  for (const surface of Object.values(stage)) assert.doesNotMatch(surface.textFallback ?? "", /Amount due now|Amount paid|Stay payment verified/);
 });

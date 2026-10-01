@@ -272,8 +272,12 @@ export const GUEST_FACT_LABELS = Object.freeze({
   refundableSecurityDeposit: `${GUEST_GLOSSARY.refundableSecurityDeposit} (separate)`,
   /** Stands alone above the money facts while the amount is due only once the Operator accepts. */
   ifRequestAccepted: "If your request is accepted",
-  amountDueNow: "Amount due now",
-  amountPaid: "Amount paid",
+  /** Issue 12: everything the Guest pays to complete the booking: the stay payment plus any Refundable Security Deposit. */
+  amountDueNow: "Total to complete booking",
+  /** Issue 12: the one payment a payment screen asks for now (the stay payment, or the deposit when it is next). */
+  thisPayment: "This payment",
+  /** Issue 12: the stay payment collected; the Refundable Security Deposit has its own "collected" row. */
+  amountPaid: "Stay payment paid",
   nextPayment: "Next payment",
   fitReason: "Why it fits",
   /** "Photos: 7" on a discovery card; the stay card shows it as the "1 / 7" badge over the photo. */

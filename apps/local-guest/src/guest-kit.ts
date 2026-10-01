@@ -74,6 +74,8 @@ export interface PriceBreakdownInput {
   readonly allInStayTotalKobo?: number;
   readonly refundableSecurityDepositKobo?: number;
   readonly amountDueNowKobo?: number;
+  /** The payment the screen asks for now, when it differs from the total to complete the booking (issue 12). */
+  readonly thisPaymentKobo?: number;
   readonly amountPaidKobo?: number;
   /** A condition tag above the total, for example "If your request is accepted". */
   readonly heading?: string;
@@ -92,6 +94,7 @@ export interface BreakdownParts {
   readonly totalLabel?: string;
   readonly deposit?: string;
   readonly due?: string;
+  readonly thisPayment?: string;
   readonly paid?: string;
   readonly next?: string;
 }
@@ -101,9 +104,10 @@ export function breakdownHtml(parts: BreakdownParts): string {
   const total = parts.total === undefined ? "" : `<div><p class="ui-price-breakdown__label">${escapeHtml(parts.totalLabel ?? GUEST_FACT_LABELS.allInStayTotal)}</p><p class="ui-money-total">${escapeHtml(parts.total)}</p></div>`;
   const deposit = parts.deposit === undefined ? "" : `<p class="ui-price-breakdown__row">${parts.depositCollected ? `${GUEST_GLOSSARY.refundableSecurityDeposit} collected` : GUEST_FACT_LABELS.refundableSecurityDeposit}: ${money(parts.deposit)}</p>`;
   const due = parts.due === undefined ? "" : `<p class="ui-price-breakdown__due">${GUEST_FACT_LABELS.amountDueNow}: ${money(parts.due)}</p>`;
+  const thisPayment = parts.thisPayment === undefined ? "" : `<p class="ui-price-breakdown__due">${GUEST_FACT_LABELS.thisPayment}: ${money(parts.thisPayment)}</p>`;
   const paid = parts.paid === undefined ? "" : `<p class="ui-price-breakdown__paid">${GUEST_FACT_LABELS.amountPaid}: ${money(parts.paid)}</p>`;
   const next = parts.next === undefined ? "" : `<p class="ui-price-breakdown__row payment-current-component">${GUEST_FACT_LABELS.nextPayment}: ${money(parts.next)}</p>`;
-  return `<section class="ui-panel ui-price-breakdown" aria-label="Price breakdown">${parts.condition ? `<p class="ui-price-breakdown__condition">${escapeHtml(parts.condition)}</p>` : ""}${total}${deposit}${due}${paid}${next}</section>`;
+  return `<section class="ui-panel ui-price-breakdown" aria-label="Price breakdown">${parts.condition ? `<p class="ui-price-breakdown__condition">${escapeHtml(parts.condition)}</p>` : ""}${total}${deposit}${due}${thisPayment}${paid}${next}</section>`;
 }
 
 /** ADR 0015: the All-In Stay Total leads, the deposit is separate, then one amount line. */
@@ -115,6 +119,7 @@ export function priceBreakdownHtml(input: PriceBreakdownInput): string {
     ...(input.totalLabel === undefined ? {} : { totalLabel: input.totalLabel }),
     ...(input.refundableSecurityDepositKobo === undefined || input.refundableSecurityDepositKobo <= 0 ? {} : { deposit: formatNgnKobo(input.refundableSecurityDepositKobo) }),
     ...(input.amountDueNowKobo === undefined ? {} : { due: formatNgnKobo(input.amountDueNowKobo) }),
+    ...(input.thisPaymentKobo === undefined ? {} : { thisPayment: formatNgnKobo(input.thisPaymentKobo) }),
     ...(input.amountPaidKobo === undefined ? {} : { paid: formatNgnKobo(input.amountPaidKobo) }),
     ...(input.next === undefined ? {} : { next: input.next }),
   });
@@ -177,7 +182,7 @@ export function offerScreenHtml(
     ? `<section class="ui-panel offer-policies" aria-label="Before you pay"><h2>Before you pay</h2><p>${escapeHtml(content.provider)}</p>${content.policies.map((text) => `<p>${escapeHtml(text)}</p>`).join("")}${content.notes.map((text) => `<p>${escapeHtml(text)}</p>`).join("")}</section>`
     : "";
   const actions = content.accept
-    ? `<div class="ui-action-bar offer-actions"><div><strong>${escapeHtml(content.amount)}</strong><span class="ui-price-breakdown__label">Amount due now</span></div>${form(content.accept.path, "Accept and pay", true, content.accept.surfaceId)}</div>`
+    ? `<div class="ui-action-bar offer-actions"><div><strong>${escapeHtml(content.amount)}</strong><span class="ui-price-breakdown__label">${GUEST_FACT_LABELS.amountDueNow}</span></div>${form(content.accept.path, "Accept and pay", true, content.accept.surfaceId)}</div>`
     : `<div class="offer-actions request-actions">${form(content.conversationPath, "Back to your conversation", true)}${content.searchPath ? form(content.searchPath, "Find other stays", false) : ""}</div>`;
   return `<section class="offer-screen" data-offer-state="${content.state}" data-server-now="${escapeHtml(content.serverNow)}"><header class="request-head offer-head" data-page="booking-record"><p class="ui-eyebrow">Conditional Booking Offer</p><h1>${escapeHtml(content.title)}</h1><span class="ui-status ui-status--${live ? "success" : content.state === "expired" || content.state === "closed" ? "danger" : "warning"}">${escapeHtml(content.status)}</span></header>${banner}${ticket}${live ? breakdown : ""}${policies}${content.steps.length ? `<section class="ui-panel"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>` : ""}${actions}</section>`;
 }

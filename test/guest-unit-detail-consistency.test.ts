@@ -43,7 +43,7 @@ test("AC2: with a quote the price block shows the All-In Stay Total for the date
   assert.ok(labelIndex >= 0 && priceIndex === labelIndex + 1, "the total's label leads its amount");
   assert.equal(components[labelIndex]!.text, "All-In Stay Total · 1–3 Oct 2026 · 2 nights");
   assert.ok(depositIndex > priceIndex, "the All-In Stay Total precedes the separate deposit");
-  assert.doesNotMatch(JSON.stringify(components), /Amount due now|Indicative nightly rate/, "no second amount line and no un-quoted rate on a quoted stay");
+  assert.doesNotMatch(JSON.stringify(components), /Total to complete booking|Indicative nightly rate/, "no second amount line and no un-quoted rate on a quoted stay");
 
   // Un-quoted: the public page shows only the labelled indicative nightly rate (ADR 0015).
   const directory = mkdtempSync(join(tmpdir(), "unit-detail-ac2-"));

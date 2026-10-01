@@ -23,7 +23,7 @@ test("AC1: the confirmed reservation renders the same ticket, paid breakdown, st
       assert.match(result.chat, /Before you arrive.*ui-steps/);
       assert.match(result.chat, /does not itself grant physical access/);
       assert.match(result.chat, /View booking details/);
-      assert.doesNotMatch(result.chat, /Amount due now|If your request is accepted/);
+      assert.doesNotMatch(result.chat, /Total to complete booking|If your request is accepted/);
     } finally { await browser.close(); }
   });
 });

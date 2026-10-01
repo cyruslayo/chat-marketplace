@@ -140,13 +140,13 @@ test("AC6: the amounts on each payment screen equal the projection values used t
     const facts = g.env.cardPaymentApp.getArtifact(g.offerId, g.env.guestPrincipal()).facts;
     const choice = visibleText(await (await g.get(g.paymentPage)).text());
     assert.ok(choice.includes(formatNgnKobo(facts.allInStayTotalKobo!)), "All-In Stay Total");
-    assert.ok(choice.includes(`Amount due now: ${formatNgnKobo(facts.amountDueNowKobo)}`), "amount due now");
+    assert.ok(choice.includes(`Total to complete booking: ${formatNgnKobo(facts.amountDueNowKobo)}`), "amount due now");
     assert.ok(choice.includes(`Next payment: stay payment · ${formatNgnKobo(facts.currentComponentAmountKobo ?? facts.allInStayTotalKobo!)}`), "next payment row");
 
     assert.equal((await g.post(`${g.paymentPage}/manual-transfer`)).status, 303);
     const transfer = g.env.manualTransfers!.current(g.offerId, g.env.clock())!;
     const manualText = visibleText(await (await g.get(`${g.paymentPage}/manual-transfer`)).text());
     assert.ok(manualText.includes(`Exact amount ${formatNgnKobo(transfer.amountKobo)}`));
-    assert.ok(manualText.includes(`Amount due now: ${formatNgnKobo(transfer.amountKobo)}`));
+    assert.ok(manualText.includes(`This payment: ${formatNgnKobo(transfer.amountKobo)}`));
   } finally { await g.close(); }
 });

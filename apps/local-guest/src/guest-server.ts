@@ -3232,7 +3232,7 @@ export function renderManualTransferPageHtml(input: {
                       refundableSecurityDepositKobo:
                         input.refundableSecurityDepositKobo,
                     }),
-                amountDueNowKobo: transfer.amountKobo,
+                thisPaymentKobo: transfer.amountKobo,
               }),
         sections: parts.sections ?? [],
         actions: parts.actions,
@@ -3417,6 +3417,7 @@ export function renderTransferPageHtml(input: {
                         input.refundableSecurityDepositKobo,
                     }),
                 amountDueNowKobo: input.amountDueNowKobo,
+                thisPaymentKobo: transfer.amountKobo,
               }),
         sections: parts.sections ?? [],
         actions: parts.actions,
