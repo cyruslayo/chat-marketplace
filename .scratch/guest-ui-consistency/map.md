@@ -1,11 +1,11 @@
 # Map: guest UI consistency
 
-PRD: `PRD.md` · Design: `design/` (canvas https://claude.ai/artifact/TKQCWTF4SWNscKrjLkN1zX)
+PRD: `PRD.md` · Design: `design/` (canvas <https://claude.ai/artifact/TKQCWTF4SWNscKrjLkN1zX>)
 
 Work top to bottom. The frontier is the first issue that is open, unblocked and unclaimed. Each issue ends with `npm run check` and `npm test` green, and a commit on the effort branch.
 
 | # | Issue | Type | Blocked by |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 01 | Start from an up-to-date main | task | none |
 | 02 | Kit foundations: CSS components, icons and server HTML helpers | task | 01 |
 | 03 | One app frame: top bar and journey rail everywhere; chat shell on foundation tokens | task | 02 |
@@ -25,12 +25,14 @@ Issue 12 needs a human answer. Issue 09 ships with today's amounts and labels if
 
 > Implement the guest UI consistency effort in `.scratch/guest-ui-consistency/`. Read `PRD.md`, then `map.md`, and follow the implementation protocol in `AGENTS.md` for each issue in order, starting at the frontier (issue 01).
 >
-> - The approved design is in `design/`: open the `.dc.html` files and compare with `design/renders/`. The live canvas is https://claude.ai/artifact/TKQCWTF4SWNscKrjLkN1zX.
+> - The approved design is in `design/`: open the `.dc.html` files and compare with `design/renders/`. The live canvas is <https://claude.ai/artifact/TKQCWTF4SWNscKrjLkN1zX>.
 > - For each issue: claim it, read the ADRs it lists, write one failing test per acceptance criterion, implement, run `npm run check` and the full `npm test` (the browser phase takes ~12 minutes, so run it in the background), capture screenshots with the walkthrough, check the Definition of Done in `docs/agents/issue-tracker.md`, commit on `ui/guest-consistency`, then write the `## Answer` and a context pointer here.
 > - Don't invent copy, amounts or times; ask me. Issue 12 needs my decision. Don't block on it.
 
 ## Context pointers
+
 (Append one line per resolved issue: what landed and where.)
+
 - 10: shared confirmation content in `apps/web-agent/src/confirmation-presentation.ts` and kit markup in `guest-kit.ts`; approved Reservation ID reference, projected paid/held-deposit breakdown, arrival steps and readable booking details. `ui-kit.ts` owns the shared app bar and framed error page; no-JS conversation uses kit rows/bubbles/rail/native composer. Tests: `test/guest-confirmation-system*.test.ts`; 16 captures in `screenshots/10/`. Commit `5b73998`; full suite 1218 non-browser + 154 Chromium passes, 1 pre-existing skip, zero failures; deviations and DoD in the issue.
 - 01: `ui/editorial-refinement` merged with `origin/main` (PR 96 open, unmerged); effort branch `ui/guest-consistency` cut from it; `guest-ui-walkthrough` in `.claude/launch.json`; discovery notes for issue 05 in `issues/01-start-from-up-to-date-main.md`. Screenshots: `screenshots/01/`.
 - 02: kit CSS in `apps/web/src/shortlet-foundations.css` ("Guest UI kit" block), icons in `apps/web/src/ui-kit.ts`, server helpers in `apps/local-guest/src/guest-kit.ts` (pages now render through them); tests in `test/guest-kit.test.ts`. Screenshots: `screenshots/02/`.
@@ -40,5 +42,5 @@ Issue 12 needs a human answer. Issue 09 ships with today's amounts and labels if
 - 06: one `.unit-detail-sheet` on the chat workspace and `/stays/:id` (where line, serif title, `.ui-tiles`, price block, "About this apartment"); kit helpers `unitTilesHtml`/`unitIndicativePriceHtml`/`unitAboutHtml` in `guest-kit.ts`, `unitTiles`/`unitStayTotalLabel` in `booking-presentation.ts`. Tests: `test/guest-unit-detail-consistency*.test.ts`. Screenshots: `screenshots/06/`. Deviations in the issue Comments (no provider line, ADR 0006; dropped nightly-rate/fees/amount-due lines).
 - 07: shared request screen content in `apps/web-agent/src/request-presentation.ts` and markup in `guest-kit.ts`, used by chat and conventional draft/review/sent/not-accepted pages; native owner/freshness-checked POST actions reuse platform handlers; outcome recovery keeps criteria; neutral banner and steps replace the operator-response waiting panel. Tests: `test/guest-request-consistency*.test.ts`; 40 captures in `screenshots/07/`. Commit `f802424`; copy deviations and DoD recorded in the issue. Full suite: 1210 non-browser + 151 Chromium passes, 1 pre-existing skip, zero failures.
 - 08: shared live/expired offer content in `apps/web-agent/src/offer-presentation.ts` and `guest-kit.ts`, used by chat and `/conditional-offers/:id`; authoritative WAT countdown/lazy expiry, fail-closed outage retry, native owner/current-authority acceptance and expired recovery. Tests: `test/guest-offer-consistency*.test.ts`; 16 light captures in `screenshots/08/`. Implementation `26f719b`; AC1–AC5, ADR decisions and explicit DoD in `issues/08-offer-screens.md`. Exact staged suite: 1221 non-browser + 159 Chromium passes, 1 pre-existing skip, zero failures; typecheck clean. Issues 09/11 not worked.
-- 09: shared payment layout (`paymentLayoutHtml`/`paymentScreenHtml` etc. in `guest-kit.ts`, `apps/web-agent/src/payment-presentation.ts`); choice page is a native radio form posting to `/payments/offers/:id`; chat payment surface uses `.ui-banner--warning` + steps (no `.waiting-panel`). Tests: `test/guest-payment-consistency*.test.ts`; screenshots `screenshots/09/`. Isolated suite: 1226 non-browser + 160 Chromium passes, zero failures.
+- 09: shared payment layout (`paymentLayoutHtml`/`paymentScreenHtml` and friends in `guest-kit.ts`, `apps/web-agent/src/payment-presentation.ts`); choice page is a native radio form posting to `/payments/offers/:id`; chat payment surface uses `.ui-banner--warning` + steps (no `.waiting-panel`). Tests: `test/guest-payment-consistency*.test.ts`; screenshots `screenshots/09/`. Implemented, uncommitted (working-tree reformatting; see issue Comments).
 - 12: amount labels decided and applied: "Total to complete booking" (stay + deposit), "This payment", "Stay payment paid"; table in `guest-content.ts`; `test/guest-amount-labels.test.ts`. Rationale in the issue.

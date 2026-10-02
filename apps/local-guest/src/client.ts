@@ -5,8 +5,21 @@
  */
 import { createBasicWebRuntime } from "@weaver/web";
 import { icon } from "../../web/src/ui-kit.js";
-import { buildListingGallery, enhanceListingGallery, watchPhotoFailure } from "./listing-gallery.js";
-import { GUEST_COMPARE_LABELS, GUEST_FACT_LABELS, GUEST_GLOSSARY, GUEST_NEW_CONVERSATION, UNIT_DETAIL_ABOUT_HEADING, guestFactValue, guestNewConversationCopy, type GuestCommittedWorkKind } from "../../web-agent/src/guest-content.js";
+import {
+  buildListingGallery,
+  enhanceListingGallery,
+  watchPhotoFailure,
+} from "./listing-gallery.js";
+import {
+  GUEST_COMPARE_LABELS,
+  GUEST_FACT_LABELS,
+  GUEST_GLOSSARY,
+  GUEST_NEW_CONVERSATION,
+  UNIT_DETAIL_ABOUT_HEADING,
+  guestFactValue,
+  guestNewConversationCopy,
+  type GuestCommittedWorkKind,
+} from "../../web-agent/src/guest-content.js";
 import {
   breakdownHtml,
   confirmationScreenHtml,
@@ -14,7 +27,11 @@ import {
   paymentScreenHtml,
   requestScreenHtml,
   resultRowPartsHtml,
-  stayCardInnerHtml, ticketHtml, unitAboutHtml, unitTilesHtml,type StayCardParts,
+  stayCardInnerHtml,
+  ticketHtml,
+  unitAboutHtml,
+  unitTilesHtml,
+  type StayCardParts,
 } from "./guest-kit.js";
 import type { ConfirmationContent } from "../../web-agent/src/confirmation-presentation.js";
 import type { OfferScreenContent } from "../../web-agent/src/offer-presentation.js";
@@ -47,7 +64,7 @@ interface GuestSurfacePayload {
   readonly textFallback?: string;
   readonly conventionalRoute?: string;
   readonly conventionalRouteLabel?: string;
-readonly waiting?: GuestWaitingState;
+  readonly waiting?: GuestWaitingState;
   readonly requestScreen?: RequestScreenContent;
   readonly confirmation?: ConfirmationContent;
   readonly offerScreen?: OfferScreenContent;
@@ -62,22 +79,57 @@ interface GuestWaitingState {
   readonly outcomes: readonly string[];
   readonly meanwhile: readonly string[];
 }
-interface GuestTimelineEntry { readonly role: "assistant" | "user" | "receipt"; readonly text: string; }
+interface GuestTimelineEntry {
+  readonly role: "assistant" | "user" | "receipt";
+  readonly text: string;
+}
 type JourneyStepState = "done" | "current" | "failed" | "upcoming";
-interface GuestJourney { readonly current: string; readonly steps: readonly { readonly id: string; readonly label: string; readonly state: JourneyStepState }[]; }
+interface GuestJourney {
+  readonly current: string;
+  readonly steps: readonly {
+    readonly id: string;
+    readonly label: string;
+    readonly state: JourneyStepState;
+  }[];
+}
 interface GuestCriteria {
   readonly key: string;
   readonly editable: boolean;
   readonly canUndo: boolean;
   readonly where?: { readonly area?: string; readonly label: string };
-  readonly when?: { readonly checkIn?: string; readonly nights?: number; readonly label: string };
+  readonly when?: {
+    readonly checkIn?: string;
+    readonly nights?: number;
+    readonly label: string;
+  };
   readonly guests?: { readonly count: number; readonly label: string };
-  readonly budget?: { readonly naira: number; readonly per: "stay" | "night"; readonly label: string };
+  readonly budget?: {
+    readonly naira: number;
+    readonly per: "stay" | "night";
+    readonly label: string;
+  };
   readonly areas: readonly { readonly id: string; readonly label: string }[];
 }
-interface GuestResponse { readonly ok: boolean; readonly code?: string; readonly message?: string; readonly messages?: readonly string[]; readonly receipts?: readonly string[]; readonly surfaces?: readonly GuestSurfacePayload[]; readonly journey?: GuestJourney; readonly criteria?: GuestCriteria; readonly quickReplies?: readonly string[]; }
-interface GuestCommittedWork { readonly kind: GuestCommittedWorkKind; readonly threadId: string; readonly route: string; readonly unitTitle?: string; }
-interface GuestStateResponse extends GuestResponse { readonly timeline?: readonly GuestTimelineEntry[]; }
+interface GuestResponse {
+  readonly ok: boolean;
+  readonly code?: string;
+  readonly message?: string;
+  readonly messages?: readonly string[];
+  readonly receipts?: readonly string[];
+  readonly surfaces?: readonly GuestSurfacePayload[];
+  readonly journey?: GuestJourney;
+  readonly criteria?: GuestCriteria;
+  readonly quickReplies?: readonly string[];
+}
+interface GuestCommittedWork {
+  readonly kind: GuestCommittedWorkKind;
+  readonly threadId: string;
+  readonly route: string;
+  readonly unitTitle?: string;
+}
+interface GuestStateResponse extends GuestResponse {
+  readonly timeline?: readonly GuestTimelineEntry[];
+}
 
 function requiredElement<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
@@ -102,23 +154,38 @@ const criteriaEditor = requiredElement<HTMLFormElement>("criteria-editor");
 const criteriaStatus = requiredElement<HTMLElement>("criteria-status");
 const criteriaToggle = requiredElement<HTMLButtonElement>("criteria-toggle");
 const criteriaSummary = requiredElement<HTMLElement>("criteria-summary");
-const newConversationButton = requiredElement<HTMLButtonElement>("new-conversation");
-const newConversationConfirm = requiredElement<HTMLElement>("new-conversation-confirm");
-const newConversationStart = requiredElement<HTMLButtonElement>("new-conversation-start");
-const newConversationCancel = requiredElement<HTMLButtonElement>("new-conversation-cancel");
+const newConversationButton =
+  requiredElement<HTMLButtonElement>("new-conversation");
+const newConversationConfirm = requiredElement<HTMLElement>(
+  "new-conversation-confirm",
+);
+const newConversationStart = requiredElement<HTMLButtonElement>(
+  "new-conversation-start",
+);
+const newConversationCancel = requiredElement<HTMLButtonElement>(
+  "new-conversation-cancel",
+);
 
 function getThreadId(): string {
   try {
-    const urlParam = new URLSearchParams(window.location.search).get("threadId");
+    const urlParam = new URLSearchParams(window.location.search).get(
+      "threadId",
+    );
     if (urlParam && /^g-[a-f0-9-]{6,64}$/.test(urlParam)) {
       window.sessionStorage.setItem("shortlet-concierge-thread", urlParam);
       return urlParam;
     }
     const stored = window.sessionStorage.getItem("shortlet-concierge-thread");
     if (stored && /^g-[a-f0-9-]{6,64}$/.test(stored)) return stored;
-  } catch { /* Storage is optional; the server remains authoritative. */ }
+  } catch {
+    /* Storage is optional; the server remains authoritative. */
+  }
   const created = `g-${crypto.randomUUID()}`;
-  try { window.sessionStorage.setItem("shortlet-concierge-thread", created); } catch { /* Page-lifetime fallback. */ }
+  try {
+    window.sessionStorage.setItem("shortlet-concierge-thread", created);
+  } catch {
+    /* Page-lifetime fallback. */
+  }
   return created;
 }
 
@@ -130,14 +197,36 @@ function isSafeImageUrl(value: string): boolean {
   try {
     const parsed = new URL(value);
     const hostname = parsed.hostname.toLowerCase().replace(/\.$/, "");
-    if (parsed.protocol !== "https:" || parsed.username !== "" || parsed.password !== "") return false;
-    if (hostname === "localhost" || hostname.endsWith(".localhost") || hostname.endsWith(".local")
-      || hostname.endsWith(".internal") || hostname.endsWith(".lan")) return false;
+    if (
+      parsed.protocol !== "https:" ||
+      parsed.username !== "" ||
+      parsed.password !== ""
+    )
+      return false;
+    if (
+      hostname === "localhost" ||
+      hostname.endsWith(".localhost") ||
+      hostname.endsWith(".local") ||
+      hostname.endsWith(".internal") ||
+      hostname.endsWith(".lan")
+    )
+      return false;
     if (hostname.includes(":") || hostname.startsWith("[")) return false;
-    if (/^(0\.|10\.|127\.|169\.254\.|192\.0\.0\.|192\.168\.|198\.(18|19)\.|224\.)/.test(hostname)) return false;
+    if (
+      /^(0\.|10\.|127\.|169\.254\.|192\.0\.0\.|192\.168\.|198\.(18|19)\.|224\.)/.test(
+        hostname,
+      )
+    )
+      return false;
     if (/^100\.(6[4-9]|[78]\d|9\d)\./.test(hostname)) return false;
     if (/^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) return false;
-    if (hostname === "::1" || hostname.startsWith("fc") || hostname.startsWith("fd") || hostname.startsWith("fe8")) return false;
+    if (
+      hostname === "::1" ||
+      hostname.startsWith("fc") ||
+      hostname.startsWith("fd") ||
+      hostname.startsWith("fe8")
+    )
+      return false;
     return true;
   } catch {
     return false;
@@ -147,8 +236,13 @@ function isSafeImageUrl(value: string): boolean {
 function safeImageResourceUrl(value: string): string | undefined {
   if (!isSafeImageUrl(value)) return undefined;
   const parsed = new URL(value);
-  const localBrowser = window.location.protocol === "http:" && (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost");
-  return localBrowser && parsed.hostname === "pilot-local.invalid" ? `${window.location.origin}${parsed.pathname}` : value;
+  const localBrowser =
+    window.location.protocol === "http:" &&
+    (window.location.hostname === "127.0.0.1" ||
+      window.location.hostname === "localhost");
+  return localBrowser && parsed.hostname === "pilot-local.invalid"
+    ? `${window.location.origin}${parsed.pathname}`
+    : value;
 }
 
 function enhanceListingImages(mount: HTMLElement): void {
@@ -161,7 +255,8 @@ function enhanceListingImages(mount: HTMLElement): void {
     watchPhotoFailure(image);
   }
   // Guest gallery issue 01: the strip count, "Show all" and the full-screen viewer (presentation only, ADR 0072).
-  for (const gallery of mount.querySelectorAll<HTMLElement>(".listing-gallery")) enhanceListingGallery(gallery);
+  for (const gallery of mount.querySelectorAll<HTMLElement>(".listing-gallery"))
+    enhanceListingGallery(gallery);
 }
 
 const UNIT_TILE_FACTS = [
@@ -172,11 +267,17 @@ const UNIT_TILE_FACTS = [
 
 function organizeUnitDetail(mount: HTMLElement): void {
   // Weaver adds a surface mount between our target and the Basic Catalog root.
-  const root = mount.querySelector<HTMLElement>('[data-a2ui-component="Column"]');
+  const root = mount.querySelector<HTMLElement>(
+    '[data-a2ui-component="Column"]',
+  );
   if (!root) return;
-  const tileFacts = UNIT_TILE_FACTS.map((tile) => ({ ...tile, fact: findFact([...root.children], tile.label) }));
+  const tileFacts = UNIT_TILE_FACTS.map((tile) => ({
+    ...tile,
+    fact: findFact([...root.children], tile.label),
+  }));
   // ADR-0080: incomplete presentation facts retain the complete Weaver fallback, rather than a partial sheet.
-  if (tileFacts.some((tile) => !tile.fact || tile.fact.value.trim() === "")) return;
+  if (tileFacts.some((tile) => !tile.fact || tile.fact.value.trim() === ""))
+    return;
   root.classList.add("unit-detail-root");
 
   // Guest gallery issue 01: the photos Weaver rendered become the shared listing gallery, as on the full page.
@@ -185,13 +286,22 @@ function organizeUnitDetail(mount: HTMLElement): void {
     if (!(child instanceof HTMLImageElement)) break;
     images.push(child);
   }
-  const unitTitle = [...root.children].find((child) => child.tagName === "H2" && !isMoney(child.textContent ?? ""))?.textContent?.trim() || "this apartment";
+  const unitTitle =
+    [...root.children]
+      .find(
+        (child) => child.tagName === "H2" && !isMoney(child.textContent ?? ""),
+      )
+      ?.textContent?.trim() || "this apartment";
   let gallery: HTMLElement | undefined;
   if (images.length > 0) {
     gallery = buildListingGallery(document, unitTitle, images);
   } else {
     const noPhotos = root.firstElementChild;
-    if (noPhotos instanceof HTMLElement && noPhotos.matches('[data-a2ui-component="Text"]') && /no property photos/i.test(noPhotos.textContent ?? "")) {
+    if (
+      noPhotos instanceof HTMLElement &&
+      noPhotos.matches('[data-a2ui-component="Text"]') &&
+      /no property photos/i.test(noPhotos.textContent ?? "")
+    ) {
       gallery = document.createElement("div");
       gallery.className = "unit-gallery unit-gallery--fallback";
       gallery.setAttribute("role", "group");
@@ -202,31 +312,59 @@ function organizeUnitDetail(mount: HTMLElement): void {
   }
 
   const children = [...root.children];
-  const title = children.find((child) => child.tagName === "H2" && !isMoney(child.textContent ?? ""));
-  const amount = children.find((child) => child !== title && child.tagName === "H2" && isMoney(child.textContent ?? ""));
-  const priceLabel = children.find((child) => isPriceLabel(child.textContent?.trim() ?? ""));
-  const where = children.find((child) => child.tagName === "SMALL" && child !== priceLabel);
-  const deposit = findFact(children, GUEST_FACT_LABELS.refundableSecurityDeposit);
-  const aboutHeading = children.find((child) => child.textContent?.trim() === UNIT_DETAIL_ABOUT_HEADING);
-  const amenitiesHeading = children.find((child) => child.textContent?.trim() === "Amenities");
-  const action = root.querySelector<HTMLElement>(":scope > [data-a2ui-component=\"Row\"]");
+  const title = children.find(
+    (child) => child.tagName === "H2" && !isMoney(child.textContent ?? ""),
+  );
+  const amount = children.find(
+    (child) =>
+      child !== title &&
+      child.tagName === "H2" &&
+      isMoney(child.textContent ?? ""),
+  );
+  const priceLabel = children.find((child) =>
+    isPriceLabel(child.textContent?.trim() ?? ""),
+  );
+  const where = children.find(
+    (child) => child.tagName === "SMALL" && child !== priceLabel,
+  );
+  const deposit = findFact(
+    children,
+    GUEST_FACT_LABELS.refundableSecurityDeposit,
+  );
+  const aboutHeading = children.find(
+    (child) => child.textContent?.trim() === UNIT_DETAIL_ABOUT_HEADING,
+  );
+  const amenitiesHeading = children.find(
+    (child) => child.textContent?.trim() === "Amenities",
+  );
+  const action = root.querySelector<HTMLElement>(
+    ':scope > [data-a2ui-component="Row"]',
+  );
 
   // Issue 06: the sheet is the same DOM the standalone page renders: where, serif title, facility tiles, price, about.
   const sheet = document.createElement("section");
   sheet.className = "unit-detail-sheet";
   sheet.setAttribute("aria-label", "Stay details");
-  if (where) { where.classList.add("unit-detail-location"); where.insertAdjacentHTML("afterbegin", icon("pin")); sheet.append(where); }
+  if (where) {
+    where.classList.add("unit-detail-location");
+    where.insertAdjacentHTML("afterbegin", icon("pin"));
+    sheet.append(where);
+  }
   if (title) sheet.append(title);
   {
     const template = document.createElement("template");
-    template.innerHTML = unitTilesHtml(tileFacts.map((tile) => ({ icon: tile.icon, text: tile.fact!.value })));
+    template.innerHTML = unitTilesHtml(
+      tileFacts.map((tile) => ({ icon: tile.icon, text: tile.fact!.value })),
+    );
     sheet.append(template.content);
   }
   if (amount) {
     const template = document.createElement("template");
     template.innerHTML = breakdownHtml({
       total: amount.textContent?.trim() ?? "",
-      ...(priceLabel ? { totalLabel: priceLabel.textContent?.trim() ?? "" } : {}),
+      ...(priceLabel
+        ? { totalLabel: priceLabel.textContent?.trim() ?? "" }
+        : {}),
       ...(deposit ? { deposit: deposit.value } : {}),
     });
     sheet.append(template.content);
@@ -246,8 +384,17 @@ function organizeUnitDetail(mount: HTMLElement): void {
   amount?.remove();
   deposit?.element.remove();
 
-  const amenitiesNodes = amenitiesHeading ? [amenitiesHeading, ...(amenitiesHeading.nextElementSibling ? [amenitiesHeading.nextElementSibling] : [])] : [];
-  const supporting = [...root.children].filter((child) => child !== action && !amenitiesNodes.includes(child));
+  const amenitiesNodes = amenitiesHeading
+    ? [
+        amenitiesHeading,
+        ...(amenitiesHeading.nextElementSibling
+          ? [amenitiesHeading.nextElementSibling]
+          : []),
+      ]
+    : [];
+  const supporting = [...root.children].filter(
+    (child) => child !== action && !amenitiesNodes.includes(child),
+  );
 
   root.replaceChildren();
   if (gallery) root.append(gallery);
@@ -272,8 +419,17 @@ function organizeUnitDetail(mount: HTMLElement): void {
     sum.className = "ui-action-bar__sum";
     const total = amount?.textContent?.trim() ?? "";
     const label = priceLabel?.textContent?.trim() ?? "";
-    if (total !== "") { const strong = document.createElement("strong"); strong.textContent = total; sum.append(strong); }
-    if (label !== "") { const meta = document.createElement("span"); meta.className = "ui-money-metadata"; meta.textContent = label; sum.append(meta); }
+    if (total !== "") {
+      const strong = document.createElement("strong");
+      strong.textContent = total;
+      sum.append(strong);
+    }
+    if (label !== "") {
+      const meta = document.createElement("span");
+      meta.className = "ui-money-metadata";
+      meta.textContent = label;
+      sum.append(meta);
+    }
     if (sum.childElementCount > 0) bar.append(sum);
     bar.append(action);
     root.append(bar);
@@ -281,7 +437,10 @@ function organizeUnitDetail(mount: HTMLElement): void {
 }
 
 /** The first child whose text is the fact `label`, with its value: facts are found only through the shared label table. */
-function findFact(children: readonly Element[], label: string): { readonly element: Element; readonly value: string } | undefined {
+function findFact(
+  children: readonly Element[],
+  label: string,
+): { readonly element: Element; readonly value: string } | undefined {
   for (const child of children) {
     const value = guestFactValue(child.textContent ?? "", label);
     if (value !== undefined) return { element: child, value };
@@ -291,15 +450,25 @@ function findFact(children: readonly Element[], label: string): { readonly eleme
 
 /** The day of the month in a ticket date such as "Thu, 10 Sept 2026": its first whole-number word. */
 function dayNumeral(date: string): string | undefined {
-  return date.replaceAll(",", " ").split(" ").find((word) => word !== "" && Number.isInteger(Number(word)));
+  return date
+    .replaceAll(",", " ")
+    .split(" ")
+    .find((word) => word !== "" && Number.isInteger(Number(word)));
 }
 
 /**
  * Swaps the Weaver elements that carry one booking fact each for the shared kit markup (guest-kit.ts), so a surface in
  * the chat has the same DOM, classes and text as its standalone page. Presentation only (ADR 0072).
  */
-function replaceWithKitMarkup(root: HTMLElement, html: string, consumed: readonly (Element | undefined)[]): void {
-  const present = consumed.filter((element): element is Element => element !== undefined && element.parentElement === root);
+function replaceWithKitMarkup(
+  root: HTMLElement,
+  html: string,
+  consumed: readonly (Element | undefined)[],
+): void {
+  const present = consumed.filter(
+    (element): element is Element =>
+      element !== undefined && element.parentElement === root,
+  );
   const template = document.createElement("template");
   template.innerHTML = html;
   const markup = template.content.firstElementChild;
@@ -313,50 +482,104 @@ function replaceWithKitMarkup(root: HTMLElement, html: string, consumed: readonl
  * is missing (no quote yet, an older surface) nothing partial is built and the surface stays as Weaver rendered it.
  */
 function organizeBookingTicket(mount: HTMLElement): void {
-  const root = mount.querySelector<HTMLElement>('[data-a2ui-component="Column"]');
+  const root = mount.querySelector<HTMLElement>(
+    '[data-a2ui-component="Column"]',
+  );
   if (!root) return;
   const children = [...root.children];
-  const title = children.find((child) => child.tagName === "H3" && guestFactValue(child.textContent ?? "", GUEST_FACT_LABELS.allInStayTotal) === undefined);
+  const title = children.find(
+    (child) =>
+      child.tagName === "H3" &&
+      guestFactValue(
+        child.textContent ?? "",
+        GUEST_FACT_LABELS.allInStayTotal,
+      ) === undefined,
+  );
   const checkIn = findFact(children, GUEST_FACT_LABELS.checkIn);
   const checkOut = findFact(children, GUEST_FACT_LABELS.checkOut);
   const stay = findFact(children, GUEST_FACT_LABELS.stay);
-  const checkInDay = checkIn === undefined ? undefined : dayNumeral(checkIn.value);
-  const checkOutDay = checkOut === undefined ? undefined : dayNumeral(checkOut.value);
+  const checkInDay =
+    checkIn === undefined ? undefined : dayNumeral(checkIn.value);
+  const checkOutDay =
+    checkOut === undefined ? undefined : dayNumeral(checkOut.value);
   if (title && checkIn && checkOut && stay && checkInDay && checkOutDay) {
-    replaceWithKitMarkup(root, ticketHtml({
-      title: title.textContent?.trim() ?? "",
-      checkIn: { day: checkInDay, date: checkIn.value },
-      checkOut: { day: checkOutDay, date: checkOut.value },
-      foot: stay.value + (activePayload?.confirmation ? ` · Booking reference ${activePayload.confirmation.bookingReference}` : ""),
-    }), [title, checkIn.element, checkOut.element, stay.element]);
+    replaceWithKitMarkup(
+      root,
+      ticketHtml({
+        title: title.textContent?.trim() ?? "",
+        checkIn: { day: checkInDay, date: checkIn.value },
+        checkOut: { day: checkOutDay, date: checkOut.value },
+        foot:
+          stay.value +
+          (activePayload?.confirmation
+            ? ` · Booking reference ${activePayload.confirmation.bookingReference}`
+            : ""),
+      }),
+      [title, checkIn.element, checkOut.element, stay.element],
+    );
   }
   const total = findFact(children, GUEST_FACT_LABELS.allInStayTotal);
   if (!total) return;
-  const deposit = findFact(children, GUEST_FACT_LABELS.refundableSecurityDeposit);
+  const deposit = findFact(
+    children,
+    GUEST_FACT_LABELS.refundableSecurityDeposit,
+  );
   const due = findFact(children, GUEST_FACT_LABELS.amountDueNow);
   const paid = findFact(children, GUEST_FACT_LABELS.amountPaid);
   const next = findFact(children, GUEST_FACT_LABELS.nextPayment);
-  const condition = children.find((child) => child.textContent?.trim() === GUEST_FACT_LABELS.ifRequestAccepted);
-  replaceWithKitMarkup(root, breakdownHtml({
-    ...(activePayload?.confirmation?.depositCollected ? { depositCollected: true } : {}),
-    ...(condition ? { condition: GUEST_FACT_LABELS.ifRequestAccepted } : {}),
-    total: total.value,
-    ...(deposit ? { deposit: deposit.value } : {}),
-    ...(due ? { due: due.value } : {}),
-    ...(paid ? { paid: paid.value } : {}),
-    ...(next ? { next: next.value } : {}),
-  }), [condition, total.element, deposit?.element, due?.element, paid?.element, next?.element]);
+  const condition = children.find(
+    (child) =>
+      child.textContent?.trim() === GUEST_FACT_LABELS.ifRequestAccepted,
+  );
+  replaceWithKitMarkup(
+    root,
+    breakdownHtml({
+      ...(activePayload?.confirmation?.depositCollected
+        ? { depositCollected: true }
+        : {}),
+      ...(condition ? { condition: GUEST_FACT_LABELS.ifRequestAccepted } : {}),
+      total: total.value,
+      ...(deposit ? { deposit: deposit.value } : {}),
+      ...(due ? { due: due.value } : {}),
+      ...(paid ? { paid: paid.value } : {}),
+      ...(next ? { next: next.value } : {}),
+    }),
+    [
+      condition,
+      total.element,
+      deposit?.element,
+      due?.element,
+      paid?.element,
+      next?.element,
+    ],
+  );
 }
 
-function organizeConfirmation(mount: HTMLElement, content: ConfirmationContent): void {
-  const root = mount.querySelector<HTMLElement>('[data-a2ui-component="Column"]');
+function organizeConfirmation(
+  mount: HTMLElement,
+  content: ConfirmationContent,
+): void {
+  const root = mount.querySelector<HTMLElement>(
+    '[data-a2ui-component="Column"]',
+  );
   const ticket = root?.querySelector<HTMLElement>(":scope > .ui-ticket");
-  const breakdown = root?.querySelector<HTMLElement>(":scope > .ui-price-breakdown");
+  const breakdown = root?.querySelector<HTMLElement>(
+    ":scope > .ui-price-breakdown",
+  );
   if (!root || !ticket || !breakdown) return;
   const template = document.createElement("template");
-  template.innerHTML = confirmationScreenHtml(content, ticket.outerHTML, breakdown.outerHTML);
+  template.innerHTML = confirmationScreenHtml(
+    content,
+    ticket.outerHTML,
+    breakdown.outerHTML,
+  );
   root.replaceChildren(template.content);
-  root.querySelector<HTMLAnchorElement>(".request-actions a")?.addEventListener("click", (event) => { event.preventDefault(); closeWorkspace(workspaceReopen);});
+  root
+    .querySelector<HTMLAnchorElement>(".request-actions a")
+    ?.addEventListener("click", (event) => {
+      event.preventDefault();
+      closeWorkspace(workspaceReopen);
+    });
 }
 
 /** Issue 09: one payment layout. The Weaver action row stays in the page, so its server-bound event still runs (ADR-0072). */
@@ -442,30 +665,62 @@ function organizeOfferScreen(
 
 /** ADR-0072/0081: one kit layout; the submitted draft action still runs Weaver's original, server-bound event. */
 function organizeRequestScreen(
-  mount: HTMLElement, content: RequestScreenContent): void {
-  const root = mount.querySelector<HTMLElement>('[data-a2ui-component="Column"]');
+  mount: HTMLElement,
+  content: RequestScreenContent,
+): void {
+  const root = mount.querySelector<HTMLElement>(
+    '[data-a2ui-component="Column"]',
+  );
   const ticket = root?.querySelector<HTMLElement>(":scope > .ui-ticket");
-  const breakdown = root?.querySelector<HTMLElement>(":scope > .ui-price-breakdown");
+  const breakdown = root?.querySelector<HTMLElement>(
+    ":scope > .ui-price-breakdown",
+  );
   if (!root || !ticket || !breakdown) return;
-  const originalAction = root.querySelector<HTMLButtonElement>('button');
-  if ((content.state === "draft" || content.state === "review") && !originalAction) return;
+  const originalAction = root.querySelector<HTMLButtonElement>("button");
+  if (
+    (content.state === "draft" || content.state === "review") &&
+    !originalAction
+  )
+    return;
   const template = document.createElement("template");
-  template.innerHTML = requestScreenHtml(content, ticket.outerHTML, breakdown.outerHTML, breakdown.querySelector(".ui-money-total")?.textContent ?? undefined);
+  template.innerHTML = requestScreenHtml(
+    content,
+    ticket.outerHTML,
+    breakdown.outerHTML,
+    breakdown.querySelector(".ui-money-total")?.textContent ?? undefined,
+  );
   const screen = template.content.firstElementChild as HTMLElement;
-  const primaryForm = screen.querySelector<HTMLFormElement>(".request-actions form");
-  if (originalAction && (content.state === "draft" || content.state === "review")) {
+  const primaryForm = screen.querySelector<HTMLFormElement>(
+    ".request-actions form",
+  );
+  if (
+    originalAction &&
+    (content.state === "draft" || content.state === "review")
+  ) {
     // Keep the runtime-owned button and its listeners, without exposing a second action to assistive technology.
     const binding = document.createElement("div");
     binding.hidden = true;
     binding.append(originalAction);
-    primaryForm?.addEventListener("submit", (event) => { event.preventDefault(); if (!originalAction.disabled) originalAction.click(); });
+    primaryForm?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      if (!originalAction.disabled) originalAction.click();
+    });
     root.replaceChildren(screen, binding);
   } else root.replaceChildren(screen);
-  for (const form of screen.querySelectorAll<HTMLFormElement>(".request-actions form")) {
-    if (new URL(form.action).pathname.endsWith("/conversation")) form.addEventListener("submit", (event) => { event.preventDefault(); closeWorkspace(workspaceReopen); });
+  for (const form of screen.querySelectorAll<HTMLFormElement>(
+    ".request-actions form",
+  )) {
+    if (new URL(form.action).pathname.endsWith("/conversation"))
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        closeWorkspace(workspaceReopen);
+      });
   }
   const change = screen.querySelector<HTMLAnchorElement>(".request-guests a");
-  change?.addEventListener("click", (event) => { event.preventDefault(); closeWorkspace(composerInput); });
+  change?.addEventListener("click", (event) => {
+    event.preventDefault();
+    closeWorkspace(composerInput);
+  });
   if (activePayload?.waiting?.kind === "operator-response") {
     screen.dataset.waiting = "operator-response";
     const countdown = screen.querySelector<HTMLElement>(".waiting-countdown");
@@ -474,25 +729,49 @@ function organizeRequestScreen(
 }
 
 /** The Units a discovery surface offers, in the order its cards are shown, from the view-unit actions the server generated. */
-function viewUnitIds(payload: GuestSurfacePayload | undefined): readonly string[] {
+function viewUnitIds(
+  payload: GuestSurfacePayload | undefined,
+): readonly string[] {
   const ids: string[] = [];
   for (const message of payload?.a2uiMessages ?? []) {
-    if (!isRecord(message) || !isRecord(message.updateComponents) || !Array.isArray(message.updateComponents.components)) continue;
+    if (
+      !isRecord(message) ||
+      !isRecord(message.updateComponents) ||
+      !Array.isArray(message.updateComponents.components)
+    )
+      continue;
     for (const component of message.updateComponents.components) {
-      if (!isRecord(component) || !isRecord(component.action) || !isRecord(component.action.event)) continue;
+      if (
+        !isRecord(component) ||
+        !isRecord(component.action) ||
+        !isRecord(component.action.event)
+      )
+        continue;
       const context = component.action.event.context;
-      if (component.action.event.name === "shortlet.discovery.view-unit" && isRecord(context) && typeof context.unitId === "string") ids.push(context.unitId);
+      if (
+        component.action.event.name === "shortlet.discovery.view-unit" &&
+        isRecord(context) &&
+        typeof context.unitId === "string"
+      )
+        ids.push(context.unitId);
     }
   }
   return ids;
 }
 
 function factIcon(text: string): "bed" | "bath" | "users" {
-  return text.includes("bedroom") ? "bed" : text.includes("bathroom") ? "bath" : "users";
+  return text.includes("bedroom")
+    ? "bed"
+    : text.includes("bathroom")
+      ? "bath"
+      : "users";
 }
 
 /** Sends the same view-unit event as the card's View apartment button; the link keeps working without JavaScript. */
-function openStayFrom(link: HTMLElement, viewButton: HTMLButtonElement | undefined): void {
+function openStayFrom(
+  link: HTMLElement,
+  viewButton: HTMLButtonElement | undefined,
+): void {
   if (!viewButton) return;
   link.addEventListener("click", (event) => {
     event.preventDefault();
@@ -507,9 +786,14 @@ function openStayFrom(link: HTMLElement, viewButton: HTMLButtonElement | undefin
  */
 function decorateDiscoveryCards(mount: HTMLElement): void {
   const unitIds = viewUnitIds(activePayload);
-  const rows: { readonly html: string; readonly view: HTMLButtonElement | undefined }[] = [];
+  const rows: {
+    readonly html: string;
+    readonly view: HTMLButtonElement | undefined;
+  }[] = [];
   let listElement: HTMLElement | undefined;
-  for (const [index, card] of [...mount.querySelectorAll<HTMLElement>('[data-a2ui-component="Card"]')].entries()) {
+  for (const [index, card] of [
+    ...mount.querySelectorAll<HTMLElement>('[data-a2ui-component="Card"]'),
+  ].entries()) {
     const list = card.parentElement;
     if (list instanceof HTMLElement) {
       list.classList.add("stay-grid");
@@ -517,28 +801,47 @@ function decorateDiscoveryCards(mount: HTMLElement): void {
       list.setAttribute("aria-label", "Stay search results");
       listElement = list;
     }
-    const body = card.querySelector<HTMLElement>(":scope > [data-weaver-mount] > [data-a2ui-component=\"Column\"], :scope > [data-a2ui-component=\"Column\"]");
+    const body = card.querySelector<HTMLElement>(
+      ':scope > [data-weaver-mount] > [data-a2ui-component="Column"], :scope > [data-a2ui-component="Column"]',
+    );
     const unitId = unitIds[index];
     if (!body || unitId === undefined) continue;
     const children = [...body.children];
-    const title = children.find((child) => child.tagName === "H3" && !isMoney(child.textContent ?? ""));
+    const title = children.find(
+      (child) => child.tagName === "H3" && !isMoney(child.textContent ?? ""),
+    );
     const where = findFact(children, GUEST_FACT_LABELS.where);
     const factLine = children.find((child) => child.tagName === "P");
-    const priceLabel = children.find((child) => isPriceLabel(child.textContent?.trim() ?? ""));
-    const price = children.find((child) => child.tagName === "H3" && isMoney(child.textContent ?? ""));
+    const priceLabel = children.find((child) =>
+      isPriceLabel(child.textContent?.trim() ?? ""),
+    );
+    const price = children.find(
+      (child) => child.tagName === "H3" && isMoney(child.textContent ?? ""),
+    );
     if (!title || !where || !factLine || !priceLabel || !price) continue;
-    const deposit = findFact(children, GUEST_FACT_LABELS.refundableSecurityDeposit);
+    const deposit = findFact(
+      children,
+      GUEST_FACT_LABELS.refundableSecurityDeposit,
+    );
     const fit = findFact(children, GUEST_FACT_LABELS.fitReason);
     const photos = findFact(children, GUEST_FACT_LABELS.photos);
     const photoCount = photos === undefined ? undefined : Number(photos.value);
-    const image = children.find((child): child is HTMLImageElement => child instanceof HTMLImageElement);
-    const buttons = children.filter((child): child is HTMLButtonElement => child instanceof HTMLButtonElement);
+    const image = children.find(
+      (child): child is HTMLImageElement => child instanceof HTMLImageElement,
+    );
+    const buttons = children.filter(
+      (child): child is HTMLButtonElement => child instanceof HTMLButtonElement,
+    );
     const view = buttons[0];
     const parts: StayCardParts = {
       href: `/stays/${encodeURIComponent(unitId)}`,
       title: title.textContent?.trim() ?? "",
       where: where.value,
-      facts: (factLine.textContent ?? "").split(" · ").map((text) => text.trim()).filter(Boolean).map((text) => ({ icon: factIcon(text), text })),
+      facts: (factLine.textContent ?? "")
+        .split(" · ")
+        .map((text) => text.trim())
+        .filter(Boolean)
+        .map((text) => ({ icon: factIcon(text), text })),
       total: price.textContent?.trim() ?? "",
       totalLabel: priceLabel.textContent?.trim() ?? "",
       ...(deposit ? { deposit: deposit.value } : {}),
@@ -546,8 +849,23 @@ function decorateDiscoveryCards(mount: HTMLElement): void {
       ...(photoCount === undefined ? {} : { photoCount }),
     };
     // Whatever else Weaver rendered (the fit reason, amenity highlights, a budget note) stays, after the facts.
-    const known = new Set<Element | undefined>([title, where.element, factLine, priceLabel, price, deposit?.element, fit?.element, photos?.element, image, ...buttons]);
-    const extras = children.filter((child) => !known.has(child) && child.getAttribute("data-a2ui-component") !== "Divider");
+    const known = new Set<Element | undefined>([
+      title,
+      where.element,
+      factLine,
+      priceLabel,
+      price,
+      deposit?.element,
+      fit?.element,
+      photos?.element,
+      image,
+      ...buttons,
+    ]);
+    const extras = children.filter(
+      (child) =>
+        !known.has(child) &&
+        child.getAttribute("data-a2ui-component") !== "Divider",
+    );
     const template = document.createElement("template");
     template.innerHTML = stayCardInnerHtml(parts);
     card.replaceChildren(template.content);
@@ -555,10 +873,18 @@ function decorateDiscoveryCards(mount: HTMLElement): void {
     card.setAttribute("role", "listitem");
     const anchor = card.querySelector<HTMLAnchorElement>(".ui-stay-card__view");
     if (view && anchor) {
-      view.classList.add("ui-button", "ui-button--primary", "ui-button--block", "ui-stay-card__view");
+      view.classList.add(
+        "ui-button",
+        "ui-button--primary",
+        "ui-button--block",
+        "ui-stay-card__view",
+      );
       anchor.replaceWith(view);
     } else anchor?.remove();
-    openStayFrom(card.querySelector<HTMLElement>(".ui-stay-card__title a")!, view);
+    openStayFrom(
+      card.querySelector<HTMLElement>(".ui-stay-card__title a")!,
+      view,
+    );
     fit?.element.classList.add("stay-card__fit");
     const facts = card.querySelector(".ui-stay-card__facts");
     for (const extra of [...extras].reverse()) facts?.after(extra);
@@ -591,7 +917,10 @@ function decorateDiscoveryCards(mount: HTMLElement): void {
       const both = document.createElement("button");
       both.type = "button";
       both.className = "ui-link ui-result-rows__compare";
-      both.insertAdjacentHTML("beforeend", `See both side by side${icon("arrow-right")}`);
+      both.insertAdjacentHTML(
+        "beforeend",
+        `See both side by side${icon("arrow-right")}`,
+      );
       both.addEventListener("click", () => void compareBoth());
       rowList.after(both);
     }
@@ -607,8 +936,12 @@ let comparingBoth = false;
 async function compareBoth(): Promise<void> {
   if (comparingBoth) return;
   comparingBoth = true;
-  const compareButtons = (): (HTMLButtonElement | null)[] => [...activeWorkspace.querySelectorAll<HTMLElement>(".ui-stay-card")].map((card) => card.querySelector<HTMLButtonElement>(".stay-card__compare"));
-  const picked = (button: HTMLButtonElement | null | undefined): boolean => button?.textContent?.trim() === GUEST_COMPARE_LABELS.unpick;
+  const compareButtons = (): (HTMLButtonElement | null)[] =>
+    [...activeWorkspace.querySelectorAll<HTMLElement>(".ui-stay-card")].map(
+      (card) => card.querySelector<HTMLButtonElement>(".stay-card__compare"),
+    );
+  const picked = (button: HTMLButtonElement | null | undefined): boolean =>
+    button?.textContent?.trim() === GUEST_COMPARE_LABELS.unpick;
   try {
     const [first, second] = compareButtons();
     if (first && second) {
@@ -628,7 +961,8 @@ async function compareBoth(): Promise<void> {
       }
     }
     // Never silent: say what happened and where the per-stay Compare is.
-    const message = "The comparison could not be opened. Open See all results and choose Compare on each stay.";
+    const message =
+      "The comparison could not be opened. Open See all results and choose Compare on each stay.";
     addTurn("assistant", message);
     announce(message, true);
   } finally {
@@ -641,11 +975,21 @@ async function compareBoth(): Promise<void> {
  * screens, ADR-0078). It rearranges the Weaver elements, which keep their events.
  */
 function decorateComparison(mount: HTMLElement): void {
-  const root = mount.querySelector<HTMLElement>('[data-a2ui-component="Column"]');
+  const root = mount.querySelector<HTMLElement>(
+    '[data-a2ui-component="Column"]',
+  );
   if (!root) return;
-  const rowElements = [...root.querySelectorAll<HTMLElement>(':scope > [data-a2ui-component="Row"]')];
-  const attributeRows = rowElements.filter((row) => row.previousElementSibling?.tagName === "H3");
-  const actionRow = rowElements.find((row) => row.querySelector("button") !== null);
+  const rowElements = [
+    ...root.querySelectorAll<HTMLElement>(
+      ':scope > [data-a2ui-component="Row"]',
+    ),
+  ];
+  const attributeRows = rowElements.filter(
+    (row) => row.previousElementSibling?.tagName === "H3",
+  );
+  const actionRow = rowElements.find(
+    (row) => row.querySelector("button") !== null,
+  );
   if (attributeRows.length === 0) return;
   const table = document.createElement("div");
   table.className = "ui-compare";
@@ -657,7 +1001,11 @@ function decorateComparison(mount: HTMLElement): void {
     element.setAttribute("role", "row");
     return element;
   };
-  const cellsOf = (row: HTMLElement): HTMLElement[] => [...row.querySelectorAll<HTMLElement>(':scope > [data-a2ui-component="Column"], :scope > [data-weaver-mount] > [data-a2ui-component="Column"]')];
+  const cellsOf = (row: HTMLElement): HTMLElement[] => [
+    ...row.querySelectorAll<HTMLElement>(
+      ':scope > [data-a2ui-component="Column"], :scope > [data-weaver-mount] > [data-a2ui-component="Column"]',
+    ),
+  ];
   const head = line("ui-compare__row--head");
   const corner = document.createElement("div");
   corner.setAttribute("role", "columnheader");
@@ -666,7 +1014,8 @@ function decorateComparison(mount: HTMLElement): void {
     const heading = document.createElement("div");
     heading.className = "ui-compare__head";
     heading.setAttribute("role", "columnheader");
-    heading.textContent = cell.querySelector("small")?.textContent?.trim() ?? "";
+    heading.textContent =
+      cell.querySelector("small")?.textContent?.trim() ?? "";
     head.appendChild(heading);
   }
   table.appendChild(head);
@@ -700,20 +1049,28 @@ function decorateComparison(mount: HTMLElement): void {
 
 function enhanceSurfacePresentation(mount: HTMLElement, kind: string): void {
   mount.dataset.surfaceKind = kind;
-  for (const button of mount.querySelectorAll<HTMLButtonElement>("button")) button.classList.add("guest-action");
-  for (const field of mount.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>("input, textarea, select")) field.classList.add("guest-field");
-  for (const text of mount.querySelectorAll<HTMLElement>('[data-a2ui-component="Text"]')) {
+  for (const button of mount.querySelectorAll<HTMLButtonElement>("button"))
+    button.classList.add("guest-action");
+  for (const field of mount.querySelectorAll<
+    HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+  >("input, textarea, select"))
+    field.classList.add("guest-field");
+  for (const text of mount.querySelectorAll<HTMLElement>(
+    '[data-a2ui-component="Text"]',
+  )) {
     const value = text.textContent?.trim() ?? "";
     const isHeading = /^H[1-6]$/.test(text.tagName);
     const tone = isHeading ? undefined : guestStatusTone(value);
     if (tone) text.classList.add("guest-status", `guest-status--${tone}`);
-    if (/^No stays match|^No current matches/i.test(value)) text.classList.add("empty-state-title");
+    if (/^No stays match|^No current matches/i.test(value))
+      text.classList.add("empty-state-title");
   }
   if (kind === "discovery") decorateDiscoveryCards(mount);
   if (kind === "compare") decorateComparison(mount);
   if (kind === "unit-detail") organizeUnitDetail(mount);
   if (kind === "booking" || kind === "payment") organizeBookingTicket(mount);
-  if (activePayload?.requestScreen)organizeRequestScreen(mount, activePayload.requestScreen);
+  if (activePayload?.requestScreen)
+    organizeRequestScreen(mount, activePayload.requestScreen);
   if (activePayload?.confirmation)
     organizeConfirmation(mount, activePayload.confirmation);
   if (activePayload?.offerScreen)
@@ -728,45 +1085,107 @@ function isMoney(text: string): boolean {
 }
 
 function isPriceLabel(text: string): boolean {
-  return text.startsWith(GUEST_GLOSSARY.allInStayTotal) || text.startsWith("Indicative nightly rate");
+  return (
+    text.startsWith(GUEST_GLOSSARY.allInStayTotal) ||
+    text.startsWith("Indicative nightly rate")
+  );
 }
 
 function isSafeInternalRoute(value: unknown): value is string {
-  if (typeof value !== "string" || value === "" || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) return false;
-  try { return new URL(value, window.location.origin).origin === window.location.origin; } catch { return false; }
+  if (
+    typeof value !== "string" ||
+    value === "" ||
+    !value.startsWith("/") ||
+    value.startsWith("//") ||
+    value.includes("\\")
+  )
+    return false;
+  try {
+    return (
+      new URL(value, window.location.origin).origin === window.location.origin
+    );
+  } catch {
+    return false;
+  }
 }
 
 function isStringList(value: unknown): value is readonly string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === "string");
+  return (
+    Array.isArray(value) && value.every((item) => typeof item === "string")
+  );
 }
 
 function isWaitingState(value: unknown): value is GuestWaitingState {
-  return isRecord(value)
-    && ["operator-response", "offer-payment-window", "payment-window"].includes(String(value.kind))
-    && typeof value.heading === "string" && typeof value.deadlineText === "string"
-    && typeof value.deadlineAt === "string" && Number.isFinite(Date.parse(value.deadlineAt))
-    && typeof value.serverNow === "string" && Number.isFinite(Date.parse(value.serverNow))
-    && isStringList(value.outcomes) && isStringList(value.meanwhile);
+  return (
+    isRecord(value) &&
+    ["operator-response", "offer-payment-window", "payment-window"].includes(
+      String(value.kind),
+    ) &&
+    typeof value.heading === "string" &&
+    typeof value.deadlineText === "string" &&
+    typeof value.deadlineAt === "string" &&
+    Number.isFinite(Date.parse(value.deadlineAt)) &&
+    typeof value.serverNow === "string" &&
+    Number.isFinite(Date.parse(value.serverNow)) &&
+    isStringList(value.outcomes) &&
+    isStringList(value.meanwhile)
+  );
 }
 
 function isConfirmation(value: unknown): value is ConfirmationContent {
-  return isRecord(value) && typeof value.bookingReference === "string" && value.bookingReference !== ""
-    && typeof value.depositCollected === "boolean" && isStringList(value.steps)
-    && isSafeInternalRoute(value.conversationHref) && isSafeInternalRoute(value.detailsHref) && typeof value.details === "string";
+  return (
+    isRecord(value) &&
+    typeof value.bookingReference === "string" &&
+    value.bookingReference !== "" &&
+    typeof value.depositCollected === "boolean" &&
+    isStringList(value.steps) &&
+    isSafeInternalRoute(value.conversationHref) &&
+    isSafeInternalRoute(value.detailsHref) &&
+    typeof value.details === "string"
+  );
 }
 
 function isRequestScreen(value: unknown): value is RequestScreenContent {
-  if (!isRecord(value) || typeof value.state !== "string" || !["draft", "review", "sent", "not-accepted"].includes(value.state)
-    || typeof value.tone !== "string" || !["neutral", "warning", "danger"].includes(value.tone)
-    || typeof value.title !== "string" || typeof value.status !== "string" || !isStringList(value.steps) || !isStringList(value.notes)) return false;
-  const action = (candidate: unknown): boolean => isRecord(candidate) && isSafeInternalRoute(candidate.path) && typeof candidate.label === "string"
-    && (candidate.surfaceId === undefined || typeof candidate.surfaceId === "string");
-  if (!action(value.primary) || (value.secondary !== undefined && !action(value.secondary))) return false;
-  if (["banner", "provider", "guests", "sentAt"].some((key) => value[key] !== undefined && typeof value[key] !== "string")) return false;
-  if (value.selfBooking !== undefined && typeof value.selfBooking !== "boolean") return false;
-  if (value.changeHref !== undefined && !isSafeInternalRoute(value.changeHref)) return false;
-  return value.deadline === undefined || (isRecord(value.deadline) && typeof value.deadline.iso === "string"
-    && Number.isFinite(Date.parse(value.deadline.iso)) && typeof value.deadline.text === "string");
+  if (
+    !isRecord(value) ||
+    typeof value.state !== "string" ||
+    !["draft", "review", "sent", "not-accepted"].includes(value.state) ||
+    typeof value.tone !== "string" ||
+    !["neutral", "warning", "danger"].includes(value.tone) ||
+    typeof value.title !== "string" ||
+    typeof value.status !== "string" ||
+    !isStringList(value.steps) ||
+    !isStringList(value.notes)
+  )
+    return false;
+  const action = (candidate: unknown): boolean =>
+    isRecord(candidate) &&
+    isSafeInternalRoute(candidate.path) &&
+    typeof candidate.label === "string" &&
+    (candidate.surfaceId === undefined ||
+      typeof candidate.surfaceId === "string");
+  if (
+    !action(value.primary) ||
+    (value.secondary !== undefined && !action(value.secondary))
+  )
+    return false;
+  if (
+    ["banner", "provider", "guests", "sentAt"].some(
+      (key) => value[key] !== undefined && typeof value[key] !== "string",
+    )
+  )
+    return false;
+  if (value.selfBooking !== undefined && typeof value.selfBooking !== "boolean")
+    return false;
+  if (value.changeHref !== undefined && !isSafeInternalRoute(value.changeHref))
+    return false;
+  return (
+    value.deadline === undefined ||
+    (isRecord(value.deadline) &&
+      typeof value.deadline.iso === "string" &&
+      Number.isFinite(Date.parse(value.deadline.iso)) &&
+      typeof value.deadline.text === "string")
+  );
 }
 
 function isOfferScreen(value: unknown): value is OfferScreenContent {
@@ -817,14 +1236,51 @@ function isPaymentScreen(value: unknown): value is PaymentScreenContent {
 
 function isSurfacePayload(value: unknown): value is GuestSurfacePayload {
   if (
-    !isRecord(value) || typeof value.surfaceId !== "string" || value.surfaceId.trim() === "" || !Array.isArray(value.a2uiMessages)) return false;
-  if (value.mode !== undefined && value.mode !== "text" && value.mode !== "inline-surface" && value.mode !== "focused-surface") return false;
-  if (value.status !== undefined && (typeof value.status !== "string" || !["active", "superseded", "stale", "expired", "deleted", "fallback"].includes(value.status))) return false;
-  if (value.summary !== undefined && typeof value.summary !== "string") return false;
-  if (value.textFallback !== undefined && typeof value.textFallback !== "string") return false;
-  if (value.conventionalRouteLabel !== undefined && typeof value.conventionalRouteLabel !== "string") return false;
-  if (value.waiting !== undefined && !isWaitingState(value.waiting)) return false;
-  if (value.requestScreen !== undefined && !isRequestScreen(value.requestScreen))return false;
+    !isRecord(value) ||
+    typeof value.surfaceId !== "string" ||
+    value.surfaceId.trim() === "" ||
+    !Array.isArray(value.a2uiMessages)
+  )
+    return false;
+  if (
+    value.mode !== undefined &&
+    value.mode !== "text" &&
+    value.mode !== "inline-surface" &&
+    value.mode !== "focused-surface"
+  )
+    return false;
+  if (
+    value.status !== undefined &&
+    (typeof value.status !== "string" ||
+      ![
+        "active",
+        "superseded",
+        "stale",
+        "expired",
+        "deleted",
+        "fallback",
+      ].includes(value.status))
+  )
+    return false;
+  if (value.summary !== undefined && typeof value.summary !== "string")
+    return false;
+  if (
+    value.textFallback !== undefined &&
+    typeof value.textFallback !== "string"
+  )
+    return false;
+  if (
+    value.conventionalRouteLabel !== undefined &&
+    typeof value.conventionalRouteLabel !== "string"
+  )
+    return false;
+  if (value.waiting !== undefined && !isWaitingState(value.waiting))
+    return false;
+  if (
+    value.requestScreen !== undefined &&
+    !isRequestScreen(value.requestScreen)
+  )
+    return false;
   if (value.confirmation !== undefined && !isConfirmation(value.confirmation))
     return false;
   if (value.offerScreen !== undefined && !isOfferScreen(value.offerScreen))
@@ -841,30 +1297,85 @@ function isSurfacePayload(value: unknown): value is GuestSurfacePayload {
 }
 
 const JOURNEY_STATE_TEXT: Readonly<Record<JourneyStepState, string>> = {
-  done: "completed", current: "current step", failed: "not completed", upcoming: "not started",
+  done: "completed",
+  current: "current step",
+  failed: "not completed",
+  upcoming: "not started",
 };
 
 function isJourney(value: unknown): value is GuestJourney {
-  if (!isRecord(value) || typeof value.current !== "string" || !Array.isArray(value.steps) || value.steps.length === 0) return false;
-  return value.steps.every((step) => isRecord(step) && typeof step.id === "string" && typeof step.label === "string"
-    && typeof step.state === "string" && step.state in JOURNEY_STATE_TEXT);
+  if (
+    !isRecord(value) ||
+    typeof value.current !== "string" ||
+    !Array.isArray(value.steps) ||
+    value.steps.length === 0
+  )
+    return false;
+  return value.steps.every(
+    (step) =>
+      isRecord(step) &&
+      typeof step.id === "string" &&
+      typeof step.label === "string" &&
+      typeof step.state === "string" &&
+      step.state in JOURNEY_STATE_TEXT,
+  );
 }
 
 function isCriteria(value: unknown): value is GuestCriteria {
-  if (!isRecord(value) || typeof value.key !== "string" || typeof value.editable !== "boolean" || typeof value.canUndo !== "boolean") return false;
-  if (!Array.isArray(value.areas) || !value.areas.every((area) => isRecord(area) && typeof area.id === "string" && typeof area.label === "string")) return false;
-  const labelled = (field: unknown): boolean => field === undefined || (isRecord(field) && typeof field.label === "string");
-  return labelled(value.where) && labelled(value.when) && labelled(value.guests) && labelled(value.budget);
+  if (
+    !isRecord(value) ||
+    typeof value.key !== "string" ||
+    typeof value.editable !== "boolean" ||
+    typeof value.canUndo !== "boolean"
+  )
+    return false;
+  if (
+    !Array.isArray(value.areas) ||
+    !value.areas.every(
+      (area) =>
+        isRecord(area) &&
+        typeof area.id === "string" &&
+        typeof area.label === "string",
+    )
+  )
+    return false;
+  const labelled = (field: unknown): boolean =>
+    field === undefined || (isRecord(field) && typeof field.label === "string");
+  return (
+    labelled(value.where) &&
+    labelled(value.when) &&
+    labelled(value.guests) &&
+    labelled(value.budget)
+  );
 }
 
 function readGuestResponse(value: unknown): GuestResponse {
-  if (!isRecord(value) || typeof value.ok !== "boolean") throw new Error("Invalid server response");
-  if (value.messages !== undefined && (!Array.isArray(value.messages) || value.messages.some((message) => typeof message !== "string"))) throw new Error("Invalid response messages");
-  if (value.receipts !== undefined && (!Array.isArray(value.receipts) || value.receipts.some((receipt) => typeof receipt !== "string"))) throw new Error("Invalid response receipts");
-  if (value.surfaces !== undefined && (!Array.isArray(value.surfaces) || value.surfaces.some((surface) => !isSurfacePayload(surface)))) throw new Error("Invalid response surface");
-  if (value.journey !== undefined && !isJourney(value.journey)) throw new Error("Invalid response journey");
-  if (value.criteria !== undefined && !isCriteria(value.criteria)) throw new Error("Invalid response criteria");
-  if (value.quickReplies !== undefined && !isStringList(value.quickReplies)) throw new Error("Invalid response quick replies");
+  if (!isRecord(value) || typeof value.ok !== "boolean")
+    throw new Error("Invalid server response");
+  if (
+    value.messages !== undefined &&
+    (!Array.isArray(value.messages) ||
+      value.messages.some((message) => typeof message !== "string"))
+  )
+    throw new Error("Invalid response messages");
+  if (
+    value.receipts !== undefined &&
+    (!Array.isArray(value.receipts) ||
+      value.receipts.some((receipt) => typeof receipt !== "string"))
+  )
+    throw new Error("Invalid response receipts");
+  if (
+    value.surfaces !== undefined &&
+    (!Array.isArray(value.surfaces) ||
+      value.surfaces.some((surface) => !isSurfacePayload(surface)))
+  )
+    throw new Error("Invalid response surface");
+  if (value.journey !== undefined && !isJourney(value.journey))
+    throw new Error("Invalid response journey");
+  if (value.criteria !== undefined && !isCriteria(value.criteria))
+    throw new Error("Invalid response criteria");
+  if (value.quickReplies !== undefined && !isStringList(value.quickReplies))
+    throw new Error("Invalid response quick replies");
   return value as unknown as GuestResponse;
 }
 
@@ -895,7 +1406,9 @@ function trackTelemetry(event: ShellTelemetryEvent): void {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ event }),
     keepalive: true,
-  }).catch(() => { /* Observability must never block the interaction. */ });
+  }).catch(() => {
+    /* Observability must never block the interaction. */
+  });
 }
 
 function announce(text: string, assertive = false): void {
@@ -908,7 +1421,10 @@ function addTurn(role: "assistant" | "user", text: string): void {
   emptyState.hidden = true;
   const turn = document.createElement("article");
   turn.className = `turn ${role}`;
-  turn.setAttribute("aria-label", role === "user" ? "You" : "Shortlet Concierge");
+  turn.setAttribute(
+    "aria-label",
+    role === "user" ? "You" : "Shortlet Concierge",
+  );
   const bubble = document.createElement("div");
   bubble.className = "bubble";
   bubble.textContent = text;
@@ -928,7 +1444,14 @@ function addRetryTurn(text: string, retry: () => void): void {
   button.type = "button";
   button.className = "ui-button retry-action";
   button.textContent = "Retry";
-  button.addEventListener("click", () => { button.remove(); retry(); }, { once: true });
+  button.addEventListener(
+    "click",
+    () => {
+      button.remove();
+      retry();
+    },
+    { once: true },
+  );
   turn.appendChild(button);
 }
 
@@ -941,8 +1464,13 @@ function addMarker(text: string, className: string): void {
   transcript.appendChild(item);
 }
 
-function addHistoricalSummary(summary: ConversationShellState["historicalSummaries"][number]): void {
-  addMarker(formatGuestHistorySummary(summary.summary, summary.status), "historical-summary");
+function addHistoricalSummary(
+  summary: ConversationShellState["historicalSummaries"][number],
+): void {
+  addMarker(
+    formatGuestHistorySummary(summary.summary, summary.status),
+    "historical-summary",
+  );
 }
 
 // Issue 07: a receipt records a completed action as a quiet marker, not an assistant turn.
@@ -957,8 +1485,13 @@ function addTimelineEntry(entry: GuestTimelineEntry): void {
 
 function modeFor(surface: GuestSurfacePayload): PresentationMode {
   if (surface.mode) return surface.mode;
-  return surface.surfaceId.includes(":unit:") || surface.surfaceId.includes(":request:") || surface.surfaceId.includes(":offer:") || surface.surfaceId.includes(":booking:") || surface.surfaceId.includes(":payment:")
-    ? "focused-surface" : "inline-surface";
+  return surface.surfaceId.includes(":unit:") ||
+    surface.surfaceId.includes(":request:") ||
+    surface.surfaceId.includes(":offer:") ||
+    surface.surfaceId.includes(":booking:") ||
+    surface.surfaceId.includes(":payment:")
+    ? "focused-surface"
+    : "inline-surface";
 }
 
 function presentationFor(surface: GuestSurfacePayload): SurfacePresentation {
@@ -969,10 +1502,18 @@ function presentationFor(surface: GuestSurfacePayload): SurfacePresentation {
     // Missing authority metadata is unsafe: the browser must not infer that
     // a rich surface is actionable (ADR-0074).
     status: surface.status ?? "fallback",
-    summary: surface.summary ?? (mode === "focused-surface" ? "Stay details" : "Stays for your search"),
-    ...(surface.textFallback === undefined ? {} : { textFallback: surface.textFallback }),
-    ...(surface.conventionalRoute === undefined ? {} : { conventionalRoute: surface.conventionalRoute }),
-    ...(surface.conventionalRouteLabel === undefined ? {} : { conventionalRouteLabel: surface.conventionalRouteLabel }),
+    summary:
+      surface.summary ??
+      (mode === "focused-surface" ? "Stay details" : "Stays for your search"),
+    ...(surface.textFallback === undefined
+      ? {}
+      : { textFallback: surface.textFallback }),
+    ...(surface.conventionalRoute === undefined
+      ? {}
+      : { conventionalRoute: surface.conventionalRoute }),
+    ...(surface.conventionalRouteLabel === undefined
+      ? {}
+      : { conventionalRouteLabel: surface.conventionalRouteLabel }),
   };
 }
 
@@ -998,27 +1539,41 @@ function fallback(mount: HTMLElement, surface: SurfacePresentation): void {
 
 function showReopen(): void {
   const current = shellState.activeSurface;
-  const canReopen = current?.mode === "focused-surface" && current.status === "active" && activePayload !== undefined;
+  const canReopen =
+    current?.mode === "focused-surface" &&
+    current.status === "active" &&
+    activePayload !== undefined;
   workspaceReopen.hidden = !canReopen || shellState.focusedSurfaceOpen;
-  if (canReopen) workspaceReopen.textContent = `Return to ${guestSurfaceHeading(current.summary).toLocaleLowerCase()}`;
+  if (canReopen)
+    workspaceReopen.textContent = `Return to ${guestSurfaceHeading(current.summary).toLocaleLowerCase()}`;
 }
 
 function enhanceGuestContactField(mount: HTMLElement): void {
   const synchronize = (): void => {
-    const wrapper = mount.querySelector<HTMLElement>('[data-a2ui-component="TextField"]');
+    const wrapper = mount.querySelector<HTMLElement>(
+      '[data-a2ui-component="TextField"]',
+    );
     const label = wrapper?.querySelector<HTMLLabelElement>("label");
     const input = wrapper?.querySelector<HTMLInputElement>("input");
     if (!wrapper || !label || !input) return;
     const labelText = label.textContent?.trim() ?? "";
-    const kind = /^phone number/i.test(labelText) ? "phone" : /^email address/i.test(labelText) ? "email" : undefined;
+    const kind = /^phone number/i.test(labelText)
+      ? "phone"
+      : /^email address/i.test(labelText)
+        ? "email"
+        : undefined;
     if (!kind) return;
 
-    const hint = wrapper.previousElementSibling instanceof HTMLElement && wrapper.previousElementSibling.dataset.a2uiComponent === "Text"
-      ? wrapper.previousElementSibling
-      : undefined;
-    const error = wrapper.nextElementSibling instanceof HTMLElement && wrapper.nextElementSibling.dataset.a2uiComponent === "Text"
-      ? wrapper.nextElementSibling
-      : undefined;
+    const hint =
+      wrapper.previousElementSibling instanceof HTMLElement &&
+      wrapper.previousElementSibling.dataset.a2uiComponent === "Text"
+        ? wrapper.previousElementSibling
+        : undefined;
+    const error =
+      wrapper.nextElementSibling instanceof HTMLElement &&
+      wrapper.nextElementSibling.dataset.a2uiComponent === "Text"
+        ? wrapper.nextElementSibling
+        : undefined;
     if (hint) hint.id = `guest-contact-${kind}-help`;
     input.required = true;
     input.type = kind === "phone" ? "tel" : "email";
@@ -1029,12 +1584,19 @@ function enhanceGuestContactField(mount: HTMLElement): void {
       error.setAttribute("role", "alert");
       error.classList.add("guest-field-error");
     }
-    input.setAttribute("aria-describedby", [hint?.id, error?.id].filter(Boolean).join(" "));
+    input.setAttribute(
+      "aria-describedby",
+      [hint?.id, error?.id].filter(Boolean).join(" "),
+    );
     if (error) input.setAttribute("aria-invalid", "true");
     else input.removeAttribute("aria-invalid");
   };
   synchronize();
-  new MutationObserver(synchronize).observe(mount, { childList: true, subtree: true, characterData: true });
+  new MutationObserver(synchronize).observe(mount, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+  });
 }
 
 let countdownTimer: ReturnType<typeof setInterval> | undefined;
@@ -1050,12 +1612,14 @@ function formatRemaining(ms: number): string {
   if (ms <= 0) return "Checking the latest status…";
   const minutes = Math.ceil(ms / 60_000);
   if (minutes <= 1) return "Less than 1 min left";
-  return minutes < 60 ? `${minutes} min left` : `${Math.floor(minutes / 60)} h ${minutes % 60} min left`;
+  return minutes < 60
+    ? `${minutes} min left`
+    : `${Math.floor(minutes / 60)} h ${minutes % 60} min left`;
 }
 
 /**
  * Issue 10 AC2 / ADR-0079: at zero the browser asks the server for the
-* authoritative state; it never marks anything expired itself. Refetches are
+ * authoritative state; it never marks anything expired itself. Refetches are
  * spaced so a deadline on the boundary cannot loop.
  */
 function refetchWaitingState(retryWhile?: HTMLElement): void {
@@ -1076,7 +1640,7 @@ function refetchWaitingState(retryWhile?: HTMLElement): void {
 
 /**
  * Issue 10 AC1: the remaining time is the server's deadline minus the
-* server's own clock, then counted down with the monotonic clock. Changing
+ * server's own clock, then counted down with the monotonic clock. Changing
  * the device clock moves neither the countdown nor the displayed deadline.
  */
 function startCountdown(
@@ -1113,26 +1677,29 @@ function startCountdown(
 }
 
 function renderWaiting(waiting: GuestWaitingState): HTMLElement {
+  // Issue 11: the kit's panel, neutral banner and steps replace the retired waiting panel.
   const panel = document.createElement("section");
-  panel.className = "waiting-panel";
+  panel.className = "ui-panel";
   panel.dataset.waiting = waiting.kind;
   panel.setAttribute("aria-label", waiting.heading);
   const heading = document.createElement("h3");
   heading.textContent = waiting.heading;
   const deadline = document.createElement("p");
-  deadline.className = "waiting-deadline";
+  deadline.className = "ui-banner ui-banner--neutral waiting-deadline";
+  deadline.insertAdjacentHTML("afterbegin", icon("clock"));
+  const text = document.createElement("span");
   const absolute = document.createElement("span");
   absolute.className = "waiting-deadline-time";
   absolute.textContent = waiting.deadlineText;
   const countdown = document.createElement("span");
   countdown.className = "waiting-countdown";
-  deadline.append(absolute, " · ", countdown);
-  const nextLabel = document.createElement("p");
-  nextLabel.className = "waiting-label";
+  text.append(absolute, " · ", countdown);
+  deadline.append(text);
+  const nextLabel = document.createElement("h4");
   nextLabel.textContent = "What happens next";
-  const list = (items: readonly string[], className: string): HTMLElement => {
-    const element = document.createElement("ul");
-    element.className = className;
+  const steps = (items: readonly string[]): HTMLElement => {
+    const element = document.createElement("ol");
+    element.className = "ui-steps";
     for (const item of items) {
       const entry = document.createElement("li");
       entry.textContent = item;
@@ -1140,10 +1707,17 @@ function renderWaiting(waiting: GuestWaitingState): HTMLElement {
     }
     return element;
   };
-  panel.append(heading, deadline, nextLabel, list(waiting.outcomes, "waiting-outcomes"), list(waiting.meanwhile, "waiting-meanwhile"));
+  panel.append(heading, deadline, nextLabel, steps(waiting.outcomes));
+  for (const line of waiting.meanwhile) {
+    const note = document.createElement("p");
+    note.textContent = line;
+    panel.appendChild(note);
+  }
   startCountdown(waiting, countdown);
   return panel;
 }
+
+
 
 /**
  * Issue 09: below 64rem a focused workspace is a full-screen sheet. While it

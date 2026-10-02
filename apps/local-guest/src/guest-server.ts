@@ -1,11 +1,23 @@
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import {
+  createServer,
+  type IncomingMessage,
+  type ServerResponse,
+} from "node:http";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage, type JsonObject } from "@weaver/core";
+import {
+  A2UI_V091_BASIC_CATALOG_ID,
+  type A2UIComponent,
+  type A2UIServerMessage,
+  type JsonObject,
+} from "@weaver/core";
 import type { WebServerEventHandoff } from "@weaver/web";
-import type { CommandPrincipal, TransitionTelemetryEvent } from "../../../packages/platform-core/src/index.js";
+import type {
+  CommandPrincipal,
+  TransitionTelemetryEvent,
+} from "../../../packages/platform-core/src/index.js";
 import {
   discoveryArtifactToA2UI,
   createWeaverWebAgentAdapter,
@@ -52,11 +64,35 @@ import {
   type DiscoveryArtifactProjection,
 } from "../../../apps/web-agent/src/index.js";
 import { unitDetailArtifactFromProjection } from "../../../apps/web/src/unit-detail-artifact.js";
-import { errorPage, escapeHtml, icon, pageShell, prefersHtml } from "../../../apps/web/src/ui-kit.js";
-import { appFrameHtml, bankDetailsCardHtml, deadlineBannerHtml, formatWAT, paymentChoiceHtml, paymentLayoutHtml, paymentOutcomeBannerHtml, paymentRecoveryActionsHtml, paymentScreenHtml, priceBreakdownHtml, stayCardHtml, stayTicketHtml, transferSummaryHtml, uploadCardHtml, unitAboutHtml, unitIndicativePriceHtml, unitTilesHtml, type KitStatusTone, type StayTicketFacts } from "./guest-kit.js";
 import {
-  resolveDiscoveryServerEvent,
-} from "../../../apps/web/src/discovery-actions.js";
+  errorPage,
+  escapeHtml,
+  icon,
+  pageShell,
+  prefersHtml,
+} from "../../../apps/web/src/ui-kit.js";
+import {
+  appFrameHtml,
+  bankDetailsCardHtml,
+  deadlineBannerHtml,
+  formatWAT,
+  paymentChoiceHtml,
+  paymentLayoutHtml,
+  paymentOutcomeBannerHtml,
+  paymentRecoveryActionsHtml,
+  paymentScreenHtml,
+  priceBreakdownHtml,
+  stayCardHtml,
+  stayTicketHtml,
+  transferSummaryHtml,
+  uploadCardHtml,
+  type KitStatusTone,
+  unitAboutHtml,
+  unitIndicativePriceHtml,
+  unitTilesHtml,
+  type StayTicketFacts,
+} from "./guest-kit.js";
+import { resolveDiscoveryServerEvent } from "../../../apps/web/src/discovery-actions.js";
 import {
   conventionalBookingContractRoute,
   conventionalBookingRequestRoute,
@@ -69,12 +105,30 @@ import {
   getConventionalConditionalOfferView,
 } from "../../../apps/web/src/presentation.js";
 import { resolveConditionalOfferServerEvent } from "../../../apps/web/src/conditional-offer-actions.js";
-import { CARD_PAYMENT_INITIALIZE_CHECKOUT_EVENT, resolveCardPaymentServerEvent } from "../../../apps/web/src/card-payment-actions.js";
-import { createStayQuote, isEligibleUnit, normalizePhotoUrls, type Unit } from "../../../domains/shortlet/src/index.js";
-import { LISTING_GALLERY_STYLE, listingGalleryHtml } from "./listing-gallery.js";
-import { requestDraftArtifactFromProjection, requestDraftArtifactId } from "../../../apps/web/src/request-draft-artifact.js";
+import {
+  CARD_PAYMENT_INITIALIZE_CHECKOUT_EVENT,
+  resolveCardPaymentServerEvent,
+} from "../../../apps/web/src/card-payment-actions.js";
+import {
+  createStayQuote,
+  isEligibleUnit,
+  normalizePhotoUrls,
+  type Unit,
+} from "../../../domains/shortlet/src/index.js";
+import {
+  LISTING_GALLERY_STYLE,
+  listingGalleryHtml,
+} from "./listing-gallery.js";
+import {
+  requestDraftArtifactFromProjection,
+  requestDraftArtifactId,
+} from "../../../apps/web/src/request-draft-artifact.js";
 import type { RequestDraftArtifact } from "../../../apps/web/src/request-draft-artifact.js";
-import { draftScreenContent, requestScreenContent, type RequestScreenContent } from "../../web-agent/src/request-presentation.js";
+import {
+  draftScreenContent,
+  requestScreenContent,
+  type RequestScreenContent,
+} from "../../web-agent/src/request-presentation.js";
 import {
   appBarHtml,
   confirmationScreenHtml,
@@ -92,7 +146,8 @@ import {
 } from "../../web-agent/src/offer-presentation.js";
 import {
   confirmationContent,
-  type ConfirmationContent, } from "../../web-agent/src/confirmation-presentation.js";
+  type ConfirmationContent,
+} from "../../web-agent/src/confirmation-presentation.js";
 import type { ConditionalOfferArtifact } from "../../../apps/web/src/conditional-offer-artifact.js";
 import type { BookingContractArtifact } from "../../../apps/web/src/booking-contract-artifact.js";
 import type { CardPaymentApplication } from "../../../apps/web/src/card-payment-application.js";
@@ -110,35 +165,81 @@ import { hashSessionSecret } from "../../../domains/shortlet/src/index.js";
 import { multipartBoundary, multipartFile } from "./multipart.js";
 import { DEFAULT_RECEIPT_MAX_BYTES } from "./fixture.js";
 import { createPlatformCommandEnvelope as createManualTransferCommand } from "../../../packages/platform-core/src/index.js";
-import { ManualTransferError, type ManualTransfer } from "../../../domains/shortlet/src/index.js";
-import { BankTransferProviderError, DirectPaystackClient, isApprovedPaystackCheckoutUrl, loadPaystackConfiguration, type BankTransferCheckoutSession, type PaystackClient } from "../../../domains/shortlet/src/index.js";
-import { applyCriteriaEdit, budgetLabel, quickRepliesFor, searchAreaFor, SEARCH_AREAS, type CriteriaEdit } from "./concierge.js";
-import { amenityQuestions, extractStayRequestFacts, formatGuestDay, mergeStayRequestContext, resolveStayRequestContext, stayChangeRequested, unsupportedPreferenceNote, viewResultIntent, type DiscoverySearchContext, type StayRequestFilters } from "./concierge.js";
-import { handleGeminiTurn, type GeminiConciergeClient } from "./gemini-concierge.js";
+import {
+  ManualTransferError,
+  type ManualTransfer,
+} from "../../../domains/shortlet/src/index.js";
+import {
+  BankTransferProviderError,
+  DirectPaystackClient,
+  isApprovedPaystackCheckoutUrl,
+  loadPaystackConfiguration,
+  type BankTransferCheckoutSession,
+  type PaystackClient,
+} from "../../../domains/shortlet/src/index.js";
+import {
+  applyCriteriaEdit,
+  budgetLabel,
+  quickRepliesFor,
+  searchAreaFor,
+  SEARCH_AREAS,
+  type CriteriaEdit,
+} from "./concierge.js";
+import {
+  amenityQuestions,
+  extractStayRequestFacts,
+  formatGuestDay,
+  mergeStayRequestContext,
+  resolveStayRequestContext,
+  stayChangeRequested,
+  unsupportedPreferenceNote,
+  viewResultIntent,
+  type DiscoverySearchContext,
+  type StayRequestFilters,
+} from "./concierge.js";
+import {
+  handleGeminiTurn,
+  type GeminiConciergeClient,
+} from "./gemini-concierge.js";
 import type { Content } from "@google/genai";
 import { AssistantRuntime } from "./assistant/assistant-runtime.js";
 import { ScriptedAssistantModel } from "./assistant/scripted-assistant-model.js";
-import { createConciergeModelClient, loadConciergeConfiguration } from "./assistant/concierge-configuration.js";
-import { BudgetedModelClient, type ModelCallBudget } from "./assistant/model-call-budget.js";
+import {
+  createConciergeModelClient,
+  loadConciergeConfiguration,
+} from "./assistant/concierge-configuration.js";
+import {
+  BudgetedModelClient,
+  type ModelCallBudget,
+} from "./assistant/model-call-budget.js";
 import type { AssistantModelClient } from "./assistant/assistant-model.js";
 import {
   ASSISTANT_CONFIRM_ACTION_EVENT,
   ASSISTANT_CANCEL_ACTION_EVENT,
 } from "./assistant/pending-action-a2ui.js";
 
-const SHORTLET_FOUNDATION_CSS = readFileSync(new URL("../../web/src/shortlet-foundations.css", import.meta.url), "utf8");
+const SHORTLET_FOUNDATION_CSS = readFileSync(
+  new URL("../../web/src/shortlet-foundations.css", import.meta.url),
+  "utf8",
+);
 
 export interface GuestSurfacePayload {
   readonly surfaceId: string;
   readonly a2uiMessages: readonly A2UIServerMessage[];
   readonly mode?: "text" | "inline-surface" | "focused-surface";
-  readonly status?: "active" | "superseded" | "stale" | "expired" | "deleted" | "fallback";
+  readonly status?:
+    | "active"
+    | "superseded"
+    | "stale"
+    | "expired"
+    | "deleted"
+    | "fallback";
   readonly summary?: string;
   readonly textFallback?: string;
   readonly conventionalRoute?: string;
   readonly conventionalRouteLabel?: string;
   /** Issue 10: present only while the Guest waits on a server-owned deadline. */
-readonly waiting?: GuestWaitingState;
+  readonly waiting?: GuestWaitingState;
   readonly requestScreen?: RequestScreenContent;
   readonly confirmation?: ConfirmationContent;
   readonly offerScreen?: OfferScreenContent;
@@ -198,10 +299,18 @@ export interface GuestCriteria {
   readonly editable: boolean;
   readonly canUndo: boolean;
   readonly where?: { readonly area?: string; readonly label: string };
-  readonly when?: { readonly checkIn?: string; readonly nights?: number; readonly label: string };
+  readonly when?: {
+    readonly checkIn?: string;
+    readonly nights?: number;
+    readonly label: string;
+  };
   readonly guests?: { readonly count: number; readonly label: string };
   /** Issue 03b: always an All-In Stay Total comparison; "About" until it can be quoted. */
-  readonly budget?: { readonly naira: number; readonly per: "stay" | "night"; readonly label: string };
+  readonly budget?: {
+    readonly naira: number;
+    readonly per: "stay" | "night";
+    readonly label: string;
+  };
   readonly areas: readonly { readonly id: string; readonly label: string }[];
 }
 
@@ -214,7 +323,11 @@ export interface GuestRejection {
 export type GuestTurnResult = GuestTurnSuccess | GuestRejection;
 
 /** Issue 06b: the booking records that have an owner-checked conventional page (ADR-0080). */
-export type ConventionalBookingPageKind = "draft" | "request" | "offer" | "contract";
+export type ConventionalBookingPageKind =
+  | "draft"
+  | "request"
+  | "offer"
+  | "contract";
 
 /** Issue 13a: a live request, offer or Reservation in one of the Guest's threads. */
 export interface GuestCommittedWork {
@@ -230,7 +343,7 @@ export interface ConventionalBookingPage {
   readonly journey?: GuestJourney;
   readonly summary: string;
   readonly textFallback: string;
-readonly stay?: ConventionalStayDetails;
+  readonly stay?: ConventionalStayDetails;
   readonly requestScreen?: RequestScreenContent;
   readonly confirmation?: ConfirmationContent;
   readonly offerScreen?: OfferScreenContent;
@@ -258,10 +371,17 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 
 /** Fails closed unless the record's Primary Guest and tenant are the principal's (ADR-0070). */
 function primaryGuestIs(record: unknown, principal: CommandPrincipal): boolean {
-  if (!isPlainRecord(record) || !isPlainRecord(record.primaryGuest)) return false;
+  if (!isPlainRecord(record) || !isPlainRecord(record.primaryGuest))
+    return false;
   const guestId = record.primaryGuest.id;
-  return typeof guestId === "string" && !!principal.id && guestId === principal.id
-    && typeof record.tenantId === "string" && !!principal.tenantId && record.tenantId === principal.tenantId;
+  return (
+    typeof guestId === "string" &&
+    !!principal.id &&
+    guestId === principal.id &&
+    typeof record.tenantId === "string" &&
+    !!principal.tenantId &&
+    record.tenantId === principal.tenantId
+  );
 }
 
 const DISCOVERY_STAGE = "discovery";
@@ -275,7 +395,10 @@ const COMPARE_STAGE = "compare";
 /** Issue 14: a proposed replacement Request Draft awaiting the Guest's choice. */
 const DRAFT_REPLACEMENT_STAGE = "draft_replacement";
 
-function unitDetailSurfaceId(threadId: string, discoveryRevision: number): string {
+function unitDetailSurfaceId(
+  threadId: string,
+  discoveryRevision: number,
+): string {
   // ADR-0074: a newly selected detail is a new surface lifecycle; Weaver rejects duplicate createSurface IDs.
   return `thread-${threadId}:unit:detail:${discoveryRevision}`;
 }
@@ -294,9 +417,18 @@ export function criteriaSurfaceId(threadId: string): string {
 }
 
 function criteriaKey(context: DiscoverySearchContext | null): string {
-  return JSON.stringify([context?.city ?? null, context?.neighbourhood ?? null, context?.checkIn ?? null, context?.nights ?? null,
-    context?.datesConfirmed ?? null, context?.partySize ?? null, context?.bedrooms ?? null, context?.pendingLocationChange?.label ?? null,
-    context?.budget?.kobo ?? null, context?.budget?.per ?? null]);
+  return JSON.stringify([
+    context?.city ?? null,
+    context?.neighbourhood ?? null,
+    context?.checkIn ?? null,
+    context?.nights ?? null,
+    context?.datesConfirmed ?? null,
+    context?.partySize ?? null,
+    context?.bedrooms ?? null,
+    context?.pendingLocationChange?.label ?? null,
+    context?.budget?.kobo ?? null,
+    context?.budget?.per ?? null,
+  ]);
 }
 
 const CALENDAR_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -308,28 +440,69 @@ function isPositiveInteger(value: unknown): value is number {
 }
 
 /** Reads one strip edit; anything but the exact expected shape fails closed (ADR-0072). */
-function readCriteriaEdit(context: Readonly<Record<string, unknown>>): CriteriaEdit | null {
+function readCriteriaEdit(
+  context: Readonly<Record<string, unknown>>,
+): CriteriaEdit | null {
   const keys = Object.keys(context).sort().join(",");
-  if (context.field === "where" && keys === "area,basedOn,field" && typeof context.area === "string") return { field: "where", area: context.area };
-  if (context.field === "when" && keys === "basedOn,checkIn,field,nights" && typeof context.checkIn === "string" && CALENDAR_DATE.test(context.checkIn)
-    && !Number.isNaN(Date.parse(`${context.checkIn}T00:00:00Z`)) && new Date(`${context.checkIn}T00:00:00Z`).toISOString().startsWith(context.checkIn) && isPositiveInteger(context.nights)) {
+  if (
+    context.field === "where" &&
+    keys === "area,basedOn,field" &&
+    typeof context.area === "string"
+  )
+    return { field: "where", area: context.area };
+  if (
+    context.field === "when" &&
+    keys === "basedOn,checkIn,field,nights" &&
+    typeof context.checkIn === "string" &&
+    CALENDAR_DATE.test(context.checkIn) &&
+    !Number.isNaN(Date.parse(`${context.checkIn}T00:00:00Z`)) &&
+    new Date(`${context.checkIn}T00:00:00Z`)
+      .toISOString()
+      .startsWith(context.checkIn) &&
+    isPositiveInteger(context.nights)
+  ) {
     return { field: "when", checkIn: context.checkIn, nights: context.nights };
   }
-  if (context.field === "guests" && keys === "basedOn,field,partySize" && isPositiveInteger(context.partySize)) return { field: "guests", partySize: context.partySize };
+  if (
+    context.field === "guests" &&
+    keys === "basedOn,field,partySize" &&
+    isPositiveInteger(context.partySize)
+  )
+    return { field: "guests", partySize: context.partySize };
   // Issue 03b: a whole-naira budget, for the stay or per night; `clear` removes it.
-  if (context.field === "budget" && keys === "basedOn,field,naira,per" && isPositiveInteger(context.naira) && context.naira <= MAX_BUDGET_NAIRA
-    && (context.per === "stay" || context.per === "night")) {
-    return { field: "budget", budget: { kobo: context.naira * 100, per: context.per } };
+  if (
+    context.field === "budget" &&
+    keys === "basedOn,field,naira,per" &&
+    isPositiveInteger(context.naira) &&
+    context.naira <= MAX_BUDGET_NAIRA &&
+    (context.per === "stay" || context.per === "night")
+  ) {
+    return {
+      field: "budget",
+      budget: { kobo: context.naira * 100, per: context.per },
+    };
   }
-  if (context.field === "budget" && keys === "basedOn,clear,field" && context.clear === true) return { field: "budget", budget: null };
+  if (
+    context.field === "budget" &&
+    keys === "basedOn,clear,field" &&
+    context.clear === true
+  )
+    return { field: "budget", budget: null };
   return null;
 }
 const SHELL_TELEMETRY_EVENTS = [
-  "text-response-rendered", "inline-surface-rendered", "focused-surface-opened", "focused-surface-closed",
-  "surface-replaced", "stale-surface-encountered", "expired-surface-encountered", "fallback-rendered",
-  "conventional-route-fallback", "weaver-rendering-failure",
+  "text-response-rendered",
+  "inline-surface-rendered",
+  "focused-surface-opened",
+  "focused-surface-closed",
+  "surface-replaced",
+  "stale-surface-encountered",
+  "expired-surface-encountered",
+  "fallback-rendered",
+  "conventional-route-fallback",
+  "weaver-rendering-failure",
 ] as const;
-type ShellTelemetryEvent = typeof SHELL_TELEMETRY_EVENTS[number];
+type ShellTelemetryEvent = (typeof SHELL_TELEMETRY_EVENTS)[number];
 
 /**
  * Explicit local allow-list of Weaver-generated action events (ADR-0072).
@@ -360,7 +533,14 @@ const EVENT_STAGE_ALLOW_LIST: Readonly<Record<string, string>> = Object.freeze({
 const THREAD_ID_PATTERN = /^g-[a-f0-9-]{6,64}$/;
 
 /** Where the Guest is in the journey, for stage-aware free-text replies (issue 04a). */
-type GuestStage = "discovery" | "unit" | "draft" | "request" | "offer" | "payment" | "booking";
+type GuestStage =
+  | "discovery"
+  | "unit"
+  | "draft"
+  | "request"
+  | "offer"
+  | "payment"
+  | "booking";
 
 interface GuestThreadState {
   readonly threadId: string;
@@ -372,11 +552,18 @@ interface GuestThreadState {
   unitDetail: { readonly unitId: string; readonly artifactId: string } | null;
   requestId: string | null;
   draftId: string | null;
-  draftQuote: { readonly allInStayTotalKobo: number; readonly refundableSecurityDepositKobo: number; readonly amountDueNowKobo: number } | null;
+  draftQuote: {
+    readonly allInStayTotalKobo: number;
+    readonly refundableSecurityDepositKobo: number;
+    readonly amountDueNowKobo: number;
+  } | null;
   offerId: string | null;
   activeSurfaces: Map<string, string>;
   supersededSurfaces: Set<string>;
-  geminiLastSearch: { readonly surfaceId: string; readonly a2uiMessages: readonly A2UIServerMessage[] } | null;
+  geminiLastSearch: {
+    readonly surfaceId: string;
+    readonly a2uiMessages: readonly A2UIServerMessage[];
+  } | null;
   timeline: GuestTimelineEntry[];
   lastSurfaces: GuestSurfacePayload[];
   /** Issue 03a: the criteria of each executed search, oldest first (for "Undo last change"). */
@@ -448,13 +635,24 @@ export class LocalGuestApp {
 
   async #handleTurn(threadId: string, text: string): Promise<GuestTurnResult> {
     if (!THREAD_ID_PATTERN.test(threadId)) {
-      return { ok: false, code: "INVALID_THREAD", message: "Unknown conversation." };
+      return {
+        ok: false,
+        code: "INVALID_THREAD",
+        message: "Unknown conversation.",
+      };
     }
 
-    if (this.#assistantRuntime && (this.#modelCallBudget?.hasCapacity() ?? true)) {
+    if (
+      this.#assistantRuntime &&
+      (this.#modelCallBudget?.hasCapacity() ?? true)
+    ) {
       const output = await this.#assistantRuntime.handleTurn(threadId, text);
       if (!output.ok) {
-        return { ok: false, code: output.code ?? "CONCIERGE_UNAVAILABLE", message: output.message ?? "The assistant is unavailable." };
+        return {
+          ok: false,
+          code: output.code ?? "CONCIERGE_UNAVAILABLE",
+          message: output.message ?? "The assistant is unavailable.",
+        };
       }
       return {
         ok: true,
@@ -463,7 +661,10 @@ export class LocalGuestApp {
       };
     }
 
-    const thread = this.#threads.get(threadId) ?? this.#loadThread(threadId) ?? this.#createThread(threadId);
+    const thread =
+      this.#threads.get(threadId) ??
+      this.#loadThread(threadId) ??
+      this.#createThread(threadId);
     const refreshed = this.#refreshWorkflow(thread);
     // Issue 04a AC1: every message gets a reply for the stage the Guest is in,
     // including when a refresh re-presents the current surface.
@@ -471,7 +672,18 @@ export class LocalGuestApp {
     if (refreshed) {
       if (!refreshed.ok) return refreshed;
       const messages = [...refreshed.messages, ...(stageReply ?? [])];
-      return { ...refreshed, messages: messages.length > 0 ? messages : [this.#capabilityReply(this.#guestStage(thread), this.#currentUnit(thread))] };
+      return {
+        ...refreshed,
+        messages:
+          messages.length > 0
+            ? messages
+            : [
+                this.#capabilityReply(
+                  this.#guestStage(thread),
+                  this.#currentUnit(thread),
+                ),
+              ],
+      };
     }
     if (stageReply) return { ok: true, messages: stageReply, surfaces: [] };
     const replacement = this.#proposeDraftReplacement(thread, text);
@@ -487,69 +699,127 @@ export class LocalGuestApp {
           search: (filters) => {
             this.#prepareDiscovery(thread);
             const adapter = createWeaverWebAgentAdapter({
-              query: { search: (query) => this.#environment.discoveryQuery.search(query) },
+              query: {
+                search: (query) =>
+                  this.#environment.discoveryQuery.search(query),
+              },
               createSurfaceId: () => thread.discoverySurfaceId,
             });
             const result = adapter.search({ ...filters });
             thread.discoveryArtifact = result.artifact;
-            thread.activeSurfaces.set(DISCOVERY_STAGE, thread.discoverySurfaceId);
-            this.#emitTransition(thread, "unit.discovery.results_produced", { aggregateType: "discovery", aggregateId: result.artifact.id, surfaceId: thread.discoverySurfaceId });
+            thread.activeSurfaces.set(
+              DISCOVERY_STAGE,
+              thread.discoverySurfaceId,
+            );
+            this.#emitTransition(thread, "unit.discovery.results_produced", {
+              aggregateType: "discovery",
+              aggregateId: result.artifact.id,
+              surfaceId: thread.discoverySurfaceId,
+            });
             thread.geminiLastSearch = result;
             return {
               resultCount: result.artifact.facts.results.length,
               location: filters.location,
-              ...(filters.neighbourhood ? { neighbourhood: filters.neighbourhood } : {}),
+              ...(filters.neighbourhood
+                ? { neighbourhood: filters.neighbourhood }
+                : {}),
               checkIn: filters.checkIn,
               checkOut: filters.checkOut,
             };
           },
         });
-        if (live.kind === "clarify") return { ok: true, messages: [live.reply], surfaces: [] };
+        if (live.kind === "clarify")
+          return { ok: true, messages: [live.reply], surfaces: [] };
         const result = thread.geminiLastSearch;
-        if (!result) throw new Error("Gemini search did not produce a discovery surface");
+        if (!result)
+          throw new Error("Gemini search did not produce a discovery surface");
         return {
           ok: true,
           messages: [live.reply],
-          surfaces: [{
-            surfaceId: result.surfaceId,
-            a2uiMessages: result.a2uiMessages,
-            mode: "inline-surface",
-            summary: discoverySummary(thread.discoveryArtifact?.facts.filters),
-            conventionalRoute: conventionalSearchRoute({}),
-          }],
+          surfaces: [
+            {
+              surfaceId: result.surfaceId,
+              a2uiMessages: result.a2uiMessages,
+              mode: "inline-surface",
+              summary: discoverySummary(
+                thread.discoveryArtifact?.facts.filters,
+              ),
+              conventionalRoute: conventionalSearchRoute({}),
+            },
+          ],
         };
       } catch {
-        return { ok: false, code: "CONCIERGE_UNAVAILABLE", message: "The concierge is temporarily unavailable. Please try again." };
+        return {
+          ok: false,
+          code: "CONCIERGE_UNAVAILABLE",
+          message:
+            "The concierge is temporarily unavailable. Please try again.",
+        };
       }
     }
 
     const previousContext = thread.discoveryContext;
     // Issue 01: dates resolve against the injected clock and are never assumed.
-    const facts = extractStayRequestFacts(text, { now: this.#environment.clock() });
+    const facts = extractStayRequestFacts(text, {
+      now: this.#environment.clock(),
+    });
     const merged = mergeStayRequestContext(previousContext, facts, text);
     thread.discoveryContext = merged.context;
     // Issue 02 AC3: an unfilterable preference is acknowledged on every reply.
     const note = unsupportedPreferenceNote(facts.unsupportedPreferences);
-    const acknowledged = (result: GuestTurnResult): GuestTurnResult => note !== undefined && result.ok ? { ...result, messages: [...result.messages, note] } : result;
+    const acknowledged = (result: GuestTurnResult): GuestTurnResult =>
+      note !== undefined && result.ok
+        ? { ...result, messages: [...result.messages, note] }
+        : result;
     if (merged.conflict) {
       // A location conflict is intentionally surfaced. No search runs until the
       // Guest resolves it, and every other accumulated constraint is retained.
-      return acknowledged({ ok: true, messages: [merged.conflict.question], surfaces: [] });
+      return acknowledged({
+        ok: true,
+        messages: [merged.conflict.question],
+        surfaces: [],
+      });
     }
-    const resolution = resolveStayRequestContext(merged.context, { now: this.#environment.clock() });
+    const resolution = resolveStayRequestContext(merged.context, {
+      now: this.#environment.clock(),
+    });
     if (resolution.kind !== "search") {
       // Clarifications, date confirmations and limit refusals never run a search.
-      return acknowledged({ ok: true, messages: [resolution.reply], surfaces: [], ...(resolution.kind === "clarify" ? { quickReplies: quickRepliesFor(resolution.next) } : {}) });
+      return acknowledged({
+        ok: true,
+        messages: [resolution.reply],
+        surfaces: [],
+        ...(resolution.kind === "clarify"
+          ? { quickReplies: quickRepliesFor(resolution.next) }
+          : {}),
+      });
     }
 
-    const providedFacts = Object.keys(facts).some((key) => key !== "unsupportedPreferences") || merged.confirmedDates === true;
-    const resolvedConflict = previousContext?.pendingLocationChange !== undefined && merged.context.pendingLocationChange === undefined;
+    const providedFacts =
+      Object.keys(facts).some((key) => key !== "unsupportedPreferences") ||
+      merged.confirmedDates === true;
+    const resolvedConflict =
+      previousContext?.pendingLocationChange !== undefined &&
+      merged.context.pendingLocationChange === undefined;
     if (!providedFacts && !resolvedConflict && thread.discoveryArtifact) {
       // Issue 10 (C4): "show me the apartment" opens a result, or asks which one, instead of being ignored.
       const viewIntent = viewResultIntent(text);
-      if (viewIntent) return acknowledged(this.#viewResultFromChat(thread, thread.discoveryArtifact, viewIntent.position));
+      if (viewIntent)
+        return acknowledged(
+          this.#viewResultFromChat(
+            thread,
+            thread.discoveryArtifact,
+            viewIntent.position,
+          ),
+        );
       // An unrelated turn must not replace the current authoritative results.
-      return acknowledged({ ok: true, messages: ["Your current search results are still active. Tell me how you would like to refine them, for example: “Only show two-bedroom apartments”."], surfaces: [] });
+      return acknowledged({
+        ok: true,
+        messages: [
+          "Your current search results are still active. Tell me how you would like to refine them, for example: “Only show two-bedroom apartments”.",
+        ],
+        surfaces: [],
+      });
     }
 
     return acknowledged(this.#executeDiscovery(thread, resolution.filters));
@@ -566,9 +836,17 @@ export class LocalGuestApp {
   }
 
   #currentUnit(thread: GuestThreadState): Unit | null {
-    const unitId = thread.unitDetail?.unitId
-      ?? (thread.requestId ? this.#environment.bookingRequestApp.getArtifact(thread.requestId, this.#environment.guestPrincipal()).facts.unitId : undefined);
-    return unitId === undefined ? null : this.#environment.unitRepository.findById(unitId) as Unit | null;
+    const unitId =
+      thread.unitDetail?.unitId ??
+      (thread.requestId
+        ? this.#environment.bookingRequestApp.getArtifact(
+            thread.requestId,
+            this.#environment.guestPrincipal(),
+          ).facts.unitId
+        : undefined);
+    return unitId === undefined
+      ? null
+      : (this.#environment.unitRepository.findById(unitId) as Unit | null);
   }
 
   /**
@@ -580,38 +858,62 @@ export class LocalGuestApp {
   #stageReply(thread: GuestThreadState, text: string): string[] | null {
     const stage = this.#guestStage(thread);
     const unit = this.#currentUnit(thread);
-    const answers = unit === null ? [] : amenityQuestions(text).map((question) => {
-      const listed = question.ids.find((id) => unit.amenities.includes(id));
-      return listed === undefined
-        ? `${question.label} isn't listed for ${unit.title}, so I can't confirm it.`
-        : `Yes: ${unit.title} lists ${guestAmenityLabel(listed)}.`;
+    const answers =
+      unit === null
+        ? []
+        : amenityQuestions(text).map((question) => {
+            const listed = question.ids.find((id) =>
+              unit.amenities.includes(id),
+            );
+            return listed === undefined
+              ? `${question.label} isn't listed for ${unit.title}, so I can't confirm it.`
+              : `Yes: ${unit.title} lists ${guestAmenityLabel(listed)}.`;
+          });
+    const facts = extractStayRequestFacts(text, {
+      now: this.#environment.clock(),
     });
-    const facts = extractStayRequestFacts(text, { now: this.#environment.clock() });
     if (stage === "discovery" || stage === "unit" || stage === "draft") {
       // Draft changes belong to issue 14; a turn with new stay facts stays in discovery.
-      const hasStayFacts = Object.keys(facts).some((key) => key !== "unsupportedPreferences");
+      const hasStayFacts = Object.keys(facts).some(
+        (key) => key !== "unsupportedPreferences",
+      );
       return answers.length > 0 && !hasStayFacts ? answers : null;
     }
-    const change = stayChangeRequested(facts, text) ? [this.#changeExplanation(stage, unit)] : [];
+    const change = stayChangeRequested(facts, text)
+      ? [this.#changeExplanation(stage, unit)]
+      : [];
     const replies = [...change, ...answers];
     return replies.length > 0 ? replies : [this.#capabilityReply(stage, unit)];
   }
 
   /** ADR-0005/0060: after submission nothing changes silently; say why or how. */
-  #changeExplanation(stage: "request" | "offer" | "payment" | "booking", unit: Unit | null): string {
+  #changeExplanation(
+    stage: "request" | "offer" | "payment" | "booking",
+    unit: Unit | null,
+  ): string {
     const operator = guestOperatorName(unit?.operator?.name);
-    if (stage === "request") return `A sent ${GUEST_GLOSSARY.bookingRequest} can't be changed while ${operator} reviews it. If ${operator} confirms, you can choose not to accept the offer at no cost and search again with new details. Nothing has been changed.`;
-    if (stage === "offer") return `A ${GUEST_GLOSSARY.conditionalBookingOffer} can't be changed. You can choose not to accept it at no cost and search again with new details. Nothing has been changed.`;
-    if (stage === "payment") return "An accepted offer can't be changed from this conversation. Nothing has been changed.";
+    if (stage === "request")
+      return `A sent ${GUEST_GLOSSARY.bookingRequest} can't be changed while ${operator} reviews it. If ${operator} confirms, you can choose not to accept the offer at no cost and search again with new details. Nothing has been changed.`;
+    if (stage === "offer")
+      return `A ${GUEST_GLOSSARY.conditionalBookingOffer} can't be changed. You can choose not to accept it at no cost and search again with new details. Nothing has been changed.`;
+    if (stage === "payment")
+      return "An accepted offer can't be changed from this conversation. Nothing has been changed.";
     return `Changes to a confirmed ${GUEST_GLOSSARY.reservation} are made as a booking amendment, which re-checks availability and price. I can't start one from this conversation yet. Nothing has been changed.`;
   }
 
   #capabilityReply(stage: GuestStage, unit: Unit | null): string {
-    const about = unit === null ? "" : ` I can also answer questions about ${unit.title}, such as parking or Wi-Fi.`;
-    if (stage === "request") return `Your ${GUEST_GLOSSARY.bookingRequest} is with ${guestOperatorName(unit?.operator?.name)} for review; the details are in the workspace.${about}`;
-    if (stage === "offer") return `Your ${GUEST_GLOSSARY.conditionalBookingOffer} is in the workspace. Review it and accept it there if it suits you.${about}`;
-    if (stage === "payment") return `Your payment step is in the workspace.${about}`;
-    if (stage === "booking") return `Your booking details are in the workspace.${about}`;
+    const about =
+      unit === null
+        ? ""
+        : ` I can also answer questions about ${unit.title}, such as parking or Wi-Fi.`;
+    if (stage === "request")
+      return `Your ${GUEST_GLOSSARY.bookingRequest} is with ${guestOperatorName(unit?.operator?.name)} for review; the details are in the workspace.${about}`;
+    if (stage === "offer")
+      return `Your ${GUEST_GLOSSARY.conditionalBookingOffer} is in the workspace. Review it and accept it there if it suits you.${about}`;
+    if (stage === "payment")
+      return `Your payment step is in the workspace.${about}`;
+    if (stage === "booking")
+      return `Your booking details are in the workspace.${about}`;
     return `Your current details are in the workspace.${about}`;
   }
 
@@ -620,35 +922,55 @@ export class LocalGuestApp {
    * publishes its DiscoveryArtifact through the existing A2UI/Weaver surface.
    * The conversational layer never manufactures Units, prices or availability.
    */
-  #executeDiscovery(thread: GuestThreadState, filters: StayRequestFilters, options: { readonly recordHistory?: boolean } = {}): GuestTurnResult {
+  #executeDiscovery(
+    thread: GuestThreadState,
+    filters: StayRequestFilters,
+    options: { readonly recordHistory?: boolean } = {},
+  ): GuestTurnResult {
     if (options.recordHistory !== false && thread.discoveryContext) {
       thread.searchHistory.push({ ...thread.discoveryContext });
       // A storage bound for the durable projection, not a Guest-facing policy.
-      if (thread.searchHistory.length > MAX_SEARCH_HISTORY) thread.searchHistory.splice(0, thread.searchHistory.length - MAX_SEARCH_HISTORY);
+      if (thread.searchHistory.length > MAX_SEARCH_HISTORY)
+        thread.searchHistory.splice(
+          0,
+          thread.searchHistory.length - MAX_SEARCH_HISTORY,
+        );
     }
     this.#prepareDiscovery(thread);
     const adapter = createWeaverWebAgentAdapter({
-      query: { search: (query) => this.#environment.discoveryQuery.search(query) },
+      query: {
+        search: (query) => this.#environment.discoveryQuery.search(query),
+      },
       createSurfaceId: () => thread.discoverySurfaceId,
     });
     const result = adapter.search({ ...filters });
     thread.discoveryArtifact = result.artifact;
     thread.activeSurfaces.set(DISCOVERY_STAGE, thread.discoverySurfaceId);
-    this.#emitTransition(thread, "unit.discovery.results_produced", { aggregateType: "discovery", aggregateId: result.artifact.id, surfaceId: thread.discoverySurfaceId });
+    this.#emitTransition(thread, "unit.discovery.results_produced", {
+      aggregateType: "discovery",
+      aggregateId: result.artifact.id,
+      surfaceId: thread.discoverySurfaceId,
+    });
 
     return {
       ok: true,
       messages: [
         `I found ${result.artifact.facts.results.length} eligible place${result.artifact.facts.results.length === 1 ? "" : "s"} in ${filters.location}${filters.maxPriceKobo === undefined ? "" : ` within your ${formatNgnKobo(filters.maxPriceKobo)} budget (${GUEST_GLOSSARY.allInStayTotal})`} for your stay from ${formatGuestDay(filters.checkIn)} to ${formatGuestDay(filters.checkOut)}. You can view the details below.`,
       ],
-      surfaces: [{
-        surfaceId: result.surfaceId,
-        a2uiMessages: result.a2uiMessages,
-        mode: "inline-surface",
-        summary: discoverySummary({ location: filters.location, neighbourhood: filters.neighbourhood, partySize: filters.partySize }),
-        textFallback: result.fallback.message,
-        conventionalRoute: result.fallback.conventionalRoute,
-      }],
+      surfaces: [
+        {
+          surfaceId: result.surfaceId,
+          a2uiMessages: result.a2uiMessages,
+          mode: "inline-surface",
+          summary: discoverySummary({
+            location: filters.location,
+            neighbourhood: filters.neighbourhood,
+            partySize: filters.partySize,
+          }),
+          textFallback: result.fallback.message,
+          conventionalRoute: result.fallback.conventionalRoute,
+        },
+      ],
     };
   }
 
@@ -659,9 +981,15 @@ export class LocalGuestApp {
     return this.#withJourney(threadId, decorated);
   }
 
-  async handleEventAsync(threadId: string, payload: unknown): Promise<GuestTurnResult> {
+  async handleEventAsync(
+    threadId: string,
+    payload: unknown,
+  ): Promise<GuestTurnResult> {
     const event = readEventPayload(payload);
-    if (this.#environment.config.paystackClient && event?.name === "shortlet.card-payment.initialize-checkout") {
+    if (
+      this.#environment.config.paystackClient &&
+      event?.name === "shortlet.card-payment.initialize-checkout"
+    ) {
       const result = await this.#handlePaystackCardCheckout(threadId, event);
       const decorated = this.#decorateResult(result);
       if (decorated.ok) this.#rememberResult(threadId, undefined, decorated);
@@ -670,46 +998,140 @@ export class LocalGuestApp {
     return this.handleEvent(threadId, payload);
   }
 
-  async #handlePaystackCardCheckout(threadId: string, event: GuestEventPayload): Promise<GuestTurnResult> {
-    if (!this.#environment.config.paystackClient) return { ok: false, code: "PAYSTACK_UNAVAILABLE", message: "Secure card checkout is unavailable." };
-    if (!threadId || !THREAD_ID_PATTERN.test(threadId)) return { ok: false, code: "INVALID_THREAD", message: "Unknown conversation." };
+  async #handlePaystackCardCheckout(
+    threadId: string,
+    event: GuestEventPayload,
+  ): Promise<GuestTurnResult> {
+    if (!this.#environment.config.paystackClient)
+      return {
+        ok: false,
+        code: "PAYSTACK_UNAVAILABLE",
+        message: "Secure card checkout is unavailable.",
+      };
+    if (!threadId || !THREAD_ID_PATTERN.test(threadId))
+      return {
+        ok: false,
+        code: "INVALID_THREAD",
+        message: "Unknown conversation.",
+      };
     const thread = this.#threads.get(threadId) ?? this.#loadThread(threadId);
-    if (!thread) return { ok: false, code: "UNKNOWN_THREAD", message: "Unknown conversation." };
+    if (!thread)
+      return {
+        ok: false,
+        code: "UNKNOWN_THREAD",
+        message: "Unknown conversation.",
+      };
     const activeSurfaceId = thread.activeSurfaces.get(PAYMENT_STAGE);
-    if (!activeSurfaceId || activeSurfaceId !== event.surfaceId) return { ok: false, code: "STALE_SURFACE", message: "That action is no longer available; please use the current options." };
-    const resolved = resolveCardPaymentServerEvent({ event: this.#handoff(event), application: this.#environment.cardPaymentApp, principal: this.#environment.guestPrincipal() });
+    if (!activeSurfaceId || activeSurfaceId !== event.surfaceId)
+      return {
+        ok: false,
+        code: "STALE_SURFACE",
+        message:
+          "That action is no longer available; please use the current options.",
+      };
+    const resolved = resolveCardPaymentServerEvent({
+      event: this.#handoff(event),
+      application: this.#environment.cardPaymentApp,
+      principal: this.#environment.guestPrincipal(),
+    });
     if (!resolved.ok) return resolved;
     try {
-      const session = await this.#environment.cardPaymentApp.initializePaystackCheckout(thread.offerId!, this.#environment.guestPrincipal(), this.#environment.config.paystackClient);
-      const artifact = this.#environment.cardPaymentApp.getArtifact(thread.offerId!, this.#environment.guestPrincipal());
+      const session =
+        await this.#environment.cardPaymentApp.initializePaystackCheckout(
+          thread.offerId!,
+          this.#environment.guestPrincipal(),
+          this.#environment.config.paystackClient,
+        );
+      const artifact = this.#environment.cardPaymentApp.getArtifact(
+        thread.offerId!,
+        this.#environment.guestPrincipal(),
+      );
       const surfaceId = `thread-${thread.threadId}:payment:checkout:${session.checkoutId}`;
       this.#supersede(thread, PAYMENT_STAGE);
       thread.activeSurfaces.set(PAYMENT_STAGE, surfaceId);
-      this.#emitTransition(thread, "payment.handoff.opened", { aggregateType: "payment", aggregateId: thread.offerId!, surfaceId });
-      this.#emitTransition(thread, "payment.attempt.initialized", { aggregateType: "payment_attempt", aggregateId: session.checkoutId, correlationId: thread.offerId! });
-      const checkoutAmount = artifact.facts.currentComponentAmountKobo ?? artifact.facts.allInStayTotalKobo ?? artifact.facts.amountDueNowKobo;
-      const checkoutPurpose = artifact.facts.currentComponent === "security_deposit" ? GUEST_GLOSSARY.refundableSecurityDeposit : "stay payment";
-      return { ok: true, messages: ["Hosted card checkout is ready. Payment has not succeeded; your booking details remain available when you return."], surfaces: [{ surfaceId, mode: "focused-surface", summary: "Payment handoff", conventionalRoute: `/payments/offers/${encodeURIComponent(thread.offerId!)}/continue`, conventionalRouteLabel: `Continue to ${checkoutPurpose} · ${formatNgnKobo(checkoutAmount)}`, textFallback: `You will leave Shortlet temporarily for hosted card checkout. ${artifact.facts.allInStayTotalKobo === undefined ? "" : `${GUEST_GLOSSARY.allInStayTotal}: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. `}${artifact.facts.refundableSecurityDepositKobo ? `${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}Next payment: ${formatNgnKobo(checkoutAmount)}. ${formatWAT(artifact.facts.paymentWindowExpiresAt)}. Payment has not succeeded and the booking is not confirmed. Your booking details will be retained when you return.`, a2uiMessages: cardPaymentArtifactToA2UI({ artifact, surfaceId }) }] };
+      this.#emitTransition(thread, "payment.handoff.opened", {
+        aggregateType: "payment",
+        aggregateId: thread.offerId!,
+        surfaceId,
+      });
+      this.#emitTransition(thread, "payment.attempt.initialized", {
+        aggregateType: "payment_attempt",
+        aggregateId: session.checkoutId,
+        correlationId: thread.offerId!,
+      });
+      const checkoutAmount =
+        artifact.facts.currentComponentAmountKobo ??
+        artifact.facts.allInStayTotalKobo ??
+        artifact.facts.amountDueNowKobo;
+      const checkoutPurpose =
+        artifact.facts.currentComponent === "security_deposit"
+          ? GUEST_GLOSSARY.refundableSecurityDeposit
+          : "stay payment";
+      return {
+        ok: true,
+        messages: [
+          "Hosted card checkout is ready. Payment has not succeeded; your booking details remain available when you return.",
+        ],
+        surfaces: [
+          {
+            surfaceId,
+            mode: "focused-surface",
+            summary: "Payment handoff",
+            conventionalRoute: `/payments/offers/${encodeURIComponent(thread.offerId!)}/continue`,
+            conventionalRouteLabel: `Continue to ${checkoutPurpose} · ${formatNgnKobo(checkoutAmount)}`,
+            textFallback: `You will leave Shortlet temporarily for hosted card checkout. ${artifact.facts.allInStayTotalKobo === undefined ? "" : `${GUEST_GLOSSARY.allInStayTotal}: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. `}${artifact.facts.refundableSecurityDepositKobo ? `${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}Next payment: ${formatNgnKobo(checkoutAmount)}. ${formatWAT(artifact.facts.paymentWindowExpiresAt)}. Payment has not succeeded and the booking is not confirmed. Your booking details will be retained when you return.`,
+            a2uiMessages: cardPaymentArtifactToA2UI({ artifact, surfaceId }),
+          },
+        ],
+      };
     } catch (error) {
-      if (/email address is required/i.test(error instanceof Error ? error.message : "")) return this.#contactSurface(thread, "email", event.context ?? {});
-      return { ok: false, code: "ACTION_NOT_AUTHORIZED", message: "The secure card checkout could not be started." };
+      if (
+        /email address is required/i.test(
+          error instanceof Error ? error.message : "",
+        )
+      )
+        return this.#contactSurface(thread, "email", event.context ?? {});
+      return {
+        ok: false,
+        code: "ACTION_NOT_AUTHORIZED",
+        message: "The secure card checkout could not be started.",
+      };
     }
   }
 
   #handleEvent(threadId: string, payload: unknown): GuestTurnResult {
     const event = readEventPayload(payload);
     if (!event) {
-      return { ok: false, code: "INVALID_EVENT", message: "The action could not be processed." };
+      return {
+        ok: false,
+        code: "INVALID_EVENT",
+        message: "The action could not be processed.",
+      };
     }
     if (!THREAD_ID_PATTERN.test(threadId)) {
-      return { ok: false, code: "INVALID_THREAD", message: "Unknown conversation." };
+      return {
+        ok: false,
+        code: "INVALID_THREAD",
+        message: "Unknown conversation.",
+      };
     }
 
     if (this.#assistantRuntime) {
-      if (event.name === ASSISTANT_CONFIRM_ACTION_EVENT || event.name === ASSISTANT_CANCEL_ACTION_EVENT) {
-        const output = this.#assistantRuntime.handleAssistantEvent(threadId, event.name, event.context);
+      if (
+        event.name === ASSISTANT_CONFIRM_ACTION_EVENT ||
+        event.name === ASSISTANT_CANCEL_ACTION_EVENT
+      ) {
+        const output = this.#assistantRuntime.handleAssistantEvent(
+          threadId,
+          event.name,
+          event.context,
+        );
         if (!output.ok) {
-          return { ok: false, code: output.code ?? "UNSUPPORTED_EVENT", message: output.message ?? "The action failed." };
+          return {
+            ok: false,
+            code: output.code ?? "UNSUPPORTED_EVENT",
+            message: output.message ?? "The action failed.",
+          };
         }
         return {
           ok: true,
@@ -721,30 +1143,58 @@ export class LocalGuestApp {
 
     const thread = this.#threads.get(threadId) ?? this.#loadThread(threadId);
     if (!thread) {
-      return { ok: false, code: "UNKNOWN_THREAD", message: "Unknown conversation." };
+      return {
+        ok: false,
+        code: "UNKNOWN_THREAD",
+        message: "Unknown conversation.",
+      };
     }
 
     const stage = EVENT_STAGE_ALLOW_LIST[event.name];
     if (!stage) {
-      return { ok: false, code: "UNSUPPORTED_EVENT", message: "That action is not available." };
+      return {
+        ok: false,
+        code: "UNSUPPORTED_EVENT",
+        message: "That action is not available.",
+      };
     }
     // The strip exists once the thread has criteria; its freshness is checked by `basedOn`.
-    if (stage === CRITERIA_STAGE && thread.discoveryContext) thread.activeSurfaces.set(CRITERIA_STAGE, criteriaSurfaceId(thread.threadId));
+    if (stage === CRITERIA_STAGE && thread.discoveryContext)
+      thread.activeSurfaces.set(
+        CRITERIA_STAGE,
+        criteriaSurfaceId(thread.threadId),
+      );
     const activeSurfaceId = thread.activeSurfaces.get(stage);
     // Guest UI consistency issue 05: the comparison offers a View per stay; it is the same authoritative view-unit event, sent from the current comparison.
-    const viewFromComparison = event.name === "shortlet.discovery.view-unit" && thread.activeSurfaces.get(COMPARE_STAGE) === event.surfaceId;
-    if (!viewFromComparison && (!activeSurfaceId || activeSurfaceId !== event.surfaceId)) {
-      const duplicate = event.name === "shortlet.card-payment.verify-return" && thread.activeSurfaces.has(BOOKING_STAGE);
-      this.#emitTransition(thread, duplicate ? "interaction.duplicate_command_rejected" : "interaction.stale_surface_rejected", {
-        aggregateType: duplicate ? "payment" : "interaction_surface",
-        aggregateId: duplicate ? thread.offerId ?? thread.threadId : event.surfaceId,
-        surfaceId: event.surfaceId,
-        reasonCode: duplicate ? "DUPLICATE_COMMAND" : "STALE_SURFACE",
-      });
+    const viewFromComparison =
+      event.name === "shortlet.discovery.view-unit" &&
+      thread.activeSurfaces.get(COMPARE_STAGE) === event.surfaceId;
+    if (
+      !viewFromComparison &&
+      (!activeSurfaceId || activeSurfaceId !== event.surfaceId)
+    ) {
+      const duplicate =
+        event.name === "shortlet.card-payment.verify-return" &&
+        thread.activeSurfaces.has(BOOKING_STAGE);
+      this.#emitTransition(
+        thread,
+        duplicate
+          ? "interaction.duplicate_command_rejected"
+          : "interaction.stale_surface_rejected",
+        {
+          aggregateType: duplicate ? "payment" : "interaction_surface",
+          aggregateId: duplicate
+            ? (thread.offerId ?? thread.threadId)
+            : event.surfaceId,
+          surfaceId: event.surfaceId,
+          reasonCode: duplicate ? "DUPLICATE_COMMAND" : "STALE_SURFACE",
+        },
+      );
       return {
         ok: false,
         code: "STALE_SURFACE",
-        message: "That action is no longer available; please use the current options.",
+        message:
+          "That action is no longer available; please use the current options.",
       };
     }
 
@@ -784,7 +1234,11 @@ export class LocalGuestApp {
       case GUEST_EMAIL_SUBMIT_EVENT:
         return this.#handleEmailSubmit(thread, event);
       default:
-        return { ok: false, code: "UNSUPPORTED_EVENT", message: "That action is not available." };
+        return {
+          ok: false,
+          code: "UNSUPPORTED_EVENT",
+          message: "That action is not available.",
+        };
     }
   }
 
@@ -804,25 +1258,55 @@ export class LocalGuestApp {
    * and the domain record must name the Guest (ADR-0070). Reads go through the
    * conventional view functions, never an agent-only path (ADR-0072).
    */
-  conventionalBookingPage(kind: ConventionalBookingPageKind, id: string, principal: CommandPrincipal): ConventionalBookingPage | null {
+  conventionalBookingPage(
+    kind: ConventionalBookingPageKind,
+    id: string,
+    principal: CommandPrincipal,
+  ): ConventionalBookingPage | null {
     const environment = this.#environment;
     const guest = environment.guestPrincipal();
-    if (principal.role !== "guest" || !principal.id || principal.id !== guest.id || !principal.tenantId || principal.tenantId !== environment.config.tenantId || id === "") return null;
+    if (
+      principal.role !== "guest" ||
+      !principal.id ||
+      principal.id !== guest.id ||
+      !principal.tenantId ||
+      principal.tenantId !== environment.config.tenantId ||
+      id === ""
+    )
+      return null;
     try {
-      for (const record of environment.interactionStore.findThreadsForPrincipal(principal.id, principal.tenantId)) {
+      for (const record of environment.interactionStore.findThreadsForPrincipal(
+        principal.id,
+        principal.tenantId,
+      )) {
         let projection: GuestPersistentProjection | null = null;
-        try { projection = parseGuestProjection(JSON.parse(record.threadJson) as unknown); } catch { projection = null; }
+        try {
+          projection = parseGuestProjection(
+            JSON.parse(record.threadJson) as unknown,
+          );
+        } catch {
+          projection = null;
+        }
         if (!projection) continue;
-        const correlated = kind === "draft" ? projection.draftId === id
-          : kind === "request" ? projection.requestId === id
-            : kind === "offer" ? projection.offerId === id
-              : !!projection.offerId && this.#snapshotContractId(projection.offerId) === id;
+        const correlated =
+          kind === "draft"
+            ? projection.draftId === id
+            : kind === "request"
+              ? projection.requestId === id
+              : kind === "offer"
+                ? projection.offerId === id
+                : !!projection.offerId &&
+                  this.#snapshotContractId(projection.offerId) === id;
         if (!correlated) continue;
-        const thread = this.#threads.get(record.threadId) ?? this.#loadThread(record.threadId);
+        const thread =
+          this.#threads.get(record.threadId) ??
+          this.#loadThread(record.threadId);
         if (!thread) return null;
         const page = this.#bookingPage(thread, kind, id, principal);
         const journey = this.#journeyFor(thread);
-        return page === null || journey === undefined ? page : { ...page, journey };
+        return page === null || journey === undefined
+          ? page
+          : { ...page, journey };
       }
     } catch {
       return null;
@@ -834,32 +1318,81 @@ export class LocalGuestApp {
    * Guest UI consistency issue 03: the journey rail for a standalone page. Only the Guest's own thread resolves
    * (ADR-0070); anything else is undefined, and the page then shows no rail rather than someone else's progress.
    */
-  journeyForThread(threadId: string, principal: CommandPrincipal): GuestJourney | undefined {
+  journeyForThread(
+    threadId: string,
+    principal: CommandPrincipal,
+  ): GuestJourney | undefined {
     const environment = this.#environment;
     const guest = environment.guestPrincipal();
-    if (principal.role !== "guest" || !principal.id || principal.id !== guest.id || !principal.tenantId || principal.tenantId !== environment.config.tenantId) return undefined;
-    if (!environment.interactionStore.findThreadsForPrincipal(principal.id, principal.tenantId).some((record) => record.threadId === threadId)) return undefined;
+    if (
+      principal.role !== "guest" ||
+      !principal.id ||
+      principal.id !== guest.id ||
+      !principal.tenantId ||
+      principal.tenantId !== environment.config.tenantId
+    )
+      return undefined;
+    if (
+      !environment.interactionStore
+        .findThreadsForPrincipal(principal.id, principal.tenantId)
+        .some((record) => record.threadId === threadId)
+    )
+      return undefined;
     const thread = this.#threads.get(threadId) ?? this.#loadThread(threadId);
     return thread === null ? undefined : this.#journeyFor(thread);
   }
 
   /** ADR-0072/0080: conventional forms resolve the same current action and handler as Weaver. */
-  conventionalRequestAction(id: string, action: "review" | "submit", surfaceId: string, principal: CommandPrincipal): GuestTurnResult {
+  conventionalRequestAction(
+    id: string,
+    action: "review" | "submit",
+    surfaceId: string,
+    principal: CommandPrincipal,
+  ): GuestTurnResult {
     const page = this.conventionalBookingPage("draft", id, principal);
     const thread = page === null ? undefined : this.#threads.get(page.threadId);
-    if (!page || !thread || thread.requestId || thread.offerId || !surfaceId
-      || thread.activeSurfaces.get(REQUEST_STAGE) !== surfaceId
-      || page.requestScreen?.primary.surfaceId !== surfaceId
-      || page.requestScreen.state !== (action === "review" ? "draft" : "review")) {
-      return { ok: false, code: "STALE_SURFACE", message: "That action is no longer available; please use the current options." };
+    if (
+      !page ||
+      !thread ||
+      thread.requestId ||
+      thread.offerId ||
+      !surfaceId ||
+      thread.activeSurfaces.get(REQUEST_STAGE) !== surfaceId ||
+      page.requestScreen?.primary.surfaceId !== surfaceId ||
+      page.requestScreen.state !== (action === "review" ? "draft" : "review")
+    ) {
+      return {
+        ok: false,
+        code: "STALE_SURFACE",
+        message:
+          "That action is no longer available; please use the current options.",
+      };
     }
-    const candidate = this.#draftArtifact(thread, action === "review" ? "draft" : "review").actions[0];
-    if (!candidate || candidate.type !== action) return { ok: false, code: "ACTION_NOT_AUTHORIZED", message: "That action is not available." };
+    const candidate = this.#draftArtifact(
+      thread,
+      action === "review" ? "draft" : "review",
+    ).actions[0];
+    if (!candidate || candidate.type !== action)
+      return {
+        ok: false,
+        code: "ACTION_NOT_AUTHORIZED",
+        message: "That action is not available.",
+      };
     return this.handleEvent(page.threadId, {
-      name: action === "review" ? REQUEST_DRAFT_REVIEW_EVENT : REQUEST_DRAFT_SUBMIT_EVENT,
-      surfaceId, sourceComponentId: "request-form", timestamp: this.#environment.clock().toISOString(),
-      context: { artifactId: candidate.artifactId, draftId: candidate.draftId, expectedStatus: candidate.expectedStatus, projectionVersion: candidate.projectionVersion },
-});
+      name:
+        action === "review"
+          ? REQUEST_DRAFT_REVIEW_EVENT
+          : REQUEST_DRAFT_SUBMIT_EVENT,
+      surfaceId,
+      sourceComponentId: "request-form",
+      timestamp: this.#environment.clock().toISOString(),
+      context: {
+        artifactId: candidate.artifactId,
+        draftId: candidate.draftId,
+        expectedStatus: candidate.expectedStatus,
+        projectionVersion: candidate.projectionVersion,
+      },
+    });
   }
 
   /** ADR-0072/0080: the native form resolves current server authority, then reuses the Weaver command handler. */
@@ -927,7 +1460,12 @@ export class LocalGuestApp {
   ): string | null {
     const page = this.conventionalBookingPage("request", id, principal);
     const thread = page === null ? undefined : this.#threads.get(page.threadId);
-    if (!page || !thread?.discoveryArtifact || page.requestScreen?.state !== "not-accepted") return null;
+    if (
+      !page ||
+      !thread?.discoveryArtifact ||
+      page.requestScreen?.state !== "not-accepted"
+    )
+      return null;
     return conventionalSearchRoute(thread.discoveryArtifact.facts.filters);
   }
 
@@ -941,28 +1479,66 @@ export class LocalGuestApp {
   committedWork(principal: CommandPrincipal): GuestCommittedWork[] {
     const environment = this.#environment;
     const guest = environment.guestPrincipal();
-    if (principal.role !== "guest" || !principal.id || principal.id !== guest.id || !principal.tenantId || principal.tenantId !== environment.config.tenantId) return [];
+    if (
+      principal.role !== "guest" ||
+      !principal.id ||
+      principal.id !== guest.id ||
+      !principal.tenantId ||
+      principal.tenantId !== environment.config.tenantId
+    )
+      return [];
     const work: GuestCommittedWork[] = [];
     try {
-      for (const record of environment.interactionStore.findThreadsForPrincipal(principal.id, principal.tenantId)) {
-        const loaded = this.#threads.get(record.threadId) ?? this.#loadThread(record.threadId);
+      for (const record of environment.interactionStore.findThreadsForPrincipal(
+        principal.id,
+        principal.tenantId,
+      )) {
+        const loaded =
+          this.#threads.get(record.threadId) ??
+          this.#loadThread(record.threadId);
         if (!loaded || (!loaded.requestId && !loaded.offerId)) continue;
         // A thread records its offer only on its next refresh, and this read
         // never issues one (ADR-0079). Judge the durable offer for a confirmed
         // request so an expired offer is never called a live request.
-        const offerId = loaded.offerId ?? (loaded.requestId ? environment.interactionStore.findConditionalOfferByRequestId(loaded.requestId)?.offerId ?? null : null);
-        const thread: GuestThreadState = offerId === loaded.offerId ? loaded : { ...loaded, offerId };
+        const offerId =
+          loaded.offerId ??
+          (loaded.requestId
+            ? (environment.interactionStore.findConditionalOfferByRequestId(
+                loaded.requestId,
+              )?.offerId ?? null)
+            : null);
+        const thread: GuestThreadState =
+          offerId === loaded.offerId ? loaded : { ...loaded, offerId };
         const journey = this.#journeyFor(thread);
         if (journey === undefined || journey.outcome !== undefined) continue;
         const unitTitle = this.#currentUnit(thread)?.title;
-        const base = { threadId: thread.threadId, ...(unitTitle === undefined ? {} : { unitTitle }) };
+        const base = {
+          threadId: thread.threadId,
+          ...(unitTitle === undefined ? {} : { unitTitle }),
+        };
         if (journey.current === "confirmed" && thread.offerId) {
           const contractId = this.#snapshotContractId(thread.offerId);
-          if (contractId !== null) work.push({ ...base, kind: "reservation", route: conventionalBookingContractRoute(contractId) });
-        } else if ((journey.current === "offer" || journey.current === "pay") && thread.offerId) {
-          work.push({ ...base, kind: "offer", route: conventionalConditionalOfferRoute(thread.offerId) });
+          if (contractId !== null)
+            work.push({
+              ...base,
+              kind: "reservation",
+              route: conventionalBookingContractRoute(contractId),
+            });
+        } else if (
+          (journey.current === "offer" || journey.current === "pay") &&
+          thread.offerId
+        ) {
+          work.push({
+            ...base,
+            kind: "offer",
+            route: conventionalConditionalOfferRoute(thread.offerId),
+          });
         } else if (journey.current === "request" && thread.requestId) {
-          work.push({ ...base, kind: "request", route: conventionalBookingRequestRoute(thread.requestId) });
+          work.push({
+            ...base,
+            kind: "request",
+            route: conventionalBookingRequestRoute(thread.requestId),
+          });
         }
       }
     } catch {
@@ -972,38 +1548,124 @@ export class LocalGuestApp {
   }
 
   #snapshotContractId(offerId: string): string | null {
-    const snapshot = this.#environment.interactionStore.findBookingSnapshotByOfferId(offerId);
+    const snapshot =
+      this.#environment.interactionStore.findBookingSnapshotByOfferId(offerId);
     if (!snapshot) return null;
     const contract: unknown = JSON.parse(snapshot.contractJson);
-    return isPlainRecord(contract) && typeof contract.contractId === "string" ? contract.contractId : null;
+    return isPlainRecord(contract) && typeof contract.contractId === "string"
+      ? contract.contractId
+      : null;
   }
 
-  #bookingPage(thread: GuestThreadState, kind: ConventionalBookingPageKind, id: string, principal: CommandPrincipal): ConventionalBookingPage | null {
+  #bookingPage(
+    thread: GuestThreadState,
+    kind: ConventionalBookingPageKind,
+    id: string,
+    principal: CommandPrincipal,
+  ): ConventionalBookingPage | null {
     const environment = this.#environment;
     if (kind === "draft") {
       const draft: unknown = environment.bookingRequestApp.manager.getDraft(id);
-      if (!isPlainRecord(draft) || !isPlainRecord(draft.primaryGuest) || draft.primaryGuest.id !== principal.id) return null;
+      if (
+        !isPlainRecord(draft) ||
+        !isPlainRecord(draft.primaryGuest) ||
+        draft.primaryGuest.id !== principal.id
+      )
+        return null;
       // The page mirrors the view the thread is on: the draft, or its review.
-      const review = thread.activeSurfaces.get(REQUEST_STAGE)?.includes(":request:review:") === true;
+      const review =
+        thread.activeSurfaces
+          .get(REQUEST_STAGE)
+          ?.includes(":request:review:") === true;
       const artifact = this.#draftArtifact(thread, review ? "review" : "draft");
       // ADR-0074/0078: historical links remain readable, but a sent request removes the draft's material authority.
-      const surfaceId = thread.requestId || thread.offerId ? "" : thread.activeSurfaces.get(REQUEST_STAGE) ?? "";
-      return { threadId: thread.threadId, requestScreen: draftScreenContent(artifact, conventionalRequestDraftRoute(id), surfaceId, thread.threadId), summary: review ? "Request review" : "Request Draft", textFallback: this.#draftFallback(artifact), stay: { unitTitle: artifact.facts.unitTitle, checkIn: artifact.facts.checkIn, checkOut: artifact.facts.checkOut, nights: artifact.facts.nights, guestCount: artifact.facts.occupants.length, allInStayTotalKobo: artifact.facts.allInStayTotalKobo, refundableSecurityDepositKobo: artifact.facts.refundableSecurityDepositKobo, amountDueNowIsConditional: true, ...(review ? { amountDueNowKobo: artifact.facts.amountDueNowKobo } : {}) } };
+      const surfaceId =
+        thread.requestId || thread.offerId
+          ? ""
+          : (thread.activeSurfaces.get(REQUEST_STAGE) ?? "");
+      return {
+        threadId: thread.threadId,
+        requestScreen: draftScreenContent(
+          artifact,
+          conventionalRequestDraftRoute(id),
+          surfaceId,
+          thread.threadId,
+        ),
+        summary: review ? "Request review" : "Request Draft",
+        textFallback: this.#draftFallback(artifact),
+        stay: {
+          unitTitle: artifact.facts.unitTitle,
+          checkIn: artifact.facts.checkIn,
+          checkOut: artifact.facts.checkOut,
+          nights: artifact.facts.nights,
+          guestCount: artifact.facts.occupants.length,
+          allInStayTotalKobo: artifact.facts.allInStayTotalKobo,
+          refundableSecurityDepositKobo:
+            artifact.facts.refundableSecurityDepositKobo,
+          amountDueNowIsConditional: true,
+          ...(review
+            ? { amountDueNowKobo: artifact.facts.amountDueNowKobo }
+            : {}),
+        },
+      };
     }
     if (kind === "request") {
-      getConventionalBookingRequestView(environment.bookingRequestApp, id, principal);
-      if (!primaryGuestIs(environment.bookingRequestApp.manager.getRequest(id), principal)) return null;
+      getConventionalBookingRequestView(
+        environment.bookingRequestApp,
+        id,
+        principal,
+      );
+      if (
+        !primaryGuestIs(
+          environment.bookingRequestApp.manager.getRequest(id),
+          principal,
+        )
+      )
+        return null;
       const surface = this.#requestSurface(thread, id);
       const artifact = environment.bookingRequestApp.getArtifact(id, principal);
       const unit = environment.unitRepository.findById(artifact.facts.unitId);
-      return { threadId: thread.threadId, requestScreen: requestScreenContent(artifact, conventionalBookingRequestRoute(id), unit?.operator.name), summary: surface.summary ?? GUEST_GLOSSARY.bookingRequest, textFallback: surface.textFallback ?? "", stay: { unitTitle: unit?.title ?? `Your selected ${GUEST_GLOSSARY.unit}`, checkIn: artifact.facts.checkIn, checkOut: artifact.facts.checkOut, nights: artifact.facts.nights, guestCount: artifact.facts.occupants.length, ...(artifact.facts.quote ? { allInStayTotalKobo: artifact.facts.quote.allInStayTotalKobo, refundableSecurityDepositKobo: artifact.facts.quote.refundableSecurityDepositKobo, amountDueNowKobo: artifact.facts.quote.totalAmountDueNowKobo, amountDueNowIsConditional: true } : {}) } };
+      return {
+        threadId: thread.threadId,
+        requestScreen: requestScreenContent(
+          artifact,
+          conventionalBookingRequestRoute(id),
+          unit?.operator.name,
+        ),
+        summary: surface.summary ?? GUEST_GLOSSARY.bookingRequest,
+        textFallback: surface.textFallback ?? "",
+        stay: {
+          unitTitle: unit?.title ?? `Your selected ${GUEST_GLOSSARY.unit}`,
+          checkIn: artifact.facts.checkIn,
+          checkOut: artifact.facts.checkOut,
+          nights: artifact.facts.nights,
+          guestCount: artifact.facts.occupants.length,
+          ...(artifact.facts.quote
+            ? {
+                allInStayTotalKobo: artifact.facts.quote.allInStayTotalKobo,
+                refundableSecurityDepositKobo:
+                  artifact.facts.quote.refundableSecurityDepositKobo,
+                amountDueNowKobo: artifact.facts.quote.totalAmountDueNowKobo,
+                amountDueNowIsConditional: true,
+              }
+            : {}),
+        },
+      };
     }
     if (kind === "offer") {
       const offer = environment.conditionalOfferApp.manager.getOffer(id);
       const payerId = offer.parties.distinctPayer?.id;
-      const isParty = !!principal.id && (offer.parties.primaryGuest.id === principal.id || (!!payerId && payerId === principal.id));
-      if (!isParty || !offer.tenantId || offer.tenantId !== principal.tenantId) return null;
-      const { artifact } = getConventionalConditionalOfferView(environment.conditionalOfferApp, id, principal);
+      const isParty =
+        !!principal.id &&
+        (offer.parties.primaryGuest.id === principal.id ||
+          (!!payerId && payerId === principal.id));
+      if (!isParty || !offer.tenantId || offer.tenantId !== principal.tenantId)
+        return null;
+      const { artifact } = getConventionalConditionalOfferView(
+        environment.conditionalOfferApp,
+        id,
+        principal,
+      );
       return {
         threadId: thread.threadId,
         offerScreen: offerScreenContent(
@@ -1015,12 +1677,53 @@ export class LocalGuestApp {
         ),
         summary:
           artifact.facts.status === "expired"
-            ? `${GUEST_GLOSSARY.conditionalBookingOffer} expired` : GUEST_GLOSSARY.conditionalBookingOffer, textFallback: this.#offerFallback(artifact), stay: { unitTitle: artifact.facts.unitTitle, checkIn: artifact.facts.checkIn, checkOut: artifact.facts.checkOut, nights: artifact.facts.nights, guestCount: artifact.facts.occupants.length, allInStayTotalKobo: artifact.facts.allInStayTotalKobo, refundableSecurityDepositKobo: artifact.facts.refundableSecurityDepositKobo, amountDueNowKobo: artifact.facts.totalAmountDueNowKobo } };
+            ? `${GUEST_GLOSSARY.conditionalBookingOffer} expired`
+            : GUEST_GLOSSARY.conditionalBookingOffer,
+        textFallback: this.#offerFallback(artifact),
+        stay: {
+          unitTitle: artifact.facts.unitTitle,
+          checkIn: artifact.facts.checkIn,
+          checkOut: artifact.facts.checkOut,
+          nights: artifact.facts.nights,
+          guestCount: artifact.facts.occupants.length,
+          allInStayTotalKobo: artifact.facts.allInStayTotalKobo,
+          refundableSecurityDepositKobo:
+            artifact.facts.refundableSecurityDepositKobo,
+          amountDueNowKobo: artifact.facts.totalAmountDueNowKobo,
+        },
+      };
     }
     // The contract view is authorized by the domain for the contract's parties.
     getConventionalBookingContractView(environment.contractApp, id, principal);
     const artifact = this.#contractArtifact(id);
-    return { threadId: thread.threadId, confirmation: confirmationContent(artifact, thread.threadId, conventionalBookingContractRoute(id), this.#confirmedBookingFallback(artifact)), summary: "Reservation confirmed", textFallback: this.#confirmedBookingFallback(artifact), stay: { unitTitle: artifact.facts.unitTitle ?? `Your ${GUEST_GLOSSARY.unit}`, checkIn: artifact.facts.checkIn, checkOut: artifact.facts.checkOut, nights: artifact.facts.nights, guestCount: artifact.facts.occupants.length, ...(artifact.facts.allInStayTotalKobo === undefined ? {} : { allInStayTotalKobo: artifact.facts.allInStayTotalKobo }), ...(artifact.facts.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: artifact.facts.refundableSecurityDepositKobo }), amountPaidKobo: artifact.facts.amountPaidKobo } };
+    return {
+      threadId: thread.threadId,
+      confirmation: confirmationContent(
+        artifact,
+        thread.threadId,
+        conventionalBookingContractRoute(id),
+        this.#confirmedBookingFallback(artifact),
+      ),
+      summary: "Reservation confirmed",
+      textFallback: this.#confirmedBookingFallback(artifact),
+      stay: {
+        unitTitle: artifact.facts.unitTitle ?? `Your ${GUEST_GLOSSARY.unit}`,
+        checkIn: artifact.facts.checkIn,
+        checkOut: artifact.facts.checkOut,
+        nights: artifact.facts.nights,
+        guestCount: artifact.facts.occupants.length,
+        ...(artifact.facts.allInStayTotalKobo === undefined
+          ? {}
+          : { allInStayTotalKobo: artifact.facts.allInStayTotalKobo }),
+        ...(artifact.facts.refundableSecurityDepositKobo === undefined
+          ? {}
+          : {
+              refundableSecurityDepositKobo:
+                artifact.facts.refundableSecurityDepositKobo,
+            }),
+        amountPaidKobo: artifact.facts.amountPaidKobo,
+      },
+    };
   }
 
   getState(threadId: string): GuestStateSnapshot | undefined {
@@ -1033,11 +1736,21 @@ export class LocalGuestApp {
       thread.lastSurfaces = [...decorated.surfaces];
       this.#rememberResult(threadId, undefined, decorated);
     }
-    const normalized = this.#decorateResult({ ok: true, messages: [], surfaces: thread.lastSurfaces });
+    const normalized = this.#decorateResult({
+      ok: true,
+      messages: [],
+      surfaces: thread.lastSurfaces,
+    });
     if (!normalized.ok) return undefined;
     thread.lastSurfaces = [...normalized.surfaces];
-    if (priorSurfaceId !== undefined && thread.lastSurfaces.at(-1)?.surfaceId !== priorSurfaceId) {
-      this.#emitTransition(thread, "interaction.cross_tab_recovery_occurred", { aggregateType: "interaction_thread", aggregateId: threadId });
+    if (
+      priorSurfaceId !== undefined &&
+      thread.lastSurfaces.at(-1)?.surfaceId !== priorSurfaceId
+    ) {
+      this.#emitTransition(thread, "interaction.cross_tab_recovery_occurred", {
+        aggregateType: "interaction_thread",
+        aggregateId: threadId,
+      });
     }
     const journey = this.#journeyFor(thread);
     const criteria = this.#criteriaFor(thread);
@@ -1062,22 +1775,60 @@ export class LocalGuestApp {
     const journey = this.#journeyFor(thread);
     const criteria = this.#criteriaFor(thread);
     const surfaces = this.#withWaiting(thread, result.surfaces);
-    return { ...result, surfaces, ...(journey === undefined ? {} : { journey }), ...(criteria === undefined ? {} : { criteria }) };
+    return {
+      ...result,
+      surfaces,
+      ...(journey === undefined ? {} : { journey }),
+      ...(criteria === undefined ? {} : { criteria }),
+    };
   }
 
-  #withWaiting(thread: GuestThreadState, surfaces: readonly GuestSurfacePayload[]): GuestSurfacePayload[] {
+  #withWaiting(
+    thread: GuestThreadState,
+    surfaces: readonly GuestSurfacePayload[],
+  ): GuestSurfacePayload[] {
     return surfaces.map((surface, index) => {
       if (index !== surfaces.length - 1) return surface;
       const waiting = this.#waitingFor(thread, surface);
-      const draftView = surface.surfaceId.includes(":request:draft:") ? "draft" : surface.surfaceId.includes(":request:review:") ? "review" : undefined;
-      const content = draftView && thread.draftId
-        ? draftScreenContent(this.#draftArtifact(thread, draftView), conventionalRequestDraftRoute(thread.draftId), surface.surfaceId, thread.threadId)
-        : thread.requestId && surface.surfaceId === `thread-${thread.threadId}:request:${thread.requestId}`
-          ? requestScreenContent(this.#environment.bookingRequestApp.getArtifact(thread.requestId, this.#environment.guestPrincipal()), conventionalBookingRequestRoute(thread.requestId), this.#currentUnit(thread)?.operator.name)
+      const draftView = surface.surfaceId.includes(":request:draft:")
+        ? "draft"
+        : surface.surfaceId.includes(":request:review:")
+          ? "review"
           : undefined;
-      const contractId = thread.offerId ? this.#snapshotContractId(thread.offerId) : null;
-      const contract = contractId && surface.surfaceId === `thread-${thread.threadId}:booking:${contractId}` ? this.#contractArtifact(contractId) : undefined;
-      const confirmation = contract ? confirmationContent(contract, thread.threadId, conventionalBookingContractRoute(contract.facts.contractId),this.#confirmedBookingFallback(contract),
+      const content =
+        draftView && thread.draftId
+          ? draftScreenContent(
+              this.#draftArtifact(thread, draftView),
+              conventionalRequestDraftRoute(thread.draftId),
+              surface.surfaceId,
+              thread.threadId,
+            )
+          : thread.requestId &&
+              surface.surfaceId ===
+                `thread-${thread.threadId}:request:${thread.requestId}`
+            ? requestScreenContent(
+                this.#environment.bookingRequestApp.getArtifact(
+                  thread.requestId,
+                  this.#environment.guestPrincipal(),
+                ),
+                conventionalBookingRequestRoute(thread.requestId),
+                this.#currentUnit(thread)?.operator.name,
+              )
+            : undefined;
+      const contractId = thread.offerId
+        ? this.#snapshotContractId(thread.offerId)
+        : null;
+      const contract =
+        contractId &&
+        surface.surfaceId === `thread-${thread.threadId}:booking:${contractId}`
+          ? this.#contractArtifact(contractId)
+          : undefined;
+      const confirmation = contract
+        ? confirmationContent(
+            contract,
+            thread.threadId,
+            conventionalBookingContractRoute(contract.facts.contractId),
+            this.#confirmedBookingFallback(contract),
           )
         : undefined;
       const offer =
@@ -1148,32 +1899,95 @@ export class LocalGuestApp {
    * delivered request awaiting the Operator (ADR-0041) and an open Payment
    * Window (ADR-0044) wait on a deadline; everything else has none.
    */
-  #waitingFor(thread: GuestThreadState, surface: GuestSurfacePayload): GuestWaitingState | undefined {
-    if (surface.status !== undefined && surface.status !== "active") return undefined;
+  #waitingFor(
+    thread: GuestThreadState,
+    surface: GuestSurfacePayload,
+  ): GuestWaitingState | undefined {
+    if (surface.status !== undefined && surface.status !== "active")
+      return undefined;
     const environment = this.#environment;
     const guest = environment.guestPrincipal();
     const now = environment.clock();
-    const open = (deadlineAt: string): boolean => new Date(deadlineAt).getTime() > now.getTime();
-    const state = (kind: GuestWaitingKind, deadlineAt: string, deadlineText: string): GuestWaitingState => {
-      const copy = guestWaitingCopy(kind, this.#currentUnit(thread)?.operator?.name);
-      return { kind, heading: copy.heading, deadlineAt, deadlineText, serverNow: now.toISOString(), outcomes: copy.outcomes, meanwhile: copy.meanwhile };
+    const open = (deadlineAt: string): boolean =>
+      new Date(deadlineAt).getTime() > now.getTime();
+    const state = (
+      kind: GuestWaitingKind,
+      deadlineAt: string,
+      deadlineText: string,
+    ): GuestWaitingState => {
+      const copy = guestWaitingCopy(
+        kind,
+        this.#currentUnit(thread)?.operator?.name,
+      );
+      return {
+        kind,
+        heading: copy.heading,
+        deadlineAt,
+        deadlineText,
+        serverNow: now.toISOString(),
+        outcomes: copy.outcomes,
+        meanwhile: copy.meanwhile,
+      };
     };
     try {
-      if (thread.requestId && !thread.offerId && surface.surfaceId === `thread-${thread.threadId}:request:${thread.requestId}`) {
-        const facts = environment.bookingRequestApp.getArtifact(thread.requestId, guest).facts;
-        if (facts.status !== "disclosed" || !facts.delivered || !open(facts.operatorResponseDeadlineAt)) return undefined;
-        return state("operator-response", facts.operatorResponseDeadlineAt, `Response due by ${formatWAT(facts.operatorResponseDeadlineAt)}`);
+      if (
+        thread.requestId &&
+        !thread.offerId &&
+        surface.surfaceId ===
+          `thread-${thread.threadId}:request:${thread.requestId}`
+      ) {
+        const facts = environment.bookingRequestApp.getArtifact(
+          thread.requestId,
+          guest,
+        ).facts;
+        if (
+          facts.status !== "disclosed" ||
+          !facts.delivered ||
+          !open(facts.operatorResponseDeadlineAt)
+        )
+          return undefined;
+        return state(
+          "operator-response",
+          facts.operatorResponseDeadlineAt,
+          `Response due by ${formatWAT(facts.operatorResponseDeadlineAt)}`,
+        );
       }
-      if (thread.offerId && surface.surfaceId === `thread-${thread.threadId}:offer:${thread.offerId}`) {
-        const facts = environment.conditionalOfferApp.getArtifact(thread.offerId, guest).facts;
-        if (facts.status !== "issued" || !open(facts.paymentWindowExpiresAt)) return undefined;
-        return state("offer-payment-window", facts.paymentWindowExpiresAt, formatBookingDeadline(facts.paymentWindowExpiresAt));
+      if (
+        thread.offerId &&
+        surface.surfaceId ===
+          `thread-${thread.threadId}:offer:${thread.offerId}`
+      ) {
+        const facts = environment.conditionalOfferApp.getArtifact(
+          thread.offerId,
+          guest,
+        ).facts;
+        if (facts.status !== "issued" || !open(facts.paymentWindowExpiresAt))
+          return undefined;
+        return state(
+          "offer-payment-window",
+          facts.paymentWindowExpiresAt,
+          formatBookingDeadline(facts.paymentWindowExpiresAt),
+        );
       }
       if (thread.offerId && surface.surfaceId.includes(":payment:")) {
-        const facts = environment.cardPaymentApp.getArtifact(thread.offerId, guest).facts;
+        const facts = environment.cardPaymentApp.getArtifact(
+          thread.offerId,
+          guest,
+        ).facts;
         // A payment already processing may be in its grace period (ADR-0044); it has no guest countdown.
-        if (!["ready", "checkout_initiated", "deposit_required"].includes(facts.status) || surface.surfaceId.includes(":payment:result:") || !open(facts.paymentWindowExpiresAt)) return undefined;
-        return state("payment-window", facts.paymentWindowExpiresAt, formatBookingDeadline(facts.paymentWindowExpiresAt));
+        if (
+          !["ready", "checkout_initiated", "deposit_required"].includes(
+            facts.status,
+          ) ||
+          surface.surfaceId.includes(":payment:result:") ||
+          !open(facts.paymentWindowExpiresAt)
+        )
+          return undefined;
+        return state(
+          "payment-window",
+          facts.paymentWindowExpiresAt,
+          formatBookingDeadline(facts.paymentWindowExpiresAt),
+        );
       }
     } catch {
       return undefined;
@@ -1193,26 +2007,61 @@ export class LocalGuestApp {
     try {
       if (thread.offerId) {
         // ADR-0005: "Confirmed" only once the durable Booking Contract exists.
-        if (environment.interactionStore.findBookingSnapshotByOfferId(thread.offerId)) return projectJourney("confirmed");
-        const offer = environment.conditionalOfferApp.getArtifact(thread.offerId, guest).facts.status;
+        if (
+          environment.interactionStore.findBookingSnapshotByOfferId(
+            thread.offerId,
+          )
+        )
+          return projectJourney("confirmed");
+        const offer = environment.conditionalOfferApp.getArtifact(
+          thread.offerId,
+          guest,
+        ).facts.status;
         if (offer === "accepted" || thread.activeSurfaces.has(PAYMENT_STAGE)) {
-          const payment = environment.cardPaymentApp.getArtifact(thread.offerId, guest).facts.status;
+          const payment = environment.cardPaymentApp.getArtifact(
+            thread.offerId,
+            guest,
+          ).facts.status;
           if (payment === "expired" || payment === "failed") {
-            return projectJourney("pay", { kind: payment, label: guestPaymentStatus(payment).label.split(" · ")[0]! });
+            return projectJourney("pay", {
+              kind: payment,
+              label: guestPaymentStatus(payment).label.split(" · ")[0]!,
+            });
           }
           return projectJourney("pay");
         }
-        if (offer === "expired") return projectJourney("offer", { kind: "expired", label: "Offer expired" });
-        if (offer === "stale") return projectJourney("offer", { kind: "closed", label: "Offer no longer current" });
-        if (offer === "revoked") return projectJourney("offer", { kind: "closed", label: "Offer withdrawn" });
+        if (offer === "expired")
+          return projectJourney("offer", {
+            kind: "expired",
+            label: "Offer expired",
+          });
+        if (offer === "stale")
+          return projectJourney("offer", {
+            kind: "closed",
+            label: "Offer no longer current",
+          });
+        if (offer === "revoked")
+          return projectJourney("offer", {
+            kind: "closed",
+            label: "Offer withdrawn",
+          });
         return projectJourney("offer");
       }
       if (thread.requestId) {
-        const request = environment.bookingRequestApp.getArtifact(thread.requestId, guest).facts;
-        const label = guestRequestStatus(request.status, request.delivered).label;
-        if (request.status === "declined") return projectJourney("request", { kind: "declined", label });
-        if (request.status === "expired") return projectJourney("request", { kind: "expired", label });
-        if (request.status === "delivery_failed") return projectJourney("request", { kind: "not-delivered", label });
+        const request = environment.bookingRequestApp.getArtifact(
+          thread.requestId,
+          guest,
+        ).facts;
+        const label = guestRequestStatus(
+          request.status,
+          request.delivered,
+        ).label;
+        if (request.status === "declined")
+          return projectJourney("request", { kind: "declined", label });
+        if (request.status === "expired")
+          return projectJourney("request", { kind: "expired", label });
+        if (request.status === "delivery_failed")
+          return projectJourney("request", { kind: "not-delivered", label });
         return projectJourney("request");
       }
     } catch {
@@ -1221,32 +2070,71 @@ export class LocalGuestApp {
     }
     if (thread.activeSurfaces.has(UNIT_STAGE)) return projectJourney("stay");
     // A kept draft counts only while it is the surface on screen, not after a new search.
-    if (thread.draftId && this.#stageForSurfaceId(thread.lastSurfaces.at(-1)?.surfaceId ?? "") === REQUEST_STAGE) return projectJourney("request");
+    if (
+      thread.draftId &&
+      this.#stageForSurfaceId(thread.lastSurfaces.at(-1)?.surfaceId ?? "") ===
+        REQUEST_STAGE
+    )
+      return projectJourney("request");
     if (thread.discoveryArtifact) return projectJourney("search");
     return undefined;
   }
 
   recordShellTelemetry(event: unknown): boolean {
-    if (typeof event !== "string" || !(SHELL_TELEMETRY_EVENTS as readonly string[]).includes(event)) return false;
-    try { this.#environment.telemetry.track({ type: `interaction.${event as ShellTelemetryEvent}` }); } catch { /* telemetry is non-blocking */ }
+    if (
+      typeof event !== "string" ||
+      !(SHELL_TELEMETRY_EVENTS as readonly string[]).includes(event)
+    )
+      return false;
+    try {
+      this.#environment.telemetry.track({
+        type: `interaction.${event as ShellTelemetryEvent}`,
+      });
+    } catch {
+      /* telemetry is non-blocking */
+    }
     return true;
   }
 
-  #emitTransition(thread: GuestThreadState, type: string, fields: Omit<TransitionTelemetryEvent, "type" | "eventVersion" | "timestamp" | "transitionKey" | "tenantId" | "principalId" | "threadId"> = {}): void {
+  #emitTransition(
+    thread: GuestThreadState,
+    type: string,
+    fields: Omit<
+      TransitionTelemetryEvent,
+      | "type"
+      | "eventVersion"
+      | "timestamp"
+      | "transitionKey"
+      | "tenantId"
+      | "principalId"
+      | "threadId"
+    > = {},
+  ): void {
     const aggregateId = fields.aggregateId ?? fields.correlationId;
     const event: TransitionTelemetryEvent = {
-      type, eventVersion: "1", timestamp: this.#environment.clock().toISOString(),
-      tenantId: this.#environment.config.tenantId, principalId: this.#environment.guestPrincipal().id,
-      threadId: thread.threadId, transitionKey: `${type}:${thread.threadId}:${fields.aggregateType ?? "interaction"}:${aggregateId ?? "none"}`,
-      ...(aggregateId === undefined ? {} : { aggregateId }), ...fields,
+      type,
+      eventVersion: "1",
+      timestamp: this.#environment.clock().toISOString(),
+      tenantId: this.#environment.config.tenantId,
+      principalId: this.#environment.guestPrincipal().id,
+      threadId: thread.threadId,
+      transitionKey: `${type}:${thread.threadId}:${fields.aggregateType ?? "interaction"}:${aggregateId ?? "none"}`,
+      ...(aggregateId === undefined ? {} : { aggregateId }),
+      ...fields,
     };
-    try { this.#environment.telemetry.trackTransition(event); } catch { /* telemetry cannot block a Guest action */ }
+    try {
+      this.#environment.telemetry.trackTransition(event);
+    } catch {
+      /* telemetry cannot block a Guest action */
+    }
   }
 
   #persistThread(thread: GuestThreadState): void {
     const environment = this.#environment;
     const current = thread.lastSurfaces.at(-1);
-    const activeStage = this.#stageForSurfaceId(current?.surfaceId ?? "") ?? this.#inferActiveStage(thread);
+    const activeStage =
+      this.#stageForSurfaceId(current?.surfaceId ?? "") ??
+      this.#inferActiveStage(thread);
     environment.interactionStore.saveThread({
       threadId: thread.threadId,
       principalId: environment.guestPrincipal().id,
@@ -1255,16 +2143,27 @@ export class LocalGuestApp {
     });
   }
 
-  #projectionFor(thread: GuestThreadState, activeStage: string | null): GuestPersistentProjection {
+  #projectionFor(
+    thread: GuestThreadState,
+    activeStage: string | null,
+  ): GuestPersistentProjection {
     const current = thread.lastSurfaces.at(-1);
     return {
       version: 1,
       timeline: thread.timeline.map(({ role, text }) => ({ role, text })),
-      discoveryContext: thread.discoveryContext === null ? null : { ...thread.discoveryContext },
+      discoveryContext:
+        thread.discoveryContext === null
+          ? null
+          : { ...thread.discoveryContext },
       discoveryArtifact: thread.discoveryArtifact,
       discoverySurfaceId: thread.discoverySurfaceId,
       discoveryRevision: thread.discoveryRevision,
-      unitDetail: thread.unitDetail ? { unitId: thread.unitDetail.unitId, artifactId: thread.unitDetail.artifactId } : null,
+      unitDetail: thread.unitDetail
+        ? {
+            unitId: thread.unitDetail.unitId,
+            artifactId: thread.unitDetail.artifactId,
+          }
+        : null,
       draftId: thread.draftId,
       draftQuote: thread.draftQuote ? { ...thread.draftQuote } : null,
       requestId: thread.requestId,
@@ -1277,10 +2176,16 @@ export class LocalGuestApp {
 
   #stageForSurfaceId(surfaceId: string): string | null {
     // Issue 13b: a comparison is restored as the results it was opened from.
-    if (surfaceId.includes(":discovery:") || surfaceId.includes(":compare:")) return DISCOVERY_STAGE;
+    if (surfaceId.includes(":discovery:") || surfaceId.includes(":compare:"))
+      return DISCOVERY_STAGE;
     if (surfaceId.includes(":unit:")) return UNIT_STAGE;
-    if (surfaceId.includes(":request:draft:") || surfaceId.includes(":request:review:")) return REQUEST_STAGE;
-    if (surfaceId.includes(":request:req-") || surfaceId.includes(":request:")) return REQUEST_STAGE;
+    if (
+      surfaceId.includes(":request:draft:") ||
+      surfaceId.includes(":request:review:")
+    )
+      return REQUEST_STAGE;
+    if (surfaceId.includes(":request:req-") || surfaceId.includes(":request:"))
+      return REQUEST_STAGE;
     if (surfaceId.includes(":offer:")) return OFFER_STAGE;
     if (surfaceId.includes(":payment:")) return PAYMENT_STAGE;
     if (surfaceId.includes(":booking:")) return BOOKING_STAGE;
@@ -1310,12 +2215,17 @@ export class LocalGuestApp {
     const environment = this.#environment;
     const record = environment.interactionStore.findThread(threadId);
     if (!record) return null;
-    if (record.principalId !== environment.guestPrincipal().id || record.tenantId !== environment.config.tenantId) {
+    if (
+      record.principalId !== environment.guestPrincipal().id ||
+      record.tenantId !== environment.config.tenantId
+    ) {
       return null;
     }
     let projection: GuestPersistentProjection | null = null;
     try {
-      projection = parseGuestProjection(JSON.parse(record.threadJson) as unknown);
+      projection = parseGuestProjection(
+        JSON.parse(record.threadJson) as unknown,
+      );
     } catch {
       projection = null;
     }
@@ -1324,8 +2234,13 @@ export class LocalGuestApp {
     const thread: GuestThreadState = {
       threadId,
       geminiHistory: [],
-      discoveryContext: projection.discoveryContext === null ? null : { ...projection.discoveryContext },
-      discoveryArtifact: projection.discoveryArtifact ? structuredClone(projection.discoveryArtifact) : null,
+      discoveryContext:
+        projection.discoveryContext === null
+          ? null
+          : { ...projection.discoveryContext },
+      discoveryArtifact: projection.discoveryArtifact
+        ? structuredClone(projection.discoveryArtifact)
+        : null,
       discoverySurfaceId: projection.discoverySurfaceId,
       discoveryRevision: projection.discoveryRevision,
       unitDetail: projection.unitDetail ? { ...projection.unitDetail } : null,
@@ -1338,7 +2253,9 @@ export class LocalGuestApp {
       geminiLastSearch: null,
       timeline: projection.timeline.map(({ role, text }) => ({ role, text })),
       lastSurfaces: [],
-      searchHistory: projection.searchHistory.map((context) => ({ ...context })),
+      searchHistory: projection.searchHistory.map((context) => ({
+        ...context,
+      })),
       compareSelection: null,
       draftChangeContext: null,
       pendingDraftReplacement: null,
@@ -1347,7 +2264,11 @@ export class LocalGuestApp {
     const restored = this.#restoreCurrentSurface(thread, projection);
     if (restored) {
       thread.lastSurfaces = [restored];
-      this.#emitTransition(thread, "interaction.restart_restoration_succeeded", { aggregateType: "interaction_thread", aggregateId: threadId });
+      this.#emitTransition(
+        thread,
+        "interaction.restart_restoration_succeeded",
+        { aggregateType: "interaction_thread", aggregateId: threadId },
+      );
     }
     return thread;
   }
@@ -1358,36 +2279,64 @@ export class LocalGuestApp {
    * preserved fail-closed by the underlying artifact builders (lazy expiry
    * against the current clock).
    */
-  #restoreCurrentSurface(thread: GuestThreadState, projection: GuestPersistentProjection): GuestSurfacePayload | null {
+  #restoreCurrentSurface(
+    thread: GuestThreadState,
+    projection: GuestPersistentProjection,
+  ): GuestSurfacePayload | null {
     const environment = this.#environment;
     const surfaceId = projection.activeSurfaceId;
     if (!surfaceId) return null;
     try {
-      if (projection.activeStage === UNIT_STAGE && projection.unitDetail && projection.discoveryArtifact) {
-        const unit = projection.discoveryArtifact.facts.results.find((candidate) => candidate.id === projection.unitDetail?.unitId);
+      if (
+        projection.activeStage === UNIT_STAGE &&
+        projection.unitDetail &&
+        projection.discoveryArtifact
+      ) {
+        const unit = projection.discoveryArtifact.facts.results.find(
+          (candidate) => candidate.id === projection.unitDetail?.unitId,
+        );
         if (unit) {
-          const unitSurfaceId = unitDetailSurfaceId(thread.threadId, projection.discoveryRevision);
+          const unitSurfaceId = unitDetailSurfaceId(
+            thread.threadId,
+            projection.discoveryRevision,
+          );
           thread.activeSurfaces.set(UNIT_STAGE, unitSurfaceId);
           return {
             surfaceId: unitSurfaceId,
             mode: "focused-surface",
             summary: `${unit.title} details`,
             // ADR-0080: the restored unit keeps its conventional unit route.
-            conventionalRoute: projection.discoveryArtifact.actions.find((action) => action.type === "view-unit" && action.unitId === unit.id)?.conventionalRoute,
+            conventionalRoute: projection.discoveryArtifact.actions.find(
+              (action) =>
+                action.type === "view-unit" && action.unitId === unit.id,
+            )?.conventionalRoute,
             textFallback: `${unit.title}. ${unit.location.neighbourhood}, ${unit.location.city}. Entire Place; capacity ${unit.capacity} guests.`,
             a2uiMessages: unitDetailArtifactToA2UI({
-              artifact: unitDetailArtifactFromProjection({ unit, ...this.#stayDatesFor(thread), projectionVersion: projection.discoveryArtifact.projectionVersion, viewer: environment.guestPrincipal() }),
+              artifact: unitDetailArtifactFromProjection({
+                unit,
+                ...this.#stayDatesFor(thread),
+                projectionVersion:
+                  projection.discoveryArtifact.projectionVersion,
+                viewer: environment.guestPrincipal(),
+              }),
               surfaceId: unitSurfaceId,
               backToResults: { artifactId: projection.discoveryArtifact.id },
             }),
           };
         }
       }
-      if (projection.activeStage === REQUEST_STAGE && projection.draftId && !projection.requestId) {
+      if (
+        projection.activeStage === REQUEST_STAGE &&
+        projection.draftId &&
+        !projection.requestId
+      ) {
         // Draft or review: rebuild the current draft artifact surface. The
         // stored surface id distinguishes draft from review.
         const review = surfaceId.includes(":request:review:");
-        const artifact = this.#draftArtifact(thread, review ? "review" : "draft");
+        const artifact = this.#draftArtifact(
+          thread,
+          review ? "review" : "draft",
+        );
         const draftSurfaceId = review
           ? `thread-${thread.threadId}:request:review:${projection.draftId}`
           : `thread-${thread.threadId}:request:draft:${projection.draftId}`;
@@ -1398,96 +2347,218 @@ export class LocalGuestApp {
           summary: review ? "Request review" : "Request Draft",
           conventionalRoute: conventionalRequestDraftRoute(projection.draftId),
           textFallback: this.#draftFallback(artifact),
-          a2uiMessages: requestDraftArtifactToA2UI({ artifact, surfaceId: draftSurfaceId }),
+          a2uiMessages: requestDraftArtifactToA2UI({
+            artifact,
+            surfaceId: draftSurfaceId,
+          }),
         };
       }
       if (projection.activeStage === REQUEST_STAGE && projection.requestId) {
-        const artifact = environment.bookingRequestApp.getArtifact(projection.requestId, environment.guestPrincipal());
-        if (["declined", "expired", "delivery_failed"].includes(artifact.facts.status)) {
-          const outcomeSurface = { ...this.#requestSurface(thread, projection.requestId), mode: "inline-surface", summary: "Request outcome", status: "active" } as GuestSurfacePayload;
+        const artifact = environment.bookingRequestApp.getArtifact(
+          projection.requestId,
+          environment.guestPrincipal(),
+        );
+        if (
+          ["declined", "expired", "delivery_failed"].includes(
+            artifact.facts.status,
+          )
+        ) {
+          const outcomeSurface = {
+            ...this.#requestSurface(thread, projection.requestId),
+            mode: "inline-surface",
+            summary: "Request outcome",
+            status: "active",
+          } as GuestSurfacePayload;
           thread.activeSurfaces.delete(REQUEST_STAGE);
           return outcomeSurface;
         }
-        const requestSurface = this.#requestSurface(thread, projection.requestId);
+        const requestSurface = this.#requestSurface(
+          thread,
+          projection.requestId,
+        );
         thread.activeSurfaces.set(REQUEST_STAGE, requestSurface.surfaceId);
         return requestSurface;
       }
       if (projection.activeStage === OFFER_STAGE && projection.offerId) {
         // Never issue a new offer during restoration; only present the one the
         // durable store already correlates.
-        const offerArtifact = environment.conditionalOfferApp.getArtifact(projection.offerId, environment.guestPrincipal());
+        const offerArtifact = environment.conditionalOfferApp.getArtifact(
+          projection.offerId,
+          environment.guestPrincipal(),
+        );
         const offerSurfaceId = `thread-${thread.threadId}:offer:${projection.offerId}`;
         thread.activeSurfaces.set(OFFER_STAGE, offerSurfaceId);
         return {
           surfaceId: offerSurfaceId,
           mode: "focused-surface",
-          summary: offerArtifact.facts.status === "expired" ? "Conditional Booking Offer expired" : "Conditional Booking Offer",
-          status: offerArtifact.facts.status === "expired" ? "expired" : "active",
-          conventionalRoute: conventionalConditionalOfferRoute(projection.offerId),
+          summary:
+            offerArtifact.facts.status === "expired"
+              ? "Conditional Booking Offer expired"
+              : "Conditional Booking Offer",
+          status:
+            offerArtifact.facts.status === "expired" ? "expired" : "active",
+          conventionalRoute: conventionalConditionalOfferRoute(
+            projection.offerId,
+          ),
           textFallback: this.#offerFallback(offerArtifact),
-          a2uiMessages: conditionalOfferArtifactToA2UI({ artifact: offerArtifact, surfaceId: offerSurfaceId }),
+          a2uiMessages: conditionalOfferArtifactToA2UI({
+            artifact: offerArtifact,
+            surfaceId: offerSurfaceId,
+          }),
         };
       }
       if (projection.activeStage === PAYMENT_STAGE && projection.offerId) {
-        const snapshot = environment.interactionStore.findBookingSnapshotByOfferId(projection.offerId);
+        const snapshot =
+          environment.interactionStore.findBookingSnapshotByOfferId(
+            projection.offerId,
+          );
         if (snapshot) {
           try {
-            const contract = JSON.parse(snapshot.contractJson) as { readonly contractId: string };
+            const contract = JSON.parse(snapshot.contractJson) as {
+              readonly contractId: string;
+            };
             const bookingSurfaceId = `thread-${thread.threadId}:booking:${contract.contractId}`;
-            const contractArtifact = this.#contractArtifact(contract.contractId);
+            const contractArtifact = this.#contractArtifact(
+              contract.contractId,
+            );
             thread.activeSurfaces.delete(PAYMENT_STAGE);
             thread.activeSurfaces.set(BOOKING_STAGE, bookingSurfaceId);
-            return { surfaceId: bookingSurfaceId, mode: "focused-surface", summary: "Reservation confirmed", conventionalRoute: conventionalBookingContractRoute(contract.contractId), textFallback: this.#confirmedBookingFallback(contractArtifact), a2uiMessages: bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: bookingSurfaceId }) };
+            return {
+              surfaceId: bookingSurfaceId,
+              mode: "focused-surface",
+              summary: "Reservation confirmed",
+              conventionalRoute: conventionalBookingContractRoute(
+                contract.contractId,
+              ),
+              textFallback: this.#confirmedBookingFallback(contractArtifact),
+              a2uiMessages: bookingContractArtifactToA2UI({
+                artifact: contractArtifact,
+                surfaceId: bookingSurfaceId,
+              }),
+            };
           } catch {
             // Keep the payment surface until the durable Contract can be read.
           }
         }
-        const artifact = environment.cardPaymentApp.getArtifact(projection.offerId, environment.guestPrincipal());
+        const artifact = environment.cardPaymentApp.getArtifact(
+          projection.offerId,
+          environment.guestPrincipal(),
+        );
         if (artifact.facts.status === "confirmed") {
-          const snapshot = environment.interactionStore.findBookingSnapshotByOfferId(projection.offerId);
+          const snapshot =
+            environment.interactionStore.findBookingSnapshotByOfferId(
+              projection.offerId,
+            );
           if (snapshot) {
-            const contract = JSON.parse(snapshot.contractJson) as { contractId: string };
+            const contract = JSON.parse(snapshot.contractJson) as {
+              contractId: string;
+            };
             const bookingSurfaceId = `thread-${thread.threadId}:booking:${contract.contractId}`;
-            const contractArtifact = this.#contractArtifact(contract.contractId);
+            const contractArtifact = this.#contractArtifact(
+              contract.contractId,
+            );
             thread.activeSurfaces.delete(PAYMENT_STAGE);
             thread.activeSurfaces.set(BOOKING_STAGE, bookingSurfaceId);
-            return { surfaceId: bookingSurfaceId, mode: "focused-surface", summary: "Reservation confirmed", conventionalRoute: conventionalBookingContractRoute(contract.contractId), textFallback: this.#confirmedBookingFallback(contractArtifact), a2uiMessages: bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: bookingSurfaceId }) };
+            return {
+              surfaceId: bookingSurfaceId,
+              mode: "focused-surface",
+              summary: "Reservation confirmed",
+              conventionalRoute: conventionalBookingContractRoute(
+                contract.contractId,
+              ),
+              textFallback: this.#confirmedBookingFallback(contractArtifact),
+              a2uiMessages: bookingContractArtifactToA2UI({
+                artifact: contractArtifact,
+                surfaceId: bookingSurfaceId,
+              }),
+            };
           }
         }
         if (artifact.facts.status === "expired") {
           const expiredId = `thread-${thread.threadId}:payment:expired:${projection.offerId}`;
           thread.activeSurfaces.set(PAYMENT_STAGE, expiredId);
-          return { ...this.#paymentSurface(thread, artifact, "Payment Window expired", expiredId), status: "expired", textFallback: `Payment window expired. ${GUEST_FACT_LABELS.amountDueNow}: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}. No Reservation exists.` };
+          return {
+            ...this.#paymentSurface(
+              thread,
+              artifact,
+              "Payment Window expired",
+              expiredId,
+            ),
+            status: "expired",
+            textFallback: `Payment window expired. ${GUEST_FACT_LABELS.amountDueNow}: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}. No Reservation exists.`,
+          };
         }
         const storedSurfaceId = projection.activeSurfaceId ?? "";
         // The stored surface id is the authoritative pointer to the exact
         // server-owned presentation (ADR-0074): processing, deposit, checkout
         // and ready surfaces must restore to the same lifecycle state.
-        if (storedSurfaceId.includes(":payment:result:") || artifact.facts.journeyStage === "stay_payment_processing") {
-          const processingId = storedSurfaceId.includes(":payment:result:") ? storedSurfaceId : `thread-${thread.threadId}:payment:result:${projection.offerId}`;
+        if (
+          storedSurfaceId.includes(":payment:result:") ||
+          artifact.facts.journeyStage === "stay_payment_processing"
+        ) {
+          const processingId = storedSurfaceId.includes(":payment:result:")
+            ? storedSurfaceId
+            : `thread-${thread.threadId}:payment:result:${projection.offerId}`;
           thread.activeSurfaces.set(PAYMENT_STAGE, processingId);
-          return this.#paymentSurface(thread, artifact, "Checking payment", processingId);
+          return this.#paymentSurface(
+            thread,
+            artifact,
+            "Checking payment",
+            processingId,
+          );
         }
-        if (artifact.facts.status === "deposit_required" || storedSurfaceId.includes(":deposit-")) {
+        if (
+          artifact.facts.status === "deposit_required" ||
+          storedSurfaceId.includes(":deposit-")
+        ) {
           const depositId = `thread-${thread.threadId}:payment:deposit-ready:${projection.offerId}`;
           thread.activeSurfaces.set(PAYMENT_STAGE, depositId);
-          return this.#paymentSurface(thread, artifact, `${GUEST_GLOSSARY.refundableSecurityDeposit} payment required`, depositId);
+          return this.#paymentSurface(
+            thread,
+            artifact,
+            `${GUEST_GLOSSARY.refundableSecurityDeposit} payment required`,
+            depositId,
+          );
         }
-        const session = environment.cardPaymentApp.manager.getCheckoutSession(projection.offerId);
-        if (artifact.facts.status === "checkout_initiated" || (session && session.status === "initiated")) {
-          const checkoutId = session?.checkoutId ?? (storedSurfaceId.includes(":checkout:") ? storedSurfaceId.split(":checkout:").at(-1) ?? "restored" : "restored");
+        const session = environment.cardPaymentApp.manager.getCheckoutSession(
+          projection.offerId,
+        );
+        if (
+          artifact.facts.status === "checkout_initiated" ||
+          (session && session.status === "initiated")
+        ) {
+          const checkoutId =
+            session?.checkoutId ??
+            (storedSurfaceId.includes(":checkout:")
+              ? (storedSurfaceId.split(":checkout:").at(-1) ?? "restored")
+              : "restored");
           const checkoutSurfaceId = `thread-${thread.threadId}:payment:checkout:${checkoutId}`;
           thread.activeSurfaces.set(PAYMENT_STAGE, checkoutSurfaceId);
-          return this.#paymentSurface(thread, artifact, "Payment handoff", checkoutSurfaceId);
+          return this.#paymentSurface(
+            thread,
+            artifact,
+            "Payment handoff",
+            checkoutSurfaceId,
+          );
         }
-        const readyId = storedSurfaceId.includes(":payment:ready:") ? storedSurfaceId : `thread-${thread.threadId}:payment:ready:${projection.offerId}`;
+        const readyId = storedSurfaceId.includes(":payment:ready:")
+          ? storedSurfaceId
+          : `thread-${thread.threadId}:payment:ready:${projection.offerId}`;
         thread.activeSurfaces.set(PAYMENT_STAGE, readyId);
-        return { ...this.#paymentSurface(thread, artifact, "Secure payment", readyId) };
+        return {
+          ...this.#paymentSurface(thread, artifact, "Secure payment", readyId),
+        };
       }
       if (projection.activeStage === BOOKING_STAGE) {
-        const snapshot = environment.interactionStore.findBookingSnapshotByOfferId(projection.offerId ?? "");
+        const snapshot =
+          environment.interactionStore.findBookingSnapshotByOfferId(
+            projection.offerId ?? "",
+          );
         if (snapshot) {
-          const contract = JSON.parse(snapshot.contractJson) as { contractId: string; offerId: string };
+          const contract = JSON.parse(snapshot.contractJson) as {
+            contractId: string;
+            offerId: string;
+          };
           const bookingSurfaceId = surfaceId.includes(":booking:")
             ? surfaceId
             : `thread-${thread.threadId}:booking:${contract.contractId}`;
@@ -1497,21 +2568,39 @@ export class LocalGuestApp {
             surfaceId: bookingSurfaceId,
             mode: "focused-surface",
             summary: "Reservation confirmed",
-            conventionalRoute: conventionalBookingContractRoute(contract.contractId),
+            conventionalRoute: conventionalBookingContractRoute(
+              contract.contractId,
+            ),
             textFallback: this.#confirmedBookingFallback(contractArtifact),
-            a2uiMessages: bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: bookingSurfaceId }),
+            a2uiMessages: bookingContractArtifactToA2UI({
+              artifact: contractArtifact,
+              surfaceId: bookingSurfaceId,
+            }),
           };
         }
       }
-      if (projection.activeStage === DISCOVERY_STAGE && projection.discoveryArtifact) {
-        thread.activeSurfaces.set(DISCOVERY_STAGE, projection.discoverySurfaceId);
-        return discoverySurface(projection.discoveryArtifact, projection.discoverySurfaceId);
+      if (
+        projection.activeStage === DISCOVERY_STAGE &&
+        projection.discoveryArtifact
+      ) {
+        thread.activeSurfaces.set(
+          DISCOVERY_STAGE,
+          projection.discoverySurfaceId,
+        );
+        return discoverySurface(
+          projection.discoveryArtifact,
+          projection.discoverySurfaceId,
+        );
       }
       return null;
     } catch {
       // A current-domain validation failure during restoration keeps the
       // thread non-actionable rather than starting a new workflow.
-      this.#emitTransition(thread, "interaction.restart_restoration_failed", { aggregateType: "interaction_thread", aggregateId: thread.threadId, reasonCode: "RESTORATION_FAILED" });
+      this.#emitTransition(thread, "interaction.restart_restoration_failed", {
+        aggregateType: "interaction_thread",
+        aggregateId: thread.threadId,
+        reasonCode: "RESTORATION_FAILED",
+      });
       return null;
     }
   }
@@ -1558,7 +2647,8 @@ export class LocalGuestApp {
     thread.compareSelection = null;
     // Issue 14 / M3: a new search forgets the draft on screen, so its Review
     // and Submit go stale. Resuming the same stay re-presents it.
-    if (!thread.requestId && !thread.offerId) this.#supersede(thread, REQUEST_STAGE);
+    if (!thread.requestId && !thread.offerId)
+      this.#supersede(thread, REQUEST_STAGE);
     this.#supersede(thread, DRAFT_REPLACEMENT_STAGE);
     thread.draftChangeContext = null;
     thread.pendingDraftReplacement = null;
@@ -1566,14 +2656,23 @@ export class LocalGuestApp {
     // answering about an apartment that is no longer on screen.
     thread.unitDetail = null;
     thread.discoveryRevision += 1;
-    thread.discoverySurfaceId = thread.discoveryRevision === 1
-      ? `thread-${thread.threadId}:discovery:results`
-      : `thread-${thread.threadId}:discovery:results:${thread.discoveryRevision}`;
+    thread.discoverySurfaceId =
+      thread.discoveryRevision === 1
+        ? `thread-${thread.threadId}:discovery:results`
+        : `thread-${thread.threadId}:discovery:results:${thread.discoveryRevision}`;
   }
 
-  #rememberResult(threadId: string, userText: string | undefined, result: GuestTurnResult & { readonly ok: true }): void {
-    const thread = this.#threads.get(threadId) ?? this.#loadThread(threadId) ?? this.#createThread(threadId);
-    if (userText !== undefined) thread.timeline.push({ role: "user", text: userText });
+  #rememberResult(
+    threadId: string,
+    userText: string | undefined,
+    result: GuestTurnResult & { readonly ok: true },
+  ): void {
+    const thread =
+      this.#threads.get(threadId) ??
+      this.#loadThread(threadId) ??
+      this.#createThread(threadId);
+    if (userText !== undefined)
+      thread.timeline.push({ role: "user", text: userText });
     for (const message of result.messages) {
       // Refresh paths can re-present the same outcome message (ADR-0074);
       // avoid duplicating an identical assistant message at the tail.
@@ -1581,19 +2680,31 @@ export class LocalGuestApp {
       if (tail?.role === "assistant" && tail.text === message) continue;
       thread.timeline.push({ role: "assistant", text: message });
     }
-    for (const receipt of result.receipts ?? []) thread.timeline.push({ role: "receipt", text: receipt });
+    for (const receipt of result.receipts ?? [])
+      thread.timeline.push({ role: "receipt", text: receipt });
     // A text-only turn changes the transcript but does not supersede the
     // current server-backed workspace (ADR-0074).
     if (result.surfaces.length > 0) thread.lastSurfaces = [...result.surfaces];
     try {
-      if (result.messages.length > 0) this.#environment.telemetry.track({ type: "interaction.text-response-rendered" });
+      if (result.messages.length > 0)
+        this.#environment.telemetry.track({
+          type: "interaction.text-response-rendered",
+        });
       for (const surface of result.surfaces) {
-        this.#environment.telemetry.track({ type: `interaction.${surface.mode ?? "surface"}-rendered` });
+        this.#environment.telemetry.track({
+          type: `interaction.${surface.mode ?? "surface"}-rendered`,
+        });
         if (surface.surfaceId.includes(":booking:")) {
-          this.#emitTransition(thread, "reservation.summary.rendered", { aggregateType: "reservation", aggregateId: surface.surfaceId.split(":booking:").at(-1), surfaceId: surface.surfaceId });
+          this.#emitTransition(thread, "reservation.summary.rendered", {
+            aggregateType: "reservation",
+            aggregateId: surface.surfaceId.split(":booking:").at(-1),
+            surfaceId: surface.surfaceId,
+          });
         }
       }
-    } catch { /* presentation telemetry is best-effort */ }
+    } catch {
+      /* presentation telemetry is best-effort */
+    }
     this.#persistThread(thread);
   }
 
@@ -1603,7 +2714,15 @@ export class LocalGuestApp {
       ...result,
       surfaces: result.surfaces.map((surface) => ({
         ...surface,
-        mode: surface.mode ?? (surface.surfaceId.includes(":unit:") || surface.surfaceId.includes(":request:") || surface.surfaceId.includes(":offer:") || surface.surfaceId.includes(":payment:") || surface.surfaceId.includes(":booking:") ? "focused-surface" : "inline-surface"),
+        mode:
+          surface.mode ??
+          (surface.surfaceId.includes(":unit:") ||
+          surface.surfaceId.includes(":request:") ||
+          surface.surfaceId.includes(":offer:") ||
+          surface.surfaceId.includes(":payment:") ||
+          surface.surfaceId.includes(":booking:")
+            ? "focused-surface"
+            : "inline-surface"),
         status: surface.status ?? "active",
         summary: surface.summary ?? "Current conversation workspace",
       })),
@@ -1625,10 +2744,17 @@ export class LocalGuestApp {
     };
   }
 
-  #handleViewUnit(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
+  #handleViewUnit(
+    thread: GuestThreadState,
+    event: GuestEventPayload,
+  ): GuestTurnResult {
     const artifact = thread.discoveryArtifact;
     if (!artifact) {
-      return { ok: false, code: "INVALID_ARTIFACT", message: "No search is active for this conversation." };
+      return {
+        ok: false,
+        code: "INVALID_ARTIFACT",
+        message: "No search is active for this conversation.",
+      };
     }
     // Server-side validation against the authoritative discovery artifact;
     // arbitrary client-supplied Unit IDs fail closed here.
@@ -1639,15 +2765,28 @@ export class LocalGuestApp {
       projectionVersion: artifact.projectionVersion,
       actions: artifact.actions
         .filter((action) => action.type === "view-unit")
-        .map((action) => ({ type: "view-unit" as const, unitId: action.unitId, conventionalRoute: action.conventionalRoute })),
+        .map((action) => ({
+          type: "view-unit" as const,
+          unitId: action.unitId,
+          conventionalRoute: action.conventionalRoute,
+        })),
     };
-    const resolved = resolveDiscoveryServerEvent({ event: this.#handoff(event), artifact: authoritative });
+    const resolved = resolveDiscoveryServerEvent({
+      event: this.#handoff(event),
+      artifact: authoritative,
+    });
     if (!resolved.ok) {
       return { ok: false, code: resolved.code, message: resolved.message };
     }
-    const unit = artifact.facts.results.find((candidate) => candidate.id === resolved.effect.unitId);
+    const unit = artifact.facts.results.find(
+      (candidate) => candidate.id === resolved.effect.unitId,
+    );
     if (!unit) {
-      return { ok: false, code: "ACTION_NOT_AUTHORIZED", message: `That ${GUEST_GLOSSARY.unit} is not available.` };
+      return {
+        ok: false,
+        code: "ACTION_NOT_AUTHORIZED",
+        message: `That ${GUEST_GLOSSARY.unit} is not available.`,
+      };
     }
     return this.#openUnitDetail(thread, artifact, unit, resolved.effect.route);
   }
@@ -1656,22 +2795,54 @@ export class LocalGuestApp {
    * A typed request to open a result. The Unit is chosen from the authoritative results in the order they are shown;
    * with several results and none named, the concierge asks which one rather than guessing.
    */
-  #viewResultFromChat(thread: GuestThreadState, artifact: DiscoveryArtifactProjection, position: number | "last" | null): GuestTurnResult {
+  #viewResultFromChat(
+    thread: GuestThreadState,
+    artifact: DiscoveryArtifactProjection,
+    position: number | "last" | null,
+  ): GuestTurnResult {
     const results = artifact.facts.results;
     const ordinalLabels = ["The first one", "The second one", "The third one"];
-    const askWhich = (message: string): GuestTurnResult => ({ ok: true, messages: [message], surfaces: [], quickReplies: ordinalLabels.slice(0, Math.min(results.length, ordinalLabels.length)) });
+    const askWhich = (message: string): GuestTurnResult => ({
+      ok: true,
+      messages: [message],
+      surfaces: [],
+      quickReplies: ordinalLabels.slice(
+        0,
+        Math.min(results.length, ordinalLabels.length),
+      ),
+    });
     if (results.length === 0) {
-      return { ok: true, messages: [`There is no ${GUEST_GLOSSARY.unit} to show for this search yet. Tell me how you would like to change it.`], surfaces: [] };
+      return {
+        ok: true,
+        messages: [
+          `There is no ${GUEST_GLOSSARY.unit} to show for this search yet. Tell me how you would like to change it.`,
+        ],
+        surfaces: [],
+      };
     }
-    const index = position === "last" ? results.length - 1 : position === null ? (results.length === 1 ? 0 : -1) : position - 1;
+    const index =
+      position === "last"
+        ? results.length - 1
+        : position === null
+          ? results.length === 1
+            ? 0
+            : -1
+          : position - 1;
     if (position === null && index === -1) {
-      return askWhich(`I found ${results.length} places. Which one would you like to see? Say “the first one” or “the second one”, or choose ${GUEST_GLOSSARY.viewUnit} on a result.`);
+      return askWhich(
+        `I found ${results.length} places. Which one would you like to see? Say “the first one” or “the second one”, or choose ${GUEST_GLOSSARY.viewUnit} on a result.`,
+      );
     }
     const unit = results[index];
     if (!unit) {
-      return askWhich(`This search has ${results.length} ${results.length === 1 ? "place" : "places"}. Which one would you like to see?`);
+      return askWhich(
+        `This search has ${results.length} ${results.length === 1 ? "place" : "places"}. Which one would you like to see?`,
+      );
     }
-    const route = artifact.actions.find((action) => action.type === "view-unit" && action.unitId === unit.id)?.conventionalRoute ?? `/stays/${encodeURIComponent(unit.id)}`;
+    const route =
+      artifact.actions.find(
+        (action) => action.type === "view-unit" && action.unitId === unit.id,
+      )?.conventionalRoute ?? `/stays/${encodeURIComponent(unit.id)}`;
     return this.#openUnitDetail(thread, artifact, unit, route);
   }
 
@@ -1679,18 +2850,39 @@ export class LocalGuestApp {
    * Opens a Unit from the authoritative discovery artifact, for the generated View action and for the same request
    * typed in chat (issue 10, finding C4). Callers pick the Unit from `artifact.facts.results`, never from client input.
    */
-  #openUnitDetail(thread: GuestThreadState, artifact: DiscoveryArtifactProjection, unit: DiscoveryArtifactProjection["facts"]["results"][number], route: string): GuestTurnResult {
-    const unitDetailArtifact = unitDetailArtifactFromProjection({ unit, ...this.#stayDatesFor(thread), projectionVersion: artifact.projectionVersion, viewer: this.#environment.guestPrincipal() });
+  #openUnitDetail(
+    thread: GuestThreadState,
+    artifact: DiscoveryArtifactProjection,
+    unit: DiscoveryArtifactProjection["facts"]["results"][number],
+    route: string,
+  ): GuestTurnResult {
+    const unitDetailArtifact = unitDetailArtifactFromProjection({
+      unit,
+      ...this.#stayDatesFor(thread),
+      projectionVersion: artifact.projectionVersion,
+      viewer: this.#environment.guestPrincipal(),
+    });
     thread.unitDetail = { unitId: unit.id, artifactId: unitDetailArtifact.id };
-    const surfaceId = unitDetailSurfaceId(thread.threadId, thread.discoveryRevision);
+    const surfaceId = unitDetailSurfaceId(
+      thread.threadId,
+      thread.discoveryRevision,
+    );
     // ADR-0074: selecting a Unit supersedes the discovery projection and its
     // generated actions. "Back to results" re-presents the same artifact as a
     // new surface lifecycle (issue 08).
     this.#supersede(thread, DISCOVERY_STAGE);
     this.#supersede(thread, COMPARE_STAGE);
     thread.activeSurfaces.set(UNIT_STAGE, surfaceId);
-    this.#emitTransition(thread, "unit.selected", { aggregateType: "unit", aggregateId: unit.id, surfaceId });
-    this.#emitTransition(thread, "unit.inspection.opened", { aggregateType: "unit", aggregateId: unit.id, surfaceId });
+    this.#emitTransition(thread, "unit.selected", {
+      aggregateType: "unit",
+      aggregateId: unit.id,
+      surfaceId,
+    });
+    this.#emitTransition(thread, "unit.inspection.opened", {
+      aggregateType: "unit",
+      aggregateId: unit.id,
+      surfaceId,
+    });
     return {
       ok: true,
       messages: [`Here are the details for ${unit.title}.`],
@@ -1701,18 +2893,35 @@ export class LocalGuestApp {
           summary: `${unit.title} details`,
           conventionalRoute: route,
           textFallback: `${unit.title}. ${unit.location.neighbourhood}, ${unit.location.city}. Entire Place; capacity ${unit.capacity} guests. ${GUEST_GLOSSARY.allInStayTotal}: ${unit.price.allInStayTotalKobo === null ? "not yet quoted" : formatNgnKobo(unit.price.allInStayTotalKobo)}. ${GUEST_GLOSSARY.refundableSecurityDeposit}: ${formatNgnKobo(unit.price.refundableSecurityDepositKobo)}. Inspection: ${unit.trust.inspection.status}; Management Authority: ${unit.trust.managementAuthority.status}.`,
-          a2uiMessages: unitDetailArtifactToA2UI({ artifact: unitDetailArtifact, surfaceId, backToResults: { artifactId: artifact.id } }),
+          a2uiMessages: unitDetailArtifactToA2UI({
+            artifact: unitDetailArtifact,
+            surfaceId,
+            backToResults: { artifactId: artifact.id },
+          }),
         },
       ],
     };
   }
 
-  #handleSeeAllDiscovery(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
+  #handleSeeAllDiscovery(
+    thread: GuestThreadState,
+    event: GuestEventPayload,
+  ): GuestTurnResult {
     const artifact = thread.discoveryArtifact;
     const context = event.context;
-    if (!artifact || !context || typeof context !== "object" || Array.isArray(context)
-      || Object.keys(context).length !== 1 || context.artifactId !== artifact.id) {
-      return { ok: false, code: "INVALID_CONTEXT", message: "That discovery workspace is no longer valid." };
+    if (
+      !artifact ||
+      !context ||
+      typeof context !== "object" ||
+      Array.isArray(context) ||
+      Object.keys(context).length !== 1 ||
+      context.artifactId !== artifact.id
+    ) {
+      return {
+        ok: false,
+        code: "INVALID_CONTEXT",
+        message: "That discovery workspace is no longer valid.",
+      };
     }
     const surfaceId = `thread-${thread.threadId}:discovery:focused`;
     this.#supersede(thread, DISCOVERY_STAGE);
@@ -1721,14 +2930,20 @@ export class LocalGuestApp {
     return {
       ok: true,
       messages: [`Here are all the matching ${GUEST_GLOSSARY.units}.`],
-      surfaces: [{
-        surfaceId,
-        mode: "focused-surface",
-        summary: "All discovery results",
-        conventionalRoute: conventionalSearchRoute(filters),
-        textFallback: discoveryFallbackMessage(artifact),
-        a2uiMessages: discoveryArtifactToA2UI({ artifact, surfaceId, compareSelection: thread.compareSelection ?? undefined }),
-      }],
+      surfaces: [
+        {
+          surfaceId,
+          mode: "focused-surface",
+          summary: "All discovery results",
+          conventionalRoute: conventionalSearchRoute(filters),
+          textFallback: discoveryFallbackMessage(artifact),
+          a2uiMessages: discoveryArtifactToA2UI({
+            artifact,
+            surfaceId,
+            compareSelection: thread.compareSelection ?? undefined,
+          }),
+        },
+      ],
     };
   }
 
@@ -1738,27 +2953,63 @@ export class LocalGuestApp {
    * stay opens the two-up comparison. Presentation only: no domain command
    * runs (ADR-0072). Context is checked exactly against the stored artifact.
    */
-  #handleCompare(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
+  #handleCompare(
+    thread: GuestThreadState,
+    event: GuestEventPayload,
+  ): GuestTurnResult {
     const artifact = thread.discoveryArtifact;
     const context = event.context;
-    if (!artifact || !context || typeof context !== "object" || Array.isArray(context)
-      || Object.keys(context).sort().join(",") !== "artifactId,unitId" || context.artifactId !== artifact.id || typeof context.unitId !== "string") {
-      return { ok: false, code: "INVALID_CONTEXT", message: "Those search results are no longer available." };
+    if (
+      !artifact ||
+      !context ||
+      typeof context !== "object" ||
+      Array.isArray(context) ||
+      Object.keys(context).sort().join(",") !== "artifactId,unitId" ||
+      context.artifactId !== artifact.id ||
+      typeof context.unitId !== "string"
+    ) {
+      return {
+        ok: false,
+        code: "INVALID_CONTEXT",
+        message: "Those search results are no longer available.",
+      };
     }
     const unitId = context.unitId;
-    const unit = artifact.facts.results.find((candidate) => candidate.id === unitId);
+    const unit = artifact.facts.results.find(
+      (candidate) => candidate.id === unitId,
+    );
     if (!unit || artifact.facts.results.length < 2) {
-      return { ok: false, code: "INVALID_CONTEXT", message: `That ${GUEST_GLOSSARY.unit} is not in these results.` };
+      return {
+        ok: false,
+        code: "INVALID_CONTEXT",
+        message: `That ${GUEST_GLOSSARY.unit} is not in these results.`,
+      };
     }
-    const selected = thread.compareSelection === null ? undefined : artifact.facts.results.find((candidate) => candidate.id === thread.compareSelection);
+    const selected =
+      thread.compareSelection === null
+        ? undefined
+        : artifact.facts.results.find(
+            (candidate) => candidate.id === thread.compareSelection,
+          );
     const surfaceId = event.surfaceId;
     const results = (message: string): GuestTurnResult => ({
       ok: true,
       messages: [message],
-      surfaces: [{
-        ...discoverySurface(artifact, surfaceId, thread.compareSelection ?? undefined),
-        ...(surfaceId.endsWith(":discovery:focused") ? { mode: "focused-surface" as const, summary: "All discovery results" } : {}),
-      }],
+      surfaces: [
+        {
+          ...discoverySurface(
+            artifact,
+            surfaceId,
+            thread.compareSelection ?? undefined,
+          ),
+          ...(surfaceId.endsWith(":discovery:focused")
+            ? {
+                mode: "focused-surface" as const,
+                summary: "All discovery results",
+              }
+            : {}),
+        },
+      ],
     });
     if (selected === undefined) {
       thread.compareSelection = unit.id;
@@ -1774,34 +3025,65 @@ export class LocalGuestApp {
     this.#supersede(thread, DISCOVERY_STAGE);
     this.#supersede(thread, COMPARE_STAGE);
     thread.activeSurfaces.set(COMPARE_STAGE, compareSurfaceId);
-    this.#emitTransition(thread, "unit.discovery.compared", { aggregateType: "discovery", aggregateId: artifact.id, surfaceId: compareSurfaceId });
+    this.#emitTransition(thread, "unit.discovery.compared", {
+      aggregateType: "discovery",
+      aggregateId: artifact.id,
+      surfaceId: compareSurfaceId,
+    });
     const units = [selected, unit] as const;
     return {
       ok: true,
       messages: [`Here are ${selected.title} and ${unit.title} side by side.`],
-      surfaces: [{
-        surfaceId: compareSurfaceId,
-        mode: "focused-surface",
-        summary: "Compare stays",
-        conventionalRoute: conventionalSearchRoute(artifact.facts.filters),
-        textFallback: compareFallbackText(units),
-        a2uiMessages: compareArtifactToA2UI({ artifact, unitIds: [selected.id, unit.id], surfaceId: compareSurfaceId }),
-      }],
+      surfaces: [
+        {
+          surfaceId: compareSurfaceId,
+          mode: "focused-surface",
+          summary: "Compare stays",
+          conventionalRoute: conventionalSearchRoute(artifact.facts.filters),
+          textFallback: compareFallbackText(units),
+          a2uiMessages: compareArtifactToA2UI({
+            artifact,
+            unitIds: [selected.id, unit.id],
+            surfaceId: compareSurfaceId,
+          }),
+        },
+      ],
     };
   }
 
   /** Issue 13b: leave the comparison for the same results (no new search, ADR-0079). */
-  #handleCompareBack(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
+  #handleCompareBack(
+    thread: GuestThreadState,
+    event: GuestEventPayload,
+  ): GuestTurnResult {
     const artifact = thread.discoveryArtifact;
     const context = event.context;
-    if (!artifact || !context || typeof context !== "object" || Array.isArray(context)
-      || Object.keys(context).length !== 1 || context.artifactId !== artifact.id) {
-      return { ok: false, code: "INVALID_CONTEXT", message: "Those search results are no longer available." };
+    if (
+      !artifact ||
+      !context ||
+      typeof context !== "object" ||
+      Array.isArray(context) ||
+      Object.keys(context).length !== 1 ||
+      context.artifactId !== artifact.id
+    ) {
+      return {
+        ok: false,
+        code: "INVALID_CONTEXT",
+        message: "Those search results are no longer available.",
+      };
     }
     this.#prepareDiscovery(thread);
     thread.activeSurfaces.set(DISCOVERY_STAGE, thread.discoverySurfaceId);
-    this.#emitTransition(thread, "unit.discovery.results_restored", { aggregateType: "discovery", aggregateId: artifact.id, surfaceId: thread.discoverySurfaceId });
-    return { ok: true, messages: ["Here are your search results again."], surfaces: [discoverySurface(artifact, thread.discoverySurfaceId)] };
+    this.#emitTransition(thread, "unit.discovery.results_restored", {
+      aggregateType: "discovery",
+      aggregateId: artifact.id,
+      surfaceId: thread.discoverySurfaceId,
+    });
+    return {
+      ok: true,
+      messages: ["Here are your search results again."],
+      surfaces: [discoverySurface(artifact, thread.discoverySurfaceId)],
+    };
   }
 
   /**
@@ -1809,22 +3091,53 @@ export class LocalGuestApp {
    * stored artifact is re-presented, so the criteria and results are the ones
    * the Guest saw; no new search runs (ADR-0079). Every check fails closed.
    */
-  #handleBackToResults(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
+  #handleBackToResults(
+    thread: GuestThreadState,
+    event: GuestEventPayload,
+  ): GuestTurnResult {
     // AC4 / ADR-0005: going back never touches a sent Booking Request or offer.
-    if (thread.requestId || thread.offerId) return { ok: false, code: "STALE_SURFACE", message: "That action is no longer available; please use the current options." };
+    if (thread.requestId || thread.offerId)
+      return {
+        ok: false,
+        code: "STALE_SURFACE",
+        message:
+          "That action is no longer available; please use the current options.",
+      };
     const artifact = thread.discoveryArtifact;
-    if (!artifact) return { ok: false, code: "INVALID_ARTIFACT", message: "No search is active for this conversation." };
+    if (!artifact)
+      return {
+        ok: false,
+        code: "INVALID_ARTIFACT",
+        message: "No search is active for this conversation.",
+      };
     const context = event.context;
-    if (!context || typeof context !== "object" || Array.isArray(context)
-      || Object.keys(context).length !== 1 || context.artifactId !== artifact.id) {
-      return { ok: false, code: "INVALID_CONTEXT", message: "Those search results are no longer available." };
+    if (
+      !context ||
+      typeof context !== "object" ||
+      Array.isArray(context) ||
+      Object.keys(context).length !== 1 ||
+      context.artifactId !== artifact.id
+    ) {
+      return {
+        ok: false,
+        code: "INVALID_CONTEXT",
+        message: "Those search results are no longer available.",
+      };
     }
     // ADR-0074: a new discovery revision, so the old unit surface's actions go stale.
     this.#prepareDiscovery(thread);
     thread.unitDetail = null;
     thread.activeSurfaces.set(DISCOVERY_STAGE, thread.discoverySurfaceId);
-    this.#emitTransition(thread, "unit.discovery.results_restored", { aggregateType: "discovery", aggregateId: artifact.id, surfaceId: thread.discoverySurfaceId });
-    return { ok: true, messages: ["Here are your search results again."], surfaces: [discoverySurface(artifact, thread.discoverySurfaceId)] };
+    this.#emitTransition(thread, "unit.discovery.results_restored", {
+      aggregateType: "discovery",
+      aggregateId: artifact.id,
+      surfaceId: thread.discoverySurfaceId,
+    });
+    return {
+      ok: true,
+      messages: ["Here are your search results again."],
+      surfaces: [discoverySurface(artifact, thread.discoverySurfaceId)],
+    };
   }
 
   /**
@@ -1836,25 +3149,52 @@ export class LocalGuestApp {
   #draftMatchesStay(thread: GuestThreadState, unitId: string): boolean {
     if (!thread.draftId) return false;
     try {
-      const draft = this.#environment.bookingRequestApp.manager.getDraft(thread.draftId);
+      const draft = this.#environment.bookingRequestApp.manager.getDraft(
+        thread.draftId,
+      );
       const stay = this.#stayDatesFor(thread);
-      return draft.unitId === unitId && draft.checkIn === stay.checkIn && draft.checkOut === stay.checkOut
-        && draft.occupants.length === this.#partySizeFor(thread);
+      return (
+        draft.unitId === unitId &&
+        draft.checkIn === stay.checkIn &&
+        draft.checkOut === stay.checkOut &&
+        draft.occupants.length === this.#partySizeFor(thread)
+      );
     } catch {
       return false;
     }
   }
 
   /** Fails closed unless the edit is based on the criteria the server holds now. */
-  #criteriaGuard(thread: GuestThreadState, event: GuestEventPayload): GuestRejection | null {
+  #criteriaGuard(
+    thread: GuestThreadState,
+    event: GuestEventPayload,
+  ): GuestRejection | null {
     if (thread.requestId || thread.offerId) {
       // ADR-0005: a sent Booking Request is never changed by a search edit.
       const stage = this.#guestStage(thread);
-      const explained = stage === "request" || stage === "offer" || stage === "payment" || stage === "booking" ? stage : "request";
-      return { ok: false, code: "CRITERIA_LOCKED", message: this.#changeExplanation(explained, this.#currentUnit(thread)) };
+      const explained =
+        stage === "request" ||
+        stage === "offer" ||
+        stage === "payment" ||
+        stage === "booking"
+          ? stage
+          : "request";
+      return {
+        ok: false,
+        code: "CRITERIA_LOCKED",
+        message: this.#changeExplanation(explained, this.#currentUnit(thread)),
+      };
     }
-    if (!event.context || event.context.basedOn !== criteriaKey(thread.discoveryContext)) {
-      return { ok: false, code: "STALE_SURFACE", message: "Your search has changed since this was opened. Check the current search and try again." };
+    if (
+      !event.context ||
+      event.context.basedOn !== criteriaKey(thread.discoveryContext)
+    ) {
+      return {
+        ok: false,
+        code: "STALE_SURFACE",
+        message:
+          "Your search has changed since this was opened. Check the current search and try again.",
+      };
     }
     return null;
   }
@@ -1864,33 +3204,86 @@ export class LocalGuestApp {
    * criteria and re-runs the authoritative search (ADR-0004); an edit that
    * breaks a stay limit is refused with the limit and changes nothing.
    */
-  #handleCriteriaEdit(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
+  #handleCriteriaEdit(
+    thread: GuestThreadState,
+    event: GuestEventPayload,
+  ): GuestTurnResult {
     const guard = this.#criteriaGuard(thread, event);
     if (guard) return guard;
     const edit = readCriteriaEdit(event.context ?? {});
-    const next = edit === null ? null : applyCriteriaEdit(thread.discoveryContext, edit);
-    if (next === null) return { ok: false, code: "INVALID_CRITERIA", message: "That change could not be applied. Check the value and try again." };
-    const resolution = resolveStayRequestContext(next, { now: this.#environment.clock() });
-    if (resolution.kind === "refuse") return { ok: false, code: "CRITERIA_REJECTED", message: resolution.reply };
+    const next =
+      edit === null ? null : applyCriteriaEdit(thread.discoveryContext, edit);
+    if (next === null)
+      return {
+        ok: false,
+        code: "INVALID_CRITERIA",
+        message:
+          "That change could not be applied. Check the value and try again.",
+      };
+    const resolution = resolveStayRequestContext(next, {
+      now: this.#environment.clock(),
+    });
+    if (resolution.kind === "refuse")
+      return {
+        ok: false,
+        code: "CRITERIA_REJECTED",
+        message: resolution.reply,
+      };
     thread.discoveryContext = next;
-    if (resolution.kind !== "search") return { ok: true, messages: [resolution.reply], surfaces: [], ...(resolution.kind === "clarify" ? { quickReplies: quickRepliesFor(resolution.next) } : {}) };
+    if (resolution.kind !== "search")
+      return {
+        ok: true,
+        messages: [resolution.reply],
+        surfaces: [],
+        ...(resolution.kind === "clarify"
+          ? { quickReplies: quickRepliesFor(resolution.next) }
+          : {}),
+      };
     return this.#executeDiscovery(thread, resolution.filters);
   }
 
   /** Issue 03a AC4: restores the previous search's criteria and re-runs it. */
-  #handleCriteriaUndo(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
+  #handleCriteriaUndo(
+    thread: GuestThreadState,
+    event: GuestEventPayload,
+  ): GuestTurnResult {
     const guard = this.#criteriaGuard(thread, event);
     if (guard) return guard;
-    if (Object.keys(event.context ?? {}).length !== 1) return { ok: false, code: "INVALID_CRITERIA", message: "That change could not be applied. Check the value and try again." };
+    if (Object.keys(event.context ?? {}).length !== 1)
+      return {
+        ok: false,
+        code: "INVALID_CRITERIA",
+        message:
+          "That change could not be applied. Check the value and try again.",
+      };
     const previous = thread.searchHistory.at(-2);
-    if (!previous) return { ok: false, code: "NOTHING_TO_UNDO", message: "There is no earlier search to go back to." };
-    const resolution = resolveStayRequestContext(previous, { now: this.#environment.clock() });
+    if (!previous)
+      return {
+        ok: false,
+        code: "NOTHING_TO_UNDO",
+        message: "There is no earlier search to go back to.",
+      };
+    const resolution = resolveStayRequestContext(previous, {
+      now: this.#environment.clock(),
+    });
     // Dates that have since passed are refused like any other edit.
-    if (resolution.kind !== "search") return { ok: false, code: "CRITERIA_REJECTED", message: resolution.reply };
+    if (resolution.kind !== "search")
+      return {
+        ok: false,
+        code: "CRITERIA_REJECTED",
+        message: resolution.reply,
+      };
     thread.searchHistory.pop();
     thread.discoveryContext = { ...previous };
-    const result = this.#executeDiscovery(thread, resolution.filters, { recordHistory: false });
-    return result.ok ? { ...result, messages: ["I've undone your last change.", ...result.messages] } : result;
+    const result = this.#executeDiscovery(thread, resolution.filters, {
+      recordHistory: false,
+    });
+    return result.ok
+      ? {
+          ...result,
+          messages: ["I've undone your last change.", ...result.messages],
+        }
+      : result;
   }
 
   /** Issue 03a AC1: the strip mirrors the server's criteria after every response. */
@@ -1898,52 +3291,129 @@ export class LocalGuestApp {
     const context = thread.discoveryContext;
     if (!context) return undefined;
     const area = searchAreaFor(context);
-    const where = context.city === undefined ? undefined : {
-      ...(area === undefined ? {} : { area: area.id }),
-      label: area?.label ?? [context.neighbourhood, context.city].filter(Boolean).join(", "),
-    };
+    const where =
+      context.city === undefined
+        ? undefined
+        : {
+            ...(area === undefined ? {} : { area: area.id }),
+            label:
+              area?.label ??
+              [context.neighbourhood, context.city].filter(Boolean).join(", "),
+          };
     const nights = context.nights;
-    const nightsLabel = nights === undefined ? "" : `${nights} ${nights === 1 ? "night" : "nights"}`;
-    const checkOut = context.checkIn !== undefined && nights !== undefined
-      ? new Date(Date.parse(`${context.checkIn}T00:00:00Z`) + nights * 86_400_000).toISOString().slice(0, 10) : undefined;
-    const whenLabel = context.checkIn !== undefined && checkOut !== undefined ? `${formatStayDates(context.checkIn, checkOut)} · ${nightsLabel}`
-      : context.checkIn !== undefined ? `From ${formatGuestDay(context.checkIn)}` : nightsLabel;
-    const when = whenLabel === "" ? undefined : {
-      ...(context.checkIn === undefined ? {} : { checkIn: context.checkIn }),
-      ...(nights === undefined ? {} : { nights }),
-      label: context.checkIn !== undefined && context.datesConfirmed !== true ? `${whenLabel} (to confirm)` : whenLabel,
-    };
-    const guests = context.partySize === undefined ? undefined : { count: context.partySize, label: `${context.partySize} ${context.partySize === 1 ? "guest" : "guests"}` };
+    const nightsLabel =
+      nights === undefined
+        ? ""
+        : `${nights} ${nights === 1 ? "night" : "nights"}`;
+    const checkOut =
+      context.checkIn !== undefined && nights !== undefined
+        ? new Date(
+            Date.parse(`${context.checkIn}T00:00:00Z`) + nights * 86_400_000,
+          )
+            .toISOString()
+            .slice(0, 10)
+        : undefined;
+    const whenLabel =
+      context.checkIn !== undefined && checkOut !== undefined
+        ? `${formatStayDates(context.checkIn, checkOut)} · ${nightsLabel}`
+        : context.checkIn === undefined
+          ? nightsLabel
+          : `From ${formatGuestDay(context.checkIn)}`;
+    const when =
+      whenLabel === ""
+        ? undefined
+        : {
+            ...(context.checkIn === undefined
+              ? {}
+              : { checkIn: context.checkIn }),
+            ...(nights === undefined ? {} : { nights }),
+            label:
+              context.checkIn !== undefined && context.datesConfirmed !== true
+                ? `${whenLabel} (to confirm)`
+                : whenLabel,
+          };
+    const guests =
+      context.partySize === undefined
+        ? undefined
+        : {
+            count: context.partySize,
+            label: `${context.partySize} ${context.partySize === 1 ? "guest" : "guests"}`,
+          };
     const budgetText = budgetLabel(context);
-    const budget = context.budget === undefined || budgetText === undefined ? undefined
-      : { naira: Math.round(context.budget.kobo / 100), per: context.budget.per, label: budgetText };
+    const budget =
+      context.budget === undefined || budgetText === undefined
+        ? undefined
+        : {
+            naira: Math.round(context.budget.kobo / 100),
+            per: context.budget.per,
+            label: budgetText,
+          };
     if (!where && !when && !guests && !budget) return undefined;
     return {
       key: criteriaKey(context),
       editable: !thread.requestId && !thread.offerId,
-      canUndo: thread.searchHistory.length >= 2 && !thread.requestId && !thread.offerId,
-      ...(where ? { where } : {}), ...(when ? { when } : {}), ...(guests ? { guests } : {}), ...(budget ? { budget } : {}),
+      canUndo:
+        thread.searchHistory.length >= 2 &&
+        !thread.requestId &&
+        !thread.offerId,
+      ...(where ? { where } : {}),
+      ...(when ? { when } : {}),
+      ...(guests ? { guests } : {}),
+      ...(budget ? { budget } : {}),
       areas: SEARCH_AREAS.map(({ id, label }) => ({ id, label })),
     };
   }
 
-  #handleRequestToBook(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
+  #handleRequestToBook(
+    thread: GuestThreadState,
+    event: GuestEventPayload,
+  ): GuestTurnResult {
     const detail = thread.unitDetail;
     const context = event.context;
-    if (!detail || !context || typeof context !== "object"
-      || (context as Record<string, unknown>).artifactId !== detail.artifactId
-      || (context as Record<string, unknown>).unitId !== detail.unitId) {
-      return { ok: false, code: "INVALID_CONTEXT", message: "That request is no longer valid." };
+    if (
+      !detail ||
+      !context ||
+      typeof context !== "object" ||
+      (context as Record<string, unknown>).artifactId !== detail.artifactId ||
+      (context as Record<string, unknown>).unitId !== detail.unitId
+    ) {
+      return {
+        ok: false,
+        code: "INVALID_CONTEXT",
+        message: "That request is no longer valid.",
+      };
     }
-    if (thread.requestId || thread.offerId) return { ok: false, code: "STALE_SURFACE", message: "A Booking Request already exists for this conversation." };
+    if (thread.requestId || thread.offerId)
+      return {
+        ok: false,
+        code: "STALE_SURFACE",
+        message: "A Booking Request already exists for this conversation.",
+      };
 
     if (thread.draftId && this.#draftMatchesStay(thread, detail.unitId)) {
       const surfaceId = `thread-${thread.threadId}:request:draft:${thread.draftId}`;
       const artifact = this.#draftArtifact(thread, "draft");
       this.#supersede(thread, UNIT_STAGE);
       thread.activeSurfaces.set(REQUEST_STAGE, surfaceId);
-      this.#emitTransition(thread, "request_draft.resumed", { aggregateType: "request_draft", aggregateId: thread.draftId, surfaceId });
-      return { ok: true, messages: ["Your request is ready to continue."], surfaces: [{ surfaceId, mode: "focused-surface", summary: "Request Draft", conventionalRoute: conventionalRequestDraftRoute(thread.draftId), textFallback: this.#draftFallback(artifact), a2uiMessages: requestDraftArtifactToA2UI({ artifact, surfaceId }) }] };
+      this.#emitTransition(thread, "request_draft.resumed", {
+        aggregateType: "request_draft",
+        aggregateId: thread.draftId,
+        surfaceId,
+      });
+      return {
+        ok: true,
+        messages: ["Your request is ready to continue."],
+        surfaces: [
+          {
+            surfaceId,
+            mode: "focused-surface",
+            summary: "Request Draft",
+            conventionalRoute: conventionalRequestDraftRoute(thread.draftId),
+            textFallback: this.#draftFallback(artifact),
+            a2uiMessages: requestDraftArtifactToA2UI({ artifact, surfaceId }),
+          },
+        ],
+      };
     }
 
     const environment = this.#environment;
@@ -1951,7 +3421,10 @@ export class LocalGuestApp {
     const draft = environment.bookingRequestApp.createDraft(
       {
         unitId: detail.unitId,
-        primaryGuest: { id: environment.guestPrincipal().id, name: environment.config.guestName },
+        primaryGuest: {
+          id: environment.guestPrincipal().id,
+          name: environment.config.guestName,
+        },
         occupants: environment.demoOccupants(this.#partySizeFor(thread)),
         selfBookingAttestation: environment.selfBookingAttestation(),
         ...this.#stayDatesFor(thread),
@@ -1963,28 +3436,64 @@ export class LocalGuestApp {
     this.#supersede(thread, UNIT_STAGE);
     thread.activeSurfaces.set(REQUEST_STAGE, requestSurfaceId);
     const artifact = this.#draftArtifact(thread, "draft");
-    thread.draftQuote = { allInStayTotalKobo: artifact.facts.allInStayTotalKobo, refundableSecurityDepositKobo: artifact.facts.refundableSecurityDepositKobo, amountDueNowKobo: artifact.facts.amountDueNowKobo };
-    this.#emitTransition(thread, "request_draft.created", { aggregateType: "request_draft", aggregateId: draft.draftId, surfaceId: requestSurfaceId });
+    thread.draftQuote = {
+      allInStayTotalKobo: artifact.facts.allInStayTotalKobo,
+      refundableSecurityDepositKobo:
+        artifact.facts.refundableSecurityDepositKobo,
+      amountDueNowKobo: artifact.facts.amountDueNowKobo,
+    };
+    this.#emitTransition(thread, "request_draft.created", {
+      aggregateType: "request_draft",
+      aggregateId: draft.draftId,
+      surfaceId: requestSurfaceId,
+    });
 
     return {
       ok: true,
       messages: [],
       receipts: [GUEST_RECEIPTS.draftCreated],
       surfaces: [
-        { surfaceId: requestSurfaceId, mode: "focused-surface", summary: "Request Draft", conventionalRoute: conventionalRequestDraftRoute(draft.draftId), textFallback: this.#draftFallback(artifact), a2uiMessages: requestDraftArtifactToA2UI({ artifact, surfaceId: requestSurfaceId }) },
+        {
+          surfaceId: requestSurfaceId,
+          mode: "focused-surface",
+          summary: "Request Draft",
+          conventionalRoute: conventionalRequestDraftRoute(draft.draftId),
+          textFallback: this.#draftFallback(artifact),
+          a2uiMessages: requestDraftArtifactToA2UI({
+            artifact,
+            surfaceId: requestSurfaceId,
+          }),
+        },
       ],
     };
   }
 
-  #draftArtifact(thread: GuestThreadState, view: "draft" | "review"): RequestDraftArtifact {
+  #draftArtifact(
+    thread: GuestThreadState,
+    view: "draft" | "review",
+  ): RequestDraftArtifact {
     if (!thread.draftId) throw new Error("No Request Draft is active");
-    const draft = this.#environment.bookingRequestApp.manager.getDraft(thread.draftId) as {
-      readonly draftId: string; readonly unitId: string; readonly primaryGuest: { readonly name: string };
-      readonly occupants: readonly { readonly name: string }[]; readonly checkIn: string; readonly checkOut: string;
-      readonly selfBookingAttestation: { readonly accepted: boolean; readonly version: string };
+    const draft = this.#environment.bookingRequestApp.manager.getDraft(
+      thread.draftId,
+    ) as {
+      readonly draftId: string;
+      readonly unitId: string;
+      readonly primaryGuest: { readonly name: string };
+      readonly occupants: readonly { readonly name: string }[];
+      readonly checkIn: string;
+      readonly checkOut: string;
+      readonly selfBookingAttestation: {
+        readonly accepted: boolean;
+        readonly version: string;
+      };
     };
-    const unit = this.#environment.unitRepository.findById(draft.unitId) as Unit | null;
-    if (!unit) throw new Error(`The selected ${GUEST_GLOSSARY.unit} is no longer available.`);
+    const unit = this.#environment.unitRepository.findById(
+      draft.unitId,
+    ) as Unit | null;
+    if (!unit)
+      throw new Error(
+        `The selected ${GUEST_GLOSSARY.unit} is no longer available.`,
+      );
     const quote = createStayQuote({
       unit,
       checkIn: draft.checkIn,
@@ -1992,25 +3501,32 @@ export class LocalGuestApp {
       partySize: draft.occupants.length || 1,
       clock: this.#environment.clock,
     });
-    return requestDraftArtifactFromProjection({
-      draftId: draft.draftId,
-      unitId: unit.id,
-      unitTitle: unit.title,
-      operatorName: unit.operator.name,
-      checkIn: quote.checkIn,
-      checkOut: quote.checkOut,
-      nights: quote.nights,
-      primaryGuestName: draft.primaryGuest.name,
-      occupants: draft.occupants.map((occupant) => occupant.name),
-      selfBookingAttestation: draft.selfBookingAttestation,
-      allInStayTotalKobo: quote.allInStayTotalKobo,
-      refundableSecurityDepositKobo: quote.refundableSecurityDepositKobo,
-      amountDueNowKobo: quote.totalAmountDueNowKobo,
-      cancellationPolicy: { type: quote.cancellationPolicy.type, version: quote.cancellationPolicy.version, summary: quote.cancellationPolicy.policySummary },
-      view,
-      policyVersions: quote.policyVersions,
-      disclosures: quote.disclosures,
-    }, this.#environment.guestPrincipal());
+    return requestDraftArtifactFromProjection(
+      {
+        draftId: draft.draftId,
+        unitId: unit.id,
+        unitTitle: unit.title,
+        operatorName: unit.operator.name,
+        checkIn: quote.checkIn,
+        checkOut: quote.checkOut,
+        nights: quote.nights,
+        primaryGuestName: draft.primaryGuest.name,
+        occupants: draft.occupants.map((occupant) => occupant.name),
+        selfBookingAttestation: draft.selfBookingAttestation,
+        allInStayTotalKobo: quote.allInStayTotalKobo,
+        refundableSecurityDepositKobo: quote.refundableSecurityDepositKobo,
+        amountDueNowKobo: quote.totalAmountDueNowKobo,
+        cancellationPolicy: {
+          type: quote.cancellationPolicy.type,
+          version: quote.cancellationPolicy.version,
+          summary: quote.cancellationPolicy.policySummary,
+        },
+        view,
+        policyVersions: quote.policyVersions,
+        disclosures: quote.disclosures,
+      },
+      this.#environment.guestPrincipal(),
+    );
   }
 
   /**
@@ -2021,9 +3537,21 @@ export class LocalGuestApp {
    * (ADR-0015). Returns null when the turn is not a change to the draft's
    * stay, so a new place still runs a new search.
    */
-  #proposeDraftReplacement(thread: GuestThreadState, text: string): GuestTurnResult | null {
+  #proposeDraftReplacement(
+    thread: GuestThreadState,
+    text: string,
+  ): GuestTurnResult | null {
     const onScreen = thread.activeSurfaces.get(REQUEST_STAGE) ?? "";
-    if (!thread.draftId || thread.requestId || thread.offerId || !(onScreen.includes(":request:draft:") || onScreen.includes(":request:review:"))) return null;
+    if (
+      !thread.draftId ||
+      thread.requestId ||
+      thread.offerId ||
+      !(
+        onScreen.includes(":request:draft:") ||
+        onScreen.includes(":request:review:")
+      )
+    )
+      return null;
     const now = this.#environment.clock();
     const facts = extractStayRequestFacts(text, { now });
     if (facts.location !== undefined) return null;
@@ -2032,11 +3560,20 @@ export class LocalGuestApp {
     // dates the Guest didn't confirm.
     const pendingDates = thread.draftChangeContext;
     thread.draftChangeContext = null;
-    const onPending = pendingDates === null ? null : mergeStayRequestContext(pendingDates, facts, text);
-    const merged = onPending !== null && (onPending.confirmedDates === true || facts.dates !== undefined)
-      ? onPending
-      : mergeStayRequestContext(thread.discoveryContext, facts, text);
-    const changed = facts.nights !== undefined || facts.partySize !== undefined || facts.dates !== undefined || merged.confirmedDates === true;
+    const onPending =
+      pendingDates === null
+        ? null
+        : mergeStayRequestContext(pendingDates, facts, text);
+    const merged =
+      onPending !== null &&
+      (onPending.confirmedDates === true || facts.dates !== undefined)
+        ? onPending
+        : mergeStayRequestContext(thread.discoveryContext, facts, text);
+    const changed =
+      facts.nights !== undefined ||
+      facts.partySize !== undefined ||
+      facts.dates !== undefined ||
+      merged.confirmedDates === true;
     if (!changed || merged.conflict) return null;
     const unchanged = "Your Request Draft is unchanged.";
     const resolution = resolveStayRequestContext(merged.context, { now });
@@ -2045,30 +3582,92 @@ export class LocalGuestApp {
       // wording is the discovery check's, but "yes" updates the draft here.
       thread.draftChangeContext = merged.context;
       const { checkIn, checkOut, partySize } = resolution.filters;
-      const nights = Math.round((Date.parse(`${checkOut}T00:00:00Z`) - Date.parse(`${checkIn}T00:00:00Z`)) / 86_400_000);
-      return { ok: true, messages: [`Just to check: arriving ${formatGuestDay(checkIn)} and leaving ${formatGuestDay(checkOut)} (${nights} ${nights === 1 ? "night" : "nights"}), ${partySize} ${partySize === 1 ? "guest" : "guests"}. Shall I show your Request Draft with these dates? Reply "yes", or tell me different dates.`, unchanged], surfaces: [] };
+      const nights = Math.round(
+        (Date.parse(`${checkOut}T00:00:00Z`) -
+          Date.parse(`${checkIn}T00:00:00Z`)) /
+          86_400_000,
+      );
+      return {
+        ok: true,
+        messages: [
+          `Just to check: arriving ${formatGuestDay(checkIn)} and leaving ${formatGuestDay(checkOut)} (${nights} ${nights === 1 ? "night" : "nights"}), ${partySize} ${partySize === 1 ? "guest" : "guests"}. Shall I show your Request Draft with these dates? Reply "yes", or tell me different dates.`,
+          unchanged,
+        ],
+        surfaces: [],
+      };
     }
     // The 14-night and 90-day refusals are the discovery ones, unchanged.
-    if (resolution.kind !== "search") return { ok: true, messages: [resolution.reply, unchanged], surfaces: [] };
-    const draft = this.#environment.bookingRequestApp.manager.getDraft(thread.draftId);
+    if (resolution.kind !== "search")
+      return {
+        ok: true,
+        messages: [resolution.reply, unchanged],
+        surfaces: [],
+      };
+    const draft = this.#environment.bookingRequestApp.manager.getDraft(
+      thread.draftId,
+    );
     const { filters } = resolution;
-    const stay: DraftReplacementStay = { location: filters.location, ...(filters.neighbourhood === undefined ? {} : { neighbourhood: filters.neighbourhood }), checkIn: filters.checkIn, checkOut: filters.checkOut, partySize: filters.partySize };
-    if (stay.checkIn === draft.checkIn && stay.checkOut === draft.checkOut && stay.partySize === draft.occupants.length) {
-      return { ok: true, messages: [`Your Request Draft already covers ${formatStayDates(stay.checkIn, stay.checkOut)} for ${stay.partySize} ${stay.partySize === 1 ? "guest" : "guests"}.`], surfaces: [] };
+    const stay: DraftReplacementStay = {
+      location: filters.location,
+      ...(filters.neighbourhood === undefined
+        ? {}
+        : { neighbourhood: filters.neighbourhood }),
+      checkIn: filters.checkIn,
+      checkOut: filters.checkOut,
+      partySize: filters.partySize,
+    };
+    if (
+      stay.checkIn === draft.checkIn &&
+      stay.checkOut === draft.checkOut &&
+      stay.partySize === draft.occupants.length
+    ) {
+      return {
+        ok: true,
+        messages: [
+          `Your Request Draft already covers ${formatStayDates(stay.checkIn, stay.checkOut)} for ${stay.partySize} ${stay.partySize === 1 ? "guest" : "guests"}.`,
+        ],
+        surfaces: [],
+      };
     }
     const proposal = this.#replacementTerms(draft.unitId, stay);
-    if (proposal === null) return { ok: true, messages: [this.#replacementUnavailable(draft.unitId, stay), unchanged], surfaces: [] };
-    return this.#presentDraftReplacement(thread, { unitId: draft.unitId, stay, filters, context: merged.context, proposed: proposal }, "Here is your Request Draft with the new details. It changes only if you choose “Use the new details”.");
+    if (proposal === null)
+      return {
+        ok: true,
+        messages: [this.#replacementUnavailable(draft.unitId, stay), unchanged],
+        surfaces: [],
+      };
+    return this.#presentDraftReplacement(
+      thread,
+      {
+        unitId: draft.unitId,
+        stay,
+        filters,
+        context: merged.context,
+        proposed: proposal,
+      },
+      "Here is your Request Draft with the new details. It changes only if you choose “Use the new details”.",
+    );
   }
 
   /** ADR-0015: the same deterministic quote as the draft; null when the unit can't take the stay. */
-  #replacementTerms(unitId: string, stay: DraftReplacementStay): DraftStayTerms | null {
+  #replacementTerms(
+    unitId: string,
+    stay: DraftReplacementStay,
+  ): DraftStayTerms | null {
     const environment = this.#environment;
     // Revalidate availability and capacity for the stay itself, not budget or bedroom preferences.
-    const results = environment.discoveryQuery.search({ ...stay }).facts.results;
+    const results = environment.discoveryQuery.search({ ...stay }).facts
+      .results;
     const unit = environment.unitRepository.findById(unitId) as Unit | null;
-    if (!unit || !results.some((candidate) => candidate.id === unitId)) return null;
-    const quote = createStayQuote({ unit, checkIn: stay.checkIn, checkOut: stay.checkOut, partySize: stay.partySize, clock: environment.clock });
+    if (!unit || !results.some((candidate) => candidate.id === unitId))
+      return null;
+    const quote = createStayQuote({
+      unit,
+      checkIn: stay.checkIn,
+      checkOut: stay.checkOut,
+      partySize: stay.partySize,
+      clock: environment.clock,
+    });
     return {
       checkIn: quote.checkIn,
       checkOut: quote.checkOut,
@@ -2081,11 +3680,20 @@ export class LocalGuestApp {
   }
 
   #replacementUnavailable(unitId: string, stay: DraftReplacementStay): string {
-    const title = (this.#environment.unitRepository.findById(unitId) as Unit | null)?.title ?? `This ${GUEST_GLOSSARY.unit}`;
+    const title =
+      (this.#environment.unitRepository.findById(unitId) as Unit | null)
+        ?.title ?? `This ${GUEST_GLOSSARY.unit}`;
     return `${title} isn't available for ${formatStayDates(stay.checkIn, stay.checkOut)} for ${stay.partySize} ${stay.partySize === 1 ? "guest" : "guests"}.`;
   }
 
-  #presentDraftReplacement(thread: GuestThreadState, change: Omit<PendingDraftReplacement, "basedOnDraftId" | "basedOn" | "surfaceId">, message: string): GuestTurnResult {
+  #presentDraftReplacement(
+    thread: GuestThreadState,
+    change: Omit<
+      PendingDraftReplacement,
+      "basedOnDraftId" | "basedOn" | "surfaceId"
+    >,
+    message: string,
+  ): GuestTurnResult {
     const draftId = thread.draftId;
     if (!draftId) throw new Error("No Request Draft is active");
     const current = this.#draftArtifact(thread, "draft").facts;
@@ -2093,19 +3701,45 @@ export class LocalGuestApp {
     const basedOn = JSON.stringify([draftId, change.unitId, change.proposed]);
     this.#supersede(thread, DRAFT_REPLACEMENT_STAGE);
     thread.activeSurfaces.set(DRAFT_REPLACEMENT_STAGE, surfaceId);
-    thread.pendingDraftReplacement = { ...change, basedOnDraftId: draftId, basedOn, surfaceId };
-    this.#emitTransition(thread, "request_draft.replacement_proposed", { aggregateType: "request_draft", aggregateId: draftId, surfaceId });
+    thread.pendingDraftReplacement = {
+      ...change,
+      basedOnDraftId: draftId,
+      basedOn,
+      surfaceId,
+    };
+    this.#emitTransition(thread, "request_draft.replacement_proposed", {
+      aggregateType: "request_draft",
+      aggregateId: draftId,
+      surfaceId,
+    });
     const proposal = {
       draftId,
       basedOn,
       unitTitle: current.unitTitle,
-      current: { checkIn: current.checkIn, checkOut: current.checkOut, nights: current.nights, partySize: current.occupants.length, allInStayTotalKobo: current.allInStayTotalKobo, refundableSecurityDepositKobo: current.refundableSecurityDepositKobo, amountDueNowKobo: current.amountDueNowKobo },
+      current: {
+        checkIn: current.checkIn,
+        checkOut: current.checkOut,
+        nights: current.nights,
+        partySize: current.occupants.length,
+        allInStayTotalKobo: current.allInStayTotalKobo,
+        refundableSecurityDepositKobo: current.refundableSecurityDepositKobo,
+        amountDueNowKobo: current.amountDueNowKobo,
+      },
       proposed: change.proposed,
     };
     return {
       ok: true,
       messages: [message],
-      surfaces: [{ surfaceId, mode: "focused-surface", summary: "Change Request Draft", conventionalRoute: conventionalRequestDraftRoute(draftId), textFallback: draftReplacementFallback(proposal), a2uiMessages: draftReplacementToA2UI({ proposal, surfaceId }) }],
+      surfaces: [
+        {
+          surfaceId,
+          mode: "focused-surface",
+          summary: "Change Request Draft",
+          conventionalRoute: conventionalRequestDraftRoute(draftId),
+          textFallback: draftReplacementFallback(proposal),
+          a2uiMessages: draftReplacementToA2UI({ proposal, surfaceId }),
+        },
+      ],
     };
   }
 
@@ -2113,11 +3747,20 @@ export class LocalGuestApp {
   #currentDraftSurface(thread: GuestThreadState): GuestSurfacePayload {
     const draftId = thread.draftId;
     if (!draftId) throw new Error("No Request Draft is active");
-    const surfaceId = thread.activeSurfaces.get(REQUEST_STAGE) ?? `thread-${thread.threadId}:request:draft:${draftId}`;
+    const surfaceId =
+      thread.activeSurfaces.get(REQUEST_STAGE) ??
+      `thread-${thread.threadId}:request:draft:${draftId}`;
     const review = surfaceId.includes(":request:review:");
     thread.activeSurfaces.set(REQUEST_STAGE, surfaceId);
     const artifact = this.#draftArtifact(thread, review ? "review" : "draft");
-    return { surfaceId, mode: "focused-surface", summary: review ? "Request review" : "Request Draft", conventionalRoute: conventionalRequestDraftRoute(draftId), textFallback: this.#draftFallback(artifact), a2uiMessages: requestDraftArtifactToA2UI({ artifact, surfaceId }) };
+    return {
+      surfaceId,
+      mode: "focused-surface",
+      summary: review ? "Request review" : "Request Draft",
+      conventionalRoute: conventionalRequestDraftRoute(draftId),
+      textFallback: this.#draftFallback(artifact),
+      a2uiMessages: requestDraftArtifactToA2UI({ artifact, surfaceId }),
+    };
   }
 
   /**
@@ -2126,34 +3769,63 @@ export class LocalGuestApp {
    * command (ADR-0072). The old draft's surfaces go stale; the old draft
    * blocked nothing, so nothing is released. Every check fails closed.
    */
-  #handleDraftReplacementAccept(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
+  #handleDraftReplacementAccept(
+    thread: GuestThreadState,
+    event: GuestEventPayload,
+  ): GuestTurnResult {
     const pending = thread.pendingDraftReplacement;
     const context = event.context;
-    if (!pending || !thread.draftId || thread.requestId || thread.offerId || !isPlainRecord(context)
-      || Object.keys(context).sort().join(",") !== "basedOn,draftId"
-      || context.draftId !== thread.draftId || pending.basedOnDraftId !== thread.draftId || context.basedOn !== pending.basedOn) {
-      return { ok: false, code: "INVALID_CONTEXT", message: "That change to your Request Draft is no longer valid." };
+    if (
+      !pending ||
+      !thread.draftId ||
+      thread.requestId ||
+      thread.offerId ||
+      !isPlainRecord(context) ||
+      Object.keys(context).sort().join(",") !== "basedOn,draftId" ||
+      context.draftId !== thread.draftId ||
+      pending.basedOnDraftId !== thread.draftId ||
+      context.basedOn !== pending.basedOn
+    ) {
+      return {
+        ok: false,
+        code: "INVALID_CONTEXT",
+        message: "That change to your Request Draft is no longer valid.",
+      };
     }
     const fresh = this.#replacementTerms(pending.unitId, pending.stay);
     if (fresh === null) {
       thread.pendingDraftReplacement = null;
       this.#supersede(thread, DRAFT_REPLACEMENT_STAGE);
-      return { ok: true, messages: [this.#replacementUnavailable(pending.unitId, pending.stay), "Your Request Draft is unchanged."], surfaces: [this.#currentDraftSurface(thread)] };
+      return {
+        ok: true,
+        messages: [
+          this.#replacementUnavailable(pending.unitId, pending.stay),
+          "Your Request Draft is unchanged.",
+        ],
+        surfaces: [this.#currentDraftSurface(thread)],
+      };
     }
     if (JSON.stringify(fresh) !== JSON.stringify(pending.proposed)) {
-      return this.#presentDraftReplacement(thread, { ...pending, proposed: fresh }, "The price changed before you chose. Here are the updated details; your Request Draft is unchanged until you choose.");
+      return this.#presentDraftReplacement(
+        thread,
+        { ...pending, proposed: fresh },
+        "The price changed before you chose. Here are the updated details; your Request Draft is unchanged until you choose.",
+      );
     }
     const environment = this.#environment;
     const guest = environment.guestPrincipal();
     const replaced = thread.draftId;
-    const draft = environment.bookingRequestApp.createDraft({
-      unitId: pending.unitId,
-      primaryGuest: { id: guest.id, name: environment.config.guestName },
-      occupants: environment.demoOccupants(pending.stay.partySize),
-      selfBookingAttestation: environment.selfBookingAttestation(),
-      checkIn: pending.stay.checkIn,
-      checkOut: pending.stay.checkOut,
-    }, guest);
+    const draft = environment.bookingRequestApp.createDraft(
+      {
+        unitId: pending.unitId,
+        primaryGuest: { id: guest.id, name: environment.config.guestName },
+        occupants: environment.demoOccupants(pending.stay.partySize),
+        selfBookingAttestation: environment.selfBookingAttestation(),
+        checkIn: pending.stay.checkIn,
+        checkOut: pending.stay.checkOut,
+      },
+      guest,
+    );
     this.#supersede(thread, REQUEST_STAGE);
     this.#supersede(thread, DRAFT_REPLACEMENT_STAGE);
     thread.pendingDraftReplacement = null;
@@ -2161,37 +3833,85 @@ export class LocalGuestApp {
     // so the criteria strip, undo and resuming the draft all agree.
     if (thread.discoveryContext) {
       thread.searchHistory.push({ ...thread.discoveryContext });
-      if (thread.searchHistory.length > MAX_SEARCH_HISTORY) thread.searchHistory.splice(0, thread.searchHistory.length - MAX_SEARCH_HISTORY);
+      if (thread.searchHistory.length > MAX_SEARCH_HISTORY)
+        thread.searchHistory.splice(
+          0,
+          thread.searchHistory.length - MAX_SEARCH_HISTORY,
+        );
     }
     thread.discoveryContext = pending.context;
-    thread.discoveryArtifact = environment.discoveryQuery.search({ ...pending.filters });
+    thread.discoveryArtifact = environment.discoveryQuery.search({
+      ...pending.filters,
+    });
     thread.draftId = draft.draftId;
     const surfaceId = `thread-${thread.threadId}:request:draft:${draft.draftId}`;
     thread.activeSurfaces.set(REQUEST_STAGE, surfaceId);
     const artifact = this.#draftArtifact(thread, "draft");
-    thread.draftQuote = { allInStayTotalKobo: artifact.facts.allInStayTotalKobo, refundableSecurityDepositKobo: artifact.facts.refundableSecurityDepositKobo, amountDueNowKobo: artifact.facts.amountDueNowKobo };
-    this.#emitTransition(thread, "request_draft.replaced", { aggregateType: "request_draft", aggregateId: draft.draftId, correlationId: replaced, surfaceId });
+    thread.draftQuote = {
+      allInStayTotalKobo: artifact.facts.allInStayTotalKobo,
+      refundableSecurityDepositKobo:
+        artifact.facts.refundableSecurityDepositKobo,
+      amountDueNowKobo: artifact.facts.amountDueNowKobo,
+    };
+    this.#emitTransition(thread, "request_draft.replaced", {
+      aggregateType: "request_draft",
+      aggregateId: draft.draftId,
+      correlationId: replaced,
+      surfaceId,
+    });
     const { stay } = pending;
     return {
       ok: true,
-      messages: [`Your Request Draft now covers ${formatStayDates(stay.checkIn, stay.checkOut)} for ${stay.partySize} ${stay.partySize === 1 ? "guest" : "guests"}. Review it before you send it.`],
+      messages: [
+        `Your Request Draft now covers ${formatStayDates(stay.checkIn, stay.checkOut)} for ${stay.partySize} ${stay.partySize === 1 ? "guest" : "guests"}. Review it before you send it.`,
+      ],
       receipts: [GUEST_RECEIPTS.draftUpdated],
-      surfaces: [{ surfaceId, mode: "focused-surface", summary: "Request Draft", conventionalRoute: conventionalRequestDraftRoute(draft.draftId), textFallback: this.#draftFallback(artifact), a2uiMessages: requestDraftArtifactToA2UI({ artifact, surfaceId }) }],
+      surfaces: [
+        {
+          surfaceId,
+          mode: "focused-surface",
+          summary: "Request Draft",
+          conventionalRoute: conventionalRequestDraftRoute(draft.draftId),
+          textFallback: this.#draftFallback(artifact),
+          a2uiMessages: requestDraftArtifactToA2UI({ artifact, surfaceId }),
+        },
+      ],
     };
   }
 
   /** Issue 14: keeping the current draft is free and changes nothing (ADR-0015). */
-  #handleDraftReplacementKeep(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
+  #handleDraftReplacementKeep(
+    thread: GuestThreadState,
+    event: GuestEventPayload,
+  ): GuestTurnResult {
     const pending = thread.pendingDraftReplacement;
     const context = event.context;
-    if (!pending || !thread.draftId || !isPlainRecord(context) || Object.keys(context).join(",") !== "draftId"
-      || context.draftId !== thread.draftId || pending.basedOnDraftId !== thread.draftId) {
-      return { ok: false, code: "INVALID_CONTEXT", message: "That change to your Request Draft is no longer valid." };
+    if (
+      !pending ||
+      !thread.draftId ||
+      !isPlainRecord(context) ||
+      Object.keys(context).join(",") !== "draftId" ||
+      context.draftId !== thread.draftId ||
+      pending.basedOnDraftId !== thread.draftId
+    ) {
+      return {
+        ok: false,
+        code: "INVALID_CONTEXT",
+        message: "That change to your Request Draft is no longer valid.",
+      };
     }
     thread.pendingDraftReplacement = null;
     this.#supersede(thread, DRAFT_REPLACEMENT_STAGE);
-    this.#emitTransition(thread, "request_draft.replacement_declined", { aggregateType: "request_draft", aggregateId: thread.draftId, surfaceId: event.surfaceId });
-    return { ok: true, messages: ["Your Request Draft is unchanged."], surfaces: [this.#currentDraftSurface(thread)] };
+    this.#emitTransition(thread, "request_draft.replacement_declined", {
+      aggregateType: "request_draft",
+      aggregateId: thread.draftId,
+      surfaceId: event.surfaceId,
+    });
+    return {
+      ok: true,
+      messages: ["Your Request Draft is unchanged."],
+      surfaces: [this.#currentDraftSurface(thread)],
+    };
   }
 
   #draftFallback(artifact: RequestDraftArtifact): string {
@@ -2201,109 +3921,373 @@ export class LocalGuestApp {
     return `${guestReservationStatus("draft")}. ${facts.unitTitle}. ${review ? `${accommodationProviderLine(facts.operatorName)}. ` : ""}${formatStayDates(facts.checkIn, facts.checkOut)} · ${facts.nights} ${facts.nights === 1 ? "night" : "nights"} · ${facts.occupants.length} ${facts.occupants.length === 1 ? "guest" : "guests"}. ${GUEST_GLOSSARY.allInStayTotal}: ${formatNgnKobo(facts.allInStayTotalKobo)}. ${facts.refundableSecurityDepositKobo > 0 ? `${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(facts.refundableSecurityDepositKobo)}. ` : ""}${review ? `${GUEST_FACT_LABELS.ifRequestAccepted}. ${GUEST_FACT_LABELS.amountDueNow}: ${formatNgnKobo(facts.amountDueNowKobo)}. ${GUEST_GLOSSARY.revalidation}. ` : "Review these details before you send the request. "}Cancellation terms: ${facts.cancellationPolicy.summary}.`;
   }
 
-  #handleDraftReview(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
-    if (!thread.draftId || event.context?.artifactId !== requestDraftArtifactId(thread.draftId) || event.context?.draftId !== thread.draftId) {
-      return { ok: false, code: "INVALID_CONTEXT", message: "That Request Draft is no longer valid." };
+  #handleDraftReview(
+    thread: GuestThreadState,
+    event: GuestEventPayload,
+  ): GuestTurnResult {
+    if (
+      !thread.draftId ||
+      event.context?.artifactId !== requestDraftArtifactId(thread.draftId) ||
+      event.context?.draftId !== thread.draftId
+    ) {
+      return {
+        ok: false,
+        code: "INVALID_CONTEXT",
+        message: "That Request Draft is no longer valid.",
+      };
     }
-    if (!this.#environment.guestContactApp.get(this.#environment.guestPrincipal())?.phoneNumber) {
+    if (
+      !this.#environment.guestContactApp.get(this.#environment.guestPrincipal())
+        ?.phoneNumber
+    ) {
       // ADR-0085: collect a coordination contact only; Guest identity checks remain a check-in eligibility step.
-      return this.#contactSurface(thread, "phone", { ...event.context, resumeAction: "review" });
+      return this.#contactSurface(thread, "phone", {
+        ...event.context,
+        resumeAction: "review",
+      });
     }
     const artifact = this.#draftArtifact(thread, "review");
     const surfaceId = `thread-${thread.threadId}:request:review:${thread.draftId}`;
     this.#supersede(thread, REQUEST_STAGE);
     thread.activeSurfaces.set(REQUEST_STAGE, surfaceId);
-    this.#emitTransition(thread, "request_draft.review.opened", { aggregateType: "request_draft", aggregateId: thread.draftId, surfaceId });
+    this.#emitTransition(thread, "request_draft.review.opened", {
+      aggregateType: "request_draft",
+      aggregateId: thread.draftId,
+      surfaceId,
+    });
     return {
       ok: true,
       messages: ["Review the complete request terms."],
-      surfaces: [{ surfaceId, mode: "focused-surface", summary: "Request review", conventionalRoute: conventionalRequestDraftRoute(thread.draftId), textFallback: this.#draftFallback(artifact), a2uiMessages: requestDraftArtifactToA2UI({ artifact, surfaceId }) }],
+      surfaces: [
+        {
+          surfaceId,
+          mode: "focused-surface",
+          summary: "Request review",
+          conventionalRoute: conventionalRequestDraftRoute(thread.draftId),
+          textFallback: this.#draftFallback(artifact),
+          a2uiMessages: requestDraftArtifactToA2UI({ artifact, surfaceId }),
+        },
+      ],
     };
   }
 
-  #handleDraftSubmit(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
-    if (!thread.draftId || event.context?.artifactId !== requestDraftArtifactId(thread.draftId) || event.context?.draftId !== thread.draftId) {
-      return { ok: false, code: "STALE_SURFACE", message: "That Request review is no longer current." };
+  #handleDraftSubmit(
+    thread: GuestThreadState,
+    event: GuestEventPayload,
+  ): GuestTurnResult {
+    if (
+      !thread.draftId ||
+      event.context?.artifactId !== requestDraftArtifactId(thread.draftId) ||
+      event.context?.draftId !== thread.draftId
+    ) {
+      return {
+        ok: false,
+        code: "STALE_SURFACE",
+        message: "That Request review is no longer current.",
+      };
     }
     const currentTerms = this.#draftArtifact(thread, "review");
-    if (!thread.draftQuote || thread.draftQuote.allInStayTotalKobo !== currentTerms.facts.allInStayTotalKobo || thread.draftQuote.refundableSecurityDepositKobo !== currentTerms.facts.refundableSecurityDepositKobo || thread.draftQuote.amountDueNowKobo !== currentTerms.facts.amountDueNowKobo) {
-      return { ok: false, code: "QUOTE_CHANGED", message: "The price or deposit changed before submission. Review the updated material terms and submit again." };
+    if (
+      !thread.draftQuote ||
+      thread.draftQuote.allInStayTotalKobo !==
+        currentTerms.facts.allInStayTotalKobo ||
+      thread.draftQuote.refundableSecurityDepositKobo !==
+        currentTerms.facts.refundableSecurityDepositKobo ||
+      thread.draftQuote.amountDueNowKobo !== currentTerms.facts.amountDueNowKobo
+    ) {
+      return {
+        ok: false,
+        code: "QUOTE_CHANGED",
+        message:
+          "The price or deposit changed before submission. Review the updated material terms and submit again.",
+      };
     }
     try {
-      this.#emitTransition(thread, "booking_request.submission.attempted", { aggregateType: "request_draft", aggregateId: thread.draftId, surfaceId: event.surfaceId });
-      const disclosed = this.#environment.bookingRequestApp.disclose(thread.draftId, this.#environment.guestPrincipal(), this.#environment.config.autoDeliverRequests !== false);
+      this.#emitTransition(thread, "booking_request.submission.attempted", {
+        aggregateType: "request_draft",
+        aggregateId: thread.draftId,
+        surfaceId: event.surfaceId,
+      });
+      const disclosed = this.#environment.bookingRequestApp.disclose(
+        thread.draftId,
+        this.#environment.guestPrincipal(),
+        this.#environment.config.autoDeliverRequests !== false,
+      );
       thread.requestId = disclosed.requestId;
       this.#supersede(thread, REQUEST_STAGE);
       const surface = this.#requestSurface(thread, disclosed.requestId);
       thread.activeSurfaces.set(REQUEST_STAGE, surface.surfaceId);
-      this.#emitTransition(thread, "booking_request.submitted", { aggregateType: "booking_request", aggregateId: disclosed.requestId, correlationId: thread.draftId, surfaceId: surface.surfaceId });
+      this.#emitTransition(thread, "booking_request.submitted", {
+        aggregateType: "booking_request",
+        aggregateId: disclosed.requestId,
+        correlationId: thread.draftId,
+        surfaceId: surface.surfaceId,
+      });
       // Issue 07: the Operator is named where known; the surface carries the reservation status.
-      return { ok: true, messages: [`Next, ${guestOperatorName(currentTerms.facts.operatorName)} will confirm availability before payment is due.`], receipts: [GUEST_RECEIPTS.requestSent], surfaces: [surface] };
+      return {
+        ok: true,
+        messages: [
+          `Next, ${guestOperatorName(currentTerms.facts.operatorName)} will confirm availability before payment is due.`,
+        ],
+        receipts: [GUEST_RECEIPTS.requestSent],
+        surfaces: [surface],
+      };
     } catch (error) {
-      const message = error instanceof Error ? error.message : "The Booking Request could not be submitted.";
-      if (/phone number is required/i.test(message)) return this.#contactSurface(thread, "phone", event.context ?? {});
-      this.#emitTransition(thread, "booking_request.delivery_failed", { aggregateType: "request_draft", aggregateId: thread.draftId, reasonCode: "REQUEST_DELIVERY_FAILED" });
+      const message =
+        error instanceof Error
+          ? error.message
+          : "The Booking Request could not be submitted.";
+      if (/phone number is required/i.test(message))
+        return this.#contactSurface(thread, "phone", event.context ?? {});
+      this.#emitTransition(thread, "booking_request.delivery_failed", {
+        aggregateType: "request_draft",
+        aggregateId: thread.draftId,
+        reasonCode: "REQUEST_DELIVERY_FAILED",
+      });
       return { ok: false, code: "REQUEST_NOT_SUBMITTED", message };
     }
   }
 
-  #contactSurface(thread: GuestThreadState, kind: "phone" | "email", resumeContext: JsonObject, input: { readonly value?: string; readonly error?: string } = {}): GuestTurnResult {
+  #contactSurface(
+    thread: GuestThreadState,
+    kind: "phone" | "email",
+    resumeContext: JsonObject,
+    input: { readonly value?: string; readonly error?: string } = {},
+  ): GuestTurnResult {
     const stage = kind === "phone" ? REQUEST_STAGE : PAYMENT_STAGE;
     const surfaceId = `thread-${thread.threadId}:contact:${kind}:${crypto.randomUUID()}`;
     this.#supersede(thread, stage);
     thread.activeSurfaces.set(stage, surfaceId);
-    const contact = this.#environment.guestContactApp.get(this.#environment.guestPrincipal());
+    const contact = this.#environment.guestContactApp.get(
+      this.#environment.guestPrincipal(),
+    );
     const baseLabel = kind === "phone" ? "Phone number" : "Email address";
-    const saveLabel = kind === "phone" ? "Save phone number" : "Save email address";
-    const eventName = kind === "phone" ? GUEST_PHONE_SUBMIT_EVENT : GUEST_EMAIL_SUBMIT_EVENT;
+    const saveLabel =
+      kind === "phone" ? "Save phone number" : "Save email address";
+    const eventName =
+      kind === "phone" ? GUEST_PHONE_SUBMIT_EVENT : GUEST_EMAIL_SUBMIT_EVENT;
     const components: A2UIComponent[] = [
-      { id: "root", component: "Column", children: ["contact-title", "contact-help", "contact-value", ...(input.error ? ["contact-error"] : []), "contact-save"] },
-      { id: "contact-title", component: "Text", text: baseLabel, variant: "h2" },
-      { id: "contact-help", component: "Text", text: kind === "phone" ? "Required to send a Booking Request. Use a Nigerian mobile number in +234 format; for example +234 801 234 5678. Phone is for booking coordination, not identity verification." : "Required to start hosted card checkout and send a payment receipt. This email is not your account identity." },
-      { id: "contact-value", component: "TextField", label: baseLabel, value: { path: "/contactValue" }, accessibility: { label: baseLabel } },
-      ...(input.error ? [{ id: "contact-error", component: "Text" as const, text: input.error }] : []),
-      { id: "contact-save", component: "Button", child: "contact-save-label", variant: "primary", action: { event: { name: eventName, context: { ...resumeContext, contactValue: { path: "/contactValue" }, expectedRevision: contact?.revision ?? 0 } } }, accessibility: { label: saveLabel } },
+      {
+        id: "root",
+        component: "Column",
+        children: [
+          "contact-title",
+          "contact-help",
+          "contact-value",
+          ...(input.error ? ["contact-error"] : []),
+          "contact-save",
+        ],
+      },
+      {
+        id: "contact-title",
+        component: "Text",
+        text: baseLabel,
+        variant: "h2",
+      },
+      {
+        id: "contact-help",
+        component: "Text",
+        text:
+          kind === "phone"
+            ? "Required to send a Booking Request. Use a Nigerian mobile number in +234 format; for example +234 801 234 5678. Phone is for booking coordination, not identity verification."
+            : "Required to start hosted card checkout and send a payment receipt. This email is not your account identity.",
+      },
+      {
+        id: "contact-value",
+        component: "TextField",
+        label: baseLabel,
+        value: { path: "/contactValue" },
+        accessibility: { label: baseLabel },
+      },
+      ...(input.error
+        ? [
+            {
+              id: "contact-error",
+              component: "Text" as const,
+              text: input.error,
+            },
+          ]
+        : []),
+      {
+        id: "contact-save",
+        component: "Button",
+        child: "contact-save-label",
+        variant: "primary",
+        action: {
+          event: {
+            name: eventName,
+            context: {
+              ...resumeContext,
+              contactValue: { path: "/contactValue" },
+              expectedRevision: contact?.revision ?? 0,
+            },
+          },
+        },
+        accessibility: { label: saveLabel },
+      },
       { id: "contact-save-label", component: "Text", text: saveLabel },
     ];
-    const currentValue = input.value ?? (kind === "phone" ? contact?.phoneNumber : contact?.contactEmail) ?? "";
-    const prompt = input.error ? "Please correct the field below." : kind === "phone" ? "Add a phone number to send your Booking Request." : "Add an email address to continue to payment.";
-    return { ok: true, messages: [prompt], surfaces: [{ surfaceId, mode: "focused-surface", summary: baseLabel, conventionalRoute: `/guest/contact?kind=${kind}`, conventionalRouteLabel: kind === "phone" ? "Edit phone number" : "Edit email address", textFallback: `${baseLabel} is required. ${kind === "phone" ? "Use a Nigerian mobile number, for example +234 801 234 5678." : "It is used for checkout and your receipt."} Open Contact details to save it.`, a2uiMessages: [{ version: "v0.9.1", createSurface: { surfaceId, catalogId: A2UI_V091_BASIC_CATALOG_ID } }, { version: "v0.9.1", updateDataModel: { surfaceId, path: "/contactValue", value: currentValue } }, { version: "v0.9.1", updateComponents: { surfaceId, components } }] }] };
+    const currentValue =
+      input.value ??
+      (kind === "phone" ? contact?.phoneNumber : contact?.contactEmail) ??
+      "";
+    const prompt = input.error
+      ? "Please correct the field below."
+      : kind === "phone"
+        ? "Add a phone number to send your Booking Request."
+        : "Add an email address to continue to payment.";
+    return {
+      ok: true,
+      messages: [prompt],
+      surfaces: [
+        {
+          surfaceId,
+          mode: "focused-surface",
+          summary: baseLabel,
+          conventionalRoute: `/guest/contact?kind=${kind}`,
+          conventionalRouteLabel:
+            kind === "phone" ? "Edit phone number" : "Edit email address",
+          textFallback: `${baseLabel} is required. ${kind === "phone" ? "Use a Nigerian mobile number, for example +234 801 234 5678." : "It is used for checkout and your receipt."} Open Contact details to save it.`,
+          a2uiMessages: [
+            {
+              version: "v0.9.1",
+              createSurface: {
+                surfaceId,
+                catalogId: A2UI_V091_BASIC_CATALOG_ID,
+              },
+            },
+            {
+              version: "v0.9.1",
+              updateDataModel: {
+                surfaceId,
+                path: "/contactValue",
+                value: currentValue,
+              },
+            },
+            { version: "v0.9.1", updateComponents: { surfaceId, components } },
+          ],
+        },
+      ],
+    };
   }
 
-  #handlePhoneSubmit(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
+  #handlePhoneSubmit(
+    thread: GuestThreadState,
+    event: GuestEventPayload,
+  ): GuestTurnResult {
     const value = event.context?.contactValue;
-    if (typeof value !== "string") return { ok: false, code: "INVALID_INPUT", message: "Phone number is required." };
-    try { this.#environment.guestContactApp.submitPhone({ phoneNumber: value, expectedRevision: Number(event.context?.expectedRevision ?? 0) }, this.#environment.guestPrincipal()); }
-    catch (error) {
-      const { contactValue: _contactValue, expectedRevision: _expectedRevision, ...resumeContext } = event.context ?? {};
-      return this.#contactSurface(thread, "phone", resumeContext, { value, error: error instanceof Error ? error.message : "Phone number could not be saved." });
+    if (typeof value !== "string")
+      return {
+        ok: false,
+        code: "INVALID_INPUT",
+        message: "Phone number is required.",
+      };
+    try {
+      this.#environment.guestContactApp.submitPhone(
+        {
+          phoneNumber: value,
+          expectedRevision: Number(event.context?.expectedRevision ?? 0),
+        },
+        this.#environment.guestPrincipal(),
+      );
+    } catch (error) {
+      const {
+        contactValue: _contactValue,
+        expectedRevision: _expectedRevision,
+        ...resumeContext
+      } = event.context ?? {};
+      return this.#contactSurface(thread, "phone", resumeContext, {
+        value,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Phone number could not be saved.",
+      });
     }
-    const { contactValue: _contactValue, expectedRevision: _expectedRevision, resumeAction, ...resumeContext } = event.context ?? {};
+    const {
+      contactValue: _contactValue,
+      expectedRevision: _expectedRevision,
+      resumeAction,
+      ...resumeContext
+    } = event.context ?? {};
     return resumeAction === "review"
-      ? this.#handleDraftReview(thread, { ...event, name: REQUEST_DRAFT_REVIEW_EVENT, context: resumeContext })
+      ? this.#handleDraftReview(thread, {
+          ...event,
+          name: REQUEST_DRAFT_REVIEW_EVENT,
+          context: resumeContext,
+        })
       : this.#handleDraftSubmit(thread, { ...event, context: resumeContext });
   }
 
-  #handleEmailSubmit(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
+  #handleEmailSubmit(
+    thread: GuestThreadState,
+    event: GuestEventPayload,
+  ): GuestTurnResult {
     const value = event.context?.contactValue;
-    if (typeof value !== "string") return { ok: false, code: "INVALID_INPUT", message: "Email address is required." };
-    try { this.#environment.guestContactApp.submitEmail({ contactEmail: value, expectedRevision: Number(event.context?.expectedRevision ?? 0) }, this.#environment.guestPrincipal()); }
-    catch (error) {
-      const { contactValue: _contactValue, expectedRevision: _expectedRevision, ...resumeContext } = event.context ?? {};
-      return this.#contactSurface(thread, "email", resumeContext, { value, error: error instanceof Error ? error.message : "Email address could not be saved." });
+    if (typeof value !== "string")
+      return {
+        ok: false,
+        code: "INVALID_INPUT",
+        message: "Email address is required.",
+      };
+    try {
+      this.#environment.guestContactApp.submitEmail(
+        {
+          contactEmail: value,
+          expectedRevision: Number(event.context?.expectedRevision ?? 0),
+        },
+        this.#environment.guestPrincipal(),
+      );
+    } catch (error) {
+      const {
+        contactValue: _contactValue,
+        expectedRevision: _expectedRevision,
+        ...resumeContext
+      } = event.context ?? {};
+      return this.#contactSurface(thread, "email", resumeContext, {
+        value,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Email address could not be saved.",
+      });
     }
     // Resume the server-issued payment action after the contact application
     // commits the email. The browser-provided contact value is not a payment
     // command and cannot alter the authoritative amount or currency.
-    const { contactValue: _contactValue, expectedRevision: _expectedRevision, ...paymentContext } = event.context ?? {};
-    return this.#handleCardCheckout(thread, { ...event, name: CARD_PAYMENT_INITIALIZE_CHECKOUT_EVENT, context: paymentContext });
+    const {
+      contactValue: _contactValue,
+      expectedRevision: _expectedRevision,
+      ...paymentContext
+    } = event.context ?? {};
+    return this.#handleCardCheckout(thread, {
+      ...event,
+      name: CARD_PAYMENT_INITIALIZE_CHECKOUT_EVENT,
+      context: paymentContext,
+    });
   }
 
-  #requestSurface(thread: GuestThreadState, requestId: string): GuestSurfacePayload {
-    const baseArtifact = this.#environment.bookingRequestApp.getArtifact(requestId, this.#environment.guestPrincipal());
-    const unit = this.#environment.unitRepository.findById(baseArtifact.facts.unitId);
-    const artifact = unit ? { ...baseArtifact, facts: { ...baseArtifact.facts, unitTitle: unit.title } } : baseArtifact;
-    const status = guestRequestStatus(artifact.facts.status, artifact.facts.delivered);
+  #requestSurface(
+    thread: GuestThreadState,
+    requestId: string,
+  ): GuestSurfacePayload {
+    const baseArtifact = this.#environment.bookingRequestApp.getArtifact(
+      requestId,
+      this.#environment.guestPrincipal(),
+    );
+    const unit = this.#environment.unitRepository.findById(
+      baseArtifact.facts.unitId,
+    );
+    const artifact = unit
+      ? {
+          ...baseArtifact,
+          facts: { ...baseArtifact.facts, unitTitle: unit.title },
+        }
+      : baseArtifact;
+    const status = guestRequestStatus(
+      artifact.facts.status,
+      artifact.facts.delivered,
+    );
     const surfaceId = `thread-${thread.threadId}:request:${requestId}`;
     return {
       surfaceId,
@@ -2316,33 +4300,56 @@ export class LocalGuestApp {
   }
 
   #contractArtifact(contractId: string): BookingContractArtifact {
-    const artifact = this.#environment.contractApp.getArtifact(contractId, this.#environment.guestPrincipal());
-    const unit = this.#environment.unitRepository.findById(artifact.facts.unitId);
-    return unit ? { ...artifact, facts: { ...artifact.facts, unitTitle: unit.title } } : artifact;
+    const artifact = this.#environment.contractApp.getArtifact(
+      contractId,
+      this.#environment.guestPrincipal(),
+    );
+    const unit = this.#environment.unitRepository.findById(
+      artifact.facts.unitId,
+    );
+    return unit
+      ? { ...artifact, facts: { ...artifact.facts, unitTitle: unit.title } }
+      : artifact;
   }
 
   #confirmedBookingFallback(artifact: BookingContractArtifact): string {
-    const access = artifact.facts.accessAvailability === "available"
-      ? "Access details are in secure booking details."
-      : "Check-in details will be shared when they are ready. A confirmed booking does not itself grant physical access.";
-    const depositCollected = artifact.facts.securityDeposit?.status === "held" && (artifact.facts.refundableSecurityDepositKobo ?? 0) > 0;
+    const access =
+      artifact.facts.accessAvailability === "available"
+        ? "Access details are in secure booking details."
+        : "Check-in details will be shared when they are ready. A confirmed booking does not itself grant physical access.";
+    const depositCollected =
+      artifact.facts.securityDeposit?.status === "held" &&
+      (artifact.facts.refundableSecurityDepositKobo ?? 0) > 0;
     return `Booking confirmed for ${artifact.facts.unitTitle ?? "your stay"}. ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)} · ${artifact.facts.nights} ${artifact.facts.nights === 1 ? "night" : "nights"}; ${artifact.facts.occupants.length} ${artifact.facts.occupants.length === 1 ? "guest" : "guests"}. ${artifact.facts.amountPaidKobo ? `${GUEST_FACT_LABELS.amountPaid}: ${formatNgnKobo(artifact.facts.amountPaidKobo)}. ` : ""}${depositCollected ? `${GUEST_GLOSSARY.refundableSecurityDeposit} collected: ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo!)}. ` : ""}${access} Your booking reference and full contract are in booking details.`;
   }
 
   #offerFallback(artifact: ConditionalOfferArtifact): string {
-    const status = artifact.facts.status === "issued" ? "Offer available · Operator confirmed availability"
-      : artifact.facts.status === "accepted" ? "Offer accepted · Payment required"
-        : artifact.facts.status === "expired" ? "Offer expired"
-          : artifact.facts.status === "stale" ? "Offer no longer current" : "Offer withdrawn";
+    const status =
+      artifact.facts.status === "issued"
+        ? "Offer available · Operator confirmed availability"
+        : artifact.facts.status === "accepted"
+          ? "Offer accepted · Payment required"
+          : artifact.facts.status === "expired"
+            ? "Offer expired"
+            : artifact.facts.status === "stale"
+              ? "Offer no longer current"
+              : "Offer withdrawn";
     return `${status}. ${artifact.facts.unitTitle}. ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)} · ${artifact.facts.nights} ${artifact.facts.nights === 1 ? "night" : "nights"}. ${GUEST_GLOSSARY.allInStayTotal}: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. ${artifact.facts.refundableSecurityDepositKobo > 0 ? `${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}${GUEST_FACT_LABELS.amountDueNow}: ${formatNgnKobo(artifact.facts.totalAmountDueNowKobo)}. ${formatBookingDeadline(artifact.facts.paymentWindowExpiresAt)}. ${guestReservationStatus(artifact.facts.status === "issued" ? "offer-issued" : artifact.facts.status === "accepted" ? "offer-accepted" : "offer-closed")}`;
   }
 
-  #confirmedBookingSurface(thread: GuestThreadState): GuestSurfacePayload | null {
+  #confirmedBookingSurface(
+    thread: GuestThreadState,
+  ): GuestSurfacePayload | null {
     if (!thread.offerId) return null;
-    const snapshot = this.#environment.interactionStore.findBookingSnapshotByOfferId(thread.offerId);
+    const snapshot =
+      this.#environment.interactionStore.findBookingSnapshotByOfferId(
+        thread.offerId,
+      );
     if (!snapshot) return null;
     try {
-      const contract = JSON.parse(snapshot.contractJson) as { readonly contractId: string };
+      const contract = JSON.parse(snapshot.contractJson) as {
+        readonly contractId: string;
+      };
       const bookingSurfaceId = `thread-${thread.threadId}:booking:${contract.contractId}`;
       const contractArtifact = this.#contractArtifact(contract.contractId);
       this.#supersede(thread, PAYMENT_STAGE);
@@ -2351,9 +4358,14 @@ export class LocalGuestApp {
         surfaceId: bookingSurfaceId,
         mode: "focused-surface",
         summary: "Reservation confirmed",
-        conventionalRoute: conventionalBookingContractRoute(contract.contractId),
+        conventionalRoute: conventionalBookingContractRoute(
+          contract.contractId,
+        ),
         textFallback: this.#confirmedBookingFallback(contractArtifact),
-        a2uiMessages: bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: bookingSurfaceId }),
+        a2uiMessages: bookingContractArtifactToA2UI({
+          artifact: contractArtifact,
+          surfaceId: bookingSurfaceId,
+        }),
       };
     } catch {
       return null;
@@ -2362,33 +4374,56 @@ export class LocalGuestApp {
 
   #refreshWorkflow(thread: GuestThreadState): GuestTurnResult | null {
     const confirmedSurface = this.#confirmedBookingSurface(thread);
-    if (confirmedSurface) return { ok: true, messages: [], surfaces: [confirmedSurface] };
+    if (confirmedSurface)
+      return { ok: true, messages: [], surfaces: [confirmedSurface] };
     if (thread.offerId && thread.activeSurfaces.has(OFFER_STAGE)) {
-      const offer = this.#environment.conditionalOfferApp.getArtifact(thread.offerId, this.#environment.guestPrincipal());
+      const offer = this.#environment.conditionalOfferApp.getArtifact(
+        thread.offerId,
+        this.#environment.guestPrincipal(),
+      );
       if (offer.facts.status === "expired") {
         const surfaceId = `thread-${thread.threadId}:offer:${thread.offerId}`;
         thread.activeSurfaces.set(OFFER_STAGE, surfaceId);
-        this.#emitTransition(thread, "conditional_booking_offer.expired", { aggregateType: "conditional_booking_offer", aggregateId: thread.offerId, reasonCode: "OFFER_EXPIRED", surfaceId });
+        this.#emitTransition(thread, "conditional_booking_offer.expired", {
+          aggregateType: "conditional_booking_offer",
+          aggregateId: thread.offerId,
+          reasonCode: "OFFER_EXPIRED",
+          surfaceId,
+        });
         return {
           ok: true,
-          messages: ["The Conditional Booking Offer expired. Payment authority has been removed."],
-          surfaces: [{
-            surfaceId,
-            mode: "focused-surface",
-            summary: "Conditional Booking Offer expired",
-            status: "expired",
-            conventionalRoute: conventionalConditionalOfferRoute(thread.offerId),
-            textFallback: this.#offerFallback(offer),
-            a2uiMessages: conditionalOfferArtifactToA2UI({ artifact: offer, surfaceId }),
-          }],
+          messages: [
+            "The Conditional Booking Offer expired. Payment authority has been removed.",
+          ],
+          surfaces: [
+            {
+              surfaceId,
+              mode: "focused-surface",
+              summary: "Conditional Booking Offer expired",
+              status: "expired",
+              conventionalRoute: conventionalConditionalOfferRoute(
+                thread.offerId,
+              ),
+              textFallback: this.#offerFallback(offer),
+              a2uiMessages: conditionalOfferArtifactToA2UI({
+                artifact: offer,
+                surfaceId,
+              }),
+            },
+          ],
         };
       }
     }
     if (thread.offerId && thread.activeSurfaces.has(PAYMENT_STAGE)) {
-      const snapshot = this.#environment.interactionStore.findBookingSnapshotByOfferId(thread.offerId);
+      const snapshot =
+        this.#environment.interactionStore.findBookingSnapshotByOfferId(
+          thread.offerId,
+        );
       if (snapshot) {
         try {
-          const contract = JSON.parse(snapshot.contractJson) as { readonly contractId: string };
+          const contract = JSON.parse(snapshot.contractJson) as {
+            readonly contractId: string;
+          };
           const bookingSurfaceId = `thread-${thread.threadId}:booking:${contract.contractId}`;
           const contractArtifact = this.#contractArtifact(contract.contractId);
           this.#supersede(thread, PAYMENT_STAGE);
@@ -2396,75 +4431,215 @@ export class LocalGuestApp {
           return {
             ok: true,
             messages: [],
-            surfaces: [{
-              surfaceId: bookingSurfaceId,
-              mode: "focused-surface",
-              summary: "Reservation confirmed",
-              conventionalRoute: conventionalBookingContractRoute(contract.contractId),
-              textFallback: this.#confirmedBookingFallback(contractArtifact),
-              a2uiMessages: bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: bookingSurfaceId }),
-            }],
+            surfaces: [
+              {
+                surfaceId: bookingSurfaceId,
+                mode: "focused-surface",
+                summary: "Reservation confirmed",
+                conventionalRoute: conventionalBookingContractRoute(
+                  contract.contractId,
+                ),
+                textFallback: this.#confirmedBookingFallback(contractArtifact),
+                a2uiMessages: bookingContractArtifactToA2UI({
+                  artifact: contractArtifact,
+                  surfaceId: bookingSurfaceId,
+                }),
+              },
+            ],
           };
         } catch {
           // Keep the payment surface until the durable Contract can be read.
         }
       }
-      const payment = this.#environment.cardPaymentApp.getArtifact(thread.offerId, this.#environment.guestPrincipal());
+      const payment = this.#environment.cardPaymentApp.getArtifact(
+        thread.offerId,
+        this.#environment.guestPrincipal(),
+      );
       if (payment.facts.status === "expired") {
         const surfaceId = `thread-${thread.threadId}:payment:expired:${thread.offerId}`;
         this.#supersede(thread, PAYMENT_STAGE);
         thread.activeSurfaces.set(PAYMENT_STAGE, surfaceId);
-        this.#emitTransition(thread, "payment.expired", { aggregateType: "payment_window", aggregateId: thread.offerId, reasonCode: "PAYMENT_EXPIRED", surfaceId });
-        return { ok: true, messages: ["The Payment Window expired. Payment authority has been removed; no Reservation exists."], surfaces: [{ ...this.#paymentSurface(thread, payment, "Payment Window expired", surfaceId), status: "expired", textFallback: `Payment window expired. Total to complete booking: ${formatNgnKobo(payment.facts.amountDueNowKobo)}. No Reservation exists.` }] };
+        this.#emitTransition(thread, "payment.expired", {
+          aggregateType: "payment_window",
+          aggregateId: thread.offerId,
+          reasonCode: "PAYMENT_EXPIRED",
+          surfaceId,
+        });
+        return {
+          ok: true,
+          messages: [
+            "The Payment Window expired. Payment authority has been removed; no Reservation exists.",
+          ],
+          surfaces: [
+            {
+              ...this.#paymentSurface(
+                thread,
+                payment,
+                "Payment Window expired",
+                surfaceId,
+              ),
+              status: "expired",
+              textFallback: `Payment window expired. Total to complete booking: ${formatNgnKobo(payment.facts.amountDueNowKobo)}. No Reservation exists.`,
+            },
+          ],
+        };
       }
     }
     if (!thread.requestId || thread.offerId) return null;
-    const artifact = this.#environment.bookingRequestApp.getArtifact(thread.requestId, this.#environment.guestPrincipal());
+    const artifact = this.#environment.bookingRequestApp.getArtifact(
+      thread.requestId,
+      this.#environment.guestPrincipal(),
+    );
     if (artifact.facts.status === "confirmed") {
       // ADR-0079: never issue a second Conditional Booking Offer for a request
       // that already has one. The refresh path adopts an existing durable
       // offer instead of repeating the issuance command.
-      const durableOffer = this.#environment.interactionStore.findConditionalOfferByRequestId(thread.requestId);
+      const durableOffer =
+        this.#environment.interactionStore.findConditionalOfferByRequestId(
+          thread.requestId,
+        );
       let offerId = durableOffer?.offerId ?? null;
       if (offerId === null) {
         try {
-          const offer = this.#environment.conditionalOfferApp.issue(thread.requestId, this.#environment.representativePrincipal());
+          const offer = this.#environment.conditionalOfferApp.issue(
+            thread.requestId,
+            this.#environment.representativePrincipal(),
+          );
           offerId = offer.offerId;
         } catch {
           offerId = null;
         }
       }
-      if (offerId === null) return { ok: true, messages: ["The Operator confirmed availability, but the Conditional Booking Offer could not be prepared."], surfaces: [this.#requestSurface(thread, thread.requestId)] };
+      if (offerId === null)
+        return {
+          ok: true,
+          messages: [
+            "The Operator confirmed availability, but the Conditional Booking Offer could not be prepared.",
+          ],
+          surfaces: [this.#requestSurface(thread, thread.requestId)],
+        };
       thread.offerId = offerId;
       this.#supersede(thread, REQUEST_STAGE);
       const surfaceId = `thread-${thread.threadId}:offer:${offerId}`;
       thread.activeSurfaces.set(OFFER_STAGE, surfaceId);
-      const offerArtifact = this.#environment.conditionalOfferApp.getArtifact(offerId, this.#environment.guestPrincipal());
-      this.#emitTransition(thread, "booking_request.confirmed", { aggregateType: "booking_request", aggregateId: thread.requestId, nextState: "confirmed", correlationId: offerId });
-      this.#emitTransition(thread, "conditional_booking_offer.shown", { aggregateType: "conditional_booking_offer", aggregateId: offerId, correlationId: thread.requestId, surfaceId });
-      return { ok: true, messages: ["Operator confirmed availability. Review the Conditional Booking Offer; payment is still required."], surfaces: [{ surfaceId, mode: "focused-surface", summary: "Conditional Booking Offer", conventionalRoute: conventionalConditionalOfferRoute(offerId), textFallback: this.#offerFallback(offerArtifact), a2uiMessages: conditionalOfferArtifactToA2UI({ artifact: offerArtifact, surfaceId }) }] };
+      const offerArtifact = this.#environment.conditionalOfferApp.getArtifact(
+        offerId,
+        this.#environment.guestPrincipal(),
+      );
+      this.#emitTransition(thread, "booking_request.confirmed", {
+        aggregateType: "booking_request",
+        aggregateId: thread.requestId,
+        nextState: "confirmed",
+        correlationId: offerId,
+      });
+      this.#emitTransition(thread, "conditional_booking_offer.shown", {
+        aggregateType: "conditional_booking_offer",
+        aggregateId: offerId,
+        correlationId: thread.requestId,
+        surfaceId,
+      });
+      return {
+        ok: true,
+        messages: [
+          "Operator confirmed availability. Review the Conditional Booking Offer; payment is still required.",
+        ],
+        surfaces: [
+          {
+            surfaceId,
+            mode: "focused-surface",
+            summary: "Conditional Booking Offer",
+            conventionalRoute: conventionalConditionalOfferRoute(offerId),
+            textFallback: this.#offerFallback(offerArtifact),
+            a2uiMessages: conditionalOfferArtifactToA2UI({
+              artifact: offerArtifact,
+              surfaceId,
+            }),
+          },
+        ],
+      };
     }
-    if (["declined", "expired", "delivery_failed"].includes(artifact.facts.status)) {
+    if (
+      ["declined", "expired", "delivery_failed"].includes(artifact.facts.status)
+    ) {
       this.#supersede(thread, REQUEST_STAGE);
-      const type = artifact.facts.status === "declined" ? "booking_request.declined" : artifact.facts.status === "expired" ? "booking_request.timed_out" : "booking_request.delivery_failed";
-      this.#emitTransition(thread, type, { aggregateType: "booking_request", aggregateId: thread.requestId, reasonCode: artifact.facts.status === "declined" ? "OPERATOR_DECLINED" : artifact.facts.status === "expired" ? "OPERATOR_TIMEOUT" : "REQUEST_DELIVERY_FAILED" });
-      return { ok: true, messages: [artifact.facts.status === "declined" ? "The Operator declined the request. No payment was taken." : artifact.facts.status === "expired" ? "The Booking Request expired before the Operator responded." : "The Booking Request could not be delivered."], surfaces: [{ ...this.#requestSurface(thread, thread.requestId), mode: "inline-surface", summary: "Request outcome", status: "active" }] };
+      const type =
+        artifact.facts.status === "declined"
+          ? "booking_request.declined"
+          : artifact.facts.status === "expired"
+            ? "booking_request.timed_out"
+            : "booking_request.delivery_failed";
+      this.#emitTransition(thread, type, {
+        aggregateType: "booking_request",
+        aggregateId: thread.requestId,
+        reasonCode:
+          artifact.facts.status === "declined"
+            ? "OPERATOR_DECLINED"
+            : artifact.facts.status === "expired"
+              ? "OPERATOR_TIMEOUT"
+              : "REQUEST_DELIVERY_FAILED",
+      });
+      return {
+        ok: true,
+        messages: [
+          artifact.facts.status === "declined"
+            ? "The Operator declined the request. No payment was taken."
+            : artifact.facts.status === "expired"
+              ? "The Booking Request expired before the Operator responded."
+              : "The Booking Request could not be delivered.",
+        ],
+        surfaces: [
+          {
+            ...this.#requestSurface(thread, thread.requestId),
+            mode: "inline-surface",
+            summary: "Request outcome",
+            status: "active",
+          },
+        ],
+      };
     }
-    return { ok: true, messages: [], surfaces: [this.#requestSurface(thread, thread.requestId)] };
+    return {
+      ok: true,
+      messages: [],
+      surfaces: [this.#requestSurface(thread, thread.requestId)],
+    };
   }
 
-  #handleOfferAccept(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
+  #handleOfferAccept(
+    thread: GuestThreadState,
+    event: GuestEventPayload,
+  ): GuestTurnResult {
     if (!thread.offerId) {
-      return { ok: false, code: "INVALID_ARTIFACT", message: "No offer is active for this conversation." };
+      return {
+        ok: false,
+        code: "INVALID_ARTIFACT",
+        message: "No offer is active for this conversation.",
+      };
     }
-    this.#emitTransition(thread, "conditional_booking_offer.acceptance_attempted", { aggregateType: "conditional_booking_offer", aggregateId: thread.offerId, surfaceId: event.surfaceId });
+    this.#emitTransition(
+      thread,
+      "conditional_booking_offer.acceptance_attempted",
+      {
+        aggregateType: "conditional_booking_offer",
+        aggregateId: thread.offerId,
+        surfaceId: event.surfaceId,
+      },
+    );
     const resolved = resolveConditionalOfferServerEvent({
       event: this.#handoff(event),
       application: this.#environment.conditionalOfferApp,
       principal: this.#environment.guestPrincipal(),
     });
     if (!resolved.ok) {
-      this.#emitTransition(thread, "conditional_booking_offer.stale_action_rejected", { aggregateType: "conditional_booking_offer", aggregateId: thread.offerId, reasonCode: "STALE_ACTION", surfaceId: event.surfaceId });
+      this.#emitTransition(
+        thread,
+        "conditional_booking_offer.stale_action_rejected",
+        {
+          aggregateType: "conditional_booking_offer",
+          aggregateId: thread.offerId,
+          reasonCode: "STALE_ACTION",
+          surfaceId: event.surfaceId,
+        },
+      );
       return { ok: false, code: resolved.code, message: resolved.message };
     }
 
@@ -2472,29 +4647,52 @@ export class LocalGuestApp {
     const paymentSurfaceId = `thread-${thread.threadId}:payment:ready:${offerId}`;
     this.#supersede(thread, OFFER_STAGE);
     thread.activeSurfaces.set(PAYMENT_STAGE, paymentSurfaceId);
-    this.#emitTransition(thread, "conditional_booking_offer.accepted", { aggregateType: "conditional_booking_offer", aggregateId: offerId, nextState: "accepted", surfaceId: paymentSurfaceId });
+    this.#emitTransition(thread, "conditional_booking_offer.accepted", {
+      aggregateType: "conditional_booking_offer",
+      aggregateId: offerId,
+      nextState: "accepted",
+      surfaceId: paymentSurfaceId,
+    });
 
-    const paymentArtifact = this.#environment.cardPaymentApp.getArtifact(offerId, this.#environment.guestPrincipal());
+    const paymentArtifact = this.#environment.cardPaymentApp.getArtifact(
+      offerId,
+      this.#environment.guestPrincipal(),
+    );
     return {
       ok: true,
       messages: ["Complete the secure card payment to confirm your booking."],
       receipts: [GUEST_RECEIPTS.offerAccepted],
       surfaces: [
-        this.#paymentSurface(thread, paymentArtifact, "Payment required", paymentSurfaceId),
+        this.#paymentSurface(
+          thread,
+          paymentArtifact,
+          "Payment required",
+          paymentSurfaceId,
+        ),
       ],
     };
   }
 
-  #handleCardCheckout(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
+  #handleCardCheckout(
+    thread: GuestThreadState,
+    event: GuestEventPayload,
+  ): GuestTurnResult {
     if (!thread.offerId) {
-      return { ok: false, code: "INVALID_ARTIFACT", message: "No payment is active for this conversation." };
+      return {
+        ok: false,
+        code: "INVALID_ARTIFACT",
+        message: "No payment is active for this conversation.",
+      };
     }
     const environment = this.#environment;
     // The contact application owns email validation and persistence. Present
     // its generated input surface before resolving the payment command so the
     // payment resolver never has to infer a missing contact from a swallowed
     // application error.
-    if (!environment.guestContactApp.get(environment.guestPrincipal())?.contactEmail) {
+    if (
+      !environment.guestContactApp.get(environment.guestPrincipal())
+        ?.contactEmail
+    ) {
       return this.#contactSurface(thread, "email", event.context ?? {});
     }
     const resolved = resolveCardPaymentServerEvent({
@@ -2503,85 +4701,301 @@ export class LocalGuestApp {
       principal: environment.guestPrincipal(),
     });
     if (!resolved.ok) {
-      if (/email address is required/i.test(resolved.message)) return this.#contactSurface(thread, "email", event.context ?? {});
+      if (/email address is required/i.test(resolved.message))
+        return this.#contactSurface(thread, "email", event.context ?? {});
       return { ok: false, code: resolved.code, message: resolved.message };
     }
 
-    const session = environment.cardPaymentApp.manager.getCheckoutSession(thread.offerId);
+    const session = environment.cardPaymentApp.manager.getCheckoutSession(
+      thread.offerId,
+    );
     if (!session) {
-      return { ok: false, code: "INVALID_ARTIFACT", message: "No checkout session is active." };
+      return {
+        ok: false,
+        code: "INVALID_ARTIFACT",
+        message: "No checkout session is active.",
+      };
     }
-    const artifact = environment.cardPaymentApp.getArtifact(thread.offerId, environment.guestPrincipal());
+    const artifact = environment.cardPaymentApp.getArtifact(
+      thread.offerId,
+      environment.guestPrincipal(),
+    );
     const surfaceId = `thread-${thread.threadId}:payment:checkout:${session.checkoutId}`;
     this.#supersede(thread, PAYMENT_STAGE);
     thread.activeSurfaces.set(PAYMENT_STAGE, surfaceId);
-    this.#emitTransition(thread, "payment.handoff.opened", { aggregateType: "payment", aggregateId: thread.offerId, surfaceId });
-    this.#emitTransition(thread, "payment.attempt.initialized", { aggregateType: "payment_attempt", aggregateId: session.checkoutId, correlationId: thread.offerId });
-    const checkoutAmount = artifact.facts.currentComponentAmountKobo ?? (artifact.facts.currentComponent === "security_deposit" ? artifact.facts.refundableSecurityDepositKobo : artifact.facts.allInStayTotalKobo) ?? artifact.facts.amountDueNowKobo;
-    const checkoutPurpose = artifact.facts.currentComponent === "security_deposit" ? GUEST_GLOSSARY.refundableSecurityDeposit : "stay payment";
-    return { ok: true, messages: ["Payment checkout is ready. Payment has not succeeded; your booking details remain available when you return."], surfaces: [{ surfaceId, mode: "focused-surface", summary: "Payment handoff", conventionalRoute: conventionalCardPaymentRoute(thread.offerId), conventionalRouteLabel: `Continue to ${checkoutPurpose} · ${formatNgnKobo(checkoutAmount)}`, textFallback: `Payment handoff ready for ${artifact.facts.unit}, ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)}. ${artifact.facts.allInStayTotalKobo === undefined ? "" : `${GUEST_GLOSSARY.allInStayTotal}: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. `}${artifact.facts.refundableSecurityDepositKobo ? `${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}Next payment: ${formatNgnKobo(checkoutAmount)}. ${formatWAT(artifact.facts.paymentWindowExpiresAt)}. Payment has not succeeded and the booking is not confirmed. Your booking details will be retained when you return.`, a2uiMessages: cardPaymentArtifactToA2UI({ artifact, surfaceId }) }] };
+    this.#emitTransition(thread, "payment.handoff.opened", {
+      aggregateType: "payment",
+      aggregateId: thread.offerId,
+      surfaceId,
+    });
+    this.#emitTransition(thread, "payment.attempt.initialized", {
+      aggregateType: "payment_attempt",
+      aggregateId: session.checkoutId,
+      correlationId: thread.offerId,
+    });
+    const checkoutAmount =
+      artifact.facts.currentComponentAmountKobo ??
+      (artifact.facts.currentComponent === "security_deposit"
+        ? artifact.facts.refundableSecurityDepositKobo
+        : artifact.facts.allInStayTotalKobo) ??
+      artifact.facts.amountDueNowKobo;
+    const checkoutPurpose =
+      artifact.facts.currentComponent === "security_deposit"
+        ? GUEST_GLOSSARY.refundableSecurityDeposit
+        : "stay payment";
+    return {
+      ok: true,
+      messages: [
+        "Payment checkout is ready. Payment has not succeeded; your booking details remain available when you return.",
+      ],
+      surfaces: [
+        {
+          surfaceId,
+          mode: "focused-surface",
+          summary: "Payment handoff",
+          conventionalRoute: conventionalCardPaymentRoute(thread.offerId),
+          conventionalRouteLabel: `Continue to ${checkoutPurpose} · ${formatNgnKobo(checkoutAmount)}`,
+          textFallback: `Payment handoff ready for ${artifact.facts.unit}, ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)}. ${artifact.facts.allInStayTotalKobo === undefined ? "" : `${GUEST_GLOSSARY.allInStayTotal}: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. `}${artifact.facts.refundableSecurityDepositKobo ? `${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}Next payment: ${formatNgnKobo(checkoutAmount)}. ${formatWAT(artifact.facts.paymentWindowExpiresAt)}. Payment has not succeeded and the booking is not confirmed. Your booking details will be retained when you return.`,
+          a2uiMessages: cardPaymentArtifactToA2UI({ artifact, surfaceId }),
+        },
+      ],
+    };
   }
 
-  #handlePaymentReturn(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
-    if (!thread.offerId || event.context?.artifactId !== `card-payment:${thread.offerId}` || event.context?.offerId !== thread.offerId) return { ok: false, code: "STALE_SURFACE", message: "That payment handoff is no longer current." };
+  #handlePaymentReturn(
+    thread: GuestThreadState,
+    event: GuestEventPayload,
+  ): GuestTurnResult {
+    if (
+      !thread.offerId ||
+      event.context?.artifactId !== `card-payment:${thread.offerId}` ||
+      event.context?.offerId !== thread.offerId
+    )
+      return {
+        ok: false,
+        code: "STALE_SURFACE",
+        message: "That payment handoff is no longer current.",
+      };
     const environment = this.#environment;
-    const current = environment.cardPaymentApp.getArtifact(thread.offerId, environment.guestPrincipal());
-    if (current.facts.status !== "checkout_initiated" || event.context?.projectionVersion !== current.projectionVersion) return { ok: false, code: "STALE_SURFACE", message: "That payment handoff is no longer current." };
-    const session = environment.cardPaymentApp.manager.getCheckoutSession(thread.offerId);
-    if (!session) return { ok: false, code: "INVALID_ARTIFACT", message: "No active payment attempt was found." };
-    this.#emitTransition(thread, "payment.return.received", { aggregateType: "payment", aggregateId: thread.offerId, surfaceId: event.surfaceId });
+    const current = environment.cardPaymentApp.getArtifact(
+      thread.offerId,
+      environment.guestPrincipal(),
+    );
+    if (
+      current.facts.status !== "checkout_initiated" ||
+      event.context?.projectionVersion !== current.projectionVersion
+    )
+      return {
+        ok: false,
+        code: "STALE_SURFACE",
+        message: "That payment handoff is no longer current.",
+      };
+    const session = environment.cardPaymentApp.manager.getCheckoutSession(
+      thread.offerId,
+    );
+    if (!session)
+      return {
+        ok: false,
+        code: "INVALID_ARTIFACT",
+        message: "No active payment attempt was found.",
+      };
+    this.#emitTransition(thread, "payment.return.received", {
+      aggregateType: "payment",
+      aggregateId: thread.offerId,
+      surfaceId: event.surfaceId,
+    });
     try {
-      const outcome = environment.cardPaymentApp.verifyAndConfirm(session.pspReference, environment.systemPrincipal());
+      const outcome = environment.cardPaymentApp.verifyAndConfirm(
+        session.pspReference,
+        environment.systemPrincipal(),
+      );
       if (outcome.outcome === "deposit_required") {
-        const artifact = environment.cardPaymentApp.getArtifact(thread.offerId, environment.guestPrincipal());
+        const artifact = environment.cardPaymentApp.getArtifact(
+          thread.offerId,
+          environment.guestPrincipal(),
+        );
         const surfaceId = `thread-${thread.threadId}:payment:deposit-ready:${thread.offerId}`;
         this.#supersede(thread, PAYMENT_STAGE);
         thread.activeSurfaces.set(PAYMENT_STAGE, surfaceId);
-        this.#emitTransition(thread, "payment.verified", { aggregateType: "payment", aggregateId: thread.offerId, nextState: "deposit_required", surfaceId });
-        return { ok: true, messages: [`Payment verified for the stay. A separate ${GUEST_GLOSSARY.refundableSecurityDeposit} payment is required before a Reservation can exist.`], surfaces: [this.#paymentSurface(thread, artifact, `${GUEST_GLOSSARY.refundableSecurityDeposit} payment required`, surfaceId)] };
+        this.#emitTransition(thread, "payment.verified", {
+          aggregateType: "payment",
+          aggregateId: thread.offerId,
+          nextState: "deposit_required",
+          surfaceId,
+        });
+        return {
+          ok: true,
+          messages: [
+            `Payment verified for the stay. A separate ${GUEST_GLOSSARY.refundableSecurityDeposit} payment is required before a Reservation can exist.`,
+          ],
+          surfaces: [
+            this.#paymentSurface(
+              thread,
+              artifact,
+              `${GUEST_GLOSSARY.refundableSecurityDeposit} payment required`,
+              surfaceId,
+            ),
+          ],
+        };
       }
-      const contractArtifact = this.#contractArtifact(outcome.bookingContract.contractId);
+      const contractArtifact = this.#contractArtifact(
+        outcome.bookingContract.contractId,
+      );
       const bookingSurfaceId = `thread-${thread.threadId}:booking:${outcome.bookingContract.contractId}`;
       this.#supersede(thread, PAYMENT_STAGE);
       thread.activeSurfaces.set(BOOKING_STAGE, bookingSurfaceId);
-      this.#emitTransition(thread, "payment.verified", { aggregateType: "payment", aggregateId: thread.offerId, nextState: "verified", surfaceId: bookingSurfaceId });
-      this.#emitTransition(thread, "reservation.confirmed", { aggregateType: "reservation", aggregateId: outcome.reservation.reservationId, correlationId: thread.offerId, nextState: "confirmed" });
-      return { ok: true, messages: [], receipts: [GUEST_RECEIPTS.paymentVerified], surfaces: [{ surfaceId: bookingSurfaceId, mode: "focused-surface", summary: "Reservation confirmed", conventionalRoute: conventionalBookingContractRoute(outcome.bookingContract.contractId), textFallback: this.#confirmedBookingFallback(contractArtifact), a2uiMessages: bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: bookingSurfaceId }) }] };
+      this.#emitTransition(thread, "payment.verified", {
+        aggregateType: "payment",
+        aggregateId: thread.offerId,
+        nextState: "verified",
+        surfaceId: bookingSurfaceId,
+      });
+      this.#emitTransition(thread, "reservation.confirmed", {
+        aggregateType: "reservation",
+        aggregateId: outcome.reservation.reservationId,
+        correlationId: thread.offerId,
+        nextState: "confirmed",
+      });
+      return {
+        ok: true,
+        messages: [],
+        receipts: [GUEST_RECEIPTS.paymentVerified],
+        surfaces: [
+          {
+            surfaceId: bookingSurfaceId,
+            mode: "focused-surface",
+            summary: "Reservation confirmed",
+            conventionalRoute: conventionalBookingContractRoute(
+              outcome.bookingContract.contractId,
+            ),
+            textFallback: this.#confirmedBookingFallback(contractArtifact),
+            a2uiMessages: bookingContractArtifactToA2UI({
+              artifact: contractArtifact,
+              surfaceId: bookingSurfaceId,
+            }),
+          },
+        ],
+      };
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Payment verification did not complete.";
-      const artifact = environment.cardPaymentApp.getArtifact(thread.offerId, environment.guestPrincipal());
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Payment verification did not complete.";
+      const artifact = environment.cardPaymentApp.getArtifact(
+        thread.offerId,
+        environment.guestPrincipal(),
+      );
       const surfaceId = `thread-${thread.threadId}:payment:result:${Date.now()}`;
       this.#supersede(thread, PAYMENT_STAGE);
       thread.activeSurfaces.set(PAYMENT_STAGE, surfaceId);
-       if (/processing|grace/i.test(message)) { this.#emitTransition(thread, "payment.processing", { aggregateType: "payment", aggregateId: thread.offerId, reasonCode: "PAYMENT_PROCESSING", surfaceId }); return { ok: true, messages: ["Payment is still processing. It has not succeeded and no Reservation exists yet."], surfaces: [this.#paymentSurface(thread, artifact, "Payment processing", surfaceId)] }; }
-       if (/late|expired|deadline/i.test(message)) this.#emitTransition(thread, "payment.late_payment.detected", { aggregateType: "payment", aggregateId: thread.offerId, reasonCode: /expired|deadline/i.test(message) ? "PAYMENT_EXPIRED" : "LATE_PAYMENT", surfaceId });
-       else this.#emitTransition(thread, "payment.failed", { aggregateType: "payment", aggregateId: thread.offerId, reasonCode: "PAYMENT_FAILED", surfaceId });
-       return { ok: true, messages: [`Payment was not verified. No Reservation was created. ${message}`], surfaces: [this.#paymentSurface(thread, artifact, "Payment verification result", surfaceId)] };
+      if (/processing|grace/i.test(message)) {
+        this.#emitTransition(thread, "payment.processing", {
+          aggregateType: "payment",
+          aggregateId: thread.offerId,
+          reasonCode: "PAYMENT_PROCESSING",
+          surfaceId,
+        });
+        return {
+          ok: true,
+          messages: [
+            "Payment is still processing. It has not succeeded and no Reservation exists yet.",
+          ],
+          surfaces: [
+            this.#paymentSurface(
+              thread,
+              artifact,
+              "Payment processing",
+              surfaceId,
+            ),
+          ],
+        };
+      }
+      if (/late|expired|deadline/i.test(message))
+        this.#emitTransition(thread, "payment.late_payment.detected", {
+          aggregateType: "payment",
+          aggregateId: thread.offerId,
+          reasonCode: /expired|deadline/i.test(message)
+            ? "PAYMENT_EXPIRED"
+            : "LATE_PAYMENT",
+          surfaceId,
+        });
+      else
+        this.#emitTransition(thread, "payment.failed", {
+          aggregateType: "payment",
+          aggregateId: thread.offerId,
+          reasonCode: "PAYMENT_FAILED",
+          surfaceId,
+        });
+      return {
+        ok: true,
+        messages: [
+          `Payment was not verified. No Reservation was created. ${message}`,
+        ],
+        surfaces: [
+          this.#paymentSurface(
+            thread,
+            artifact,
+            "Payment verification result",
+            surfaceId,
+          ),
+        ],
+      };
     }
   }
 
-  #paymentSurface(thread: GuestThreadState, artifact: ReturnType<CardPaymentApplication["getArtifact"]>, summary: string, surfaceId: string): GuestSurfacePayload {
-    const processing = artifact.facts.journeyStage === "stay_payment_processing" || artifact.facts.journeyStage === "deposit_payment_processing";
+  #paymentSurface(
+    thread: GuestThreadState,
+    artifact: ReturnType<CardPaymentApplication["getArtifact"]>,
+    summary: string,
+    surfaceId: string,
+  ): GuestSurfacePayload {
+    const processing =
+      artifact.facts.journeyStage === "stay_payment_processing" ||
+      artifact.facts.journeyStage === "deposit_payment_processing";
     const status = guestPaymentStatus(artifact.facts.status, processing);
-    const currentAmount = artifact.facts.currentComponentAmountKobo ?? (artifact.facts.status === "ready" ? artifact.facts.allInStayTotalKobo : undefined);
-    const routeLabel = processing ? "Return to payment status"
-      : artifact.facts.status === "ready" ? "Open payment details"
-        : artifact.facts.status === "checkout_initiated" ? `Continue to ${artifact.facts.currentComponent === "security_deposit" ? GUEST_GLOSSARY.refundableSecurityDeposit : "stay payment"} · ${formatNgnKobo(currentAmount ?? artifact.facts.amountDueNowKobo)}`
-          : artifact.facts.status === "deposit_required" ? `Continue to ${GUEST_GLOSSARY.refundableSecurityDeposit} · ${formatNgnKobo(currentAmount ?? artifact.facts.refundableSecurityDepositKobo ?? artifact.facts.amountDueNowKobo)}`
+    const currentAmount =
+      artifact.facts.currentComponentAmountKobo ??
+      (artifact.facts.status === "ready"
+        ? artifact.facts.allInStayTotalKobo
+        : undefined);
+    const routeLabel = processing
+      ? "Return to payment status"
+      : artifact.facts.status === "ready"
+        ? "Open payment details"
+        : artifact.facts.status === "checkout_initiated"
+          ? `Continue to ${artifact.facts.currentComponent === "security_deposit" ? GUEST_GLOSSARY.refundableSecurityDeposit : "stay payment"} · ${formatNgnKobo(currentAmount ?? artifact.facts.amountDueNowKobo)}`
+          : artifact.facts.status === "deposit_required"
+            ? `Continue to ${GUEST_GLOSSARY.refundableSecurityDeposit} · ${formatNgnKobo(currentAmount ?? artifact.facts.refundableSecurityDepositKobo ?? artifact.facts.amountDueNowKobo)}`
             : "View payment status";
-    return { surfaceId, mode: "focused-surface", summary, conventionalRoute: conventionalCardPaymentRoute(thread.offerId!), conventionalRouteLabel: routeLabel, textFallback: `${status.label}. ${artifact.facts.unit}, ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)}. ${artifact.facts.allInStayTotalKobo === undefined ? "" : `${GUEST_GLOSSARY.allInStayTotal}: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. `}${artifact.facts.refundableSecurityDepositKobo ? `${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}${artifact.facts.status === "ready" || artifact.facts.status === "deposit_required" ? `${GUEST_FACT_LABELS.amountDueNow}: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}. ` : ""}${currentAmount === undefined ? "" : `Current payment: ${formatNgnKobo(currentAmount)}. `}${formatWAT(artifact.facts.paymentWindowExpiresAt)}. ${status.detail}`, a2uiMessages: cardPaymentArtifactToA2UI({ artifact, surfaceId }) };
+    return {
+      surfaceId,
+      mode: "focused-surface",
+      summary,
+      conventionalRoute: conventionalCardPaymentRoute(thread.offerId!),
+      conventionalRouteLabel: routeLabel,
+      textFallback: `${status.label}. ${artifact.facts.unit}, ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)}. ${artifact.facts.allInStayTotalKobo === undefined ? "" : `${GUEST_GLOSSARY.allInStayTotal}: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. `}${artifact.facts.refundableSecurityDepositKobo ? `${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}${artifact.facts.status === "ready" || artifact.facts.status === "deposit_required" ? `${GUEST_FACT_LABELS.amountDueNow}: ${formatNgnKobo(artifact.facts.amountDueNowKobo)}. ` : ""}${currentAmount === undefined ? "" : `Current payment: ${formatNgnKobo(currentAmount)}. `}${formatWAT(artifact.facts.paymentWindowExpiresAt)}. ${status.detail}`,
+      a2uiMessages: cardPaymentArtifactToA2UI({ artifact, surfaceId }),
+    };
   }
 
   #partySizeFor(thread: GuestThreadState): number {
     const filters = thread.discoveryArtifact?.facts.filters;
-    return typeof filters?.partySize === "number" && Number.isInteger(filters.partySize) && filters.partySize >= 1
+    return typeof filters?.partySize === "number" &&
+      Number.isInteger(filters.partySize) &&
+      filters.partySize >= 1
       ? filters.partySize
       : 1;
   }
 
-  #stayDatesFor(thread: GuestThreadState): { readonly checkIn: string; readonly checkOut: string } {
+  #stayDatesFor(thread: GuestThreadState): {
+    readonly checkIn: string;
+    readonly checkOut: string;
+  } {
     const filters = thread.discoveryArtifact?.facts.filters;
-    if (typeof filters?.checkIn !== "string" || typeof filters.checkOut !== "string") {
+    if (
+      typeof filters?.checkIn !== "string" ||
+      typeof filters.checkOut !== "string"
+    ) {
       throw new Error("Discovery dates are required for the booking journey");
     }
     return { checkIn: filters.checkIn, checkOut: filters.checkOut };
@@ -2597,25 +5011,40 @@ interface GuestEventPayload {
 }
 
 function readEventPayload(payload: unknown): GuestEventPayload | undefined {
-  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return undefined;
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload))
+    return undefined;
   const record = payload as Record<string, unknown>;
-  if (typeof record.name !== "string" || record.name.trim() === "") return undefined;
-  if (typeof record.surfaceId !== "string" || record.surfaceId.trim() === "") return undefined;
+  if (typeof record.name !== "string" || record.name.trim() === "")
+    return undefined;
+  if (typeof record.surfaceId !== "string" || record.surfaceId.trim() === "")
+    return undefined;
   const context: JsonObject | null =
-    record.context !== null && typeof record.context === "object" && !Array.isArray(record.context)
+    record.context !== null &&
+    typeof record.context === "object" &&
+    !Array.isArray(record.context)
       ? (record.context as JsonObject)
       : null;
   return {
     name: record.name,
     surfaceId: record.surfaceId,
-    sourceComponentId: typeof record.sourceComponentId === "string" ? record.sourceComponentId : "unknown",
-    timestamp: typeof record.timestamp === "string" ? record.timestamp : new Date().toISOString(),
+    sourceComponentId:
+      typeof record.sourceComponentId === "string"
+        ? record.sourceComponentId
+        : "unknown",
+    timestamp:
+      typeof record.timestamp === "string"
+        ? record.timestamp
+        : new Date().toISOString(),
     context,
   };
 }
 
 /** The discovery surface for a stored artifact; restoring and going back present it identically. */
-function discoverySurface(artifact: DiscoveryArtifactProjection, surfaceId: string, compareSelection?: string): GuestSurfacePayload {
+function discoverySurface(
+  artifact: DiscoveryArtifactProjection,
+  surfaceId: string,
+  compareSelection?: string,
+): GuestSurfacePayload {
   return {
     surfaceId,
     mode: "inline-surface",
@@ -2623,17 +5052,28 @@ function discoverySurface(artifact: DiscoveryArtifactProjection, surfaceId: stri
     // ADR-0080: the re-presented fallback keeps the same criteria as the live one.
     conventionalRoute: conventionalSearchRoute(artifact.facts.filters),
     textFallback: discoveryFallbackMessage(artifact),
-    a2uiMessages: discoveryArtifactToA2UI({ artifact, surfaceId, compareSelection }),
+    a2uiMessages: discoveryArtifactToA2UI({
+      artifact,
+      surfaceId,
+      compareSelection,
+    }),
   };
 }
 
 function discoverySummary(filters: unknown): string {
-  if (filters === null || typeof filters !== "object" || Array.isArray(filters)) return "Search results";
+  if (filters === null || typeof filters !== "object" || Array.isArray(filters))
+    return "Search results";
   const record = filters as Record<string, unknown>;
-  const location = typeof record.location === "string" ? record.location.trim() : "";
-  const neighbourhood = typeof record.neighbourhood === "string" ? record.neighbourhood.trim() : "";
-  const partySize = typeof record.partySize === "number" && Number.isSafeInteger(record.partySize) && record.partySize > 0
-    ? `${record.partySize} guests` : "";
+  const location =
+    typeof record.location === "string" ? record.location.trim() : "";
+  const neighbourhood =
+    typeof record.neighbourhood === "string" ? record.neighbourhood.trim() : "";
+  const partySize =
+    typeof record.partySize === "number" &&
+    Number.isSafeInteger(record.partySize) &&
+    record.partySize > 0
+      ? `${record.partySize} guests`
+      : "";
   const place = [neighbourhood, location].filter(Boolean).join(", ");
   return ["Search updated", place, partySize].filter(Boolean).join(" · ");
 }
@@ -2705,14 +5145,6 @@ export function renderGuestShellHtml(): string {
     .workspace-close:hover, #workspace-reopen:hover, .contact-link:hover { border-color: var(--color-action); }
     .workspace-status { margin: 0 0 var(--space-3); color: var(--color-text-secondary); font-size: var(--font-size-small); }
     .workspace-status[data-status="stale"], .workspace-status[data-status="expired"], .workspace-status[data-status="deleted"], .workspace-status[data-status="fallback"] { padding: var(--space-2) var(--space-3); border-inline-start: 3px dashed var(--color-warning); background: var(--color-warning-surface); color: var(--color-warning); }
-    .waiting-panel { display: grid; gap: var(--space-2); margin: 0 0 var(--space-4); padding: var(--space-3); border: 1px solid var(--color-border-subtle); border-inline-start: 4px solid var(--color-info); border-radius: var(--radius-card); background: var(--color-info-surface); }
-    .waiting-panel h3 { margin: 0; font-size: var(--font-size-h3); line-height: var(--font-line-h3); font-weight: 650; }
-    .waiting-panel p, .waiting-panel ul { margin: 0; }
-    .waiting-panel ul { display: grid; gap: var(--space-1); padding-inline-start: var(--space-5); }
-    .waiting-deadline { font-weight: 600; font-variant-numeric: tabular-nums; }
-    .waiting-panel .waiting-countdown { color: var(--color-info); }
-    .waiting-label { color: var(--color-text-secondary); font-size: var(--font-size-small); font-weight: 600; }
-    .waiting-meanwhile { color: var(--color-text-secondary); }
     .weaver-mount { min-width: 0; max-width: 100%; overflow: visible; }
     .workspace-arrival { animation: workspace-enter var(--duration-base) var(--ease-enter) both; }
     @keyframes workspace-enter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
@@ -2827,10 +5259,12 @@ export function renderGuestShellHtml(): string {
      * strip and composer stay under the transcript so chat remains live.
      */
     @media (min-width: 64rem) {
-      .app:has(#active-workspace:not([hidden])) { max-width: var(--layout-app-max); }
+      /* Issue 11: the app bar and rail span the full width; a 460px conversation sits beside a left-aligned reading column (560px, 760px for discovery). */
+      .app:has(#active-workspace:not([hidden])) { max-width: none; }
+      .app:has(#active-workspace:not([hidden])) .ui-appbar, .app:has(#active-workspace:not([hidden])) .ui-rail { padding-inline: var(--layout-gutter-desktop); }
       main:has(#active-workspace:not([hidden])) {
         display: grid;
-        grid-template-columns: minmax(22rem, 1fr) minmax(0, 1.25fr);
+        grid-template-columns: minmax(22rem, 28.75rem) minmax(0, 1fr);
         grid-template-rows: minmax(0, 1fr) auto auto auto;
         grid-template-areas: "transcript workspace" "reopen workspace" "strip workspace" "composer workspace";
       }
@@ -2838,7 +5272,9 @@ export function renderGuestShellHtml(): string {
       main:has(#active-workspace:not([hidden])) > #workspace-reopen { grid-area: reopen; }
       main:has(#active-workspace:not([hidden])) > #criteria-strip { grid-area: strip; }
       main:has(#active-workspace:not([hidden])) > form#composer { grid-area: composer; }
-      main:has(#active-workspace:not([hidden])) > #workspace-region { grid-area: workspace; min-height: 0; padding-block: var(--space-4); border-inline-start: 1px solid var(--color-border); }
+      main:has(#active-workspace:not([hidden])) > #workspace-region { grid-area: workspace; min-height: 0; padding: var(--space-6) var(--space-10); border-inline-start: 1px solid var(--color-border); }
+      main:has(#active-workspace:not([hidden])) #active-workspace { max-inline-size: 35rem; }
+      main:has(#active-workspace:not([hidden])) #active-workspace[data-surface-kind="discovery"] { max-inline-size: 47.5rem; }
     }
     /*
      * Issue 09 AC2: below 64rem a focused workspace is a full-screen sheet
@@ -2931,7 +5367,9 @@ export const JSON_BODY_LIMIT_BYTES = 64 * 1024;
 export const PROVIDER_BODY_LIMIT_BYTES = 256 * 1024;
 
 async function readJsonBody(req: IncomingMessage): Promise<unknown> {
-  const raw = (await readBoundedBody(req, JSON_BODY_LIMIT_BYTES)).toString("utf8");
+  const raw = (await readBoundedBody(req, JSON_BODY_LIMIT_BYTES)).toString(
+    "utf8",
+  );
   try {
     return raw === "" ? {} : JSON.parse(raw);
   } catch (error) {
@@ -2939,13 +5377,17 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
   }
 }
 
-export function renderConventionalUnitDetailHtml(unit: Unit, photoUrl?: (url: string) => string): string {
+export function renderConventionalUnitDetailHtml(
+  unit: Unit,
+  photoUrl?: (url: string) => string,
+): string {
   const photos = normalizePhotoUrls(unit.photoUrls);
   // Guest gallery issue 01: the shared gallery. Every photo shows and links to its full image without JavaScript
   // (ADR 0080); /gallery.js adds the strip count, "Show all" and the full-screen viewer.
-  const photoMarkup = photos.length === 0
-    ? `<p class="ui-image-frame" role="status">Photos are not available for this ${GUEST_GLOSSARY.unit} yet.</p>`
-    : `${listingGalleryHtml({ title: unit.title, photos: photos.map((url, index) => ({ src: photoUrl ? photoUrl(url) : url, alt: `Photo ${index + 1} of ${unit.title}` })) })}<script src="/gallery.js" defer></script>`;
+  const photoMarkup =
+    photos.length === 0
+      ? `<p class="ui-image-frame" role="status">Photos are not available for this ${GUEST_GLOSSARY.unit} yet.</p>`
+      : `${listingGalleryHtml({ title: unit.title, photos: photos.map((url, index) => ({ src: photoUrl ? photoUrl(url) : url, alt: `Photo ${index + 1} of ${unit.title}` })) })}<script src="/gallery.js" defer></script>`;
   return pageShell({
     title: unit.title,
     frame: appFrameHtml({ threadId: null, publicStep: "stay" }),
@@ -2963,63 +5405,133 @@ const MAX_TURN_TEXT_LENGTH = 2000;
  */
 /** Issue 08 / ADR-0080: the no-JS page shows the same journey rail as the live shell. */
 function renderJourneyRailHtml(journey: GuestJourney | undefined): string {
-  return railHtml(journey).replace('class="ui-rail-nav"', 'class="ui-rail-nav no-js-journey"');
+  return railHtml(journey).replace(
+    'class="ui-rail-nav"',
+    'class="ui-rail-nav no-js-journey"',
+  );
 }
 
 /** Issue 10 / ADR-0080: without JavaScript the absolute deadline stands in for the countdown. */
 function renderWaitingHtml(waiting: GuestWaitingState | undefined): string {
   if (!waiting) return "";
-  const list = (items: readonly string[]): string => `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+  const list = (items: readonly string[]): string =>
+    `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
   return `<div class="no-js-waiting" data-waiting="${waiting.kind}"><h3>${escapeHtml(waiting.heading)}</h3><p>${escapeHtml(waiting.deadlineText)}</p><p>What happens next</p>${list(waiting.outcomes)}${list(waiting.meanwhile)}</div>`;
 }
 
-export function renderNoScriptConversationHtml(input: { readonly threadId: string; readonly timeline: readonly GuestTimelineEntry[]; readonly surfaces: readonly GuestSurfacePayload[]; readonly journey?: GuestJourney; readonly error?: string; readonly draft?: string; readonly committedWork?: readonly GuestCommittedWork[] }): string {
-  const turns = input.timeline.map((entry) => entry.role === "receipt"
-    ? `<li class="no-js-receipt receipt-marker" data-role="receipt"><p>${icon("check")} ${escapeHtml(entry.text)}</p></li>`
-    : `<li class="turn ${entry.role} no-js-turn" data-role="${entry.role}"><p class="turn-label">${entry.role === "user" ? "You" : "Shortlet Concierge"}</p><div class="bubble">${escapeHtml(entry.text)}</div></li>`).join("");
-  const surfaces = input.surfaces.filter((surface) => surface.status !== "deleted" && surface.status !== "superseded").map((surface) => {
-    const content = `<span class="ui-result-row__thumb">${icon("doc")}</span><span class="ui-result-row__body"><strong class="ui-result-row__title">${escapeHtml(surface.summary ?? "Current details")}</strong>${surface.textFallback ? `<span class="no-js-surface-fallback">${escapeHtml(surface.textFallback)}</span>` : ""}<span class="ui-link">${escapeHtml(surface.conventionalRouteLabel ?? "Open full details")}</span></span>${icon("chevron-right")}`;
-    return `<section aria-label="${escapeHtml(surface.summary ?? "Current details")}">${surface.conventionalRoute ? `<a class="ui-result-row" href="${escapeHtml(surface.conventionalRoute)}">${content}</a>` : `<div class="ui-result-row">${content}</div>`}${renderWaitingHtml(surface.waiting)}</section>`;
-  }).join("");
-  const error = input.error ? `<p id="composer-error" class="ui-field__error" role="alert">${escapeHtml(input.error)}</p>` : "";
+export function renderNoScriptConversationHtml(input: {
+  readonly threadId: string;
+  readonly timeline: readonly GuestTimelineEntry[];
+  readonly surfaces: readonly GuestSurfacePayload[];
+  readonly journey?: GuestJourney;
+  readonly error?: string;
+  readonly draft?: string;
+  readonly committedWork?: readonly GuestCommittedWork[];
+}): string {
+  const turns = input.timeline
+    .map((entry) =>
+      entry.role === "receipt"
+        ? `<li class="no-js-receipt receipt-marker" data-role="receipt"><p>${icon("check")} ${escapeHtml(entry.text)}</p></li>`
+        : `<li class="turn ${entry.role} no-js-turn" data-role="${entry.role}"><p class="turn-label">${entry.role === "user" ? "You" : "Shortlet Concierge"}</p><div class="bubble">${escapeHtml(entry.text)}</div></li>`,
+    )
+    .join("");
+  const surfaces = input.surfaces
+    .filter(
+      (surface) =>
+        surface.status !== "deleted" && surface.status !== "superseded",
+    )
+    .map((surface) => {
+      const content = `<span class="ui-result-row__thumb">${icon("doc")}</span><span class="ui-result-row__body"><strong class="ui-result-row__title">${escapeHtml(surface.summary ?? "Current details")}</strong>${surface.textFallback ? `<span class="no-js-surface-fallback">${escapeHtml(surface.textFallback)}</span>` : ""}<span class="ui-link">${escapeHtml(surface.conventionalRouteLabel ?? "Open full details")}</span></span>${icon("chevron-right")}`;
+      return `<section aria-label="${escapeHtml(surface.summary ?? "Current details")}">${surface.conventionalRoute ? `<a class="ui-result-row" href="${escapeHtml(surface.conventionalRoute)}">${content}</a>` : `<div class="ui-result-row">${content}</div>`}${renderWaitingHtml(surface.waiting)}</section>`;
+    })
+    .join("");
+  const error = input.error
+    ? `<p id="composer-error" class="ui-field__error" role="alert">${escapeHtml(input.error)}</p>`
+    : "";
   // Issue 13a / ADR-0080: a new conversation without JavaScript still says the
   // Guest's live work elsewhere is unaffected, and links to it.
-  const committed = input.timeline.length > 0 ? "" : (input.committedWork ?? []).filter((work) => work.threadId !== input.threadId).map((work) => {
-    const copy = guestNewConversationCopy(work.kind, work.unitTitle);
-    return `<section class="ui-panel committed-work" data-kind="${work.kind}"><p>${escapeHtml(copy.stillActive)}</p><a class="ui-button" href="${escapeHtml(work.route)}">${escapeHtml(copy.link)}</a></section>`;
-  }).join("");
+  const committed =
+    input.timeline.length > 0
+      ? ""
+      : (input.committedWork ?? [])
+          .filter((work) => work.threadId !== input.threadId)
+          .map((work) => {
+            const copy = guestNewConversationCopy(work.kind, work.unitTitle);
+            return `<section class="ui-panel committed-work" data-kind="${work.kind}"><p>${escapeHtml(copy.stillActive)}</p><a class="ui-button" href="${escapeHtml(work.route)}">${escapeHtml(copy.link)}</a></section>`;
+          })
+          .join("");
   return pageShell({
     title: "Conversation · Shortlet",
     width: "narrow",
     frame: `${appBarHtml({ backHref: "/", backLabel: "Back to your conversation", action: { href: "/conversation", label: GUEST_NEW_CONVERSATION.control, icon: "message-plus" } })}${renderJourneyRailHtml(input.journey)}`,
-    body: `<div class="guest-editorial no-js-conversation" data-page="conversation"><h1 class="ui-sr-only">Conversation</h1>${committed}${turns ? `<ol class="no-js-transcript" aria-label="Conversation">${turns}</ol>` : ""}${surfaces}<form id="composer" class="composer" method="post" action="/conversation" aria-label="Message the concierge"><div class="ui-field"><label class="ui-field__label" for="composer-input">Your message</label><p class="ui-field__hint" id="composer-hint">Share a city or neighbourhood, dates or nights, and number of guests.</p><input id="composer-input" name="message" type="text" autocomplete="off" enterkeyhint="send" maxlength="${MAX_TURN_TEXT_LENGTH}" required aria-describedby="composer-hint${error ? " composer-error" : ""}"${error ? " aria-invalid=\"true\"" : ""} value="${escapeHtml(input.draft ?? "")}">${error}</div><input type="hidden" name="threadId" value="${escapeHtml(input.threadId)}"><button class="ui-button ui-button--primary" type="submit">Send</button></form></div>`,
+    body: `<div class="guest-editorial no-js-conversation" data-page="conversation"><h1 class="ui-sr-only">Conversation</h1>${committed}${turns ? `<ol class="no-js-transcript" aria-label="Conversation">${turns}</ol>` : ""}${surfaces}<form id="composer" class="composer" method="post" action="/conversation" aria-label="Message the concierge"><div class="ui-field"><label class="ui-field__label" for="composer-input">Your message</label><p class="ui-field__hint" id="composer-hint">Share a city or neighbourhood, dates or nights, and number of guests.</p><input id="composer-input" name="message" type="text" autocomplete="off" enterkeyhint="send" maxlength="${MAX_TURN_TEXT_LENGTH}" required aria-describedby="composer-hint${error ? " composer-error" : ""}"${error ? ' aria-invalid="true"' : ""} value="${escapeHtml(input.draft ?? "")}">${error}</div><input type="hidden" name="threadId" value="${escapeHtml(input.threadId)}"><button class="ui-button ui-button--primary" type="submit">Send</button></form></div>`,
   });
 }
 
 /** The booking routes built by `apps/web/src/presentation.ts`; drafts are matched before requests. */
-const CONVENTIONAL_BOOKING_ROUTES: readonly (readonly [ConventionalBookingPageKind, RegExp])[] = [
+const CONVENTIONAL_BOOKING_ROUTES: readonly (readonly [
+  ConventionalBookingPageKind,
+  RegExp,
+])[] = [
   ["draft", /^\/booking-requests\/drafts\/([^/]+)$/],
   ["request", /^\/booking-requests\/([^/]+)$/],
   ["offer", /^\/conditional-offers\/([^/]+)$/],
   ["contract", /^\/booking-contracts\/([^/]+)$/],
 ];
 
-function matchConventionalBookingRoute(pathname: string): { readonly kind: ConventionalBookingPageKind; readonly encodedId: string } | null {
+function matchConventionalBookingRoute(pathname: string): {
+  readonly kind: ConventionalBookingPageKind;
+  readonly encodedId: string;
+} | null {
   for (const [kind, pattern] of CONVENTIONAL_BOOKING_ROUTES) {
     const match = pattern.exec(pathname);
-    if (match && !(kind === "request" && match[1] === "drafts")) return { kind, encodedId: match[1]! };
+    if (match && !(kind === "request" && match[1] === "drafts"))
+      return { kind, encodedId: match[1]! };
   }
   return null;
 }
 
-export function renderConventionalBookingHtml(page: ConventionalBookingPage): string {
+export function renderConventionalBookingHtml(
+  page: ConventionalBookingPage,
+): string {
   const stay = page.stay;
-  const ticket = stay ? stayTicketHtml({ ...stay, ...(page.confirmation ? { bookingReference: page.confirmation.bookingReference } : {}) }) : "";
-  const breakdown = stay ? priceBreakdownHtml({ ...(page.confirmation ? { depositCollected: page.confirmation.depositCollected } : {}), ...(stay.allInStayTotalKobo === undefined ? {} : { allInStayTotalKobo: stay.allInStayTotalKobo }), ...(stay.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: stay.refundableSecurityDepositKobo }), ...(stay.amountDueNowKobo === undefined ? {} : { amountDueNowKobo: stay.amountDueNowKobo }), ...(stay.amountDueNowIsConditional ? { heading: GUEST_FACT_LABELS.ifRequestAccepted } : {}), ...(stay.amountPaidKobo === undefined ? {} : { amountPaidKobo: stay.amountPaidKobo }) }) : "";
+  const ticket = stay
+    ? stayTicketHtml({
+        ...stay,
+        ...(page.confirmation
+          ? { bookingReference: page.confirmation.bookingReference }
+          : {}),
+      })
+    : "";
+  const breakdown = stay
+    ? priceBreakdownHtml({
+        ...(page.confirmation
+          ? { depositCollected: page.confirmation.depositCollected }
+          : {}),
+        ...(stay.allInStayTotalKobo === undefined
+          ? {}
+          : { allInStayTotalKobo: stay.allInStayTotalKobo }),
+        ...(stay.refundableSecurityDepositKobo === undefined
+          ? {}
+          : {
+              refundableSecurityDepositKobo: stay.refundableSecurityDepositKobo,
+            }),
+        ...(stay.amountDueNowKobo === undefined
+          ? {}
+          : { amountDueNowKobo: stay.amountDueNowKobo }),
+        ...(stay.amountDueNowIsConditional
+          ? { heading: GUEST_FACT_LABELS.ifRequestAccepted }
+          : {}),
+        ...(stay.amountPaidKobo === undefined
+          ? {}
+          : { amountPaidKobo: stay.amountPaidKobo }),
+      })
+    : "";
   return pageShell({
     title: `${page.summary} · Shortlet`,
     width: "narrow",
-    frame: appFrameHtml({threadId: page.threadId,
+    frame: appFrameHtml({
+      threadId: page.threadId,
       ...(page.journey === undefined ? {} : { journey: page.journey }),
     }),
     body: page.offerScreen
@@ -3033,16 +5545,29 @@ export function renderConventionalBookingHtml(page: ConventionalBookingPage): st
 }
 
 /** Only the criteria `conventionalSearchRoute` builds for the guest app; anything else fails closed (ADR-0080). */
-const SEARCH_TEXT_KEYS = ["location", "neighbourhood", "checkIn", "checkOut"] as const;
+const SEARCH_TEXT_KEYS = [
+  "location",
+  "neighbourhood",
+  "checkIn",
+  "checkOut",
+] as const;
 const SEARCH_COUNT_KEYS = ["partySize", "bedrooms"] as const;
 
-export function parseConventionalSearchQuery(params: URLSearchParams): Readonly<Record<string, string | number>> | null {
+export function parseConventionalSearchQuery(
+  params: URLSearchParams,
+): Readonly<Record<string, string | number>> | null {
   const filters: Record<string, string | number> = {};
   for (const [key, value] of params) {
     // Issue 03b: the form's budget (whole naira) is optional, so an empty one means none.
     if (key === "budget") {
       if (value.trim() === "") continue;
-      if (!/^\d{1,10}$/.test(value) || Number(value) < 1 || params.has("maxPriceKobo") || params.getAll("budget").length > 1) return null;
+      if (
+        !/^\d{1,10}$/.test(value) ||
+        Number(value) < 1 ||
+        params.has("maxPriceKobo") ||
+        params.getAll("budget").length > 1
+      )
+        return null;
       filters.maxPriceKobo = Number(value) * 100;
       continue;
     }
@@ -3055,60 +5580,131 @@ export function parseConventionalSearchQuery(params: URLSearchParams): Readonly<
     if (key === "area") {
       // Issue 03a / ADR-0080: the search form's Where field, from the same list as the strip.
       const area = SEARCH_AREAS.find((candidate) => candidate.id === value);
-      if (!area || params.has("location") || params.has("neighbourhood") || params.getAll("area").length > 1) return null;
+      if (
+        !area ||
+        params.has("location") ||
+        params.has("neighbourhood") ||
+        params.getAll("area").length > 1
+      )
+        return null;
       filters.location = area.city;
-      if (area.neighbourhood !== undefined) filters.neighbourhood = area.neighbourhood;
-    } else if ((SEARCH_TEXT_KEYS as readonly string[]).includes(key)) filters[key] = value.trim();
-    else if ((SEARCH_COUNT_KEYS as readonly string[]).includes(key) && /^\d{1,3}$/.test(value)) filters[key] = Number(value);
+      if (area.neighbourhood !== undefined)
+        filters.neighbourhood = area.neighbourhood;
+    } else if ((SEARCH_TEXT_KEYS as readonly string[]).includes(key))
+      filters[key] = value.trim();
+    else if (
+      (SEARCH_COUNT_KEYS as readonly string[]).includes(key) &&
+      /^\d{1,3}$/.test(value)
+    )
+      filters[key] = Number(value);
     else return null;
   }
   return filters;
 }
 
-function quotedNightCount(checkIn: unknown, checkOut: unknown): number | undefined {
-  if (typeof checkIn !== "string" || typeof checkOut !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(checkIn) || !/^\d{4}-\d{2}-\d{2}$/.test(checkOut)) return undefined;
+function quotedNightCount(
+  checkIn: unknown,
+  checkOut: unknown,
+): number | undefined {
+  if (
+    typeof checkIn !== "string" ||
+    typeof checkOut !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(checkIn) ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(checkOut)
+  )
+    return undefined;
   const start = Date.parse(`${checkIn}T00:00:00Z`);
   const end = Date.parse(`${checkOut}T00:00:00Z`);
   const nights = (end - start) / 86_400_000;
   return Number.isInteger(nights) && nights > 0 ? nights : undefined;
 }
 
-export function renderConventionalSearchHtml(artifact: DiscoveryArtifactProjection, photoUrl?: (url: string) => string): string {
+export function renderConventionalSearchHtml(
+  artifact: DiscoveryArtifactProjection,
+  photoUrl?: (url: string) => string,
+): string {
   const { checkIn, checkOut } = artifact.facts.filters;
   const nights = quotedNightCount(checkIn, checkOut);
-  const cards = artifact.facts.results.map((unit) => {
-    const route = artifact.actions.find((action) => action.type === "view-unit" && action.unitId === unit.id)?.conventionalRoute ?? `/stays/${encodeURIComponent(unit.id)}`;
-    const photo = unit.photoUrls[0];
-    return `<li class="stay-result" data-unit-id="${escapeHtml(unit.id)}">${stayCardHtml({ href: route, title: unit.title, neighbourhood: unit.location.neighbourhood, city: unit.location.city, allInStayTotalKobo: unit.price.allInStayTotalKobo, refundableSecurityDepositKobo: unit.price.refundableSecurityDepositKobo, nightlyKobo: unit.price.nightlyKobo, bedrooms: unit.bedrooms ?? null, bathrooms: unit.bathrooms, capacity: unit.capacity, ...(nights === undefined ? {} : { nights }), ...(photo === undefined ? {} : { photoSrc: photoUrl ? photoUrl(photo) : photo, photoCount: unit.photoUrls.length }) })}</li>`;
-  }).join("");
-  const stay = typeof checkIn === "string" && typeof checkOut === "string" ? formatStayDates(checkIn, checkOut) : "";
-  const summary = [discoverySummary(artifact.facts.filters).replace(/^Search updated( · )?/, ""), stay].filter(Boolean).join(" · ");
+  const cards = artifact.facts.results
+    .map((unit) => {
+      const route =
+        artifact.actions.find(
+          (action) => action.type === "view-unit" && action.unitId === unit.id,
+        )?.conventionalRoute ?? `/stays/${encodeURIComponent(unit.id)}`;
+      const photo = unit.photoUrls[0];
+      return `<li data-unit-id="${escapeHtml(unit.id)}">${stayCardHtml({ href: route, title: unit.title, neighbourhood: unit.location.neighbourhood, city: unit.location.city, allInStayTotalKobo: unit.price.allInStayTotalKobo, refundableSecurityDepositKobo: unit.price.refundableSecurityDepositKobo, nightlyKobo: unit.price.nightlyKobo, bedrooms: unit.bedrooms ?? null, bathrooms: unit.bathrooms, capacity: unit.capacity, ...(nights === undefined ? {} : { nights }), ...(photo === undefined ? {} : { photoSrc: photoUrl ? photoUrl(photo) : photo, photoCount: unit.photoUrls.length }) })}</li>`;
+    })
+    .join("");
+  const stay =
+    typeof checkIn === "string" && typeof checkOut === "string"
+      ? formatStayDates(checkIn, checkOut)
+      : "";
+  const summary = [
+    discoverySummary(artifact.facts.filters).replace(
+      /^Search updated( · )?/,
+      "",
+    ),
+    stay,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const filters = artifact.facts.filters as Readonly<Record<string, unknown>>;
-  const currentArea = SEARCH_AREAS.find((area) => area.city === filters.location && area.neighbourhood === filters.neighbourhood)?.id;
-  const text = (value: unknown): string => typeof value === "string" ? escapeHtml(value) : "";
+  const currentArea = SEARCH_AREAS.find(
+    (area) =>
+      area.city === filters.location &&
+      area.neighbourhood === filters.neighbourhood,
+  )?.id;
+  const text = (value: unknown): string =>
+    typeof value === "string" ? escapeHtml(value) : "";
   // Issue 03a / ADR-0080: the strip's Where, When and Guests, editable without JavaScript.
-  const form = `<form class="ui-panel search-form" id="change-search" method="get" action="/stays/search" aria-label="Change your search">`
-    + `<div class="ui-field"><label class="ui-field__label" for="search-area">Where</label><select class="ui-input" id="search-area" name="area" required>${SEARCH_AREAS.map((area) => `<option value="${area.id}"${area.id === currentArea ? " selected" : ""}>${escapeHtml(area.label)}</option>`).join("")}</select></div>`
-    + `<div class="ui-field"><label class="ui-field__label" for="search-check-in">Arrival date</label><input class="ui-input" id="search-check-in" name="checkIn" type="date" required value="${text(filters.checkIn)}"></div>`
-    + `<div class="ui-field"><label class="ui-field__label" for="search-check-out">Departure date</label><input class="ui-input" id="search-check-out" name="checkOut" type="date" required value="${text(filters.checkOut)}"></div>`
-    + `<div class="ui-field"><label class="ui-field__label" for="search-guests">Guests</label><input class="ui-input" id="search-guests" name="partySize" type="number" min="1" inputmode="numeric" required value="${typeof filters.partySize === "number" ? filters.partySize : ""}"></div>`
-    + `<div class="ui-field"><label class="ui-field__label" for="search-budget">Budget for the stay (₦, optional)</label><p class="ui-field__hint" id="search-budget-hint">Compared with the ${GUEST_GLOSSARY.allInStayTotal}. The ${GUEST_GLOSSARY.refundableSecurityDeposit} is separate.</p><input class="ui-input" id="search-budget" name="budget" type="number" min="1" step="1" inputmode="numeric" aria-describedby="search-budget-hint" value="${typeof filters.maxPriceKobo === "number" ? Math.round(filters.maxPriceKobo / 100) : ""}"></div>`
-    + `<button class="ui-button ui-button--primary" type="submit">Update search</button></form>`;
+  const form =
+    `<form class="ui-panel search-form" id="change-search" method="get" action="/stays/search" aria-label="Change your search">` +
+    `<div class="ui-field"><label class="ui-field__label" for="search-area">Where</label><select class="ui-input" id="search-area" name="area" required>${SEARCH_AREAS.map((area) => `<option value="${area.id}"${area.id === currentArea ? " selected" : ""}>${escapeHtml(area.label)}</option>`).join("")}</select></div>` +
+    `<div class="ui-field"><label class="ui-field__label" for="search-check-in">Arrival date</label><input class="ui-input" id="search-check-in" name="checkIn" type="date" required value="${text(filters.checkIn)}"></div>` +
+    `<div class="ui-field"><label class="ui-field__label" for="search-check-out">Departure date</label><input class="ui-input" id="search-check-out" name="checkOut" type="date" required value="${text(filters.checkOut)}"></div>` +
+    `<div class="ui-field"><label class="ui-field__label" for="search-guests">Guests</label><input class="ui-input" id="search-guests" name="partySize" type="number" min="1" inputmode="numeric" required value="${typeof filters.partySize === "number" ? filters.partySize : ""}"></div>` +
+    `<div class="ui-field"><label class="ui-field__label" for="search-budget">Budget for the stay (₦, optional)</label><p class="ui-field__hint" id="search-budget-hint">Compared with the ${GUEST_GLOSSARY.allInStayTotal}. The ${GUEST_GLOSSARY.refundableSecurityDeposit} is separate.</p><input class="ui-input" id="search-budget" name="budget" type="number" min="1" step="1" inputmode="numeric" aria-describedby="search-budget-hint" value="${typeof filters.maxPriceKobo === "number" ? Math.round(filters.maxPriceKobo / 100) : ""}"></div>` +
+    `<button class="ui-button ui-button--primary" type="submit">Update search</button></form>`;
   // Design: "N apartments in <area>", then the criteria as chips that jump to the search form below (works without JavaScript).
-  const areaLabel = SEARCH_AREAS.find((area) => area.city === filters.location && area.neighbourhood === filters.neighbourhood)?.label;
+  const areaLabel = SEARCH_AREAS.find(
+    (area) =>
+      area.city === filters.location &&
+      area.neighbourhood === filters.neighbourhood,
+  )?.label;
   const count = artifact.facts.results.length;
-  const heading = count > 0 && areaLabel !== undefined ? `${count} ${count === 1 ? "apartment" : "apartments"} in ${areaLabel}` : discoveryFallbackMessage(artifact);
-  const chip = (iconName: "pin" | "calendar" | "users" | "plus", label: string, add = false): string => `<a class="ui-chip${add ? " ui-chip--add" : ""}" href="#change-search">${icon(iconName)}${escapeHtml(label)}</a>`;
+  const heading =
+    count > 0 && areaLabel !== undefined
+      ? `${count} ${count === 1 ? "apartment" : "apartments"} in ${areaLabel}`
+      : discoveryFallbackMessage(artifact);
+  const chip = (
+    iconName: "pin" | "calendar" | "users" | "plus",
+    label: string,
+    add = false,
+  ): string =>
+    `<a class="ui-chip${add ? " ui-chip--add" : ""}" href="#change-search">${icon(iconName)}${escapeHtml(label)}</a>`;
   const chips = `<div class="ui-row" role="group" aria-label="Your search">${[
     areaLabel === undefined ? "" : chip("pin", areaLabel),
-    typeof checkIn === "string" && typeof checkOut === "string" ? chip("calendar", `${stay}${nights === undefined ? "" : ` · ${nights} ${nights === 1 ? "night" : "nights"}`}`) : "",
-    typeof filters.partySize === "number" ? chip("users", `${filters.partySize} ${filters.partySize === 1 ? "guest" : "guests"}`) : "",
-    typeof filters.maxPriceKobo === "number" ? chip("plus", `Budget ${formatNgnKobo(filters.maxPriceKobo)}`) : chip("plus", "Budget", true),
+    typeof checkIn === "string" && typeof checkOut === "string"
+      ? chip(
+          "calendar",
+          `${stay}${nights === undefined ? "" : ` · ${nights} ${nights === 1 ? "night" : "nights"}`}`,
+        )
+      : "",
+    typeof filters.partySize === "number"
+      ? chip(
+          "users",
+          `${filters.partySize} ${filters.partySize === 1 ? "guest" : "guests"}`,
+        )
+      : "",
+    typeof filters.maxPriceKobo === "number"
+      ? chip("plus", `Budget ${formatNgnKobo(filters.maxPriceKobo)}`)
+      : chip("plus", "Budget", true),
   ].join("")}</div>`;
   return pageShell({
     title: "Search results · Shortlet",
     frame: appFrameHtml({ threadId: null, publicStep: "search" }),
-    style: ".search-form{display:grid;gap:var(--space-3)}.stay-results{list-style:none;margin:0;padding:0;display:grid;gap:var(--space-4)}",
+    style:
+      ".search-form{display:grid;gap:var(--space-3)}.stay-results{list-style:none;margin:0;padding:0;display:grid;gap:var(--space-4)}",
     body: `<div class="guest-editorial"><header class="ui-page__header" data-page="stay-search"><p class="ui-eyebrow">Stays that fit your trip</p><h1>${escapeHtml(heading)}</h1>${summary ? `<p>${escapeHtml(summary)}</p>` : ""}</header>${chips}${form}${cards ? `<ul class="stay-results" aria-label="Stay search results">${cards}</ul>` : ""}<p><a class="ui-button ui-button--primary" href="/">Back to your conversation</a></p></div>`,
   });
 }
@@ -3118,18 +5714,48 @@ function readRawBody(req: IncomingMessage): Promise<Buffer> {
 }
 
 function readFormBody(req: IncomingMessage): Promise<URLSearchParams> {
-  return new Promise((resolve, reject) => { let body = ""; req.setEncoding("utf8"); req.on("data", (chunk) => { body += chunk; if (body.length > 4096) reject(new Error("Form is too large")); }); req.on("end", () => resolve(new URLSearchParams(body))); req.on("error", reject); });
+  return new Promise((resolve, reject) => {
+    let body = "";
+    req.setEncoding("utf8");
+    req.on("data", (chunk) => {
+      body += chunk;
+      if (body.length > 4096) reject(new Error("Form is too large"));
+    });
+    req.on("end", () => resolve(new URLSearchParams(body)));
+    req.on("error", reject);
+  });
 }
 
-export function renderGuestContactHtml(contact: { phoneNumber: string | null; contactEmail: string | null; revision: number } | null, error = "", kind: "phone" | "email" | "both" = "both", entered: { readonly phoneNumber?: string; readonly contactEmail?: string } = {}): string {
+export function renderGuestContactHtml(
+  contact: {
+    phoneNumber: string | null;
+    contactEmail: string | null;
+    revision: number;
+  } | null,
+  error = "",
+  kind: "phone" | "email" | "both" = "both",
+  entered: {
+    readonly phoneNumber?: string;
+    readonly contactEmail?: string;
+  } = {},
+): string {
   const safe = escapeHtml;
   const phoneError = kind === "phone" ? error : "";
   const emailError = kind === "email" ? error : "";
   const phoneValue = entered.phoneNumber ?? contact?.phoneNumber ?? "";
   const emailValue = entered.contactEmail ?? contact?.contactEmail ?? "";
-  const phoneForm = kind === "email" ? "" : `<form class="ui-panel" method="post" action="/guest/contact/phone"><div class="ui-field"><label class="ui-field__label" for="phoneNumber">Phone number <span aria-hidden="true">*</span></label><p class="ui-field__hint" id="phoneNumber-help">Required before you send a Booking Request. Use a Nigerian mobile number: +234 E.164 format. Example: +234 801 234 5678 or 0801 234 5678. This is for booking coordination, not identity verification.</p><input id="phoneNumber" name="phoneNumber" type="tel" inputmode="tel" autocomplete="tel" enterkeyhint="done" maxlength="32" required aria-describedby="phoneNumber-help${phoneError ? " phoneNumber-error" : ""}"${phoneError ? " aria-invalid=\"true\"" : ""} value="${safe(phoneValue)}">${phoneError ? `<p id="phoneNumber-error" class="ui-field__error" role="alert">${safe(phoneError)}</p>` : ""}</div><input type="hidden" name="expectedRevision" value="${contact?.revision ?? 0}"><button class="ui-button ui-button--primary ui-button--block" type="submit">Save phone number</button></form>`;
-  const emailForm = kind === "phone" ? "" : `<form class="ui-panel" method="post" action="/guest/contact/email"><div class="ui-field"><label class="ui-field__label" for="contactEmail">Email address <span aria-hidden="true">*</span></label><p class="ui-field__hint" id="contactEmail-help">Required to initialize hosted card checkout and send your payment receipt. This email is not your account identity.</p><input id="contactEmail" name="contactEmail" type="email" inputmode="email" autocomplete="email" enterkeyhint="done" maxlength="254" required aria-describedby="contactEmail-help${emailError ? " contactEmail-error" : ""}"${emailError ? " aria-invalid=\"true\"" : ""} value="${safe(emailValue)}">${emailError ? `<p id="contactEmail-error" class="ui-field__error" role="alert">${safe(emailError)}</p>` : ""}</div><input type="hidden" name="expectedRevision" value="${contact?.revision ?? 0}"><button class="ui-button ui-button--primary ui-button--block" type="submit">Save email address</button></form>`;
-  const generalError = error && kind === "both" ? `<p class="ui-banner ui-banner--danger" role="alert">${icon("alert")}<span>${safe(error)}</span></p>` : "";
+  const phoneForm =
+    kind === "email"
+      ? ""
+      : `<form class="ui-panel" method="post" action="/guest/contact/phone"><div class="ui-field"><label class="ui-field__label" for="phoneNumber">Phone number <span aria-hidden="true">*</span></label><p class="ui-field__hint" id="phoneNumber-help">Required before you send a Booking Request. Use a Nigerian mobile number: +234 E.164 format. Example: +234 801 234 5678 or 0801 234 5678. This is for booking coordination, not identity verification.</p><input id="phoneNumber" name="phoneNumber" type="tel" inputmode="tel" autocomplete="tel" enterkeyhint="done" maxlength="32" required aria-describedby="phoneNumber-help${phoneError ? " phoneNumber-error" : ""}"${phoneError ? ' aria-invalid="true"' : ""} value="${safe(phoneValue)}">${phoneError ? `<p id="phoneNumber-error" class="ui-field__error" role="alert">${safe(phoneError)}</p>` : ""}</div><input type="hidden" name="expectedRevision" value="${contact?.revision ?? 0}"><button class="ui-button ui-button--primary ui-button--block" type="submit">Save phone number</button></form>`;
+  const emailForm =
+    kind === "phone"
+      ? ""
+      : `<form class="ui-panel" method="post" action="/guest/contact/email"><div class="ui-field"><label class="ui-field__label" for="contactEmail">Email address <span aria-hidden="true">*</span></label><p class="ui-field__hint" id="contactEmail-help">Required to initialize hosted card checkout and send your payment receipt. This email is not your account identity.</p><input id="contactEmail" name="contactEmail" type="email" inputmode="email" autocomplete="email" enterkeyhint="done" maxlength="254" required aria-describedby="contactEmail-help${emailError ? " contactEmail-error" : ""}"${emailError ? ' aria-invalid="true"' : ""} value="${safe(emailValue)}">${emailError ? `<p id="contactEmail-error" class="ui-field__error" role="alert">${safe(emailError)}</p>` : ""}</div><input type="hidden" name="expectedRevision" value="${contact?.revision ?? 0}"><button class="ui-button ui-button--primary ui-button--block" type="submit">Save email address</button></form>`;
+  const generalError =
+    error && kind === "both"
+      ? `<p class="ui-banner ui-banner--danger" role="alert">${icon("alert")}<span>${safe(error)}</span></p>`
+      : "";
   return pageShell({
     title: "Guest contact",
     width: "narrow",
@@ -3137,37 +5763,124 @@ export function renderGuestContactHtml(contact: { phoneNumber: string | null; co
   });
 }
 
-const PAGE_ERROR_COPY: Readonly<Record<string, { readonly title: string; readonly message: string }>> = {
-  AUTHENTICATION_REQUIRED: { title: "Open this from your conversation", message: "This page needs the browser session you used to chat with the concierge. Return to the conversation and follow the link from there." },
-  INVALID_OFFER: { title: "This payment link isn't valid", message: "The link is incomplete or has been changed. Return to the conversation for the current booking status." },
-  PAYMENT_OFFER_NOT_FOUND: { title: "We couldn't find this booking offer", message: "It may have expired or belong to a different conversation. Return to the conversation for the current booking status." },
-  PAYMENT_CONTINUATION_REJECTED: { title: "Payment can't continue right now", message: "No payment was taken. The offer may have expired or already been paid. Return to the conversation for the current booking status." },
-  TRANSFER_UNAVAILABLE: { title: "Bank transfer is unavailable", message: "No transfer account was issued and no payment was taken. Go back and pay by card, or try again in a few minutes." },
-  TRANSFER_REJECTED: { title: "Bank transfer can't start", message: "No transfer account was issued. The offer may have expired or another payment may already be in progress. Return to the conversation for the current booking status." },
-  MANUAL_TRANSFER_UNAVAILABLE: { title: "Manual bank transfer is unavailable", message: "No payment was taken. Go back and choose another way to pay." },
-  MANUAL_TRANSFER_REJECTED: { title: "Manual bank transfer can't start", message: "Manual bank transfer is only offered when we can check your payment between 8:00 AM and 8:00 PM WAT, and only while no other payment is in progress. No payment was taken." },
+const PAGE_ERROR_COPY: Readonly<
+  Record<string, { readonly title: string; readonly message: string }>
+> = {
+  AUTHENTICATION_REQUIRED: {
+    title: "Open this from your conversation",
+    message:
+      "This page needs the browser session you used to chat with the concierge. Return to the conversation and follow the link from there.",
+  },
+  INVALID_OFFER: {
+    title: "This payment link isn't valid",
+    message:
+      "The link is incomplete or has been changed. Return to the conversation for the current booking status.",
+  },
+  PAYMENT_OFFER_NOT_FOUND: {
+    title: "We couldn't find this booking offer",
+    message:
+      "It may have expired or belong to a different conversation. Return to the conversation for the current booking status.",
+  },
+  PAYMENT_CONTINUATION_REJECTED: {
+    title: "Payment can't continue right now",
+    message:
+      "No payment was taken. The offer may have expired or already been paid. Return to the conversation for the current booking status.",
+  },
+  TRANSFER_UNAVAILABLE: {
+    title: "Bank transfer is unavailable",
+    message:
+      "No transfer account was issued and no payment was taken. Go back and pay by card, or try again in a few minutes.",
+  },
+  TRANSFER_REJECTED: {
+    title: "Bank transfer can't start",
+    message:
+      "No transfer account was issued. The offer may have expired or another payment may already be in progress. Return to the conversation for the current booking status.",
+  },
+  MANUAL_TRANSFER_UNAVAILABLE: {
+    title: "Manual bank transfer is unavailable",
+    message: "No payment was taken. Go back and choose another way to pay.",
+  },
+  MANUAL_TRANSFER_REJECTED: {
+    title: "Manual bank transfer can't start",
+    message:
+      "Manual bank transfer is only offered when we can check your payment between 8:00 AM and 8:00 PM WAT, and only while no other payment is in progress. No payment was taken.",
+  },
   PAYMENT_METHOD_INVALID: {
     title: "Choose how to pay",
     message:
       "Pick card or bank transfer on the payment page. No payment was started.",
   },
-  MANUAL_TRANSFER_IN_PROGRESS: { title: "Your manual bank transfer is still open", message: "You chose manual bank transfer, so other payment methods are unavailable until it is confirmed, declined or expires." },
-  TRANSFER_IN_PROGRESS: { title: "Your bank transfer is still open", message: "You chose bank transfer, so card payment is unavailable until the transfer account expires. Transfer the exact amount to the account shown, or wait for it to expire." },
-  PAYSTACK_UNAVAILABLE: { title: "Card checkout is unavailable", message: "No payment was taken. Try again in a few minutes from your conversation." },
-  INVALID_CHECKOUT_URL: { title: "Card checkout is unavailable", message: "No payment was taken. Try again in a few minutes from your conversation." },
-  LOCAL_PAYMENT_INVALID: { title: "This demo payment link isn't valid", message: "Start the payment again from your conversation." },
-  INVALID_BOOKING_LINK: { title: "This booking link isn't valid", message: "The link is incomplete or has been changed. Return to the conversation for the current booking status." },
-  BOOKING_RECORD_NOT_FOUND: { title: "We couldn't find this booking", message: "It may belong to a different conversation. Return to the conversation for the current booking status." },
-  INVALID_CONVERSATION: { title: "This conversation link isn't valid", message: "The link is incomplete or has been changed. Start again from the conversation." },
-  SEARCH_INVALID: { title: "This search link isn't valid", message: "The link is incomplete or has been changed. Return to the conversation and search again." },
+  MANUAL_TRANSFER_IN_PROGRESS: {
+    title: "Your manual bank transfer is still open",
+    message:
+      "You chose manual bank transfer, so other payment methods are unavailable until it is confirmed, declined or expires.",
+  },
+  TRANSFER_IN_PROGRESS: {
+    title: "Your bank transfer is still open",
+    message:
+      "You chose bank transfer, so card payment is unavailable until the transfer account expires. Transfer the exact amount to the account shown, or wait for it to expire.",
+  },
+  PAYSTACK_UNAVAILABLE: {
+    title: "Card checkout is unavailable",
+    message:
+      "No payment was taken. Try again in a few minutes from your conversation.",
+  },
+  INVALID_CHECKOUT_URL: {
+    title: "Card checkout is unavailable",
+    message:
+      "No payment was taken. Try again in a few minutes from your conversation.",
+  },
+  LOCAL_PAYMENT_INVALID: {
+    title: "This demo payment link isn't valid",
+    message: "Start the payment again from your conversation.",
+  },
+  INVALID_BOOKING_LINK: {
+    title: "This booking link isn't valid",
+    message:
+      "The link is incomplete or has been changed. Return to the conversation for the current booking status.",
+  },
+  BOOKING_RECORD_NOT_FOUND: {
+    title: "We couldn't find this booking",
+    message:
+      "It may belong to a different conversation. Return to the conversation for the current booking status.",
+  },
+  INVALID_CONVERSATION: {
+    title: "This conversation link isn't valid",
+    message:
+      "The link is incomplete or has been changed. Start again from the conversation.",
+  },
+  SEARCH_INVALID: {
+    title: "This search link isn't valid",
+    message:
+      "The link is incomplete or has been changed. Return to the conversation and search again.",
+  },
 };
 
 /** Page routes answer browser navigations with a styled page and API clients with JSON. */
-function sendPageError(req: IncomingMessage, res: ServerResponse, status: number, code: string): void {
-  if (!prefersHtml(req.headers.accept)) { sendJson(res, status, { ok: false, code }); return; }
-  const copy = PAGE_ERROR_COPY[code] ?? { title: "This action couldn't be completed", message: "Return to your conversation for the current options." };
+function sendPageError(
+  req: IncomingMessage,
+  res: ServerResponse,
+  status: number,
+  code: string,
+): void {
+  if (!prefersHtml(req.headers.accept)) {
+    sendJson(res, status, { ok: false, code });
+    return;
+  }
+  const copy = PAGE_ERROR_COPY[code] ?? {
+    title: "This action couldn't be completed",
+    message: "Return to your conversation for the current options.",
+  };
   res.writeHead(status, GUEST_HTML_HEADERS);
-  res.end(errorPage({ status, code, title: copy.title, message: copy.message, action: { href: "/", label: "Back to your conversation" } }));
+  res.end(
+    errorPage({
+      status,
+      code,
+      title: copy.title,
+      message: copy.message,
+      action: { href: "/", label: "Back to your conversation" },
+    }),
+  );
 }
 
 /**
@@ -3344,7 +6057,9 @@ export function renderManualTransferPageHtml(input: {
 
 /** Reads a request body, refusing (and discarding) anything over `limit` bytes. */
 export class BodyTooLargeError extends Error {
-  constructor() { super("Body too large"); }
+  constructor() {
+    super("Body too large");
+  }
 }
 
 function readBoundedBody(req: IncomingMessage, limit: number): Promise<Buffer> {
@@ -3352,8 +6067,21 @@ function readBoundedBody(req: IncomingMessage, limit: number): Promise<Buffer> {
     const chunks: Buffer[] = [];
     let size = 0;
     let refused = false;
-    req.on("data", (chunk: Buffer) => { if (refused) return; size += chunk.length; if (size > limit) { refused = true; chunks.length = 0; reject(new BodyTooLargeError()); req.resume(); return; } chunks.push(chunk); });
-    req.on("end", () => { if (!refused) resolve(Buffer.concat(chunks)); });
+    req.on("data", (chunk: Buffer) => {
+      if (refused) return;
+      size += chunk.length;
+      if (size > limit) {
+        refused = true;
+        chunks.length = 0;
+        reject(new BodyTooLargeError());
+        req.resume();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on("end", () => {
+      if (!refused) resolve(Buffer.concat(chunks));
+    });
     req.on("error", reject);
   });
 }
@@ -3513,7 +6241,8 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
 
 const GUEST_SESSION_COOKIE = "shortlet_guest_session";
 /** Static assets the public /stays/* pages load; never refused for a stale session. */
-const PUBLIC_GUEST_PATHS: ReadonlySet<string> = new Set(["/client.js",
+const PUBLIC_GUEST_PATHS: ReadonlySet<string> = new Set([
+  "/client.js",
   "/gallery.js",
   "/payment.js",
   "/offer.js",
@@ -3524,20 +6253,27 @@ const GUEST_SESSION_PATTERN = /^gs-[a-f0-9-]{36}$/;
 function readGuestSession(req: IncomingMessage): string | null | undefined {
   const header = req.headers.cookie;
   if (typeof header !== "string") return undefined;
-  const value = header.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${GUEST_SESSION_COOKIE}=`))?.slice(GUEST_SESSION_COOKIE.length + 1);
+  const value = header
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${GUEST_SESSION_COOKIE}=`))
+    ?.slice(GUEST_SESSION_COOKIE.length + 1);
   if (value === undefined) return undefined;
   return GUEST_SESSION_PATTERN.test(value) ? value : null;
 }
 
 /** Compares digests so neither the code's length nor its content leaks through timing. */
 function betaInviteCodeMatches(offered: string, expected: string): boolean {
-  const digest = (value: string) => createHash("sha256").update(value, "utf8").digest();
+  const digest = (value: string) =>
+    createHash("sha256").update(value, "utf8").digest();
   return timingSafeEqual(digest(offered.trim()), digest(expected));
 }
 
 /** Staging beta gate (launch-readiness issue 22). A plain GET form, so it works without JavaScript (ADR 0080). */
 export function renderBetaInviteHtml(rejected: boolean): string {
-  const error = rejected ? `<p id="invite-error" class="ui-field__error" role="alert">That invite code is not valid. Check the invite link you were sent.</p>` : "";
+  const error = rejected
+    ? `<p id="invite-error" class="ui-field__error" role="alert">That invite code is not valid. Check the invite link you were sent.</p>`
+    : "";
   return pageShell({
     title: "Shortlet beta",
     width: "narrow",
@@ -3547,20 +6283,29 @@ export function renderBetaInviteHtml(rejected: boolean): string {
 
 function issueGuestSession(res: ServerResponse, secureCookie: boolean): string {
   const sessionId = `gs-${crypto.randomUUID()}`;
-  res.setHeader("Set-Cookie", `${GUEST_SESSION_COOKIE}=${sessionId};${secureCookie ? " Secure;" : ""} HttpOnly; SameSite=Lax; Path=/`);
+  res.setHeader(
+    "Set-Cookie",
+    `${GUEST_SESSION_COOKIE}=${sessionId};${secureCookie ? " Secure;" : ""} HttpOnly; SameSite=Lax; Path=/`,
+  );
   return sessionId;
 }
 
-function browserOriginAccepted(req: IncomingMessage, publicOrigin: string | undefined): boolean {
+function browserOriginAccepted(
+  req: IncomingMessage,
+  publicOrigin: string | undefined,
+): boolean {
   const origin = req.headers.origin;
   if (origin === undefined) return true;
   const expected = publicOrigin ?? `http://${req.headers.host ?? "localhost"}`;
   if (origin === "null" && publicOrigin) {
     const configured = safePublicOrigin(publicOrigin);
-    return configured !== null
-      && configured.protocol === "http:"
-      && (configured.hostname === "127.0.0.1" || configured.hostname === "localhost")
-      && req.headers["sec-fetch-site"] === "same-origin";
+    return (
+      configured !== null &&
+      configured.protocol === "http:" &&
+      (configured.hostname === "127.0.0.1" ||
+        configured.hostname === "localhost") &&
+      req.headers["sec-fetch-site"] === "same-origin"
+    );
   }
   return origin === expected;
 }
@@ -3590,19 +6335,33 @@ function resolveBrowserSession(
   const sessionKey = hashSessionSecret(sessionId);
   const cached = cache.get(sessionKey);
   if (cached) {
-    if ((expectedPrincipalId !== undefined && cached.principalId !== expectedPrincipalId) || cached.tenantId !== env.config.tenantId) return null;
+    if (
+      (expectedPrincipalId !== undefined &&
+        cached.principalId !== expectedPrincipalId) ||
+      cached.tenantId !== env.config.tenantId
+    )
+      return null;
     return cached;
   }
   const binding = env.interactionStore.findSessionBinding(sessionKey);
   if (!binding) return null;
-  if ((expectedPrincipalId !== undefined && binding.principalId !== expectedPrincipalId) || binding.tenantId !== env.config.tenantId) return null;
+  if (
+    (expectedPrincipalId !== undefined &&
+      binding.principalId !== expectedPrincipalId) ||
+    binding.tenantId !== env.config.tenantId
+  )
+    return null;
   const session: BrowserSession = {
     sessionKey,
     principalId: binding.principalId,
     tenantId: binding.tenantId,
     // The thread set is derived from the durable principal-scoped threads; the
     // browser session itself never authorizes a thread id on its own.
-    threadIds: new Set(env.interactionStore.findThreadsForPrincipal(binding.principalId, binding.tenantId).map((thread) => thread.threadId)),
+    threadIds: new Set(
+      env.interactionStore
+        .findThreadsForPrincipal(binding.principalId, binding.tenantId)
+        .map((thread) => thread.threadId),
+    ),
   };
   cache.set(sessionKey, session);
   return session;
@@ -3634,13 +6393,22 @@ function bindBrowserThread(
     }
     return true;
   }
-  const session = resolveBrowserSession(env, cache, sessionId, env.config.guestId);
+  const session = resolveBrowserSession(
+    env,
+    cache,
+    sessionId,
+    env.config.guestId,
+  );
   if (!session) return false;
   // The thread row is owned by the principal/tenant (ADR-0070); persisting it
   // makes the thread re-derivable after a restart by the same session binding.
   const record = env.interactionStore.findThread(threadId);
   if (record) {
-    if (record.principalId !== session.principalId || record.tenantId !== session.tenantId) return false;
+    if (
+      record.principalId !== session.principalId ||
+      record.tenantId !== session.tenantId
+    )
+      return false;
     env.interactionStore.saveThread({
       threadId,
       principalId: session.principalId,
@@ -3687,19 +6455,33 @@ interface BrowserSession {
 const GUEST_HTML_HEADERS = {
   "Content-Type": "text/html; charset=utf-8",
   // ADR-0078: serve the local accessible foundation while keeping remote styles disallowed.
-  "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+  "Content-Security-Policy":
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
   // Issue 06c: "same-origin" (not "no-referrer") so a same-origin form post
   // carries a real Origin for browserOriginAccepted; cross-origin requests
   // still send no referrer.
   "Referrer-Policy": "same-origin",
 } as const;
 
-function findGuestThreadForOffer(env: LocalGuestEnvironment, offerId: string, principal: { readonly id: string; readonly tenantId?: string }): string | null {
+function findGuestThreadForOffer(
+  env: LocalGuestEnvironment,
+  offerId: string,
+  principal: { readonly id: string; readonly tenantId?: string },
+): string | null {
   if (!principal.tenantId) return null;
-  for (const thread of env.interactionStore.findThreadsForPrincipal(principal.id, principal.tenantId)) {
+  for (const thread of env.interactionStore.findThreadsForPrincipal(
+    principal.id,
+    principal.tenantId,
+  )) {
     try {
       const projection: unknown = JSON.parse(thread.threadJson);
-      if (projection !== null && typeof projection === "object" && !Array.isArray(projection) && (projection as { offerId?: unknown }).offerId === offerId) return thread.threadId;
+      if (
+        projection !== null &&
+        typeof projection === "object" &&
+        !Array.isArray(projection) &&
+        (projection as { offerId?: unknown }).offerId === offerId
+      )
+        return thread.threadId;
     } catch {
       // Corrupt thread projections are not eligible callback targets.
     }
@@ -3708,9 +6490,14 @@ function findGuestThreadForOffer(env: LocalGuestEnvironment, offerId: string, pr
 }
 
 /** The conversation a payment page belongs to and its journey, for the shared app frame. */
-function threadFrame(app: LocalGuestApp, offerId: string, principal: CommandPrincipal): { readonly threadId: string | null; readonly journey?: GuestJourney } {
+function threadFrame(
+  app: LocalGuestApp,
+  offerId: string,
+  principal: CommandPrincipal,
+): { readonly threadId: string | null; readonly journey?: GuestJourney } {
   const threadId = findGuestThreadForOffer(app.environment, offerId, principal);
-  const journey = threadId === null ? undefined : app.journeyForThread(threadId, principal);
+  const journey =
+    threadId === null ? undefined : app.journeyForThread(threadId, principal);
   return { threadId, ...(journey === undefined ? {} : { journey }) };
 }
 
@@ -3725,61 +6512,89 @@ export interface LocalGuestServerHandle {
   close(): Promise<void>;
 }
 
-export function startLocalGuestServer(options: {
-  port?: number;
-  environment?: LocalGuestEnvironment;
-  clientScriptPath?: string;
-  geminiClient?: GeminiConciergeClient;
-  modelClient?: AssistantModelClient;
-  conciergeMode?: "deterministic" | "gemini" | "openai-compatible" | "assistant-offline";
-  paystackClient?: PaystackClient;
-  /** Production-only deployment controls. Local fixture defaults remain unchanged. */
-  production?: boolean;
-  publicOrigin?: string;
-  secureCookie?: boolean;
-  sessionScopedGuestPrincipals?: boolean;
-  /** Staging beta gate: when set, a new Guest session needs `/?invite=<code>` (issue 22). */
-  betaInviteCode?: string;
-  /** Explicit local-pilot control; never enabled by production composition. */
-  localPayment?: boolean;
-  /** Explicit local-pilot photo mapping for synthetic, same-process assets. */
-  localPhotoUrl?: (url: string) => string;
-  fixtureRoutes?: boolean;
-  /** Issue 19: daily cap on model calls; when it is spent, turns use the deterministic concierge. */
-  modelCallBudget?: ModelCallBudget;
-  /** Issue 19: a session's runtime (environment, SQLite connection, assistant memory) is closed after this idle time. */
-  sessionRuntimeIdleMs?: number;
-} = {}): LocalGuestServerHandle {
+export function startLocalGuestServer(
+  options: {
+    port?: number;
+    environment?: LocalGuestEnvironment;
+    clientScriptPath?: string;
+    geminiClient?: GeminiConciergeClient;
+    modelClient?: AssistantModelClient;
+    conciergeMode?:
+      | "deterministic"
+      | "gemini"
+      | "openai-compatible"
+      | "assistant-offline";
+    paystackClient?: PaystackClient;
+    /** Production-only deployment controls. Local fixture defaults remain unchanged. */
+    production?: boolean;
+    publicOrigin?: string;
+    secureCookie?: boolean;
+    sessionScopedGuestPrincipals?: boolean;
+    /** Staging beta gate: when set, a new Guest session needs `/?invite=<code>` (issue 22). */
+    betaInviteCode?: string;
+    /** Explicit local-pilot control; never enabled by production composition. */
+    localPayment?: boolean;
+    /** Explicit local-pilot photo mapping for synthetic, same-process assets. */
+    localPhotoUrl?: (url: string) => string;
+    fixtureRoutes?: boolean;
+    /** Issue 19: daily cap on model calls; when it is spent, turns use the deterministic concierge. */
+    modelCallBudget?: ModelCallBudget;
+    /** Issue 19: a session's runtime (environment, SQLite connection, assistant memory) is closed after this idle time. */
+    sessionRuntimeIdleMs?: number;
+  } = {},
+): LocalGuestServerHandle {
   const port = options.port ?? LOCAL_GUEST_PORT;
   const sessionRuntimeIdleMs = options.sessionRuntimeIdleMs ?? null;
-  if (sessionRuntimeIdleMs !== null && (!Number.isSafeInteger(sessionRuntimeIdleMs) || sessionRuntimeIdleMs < 1)) {
-    throw new Error("sessionRuntimeIdleMs must be a positive whole number of milliseconds");
+  if (
+    sessionRuntimeIdleMs !== null &&
+    (!Number.isSafeInteger(sessionRuntimeIdleMs) || sessionRuntimeIdleMs < 1)
+  ) {
+    throw new Error(
+      "sessionRuntimeIdleMs must be a positive whole number of milliseconds",
+    );
   }
   const rawMode = options.conciergeMode ?? process.env.CONCIERGE_MODE;
-  const mode: "deterministic" | "gemini" | "openai-compatible" | "assistant-offline" =
+  const mode:
+    | "deterministic"
+    | "gemini"
+    | "openai-compatible"
+    | "assistant-offline" =
     rawMode === "gemini" || rawMode === "openai-compatible"
       ? rawMode
       : rawMode === "assistant-offline"
         ? "assistant-offline"
         : "deterministic";
 
-  const configuredPaystack = options.paystackClient ?? (() => {
-    const configuration = loadPaystackConfiguration();
-    return configuration ? new DirectPaystackClient(configuration) : undefined;
-  })();
+  const configuredPaystack =
+    options.paystackClient ??
+    (() => {
+      const configuration = loadPaystackConfiguration();
+      return configuration
+        ? new DirectPaystackClient(configuration)
+        : undefined;
+    })();
   const production = options.production === true;
   const fixtureRoutes = options.fixtureRoutes ?? !production;
-  if (production && (options.localPayment || options.localPhotoUrl)) throw new Error("Production Guest composition cannot mount local pilot controls");
-  const sessionScopedGuestPrincipals = options.sessionScopedGuestPrincipals === true;
-  if (production && !options.publicOrigin) throw new Error("Production Guest server requires SHORTLET_PUBLIC_ORIGIN");
+  if (production && (options.localPayment || options.localPhotoUrl))
+    throw new Error(
+      "Production Guest composition cannot mount local pilot controls",
+    );
+  const sessionScopedGuestPrincipals =
+    options.sessionScopedGuestPrincipals === true;
+  if (production && !options.publicOrigin)
+    throw new Error("Production Guest server requires SHORTLET_PUBLIC_ORIGIN");
   const secureCookie = options.secureCookie ?? production;
-  const env = options.environment ?? new LocalGuestEnvironment({
-    initialGuestPhoneNumber: null,
-    initialGuestContactEmail: null,
-    production,
-    deterministicPsp: !production,
-    ...(configuredPaystack === undefined ? {} : { paystackClient: configuredPaystack }),
-  });
+  const env =
+    options.environment ??
+    new LocalGuestEnvironment({
+      initialGuestPhoneNumber: null,
+      initialGuestContactEmail: null,
+      production,
+      deterministicPsp: !production,
+      ...(configuredPaystack === undefined
+        ? {}
+        : { paystackClient: configuredPaystack }),
+    });
   const paystackClient = configuredPaystack ?? env.config.paystackClient;
 
   let assistantRuntime: AssistantRuntime | undefined;
@@ -3791,17 +6606,38 @@ export function startLocalGuestServer(options: {
     assistantRuntime = new AssistantRuntime(env, assistantModelClient);
   } else if (mode === "gemini" || mode === "openai-compatible") {
     // The production pilot passes a validated client; development commands read the same settings from the environment.
-    assistantModelClient = options.modelClient
-      ?? createConciergeModelClient(loadConciergeConfiguration({ ...process.env, CONCIERGE_MODE: mode }));
-    if (!assistantModelClient) throw new Error(`CONCIERGE_MODE=${mode} requires a model client`);
-    if (options.modelCallBudget) assistantModelClient = new BudgetedModelClient(assistantModelClient, options.modelCallBudget);
+    assistantModelClient =
+      options.modelClient ??
+      createConciergeModelClient(
+        loadConciergeConfiguration({ ...process.env, CONCIERGE_MODE: mode }),
+      );
+    if (!assistantModelClient)
+      throw new Error(`CONCIERGE_MODE=${mode} requires a model client`);
+    if (options.modelCallBudget)
+      assistantModelClient = new BudgetedModelClient(
+        assistantModelClient,
+        options.modelCallBudget,
+      );
     assistantRuntime = new AssistantRuntime(env, assistantModelClient);
   }
-  const modelCallBudget = options.modelCallBudget ? { modelCallBudget: options.modelCallBudget } : {};
+  const modelCallBudget = options.modelCallBudget
+    ? { modelCallBudget: options.modelCallBudget }
+    : {};
 
-  const defaultApp = new LocalGuestApp(env, { geminiClient, assistantRuntime, ...modelCallBudget });
+  const defaultApp = new LocalGuestApp(env, {
+    geminiClient,
+    assistantRuntime,
+    ...modelCallBudget,
+  });
   const browserSessions = new Map<string, BrowserSession>();
-  const sessionRuntimes = new Map<string, { readonly environment: LocalGuestEnvironment; readonly app: LocalGuestApp; lastUsedMs: number }>();
+  const sessionRuntimes = new Map<
+    string,
+    {
+      readonly environment: LocalGuestEnvironment;
+      readonly app: LocalGuestApp;
+      lastUsedMs: number;
+    }
+  >();
   // Durable state lives in SQLite, so an evicted session's runtime is rebuilt on its next request, exactly as after a
   // restart. Only the in-memory assistant conversation is lost.
   const evictIdleRuntimes = (nowMs: number): void => {
@@ -3812,8 +6648,14 @@ export function startLocalGuestServer(options: {
       runtime.environment.close();
     }
   };
-  const runtimeForSession = (session: BrowserSession): { readonly environment: LocalGuestEnvironment; readonly app: LocalGuestApp } => {
-    if (!sessionScopedGuestPrincipals) return { environment: env, app: defaultApp };
+  const runtimeForSession = (
+    session: BrowserSession,
+  ): {
+    readonly environment: LocalGuestEnvironment;
+    readonly app: LocalGuestApp;
+  } => {
+    if (!sessionScopedGuestPrincipals)
+      return { environment: env, app: defaultApp };
     const nowMs = env.clock().getTime();
     evictIdleRuntimes(nowMs);
     const existing = sessionRuntimes.get(session.sessionKey);
@@ -3833,7 +6675,14 @@ export function startLocalGuestServer(options: {
     const runtime = {
       environment: runtimeEnvironment,
       app: new LocalGuestApp(runtimeEnvironment, {
-        ...(assistantModelClient ? { assistantRuntime: new AssistantRuntime(runtimeEnvironment, assistantModelClient) } : {}),
+        ...(assistantModelClient
+          ? {
+              assistantRuntime: new AssistantRuntime(
+                runtimeEnvironment,
+                assistantModelClient,
+              ),
+            }
+          : {}),
         ...modelCallBudget,
       }),
       lastUsedMs: nowMs,
@@ -3841,124 +6690,243 @@ export function startLocalGuestServer(options: {
     sessionRuntimes.set(session.sessionKey, runtime);
     return runtime;
   };
-  const clientScriptPath = options.clientScriptPath
-    ?? join(dirname(fileURLToPath(import.meta.url)), "..", "dist", "client.js");
+  const clientScriptPath =
+    options.clientScriptPath ??
+    join(dirname(fileURLToPath(import.meta.url)), "..", "dist", "client.js");
 
-  const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
-    const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
-    const rawSession = readGuestSession(req);
-    let requestSession: BrowserSession | null = null;
-    if (rawSession !== undefined && rawSession !== null) {
-      requestSession = resolveBrowserSession(env, browserSessions, rawSession, sessionScopedGuestPrincipals ? undefined : env.config.guestId);
-      // Public pages and their static assets load for anyone, even with an expired or unknown session cookie.
-      if (!requestSession && sessionScopedGuestPrincipals && !PUBLIC_GUEST_PATHS.has(url.pathname) && !url.pathname.startsWith("/stays/")) {
-        sendJson(res, 401, { ok: false, code: "AUTHENTICATION_REQUIRED" });
-        return;
-      }
-    }
-    const requestRuntime = requestSession ? runtimeForSession(requestSession) : { environment: env, app: defaultApp };
-    // This shadowed application is the same existing Guest application code,
-    // selected by the server-owned browser session in production.
-    const app = requestRuntime.app;
-
-    if (req.method === "GET" && url.pathname === "/shortlet-foundations.css") {
-      res.writeHead(200, { "Content-Type": "text/css; charset=utf-8", "Cache-Control": "public, max-age=3600" });
-      res.end(SHORTLET_FOUNDATION_CSS);
-      return;
-    }
-
-    if (req.method === "GET" && url.pathname === "/") {
-      if (rawSession === null) {
-        // A malformed session cookie is rejected, never silently replaced.
-        res.writeHead(401, { "Content-Type": "text/plain" });
-        res.end("Unauthorized");
-        return;
-      }
-      if (rawSession === undefined) {
-        // Staging beta: no Guest session starts without the invite code (issue 22).
-        const offeredInvite = url.searchParams.get("invite");
-        if (options.betaInviteCode !== undefined && (offeredInvite === null || !betaInviteCodeMatches(offeredInvite, options.betaInviteCode))) {
-          res.writeHead(offeredInvite === null ? 200 : 403, GUEST_HTML_HEADERS);
-          res.end(renderBetaInviteHtml(offeredInvite !== null));
+  const server = createServer(
+    async (req: IncomingMessage, res: ServerResponse) => {
+      const url = new URL(
+        req.url ?? "/",
+        `http://${req.headers.host ?? "localhost"}`,
+      );
+      const rawSession = readGuestSession(req);
+      let requestSession: BrowserSession | null = null;
+      if (rawSession !== undefined && rawSession !== null) {
+        requestSession = resolveBrowserSession(
+          env,
+          browserSessions,
+          rawSession,
+          sessionScopedGuestPrincipals ? undefined : env.config.guestId,
+        );
+        // Public pages and their static assets load for anyone, even with an expired or unknown session cookie.
+        if (
+          !requestSession &&
+          sessionScopedGuestPrincipals &&
+          !PUBLIC_GUEST_PATHS.has(url.pathname) &&
+          !url.pathname.startsWith("/stays/")
+        ) {
+          sendJson(res, 401, { ok: false, code: "AUTHENTICATION_REQUIRED" });
           return;
         }
-        const sessionId = issueGuestSession(res, secureCookie);
-        const principalId = sessionScopedGuestPrincipals ? `guest-${crypto.randomUUID()}` : app.environment.config.guestId;
-        const registered = registerBrowserSession(env, browserSessions, sessionId, principalId);
-        if (sessionScopedGuestPrincipals) runtimeForSession(registered);
-        if (options.betaInviteCode !== undefined) {
-          // Drop the code from the address bar and history once the session exists.
-          res.writeHead(303, { Location: "/", "Cache-Control": "no-store" });
-          res.end();
-          return;
-        }
-      } else {
-        // A well-formed cookie must resolve to a durable binding; an unknown
-        // id is rejected rather than silently minted into a new session.
-        const resolved = resolveBrowserSession(app.environment, browserSessions, rawSession, sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId);
-        if (!resolved) {
+      }
+      const requestRuntime = requestSession
+        ? runtimeForSession(requestSession)
+        : { environment: env, app: defaultApp };
+      // This shadowed application is the same existing Guest application code,
+      // selected by the server-owned browser session in production.
+      const app = requestRuntime.app;
+
+      if (
+        req.method === "GET" &&
+        url.pathname === "/shortlet-foundations.css"
+      ) {
+        res.writeHead(200, {
+          "Content-Type": "text/css; charset=utf-8",
+          "Cache-Control": "public, max-age=3600",
+        });
+        res.end(SHORTLET_FOUNDATION_CSS);
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/") {
+        if (rawSession === null) {
+          // A malformed session cookie is rejected, never silently replaced.
           res.writeHead(401, { "Content-Type": "text/plain" });
           res.end("Unauthorized");
           return;
         }
+        if (rawSession === undefined) {
+          // Staging beta: no Guest session starts without the invite code (issue 22).
+          const offeredInvite = url.searchParams.get("invite");
+          if (
+            options.betaInviteCode !== undefined &&
+            (offeredInvite === null ||
+              !betaInviteCodeMatches(offeredInvite, options.betaInviteCode))
+          ) {
+            res.writeHead(
+              offeredInvite === null ? 200 : 403,
+              GUEST_HTML_HEADERS,
+            );
+            res.end(renderBetaInviteHtml(offeredInvite !== null));
+            return;
+          }
+          const sessionId = issueGuestSession(res, secureCookie);
+          const principalId = sessionScopedGuestPrincipals
+            ? `guest-${crypto.randomUUID()}`
+            : app.environment.config.guestId;
+          const registered = registerBrowserSession(
+            env,
+            browserSessions,
+            sessionId,
+            principalId,
+          );
+          if (sessionScopedGuestPrincipals) runtimeForSession(registered);
+          if (options.betaInviteCode !== undefined) {
+            // Drop the code from the address bar and history once the session exists.
+            res.writeHead(303, { Location: "/", "Cache-Control": "no-store" });
+            res.end();
+            return;
+          }
+        } else {
+          // A well-formed cookie must resolve to a durable binding; an unknown
+          // id is rejected rather than silently minted into a new session.
+          const resolved = resolveBrowserSession(
+            app.environment,
+            browserSessions,
+            rawSession,
+            sessionScopedGuestPrincipals
+              ? undefined
+              : app.environment.config.guestId,
+          );
+          if (!resolved) {
+            res.writeHead(401, { "Content-Type": "text/plain" });
+            res.end("Unauthorized");
+            return;
+          }
+        }
+        res.writeHead(200, GUEST_HTML_HEADERS);
+        res.end(renderGuestShellHtml());
+        return;
       }
-      res.writeHead(200, GUEST_HTML_HEADERS);
-      res.end(renderGuestShellHtml());
-      return;
-    }
 
-    // ADR-0080: conventional search parity. Matched before the unit route so
-    // "search" is never read as a unit id.
-    if (req.method === "GET" && url.pathname === "/stays/search") {
-      const filters = parseConventionalSearchQuery(url.searchParams);
-      let artifact: DiscoveryArtifactProjection | null = null;
-      try { artifact = filters === null ? null : app.environment.discoveryQuery.search(filters); } catch { artifact = null; }
-      if (!artifact) { sendPageError(req, res, 400, "SEARCH_INVALID"); return; }
-      res.writeHead(200, GUEST_HTML_HEADERS);
-      res.end(renderConventionalSearchHtml(artifact, options.localPhotoUrl));
-      return;
-    }
-
-    const conventionalUnitMatch = /^\/stays\/([^/]+)$/.exec(url.pathname);
-    if (req.method === "GET" && conventionalUnitMatch) {
-      let unitId: string;
-      try { unitId = decodeURIComponent(conventionalUnitMatch[1]!); } catch { res.writeHead(400, { "Content-Type": "text/plain" }); res.end("Invalid apartment"); return; }
-      const unit = app.environment.unitRepository.findById(unitId);
-      if (!unit || !isEligibleUnit(unit, app.environment.clock())) { res.writeHead(404, { "Content-Type": "text/plain" }); res.end("Apartment not found"); return; }
-      res.writeHead(200, GUEST_HTML_HEADERS);
-      res.end(renderConventionalUnitDetailHtml(unit, options.localPhotoUrl));
-      return;
-    }
-
-    const requestPost = /^\/(booking-requests\/drafts|booking-requests)\/([^/]+)\/(review|submit|conversation|search)$/.exec(url.pathname);
-    if (req.method === "POST" && requestPost) {
-      const session = resolveBrowserSession(env, browserSessions, readGuestSession(req), sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId);
-      if (!session) { sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED"); return; }
-      if (!browserOriginAccepted(req, options.publicOrigin)) { sendPageError(req, res, 403, "ORIGIN_REJECTED"); return; }
-      let id: string;
-      try { id = decodeURIComponent(requestPost[2]!); } catch { sendPageError(req, res, 400, "INVALID_BOOKING_LINK"); return; }
-      const kind = requestPost[1] === "booking-requests/drafts" ? "draft" : "request";
-      const principal: CommandPrincipal = { id: session.principalId, role: "guest", tenantId: session.tenantId };
-      const page = app.conventionalBookingPage(kind, id, principal);
-      if (!page) { sendPageError(req, res, 404, "BOOKING_RECORD_NOT_FOUND"); return; }
-      const action = requestPost[3];
-      let destination: string | undefined;
-      if (kind === "draft" && (action === "review" || action === "submit")) {
-        let form: URLSearchParams;
-        try { form = await readFormBody(req); } catch { sendPageError(req, res, 400, "INVALID_EVENT"); return; }
-        if ([...form.keys()].some((key) => key !== "surfaceId") || form.getAll("surfaceId").length !== 1) { sendPageError(req, res, 409, "STALE_SURFACE"); return; }
-        const result = app.conventionalRequestAction(id, action, form.get("surfaceId") ?? "", principal);
-        if (!result.ok) { sendPageError(req, res, 409, result.code); return; }
-        destination = result.surfaces.at(-1)?.conventionalRoute;
-      } else if (kind === "request" && action === "conversation") {
-        destination = `/conversation?threadId=${encodeURIComponent(page.threadId)}`;
-      } else if (kind === "request" && action === "search") {
-        destination = app.conventionalRequestSearch(id, principal) ?? undefined;
+      // ADR-0080: conventional search parity. Matched before the unit route so
+      // "search" is never read as a unit id.
+      if (req.method === "GET" && url.pathname === "/stays/search") {
+        const filters = parseConventionalSearchQuery(url.searchParams);
+        let artifact: DiscoveryArtifactProjection | null = null;
+        try {
+          artifact =
+            filters === null
+              ? null
+              : app.environment.discoveryQuery.search(filters);
+        } catch {
+          artifact = null;
+        }
+        if (!artifact) {
+          sendPageError(req, res, 400, "SEARCH_INVALID");
+          return;
+        }
+        res.writeHead(200, GUEST_HTML_HEADERS);
+        res.end(renderConventionalSearchHtml(artifact, options.localPhotoUrl));
+        return;
       }
-      if (!destination) { sendPageError(req, res, 409, "ACTION_NOT_AUTHORIZED"); return; }
-      res.writeHead(303, { Location: destination, "Cache-Control": "no-store" });
-      res.end();
-return;
+
+      const conventionalUnitMatch = /^\/stays\/([^/]+)$/.exec(url.pathname);
+      if (req.method === "GET" && conventionalUnitMatch) {
+        let unitId: string;
+        try {
+          unitId = decodeURIComponent(conventionalUnitMatch[1]!);
+        } catch {
+          res.writeHead(400, { "Content-Type": "text/plain" });
+          res.end("Invalid apartment");
+          return;
+        }
+        const unit = app.environment.unitRepository.findById(unitId);
+        if (!unit || !isEligibleUnit(unit, app.environment.clock())) {
+          res.writeHead(404, { "Content-Type": "text/plain" });
+          res.end("Apartment not found");
+          return;
+        }
+        res.writeHead(200, GUEST_HTML_HEADERS);
+        res.end(renderConventionalUnitDetailHtml(unit, options.localPhotoUrl));
+        return;
+      }
+
+      const requestPost =
+        /^\/(booking-requests\/drafts|booking-requests)\/([^/]+)\/(review|submit|conversation|search)$/.exec(
+          url.pathname,
+        );
+      if (req.method === "POST" && requestPost) {
+        const session = resolveBrowserSession(
+          env,
+          browserSessions,
+          readGuestSession(req),
+          sessionScopedGuestPrincipals
+            ? undefined
+            : app.environment.config.guestId,
+        );
+        if (!session) {
+          sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
+          return;
+        }
+        if (!browserOriginAccepted(req, options.publicOrigin)) {
+          sendPageError(req, res, 403, "ORIGIN_REJECTED");
+          return;
+        }
+        let id: string;
+        try {
+          id = decodeURIComponent(requestPost[2]!);
+        } catch {
+          sendPageError(req, res, 400, "INVALID_BOOKING_LINK");
+          return;
+        }
+        const kind =
+          requestPost[1] === "booking-requests/drafts" ? "draft" : "request";
+        const principal: CommandPrincipal = {
+          id: session.principalId,
+          role: "guest",
+          tenantId: session.tenantId,
+        };
+        const page = app.conventionalBookingPage(kind, id, principal);
+        if (!page) {
+          sendPageError(req, res, 404, "BOOKING_RECORD_NOT_FOUND");
+          return;
+        }
+        const action = requestPost[3];
+        let destination: string | undefined;
+        if (kind === "draft" && (action === "review" || action === "submit")) {
+          let form: URLSearchParams;
+          try {
+            form = await readFormBody(req);
+          } catch {
+            sendPageError(req, res, 400, "INVALID_EVENT");
+            return;
+          }
+          if (
+            [...form.keys()].some((key) => key !== "surfaceId") ||
+            form.getAll("surfaceId").length !== 1
+          ) {
+            sendPageError(req, res, 409, "STALE_SURFACE");
+            return;
+          }
+          const result = app.conventionalRequestAction(
+            id,
+            action,
+            form.get("surfaceId") ?? "",
+            principal,
+          );
+          if (!result.ok) {
+            sendPageError(req, res, 409, result.code);
+            return;
+          }
+          destination = result.surfaces.at(-1)?.conventionalRoute;
+        } else if (kind === "request" && action === "conversation") {
+          destination = `/conversation?threadId=${encodeURIComponent(page.threadId)}`;
+        } else if (kind === "request" && action === "search") {
+          destination =
+            app.conventionalRequestSearch(id, principal) ?? undefined;
+        }
+        if (!destination) {
+          sendPageError(req, res, 409, "ACTION_NOT_AUTHORIZED");
+          return;
+        }
+        res.writeHead(303, {
+          Location: destination,
+          "Cache-Control": "no-store",
+        });
+        res.end();
+        return;
       }
 
       const offerPost =
@@ -4042,33 +7010,67 @@ return;
 
       const bookingPageMatch =
         req.method === "GET"
-          ? matchConventionalBookingRoute(url.pathname) : null;
-    if (bookingPageMatch) {
-      // ADR-0070/0080: booking records are never public. Unlike /stays/*,
-      // these routes need the owner's browser session and re-check ownership.
-      const session = resolveBrowserSession(env, browserSessions, readGuestSession(req), sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId);
-      if (!session) { sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED"); return; }
-      let recordId: string;
-      try { recordId = decodeURIComponent(bookingPageMatch.encodedId); } catch { sendPageError(req, res, 400, "INVALID_BOOKING_LINK"); return; }
-      const principal: CommandPrincipal = { id: session.principalId, role: "guest", tenantId: session.tenantId };
-      const bookingPage = app.conventionalBookingPage(bookingPageMatch.kind, recordId, principal);
-      if (!bookingPage) { sendPageError(req, res, 404, "BOOKING_RECORD_NOT_FOUND"); return; }
-      res.writeHead(200, GUEST_HTML_HEADERS);
-      res.end(renderConventionalBookingHtml(bookingPage));
-      return;
-    }
-
-    // Guest gallery issue 01: the full apartment page's script. Public, like /stays/* itself.
-    if (req.method === "GET" && url.pathname === "/gallery.js") {
-      try {
-        const script = readFileSync(join(dirname(clientScriptPath), "gallery.js"), "utf8");
-        res.writeHead(200, { "Content-Type": "text/javascript; charset=utf-8" });
-        res.end(script);
-      } catch {
-        res.writeHead(404, { "Content-Type": "text/plain" });
-        res.end("Gallery script missing; run npm run guest:local to build it.");
+          ? matchConventionalBookingRoute(url.pathname)
+          : null;
+      if (bookingPageMatch) {
+        // ADR-0070/0080: booking records are never public. Unlike /stays/*,
+        // these routes need the owner's browser session and re-check ownership.
+        const session = resolveBrowserSession(
+          env,
+          browserSessions,
+          readGuestSession(req),
+          sessionScopedGuestPrincipals
+            ? undefined
+            : app.environment.config.guestId,
+        );
+        if (!session) {
+          sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
+          return;
+        }
+        let recordId: string;
+        try {
+          recordId = decodeURIComponent(bookingPageMatch.encodedId);
+        } catch {
+          sendPageError(req, res, 400, "INVALID_BOOKING_LINK");
+          return;
+        }
+        const principal: CommandPrincipal = {
+          id: session.principalId,
+          role: "guest",
+          tenantId: session.tenantId,
+        };
+        const bookingPage = app.conventionalBookingPage(
+          bookingPageMatch.kind,
+          recordId,
+          principal,
+        );
+        if (!bookingPage) {
+          sendPageError(req, res, 404, "BOOKING_RECORD_NOT_FOUND");
+          return;
+        }
+        res.writeHead(200, GUEST_HTML_HEADERS);
+        res.end(renderConventionalBookingHtml(bookingPage));
+        return;
       }
-return;
+
+      // Guest gallery issue 01: the full apartment page's script. Public, like /stays/* itself.
+      if (req.method === "GET" && url.pathname === "/gallery.js") {
+        try {
+          const script = readFileSync(
+            join(dirname(clientScriptPath), "gallery.js"),
+            "utf8",
+          );
+          res.writeHead(200, {
+            "Content-Type": "text/javascript; charset=utf-8",
+          });
+          res.end(script);
+        } catch {
+          res.writeHead(404, { "Content-Type": "text/plain" });
+          res.end(
+            "Gallery script missing; run npm run guest:local to build it.",
+          );
+        }
+        return;
       }
       // The bank transfer pages' copy-account-number script.
       if (
@@ -4083,27 +7085,37 @@ return;
             ),
             "utf8",
           );
-          res.writeHead(200, { "Content-Type": "text/javascript; charset=utf-8" });
-        res.end(script);
-      } catch {
-        res.writeHead(404, { "Content-Type": "text/plain" });
-        res.end("Payment script missing; run npm run guest:local to build it.");
+          res.writeHead(200, {
+            "Content-Type": "text/javascript; charset=utf-8",
+          });
+          res.end(script);
+        } catch {
+          res.writeHead(404, { "Content-Type": "text/plain" });
+          res.end(
+            "Payment script missing; run npm run guest:local to build it.",
+          );
+        }
+        return;
       }
-      return;
-    }
-    if (req.method === "GET" && url.pathname === "/client.js") {
-      try {
-        const script = readFileSync(clientScriptPath, "utf8");
-        res.writeHead(200, { "Content-Type": "text/javascript; charset=utf-8" });
-        res.end(script);
-      } catch {
-        res.writeHead(500, { "Content-Type": "text/plain" });
-        res.end("Guest client bundle missing; run npm run guest:local to build it.");
+      if (req.method === "GET" && url.pathname === "/client.js") {
+        try {
+          const script = readFileSync(clientScriptPath, "utf8");
+          res.writeHead(200, {
+            "Content-Type": "text/javascript; charset=utf-8",
+          });
+          res.end(script);
+        } catch {
+          res.writeHead(500, { "Content-Type": "text/plain" });
+          res.end(
+            "Guest client bundle missing; run npm run guest:local to build it.",
+          );
+        }
+        return;
       }
-      return;
-    }
 
-    const paymentPageMatch = /^\/payments\/offers\/([^/]+)$/.exec(url.pathname);
+      const paymentPageMatch = /^\/payments\/offers\/([^/]+)$/.exec(
+        url.pathname,
+      );
       if (req.method === "POST" && paymentPageMatch) {
         // Issue 09 AC2: one native method form. It only dispatches to the existing card continuation or transfer
         // route (ADR 0072, 0088); an unknown or missing method starts nothing.
@@ -4148,35 +7160,95 @@ return;
         return;
       }
       if (req.method === "GET" && paymentPageMatch) {
-      const session = resolveBrowserSession(env, browserSessions, readGuestSession(req), sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId);
-      if (!session) { sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED"); return; }
-      let offerId: string;
-      try { offerId = decodeURIComponent(paymentPageMatch[1]!); } catch { sendPageError(req, res, 400, "INVALID_OFFER"); return; }
-      try {
-        const principal: CommandPrincipal = { id: session.principalId, role: "guest", tenantId: session.tenantId };
-        const artifact = app.environment.cardPaymentApp.getArtifact(offerId, principal);
-        if (app.environment.manualTransfers?.current(offerId, app.environment.clock())) { res.writeHead(303, { Location: `/payments/offers/${encodeURIComponent(offerId)}/manual-transfer` }); res.end(); return; }
-        if (app.environment.bankTransferApp?.manager.getSession(offerId)) { res.writeHead(303, { Location: `/payments/offers/${encodeURIComponent(offerId)}/transfer` }); res.end(); return; }
-        const processing = artifact.facts.journeyStage === "stay_payment_processing" || artifact.facts.journeyStage === "deposit_payment_processing";
-        const status = guestPaymentStatus(artifact.facts.status, processing);
-        const contactEmailMissing = !app.environment.guestContactApp.get(principal)?.contactEmail;
-        const threadId = findGuestThreadForOffer(app.environment, offerId, principal);
-        const href = contactEmailMissing && artifact.facts.status === "ready"
-          ? "/guest/contact?kind=email"
-          : processing && threadId
-            ? `/?threadId=${encodeURIComponent(threadId)}`
-            : `/payments/offers/${encodeURIComponent(offerId)}/continue`;
-        const label = contactEmailMissing && artifact.facts.status === "ready"
-          ? "Add email address to continue"
-          : processing
-            ? "Return to booking status"
-            : options.localPayment
-              ? "Continue to local demo payment"
-              : "Continue to hosted card checkout";
-        const canContinue = artifact.actions.length > 0 && (artifact.facts.status !== "ready" || contactEmailMissing || !processing);
-        // P3: before any attempt, with an email on file, the Guest chooses the method (ADR 0088).
-        const manualOffered = app.environment.manualTransfers?.isOffered(offerId, app.environment.clock()) === true;
-        const offerTransferChoice = (app.environment.bankTransferApp !== null || manualOffered) && artifact.facts.status === "ready" && !contactEmailMissing && !processing;
+        const session = resolveBrowserSession(
+          env,
+          browserSessions,
+          readGuestSession(req),
+          sessionScopedGuestPrincipals
+            ? undefined
+            : app.environment.config.guestId,
+        );
+        if (!session) {
+          sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
+          return;
+        }
+        let offerId: string;
+        try {
+          offerId = decodeURIComponent(paymentPageMatch[1]!);
+        } catch {
+          sendPageError(req, res, 400, "INVALID_OFFER");
+          return;
+        }
+        try {
+          const principal: CommandPrincipal = {
+            id: session.principalId,
+            role: "guest",
+            tenantId: session.tenantId,
+          };
+          const artifact = app.environment.cardPaymentApp.getArtifact(
+            offerId,
+            principal,
+          );
+          if (
+            app.environment.manualTransfers?.current(
+              offerId,
+              app.environment.clock(),
+            )
+          ) {
+            res.writeHead(303, {
+              Location: `/payments/offers/${encodeURIComponent(offerId)}/manual-transfer`,
+            });
+            res.end();
+            return;
+          }
+          if (app.environment.bankTransferApp?.manager.getSession(offerId)) {
+            res.writeHead(303, {
+              Location: `/payments/offers/${encodeURIComponent(offerId)}/transfer`,
+            });
+            res.end();
+            return;
+          }
+          const processing =
+            artifact.facts.journeyStage === "stay_payment_processing" ||
+            artifact.facts.journeyStage === "deposit_payment_processing";
+          const status = guestPaymentStatus(artifact.facts.status, processing);
+          const contactEmailMissing =
+            !app.environment.guestContactApp.get(principal)?.contactEmail;
+          const threadId = findGuestThreadForOffer(
+            app.environment,
+            offerId,
+            principal,
+          );
+          const href =
+            contactEmailMissing && artifact.facts.status === "ready"
+              ? "/guest/contact?kind=email"
+              : processing && threadId
+                ? `/?threadId=${encodeURIComponent(threadId)}`
+                : `/payments/offers/${encodeURIComponent(offerId)}/continue`;
+          const label =
+            contactEmailMissing && artifact.facts.status === "ready"
+              ? "Add email address to continue"
+              : processing
+                ? "Return to booking status"
+                : options.localPayment
+                  ? "Continue to local demo payment"
+                  : "Continue to hosted card checkout";
+          const canContinue =
+            artifact.actions.length > 0 &&
+            (artifact.facts.status !== "ready" ||
+              contactEmailMissing ||
+              !processing);
+          // P3: before any attempt, with an email on file, the Guest chooses the method (ADR 0088).
+          const manualOffered =
+            app.environment.manualTransfers?.isOffered(
+              offerId,
+              app.environment.clock(),
+            ) === true;
+          const offerTransferChoice =
+            (app.environment.bankTransferApp !== null || manualOffered) &&
+            artifact.facts.status === "ready" &&
+            !contactEmailMissing &&
+            !processing;
           const offerFacts = app.environment.conditionalOfferApp.getArtifact(
             offerId,
             principal,
@@ -4253,413 +7325,1250 @@ return;
               body: `<div class="guest-editorial">${paymentScreenHtml(content, ticket, breakdown, canContinue ? (choice !== undefined ? { sections: choice } : { actions: `<a class="ui-button ui-button--primary ui-button--block" href="${href}">${label}</a>` }) : {})}</div>`,
             }),
           );
-      } catch { sendPageError(req, res, 404, "PAYMENT_OFFER_NOT_FOUND"); }
-      return;
-    }
-
-    // P5: manual bank transfer with receipt (ADR 0090). The receipt is evidence only; the back office confirms (B6).
-    const manualMatch = /^\/payments\/offers\/([^/]+)\/manual-transfer(\/receipt)?$/.exec(url.pathname);
-    if (manualMatch && (req.method === "POST" || (req.method === "GET" && !manualMatch[2]))) {
-      if (req.method === "POST" && !browserOriginAccepted(req, options.publicOrigin)) { res.writeHead(403); res.end("Origin rejected"); return; }
-      const session = resolveBrowserSession(env, browserSessions, readGuestSession(req), sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId);
-      if (!session) { sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED"); return; }
-      let offerId: string;
-      try { offerId = decodeURIComponent(manualMatch[1]!); } catch { sendPageError(req, res, 400, "INVALID_OFFER"); return; }
-      const manual = app.environment.manualTransfers;
-      if (!manual) { sendPageError(req, res, 404, "MANUAL_TRANSFER_UNAVAILABLE"); return; }
-      const principal: CommandPrincipal = { id: session.principalId, role: "guest", tenantId: session.tenantId };
-      let manualOffer: ReturnType<typeof app.environment.conditionalOfferApp.manager.getOffer>;
-      try { manualOffer = app.environment.conditionalOfferApp.manager.getOffer(offerId); } catch { sendPageError(req, res, 404, "PAYMENT_OFFER_NOT_FOUND"); return; }
-      const payerId = manualOffer.parties.distinctPayer?.id ?? manualOffer.parties.primaryGuest.id;
-      if (!principal.id || principal.id !== payerId || !principal.tenantId || principal.tenantId !== manualOffer.tenantId) { sendPageError(req, res, 404, "PAYMENT_OFFER_NOT_FOUND"); return; }
-      const manualPage = `/payments/offers/${encodeURIComponent(offerId)}/manual-transfer`;
-      const receiptMaxBytes = app.environment.config.receiptMaxBytes ?? DEFAULT_RECEIPT_MAX_BYTES;
-      const render = (status: number, error = "") => {
-        const transfer = manual.current(offerId, app.environment.clock());
-        if (!transfer) { res.writeHead(303, { Location: `/payments/offers/${encodeURIComponent(offerId)}` }); res.end(); return; }
-        const paymentFacts = app.environment.cardPaymentApp.getArtifact(offerId, principal).facts;
-        res.writeHead(status, GUEST_HTML_HEADERS);
-        const offerFacts = app.environment.conditionalOfferApp.getArtifact(offerId, principal).facts;
-        res.end(renderManualTransferPageHtml({ transfer, now: app.environment.clock(), receiptMaxBytes, error, ...threadFrame(app, offerId, principal), contractId: transfer.decision?.kind === "confirmed" ? transfer.decision.contractId : null, stay: { unitTitle: paymentFacts.unit, checkIn: paymentFacts.checkIn, checkOut: paymentFacts.checkOut, nights: quotedNightCount(paymentFacts.checkIn, paymentFacts.checkOut) ?? 0, guestCount: offerFacts.occupants.length }, ...(paymentFacts.allInStayTotalKobo === undefined ? {} : { allInStayTotalKobo: paymentFacts.allInStayTotalKobo }), ...(paymentFacts.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: paymentFacts.refundableSecurityDepositKobo }) }));
-      };
-      if (req.method === "GET") { render(200); return; }
-      if (!manualMatch[2]) {
-        try { manual.start(createManualTransferCommand({ commandName: "manual_transfer.start", principal, payload: { offerId } }), app.environment.clock); }
-        catch { sendPageError(req, res, 409, "MANUAL_TRANSFER_REJECTED"); return; }
-        res.writeHead(303, { Location: manualPage }); res.end();
+        } catch {
+          sendPageError(req, res, 404, "PAYMENT_OFFER_NOT_FOUND");
+        }
         return;
       }
-      // Receipt upload: a bounded body, one file field; nothing is stored on any refusal (ADR 0075, 0090).
-      const boundary = multipartBoundary(req.headers["content-type"]);
-      const declared = Number(req.headers["content-length"] ?? "0");
-      const bodyLimit = receiptMaxBytes + 16 * 1024;
-      if (!boundary) { req.resume(); render(400, "Choose a receipt file to upload."); return; }
-      if (Number.isFinite(declared) && declared > bodyLimit) { req.resume(); render(413, "That file is too large. Upload a smaller photo or PDF of your receipt."); return; }
-      let body: Buffer;
-      try { body = await readBoundedBody(req, bodyLimit); } catch { render(413, "That file is too large. Upload a smaller photo or PDF of your receipt."); return; }
-      let bytes: Buffer | null;
-      try { bytes = multipartFile(body, boundary, "receipt"); } catch { render(400, "The upload could not be read. Choose your receipt file again."); return; }
-      try {
-        manual.uploadReceipt(createManualTransferCommand({ commandName: "manual_transfer.upload_receipt", principal, payload: { offerId } }), { bytes: bytes ?? Buffer.alloc(0) }, app.environment.clock);
-      } catch (error) {
-        const problem = error instanceof ManualTransferError ? error.problem : "no_transfer";
-        const message = problem === "receipt_type_not_allowed" ? "Upload a photo (JPEG or PNG) or a PDF of your receipt."
-          : problem === "receipt_too_large" ? "That file is too large. Upload a smaller photo or PDF of your receipt."
-            : problem === "receipt_empty" ? "Choose a receipt file to upload."
-              : problem === "payment_window_closed" ? "The deadline has passed, so the receipt was not accepted. No Reservation was made."
-                : problem === "receipt_already_uploaded" ? "Your receipt was already received."
-                  : "The receipt was not accepted. No payment was recorded.";
-        render(problem === "receipt_too_large" ? 413 : problem === "payment_window_closed" || problem === "receipt_already_uploaded" || problem === "no_transfer" || problem === "not_payer" ? 409 : 400, message);
-        return;
-      }
-      res.writeHead(303, { Location: manualPage }); res.end();
-      return;
-    }
 
-    // P3: the Guest chooses bank transfer (ADR 0088). Server-owned: the offer, amount and reference never come from the browser.
-    const transferMatch = /^\/payments\/offers\/([^/]+)\/transfer$/.exec(url.pathname);
-    if (transferMatch && (req.method === "POST" || req.method === "GET")) {
-      if (req.method === "POST" && !browserOriginAccepted(req, options.publicOrigin)) { res.writeHead(403); res.end("Origin rejected"); return; }
-      const session = resolveBrowserSession(env, browserSessions, readGuestSession(req), sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId);
-      if (!session) { sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED"); return; }
-      let offerId: string;
-      try { offerId = decodeURIComponent(transferMatch[1]!); } catch { sendPageError(req, res, 400, "INVALID_OFFER"); return; }
-      const transfers = app.environment.bankTransferApp;
-      if (!transfers) { sendPageError(req, res, 404, "TRANSFER_UNAVAILABLE"); return; }
-      const principal: CommandPrincipal = { id: session.principalId, role: "guest", tenantId: session.tenantId };
-      let transferOffer: ReturnType<typeof app.environment.conditionalOfferApp.manager.getOffer>;
-      try { transferOffer = app.environment.conditionalOfferApp.manager.getOffer(offerId); } catch { sendPageError(req, res, 404, "PAYMENT_OFFER_NOT_FOUND"); return; }
-      const payerId = transferOffer.parties.distinctPayer?.id ?? transferOffer.parties.primaryGuest.id;
-      if (!principal.id || principal.id !== payerId || !principal.tenantId || principal.tenantId !== transferOffer.tenantId) { sendPageError(req, res, 404, "PAYMENT_OFFER_NOT_FOUND"); return; }
-      const transferPage = `/payments/offers/${encodeURIComponent(offerId)}/transfer`;
-      if (req.method === "POST") {
-        try { await transfers.initializeTransfer(offerId, principal); }
-        catch (error) { sendPageError(req, res, 409, error instanceof BankTransferProviderError ? "TRANSFER_UNAVAILABLE" : "TRANSFER_REJECTED"); return; }
-        res.writeHead(303, { Location: transferPage }); res.end();
-        return;
-      }
-      const transfer = transfers.manager.getSession(offerId);
-      if (!transfer) { res.writeHead(303, { Location: `/payments/offers/${encodeURIComponent(offerId)}` }); res.end(); return; }
-      const paymentFacts = app.environment.cardPaymentApp.getArtifact(offerId, principal).facts;
-      const offerFacts = app.environment.conditionalOfferApp.getArtifact(offerId, principal).facts;
-      res.writeHead(200, GUEST_HTML_HEADERS);
-      res.end(renderTransferPageHtml({ transfer, now: app.environment.clock(), contract: transfers.manager.getBookingContract(offerId) ?? null, ...threadFrame(app, offerId, principal), localPayment: options.localPayment === true, stay: { unitTitle: paymentFacts.unit, checkIn: paymentFacts.checkIn, checkOut: paymentFacts.checkOut, nights: quotedNightCount(paymentFacts.checkIn, paymentFacts.checkOut) ?? 0, guestCount: offerFacts.occupants.length }, ...(paymentFacts.allInStayTotalKobo === undefined ? {} : { allInStayTotalKobo: paymentFacts.allInStayTotalKobo }), ...(paymentFacts.refundableSecurityDepositKobo === undefined ? {} : { refundableSecurityDepositKobo: paymentFacts.refundableSecurityDepositKobo }), amountDueNowKobo: paymentFacts.amountDueNowKobo }));
-      return;
-    }
-
-    if (options.localPayment && req.method === "POST" && url.pathname === "/payments/local/transfer/complete") {
-      // Local pilot only: plays the Guest's bank sending the exact amount to the local provider's account.
-      if (!browserOriginAccepted(req, options.publicOrigin)) { res.writeHead(403); res.end("Origin rejected"); return; }
-      const session = resolveBrowserSession(env, browserSessions, readGuestSession(req), sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId);
-      if (!session) { sendJson(res, 401, { ok: false, code: "AUTHENTICATION_REQUIRED" }); return; }
-      const reference = new URLSearchParams((await readRawBody(req)).toString("utf8")).get("reference") ?? "";
-      const transfers = app.environment.bankTransferApp;
-      const transfer = reference && transfers ? transfers.manager.getSessionByReference(reference) : undefined;
-      if (!transfers || !transfer) { sendJson(res, 400, { ok: false, code: "LOCAL_PAYMENT_INVALID" }); return; }
-      const localOffer = app.environment.conditionalOfferApp.manager.getOffer(transfer.offerId);
-      if (session.principalId !== (localOffer.parties.distinctPayer?.id ?? localOffer.parties.primaryGuest.id) || session.tenantId !== localOffer.tenantId) { sendJson(res, 400, { ok: false, code: "LOCAL_PAYMENT_INVALID" }); return; }
-      try { await transfers.verifyAndProcessFromProvider(reference, app.environment.systemPrincipal()); } catch { /* the authoritative state is re-read on the transfer page */ }
-      res.writeHead(303, { Location: `/payments/offers/${encodeURIComponent(transfer.offerId)}/transfer` }); res.end();
-      return;
-    }
-
-    const continuationMatch = /^\/payments\/offers\/([^/]+)\/continue$/.exec(url.pathname);
-    if (req.method === "GET" && continuationMatch) {
-      // ADR-0087: payment initialization is a server-owned continuation, not
-      // a browser-selected amount, currency, reference, callback, or URL.
-      const session = resolveBrowserSession(env, browserSessions, readGuestSession(req), sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId);
-      if (!session) { sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED"); return; }
-      let offerId: string;
-      try { offerId = decodeURIComponent(continuationMatch[1]!); } catch { sendPageError(req, res, 400, "INVALID_OFFER"); return; }
-      const openManual = app.environment.manualTransfers?.current(offerId, app.environment.clock());
-      if (openManual && (openManual.status === "awaiting_receipt" || openManual.status === "awaiting_verification")) { sendPageError(req, res, 409, "MANUAL_TRANSFER_IN_PROGRESS"); return; }
-      const liveTransfer = app.environment.bankTransferApp?.manager.getSession(offerId);
-      if (liveTransfer && (liveTransfer.status === "initiated" || liveTransfer.status === "processing_in_grace") && app.environment.clock().getTime() < Date.parse(liveTransfer.graceEndsAt)) {
-        // ADR 0046/0088: a transfer that can still be paid holds the one Live Payment Attempt; no switch to card.
-        sendPageError(req, res, 409, "TRANSFER_IN_PROGRESS");
-        return;
-      }
-      try {
-        const principal: CommandPrincipal = { id: session.principalId, role: "guest", tenantId: session.tenantId };
-        if (options.localPayment) {
-          app.environment.cardPaymentApp.getArtifact(offerId, principal);
-          const checkout = app.environment.cardPaymentApp.manager.getCheckoutSession(offerId) ?? app.environment.cardPaymentApp.initializeCheckout(offerId, principal);
-          res.writeHead(303, { Location: `/payments/local/checkout?reference=${encodeURIComponent(checkout.pspReference)}` }); res.end();
+      // P5: manual bank transfer with receipt (ADR 0090). The receipt is evidence only; the back office confirms (B6).
+      const manualMatch =
+        /^\/payments\/offers\/([^/]+)\/manual-transfer(\/receipt)?$/.exec(
+          url.pathname,
+        );
+      if (
+        manualMatch &&
+        (req.method === "POST" || (req.method === "GET" && !manualMatch[2]))
+      ) {
+        if (
+          req.method === "POST" &&
+          !browserOriginAccepted(req, options.publicOrigin)
+        ) {
+          res.writeHead(403);
+          res.end("Origin rejected");
           return;
         }
-        if (!paystackClient) { sendPageError(req, res, 503, "PAYSTACK_UNAVAILABLE"); return; }
-        const checkout = await app.environment.cardPaymentApp.initializePaystackCheckout(offerId, principal, paystackClient);
-        if (!isApprovedPaystackCheckoutUrl(checkout.checkoutUrl)) { sendPageError(req, res, 502, "INVALID_CHECKOUT_URL"); return; }
-        res.writeHead(303, { Location: checkout.checkoutUrl }); res.end();
-      } catch {
-        sendPageError(req, res, 400, "PAYMENT_CONTINUATION_REJECTED");
-      }
-      return;
-    }
-
-    if (options.localPayment && req.method === "GET" && url.pathname === "/payments/local/checkout") {
-      const session = resolveBrowserSession(env, browserSessions, readGuestSession(req), sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId);
-      const reference = url.searchParams.get("reference");
-      const checkout = reference ? app.environment.cardPaymentApp.manager.getCheckoutSessionByReference(reference) : null;
-      if (!session || !reference || !checkout) { sendPageError(req, res, 400, "LOCAL_PAYMENT_INVALID"); return; }
-      res.writeHead(200, GUEST_HTML_HEADERS);
-      res.end(pageShell({
-        title: "Local demo payment",
-        width: "narrow",
-        body: `<header class="ui-page__header"><p class="ui-eyebrow">Local pilot only</p><h1>Local demo payment</h1><p>This deterministic local provider verifies the authoritative amount without collecting card details.</p></header><form class="ui-panel" method="post" action="/payments/local/complete"><input type="hidden" name="reference" value="${reference.replace(/[&<>'"]/g, "")}"><button class="ui-button ui-button--primary ui-button--block" type="submit">Complete local payment</button></form>`,
-      }));
-      return;
-    }
-
-    if (options.localPayment && req.method === "POST" && url.pathname === "/payments/local/complete") {
-      if (!browserOriginAccepted(req, options.publicOrigin)) { res.writeHead(403); res.end("Origin rejected"); return; }
-      const session = resolveBrowserSession(env, browserSessions, readGuestSession(req), sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId);
-      if (!session) { sendJson(res, 401, { ok: false, code: "AUTHENTICATION_REQUIRED" }); return; }
-      const params = new URLSearchParams((await readRawBody(req)).toString("utf8"));
-      const reference = params.get("reference");
-      const checkout = reference ? app.environment.cardPaymentApp.manager.getCheckoutSessionByReference(reference) : null;
-      if (!reference || !checkout) { sendJson(res, 400, { ok: false, code: "LOCAL_PAYMENT_INVALID" }); return; }
-      const principal: CommandPrincipal = { id: session.principalId, role: "guest", tenantId: session.tenantId };
-      try {
-        const offer = app.environment.conditionalOfferApp.manager.getOffer(checkout.offerId);
-        const expectedPayerId = offer.parties.distinctPayer?.id ?? offer.parties.primaryGuest.id;
-        if (!principal.id || principal.id !== expectedPayerId || !principal.tenantId || principal.tenantId !== offer.tenantId) throw new Error("Local payment is not authorized for this Guest");
-        app.environment.cardPaymentApp.getArtifact(checkout.offerId, principal);
-        const threadId = findGuestThreadForOffer(app.environment, checkout.offerId, principal);
-        if (!threadId) throw new Error("Local payment thread is unavailable");
-        app.environment.cardPaymentApp.verifyAndConfirm(reference, app.environment.systemPrincipal());
-        res.writeHead(303, { Location: `/?threadId=${encodeURIComponent(threadId)}` }); res.end();
-      } catch { sendJson(res, 400, { ok: false, code: "LOCAL_PAYMENT_REJECTED" }); }
-      return;
-    }
-
-    if (req.method === "GET" && url.pathname === "/payments/paystack/callback") {
-      // ADR-0087: a callback is only a return signal; verification below is
-      // the sole path allowed to advance the existing payment transition.
-      if (!paystackClient) { sendJson(res, 503, { ok: false, code: "PAYSTACK_UNAVAILABLE" }); return; }
-      const session = resolveBrowserSession(env, browserSessions, readGuestSession(req), sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId);
-      const reference = url.searchParams.get("reference");
-      if (!session || !reference) { sendJson(res, 400, { ok: false, code: "PAYMENT_CALLBACK_INVALID" }); return; }
-      const checkout = app.environment.cardPaymentApp.manager.getCheckoutSessionByReference(reference);
-      if (!checkout) { sendJson(res, 400, { ok: false, code: "PAYMENT_CALLBACK_UNKNOWN" }); return; }
-      const principal: CommandPrincipal = { id: session.principalId, role: "guest", tenantId: session.tenantId };
-      try {
-        // Resolving the artifact first binds the provider reference to the
-        // authenticated Guest and tenant before any server verification.
-        const callbackOffer = app.environment.conditionalOfferApp.manager.getOffer(checkout.offerId);
-        const expectedPayerId = callbackOffer.parties.distinctPayer?.id ?? callbackOffer.parties.primaryGuest.id;
-        if (!principal.id || principal.id !== expectedPayerId || !principal.tenantId || !callbackOffer.tenantId || principal.tenantId !== callbackOffer.tenantId) throw new Error("Payment callback is not authorized for this Guest");
-        app.environment.cardPaymentApp.getArtifact(checkout.offerId, principal);
-        const threadId = findGuestThreadForOffer(app.environment, checkout.offerId, principal);
-        if (!threadId) { sendJson(res, 404, { ok: false, code: "PAYMENT_CALLBACK_THREAD_UNKNOWN" }); return; }
-        await app.environment.cardPaymentApp.verifyAndConfirmPaystack(reference, app.environment.systemPrincipal(), paystackClient);
-        res.writeHead(303, { Location: `/?threadId=${encodeURIComponent(threadId)}` }); res.end();
-      } catch {
-        const threadId = findGuestThreadForOffer(app.environment, checkout.offerId, principal);
-        if (threadId) { res.writeHead(303, { Location: `/?threadId=${encodeURIComponent(threadId)}` }); res.end(); }
-        else sendJson(res, 400, { ok: false, code: "PAYMENT_CALLBACK_REJECTED" });
-      }
-      return;
-    }
-
-    if (req.method === "POST" && url.pathname === "/webhooks/paystack") {
-      // ADR-0087: validate the raw signed body before parsing event meaning.
-      if (!paystackClient) { sendJson(res, 503, { ok: false, code: "PAYSTACK_UNAVAILABLE" }); return; }
-      try {
-        const rawBody = await readRawBody(req);
-        if (!paystackClient.verifyWebhookSignature(rawBody, typeof req.headers["x-paystack-signature"] === "string" ? req.headers["x-paystack-signature"] : undefined)) { sendJson(res, 401, { ok: false, code: "INVALID_WEBHOOK_SIGNATURE" }); return; }
-        const parsed: unknown = JSON.parse(rawBody.toString("utf8"));
-        if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) { sendJson(res, 400, { ok: false, code: "INVALID_WEBHOOK" }); return; }
-        const event = parsed as { event?: unknown; data?: unknown };
-        if (event.event !== "charge.success") { sendJson(res, 200, { ok: true, ignored: true }); return; }
-        const data = event.data !== null && typeof event.data === "object" && !Array.isArray(event.data) ? event.data as { reference?: unknown } : undefined;
-        if (typeof data?.reference !== "string" || data.reference === "") { sendJson(res, 400, { ok: false, code: "INVALID_WEBHOOK" }); return; }
-        const checkout = app.environment.cardPaymentApp.manager.getCheckoutSessionByReference(data.reference);
-        if (!checkout) {
-          // P2: a Pay with Transfer reference. The signed event is only a prompt; the server re-verifies with
-          // Paystack and processes once (ADR 0047). Late money is recorded for a full refund (ADR 0045).
-          const transfers = app.environment.bankTransferApp;
-          if (!transfers?.manager.getSessionByReference(data.reference)) { sendJson(res, 200, { ok: true, ignored: true }); return; }
-          try { await transfers.verifyAndProcessFromProvider(data.reference, app.environment.systemPrincipal()); } catch { /* the authoritative unresolved/failed state is retained */ }
-          sendJson(res, 200, { ok: true });
+        const session = resolveBrowserSession(
+          env,
+          browserSessions,
+          readGuestSession(req),
+          sessionScopedGuestPrincipals
+            ? undefined
+            : app.environment.config.guestId,
+        );
+        if (!session) {
+          sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
           return;
         }
-        try { await app.environment.cardPaymentApp.verifyAndConfirmPaystack(data.reference, app.environment.systemPrincipal(), paystackClient); } catch { /* the authoritative unresolved/failed state is retained */ }
-        sendJson(res, 200, { ok: true });
-      } catch (error) {
-        sendJson(res, error instanceof BodyTooLargeError ? 413 : 400, { ok: false, code: error instanceof BodyTooLargeError ? "BODY_TOO_LARGE" : "INVALID_WEBHOOK" });
-      }
-      return;
-    }
-
-    if (url.pathname === "/guest/contact" || url.pathname === "/guest/contact/phone" || url.pathname === "/guest/contact/email") {
-      const session = resolveBrowserSession(env, browserSessions, readGuestSession(req), sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId);
-      if (!session) { res.writeHead(401, { "Content-Type": "text/plain" }); res.end("Unauthorized"); return; }
-      const contactPrincipal: CommandPrincipal = { id: session.principalId, role: "guest", tenantId: session.tenantId };
-      if (req.method === "GET" && url.pathname === "/guest/contact") { const kind = url.searchParams.get("kind"); const requestedKind = kind === "phone" || kind === "email" ? kind : "both"; res.writeHead(200, GUEST_HTML_HEADERS); res.end(renderGuestContactHtml(app.environment.guestContactApp.get(contactPrincipal), "", requestedKind)); return; }
-      if (req.method === "POST") {
-        if (!browserOriginAccepted(req, options.publicOrigin)) { res.writeHead(403); res.end("Origin rejected"); return; }
-        let submittedValue = "";
-        const contactKind = url.pathname.endsWith("/phone") ? "phone" : "email";
+        let offerId: string;
         try {
-          const form = await readFormBody(req);
-          const expectedRevision = Number(form.get("expectedRevision"));
-          if (contactKind === "phone") { submittedValue = form.get("phoneNumber") ?? ""; app.environment.guestContactApp.submitPhone({ phoneNumber: submittedValue, ...(Number.isInteger(expectedRevision) ? { expectedRevision } : {}) }, contactPrincipal); }
-          else { submittedValue = form.get("contactEmail") ?? ""; app.environment.guestContactApp.submitEmail({ contactEmail: submittedValue, ...(Number.isInteger(expectedRevision) ? { expectedRevision } : {}) }, contactPrincipal); }
-          res.writeHead(303, { Location: "/guest/contact" }); res.end(); return;
-        } catch (error) {
-          res.writeHead(400, GUEST_HTML_HEADERS);
-          res.end(renderGuestContactHtml(app.environment.guestContactApp.get(contactPrincipal), error instanceof Error ? error.message : "Contact could not be saved", contactKind, contactKind === "phone" ? { phoneNumber: submittedValue } : { contactEmail: submittedValue }));
+          offerId = decodeURIComponent(manualMatch[1]!);
+        } catch {
+          sendPageError(req, res, 400, "INVALID_OFFER");
           return;
         }
-      }
-    }
-
-    if (url.pathname === "/conversation" && (req.method === "GET" || req.method === "POST")) {
-      // Issue 06c / ADR-0080: the composer works without JavaScript. The turn
-      // runs through the same handleTurn as /api/turn, and the browser session
-      // must own the thread (ADR-0070). Message text is never logged (ADR-0075).
-      const session = resolveBrowserSession(env, browserSessions, readGuestSession(req), sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId);
-      if (req.method === "GET") {
-        if (!session) { sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED"); return; }
-        // Issue 13a: no thread id starts a new, empty conversation. Only an id
-        // is minted; nothing is written and no earlier work changes (ADR-0079).
-        if (!url.searchParams.has("threadId")) {
-          res.writeHead(303, { Location: `/conversation?threadId=${encodeURIComponent(`g-${crypto.randomUUID()}`)}` });
+        const manual = app.environment.manualTransfers;
+        if (!manual) {
+          sendPageError(req, res, 404, "MANUAL_TRANSFER_UNAVAILABLE");
+          return;
+        }
+        const principal: CommandPrincipal = {
+          id: session.principalId,
+          role: "guest",
+          tenantId: session.tenantId,
+        };
+        let manualOffer: ReturnType<
+          typeof app.environment.conditionalOfferApp.manager.getOffer
+        >;
+        try {
+          manualOffer =
+            app.environment.conditionalOfferApp.manager.getOffer(offerId);
+        } catch {
+          sendPageError(req, res, 404, "PAYMENT_OFFER_NOT_FOUND");
+          return;
+        }
+        const payerId =
+          manualOffer.parties.distinctPayer?.id ??
+          manualOffer.parties.primaryGuest.id;
+        if (
+          !principal.id ||
+          principal.id !== payerId ||
+          !principal.tenantId ||
+          principal.tenantId !== manualOffer.tenantId
+        ) {
+          sendPageError(req, res, 404, "PAYMENT_OFFER_NOT_FOUND");
+          return;
+        }
+        const manualPage = `/payments/offers/${encodeURIComponent(offerId)}/manual-transfer`;
+        const receiptMaxBytes =
+          app.environment.config.receiptMaxBytes ?? DEFAULT_RECEIPT_MAX_BYTES;
+        const render = (status: number, error = "") => {
+          const transfer = manual.current(offerId, app.environment.clock());
+          if (!transfer) {
+            res.writeHead(303, {
+              Location: `/payments/offers/${encodeURIComponent(offerId)}`,
+            });
+            res.end();
+            return;
+          }
+          const paymentFacts = app.environment.cardPaymentApp.getArtifact(
+            offerId,
+            principal,
+          ).facts;
+          res.writeHead(status, GUEST_HTML_HEADERS);
+          const offerFacts = app.environment.conditionalOfferApp.getArtifact(
+            offerId,
+            principal,
+          ).facts;
+          res.end(
+            renderManualTransferPageHtml({
+              transfer,
+              now: app.environment.clock(),
+              receiptMaxBytes,
+              error,
+              ...threadFrame(app, offerId, principal),
+              contractId:
+                transfer.decision?.kind === "confirmed"
+                  ? transfer.decision.contractId
+                  : null,
+              stay: {
+                unitTitle: paymentFacts.unit,
+                checkIn: paymentFacts.checkIn,
+                checkOut: paymentFacts.checkOut,
+                nights:
+                  quotedNightCount(
+                    paymentFacts.checkIn,
+                    paymentFacts.checkOut,
+                  ) ?? 0,
+                guestCount: offerFacts.occupants.length,
+              },
+              ...(paymentFacts.allInStayTotalKobo === undefined
+                ? {}
+                : { allInStayTotalKobo: paymentFacts.allInStayTotalKobo }),
+              ...(paymentFacts.refundableSecurityDepositKobo === undefined
+                ? {}
+                : {
+                    refundableSecurityDepositKobo:
+                      paymentFacts.refundableSecurityDepositKobo,
+                  }),
+            }),
+          );
+        };
+        if (req.method === "GET") {
+          render(200);
+          return;
+        }
+        if (!manualMatch[2]) {
+          try {
+            manual.start(
+              createManualTransferCommand({
+                commandName: "manual_transfer.start",
+                principal,
+                payload: { offerId },
+              }),
+              app.environment.clock,
+            );
+          } catch {
+            sendPageError(req, res, 409, "MANUAL_TRANSFER_REJECTED");
+            return;
+          }
+          res.writeHead(303, { Location: manualPage });
           res.end();
           return;
         }
-        const threadId = url.searchParams.get("threadId") ?? "";
-        if (!THREAD_ID_PATTERN.test(threadId)) { sendPageError(req, res, 400, "INVALID_CONVERSATION"); return; }
-        const state = session.threadIds.has(threadId) ? app.getState(threadId) : undefined;
-        const committedWork = app.committedWork({ id: session.principalId, role: "guest", tenantId: session.tenantId });
-        res.writeHead(200, GUEST_HTML_HEADERS);
-        res.end(renderNoScriptConversationHtml({ threadId, timeline: state?.timeline ?? [], surfaces: state?.surfaces ?? [], journey: state?.journey, committedWork }));
-        return;
-      }
-      if (!browserOriginAccepted(req, options.publicOrigin)) { res.writeHead(403); res.end("Origin rejected"); return; }
-      let form: URLSearchParams;
-      try { form = await readFormBody(req); } catch { sendPageError(req, res, 400, "INVALID_CONVERSATION"); return; }
-      const submittedThreadId = form.get("threadId") ?? "";
-      if (submittedThreadId !== "" && !THREAD_ID_PATTERN.test(submittedThreadId)) { sendPageError(req, res, 400, "INVALID_CONVERSATION"); return; }
-      const threadId = submittedThreadId === "" ? `g-${crypto.randomUUID()}` : submittedThreadId;
-      if (!session || !bindBrowserThread(app.environment, browserSessions, req, threadId, true)) { sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED"); return; }
-      const text = form.get("message") ?? "";
-      if (text.trim() === "" || text.length > MAX_TURN_TEXT_LENGTH) {
-        const state = app.getState(threadId);
-        res.writeHead(400, GUEST_HTML_HEADERS);
-        res.end(renderNoScriptConversationHtml({ threadId, timeline: state?.timeline ?? [], surfaces: state?.surfaces ?? [], journey: state?.journey, error: "Type a short message to send.", draft: text.slice(0, MAX_TURN_TEXT_LENGTH) }));
-        return;
-      }
-      const result = await app.handleTurn(threadId, text);
-      if (!result.ok) {
-        // The same rejection the JavaScript client announces, keeping the draft.
-        const state = app.getState(threadId);
-        res.writeHead(422, GUEST_HTML_HEADERS);
-        res.end(renderNoScriptConversationHtml({ threadId, timeline: state?.timeline ?? [], surfaces: state?.surfaces ?? [], journey: state?.journey, error: result.message, draft: text }));
-        return;
-      }
-      // Post/redirect/get: refreshing the transcript never re-sends the turn.
-      res.writeHead(303, { Location: `/conversation?threadId=${encodeURIComponent(threadId)}` });
-      res.end();
-      return;
-    }
-
-    if (req.method === "GET" && url.pathname === "/api/committed-work") {
-      // Issue 13a: principal-scoped, never keyed by a client-supplied thread id.
-      const session = resolveBrowserSession(app.environment, browserSessions, readGuestSession(req), sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId);
-      if (!session) {
-        sendJson(res, 401, { ok: false, code: "AUTHENTICATION_REQUIRED", message: "Conversation access requires an active browser session." });
-        return;
-      }
-      sendJson(res, 200, { ok: true, committedWork: app.committedWork({ id: session.principalId, role: "guest", tenantId: session.tenantId }) });
-      return;
-    }
-
-    if (req.method === "GET" && url.pathname === "/api/state") {
-      const threadId = url.searchParams.get("threadId");
-      if (!threadId || !THREAD_ID_PATTERN.test(threadId)) {
-        sendJson(res, 400, { ok: false, code: "INVALID_THREAD", message: "Unknown conversation." });
-        return;
-      }
-      // ADR-0070/0075: a syntactically valid opaque thread ID is not an
-      // ownership claim; browser refresh must present the server-issued
-      // session binding before any projection is returned.
-      const sessionId = readGuestSession(req);
-      const session = resolveBrowserSession(app.environment, browserSessions, sessionId);
-      if (!session) {
-        sendJson(res, 401, { ok: false, code: "AUTHENTICATION_REQUIRED", message: "Conversation access requires an active browser session." });
-        return;
-      }
-      if (!session.threadIds.has(threadId)) {
-        sendJson(res, 200, { ok: true, threadId, timeline: [], surfaces: [] });
-        return;
-      }
-      const state = app.getState(threadId);
-      if (!state) {
-        sendJson(res, 200, { ok: true, threadId, timeline: [], surfaces: [] });
-        return;
-      }
-      sendJson(res, 200, state);
-      return;
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/telemetry") {
-      if (!browserOriginAccepted(req, options.publicOrigin)) { res.writeHead(403); res.end("Origin rejected"); return; }
-      try {
-        const body = await readJsonBody(req);
-        const event = body !== null && typeof body === "object" && !Array.isArray(body)
-          ? (body as { event?: unknown }).event
-          : undefined;
-        const accepted = app.recordShellTelemetry(event);
-        sendJson(res, accepted ? 200 : 400, { ok: accepted });
-      } catch {
-        sendJson(res, 400, { ok: false, code: "INVALID_TELEMETRY" });
-      }
-      return;
-    }
-
-    if (req.method === "POST" && (url.pathname === "/api/turn" || url.pathname === "/api/event" || (fixtureRoutes && url.pathname === "/api/reset"))) {
-      if (!browserOriginAccepted(req, options.publicOrigin)) { res.writeHead(403); res.end("Origin rejected"); return; }
-      try {
-        const body = await readJsonBody(req);
-        if (fixtureRoutes && url.pathname === "/api/reset") {
-          app.reset();
-          browserSessions.clear();
-          sendJson(res, 200, { ok: true });
+        // Receipt upload: a bounded body, one file field; nothing is stored on any refusal (ADR 0075, 0090).
+        const boundary = multipartBoundary(req.headers["content-type"]);
+        const declared = Number(req.headers["content-length"] ?? "0");
+        const bodyLimit = receiptMaxBytes + 16 * 1024;
+        if (!boundary) {
+          req.resume();
+          render(400, "Choose a receipt file to upload.");
           return;
         }
-        const threadId = (body as { threadId?: unknown }).threadId;
-        if (typeof threadId !== "string") {
-          sendJson(res, 400, { ok: false, code: "INVALID_THREAD", message: "threadId is required." });
+        if (Number.isFinite(declared) && declared > bodyLimit) {
+          req.resume();
+          render(
+            413,
+            "That file is too large. Upload a smaller photo or PDF of your receipt.",
+          );
           return;
         }
-        if (!bindBrowserThread(app.environment, browserSessions, req, threadId, sessionScopedGuestPrincipals)) {
-          sendJson(res, 401, { ok: false, code: "AUTHENTICATION_REQUIRED", message: "Conversation access requires an active browser session." });
+        let body: Buffer;
+        try {
+          body = await readBoundedBody(req, bodyLimit);
+        } catch {
+          render(
+            413,
+            "That file is too large. Upload a smaller photo or PDF of your receipt.",
+          );
           return;
         }
-        if (url.pathname === "/api/turn") {
-          const text = (body as { text?: unknown }).text;
-          if (typeof text !== "string" || text.trim() === "" || text.length > 2000) {
-            sendJson(res, 400, { ok: false, code: "INVALID_INPUT", message: "A short message is required." });
+        let bytes: Buffer | null;
+        try {
+          bytes = multipartFile(body, boundary, "receipt");
+        } catch {
+          render(
+            400,
+            "The upload could not be read. Choose your receipt file again.",
+          );
+          return;
+        }
+        try {
+          manual.uploadReceipt(
+            createManualTransferCommand({
+              commandName: "manual_transfer.upload_receipt",
+              principal,
+              payload: { offerId },
+            }),
+            { bytes: bytes ?? Buffer.alloc(0) },
+            app.environment.clock,
+          );
+        } catch (error) {
+          const problem =
+            error instanceof ManualTransferError
+              ? error.problem
+              : "no_transfer";
+          const message =
+            problem === "receipt_type_not_allowed"
+              ? "Upload a photo (JPEG or PNG) or a PDF of your receipt."
+              : problem === "receipt_too_large"
+                ? "That file is too large. Upload a smaller photo or PDF of your receipt."
+                : problem === "receipt_empty"
+                  ? "Choose a receipt file to upload."
+                  : problem === "payment_window_closed"
+                    ? "The deadline has passed, so the receipt was not accepted. No Reservation was made."
+                    : problem === "receipt_already_uploaded"
+                      ? "Your receipt was already received."
+                      : "The receipt was not accepted. No payment was recorded.";
+          render(
+            problem === "receipt_too_large"
+              ? 413
+              : problem === "payment_window_closed" ||
+                  problem === "receipt_already_uploaded" ||
+                  problem === "no_transfer" ||
+                  problem === "not_payer"
+                ? 409
+                : 400,
+            message,
+          );
+          return;
+        }
+        res.writeHead(303, { Location: manualPage });
+        res.end();
+        return;
+      }
+
+      // P3: the Guest chooses bank transfer (ADR 0088). Server-owned: the offer, amount and reference never come from the browser.
+      const transferMatch = /^\/payments\/offers\/([^/]+)\/transfer$/.exec(
+        url.pathname,
+      );
+      if (transferMatch && (req.method === "POST" || req.method === "GET")) {
+        if (
+          req.method === "POST" &&
+          !browserOriginAccepted(req, options.publicOrigin)
+        ) {
+          res.writeHead(403);
+          res.end("Origin rejected");
+          return;
+        }
+        const session = resolveBrowserSession(
+          env,
+          browserSessions,
+          readGuestSession(req),
+          sessionScopedGuestPrincipals
+            ? undefined
+            : app.environment.config.guestId,
+        );
+        if (!session) {
+          sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
+          return;
+        }
+        let offerId: string;
+        try {
+          offerId = decodeURIComponent(transferMatch[1]!);
+        } catch {
+          sendPageError(req, res, 400, "INVALID_OFFER");
+          return;
+        }
+        const transfers = app.environment.bankTransferApp;
+        if (!transfers) {
+          sendPageError(req, res, 404, "TRANSFER_UNAVAILABLE");
+          return;
+        }
+        const principal: CommandPrincipal = {
+          id: session.principalId,
+          role: "guest",
+          tenantId: session.tenantId,
+        };
+        let transferOffer: ReturnType<
+          typeof app.environment.conditionalOfferApp.manager.getOffer
+        >;
+        try {
+          transferOffer =
+            app.environment.conditionalOfferApp.manager.getOffer(offerId);
+        } catch {
+          sendPageError(req, res, 404, "PAYMENT_OFFER_NOT_FOUND");
+          return;
+        }
+        const payerId =
+          transferOffer.parties.distinctPayer?.id ??
+          transferOffer.parties.primaryGuest.id;
+        if (
+          !principal.id ||
+          principal.id !== payerId ||
+          !principal.tenantId ||
+          principal.tenantId !== transferOffer.tenantId
+        ) {
+          sendPageError(req, res, 404, "PAYMENT_OFFER_NOT_FOUND");
+          return;
+        }
+        const transferPage = `/payments/offers/${encodeURIComponent(offerId)}/transfer`;
+        if (req.method === "POST") {
+          try {
+            await transfers.initializeTransfer(offerId, principal);
+          } catch (error) {
+            sendPageError(
+              req,
+              res,
+              409,
+              error instanceof BankTransferProviderError
+                ? "TRANSFER_UNAVAILABLE"
+                : "TRANSFER_REJECTED",
+            );
             return;
           }
-          sendJson(res, 200, await app.handleTurn(threadId, text));
+          res.writeHead(303, { Location: transferPage });
+          res.end();
           return;
         }
-        sendJson(res, 200, await app.handleEventAsync(threadId, body));
-      } catch (error) {
-        if (error instanceof BodyTooLargeError) { sendJson(res, 413, { ok: false, code: "BODY_TOO_LARGE", message: "That request is too large." }); return; }
-        if (error instanceof SyntaxError) { sendJson(res, 400, { ok: false, code: "INVALID_JSON", message: "The request could not be read." }); return; }
-        // Issue 19: internal error text can carry domain or provider detail, so it never reaches the browser (ADR 0075).
-        sendJson(res, 500, { ok: false, code: "INTERNAL_ERROR", message: "Something went wrong. Please try again." });
+        const transfer = transfers.manager.getSession(offerId);
+        if (!transfer) {
+          res.writeHead(303, {
+            Location: `/payments/offers/${encodeURIComponent(offerId)}`,
+          });
+          res.end();
+          return;
+        }
+        const paymentFacts = app.environment.cardPaymentApp.getArtifact(
+          offerId,
+          principal,
+        ).facts;
+        const offerFacts = app.environment.conditionalOfferApp.getArtifact(
+          offerId,
+          principal,
+        ).facts;
+        res.writeHead(200, GUEST_HTML_HEADERS);
+        res.end(
+          renderTransferPageHtml({
+            transfer,
+            now: app.environment.clock(),
+            contract: transfers.manager.getBookingContract(offerId) ?? null,
+            ...threadFrame(app, offerId, principal),
+            localPayment: options.localPayment === true,
+            stay: {
+              unitTitle: paymentFacts.unit,
+              checkIn: paymentFacts.checkIn,
+              checkOut: paymentFacts.checkOut,
+              nights:
+                quotedNightCount(paymentFacts.checkIn, paymentFacts.checkOut) ??
+                0,
+              guestCount: offerFacts.occupants.length,
+            },
+            ...(paymentFacts.allInStayTotalKobo === undefined
+              ? {}
+              : { allInStayTotalKobo: paymentFacts.allInStayTotalKobo }),
+            ...(paymentFacts.refundableSecurityDepositKobo === undefined
+              ? {}
+              : {
+                  refundableSecurityDepositKobo:
+                    paymentFacts.refundableSecurityDepositKobo,
+                }),
+            amountDueNowKobo: paymentFacts.amountDueNowKobo,
+          }),
+        );
+        return;
       }
-      return;
-    }
 
-    res.writeHead(404, { "Content-Type": "text/plain" });
-    res.end("Not Found");
-  });
+      if (
+        options.localPayment &&
+        req.method === "POST" &&
+        url.pathname === "/payments/local/transfer/complete"
+      ) {
+        // Local pilot only: plays the Guest's bank sending the exact amount to the local provider's account.
+        if (!browserOriginAccepted(req, options.publicOrigin)) {
+          res.writeHead(403);
+          res.end("Origin rejected");
+          return;
+        }
+        const session = resolveBrowserSession(
+          env,
+          browserSessions,
+          readGuestSession(req),
+          sessionScopedGuestPrincipals
+            ? undefined
+            : app.environment.config.guestId,
+        );
+        if (!session) {
+          sendJson(res, 401, { ok: false, code: "AUTHENTICATION_REQUIRED" });
+          return;
+        }
+        const reference =
+          new URLSearchParams((await readRawBody(req)).toString("utf8")).get(
+            "reference",
+          ) ?? "";
+        const transfers = app.environment.bankTransferApp;
+        const transfer =
+          reference && transfers
+            ? transfers.manager.getSessionByReference(reference)
+            : undefined;
+        if (!transfers || !transfer) {
+          sendJson(res, 400, { ok: false, code: "LOCAL_PAYMENT_INVALID" });
+          return;
+        }
+        const localOffer = app.environment.conditionalOfferApp.manager.getOffer(
+          transfer.offerId,
+        );
+        if (
+          session.principalId !==
+            (localOffer.parties.distinctPayer?.id ??
+              localOffer.parties.primaryGuest.id) ||
+          session.tenantId !== localOffer.tenantId
+        ) {
+          sendJson(res, 400, { ok: false, code: "LOCAL_PAYMENT_INVALID" });
+          return;
+        }
+        try {
+          await transfers.verifyAndProcessFromProvider(
+            reference,
+            app.environment.systemPrincipal(),
+          );
+        } catch {
+          /* the authoritative state is re-read on the transfer page */
+        }
+        res.writeHead(303, {
+          Location: `/payments/offers/${encodeURIComponent(transfer.offerId)}/transfer`,
+        });
+        res.end();
+        return;
+      }
+
+      const continuationMatch = /^\/payments\/offers\/([^/]+)\/continue$/.exec(
+        url.pathname,
+      );
+      if (req.method === "GET" && continuationMatch) {
+        // ADR-0087: payment initialization is a server-owned continuation, not
+        // a browser-selected amount, currency, reference, callback, or URL.
+        const session = resolveBrowserSession(
+          env,
+          browserSessions,
+          readGuestSession(req),
+          sessionScopedGuestPrincipals
+            ? undefined
+            : app.environment.config.guestId,
+        );
+        if (!session) {
+          sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
+          return;
+        }
+        let offerId: string;
+        try {
+          offerId = decodeURIComponent(continuationMatch[1]!);
+        } catch {
+          sendPageError(req, res, 400, "INVALID_OFFER");
+          return;
+        }
+        const openManual = app.environment.manualTransfers?.current(
+          offerId,
+          app.environment.clock(),
+        );
+        if (
+          openManual &&
+          (openManual.status === "awaiting_receipt" ||
+            openManual.status === "awaiting_verification")
+        ) {
+          sendPageError(req, res, 409, "MANUAL_TRANSFER_IN_PROGRESS");
+          return;
+        }
+        const liveTransfer =
+          app.environment.bankTransferApp?.manager.getSession(offerId);
+        if (
+          liveTransfer &&
+          (liveTransfer.status === "initiated" ||
+            liveTransfer.status === "processing_in_grace") &&
+          app.environment.clock().getTime() <
+            Date.parse(liveTransfer.graceEndsAt)
+        ) {
+          // ADR 0046/0088: a transfer that can still be paid holds the one Live Payment Attempt; no switch to card.
+          sendPageError(req, res, 409, "TRANSFER_IN_PROGRESS");
+          return;
+        }
+        try {
+          const principal: CommandPrincipal = {
+            id: session.principalId,
+            role: "guest",
+            tenantId: session.tenantId,
+          };
+          if (options.localPayment) {
+            app.environment.cardPaymentApp.getArtifact(offerId, principal);
+            const checkout =
+              app.environment.cardPaymentApp.manager.getCheckoutSession(
+                offerId,
+              ) ??
+              app.environment.cardPaymentApp.initializeCheckout(
+                offerId,
+                principal,
+              );
+            res.writeHead(303, {
+              Location: `/payments/local/checkout?reference=${encodeURIComponent(checkout.pspReference)}`,
+            });
+            res.end();
+            return;
+          }
+          if (!paystackClient) {
+            sendPageError(req, res, 503, "PAYSTACK_UNAVAILABLE");
+            return;
+          }
+          const checkout =
+            await app.environment.cardPaymentApp.initializePaystackCheckout(
+              offerId,
+              principal,
+              paystackClient,
+            );
+          if (!isApprovedPaystackCheckoutUrl(checkout.checkoutUrl)) {
+            sendPageError(req, res, 502, "INVALID_CHECKOUT_URL");
+            return;
+          }
+          res.writeHead(303, { Location: checkout.checkoutUrl });
+          res.end();
+        } catch {
+          sendPageError(req, res, 400, "PAYMENT_CONTINUATION_REJECTED");
+        }
+        return;
+      }
+
+      if (
+        options.localPayment &&
+        req.method === "GET" &&
+        url.pathname === "/payments/local/checkout"
+      ) {
+        const session = resolveBrowserSession(
+          env,
+          browserSessions,
+          readGuestSession(req),
+          sessionScopedGuestPrincipals
+            ? undefined
+            : app.environment.config.guestId,
+        );
+        const reference = url.searchParams.get("reference");
+        const checkout = reference
+          ? app.environment.cardPaymentApp.manager.getCheckoutSessionByReference(
+              reference,
+            )
+          : null;
+        if (!session || !reference || !checkout) {
+          sendPageError(req, res, 400, "LOCAL_PAYMENT_INVALID");
+          return;
+        }
+        res.writeHead(200, GUEST_HTML_HEADERS);
+        res.end(
+          pageShell({
+            title: "Local demo payment",
+            width: "narrow",
+            body: `<header class="ui-page__header"><p class="ui-eyebrow">Local pilot only</p><h1>Local demo payment</h1><p>This deterministic local provider verifies the authoritative amount without collecting card details.</p></header><form class="ui-panel" method="post" action="/payments/local/complete"><input type="hidden" name="reference" value="${reference.replace(/[&<>'"]/g, "")}"><button class="ui-button ui-button--primary ui-button--block" type="submit">Complete local payment</button></form>`,
+          }),
+        );
+        return;
+      }
+
+      if (
+        options.localPayment &&
+        req.method === "POST" &&
+        url.pathname === "/payments/local/complete"
+      ) {
+        if (!browserOriginAccepted(req, options.publicOrigin)) {
+          res.writeHead(403);
+          res.end("Origin rejected");
+          return;
+        }
+        const session = resolveBrowserSession(
+          env,
+          browserSessions,
+          readGuestSession(req),
+          sessionScopedGuestPrincipals
+            ? undefined
+            : app.environment.config.guestId,
+        );
+        if (!session) {
+          sendJson(res, 401, { ok: false, code: "AUTHENTICATION_REQUIRED" });
+          return;
+        }
+        const params = new URLSearchParams(
+          (await readRawBody(req)).toString("utf8"),
+        );
+        const reference = params.get("reference");
+        const checkout = reference
+          ? app.environment.cardPaymentApp.manager.getCheckoutSessionByReference(
+              reference,
+            )
+          : null;
+        if (!reference || !checkout) {
+          sendJson(res, 400, { ok: false, code: "LOCAL_PAYMENT_INVALID" });
+          return;
+        }
+        const principal: CommandPrincipal = {
+          id: session.principalId,
+          role: "guest",
+          tenantId: session.tenantId,
+        };
+        try {
+          const offer = app.environment.conditionalOfferApp.manager.getOffer(
+            checkout.offerId,
+          );
+          const expectedPayerId =
+            offer.parties.distinctPayer?.id ?? offer.parties.primaryGuest.id;
+          if (
+            !principal.id ||
+            principal.id !== expectedPayerId ||
+            !principal.tenantId ||
+            principal.tenantId !== offer.tenantId
+          )
+            throw new Error("Local payment is not authorized for this Guest");
+          app.environment.cardPaymentApp.getArtifact(
+            checkout.offerId,
+            principal,
+          );
+          const threadId = findGuestThreadForOffer(
+            app.environment,
+            checkout.offerId,
+            principal,
+          );
+          if (!threadId) throw new Error("Local payment thread is unavailable");
+          app.environment.cardPaymentApp.verifyAndConfirm(
+            reference,
+            app.environment.systemPrincipal(),
+          );
+          res.writeHead(303, {
+            Location: `/?threadId=${encodeURIComponent(threadId)}`,
+          });
+          res.end();
+        } catch {
+          sendJson(res, 400, { ok: false, code: "LOCAL_PAYMENT_REJECTED" });
+        }
+        return;
+      }
+
+      if (
+        req.method === "GET" &&
+        url.pathname === "/payments/paystack/callback"
+      ) {
+        // ADR-0087: a callback is only a return signal; verification below is
+        // the sole path allowed to advance the existing payment transition.
+        if (!paystackClient) {
+          sendJson(res, 503, { ok: false, code: "PAYSTACK_UNAVAILABLE" });
+          return;
+        }
+        const session = resolveBrowserSession(
+          env,
+          browserSessions,
+          readGuestSession(req),
+          sessionScopedGuestPrincipals
+            ? undefined
+            : app.environment.config.guestId,
+        );
+        const reference = url.searchParams.get("reference");
+        if (!session || !reference) {
+          sendJson(res, 400, { ok: false, code: "PAYMENT_CALLBACK_INVALID" });
+          return;
+        }
+        const checkout =
+          app.environment.cardPaymentApp.manager.getCheckoutSessionByReference(
+            reference,
+          );
+        if (!checkout) {
+          sendJson(res, 400, { ok: false, code: "PAYMENT_CALLBACK_UNKNOWN" });
+          return;
+        }
+        const principal: CommandPrincipal = {
+          id: session.principalId,
+          role: "guest",
+          tenantId: session.tenantId,
+        };
+        try {
+          // Resolving the artifact first binds the provider reference to the
+          // authenticated Guest and tenant before any server verification.
+          const callbackOffer =
+            app.environment.conditionalOfferApp.manager.getOffer(
+              checkout.offerId,
+            );
+          const expectedPayerId =
+            callbackOffer.parties.distinctPayer?.id ??
+            callbackOffer.parties.primaryGuest.id;
+          if (
+            !principal.id ||
+            principal.id !== expectedPayerId ||
+            !principal.tenantId ||
+            !callbackOffer.tenantId ||
+            principal.tenantId !== callbackOffer.tenantId
+          )
+            throw new Error(
+              "Payment callback is not authorized for this Guest",
+            );
+          app.environment.cardPaymentApp.getArtifact(
+            checkout.offerId,
+            principal,
+          );
+          const threadId = findGuestThreadForOffer(
+            app.environment,
+            checkout.offerId,
+            principal,
+          );
+          if (!threadId) {
+            sendJson(res, 404, {
+              ok: false,
+              code: "PAYMENT_CALLBACK_THREAD_UNKNOWN",
+            });
+            return;
+          }
+          await app.environment.cardPaymentApp.verifyAndConfirmPaystack(
+            reference,
+            app.environment.systemPrincipal(),
+            paystackClient,
+          );
+          res.writeHead(303, {
+            Location: `/?threadId=${encodeURIComponent(threadId)}`,
+          });
+          res.end();
+        } catch {
+          const threadId = findGuestThreadForOffer(
+            app.environment,
+            checkout.offerId,
+            principal,
+          );
+          if (threadId) {
+            res.writeHead(303, {
+              Location: `/?threadId=${encodeURIComponent(threadId)}`,
+            });
+            res.end();
+          } else
+            sendJson(res, 400, {
+              ok: false,
+              code: "PAYMENT_CALLBACK_REJECTED",
+            });
+        }
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/webhooks/paystack") {
+        // ADR-0087: validate the raw signed body before parsing event meaning.
+        if (!paystackClient) {
+          sendJson(res, 503, { ok: false, code: "PAYSTACK_UNAVAILABLE" });
+          return;
+        }
+        try {
+          const rawBody = await readRawBody(req);
+          if (
+            !paystackClient.verifyWebhookSignature(
+              rawBody,
+              typeof req.headers["x-paystack-signature"] === "string"
+                ? req.headers["x-paystack-signature"]
+                : undefined,
+            )
+          ) {
+            sendJson(res, 401, {
+              ok: false,
+              code: "INVALID_WEBHOOK_SIGNATURE",
+            });
+            return;
+          }
+          const parsed: unknown = JSON.parse(rawBody.toString("utf8"));
+          if (
+            parsed === null ||
+            typeof parsed !== "object" ||
+            Array.isArray(parsed)
+          ) {
+            sendJson(res, 400, { ok: false, code: "INVALID_WEBHOOK" });
+            return;
+          }
+          const event = parsed as { event?: unknown; data?: unknown };
+          if (event.event !== "charge.success") {
+            sendJson(res, 200, { ok: true, ignored: true });
+            return;
+          }
+          const data =
+            event.data !== null &&
+            typeof event.data === "object" &&
+            !Array.isArray(event.data)
+              ? (event.data as { reference?: unknown })
+              : undefined;
+          if (typeof data?.reference !== "string" || data.reference === "") {
+            sendJson(res, 400, { ok: false, code: "INVALID_WEBHOOK" });
+            return;
+          }
+          const checkout =
+            app.environment.cardPaymentApp.manager.getCheckoutSessionByReference(
+              data.reference,
+            );
+          if (!checkout) {
+            // P2: a Pay with Transfer reference. The signed event is only a prompt; the server re-verifies with
+            // Paystack and processes once (ADR 0047). Late money is recorded for a full refund (ADR 0045).
+            const transfers = app.environment.bankTransferApp;
+            if (!transfers?.manager.getSessionByReference(data.reference)) {
+              sendJson(res, 200, { ok: true, ignored: true });
+              return;
+            }
+            try {
+              await transfers.verifyAndProcessFromProvider(
+                data.reference,
+                app.environment.systemPrincipal(),
+              );
+            } catch {
+              /* the authoritative unresolved/failed state is retained */
+            }
+            sendJson(res, 200, { ok: true });
+            return;
+          }
+          try {
+            await app.environment.cardPaymentApp.verifyAndConfirmPaystack(
+              data.reference,
+              app.environment.systemPrincipal(),
+              paystackClient,
+            );
+          } catch {
+            /* the authoritative unresolved/failed state is retained */
+          }
+          sendJson(res, 200, { ok: true });
+        } catch (error) {
+          sendJson(res, error instanceof BodyTooLargeError ? 413 : 400, {
+            ok: false,
+            code:
+              error instanceof BodyTooLargeError
+                ? "BODY_TOO_LARGE"
+                : "INVALID_WEBHOOK",
+          });
+        }
+        return;
+      }
+
+      if (
+        url.pathname === "/guest/contact" ||
+        url.pathname === "/guest/contact/phone" ||
+        url.pathname === "/guest/contact/email"
+      ) {
+        const session = resolveBrowserSession(
+          env,
+          browserSessions,
+          readGuestSession(req),
+          sessionScopedGuestPrincipals
+            ? undefined
+            : app.environment.config.guestId,
+        );
+        if (!session) {
+          res.writeHead(401, { "Content-Type": "text/plain" });
+          res.end("Unauthorized");
+          return;
+        }
+        const contactPrincipal: CommandPrincipal = {
+          id: session.principalId,
+          role: "guest",
+          tenantId: session.tenantId,
+        };
+        if (req.method === "GET" && url.pathname === "/guest/contact") {
+          const kind = url.searchParams.get("kind");
+          const requestedKind =
+            kind === "phone" || kind === "email" ? kind : "both";
+          res.writeHead(200, GUEST_HTML_HEADERS);
+          res.end(
+            renderGuestContactHtml(
+              app.environment.guestContactApp.get(contactPrincipal),
+              "",
+              requestedKind,
+            ),
+          );
+          return;
+        }
+        if (req.method === "POST") {
+          if (!browserOriginAccepted(req, options.publicOrigin)) {
+            res.writeHead(403);
+            res.end("Origin rejected");
+            return;
+          }
+          let submittedValue = "";
+          const contactKind = url.pathname.endsWith("/phone")
+            ? "phone"
+            : "email";
+          try {
+            const form = await readFormBody(req);
+            const expectedRevision = Number(form.get("expectedRevision"));
+            if (contactKind === "phone") {
+              submittedValue = form.get("phoneNumber") ?? "";
+              app.environment.guestContactApp.submitPhone(
+                {
+                  phoneNumber: submittedValue,
+                  ...(Number.isInteger(expectedRevision)
+                    ? { expectedRevision }
+                    : {}),
+                },
+                contactPrincipal,
+              );
+            } else {
+              submittedValue = form.get("contactEmail") ?? "";
+              app.environment.guestContactApp.submitEmail(
+                {
+                  contactEmail: submittedValue,
+                  ...(Number.isInteger(expectedRevision)
+                    ? { expectedRevision }
+                    : {}),
+                },
+                contactPrincipal,
+              );
+            }
+            res.writeHead(303, { Location: "/guest/contact" });
+            res.end();
+            return;
+          } catch (error) {
+            res.writeHead(400, GUEST_HTML_HEADERS);
+            res.end(
+              renderGuestContactHtml(
+                app.environment.guestContactApp.get(contactPrincipal),
+                error instanceof Error
+                  ? error.message
+                  : "Contact could not be saved",
+                contactKind,
+                contactKind === "phone"
+                  ? { phoneNumber: submittedValue }
+                  : { contactEmail: submittedValue },
+              ),
+            );
+            return;
+          }
+        }
+      }
+
+      if (
+        url.pathname === "/conversation" &&
+        (req.method === "GET" || req.method === "POST")
+      ) {
+        // Issue 06c / ADR-0080: the composer works without JavaScript. The turn
+        // runs through the same handleTurn as /api/turn, and the browser session
+        // must own the thread (ADR-0070). Message text is never logged (ADR-0075).
+        const session = resolveBrowserSession(
+          env,
+          browserSessions,
+          readGuestSession(req),
+          sessionScopedGuestPrincipals
+            ? undefined
+            : app.environment.config.guestId,
+        );
+        if (req.method === "GET") {
+          if (!session) {
+            sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
+            return;
+          }
+          // Issue 13a: no thread id starts a new, empty conversation. Only an id
+          // is minted; nothing is written and no earlier work changes (ADR-0079).
+          if (!url.searchParams.has("threadId")) {
+            res.writeHead(303, {
+              Location: `/conversation?threadId=${encodeURIComponent(`g-${crypto.randomUUID()}`)}`,
+            });
+            res.end();
+            return;
+          }
+          const threadId = url.searchParams.get("threadId") ?? "";
+          if (!THREAD_ID_PATTERN.test(threadId)) {
+            sendPageError(req, res, 400, "INVALID_CONVERSATION");
+            return;
+          }
+          const state = session.threadIds.has(threadId)
+            ? app.getState(threadId)
+            : undefined;
+          const committedWork = app.committedWork({
+            id: session.principalId,
+            role: "guest",
+            tenantId: session.tenantId,
+          });
+          res.writeHead(200, GUEST_HTML_HEADERS);
+          res.end(
+            renderNoScriptConversationHtml({
+              threadId,
+              timeline: state?.timeline ?? [],
+              surfaces: state?.surfaces ?? [],
+              journey: state?.journey,
+              committedWork,
+            }),
+          );
+          return;
+        }
+        if (!browserOriginAccepted(req, options.publicOrigin)) {
+          res.writeHead(403);
+          res.end("Origin rejected");
+          return;
+        }
+        let form: URLSearchParams;
+        try {
+          form = await readFormBody(req);
+        } catch {
+          sendPageError(req, res, 400, "INVALID_CONVERSATION");
+          return;
+        }
+        const submittedThreadId = form.get("threadId") ?? "";
+        if (
+          submittedThreadId !== "" &&
+          !THREAD_ID_PATTERN.test(submittedThreadId)
+        ) {
+          sendPageError(req, res, 400, "INVALID_CONVERSATION");
+          return;
+        }
+        const threadId =
+          submittedThreadId === ""
+            ? `g-${crypto.randomUUID()}`
+            : submittedThreadId;
+        if (
+          !session ||
+          !bindBrowserThread(
+            app.environment,
+            browserSessions,
+            req,
+            threadId,
+            true,
+          )
+        ) {
+          sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
+          return;
+        }
+        const text = form.get("message") ?? "";
+        if (text.trim() === "" || text.length > MAX_TURN_TEXT_LENGTH) {
+          const state = app.getState(threadId);
+          res.writeHead(400, GUEST_HTML_HEADERS);
+          res.end(
+            renderNoScriptConversationHtml({
+              threadId,
+              timeline: state?.timeline ?? [],
+              surfaces: state?.surfaces ?? [],
+              journey: state?.journey,
+              error: "Type a short message to send.",
+              draft: text.slice(0, MAX_TURN_TEXT_LENGTH),
+            }),
+          );
+          return;
+        }
+        const result = await app.handleTurn(threadId, text);
+        if (!result.ok) {
+          // The same rejection the JavaScript client announces, keeping the draft.
+          const state = app.getState(threadId);
+          res.writeHead(422, GUEST_HTML_HEADERS);
+          res.end(
+            renderNoScriptConversationHtml({
+              threadId,
+              timeline: state?.timeline ?? [],
+              surfaces: state?.surfaces ?? [],
+              journey: state?.journey,
+              error: result.message,
+              draft: text,
+            }),
+          );
+          return;
+        }
+        // Post/redirect/get: refreshing the transcript never re-sends the turn.
+        res.writeHead(303, {
+          Location: `/conversation?threadId=${encodeURIComponent(threadId)}`,
+        });
+        res.end();
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/committed-work") {
+        // Issue 13a: principal-scoped, never keyed by a client-supplied thread id.
+        const session = resolveBrowserSession(
+          app.environment,
+          browserSessions,
+          readGuestSession(req),
+          sessionScopedGuestPrincipals
+            ? undefined
+            : app.environment.config.guestId,
+        );
+        if (!session) {
+          sendJson(res, 401, {
+            ok: false,
+            code: "AUTHENTICATION_REQUIRED",
+            message: "Conversation access requires an active browser session.",
+          });
+          return;
+        }
+        sendJson(res, 200, {
+          ok: true,
+          committedWork: app.committedWork({
+            id: session.principalId,
+            role: "guest",
+            tenantId: session.tenantId,
+          }),
+        });
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/state") {
+        const threadId = url.searchParams.get("threadId");
+        if (!threadId || !THREAD_ID_PATTERN.test(threadId)) {
+          sendJson(res, 400, {
+            ok: false,
+            code: "INVALID_THREAD",
+            message: "Unknown conversation.",
+          });
+          return;
+        }
+        // ADR-0070/0075: a syntactically valid opaque thread ID is not an
+        // ownership claim; browser refresh must present the server-issued
+        // session binding before any projection is returned.
+        const sessionId = readGuestSession(req);
+        const session = resolveBrowserSession(
+          app.environment,
+          browserSessions,
+          sessionId,
+        );
+        if (!session) {
+          sendJson(res, 401, {
+            ok: false,
+            code: "AUTHENTICATION_REQUIRED",
+            message: "Conversation access requires an active browser session.",
+          });
+          return;
+        }
+        if (!session.threadIds.has(threadId)) {
+          sendJson(res, 200, {
+            ok: true,
+            threadId,
+            timeline: [],
+            surfaces: [],
+          });
+          return;
+        }
+        const state = app.getState(threadId);
+        if (!state) {
+          sendJson(res, 200, {
+            ok: true,
+            threadId,
+            timeline: [],
+            surfaces: [],
+          });
+          return;
+        }
+        sendJson(res, 200, state);
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/telemetry") {
+        if (!browserOriginAccepted(req, options.publicOrigin)) {
+          res.writeHead(403);
+          res.end("Origin rejected");
+          return;
+        }
+        try {
+          const body = await readJsonBody(req);
+          const event =
+            body !== null && typeof body === "object" && !Array.isArray(body)
+              ? (body as { event?: unknown }).event
+              : undefined;
+          const accepted = app.recordShellTelemetry(event);
+          sendJson(res, accepted ? 200 : 400, { ok: accepted });
+        } catch {
+          sendJson(res, 400, { ok: false, code: "INVALID_TELEMETRY" });
+        }
+        return;
+      }
+
+      if (
+        req.method === "POST" &&
+        (url.pathname === "/api/turn" ||
+          url.pathname === "/api/event" ||
+          (fixtureRoutes && url.pathname === "/api/reset"))
+      ) {
+        if (!browserOriginAccepted(req, options.publicOrigin)) {
+          res.writeHead(403);
+          res.end("Origin rejected");
+          return;
+        }
+        try {
+          const body = await readJsonBody(req);
+          if (fixtureRoutes && url.pathname === "/api/reset") {
+            app.reset();
+            browserSessions.clear();
+            sendJson(res, 200, { ok: true });
+            return;
+          }
+          const threadId = (body as { threadId?: unknown }).threadId;
+          if (typeof threadId !== "string") {
+            sendJson(res, 400, {
+              ok: false,
+              code: "INVALID_THREAD",
+              message: "threadId is required.",
+            });
+            return;
+          }
+          if (
+            !bindBrowserThread(
+              app.environment,
+              browserSessions,
+              req,
+              threadId,
+              sessionScopedGuestPrincipals,
+            )
+          ) {
+            sendJson(res, 401, {
+              ok: false,
+              code: "AUTHENTICATION_REQUIRED",
+              message:
+                "Conversation access requires an active browser session.",
+            });
+            return;
+          }
+          if (url.pathname === "/api/turn") {
+            const text = (body as { text?: unknown }).text;
+            if (
+              typeof text !== "string" ||
+              text.trim() === "" ||
+              text.length > 2000
+            ) {
+              sendJson(res, 400, {
+                ok: false,
+                code: "INVALID_INPUT",
+                message: "A short message is required.",
+              });
+              return;
+            }
+            sendJson(res, 200, await app.handleTurn(threadId, text));
+            return;
+          }
+          sendJson(res, 200, await app.handleEventAsync(threadId, body));
+        } catch (error) {
+          if (error instanceof BodyTooLargeError) {
+            sendJson(res, 413, {
+              ok: false,
+              code: "BODY_TOO_LARGE",
+              message: "That request is too large.",
+            });
+            return;
+          }
+          if (error instanceof SyntaxError) {
+            sendJson(res, 400, {
+              ok: false,
+              code: "INVALID_JSON",
+              message: "The request could not be read.",
+            });
+            return;
+          }
+          // Issue 19: internal error text can carry domain or provider detail, so it never reaches the browser (ADR 0075).
+          sendJson(res, 500, {
+            ok: false,
+            code: "INTERNAL_ERROR",
+            message: "Something went wrong. Please try again.",
+          });
+        }
+        return;
+      }
+
+      res.writeHead(404, { "Content-Type": "text/plain" });
+      res.end("Not Found");
+    },
+  );
 
   return {
     port,
@@ -4674,13 +8583,15 @@ return;
       new Promise<number>((resolve) => {
         server.listen(port, "127.0.0.1", () => {
           const addr = server.address();
-          const actualPort = typeof addr === "object" && addr ? addr.port : port;
+          const actualPort =
+            typeof addr === "object" && addr ? addr.port : port;
           resolve(actualPort);
         });
       }),
     close: () =>
       new Promise<void>((resolve) => {
-        for (const runtime of sessionRuntimes.values()) runtime.environment.close();
+        for (const runtime of sessionRuntimes.values())
+          runtime.environment.close();
         defaultApp.environment.close();
         // Fetch clients may leave keep-alive sockets open after a response;
         // close them before waiting for the server callback so test and CLI

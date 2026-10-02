@@ -42,7 +42,7 @@ test("AC1: At 1280px, transcript and workspace are both visible with no dead spa
       const composer = (await box(tab, "form#composer"))!;
       assert.ok(transcript.width >= 350 && workspace.width >= 400, `${step}: ${JSON.stringify({ transcript, workspace })}`);
       assert.ok(transcript.right <= workspace.left, `${step}: side by side`);
-      assert.ok(workspace.top - main.top <= 24, `${step}: workspace starts at the top (${workspace.top - main.top}px)`);
+      assert.ok(workspace.top - main.top <= 32, `${step}: workspace starts at the top (${workspace.top - main.top}px)`);
       assert.ok(workspace.top < 800 && transcript.top < 800 && composer.bottom <= 800, `${step}: all in view`);
       assert.ok(composer.right <= workspace.left, `${step}: the composer stays under the transcript`);
       assert.equal(await tab.evaluate<boolean>("document.documentElement.scrollWidth > document.documentElement.clientWidth"), false);

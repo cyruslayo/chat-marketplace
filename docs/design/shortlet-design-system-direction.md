@@ -80,10 +80,10 @@ Elevation: default use tonal surfaces + 1px border, no shadow. Active workspace 
 | 320px mobile | 16px page gutters (288px content); reduce to 12px only if a known browser safe-area inset consumes the edge. |
 | 390px mobile | 18px gutters; single column; sticky composer respects `env(safe-area-inset-bottom)`. |
 | Tablet, ~768px | 24px gutters; single-column reading order; list may become 2 columns only where each card retains title, total and 44px action clarity. |
-| Desktop, 1024px+ | 32px gutters; centered max app width 1120px; guest conversational reading column 720px; workspace max 760px; landing body max 1200px. |
+| Desktop, 1024px+ | 32px gutters; the guest app bar and journey rail span the full width; with a workspace open, a 460px conversation column sits beside a left-aligned workspace reading column (560px; 760px for discovery results); landing body max 1200px. |
 | Body copy | ~70ch; never stretch paragraphs across full desktop width. |
 
-At 320px money labels and amount stack; don't force a horizontal price table. At desktop, conversation and workspace remain one center column in a single flow. No permanent desktop side canvas. Detail may use adjacent gallery and summary only if heading-to-price reading sequence remains coherent and responsive order remains accessible.
+At 320px money labels and amount stack; don't force a horizontal price table. At 64rem and wider an open workspace takes a second column beside the conversation (`renderGuestShellHtml`); below that it is a full-screen sheet above the conversation. With no workspace open the conversation stays one centered column. Reading order stays conversation, then workspace, and heading-to-price sequence stays coherent in both layouts.
 
 ## Interaction states and controls
 
@@ -143,6 +143,26 @@ Inventory is conceptual only. “Basic Catalog expressive” means the informati
 - Photos: informative listing image alt describes relevant visible room feature and location context without “photo of”; decorative treatment alt empty. Broken image retains Unit title/location and an identified image-unavailable fallback.
 - Payment status is textual (`Payment pending`, `Payment verified`, `Reconciliation in progress`) with semantics and exact amount; do not use green-only success or spinner-only pending.
 - At 320px and 200% zoom, reflow without horizontal page scroll for ordinary text, price breakdown, Operator action labels and form errors. Respect `prefers-reduced-motion`; ensure status shapes and focus indicator meet 3:1 non-text contrast.
+
+### Guest UI kit
+
+The approved guest design is the canvas <https://claude.ai/artifact/TKQCWTF4SWNscKrjLkN1zX> (sources and light/dark renders in `.scratch/guest-ui-consistency/design/`). Every guest screen, chat workspace and standalone page, is built from these components; a screen must not introduce a component outside this list. CSS lives in the "Guest UI kit" block of `apps/web/src/shortlet-foundations.css`, icons and the page shell in `apps/web/src/ui-kit.ts`, and the server markup helpers in `apps/local-guest/src/guest-kit.ts`.
+
+| Component | Class | Used for |
+| --- | --- | --- |
+| App bar, journey rail | `.ui-appbar`, `.ui-rail-nav` / `.ui-rail` | One frame on every guest screen: brand, New conversation, six-step Booking progress. |
+| Stay card, result row | `.ui-stay-card`, `.ui-result-row` / `.ui-result-rows` | Discovery in chat and on the search page; compact rows on phones. |
+| Compare table | `.ui-compare` | Side-by-side stays with a View per stay. |
+| Ticket, tiles, facts | `.ui-ticket`, `.ui-tiles`, `.ui-facts` | The stay summary, unit detail facts, dates. |
+| Price breakdown | `.ui-price-breakdown`, `.ui-money-*` | All-in total, deposit, amounts due and paid, using the `GUEST_FACT_LABELS` wording. |
+| Banner, status | `.ui-banner--{success,warning,danger,neutral}`, `.ui-status` | Deadlines, outcomes, plain-text state. |
+| Steps | `.ui-steps` | "What happens next" lists. |
+| Panel, action bar | `.ui-panel`, `.ui-action-bar` | Grouped sections and the sticky primary action. |
+| Buttons, chips, fields, links | `.ui-button`, `.ui-chip`, `.ui-field`, `.ui-link`, `.ui-icon-button` | Controls, 44px minimum target. |
+| Segmented choice, upload | `.ui-segmented`, `.ui-upload` | Payment method choice and receipt upload. |
+| Empty, stale, skeleton | `.ui-empty`, `.ui-stale`, `.ui-skeleton` | Error pages, expired content, loading. |
+
+Dark mode comes from the semantic tokens only (`prefers-color-scheme: dark` and `data-theme="dark"`); the ticket takes its dark surface and border from tokens, never literals. Retired in issue 11: `.waiting-panel*`, `.stay-result` and the page-level payment style string. `.stay-card` and `.stay-grid` remain only as the client's hooks on the Weaver cards, which also carry `.ui-stay-card`.
 
 ### Foundation implementation entry points
 

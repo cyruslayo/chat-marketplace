@@ -1,6 +1,6 @@
 "use strict";
 (() => {
-  // ../chat-marketplace/node_modules/@weaver/web/dist/basic/layout.js
+  // node_modules/@weaver/web/dist/basic/layout.js
   function applyBasicHook(element, component) {
     element.setAttribute("data-a2ui-component", component);
   }
@@ -43,7 +43,7 @@
     return relationship.kind === "single" ? relationship.child === void 0 ? [] : [relationship.child] : relationship.children;
   }
 
-  // ../chat-marketplace/node_modules/@weaver/web/dist/basic/markdown.js
+  // node_modules/@weaver/web/dist/basic/markdown.js
   function appendText(document2, parent, text) {
     const lines = text.split("\n");
     lines.forEach((line, index) => {
@@ -106,7 +106,7 @@
     return [...output.childNodes];
   }
 
-  // ../chat-marketplace/node_modules/@weaver/web/dist/basic/styles.js
+  // node_modules/@weaver/web/dist/basic/styles.js
   var basicSpace = "var(--a2ui-space, 8px)";
   var basicRadius = "var(--a2ui-radius, 8px)";
   var basicOutline = "var(--a2ui-color-outline, rgba(0, 0, 0, 0.22))";
@@ -123,7 +123,7 @@
     appendBasicStyle(element, `border: 1px solid ${basicOutline}; border-radius: ${basicRadius}`);
   }
 
-  // ../chat-marketplace/node_modules/@weaver/web/dist/basic/renderers.js
+  // node_modules/@weaver/web/dist/basic/renderers.js
   var textElements = {
     h1: "h1",
     h2: "h2",
@@ -482,7 +482,7 @@
     return button;
   };
 
-  // ../chat-marketplace/node_modules/@weaver/web/dist/basic/icon.js
+  // node_modules/@weaver/web/dist/basic/icon.js
   var SVG_NAMESPACE = "http://www.w3.org/2000/svg";
   function createSvg(document2, svgPath) {
     const svg = document2.createElementNS(SVG_NAMESPACE, "svg");
@@ -514,7 +514,7 @@
     };
   }
 
-  // ../chat-marketplace/node_modules/@weaver/web/dist/basic/inputs.js
+  // node_modules/@weaver/web/dist/basic/inputs.js
   function createBasicInputRenderers(regexMatcher, dateTimeInputLocalValueResolver) {
     let opaqueId2 = 0;
     const nextId = (kind) => `weaver-basic-${kind}-${++opaqueId2}`;
@@ -874,7 +874,7 @@
       control.setAttribute(name, normalized);
   }
 
-  // ../chat-marketplace/node_modules/@weaver/web/dist/basic/media.js
+  // node_modules/@weaver/web/dist/basic/media.js
   var imageFits = {
     contain: "contain",
     cover: "cover",
@@ -966,7 +966,7 @@
     return { Image, Video, AudioPlayer };
   }
 
-  // ../chat-marketplace/node_modules/@weaver/web/dist/basic/createBasicCatalogRendererRegistrations.js
+  // node_modules/@weaver/web/dist/basic/createBasicCatalogRendererRegistrations.js
   function createBasicCatalogRendererRegistrations(options) {
     const inputs = createBasicInputRenderers(options.regexMatcher, options.dateTimeInputLocalValueResolver);
     const media = createBasicMediaRenderers(options.resourcePolicy);
@@ -992,7 +992,7 @@
     ];
   }
 
-  // ../chat-marketplace/node_modules/@weaver/web/dist/basic/theme.js
+  // node_modules/@weaver/web/dist/basic/theme.js
   function createBasicCatalogThemeAdapter(options) {
     return (input) => {
       if (input.catalogId !== options.catalogId)
@@ -1006,7 +1006,7 @@
     };
   }
 
-  // ../chat-marketplace/node_modules/@weaver/core/dist/data-model/clone.js
+  // node_modules/@weaver/core/dist/data-model/clone.js
   function cloneJson(value) {
     if (value === null || typeof value !== "object")
       return value;
@@ -1021,7 +1021,7 @@
     return JSON.stringify(left) === JSON.stringify(right);
   }
 
-  // ../chat-marketplace/node_modules/@weaver/core/dist/data-model/pointer.js
+  // node_modules/@weaver/core/dist/data-model/pointer.js
   var success = (value) => ({ ok: true, value });
   function parsePointer(path) {
     if (path === "/")
@@ -1093,7 +1093,7 @@
     return true;
   }
 
-  // ../chat-marketplace/node_modules/@weaver/core/dist/data-context/path.js
+  // node_modules/@weaver/core/dist/data-context/path.js
   var success2 = (value) => ({ ok: true, value });
   function resolveScopedPath(path, scopeTokens) {
     if (path.startsWith("/")) {
@@ -1127,7 +1127,7 @@
     return success2({ absolutePath: formatPointer(tokens), tokens });
   }
 
-  // ../chat-marketplace/node_modules/@weaver/core/dist/data-context/DataContext.js
+  // node_modules/@weaver/core/dist/data-context/DataContext.js
   var success3 = (value) => ({ ok: true, value });
   var DataContext = class _DataContext {
     #dataModel;
@@ -1199,7 +1199,7 @@
     }
   };
 
-  // ../chat-marketplace/node_modules/@weaver/core/dist/data-context/types.js
+  // node_modules/@weaver/core/dist/data-context/types.js
   function isDataPathBinding(value) {
     if (value === null || typeof value !== "object" || Array.isArray(value))
       return false;
@@ -1207,7 +1207,7 @@
     return keys.length === 1 && keys[0] === "path" && typeof value.path === "string";
   }
 
-  // ../chat-marketplace/node_modules/@weaver/core/dist/functions/FunctionRegistry.js
+  // node_modules/@weaver/core/dist/functions/FunctionRegistry.js
   var key = (catalogId, name) => JSON.stringify([catalogId, name]);
   var FunctionRegistry = class {
     #catalogs;
@@ -1265,7 +1265,7 @@
     }
   };
 
-  // ../chat-marketplace/node_modules/@weaver/core/dist/functions/types.js
+  // node_modules/@weaver/core/dist/functions/types.js
   function isFunctionCall(value) {
     if (value === null || typeof value !== "object" || Array.isArray(value))
       return false;
@@ -1282,7 +1282,7 @@
     return !("returnType" in record) || typeof record.returnType === "string" && ["string", "number", "boolean", "array", "object", "any", "void"].includes(record.returnType);
   }
 
-  // ../chat-marketplace/node_modules/@weaver/core/dist/functions/FunctionEvaluator.js
+  // node_modules/@weaver/core/dist/functions/FunctionEvaluator.js
   var MAX_DEFAULT_DEPTH = 32;
   var RecursiveFunctionFailure = class {
     error;
@@ -1540,7 +1540,7 @@
     }
   };
 
-  // ../chat-marketplace/node_modules/@weaver/core/dist/actions/ActionContextResolver.js
+  // node_modules/@weaver/core/dist/actions/ActionContextResolver.js
   function cloneJson2(value) {
     if (value === null || typeof value !== "object")
       return value;
@@ -1596,7 +1596,7 @@
     }
   };
 
-  // ../chat-marketplace/node_modules/@weaver/core/dist/checks/CheckEvaluator.js
+  // node_modules/@weaver/core/dist/checks/CheckEvaluator.js
   function actualType2(value) {
     if (value === null)
       return "null";
@@ -1740,7 +1740,7 @@
     }
   };
 
-  // ../chat-marketplace/node_modules/@weaver/core/dist/actions/ActionDispatcher.js
+  // node_modules/@weaver/core/dist/actions/ActionDispatcher.js
   function cloneJson3(value) {
     if (value === null || typeof value !== "object")
       return value;
@@ -1855,7 +1855,7 @@
     }
   };
 
-  // ../chat-marketplace/node_modules/@weaver/core/dist/basic-functions/formatString.js
+  // node_modules/@weaver/core/dist/basic-functions/formatString.js
   var _a;
   var ExpressionParser = class {
     source;
@@ -2003,7 +2003,7 @@
     throw new Error("Unterminated interpolation");
   }
 
-  // ../chat-marketplace/node_modules/@weaver/core/dist/basic-catalog/generated-basic-catalog.js
+  // node_modules/@weaver/core/dist/basic-catalog/generated-basic-catalog.js
   var A2UI_V091_BASIC_CATALOG_ID = "https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json";
   var A2UI_V091_BASIC_CATALOG = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -4549,7 +4549,7 @@
     }
   };
 
-  // ../chat-marketplace/node_modules/@weaver/core/dist/basic-catalog/index.js
+  // node_modules/@weaver/core/dist/basic-catalog/index.js
   function cloneJson4(value) {
     if (value === null || typeof value !== "object")
       return value;
@@ -4567,7 +4567,7 @@
     };
   }
 
-  // ../chat-marketplace/node_modules/@weaver/core/dist/catalog/schema.js
+  // node_modules/@weaver/core/dist/catalog/schema.js
   var A2UI_CATALOG_SCHEMA = {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     type: "object",
@@ -4587,7 +4587,7 @@
     additionalProperties: true
   };
 
-  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/deep-compare-strict.js
+  // node_modules/@cfworker/json-schema/dist/esm/deep-compare-strict.js
   function deepCompareStrict(a, b) {
     const typeofa = typeof a;
     if (typeofa !== typeof b) {
@@ -4628,7 +4628,7 @@
     return a === b;
   }
 
-  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/pointer.js
+  // node_modules/@cfworker/json-schema/dist/esm/pointer.js
   function encodePointer(p) {
     return encodeURI(escapePointer(p));
   }
@@ -4636,7 +4636,7 @@
     return p.replace(/~/g, "~0").replace(/\//g, "~1");
   }
 
-  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/dereference.js
+  // node_modules/@cfworker/json-schema/dist/esm/dereference.js
   var schemaArrayKeyword = {
     prefixItems: true,
     items: true,
@@ -4757,7 +4757,7 @@
     return lookup;
   }
 
-  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/format.js
+  // node_modules/@cfworker/json-schema/dist/esm/format.js
   var DATE = /^(\d\d\d\d)-(\d\d)-(\d\d)$/;
   var DAYS = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
   var TIME = /^(\d\d):(\d\d):(\d\d)(\.\d+)?(z|[+-]\d\d(?::?\d\d)?)?$/i;
@@ -4850,7 +4850,7 @@
     }
   }
 
-  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/types.js
+  // node_modules/@cfworker/json-schema/dist/esm/types.js
   var OutputFormat;
   (function(OutputFormat2) {
     OutputFormat2[OutputFormat2["Flag"] = 1] = "Flag";
@@ -4858,7 +4858,7 @@
     OutputFormat2[OutputFormat2["Detailed"] = 4] = "Detailed";
   })(OutputFormat || (OutputFormat = {}));
 
-  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/ucs2-length.js
+  // node_modules/@cfworker/json-schema/dist/esm/ucs2-length.js
   function ucs2length(s) {
     let result = 0;
     let length2 = s.length;
@@ -4877,7 +4877,7 @@
     return result;
   }
 
-  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/validate.js
+  // node_modules/@cfworker/json-schema/dist/esm/validate.js
   function validate(instance, schema, draft = "2019-09", lookup = dereference(schema), shortCircuit = true, recursiveAnchor = null, instanceLocation = "#", schemaLocation = "#", evaluated = /* @__PURE__ */ Object.create(null)) {
     if (schema === true) {
       return { valid: true, errors: [] };
@@ -5635,7 +5635,7 @@ Known schemas:
     return { valid: errors.length === 0, errors };
   }
 
-  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/validator.js
+  // node_modules/@cfworker/json-schema/dist/esm/validator.js
   var Validator = class {
     schema;
     draft;
@@ -5658,7 +5658,7 @@ Known schemas:
     }
   };
 
-  // ../chat-marketplace/node_modules/@weaver/core/dist/catalog/schema-validator.js
+  // node_modules/@weaver/core/dist/catalog/schema-validator.js
   var DRAFT = "2020-12";
   var TYPES = /* @__PURE__ */ new Set(["null", "boolean", "object", "array", "number", "string", "integer"]);
   function pointer(location2) {
@@ -5792,7 +5792,7 @@ Known schemas:
     return visit(schema, schema);
   }
 
-  // ../chat-marketplace/node_modules/@weaver/core/dist/catalog/CatalogRegistry.js
+  // node_modules/@weaver/core/dist/catalog/CatalogRegistry.js
   var COMPONENT_ID_REF = "common_types.json#/$defs/ComponentId";
   var CHILD_LIST_REF = "common_types.json#/$defs/ChildList";
   var CHECKABLE_REF = "common_types.json#/$defs/Checkable";
@@ -6430,7 +6430,7 @@ Known schemas:
     }
   };
 
-  // ../chat-marketplace/node_modules/@weaver/core/dist/component-tree/ComponentTreeResolver.js
+  // node_modules/@weaver/core/dist/component-tree/ComponentTreeResolver.js
   function cloneJson6(value) {
     if (value === null || typeof value !== "object")
       return value;
@@ -6575,7 +6575,7 @@ Known schemas:
     }
   };
 
-  // ../chat-marketplace/node_modules/@weaver/core/dist/component-instances/ComponentInstanceResolver.js
+  // node_modules/@weaver/core/dist/component-instances/ComponentInstanceResolver.js
   function cloneJson7(value) {
     if (value === null || typeof value !== "object")
       return value;
@@ -6764,7 +6764,7 @@ Known schemas:
     }
   };
 
-  // ../chat-marketplace/node_modules/@weaver/core/dist/component-properties/ComponentPropertyResolver.js
+  // node_modules/@weaver/core/dist/component-properties/ComponentPropertyResolver.js
   function cloneJson8(value) {
     if (value === null || typeof value !== "object")
       return value;
@@ -7090,7 +7090,7 @@ Known schemas:
     }
   };
 
-  // ../chat-marketplace/node_modules/@weaver/core/dist/input-binding/InputBindingWriter.js
+  // node_modules/@weaver/core/dist/input-binding/InputBindingWriter.js
   function compatible2(kind, value) {
     switch (kind) {
       case "dynamicString":
@@ -7179,7 +7179,7 @@ Known schemas:
     }
   };
 
-  // ../chat-marketplace/node_modules/@weaver/core/dist/data-model/DataModel.js
+  // node_modules/@weaver/core/dist/data-model/DataModel.js
   var success4 = (value) => ({ ok: true, value });
   var DataModel = class {
     #state = {};
@@ -7399,12 +7399,12 @@ Known schemas:
     }
   };
 
-  // ../chat-marketplace/node_modules/@weaver/core/dist/protocol/a2ui/v0_9_1/outbound/client-capabilities.js
+  // node_modules/@weaver/core/dist/protocol/a2ui/v0_9_1/outbound/client-capabilities.js
   function buildA2UIClientCapabilities(input) {
     return { "v0.9": { supportedCatalogIds: [...input.supportedCatalogIds] } };
   }
 
-  // ../chat-marketplace/node_modules/@weaver/core/dist/protocol/a2ui/v0_9_1/outbound/validation-error.js
+  // node_modules/@weaver/core/dist/protocol/a2ui/v0_9_1/outbound/validation-error.js
   function buildA2UIValidationFailedClientMessage(input) {
     if (input.surfaceId.length === 0)
       throw new TypeError("surfaceId must not be empty");
@@ -7490,7 +7490,7 @@ Known schemas:
     return typeof value === "object" && value !== null && !Array.isArray(value);
   }
 
-  // ../chat-marketplace/node_modules/@weaver/core/dist/protocol/a2ui/v0_9_1/validation.js
+  // node_modules/@weaver/core/dist/protocol/a2ui/v0_9_1/validation.js
   var MESSAGE_KEYS = [
     "createSurface",
     "updateComponents",
@@ -7635,7 +7635,7 @@ Known schemas:
     }
   }
 
-  // ../chat-marketplace/node_modules/@weaver/core/dist/surfaces/clone.js
+  // node_modules/@weaver/core/dist/surfaces/clone.js
   function cloneJson9(value) {
     if (value === null || typeof value !== "object")
       return value;
@@ -7649,7 +7649,7 @@ Known schemas:
     return clone;
   }
 
-  // ../chat-marketplace/node_modules/@weaver/core/dist/surfaces/SurfaceStore.js
+  // node_modules/@weaver/core/dist/surfaces/SurfaceStore.js
   var success5 = (value) => ({ ok: true, value });
   var SurfaceStore = class {
     #surfaces = /* @__PURE__ */ new Map();
@@ -7812,7 +7812,7 @@ Known schemas:
     }
   };
 
-  // ../chat-marketplace/node_modules/@weaver/core/dist/message-processor/A2UIMessageProcessor.js
+  // node_modules/@weaver/core/dist/message-processor/A2UIMessageProcessor.js
   var A2UIMessageProcessor = class {
     store;
     catalogs;
@@ -7897,7 +7897,7 @@ Known schemas:
     }
   };
 
-  // ../chat-marketplace/node_modules/@weaver/core/dist/runtime/WeaverRuntime.js
+  // node_modules/@weaver/core/dist/runtime/WeaverRuntime.js
   var WeaverRuntime = class {
     #services;
     /** @internal Construct runtimes through createWeaverRuntime(). */
@@ -8044,7 +8044,7 @@ Known schemas:
     }) };
   }
 
-  // ../chat-marketplace/node_modules/@weaver/web/dist/renderers/errors.js
+  // node_modules/@weaver/web/dist/renderers/errors.js
   var RendererRegistryConfigurationError = class extends Error {
     code = "RENDERER_ALREADY_REGISTERED";
     catalogId;
@@ -8057,7 +8057,7 @@ Known schemas:
     }
   };
 
-  // ../chat-marketplace/node_modules/@weaver/web/dist/renderers/RendererRegistry.js
+  // node_modules/@weaver/web/dist/renderers/RendererRegistry.js
   var key2 = (catalogId, component) => JSON.stringify([catalogId, component]);
   var RendererRegistry = class {
     #renderers = /* @__PURE__ */ new Map();
@@ -8085,7 +8085,7 @@ Known schemas:
     }
   };
 
-  // ../chat-marketplace/node_modules/@weaver/web/dist/surface/WebSurfaceRenderer.js
+  // node_modules/@weaver/web/dist/surface/WebSurfaceRenderer.js
   var identityKey = (sourceComponentId, scopePath) => JSON.stringify([sourceComponentId, scopePath]);
   var controlIdentityKey = (sourceComponentId, scopePath, localKey) => JSON.stringify([sourceComponentId, scopePath, localKey]);
   var WebSurfaceRenderer = class {
@@ -8462,7 +8462,7 @@ Known schemas:
     return result.ok ? { ok: true, value: { ...result.value } } : structuredClone(result);
   }
 
-  // ../chat-marketplace/node_modules/@weaver/web/dist/basic-web-runtime/createBasicWebRuntime.js
+  // node_modules/@weaver/web/dist/basic-web-runtime/createBasicWebRuntime.js
   function createBasicWebRuntime(config = {}) {
     const catalogId = A2UI_V091_BASIC_CATALOG_ID;
     const runtimeCreated = createWeaverRuntime({
@@ -9051,7 +9051,10 @@ Known schemas:
     return formatBookingDeadline(iso).replace(/^Pay by /, "");
   }
   function minutesUntil(deadlineIso, now) {
-    return Math.max(0, Math.ceil((Date.parse(deadlineIso) - now.getTime()) / 6e4));
+    return Math.max(
+      0,
+      Math.ceil((Date.parse(deadlineIso) - now.getTime()) / 6e4)
+    );
   }
   var CHECK_IN_LABEL = GUEST_FACT_LABELS.checkIn;
   var CHECK_OUT_LABEL = GUEST_FACT_LABELS.checkOut;
@@ -9156,7 +9159,9 @@ Known schemas:
   }
   function stayCardInnerHtml(parts) {
     const href = escapeHtml(parts.href);
-    const facts = parts.facts.map((fact) => `<span class="ui-fact">${icon(fact.icon)}${escapeHtml(fact.text)}</span>`).join("");
+    const facts = parts.facts.map(
+      (fact) => `<span class="ui-fact">${icon(fact.icon)}${escapeHtml(fact.text)}</span>`
+    ).join("");
     const deposit = parts.deposit === void 0 ? "" : `<p class="ui-money-metadata">+ ${escapeHtml(parts.deposit)} ${GUEST_FACT_LABELS.refundableSecurityDeposit}</p>`;
     return `${stayPhotoHtml(parts)}<p class="ui-stay-card__where">${icon("pin")}${escapeHtml(parts.where)}</p><h2 class="ui-stay-card__title"><a href="${href}">${escapeHtml(parts.title)}</a></h2><div class="ui-stay-card__facts" aria-label="Stay facts">${facts}</div><div class="ui-stay-card__total"><p class="ui-money-total">${escapeHtml(parts.total)}</p><p class="ui-money-metadata">${escapeHtml(parts.totalLabel)}</p>${deposit}</div><a class="ui-button ui-button--primary ui-button--block ui-stay-card__view" href="${href}">${GUEST_GLOSSARY.viewUnit}<span class="ui-sr-only">: ${escapeHtml(parts.title)}</span></a>`;
   }
@@ -9189,12 +9194,20 @@ Known schemas:
   var criteriaToggle = requiredElement("criteria-toggle");
   var criteriaSummary = requiredElement("criteria-summary");
   var newConversationButton = requiredElement("new-conversation");
-  var newConversationConfirm = requiredElement("new-conversation-confirm");
-  var newConversationStart = requiredElement("new-conversation-start");
-  var newConversationCancel = requiredElement("new-conversation-cancel");
+  var newConversationConfirm = requiredElement(
+    "new-conversation-confirm"
+  );
+  var newConversationStart = requiredElement(
+    "new-conversation-start"
+  );
+  var newConversationCancel = requiredElement(
+    "new-conversation-cancel"
+  );
   function getThreadId() {
     try {
-      const urlParam = new URLSearchParams(window.location.search).get("threadId");
+      const urlParam = new URLSearchParams(window.location.search).get(
+        "threadId"
+      );
       if (urlParam && /^g-[a-f0-9-]{6,64}$/.test(urlParam)) {
         window.sessionStorage.setItem("shortlet-concierge-thread", urlParam);
         return urlParam;
@@ -9217,13 +9230,19 @@ Known schemas:
     try {
       const parsed = new URL(value);
       const hostname = parsed.hostname.toLowerCase().replace(/\.$/, "");
-      if (parsed.protocol !== "https:" || parsed.username !== "" || parsed.password !== "") return false;
-      if (hostname === "localhost" || hostname.endsWith(".localhost") || hostname.endsWith(".local") || hostname.endsWith(".internal") || hostname.endsWith(".lan")) return false;
+      if (parsed.protocol !== "https:" || parsed.username !== "" || parsed.password !== "")
+        return false;
+      if (hostname === "localhost" || hostname.endsWith(".localhost") || hostname.endsWith(".local") || hostname.endsWith(".internal") || hostname.endsWith(".lan"))
+        return false;
       if (hostname.includes(":") || hostname.startsWith("[")) return false;
-      if (/^(0\.|10\.|127\.|169\.254\.|192\.0\.0\.|192\.168\.|198\.(18|19)\.|224\.)/.test(hostname)) return false;
+      if (/^(0\.|10\.|127\.|169\.254\.|192\.0\.0\.|192\.168\.|198\.(18|19)\.|224\.)/.test(
+        hostname
+      ))
+        return false;
       if (/^100\.(6[4-9]|[78]\d|9\d)\./.test(hostname)) return false;
       if (/^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) return false;
-      if (hostname === "::1" || hostname.startsWith("fc") || hostname.startsWith("fd") || hostname.startsWith("fe8")) return false;
+      if (hostname === "::1" || hostname.startsWith("fc") || hostname.startsWith("fd") || hostname.startsWith("fe8"))
+        return false;
       return true;
     } catch {
       return false;
@@ -9244,7 +9263,8 @@ Known schemas:
       if (index === 0) image.fetchPriority = "high";
       watchPhotoFailure(image);
     }
-    for (const gallery of mount.querySelectorAll(".listing-gallery")) enhanceListingGallery(gallery);
+    for (const gallery of mount.querySelectorAll(".listing-gallery"))
+      enhanceListingGallery(gallery);
   }
   var UNIT_TILE_FACTS = [
     { icon: "bed", label: GUEST_FACT_LABELS.bedrooms },
@@ -9252,17 +9272,25 @@ Known schemas:
     { icon: "users", label: GUEST_FACT_LABELS.sleeps }
   ];
   function organizeUnitDetail(mount) {
-    const root = mount.querySelector('[data-a2ui-component="Column"]');
+    const root = mount.querySelector(
+      '[data-a2ui-component="Column"]'
+    );
     if (!root) return;
-    const tileFacts = UNIT_TILE_FACTS.map((tile) => ({ ...tile, fact: findFact([...root.children], tile.label) }));
-    if (tileFacts.some((tile) => !tile.fact || tile.fact.value.trim() === "")) return;
+    const tileFacts = UNIT_TILE_FACTS.map((tile) => ({
+      ...tile,
+      fact: findFact([...root.children], tile.label)
+    }));
+    if (tileFacts.some((tile) => !tile.fact || tile.fact.value.trim() === ""))
+      return;
     root.classList.add("unit-detail-root");
     const images = [];
     for (const child of root.children) {
       if (!(child instanceof HTMLImageElement)) break;
       images.push(child);
     }
-    const unitTitle = [...root.children].find((child) => child.tagName === "H2" && !isMoney(child.textContent ?? ""))?.textContent?.trim() || "this apartment";
+    const unitTitle = [...root.children].find(
+      (child) => child.tagName === "H2" && !isMoney(child.textContent ?? "")
+    )?.textContent?.trim() || "this apartment";
     let gallery;
     if (images.length > 0) {
       gallery = buildListingGallery(document, unitTitle, images);
@@ -9278,14 +9306,31 @@ Known schemas:
       }
     }
     const children = [...root.children];
-    const title = children.find((child) => child.tagName === "H2" && !isMoney(child.textContent ?? ""));
-    const amount = children.find((child) => child !== title && child.tagName === "H2" && isMoney(child.textContent ?? ""));
-    const priceLabel = children.find((child) => isPriceLabel(child.textContent?.trim() ?? ""));
-    const where = children.find((child) => child.tagName === "SMALL" && child !== priceLabel);
-    const deposit = findFact(children, GUEST_FACT_LABELS.refundableSecurityDeposit);
-    const aboutHeading = children.find((child) => child.textContent?.trim() === UNIT_DETAIL_ABOUT_HEADING);
-    const amenitiesHeading = children.find((child) => child.textContent?.trim() === "Amenities");
-    const action = root.querySelector(':scope > [data-a2ui-component="Row"]');
+    const title = children.find(
+      (child) => child.tagName === "H2" && !isMoney(child.textContent ?? "")
+    );
+    const amount = children.find(
+      (child) => child !== title && child.tagName === "H2" && isMoney(child.textContent ?? "")
+    );
+    const priceLabel = children.find(
+      (child) => isPriceLabel(child.textContent?.trim() ?? "")
+    );
+    const where = children.find(
+      (child) => child.tagName === "SMALL" && child !== priceLabel
+    );
+    const deposit = findFact(
+      children,
+      GUEST_FACT_LABELS.refundableSecurityDeposit
+    );
+    const aboutHeading = children.find(
+      (child) => child.textContent?.trim() === UNIT_DETAIL_ABOUT_HEADING
+    );
+    const amenitiesHeading = children.find(
+      (child) => child.textContent?.trim() === "Amenities"
+    );
+    const action = root.querySelector(
+      ':scope > [data-a2ui-component="Row"]'
+    );
     const sheet = document.createElement("section");
     sheet.className = "unit-detail-sheet";
     sheet.setAttribute("aria-label", "Stay details");
@@ -9297,7 +9342,9 @@ Known schemas:
     if (title) sheet.append(title);
     {
       const template = document.createElement("template");
-      template.innerHTML = unitTilesHtml(tileFacts.map((tile) => ({ icon: tile.icon, text: tile.fact.value })));
+      template.innerHTML = unitTilesHtml(
+        tileFacts.map((tile) => ({ icon: tile.icon, text: tile.fact.value }))
+      );
       sheet.append(template.content);
     }
     if (amount) {
@@ -9322,8 +9369,13 @@ Known schemas:
     priceLabel?.remove();
     amount?.remove();
     deposit?.element.remove();
-    const amenitiesNodes = amenitiesHeading ? [amenitiesHeading, ...amenitiesHeading.nextElementSibling ? [amenitiesHeading.nextElementSibling] : []] : [];
-    const supporting = [...root.children].filter((child) => child !== action && !amenitiesNodes.includes(child));
+    const amenitiesNodes = amenitiesHeading ? [
+      amenitiesHeading,
+      ...amenitiesHeading.nextElementSibling ? [amenitiesHeading.nextElementSibling] : []
+    ] : [];
+    const supporting = [...root.children].filter(
+      (child) => child !== action && !amenitiesNodes.includes(child)
+    );
     root.replaceChildren();
     if (gallery) root.append(gallery);
     root.append(sheet);
@@ -9374,7 +9426,9 @@ Known schemas:
     return date2.replaceAll(",", " ").split(" ").find((word) => word !== "" && Number.isInteger(Number(word)));
   }
   function replaceWithKitMarkup(root, html, consumed) {
-    const present = consumed.filter((element) => element !== void 0 && element.parentElement === root);
+    const present = consumed.filter(
+      (element) => element !== void 0 && element.parentElement === root
+    );
     const template = document.createElement("template");
     template.innerHTML = html;
     const markup = template.content.firstElementChild;
@@ -9383,47 +9437,82 @@ Known schemas:
     for (const element of present) element.remove();
   }
   function organizeBookingTicket(mount) {
-    const root = mount.querySelector('[data-a2ui-component="Column"]');
+    const root = mount.querySelector(
+      '[data-a2ui-component="Column"]'
+    );
     if (!root) return;
     const children = [...root.children];
-    const title = children.find((child) => child.tagName === "H3" && guestFactValue(child.textContent ?? "", GUEST_FACT_LABELS.allInStayTotal) === void 0);
+    const title = children.find(
+      (child) => child.tagName === "H3" && guestFactValue(
+        child.textContent ?? "",
+        GUEST_FACT_LABELS.allInStayTotal
+      ) === void 0
+    );
     const checkIn = findFact(children, GUEST_FACT_LABELS.checkIn);
     const checkOut = findFact(children, GUEST_FACT_LABELS.checkOut);
     const stay = findFact(children, GUEST_FACT_LABELS.stay);
     const checkInDay = checkIn === void 0 ? void 0 : dayNumeral(checkIn.value);
     const checkOutDay = checkOut === void 0 ? void 0 : dayNumeral(checkOut.value);
     if (title && checkIn && checkOut && stay && checkInDay && checkOutDay) {
-      replaceWithKitMarkup(root, ticketHtml({
-        title: title.textContent?.trim() ?? "",
-        checkIn: { day: checkInDay, date: checkIn.value },
-        checkOut: { day: checkOutDay, date: checkOut.value },
-        foot: stay.value + (activePayload?.confirmation ? ` \xB7 Booking reference ${activePayload.confirmation.bookingReference}` : "")
-      }), [title, checkIn.element, checkOut.element, stay.element]);
+      replaceWithKitMarkup(
+        root,
+        ticketHtml({
+          title: title.textContent?.trim() ?? "",
+          checkIn: { day: checkInDay, date: checkIn.value },
+          checkOut: { day: checkOutDay, date: checkOut.value },
+          foot: stay.value + (activePayload?.confirmation ? ` \xB7 Booking reference ${activePayload.confirmation.bookingReference}` : "")
+        }),
+        [title, checkIn.element, checkOut.element, stay.element]
+      );
     }
     const total = findFact(children, GUEST_FACT_LABELS.allInStayTotal);
     if (!total) return;
-    const deposit = findFact(children, GUEST_FACT_LABELS.refundableSecurityDeposit);
+    const deposit = findFact(
+      children,
+      GUEST_FACT_LABELS.refundableSecurityDeposit
+    );
     const due = findFact(children, GUEST_FACT_LABELS.amountDueNow);
     const paid = findFact(children, GUEST_FACT_LABELS.amountPaid);
     const next = findFact(children, GUEST_FACT_LABELS.nextPayment);
-    const condition = children.find((child) => child.textContent?.trim() === GUEST_FACT_LABELS.ifRequestAccepted);
-    replaceWithKitMarkup(root, breakdownHtml({
-      ...activePayload?.confirmation?.depositCollected ? { depositCollected: true } : {},
-      ...condition ? { condition: GUEST_FACT_LABELS.ifRequestAccepted } : {},
-      total: total.value,
-      ...deposit ? { deposit: deposit.value } : {},
-      ...due ? { due: due.value } : {},
-      ...paid ? { paid: paid.value } : {},
-      ...next ? { next: next.value } : {}
-    }), [condition, total.element, deposit?.element, due?.element, paid?.element, next?.element]);
+    const condition = children.find(
+      (child) => child.textContent?.trim() === GUEST_FACT_LABELS.ifRequestAccepted
+    );
+    replaceWithKitMarkup(
+      root,
+      breakdownHtml({
+        ...activePayload?.confirmation?.depositCollected ? { depositCollected: true } : {},
+        ...condition ? { condition: GUEST_FACT_LABELS.ifRequestAccepted } : {},
+        total: total.value,
+        ...deposit ? { deposit: deposit.value } : {},
+        ...due ? { due: due.value } : {},
+        ...paid ? { paid: paid.value } : {},
+        ...next ? { next: next.value } : {}
+      }),
+      [
+        condition,
+        total.element,
+        deposit?.element,
+        due?.element,
+        paid?.element,
+        next?.element
+      ]
+    );
   }
   function organizeConfirmation(mount, content) {
-    const root = mount.querySelector('[data-a2ui-component="Column"]');
+    const root = mount.querySelector(
+      '[data-a2ui-component="Column"]'
+    );
     const ticket = root?.querySelector(":scope > .ui-ticket");
-    const breakdown = root?.querySelector(":scope > .ui-price-breakdown");
+    const breakdown = root?.querySelector(
+      ":scope > .ui-price-breakdown"
+    );
     if (!root || !ticket || !breakdown) return;
     const template = document.createElement("template");
-    template.innerHTML = confirmationScreenHtml(content, ticket.outerHTML, breakdown.outerHTML);
+    template.innerHTML = confirmationScreenHtml(
+      content,
+      ticket.outerHTML,
+      breakdown.outerHTML
+    );
     root.replaceChildren(template.content);
     root.querySelector(".request-actions a")?.addEventListener("click", (event) => {
       event.preventDefault();
@@ -9501,16 +9590,28 @@ Known schemas:
       startCountdown(activePayload.waiting, countdown, true);
   }
   function organizeRequestScreen(mount, content) {
-    const root = mount.querySelector('[data-a2ui-component="Column"]');
+    const root = mount.querySelector(
+      '[data-a2ui-component="Column"]'
+    );
     const ticket = root?.querySelector(":scope > .ui-ticket");
-    const breakdown = root?.querySelector(":scope > .ui-price-breakdown");
+    const breakdown = root?.querySelector(
+      ":scope > .ui-price-breakdown"
+    );
     if (!root || !ticket || !breakdown) return;
     const originalAction = root.querySelector("button");
-    if ((content.state === "draft" || content.state === "review") && !originalAction) return;
+    if ((content.state === "draft" || content.state === "review") && !originalAction)
+      return;
     const template = document.createElement("template");
-    template.innerHTML = requestScreenHtml(content, ticket.outerHTML, breakdown.outerHTML, breakdown.querySelector(".ui-money-total")?.textContent ?? void 0);
+    template.innerHTML = requestScreenHtml(
+      content,
+      ticket.outerHTML,
+      breakdown.outerHTML,
+      breakdown.querySelector(".ui-money-total")?.textContent ?? void 0
+    );
     const screen = template.content.firstElementChild;
-    const primaryForm = screen.querySelector(".request-actions form");
+    const primaryForm = screen.querySelector(
+      ".request-actions form"
+    );
     if (originalAction && (content.state === "draft" || content.state === "review")) {
       const binding = document.createElement("div");
       binding.hidden = true;
@@ -9521,11 +9622,14 @@ Known schemas:
       });
       root.replaceChildren(screen, binding);
     } else root.replaceChildren(screen);
-    for (const form of screen.querySelectorAll(".request-actions form")) {
-      if (new URL(form.action).pathname.endsWith("/conversation")) form.addEventListener("submit", (event) => {
-        event.preventDefault();
-        closeWorkspace(workspaceReopen);
-      });
+    for (const form of screen.querySelectorAll(
+      ".request-actions form"
+    )) {
+      if (new URL(form.action).pathname.endsWith("/conversation"))
+        form.addEventListener("submit", (event) => {
+          event.preventDefault();
+          closeWorkspace(workspaceReopen);
+        });
     }
     const change = screen.querySelector(".request-guests a");
     change?.addEventListener("click", (event) => {
@@ -9541,11 +9645,14 @@ Known schemas:
   function viewUnitIds(payload) {
     const ids = [];
     for (const message of payload?.a2uiMessages ?? []) {
-      if (!isRecord3(message) || !isRecord3(message.updateComponents) || !Array.isArray(message.updateComponents.components)) continue;
+      if (!isRecord3(message) || !isRecord3(message.updateComponents) || !Array.isArray(message.updateComponents.components))
+        continue;
       for (const component of message.updateComponents.components) {
-        if (!isRecord3(component) || !isRecord3(component.action) || !isRecord3(component.action.event)) continue;
+        if (!isRecord3(component) || !isRecord3(component.action) || !isRecord3(component.action.event))
+          continue;
         const context = component.action.event.context;
-        if (component.action.event.name === "shortlet.discovery.view-unit" && isRecord3(context) && typeof context.unitId === "string") ids.push(context.unitId);
+        if (component.action.event.name === "shortlet.discovery.view-unit" && isRecord3(context) && typeof context.unitId === "string")
+          ids.push(context.unitId);
       }
     }
     return ids;
@@ -9564,7 +9671,9 @@ Known schemas:
     const unitIds = viewUnitIds(activePayload);
     const rows = [];
     let listElement;
-    for (const [index, card] of [...mount.querySelectorAll('[data-a2ui-component="Card"]')].entries()) {
+    for (const [index, card] of [
+      ...mount.querySelectorAll('[data-a2ui-component="Card"]')
+    ].entries()) {
       const list = card.parentElement;
       if (list instanceof HTMLElement) {
         list.classList.add("stay-grid");
@@ -9572,22 +9681,37 @@ Known schemas:
         list.setAttribute("aria-label", "Stay search results");
         listElement = list;
       }
-      const body = card.querySelector(':scope > [data-weaver-mount] > [data-a2ui-component="Column"], :scope > [data-a2ui-component="Column"]');
+      const body = card.querySelector(
+        ':scope > [data-weaver-mount] > [data-a2ui-component="Column"], :scope > [data-a2ui-component="Column"]'
+      );
       const unitId = unitIds[index];
       if (!body || unitId === void 0) continue;
       const children = [...body.children];
-      const title = children.find((child) => child.tagName === "H3" && !isMoney(child.textContent ?? ""));
+      const title = children.find(
+        (child) => child.tagName === "H3" && !isMoney(child.textContent ?? "")
+      );
       const where = findFact(children, GUEST_FACT_LABELS.where);
       const factLine = children.find((child) => child.tagName === "P");
-      const priceLabel = children.find((child) => isPriceLabel(child.textContent?.trim() ?? ""));
-      const price = children.find((child) => child.tagName === "H3" && isMoney(child.textContent ?? ""));
+      const priceLabel = children.find(
+        (child) => isPriceLabel(child.textContent?.trim() ?? "")
+      );
+      const price = children.find(
+        (child) => child.tagName === "H3" && isMoney(child.textContent ?? "")
+      );
       if (!title || !where || !factLine || !priceLabel || !price) continue;
-      const deposit = findFact(children, GUEST_FACT_LABELS.refundableSecurityDeposit);
+      const deposit = findFact(
+        children,
+        GUEST_FACT_LABELS.refundableSecurityDeposit
+      );
       const fit = findFact(children, GUEST_FACT_LABELS.fitReason);
       const photos = findFact(children, GUEST_FACT_LABELS.photos);
       const photoCount = photos === void 0 ? void 0 : Number(photos.value);
-      const image = children.find((child) => child instanceof HTMLImageElement);
-      const buttons = children.filter((child) => child instanceof HTMLButtonElement);
+      const image = children.find(
+        (child) => child instanceof HTMLImageElement
+      );
+      const buttons = children.filter(
+        (child) => child instanceof HTMLButtonElement
+      );
       const view = buttons[0];
       const parts = {
         href: `/stays/${encodeURIComponent(unitId)}`,
@@ -9600,8 +9724,21 @@ Known schemas:
         ...image?.src ? { photoSrc: image.src } : {},
         ...photoCount === void 0 ? {} : { photoCount }
       };
-      const known = /* @__PURE__ */ new Set([title, where.element, factLine, priceLabel, price, deposit?.element, fit?.element, photos?.element, image, ...buttons]);
-      const extras = children.filter((child) => !known.has(child) && child.getAttribute("data-a2ui-component") !== "Divider");
+      const known = /* @__PURE__ */ new Set([
+        title,
+        where.element,
+        factLine,
+        priceLabel,
+        price,
+        deposit?.element,
+        fit?.element,
+        photos?.element,
+        image,
+        ...buttons
+      ]);
+      const extras = children.filter(
+        (child) => !known.has(child) && child.getAttribute("data-a2ui-component") !== "Divider"
+      );
       const template = document.createElement("template");
       template.innerHTML = stayCardInnerHtml(parts);
       card.replaceChildren(template.content);
@@ -9609,10 +9746,18 @@ Known schemas:
       card.setAttribute("role", "listitem");
       const anchor = card.querySelector(".ui-stay-card__view");
       if (view && anchor) {
-        view.classList.add("ui-button", "ui-button--primary", "ui-button--block", "ui-stay-card__view");
+        view.classList.add(
+          "ui-button",
+          "ui-button--primary",
+          "ui-button--block",
+          "ui-stay-card__view"
+        );
         anchor.replaceWith(view);
       } else anchor?.remove();
-      openStayFrom(card.querySelector(".ui-stay-card__title a"), view);
+      openStayFrom(
+        card.querySelector(".ui-stay-card__title a"),
+        view
+      );
       fit?.element.classList.add("stay-card__fit");
       const facts = card.querySelector(".ui-stay-card__facts");
       for (const extra of [...extras].reverse()) facts?.after(extra);
@@ -9643,7 +9788,10 @@ Known schemas:
         const both = document.createElement("button");
         both.type = "button";
         both.className = "ui-link ui-result-rows__compare";
-        both.insertAdjacentHTML("beforeend", `See both side by side${icon("arrow-right")}`);
+        both.insertAdjacentHTML(
+          "beforeend",
+          `See both side by side${icon("arrow-right")}`
+        );
         both.addEventListener("click", () => void compareBoth());
         rowList.after(both);
       }
@@ -9653,7 +9801,9 @@ Known schemas:
   async function compareBoth() {
     if (comparingBoth) return;
     comparingBoth = true;
-    const compareButtons = () => [...activeWorkspace.querySelectorAll(".ui-stay-card")].map((card) => card.querySelector(".stay-card__compare"));
+    const compareButtons = () => [...activeWorkspace.querySelectorAll(".ui-stay-card")].map(
+      (card) => card.querySelector(".stay-card__compare")
+    );
     const picked = (button) => button?.textContent?.trim() === GUEST_COMPARE_LABELS.unpick;
     try {
       const [first, second] = compareButtons();
@@ -9680,11 +9830,21 @@ Known schemas:
     }
   }
   function decorateComparison(mount) {
-    const root = mount.querySelector('[data-a2ui-component="Column"]');
+    const root = mount.querySelector(
+      '[data-a2ui-component="Column"]'
+    );
     if (!root) return;
-    const rowElements = [...root.querySelectorAll(':scope > [data-a2ui-component="Row"]')];
-    const attributeRows = rowElements.filter((row) => row.previousElementSibling?.tagName === "H3");
-    const actionRow = rowElements.find((row) => row.querySelector("button") !== null);
+    const rowElements = [
+      ...root.querySelectorAll(
+        ':scope > [data-a2ui-component="Row"]'
+      )
+    ];
+    const attributeRows = rowElements.filter(
+      (row) => row.previousElementSibling?.tagName === "H3"
+    );
+    const actionRow = rowElements.find(
+      (row) => row.querySelector("button") !== null
+    );
     if (attributeRows.length === 0) return;
     const table = document.createElement("div");
     table.className = "ui-compare";
@@ -9696,7 +9856,11 @@ Known schemas:
       element.setAttribute("role", "row");
       return element;
     };
-    const cellsOf = (row) => [...row.querySelectorAll(':scope > [data-a2ui-component="Column"], :scope > [data-weaver-mount] > [data-a2ui-component="Column"]')];
+    const cellsOf = (row) => [
+      ...row.querySelectorAll(
+        ':scope > [data-a2ui-component="Column"], :scope > [data-weaver-mount] > [data-a2ui-component="Column"]'
+      )
+    ];
     const head = line("ui-compare__row--head");
     const corner = document.createElement("div");
     corner.setAttribute("role", "columnheader");
@@ -9738,20 +9902,26 @@ Known schemas:
   }
   function enhanceSurfacePresentation(mount, kind) {
     mount.dataset.surfaceKind = kind;
-    for (const button of mount.querySelectorAll("button")) button.classList.add("guest-action");
-    for (const field2 of mount.querySelectorAll("input, textarea, select")) field2.classList.add("guest-field");
-    for (const text of mount.querySelectorAll('[data-a2ui-component="Text"]')) {
+    for (const button of mount.querySelectorAll("button"))
+      button.classList.add("guest-action");
+    for (const field2 of mount.querySelectorAll("input, textarea, select"))
+      field2.classList.add("guest-field");
+    for (const text of mount.querySelectorAll(
+      '[data-a2ui-component="Text"]'
+    )) {
       const value = text.textContent?.trim() ?? "";
       const isHeading = /^H[1-6]$/.test(text.tagName);
       const tone = isHeading ? void 0 : guestStatusTone(value);
       if (tone) text.classList.add("guest-status", `guest-status--${tone}`);
-      if (/^No stays match|^No current matches/i.test(value)) text.classList.add("empty-state-title");
+      if (/^No stays match|^No current matches/i.test(value))
+        text.classList.add("empty-state-title");
     }
     if (kind === "discovery") decorateDiscoveryCards(mount);
     if (kind === "compare") decorateComparison(mount);
     if (kind === "unit-detail") organizeUnitDetail(mount);
     if (kind === "booking" || kind === "payment") organizeBookingTicket(mount);
-    if (activePayload?.requestScreen) organizeRequestScreen(mount, activePayload.requestScreen);
+    if (activePayload?.requestScreen)
+      organizeRequestScreen(mount, activePayload.requestScreen);
     if (activePayload?.confirmation)
       organizeConfirmation(mount, activePayload.confirmation);
     if (activePayload?.offerScreen)
@@ -9767,7 +9937,8 @@ Known schemas:
     return text.startsWith(GUEST_GLOSSARY.allInStayTotal) || text.startsWith("Indicative nightly rate");
   }
   function isSafeInternalRoute(value) {
-    if (typeof value !== "string" || value === "" || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) return false;
+    if (typeof value !== "string" || value === "" || !value.startsWith("/") || value.startsWith("//") || value.includes("\\"))
+      return false;
     try {
       return new URL(value, window.location.origin).origin === window.location.origin;
     } catch {
@@ -9778,18 +9949,27 @@ Known schemas:
     return Array.isArray(value) && value.every((item) => typeof item === "string");
   }
   function isWaitingState(value) {
-    return isRecord3(value) && ["operator-response", "offer-payment-window", "payment-window"].includes(String(value.kind)) && typeof value.heading === "string" && typeof value.deadlineText === "string" && typeof value.deadlineAt === "string" && Number.isFinite(Date.parse(value.deadlineAt)) && typeof value.serverNow === "string" && Number.isFinite(Date.parse(value.serverNow)) && isStringList(value.outcomes) && isStringList(value.meanwhile);
+    return isRecord3(value) && ["operator-response", "offer-payment-window", "payment-window"].includes(
+      String(value.kind)
+    ) && typeof value.heading === "string" && typeof value.deadlineText === "string" && typeof value.deadlineAt === "string" && Number.isFinite(Date.parse(value.deadlineAt)) && typeof value.serverNow === "string" && Number.isFinite(Date.parse(value.serverNow)) && isStringList(value.outcomes) && isStringList(value.meanwhile);
   }
   function isConfirmation(value) {
     return isRecord3(value) && typeof value.bookingReference === "string" && value.bookingReference !== "" && typeof value.depositCollected === "boolean" && isStringList(value.steps) && isSafeInternalRoute(value.conversationHref) && isSafeInternalRoute(value.detailsHref) && typeof value.details === "string";
   }
   function isRequestScreen(value) {
-    if (!isRecord3(value) || typeof value.state !== "string" || !["draft", "review", "sent", "not-accepted"].includes(value.state) || typeof value.tone !== "string" || !["neutral", "warning", "danger"].includes(value.tone) || typeof value.title !== "string" || typeof value.status !== "string" || !isStringList(value.steps) || !isStringList(value.notes)) return false;
+    if (!isRecord3(value) || typeof value.state !== "string" || !["draft", "review", "sent", "not-accepted"].includes(value.state) || typeof value.tone !== "string" || !["neutral", "warning", "danger"].includes(value.tone) || typeof value.title !== "string" || typeof value.status !== "string" || !isStringList(value.steps) || !isStringList(value.notes))
+      return false;
     const action = (candidate) => isRecord3(candidate) && isSafeInternalRoute(candidate.path) && typeof candidate.label === "string" && (candidate.surfaceId === void 0 || typeof candidate.surfaceId === "string");
-    if (!action(value.primary) || value.secondary !== void 0 && !action(value.secondary)) return false;
-    if (["banner", "provider", "guests", "sentAt"].some((key3) => value[key3] !== void 0 && typeof value[key3] !== "string")) return false;
-    if (value.selfBooking !== void 0 && typeof value.selfBooking !== "boolean") return false;
-    if (value.changeHref !== void 0 && !isSafeInternalRoute(value.changeHref)) return false;
+    if (!action(value.primary) || value.secondary !== void 0 && !action(value.secondary))
+      return false;
+    if (["banner", "provider", "guests", "sentAt"].some(
+      (key3) => value[key3] !== void 0 && typeof value[key3] !== "string"
+    ))
+      return false;
+    if (value.selfBooking !== void 0 && typeof value.selfBooking !== "boolean")
+      return false;
+    if (value.changeHref !== void 0 && !isSafeInternalRoute(value.changeHref))
+      return false;
     return value.deadline === void 0 || isRecord3(value.deadline) && typeof value.deadline.iso === "string" && Number.isFinite(Date.parse(value.deadline.iso)) && typeof value.deadline.text === "string";
   }
   function isOfferScreen(value) {
@@ -9805,14 +9985,29 @@ Known schemas:
     ) && typeof value.serverNow === "string" && Number.isFinite(Date.parse(value.serverNow)) && (value.deadlineIso === void 0 || typeof value.deadlineIso === "string" && Number.isFinite(Date.parse(value.deadlineIso))) && isStringList(value.steps) && (value.choosePath === void 0 || isSafeInternalRoute(value.choosePath));
   }
   function isSurfacePayload(value) {
-    if (!isRecord3(value) || typeof value.surfaceId !== "string" || value.surfaceId.trim() === "" || !Array.isArray(value.a2uiMessages)) return false;
-    if (value.mode !== void 0 && value.mode !== "text" && value.mode !== "inline-surface" && value.mode !== "focused-surface") return false;
-    if (value.status !== void 0 && (typeof value.status !== "string" || !["active", "superseded", "stale", "expired", "deleted", "fallback"].includes(value.status))) return false;
-    if (value.summary !== void 0 && typeof value.summary !== "string") return false;
-    if (value.textFallback !== void 0 && typeof value.textFallback !== "string") return false;
-    if (value.conventionalRouteLabel !== void 0 && typeof value.conventionalRouteLabel !== "string") return false;
-    if (value.waiting !== void 0 && !isWaitingState(value.waiting)) return false;
-    if (value.requestScreen !== void 0 && !isRequestScreen(value.requestScreen)) return false;
+    if (!isRecord3(value) || typeof value.surfaceId !== "string" || value.surfaceId.trim() === "" || !Array.isArray(value.a2uiMessages))
+      return false;
+    if (value.mode !== void 0 && value.mode !== "text" && value.mode !== "inline-surface" && value.mode !== "focused-surface")
+      return false;
+    if (value.status !== void 0 && (typeof value.status !== "string" || ![
+      "active",
+      "superseded",
+      "stale",
+      "expired",
+      "deleted",
+      "fallback"
+    ].includes(value.status)))
+      return false;
+    if (value.summary !== void 0 && typeof value.summary !== "string")
+      return false;
+    if (value.textFallback !== void 0 && typeof value.textFallback !== "string")
+      return false;
+    if (value.conventionalRouteLabel !== void 0 && typeof value.conventionalRouteLabel !== "string")
+      return false;
+    if (value.waiting !== void 0 && !isWaitingState(value.waiting))
+      return false;
+    if (value.requestScreen !== void 0 && !isRequestScreen(value.requestScreen))
+      return false;
     if (value.confirmation !== void 0 && !isConfirmation(value.confirmation))
       return false;
     if (value.offerScreen !== void 0 && !isOfferScreen(value.offerScreen))
@@ -9828,23 +10023,37 @@ Known schemas:
     upcoming: "not started"
   };
   function isJourney(value) {
-    if (!isRecord3(value) || typeof value.current !== "string" || !Array.isArray(value.steps) || value.steps.length === 0) return false;
-    return value.steps.every((step) => isRecord3(step) && typeof step.id === "string" && typeof step.label === "string" && typeof step.state === "string" && step.state in JOURNEY_STATE_TEXT);
+    if (!isRecord3(value) || typeof value.current !== "string" || !Array.isArray(value.steps) || value.steps.length === 0)
+      return false;
+    return value.steps.every(
+      (step) => isRecord3(step) && typeof step.id === "string" && typeof step.label === "string" && typeof step.state === "string" && step.state in JOURNEY_STATE_TEXT
+    );
   }
   function isCriteria(value) {
-    if (!isRecord3(value) || typeof value.key !== "string" || typeof value.editable !== "boolean" || typeof value.canUndo !== "boolean") return false;
-    if (!Array.isArray(value.areas) || !value.areas.every((area) => isRecord3(area) && typeof area.id === "string" && typeof area.label === "string")) return false;
+    if (!isRecord3(value) || typeof value.key !== "string" || typeof value.editable !== "boolean" || typeof value.canUndo !== "boolean")
+      return false;
+    if (!Array.isArray(value.areas) || !value.areas.every(
+      (area) => isRecord3(area) && typeof area.id === "string" && typeof area.label === "string"
+    ))
+      return false;
     const labelled = (field2) => field2 === void 0 || isRecord3(field2) && typeof field2.label === "string";
     return labelled(value.where) && labelled(value.when) && labelled(value.guests) && labelled(value.budget);
   }
   function readGuestResponse(value) {
-    if (!isRecord3(value) || typeof value.ok !== "boolean") throw new Error("Invalid server response");
-    if (value.messages !== void 0 && (!Array.isArray(value.messages) || value.messages.some((message) => typeof message !== "string"))) throw new Error("Invalid response messages");
-    if (value.receipts !== void 0 && (!Array.isArray(value.receipts) || value.receipts.some((receipt) => typeof receipt !== "string"))) throw new Error("Invalid response receipts");
-    if (value.surfaces !== void 0 && (!Array.isArray(value.surfaces) || value.surfaces.some((surface) => !isSurfacePayload(surface)))) throw new Error("Invalid response surface");
-    if (value.journey !== void 0 && !isJourney(value.journey)) throw new Error("Invalid response journey");
-    if (value.criteria !== void 0 && !isCriteria(value.criteria)) throw new Error("Invalid response criteria");
-    if (value.quickReplies !== void 0 && !isStringList(value.quickReplies)) throw new Error("Invalid response quick replies");
+    if (!isRecord3(value) || typeof value.ok !== "boolean")
+      throw new Error("Invalid server response");
+    if (value.messages !== void 0 && (!Array.isArray(value.messages) || value.messages.some((message) => typeof message !== "string")))
+      throw new Error("Invalid response messages");
+    if (value.receipts !== void 0 && (!Array.isArray(value.receipts) || value.receipts.some((receipt) => typeof receipt !== "string")))
+      throw new Error("Invalid response receipts");
+    if (value.surfaces !== void 0 && (!Array.isArray(value.surfaces) || value.surfaces.some((surface) => !isSurfacePayload(surface))))
+      throw new Error("Invalid response surface");
+    if (value.journey !== void 0 && !isJourney(value.journey))
+      throw new Error("Invalid response journey");
+    if (value.criteria !== void 0 && !isCriteria(value.criteria))
+      throw new Error("Invalid response criteria");
+    if (value.quickReplies !== void 0 && !isStringList(value.quickReplies))
+      throw new Error("Invalid response quick replies");
     return value;
   }
   var threadId = getThreadId();
@@ -9871,7 +10080,10 @@ Known schemas:
     emptyState.hidden = true;
     const turn = document.createElement("article");
     turn.className = `turn ${role}`;
-    turn.setAttribute("aria-label", role === "user" ? "You" : "Shortlet Concierge");
+    turn.setAttribute(
+      "aria-label",
+      role === "user" ? "You" : "Shortlet Concierge"
+    );
     const bubble = document.createElement("div");
     bubble.className = "bubble";
     bubble.textContent = text;
@@ -9890,10 +10102,14 @@ Known schemas:
     button.type = "button";
     button.className = "ui-button retry-action";
     button.textContent = "Retry";
-    button.addEventListener("click", () => {
-      button.remove();
-      retry();
-    }, { once: true });
+    button.addEventListener(
+      "click",
+      () => {
+        button.remove();
+        retry();
+      },
+      { once: true }
+    );
     turn.appendChild(button);
   }
   function addMarker(text, className) {
@@ -9905,7 +10121,10 @@ Known schemas:
     transcript.appendChild(item);
   }
   function addHistoricalSummary(summary) {
-    addMarker(formatGuestHistorySummary(summary.summary, summary.status), "historical-summary");
+    addMarker(
+      formatGuestHistorySummary(summary.summary, summary.status),
+      "historical-summary"
+    );
   }
   function addReceipt(text) {
     addMarker(text, "historical-summary receipt-marker");
@@ -9954,11 +10173,14 @@ Known schemas:
     const current = shellState.activeSurface;
     const canReopen = current?.mode === "focused-surface" && current.status === "active" && activePayload !== void 0;
     workspaceReopen.hidden = !canReopen || shellState.focusedSurfaceOpen;
-    if (canReopen) workspaceReopen.textContent = `Return to ${guestSurfaceHeading(current.summary).toLocaleLowerCase()}`;
+    if (canReopen)
+      workspaceReopen.textContent = `Return to ${guestSurfaceHeading(current.summary).toLocaleLowerCase()}`;
   }
   function enhanceGuestContactField(mount) {
     const synchronize = () => {
-      const wrapper = mount.querySelector('[data-a2ui-component="TextField"]');
+      const wrapper = mount.querySelector(
+        '[data-a2ui-component="TextField"]'
+      );
       const label = wrapper?.querySelector("label");
       const input = wrapper?.querySelector("input");
       if (!wrapper || !label || !input) return;
@@ -9977,12 +10199,19 @@ Known schemas:
         error2.setAttribute("role", "alert");
         error2.classList.add("guest-field-error");
       }
-      input.setAttribute("aria-describedby", [hint?.id, error2?.id].filter(Boolean).join(" "));
+      input.setAttribute(
+        "aria-describedby",
+        [hint?.id, error2?.id].filter(Boolean).join(" ")
+      );
       if (error2) input.setAttribute("aria-invalid", "true");
       else input.removeAttribute("aria-invalid");
     };
     synchronize();
-    new MutationObserver(synchronize).observe(mount, { childList: true, subtree: true, characterData: true });
+    new MutationObserver(synchronize).observe(mount, {
+      childList: true,
+      subtree: true,
+      characterData: true
+    });
   }
   var countdownTimer;
   var lastWaitingRefetch = Number.NEGATIVE_INFINITY;
@@ -10033,25 +10262,27 @@ Known schemas:
   }
   function renderWaiting(waiting) {
     const panel = document.createElement("section");
-    panel.className = "waiting-panel";
+    panel.className = "ui-panel";
     panel.dataset.waiting = waiting.kind;
     panel.setAttribute("aria-label", waiting.heading);
     const heading = document.createElement("h3");
     heading.textContent = waiting.heading;
     const deadline = document.createElement("p");
-    deadline.className = "waiting-deadline";
+    deadline.className = "ui-banner ui-banner--neutral waiting-deadline";
+    deadline.insertAdjacentHTML("afterbegin", icon("clock"));
+    const text = document.createElement("span");
     const absolute = document.createElement("span");
     absolute.className = "waiting-deadline-time";
     absolute.textContent = waiting.deadlineText;
     const countdown = document.createElement("span");
     countdown.className = "waiting-countdown";
-    deadline.append(absolute, " \xB7 ", countdown);
-    const nextLabel = document.createElement("p");
-    nextLabel.className = "waiting-label";
+    text.append(absolute, " \xB7 ", countdown);
+    deadline.append(text);
+    const nextLabel = document.createElement("h4");
     nextLabel.textContent = "What happens next";
-    const list = (items, className) => {
-      const element = document.createElement("ul");
-      element.className = className;
+    const steps = (items) => {
+      const element = document.createElement("ol");
+      element.className = "ui-steps";
       for (const item of items) {
         const entry = document.createElement("li");
         entry.textContent = item;
@@ -10059,7 +10290,12 @@ Known schemas:
       }
       return element;
     };
-    panel.append(heading, deadline, nextLabel, list(waiting.outcomes, "waiting-outcomes"), list(waiting.meanwhile, "waiting-meanwhile"));
+    panel.append(heading, deadline, nextLabel, steps(waiting.outcomes));
+    for (const line of waiting.meanwhile) {
+      const note = document.createElement("p");
+      note.textContent = line;
+      panel.appendChild(note);
+    }
     startCountdown(waiting, countdown);
     return panel;
   }

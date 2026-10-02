@@ -459,7 +459,7 @@
   .ui-stay-card__photo--empty { display: grid; place-items: center; align-content: center; gap: var(--space-1); color: var(--color-text-secondary); font-size: var(--font-size-small); }
   .ui-stay-card__where { display: flex; align-items: center; gap: var(--space-2); color: var(--color-text-muted); font-size: var(--font-size-small); }
   .ui-stay-card__title { margin: 0; font-family: var(--font-display); font-size: 1.3125rem; line-height: 1.2; font-weight: 600; }
-  .ui-stay-card__title a { color: var(--color-text); text-decoration: none; }
+  .ui-stay-card__title a { display: inline-flex; align-items: center; min-block-size: var(--control-min-target); color: var(--color-text); text-decoration: none; }
   .ui-stay-card__facts { display: flex; flex-wrap: wrap; gap: var(--space-2); }
   .ui-stay-card__total { display: grid; gap: var(--space-1); padding-block-start: var(--space-3); border-block-start: 1px solid var(--color-border-subtle); }
 

@@ -75,29 +75,49 @@ test("AC2: the conventional offer countdown updates and reloads authoritative ex
 });
 
 test("AC2: chat deadline expiry disables acceptance during a failed authoritative refresh and retries to the expired screen", async () => {
-  await withStagePage({ label: "Offer", stage: "offer" }, async ({ fixture }) => {
-    fixture.setTime("2026-09-03T10:19:58Z");
-    const browser = await launchRealBrowser();
-    try {
-      const tab = await browser.createTab();
-      await tab.setExtraHeaders({ cookie: fixture.cookie });
-      await tab.navigate(`${fixture.base}/?threadId=${fixture.threadId}`);
-      await tab.waitForSelector("#active-workspace .offer-screen", 10_000);
-      let failures = 0;
-      const restore = await tab.interceptRequests(async (url) => {
-        if (new URL(url).pathname === "/api/state" && failures++ === 0)
-          return { status: 503, headers: [{ name: "Content-Type", value: "application/json" }], body: new TextEncoder().encode('{"ok":false}') };
-        return undefined;
-      });
-      fixture.setTime("2026-09-03T10:20:00Z");
-      await tab.waitForFunction("document.querySelector('#active-workspace .offer-actions button')?.disabled === true", 10_000);
-      assert.equal(await tab.evaluate<boolean>("[...document.querySelectorAll('#active-workspace [data-a2ui-component=Column] button')].every(button => button.disabled)"), true);
-      await tab.waitForSelector('#active-workspace .offer-screen[data-offer-state="expired"]', 15_000);
-      assert.ok(failures >= 2, "failed refresh is retried");
-      assert.equal(await tab.clickButton("Accept and pay"), false);
-      await restore();
-    } finally { await browser.close(); }
-  });
+  await withStagePage(
+    { label: "Offer", stage: "offer" },
+    async ({ fixture }) => {
+      fixture.setTime("2026-09-03T10:19:58Z");
+      const browser = await launchRealBrowser();
+      try {
+        const tab = await browser.createTab();
+        await tab.setExtraHeaders({ cookie: fixture.cookie });
+        await tab.navigate(`${fixture.base}/?threadId=${fixture.threadId}`);
+        await tab.waitForSelector("#active-workspace .offer-screen", 10_000);
+        let failures = 0;
+        const restore = await tab.interceptRequests(async (url) => {
+          if (new URL(url).pathname === "/api/state" && failures++ === 0)
+            return {
+              status: 503,
+              headers: [{ name: "Content-Type", value: "application/json" }],
+              body: new TextEncoder().encode('{"ok":false}'),
+            };
+          return undefined;
+        });
+        fixture.setTime("2026-09-03T10:20:00Z");
+        await tab.waitForFunction(
+          "document.querySelector('#active-workspace .offer-actions button')?.disabled === true",
+          10_000,
+        );
+        assert.equal(
+          await tab.evaluate<boolean>(
+            "[...document.querySelectorAll('#active-workspace [data-a2ui-component=Column] button')].every(button => button.disabled)",
+          ),
+          true,
+        );
+        await tab.waitForSelector(
+          '#active-workspace .offer-screen[data-offer-state="expired"]',
+          15_000,
+        );
+        assert.ok(failures >= 2, "failed refresh is retried");
+        assert.equal(await tab.clickButton("Accept and pay"), false);
+        await restore();
+      } finally {
+        await browser.close();
+      }
+    },
+  );
 });
 
 test("AC4: offers render no waiting-panel or info box and the live banner uses ui-banner--warning", async () => {
