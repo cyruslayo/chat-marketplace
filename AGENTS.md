@@ -48,3 +48,17 @@ Follow this sequence for every issue. Do not skip steps.
 5. Implement until all tests pass and `npm run check` is clean.
 6. Before resolving: self-review against the Definition of Done in `docs/agents/issue-tracker.md`. Check every item on that list explicitly.
 7. Commit, then mark the issue `resolved`.
+
+### Guest UI work (kit, walkthrough and captures)
+
+Any change to a guest screen (chat workspace or standalone page) follows the guest UI consistency effort in `.scratch/guest-ui-consistency/` (`PRD.md`, `map.md`, `design/`, canvas <https://claude.ai/artifact/TKQCWTF4SWNscKrjLkN1zX>).
+
+- **Use the kit, don't invent components.** The component list is in `docs/design/shortlet-design-system-direction.md` ("Guest UI kit"). CSS is the "Guest UI kit" block of `apps/web/src/shortlet-foundations.css`, server markup helpers are in `apps/local-guest/src/guest-kit.ts`, and copy/labels come from `apps/web-agent/src/guest-content.ts` (`GUEST_FACT_LABELS`). Chat and the standalone page must render the same content from the same helper. Use semantic tokens only (no hex, no page-level `style:` strings); dark mode comes from the tokens. Keep the committed CSS formatting: the foundation tests match it with regexes, so do not run a formatter over `shortlet-foundations.css`.
+- **Run the app to see it.** `npx tsx .scratch/guest-ui-consistency/walkthrough.ts` serves one local guest per booking stage on fixed ports 3021+ (local test data only); `node .scratch/guest-ui-consistency/start-walkthrough.mjs` starts it detached and logs to `walkthrough-06.log` (delete the log afterwards). Prefer `withStagePage` / `withRequestScreen` in `test/helpers/` for tests.
+- **Capture and check screens.** Every UI issue ends with screenshots at 320, 390, 768 and 1280 plus a check for horizontal overflow and controls under 44px (ADR 0078):
+  - `capture.ts name=url ...`: quick light-theme captures of any URLs.
+  - `capture-07.ts`, `capture-08.ts`, `capture-09.ts`, `capture-10.ts`: the request, offer, payment and confirmation/system screens (page and chat), asserting reflow and targets. Copy one as the starting point for a new screen group.
+  - `capture-11-all.sh` (runs `capture-11.ts` once per screen group): the full sweep of every design screen, light and dark, into `screenshots/final/`, with `findings-*.txt`. Run groups in separate processes; two fixtures in one process break the shell load. Re-run it after any shared CSS or shell change.
+  - Save new captures under `screenshots/<issue number>/`. Hidden native radio inputs report as 1x1; their labels are the 44px targets.
+- **Desktop split and clean-up rules.** At 64rem+ an open workspace sits beside a ~460px conversation (workspace 560px, discovery 760px); `.waiting-panel`, `.stay-result` and page-level payment style strings are retired (`test/guest-retired-classes.test.ts`). `.stay-card` and `.stay-grid` remain only as client hooks.
+- **Browser phase of `npm test` takes about 12 minutes.** Run it in the background with a long timeout, and never run two browser suites or capture sweeps at once.
