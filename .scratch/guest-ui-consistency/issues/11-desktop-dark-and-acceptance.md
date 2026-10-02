@@ -1,6 +1,6 @@
 # Desktop split, dark mode and the final visual acceptance
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: 05, 06, 07, 08, 09, 10
 Requested: 29 Sept 2026
@@ -53,3 +53,7 @@ The earlier issues build the screens. This one makes sure the whole app matches 
 - **Intentional differences from `design/renders/`** (for AC3): the chat workspace keeps a "Back to conversation" button and the criteria chips wrap in two rows in the 460px column; no-reservation has no chat workspace (it is a standalone page).
 - **Environment**: the working tree held an uncommitted prettier-style reformat of `shortlet-foundations.css` that broke 6 CSS-regex tests; I restored the committed formatting (copy kept in the session scratchpad) and re-applied the one rule. `guest-server.ts`, `client.ts`, `guest-kit.ts` still carry that earlier reformatting. Nothing is committed yet.
 - ADRs: 0078 (reflow, 44px targets, reduced motion, 200% zoom), 0080 (the no-JS and chat screens still render the same content).
+
+## Answer
+
+Built and verified as described in the notes above; the user reviewed the final captures and approved on 2 Oct 2026. Commit 639e3cd.
