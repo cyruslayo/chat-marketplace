@@ -74,4 +74,4 @@ Check every item in `docs/agents/issue-tracker.md`.
 
 - Added `SqlDatabase`, a Node `node:sqlite` adapter, and a runtime-agnostic contract suite. Node transactions use `BEGIN IMMEDIATE` at the outer boundary and savepoints when nested, matching the 01a Durable Object SQL probe.
 - `npm run check` passed. `test/sql-database-node.test.ts` passed all 12 tests, including eight shared contract cases for Node.
-- The earlier full `npm test` run reported four phase-1 failures in unrelated pre-existing guest UX/onboarding journeys; the browser phase passed (165 passed, 1 skipped). The new nested-savepoint behavior is covered by the focused SQL contract suite. AC4 remains open pending resolution of the baseline failures.
+- In the latest full `npm test`, phase 1 passed all 1,245 tests. The browser phase had 164 passes, one unrelated new-conversation focus timeout, and one skip. Focused SQL contract checks and `npm run check` pass; AC4 remains open until a full green suite is recorded.
