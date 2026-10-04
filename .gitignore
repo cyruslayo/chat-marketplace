@@ -1,4 +1,9 @@
 node_modules/
+# Cloudflare CLI output and local-only secrets.
+.cloudflare/
+.wrangler/
+.dev.vars*
+!.dev.vars.example
 .scratch/shortlet/
 .scratch/pilot-local/
 .scratch/pilot-acceptance-rodney/
