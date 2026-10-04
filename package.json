@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=22.13.0"
+    "node": ">=22.18.0"
   },
   "scripts": {
     "test": "node scripts/run-tests.mjs",
@@ -43,8 +43,11 @@
     "tsx": "^4.23.1"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "2.0.0-beta.sha-52b0dc0e9",
     "@types/node": "^26.1.1",
+    "cf": "1.0.0-beta.12",
     "happy-dom": "20.11.2",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vite": "8.3.2"
   }
 }
