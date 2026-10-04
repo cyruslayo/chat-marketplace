@@ -1,6 +1,6 @@
 # ADR 0093: Guest accounts and sign-in by emailed one-time code
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: 01
 Requested: 2 Oct 2026
@@ -42,3 +42,14 @@ None (documentation). The agent checks AC3 with a grep listed in `## Answer`.
 
 - 4 Oct 2026: ADR 0092 is already occupied by the accepted Extended Stays decision. This issue's authentication ADR is renumbered to 0093; the identity-assurance ADR becomes 0094. Account-specific issue references and the map are updated by meaning; Extended Stays references to 0092 remain unchanged.
 - 4 Oct 2026 ADR map: 0004 — committed rows remain authoritative and unrewritten (account identity/linking); 0011 — minimize assurance and redact operator view (account/assurance boundary); 0012 — account does not alter Primary Guest role (identity model); 0013 — email proof is not payer attribution (sign-in/payment boundary); 0067 — sensitive account operations stay on authenticated web surfaces (channels); 0068 — ordinary auth remains outside agent protocol (HTTP boundary); 0070 — separate identities and revoke attached authority (session model); 0072 — account changes use platform commands (mutation boundary); 0075 — no secrets or restricted identity in logs/state (code/session handling); 0078 — accessible localized forms/deadlines (future UI acceptance); 0080 — deterministic no-JS recovery (code entry); 0084 — assurance expiry remains explicit/no unapproved freshness (future assurance); 0085 — no account gate before booking (all sign-in paths); 0086 — Operator policy is only a pattern, not Guest code/session policy.
+
+## Answer
+
+Implemented in commit `aa74d9d`.
+
+- **AC1:** Added `docs/adr/0093-establish-guest-accounts-and-sign-in-by-emailed-code.md`; ADR 0092 remains the accepted Extended Stays decision. ADR 0093 cites 0004, 0070, 0075, 0080, 0085 and 0086 and maps all intersecting decisions.
+- **AC2:** Code/session values trace to issue 01 Answer. The 25/email/hour and 100/address/hour code-checking quotas trace to the dated 4 Oct supplemental decision in issue 01 Comments.
+- **AC3:** Grep confirmed all six terms are defined in `domains/shortlet/CONTEXT.md`, each with an `_Avoid_` line. The Primary Guest entry expressly distinguishes a booking role from the Guest Account; `packages/platform-core/CONTEXT.md` limits account resolution to server-owned interaction context.
+- **AC4:** ADR 0093 states that discovery, Request to Book, offer acceptance and payment never require sign-in; it also states in one sentence that codes and related credentials never appear in URLs, logs, audit or general interaction state.
+- Updated the PRD, issue briefs and map for ADR renumbering, scoped request claims, explicit assurance expiry and the approved verification quotas.
+- **Checks:** documentation-only issue; ran the six-term/context grep, policy/ADR grep and `git diff --check` (all passed). No tests were required by this issue.
