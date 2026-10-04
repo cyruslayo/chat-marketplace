@@ -1,6 +1,6 @@
 # ADR 0094: Anchor identity assurance to the Guest Account
 
-Status: ready-for-agent
+Status: claimed
 Type: task
 Blocked by: 02
 Requested: 2 Oct 2026
@@ -33,4 +33,8 @@ None (documentation).
 
 ## ADR compliance
 
-0011, 0012, 0070, 0075, 0084, 0085.
+0011, 0012, 0070, 0075, 0084, 0085, 0093.
+
+## Comments
+
+- 4 Oct 2026 ADR map: 0011 — minimize reusable assurance and operator-visible outcome (stored fields and operator boundary); 0012 — preserve Primary Guest and do not transfer assurance (replacement identity); 0070 — keep account, interaction, thread and Reservation identities distinct (account anchor and lineage resolution); 0075 — prohibit raw evidence and credentials in persistence/projections/logging (exact record allow-list); 0084 — normalize provider outcomes, but do not apply its unapproved 180-day recommendation (expiry); 0085 — keep account/ID checks out of booking and physical access separate (check-in-only use); 0093 — account identity and scoped recovery (Reservation claim path).

@@ -100,6 +100,8 @@ Identity readiness
 | 0084 | Results reusable while fresh; re-verify when account identity changes | assurance keyed by account; email change is an identity change |
 | 0085 | No identity check or bypass before booking; access fails closed | no account gate; check-in requires a claimed reservation |
 | 0086 | One-time hashed token, opaque non-sliding session, fail closed, safe audit | pattern for the guest code and session; ADR 0093 records where Guests differ (email delivery of a code, no URL token) |
+| 0093 | Guest Account authentication, session and recovery boundary | opaque account sessions, optional sign-in, linked-principal continuity and scoped email claims |
+| 0094 | Identity Assurance is account-owned and explicitly expiring | Reservation-aware check-in resolution, no 180-day default, no provider integration or booking gate |
 
 ## Settled policy values
 
