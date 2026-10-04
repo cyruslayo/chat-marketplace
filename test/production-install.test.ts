@@ -52,12 +52,12 @@ test("A build script rebuilds the guest client bundle as part of the production 
   assert.match(buildClientSource, /outfile:\s*"apps\/local-guest\/dist\/client\.js"/);
 });
 
-test("package.json declares engines.node for a version with node:sqlite, and .nvmrc matches", () => {
+test("package.json declares the Cloudflare config Node minimum, and .nvmrc matches", () => {
   const range = manifest.engines?.node;
-  assert.equal(range, ">=22.13.0", "node:sqlite is available without a flag from Node 22.13.0");
+  assert.equal(range, ">=22.18.0", "cloudflare.config.ts requires Node 22.18.0 or later");
   const pinned = readFileSync(".nvmrc", "utf8").trim();
   const [major, minor] = pinned.split(".").map(Number);
-  assert.ok(major! > 22 || (major === 22 && minor! >= 13), `.nvmrc ${pinned} satisfies ${range}`);
+  assert.ok(major! > 22 || (major === 22 && minor! >= 18), `.nvmrc ${pinned} satisfies ${range}`);
 });
 
 test(".scratch/pilot-rehearsal-* is in .gitignore, so the rehearsal certificates and databases cannot be committed by accident", () => {
