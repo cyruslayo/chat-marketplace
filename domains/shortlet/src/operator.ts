@@ -172,7 +172,7 @@ function compatibleOperatorRecord(value: unknown, tenantId: string, now: Date): 
 }
 
 export function bootstrapOperatorsFromUnitRepository(input: {
-  readonly units: { findAll(): Unit[] };
+  readonly units: { findAll(): readonly Unit[] };
   readonly operators: OperatorRepository;
   readonly tenantId: string;
   readonly now?: Date;

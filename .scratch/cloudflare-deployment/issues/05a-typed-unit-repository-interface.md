@@ -1,6 +1,6 @@
 # Typed unit repository interface
 
-Status: ready-for-agent
+Status: claimed
 Type: task
 Blocked by: none
 Branch: `infra/cf-05a-unit-repository-interface`
@@ -45,3 +45,14 @@ Unlocks: 05b
 Check every item in `docs/agents/issue-tracker.md`.
 
 ## Comments
+
+- Name choice: `UnitRepositoryContract` avoids renaming the existing concrete `UnitRepository` and changing its many call sites, while giving the SQLite implementation in 05b a stable shared contract.
+- Consumer method inventory: discovery and ranking read `findAll`; booking/request, availability, and verification paths read by id (and the availability calendar updates with `save`); inventory import and publication use all three; operator bootstrapping reads `findAll`. Local guest/owner environments expose the concrete repositories but do not require extra methods. Test fixtures instantiate both implementations directly.
+- ADR mapping: 0008/0009/0056 require unit publication eligibility to continue using approved inspection evidence and its validity through checkout. This slice leaves eligibility evaluation unchanged; repository results remain typed units and existing clock-based checks stay in `browse.ts`.
+
+## Answer
+
+- Added `UnitRepositoryContract`; both in-memory and JSON implementations implement it. Inventory import derives its repository boundary from the contract, and operator bootstrap accepts its readonly `findAll` result.
+- JSON reads now narrow parsed entries before normalization and throw a clear `TypeError` for a missing/blank id or malformed Unit shape.
+- `npm run check` passed. The repository-contract tests and back-office calendar tests passed (AC1–AC3 coverage included). The isolated phase-3 Chromium test passed when rerun after the screenshot output directory existed.
+- `npm test` did not pass: phase 1 reported 1,229 passed and 4 failed; the same four failures were present in the preceding `02a` full-suite run. The separate 05a full-suite Chromium phase reported 164 passed, 1 skipped, and 1 setup failure because `.scratch/ui-phase3-discovery-detail` did not exist at suite start; the failing browser test passed on isolated rerun. AC4 remains open pending the baseline failures and suite output-directory setup being corrected.

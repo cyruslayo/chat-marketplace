@@ -127,6 +127,7 @@ test("material unit change invalidates eligibility until reinspected", () => {
   flagMaterialUnitChange(repository, "unit-lagos-001");
 
   const updated = repository.findAll().find((u: any) => u.id === "unit-lagos-001");
+  assert.ok(updated);
   assert.equal(updated.published, false);
   assert.equal(updated.inspection.materialChangePending, true);
 
@@ -162,6 +163,7 @@ test("publication requires eligibility through the furthest sellable checkout", 
   assert.equal(latestPossibleCheckoutDate(publicationDate), "2026-11-03");
 
   const unit = repository.findById("unit-lagos-001");
+  assert.ok(unit);
   repository.save({
     ...unit,
     inspection: { ...unit.inspection, expiresAt: "2026-08-01" }
@@ -173,6 +175,7 @@ test("publication requires eligibility through the furthest sellable checkout", 
   );
 
   const boundaryUnit = repository.findById("unit-lagos-001");
+  assert.ok(boundaryUnit);
   repository.save({
     ...boundaryUnit,
     published: true,

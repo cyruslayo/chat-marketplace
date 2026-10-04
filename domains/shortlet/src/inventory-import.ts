@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { getUnitOnboardingStatus } from "./onboarding.js";
-import type { Unit } from "./browse.js";
+import type { Unit, UnitRepositoryContract } from "./browse.js";
 import { normalizePhotoUrls } from "./photo-url.js";
 import { normalizeListingDescription } from "./listing-details.js";
 import { contractualCheckInWindow } from "./checkin-support.js";
@@ -43,11 +43,7 @@ export interface OperatorReferenceResolver {
   findById(id: string): OperatorReference | null;
 }
 
-export interface InventoryRepository {
-  findAll(): Unit[];
-  findById(id: string): Unit | null;
-  save(unit: Unit): void;
-}
+export interface InventoryRepository extends UnitRepositoryContract {}
 
 export interface InventoryAuditSink {
   record(entry: Record<string, unknown>): void;
@@ -355,7 +351,7 @@ function validateRow(row: CsvRow, options: InventoryImportOptions): PreparedUnit
   return { rowNumber: row.rowNumber, unit: { ...unit, published: current?.published === true } };
 }
 
-export function operatorResolverFromUnitRepository(repository: { findAll(): Unit[] }): OperatorReferenceResolver {
+export function operatorResolverFromUnitRepository(repository: { findAll(): readonly Unit[] }): OperatorReferenceResolver {
   return {
     findById(id: string): OperatorReference | null {
       const found = repository.findAll().find((unit) => {
