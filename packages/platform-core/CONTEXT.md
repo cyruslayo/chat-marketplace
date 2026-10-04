@@ -60,6 +60,8 @@ _Avoid_: Renderer protocol, framework configuration, transient UI state
 A durable conversational context belonging to one authorized principal and tenant that may reference, but never own, domain aggregates.
 _Avoid_: Booking, browser session, agent run
 
+An authenticated browser session may resolve to a Guest Account on the interaction side. That resolution is server-owned presentation/authorization context only; it does not make the interaction runtime authoritative for account or booking state, and it does not merge interaction and domain identities.
+
 **Agent Run**:
 One bounded execution attempt within an Interaction Thread, with its own lifecycle and event stream.
 _Avoid_: Conversation, booking workflow, background service

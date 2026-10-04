@@ -24,9 +24,29 @@ _Avoid_: Property access, verbal permission, operator approval
 A person seeking or holding a shortlet reservation, whether or not they initiated the booking conversation.
 _Avoid_: Consumer, customer, user
 
+**Guest Account**:
+A durable, email-verified record that anchors a Guest's account identity and permitted continuity across devices; it does not replace the Guest's booking role.
+_Avoid_: User, customer, profile, login, booking party
+
+**Account Guest Id**:
+The opaque, stable domain Guest identity owned by a Guest Account and used for new account-authenticated actions.
+_Avoid_: Interaction principal, browser-session id, thread id, booking id
+
+**Linked Principal**:
+An interaction principal linked to one Guest Account after successful sign-in from the browser that controls that principal.
+_Avoid_: Account Guest Id, email claim, proof of ownership of every record
+
+**Sign-In Code**:
+A single-use, short-lived emailed code that a Guest types into a page to prove control of an email address.
+_Avoid_: Magic link, URL token, password, identity-verification result
+
+**Guest Account Session**:
+The server-owned, opaque, absolute-expiry browser binding that authenticates a Guest Account.
+_Avoid_: Interaction principal, cookie claims, sliding session, booking identity
+
 **Primary Guest**:
 The verified adult who submits the booking request, accepts the booking contract, and is responsible for the declared guest party.
-_Avoid_: Payer, account holder, additional occupant
+_Avoid_: Payer, Guest Account (which is not a booking role), additional occupant
 
 **Additional Occupant**:
 A declared member of the guest party for whom the primary guest remains responsible and who is not routinely identity-verified at launch.
@@ -111,6 +131,10 @@ _Avoid_: Verified badge, platform approved
 **Guest Identity Verification**:
 The platform's reusable assurance that the primary guest's government identity and minimum age have been verified, without disclosing raw identity evidence to an operator. For the pilot it is Check-In Eligibility, not Booking Eligibility: it must be established before physical access authority is granted, while the check-in procedure is deferred.
 _Avoid_: Contact verification, operator ID check
+
+**Identity Assurance**:
+The account-scoped, normalized outcome of evidence about a Guest, such as confirmed email or future check-in identity verification, with explicit verification and expiry timestamps when the outcome is time-bound.
+_Avoid_: Verified badge, KYC status, raw identity evidence, payer attribution
 
 **Payer Attribution**:
 The platform's channel-specific assessment of whether a received payment is reasonably attributable to the verified primary guest.
