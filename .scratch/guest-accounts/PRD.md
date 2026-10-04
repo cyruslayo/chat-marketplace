@@ -67,7 +67,7 @@ Identity readiness
 - Sessions do not slide. Sign out revokes this session before clearing the cookie; sign out everywhere revokes every session of the account and ends attached streams (ADR 0070).
 - Audit and telemetry carry only safe identifiers (`accountGuestId`, tenant, reason codes). Never the email, the code, the session secret or the cookie (ADR 0075).
 - "Send me a code" responds the same way whether or not the email has an account.
-- Code checking is limited to 25 per email per hour and 100 per client address per hour, configurable and shared across purposes (supplemental user approval, 4 Oct 2026; issue 01 Comments).
+- Code checking is limited to 25 per email per hour and 100 per client address per hour, configurable and shared across purposes and tenant contexts (supplemental user approval, 4 Oct 2026; issue 01 Comments).
 
 **Identity Assurance.** The account carries an assurance level: anonymous (no account), email-verified, phone-verified (later), government-ID-verified (future, ADR 0084). A verified outcome must have authoritative `verifiedAt` and `expiresAt`; no default freshness duration is approved, and ADR 0084's proposed 180-day period is not adopted. `GuestIdentityVerificationResultSource` resolves through the account, including Reservation-aware scoped claims, and checks expiry lazily. No provider, ID form, document upload or selfie is built (ADR 0085); only the port, a stored normalized outcome, and a local fake for tests.
 
@@ -108,7 +108,7 @@ Identity readiness
 Settled by the user on 3 Oct 2026 in issue 01 (see its `## Answer` for reasons). Authentication ADR 0093 and assurance ADR 0094 cite them; code takes configurable policy options with these defaults.
 
 - **Sign-in code:** 6 digits, 10-minute lifetime, 5 wrong attempts, one request per 60 s, max 5 per email per hour and 20 per client address per hour; a new code invalidates the earlier one.
-- **Code checking:** at most 25 checks per email per hour and 100 per client address per hour; configurable and shared across code purposes (supplemental decision recorded in issue 01 Comments, 4 Oct 2026).
+- **Code checking:** at most 25 checks per email per hour and 100 per client address per hour; configurable and shared across code purposes and tenant contexts (supplemental decision recorded in issue 01 Comments, 4 Oct 2026).
 - **Guest Account Session:** 30 days absolute, non-sliding; a fresh code for email change, deletion and export.
 - **Check-in:** requires a Reservation that belongs to a Guest Account.
 - **Linking and recovery:** current-device sign-in links that principal's permitted history; a principal already linked to another account cannot be moved.

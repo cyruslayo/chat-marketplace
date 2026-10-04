@@ -1,6 +1,6 @@
 # Guest account authority: codes, accounts, sessions
 
-Status: ready-for-agent
+Status: claimed
 Type: task
 Blocked by: 02
 Requested: 2 Oct 2026
@@ -13,12 +13,12 @@ The domain needs one authority that issues and checks Sign-In Codes, finds or cr
 
 - `domains/shortlet/src/guest-account-authority.ts`, exported from `domains/shortlet/src/index.ts`. Model it on `SqliteOperatorSessionAuthority` (`domains/shortlet/src/operator-session-authority.ts`): `BEGIN IMMEDIATE` transactions, `#now()` clock guard, `#emit` to optional audit and telemetry sinks that can never block auth, hashed secrets.
    - Policy values from ADR 0093 are constructor options with the ADR values as defaults (AGENTS anti-pattern 3), not literals in logic. Include purpose-bound `delete_account` and `export_data` proofs and the supplemental checking quotas.
-   - Tables: `guest_accounts` (account_guest_id, tenant_id, email, phone, status, created_at, updated_at, revision), `guest_sign_in_codes` (opaque challenge id, code_hash, tenant_id, email, purpose `sign_in`|`change_email`|`delete_account`|`export_data`, bound account/session/revision where required, created_at, expires_at, attempts, consumed_at), `guest_account_sessions` (session_id, session_secret_hash, account_guest_id, tenant_id, created_at, expires_at, revoked_at). The low-entropy code hash is not a global primary key.
-  - `requestCode({ tenantId, email, purpose })`: normalizes with `normalizeContactEmail` (`domains/shortlet/src/guest-contact.ts`), stores only the hash, returns the plain code to the caller once (for the notifier). Same outcome shape whether or not the account exists.
-  - `verifyCode({ tenantId, email, code })`: wrong code increments attempts; expired, consumed or over-limit fails. On success, consumes atomically, finds or creates the account, issues a new session. Returns `{ sessionId, sessionSecret, accountGuestId, expiresAt }`.
-  - `resolveSession(sessionId, secret)`: returns the principal or a rejection (`missing`, `expired`, `revoked`), as `OperatorSessionRejection` does.
-  - `revokeSession`, `revokeAllSessions(accountGuestId)`.
-  - `changeEmail`: requires a `change_email` code sent to the *new* address and a live session; bumps `revision`.
+   - Tables: `guest_accounts` (id, tenant, normalized email, phone, status, timestamps, revision), `guest_sign_in_codes` (opaque challenge id, HMAC code hash, tenant/email/purpose, bound account/session/revision for action codes, timestamps, attempts, consumption/invalidation state), `guest_account_sessions` (session id, secret hash, account/tenant, absolute timestamps and revocation), and pseudonymous persisted rate events keyed by a stable HMAC scope. The low-entropy code hash is not a global primary key.
+   - `requestCode({ tenantId, email, purpose, clientAddress, ...sessionBinding })`: normalizes with `normalizeContactEmail` (`domains/shortlet/src/guest-contact.ts`), stores only the purpose/context-bound HMAC hash, returns the plain code once for immediate delivery, enforces configured send limits, and invalidates a prior challenge only after a permitted request. Sign-in has the same outcome shape whether or not an account exists.
+   - `verifyCode({ challengeId, tenantId, email, code, purpose, clientAddress, ...sessionBinding })`: checking quotas apply across purposes and tenant contexts; wrong-attempt and rate events commit even when verification is refused. Sign-in success consumes atomically, finds or creates the account, and issues a new session. Action purposes issue no sign-in session; their proof is bound to account/session/revision and consumed once.
+   - `resolveSession(sessionId, secret)`: returns the authenticated account/tenant/session principal or `null`; `sessionRejection` provides `missing`, `expired` or `revoked` only for a matching secret.
+   - `revokeSession(sessionId, tenantId)`, `revokeAllSessions(accountGuestId, tenantId)`.
+   - `changeEmail`: requires a consumed `change_email` proof sent to the *new* address, its live bound session and revision; bumps `revision` and invalidates other pending account action codes.
 - Commands that change account state go through platform command envelopes (ADR 0072), following the envelope shape used by `VerifiedStayReviewManager.submitReview`.
 - Audit entries: type, `accountGuestId`, tenant, reason code. Never email, code, secret or session id value.
 
@@ -41,3 +41,8 @@ New `test/guest-account-authority.test.ts`, mirroring the Operator authority tes
 ## ADR compliance
 
 0070, 0072, 0075, 0086 (pattern), 0093.
+
+## Comments
+
+- 4 Oct 2026 ADR map: 0070 — account/domain/session identities remain separate and sessions are absolute/revocable (account and session rows); 0072 — account email changes require an authenticated, tenant-scoped, versioned `guest_account.change_email` command envelope (mutation boundary); 0075 — one-time codes, session secrets, email and session IDs never enter audit/telemetry (hashing and safe transition events); 0086 — reuse SQLite/clock/audit patterns but not Operator's token delivery or 12-hour session policy (constructor and expiry); 0093 — six-digit emailed codes, purpose-bound challenges, 30-day absolute Guest sessions and approved send/check quotas (authority defaults and validation).
+- 4 Oct 2026 validation: `npm run check` passed; all 14 tests in `test/guest-account-authority.test.ts` passed; `git diff --check` passed. `npm test` completed with phase 1 at 1238/1242 and phase 2 at 164/165. Its failures are unrelated to account authority: the `guest-must-fix-ux` production flow gets 409 instead of 303 (two subsequent assertions cascade), `onboard-and-publish-one-inspected-unit` fails its publication-eligibility assertion, and `discovery-phase3-chromium` cannot write evidence because `.scratch/ui-phase3-discovery-detail` is absent when it runs. The guest-must-fix failure reproduced when that file was run alone. Keep this issue claimed until the repository test gate is green or the baseline failures are resolved.
