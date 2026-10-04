@@ -1,6 +1,6 @@
 # Cut the integration branch; spike Durable Object SQL semantics
 
-Status: claimed
+Status: resolved
 Type: prototype
 Blocked by: none
 Branch: `infra/cloudflare-deployment` (created here); the spike itself goes on `infra/cf-01a-do-sql-spike` and is **not merged**
@@ -52,3 +52,23 @@ Prototype slice. DoD items 1, 2 and 7 apply only to AC1 and AC2, since no produc
 ## Comments
 
 ## Answer
+
+### Observed SQL semantics
+
+The spike uses `ctx.storage.sql.exec` and `ctx.storage.transactionSync` in `spikes/do-sql/src/index.ts`. It ran with `cf@1.0.0-beta.12`, `@cloudflare/vite-plugin@2.0.0-beta.sha-52b0dc0e9`, and Vite 8.3.2 on the local `cf dev` runtime.
+
+1. **Parameters** — `SELECT ? AS value`, `SELECT ?1 AS value`, and `SELECT $value AS value`, each with one positional binding, returned respectively `[{"value":"plain"}]`, `[{"value":"numbered"}]`, and `[{"value":"named"}]`. All three forms are accepted.
+2. **Multiple statements** — `sql.exec("CREATE TABLE IF NOT EXISTS probe_multi (id INTEGER PRIMARY KEY); CREATE INDEX IF NOT EXISTS probe_multi_idx ON probe_multi(id);")` returned catalog rows for both `probe_multi` and `probe_multi_idx`; one call executes both statements.
+3. **PRAGMAs and foreign keys** — `PRAGMA busy_timeout = 5000` and `PRAGMA journal_mode` each failed with `not authorized: SQLITE_AUTH`. `PRAGMA foreign_keys = ON` returned an empty cursor without error. `PRAGMA table_info('probe_multi')` worked and returned the expected `id INTEGER PRIMARY KEY` column. A newly named Durable Object, before any foreign-key PRAGMA, returned `PRAGMA foreign_keys` as `1` and rejected an invalid child row with `FOREIGN KEY constraint failed`; enforcement is on by default.
+4. **BLOBs** — inserting either `new Uint8Array([0, 1, 127, 255])` or its `ArrayBuffer` into a BLOB column succeeded. Both read back as `ArrayBuffer` with bytes `[0,1,127,255]`.
+5. **Transactions** — nested `transactionSync` calls succeed and join the outer transaction: inserts 1 and 2 both committed. Throwing from the outer callback removed both its own and nested inserts (3 and 4). A nested callback that threw and was caught by the outer callback rolled back only the nested insert, then the outer transaction committed its surrounding inserts (observed ids 1 and 3). Returning `Promise.resolve()` was accepted; the transaction committed its insert (id 5). The runtime does not reject or await a thenable, so adapters must enforce synchronous callback semantics themselves.
+6. **Rows written vs changes** — for `INSERT OR IGNORE`, `UPDATE` with one `AFTER UPDATE` trigger insert, and an unmatched `UPDATE`, cursor `rowsWritten` was respectively 0, 2, and 0. Running `SELECT changes()` immediately after each statement returned 0, 1, and 0, matching Node `StatementSync.run().changes` (confirmed with the same trigger case).
+7. **Limits** — a statement with 100 bound parameters succeeded; 101 failed with `too many SQL variables at offset 207: SQLITE_ERROR`. A 2 MiB text value and a 2 MiB + 1 byte value were both accepted by the local runtime.
+
+### Consequences
+
+- **02a (port semantics):** Support plain, numbered and named bindings at the Durable Object boundary. Preserve `run().changes` semantics rather than forwarding `rowsWritten`; the adapter can query `SELECT changes()` immediately after the statement. Reject thenable-returning transaction callbacks explicitly. Support nested transactions with nested rollback isolation (savepoints on Node); outer rollback must include successful nested work. Document that `transactionSync` itself accepts a Promise without awaiting it.
+- **03b (adapter translation and guards):** BLOB reads arrive as `ArrayBuffer`, so translate them to the port's `Uint8Array`; accept `Uint8Array` and `ArrayBuffer` on insert. Treat `busy_timeout` and `journal_mode` as unsupported PRAGMAs (no-op only where callers need compatibility), preserve default foreign-key enforcement, and allow `foreign_keys` and `table_info`. Guard more than 100 bound parameters; do not add a 2 MiB value limit based on this runtime result.
+- **10b:** Configure required foreign-key constraints in schema and rely on the runtime default; do not configure busy timeout or journal mode. Keep transaction callbacks synchronous and enforce no-Promise behavior at the application/adapter seam, because runtime `transactionSync` silently commits before an async continuation. Preserve a single tenant transaction boundary and test trigger-aware change counts.
+
+- **Evidence and limitation:** All outputs above came from requests to the local `cf dev` server. The limit observations are runtime-specific and do not replace a documented platform quota check before production use.
