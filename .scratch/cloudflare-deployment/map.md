@@ -74,7 +74,7 @@ The frontier is the first slice in the table that is open, unblocked and unclaim
 | 12a | Daily export and orphan-receipt sweep alarm | task | ready-for-agent | 07b, 10b | 15 |
 | 12b | Restore runbook | task | ready-for-agent | 10b | 15 |
 | 13 | Observability and edge security | task | ready-for-agent (the dashboard steps need a human) | 10b | 15 |
-| 14 | ADR 0092 and DPIA update | grilling | ready-for-human | none | 15 |
+| 14 | ADR 0092 and DPIA update | grilling | claimed | none | 15 |
 | **G: Release** | | | | | |
 | 15 | Staging rehearsal; merge to `main` | task | ready-for-human | 06d, 11b, 12a, 12b, 13, 14 | 16 |
 | 16 | Data migration and cutover | task | ready-for-human | 15 | 17 |
@@ -132,4 +132,4 @@ At the beginning of a wave session:
 
 ## Context pointers
 
-(Add one line per resolved slice: what landed and where.)
+- 14: Accepted hosting ADR 0092 and Cloudflare/Gemini privacy launch gates in `docs/adr/0092-host-the-pilot-on-cloudflare.md` and ADR 0065; counsel, contracts and retention evidence remain prerequisites for real-data issue 15.
