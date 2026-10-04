@@ -6,8 +6,9 @@ port and trusts only the configured public origin for browser-origin checks.
 
 ## Runtime and start
 
-- Node.js 22.13.0 or later (`node:sqlite` without a flag); `.nvmrc` pins the
-  tested version.
+- Node.js 22.18.0 or later (the repository minimum required by the typed
+  Cloudflare configuration; this also includes `node:sqlite` without a flag).
+  `.nvmrc` pins the tested version.
 - Install runtime dependencies with `npm ci --omit=dev` (with
   `NODE_ENV=production`, plain `npm ci` does the same).
 - Build the Guest browser bundle with `npm run build`, on every deploy.
