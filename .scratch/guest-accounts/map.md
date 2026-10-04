@@ -49,3 +49,4 @@ Issue 10's legal review progresses alongside implementation but it must be resol
 
 - 01: policy values settled with the user on 3 Oct 2026; see the issue's `## Answer` and `PRD.md` "Settled policy values". Retention (answer 6) is provisional until legal review.
 - 02: **resolved** in `aa74d9d`; authentication policy and identity model recorded in ADR 0093. ADR 0092 remains the accepted Extended Stays decision. Assurance ADR is 0094; account recovery uses request-scoped email claims and explicit assurance expiry. See issue 02 Answer.
+- 03: **resolved** in `29a546a`; ADR 0094 anchors normalized assurance to the Guest Account, requires explicit outcome expiry, and documents the scoped Reservation claim path without changing ADR 0085. See issue 03 Answer.
