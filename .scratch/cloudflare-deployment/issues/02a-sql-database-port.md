@@ -1,6 +1,6 @@
 # `SqlDatabase` port, Node adapter and contract helper
 
-Status: ready-for-agent
+Status: claimed
 Type: task
 Blocked by: none (if 01a has been answered, read its "Consequences" list first)
 Branch: `infra/cf-02a-sql-database-port`
@@ -67,3 +67,11 @@ The 5000 ms busy timeout is an existing value, not a new policy. Cite where it c
 Check every item in `docs/agents/issue-tracker.md`.
 
 ## Comments
+
+- ADR mapping: 0004 keeps authoritative state in the backend and the adapter adds no cache (AC1/AC2); 0041, 0044 and 0046 require serialized atomic read-then-write transitions (AC2/AC3), implemented with `BEGIN IMMEDIATE`, nested savepoints, rollback on throw, and thenable rejection. The 01a probe found nested Durable Object transactions have savepoint-like rollback boundaries: a nested failure can be caught while the outer transaction continues, while an outer failure rolls back successful nested work.
+
+## Answer
+
+- Added `SqlDatabase`, a Node `node:sqlite` adapter, and a runtime-agnostic contract suite. Node transactions use `BEGIN IMMEDIATE` at the outer boundary and savepoints when nested, matching the 01a Durable Object SQL probe.
+- `npm run check` passed. `test/sql-database-node.test.ts` passed all 12 tests, including eight shared contract cases for Node.
+- The earlier full `npm test` run reported four phase-1 failures in unrelated pre-existing guest UX/onboarding journeys; the browser phase passed (165 passed, 1 skipped). The new nested-savepoint behavior is covered by the focused SQL contract suite. AC4 remains open pending resolution of the baseline failures.
