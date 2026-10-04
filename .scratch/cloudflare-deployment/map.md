@@ -35,10 +35,10 @@ The frontier is the first slice in the table that is open, unblocked and unclaim
 | # | Slice | Type | Status | Blocked by | Unlocks |
 | --- | --- | --- | --- | --- | --- |
 | **A: Foundation** | | | | | |
-| 01a | Cut the integration branch; spike Durable Object SQL semantics | prototype | ready-for-agent | none | 01c, 01b, 03a |
+| 01a | Cut the integration branch; spike Durable Object SQL semantics | prototype | resolved | none | 01c, 01b, 03a |
 | 01c | Validate and pin the `cf` Workers toolchain | prototype | ready-for-agent | 01a | 01b, 03a |
 | 01b | Spike Workers runtime compatibility | prototype | ready-for-agent | 01a, 01c | 09c, 10b |
-| 02a | `SqlDatabase` port, Node adapter, contract helper | task | ready-for-agent | none | 02b–02d, 03b, 05b, 06a–06c |
+| 02a | `SqlDatabase` port, Node adapter, contract helper | task | claimed (focused checks green; baseline suite gate open) | none | 02b–02d, 03b, 05b, 06a–06c |
 | 02b | Move the seven handle-taking stores onto the port | task | ready-for-agent | 02a | 02e, 07a |
 | 02c | Move the availability and guest-interaction stores onto the port | task | ready-for-agent | 02a | 02e |
 | 02d | Move the operator grant and session stores onto the shared handle | task | ready-for-agent | 02a | 02e |
@@ -50,7 +50,7 @@ The frontier is the first slice in the table that is open, unblocked and unclaim
 | 04a | Injectable guest composition root | task | ready-for-agent | 02e | 04c, 08a |
 | 04b | Injectable owner composition root | task | ready-for-agent | 02e | 06d, 08b |
 | 04c | Session runtimes share one handle, with a size cap | task | ready-for-agent | 04a | 10b |
-| 05a | Typed unit repository interface | task | ready-for-agent | none | 05b |
+| 05a | Typed unit repository interface | task | claimed (AC4 baseline suite gate open) | none | 05b |
 | 05b | SQLite unit and operator repositories | task | ready-for-agent | 02a, 05a | 10a |
 | **D: Durable state** | | | | | |
 | 06a | Durable, typed, redacted audit log | task | ready-for-agent | 02a | 06d |
@@ -132,4 +132,7 @@ At the beginning of a wave session:
 
 ## Context pointers
 
+- 01a: `infra/cf-01a-do-sql-spike` holds the runnable SQL spike; its issue answer records SQL, PRAGMA, transaction, BLOB, row-count and limit evidence without merging the spike into the integration branch.
+- 02a: Added the synchronous SQL port, Node adapter and shared contract at `packages/platform-core/src/sql-database.ts`, `packages/platform-core/src/node-sqlite-database.ts` and `test/helpers/sql-database-contract.ts`; focused tests/typecheck pass, while the existing full-suite baseline failures remain open.
+- 05a: Added `UnitRepositoryContract` and JSON input validation in `domains/shortlet/src/browse.ts`; focused tests/typecheck pass, while AC4 remains open on baseline full-suite failures.
 - 14: Accepted hosting ADR 0092 and Cloudflare/Gemini privacy launch gates in `docs/adr/0092-host-the-pilot-on-cloudflare.md` and ADR 0065; counsel, contracts and retention evidence remain prerequisites for real-data issue 15.
