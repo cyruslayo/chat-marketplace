@@ -59,8 +59,32 @@ An occupancy model granting one guest party exclusive use of a self-contained un
 _Avoid_: Private apartment, shared room, room category
 
 **Short Stay**:
-A reservation or aggregated continuous occupancy at one property lasting between one and fourteen consecutive nights under the launch product.
+A reservation or aggregated continuous occupancy at one property lasting between one and fourteen consecutive nights under the launch product. Longer stays are Extended Stays (ADR 0092).
 _Avoid_: Extended stay, monthly stay, tenancy
+
+**Extended Stay**:
+A reservation or aggregated continuous occupancy at one property of 30 to 90 consecutive nights at a unit that has opted in, contracted at once and paid one Billing Period at a time (ADR 0092).
+_Avoid_: Tenancy, lease, monthly rental, long let
+
+**Billing Period**:
+One of the consecutive 30-night spans of an Extended Stay, counted from check-in (the last may be shorter), fixed at confirmation with its dates, amount, nightly contracted values and due date (ADR 0092).
+_Avoid_: Month, rent period, instalment
+
+**Period Payment**:
+The payment for one Billing Period, made through its own payment session under the ordinary Payment Window and Live Payment Attempt rules; payable once the previous period has started and due 7 days before its first night (ADR 0092).
+_Avoid_: Rent, recurring charge, direct debit
+
+**Monthly Agreed Amounts**:
+The owner's agreed amount for a full Billing Period plus any mandatory charges; versioned unit configuration from which a full period's Extended Stay price is derived (ADR 0092, ADR 0089).
+_Avoid_: Monthly rent, guest price
+
+**Period Owner Payable**:
+The Owner Payable for one Billing Period, captured at confirmation; period 1 is due under ADR 0089, later periods when their Period Payment is verified and their first night has begun with no Blocking Fulfilment Complaint open (ADR 0092).
+_Avoid_: Monthly payout, rent remittance
+
+**Notice to End**:
+The Primary Guest's versioned request, after Verified Access, to end an Extended Stay early, setting a new last night and settling nights by nightly contracted value (ADR 0092).
+_Avoid_: Notice to quit, termination, eviction
 
 **Continuous Occupancy**:
 Adjacent or operationally continuous accommodation at the same property by the same primary guest or materially the same guest party, aggregated across units and reservations for stay-length enforcement.
