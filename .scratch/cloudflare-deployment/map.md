@@ -74,7 +74,7 @@ The frontier is the first slice in the table that is open, unblocked and unclaim
 | 12a | Daily export and orphan-receipt sweep alarm | task | ready-for-agent | 07b, 10b | 15 |
 | 12b | Restore runbook | task | ready-for-agent | 10b | 15 |
 | 13 | Observability and edge security | task | ready-for-agent (the dashboard steps need a human) | 10b | 15 |
-| 14 | ADR 0092 and DPIA update | grilling | claimed | none | 15 |
+| 14 | ADR 0092 and DPIA update | grilling | resolved (launch gates open) | none | 15 |
 | **G: Release** | | | | | |
 | 15 | Staging rehearsal; merge to `main` | task | ready-for-human | 06d, 11b, 12a, 12b, 13, 14 | 16 |
 | 16 | Data migration and cutover | task | ready-for-human | 15 | 17 |

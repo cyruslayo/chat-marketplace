@@ -1,6 +1,6 @@
 # ADR 0092 and DPIA update
 
-Status: claimed
+Status: resolved
 Type: grilling
 Blocked by: none
 Branch: `infra/cf-14-adr-0092`
