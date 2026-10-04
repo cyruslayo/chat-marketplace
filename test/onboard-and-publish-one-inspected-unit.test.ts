@@ -190,7 +190,8 @@ test("operators and staff see actionable status without raw evidence exposure", 
   seedIssue01Units(repository);
 
   const unit = repository.findAll().find((u: any) => u.id === "unit-lagos-001");
-  const status: any = getUnitOnboardingStatus(unit);
+  // ADRs 0009 and 0056 make eligibility relative to the latest permissible checkout.
+  const status: any = getUnitOnboardingStatus(unit, new Date("2026-07-22T00:00:00Z"));
 
   assert.equal(status.unitId, "unit-lagos-001");
   assert.equal(status.published, true);
