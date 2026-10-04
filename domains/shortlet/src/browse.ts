@@ -132,6 +132,59 @@ export type UnitInput = Omit<Unit, "photoUrls" | "description" | "bathrooms"> & 
 };
 export type UnitSaveInput = UnitInput | Partial<Unit>;
 
+export interface UnitRepositoryContract {
+  save(unit: UnitSaveInput): void;
+  findAll(): readonly Unit[];
+  findById(id: string): Unit | null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item: unknown) => typeof item === "string");
+}
+
+function isUnitInput(value: unknown): value is UnitInput {
+  if (!isRecord(value) || typeof value.id !== "string" || value.id.trim() === "") return false;
+  if (typeof value.propertyId !== "string" || typeof value.title !== "string" || typeof value.occupancyModel !== "string") return false;
+  if (typeof value.capacity !== "number" || typeof value.published !== "boolean") return false;
+  if (value.description !== undefined && typeof value.description !== "string") return false;
+  if (value.bathrooms !== undefined && typeof value.bathrooms !== "number") return false;
+  if (!isStringArray(value.amenities) || (value.photoUrls !== undefined && !isStringArray(value.photoUrls))) return false;
+  if (!isRecord(value.location) || typeof value.location.city !== "string" || typeof value.location.neighbourhood !== "string") return false;
+  if (!isRecord(value.price)
+    || typeof value.price.nightlyKobo !== "number"
+    || typeof value.price.refundableSecurityDepositKobo !== "number"
+    || typeof value.price.version !== "string"
+    || (value.price.mandatoryFeesKobo !== undefined && typeof value.price.mandatoryFeesKobo !== "number")) return false;
+  if (value.price.ownerTerms !== undefined) {
+    if (!isRecord(value.price.ownerTerms) || !isRecord(value.price.ownerTerms.agreed)
+      || typeof value.price.ownerTerms.agreed.nightlyKobo !== "number"
+      || typeof value.price.ownerTerms.agreed.mandatoryChargesKobo !== "number"
+      || typeof value.price.ownerTerms.marginBasisPoints !== "number") return false;
+  }
+  if (!("operator" in value) || !("inspection" in value) || !("managementAuthority" in value) || !("regulatory" in value)) return false;
+  if (!Array.isArray(value.blockedDates) || !value.blockedDates.every((range: unknown) =>
+    isRecord(range)
+      && (typeof range.start === "string" || range.start instanceof Date)
+      && (typeof range.end === "string" || range.end instanceof Date))) return false;
+  if (value.checkInWindow !== undefined && (!isRecord(value.checkInWindow)
+    || typeof value.checkInWindow.earliestAccessTime !== "string"
+    || typeof value.checkInWindow.latestPermittedArrival !== "string"
+    || value.checkInWindow.timezone !== "Africa/Lagos")) return false;
+  return true;
+}
+
+function requireUnitInput(value: unknown, label: string): UnitInput {
+  if (isRecord(value) && (typeof value.id !== "string" || value.id.trim() === "")) {
+    throw new TypeError(`${label} must include a string id`);
+  }
+  if (!isUnitInput(value)) throw new TypeError(`${label} must be a valid Unit record`);
+  return value;
+}
+
 function normalizeUnit(unit: UnitInput): Unit {
   return {
     ...unit,
@@ -197,20 +250,20 @@ export function isEligibleUnit(unit: any, now: Date = new Date(), dateRange?: El
     && unit.regulatory.insurance.propertyCoverVerified === true;
 }
 
-export class UnitRepository {
-  #units = new Map<string, any>();
+export class UnitRepository implements UnitRepositoryContract {
+  #units = new Map<string, Unit>();
   save(unit: UnitSaveInput): void {
     if (!unit.id) throw new TypeError("Unit id is required");
     const current = this.#units.get(unit.id);
     if (!current && (!unit.propertyId || !unit.title || !unit.location || !unit.occupancyModel || !unit.price)) throw new TypeError("A new Unit requires its complete record");
-    const normalized = normalizeUnit({ ...current, ...unit } as UnitInput);
+    const normalized = normalizeUnit(requireUnitInput({ ...current, ...unit }, `Unit ${unit.id}`));
     this.#units.set(normalized.id, structuredClone(normalized));
   }
-  findAll(): any[] { return [...this.#units.values()].map((unit) => structuredClone(normalizeUnit(unit as UnitInput))); }
-  findById(id: string): any { const unit = this.#units.get(id); return unit ? structuredClone(normalizeUnit(unit as UnitInput)) : null; }
+  findAll(): Unit[] { return [...this.#units.values()].map((unit) => structuredClone(unit)); }
+  findById(id: string): Unit | null { const unit = this.#units.get(id); return unit ? structuredClone(unit) : null; }
 }
 
-export class JsonUnitRepository {
+export class JsonUnitRepository implements UnitRepositoryContract {
   public readonly filePath: string;
   constructor(filePath: string) {
     this.filePath = filePath;
@@ -221,16 +274,16 @@ export class JsonUnitRepository {
     if (!unit.id) throw new TypeError("Unit id is required");
     const current = this.findById(unit.id);
     if (!current && (!unit.propertyId || !unit.title || !unit.location || !unit.occupancyModel || !unit.price)) throw new TypeError("A new Unit requires its complete record");
-    const normalized = normalizeUnit({ ...current, ...unit } as UnitInput);
+    const normalized = normalizeUnit(requireUnitInput({ ...current, ...unit }, `Unit ${unit.id}`));
     const units = this.findAll().filter((candidate) => candidate.id !== normalized.id);
     writeFileSync(this.filePath, JSON.stringify([...units, normalized], null, 2), "utf8");
   }
-  findAll(): any[] {
+  findAll(): Unit[] {
     const parsed: unknown = JSON.parse(readFileSync(this.filePath, "utf8"));
     if (!Array.isArray(parsed)) throw new TypeError("Unit repository file must contain an array");
-    return parsed.map((unit) => structuredClone(normalizeUnit(unit as UnitInput)));
+    return parsed.map((unit: unknown, index: number) => structuredClone(normalizeUnit(requireUnitInput(unit, `Unit repository entry ${index}`))));
   }
-  findById(id: string): any { return this.findAll().find((unit) => unit.id === id) ?? null; }
+  findById(id: string): Unit | null { return this.findAll().find((unit) => unit.id === id) ?? null; }
 }
 
 function readFileSafe(filePath: string): string | null {
