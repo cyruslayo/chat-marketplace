@@ -7,7 +7,7 @@ import { viewResultIntent } from "../apps/local-guest/src/concierge.js";
 import { startPilotServer } from "../apps/pilot/src/pilot-server.js";
 import type { AssistantModelClient } from "../apps/local-guest/src/assistant/assistant-model.js";
 import { restartFixture } from "./helpers/guest-restart.js";
-import { PUBLIC_ORIGIN, arrivalNextWeek, cookieFrom, productionFixture } from "./helpers/pilot-fixture.js";
+import { PUBLIC_ORIGIN, cookieFrom, productionFixture } from "./helpers/pilot-fixture.js";
 import { approvingPaystack, guestEvent, postJson, provisionOperatorToken, surfaceAction } from "./helpers/guest-journey.js";
 import { operatorCookieFrom, postOperatorLogin } from "./helpers/operator-session.js";
 
@@ -117,9 +117,11 @@ let journeyProof: JourneyProof | undefined;
 
 test("Production journey for the title and name criteria", async () => {
   const fixture = await productionFixture({ noDeposit: true });
-  // Frozen inside Operator Active Hours (ADR 0042: disclosure only 8:00 AM - 7:30 PM WAT), so the test never depends on the time of day.
-  const frozen = new Date(`${new Date().toISOString().slice(0, 10)}T10:00:00.000Z`);
+  // Fixed fixture date keeps the seeded inspection valid through its latest permissible checkout (ADRs 0009/0056).
+  // 10:00 UTC is inside Operator Active Hours in Lagos (ADR 0042).
+  const frozen = new Date("2026-09-03T10:00:00.000Z");
   const clock = () => frozen;
+  const arrival = new Date(frozen.getTime() + 7 * 86_400_000).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "Africa/Lagos" });
   const operatorToken = provisionOperatorToken(fixture, clock, "issue-10-journey");
   const { provider, initializedReference } = approvingPaystack(fixture);
   const server = startPilotServer({ port: 0, configuration: fixture.configuration, paystackClient: provider, clock });
@@ -128,22 +130,24 @@ test("Production journey for the title and name criteria", async () => {
     const guestCookie = cookieFrom(await fetch(`${base}/`));
     await fetch(`${base}/guest/contact/phone`, { method: "POST", headers: { cookie: guestCookie, origin: PUBLIC_ORIGIN, "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ phoneNumber: "+2348090001111", expectedRevision: "0" }), redirect: "manual" });
     const threadId = `g-${crypto.randomUUID()}`;
-    let body = (await postJson(base, "/api/turn", guestCookie, { threadId, text: `I need an apartment in Lagos from ${arrivalNextWeek()} for 2 nights for 2 people` })).body;
+    let body = (await postJson(base, "/api/turn", guestCookie, { threadId, text: `I need an apartment in Lagos from ${arrival} for 2 nights for 2 people` })).body;
     for (const label of ["View apartment", "Request to Book", "Review request", "Submit Booking Request"]) { body = await guestEvent(base, guestCookie, threadId, surfaceAction(body, label)); }
     const statusScreen = JSON.stringify(body);
 
     const login = await postOperatorLogin({ base }, operatorToken, { origin: PUBLIC_ORIGIN });
     const operatorCookie = operatorCookieFrom(login);
     const database = new DatabaseSync(fixture.configuration.databasePath);
-    const requestId = (database.prepare("SELECT request_id FROM guest_booking_requests LIMIT 1").get() as { request_id: string }).request_id;
+    const request = database.prepare("SELECT request_id, status FROM guest_booking_requests LIMIT 1").get() as { request_id: string; status: string };
     database.close();
+    assert.equal(request.status, "disclosed", "production keeps the request open for an authorized Operator decision (ADR 0041)");
+    const requestId = request.request_id;
     const operatorInbox = await (await fetch(`${base}/operator/requests`, { headers: { cookie: operatorCookie } })).text();
     const operatorHome = await (await fetch(`${base}/operator`, { headers: { cookie: operatorCookie } })).text();
     const requestPath = `/operator/requests/${encodeURIComponent(requestId)}`;
     const operatorRequestPage = await (await fetch(`${base}${requestPath}`, { headers: { cookie: operatorCookie } })).text();
     const basedOnVersion = operatorRequestPage.match(/name="basedOnVersion" value="(\d+)"/)?.[1] ?? "";
     const confirmed = await fetch(`${base}${requestPath}/confirm`, { method: "POST", headers: { cookie: operatorCookie, origin: PUBLIC_ORIGIN }, body: new URLSearchParams({ basedOnVersion, attest: "yes" }), redirect: "manual" });
-    assert.equal(confirmed.status, 303);
+    assert.equal(confirmed.status, 303, await confirmed.clone().text());
 
     const offerState = await (await fetch(`${base}/api/state?threadId=${encodeURIComponent(threadId)}`, { headers: { cookie: guestCookie } })).json();
     await guestEvent(base, guestCookie, threadId, surfaceAction(offerState, "Accept"));
