@@ -133,6 +133,7 @@ At the beginning of a wave session:
 ## Context pointers
 
 - 01a: `infra/cf-01a-do-sql-spike` holds the runnable SQL spike; its issue answer records SQL, PRAGMA, transaction, BLOB, row-count and limit evidence without merging the spike into the integration branch.
+- 01c: Pinned `cf@1.0.0-beta.12`, `@cloudflare/vite-plugin@2.0.0-beta.sha-52b0dc0e9`, and Vite `8.3.2`; typed Worker proof covered SQLite DO, R2, assets, synthetic local secret, mode selection, generated types, dry-run deploys and the Workers Vitest harness. Details and exact commands are in `issues/01c-cf-toolchain-foundation.md`; `npm run check` passes, but 01c stays claimed pending the full `npm test` gate. Integrated by commits `9bf7b12`, `aa47f50`, `cc261c8` (supporting pilot Node minimum and local secret ignore rules).
 - 02a: Added the synchronous SQL port, Node adapter and shared contract at `packages/platform-core/src/sql-database.ts`, `packages/platform-core/src/node-sqlite-database.ts` and `test/helpers/sql-database-contract.ts`; focused tests/typecheck pass, while the existing full-suite baseline failures remain open.
 - 05a: Added `UnitRepositoryContract` and JSON input validation in `domains/shortlet/src/browse.ts`; focused tests/typecheck pass, while AC4 remains open on baseline full-suite failures.
 - 14: Accepted hosting ADR 0092 and Cloudflare/Gemini privacy launch gates in `docs/adr/0092-host-the-pilot-on-cloudflare.md` and ADR 0065; counsel, contracts and retention evidence remain prerequisites for real-data issue 15.
