@@ -68,5 +68,5 @@ The decisions above are the user's answers to the issue 14 review questions. The
 
 - Added accepted ADR 0092 at `docs/adr/0092-host-the-pilot-on-cloudflare.md`; no ADR index exists in `docs/adr/` to update.
 - Updated ADR 0065 with Cloudflare/Gemini proposed processor roles, cross-border approval requirements, minimized data-flow assumptions, provisional retention, and explicit launch blockers.
-- Recorded each human decision above. Open gates are: Nigerian counsel's transfer/DPIA approval, confirmation of processor roles/subprocessors/contract terms and service locations, and an approved schedule for all data classes including Cloudflare Logs and issue 12a exports. These remain blockers for issue 15; synthetic-only staging is allowed meanwhile.
+- Recorded each human decision above. Open gates are: Nigerian counsel's transfer/DPIA approval, confirmation of processor roles/subprocessors/contract terms and service locations, and an approved schedule for all data classes including Cloudflare Logs and issue 12a exports. These remain explicit blockers on issue 15 even though the issue 14 architecture/documentation slice is resolved; synthetic-only staging is allowed meanwhile.
 - ADRs 0004, 0065, 0075 and 0090 were re-read and their constraints are mapped above and in the two ADR documents.
