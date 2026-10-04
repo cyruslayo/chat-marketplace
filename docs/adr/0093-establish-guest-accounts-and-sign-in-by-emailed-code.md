@@ -10,7 +10,7 @@ The Guest Account is optional. Booking authority remains independent of account 
 
 ### Guest Account identity
 
-- A **Guest Account** is a durable, tenant-scoped record with an opaque, stable **Account Guest Id**, verified primary email, optional phone, timestamps, revision and active/closed status.
+- A **Guest Account** is a durable, tenant-scoped record with an opaque, stable **Account Guest Id**, verified primary email, optional phone, timestamps, revision and active/closed status. Account Guest Ids use the `gacct-` prefix followed by 128 bits of cryptographically random base64url data; the identifier encodes no email, tenant or permission.
 - The Account Guest Id is the durable domain Guest identity for new account-authenticated actions. It is not an interaction, browser-session, thread or booking identifier (ADR 0070).
 - An anonymous browser **principal** remains an interaction identity. Successful sign-in may link the current principal to one Guest Account as a **Linked Principal**. A principal may link to at most one account; a conflicting link fails closed and does not move existing ownership.
 - A device principal linked during successful sign-in provides continuity for its permitted history. Recovery on a new device by proving a historical request email creates resource-scoped claims for matching Booking Requests and their causally related records; it does not link or disclose every record owned by an old principal. Historical contact evidence must be authoritative and unambiguous. The current mutable contact on a principal is not proof of a request's historical email.
