@@ -36,7 +36,7 @@ The frontier is the first slice in the table that is open, unblocked and unclaim
 | --- | --- | --- | --- | --- | --- |
 | **A: Foundation** | | | | | |
 | 01a | Cut the integration branch; spike Durable Object SQL semantics | prototype | resolved | none | 01c, 01b, 03a |
-| 01c | Validate and pin the `cf` Workers toolchain | prototype | ready-for-agent | 01a | 01b, 03a |
+| 01c | Validate and pin the `cf` Workers toolchain | prototype | claimed | 01a | 01b, 03a |
 | 01b | Spike Workers runtime compatibility | prototype | ready-for-agent | 01a, 01c | 09c, 10b |
 | 02a | `SqlDatabase` port, Node adapter, contract helper | task | claimed (focused checks green; baseline suite gate open) | none | 02b–02d, 03b, 05b, 06a–06c |
 | 02b | Move the seven handle-taking stores onto the port | task | ready-for-agent | 02a | 02e, 07a |

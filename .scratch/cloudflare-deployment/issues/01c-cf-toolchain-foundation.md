@@ -1,6 +1,6 @@
 # Validate and pin the `cf` Workers toolchain
 
-Status: ready-for-agent
+Status: claimed
 Type: prototype
 Blocked by: 01a
 Branch: `infra/cf-01c-toolchain`
@@ -47,4 +47,29 @@ Check every item in `docs/agents/issue-tracker.md`.
 
 ## Answer
 
-(Record the tested toolchain and findings.)
+### Versions and configuration
+
+- Verified with Node `22.19.0` and npm `10.9.3`; `cloudflare.config.ts` requires Node 22.18 or later.
+- Pinned the project-local tools exactly: `cf@1.0.0-beta.12`, `@cloudflare/vite-plugin@2.0.0-beta.sha-52b0dc0e9`, and `vite@8.3.2`. `npm ls cf @cloudflare/vite-plugin vite --depth=0` reported those exact versions.
+- `npm exec cf -- init workers C:\Users\Cyrus\AppData\Local\Temp\opencode\cf-toolchain-01c-20261004 --no-install --quiet` created a project with typed `cloudflare.config.ts`, `vite.config.ts`, and npm scripts. `cf init`'s generated package uses version ranges, so the project root was pinned explicitly.
+- The probe's typed config used `defineConfig`, `defineWorker`, `exports.durableObject({ storage: "sqlite" })`, a Durable Object binding, `bindings.r2`, `bindings.assets`, `compatibilityFlags: ["nodejs_compat"]`, and `assets.runWorkerFirst`. A context-aware config factory selected worker names by `mode`. The Worker exposed synthetic `/sql`, `/r2`, `/secret`, `/mode` and static `/` routes.
+
+### Commands and observed results
+
+- `npm exec cf -- workers types` succeeded and generated `.cloudflare/types/index.d.ts`.
+- `npm exec cf -- build`, `npm exec cf -- build --mode staging`, and `npm exec cf -- build --mode production` all succeeded.
+- `npm exec cf -- deploy --dry-run --mode staging` and `npm exec cf -- deploy --dry-run --mode production` both completed without upload. Their reports showed the SQLite-backed Durable Object, R2 bucket, and Assets bindings; worker names differed (`cf-toolchain-proof-staging` and `cf-toolchain-proof-production`). No real resource was created or deployed.
+- `npm exec cf -- dev` started the Vite/Workers runtime. Requests returned: `/` → HTML containing `static-asset-ok`; `/sql` → `{"value":"sqlite-ok"}`; `/r2` → `r2-ok`; `/secret` → `secret-bound` using a synthetic, temporary `.dev.vars` value. The development Worker exercised SQLite-backed DO storage, local R2 put/get, and static assets.
+- `npm exec cf -- dev --port 5174` failed because this beta cannot forward arguments to the detected Vite dev command. Setting `server.port` in `vite.config.ts` worked; the successful proof used port 5181.
+- The local Workers test proof used `vitest@4.1.11` and `@cloudflare/vitest-plugin@1.3.6`. A Vitest integration test invoked the SQLite-backed Durable Object and passed (1 test). Its test-only `wrangler.test.jsonc` described the same DO/R2/assets runtime; the plugin depends on `wrangler@4.147.0` internally. Wrangler is therefore a transitive test-runtime dependency only, not the project's build, dev or deploy CLI.
+- `npm exec cf -- workers secrets update --help` and `npm exec cf -- workers secrets bulk --help` expose secret management; `npm exec cf -- deploy --help` also documents `--secrets-file`. No CLI authentication or secret upload was attempted. `npm exec cf -- tail --help` returned the generic unknown-command help and the command listing contains no `tail`; the exact supported live-log fallback is Cloudflare Dashboard → Workers & Pages → select the Worker → Observability. `npm exec cf -- logs retrieve get --help` describes retrieval of logs already stored in R2, not live streaming.
+- `npm run check` passed. The full `npm test` run is currently in progress; 01c remains claimed until its result is recorded. The integration baseline previously reported four unrelated phase-1 failures, so AC4/Definition of Done cannot be marked complete unless this run is fully green.
+
+### ADR mapping
+
+| ADR | Constraint | Result |
+| --- | --- | --- |
+| 0004 | Durable Object remains authoritative; configuration must not own application state | Probe state exists only in the SQLite-backed DO; the Worker only routes requests and serves assets. |
+| 0065 | Hosting/vendor and cross-border implications remain launch gates | This proves tooling only; it does not close any privacy or vendor gate. |
+| 0075 | Secrets and restricted data never enter logs | Local secret was synthetic, temporary and tested through a boolean response; no secret value was logged or committed. |
+| 0080 | Critical routes retain deterministic parity | This toolchain proof is independent of guest/operator workflows and adds no agent-only behavior. |
