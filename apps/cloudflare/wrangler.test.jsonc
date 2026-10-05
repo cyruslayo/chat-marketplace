@@ -1,0 +1,15 @@
+{
+  // Internal Workers Vitest runtime configuration, not a deployment config.
+  "name": "shortlet-test-harness",
+  "main": "src/test-harness-do.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": {
+    "bindings": [{ "name": "TEST_HARNESS", "class_name": "TestHarnessDO" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TestHarnessDO"] }],
+  "r2_buckets": [
+    { "binding": "RECEIPTS", "bucket_name": "test-receipts" },
+    { "binding": "EXPORTS", "bucket_name": "test-exports" }
+  ]
+}
