@@ -57,3 +57,17 @@ New `test/guest-account-authority.test.ts`, mirroring the Operator authority tes
 - Zero credentials or secrets in audit or telemetry (ADR 0075).
 - All 14 tests in `test/guest-account-authority.test.ts` pass, covering AC1–AC9, wrong-attempt lockouts, concurrent consumption, tenant isolation, and restart survival.
 - `npm run check` and full `npm test` (Phase 1 concurrent and Phase 2 real browser, 165 passed, 0 failed, 1 skipped) passed cleanly on 5 October 2026.
+
+### Integration gate (5 October 2026)
+
+Candidate `5772c8a`, including idempotency correction `a86ceb8`, passed a complete serial `npm test`: **1,247 non-browser tests passed; 165 browser tests passed; zero failures; one expected foundation-browser skip**. `npm run check` and `git diff --check` are clean. Standards and Spec reviews accepted the account correction, and a follow-up review accepted the RB8 readiness repair. This supersedes the pending integration gates in the historical comments above.
+
+| Definition of Done item | Reviewed evidence |
+| --- | --- |
+| 1 — Dedicated named tests | `guest-account-authority.test.ts` has separate AC1–AC9 tests, plus envelope, idempotency and stale-proof regressions; ADR issues 02/03 explicitly require documentary checks rather than tests. |
+| 2 — Named failure paths | Expired/consumed/unknown codes, exhausted attempts, concurrent consumption, tenant isolation, session expiry/revocation, wrong/stale email proofs and conflicting command retries are exercised. |
+| 3 — ADR discovery and compliance | Read and mapped ADRs 0004, 0070, 0072, 0075, 0078, 0080, 0085, 0086, 0093 and 0094, plus the intersecting identity/channel decisions recorded in issues 02/03. Receipt/replay constraints are cited at their callsite and in the fix commit. |
+| 4 — Dependencies used | Database/ownership, clock, HMAC key, policy and optional audit/telemetry sinks all have implementation callsites. |
+| 5 — No invented policy | Authentication values and account-id format trace to ADR 0093 and issue 01; the correction introduces command persistence, not new policy thresholds or retention. |
+| 6 — Credential minimization | Redaction assertions cover every emitted event type. Command receipts contain account snapshots and keyed fingerprints, never plaintext codes or session secrets. |
+| 7 — Green repository checks | Full suite on `5772c8a`: 1,247 + 165 passed, zero failed, one expected skip; typecheck and whitespace checks passed. |
