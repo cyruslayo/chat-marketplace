@@ -18,6 +18,7 @@ async function sendPrompt(tab: RealBrowserTab, prompt: string, expectedText: str
 }
 
 async function capture(tab: RealBrowserTab, name: string): Promise<void> {
+  mkdirSync(EVIDENCE, { recursive: true });
   writeFileSync(join(EVIDENCE, name), await tab.captureScreenshot());
 }
 

@@ -1,6 +1,6 @@
 # Guest account authority: codes, accounts, sessions
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: 02
 Requested: 2 Oct 2026
@@ -46,3 +46,12 @@ New `test/guest-account-authority.test.ts`, mirroring the Operator authority tes
 
 - 4 Oct 2026 ADR map: 0070 — account/domain/session identities remain separate and sessions are absolute/revocable (account and session rows); 0072 — account email changes require an authenticated, tenant-scoped, versioned `guest_account.change_email` command envelope (mutation boundary); 0075 — one-time codes, session secrets, email and session IDs never enter audit/telemetry (hashing and safe transition events); 0086 — reuse SQLite/clock/audit patterns but not Operator's token delivery or 12-hour session policy (constructor and expiry); 0093 — six-digit emailed codes, purpose-bound challenges, 30-day absolute Guest sessions and approved send/check quotas (authority defaults and validation).
 - 4 Oct 2026 validation: `npm run check` passed; all 14 tests in `test/guest-account-authority.test.ts` passed; `git diff --check` passed. `npm test` completed with phase 1 at 1238/1242 and phase 2 at 164/165. Its failures are outside account authority: the `guest-must-fix-ux` production flow gets 409 instead of 303 (two subsequent assertions cascade), `onboard-and-publish-one-inspected-unit` fails its publication-eligibility assertion, and `discovery-phase3-chromium` cannot write evidence because `.scratch/ui-phase3-discovery-detail` is absent when it runs. The two independent phase-1 failures were reproduced at baseline commit `c6bad10` in an isolated temporary worktree, as was the guest-must-fix failure when run alone. Keep this issue claimed until the repository test gate is green or the baseline failures are resolved.
+- Follow-up: fixed the time-dependent Guest UX fixture by freezing its clock at the fixture-valid date and selecting the request created by that journey; pinned the onboarding projection test clock; made the Chromium evidence helper create its output directory; scheduled focus after layout and awaited focus target in Chromium new-conversation test; waited for Paystack checkout redirect in real browser test. The complete `npm test` suite passed with zero failures on 5 October 2026.
+
+## Answer
+
+- Implemented `SqliteGuestAccountAuthority` and types in `domains/shortlet/src/guest-account-authority.ts`, exported from `domains/shortlet/src/index.ts`.
+- Enforces ADR 0093 policy values as configurable options with compliant defaults, transaction atomicity via `BEGIN IMMEDIATE`, HMAC-bound code hashing and storage, purpose-bound challenges, 30-day absolute sessions, and envelope-gated email changes (ADR 0072).
+- Zero credentials or secrets in audit or telemetry (ADR 0075).
+- All 14 tests in `test/guest-account-authority.test.ts` pass, covering AC1–AC9, wrong-attempt lockouts, concurrent consumption, tenant isolation, and restart survival.
+- `npm run check` and full `npm test` (Phase 1 concurrent and Phase 2 real browser, 165 passed, 0 failed, 1 skipped) passed cleanly on 5 October 2026.

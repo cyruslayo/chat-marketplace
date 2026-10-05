@@ -187,7 +187,7 @@ test("operators and staff see actionable status without raw evidence exposure", 
   seedIssue01Units(repository);
 
   const unit = repository.findAll().find((u: any) => u.id === "unit-lagos-001");
-  const status: any = getUnitOnboardingStatus(unit);
+  const status: any = getUnitOnboardingStatus(unit, "2026-09-03T10:00:00.000Z");
 
   assert.equal(status.unitId, "unit-lagos-001");
   assert.equal(status.published, true);

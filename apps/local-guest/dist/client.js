@@ -10983,7 +10983,9 @@ Known schemas:
     }
     newConversationConfirm.hidden = false;
     newConversationButton.setAttribute("aria-expanded", "true");
-    newConversationStart.focus();
+    requestAnimationFrame(() => {
+      if (!newConversationConfirm.hidden) newConversationStart.focus({ preventScroll: true });
+    });
   });
   newConversationStart.addEventListener("click", startNewConversation);
   newConversationCancel.addEventListener("click", closeNewConversationConfirm);

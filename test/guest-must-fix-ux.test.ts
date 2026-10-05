@@ -118,7 +118,7 @@ let journeyProof: JourneyProof | undefined;
 test("Production journey for the title and name criteria", async () => {
   const fixture = await productionFixture({ noDeposit: true });
   // Frozen inside Operator Active Hours (ADR 0042: disclosure only 8:00 AM - 7:30 PM WAT), so the test never depends on the time of day.
-  const frozen = new Date(`${new Date().toISOString().slice(0, 10)}T10:00:00.000Z`);
+  const frozen = new Date("2026-09-03T10:00:00.000Z");
   const clock = () => frozen;
   const operatorToken = provisionOperatorToken(fixture, clock, "issue-10-journey");
   const { provider, initializedReference } = approvingPaystack(fixture);
@@ -135,7 +135,7 @@ test("Production journey for the title and name criteria", async () => {
     const login = await postOperatorLogin({ base }, operatorToken, { origin: PUBLIC_ORIGIN });
     const operatorCookie = operatorCookieFrom(login);
     const database = new DatabaseSync(fixture.configuration.databasePath);
-    const requestId = (database.prepare("SELECT request_id FROM guest_booking_requests LIMIT 1").get() as { request_id: string }).request_id;
+    const requestId = (database.prepare("SELECT request_id FROM guest_booking_requests ORDER BY rowid DESC LIMIT 1").get() as { request_id: string }).request_id;
     database.close();
     const operatorInbox = await (await fetch(`${base}/operator/requests`, { headers: { cookie: operatorCookie } })).text();
     const operatorHome = await (await fetch(`${base}/operator`, { headers: { cookie: operatorCookie } })).text();
