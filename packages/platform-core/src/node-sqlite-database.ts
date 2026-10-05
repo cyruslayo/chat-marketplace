@@ -1,12 +1,29 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { DatabaseSync, type SQLInputValue, type StatementResultingChanges, type StatementSync } from "node:sqlite";
-import type { SqlDatabase, SqlParams, SqlRow, SqlStatement, SqlValue } from "./sql-database.js";
+import {
+  DatabaseSync,
+  type SQLInputValue,
+  type StatementResultingChanges,
+  type StatementSync,
+} from "node:sqlite";
+import type {
+  SqlDatabase,
+  SqlParams,
+  SqlRow,
+  SqlStatement,
+  SqlValue,
+} from "./sql-database.js";
 
 const BUSY_TIMEOUT_MS = 5_000;
 
 function isSqlValue(value: unknown): value is SqlValue {
-  return value === null || typeof value === "string" || typeof value === "number" || typeof value === "bigint" || value instanceof Uint8Array;
+  return (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "bigint" ||
+    value instanceof Uint8Array
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -22,7 +39,9 @@ function toSqlRow(value: unknown): SqlRow {
   for (const key of Object.keys(value)) {
     const cell = value[key];
     if (!isSqlValue(cell)) {
-      throw new TypeError(`SQLite returned an unsupported value for column ${key}`);
+      throw new TypeError(
+        `SQLite returned an unsupported value for column ${key}`,
+      );
     }
     row[key] = cell;
   }
@@ -37,14 +56,19 @@ function toNodeValue(value: SqlValue): SQLInputValue {
   return value instanceof Uint8Array ? Uint8Array.from(value) : value;
 }
 
-function toNamedParameters(params: Record<string, SqlValue>): Record<string, SQLInputValue> {
-  return Object.fromEntries(Object.entries(params).map(([key, value]) => [key, toNodeValue(value)]));
+function toNamedParameters(
+  params: Record<string, SqlValue>,
+): Record<string, SQLInputValue> {
+  return Object.fromEntries(
+    Object.entries(params).map(([key, value]) => [key, toNodeValue(value)]),
+  );
 }
 
 function changesToNumber(result: StatementResultingChanges): number {
   const changes = result.changes;
   const numeric = typeof changes === "bigint" ? Number(changes) : changes;
-  if (!Number.isSafeInteger(numeric)) throw new RangeError("SQLite change count exceeds the safe integer range");
+  if (!Number.isSafeInteger(numeric))
+    throw new RangeError("SQLite change count exceeds the safe integer range");
   return numeric;
 }
 
@@ -52,29 +76,32 @@ class NodeSqliteStatement implements SqlStatement {
   constructor(private readonly statement: StatementSync) {}
 
   get(params?: SqlParams): SqlRow | undefined {
-    const row = params === undefined
-      ? this.statement.get()
-      : isPositionalParams(params)
-        ? this.statement.get(...params.map(toNodeValue))
-        : this.statement.get(toNamedParameters(params));
+    const row =
+      params === undefined
+        ? this.statement.get()
+        : isPositionalParams(params)
+          ? this.statement.get(...params.map(toNodeValue))
+          : this.statement.get(toNamedParameters(params));
     return row === undefined ? undefined : toSqlRow(row);
   }
 
   all(params?: SqlParams): SqlRow[] {
-    const rows = params === undefined
-      ? this.statement.all()
-      : isPositionalParams(params)
-        ? this.statement.all(...params.map(toNodeValue))
-        : this.statement.all(toNamedParameters(params));
+    const rows =
+      params === undefined
+        ? this.statement.all()
+        : isPositionalParams(params)
+          ? this.statement.all(...params.map(toNodeValue))
+          : this.statement.all(toNamedParameters(params));
     return rows.map(toSqlRow);
   }
 
   run(params?: SqlParams): { changes: number } {
-    const result = params === undefined
-      ? this.statement.run()
-      : isPositionalParams(params)
-        ? this.statement.run(...params.map(toNodeValue))
-        : this.statement.run(toNamedParameters(params));
+    const result =
+      params === undefined
+        ? this.statement.run()
+        : isPositionalParams(params)
+          ? this.statement.run(...params.map(toNodeValue))
+          : this.statement.run(toNamedParameters(params));
     return { changes: changesToNumber(result) };
   }
 }
@@ -117,7 +144,8 @@ export class NodeSqliteDatabase implements SqlDatabase {
     this.#transactionDepth = depth + 1;
     try {
       const result = fn();
-      if (isThenable(result)) throw new TypeError("SQL transaction callbacks must be synchronous");
+      if (isThenable(result))
+        throw new TypeError("SQL transaction callbacks must be synchronous");
       if (ownsTransaction) this.#database.exec("COMMIT");
       else this.#database.exec(`RELEASE SAVEPOINT ${savepoint}`);
       return result;
@@ -139,7 +167,11 @@ export class NodeSqliteDatabase implements SqlDatabase {
 }
 
 function isThenable(value: unknown): value is PromiseLike<unknown> {
-  if ((typeof value !== "object" || value === null) && typeof value !== "function") return false;
+  if (
+    (typeof value !== "object" || value === null) &&
+    typeof value !== "function"
+  )
+    return false;
   return "then" in value && typeof value.then === "function";
 }
 

@@ -7,6 +7,7 @@ The 17 PRD workstreams are cut into **slices** numbered `NNx`. `NN` is the PRD w
 ## Slice rules
 
 Each slice:
+
 - **Fits one agent session.** About a day of work, a bounded list of files, and five acceptance criteria or fewer.
 - **Leaves the repo green.** `npm run check` and `npm test` pass, and the Node pilot still runs. No slice ends half-migrated: if a converted type is used somewhere, every use is converted in the same slice.
 - **Delivers something verifiable on its own**, such as a new port, a converted group of stores, or a green test suite. The "Unlocks" column says what it makes possible next.
@@ -87,7 +88,7 @@ The frontier is the first slice in the table that is open, unblocked and unclaim
 Waves are session-sized batches of slices, not replacements for the `Blocked by` graph. A session may implement only the unblocked slices listed for its wave; do not wait for unrelated slices in the same wave when their own dependencies are satisfied. Merge each completed slice into `infra/cloudflare-deployment` before starting a dependent slice. If a slice is still blocked, leave it for the next session rather than widening the batch.
 
 | Wave | Session focus | Issues | Start when | Handoff / exit gate |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | **1 — Foundation** | Establish integration branch, validate Cloudflare SQL, pin and prove the `cf` toolchain, and land the common SQL port and repository seam. | 01a, 01c, 02a, 05a, 14 (human review can proceed in parallel) | Start with 01a, 02a and 05a; 01c follows 01a. Start human review for 14 early. | 01a establishes `infra/cloudflare-deployment`; 01c records pinned `cf` versions/commands and verified capabilities; 02a provides `SqlDatabase`; 05a provides the repository contract. ADR 0095/DPIA decision from 14 is recorded before release wave 6. |
 | **2 — Parallel persistence and harness** | Convert existing stores and prove the Workers runtime/database adapter; establish SQLite repositories and durable audit/telemetry/revenue. | 01b, 02b–02d, 03a, 05b, 06a–06c | 01b and 03a after 01a/01c; 02b–02d and 06a–06c after 02a; 05b after 02a/05a. | `npm run check`, `npm test` and `npm run test:workers` pass; Node adapter contract remains green; runtime assumptions and test-harness/tooling limits are documented. |
 | **3 — Composition and durable services** | Inject dependencies into guest/owner compositions, share the DB handle, complete restart-safe operator state, and move receipts to R2. | 02e, 04a–04c, 06d, 07a–07b, 10a | 02e after 02b–02d; 04a/04b after 02e; 04c after 04a; 06d after 04b/06a–06c; 07a after 02b then 07b after 03a; 10a after 05b. | Both environments consume injected dependencies; restart and repository contracts pass; receipt storage and Cloudflare configuration loader are ready for assembly. |
@@ -98,6 +99,7 @@ Waves are session-sized batches of slices, not replacements for the `Blocked by`
 ### Session handoff checklist
 
 At the beginning of a wave session:
+
 1. Read the wave row, each selected issue, its `Blocked by` list, and the relevant ADRs.
 2. Select only issues in that wave whose blockers are merged and whose scope fits the session. Resolve any user-owned decisions before implementing their dependent issue.
 3. Run the issue's acceptance checks and the shared checks in the workflow above.

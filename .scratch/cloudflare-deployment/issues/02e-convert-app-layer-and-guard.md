@@ -24,6 +24,7 @@ After 02b–02d, the original domain stores are on the port, but the newly integ
 | `domains/shortlet/src/guest-account-authority.ts` | path-first constructor (:251), optional `database?: DatabaseSync`, its own busy timeout and `BEGIN IMMEDIATE` helper (:345) | require shared `SqlDatabase`, use `transaction`, preserve non-owning close and all account/code/session/quota/email-command semantics; update server composition and authority tests |
 
 Steps:
+
 - After the change, `packages/platform-core/src/node-sqlite-database.ts` is the only production file that imports `node:sqlite`. Tests may still import it.
 - Extend `test/sql-port-store-imports.test.ts` into a repo-wide guard: walk `apps/`, `domains/` and `packages/`, and fail if any `.ts` file other than the adapter imports `node:sqlite`.
 

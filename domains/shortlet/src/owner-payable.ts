@@ -9,7 +9,13 @@ import type { OwnerSettlementSnapshot } from "./owner-terms.js";
  * clock on every read, never stored (the due time passes without any event).
  */
 
-export type OwnerPayableStatus = "not_yet_due" | "due" | "paused" | "paid" | "nothing_owed" | "overpaid";
+export type OwnerPayableStatus =
+  | "not_yet_due"
+  | "due"
+  | "paused"
+  | "paid"
+  | "nothing_owed"
+  | "overpaid";
 
 /** The cancellation policy outcome as the cancellation ledger port receives it (apps/web CancellationApplication). */
 export interface OwnerPayableCancellation {
@@ -50,7 +56,10 @@ export interface OwnerRecovery {
 
 export interface OwnerPayableProjection {
   /** The snapshot captured at confirmation (P4), never recalculated (ADR 0077). */
-  readonly captured: { readonly ownerPayableKobo: number; readonly marginKobo: number };
+  readonly captured: {
+    readonly ownerPayableKobo: number;
+    readonly marginKobo: number;
+  };
   /** What the owner is owed after any cancellation policy outcome (ADR 0014, 0089). */
   readonly ownerPayableKobo: number;
   readonly marginKobo: number;
@@ -90,38 +99,87 @@ export interface OwnerPayableInput {
  * Cancellation Base the policy kept (pro rata), and what remains is due when the outcome is posted, as no Verified
  * Access will follow. The margin is rounded down to whole kobo, as it is when quoted; the owner keeps the remainder.
  */
-export function ownerShareAfterCancellation(settlement: Pick<OwnerSettlementSnapshot, "ownerPayableKobo" | "marginKobo">, retainedCancellationBaseKobo: number): { readonly ownerPayableKobo: number; readonly marginKobo: number } {
+export function ownerShareAfterCancellation(
+  settlement: Pick<OwnerSettlementSnapshot, "ownerPayableKobo" | "marginKobo">,
+  retainedCancellationBaseKobo: number,
+): { readonly ownerPayableKobo: number; readonly marginKobo: number } {
   const base = settlement.ownerPayableKobo + settlement.marginKobo;
   if (base <= 0) return { ownerPayableKobo: 0, marginKobo: 0 };
   const retained = Math.min(Math.max(0, retainedCancellationBaseKobo), base);
   const marginKobo = Math.floor((settlement.marginKobo * retained) / base);
-  return { ownerPayableKobo: Math.min(settlement.ownerPayableKobo, retained - marginKobo), marginKobo };
+  return {
+    ownerPayableKobo: Math.min(
+      settlement.ownerPayableKobo,
+      retained - marginKobo,
+    ),
+    marginKobo,
+  };
 }
 
 function laterOf(a: string, b: string | null): string {
   return b !== null && Date.parse(b) > Date.parse(a) ? b : a;
 }
 
-export function projectOwnerPayable(input: OwnerPayableInput): OwnerPayableProjection {
-  const captured = { ownerPayableKobo: input.settlement.ownerPayableKobo, marginKobo: input.settlement.marginKobo };
-  const owed = input.cancellation ? ownerShareAfterCancellation(captured, input.cancellation.retainedCancellationBaseKobo) : captured;
+export function projectOwnerPayable(
+  input: OwnerPayableInput,
+): OwnerPayableProjection {
+  const captured = {
+    ownerPayableKobo: input.settlement.ownerPayableKobo,
+    marginKobo: input.settlement.marginKobo,
+  };
+  const owed = input.cancellation
+    ? ownerShareAfterCancellation(
+        captured,
+        input.cancellation.retainedCancellationBaseKobo,
+      )
+    : captured;
   const recoveries = input.recoveries ?? [];
-  const paidKobo = input.payouts.reduce((sum, payout) => sum + payout.amountKobo, 0);
-  const recoveredKobo = recoveries.reduce((sum, recovery) => sum + recovery.amountKobo, 0);
+  const paidKobo = input.payouts.reduce(
+    (sum, payout) => sum + payout.amountKobo,
+    0,
+  );
+  const recoveredKobo = recoveries.reduce(
+    (sum, recovery) => sum + recovery.amountKobo,
+    0,
+  );
   const netPaidKobo = paidKobo - recoveredKobo;
   const outstandingKobo = Math.max(0, owed.ownerPayableKobo - netPaidKobo);
   // Issue 11: a later cancellation outcome can leave the owner owed less than was already paid.
   const overpaidKobo = Math.max(0, netPaidKobo - owed.ownerPayableKobo);
   // ADR 0089: 24 hours after Verified Access with no Blocking Fulfilment Complaint open; after a cancellation, when posted.
   // Issue 10 (decided 28 Sept 2026): a complaint dismissed later makes it due at the dismissal, not a fresh window.
-  const dueAt = input.cancellation ? input.cancellation.postedAt
-    : input.protectionWindowStartsAt && !input.blockingComplaintOpen ? laterOf(ownerPayableDueAt(input.protectionWindowStartsAt), input.complaintResolvedAt ?? null) : null;
-  const status: OwnerPayableStatus = overpaidKobo > 0 ? "overpaid"
-    : owed.ownerPayableKobo === 0 ? "nothing_owed"
-    : outstandingKobo === 0 ? "paid"
-      : !input.cancellation && input.blockingComplaintOpen ? "paused"
-        : dueAt !== null && input.now.getTime() >= Date.parse(dueAt) ? "due" : "not_yet_due";
-  const version = createHash("sha256").update(JSON.stringify([status, dueAt, owed.ownerPayableKobo, input.payouts.map((payout) => payout.payoutId), recoveries.map((recovery) => recovery.recoveryId)])).digest("hex").slice(0, 16);
+  const dueAt = input.cancellation
+    ? input.cancellation.postedAt
+    : input.protectionWindowStartsAt && !input.blockingComplaintOpen
+      ? laterOf(
+          ownerPayableDueAt(input.protectionWindowStartsAt),
+          input.complaintResolvedAt ?? null,
+        )
+      : null;
+  const status: OwnerPayableStatus =
+    overpaidKobo > 0
+      ? "overpaid"
+      : owed.ownerPayableKobo === 0
+        ? "nothing_owed"
+        : outstandingKobo === 0
+          ? "paid"
+          : !input.cancellation && input.blockingComplaintOpen
+            ? "paused"
+            : dueAt !== null && input.now.getTime() >= Date.parse(dueAt)
+              ? "due"
+              : "not_yet_due";
+  const version = createHash("sha256")
+    .update(
+      JSON.stringify([
+        status,
+        dueAt,
+        owed.ownerPayableKobo,
+        input.payouts.map((payout) => payout.payoutId),
+        recoveries.map((recovery) => recovery.recoveryId),
+      ]),
+    )
+    .digest("hex")
+    .slice(0, 16);
   return Object.freeze({
     captured: Object.freeze(captured),
     ownerPayableKobo: owed.ownerPayableKobo,
@@ -140,29 +198,57 @@ export function projectOwnerPayable(input: OwnerPayableInput): OwnerPayableProje
   });
 }
 
-export type OwnerPayoutProblem = "amount_required" | "date_required" | "reference_required" | "not_due" | "paused" | "already_paid" | "exceeds_due" | "reference_used" | "stale";
+export type OwnerPayoutProblem =
+  | "amount_required"
+  | "date_required"
+  | "reference_required"
+  | "not_due"
+  | "paused"
+  | "already_paid"
+  | "exceeds_due"
+  | "reference_used"
+  | "stale";
 
 const OWNER_PAYOUT_MESSAGES: Readonly<Record<OwnerPayoutProblem, string>> = {
   amount_required: "Enter the amount paid in naira, for example 200,000",
   date_required: "Enter the date you paid, not later than today",
   reference_required: "Enter the payment reference from your bank or Paystack",
   not_due: "This owner payable is not due yet",
-  paused: "This owner payable is paused while a Blocking Fulfilment Complaint is open",
+  paused:
+    "This owner payable is paused while a Blocking Fulfilment Complaint is open",
   already_paid: "This owner payable is already paid",
   exceeds_due: "The amount is more than is due",
-  reference_used: "That reference is already recorded for this booking with a different amount or date",
+  reference_used:
+    "That reference is already recorded for this booking with a different amount or date",
   stale: "This payable changed since you opened it",
 };
 
 export class OwnerPayoutError extends Error {
-  constructor(readonly problem: OwnerPayoutProblem) { super(OWNER_PAYOUT_MESSAGES[problem]); this.name = "OwnerPayoutError"; }
+  constructor(readonly problem: OwnerPayoutProblem) {
+    super(OWNER_PAYOUT_MESSAGES[problem]);
+    this.name = "OwnerPayoutError";
+  }
   /** A problem with what was typed (400), rather than with the payable's state (409). */
-  get isInput(): boolean { return this.problem === "amount_required" || this.problem === "date_required" || this.problem === "reference_required"; }
+  get isInput(): boolean {
+    return (
+      this.problem === "amount_required" ||
+      this.problem === "date_required" ||
+      this.problem === "reference_required"
+    );
+  }
 }
 
 export interface OwnerPayableLedger {
   /** The cancellation ledger port (`LedgerPort` in apps/web CancellationApplication). Idempotent per cancellation. */
-  postCancellation(input: { readonly cancellationId: string; readonly reservationId: string; readonly liability: string; readonly amountKobo: number; readonly retainedCancellationBaseKobo: number; readonly retainedCommissionKobo: number; readonly currency: "NGN" }): { readonly ledgerRecordId: string; readonly status: "posted" };
+  postCancellation(input: {
+    readonly cancellationId: string;
+    readonly reservationId: string;
+    readonly liability: string;
+    readonly amountKobo: number;
+    readonly retainedCancellationBaseKobo: number;
+    readonly retainedCommissionKobo: number;
+    readonly currency: "NGN";
+  }): { readonly ledgerRecordId: string; readonly status: "posted" };
   findCancellation(reservationId: string): OwnerPayableCancellation | null;
   listPayouts(reservationId: string): readonly OwnerPayout[];
   /** Fails if the reservation already has a payout with this reference. */
@@ -175,32 +261,60 @@ export interface OwnerPayableLedger {
   insertRecovery(recovery: OwnerRecovery): void;
 }
 
-export type OwnerRecoveryProblem = "amount_required" | "date_required" | "reference_required" | "not_overpaid" | "exceeds_overpaid" | "reference_used" | "stale";
+export type OwnerRecoveryProblem =
+  | "amount_required"
+  | "date_required"
+  | "reference_required"
+  | "not_overpaid"
+  | "exceeds_overpaid"
+  | "reference_used"
+  | "stale";
 
-const OWNER_RECOVERY_MESSAGES: Readonly<Record<OwnerRecoveryProblem, string>> = {
-  amount_required: "Enter the amount recovered in naira, for example 120,000",
-  date_required: "Enter the date the owner paid it back, not later than today",
-  reference_required: "Enter the payment reference from your bank or Paystack",
-  not_overpaid: "Nothing is over-paid on this booking",
-  exceeds_overpaid: "The amount is more than is over-paid",
-  reference_used: "That reference is already recorded for this booking with a different amount or date",
-  stale: "This payable changed since you opened it",
-};
+const OWNER_RECOVERY_MESSAGES: Readonly<Record<OwnerRecoveryProblem, string>> =
+  {
+    amount_required: "Enter the amount recovered in naira, for example 120,000",
+    date_required:
+      "Enter the date the owner paid it back, not later than today",
+    reference_required:
+      "Enter the payment reference from your bank or Paystack",
+    not_overpaid: "Nothing is over-paid on this booking",
+    exceeds_overpaid: "The amount is more than is over-paid",
+    reference_used:
+      "That reference is already recorded for this booking with a different amount or date",
+    stale: "This payable changed since you opened it",
+  };
 
 export class OwnerRecoveryError extends Error {
-  constructor(readonly problem: OwnerRecoveryProblem) { super(OWNER_RECOVERY_MESSAGES[problem]); this.name = "OwnerRecoveryError"; }
+  constructor(readonly problem: OwnerRecoveryProblem) {
+    super(OWNER_RECOVERY_MESSAGES[problem]);
+    this.name = "OwnerRecoveryError";
+  }
   /** A problem with what was typed (400), rather than with the payable's state (409). */
-  get isInput(): boolean { return this.problem === "amount_required" || this.problem === "date_required" || this.problem === "reference_required"; }
+  get isInput(): boolean {
+    return (
+      this.problem === "amount_required" ||
+      this.problem === "date_required" ||
+      this.problem === "reference_required"
+    );
+  }
 }
 
 function lagosDate(at: Date): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Lagos", year: "numeric", month: "2-digit", day: "2-digit" }).format(at);
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Africa/Lagos",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(at);
 }
 
 function validDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const parsed = new Date(`${value}T00:00:00.000Z`);
-  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+  return (
+    Number.isFinite(parsed.getTime()) &&
+    parsed.toISOString().slice(0, 10) === value
+  );
 }
 
 /**
@@ -219,20 +333,39 @@ export function recordOwnerPayout(input: {
   readonly now: Date;
 }): { readonly payout: OwnerPayout; readonly replayed: boolean } {
   const reference = normalizeBankReference(input.reference);
-  if (input.amountKobo === null || !Number.isSafeInteger(input.amountKobo) || input.amountKobo <= 0) throw new OwnerPayoutError("amount_required");
-  if (!validDate(input.paidOn) || input.paidOn > lagosDate(input.now)) throw new OwnerPayoutError("date_required");
+  if (
+    input.amountKobo === null ||
+    !Number.isSafeInteger(input.amountKobo) ||
+    input.amountKobo <= 0
+  )
+    throw new OwnerPayoutError("amount_required");
+  if (!validDate(input.paidOn) || input.paidOn > lagosDate(input.now))
+    throw new OwnerPayoutError("date_required");
   if (reference === "") throw new OwnerPayoutError("reference_required");
 
-  const earlier = input.payable.payouts.find((payout) => payout.reference === reference);
+  const earlier = input.payable.payouts.find(
+    (payout) => payout.reference === reference,
+  );
   if (earlier) {
-    if (earlier.amountKobo === input.amountKobo && earlier.paidOn === input.paidOn) return { payout: earlier, replayed: true };
+    if (
+      earlier.amountKobo === input.amountKobo &&
+      earlier.paidOn === input.paidOn
+    )
+      return { payout: earlier, replayed: true };
     throw new OwnerPayoutError("reference_used");
   }
-  if (input.basedOnVersion !== input.payable.version) throw new OwnerPayoutError("stale");
-  if (input.payable.status === "paid" || input.payable.status === "nothing_owed" || input.payable.status === "overpaid") throw new OwnerPayoutError("already_paid");
+  if (input.basedOnVersion !== input.payable.version)
+    throw new OwnerPayoutError("stale");
+  if (
+    input.payable.status === "paid" ||
+    input.payable.status === "nothing_owed" ||
+    input.payable.status === "overpaid"
+  )
+    throw new OwnerPayoutError("already_paid");
   if (input.payable.status === "paused") throw new OwnerPayoutError("paused");
   if (input.payable.status !== "due") throw new OwnerPayoutError("not_due");
-  if (input.amountKobo > input.payable.outstandingKobo) throw new OwnerPayoutError("exceeds_due");
+  if (input.amountKobo > input.payable.outstandingKobo)
+    throw new OwnerPayoutError("exceeds_due");
 
   const payout: OwnerPayout = Object.freeze({
     payoutId: `payout-${randomUUID()}`,
@@ -264,18 +397,33 @@ export function recordOwnerRecovery(input: {
   readonly now: Date;
 }): { readonly recovery: OwnerRecovery; readonly replayed: boolean } {
   const reference = normalizeBankReference(input.reference);
-  if (input.amountKobo === null || !Number.isSafeInteger(input.amountKobo) || input.amountKobo <= 0) throw new OwnerRecoveryError("amount_required");
-  if (!validDate(input.receivedOn) || input.receivedOn > lagosDate(input.now)) throw new OwnerRecoveryError("date_required");
+  if (
+    input.amountKobo === null ||
+    !Number.isSafeInteger(input.amountKobo) ||
+    input.amountKobo <= 0
+  )
+    throw new OwnerRecoveryError("amount_required");
+  if (!validDate(input.receivedOn) || input.receivedOn > lagosDate(input.now))
+    throw new OwnerRecoveryError("date_required");
   if (reference === "") throw new OwnerRecoveryError("reference_required");
 
-  const earlier = input.payable.recoveries.find((recovery) => recovery.reference === reference);
+  const earlier = input.payable.recoveries.find(
+    (recovery) => recovery.reference === reference,
+  );
   if (earlier) {
-    if (earlier.amountKobo === input.amountKobo && earlier.receivedOn === input.receivedOn) return { recovery: earlier, replayed: true };
+    if (
+      earlier.amountKobo === input.amountKobo &&
+      earlier.receivedOn === input.receivedOn
+    )
+      return { recovery: earlier, replayed: true };
     throw new OwnerRecoveryError("reference_used");
   }
-  if (input.basedOnVersion !== input.payable.version) throw new OwnerRecoveryError("stale");
-  if (input.payable.overpaidKobo <= 0) throw new OwnerRecoveryError("not_overpaid");
-  if (input.amountKobo > input.payable.overpaidKobo) throw new OwnerRecoveryError("exceeds_overpaid");
+  if (input.basedOnVersion !== input.payable.version)
+    throw new OwnerRecoveryError("stale");
+  if (input.payable.overpaidKobo <= 0)
+    throw new OwnerRecoveryError("not_overpaid");
+  if (input.amountKobo > input.payable.overpaidKobo)
+    throw new OwnerRecoveryError("exceeds_overpaid");
 
   const recovery: OwnerRecovery = Object.freeze({
     recoveryId: `recovery-${randomUUID()}`,
@@ -297,18 +445,53 @@ export function recordOwnerRecovery(input: {
  * used (the pilot reading of ADR 0061's "attributable undelivered charges").
  */
 export class UpheldOutcomeError extends Error {
-  constructor(readonly problem: "night_outside_stay" | "nightly_price_missing") { super(problem === "night_outside_stay" ? "Choose the first affected night of the stay" : "This booking has no contracted nightly price on file"); this.name = "UpheldOutcomeError"; }
+  constructor(
+    readonly problem: "night_outside_stay" | "nightly_price_missing",
+  ) {
+    super(
+      problem === "night_outside_stay"
+        ? "Choose the first affected night of the stay"
+        : "This booking has no contracted nightly price on file",
+    );
+    this.name = "UpheldOutcomeError";
+  }
 }
 
-export function upheldStayRefund(input: { readonly quote: unknown; readonly amountPaidKobo: number; readonly checkIn: string; readonly checkOut: string; readonly firstAffectedNight: string }): { readonly refundKobo: number; readonly affectedNights: number } {
+export function upheldStayRefund(input: {
+  readonly quote: unknown;
+  readonly amountPaidKobo: number;
+  readonly checkIn: string;
+  readonly checkOut: string;
+  readonly firstAffectedNight: string;
+}): { readonly refundKobo: number; readonly affectedNights: number } {
   const night = input.firstAffectedNight;
-  if (!validDate(night) || night < input.checkIn || night >= input.checkOut) throw new UpheldOutcomeError("night_outside_stay");
-  const affectedNights = Math.round((Date.parse(`${input.checkOut}T00:00:00Z`) - Date.parse(`${night}T00:00:00Z`)) / 86_400_000);
-  if (night === input.checkIn) return Object.freeze({ refundKobo: input.amountPaidKobo, affectedNights });
-  const lineItems = input.quote !== null && typeof input.quote === "object" ? (input.quote as { readonly lineItems?: unknown }).lineItems : undefined;
-  const nightlyKobo = lineItems !== null && typeof lineItems === "object" ? (lineItems as { readonly nightlyKobo?: unknown }).nightlyKobo : undefined;
-  if (typeof nightlyKobo !== "number" || !Number.isSafeInteger(nightlyKobo) || nightlyKobo < 0) throw new UpheldOutcomeError("nightly_price_missing");
-  return Object.freeze({ refundKobo: Math.min(input.amountPaidKobo, nightlyKobo * affectedNights), affectedNights });
+  if (!validDate(night) || night < input.checkIn || night >= input.checkOut)
+    throw new UpheldOutcomeError("night_outside_stay");
+  const affectedNights = Math.round(
+    (Date.parse(`${input.checkOut}T00:00:00Z`) -
+      Date.parse(`${night}T00:00:00Z`)) /
+      86_400_000,
+  );
+  if (night === input.checkIn)
+    return Object.freeze({ refundKobo: input.amountPaidKobo, affectedNights });
+  const lineItems =
+    input.quote !== null && typeof input.quote === "object"
+      ? (input.quote as { readonly lineItems?: unknown }).lineItems
+      : undefined;
+  const nightlyKobo =
+    lineItems !== null && typeof lineItems === "object"
+      ? (lineItems as { readonly nightlyKobo?: unknown }).nightlyKobo
+      : undefined;
+  if (
+    typeof nightlyKobo !== "number" ||
+    !Number.isSafeInteger(nightlyKobo) ||
+    nightlyKobo < 0
+  )
+    throw new UpheldOutcomeError("nightly_price_missing");
+  return Object.freeze({
+    refundKobo: Math.min(input.amountPaidKobo, nightlyKobo * affectedNights),
+    affectedNights,
+  });
 }
 
 /** A refund you paid the Guest after an upheld complaint (issue 14). The reference is never audited or logged (ADR 0075). */
@@ -323,7 +506,14 @@ export interface GuestRefund {
   readonly recordedBy: string;
 }
 
-export type GuestRefundProblem = "amount_required" | "date_required" | "reference_required" | "nothing_owed" | "exceeds_owed" | "reference_used" | "stale";
+export type GuestRefundProblem =
+  | "amount_required"
+  | "date_required"
+  | "reference_required"
+  | "nothing_owed"
+  | "exceeds_owed"
+  | "reference_used"
+  | "stale";
 
 const GUEST_REFUND_MESSAGES: Readonly<Record<GuestRefundProblem, string>> = {
   amount_required: "Enter the amount refunded in naira, for example 240,000",
@@ -331,14 +521,24 @@ const GUEST_REFUND_MESSAGES: Readonly<Record<GuestRefundProblem, string>> = {
   reference_required: "Enter the refund reference from Paystack or your bank",
   nothing_owed: "No refund is owed to the Guest on this booking",
   exceeds_owed: "The amount is more than is owed to the Guest",
-  reference_used: "That reference is already recorded for this booking with a different amount or date",
+  reference_used:
+    "That reference is already recorded for this booking with a different amount or date",
   stale: "This Reservation changed since you opened it",
 };
 
 export class GuestRefundError extends Error {
-  constructor(readonly problem: GuestRefundProblem) { super(GUEST_REFUND_MESSAGES[problem]); this.name = "GuestRefundError"; }
+  constructor(readonly problem: GuestRefundProblem) {
+    super(GUEST_REFUND_MESSAGES[problem]);
+    this.name = "GuestRefundError";
+  }
   /** A problem with what was typed (400), rather than with the booking's state (409). */
-  get isInput(): boolean { return this.problem === "amount_required" || this.problem === "date_required" || this.problem === "reference_required"; }
+  get isInput(): boolean {
+    return (
+      this.problem === "amount_required" ||
+      this.problem === "date_required" ||
+      this.problem === "reference_required"
+    );
+  }
 }
 
 /**
@@ -360,18 +560,34 @@ export function recordGuestRefund(input: {
   readonly now: Date;
 }): { readonly refund: GuestRefund; readonly replayed: boolean } {
   const reference = normalizeBankReference(input.reference);
-  if (input.amountKobo === null || !Number.isSafeInteger(input.amountKobo) || input.amountKobo <= 0) throw new GuestRefundError("amount_required");
-  if (!validDate(input.refundedOn) || input.refundedOn > lagosDate(input.now)) throw new GuestRefundError("date_required");
+  if (
+    input.amountKobo === null ||
+    !Number.isSafeInteger(input.amountKobo) ||
+    input.amountKobo <= 0
+  )
+    throw new GuestRefundError("amount_required");
+  if (!validDate(input.refundedOn) || input.refundedOn > lagosDate(input.now))
+    throw new GuestRefundError("date_required");
   if (reference === "") throw new GuestRefundError("reference_required");
-  const earlier = input.refunds.find((refund) => refund.reference === reference);
+  const earlier = input.refunds.find(
+    (refund) => refund.reference === reference,
+  );
   if (earlier) {
-    if (earlier.amountKobo === input.amountKobo && earlier.refundedOn === input.refundedOn) return { refund: earlier, replayed: true };
+    if (
+      earlier.amountKobo === input.amountKobo &&
+      earlier.refundedOn === input.refundedOn
+    )
+      return { refund: earlier, replayed: true };
     throw new GuestRefundError("reference_used");
   }
-  if (input.basedOnVersion !== input.currentVersion) throw new GuestRefundError("stale");
-  const outstanding = input.owedKobo - input.refunds.reduce((sum, refund) => sum + refund.amountKobo, 0);
+  if (input.basedOnVersion !== input.currentVersion)
+    throw new GuestRefundError("stale");
+  const outstanding =
+    input.owedKobo -
+    input.refunds.reduce((sum, refund) => sum + refund.amountKobo, 0);
   if (outstanding <= 0) throw new GuestRefundError("nothing_owed");
-  if (input.amountKobo > outstanding) throw new GuestRefundError("exceeds_owed");
+  if (input.amountKobo > outstanding)
+    throw new GuestRefundError("exceeds_owed");
   const refund: GuestRefund = Object.freeze({
     refundId: `guest-refund-${randomUUID()}`,
     reservationId: input.reservationId,
@@ -385,35 +601,100 @@ export function recordGuestRefund(input: {
   return { refund, replayed: false };
 }
 
-function isGuestRefundRow(value: unknown): value is { refund_id: string; reservation_id: string; amount_kobo: number; refunded_on: string; reference: string; recorded_at: string; recorded_by: string } {
+function isGuestRefundRow(value: unknown): value is {
+  refund_id: string;
+  reservation_id: string;
+  amount_kobo: number;
+  refunded_on: string;
+  reference: string;
+  recorded_at: string;
+  recorded_by: string;
+} {
   const row = value as Record<string, unknown> | undefined;
-  return !!row && typeof row.refund_id === "string" && typeof row.reservation_id === "string" && typeof row.amount_kobo === "number"
-    && typeof row.refunded_on === "string" && typeof row.reference === "string" && typeof row.recorded_at === "string" && typeof row.recorded_by === "string";
+  return (
+    !!row &&
+    typeof row.refund_id === "string" &&
+    typeof row.reservation_id === "string" &&
+    typeof row.amount_kobo === "number" &&
+    typeof row.refunded_on === "string" &&
+    typeof row.reference === "string" &&
+    typeof row.recorded_at === "string" &&
+    typeof row.recorded_by === "string"
+  );
 }
 
-function isRecoveryRow(value: unknown): value is { recovery_id: string; reservation_id: string; amount_kobo: number; received_on: string; reference: string; recorded_at: string; recorded_by: string } {
+function isRecoveryRow(value: unknown): value is {
+  recovery_id: string;
+  reservation_id: string;
+  amount_kobo: number;
+  received_on: string;
+  reference: string;
+  recorded_at: string;
+  recorded_by: string;
+} {
   const row = value as Record<string, unknown> | undefined;
-  return !!row && typeof row.recovery_id === "string" && typeof row.reservation_id === "string" && typeof row.amount_kobo === "number"
-    && typeof row.received_on === "string" && typeof row.reference === "string" && typeof row.recorded_at === "string" && typeof row.recorded_by === "string";
+  return (
+    !!row &&
+    typeof row.recovery_id === "string" &&
+    typeof row.reservation_id === "string" &&
+    typeof row.amount_kobo === "number" &&
+    typeof row.received_on === "string" &&
+    typeof row.reference === "string" &&
+    typeof row.recorded_at === "string" &&
+    typeof row.recorded_by === "string"
+  );
 }
 
-function isCancellationRow(value: unknown): value is { cancellation_id: string; reservation_id: string; liability: string; refund_kobo: number; retained_base_kobo: number; posted_at: string } {
+function isCancellationRow(value: unknown): value is {
+  cancellation_id: string;
+  reservation_id: string;
+  liability: string;
+  refund_kobo: number;
+  retained_base_kobo: number;
+  posted_at: string;
+} {
   const row = value as Record<string, unknown> | undefined;
-  return !!row && typeof row.cancellation_id === "string" && typeof row.reservation_id === "string" && typeof row.liability === "string"
-    && typeof row.refund_kobo === "number" && typeof row.retained_base_kobo === "number" && typeof row.posted_at === "string";
+  return (
+    !!row &&
+    typeof row.cancellation_id === "string" &&
+    typeof row.reservation_id === "string" &&
+    typeof row.liability === "string" &&
+    typeof row.refund_kobo === "number" &&
+    typeof row.retained_base_kobo === "number" &&
+    typeof row.posted_at === "string"
+  );
 }
 
-function isPayoutRow(value: unknown): value is { payout_id: string; reservation_id: string; amount_kobo: number; paid_on: string; reference: string; recorded_at: string; recorded_by: string } {
+function isPayoutRow(value: unknown): value is {
+  payout_id: string;
+  reservation_id: string;
+  amount_kobo: number;
+  paid_on: string;
+  reference: string;
+  recorded_at: string;
+  recorded_by: string;
+} {
   const row = value as Record<string, unknown> | undefined;
-  return !!row && typeof row.payout_id === "string" && typeof row.reservation_id === "string" && typeof row.amount_kobo === "number"
-    && typeof row.paid_on === "string" && typeof row.reference === "string" && typeof row.recorded_at === "string" && typeof row.recorded_by === "string";
+  return (
+    !!row &&
+    typeof row.payout_id === "string" &&
+    typeof row.reservation_id === "string" &&
+    typeof row.amount_kobo === "number" &&
+    typeof row.paid_on === "string" &&
+    typeof row.reference === "string" &&
+    typeof row.recorded_at === "string" &&
+    typeof row.recorded_by === "string"
+  );
 }
 
 /** The owner-payable ledger in the shared SQLite database, read fresh on every call (no cross-process cache). */
 export class SqliteOwnerPayableLedger implements OwnerPayableLedger {
   readonly #database: import("../../../packages/platform-core/src/sql-database.js").SqlDatabase;
   readonly #clock: () => Date;
-  constructor(database: import("../../../packages/platform-core/src/sql-database.js").SqlDatabase, clock: () => Date = () => new Date()) {
+  constructor(
+    database: import("../../../packages/platform-core/src/sql-database.js").SqlDatabase,
+    clock: () => Date = () => new Date(),
+  ) {
     this.#database = database;
     this.#clock = clock;
     this.#database.exec(`
@@ -424,39 +705,140 @@ export class SqliteOwnerPayableLedger implements OwnerPayableLedger {
       CREATE TABLE IF NOT EXISTS owner_payout_recoveries (recovery_id TEXT PRIMARY KEY, reservation_id TEXT NOT NULL, amount_kobo INTEGER NOT NULL, received_on TEXT NOT NULL, reference TEXT NOT NULL, recorded_at TEXT NOT NULL, recorded_by TEXT NOT NULL, UNIQUE (reservation_id, reference));
     `);
   }
-  postCancellation(input: Parameters<OwnerPayableLedger["postCancellation"]>[0]): { readonly ledgerRecordId: string; readonly status: "posted" } {
+  postCancellation(
+    input: Parameters<OwnerPayableLedger["postCancellation"]>[0],
+  ): { readonly ledgerRecordId: string; readonly status: "posted" } {
     // ADR 0072: a repeated post for the same cancellation keeps the first outcome.
-    this.#database.prepare("INSERT INTO owner_payable_cancellations (reservation_id, cancellation_id, liability, refund_kobo, retained_base_kobo, posted_at) VALUES ($reservationId, $cancellationId, $liability, $refund, $retained, $postedAt) ON CONFLICT(reservation_id) DO NOTHING")
-      .run({ $reservationId: input.reservationId, $cancellationId: input.cancellationId, $liability: input.liability, $refund: input.amountKobo, $retained: input.retainedCancellationBaseKobo, $postedAt: this.#clock().toISOString() });
-    return { ledgerRecordId: `owner-payable:${input.cancellationId}`, status: "posted" };
+    this.#database
+      .prepare(
+        "INSERT INTO owner_payable_cancellations (reservation_id, cancellation_id, liability, refund_kobo, retained_base_kobo, posted_at) VALUES ($reservationId, $cancellationId, $liability, $refund, $retained, $postedAt) ON CONFLICT(reservation_id) DO NOTHING",
+      )
+      .run({
+        $reservationId: input.reservationId,
+        $cancellationId: input.cancellationId,
+        $liability: input.liability,
+        $refund: input.amountKobo,
+        $retained: input.retainedCancellationBaseKobo,
+        $postedAt: this.#clock().toISOString(),
+      });
+    return {
+      ledgerRecordId: `owner-payable:${input.cancellationId}`,
+      status: "posted",
+    };
   }
   findCancellation(reservationId: string): OwnerPayableCancellation | null {
-    const row: unknown = this.#database.prepare("SELECT * FROM owner_payable_cancellations WHERE reservation_id = $id").get({ $id: reservationId });
+    const row: unknown = this.#database
+      .prepare(
+        "SELECT * FROM owner_payable_cancellations WHERE reservation_id = $id",
+      )
+      .get({ $id: reservationId });
     if (!isCancellationRow(row)) return null;
-    return Object.freeze({ cancellationId: row.cancellation_id, reservationId: row.reservation_id, liability: row.liability, refundKobo: row.refund_kobo, retainedCancellationBaseKobo: row.retained_base_kobo, postedAt: row.posted_at });
+    return Object.freeze({
+      cancellationId: row.cancellation_id,
+      reservationId: row.reservation_id,
+      liability: row.liability,
+      refundKobo: row.refund_kobo,
+      retainedCancellationBaseKobo: row.retained_base_kobo,
+      postedAt: row.posted_at,
+    });
   }
   listPayouts(reservationId: string): readonly OwnerPayout[] {
-    const rows: unknown[] = this.#database.prepare("SELECT * FROM owner_payouts WHERE reservation_id = $id ORDER BY recorded_at, payout_id").all({ $id: reservationId });
-    return rows.filter(isPayoutRow).map((row) => Object.freeze({ payoutId: row.payout_id, reservationId: row.reservation_id, amountKobo: row.amount_kobo, paidOn: row.paid_on, reference: row.reference, recordedAt: row.recorded_at, recordedBy: row.recorded_by }));
+    const rows: unknown[] = this.#database
+      .prepare(
+        "SELECT * FROM owner_payouts WHERE reservation_id = $id ORDER BY recorded_at, payout_id",
+      )
+      .all({ $id: reservationId });
+    return rows.filter(isPayoutRow).map((row) =>
+      Object.freeze({
+        payoutId: row.payout_id,
+        reservationId: row.reservation_id,
+        amountKobo: row.amount_kobo,
+        paidOn: row.paid_on,
+        reference: row.reference,
+        recordedAt: row.recorded_at,
+        recordedBy: row.recorded_by,
+      }),
+    );
   }
   insertPayout(payout: OwnerPayout): void {
-    this.#database.prepare("INSERT INTO owner_payouts (payout_id, reservation_id, amount_kobo, paid_on, reference, recorded_at, recorded_by) VALUES ($id, $reservationId, $amount, $paidOn, $reference, $recordedAt, $recordedBy)")
-      .run({ $id: payout.payoutId, $reservationId: payout.reservationId, $amount: payout.amountKobo, $paidOn: payout.paidOn, $reference: payout.reference, $recordedAt: payout.recordedAt, $recordedBy: payout.recordedBy });
+    this.#database
+      .prepare(
+        "INSERT INTO owner_payouts (payout_id, reservation_id, amount_kobo, paid_on, reference, recorded_at, recorded_by) VALUES ($id, $reservationId, $amount, $paidOn, $reference, $recordedAt, $recordedBy)",
+      )
+      .run({
+        $id: payout.payoutId,
+        $reservationId: payout.reservationId,
+        $amount: payout.amountKobo,
+        $paidOn: payout.paidOn,
+        $reference: payout.reference,
+        $recordedAt: payout.recordedAt,
+        $recordedBy: payout.recordedBy,
+      });
   }
   listRecoveries(reservationId: string): readonly OwnerRecovery[] {
-    const rows: unknown[] = this.#database.prepare("SELECT * FROM owner_payout_recoveries WHERE reservation_id = $id ORDER BY recorded_at, recovery_id").all({ $id: reservationId });
-    return rows.filter(isRecoveryRow).map((row) => Object.freeze({ recoveryId: row.recovery_id, reservationId: row.reservation_id, amountKobo: row.amount_kobo, receivedOn: row.received_on, reference: row.reference, recordedAt: row.recorded_at, recordedBy: row.recorded_by }));
+    const rows: unknown[] = this.#database
+      .prepare(
+        "SELECT * FROM owner_payout_recoveries WHERE reservation_id = $id ORDER BY recorded_at, recovery_id",
+      )
+      .all({ $id: reservationId });
+    return rows.filter(isRecoveryRow).map((row) =>
+      Object.freeze({
+        recoveryId: row.recovery_id,
+        reservationId: row.reservation_id,
+        amountKobo: row.amount_kobo,
+        receivedOn: row.received_on,
+        reference: row.reference,
+        recordedAt: row.recorded_at,
+        recordedBy: row.recorded_by,
+      }),
+    );
   }
   listGuestRefunds(reservationId: string): readonly GuestRefund[] {
-    const rows: unknown[] = this.#database.prepare("SELECT * FROM guest_refunds WHERE reservation_id = $id ORDER BY recorded_at, refund_id").all({ $id: reservationId });
-    return rows.filter(isGuestRefundRow).map((row) => Object.freeze({ refundId: row.refund_id, reservationId: row.reservation_id, amountKobo: row.amount_kobo, refundedOn: row.refunded_on, reference: row.reference, recordedAt: row.recorded_at, recordedBy: row.recorded_by }));
+    const rows: unknown[] = this.#database
+      .prepare(
+        "SELECT * FROM guest_refunds WHERE reservation_id = $id ORDER BY recorded_at, refund_id",
+      )
+      .all({ $id: reservationId });
+    return rows.filter(isGuestRefundRow).map((row) =>
+      Object.freeze({
+        refundId: row.refund_id,
+        reservationId: row.reservation_id,
+        amountKobo: row.amount_kobo,
+        refundedOn: row.refunded_on,
+        reference: row.reference,
+        recordedAt: row.recorded_at,
+        recordedBy: row.recorded_by,
+      }),
+    );
   }
   insertGuestRefund(refund: GuestRefund): void {
-    this.#database.prepare("INSERT INTO guest_refunds (refund_id, reservation_id, amount_kobo, refunded_on, reference, recorded_at, recorded_by) VALUES ($id, $reservationId, $amount, $refundedOn, $reference, $recordedAt, $recordedBy)")
-      .run({ $id: refund.refundId, $reservationId: refund.reservationId, $amount: refund.amountKobo, $refundedOn: refund.refundedOn, $reference: refund.reference, $recordedAt: refund.recordedAt, $recordedBy: refund.recordedBy });
+    this.#database
+      .prepare(
+        "INSERT INTO guest_refunds (refund_id, reservation_id, amount_kobo, refunded_on, reference, recorded_at, recorded_by) VALUES ($id, $reservationId, $amount, $refundedOn, $reference, $recordedAt, $recordedBy)",
+      )
+      .run({
+        $id: refund.refundId,
+        $reservationId: refund.reservationId,
+        $amount: refund.amountKobo,
+        $refundedOn: refund.refundedOn,
+        $reference: refund.reference,
+        $recordedAt: refund.recordedAt,
+        $recordedBy: refund.recordedBy,
+      });
   }
   insertRecovery(recovery: OwnerRecovery): void {
-    this.#database.prepare("INSERT INTO owner_payout_recoveries (recovery_id, reservation_id, amount_kobo, received_on, reference, recorded_at, recorded_by) VALUES ($id, $reservationId, $amount, $receivedOn, $reference, $recordedAt, $recordedBy)")
-      .run({ $id: recovery.recoveryId, $reservationId: recovery.reservationId, $amount: recovery.amountKobo, $receivedOn: recovery.receivedOn, $reference: recovery.reference, $recordedAt: recovery.recordedAt, $recordedBy: recovery.recordedBy });
+    this.#database
+      .prepare(
+        "INSERT INTO owner_payout_recoveries (recovery_id, reservation_id, amount_kobo, received_on, reference, recorded_at, recorded_by) VALUES ($id, $reservationId, $amount, $receivedOn, $reference, $recordedAt, $recordedBy)",
+      )
+      .run({
+        $id: recovery.recoveryId,
+        $reservationId: recovery.reservationId,
+        $amount: recovery.amountKobo,
+        $receivedOn: recovery.receivedOn,
+        $reference: recovery.reference,
+        $recordedAt: recovery.recordedAt,
+        $recordedBy: recovery.recordedBy,
+      });
   }
 }

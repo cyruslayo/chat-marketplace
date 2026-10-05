@@ -26,6 +26,7 @@ Change each constructor to accept `SqlDatabase`, and remove the `node:sqlite` im
 | `guest-contact.ts` | `SqliteGuestContactRepository` | :43 `(database)` |
 
 Steps:
+
 - Replace the hand-rolled `BEGIN IMMEDIATE` in `booking-state.ts:123` with `database.transaction(fn)`.
 - Callers (`apps/local-guest/src/fixture.ts`, `apps/local-owner/src/local-owner-environment.ts`, tests) still hold a `DatabaseSync`. Wrap it at the call site with `NodeSqliteDatabase`. Add a constructor or factory to 02a's module that wraps an existing `DatabaseSync` without taking ownership, so the shared connection stays shared.
 - Where a row read is touched, narrow it with a small guard instead of an `as` cast (coding standards). Don't rewrite reads you don't otherwise touch.

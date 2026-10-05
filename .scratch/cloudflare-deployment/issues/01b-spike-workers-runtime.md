@@ -14,6 +14,7 @@ The Durable Object will run the existing guest and owner code under `nodejs_comp
 ## What to build
 
 Extend the 01a spike Worker (`spikes/`) and answer each question with a snippet and its observed output:
+
 - `@google/genai`: does it bundle, and can it make one `generateContent` call under `nodejs_compat`? A mocked `fetch` is acceptable if no key is at hand. Record any bundling errors.
 - `node:crypto` `createHmac("sha512", …)` and `timingSafeEqual`, as used by the Paystack webhook signature check in `domains/shortlet/src/paystack.ts`. Do they give the same digest as Node for the same raw bytes?
 - `node:net` `isIP`: is it available?

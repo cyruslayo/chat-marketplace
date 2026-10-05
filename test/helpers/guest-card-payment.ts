@@ -1,7 +1,10 @@
 import { DatabaseSync } from "node:sqlite";
 import { NodeSqliteDatabase } from "../../packages/platform-core/src/node-sqlite-database.js";
 import type { LocalApartmentOwnerEnvironment } from "../../apps/local-owner/src/index.js";
-import { createCardPaymentApplication, type CardPaymentApplication } from "../../apps/web/src/index.js";
+import {
+  createCardPaymentApplication,
+  type CardPaymentApplication,
+} from "../../apps/web/src/index.js";
 import {
   InMemorySecurityDepositAccountingRepository,
   SqliteBookingPaymentJourneyRepository,
@@ -35,61 +38,134 @@ export interface GuestCardPayments {
   close(): void;
 }
 
-export function guestCardPayments(env: LocalApartmentOwnerEnvironment, options: { readonly refundStatus?: "pending" | "settled" } = {}): GuestCardPayments {
+export function guestCardPayments(
+  env: LocalApartmentOwnerEnvironment,
+  options: { readonly refundStatus?: "pending" | "settled" } = {},
+): GuestCardPayments {
   const database = new DatabaseSync(env.config.databasePath);
   database.exec("PRAGMA busy_timeout = 5000");
-  const store = new SqliteGuestInteractionStore(env.config.databasePath, database);
+  const store = new SqliteGuestInteractionStore(
+    env.config.databasePath,
+    database,
+  );
   const sqlDatabase = new NodeSqliteDatabase(database);
   let providerStatus: ProviderStatus = "success";
   const app: CardPaymentApplication = createCardPaymentApplication({
     conditionalOfferApplication: env.conditionalOfferApp,
     repository: env.unitRepository,
     calendar: env.calendar,
-    guestContacts: { find: (guestId: string, tenantId: string) => ({ guestId, tenantId, phoneNumber: "+2348012345678", contactEmail: TEST_PAYER_EMAIL, revision: 1 }) },
+    guestContacts: {
+      find: (guestId: string, tenantId: string) => ({
+        guestId,
+        tenantId,
+        phoneNumber: "+2348012345678",
+        contactEmail: TEST_PAYER_EMAIL,
+        revision: 1,
+      }),
+    },
     pspClient: {
       verifyTransaction: (pspReference: string) => {
         const session = app.manager.getCheckoutSessionByReference(pspReference);
-        const payerId = session ? env.conditionalOfferApp.manager.getOffer(session.offerId).parties.primaryGuest.id : undefined;
-        return { verified: providerStatus === "success", status: providerStatus, amountKobo: session?.amountKobo ?? 0, currency: "NGN", pspReference, ...(payerId ? { payerId } : {}), cardMetadata: { brand: "visa", last4: TEST_CARD_LAST4 } };
+        const payerId = session
+          ? env.conditionalOfferApp.manager.getOffer(session.offerId).parties
+              .primaryGuest.id
+          : undefined;
+        return {
+          verified: providerStatus === "success",
+          status: providerStatus,
+          amountKobo: session?.amountKobo ?? 0,
+          currency: "NGN",
+          pspReference,
+          ...(payerId ? { payerId } : {}),
+          cardMetadata: { brand: "visa", last4: TEST_CARD_LAST4 },
+        };
       },
     },
-    journeyRepository: new SqliteBookingPaymentJourneyRepository(sqlDatabase, env.config.databasePath),
+    journeyRepository: new SqliteBookingPaymentJourneyRepository(
+      sqlDatabase,
+      env.config.databasePath,
+    ),
     liveAttempts: new SqliteLivePaymentAttemptRegistry(store),
     store,
-    securityDepositAccounting: new InMemorySecurityDepositAccountingRepository(),
-    securityDepositCapability: { getCapability: ({ paymentMethod }) => ({ capabilityVersion: "test-security-deposit-v1", enabled: true, pspProviderId: "test-psp", pspApproved: true, counselApproved: true, collectionModel: "separate_actual_charge", paymentMethod }) },
-    compensationRefundProvider: { refundOrGet: ({ obligationId, amountKobo }) => ({ refundId: `refund-${obligationId}`, status: options.refundStatus ?? "pending", amountKobo, currency: "NGN" }) },
-    bookingState: new SqliteBookingStateRepository(sqlDatabase, env.config.databasePath),
+    securityDepositAccounting:
+      new InMemorySecurityDepositAccountingRepository(),
+    securityDepositCapability: {
+      getCapability: ({ paymentMethod }) => ({
+        capabilityVersion: "test-security-deposit-v1",
+        enabled: true,
+        pspProviderId: "test-psp",
+        pspApproved: true,
+        counselApproved: true,
+        collectionModel: "separate_actual_charge",
+        paymentMethod,
+      }),
+    },
+    compensationRefundProvider: {
+      refundOrGet: ({ obligationId, amountKobo }) => ({
+        refundId: `refund-${obligationId}`,
+        status: options.refundStatus ?? "pending",
+        amountKobo,
+        currency: "NGN",
+      }),
+    },
+    bookingState: new SqliteBookingStateRepository(
+      sqlDatabase,
+      env.config.databasePath,
+    ),
     clock: env.clock,
   });
 
   const offerIdFor = (requestId: string): string => {
     const offer = store.findConditionalOfferByRequestId(requestId);
-    if (!offer) throw new Error(`No Conditional Booking Offer for ${requestId}`);
+    if (!offer)
+      throw new Error(`No Conditional Booking Offer for ${requestId}`);
     return offer.offerId;
   };
   const guestFor = (offerId: string): CommandPrincipal => {
     const offer = env.conditionalOfferApp.manager.getOffer(offerId);
-    return { id: offer.parties.primaryGuest.id, role: "guest", tenantId: offer.tenantId ?? env.config.tenantId };
+    return {
+      id: offer.parties.primaryGuest.id,
+      role: "guest",
+      tenantId: offer.tenantId ?? env.config.tenantId,
+    };
   };
-  const system: CommandPrincipal = { id: "system-payment-verifier", role: "system", tenantId: env.config.tenantId };
+  const system: CommandPrincipal = {
+    id: "system-payment-verifier",
+    role: "system",
+    tenantId: env.config.tenantId,
+  };
 
   const accept = (requestId: string): string => {
     const offerId = offerIdFor(requestId);
     const offer = env.conditionalOfferApp.manager.getOffer(offerId);
-    if (offer.status !== "accepted") env.conditionalOfferApp.accept({ offerId, confirmationToken: offer.confirmationToken, expectedVersion: offer.offerVersion, principal: guestFor(offerId) });
+    if (offer.status !== "accepted")
+      env.conditionalOfferApp.accept({
+        offerId,
+        confirmationToken: offer.confirmationToken,
+        expectedVersion: offer.offerVersion,
+        principal: guestFor(offerId),
+      });
     return offerId;
   };
   const startCard = (requestId: string): string => {
     const offerId = accept(requestId);
     const open = app.manager.getCheckoutSession(offerId);
-    return open?.status === "initiated" ? open.pspReference : app.initializeCheckout(offerId, guestFor(offerId)).pspReference;
+    return open?.status === "initiated"
+      ? open.pspReference
+      : app.initializeCheckout(offerId, guestFor(offerId)).pspReference;
   };
-  const verify = (requestId: string, status: ProviderStatus = "success"): void => {
+  const verify = (
+    requestId: string,
+    status: ProviderStatus = "success",
+  ): void => {
     const session = app.manager.getCheckoutSession(offerIdFor(requestId));
     if (!session) throw new Error(`No checkout for ${requestId}`);
     providerStatus = status;
-    try { app.verifyAndConfirm(session.pspReference, system); } catch { /* the refused state is what the test reads */ }
+    try {
+      app.verifyAndConfirm(session.pspReference, system);
+    } catch {
+      /* the refused state is what the test reads */
+    }
   };
 
   return {
@@ -104,6 +180,8 @@ export function guestCardPayments(env: LocalApartmentOwnerEnvironment, options: 
       }
       throw new Error(`Payment did not confirm a Reservation for ${requestId}`);
     },
-    close() { if (database.isOpen) database.close(); },
+    close() {
+      if (database.isOpen) database.close();
+    },
   };
 }
