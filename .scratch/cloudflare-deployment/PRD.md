@@ -57,7 +57,7 @@ Outbound fetch: Paystack API, Gemini (@google/genai)       Inbound: POST /webhoo
 | 0086 | Operator tokens hashed, never in URLs, 30-min, restart-safe sessions | Ops endpoints return tokens only in response bodies. Sessions stay in Durable Object SQLite. (Issue 11) |
 | 0087 / 0088 | Paystack live client bound to public origin; transfers gated | The Cloudflare config loader keeps the `callbackBaseUrl === publicOrigin` check and `paystackTransfersEnabled` exactly. The webhook uses the raw body. |
 | 0090 | Configured receipt limit; receipts are evidence only; seen only by the back office | R2 storage; the 5 MB default is kept; the read route stays back-office-authorized (issue 07). |
-| **New 0092** | Record the hosting decision | Issue 14 |
+| **0095** | Record the hosting decision (renumbered from 0092 during integration) | Issue 14 |
 
 ## `cf` toolchain decision and ADR constraints
 
@@ -259,9 +259,9 @@ Replace them with `/_ops/*` routes on the Durable Object:
 - Add WAF rate-limit rules for `POST /operator/login` and `/webhooks/paystack`.
 - Use a custom domain with HTTPS only; keep the app's own security headers.
 
-### 14 — ADR 0092 and DPIA update (Type: grilling, human review)
+### 14 — ADR 0095 and DPIA update (Type: grilling, human review)
 
-- Write `docs/adr/0092-host-the-pilot-on-cloudflare.md`, covering:
+- Write `docs/adr/0095-host-the-pilot-on-cloudflare.md`, covering:
   - a single Durable Object per tenant;
   - R2 for evidence;
   - no Nigerian data-residency option (placement is only a hint);

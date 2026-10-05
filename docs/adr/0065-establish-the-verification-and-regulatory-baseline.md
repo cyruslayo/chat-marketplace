@@ -4,7 +4,7 @@ No unit publishes without verified CAC operator and responsible persons, matchin
 
 Inspection covers identity, entire-place possession, visible structure and sanitation, fire and emergency readiness, electrical and utility condition, locks and privacy, access controls, cameras, listing accuracy and current media. Provisional insurance targets are ₦10m public/occupiers' liability per occurrence and ₦20m annual aggregate per operator plus appropriate property and platform cover. Renewals trigger notices at T-90/T-60/T-30/T-7 and automatic ineligibility at expiry; pending renewal grants nothing. Applicability, insurance availability, DPIA, vendor roles, retention and specialist legal standards remain launch gates.
 
-## Cloudflare hosting and data-protection launch gate (ADR 0092)
+## Cloudflare hosting and data-protection launch gate (ADR 0095)
 
 The user accepted the Cloudflare hosting architecture on 4 October 2026. This is not approval of the vendor contracts, processing roles, cross-border transfer, or retention schedule.
 

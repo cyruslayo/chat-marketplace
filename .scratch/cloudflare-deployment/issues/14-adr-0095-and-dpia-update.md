@@ -1,4 +1,4 @@
-# ADR 0092 and DPIA update
+# ADR 0095 and DPIA update
 
 Status: resolved
 Type: grilling
@@ -13,7 +13,7 @@ Moving the pilot to Cloudflare is a system-wide architectural decision. It also 
 
 ## What to build
 
-- An agent drafts `docs/adr/0092-host-the-pilot-on-cloudflare.md` in the format of the existing ADRs (read 0086 to 0091 first). It covers:
+- An agent drafts `docs/adr/0095-host-the-pilot-on-cloudflare.md` in the format of the existing ADRs (read 0086 to 0091 first). It covers:
   - one SQLite-backed Durable Object per tenant as the single system of record;
   - why Durable Objects and not D1 (synchronous SQL, `transactionSync`; see the PRD);
   - R2 for receipt evidence and exports;
@@ -28,7 +28,7 @@ Moving the pilot to Cloudflare is a system-wide architectural decision. It also 
 
 ## Acceptance criteria
 
-- AC1: ADR 0092 exists, is accepted by the user, and is linked from the ADR index if there is one.
+- AC1: ADR 0095 exists, is accepted by the user, and is linked from the ADR index if there is one.
 - AC2: The ADR 0065 gate items for Cloudflare and Gemini are updated, and any item still open is listed as a blocker for 15.
 - AC3: Every decision recorded traces to a user answer in `## Comments`.
 
@@ -59,14 +59,14 @@ The decisions above are the user's answers to the issue 14 review questions. The
 
 | ADR | Constraint | Reflection |
 | --- | --- | --- |
-| 0004 | Backend owns authoritative transaction state | ADR 0092 assigns tenant state to the SQLite-backed Durable Object. |
+| 0004 | Backend owns authoritative transaction state | ADR 0095 assigns tenant state to the SQLite-backed Durable Object. |
 | 0065 | DPIA, vendor roles, cross-border transfer and retention are launch gates | ADR 0065 names the proposed roles and open gates; issue 15 remains synthetic-data-only until closure. |
-| 0075 | Minimize restricted data, redact logs, and treat retention as provisional pending review | ADRs 0065 and 0092 prohibit restricted material in ordinary model input/log projections and retain provisional periods pending approval. |
-| 0090 | Receipt evidence is back-office-only and deleted after the stated period | ADR 0092 preserves private R2 storage and the existing 90-day deletion rule. |
+| 0075 | Minimize restricted data, redact logs, and treat retention as provisional pending review | ADRs 0065 and 0095 prohibit restricted material in ordinary model input/log projections and retain provisional periods pending approval. |
+| 0090 | Receipt evidence is back-office-only and deleted after the stated period | ADR 0095 preserves private R2 storage and the existing 90-day deletion rule. |
 
 ## Answer
 
-- Added accepted ADR 0092 at `docs/adr/0092-host-the-pilot-on-cloudflare.md`; no ADR index exists in `docs/adr/` to update.
+- Added accepted hosting ADR at `docs/adr/0095-host-the-pilot-on-cloudflare.md`; no ADR index exists in `docs/adr/` to update. Originally numbered 0092, it was renumbered to 0095 on 5 October 2026 to preserve `main`'s accepted Extended Stays ADR 0092 and Guest Account ADRs 0093/0094. The original slice branch name remains a historical reference.
 - Updated ADR 0065 with Cloudflare/Gemini proposed processor roles, cross-border approval requirements, minimized data-flow assumptions, provisional retention, and explicit launch blockers.
 - Recorded each human decision above. Open gates are: Nigerian counsel's transfer/DPIA approval, confirmation of processor roles/subprocessors/contract terms and service locations, and an approved schedule for all data classes including Cloudflare Logs and issue 12a exports. These remain explicit blockers on issue 15 even though the issue 14 architecture/documentation slice is resolved; synthetic-only staging is allowed meanwhile.
 - ADRs 0004, 0065, 0075 and 0090 were re-read and their constraints are mapped above and in the two ADR documents.

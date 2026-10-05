@@ -4,6 +4,8 @@ status: accepted
 
 # Host the pilot on Cloudflare
 
+Renumbered from 0092 to 0095 on 5 October 2026 when reconciling with `main`: ADR 0092 already records Extended Stays, and ADRs 0093/0094 record Guest Accounts and Identity Assurance. This changes the identifier only; the accepted hosting decision and its open data-protection gates are unchanged.
+
 ## Context
 
 The Shortlet pilot currently runs as a Node application backed by SQLite. Its authoritative domain stores use synchronous SQLite operations, including atomic read-then-write transactions for inventory and payment state. Durable Objects provide synchronous SQLite-backed storage and `transactionSync`; D1 is asynchronous and would require an asynchronous rewrite across the existing domain/application boundary.
