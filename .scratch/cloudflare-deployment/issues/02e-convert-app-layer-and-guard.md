@@ -9,7 +9,7 @@ Unlocks: 04a, 04b
 
 ## Why
 
-After 02b–02d, the domain is on the port. Six app-layer files still use `DatabaseSync` directly, and several open extra connections the PRD missed. This slice finishes the move and adds a guard, so that weekly merges from `main` can't quietly add a new direct use.
+After 02b–02d, the original domain stores are on the port, but the newly integrated Guest Account authority is not. Six app-layer files and that additional domain authority still use `DatabaseSync` directly, and several open extra connections the PRD missed. This slice finishes the move and adds a guard, so that weekly merges from `main` can't quietly add a new direct use.
 
 ## What to build
 
@@ -21,6 +21,7 @@ After 02b–02d, the domain is on the port. Six app-layer files still use `Datab
 | `apps/pilot/src/local-pilot.ts` | opens connections at :49 and :57 | use `openNodeSqliteDatabase`, or take a handle |
 | `apps/pilot/src/pilot-server.ts` | healthcheck opens a new connection per call (:29) | `SELECT 1` on a handle passed in; full in-process dispatch is 08c |
 | `apps/pilot/src/local-pilot-server.ts` | healthcheck (:60) | same |
+| `domains/shortlet/src/guest-account-authority.ts` | path-first constructor (:251), optional `database?: DatabaseSync`, its own busy timeout and `BEGIN IMMEDIATE` helper (:345) | require shared `SqlDatabase`, use `transaction`, preserve non-owning close and all account/code/session/quota/email-command semantics; update server composition and authority tests |
 
 Steps:
 - After the change, `packages/platform-core/src/node-sqlite-database.ts` is the only production file that imports `node:sqlite`. Tests may still import it.
@@ -45,6 +46,8 @@ Steps:
 | --- | --- | --- |
 | 0004 | One system of record and one handle | all six files |
 | 0079 | Notifications deduplicated durably | `pilot-notifier.ts` keeps its tables on the shared handle |
+| 0072 / 0075 / 0093 | Account commands authenticate and authorize replay; consume codes and record command receipts atomically; never log codes, hashes, sessions or email | Guest Account authority conversion and `test/guest-account-authority.test.ts` |
+| 0094 | Account identity anchors assurance; no invented freshness or booking gate | Preserve account identity/lineage while replacing storage boundary only |
 
 ## Definition of Done
 
@@ -52,4 +55,6 @@ Check every item in `docs/agents/issue-tracker.md`.
 
 ## Comments
 
+- Wave 2 inventory (5 Oct 2026, after 02b): seven handle-taking stores are ported. The remaining non-adapter production imports are **five domain authorities/stores** (availability and interaction: 02c; operator grants and sessions: 02d; **Guest Account: 02e**) and **six app files** listed above. The inventory is twelve domain persistence files in total, not the original eleven. Guest Account tables: `guest_accounts`, `guest_account_sessions`, `guest_sign_in_codes`, `guest_account_rate_events`, `guest_account_email_commands`. Preserve refused-check quota writes and wrong-attempt persistence, single-use code consumption, absolute session expiry/revocation, sensitive-action binding and authenticated email-command replay. Interaction-side account links/scoped claims stay in the interaction store and must not be rewritten or inferred from mutable contact (ADRs 0093/0094). This slice is still blocked by 02c/02d; Wave 2 does not implement it.
+- 02b names the existing app `LocalBookingContractRepository.#sharedRow` shape as `LocalBookingSqlRow` and preserves both callers' JSON string guards. This repository still uses a raw Node handle and manual transaction; its actual port conversion remains here. Do not weaken its guards or add an import-guard exception.
 - 5 Oct 2026 integration inventory: Guest Account delivery adds `domains/shortlet/src/guest-account-authority.ts`, which imports `DatabaseSync` and optionally takes a shared Node handle, like the session authorities. Its tables now also include atomic email-command receipts (ADRs 0072/0075/0093). Wave 1 does not migrate this authority. Before this slice's AC1 can pass, convert that boundary to `SqlDatabase` and preserve code consumption, quota writes, session expiry/revocation, email-change receipts and replay authorization with `test/guest-account-authority.test.ts`; the repo-wide import guard must include it. Do not exempt the new file or claim the existing seven-store list covers it.

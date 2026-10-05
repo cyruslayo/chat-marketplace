@@ -1,4 +1,4 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
 
 export interface GuestContact {
   readonly guestId: string;
@@ -39,8 +39,8 @@ export function normalizeContactEmail(input: string): string {
 }
 
 export class SqliteGuestContactRepository implements GuestContactSource {
-  readonly #database: DatabaseSync;
-  constructor(database: DatabaseSync) {
+  readonly #database: SqlDatabase;
+  constructor(database: SqlDatabase) {
     this.#database = database;
     database.exec(`CREATE TABLE IF NOT EXISTS guest_contacts (
       guest_id TEXT NOT NULL,

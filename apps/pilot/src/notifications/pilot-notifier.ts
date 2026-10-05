@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import { NodeSqliteDatabase } from "../../../../packages/platform-core/src/node-sqlite-database.js";
 import {
   OPERATOR_RESPONSE_REMINDER_MINUTES,
   SqliteGuestContactRepository,
@@ -123,7 +124,7 @@ export class PilotNotifier {
     this.#database = new DatabaseSync(options.databasePath);
     this.#database.exec("PRAGMA busy_timeout = 5000");
     this.#store = new SqliteGuestInteractionStore(options.databasePath, this.#database);
-    this.#contacts = new SqliteGuestContactRepository(this.#database);
+    this.#contacts = new SqliteGuestContactRepository(new NodeSqliteDatabase(this.#database));
     this.#log = new NotificationLog(this.#database);
     this.#clock = options.clock ?? (() => new Date());
     this.#lookbackMs = options.lookbackMs ?? DEFAULT_LOOKBACK_MS;

@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
 import type { PlatformCommandEnvelope } from "../../../packages/platform-core/src/index.js";
 import type { ConditionalBookingOffer } from "./conditional-offer.js";
 import type { LivePaymentAttemptRegistryPort } from "./payment-attempt.js";
@@ -129,8 +130,8 @@ function isReceiptContentType(value: unknown): value is ReceiptContentType {
 
 /** Manual transfers and their receipts in the shared SQLite database; the receipt bytes never leave it except to the back office. */
 export class SqliteManualTransferStore implements ManualTransferStore {
-  readonly #database: import("node:sqlite").DatabaseSync;
-  constructor(database: import("node:sqlite").DatabaseSync) {
+  readonly #database: SqlDatabase;
+  constructor(database: SqlDatabase) {
     this.#database = database;
     this.#database.exec(`
       CREATE TABLE IF NOT EXISTS manual_transfers (transfer_id TEXT PRIMARY KEY, offer_id TEXT NOT NULL, booking_reference TEXT NOT NULL UNIQUE, seq INTEGER NOT NULL, transfer_json TEXT NOT NULL);
@@ -226,7 +227,7 @@ export interface ManualTransferManagerOptions {
     readonly bookingState: BookingStateRepository;
     readonly snapshots: { saveBookingSnapshot(snapshot: { reservationId: string; contractId: string; offerId: string; reservationJson: string; contractJson: string; confirmedAt: string }): void };
     readonly calendar: {
-      transitionPaymentPendingToConfirmedBooking(input: { commitmentId: string; unitId: string; start: string; end: string; clock: () => Date }): unknown;
+      transitionPaymentPendingToConfirmedBooking(input: { commitmentId: string; unitId: string; start: string; end: string; clock: () => Date }): void;
       releaseConfirmedBooking?(input: { commitmentId: string; unitId: string; start: string; end: string; clock: () => Date }): void;
     };
   };
@@ -339,7 +340,9 @@ export class ManualTransferManager {
   }
 
   #expireIfDue(transfer: ManualTransfer, now: Date): ManualTransfer {
-    const due = transfer.status === "awaiting_receipt" ? transfer.paymentDeadlineAt : transfer.status === "awaiting_verification" ? transfer.verificationDeadlineAt : null;
+    let due: string | null = null;
+    if (transfer.status === "awaiting_receipt") due = transfer.paymentDeadlineAt;
+    else if (transfer.status === "awaiting_verification") due = transfer.verificationDeadlineAt;
     if (due === null || now.getTime() < Date.parse(due)) return transfer;
     const expired: ManualTransfer = { ...transfer, status: "expired", closedAt: due, version: transfer.version + 1 };
     try {
@@ -366,7 +369,9 @@ export class ManualTransferManager {
     for (const transfer of this.#o.store.list()) {
       if (!transfer.receipt || transfer.receiptDeletedAt) continue;
       // Checkout is 11:00 WAT (ADR 0032), i.e. 10:00 UTC on the checkout date.
-      const anchor = transfer.status === "confirmed" ? `${transfer.stayCheckOut}T10:00:00.000Z` : transfer.status === "awaiting_receipt" || transfer.status === "awaiting_verification" ? null : transfer.closedAt ?? transfer.startedAt;
+      let anchor: string | null = transfer.closedAt ?? transfer.startedAt;
+      if (transfer.status === "confirmed") anchor = `${transfer.stayCheckOut}T10:00:00.000Z`;
+      else if (transfer.status === "awaiting_receipt" || transfer.status === "awaiting_verification") anchor = null;
       if (anchor === null || now.getTime() < Date.parse(anchor) + RECEIPT_RETENTION_DAYS * 24 * 60 * 60_000) continue;
       this.#o.store.deleteReceipt(transfer.receipt.receiptId);
       this.#o.store.save({ ...transfer, receiptDeletedAt: now.toISOString(), version: transfer.version + 1 });

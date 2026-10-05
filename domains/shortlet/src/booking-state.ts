@@ -1,4 +1,5 @@
 import type { BookingContract, Reservation } from "./card-payment.js";
+import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
 
 /** Small in-memory authoritative aggregate store; adapters can replace it with a transactional repository. */
 export interface BookingStateRepository {
@@ -50,29 +51,6 @@ export class InMemoryBookingStateRepository implements BookingStateRepository {
   }
 }
 
-/** Unit-row guard for loosely typed SQLite rows (no `any` in the domain layer). */
-interface BookingStateContractRow {
-  contract_id: string;
-  contract_json: string;
-}
-
-interface BookingStateReservationRow {
-  reservation_id: string;
-  reservation_json: string;
-}
-
-function parseContractJson(json: string): BookingContract {
-  const parsed: unknown = JSON.parse(json);
-  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid stored Booking Contract");
-  return parsed as BookingContract;
-}
-
-function parseReservationJson(json: string): Reservation {
-  const parsed: unknown = JSON.parse(json);
-  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid stored Reservation");
-  return parsed as Reservation;
-}
-
 /**
  * Durable SQLite implementation of BookingStateRepository for the Guest
  * composition. Authoritative contracts/reservations committed by the payment
@@ -80,10 +58,10 @@ function parseReservationJson(json: string): Reservation {
  */
 export class SqliteBookingStateRepository implements BookingStateRepository {
   readonly databasePath: string;
-  readonly #database: import("node:sqlite").DatabaseSync;
+  readonly #database: SqlDatabase;
   #closed = false;
 
-  constructor(database: import("node:sqlite").DatabaseSync, databasePath: string) {
+  constructor(database: SqlDatabase, databasePath: string) {
     this.databasePath = databasePath;
     this.#database = database;
     this.#database.exec(`
@@ -101,9 +79,12 @@ export class SqliteBookingStateRepository implements BookingStateRepository {
   }
 
   findContractById(id: string): BookingContract | null {
-    const row = this.#database.prepare("SELECT contract_json FROM booking_contracts WHERE contract_id = $id").get({ $id: id }) as BookingStateContractRow | undefined;
-    if (!row) return null;
-    try { return parseContractJson(row.contract_json); } catch { return null; }
+    const row = this.#database.prepare("SELECT contract_json FROM booking_contracts WHERE contract_id = $id").get({ $id: id });
+    if (!row || typeof row.contract_json !== "string") return null;
+    try {
+      const parsed: unknown = JSON.parse(row.contract_json);
+      return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as BookingContract : null;
+    } catch { return null; }
   }
 
   saveContract(contract: BookingContract): void {
@@ -115,20 +96,11 @@ export class SqliteBookingStateRepository implements BookingStateRepository {
     const existingContract = this.findContractById(input.contract.contractId);
     const existingReservation = this.findReservationById(input.reservation.reservationId);
     if ((existingContract && (existingContract.reservationId !== input.reservation.reservationId || existingContract.contractId !== input.contract.contractId)) || (existingReservation && (existingReservation.contractId !== input.contract.contractId || existingReservation.reservationId !== input.reservation.reservationId))) throw new Error("Booking identity conflict");
-    if (this.#database.isTransaction) {
+    // ADR 0044/0046/0095: synchronous atomic write; nested callers retain their transaction boundary.
+    this.#database.transaction(() => {
       this.saveContract(input.contract);
       this.saveReservation(input.reservation);
-      return;
-    }
-    this.#database.exec("BEGIN IMMEDIATE");
-    try {
-      this.saveContract(input.contract);
-      this.saveReservation(input.reservation);
-      this.#database.exec("COMMIT");
-    } catch (error) {
-      try { this.#database.exec("ROLLBACK"); } catch { /* preserve the original failure */ }
-      throw error;
-    }
+    });
   }
 
   removeBookingAtomically(input: { contractId: string; reservationId: string }): void {
@@ -137,9 +109,12 @@ export class SqliteBookingStateRepository implements BookingStateRepository {
   }
 
   findReservationById(id: string): Reservation | null {
-    const row = this.#database.prepare("SELECT reservation_json FROM booking_reservations WHERE reservation_id = $id").get({ $id: id }) as BookingStateReservationRow | undefined;
-    if (!row) return null;
-    try { return parseReservationJson(row.reservation_json); } catch { return null; }
+    const row = this.#database.prepare("SELECT reservation_json FROM booking_reservations WHERE reservation_id = $id").get({ $id: id });
+    if (!row || typeof row.reservation_json !== "string") return null;
+    try {
+      const parsed: unknown = JSON.parse(row.reservation_json);
+      return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Reservation : null;
+    } catch { return null; }
   }
 
   saveReservation(reservation: Reservation): void {

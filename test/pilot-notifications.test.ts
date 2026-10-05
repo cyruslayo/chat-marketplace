@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
+import { NodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-database.js";
 import { SqliteGuestContactRepository, SqliteGuestInteractionStore, type DurableBookingRequest } from "../domains/shortlet/src/index.js";
 import { PilotNotifier } from "../apps/pilot/src/notifications/pilot-notifier.js";
 import { EmailProviderError, RESEND_EMAILS_ENDPOINT, ResendEmailSender, type EmailMessage, type EmailSender } from "../apps/pilot/src/notifications/email-sender.js";
@@ -47,7 +48,7 @@ async function harness(): Promise<Harness> {
   const databasePath = join(directory, "pilot.sqlite");
   const database = new DatabaseSync(databasePath);
   const store = new SqliteGuestInteractionStore(databasePath, database);
-  const contacts = new SqliteGuestContactRepository(database);
+  const contacts = new SqliteGuestContactRepository(new NodeSqliteDatabase(database));
   const sender = new RecordingSender();
   const logs: string[] = [];
   let now = DISCLOSED_AT;

@@ -1,4 +1,5 @@
 import type { CommandPrincipal, PlatformCommandEnvelope } from "../../../packages/platform-core/src/index.js";
+import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
 
 export type CheckInSupportStatus = "scheduled" | "active" | "handoff_requested" | "human_owned" | "closed";
 export type AccessStatus = "awaiting_access" | "verified_access" | "late_voluntary_arrival" | "failed_access" | "under_human_review";
@@ -108,9 +109,9 @@ export interface CheckInSupportStore {
 }
 
 export class SqliteCheckInSupportStore implements CheckInSupportStore {
-  readonly #database: import("node:sqlite").DatabaseSync;
+  readonly #database: SqlDatabase;
 
-  constructor(database: import("node:sqlite").DatabaseSync) {
+  constructor(database: SqlDatabase) {
     this.#database = database;
     this.#database.exec("CREATE TABLE IF NOT EXISTS checkin_support_state (reservation_id TEXT PRIMARY KEY, state_json TEXT NOT NULL)");
   }

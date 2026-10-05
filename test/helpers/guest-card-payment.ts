@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import { NodeSqliteDatabase } from "../../packages/platform-core/src/node-sqlite-database.js";
 import type { LocalApartmentOwnerEnvironment } from "../../apps/local-owner/src/index.js";
 import { createCardPaymentApplication, type CardPaymentApplication } from "../../apps/web/src/index.js";
 import {
@@ -38,6 +39,7 @@ export function guestCardPayments(env: LocalApartmentOwnerEnvironment, options: 
   const database = new DatabaseSync(env.config.databasePath);
   database.exec("PRAGMA busy_timeout = 5000");
   const store = new SqliteGuestInteractionStore(env.config.databasePath, database);
+  const sqlDatabase = new NodeSqliteDatabase(database);
   let providerStatus: ProviderStatus = "success";
   const app: CardPaymentApplication = createCardPaymentApplication({
     conditionalOfferApplication: env.conditionalOfferApp,
@@ -51,13 +53,13 @@ export function guestCardPayments(env: LocalApartmentOwnerEnvironment, options: 
         return { verified: providerStatus === "success", status: providerStatus, amountKobo: session?.amountKobo ?? 0, currency: "NGN", pspReference, ...(payerId ? { payerId } : {}), cardMetadata: { brand: "visa", last4: TEST_CARD_LAST4 } };
       },
     },
-    journeyRepository: new SqliteBookingPaymentJourneyRepository(database, env.config.databasePath),
+    journeyRepository: new SqliteBookingPaymentJourneyRepository(sqlDatabase, env.config.databasePath),
     liveAttempts: new SqliteLivePaymentAttemptRegistry(store),
     store,
     securityDepositAccounting: new InMemorySecurityDepositAccountingRepository(),
     securityDepositCapability: { getCapability: ({ paymentMethod }) => ({ capabilityVersion: "test-security-deposit-v1", enabled: true, pspProviderId: "test-psp", pspApproved: true, counselApproved: true, collectionModel: "separate_actual_charge", paymentMethod }) },
     compensationRefundProvider: { refundOrGet: ({ obligationId, amountKobo }) => ({ refundId: `refund-${obligationId}`, status: options.refundStatus ?? "pending", amountKobo, currency: "NGN" }) },
-    bookingState: new SqliteBookingStateRepository(database, env.config.databasePath),
+    bookingState: new SqliteBookingStateRepository(sqlDatabase, env.config.databasePath),
     clock: env.clock,
   });
 
