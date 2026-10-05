@@ -9,10 +9,11 @@ import {
   restoreSameDayTurnoverCapability,
   revokeSameDayTurnoverCapability,
   isSameDayTurnoverPermitted,
-  AvailabilityCalendar,
   UnitRepository,
   seedIssue01Units
 } from "../domains/shortlet/src/index.js";
+
+import { createTestAvailabilityCalendar } from "./helpers/availability-calendar.js";
 
 function setupUnit() {
   const repository = new UnitRepository();
@@ -142,7 +143,7 @@ test("A missed deadline initiates incident workflow and immediately protects inc
     }
   };
 
-  const calendar = new AvailabilityCalendar();
+  const calendar = createTestAvailabilityCalendar();
 
   // Clock is now 14:35 (deadline was 14:30)
   const result = checkTurnoverRunReadiness({

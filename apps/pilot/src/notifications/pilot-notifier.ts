@@ -146,13 +146,9 @@ export class PilotNotifier {
     this.#options = options;
     this.#database = new DatabaseSync(options.databasePath);
     this.#database.exec("PRAGMA busy_timeout = 5000");
-    this.#store = new SqliteGuestInteractionStore(
-      options.databasePath,
-      this.#database,
-    );
-    this.#contacts = new SqliteGuestContactRepository(
-      new NodeSqliteDatabase(this.#database),
-    );
+    const sqlDatabase = new NodeSqliteDatabase(this.#database);
+    this.#store = new SqliteGuestInteractionStore(sqlDatabase);
+    this.#contacts = new SqliteGuestContactRepository(sqlDatabase);
     this.#log = new NotificationLog(this.#database);
     this.#clock = options.clock ?? (() => new Date());
     this.#lookbackMs = options.lookbackMs ?? DEFAULT_LOOKBACK_MS;

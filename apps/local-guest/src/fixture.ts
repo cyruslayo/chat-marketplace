@@ -317,11 +317,8 @@ export class LocalGuestEnvironment {
     this.#database = new DatabaseSync(this.config.databasePath);
     this.#database.exec("PRAGMA busy_timeout = 5000");
     this.#database.exec("PRAGMA foreign_keys = ON");
-    this.interactionStore = new SqliteGuestInteractionStore(
-      this.config.databasePath,
-      this.#database,
-    );
     const sqlDatabase = new NodeSqliteDatabase(this.#database);
+    this.interactionStore = new SqliteGuestInteractionStore(sqlDatabase);
     this.guestContactApp = new GuestContactApplication(
       new SqliteGuestContactRepository(sqlDatabase),
     );
@@ -354,10 +351,7 @@ export class LocalGuestEnvironment {
       : new UnitRepository();
     this.calendar = new AvailabilityCalendar({
       repository: this.unitRepository,
-      store: new SqliteAvailabilityStore(
-        this.config.databasePath,
-        this.#database,
-      ),
+      store: new SqliteAvailabilityStore(sqlDatabase),
     });
     this.audit = new InMemoryAuditLog();
     this.telemetry = new InMemoryTelemetry();

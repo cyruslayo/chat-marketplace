@@ -6,7 +6,6 @@ import {
   GenerativeSurfaceManager
 } from "../packages/platform-core/src/index.js";
 import {
-  AvailabilityCalendar,
   UnitRepository,
   seedIssue01Units,
   GuestVerificationService,
@@ -19,11 +18,13 @@ import {
   decodeConfirmationToken
 } from "../domains/shortlet/src/index.js";
 
+import { createTestAvailabilityCalendar } from "./helpers/availability-calendar.js";
+
 function setup() {
   const repository = new UnitRepository();
   seedIssue01Units(repository);
   const audit = new InMemoryAuditLog();
-  const calendar = new AvailabilityCalendar({ repository, audit });
+  const calendar = createTestAvailabilityCalendar({ repository, audit });
   const identityStore = new RestrictedIdentityStore();
   const verifiedFixtureGuests = new Set(["guest-101", "guest-102", "guest-103", "guest-104"]);
   const verificationResults: GuestIdentityVerificationResultSource = {

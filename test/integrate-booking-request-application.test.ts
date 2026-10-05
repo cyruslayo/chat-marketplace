@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { WebServerEventHandoff } from "@weaver/web";
 import {
-  AvailabilityCalendar,
   GuestVerificationService,
   UnitRepository,
   BookingRequestManager,
@@ -18,6 +17,8 @@ import {
 import { createBookingRequestWebAgentAdapter } from "../apps/web-agent/src/index.js";
 import { bookingRequestArtifactToA2UI } from "../apps/web-agent/src/index.js";
 
+import { createTestAvailabilityCalendar } from "./helpers/availability-calendar.js";
+
 const NOW = new Date("2026-07-22T10:00:00Z");
 const clock = () => NOW;
 
@@ -25,7 +26,7 @@ function setup() {
   const repository = new UnitRepository();
   seedIssue01Units(repository);
   const audit = new InMemoryAuditLog();
-  const calendar = new AvailabilityCalendar({ repository, audit });
+  const calendar = createTestAvailabilityCalendar({ repository, audit });
   const operatorAuthority = {
     canActForOperator: ({ actorId, operatorId, tenantId }: { actorId: string; operatorId: string; tenantId: string }) =>
       tenantId === "tenant-lagos" && (actorId === operatorId || actorId.startsWith("rep-")),

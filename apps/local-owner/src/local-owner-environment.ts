@@ -526,11 +526,8 @@ export class LocalApartmentOwnerEnvironment {
 
     this.#database = new DatabaseSync(this.config.databasePath);
     this.#database.exec("PRAGMA busy_timeout = 5000");
-    this.interactionStore = new SqliteGuestInteractionStore(
-      this.config.databasePath,
-      this.#database,
-    );
     this.#sqlDatabase = new NodeSqliteDatabase(this.#database);
+    this.interactionStore = new SqliteGuestInteractionStore(this.#sqlDatabase);
     this.#bookingState = new SqliteBookingStateRepository(
       this.#sqlDatabase,
       this.config.databasePath,
@@ -563,10 +560,7 @@ export class LocalApartmentOwnerEnvironment {
       : null;
     this.calendar = new AvailabilityCalendar({
       repository: this.unitRepository,
-      store: new SqliteAvailabilityStore(
-        this.config.databasePath,
-        this.#database,
-      ),
+      store: new SqliteAvailabilityStore(this.#sqlDatabase),
     });
     this.enforcementManager = new OperatorEnforcementManager({
       clock: this.clock,
