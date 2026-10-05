@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
-import { NodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-database.js";
+import { NodeSqliteDatabase, openNodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-database.js";
 import {
   SqliteGuestContactRepository,
   SqliteGuestInteractionStore,
@@ -58,10 +58,9 @@ async function harness(): Promise<Harness> {
   const directory = await mkdtemp(join(tmpdir(), "shortlet-notifications-"));
   const databasePath = join(directory, "pilot.sqlite");
   const database = new DatabaseSync(databasePath);
-  const store = new SqliteGuestInteractionStore(databasePath, database);
-  const contacts = new SqliteGuestContactRepository(
-    new NodeSqliteDatabase(database),
-  );
+  const sqlDatabase = new NodeSqliteDatabase(database);
+  const store = new SqliteGuestInteractionStore(sqlDatabase);
+  const contacts = new SqliteGuestContactRepository(sqlDatabase);
   const sender = new RecordingSender();
   const logs: string[] = [];
   let now = DISCLOSED_AT;
@@ -578,21 +577,19 @@ test("The production pilot runs the notifier when notifications are configured",
   try {
     assert.ok(server.notifier);
     await server.listen();
-    const store = new SqliteGuestInteractionStore(
-      fixture.configuration.databasePath,
-    );
-    const now = new Date();
-    store.saveBookingRequest(
-      bookingRequest({
-        unitId: fixture.configuration.unitId,
-        disclosedAt: now.toISOString(),
-        deliveryDeadlineAt: new Date(now.getTime() + 5 * 60_000).toISOString(),
-        operatorResponseDeadlineAt: new Date(
-          now.getTime() + 30 * 60_000,
-        ).toISOString(),
-      }),
-    );
-    store.close();
+    const database = openNodeSqliteDatabase(fixture.configuration.databasePath);
+    try {
+      const store = new SqliteGuestInteractionStore(database);
+      const now = new Date();
+      store.saveBookingRequest(
+        bookingRequest({
+          unitId: fixture.configuration.unitId,
+          disclosedAt: now.toISOString(),
+          deliveryDeadlineAt: new Date(now.getTime() + 5 * 60_000).toISOString(),
+          operatorResponseDeadlineAt: new Date(now.getTime() + 30 * 60_000).toISOString(),
+        }),
+      );
+    } finally { database.close(); }
     const deadline = Date.now() + 5_000;
     while (sender.sent.length === 0 && Date.now() < deadline)
       await new Promise((resolve) => setTimeout(resolve, 100));

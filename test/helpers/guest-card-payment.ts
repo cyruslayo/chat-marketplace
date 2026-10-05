@@ -44,11 +44,8 @@ export function guestCardPayments(
 ): GuestCardPayments {
   const database = new DatabaseSync(env.config.databasePath);
   database.exec("PRAGMA busy_timeout = 5000");
-  const store = new SqliteGuestInteractionStore(
-    env.config.databasePath,
-    database,
-  );
   const sqlDatabase = new NodeSqliteDatabase(database);
+  const store = new SqliteGuestInteractionStore(sqlDatabase);
   let providerStatus: ProviderStatus = "success";
   const app: CardPaymentApplication = createCardPaymentApplication({
     conditionalOfferApplication: env.conditionalOfferApp,

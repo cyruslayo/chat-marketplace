@@ -5,7 +5,6 @@ import {
   createPlatformCommandEnvelope
 } from "../packages/platform-core/src/index.js";
 import {
-  AvailabilityCalendar,
   UnitRepository,
   seedIssue01Units,
   GuestVerificationService,
@@ -14,6 +13,8 @@ import {
   BookingRequestManager
 } from "../domains/shortlet/src/index.js";
 import { setupBookingRequestManager } from "./helpers/booking-request-manager.js";
+
+import { createTestAvailabilityCalendar } from "./helpers/availability-calendar.js";
 
 const setup = setupBookingRequestManager;
 
@@ -108,7 +109,7 @@ test("Disclosure remains fail-closed for cross-principal requests before invento
   const repository = new UnitRepository();
   seedIssue01Units(repository);
   const audit = new InMemoryAuditLog();
-  const calendar = new AvailabilityCalendar({ repository, audit });
+  const calendar = createTestAvailabilityCalendar({ repository, audit });
   const manager = new BookingRequestManager({ repository, audit, calendar });
   const unit = repository.findAll()[0];
   const clock = () => new Date("2026-07-22T10:00:00Z");
@@ -549,7 +550,7 @@ test("Booking Request disclosure preserves booking requirements without requirin
   const repository = new UnitRepository();
   seedIssue01Units(repository);
   const audit = new InMemoryAuditLog();
-  const calendar = new AvailabilityCalendar({ repository, audit });
+  const calendar = createTestAvailabilityCalendar({ repository, audit });
   const verificationResults: GuestIdentityVerificationResultSource = {
     getVerificationResult: ({ tenantId, guestId }) => ({
       tenantId,

@@ -4,6 +4,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { InMemoryAuditLog } from "../packages/platform-core/src/index.js";
+import { openNodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-database.js";
+import { createTestAvailabilityCalendar } from "./helpers/availability-calendar.js";
 import {
   AvailabilityCalendar,
   SqliteAvailabilityStore,
@@ -15,7 +17,7 @@ function setup() {
   const repository = new UnitRepository();
   seedIssue01Units(repository);
   const audit = new InMemoryAuditLog();
-  const calendar = new AvailabilityCalendar({ repository, audit });
+  const calendar = createTestAvailabilityCalendar({ repository, audit });
   return { repository, audit, calendar };
 }
 
@@ -167,8 +169,10 @@ test("Web, agent, and support views show the same current availability without o
 test("File-backed availability authority is shared across independent calendars and survives reconstruction", () => {
   const directory = mkdtempSync(join(tmpdir(), "shortlet-availability-"));
   const databasePath = join(directory, "availability.sqlite");
-  const storeA = new SqliteAvailabilityStore(databasePath);
-  const storeB = new SqliteAvailabilityStore(databasePath);
+  const databaseA = openNodeSqliteDatabase(databasePath);
+  const databaseB = openNodeSqliteDatabase(databasePath);
+  const storeA = new SqliteAvailabilityStore(databaseA);
+  const storeB = new SqliteAvailabilityStore(databaseB);
   const unitId = "unit-lagos-001";
   const now = () => new Date("2026-07-22T10:00:00Z");
   const calendarA = new AvailabilityCalendar({ store: storeA });
@@ -181,21 +185,22 @@ test("File-backed availability authority is shared across independent calendars 
     assert.equal(calendarA.getAuthoritativeAvailability({ unitId, checkIn: "2026-08-03", checkOut: "2026-08-04", clock: now }).isAvailable, true);
 
     calendarA.addOperatorBlock({ unitId, operatorId: "operator-001", start: "2026-08-10", end: "2026-08-12", reason: "Maintenance", clock: now });
-    storeA.close();
-    storeB.close();
+    databaseA.close();
+    databaseB.close();
 
-    const storeC = new SqliteAvailabilityStore(databasePath);
+    const databaseC = openNodeSqliteDatabase(databasePath);
+    const storeC = new SqliteAvailabilityStore(databaseC);
     try {
       const calendarC = new AvailabilityCalendar({ store: storeC });
       const availability = calendarC.getAuthoritativeAvailability({ unitId, checkIn: "2026-08-10", checkOut: "2026-08-11", clock: now });
       assert.equal(availability.isAvailable, false);
       assert.equal(availability.conflictReason, "Overlaps with Operator Block");
     } finally {
-      storeC.close();
+      databaseC.close();
     }
   } finally {
-    storeA.close();
-    storeB.close();
+    try { databaseA.close(); } catch { /* already closed for reconstruction */ }
+    try { databaseB.close(); } catch { /* already closed for reconstruction */ }
     rmSync(directory, { recursive: true, force: true });
   }
 });
@@ -203,8 +208,10 @@ test("File-backed availability authority is shared across independent calendars 
 test("Independent SQLite connections atomically reject overlapping holds and blocks while allowing non-overlap", () => {
   const directory = mkdtempSync(join(tmpdir(), "shortlet-availability-"));
   const databasePath = join(directory, "availability.sqlite");
-  const storeA = new SqliteAvailabilityStore(databasePath);
-  const storeB = new SqliteAvailabilityStore(databasePath);
+  const databaseA = openNodeSqliteDatabase(databasePath);
+  const databaseB = openNodeSqliteDatabase(databasePath);
+  const storeA = new SqliteAvailabilityStore(databaseA);
+  const storeB = new SqliteAvailabilityStore(databaseB);
   const unitId = "unit-lagos-001";
   const clock = () => new Date("2026-07-22T10:00:00Z");
   const calendarA = new AvailabilityCalendar({ store: storeA });
@@ -216,8 +223,8 @@ test("Independent SQLite connections atomically reject overlapping holds and blo
     assert.throws(() => calendarB.addOperatorBlock({ unitId, operatorId: "operator-001", start: "2026-09-04", end: "2026-09-06", clock }), /availability conflict/i);
     assert.doesNotThrow(() => calendarB.addOperatorBlock({ unitId, operatorId: "operator-001", start: "2026-09-05", end: "2026-09-06", clock }));
   } finally {
-    storeA.close();
-    storeB.close();
+    databaseA.close();
+    databaseB.close();
     rmSync(directory, { recursive: true, force: true });
   }
 });
@@ -295,7 +302,8 @@ test("Operator Hold lasts 45 minutes and extends once to a maximum of 60 minutes
 test("Payment Pending transitions atomically to non-expiring confirmed Booking inventory", () => {
   const directory = mkdtempSync(join(tmpdir(), "shortlet-confirmed-booking-"));
   const databasePath = join(directory, "availability.sqlite");
-  const store = new SqliteAvailabilityStore(databasePath);
+  const database = openNodeSqliteDatabase(databasePath);
+  const store = new SqliteAvailabilityStore(database);
   const unitId = "unit-lagos-001";
   const start = "2027-01-10";
   const end = "2027-01-12";
@@ -331,16 +339,17 @@ test("Payment Pending transitions atomically to non-expiring confirmed Booking i
     assert.ok(expiredPending.expiresAt);
     assert.throws(() => calendar.transitionPaymentPendingToConfirmedBooking({ commitmentId: expiredBlock.commitmentId, unitId, start: "2027-02-10", end: "2027-02-12", clock: afterExpiry }), /no longer active/i);
 
-    store.close();
-    const reconstructedStore = new SqliteAvailabilityStore(databasePath);
+    database.close();
+    const reconstructedDatabase = openNodeSqliteDatabase(databasePath);
+    const reconstructedStore = new SqliteAvailabilityStore(reconstructedDatabase);
     try {
       const reconstructedCalendar = new AvailabilityCalendar({ store: reconstructedStore });
       assert.equal(reconstructedCalendar.getAuthoritativeAvailability({ unitId, checkIn: start, checkOut: end, clock: afterExpiry }).isAvailable, false);
     } finally {
-      reconstructedStore.close();
+      reconstructedDatabase.close();
     }
   } finally {
-    try { store.close(); } catch { /* already closed after reconstruction */ }
+    try { database.close(); } catch { /* already closed after reconstruction */ }
     rmSync(directory, { recursive: true, force: true });
   }
 });
@@ -348,7 +357,8 @@ test("Payment Pending transitions atomically to non-expiring confirmed Booking i
 test("Confirmed Booking inventory cannot be created outside the Payment Pending transition", () => {
   const directory = mkdtempSync(join(tmpdir(), "shortlet-confirmed-booking-guard-"));
   const databasePath = join(directory, "availability.sqlite");
-  const store = new SqliteAvailabilityStore(databasePath);
+  const database = openNodeSqliteDatabase(databasePath);
+  const store = new SqliteAvailabilityStore(database);
   const calendar = new AvailabilityCalendar({ store });
   const unitId = "unit-lagos-001";
   const start = "2027-03-10";
@@ -373,7 +383,7 @@ test("Confirmed Booking inventory cannot be created outside the Payment Pending 
     assert.equal(confirmed.kind, "confirmed_booking");
     assert.equal(confirmed.commitmentId, requestBlock.commitmentId);
   } finally {
-    store.close();
+    database.close();
     rmSync(directory, { recursive: true, force: true });
   }
 });

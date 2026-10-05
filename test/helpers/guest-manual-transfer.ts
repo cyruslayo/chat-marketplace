@@ -29,13 +29,11 @@ export function guestManualTransfers(
 ): GuestManualTransfers {
   const database = new DatabaseSync(env.config.databasePath);
   database.exec("PRAGMA busy_timeout = 5000");
-  const store = new SqliteGuestInteractionStore(
-    env.config.databasePath,
-    database,
-  );
+  const sqlDatabase = new NodeSqliteDatabase(database);
+  const store = new SqliteGuestInteractionStore(sqlDatabase);
   const manager = new ManualTransferManager({
     offerManager: env.conditionalOfferApp.manager,
-    store: new SqliteManualTransferStore(new NodeSqliteDatabase(database)),
+    store: new SqliteManualTransferStore(sqlDatabase),
     account: TEST_MANUAL_ACCOUNT,
     liveAttempts: new SqliteLivePaymentAttemptRegistry(store),
     calendar: env.calendar,

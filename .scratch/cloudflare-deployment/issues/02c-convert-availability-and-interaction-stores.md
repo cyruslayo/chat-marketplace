@@ -1,6 +1,6 @@
 # Move the availability and guest-interaction stores onto `SqlDatabase`
 
-Status: ready-for-agent
+Status: claimed
 Type: task
 Blocked by: 02a
 Branch: `infra/cf-02c-availability-interaction`
@@ -53,3 +53,18 @@ Add the files to `test/sql-port-store-imports.test.ts` (from 02b). Find the exis
 Check every item in `docs/agents/issue-tracker.md`.
 
 ## Comments
+
+### Reconciled implementation plan
+
+| ADR | Constraint | Acceptance/code path |
+| --- | --- | --- |
+| 0004 / 0095 | One backend-owned synchronous SQL handle | AC1 injected non-owning stores |
+| 0039 / 0041 | Exclusive atomic inventory blocks | AC2 hold transaction/rollback |
+| 0044 / 0046 | Preserve payment deadlines and one live attempt | AC3 registry reconstruction |
+| 0075 | No credential logging | No logging or projection changes |
+
+Reconciles the existing 02c worktree edits, correcting their borrowed-handle close() bug and completing missing callers/tests. No policy changes. Unread path labels are removed as coordinated with 02d. Full-suite gate remains pending.
+
+Direct continuation checks: `npm run check`, focused availability/interaction/import/notifier/process-restart tests, `npm run test:workers`, and `git diff --check` passed. Dedicated AC1–AC4 tests were first run red in `cf-02c-red.log`, then green in `cf-02c-focused.log`. Both stores borrow the handle; tests close their own connections, including before reconstruction. No dynamic SQL `IN (...)` parameter lists exist in either store. The existing live-attempt registry API is unchanged. New row reads use text guards; SQL and policy values are unchanged. Automated formatting of touched files is retained rather than reverted.
+
+DoD 1–6 reviewed: separate named tests, overlap/duplicate failure assertions, ADR table verified, dependencies used, no invented policies, no credentials/logging introduced. DoD 7 awaits the serial full-suite gate; keep claimed until then.
