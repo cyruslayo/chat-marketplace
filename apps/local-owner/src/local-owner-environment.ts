@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import { NodeSqliteDatabase } from "../../../packages/platform-core/src/node-sqlite-database.js";
 import { createHash } from "node:crypto";
 import { existsSync, unlinkSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
@@ -407,6 +408,7 @@ export class LocalApartmentOwnerEnvironment {
   readonly audit: InMemoryAuditLog;
   readonly telemetry: InMemoryTelemetry;
   readonly #database: DatabaseSync;
+  readonly #sqlDatabase: NodeSqliteDatabase;
 
   /** Read-only here: the committed Reservation's current status (B4). The Guest side writes it. */
   readonly #bookingState: SqliteBookingStateRepository;
@@ -428,10 +430,11 @@ export class LocalApartmentOwnerEnvironment {
     this.#database = new DatabaseSync(this.config.databasePath);
     this.#database.exec("PRAGMA busy_timeout = 5000");
     this.interactionStore = new SqliteGuestInteractionStore(this.config.databasePath, this.#database);
-    this.#bookingState = new SqliteBookingStateRepository(this.#database, this.config.databasePath);
-    this.#checkInStore = new SqliteCheckInSupportStore(this.#database);
-    this.#manualTransferStore = new SqliteManualTransferStore(this.#database);
-    this.ownerPayableLedger = new SqliteOwnerPayableLedger(this.#database, this.clock);
+    this.#sqlDatabase = new NodeSqliteDatabase(this.#database);
+    this.#bookingState = new SqliteBookingStateRepository(this.#sqlDatabase, this.config.databasePath);
+    this.#checkInStore = new SqliteCheckInSupportStore(this.#sqlDatabase);
+    this.#manualTransferStore = new SqliteManualTransferStore(this.#sqlDatabase);
+    this.ownerPayableLedger = new SqliteOwnerPayableLedger(this.#sqlDatabase, this.clock);
     this.audit = new InMemoryAuditLog();
     this.telemetry = new InMemoryTelemetry();
     this.grantStore = new SqliteOperatorRepresentativeGrantStore(this.config.databasePath, { clock: this.clock });
@@ -818,7 +821,7 @@ export class LocalApartmentOwnerEnvironment {
    */
   listOperatorBookings(principal: CommandPrincipal): readonly OperatorBooking[] {
     if (principal.role !== "operator" || !principal.id || !principal.tenantId) return [];
-    const journeys = new SqliteBookingPaymentJourneyRepository(this.#database, this.config.databasePath);
+    const journeys = new SqliteBookingPaymentJourneyRepository(this.#sqlDatabase, this.config.databasePath);
     const now = this.clock();
     const bookings = this.interactionStore.listBookingRequestIds().flatMap((requestId) => {
       try {
@@ -834,7 +837,7 @@ export class LocalApartmentOwnerEnvironment {
 
   /** One booking, or "Booking not found" for an unknown id, an unconfirmed request, or an owner you do not act for (ADR 0082). */
   operatorBooking(requestId: string, principal: CommandPrincipal): OperatorBooking {
-    const booking = this.#bookingFor(requestId, principal, new SqliteBookingPaymentJourneyRepository(this.#database, this.config.databasePath), this.clock());
+    const booking = this.#bookingFor(requestId, principal, new SqliteBookingPaymentJourneyRepository(this.#sqlDatabase, this.config.databasePath), this.clock());
     if (!booking) throw new Error("Booking not found");
     return booking;
   }

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
 import type { PlatformCommandEnvelope, CommandPrincipal } from "../../../packages/platform-core/src/index.js";
 import type { ConditionalBookingOffer } from "./conditional-offer.js";
 import type { BookingContract, LedgerEntry, Reservation } from "./card-payment.js";
@@ -109,8 +110,8 @@ function parseSession(json: string): BankTransferCheckoutSession | null {
 }
 
 export class SqliteBankTransferSessionStore implements BankTransferSessionStore {
-  readonly #database: import("node:sqlite").DatabaseSync;
-  constructor(database: import("node:sqlite").DatabaseSync) {
+  readonly #database: SqlDatabase;
+  constructor(database: SqlDatabase) {
     this.#database = database;
     this.#database.exec("CREATE TABLE IF NOT EXISTS bank_transfer_sessions (transfer_reference TEXT PRIMARY KEY, offer_id TEXT NOT NULL, seq INTEGER NOT NULL, session_json TEXT NOT NULL); CREATE INDEX IF NOT EXISTS idx_bank_transfer_sessions_offer ON bank_transfer_sessions (offer_id, seq)");
   }
@@ -137,7 +138,7 @@ export class BankTransferProviderError extends Error {
 export interface BankTransferPaymentManagerOptions {
   readonly offerManager: { getOffer(offerId: string): ConditionalBookingOffer };
   readonly calendar?: {
-    transitionPaymentPendingToConfirmedBooking(input: { commitmentId: string; unitId: string; start: string; end: string; clock: () => Date }): unknown;
+    transitionPaymentPendingToConfirmedBooking(input: { commitmentId: string; unitId: string; start: string; end: string; clock: () => Date }): void;
     releasePaymentPending?(commitmentId: string, options?: { clock?: () => Date }): void;
     releaseConfirmedBooking?(input: { commitmentId: string; unitId: string; start: string; end: string; clock: () => Date }): void;
     extendPaymentPending?(commitmentId: string, expiresAt: string, options?: { clock?: () => Date }): void;

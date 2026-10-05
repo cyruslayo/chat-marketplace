@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import { NodeSqliteDatabase } from "../../packages/platform-core/src/node-sqlite-database.js";
 import type { LocalApartmentOwnerEnvironment } from "../../apps/local-owner/src/index.js";
 import { ManualTransferManager, SqliteGuestInteractionStore, SqliteLivePaymentAttemptRegistry, SqliteManualTransferStore, type ManualTransfer } from "../../domains/shortlet/src/index.js";
 import { createPlatformCommandEnvelope, type CommandPrincipal } from "../../packages/platform-core/src/index.js";
@@ -20,7 +21,7 @@ export function guestManualTransfers(env: LocalApartmentOwnerEnvironment): Guest
   const store = new SqliteGuestInteractionStore(env.config.databasePath, database);
   const manager = new ManualTransferManager({
     offerManager: env.conditionalOfferApp.manager,
-    store: new SqliteManualTransferStore(database),
+    store: new SqliteManualTransferStore(new NodeSqliteDatabase(database)),
     account: TEST_MANUAL_ACCOUNT,
     liveAttempts: new SqliteLivePaymentAttemptRegistry(store),
     calendar: env.calendar,

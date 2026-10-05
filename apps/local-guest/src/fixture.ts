@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { NodeSqliteDatabase } from "../../../packages/platform-core/src/node-sqlite-database.js";
 import { createPlatformCommandEnvelope, InMemoryAuditLog, InMemoryTelemetry, type CommandPrincipal } from "../../../packages/platform-core/src/index.js";
 import {
   AvailabilityCalendar,
@@ -142,6 +143,8 @@ const AUTHORITY_PERMISSIONS = [
  * Durable so a restarted application instance can re-serve the confirmed
  * Reservation summary from the same SQLite file.
  */
+type LocalBookingSqlRow = Record<string, unknown>;
+
 class LocalBookingContractRepository implements ContractRepository {
   readonly #database: import("node:sqlite").DatabaseSync;
   #closed = false;
@@ -190,7 +193,7 @@ class LocalBookingContractRepository implements ContractRepository {
     return this.#rowContract(contractId);
   }
 
-  #sharedRow(sql: string, id: string): unknown {
+  #sharedRow(sql: string, id: string): LocalBookingSqlRow | undefined {
     try { return this.#database.prepare(sql).get({ $id: id }); } catch { return undefined; }
   }
 
@@ -261,7 +264,8 @@ export class LocalGuestEnvironment {
     this.#database.exec("PRAGMA busy_timeout = 5000");
     this.#database.exec("PRAGMA foreign_keys = ON");
     this.interactionStore = new SqliteGuestInteractionStore(this.config.databasePath, this.#database);
-    this.guestContactApp = new GuestContactApplication(new SqliteGuestContactRepository(this.#database));
+    const sqlDatabase = new NodeSqliteDatabase(this.#database);
+    this.guestContactApp = new GuestContactApplication(new SqliteGuestContactRepository(sqlDatabase));
     if (this.config.initialGuestPhoneNumber && !this.guestContactApp.get(this.guestPrincipal())) this.guestContactApp.submitPhone({ phoneNumber: this.config.initialGuestPhoneNumber }, this.guestPrincipal());
     if (this.config.initialGuestContactEmail && !this.guestContactApp.get(this.guestPrincipal())?.contactEmail) this.guestContactApp.submitEmail({ contactEmail: this.config.initialGuestContactEmail }, this.guestPrincipal());
     this.livePaymentAttempts = new SqliteLivePaymentAttemptRegistry(this.interactionStore);
@@ -306,8 +310,8 @@ export class LocalGuestEnvironment {
     });
 
     this.contractRepository = new LocalBookingContractRepository(this.#database);
-    const journeyRepository = new SqliteBookingPaymentJourneyRepository(this.#database, this.config.databasePath);
-    const bookingState = new SqliteBookingStateRepository(this.#database, this.config.databasePath);
+    const journeyRepository = new SqliteBookingPaymentJourneyRepository(sqlDatabase, this.config.databasePath);
+    const bookingState = new SqliteBookingStateRepository(sqlDatabase, this.config.databasePath);
 
     this.cardPaymentApp = createCardPaymentApplication({
       conditionalOfferApplication: this.conditionalOfferApp,
@@ -369,7 +373,7 @@ export class LocalGuestEnvironment {
       calendar: this.calendar,
       audit: this.audit,
       providerClient: transferProvider,
-      sessionStore: new SqliteBankTransferSessionStore(this.#database),
+      sessionStore: new SqliteBankTransferSessionStore(sqlDatabase),
       store: this.interactionStore,
       onConfirmedOutcome: (outcome) => this.contractRepository.recordConfirmedOutcome(outcome.reservation, outcome.bookingContract),
       guestContacts: this.guestContactApp.repository,
@@ -393,7 +397,7 @@ export class LocalGuestEnvironment {
 
     this.manualTransfers = this.config.manualTransferAccount ? new ManualTransferManager({
       offerManager: this.conditionalOfferApp.manager,
-      store: new SqliteManualTransferStore(this.#database),
+      store: new SqliteManualTransferStore(sqlDatabase),
       account: this.config.manualTransferAccount,
       liveAttempts: this.livePaymentAttempts,
       calendar: this.calendar,

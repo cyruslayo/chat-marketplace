@@ -39,7 +39,7 @@ The frontier is the first slice in the table that is open, unblocked and unclaim
 | 01c | Validate and pin the `cf` Workers toolchain | prototype | resolved | 01a | 01b, 03a |
 | 01b | Spike Workers runtime compatibility | prototype | ready-for-agent | 01a, 01c | 09c, 10b |
 | 02a | `SqlDatabase` port, Node adapter, contract helper | task | resolved | none | 02b–02d, 03b, 05b, 06a–06c |
-| 02b | Move the seven handle-taking stores onto the port | task | ready-for-agent | 02a | 02e, 07a |
+| 02b | Move the seven handle-taking stores onto the port | task | resolved | 02a | 02e, 07a |
 | 02c | Move the availability and guest-interaction stores onto the port | task | ready-for-agent | 02a | 02e |
 | 02d | Move the operator grant and session stores onto the shared handle | task | ready-for-agent | 02a | 02e |
 | 02e | Move the app layer onto the port; guard `node:sqlite` imports | task | ready-for-agent | 02b, 02c, 02d | 04a, 04b |
@@ -130,7 +130,15 @@ At the beginning of a wave session:
 > - Stay inside the slice's "Out of scope" list. Keep the Node pilot and `npm test` green.
 > - Don't invent policy values; ask me. When done, check the Definition of Done item by item, then write `## Answer` and a context pointer in `map.md`.
 
+## Wave 2 session handoff (5 Oct 2026)
+
+Started from `infra/cloudflare-deployment` at `d4eefe5`; selected the unblocked, bounded slices **03a and 02b**. Both completed on their own branches and were validated before integration. **Wave 2 remains open**: 01b, 02c, 02d, 05b and 06a–06c are still unclaimed/unblocked and were not attempted in this batch. No Wave 3 implementation was taken; 02e still waits for 02c/02d. Issue 03b is unlocked by 03a but is not listed in this wave's slice set and was not silently added.
+
+Final stable checks: `npm run check`, `npm run test:workers` (1 workerd test), full Node suite (1,268 non-browser + 165 browser tests passed; zero failures; one expected skip), and whitespace checks. See issue answers for the environment-variable caveat and transient Chromium focus failure/retry evidence. No production Cloudflare app/config, deployment, or staging rehearsal is claimed. The Guest Account authority is explicitly part of 02e's twelve-file domain persistence inventory and future repo-wide guard, not one of 02b's seven converted stores.
+
 ## Context pointers
+
+- 02b: `ca9de39` converts the seven shared-handle stores, adds non-owning Node wrapping and preserves savepoint boundaries inside existing raw Node transactions. Dedicated import/rollback/ownership tests and full suite pass. Existing app handles/foreign-key settings remain unchanged until 02e. Its inventory now explicitly covers Guest Accounts, sessions, codes, quota events and email-command receipts. Parent Chrome smoke on synthetic `http://127.0.0.1:3047/` exercised concierge turns and contact persistence across reload; only favicon 404 observed. Details in issue 02b.
 
 - 03a: `492982a` adds the isolated workerd harness, exact Workers-plugin/Vitest/types pins and separate Node, Worker-source, Worker-test and tooling checks. SQLite `SELECT 1` passes in workerd; a Node-only SQLite import fails the source check. Full Node suite passed (1,265 non-browser / 165 browser, zero failures, one expected skip). See the issue answer for legacy pool-name correction, negative probe and `PI_REASONING_LEVEL` test-environment caveat. No production config or deployment introduced.
 

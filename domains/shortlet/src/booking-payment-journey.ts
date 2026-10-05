@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
 import type { SecurityDepositPolicySnapshot } from "./security-deposit.js";
 
 /** ADR 0044: one Payment-Processing Grace of at most 10 minutes after the Payment Window deadline, never repeated. */
@@ -34,17 +35,6 @@ export class InMemoryBookingPaymentJourneyRepository implements BookingPaymentJo
   update(offerId: string, expected: number, mutation: (current: BookingPaymentJourney) => BookingPaymentJourney): BookingPaymentJourney { const current = this.#journeys.get(offerId); if (!current || current.journeyVersion !== expected) throw new Error("STALE_ACTION"); const next = clone({ ...mutation(current), journeyVersion: expected + 1 }); this.#journeys.set(offerId, next); return next; }
 }
 
-interface PaymentJourneyRow {
-  offer_id: string;
-  journey_json: string;
-}
-
-function parseJourneyJson(json: string): BookingPaymentJourney {
-  const parsed: unknown = JSON.parse(json);
-  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid stored payment journey");
-  return parsed as BookingPaymentJourney;
-}
-
 /**
  * Durable SQLite implementation of BookingPaymentJourneyRepository for the
  * Guest composition. The stay/deposit payment stage machine survives restart
@@ -52,11 +42,11 @@ function parseJourneyJson(json: string): BookingPaymentJourney {
  */
 export class SqliteBookingPaymentJourneyRepository implements BookingPaymentJourneyRepository {
   readonly databasePath: string;
-  readonly #database: import("node:sqlite").DatabaseSync;
+  readonly #database: SqlDatabase;
   readonly #journeys = new Map<string, BookingPaymentJourney>();
   #loaded = false;
 
-  constructor(database: import("node:sqlite").DatabaseSync, databasePath: string) {
+  constructor(database: SqlDatabase, databasePath: string) {
     this.databasePath = databasePath;
     this.#database = database;
     this.#database.exec(`
@@ -70,10 +60,13 @@ export class SqliteBookingPaymentJourneyRepository implements BookingPaymentJour
   #loadAll(): void {
     if (this.#loaded) return;
     this.#loaded = true;
-    const rows = this.#database.prepare("SELECT offer_id, journey_json FROM booking_payment_journeys").all() as unknown as PaymentJourneyRow[];
+    const rows = this.#database.prepare("SELECT offer_id, journey_json FROM booking_payment_journeys").all();
     for (const row of rows) {
+      if (typeof row.offer_id !== "string" || typeof row.journey_json !== "string") continue;
       try {
-        const journey = parseJourneyJson(row.journey_json);
+        const parsed: unknown = JSON.parse(row.journey_json);
+        if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) continue;
+        const journey = parsed as BookingPaymentJourney;
         if (journey.offerId === row.offer_id) this.#journeys.set(row.offer_id, journey);
       } catch {
         // A corrupt stored journey is ignored; authoritative re-derivation wins.

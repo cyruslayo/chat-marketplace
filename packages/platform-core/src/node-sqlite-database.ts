@@ -9,14 +9,18 @@ function isSqlValue(value: unknown): value is SqlValue {
   return value === null || typeof value === "string" || typeof value === "number" || typeof value === "bigint" || value instanceof Uint8Array;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function toSqlRow(value: unknown): SqlRow {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+  if (!isRecord(value)) {
     throw new TypeError("SQLite returned a row that is not an object");
   }
 
   const row: SqlRow = {};
   for (const key of Object.keys(value)) {
-    const cell: unknown = Reflect.get(value, key);
+    const cell = value[key];
     if (!isSqlValue(cell)) {
       throw new TypeError(`SQLite returned an unsupported value for column ${key}`);
     }
@@ -77,11 +81,18 @@ class NodeSqliteStatement implements SqlStatement {
 
 export class NodeSqliteDatabase implements SqlDatabase {
   readonly #database: DatabaseSync;
+  readonly #ownsDatabase: boolean;
   #transactionDepth = 0;
 
-  constructor(path: string) {
-    mkdirSync(dirname(path), { recursive: true });
-    this.#database = new DatabaseSync(path);
+  /** An existing handle is borrowed: no pragmas are changed and close() does not close it. */
+  constructor(pathOrDatabase: string | DatabaseSync) {
+    this.#ownsDatabase = typeof pathOrDatabase === "string";
+    if (typeof pathOrDatabase !== "string") {
+      this.#database = pathOrDatabase;
+      return;
+    }
+    mkdirSync(dirname(pathOrDatabase), { recursive: true });
+    this.#database = new DatabaseSync(pathOrDatabase);
     // Preserve the existing 5-second timeout used by availability-store.ts,
     // guest-interaction-store.ts, and apps/local-guest/src/fixture.ts.
     this.#database.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`);
@@ -99,18 +110,19 @@ export class NodeSqliteDatabase implements SqlDatabase {
   transaction<T>(fn: () => T): T {
     const depth = this.#transactionDepth;
     const savepoint = `__sql_transaction_${depth}`;
-    // Durable Object transactionSync supports nesting; savepoints preserve its nested rollback boundary on Node.
-    if (depth === 0) this.#database.exec("BEGIN IMMEDIATE");
+    // ADR 0095: retain nested rollback boundaries, including transactions started by unconverted Node callers.
+    const ownsTransaction = depth === 0 && !this.#database.isTransaction;
+    if (ownsTransaction) this.#database.exec("BEGIN IMMEDIATE");
     else this.#database.exec(`SAVEPOINT ${savepoint}`);
     this.#transactionDepth = depth + 1;
     try {
       const result = fn();
       if (isThenable(result)) throw new TypeError("SQL transaction callbacks must be synchronous");
-      if (depth === 0) this.#database.exec("COMMIT");
+      if (ownsTransaction) this.#database.exec("COMMIT");
       else this.#database.exec(`RELEASE SAVEPOINT ${savepoint}`);
       return result;
     } catch (error) {
-      if (depth === 0) this.#database.exec("ROLLBACK");
+      if (ownsTransaction) this.#database.exec("ROLLBACK");
       else {
         this.#database.exec(`ROLLBACK TO SAVEPOINT ${savepoint}`);
         this.#database.exec(`RELEASE SAVEPOINT ${savepoint}`);
@@ -122,7 +134,7 @@ export class NodeSqliteDatabase implements SqlDatabase {
   }
 
   close(): void {
-    this.#database.close();
+    if (this.#ownsDatabase) this.#database.close();
   }
 }
 

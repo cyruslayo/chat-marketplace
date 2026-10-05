@@ -411,9 +411,9 @@ function isPayoutRow(value: unknown): value is { payout_id: string; reservation_
 
 /** The owner-payable ledger in the shared SQLite database, read fresh on every call (no cross-process cache). */
 export class SqliteOwnerPayableLedger implements OwnerPayableLedger {
-  readonly #database: import("node:sqlite").DatabaseSync;
+  readonly #database: import("../../../packages/platform-core/src/sql-database.js").SqlDatabase;
   readonly #clock: () => Date;
-  constructor(database: import("node:sqlite").DatabaseSync, clock: () => Date = () => new Date()) {
+  constructor(database: import("../../../packages/platform-core/src/sql-database.js").SqlDatabase, clock: () => Date = () => new Date()) {
     this.#database = database;
     this.#clock = clock;
     this.#database.exec(`
