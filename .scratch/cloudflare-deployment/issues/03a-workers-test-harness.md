@@ -1,6 +1,6 @@
 # Workers test harness and `apps/cloudflare` skeleton
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 01a, 01c
 Branch: `infra/cf-03a-workers-harness`
@@ -47,3 +47,28 @@ No domain ADRs. This slice is tooling only.
 Check every item in `docs/agents/issue-tracker.md`. Item 7 also covers `npm run test:workers`.
 
 ## Comments
+
+- Implementation selection: unblocked by merged 01a/01c. Follow 01c's verified `@cloudflare/vitest-plugin@1.3.6` / Vitest 4.1.11 integration rather than guessing a legacy pool configuration. Wrangler remains transitive test infrastructure only.
+
+| ADR | Constraint | Acceptance / code path |
+| --- | --- | --- |
+| 0095 | SQLite-backed DO; no authority in front-door Worker | AC1 test harness only, synthetic data; no production binding or deployment |
+
+- No domain logic changes in this tooling slice.
+- AC2 negative probe: temporary `src/node-only-probe.ts` imported `DatabaseSync` from `node:sqlite`; Worker-source tsc failed with TS2591. Removed probe and `npm run check` passed. Source, tests and Node-hosted tooling have separate configs: Vitest references Node types, so mixing tests into the source check would mask this failure. Workers-types declares a compatibility `process` global, so `process.cwd()` is not a suitable negative probe.
+- npm 10.9.3 initially failed dependency installation with `Cannot read properties of null (reading edgesOut)`; exact pins installed successfully using `--legacy-peer-deps`. `npm ls` and runtime checks succeed.
+- First full test attempt raced a package.json edit (two invalid-package reads); AC22 in the existing verification test also matches the harness variable `PI_REASONING_LEVEL` via its broad `/NIN/i` check. Stable rerun with only that variable unset passed; no domain/test policy changes were made.
+
+## Verification and Definition of Done
+
+1. AC1 has a workerd `test()` in `apps/cloudflare/test/harness.spec.ts`; AC2–AC4 have separate named Node tests in `test/cloudflare-harness.test.ts`. All were observed failing before implementation.
+2. AC2's named failure path was reproduced by hand (TS2591); configurations exclude Workers specs from the Node runner. No other failure paths specified.
+3. ADR table rechecked: SQLite-backed synthetic DO only; no production authority or deployment. ADR 0095 read; slice has no domain ADR constraints.
+4. All injected bindings/dependencies used by the harness; R2 bindings reserved explicitly by this issue for subsequent slices.
+5. No invented domain policies or constants.
+6. No bearer or restricted identity data in harness records/logs.
+7. `npm run check`, `npm run test:workers` (1 passed), and full `env -u PI_REASONING_LEVEL npm test` passed: 1,265 non-browser tests; 165 browser tests; zero failures; one expected skip. Log: `/tmp/cf-wave2-03a-clean-tests.log`. Whitespace check passed. Active LSP returned stale/inferred-project Cloudflare module findings; project tsc is clean for each explicit config.
+
+## Answer
+
+Implementation committed in `492982a` before resolution. Implemented the isolated workerd harness with SQLite `TestHarnessDO` and simulated R2 bindings. Exact pins: Vitest 4.1.11, Workers plugin 1.3.6, Workers types 5.20261005.1. The verified 01c plugin supersedes the issue's legacy pool-package name; Wrangler 4.147.0 is transitive test infrastructure only. Existing ignore rules already cover generated runtime state. No production Worker/config exists in this slice, so `cf build` / deployment dry-run are not applicable until assembly (10b).

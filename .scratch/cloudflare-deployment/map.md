@@ -44,7 +44,7 @@ The frontier is the first slice in the table that is open, unblocked and unclaim
 | 02d | Move the operator grant and session stores onto the shared handle | task | ready-for-agent | 02a | 02e |
 | 02e | Move the app layer onto the port; guard `node:sqlite` imports | task | ready-for-agent | 02b, 02c, 02d | 04a, 04b |
 | **B: Workers harness** | | | | | |
-| 03a | Workers test harness and `apps/cloudflare` skeleton | task | ready-for-agent | 01a, 01c | 03b, 07b, 09b, 09c |
+| 03a | Workers test harness and `apps/cloudflare` skeleton | task | resolved | 01a, 01c | 03b, 07b, 09b, 09c |
 | 03b | `DurableObjectSqlDatabase` passing the shared contract | task | ready-for-agent | 02a, 03a | 10b |
 | **C: Composition and repositories** | | | | | |
 | 04a | Injectable guest composition root | task | ready-for-agent | 02e | 04c, 08a |
@@ -131,6 +131,8 @@ At the beginning of a wave session:
 > - Don't invent policy values; ask me. When done, check the Definition of Done item by item, then write `## Answer` and a context pointer in `map.md`.
 
 ## Context pointers
+
+- 03a: `492982a` adds the isolated workerd harness, exact Workers-plugin/Vitest/types pins and separate Node, Worker-source, Worker-test and tooling checks. SQLite `SELECT 1` passes in workerd; a Node-only SQLite import fails the source check. Full Node suite passed (1,265 non-browser / 165 browser, zero failures, one expected skip). See the issue answer for legacy pool-name correction, negative probe and `PI_REASONING_LEVEL` test-environment caveat. No production config or deployment introduced.
 
 - 01a: `infra/cf-01a-do-sql-spike` holds the runnable SQL spike; its issue answer records SQL, PRAGMA, transaction, BLOB, row-count and limit evidence without merging the spike into the integration branch.
 - 01c: Pinned `cf@1.0.0-beta.12`, `@cloudflare/vite-plugin@2.0.0-beta.sha-52b0dc0e9`, and Vite `8.3.2`; typed Worker proof covered SQLite DO, R2, assets, synthetic local secret, mode selection, generated types, dry-run deploys and the Workers Vitest harness. Details are in `issues/01c-cf-toolchain-foundation.md`. Full serial `npm test` (Phase 1 1,245 passed; Phase 2 165 passed, 0 failed, 1 skipped) and `npm run check` passed cleanly on 5 October 2026. Integrated toolchain by `9bf7b12`, Node minimum by `aa47f50`, secret ignores by `cc261c8`, and baseline reconciliation by `b547628`.
