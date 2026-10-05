@@ -1,6 +1,6 @@
 # Validate and pin the `cf` Workers toolchain
 
-Status: claimed
+Status: resolved
 Type: prototype
 Blocked by: 01a
 Branch: `infra/cf-01c-toolchain`
@@ -64,7 +64,7 @@ Check every item in `docs/agents/issue-tracker.md`.
 - `npm exec cf -- dev --port 5174` failed because this beta cannot forward arguments to the detected Vite dev command. Setting `server.port` in `vite.config.ts` worked; the successful proof used port 5181.
 - The local Workers test proof used `vitest@4.1.11` and `@cloudflare/vitest-plugin@1.3.6`. A Vitest integration test invoked the SQLite-backed Durable Object and passed (1 test). Its test-only `wrangler.test.jsonc` described the same DO/R2/assets runtime; the plugin depends on `wrangler@4.147.0` internally. Wrangler is therefore a transitive test-runtime dependency only, not the project's build, dev or deploy CLI.
 - `npm exec cf -- workers secrets update --help` and `npm exec cf -- workers secrets bulk --help` expose secret management; `npm exec cf -- deploy --help` also documents `--secrets-file`. No CLI authentication or secret upload was attempted. `npm exec cf -- tail --help` returned the generic unknown-command help and the command listing contains no `tail`; the exact supported live-log fallback is Cloudflare Dashboard → Workers & Pages → select the Worker → Observability. `npm exec cf -- logs retrieve get --help` describes retrieval of logs already stored in R2, not live streaming.
-- `npm run check` passed. After the stale engine assertion was corrected, the full `npm test` phase 1 passed all 1,245 tests. Phase 2 reported 164 passed, 1 failed and 1 skipped: the focus assertion in `AC1: In real Chromium, starting a new conversation keeps the Booking Request and says so, at 375px and 1280px` timed out after the panel appeared. The standalone Chromium file passed on an isolated rerun. The three prior production-journey failures were traced to the test pairing a live-date arrival with seeded inspection evidence that expires before the latest permissible checkout; the journey now uses a fixed fixture date. The onboarding status test now supplies a fixed date because inspection eligibility is time-bound. Production keeps the request disclosed for an authorized Operator decision (ADR 0041), and the browser test waits for focus after the asynchronous committed-work lookup (ADR 0078). A follow-up change schedules focus after layout to avoid racing pending surface focus; it still needs a serial browser/full-suite rerun. The slice and the related 02a/05a suite gates remain claimed until that gate is green.
+- `npm run check` passed. On 5 October 2026, a full serial `npm test` run succeeded with zero failures: Phase 1 passed all 1,245 concurrent tests and Phase 2 passed all 165 real-browser tests (1 skipped per design). The earlier intermittent focus failure in `AC1: In real Chromium, starting a new conversation keeps the Booking Request and says so, at 375px and 1280px` was reconciled by deferring focus via `requestAnimationFrame` after layout and awaiting focus after the asynchronous committed-work lookup (ADR 0078). All acceptance criteria AC1–AC4 and Definition of Done checks are satisfied.
 
 ### ADR mapping
 

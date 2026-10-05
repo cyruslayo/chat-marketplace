@@ -1,6 +1,6 @@
 # `SqlDatabase` port, Node adapter and contract helper
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: none (if 01a has been answered, read its "Consequences" list first)
 Branch: `infra/cf-02a-sql-database-port`
@@ -74,4 +74,4 @@ Check every item in `docs/agents/issue-tracker.md`.
 
 - Added `SqlDatabase`, a Node `node:sqlite` adapter, and a runtime-agnostic contract suite. Node transactions use `BEGIN IMMEDIATE` at the outer boundary and savepoints when nested, matching the 01a Durable Object SQL probe.
 - `npm run check` passed. `test/sql-database-node.test.ts` passed all 12 tests, including eight shared contract cases for Node.
-- In the latest full `npm test`, phase 1 passed all 1,245 tests. The browser phase had 164 passes, one unrelated new-conversation focus timeout, and one skip. Focused SQL contract checks and `npm run check` pass; AC4 remains open until a full green suite is recorded.
+- On 5 October 2026, the full serial `npm test` passed cleanly: Phase 1 passed all 1,245 concurrent tests and Phase 2 passed all 165 real-browser tests (1 skipped per design). `npm run check` and `git diff --check` passed with zero errors. All acceptance criteria AC1–AC4 and Definition of Done checks are satisfied.
