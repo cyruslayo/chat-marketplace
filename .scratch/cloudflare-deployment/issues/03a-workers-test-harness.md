@@ -1,6 +1,6 @@
 # Workers test harness and `apps/cloudflare` skeleton
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: 01a, 01c
 Branch: `infra/cf-03a-workers-harness`
@@ -71,4 +71,4 @@ Check every item in `docs/agents/issue-tracker.md`. Item 7 also covers `npm run 
 
 ## Answer
 
-Implemented the isolated workerd harness with SQLite `TestHarnessDO` and simulated R2 bindings. Exact pins: Vitest 4.1.11, Workers plugin 1.3.6, Workers types 5.20261005.1. The verified 01c plugin supersedes the issue's legacy pool-package name; Wrangler 4.147.0 is transitive test infrastructure only. Existing ignore rules already cover generated runtime state. No production Worker/config exists in this slice, so `cf build` / deployment dry-run are not applicable until assembly (10b).
+Implementation committed in `492982a` before resolution. Implemented the isolated workerd harness with SQLite `TestHarnessDO` and simulated R2 bindings. Exact pins: Vitest 4.1.11, Workers plugin 1.3.6, Workers types 5.20261005.1. The verified 01c plugin supersedes the issue's legacy pool-package name; Wrangler 4.147.0 is transitive test infrastructure only. Existing ignore rules already cover generated runtime state. No production Worker/config exists in this slice, so `cf build` / deployment dry-run are not applicable until assembly (10b).
