@@ -51,3 +51,5 @@ Steps:
 Check every item in `docs/agents/issue-tracker.md`.
 
 ## Comments
+
+- 5 Oct 2026 integration inventory: Guest Account delivery adds `domains/shortlet/src/guest-account-authority.ts`, which imports `DatabaseSync` and optionally takes a shared Node handle, like the session authorities. Its tables now also include atomic email-command receipts (ADRs 0072/0075/0093). Wave 1 does not migrate this authority. Before this slice's AC1 can pass, convert that boundary to `SqlDatabase` and preserve code consumption, quota writes, session expiry/revocation, email-change receipts and replay authorization with `test/guest-account-authority.test.ts`; the repo-wide import guard must include it. Do not exempt the new file or claim the existing seven-store list covers it.

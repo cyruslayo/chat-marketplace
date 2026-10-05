@@ -1,0 +1,296 @@
+<title>Monthly Stay Supply Strategy</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600;700&family=Literata:opsz,wght@7..72,400;7..72,600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a single reading column (~44rem) with wide breakout blocks for tables and the calculator. */
+:root{
+  --bg:#f5f7f6; --surface:#ffffff; --ink:#15211d; --muted:#56635e; --line:#d9e0dc;
+  --accent:#1d6b4f; --accent-soft:#e2efe9; --ochre:#9a6512; --ochre-soft:#f6ecd9; --warn:#a33a2c; --warn-soft:#f8e4e0;
+  --display:"Familjen Grotesk",system-ui,sans-serif;
+  --body:"Literata",Georgia,serif;
+  --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f1513; --surface:#161e1b; --ink:#e3ebe7; --muted:#9aa9a2; --line:#2a3632;
+  --accent:#5cc19a; --accent-soft:#17302a; --ochre:#e0b064; --ochre-soft:#2e2615; --warn:#f08a7a; --warn-soft:#331b18; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1513; --surface:#161e1b; --ink:#e3ebe7; --muted:#9aa9a2; --line:#2a3632;
+  --accent:#5cc19a; --accent-soft:#17302a; --ochre:#e0b064; --ochre-soft:#2e2615; --warn:#f08a7a; --warn-soft:#331b18; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:400 1.0625rem/1.65 var(--body);padding-inline:16px;padding-block:0 4rem}
+.wrap{max-width:44rem;margin:0 auto}
+.wide{max-width:60rem;margin:0 auto}
+header{padding-block:3.5rem 2rem;border-bottom:1px solid var(--line)}
+.eyebrow{font:500 .75rem/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;line-height:1.15;margin:0}
+h1{font-size:clamp(2rem,5vw,3rem);font-weight:700;margin-top:.75rem;letter-spacing:-.01em}
+.lede{font-size:1.2rem;color:var(--muted);margin:1rem 0 0;max-width:38rem}
+.meta{display:flex;flex-wrap:wrap;gap:.5rem 1.5rem;margin-top:1.5rem;font:400 .8125rem/1.4 var(--mono);color:var(--muted)}
+section{padding-block:2.75rem 0}
+h2{font-size:1.6rem;font-weight:600;display:flex;gap:.75rem;align-items:baseline}
+h2 .n{font:500 .8rem/1 var(--mono);color:var(--muted);min-width:1.5rem}
+h3{font-size:1.1rem;font-weight:600;margin-top:1.75rem}
+p{margin:.9rem 0 0}
+ul,ol{margin:.9rem 0 0;padding-left:1.25rem}
+li{margin-top:.35rem}
+strong{font-weight:600}
+code{font:400 .875em var(--mono);background:var(--accent-soft);padding:.05em .3em;border-radius:3px}
+.thesis{margin-top:1.25rem;padding:1.1rem 1.25rem;border-left:3px solid var(--accent);background:var(--surface);font-size:1.15rem}
+.note{margin-top:1.25rem;padding:.9rem 1.1rem;border-radius:6px;font-size:.95rem}
+.note.warn{background:var(--warn-soft)}
+.note.ochre{background:var(--ochre-soft)}
+.note b{font-family:var(--display);font-weight:600}
+.tablebox{overflow-x:auto;margin-top:1.25rem;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:.92rem;line-height:1.45}
+th,td{text-align:left;vertical-align:top;padding:.7rem .85rem;border-bottom:1px solid var(--line)}
+th{font:600 .78rem/1.3 var(--display);letter-spacing:.04em;text-transform:uppercase;color:var(--muted);background:var(--bg)}
+tr:last-child td{border-bottom:0}
+td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.pill{display:inline-block;font:500 .72rem/1 var(--mono);padding:.3rem .5rem;border-radius:99px;white-space:nowrap}
+.pill.ok{background:var(--accent-soft);color:var(--accent)}
+.pill.part{background:var(--ochre-soft);color:var(--ochre)}
+.pill.no{background:var(--warn-soft);color:var(--warn)}
+/* calculator */
+.calc{margin-top:1.5rem;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:1.25rem;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:1.25rem}
+@media (max-width:760px){.calc{grid-template-columns:1fr}}
+.inputs{display:grid;grid-template-columns:1fr 1fr;gap:.75rem 1rem}
+.field{display:flex;flex-direction:column;gap:.25rem;min-width:0}
+.field label{font:500 .78rem/1.3 var(--display);color:var(--muted)}
+.field input{font:400 .95rem var(--mono);padding:.55rem .6rem;min-height:44px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);width:100%}
+.field input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.out{min-width:0}
+.out h3{margin-top:0}
+.big{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-top:1rem}
+.big div{padding:.8rem .9rem;border-radius:8px;background:var(--bg)}
+.big span{display:block;font:500 .75rem/1.3 var(--display);color:var(--muted)}
+.big b{display:block;font:500 1.25rem/1.3 var(--mono);font-variant-numeric:tabular-nums;margin-top:.2rem}
+.big .good b{color:var(--accent)}
+.big .bad b{color:var(--warn)}
+.calc-note{font-size:.85rem;color:var(--muted);margin-top:.75rem}
+/* loop diagram */
+.loop{margin-top:1.25rem;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:1rem;overflow-x:auto}
+.loop svg{display:block;width:100%;min-width:520px;height:auto}
+.loop text{font-family:var(--display);font-size:13px;fill:var(--ink)}
+.loop .lbl{font-family:var(--mono);font-size:11px;fill:var(--muted)}
+.steps{counter-reset:s;list-style:none;padding:0}
+.steps li{counter-increment:s;display:grid;grid-template-columns:2rem 1fr;gap:.5rem;margin-top:.9rem}
+.steps li::before{content:counter(s);font:500 .85rem/1.9 var(--mono);color:var(--accent)}
+footer{margin-top:3.5rem;padding-top:1.25rem;border-top:1px solid var(--line);font:400 .8rem/1.5 var(--mono);color:var(--muted)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">Monthly stays · Lagos &amp; Abuja</div>
+  <h1>Monthly Stay Supply Strategy</h1>
+  <p class="lede">How we structure deals with apartment operators, why they hold, and where pricing creates value for operators, guests and the platform.</p>
+  <div class="meta"><span>4 Oct 2026</span><span>Status: draft for decision</span><span>Follows ADR 0089, ADR 0092</span><span>Issues 15 &amp; 16</span></div>
+</header>
+
+<section>
+  <h2><span class="n">1</span>The scarce thing isn't apartments</h2>
+  <p>Lagos has too many shortlets. Airbnb occupancy is about 43% and revenue per listing is falling. About 24% of stays already run 30 nights or more. Two things are scarce:</p>
+  <ul>
+    <li><strong>Supply you can trust for a month:</strong> inspected, powered, with a real manager and fixed terms.</li>
+    <li><strong>Qualified monthly demand:</strong> assignment professionals and relocators who can pay one month at a time.</li>
+  </ul>
+  <p class="thesis">Whoever brings the demand leads the deal. We aren't asking operators for apartments. We're selling them occupancy certainty, which they can't produce alone because we pool demand across many units.</p>
+  <p>The trade in every deal is the same: <strong>the operator gives up some price, and we give them certainty.</strong> It works like insurance. We can price the risk because we see demand across the whole portfolio.</p>
+</section>
+
+<section>
+  <h2><span class="n">2</span>Does the trade work for the operator?</h2>
+  <p>Compare the operator's expected net income from nightly letting with the certain net income from a monthly stay. Utilities matter more than they first appear. A monthly price includes utilities (ADR 0092) and the unit is occupied every night, so the operator buys diesel for about 17 more nights than at 43% occupancy. Gross nightly income overstates the comparison.</p>
+</div>
+
+<div class="wide">
+  <div class="calc" id="calc">
+    <form class="inputs" id="calc-form" onsubmit="return false">
+      <div class="field"><label for="R">Nightly rate achieved (₦)</label><input id="R" type="number" inputmode="numeric" value="80000" step="1000" min="0"></div>
+      <div class="field"><label for="o">Expected occupancy (%)</label><input id="o" type="number" value="43" step="1" min="1" max="100"></div>
+      <div class="field"><label for="f">Channel fees (%)</label><input id="f" type="number" value="15" step="1" min="0" max="60"></div>
+      <div class="field"><label for="L">Avg nightly stay (nights)</label><input id="L" type="number" value="3" step="0.5" min="1"></div>
+      <div class="field"><label for="c">Cost per turnover (₦)</label><input id="c" type="number" value="12000" step="500" min="0"></div>
+      <div class="field"><label for="u">Utilities per occupied night (₦)</label><input id="u" type="number" value="8000" step="500" min="0"></div>
+      <div class="field"><label for="s">Scheduled cleaning per month (₦)</label><input id="s" type="number" value="40000" step="1000" min="0"></div>
+      <div class="field"><label for="n">Extended Stay length (nights)</label><input id="n" type="number" value="90" step="30" min="30" max="90"></div>
+      <div class="field"><label for="M">Monthly Agreed Amount offered (₦)</label><input id="M" type="number" value="1100000" step="10000" min="0"></div>
+      <div class="field"><label for="m">Platform margin (%)</label><input id="m" type="number" value="15" step="1" min="0" max="50"></div>
+    </form>
+    <div class="out" aria-live="polite">
+      <h3>One month, per unit</h3>
+      <div class="tablebox">
+        <table>
+          <thead><tr><th>Occupancy</th><th class="num">Nightly-mode net</th></tr></thead>
+          <tbody id="range"></tbody>
+        </table>
+      </div>
+      <div class="big">
+        <div><span>Break-even monthly amount</span><b id="be">–</b></div>
+        <div id="certainBox"><span>Monthly-mode net (certain)</span><b id="certain">–</b></div>
+        <div id="deltaBox"><span>Gain vs expected nightly</span><b id="delta">–</b></div>
+        <div><span>Guest pays / platform keeps</span><b id="guest">–</b></div>
+      </div>
+      <p class="calc-note">Example values, not pilot data. Low and high occupancy are the expected value −13 and +12 points. Fixed costs (rent, service charge) are the same in both modes and left out. Formulas are in issue 16.</p>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+  <p>With the example values, an operator expects about ₦722k a month from nightly letting, but anything from ₦504k to ₦924k. A ₦1.1M monthly offer gives them ₦816k, guaranteed. The guest pays ₦1.265M all-in, a fraction of a hotel and with no year's rent upfront. Everyone does better than their alternative, which is why the deal holds.</p>
+
+<section>
+  <h2><span class="n">3</span>The system as a network</h2>
+  <p>The nodes are operators, guests, the employers who reimburse guests, estate agents who serve relocators when they sign a lease, and service vendors (diesel, cleaning, internet). Five loops decide whether the network compounds or leaks.</p>
+</section>
+</div>
+
+<div class="wide">
+  <div class="loop" role="img" aria-label="The flywheel: units concentrated in one neighbourhood lead to faster matches, higher occupancy, more operator commitment, better prices and more demand, which leads back to more concentrated supply.">
+    <svg viewBox="0 0 760 250" xmlns="http://www.w3.org/2000/svg">
+      <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" style="fill:var(--accent)"/></marker></defs>
+      <g style="stroke:var(--accent);stroke-width:1.6;fill:none" marker-end="url(#ah)">
+        <path d="M205 55 H300"/><path d="M455 55 H550"/><path d="M640 78 Q690 125 640 172"/>
+        <path d="M550 195 H455"/><path d="M300 195 H205"/><path d="M118 172 Q68 125 118 78"/>
+      </g>
+      <g style="fill:var(--accent-soft);stroke:var(--line)">
+        <rect x="40" y="32" width="165" height="46" rx="8"/><rect x="300" y="32" width="155" height="46" rx="8"/><rect x="550" y="32" width="170" height="46" rx="8"/>
+        <rect x="550" y="172" width="170" height="46" rx="8"/><rect x="300" y="172" width="155" height="46" rx="8"/><rect x="40" y="172" width="165" height="46" rx="8"/>
+      </g>
+      <text x="122" y="60" text-anchor="middle">Units dense in one area</text>
+      <text x="377" y="60" text-anchor="middle">Faster matches</text>
+      <text x="635" y="60" text-anchor="middle">Higher occupancy</text>
+      <text x="635" y="200" text-anchor="middle">Operators commit more</text>
+      <text x="377" y="200" text-anchor="middle">Better prices</text>
+      <text x="122" y="200" text-anchor="middle">More guest demand</text>
+      <text class="lbl" x="380" y="130" text-anchor="middle">reinforcing loop · build it by neighbourhood, not by city</text>
+    </svg>
+  </div>
+  <div class="tablebox">
+    <table>
+      <thead><tr><th>Loop</th><th>Type</th><th>What we do about it</th></tr></thead>
+      <tbody>
+        <tr><td>The flywheel above</td><td><span class="pill ok">Reinforcing</span></td><td>Launch dense in 2–3 neighbourhoods. Ten units in VI/Ikoyi beat fifty spread across Lagos.</td></tr>
+        <tr><td>More units in an area → less occupancy each → operators leave</td><td><span class="pill part">Balancing</span></td><td>Cap units per neighbourhood at what demand can fill. Curation protects the occupancy promise.</td></tr>
+        <tr><td>Guest and owner meet in month 1 → go direct in month 2</td><td><span class="pill no">Leakage</span></td><td>The biggest risk. See section 4.</td></tr>
+        <tr><td>Stays and concierge requests → better pricing and supply targeting</td><td><span class="pill ok">Reinforcing</span></td><td>Record unmet requests by neighbourhood. They show where to recruit next.</td></tr>
+        <tr><td>More operators → bulk buying of diesel, cleaning, internet → lower costs</td><td><span class="pill ok">Reinforcing</span></td><td>Set up one shared-services deal early. It gives operators a reason to stay that has nothing to do with bookings.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="wrap">
+<section>
+  <h2><span class="n">4</span>Keeping both sides on the platform</h2>
+  <p>A monthly stay is a repeated game with an easy way out. The guest stays 90 days and has the owner's number in week one. What keeps them with us, strongest first:</p>
+  <ol>
+    <li><strong>Value that renews every Billing Period.</strong> An employer-accepted receipt, payment protection, the mid-stay remedy matrix, maintenance handling and human support. Going direct usually means losing the reimbursable receipt.</li>
+    <li><strong>The whole stay is contracted at once</strong>, and extensions are never agreed off-platform (ADR 0092).</li>
+    <li><strong>A margin that makes defection not worth it.</strong> If the saving from going direct is small, the hassle wins.</li>
+    <li><strong>A non-circumvention promise</strong> for platform-introduced guests, about 12 months. It deters more than it gets enforced. Counsel must word it.</li>
+    <li><strong>Benefits operators lose if they leave:</strong> shared-services pricing, the account manager, eligibility for future guarantee terms.</li>
+  </ol>
+  <p>Our own commitments must be credible too. Published ranking rules (ADR 0066) and a published enforcement ladder (ADR 0064) are sales material: operators can predict how we'll treat them.</p>
+</section>
+
+<section>
+  <h2><span class="n">5</span>The operator tier menu</h2>
+  <p>Instead of negotiating each deal blind, we offer a short menu and let each operator choose. The choice shows whether they value calendar control, price or certainty. Tiers are proposals for issue 15, not policy.</p>
+</section>
+</div>
+
+<div class="wide">
+  <div class="tablebox">
+    <table>
+      <thead><tr><th>Tier</th><th>Operator gives</th><th>Platform gives</th><th>Fits ADRs today</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Listed</strong></td><td>Monthly amount near nightly equivalent; full calendar control</td><td>Listing, inspection, protected payment, support; margin on top</td><td><span class="pill ok">Yes</span></td></tr>
+        <tr><td><strong>Committed</strong></td><td>Test a 15–30% deeper monthly discount; agreed availability windows; non-circumvention for introduced guests</td><td>Account manager, shared services, quarterly earnings projection, first offer of matching demand</td><td><span class="pill part">Mostly</span></td></tr>
+        <tr><td><strong>Guaranteed</strong></td><td>Deepest discount; monthly stays only through us; revenue share above a floor</td><td>A quarterly revenue floor, topped up if we don't fill the unit</td><td><span class="pill no">New ADR</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="note warn"><b>What the ADRs rule out.</b> Three ideas from the first conversation don't survive the ADR check:
+    <ul>
+      <li><strong>Priority placement for a tier:</strong> ADR 0066 bans sponsored placement. Committed units can rank better only by actually being more reliable.</li>
+      <li><strong>Faster payout as a benefit:</strong> ADR 0089 already pays 24 hours after Verified Access, which is the guest-protection timing. Paying faster would weaken protection.</li>
+      <li><strong>Exclusivity or rate parity:</strong> ADR 0039 keeps inventory non-exclusive. Both need an ADR change and a competition-law check.</li>
+    </ul>
+  </div>
+  <p>Recommendation: <strong>pilot Listed and Committed only.</strong> A revenue floor is partly the master lease we rejected on 3 Oct. Offer Guaranteed only after 3 months of fill data in a neighbourhood, with a cap on total exposure.</p>
+
+<section>
+  <h2><span class="n">6</span>Dynamic pricing, sized for monthly stays</h2>
+  <p>Airline-style pricing needs perishable stock, many transactions and short lead times. Monthly stays have few transactions, long lead times, and prices fixed at confirmation (ADR 0092 never reprices a confirmed period). Pricing therefore happens at quote time, through a few levers you can explain to an operator:</p>
+  <ul>
+    <li><strong>Length of stay:</strong> different rates for 30, 60 and 90 nights.</li>
+    <li><strong>Season:</strong> the Dec–Feb diaspora surge, Q1 assignment and relocation starts, July–August.</li>
+    <li><strong>Gap-filling:</strong> a discount on a vacancy starting within 14 days, before those nights are lost.</li>
+    <li><strong>Area demand vs supply:</strong> a premium where qualified requests outnumber available units.</li>
+  </ul>
+  <p>The goal is <strong>revenue per available night across the portfolio</strong>, not the price of any single booking. An empty unit at a good price is a loss. Start with rules. Machine learning can wait until there are hundreds of stays.</p>
+  <h3>Floor, ceiling and shared upside</h3>
+  <p>The operator sets a floor (their agreed amount, so they never get less). Together we agree a ceiling. The platform prices within that band, and revenue above a baseline is split, for example 50/50. The operator is protected on the downside, the platform is rewarded for pricing well, and both sides gain by cooperating. This needs a new ADR: today ADR 0089 fixes the guest price as agreed amounts plus margin.</p>
+  <div class="note ochre"><b>Competition-law risk.</b> Collecting prices from competing operators and setting them centrally can look like algorithmic price coordination. Regulators challenged RealPage in the US over this, and Nigeria's FCCPC could take the same view under the FCCPA 2018. Operators should set floors independently, never see each other's prices, and the platform should price as an agent. This belongs in the counsel review (issue 02).</div>
+  <h3>Two views from one dataset</h3>
+  <ul>
+    <li><strong>For operators:</strong> the earnings projection in section 2, used in onboarding to pick a tier.</li>
+    <li><strong>For guests:</strong> the monthly all-in price next to a hotel × 30, an annual lease's upfront cash, and a typical unverified shortlet. Every benchmark is cited or left out.</li>
+  </ul>
+</section>
+
+<section>
+  <h2><span class="n">7</span>How we'll know it's working</h2>
+  <p>Ordered by how strongly each signal shows product-market fit:</p>
+  <ol>
+    <li><strong>Extension rate:</strong> guests adding another Billing Period.</li>
+    <li><strong>Operators committing more units</strong> or moving up a tier without being pushed.</li>
+    <li><strong>Leakage rate:</strong> stays that don't come back for the next period.</li>
+    <li><strong>Employer reimbursement acceptance</strong> of our receipts.</li>
+    <li><strong>Chat-to-stay conversion</strong>, and unmet requests by neighbourhood.</li>
+  </ol>
+</section>
+
+<section>
+  <h2><span class="n">8</span>Next steps</h2>
+  <ol class="steps">
+    <li><span>Put the tier menu into the 60-day manual pilot and record each operator's choice (issues 01, 15).</span></li>
+    <li><span>Build the earnings projection as a spreadsheet and use it in every onboarding conversation (issue 16).</span></li>
+    <li><span>Pick 2–3 launch neighbourhoods and cap units in each.</span></li>
+    <li><span>Set up one shared-services deal: diesel, cleaning or internet.</span></li>
+    <li><span>Add non-circumvention, exclusivity and competition-law questions to the counsel brief (issue 02).</span></li>
+    <li><span>After 3 months of data: draft the ADR for the price band and shared upside, and decide on Guaranteed.</span></li>
+  </ol>
+</section>
+
+<footer>Sources: Monthly Stays PRD (3 Oct 2026); ADRs 0039, 0064, 0066, 0083, 0089, 0092. Calculator figures are examples, not pilot data.</footer>
+</div>
+
+<script>
+(function(){
+  const ids=["R","o","f","L","c","u","s","n","M","m"];
+  const naira=v=>(v<0?"−":"")+"₦"+Math.round(Math.abs(v)).toLocaleString("en-NG");
+  function nightly(R,o,f,L,c,u){const occ=30*o;return R*occ*(1-f)-(occ/L)*c-occ*u}
+  function run(){
+    const v={};ids.forEach(k=>{v[k]=parseFloat(document.getElementById(k).value)||0});
+    const o=v.o/100,f=v.f/100,L=Math.max(v.L,1),n=Math.max(v.n,30);
+    const monthlyCost=30*v.u+v.s+v.c*(30/n);
+    const rows=[["Low",Math.max(o-.13,.01)],["Expected",o],["High",Math.min(o+.12,1)]];
+    document.getElementById("range").innerHTML=rows.map(([l,x])=>`<tr><td>${l} (${Math.round(x*100)}%)</td><td class="num">${naira(nightly(v.R,x,f,L,v.c,v.u))}</td></tr>`).join("");
+    const exp=nightly(v.R,o,f,L,v.c,v.u);
+    const be=exp+monthlyCost, certain=v.M-monthlyCost, delta=certain-exp;
+    document.getElementById("be").textContent=naira(be);
+    document.getElementById("certain").textContent=naira(certain);
+    document.getElementById("delta").textContent=(delta>=0?"+":"")+naira(delta);
+    document.getElementById("deltaBox").className=delta>=0?"good":"bad";
+    const g=v.M*(1+v.m/100);
+    document.getElementById("guest").textContent=naira(g)+" / "+naira(g-v.M);
+  }
+  ids.forEach(k=>document.getElementById(k).addEventListener("input",run));
+  run();
+})();
+</script>

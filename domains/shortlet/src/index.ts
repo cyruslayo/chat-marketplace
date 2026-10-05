@@ -42,6 +42,7 @@ export * from "./mid-stay-failure.js";
 export * from "./operator-enforcement.js";
 export * from "./operator-representative-authority.js";
 export * from "./operator-session-authority.js";
+export * from "./guest-account-authority.js";
 export * from "./relocation-choice.js";
 export * from "./relocation-policy.js";
 export * from "./reserve-payout-trust.js";

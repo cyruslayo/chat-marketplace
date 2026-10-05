@@ -137,7 +137,7 @@ test("Production journey for the title and name criteria", async () => {
     const login = await postOperatorLogin({ base }, operatorToken, { origin: PUBLIC_ORIGIN });
     const operatorCookie = operatorCookieFrom(login);
     const database = new DatabaseSync(fixture.configuration.databasePath);
-    const request = database.prepare("SELECT request_id, status FROM guest_booking_requests LIMIT 1").get() as { request_id: string; status: string };
+    const request = database.prepare("SELECT request_id, status FROM guest_booking_requests ORDER BY rowid DESC LIMIT 1").get() as { request_id: string; status: string };
     database.close();
     assert.equal(request.status, "disclosed", "production keeps the request open for an authorized Operator decision (ADR 0041)");
     const requestId = request.request_id;

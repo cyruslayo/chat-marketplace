@@ -1,0 +1,73 @@
+# Guest account authority: codes, accounts, sessions
+
+Status: resolved
+Type: task
+Blocked by: 02
+Requested: 2 Oct 2026
+
+## Why
+
+The domain needs one authority that issues and checks Sign-In Codes, finds or creates Guest Accounts, and issues, resolves and revokes Guest Account Sessions. The Operator equivalent already exists and is the pattern to follow.
+
+## What to build
+
+- `domains/shortlet/src/guest-account-authority.ts`, exported from `domains/shortlet/src/index.ts`. Model it on `SqliteOperatorSessionAuthority` (`domains/shortlet/src/operator-session-authority.ts`): `BEGIN IMMEDIATE` transactions, `#now()` clock guard, `#emit` to optional audit and telemetry sinks that can never block auth, hashed secrets.
+   - Policy values from ADR 0093 are constructor options with the ADR values as defaults (AGENTS anti-pattern 3), not literals in logic. Include purpose-bound `delete_account` and `export_data` proofs and the supplemental checking quotas.
+   - Tables: `guest_accounts` (id, tenant, normalized email, phone, status, timestamps, revision), `guest_sign_in_codes` (opaque challenge id, HMAC code hash, tenant/email/purpose, bound account/session/revision for action codes, timestamps, attempts, consumption/invalidation state), `guest_account_sessions` (session id, secret hash, account/tenant, absolute timestamps and revocation), and pseudonymous persisted rate events keyed by a stable HMAC scope. The low-entropy code hash is not a global primary key.
+   - `requestCode({ tenantId, email, purpose, clientAddress, ...sessionBinding })`: normalizes with `normalizeContactEmail` (`domains/shortlet/src/guest-contact.ts`), stores only the purpose/context-bound HMAC hash, returns the plain code once for immediate delivery, enforces configured send limits, and invalidates a prior challenge only after a permitted request. Sign-in has the same outcome shape whether or not an account exists.
+   - `verifyCode({ challengeId, tenantId, email, code, purpose, clientAddress, ...sessionBinding })`: checking quotas apply across purposes and tenant contexts; wrong-attempt and rate events commit even when verification is refused. Sign-in success consumes atomically, finds or creates the account, and issues a new session. Action purposes issue no sign-in session; their proof is bound to account/session/revision and consumed once.
+   - `resolveSession(sessionId, secret)`: returns the authenticated account/tenant/session principal or `null`; `sessionRejection` provides `missing`, `expired` or `revoked` only for a matching secret.
+   - `revokeSession(sessionId, tenantId)`, `revokeAllSessions(accountGuestId, tenantId)`.
+   - `changeEmail`: requires a consumed `change_email` proof sent to the *new* address, its live bound session and revision; bumps `revision` and invalidates other pending account action codes.
+- Commands that change account state go through platform command envelopes (ADR 0072), following the envelope shape used by `VerifiedStayReviewManager.submitReview`.
+- Audit entries: type, `accountGuestId`, tenant, reason code. Never email, code, secret or session id value.
+
+## Acceptance criteria
+
+- AC1: A code verified within its lifetime creates an account on first use and returns a session. Failure paths: expired code, consumed code, unknown email/code pair all fail and create no session.
+- AC2: After the configured number of wrong attempts the code fails even when the right code is then entered.
+- AC3: Two concurrent verifications of one code produce exactly one session.
+- AC4: `requestCode` returns the same outcome shape and audit type for a known and an unknown email.
+- AC5: A resolved session past its absolute expiry, or revoked, is rejected; `revokeAllSessions` rejects every session of that account and no other account's.
+- AC6: A cross-tenant lookup (right code, wrong tenant) fails closed.
+- AC7: No audit or telemetry entry contains the email, the code, the session secret or the session id (assert over every emitted entry in the test run).
+- AC8: Changing email needs a code sent to the new address; the old email no longer signs in.
+- AC9: Restarting (new authority instance on the same database) preserves valid, expired and revoked state.
+
+## Tests to add/update
+
+New `test/guest-account-authority.test.ts`, mirroring the Operator authority tests. Shared fixtures go in `test/helpers/` (AGENTS anti-pattern 4).
+
+## ADR compliance
+
+0070, 0072, 0075, 0086 (pattern), 0093.
+
+## Comments
+
+- 4 Oct 2026 ADR map: 0070 — account/domain/session identities remain separate and sessions are absolute/revocable (account and session rows); 0072 — account email changes require an authenticated, tenant-scoped, versioned `guest_account.change_email` command envelope (mutation boundary); 0075 — one-time codes, session secrets, email and session IDs never enter audit/telemetry (hashing and safe transition events); 0086 — reuse SQLite/clock/audit patterns but not Operator's token delivery or 12-hour session policy (constructor and expiry); 0093 — six-digit emailed codes, purpose-bound challenges, 30-day absolute Guest sessions and approved send/check quotas (authority defaults and validation).
+- 4 Oct 2026 validation: `npm run check` passed; all 14 tests in `test/guest-account-authority.test.ts` passed; `git diff --check` passed. `npm test` completed with phase 1 at 1238/1242 and phase 2 at 164/165. Its failures are outside account authority: the `guest-must-fix-ux` production flow gets 409 instead of 303 (two subsequent assertions cascade), `onboard-and-publish-one-inspected-unit` fails its publication-eligibility assertion, and `discovery-phase3-chromium` cannot write evidence because `.scratch/ui-phase3-discovery-detail` is absent when it runs. The two independent phase-1 failures were reproduced at baseline commit `c6bad10` in an isolated temporary worktree, as was the guest-must-fix failure when run alone. Keep this issue claimed until the repository test gate is green or the baseline failures are resolved.
+- Follow-up: fixed the time-dependent Guest UX fixture by freezing its clock at the fixture-valid date and selecting the request created by that journey; pinned the onboarding projection test clock; made the Chromium evidence helper create its output directory; scheduled focus after layout and awaited focus target in Chromium new-conversation test; waited for Paystack checkout redirect in real browser test. The complete `npm test` suite passed with zero failures on 5 October 2026.
+- 5 Oct 2026 integration review (ADRs 0072/0075/0093): added atomic tenant/account-scoped email-command receipts with HMAC-bound keys and canonical effect/proof fingerprints. An authenticated exact retry returns its original result after restart or later account changes, without repeating the mutation or success event; conflicting key reuse fails before consuming a fresh proof. Replay still requires a current bound session. The retry regression failed on the original implementation and passed after the fix. Expanded redaction coverage across every emitted event type and stale-proof/session failure cases; removed probabilistic wrong-code/hash assertions. All 17 focused authority tests, `npm run check`, and `git diff --check` pass; independent Standards and Spec follow-up reviews found no blocking defects. The final integration full-suite gate is pending.
+- Integration suite reconciliation: candidate `a86ceb8` passed all 1,247 non-browser tests; browser results were 164 passed, one failed (RB8 composer focus), one skipped. The cross-tab file passed all 12 tests in isolation. A controlled delayed-response regression then demonstrated that RB8's existing transcript-count wait completed before stale-action recovery, racing the replacement's deferred focus. RB8 now waits for the winning durable request, the authoritative replacement and action completion, then settles deferred focus before enforcing the composer-focus assertion (ADRs 0004/0078). The controlled regression and typecheck pass; a fresh full-suite run is required.
+
+## Answer
+
+- Implemented `SqliteGuestAccountAuthority` and types in `domains/shortlet/src/guest-account-authority.ts`, exported from `domains/shortlet/src/index.ts`.
+- Enforces ADR 0093 policy values as configurable options with compliant defaults, transaction atomicity via `BEGIN IMMEDIATE`, HMAC-bound code hashing and storage, purpose-bound challenges, 30-day absolute sessions, and envelope-gated email changes (ADR 0072).
+- Zero credentials or secrets in audit or telemetry (ADR 0075).
+- All 14 tests in `test/guest-account-authority.test.ts` pass, covering AC1–AC9, wrong-attempt lockouts, concurrent consumption, tenant isolation, and restart survival.
+- `npm run check` and full `npm test` (Phase 1 concurrent and Phase 2 real browser, 165 passed, 0 failed, 1 skipped) passed cleanly on 5 October 2026.
+
+### Integration gate (5 October 2026)
+
+Candidate `5772c8a`, including idempotency correction `a86ceb8`, passed a complete serial `npm test`: **1,247 non-browser tests passed; 165 browser tests passed; zero failures; one expected foundation-browser skip**. `npm run check` and `git diff --check` are clean. Standards and Spec reviews accepted the account correction, and a follow-up review accepted the RB8 readiness repair. This supersedes the pending integration gates in the historical comments above.
+
+| Definition of Done item | Reviewed evidence |
+| --- | --- |
+| 1 — Dedicated named tests | `guest-account-authority.test.ts` has separate AC1–AC9 tests, plus envelope, idempotency and stale-proof regressions; ADR issues 02/03 explicitly require documentary checks rather than tests. |
+| 2 — Named failure paths | Expired/consumed/unknown codes, exhausted attempts, concurrent consumption, tenant isolation, session expiry/revocation, wrong/stale email proofs and conflicting command retries are exercised. |
+| 3 — ADR discovery and compliance | Read and mapped ADRs 0004, 0070, 0072, 0075, 0078, 0080, 0085, 0086, 0093 and 0094, plus the intersecting identity/channel decisions recorded in issues 02/03. Receipt/replay constraints are cited at their callsite and in the fix commit. |
+| 4 — Dependencies used | Database/ownership, clock, HMAC key, policy and optional audit/telemetry sinks all have implementation callsites. |
+| 5 — No invented policy | Authentication values and account-id format trace to ADR 0093 and issue 01; the correction introduces command persistence, not new policy thresholds or retention. |
+| 6 — Credential minimization | Redaction assertions cover every emitted event type. Command receipts contain account snapshots and keyed fingerprints, never plaintext codes or session secrets. |
+| 7 — Green repository checks | Full suite on `5772c8a`: 1,247 + 165 passed, zero failed, one expected skip; typecheck and whitespace checks passed. |
