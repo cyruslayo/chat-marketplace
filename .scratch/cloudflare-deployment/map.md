@@ -36,9 +36,9 @@ The frontier is the first slice in the table that is open, unblocked and unclaim
 | --- | --- | --- | --- | --- | --- |
 | **A: Foundation** | | | | | |
 | 01a | Cut the integration branch; spike Durable Object SQL semantics | prototype | resolved | none | 01c, 01b, 03a |
-| 01c | Validate and pin the `cf` Workers toolchain | prototype | claimed (phase 1 green; browser suite gate open) | 01a | 01b, 03a |
+| 01c | Validate and pin the `cf` Workers toolchain | prototype | resolved | 01a | 01b, 03a |
 | 01b | Spike Workers runtime compatibility | prototype | ready-for-agent | 01a, 01c | 09c, 10b |
-| 02a | `SqlDatabase` port, Node adapter, contract helper | task | claimed (focused checks green; browser suite gate open) | none | 02b–02d, 03b, 05b, 06a–06c |
+| 02a | `SqlDatabase` port, Node adapter, contract helper | task | resolved | none | 02b–02d, 03b, 05b, 06a–06c |
 | 02b | Move the seven handle-taking stores onto the port | task | ready-for-agent | 02a | 02e, 07a |
 | 02c | Move the availability and guest-interaction stores onto the port | task | ready-for-agent | 02a | 02e |
 | 02d | Move the operator grant and session stores onto the shared handle | task | ready-for-agent | 02a | 02e |
@@ -50,7 +50,7 @@ The frontier is the first slice in the table that is open, unblocked and unclaim
 | 04a | Injectable guest composition root | task | ready-for-agent | 02e | 04c, 08a |
 | 04b | Injectable owner composition root | task | ready-for-agent | 02e | 06d, 08b |
 | 04c | Session runtimes share one handle, with a size cap | task | ready-for-agent | 04a | 10b |
-| 05a | Typed unit repository interface | task | claimed (AC4 browser suite gate open) | none | 05b |
+| 05a | Typed unit repository interface | task | resolved | none | 05b |
 | 05b | SQLite unit and operator repositories | task | ready-for-agent | 02a, 05a | 10a |
 | **D: Durable state** | | | | | |
 | 06a | Durable, typed, redacted audit log | task | ready-for-agent | 02a | 06d |
@@ -133,7 +133,7 @@ At the beginning of a wave session:
 ## Context pointers
 
 - 01a: `infra/cf-01a-do-sql-spike` holds the runnable SQL spike; its issue answer records SQL, PRAGMA, transaction, BLOB, row-count and limit evidence without merging the spike into the integration branch.
-- 01c: Pinned `cf@1.0.0-beta.12`, `@cloudflare/vite-plugin@2.0.0-beta.sha-52b0dc0e9`, and Vite `8.3.2`; typed Worker proof covered SQLite DO, R2, assets, synthetic local secret, mode selection, generated types, dry-run deploys and the Workers Vitest harness. Details are in `issues/01c-cf-toolchain-foundation.md`. Latest `npm test` phase 1 passed all 1,245 tests; phase 2 had one intermittent new-conversation focus timeout. Deferred focus-after-layout has been added and awaits a serial full-suite rerun. Integrated toolchain by `9bf7b12`, Node minimum by `aa47f50`, secret ignores by `cc261c8`, and baseline reconciliation by `b547628`.
-- 02a: Added the synchronous SQL port, Node adapter and shared contract at `packages/platform-core/src/sql-database.ts`, `packages/platform-core/src/node-sqlite-database.ts` and `test/helpers/sql-database-contract.ts`; focused tests/typecheck pass and phase 1 is green; AC4 remains open pending the browser gate.
-- 05a: Added `UnitRepositoryContract` and JSON input validation in `domains/shortlet/src/browse.ts`; focused tests/typecheck pass and phase 1 is green; AC4 remains open pending the browser gate.
+- 01c: Pinned `cf@1.0.0-beta.12`, `@cloudflare/vite-plugin@2.0.0-beta.sha-52b0dc0e9`, and Vite `8.3.2`; typed Worker proof covered SQLite DO, R2, assets, synthetic local secret, mode selection, generated types, dry-run deploys and the Workers Vitest harness. Details are in `issues/01c-cf-toolchain-foundation.md`. Full serial `npm test` (Phase 1 1,245 passed; Phase 2 165 passed, 0 failed, 1 skipped) and `npm run check` passed cleanly on 5 October 2026. Integrated toolchain by `9bf7b12`, Node minimum by `aa47f50`, secret ignores by `cc261c8`, and baseline reconciliation by `b547628`.
+- 02a: Added synchronous SQL port, Node adapter and shared contract at `packages/platform-core/src/sql-database.ts`, `packages/platform-core/src/node-sqlite-database.ts` and `test/helpers/sql-database-contract.ts`; focused contract checks pass and full `npm test` passed on 5 October 2026.
+- 05a: Added `UnitRepositoryContract` and JSON input validation in `domains/shortlet/src/browse.ts`; contract tests pass and full `npm test` passed on 5 October 2026.
 - 14: Accepted hosting ADR 0092 and Cloudflare/Gemini privacy launch gates in `docs/adr/0092-host-the-pilot-on-cloudflare.md` and ADR 0065; counsel, contracts and retention evidence remain prerequisites for real-data issue 15.
