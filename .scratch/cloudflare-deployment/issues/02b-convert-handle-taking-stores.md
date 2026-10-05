@@ -1,6 +1,6 @@
 # Move the seven handle-taking stores onto `SqlDatabase`
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: 02a
 Branch: `infra/cf-02b-handle-stores`
@@ -97,4 +97,4 @@ Check every item in `docs/agents/issue-tracker.md`.
 
 ## Answer
 
-Converted all seven specified stores to `SqlDatabase`, replacing the booking write transaction with `transaction()` and keeping path labels. Existing Node handles are wrapped without opening a connection, changing pragmas or taking ownership. Savepoints preserve both port-owned nesting and existing raw caller transactions. Required guest/owner/notifier/test callers are updated. Guest Account authority stays explicitly inventoried for 02e; the repo-wide import guard is not prematurely claimed.
+Implementation committed in `ca9de39` before resolution. Converted all seven specified stores to `SqlDatabase`, replacing the booking write transaction with `transaction()` and keeping path labels. Existing Node handles are wrapped without opening a connection, changing pragmas or taking ownership. Savepoints preserve both port-owned nesting and existing raw caller transactions. Required guest/owner/notifier/test callers are updated. Guest Account authority stays explicitly inventoried for 02e; the repo-wide import guard is not prematurely claimed.
