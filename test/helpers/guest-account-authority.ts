@@ -1,11 +1,33 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { SqliteGuestAccountAuthority } from "../../domains/shortlet/src/guest-account-authority.js";
+import { SqliteGuestAccountAuthority, type GuestAccountSession } from "../../domains/shortlet/src/guest-account-authority.js";
+import { createPlatformCommandEnvelope } from "../../packages/platform-core/src/envelope.js";
 
 export const TEST_GUEST_CODE_HASHING_KEY = "guest-account-test-key-not-for-production";
 export const TEST_GUEST_EMAIL = "guest@example.test";
 export const TEST_GUEST_ADDRESS = "192.0.2.10";
+
+export function signInGuestAccount(authority: SqliteGuestAccountAuthority, email = TEST_GUEST_EMAIL, tenantId = "tenant-1") {
+  const input = { tenantId, email, purpose: "sign_in", clientAddress: TEST_GUEST_ADDRESS } as const;
+  const challenge = authority.requestCode(input);
+  return authority.verifyCode({ ...input, challengeId: challenge.challengeId, code: challenge.code });
+}
+
+export function guestEmailChange(authority: SqliteGuestAccountAuthority, session: GuestAccountSession, email: string, revision = session.account.revision) {
+  const input = {
+    tenantId: session.account.tenantId, email, purpose: "change_email", clientAddress: TEST_GUEST_ADDRESS,
+    accountGuestId: session.account.accountGuestId, sessionId: session.sessionId, sessionSecret: session.sessionSecret
+  } as const;
+  const challenge = authority.requestCode({ ...input, expectedRevision: revision });
+  const verified = authority.verifyCode({ ...input, challengeId: challenge.challengeId, code: challenge.code });
+  const command = createPlatformCommandEnvelope({
+    commandName: "guest_account.change_email",
+    principal: { id: session.account.accountGuestId, role: "guest", tenantId: session.account.tenantId },
+    expectedVersion: revision, payload: { email }
+  });
+  return { command, proof: verified.proof, sessionSecret: session.sessionSecret };
+}
 
 export interface GuestAccountFixture {
   readonly directory: string;

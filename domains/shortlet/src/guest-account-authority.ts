@@ -148,6 +148,10 @@ interface SessionRow {
   revoked_at: unknown;
 }
 
+interface EmailChangeCommandRow extends AccountRow {
+  fingerprint: unknown;
+}
+
 interface ChallengeRow {
   challenge_id: unknown;
   code_hash: unknown;
@@ -309,6 +313,20 @@ export class SqliteGuestAccountAuthority {
         ON guest_account_rate_events (rate_scope_key, email_key, event_kind, occurred_at);
       CREATE INDEX IF NOT EXISTS idx_guest_account_rate_address
         ON guest_account_rate_events (rate_scope_key, address_key, event_kind, occurred_at);
+      CREATE TABLE IF NOT EXISTS guest_account_email_commands (
+        tenant_id TEXT NOT NULL,
+        account_guest_id TEXT NOT NULL,
+        idempotency_key_hash TEXT NOT NULL,
+        fingerprint TEXT NOT NULL,
+        email_normalized TEXT NOT NULL,
+        phone_number TEXT,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        revision INTEGER NOT NULL,
+        PRIMARY KEY (tenant_id, account_guest_id, idempotency_key_hash),
+        FOREIGN KEY (account_guest_id) REFERENCES guest_accounts(account_guest_id)
+      );
     `);
   }
 
@@ -595,14 +613,31 @@ export class SqliteGuestAccountAuthority {
     }
     if (!proof || proof.purpose !== "change_email") throw new GuestAccountAuthorityError("action_proof_invalid", "A fresh email-change proof is required");
     const newEmail = normalizeContactEmail(command.payload.email);
+    const key = this.#key("email-change-idempotency", requiredText(command.idempotencyKey, "Idempotency key"));
+    // ADRs 0072/0075: bind the receipt to the scoped effect and proof, storing no bearer credentials.
+    const fingerprint = this.#key("email-change-command", JSON.stringify({
+      commandName: command.commandName, accountGuestId: proof.accountGuestId, tenantId: proof.tenantId,
+      expectedVersion: command.expectedVersion, email: newEmail,
+      challengeId: proof.challengeId, purpose: proof.purpose, sessionId: proof.sessionId,
+      accountRevision: proof.accountRevision, expiresAt: proof.expiresAt
+    }));
     const now = this.#now();
     const nowIso = now.toISOString();
-    const result = this.#tx((): { account?: GuestAccount; failure?: GuestAccountAuthorityErrorCode } => {
+    const result = this.#tx((): { account?: GuestAccount; failure?: GuestAccountAuthorityErrorCode; replay?: boolean } => {
+      // A recorded effect may be retried after proof expiry, but never without current session authority.
+      if (!this.#sessionIsValid({ sessionId: proof.sessionId, sessionSecret: input.sessionSecret, tenantId: proof.tenantId, accountGuestId: proof.accountGuestId, now })) return { failure: "session_invalid" };
+      const prior = this.#database.prepare(`SELECT * FROM guest_account_email_commands
+        WHERE tenant_id = ? AND account_guest_id = ? AND idempotency_key_hash = ?`)
+        .get(proof.tenantId, proof.accountGuestId, key) as unknown as EmailChangeCommandRow | undefined;
+      if (prior) {
+        const account = projectAccount(prior);
+        if (prior.fingerprint !== fingerprint || !account) return { failure: "action_proof_invalid" };
+        return { account, replay: true };
+      }
       const row = this.#database.prepare("SELECT * FROM guest_sign_in_codes WHERE challenge_id = ?").get(proof.challengeId) as unknown as ChallengeRow | undefined;
       if (!row || row.purpose !== "change_email" || row.tenant_id !== proof.tenantId || row.account_guest_id !== proof.accountGuestId || row.session_id !== proof.sessionId || row.account_revision !== proof.accountRevision || row.email_normalized !== newEmail || row.consumed_at === null || row.action_consumed_at !== null || row.invalidated_at !== null) return { failure: "action_proof_invalid" };
       const expiresAt = parsedTimestamp(row.expires_at);
       if (!expiresAt || now.getTime() >= expiresAt.getTime() || proof.expiresAt !== expiresAt.toISOString()) return { failure: "action_proof_invalid" };
-      if (!this.#sessionIsValid({ sessionId: proof.sessionId, sessionSecret: input.sessionSecret, tenantId: proof.tenantId, accountGuestId: proof.accountGuestId, now })) return { failure: "session_invalid" };
       const account = projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE account_guest_id = ? AND tenant_id = ? AND status = 'active'").get(proof.accountGuestId, proof.tenantId) as unknown as AccountRow | undefined);
       if (!account || account.revision !== proof.accountRevision) return { failure: "action_proof_invalid" };
       const conflict = projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE tenant_id = ? AND email_normalized = ? AND status = 'active'").get(proof.tenantId, newEmail) as unknown as AccountRow | undefined);
@@ -616,14 +651,20 @@ export class SqliteGuestAccountAuthority {
       this.#database.prepare(`UPDATE guest_sign_in_codes SET invalidated_at = ? WHERE tenant_id = ? AND account_guest_id = ?
         AND consumed_at IS NULL AND invalidated_at IS NULL`)
         .run(nowIso, proof.tenantId, proof.accountGuestId);
-      return { account: projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE account_guest_id = ? AND tenant_id = ?").get(proof.accountGuestId, proof.tenantId) as unknown as AccountRow | undefined) ?? undefined };
+      const changed = projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE account_guest_id = ? AND tenant_id = ?").get(proof.accountGuestId, proof.tenantId) as unknown as AccountRow | undefined);
+      if (!changed) throw new Error("Account email change did not produce an account");
+      this.#database.prepare(`INSERT INTO guest_account_email_commands
+        (tenant_id, account_guest_id, idempotency_key_hash, fingerprint, email_normalized, phone_number, status, created_at, updated_at, revision)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(changed.tenantId, changed.accountGuestId, key, fingerprint, changed.email, changed.phoneNumber, changed.status, changed.createdAt, changed.updatedAt, changed.revision);
+      return { account: changed };
     });
     if (result.failure) {
       this.#emit("guest.account.email_change.rejected", { tenantId: proof.tenantId, accountGuestId: proof.accountGuestId, reasonCode: result.failure });
       throw new GuestAccountAuthorityError(result.failure, "Unable to change the account email");
     }
     if (!result.account) throw new Error("Account email change did not produce an account");
-    this.#emit("guest.account.email_changed", { tenantId: proof.tenantId, accountGuestId: proof.accountGuestId, revision: result.account.revision });
+    if (!result.replay) this.#emit("guest.account.email_changed", { tenantId: proof.tenantId, accountGuestId: proof.accountGuestId, revision: result.account.revision });
     return result.account;
   }
 

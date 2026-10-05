@@ -4,7 +4,7 @@ import { spawn } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 import { createPlatformCommandEnvelope } from "../packages/platform-core/src/envelope.js";
 import { SqliteGuestAccountAuthority, GuestAccountAuthorityError } from "../domains/shortlet/src/index.js";
-import { createGuestAccountFixture, removeGuestAccountFixture, TEST_GUEST_ADDRESS, TEST_GUEST_EMAIL, TEST_GUEST_CODE_HASHING_KEY } from "./helpers/guest-account-authority.js";
+import { createGuestAccountFixture, guestEmailChange, signInGuestAccount, removeGuestAccountFixture, TEST_GUEST_ADDRESS, TEST_GUEST_EMAIL, TEST_GUEST_CODE_HASHING_KEY } from "./helpers/guest-account-authority.js";
 
 function signInCode(authority: SqliteGuestAccountAuthority, email = TEST_GUEST_EMAIL, tenantId = "tenant-1") {
   return authority.requestCode({ tenantId, email, purpose: "sign_in", clientAddress: TEST_GUEST_ADDRESS });
@@ -216,9 +216,35 @@ test("AC7 — Audit and telemetry exclude email, code, session secret and sessio
   });
   try {
     const challenge = signInCode(authority, "private@example.test");
+    assert.throws(() => signInCode(authority, "private@example.test"), GuestAccountAuthorityError);
+    const wrongCode = challenge.code === "000000" ? "000001" : "000000";
+    assert.throws(() => authority.verifyCode({ challengeId: challenge.challengeId, tenantId: "tenant-1", email: "private@example.test", code: wrongCode, purpose: "sign_in", clientAddress: TEST_GUEST_ADDRESS }), GuestAccountAuthorityError);
     const result = authority.verifyCode({ challengeId: challenge.challengeId, tenantId: "tenant-1", email: "private@example.test", code: challenge.code, purpose: "sign_in", clientAddress: TEST_GUEST_ADDRESS });
-    const serialized = JSON.stringify({ audit, telemetry });
-    for (const secret of ["private@example.test", challenge.code, result.sessionSecret, result.sessionId]) assert.equal(serialized.includes(secret), false);
+    assert.throws(() => authority.requestCode({ tenantId: "tenant-1", email: "private@example.test", purpose: "export_data", clientAddress: TEST_GUEST_ADDRESS, accountGuestId: result.account.accountGuestId, sessionId: result.sessionId, sessionSecret: "wrong-secret", expectedRevision: 0 }), GuestAccountAuthorityError);
+    const change = guestEmailChange(authority, result, "changed-private@example.test");
+    assert.throws(() => authority.changeEmail({ ...change, sessionSecret: "wrong-secret" }), GuestAccountAuthorityError);
+    const changed = authority.changeEmail(change);
+    fixture.advance(60 * 1000);
+    const actionInput = {
+      tenantId: "tenant-1", email: changed.email, purpose: "export_data", clientAddress: TEST_GUEST_ADDRESS,
+      accountGuestId: result.account.accountGuestId, sessionId: result.sessionId, sessionSecret: result.sessionSecret
+    } as const;
+    const action = authority.requestCode({ ...actionInput, expectedRevision: changed.revision });
+    const verifiedAction = authority.verifyCode({ ...actionInput, challengeId: action.challengeId, code: action.code });
+    assert.equal(authority.consumeActionProof({ proof: verifiedAction.proof, sessionSecret: result.sessionSecret }), true);
+    authority.revokeSession(result.sessionId, "tenant-1");
+    authority.revokeAllSessions(result.account.accountGuestId, "tenant-1");
+    assert.deepEqual(audit, telemetry);
+    for (const type of ["guest.account.code.requested", "guest.account.code.rate_limited", "guest.account.code.request_rejected", "guest.account.code.rejected", "guest.account.session.created", "guest.account.code.verified", "guest.account.action_code.verified", "guest.account.email_change.rejected", "guest.account.email_changed", "guest.account.action_proof.consumed", "guest.account.session.revoked", "guest.account.sessions.revoked_all"]) {
+      assert.ok(audit.some((entry) => entry.type === type), `exercise redaction for ${type}`);
+    }
+    for (const entry of [...audit, ...telemetry]) {
+      for (const key of Object.keys(entry)) assert.ok(["type", "tenantId", "accountGuestId", "purpose", "reasonCode", "expiresAt", "revision"].includes(key), `unexpected audit field ${key}`);
+      for (const value of Object.values(entry)) {
+        assert.ok(![challenge.code, wrongCode, action.code, result.sessionSecret, result.sessionId].includes(String(value)));
+        assert.equal(String(value).includes("private@example.test"), false);
+      }
+    }
     const resilient = new SqliteGuestAccountAuthority(fixture.databasePath, {
       codeHashingKey: TEST_GUEST_CODE_HASHING_KEY,
       clock: fixture.now,
@@ -295,6 +321,85 @@ test("AC10 — Email-change commands reject missing tenant, wrong actor, stale v
   }
 });
 
+test("ADR 0072 — Email-change commands return their original result on exact retry, including after restart and later changes", async () => {
+  const fixture = await createGuestAccountFixture();
+  const entries: Record<string, string | number>[] = [];
+  fixture.authority.close();
+  let authority = new SqliteGuestAccountAuthority(fixture.databasePath, {
+    codeHashingKey: TEST_GUEST_CODE_HASHING_KEY, clock: fixture.now, audit: { record: (entry) => entries.push(entry) }
+  });
+  try {
+    const session = signInGuestAccount(authority);
+    const first = guestEmailChange(authority, session, "first-change@example.test");
+    const result = authority.changeEmail(first);
+    assert.deepEqual(authority.changeEmail(first), result);
+    const second = guestEmailChange(authority, session, "second-change@example.test", result.revision);
+    const later = authority.changeEmail(second);
+    fixture.advance(10 * 60 * 1000);
+    authority.close();
+    authority = new SqliteGuestAccountAuthority(fixture.databasePath, {
+      codeHashingKey: TEST_GUEST_CODE_HASHING_KEY, clock: fixture.now, audit: { record: (entry) => entries.push(entry) }
+    });
+    assert.deepEqual(authority.changeEmail(first), result);
+    assert.equal(authority.findAccountByEmail(later.email, "tenant-1")?.revision, later.revision);
+    assert.equal(entries.filter((entry) => entry.type === "guest.account.email_changed").length, 2);
+    assert.throws(() => authority.changeEmail({ ...first, sessionSecret: "wrong-secret" }), GuestAccountAuthorityError);
+    authority.revokeSession(session.sessionId, "tenant-1");
+    assert.throws(() => authority.changeEmail(first), GuestAccountAuthorityError);
+  } finally {
+    authority.close();
+    await removeGuestAccountFixture(fixture.directory);
+  }
+});
+
+test("ADR 0072 — Reusing an email-change idempotency key for a different effect fails without consuming its fresh proof", async () => {
+  const fixture = await createGuestAccountFixture();
+  try {
+    const session = signInGuestAccount(fixture.authority);
+    const first = guestEmailChange(fixture.authority, session, "first-change@example.test");
+    const changed = fixture.authority.changeEmail(first);
+    assert.throws(() => fixture.authority.changeEmail({ ...first, command: { ...first.command, payload: { email: "substitution@example.test" } } }), GuestAccountAuthorityError);
+    const second = guestEmailChange(fixture.authority, session, "second-change@example.test", changed.revision);
+    assert.throws(() => fixture.authority.changeEmail({ ...second, command: { ...second.command, idempotencyKey: first.command.idempotencyKey } }), GuestAccountAuthorityError);
+    assert.equal(fixture.authority.findAccountByEmail(changed.email, "tenant-1")?.revision, changed.revision);
+    assert.equal(fixture.authority.findAccountByEmail("second-change@example.test", "tenant-1"), null);
+    assert.equal(fixture.authority.changeEmail(second).revision, changed.revision + 1);
+
+    const other = signInGuestAccount(fixture.authority, "other-account@example.test");
+    const otherChange = guestEmailChange(fixture.authority, other, "other-change@example.test");
+    assert.equal(fixture.authority.changeEmail({ ...otherChange, command: { ...otherChange.command, idempotencyKey: first.command.idempotencyKey } }).accountGuestId, other.account.accountGuestId);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("Email-change proofs fail closed for revoked or expired sessions, expired proofs and changed account revisions", async () => {
+  for (const scenario of ["revoked session", "expired session", "expired proof", "changed revision"] as const) {
+    const fixture = await createGuestAccountFixture();
+    try {
+      const session = signInGuestAccount(fixture.authority);
+      const change = guestEmailChange(fixture.authority, session, "stale-change@example.test");
+      let currentEmail = TEST_GUEST_EMAIL;
+      let revision = session.account.revision;
+      if (scenario === "revoked session") fixture.authority.revokeSession(session.sessionId, "tenant-1");
+      if (scenario === "expired session") fixture.advance(30 * 24 * 60 * 60 * 1000);
+      if (scenario === "expired proof") fixture.advance(10 * 60 * 1000);
+      if (scenario === "changed revision") {
+        const other = guestEmailChange(fixture.authority, session, "current-change@example.test");
+        const changed = fixture.authority.changeEmail(other);
+        currentEmail = changed.email;
+        revision = changed.revision;
+        assert.throws(() => fixture.authority.changeEmail({ ...other, command: { ...other.command, idempotencyKey: "different-command" } }), GuestAccountAuthorityError);
+      }
+      assert.throws(() => fixture.authority.changeEmail(change), GuestAccountAuthorityError, scenario);
+      assert.equal(fixture.authority.findAccountByEmail(currentEmail, "tenant-1")?.revision, revision);
+      assert.equal(fixture.authority.findAccountByEmail("stale-change@example.test", "tenant-1"), null);
+    } finally {
+      await fixture.close();
+    }
+  }
+});
+
 test("AC9 — Restart preserves valid, expired, exhausted and revoked account authority state", async () => {
   const fixture = await createGuestAccountFixture();
   try {
@@ -302,7 +407,8 @@ test("AC9 — Restart preserves valid, expired, exhausted and revoked account au
     const valid = fixture.authority.verifyCode({ challengeId: validChallenge.challengeId, tenantId: "tenant-1", email: "valid@example.test", code: validChallenge.code, purpose: "sign_in", clientAddress: "192.0.2.60" });
     const expiredChallenge = signInCode(fixture.authority, "expired@example.test");
     const exhaustedChallenge = signInCode(fixture.authority, "exhausted@example.test");
-    for (let attempt = 0; attempt < 5; attempt += 1) assert.throws(() => fixture.authority.verifyCode({ challengeId: exhaustedChallenge.challengeId, tenantId: "tenant-1", email: "exhausted@example.test", code: "000000", purpose: "sign_in", clientAddress: "192.0.2.61" }));
+    const wrongCode = exhaustedChallenge.code === "000000" ? "000001" : "000000";
+    for (let attempt = 0; attempt < 5; attempt += 1) assert.throws(() => fixture.authority.verifyCode({ challengeId: exhaustedChallenge.challengeId, tenantId: "tenant-1", email: "exhausted@example.test", code: wrongCode, purpose: "sign_in", clientAddress: "192.0.2.61" }));
     const revokedChallenge = signInCode(fixture.authority, "revoked@example.test");
     const revoked = fixture.authority.verifyCode({ challengeId: revokedChallenge.challengeId, tenantId: "tenant-1", email: "revoked@example.test", code: revokedChallenge.code, purpose: "sign_in", clientAddress: "192.0.2.62" });
     fixture.authority.revokeSession(revoked.sessionId, "tenant-1");
@@ -331,7 +437,7 @@ test("The persisted Sign-In Code table stores no plaintext code and hashes are c
       const row = database.prepare("SELECT code_hash, challenge_id FROM guest_sign_in_codes WHERE challenge_id = ?").get(challenge.challengeId) as { code_hash: string; challenge_id: string };
       assert.notEqual(row.code_hash, challenge.code);
       assert.equal(row.challenge_id, challenge.challengeId);
-      assert.doesNotMatch(JSON.stringify(row), new RegExp(challenge.code));
+      assert.match(row.code_hash, /^[a-f0-9]{64}$/);
     } finally {
       database.close();
     }
