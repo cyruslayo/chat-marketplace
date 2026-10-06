@@ -17,6 +17,7 @@ The unexpected `C:\AI2026\chat-marketplace\.scratch\cf-wave2-worktree` held seve
 2. Moved it using `git worktree move` to a sibling worktree, byte-verified every changed file, HEAD/branch and the dependency link, and confirmed the old path/registration disappeared.
 3. Reviewed and completed the unfinished operator conversion. Verified three unrelated formatting-only edits emitted identical JavaScript before removing that churn (original text remains recoverable).
 4. Committed implementation `491c399`, integrated by `d142a37`, then delivery record `36c522c` after final validation.
+5. Archived that temporary worktree's validation logs and four generated test-data directories with byte checks, removed only its dependency junction, then removed the clean worktree with `git worktree remove` (no force). Both the misplaced old path and temporary sibling path are gone; branch/commits and all recovery evidence remain. The integration worktree's unrelated directories are unchanged.
 
 The main worktree and unrelated untracked directories were not reset, cleaned or modified. Recovery files/logs are local evidence, not production data or source to merge. The removed worktree's branch remains recoverable.
 
