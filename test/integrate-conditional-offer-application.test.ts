@@ -2,17 +2,19 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { WebServerEventHandoff } from "@weaver/web";
 import { InMemoryAuditLog } from "../packages/platform-core/src/index.js";
-import { AvailabilityCalendar, BookingRequestManager, ConditionalOfferManager, GuestVerificationService, UnitRepository, seedIssue01Units } from "../domains/shortlet/src/index.js";
+import { BookingRequestManager, ConditionalOfferManager, GuestVerificationService, UnitRepository, seedIssue01Units } from "../domains/shortlet/src/index.js";
 import { createBookingRequestApplication } from "../apps/web/src/booking-request-application.js";
 import { createConditionalOfferApplication } from "../apps/web/src/conditional-offer-application.js";
 import { acceptConventionalConditionalOffer } from "../apps/web/src/presentation.js";
 import { resolveConditionalOfferServerEvent } from "../apps/web/src/conditional-offer-actions.js";
 
+import { createTestAvailabilityCalendar } from "./helpers/availability-calendar.js";
+
 function setup() {
   const repository = new UnitRepository();
   seedIssue01Units(repository);
   const audit = new InMemoryAuditLog();
-  const calendar = new AvailabilityCalendar({ repository, audit });
+  const calendar = createTestAvailabilityCalendar({ repository, audit });
   const operatorAuthority = {
     canActForOperator: ({ actorId, operatorId, tenantId }: { actorId: string; operatorId: string; tenantId: string }) =>
       tenantId === "tenant-lagos" && actorId === "rep-operator" && operatorId === "operator-001",

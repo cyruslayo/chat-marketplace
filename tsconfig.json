@@ -16,5 +16,6 @@
     "apps/**/*",
     "test/**/*",
     "scripts/**/*"
-  ]
+  ],
+  "exclude": ["apps/cloudflare/**"]
 }

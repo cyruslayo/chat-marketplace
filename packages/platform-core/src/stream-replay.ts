@@ -1,4 +1,4 @@
-import { InMemoryTelemetry } from "./index.js";
+import type { Telemetry } from "./index.js";
 
 export const INTERACTION_STREAM_VERSION = "com.chat-marketplace.interaction/stream-v1";
 
@@ -50,12 +50,12 @@ const MAX_ORDINARY_EVENT_BYTES = 65536; // 64 KiB
  * gap detection, backpressure/size limits, normalized projection, and redacted telemetry.
  */
 export class InteractionStreamEngine {
-  readonly #telemetry?: InMemoryTelemetry;
+  readonly #telemetry?: Telemetry;
   readonly #processedEvents = new Map<number, StreamEvent>();
   #expectedSequence = 1;
   #compactedSnapshot: any = null;
 
-  constructor({ telemetry }: { telemetry?: InMemoryTelemetry } = {}) {
+  constructor({ telemetry }: { telemetry?: Telemetry } = {}) {
     this.#telemetry = telemetry;
   }
 

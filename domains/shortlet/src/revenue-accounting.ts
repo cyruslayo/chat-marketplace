@@ -30,7 +30,7 @@ export function journal(input: { readonly correlationId: string; readonly lines:
   const journalId = `journal:${input.correlationId}:${createHash("sha256").update(JSON.stringify(input.lines)).digest("hex").slice(0, 16)}`;
   return Object.freeze({ journalId, correlationId: input.correlationId, lines: Object.freeze(input.lines.map((line) => Object.freeze({ ...line }))), balanced: true as const, createdAt: input.createdAt });
 }
-function sameAdjustment(a: RevenueAdjustmentRecord, b: RevenueAdjustmentRecord): boolean {
+export function sameAdjustment(a: RevenueAdjustmentRecord, b: RevenueAdjustmentRecord): boolean {
   return a.reservationId === b.reservationId && a.releaseId === b.releaseId && a.source === b.source && a.sourceReference === b.sourceReference && a.reasonCode === b.reasonCode && a.journal.correlationId === b.journal.correlationId && a.journal.journalId === b.journal.journalId && JSON.stringify(a.journal.lines) === JSON.stringify(b.journal.lines);
 }
 

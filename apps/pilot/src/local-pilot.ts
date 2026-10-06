@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { openNodeSqliteDatabase } from "../../../packages/platform-core/src/node-sqlite-database.js";
 import { createPlatformCommandEnvelope } from "../../../packages/platform-core/src/index.js";
 import {
   JsonOperatorRepository,
@@ -130,8 +131,9 @@ export function bootstrapLocalPilot(paths = localPilotPaths()): { readonly creat
   if (imported.invalid > 0) throw new Error(`Local inventory bootstrap failed: ${imported.errors.map((error) => error.message).join("; ")}`);
   for (const unit of units.findAll()) if (!unit.published) publishUnit(units, unit.id, { clock: () => BOOTSTRAP_TIME });
 
-  const grants = new SqliteOperatorRepresentativeGrantStore(paths.databasePath, { clock: () => BOOTSTRAP_TIME });
+  const database = openNodeSqliteDatabase(paths.databasePath);
   try {
+    const grants = new SqliteOperatorRepresentativeGrantStore(database, { clock: () => BOOTSTRAP_TIME });
     if (!grants.canActForOperator({ actorId: LOCAL_PILOT_ACTOR_ID, operatorId: LOCAL_PILOT_OPERATOR_ID, tenantId: LOCAL_PILOT_TENANT_ID })) {
       grants.createGrant(createPlatformCommandEnvelope({
         commandName: "operator_representative.grant",
@@ -140,20 +142,21 @@ export function bootstrapLocalPilot(paths = localPilotPaths()): { readonly creat
         idempotencyKey: "local-pilot-representative-grant",
       }));
     }
-  } finally { grants.close(); }
+  } finally { database.close(); }
   return { created: imported.inserted > 0, unitIds: units.findAll().map((unit) => unit.id) };
 }
 
 export function issueLocalOperatorToken(paths = localPilotPaths()): string {
   if (!existsSync(paths.databasePath) || !existsSync(paths.operatorsPath)) throw new Error("Local pilot is not bootstrapped; run npm run pilot:local:bootstrap");
   const clock = localPilotClock(paths);
-  const grants = new SqliteOperatorRepresentativeGrantStore(paths.databasePath, { clock });
-  const authorized = grants.canActForOperator({ actorId: LOCAL_PILOT_ACTOR_ID, operatorId: LOCAL_PILOT_OPERATOR_ID, tenantId: LOCAL_PILOT_TENANT_ID });
-  grants.close();
-  if (!authorized) throw new Error("Local pilot representative grant is missing or expired");
-  const sessions = new SqliteOperatorSessionAuthority(paths.databasePath, { clock });
-  try { return sessions.provisionAccessToken({ actorId: LOCAL_PILOT_ACTOR_ID, tenantId: LOCAL_PILOT_TENANT_ID, representativeAuthorized: true }).token; }
-  finally { sessions.close(); }
+  const database = openNodeSqliteDatabase(paths.databasePath);
+  try {
+    const grants = new SqliteOperatorRepresentativeGrantStore(database, { clock });
+    const authorized = grants.canActForOperator({ actorId: LOCAL_PILOT_ACTOR_ID, operatorId: LOCAL_PILOT_OPERATOR_ID, tenantId: LOCAL_PILOT_TENANT_ID });
+    if (!authorized) throw new Error("Local pilot representative grant is missing or expired");
+    const sessions = new SqliteOperatorSessionAuthority(database, { clock });
+    return sessions.provisionAccessToken({ actorId: LOCAL_PILOT_ACTOR_ID, tenantId: LOCAL_PILOT_TENANT_ID, representativeAuthorized: true }).token;
+  } finally { database.close(); }
 }
 
 export function resetLocalPilot(paths = localPilotPaths()): void {

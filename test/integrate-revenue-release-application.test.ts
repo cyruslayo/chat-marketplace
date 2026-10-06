@@ -1,13 +1,16 @@
-import test from "node:test";
+import { registerRevenueContract } from "./helpers/revenue-contract.js";
 import assert from "node:assert/strict";
-import { InMemoryRevenueAccountingRepository, RepositoryEarnedCommissionSource, journal, type RevenueAdjustmentRecord } from "../domains/shortlet/src/revenue-accounting.js";
+import { RepositoryEarnedCommissionSource, journal, type RevenueAdjustmentRecord } from "../domains/shortlet/src/revenue-accounting.js";
 import { CheckInSupportManager } from "../domains/shortlet/src/checkin-support.js";
 import { InMemoryMidStayIncidentRepository, MidStayBlockingComplaintQuery } from "../domains/shortlet/src/mid-stay-failure.js";
 import { CheckInSupportApplication } from "../apps/web/src/checkin-support-application.js";
 import { RevenueReleaseCheckInAccessAdapter, RevenueReleaseBlockingComplaintQuery } from "../apps/web/src/revenue-release-authority-adapters.js";
 import type { AuthoritativeRevenueEconomics } from "../domains/shortlet/src/revenue-release.js";
-import { setupRevenueRelease as setup, revenueNow as now, revenuePrincipal as principal } from "./revenue-release-fixtures.js";
-test("Production Revenue Release uses authoritative state, exact 24-hour boundary, captured commission, and balanced Fast Payout", () => { const s = setup(); const release = s.app.releaseRevenue("reservation-1", principal); assert.equal(release.releaseId, "revenue-release:reservation-1"); assert.equal(release.commissionRate, 0.08); assert.equal(release.commissionBaseKobo, 123457); assert.equal(release.commissionKobo, 9876); assert.equal(release.operatorNetKobo, 113470); assert.equal(release.payableNowKobo + release.routineReserveTrancheKobo + release.riskHoldKobo, release.operatorNetKobo); assert.equal(s.accounting.findLedgerEntriesForRelease(release.releaseId)[0].balanced, true); assert.equal(new RepositoryEarnedCommissionSource(s.accounting).getEarnedCommission(release.releaseId)?.earnedCommissionKobo, 9876); assert.strictEqual(s.app.releaseRevenue("reservation-1", principal), release); });
+import { setupRevenueRelease, revenueNow as now, revenuePrincipal as principal } from "./revenue-release-fixtures.js";
+
+registerRevenueContract(({ test, createAccounting }) => {
+const setup = (overrides: Parameters<typeof setupRevenueRelease>[0] = {}) => setupRevenueRelease({ ...overrides, accounting: overrides.accounting ?? createAccounting() });
+test("Production Revenue Release uses authoritative state, exact 24-hour boundary, captured commission, and balanced Fast Payout", () => { const s = setup(); const release = s.app.releaseRevenue("reservation-1", principal); assert.equal(release.releaseId, "revenue-release:reservation-1"); assert.equal(release.commissionRate, 0.08); assert.equal(release.commissionBaseKobo, 123457); assert.equal(release.commissionKobo, 9876); assert.equal(release.operatorNetKobo, 113470); assert.equal(release.payableNowKobo + release.routineReserveTrancheKobo + release.riskHoldKobo, release.operatorNetKobo); assert.equal(s.accounting.findLedgerEntriesForRelease(release.releaseId)[0].balanced, true); assert.equal(new RepositoryEarnedCommissionSource(s.accounting).getEarnedCommission(release.releaseId)?.earnedCommissionKobo, 9876); assert.deepEqual(s.app.releaseRevenue("reservation-1", principal), release); });
 
 test("Production Revenue Release rejects awaiting access and cancelled Reservation", () => { assert.throws(() => setup({ accessStatus: "awaiting_access" }).app.releaseRevenue("reservation-1", principal), /authoritative Verified Access/); assert.throws(() => setup({ status: "cancelled" }).app.releaseRevenue("reservation-1", principal), /confirmed Reservation/); });
 
@@ -95,7 +98,7 @@ test("Real Check-In and Mid-Stay complaint queries compose and resolved incident
 });
 
 test("Replay and post-release views return immutable accounting authority before consulting throwing providers", () => {
-  const accounting = new InMemoryRevenueAccountingRepository();
+  const accounting = createAccounting();
   const first = setup({ accounting });
   const release = first.app.releaseRevenue("reservation-1", principal);
   const journalCount = accounting.findLedgerEntriesForRelease(release.releaseId).length;
@@ -103,10 +106,10 @@ test("Replay and post-release views return immutable accounting authority before
   let calls = 0;
   const fail = () => { calls += 1; throw new Error("SHOULD_NOT_BE_CALLED"); };
   const replay = setup({ accounting, providers: { access: { getAccess: fail }, complaints: { hasUnresolvedBlockingComplaint: fail }, holds: { getHold: fail }, accounts: { getStatus: fail }, economics: { getEconomics: fail }, payoutPlans: { getPlan: fail }, checkout: { getTerms: fail }, risk: { getHold: fail } } });
-  assert.strictEqual(replay.app.releaseRevenue("reservation-1", principal), release);
+  assert.deepEqual(replay.app.releaseRevenue("reservation-1", principal), release);
   assert.equal(calls, 0);
   assert.equal(accounting.findLedgerEntriesForRelease(release.releaseId).length, journalCount);
-  assert.strictEqual(accounting.getEarnedCommissionRecord(release.releaseId), earned);
+  assert.deepEqual(accounting.getEarnedCommissionRecord(release.releaseId), earned);
   const artifact = replay.app.getArtifact("reservation-1", { id: "operator-1", role: "operator", tenantId: "tenant" });
   assert.equal(artifact.facts.status, "released"); assert.equal(artifact.facts.protectionWindowStartsAt, release.protectionWindowStartsAt); assert.equal(artifact.facts.commissionRate, release.commissionRate); assert.equal(calls, 0);
 });
@@ -125,5 +128,6 @@ test("Adjustment identity is idempotent, discoverable, and conflicts fail closed
 });
 
 test("Trusted post-release adjustments are idempotent and do not mutate the historic release", () => { const s = setup(); const release = s.app.releaseRevenue("reservation-1", principal); const adjustment: RevenueAdjustmentRecord = { adjustmentId: "adjustment-1", adjustmentVersion: 1, reservationId: "reservation-1", releaseId: release.releaseId, source: "remedy", sourceReference: "mid-stay-failure:reservation-1", reasonCode: "accepted_remedy", journal: journal({ correlationId: release.releaseId, createdAt: now.toISOString(), lines: [{ lineId: "a", account: "operator_net_recognized", side: "debit", amountKobo: 10, currency: "NGN" }, { lineId: "b", account: "operator_payable", side: "credit", amountKobo: 10, currency: "NGN" }] }) };
-  const withAuthority = setup({ adjustment }); const committed = withAuthority.app.releaseRevenue("reservation-1", principal); assert.equal(committed.releaseId, release.releaseId); const posted = withAuthority.app.postAdjustment("adjustment-1", principal); assert.equal(posted.adjustmentId, "adjustment-1"); assert.strictEqual(withAuthority.app.postAdjustment("adjustment-1", principal), posted); assert.equal(release.releaseVersion, 1);
+  const withAuthority = setup({ adjustment }); const committed = withAuthority.app.releaseRevenue("reservation-1", principal); assert.equal(committed.releaseId, release.releaseId); const posted = withAuthority.app.postAdjustment("adjustment-1", principal); assert.equal(posted.adjustmentId, "adjustment-1"); assert.deepEqual(withAuthority.app.postAdjustment("adjustment-1", principal), posted); assert.equal(release.releaseVersion, 1);
+});
 });

@@ -55,6 +55,12 @@ export interface ProductionRevenueReleaseRecord {
 }
 export interface LedgerAdjustment { adjustmentId: string; reservationId: string; type: "ledger_adjustment"; reason: string; adjustmentKobo: number; recordedAtIso: string; }
 
+export interface RevenueReleaseStateStore {
+  findRelease(reservationId: string): RevenueReleaseRecord | null;
+  recordRelease(release: RevenueReleaseRecord): void;
+  recordAdjustment(adjustment: LedgerAdjustment): void;
+}
+
 /**
  * ADR 0021, ADR 0024, ADR 0026, ADR 0062:
  * Calculates commission and Operator Net, enforces Check-In Protection Window,
@@ -63,7 +69,11 @@ export interface LedgerAdjustment { adjustmentId: string; reservationId: string;
 export class RevenueReleaseManager {
   readonly #releases = new Map<string, RevenueReleaseRecord>();
   readonly #blockingComplaintQuery?: BlockingComplaintQuery;
-  constructor(options: { readonly blockingComplaintQuery?: BlockingComplaintQuery } = {}) { this.#blockingComplaintQuery = options.blockingComplaintQuery; }
+  readonly #stateStore?: RevenueReleaseStateStore;
+  constructor(options: { readonly blockingComplaintQuery?: BlockingComplaintQuery; readonly stateStore?: RevenueReleaseStateStore } = {}) {
+    this.#blockingComplaintQuery = options.blockingComplaintQuery;
+    this.#stateStore = options.stateStore;
+  }
   readonly #adjustments: LedgerAdjustment[] = [];
 
   /**
@@ -107,7 +117,7 @@ export class RevenueReleaseManager {
     currentIso: string;
     hasUnresolvedBlockingComplaint: boolean;
   }): RevenueReleaseRecord {
-    if (this.#releases.has(booking.reservationId)) {
+    if (this.#stateStore ? this.#stateStore.findRelease(booking.reservationId) : this.#releases.has(booking.reservationId)) {
       throw new Error(`Revenue release already processed for reservation ${booking.reservationId}`);
     }
 
@@ -159,7 +169,8 @@ export class RevenueReleaseManager {
       releasedAtIso: currentIso
     };
 
-    this.#releases.set(booking.reservationId, record);
+    if (this.#stateStore) this.#stateStore.recordRelease(record);
+    else this.#releases.set(booking.reservationId, record);
     return { ...record };
   }
 
@@ -209,7 +220,8 @@ export class RevenueReleaseManager {
       recordedAtIso
     };
 
-    this.#adjustments.push(record);
+    if (this.#stateStore) this.#stateStore.recordAdjustment(record);
+    else this.#adjustments.push(record);
     return { ...record };
   }
 }
