@@ -1,6 +1,6 @@
 # Durable, redacted telemetry
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: 02a
 Branch: `infra/cf-06b-telemetry`
@@ -58,3 +58,19 @@ This slice builds on 06a's committed shared pure redactor (`5303c68`), without m
 | 0079 | Durable evidence and no duplicated transitions | AC1 / AC2, unique transition key |
 
 No Workers Logs wiring (10b/13), revenue rules (06c) or new events are introduced.
+
+### Verification and Definition of Done
+
+1. Four dedicated `06b AC1`–`AC4` tests in `test/sqlite-telemetry.test.ts`; the initial run failed on the missing implementation (`C:/AI2026/cf-06b-red.log`).
+2. AC1 restarts both real environments; AC2 retries one transition before/after a file-backed reopen and verifies one row and one sink call, while distinct keys and ordinary events remain distinct. Outer rollback does not poison durable dedupe. AC3 inspects every raw table column and the sink for nested synthetic token/cookie/phone values, including a sensitive transition key.
+3. Re-checked the ADR table: shared durable evidence implements 0004/0095/0079, correlation survives, and the shared redactor precedes both table/sink under 0070/0071/0075. The unique indexed key is a SHA-256 digest of the raw dedupe identity, not raw credentials; distinct identities are not collapsed by masking.
+4. Both constructor dependencies are used: SQL for schema/read/write, optional sink after an actual insert. Handles remain borrowed; no new connection/pragmas/close ownership.
+5. No events, policy, thresholds, retention or Workers Logs configuration invented.
+6. Table/sink credential absence is tested. In-memory telemetry uses the same redactor, and returned snapshots are detached from its history.
+7. `npm run check`, **87 focused tests**, **14 workerd tests**, whitespace checks and full `npm test` pass. Full suite exits 0: **1,290 non-browser and 165 browser passes, zero failures, one expected skip**. Node tests unset the previously documented `PI_REASONING_LEVEL`. Evidence: `C:/AI2026/cf-06b-{check,focused,workers,full}.log`; `cf-06b-full.exit` = 0. LSP did not confirm clean coverage; successful compiler checks are the typecheck evidence.
+
+The optional synchronous observational sink follows an insertion, not an enclosing transaction's eventual commit, and is not an outbox or a guaranteed-delivery channel. No sink is wired in either environment. When 10b wires external logs, do not treat that stream as committed domain state: use the durable table as authority and forward outside material transaction boundaries (or introduce a separately scoped commit-aware outbox if that guarantee is needed). A failed sink does not undo the durable insert.
+
+## Answer
+
+Implementation `cee7988` on `infra/cf-06b-telemetry`: typed telemetry port, redacted shared-handle event table, unique hashed transition index and optional redacted sink. Guest/owner events and transition dedupe survive restart. All gates passed before resolution; no Workers Logs deployment/configuration or Wave 3 work.
