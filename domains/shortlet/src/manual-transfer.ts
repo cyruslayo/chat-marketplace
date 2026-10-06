@@ -7,6 +7,7 @@ import type { ConditionalBookingOffer } from "./conditional-offer.js";
 import type { LivePaymentAttemptRegistryPort } from "./payment-attempt.js";
 import type { BookingContract, Reservation } from "./card-payment.js";
 import type { BookingStateRepository } from "./booking-state.js";
+import { newReceiptObjectKey, SqliteReceiptBlobStore, type ReceiptBlobStore } from "./receipt-blob-store.js";
 
 /**
  * Manual bank transfer with receipt upload (ADR 0090, P5). The Guest pays the business account and uploads a
@@ -141,17 +142,30 @@ export interface ManualTransferStore {
   find(transferId: string): ManualTransfer | null;
   findLatestByOffer(offerId: string): ManualTransfer | null;
   list(): readonly ManualTransfer[];
-  saveReceipt(
-    receiptId: string,
-    transferId: string,
+  /**
+   * Puts the receipt bytes in the blob store under a fresh opaque key and returns the key. Async because the bytes
+   * may live in R2; callers do this before any synchronous state change, never inside a transaction (ADR 0041/0046).
+   */
+  putReceiptBytes(
     contentType: ReceiptContentType,
     bytes: Buffer,
-  ): void;
-  readReceipt(receiptId: string): {
+  ): Promise<string>;
+  /** Removes bytes that were put but never recorded (a refused or failed upload). Never throws. */
+  discardReceiptBytes(objectKey: string): Promise<void>;
+  /** Metadata only, synchronous so it can sit beside the transfer write. The bytes are already in the blob store. */
+  saveReceiptMetadata(receipt: {
+    readonly receiptId: string;
+    readonly transferId: string;
+    readonly contentType: ReceiptContentType;
+    readonly sizeBytes: number;
+    readonly objectKey: string;
+  }): void;
+  readReceipt(receiptId: string): Promise<{
     readonly contentType: ReceiptContentType;
     readonly bytes: Buffer;
-  } | null;
-  deleteReceipt(receiptId: string): void;
+  } | null>;
+  /** Bytes first, then the metadata row, so a failure never leaves a row that points at nothing. */
+  deleteReceipt(receiptId: string): Promise<void>;
 }
 
 function parseTransfer(json: string): ManualTransfer | null {
@@ -176,16 +190,53 @@ function isReceiptContentType(value: unknown): value is ReceiptContentType {
   );
 }
 
-/** Manual transfers and their receipts in the shared SQLite database; the receipt bytes never leave it except to the back office. */
+const RECEIPT_TABLE = "manual_transfer_receipts";
+
+/**
+ * Manual transfers and their receipt metadata in the shared SQLite database; the receipt bytes live in the injected
+ * blob store and never leave it except to the back office (ADR 0090). Receipts saved before the blob store existed
+ * keep their bytes in the row and are still served.
+ */
 export class SqliteManualTransferStore implements ManualTransferStore {
   readonly #database: SqlDatabase;
-  constructor(database: SqlDatabase) {
+  readonly #blobs: ReceiptBlobStore;
+  constructor(
+    database: SqlDatabase,
+    blobs: ReceiptBlobStore = new SqliteReceiptBlobStore(database),
+  ) {
     this.#database = database;
+    this.#blobs = blobs;
     this.#database.exec(`
       CREATE TABLE IF NOT EXISTS manual_transfers (transfer_id TEXT PRIMARY KEY, offer_id TEXT NOT NULL, booking_reference TEXT NOT NULL UNIQUE, seq INTEGER NOT NULL, transfer_json TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS idx_manual_transfers_offer ON manual_transfers (offer_id, seq);
-      CREATE TABLE IF NOT EXISTS manual_transfer_receipts (receipt_id TEXT PRIMARY KEY, transfer_id TEXT NOT NULL, content_type TEXT NOT NULL, bytes BLOB NOT NULL);
     `);
+    this.#migrateReceiptTable();
+  }
+
+  /**
+   * Additive and idempotent. A new database gets the current shape; one with the original shape (`bytes BLOB NOT NULL`,
+   * no key) is rebuilt create-copy-rename in one transaction, because SQLite cannot drop NOT NULL in place. Existing
+   * rows keep their bytes and get their size.
+   */
+  #migrateReceiptTable(): void {
+    const current = `CREATE TABLE ${RECEIPT_TABLE} (receipt_id TEXT PRIMARY KEY, transfer_id TEXT NOT NULL, content_type TEXT NOT NULL, bytes BLOB, object_key TEXT, size_bytes INTEGER)`;
+    this.#database.transaction(() => {
+      const existing = this.#database
+        .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = $name")
+        .get({ $name: RECEIPT_TABLE });
+      if (!existing) {
+        this.#database.exec(current);
+        return;
+      }
+      if (typeof existing.sql === "string" && existing.sql.includes("object_key")) return;
+      this.#database.exec(`
+        ${current.replace(RECEIPT_TABLE, `${RECEIPT_TABLE}_next`)};
+        INSERT INTO ${RECEIPT_TABLE}_next (receipt_id, transfer_id, content_type, bytes, size_bytes)
+          SELECT receipt_id, transfer_id, content_type, bytes, length(bytes) FROM ${RECEIPT_TABLE};
+        DROP TABLE ${RECEIPT_TABLE};
+        ALTER TABLE ${RECEIPT_TABLE}_next RENAME TO ${RECEIPT_TABLE};
+      `);
+    });
   }
   save(transfer: ManualTransfer): void {
     const existing = this.#database
@@ -237,47 +288,78 @@ export class SqliteManualTransferStore implements ManualTransferStore {
       return transfer ? [transfer] : [];
     });
   }
-  saveReceipt(
-    receiptId: string,
-    transferId: string,
+  async putReceiptBytes(
     contentType: ReceiptContentType,
     bytes: Buffer,
-  ): void {
+  ): Promise<string> {
+    const objectKey = newReceiptObjectKey();
+    await this.#blobs.put(objectKey, bytes, contentType);
+    return objectKey;
+  }
+  async discardReceiptBytes(objectKey: string): Promise<void> {
+    try {
+      await this.#blobs.delete(objectKey);
+    } catch {
+      /* an orphan is swept later (12a); never mask the original failure */
+    }
+  }
+  saveReceiptMetadata(receipt: {
+    readonly receiptId: string;
+    readonly transferId: string;
+    readonly contentType: ReceiptContentType;
+    readonly sizeBytes: number;
+    readonly objectKey: string;
+  }): void {
     this.#database
       .prepare(
-        "INSERT INTO manual_transfer_receipts (receipt_id, transfer_id, content_type, bytes) VALUES ($id, $transferId, $type, $bytes)",
+        `INSERT INTO ${RECEIPT_TABLE} (receipt_id, transfer_id, content_type, bytes, object_key, size_bytes) VALUES ($id, $transferId, $type, NULL, $key, $size)`,
       )
       .run({
-        $id: receiptId,
-        $transferId: transferId,
-        $type: contentType,
-        $bytes: bytes,
+        $id: receipt.receiptId,
+        $transferId: receipt.transferId,
+        $type: receipt.contentType,
+        $key: receipt.objectKey,
+        $size: receipt.sizeBytes,
       });
   }
-  readReceipt(receiptId: string): {
+  async readReceipt(receiptId: string): Promise<{
     readonly contentType: ReceiptContentType;
     readonly bytes: Buffer;
-  } | null {
+  } | null> {
     const row = this.#database
       .prepare(
-        "SELECT content_type, bytes FROM manual_transfer_receipts WHERE receipt_id = $id",
+        `SELECT content_type, bytes, object_key FROM ${RECEIPT_TABLE} WHERE receipt_id = $id`,
       )
-      .get({ $id: receiptId }) as
-      | { content_type?: unknown; bytes?: unknown }
-      | undefined;
-    if (
-      !row ||
-      !isReceiptContentType(row.content_type) ||
-      !(row.bytes instanceof Uint8Array)
-    )
-      return null;
-    return { contentType: row.content_type, bytes: Buffer.from(row.bytes) };
+      .get({ $id: receiptId });
+    if (!row || !isReceiptContentType(row.content_type)) return null;
+    if (typeof row.object_key === "string") {
+      const blob = await this.#blobs.get(row.object_key);
+      return blob
+        ? { contentType: row.content_type, bytes: Buffer.from(blob.bytes) }
+        : null;
+    }
+    // Saved before the blob store existed: the bytes are still in the row.
+    return row.bytes instanceof Uint8Array
+      ? { contentType: row.content_type, bytes: Buffer.from(row.bytes) }
+      : null;
   }
-  deleteReceipt(receiptId: string): void {
+  async deleteReceipt(receiptId: string): Promise<void> {
+    const row = this.#database
+      .prepare(`SELECT object_key FROM ${RECEIPT_TABLE} WHERE receipt_id = $id`)
+      .get({ $id: receiptId });
+    if (row && typeof row.object_key === "string")
+      await this.#blobs.delete(row.object_key);
     this.#database
-      .prepare("DELETE FROM manual_transfer_receipts WHERE receipt_id = $id")
+      .prepare(`DELETE FROM ${RECEIPT_TABLE} WHERE receipt_id = $id`)
       .run({ $id: receiptId });
   }
+}
+
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+const PDF_SIGNATURE = [0x25, 0x50, 0x44, 0x46, 0x2d]; // "%PDF-"
+
+function startsWithBytes(bytes: Uint8Array, signature: readonly number[]): boolean {
+  return bytes.length >= signature.length && signature.every((byte, index) => bytes[index] === byte);
 }
 
 /** The receipt's real type from its first bytes; the declared type is ignored (ADR 0075: untrusted input). */
@@ -289,15 +371,9 @@ export function sniffReceiptType(bytes: Buffer): ReceiptContentType | null {
     bytes[2] === 0xff
   )
     return "image/jpeg";
-  if (
-    bytes.length >= 8 &&
-    bytes
-      .subarray(0, 8)
-      .equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
-  )
-    return "image/png";
-  if (bytes.length >= 5 && bytes.subarray(0, 5).toString("latin1") === "%PDF-")
-    return "application/pdf";
+  // Byte comparisons only, so this also compiles and runs in the Worker (no Node Buffer methods).
+  if (startsWithBytes(bytes, PNG_SIGNATURE)) return "image/png";
+  if (startsWithBytes(bytes, PDF_SIGNATURE)) return "application/pdf";
   return null;
 }
 
@@ -557,11 +633,42 @@ export class ManualTransferManager {
    * Stores one receipt before the Payment Window deadline. The receipt is evidence only (ADR 0090): the booking now
    * waits for the back office, and the dates stay held until the verification deadline.
    */
-  uploadReceipt(
+  async uploadReceipt(
     envelope: PlatformCommandEnvelope<{ offerId: string }>,
     file: { readonly bytes: Buffer },
     clock: () => Date = () => new Date(),
-  ): ManualTransfer {
+  ): Promise<ManualTransfer> {
+    const checked = this.#checkReceiptUpload(envelope, file, clock);
+    // ADR 0041/0046: the bytes go to the blob store first and never inside a state change. A failed put records
+    // nothing. The check below runs again afterwards because another request may have won while this one waited.
+    const objectKey = await this.#o.store.putReceiptBytes(
+      checked.contentType,
+      file.bytes,
+    );
+    try {
+      // Synchronous from here to the end of the method, so no other request can interleave.
+      return this.#recordReceipt(
+        this.#checkReceiptUpload(envelope, file, clock),
+        file,
+        objectKey,
+      );
+    } catch (error) {
+      await this.#o.store.discardReceiptBytes(objectKey);
+      throw error;
+    }
+  }
+
+  /** Every refusal an upload can meet, with no side effect. */
+  #checkReceiptUpload(
+    envelope: PlatformCommandEnvelope<{ offerId: string }>,
+    file: { readonly bytes: Buffer },
+    clock: () => Date,
+  ): {
+    readonly now: Date;
+    readonly offer: ConditionalBookingOffer;
+    readonly transfer: ManualTransfer;
+    readonly contentType: ReceiptContentType;
+  } {
     if (
       !envelope ||
       envelope.commandName !== "manual_transfer.upload_receipt" ||
@@ -609,7 +716,21 @@ export class ManualTransferManager {
         "receipt_type_not_allowed",
         "Upload a JPEG, PNG or PDF receipt",
       );
-    const receiptId = `rcpt_${randomBytes(12).toString("hex")}`;
+    return { now, offer, transfer, contentType };
+  }
+
+  #recordReceipt(
+    checked: {
+      readonly now: Date;
+      readonly offer: ConditionalBookingOffer;
+      readonly transfer: ManualTransfer;
+      readonly contentType: ReceiptContentType;
+    },
+    file: { readonly bytes: Buffer },
+    objectKey: string,
+  ): ManualTransfer {
+    const { now, offer, transfer, contentType } = checked;
+    const receiptId = `rcpt_${Array.from(randomBytes(12), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
     const updated: ManualTransfer = {
       ...transfer,
       status: "awaiting_verification",
@@ -635,12 +756,13 @@ export class ManualTransferManager {
         "The dates are no longer held for this booking",
       );
     }
-    this.#o.store.saveReceipt(
+    this.#o.store.saveReceiptMetadata({
       receiptId,
-      transfer.transferId,
+      transferId: transfer.transferId,
       contentType,
-      file.bytes,
-    );
+      sizeBytes: file.bytes.length,
+      objectKey,
+    });
     this.#o.store.save(updated);
     // The attempt keeps the single slot through the verification deadline (ADR 0046).
     this.#o.liveAttempts?.release(offer.offerId);
@@ -722,12 +844,12 @@ export class ManualTransferManager {
   }
 
   /** The receipt for the back office only; callers must hold a grant for the owner (ADR 0090). */
-  readReceipt(transfer: ManualTransfer): {
+  async readReceipt(transfer: ManualTransfer): Promise<{
     readonly contentType: ReceiptContentType;
     readonly bytes: Buffer;
-  } | null {
+  } | null> {
     return transfer.receipt && !transfer.receiptDeletedAt
-      ? this.#o.store.readReceipt(transfer.receipt.receiptId)
+      ? await this.#o.store.readReceipt(transfer.receipt.receiptId)
       : null;
   }
 
@@ -735,7 +857,7 @@ export class ManualTransferManager {
    * ADR 0090 retention: receipts are deleted 90 days after the stay's checkout for a confirmed booking, or 90 days
    * after the attempt when no booking formed. Safe to call on every read.
    */
-  purgeReceipts(now: Date): number {
+  async purgeReceipts(now: Date): Promise<number> {
     let deleted = 0;
     for (const transfer of this.#o.store.list()) {
       if (!transfer.receipt || transfer.receiptDeletedAt) continue;
@@ -754,11 +876,13 @@ export class ManualTransferManager {
           Date.parse(anchor) + RECEIPT_RETENTION_DAYS * 24 * 60 * 60_000
       )
         continue;
-      this.#o.store.deleteReceipt(transfer.receipt.receiptId);
+      // The bytes go first; once they are gone the rest is synchronous, so the row and the transfer never disagree.
+      await this.#o.store.deleteReceipt(transfer.receipt.receiptId);
+      const current = this.#o.store.find(transfer.transferId) ?? transfer;
       this.#o.store.save({
-        ...transfer,
+        ...current,
         receiptDeletedAt: now.toISOString(),
-        version: transfer.version + 1,
+        version: current.version + 1,
       });
       this.#o.audit?.record({
         type: "manual_transfer.receipt_deleted",

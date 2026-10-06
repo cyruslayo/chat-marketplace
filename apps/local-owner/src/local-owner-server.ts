@@ -1227,6 +1227,9 @@ export function startLocalOwnerServer(options: {
       return;
     }
 
+    // ADR 0090 retention runs before a signed-in back-office read, as it did when it sat inside the transfer listing.
+    if (req.method === "GET" && url.pathname.startsWith("/operator") && operatorPrincipal(req, env)) await env.purgeManualTransferReceipts();
+
     // Back-office pages fail closed (ADR 0086): a page without a usable session goes to sign-in with a fixed reason.
     const page = (render: (principal: OperatorPrincipal) => string): void => {
       const principal = operatorPrincipal(req, env);
@@ -1273,8 +1276,8 @@ export function startLocalOwnerServer(options: {
     if (req.method === "GET" && receiptMatch) {
       const principal = operatorPrincipal(req, env);
       if (!principal) { res.writeHead(303, { Location: signInLocation(req, env) }); res.end(); return; }
-      let receipt: ReturnType<LocalApartmentOwnerEnvironment["manualTransferReceipt"]> = null;
-      try { receipt = env.manualTransferReceipt(decodeURIComponent(receiptMatch[1]!), commandPrincipal(principal)); } catch { receipt = null; }
+      let receipt: Awaited<ReturnType<LocalApartmentOwnerEnvironment["manualTransferReceipt"]>> = null;
+      try { receipt = await env.manualTransferReceipt(decodeURIComponent(receiptMatch[1]!), commandPrincipal(principal)); } catch { receipt = null; }
       // Unknown, deleted, or another owner's receipt all look the same (ADR 0082, 0090).
       if (!receipt) { res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" }); res.end("Receipt not found"); return; }
       res.writeHead(200, {

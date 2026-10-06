@@ -7547,7 +7547,7 @@ export function startLocalGuestServer(
           return;
         }
         try {
-          manual.uploadReceipt(
+          await manual.uploadReceipt(
             createManualTransferCommand({
               commandName: "manual_transfer.upload_receipt",
               principal,

@@ -21,6 +21,7 @@ export * from "./paystack.js";
 export * from "./human-risk-review.js";
 export * from "./bank-transfer.js";
 export * from "./manual-transfer.js";
+export * from "./receipt-blob-store.js";
 export * from "./contract-release.js";
 export * from "./arrival-disclosure-policy.js";
 export * from "./same-day-booking.js";

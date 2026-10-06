@@ -99,7 +99,7 @@ test("AC2: The booking-state transition still rolls back atomically", () => {
   }
 });
 
-test("AC3: The full existing suite passes unchanged (npm test), and npm run check is clean", () => {
+test("AC3: The full existing suite passes unchanged (npm test), and npm run check is clean", async () => {
   // Smoke-test all seven constructors through the same borrowed port. Full-suite
   // and compiler command evidence is recorded in issue 02b, not run recursively.
   const raw = new DatabaseSync(":memory:");
@@ -122,14 +122,18 @@ test("AC3: The full existing suite passes unchanged (npm test), and npm run chec
       contacts.find("guest", "tenant")?.phoneNumber,
       "+2348012345678",
     );
-    receipts.saveReceipt(
-      "receipt",
-      "transfer",
-      "application/pdf",
-      Buffer.from("%PDF-proof"),
-    );
+    receipts.saveReceiptMetadata({
+      receiptId: "receipt",
+      transferId: "transfer",
+      contentType: "application/pdf",
+      sizeBytes: 10,
+      objectKey: await receipts.putReceiptBytes(
+        "application/pdf",
+        Buffer.from("%PDF-proof"),
+      ),
+    });
     assert.deepEqual(
-      receipts.readReceipt("receipt")?.bytes,
+      (await receipts.readReceipt("receipt"))?.bytes,
       Buffer.from("%PDF-proof"),
     );
     assert.equal(

@@ -20,7 +20,7 @@ import { TEST_MANUAL_ACCOUNT, TEST_RECEIPTS } from "./guest-payment-page.js";
  */
 export interface GuestManualTransfers {
   start(requestId: string): ManualTransfer;
-  upload(requestId: string, bytes?: Buffer): ManualTransfer;
+  upload(requestId: string, bytes?: Buffer): Promise<ManualTransfer>;
   close(): void;
 }
 

@@ -27,6 +27,7 @@ import {
   UnitRepository,
   JsonUnitRepository,
   type UnitRepositoryContract,
+  type ReceiptBlobStore,
   unitPriceFromOwnerTerms,
   InMemorySecurityDepositAccountingRepository,
   type PaystackClient,
@@ -276,6 +277,8 @@ export interface LocalGuestEnvironmentDependencies {
   readonly unitRepository: UnitRepositoryContract;
   /** Seed the deterministic demo units into `unitRepository`. Demo and test compositions only. */
   readonly seedDemoUnits?: boolean;
+  /** Where manual-transfer receipt bytes live (ADR 0090). Defaults to the shared SQLite file; Cloudflare passes R2. */
+  readonly receiptBlobs?: ReceiptBlobStore;
 }
 
 export class LocalGuestEnvironment {
@@ -546,7 +549,7 @@ export class LocalGuestEnvironment {
     this.manualTransfers = this.config.manualTransferAccount
       ? new ManualTransferManager({
           offerManager: this.conditionalOfferApp.manager,
-          store: new SqliteManualTransferStore(sqlDatabase),
+          store: new SqliteManualTransferStore(sqlDatabase, dependencies.receiptBlobs),
           account: this.config.manualTransferAccount,
           liveAttempts: this.livePaymentAttempts,
           calendar: this.calendar,

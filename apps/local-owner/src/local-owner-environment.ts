@@ -33,6 +33,7 @@ import {
   SqliteAvailabilityStore,
   JsonUnitRepository,
   type UnitRepositoryContract,
+  type ReceiptBlobStore,
   JsonOperatorRepository,
   SqliteBookingPaymentJourneyRepository,
   SqliteBookingStateRepository,
@@ -503,6 +504,8 @@ export interface LocalOwnerEnvironmentDependencies {
   readonly unitRepository: UnitRepositoryContract;
   /** Null when no operator directory is configured, as today. */
   readonly operatorRepository: OperatorRepository | null;
+  /** Where manual-transfer receipt bytes live (ADR 0090); must be the Guest composition's store. Defaults to SQLite. */
+  readonly receiptBlobs?: ReceiptBlobStore;
 }
 
 export class LocalApartmentOwnerEnvironment {
@@ -586,6 +589,7 @@ export class LocalApartmentOwnerEnvironment {
     this.#checkInStore = new SqliteCheckInSupportStore(this.#sqlDatabase);
     this.#manualTransferStore = new SqliteManualTransferStore(
       this.#sqlDatabase,
+      dependencies.receiptBlobs,
     );
     this.ownerPayableLedger = new SqliteOwnerPayableLedger(
       this.#sqlDatabase,
@@ -2151,20 +2155,26 @@ export class LocalApartmentOwnerEnvironment {
   }
 
   /**
+   * ADR 0090 retention: deletes receipts past their retention, bytes first. The back office calls it before reading
+   * manual transfers; a failure retries on the next read.
+   */
+  async purgeManualTransferReceipts(): Promise<void> {
+    try {
+      await this.#manualTransfers().purgeReceipts(this.clock());
+    } catch {
+      /* retention retries on the next read */
+    }
+  }
+
+  /**
    * Manual transfers for owners you hold a grant for (B6, ADR 0082, 0090), read fresh on every call. Due deadlines
-   * are evaluated lazily; receipts past retention are purged first (ADR 0090). Waiting for your check comes first,
-   * soonest verification deadline first.
+   * are evaluated lazily. Waiting for your check comes first, soonest verification deadline first.
    */
   listOperatorManualTransfers(
     principal: CommandPrincipal,
   ): readonly OperatorManualTransfer[] {
     const manager = this.#manualTransfers();
     const now = this.clock();
-    try {
-      manager.purgeReceipts(now);
-    } catch {
-      /* retention retries on the next read */
-    }
     const rank: Record<ManualTransferStatus, number> = {
       awaiting_verification: 0,
       awaiting_receipt: 1,
@@ -2207,15 +2217,15 @@ export class LocalApartmentOwnerEnvironment {
    * The receipt, only for a signed-in grant holder for the transfer's owner (ADR 0090). Never logged: the audit
    * records only that it was opened (ADR 0075).
    */
-  manualTransferReceipt(
+  async manualTransferReceipt(
     transferId: string,
     principal: CommandPrincipal,
-  ): {
+  ): Promise<{
     readonly contentType: ReceiptContentType;
     readonly bytes: Buffer;
-  } | null {
+  } | null> {
     const { transfer } = this.operatorManualTransfer(transferId, principal);
-    const receipt = this.#manualTransfers().readReceipt(transfer);
+    const receipt = await this.#manualTransfers().readReceipt(transfer);
     if (receipt) {
       try {
         this.audit.record({
