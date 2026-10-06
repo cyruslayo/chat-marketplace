@@ -78,10 +78,7 @@ export function guestCardPayments(
         };
       },
     },
-    journeyRepository: new SqliteBookingPaymentJourneyRepository(
-      sqlDatabase,
-      env.config.databasePath,
-    ),
+    journeyRepository: new SqliteBookingPaymentJourneyRepository(sqlDatabase),
     liveAttempts: new SqliteLivePaymentAttemptRegistry(store),
     store,
     securityDepositAccounting:
@@ -105,10 +102,7 @@ export function guestCardPayments(
         currency: "NGN",
       }),
     },
-    bookingState: new SqliteBookingStateRepository(
-      sqlDatabase,
-      env.config.databasePath,
-    ),
+    bookingState: new SqliteBookingStateRepository(sqlDatabase),
     clock: env.clock,
   });
 

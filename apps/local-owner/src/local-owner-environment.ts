@@ -528,10 +528,7 @@ export class LocalApartmentOwnerEnvironment {
     this.#database.exec("PRAGMA busy_timeout = 5000");
     this.#sqlDatabase = new NodeSqliteDatabase(this.#database);
     this.interactionStore = new SqliteGuestInteractionStore(this.#sqlDatabase);
-    this.#bookingState = new SqliteBookingStateRepository(
-      this.#sqlDatabase,
-      this.config.databasePath,
-    );
+    this.#bookingState = new SqliteBookingStateRepository(this.#sqlDatabase);
     this.#checkInStore = new SqliteCheckInSupportStore(this.#sqlDatabase);
     this.#manualTransferStore = new SqliteManualTransferStore(
       this.#sqlDatabase,
@@ -543,11 +540,11 @@ export class LocalApartmentOwnerEnvironment {
     this.audit = new InMemoryAuditLog();
     this.telemetry = new InMemoryTelemetry();
     this.grantStore = new SqliteOperatorRepresentativeGrantStore(
-      this.config.databasePath,
+      this.#sqlDatabase,
       { clock: this.clock },
     );
     this.sessionAuthority = new SqliteOperatorSessionAuthority(
-      this.config.databasePath,
+      this.#sqlDatabase,
       { clock: this.clock },
     );
     this.unitRepository = this.config.inventoryPath
@@ -1291,10 +1288,7 @@ export class LocalApartmentOwnerEnvironment {
   ): readonly OperatorBooking[] {
     if (principal.role !== "operator" || !principal.id || !principal.tenantId)
       return [];
-    const journeys = new SqliteBookingPaymentJourneyRepository(
-      this.#sqlDatabase,
-      this.config.databasePath,
-    );
+    const journeys = new SqliteBookingPaymentJourneyRepository(this.#sqlDatabase);
     const now = this.clock();
     const bookings = this.interactionStore
       .listBookingRequestIds()
@@ -1331,10 +1325,7 @@ export class LocalApartmentOwnerEnvironment {
     const booking = this.#bookingFor(
       requestId,
       principal,
-      new SqliteBookingPaymentJourneyRepository(
-        this.#sqlDatabase,
-        this.config.databasePath,
-      ),
+      new SqliteBookingPaymentJourneyRepository(this.#sqlDatabase),
       this.clock(),
     );
     if (!booking) throw new Error("Booking not found");

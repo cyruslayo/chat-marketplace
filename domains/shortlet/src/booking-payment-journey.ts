@@ -197,13 +197,11 @@ export class InMemoryBookingPaymentJourneyRepository
 export class SqliteBookingPaymentJourneyRepository
   implements BookingPaymentJourneyRepository
 {
-  readonly databasePath: string;
   readonly #database: SqlDatabase;
   readonly #journeys = new Map<string, BookingPaymentJourney>();
   #loaded = false;
 
-  constructor(database: SqlDatabase, databasePath: string) {
-    this.databasePath = databasePath;
+  constructor(database: SqlDatabase) {
     this.#database = database;
     this.#database.exec(`
       CREATE TABLE IF NOT EXISTS booking_payment_journeys (

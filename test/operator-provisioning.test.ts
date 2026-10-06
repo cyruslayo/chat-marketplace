@@ -18,6 +18,8 @@ import {
 import { SqliteOperatorRepresentativeGrantStore, SqliteOperatorSessionAuthority } from "../domains/shortlet/src/index.js";
 import { runOperatorCreateCommand, runOperatorListCommand, runOperatorUpdateCommand } from "../apps/shortlet-ops/src/operator-cli.js";
 
+import { createTestOperatorGrantStore, createTestOperatorSessionAuthority } from "./helpers/operator-authority.js";
+
 const NOW = new Date("2026-09-21T10:00:00.000Z");
 
 function row(overrides: Record<string, string> = {}): string {
@@ -140,7 +142,7 @@ test("AC4 — Operator list shows provisioned Operator.", async () => {
 
 test("AC5 — Creating an Operator does not create representative authority.", async () => {
   const dir = await directory("operator-grant-separation-");
-  const grantStore = new SqliteOperatorRepresentativeGrantStore(join(dir, "authority.sqlite"));
+  const grantStore = createTestOperatorGrantStore(join(dir, "authority.sqlite"));
   try {
     const repository = new JsonOperatorRepository(join(dir, "operators.json"), { clock: () => NOW });
     runOperatorCreateCommand(repository, ["--operator-id", "operator-provisioned-001", "--tenant-id", "tenant-abuja", "--name", "Example Shortlets"]);
@@ -153,7 +155,7 @@ test("AC5 — Creating an Operator does not create representative authority.", a
 
 test("AC6 — Creating an Operator does not create an authenticated session.", async () => {
   const dir = await directory("operator-session-separation-");
-  const authority = new SqliteOperatorSessionAuthority(join(dir, "auth.sqlite"));
+  const authority = createTestOperatorSessionAuthority(join(dir, "auth.sqlite"));
   try {
     const repository = new JsonOperatorRepository(join(dir, "operators.json"), { clock: () => NOW });
     runOperatorCreateCommand(repository, ["--operator-id", "operator-provisioned-001", "--tenant-id", "tenant-abuja", "--name", "Example Shortlets"]);

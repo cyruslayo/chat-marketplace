@@ -123,12 +123,10 @@ export class InMemoryBookingStateRepository implements BookingStateRepository {
  * confirmation path survive application restart in this repository.
  */
 export class SqliteBookingStateRepository implements BookingStateRepository {
-  readonly databasePath: string;
   readonly #database: SqlDatabase;
   #closed = false;
 
-  constructor(database: SqlDatabase, databasePath: string) {
-    this.databasePath = databasePath;
+  constructor(database: SqlDatabase) {
     this.#database = database;
     this.#database.exec(`
       CREATE TABLE IF NOT EXISTS booking_contracts (
