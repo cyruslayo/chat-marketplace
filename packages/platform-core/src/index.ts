@@ -28,13 +28,19 @@ export class InMemoryAuditLog implements AuditLog {
   }
 }
 
-export class InMemoryTelemetry {
+export interface Telemetry {
+  track(event: object): void;
+  trackTransition(event: TransitionTelemetryEvent): void;
+  events(): TelemetryEvent[];
+}
+
+export class InMemoryTelemetry implements Telemetry {
   #events: TelemetryEvent[] = [];
   #transitionKeys = new Set<string>();
 
   track(event: object): void {
-    const record = event as Record<string, unknown>;
-    this.#events.push(Object.freeze({ ...record, recordedAt: record.recordedAt ?? new Date().toISOString() }));
+    const record = redactSensitiveData(event) as TelemetryEvent;
+    this.#events.push(structuredClone({ ...record, recordedAt: record.recordedAt ?? new Date().toISOString() }));
   }
 
   trackTransition(event: TransitionTelemetryEvent): void {
@@ -44,7 +50,7 @@ export class InMemoryTelemetry {
   }
 
   events(): TelemetryEvent[] {
-    return this.#events.map((event) => ({ ...event }));
+    return structuredClone(this.#events);
   }
 }
 

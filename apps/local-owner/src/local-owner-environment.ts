@@ -94,9 +94,10 @@ import {
 } from "../../../apps/web/src/index.js";
 import {
   type AuditLog,
-  InMemoryTelemetry,
+  type Telemetry,
 } from "../../../packages/platform-core/src/index.js";
 import { SqliteAuditLog } from "../../../packages/platform-core/src/sqlite-audit-log.js";
+import { SqliteTelemetry } from "../../../packages/platform-core/src/sqlite-telemetry.js";
 
 export interface LocalOwnerFixtureConfig {
   readonly databasePath: string;
@@ -504,7 +505,7 @@ export class LocalApartmentOwnerEnvironment {
   readonly sessionAuthority: SqliteOperatorSessionAuthority;
   readonly interactionStore: SqliteGuestInteractionStore;
   readonly audit: AuditLog;
-  readonly telemetry: InMemoryTelemetry;
+  readonly telemetry: Telemetry;
   readonly #database: DatabaseSync;
   readonly #sqlDatabase: NodeSqliteDatabase;
 
@@ -539,7 +540,7 @@ export class LocalApartmentOwnerEnvironment {
       this.clock,
     );
     this.audit = new SqliteAuditLog(this.#sqlDatabase);
-    this.telemetry = new InMemoryTelemetry();
+    this.telemetry = new SqliteTelemetry(this.#sqlDatabase);
     this.grantStore = new SqliteOperatorRepresentativeGrantStore(
       this.#sqlDatabase,
       { clock: this.clock },

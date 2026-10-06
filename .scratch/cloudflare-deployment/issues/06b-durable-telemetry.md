@@ -1,6 +1,6 @@
 # Durable, redacted telemetry
 
-Status: ready-for-agent
+Status: claimed
 Type: task
 Blocked by: 02a
 Branch: `infra/cf-06b-telemetry`
@@ -45,3 +45,16 @@ Unlocks: 06d
 Check every item in `docs/agents/issue-tracker.md`.
 
 ## Comments
+
+### Direct continuation plan (6 Oct 2026)
+
+This slice builds on 06a's committed shared pure redactor (`5303c68`), without modifying its stable full-suite snapshot. Integration/resolution waits for validation. Add a typed telemetry port, shared-handle table and unique transition index; use the redactor for both table and optional sink. Keep event vocabulary unchanged. Dedicated AC tests run red first.
+
+| ADR read | Constraint | Acceptance/code path |
+| --- | --- | --- |
+| 0004 / 0095 | Shared authoritative backend SQL, synchronous writes | AC1 / AC2, composition and insert |
+| 0070 / 0071 | Retain correlation IDs, exclude credentials and restricted projection material | AC3, redaction |
+| 0075 | Redact before table and sink; no retention policy invented | AC3 |
+| 0079 | Durable evidence and no duplicated transitions | AC1 / AC2, unique transition key |
+
+No Workers Logs wiring (10b/13), revenue rules (06c) or new events are introduced.

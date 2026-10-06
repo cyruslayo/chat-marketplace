@@ -3,10 +3,11 @@ import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { NodeSqliteDatabase } from "../../../packages/platform-core/src/node-sqlite-database.js";
 import { SqliteAuditLog } from "../../../packages/platform-core/src/sqlite-audit-log.js";
+import { SqliteTelemetry } from "../../../packages/platform-core/src/sqlite-telemetry.js";
 import {
   createPlatformCommandEnvelope,
   type AuditLog,
-  InMemoryTelemetry,
+  type Telemetry,
   type CommandPrincipal,
 } from "../../../packages/platform-core/src/index.js";
 import {
@@ -280,7 +281,7 @@ export class LocalGuestEnvironment {
   readonly calendar: AvailabilityCalendar;
   readonly grantStore: SqliteOperatorRepresentativeGrantStore;
   readonly audit: AuditLog;
-  readonly telemetry: InMemoryTelemetry;
+  readonly telemetry: Telemetry;
   readonly discoveryQuery: UnitDiscoveryQuery;
   readonly bookingRequestApp: BookingRequestApplication;
   readonly conditionalOfferApp: ConditionalOfferApplication;
@@ -355,7 +356,7 @@ export class LocalGuestEnvironment {
       store: new SqliteAvailabilityStore(sqlDatabase),
     });
     this.audit = new SqliteAuditLog(sqlDatabase);
-    this.telemetry = new InMemoryTelemetry();
+    this.telemetry = new SqliteTelemetry(sqlDatabase);
 
     this.discoveryQuery = new UnitDiscoveryQuery({
       repository: this.unitRepository,
