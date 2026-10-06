@@ -1,6 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { resolve, join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { openNodeSqliteDatabase } from "../../../packages/platform-core/src/node-sqlite-database.js";
 import { createPlatformCommandEnvelope } from "../../../packages/platform-core/src/index.js";
 import {
@@ -47,7 +46,7 @@ export function localPilotPaths(directory = LOCAL_PILOT_DIRECTORY): LocalPilotPa
 }
 
 function initializeLocalPilotClock(databasePath: string): void {
-  const database = new DatabaseSync(databasePath);
+  const database = openNodeSqliteDatabase(databasePath);
   try {
     database.exec("CREATE TABLE IF NOT EXISTS local_pilot_clock (clock_id INTEGER PRIMARY KEY CHECK (clock_id = 1), real_origin_ms INTEGER NOT NULL, virtual_origin_ms INTEGER NOT NULL)");
     database.prepare("INSERT OR IGNORE INTO local_pilot_clock (clock_id, real_origin_ms, virtual_origin_ms) VALUES (1, $real, $virtual)").run({ $real: Date.now(), $virtual: BOOTSTRAP_TIME.getTime() });
@@ -55,9 +54,9 @@ function initializeLocalPilotClock(databasePath: string): void {
 }
 
 export function localPilotClock(paths = localPilotPaths()): () => Date {
-  const database = new DatabaseSync(paths.databasePath);
-  const row = database.prepare("SELECT real_origin_ms, virtual_origin_ms FROM local_pilot_clock WHERE clock_id = 1").get() as { real_origin_ms?: number; virtual_origin_ms?: number } | undefined;
-  database.close();
+  const database = openNodeSqliteDatabase(paths.databasePath);
+  let row: { real_origin_ms?: unknown; virtual_origin_ms?: unknown } | undefined;
+  try { row = database.prepare("SELECT real_origin_ms, virtual_origin_ms FROM local_pilot_clock WHERE clock_id = 1").get(); } finally { database.close(); }
   if (!row || typeof row.real_origin_ms !== "number" || !Number.isSafeInteger(row.real_origin_ms) || typeof row.virtual_origin_ms !== "number" || !Number.isSafeInteger(row.virtual_origin_ms)) throw new Error("Local pilot clock is not initialized; run npm run pilot:local:bootstrap");
   const realOrigin = row.real_origin_ms;
   const virtualOrigin = row.virtual_origin_ms;

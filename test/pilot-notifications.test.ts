@@ -65,7 +65,7 @@ async function harness(): Promise<Harness> {
   const logs: string[] = [];
   let now = DISCLOSED_AT;
   const notifier = new PilotNotifier({
-    databasePath,
+    database: sqlDatabase,
     publicOrigin: ORIGIN,
     sender,
     operatorAlertEmails: OPS,
@@ -86,7 +86,6 @@ async function harness(): Promise<Harness> {
       now = at;
     },
     close: async () => {
-      notifier.close();
       database.close();
       await rm(directory, { recursive: true, force: true });
     },

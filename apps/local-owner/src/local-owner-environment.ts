@@ -1,5 +1,5 @@
-import { DatabaseSync } from "node:sqlite";
-import { NodeSqliteDatabase } from "../../../packages/platform-core/src/node-sqlite-database.js";
+import { openNodeSqliteDatabase } from "../../../packages/platform-core/src/node-sqlite-database.js";
+import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
 import { createHash } from "node:crypto";
 import { existsSync, unlinkSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
@@ -507,8 +507,8 @@ export class LocalApartmentOwnerEnvironment {
   readonly interactionStore: SqliteGuestInteractionStore;
   readonly audit: AuditLog;
   readonly telemetry: Telemetry;
-  readonly #database: DatabaseSync;
-  readonly #sqlDatabase: NodeSqliteDatabase;
+  readonly #sqlDatabase: SqlDatabase;
+  #closed = false;
 
   /** Read-only here: the committed Reservation's current status (B4). The Guest side writes it. */
   readonly #bookingState: SqliteBookingStateRepository;
@@ -527,9 +527,7 @@ export class LocalApartmentOwnerEnvironment {
 
     mkdirSync(dirname(this.config.databasePath), { recursive: true });
 
-    this.#database = new DatabaseSync(this.config.databasePath);
-    this.#database.exec("PRAGMA busy_timeout = 5000");
-    this.#sqlDatabase = new NodeSqliteDatabase(this.#database);
+    this.#sqlDatabase = openNodeSqliteDatabase(this.config.databasePath);
     this.interactionStore = new SqliteGuestInteractionStore(this.#sqlDatabase);
     this.#bookingState = new SqliteBookingStateRepository(this.#sqlDatabase);
     this.#checkInStore = new SqliteCheckInSupportStore(this.#sqlDatabase);
@@ -2735,10 +2733,17 @@ export class LocalApartmentOwnerEnvironment {
     };
   }
 
+  /** The one handle every repository in this composition shares (ADR 0004). */
+  get database(): SqlDatabase {
+    return this.#sqlDatabase;
+  }
+
   close(): void {
     this.sessionAuthority.close();
     this.grantStore.close();
-    if (this.#database.isOpen) this.#database.close();
+    if (this.#closed) return;
+    this.#closed = true;
+    this.#sqlDatabase.close();
   }
 }
 

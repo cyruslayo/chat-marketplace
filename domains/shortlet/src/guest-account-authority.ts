@@ -1,5 +1,5 @@
 import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
-import { DatabaseSync } from "node:sqlite";
+import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
 import type { PlatformCommandEnvelope } from "../../../packages/platform-core/src/envelope.js";
 import { normalizeContactEmail } from "./guest-contact.js";
 
@@ -42,7 +42,6 @@ export interface GuestAccountTelemetrySink {
 
 export interface GuestAccountAuthorityOptions {
   readonly codeHashingKey: string;
-  readonly database?: DatabaseSync;
   readonly clock?: () => Date;
   readonly audit?: GuestAccountAuditSink;
   readonly telemetry?: GuestAccountTelemetrySink;
@@ -240,19 +239,17 @@ export function hashGuestAccountSessionSecret(secret: string): string {
 }
 
 export class SqliteGuestAccountAuthority {
-  readonly #database: DatabaseSync;
-  readonly #ownsDatabase: boolean;
+  readonly #database: SqlDatabase;
   readonly #clock: () => Date;
   readonly #codeHashingKey: string;
   readonly #audit?: GuestAccountAuditSink;
   readonly #telemetry?: GuestAccountTelemetrySink;
   readonly #policy: Readonly<Record<keyof typeof GUEST_ACCOUNT_POLICY_DEFAULTS, number>>;
 
-  constructor(databasePath: string, options: GuestAccountAuthorityOptions) {
+  /** The composition owns the shared handle and its busy timeout (ADR 0004, ADR 0095). */
+  constructor(database: SqlDatabase, options: GuestAccountAuthorityOptions) {
     this.#codeHashingKey = requiredText(options.codeHashingKey, "Guest code hashing key");
-    this.#database = options.database ?? new DatabaseSync(databasePath);
-    this.#ownsDatabase = options.database === undefined;
-    this.#database.exec("PRAGMA busy_timeout = 5000");
+    this.#database = database;
     this.#clock = options.clock ?? (() => new Date());
     this.#audit = options.audit;
     this.#telemetry = options.telemetry;
@@ -343,15 +340,7 @@ export class SqliteGuestAccountAuthority {
   }
 
   #tx<T>(operation: () => T): T {
-    this.#database.exec("BEGIN IMMEDIATE");
-    try {
-      const result = operation();
-      this.#database.exec("COMMIT");
-      return result;
-    } catch (error) {
-      try { this.#database.exec("ROLLBACK"); } catch { /* preserve the original failure */ }
-      throw error;
-    }
+    return this.#database.transaction(operation);
   }
 
   #key(scope: string, value: string): string {
@@ -365,12 +354,12 @@ export class SqliteGuestAccountAuthority {
   }
 
   #sessionRow(sessionId: string): SessionRow | undefined {
-    return this.#database.prepare("SELECT * FROM guest_account_sessions WHERE session_id = ?").get(sessionId) as unknown as SessionRow | undefined;
+    return this.#database.prepare("SELECT * FROM guest_account_sessions WHERE session_id = ?").get([sessionId]) as unknown as SessionRow | undefined;
   }
 
   #sessionIsValid(input: { sessionId: string; sessionSecret: string; tenantId: string; accountGuestId: string; now: Date }): boolean {
     const row = this.#sessionRow(input.sessionId);
-    const account = projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE account_guest_id = ? AND tenant_id = ?").get(input.accountGuestId, input.tenantId) as unknown as AccountRow | undefined);
+    const account = projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE account_guest_id = ? AND tenant_id = ?").get([input.accountGuestId, input.tenantId]) as unknown as AccountRow | undefined);
     const expiresAt = parsedTimestamp(row?.expires_at);
     return Boolean(row &&
       typeof row.tenant_id === "string" && row.tenant_id === input.tenantId &&
@@ -382,16 +371,16 @@ export class SqliteGuestAccountAuthority {
 
   #requestRateFailure(rateScopeKey: string, emailKey: string, addressKey: string, now: Date): number | null {
     const windowStart = new Date(now.getTime() - this.#policy.rateLimitWindowMs).toISOString();
-    const emailEvents = this.#database.prepare("SELECT COUNT(*) AS count FROM guest_account_rate_events WHERE rate_scope_key = ? AND email_key = ? AND event_kind = 'request' AND occurred_at > ?").get(rateScopeKey, emailKey, windowStart) as { count: number };
-    const addressEvents = this.#database.prepare("SELECT COUNT(*) AS count FROM guest_account_rate_events WHERE rate_scope_key = ? AND address_key = ? AND event_kind = 'request' AND occurred_at > ?").get(rateScopeKey, addressKey, windowStart) as { count: number };
-    const last = this.#database.prepare("SELECT MAX(occurred_at) AS occurred_at FROM guest_account_rate_events WHERE rate_scope_key = ? AND email_key = ? AND event_kind = 'request'").get(rateScopeKey, emailKey) as { occurred_at: string | null };
+    const emailEvents = this.#database.prepare("SELECT COUNT(*) AS count FROM guest_account_rate_events WHERE rate_scope_key = ? AND email_key = ? AND event_kind = 'request' AND occurred_at > ?").get([rateScopeKey, emailKey, windowStart]) as { count: number };
+    const addressEvents = this.#database.prepare("SELECT COUNT(*) AS count FROM guest_account_rate_events WHERE rate_scope_key = ? AND address_key = ? AND event_kind = 'request' AND occurred_at > ?").get([rateScopeKey, addressKey, windowStart]) as { count: number };
+    const last = this.#database.prepare("SELECT MAX(occurred_at) AS occurred_at FROM guest_account_rate_events WHERE rate_scope_key = ? AND email_key = ? AND event_kind = 'request'").get([rateScopeKey, emailKey]) as { occurred_at: string | null };
     let retryAfterMs = 0;
     if (emailEvents.count >= this.#policy.codeRequestsPerEmailPerHour) {
-      const first = this.#database.prepare("SELECT occurred_at FROM guest_account_rate_events WHERE rate_scope_key = ? AND email_key = ? AND event_kind = 'request' AND occurred_at > ? ORDER BY occurred_at ASC LIMIT 1").get(rateScopeKey, emailKey, windowStart) as { occurred_at: string } | undefined;
+      const first = this.#database.prepare("SELECT occurred_at FROM guest_account_rate_events WHERE rate_scope_key = ? AND email_key = ? AND event_kind = 'request' AND occurred_at > ? ORDER BY occurred_at ASC LIMIT 1").get([rateScopeKey, emailKey, windowStart]) as { occurred_at: string } | undefined;
       if (first) retryAfterMs = Math.max(retryAfterMs, Date.parse(first.occurred_at) + this.#policy.rateLimitWindowMs - now.getTime());
     }
     if (addressEvents.count >= this.#policy.codeRequestsPerAddressPerHour) {
-      const first = this.#database.prepare("SELECT occurred_at FROM guest_account_rate_events WHERE rate_scope_key = ? AND address_key = ? AND event_kind = 'request' AND occurred_at > ? ORDER BY occurred_at ASC LIMIT 1").get(rateScopeKey, addressKey, windowStart) as { occurred_at: string } | undefined;
+      const first = this.#database.prepare("SELECT occurred_at FROM guest_account_rate_events WHERE rate_scope_key = ? AND address_key = ? AND event_kind = 'request' AND occurred_at > ? ORDER BY occurred_at ASC LIMIT 1").get([rateScopeKey, addressKey, windowStart]) as { occurred_at: string } | undefined;
       if (first) retryAfterMs = Math.max(retryAfterMs, Date.parse(first.occurred_at) + this.#policy.rateLimitWindowMs - now.getTime());
     }
     if (last.occurred_at && this.#policy.codeRequestCooldownMs > 0) {
@@ -402,11 +391,11 @@ export class SqliteGuestAccountAuthority {
 
   #checkRateFailure(rateScopeKey: string, emailKey: string, addressKey: string, now: Date): number | null {
     const windowStart = new Date(now.getTime() - this.#policy.rateLimitWindowMs).toISOString();
-    const emailEvents = this.#database.prepare("SELECT COUNT(*) AS count FROM guest_account_rate_events WHERE rate_scope_key = ? AND email_key = ? AND event_kind = 'check' AND occurred_at > ?").get(rateScopeKey, emailKey, windowStart) as { count: number };
-    const addressEvents = this.#database.prepare("SELECT COUNT(*) AS count FROM guest_account_rate_events WHERE rate_scope_key = ? AND address_key = ? AND event_kind = 'check' AND occurred_at > ?").get(rateScopeKey, addressKey, windowStart) as { count: number };
+    const emailEvents = this.#database.prepare("SELECT COUNT(*) AS count FROM guest_account_rate_events WHERE rate_scope_key = ? AND email_key = ? AND event_kind = 'check' AND occurred_at > ?").get([rateScopeKey, emailKey, windowStart]) as { count: number };
+    const addressEvents = this.#database.prepare("SELECT COUNT(*) AS count FROM guest_account_rate_events WHERE rate_scope_key = ? AND address_key = ? AND event_kind = 'check' AND occurred_at > ?").get([rateScopeKey, addressKey, windowStart]) as { count: number };
     if (emailEvents.count >= this.#policy.codeChecksPerEmailPerHour || addressEvents.count >= this.#policy.codeChecksPerAddressPerHour) {
-      const firstEmail = this.#database.prepare("SELECT occurred_at FROM guest_account_rate_events WHERE rate_scope_key = ? AND email_key = ? AND event_kind = 'check' AND occurred_at > ? ORDER BY occurred_at ASC LIMIT 1").get(rateScopeKey, emailKey, windowStart) as { occurred_at: string } | undefined;
-      const firstAddress = this.#database.prepare("SELECT occurred_at FROM guest_account_rate_events WHERE rate_scope_key = ? AND address_key = ? AND event_kind = 'check' AND occurred_at > ? ORDER BY occurred_at ASC LIMIT 1").get(rateScopeKey, addressKey, windowStart) as { occurred_at: string } | undefined;
+      const firstEmail = this.#database.prepare("SELECT occurred_at FROM guest_account_rate_events WHERE rate_scope_key = ? AND email_key = ? AND event_kind = 'check' AND occurred_at > ? ORDER BY occurred_at ASC LIMIT 1").get([rateScopeKey, emailKey, windowStart]) as { occurred_at: string } | undefined;
+      const firstAddress = this.#database.prepare("SELECT occurred_at FROM guest_account_rate_events WHERE rate_scope_key = ? AND address_key = ? AND event_kind = 'check' AND occurred_at > ? ORDER BY occurred_at ASC LIMIT 1").get([rateScopeKey, addressKey, windowStart]) as { occurred_at: string } | undefined;
       const retryEmail = emailEvents.count >= this.#policy.codeChecksPerEmailPerHour && firstEmail ? Date.parse(firstEmail.occurred_at) + this.#policy.rateLimitWindowMs - now.getTime() : 0;
       const retryAddress = addressEvents.count >= this.#policy.codeChecksPerAddressPerHour && firstAddress ? Date.parse(firstAddress.occurred_at) + this.#policy.rateLimitWindowMs - now.getTime() : 0;
       return Math.max(1, Math.ceil(Math.max(retryEmail, retryAddress) / 1000));
@@ -416,8 +405,8 @@ export class SqliteGuestAccountAuthority {
 
   #insertRateEvent(input: { rateScopeKey: string; emailKey: string; addressKey: string; kind: "request" | "check"; at: string }): void {
     this.#database.prepare("INSERT INTO guest_account_rate_events (rate_scope_key, email_key, address_key, event_kind, occurred_at) VALUES (?, ?, ?, ?, ?)")
-      .run(input.rateScopeKey, input.emailKey, input.addressKey, input.kind, input.at);
-    this.#database.prepare("DELETE FROM guest_account_rate_events WHERE occurred_at <= ?").run(new Date(Date.parse(input.at) - this.#policy.rateLimitWindowMs).toISOString());
+      .run([input.rateScopeKey, input.emailKey, input.addressKey, input.kind, input.at]);
+    this.#database.prepare("DELETE FROM guest_account_rate_events WHERE occurred_at <= ?").run([new Date(Date.parse(input.at) - this.#policy.rateLimitWindowMs).toISOString()]);
   }
 
   requestCode(input: {
@@ -457,7 +446,7 @@ export class SqliteGuestAccountAuthority {
         if (!accountGuestId || !sessionId || !sessionSecret || !this.#sessionIsValid({ sessionId, sessionSecret, tenantId, accountGuestId, now })) {
           return { failure: "session_invalid" };
         }
-        const account = projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE account_guest_id = ? AND tenant_id = ?").get(accountGuestId, tenantId) as unknown as AccountRow | undefined);
+        const account = projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE account_guest_id = ? AND tenant_id = ?").get([accountGuestId, tenantId]) as unknown as AccountRow | undefined);
         if (!account || account.revision !== expectedRevision) return { failure: "session_invalid" };
         if (input.purpose === "change_email" && account.email === email) return { failure: "invalid_input" };
         if (input.purpose !== "change_email" && account.email !== email) return { failure: "session_invalid" };
@@ -466,11 +455,11 @@ export class SqliteGuestAccountAuthority {
       if (retryAfterMs !== null) return { failure: "rate_limited", retryAfterSeconds: Math.max(1, Math.ceil(retryAfterMs / 1000)) };
       this.#insertRateEvent({ rateScopeKey, emailKey, addressKey, kind: "request", at: createdAt });
       this.#database.prepare("UPDATE guest_sign_in_codes SET invalidated_at = ? WHERE tenant_id = ? AND email_normalized = ? AND purpose = ? AND consumed_at IS NULL AND invalidated_at IS NULL")
-        .run(createdAt, tenantId, email, input.purpose);
+        .run([createdAt, tenantId, email, input.purpose]);
       this.#database.prepare(`INSERT INTO guest_sign_in_codes
         (challenge_id, code_hash, tenant_id, email_normalized, purpose, account_guest_id, session_id, account_revision, created_at, expires_at, attempts)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`)
-        .run(challengeId, codeHash, tenantId, email, input.purpose, accountGuestId, sessionId, expectedRevision ?? null, createdAt, expiresAt);
+        .run([challengeId, codeHash, tenantId, email, input.purpose, accountGuestId, sessionId, expectedRevision ?? null, createdAt, expiresAt]);
       return { challenge: Object.freeze({ challengeId, code, expiresAt }) };
     });
     if (result.failure) {
@@ -508,7 +497,7 @@ export class SqliteGuestAccountAuthority {
       this.#insertRateEvent({ rateScopeKey, emailKey, addressKey, kind: "check", at: nowIso });
       const row = this.#database.prepare(`SELECT * FROM guest_sign_in_codes
         WHERE challenge_id = ? AND tenant_id = ? AND email_normalized = ? AND purpose = ?`)
-        .get(challengeId, tenantId, email, input.purpose) as unknown as ChallengeRow | undefined;
+        .get([challengeId, tenantId, email, input.purpose]) as unknown as ChallengeRow | undefined;
       if (!row || typeof row.code_hash !== "string") return { failure: "code_invalid", audit: { type: "guest.account.code.rejected", fields: { tenantId, purpose: input.purpose, reasonCode: "invalid" } } };
       if (row.invalidated_at !== null) return { failure: "code_invalid", audit: { type: "guest.account.code.rejected", fields: { tenantId, purpose: input.purpose, reasonCode: "invalid" } } };
       if (row.consumed_at !== null) return { failure: "code_consumed", audit: { type: "guest.account.code.rejected", fields: { tenantId, purpose: input.purpose, reasonCode: "consumed" } } };
@@ -526,16 +515,16 @@ export class SqliteGuestAccountAuthority {
           !this.#sessionIsValid({ sessionId: expectedSession, sessionSecret: expectedSecret, tenantId, accountGuestId: expectedAccount, now })) {
           return { failure: "session_invalid", audit: { type: "guest.account.code.rejected", fields: { tenantId, purpose: input.purpose, reasonCode: "session_invalid" } } };
         }
-        const account = projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE account_guest_id = ? AND tenant_id = ?").get(expectedAccount, tenantId) as unknown as AccountRow | undefined);
+        const account = projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE account_guest_id = ? AND tenant_id = ?").get([expectedAccount, tenantId]) as unknown as AccountRow | undefined);
         if (!account || row.account_revision !== account.revision) return { failure: "session_invalid", audit: { type: "guest.account.code.rejected", fields: { tenantId, purpose: input.purpose, reasonCode: "stale_revision" } } };
       }
       const validCodeShape = new RegExp(`^\\d{${this.#policy.signInCodeDigits}}$`).test(code);
       if (!validCodeShape || !verifyDigest(candidateHash, row.code_hash)) {
-        this.#database.prepare("UPDATE guest_sign_in_codes SET attempts = attempts + 1 WHERE challenge_id = ? AND consumed_at IS NULL AND invalidated_at IS NULL").run(challengeId);
+        this.#database.prepare("UPDATE guest_sign_in_codes SET attempts = attempts + 1 WHERE challenge_id = ? AND consumed_at IS NULL AND invalidated_at IS NULL").run([challengeId]);
         const nextAttempts = row.attempts + 1;
         return { failure: nextAttempts >= this.#policy.signInCodeMaxAttempts ? "code_attempts_exhausted" : "code_invalid", audit: { type: "guest.account.code.rejected", fields: { tenantId, purpose: input.purpose, reasonCode: nextAttempts >= this.#policy.signInCodeMaxAttempts ? "attempts_exhausted" : "invalid" } } };
       }
-      const consumed = this.#database.prepare("UPDATE guest_sign_in_codes SET consumed_at = ? WHERE challenge_id = ? AND consumed_at IS NULL AND invalidated_at IS NULL").run(nowIso, challengeId);
+      const consumed = this.#database.prepare("UPDATE guest_sign_in_codes SET consumed_at = ? WHERE challenge_id = ? AND consumed_at IS NULL AND invalidated_at IS NULL").run([nowIso, challengeId]);
       if (consumed.changes !== 1) return { failure: "code_consumed", audit: { type: "guest.account.code.rejected", fields: { tenantId, purpose: input.purpose, reasonCode: "consumed" } } };
       if (input.purpose !== "sign_in") {
         const accountGuestId = row.account_guest_id;
@@ -547,14 +536,14 @@ export class SqliteGuestAccountAuthority {
         const proof: GuestAccountActionProof = Object.freeze({ challengeId, purpose: input.purpose, tenantId, accountGuestId, sessionId, accountRevision, expiresAt: expiresAt.toISOString() });
         return { verification: Object.freeze({ purpose: input.purpose, proof, verifiedAt: nowIso }), audit: { type: "guest.account.action_code.verified", fields: { tenantId, accountGuestId, purpose: input.purpose } } };
       }
-      let account = projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE tenant_id = ? AND email_normalized = ? AND status = 'active'").get(tenantId, email) as unknown as AccountRow | undefined);
+      let account = projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE tenant_id = ? AND email_normalized = ? AND status = 'active'").get([tenantId, email]) as unknown as AccountRow | undefined);
       if (!account) {
         const accountGuestId = `gacct-${randomBytes(16).toString("base64url")}`;
         this.#database.prepare(`INSERT INTO guest_accounts
           (account_guest_id, tenant_id, email_normalized, phone_number, status, created_at, updated_at, revision)
           VALUES (?, ?, ?, NULL, 'active', ?, ?, 0)`)
-          .run(accountGuestId, tenantId, email, nowIso, nowIso);
-        account = projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE account_guest_id = ? AND tenant_id = ?").get(accountGuestId, tenantId) as unknown as AccountRow | undefined);
+          .run([accountGuestId, tenantId, email, nowIso, nowIso]);
+        account = projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE account_guest_id = ? AND tenant_id = ?").get([accountGuestId, tenantId]) as unknown as AccountRow | undefined);
       }
       if (!account || account.status !== "active") return { failure: "code_invalid" };
       const sessionId = `gass-${randomBytes(16).toString("base64url")}`;
@@ -563,7 +552,7 @@ export class SqliteGuestAccountAuthority {
       this.#database.prepare(`INSERT INTO guest_account_sessions
         (session_id, session_secret_hash, tenant_id, account_guest_id, created_at, expires_at, revoked_at)
         VALUES (?, ?, ?, ?, ?, ?, NULL)`)
-        .run(sessionId, hashGuestAccountSessionSecret(sessionSecret), tenantId, account.accountGuestId, nowIso, sessionExpiresAt);
+        .run([sessionId, hashGuestAccountSessionSecret(sessionSecret), tenantId, account.accountGuestId, nowIso, sessionExpiresAt]);
       const verification: GuestAccountSession = Object.freeze({ purpose: "sign_in", account, sessionId, sessionSecret, createdAt: nowIso, expiresAt: sessionExpiresAt });
       return { verification, audit: { type: "guest.account.session.created", fields: { tenantId, accountGuestId: account.accountGuestId, expiresAt: sessionExpiresAt } } };
     });
@@ -585,13 +574,13 @@ export class SqliteGuestAccountAuthority {
     const now = this.#now();
     const consumed = this.#tx((): boolean => {
       if (!this.#sessionIsValid({ sessionId: proof.sessionId, sessionSecret: input.sessionSecret, tenantId: proof.tenantId, accountGuestId: proof.accountGuestId, now })) return false;
-      const account = projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE account_guest_id = ? AND tenant_id = ? AND status = 'active'").get(proof.accountGuestId, proof.tenantId) as unknown as AccountRow | undefined);
+      const account = projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE account_guest_id = ? AND tenant_id = ? AND status = 'active'").get([proof.accountGuestId, proof.tenantId]) as unknown as AccountRow | undefined);
       if (account?.revision !== proof.accountRevision) return false;
       const result = this.#database.prepare(`UPDATE guest_sign_in_codes SET action_consumed_at = ?
         WHERE challenge_id = ? AND tenant_id = ? AND account_guest_id = ? AND session_id = ? AND purpose = ?
           AND account_revision = ? AND consumed_at IS NOT NULL AND action_consumed_at IS NULL
           AND invalidated_at IS NULL AND expires_at = ? AND expires_at > ?`)
-        .run(now.toISOString(), proof.challengeId, proof.tenantId, proof.accountGuestId, proof.sessionId, proof.purpose, proof.accountRevision, proof.expiresAt, now.toISOString());
+        .run([now.toISOString(), proof.challengeId, proof.tenantId, proof.accountGuestId, proof.sessionId, proof.purpose, proof.accountRevision, proof.expiresAt, now.toISOString()]);
       return result.changes === 1;
     });
     if (consumed) this.#emit("guest.account.action_proof.consumed", { tenantId: proof.tenantId, accountGuestId: proof.accountGuestId, purpose: proof.purpose });
@@ -628,35 +617,35 @@ export class SqliteGuestAccountAuthority {
       if (!this.#sessionIsValid({ sessionId: proof.sessionId, sessionSecret: input.sessionSecret, tenantId: proof.tenantId, accountGuestId: proof.accountGuestId, now })) return { failure: "session_invalid" };
       const prior = this.#database.prepare(`SELECT * FROM guest_account_email_commands
         WHERE tenant_id = ? AND account_guest_id = ? AND idempotency_key_hash = ?`)
-        .get(proof.tenantId, proof.accountGuestId, key) as unknown as EmailChangeCommandRow | undefined;
+        .get([proof.tenantId, proof.accountGuestId, key]) as unknown as EmailChangeCommandRow | undefined;
       if (prior) {
         const account = projectAccount(prior);
         if (prior.fingerprint !== fingerprint || !account) return { failure: "action_proof_invalid" };
         return { account, replay: true };
       }
-      const row = this.#database.prepare("SELECT * FROM guest_sign_in_codes WHERE challenge_id = ?").get(proof.challengeId) as unknown as ChallengeRow | undefined;
+      const row = this.#database.prepare("SELECT * FROM guest_sign_in_codes WHERE challenge_id = ?").get([proof.challengeId]) as unknown as ChallengeRow | undefined;
       if (!row || row.purpose !== "change_email" || row.tenant_id !== proof.tenantId || row.account_guest_id !== proof.accountGuestId || row.session_id !== proof.sessionId || row.account_revision !== proof.accountRevision || row.email_normalized !== newEmail || row.consumed_at === null || row.action_consumed_at !== null || row.invalidated_at !== null) return { failure: "action_proof_invalid" };
       const expiresAt = parsedTimestamp(row.expires_at);
       if (!expiresAt || now.getTime() >= expiresAt.getTime() || proof.expiresAt !== expiresAt.toISOString()) return { failure: "action_proof_invalid" };
-      const account = projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE account_guest_id = ? AND tenant_id = ? AND status = 'active'").get(proof.accountGuestId, proof.tenantId) as unknown as AccountRow | undefined);
+      const account = projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE account_guest_id = ? AND tenant_id = ? AND status = 'active'").get([proof.accountGuestId, proof.tenantId]) as unknown as AccountRow | undefined);
       if (!account || account.revision !== proof.accountRevision) return { failure: "action_proof_invalid" };
-      const conflict = projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE tenant_id = ? AND email_normalized = ? AND status = 'active'").get(proof.tenantId, newEmail) as unknown as AccountRow | undefined);
+      const conflict = projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE tenant_id = ? AND email_normalized = ? AND status = 'active'").get([proof.tenantId, newEmail]) as unknown as AccountRow | undefined);
       if (conflict && conflict.accountGuestId !== proof.accountGuestId) return { failure: "account_conflict" };
-      const proofUse = this.#database.prepare("UPDATE guest_sign_in_codes SET action_consumed_at = ? WHERE challenge_id = ? AND action_consumed_at IS NULL").run(nowIso, proof.challengeId);
+      const proofUse = this.#database.prepare("UPDATE guest_sign_in_codes SET action_consumed_at = ? WHERE challenge_id = ? AND action_consumed_at IS NULL").run([nowIso, proof.challengeId]);
       if (proofUse.changes !== 1) return { failure: "action_proof_invalid" };
       const updated = this.#database.prepare(`UPDATE guest_accounts SET email_normalized = ?, updated_at = ?, revision = revision + 1
         WHERE account_guest_id = ? AND tenant_id = ? AND status = 'active' AND revision = ?`)
-        .run(newEmail, nowIso, proof.accountGuestId, proof.tenantId, proof.accountRevision);
+        .run([newEmail, nowIso, proof.accountGuestId, proof.tenantId, proof.accountRevision]);
       if (updated.changes !== 1) return { failure: "action_proof_invalid" };
       this.#database.prepare(`UPDATE guest_sign_in_codes SET invalidated_at = ? WHERE tenant_id = ? AND account_guest_id = ?
         AND consumed_at IS NULL AND invalidated_at IS NULL`)
-        .run(nowIso, proof.tenantId, proof.accountGuestId);
-      const changed = projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE account_guest_id = ? AND tenant_id = ?").get(proof.accountGuestId, proof.tenantId) as unknown as AccountRow | undefined);
+        .run([nowIso, proof.tenantId, proof.accountGuestId]);
+      const changed = projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE account_guest_id = ? AND tenant_id = ?").get([proof.accountGuestId, proof.tenantId]) as unknown as AccountRow | undefined);
       if (!changed) throw new Error("Account email change did not produce an account");
       this.#database.prepare(`INSERT INTO guest_account_email_commands
         (tenant_id, account_guest_id, idempotency_key_hash, fingerprint, email_normalized, phone_number, status, created_at, updated_at, revision)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .run(changed.tenantId, changed.accountGuestId, key, fingerprint, changed.email, changed.phoneNumber, changed.status, changed.createdAt, changed.updatedAt, changed.revision);
+        .run([changed.tenantId, changed.accountGuestId, key, fingerprint, changed.email, changed.phoneNumber, changed.status, changed.createdAt, changed.updatedAt, changed.revision]);
       return { account: changed };
     });
     if (result.failure) {
@@ -671,7 +660,7 @@ export class SqliteGuestAccountAuthority {
   findAccountByEmail(emailInput: string, tenantIdInput: string): GuestAccount | null {
     const email = normalizeContactEmail(emailInput);
     const tenantId = requiredText(tenantIdInput, "Tenant ID");
-    return projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE tenant_id = ? AND email_normalized = ? AND status = 'active'").get(tenantId, email) as unknown as AccountRow | undefined);
+    return projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE tenant_id = ? AND email_normalized = ? AND status = 'active'").get([tenantId, email]) as unknown as AccountRow | undefined);
   }
 
   resolveSession(sessionIdInput: string | null | undefined, sessionSecretInput: string | null | undefined): GuestAuthenticatedAccount | null {
@@ -680,7 +669,7 @@ export class SqliteGuestAccountAuthority {
     if (!row || typeof row.session_secret_hash !== "string" || typeof row.tenant_id !== "string" || typeof row.account_guest_id !== "string") return null;
     const expiry = parsedTimestamp(row.expires_at);
     if (row.revoked_at !== null || !expiry || this.#now().getTime() >= expiry.getTime() || !verifyDigest(hashGuestAccountSessionSecret(sessionSecretInput), row.session_secret_hash)) return null;
-    const account = projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE tenant_id = ? AND account_guest_id = ? AND status = 'active'").get(row.tenant_id, row.account_guest_id) as unknown as AccountRow | undefined);
+    const account = projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE tenant_id = ? AND account_guest_id = ? AND status = 'active'").get([row.tenant_id, row.account_guest_id]) as unknown as AccountRow | undefined);
     return account ? Object.freeze({ tenantId: account.tenantId, accountGuestId: account.accountGuestId, sessionId: sessionIdInput }) : null;
   }
 
@@ -698,8 +687,8 @@ export class SqliteGuestAccountAuthority {
     const sessionId = requiredText(sessionIdInput, "Session ID");
     const tenantId = requiredText(tenantIdInput, "Tenant ID");
     const now = this.#now().toISOString();
-    const row = this.#database.prepare("SELECT account_guest_id FROM guest_account_sessions WHERE session_id = ? AND tenant_id = ? AND revoked_at IS NULL").get(sessionId, tenantId) as { account_guest_id: unknown } | undefined;
-    this.#database.prepare("UPDATE guest_account_sessions SET revoked_at = ? WHERE session_id = ? AND tenant_id = ? AND revoked_at IS NULL").run(now, sessionId, tenantId);
+    const row = this.#database.prepare("SELECT account_guest_id FROM guest_account_sessions WHERE session_id = ? AND tenant_id = ? AND revoked_at IS NULL").get([sessionId, tenantId]) as { account_guest_id: unknown } | undefined;
+    this.#database.prepare("UPDATE guest_account_sessions SET revoked_at = ? WHERE session_id = ? AND tenant_id = ? AND revoked_at IS NULL").run([now, sessionId, tenantId]);
     if (typeof row?.account_guest_id === "string") this.#emit("guest.account.session.revoked", { tenantId, accountGuestId: row.account_guest_id });
   }
 
@@ -709,11 +698,11 @@ export class SqliteGuestAccountAuthority {
     const now = this.#now().toISOString();
     this.#database.prepare(`UPDATE guest_account_sessions SET revoked_at = ?
       WHERE account_guest_id = ? AND tenant_id = ? AND revoked_at IS NULL`)
-      .run(now, accountGuestId, tenantId);
+      .run([now, accountGuestId, tenantId]);
     this.#emit("guest.account.sessions.revoked_all", { tenantId, accountGuestId });
   }
 
   close(): void {
-    if (this.#ownsDatabase && this.#database.isOpen) this.#database.close();
+    /* The composition owns the shared handle (ADR 0095). */
   }
 }

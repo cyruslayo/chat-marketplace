@@ -1,5 +1,4 @@
-import { DatabaseSync } from "node:sqlite";
-import { NodeSqliteDatabase } from "../../../../packages/platform-core/src/node-sqlite-database.js";
+import type { SqlDatabase } from "../../../../packages/platform-core/src/sql-database.js";
 import {
   OPERATOR_RESPONSE_REMINDER_MINUTES,
   SqliteGuestContactRepository,
@@ -40,7 +39,8 @@ export type NotificationKind =
   | "guest.request_not_delivered";
 
 export interface PilotNotifierOptions {
-  readonly databasePath: string;
+  /** The shared pilot handle (ADR 0004); the notifier borrows it and never closes it. */
+  readonly database: SqlDatabase;
   readonly publicOrigin: string;
   readonly sender: EmailSender;
   /** Where Operator alerts go: the people covering the response window (ADR 0042). */
@@ -69,9 +69,9 @@ const DEFAULT_LOOKBACK_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_MAX_ATTEMPTS = 5;
 
 class NotificationLog {
-  readonly #database: DatabaseSync;
+  readonly #database: SqlDatabase;
 
-  constructor(database: DatabaseSync) {
+  constructor(database: SqlDatabase) {
     this.#database = database;
     database.exec(`CREATE TABLE IF NOT EXISTS pilot_notifications (
       notification_key TEXT PRIMARY KEY,
@@ -87,11 +87,13 @@ class NotificationLog {
       .prepare(
         "SELECT status, attempts FROM pilot_notifications WHERE notification_key = $key",
       )
-      .get({ $key: key }) as { status: string; attempts: number } | undefined;
+      .get({ $key: key });
     if (!row) return null;
     const status =
       row.status === "sent" || row.status === "skipped" ? row.status : "failed";
-    return { status, attempts: row.attempts };
+    const attempts = Number(row.attempts);
+    if (!Number.isSafeInteger(attempts)) throw new TypeError("Notification attempts must be an integer");
+    return { status, attempts };
   }
 
   record(
@@ -131,7 +133,6 @@ function allInStayTotalKobo(quoteJson: string): number | null {
 }
 
 export class PilotNotifier {
-  readonly #database: DatabaseSync;
   readonly #store: SqliteGuestInteractionStore;
   readonly #contacts: SqliteGuestContactRepository;
   readonly #log: NotificationLog;
@@ -144,20 +145,13 @@ export class PilotNotifier {
 
   constructor(options: PilotNotifierOptions) {
     this.#options = options;
-    this.#database = new DatabaseSync(options.databasePath);
-    this.#database.exec("PRAGMA busy_timeout = 5000");
-    const sqlDatabase = new NodeSqliteDatabase(this.#database);
-    this.#store = new SqliteGuestInteractionStore(sqlDatabase);
-    this.#contacts = new SqliteGuestContactRepository(sqlDatabase);
-    this.#log = new NotificationLog(this.#database);
+    this.#store = new SqliteGuestInteractionStore(options.database);
+    this.#contacts = new SqliteGuestContactRepository(options.database);
+    this.#log = new NotificationLog(options.database);
     this.#clock = options.clock ?? (() => new Date());
     this.#lookbackMs = options.lookbackMs ?? DEFAULT_LOOKBACK_MS;
     this.#maxAttempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
     this.#writeLog = options.log ?? ((line) => console.error(line));
-  }
-
-  close(): void {
-    this.#database.close();
   }
 
   /** One pass over current state. Never throws; overlapping calls return an empty report. */

@@ -16,6 +16,13 @@ import type {
 
 const BUSY_TIMEOUT_MS = 5_000;
 
+let pathOpenCount = 0;
+
+/** How many handles this process has opened by path; ADR 0004 tests assert one authoritative handle per environment. */
+export function nodeSqlitePathOpenCount(): number {
+  return pathOpenCount;
+}
+
 function isSqlValue(value: unknown): value is SqlValue {
   return (
     value === null ||
@@ -120,6 +127,7 @@ export class NodeSqliteDatabase implements SqlDatabase {
     }
     mkdirSync(dirname(pathOrDatabase), { recursive: true });
     this.#database = new DatabaseSync(pathOrDatabase);
+    pathOpenCount += 1;
     // Preserve the existing 5-second timeout used by availability-store.ts,
     // guest-interaction-store.ts, and apps/local-guest/src/fixture.ts.
     this.#database.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`);

@@ -1,6 +1,5 @@
 import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
 import { createHash, randomUUID } from "node:crypto";
-import { DatabaseSync } from "node:sqlite";
 import { LocalGuestEnvironment } from "../../local-guest/src/fixture.js";
 import { startLocalGuestServer, type LocalGuestServerHandle } from "../../local-guest/src/guest-server.js";
 import { LocalApartmentOwnerEnvironment, startLocalOwnerServer } from "../../local-owner/src/index.js";
@@ -13,6 +12,8 @@ import { errorPage } from "../../web/src/ui-kit.js";
 import { SlidingWindowRateLimiter } from "./rate-limiter.js";
 import { ResendEmailSender, type EmailSender } from "./notifications/email-sender.js";
 import { PilotNotifier } from "./notifications/pilot-notifier.js";
+import { databaseHealthy } from "./database-health.js";
+import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
 
 export interface PilotServerHandle {
   readonly port: number;
@@ -24,19 +25,8 @@ export interface PilotServerHandle {
   close(): Promise<void>;
 }
 
-function healthCheck(configuration: PilotConfiguration): { readonly ok: true } | { readonly ok: false } {
-  try {
-    const database = new DatabaseSync(configuration.databasePath);
-    database.prepare("SELECT 1").get();
-    database.close();
-    return { ok: true };
-  } catch {
-    return { ok: false };
-  }
-}
-
-function sendHealth(res: ServerResponse, configuration: PilotConfiguration, initialized: boolean): void {
-  const healthy = initialized && healthCheck(configuration).ok;
+function sendHealth(res: ServerResponse, database: SqlDatabase, initialized: boolean): void {
+  const healthy = initialized && databaseHealthy(database);
   res.writeHead(healthy ? 200 : 503, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
   res.end(JSON.stringify({ ok: healthy }));
 }
@@ -241,7 +231,7 @@ export function startPilotServer(options: {
   // Issue 23: email notifications, swept from durable state on an interval once the server is listening.
   const notifier = configuration.notifications
     ? new PilotNotifier({
-      databasePath: configuration.databasePath,
+      database: guestEnvironment.database,
       publicOrigin: configuration.publicOrigin,
       sender: options.emailSender ?? new ResendEmailSender({ apiKey: configuration.notifications.resendApiKey, from: configuration.notifications.from }),
       operatorAlertEmails: configuration.notifications.operatorAlertEmails,
@@ -262,7 +252,7 @@ export function startPilotServer(options: {
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", configuration.publicOrigin);
     if (req.method === "GET" && url.pathname === "/healthz") {
-      sendHealth(res, configuration, initialized);
+      sendHealth(res, guestEnvironment.database, initialized);
       return;
     }
     const refusal = guard(req, url);
@@ -301,7 +291,6 @@ export function startPilotServer(options: {
       initialized = false;
       if (notificationTimer) clearInterval(notificationTimer);
       await inFlightSweep;
-      notifier?.close();
       server.closeIdleConnections?.();
       server.closeAllConnections?.();
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));

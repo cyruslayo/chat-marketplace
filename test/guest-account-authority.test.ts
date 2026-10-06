@@ -4,7 +4,7 @@ import { spawn } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 import { createPlatformCommandEnvelope } from "../packages/platform-core/src/envelope.js";
 import { SqliteGuestAccountAuthority, GuestAccountAuthorityError } from "../domains/shortlet/src/index.js";
-import { createGuestAccountFixture, guestEmailChange, signInGuestAccount, removeGuestAccountFixture, TEST_GUEST_ADDRESS, TEST_GUEST_EMAIL, TEST_GUEST_CODE_HASHING_KEY } from "./helpers/guest-account-authority.js";
+import { closeGuestAccountAuthority, openGuestAccountAuthority, createGuestAccountFixture, guestEmailChange, signInGuestAccount, removeGuestAccountFixture, TEST_GUEST_ADDRESS, TEST_GUEST_EMAIL, TEST_GUEST_CODE_HASHING_KEY } from "./helpers/guest-account-authority.js";
 
 function signInCode(authority: SqliteGuestAccountAuthority, email = TEST_GUEST_EMAIL, tenantId = "tenant-1") {
   return authority.requestCode({ tenantId, email, purpose: "sign_in", clientAddress: TEST_GUEST_ADDRESS });
@@ -18,8 +18,10 @@ async function concurrentVerify(input: {
 }): Promise<readonly boolean[]> {
   const source = `
     import { SqliteGuestAccountAuthority } from "./domains/shortlet/src/index.js";
+    import { openNodeSqliteDatabase } from "./packages/platform-core/src/node-sqlite-database.js";
     const input = JSON.parse(process.env.GUEST_ACCOUNT_VERIFY_INPUT ?? "{}");
-    const authority = new SqliteGuestAccountAuthority(input.databasePath, { codeHashingKey: input.codeHashingKey, clock: () => new Date(input.timestamp) });
+    const database = openNodeSqliteDatabase(input.databasePath);
+    const authority = new SqliteGuestAccountAuthority(database, { codeHashingKey: input.codeHashingKey, clock: () => new Date(input.timestamp) });
     process.stdout.write("READY\\n");
     await new Promise((resolve) => process.stdin.once("data", resolve));
     try {
@@ -28,7 +30,7 @@ async function concurrentVerify(input: {
     } catch {
       process.stdout.write("RESULT:false\\n");
     } finally {
-      authority.close();
+      database.close();
     }
   `;
   const children = Array.from({ length: 2 }, () => spawn(process.execPath, ["--import", "tsx", "--input-type=module", "-e", source], {
@@ -98,8 +100,8 @@ test("AC2 — Five wrong attempts commit and the correct code is refused afterwa
 
 test("Malformed code submissions consume attempt and rate budgets", async () => {
   const fixture = await createGuestAccountFixture();
-  fixture.authority.close();
-  const authority = new SqliteGuestAccountAuthority(fixture.databasePath, {
+  closeGuestAccountAuthority(fixture.authority);
+  const authority = openGuestAccountAuthority(fixture.databasePath, {
     codeHashingKey: TEST_GUEST_CODE_HASHING_KEY,
     clock: fixture.now,
     policy: { signInCodeMaxAttempts: 1, codeRequestCooldownMs: 0, codeChecksPerEmailPerHour: 3, codeChecksPerAddressPerHour: 3 }
@@ -110,7 +112,7 @@ test("Malformed code submissions consume attempt and rate budgets", async () => 
     assert.throws(() => authority.verifyCode({ challengeId: challenge.challengeId, tenantId: "tenant-1", email: TEST_GUEST_EMAIL, code: challenge.code, purpose: "sign_in", clientAddress: TEST_GUEST_ADDRESS }), (error: unknown) => error instanceof GuestAccountAuthorityError && error.code === "code_attempts_exhausted");
     assert.equal(authority.findAccountByEmail(TEST_GUEST_EMAIL, "tenant-1"), null);
   } finally {
-    authority.close();
+    closeGuestAccountAuthority(authority);
     await removeGuestAccountFixture(fixture.directory);
   }
 });
@@ -141,8 +143,8 @@ test("AC3 — Two concurrent verifications of one code produce exactly one sessi
 test("AC4 — Code requests have the same public outcome shape and audit type for known and unknown email addresses", async () => {
   const fixture = await createGuestAccountFixture();
   const entries: Record<string, string | number>[] = [];
-  fixture.authority.close();
-  const authority = new SqliteGuestAccountAuthority(fixture.databasePath, {
+  closeGuestAccountAuthority(fixture.authority);
+  const authority = openGuestAccountAuthority(fixture.databasePath, {
     codeHashingKey: TEST_GUEST_CODE_HASHING_KEY,
     clock: fixture.now,
     audit: { record: (entry) => entries.push(entry) }
@@ -157,7 +159,7 @@ test("AC4 — Code requests have the same public outcome shape and audit type fo
     assert.ok(known.code && unknown.code && known.expiresAt === unknown.expiresAt);
     assert.deepEqual(entries.filter((entry) => entry.type === "guest.account.code.requested").map((entry) => entry.type), ["guest.account.code.requested", "guest.account.code.requested", "guest.account.code.requested"]);
   } finally {
-    authority.close();
+    closeGuestAccountAuthority(authority);
     await removeGuestAccountFixture(fixture.directory);
   }
 });
@@ -207,8 +209,8 @@ test("AC7 — Audit and telemetry exclude email, code, session secret and sessio
   const fixture = await createGuestAccountFixture();
   const audit: Record<string, string | number>[] = [];
   const telemetry: Record<string, string | number>[] = [];
-  fixture.authority.close();
-  const authority = new SqliteGuestAccountAuthority(fixture.databasePath, {
+  closeGuestAccountAuthority(fixture.authority);
+  const authority = openGuestAccountAuthority(fixture.databasePath, {
     codeHashingKey: TEST_GUEST_CODE_HASHING_KEY,
     clock: fixture.now,
     audit: { record: (entry) => audit.push(entry) },
@@ -245,7 +247,7 @@ test("AC7 — Audit and telemetry exclude email, code, session secret and sessio
         assert.equal(String(value).includes("private@example.test"), false);
       }
     }
-    const resilient = new SqliteGuestAccountAuthority(fixture.databasePath, {
+    const resilient = openGuestAccountAuthority(fixture.databasePath, {
       codeHashingKey: TEST_GUEST_CODE_HASHING_KEY,
       clock: fixture.now,
       audit: { record: () => { throw new Error("audit unavailable"); } },
@@ -255,10 +257,10 @@ test("AC7 — Audit and telemetry exclude email, code, session secret and sessio
       const next = resilient.requestCode({ tenantId: "tenant-1", email: "another@example.test", purpose: "sign_in", clientAddress: "192.0.2.40" });
       assert.doesNotThrow(() => resilient.verifyCode({ challengeId: next.challengeId, tenantId: "tenant-1", email: "another@example.test", code: next.code, purpose: "sign_in", clientAddress: "192.0.2.40" }));
     } finally {
-      resilient.close();
+      closeGuestAccountAuthority(resilient);
     }
   } finally {
-    authority.close();
+    closeGuestAccountAuthority(authority);
     await removeGuestAccountFixture(fixture.directory);
   }
 });
@@ -324,8 +326,8 @@ test("AC10 — Email-change commands reject missing tenant, wrong actor, stale v
 test("ADR 0072 — Email-change commands return their original result on exact retry, including after restart and later changes", async () => {
   const fixture = await createGuestAccountFixture();
   const entries: Record<string, string | number>[] = [];
-  fixture.authority.close();
-  let authority = new SqliteGuestAccountAuthority(fixture.databasePath, {
+  closeGuestAccountAuthority(fixture.authority);
+  let authority = openGuestAccountAuthority(fixture.databasePath, {
     codeHashingKey: TEST_GUEST_CODE_HASHING_KEY, clock: fixture.now, audit: { record: (entry) => entries.push(entry) }
   });
   try {
@@ -336,8 +338,8 @@ test("ADR 0072 — Email-change commands return their original result on exact r
     const second = guestEmailChange(authority, session, "second-change@example.test", result.revision);
     const later = authority.changeEmail(second);
     fixture.advance(10 * 60 * 1000);
-    authority.close();
-    authority = new SqliteGuestAccountAuthority(fixture.databasePath, {
+    closeGuestAccountAuthority(authority);
+    authority = openGuestAccountAuthority(fixture.databasePath, {
       codeHashingKey: TEST_GUEST_CODE_HASHING_KEY, clock: fixture.now, audit: { record: (entry) => entries.push(entry) }
     });
     assert.deepEqual(authority.changeEmail(first), result);
@@ -347,7 +349,7 @@ test("ADR 0072 — Email-change commands return their original result on exact r
     authority.revokeSession(session.sessionId, "tenant-1");
     assert.throws(() => authority.changeEmail(first), GuestAccountAuthorityError);
   } finally {
-    authority.close();
+    closeGuestAccountAuthority(authority);
     await removeGuestAccountFixture(fixture.directory);
   }
 });
@@ -413,15 +415,15 @@ test("AC9 — Restart preserves valid, expired, exhausted and revoked account au
     const revoked = fixture.authority.verifyCode({ challengeId: revokedChallenge.challengeId, tenantId: "tenant-1", email: "revoked@example.test", code: revokedChallenge.code, purpose: "sign_in", clientAddress: "192.0.2.62" });
     fixture.authority.revokeSession(revoked.sessionId, "tenant-1");
     fixture.advance(10 * 60 * 1000);
-    fixture.authority.close();
-    const reopened = new SqliteGuestAccountAuthority(fixture.databasePath, { codeHashingKey: TEST_GUEST_CODE_HASHING_KEY, clock: fixture.now });
+    closeGuestAccountAuthority(fixture.authority);
+    const reopened = openGuestAccountAuthority(fixture.databasePath, { codeHashingKey: TEST_GUEST_CODE_HASHING_KEY, clock: fixture.now });
     try {
       assert.ok(reopened.resolveSession(valid.sessionId, valid.sessionSecret));
       assert.equal(reopened.resolveSession(revoked.sessionId, revoked.sessionSecret), null);
       assert.throws(() => reopened.verifyCode({ challengeId: expiredChallenge.challengeId, tenantId: "tenant-1", email: "expired@example.test", code: expiredChallenge.code, purpose: "sign_in", clientAddress: "192.0.2.63" }), /expired|invalid/i);
       assert.throws(() => reopened.verifyCode({ challengeId: exhaustedChallenge.challengeId, tenantId: "tenant-1", email: "exhausted@example.test", code: exhaustedChallenge.code, purpose: "sign_in", clientAddress: "192.0.2.64" }), /attempt|invalid/i);
     } finally {
-      reopened.close();
+      closeGuestAccountAuthority(reopened);
     }
   } finally {
     await removeGuestAccountFixture(fixture.directory);
@@ -448,8 +450,8 @@ test("The persisted Sign-In Code table stores no plaintext code and hashes are c
 
 test("Configured send and check quotas are enforced across purposes without invalidating a usable code on refused resend", async () => {
   const fixture = await createGuestAccountFixture();
-  fixture.authority.close();
-  const authority = new SqliteGuestAccountAuthority(fixture.databasePath, {
+  closeGuestAccountAuthority(fixture.authority);
+  const authority = openGuestAccountAuthority(fixture.databasePath, {
     codeHashingKey: TEST_GUEST_CODE_HASHING_KEY,
     clock: fixture.now,
     policy: {
@@ -469,7 +471,7 @@ test("Configured send and check quotas are enforced across purposes without inva
     assert.throws(() => authority.verifyCode({ challengeId: "unknown", tenantId: "tenant-1", email: "other@example.test", code: "000000", purpose: "sign_in", clientAddress: "192.0.2.90" }), (error: unknown) => error instanceof GuestAccountAuthorityError && error.code === "rate_limited");
     assert.ok(authority.resolveSession(verified.sessionId, verified.sessionSecret));
   } finally {
-    authority.close();
+    closeGuestAccountAuthority(authority);
     await removeGuestAccountFixture(fixture.directory);
   }
 });

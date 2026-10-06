@@ -1,8 +1,8 @@
 import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
-import { DatabaseSync } from "node:sqlite";
 import { LocalGuestEnvironment } from "../../local-guest/src/fixture.js";
 import { startLocalGuestServer } from "../../local-guest/src/guest-server.js";
 import { LocalApartmentOwnerEnvironment, startLocalOwnerServer } from "../../local-owner/src/index.js";
+import { databaseHealthy } from "./database-health.js";
 import { assertLocalPilotReady, LOCAL_PILOT_ACTOR_ID, LOCAL_PILOT_OPERATOR_ID, LOCAL_PILOT_OPERATOR_NAME, LOCAL_PILOT_PHOTO_HOST, LOCAL_PILOT_TENANT_ID, localPilotClock, localPilotPaths, type LocalPilotPaths } from "./local-pilot.js";
 
 export interface LocalPilotServerHandle {
@@ -56,8 +56,7 @@ export function startLocalPilotServer(options: { readonly port?: number; readonl
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", publicOrigin);
     if (req.method === "GET" && url.pathname === "/healthz") {
-      let ok = initialized;
-      try { const database = new DatabaseSync(paths.databasePath); database.prepare("SELECT 1").get(); database.close(); } catch { ok = false; }
+      const ok = initialized && databaseHealthy(guestEnvironment.database);
       res.writeHead(ok ? 200 : 503, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" }); res.end(JSON.stringify({ ok })); return;
     }
     const photo = /^\/photos\/([a-z0-9-]+\.svg)$/.exec(url.pathname);

@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { dirname } from "node:path";
-import { DatabaseSync } from "node:sqlite";
-import { NodeSqliteDatabase } from "../../../packages/platform-core/src/node-sqlite-database.js";
+import { openNodeSqliteDatabase } from "../../../packages/platform-core/src/node-sqlite-database.js";
+import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
 import { SqliteAuditLog } from "../../../packages/platform-core/src/sqlite-audit-log.js";
 import { SqliteTelemetry } from "../../../packages/platform-core/src/sqlite-telemetry.js";
 import {
@@ -156,10 +156,10 @@ const AUTHORITY_PERMISSIONS = [
 type LocalBookingSqlRow = Record<string, unknown>;
 
 class LocalBookingContractRepository implements ContractRepository {
-  readonly #database: import("node:sqlite").DatabaseSync;
+  readonly #database: SqlDatabase;
   #closed = false;
 
-  constructor(database: import("node:sqlite").DatabaseSync) {
+  constructor(database: SqlDatabase) {
     this.#database = database;
     this.#database.exec(`
       CREATE TABLE IF NOT EXISTS local_booking_contracts (
@@ -202,8 +202,7 @@ class LocalBookingContractRepository implements ContractRepository {
     reservation: ReservationLike,
     contract: BookingContract,
   ): void {
-    this.#database.exec("BEGIN IMMEDIATE");
-    try {
+    this.#database.transaction(() => {
       this.#database
         .prepare(
           "INSERT INTO local_booking_contracts (contract_id, contract_json) VALUES ($id, $json) ON CONFLICT(contract_id) DO UPDATE SET contract_json = excluded.contract_json",
@@ -217,15 +216,7 @@ class LocalBookingContractRepository implements ContractRepository {
           $id: reservation.reservationId,
           $json: JSON.stringify(reservation),
         });
-      this.#database.exec("COMMIT");
-    } catch (error) {
-      try {
-        this.#database.exec("ROLLBACK");
-      } catch {
-        /* preserve the original failure */
-      }
-      throw error;
-    }
+    });
   }
 
   findContractById(contractId: string): BookingContract | null {
@@ -299,7 +290,8 @@ export class LocalGuestEnvironment {
   readonly livePaymentAttempts: SqliteLivePaymentAttemptRegistry;
   readonly guestContactApp: GuestContactApplication;
   #searchCounter = 0;
-  readonly #database: DatabaseSync;
+  readonly #database: SqlDatabase;
+  #closed = false;
 
   constructor(config: Partial<LocalGuestFixtureConfig> = {}) {
     this.config = { ...DEFAULT_LOCAL_GUEST_CONFIG, ...config };
@@ -316,10 +308,8 @@ export class LocalGuestEnvironment {
     // composition. A restarted application instance opens a fresh connection
     // over the same file; no application state is retained in memory across
     // the restart boundary. ADR-0039/0041/0070/0079.
-    this.#database = new DatabaseSync(this.config.databasePath);
-    this.#database.exec("PRAGMA busy_timeout = 5000");
-    this.#database.exec("PRAGMA foreign_keys = ON");
-    const sqlDatabase = new NodeSqliteDatabase(this.#database);
+    this.#database = openNodeSqliteDatabase(this.config.databasePath);
+    const sqlDatabase = this.#database;
     this.interactionStore = new SqliteGuestInteractionStore(sqlDatabase);
     this.guestContactApp = new GuestContactApplication(
       new SqliteGuestContactRepository(sqlDatabase),
@@ -819,9 +809,15 @@ export class LocalGuestEnvironment {
     this.grantStore.createGrant(grantCommand);
   }
 
+  /** The one handle every repository in this composition shares (ADR 0004). */
+  get database(): SqlDatabase {
+    return this.#database;
+  }
+
   close(): void {
     this.grantStore.close();
-    if (!this.#database.isOpen) return;
+    if (this.#closed) return;
+    this.#closed = true;
     try {
       this.#database.close();
     } catch {

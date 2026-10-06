@@ -14,6 +14,7 @@ const stores = [
   "guest-interaction-store",
   "operator-representative-authority",
   "operator-session-authority",
+  "guest-account-authority",
 ];
 
 test("AC1: None of the converted stores imports node:sqlite", () => {
