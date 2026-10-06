@@ -1,6 +1,6 @@
 # `DurableObjectSqlDatabase` passes the shared contract
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: 02a, 03a (and the 01a answers)
 Branch: `infra/cf-03b-do-sql-adapter`
@@ -61,3 +61,12 @@ Check every item in `docs/agents/issue-tracker.md`. Item 7 also covers `npm run 
 | 0075 | No binding values or secrets in error messages | AC2/AC4 validation |
 
 Follow the observed 01a semantics: `run().changes` uses `SELECT changes()` (trigger writes must not inflate it); BLOB reads normalize ArrayBuffer. The issue explicitly requires a conservative 2 MiB preflight guard even though the local spike accepted larger values; this is not claimed as an observed runtime rejection. Only known unsupported busy_timeout/journal_mode PRAGMAs are ignored. No domain stores, production configuration or deployment are added.
+
+## Answer
+
+Adapter implementation `f80e537`, dedicated AC3 check `e2fc91d`, integrated via `907f2b8` and its follow-up merge. Every one of the eight existing shared contract cases passes in workerd and on Node; cases were reused, not copied. Named translation is cached, repeated names share bindings, literals/identifiers/comments are opaque, unbound/undefined parameters fail before execution. BLOBs normalize to Uint8Array. Nested transactionSync rollback and thenable rejection match the Node port. `SELECT changes()` preserves direct-change counts in the presence of triggers; known unsupported busy_timeout/journal_mode PRAGMAs alone are ignored. Preflight rejects 101 bindings and values above 2 MiB (UTF-8 bytes for text), with exact-boundary success covered. close() is non-owning.
+
+DoD checked item by item: (1) AC1 contract registrations plus dedicated AC2–AC5 checks; (2) missing binding, overflow-with-no-write, throw rollback and losing hold asserted; (3) ADR table above reverified; (4) storage is used for every operation; (5) only documented platform guards, no domain policy; (6) errors contain no binding values and no logging added; (7) final integrated typecheck, full Node suite and **14 workerd tests** pass. Node gate: **1,281 non-browser + 165 browser passed, zero failures, one expected skip**; see `.scratch/cf-wave2-confirmed.log`, `cf-wave2-check.log`, `cf-wave2-workers.log` in the integration worktree. Tests were initially red with the adapter absent.
+
+Runtime limits: bigint bindings beyond the JS safe-integer range fail loudly rather than lose precision. The 2 MiB guard is deliberately stricter than observed local workerd behaviour, as required by this slice. No row cache, hosted quota claim, production config or deployment.
+
