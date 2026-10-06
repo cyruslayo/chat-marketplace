@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { SecurityContext } from "./thread.js";
-import { type AuditLog, InMemoryTelemetry } from "./index.js";
+import type { AuditLog, Telemetry } from "./index.js";
 import { redactSensitiveData } from "./redaction.js";
 
 /**
@@ -9,11 +9,11 @@ import { redactSensitiveData } from "./redaction.js";
  */
 export class InteractionSecurityEngine {
   readonly #audit?: AuditLog;
-  readonly #telemetry?: InMemoryTelemetry;
+  readonly #telemetry?: Telemetry;
   readonly #usedTokens = new Set<string>();
   readonly #revokedSessions = new Set<string>();
 
-  constructor(options?: { audit?: AuditLog; telemetry?: InMemoryTelemetry }) {
+  constructor(options?: { audit?: AuditLog; telemetry?: Telemetry }) {
     this.#audit = options?.audit;
     this.#telemetry = options?.telemetry;
   }
