@@ -55,7 +55,7 @@ The frontier is the first slice in the table that is open, unblocked and unclaim
 | 05b | SQLite unit and operator repositories | task | resolved | 02a, 05a | 10a |
 | **D: Durable state** | | | | | |
 | 06a | Durable, typed, redacted audit log | task | resolved | 02a | 06d |
-| 06b | Durable, redacted telemetry | task | ready-for-agent | 02a | 06d |
+| 06b | Durable, redacted telemetry | task | resolved | 02a | 06d |
 | 06c | Durable revenue accounting and release state | task | ready-for-agent | 02a | 06d |
 | 06d | Durable enforcement and booking state; operator restart test | task | ready-for-agent | 04b, 06a, 06b, 06c | 15 |
 | 07a | `ReceiptBlobStore` port, SQLite implementation, migration | task | ready-for-agent | 02b | 07b |
@@ -152,10 +152,11 @@ Runtime spike evidence is local only: `cf build`, `cf dev`, assertions and dry-r
 
 ## Direct durable-state continuation (6 Oct 2026)
 
-06a is implemented and validated (`5303c68`): full suite 1,286 non-browser + 165 browser passes, zero failures, one expected skip; all compiler checks and 14 Workers tests pass. Shared redaction is extracted from the interaction security engine. No retention rule, export or production deployment added. 06b and 06c are being developed on separate slice branches; their integration/resolution awaits their own stable full-suite gates. Wave 2 remains open.
+06a is implemented and validated (`5303c68`): full suite 1,286 non-browser + 165 browser passes, zero failures, one expected skip; all compiler checks and 14 Workers tests pass. Shared redaction is extracted from the interaction security engine. No retention rule, export or production deployment added. 06b is implemented and validated (`cee7988`): full suite 1,290 non-browser + 165 browser passes, zero failures, one expected skip; compiler and 14 Workers tests pass. Events and unique hashed transition keys survive restart; no external sink is wired. 06c's implementation is committed on its own branch and its stable full suite is running; integration/resolution awaits that gate. Wave 2 remains open until 06c and final integrated checks complete.
 
 ## Context pointers
 
+- 06b: implementation `cee7988`; shared-handle redacted telemetry, durable unique hashed transition dedupe, restart/table/sink checks. Full evidence `C:/AI2026/cf-06b-full.log` (exit 0). The optional sink is observational, not commit-aware/outbox-backed; see its answer before 10b wiring.
 - 06a: implementation `5303c68`; typed append-only shared-handle audit, environment restart/order and outer/nested rollback checks; raw table credential absence verified. Full evidence `C:/AI2026/cf-06a-full.log` (exit 0).
 
 - 01b: spike `711b863` on throwaway `infra/cf-01b-runtime`; only answer `0b8d00c` integrated. See `spikes/runtime/README.md` on that branch for runnable snippets and observed outputs. No spike code merged.
