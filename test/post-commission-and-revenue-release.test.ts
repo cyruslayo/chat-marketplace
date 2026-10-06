@@ -1,8 +1,8 @@
-import test from "node:test";
+import { registerRevenueContract } from "./helpers/revenue-contract.js";
 import assert from "node:assert/strict";
-import { RevenueReleaseManager } from "../domains/shortlet/src/index.js";
+import type { RevenueBookingData } from "../domains/shortlet/src/revenue-release.js";
 
-function createMockBookingData(overrides: Record<string, any> = {}) {
+function createMockBookingData(overrides: Partial<RevenueBookingData> = {}) {
   return {
     reservationId: "res-rev-101",
     unitId: "unit-lagos-1",
@@ -18,8 +18,10 @@ function createMockBookingData(overrides: Record<string, any> = {}) {
   };
 }
 
+registerRevenueContract(({ test, createManager }) => {
+
 test("Standard, founding, and Preferred rates apply prospectively to the correct commission base and captured booking version", () => {
-  const manager = new RevenueReleaseManager();
+  const manager = createManager();
 
   // 1. Standard operator (12% rate)
   const stdBooking = createMockBookingData({ operatorTier: "standard" });
@@ -48,7 +50,7 @@ test("Standard, founding, and Preferred rates apply prospectively to the correct
 });
 
 test("Revenue becomes payable only after Verified Access plus 24 hours without an unresolved Blocking Fulfilment Complaint", () => {
-  const manager = new RevenueReleaseManager();
+  const manager = createManager();
   const booking = createMockBookingData();
 
   const verifiedAccessIso = "2026-08-25T14:00:00.000Z";
@@ -93,12 +95,12 @@ test("Revenue becomes payable only after Verified Access plus 24 hours without a
 
 test("Authoritative unresolved complaint query cannot be bypassed by a false caller flag", () => {
   const complaintQuery = { hasUnresolvedBlockingComplaint: () => true };
-  const manager = new RevenueReleaseManager({ blockingComplaintQuery: complaintQuery });
+  const manager = createManager({ blockingComplaintQuery: complaintQuery });
   assert.throws(() => manager.processRevenueRelease({ booking: createMockBookingData(), verifiedAccessIso: "2026-08-25T14:00:00.000Z", currentIso: "2026-08-26T15:00:00.000Z", hasUnresolvedBlockingComplaint: false }), /Unresolved Blocking Fulfilment Complaint/);
 });
 
 test("One launch Reservation creates at most one Revenue Release while corrections use explicit ledger adjustments", () => {
-  const manager = new RevenueReleaseManager();
+  const manager = createManager();
   const booking = createMockBookingData();
   const verifiedAccessIso = "2026-08-25T14:00:00.000Z";
   const currentIso = "2026-08-26T15:00:00.000Z";
@@ -137,7 +139,7 @@ test("One launch Reservation creates at most one Revenue Release while correctio
 });
 
 test("Duplicate events, cancellation, refund, incident, and provider failure preserve financial balance and audit correlation", () => {
-  const manager = new RevenueReleaseManager();
+  const manager = createManager();
   const bookingFast = createMockBookingData({ payoutPlan: "fast_payout" });
   const verifiedAccessIso = "2026-08-25T14:00:00.000Z";
   const currentIso = "2026-08-26T15:00:00.000Z";
@@ -173,4 +175,5 @@ test("Duplicate events, cancellation, refund, incident, and provider failure pre
   assert.equal(releaseFull.payableNetKobo, releaseFull.operatorNetKobo);
   assert.equal(releaseFull.reserveTrancheKobo, 0);
   assert.equal(releaseFull.balanced, true);
+});
 });

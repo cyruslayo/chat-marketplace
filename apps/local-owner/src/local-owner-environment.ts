@@ -16,7 +16,7 @@ import {
   OperatorEnforcementManager,
   ReservePayoutManager,
   RevenueReleaseManager,
-  InMemoryRevenueAccountingRepository,
+  type RevenueAccountingRepository,
   InMemoryBookingStateRepository,
   type Unit,
   type OperatorRepresentativeGrant,
@@ -98,6 +98,7 @@ import {
 } from "../../../packages/platform-core/src/index.js";
 import { SqliteAuditLog } from "../../../packages/platform-core/src/sqlite-audit-log.js";
 import { SqliteTelemetry } from "../../../packages/platform-core/src/sqlite-telemetry.js";
+import { SqliteRevenueAccountingRepository, SqliteRevenueReleaseStateStore } from "../../../domains/shortlet/src/sqlite-revenue-accounting.js";
 
 export interface LocalOwnerFixtureConfig {
   readonly databasePath: string;
@@ -496,7 +497,7 @@ export class LocalApartmentOwnerEnvironment {
   readonly scopeAuthority: OperatorScopeAuthority;
   readonly reservePayoutManager: ReservePayoutManager;
   readonly revenueReleaseManager: RevenueReleaseManager;
-  readonly accountingRepository: InMemoryRevenueAccountingRepository;
+  readonly accountingRepository: RevenueAccountingRepository;
   readonly bookingStateRepository: InMemoryBookingStateRepository;
   readonly bookingRequestApp: BookingRequestApplication;
   readonly conditionalOfferApp: ReturnType<
@@ -594,8 +595,8 @@ export class LocalApartmentOwnerEnvironment {
         operatorId === this.config.operatorId &&
         tenantId === this.config.tenantId,
     };
-    this.accountingRepository = new InMemoryRevenueAccountingRepository();
-    this.revenueReleaseManager = new RevenueReleaseManager();
+    this.accountingRepository = new SqliteRevenueAccountingRepository(this.#sqlDatabase);
+    this.revenueReleaseManager = new RevenueReleaseManager({ stateStore: new SqliteRevenueReleaseStateStore(this.#sqlDatabase) });
     this.reservePayoutManager = new ReservePayoutManager({
       accountingRepository: this.accountingRepository,
       enforcementAuthority: this.enforcementManager,
