@@ -55,6 +55,7 @@ The frontier is the first slice in the table that is open, unblocked and unclaim
 | 05b | SQLite unit and operator repositories | task | resolved | 02a, 05a | 10a |
 | **D: Durable state** | | | | | |
 | 06a | Durable, typed, redacted audit log | task | resolved | 02a | 06d |
+| 06e | Durable reserve-payout state (admin holds, tranches, idempotency) | task | resolved | 06c, 06d | 15 |
 | 06b | Durable, redacted telemetry | task | resolved | 02a | 06d |
 | 06c | Durable revenue accounting and release state | task | resolved | 02a | 06d |
 | 06d | Durable enforcement and booking state; operator restart test | task | resolved | 04b, 06a, 06b, 06c | 15 |
@@ -187,7 +188,7 @@ What changed, in one line each:
 - **07a/07b:** receipt bytes go through the async `ReceiptBlobStore` (SQLite for Node, R2 in the Worker), with an idempotent create-copy-rename migration that also runs on Durable Object SQL, opaque UUID keys, put-then-commit with a re-check after the await, and a bounded-body reader for the Worker.
 
 Findings and decisions to carry forward:
-- **Not covered by any slice:** `ReservePayoutManager` keeps `#tranches`, `#adminHolds` and `#executedCommands` in memory. Admin holds affect trust tier and payouts, so this needs its own audit and store before slice 15 (a follow-up task was raised).
+- **Resolved by 06e:** `ReservePayoutManager` keeps `#tranches`, `#adminHolds` and `#executedCommands` in memory. Admin holds affect trust tier and payouts, so this needs its own audit and store before slice 15 (a follow-up task was raised).
 - **02e AC2 deviation, resolved:** the one-handle check first asserted two, then one once 04a/04b injected a shared handle. Per-session guest runtimes were the last place that opened more; 04c closed that.
 - **For 10b:** wire `R2ReceiptBlobStore(env.RECEIPTS)` into both environments' `receiptBlobs`, pass the 32 cap as `sessionRuntimeLimit`, call `readBodyWithLimit` before the multipart parse, build a `SqliteUnitRepository` / `SqliteOperatorRepository` (05b) as the injected repositories, and keep the 503 "not provisioned" first-boot behaviour. 09c must keep `content-length` and the stream.
 - **For 12a:** there is no `list` on the receipt port; sweep orphans with the R2 binding directly (it has object upload times, the SQLite store does not).

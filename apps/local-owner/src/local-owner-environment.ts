@@ -38,6 +38,7 @@ import {
   SqliteBookingPaymentJourneyRepository,
   SqliteBookingStateRepository,
   SqliteOperatorEnforcementStateStore,
+  SqliteReservePayoutStateStore,
   type BookingStateRepository,
   SqliteCheckInSupportStore,
   SqliteManualTransferStore,
@@ -653,6 +654,7 @@ export class LocalApartmentOwnerEnvironment {
       reliabilityAuthority: this.reliabilityAuthority,
       scopeAuthority: this.scopeAuthority,
       clock: this.clock,
+      store: new SqliteReservePayoutStateStore(this.#sqlDatabase),
     });
     this.bookingStateRepository = this.#bookingState;
 

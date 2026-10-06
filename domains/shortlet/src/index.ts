@@ -52,6 +52,8 @@ export * from "./guest-account-authority.js";
 export * from "./relocation-choice.js";
 export * from "./relocation-policy.js";
 export * from "./reserve-payout-trust.js";
+export * from "./reserve-payout-state.js";
+export * from "./sqlite-reserve-payout-state.js";
 export * from "./protection-fund-remedy.js";
 export * from "./protection-fund-accounting.js";
 export * from "./ranking.js";
