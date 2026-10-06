@@ -68,7 +68,7 @@ The frontier is the first slice in the table that is open, unblocked and unclaim
 | 09b | Build static assets for Cloudflare | task | ready-for-agent | 03a, 09a | 10b |
 | 09c | Fetch-to-node-HTTP shim | task | ready-for-agent | 01b, 03a, 08a | 10b |
 | **F: Cloudflare assembly** | | | | | |
-| 10a | Cloudflare configuration loader | task | ready-for-agent | 05b | 10b |
+| 10a | Cloudflare configuration loader | task | claimed | 05b | 10b |
 | 10b | Worker, Durable Object and typed `cf` config, running on `cf dev` | task | ready-for-agent | 01b, 03b, 04c, 07b, 08c, 09b, 09c, 10a | 11a, 12a, 12b, 13 |
 | 11a | `/_ops` authentication and operator routes | task | ready-for-agent | 10b | 11b |
 | 11b | Inventory import route; CLIs over HTTPS | task | ready-for-agent | 11a | 15 |
@@ -107,11 +107,18 @@ At the beginning of a wave session:
 
 **Change from the PRD.** Slice 14 blocks 15, so the hosting ADR exists before the integration branch merges to `main`.
 
+## Wave 3 approved configuration decisions
+
+The user approved both recommendations in this implementation session:
+
+- Production session-runtime cap: **32**, configurable; local/unset behavior remains uncapped. This is an initial engineering limit, not a measured capacity guarantee. 04c supplies LRU eviction and durable reconstruction; 10b wires the production configuration.
+- Empty first boot: normal application routes and `/healthz` return **503 “not provisioned”** until valid inventory and tenant-matching operators exist. Authenticated provisioning remains available. No fallback to demo data. 10a records configuration/readiness policy; HTTP enforcement is wired in assembly (10b/11a/11b).
+
 ## Values to ask the user, not invent
 
 - 02e: whether to fix owner fixture data or turn off `foreign_keys` for the owner database, if turning it on breaks an owner fixture.
-- 04c: the default cap on in-memory session runtimes.
-- 10a: how the Durable Object behaves on first boot before inventory is imported, for example a 503 "not provisioned".
+- 04c: answered above (32 for production; local/unset remains uncapped).
+- 10a: answered above (503 “not provisioned”; authenticated provisioning available).
 - 11a: the name of the shared-secret header, and how the secret is provisioned.
 - 11b: the body-size limit for inventory CSV import.
 - 12a: export retention (ADR 0075 is provisional), and the grace period before an orphaned receipt is swept.

@@ -1,6 +1,6 @@
 # Cloudflare configuration loader
 
-Status: ready-for-agent
+Status: claimed
 Type: task
 Blocked by: 05b
 Branch: `infra/cf-10a-config`
@@ -56,3 +56,20 @@ Every safety check must carry over **exactly**.
 Check every item in `docs/agents/issue-tracker.md`.
 
 ## Comments
+
+### Implementation plan and approved decisions
+
+User approved 32 configurable production session runtimes (local/unset remains uncapped) and fail-closed first boot: normal routes and health return 503 “not provisioned” until valid inventory and tenant-matching operators exist; authenticated provisioning remains available. 10a exposes readiness, not routes; 10b/11a/11b wire HTTP enforcement. No demo fallback.
+
+1. Add dedicated failing AC1–AC5 tests plus SQLite readiness tests.
+2. Extract the existing non-file validators into a filesystem-free shared core, preserving their rules and Node exports/signature; implement the explicit-env Cloudflare loader and repository readiness check.
+3. Run focused unchanged pilot suites, compiler checks, Workers tests and the full serial Node/browser suite. Verify all DoD items before resolving.
+
+| ADR | Constraint | Acceptance/code path |
+| --- | --- | --- |
+| 0004 / 0095 | SQLite authoritative; no filesystem/demo fallback in Workers; synchronous SQL | repository readiness and filesystem-free loader |
+| 0087 | Environment-bound Paystack and matching public/callback origin | AC1–AC4, shared validation |
+| 0088 | Transfer capability enabled only by explicit valid configuration | AC1, shared switch |
+| 0090 | Complete configured manual-transfer account and positive receipt limit | AC1, unchanged validators |
+| 0075 | No credentials or restricted data in logs | no logging in loader/readiness |
+| 0065 / 0095 | Counsel, vendor and retention gates stay open | local synthetic checks only; no deployment/release claim |

@@ -1,4 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
+import type { ManualTransferAccount } from "./manual-transfer-account.js";
+export type { ManualTransferAccount } from "./manual-transfer-account.js";
 import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
 import type { PlatformCommandEnvelope } from "../../../packages/platform-core/src/index.js";
 import type { ConditionalBookingOffer } from "./conditional-offer.js";
@@ -12,13 +14,6 @@ import type { BookingStateRepository } from "./booking-state.js";
  * credit (B6). Receipts are stored in the database (outside any web root), never logged, and deleted 90 days after
  * the stay's checkout or, when no booking formed, 90 days after the attempt.
  */
-
-/** ADR 0090: the one fixed business account. Configuration, never code. */
-export interface ManualTransferAccount {
-  readonly bankName: string;
-  readonly accountName: string;
-  readonly accountNumber: string;
-}
 
 /** ADR 0090: dates stay held for up to 60 minutes after the Payment Window deadline while the credit is checked. */
 export const MANUAL_TRANSFER_VERIFICATION_HOLD_MINUTES = 60;
