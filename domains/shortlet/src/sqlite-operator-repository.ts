@@ -32,7 +32,7 @@ export class SqliteOperatorRepository implements OperatorRepository {
       if (!current) throw new Error(`Operator ${id} was not found`);
       const now = this.#clock();
       if (!(now instanceof Date) || !Number.isFinite(now.getTime())) throw new Error("Operator update clock is invalid");
-      const updated = validateOperatorRecord({ ...current, name: metadata.name ?? current.name, updatedAt: now.toISOString() });
+      const updated = validateOperatorRecord({ ...current, name: metadata.name === undefined ? current.name : metadata.name, updatedAt: now.toISOString() });
       this.database.prepare("UPDATE operators SET operator_json = $json WHERE id = $id").run({ $id: id, $json: JSON.stringify(updated) });
       return updated;
     });
