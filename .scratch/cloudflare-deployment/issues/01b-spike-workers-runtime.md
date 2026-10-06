@@ -1,9 +1,9 @@
 # Spike Workers runtime compatibility
 
-Status: claimed
+Status: resolved
 Type: prototype
 Blocked by: 01a, 01c
-Branch: `infra/cf-01b-runtime-spike` (throwaway, **not merged**)
+Branch: `infra/cf-01b-runtime` (throwaway, **not merged**)
 Requested: 2 Oct 2026
 Unlocks: 09c, 10b
 
@@ -55,3 +55,17 @@ Prototype slice. Answers recorded; no repo code changed.
 The local `cf dev` clock DOES advance during synchronous execution (3 ms on the successful run; 8 ms in the initial probe). This disproves the PRD assumption for this local runtime; it does not establish production clock behaviour. Slice 10b must not depend on a ticking synchronous clock: capture one server timestamp for an atomic decision and evaluate expiry at request/I/O boundaries. No production testing or runtime changes are made here.
 
 ## Answer
+
+Implementation/evidence: `711b863`, throwaway branch `infra/cf-01b-runtime`, `spikes/runtime/src/index.ts`, runnable assertions in `check.mjs`, observed outputs in `README.md`. Only this answer is integrated. `npm exec cf -- build`, `npm exec cf -- dev`, `node check.mjs` and `npm exec cf -- deploy --dry-run` passed using the 01c pins, with Node 22.19.0. No remote upload or real API request occurred.
+
+| Question / snippet | Observed local output |
+| --- | --- |
+| `new GoogleGenAI({ apiKey: synthetic }).models.generateContent(...)`, replacing fetch temporarily with a synthetic JSON response | Bundled successfully; one mocked fetch; text `mocked-gemini-ok` |
+| `createHmac('sha512', 'synthetic-spike-key').update(new Uint8Array([0,255,123,34,195,169,34,125])).digest()` | `e66a8dc291268caf346169258942c2f5eea96e3cf40b5451cc7bd0949c35131df41287e2791bfbf38ad9e0855f16fd04af2a75a076971cc35b8848fa77aba332`, identical to Node; timingSafeEqual true for equal bytes, false for same-length unequal bytes |
+| `isIP('127.0.0.1'), isIP('::1'), isIP('not-an-ip')` | `[4,6,0]` |
+| `Intl.DateTimeFormat('en-NG', {timeZone:'Africa/Lagos',dateStyle:'medium',timeStyle:'short'})` at `2026-01-01T00:00Z`, `2026-07-22T23:30Z`, `2026-12-31T23:00Z` | `1 Jan 2026, 01:00`; `23 Jul 2026, 00:30`; `1 Jan 2027, 00:00` — identical to Node; no display follow-up required |
+| `typeof globalThis.Buffer`; imported `Buffer.from([0,255]).toString('hex')` | `function`; `00ff` — both global and explicit import work |
+| `env.PROBE.get(...).fetch(request)`, DO body reader, producer pauses 300 ms after first payload chunk | 5 MiB payload plus 176 multipart bytes = 5,243,056 bytes; 1,522 chunks; largest 4,096 bytes; first-to-last read 406 ms. Progressive local consumption demonstrated; no whole-body materialization in the forwarding code. Hosted limit untested |
+| `before=Date.now(); for(i=0;i<2_000_000;i++)sum+=i; after=Date.now()` | Sum 1,999,999,000,000; local delta 3 ms (first run 8 ms), NOT frozen |
+
+AC1–AC3 and prototype DoD reviewed: every question has runnable code plus observed output; crypto and Intl have Node comparisons; synthetic-only credentials and body; no domain/application changes. Workarounds: 10b must capture one clock value per atomic decision and never rely on sync-loop time advancing (production untested); 09c should preserve the body stream and keep its configured upload-limit guard, not infer a hosted quota from this local upload. No other incompatibility was found. Production config, shim, secrets and staging remain out of scope.
