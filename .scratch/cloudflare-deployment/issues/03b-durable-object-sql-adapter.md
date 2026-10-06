@@ -1,6 +1,6 @@
 # `DurableObjectSqlDatabase` passes the shared contract
 
-Status: ready-for-agent
+Status: claimed
 Type: task
 Blocked by: 02a, 03a (and the 01a answers)
 Branch: `infra/cf-03b-do-sql-adapter`
@@ -51,3 +51,13 @@ Contract wiring:
 Check every item in `docs/agents/issue-tracker.md`. Item 7 also covers `npm run test:workers`.
 
 ## Comments
+
+### Implementation ADR map
+
+| ADR | Constraint | Acceptance path |
+| --- | --- | --- |
+| 0004 / 0095 | SQL storage is the authority; only SQL translations may be cached | AC1/AC5 adapter |
+| 0041 / 0044 / 0046 | Synchronous atomic writes, nested rollback, reject thenables | AC1/AC3 contract |
+| 0075 | No binding values or secrets in error messages | AC2/AC4 validation |
+
+Follow the observed 01a semantics: `run().changes` uses `SELECT changes()` (trigger writes must not inflate it); BLOB reads normalize ArrayBuffer. The issue explicitly requires a conservative 2 MiB preflight guard even though the local spike accepted larger values; this is not claimed as an observed runtime rejection. Only known unsupported busy_timeout/journal_mode PRAGMAs are ignored. No domain stores, production configuration or deployment are added.
