@@ -1,6 +1,6 @@
 # Cloudflare configuration loader
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: 05b
 Branch: `infra/cf-10a-config`
@@ -73,3 +73,23 @@ User approved 32 configurable production session runtimes (local/unset remains u
 | 0090 | Complete configured manual-transfer account and positive receipt limit | AC1, unchanged validators |
 | 0075 | No credentials or restricted data in logs | no logging in loader/readiness |
 | 0065 / 0095 | Counsel, vendor and retention gates stay open | local synthetic checks only; no deployment/release claim |
+
+## Answer
+
+Implemented in `a3fdb15` on `infra/cf-10a-config`. Shared non-file validation now lives in `apps/pilot/src/pilot-config-core.ts`; the Node wrapper retains its signature, exports, file/repository checks and original error ordering. Cloudflare uses explicit env values, inherits all shared vars/secrets and types the four service bindings. Extracted the unchanged `ManualTransferAccount` interface into its own module so configuration type-checking does not pull the receipt implementation into the Worker source check; existing domain imports remain compatible through the type re-export.
+
+`cloudflareProvisioningState` reads the existing SQLite repositories, validates tenant matching and unit/operator associations, and re-evaluates after imports. Empty data reports `provisioned: false`, with no demo fallback. Malformed or inconsistent records fail closed. This does not certify publication eligibility or impose new booking rules. HTTP 503 enforcement and authenticated provisioning availability remain assembly work in 10b/11a/11b, not implemented routes in this slice. The approved production cap of 32 is recorded for 04c/10b, not silently added to Node defaults.
+
+Validation on the committed code: `npm run check` passes all four compiler projects; `npm run test:workers` passes 16 tests (14 existing + two configuration/readiness workerd checks); full serial `npm test` exits 0 with **1,317 non-browser and 165 browser tests passed, zero failures, one expected browser skip**. Focused configuration, production composition, guardrail and notification tests also pass. The new Node suite initially failed because the Cloudflare loader did not exist (`C:/AI2026/cf-10a-red.log`). Evidence: `C:/AI2026/cf-10a-{focused,check,workers,full}.log`, `cf-10a-full.exit` (0). The full run unsets the previously documented `PI_REASONING_LEVEL` test-environment variable. Workers reports only the existing Gemini missing-source sourcemap warning. Active LSP probes report no errors but are inconclusive; successful explicit compiler runs supply the verification gate.
+
+No deployable Cloudflare configuration exists yet (10b), so this slice validates real workerd imports/runtime rather than claiming a production `cf build`, dry-run or deployment. No push, hosted PR, staging or production release.
+
+### Definition of Done — explicit self-review
+
+1. Dedicated named AC1–AC5 `test()` blocks in `test/cloudflare-config.test.ts`; separate SQLite first-boot/readiness test and two workerd runtime checks.
+2. Shared invalid-input table exercises refusal paths through both loaders; callback mismatch, staging/live refusal, conflicting process environment, Node path refusals, empty data, tenant mismatch and missing Operator are asserted. Success paths also pass.
+3. Relevant ADRs listed/read and mapped above; implementation commit cites the constraints. Rechecked the table: callback/environment/transfer/receipt checks retained, SQLite authoritative, no credential logging or demo fallback, launch gates unchanged.
+4. No unused constructor dependency introduced. The readiness function uses its database and configuration; service bindings are env declarations for later assembly, not injected class dependencies.
+5. No invented domain policy or changed validation rule. The two user-approved decisions are recorded with their downstream wiring scope; existing operational defaults remain unchanged.
+6. No bearer credentials, restricted identity material or request bodies added to audit/logs. All checks use synthetic local data.
+7. Compiler, full Node/browser suite and workerd tests pass as recorded above. Whitespace checks pass.

@@ -68,7 +68,7 @@ The frontier is the first slice in the table that is open, unblocked and unclaim
 | 09b | Build static assets for Cloudflare | task | ready-for-agent | 03a, 09a | 10b |
 | 09c | Fetch-to-node-HTTP shim | task | ready-for-agent | 01b, 03a, 08a | 10b |
 | **F: Cloudflare assembly** | | | | | |
-| 10a | Cloudflare configuration loader | task | claimed | 05b | 10b |
+| 10a | Cloudflare configuration loader | task | resolved | 05b | 10b |
 | 10b | Worker, Durable Object and typed `cf` config, running on `cf dev` | task | ready-for-agent | 01b, 03b, 04c, 07b, 08c, 09b, 09c, 10a | 11a, 12a, 12b, 13 |
 | 11a | `/_ops` authentication and operator routes | task | ready-for-agent | 10b | 11b |
 | 11b | Inventory import route; CLIs over HTTPS | task | ready-for-agent | 11a | 15 |
@@ -165,7 +165,15 @@ Runtime spike evidence is local only: `cf build`, `cf dev`, assertions and dry-r
 
 No Wave 3 implementation, staging/production deployment, merge to `main`, orchestrator or delegated work. Delivery is committed locally on slice branches and merged into `infra/cloudflare-deployment`; no external PR was opened. New worktrees are outside the main repository (`chat-marketplace-cloudflare-06a`, `-06b`, `-06c-direct`) and share the integration dependency junction; existing worktrees and untracked scratch data are preserved. The next implementation batch is Wave 3, only when requested, including its recorded user-owned configuration decisions and launch gates.
 
+## Wave 3 partial handoff
+
+Completed only the independent configuration slice **10a** (`a3fdb15`) in this batch, with the user-approved cap/first-boot decisions recorded above. Shared Node/Cloudflare validation and SQLite readiness checks pass. Full serial suite: **1,317 non-browser + 165 browser passes, zero failures, one expected skip**; compiler and **16 workerd tests** pass. Evidence: `C:/AI2026/cf-10a-{focused,check,workers,full}.log` and `cf-10a-full.exit` (0). Delivery is local on the slice branch and integration branch; no external PR/push or deployment.
+
+**Wave 3 remains open:** 02e, 04a–04c, 06d and 07a–07b are unimplemented. 02e, 07a and 07b's prerequisite 03a are available; 04a/04b still wait for 02e, 04c waits for 04a, and 06d waits for 04b. 02e was not claimed or implemented in this batch. Preserve its conditional owner foreign-key decision gate. 10b remains blocked by the remaining composition/receipt work and Wave 4. No HTTP first-boot 503 routes or production runtime cap wiring are claimed by 10a; those remain downstream assembly/composition work.
+
 ## Context pointers
+
+- 10a: `a3fdb15`; shared explicit-source configuration core, unchanged Node validation, typed Cloudflare vars/bindings and lazily rechecked SQLite provisioning. Full suite and 16 workerd tests pass. See its Answer for scope and compiler/runtime evidence.
 
 - 06c: implementation `502fcc1`; shared-handle revenue accounting and compatibility-manager state, atomic trigger-failure rollback, >2^31 integer-kobo round-trip, real owner restart and both existing release suites through the shared contract. Full evidence `C:/AI2026/cf-06c-full.log` (exit 0). No changes to current ADR 0089 owner-payable rules or to existing historical arithmetic.
 - 06b: implementation `cee7988`; shared-handle redacted telemetry, durable unique hashed transition dedupe, restart/table/sink checks. Full evidence `C:/AI2026/cf-06b-full.log` (exit 0). The optional sink is observational, not commit-aware/outbox-backed; see its answer before 10b wiring.
