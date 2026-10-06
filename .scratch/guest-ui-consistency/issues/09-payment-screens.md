@@ -1,6 +1,6 @@
 # Payment screens: choice, card, bank transfer, manual transfer, waiting, no reservation
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: 08
 Requested: 29 Sept 2026
@@ -55,7 +55,7 @@ The user accepted the page-based transfer flow: chat retains the shared payment-
 
 Implementation was committed as `dc306fb`; amount labels were settled in `c0db5d5`. The issue-11 close-out (`639e3cd`) records a clean typecheck and 1230 non-browser + 165 Chromium passes, one pre-existing skip and zero failures. The earlier formatting failures and uncommitted notes below are historical, not current blockers.
 
-All seven Definition of Done items are verified below. The audit and final answer are committed before the resolution status is recorded.
+All seven Definition of Done items are verified below. Audit and final answer committed as `62a9e47` before recording resolution.
 
 ### Close-out audit
 
