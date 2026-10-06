@@ -185,6 +185,10 @@ function requireUnitInput(value: unknown, label: string): UnitInput {
   return value;
 }
 
+export function parseUnitRecord(value: unknown, label: string): Unit {
+  return normalizeUnit(requireUnitInput(value, label));
+}
+
 function normalizeUnit(unit: UnitInput): Unit {
   return {
     ...unit,
@@ -281,7 +285,7 @@ export class JsonUnitRepository implements UnitRepositoryContract {
   findAll(): Unit[] {
     const parsed: unknown = JSON.parse(readFileSync(this.filePath, "utf8"));
     if (!Array.isArray(parsed)) throw new TypeError("Unit repository file must contain an array");
-    return parsed.map((unit: unknown, index: number) => structuredClone(normalizeUnit(requireUnitInput(unit, `Unit repository entry ${index}`))));
+    return parsed.map((unit: unknown, index: number) => structuredClone(parseUnitRecord(unit, `Unit repository entry ${index}`)));
   }
   findById(id: string): Unit | null { return this.findAll().find((unit) => unit.id === id) ?? null; }
 }

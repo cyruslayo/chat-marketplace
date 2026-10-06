@@ -1,6 +1,6 @@
 # SQLite unit and operator repositories
 
-Status: ready-for-agent
+Status: claimed
 Type: task
 Blocked by: 02a, 05a
 Branch: `infra/cf-05b-sqlite-repositories`
@@ -49,3 +49,11 @@ The production pilot loads inventory and operators from JSON files on disk (`SHO
 Check every item in `docs/agents/issue-tracker.md`.
 
 ## Comments
+
+| ADR | Constraint | Acceptance path |
+| --- | --- | --- |
+| 0004 / 0095 | Shared synchronous SQL authority | AC1/AC3/AC4/AC5 repositories |
+| 0008 / 0009 / 0056 | Retain evidence dates; eligibility evaluated at query time | AC2 discovery clock |
+| 0075 | No new logging or credential storage | All writes |
+
+Reuse existing UnitRepository normalization and operator validation; no eligibility cache, new loader, or app wiring. Shared behaviour contract covers JSON and SQLite. The existing inventory-template CSV supplies synthetic import parity data.
