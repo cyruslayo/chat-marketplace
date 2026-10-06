@@ -39,6 +39,7 @@ export * from "./cancellation-noshow.js";
 export * from "./deposit-claim.js";
 export * from "./revenue-release.js";
 export * from "./revenue-accounting.js";
+export * from "./sqlite-revenue-accounting.js";
 export * from "./guest-conduct.js";
 export * from "./mid-stay-failure.js";
 export * from "./operator-enforcement.js";
