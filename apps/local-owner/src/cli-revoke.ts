@@ -5,7 +5,7 @@ if (mode !== "session" && mode !== "all") throw new Error("Usage: npm run operat
 const databasePath = process.env.SHORTLET_DB_PATH ?? DEFAULT_LOCAL_OWNER_CONFIG.databasePath;
 const inventoryPath = process.env.SHORTLET_INVENTORY_PATH;
 const operatorsPath = process.env.SHORTLET_OPERATORS_PATH;
-const env = new LocalApartmentOwnerEnvironment({
+const env = LocalApartmentOwnerEnvironment.openNode({
   databasePath,
   ...(inventoryPath ? { inventoryPath } : {}),
   ...(operatorsPath ? { operatorsPath } : {}),

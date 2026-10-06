@@ -43,7 +43,7 @@ export async function guestPaymentPage(options: {
 } = {}): Promise<GuestPaymentPage> {
   const dir = options.dir ?? mkdtempSync(join(tmpdir(), "guest-payment-"));
   let current = new Date(options.start ?? "2026-09-03T10:02:00.000Z");
-  const env = new LocalGuestEnvironment({ databasePath: join(dir, "guest.sqlite"), initialGuestPhoneNumber: "+2348012345678", initialGuestContactEmail: "guest@example.test", clock: () => current, ...options.config });
+  const env = LocalGuestEnvironment.openNode({ databasePath: join(dir, "guest.sqlite"), initialGuestPhoneNumber: "+2348012345678", initialGuestContactEmail: "guest@example.test", clock: () => current, ...options.config });
   let offerId = options.existing?.offerId ?? "";
   if (!options.existing) {
     const unit = env.unitRepository.findById("unit-lagos-ikoyi-001") as Unit;

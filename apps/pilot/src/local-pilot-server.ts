@@ -3,6 +3,8 @@ import { LocalGuestEnvironment } from "../../local-guest/src/fixture.js";
 import { startLocalGuestServer } from "../../local-guest/src/guest-server.js";
 import { LocalApartmentOwnerEnvironment, startLocalOwnerServer } from "../../local-owner/src/index.js";
 import { databaseHealthy } from "./database-health.js";
+import { openNodeSqliteDatabase } from "../../../packages/platform-core/src/node-sqlite-database.js";
+import { JsonOperatorRepository, JsonUnitRepository } from "../../../domains/shortlet/src/index.js";
 import { assertLocalPilotReady, LOCAL_PILOT_ACTOR_ID, LOCAL_PILOT_OPERATOR_ID, LOCAL_PILOT_OPERATOR_NAME, LOCAL_PILOT_PHOTO_HOST, LOCAL_PILOT_TENANT_ID, localPilotClock, localPilotPaths, type LocalPilotPaths } from "./local-pilot.js";
 
 export interface LocalPilotServerHandle {
@@ -28,6 +30,9 @@ export function startLocalPilotServer(options: { readonly port?: number; readonl
   // Local-only durable virtual clock starts within ADR-0042 Active Hours and advances with real elapsed time.
   const clock = localPilotClock(paths);
   const demoCheckIn = "2026-09-29";
+  // ADR 0004: one SQLite handle and one inventory serve the Guest and Operator compositions in this process.
+  const database = openNodeSqliteDatabase(paths.databasePath);
+  const unitRepository = new JsonUnitRepository(paths.inventoryPath);
   const guestEnvironment = new LocalGuestEnvironment({
     databasePath: paths.databasePath, inventoryPath: paths.inventoryPath, tenantId: LOCAL_PILOT_TENANT_ID,
     operatorId: LOCAL_PILOT_OPERATOR_ID, operatorName: LOCAL_PILOT_OPERATOR_NAME, representativePersonId: LOCAL_PILOT_ACTOR_ID,
@@ -37,13 +42,13 @@ export function startLocalPilotServer(options: { readonly port?: number; readonl
     deterministicPsp: true, seedRepresentativeGrant: false, clock,
     // Local pilot only: a clearly fictional business account so manual transfer can be walked through (ADR 0090).
     manualTransferAccount: { bankName: "Local Demo Bank", accountName: "Shortlet Local Demo", accountNumber: "0000000000" },
-  });
+  }, { database, unitRepository });
   const operatorEnvironment = new LocalApartmentOwnerEnvironment({
     databasePath: paths.databasePath, inventoryPath: paths.inventoryPath, operatorsPath: paths.operatorsPath,
     tenantId: LOCAL_PILOT_TENANT_ID, operatorId: LOCAL_PILOT_OPERATOR_ID, operatorName: LOCAL_PILOT_OPERATOR_NAME,
     representativePersonId: LOCAL_PILOT_ACTOR_ID, representativePersonName: "Local Pilot Representative", adminId: "admin-local-pilot",
     unitId: "unit-local-abuja-wuse2", propertyId: "property-local-abuja-wuse2", seedFixture: false, clock,
-  });
+  }, { database, unitRepository, operatorRepository: new JsonOperatorRepository(paths.operatorsPath, { clock }) });
   const guest = startLocalGuestServer({
     port: 0, environment: guestEnvironment, production: false, fixtureRoutes: false, publicOrigin, secureCookie: false,
     sessionScopedGuestPrincipals: true, localPayment: true,
@@ -75,7 +80,7 @@ export function startLocalPilotServer(options: { readonly port?: number; readonl
     close: async () => {
       initialized = false; server.closeIdleConnections?.(); server.closeAllConnections?.();
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
-      await owner.close(); await guest.close();
+      await owner.close(); await guest.close(); database.close();
     },
   };
 }

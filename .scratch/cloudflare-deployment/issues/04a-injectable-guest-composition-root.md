@@ -1,6 +1,6 @@
 # Injectable guest composition root
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 02e
 Branch: `infra/cf-04a-guest-root`
@@ -45,3 +45,13 @@ Unlocks: 04c, 08a
 Check every item in `docs/agents/issue-tracker.md`. Item 4 matters here: every injected dependency is used.
 
 ## Comments
+
+## Answer
+
+Resolved 6 Oct 2026. `new LocalGuestEnvironment(config, { database, unitRepository, seedDemoUnits? })` does no filesystem access; `LocalGuestEnvironment.openNode(config)` holds today's path logic (mkdir, `openNodeSqliteDatabase`, JSON or in-memory inventory), marks the environment as owner, and releases the handle if construction throws. `close()` closes the handle only for an owned environment and is idempotent. A `database` getter exposes the one handle.
+
+- Demo seeding is now an explicit dependency (`seedDemoUnits`, true only from `openNode` with no inventory path), so an injected inventory is never seeded with demo units.
+- `unitRepository` is typed `UnitRepositoryContract`; the consumer interfaces that wanted a mutable `findAll()` array (`availability.ts`, `card-payment.ts`, `guest-verification.ts`) were widened to `readonly` arrays, type-only.
+- All 42 call sites (CLIs, `guest-server.ts` default and per-session environments, pilot servers, scripts, tests) use `openNode`, except the two pilot compositions, which now inject one shared handle and one `JsonUnitRepository` into both environments and close the handle themselves.
+- Tests: `test/guest-environment-injection.test.ts` (AC1 no filesystem access with an unreachable path and the contrasting `openNode`; AC2 query after `close()`; AC3 owned close and a constructor failure that releases the handle). `test/guest-process-restart.test.ts` and the rest of the suite pass unchanged.
+- ADRs: 0004 (one handle), 0079 (restart-safe guest state).

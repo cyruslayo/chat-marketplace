@@ -25,7 +25,7 @@ export async function restartFixture(config: Partial<LocalGuestFixtureConfig> = 
   const directory = mkdtempSync(join(tmpdir(), "guest-restart-"));
   const databasePath = join(directory, "guest.sqlite");
   let now = new Date("2026-09-03T10:00:00Z");
-  let server = startLocalGuestServer({ ...serverOptions, port: 0, environment: new LocalGuestEnvironment({ ...config, databasePath, clock: () => now }) });
+  let server = startLocalGuestServer({ ...serverOptions, port: 0, environment: LocalGuestEnvironment.openNode({ ...config, databasePath, clock: () => now }) });
   let base = `http://127.0.0.1:${await server.listen()}`;
   const home = await fetch(base);
   const cookie = home.headers.get("set-cookie")?.split(";")[0];
@@ -44,6 +44,7 @@ export async function restartFixture(config: Partial<LocalGuestFixtureConfig> = 
   const actions: ReturnType<typeof guestAction>[] = [];
   return {
     databasePath, directory, cookie, threadId, actions, send, state,
+    get server() { return server; },
     get environment() { return server.environment; },
     get base() { return base; },
     get app() { return server.app; },
@@ -73,7 +74,7 @@ export async function restartFixture(config: Partial<LocalGuestFixtureConfig> = 
       await server.close();
       // A new server, environment, repositories, managers and connections. No
       // application instance or runtime map is retained across this boundary.
-      server = startLocalGuestServer({ ...serverOptions, port: 0, environment: new LocalGuestEnvironment({ ...config, ...overrides, databasePath, clock: () => now }) });
+      server = startLocalGuestServer({ ...serverOptions, port: 0, environment: LocalGuestEnvironment.openNode({ ...config, ...overrides, databasePath, clock: () => now }) });
       base = `http://127.0.0.1:${await server.listen()}`;
       const response = await fetch(base, { headers: { cookie } });
       await response.text();

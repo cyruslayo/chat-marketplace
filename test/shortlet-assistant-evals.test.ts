@@ -44,7 +44,7 @@ let testDbIndex = 0;
 function createTestRuntime(model = new ScriptedAssistantModel()) {
   testDbIndex++;
   const databasePath = `.scratch/local-guest/eval_test_${testDbIndex}_${Date.now()}.sqlite`;
-  const env = new LocalGuestEnvironment({ databasePath });
+  const env = LocalGuestEnvironment.openNode({ databasePath });
   const runtime = new AssistantRuntime(env, model);
   return { env, runtime };
 }
@@ -514,7 +514,7 @@ test("Weaver confirmation is rejected unless it comes from the active pending-ac
 
 test("Expired pending actions fail closed before executing", async () => {
   let now = new Date("2026-09-03T10:00:00Z");
-  const env = new LocalGuestEnvironment({
+  const env = LocalGuestEnvironment.openNode({
     databasePath: `.scratch/local-guest/eval_expiry_${Date.now()}.sqlite`,
     clock: () => now,
   });
@@ -715,7 +715,7 @@ test("Server-only diagnostics identify provider, tool, and continuation stages w
     () => ({ text: "Search complete." }),
   ]);
   testDbIndex++;
-  const env = new LocalGuestEnvironment({ databasePath: `.scratch/local-guest/diagnostic_${testDbIndex}_${Date.now()}.sqlite` });
+  const env = LocalGuestEnvironment.openNode({ databasePath: `.scratch/local-guest/diagnostic_${testDbIndex}_${Date.now()}.sqlite` });
   const runtime = new AssistantRuntime(env, model, { onDiagnostic: (event) => events.push(event) });
 
   const response = await runtime.handleTurn("diagnostic-thread", "Lagos for two nights and one guest");
@@ -733,7 +733,7 @@ test("Server-only diagnostics safely expose provider status and code while the g
   const model = new ScriptedAssistantModel([() => { throw providerError; }]);
   const events: import("../apps/local-guest/src/assistant/assistant-runtime.js").AssistantDiagnosticEvent[] = [];
   testDbIndex++;
-  const env = new LocalGuestEnvironment({ databasePath: `.scratch/local-guest/diagnostic_error_${testDbIndex}_${Date.now()}.sqlite` });
+  const env = LocalGuestEnvironment.openNode({ databasePath: `.scratch/local-guest/diagnostic_error_${testDbIndex}_${Date.now()}.sqlite` });
   const runtime = new AssistantRuntime(env, model, { onDiagnostic: (event) => events.push(event) });
 
   const response = await runtime.handleTurn("diagnostic-error", "private conversation content");
@@ -761,7 +761,7 @@ test("Server-only diagnostics discard malformed provider metadata that could car
   const model = new ScriptedAssistantModel([() => { throw providerError; }]);
   const events: import("../apps/local-guest/src/assistant/assistant-runtime.js").AssistantDiagnosticEvent[] = [];
   testDbIndex++;
-  const env = new LocalGuestEnvironment({ databasePath: `.scratch/local-guest/diagnostic_malformed_${testDbIndex}_${Date.now()}.sqlite` });
+  const env = LocalGuestEnvironment.openNode({ databasePath: `.scratch/local-guest/diagnostic_malformed_${testDbIndex}_${Date.now()}.sqlite` });
   const runtime = new AssistantRuntime(env, model, { onDiagnostic: (event) => events.push(event) });
 
   await runtime.handleTurn("diagnostic-malformed", "private prompt");

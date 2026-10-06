@@ -1,6 +1,6 @@
 # Session runtimes share one handle, with a size cap
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 04a
 Branch: `infra/cf-04c-session-runtimes`
@@ -46,3 +46,12 @@ Use `test/helpers/guest-restart.ts` patterns for AC3. Put the sessions-and-evict
 Check every item in `docs/agents/issue-tracker.md`. Item 5 matters here: no invented default; record the user's answer.
 
 ## Comments
+
+## Answer
+
+Resolved 6 Oct 2026. Every session runtime is built with the live environment's `database` and `unitRepository` through the 04a dependencies, so none opens a handle and eviction never closes the shared one. `sessionRuntimeLimit` (positive whole number, otherwise refused) evicts the least recently used runtime before inserting a new one; the Map is re-inserted on access. `activeSessionRuntimes` is joined by `sessionRuntimesBuilt` (monotonic count of builds, used to prove rebuilds).
+
+- **Default.** The option is unset by default (no cap). The user approved 32 as the initial production value (configurable; local/unset uncapped); 10b passes it from configuration. It is an engineering limit, not measured capacity.
+- Tests (`test/guest-session-runtime-limit.test.ts`): AC1 three sessions open no handle; AC2 LRU order proven by rebuild counts and the cap, and invalid limits refused; AC3 an evicted session's view equals the view after a full restart and the booking draft survives; AC4 the handle stays open and both sessions keep working; AC5 six sessions with the option unset.
+- Finding: a session-scoped runtime shows the "Phone number" surface until the thread is restored, then the booking draft. That is how restoration already behaves after a full restart, so AC3 asserts eviction equals restart rather than equality with the pre-eviction view.
+- ADRs: 0004, 0079.

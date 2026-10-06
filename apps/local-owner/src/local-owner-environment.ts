@@ -33,6 +33,7 @@ import {
   SqliteGuestInteractionStore,
   SqliteAvailabilityStore,
   JsonUnitRepository,
+  type UnitRepositoryContract,
   JsonOperatorRepository,
   SqliteBookingPaymentJourneyRepository,
   SqliteBookingStateRepository,
@@ -485,10 +486,26 @@ export interface LocalOwnerStateOverview {
   readonly reserveTranches: readonly ReserveTranche[];
 }
 
+/** The default fixture clock; the Node composition hands the same one to the operator repository. */
+const DEFAULT_OWNER_CLOCK = (): Date => new Date("2026-08-10T10:00:00Z");
+
+/**
+ * What a composition hands the environment (ADR 0004: one handle, one inventory). The environment performs no
+ * filesystem access of its own; `LocalApartmentOwnerEnvironment.openNode` is the Node composition that builds these
+ * from paths.
+ */
+export interface LocalOwnerEnvironmentDependencies {
+  /** The one authoritative handle. Borrowed: the environment never closes it. */
+  readonly database: SqlDatabase;
+  readonly unitRepository: UnitRepositoryContract;
+  /** Null when no operator directory is configured, as today. */
+  readonly operatorRepository: OperatorRepository | null;
+}
+
 export class LocalApartmentOwnerEnvironment {
   readonly config: LocalOwnerFixtureConfig;
   readonly clock: () => Date;
-  readonly unitRepository: UnitRepository | JsonUnitRepository;
+  readonly unitRepository: UnitRepositoryContract;
   readonly operatorRepository: OperatorRepository | null;
   readonly calendar: AvailabilityCalendar;
   readonly grantStore: SqliteOperatorRepresentativeGrantStore;
@@ -508,6 +525,7 @@ export class LocalApartmentOwnerEnvironment {
   readonly audit: AuditLog;
   readonly telemetry: Telemetry;
   readonly #sqlDatabase: SqlDatabase;
+  #ownsDatabase = false;
   #closed = false;
 
   /** Read-only here: the committed Reservation's current status (B4). The Guest side writes it. */
@@ -521,13 +539,44 @@ export class LocalApartmentOwnerEnvironment {
 
   #demoRequests: string[] = [];
 
-  constructor(config: Partial<LocalOwnerFixtureConfig> = {}) {
+  /**
+   * Today's path-based composition: creates the directory, opens the SQLite file and reads the JSON inventory and
+   * operator directory. The returned environment owns its handle and closes it in `close()`.
+   */
+  static openNode(
+    config: Partial<LocalOwnerFixtureConfig> = {},
+  ): LocalApartmentOwnerEnvironment {
+    const merged = { ...DEFAULT_LOCAL_OWNER_CONFIG, ...config };
+    mkdirSync(dirname(merged.databasePath), { recursive: true });
+    const database = openNodeSqliteDatabase(merged.databasePath);
+    try {
+      const environment = new LocalApartmentOwnerEnvironment(config, {
+        database,
+        unitRepository: merged.inventoryPath
+          ? new JsonUnitRepository(merged.inventoryPath)
+          : new UnitRepository(),
+        operatorRepository: merged.operatorsPath
+          ? new JsonOperatorRepository(merged.operatorsPath, {
+              clock: merged.clock ?? DEFAULT_OWNER_CLOCK,
+            })
+          : null,
+      });
+      environment.#ownsDatabase = true;
+      return environment;
+    } catch (error) {
+      database.close();
+      throw error;
+    }
+  }
+
+  constructor(
+    config: Partial<LocalOwnerFixtureConfig>,
+    dependencies: LocalOwnerEnvironmentDependencies,
+  ) {
     this.config = { ...DEFAULT_LOCAL_OWNER_CONFIG, ...config };
-    this.clock = this.config.clock ?? (() => new Date("2026-08-10T10:00:00Z"));
+    this.clock = this.config.clock ?? DEFAULT_OWNER_CLOCK;
 
-    mkdirSync(dirname(this.config.databasePath), { recursive: true });
-
-    this.#sqlDatabase = openNodeSqliteDatabase(this.config.databasePath);
+    this.#sqlDatabase = dependencies.database;
     this.interactionStore = new SqliteGuestInteractionStore(this.#sqlDatabase);
     this.#bookingState = new SqliteBookingStateRepository(this.#sqlDatabase);
     this.#checkInStore = new SqliteCheckInSupportStore(this.#sqlDatabase);
@@ -548,14 +597,8 @@ export class LocalApartmentOwnerEnvironment {
       this.#sqlDatabase,
       { clock: this.clock },
     );
-    this.unitRepository = this.config.inventoryPath
-      ? new JsonUnitRepository(this.config.inventoryPath)
-      : new UnitRepository();
-    this.operatorRepository = this.config.operatorsPath
-      ? new JsonOperatorRepository(this.config.operatorsPath, {
-          clock: this.clock,
-        })
-      : null;
+    this.unitRepository = dependencies.unitRepository;
+    this.operatorRepository = dependencies.operatorRepository;
     this.calendar = new AvailabilityCalendar({
       repository: this.unitRepository,
       store: new SqliteAvailabilityStore(this.#sqlDatabase),
@@ -2456,7 +2499,7 @@ export class LocalApartmentOwnerEnvironment {
       return [];
     const actorId = principal.id;
     const tenantId = principal.tenantId;
-    const units: unknown[] = this.unitRepository.findAll();
+    const units: readonly unknown[] = this.unitRepository.findAll();
     return units.flatMap((unit) => {
       if (
         !isRecord(unit) ||
@@ -2743,7 +2786,7 @@ export class LocalApartmentOwnerEnvironment {
     this.grantStore.close();
     if (this.#closed) return;
     this.#closed = true;
-    this.#sqlDatabase.close();
+    if (this.#ownsDatabase) this.#sqlDatabase.close();
   }
 }
 

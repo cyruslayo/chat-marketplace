@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { LocalGuestEnvironment } from "../../local-guest/src/fixture.js";
 import { startLocalGuestServer, type LocalGuestServerHandle } from "../../local-guest/src/guest-server.js";
 import { LocalApartmentOwnerEnvironment, startLocalOwnerServer } from "../../local-owner/src/index.js";
-import { DirectPaystackClient, PaystackBankTransferClient, type PaystackClient } from "../../../domains/shortlet/src/index.js";
+import { DirectPaystackClient, JsonOperatorRepository, JsonUnitRepository, PaystackBankTransferClient, type PaystackClient } from "../../../domains/shortlet/src/index.js";
 import { loadPilotConfiguration, type PilotConfiguration } from "./pilot-config.js";
 import type { AssistantModelClient } from "../../local-guest/src/assistant/assistant-model.js";
 import { createConciergeModelClient } from "../../local-guest/src/assistant/concierge-configuration.js";
@@ -13,6 +13,7 @@ import { SlidingWindowRateLimiter } from "./rate-limiter.js";
 import { ResendEmailSender, type EmailSender } from "./notifications/email-sender.js";
 import { PilotNotifier } from "./notifications/pilot-notifier.js";
 import { databaseHealthy } from "./database-health.js";
+import { openNodeSqliteDatabase } from "../../../packages/platform-core/src/node-sqlite-database.js";
 import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
 
 export interface PilotServerHandle {
@@ -162,6 +163,9 @@ export function startPilotServer(options: {
   }
   const transformHtml = configuration.deployment === "staging" ? withBetaBanner : undefined;
 
+  // ADR 0004: one SQLite handle and one inventory serve the Guest and Operator compositions in this process.
+  const database = openNodeSqliteDatabase(configuration.databasePath);
+  const unitRepository = new JsonUnitRepository(configuration.inventoryPath);
   const guestEnvironment = new LocalGuestEnvironment({
     databasePath: configuration.databasePath,
     inventoryPath: configuration.inventoryPath,
@@ -185,7 +189,7 @@ export function startPilotServer(options: {
     // ADR 0090: manual transfer only when the business account is configured.
     manualTransferAccount: configuration.manualTransferAccount,
     ...(configuration.receiptMaxBytes === null ? {} : { receiptMaxBytes: configuration.receiptMaxBytes }),
-  });
+  }, { database, unitRepository });
   const operatorEnvironment = new LocalApartmentOwnerEnvironment({
     databasePath: configuration.databasePath,
     inventoryPath: configuration.inventoryPath,
@@ -200,7 +204,7 @@ export function startPilotServer(options: {
     propertyId: configuration.propertyId,
     seedFixture: false,
     clock,
-  });
+  }, { database, unitRepository, operatorRepository: new JsonOperatorRepository(configuration.operatorsPath, { clock }) });
 
   const modelClient = options.modelClient ?? createConciergeModelClient(configuration.concierge);
   const guest = startLocalGuestServer({
@@ -296,6 +300,7 @@ export function startPilotServer(options: {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
       await owner.close();
       await guest.close();
+      database.close();
     },
   };
 }

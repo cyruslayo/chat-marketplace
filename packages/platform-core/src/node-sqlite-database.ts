@@ -170,7 +170,7 @@ export class NodeSqliteDatabase implements SqlDatabase {
   }
 
   close(): void {
-    if (this.#ownsDatabase) this.#database.close();
+    if (this.#ownsDatabase && this.#database.isOpen) this.#database.close();
   }
 }
 

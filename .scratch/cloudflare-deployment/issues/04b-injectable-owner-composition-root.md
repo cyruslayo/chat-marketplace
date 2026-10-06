@@ -1,6 +1,6 @@
 # Injectable owner composition root
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 02e
 Branch: `infra/cf-04b-owner-root`
@@ -44,3 +44,11 @@ This is the same as 04a, for the operator back office. `LocalApartmentOwnerEnvir
 Check every item in `docs/agents/issue-tracker.md`.
 
 ## Comments
+
+## Answer
+
+Resolved 6 Oct 2026. `new LocalApartmentOwnerEnvironment(config, { database, unitRepository, operatorRepository })` does no filesystem access (`operatorRepository` stays nullable, as today); `openNode(config)` keeps the path behaviour, owns the handle and releases it if construction throws; `close()` closes only an owned handle. The operator JSON repository gets the same clock as before (`config.clock` or the fixture default).
+
+- Call sites moved to `openNode`: `cli-provision.ts`, `cli-revoke.ts`, `local-owner-server.ts` (default and reset), scripts and tests. The pilot servers inject the shared handle. `operator:provision`/`operator:revoke` behave the same (existing suites pass).
+- Tests: `test/owner-environment-injection.test.ts` (AC1–AC3, plus the failed-construction release).
+- ADRs: 0086 (the session authority uses the injected handle; restart-safe sessions unchanged), 0004.

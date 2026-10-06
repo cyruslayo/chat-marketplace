@@ -58,11 +58,11 @@ test("02e AC2: No component opens a second connection to the pilot database", as
   const before = nodeSqlitePathOpenCount();
   const server = startPilotServer({ port: 0, configuration: fixture.configuration, paystackClient: fixture.paystack, emailSender: silentSender });
   try {
-    // One handle for the guest composition and one for the owner composition (04a/04b inject a single shared handle).
-    // The notifier and the healthcheck add none.
+    // The pilot composition injects one handle into the Guest and Operator environments (04a/04b); the notifier and
+    // the healthcheck borrow it. Per-session Guest runtimes still open their own until 04c.
     assert.ok(server.notifier, "notifications are configured, so the notifier exists");
     await server.listen();
-    assert.equal(nodeSqlitePathOpenCount() - before, 2);
+    assert.equal(nodeSqlitePathOpenCount() - before, 1);
   } finally {
     await server.close();
     await rm(fixture.directory, { recursive: true, force: true });
@@ -71,7 +71,7 @@ test("02e AC2: No component opens a second connection to the pilot database", as
 
 test("02e AC3: The owner environment now enforces foreign keys, the same as the guest environment", async () => {
   const directory = await mkdtemp(join(tmpdir(), "owner-foreign-keys-"));
-  const environment = new LocalApartmentOwnerEnvironment({ databasePath: join(directory, "owner.sqlite"), seedFixture: false });
+  const environment = LocalApartmentOwnerEnvironment.openNode({ databasePath: join(directory, "owner.sqlite"), seedFixture: false });
   try {
     const authority = new SqliteGuestAccountAuthority(environment.database, { codeHashingKey: "owner-foreign-key-test-key" });
     assert.ok(authority);
@@ -97,7 +97,7 @@ test("02e AC4: The healthcheck reuses the shared handle and answers 200, or 503 
     assert.equal(healthy.status, 200);
     assert.deepEqual(await healthy.json(), { ok: true });
     assert.equal(nodeSqlitePathOpenCount(), opened, "a healthcheck opens no new connection");
-    server.guest.environment.close();
+    server.guest.environment.database.close();
     const unhealthy = await fetch(`http://127.0.0.1:${port}/healthz`);
     assert.equal(unhealthy.status, 503);
     assert.deepEqual(await unhealthy.json(), { ok: false });

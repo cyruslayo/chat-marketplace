@@ -18,7 +18,7 @@ interface UnitLike {
 
 interface UnitRepositoryLike {
   findById?: (id: string) => UnitLike | null;
-  findAll?: () => UnitLike[];
+  findAll?: () => readonly UnitLike[];
   save: (unit: UnitLike) => void;
 }
 

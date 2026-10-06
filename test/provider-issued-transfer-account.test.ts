@@ -59,7 +59,7 @@ test("AC1 — Starting a bank transfer returns the bank name, account number and
 
   // LocalGuestEnvironment composes the app over the deterministic local provider; the account is the provider's.
   const dir = mkdtempSync(join(tmpdir(), "p1-guest-"));
-  const env = new LocalGuestEnvironment({ databasePath: join(dir, "guest.sqlite"), initialGuestPhoneNumber: "+2348012345678", initialGuestContactEmail: "guest@example.test" });
+  const env = LocalGuestEnvironment.openNode({ databasePath: join(dir, "guest.sqlite"), initialGuestPhoneNumber: "+2348012345678", initialGuestContactEmail: "guest@example.test" });
   try {
     assert.ok(env.bankTransferApp, "bank transfer app is composed locally");
     const draft = env.bookingRequestApp.createDraft({ unitId: "unit-lagos-ikoyi-001", primaryGuest: { id: env.config.guestId, name: env.config.guestName }, occupants: env.demoOccupants(2), selfBookingAttestation: env.selfBookingAttestation(), checkIn: "2026-09-10", checkOut: "2026-09-13" }, env.guestPrincipal());
@@ -77,7 +77,7 @@ test("AC1 — Starting a bank transfer returns the bank name, account number and
   // Production has no transfer provider until the Paystack adapter (P2): nothing can invent an account.
   const productionDir = mkdtempSync(join(tmpdir(), "p1-prod-"));
   try {
-    const production = new LocalGuestEnvironment({ databasePath: join(productionDir, "guest.sqlite"), deterministicPsp: false });
+    const production = LocalGuestEnvironment.openNode({ databasePath: join(productionDir, "guest.sqlite"), deterministicPsp: false });
     try { assert.equal(production.bankTransferApp, null); } finally { production.close(); }
   } finally { rmSync(productionDir, { recursive: true, force: true }); }
 });

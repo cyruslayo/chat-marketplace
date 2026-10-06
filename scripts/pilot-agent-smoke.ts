@@ -141,7 +141,7 @@ if (!credential) {
     assertLocalPilotReady(paths);
     await mkdir(reportDirectory, { recursive: true });
     smokeDatabasePath = resolve(reportDirectory, `runtime-${process.pid}.sqlite`);
-    environment = new LocalGuestEnvironment({
+    environment = LocalGuestEnvironment.openNode({
       databasePath: smokeDatabasePath,
       inventoryPath: paths.inventoryPath,
       tenantId: LOCAL_PILOT_TENANT_ID,

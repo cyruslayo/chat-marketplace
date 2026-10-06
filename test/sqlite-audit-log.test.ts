@@ -10,16 +10,16 @@ import { SqliteAuditLog } from "../packages/platform-core/src/sqlite-audit-log.j
 import { InMemoryAuditLog, type AuditLog } from "../packages/platform-core/src/index.js";
 
 test("06a AC1: Audit entries written before a restart through a new environment are readable afterwards in order", () => {
-  for (const Environment of [LocalGuestEnvironment, LocalApartmentOwnerEnvironment]) {
+  for (const open of [(config: Parameters<typeof LocalApartmentOwnerEnvironment.openNode>[0]) => LocalGuestEnvironment.openNode(config), (config: Parameters<typeof LocalApartmentOwnerEnvironment.openNode>[0]) => LocalApartmentOwnerEnvironment.openNode(config)]) {
     const directory = mkdtempSync(join(tmpdir(), "audit-restart-"));
     const config = { databasePath: join(directory, "pilot.sqlite"), seedFixture: false };
-    let env = new Environment(config);
+    let env = open(config);
     try {
       env.audit.record({ type: "audit.first", principalId: "synthetic-principal" });
       env.audit.record({ type: "audit.second" });
       const before = env.audit.entries();
       env.close();
-      env = new Environment(config);
+      env = open(config);
       assert.deepEqual(env.audit.entries().slice(0, before.length), before);
       assert.deepEqual(before.slice(-2).map((entry) => entry.type), ["audit.first", "audit.second"]);
       assert.ok(before.every((entry) => typeof entry.recordedAt === "string"));

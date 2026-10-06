@@ -32,7 +32,7 @@ test("06c AC1: Comments audit lists every piece of instance state and persists i
 test("06c AC2: Revenue records and release decisions made before a restart are the same after it", () => {
   const directory = mkdtempSync(join(tmpdir(), "revenue-restart-"));
   const config = { databasePath: join(directory, "pilot.sqlite"), seedFixture: false };
-  let env = new LocalApartmentOwnerEnvironment(config);
+  let env = LocalApartmentOwnerEnvironment.openNode(config);
   try {
     const production = setupRevenueRelease({ accounting: env.accountingRepository });
     const release = production.app.releaseRevenue("reservation-1", revenuePrincipal);
@@ -50,7 +50,7 @@ test("06c AC2: Revenue records and release decisions made before a restart are t
     env.revenueReleaseManager.processRevenueRelease(legacyInput);
     const adjustment = env.revenueReleaseManager.postLedgerAdjustment({ reservationId: "legacy-1", reason: "correction", adjustmentKobo: -7, recordedAtIso: legacyInput.currentIso });
     env.close();
-    env = new LocalApartmentOwnerEnvironment(config);
+    env = LocalApartmentOwnerEnvironment.openNode(config);
     assert.deepEqual(env.accountingRepository.findReleaseByReservationId("reservation-1"), release);
     assert.deepEqual(env.accountingRepository.findReleaseById(release.releaseId), release);
     assert.deepEqual(env.accountingRepository.findLedgerEntriesForRelease(release.releaseId), journals);

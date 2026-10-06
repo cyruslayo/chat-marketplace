@@ -24,7 +24,7 @@ function questionCount(reply: string): number {
 }
 
 async function withApp(run: (app: LocalGuestApp, threadId: string) => Promise<void>): Promise<void> {
-  const environment = new LocalGuestEnvironment({ databasePath: `.scratch/local-guest/reflective-${crypto.randomUUID()}.sqlite` });
+  const environment = LocalGuestEnvironment.openNode({ databasePath: `.scratch/local-guest/reflective-${crypto.randomUUID()}.sqlite` });
   try { await run(new LocalGuestApp(environment), `g-${crypto.randomUUID()}`); } finally { environment.close(); }
 }
 

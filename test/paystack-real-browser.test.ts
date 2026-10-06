@@ -37,7 +37,7 @@ test("Paystack callback and handoff routes restore authoritative state in real C
     verifyWebhookSignature() { return true; },
   };
   let clockTime = new Date("2026-09-03T10:00:00Z");
-  const environment = new LocalGuestEnvironment({ databasePath, clock: () => clockTime, paystackClient });
+  const environment = LocalGuestEnvironment.openNode({ databasePath, clock: () => clockTime, paystackClient });
   const server = startLocalGuestServer({ port: 0, environment });
   const browser = await launchRealBrowser({ headless: true });
   let tab: RealBrowserTab | undefined;

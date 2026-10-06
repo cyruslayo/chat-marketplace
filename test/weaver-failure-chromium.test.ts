@@ -9,7 +9,7 @@ import { launchRealBrowser } from "./helpers/chrome-devtools.js";
 
 test("AC20 — A controlled Weaver rendering failure preserves a safe conventional fallback in real Chromium", async () => {
   const directory = mkdtempSync(join(tmpdir(), "weaver-failure-"));
-  const server = startLocalGuestServer({ port: 0, environment: new LocalGuestEnvironment({ databasePath: join(directory, "guest.sqlite") }) });
+  const server = startLocalGuestServer({ port: 0, environment: LocalGuestEnvironment.openNode({ databasePath: join(directory, "guest.sqlite") }) });
   const browser = await launchRealBrowser();
   const tab = await browser.createTab();
   let stopIntercept: (() => Promise<void>) | undefined;

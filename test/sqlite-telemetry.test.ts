@@ -15,16 +15,16 @@ const transition: TransitionTelemetryEvent = {
 };
 
 test("06b AC1: Events survive a restart", () => {
-  for (const Environment of [LocalGuestEnvironment, LocalApartmentOwnerEnvironment]) {
+  for (const open of [(config: Parameters<typeof LocalApartmentOwnerEnvironment.openNode>[0]) => LocalGuestEnvironment.openNode(config), (config: Parameters<typeof LocalApartmentOwnerEnvironment.openNode>[0]) => LocalApartmentOwnerEnvironment.openNode(config)]) {
     const directory = mkdtempSync(join(tmpdir(), "telemetry-restart-"));
     const config = { databasePath: join(directory, "pilot.sqlite"), seedFixture: false };
-    let env = new Environment(config);
+    let env = open(config);
     try {
       env.telemetry.track({ type: "telemetry.first" });
       env.telemetry.track({ type: "telemetry.second" });
       const before = env.telemetry.events();
       env.close();
-      env = new Environment(config);
+      env = open(config);
       assert.deepEqual(env.telemetry.events().slice(0, before.length), before);
       assert.deepEqual(before.slice(-2).map((event) => event.type), ["telemetry.first", "telemetry.second"]);
     } finally {

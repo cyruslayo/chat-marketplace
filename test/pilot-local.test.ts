@@ -189,7 +189,7 @@ test("AC30 — Production deterministic PSP isolation remains unchanged", () => 
 test("Production Guest fixture and demo/reset routes remain unavailable", async () => {
   const paths = temporaryPaths();
   const paystack: PaystackClient = { configuration: { environment: "live", callbackBaseUrl: "https://pilot.example.test" }, async initializeTransaction() { throw new Error("not used"); }, async verifyTransaction() { throw new Error("not used"); }, verifyWebhookSignature() { return false; } };
-  const environment = new LocalGuestEnvironment({ databasePath: paths.databasePath, production: true, deterministicPsp: false, paystackClient: paystack });
+  const environment = LocalGuestEnvironment.openNode({ databasePath: paths.databasePath, production: true, deterministicPsp: false, paystackClient: paystack });
   const server = startLocalGuestServer({ port: 0, environment, production: true, publicOrigin: "https://pilot.example.test", secureCookie: true });
   try { const port = await server.listen(); assert.equal((await fetch(`http://127.0.0.1:${port}/api/reset`, { method: "POST" })).status, 404); assert.equal((await fetch(`http://127.0.0.1:${port}/action/demo-request`, { method: "POST" })).status, 404); }
   finally { await server.close(); rmSync(paths.directory, { recursive: true, force: true }); }

@@ -41,7 +41,7 @@ export interface DistinctPayer {
 
 interface UnitRepositoryLike {
   findById?: (id: string) => { capacity: number } | null;
-  findAll?: () => Array<{ id: string; capacity: number }>;
+  findAll?: () => readonly { id: string; capacity: number }[];
 }
 
 export type RestrictedIdentityOperation = "read" | "write";

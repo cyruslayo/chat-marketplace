@@ -451,7 +451,7 @@ test("AC16 — imported data survives restart", async () => {
     const restarted = new JsonUnitRepository(file);
     assert.equal(restarted.findById("unit-import-001")?.title, "Bright apartment in Ikeja");
     publishUnit(restarted as unknown as UnitRepository, "unit-import-001", { clock: () => NOW });
-    const guest = new LocalGuestEnvironment({ databasePath: join(directory, "guest.sqlite"), inventoryPath: file, initialGuestPhoneNumber: null, initialGuestContactEmail: null });
+    const guest = LocalGuestEnvironment.openNode({ databasePath: join(directory, "guest.sqlite"), inventoryPath: file, initialGuestPhoneNumber: null, initialGuestContactEmail: null });
     try {
       assert.deepEqual(guest.discoveryQuery.search({ location: "Lagos" }).facts.results.map((unit: { id: string }) => unit.id), ["unit-import-001"]);
     } finally {

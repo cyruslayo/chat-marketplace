@@ -58,7 +58,7 @@ test("The shell supports focused-workspace composer de-emphasis without hiding m
 });
 
 test("server-backed state restores the conversation timeline and latest workspace projection", async () => {
-  const environment = new LocalGuestEnvironment({ databasePath: `.scratch/eval-test/shell_state_${Date.now()}.sqlite` });
+  const environment = LocalGuestEnvironment.openNode({ databasePath: `.scratch/eval-test/shell_state_${Date.now()}.sqlite` });
   try {
     const app = new LocalGuestApp(environment);
     const threadId = "g-abcdef123456";
@@ -83,7 +83,7 @@ test("server-backed state restores the conversation timeline and latest workspac
 });
 
 test("discovery preview expands into one focused results workspace through a reversible presentation event", async () => {
-  const environment = new LocalGuestEnvironment({ databasePath: `.scratch/eval-test/shell_expand_${Date.now()}.sqlite` });
+  const environment = LocalGuestEnvironment.openNode({ databasePath: `.scratch/eval-test/shell_expand_${Date.now()}.sqlite` });
   try {
     const app = new LocalGuestApp(environment);
     const threadId = "g-fedcba654321";
@@ -109,7 +109,7 @@ test("discovery preview expands into one focused results workspace through a rev
 });
 
 test("shell telemetry accepts only the registered redacted event vocabulary", () => {
-  const environment = new LocalGuestEnvironment({ databasePath: `.scratch/eval-test/shell_telemetry_${Date.now()}.sqlite` });
+  const environment = LocalGuestEnvironment.openNode({ databasePath: `.scratch/eval-test/shell_telemetry_${Date.now()}.sqlite` });
   try {
     const app = new LocalGuestApp(environment);
     assert.equal(app.recordShellTelemetry("fallback-rendered"), true);
@@ -123,7 +123,7 @@ test("shell telemetry accepts only the registered redacted event vocabulary", ()
 });
 
 test("HTTP refresh state requires the server-issued browser session and cannot enumerate another thread", async () => {
-  const environment = new LocalGuestEnvironment({ databasePath: `.scratch/eval-test/shell_http_${Date.now()}.sqlite` });
+  const environment = LocalGuestEnvironment.openNode({ databasePath: `.scratch/eval-test/shell_http_${Date.now()}.sqlite` });
   const server = startLocalGuestServer({ port: 0, environment });
   const port = await server.listen();
   const base = `http://127.0.0.1:${port}`;

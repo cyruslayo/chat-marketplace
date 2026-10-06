@@ -27,7 +27,7 @@ interface MobileContext {
 async function startContext(width: number, height: number, verifyPayment?: (reference: string, amountKobo: number) => PSPVerifyResult): Promise<MobileContext> {
   const directory = mkdtempSync(join(tmpdir(), "guest-mobile-"));
   const databasePath = join(directory, "guest.sqlite");
-  const server = startLocalGuestServer({ port: 0, environment: new LocalGuestEnvironment({ databasePath, initialGuestPhoneNumber: null, initialGuestContactEmail: null, ...(verifyPayment ? { verifyPayment } : {}) }) });
+  const server = startLocalGuestServer({ port: 0, environment: LocalGuestEnvironment.openNode({ databasePath, initialGuestPhoneNumber: null, initialGuestContactEmail: null, ...(verifyPayment ? { verifyPayment } : {}) }) });
   let browser: RealBrowserInstance | undefined;
   let tab: RealBrowserTab | undefined;
   try {

@@ -11,7 +11,7 @@ const SEARCH_PATH = "/stays/search?area=old-ikoyi&checkIn=2026-09-10&checkOut=20
 
 async function withPublicServer<T>(run: (base: string) => Promise<T>): Promise<T> {
   const directory = mkdtempSync(join(tmpdir(), "guest-app-frame-"));
-  const server = startLocalGuestServer({ port: 0, environment: new LocalGuestEnvironment({ databasePath: join(directory, "guest.sqlite"), clock: () => new Date("2026-09-03T10:00:00Z") }) });
+  const server = startLocalGuestServer({ port: 0, environment: LocalGuestEnvironment.openNode({ databasePath: join(directory, "guest.sqlite"), clock: () => new Date("2026-09-03T10:00:00Z") }) });
   try {
     return await run(`http://127.0.0.1:${await server.listen()}`);
   } finally {

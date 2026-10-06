@@ -33,7 +33,7 @@ test("02d AC2: Operator sessions survive environment restart and expired or revo
   const databasePath = join(directory, "pilot.sqlite");
   let now = new Date("2026-08-10T10:00:00Z");
   const config = { databasePath, clock: () => now };
-  let env = new LocalApartmentOwnerEnvironment(config);
+  let env = LocalApartmentOwnerEnvironment.openNode(config);
   try {
     const token = env.provisionOperatorAccessToken();
     const live = env.sessionAuthority.authenticateAccessToken(token);
@@ -43,7 +43,7 @@ test("02d AC2: Operator sessions survive environment restart and expired or revo
     env.sessionAuthority.revokeSession(revoked.sessionId);
     const unconsumed = env.provisionOperatorAccessToken();
     env.close();
-    env = new LocalApartmentOwnerEnvironment({ ...config, seedFixture: false });
+    env = LocalApartmentOwnerEnvironment.openNode({ ...config, seedFixture: false });
     assert.deepEqual(
       env.sessionAuthority.resolveSession(live.sessionId, live.sessionSecret),
       live.principal,
@@ -69,7 +69,7 @@ test("02d AC2: Operator sessions survive environment restart and expired or revo
     );
     now = new Date("2026-08-10T22:00:00Z");
     env.close();
-    env = new LocalApartmentOwnerEnvironment({ ...config, seedFixture: false });
+    env = LocalApartmentOwnerEnvironment.openNode({ ...config, seedFixture: false });
     assert.equal(
       env.sessionAuthority.resolveSession(live.sessionId, live.sessionSecret),
       null,

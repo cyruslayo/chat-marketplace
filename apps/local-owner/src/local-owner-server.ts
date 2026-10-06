@@ -1192,7 +1192,7 @@ export function startLocalOwnerServer(options: {
   production?: boolean;
 } = {}) {
   const port = options.port ?? 3000;
-  let env = options.environment ?? new LocalApartmentOwnerEnvironment();
+  let env = options.environment ?? LocalApartmentOwnerEnvironment.openNode();
   const production = options.production === true;
   if (production && !options.publicOrigin) throw new Error("Production Operator server requires SHORTLET_PUBLIC_ORIGIN");
   const cookieFlags = `${(options.secureCookie ?? production) ? "; Secure" : ""}; HttpOnly; SameSite=Lax; Path=/operator`;
@@ -1545,7 +1545,7 @@ export function startLocalOwnerServer(options: {
       if (url.pathname === "/action/reset") {
         env.close();
         resetLocalOwnerFixture(env.config.databasePath);
-        env = new LocalApartmentOwnerEnvironment(env.config);
+        env = LocalApartmentOwnerEnvironment.openNode(env.config);
         res.writeHead(302, { Location: "/" });
         res.end();
         return;

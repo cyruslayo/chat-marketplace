@@ -47,7 +47,7 @@ test("AC2: with a quote the price block shows the All-In Stay Total for the date
 
   // Un-quoted: the public page shows only the labelled indicative nightly rate (ADR 0015).
   const directory = mkdtempSync(join(tmpdir(), "unit-detail-ac2-"));
-  const environment = new LocalGuestEnvironment({ databasePath: join(directory, "guest.sqlite") });
+  const environment = LocalGuestEnvironment.openNode({ databasePath: join(directory, "guest.sqlite") });
   try {
     const unit = environment.unitRepository.findAll()[0]!;
     const page = renderConventionalUnitDetailHtml(unit);
@@ -74,7 +74,7 @@ test("AC3: the tiles show bedrooms, bathrooms and capacity from the unit record,
   assert.equal(missingBedroomComponents.find((component) => component.id === "unit-detail-sleeps")?.text, "Sleeps: Sleeps 4");
 
   const directory = mkdtempSync(join(tmpdir(), "unit-detail-ac3-"));
-  const environment = new LocalGuestEnvironment({ databasePath: join(directory, "guest.sqlite") });
+  const environment = LocalGuestEnvironment.openNode({ databasePath: join(directory, "guest.sqlite") });
   try {
     const unit = environment.unitRepository.findAll()[0]!;
     const page = renderConventionalUnitDetailHtml(unit);

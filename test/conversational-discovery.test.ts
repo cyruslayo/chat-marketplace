@@ -133,7 +133,7 @@ async function startConversation(
 ): Promise<ConversationServer> {
   const directory = mkdtempSync(join(tmpdir(), "guest-conversation-"));
   const databasePath = join(directory, "guest.sqlite");
-  const environment = new LocalGuestEnvironment({ databasePath });
+  const environment = LocalGuestEnvironment.openNode({ databasePath });
   const server = startLocalGuestServer({
     port: 0,
     environment,
@@ -727,7 +727,7 @@ test("AC15 — Restart preserves an incomplete conversational search context", a
 test("AC14/AC15 — Restart keeps two Guest threads' search contexts separate", async () => {
   const directory = mkdtempSync(join(tmpdir(), "guest-conversation-restart-"));
   const databasePath = join(directory, "guest.sqlite");
-  let environment = new LocalGuestEnvironment({ databasePath });
+  let environment = LocalGuestEnvironment.openNode({ databasePath });
   let server = startLocalGuestServer({ port: 0, environment });
   let base = `http://127.0.0.1:${await server.listen()}`;
   const home = await fetch(base);
@@ -752,7 +752,7 @@ test("AC14/AC15 — Restart keeps two Guest threads' search contexts separate", 
 
     // A fresh application instance over the same durable store, no shared memory.
     await server.close();
-    environment = new LocalGuestEnvironment({ databasePath });
+    environment = LocalGuestEnvironment.openNode({ databasePath });
     server = startLocalGuestServer({ port: 0, environment });
     base = `http://127.0.0.1:${await server.listen()}`;
     await (await fetch(base, { headers: { cookie } })).text();

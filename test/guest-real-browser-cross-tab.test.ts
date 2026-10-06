@@ -59,7 +59,7 @@ async function startRealBrowserContext(config: Partial<LocalGuestFixtureConfig> 
   const databasePath = join(dir, "guest.sqlite");
   let clockTime = new Date("2026-09-03T10:00:00Z");
 
-  const environment = new LocalGuestEnvironment({
+  const environment = LocalGuestEnvironment.openNode({
     databasePath,
     clock: () => clockTime,
     ...config,
@@ -583,7 +583,7 @@ test("RB10 — Two real tabs restore safely after server restart", async () => {
     await ctx.server.close();
 
     // Start a new server instance over the SAME durable SQLite database (ADR-0079)
-    const newEnv = new LocalGuestEnvironment({
+    const newEnv = LocalGuestEnvironment.openNode({
       databasePath: ctx.databasePath,
       clock: () => ctx.clockTime,
     });
@@ -630,7 +630,7 @@ test("RB11 — Restarted real tabs do not replay consequential commands", async 
     // Stop server and restart
     await ctx.server.close();
 
-    const newEnv = new LocalGuestEnvironment({
+    const newEnv = LocalGuestEnvironment.openNode({
       databasePath: ctx.databasePath,
       clock: () => ctx.clockTime,
     });

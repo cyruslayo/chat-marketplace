@@ -10,7 +10,7 @@ import { launchRealBrowser } from "./helpers/chrome-devtools.js";
 test("AC3: With JavaScript disabled, posting the composer produces a server-rendered reply in real Chromium", async () => {
   const directory = mkdtempSync(join(tmpdir(), "no-js-composer-"));
   const now = new Date("2026-09-03T10:00:00Z");
-  const server = startLocalGuestServer({ port: 0, environment: new LocalGuestEnvironment({ databasePath: join(directory, "guest.sqlite"), clock: () => now }) });
+  const server = startLocalGuestServer({ port: 0, environment: LocalGuestEnvironment.openNode({ databasePath: join(directory, "guest.sqlite"), clock: () => now }) });
   const browser = await launchRealBrowser();
   const tab = await browser.createTab();
   try {

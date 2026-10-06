@@ -24,7 +24,7 @@ function event(app: LocalGuestApp, threadId: string, surface: { readonly a2uiMes
 function close(environment: LocalGuestEnvironment): void { environment.close(); }
 
 test("AC1–AC8 — Guest discovery, Unit inspection, Request Draft, review, disclosure, and pending status preserve one conversation workspace", async () => {
-  const environment = new LocalGuestEnvironment({ databasePath: `.scratch/local-guest/ac1-${Date.now()}.sqlite` });
+  const environment = LocalGuestEnvironment.openNode({ databasePath: `.scratch/local-guest/ac1-${Date.now()}.sqlite` });
   try {
     const app = new LocalGuestApp(environment);
     const threadId = "g-abcdefac1";
@@ -55,7 +55,7 @@ test("AC1–AC8 — Guest discovery, Unit inspection, Request Draft, review, dis
 });
 
 test("AC3: Retrying a command event does not create a second Booking Request", async () => {
-  const environment = new LocalGuestEnvironment({ databasePath: `.scratch/local-guest/ac3-liveness-${Date.now()}.sqlite` });
+  const environment = LocalGuestEnvironment.openNode({ databasePath: `.scratch/local-guest/ac3-liveness-${Date.now()}.sqlite` });
   try {
     const app = new LocalGuestApp(environment);
     const threadId = "g-abcdefac33";
@@ -77,7 +77,7 @@ test("AC3: Retrying a command event does not create a second Booking Request", a
 });
 
 test("AC12–AC23 and AC37–AC39 — Operator confirmation, explicit offer acceptance, PSP return verification, staged payment, reservation commit, and refresh restoration are authoritative", async () => {
-  const environment = new LocalGuestEnvironment({ databasePath: `.scratch/local-guest/ac12-${Date.now()}.sqlite` });
+  const environment = LocalGuestEnvironment.openNode({ databasePath: `.scratch/local-guest/ac12-${Date.now()}.sqlite` });
   try {
     const app = new LocalGuestApp(environment);
     const threadId = "g-abcdefac12";
@@ -122,7 +122,7 @@ test("AC12–AC23 and AC37–AC39 — Operator confirmation, explicit offer acce
 });
 
 test("AC4, AC9–AC11, AC26–AC28, and AC34–AC36 — unverified guests can submit, request outcomes are distinct, stale actions fail closed, and generated actions stay allow-listed", async () => {
-  const unverified = new LocalGuestEnvironment({ databasePath: `.scratch/local-guest/ac4-${Date.now()}.sqlite` });
+  const unverified = LocalGuestEnvironment.openNode({ databasePath: `.scratch/local-guest/ac4-${Date.now()}.sqlite` });
   try {
     const app = new LocalGuestApp(unverified);
     const threadId = "g-abcdefac4";
@@ -143,7 +143,7 @@ test("AC4, AC9–AC11, AC26–AC28, and AC34–AC36 — unverified guests can su
   } finally { close(unverified); }
 
   let now = new Date("2026-09-03T10:00:00Z");
-  const timeoutEnvironment = new LocalGuestEnvironment({ databasePath: `.scratch/local-guest/ac11-${Date.now()}.sqlite`, clock: () => now });
+  const timeoutEnvironment = LocalGuestEnvironment.openNode({ databasePath: `.scratch/local-guest/ac11-${Date.now()}.sqlite`, clock: () => now });
   try {
     const app = new LocalGuestApp(timeoutEnvironment);
     const threadId = "g-abcdefac11";
@@ -173,7 +173,7 @@ test("AC9–AC11 — delivery failure, Operator decline, and Operator timeout re
   ] as const;
   for (const scenario of cases) {
     let now = new Date("2026-09-03T10:00:00Z");
-    const environment = new LocalGuestEnvironment({ databasePath: `.scratch/local-guest/${scenario.name}-${Date.now()}-${crypto.randomUUID()}.sqlite`, clock: () => now, ...scenario.config });
+    const environment = LocalGuestEnvironment.openNode({ databasePath: `.scratch/local-guest/${scenario.name}-${Date.now()}-${crypto.randomUUID()}.sqlite`, clock: () => now, ...scenario.config });
     try {
       const app = new LocalGuestApp(environment);
       const threadId = `g-${scenario.name === "delivery" ? "deadbeef1" : scenario.name === "decline" ? "deadbeef2" : "deadbeef3"}`;

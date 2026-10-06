@@ -26,6 +26,7 @@ import {
   UnitDiscoveryQuery,
   UnitRepository,
   JsonUnitRepository,
+  type UnitRepositoryContract,
   unitPriceFromOwnerTerms,
   InMemorySecurityDepositAccountingRepository,
   type PaystackClient,
@@ -265,10 +266,22 @@ class LocalBookingContractRepository implements ContractRepository {
   }
 }
 
+/**
+ * What a composition hands the environment (ADR 0004: one handle, one inventory). The environment performs no
+ * filesystem access of its own; `LocalGuestEnvironment.openNode` is the Node composition that builds these from paths.
+ */
+export interface LocalGuestEnvironmentDependencies {
+  /** The one authoritative handle. Borrowed: the environment never closes it. */
+  readonly database: SqlDatabase;
+  readonly unitRepository: UnitRepositoryContract;
+  /** Seed the deterministic demo units into `unitRepository`. Demo and test compositions only. */
+  readonly seedDemoUnits?: boolean;
+}
+
 export class LocalGuestEnvironment {
   readonly config: LocalGuestFixtureConfig;
   readonly clock: () => Date;
-  readonly unitRepository: UnitRepository | JsonUnitRepository;
+  readonly unitRepository: UnitRepositoryContract;
   readonly calendar: AvailabilityCalendar;
   readonly grantStore: SqliteOperatorRepresentativeGrantStore;
   readonly audit: AuditLog;
@@ -291,9 +304,43 @@ export class LocalGuestEnvironment {
   readonly guestContactApp: GuestContactApplication;
   #searchCounter = 0;
   readonly #database: SqlDatabase;
+  #ownsDatabase = false;
   #closed = false;
 
-  constructor(config: Partial<LocalGuestFixtureConfig> = {}) {
+  /**
+   * Today's path-based composition: creates the directory, opens the SQLite file and picks the JSON or in-memory
+   * inventory. The returned environment owns its handle and closes it in `close()`.
+   */
+  static openNode(
+    config: Partial<LocalGuestFixtureConfig> = {},
+  ): LocalGuestEnvironment {
+    const merged = { ...DEFAULT_LOCAL_GUEST_CONFIG, ...config };
+    mkdirSync(dirname(merged.databasePath), { recursive: true });
+    // One durable SQLite file backs every authoritative repository in this
+    // composition. A restarted application instance opens a fresh connection
+    // over the same file; no application state is retained in memory across
+    // the restart boundary. ADR-0039/0041/0070/0079.
+    const database = openNodeSqliteDatabase(merged.databasePath);
+    try {
+      const environment = new LocalGuestEnvironment(config, {
+        database,
+        unitRepository: merged.inventoryPath
+          ? new JsonUnitRepository(merged.inventoryPath)
+          : new UnitRepository(),
+        seedDemoUnits: !merged.inventoryPath,
+      });
+      environment.#ownsDatabase = true;
+      return environment;
+    } catch (error) {
+      database.close();
+      throw error;
+    }
+  }
+
+  constructor(
+    config: Partial<LocalGuestFixtureConfig>,
+    dependencies: LocalGuestEnvironmentDependencies,
+  ) {
     this.config = { ...DEFAULT_LOCAL_GUEST_CONFIG, ...config };
     if (this.config.production && !this.config.paystackClient) {
       throw new Error(
@@ -302,13 +349,7 @@ export class LocalGuestEnvironment {
     }
     this.clock = this.config.clock ?? (() => new Date("2026-09-03T10:00:00Z"));
 
-    mkdirSync(dirname(this.config.databasePath), { recursive: true });
-
-    // One durable SQLite file backs every authoritative repository in this
-    // composition. A restarted application instance opens a fresh connection
-    // over the same file; no application state is retained in memory across
-    // the restart boundary. ADR-0039/0041/0070/0079.
-    this.#database = openNodeSqliteDatabase(this.config.databasePath);
+    this.#database = dependencies.database;
     const sqlDatabase = this.#database;
     this.interactionStore = new SqliteGuestInteractionStore(sqlDatabase);
     this.guestContactApp = new GuestContactApplication(
@@ -338,9 +379,7 @@ export class LocalGuestEnvironment {
       sqlDatabase,
       { clock: this.clock },
     );
-    this.unitRepository = this.config.inventoryPath
-      ? new JsonUnitRepository(this.config.inventoryPath)
-      : new UnitRepository();
+    this.unitRepository = dependencies.unitRepository;
     this.calendar = new AvailabilityCalendar({
       repository: this.unitRepository,
       store: new SqliteAvailabilityStore(sqlDatabase),
@@ -522,7 +561,7 @@ export class LocalGuestEnvironment {
       clock: this.clock,
     });
 
-    if (!this.config.inventoryPath) this.#seedUnits();
+    if (dependencies.seedDemoUnits === true) this.#seedUnits();
     if (
       !this.config.production &&
       this.config.seedRepresentativeGrant !== false
@@ -818,6 +857,7 @@ export class LocalGuestEnvironment {
     this.grantStore.close();
     if (this.#closed) return;
     this.#closed = true;
+    if (!this.#ownsDatabase) return;
     try {
       this.#database.close();
     } catch {

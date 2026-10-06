@@ -116,7 +116,7 @@ interface JourneyServer {
 }
 
 async function startJourneyServer(): Promise<JourneyServer> {
-  const environment = new LocalGuestEnvironment({ databasePath: `.scratch/local-guest/browser-${Date.now()}-${crypto.randomUUID()}.sqlite` });
+  const environment = LocalGuestEnvironment.openNode({ databasePath: `.scratch/local-guest/browser-${Date.now()}-${crypto.randomUUID()}.sqlite` });
   const server = startLocalGuestServer({ port: 0, environment });
   const port = await server.listen();
   const base = `http://127.0.0.1:${port}`;

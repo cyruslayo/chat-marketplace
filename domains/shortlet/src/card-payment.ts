@@ -143,7 +143,7 @@ export interface CardPaymentManagerOptions {
   };
   readonly repository?: {
     findById(id: string): unknown;
-    findAll(): unknown[];
+    findAll(): readonly unknown[];
   };
   readonly calendar?: {
     transitionPaymentPendingToConfirmedBooking(input: {

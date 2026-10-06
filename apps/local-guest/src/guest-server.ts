@@ -1248,7 +1248,7 @@ export class LocalGuestApp {
     const config = this.#environment.config;
     this.#environment.close();
     resetLocalGuestFixture(config.databasePath);
-    this.#environment = new LocalGuestEnvironment(config);
+    this.#environment = LocalGuestEnvironment.openNode(config);
   }
 
   /**
@@ -6508,6 +6508,8 @@ export interface LocalGuestServerHandle {
   readonly environment: LocalGuestEnvironment;
   /** Issue 19: open per-session runtimes (each holds a SQLite connection); idle ones are evicted. */
   readonly activeSessionRuntimes: number;
+  /** How many session runtimes this server has built since it started, including rebuilds after eviction. */
+  readonly sessionRuntimesBuilt: number;
   listen(): Promise<number>;
   close(): Promise<void>;
 }
@@ -6541,9 +6543,21 @@ export function startLocalGuestServer(
     modelCallBudget?: ModelCallBudget;
     /** Issue 19: a session's runtime (environment, SQLite connection, assistant memory) is closed after this idle time. */
     sessionRuntimeIdleMs?: number;
+    /**
+     * At most this many session runtimes are resident; opening one more evicts the least recently used. Unset means
+     * no cap. Runtimes share one SQLite handle, so an evicted session is rebuilt from durable state.
+     */
+    sessionRuntimeLimit?: number;
   } = {},
 ): LocalGuestServerHandle {
   const port = options.port ?? LOCAL_GUEST_PORT;
+  const sessionRuntimeLimit = options.sessionRuntimeLimit ?? null;
+  if (
+    sessionRuntimeLimit !== null &&
+    (!Number.isSafeInteger(sessionRuntimeLimit) || sessionRuntimeLimit < 1)
+  ) {
+    throw new Error("sessionRuntimeLimit must be a positive whole number");
+  }
   const sessionRuntimeIdleMs = options.sessionRuntimeIdleMs ?? null;
   if (
     sessionRuntimeIdleMs !== null &&
@@ -6586,7 +6600,7 @@ export function startLocalGuestServer(
   const secureCookie = options.secureCookie ?? production;
   const env =
     options.environment ??
-    new LocalGuestEnvironment({
+    LocalGuestEnvironment.openNode({
       initialGuestPhoneNumber: null,
       initialGuestContactEmail: null,
       production,
@@ -6638,6 +6652,7 @@ export function startLocalGuestServer(
       lastUsedMs: number;
     }
   >();
+  let sessionRuntimesBuilt = 0;
   // Durable state lives in SQLite, so an evicted session's runtime is rebuilt on its next request, exactly as after a
   // restart. Only the in-memory assistant conversation is lost.
   const evictIdleRuntimes = (nowMs: number): void => {
@@ -6661,17 +6676,35 @@ export function startLocalGuestServer(
     const existing = sessionRuntimes.get(session.sessionKey);
     if (existing) {
       existing.lastUsedMs = nowMs;
+      // Re-insert so the Map's first key is always the least recently used runtime.
+      sessionRuntimes.delete(session.sessionKey);
+      sessionRuntimes.set(session.sessionKey, existing);
       return existing;
     }
-    const runtimeEnvironment = new LocalGuestEnvironment({
-      ...env.config,
-      guestId: session.principalId,
-      initialGuestPhoneNumber: null,
-      initialGuestContactEmail: null,
-      production,
-      deterministicPsp: !production,
-      ...(paystackClient === undefined ? {} : { paystackClient }),
-    });
+    if (sessionRuntimeLimit !== null) {
+      while (sessionRuntimes.size >= sessionRuntimeLimit) {
+        const [leastRecentlyUsedKey, leastRecentlyUsed] =
+          sessionRuntimes.entries().next().value!;
+        sessionRuntimes.delete(leastRecentlyUsedKey);
+        leastRecentlyUsed.environment.close();
+      }
+    }
+    // ADR 0004: every session runtime shares the live environment's one handle and inventory. Closing a runtime
+    // environment never closes them, so eviction cannot disturb other sessions.
+    const shared = defaultApp.environment;
+    const runtimeEnvironment = new LocalGuestEnvironment(
+      {
+        ...shared.config,
+        guestId: session.principalId,
+        initialGuestPhoneNumber: null,
+        initialGuestContactEmail: null,
+        production,
+        deterministicPsp: !production,
+        ...(paystackClient === undefined ? {} : { paystackClient }),
+      },
+      { database: shared.database, unitRepository: shared.unitRepository },
+    );
+    sessionRuntimesBuilt += 1;
     const runtime = {
       environment: runtimeEnvironment,
       app: new LocalGuestApp(runtimeEnvironment, {
@@ -8578,6 +8611,9 @@ export function startLocalGuestServer(
     },
     get activeSessionRuntimes() {
       return sessionRuntimes.size;
+    },
+    get sessionRuntimesBuilt() {
+      return sessionRuntimesBuilt;
     },
     listen: () =>
       new Promise<number>((resolve) => {

@@ -87,8 +87,8 @@ test("Shortlet foundation tokens use the approved semantic palette and pass spec
 
 test("Guest and Operator conventional surfaces load the shared stylesheet", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "shortlet-foundation-http-"));
-  const guestEnvironment = new LocalGuestEnvironment({ databasePath: join(directory, "guest.sqlite") });
-  const ownerEnvironment = new LocalApartmentOwnerEnvironment({ databasePath: join(directory, "owner.sqlite") });
+  const guestEnvironment = LocalGuestEnvironment.openNode({ databasePath: join(directory, "guest.sqlite") });
+  const ownerEnvironment = LocalApartmentOwnerEnvironment.openNode({ databasePath: join(directory, "owner.sqlite") });
   const guestServer = startLocalGuestServer({ port: 0, environment: guestEnvironment, conciergeMode: "deterministic" });
   const ownerServer = startLocalOwnerServer({ port: 0, environment: ownerEnvironment });
   const guestPort = await guestServer.listen();
@@ -116,8 +116,8 @@ test("Real Chromium renders foundation without narrow viewport overflow and expo
   skip: process.env.SHORTLET_FOUNDATIONS_BROWSER !== "1" ? "Run explicitly with SHORTLET_FOUNDATIONS_BROWSER=1 to avoid competing with the full Chromium suite" : false,
 }, async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "shortlet-foundation-browser-"));
-  const guestEnvironment = new LocalGuestEnvironment({ databasePath: join(directory, "guest.sqlite") });
-  const ownerEnvironment = new LocalApartmentOwnerEnvironment({ databasePath: join(directory, "owner.sqlite") });
+  const guestEnvironment = LocalGuestEnvironment.openNode({ databasePath: join(directory, "guest.sqlite") });
+  const ownerEnvironment = LocalApartmentOwnerEnvironment.openNode({ databasePath: join(directory, "owner.sqlite") });
   ownerEnvironment.createDemoIncomingBookingRequest();
   const guestServer = startLocalGuestServer({ port: 0, environment: guestEnvironment, conciergeMode: "deterministic" });
   const ownerServer = startLocalOwnerServer({ port: 0, environment: ownerEnvironment });

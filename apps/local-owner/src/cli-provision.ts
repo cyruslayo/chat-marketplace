@@ -10,7 +10,7 @@ const operatorId = requestedOperatorId ?? (operatorsPath
   ? new JsonOperatorRepository(operatorsPath).findAll().find((operator) => operator.tenantId === tenantId)?.id
   : undefined);
 if (operatorsPath && !operatorId) throw new Error("An Operator ID is required when no Operator for the tenant is configured");
-const env = new LocalApartmentOwnerEnvironment({
+const env = LocalApartmentOwnerEnvironment.openNode({
   databasePath,
   ...(inventoryPath ? { inventoryPath } : {}),
   ...(operatorsPath ? { operatorsPath } : {}),
