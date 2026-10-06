@@ -426,6 +426,7 @@ test("Technical delivery, delivery failure, Operator response, expiry, confirmat
   const types3 = entries3.map((e) => e.type);
   assert.ok(types3.includes("booking_request.expired"));
   const expireAudit = entries3.find((e) => e.type === "booking_request.expired");
+  assert.ok(expireAudit);
   assert.equal(expireAudit.commandEnvelopeId, expireEnv.commandId);
 });
 

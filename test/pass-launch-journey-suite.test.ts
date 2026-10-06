@@ -55,7 +55,9 @@ test("Each journey proves authoritative state, ledger, projection, notification,
   const firstJourneyAudit = audit.entries().find(
     (entry) => entry.action === "record_journey_proof"
   );
-  assert.equal(firstJourneyAudit?.details.channel, "web_agent");
+  const details = firstJourneyAudit?.details;
+  assert.ok(details && typeof details === "object" && "channel" in details);
+  assert.equal(details.channel, "web_agent");
 
   // Failure path 1: Missing journeyId
   assert.throws(

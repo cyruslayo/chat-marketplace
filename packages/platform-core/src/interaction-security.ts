@@ -1,18 +1,19 @@
 import crypto from "node:crypto";
 import { SecurityContext } from "./thread.js";
-import { InMemoryAuditLog, InMemoryTelemetry } from "./index.js";
+import { type AuditLog, InMemoryTelemetry } from "./index.js";
+import { redactSensitiveData } from "./redaction.js";
 
 /**
  * ADR 0004, ADR 0011, ADR 0068, ADR 0070, ADR 0071, ADR 0074, ADR 0075 & Issue 37:
  * Enforces cross-tenant and sensitive-data interaction security guardrails.
  */
 export class InteractionSecurityEngine {
-  readonly #audit?: InMemoryAuditLog;
+  readonly #audit?: AuditLog;
   readonly #telemetry?: InMemoryTelemetry;
   readonly #usedTokens = new Set<string>();
   readonly #revokedSessions = new Set<string>();
 
-  constructor(options?: { audit?: InMemoryAuditLog; telemetry?: InMemoryTelemetry }) {
+  constructor(options?: { audit?: AuditLog; telemetry?: InMemoryTelemetry }) {
     this.#audit = options?.audit;
     this.#telemetry = options?.telemetry;
   }
@@ -148,70 +149,12 @@ export class InteractionSecurityEngine {
     return Object.freeze(sanitized as Record<string, unknown>);
   }
 
-  #redactValue(data: any): any {
-    if (data === null || data === undefined) return data;
-
-    const sensitiveKeys = new Set([
-      "bvn",
-      "nin",
-      "passportnumber",
-      "nationalid",
-      "iddocument",
-      "cardnumber",
-      "card_number",
-      "cvv",
-      "pin",
-      "bankaccountsecret",
-      "accountnumber",
-      "doorcode",
-      "keyboxcode",
-      "pincode",
-      "accesscode",
-      "bearertoken",
-      "secretkey",
-      "apikey",
-      "password",
-      "authorization",
-      "rawchainofthought",
-      "rawreasoning",
-      "internalcot",
-      "modelreasoning"
-    ]);
-
-    if (typeof data === "string") {
-      let result = data;
-      result = result.replace(/\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b/g, "[REDACTED]");
-      result = result.replace(/\b(bvn|nin)\s*[:=]\s*\d{11}\b/gi, "$1: [REDACTED]");
-      result = result.replace(/Bearer\s+[A-Za-z0-9._~+/-]+=*/g, "Bearer [REDACTED]");
-      return result;
-    }
-
-    if (typeof data === "object") {
-      if (Array.isArray(data)) {
-        return data.map((item) => this.#redactValue(item));
-      }
-
-      const copy: Record<string, unknown> = {};
-      for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
-        const lowerKey = key.toLowerCase();
-        if (sensitiveKeys.has(lowerKey)) {
-          copy[key] = "[REDACTED]";
-        } else {
-          copy[key] = this.#redactValue(value);
-        }
-      }
-      return copy;
-    }
-
-    return data;
-  }
-
   /**
    * AC 3: Logs, traces, analytics, errors, and model context exclude restricted identity,
    * payment, access, secrets, and raw reasoning.
    */
   redactSensitiveData<T>(data: T): T {
-    return this.#redactValue(data) as T;
+    return redactSensitiveData(data) as T;
   }
 
   /**

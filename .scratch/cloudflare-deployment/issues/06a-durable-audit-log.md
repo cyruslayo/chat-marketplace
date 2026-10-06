@@ -1,6 +1,6 @@
 # Durable, typed, redacted audit log
 
-Status: ready-for-agent
+Status: claimed
 Type: task
 Blocked by: 02a
 Branch: `infra/cf-06a-audit-log`
@@ -44,3 +44,16 @@ Both environments keep the audit trail in `InMemoryAuditLog` (`packages/platform
 Check every item in `docs/agents/issue-tracker.md`. Item 6 applies directly.
 
 ## Comments
+
+### Direct continuation plan (6 Oct 2026)
+
+Use the existing shared SQL handle in both environments; extract the engine's pure redactor rather than add a second implementation. Keep the in-memory test adapter and append-only API. Write dedicated AC tests red first, then run compiler, focused tests, Workers tests and the serialized full suite before resolution.
+
+| ADR read | Constraint | Acceptance/code path |
+| --- | --- | --- |
+| 0004 / 0095 | Backend owns durable state; synchronous shared SQL transactions | AC1 / AC4, environment composition and insert |
+| 0070 | Keep server-bound IDs distinct from credentials | AC2, preserve IDs but redact tokens |
+| 0075 | Minimize logs, no secrets, restricted identity or access material | AC2, shared redactor before storage |
+| 0079 | Durable ordered material-action evidence | AC1, ordered append-only rows |
+
+No retention period or new domain policy is introduced. Telemetry remains 06b; revenue remains 06c.
