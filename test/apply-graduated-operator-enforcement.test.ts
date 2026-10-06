@@ -3,12 +3,26 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { OperatorEnforcementManager, SqliteOperatorRepresentativeGrantStore } from "../domains/shortlet/src/index.js";
+import { DatabaseSync } from "node:sqlite";
+import { InMemoryOperatorEnforcementStateStore, OperatorEnforcementManager, SqliteOperatorEnforcementStateStore, SqliteOperatorRepresentativeGrantStore, type OperatorEnforcementStateStore } from "../domains/shortlet/src/index.js";
+import { NodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-database.js";
 import { createPlatformCommandEnvelope, type PlatformCommandEnvelope, type CommandPrincipal } from "../packages/platform-core/src/index.js";
 
 import { createTestOperatorGrantStore } from "./helpers/operator-authority.js";
 
 const clock = () => new Date("2026-09-10T10:00:00.000Z");
+type ManagerOptions = ConstructorParameters<typeof OperatorEnforcementManager>[0];
+const storeKinds: readonly (readonly [string, () => OperatorEnforcementStateStore])[] = [
+  ["memory", () => new InMemoryOperatorEnforcementStateStore()],
+  ["SQLite", () => new SqliteOperatorEnforcementStateStore(new NodeSqliteDatabase(new DatabaseSync(":memory:")))],
+];
+/** Every enforcement policy test runs against the in-memory store and the SQLite store (ADR 0064). */
+function forEachStore(name: string, body: (newManager: (options: ManagerOptions) => OperatorEnforcementManager) => void | Promise<void>): void {
+  for (const [kind, openStore] of storeKinds)
+    test(kind === "memory" ? name : `${name} (${kind})`, async () => {
+      await body((options) => new OperatorEnforcementManager({ ...options, store: openStore() }));
+    });
+}
 const operatorAuthority = { canActForOperator: ({ actorId, operatorId }: { actorId: string; operatorId: string; tenantId: string }) => actorId === "operator-actor" && operatorId === "op" };
 function command<T>(commandName: string, payload: T, role: "admin" | "authorized_staff" | "agent" | "operator" | "guest" | "system" = "admin", id = "human-1", tenantId = "tenant-lagos", idempotencyKey?: string): PlatformCommandEnvelope<T> {
   return createPlatformCommandEnvelope({ commandName, payload, principal: { id, role, tenantId }, ...(idempotencyKey ? { idempotencyKey } : {}) });
@@ -26,8 +40,8 @@ function finalize(manager: OperatorEnforcementManager, enforcementId: string, op
   return manager.finalizeEnforcementDecision(command("operator_enforcement.finalize", { enforcementId, operatorId, unitId, decision, classifiedIncidentIds, ...(approvalTier ? { approvalTier, secondApproverId: "human-2" } : {}) }, "authorized_staff", id, tenantId));
 }
 
-test("Severity, recurrence, attribution, restoration, revocation, and egregious-event thresholds follow accepted policy", () => {
-  const manager = new OperatorEnforcementManager({ clock, operatorAuthority });
+forEachStore("Severity, recurrence, attribution, restoration, revocation, and egregious-event thresholds follow accepted policy", (newManager) => {
+  const manager = newManager({ clock, operatorAuthority });
   incident(manager, { incidentId: "s1", operatorId: "op", unitId: "u", incidentType: "turnover_defect", severity: "serious" });
   incident(manager, { incidentId: "s2", operatorId: "op", unitId: "u", incidentType: "turnover_defect", severity: "serious" });
   assert.equal(manager.getProjections({ operatorId: "op", unitId: "u" }).turnoverCapability, "eligible");
@@ -39,14 +53,14 @@ test("Severity, recurrence, attribution, restoration, revocation, and egregious-
   finalize(manager, second.enforcementId, "op", "u", ["s2"]);
   assert.equal(manager.getProjections({ operatorId: "op", unitId: "u" }).turnoverCapability, "revoked");
 
-  const duplicateManager = new OperatorEnforcementManager({ clock, operatorAuthority });
+  const duplicateManager = newManager({ clock, operatorAuthority });
   incident(duplicateManager, { incidentId: "d1", rootIncidentId: "root", operatorId: "op", unitId: "u", incidentType: "turnover_defect", severity: "egregious" });
   incident(duplicateManager, { incidentId: "d2", rootIncidentId: "root", operatorId: "op", unitId: "u", incidentType: "turnover_defect", severity: "egregious" });
   const duplicateAction = protect(duplicateManager, "op", "u");
   finalize(duplicateManager, duplicateAction.enforcementId, "op", "u", ["d1", "d2"], "unit_suspension", "human-1", "tenant-lagos", "two_person");
   assert.equal(duplicateManager.getProjections({ operatorId: "op", unitId: "u" }).turnoverCapability, "revoked");
 
-  const restoreManager = new OperatorEnforcementManager({ clock, operatorAuthority });
+  const restoreManager = newManager({ clock, operatorAuthority });
   incident(restoreManager, { incidentId: "r", operatorId: "op", unitId: "u", incidentType: "turnover_defect", severity: "serious" });
   const restoreAction = protect(restoreManager, "op", "u");
   const restoredFinal = finalize(restoreManager, restoreAction.enforcementId, "op", "u", ["r"]);
@@ -67,7 +81,7 @@ test("Severity, recurrence, attribution, restoration, revocation, and egregious-
   assert.equal(restoreManager.getProjections({ operatorId: "op", unitId: "u" }).turnoverCapability, "eligible");
   assert.equal(restoreManager.getProjections({ operatorId: "op", unitId: "other" }).turnoverCapability, "eligible");
 
-  const operationalManager = new OperatorEnforcementManager({ clock, operatorAuthority });
+  const operationalManager = newManager({ clock, operatorAuthority });
   incident(operationalManager, { incidentId: "operational", operatorId: "op", unitId: "u", incidentType: "turnover_defect", severity: "serious" });
   const operationalAction = protect(operationalManager, "op", "u");
   finalize(operationalManager, operationalAction.enforcementId, "op", "u", ["operational"]);
@@ -76,7 +90,7 @@ test("Severity, recurrence, attribution, restoration, revocation, and egregious-
   assert.equal(operationalManager.getProjections({ operatorId: "op", unitId: "u" }).turnoverCapability, "eligible");
   assert.equal(operationalManager.getProjections({ operatorId: "op", unitId: "u" }).unitStatus, "active");
 
-  const guestImpactManager = new OperatorEnforcementManager({ clock, operatorAuthority });
+  const guestImpactManager = newManager({ clock, operatorAuthority });
   incident(guestImpactManager, { incidentId: "guest-impact", operatorId: "op", unitId: "u", incidentType: "turnover_defect", severity: "serious" });
   const guestImpactAction = protect(guestImpactManager, "op", "u");
   finalize(guestImpactManager, guestImpactAction.enforcementId, "op", "u", ["guest-impact"]);
@@ -85,7 +99,7 @@ test("Severity, recurrence, attribution, restoration, revocation, and egregious-
   assert.equal(guestImpactManager.getProjections({ operatorId: "op", unitId: "u" }).turnoverCapability, "eligible");
   assert.equal(guestImpactManager.getProjections({ operatorId: "op", unitId: "u" }).unitStatus, "active");
 
-  const egregiousManager = new OperatorEnforcementManager({ clock, operatorAuthority });
+  const egregiousManager = newManager({ clock, operatorAuthority });
   incident(egregiousManager, { incidentId: "eg", operatorId: "op", unitId: "u", incidentType: "turnover_defect", severity: "egregious" });
   const egregiousAction = protect(egregiousManager, "op", "u");
   assert.throws(() => finalize(egregiousManager, egregiousAction.enforcementId, "op", "u", ["eg"]), /two-person/);
@@ -93,15 +107,15 @@ test("Severity, recurrence, attribution, restoration, revocation, and egregious-
   assert.throws(() => egregiousManager.restoreTurnoverEligibility(command("operator_enforcement.restore_turnover", { operatorId: "op", unitId: "u", enforcementId: egregiousAction.enforcementId, kind: "guest_impacting_failure", incidentRemediated: true, observedSuccessfulTurnoverRuns: 3, runsAfterRealStays: 2, fullOperationalReapproval: true, approvalTier: "senior" }, "authorized_staff", "restoration-reviewer")), /revocation cannot be restored/);
 });
 
-test("Provider/platform faults and extraordinary events do not count as Operator misconduct", () => {
-  const manager = new OperatorEnforcementManager({ clock, operatorAuthority });
+forEachStore("Provider/platform faults and extraordinary events do not count as Operator misconduct", (newManager) => {
+  const manager = newManager({ clock, operatorAuthority });
   for (const [id, attribution] of [["p", "platform_fault"], ["v", "provider_fault"], ["x", "extraordinary_event"]] as const) incident(manager, { incidentId: id, operatorId: "op", unitId: "u", incidentType: "safety_failure", severity: "egregious", attribution });
   assert.equal(manager.evaluateGraduatedEnforcement({ operatorId: "op", unitId: "u" }).misconductCount, 0);
   assert.equal(manager.getProjections({ operatorId: "op", unitId: "u" }).operatorStatus, "active");
 });
 
-test("Immediate protection is distinguished from the independent human final decision and seven-day appeal", async () => {
-  const manager = new OperatorEnforcementManager({ clock, operatorAuthority });
+forEachStore("Immediate protection is distinguished from the independent human final decision and seven-day appeal", async (newManager) => {
+  const manager = newManager({ clock, operatorAuthority });
   assert.throws(() => manager.applyImmediateProtectiveAction({} as never), /command/);
   const action = protect(manager, "op", "u");
   assert.equal(action.isFinalDecision, false);
@@ -120,7 +134,7 @@ test("Immediate protection is distinguished from the independent human final dec
   assert.equal(manager.resolveEnforcementAppeal(command("operator_enforcement.resolve_appeal", { enforcementId: action.enforcementId, operatorId: "op", decision: "exonerated", rationale: "supported" }, "authorized_staff", "human-2")).status, "exonerated");
   assert.equal(manager.getProjections({ operatorId: "op", unitId: "u" }).enforcementLevel, "unit_suspension");
 
-  const upheldManager = new OperatorEnforcementManager({ clock, operatorAuthority });
+  const upheldManager = newManager({ clock, operatorAuthority });
   const upheldAction = protect(upheldManager, "op", "u");
   finalize(upheldManager, upheldAction.enforcementId, "op", "u");
   upheldManager.recordEnforcementNotice({ enforcementId: upheldAction.enforcementId, operatorId: "op", unitId: "u", tenantId: "tenant-lagos", status: "delivered", deliveredAtIso: "2026-09-10T10:00:00.000Z" });
@@ -129,7 +143,7 @@ test("Immediate protection is distinguished from the independent human final dec
   assert.equal(upheldManager.getProjections({ operatorId: "op", unitId: "u" }).enforcementLevel, "unit_suspension");
 
   let boundaryNow = new Date("2026-09-10T10:00:00.000Z");
-  const boundaryManager = new OperatorEnforcementManager({ clock: () => boundaryNow, operatorAuthority });
+  const boundaryManager = newManager({ clock: () => boundaryNow, operatorAuthority });
   const boundaryAction = protect(boundaryManager, "op", "u");
   finalize(boundaryManager, boundaryAction.enforcementId, "op", "u");
   boundaryNow = new Date("2026-09-17T10:00:00.000Z");
@@ -141,7 +155,7 @@ test("Immediate protection is distinguished from the independent human final dec
   let current = new Date("2026-09-10T10:00:00.000Z");
   const store = createTestOperatorGrantStore(databasePath, { clock: () => current });
   try {
-    const realManager = new OperatorEnforcementManager({ clock: () => current, operatorAuthority: store });
+    const realManager = newManager({ clock: () => current, operatorAuthority: store });
     const realAction = protect(realManager, "op", "u");
     finalize(realManager, realAction.enforcementId, "op", "u");
     realManager.recordEnforcementNotice({ enforcementId: realAction.enforcementId, operatorId: "op", unitId: "u", tenantId: "tenant-lagos", status: "delivered", deliveredAtIso: current.toISOString() });
@@ -152,7 +166,7 @@ test("Immediate protection is distinguished from the independent human final dec
     store.revokeGrant(command("operator_representative.revoke", { grantId: grant.grantId }, "admin", "admin-1", "tenant-lagos", "issue-29-revoke-happy"));
 
     const appealable = (actorId: string, operatorId: string, tenantId = "tenant-lagos") => {
-      const scopedManager = new OperatorEnforcementManager({ clock: () => current, operatorAuthority: store });
+      const scopedManager = newManager({ clock: () => current, operatorAuthority: store });
       const scopedAction = protect(scopedManager, "op", "u", `support-${actorId}-${operatorId}-${tenantId}`);
       finalize(scopedManager, scopedAction.enforcementId, "op", "u");
       scopedManager.recordEnforcementNotice({ enforcementId: scopedAction.enforcementId, operatorId: "op", unitId: "u", tenantId: "tenant-lagos", status: "delivered", deliveredAtIso: current.toISOString() });
@@ -178,8 +192,8 @@ test("Immediate protection is distinguished from the independent human final dec
   }
 });
 
-test("One underlying incident is not multiplied by downstream reports, and every affected feature or Unit projection updates consistently", () => {
-  const manager = new OperatorEnforcementManager({ clock, operatorAuthority });
+forEachStore("One underlying incident is not multiplied by downstream reports, and every affected feature or Unit projection updates consistently", (newManager) => {
+  const manager = newManager({ clock, operatorAuthority });
   incident(manager, { incidentId: "r1", rootIncidentId: "root", operatorId: "op", unitId: "u1", incidentType: "calendar_error", severity: "serious" });
   incident(manager, { incidentId: "r2", rootIncidentId: "root", operatorId: "op", unitId: "u1", incidentType: "calendar_error", severity: "serious" });
   assert.equal(manager.getProjections({ operatorId: "op", unitId: "u1" }).misconductCount, 1);
@@ -199,7 +213,7 @@ test("One underlying incident is not multiplied by downstream reports, and every
   assert.equal(manager.getProjections({ operatorId: "op", unitId: "u1" }).operatorStatus, "terminated");
   assert.equal(manager.getProjections({ operatorId: "op", unitId: "u1" }).unitStatus, "suspended");
 
-  const other = new OperatorEnforcementManager({ clock, operatorAuthority });
+  const other = newManager({ clock, operatorAuthority });
   const otherAction = protect(other, "op", "u1");
   finalize(other, otherAction.enforcementId, "op", "u1");
   other.recordEnforcementNotice({ enforcementId: otherAction.enforcementId, operatorId: "op", unitId: "u1", tenantId: "tenant-lagos", status: "delivered", deliveredAtIso: "2026-09-10T10:00:00.000Z" });

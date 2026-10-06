@@ -43,6 +43,8 @@ export * from "./sqlite-revenue-accounting.js";
 export * from "./guest-conduct.js";
 export * from "./mid-stay-failure.js";
 export * from "./operator-enforcement.js";
+export * from "./operator-enforcement-state.js";
+export * from "./sqlite-operator-enforcement-state.js";
 export * from "./operator-representative-authority.js";
 export * from "./operator-session-authority.js";
 export * from "./guest-account-authority.js";

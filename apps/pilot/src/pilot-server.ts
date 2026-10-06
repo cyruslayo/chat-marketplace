@@ -203,6 +203,7 @@ export function startPilotServer(options: {
     unitId: configuration.unitId,
     propertyId: configuration.propertyId,
     seedFixture: false,
+    production: true,
     clock,
   }, { database, unitRepository, operatorRepository: new JsonOperatorRepository(configuration.operatorsPath, { clock }) });
 

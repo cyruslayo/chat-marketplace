@@ -17,7 +17,6 @@ import {
   ReservePayoutManager,
   RevenueReleaseManager,
   type RevenueAccountingRepository,
-  InMemoryBookingStateRepository,
   type Unit,
   type OperatorRepresentativeGrant,
   type TrustTierEvaluation,
@@ -37,6 +36,8 @@ import {
   JsonOperatorRepository,
   SqliteBookingPaymentJourneyRepository,
   SqliteBookingStateRepository,
+  SqliteOperatorEnforcementStateStore,
+  type BookingStateRepository,
   SqliteCheckInSupportStore,
   SqliteManualTransferStore,
   SqliteLivePaymentAttemptRegistry,
@@ -114,6 +115,8 @@ export interface LocalOwnerFixtureConfig {
   readonly inventoryPath?: string;
   readonly operatorsPath?: string;
   readonly seedFixture?: boolean;
+  /** Production composition: the demo-only request list is never read or written (ADR 0004). */
+  readonly production?: boolean;
   readonly clock?: () => Date;
 }
 
@@ -515,7 +518,8 @@ export class LocalApartmentOwnerEnvironment {
   readonly reservePayoutManager: ReservePayoutManager;
   readonly revenueReleaseManager: RevenueReleaseManager;
   readonly accountingRepository: RevenueAccountingRepository;
-  readonly bookingStateRepository: InMemoryBookingStateRepository;
+  /** The shared handle's booking state, the same rows the Guest composition writes (ADR 0004). */
+  readonly bookingStateRepository: BookingStateRepository;
   readonly bookingRequestApp: BookingRequestApplication;
   readonly conditionalOfferApp: ReturnType<
     typeof createConditionalOfferApplication
@@ -606,6 +610,7 @@ export class LocalApartmentOwnerEnvironment {
     this.enforcementManager = new OperatorEnforcementManager({
       clock: this.clock,
       operatorAuthority: this.grantStore,
+      store: new SqliteOperatorEnforcementStateStore(this.#sqlDatabase),
     });
     this.reliabilityAuthority = {
       getReliability: ({
@@ -645,7 +650,7 @@ export class LocalApartmentOwnerEnvironment {
       scopeAuthority: this.scopeAuthority,
       clock: this.clock,
     });
-    this.bookingStateRepository = new InMemoryBookingStateRepository();
+    this.bookingStateRepository = this.#bookingState;
 
     const guestVerification = new GuestVerificationService({
       repository: this.unitRepository,
@@ -863,6 +868,8 @@ export class LocalApartmentOwnerEnvironment {
       unitId?: string;
     } = {},
   ): BookingRequestArtifact {
+    if (this.config.production)
+      throw new Error("Demo booking requests are not available in production");
     const guestId = input.guestId ?? "demo-guest-101";
     const guestPrincipal: CommandPrincipal = {
       id: guestId,
@@ -2714,7 +2721,7 @@ export class LocalApartmentOwnerEnvironment {
         revenueRelease: committedRevenueRelease,
       });
 
-    const pendingRequests = this.#demoRequests
+    const pendingRequests = (this.config.production ? [] : this.#demoRequests)
       .map((reqId) => {
         try {
           return this.bookingRequestApp.getArtifact(
