@@ -1,9 +1,9 @@
 # Move the operator grant and session stores onto the shared handle
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: 02a
-Branch: `infra/cf-02d-operator-stores`
+Branch: `infra/cf-02d-operator-stores-reconciled`
 Requested: 2 Oct 2026
 Unlocks: 02e
 
@@ -62,3 +62,12 @@ Check every item in `docs/agents/issue-tracker.md`.
 | 0004 / 0095 | Single backend-owned synchronous handle | AC1/AC4 stores borrow the composition handle |
 
 Corrected the issue's 30-minute session wording to the accepted ADR's 12 hours; no authentication policy is changed. 02c has landed, so all five unread store path labels can now be removed. Existing test-only path convenience factories will own their connections; domain stores never do.
+
+## Answer
+
+Implementation `491c399`, integrated by `d142a37`. Recovered the unfinished worktree from the main repo's `.scratch` into a sibling worktree, preserved all seven dirty files byte-for-byte in the integration recovery folder, and removed three verified formatting-only changes before committing. Both operator stores now borrow `SqlDatabase`, use its transaction boundary and never close the composition handle. Every app/CLI/test caller compiles through shared handles or the shared test-owned convenience factories. All five unread path fields are gone; the two remaining label-only constructor arguments and callers were also removed.
+
+Dedicated AC1–AC4 tests: `test/sql-port-operator-stores.test.ts` (red before completing callers). Covers borrowed-handle close, environment restart, consumed-token replay, 30-minute token expiry, 12-hour absolute session expiry, persisted revocation/wrong-secret refusal, nested mid-revoke rollback and no path fields. Import guard extended. Updated the old inbox test to revoke authority explicitly rather than close a borrowed store; its old close-as-revocation assumption was the only non-browser failure in the first full run.
+
+DoD checked item by item: (1) separate named AC tests; (2) every named refusal/rollback path asserted; (3) ADR 0004/0075/0082/0086/0095 constraints read and verified; (4) injected handles/clocks/sinks consumed; (5) no authentication-policy change or invented value; (6) no new logging/raw credentials; (7) final integrated `npm run check`, `npm test` and Workers tests pass. Final Node gate: **1,281 non-browser + 165 browser passed, zero failures, one expected skip**. Workers gate: **14 passed**. Evidence lives in the integration worktree: `.scratch/cf-wave2-confirmed.log`, `cf-wave2-check.log`, `cf-wave2-workers.log`. `PI_REASONING_LEVEL` was unset for Node tests because an existing NIN environment check matches that harness variable. The preceding run had two Chrome startup failures; isolated retry and the entire subsequent suite passed without a UI/source workaround.
+
