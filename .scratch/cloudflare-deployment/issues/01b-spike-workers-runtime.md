@@ -1,6 +1,6 @@
 # Spike Workers runtime compatibility
 
-Status: ready-for-agent
+Status: claimed
 Type: prototype
 Blocked by: 01a, 01c
 Branch: `infra/cf-01b-runtime-spike` (throwaway, **not merged**)
@@ -45,5 +45,13 @@ Extend the 01a spike Worker (`spikes/`) and answer each question with a snippet 
 Prototype slice. Answers recorded; no repo code changed.
 
 ## Comments
+
+| ADR | Constraint | Spike path |
+| --- | --- | --- |
+| 0078 | en-NG / Africa-Lagos output parity | Three fixed instants compared to Node |
+| 0087 | HMAC verifies exact raw bytes | Identical binary input / synthetic key |
+| 0075 / 0095 | No real credentials/data or deployment | Mocked Gemini; local cf dev / dry-run only |
+
+The local `cf dev` clock DOES advance during synchronous execution (3 ms on the successful run; 8 ms in the initial probe). This disproves the PRD assumption for this local runtime; it does not establish production clock behaviour. Slice 10b must not depend on a ticking synchronous clock: capture one server timestamp for an atomic decision and evaluate expiry at request/I/O boundaries. No production testing or runtime changes are made here.
 
 ## Answer
