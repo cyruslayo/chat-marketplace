@@ -1,9 +1,9 @@
 # Durable revenue accounting and release state
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: 02a
-Branch: `infra/cf-06c-revenue`
+Branch: `infra/cf-06c-revenue-direct`
 Requested: 2 Oct 2026
 Unlocks: 06d
 
@@ -74,11 +74,24 @@ Read both entire source files, owner composition/sample release and the owner-pa
 
 The issue references commission ADRs now superseded by ADR 0089. This is persistence-only: do not change arithmetic, expose new policy, or claim the legacy sample proves current owner settlements. AC5 will share the existing revenue/release scenarios across the in-memory and SQL adapters. Each AC gets its own dedicated test before implementation. Full-suite resolution remains gated; no Wave 3 work.
 
-### Implementation review (full-suite gate pending)
+### Implementation review
 
 - AC1–AC5 each have a dedicated test in `test/sqlite-revenue-state.test.ts`. The first run failed on the missing implementation (`C:/AI2026/cf-06c-red.log`). Existing commission/release and application suites now register unchanged economic scenarios for both adapters through `test/helpers/revenue-contract.ts`; identity assertions compare snapshot values, not JavaScript object references.
 - AC2 exercises real owner-environment restart, production release/journal/earned/adjustment reconstruction, adjustment replay and the compatibility manager's durable duplicate guard and signed correction. AC3's trigger aborts earned-commission insertion after release/journal/lines have been written and verifies all four tables empty after rollback. AC4 covers 3,000,000,001 kobo in release/ledger INTEGER columns and rejects fractional corrections.
 - Re-checked every ADR-table constraint: owner-payable/cancellation ledger and financial arithmetic are unchanged; release evidence is shared-handle durable, multi-row writes are synchronous atomic transactions, and all new monetary columns use INTEGER with safe-integer input validation. No new logs, bearer credentials, thresholds or launch settlement policies.
 - All constructor dependencies are used; stores borrow their handle without connection opens/pragmas/close ownership. The optional compatibility state store is used for reads and writes, never a second production financial truth.
 - `npm run check`, **47 focused tests**, **14 workerd tests** and `git diff --check` pass. Evidence: `C:/AI2026/cf-06c-{check,focused,workers}.log`. LSP probe was inconclusive on three paths and reported only existing generic class-size/conditional-spread hints; compiler checks are the typecheck evidence.
-- DoD 1–6 reviewed above; DoD 7 awaits the serialized stable full suite. Do not resolve or integrate this slice based only on focused results.
+
+### Final Definition of Done
+
+1. All five criteria have dedicated named `06c AC1`–`AC5` tests; both complete existing revenue/release suites run through the shared contract helper for both adapters.
+2. Named mid-release failure is exercised with an aborting SQLite trigger inside an outer transaction, not a pre-write fake. Restart, duplicate, adjustment-conflict and fractional amount failure paths also pass.
+3. Re-read the ADR table and verify every constraint in the code. Also read ADRs 0065 and 0072: only synthetic local evidence is used, external launch/privacy gates remain open, and existing authorized/idempotent application commands remain unchanged. No new guest financial command or bypass is introduced.
+4. SQL handles and the manager's optional state store are actually read/written; no unused injection and no connection ownership change.
+5. No invented policy, rate, settlement rule, state string or retention period; existing superseded-policy compatibility code is retained as historical behaviour only.
+6. No new audit/log emissions or bearer data. Restricted financial evidence stays in the accounting repository; owner bank-reference handling is untouched.
+7. `npm run check`, **47 focused tests**, **14 workerd tests**, whitespace checks and full `npm test` pass. Full suite exits 0: **1,311 non-browser and 165 browser passes, zero failures, one expected skip**. Node tests unset the previously recorded `PI_REASONING_LEVEL`. Evidence: `C:/AI2026/cf-06c-{check,focused,workers,full}.log`; `cf-06c-full.exit` = 0. LSP coverage was not conclusive; successful compiler checks are the typecheck proof.
+
+## Answer
+
+Implementation `502fcc1` on `infra/cf-06c-revenue-direct`: shared-handle SQLite revenue accounting, atomic release/journal/earned/adjustment writes, exact INTEGER kobo and durable compatibility-manager state. Owner composition uses these stores; both complete existing revenue/release suites share their scenarios across memory/SQL adapters. The pre-code instance-state audit above maps every field. Public manager methods and financial arithmetic remain unchanged. All gates passed before resolution; no enforcement/booking-state conversion (06d), new launch financial policy, production deployment or Wave 3 implementation.

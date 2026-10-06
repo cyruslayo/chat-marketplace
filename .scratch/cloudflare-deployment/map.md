@@ -56,7 +56,7 @@ The frontier is the first slice in the table that is open, unblocked and unclaim
 | **D: Durable state** | | | | | |
 | 06a | Durable, typed, redacted audit log | task | resolved | 02a | 06d |
 | 06b | Durable, redacted telemetry | task | resolved | 02a | 06d |
-| 06c | Durable revenue accounting and release state | task | ready-for-agent | 02a | 06d |
+| 06c | Durable revenue accounting and release state | task | resolved | 02a | 06d |
 | 06d | Durable enforcement and booking state; operator restart test | task | ready-for-agent | 04b, 06a, 06b, 06c | 15 |
 | 07a | `ReceiptBlobStore` port, SQLite implementation, migration | task | ready-for-agent | 02b | 07b |
 | 07b | R2 receipt store | task | ready-for-agent | 03a, 07a | 10b, 12a |
@@ -140,7 +140,7 @@ Started from `infra/cloudflare-deployment` at `d4eefe5`; selected the unblocked,
 
 Final stable checks: `npm run check`, `npm run test:workers` (1 workerd test), full Node suite (1,268 non-browser + 165 browser tests passed; zero failures; one expected skip), and whitespace checks. See issue answers for the environment-variable caveat and transient Chromium focus failure/retry evidence. No production Cloudflare app/config, deployment, or staging rehearsal is claimed. The Guest Account authority is explicitly part of 02e's twelve-file domain persistence inventory and future repo-wide guard, not one of 02b's seven converted stores.
 
-## Wave 2 continuation (6 Oct 2026)
+## Wave 2 continuation (6 Oct 2026 — historical; superseded below)
 
 Completed and integrated **01b, 02c, 02d, 03b and 05b**. The current Wave 2 row explicitly includes 03b, superseding the older handoff's scheduling gap. **Wave 2 remains open: 06a, 06b and 06c remain ready-for-agent and unimplemented.** Do not declare the wave complete or start Wave 3 on this record. No new policy decision blocks those three slices.
 
@@ -152,10 +152,11 @@ Runtime spike evidence is local only: `cf build`, `cf dev`, assertions and dry-r
 
 ## Direct durable-state continuation (6 Oct 2026)
 
-06a is implemented and validated (`5303c68`): full suite 1,286 non-browser + 165 browser passes, zero failures, one expected skip; all compiler checks and 14 Workers tests pass. Shared redaction is extracted from the interaction security engine. No retention rule, export or production deployment added. 06b is implemented and validated (`cee7988`): full suite 1,290 non-browser + 165 browser passes, zero failures, one expected skip; compiler and 14 Workers tests pass. Events and unique hashed transition keys survive restart; no external sink is wired. 06c's implementation is committed on its own branch and its stable full suite is running; integration/resolution awaits that gate. Wave 2 remains open until 06c and final integrated checks complete.
+06a is implemented and validated (`5303c68`): full suite 1,286 non-browser + 165 browser passes, zero failures, one expected skip; all compiler checks and 14 Workers tests pass. Shared redaction is extracted from the interaction security engine. No retention rule, export or production deployment added. 06b is implemented and validated (`cee7988`): full suite 1,290 non-browser + 165 browser passes, zero failures, one expected skip; compiler and 14 Workers tests pass. Events and unique hashed transition keys survive restart; no external sink is wired. 06c is implemented and validated (`502fcc1`): its full suite passed 1,311 non-browser + 165 browser tests, zero failures, one expected skip; compiler and 14 Workers tests pass. The pre-code audit covers every instance field, financial writes are atomic and integer-kobo, and both complete existing release suites run against both adapters. The slice is resolved; final integrated checks remain before Wave 2 closes.
 
 ## Context pointers
 
+- 06c: implementation `502fcc1`; shared-handle revenue accounting and compatibility-manager state, atomic trigger-failure rollback, >2^31 integer-kobo round-trip, real owner restart and both existing release suites through the shared contract. Full evidence `C:/AI2026/cf-06c-full.log` (exit 0). No changes to current ADR 0089 owner-payable rules or to existing historical arithmetic.
 - 06b: implementation `cee7988`; shared-handle redacted telemetry, durable unique hashed transition dedupe, restart/table/sink checks. Full evidence `C:/AI2026/cf-06b-full.log` (exit 0). The optional sink is observational, not commit-aware/outbox-backed; see its answer before 10b wiring.
 - 06a: implementation `5303c68`; typed append-only shared-handle audit, environment restart/order and outer/nested rollback checks; raw table credential absence verified. Full evidence `C:/AI2026/cf-06a-full.log` (exit 0).
 
