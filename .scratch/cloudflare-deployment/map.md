@@ -158,6 +158,10 @@ Runtime spike evidence is local only: `cf build`, `cf dev`, assertions and dry-r
 
 No Wave 3 implementation, staging/production deployment, merge to `main`, orchestrator or delegated work. Delivery is committed locally on slice branches and merged into `infra/cloudflare-deployment`; no external PR was opened. New worktrees are outside the main repository (`chat-marketplace-cloudflare-06a`, `-06b`, `-06c-direct`) and share the integration dependency junction; existing worktrees and untracked scratch data are preserved. The next implementation batch is Wave 3, only when requested, including its recorded user-owned configuration decisions and launch gates.
 
+## User-authorized early code merge to main (6 Oct 2026)
+
+After Wave 2 validation, the user explicitly requested `merge to main`. Merge `33d8135` brings the validated foundation/Wave 2 code into `main` ahead of the original issue-15 release schedule. This is a **local code merge only**, not acceptance of staging, production, cutover, counsel, retention or vendor-contract gates; issue 15 remains ready-for-human and Waves 3–6 remain unimplemented. Existing main-only guest UI documentation is retained. The merged runtime/test/package trees are byte-identical to the fully tested integration branch; fresh compiler checks and 14 Workers tests pass (`C:/AI2026/cf-main-merge-{check,workers}.log`). No push or deployment is authorized by this record.
+
 ## Context pointers
 
 - 06c: implementation `502fcc1`; shared-handle revenue accounting and compatibility-manager state, atomic trigger-failure rollback, >2^31 integer-kobo round-trip, real owner restart and both existing release suites through the shared contract. Full evidence `C:/AI2026/cf-06c-full.log` (exit 0). No changes to current ADR 0089 owner-payable rules or to existing historical arithmetic.
