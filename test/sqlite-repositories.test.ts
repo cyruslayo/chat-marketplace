@@ -49,6 +49,7 @@ test("05b AC3: Duplicate operator raises OperatorConflictError and leaves the ta
     assert.equal(repository.update(operator.id, { name: " Updated " }).name, "Updated");
     assert.throws(() => repository.update("missing", { name: "Name" }), /not found/);
     assert.throws(() => repository.update(operator.id, { name: " " }), /required/);
+    assert.throws(() => repository.update(operator.id, { name: null } as unknown as { name: string }), /required/);
   } finally { db.close(); }
 });
 
