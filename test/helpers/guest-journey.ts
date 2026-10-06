@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createPlatformCommandEnvelope } from "../../packages/platform-core/src/index.js";
 import { DirectPaystackClient, SqliteOperatorRepresentativeGrantStore, SqliteOperatorSessionAuthority, type PaystackHttpFetcher } from "../../domains/shortlet/src/index.js";
+import { createTestOperatorGrantStore, createTestOperatorSessionAuthority } from "./operator-authority.js";
 import { PUBLIC_ORIGIN, type ProductionFixture } from "./pilot-fixture.js";
 
 /** The generated A2UI action behind the button labelled `label` on the latest surface of a turn or state body. */
@@ -47,7 +48,7 @@ export async function guestEvent(base: string, cookie: string, threadId: string,
 /** A representative grant and a one-time sign-in token for the fixture's Operator (ADR 0082, 0086). */
 export function provisionOperatorToken(fixture: ProductionFixture, clock: () => Date, reference: string): string {
   const actorId = "production-session-actor";
-  const grants = new SqliteOperatorRepresentativeGrantStore(fixture.configuration.databasePath, { clock });
+  const grants = createTestOperatorGrantStore(fixture.configuration.databasePath, { clock });
   grants.createGrant(createPlatformCommandEnvelope({
     commandName: "operator_representative.grant",
     principal: { id: "pilot-admin", role: "admin", tenantId: fixture.configuration.tenantId },
@@ -60,7 +61,7 @@ export function provisionOperatorToken(fixture: ProductionFixture, clock: () => 
     },
     idempotencyKey: `${reference}-grant`,
   }));
-  const sessions = new SqliteOperatorSessionAuthority(fixture.configuration.databasePath, { clock });
+  const sessions = createTestOperatorSessionAuthority(fixture.configuration.databasePath, { clock });
   const token = sessions.provisionAccessToken({ actorId, tenantId: fixture.configuration.tenantId, representativeAuthorized: true }).token;
   sessions.close();
   grants.close();

@@ -343,7 +343,7 @@ export class LocalGuestEnvironment {
     );
 
     this.grantStore = new SqliteOperatorRepresentativeGrantStore(
-      this.config.databasePath,
+      sqlDatabase,
       { clock: this.clock },
     );
     this.unitRepository = this.config.inventoryPath
@@ -390,14 +390,8 @@ export class LocalGuestEnvironment {
     this.contractRepository = new LocalBookingContractRepository(
       this.#database,
     );
-    const journeyRepository = new SqliteBookingPaymentJourneyRepository(
-      sqlDatabase,
-      this.config.databasePath,
-    );
-    const bookingState = new SqliteBookingStateRepository(
-      sqlDatabase,
-      this.config.databasePath,
-    );
+    const journeyRepository = new SqliteBookingPaymentJourneyRepository(sqlDatabase);
+    const bookingState = new SqliteBookingStateRepository(sqlDatabase);
 
     this.cardPaymentApp = createCardPaymentApplication({
       conditionalOfferApplication: this.conditionalOfferApp,

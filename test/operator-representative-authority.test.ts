@@ -7,6 +7,8 @@ import test from "node:test";
 import { createPlatformCommandEnvelope, type CommandPrincipal } from "../packages/platform-core/src/index.js";
 import { SqliteOperatorRepresentativeGrantStore } from "../domains/shortlet/src/index.js";
 
+import { createTestOperatorGrantStore } from "./helpers/operator-authority.js";
+
 const now = new Date("2026-08-01T12:00:00.000Z");
 const human: CommandPrincipal = { id: "staff-1", role: "authorized_staff", tenantId: "tenant-a" };
 const admin: CommandPrincipal = { id: "admin-1", role: "admin", tenantId: "tenant-a" };
@@ -15,12 +17,12 @@ const command = <T>(commandName: string, principal: CommandPrincipal, value: T, 
 async function database() { const directory = await mkdtemp(join(tmpdir(), "operator-representative-")); return { directory, path: join(directory, "grants.sqlite") }; }
 
  test("Authorized platform humans create durable explicit Operator representative grants", async () => {
-  const db = await database(); const clock = () => now; const store = new SqliteOperatorRepresentativeGrantStore(db.path, { clock });
+  const db = await database(); const clock = () => now; const store = createTestOperatorGrantStore(db.path, { clock });
   const grant = store.createGrant(command("operator_representative.grant", human, payload, "create-1"));
   const adminGrant = store.createGrant(command("operator_representative.grant", admin, { ...payload, actorId: "person-admin" }, "create-admin"));
   assert.match(grant.grantId, /^grant-[0-9a-f-]+$/); assert.equal(grant.tenantId, "tenant-a"); assert.notEqual(grant.actorId, grant.operatorId);
   assert.deepEqual(Object.keys(grant).sort(), ["actorId", "authorizedGrantorId", "expiresAtIso", "grantId", "grantedAtIso", "operatorId", "permission", "responsiblePersonVerifiedAtIso", "tenantId", "verificationReference"].sort());
-  store.close(); const reopened = new SqliteOperatorRepresentativeGrantStore(db.path, { clock }); assert.deepEqual(reopened.listGrants(), [grant, adminGrant]);
+  store.close(); const reopened = createTestOperatorGrantStore(db.path, { clock }); assert.deepEqual(reopened.listGrants(), [grant, adminGrant]);
   for (const role of ["guest", "operator", "agent", "system"] as const) assert.throws(() => reopened.createGrant(command("operator_representative.grant", { id: "x", role, tenantId: "tenant-a" }, payload, `bad-${role}`)));
   assert.throws(() => reopened.createGrant(command("operator_representative.grant", { ...human, id: payload.actorId }, payload, "self")));
   assert.throws(() => reopened.createGrant(command("operator_representative.grant", { id: "staff-2", role: "admin" }, payload, "no-tenant")));
@@ -34,7 +36,7 @@ async function database() { const directory = await mkdtemp(join(tmpdir(), "oper
  });
 
  test("Operator representative authority fails closed outside an active matching grant", async () => {
-  const db = await database(); let current = new Date(now); const store = new SqliteOperatorRepresentativeGrantStore(db.path, { clock: () => current });
+  const db = await database(); let current = new Date(now); const store = createTestOperatorGrantStore(db.path, { clock: () => current });
   store.createGrant(command("operator_representative.grant", human, payload, "active"));
   assert.equal(store.canActForOperator({ actorId: "person-1", operatorId: "operator-1", tenantId: "tenant-a" }), true);
 
@@ -74,7 +76,7 @@ async function database() { const directory = await mkdtemp(join(tmpdir(), "oper
  });
 
  test("Authorized revocation immediately removes Operator representative authority and preserves history", async () => {
-  const db = await database(); let current = new Date(now); const store = new SqliteOperatorRepresentativeGrantStore(db.path, { clock: () => current });
+  const db = await database(); let current = new Date(now); const store = createTestOperatorGrantStore(db.path, { clock: () => current });
   const grant = store.createGrant(command("operator_representative.grant", human, payload, "revocation-create"));
   const revoked = store.revokeGrant(command("operator_representative.revoke", admin, { grantId: grant.grantId }, "revoke-1"));
   assert.equal(store.canActForOperator({ actorId: grant.actorId, operatorId: grant.operatorId, tenantId: grant.tenantId }), false); assert.equal(revoked.revokedById, "admin-1"); assert.equal(revoked.revokedAtIso, now.toISOString()); assert.equal(store.listGrants().length, 1); assert.equal(store.auditEntries().length, 2);
@@ -83,11 +85,11 @@ async function database() { const directory = await mkdtemp(join(tmpdir(), "oper
   const revokeWithoutIdempotency = { ...command("operator_representative.revoke", admin, { grantId: grant.grantId }, "ignored-revoke"), idempotencyKey: undefined };
   assert.throws(() => store.revokeGrant(revokeWithoutIdempotency));
   current = new Date("2026-08-01T13:30:00Z"); assert.equal(store.canActForOperator({ actorId: grant.actorId, operatorId: grant.operatorId, tenantId: grant.tenantId }), false);
-  store.close(); const reopened = new SqliteOperatorRepresentativeGrantStore(db.path, { clock: () => current }); assert.equal(reopened.listGrants()[0]?.revokedById, "admin-1"); assert.equal(reopened.canActForOperator({ actorId: grant.actorId, operatorId: grant.operatorId, tenantId: grant.tenantId }), false); reopened.close(); await rm(db.directory, { recursive: true, force: true });
+  store.close(); const reopened = createTestOperatorGrantStore(db.path, { clock: () => current }); assert.equal(reopened.listGrants()[0]?.revokedById, "admin-1"); assert.equal(reopened.canActForOperator({ actorId: grant.actorId, operatorId: grant.operatorId, tenantId: grant.tenantId }), false); reopened.close(); await rm(db.directory, { recursive: true, force: true });
  });
 
  test("Representative grant commands are idempotent and audit only minimal transitions", async () => {
-  const db = await database(); let current = new Date(now); const store = new SqliteOperatorRepresentativeGrantStore(db.path, { clock: () => current });
+  const db = await database(); let current = new Date(now); const store = createTestOperatorGrantStore(db.path, { clock: () => current });
   const first = store.createGrant(command("operator_representative.grant", human, payload, "same-create")); const replay = store.createGrant(command("operator_representative.grant", human, payload, "same-create")); assert.deepEqual(replay, first); assert.equal(store.listGrants().length, 1); assert.equal(store.auditEntries().length, 1);
   const noKeyCreate = { ...command("operator_representative.grant", human, { ...payload, actorId: "person-no-key" }, "ignored"), idempotencyKey: undefined };
   assert.throws(() => store.createGrant(noKeyCreate)); assert.equal(store.listGrants().length, 1); assert.equal(store.auditEntries().length, 1);
@@ -111,10 +113,10 @@ async function database() { const directory = await mkdtemp(join(tmpdir(), "oper
   ];
   for (const sql of corruptions) {
     const corrupted = await database();
-    const source = new SqliteOperatorRepresentativeGrantStore(corrupted.path, { clock: () => now });
+    const source = createTestOperatorGrantStore(corrupted.path, { clock: () => now });
     const valid = source.createGrant(command("operator_representative.grant", human, payload, `valid-${sql}`)); source.close();
     const raw = new DatabaseSync(corrupted.path); raw.exec(sql); raw.close();
-    const reopened = new SqliteOperatorRepresentativeGrantStore(corrupted.path, { clock: () => now });
+    const reopened = createTestOperatorGrantStore(corrupted.path, { clock: () => now });
     assert.equal(reopened.canActForOperator({ actorId: valid.actorId, operatorId: valid.operatorId, tenantId: valid.tenantId }), false);
     reopened.close(); await rm(corrupted.directory, { recursive: true, force: true });
   }

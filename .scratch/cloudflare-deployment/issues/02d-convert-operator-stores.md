@@ -1,6 +1,6 @@
 # Move the operator grant and session stores onto the shared handle
 
-Status: ready-for-agent
+Status: claimed
 Type: task
 Blocked by: 02a
 Branch: `infra/cf-02d-operator-stores`
@@ -30,7 +30,7 @@ Two operator stores always open their own SQLite connection from a path. That gi
 ## Acceptance criteria
 
 - AC1: Neither operator store opens a connection or accepts a path.
-- AC2: An operator session issued before a restart, using a new environment on the same file, is still valid afterwards, and is still expired after 30 minutes (ADR 0086). Failure path: an expired or revoked session is refused after the restart.
+- AC2: An operator session issued before a restart, using a new environment on the same file, is still valid afterwards, and is expired after 12 hours (ADR 0086); an unconsumed access token expires after 30 minutes. Failure path: an expired or revoked session is refused after the restart.
 - AC3: Revoking a representative grant is atomic. Failure path: a throw mid-revoke leaves the grant active and the audit unchanged.
 - AC4: No `databasePath` field remains on a converted store, and `npm run check` and `npm test` pass.
 
@@ -42,7 +42,7 @@ Extend `test/sql-port-store-imports.test.ts`. For AC2, reuse the existing operat
 
 | ADR | Constraint | Code path |
 | --- | --- | --- |
-| 0086 | Hashed tokens; 30-minute sessions that survive restarts | session authority on the shared handle |
+| 0086 | Hashed 30-minute access tokens; absolute 12-hour sessions that survive restarts | session authority on the shared handle |
 | 0082 | Explicit representative grants | grant store transaction |
 | 0075 | No tokens in logs | unchanged; check that no new log line is added |
 
@@ -51,3 +51,14 @@ Extend `test/sql-port-store-imports.test.ts`. For AC2, reuse the existing operat
 Check every item in `docs/agents/issue-tracker.md`.
 
 ## Comments
+
+### ADR implementation plan
+
+| ADR | Constraint | Acceptance / code path |
+| --- | --- | --- |
+| 0086 | 30-minute single-use access tokens; hashed, absolute 12-hour sessions; durable revocation | AC1/AC2 shared session handle and restart/expiry tests |
+| 0082 | Explicit grants with atomic minimal audit transitions | AC3 nested transaction rollback test |
+| 0075 | No raw secrets, cookies or identity evidence in logs | Existing minimal metadata unchanged |
+| 0004 / 0095 | Single backend-owned synchronous handle | AC1/AC4 stores borrow the composition handle |
+
+Corrected the issue's 30-minute session wording to the accepted ADR's 12 hours; no authentication policy is changed. 02c has landed, so all five unread store path labels can now be removed. Existing test-only path convenience factories will own their connections; domain stores never do.

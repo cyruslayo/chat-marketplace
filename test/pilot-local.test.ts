@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { loadPilotConfiguration } from "../apps/pilot/src/pilot-config.js";
-import { SqliteOperatorRepresentativeGrantStore } from "../domains/shortlet/src/index.js";
+import { createTestOperatorGrantStore } from "./helpers/operator-authority.js";
 import { startLocalPilotServer } from "../apps/pilot/src/local-pilot-server.js";
 import { bootstrapLocalPilot, issueLocalOperatorToken, localPilotPaths, resetLocalPilot } from "../apps/pilot/src/local-pilot.js";
 import { startLocalGuestServer } from "../apps/local-guest/src/guest-server.js";
@@ -264,7 +264,7 @@ test("Operator decline real-browser proof", async () => {
     await guestToRequest(guest, "Lagos", "+2348093334455");
     const debugDatabase = new DatabaseSync(paths.databasePath); const row = debugDatabase.prepare("SELECT status, operator_id, tenant_id FROM guest_booking_requests LIMIT 1").get() as { status: string; operator_id: string; tenant_id: string }; debugDatabase.close();
     assert.equal(row.status, "disclosed"); assert.equal(row.operator_id, "operator-local-pilot"); assert.equal(row.tenant_id, "tenant-local-pilot");
-    const debugGrants = new SqliteOperatorRepresentativeGrantStore(paths.databasePath, { clock: () => new Date("2026-09-22T10:00:00.000Z") }); assert.equal(debugGrants.canActForOperator({ actorId: "representative-local-pilot", operatorId: row.operator_id, tenantId: row.tenant_id }), true); debugGrants.close();
+    const debugGrants = createTestOperatorGrantStore(paths.databasePath, { clock: () => new Date("2026-09-22T10:00:00.000Z") }); assert.equal(debugGrants.canActForOperator({ actorId: "representative-local-pilot", operatorId: row.operator_id, tenantId: row.tenant_id }), true); debugGrants.close();
     await operatorLoginAndDecision(operator, issueLocalOperatorToken(paths), "Decline");
     await reloadTab(guest); await guest.waitForText("declined", 15000); declineProof = { operatorDeclined: true, guestDeclined: true };
   } finally { await browser.close(); await server.close(); rmSync(paths.directory, { recursive: true, force: true }); }

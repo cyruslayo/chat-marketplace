@@ -25,7 +25,7 @@ test("AC2: The booking-state transition still rolls back atomically", () => {
   const raw = new DatabaseSync(":memory:");
   const database = new NodeSqliteDatabase(raw);
   try {
-    const repository = new SqliteBookingStateRepository(database, ":memory:");
+    const repository = new SqliteBookingStateRepository(database);
     // Only persisted identity/version fields are needed for this storage fault test.
     database.prepare("INSERT INTO booking_contracts VALUES ($id, $json)").run({
       $id: reservation.contractId,
@@ -106,8 +106,8 @@ test("AC3: The full existing suite passes unchanged (npm test), and npm run chec
   raw.exec("PRAGMA foreign_keys = OFF; PRAGMA busy_timeout = 17");
   const database = new NodeSqliteDatabase(raw);
   try {
-    new SqliteBookingStateRepository(database, ":memory:");
-    new SqliteBookingPaymentJourneyRepository(database, ":memory:");
+    new SqliteBookingStateRepository(database);
+    new SqliteBookingPaymentJourneyRepository(database);
     const receipts = new SqliteManualTransferStore(database);
     new SqliteOwnerPayableLedger(database);
     new SqliteBankTransferSessionStore(database);

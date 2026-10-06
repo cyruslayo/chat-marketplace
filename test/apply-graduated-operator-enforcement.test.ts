@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { OperatorEnforcementManager, SqliteOperatorRepresentativeGrantStore } from "../domains/shortlet/src/index.js";
 import { createPlatformCommandEnvelope, type PlatformCommandEnvelope, type CommandPrincipal } from "../packages/platform-core/src/index.js";
 
+import { createTestOperatorGrantStore } from "./helpers/operator-authority.js";
+
 const clock = () => new Date("2026-09-10T10:00:00.000Z");
 const operatorAuthority = { canActForOperator: ({ actorId, operatorId }: { actorId: string; operatorId: string; tenantId: string }) => actorId === "operator-actor" && operatorId === "op" };
 function command<T>(commandName: string, payload: T, role: "admin" | "authorized_staff" | "agent" | "operator" | "guest" | "system" = "admin", id = "human-1", tenantId = "tenant-lagos", idempotencyKey?: string): PlatformCommandEnvelope<T> {
@@ -137,7 +139,7 @@ test("Immediate protection is distinguished from the independent human final dec
   const directory = await mkdtemp(join(tmpdir(), "issue-29-representative-"));
   const databasePath = join(directory, "grants.sqlite");
   let current = new Date("2026-09-10T10:00:00.000Z");
-  const store = new SqliteOperatorRepresentativeGrantStore(databasePath, { clock: () => current });
+  const store = createTestOperatorGrantStore(databasePath, { clock: () => current });
   try {
     const realManager = new OperatorEnforcementManager({ clock: () => current, operatorAuthority: store });
     const realAction = protect(realManager, "op", "u");
