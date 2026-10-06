@@ -43,23 +43,23 @@ The frontier is the first slice in the table that is open, unblocked and unclaim
 | 02b | Move the seven handle-taking stores onto the port | task | resolved | 02a | 02e, 07a |
 | 02c | Move the availability and guest-interaction stores onto the port | task | resolved | 02a | 02e |
 | 02d | Move the operator grant and session stores onto the shared handle | task | resolved | 02a | 02e |
-| 02e | Move the app layer onto the port; guard `node:sqlite` imports | task | ready-for-agent | 02b, 02c, 02d | 04a, 04b |
+| 02e | Move the app layer onto the port; guard `node:sqlite` imports | task | resolved | 02b, 02c, 02d | 04a, 04b |
 | **B: Workers harness** | | | | | |
 | 03a | Workers test harness and `apps/cloudflare` skeleton | task | resolved | 01a, 01c | 03b, 07b, 09b, 09c |
 | 03b | `DurableObjectSqlDatabase` passing the shared contract | task | resolved | 02a, 03a | 10b |
 | **C: Composition and repositories** | | | | | |
-| 04a | Injectable guest composition root | task | ready-for-agent | 02e | 04c, 08a |
-| 04b | Injectable owner composition root | task | ready-for-agent | 02e | 06d, 08b |
-| 04c | Session runtimes share one handle, with a size cap | task | ready-for-agent | 04a | 10b |
+| 04a | Injectable guest composition root | task | resolved | 02e | 04c, 08a |
+| 04b | Injectable owner composition root | task | resolved | 02e | 06d, 08b |
+| 04c | Session runtimes share one handle, with a size cap | task | resolved | 04a | 10b |
 | 05a | Typed unit repository interface | task | resolved | none | 05b |
 | 05b | SQLite unit and operator repositories | task | resolved | 02a, 05a | 10a |
 | **D: Durable state** | | | | | |
 | 06a | Durable, typed, redacted audit log | task | resolved | 02a | 06d |
 | 06b | Durable, redacted telemetry | task | resolved | 02a | 06d |
 | 06c | Durable revenue accounting and release state | task | resolved | 02a | 06d |
-| 06d | Durable enforcement and booking state; operator restart test | task | ready-for-agent | 04b, 06a, 06b, 06c | 15 |
-| 07a | `ReceiptBlobStore` port, SQLite implementation, migration | task | ready-for-agent | 02b | 07b |
-| 07b | R2 receipt store | task | ready-for-agent | 03a, 07a | 10b, 12a |
+| 06d | Durable enforcement and booking state; operator restart test | task | resolved | 04b, 06a, 06b, 06c | 15 |
+| 07a | `ReceiptBlobStore` port, SQLite implementation, migration | task | resolved | 02b | 07b |
+| 07b | R2 receipt store | task | resolved | 03a, 07a | 10b, 12a |
 | **E: HTTP** | | | | | |
 | 08a | Narrow HTTP types; extract the guest request handler | task | ready-for-agent | 04a | 08b, 09c |
 | 08b | Extract the owner request handler | task | ready-for-agent | 04b, 08a | 08c |
@@ -169,13 +169,37 @@ No Wave 3 implementation, staging/production deployment, merge to `main`, orches
 
 After Wave 2 validation, the user explicitly requested `merge to main`. Merge `33d8135` brings the validated foundation/Wave 2 code into `main` ahead of the original issue-15 release schedule. This is a **local code merge only**, not acceptance of staging, production, cutover, counsel, retention or vendor-contract gates; issue 15 remains ready-for-human and Waves 3–6 remain unimplemented. Existing main-only guest UI documentation is retained. The merged runtime/test/package trees are byte-identical to the fully tested integration branch; fresh compiler checks and 14 Workers tests pass (`C:/AI2026/cf-main-merge-{check,workers}.log`). No push or deployment is authorized by this record.
 
-## Wave 3 partial handoff
+## Wave 3 partial handoff (historical)
 
-Completed only the independent configuration slice **10a** (`a3fdb15`) in this batch, with the user-approved cap/first-boot decisions recorded above. Shared Node/Cloudflare validation and SQLite readiness checks pass. Full serial suite: **1,317 non-browser + 165 browser passes, zero failures, one expected skip**; compiler and **16 workerd tests** pass. Evidence: `C:/AI2026/cf-10a-{focused,check,workers,full}.log` and `cf-10a-full.exit` (0). Delivery is local on the slice branch and integration branch; no external PR/push or deployment.
+Slice **10a** (`a3fdb15`) was completed first, with the user-approved cap/first-boot decisions recorded above (1,317 non-browser + 165 browser passes, 16 workerd tests). The rest of the wave is recorded below.
 
-**Wave 3 remains open:** 02e, 04a–04c, 06d and 07a–07b are unimplemented. 02e, 07a and 07b's prerequisite 03a are available; 04a/04b still wait for 02e, 04c waits for 04a, and 06d waits for 04b. 02e was not claimed or implemented in this batch. Preserve its conditional owner foreign-key decision gate. 10b remains blocked by the remaining composition/receipt work and Wave 4. No HTTP first-boot 503 routes or production runtime cap wiring are claimed by 10a; those remain downstream assembly/composition work.
+## Wave 3 completion (6 Oct 2026)
+
+**Wave 3 is complete.** 02e, 04a, 04b, 04c, 06d, 07a and 07b are implemented and integrated into `infra/cloudflare-deployment` (`602a11e`, `fb7e199`, `ca19100`, `772d8a2`), on top of 10a.
+
+Final checks on the integrated snapshot `772d8a2`: `npm run check` passes; full `npm test` exits 0 with **1,359 non-browser and 165 browser tests passed, zero failures, one expected skip**; `npm run test:workers` passes **22 workerd tests** (the 16 earlier plus 6 for R2 and the bounded body). Tests unset the documented `PI_REASONING_LEVEL` variable. Evidence: `C:/AI2026/cf-wave3-full.log` and `.exit` (0), `cf-wave3-check.log`, `cf-wave3-workers.log`. Per slice, the non-browser phase and the compiler were run before each commit; the browser phase ran once on the integrated snapshot rather than per slice.
+
+What changed, in one line each:
+- **02e:** the app layer and the Guest Account authority use `SqlDatabase`; `node-sqlite-database.ts` is the only production importer of `node:sqlite`, guarded repo-wide. The owner handle now enforces foreign keys; no fixture broke, so no user decision was needed.
+- **04a/04b:** both environments take `(config, { database, unitRepository, ... })` and do no filesystem access; `openNode(config)` is the Node composition and owns its handle. The pilot servers inject one handle into both environments, so `startPilotServer` opens exactly one.
+- **04c:** session runtimes share the live handle and inventory; `sessionRuntimeLimit` evicts least-recently-used runtimes. Unset means uncapped; the approved production value of 32 is for 10b to pass.
+- **06d:** operator enforcement state lives on the shared handle (`SqliteOperatorEnforcementStateStore`); the policy suite runs against both stores; the operator restart test covers session, grant, request action, revenue, enforcement and audit. Owner `production` config makes demo requests unavailable.
+- **07a/07b:** receipt bytes go through the async `ReceiptBlobStore` (SQLite for Node, R2 in the Worker), with an idempotent create-copy-rename migration that also runs on Durable Object SQL, opaque UUID keys, put-then-commit with a re-check after the await, and a bounded-body reader for the Worker.
+
+Findings and decisions to carry forward:
+- **Not covered by any slice:** `ReservePayoutManager` keeps `#tranches`, `#adminHolds` and `#executedCommands` in memory. Admin holds affect trust tier and payouts, so this needs its own audit and store before slice 15 (a follow-up task was raised).
+- **02e AC2 deviation, resolved:** the one-handle check first asserted two, then one once 04a/04b injected a shared handle. Per-session guest runtimes were the last place that opened more; 04c closed that.
+- **For 10b:** wire `R2ReceiptBlobStore(env.RECEIPTS)` into both environments' `receiptBlobs`, pass the 32 cap as `sessionRuntimeLimit`, call `readBodyWithLimit` before the multipart parse, build a `SqliteUnitRepository` / `SqliteOperatorRepository` (05b) as the injected repositories, and keep the 503 "not provisioned" first-boot behaviour. 09c must keep `content-length` and the stream.
+- **For 12a:** there is no `list` on the receipt port; sweep orphans with the R2 binding directly (it has object upload times, the SQLite store does not).
+- The owner server now awaits receipt reads and runs receipt retention before signed-in `GET /operator*` pages.
+- Delivery is local on slice branches and the integration branch; no external PR, push, deployment, merge to `main` or staging claim. Wave 4 (08a–08c, 09a–09c) is the next batch, only when requested.
 
 ## Context pointers
+
+- 07a/07b: `772d8a2`; blob port, SQLite and R2 stores, idempotent receipt-table migration (also on Durable Object SQL), put-then-commit with re-check, bounded body, no public/signed URL guard. 22 workerd tests; full suite evidence `C:/AI2026/cf-wave3-full.log`.
+- 06d: `ca19100`; field-by-field audit in the issue's Comments, `SqliteOperatorEnforcementStateStore`, owner `production` flag, `test/operator-process-restart.test.ts`.
+- 04a/04b/04c: `fb7e199`; injectable roots, `openNode` factories, shared handle for session runtimes, `sessionRuntimeLimit`.
+- 02e: `602a11e`; repo-wide `node:sqlite` guard and the Guest Account authority on `SqlDatabase`.
 
 - 10a: `a3fdb15`; shared explicit-source configuration core, unchanged Node validation, typed Cloudflare vars/bindings and lazily rechecked SQLite provisioning. Full suite and 16 workerd tests pass. See its Answer for scope and compiler/runtime evidence.
 
