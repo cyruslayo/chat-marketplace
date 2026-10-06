@@ -38,21 +38,21 @@ The frontier is the first slice in the table that is open, unblocked and unclaim
 | **A: Foundation** | | | | | |
 | 01a | Cut the integration branch; spike Durable Object SQL semantics | prototype | resolved | none | 01c, 01b, 03a |
 | 01c | Validate and pin the `cf` Workers toolchain | prototype | resolved | 01a | 01b, 03a |
-| 01b | Spike Workers runtime compatibility | prototype | ready-for-agent | 01a, 01c | 09c, 10b |
+| 01b | Spike Workers runtime compatibility | prototype | resolved | 01a, 01c | 09c, 10b |
 | 02a | `SqlDatabase` port, Node adapter, contract helper | task | resolved | none | 02b–02d, 03b, 05b, 06a–06c |
 | 02b | Move the seven handle-taking stores onto the port | task | resolved | 02a | 02e, 07a |
-| 02c | Move the availability and guest-interaction stores onto the port | task | ready-for-agent | 02a | 02e |
-| 02d | Move the operator grant and session stores onto the shared handle | task | ready-for-agent | 02a | 02e |
+| 02c | Move the availability and guest-interaction stores onto the port | task | resolved | 02a | 02e |
+| 02d | Move the operator grant and session stores onto the shared handle | task | resolved | 02a | 02e |
 | 02e | Move the app layer onto the port; guard `node:sqlite` imports | task | ready-for-agent | 02b, 02c, 02d | 04a, 04b |
 | **B: Workers harness** | | | | | |
 | 03a | Workers test harness and `apps/cloudflare` skeleton | task | resolved | 01a, 01c | 03b, 07b, 09b, 09c |
-| 03b | `DurableObjectSqlDatabase` passing the shared contract | task | ready-for-agent | 02a, 03a | 10b |
+| 03b | `DurableObjectSqlDatabase` passing the shared contract | task | resolved | 02a, 03a | 10b |
 | **C: Composition and repositories** | | | | | |
 | 04a | Injectable guest composition root | task | ready-for-agent | 02e | 04c, 08a |
 | 04b | Injectable owner composition root | task | ready-for-agent | 02e | 06d, 08b |
 | 04c | Session runtimes share one handle, with a size cap | task | ready-for-agent | 04a | 10b |
 | 05a | Typed unit repository interface | task | resolved | none | 05b |
-| 05b | SQLite unit and operator repositories | task | ready-for-agent | 02a, 05a | 10a |
+| 05b | SQLite unit and operator repositories | task | resolved | 02a, 05a | 10a |
 | **D: Durable state** | | | | | |
 | 06a | Durable, typed, redacted audit log | task | ready-for-agent | 02a | 06d |
 | 06b | Durable, redacted telemetry | task | ready-for-agent | 02a | 06d |
@@ -81,7 +81,7 @@ The frontier is the first slice in the table that is open, unblocked and unclaim
 | 16 | Data migration and cutover | task | ready-for-human | 15 | 17 |
 | 17 | Retire the Node production entry | task | ready-for-agent | 16 | none |
 
-**What can run at once.** Slices 01a, 02a, 05a and 14 have no blockers. After 01a lands, 01c can start; after 01c lands, 01b and 03a can proceed. After 02a lands, 02b, 02c, 02d, 06a, 06b and 06c can all run in parallel.
+**What can run at once.** Slices 01a, 02a, 05a and 14 have no blockers. After 01a lands, 01c can start; after 01c lands, 01b and 03a can proceed. After 02a lands, 02b, 02c, 02d, 06a, 06b and 06c can all run in parallel. After 02a and 03a land, 03b can start.
 
 ## Delivery waves (one wave per implementation session)
 
@@ -90,8 +90,8 @@ Waves are session-sized batches of slices, not replacements for the `Blocked by`
 | Wave | Session focus | Issues | Start when | Handoff / exit gate |
 | --- | --- | --- | --- | --- |
 | **1 — Foundation** | Establish integration branch, validate Cloudflare SQL, pin and prove the `cf` toolchain, and land the common SQL port and repository seam. | 01a, 01c, 02a, 05a, 14 (human review can proceed in parallel) | Start with 01a, 02a and 05a; 01c follows 01a. Start human review for 14 early. | 01a establishes `infra/cloudflare-deployment`; 01c records pinned `cf` versions/commands and verified capabilities; 02a provides `SqlDatabase`; 05a provides the repository contract. ADR 0095/DPIA decision from 14 is recorded before release wave 6. |
-| **2 — Parallel persistence and harness** | Convert existing stores and prove the Workers runtime/database adapter; establish SQLite repositories and durable audit/telemetry/revenue. | 01b, 02b–02d, 03a, 05b, 06a–06c | 01b and 03a after 01a/01c; 02b–02d and 06a–06c after 02a; 05b after 02a/05a. | `npm run check`, `npm test` and `npm run test:workers` pass; Node adapter contract remains green; runtime assumptions and test-harness/tooling limits are documented. |
-| **3 — Composition and durable services** | Inject dependencies into guest/owner compositions, share the DB handle, complete restart-safe operator state, and move receipts to R2. | 02e, 04a–04c, 06d, 07a–07b, 10a | 02e after 02b–02d; 04a/04b after 02e; 04c after 04a; 06d after 04b/06a–06c; 07a after 02b then 07b after 03a; 10a after 05b. | Both environments consume injected dependencies; restart and repository contracts pass; receipt storage and Cloudflare configuration loader are ready for assembly. |
+| **2 — Parallel persistence and harness** | Convert existing stores and prove the Workers runtime/database adapter; establish SQLite repositories and durable audit/telemetry/revenue. | 01b, 02b–02d, 03a, 03b, 05b, 06a–06c | 01b and 03a after 01a/01c; 02b–02d and 06a–06c after 02a; 03b after 02a/03a; 05b after 02a/05a. | `npm run check`, `npm test` and `npm run test:workers` pass; Node adapter and `DurableObjectSqlDatabase` both pass the shared SQL contract; runtime assumptions and test-harness/tooling limits are documented. |
+| **3 — Composition and durable services** | Inject dependencies into guest/owner compositions, share the DB handle, complete restart-safe operator state, and move receipts to R2. | 02e, 04a–04c, 06d, 07a–07b, 10a | 02e after 02b–02d (02e also converts the Guest Account authority, `domains/shortlet/src/guest-account-authority.ts`, to `SqlDatabase` before its import guard can pass; see the 5 Oct 2026 comment in issue 02e); 04a/04b after 02e; 04c after 04a; 06d after 04b/06a–06c; 07a after 02b then 07b after 03a; 10a after 05b. | Both environments consume injected dependencies; restart and repository contracts pass; receipt storage and Cloudflare configuration loader are ready for assembly. |
 | **4 — HTTP and asset adaptation** | Make existing handlers runnable without Node servers/filesystem and prepare Workers HTTP/assets. | 08a–08c, 09a–09c | 08a after 04a; 08b after 04b/08a; 08c after 08b; 09a after 08c; 09b after 03a/09a; 09c after 01b/03a/08a. | Handler, asset and Fetch-shim tests pass; Node wrappers and conventional routes preserve behavior; no Wrangler-only asset assumptions remain. |
 | **5 — Cloudflare assembly and operations** | Integrate the Worker/Durable Object, operations APIs, backup/restore and edge security. | 10b, 11a–11b, 12a–12b, 13 | 10b after 01b, 03b, 04c, 07b, 08c, 09b–09c and 10a. Then 11a/12a/12b/13 after 10b; 11b after 11a. Human dashboard/DNS steps in 13 are coordinated with the user. | Full local journey passes on `cf dev`; `cf build` / dry-run succeeds; ops, persistence, backups, restore and security checks are ready for staging. |
 | **6 — Release and retirement** | Rehearse staging, migrate production data, cut over, then remove the Node production entry. | 15–17 | 15 after 06d, 11b, 12a–12b, 13 and 14; 16 after 15; 17 after 16. | Staging evidence, migration/cutover and rollback checks are recorded; Cloudflare is production and Node remains only for local development/tests. |
@@ -132,13 +132,31 @@ At the beginning of a wave session:
 > - Stay inside the slice's "Out of scope" list. Keep the Node pilot and `npm test` green.
 > - Don't invent policy values; ask me. When done, check the Definition of Done item by item, then write `## Answer` and a context pointer in `map.md`.
 
-## Wave 2 session handoff (5 Oct 2026)
+## Wave 2 session handoff (5 Oct 2026 — historical)
+
+Superseded by the continuation below; its status descriptions are historical.
 
 Started from `infra/cloudflare-deployment` at `d4eefe5`; selected the unblocked, bounded slices **03a and 02b**. Both completed on their own branches and were validated before integration. **Wave 2 remains open**: 01b, 02c, 02d, 05b and 06a–06c are still unclaimed/unblocked and were not attempted in this batch. No Wave 3 implementation was taken; 02e still waits for 02c/02d. Issue 03b is unlocked by 03a but is not listed in this wave's slice set and was not silently added.
 
 Final stable checks: `npm run check`, `npm run test:workers` (1 workerd test), full Node suite (1,268 non-browser + 165 browser tests passed; zero failures; one expected skip), and whitespace checks. See issue answers for the environment-variable caveat and transient Chromium focus failure/retry evidence. No production Cloudflare app/config, deployment, or staging rehearsal is claimed. The Guest Account authority is explicitly part of 02e's twelve-file domain persistence inventory and future repo-wide guard, not one of 02b's seven converted stores.
 
+## Wave 2 continuation (6 Oct 2026)
+
+Completed and integrated **01b, 02c, 02d, 03b and 05b**. The current Wave 2 row explicitly includes 03b, superseding the older handoff's scheduling gap. **Wave 2 remains open: 06a, 06b and 06c remain ready-for-agent and unimplemented.** Do not declare the wave complete or start Wave 3 on this record. No new policy decision blocks those three slices.
+
+The misplaced `.scratch/cf-wave2-worktree` was moved outside the main repository and reconciled. Its seven dirty files were backed up and byte-verified; three formatting-only edits were removed after emitted-code comparison. Its completed operator code is committed and integrated, not stranded in an untracked folder. Recovery snapshots remain local under `cloudflare-deployment/recovery/`.
+
+Final checks on the integrated code: `npm run check` passes; `npm run test:workers` passes **14 workerd tests**, including all eight shared SQL contract cases; `npm test` passes **1,281 non-browser and 165 browser tests, zero failures, one expected skip**. Node tests unset `PI_REASONING_LEVEL` for the existing broad NIN environment assertion. A preceding full run had two Chrome DevTools startup failures, before app interaction; isolated retry and a complete subsequent full suite passed without a UI workaround. Evidence: `.scratch/cf-wave2-confirmed.log`, `cf-wave2-check.log`, `cf-wave2-workers.log`, `cf-wave2-chrome-retry.log`.
+
+Runtime spike evidence is local only: `cf build`, `cf dev`, assertions and dry-run pass. Crypto/Intl match Node, Gemini uses mocked fetch, Buffer/isIP work, and a 5 MiB multipart upload is progressively consumed. Unlike the PRD assumption, the local synchronous loop's clock advances (3/8 ms); 10b must not depend on clock advancement inside atomic decisions. No hosted quota proof, staging/production deployment or real-person data processing is claimed.
+
 ## Context pointers
+
+- 01b: spike `711b863` on throwaway `infra/cf-01b-runtime`; only answer `0b8d00c` integrated. See `spikes/runtime/README.md` on that branch for runnable snippets and observed outputs. No spike code merged.
+- 02c: `7d8bb85` / `fe8c288` now passes its formerly pending full-suite gate; shared ownership, overlap and single-live-attempt checks are green. Issue resolved.
+- 02d: implementation `491c399`, merged `d142a37`, delivery record `36c522c`. Shared operator handles, restart/expiry/revocation and atomic grant rollback; all label-only store path fields/arguments removed. Recovered misplaced worktree is no longer under the main `.scratch`.
+- 03b: implementation `f80e537`, dedicated rollback check `e2fc91d`, delivery record `8161810`. Node/workerd share the unchanged eight-case SQL contract. Known PRAGMA no-ops, trigger-aware changes(), BLOB normalization, binding/value preflight and synchronous nested transactions verified. Unsafe bigint bindings fail rather than lose precision.
+- 05b: implementation `d1d6687`, null-update parity `068a013`, delivery record `3eb69df`. Shared JSON/SQLite behaviour checks, CSV/bootstrap parity, lazy discovery expiry and file restart pass. No app wiring yet.
 
 - 02b: `ca9de39` converts the seven shared-handle stores, adds non-owning Node wrapping and preserves savepoint boundaries inside existing raw Node transactions. Dedicated import/rollback/ownership tests and full suite pass. Existing app handles/foreign-key settings remain unchanged until 02e. Its inventory now explicitly covers Guest Accounts, sessions, codes, quota events and email-command receipts. Parent Chrome smoke on synthetic `http://127.0.0.1:3047/` exercised concierge turns and contact persistence across reload; only favicon 404 observed. Details in issue 02b.
 

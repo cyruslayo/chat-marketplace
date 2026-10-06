@@ -1,6 +1,6 @@
 # Move the availability and guest-interaction stores onto `SqlDatabase`
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: 02a
 Branch: `infra/cf-02c-availability-interaction`
@@ -63,8 +63,15 @@ Check every item in `docs/agents/issue-tracker.md`.
 | 0044 / 0046 | Preserve payment deadlines and one live attempt | AC3 registry reconstruction |
 | 0075 | No credential logging | No logging or projection changes |
 
-Reconciles the existing 02c worktree edits, correcting their borrowed-handle close() bug and completing missing callers/tests. No policy changes. Unread path labels are removed as coordinated with 02d. Full-suite gate remains pending.
+Reconciles the existing 02c worktree edits, correcting their borrowed-handle close() bug and completing missing callers/tests. No policy changes. Unread path labels are removed as coordinated with 02d. Full-suite gate was pending at the earlier handoff; it is now verified below.
 
 Direct continuation checks: `npm run check`, focused availability/interaction/import/notifier/process-restart tests, `npm run test:workers`, and `git diff --check` passed. Dedicated AC1–AC4 tests were first run red in `cf-02c-red.log`, then green in `cf-02c-focused.log`. Both stores borrow the handle; tests close their own connections, including before reconstruction. No dynamic SQL `IN (...)` parameter lists exist in either store. The existing live-attempt registry API is unchanged. New row reads use text guards; SQL and policy values are unchanged. Automated formatting of touched files is retained rather than reverted.
 
-DoD 1–6 reviewed: separate named tests, overlap/duplicate failure assertions, ADR table verified, dependencies used, no invented policies, no credentials/logging introduced. DoD 7 awaits the serial full-suite gate; keep claimed until then.
+DoD 1–6 reviewed: separate named tests, overlap/duplicate failure assertions, ADR table verified, dependencies used, no invented policies, no credentials/logging introduced. DoD 7 is now satisfied by the final integrated serial full-suite gate.
+
+## Answer
+
+Implementation `7d8bb85`, integrated by `fe8c288`, now fully validated together with 02d/03b/05b. AC1–AC4 have dedicated tests in `test/sql-port-availability-interaction.test.ts`: port-only/non-owning construction, exclusive overlapping holds, duplicate live-attempt refusal after reconstruction, and outer rollback. Import guard includes both stores. `test/guest-process-restart.test.ts` and the existing Node pilot/browser journeys passed in the full suite.
+
+DoD checked item by item: (1) separate named AC tests; (2) competing hold and duplicate-attempt refusal preserve the winner; (3) ADR 0004/0039/0041/0044/0046/0075/0095 constraints verified; (4) both injected handles used; (5) SQL/policy values unchanged; (6) no credentials/logging introduced; (7) final integrated `npm run check`, `npm test` and `npm run test:workers` pass: **1,281 non-browser + 165 browser tests, zero failures, one expected skip; 14 workerd tests**. Evidence: integration `.scratch/cf-wave2-confirmed.log`, `cf-wave2-check.log`, `cf-wave2-workers.log`. Node tests unset the harness-only PI_REASONING_LEVEL variable to avoid the existing broad NIN environment assertion. Initial Chrome startup failures were retried in isolation and followed by a complete zero-failure suite; no guest UI/source workaround was added.
+
