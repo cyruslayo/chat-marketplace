@@ -6,7 +6,7 @@ import { DurableObjectSqlDatabase } from "../src/do-sql-database.js";
 
 let storage: DurableObjectStorage;
 runSqlDatabaseContract("DurableObjectSqlDatabase", () => new DurableObjectSqlDatabase(storage), (name, run) => {
-  test(`AC1/AC3: ${name}`, async () => {
+  test(`AC1: ${name}`, async () => {
     const stub = env.TEST_HARNESS.get(env.TEST_HARNESS.idFromName(name));
     await runInDurableObject(stub, async (_instance, ctx) => {
       storage = ctx.storage;
@@ -19,6 +19,18 @@ async function withDatabase(run: (database: DurableObjectSqlDatabase, storage: D
   const stub = env.TEST_HARNESS.get(env.TEST_HARNESS.idFromName(crypto.randomUUID()));
   await runInDurableObject(stub, (_instance, ctx) => run(new DurableObjectSqlDatabase(ctx.storage), ctx.storage));
 }
+
+test("AC3: A transaction that throws rolls back fully and competing holds allow only one writer", async () => {
+  const stub = env.TEST_HARNESS.get(env.TEST_HARNESS.idFromName("dedicated-rollback-and-hold"));
+  await runInDurableObject(stub, async (_instance, ctx) => {
+    const checks: (() => void | Promise<void>)[] = [];
+    runSqlDatabaseContract("AC3", () => new DurableObjectSqlDatabase(ctx.storage), (name, run) => {
+      if (name.endsWith("rollback on throw") || name.endsWith("competing read-then-write transactions allow one hold")) checks.push(run);
+    });
+    expect(checks).toHaveLength(2);
+    for (const check of checks) await check();
+  });
+});
 
 test("AC2: Named parameters inside literals, identifiers and comments are not translated; unbound names throw", async () => {
   await withDatabase((database) => {
