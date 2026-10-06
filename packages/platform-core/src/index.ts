@@ -3,16 +3,28 @@
  * these small contracts; channel/framework adapters stay outside them.
  */
 import type { TelemetryEvent, TransitionTelemetryEvent } from "./telemetry.js";
+import { redactSensitiveData } from "./redaction.js";
 
-export class InMemoryAuditLog {
-  #entries: any[] = [];
+/** Callers own the shape/narrowing of domain-specific fields (ADR 0070/0075). */
+export interface AuditEntry extends Record<string, unknown> {
+  recordedAt?: string;
+}
 
-  record(entry: any) {
-    this.#entries.push(Object.freeze({ ...entry, recordedAt: entry.recordedAt ?? new Date().toISOString() }));
+export interface AuditLog {
+  record(entry: AuditEntry): void;
+  entries(): AuditEntry[];
+}
+
+export class InMemoryAuditLog implements AuditLog {
+  #entries: AuditEntry[] = [];
+
+  record(entry: AuditEntry): void {
+    const redacted = redactSensitiveData(entry) as AuditEntry;
+    this.#entries.push(structuredClone({ ...redacted, recordedAt: redacted.recordedAt ?? new Date().toISOString() }));
   }
 
-  entries(): any[] {
-    return this.#entries.map((entry) => ({ ...entry }));
+  entries(): AuditEntry[] {
+    return structuredClone(this.#entries);
   }
 }
 

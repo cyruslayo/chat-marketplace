@@ -1,6 +1,6 @@
 # Durable, typed, redacted audit log
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 02a
 Branch: `infra/cf-06a-audit-log`
@@ -44,3 +44,34 @@ Both environments keep the audit trail in `InMemoryAuditLog` (`packages/platform
 Check every item in `docs/agents/issue-tracker.md`. Item 6 applies directly.
 
 ## Comments
+
+### Direct continuation plan (6 Oct 2026)
+
+Use the existing shared SQL handle in both environments; extract the engine's pure redactor rather than add a second implementation. Keep the in-memory test adapter and append-only API. Write dedicated AC tests red first, then run compiler, focused tests, Workers tests and the serialized full suite before resolution.
+
+| ADR read | Constraint | Acceptance/code path |
+| --- | --- | --- |
+| 0004 / 0095 | Backend owns durable state; synchronous shared SQL transactions | AC1 / AC4, environment composition and insert |
+| 0070 | Keep server-bound IDs distinct from credentials | AC2, preserve IDs but redact tokens |
+| 0075 | Minimize logs, no secrets, restricted identity or access material | AC2, shared redactor before storage |
+| 0079 | Durable ordered material-action evidence | AC1, ordered append-only rows |
+
+No retention period or new domain policy is introduced. Telemetry remains 06b; revenue remains 06c.
+
+### Verification and Definition of Done
+
+1. Five dedicated `06a AC1`–`AC5` tests in `test/sqlite-audit-log.test.ts`; test file initially failed on the missing implementation (`C:/AI2026/cf-06a-red.log`), then all five passed.
+2. AC2 records nested synthetic bearer credentials, cookies, access codes and phone numbers and inspects every raw table column; AC4 explicitly throws in outer/nested transactions and verifies absence of rolled-back rows. AC3 verifies both shallow and nested returned data cannot mutate history.
+3. Re-read the ADR table: ordered shared-handle storage implements 0004/0095/0079, bound principal IDs survive redaction under 0070, and 0075 redaction happens before storage. No retention assumptions added.
+4. The only new store dependency (`SqlDatabase`) is used for DDL/inserts/reads; connection ownership stays with the environments.
+5. No policy values or new domain events invented.
+6. Extracted the existing engine redactor into `redaction.ts`, added normalized cookie/access-code/phone and credential key coverage, and made the engine/in-memory audit/durable audit use that one implementation. No credentials logged. Existing caller inspection found card-payment audit PSP references, now masked centrally.
+7. `npm run check` passes; 84 focused tests and 14 workerd tests pass; full `npm test` exits 0 with **1,286 non-browser and 165 browser passes, zero failures, one expected skip**. Full tests unset `PI_REASONING_LEVEL` for the known unrelated broad environment assertion. `git diff --check` passes. Logs: `C:/AI2026/cf-06a-{check,focused,workers,full}.log`; exit marker `cf-06a-full.exit` = 0.
+
+The active LSP probe was not fully conclusive and surfaced generic auxiliary lint rules against `unknown` redaction and deliberate fail-closed JSON parsing; these are not TypeScript errors. The successful compiler checks supply the clean typecheck evidence. No errors are swallowed to hide corrupt audit rows.
+
+Audit insertion participates in any outer shared SQL transaction; it does not create a transaction around an entire application command. Availability/booking/payment callers often audit after their store-specific transaction returns, so those independent writes remain independent. AC4 proves the actual shared-handle outer rollback behaviour; this slice does not claim a new atomic command boundary.
+
+## Answer
+
+Committed implementation `5303c68` on `infra/cf-06a-audit-log`: typed append-only audit port, durable ordered audit rows, shared redaction and guest/owner composition. Returned snapshots cannot mutate stored evidence. All acceptance and shared gates passed before resolution. No export, retention job, Workers deployment or Wave 3 work.
