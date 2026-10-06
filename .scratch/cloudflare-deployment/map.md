@@ -68,7 +68,7 @@ The frontier is the first slice in the table that is open, unblocked and unclaim
 | 09b | Build static assets for Cloudflare | task | ready-for-agent | 03a, 09a | 10b |
 | 09c | Fetch-to-node-HTTP shim | task | ready-for-agent | 01b, 03a, 08a | 10b |
 | **F: Cloudflare assembly** | | | | | |
-| 10a | Cloudflare configuration loader | task | ready-for-agent | 05b | 10b |
+| 10a | Cloudflare configuration loader | task | resolved | 05b | 10b |
 | 10b | Worker, Durable Object and typed `cf` config, running on `cf dev` | task | ready-for-agent | 01b, 03b, 04c, 07b, 08c, 09b, 09c, 10a | 11a, 12a, 12b, 13 |
 | 11a | `/_ops` authentication and operator routes | task | ready-for-agent | 10b | 11b |
 | 11b | Inventory import route; CLIs over HTTPS | task | ready-for-agent | 11a | 15 |
@@ -107,11 +107,18 @@ At the beginning of a wave session:
 
 **Change from the PRD.** Slice 14 blocks 15, so the hosting ADR exists before the integration branch merges to `main`.
 
+## Wave 3 approved configuration decisions
+
+The user approved both recommendations in this implementation session:
+
+- Production session-runtime cap: **32**, configurable; local/unset behavior remains uncapped. This is an initial engineering limit, not a measured capacity guarantee. 04c supplies LRU eviction and durable reconstruction; 10b wires the production configuration.
+- Empty first boot: normal application routes and `/healthz` return **503 “not provisioned”** until valid inventory and tenant-matching operators exist. Authenticated provisioning remains available. No fallback to demo data. 10a records configuration/readiness policy; HTTP enforcement is wired in assembly (10b/11a/11b).
+
 ## Values to ask the user, not invent
 
 - 02e: whether to fix owner fixture data or turn off `foreign_keys` for the owner database, if turning it on breaks an owner fixture.
-- 04c: the default cap on in-memory session runtimes.
-- 10a: how the Durable Object behaves on first boot before inventory is imported, for example a 503 "not provisioned".
+- 04c: answered above (32 for production; local/unset remains uncapped).
+- 10a: answered above (503 “not provisioned”; authenticated provisioning available).
 - 11a: the name of the shared-secret header, and how the secret is provisioned.
 - 11b: the body-size limit for inventory CSV import.
 - 12a: export retention (ADR 0075 is provisional), and the grace period before an orphaned receipt is swept.
@@ -162,7 +169,15 @@ No Wave 3 implementation, staging/production deployment, merge to `main`, orches
 
 After Wave 2 validation, the user explicitly requested `merge to main`. Merge `33d8135` brings the validated foundation/Wave 2 code into `main` ahead of the original issue-15 release schedule. This is a **local code merge only**, not acceptance of staging, production, cutover, counsel, retention or vendor-contract gates; issue 15 remains ready-for-human and Waves 3–6 remain unimplemented. Existing main-only guest UI documentation is retained. The merged runtime/test/package trees are byte-identical to the fully tested integration branch; fresh compiler checks and 14 Workers tests pass (`C:/AI2026/cf-main-merge-{check,workers}.log`). No push or deployment is authorized by this record.
 
+## Wave 3 partial handoff
+
+Completed only the independent configuration slice **10a** (`a3fdb15`) in this batch, with the user-approved cap/first-boot decisions recorded above. Shared Node/Cloudflare validation and SQLite readiness checks pass. Full serial suite: **1,317 non-browser + 165 browser passes, zero failures, one expected skip**; compiler and **16 workerd tests** pass. Evidence: `C:/AI2026/cf-10a-{focused,check,workers,full}.log` and `cf-10a-full.exit` (0). Delivery is local on the slice branch and integration branch; no external PR/push or deployment.
+
+**Wave 3 remains open:** 02e, 04a–04c, 06d and 07a–07b are unimplemented. 02e, 07a and 07b's prerequisite 03a are available; 04a/04b still wait for 02e, 04c waits for 04a, and 06d waits for 04b. 02e was not claimed or implemented in this batch. Preserve its conditional owner foreign-key decision gate. 10b remains blocked by the remaining composition/receipt work and Wave 4. No HTTP first-boot 503 routes or production runtime cap wiring are claimed by 10a; those remain downstream assembly/composition work.
+
 ## Context pointers
+
+- 10a: `a3fdb15`; shared explicit-source configuration core, unchanged Node validation, typed Cloudflare vars/bindings and lazily rechecked SQLite provisioning. Full suite and 16 workerd tests pass. See its Answer for scope and compiler/runtime evidence.
 
 - 06c: implementation `502fcc1`; shared-handle revenue accounting and compatibility-manager state, atomic trigger-failure rollback, >2^31 integer-kobo round-trip, real owner restart and both existing release suites through the shared contract. Full evidence `C:/AI2026/cf-06c-full.log` (exit 0). No changes to current ADR 0089 owner-payable rules or to existing historical arithmetic.
 - 06b: implementation `cee7988`; shared-handle redacted telemetry, durable unique hashed transition dedupe, restart/table/sink checks. Full evidence `C:/AI2026/cf-06b-full.log` (exit 0). The optional sink is observational, not commit-aware/outbox-backed; see its answer before 10b wiring.
