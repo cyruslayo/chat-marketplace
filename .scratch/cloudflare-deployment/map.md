@@ -195,12 +195,49 @@ Findings and decisions to carry forward:
 - The owner server now awaits receipt reads and runs receipt retention before signed-in `GET /operator*` pages.
 - Delivery is local on slice branches and the integration branch; no external PR, push, deployment, merge to `main` or staging claim. Wave 4 (08a–08c, 09a–09c) is the next batch, only when requested.
 
+## Wave 4 completion (7 Oct 2026)
+
+**Wave 4 is complete.** 08a, 08b, 08c, 09a, 09b and 09c are implemented, merged into `infra/cloudflare-deployment` and resolved.
+
+| Slice | Implementation | Delivery record |
+| --- | --- | --- |
+| 08a guest handler | `f1ff86c` | `0f01fce` |
+| 08b owner handler | `bb247a3` | `3469dde` |
+| 08c pilot handler | `6c89dbc` | `c25983f` |
+| 09a asset loader | `eb2a228` | `6319924` |
+| 09b static assets | `c9237eb` (merge commit) | `eae5bd6` |
+| 09c HTTP shim | `75ccc2d` | `cdcae50` |
+
+Evidence on the integrated snapshot `cdcae50`:
+
+- **Full serial `npm test`** (phase 1 concurrent, phase 2 real-browser serial) exited **0**. The verdict is in `C:/AI2026/cf-wave4-full.exit` (`EXIT=0`); background log capture produces 0-byte files on this machine.
+- **Phase 1** was re-run in four foreground chunks: 337 + 342 + 409 + 293 = **1,381 tests, zero failures**.
+- **`npm run test:workers`:** 27 tests in 5 files pass.
+- **`npm run check`** (all four programs) and `git diff --check` are clean.
+- **Pilot acceptance (08c AC5): PASS**, 29 of 29 scenarios. The Rodney journey was replayed in the Claude desktop in-app browser rather than through Rodney. Guest A, Guest B and Operator each had their own cookie host. The run covered:
+  - Discovery and refinement, the generated Unit detail, the Request Draft, phone, review and submit.
+  - Operator one-time token login and reuse refusal.
+  - Confirmation, the Conditional Booking Offer, acceptance, the email gate, local deterministic payment, then exactly 1 Reservation and 1 Booking Contract.
+  - Restart persistence.
+  - Guest B's Lagos/Wuse location conflict, then its own request and decline.
+  - Cross-Guest and Operator isolation probes, plus 390/320 reflow and target checks on discovery, detail, review and confirmed screens.
+
+  Full record: `wave-4-acceptance.md`.
+
+As in earlier waves, the browser phase and the acceptance journey ran once, on the integrated snapshot. The per-slice deferrals (08c AC5 and 09a AC4) are now discharged; each issue's Comments says so.
+
+Findings to carry forward:
+
+- **The Rodney script predates the 30 Sep–2 Oct guest UI and confirm-real-dates work.** The committed heading fix is not enough; it would next fail on the composer name ("Area, dates, guests"), "View apartment", the arrival-date question, the review-after-phone order, the back-office copy and the removed projection status strings. The drift list is in `wave-4-acceptance.md`. Refreshing the script is product/test work outside Wave 4. The browser record above is the 08c AC5 evidence.
+- **Generate-after-build churn.** `pilot:local` and the Cloudflare static-assets test rewrite tracked `apps/local-guest/dist/*.js` and `apps/cloudflare/public/_headers` with LF endings. Restore them with `git restore` before any clean-tree gate; never commit that churn.
+- **Do not start Wave 5 (10b+) without a request.** The integration branch merges to `main` only after slice 15; no push, deployment or staging claim.
+
 ## Context pointers
 
 - 09c: `75ccc2d`; Fetch-to-node-HTTP shim (`toHttpRequestLike` raw-byte pump, `createHttpResponseLike` collecting writeHead/setHeader/end with per-value `Set-Cookie` appends and destroy/throw→500, `clientAddressFromCloudflare` fail-closed to `"unknown"`); the implementation is `packages/platform-core/src/http-fetch-shim.ts` (Node-program-testable) with `apps/cloudflare/src/http-shim.ts` re-exported as the DO import site; workerd spec is shim-only because app node sources can't typecheck in the `apps/cloudflare` ambient — the real guest-handler multipart run via the shim is `test/http-shim-multipart.test.ts`. Probe noted: `node:sqlite` imports in workerd but `DatabaseSync` is illegal; a fully injected guest environment serves the multipart flow inside a DO (10b's composition route).
 - 09b: `c9237eb`; `build-client.mjs` also writes the four bundles + byte-identical foundations CSS into gitignored `apps/cloudflare/public/` with a committed `_headers` mirroring the real route values (scripts: content-type only, no Cache-Control; CSS: `public, max-age=3600`); `?raw` CSS import prepared in `apps/cloudflare/src`; the real `cf build` proof is 10b's gate. Hash/byte tests included.
 - 09a: `eb2a228`; `AssetLoader` (closed five-name union) + caching `nodeAssetLoader()` in `packages/platform-core`, both handlers default to it, every module-level `readFileSync` and per-request script read removed, import-time read proven absent by a subprocess probe on an empty cwd; missing assets answer per request (CSS/client.js 500, gallery/payment/offer 404). Decision for 09b/10b recorded in the issue: bundles+CSS as Static Assets before the Durable Object; CSS text inside the DO via a Vite `?raw` import (fallback: generated TS module), to be proven by a real `cf build` in 09b.
-- 08c: `6c89dbc`; `createPilotRequestHandler` (health on the one shared handle, the four rate limiters, staging banner applied to the handler's own HTML response, `/operator*` dispatch, injectable clientAddress + `ready`), `proxyRequest` deleted from both pilot servers — no `127.0.0.1` literal stays in `apps/pilot/src` (grep test permanent; the bind address moved to `packages/platform-core/src/loopback-address.ts`). pilot-local/Rodney/browser phase verify at wave close.
+- 08c: `6c89dbc`; `createPilotRequestHandler` (health on the one shared handle, the four rate limiters, staging banner applied to the handler's own HTML response, `/operator*` dispatch, injectable clientAddress + `ready`), `proxyRequest` deleted from both pilot servers — no `127.0.0.1` literal stays in `apps/pilot/src` (grep test permanent; the bind address moved to `packages/platform-core/src/loopback-address.ts`). pilot-local, the browser phase and the pilot acceptance journey passed at wave close (see "Wave 4 completion").
 - 08b: `bb247a3` extracts the owner request handler (`createOwnerRequestHandler`, thin `startLocalOwnerServer` wrapper); `readForm` converted to `on("data")` within the same 4 KiB ceiling; `HttpResponseLike.setHeader` accepts value lists so login/logout keep two separate `Set-Cookie` lines and the fake records them separately. Phase 1: 1,371 tests, zero failures; 22 workerd tests; `npm run check` clean.
 - 08a: `f1ff86c` extracts the guest request handler behind `HttpRequestLike`/`HttpResponseLike` (`packages/platform-core/src/http-like.ts`); `createGuestRequestHandler` carries all request logic, `startLocalGuestServer` is a thin wrapper, and `test/helpers/http-like.ts` provides fake request/response builders for 08b/08c/09b/09c. Phase 1: 1,368 tests, zero failures; 22 workerd tests (hung-run false alarm did not reproduce); `npm run check` clean. Browser phase deferred to wave close.
 - 07a/07b: `772d8a2`; blob port, SQLite and R2 stores, idempotent receipt-table migration (also on Durable Object SQL), put-then-commit with re-check, bounded body, no public/signed URL guard. 22 workerd tests; full suite evidence `C:/AI2026/cf-wave3-full.log`.

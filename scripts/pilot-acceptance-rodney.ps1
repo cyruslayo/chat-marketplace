@@ -463,7 +463,8 @@ try {
   $script:activeScenario = 'Guest A home'
   Start-Session 'guest-a'
   Assert-Rodney @('visible','#composer-input') 'Guest composer is visible.' 'Guest home composer'
-  Assert-AccessibleName 'heading' 'Shortlet Concierge' 'Guest page heading'
+  # The app bar's page heading is "Shortlet" since the desktop split refresh; "Shortlet Concierge" is the RootWebArea title.
+  Assert-AccessibleName 'heading' 'Shortlet' 'Guest page heading'
   Assert-AccessibleName 'textbox' 'Message the concierge' 'Guest composer textbox'
   Assert-AccessibleName 'button' 'Send' 'Guest send button'
   $homeText = Invoke-Rodney @('text','body')
@@ -738,7 +739,7 @@ try {
   if ($confirmedGuestText -notmatch 'Reservation confirmed|Booking Contract|Contract') { throw 'Verified local payment did not produce a confirmed Guest booking surface.' }
   $countsAfterPayment = Get-BookingCounts
   if ($countsAfterPayment.reservations -ne 1 -or $countsAfterPayment.contracts -ne 1) { throw "Expected exactly one Reservation and one Booking Contract; observed $($countsAfterPayment.reservations)/$($countsAfterPayment.contracts)." }
-  Assert-AccessibleName 'heading' 'Shortlet Concierge' 'Confirmed booking Guest shell'
+  Assert-AccessibleName 'heading' 'Shortlet' 'Confirmed booking Guest shell'
   Save-MobileShots '27-confirmed' 390
   Save-MobileShots '30-confirmed' 320
   Invoke-Rodney @('screenshot','-w','1280','-h','900',(Join-Path $shots 'viewport-reset.png')) | Out-Null

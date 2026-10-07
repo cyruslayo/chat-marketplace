@@ -61,3 +61,11 @@ Design notes for later slices: `createPilotRequestHandler(configuration, deps)` 
 ## Comments
 
 - A slice-engineering decision recorded for AC1/AC4: `local-pilot-server.ts` has its own `proxyRequest` inside `apps/pilot/src`, so the AC1 grep covers it; it is converted to the same in-process dispatch (its health/photos routes stay its own; it keeps no rate guard, banner or notifier, matching its local-only behavior). The redesign is byte-identical for its callers (`startLocalPilotServer` used by `pilot-local`, `discovery-phase3`, `unit-detail-old-ikoyi` Chromium suites).
+- **7 Oct 2026, wave close: the AC5 deferral is discharged.**
+  - On the integrated snapshot `cdcae50`, full serial `npm test` exited 0. That run includes `test/pilot-local.test.ts` and the browser phase. Phase 1 also passed in chunks: 1,381 tests, zero failures. `npm run check` is clean.
+  - The pilot acceptance journey passed 29 of 29 scenarios on a fresh reset/bootstrap of `npm run pilot:local`, run by hand in the Claude desktop in-app browser instead of Rodney. Guest A, Guest B and Operator each had their own cookie host. The run covered:
+    - Restart persistence, with exactly one Reservation and one Booking Contract.
+    - Cross-Guest and Operator isolation.
+    - One-time token reuse refusal.
+    - 390/320 reflow.
+  - Record: `../wave-4-acceptance.md`. `scripts/pilot-acceptance-rodney.ps1` itself is stale against the refreshed guest UI. Its heading fix is committed, but the rest of the drift is listed in that record as follow-up work, not a regression.
