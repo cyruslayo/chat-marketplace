@@ -77,10 +77,14 @@ function workerFor(environment: PilotEnvironment) {
       ...optionalText("SHORTLET_NOTIFICATION_FROM"),
       ...optionalText("SHORTLET_OPERATOR_ALERT_EMAILS"),
       ...optionalText("SHORTLET_NOTIFICATION_SWEEP_SECONDS"),
+      // 11a: the Cloudflare Access application the `/_ops` routes sit behind.
+      ...optionalText("CF_ACCESS_TEAM_DOMAIN"),
+      ...optionalText("CF_ACCESS_AUD"),
       // Secrets: names declared here, values never committed (cf secret workflow or .dev.vars).
       PAYSTACK_SECRET_KEY: bindings.secret(),
       GEMINI_API_KEY: bindings.secret(),
       RESEND_API_KEY: bindings.secret(),
+      OPS_SHARED_SECRET: bindings.secret(),
     },
   });
 }

@@ -1,6 +1,6 @@
 # `/_ops` authentication and operator routes
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 10b
 Branch: `infra/cf-11a-ops-operators`
@@ -54,3 +54,33 @@ On Cloudflare the data lives inside the Durable Object, so these operations need
 Check every item in `docs/agents/issue-tracker.md`. Item 5 matters here: the header name comes from the user.
 
 ## Comments
+
+## Answer
+
+Resolved 7 Oct 2026 on `infra/cf-11a-ops-operators`.
+
+### Authentication (two layers, both fail-closed)
+
+- **Access layer.** `apps/cloudflare/src/access-jwt.ts` verifies the `Cf-Access-Jwt-Assertion` JWT with WebCrypto: RS256 only, the signing key selected from the team's JWKS by `kid`, and the `aud`, `exp` and `nbf` claims checked. **Option chosen and recorded:** verify the JWT against the team's published certs (`https://<CF_ACCESS_TEAM_DOMAIN>/cdn-cgi/access/certs`, fetched once and cached per Durable Object) rather than trusting the Access-injected headers. `CF_ACCESS_JWKS` is a local/test override so workerd tests never fetch the public certs. Anything missing, malformed or unverifiable is refused, never treated as authenticated.
+- **Shared secret.** `apps/cloudflare/src/ops-auth.ts` compares the `X-Shortlet-Ops-Secret` header (user-approved name) with the `OPS_SHARED_SECRET` binding in constant time: both sides are SHA-256 hashed first, then compared with `timingSafeEqual`, so neither the length nor an empty value leaks or passes.
+- A refusal is a bare `401 {ok:false,code:"UNAUTHORIZED"}` with no indication of which layer failed (AGENTS.md anti-pattern 1). `loadOpsConfiguration` returns a deny-all verifier and an empty secret when the Access vars or the secret are absent, so an under-configured deployment refuses everything rather than admitting anything.
+
+### Routes
+
+`apps/cloudflare/src/ops-routes.ts`, dispatched in `fetch` **before** the guest/owner config load and the provisioning gate, so provisioning works on an unprovisioned object: `POST/GET /_ops/operators`, `PATCH /_ops/operators/:id`, `POST /_ops/operators/bootstrap`, `POST /_ops/operators/:id/access`, `DELETE /_ops/operators/:id/access`. Every response carries `Cache-Control: no-store`; bodies are bounded at 64 KiB before reading. Each route calls exactly the domain functions the operator CLIs call today — `runOperatorCreateCommand`/`runOperatorListCommand`/`runOperatorUpdateCommand` (`apps/shortlet-ops/src/operator-cli.ts`), `bootstrapOperatorsFromUnitRepository`, `sessionAuthority.provisionAccessToken`/`revokeAll`, `grantStore.canActForOperator` — with no new operator logic. The ops composition on the Durable Object is deliberately lighter than the guest/owner runtime (operator, unit, grant, session and audit authorities on the shared handle only).
+
+**ADR 0086.** A provisioned token is returned only in the JSON response body; the audit records the operator and actor ids only. `OPS_SHARED_SECRET` is declared as `bindings.secret()` (never committed) and documented in `.dev.vars.example`.
+
+### Acceptance evidence (`apps/cloudflare/test/ops-routes.spec.ts`)
+
+- **AC1**: missing Access assertion, missing secret, empty-string secret, wrong secret, expired token, wrong audience and a tampered signature each give 401, and the operator table is unchanged.
+- **AC2**: `POST`/`PATCH`/`GET` return the same record the CLI's domain command produces against the same database.
+- **AC3**: the provisioned token is a non-trivial string in the response body only — it appears in neither the durable audit table nor captured `console.log`/`console.error` output.
+- **AC4**: after `DELETE .../access`, the operator's session resolves to `null` at once (`resolveSession`), proving immediate refusal (ADR 0086).
+- **AC5**: `npm run check` (four compiler programs + bundle guard) passes; `npm run test:workers` passes **35** workerd tests; the Vite build emits 325 modules with no `node:sqlite`.
+
+### Notes
+
+- The Access layer needs `CF_ACCESS_TEAM_DOMAIN` + `CF_ACCESS_AUD` (non-secret vars) and the `OPS_SHARED_SECRET` secret. Until those are supplied at deploy the routes refuse everything; that is the intended fail-closed default.
+- ADR constraints checked: 0086 (token in the body only), 0082 (provision/revoke reuse the domain grant authority), 0075 (no secrets in logs or audit).
+- Out of scope and untouched: inventory import and CLI changes (11b) — `POST /_ops/inventory/import` and making the CLIs call these routes when `SHORTLET_OPS_URL` is set.

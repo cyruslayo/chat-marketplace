@@ -1,7 +1,10 @@
 import { DurableObject } from "cloudflare:workers";
 import { DirectPaystackClient, PaystackBankTransferClient } from "../../../domains/shortlet/src/index.js";
 import { SqliteOperatorRepository } from "../../../domains/shortlet/src/sqlite-operator-repository.js";
+import { SqliteOperatorRepresentativeGrantStore } from "../../../domains/shortlet/src/operator-representative-authority.js";
+import { SqliteOperatorSessionAuthority } from "../../../domains/shortlet/src/operator-session-authority.js";
 import { SqliteUnitRepository } from "../../../domains/shortlet/src/sqlite-unit-repository.js";
+import { SqliteAuditLog } from "../../../packages/platform-core/src/sqlite-audit-log.js";
 import type { TelemetryEvent } from "../../../packages/platform-core/src/telemetry.js";
 import { createConciergeModelClient } from "../../local-guest/src/assistant/concierge-configuration.js";
 import { ModelCallBudget } from "../../local-guest/src/assistant/model-call-budget.js";
@@ -15,6 +18,7 @@ import { DEFAULT_NOTIFICATION_SWEEP_SECONDS } from "../../pilot/src/pilot-config
 import {
   cloudflareProvisioningState,
   loadCloudflareConfiguration,
+  loadOpsConfiguration,
   type CloudflareConfiguration,
   type CloudflareEnv,
   type CloudflareProvisioningState,
@@ -22,6 +26,7 @@ import {
 import { runAlarmTasks, type AlarmTask } from "./do-alarm.js";
 import { DurableObjectSqlDatabase } from "./do-sql-database.js";
 import { clientAddressFromCloudflareHeaderValue, createHttpResponseLike, toHttpRequestLike } from "./http-shim.js";
+import { createOpsHandler, type OpsHandler } from "./ops-routes.js";
 import { cloudflareAssetLoader } from "./pilot-assets.js";
 import { R2ReceiptBlobStore } from "./r2-receipt-blob-store.js";
 
@@ -50,10 +55,15 @@ function isOpsPath(pathname: string): boolean {
 
 export class ShortletPilot extends DurableObject<CloudflareEnv> {
   #runtime: PilotRuntime | null = null;
+  #opsHandler: OpsHandler | null = null;
   #alarmScheduled = false;
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
+    // 11a: authenticated ops routes are dispatched first, so provisioning does not depend on the guest/owner
+    // configuration (Paystack, concierge) being valid, nor on the tenant being provisioned yet.
+    if (isOpsPath(url.pathname)) return this.#handleOps(request);
+
     const database = new DurableObjectSqlDatabase(this.ctx.storage);
     let configuration: CloudflareConfiguration;
     let provisioning: CloudflareProvisioningState;
@@ -64,8 +74,6 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
       // Fail closed without detail: a malformed configuration or inconsistent inventory is never served.
       return this.#unavailable();
     }
-
-    if (isOpsPath(url.pathname)) return this.#handleOps();
 
     // 10a's user-approved first boot: normal routes and health return 503 "not provisioned" until valid
     // tenant-matching inventory and operators exist; authenticated provisioning above stays available.
@@ -85,11 +93,38 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
   }
 
   /**
-   * 10b adds no `/_ops` routes; 11a replaces this with authenticated operator and inventory routes. The seam exists
-   * now so the provisioning gate above never blocks provisioning itself.
+   * 11a: authenticated operator routes, dispatched before the guest/owner routes and before the provisioning gate,
+   * so provisioning stays available on an unprovisioned object. The composition here is deliberately lighter than
+   * the guest/owner runtime: the operator, unit, grant, session and audit authorities on the shared handle only.
    */
-  #handleOps(): Response {
-    return new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } });
+  async #handleOps(request: Request): Promise<Response> {
+    try {
+      const handler = (this.#opsHandler ??= this.#buildOpsHandler());
+      const response = await handler.handle(request);
+      return response ?? new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } });
+    } catch {
+      return new Response(JSON.stringify({ ok: false, code: "UNAVAILABLE" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
+      });
+    }
+  }
+
+  #buildOpsHandler(): OpsHandler {
+    const clock = (): Date => new Date();
+    const database = new DurableObjectSqlDatabase(this.ctx.storage);
+    const ops = loadOpsConfiguration(this.env);
+    return createOpsHandler({
+      sharedSecret: ops.sharedSecret,
+      verifier: ops.verifier,
+      operatorRepository: new SqliteOperatorRepository(database, { clock }),
+      unitRepository: new SqliteUnitRepository(database),
+      grantStore: new SqliteOperatorRepresentativeGrantStore(database, { clock }),
+      sessionAuthority: new SqliteOperatorSessionAuthority(database, { clock }),
+      audit: new SqliteAuditLog(database),
+      clock,
+      tenantId: this.env.SHORTLET_TENANT_ID?.trim() ?? "",
+    });
   }
 
   #notProvisioned(): Response {

@@ -28,6 +28,10 @@
     "CONCIERGE_MODE": "deterministic",
     "RESEND_API_KEY": "re_test_synthetic",
     "SHORTLET_NOTIFICATION_FROM": "Shortlet <notifications@example.test>",
-    "SHORTLET_OPERATOR_ALERT_EMAILS": "alerts@example.test"
+    "SHORTLET_OPERATOR_ALERT_EMAILS": "alerts@example.test",
+    "OPS_SHARED_SECRET": "synthetic-ops-shared-secret",
+    "CF_ACCESS_TEAM_DOMAIN": "shortlet.cloudflareaccess.test",
+    "CF_ACCESS_AUD": "synthetic-access-audience",
+    "CF_ACCESS_JWKS": "{\"keys\":[{\"kty\":\"RSA\",\"n\":\"s-OrNgEde0lVkMzmI5Eoo8Fseut09ZD3KpPKGcwvAynA3hjUDDm6kHYR58oo2tdPq_6y-faoZJEEU6HEvMn2eJK9nZtPEmPumk7cnzvhMbItYmTycOm_1A-q3Sp0vLevM5KfuivZ14FLS-wQUlh2MQNxT5XFdQ4_x0LZ0jGstqB0upBnCjWd17a6SFsm3rLhCnrf8j4N9TPvngIQOdZnGxwn_mnXrtKXYkCOEpjDkOMRCZtyw0TQDcd57lOonDphZlD6JM6ldnkL3bndrasRqOwX7ePGQg41lkB6hxiISMH_UZKqpZsR0yk0noTQ-MImic7DqpOTcUyGAGyWsloQaQ\",\"e\":\"AQAB\",\"kid\":\"synthetic-access-key\"}]}"
   }
 }

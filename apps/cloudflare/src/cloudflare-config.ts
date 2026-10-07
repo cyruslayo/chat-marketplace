@@ -3,6 +3,7 @@ import type { SqlDatabase } from "../../../packages/platform-core/src/sql-databa
 import { SqliteOperatorRepository } from "../../../domains/shortlet/src/sqlite-operator-repository.js";
 import { SqliteUnitRepository } from "../../../domains/shortlet/src/sqlite-unit-repository.js";
 import { loadPilotCoreConfiguration, required, type PilotCoreConfiguration, type PilotEnvironmentSource } from "../../pilot/src/pilot-config-core.js";
+import { createAccessJwtVerifier, type AccessJwks, type AccessVerifier } from "./access-jwt.js";
 
 /** Inherits every shared Paystack, concierge, notification and guardrail var/secret, not Node file paths. */
 export interface CloudflareEnv extends Omit<PilotEnvironmentSource, "SHORTLET_DB_PATH" | "SHORTLET_INVENTORY_PATH" | "SHORTLET_OPERATORS_PATH"> {
@@ -12,6 +13,14 @@ export interface CloudflareEnv extends Omit<PilotEnvironmentSource, "SHORTLET_DB
   readonly ASSETS: Fetcher;
   /** 04c/10a: the production cap on resident per-session Guest runtimes; unset keeps the approved default. */
   readonly SHORTLET_GUEST_RUNTIME_LIMIT?: string;
+  /** 11a: the `/_ops` shared secret (secret binding; never committed). */
+  readonly OPS_SHARED_SECRET?: string;
+  /** 11a: the Cloudflare Access team domain, e.g. `shortlet.cloudflareaccess.com`. */
+  readonly CF_ACCESS_TEAM_DOMAIN?: string;
+  /** 11a: the Cloudflare Access application audience tag. */
+  readonly CF_ACCESS_AUD?: string;
+  /** 11a: local/test JWKS override so workerd tests do not fetch the public certs. */
+  readonly CF_ACCESS_JWKS?: string;
 }
 
 export interface CloudflareConfiguration extends PilotCoreConfiguration {
@@ -67,4 +76,33 @@ export function cloudflareProvisioningState(configuration: CloudflareConfigurati
   const unit = units[0]!;
   const operator = operators.find(operator => operator.id === unit.operator.id)!;
   return Object.freeze({ provisioned: true, operatorId: operator.id, operatorName: operator.name, unitId: unit.id, propertyId: unit.propertyId });
+}
+
+export interface OpsConfiguration {
+  readonly sharedSecret: string;
+  readonly verifier: AccessVerifier;
+}
+
+/**
+ * 11a: the two `/_ops` authentication layers, both fail-closed. A missing shared secret or missing Access
+ * configuration produces a configuration that refuses everything rather than one that admits anything.
+ */
+export function loadOpsConfiguration(env: CloudflareEnv): OpsConfiguration {
+  const sharedSecret = env.OPS_SHARED_SECRET?.trim() ?? "";
+  const teamDomain = env.CF_ACCESS_TEAM_DOMAIN?.trim() ?? "";
+  const audience = env.CF_ACCESS_AUD?.trim() ?? "";
+  let jwks: AccessJwks | undefined;
+  const rawJwks = env.CF_ACCESS_JWKS?.trim() ?? "";
+  if (rawJwks !== "") {
+    try {
+      jwks = JSON.parse(rawJwks) as AccessJwks;
+    } catch {
+      jwks = undefined;
+    }
+  }
+  const verifier: AccessVerifier =
+    teamDomain !== "" && audience !== ""
+      ? createAccessJwtVerifier({ teamDomain, audience, ...(jwks === undefined ? {} : { jwks }) })
+      : { verify: async () => false };
+  return Object.freeze({ sharedSecret, verifier });
 }
