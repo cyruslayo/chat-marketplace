@@ -80,6 +80,9 @@ function workerFor(environment: PilotEnvironment) {
       // 11a: the Cloudflare Access application the `/_ops` routes sit behind.
       ...optionalText("CF_ACCESS_TEAM_DOMAIN"),
       ...optionalText("CF_ACCESS_AUD"),
+      // 12a: export retention and the orphaned-receipt grace period (defaults are the approved values).
+      ...optionalText("SHORTLET_EXPORT_RETENTION_DAYS"),
+      ...optionalText("SHORTLET_RECEIPT_ORPHAN_GRACE_HOURS"),
       // Secrets: names declared here, values never committed (cf secret workflow or .dev.vars).
       PAYSTACK_SECRET_KEY: bindings.secret(),
       GEMINI_API_KEY: bindings.secret(),

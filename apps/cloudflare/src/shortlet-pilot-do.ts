@@ -18,12 +18,14 @@ import { DEFAULT_NOTIFICATION_SWEEP_SECONDS } from "../../pilot/src/pilot-config
 import {
   cloudflareProvisioningState,
   loadCloudflareConfiguration,
+  loadExportConfiguration,
   loadOpsConfiguration,
   type CloudflareConfiguration,
   type CloudflareEnv,
   type CloudflareProvisioningState,
 } from "./cloudflare-config.js";
 import { runAlarmTasks, type AlarmTask } from "./do-alarm.js";
+import { lagosDate, runDailyExport } from "./do-export.js";
 import { DurableObjectSqlDatabase } from "./do-sql-database.js";
 import { clientAddressFromCloudflareHeaderValue, createHttpResponseLike, toHttpRequestLike } from "./http-shim.js";
 import { createOpsHandler, type OpsHandler } from "./ops-routes.js";
@@ -262,14 +264,37 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
   }
 
   /**
-   * Replaces the Node notifier's `setInterval` (`pilot-server.ts`). A task that throws is isolated (do-alarm), and
-   * the alarm always reschedules itself, so one failed sweep cannot stop the next.
+   * Replaces the Node notifier's `setInterval` (`pilot-server.ts`) and adds 12a's daily export. A task that throws
+   * is isolated (do-alarm), and the alarm always reschedules itself, so one failed sweep cannot stop the next.
    */
   async alarm(): Promise<void> {
     const runtime = this.#runtime;
-    if (runtime === null) return;
-    await runAlarmTasks(this.#alarmTasks(runtime), (line) => console.log(line));
-    await this.#scheduleAlarm(runtime);
+    const tasks: AlarmTask[] = [];
+    if (runtime !== null) tasks.push(...this.#alarmTasks(runtime));
+    // 12a: the export and orphan sweep run from the same alarm, whether or not the guest runtime is built.
+    tasks.push({ name: "daily-export", run: async () => { await this.#dailyExport(); } });
+    await runAlarmTasks(tasks, (line) => console.log(line));
+    // The alarm always reschedules: the daily export must survive a guest runtime that is not built (for example,
+    // before the tenant is provisioned).
+    const sweepSeconds = runtime?.configuration.notifications?.sweepSeconds ?? DEFAULT_NOTIFICATION_SWEEP_SECONDS;
+    const delayMs = runtime === null ? 24 * 60 * 60 * 1000 : sweepSeconds * 1000;
+    await this.ctx.storage.setAlarm(Date.now() + delayMs);
+  }
+
+  /** Runs the export at most once per Lagos day (ADR 0078), tracked in Durable Object storage. */
+  async #dailyExport(): Promise<void> {
+    const today = lagosDate(new Date());
+    if ((await this.ctx.storage.get<string>("export:lastDate")) === today) return;
+    const configuration = loadExportConfiguration(this.env);
+    await runDailyExport({
+      database: new DurableObjectSqlDatabase(this.ctx.storage),
+      receipts: this.env.RECEIPTS,
+      exports: this.env.EXPORTS,
+      clock: () => new Date(),
+      retentionDays: configuration.retentionDays,
+      orphanGraceHours: configuration.orphanGraceHours,
+    });
+    await this.ctx.storage.put("export:lastDate", today);
   }
 
   #alarmTasks(runtime: PilotRuntime): readonly AlarmTask[] {

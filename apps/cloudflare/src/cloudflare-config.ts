@@ -21,6 +21,10 @@ export interface CloudflareEnv extends Omit<PilotEnvironmentSource, "SHORTLET_DB
   readonly CF_ACCESS_AUD?: string;
   /** 11a: local/test JWKS override so workerd tests do not fetch the public certs. */
   readonly CF_ACCESS_JWKS?: string;
+  /** 12a: how many days of JSONL exports to keep (user-approved; ADR 0075 retention is provisional). */
+  readonly SHORTLET_EXPORT_RETENTION_DAYS?: string;
+  /** 12a: the grace period before an orphaned receipt object is swept (user-approved). */
+  readonly SHORTLET_RECEIPT_ORPHAN_GRACE_HOURS?: string;
 }
 
 export interface CloudflareConfiguration extends PilotCoreConfiguration {
@@ -105,4 +109,30 @@ export function loadOpsConfiguration(env: CloudflareEnv): OpsConfiguration {
       ? createAccessJwtVerifier({ teamDomain, audience, ...(jwks === undefined ? {} : { jwks }) })
       : { verify: async () => false };
   return Object.freeze({ sharedSecret, verifier });
+}
+
+export interface ExportConfiguration {
+  readonly retentionDays: number;
+  readonly orphanGraceHours: number;
+}
+
+/** 12a: the user-approved export retention (400 days) and orphaned-receipt grace (24 h), per deployment. */
+const DEFAULT_EXPORT_RETENTION_DAYS = 400;
+const DEFAULT_RECEIPT_ORPHAN_GRACE_HOURS = 24;
+
+function positiveWholeNumber(value: string | undefined, key: string, fallback: number): number {
+  const setting = value?.trim() ?? "";
+  if (setting === "") return fallback;
+  if (!/^\d+$/.test(setting) || Number(setting) < 1 || !Number.isSafeInteger(Number(setting))) {
+    throw new Error(`${key} must be a positive whole number`);
+  }
+  return Number(setting);
+}
+
+/** Explicit source only: a typo fails startup rather than silently changing the retention. */
+export function loadExportConfiguration(env: CloudflareEnv): ExportConfiguration {
+  return Object.freeze({
+    retentionDays: positiveWholeNumber(env.SHORTLET_EXPORT_RETENTION_DAYS, "SHORTLET_EXPORT_RETENTION_DAYS", DEFAULT_EXPORT_RETENTION_DAYS),
+    orphanGraceHours: positiveWholeNumber(env.SHORTLET_RECEIPT_ORPHAN_GRACE_HOURS, "SHORTLET_RECEIPT_ORPHAN_GRACE_HOURS", DEFAULT_RECEIPT_ORPHAN_GRACE_HOURS),
+  });
 }
