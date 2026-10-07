@@ -90,7 +90,11 @@ Resolved 7 Oct 2026 on `infra/cf-10b-worker-do`.
 - **AC2**: `apps/cloudflare/test/pilot-worker.spec.ts` provisions an ADR 0082 grant + token, signs in at `/operator/login`, and re-reads `/operator` after `abortAllDurableObjects()` — the session survives instance teardown (ADR 0086).
 - **AC3**: `scripts/check-worker-bundle.mjs` + `test/cloudflare-worker-bundle.test.ts` (fails on an adapter input or a direct `node:sqlite` import; passes on the real build). The Vite build emits 320 modules with **0** real `node:sqlite` imports.
 - **AC4**: the same spec drives `SELF.fetch` through the Worker into the Durable Object for `/healthz` (200 `{ok:true}`), a guest page (200 HTML) and the Paystack webhook signature refusal (401); the failure path proves an unprovisioned object answers 503 and writes no inventory.
-- **AC5**: `alarm()` runs the notifier sweep and reschedules; `runAlarmTasks` isolates a throwing task. `npm run check`, `npm run test:workers` (31 workerd tests) and the full Node/browser suite pass.
+- **AC5**: `alarm()` runs the notifier sweep and reschedules; `runAlarmTasks` isolates a throwing task. `npm run check` and `npm run test:workers` (31 workerd tests) pass.
+
+### Verification environment (important)
+
+`npm run check` (all four compiler programs + the bundle guard) and `npm run test:workers` (31 workerd tests) pass. The **full `npm test` could not be completed in this session's shell**: 316 of 348 failures are `PAYSTACK_SECRET_KEY is required` thrown by the untouched `createGuestRequestHandler` → `loadPaystackConfiguration()` (`guest-server.ts:6616`), plus two `EBUSY` temp-file flakes. The pilot/browser suites require ambient `PAYSTACK_SECRET_KEY`, `PAYSTACK_ENVIRONMENT`, `PAYSTACK_CALLBACK_BASE_URL` (and a matching live/test mode) that prior sessions had exported and this shell did not; the failures are environmental, not caused by this slice (no failing test exercises the changed lines). Re-run the full suite with the pilot env exported to close the gate.
 
 ### Builder interface
 
