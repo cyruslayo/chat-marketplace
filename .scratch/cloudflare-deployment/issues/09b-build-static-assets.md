@@ -1,6 +1,6 @@
 # Build static assets for Cloudflare
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 03a, 09a
 Branch: `infra/cf-09b-static-assets`
@@ -40,4 +40,17 @@ Cloudflare Static Assets serve the browser bundles and the CSS from the edge wit
 
 Check every item in `docs/agents/issue-tracker.md`.
 
+## Answer
+
+Integrated at `c9237eb` (branch `infra/cf-09b-static-assets`), merged into `infra/cloudflare-deployment`.
+
+- **AC1** — `test("09b AC1: npm run build writes the four bundles into apps/cloudflare/public byte-identical to the Node output")` runs the real build script and compares the four `apps/cloudflare/public` bundles byte for byte with `apps/local-guest/dist`.
+- **AC2** — `test("09b AC2: _headers mirrors each asset's Cache-Control exactly as the Node server sends it")` reads the real values from a live `startLocalGuestServer` response (CSS: `public, max-age=3600`; the four scripts: none), parses the committed `apps/cloudflare/public/_headers`, and compares per asset — including that each script carries `Content-Type: text/javascript; charset=utf-8` and **no** Cache-Control, and the CSS `text/css`.
+- **AC3** — `test("09b AC3: the foundations CSS copy is byte-identical to the source; any whitespace drift fails")` compares the copy with `apps/web/src/shortlet-foundations.css` as raw bytes (fails on any whitespace drift).
+- **AC4** — `npm run check` clean (the `?raw` type declaration compiles), 22 workerd tests pass, and the full `npm test` on the integrated Wave 4 snapshot runs at wave close.
+- `apps/cloudflare/public/*` is gitignored except `_headers` (committed); the values in `_headers` are read from the real handlers, not guessed. `apps/cloudflare/src/foundation-css.ts` imports the source CSS with Vite `?raw` (with the `"*.css?raw"` declaration in `src/env.d.ts`), making the importable-from-`apps/cloudflare/src` requirement real and type-checked now.
+
 ## Comments
+
+- The 09a decision is exercised at the type level here: `foundation-css.ts` compiles through the pooled `apps/cloudflare` tsconfigs. **A real `cf build` proof is deferred to 10b**, because `cf build` reports "No Cloudflare dev-server is installed in this project" before that slice creates the project's Vite config — 10b's gate is exactly that build. If the pinned beta plugin fails to inline `?raw` there, the fallback recorded in 09a (a generated TypeScript string module emitted by this same build script) applies; the script change is already in place to add that emit.
+- Build-out note: in slice worktrees whose `node_modules` is a junction, esbuild's bundle header comments embed the junction's resolved path (`../chat-marketplace-cloudflare/node_modules/...`), which produces comment-only churn in the tracked `apps/local-guest/dist` files. `dist` churn was reverted for the clean commit; the committed `dist` builds come from the integration worktree's real `node_modules`.
