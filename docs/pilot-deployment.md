@@ -168,3 +168,24 @@ recovery path.
 
 Health is `GET /healthz`; it returns only `{ "ok": true }` when the application
 has initialized and the SQLite file can be opened.
+
+## Remote operations (Cloudflare)
+
+When the pilot runs on Cloudflare the durable data lives inside the Durable
+Object, so `pilot:operator:*`, `pilot:inventory:import`, `operator:provision`
+and `operator:revoke` change from local file/SQLite access to authenticated
+HTTPS calls. Set `SHORTLET_OPS_URL` to the deployment's origin and the tools
+call the `/_ops` routes instead:
+
+- `SHORTLET_OPS_URL` — the pilot origin (https, or http only for `localhost`).
+- `SHORTLET_OPS_SECRET` — the `X-Shortlet-Ops-Secret` shared-secret value.
+- `CF_ACCESS_CLIENT_ID` / `CF_ACCESS_CLIENT_SECRET` — the Cloudflare Access
+  service-token credentials.
+
+With `SHORTLET_OPS_URL` unset the tools keep their local behaviour exactly.
+A provisioned operator token is printed once to stdout and is never written to
+a file or a log. `operator:revoke` revokes all of an actor's access through the
+ops route; revoking a single session stays a back-office action.
+
+The `pilot:local:*` commands remain **Node-only**: they run the local fixture
+pilot against a SQLite file and are not part of the Cloudflare deployment.

@@ -4,6 +4,12 @@ declare module "*.css?raw" {
   export default value;
 }
 
+/** Slice 11b: the real inventory template read as text by the workerd import-route test. */
+declare module "*.csv?raw" {
+  const value: string;
+  export default value;
+}
+
 /** Test-runtime bindings (`wrangler.test.jsonc`). The deployable shape is `CloudflareEnv` in cloudflare-config.ts. */
 declare namespace Cloudflare {
   interface Env {

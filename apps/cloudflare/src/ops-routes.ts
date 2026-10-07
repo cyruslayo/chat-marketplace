@@ -1,5 +1,6 @@
 import type { AuditLog } from "../../../packages/platform-core/src/index.js";
 import type { UnitRepositoryContract } from "../../../domains/shortlet/src/browse.js";
+import { importInventoryCsv, operatorResolverFromRepository } from "../../../domains/shortlet/src/inventory-import.js";
 import { bootstrapOperatorsFromUnitRepository, type OperatorRepository } from "../../../domains/shortlet/src/operator.js";
 import { readBodyWithLimit, BodyTooLargeError } from "./bounded-body.js";
 import {
@@ -49,6 +50,9 @@ export interface OpsHandler {
 
 /** A JSON ops body is small; anything larger is refused before it is read (a bound, not a policy value). */
 const MAX_OPS_BODY_BYTES = 64 * 1024;
+
+/** The user-approved inventory CSV limit (5 MiB); enforced before the body is read. */
+const MAX_INVENTORY_CSV_BYTES = 5 * 1024 * 1024;
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -121,6 +125,22 @@ export function createOpsHandler(dependencies: OpsRouteDependencies): OpsHandler
       });
       record("ops.operators.bootstrap", { tenantId, migrated: migrated.length });
       return json(200, { ok: true, migrated: migrated.length });
+    }
+    if (request.method === "POST" && path === "/_ops/inventory/import") {
+      const tenantId = url.searchParams.get("tenantId")?.trim() || dependencies.tenantId;
+      const dryRun = url.searchParams.get("dryRun") === "true";
+      // The user-approved 5 MiB limit is enforced before a byte of the CSV is read.
+      const csv = new TextDecoder().decode(await readBodyWithLimit(request, MAX_INVENTORY_CSV_BYTES));
+      const result = importInventoryCsv(csv, {
+        repository: dependencies.unitRepository,
+        operatorResolver: operatorResolverFromRepository(dependencies.operatorRepository),
+        tenantId,
+        dryRun,
+        clock: dependencies.clock,
+      });
+      record("ops.inventory.import", { tenantId, inserted: result.inserted, invalid: result.invalid });
+      // The importer's own summary is returned verbatim; invalid rows are reported exactly as the CLI reports them.
+      return json(200, { ok: true, ...result });
     }
     const operatorPath = /^\/_ops\/operators\/([^/]+)$/.exec(path);
     if (request.method === "PATCH" && operatorPath) {
