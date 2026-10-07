@@ -1,3 +1,4 @@
+import type { DurableObjectStorage } from "@cloudflare/workers-types";
 import type { SqlDatabase, SqlParams, SqlRow, SqlStatement, SqlValue } from "../../../packages/platform-core/src/sql-database.js";
 
 // https://developers.cloudflare.com/durable-objects/platform/limits/ — SQL platform limits, not booking policy.

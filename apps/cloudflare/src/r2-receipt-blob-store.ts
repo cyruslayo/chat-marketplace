@@ -1,3 +1,4 @@
+import type { R2Bucket } from "@cloudflare/workers-types";
 import type { ReceiptBlob, ReceiptBlobStore } from "../../../domains/shortlet/src/receipt-blob-store.js";
 
 const UNKNOWN_CONTENT_TYPE = "application/octet-stream";

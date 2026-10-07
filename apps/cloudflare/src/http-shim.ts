@@ -8,4 +8,5 @@ export {
   createHttpResponseLike,
   type HttpResponseStream,
   clientAddressFromCloudflare,
+  clientAddressFromCloudflareHeaderValue,
 } from "../../../packages/platform-core/src/http-fetch-shim.js";

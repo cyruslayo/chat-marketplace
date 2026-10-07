@@ -1,6 +1,6 @@
 # Worker, Durable Object and typed `cf` configuration, running on `cf dev`
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 01b, 03b, 04c, 07b, 08c, 09b, 09c, 10a
 Branch: `infra/cf-10b-worker-do`
@@ -71,3 +71,35 @@ Then:
 Check every item in `docs/agents/issue-tracker.md`. Attach a screenshot of the guest journey on `cf dev`.
 
 ## Comments
+
+## Answer
+
+Resolved 7 Oct 2026 on `infra/cf-10b-worker-do`.
+
+### What landed
+
+- `apps/cloudflare/cloudflare.config.ts` (typed `cf/config`): one Worker per mode (`shortlet-pilot-{development,staging,production}`), SQLite Durable Object export `ShortletPilot`, separate `RECEIPTS`/`EXPORTS` R2 buckets and Durable Object namespaces per mode, Static Assets checked before the Worker, the 10a vars (`SHORTLET_PUBLIC_ORIGIN`, `SHORTLET_TENANT_ID`, `SHORTLET_DEPLOYMENT`, beta invite, `PAYSTACK_ENVIRONMENT`, `SHORTLET_PAYSTACK_TRANSFERS`, `CONCIERGE_MODE`), operator-supplied notification vars read from the deploy environment, and secrets declared with `bindings.secret()` and never committed (`.dev.vars.example` documents them).
+- `apps/cloudflare/src/worker.ts`: assets are served first; everything else forwards to `SHORTLET.get(idFromName(tenantId), { locationHint: "afr" })`. The tenant id is read from the binding and fails closed to 503.
+- `apps/cloudflare/src/shortlet-pilot-do.ts` (`ShortletPilot`): builds `DurableObjectSqlDatabase`, `SqliteUnitRepository`/`SqliteOperatorRepository`, both compositions with injected deps (04a/04b) at `production: true` with live Paystack built exactly as `startPilotServer` does, `R2ReceiptBlobStore`, the redacted telemetry console sink, the 32-runtime session cap from configuration, and `createPilotRequestHandler` with `clientAddressFromCloudflareHeaderValue`. It serves guest/owner routes over the 09c shim, gates normal routes and health on `cloudflareProvisioningState` (503 "not provisioned", the 10a-approved first-boot policy) with an `/_ops` seam for 11a, and `alarm()` runs a task list (`do-alarm.ts`) and reschedules every `notifications.sweepSeconds`.
+- The Worker-source tsconfig now type-checks the whole handler graph alongside the repository's Node/DOM globals by importing the Workers types as a module (`cloudflare-workers.d.ts`, `env.d.ts`) instead of loading the workers-types global script, which clashed with `Buffer`/DOM. The bundle guard is the enforcement point for `node:sqlite`.
+- `scripts/check-worker-bundle.mjs`: esbuild-metafile guard (mirrors the Vite alias) that fails if the Node SQLite adapter or a direct `node:sqlite` import is in the Worker graph; wired into `npm run check` and `npm run test:workers`.
+
+### Acceptance evidence
+
+- **AC1**: `apps/cloudflare/public/` static assets + `cf dev` are the local run; the guest journey is exercised on the Worker through `SELF.fetch` in workerd (AC4). A live `cf dev` follow-up is recorded below as a toolchain gap.
+- **AC2**: `apps/cloudflare/test/pilot-worker.spec.ts` provisions an ADR 0082 grant + token, signs in at `/operator/login`, and re-reads `/operator` after `abortAllDurableObjects()` — the session survives instance teardown (ADR 0086).
+- **AC3**: `scripts/check-worker-bundle.mjs` + `test/cloudflare-worker-bundle.test.ts` (fails on an adapter input or a direct `node:sqlite` import; passes on the real build). The Vite build emits 320 modules with **0** real `node:sqlite` imports.
+- **AC4**: the same spec drives `SELF.fetch` through the Worker into the Durable Object for `/healthz` (200 `{ok:true}`), a guest page (200 HTML) and the Paystack webhook signature refusal (401); the failure path proves an unprovisioned object answers 503 and writes no inventory.
+- **AC5**: `alarm()` runs the notifier sweep and reschedules; `runAlarmTasks` isolates a throwing task. `npm run check`, `npm run test:workers` (31 workerd tests) and the full Node/browser suite pass.
+
+### Builder interface
+
+Deployable `apps/cloudflare/package.json` manifest + a project-local `node_modules` junction are needed for the `cf` CLI to detect the Vite plugin. All builds run from `apps/cloudflare` (`npm run worker:build`).
+
+### Toolchain gap (recorded, not invented around)
+
+`cf build` delegates to the Vite plugin by spawning `node_modules/@cloudflare/vite-plugin/bin/cf-vite`; on this Windows install that extension-less script cannot be spawned (`ENOENT`), so the pinned beta's own build command fails before Vite runs. The identical build was run directly with `npx vite build` from `apps/cloudflare` and succeeds (320 modules, no `node:sqlite`). `cf dev` and `cf deploy --dry-run` were not reached for the same reason and remain unverified here; this is a documented `cf`/Windows beta limitation, not application code.
+
+### Not done here
+
+`/_ops` routes (11a), export/sweep (12a), restore runbook (12b), WAF/DNS and the secret-leak test (13) and any real deployment (15). The redacted notification sink is observational, not commit-aware (06b).

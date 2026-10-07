@@ -1,0 +1,5 @@
+# Local-only secrets for `cf dev` (copy to `.dev.vars`, which is git-ignored). Never commit real values.
+# Non-secret staging/production vars come from cloudflare.config.ts; these secrets never appear there.
+PAYSTACK_SECRET_KEY="sk_test_replace_me"
+GEMINI_API_KEY="replace_me"
+RESEND_API_KEY="re_test_replace_me"

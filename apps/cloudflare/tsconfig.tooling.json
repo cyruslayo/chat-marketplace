@@ -1,5 +1,16 @@
 {
   "extends": "../../tsconfig.json",
-  "include": ["vitest.config.ts"],
+  "compilerOptions": {
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "types": ["node"]
+  },
+  "include": [
+    "vitest.config.ts",
+    "vite.config.ts",
+    "cloudflare.config.ts",
+    "src/**/*.d.ts"
+  ],
   "exclude": []
 }

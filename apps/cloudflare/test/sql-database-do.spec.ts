@@ -1,3 +1,4 @@
+import type { DurableObjectStorage } from "@cloudflare/workers-types";
 import { env } from "cloudflare:workers";
 import { runInDurableObject } from "cloudflare:test";
 import { expect, test } from "vitest";

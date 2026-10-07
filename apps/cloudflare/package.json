@@ -1,0 +1,9 @@
+{
+  "name": "@shortlet/cloudflare-pilot",
+  "private": true,
+  "type": "module",
+  "//": "Manifest for the pinned `cf` CLI so it detects the Cloudflare Vite plugin for this project. The dependencies themselves live in the repository root node_modules.",
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "2.0.0-beta.sha-52b0dc0e9"
+  }
+}

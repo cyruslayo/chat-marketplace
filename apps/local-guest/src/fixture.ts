@@ -4,6 +4,7 @@ import { openNodeSqliteDatabase } from "../../../packages/platform-core/src/node
 import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
 import { SqliteAuditLog } from "../../../packages/platform-core/src/sqlite-audit-log.js";
 import { SqliteTelemetry } from "../../../packages/platform-core/src/sqlite-telemetry.js";
+import type { TelemetryEvent } from "../../../packages/platform-core/src/telemetry.js";
 import {
   createPlatformCommandEnvelope,
   type AuditLog,
@@ -279,6 +280,11 @@ export interface LocalGuestEnvironmentDependencies {
   readonly seedDemoUnits?: boolean;
   /** Where manual-transfer receipt bytes live (ADR 0090). Defaults to the shared SQLite file; Cloudflare passes R2. */
   readonly receiptBlobs?: ReceiptBlobStore;
+  /**
+   * ADR 0075/0079: an observational sink for already-redacted telemetry. The Cloudflare composition forwards these
+   * to Workers Logs; Node passes none. The durable table stays authoritative.
+   */
+  readonly telemetrySink?: (event: TelemetryEvent) => void;
 }
 
 export class LocalGuestEnvironment {
@@ -388,7 +394,7 @@ export class LocalGuestEnvironment {
       store: new SqliteAvailabilityStore(sqlDatabase),
     });
     this.audit = new SqliteAuditLog(sqlDatabase);
-    this.telemetry = new SqliteTelemetry(sqlDatabase);
+    this.telemetry = new SqliteTelemetry(sqlDatabase, dependencies.telemetrySink === undefined ? {} : { sink: dependencies.telemetrySink });
 
     this.discoveryQuery = new UnitDiscoveryQuery({
       repository: this.unitRepository,

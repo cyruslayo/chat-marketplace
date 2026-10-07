@@ -224,8 +224,17 @@ export function createHttpResponseLike(): HttpResponseStream {
 /**
  * The connected client's address, sent by the edge. It fails closed to `"unknown"` when the header is absent,
  * so an unknowable client shares one rate-limit bucket instead of skipping limits.
+ *
+ * The node-shaped shim carries the same `cf-connecting-ip` header, so a long-lived handler — whose rate limiters
+ * must keep their windows across requests — reads the address from `HttpRequestLike.headers` through this shared
+ * rule rather than calling the `Request` overload.
  */
+export function clientAddressFromCloudflareHeaderValue(value: string | readonly string[] | undefined): string {
+  const header = Array.isArray(value) ? value.join(",") : value;
+  const address = typeof header === "string" ? header.trim() : "";
+  return address === "" ? "unknown" : address;
+}
+
 export function clientAddressFromCloudflare(request: Request): string {
-  const address = request.headers.get("cf-connecting-ip")?.trim();
-  return address !== "" && address !== undefined ? address : "unknown";
+  return clientAddressFromCloudflareHeaderValue(request.headers.get("cf-connecting-ip") ?? undefined);
 }

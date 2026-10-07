@@ -102,6 +102,7 @@ import {
 } from "../../../packages/platform-core/src/index.js";
 import { SqliteAuditLog } from "../../../packages/platform-core/src/sqlite-audit-log.js";
 import { SqliteTelemetry } from "../../../packages/platform-core/src/sqlite-telemetry.js";
+import type { TelemetryEvent } from "../../../packages/platform-core/src/telemetry.js";
 import { SqliteRevenueAccountingRepository, SqliteRevenueReleaseStateStore } from "../../../domains/shortlet/src/sqlite-revenue-accounting.js";
 
 export interface LocalOwnerFixtureConfig {
@@ -507,6 +508,11 @@ export interface LocalOwnerEnvironmentDependencies {
   readonly operatorRepository: OperatorRepository | null;
   /** Where manual-transfer receipt bytes live (ADR 0090); must be the Guest composition's store. Defaults to SQLite. */
   readonly receiptBlobs?: ReceiptBlobStore;
+  /**
+   * ADR 0075/0079: an observational sink for already-redacted telemetry. The Cloudflare composition forwards these
+   * to Workers Logs; Node passes none. The durable table stays authoritative.
+   */
+  readonly telemetrySink?: (event: TelemetryEvent) => void;
 }
 
 export class LocalApartmentOwnerEnvironment {
@@ -597,7 +603,7 @@ export class LocalApartmentOwnerEnvironment {
       this.clock,
     );
     this.audit = new SqliteAuditLog(this.#sqlDatabase);
-    this.telemetry = new SqliteTelemetry(this.#sqlDatabase);
+    this.telemetry = new SqliteTelemetry(this.#sqlDatabase, dependencies.telemetrySink === undefined ? {} : { sink: dependencies.telemetrySink });
     this.grantStore = new SqliteOperatorRepresentativeGrantStore(
       this.#sqlDatabase,
       { clock: this.clock },

@@ -4,12 +4,17 @@ declare module "*.css?raw" {
   export default value;
 }
 
+/** Test-runtime bindings (`wrangler.test.jsonc`). The deployable shape is `CloudflareEnv` in cloudflare-config.ts. */
 declare namespace Cloudflare {
   interface Env {
-    TEST_HARNESS: DurableObjectNamespace<
+    TEST_HARNESS: import("@cloudflare/workers-types").DurableObjectNamespace<
       import("./test-harness-do.js").TestHarnessDO
     >;
-    RECEIPTS: R2Bucket;
-    EXPORTS: R2Bucket;
+    SHORTLET: import("@cloudflare/workers-types").DurableObjectNamespace<
+      import("./shortlet-pilot-do.js").ShortletPilot
+    >;
+    RECEIPTS: import("@cloudflare/workers-types").R2Bucket;
+    EXPORTS: import("@cloudflare/workers-types").R2Bucket;
+    ASSETS: import("@cloudflare/workers-types").Fetcher;
   }
 }
