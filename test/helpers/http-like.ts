@@ -1,6 +1,6 @@
 import type {
   HttpRequestLike,
-  HttpResponseHeaderValue,
+  HttpResponseHeaderValueOrList,
   HttpResponseLike,
 } from "../../packages/platform-core/src/http-like.js";
 
@@ -122,7 +122,7 @@ interface HeaderEntry {
 function writeEntries(
   target: HeaderEntry[],
   name: string,
-  value: HttpResponseHeaderValue,
+  value: HttpResponseHeaderValueOrList,
   replace: boolean,
 ): void {
   const lowered = name.toLowerCase();
@@ -131,7 +131,10 @@ function writeEntries(
       if (target[index]!.name === lowered) target.splice(index, 1);
     }
   }
-  target.push({ name: lowered, value: String(value) });
+  // Node writes one header line per value, so a list (two `Set-Cookie`s) keeps its own entries.
+  for (const item of Array.isArray(value) ? value : [value]) {
+    target.push({ name: lowered, value: String(item) });
+  }
 }
 
 /**
@@ -165,7 +168,7 @@ export function createFakeHttpResponse(): FakeHttpResponseHandle {
       statusCode = status;
       if (headers !== undefined) {
         for (const [name, value] of Object.entries(headers)) {
-          writeEntries(entries, name, value as HttpResponseHeaderValue, false);
+          writeEntries(entries, name, value, false);
         }
       }
       sent = true;

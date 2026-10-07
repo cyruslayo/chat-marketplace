@@ -19,8 +19,10 @@ export interface HttpRequestLike {
   resume(): this;
 }
 
-/** Header values the handlers write today: `Set-Cookie` stays a separate call per value. */
+/** Header values the handlers write today: `Set-Cookie` stays a separate call per value or a list of values. */
 export type HttpResponseHeaderValue = string | number;
+export type HttpResponseHeaderList = readonly HttpResponseHeaderValue[];
+export type HttpResponseHeaderValueOrList = HttpResponseHeaderValue | HttpResponseHeaderList;
 export type HttpResponseHeaders = Record<string, HttpResponseHeaderValue>;
 
 /**
@@ -33,7 +35,8 @@ export interface HttpResponseLike {
   /** True once the status line and headers have been written; error paths read it. */
   readonly headersSent: boolean;
   writeHead(statusCode: number, headers?: HttpResponseHeaders): this;
-  setHeader(name: string, value: HttpResponseHeaderValue): this;
+  /** Replaces the entries `name` has, as node:http does; an array writes one entry per value (ADR 0086). */
+  setHeader(name: string, value: HttpResponseHeaderValueOrList): this;
   end(body?: string | Buffer): this;
   /** Node semantics: tears the connection down; the owner error path uses it after headers were sent. */
   destroy(error?: Error): this;
