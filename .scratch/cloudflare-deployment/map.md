@@ -231,6 +231,9 @@ Findings to carry forward:
 - **The Rodney script predates the 30 Sep–2 Oct guest UI and confirm-real-dates work.** The committed heading fix is not enough; it would next fail on the composer name ("Area, dates, guests"), "View apartment", the arrival-date question, the review-after-phone order, the back-office copy and the removed projection status strings. The drift list is in `wave-4-acceptance.md`. Refreshing the script is product/test work outside Wave 4. The browser record above is the 08c AC5 evidence.
 - **Generate-after-build churn.** `pilot:local` and the Cloudflare static-assets test rewrite tracked `apps/local-guest/dist/*.js` and `apps/cloudflare/public/_headers` with LF endings. Restore them with `git restore` before any clean-tree gate; never commit that churn.
 - **Do not start Wave 5 (10b+) without a request.** The integration branch merges to `main` only after slice 15; no push, deployment or staging claim.
+- **Worktree cleanup pitfall: unlink `node_modules` before `git worktree remove`.** Slice worktrees use a `node_modules` junction into this checkout. At wave close, `git worktree remove` on `-08c` and `-09c-integration` followed the junction and emptied the shared `node_modules`. It was restored with `npm ci` (with `NODE_ENV` unset); `npm run check` and the 27 workerd tests passed afterwards.
+  - To remove a junctioned worktree safely, delete the link itself first with `cmd /c rmdir <worktree>\node_modules`. That removes only the junction. Then run `git worktree remove`.
+  - `-08a`, `-08b` and `-09a` were left in place. They hold only untracked test scratch (`.scratch/eval-test`, `.scratch/local-guest`, `.scratch/local-owner`) and, in 09a, the generated `apps/cloudflare/public/`. Their branches stay either way.
 
 ## Context pointers
 
