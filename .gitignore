@@ -1,4 +1,7 @@
 node_modules/
+# Cloudflare Static Assets build output is generated; only the header policy is committed.
+apps/cloudflare/public/*
+!apps/cloudflare/public/_headers
 # Cloudflare CLI output and local-only secrets.
 .cloudflare/
 .wrangler/

@@ -1,0 +1,15 @@
+/shortlet-foundations.css
+  Content-Type: text/css; charset=utf-8
+  Cache-Control: public, max-age=3600
+
+/gallery.js
+  Content-Type: text/javascript; charset=utf-8
+
+/offer.js
+  Content-Type: text/javascript; charset=utf-8
+
+/payment.js
+  Content-Type: text/javascript; charset=utf-8
+
+/client.js
+  Content-Type: text/javascript; charset=utf-8
