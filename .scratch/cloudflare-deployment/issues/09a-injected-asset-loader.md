@@ -1,6 +1,6 @@
 # Injected asset loader
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 08c
 Branch: `infra/cf-09a-asset-loader`
@@ -47,4 +47,18 @@ A Durable Object has no filesystem, and module-level `readFileSync` would fail a
 
 Check every item in `docs/agents/issue-tracker.md`. Don't run a formatter over `shortlet-foundations.css` (AGENTS.md).
 
+## Answer
+
+Implemented at `eb2a228` on `infra/cf-09a-asset-loader`, merged (fast-forward) into `infra/cloudflare-deployment`.
+
+- **AC1** — `test("09a AC1: neither handler module reads files into pages at import time")`: a source scan proves no `readFileSync` call remains in `guest-server.ts`/`local-owner-server.ts`, and a fresh subprocess (`test/helpers/asset-import-probe.mjs` with `tsx/esm/api register`) imports both handler modules with `process.cwd()` at an empty temp directory — a cached in-process import would not re-run module-level code.
+- **AC2** — `test("09a AC2: a stub AssetLoader inlines the stub CSS and serves the stub bundles with today's headers")`: the stub CSS is served by the guest and owner CSS routes with today's `Content-Type: text/css; charset=utf-8` and `Cache-Control: public, max-age=3600`, and all four stub bundles with `Content-Type: text/javascript; charset=utf-8` and **no** `Cache-Control` — exactly today's headers.
+- **AC3** — `test("09a AC3: a missing asset answers per request, not a crash at import")`: a throwing loader gives the CSS route and `client.js` a per-request 500, and keeps the gallery/payment/offer 404s with their exact `run npm run guest:local` copy (the four error responses are preserved from the previous per-request `readFileSync` catch paths).
+- **AC4** — The foundation-adjacent suites pass in the slice worktree (design-system, weaver host, shell/dependency boundary files); the full `npm test` including the Chromium journeys and the foundation-CSS regex tests is verified on the integrated Wave 4 snapshot at wave close (browser phase once). `npm run check` and 22 workerd tests pass.
+- The readFileSync-based behaviors moved to the loader are byte-identical: `nodeAssetLoader()` resolves the same paths and caches after first read; the clientScriptPath resolution lives inside the loader. ADR 0080 (no-JS pages still get CSS) holds — the CSS route is unchanged and now served through the loader; ADR 0081 (identical bytes) is asserted by hash tests in 09b for the copied bundles.
+
 ## Comments
+
+- **Decision recorded for 09b and 10b: how Cloudflare serves the bundles and the inlined CSS.**
+  - **The four bundles and the CSS route never wake the Durable Object.** Cloudflare Static Assets serve `client.js`, `gallery.js`, `offer.js`, `payment.js` and `shortlet-foundations.css` from `apps/cloudflare/public/` (built by 09b from `apps/local-guest/scripts/build-client.mjs`) before the Worker routes to the Durable Object, so the handler's script routes are simply never hit there. `_headers` mirrors each route's `Cache-Control`/`Content-Type` exactly as the Node handlers send them.
+  - **Inlined/link-served CSS text inside the Durable Object comes from a Vite `?raw` import** of `apps/web/src/shortlet-foundations.css` (a `declare module "*.css?raw"` declaration in `apps/cloudflare/src/env.d.ts`). Reasoning: the `cf` build delegates to Vite (`@cloudflare/vite-plugin` verified in 01c via `bindings.assets`, `cf dev` and `cf build`); `?raw` is core Vite behavior, not a Wrangler Text-module rule, and it keeps no generated duplicate of the CSS in the repo. **Fallback if the pinned beta plugin cannot inline `?raw` in `cf build` (09b must verify with a real `cf build` and record evidence):** generate a TypeScript string module beside the bundle copies in the same build script, imported by the Cloudflare loader.
