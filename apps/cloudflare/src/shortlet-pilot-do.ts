@@ -123,6 +123,10 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
       unitRepository: new SqliteUnitRepository(database),
       grantStore: new SqliteOperatorRepresentativeGrantStore(database, { clock }),
       sessionAuthority: new SqliteOperatorSessionAuthority(database, { clock }),
+      storageBookmarks: {
+        bookmarkForTime: (timeMs) => this.ctx.storage.getBookmarkForTime(timeMs),
+        restoreOnNextSession: (bookmark) => { this.ctx.storage.onNextSessionRestoreBookmark(bookmark); },
+      },
       audit: new SqliteAuditLog(database),
       clock,
       tenantId: this.env.SHORTLET_TENANT_ID?.trim() ?? "",

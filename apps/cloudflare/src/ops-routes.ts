@@ -31,6 +31,12 @@ export interface OpsSessionAuthority {
   revokeAll(actorId: string, tenantId: string): void;
 }
 
+/** Slice 12b: Durable Object point-in-time recovery bookmarks. */
+export interface OpsStorageBookmarks {
+  bookmarkForTime(timeMs: number): Promise<string>;
+  restoreOnNextSession(bookmark: string): void | Promise<void>;
+}
+
 export interface OpsRouteDependencies {
   readonly sharedSecret: string;
   readonly verifier: AccessVerifier;
@@ -38,6 +44,7 @@ export interface OpsRouteDependencies {
   readonly unitRepository: UnitRepositoryContract;
   readonly grantStore: OpsGrantAuthority;
   readonly sessionAuthority: OpsSessionAuthority;
+  readonly storageBookmarks: OpsStorageBookmarks;
   readonly audit: AuditLog;
   readonly clock: () => Date;
   readonly tenantId: string;
@@ -153,6 +160,22 @@ export function createOpsHandler(dependencies: OpsRouteDependencies): OpsHandler
       ]);
       record("ops.operators.update", { operatorId: result.operator.id });
       return json(200, { ok: true, operator: result.summary });
+    }
+    if (request.method === "POST" && path === "/_ops/restore") {
+      // 12b: two-step point-in-time recovery. A dry run returns the bookmark to use; the confirm step must carry
+      // that bookmark, so a confirm without a prior dry run is refused.
+      const body = await readJsonBody(request);
+      if (body.confirm !== true) {
+        const timeMs = typeof body.timeMs === "number" && Number.isFinite(body.timeMs) ? body.timeMs : dependencies.clock().getTime();
+        const bookmark = await dependencies.storageBookmarks.bookmarkForTime(timeMs);
+        record("ops.restore.dry_run", { timeMs });
+        return json(200, { ok: true, bookmark, restartRequired: false });
+      }
+      const bookmark = requiredString(body.bookmark, "bookmark");
+      await dependencies.storageBookmarks.restoreOnNextSession(bookmark);
+      record("ops.restore.scheduled", {});
+      // The restore takes effect on the object's next session; the operator restarts (or evicts) the object.
+      return json(200, { ok: true, scheduled: true, restartRequired: true });
     }
     const accessPath = /^\/_ops\/operators\/([^/]+)\/access$/.exec(path);
     if (accessPath && (request.method === "POST" || request.method === "DELETE")) {
