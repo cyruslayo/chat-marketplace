@@ -45,6 +45,7 @@ export interface PhaseRecord {
   exitCode: number;
   state: FinalRunState;
   childPid?: number;
+  startupDiagnosticsObserved?: true;
 }
 export interface RunRecord {
   schemaVersion: 1;
@@ -97,6 +98,7 @@ export function recordPhaseResult(record: RunRecord, phase: {
   exitCode?: number;
   state?: FinalRunState;
   childPid?: number;
+  startupDiagnosticsObserved?: boolean;
 }): PhaseRecord;
 export function recordFileResult(record: RunRecord, file: string, rows?: TestResultRow[], options?: {
   exitCode?: number;

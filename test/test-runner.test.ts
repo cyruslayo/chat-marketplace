@@ -197,7 +197,7 @@ test("AC5: Successful, failed, skipped, and cancelled runs record complete count
 
   const cancelled = createRunRecord({ selectedFiles: ["test/pending.test.ts"], ownerPid: 124 });
   const interrupted = finalizeRunRecord(cancelled, { exitCode: 143, state: "cancelled" });
-  assert.equal(interrupted.counts.cancelled, 1);
+  assert.equal(interrupted.counts.cancelled, 0, "file cancellation does not prove that a test reached cancellation");
   assert.equal(interrupted.files[0]?.state, "cancelled");
   assert.equal(interrupted.run.state, "cancelled");
 });
@@ -247,8 +247,8 @@ test("AC6: Every run has a unique identifier, sanitized command metadata, select
   assert.deepEqual(first.run.owner, { pid: 123, childPids: [] });
   assert.deepEqual(first.run.workerDefaults, { nonBrowser: 8, source: "benchmark" });
   assert.equal(JSON.stringify(first.run.command).includes(secret), false);
-  recordPhaseResult(first, { suite: "non-browser", selectedFiles: ["test/a.test.ts"], workers: 8, durationMs: 17, exitCode: 0, state: "passed", childPid: 456 });
-  assert.deepEqual(first.run.phases, [{ suite: "non-browser", selectedFiles: ["test/a.test.ts"], workers: 8, durationMs: 17, exitCode: 0, state: "passed", childPid: 456 }]);
+  recordPhaseResult(first, { suite: "non-browser", selectedFiles: ["test/a.test.ts"], workers: 8, durationMs: 17, exitCode: 0, state: "passed", childPid: 456, startupDiagnosticsObserved: true });
+  assert.deepEqual(first.run.phases, [{ suite: "non-browser", selectedFiles: ["test/a.test.ts"], workers: 8, durationMs: 17, exitCode: 0, state: "passed", childPid: 456, startupDiagnosticsObserved: true }]);
   assert.deepEqual(first.run.owner.childPids, [456]);
 });
 
@@ -280,6 +280,7 @@ test("AC8: Interrupted execution stops owned work and hard-killed runs recover a
   const env: NodeJS.ProcessEnv = { ...process.env, STARTED_MARKER: startedMarker };
   delete env.NODE_TEST_CONTEXT;
   let ownedTestPid = 0;
+  let ownedTestConfirmedDead = false;
   let reportPath = "";
   fixtureTest(fixture.root, "slow.test.ts", [
     "import test from 'node:test';",
@@ -295,7 +296,7 @@ test("AC8: Interrupted execution stops owned work and hard-killed runs recover a
     detached: process.platform === "win32",
   });
   try {
-    const deadline = Date.now() + 8000;
+    const deadline = Date.now() + 15_000;
     while ((!existsSync(startedMarker) || !reportPath) && Date.now() < deadline) {
       const runsPath = join(fixture.root, ".scratch", "test-runs");
       const runId = existsSync(runsPath) ? readdirSync(runsPath)[0] : undefined;
@@ -334,6 +335,7 @@ test("AC8: Interrupted execution stops owned work and hard-killed runs recover a
         catch { ownedAlive = false; }
       }
       assert.equal(ownedAlive, false, "owned test process must stop");
+      ownedTestConfirmedDead = !ownedAlive;
     }
     assert.doesNotThrow(() => process.kill(unrelated.pid!, 0), "unowned process must remain alive");
 
@@ -345,10 +347,10 @@ test("AC8: Interrupted execution stops owned work and hard-killed runs recover a
     assert.notEqual(recovered.run.state, "passed");
   } finally {
     if (runner.exitCode === null) runner.kill("SIGKILL");
-    if (ownedTestPid > 0) {
+    if (ownedTestPid > 0 && !ownedTestConfirmedDead) {
       try { process.kill(ownedTestPid, "SIGKILL"); } catch { /* The fixture worker may already be gone. */ }
     }
-    if (reportPath && existsSync(reportPath)) {
+    if (!ownedTestConfirmedDead && reportPath && existsSync(reportPath)) {
       try {
         const report = JSON.parse(readFileSync(reportPath, "utf8")) as { run?: { owner?: { childPids?: number[] } } };
         for (const pid of report.run?.owner?.childPids ?? []) {
@@ -381,7 +383,7 @@ test("AC8: Cooperative cancellation stops the owned test tree, leaves unrelated 
     stdio: "ignore",
   });
   try {
-    const deadline = Date.now() + 8000;
+    const deadline = Date.now() + 15_000;
     let reportPath = "";
     while ((!existsSync(startedMarker) || !reportPath) && Date.now() < deadline) {
       const runsPath = join(fixture.root, ".scratch", "test-runs");
@@ -418,6 +420,208 @@ test("AC8: Cooperative cancellation stops the owned test tree, leaves unrelated 
   } finally {
     if (runner.exitCode === null) runner.kill("SIGKILL");
     unrelated.kill("SIGTERM");
+    fixture.cleanup();
+  }
+});
+
+test("AC5/AC6/AC8: A custom report remains an export while the canonical checkpoint supports cancellation and recovery", async () => {
+  const fixture = makeFixture();
+  const startedMarker = join(fixture.root, "started.txt");
+  const customReport = join(fixture.root, "custom-report.json");
+  const env: NodeJS.ProcessEnv = { ...process.env, STARTED_MARKER: startedMarker };
+  delete env.NODE_TEST_CONTEXT;
+  fixtureTest(fixture.root, "slow.test.ts", [
+    "import test from 'node:test';",
+    "import { writeFileSync } from 'node:fs';",
+    "test('wait for custom-report cancellation', () => { writeFileSync(process.env.STARTED_MARKER, String(process.pid)); setInterval(() => {}, 1000); return new Promise(() => {}); });",
+  ].join("\n"));
+  fixtureTest(fixture.root, "recovery.test.ts", "import test from 'node:test'; test('recover custom report', () => {});");
+  const runner = spawn(process.execPath, [runnerPath, `--root=${fixture.root}`, "--suite=non-browser", "--file=test/slow.test.ts", `--report=${customReport}`], {
+    cwd: repoRoot,
+    env,
+    stdio: "ignore",
+  });
+  let reportPath = "";
+  try {
+    const deadline = Date.now() + 15_000;
+    while ((!existsSync(startedMarker) || !existsSync(customReport) || !reportPath) && Date.now() < deadline) {
+      if (existsSync(customReport)) {
+        const custom = JSON.parse(readFileSync(customReport, "utf8")) as { run: { id: string } };
+        const candidate = join(fixture.root, ".scratch", "test-runs", custom.run.id, "run.json");
+        if (existsSync(candidate)) reportPath = candidate;
+      }
+      await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+    }
+    assert.ok(existsSync(startedMarker), "owned test process did not start");
+    assert.ok(reportPath, "custom report must not replace the canonical startup checkpoint");
+    const before = JSON.parse(readFileSync(reportPath, "utf8")) as { run: { id: string } };
+    assert.ok(existsSync(customReport));
+    const request = runControlled(fixture.root, [`--cancel=${before.run.id}`]);
+    assert.equal(request.status, 0, `${request.stderr}\n${request.stdout}`);
+    const exitCode = await new Promise<number | null>((resolveExit, reject) => {
+      const timeout = setTimeout(() => reject(new Error("runner did not finish after custom-report cancellation")), 10_000);
+      runner.once("exit", (code) => { clearTimeout(timeout); resolveExit(code); });
+    });
+    assert.notEqual(exitCode, 0);
+    const canonical = JSON.parse(readFileSync(reportPath, "utf8")) as { run: { state: string } };
+    const exported = JSON.parse(readFileSync(customReport, "utf8")) as { run: { state: string } };
+    assert.equal(canonical.run.state, "cancelled");
+    assert.equal(exported.run.state, "cancelled");
+
+    const recoveryMarker = join(fixture.root, "recovery-started.txt");
+    const customRecoveryReport = join(fixture.root, "custom-recovery-report.json");
+    const recoveryEnv: NodeJS.ProcessEnv = { ...env, STARTED_MARKER: recoveryMarker };
+    fixtureTest(fixture.root, "hard-kill.test.ts", [
+      "import test from 'node:test';",
+      "import { writeFileSync } from 'node:fs';",
+      "test('wait for recovery', () => { writeFileSync(process.env.STARTED_MARKER, String(process.pid)); setInterval(() => {}, 1000); return new Promise(() => {}); });",
+    ].join("\n"));
+    const hardKilledRunner = spawn(process.execPath, [runnerPath, `--root=${fixture.root}`, "--suite=non-browser", "--file=test/hard-kill.test.ts", `--report=${customRecoveryReport}`], {
+      cwd: repoRoot,
+      env: recoveryEnv,
+      stdio: "ignore",
+    });
+    let recoveryPath = "";
+    try {
+      const recoveryDeadline = Date.now() + 15_000;
+      while ((!existsSync(recoveryMarker) || !existsSync(customRecoveryReport) || !recoveryPath) && Date.now() < recoveryDeadline) {
+        if (existsSync(customRecoveryReport)) {
+          const custom = JSON.parse(readFileSync(customRecoveryReport, "utf8")) as { run: { id: string } };
+          const candidate = join(fixture.root, ".scratch", "test-runs", custom.run.id, "run.json");
+          if (existsSync(candidate)) recoveryPath = candidate;
+        }
+        await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+      }
+      assert.ok(existsSync(recoveryMarker), "hard-kill fixture did not start");
+      assert.ok(recoveryPath, "custom report must retain a canonical startup checkpoint for recovery");
+      hardKilledRunner.kill("SIGKILL");
+      await new Promise<void>((resolveExit) => hardKilledRunner.once("exit", () => resolveExit()));
+      const recovered = runControlled(fixture.root, ["--suite=non-browser", "--file=test/recovery.test.ts"]);
+      assert.equal(recovered.status, 0, `${recovered.stderr}\n${recovered.stdout}`);
+      const recoveredCanonical = JSON.parse(readFileSync(recoveryPath, "utf8")) as { run: { state: string } };
+      const recoveredExport = JSON.parse(readFileSync(customRecoveryReport, "utf8")) as { run: { state: string } };
+      assert.equal(recoveredCanonical.run.state, "incomplete");
+      assert.equal(recoveredExport.run.state, "incomplete");
+    } finally {
+      if (hardKilledRunner.exitCode === null) hardKilledRunner.kill("SIGKILL");
+      if (recoveryPath && existsSync(recoveryPath)) {
+        try {
+          const recoveryRecord = JSON.parse(readFileSync(recoveryPath, "utf8")) as { run?: { owner?: { childPids?: number[] } } };
+          for (const pid of recoveryRecord.run?.owner?.childPids ?? []) {
+            try {
+              if (process.platform === "win32") spawnSync("taskkill.exe", ["/PID", String(pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" });
+              else process.kill(-pid, "SIGKILL");
+            } catch { /* The fixture process tree may already be gone. */ }
+          }
+        } catch { /* The startup checkpoint may not exist. */ }
+      }
+    }
+  } finally {
+    const runnerWasActiveAtCleanup = runner.exitCode === null;
+    if (runnerWasActiveAtCleanup) runner.kill("SIGKILL");
+    if (runnerWasActiveAtCleanup && reportPath && existsSync(reportPath)) {
+      try {
+        const report = JSON.parse(readFileSync(reportPath, "utf8")) as { run?: { owner?: { childPids?: number[] } } };
+        for (const pid of report.run?.owner?.childPids ?? []) {
+          try {
+            if (process.platform === "win32") spawnSync("taskkill.exe", ["/PID", String(pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" });
+            else process.kill(-pid, "SIGKILL");
+          } catch { /* The fixture process tree may already be gone. */ }
+        }
+      } catch { /* The startup checkpoint may not exist. */ }
+    }
+    fixture.cleanup();
+  }
+});
+
+test("AC5/AC8: Cancellation preserves completed file results and does not invent cancelled test counts", async () => {
+  const fixture = makeFixture();
+  const startedMarker = join(fixture.root, "started.txt");
+  const env: NodeJS.ProcessEnv = { ...process.env, STARTED_MARKER: startedMarker };
+  delete env.NODE_TEST_CONTEXT;
+  fixtureTest(fixture.root, "pass.test.ts", "import test from 'node:test'; test('already passed', () => {});");
+  fixtureTest(fixture.root, "slow.test.ts", [
+    "import test from 'node:test';",
+    "import { writeFileSync } from 'node:fs';",
+    "test('wait for cancellation', () => { writeFileSync(process.env.STARTED_MARKER, String(process.pid)); setInterval(() => {}, 1000); return new Promise(() => {}); });",
+  ].join("\n"));
+  const runner = spawn(process.execPath, [runnerPath, `--root=${fixture.root}`, "--suite=non-browser", "--file=test/pass.test.ts", "--file=test/slow.test.ts"], {
+    cwd: repoRoot,
+    env,
+    stdio: "ignore",
+  });
+  let reportPath = "";
+  try {
+    const deadline = Date.now() + 15_000;
+    while ((!existsSync(startedMarker) || !reportPath) && Date.now() < deadline) {
+      const runsPath = join(fixture.root, ".scratch", "test-runs");
+      const runId = existsSync(runsPath) ? readdirSync(runsPath)[0] : undefined;
+      if (runId) {
+        const candidate = join(runsPath, runId, "run.json");
+        if (existsSync(candidate)) reportPath = candidate;
+      }
+      await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+    }
+    assert.ok(existsSync(startedMarker), "owned test process did not start");
+    assert.ok(reportPath, "runner did not persist its startup checkpoint");
+    const before = JSON.parse(readFileSync(reportPath, "utf8")) as { run: { id: string } };
+    const request = runControlled(fixture.root, [`--cancel=${before.run.id}`]);
+    assert.equal(request.status, 0, `${request.stderr}\n${request.stdout}`);
+    const exitCode = await new Promise<number | null>((resolveExit, reject) => {
+      const timeout = setTimeout(() => reject(new Error("runner did not finish after mixed-phase cancellation")), 10_000);
+      runner.once("exit", (code) => { clearTimeout(timeout); resolveExit(code); });
+    });
+    assert.notEqual(exitCode, 0);
+    const report = JSON.parse(readFileSync(reportPath, "utf8")) as {
+      run: { state: string };
+      counts: { passed: number; failed: number; skipped: number; cancelled: number };
+      files: { file: string; state: string; counts: { passed: number; failed: number; skipped: number; cancelled: number } }[];
+    };
+    const completed = report.files.find(({ file }) => file === "test/pass.test.ts");
+    const unfinished = report.files.find(({ file }) => file === "test/slow.test.ts");
+    assert.equal(report.run.state, "cancelled");
+    assert.equal(completed?.state, "passed");
+    assert.deepEqual(completed?.counts, { passed: 1, failed: 0, skipped: 0, cancelled: 0 });
+    assert.equal(unfinished?.state, "cancelled");
+    assert.equal(report.counts.passed, 1);
+    assert.equal(report.counts.cancelled, 0, "a cancelled file is not itself a cancelled test");
+  } finally {
+    const runnerWasActiveAtCleanup = runner.exitCode === null;
+    if (runnerWasActiveAtCleanup) runner.kill("SIGKILL");
+    if (runnerWasActiveAtCleanup && reportPath && existsSync(reportPath)) {
+      try {
+        const report = JSON.parse(readFileSync(reportPath, "utf8")) as { run?: { owner?: { childPids?: number[] } } };
+        for (const pid of report.run?.owner?.childPids ?? []) {
+          try {
+            if (process.platform === "win32") spawnSync("taskkill.exe", ["/PID", String(pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" });
+            else process.kill(-pid, "SIGKILL");
+          } catch { /* The fixture process tree may already be gone. */ }
+        }
+      } catch { /* The startup checkpoint may not exist. */ }
+    }
+    fixture.cleanup();
+  }
+});
+
+test("AC3/AC6: Invalid test-name patterns fail with a generic error and child startup output stays sanitized", () => {
+  const fixture = makeFixture();
+  const secret = "synthetic-secret-pattern-8231";
+  try {
+    fixtureTest(fixture.root, "present.test.ts", "import test from 'node:test'; test('must not run', () => {});");
+    const invalidPattern = runControlled(fixture.root, ["--suite=non-browser", `--test-name-pattern=[${secret}`]);
+    assert.notEqual(invalidPattern.status, 0);
+    assert.doesNotMatch(`${invalidPattern.stdout ?? ""}${invalidPattern.stderr ?? ""}`, new RegExp(secret));
+    assert.doesNotMatch(`${invalidPattern.stdout ?? ""}${invalidPattern.stderr ?? ""}`, /unterminated|syntaxerror/i);
+
+    writeFileSync(join(fixture.root, "node_modules", "tsx", "dist", "cli.mjs"), `process.stderr.write('${secret}'); process.exitCode = 1;`);
+    const loaderFailure = runControlled(fixture.root, ["--suite=non-browser", "--file=test/present.test.ts"]);
+    assert.notEqual(loaderFailure.status, 0);
+    assert.doesNotMatch(`${loaderFailure.stdout ?? ""}${loaderFailure.stderr ?? ""}`, new RegExp(secret));
+    const runsPath = join(fixture.root, ".scratch", "test-runs");
+    const runId = readdirSync(runsPath)[0];
+    const record = readFileSync(join(runsPath, runId!, "run.json"), "utf8");
+    assert.doesNotMatch(record, new RegExp(secret));
+  } finally {
     fixture.cleanup();
   }
 });

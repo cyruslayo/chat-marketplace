@@ -8,7 +8,7 @@ PRD: `PRD.md`
 
 Use two GPT-6 Luna high workers with separate file ownership.
 
-Use GPT-6.1 Sol medium for independent review after implementation.
+Use GPT-6 Luna high for every subagent, including independent reviewers, until the user changes this instruction.
 
 ## Current state
 

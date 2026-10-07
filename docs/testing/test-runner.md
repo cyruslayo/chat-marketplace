@@ -2,11 +2,13 @@
 
 Use `npm test` for the complete suite. Use `npm run test:non-browser`, `npm run test:browser`, or `npm run test:files` for focused feedback.
 
-Use `--suite=all|non-browser|browser` to select a suite. Repeat `--file=test/name.test.ts` to select files. Add `--test-name-pattern=pattern` to select named tests. Use `--workers=2` to set non-browser file concurrency. Browser files always run sequentially.
+Use `--suite=all|non-browser|browser` to select a suite. Repeat `--file=test/name.test.ts` to select files. Add `--test-name-pattern=pattern` to select named tests. Invalid patterns fail before test startup. Use `--workers=2` to set non-browser file concurrency. Browser files always run sequentially.
 
 Use `node scripts/run-tests.mjs --list` to print the selected file list as JSON lines. Each line contains a file path and its browser classification.
 
-Each run writes a report under `.scratch/test-runs/<run-uuid>/run.json`. The report records the selection, counts, durations, phase results, failure codes, source locations, and owned process IDs. The report omits error messages, output payloads, and test-name pattern values.
+Each run writes its canonical report under `.scratch/test-runs/<run-uuid>/run.json`. Use `--report=<path>` to create a synchronized export at a new path inside the workspace. Relative paths start at the workspace root. Cancellation and stale-run recovery use the canonical report, then update a verified export copy. The report records selection, counts, durations, phase results, failure codes, source locations, and owned process IDs. It omits error messages, output payloads, and test-name pattern values.
+
+The runner prints structured test names and result metadata. It discards raw child output and startup errors.
 
 Use `node scripts/run-tests.mjs --cancel=<run-uuid>` to request cancellation. The command writes a control file for that run. The live runner polls the control file and stops its owned test process tree. The cancellation command confirms the request only. Read `run.json` to see the final state after the runner stops.
 

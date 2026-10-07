@@ -91,12 +91,13 @@ export function createRunRecord({ runId = randomUUID(), startedAt = new Date().t
   };
 }
 
-export function recordPhaseResult(record, { suite, selectedFiles = [], workers, durationMs = 0, exitCode = 0, state = exitCode === 0 ? "passed" : "failed", childPid } = {}) {
+export function recordPhaseResult(record, { suite, selectedFiles = [], workers, durationMs = 0, exitCode = 0, state = exitCode === 0 ? "passed" : "failed", childPid, startupDiagnosticsObserved = false } = {}) {
   if (!record || record.run?.state !== "running") throw new TypeError("phase results require a running record");
   if (!new Set(["non-browser", "browser"]).has(suite)) throw new TypeError(`Invalid test phase: ${suite}`);
   if (!["passed", "failed", "cancelled", "incomplete"].includes(state)) throw new TypeError(`Invalid test phase state: ${state}`);
   if (!Number.isSafeInteger(workers) || workers < 1) throw new TypeError("phase workers must be a positive safe integer");
   const phase = { suite, selectedFiles: [...selectedFiles], workers, durationMs: duration(durationMs), exitCode, state };
+  if (startupDiagnosticsObserved === true) phase.startupDiagnosticsObserved = true;
   if (Number.isInteger(childPid) && childPid > 0) {
     phase.childPid = childPid;
     if (!record.run.owner.childPids.includes(childPid)) record.run.owner.childPids.push(childPid);
@@ -157,7 +158,6 @@ export function finalizeRunRecord(record, { exitCode = 0, state, endedAt = new D
     counts.failed += file.counts.failed;
     counts.skipped += file.counts.skipped;
     counts.cancelled += file.counts.cancelled;
-    if (file.state === "cancelled" && file.counts.cancelled === 0) counts.cancelled += 1;
   }
   const timestampElapsed = Date.parse(endedAt) - Date.parse(record.run.startedAt);
   record.counts = counts;

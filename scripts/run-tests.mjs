@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { performance } from "node:perf_hooks";
@@ -46,7 +46,12 @@ function parseArgs(args) {
     const cancel = takeValue("--cancel");
     if (cancel !== undefined) { options.cancel = cancel; continue; }
     const pattern = takeValue("--test-name-pattern");
-    if (pattern !== undefined) { options.patterns.push(pattern); continue; }
+    if (pattern !== undefined) {
+      try { new RegExp(pattern); }
+      catch { throw new Error("invalid --test-name-pattern"); }
+      options.patterns.push(pattern);
+      continue;
+    }
     if (arg === "--list") { options.list = true; continue; }
     if (arg === "--test-concurrency" || arg.startsWith("--test-concurrency=") || arg === "--test-concurrency=1") {
       throw new Error("--test-concurrency is controlled by the runner; use --workers for non-browser files");
@@ -131,16 +136,114 @@ function parseRows(path) {
   });
 }
 
-function writeReport(path, record) {
+function reportFile(value, root) {
+  if (typeof value !== "string") return undefined;
+  const candidate = isAbsolute(value) ? relative(root, value) : value;
+  const normalized = candidate.replaceAll("\\", "/");
+  if (!normalized.startsWith("test/") || normalized.startsWith("test/../") || normalized.includes("/../")) return undefined;
+  return normalized;
+}
+
+function emitReporterRows(rows, root) {
+  for (const row of rows) {
+    if (!row || row.kind === "summary" || typeof row.name !== "string") continue;
+    if (!["pass", "fail", "skip", "cancelled"].includes(row.status)) continue;
+    const file = reportFile(row.file, root);
+    if (!file) continue;
+    const output = {
+      file,
+      name: row.name,
+      status: row.status,
+      durationMs: Number.isFinite(row.durationMs) && row.durationMs >= 0 ? row.durationMs : 0,
+    };
+    const code = typeof row.code === "string" && /^[A-Z][A-Z0-9_]{0,63}$/.test(row.code) ? row.code : undefined;
+    if (code) output.code = code;
+    const sourceFile = reportFile(row.source?.file, root);
+    if (sourceFile) {
+      output.source = {
+        file: sourceFile,
+        ...(Number.isInteger(row.source.line) && row.source.line > 0 ? { line: row.source.line } : {}),
+        ...(Number.isInteger(row.source.column) && row.source.column > 0 ? { column: row.source.column } : {}),
+      };
+    }
+    console.log(JSON.stringify(output));
+  }
+}
+
+function isWithin(parent, child) {
+  const rel = relative(parent, child);
+  return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+}
+
+function reportText(record) {
+  return `${JSON.stringify(record, null, 2)}\n`;
+}
+
+function hasFileEntry(path) {
+  try { lstatSync(path); return true; }
+  catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+function writeNewReport(path, record) {
   mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, reportText(record), { flag: "wx" });
+}
+
+function replaceOwnedReport(path, record) {
+  let existing;
+  try { existing = JSON.parse(readFileSync(path, "utf8")); }
+  catch { throw new Error("owned report is unreadable"); }
+  if (existing?.run?.id !== record.run.id) throw new Error("report ownership changed");
   const temporaryPath = `${path}.${randomUUID()}.tmp`;
   try {
-    writeFileSync(temporaryPath, `${JSON.stringify(record, null, 2)}\n`, { flag: "wx" });
+    writeFileSync(temporaryPath, reportText(record), { flag: "wx" });
     renameSync(temporaryPath, path);
   } catch (error) {
     try { unlinkSync(temporaryPath); } catch { /* No temporary file remains. */ }
     throw error;
   }
+}
+
+function writeReport(path, record) {
+  if (existsSync(path)) replaceOwnedReport(path, record);
+  else writeNewReport(path, record);
+}
+
+function customReportPath(root, value) {
+  if (value === undefined) return undefined;
+  const rootReal = realpathSync(root);
+  const target = isAbsolute(value) ? resolve(value) : resolve(root, value);
+  mkdirSync(dirname(target), { recursive: true });
+  const parentReal = realpathSync(dirname(target));
+  if (!isWithin(rootReal, parentReal)) throw new Error("--report must stay inside the workspace");
+  if (hasFileEntry(target)) throw new Error("--report must name a new file");
+  return target;
+}
+
+function exportManifestPath(runDir) { return join(runDir, "export.json"); }
+
+function writeRunReports(canonicalPath, customPath, record) {
+  writeReport(canonicalPath, record);
+  if (customPath) writeReport(customPath, record);
+}
+
+function syncCustomExport(root, runDir, record) {
+  let manifest;
+  try { manifest = JSON.parse(readFileSync(exportManifestPath(runDir), "utf8")); }
+  catch { return; }
+  if (manifest?.runId !== record.run.id || typeof manifest.path !== "string" || isAbsolute(manifest.path)) return;
+  const target = resolve(root, manifest.path);
+  try {
+    const rootReal = realpathSync(root);
+    const parentReal = realpathSync(dirname(target));
+    if (!isWithin(rootReal, parentReal) || !existsSync(target) || lstatSync(target).isSymbolicLink()) return;
+    const current = JSON.parse(readFileSync(target, "utf8"));
+    if (current?.run?.id !== record.run.id) return;
+    replaceOwnedReport(target, record);
+  } catch { /* Never write to an unverified custom destination. */ }
 }
 
 function ownerIsRunning(pid) {
@@ -161,7 +264,12 @@ function recoverStaleRuns(root) {
     let record;
     try { record = JSON.parse(readFileSync(reportPath, "utf8")); }
     catch { continue; }
-    if (record?.run?.state !== "running" || ownerIsRunning(record.run.owner?.pid)) continue;
+    if (record?.run?.id !== entry.name || !["running", "passed", "failed", "cancelled", "incomplete"].includes(record.run.state)) continue;
+    if (record.run.state !== "running") {
+      syncCustomExport(root, join(runsPath, entry.name), record);
+      continue;
+    }
+    if (ownerIsRunning(record.run.owner?.pid)) continue;
     try {
       const recovered = finalizeRunRecord(record, {
         exitCode: Number.isInteger(record.run.exitCode) && record.run.exitCode !== 0 ? record.run.exitCode : 1,
@@ -170,6 +278,7 @@ function recoverStaleRuns(root) {
         elapsedMs: Number.isFinite(record.run.durationMs) && record.run.durationMs >= 0 ? record.run.durationMs : 0,
       });
       writeReport(reportPath, recovered);
+      syncCustomExport(root, join(runsPath, entry.name), recovered);
     } catch { /* Ignore malformed or concurrently replaced run records. */ }
   }
 }
@@ -197,13 +306,15 @@ function requestCancellation(root, runId) {
 
 function runProcess(args, cwd, onSpawn) {
   return new Promise((resolveRun) => {
-    const child = spawn(process.execPath, args, { cwd, stdio: "inherit", detached: process.platform !== "win32", windowsHide: true });
+    const child = spawn(process.execPath, args, { cwd, stdio: ["ignore", "ignore", "pipe"], detached: process.platform !== "win32", windowsHide: true });
     let closed = false;
+    let stderrObserved = false;
+    child.stderr?.on("data", () => { stderrObserved = true; });
     const finish = (code, signal) => {
       if (closed) return;
       closed = true;
       if (runProcess.current === child) runProcess.current = undefined;
-      resolveRun({ code: code ?? 1, signal, pid: child.pid });
+      resolveRun({ code: code ?? 1, signal, pid: child.pid, stderrObserved });
     };
     child.once("error", () => finish(1, undefined));
     child.once("close", (code, signal) => finish(code, signal));
@@ -243,14 +354,21 @@ async function main() {
 
   const runId = randomUUID();
   const runDir = join(options.root, ".scratch", "test-runs", runId);
-  const reportPath = options.report ? resolve(options.report) : join(runDir, "run.json");
-  if (existsSync(reportPath)) { usageError("report path already exists"); return; }
+  let customPath;
+  try { customPath = customReportPath(options.root, options.report); }
+  catch { usageError("--report must name a new file inside the workspace"); return; }
+  const reportPath = join(runDir, "run.json");
+  if (customPath && hasFileEntry(customPath)) { usageError("report path already exists"); return; }
   const reporterPathname = join(runDir, "events.jsonl");
   const cancelPath = join(runDir, "cancel.request");
   mkdirSync(runDir, { recursive: true });
   const record = createRunRecord({ runId, startedAt: new Date().toISOString(), command: safeCommand(options, selected), selectedFiles: selected.map(({ file }) => file), ownerPid: process.pid, workerDefaults: { nonBrowser: DEFAULT_NON_BROWSER_WORKERS, source: "benchmark" } });
   const started = performance.now();
-  try { writeReport(reportPath, record); }
+  try {
+    if (customPath) writeFileSync(exportManifestPath(runDir), `${JSON.stringify({ runId, path: relative(options.root, customPath).split(sep).join("/") })}\n`, { flag: "wx" });
+    writeNewReport(reportPath, record);
+    if (customPath) writeNewReport(customPath, record);
+  }
   catch { usageError("could not create the run report"); return; }
   let cancelled = false;
   let signalName;
@@ -294,19 +412,22 @@ async function main() {
       args.push(`--test-concurrency=${workers}`);
       for (const pattern of options.patterns) args.push(`--test-name-pattern=${pattern}`);
       const reporterUrl = pathToFileURL(reporterPath).href;
-      args.push(`--test-reporter=${reporterUrl}`, `--test-reporter=${reporterUrl}`, "--test-reporter-destination=stdout", `--test-reporter-destination=${jsonl}`, ...phase.files.map(({ file }) => join(options.root, file)));
+      args.push(`--test-reporter=${reporterUrl}`, `--test-reporter-destination=${jsonl}`, ...phase.files.map(({ file }) => join(options.root, file)));
       const startedAt = performance.now();
       const result = await runProcess(args, options.root, (pid) => {
         if (!record.run.owner.childPids.includes(pid)) record.run.owner.childPids.push(pid);
-        writeReport(reportPath, record);
+        writeRunReports(reportPath, customPath, record);
       });
       const durationMs = Math.max(0, Math.round(performance.now() - startedAt));
       const rows = parseRows(jsonl);
+      emitReporterRows(rows, options.root);
+      if (result.stderrObserved) console.error("test process emitted diagnostics; raw text was discarded.");
       for (const { file } of phase.files) {
         const fileRows = rows.filter((row) => row.file === file);
         const summary = fileRows.find((row) => row.kind === "summary");
         const noTestsRan = summary && summary.counts?.tests === 0;
-        const fileState = cancelled ? "cancelled" : !summary || noTestsRan ? "incomplete" : summary.success ? "passed" : "failed";
+        const fileWasInterrupted = cancelled && (!summary || noTestsRan || (summary.counts?.cancelled ?? 0) > 0);
+        const fileState = fileWasInterrupted ? "cancelled" : !summary || noTestsRan ? "incomplete" : summary.success ? "passed" : "failed";
         const fileExitCode = fileState === "passed" ? 0 : cancelled ? 130 : result.code || 1;
         recordFileResult(record, file, fileRows, { exitCode: fileExitCode, durationMs, state: fileState, childPid: result.pid });
       }
@@ -315,8 +436,8 @@ async function main() {
         return !summary || summary.counts?.tests === 0;
       });
       const phaseState = cancelled ? "cancelled" : incompleteEvidence ? "incomplete" : result.code === 0 ? "passed" : "failed";
-      recordPhaseResult(record, { suite: phase.suite, selectedFiles: phase.files.map(({ file }) => file), workers, durationMs, exitCode: cancelled ? cancellationExitCode(signalName) : result.code, state: phaseState, childPid: result.pid });
-      writeReport(reportPath, record);
+      recordPhaseResult(record, { suite: phase.suite, selectedFiles: phase.files.map(({ file }) => file), workers, durationMs, exitCode: cancelled ? cancellationExitCode(signalName) : result.code, state: phaseState, childPid: result.pid, startupDiagnosticsObserved: result.stderrObserved || undefined });
+      writeRunReports(reportPath, customPath, record);
       if (cancelled) { exitCode = cancellationExitCode(signalName); state = "cancelled"; break; }
       if (result.code !== 0) { exitCode = result.code; state = "failed"; }
       else if (phase.files.some(({ file }) => record.files.find((entry) => entry.file === file)?.state === "incomplete")) {
@@ -334,7 +455,7 @@ async function main() {
     clearInterval(cancellationPoll);
     if (cancelled && state === "passed") { state = "cancelled"; exitCode = cancellationExitCode(signalName); }
     const completed = finalizeRunRecord(record, { exitCode, state, endedAt: new Date().toISOString(), elapsedMs: Math.max(0, Math.round(performance.now() - started)) });
-    try { writeReport(reportPath, completed); }
+    try { writeRunReports(reportPath, customPath, completed); }
     catch { console.error("test runner: could not write the final run report"); process.exitCode = 1; return; }
     console.log(`\nRun ${completed.run.id}: ${completed.run.state} (${completed.counts.passed} passed, ${completed.counts.failed} failed, ${completed.counts.skipped} skipped).`);
     process.exitCode = exitCode;
