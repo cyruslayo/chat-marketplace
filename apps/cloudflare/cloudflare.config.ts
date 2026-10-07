@@ -53,6 +53,9 @@ function workerFor(environment: PilotEnvironment) {
     entrypoint,
     // Static Assets are checked first: they serve the bundles and CSS without waking the Durable Object (09a/09b).
     assets: {},
+    // 13: Workers Logs (ADR 0075). The handlers log nothing about requests; the Durable Object emits only redacted
+    // telemetry and alarm-failure records. Invocation logs are off so no request metadata is recorded.
+    observability: { enabled: true, logs: { enabled: true, invocationLogs: false } },
     exports: { ShortletPilot: exports.durableObject({ storage: "sqlite" }) },
     env: {
       SHORTLET: bindings.durableObject({ worker: name, exportName: "ShortletPilot" }),

@@ -1,8 +1,10 @@
 import { env } from "cloudflare:workers";
 import { runInDurableObject } from "cloudflare:test";
 import { createPlatformCommandEnvelope } from "../../../packages/platform-core/src/index.js";
+import { seedIssue01Units } from "../../../domains/shortlet/src/browse.js";
 import { SqliteOperatorRepository } from "../../../domains/shortlet/src/sqlite-operator-repository.js";
 import { createProvisionedOperator } from "../../../domains/shortlet/src/operator.js";
+import { SqliteUnitRepository } from "../../../domains/shortlet/src/sqlite-unit-repository.js";
 import { SqliteOperatorRepresentativeGrantStore } from "../../../domains/shortlet/src/operator-representative-authority.js";
 import { DurableObjectSqlDatabase } from "../src/do-sql-database.js";
 
@@ -72,6 +74,18 @@ export async function seedOperator(operatorId: string): Promise<void> {
     const operators = new SqliteOperatorRepository(database, { clock: () => new Date() });
     if (operators.findById(operatorId)) return;
     operators.create(createProvisionedOperator({ id: operatorId, tenantId: TENANT, name: "Fixture Operator", now: new Date() }));
+  });
+}
+
+/** Seeds units and their operators so the tenant passes the provisioning gate (the guest/owner routes serve). */
+export async function provisionTenant(): Promise<void> {
+  await withState((database) => {
+    const units = new SqliteUnitRepository(database);
+    if (units.findAll().length === 0) seedIssue01Units(units);
+    const operators = new SqliteOperatorRepository(database, { clock: () => new Date() });
+    for (const [id, name] of new Map(units.findAll().map((unit) => [unit.operator.id, unit.operator.name]))) {
+      if (!operators.findById(id)) operators.create(createProvisionedOperator({ id, tenantId: TENANT, name: name?.trim() || "Fixture Operator", now: new Date() }));
+    }
   });
 }
 

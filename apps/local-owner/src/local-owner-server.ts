@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { HttpRequestLike, HttpResponseLike } from "../../../packages/platform-core/src/http-like.js";
 import type { AssetLoader } from "../../../packages/platform-core/src/asset-loader.js";
 import { nodeAssetLoader } from "../../../packages/platform-core/src/node-asset-loader.js";
+import { RECEIPT_SECURITY_HEADERS } from "../../../packages/platform-core/src/security-headers.js";
 import {
   DECLINE_REASONS,
   OperatorDecisionInputError,
@@ -1345,10 +1346,9 @@ export function createOwnerRequestHandler(
       res.writeHead(200, {
         "Content-Type": receipt.contentType,
         "Cache-Control": "no-store",
-        "X-Content-Type-Options": "nosniff",
-        // Images display inline; a PDF downloads rather than run in a viewer.
+        // Images display inline; a PDF downloads rather than run in a viewer. Shared with the Worker (slice 13).
         "Content-Disposition": receipt.contentType === "application/pdf" ? "attachment; filename=\"receipt.pdf\"" : "inline",
-        "Content-Security-Policy": "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'",
+        ...RECEIPT_SECURITY_HEADERS,
       });
       res.end(receipt.bytes);
       return;

@@ -21,6 +21,7 @@ import type {
 } from "../../../packages/platform-core/src/index.js";
 import type { AssetLoader } from "../../../packages/platform-core/src/asset-loader.js";
 import { nodeAssetLoader } from "../../../packages/platform-core/src/node-asset-loader.js";
+import { GUEST_HTML_SECURITY_HEADERS } from "../../../packages/platform-core/src/security-headers.js";
 import {
   discoveryArtifactToA2UI,
   createWeaverWebAgentAdapter,
@@ -6465,13 +6466,9 @@ interface BrowserSession {
 
 const GUEST_HTML_HEADERS = {
   "Content-Type": "text/html; charset=utf-8",
-  // ADR-0078: serve the local accessible foundation while keeping remote styles disallowed.
-  "Content-Security-Policy":
-    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
-  // Issue 06c: "same-origin" (not "no-referrer") so a same-origin form post
-  // carries a real Origin for browserOriginAccepted; cross-origin requests
-  // still send no referrer.
-  "Referrer-Policy": "same-origin",
+  // ADR-0078: serve the local accessible foundation while keeping remote styles disallowed. Shared with the Worker
+  // so the two cannot drift (slice 13).
+  ...GUEST_HTML_SECURITY_HEADERS,
 } as const;
 
 function findGuestThreadForOffer(
