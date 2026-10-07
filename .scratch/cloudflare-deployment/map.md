@@ -233,7 +233,7 @@ Findings to carry forward:
 - **Do not start Wave 5 (10b+) without a request.** The integration branch merges to `main` only after slice 15; no push, deployment or staging claim.
 - **Worktree cleanup pitfall: unlink `node_modules` before `git worktree remove`.** Slice worktrees use a `node_modules` junction into this checkout. At wave close, `git worktree remove` on `-08c` and `-09c-integration` followed the junction and emptied the shared `node_modules`. It was restored with `npm ci` (with `NODE_ENV` unset); `npm run check` and the 27 workerd tests passed afterwards.
   - To remove a junctioned worktree safely, delete the link itself first with `cmd /c rmdir <worktree>\node_modules`. That removes only the junction. Then run `git worktree remove`.
-  - `-08a`, `-08b` and `-09a` were left in place. They hold only untracked test scratch (`.scratch/eval-test`, `.scratch/local-guest`, `.scratch/local-owner`) and, in 09a, the generated `apps/cloudflare/public/`. Their branches stay either way.
+  - `-08a`, `-08b` and `-09a` were removed this way afterwards. Each held only untracked test scratch (`.scratch/eval-test`, `.scratch/local-guest`, `.scratch/local-owner`) and, in 09a, the generated `apps/cloudflare/public/` bundles. Those were cleared first so `git worktree remove` ran without `--force`. The shared install was unaffected, and the slice branches remain.
 
 ## Context pointers
 
