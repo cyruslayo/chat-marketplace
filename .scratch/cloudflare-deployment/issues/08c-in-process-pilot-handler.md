@@ -1,6 +1,6 @@
 # In-process pilot handler; remove the localhost proxy
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 08b
 Branch: `infra/cf-08c-pilot-handler`
@@ -46,4 +46,18 @@ Unlocks: 09a, 10b
 
 Check every item in `docs/agents/issue-tracker.md`.
 
+## Answer
+
+Implemented at `6c89dbc` on `infra/cf-08c-pilot-handler`, merged (fast-forward) into `infra/cloudflare-deployment`.
+
+- **AC1** — `test("08c AC1: no localhost proxy remains in apps/pilot/src")` walks every `.ts` file under `apps/pilot/src` (including `notifications/`) and fails naming any file that still contains `127.0.0.1` or `request as httpRequest`. `proxyRequest` is deleted from both `pilot-server.ts` and `local-pilot-server.ts`; the loopback literals that remain legitimate (the Node wrappers' `listen` and the local pilot's origin) come from `packages/platform-core/src/loopback-address.ts` so no pilot source carries them.
+- **AC2** — `test("08c AC2: /healthz reads only the shared handle and never opens a new connection")`: 200 `{ok:true}` on the opened shared handle, 503 `{ok:false}` after it is closed; a counting proxy over the injected `SqlDatabase` proves the dispatch path issues only the health `SELECT 1`. The stale "healthCheck opens a new connection" note is superseded by Wave 3's shared-handle `databaseHealthy` (ADR 0004), which 08c moves inside the handler.
+- **AC3** — `test("08c AC3: logins beyond operatorLoginsPerAddressPerHour are refused with 429 and Retry-After")`: two logins dispatch, the third is 429 with `Retry-After` and `Cache-Control: no-store`; per-address isolation is asserted. The other limiters keep their exact check-before-charge semantics (moved, not rewritten); `pilot-guardrails.test.ts` and `pilot-notifications.test.ts` pass unchanged against the new dispatch.
+- **AC4** — `test("08c AC4: the beta banner wraps guest and operator HTML when staging, and never JSON or assets")`, plus the existing staging suites through the real server: `test/pilot-production-composition.test.ts` (banner on guest/operator/error pages, `content-length` rewritten, JSON untouched, production never banners) and "Staging starts with Paystack test keys" pass against the in-process dispatch.
+- **AC5** — `test/pilot-production-composition.test.ts`, `test/pilot-database-handle.test.ts`, `test/pilot-guardrails.test.ts`, `test/pilot-notifications.test.ts` and `test/pilot-request-handler.test.ts` pass (36 tests, zero failures). `npm run check` clean. **Deferred to wave close (recorded here for AC5):** `test/pilot-local.test.ts`, the Rodney acceptance script (`npm run pilot:acceptance:rodney`) and the browser phase of the full `npm test` run once on the integrated Wave 4 snapshot; the Rodney script refuses dirty tracked trees so the run belongs to the committed snapshot.
+
+Design notes for later slices: `createPilotRequestHandler(configuration, deps)` takes `Pick<PilotConfiguration, "publicOrigin" | "deployment" | "limits">` as configuration and `{ guest, owner, database, clock, clientAddress, ready }` as deps; the buffering decision for the banner is made from the handler's own written headers (never a proxied body), and `ready()` preserves the pre-listen 503 the proxy's `initialized` flag provided. `apps/pilot/src` must contain **no** `127.0.0.1` literal — the grep test is permanent. The Node wrapper keeps the rightmost-`X-Forwarded-For` rule with the `req.socket.remoteAddress` fallback; 09c/10b inject a `CF-Connecting-IP` reader instead.
+
 ## Comments
+
+- A slice-engineering decision recorded for AC1/AC4: `local-pilot-server.ts` has its own `proxyRequest` inside `apps/pilot/src`, so the AC1 grep covers it; it is converted to the same in-process dispatch (its health/photos routes stay its own; it keeps no rate guard, banner or notifier, matching its local-only behavior). The redesign is byte-identical for its callers (`startLocalPilotServer` used by `pilot-local`, `discovery-phase3`, `unit-detail-old-ikoyi` Chromium suites).
