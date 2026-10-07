@@ -7,6 +7,9 @@
   },
   "scripts": {
     "test": "node scripts/run-tests.mjs",
+    "test:non-browser": "node scripts/run-tests.mjs --suite=non-browser",
+    "test:browser": "node scripts/run-tests.mjs --suite=browser",
+    "test:files": "node scripts/run-tests.mjs --suite=all",
     "check": "tsc --noEmit && tsc --noEmit -p apps/cloudflare && tsc --noEmit -p apps/cloudflare/tsconfig.test.json && tsc --noEmit -p apps/cloudflare/tsconfig.tooling.json",
     "test:workers": "vitest run --config apps/cloudflare/vitest.config.ts",
     "build": "node apps/local-guest/scripts/build-client.mjs",

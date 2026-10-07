@@ -4,7 +4,7 @@
 
 - **Language**: TypeScript (`tsconfig.json`, target `ES2022`, module resolution `NodeNext`).
 - **Type Checking**: Run `npm run check` (`tsc --noEmit`) regularly to ensure zero type errors.
-- **Testing**: Run `npm test` (`node scripts/run-tests.mjs`) to execute unit tests. It runs `tsx --test` on the non-browser files concurrently, then on the real-Chrome files one at a time.
+- **Testing**: Use `npm run test:non-browser`, `npm run test:browser`, or `npm run test:files` for focused runs. Run `npm test` for the complete suite. See `docs/testing/test-runner.md` for selection and cancellation options.
 - **Coding standards**: See `docs/agents/coding-standards.md`. These rules are a hard gate — no `any` in domain types, no invented policy strings, no bearer credentials in logs, search before inventing a new pattern.
 
 ### Issue tracker
@@ -45,9 +45,11 @@ Follow this sequence for every issue. Do not skip steps.
 2. List `docs/adr/` and read all ADRs that touch the domain. Record which apply and what they require.
 3. Read the relevant `CONTEXT.md` and confirm all terms used in the issue are defined there.
 4. Write failing tests — one `test()` per acceptance criterion, named to mirror the criterion text, covering both success and all named failure paths.
-5. Implement until all tests pass and `npm run check` is clean.
-6. Before resolving: self-review against the Definition of Done in `docs/agents/issue-tracker.md`. Check every item on that list explicitly.
-7. Commit, then mark the issue `resolved`.
+5. Implement until targeted tests pass, `npm run check` is clean, and required builds pass.
+6. Before resolving, check every item in the Definition of Done in `docs/agents/issue-tracker.md`.
+7. Commit the implementation before resolving the issue.
+8. Keep coordinated wave issues claimed until integrated full-suite verification passes.
+9. Resolve standalone issues only after their full verification gate passes.
 
 ### Guest UI work (kit, walkthrough and captures)
 

@@ -35,4 +35,9 @@ An issue may only be set to `Status: resolved` when **all** of the following are
 4. **No injected dependency is unused.** Every constructor parameter accepted by a new class is called somewhere in that class's implementation.
 5. **No policy string, rule, or constant has been invented.** All hardcoded domain values are traceable to an ADR or `CONTEXT.md`. Unresolved gaps are noted and the user is asked.
 6. **No bearer credential or restricted identity material appears in audit records or logs** (ADR 0075).
-7. **`npm run check` passes with zero errors and `npm test` passes with zero failures.**
+7. **Targeted checks pass.** Run the tests, type checks, and builds that cover the issue.
+8. **Integrated verification passes before resolution.** Coordinated waves require one final full-suite run after all wave changes. Standalone issues require their full verification gate before resolution.
+9. **Verification evidence is current.** Any relevant code change invalidates earlier wave verification and requires a new final gate.
+10. **Failures receive diagnosis.** Report application failures separately. Do not retry the full suite automatically to diagnose a failure.
+
+Run `npm test` for the complete two-phase suite. Use `npm run test:non-browser`, `npm run test:browser`, or `npm run test:files` for focused feedback. A passing focused run does not satisfy a coordinated wave's integrated full-suite gate.
