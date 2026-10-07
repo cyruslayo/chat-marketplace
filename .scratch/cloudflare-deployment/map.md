@@ -197,6 +197,7 @@ Findings and decisions to carry forward:
 
 ## Context pointers
 
+- 08a: `f1ff86c` extracts the guest request handler behind `HttpRequestLike`/`HttpResponseLike` (`packages/platform-core/src/http-like.ts`); `createGuestRequestHandler` carries all request logic, `startLocalGuestServer` is a thin wrapper, and `test/helpers/http-like.ts` provides fake request/response builders for 08b/08c/09b/09c. Phase 1: 1,368 tests, zero failures; 22 workerd tests (hung-run false alarm did not reproduce); `npm run check` clean. Browser phase deferred to wave close.
 - 07a/07b: `772d8a2`; blob port, SQLite and R2 stores, idempotent receipt-table migration (also on Durable Object SQL), put-then-commit with re-check, bounded body, no public/signed URL guard. 22 workerd tests; full suite evidence `C:/AI2026/cf-wave3-full.log`.
 - 06d: `ca19100`; field-by-field audit in the issue's Comments, `SqliteOperatorEnforcementStateStore`, owner `production` flag, `test/operator-process-restart.test.ts`.
 - 04a/04b/04c: `fb7e199`; injectable roots, `openNode` factories, shared handle for session runtimes, `sessionRuntimeLimit`.
