@@ -8,9 +8,6 @@ import type {
   HttpResponseLike,
 } from "../../../packages/platform-core/src/http-like.js";
 import { createHash, timingSafeEqual } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   A2UI_V091_BASIC_CATALOG_ID,
   type A2UIComponent,
@@ -22,6 +19,8 @@ import type {
   CommandPrincipal,
   TransitionTelemetryEvent,
 } from "../../../packages/platform-core/src/index.js";
+import type { AssetLoader } from "../../../packages/platform-core/src/asset-loader.js";
+import { nodeAssetLoader } from "../../../packages/platform-core/src/node-asset-loader.js";
 import {
   discoveryArtifactToA2UI,
   createWeaverWebAgentAdapter,
@@ -221,11 +220,6 @@ import {
   ASSISTANT_CONFIRM_ACTION_EVENT,
   ASSISTANT_CANCEL_ACTION_EVENT,
 } from "./assistant/pending-action-a2ui.js";
-
-const SHORTLET_FOUNDATION_CSS = readFileSync(
-  new URL("../../web/src/shortlet-foundations.css", import.meta.url),
-  "utf8",
-);
 
 export interface GuestSurfacePayload {
   readonly surfaceId: string;
@@ -6534,6 +6528,8 @@ export interface LocalGuestServerHandle {
 export interface GuestRequestHandlerOptions {
   environment?: LocalGuestEnvironment;
   clientScriptPath?: string;
+  /** Slice 09a: the bundles/CSS the handler serves; the Node default is `nodeAssetLoader()` (no import-time reads). */
+  assets?: AssetLoader;
   geminiClient?: GeminiConciergeClient;
   modelClient?: AssistantModelClient;
   conciergeMode?:
@@ -6758,9 +6754,8 @@ export function createGuestRequestHandler(
     sessionRuntimes.set(session.sessionKey, runtime);
     return runtime;
   };
-  const clientScriptPath =
-    options.clientScriptPath ??
-    join(dirname(fileURLToPath(import.meta.url)), "..", "dist", "client.js");
+  // Slice 09a: assets come from the injected loader (Node default `nodeAssetLoader()`), never from import-time reads.
+  const assets = options.assets ?? nodeAssetLoader({ clientScriptPath: options.clientScriptPath });
 
   const dispatch = async (
     req: HttpRequestLike,
@@ -6801,11 +6796,17 @@ export function createGuestRequestHandler(
         req.method === "GET" &&
         url.pathname === "/shortlet-foundations.css"
       ) {
-        res.writeHead(200, {
-          "Content-Type": "text/css; charset=utf-8",
-          "Cache-Control": "public, max-age=3600",
-        });
-        res.end(SHORTLET_FOUNDATION_CSS);
+        // Slice 09a: a missing asset answers 500 for this request instead of failing at import.
+        try {
+          res.writeHead(200, {
+            "Content-Type": "text/css; charset=utf-8",
+            "Cache-Control": "public, max-age=3600",
+          });
+          res.end(assets.text("shortlet-foundations.css"));
+        } catch {
+          res.writeHead(500, { "Content-Type": "text/plain" });
+          res.end("Foundation styles missing; run npm run guest:local to build it.");
+        }
         return;
       }
 
@@ -7126,10 +7127,7 @@ export function createGuestRequestHandler(
       // Guest gallery issue 01: the full apartment page's script. Public, like /stays/* itself.
       if (req.method === "GET" && url.pathname === "/gallery.js") {
         try {
-          const script = readFileSync(
-            join(dirname(clientScriptPath), "gallery.js"),
-            "utf8",
-          );
+          const script = assets.text("gallery.js");
           res.writeHead(200, {
             "Content-Type": "text/javascript; charset=utf-8",
           });
@@ -7148,12 +7146,8 @@ export function createGuestRequestHandler(
         (url.pathname === "/payment.js" || url.pathname === "/offer.js")
       ) {
         try {
-          const script = readFileSync(
-            join(
-              dirname(clientScriptPath),
-              url.pathname === "/offer.js" ? "offer.js" : "payment.js",
-            ),
-            "utf8",
+          const script = assets.text(
+            url.pathname === "/offer.js" ? "offer.js" : "payment.js",
           );
           res.writeHead(200, {
             "Content-Type": "text/javascript; charset=utf-8",
@@ -7169,7 +7163,7 @@ export function createGuestRequestHandler(
       }
       if (req.method === "GET" && url.pathname === "/client.js") {
         try {
-          const script = readFileSync(clientScriptPath, "utf8");
+          const script = assets.text("client.js");
           res.writeHead(200, {
             "Content-Type": "text/javascript; charset=utf-8",
           });

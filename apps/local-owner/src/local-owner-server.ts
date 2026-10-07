@@ -1,5 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { readFileSync } from "node:fs";
+import type { HttpRequestLike, HttpResponseLike } from "../../../packages/platform-core/src/http-like.js";
+import type { AssetLoader } from "../../../packages/platform-core/src/asset-loader.js";
+import { nodeAssetLoader } from "../../../packages/platform-core/src/node-asset-loader.js";
 import {
   DECLINE_REASONS,
   OperatorDecisionInputError,
@@ -31,11 +33,9 @@ import { OPERATOR_RESPONSE_REMINDER_MINUTES, operatorResponseReminderDue, type O
 import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
 import { backOfficePage, SIGN_IN_REASONS, signInReason, watTime, type BackOfficeViewer, type SignInReason } from "./back-office-view.js";
 import { formatStayDates } from "../../web-agent/src/booking-presentation.js";
-import type { HttpRequestLike, HttpResponseLike } from "../../../packages/platform-core/src/http-like.js";
 
 const OPERATOR_SESSION_COOKIE = "shortlet_operator_session";
 const OPERATOR_SECRET_COOKIE = "shortlet_operator_secret";
-const SHORTLET_FOUNDATION_CSS = readFileSync(new URL("../../web/src/shortlet-foundations.css", import.meta.url), "utf8");
 
 /** A malformed cookie is no cookie: the request is treated as signed out, never as a server error (ADR 0086). */
 function cookieValue(req: HttpRequestLike, name: string): string | null {
@@ -1221,6 +1221,8 @@ export function renderOwnerDashboardHtml(overview: LocalOwnerStateOverview): str
 
 export interface OwnerRequestHandlerOptions {
   environment?: LocalApartmentOwnerEnvironment;
+  /** Slice 09a: the CSS the back office serves; the Node default is `nodeAssetLoader()` (no import-time reads). */
+  assets?: AssetLoader;
   secureCookie?: boolean;
   publicOrigin?: string;
   production?: boolean;
@@ -1242,6 +1244,8 @@ export function createOwnerRequestHandler(
   options: OwnerRequestHandlerOptions = {},
 ): OwnerRequestHandler {
   let env = options.environment ?? LocalApartmentOwnerEnvironment.openNode();
+  // Slice 09a: assets come from the injected loader (Node default `nodeAssetLoader()`), never from import-time reads.
+  const assets = options.assets ?? nodeAssetLoader();
   const production = options.production === true;
   if (production && !options.publicOrigin) throw new Error("Production Operator server requires SHORTLET_PUBLIC_ORIGIN");
   const cookieFlags = `${(options.secureCookie ?? production) ? "; Secure" : ""}; HttpOnly; SameSite=Lax; Path=/operator`;
@@ -1255,8 +1259,17 @@ export function createOwnerRequestHandler(
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
     if (req.method === "GET" && url.pathname === "/shortlet-foundations.css") {
-      res.writeHead(200, { "Content-Type": "text/css; charset=utf-8", "Cache-Control": "public, max-age=3600" });
-      res.end(SHORTLET_FOUNDATION_CSS);
+      // Slice 09a: a missing asset answers 500 for this request instead of failing at import.
+      try {
+        res.writeHead(200, {
+          "Content-Type": "text/css; charset=utf-8",
+          "Cache-Control": "public, max-age=3600",
+        });
+        res.end(assets.text("shortlet-foundations.css"));
+      } catch {
+        res.writeHead(500, { "Content-Type": "text/plain" });
+        res.end("Foundation styles missing; run npm run guest:local to build it.");
+      }
       return;
     }
 
