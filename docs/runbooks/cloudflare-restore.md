@@ -72,11 +72,14 @@ row deleted after the older day would survive the rebuild, and the object would 
 
 1. **Choose the day.** Take the newest `YYYY-MM-DD/` prefix that has an object for every name in `EXPORT_TABLES`. Writes
    made after that day's alarm are not in it.
-2. **Create the object.** A request to the origin creates the tenant's object, and the object applies its own schema
-   migrations on start. Check `GET /_ops/status`: `schemaVersion` must equal the migration count in
-   `apps/cloudflare/src/schema.ts`, and `cutoverMarker` must be `absent`. A `present` marker means this tenant's cutover is recorded
-   in R2 (issue 16 A), so every import is refused with `CUTOVER_COMPLETE`, and a rebuild into that tenant is not possible under the
-   current design (issue 16, Needs user item 8). An `unavailable` marker refuses every import (`CUTOVER_MARKER_UNAVAILABLE`).
+2. **Create the object.** Before any request reaches the object, check its marker (break-glass B0 below). A marker that exists
+   is re-asserted into the object's flag when the object starts, and the object starts on its first request, so a marker found
+   here changes what this step may do. If no marker exists, a request to the origin creates the tenant's object, and the object
+   applies its own schema migrations on start. Then check `GET /_ops/status`: `schemaVersion` must equal the migration count in
+   `apps/cloudflare/src/schema.ts`, `cutoverMarker` must be `absent` and `cutoverCompletedAt` must be `null`. A `present` marker
+   means this tenant's cutover is recorded in R2 (issue 16 A), so every import is refused with `CUTOVER_COMPLETE`; the only
+   rebuild path is the break-glass below. An `unavailable` marker refuses every import (`CUTOVER_MARKER_UNAVAILABLE`); fix the
+   marker's access first, and never use the break-glass to get past it.
 3. **Load each table, parents first.** Load each table's file for the chosen day in the order `importOrder()`
    (`packages/platform-core/src/data-migration.ts`) returns for `EXPORT_TABLES`. That order follows the schema's foreign
    keys. The object enforces foreign keys, so a child row whose parent is not loaded yet is refused: `POST /_ops/import`
@@ -89,7 +92,41 @@ row deleted after the older day would survive the rebuild, and the object would 
 5. **Confirm the cutover state.** The one-way flag lives in a control table, which is not exported. The cutover marker lives in the
    `EXPORTS` bucket, outside the object's storage, so it is not part of the rebuild either. A rebuilt object re-asserts its flag from
    the marker when it starts and before any import (issue 16 A). Check `GET /_ops/status` after step 4: `cutoverMarker` and
-   `cutoverCompletedAt` must agree with the tenant's history. No step in this runbook sets the flag or the marker.
+   `cutoverCompletedAt` must agree with the tenant's history. Outside the break-glass, no step in this runbook sets the flag or the
+   marker. The break-glass re-closes the cutover at B5.
+
+**Break-glass: rebuild into a tenant whose cutover marker exists (decided 10 Oct 2026, issue 16 item 8).** The normal rebuild is
+refused by design when the marker exists. No API route clears the marker, and no route clears the object's flag. This break-glass is
+for disaster recovery into the same tenant only. It needs a person with R2 write access to the production `EXPORTS` bucket
+(`shortlet-pilot-production-exports`), and every step is recorded in the cutover log (cutover runbook, section 11).
+
+Deleting the marker is not enough on its own. The object keeps its flag in its own storage, and each start of the object re-creates
+the marker from that flag. The delete holds only when the object's storage no longer carries the flag. B3 checks this, and the rebuild
+stops if the flag is still there.
+
+- **B0. Record the marker.** The object id is the Durable Object's hex id, so find the key by listing; do not compute it.
+  `npm exec cf -- r2 objects list --bucket-name "shortlet-pilot-production-exports" --mode production --prefix "_ops/cutover/"`.
+  Expect one key, `_ops/cutover/<object id>.json`. No key means no break-glass is needed: use the normal procedure. More than one
+  key means stop. Read the key and record its `completedAt`, the original cutover time:
+  `npm exec cf -- r2 objects get "_ops/cutover/<object id>.json" --bucket-name "shortlet-pilot-production-exports" --mode production --text`.
+- **B1. Freeze and record.** Before B2, no request may reach this tenant's object: stop the Worker route or serve the freeze response
+  (the mechanism is in cutover runbook, section 1). Record the incident reason, the operator and the time in the cutover log.
+- **B2. Delete the marker.** Run the dry run first, then the same command without `--dry-run`. Do not pass `--force`, so the CLI's
+  confirmation shows the key:
+  `npm exec cf -- r2 objects delete "_ops/cutover/<object id>.json" --bucket-name "shortlet-pilot-production-exports" --mode production --dry-run`.
+- **B3. Check that the flag did not survive. Stop if it did.** List the prefix again; the key must be absent. Then `GET /_ops/status`.
+  The status request starts the object, so the result is the state after its start. Expected: `cutoverCompletedAt` is `null` and
+  `cutoverMarker` is `absent`. If `cutoverCompletedAt` is set, or the key reappears, the flag survived in the object's storage and the
+  marker was re-created. Do not import, and do not run B4 or B5 into this object. A rebuild into this object is then not possible
+  under the current design; the recovery is a separate decision (cutover runbook, Needs user item 8).
+- **B4. Rebuild.** Run steps 3 and 4 above: load the chosen day and verify the counts. Imports are accepted in this window because
+  the object's flag is clear, which is why B1 must hold.
+- **B5. Re-close.** Send `POST /_ops/cutover/complete` with `-d '{}'` and the same headers as the restore route in section 1. The
+  marker is written first, then the flag. The response's `cutoverCompletedAt` is a new timestamp, because no marker and no flag
+  existed. A repeat call returns that timestamp. Keep the original `completedAt` from B0 in the log next to it.
+- **B6. Confirm.** `GET /_ops/status` must show `cutoverMarker: "present"` and `cutoverCompletedAt` equal to B5's value.
+- **B7. Lift the freeze and log.** Only after B6. Add the log row: date, reason, operator, the original `completedAt` (B0), the B3
+  result, the B5 timestamp and the step 4 counts.
 
 **Row ordering.** The load does two things. Parents before children is required by the foreign keys (step 3). Within a
 table, the import keeps the file's order: it sends rows in file order and inserts them in that order, and an upsert of

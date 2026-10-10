@@ -356,8 +356,11 @@ These need human facts or decisions. None is decided in this runbook.
 7. The cutover and sign-in communication (checklist C10): the wording and the channel for telling guests and operators that they sign
    in again. **Decided:** the sign-in is required, because sessions and codes are not moved (issue 16 B).
 8. Rebuilds after a cutover (restore runbook, section 2): a rebuild from export cannot load into a tenant whose cutover marker is set,
-   because imports are refused by design (issue 16 A). **Decided:** no route clears the marker. How a post-cutover rebuild is recovered
-   (a new tenant, or a marker handled outside the object) is **Needs user**.
+   because imports are refused by design (issue 16 A). **Decided (10 Oct 2026):** no route clears the marker. The only rebuild path into
+   such a tenant is the break-glass in restore runbook section 2 (B0 to B7): a person with R2 write access runs
+   `cf r2 objects delete` on the marker key, before any request reaches the object, then rebuilds and re-closes with
+   `POST /_ops/cutover/complete`, logging each step. The delete holds only if the object's storage no longer carries the flag; B3
+   checks it and stops the rebuild when the flag survived. If B3 stops, the recovery (a new tenant, or another design) is **Needs user**.
 
 ## 11. Cutover log
 
@@ -373,4 +376,5 @@ These need human facts or decisions. None is decided in this runbook.
 | 7.1 Cutover marker and flag (timestamp: , `cutoverMarker`: ) | | | | |
 | 7.2 DNS switch | | | | |
 | 8 Smoke tests | | | | |
+| Break-glass marker delete (only if used: date, reason, operator, original `completedAt`, B3 result, B5 timestamp) | | | | |
 | `ROLLBACK_WINDOW` open / close (date: ) | | | | |
