@@ -11,14 +11,26 @@ test("AC2: npm run check type-checks both the Node tree and apps/cloudflare with
   const workers = json("apps/cloudflare/tsconfig.json");
   assert.deepEqual(node.compilerOptions.types, ["node"]);
   assert.ok(node.exclude.includes("apps/cloudflare/**"));
-  assert.deepEqual(workers.compilerOptions.types, [
-    "@cloudflare/workers-types",
-    "@cloudflare/vitest-plugin/types",
-  ]);
-  assert.match(
-    json("package.json").scripts.check,
-    /tsc --noEmit -p apps\/cloudflare/,
+  // Slice 10b: the Worker tree loads only Node globals. The Workers types are
+  // imported as a module (cloudflare-workers.d.ts) so they do not clash with the
+  // repository's DOM and Node globals, and the node:sqlite rule is enforced by the
+  // worker-bundle guard rather than by a Workers-types global.
+  assert.equal(workers.extends, "../../tsconfig.json");
+  assert.deepEqual(workers.compilerOptions.types, ["node"]);
+  assert.ok(!workers.compilerOptions.types.includes("@cloudflare/workers-types"));
+  assert.deepEqual(workers.include, ["src/**/*.ts"]);
+  const workersTypes = readFileSync(
+    new URL("apps/cloudflare/src/cloudflare-workers.d.ts", root),
+    "utf8",
   );
+  assert.match(workersTypes, /declare module "cloudflare:workers"/);
+  assert.match(workersTypes, /import\("@cloudflare\/workers-types"\)/);
+
+  const scripts: Record<string, string> = json("package.json").scripts;
+  const checkSteps = scripts.check.split("&&").map((step) => step.trim());
+  assert.ok(checkSteps.includes("tsc --noEmit -p apps/cloudflare"));
+  assert.ok(checkSteps.includes("node scripts/check-worker-bundle.mjs"));
+  assert.match(scripts["test:workers"], /node scripts\/check-worker-bundle\.mjs/);
 });
 
 test("AC3: npm test neither runs nor breaks on the .spec.ts files, and still passes", () => {
