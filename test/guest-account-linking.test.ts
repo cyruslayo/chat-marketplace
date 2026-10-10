@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { GuestAccountAuthorityError, authorizesBookingRequest, authorizesPrincipalOwner, anonymousGuestIdentity, GuestIdentityResolver, SqliteGuestAccountAuthority, SqliteGuestAccountLinks, SqliteGuestContactRepository, SqliteGuestInteractionStore } from "../domains/shortlet/src/index.js";
 import { applySchemaMigrations } from "../packages/platform-core/src/schema-migrations.js";
-import { resolveGuestContact, SqliteGuestContactRepository } from "../domains/shortlet/src/index.js";
+import { resolveGuestContact } from "../domains/shortlet/src/index.js";
 import { SHORTLET_SCHEMA_MIGRATIONS, SHORTLET_SCHEMA_VERSION } from "../apps/cloudflare/src/schema.js";
 import { openNodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-database.js";
 import { createGuestLinkingFixture, linkedTableRows, LINKING_TENANT, type GuestLinkingFixture } from "./helpers/guest-account-linking.js";
