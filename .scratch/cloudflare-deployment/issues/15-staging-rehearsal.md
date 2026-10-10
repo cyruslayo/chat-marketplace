@@ -64,3 +64,17 @@ Evidence log (one row per step; PASS, FAIL or BLOCKED; references only, never se
 | 6b. PITR drill (dry run, confirm, restart, checks) | | | | | Restore point; PITR bookmark | |
 | 7. Workers Logs searches (zero matches expected) | | | | | Queries; time range; match counts | |
 | 8. Go / no-go (user decision) and merge PR | | | | | PR URL | |
+
+### Agent pass on `infra/cf-wave6` (10 Oct 2026)
+
+Status unchanged: **ready-for-human**.
+
+- The staging-prep branch `infra/cf-15-staging-prep` is merged into `infra/cf-wave6` (merge commit `b567a0b`, no conflicts).
+  The staging-prep work is in place: `docs/runbooks/cloudflare-staging-rehearsal.md`, the pilot base-URL resolver, and
+  the HTTPS URL guard.
+- Checks on `infra/cf-wave6`: `npm run check` passes, and `npm run test:workers` passes 58 of 58. The non-browser suite
+  gives 1404 of 1407 passing. Its 3 failures predate the merge (details in issue 16's comment), so AC5 is not met yet.
+  The browser phase was not run.
+- Not done and not claimed: the staging deployment, the Paystack test-mode steps, the forced restarts, the PITR drill, the
+  Logs search and the go/no-go. These need the user.
+- Data-protection gates (ADR 0095) still apply. Staging uses synthetic data only.

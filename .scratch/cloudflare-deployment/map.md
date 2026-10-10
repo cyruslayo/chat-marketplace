@@ -122,6 +122,7 @@ The user approved both recommendations in this implementation session:
 - 10a: answered above (503 “not provisioned”; authenticated provisioning available).
 - 11a: the name of the shared-secret header, and how the secret is provisioned.
 - 11b: the body-size limit for inventory CSV import.
+- 16: the import batch byte bound (reuses the 5 MiB CSV limit) and the 100-row client chunk; the cutover open decisions (issue 16, "Open decisions for the user").
 - 12a: export retention (ADR 0075 is provisional), and the grace period before an orphaned receipt is swept.
 - 13: WAF rate-limit thresholds for `POST /operator/login` and `/webhooks/paystack`.
 
@@ -245,8 +246,13 @@ Started from `infra/cloudflare-deployment` at `3b40d73`. **10b is implemented an
 
 **User-owned values confirmed for this wave:** shared-secret header `X-Shortlet-Ops-Secret` (secret `OPS_SHARED_SECRET`), Access JWT verified against the team certs, inventory CSV limit 5 MiB, export retention 400 days, orphan-receipt grace 24 h, WAF 10 req/min for `POST /operator/login` plus a Paystack webhook IP allow-list, and `importInventoryCsv` staying per-row (run `dryRun=true` first). The next wave is **6 — release and retirement** (15–17), starting with the issue-15 staging rehearsal once the human/DNS gates and the pilot env are available.
 
+## Wave 6 agent pass (10 Oct 2026)
+
+Branch `infra/cf-wave6`, cut from `infra/cloudflare-deployment`, with the merge commits for cf-15 (`b567a0b`) and cf-16 (`e3a52a0`). Issues 15 and 16 remain **ready-for-human**. Work done: the ADR 0075 leaks in the export and ops-body parsers are fixed (failing-first tests added); the Node-export-to-Durable-Object end-to-end test is in; the cutover runbook uses `cf` for R2, with the download step as a documented gap; the stale `ops-routes.ts` reference is removed; the parameter-limit source is cited. Checks: `npm run check` passes; `npm run test:workers` passes 58 of 58; the non-browser suite has 3 failures that predate the merge (listed in issue 16's comment). The AC5 gate (`npm test` green) is not met. Open decisions and values for the user are in issue 16 ("Values to ask the user", "Open decisions for the user"). Nothing is deployed, merged to `main` or cut over.
+
 ## Context pointers
 
+- 16 and 15 (wave 6 agent pass): `infra/cf-wave6`. Node export fixture `apps/cloudflare/test/fixtures/node-export.json` (regenerate with `UPDATE_NODE_EXPORT_FIXTURE=1`); `scripts/export-node-sqlite.ts`; `apps/cloudflare/src/ops-import.ts`; `docs/runbooks/cloudflare-cutover.md` (DRAFT).
 - 13: `infra/cf-13-observability-edge`. `observability` (Workers Logs, invocation logs off) in `cloudflare.config.ts`; `packages/platform-core/src/security-headers.ts` as the single source for `GUEST_HTML_SECURITY_HEADERS`/`RECEIPT_SECURITY_HEADERS` (spread by `guest-server.ts` and `local-owner-server.ts`); `docs/runbooks/cloudflare-edge.md` (WAF 10/min login rule, Paystack IP allow-list, HTTPS-only domain, `workers.dev`/preview off). Workerd spec `apps/cloudflare/test/edge-security.spec.ts` (secret-leak capture + header parity). Dashboard/DNS steps remain human.
 - 12b: `infra/cf-12b-restore-runbook`. `docs/runbooks/cloudflare-restore.md` (PITR flow, the two-step route, rebuild from 12a exports via slice 16's `/_ops/import`, and the mandatory post-restore checks incl. Paystack reconciliation and R2-not-rolled-back); `POST /_ops/restore` in `src/ops-routes.ts` with `OpsStorageBookmarks` injected from `this.ctx.storage`. Workerd spec `apps/cloudflare/test/ops-restore.spec.ts`. **Gap:** workerd's local storage has no PITR, so the bookmark round trip is staging-only (slice 15).
 - 12a: `infra/cf-12a-export-alarm`. `src/do-export.ts` (18 store-derived `EXPORT_TABLES`, paged JSONL export to `EXPORTS` keyed `YYYY-MM-DD/<table>.jsonl` in Africa/Lagos, `deleteExpiredExports`, fail-closed `sweepOrphanReceipts`); `SHORTLET_EXPORT_RETENTION_DAYS` (400) and `SHORTLET_RECEIPT_ORPHAN_GRACE_HOURS` (24) via `loadExportConfiguration`; the `daily-export` alarm task in `shortlet-pilot-do.ts` gated once per Lagos day by `storage["export:lastDate"]`, with the alarm now always rescheduling. Workerd spec `apps/cloudflare/test/daily-export.spec.ts`. DPIA note in the issue (personal-data columns in the exported tables).
