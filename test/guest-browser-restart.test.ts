@@ -4,21 +4,21 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Window } from "happy-dom";
-import { createBasicWebRuntime } from "@weaver/web";
+import { createBasicWebRuntime } from "@cylayo/weaver-web";
 import {
   startLocalGuestServer,
   type GuestSurfacePayload,
   type LocalGuestServerHandle,
 } from "../apps/local-guest/src/guest-server.js";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
-import type { A2UIServerMessage, A2UIClientActionMessage } from "@weaver/core";
+import type { A2UIServerMessage, A2UIClientActionMessage } from "@cylayo/weaver-core";
 import { restartFixture } from "./helpers/guest-restart.js";
 
 /**
  * Browser restart proof.
  *
  * This test uses the repository's existing browser harness (happy-dom +
- * @weaver/web) to drive a real Guest server instance A to a chosen stage, then
+ * @cylayo/weaver-web) to drive a real Guest server instance A to a chosen stage, then
  * closes server A entirely and starts a NEW server instance B over the SAME
  * durable SQLite store. The same browser session cookie and thread id are then
  * resumed against instance B. No in-memory state is shared: the LocalGuestApp,

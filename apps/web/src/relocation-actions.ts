@@ -1,4 +1,4 @@
-import type { WebServerEventHandoff } from "@weaver/web";
+import type { WebServerEventHandoff } from "@cylayo/weaver-web";
 import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
 import type { RelocationApplication } from "./relocation-application.js";
 import type { RelocationArtifact, RelocationAction } from "./relocation-artifact.js";

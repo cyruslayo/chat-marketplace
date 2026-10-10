@@ -1,14 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Window } from "happy-dom";
-import { createBasicWebRuntime } from "@weaver/web";
+import { createBasicWebRuntime } from "@cylayo/weaver-web";
 import {
   startLocalGuestServer,
   type GuestTurnSuccess,
   type LocalGuestServerHandle,
 } from "../apps/local-guest/src/guest-server.js";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
-import type { A2UIServerMessage, A2UIClientActionMessage } from "@weaver/core";
+import type { A2UIServerMessage, A2UIClientActionMessage } from "@cylayo/weaver-core";
 
 const CANONICAL_PROMPT = "I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people";
 const IKOYI_TITLE = "Luxury 2-Bedroom Apartment in Old Ikoyi";

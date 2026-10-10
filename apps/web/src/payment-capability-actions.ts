@@ -1,4 +1,4 @@
-import type { WebServerEventHandoff } from "@weaver/web";
+import type { WebServerEventHandoff } from "@cylayo/weaver-web";
 import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
 import { PAYMENT_CAPABILITY_ARTIFACT_KIND, PAYMENT_CAPABILITY_SCHEMA_VERSION, type PaymentCapabilityArtifact } from "./payment-capability-artifact.js";
 import type { PaymentCapabilityApplication } from "./payment-capability-application.js";

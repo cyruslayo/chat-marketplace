@@ -1,14 +1,14 @@
 /**
  * Assistant Preflight Verification
- * Validates TypeScript types, browser client build, vendor Weaver artifacts,
+ * Validates TypeScript types, browser client build, published Weaver dependencies,
  * assistant protocol tests, offline evals, Weaver demo tests, and an offline
  * assistant HTTP/Weaver E2E check WITHOUT calling live Gemini.
  */
 import { execSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { Window } from "happy-dom";
-import { createBasicWebRuntime } from "@weaver/web";
-import type { A2UIServerMessage, A2UIClientActionMessage } from "@weaver/core";
+import { createBasicWebRuntime } from "@cylayo/weaver-web";
+import type { A2UIServerMessage, A2UIClientActionMessage } from "@cylayo/weaver-core";
 import { startLocalGuestServer } from "../apps/local-guest/src/guest-server.js";
 
 console.log("=== 1. Checking TypeScript (tsc --noEmit) ===");
@@ -19,15 +19,11 @@ console.log("\n=== 2. Building Local Guest Browser Client ===");
 execSync("node apps/local-guest/scripts/build-client.mjs", { stdio: "inherit" });
 console.log("✓ Browser client build succeeded.");
 
-console.log("\n=== 3. Verifying Weaver Vendor Artifacts ===");
-execSync("npm run verify:weaver", { stdio: "inherit" });
-console.log("✓ Weaver vendor verification passed.");
-
-console.log("\n=== 4. Running Assistant Protocol and Eval Tests ===");
+console.log("\n=== 3. Running Assistant Protocol and Eval Tests ===");
 execSync("npm run test:assistant", { stdio: "inherit" });
 console.log("✓ Assistant protocol and eval suites passed.");
 
-console.log("\n=== 5. Running Local Guest Weaver Demo Tests ===");
+console.log("\n=== 4. Running Local Guest Weaver Demo Tests ===");
 execSync("npm run test:guest-local", { stdio: "inherit" });
 console.log("✓ Local guest Weaver demo tests passed.");
 

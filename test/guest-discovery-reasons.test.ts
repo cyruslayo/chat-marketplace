@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import type { A2UIServerMessage } from "@weaver/core";
+import type { A2UIServerMessage } from "@cylayo/weaver-core";
 import { discoveryArtifactToA2UI, fitReasons, formatGuestDate, guestAmenityLabel, type DiscoveryUnitProjection } from "../apps/web-agent/src/index.js";
 import { INDICATIVE_RATES_DISCLOSURE } from "../domains/shortlet/src/browse.js";
 import type { GuestTurnResult } from "../apps/local-guest/src/guest-server.js";

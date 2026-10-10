@@ -1,4 +1,4 @@
-import type { WebServerEventHandoff } from "@weaver/web";
+import type { WebServerEventHandoff } from "@cylayo/weaver-web";
 import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
 import type { BookingAmendmentApplication } from "./booking-amendment-application.js";
 import type { BookingAmendmentArtifact } from "./booking-amendment-artifact.js";

@@ -1,4 +1,4 @@
-import type { WebServerEventHandoff } from "@weaver/web";
+import type { WebServerEventHandoff } from "@cylayo/weaver-web";
 import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
 import type { MidStayFailureApplication } from "./mid-stay-failure-application.js";
 import type { MidStayFailureArtifact } from "./mid-stay-failure-artifact.js";

@@ -1,4 +1,4 @@
-import type { A2UIServerMessage } from "@weaver/core";
+import type { A2UIServerMessage } from "@cylayo/weaver-core";
 import {
   discoveryArtifactToA2UI,
   bookingRequestArtifactToA2UI,

@@ -3,7 +3,8 @@
  * Presentation-only browser shell. Weaver renders server-produced A2UI; the
  * browser never owns booking state or executes generated business logic.
  */
-import { createBasicWebRuntime } from "@weaver/web";
+import { createBasicWebRuntime } from "@cylayo/weaver-web";
+import { renderWeaverSurfaceFallback } from "./surface-fallback.js";
 import { icon } from "../../web/src/ui-kit.js";
 import {
   buildListingGallery,
@@ -1519,22 +1520,13 @@ function presentationFor(surface: GuestSurfacePayload): SurfacePresentation {
 
 function fallback(mount: HTMLElement, surface: SurfacePresentation): void {
   // ADR-0074: retain safe explanatory text and conventional navigation when rich UI cannot mount.
-  mount.replaceChildren();
-  mount.dataset.renderer = "fallback";
-  const box = document.createElement("div");
-  box.className = "surface-fallback";
-  const text = document.createElement("p");
-  text.textContent = surface.textFallback ?? fallbackSummary(surface);
-  box.appendChild(text);
-  if (surface.conventionalRoute) {
-    const link = document.createElement("a");
-    link.href = surface.conventionalRoute;
-    link.className = "fallback-link";
-    link.textContent = surface.conventionalRouteLabel ?? "Open full details";
-    box.appendChild(link);
-    trackTelemetry("conventional-route-fallback");
-  }
-  mount.appendChild(box);
+  renderWeaverSurfaceFallback({
+    mount,
+    text: surface.textFallback ?? fallbackSummary(surface),
+    ...(surface.conventionalRoute === undefined ? {} : { conventionalRoute: surface.conventionalRoute }),
+    ...(surface.conventionalRouteLabel === undefined ? {} : { conventionalRouteLabel: surface.conventionalRouteLabel }),
+    onConventionalRouteFallback: () => trackTelemetry("conventional-route-fallback"),
+  });
 }
 
 function showReopen(): void {

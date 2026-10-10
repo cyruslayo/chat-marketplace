@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { A2UIServerMessage } from "@weaver/core";
+import type { A2UIServerMessage } from "@cylayo/weaver-core";
 import { LocalGuestEnvironment, type LocalGuestFixtureConfig } from "../../apps/local-guest/src/fixture.js";
 import { startLocalGuestServer, type GuestStateSnapshot, type GuestSurfacePayload, type GuestTurnResult, type GuestTurnSuccess } from "../../apps/local-guest/src/guest-server.js";
 

@@ -1,0 +1,12 @@
+
+not ok 67 - AC3 — Tapping a photo, or "Show all", opens a full-screen viewer at that photo, with previous and next buttons, arrow keys, swipe and an "X of N" count. Esc, the close button or a tap outside closes it, and focus returns to what opened it
+    Timeout waiting for browser condition at http://127.0.0.1:63942/stays/unit-lagos-ikoyi-001; body: Shortlet
+  code: 'ERR_TEST_FAILURE'
+    async TestContext.<anonymous> (C:\AI2026\chat-marketplace\test\listing-gallery-chromium.test.ts:143:7)
+# tests 166
+# pass 164
+# fail 1
+# cancelled 0
+# skipped 1
+# duration_ms 912184.7822
+

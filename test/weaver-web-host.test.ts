@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { A2UI_V091_BASIC_CATALOG_ID, type A2UIServerMessage } from "@weaver/core";
-import { type BasicResourcePolicy, type WebServerEventHandoff } from "@weaver/web";
+import { A2UI_V091_BASIC_CATALOG_ID, type A2UIServerMessage } from "@cylayo/weaver-core";
+import { type BasicResourcePolicy, type WebServerEventHandoff } from "@cylayo/weaver-web";
 import { Window } from "happy-dom";
 import { discoveryArtifactToA2UI } from "../apps/web-agent/src/index.js";
 import { createWeaverWebHost } from "../apps/web/src/index.js";

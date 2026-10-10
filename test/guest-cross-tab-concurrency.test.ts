@@ -9,8 +9,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Window } from "happy-dom";
-import { createBasicWebRuntime } from "@weaver/web";
-import type { A2UIServerMessage, A2UIClientActionMessage } from "@weaver/core";
+import { createBasicWebRuntime } from "@cylayo/weaver-web";
+import type { A2UIServerMessage, A2UIClientActionMessage } from "@cylayo/weaver-core";
 import {
   startLocalGuestServer,
   type GuestSurfacePayload,
@@ -99,7 +99,10 @@ async function startMultiTabContext(config: Partial<LocalGuestFixtureConfig> = {
   const server = startLocalGuestServer({ port: 0, environment });
   const port = await server.listen();
   const base = `http://127.0.0.1:${port}`;
-  const home = await fetch(base);
+  // Parallel integration probes reset fetch requests intermittently without explicit connection closure.
+  // These tests cover command concurrency, not keep-alive behavior.
+  const connectionPolicy = { connection: "close" };
+  const home = await fetch(base, { headers: connectionPolicy });
   const cookie = home.headers.get("set-cookie")?.split(";")[0];
   assert.ok(cookie, "server must issue authenticated session cookie");
   await home.text();
@@ -113,6 +116,7 @@ async function startMultiTabContext(config: Partial<LocalGuestFixtureConfig> = {
       method: "POST",
       headers: {
         "content-type": "application/json",
+        ...connectionPolicy,
         ...(tabCookie ? { cookie: tabCookie } : {}),
       },
       body: JSON.stringify({ threadId, ...(body as Record<string, unknown>) }),
@@ -122,7 +126,7 @@ async function startMultiTabContext(config: Partial<LocalGuestFixtureConfig> = {
 
   const state = async (tabCookie = cookie): Promise<GuestStateSnapshot | { ok: false; code: string }> => {
     const response = await fetch(`${base}/api/state?threadId=${encodeURIComponent(threadId)}`, {
-      headers: tabCookie ? { cookie: tabCookie } : {},
+      headers: { ...connectionPolicy, ...(tabCookie ? { cookie: tabCookie } : {}) },
     });
     return (await response.json()) as GuestStateSnapshot | { ok: false; code: string };
   };

@@ -1,4 +1,4 @@
-import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage } from "@weaver/core";
+import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage } from "@cylayo/weaver-core";
 import type { BookingContractArtifact } from "../../web/src/booking-contract-artifact.js";
 import { confirmationSteps } from "./confirmation-presentation.js";
 import { formatBookingMoney, ticketFactComponents, ticketFactIds } from "./booking-presentation.js";

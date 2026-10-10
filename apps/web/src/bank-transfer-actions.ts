@@ -1,4 +1,4 @@
-import type { WebServerEventHandoff } from "@weaver/web";
+import type { WebServerEventHandoff } from "@cylayo/weaver-web";
 import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
 import { BANK_TRANSFER_ARTIFACT_KIND, BANK_TRANSFER_SCHEMA_VERSION, type BankTransferArtifact } from "./bank-transfer-artifact.js";
 import type { BankTransferPaymentApplication } from "./bank-transfer-application.js";

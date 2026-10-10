@@ -1,4 +1,4 @@
-import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage } from "@weaver/core";
+import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage } from "@cylayo/weaver-core";
 import type { DepositClaimArtifact } from "../../web/src/deposit-claim-artifact.js";
 import { EVENTS } from "../../web/src/deposit-claim-actions.js";
 import { GUEST_GLOSSARY } from "./guest-content.js";

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import type { A2UIServerMessage } from "@weaver/core";
+import type { A2UIServerMessage } from "@cylayo/weaver-core";
 import { renderNoScriptConversationHtml, type GuestStateSnapshot, type GuestSurfacePayload, type GuestTurnResult } from "../apps/local-guest/src/guest-server.js";
 import { restartFixture, type RestartStage } from "./helpers/guest-restart.js";
 

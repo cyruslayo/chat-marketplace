@@ -1,4 +1,4 @@
-import type { WebServerEventHandoff } from "@weaver/web";
+import type { WebServerEventHandoff } from "@cylayo/weaver-web";
 import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
 import type { GuestConductApplication } from "./guest-conduct-application.js";
 import type { GuestConductArtifact } from "./guest-conduct-artifact.js";

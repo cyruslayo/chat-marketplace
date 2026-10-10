@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { validateA2UIServerMessage, type A2UIComponent, type A2UIServerMessage } from "@weaver/core";
+import { validateA2UIServerMessage, type A2UIComponent, type A2UIServerMessage } from "@cylayo/weaver-core";
 import { startLocalPilotServer } from "../apps/pilot/src/local-pilot-server.js";
 import { bootstrapLocalPilot, localPilotPaths } from "../apps/pilot/src/local-pilot.js";
 import { createWeaverWebHost } from "../apps/web/src/index.js";

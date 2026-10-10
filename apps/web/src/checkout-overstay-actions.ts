@@ -1,4 +1,4 @@
-import type { WebServerEventHandoff } from "@weaver/web";
+import type { WebServerEventHandoff } from "@cylayo/weaver-web";
 import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
 import type { CheckoutOverstayApplication } from "./checkout-overstay-application.js";
 import type { CheckoutArtifact } from "./checkout-overstay-artifact.js";

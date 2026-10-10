@@ -4,7 +4,7 @@ import { LocalGuestApp, renderGuestShellHtml, startLocalGuestServer } from "../a
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { formatGuestHistorySummary, guestSurfaceStatusMessage } from "../apps/local-guest/src/conversational-shell.js";
 import { SEE_ALL_DISCOVERY_EVENT } from "../apps/web-agent/src/discovery-a2ui.js";
-import type { A2UIServerMessage } from "@weaver/core";
+import type { A2UIServerMessage } from "@cylayo/weaver-core";
 
 test("mobile conversation shell keeps one timeline, one workspace slot, and a text composer", () => {
   const html = renderGuestShellHtml();

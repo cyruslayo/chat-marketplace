@@ -1,4 +1,4 @@
-import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage } from "@weaver/core";
+import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage } from "@cylayo/weaver-core";
 import type { CheckInSupportArtifact } from "../../web/src/checkin-support-artifact.js";
 import { CHECK_IN_CONFIRM_ACCESS_EVENT, CHECK_IN_REPORT_PROBLEM_EVENT, CHECK_IN_REQUEST_SUPPORT_EVENT } from "../../web/src/checkin-support-actions.js";
 export function checkInSupportArtifactToA2UI({ artifact, surfaceId }: { readonly artifact: CheckInSupportArtifact; readonly surfaceId: string }): readonly A2UIServerMessage[] {

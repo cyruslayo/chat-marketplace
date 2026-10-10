@@ -1,4 +1,4 @@
-import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage } from "@weaver/core";
+import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage } from "@cylayo/weaver-core";
 import type { CancellationArtifact } from "../../web/src/cancellation-artifact.js";
 import { CANCELLATION_CANCEL_EVENT, CANCELLATION_NO_SHOW_EVENT, CANCELLATION_REVIEW_EVENT, cancellationActionContext } from "../../web/src/cancellation-actions.js";
 import { GUEST_GLOSSARY } from "./guest-content.js";

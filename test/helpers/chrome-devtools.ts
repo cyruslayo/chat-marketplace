@@ -3,6 +3,7 @@ import { createServer } from "node:net";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { focusAttemptExpression, synchronousFocusExpression, waitForStableFocus } from "./focus-stability.js";
 
 const CHROME_PATH = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
 
@@ -237,6 +238,7 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
 
     const attached = await send<{ sessionId: string }>("Target.attachToTarget", { targetId, flatten: true });
     const sessionId = attached.sessionId;
+    let javaScriptEnabled = true;
 
     await send("Page.enable", {}, sessionId);
     await send("Runtime.enable", {}, sessionId);
@@ -342,22 +344,15 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
     }
 
     async function focus(selector: string): Promise<void> {
-      // Re-focus on every poll: a surface that just rendered moves focus to itself one animation frame later
-      // (apps/local-guest/src/client.ts), which can land after a single focus() call. Focus must hold across two
-      // consecutive polls; a persistent trap still fails.
-      const refocus = `(() => {
-        const el = document.querySelector(${JSON.stringify(selector)});
-        const held = Boolean(el) && document.activeElement === el;
-        if (el && !held && typeof el.focus === "function") el.focus();
-        return held;
-      })()`;
-      const deadline = Date.now() + 8000;
-      let heldPolls = 0;
-      while (Date.now() < deadline) {
-        heldPolls = await evaluate<boolean>(refocus) ? heldPolls + 1 : 0;
-        if (heldPolls >= 2) return;
-        await new Promise((r) => setTimeout(r, 50));
-      }
+      const activated = await Promise.race([
+        send("Page.bringToFront", {}, sessionId).then(() => true),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 1_000)),
+      ]);
+      if (!activated) throw new Error("Timed out activating browser page before focus");
+      const attempt = javaScriptEnabled
+        ? () => evaluate<boolean | "active" | "stable">(focusAttemptExpression(selector))
+        : () => evaluate<boolean | "active" | "stable">(synchronousFocusExpression(selector));
+      if (await waitForStableFocus(attempt)) return;
       const url = await evaluate<string>("location.href").catch(() => "<unavailable>");
       const active = await evaluate<string>("document.activeElement ? document.activeElement.tagName + (document.activeElement.id ? '#' + document.activeElement.id : '') + '.' + document.activeElement.className : '<none>'").catch(() => "<unavailable>");
       throw new Error(`Timeout focusing ${selector} at ${safeDiagnosticUrl(url)}; focus is on ${active}`);
@@ -441,6 +436,7 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
 
     async function setJavaScriptEnabled(enabled: boolean): Promise<void> {
       await send("Emulation.setScriptExecutionDisabled", { value: !enabled }, sessionId);
+      javaScriptEnabled = enabled;
     }
 
     async function insertText(text: string): Promise<void> {

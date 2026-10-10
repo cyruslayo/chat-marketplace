@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { checkInSupportArtifactToA2UI } from "../apps/web-agent/src/checkin-support-a2ui.js";
-import { A2UI_V091_BASIC_CATALOG_ID } from "@weaver/core";
+import { A2UI_V091_BASIC_CATALOG_ID } from "@cylayo/weaver-core";
 import type { CheckInSupportArtifact } from "../apps/web/src/checkin-support-artifact.js";
 function artifact(overrides: Partial<CheckInSupportArtifact["facts"]> = {}, actions: CheckInSupportArtifact["actions"] = []): CheckInSupportArtifact { const facts: CheckInSupportArtifact["facts"] = { reservationId: "res-1", contractId: "contract-1", unitId: "unit-1", checkInDate: "2026-08-10", earliestAccessTime: "14:00", latestPermittedArrival: "22:00", timezone: "Africa/Lagos", supportStatus: "scheduled", humanSupportAvailable: true, accessStatus: "awaiting_access", hasBlockingComplaint: false, revenueHeld: false, ...overrides }; return { id: "check-in-support:res-1", kind: "shortlet.check-in-support", schemaVersion: "shortlet.check-in-support/v1", projectionVersion: "version-1", facts, actions, sensitivity: "booking-sensitive" }; }
 test("A2UI v0.9.1 Basic Catalog renders deterministic WAT arrival and support availability", () => { const result = checkInSupportArtifactToA2UI({ artifact: artifact(), surfaceId: "surface-1" }); assert.equal(result[0].version, "v0.9.1"); assert.equal("createSurface" in result[0] ? result[0].createSurface.catalogId : undefined, A2UI_V091_BASIC_CATALOG_ID); assert.deepEqual(result, checkInSupportArtifactToA2UI({ artifact: artifact(), surfaceId: "surface-1" })); const text = JSON.stringify(result); assert.match(text, /14:00/); assert.match(text, /22:00/); assert.match(text, /Human Incident Support/); });

@@ -3,7 +3,7 @@ import test from "node:test";
 import {
   createBasicCatalogV091Registration,
   createWeaverRuntime,
-} from "@weaver/core";
+} from "@cylayo/weaver-core";
 import {
   createWebAgentAdapter,
   createWeaverWebAgentAdapter,

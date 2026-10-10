@@ -422,6 +422,10 @@ _Avoid_: Gross Booking Value, Operator Net, Amount Due Now
 The single review the Primary Guest may submit after a paid booking reaches completed-stay status with Verified Access.
 _Avoid_: Imported testimonial, operator endorsement, unverified rating
 
+**Saved Stay**:
+A Unit a Guest has saved to revisit and request later; it records only the Unit and when it was saved, never a price or availability, and moves from the device to the Guest Account on sign-in.
+_Avoid_: Wishlist, like, shortlist (the concierge's per-search list)
+
 **Instant Book**:
 A booking mode in which authoritative availability permits a timed hold and automatic confirmation after verified payment.
 _Avoid_: Request to book

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { A2UI_V091_BASIC_CATALOG_ID } from "@weaver/core";
+import { A2UI_V091_BASIC_CATALOG_ID } from "@cylayo/weaver-core";
 import { createMidStayFailureWebAgentAdapter } from "../apps/web-agent/src/presentation.js";
 import { makeApplication } from "./mid-stay-fixtures.js";
 

@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { A2UI_V091_BASIC_CATALOG_ID } from "@weaver/core";
+import { A2UI_V091_BASIC_CATALOG_ID } from "@cylayo/weaver-core";
 import { bookingContractArtifactToA2UI } from "../apps/web-agent/src/booking-contract-a2ui.js";
 import type { BookingContractArtifact } from "../apps/web/src/booking-contract-artifact.js";
 

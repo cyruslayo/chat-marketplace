@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import type { WebServerEventHandoff } from "@weaver/web";
+import type { WebServerEventHandoff } from "@cylayo/weaver-web";
 import { Window } from "happy-dom";
 import { discoveryArtifactToA2UI } from "../apps/web-agent/src/index.js";
 import {

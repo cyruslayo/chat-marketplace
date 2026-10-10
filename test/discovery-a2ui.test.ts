@@ -8,7 +8,7 @@ import {
   type A2UIServerMessage,
   type HydratedComponentInstance,
   type WeaverRuntime,
-} from "@weaver/core";
+} from "@cylayo/weaver-core";
 import { discoveryArtifactToA2UI } from "../apps/web-agent/src/index.js";
 import { UnitDiscoveryQuery, UnitRepository, seedIssue01Units } from "../domains/shortlet/src/index.js";
 import { InMemoryAuditLog, InMemoryTelemetry } from "../packages/platform-core/src/index.js";

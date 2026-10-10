@@ -1,4 +1,4 @@
-import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage } from "@weaver/core";
+import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage } from "@cylayo/weaver-core";
 import { CONDITIONAL_OFFER_ACCEPT_EVENT } from "../../web/src/conditional-offer-actions.js";
 import type { ConditionalOfferArtifact } from "../../web/src/conditional-offer-artifact.js";
 import { bookingProgressText, formatBookingDeadline, formatBookingMoney, ticketFactComponents, ticketFactIds } from "./booking-presentation.js";

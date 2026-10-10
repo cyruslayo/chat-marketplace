@@ -1,0 +1,12 @@
+{
+  "width": 1280,
+  "height": 900,
+  "documentWidth": 1280,
+  "label": "Your message",
+  "headings": [
+    "H1: Shortlet",
+    "H2: Conversation",
+    "H2: Find a place to stay"
+  ],
+  "visibleControls": 7
+}

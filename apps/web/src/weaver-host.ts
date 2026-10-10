@@ -1,11 +1,11 @@
-import type { A2UIServerMessage, MessageProcessorResult } from "@weaver/core";
+import type { A2UIServerMessage, MessageProcessorResult } from "@cylayo/weaver-core";
 import {
   createBasicWebRuntime,
   type BasicResourcePolicy,
   type WebServerEventHandoff,
   type WebSurfaceMountOptions,
   type WebSurfaceMountResult,
-} from "@weaver/web";
+} from "@cylayo/weaver-web";
 
 export interface WeaverWebHostOptions {
   readonly onServerEvent?: (event: WebServerEventHandoff) => void;
