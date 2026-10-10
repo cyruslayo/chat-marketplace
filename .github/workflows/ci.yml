@@ -1,0 +1,66 @@
+# CI. Commands and what each job covers are in docs/testing/ci.md.
+#
+# Required check (configure in branch protection, not here): `verify`.
+# `browser` runs the real-Chromium tests on pushes to main and on manual runs only. It is not a required check.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run test:workers
+      - run: npm run test:non-browser
+
+  browser:
+    name: browser
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Locate the runner's Google Chrome
+        run: |
+          chrome="$(command -v google-chrome || command -v google-chrome-stable || true)"
+          if [ -z "$chrome" ]; then
+            echo "Google Chrome is not installed on this runner image" >&2
+            exit 1
+          fi
+          echo "SHORTLET_CHROME_PATH=$chrome" >> "$GITHUB_ENV"
+          "$chrome" --version
+      - name: Real-browser tests (one file at a time)
+        env:
+          # The runner user cannot start Chrome's sandbox; see test/helpers/chrome-devtools.ts.
+          SHORTLET_CHROME_NO_SANDBOX: "1"
+        run: npm run test:browser

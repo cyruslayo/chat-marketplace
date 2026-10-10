@@ -28,7 +28,10 @@ test("AC2: npm run check type-checks both the Node tree and apps/cloudflare with
 });
 
 test("AC3: npm test neither runs nor breaks on the .spec.ts files, and still passes", () => {
-  const runner = readFileSync(new URL("scripts/run-tests.mjs", root), "utf8");
+  // The file listing moved to scripts/test-phases.mjs when `--non-browser` was added; run-tests.mjs imports it.
+  const runner =
+    readFileSync(new URL("scripts/run-tests.mjs", root), "utf8") +
+    readFileSync(new URL("scripts/test-phases.mjs", root), "utf8");
   assert.match(runner, /readdirSync\(join\(root, "test"\)\)/);
   assert.match(runner, /name\.endsWith\("\.test\.ts"\)/);
   assert.match(

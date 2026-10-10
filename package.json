@@ -7,6 +7,8 @@
   },
   "scripts": {
     "test": "node scripts/run-tests.mjs",
+    "test:non-browser": "node scripts/run-tests.mjs --non-browser",
+    "test:browser": "node scripts/run-tests.mjs --browser-only",
     "check": "tsc --noEmit && tsc --noEmit -p apps/cloudflare && tsc --noEmit -p apps/cloudflare/tsconfig.test.json && tsc --noEmit -p apps/cloudflare/tsconfig.tooling.json && node scripts/check-worker-bundle.mjs",
     "check:worker-bundle": "node scripts/check-worker-bundle.mjs",
     "test:workers": "node scripts/check-worker-bundle.mjs && vitest run --config apps/cloudflare/vitest.config.ts",
