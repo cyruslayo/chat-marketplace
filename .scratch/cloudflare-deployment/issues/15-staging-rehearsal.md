@@ -46,7 +46,7 @@ Prepared on `infra/cf-15-staging-prep`. Status stays `ready-for-human`. No rehea
 - Runbook: `docs/runbooks/cloudflare-staging-rehearsal.md` (steps 1 to 8, the preconditions and the full evidence-log template).
 - Harness change: `scripts/pilot-acceptance-rodney.ps1` accepts `-BaseUrl` or `SHORTLET_BASE_URL` (validated by `scripts/pilot-base-url.ts`); `scripts/pilot-agent-smoke.ts` refuses a base URL, since it is in-process only.
 - Open gates (ADR 0095, ADR 0065): counsel approval, Cloudflare and Google Gemini contracts and processor roles, the retention schedule, and the DPIA review. Real personal data must not be used on staging until these close. Staging uses Paystack test keys and synthetic data only.
-- Blocking questions for the user before the rehearsal: the real staging origin (`cloudflare.config.ts` still has the placeholder `staging.pilot.shortlet.example`); a build host where `npm exec cf -- build --mode staging` works (it fails on the Windows install, issue 10b); whether a remote agent smoke is needed (the current smoke is in-process only).
+- User decisions: the staging origin is `https://staging.shortlet.ng` (set in `cloudflare.config.ts`); the agent smoke stays in-process with no remote HTTP mode, so the remote journeys are the Rodney acceptance run plus human-run real-Chrome journeys. Still open before the build: a host where `npm exec cf -- build --mode staging` works (it fails on the Windows install, issue 10b).
 
 Evidence log (one row per step; PASS, FAIL or BLOCKED; references only, never secret values, cookies, tokens, card data or webhook bodies):
 

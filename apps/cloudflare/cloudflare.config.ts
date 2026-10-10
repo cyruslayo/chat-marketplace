@@ -17,7 +17,7 @@ type PilotEnvironment = "development" | "staging" | "production";
 /** The public origin each deployment serves (the Paystack callback origin must equal this, ADR 0087). */
 const PUBLIC_ORIGIN: Record<PilotEnvironment, string> = {
   development: "https://localhost:5173",
-  staging: "https://staging.pilot.shortlet.example",
+  staging: "https://staging.shortlet.ng",
   production: "https://pilot.shortlet.example",
 };
 

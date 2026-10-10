@@ -30,13 +30,13 @@ Known tooling and configuration gaps to resolve before the build (each is record
    (`node_modules/@cloudflare/vite-plugin/bin/cf-vite`) and gets `ENOENT` (issues 10b, 13). Run this rehearsal from a
    host where `npm exec cf -- build --mode staging` succeeds. If it does not succeed anywhere, stop: this is a
    blocker, not a step to work around.
-2. **The staging origin is a placeholder.** `apps/cloudflare/cloudflare.config.ts` sets
-   `PUBLIC_ORIGIN.staging` to `https://staging.pilot.shortlet.example`. The real staging origin (a custom domain
-   or the Workers route) must be decided and set before the build, because `SHORTLET_PUBLIC_ORIGIN` and the Paystack
-   callback base URL depend on it. This is a user decision; it is not chosen in this runbook.
-3. **`pilot:local:agent-smoke` cannot target a remote origin.** It runs the assistant in-process against a live model
-   and has no HTTP surface. It refuses a base URL before any model call. The staging journeys use the Rodney harness
-   (`pilot:acceptance:rodney` with `SHORTLET_BASE_URL`). Whether a remote smoke is needed is an open question.
+2. **The staging origin is `https://staging.shortlet.ng`** (confirmed by the user). `apps/cloudflare/cloudflare.config.ts`
+   sets `PUBLIC_ORIGIN.staging` to it. Before the build, confirm that this hostname routes to the staging Worker, because
+   `SHORTLET_PUBLIC_ORIGIN` and the Paystack callback base URL depend on it. The production origin is unchanged.
+3. **`pilot:local:agent-smoke` is in-process only, and stays that way by user decision.** It runs the assistant against a
+   live model with no HTTP surface, and it refuses a base URL before any model call. It is never run against staging.
+   The remote journeys are the Rodney acceptance run (`pilot:acceptance:rodney` with `SHORTLET_BASE_URL`) plus the
+   human-run real-Chrome journeys.
 4. **The Rodney harness payment steps assume the local deterministic PSP.** The base-URL change lets the harness run
    against staging, but its downstream payment and confirmation assertions were written for the local fixture. Inspect
    any failure at the payment step before treating it as a product defect. The Paystack test-mode card payment in
@@ -121,8 +121,8 @@ See `docs/pilot-deployment.md` ("Remote operations"). Do not paste these values 
 
 ## 3. Journeys against the staging origin (issue step 3)
 
-1. **Agent smoke: not applicable to staging.** `npm run pilot:local:agent-smoke` refuses a base URL by design (gap 3).
-   Record "not applicable to staging" in the evidence log, with the reason.
+1. **Agent smoke: not run against staging.** `npm run pilot:local:agent-smoke` is in-process only and refuses a base URL
+   (gap 3). Record "not applicable to staging" in the evidence log, with the reason. The remote journeys are steps 2 and 3.
 2. **Rodney acceptance against staging:**
 
    ```powershell
