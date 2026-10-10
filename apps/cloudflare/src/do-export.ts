@@ -8,7 +8,9 @@ import type { SqlDatabase, SqlRow, SqlValue } from "../../../packages/platform-c
  *
  * Durable Object point-in-time recovery covers 30 days, so a daily off-object copy gives a second, replayable record
  * (ADR 0079). Every application table is exported unless it is listed in DAILY_EXPORT_EXCLUDED with the ADR that requires
- * the exclusion. One JSONL object per table per day holds a full snapshot of that table. Rows are written in rowid order,
+ * the exclusion. One JSONL object per table per day holds that table's rows as read during the day's first alarm (F6). The
+ * tables are read one after another, across awaits, so a day's objects are per-table snapshots, not one point-in-time
+ * snapshot across tables. Rows are written in rowid order,
  * in the transport encoding the import route reads (ops-import.ts), so a day's objects can be loaded back.
  *
  * Table names come from the stores themselves, not invented. `manual_transfer_receipts` exports its metadata only:
@@ -142,7 +144,8 @@ function encodedLine(row: SqlRow): string {
 }
 
 /**
- * Writes one JSONL object for the table: a full snapshot in rowid order, one line per row. Pages are keyed on rowid. The
+ * Writes one JSONL object for the table: the table's rows as read in pages, in rowid order, one line per row (F6: a per-table
+ * snapshot, not a point-in-time snapshot across tables). Pages are keyed on rowid. The
  * object is streamed to R2 in parts of at least R2_MIN_PART_BYTES, so memory holds one part and one page, not the table.
  * A table that does not exist in this deployment still gets its (empty) object, so each day's export has one key per
  * listed table and a restore reads a uniform set. Returns the row count.

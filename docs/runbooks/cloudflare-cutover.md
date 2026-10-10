@@ -128,7 +128,9 @@ npx tsx scripts/export-node-sqlite.ts --pull "<VERIFY_DIR>"
 npx tsx scripts/export-node-sqlite.ts --compare "<EXPORT_DIR>/manifest.json" "<VERIFY_DIR>/verify.json"
 ```
 
-`--pull` reads each table back from the object (read-only) and writes `verify.json` and the table files there.
+`--pull` reads each table back from the object (read-only) and writes `verify.json` and the table files there. The five
+bearer-credential tables (`DAILY_EXPORT_EXCLUDED`) are listed in `verify.json` with counts and hashes, so the compare works, but
+they have no table file: the object refuses to export them (F4).
 `--compare` must print `match`. A `mismatch` names the tables that differ. Stop on a mismatch. Do not switch traffic.
 Keep `verify.json` with the log. The verify response also carries `schemaVersion` and `cutoverCompletedAt`: record both
 (expected: the migration count and no timestamp).
@@ -152,8 +154,10 @@ only after steps 5 and 6 have passed:
 npx tsx scripts/export-node-sqlite.ts --cutover-complete
 ```
 
-It prints the timestamp. Calling it again returns the first timestamp. Nothing in the repository clears the flag. Record the
-time in the log. `ROLLBACK_WINDOW` starts here.
+It prints the timestamp. Calling it again returns the first timestamp. Then `GET /_ops/status` must return that same
+`cutoverCompletedAt`. No route or script in this repository clears the flag.
+A point-in-time restore rewinds the object's storage and can clear it, so check `GET /_ops/status` after any restore (restore
+runbook, section 3). Record the time in the log. `ROLLBACK_WINDOW` starts here.
 
 **7.2 Switch DNS.** Point the public hostname at the Cloudflare Worker route. The route and the TTL are **Needs user**.
 Lower the TTL in advance. Record the time of the switch.
@@ -194,7 +198,7 @@ R3. **Find the rows added, changed or deleted after cutover.** The export files 
     LC_ALL=C comm -23 "<TMP>/before.txt" "<TMP>/after.txt" > "<REMOVED_DIR>/<table>.jsonl" # deleted or changed (old value)
     ```
 
-    Every table gets one delta file, empty if nothing changed. A non-empty `<REMOVED_DIR>` file is a row the object no
+    Every table gets one delta file, empty if nothing changed, except the five bearer-credential tables, which are not pulled (step 5). A non-empty `<REMOVED_DIR>` file is a row the object no
     longer has. **Known drift risk:** the import is upsert-only and has no delete path (D1), so R5 cannot remove a row from
     Node. Any non-empty removed set stops the rollback until a person has reviewed each row and recorded the decision in
     the log. The removed set is only as complete as the cutover export: keep `<EXPORT_DIR>` with the log. The risk grows with
@@ -226,7 +230,8 @@ R5. **Apply the delta to the frozen Node file.** Use the copy from step 1, not t
     ```
 
     The import upserts changed rows on their primary key and writes the receipts into the Node blob table. It checks
-    each receipt against its SHA-256 first. It never deletes.
+    each receipt against its SHA-256 first. It never deletes. The five bearer-credential tables are skipped, so no session or
+    sign-in challenge is written back to Node (F4): sessions are re-established in Node after a rollback.
 
 R6. **Restore the Node pilot.** Start it against `<RESTORED_DB_PATH>`. Point DNS back at the Node origin. Restore the
     Paystack callback and webhook URLs recorded in step 6. Run the Node smoke tests.
@@ -242,8 +247,9 @@ made after cutover, and changes in the tables the daily export covers.
 
 **What the daily export is (issue 12a, widened by issue 16, `apps/cloudflare/src/do-export.ts`).** The object's alarm writes one
 file per table to the private `EXPORTS` bucket (`shortlet-pilot-production-exports`), at the key `YYYY-MM-DD/<table>.jsonl`. The
-date is the Africa/Lagos day (ADR 0078). Each file is a full snapshot of its table: one line per row, in rowid order, in the table's
-own column order, encoded as the import route reads it (a BLOB is `{"$bytes": ...}`). A table that does not exist in the object gets
+date is the Africa/Lagos day (ADR 0078). Each file holds one table's rows as read during that alarm, in pages: one line per row, in rowid order, in the table's
+own column order, encoded as the import route reads it (a BLOB is `{"$bytes": ...}`). The tables are read one after another, so
+the day's files are per-table snapshots, not one point-in-time snapshot across tables (F6). A table that does not exist in the object gets
 an empty file. The export covers **every application table except the five bearer-credential tables in `DAILY_EXPORT_EXCLUDED`**
 (issue 16, delegated decision of 10 Oct 2026). It has no checksums, no manifest and no timestamp. It is written once per Lagos day,
 at the first alarm of that day, so rows written after that alarm are not in it. The bucket keeps 400 days by default

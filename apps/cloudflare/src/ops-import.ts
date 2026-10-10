@@ -48,7 +48,8 @@ export function assertSchemaCurrent(database: SqlDatabase, requiredVersion: numb
 }
 
 /**
- * Refuses once the one-way cutover flag is set (D1). Nothing in this module or in the import routes clears it.
+ * Refuses once the one-way cutover flag is set (D1). Nothing in this module or in the import routes clears it. A point-in-time
+ * restore rewinds the object's storage, flag included, so it can clear the flag (restore runbook, section 3, and GET /_ops/status).
  */
 export function assertMigrationOpen(database: SqlDatabase): void {
   let completedAt: string | null;
