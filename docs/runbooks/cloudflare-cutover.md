@@ -235,16 +235,74 @@ R7. **Reconcile money.** For every Paystack transaction that arrived after the s
 
 ## 10. Post-window reconciliation
 
-Run this only when `ROLLBACK_WINDOW` has closed. It finds drift the rollback comparison cannot see, and it is the check the
-window's closing condition relies on.
+Run this only when `ROLLBACK_WINDOW` has closed. It finds drift the rollback comparison (R3 and R4) cannot see: deletes
+made after cutover, and changes in the tables the daily export covers.
 
-1. Pull the object (`--pull`) and compare its table checksums with the latest daily export in the `EXPORTS` bucket (issue
-   12a), read back through the restore path in issue 12b. Compare row sets in both directions (`comm -3` on sorted lines),
-   so deletes are caught as well as additions. **The daily export's file layout is to be confirmed against 12a and 12b
-   before this step is first run.**
-2. Compare the object's receipt keys with the same export's receipt keys, both ways.
-3. Record every discrepancy in the log. Any discrepancy means the window did not close: `ROLLBACK_WINDOW` extends, and
-   this step runs again after the next full payout cycle.
+**What the daily export is (issue 12a, `apps/cloudflare/src/do-export.ts`).** The object's alarm writes one file per
+table to the private `EXPORTS` bucket (`shortlet-pilot-production-exports`), at the key `YYYY-MM-DD/<table>.jsonl`. The
+date is the Africa/Lagos day (ADR 0078). Each file holds one `JSON.stringify` line per row, in rowid order, with the
+table's own column order and no `$bytes` encoding. A table that does not exist in the object gets an empty file. The
+export covers **only the 18 tables in `EXPORT_TABLES`**. It has no checksums, no manifest and no timestamp. It is written
+once per Lagos day, at the first alarm of that day, so rows written after that alarm are not in it. The bucket keeps
+400 days by default (`SHORTLET_EXPORT_RETENTION_DAYS`).
+
+1. **Choose the export day.** List the `EXPORTS` bucket and take the newest `YYYY-MM-DD/` prefix. Follow `--cursor`
+   across pages. Download that day's 18 table files into `<RECON_DIR>/export/`:
+
+   ```bash
+   npm exec cf -- r2 objects list --bucket-name "shortlet-pilot-production-exports" --mode production
+   npm exec cf -- r2 objects get "YYYY-MM-DD/<table>.jsonl" --bucket-name "shortlet-pilot-production-exports" --mode production \
+     > "<RECON_DIR>/export/<table>.jsonl"
+   ```
+
+   The shell redirection is the output method, as in R4. The export has no manifest to check the bytes against, so the
+   method is confirmed on a synthetic export file on staging before production (checklist C7).
+
+2. **Pull the object.** Run `--pull "<POST_DIR>"` (the command in step 5). Its `<table>.jsonl` files are canonical: keys
+   sorted, lines sorted, BLOBs as `{"$bytes": ...}`. They cover all application tables. Use only the 18 `EXPORT_TABLES`
+   files.
+
+3. **Bring both sides to one form.** For each of the 18 tables, sort the keys of every line and then sort the lines
+   (`jq` is assumed; confirm it exists before the first run):
+
+   ```bash
+   jq -S -c . "<RECON_DIR>/export/<table>.jsonl" | LC_ALL=C sort > "<RECON_DIR>/before/<table>.txt"
+   jq -S -c . "<POST_DIR>/<table>.jsonl" | LC_ALL=C sort > "<RECON_DIR>/after/<table>.txt"
+   ```
+
+   `manual_transfer_receipts` is exported with five columns only (`receipt_id, transfer_id, content_type, object_key,
+   size_bytes`; see `PROJECTIONS` in `do-export.ts`). Project the pulled file to those five keys before comparing:
+   `jq -S -c '{receipt_id, transfer_id, content_type, object_key, size_bytes}'`.
+
+4. **Compare in both directions.** Use the table's primary key, as the import uses it (`tableShape` in
+   `apps/cloudflare/src/ops-import.ts`), to classify each differing line:
+
+   ```bash
+   LC_ALL=C comm -23 "<RECON_DIR>/before/<table>.txt" "<RECON_DIR>/after/<table>.txt"   # in the export, not now
+   LC_ALL=C comm -13 "<RECON_DIR>/before/<table>.txt" "<RECON_DIR>/after/<table>.txt"   # now, not in the export
+   ```
+
+   - An export line whose key is absent from the object is a **deleted row**. It is a discrepancy.
+   - An export line whose key is present with different content is a **changed row**. It is a discrepancy, unless the
+     table's own timestamp column shows the change happened after the export day.
+   - A pulled line whose key is not in the export is a **post-export write**. It is expected. Record its count, and treat
+     it as a discrepancy only if its timestamp falls before the export day.
+
+5. **Compare receipts both ways.** Take the `object_key` values from the export's `manual_transfer_receipts` file and
+   from the pulled file, sort them, and compare them with `comm -3`. A key only in the export is a receipt the object no
+   longer references (ADR 0090). It is a discrepancy. A key only in the pull is a receipt uploaded after the export day.
+
+6. **Record.** Log every discrepancy and every count. Any discrepancy means the window did not close:
+   `ROLLBACK_WINDOW` extends, and this step runs again after the next full payout cycle.
+
+7. **Coverage gap (open, Needs user item 6).** This step reconciles 18 of the 50 application tables. The other 32 are
+   not in any daily export. They are listed by name, each with its reason, in `DAILY_EXPORT_EXCLUDED` in
+   `apps/cloudflare/test/production-composition.spec.ts`. They include the revenue ledger (`revenue_journals`,
+   `revenue_ledger_lines`, `revenue_releases`, `revenue_earned_commission` and the compatibility and adjustment tables),
+   `units`, `operators`, the operator and guest session tables, and `guest_accounts`. `guest_contacts` is excluded on
+   purpose. Their drift cannot be checked after the window with the export set as it stands. The rebuild path in
+   `docs/runbooks/cloudflare-restore.md` (section 2) cannot restore them from the daily export either, so the window's
+   closing condition cannot be fully evidenced for them until the user decides.
 
 ## Checklist before cutover
 
@@ -254,6 +312,7 @@ window's closing condition relies on.
 - [ ] C4: the receipt download method (R4) confirmed with a synthetic receipt on staging.
 - [ ] C5: the `cf r2 objects list` flags confirmed with `--help`.
 - [ ] C6: the data-protection gates (ADR 0095) cleared. **Needs user.**
+- [ ] C7: the `EXPORTS` daily-export download method (step 10.1) confirmed with a synthetic export file on staging.
 
 ## Needs user
 
@@ -264,6 +323,8 @@ These need human facts or decisions. None is decided in this runbook.
 3. The freeze mechanism at the edge: a maintenance page or a Worker response, and its wording. The process stop in step 1 applies either way.
 4. The Worker route, the DNS record and the TTL (step 7.2).
 5. The go or no-go for cutover, and the sign-off of this runbook (issue 16 AC4).
+6. Daily export coverage: 32 of 50 application tables are not in the daily export (step 10.7). Extend the 12a export set to
+   every application table, or accept that those tables carry no post-window evidence and say so in the window's closing record.
 
 ## 11. Cutover log
 

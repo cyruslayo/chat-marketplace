@@ -187,6 +187,32 @@ Status unchanged: **ready-for-human**. Nothing here is a cutover, a production r
 - **Known gap.** The table-coverage test checks only the tables that the synthetic fixture's stores create. It does not construct every store of the production composition, so a missing baseline table would show up only as a refused import. A full-composition check is still to write.
 - **Remains.** Checklist items C1 (`MAX_STATEMENT_PARAMETERS` against the live page), C4 (receipt download on staging), C5 (`cf r2 objects list` flags) and C6 (ADR 0095 gates, **Needs user**). Step 10 needs the daily export's layout confirmed against 12a and 12b. Needs user: the Cloudflare account and `cf` profile, the edge freeze page, the Worker route and TTL, the go or no-go, and the runbook sign-off (AC4). The cutover log is empty, as it should be.
 
+### Agent pass 3 on `infra/cf-wave6` (10 Oct 2026)
+
+Status unchanged: **ready-for-human**. Nothing here is a cutover, a production run or a resolution.
+
+- **Full-composition table coverage (closes the known gap in D3).** `apps/cloudflare/test/production-composition.spec.ts`
+  builds the production composition in a fresh Durable Object (provisioning, a served request and an authenticated ops
+  request) and reads the tables it creates from live SQLite. Three checks: every created table is created by the migrations;
+  every application table is on the import/export allowlist (`GET /_ops/import/verify`) or excluded with a reason; every
+  application table is in the 12a daily export set (`EXPORT_TABLES`) or excluded with a reason. The red run was taken by
+  omitting `OPERATOR_SESSION_SCHEMA` from the baseline: the first check failed by name (`operator_sessions`,
+  `operator_access_tokens`). The schema was restored. A second probe that omitted `BOOKING_STATE_SCHEMA` failed the same check
+  for `booking_contracts` and `booking_reservations`, so the probe reaches the booking stores. No migration gap was found:
+  the composition creates 50 application tables, and the baseline covers all 50 (`local_pilot_clock` is Node-only and is
+  checklist C2; `receipt_blobs` is excluded by design).
+- **Daily export coverage (finding).** The 12a export set covers 18 of the 50 application tables. The other 32 are listed
+  with reasons in `DAILY_EXPORT_EXCLUDED`, including the revenue ledger, `units`, `operators` and `guest_accounts`. Step 10 of the
+  runbook can reconcile only the 18. Needs user item 6 in the runbook asks for the decision.
+- **Runbook step 10.** Rewritten to the layout 12a actually writes: `EXPORTS` key `YYYY-MM-DD/<table>.jsonl` (Lagos date),
+  raw `JSON.stringify` lines in rowid order (not the canonical pull format), no checksums or manifest, one export per
+  Lagos day at the first alarm of the day, `manual_transfer_receipts` projected to five columns. The old step compared
+  "table checksums" that do not exist. Checklist C7 covers the R2 download method, as C4 does for receipts.
+- **Checks.** `npm run check` exits 0. `npm run test:workers` passes 68 of 68 across 13 files (65 before, plus three). The
+  non-browser phase 1 gives 1417 of 1417 pass, 0 fail.
+- **Test helper.** `provisionTenant` in `ops-test-helpers.ts` now takes the stub, so the new spec provisions an object that no
+  other test has built. The default is unchanged.
+
 ## Commits on `infra/cf-wave6`
 
 `16f5d28` ADR 0075 fixes with tests, `7bea2c7` comment and citation fixes, `19a833f` Node fixture end-to-end test,
