@@ -117,6 +117,7 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
     const database = new DurableObjectSqlDatabase(this.ctx.storage);
     const ops = loadOpsConfiguration(this.env);
     return createOpsHandler({
+      database,
       sharedSecret: ops.sharedSecret,
       verifier: ops.verifier,
       operatorRepository: new SqliteOperatorRepository(database, { clock }),

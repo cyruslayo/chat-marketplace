@@ -2,6 +2,7 @@ import { SELF, runInDurableObject } from "cloudflare:test";
 import { expect, test } from "vitest";
 import type { UnitRepositoryContract } from "../../../domains/shortlet/src/browse.js";
 import type { OperatorRepository } from "../../../domains/shortlet/src/operator.js";
+import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
 import { createOpsHandler, type OpsRouteDependencies } from "../src/ops-routes.js";
 import { ORIGIN, SECRET, TENANT, accessToken, opsHeaders, opsStub } from "./ops-test-helpers.js";
 
@@ -10,6 +11,7 @@ const UNUSED = (): never => { throw new Error("not used by the restore route"); 
 /** A handler whose bookmark authority is a stub: workerd's local storage has no point-in-time recovery (see below). */
 function restoreHandler(options: { readonly access: boolean; readonly bookmark: string }): ReturnType<typeof createOpsHandler> {
   const dependencies: OpsRouteDependencies = {
+    database: { prepare: UNUSED, exec: UNUSED, transaction: UNUSED, close: () => {} } as unknown as SqlDatabase,
     sharedSecret: SECRET,
     verifier: { verify: async () => options.access },
     operatorRepository: { findById: () => null, findAll: () => [], create: UNUSED, update: UNUSED } as unknown as OperatorRepository,
