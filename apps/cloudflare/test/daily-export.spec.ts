@@ -4,6 +4,7 @@ import { expect, test } from "vitest";
 import { SqliteAuditLog } from "../../../packages/platform-core/src/sqlite-audit-log.js";
 import { DurableObjectSqlDatabase } from "../src/do-sql-database.js";
 import { runAlarmTasks } from "../src/do-alarm.js";
+import { ORIGIN, provisionTenant } from "./ops-test-helpers.js";
 import { EXPORT_TABLES, deleteExpiredExports, exportObjectKey, exportTable, lagosDate, runDailyExport, type DailyExportDependencies } from "../src/do-export.js";
 
 const stubFor = (name: string) => env.SHORTLET.get(env.SHORTLET.idFromName(name));
@@ -199,3 +200,23 @@ test("16 D3 retention: old exports beyond the first 1,000-object listing page ar
   const remaining = new Set(await everyKey(env.EXPORTS));
   expect(keys.filter((key) => remaining.has(key))).toEqual([]);
 }, 60_000);
+
+test("12a AC6 (F1): with notifications unset, a provisioned object schedules its alarm and the daily export still runs", async () => {
+  const stub = stubFor(`12a-f1-no-notify-${crypto.randomUUID()}`);
+  // Test-only: remove the notification bindings from this object's env before its first request, so its runtime has no
+  // notifier. The other test objects keep the notification configuration from wrangler.test.jsonc.
+  await runInDurableObject(stub, (instance) => {
+    const mutable = instance as unknown as { env: Record<string, unknown> };
+    mutable.env = { ...mutable.env, RESEND_API_KEY: undefined, SHORTLET_NOTIFICATION_FROM: undefined, SHORTLET_OPERATOR_ALERT_EMAILS: undefined };
+  });
+  await provisionTenant(stub);
+  const served = await stub.fetch(`${ORIGIN}/healthz`, { headers: { "cf-connecting-ip": "203.0.113.40" } });
+  expect(served.status).toBe(200);
+
+  const scheduled = await runInDurableObject(stub, (_instance, ctx) => ctx.storage.getAlarm());
+  expect(scheduled).toEqual(expect.any(Number));
+
+  await runInDurableObject(stub, async (instance) => { await instance.alarm(); });
+  const keys = await listKeys(env.EXPORTS);
+  expect(keys).toContain(exportObjectKey(lagosDate(new Date()), "audit_log"));
+});
