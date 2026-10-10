@@ -23,6 +23,7 @@
         "sha256": "36510127c6d5ac8db8b816b3680d50b88a7c0f8f75fe6e7e024e9c0cf81f2e75"
       }
     },
+    "excludedTables": {},
     "movedTables": [
       "receipt_blobs"
     ],

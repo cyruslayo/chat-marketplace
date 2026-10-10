@@ -50,7 +50,7 @@ The user delegated these to the parent agent on 10 Oct 2026. Each has a rational
 
 ### D1. Re-import: upsert on primary key, then a one-way cutover flag
 
-- **Decided:** the import upserts by primary key while migration mode is on. A one-way flag, `migration_state.cutover_completed_at`, is set only by the authenticated `POST /_ops/cutover/complete` (idempotent: a second call returns the first timestamp). While the flag is set, every import is refused with `CUTOVER_COMPLETE` (409) before any write. Control tables (`schema_migrations`, `migration_state`) are not application tables, so an import names them as `UNKNOWN_TABLE` (400). No route clears the flag.
+- **Decided:** the import upserts by primary key while migration mode is on. A one-way flag, `migration_state.cutover_completed_at`, is set only by the authenticated `POST /_ops/cutover/complete` (idempotent: a second call returns the first timestamp). While the flag is set, every `POST /_ops/import` batch is refused with `CUTOVER_COMPLETE` (409) before any write. That refusal covers the import route and the control tables only (F8). Inventory import (`/_ops/inventory/import`), the operator routes and the restore route are the normal post-cutover path, and they are not refused. Control tables (`schema_migrations`, `migration_state`) are not application tables, so an import names them as `UNKNOWN_TABLE` (400). No route in this code clears the flag. **Superseded by D5 (fix pass 2, A):** the flag is also written as a marker in the private `EXPORTS` bucket, which a point-in-time restore does not rewind. The object re-asserts the flag from the marker on start and before any import, so no manual flag step follows a restore. The restore runbook checks `GET /_ops/status` instead.
 - **Rationale:** the upsert keeps repeated pushes safe (AC3). Making the end of migration an explicit, recorded event removes the convention "stop pushing after cutover". A flag that import can write would let import undo the cutover, so import cannot reach it.
 - **Code:** `packages/platform-core/src/data-migration.ts` (`completeCutover`, `cutoverCompletedAt`, `CONTROL_TABLES`); `apps/cloudflare/src/ops-import.ts` (`assertMigrationOpen`); `apps/cloudflare/src/ops-routes.ts` (cutover route).
 - **Tests:** `apps/cloudflare/test/data-migration.spec.ts`: "16 D1: a re-import overwrites a changed row...", "16 D1: an import is refused with CUTOVER_COMPLETE...", "16 D1: the cutover flag cannot be unset, overwritten or read back through import".
@@ -72,6 +72,22 @@ The user delegated these to the parent agent on 10 Oct 2026. Each has a rational
 
 - **Decided:** no code change for read-only mode. The Node pilot has no clean seam: its timers write without any request (the notification sweep, `DEFAULT_NOTIFICATION_SWEEP_SECONDS` = 30 s by default), so a request guard would not stop writes. The freeze is specified in runbook step 1 as a process stop, with a verification command: `pgrep` must print nothing, and the database and `-wal` checksums must be the same after two sweep intervals. Node data is untouched through the window. Issue 17 runs only after the window closes.
 - **Rollback window:** `ROLLBACK_WINDOW` in the runbook is the single definition. It is 14 days after the cutover flag is set. It closes only when at least 14 days have passed and at least one full payout cycle and one verified restore from the daily export (12a, read back through 12b) have completed on Cloudflare with no discrepancy in the post-cutover checks. Otherwise it extends. Issue 17 runs only after it closes. The runbook adds a post-window reconciliation step (step 10) because deletes are not visible in a reverse export, and that drift grows with the window's length.
+
+### D5. Cutover marker outside the object's storage (fix pass 2, parent decision A)
+
+- **Decided:** `POST /_ops/cutover/complete` writes a marker to the `EXPORTS` bucket at `_ops/cutover/<object>.json` first, then sets the object's flag (D1). A failed marker write fails closed: the flag stays unset and the route returns `503 CUTOVER_MARKER_UNAVAILABLE`. A failure of the flag after the marker returns `503 CUTOVER_NOT_RECORDED`, and running the step again finishes it. Every import first reconciles: a marker with no flag re-asserts the flag, and a flag with no marker repairs the marker. An import is refused with `CUTOVER_COMPLETE` whenever a marker exists, and with `CUTOVER_MARKER_UNAVAILABLE` (503) when the binding is absent or the marker cannot be read. The object reconciles again when it starts. `GET /_ops/status` and `GET /_ops/import/verify` report `cutoverCompletedAt` and `cutoverMarker` (`present`, `absent` or `unavailable`).
+- **Why the reserved prefix:** `_ops/` cannot match a `YYYY-MM-DD/` export day, so the daily retention sweep never deletes or lists the marker as a day.
+- **Key:** fixed per object, derived from the object's name. The Worker names the object from the tenant, so the key is fixed for the tenant in production.
+- **Consequence (Needs user, item 8):** a rebuild from export into a tenant whose marker is set is refused by design. No route clears the marker.
+- **Code:** `apps/cloudflare/src/cutover-marker.ts`; `ops-import.ts` (`assertCutoverOpenForImport`); `ops-routes.ts`; `shortlet-pilot-do.ts` (startup reconcile and the store).
+- **Tests:** `test/cutover-marker.test.ts` (marker before flag; failed marker write fails closed; restore that deletes the flag still refuses with `CUTOVER_COMPLETE`; unavailable binding fails closed; unreadable or damaged marker refused; flag repaired from marker; status; reserved key; R2 store creates only when absent); `apps/cloudflare/test/data-migration.spec.ts` ("16 A: ..." tests: real R2 marker and status, unauthenticated completion writes no marker, marker survives the retention sweep while a dated object is deleted, rewound object refused).
+
+### D6. Bearer-credential tables leave the cutover (fix pass 2, parent decision B)
+
+- **Decided:** the five tables (`guest_account_sessions`, `guest_session_bindings`, `guest_sign_in_codes`, `operator_access_tokens`, `operator_sessions`) are excluded from the cutover manifest and from the push. The manifest records each one's source row count under `excludedTables`, with no file. `verify` reports the object's count for each one under `excludedTables`. The compare checks both sides: the object must hold zero rows in each. An import that names one of them is refused with `EXCLUDED_TABLE` (400), citing ADRs 0093, 0086 and 0075, before any row is read.
+- **Shared constant:** `CREDENTIAL_TABLES` in `packages/platform-core/src/data-migration.ts`. The daily export (`DAILY_EXPORT_EXCLUDED`), the cutover manifest, the verify route, the import refusal and the composition test all read it.
+- **Consequence:** guests and operators sign in again after cutover (cutover runbook, section 0 and checklist C10). Wording and channel are Needs user, item 7. Operator access tokens are issued on the object after the compare (cutover runbook, section 0).
+- **Tests:** `test/export-node-sqlite.test.ts` ("16 B: ..." x3, with a seeded credential row); `apps/cloudflare/test/data-migration.spec.ts` ("16 B: ..." x2); `apps/cloudflare/test/production-composition.spec.ts` (allowlist from the shared constant).
 
 ### Other open decisions (status)
 
@@ -161,8 +177,10 @@ Status unchanged: **ready-for-human**. Nothing here is a cutover, a production r
   user". The 100-parameter constant now cites the Cloudflare Durable Object limits page, and `PRD.md` records it.
 - **Bundle (e, report only).** Rebuilding `apps/local-guest/src/client.ts` with the same esbuild options matches commit
   `803d616`'s `dist/client.js` except for 50 path comments. They name `../chat-marketplace-cloudflare/node_modules/...`,
-  which is another checkout. Functionally the bundle is identical. The suite's build step rewrites this file, so the
-  working tree was restored and the file is not in these commits.
+  which is another checkout. Functionally the bundle is identical. The suite's build step rewrites this file.
+  **Correction (wave-6 fix pass):** the pass-1 wording said the file was not in these commits. It was: `dist/client.js`
+  was in the branch diff against `origin/infra/cloudflare-deployment`, carrying the other checkout's paths. The fix pass
+  reverts it to the `origin/infra/cloudflare-deployment` version. Any test run rewrites it, so restore it afterwards.
 - **Checks.** `npm run check` exits 0. `npm run test:workers` passes 58 of 58 across 12 files. The non-browser suite
   (phase 1 of `npm test`, reproduced because `package.json` has no `test:non-browser` script) gives 1407 tests: 1404 pass
   and 3 fail. The browser phase was not run.
@@ -223,6 +241,47 @@ Status unchanged: **ready-for-human**. Nothing here is a cutover, a production r
 - **Chrome path.** `test/helpers/chrome-devtools.ts` reads `SHORTLET_CHROME_PATH` (blank means the default) and adds `--no-sandbox` only when `SHORTLET_CHROME_NO_SANDBOX=1`, through `resolveChromeLaunch`. The test is `test/chrome-devtools-config.test.ts`.
 - **Checks.** `npm run check` exits 0. `npm run test:workers` passes 72 of 72 across 14 files (68 before this pass, plus four new tests). The non-browser phase (phase 1 of `npm test`, reproduced because `package.json` has no separate script) gives 1423 of 1423 tests passing, 0 failing. The browser phase was not run.
 - **Open.** C1, C4, C5, C6 and C7 are unchanged. The runbook sign-off (AC4) and the edge freeze, route and DNS items remain Needs user. Also open: the DPIA entries for the personal-data columns, and the ADR 0075 transient and 180-day classes (provisional) against the 400-day export retention.
+
+### Wave-6 fix pass (review findings F1 to F13, 10 Oct 2026)
+
+Status unchanged: **ready-for-human**. Nothing here is a cutover, a production run or a resolution.
+
+Each finding was tested first (a red run before each change). Commits, oldest first, on `infra/cf-wave6`: `f60b9f9` (F11), `a951f5e` (F9, F10, F13), `10d48ba` (F1), `b3a67d7` (F12), `cc7bda1` (F4), `11a9fe0` (F3), `695b266` (F3, F4, F6, F8 wording), `94df513` (F7, issue 17), `c3c8a2b` and `110d33e` (F2 and the conditional-offer issue), `40ae72a` (F5, ADR 0096), `cf260db` (F12 runbook).
+
+- **F1 (high).** The alarm was never scheduled without a notifier, so the daily export, orphan sweep and retention did not run. The alarm now runs on every path, runs the notifier sweep only when a notifier exists, and rebuilds the runtime after an eviction when the object is provisioned. Test: "12a AC6 (F1)" (`apps/cloudflare/test/daily-export.spec.ts`).
+- **F3 (medium).** A point-in-time restore rewinds the cutover flag with the rest of the object's storage. Code cannot prevent that while the flag shares the rewound storage. Done instead: an authenticated `GET /_ops/status` (schema version, expected version, flag); the restore runbook's post-restore check and recovery step; the cutover runbook's step 7.1 status check; and the D1 wording above. Tests: unauthenticated `POST /_ops/cutover/complete` is 401; the status route; a rewound object accepts an import until the flag is set again.
+- **F4 (medium).** `GET /_ops/export`, the Node pull and the rollback import now use `DAILY_EXPORT_EXCLUDED`. The verify response still lists the five tables with counts and hashes, so the compare holds. The cutover push still sends them, which is an open decision below. Sessions are re-established after a rollback.
+- **F6 (medium).** The export is per-table, read across awaits, so the day's files are not one point-in-time snapshot. The comments and both runbooks say so, and the restore runbook has a post-restore consistency step.
+- **F7.** Issue 17 is `ready-for-human` with a hold note; the map row matches. Reconciled counts are below.
+- **F8.** D1 now says the refusal covers `POST /_ops/import` and the control tables only.
+- **F9 (medium).** `schemaVersion` fails on a gap or duplicate (rows 1 and 3). `cutoverCompletedAt` throws when the flag table is missing although its migration ran. Import refuses both as `SCHEMA_NOT_READY` before any write. A never-migrated file still reads as not cut over.
+- **F10.** The local booking DDL is a literal in the production schema, with a test that fails if it drifts from the fixture.
+- **F11.** `apps/local-guest/dist/client.js` is restored to the `origin/infra/cloudflare-deployment` version. The "Bundle (e)" note above is corrected.
+- **F12 (medium).** The Access verifier requires `iss = https://<team domain>` and refuses a missing issuer. Test: "16 F12" in `apps/cloudflare/test/ops-routes.spec.ts`.
+- **F13.** `importRequestChunks` sizes batches by the widest row and throws a `RangeError` naming the table for more than 100 parameters. It no longer emits empty chunks.
+- **F2 (documentation only; no booking code changed).** The same-day rule in production (`booking-request.ts`, about lines 378–384) is a fixed 10:55 WAT disclosure limit, not the unit's Contractual Check-In Window (ADR 0053). `SameDayBookingManager` has no production caller. Commit `4437f72` changed that manager and its test (plus two unrelated test fixes and `.gitignore`), not the production path. Earlier wave-6 notes that the three non-browser failures were the AC5 blocker are superseded: `4437f72` fixed them, and their tests now pass. Shortlet issue 15 has a correction note, and new needs-triage issue 48 tracks the production rule.
+- **F5.** Proposed ADR 0096 (`docs/adr/0096-export-payment-references-in-plaintext.md`, status `proposed`, Needs user decision) records the plaintext payment-reference conflict and three options. It is not accepted.
+- **Out-of-scope review.** Shortlet issue 49 records the reachability of the hardcoded conditional-offer key (`domains/shortlet/src/conditional-offer.ts`). The code was not changed.
+
+**Reconciled test counts (F7).** The earlier passes report different totals because each pass counted a different set of files. This is the latest run on `infra/cf-wave6` after the fix pass:
+
+- `npm run check`: exit 0.
+- `npm run test:workers`: 78 of 78 pass across 14 files. Pass 4 said 72 of 72 across 14 files; the six new tests are F1, F12, F4 (one), and the three F3 tests.
+- Non-browser phase 1 (reproduced from `scripts/run-tests.mjs`, because `package.json` has no separate script): 1431 of 1431 pass, 0 fail. Pass 4 said 1423; the eight new non-browser tests are the F9, F10 and F13 tests, and the F4 pull test.
+- Browser phase: not run.
+
+The pass-1 figures (58 of 58; 1407 tests with 3 failures) are superseded by the later passes. Issue 17 has no test counts, so nothing there needed reconciling.
+
+**Open decisions (need user).**
+
+1. Keep the one-way flag in the object's storage (today; a restore can clear it, mitigated by the status check), or store it outside the object (for example, an R2 marker that PITR does not rewind), which would let the code enforce the flag. The second option is a design change.
+2. The cutover push still sends the five bearer-credential tables into the object. Decide whether sessions and challenges should move at cutover, or be excluded from the cutover manifest too (which would need the verify and compare to exclude them).
+3. ADR 0096: the plaintext payment-reference export (exemption, encryption at rest, or keyed hash).
+4. Shortlet issue 15's resolved status (reopen or not), and the production same-day rule (issue 48).
+
+**Fix pass 2 (parent decisions A, B and C; runbooks and `docs/pilot-deployment.md` updated).** Open decisions 1 and 2 above are decided by D5 and D6. Still open: the rebuild after a cutover (Needs user, item 8 in the cutover runbook) and the sign-in communication (item 7).
+
+- **C (worker build).** A clean `npm ci` followed by `npm run worker:build` failed with "@cloudflare/vite-plugin is declared in apps/cloudflare/package.json but is not installed". The `cf` CLI checks only `apps/cloudflare/node_modules`, and the repository root holds the install. Fix: `apps/cloudflare/package-lock.json` pins the same plugin version as the manifest (`test/worker-build-setup.test.ts`), and `scripts/ensure-worker-deps.mjs` runs `npm ci --prefix apps/cloudflare` before every `cf` script. Verified on a clean worktree: `npm run worker:build`, `npm run worker:build:production`, `npm run worker:deploy:dry-run:staging` and `npm run worker:deploy:dry-run:production` all exit 0, with no login and no upload.
 
 ## Commits on `infra/cf-wave6`
 

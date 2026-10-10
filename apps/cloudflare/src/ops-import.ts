@@ -1,15 +1,18 @@
 import type { SqlDatabase, SqlRow, SqlValue } from "../../../packages/platform-core/src/sql-database.js";
 import {
+  CREDENTIAL_TABLE_REFUSAL,
   MAX_STATEMENT_PARAMETERS,
   applicationTableNames,
   canonicalTableContent,
   contentSha256,
   cutoverCompletedAt,
   decodeValue,
+  isCredentialTable,
   migrationBatchRows,
   quoteIdentifier,
 } from "../../../packages/platform-core/src/data-migration.js";
 import { schemaVersion } from "../../../packages/platform-core/src/schema-migrations.js";
+import { CutoverMarkerUnavailableError, reconcileCutover, type CutoverMarkerStore } from "./cutover-marker.js";
 
 /**
  * Slice 16: idempotent, batched import into the tenant's Durable Object, shared by `POST /_ops/import`, the verify and
@@ -26,23 +29,40 @@ export type ImportRefusalCode =
   | "MALFORMED_ROW"
   | "BATCH_REJECTED"
   | "SCHEMA_NOT_READY"
-  | "CUTOVER_COMPLETE";
+  | "CUTOVER_COMPLETE"
+  | "CUTOVER_MARKER_UNAVAILABLE"
+  | "EXCLUDED_TABLE";
 
 /**
  * Refuses unless the schema is exactly `requiredVersion`. The import never runs migrations itself: a missing or older
  * schema is a deployment fault to fix by migrating, not something an import should repair (D3).
  */
 export function assertSchemaCurrent(database: SqlDatabase, requiredVersion: number): void {
-  if (schemaVersion(database) !== requiredVersion) {
+  let version: number;
+  try {
+    version = schemaVersion(database);
+  } catch {
+    // A damaged migration record is not readable as any version, so it is refused like a version mismatch (F9).
+    throw new ImportRefusedError("SCHEMA_NOT_READY", "The schema record is damaged, so nothing was written");
+  }
+  if (version !== requiredVersion) {
     throw new ImportRefusedError("SCHEMA_NOT_READY", "The schema is not at the version this release expects, so nothing was written; run the migrations first");
   }
 }
 
 /**
- * Refuses once the one-way cutover flag is set (D1). Nothing in this module or in the import routes clears it.
+ * Refuses once the one-way cutover flag is set (D1). Nothing in this module or in the import routes clears it. A point-in-time
+ * restore rewinds the object's storage, flag included, so it can clear the flag (restore runbook, section 3, and GET /_ops/status).
  */
 export function assertMigrationOpen(database: SqlDatabase): void {
-  if (cutoverCompletedAt(database) !== null) {
+  let completedAt: string | null;
+  try {
+    completedAt = cutoverCompletedAt(database);
+  } catch {
+    // Unknown cutover state is refused, never treated as "not cut over" (F9).
+    throw new ImportRefusedError("SCHEMA_NOT_READY", "The cutover state cannot be read, so nothing was written");
+  }
+  if (completedAt !== null) {
     throw new ImportRefusedError("CUTOVER_COMPLETE", "The cutover is complete, so this object no longer accepts migration imports");
   }
 }
@@ -51,6 +71,27 @@ export function assertMigrationOpen(database: SqlDatabase): void {
 export function assertImportAllowed(database: SqlDatabase, requiredVersion: number): void {
   assertSchemaCurrent(database, requiredVersion);
   assertMigrationOpen(database);
+}
+
+/**
+ * The import route's cutover check (issue 16 A). It reconciles the database flag with the R2 marker before any write: a marker
+ * re-asserts a flag that a restore rewound, and the import is refused whenever a marker exists. An unreadable marker, or an
+ * absent binding, is refused too (CUTOVER_MARKER_UNAVAILABLE, 503), never treated as "not cut over". Nothing is written here.
+ */
+export async function assertCutoverOpenForImport(database: SqlDatabase, store: CutoverMarkerStore): Promise<void> {
+  let completedAt: string | null;
+  try {
+    completedAt = await reconcileCutover(database, store);
+  } catch (error) {
+    if (error instanceof CutoverMarkerUnavailableError) {
+      throw new ImportRefusedError("CUTOVER_MARKER_UNAVAILABLE", "The cutover marker cannot be read or written, so nothing was written");
+    }
+    // An unreadable database flag (F9) is refused as an unready schema, never read as "not cut over".
+    throw new ImportRefusedError("SCHEMA_NOT_READY", "The cutover state cannot be read, so nothing was written");
+  }
+  if (completedAt !== null) {
+    throw new ImportRefusedError("CUTOVER_COMPLETE", "The cutover is complete, so this object no longer accepts migration imports");
+  }
 }
 
 /** Messages name tables, columns and row positions only, never row values (ADR 0075). */
@@ -140,6 +181,8 @@ function insertStatement(table: string, columns: readonly string[], primaryKey: 
  */
 export function importBatch(database: SqlDatabase, table: string, rows: readonly unknown[], requiredVersion: number): ImportBatchResult {
   assertImportAllowed(database, requiredVersion);
+  // Issue 16 B: a credential table is refused by name before any row is read (ADR 0093, 0086, 0075).
+  if (isCredentialTable(table)) throw new ImportRefusedError("EXCLUDED_TABLE", CREDENTIAL_TABLE_REFUSAL);
   const shape = tableShape(database, table);
   const prepared = rows.map((raw, position) => preparedRow(raw, shape, position));
 
@@ -186,10 +229,16 @@ export function importBatch(database: SqlDatabase, table: string, rows: readonly
   };
 }
 
-/** The canonical content and checksum of one table, for the reverse export (rollback). */
+/**
+ * The canonical content and checksum of one table, for the reverse export (rollback). The bearer-credential tables that the
+ * daily export excludes are refused here too, so the same exclusion applies to every export path (F4, ADR 0093, 0086, 0075).
+ */
 export async function exportTable(database: SqlDatabase, table: string): Promise<{ table: string; rowCount: number; sha256: string; content: string }> {
   if (!applicationTableNames(database).includes(table)) {
     throw new ImportRefusedError("UNKNOWN_TABLE", "The table is not part of this deployment's schema");
+  }
+  if (isCredentialTable(table)) {
+    throw new ImportRefusedError("EXCLUDED_TABLE", CREDENTIAL_TABLE_REFUSAL);
   }
   const rows: SqlRow[] = database.prepare(`SELECT * FROM ${quoteIdentifier(table)}`).all();
   const { content, rowCount } = canonicalTableContent(rows);

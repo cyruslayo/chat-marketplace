@@ -34,7 +34,16 @@ export const MAX_IMPORT_REQUEST_BYTES = 5 * 1024 * 1024;
  */
 export function migrationBatchRows(columnCount: number): number {
   if (!Number.isInteger(columnCount) || columnCount < 1) throw new RangeError("A table must have at least one column to be batched");
+  // A single row past the parameter limit cannot be batched at all. Refused here rather than floored to zero rows (F13).
+  if (columnCount > MAX_STATEMENT_PARAMETERS) {
+    throw new RangeError(`A row of ${columnCount} columns binds more than ${MAX_STATEMENT_PARAMETERS} parameters, so it cannot be batched`);
+  }
   return Math.floor(MAX_STATEMENT_PARAMETERS / columnCount);
+}
+
+/** The column count of one row: its keys when it is a JSON object, otherwise zero (refused by migrationBatchRows). */
+function rowColumnCount(row: unknown): number {
+  return row !== null && typeof row === "object" && !Array.isArray(row) ? Object.keys(row).length : 0;
 }
 
 /**
@@ -44,8 +53,11 @@ export function migrationBatchRows(columnCount: number): number {
  */
 export function importRequestChunks(table: string, rows: readonly unknown[]): unknown[][] {
   if (rows.length === 0) return [];
-  const first = rows[0];
-  const columns = first !== null && typeof first === "object" && !Array.isArray(first) ? Object.keys(first).length : 0;
+  // The widest row sets the batch size, so no later row can bind more parameters than a request allows.
+  const columns = Math.max(...rows.map(rowColumnCount));
+  if (columns > MAX_STATEMENT_PARAMETERS) {
+    throw new RangeError(`Table ${table} has rows of ${columns} columns, and one row alone would bind more than ${MAX_STATEMENT_PARAMETERS} parameters, so the table cannot be batched`);
+  }
   const perRequest = migrationBatchRows(columns);
   const encoder = new TextEncoder();
   const envelope = encoder.encode(JSON.stringify({ table, rows: [] })).byteLength;
@@ -69,6 +81,28 @@ export function importRequestChunks(table: string, rows: readonly unknown[]): un
   return chunks;
 }
 
+/**
+ * Bearer-credential tables (ADR 0093, 0086, 0075). They are never exported, pushed, verified as application data, or imported:
+ * a cutover or a restore must not revive a session, a sign-in challenge or an access token. This is the one list. The daily
+ * export (do-export.ts, DAILY_EXPORT_EXCLUDED), the cutover manifest, the verify route and the import refusal all read it.
+ * Each entry cites the ADR that requires the exclusion. Restore and cutover consequence: guests and operators sign in again
+ * (docs/runbooks/cloudflare-cutover.md, section 0; docs/runbooks/cloudflare-restore.md, section 2).
+ */
+export const CREDENTIAL_TABLES: Readonly<Record<string, string>> = Object.freeze({
+  guest_account_sessions: "bearer credential: hashed Guest Account Session secrets; a restore must not revive a revoked session (ADR 0093; ADR 0075)",
+  guest_session_bindings: "bearer credential: hashed interaction-session secrets bound to a principal (ADR 0070, ADR 0093; ADR 0075)",
+  guest_sign_in_codes: "bearer credential: sign-in challenge code hashes; codes never leave the immediate delivery call (ADR 0093; ADR 0075)",
+  operator_access_tokens: "bearer credential: hashed one-time operator access tokens (ADR 0086; ADR 0075)",
+  operator_sessions: "bearer credential: hashed operator session secrets; a restore must not revive a revoked session (ADR 0086; ADR 0075)",
+});
+
+/** The refusal text for a credential table, shared by the export and import paths. It names the ADRs, never a value. */
+export const CREDENTIAL_TABLE_REFUSAL = "This table holds bearer credentials and is never exported or imported (ADR 0093, ADR 0086, ADR 0075)";
+
+export function isCredentialTable(name: string): boolean {
+  return Object.hasOwn(CREDENTIAL_TABLES, name);
+}
+
 /** The table that holds receipt bytes in the Node composition (07a). Its bytes move to R2, not to the table. */
 export const RECEIPT_BLOB_TABLE = "receipt_blobs";
 const RECEIPT_TABLE = "manual_transfer_receipts";
@@ -86,9 +120,26 @@ const CUTOVER_COMPLETED_KEY = "cutover_completed_at";
 /** The DDL of the cutover flag, applied by the migrations (D1). The flag is one-way: nothing here or in import deletes it. */
 export const CUTOVER_STATE_DDL = `CREATE TABLE IF NOT EXISTS ${CUTOVER_STATE_TABLE} (state_key TEXT PRIMARY KEY, state_value TEXT NOT NULL)`;
 
-/** Reads the one-way cutover flag. Null when the table is absent (a Node file that never ran the migrations) or unset. */
+/** The migration version that creates the cutover flag table (schema.ts). Shared so the check below and the list agree. */
+export const CUTOVER_STATE_MIGRATION_VERSION = 2;
+
+function migrationsReached(database: SqlDatabase, version: number): boolean {
+  if (!tableExists(database, SCHEMA_MIGRATIONS_TABLE)) return false;
+  const row = database.prepare(`SELECT MAX(version) AS version FROM ${SCHEMA_MIGRATIONS_TABLE}`).get();
+  return row !== undefined && row.version !== null && Number(row.version) >= version;
+}
+
+/**
+ * Reads the one-way cutover flag. Null when the file was never migrated, or the flag is unset. A file whose migrations ran
+ * past the flag's migration but has no flag table is damaged, not "not cut over", so it throws (F9).
+ */
 export function cutoverCompletedAt(database: SqlDatabase): string | null {
-  if (!tableExists(database, CUTOVER_STATE_TABLE)) return null;
+  if (!tableExists(database, CUTOVER_STATE_TABLE)) {
+    if (migrationsReached(database, CUTOVER_STATE_MIGRATION_VERSION)) {
+      throw new Error("The cutover state table is missing although its migration ran, so the cutover state cannot be read");
+    }
+    return null;
+  }
   const row = database
     .prepare(`SELECT state_value FROM ${CUTOVER_STATE_TABLE} WHERE state_key = $key`)
     .get({ $key: CUTOVER_COMPLETED_KEY });
@@ -124,9 +175,16 @@ export interface ReceiptManifestEntry {
   readonly sha256: string;
 }
 
+/** A credential table left out of the cutover. Only the source's row count is recorded: no row, value or checksum (ADR 0075). */
+export interface ExcludedTableCount {
+  readonly sourceRowCount: number;
+}
+
 export interface MigrationManifest {
   readonly formatVersion: number;
   readonly tables: Readonly<Record<string, TableChecksum>>;
+  /** Credential tables that are not moved, with their source counts (issue 16 B). */
+  readonly excludedTables: Readonly<Record<string, ExcludedTableCount>>;
   readonly movedTables: readonly string[];
   readonly receipts: readonly ReceiptManifestEntry[];
 }
@@ -156,6 +214,24 @@ export function applicationTableNames(database: SqlDatabase): string[] {
     .all()
     .map((row) => String(row.name))
     .filter(isApplicationTable);
+}
+
+/** Application tables that move at cutover: every application table except the bearer-credential tables (issue 16 B). */
+export function exportedTableNames(database: SqlDatabase): string[] {
+  return applicationTableNames(database).filter((name) => !isCredentialTable(name));
+}
+
+/**
+ * The row count of each credential table on this database, read only (issue 16 B). A listed table that is missing is an error,
+ * not a zero: a missing table is a schema fault, and the compare must fail closed on it.
+ */
+export function credentialTableCounts(database: SqlDatabase): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const table of Object.keys(CREDENTIAL_TABLES)) {
+    if (!tableExists(database, table)) throw new Error(`The credential table ${table} is missing, so its count cannot be read`);
+    counts[table] = Number(database.prepare(`SELECT COUNT(*) AS n FROM ${quoteIdentifier(table)}`).get()?.n ?? 0);
+  }
+  return counts;
 }
 
 /**
@@ -258,7 +334,7 @@ export function contentSha256(content: string): Promise<string> {
 /** Checksums of each table as the canonical format defines them. Defaults to every application table. */
 export async function checksumTables(
   database: SqlDatabase,
-  tables: readonly string[] = applicationTableNames(database),
+  tables: readonly string[] = exportedTableNames(database),
 ): Promise<Record<string, TableChecksum>> {
   const checksums: Record<string, TableChecksum> = {};
   for (const table of tables) {
@@ -302,7 +378,11 @@ function receiptRow(
  * receipt blob table is not exported as rows.
  */
 export async function buildExport(database: SqlDatabase): Promise<MigrationExport> {
-  const names = applicationTableNames(database);
+  const names = exportedTableNames(database);
+  const excludedTables: Record<string, ExcludedTableCount> = {};
+  for (const table of applicationTableNames(database).filter(isCredentialTable)) {
+    excludedTables[table] = { sourceRowCount: Number(database.prepare(`SELECT COUNT(*) AS n FROM ${quoteIdentifier(table)}`).get()?.n ?? 0) };
+  }
   const blobs = new Map<string, { contentType: string; bytes: Uint8Array }>();
   if (names.includes(RECEIPT_BLOB_TABLE)) {
     for (const row of database.prepare(`SELECT object_key, content_type, bytes FROM ${quoteIdentifier(RECEIPT_BLOB_TABLE)}`).all()) {
@@ -344,6 +424,7 @@ export async function buildExport(database: SqlDatabase): Promise<MigrationExpor
   const manifest: MigrationManifest = {
     formatVersion: MIGRATION_FORMAT_VERSION,
     tables,
+    excludedTables,
     movedTables: names.includes(RECEIPT_BLOB_TABLE) ? [RECEIPT_BLOB_TABLE] : [],
     receipts: receiptEntries,
   };
@@ -367,4 +448,22 @@ export function compareMigration(
     if (!Object.hasOwn(manifest.tables, table) && found.rowCount > 0) mismatches.add(table);
   }
   return [...mismatches].sort();
+}
+
+/**
+ * Compares the credential tables on the source (the manifest's recorded counts) with the object. The object must hold no rows in
+ * them: a cutover moves none, and sessions are issued afresh afterwards (issue 16 B). Returns the names that fail, sorted. A
+ * missing object report fails every excluded table, so an absent count is never read as zero.
+ */
+export function compareExcludedTables(
+  manifest: { readonly excludedTables?: Readonly<Record<string, ExcludedTableCount>> },
+  actual: Readonly<Record<string, { readonly rowCount: number }>> | undefined,
+): string[] {
+  const mismatches: string[] = [];
+  for (const table of Object.keys(CREDENTIAL_TABLES)) {
+    if (!Object.hasOwn(manifest.excludedTables ?? {}, table)) mismatches.push(table);
+    const reported = actual !== undefined && Object.hasOwn(actual, table) ? actual[table] : undefined;
+    if (reported === undefined || reported.rowCount !== 0) mismatches.push(table);
+  }
+  return [...new Set(mismatches)].sort();
 }

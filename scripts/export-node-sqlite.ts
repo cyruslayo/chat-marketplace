@@ -20,12 +20,14 @@ import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
 import { SqliteReceiptBlobStore } from "../domains/shortlet/src/receipt-blob-store.js";
 import { assertImportAllowed, importBatch } from "../apps/cloudflare/src/ops-import.js";
+import { DAILY_EXPORT_EXCLUDED } from "../apps/cloudflare/src/do-export.js";
 import { SHORTLET_SCHEMA_MIGRATIONS, SHORTLET_SCHEMA_VERSION } from "../apps/cloudflare/src/schema.js";
 import { assertOpsOk, opsRequest, remoteOpsConfiguration, type OpsRemoteConfiguration } from "../apps/shortlet-ops/src/ops-client.js";
 import { applySchemaMigrations } from "../packages/platform-core/src/schema-migrations.js";
 import {
   buildExport,
   checksumTables,
+  compareExcludedTables,
   compareMigration,
   importRequestChunks,
   sha256OfBytes,
@@ -108,6 +110,8 @@ export async function importMigrationDirectory(dbPath: string, inDir: string): P
   try {
     assertImportAllowed(database, SHORTLET_SCHEMA_VERSION);
     for (const table of Object.keys(manifest.tables)) {
+      // F4: the bearer-credential tables are not written back to Node. Sessions and challenges are re-established after a rollback.
+      if (Object.hasOwn(DAILY_EXPORT_EXCLUDED, table)) continue;
       const rows = await readRows(inDir, table);
       for (const chunk of importRequestChunks(table, rows)) {
         importBatch(database, table, chunk, SHORTLET_SCHEMA_VERSION);
@@ -159,9 +163,12 @@ export async function pullObject(outDir: string, configuration: OpsRemoteConfigu
   await mkdir(outDir, { recursive: true });
   const verify = assertOpsOk(await opsRequest(configuration, "/_ops/import/verify", { method: "GET" }));
   const tables = verify.tables as Record<string, TableChecksum>;
-  await writeFile(join(outDir, "verify.json"), `${JSON.stringify({ ok: true, tables }, null, 2)}\n`, "utf8");
+  // Issue 16 B: the credential tables' object counts travel with the checksums, so the compare can check them on both sides.
+  await writeFile(join(outDir, "verify.json"), `${JSON.stringify({ ok: true, tables, excludedTables: verify.excludedTables ?? {} }, null, 2)}\n`, "utf8");
   const counts: Record<string, number> = {};
   for (const table of Object.keys(tables)) {
+    // F4: the verify response still lists every table, so the manifest comparison holds. The credential tables have no file.
+    if (Object.hasOwn(DAILY_EXPORT_EXCLUDED, table)) continue;
     const exported = assertOpsOk(await opsRequest(configuration, `/_ops/export?table=${encodeURIComponent(table)}`, { method: "GET" }));
     if (typeof exported.content !== "string" || typeof exported.rowCount !== "number") throw new Error("The export response is malformed");
     await writeFile(join(outDir, `${table}.jsonl`), exported.content, "utf8");
@@ -179,10 +186,23 @@ function requireRemote(): OpsRemoteConfiguration {
   return configuration;
 }
 
-/** Compares a manifest with a verify response (`{ tables }`) or a bare table map. Returns the differing table names. */
+/**
+ * Compares a manifest with a verify response (`{ tables, excludedTables }`) or a bare table map. Returns the differing table names:
+ * application tables by checksum, and credential tables whose object count is not zero or is not reported (issue 16 B).
+ */
 export function compareMigrationFiles(manifest: MigrationManifest, verify: unknown): string[] {
-  const actual = (typeof verify === "object" && verify !== null && "tables" in verify ? (verify as { tables: unknown }).tables : verify) as Record<string, TableChecksum>;
-  return compareMigration(manifest, actual);
+  const record = typeof verify === "object" && verify !== null ? (verify as { tables?: unknown; excludedTables?: unknown }) : {};
+  const actual = (verify !== null && typeof verify === "object" && "tables" in verify ? record.tables : verify) as Record<string, TableChecksum>;
+  const excluded = record.excludedTables as Record<string, { rowCount: number }> | undefined;
+  return [...new Set([...compareMigration(manifest, actual), ...compareExcludedTables(manifest, excluded)])].sort();
+}
+
+/** The counts the compare prints for the credential tables on both sides: totals only, never a row (ADR 0075). */
+export function excludedCountTotals(manifest: MigrationManifest, verify: unknown): { excluded: number; sourceRows: number; targetRows: number } {
+  const excludedSource = Object.values(manifest.excludedTables ?? {});
+  const reported = (typeof verify === "object" && verify !== null && "excludedTables" in verify ? (verify as { excludedTables: unknown }).excludedTables : {}) as Record<string, { rowCount?: unknown }>;
+  const targetRows = Object.values(reported).reduce((total, entry) => total + (typeof entry?.rowCount === "number" ? entry.rowCount : 0), 0);
+  return { excluded: excludedSource.length, sourceRows: excludedSource.reduce((total, entry) => total + entry.sourceRowCount, 0), targetRows };
 }
 
 async function main(argv: readonly string[]): Promise<number> {
@@ -204,8 +224,11 @@ async function main(argv: readonly string[]): Promise<number> {
   }
   if (flag === "--compare" && first && second) {
     const manifest = JSON.parse(await readFile(first, "utf8")) as MigrationManifest;
-    const mismatches = compareMigrationFiles(manifest, JSON.parse(await readFile(second, "utf8")) as unknown);
-    console.log(mismatches.length === 0 ? `match tables=${Object.keys(manifest.tables).length}` : `mismatch tables=${mismatches.join(",")}`);
+    const verify = JSON.parse(await readFile(second, "utf8")) as unknown;
+    const mismatches = compareMigrationFiles(manifest, verify);
+    const totals = excludedCountTotals(manifest, verify);
+    const excludedLine = `excluded=${totals.excluded} excludedSourceRows=${totals.sourceRows} excludedTargetRows=${totals.targetRows}`;
+    console.log(mismatches.length === 0 ? `match tables=${Object.keys(manifest.tables).length} ${excludedLine}` : `mismatch tables=${mismatches.join(",")} ${excludedLine}`);
     return mismatches.length === 0 ? 0 : 1;
   }
   // Remote modes read SHORTLET_OPS_URL and the secrets from the environment only, never from arguments.

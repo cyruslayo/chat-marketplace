@@ -19,6 +19,7 @@ function restoreHandler(options: { readonly access: boolean; readonly bookmark: 
     grantStore: { canActForOperator: () => false },
     sessionAuthority: { provisionAccessToken: UNUSED, revokeAll: () => {} },
     storageBookmarks: { bookmarkForTime: async () => options.bookmark, restoreOnNextSession: () => {} },
+    cutoverMarker: { read: async () => null, createIfAbsent: UNUSED },
     audit: { record: () => {}, entries: () => [] },
     clock: () => new Date(),
     tenantId: TENANT,

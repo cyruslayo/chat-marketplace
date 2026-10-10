@@ -9,8 +9,8 @@ import { ORIGIN, accessToken, opsHeaders, provisionTenant } from "./ops-test-hel
 
 /**
  * Issue 12b / 16 restore procedure (docs/runbooks/cloudflare-restore.md, section 2), checked against workerd. Each day's
- * objects are a full snapshot of their tables, so a rebuild loads ONE day's files: the procedure loads them through the
- * same `POST /_ops/import` route the runbook names, parents before children (`importOrder`), into a new object. The
+ * objects are per-table snapshots (not one point-in-time snapshot across tables), so a rebuild loads ONE day's files through
+ * the same `POST /_ops/import` route the runbook names, parents before children (`importOrder`), into a new object. The
  * rebuilt object must export the same bytes for that day. Synthetic dates far in the future keep these objects apart
  * from the alarm's own daily export.
  */

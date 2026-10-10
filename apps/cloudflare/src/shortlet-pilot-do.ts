@@ -16,7 +16,6 @@ import { LocalApartmentOwnerEnvironment, createOwnerRequestHandler } from "../..
 import { ResendEmailSender } from "../../pilot/src/notifications/email-sender.js";
 import { PilotNotifier } from "../../pilot/src/notifications/pilot-notifier.js";
 import { createPilotRequestHandler, type PilotRequestHandler } from "../../pilot/src/pilot-request-handler.js";
-import { DEFAULT_NOTIFICATION_SWEEP_SECONDS } from "../../pilot/src/pilot-config-core.js";
 import {
   cloudflareProvisioningState,
   loadCloudflareConfiguration,
@@ -30,6 +29,7 @@ import { runAlarmTasks, type AlarmTask } from "./do-alarm.js";
 import { lagosDate, runDailyExport } from "./do-export.js";
 import { DurableObjectSqlDatabase } from "./do-sql-database.js";
 import { clientAddressFromCloudflareHeaderValue, createHttpResponseLike, toHttpRequestLike } from "./http-shim.js";
+import { createCutoverMarkerStore, reconcileCutover } from "./cutover-marker.js";
 import { createOpsHandler, type OpsHandler } from "./ops-routes.js";
 import { SHORTLET_SCHEMA_MIGRATIONS } from "./schema.js";
 import { cloudflareAssetLoader } from "./pilot-assets.js";
@@ -54,6 +54,12 @@ interface PilotRuntime {
 /** 11a dispatches authenticated provisioning under this prefix, before the gate below. */
 const OPS_PREFIX = "/_ops";
 
+/**
+ * The alarm's cadence when no notifier sweep is configured (or no runtime exists yet). The daily export needs one alarm per
+ * Lagos day, and 24 hours gives exactly one. A scheduling interval, not a policy value.
+ */
+const DAILY_ALARM_MS = 24 * 60 * 60 * 1000;
+
 function isOpsPath(pathname: string): boolean {
   return pathname === OPS_PREFIX || pathname.startsWith(`${OPS_PREFIX}/`);
 }
@@ -68,7 +74,15 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
     // D3: the ordered migrations run before the object serves any request. A failing migration resets the object, so
     // it never serves a half-migrated schema. Fresh and migrated objects take the same path.
     void ctx.blockConcurrencyWhile(async () => {
-      applySchemaMigrations(new DurableObjectSqlDatabase(ctx.storage), SHORTLET_SCHEMA_MIGRATIONS, new Date().toISOString());
+      const database = new DurableObjectSqlDatabase(ctx.storage);
+      applySchemaMigrations(database, SHORTLET_SCHEMA_MIGRATIONS, new Date().toISOString());
+      // A (issue 16): on start, the database flag is re-asserted from the R2 marker, so a restore that rewound the flag cannot
+      // reopen imports. A failure here is not fatal: the object still starts, and the import path reconciles and refuses (fail closed).
+      try {
+        await reconcileCutover(database, createCutoverMarkerStore(env.EXPORTS, ctx.id.toString()));
+      } catch {
+        console.log(JSON.stringify({ event: "cutover_reconcile_deferred" }));
+      }
     });
   }
 
@@ -76,7 +90,12 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
     const url = new URL(request.url);
     // 11a: authenticated ops routes are dispatched first, so provisioning does not depend on the guest/owner
     // configuration (Paystack, concierge) being valid, nor on the tenant being provisioned yet.
-    if (isOpsPath(url.pathname)) return this.#handleOps(request);
+    // F1: the alarm (the daily export, and the notifier sweep when configured) is scheduled on every path, including the
+    // ops routes and an unprovisioned object, so the export does not depend on the notifier or on the guest runtime.
+    if (isOpsPath(url.pathname)) {
+      await this.#ensureAlarm(null);
+      return this.#handleOps(request);
+    }
 
     const database = new DurableObjectSqlDatabase(this.ctx.storage);
     let configuration: CloudflareConfiguration;
@@ -86,12 +105,16 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
       provisioning = cloudflareProvisioningState(configuration, database);
     } catch {
       // Fail closed without detail: a malformed configuration or inconsistent inventory is never served.
+      await this.#ensureAlarm(null);
       return this.#unavailable();
     }
 
     // 10a's user-approved first boot: normal routes and health return 503 "not provisioned" until valid
     // tenant-matching inventory and operators exist; authenticated provisioning above stays available.
-    if (!provisioning.provisioned) return this.#notProvisioned();
+    if (!provisioning.provisioned) {
+      await this.#ensureAlarm(null);
+      return this.#notProvisioned();
+    }
 
     const runtime = (this.#runtime ??= this.#buildRuntime(configuration, provisioning));
     await this.#ensureAlarm(runtime);
@@ -140,6 +163,7 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
         bookmarkForTime: (timeMs) => this.ctx.storage.getBookmarkForTime(timeMs),
         restoreOnNextSession: (bookmark) => { this.ctx.storage.onNextSessionRestoreBookmark(bookmark); },
       },
+      cutoverMarker: createCutoverMarkerStore(this.env.EXPORTS, this.ctx.id.toString()),
       audit: new SqliteAuditLog(database),
       clock,
       tenantId: this.env.SHORTLET_TENANT_ID?.trim() ?? "",
@@ -282,20 +306,18 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
 
   /**
    * Replaces the Node notifier's `setInterval` (`pilot-server.ts`) and adds 12a's daily export. A task that throws
-   * is isolated (do-alarm), and the alarm always reschedules itself, so one failed sweep cannot stop the next.
+   * is isolated (do-alarm), and the alarm always reschedules itself, so one failed task cannot stop the next.
    */
   async alarm(): Promise<void> {
-    const runtime = this.#runtime;
+    const runtime = this.#alarmRuntime();
     const tasks: AlarmTask[] = [];
-    if (runtime !== null) tasks.push(...this.#alarmTasks(runtime));
-    // 12a: the export and orphan sweep run from the same alarm, whether or not the guest runtime is built.
+    // The notifier is null when notifications are not configured, exactly as Node's null notifier. Only the sweep is skipped.
+    const notifier = runtime?.notifier ?? null;
+    if (notifier !== null) tasks.push({ name: "notifications", run: async () => { await notifier.sweep(); } });
+    // 12a: the export and orphan sweep run from the same alarm, whether or not notifications are configured.
     tasks.push({ name: "daily-export", run: async () => { await this.#dailyExport(); } });
     await runAlarmTasks(tasks, (line) => console.log(line));
-    // The alarm always reschedules: the daily export must survive a guest runtime that is not built (for example,
-    // before the tenant is provisioned).
-    const sweepSeconds = runtime?.configuration.notifications?.sweepSeconds ?? DEFAULT_NOTIFICATION_SWEEP_SECONDS;
-    const delayMs = runtime === null ? 24 * 60 * 60 * 1000 : sweepSeconds * 1000;
-    await this.ctx.storage.setAlarm(Date.now() + delayMs);
+    await this.ctx.storage.setAlarm(Date.now() + this.#alarmDelayMs(runtime));
   }
 
   /** Runs the export at most once per Lagos day (ADR 0078), tracked in Durable Object storage. */
@@ -314,23 +336,41 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
     await this.ctx.storage.put("export:lastDate", today);
   }
 
-  #alarmTasks(runtime: PilotRuntime): readonly AlarmTask[] {
-    const tasks: AlarmTask[] = [];
-    const notifier = runtime.notifier;
-    if (notifier !== null) tasks.push({ name: "notifications", run: async () => { await notifier.sweep(); } });
-    return tasks;
+  /**
+   * The runtime for alarm work. After an eviction `#runtime` is empty until the next guest request, so the alarm builds it
+   * when the object is provisioned. That keeps the notifier sweep on its cadence. Null when the object is not provisioned or
+   * its configuration is invalid; the failure is logged, and the daily export still runs.
+   */
+  #alarmRuntime(): PilotRuntime | null {
+    if (this.#runtime !== null) return this.#runtime;
+    try {
+      const configuration = loadCloudflareConfiguration(this.env);
+      const provisioning = cloudflareProvisioningState(configuration, new DurableObjectSqlDatabase(this.ctx.storage));
+      if (!provisioning.provisioned) return null;
+      this.#runtime = this.#buildRuntime(configuration, provisioning);
+      return this.#runtime;
+    } catch (error) {
+      console.log(JSON.stringify({ event: "alarm_runtime_unavailable", errorClass: error instanceof Error ? error.constructor.name : typeof error }));
+      return null;
+    }
   }
 
-  async #ensureAlarm(runtime: PilotRuntime): Promise<void> {
-    if (runtime.notifier === null || this.#alarmScheduled) return;
-    this.#alarmScheduled = true;
-    // The alarm survives eviction in storage, so only the first request after a fresh object schedules it.
-    if ((await this.ctx.storage.getAlarm()) === null) await this.#scheduleAlarm(runtime);
+  /** The sweep cadence when notifications are configured, otherwise the daily cadence. */
+  #alarmDelayMs(runtime: PilotRuntime | null): number {
+    const sweepSeconds = runtime?.configuration.notifications?.sweepSeconds;
+    return sweepSeconds === undefined ? DAILY_ALARM_MS : sweepSeconds * 1000;
   }
 
-  async #scheduleAlarm(runtime: PilotRuntime): Promise<void> {
-    if (runtime.notifier === null) return;
-    const seconds = runtime.configuration.notifications?.sweepSeconds ?? DEFAULT_NOTIFICATION_SWEEP_SECONDS;
-    await this.ctx.storage.setAlarm(Date.now() + seconds * 1000);
+  /**
+   * Schedules the alarm no later than the cadence the runtime needs. A stored alarm that is already sooner is kept, so an
+   * alarm set on an ops request never delays the sweep once a guest runtime exists. Only a built runtime fixes the cadence,
+   * so the flag is set then; before that each request checks the stored alarm.
+   */
+  async #ensureAlarm(runtime: PilotRuntime | null): Promise<void> {
+    if (this.#alarmScheduled) return;
+    const delayMs = this.#alarmDelayMs(runtime);
+    const scheduled = await this.ctx.storage.getAlarm();
+    if (scheduled === null || scheduled > Date.now() + delayMs) await this.ctx.storage.setAlarm(Date.now() + delayMs);
+    if (runtime !== null) this.#alarmScheduled = true;
   }
 }
