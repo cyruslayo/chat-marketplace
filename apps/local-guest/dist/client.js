@@ -1,6 +1,6 @@
 "use strict";
 (() => {
-  // node_modules/@weaver/web/dist/basic/layout.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/web/dist/basic/layout.js
   function applyBasicHook(element, component) {
     element.setAttribute("data-a2ui-component", component);
   }
@@ -43,7 +43,7 @@
     return relationship.kind === "single" ? relationship.child === void 0 ? [] : [relationship.child] : relationship.children;
   }
 
-  // node_modules/@weaver/web/dist/basic/markdown.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/web/dist/basic/markdown.js
   function appendText(document2, parent, text) {
     const lines = text.split("\n");
     lines.forEach((line, index) => {
@@ -106,7 +106,7 @@
     return [...output.childNodes];
   }
 
-  // node_modules/@weaver/web/dist/basic/styles.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/web/dist/basic/styles.js
   var basicSpace = "var(--a2ui-space, 8px)";
   var basicRadius = "var(--a2ui-radius, 8px)";
   var basicOutline = "var(--a2ui-color-outline, rgba(0, 0, 0, 0.22))";
@@ -123,7 +123,7 @@
     appendBasicStyle(element, `border: 1px solid ${basicOutline}; border-radius: ${basicRadius}`);
   }
 
-  // node_modules/@weaver/web/dist/basic/renderers.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/web/dist/basic/renderers.js
   var textElements = {
     h1: "h1",
     h2: "h2",
@@ -482,7 +482,7 @@
     return button;
   };
 
-  // node_modules/@weaver/web/dist/basic/icon.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/web/dist/basic/icon.js
   var SVG_NAMESPACE = "http://www.w3.org/2000/svg";
   function createSvg(document2, svgPath) {
     const svg = document2.createElementNS(SVG_NAMESPACE, "svg");
@@ -514,7 +514,7 @@
     };
   }
 
-  // node_modules/@weaver/web/dist/basic/inputs.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/web/dist/basic/inputs.js
   function createBasicInputRenderers(regexMatcher, dateTimeInputLocalValueResolver) {
     let opaqueId2 = 0;
     const nextId = (kind) => `weaver-basic-${kind}-${++opaqueId2}`;
@@ -874,7 +874,7 @@
       control.setAttribute(name, normalized);
   }
 
-  // node_modules/@weaver/web/dist/basic/media.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/web/dist/basic/media.js
   var imageFits = {
     contain: "contain",
     cover: "cover",
@@ -966,7 +966,7 @@
     return { Image, Video, AudioPlayer };
   }
 
-  // node_modules/@weaver/web/dist/basic/createBasicCatalogRendererRegistrations.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/web/dist/basic/createBasicCatalogRendererRegistrations.js
   function createBasicCatalogRendererRegistrations(options) {
     const inputs = createBasicInputRenderers(options.regexMatcher, options.dateTimeInputLocalValueResolver);
     const media = createBasicMediaRenderers(options.resourcePolicy);
@@ -992,7 +992,7 @@
     ];
   }
 
-  // node_modules/@weaver/web/dist/basic/theme.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/web/dist/basic/theme.js
   function createBasicCatalogThemeAdapter(options) {
     return (input) => {
       if (input.catalogId !== options.catalogId)
@@ -1006,7 +1006,7 @@
     };
   }
 
-  // node_modules/@weaver/core/dist/data-model/clone.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/core/dist/data-model/clone.js
   function cloneJson(value) {
     if (value === null || typeof value !== "object")
       return value;
@@ -1021,7 +1021,7 @@
     return JSON.stringify(left) === JSON.stringify(right);
   }
 
-  // node_modules/@weaver/core/dist/data-model/pointer.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/core/dist/data-model/pointer.js
   var success = (value) => ({ ok: true, value });
   function parsePointer(path) {
     if (path === "/")
@@ -1093,7 +1093,7 @@
     return true;
   }
 
-  // node_modules/@weaver/core/dist/data-context/path.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/core/dist/data-context/path.js
   var success2 = (value) => ({ ok: true, value });
   function resolveScopedPath(path, scopeTokens) {
     if (path.startsWith("/")) {
@@ -1127,7 +1127,7 @@
     return success2({ absolutePath: formatPointer(tokens), tokens });
   }
 
-  // node_modules/@weaver/core/dist/data-context/DataContext.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/core/dist/data-context/DataContext.js
   var success3 = (value) => ({ ok: true, value });
   var DataContext = class _DataContext {
     #dataModel;
@@ -1199,7 +1199,7 @@
     }
   };
 
-  // node_modules/@weaver/core/dist/data-context/types.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/core/dist/data-context/types.js
   function isDataPathBinding(value) {
     if (value === null || typeof value !== "object" || Array.isArray(value))
       return false;
@@ -1207,7 +1207,7 @@
     return keys.length === 1 && keys[0] === "path" && typeof value.path === "string";
   }
 
-  // node_modules/@weaver/core/dist/functions/FunctionRegistry.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/core/dist/functions/FunctionRegistry.js
   var key = (catalogId, name) => JSON.stringify([catalogId, name]);
   var FunctionRegistry = class {
     #catalogs;
@@ -1265,7 +1265,7 @@
     }
   };
 
-  // node_modules/@weaver/core/dist/functions/types.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/core/dist/functions/types.js
   function isFunctionCall(value) {
     if (value === null || typeof value !== "object" || Array.isArray(value))
       return false;
@@ -1282,7 +1282,7 @@
     return !("returnType" in record) || typeof record.returnType === "string" && ["string", "number", "boolean", "array", "object", "any", "void"].includes(record.returnType);
   }
 
-  // node_modules/@weaver/core/dist/functions/FunctionEvaluator.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/core/dist/functions/FunctionEvaluator.js
   var MAX_DEFAULT_DEPTH = 32;
   var RecursiveFunctionFailure = class {
     error;
@@ -1540,7 +1540,7 @@
     }
   };
 
-  // node_modules/@weaver/core/dist/actions/ActionContextResolver.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/core/dist/actions/ActionContextResolver.js
   function cloneJson2(value) {
     if (value === null || typeof value !== "object")
       return value;
@@ -1596,7 +1596,7 @@
     }
   };
 
-  // node_modules/@weaver/core/dist/checks/CheckEvaluator.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/core/dist/checks/CheckEvaluator.js
   function actualType2(value) {
     if (value === null)
       return "null";
@@ -1740,7 +1740,7 @@
     }
   };
 
-  // node_modules/@weaver/core/dist/actions/ActionDispatcher.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/core/dist/actions/ActionDispatcher.js
   function cloneJson3(value) {
     if (value === null || typeof value !== "object")
       return value;
@@ -1855,7 +1855,7 @@
     }
   };
 
-  // node_modules/@weaver/core/dist/basic-functions/formatString.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/core/dist/basic-functions/formatString.js
   var _a;
   var ExpressionParser = class {
     source;
@@ -2003,7 +2003,7 @@
     throw new Error("Unterminated interpolation");
   }
 
-  // node_modules/@weaver/core/dist/basic-catalog/generated-basic-catalog.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/core/dist/basic-catalog/generated-basic-catalog.js
   var A2UI_V091_BASIC_CATALOG_ID = "https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json";
   var A2UI_V091_BASIC_CATALOG = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -4549,7 +4549,7 @@
     }
   };
 
-  // node_modules/@weaver/core/dist/basic-catalog/index.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/core/dist/basic-catalog/index.js
   function cloneJson4(value) {
     if (value === null || typeof value !== "object")
       return value;
@@ -4567,7 +4567,7 @@
     };
   }
 
-  // node_modules/@weaver/core/dist/catalog/schema.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/core/dist/catalog/schema.js
   var A2UI_CATALOG_SCHEMA = {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     type: "object",
@@ -4587,7 +4587,7 @@
     additionalProperties: true
   };
 
-  // node_modules/@cfworker/json-schema/dist/esm/deep-compare-strict.js
+  // ../chat-marketplace-cloudflare/node_modules/@cfworker/json-schema/dist/esm/deep-compare-strict.js
   function deepCompareStrict(a, b) {
     const typeofa = typeof a;
     if (typeofa !== typeof b) {
@@ -4628,7 +4628,7 @@
     return a === b;
   }
 
-  // node_modules/@cfworker/json-schema/dist/esm/pointer.js
+  // ../chat-marketplace-cloudflare/node_modules/@cfworker/json-schema/dist/esm/pointer.js
   function encodePointer(p) {
     return encodeURI(escapePointer(p));
   }
@@ -4636,7 +4636,7 @@
     return p.replace(/~/g, "~0").replace(/\//g, "~1");
   }
 
-  // node_modules/@cfworker/json-schema/dist/esm/dereference.js
+  // ../chat-marketplace-cloudflare/node_modules/@cfworker/json-schema/dist/esm/dereference.js
   var schemaArrayKeyword = {
     prefixItems: true,
     items: true,
@@ -4757,7 +4757,7 @@
     return lookup;
   }
 
-  // node_modules/@cfworker/json-schema/dist/esm/format.js
+  // ../chat-marketplace-cloudflare/node_modules/@cfworker/json-schema/dist/esm/format.js
   var DATE = /^(\d\d\d\d)-(\d\d)-(\d\d)$/;
   var DAYS = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
   var TIME = /^(\d\d):(\d\d):(\d\d)(\.\d+)?(z|[+-]\d\d(?::?\d\d)?)?$/i;
@@ -4850,7 +4850,7 @@
     }
   }
 
-  // node_modules/@cfworker/json-schema/dist/esm/types.js
+  // ../chat-marketplace-cloudflare/node_modules/@cfworker/json-schema/dist/esm/types.js
   var OutputFormat;
   (function(OutputFormat2) {
     OutputFormat2[OutputFormat2["Flag"] = 1] = "Flag";
@@ -4858,7 +4858,7 @@
     OutputFormat2[OutputFormat2["Detailed"] = 4] = "Detailed";
   })(OutputFormat || (OutputFormat = {}));
 
-  // node_modules/@cfworker/json-schema/dist/esm/ucs2-length.js
+  // ../chat-marketplace-cloudflare/node_modules/@cfworker/json-schema/dist/esm/ucs2-length.js
   function ucs2length(s) {
     let result = 0;
     let length2 = s.length;
@@ -4877,7 +4877,7 @@
     return result;
   }
 
-  // node_modules/@cfworker/json-schema/dist/esm/validate.js
+  // ../chat-marketplace-cloudflare/node_modules/@cfworker/json-schema/dist/esm/validate.js
   function validate(instance, schema, draft = "2019-09", lookup = dereference(schema), shortCircuit = true, recursiveAnchor = null, instanceLocation = "#", schemaLocation = "#", evaluated = /* @__PURE__ */ Object.create(null)) {
     if (schema === true) {
       return { valid: true, errors: [] };
@@ -5635,7 +5635,7 @@ Known schemas:
     return { valid: errors.length === 0, errors };
   }
 
-  // node_modules/@cfworker/json-schema/dist/esm/validator.js
+  // ../chat-marketplace-cloudflare/node_modules/@cfworker/json-schema/dist/esm/validator.js
   var Validator = class {
     schema;
     draft;
@@ -5658,7 +5658,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@weaver/core/dist/catalog/schema-validator.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/core/dist/catalog/schema-validator.js
   var DRAFT = "2020-12";
   var TYPES = /* @__PURE__ */ new Set(["null", "boolean", "object", "array", "number", "string", "integer"]);
   function pointer(location2) {
@@ -5792,7 +5792,7 @@ Known schemas:
     return visit(schema, schema);
   }
 
-  // node_modules/@weaver/core/dist/catalog/CatalogRegistry.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/core/dist/catalog/CatalogRegistry.js
   var COMPONENT_ID_REF = "common_types.json#/$defs/ComponentId";
   var CHILD_LIST_REF = "common_types.json#/$defs/ChildList";
   var CHECKABLE_REF = "common_types.json#/$defs/Checkable";
@@ -6430,7 +6430,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@weaver/core/dist/component-tree/ComponentTreeResolver.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/core/dist/component-tree/ComponentTreeResolver.js
   function cloneJson6(value) {
     if (value === null || typeof value !== "object")
       return value;
@@ -6575,7 +6575,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@weaver/core/dist/component-instances/ComponentInstanceResolver.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/core/dist/component-instances/ComponentInstanceResolver.js
   function cloneJson7(value) {
     if (value === null || typeof value !== "object")
       return value;
@@ -6764,7 +6764,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@weaver/core/dist/component-properties/ComponentPropertyResolver.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/core/dist/component-properties/ComponentPropertyResolver.js
   function cloneJson8(value) {
     if (value === null || typeof value !== "object")
       return value;
@@ -7090,7 +7090,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@weaver/core/dist/input-binding/InputBindingWriter.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/core/dist/input-binding/InputBindingWriter.js
   function compatible2(kind, value) {
     switch (kind) {
       case "dynamicString":
@@ -7179,7 +7179,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@weaver/core/dist/data-model/DataModel.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/core/dist/data-model/DataModel.js
   var success4 = (value) => ({ ok: true, value });
   var DataModel = class {
     #state = {};
@@ -7399,12 +7399,12 @@ Known schemas:
     }
   };
 
-  // node_modules/@weaver/core/dist/protocol/a2ui/v0_9_1/outbound/client-capabilities.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/core/dist/protocol/a2ui/v0_9_1/outbound/client-capabilities.js
   function buildA2UIClientCapabilities(input) {
     return { "v0.9": { supportedCatalogIds: [...input.supportedCatalogIds] } };
   }
 
-  // node_modules/@weaver/core/dist/protocol/a2ui/v0_9_1/outbound/validation-error.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/core/dist/protocol/a2ui/v0_9_1/outbound/validation-error.js
   function buildA2UIValidationFailedClientMessage(input) {
     if (input.surfaceId.length === 0)
       throw new TypeError("surfaceId must not be empty");
@@ -7490,7 +7490,7 @@ Known schemas:
     return typeof value === "object" && value !== null && !Array.isArray(value);
   }
 
-  // node_modules/@weaver/core/dist/protocol/a2ui/v0_9_1/validation.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/core/dist/protocol/a2ui/v0_9_1/validation.js
   var MESSAGE_KEYS = [
     "createSurface",
     "updateComponents",
@@ -7635,7 +7635,7 @@ Known schemas:
     }
   }
 
-  // node_modules/@weaver/core/dist/surfaces/clone.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/core/dist/surfaces/clone.js
   function cloneJson9(value) {
     if (value === null || typeof value !== "object")
       return value;
@@ -7649,7 +7649,7 @@ Known schemas:
     return clone;
   }
 
-  // node_modules/@weaver/core/dist/surfaces/SurfaceStore.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/core/dist/surfaces/SurfaceStore.js
   var success5 = (value) => ({ ok: true, value });
   var SurfaceStore = class {
     #surfaces = /* @__PURE__ */ new Map();
@@ -7812,7 +7812,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@weaver/core/dist/message-processor/A2UIMessageProcessor.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/core/dist/message-processor/A2UIMessageProcessor.js
   var A2UIMessageProcessor = class {
     store;
     catalogs;
@@ -7897,7 +7897,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@weaver/core/dist/runtime/WeaverRuntime.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/core/dist/runtime/WeaverRuntime.js
   var WeaverRuntime = class {
     #services;
     /** @internal Construct runtimes through createWeaverRuntime(). */
@@ -8044,7 +8044,7 @@ Known schemas:
     }) };
   }
 
-  // node_modules/@weaver/web/dist/renderers/errors.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/web/dist/renderers/errors.js
   var RendererRegistryConfigurationError = class extends Error {
     code = "RENDERER_ALREADY_REGISTERED";
     catalogId;
@@ -8057,7 +8057,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@weaver/web/dist/renderers/RendererRegistry.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/web/dist/renderers/RendererRegistry.js
   var key2 = (catalogId, component) => JSON.stringify([catalogId, component]);
   var RendererRegistry = class {
     #renderers = /* @__PURE__ */ new Map();
@@ -8085,7 +8085,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@weaver/web/dist/surface/WebSurfaceRenderer.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/web/dist/surface/WebSurfaceRenderer.js
   var identityKey = (sourceComponentId, scopePath) => JSON.stringify([sourceComponentId, scopePath]);
   var controlIdentityKey = (sourceComponentId, scopePath, localKey) => JSON.stringify([sourceComponentId, scopePath, localKey]);
   var WebSurfaceRenderer = class {
@@ -8462,7 +8462,7 @@ Known schemas:
     return result.ok ? { ok: true, value: { ...result.value } } : structuredClone(result);
   }
 
-  // node_modules/@weaver/web/dist/basic-web-runtime/createBasicWebRuntime.js
+  // ../chat-marketplace-cloudflare/node_modules/@weaver/web/dist/basic-web-runtime/createBasicWebRuntime.js
   function createBasicWebRuntime(config = {}) {
     const catalogId = A2UI_V091_BASIC_CATALOG_ID;
     const runtimeCreated = createWeaverRuntime({
