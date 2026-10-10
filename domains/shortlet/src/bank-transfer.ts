@@ -148,6 +148,9 @@ function parseSession(json: string): BankTransferCheckoutSession | null {
   }
 }
 
+/** Table DDL, applied by the schema migrations (apps/cloudflare/src/schema.ts) and by this store's constructor. */
+export const BANK_TRANSFER_SCHEMA = "CREATE TABLE IF NOT EXISTS bank_transfer_sessions (transfer_reference TEXT PRIMARY KEY, offer_id TEXT NOT NULL, seq INTEGER NOT NULL, session_json TEXT NOT NULL); CREATE INDEX IF NOT EXISTS idx_bank_transfer_sessions_offer ON bank_transfer_sessions (offer_id, seq)";
+
 export class SqliteBankTransferSessionStore
   implements BankTransferSessionStore
 {
@@ -155,7 +158,7 @@ export class SqliteBankTransferSessionStore
   constructor(database: SqlDatabase) {
     this.#database = database;
     this.#database.exec(
-      "CREATE TABLE IF NOT EXISTS bank_transfer_sessions (transfer_reference TEXT PRIMARY KEY, offer_id TEXT NOT NULL, seq INTEGER NOT NULL, session_json TEXT NOT NULL); CREATE INDEX IF NOT EXISTS idx_bank_transfer_sessions_offer ON bank_transfer_sessions (offer_id, seq)",
+      BANK_TRANSFER_SCHEMA,
     );
   }
   save(session: BankTransferCheckoutSession): void {

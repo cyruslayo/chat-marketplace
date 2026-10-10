@@ -687,6 +687,15 @@ function isPayoutRow(value: unknown): value is {
   );
 }
 
+/** Table DDL, applied by the schema migrations (apps/cloudflare/src/schema.ts) and by this store's constructor. */
+export const OWNER_PAYABLE_SCHEMA = `
+      CREATE TABLE IF NOT EXISTS owner_payable_cancellations (reservation_id TEXT PRIMARY KEY, cancellation_id TEXT NOT NULL UNIQUE, liability TEXT NOT NULL, refund_kobo INTEGER NOT NULL, retained_base_kobo INTEGER NOT NULL, posted_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS owner_payouts (payout_id TEXT PRIMARY KEY, reservation_id TEXT NOT NULL, amount_kobo INTEGER NOT NULL, paid_on TEXT NOT NULL, reference TEXT NOT NULL, recorded_at TEXT NOT NULL, recorded_by TEXT NOT NULL, UNIQUE (reservation_id, reference));
+      CREATE INDEX IF NOT EXISTS idx_owner_payouts_reservation ON owner_payouts (reservation_id, recorded_at);
+      CREATE TABLE IF NOT EXISTS guest_refunds (refund_id TEXT PRIMARY KEY, reservation_id TEXT NOT NULL, amount_kobo INTEGER NOT NULL, refunded_on TEXT NOT NULL, reference TEXT NOT NULL, recorded_at TEXT NOT NULL, recorded_by TEXT NOT NULL, UNIQUE (reservation_id, reference));
+      CREATE TABLE IF NOT EXISTS owner_payout_recoveries (recovery_id TEXT PRIMARY KEY, reservation_id TEXT NOT NULL, amount_kobo INTEGER NOT NULL, received_on TEXT NOT NULL, reference TEXT NOT NULL, recorded_at TEXT NOT NULL, recorded_by TEXT NOT NULL, UNIQUE (reservation_id, reference));
+    `;
+
 /** The owner-payable ledger in the shared SQLite database, read fresh on every call (no cross-process cache). */
 export class SqliteOwnerPayableLedger implements OwnerPayableLedger {
   readonly #database: import("../../../packages/platform-core/src/sql-database.js").SqlDatabase;
@@ -697,13 +706,7 @@ export class SqliteOwnerPayableLedger implements OwnerPayableLedger {
   ) {
     this.#database = database;
     this.#clock = clock;
-    this.#database.exec(`
-      CREATE TABLE IF NOT EXISTS owner_payable_cancellations (reservation_id TEXT PRIMARY KEY, cancellation_id TEXT NOT NULL UNIQUE, liability TEXT NOT NULL, refund_kobo INTEGER NOT NULL, retained_base_kobo INTEGER NOT NULL, posted_at TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS owner_payouts (payout_id TEXT PRIMARY KEY, reservation_id TEXT NOT NULL, amount_kobo INTEGER NOT NULL, paid_on TEXT NOT NULL, reference TEXT NOT NULL, recorded_at TEXT NOT NULL, recorded_by TEXT NOT NULL, UNIQUE (reservation_id, reference));
-      CREATE INDEX IF NOT EXISTS idx_owner_payouts_reservation ON owner_payouts (reservation_id, recorded_at);
-      CREATE TABLE IF NOT EXISTS guest_refunds (refund_id TEXT PRIMARY KEY, reservation_id TEXT NOT NULL, amount_kobo INTEGER NOT NULL, refunded_on TEXT NOT NULL, reference TEXT NOT NULL, recorded_at TEXT NOT NULL, recorded_by TEXT NOT NULL, UNIQUE (reservation_id, reference));
-      CREATE TABLE IF NOT EXISTS owner_payout_recoveries (recovery_id TEXT PRIMARY KEY, reservation_id TEXT NOT NULL, amount_kobo INTEGER NOT NULL, received_on TEXT NOT NULL, reference TEXT NOT NULL, recorded_at TEXT NOT NULL, recorded_by TEXT NOT NULL, UNIQUE (reservation_id, reference));
-    `);
+    this.#database.exec(OWNER_PAYABLE_SCHEMA);
   }
   postCancellation(
     input: Parameters<OwnerPayableLedger["postCancellation"]>[0],

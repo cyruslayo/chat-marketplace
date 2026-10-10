@@ -65,6 +65,20 @@ class SqliteCollection<T> implements EnforcementRecordCollection<T> {
   }
 }
 
+/** Table DDL, applied by the schema migrations (apps/cloudflare/src/schema.ts) and by this store's constructor. */
+export const OPERATOR_ENFORCEMENT_SCHEMA = `
+      CREATE TABLE IF NOT EXISTS operator_enforcement_records (
+        collection TEXT NOT NULL,
+        record_key TEXT NOT NULL,
+        record_json TEXT NOT NULL,
+        PRIMARY KEY (collection, record_key)
+      );
+      CREATE TABLE IF NOT EXISTS operator_enforcement_sequence (
+        sequence_name TEXT PRIMARY KEY,
+        last_value INTEGER NOT NULL
+      );
+    `;
+
 /**
  * Operator enforcement state on the shared handle (ADR 0064, ADR 0004). Enforcement decisions are records of human
  * decisions, appeals and notices; they hold no credentials (ADR 0075), so they are stored as written.
@@ -82,18 +96,7 @@ export class SqliteOperatorEnforcementStateStore implements OperatorEnforcementS
 
   constructor(database: SqlDatabase) {
     this.#database = database;
-    database.exec(`
-      CREATE TABLE IF NOT EXISTS operator_enforcement_records (
-        collection TEXT NOT NULL,
-        record_key TEXT NOT NULL,
-        record_json TEXT NOT NULL,
-        PRIMARY KEY (collection, record_key)
-      );
-      CREATE TABLE IF NOT EXISTS operator_enforcement_sequence (
-        sequence_name TEXT PRIMARY KEY,
-        last_value INTEGER NOT NULL
-      );
-    `);
+    database.exec(OPERATOR_ENFORCEMENT_SCHEMA);
     this.incidents = new SqliteCollection(database, "incidents");
     this.protectiveActions = new SqliteCollection(database, "protective_actions");
     this.finalizedEnforcements = new SqliteCollection(database, "finalized_enforcements");

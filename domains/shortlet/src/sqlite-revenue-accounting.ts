@@ -24,9 +24,8 @@ function releaseIdentity(value: unknown): Record<string, unknown> & { releaseId:
 const moneyFields = ["commissionBaseKobo", "commissionKobo", "operatorNetKobo", "payableNowKobo", "routineReserveTrancheKobo", "deferredPostStayKobo", "riskHoldKobo"] as const;
 const moneyColumns = ["commission_base_kobo", "commission_kobo", "operator_net_kobo", "payable_now_kobo", "routine_reserve_tranche_kobo", "deferred_post_stay_kobo", "risk_hold_kobo"] as const;
 
-export class SqliteRevenueAccountingRepository implements RevenueAccountingRepository {
-  constructor(private readonly database: SqlDatabase) {
-    database.exec(`
+/** Revenue release, journal, ledger and adjustment tables, applied by the schema migrations and by this repository. */
+export const REVENUE_ACCOUNTING_SCHEMA = `
       CREATE TABLE IF NOT EXISTS revenue_releases (
         reservation_id TEXT PRIMARY KEY, release_id TEXT NOT NULL UNIQUE, payload_json TEXT NOT NULL,
         ${moneyColumns.map((column) => `${column} INTEGER CHECK (${column} IS NULL OR (typeof(${column}) = 'integer' AND ${column} >= 0))`).join(",")}
@@ -45,7 +44,11 @@ export class SqliteRevenueAccountingRepository implements RevenueAccountingRepos
         PRIMARY KEY (adjustment_id, adjustment_version)
       );
       CREATE INDEX IF NOT EXISTS revenue_adjustments_release ON revenue_adjustments (release_id);
-    `);
+    `;
+
+export class SqliteRevenueAccountingRepository implements RevenueAccountingRepository {
+  constructor(private readonly database: SqlDatabase) {
+    database.exec(REVENUE_ACCOUNTING_SCHEMA);
   }
 
   findReleaseByReservationId(id: string): unknown {
@@ -125,17 +128,20 @@ export class SqliteRevenueAccountingRepository implements RevenueAccountingRepos
   }
 }
 
-/** Compatibility-only state; production releases use the accounting repository above. */
-export class SqliteRevenueReleaseStateStore implements RevenueReleaseStateStore {
-  constructor(private readonly database: SqlDatabase) {
-    database.exec(`CREATE TABLE IF NOT EXISTS revenue_compatibility_releases (
+/** Table DDL, applied by the schema migrations (apps/cloudflare/src/schema.ts) and by this store's constructor. */
+export const REVENUE_COMPATIBILITY_SCHEMA = `CREATE TABLE IF NOT EXISTS revenue_compatibility_releases (
       reservation_id TEXT PRIMARY KEY, payload_json TEXT NOT NULL,
       commission_base_kobo INTEGER NOT NULL, commission_kobo INTEGER NOT NULL, operator_net_kobo INTEGER NOT NULL,
       payable_net_kobo INTEGER NOT NULL, reserve_tranche_kobo INTEGER NOT NULL
     );
     CREATE TABLE IF NOT EXISTS revenue_compatibility_adjustments (
       adjustment_id TEXT PRIMARY KEY, adjustment_kobo INTEGER NOT NULL, payload_json TEXT NOT NULL
-    )`);
+    )`;
+
+/** Compatibility-only state; production releases use the accounting repository above. */
+export class SqliteRevenueReleaseStateStore implements RevenueReleaseStateStore {
+  constructor(private readonly database: SqlDatabase) {
+    database.exec(REVENUE_COMPATIBILITY_SCHEMA);
   }
 
   findRelease(id: string): RevenueReleaseRecord | null {

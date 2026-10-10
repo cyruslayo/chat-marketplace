@@ -178,13 +178,16 @@ export interface CheckInSupportStore {
   save(reservationId: string, state: CheckInSupportState): void;
 }
 
+/** Table DDL, applied by the schema migrations (apps/cloudflare/src/schema.ts) and by this store's constructor. */
+export const CHECKIN_SUPPORT_SCHEMA = "CREATE TABLE IF NOT EXISTS checkin_support_state (reservation_id TEXT PRIMARY KEY, state_json TEXT NOT NULL)";
+
 export class SqliteCheckInSupportStore implements CheckInSupportStore {
   readonly #database: SqlDatabase;
 
   constructor(database: SqlDatabase) {
     this.#database = database;
     this.#database.exec(
-      "CREATE TABLE IF NOT EXISTS checkin_support_state (reservation_id TEXT PRIMARY KEY, state_json TEXT NOT NULL)",
+      CHECKIN_SUPPORT_SCHEMA,
     );
   }
 

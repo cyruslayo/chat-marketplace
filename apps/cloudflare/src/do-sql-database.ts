@@ -1,8 +1,9 @@
 import type { DurableObjectStorage } from "@cloudflare/workers-types";
 import type { SqlDatabase, SqlParams, SqlRow, SqlStatement, SqlValue } from "../../../packages/platform-core/src/sql-database.js";
+import { MAX_STATEMENT_PARAMETERS } from "../../../packages/platform-core/src/data-migration.js";
 
-// https://developers.cloudflare.com/durable-objects/platform/limits/ — SQL platform limits, not booking policy.
-const MAX_SQL_PARAMETERS = 100;
+// The parameter limit is the one in data-migration.ts (Cloudflare DO limits page; verify before cutover). SQL platform limit, not booking policy.
+const MAX_SQL_PARAMETERS = MAX_STATEMENT_PARAMETERS;
 const MAX_SQL_VALUE_BYTES = 2 * 1024 * 1024;
 
 // Quoted strings/identifiers and comments are opaque, including escaped quotes.

@@ -39,13 +39,3 @@ export async function populateSource(database: SqlDatabase): Promise<void> {
   ).run({ $receipt_id: "receipt-current-002", $transfer_id: "transfer-fixture-002", $content_type: "application/pdf", $object_key: BLOB_KEY, $size_bytes: 4 });
   await new SqliteReceiptBlobStore(database).put(BLOB_KEY, new Uint8Array([37, 80, 68, 70]), "application/pdf");
 }
-
-/** The DDL a target needs before import: every application table except the receipt blob table, which moves to R2. */
-export function targetSchemaStatements(database: SqlDatabase): string[] {
-  return database
-    .prepare(
-      "SELECT name, sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name <> 'receipt_blobs' ORDER BY CASE type WHEN 'table' THEN 0 ELSE 1 END, name",
-    )
-    .all()
-    .map((row) => String(row.sql));
-}

@@ -1,9 +1,11 @@
 # Cut over the pilot from Node to Cloudflare (DRAFT)
 
-> **DRAFT. Not approved for use.** This runbook was drafted by the agent for issue 16 and needs the user's review
-> before anyone runs any step against production (issue 16 AC4). Open decisions are listed at the end. Do not run
-> it with real guest or payment data until the data-protection gates in ADR 0095 are cleared (counsel approval of the
-> cross-border transfer basis, vendor terms and the DPIA). Staging rehearsal (issue 15) comes first.
+> **DRAFT. Not approved for use.** The agent drafted this runbook for issue 16. Decisions D1 to D4 and the other open
+> decisions were delegated by the user on 10 Oct 2026 and are recorded in `.scratch/cloudflare-deployment/issues/16-data-migration-and-cutover.md`
+> under "Decisions (delegated by user, 10 Oct 2026)". Items marked **Needs user** below stay open. The user must still
+> review this runbook before anyone runs a step against production (issue 16 AC4). Do not run it with real guest or
+> payment data until the data-protection gates in ADR 0095 are cleared (counsel approval of the cross-border transfer
+> basis, vendor terms and the DPIA). Staging rehearsal (issue 15) comes first.
 
 The Node pilot keeps one SQLite file (`SHORTLET_DB_PATH`) and its receipts. The Cloudflare pilot keeps all state in
 one SQLite-backed Durable Object per tenant, with receipts in the private `RECEIPTS` R2 bucket (ADRs 0004, 0090, 0095).
@@ -12,15 +14,33 @@ This runbook moves the data, switches traffic, and defines how to go back.
 Record every step with its start time, end time, result and operator in the log at the end. Do not write secrets,
 tokens or guest data in the log. Counts and checksums are enough.
 
+## Rollback window (single named place)
+
+`ROLLBACK_WINDOW` is the only definition of the rollback window. Other sections refer to it and do not restate it.
+
+- **Length:** 14 days after the cutover flag is set (step 7.1).
+- **Closes only when both hold:**
+  1. at least 14 days have elapsed since the flag was set; and
+  2. at least one full payout cycle and one verified restore from the daily export (issue 12a, read back through the
+     restore path in issue 12b) have completed on Cloudflare, with no discrepancy in the post-cutover checks.
+- **Otherwise it extends**, and the post-window reconciliation (step 10) does not start.
+- **Issue 17 (retire the Node production entry) runs only after the window closes.**
+
+Drift risk: the reverse export carries every write made after cutover, so the rollback delta grows with the window's
+length. Deletes after cutover are not visible in an export without a tombstone (see R3). Both risks grow with the window,
+which is why step 10 exists.
+
 ## 0. Preconditions
 
 | Check | Why |
 | --- | --- |
 | Staging rehearsal (issue 15) passed with these same steps and checksums matched. | Proves the procedure before production. |
 | Access service token, `OPS_SHARED_SECRET`, `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD` are set on the production Worker (issue 11a). | `/_ops` refuses everything otherwise. |
-| The production Durable Object has the target schema, with every table the Node export contains. | Import refuses an unknown table. See open decision 1. |
+| The production Durable Object has run its schema migrations. It does this itself on first start (`apps/cloudflare/src/schema.ts`, D3). The verify response's `schemaVersion` must equal the number of migrations in that file (currently 2). | Import refuses with `SCHEMA_NOT_READY` otherwise, and never creates tables. |
+| **Checklist C1:** the value `MAX_STATEMENT_PARAMETERS = 100` in `packages/platform-core/src/data-migration.ts` is verified against the live Cloudflare Durable Object limits page before cutover. It came from a search summary, not the live page. Record the page's date and value in the log. | Chunk sizes and the object's own statement limit depend on it. |
+| **Checklist C2:** the production Node file has no table outside the object's schema. `local_pilot_clock` is a local-development table and must be absent. The export is refused by the object if a table is missing (`UNKNOWN_TABLE`), so a mismatch stops the push rather than losing data. | Export scope is every application table (issue 16, Decisions: export scope). |
 | `SHORTLET_PUBLIC_ORIGIN` is the final origin and the Paystack dashboard's callback and webhook URLs are known. | Needed for step 6. |
-| A write-protected copy of the Node SQLite file and its receipts folder is kept. | This is the rollback source. |
+| A write-protected copy of the Node SQLite file, its `-wal` sidecar if present, and its receipts folder is kept. | This is the rollback source. |
 
 Set the remote values in the shell session only. Never put them in a file, a URL or the log:
 
@@ -31,12 +51,27 @@ export CF_ACCESS_CLIENT_ID="<from the Access service token>"
 export CF_ACCESS_CLIENT_SECRET="<from the Access service token>"
 ```
 
-## 1. Freeze Node writes
+## 1. Freeze Node writes (D4)
 
-1. Put the Node pilot behind a maintenance page, or stop the process, so no request can write. The mechanism is for
-   the user to choose. Guests must see a clear "service paused" page, not an error.
-2. Confirm the freeze. Take a copy of the SQLite file (`SHORTLET_DB_PATH`) and a copy of the receipts. Record the file
-   size and modification time. Those copies are the rollback source. Do not write to the original file again.
+The Node pilot has no clean in-process read-only mode. Writes also come from timers that run without a request: the
+notification sweep (`setInterval` in `apps/pilot/src/pilot-server.ts`, every `DEFAULT_NOTIFICATION_SWEEP_SECONDS` = 30 s
+by default, when notifications are configured). A request guard would miss those, so the freeze is a stopped process.
+Whether a maintenance page also sits at the edge is for the user to choose (**Needs user**, see below). The verification
+below applies either way.
+
+1. Stop the Node pilot process. Guests should see the paused page from the edge, not a connection error.
+2. Verify no writer is running. This must print nothing:
+   ```bash
+   pgrep -af "<Node pilot entry point>"
+   ```
+3. Verify the file is not changing. Record the checksums and sizes of the database and its `-wal` sidecar (if present),
+   wait at least two sweep intervals (60 s by default), then repeat. The two readings must be identical:
+   ```bash
+   sha256sum "<SHORTLET_DB_PATH>" "<SHORTLET_DB_PATH>-wal" 2>/dev/null; stat -c '%s %y' "<SHORTLET_DB_PATH>" "<SHORTLET_DB_PATH>-wal" 2>/dev/null
+   ```
+   If the readings differ, the freeze has failed. Do not export.
+4. Copy the database, its `-wal` sidecar and the receipts folder to the rollback location. Confirm the copy's checksum
+   equals the reading in step 3. Do not write to the original file again.
 
 ## 2. Export
 
@@ -46,29 +81,30 @@ From the repository root, on a machine that can read the frozen SQLite file:
 npx tsx scripts/export-node-sqlite.ts --export "<SHORTLET_DB_PATH>" "<EXPORT_DIR>"
 ```
 
-This writes one `<table>.jsonl` per table, a `receipts/` folder with one file per receipt (named by its opaque key),
+This writes one `<table>.jsonl` per application table, a `receipts/` folder with one file per receipt (named by its opaque key),
 and `manifest.json`. The manifest holds the row count and SHA-256 per table, and the receipt sizes and SHA-256. It
-prints counts only. The source file is opened read-only.
+prints counts only. The source file is opened read-only. Control tables (`schema_migrations`, `migration_state`) are
+never exported.
 
 Record the manifest's SHA-256 (`sha256sum manifest.json`) in the log.
 
 ## 3. Receipts to R2
 
 Upload each file in `<EXPORT_DIR>/receipts/` to the private `RECEIPTS` bucket, `shortlet-pilot-production-receipts`
-(`apps/cloudflare/cloudflare.config.ts`). Use the project's pinned `cf` CLI. Without `--local` it works on the remote
-bucket. The key is the file name, and the content type is in `manifest.json` under `receipts`:
+(`apps/cloudflare/cloudflare.config.ts`). Use the project's pinned `cf` CLI. Its `r2 objects put` help (checked for this
+pass) documents `--file`, `--content-type`, `--bucket-name` and the global `--mode`. The key is the file name, and the
+content type is in `manifest.json` under `receipts`:
 
 ```bash
 npm exec cf -- r2 objects put "<receipt-key>" --bucket-name "shortlet-pilot-production-receipts" --mode production \
   --file "<EXPORT_DIR>/receipts/<receipt-key>" --content-type "<contentType from manifest.json>"
 ```
 
-The command and its authentication are for the user to confirm (open decision 6). Do not use a public bucket or a
-presigned URL (ADR 0090).
+The CLI's authentication (which `--profile`, which token) is **Needs user**. Do not use a public bucket or a presigned URL (ADR 0090).
 
 Check that the bucket holds exactly `manifest.receipts.length` objects with the expected sizes before continuing. List
 them with `npm exec cf -- r2 objects list --bucket-name "shortlet-pilot-production-receipts" --mode production`, following
-`--cursor` across pages. The list output must be compared by hand with the manifest's sizes.
+`--cursor` across pages. Confirm the `list` flags with `cf r2 objects list --help` before the first run (not checked in this pass).
 
 ## 4. Import
 
@@ -76,9 +112,12 @@ them with `npm exec cf -- r2 objects list --bucket-name "shortlet-pilot-producti
 npx tsx scripts/export-node-sqlite.ts --push "<EXPORT_DIR>"
 ```
 
-This sends each table's rows to `POST /_ops/import` in batches of 100 rows. Each batch is one transaction on the object.
-A batch with a malformed row is refused whole and nothing from it is written, so the command stops at the first refused
-batch. Re-running the push is safe: rows are upserted on their primary key and nothing is duplicated.
+This sends each table's rows to `POST /_ops/import`. Each request holds at most `floor(100 / column count)` rows of that
+table (D2), and its body stays within the documented 5 MiB chunk bound (`MAX_IMPORT_REQUEST_BYTES`). Each request is one
+transaction on the object. A request with a malformed row is refused whole and nothing from it is written, so the command
+stops at the first refused request. The object refuses with `SCHEMA_NOT_READY` if its schema is not current, and with
+`CUTOVER_COMPLETE` once step 7.1 has run. Before that, re-running the push is safe: rows are upserted on their primary key
+(D1), and nothing is duplicated.
 
 ## 5. Verify
 
@@ -89,7 +128,8 @@ npx tsx scripts/export-node-sqlite.ts --compare "<EXPORT_DIR>/manifest.json" "<V
 
 `--pull` reads each table back from the object (read-only) and writes `verify.json` and the table files there.
 `--compare` must print `match`. A `mismatch` names the tables that differ. Stop on a mismatch. Do not switch traffic.
-Keep `verify.json` with the log.
+Keep `verify.json` with the log. The verify response also carries `schemaVersion` and `cutoverCompletedAt`: record both
+(expected: the migration count and no timestamp).
 
 ## 6. Paystack callback and webhook URLs
 
@@ -101,10 +141,20 @@ If the public origin changes, update the Paystack dashboard for the environment 
 Record the old values so step R6 can restore them. Staging uses Paystack test keys. Production uses live keys, so
 confirm which environment is being changed before saving.
 
-## 7. Switch DNS
+## 7. Complete the cutover flag, then switch DNS
 
-Point the public hostname at the Cloudflare Worker route (the user chooses the route and the TTL). Lower the TTL in
-advance. Record the time of the switch.
+**7.1 Set the one-way cutover flag.** This is the point after which the object accepts no migration import (D1). Run it
+only after steps 5 and 6 have passed:
+
+```bash
+npx tsx scripts/export-node-sqlite.ts --cutover-complete
+```
+
+It prints the timestamp. Calling it again returns the first timestamp. Nothing in the repository clears the flag. Record the
+time in the log. `ROLLBACK_WINDOW` starts here.
+
+**7.2 Switch DNS.** Point the public hostname at the Cloudflare Worker route. The route and the TTL are **Needs user**.
+Lower the TTL in advance. Record the time of the switch.
 
 ## 8. Smoke tests
 
@@ -122,42 +172,59 @@ Run these after the switch, in order. Use the staging smoke tests from issue 15 
 ## 9. Rollback
 
 Roll back if the verify step (step 5) fails, a smoke test fails, or any payment or receipt cannot be reconciled. The
-user decides. Rollback is defined as follows. Anything written to the object after the switch is first reverse-exported
-and then applied to the Node file, so no post-cutover write is lost.
+user decides. The rollback is possible only while `ROLLBACK_WINDOW` is open. Anything written to the object after
+the switch is first reverse-exported and then applied to the Node file, so no post-cutover write is lost.
 
-R1. **Stop writes to the object.** Put the maintenance page in front of the Worker, as in step 1.
+R1. **Stop writes to the object.** Put the maintenance page in front of the Worker (mechanism **Needs user**). The
+    object's data is then frozen for the rollback, as Node's was in step 1.
 
 R2. **Reverse-export the object.** Run `--pull "<POST_DIR>"` (the same command as step 5, into a new folder). This gives
     the object's state after cutover.
 
-R3. **Find the rows written or changed after cutover.** The export files are canonical sorted lines, so compare them
-    per table with `comm`. Sort both sides the same way:
+R3. **Find the rows added, changed or deleted after cutover.** The export files are canonical sorted lines, so compare them
+    per table with `comm`. Sort both sides the same way. Two comparisons are needed, because a deleted row is in the cutover
+    export only:
 
     ```bash
     LC_ALL=C sort "<EXPORT_DIR>/<table>.jsonl" > "<TMP>/before.txt"
     LC_ALL=C sort "<POST_DIR>/<table>.jsonl" > "<TMP>/after.txt"
-    LC_ALL=C comm -13 "<TMP>/before.txt" "<TMP>/after.txt" > "<DELTA_DIR>/<table>.jsonl"
+    LC_ALL=C comm -13 "<TMP>/before.txt" "<TMP>/after.txt" > "<DELTA_DIR>/<table>.jsonl"   # added or changed (new value)
+    LC_ALL=C comm -23 "<TMP>/before.txt" "<TMP>/after.txt" > "<REMOVED_DIR>/<table>.jsonl" # deleted or changed (old value)
     ```
 
-    Every table gets one delta file, empty if nothing changed.
+    Every table gets one delta file, empty if nothing changed. A non-empty `<REMOVED_DIR>` file is a row the object no
+    longer has. **Known drift risk:** the import is upsert-only and has no delete path (D1), so R5 cannot remove a row from
+    Node. Any non-empty removed set stops the rollback until a person has reviewed each row and recorded the decision in
+    the log. The removed set is only as complete as the cutover export: keep `<EXPORT_DIR>` with the log. The risk grows with
+    the window's length, because deletes accumulate.
 
-R4. **Find the receipts written after cutover.** These are keys in `<POST_DIR>`'s manifest that are not in the cutover
-    manifest. Download each one from R2 by key into `<DELTA_DIR>/receipts/<key>`. **Documented gap:** the pinned `cf`
-    CLI has `npm exec cf -- r2 objects get <key> --bucket-name "shortlet-pilot-production-receipts" --mode production`,
-    but its help does not document an option that writes the body to a file. Confirm how the body is written (open
-    decision 8) before relying on it. Do not guess a redirection. Write `<DELTA_DIR>/manifest.json`
-    with `formatVersion`, a `tables` entry for every table (its `rowCount` and `sha256` of the delta file), and a
-    `receipts` entry for each new receipt (`objectKey`, `contentType`, `size`, `sha256`, with the SHA-256 from
-    `sha256sum`). `movedTables` is `["receipt_blobs"]`.
-
-R5. **Apply the delta to the frozen Node file.** Use the copy from step 1, not the original file's current state:
+R4. **Find the receipts written or removed after cutover.** Keys in `<POST_DIR>`'s manifest that are not in the cutover
+    manifest are new. Keys in the cutover manifest that are not in `<POST_DIR>`'s manifest are removed, and the same stop rule
+    as R3 applies. Download each new receipt from R2 by key into `<DELTA_DIR>/receipts/<key>`:
 
     ```bash
+    npm exec cf -- r2 objects get "<key>" --bucket-name "shortlet-pilot-production-receipts" --mode production \
+      > "<DELTA_DIR>/receipts/<key>"
+    ```
+
+    `cf r2 objects get --help` says the body is written as raw bytes unless `--text` is given, so `--text` must not be used
+    for a receipt. The shell redirection is the output method. This resolves open decision 8 in issue 16 (the earlier documented gap). It is
+    **verified only by the checksum gate**: each file's `sha256sum` must equal its manifest entry, and a mismatch stops the
+    rollback. Confirm the method with a synthetic receipt on staging before production.
+    Write `<DELTA_DIR>/manifest.json` with `formatVersion`, a `tables` entry for every table (its `rowCount` and `sha256` of
+    the delta file), and a `receipts` entry for each new receipt (`objectKey`, `contentType`, `size`, `sha256`, with the
+    SHA-256 from `sha256sum`). `movedTables` is `["receipt_blobs"]`.
+
+R5. **Apply the delta to the frozen Node file.** Use the copy from step 1, not the original file's current state. The file
+    must be migrated first (D3). The migration creates only the tables that are missing, and it is idempotent on a migrated file:
+
+    ```bash
+    npx tsx scripts/export-node-sqlite.ts --migrate "<RESTORED_DB_PATH>"
     npx tsx scripts/export-node-sqlite.ts --import "<RESTORED_DB_PATH>" "<DELTA_DIR>"
     ```
 
     The import upserts changed rows on their primary key and writes the receipts into the Node blob table. It checks
-    each receipt against its SHA-256 first.
+    each receipt against its SHA-256 first. It never deletes.
 
 R6. **Restore the Node pilot.** Start it against `<RESTORED_DB_PATH>`. Point DNS back at the Node origin. Restore the
     Paystack callback and webhook URLs recorded in step 6. Run the Node smoke tests.
@@ -166,39 +233,50 @@ R7. **Reconcile money.** For every Paystack transaction that arrived after the s
     platform refunds any late payment in full (ADR 0045), and the owner payable and margin follow ADR 0089. Record
     each reconciliation in the log.
 
-**Limits of this rollback.** The comparison in R3 finds added and changed rows only. A row deleted from the object after
-cutover is not found, because the export holds no tombstones. Check the object's deletes (retention sweeps in 12a and
-any back-office deletes) before R5, and use the object's point-in-time recovery (issue 12b, 30 days) or the daily
-export in the `EXPORTS` bucket (issue 12a) if the object cannot be read at all. The R2 orphan sweep (12a) can remove a
-receipt object that has no row, so check the receipts before deleting anything.
+## 10. Post-window reconciliation
 
-## 10. Cutover log
+Run this only when `ROLLBACK_WINDOW` has closed. It finds drift the rollback comparison cannot see, and it is the check the
+window's closing condition relies on.
+
+1. Pull the object (`--pull`) and compare its table checksums with the latest daily export in the `EXPORTS` bucket (issue
+   12a), read back through the restore path in issue 12b. Compare row sets in both directions (`comm -3` on sorted lines),
+   so deletes are caught as well as additions. **The daily export's file layout is to be confirmed against 12a and 12b
+   before this step is first run.**
+2. Compare the object's receipt keys with the same export's receipt keys, both ways.
+3. Record every discrepancy in the log. Any discrepancy means the window did not close: `ROLLBACK_WINDOW` extends, and
+   this step runs again after the next full payout cycle.
+
+## Checklist before cutover
+
+- [ ] C1: `MAX_STATEMENT_PARAMETERS` checked against the live Cloudflare Durable Object limits page. Date and value recorded.
+- [ ] C2: the production Node file has no table outside the object's schema (no `local_pilot_clock`).
+- [ ] C3: the object's `schemaVersion` equals the migration count in `apps/cloudflare/src/schema.ts`.
+- [ ] C4: the receipt download method (R4) confirmed with a synthetic receipt on staging.
+- [ ] C5: the `cf r2 objects list` flags confirmed with `--help`.
+- [ ] C6: the data-protection gates (ADR 0095) cleared. **Needs user.**
+
+## Needs user
+
+These need human facts or decisions. None is decided in this runbook.
+
+1. The production account, the `cf` authentication profile, and the Access service token (no values in this repository).
+2. The data-protection gates in ADR 0095 (counsel, transfer basis, vendor terms, DPIA). These block any run on real data.
+3. The freeze mechanism at the edge: a maintenance page or a Worker response, and its wording. The process stop in step 1 applies either way.
+4. The Worker route, the DNS record and the TTL (step 7.2).
+5. The go or no-go for cutover, and the sign-off of this runbook (issue 16 AC4).
+
+## 11. Cutover log
 
 | Step | Started (WAT) | Finished (WAT) | Result | Operator |
 | --- | --- | --- | --- | --- |
-| 0 Preconditions | | | | |
-| 1 Freeze Node writes | | | | |
+| 0 Preconditions (C1 to C3 recorded) | | | | |
+| 1 Freeze Node writes (checksums before and after the wait) | | | | |
 | 2 Export (manifest SHA-256: ) | | | | |
 | 3 Receipts to R2 (count: ) | | | | |
 | 4 Import (`--push`) | | | | |
-| 5 Verify (`--compare` result: ) | | | | |
+| 5 Verify (`--compare` result: , `schemaVersion`: ) | | | | |
 | 6 Paystack URLs (old/new recorded) | | | | |
-| 7 DNS switch | | | | |
+| 7.1 Cutover flag (timestamp: ) | | | | |
+| 7.2 DNS switch | | | | |
 | 8 Smoke tests | | | | |
-
-## Open decisions for the user
-
-1. **Target schema.** `--push` refuses a table the object does not have, and the object creates its tables only as its
-   stores are constructed. Decide how the production object gets every table before the import. The cleanest option
-   is to construct every store on the ops path. Not built in issue 16.
-2. **Export scope.** `EXPORT_TABLES` (issue 12a) lists the evidence tables only. The cutover export covers every
-   application table in the Node file, so that no guest, operator or session state is left behind. Confirm this.
-3. **Batch size bound.** The import route reuses the 11b 5 MiB bound for one batch request. Confirm that bound, or set
-   another.
-4. **Upsert on re-import.** A re-import replaces the stored values of a row with the file's values. Confirm this is the
-   intended behaviour (the alternative is to keep the existing row and ignore the new one).
-5. **Freeze mechanism and DNS route.** The maintenance page, the Worker route and the TTL are for the user to choose.
-6. **Receipt upload method.** Confirm the R2 upload command and its authentication.
-7. **Data-protection gates.** This runbook must not run on real data until ADR 0095's gates are cleared.
-8. **Receipt download (R4).** The pinned `cf r2 objects get` has no documented output-file option. Confirm the method, or
-   add a receipt-download step that uses a supported path.
+| `ROLLBACK_WINDOW` open / close (date: ) | | | | |

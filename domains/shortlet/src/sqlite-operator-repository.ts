@@ -7,11 +7,14 @@ function readOperator(row: SqlRow): OperatorRecord {
   return validateOperatorRecord(value);
 }
 
+/** Table DDL, applied by the schema migrations (apps/cloudflare/src/schema.ts) and by this store's constructor. */
+export const OPERATOR_SCHEMA = "CREATE TABLE IF NOT EXISTS operators (id TEXT PRIMARY KEY, operator_json TEXT NOT NULL)";
+
 export class SqliteOperatorRepository implements OperatorRepository {
   readonly #clock: () => Date;
   constructor(private readonly database: SqlDatabase, options: { readonly clock?: () => Date } = {}) {
     this.#clock = options.clock ?? (() => new Date());
-    database.exec("CREATE TABLE IF NOT EXISTS operators (id TEXT PRIMARY KEY, operator_json TEXT NOT NULL)");
+    database.exec(OPERATOR_SCHEMA);
   }
   create(operator: OperatorRecord): OperatorRecord {
     const candidate = validateOperatorRecord(operator);

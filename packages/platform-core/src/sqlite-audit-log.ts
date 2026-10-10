@@ -2,14 +2,17 @@ import type { AuditEntry, AuditLog } from "./index.js";
 import type { SqlDatabase } from "./sql-database.js";
 import { redactSensitiveData } from "./redaction.js";
 
-/** Append-only application API; the connection remains owned by its composition. */
-export class SqliteAuditLog implements AuditLog {
-  constructor(private readonly database: SqlDatabase) {
-    database.exec(`CREATE TABLE IF NOT EXISTS audit_log (
+/** Table DDL, applied by the schema migrations (apps/cloudflare/src/schema.ts) and by this store's constructor. */
+export const AUDIT_LOG_SCHEMA = `CREATE TABLE IF NOT EXISTS audit_log (
       id INTEGER PRIMARY KEY,
       recorded_at TEXT NOT NULL,
       payload_json TEXT NOT NULL
-    )`);
+    )`;
+
+/** Append-only application API; the connection remains owned by its composition. */
+export class SqliteAuditLog implements AuditLog {
+  constructor(private readonly database: SqlDatabase) {
+    database.exec(AUDIT_LOG_SCHEMA);
   }
 
   record(entry: AuditEntry): void {

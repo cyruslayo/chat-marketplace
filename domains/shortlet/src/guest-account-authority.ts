@@ -238,23 +238,8 @@ export function hashGuestAccountSessionSecret(secret: string): string {
   return createHash("sha256").update(secret, "utf8").digest("hex");
 }
 
-export class SqliteGuestAccountAuthority {
-  readonly #database: SqlDatabase;
-  readonly #clock: () => Date;
-  readonly #codeHashingKey: string;
-  readonly #audit?: GuestAccountAuditSink;
-  readonly #telemetry?: GuestAccountTelemetrySink;
-  readonly #policy: Readonly<Record<keyof typeof GUEST_ACCOUNT_POLICY_DEFAULTS, number>>;
-
-  /** The composition owns the shared handle and its busy timeout (ADR 0004, ADR 0095). */
-  constructor(database: SqlDatabase, options: GuestAccountAuthorityOptions) {
-    this.#codeHashingKey = requiredText(options.codeHashingKey, "Guest code hashing key");
-    this.#database = database;
-    this.#clock = options.clock ?? (() => new Date());
-    this.#audit = options.audit;
-    this.#telemetry = options.telemetry;
-    this.#policy = policyOptions(options.policy);
-    this.#database.exec(`
+/** Table DDL, applied by the schema migrations (apps/cloudflare/src/schema.ts) and by this store's constructor. */
+export const GUEST_ACCOUNT_SCHEMA = `
       CREATE TABLE IF NOT EXISTS guest_accounts (
         account_guest_id TEXT PRIMARY KEY,
         tenant_id TEXT NOT NULL,
@@ -324,7 +309,25 @@ export class SqliteGuestAccountAuthority {
         PRIMARY KEY (tenant_id, account_guest_id, idempotency_key_hash),
         FOREIGN KEY (account_guest_id) REFERENCES guest_accounts(account_guest_id)
       );
-    `);
+    `;
+
+export class SqliteGuestAccountAuthority {
+  readonly #database: SqlDatabase;
+  readonly #clock: () => Date;
+  readonly #codeHashingKey: string;
+  readonly #audit?: GuestAccountAuditSink;
+  readonly #telemetry?: GuestAccountTelemetrySink;
+  readonly #policy: Readonly<Record<keyof typeof GUEST_ACCOUNT_POLICY_DEFAULTS, number>>;
+
+  /** The composition owns the shared handle and its busy timeout (ADR 0004, ADR 0095). */
+  constructor(database: SqlDatabase, options: GuestAccountAuthorityOptions) {
+    this.#codeHashingKey = requiredText(options.codeHashingKey, "Guest code hashing key");
+    this.#database = database;
+    this.#clock = options.clock ?? (() => new Date());
+    this.#audit = options.audit;
+    this.#telemetry = options.telemetry;
+    this.#policy = policyOptions(options.policy);
+    this.#database.exec(GUEST_ACCOUNT_SCHEMA);
   }
 
   #now(): Date {

@@ -189,6 +189,14 @@ export class InMemoryBookingPaymentJourneyRepository
   }
 }
 
+/** Table DDL, applied by the schema migrations (apps/cloudflare/src/schema.ts) and by this store's constructor. */
+export const BOOKING_PAYMENT_JOURNEYS_SCHEMA = `
+      CREATE TABLE IF NOT EXISTS booking_payment_journeys (
+        offer_id TEXT PRIMARY KEY,
+        journey_json TEXT NOT NULL
+      );
+    `;
+
 /**
  * Durable SQLite implementation of BookingPaymentJourneyRepository for the
  * Guest composition. The stay/deposit payment stage machine survives restart
@@ -203,12 +211,7 @@ export class SqliteBookingPaymentJourneyRepository
 
   constructor(database: SqlDatabase) {
     this.#database = database;
-    this.#database.exec(`
-      CREATE TABLE IF NOT EXISTS booking_payment_journeys (
-        offer_id TEXT PRIMARY KEY,
-        journey_json TEXT NOT NULL
-      );
-    `);
+    this.#database.exec(BOOKING_PAYMENT_JOURNEYS_SCHEMA);
   }
 
   #loadAll(): void {

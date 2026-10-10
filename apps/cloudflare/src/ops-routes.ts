@@ -11,8 +11,15 @@ import {
 import { ACCESS_JWT_HEADER, OPS_SECRET_HEADER, sharedSecretMatches } from "./ops-auth.js";
 import type { AccessVerifier } from "./access-jwt.js";
 import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
-import { checksumTables } from "../../../packages/platform-core/src/data-migration.js";
-import { ImportRefusedError, exportTable, importBatch } from "./ops-import.js";
+import {
+  MAX_IMPORT_REQUEST_BYTES,
+  checksumTables,
+  completeCutover,
+  cutoverCompletedAt,
+} from "../../../packages/platform-core/src/data-migration.js";
+import { ImportRefusedError, assertSchemaCurrent, exportTable, importBatch } from "./ops-import.js";
+import { SHORTLET_SCHEMA_VERSION } from "./schema.js";
+import { schemaVersion } from "../../../packages/platform-core/src/schema-migrations.js";
 
 /**
  * Slice 11a: the authenticated `/_ops/*` routes. They call exactly the domain functions the operator CLIs call
@@ -65,12 +72,6 @@ const MAX_OPS_BODY_BYTES = 64 * 1024;
 
 /** The user-approved inventory CSV limit (5 MiB); enforced before the body is read. */
 const MAX_INVENTORY_CSV_BYTES = 5 * 1024 * 1024;
-
-/**
- * Slice 16: an import batch reuses the 11b inventory CSV bound. It is not an import-specific value, so the user must
- * confirm it (issue 16, "Values to ask the user", item 1).
- */
-const MAX_IMPORT_BATCH_BYTES = MAX_INVENTORY_CSV_BYTES;
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -214,15 +215,27 @@ export function createOpsHandler(dependencies: OpsRouteDependencies): OpsHandler
     }
     if (request.method === "POST" && path === "/_ops/import") {
       // Slice 16: one batch in one transaction (ops-import.ts). The batch is bounded by the reused 11b limit.
-      const body = await readJsonBody(request, MAX_IMPORT_BATCH_BYTES);
+      // The request bound is the documented chunk size (data-migration.ts), enforced before the body is read.
+      const body = await readJsonBody(request, MAX_IMPORT_REQUEST_BYTES);
       const table = requiredString(body.table, "table");
       if (!Array.isArray(body.rows)) throw new Error("rows must be an array");
-      const result = importBatch(dependencies.database, table, body.rows);
+      const result = importBatch(dependencies.database, table, body.rows, SHORTLET_SCHEMA_VERSION);
       // No audit record: the audit log is itself migrated, so an import must not add rows to it.
       return json(200, { ok: true, ...result });
     }
+    if (request.method === "POST" && path === "/_ops/cutover/complete") {
+      // D1: the one-way flag. Set by this authenticated step only; a second call returns the first timestamp.
+      assertSchemaCurrent(dependencies.database, SHORTLET_SCHEMA_VERSION);
+      const completedAt = completeCutover(dependencies.database, dependencies.clock().toISOString());
+      return json(200, { ok: true, cutoverCompletedAt: completedAt });
+    }
     if (request.method === "GET" && path === "/_ops/import/verify") {
-      return json(200, { ok: true, tables: await checksumTables(dependencies.database) });
+      return json(200, {
+        ok: true,
+        schemaVersion: schemaVersion(dependencies.database),
+        tables: await checksumTables(dependencies.database),
+        cutoverCompletedAt: cutoverCompletedAt(dependencies.database),
+      });
     }
     if (request.method === "GET" && path === "/_ops/export") {
       // Slice 16: the reverse export used by the rollback runbook. Read-only, one table per request.
@@ -241,8 +254,10 @@ export function createOpsHandler(dependencies: OpsRouteDependencies): OpsHandler
       } catch (error) {
         if (error instanceof BodyTooLargeError) return json(413, { ok: false, code: "BODY_TOO_LARGE" });
         if (error instanceof ImportRefusedError) {
-          // A rejected batch is 422 (nothing written); a refused table, column or row shape is 400.
-          return json(error.code === "BATCH_REJECTED" ? 422 : 400, { ok: false, code: error.code, message: error.message });
+          // A rejected batch is 422 (nothing written); a schema that is not ready or a completed cutover is 409 (nothing
+          // written); a refused table, column or row shape is 400.
+          const status = error.code === "BATCH_REJECTED" ? 422 : error.code === "SCHEMA_NOT_READY" || error.code === "CUTOVER_COMPLETE" ? 409 : 400;
+          return json(status, { ok: false, code: error.code, message: error.message });
         }
         return json(400, { ok: false, code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Bad request" });
       }

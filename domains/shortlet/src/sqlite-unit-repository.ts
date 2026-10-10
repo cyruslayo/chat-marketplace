@@ -7,9 +7,12 @@ function readUnit(row: SqlRow): Unit {
   return parseUnitRecord(value, "Stored Unit");
 }
 
+/** Table DDL, applied by the schema migrations (apps/cloudflare/src/schema.ts) and by this store's constructor. */
+export const UNIT_SCHEMA = "CREATE TABLE IF NOT EXISTS units (id TEXT PRIMARY KEY, unit_json TEXT NOT NULL)";
+
 export class SqliteUnitRepository implements UnitRepositoryContract {
   constructor(private readonly database: SqlDatabase) {
-    database.exec("CREATE TABLE IF NOT EXISTS units (id TEXT PRIMARY KEY, unit_json TEXT NOT NULL)");
+    database.exec(UNIT_SCHEMA);
   }
   save(unit: UnitSaveInput): void {
     this.database.transaction(() => {

@@ -68,18 +68,21 @@ interface NotificationRecord {
 const DEFAULT_LOOKBACK_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_MAX_ATTEMPTS = 5;
 
-class NotificationLog {
-  readonly #database: SqlDatabase;
-
-  constructor(database: SqlDatabase) {
-    this.#database = database;
-    database.exec(`CREATE TABLE IF NOT EXISTS pilot_notifications (
+/** Table DDL, applied by the schema migrations (apps/cloudflare/src/schema.ts) and by this store's constructor. */
+export const PILOT_NOTIFICATIONS_SCHEMA = `CREATE TABLE IF NOT EXISTS pilot_notifications (
       notification_key TEXT PRIMARY KEY,
       kind TEXT NOT NULL,
       status TEXT NOT NULL,
       attempts INTEGER NOT NULL,
       updated_at TEXT NOT NULL
-    )`);
+    )`;
+
+class NotificationLog {
+  readonly #database: SqlDatabase;
+
+  constructor(database: SqlDatabase) {
+    this.#database = database;
+    database.exec(PILOT_NOTIFICATIONS_SCHEMA);
   }
 
   find(key: string): NotificationRecord | null {
