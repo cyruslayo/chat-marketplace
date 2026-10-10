@@ -158,6 +158,32 @@ export function applicationTableNames(database: SqlDatabase): string[] {
     .filter(isApplicationTable);
 }
 
+/**
+ * The order in which `tables` can be loaded without breaking a foreign key: every parent before its children, read from
+ * the schema (PRAGMA foreign_key_list). Tables with no ordering constraint keep the order given. A cycle is refused, since
+ * no load order exists for it. Used by the restore procedure (docs/runbooks/cloudflare-restore.md, section 2).
+ */
+export function importOrder(database: SqlDatabase, tables: readonly string[]): string[] {
+  const parents = new Map<string, Set<string>>();
+  for (const table of tables) {
+    const referenced = database
+      .prepare(`PRAGMA foreign_key_list(${quoteIdentifier(table)})`)
+      .all()
+      .map((row) => String(row.table))
+      .filter((name) => name !== table && tables.includes(name));
+    parents.set(table, new Set(referenced));
+  }
+  const ordered: string[] = [];
+  const placed = new Set<string>();
+  while (ordered.length < tables.length) {
+    const next = tables.find((table) => !placed.has(table) && [...(parents.get(table) ?? [])].every((parent) => placed.has(parent)));
+    if (next === undefined) throw new Error("The foreign keys between these tables form a cycle, so no load order exists");
+    ordered.push(next);
+    placed.add(next);
+  }
+  return ordered;
+}
+
 export function quoteIdentifier(name: string): string {
   return `"${name.replace(/"/g, '""')}"`;
 }
@@ -291,7 +317,8 @@ export async function buildExport(database: SqlDatabase): Promise<MigrationExpor
   const claimed = new Set<string>();
   const contents: Record<string, string> = {};
   const tables: Record<string, TableChecksum> = {};
-  for (const table of names) {
+  // Parents before children, so the manifest's key order is a load order the object accepts (foreign keys are enforced).
+  for (const table of importOrder(database, names)) {
     if (table === RECEIPT_BLOB_TABLE) continue;
     let rows = database.prepare(`SELECT * FROM ${quoteIdentifier(table)}`).all();
     if (table === RECEIPT_TABLE) rows = rows.map((row) => receiptRow(row, blobs, claimed, receipts));

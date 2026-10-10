@@ -2,7 +2,7 @@ import { env } from "cloudflare:workers";
 import { runInDurableObject } from "cloudflare:test";
 import { expect, test } from "vitest";
 import { RECEIPT_BLOB_TABLE, isApplicationTable } from "../../../packages/platform-core/src/data-migration.js";
-import { EXPORT_TABLES } from "../src/do-export.js";
+import { DAILY_EXPORT_EXCLUDED, EXPORT_TABLES } from "../src/do-export.js";
 import { DurableObjectSqlDatabase } from "../src/do-sql-database.js";
 import { ORIGIN, accessToken, opsHeaders, provisionTenant } from "./ops-test-helpers.js";
 
@@ -25,49 +25,18 @@ const IMPORT_EXPORT_EXCLUDED: Readonly<Record<string, string>> = {
   [RECEIPT_BLOB_TABLE]: "receipt bytes move to the private RECEIPTS bucket by key (07a, ADR 0090), so they are never rows",
 };
 
-/** Tables the 12a daily export does not write, with the reason. The export set is the user-approved evidence list. */
-const OUTSIDE_EVIDENCE_SET =
-  "outside the 12a evidence set (EXPORT_TABLES, user-approved); the migration export (issue 16) still carries it";
-
 /**
- * Tables the 12a daily export does not write. Each is named with its reason, so a new store forces a decision. The
- * daily export is an evidence subset, not a full copy: a post-window reconciliation (cutover runbook, step 10) can
- * only compare the tables listed in EXPORT_TABLES.
+ * The only tables the daily export may leave out (issue 16 "Daily export coverage", Needs user item 6). Each one is
+ * bearer credential material that must not be copied into an evidence record (ADR 0075, 0086, 0093). Every other
+ * application table is exported, so a new store is exported unless someone adds it here with a reason and an ADR.
  */
-const DAILY_EXPORT_EXCLUDED: Readonly<Record<string, string>> = {
-  availability_commitments: OUTSIDE_EVIDENCE_SET,
-  checkin_support_state: OUTSIDE_EVIDENCE_SET,
-  guest_account_email_commands: OUTSIDE_EVIDENCE_SET,
-  guest_account_rate_events: OUTSIDE_EVIDENCE_SET,
-  guest_account_sessions: OUTSIDE_EVIDENCE_SET,
-  guest_accounts: OUTSIDE_EVIDENCE_SET,
-  guest_contacts: "personal contact data, kept out of the daily export by the 12a decision (issue 12a, DPIA note)",
-  guest_payment_journey_snapshots: OUTSIDE_EVIDENCE_SET,
-  guest_request_drafts: OUTSIDE_EVIDENCE_SET,
-  guest_session_bindings: OUTSIDE_EVIDENCE_SET,
-  guest_sign_in_codes: OUTSIDE_EVIDENCE_SET,
-  guest_threads: OUTSIDE_EVIDENCE_SET,
-  local_booking_contracts: OUTSIDE_EVIDENCE_SET,
-  local_booking_reservations: OUTSIDE_EVIDENCE_SET,
-  operator_access_tokens: OUTSIDE_EVIDENCE_SET,
-  operator_enforcement_records: OUTSIDE_EVIDENCE_SET,
-  operator_enforcement_sequence: OUTSIDE_EVIDENCE_SET,
-  operator_representative_audit: OUTSIDE_EVIDENCE_SET,
-  operator_representative_commands: OUTSIDE_EVIDENCE_SET,
-  operator_representative_grants: OUTSIDE_EVIDENCE_SET,
-  operator_sessions: OUTSIDE_EVIDENCE_SET,
-  operators: OUTSIDE_EVIDENCE_SET,
-  pilot_notifications: OUTSIDE_EVIDENCE_SET,
-  revenue_adjustments: OUTSIDE_EVIDENCE_SET,
-  revenue_compatibility_adjustments: OUTSIDE_EVIDENCE_SET,
-  revenue_compatibility_releases: OUTSIDE_EVIDENCE_SET,
-  revenue_earned_commission: OUTSIDE_EVIDENCE_SET,
-  revenue_journals: OUTSIDE_EVIDENCE_SET,
-  revenue_ledger_lines: OUTSIDE_EVIDENCE_SET,
-  revenue_releases: OUTSIDE_EVIDENCE_SET,
-  telemetry_events: OUTSIDE_EVIDENCE_SET,
-  units: OUTSIDE_EVIDENCE_SET,
-};
+const DAILY_EXPORT_ALLOWED_EXCLUSIONS: readonly string[] = [
+  "guest_account_sessions",
+  "guest_session_bindings",
+  "guest_sign_in_codes",
+  "operator_access_tokens",
+  "operator_sessions",
+];
 
 /** Every table in the object's SQLite, minus SQLite's and Cloudflare's internal tables. Control tables are included. */
 function userTables(database: DurableObjectSqlDatabase): string[] {
@@ -123,7 +92,10 @@ test("16 D3 composition: every table the production composition creates is in th
   expect(EXPORT_TABLES.filter((table) => !migrated.includes(table))).toEqual([]);
   const notExported = composed.filter(isApplicationTable).filter((table) => !(EXPORT_TABLES as readonly string[]).includes(table)).sort();
   expect(notExported).toEqual(Object.keys(DAILY_EXPORT_EXCLUDED).sort());
+  // Delegated decision (10 Oct 2026, issue 16): exclusion is for a small named set only, never for any table with a reason.
+  expect(Object.keys(DAILY_EXPORT_EXCLUDED).sort()).toEqual([...DAILY_EXPORT_ALLOWED_EXCLUSIONS].sort());
   for (const [table, reason] of Object.entries(DAILY_EXPORT_EXCLUDED)) {
     expect(reason.trim(), `${table} needs a reason`).not.toBe("");
+    expect(reason, `${table} must cite the ADR that requires its exclusion`).toMatch(/\bADR \d{4}\b/);
   }
 });
