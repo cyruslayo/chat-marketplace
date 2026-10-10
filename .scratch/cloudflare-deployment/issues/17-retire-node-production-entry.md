@@ -40,3 +40,10 @@ After cutover, Cloudflare is the only production platform. Leaving a working Nod
 Check every item in `docs/agents/issue-tracker.md`.
 
 ## Comments
+
+### Client-address rule (10 Oct 2026)
+
+- `clientAddress` is kept (as this issue requires), and it is keyed on `CF-Connecting-IP`, not on `X-Forwarded-For`. The Node
+  pilot's rightmost-`X-Forwarded-For` rule (issue 08c, map.md) is retired on `infra/cf-17-retire-node-prod`, commit `5793ec3`.
+  That branch reads the header through the shared `clientAddressFromCloudflareHeaderValue` rule, and an absent or blank header
+  fails closed to `unknown` (one shared bucket). The socket-address fallback is gone.
