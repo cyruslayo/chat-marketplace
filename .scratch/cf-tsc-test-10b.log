@@ -1,2 +1,0 @@
-apps/cloudflare/test/sql-database-do.spec.ts(7,14): error TS2552: Cannot find name 'DurableObjectStorage'. Did you mean 'IDBObjectStore'?
-apps/cloudflare/test/sql-database-do.spec.ts(18,80): error TS2552: Cannot find name 'DurableObjectStorage'. Did you mean 'IDBObjectStore'?

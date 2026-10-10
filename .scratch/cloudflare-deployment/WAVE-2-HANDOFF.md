@@ -13,7 +13,7 @@ The current map's Wave 2 row includes 03b. That supersedes this document's forme
 
 The unexpected `C:\AI2026\chat-marketplace\.scratch\cf-wave2-worktree` held seven modified/untracked files on `infra/cf-02d-operator-stores-reconciled`, based on `fe8c288`. With the user's permission:
 
-1. Backed up the binary tracked diff and all seven files plus SHA-256 manifest under this integration worktree's `.scratch/cloudflare-deployment/recovery/cf-wave2-worktree/`.
+1. Backed up the binary tracked diff and all seven files plus SHA-256 manifest under `.scratch/cloudflare-deployment/recovery/cf-wave2-worktree/` (removed in the PR 97 cleanup; see git history).
 2. Moved it using `git worktree move` to a sibling worktree, byte-verified every changed file, HEAD/branch and the dependency link, and confirmed the old path/registration disappeared.
 3. Reviewed and completed the unfinished operator conversion. Verified three unrelated formatting-only edits emitted identical JavaScript before removing that churn (original text remains recoverable).
 4. Committed implementation `491c399`, integrated by `d142a37`, then delivery record `36c522c` after final validation.
@@ -40,10 +40,10 @@ Integrated code checks:
 
 Evidence in this worktree:
 
-- `.scratch/cf-wave2-confirmed.log` — complete successful serial full run.
-- `.scratch/cf-wave2-check.log`, `cf-wave2-workers.log`.
-- `.scratch/cf-wave2-chrome-retry.log` — isolated successful retry.
-- `.scratch/cf-wave2-final.log` — preceding run had two Chrome DevTools startup failures before app interaction; all 1,281 non-browser checks passed. Followed by isolated retry AND a complete successful full run; no UI/source workaround.
+- `cf-wave2-confirmed.log` (removed in the PR 97 cleanup; see git history) — complete successful serial full run.
+- `cf-wave2-check.log` (removed in the PR 97 cleanup; see git history), `cf-wave2-workers.log`.
+- `cf-wave2-chrome-retry.log` (removed in the PR 97 cleanup; see git history) — isolated successful retry.
+- `cf-wave2-final.log` (removed in the PR 97 cleanup; see git history) — preceding run had two Chrome DevTools startup failures before app interaction; all 1,281 non-browser checks passed. Followed by isolated retry AND a complete successful full run; no UI/source workaround.
 
 Node suites unset `PI_REASONING_LEVEL`: an existing broad NIN environment assertion matches that harness variable. LSP probing found no reported diagnostics but did not confirm cleanliness (timeouts/push-only responses); the compiler checks above are the confirmed typecheck evidence.
 
