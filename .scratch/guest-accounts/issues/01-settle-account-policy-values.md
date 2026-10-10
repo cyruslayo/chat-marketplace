@@ -33,7 +33,7 @@ Approved by the user on 3 Oct 2026 (recommendations accepted as given).
 2. **Session lifetime.** 30 days absolute, non-sliding. A fresh code (step-up) is required to change email, delete the account or download data. Reason: Guests mostly read their own history; Operators keep 12 hours (ADR 0086) because they act on money and units.
 3. **Check-in.** Yes: a Reservation must belong to a Guest Account before check-in identity verification can start.
 4. **Merging.** Show both sets together and refuse nothing. The only refusal: a principal already linked to a different account cannot be linked to a second one.
-5. **Claim by email.** Yes. After proving an email with a code, Booking Requests whose recorded contact email equals it are linked to the account (their principals become Linked Principals).
+5. **Claim by email.** Yes. After proving an email with a code, Booking Requests whose recorded contact email equals it are linked to the account (their principals become Linked Principals). *Superseded by ADR 0093 and the 4 Oct 2026 supplemental decision (b) in `## Comments`:* a claim is scoped to the matching Booking Requests and their causally related records. It does not link the whole old principal, and those principals do not become Linked Principals. The original wording is kept above for history (annotated 10 Oct 2026).
 6. **Retention, deletion, export.**
    - Export: account details, stays, Booking Requests, Stay Message Threads, reviews, Saved Stays and concierge conversations, as one JSON file.
    - Delete removes: concierge conversations, Saved Stays, contact details, sessions, codes.
