@@ -1,5 +1,8 @@
 import { PlatformCommandEnvelope } from "../../../packages/platform-core/src/index.js";
 
+/** Africa/Lagos (West Africa Time) is UTC+1 all year; ADR 0053 and CONTEXT.md use WAT throughout. */
+const LAGOS_UTC_OFFSET_MS = 60 * 60 * 1000;
+
 export interface SameDayBookingManagerOptions {
   guestVerification?: {
     verifyPrimaryGuest(guestId: string): { verified: boolean; guestId: string };
@@ -36,16 +39,19 @@ export class SameDayBookingManager {
     }
 
     const now = clock();
-    const todayStr = now.toISOString().slice(0, 10);
+    // ADR 0053: the cutoff is computed in Africa/Lagos time. Lagos is a fixed UTC+1 zone (no daylight saving),
+    // so the check-in instant is built from the Lagos calendar date with an explicit offset, never host-local time.
+    const lagosDateStr = new Date(now.getTime() + LAGOS_UTC_OFFSET_MS).toISOString().slice(0, 10);
+    const checkInMs = Date.parse(`${lagosDateStr}T${requestedCheckInTime}:00+01:00`);
 
-    // Calculate Latest Disclosure Cutoff (3 hours before check-in time in Africa/Lagos)
-    const [hours, minutes] = requestedCheckInTime.split(":").map(Number);
-    const checkInDate = new Date(now);
-    checkInDate.setHours(hours, minutes, 0, 0);
+    // Fail closed: an unparseable check-in time must never make a disclosure eligible.
+    if (Number.isNaN(checkInMs)) {
+      return { eligible: false, latestDisclosureCutoffIso: "", reason: "Requested check-in time is invalid" };
+    }
 
-    const cutoffMs = checkInDate.getTime() - 3 * 60 * 60 * 1000;
-    const cutoffDate = new Date(cutoffMs);
-    const latestDisclosureCutoffIso = cutoffDate.toISOString();
+    // ADR 0053: Latest Disclosure Cutoff is three hours before the check-in window begins.
+    const cutoffMs = checkInMs - 3 * 60 * 60 * 1000;
+    const latestDisclosureCutoffIso = new Date(cutoffMs).toISOString();
 
     if (now.getTime() > cutoffMs) {
       return {

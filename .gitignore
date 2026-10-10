@@ -13,3 +13,7 @@ apps/cloudflare/public/*
 .scratch/pilot-agent-smoke/
 # Rehearsal certificates, keys and databases must never be committed.
 .scratch/pilot-rehearsal-*/
+# Test-run SQLite leftovers written by the non-browser suite.
+.scratch/eval-test/
+.scratch/local-guest/
+.scratch/local-owner/

@@ -11,10 +11,16 @@ test("AC2: npm run check type-checks both the Node tree and apps/cloudflare with
   const workers = json("apps/cloudflare/tsconfig.json");
   assert.deepEqual(node.compilerOptions.types, ["node"]);
   assert.ok(node.exclude.includes("apps/cloudflare/**"));
-  assert.deepEqual(workers.compilerOptions.types, [
-    "@cloudflare/workers-types",
-    "@cloudflare/vitest-plugin/types",
-  ]);
+  // Issue 10b superseded the global workers-types script: it clashed with the repository's Node/DOM globals
+  // (Buffer, DOM), so the Workers surface is imported as a module from a declaration file instead.
+  assert.deepEqual(workers.compilerOptions.types, ["node"]);
+  assert.match(
+    readFileSync(
+      new URL("apps/cloudflare/src/cloudflare-workers.d.ts", root),
+      "utf8",
+    ),
+    /from "@cloudflare\/workers-types"|import\("@cloudflare\/workers-types"\)/,
+  );
   assert.match(
     json("package.json").scripts.check,
     /tsc --noEmit -p apps\/cloudflare/,
