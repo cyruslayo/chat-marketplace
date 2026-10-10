@@ -848,7 +848,7 @@ export class SqliteGuestInteractionStore {
       .prepare(`SELECT r.request_id, r.primary_guest_id, r.tenant_id
         FROM guest_booking_request_contacts c
         JOIN guest_booking_requests r ON r.request_id = c.request_id AND r.tenant_id = c.tenant_id
-        WHERE c.tenant_id = $tenantId AND c.contact_email = $contactEmail
+        WHERE c.tenant_id = $tenantId AND lower(c.contact_email) = $contactEmail
         ORDER BY r.request_id`)
       .all({ $tenantId: tenantId, $contactEmail: contactEmail });
     return Object.freeze(rows.map((row) => Object.freeze({

@@ -52,7 +52,9 @@ export function normalizeContactEmail(input: string): string {
     domain.includes("..")
   )
     throw new Error("Enter a valid email address");
-  return `${local}@${domain}`;
+  // Decision (10 Oct 2026): the whole address is lowercased, local part included. Stored legacy values are compared
+  // case-insensitively at each lookup, so no persisted row is rewritten (ADR 0004).
+  return `${local}@${domain}`.toLowerCase();
 }
 
 /** Table DDL, applied by the schema migrations (apps/cloudflare/src/schema.ts) and by this store's constructor. */

@@ -99,21 +99,10 @@ export class SqliteGuestAccountLinks {
     const email = normalizeContactEmail(input.email);
     return this.#database.transaction(() => {
       const account = this.#activeAccount(accountGuestId, tenantId);
-      if (!account || account.email !== email) throw new GuestAccountAuthorityError("invalid_input", "The proven email is not the Guest Account's email");
+      if (!account || account.email.toLowerCase() !== email) throw new GuestAccountAuthorityError("invalid_input", "The proven email is not the Guest Account's email");
       const link = this.#linkInTransaction(principalId, tenantId, accountGuestId);
       this.#claimInTransaction(accountGuestId, tenantId, email);
       return { link, claimedRequestIds: this.claimedRequestIds(accountGuestId, tenantId) };
-    });
-  }
-
-  /** Links a principal to an account. Re-linking to the same account is a no-op; another account is refused. */
-  linkPrincipal(input: { principalId: string; tenantId: string; accountGuestId: string }): GuestPrincipalLink {
-    const principalId = requiredText(input.principalId, "Principal ID");
-    const tenantId = requiredText(input.tenantId, "Tenant ID");
-    const accountGuestId = requiredText(input.accountGuestId, "Account Guest Id");
-    return this.#database.transaction(() => {
-      if (!this.#activeAccount(accountGuestId, tenantId)) throw new GuestAccountAuthorityError("invalid_input", "Guest Account is not active in this tenant");
-      return this.#linkInTransaction(principalId, tenantId, accountGuestId);
     });
   }
 

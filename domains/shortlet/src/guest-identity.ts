@@ -73,8 +73,10 @@ export class GuestIdentityResolver {
     if (!input.accountSession) return anonymousGuestIdentity(principalId, tenantId);
     const account: GuestAuthenticatedAccount | null = this.#authority.resolveSession(input.accountSession.sessionId, input.accountSession.sessionSecret);
     if (!account || account.tenantId !== tenantId) return anonymousGuestIdentity(principalId, tenantId);
+    // Fail closed (AGENTS anti-pattern 1): the presented principal must be linked to exactly this account. A principal with
+    // no link row, or linked elsewhere, does not inherit the account's history.
     const ownLink = this.#links.accountForPrincipal(principalId);
-    if (ownLink !== null && (ownLink.tenantId !== tenantId || ownLink.accountGuestId !== account.accountGuestId)) {
+    if (ownLink === null || ownLink.tenantId !== tenantId || ownLink.accountGuestId !== account.accountGuestId) {
       return anonymousGuestIdentity(principalId, tenantId);
     }
     const principalIds = [principalId, ...this.#links.linkedPrincipals(account.accountGuestId, tenantId).filter((id) => id !== principalId)];
