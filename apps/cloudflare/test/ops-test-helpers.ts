@@ -77,9 +77,13 @@ export async function seedOperator(operatorId: string): Promise<void> {
   });
 }
 
-/** Seeds units and their operators so the tenant passes the provisioning gate (the guest/owner routes serve). */
-export async function provisionTenant(): Promise<void> {
-  await withState((database) => {
+/**
+ * Seeds units and their operators so the tenant passes the provisioning gate (the guest/owner routes serve). The stub
+ * defaults to the shared tenant object; a spec that needs an object no other test has built passes its own.
+ */
+export async function provisionTenant(stub: ReturnType<typeof opsStub> = opsStub()): Promise<void> {
+  await runInDurableObject(stub, (_instance, ctx) => {
+    const database = new DurableObjectSqlDatabase(ctx.storage);
     const units = new SqliteUnitRepository(database);
     if (units.findAll().length === 0) seedIssue01Units(units);
     const operators = new SqliteOperatorRepository(database, { clock: () => new Date() });

@@ -4,7 +4,7 @@ import { expect, test } from "vitest";
 import { SqliteAuditLog } from "../../../packages/platform-core/src/sqlite-audit-log.js";
 import { DurableObjectSqlDatabase } from "../src/do-sql-database.js";
 import { runAlarmTasks } from "../src/do-alarm.js";
-import { EXPORT_TABLES, exportObjectKey, lagosDate, runDailyExport, type DailyExportDependencies } from "../src/do-export.js";
+import { EXPORT_TABLES, deleteExpiredExports, exportObjectKey, exportTable, lagosDate, runDailyExport, type DailyExportDependencies } from "../src/do-export.js";
 
 const stubFor = (name: string) => env.SHORTLET.get(env.SHORTLET.idFromName(name));
 
@@ -121,3 +121,81 @@ test("12a AC5: one failing task does not stop the others (the alarm reschedules 
   expect(failed).toEqual(["daily-export"]);
   expect(ran).toEqual(["notifications"]);
 });
+
+/** Records which R2 write methods the exporter calls, delegating everything else to the real EXPORTS bucket. */
+function recordingBucket(calls: string[]): typeof env.EXPORTS {
+  return new Proxy(env.EXPORTS, {
+    get(target, property) {
+      const value = Reflect.get(target, property, target) as unknown;
+      if (typeof value !== "function") return value;
+      return (...args: unknown[]) => {
+        calls.push(String(property));
+        return (value as (...values: unknown[]) => unknown).apply(target, args);
+      };
+    },
+  });
+}
+
+async function everyKey(bucket: typeof env.EXPORTS): Promise<string[]> {
+  const keys: string[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await bucket.list({ cursor });
+    keys.push(...page.objects.map((object) => object.key));
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor !== undefined);
+  return keys;
+}
+
+test("16 D3 export: a table larger than one R2 part is streamed in parts and keeps every row in rowid order", async () => {
+  const stub = stubFor(`16-d3-large-${crypto.randomUUID()}`);
+  const date = "2031-03-03";
+  await runInDurableObject(stub, (_instance, ctx) => {
+    const database = new DurableObjectSqlDatabase(ctx.storage);
+    for (let id = 1; id <= 6000; id += 1) {
+      database.prepare("INSERT INTO telemetry_events (id, recorded_at, payload_json) VALUES ($id, $at, $payload)")
+        .run({ $id: id, $at: "2031-03-03T00:00:00Z", $payload: `${String(id).padStart(6, "0")}${"x".repeat(994)}` });
+    }
+  });
+
+  const calls: string[] = [];
+  const written = await runInDurableObject(stub, (_instance, ctx) =>
+    exportTable({
+      database: new DurableObjectSqlDatabase(ctx.storage),
+      receipts: env.RECEIPTS,
+      exports: recordingBucket(calls),
+      clock: () => new Date("2031-03-03T10:00:00Z"),
+      retentionDays: 400,
+      orphanGraceHours: 24,
+    }, date, "telemetry_events"),
+  );
+
+  expect(written).toBe(6000);
+  expect(calls).toContain("createMultipartUpload");
+  const lines = (await (await env.EXPORTS.get(exportObjectKey(date, "telemetry_events")))!.text()).split("\n").filter((line) => line !== "");
+  expect(lines.length).toBe(6000);
+  expect(JSON.parse(lines[0]!).id).toBe(1);
+  expect(JSON.parse(lines[5999]!).id).toBe(6000);
+  await env.EXPORTS.delete(exportObjectKey(date, "telemetry_events"));
+});
+
+test("16 D3 retention: old exports beyond the first 1,000-object listing page are deleted too", async () => {
+  const stub = stubFor(`16-d3-retention-${crypto.randomUUID()}`);
+  const keys = Array.from({ length: 1005 }, (_, index) => exportObjectKey("2020-01-01", `bulk-${String(index).padStart(4, "0")}`));
+  await Promise.all(keys.map((key) => env.EXPORTS.put(key, "old", { httpMetadata: { contentType: "application/x-ndjson" } })));
+
+  const deleted = await runInDurableObject(stub, (_instance, ctx) =>
+    deleteExpiredExports({
+      database: new DurableObjectSqlDatabase(ctx.storage),
+      receipts: env.RECEIPTS,
+      exports: env.EXPORTS,
+      clock: () => new Date(),
+      retentionDays: 400,
+      orphanGraceHours: 24,
+    }, lagosDate(new Date())),
+  );
+
+  expect(deleted).toBeGreaterThanOrEqual(keys.length);
+  const remaining = new Set(await everyKey(env.EXPORTS));
+  expect(keys.filter((key) => remaining.has(key))).toEqual([]);
+}, 60_000);

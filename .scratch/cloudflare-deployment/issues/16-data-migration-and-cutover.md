@@ -187,6 +187,43 @@ Status unchanged: **ready-for-human**. Nothing here is a cutover, a production r
 - **Known gap.** The table-coverage test checks only the tables that the synthetic fixture's stores create. It does not construct every store of the production composition, so a missing baseline table would show up only as a refused import. A full-composition check is still to write.
 - **Remains.** Checklist items C1 (`MAX_STATEMENT_PARAMETERS` against the live page), C4 (receipt download on staging), C5 (`cf r2 objects list` flags) and C6 (ADR 0095 gates, **Needs user**). Step 10 needs the daily export's layout confirmed against 12a and 12b. Needs user: the Cloudflare account and `cf` profile, the edge freeze page, the Worker route and TTL, the go or no-go, and the runbook sign-off (AC4). The cutover log is empty, as it should be.
 
+### Agent pass 3 on `infra/cf-wave6` (10 Oct 2026)
+
+Status unchanged: **ready-for-human**. Nothing here is a cutover, a production run or a resolution.
+
+- **Full-composition table coverage (closes the known gap in D3).** `apps/cloudflare/test/production-composition.spec.ts`
+  builds the production composition in a fresh Durable Object (provisioning, a served request and an authenticated ops
+  request) and reads the tables it creates from live SQLite. Three checks: every created table is created by the migrations;
+  every application table is on the import/export allowlist (`GET /_ops/import/verify`) or excluded with a reason; every
+  application table is in the 12a daily export set (`EXPORT_TABLES`) or excluded with a reason. The red run was taken by
+  omitting `OPERATOR_SESSION_SCHEMA` from the baseline: the first check failed by name (`operator_sessions`,
+  `operator_access_tokens`). The schema was restored. A second probe that omitted `BOOKING_STATE_SCHEMA` failed the same check
+  for `booking_contracts` and `booking_reservations`, so the probe reaches the booking stores. No migration gap was found:
+  the composition creates 50 application tables, and the baseline covers all 50 (`local_pilot_clock` is Node-only and is
+  checklist C2; `receipt_blobs` is excluded by design).
+- **Daily export coverage (finding).** The 12a export set covers 18 of the 50 application tables. The other 32 are listed
+  with reasons in `DAILY_EXPORT_EXCLUDED`, including the revenue ledger, `units`, `operators` and `guest_accounts`. Step 10 of the
+  runbook can reconcile only the 18. Needs user item 6 in the runbook asks for the decision.
+- **Runbook step 10.** Rewritten to the layout 12a actually writes: `EXPORTS` key `YYYY-MM-DD/<table>.jsonl` (Lagos date),
+  raw `JSON.stringify` lines in rowid order (not the canonical pull format), no checksums or manifest, one export per
+  Lagos day at the first alarm of the day, `manual_transfer_receipts` projected to five columns. The old step compared
+  "table checksums" that do not exist. Checklist C7 covers the R2 download method, as C4 does for receipts.
+- **Checks.** `npm run check` exits 0. `npm run test:workers` passes 68 of 68 across 13 files (65 before, plus three). The
+  non-browser phase 1 gives 1417 of 1417 pass, 0 fail.
+- **Test helper.** `provisionTenant` in `ops-test-helpers.ts` now takes the stub, so the new spec provisions an object that no
+  other test has built. The default is unchanged.
+
+### Agent pass 4 on `infra/cf-wave6` (10 Oct 2026): export coverage decided, restore and cutover order corrected
+
+Status unchanged: **ready-for-human**. Nothing here is a cutover, a production run or a resolution.
+
+- **Export scope (Needs user item 6, now decided).** The daily export covers every application table except the five bearer-credential tables in `DAILY_EXPORT_EXCLUDED` (`apps/cloudflare/src/do-export.ts`), each with its ADR. Details, the personal-data list for the DPIA, the bounds and the retention-listing fix are in the issue 12a comment. The cutover runbook's step 10 and its Needs-user item 6 are updated to match. The five exclusions and the choice to include `guest_contacts` are for review at the sign-off (AC4).
+- **Cutover push order (new finding, fixed).** The object enforces foreign keys, and `buildExport` listed tables alphabetically. The push sends the manifest's tables in that order, so `guest_account_email_commands` (and `guest_account_sessions` and `guest_sign_in_codes`, which are excluded from the export) would have been refused before `guest_accounts`, for any tenant with a guest account. `buildExport` now lists tables with `importOrder()`, parents first. Tests: "16 D1 cutover: the manifest lists each parent table before the tables that reference it..." in `test/export-node-sqlite.test.ts` (seen failing with the old order). The committed fixture is unchanged, because the synthetic source has no foreign-key children.
+- **Restore runbook.** Section 2 is corrected (see the issue 12b comment). The restore test loads a day's files parent-first through `POST /_ops/import` and checks that the rebuilt object exports the same bytes for every exported table.
+- **Chrome path.** `test/helpers/chrome-devtools.ts` reads `SHORTLET_CHROME_PATH` (blank means the default) and adds `--no-sandbox` only when `SHORTLET_CHROME_NO_SANDBOX=1`, through `resolveChromeLaunch`. The test is `test/chrome-devtools-config.test.ts`.
+- **Checks.** `npm run check` exits 0. `npm run test:workers` passes 72 of 72 across 14 files (68 before this pass, plus four new tests). The non-browser phase (phase 1 of `npm test`, reproduced because `package.json` has no separate script) gives 1423 of 1423 tests passing, 0 failing. The browser phase was not run.
+- **Open.** C1, C4, C5, C6 and C7 are unchanged. The runbook sign-off (AC4) and the edge freeze, route and DNS items remain Needs user. Also open: the DPIA entries for the personal-data columns, and the ADR 0075 transient and 180-day classes (provisional) against the 400-day export retention.
+
 ## Commits on `infra/cf-wave6`
 
 `16f5d28` ADR 0075 fixes with tests, `7bea2c7` comment and citation fixes, `19a833f` Node fixture end-to-end test,

@@ -351,3 +351,24 @@ test("16 AC1 (fixture): the committed Node export is what scripts/export-node-sq
     assert.equal(readFileSync(NODE_EXPORT_FIXTURE, "utf8"), produced, "The Node export fixture is stale: regenerate it with UPDATE_NODE_EXPORT_FIXTURE=1");
   });
 });
+
+test("16 D1 cutover: the manifest lists each parent table before the tables that reference it, so the push loads in an order the object accepts", async () => {
+  await withTempDir(async (dir) => {
+    const sourcePath = join(dir, "source.sqlite");
+    await migrateNodeSqliteFile(sourcePath);
+    const source = new NodeSqliteDatabase(sourcePath);
+    try {
+      // The object enforces foreign keys: a child row whose parent is not loaded yet is refused (import, 422).
+      source.prepare("INSERT INTO guest_accounts (account_guest_id, tenant_id, email_normalized, status, created_at, updated_at, revision) VALUES ($id, $tenant, $email, 'active', $at, $at, 0)")
+        .run({ $id: "gacct-cutoverprobe", $tenant: "tenant-synthetic", $email: "probe@example.test", $at: "2031-02-01T00:00:00Z" });
+      source.prepare("INSERT INTO guest_account_email_commands (tenant_id, account_guest_id, idempotency_key_hash, fingerprint, email_normalized, status, created_at, updated_at, revision) VALUES ($tenant, $id, $key, $fp, $email, 'done', $at, $at, 0)")
+        .run({ $tenant: "tenant-synthetic", $id: "gacct-cutoverprobe", $key: "key-hash-probe", $fp: "fp-probe", $email: "probe@example.test", $at: "2031-02-01T00:00:00Z" });
+    } finally {
+      source.close();
+    }
+    const manifest = await exportNodeSqliteFile(sourcePath, join(dir, "export"));
+    const order = Object.keys(manifest.tables);
+    assert.ok(order.indexOf("guest_accounts") >= 0 && order.indexOf("guest_account_email_commands") >= 0, "both tables are in the manifest");
+    assert.ok(order.indexOf("guest_accounts") < order.indexOf("guest_account_email_commands"), "the parent comes first");
+  });
+});

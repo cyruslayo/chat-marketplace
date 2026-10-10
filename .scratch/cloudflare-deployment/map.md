@@ -128,7 +128,7 @@ The user approved both recommendations in this implementation session:
 
 ## Things the PRD missed (now in the slices)
 
-- The pilot server does more than proxy. It also runs rate limiters, a beta banner, rightmost-`X-Forwarded-For` client addressing and a `setInterval` notifier sweep. Slice 08c keeps all of these. On Cloudflare, `CF-Connecting-IP` replaces the client-address source (09c), and the sweep becomes an alarm (10b).
+- The pilot server does more than proxy. It also runs rate limiters, a beta banner, client addressing and a `setInterval` notifier sweep. (Correction, 10 Oct 2026: client addressing reads `CF-Connecting-IP` and fails closed to `unknown`; the rightmost-`X-Forwarded-For` rule is retired on `infra/cf-17-retire-node-prod`, commit `5793ec3`.) Slice 08c keeps all of these. On Cloudflare, `CF-Connecting-IP` replaces the client-address source (09c), and the sweep becomes an alarm (10b).
 - The in-memory rate limiters reset whenever the Durable Object is evicted, so edge WAF rules back them up (13).
 - The guest environment also keeps its audit and telemetry in memory (`fixture.ts:275–276`), not just the owner side (06a, 06b).
 - `loadPilotConfiguration` also reads `SHORTLET_DEPLOYMENT`, `SHORTLET_BETA_INVITE_CODE`, the pilot limits and the notification settings, which the PRD's var list leaves out (10a).

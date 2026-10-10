@@ -53,17 +53,55 @@ workerd tests. A one-off script would need its own auth and its own tests for th
 
 ## 2. Rebuild from the daily exports (when PITR is not enough)
 
-The alarm writes one JSONL object per table per day to the private `EXPORTS` bucket, keyed
-`YYYY-MM-DD/<table>.jsonl` (Africa/Lagos date), and keeps 400 days. If the 30-day window has passed or the object
-must be rebuilt from scratch:
+**What an export day is.** Once per Africa/Lagos day (ADR 0078), at the first alarm of that day, the object writes one
+object per exported table to the private `EXPORTS` bucket, at `YYYY-MM-DD/<table>.jsonl`. The exported tables are every
+name in `EXPORT_TABLES` (`apps/cloudflare/src/do-export.ts`). Each object is a **full snapshot** of its table at that
+alarm: one JSON line per row, in rowid order, in the transport encoding the import route reads (a BLOB is
+`{"$bytes": "<base64>"}`). Objects are kept for `SHORTLET_EXPORT_RETENTION_DAYS` (default 400). The five tables in
+`DAILY_EXPORT_EXCLUDED` are not exported (see "What the rebuild does not restore"). Read a day's objects with the pinned
+`cf` CLI or the R2 dashboard. They are private and never public.
 
-1. Create the tenant's object (a request to the origin does this) and import the inventory so operators/units exist.
-2. Load each table's JSONL, oldest day first, through the authenticated `/_ops/import` route that **slice 16**
-   builds (batched to respect the 100-parameter and 2 MB limits). Until 16 lands, this step is a documented manual
-   procedure: insert the JSONL rows into the matching tables preserving `rowid` order.
-3. Re-run the day's export and confirm row counts match the source.
+**Load one day, not every day.** Each day is a snapshot, not a change set, so a rebuild loads a single day: the newest day
+whose set is complete. Loading every day oldest first is wrong. The import upserts by primary key and never deletes, so a
+row deleted after the older day would survive the rebuild, and the object would hold rows the source no longer has.
+`apps/cloudflare/test/restore-from-export.spec.ts` demonstrates this.
 
-Read a day's objects with the pinned `cf` CLI or the R2 dashboard; they are private and never public.
+**Procedure.**
+
+1. **Choose the day.** Take the newest `YYYY-MM-DD/` prefix that has an object for every name in `EXPORT_TABLES`. Writes
+   made after that day's alarm are not in it.
+2. **Create the object.** A request to the origin creates the tenant's object, and the object applies its own schema
+   migrations on start. Check `GET /_ops/import/verify`: `schemaVersion` must equal the migration count in
+   `apps/cloudflare/src/schema.ts`, and `cutoverCompletedAt` must be `null`. The import route refuses otherwise.
+3. **Load each table, parents first.** Load each table's file for the chosen day in the order `importOrder()`
+   (`packages/platform-core/src/data-migration.ts`) returns for `EXPORT_TABLES`. That order follows the schema's foreign
+   keys. The object enforces foreign keys, so a child row whose parent is not loaded yet is refused: `POST /_ops/import`
+   answers `422 BATCH_REJECTED`, nothing from that request is written, and the load must stop there and be fixed. Split
+   each file into requests of `floor(100 / column count)` rows, with each body at most 5 MiB, as `importRequestChunks`
+   does. POST each request to `/_ops/import` as `{ "table": "<table>", "rows": [ ... ] }`. No packaged command loads a day
+   export (`--push` reads the cutover manifest, which a day export does not have). The restore test is the reference loop.
+4. **Verify the counts.** For every name in `EXPORT_TABLES`, `tables[<table>].rowCount` from `GET /_ops/import/verify`
+   must equal the number of lines in that day's file. The five excluded tables must read `0`.
+5. **Close the cutover flag if it was set.** The one-way cutover flag lives in a control table, which is not exported, so
+   a rebuilt object accepts imports until the flag is set again. If the object had completed its cutover before the
+   rebuild, call `POST /_ops/cutover/complete` after step 4. A repeat call returns the first timestamp, so it is safe to repeat.
+
+**Row ordering.** The load does two things. Parents before children is required by the foreign keys (step 3). Within a
+table, the import keeps the file's order: it sends rows in file order and inserts them in that order, and an upsert of
+an existing row keeps that row's rowid. Reads that use `ORDER BY rowid` (for example `units`, `operators`, the revenue
+journals and the enforcement records) therefore keep their relative order. Absolute rowid values are not preserved.
+Rows created and then deleted within one day are in no export.
+
+**What the rebuild does not restore.**
+
+- Writes after the day's first alarm. Money and receipts in that gap are reconciled as described in section 3.
+- Sessions and credentials. `guest_account_sessions`, `guest_session_bindings`, `operator_sessions`,
+  `operator_access_tokens` and `guest_sign_in_codes` are not exported (`DAILY_EXPORT_EXCLUDED`, ADRs 0075, 0086, 0093).
+  A rebuild cannot revive a session or an open sign-in challenge, so every guest and operator signs in again. A session
+  revoked before the rebuild stays revoked.
+- Receipt bytes. The `RECEIPTS` bucket is separate and is not rebuilt from the export. The metadata rows are restored,
+  so check each receipt object exists (section 3).
+- The cutover flag, unless step 5 sets it again.
 
 ## 3. After any restore — mandatory checks
 
@@ -77,8 +115,9 @@ Read a day's objects with the pinned `cf` CLI or the R2 dashboard; they are priv
   PITR. A receipt object may exist with no metadata row after a restore. The daily orphan sweep (12a) deletes
   objects older than the grace period with no row, so a receipt uploaded after the restore point can be swept —
   recover it from Paystack/bank evidence before it ages out, or re-upload it.
-- **Operator sessions.** Sessions restored from before the bookmark are valid again; revoke any that were meant to
-  be closed after the restore point (`DELETE /_ops/operators/:id/access`).
+- **Operator sessions (PITR only).** A point-in-time restore brings back sessions as they were at the bookmark, so
+  sessions that were revoked after it are valid again. Revoke any that were meant to be closed after the restore point
+  (`DELETE /_ops/operators/:id/access`). A rebuild from exports does not restore sessions at all (section 2).
 
 ## 4. Rehearsal
 

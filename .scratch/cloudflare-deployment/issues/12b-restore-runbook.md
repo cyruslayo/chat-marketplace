@@ -43,6 +43,14 @@ The production database becomes a Durable Object. Operators need a tested way to
 Check every item in `docs/agents/issue-tracker.md`.
 
 ## Comments
+### Issue 16 pass 4 (10 Oct 2026): rebuild from exports corrected and tested
+
+- **Section 2 was wrong in two ways.** It said to load each day "oldest day first". Each day's objects are full snapshots, and the import upserts and never deletes, so that would resurrect rows deleted later. Section 2 now says to load one day, the newest complete one. It also said rowid order was "preserved" by a manual insert, which the import route does not do on its own. Section 2 now states exactly what the import keeps: file order within a table, and the rowid of an upserted row.
+- **Foreign keys.** The object enforces foreign keys (`PRAGMA foreign_keys = 1` in workerd, checked). A child row whose parent is not loaded yet is refused with `422 BATCH_REJECTED`. The load therefore runs parents first, in the order `importOrder()` (`packages/platform-core/src/data-migration.ts`) returns. The same ordering now governs the cutover manifest, which the push reads in key order. Before this pass the manifest was alphabetical, which put `guest_account_email_commands` ahead of `guest_accounts`. The Node test "16 D1 cutover: the manifest lists each parent table..." failed on that order before the fix.
+- **What cannot be restored** is now stated: writes after the day's first alarm, sessions and sign-in challenges (not exported), receipt bytes (R2 is separate), and the cutover flag (a control table, so the runbook says to call `POST /_ops/cutover/complete` again after a rebuild on a cut-over object).
+- **Test.** `apps/cloudflare/test/restore-from-export.spec.ts`: "16 restore: a day's export loaded parent-first into a new object exports the same bytes for every exported table" (the reference load loop; it also checks the FK order) and "16 restore: loading every day oldest first keeps a row deleted after the older day..." (why only one day is loaded). The rebuild path and the import route are the ones the runbook names; the packaged loader for a day export does not exist and is not added here.
+- **PITR (AC3).** Unchanged: the workerd pool still has no point-in-time recovery, so the bookmark round trip is still proven on staging only (issue 15).
+
 
 ## Answer
 
