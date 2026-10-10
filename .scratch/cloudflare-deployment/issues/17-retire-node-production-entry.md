@@ -1,6 +1,7 @@
 # Retire the Node production entry
 
-Status: ready-for-agent
+Status: ready-for-human
+Hold: do not start until the rollback window closes (`ROLLBACK_WINDOW` in `docs/runbooks/cloudflare-cutover.md`), which needs the human cutover in issue 16 first. The Node entry is the rollback path until then. Set by the wave-6 review (F7); the file had no hold note before.
 Type: task
 Blocked by: 16
 Branch: `infra/cf-17-retire-node-prod` (into `main`)

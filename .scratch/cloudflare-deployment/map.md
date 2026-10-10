@@ -80,7 +80,7 @@ The frontier is the first slice in the table that is open, unblocked and unclaim
 | **G: Release** | | | | | |
 | 15 | Staging rehearsal; merge to `main` | task | ready-for-human | 06d, 11b, 12a, 12b, 13, 14 (cross-border, contracts and retention gate) | 16 |
 | 16 | Data migration and cutover | task | ready-for-human | 15 | 17 |
-| 17 | Retire the Node production entry | task | ready-for-agent | 16 | none |
+| 17 | Retire the Node production entry | task | ready-for-human (hold until the rollback window closes) | 16 | none |
 
 **What can run at once.** Slices 01a, 02a, 05a and 14 have no blockers. After 01a lands, 01c can start; after 01c lands, 01b and 03a can proceed. After 02a lands, 02b, 02c, 02d, 06a, 06b and 06c can all run in parallel. After 02a and 03a land, 03b can start.
 
