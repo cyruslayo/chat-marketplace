@@ -38,3 +38,29 @@ The integration branch merges to `main` only after the whole pilot is proven on 
 All ADRs in the PRD table, especially 0041, 0044, 0046, 0079, 0086, 0087, 0088 and 0090.
 
 ## Comments
+
+### Evidence template (prepared 10 Oct 2026; rehearsal not run)
+
+Prepared on `infra/cf-15-staging-prep`. Status stays `ready-for-human`. No rehearsal, deployment, Paystack test, PITR drill or merge has happened, and no result is claimed here.
+
+- Runbook: `docs/runbooks/cloudflare-staging-rehearsal.md` (steps 1 to 8, the preconditions and the full evidence-log template).
+- Harness change: `scripts/pilot-acceptance-rodney.ps1` accepts `-BaseUrl` or `SHORTLET_BASE_URL` (validated by `scripts/pilot-base-url.ts`); `scripts/pilot-agent-smoke.ts` refuses a base URL, since it is in-process only.
+- Open gates (ADR 0095, ADR 0065): counsel approval, Cloudflare and Google Gemini contracts and processor roles, the retention schedule, and the DPIA review. Real personal data must not be used on staging until these close. Staging uses Paystack test keys and synthetic data only.
+- User decisions: the staging origin is `https://staging.shortlet.ng` (set in `cloudflare.config.ts`); the agent smoke stays in-process with no remote HTTP mode, so the remote journeys are the Rodney acceptance run plus human-run real-Chrome journeys. Still open before the build: a host where `npm exec cf -- build --mode staging` works (it fails on the Windows install, issue 10b).
+
+Evidence log (one row per step; PASS, FAIL or BLOCKED; references only, never secret values, cookies, tokens, card data or webhook bodies):
+
+| Step | Date (Lagos) | Result | Operator | Commit SHA | References | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1. Build and deploy (secret names set) | | | | | Build log reference | |
+| 2. Ops provisioning (import, operators, operator id) | | | | | Import summary reference | |
+| 3. Journeys (agent smoke N/A; Rodney report; real-Chrome run) | | | | | Report paths (local) | |
+| 4. Forced restarts: discovery, request, offer, payment, confirmed, operator session | | | | | Stage and request, offer or reservation ids | |
+| 5a. Paystack test card payment and callback | | | | | Paystack test reference | |
+| 5b. Webhook with bad signature (expect 401) | | | | | Status code only | |
+| 5c. Webhook with good signature (exactly once) | | | | | Paystack reference; duplicate check | |
+| 5d. Manual transfer receipt uploaded and verified | | | | | Receipt id | |
+| 6a. Today's exports present (18 objects) | | | | | Object keys | |
+| 6b. PITR drill (dry run, confirm, restart, checks) | | | | | Restore point; PITR bookmark | |
+| 7. Workers Logs searches (zero matches expected) | | | | | Queries; time range; match counts | |
+| 8. Go / no-go (user decision) and merge PR | | | | | PR URL | |

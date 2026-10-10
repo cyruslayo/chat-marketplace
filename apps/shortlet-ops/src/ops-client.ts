@@ -5,6 +5,8 @@
  * Both authentication layers are sent: the Access service-token headers and the shared secret. A non-`https:`
  * URL is refused before any request is made, unless it is `localhost` (local development).
  */
+import { assertHttpsOrLoopbackUrl } from "../../../packages/platform-core/src/https-url-guard.js";
+
 export interface OpsRemoteConfiguration {
   readonly url: string;
   readonly sharedSecret: string;
@@ -32,17 +34,7 @@ export function remoteOpsConfiguration(source: NodeJS.ProcessEnv = process.env):
 
 /** Refuses anything but `https:`, with `http:` allowed only for a loopback host. */
 export function assertOpsUrlAllowed(value: string): URL {
-  let parsed: URL;
-  try {
-    parsed = new URL(value);
-  } catch {
-    throw new Error("SHORTLET_OPS_URL must be an absolute URL");
-  }
-  const loopback = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1" || parsed.hostname === "[::1]" || parsed.hostname === "::1";
-  if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && loopback)) {
-    throw new Error("SHORTLET_OPS_URL must use https (http is allowed only for localhost)");
-  }
-  return parsed;
+  return assertHttpsOrLoopbackUrl(value, "SHORTLET_OPS_URL");
 }
 
 export async function opsRequest(
