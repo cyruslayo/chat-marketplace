@@ -10,6 +10,9 @@ import {
 } from "../../shortlet-ops/src/operator-cli.js";
 import { ACCESS_JWT_HEADER, OPS_SECRET_HEADER, sharedSecretMatches } from "./ops-auth.js";
 import type { AccessVerifier } from "./access-jwt.js";
+import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
+import { checksumTables } from "../../../packages/platform-core/src/data-migration.js";
+import { ImportRefusedError, exportTable, importBatch } from "./ops-import.js";
 
 /**
  * Slice 11a: the authenticated `/_ops/*` routes. They call exactly the domain functions the operator CLIs call
@@ -38,6 +41,8 @@ export interface OpsStorageBookmarks {
 }
 
 export interface OpsRouteDependencies {
+  /** Slice 16: the object's SQL handle, used by the import, verify and export routes. */
+  readonly database: SqlDatabase;
   readonly sharedSecret: string;
   readonly verifier: AccessVerifier;
   readonly operatorRepository: OperatorRepository;
@@ -61,6 +66,9 @@ const MAX_OPS_BODY_BYTES = 64 * 1024;
 /** The user-approved inventory CSV limit (5 MiB); enforced before the body is read. */
 const MAX_INVENTORY_CSV_BYTES = 5 * 1024 * 1024;
 
+/** Slice 16: an import batch reuses the 11b bound, which is a question for the user (see the issue's Answer). */
+const MAX_IMPORT_BATCH_BYTES = MAX_INVENTORY_CSV_BYTES;
+
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -78,8 +86,8 @@ function requiredString(value: unknown, field: string): string {
   return value.trim();
 }
 
-async function readJsonBody(request: Request): Promise<Record<string, unknown>> {
-  const bytes = await readBodyWithLimit(request, MAX_OPS_BODY_BYTES);
+async function readJsonBody(request: Request, limit = MAX_OPS_BODY_BYTES): Promise<Record<string, unknown>> {
+  const bytes = await readBodyWithLimit(request, limit);
   if (bytes.byteLength === 0) return {};
   const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("A JSON object body is required");
@@ -195,6 +203,22 @@ export function createOpsHandler(dependencies: OpsRouteDependencies): OpsHandler
       // ADR 0086: the token is returned only here, in the response body.
       return json(200, { ok: true, operatorId, actorId, tenantId, token: provisioned.token, expiresAt: provisioned.expiresAt });
     }
+    if (request.method === "POST" && path === "/_ops/import") {
+      // Slice 16: one batch in one transaction (ops-import.ts). The batch is bounded by the reused 11b limit.
+      const body = await readJsonBody(request, MAX_IMPORT_BATCH_BYTES);
+      const table = requiredString(body.table, "table");
+      if (!Array.isArray(body.rows)) throw new Error("rows must be an array");
+      const result = importBatch(dependencies.database, table, body.rows);
+      // No audit record: the audit log is itself migrated, so an import must not add rows to it.
+      return json(200, { ok: true, ...result });
+    }
+    if (request.method === "GET" && path === "/_ops/import/verify") {
+      return json(200, { ok: true, tables: await checksumTables(dependencies.database) });
+    }
+    if (request.method === "GET" && path === "/_ops/export") {
+      // Slice 16: the reverse export used by the rollback runbook. Read-only, one table per request.
+      return json(200, { ok: true, ...(await exportTable(dependencies.database, requiredString(url.searchParams.get("table"), "table"))) });
+    }
     return json(404, { ok: false, code: "NOT_FOUND" });
   };
 
@@ -207,6 +231,10 @@ export function createOpsHandler(dependencies: OpsRouteDependencies): OpsHandler
         return await route(request, url);
       } catch (error) {
         if (error instanceof BodyTooLargeError) return json(413, { ok: false, code: "BODY_TOO_LARGE" });
+        if (error instanceof ImportRefusedError) {
+          // A rejected batch is 422 (nothing written); a refused table, column or row shape is 400.
+          return json(error.code === "BATCH_REJECTED" ? 422 : 400, { ok: false, code: error.code, message: error.message });
+        }
         return json(400, { ok: false, code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Bad request" });
       }
     },
