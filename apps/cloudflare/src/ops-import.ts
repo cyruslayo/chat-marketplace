@@ -33,7 +33,14 @@ export type ImportRefusalCode =
  * schema is a deployment fault to fix by migrating, not something an import should repair (D3).
  */
 export function assertSchemaCurrent(database: SqlDatabase, requiredVersion: number): void {
-  if (schemaVersion(database) !== requiredVersion) {
+  let version: number;
+  try {
+    version = schemaVersion(database);
+  } catch {
+    // A damaged migration record is not readable as any version, so it is refused like a version mismatch (F9).
+    throw new ImportRefusedError("SCHEMA_NOT_READY", "The schema record is damaged, so nothing was written");
+  }
+  if (version !== requiredVersion) {
     throw new ImportRefusedError("SCHEMA_NOT_READY", "The schema is not at the version this release expects, so nothing was written; run the migrations first");
   }
 }
@@ -42,7 +49,14 @@ export function assertSchemaCurrent(database: SqlDatabase, requiredVersion: numb
  * Refuses once the one-way cutover flag is set (D1). Nothing in this module or in the import routes clears it.
  */
 export function assertMigrationOpen(database: SqlDatabase): void {
-  if (cutoverCompletedAt(database) !== null) {
+  let completedAt: string | null;
+  try {
+    completedAt = cutoverCompletedAt(database);
+  } catch {
+    // Unknown cutover state is refused, never treated as "not cut over" (F9).
+    throw new ImportRefusedError("SCHEMA_NOT_READY", "The cutover state cannot be read, so nothing was written");
+  }
+  if (completedAt !== null) {
     throw new ImportRefusedError("CUTOVER_COMPLETE", "The cutover is complete, so this object no longer accepts migration imports");
   }
 }

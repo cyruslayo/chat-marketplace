@@ -34,7 +34,16 @@ export const MAX_IMPORT_REQUEST_BYTES = 5 * 1024 * 1024;
  */
 export function migrationBatchRows(columnCount: number): number {
   if (!Number.isInteger(columnCount) || columnCount < 1) throw new RangeError("A table must have at least one column to be batched");
+  // A single row past the parameter limit cannot be batched at all. Refused here rather than floored to zero rows (F13).
+  if (columnCount > MAX_STATEMENT_PARAMETERS) {
+    throw new RangeError(`A row of ${columnCount} columns binds more than ${MAX_STATEMENT_PARAMETERS} parameters, so it cannot be batched`);
+  }
   return Math.floor(MAX_STATEMENT_PARAMETERS / columnCount);
+}
+
+/** The column count of one row: its keys when it is a JSON object, otherwise zero (refused by migrationBatchRows). */
+function rowColumnCount(row: unknown): number {
+  return row !== null && typeof row === "object" && !Array.isArray(row) ? Object.keys(row).length : 0;
 }
 
 /**
@@ -44,8 +53,11 @@ export function migrationBatchRows(columnCount: number): number {
  */
 export function importRequestChunks(table: string, rows: readonly unknown[]): unknown[][] {
   if (rows.length === 0) return [];
-  const first = rows[0];
-  const columns = first !== null && typeof first === "object" && !Array.isArray(first) ? Object.keys(first).length : 0;
+  // The widest row sets the batch size, so no later row can bind more parameters than a request allows.
+  const columns = Math.max(...rows.map(rowColumnCount));
+  if (columns > MAX_STATEMENT_PARAMETERS) {
+    throw new RangeError(`Table ${table} has rows of ${columns} columns, and one row alone would bind more than ${MAX_STATEMENT_PARAMETERS} parameters, so the table cannot be batched`);
+  }
   const perRequest = migrationBatchRows(columns);
   const encoder = new TextEncoder();
   const envelope = encoder.encode(JSON.stringify({ table, rows: [] })).byteLength;
@@ -86,9 +98,26 @@ const CUTOVER_COMPLETED_KEY = "cutover_completed_at";
 /** The DDL of the cutover flag, applied by the migrations (D1). The flag is one-way: nothing here or in import deletes it. */
 export const CUTOVER_STATE_DDL = `CREATE TABLE IF NOT EXISTS ${CUTOVER_STATE_TABLE} (state_key TEXT PRIMARY KEY, state_value TEXT NOT NULL)`;
 
-/** Reads the one-way cutover flag. Null when the table is absent (a Node file that never ran the migrations) or unset. */
+/** The migration version that creates the cutover flag table (schema.ts). Shared so the check below and the list agree. */
+export const CUTOVER_STATE_MIGRATION_VERSION = 2;
+
+function migrationsReached(database: SqlDatabase, version: number): boolean {
+  if (!tableExists(database, SCHEMA_MIGRATIONS_TABLE)) return false;
+  const row = database.prepare(`SELECT MAX(version) AS version FROM ${SCHEMA_MIGRATIONS_TABLE}`).get();
+  return row !== undefined && row.version !== null && Number(row.version) >= version;
+}
+
+/**
+ * Reads the one-way cutover flag. Null when the file was never migrated, or the flag is unset. A file whose migrations ran
+ * past the flag's migration but has no flag table is damaged, not "not cut over", so it throws (F9).
+ */
 export function cutoverCompletedAt(database: SqlDatabase): string | null {
-  if (!tableExists(database, CUTOVER_STATE_TABLE)) return null;
+  if (!tableExists(database, CUTOVER_STATE_TABLE)) {
+    if (migrationsReached(database, CUTOVER_STATE_MIGRATION_VERSION)) {
+      throw new Error("The cutover state table is missing although its migration ran, so the cutover state cannot be read");
+    }
+    return null;
+  }
   const row = database
     .prepare(`SELECT state_value FROM ${CUTOVER_STATE_TABLE} WHERE state_key = $key`)
     .get({ $key: CUTOVER_COMPLETED_KEY });

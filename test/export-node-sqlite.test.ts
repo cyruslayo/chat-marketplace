@@ -5,7 +5,7 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { NodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-database.js";
-import { MAX_IMPORT_REQUEST_BYTES, checksumTables, compareMigration, migrationBatchRows } from "../packages/platform-core/src/data-migration.js";
+import { MAX_IMPORT_REQUEST_BYTES, checksumTables, compareMigration, importRequestChunks, migrationBatchRows } from "../packages/platform-core/src/data-migration.js";
 import { populateSource } from "../apps/cloudflare/test/data-migration-fixtures.js";
 import { exportNodeSqliteFile, importMigrationDirectory, migrateNodeSqliteFile, pullObject, pushMigrationDirectory } from "../scripts/export-node-sqlite.js";
 import type { OpsRemoteConfiguration } from "../apps/shortlet-ops/src/ops-client.js";
@@ -371,4 +371,10 @@ test("16 D1 cutover: the manifest lists each parent table before the tables that
     assert.ok(order.indexOf("guest_accounts") >= 0 && order.indexOf("guest_account_email_commands") >= 0, "both tables are in the manifest");
     assert.ok(order.indexOf("guest_accounts") < order.indexOf("guest_account_email_commands"), "the parent comes first");
   });
+});
+
+test("16 D2: importRequestChunks throws a clear error for a table with more than 100 columns, and never emits an empty chunk", () => {
+  const wide = Object.fromEntries(Array.from({ length: 101 }, (_, index) => [`column_${index}`, 1]));
+  assert.throws(() => importRequestChunks("wide_table", [wide]), (error: unknown) => error instanceof RangeError && /wide_table/.test(error.message) && /100/.test(error.message));
+  assert.throws(() => migrationBatchRows(101), RangeError);
 });

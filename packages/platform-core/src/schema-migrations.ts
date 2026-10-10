@@ -25,11 +25,17 @@ function tableExists(database: SqlDatabase, table: string): boolean {
   return database.prepare("SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = $name").get({ $name: table }) !== undefined;
 }
 
-/** The highest applied version, or 0 when no migration has run (no `schema_migrations` table yet). */
+/**
+ * The applied version, or 0 when no migration has run (no `schema_migrations` table yet). The versions must be exactly
+ * 1, 2, ... N: a gap or a duplicate means the record is damaged, so this throws rather than reporting the highest row (F9).
+ */
 export function schemaVersion(database: SqlDatabase): number {
   if (!tableExists(database, SCHEMA_MIGRATIONS_TABLE)) return 0;
-  const row = database.prepare(`SELECT MAX(version) AS version FROM ${SCHEMA_MIGRATIONS_TABLE}`).get();
-  return row === undefined || row.version === null ? 0 : Number(row.version);
+  const rows = database.prepare(`SELECT version FROM ${SCHEMA_MIGRATIONS_TABLE} ORDER BY version`).all();
+  rows.forEach((row, index) => {
+    if (Number(row.version) !== index + 1) throw new Error("The schema_migrations record has a gap or a duplicate, so the schema version cannot be trusted");
+  });
+  return rows.length;
 }
 
 function assertOrdered(migrations: readonly SchemaMigration[]): void {
