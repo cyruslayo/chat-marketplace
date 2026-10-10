@@ -40,3 +40,8 @@ After cutover, Cloudflare is the only production platform. Leaving a working Nod
 Check every item in `docs/agents/issue-tracker.md`.
 
 ## Comments
+
+- Prepared and held (10 Oct 2026), not resolved. Branch `infra/cf-17-retire-node-prod` (from `origin/infra/cf-wave6`) removes `pilot:start` and `apps/pilot/src/cli-start.ts`, rewrites `test/pilot-local.test.ts` (AC4) and `test/production-install.test.ts`, and rewrites `docs/pilot-deployment.md` for `cf build`, `cf deploy` and `cf dev`. It also updates `docs/pilot-local-run.md`, the `.env.example` comment and AGENTS.md (`npm run test:workers`), and adds `test/retired-node-production-entry.test.ts` as the grep guard for AC1 and the AC3 doc check. Under ADR 0095, Cloudflare is the production host.
+- Kept on purpose: `startPilotServer` in `apps/pilot/src/pilot-server.ts` (with `clientAddress`, which still reads `X-Forwarded-For`), `productionPilotStartupLines`, and `NodeSqliteDatabase`. Six test files still import them as the in-process composition harness. Removing them is a separate task; `clientAddress` should move to `cf-connecting-ip` if that harness stays.
+- Verification on the branch: `npm run check` passes; `npm run test:workers` passes (12 files, 58 tests); non-browser phase 1 passes (207 files, 1414 tests, 0 failures); `pilot:local`, `guest:local` and `owner:local` start and serve. The browser phase was not run.
+- Hold: do not merge into any other branch and do not open a PR until the user confirms the production cutover and the rollback window has closed. Status stays as is until then.

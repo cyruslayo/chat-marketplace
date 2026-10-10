@@ -4,7 +4,9 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
 // Launch-readiness issue 16: a production install (`npm ci` with NODE_ENV=production skips devDependencies)
-// must still be able to build and start the pilot.
+// must still be able to run the production build. Issue 17 retired the Node production entry, so the pilot is
+// deployed through Cloudflare (`cf`, a devDependency) from a full install; this file covers the Node build step
+// that remains runtime-only.
 
 interface PackageManifest {
   readonly engines?: { readonly node?: string };
@@ -32,8 +34,8 @@ function assertRuntimeDependency(name: string, context: string): void {
   assert.notEqual(lock.packages[`node_modules/${name}`]?.dev, true, `${name} must not be marked dev in package-lock.json`);
 }
 
-test("A production install followed by the documented build and start commands starts the pilot", () => {
-  for (const scriptName of ["build", "pilot:start"]) {
+test("A production install followed by the documented build command runs from runtime dependencies", () => {
+  for (const scriptName of ["build"]) {
     const script = manifest.scripts[scriptName];
     assert.ok(script, `${scriptName} script exists`);
     for (const executable of scriptExecutables(script)) {

@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -151,14 +150,13 @@ test("AC3 — Local pilot starts without Paystack credentials", async () => {
   finally { await server.close(); rmSync(paths.directory, { recursive: true, force: true }); }
 });
 
-test("AC4 — Production pilot:start still fails without required Paystack credentials", () => {
+// Issue 17: the Node production entry is retired (test/retired-node-production-entry.test.ts). The live-configuration gate
+// it enforced stays in loadPilotConfiguration, which Cloudflare production configuration also depends on.
+test("AC4 — Production configuration still fails without required Paystack credentials", () => {
   const paths = temporaryPaths();
   try {
     bootstrapLocalPilot(paths);
-    const environment = Object.fromEntries(Object.entries({ ...process.env, SHORTLET_PUBLIC_ORIGIN: "https://pilot.example.test", SHORTLET_DB_PATH: paths.databasePath, SHORTLET_INVENTORY_PATH: paths.inventoryPath, SHORTLET_OPERATORS_PATH: paths.operatorsPath, PAYSTACK_ENVIRONMENT: "live" }).filter(([, value]) => value !== undefined)) as NodeJS.ProcessEnv;
-    const result = spawnSync(process.execPath, ["node_modules/tsx/dist/cli.mjs", "apps/pilot/src/cli-start.ts"], { cwd: process.cwd(), env: environment, encoding: "utf8", timeout: 10_000 });
-    assert.notEqual(result.status, 0); assert.match(`${result.stdout ?? ""}\n${result.stderr ?? ""}\n${result.error?.message ?? ""}`, /PAYSTACK_SECRET_KEY/);
-    assert.throws(() => loadPilotConfiguration({ SHORTLET_PUBLIC_ORIGIN: "https://pilot.example.test", SHORTLET_DB_PATH: paths.databasePath, SHORTLET_INVENTORY_PATH: paths.inventoryPath, SHORTLET_OPERATORS_PATH: paths.operatorsPath }), /PAYSTACK_SECRET_KEY/);
+    assert.throws(() => loadPilotConfiguration({ SHORTLET_PUBLIC_ORIGIN: "https://pilot.example.test", SHORTLET_DB_PATH: paths.databasePath, SHORTLET_INVENTORY_PATH: paths.inventoryPath, SHORTLET_OPERATORS_PATH: paths.operatorsPath, PAYSTACK_ENVIRONMENT: "live" }), /PAYSTACK_SECRET_KEY/);
   }
   finally { rmSync(paths.directory, { recursive: true, force: true }); }
 });
