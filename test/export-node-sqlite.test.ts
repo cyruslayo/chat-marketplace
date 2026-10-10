@@ -3,10 +3,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { NodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-database.js";
 import { MAX_IMPORT_REQUEST_BYTES, checksumTables, compareMigration, importRequestChunks, migrationBatchRows } from "../packages/platform-core/src/data-migration.js";
 import { populateSource } from "../apps/cloudflare/test/data-migration-fixtures.js";
+import { DAILY_EXPORT_EXCLUDED } from "../apps/cloudflare/src/do-export.js";
 import { exportNodeSqliteFile, importMigrationDirectory, migrateNodeSqliteFile, pullObject, pushMigrationDirectory } from "../scripts/export-node-sqlite.js";
 import type { OpsRemoteConfiguration } from "../apps/shortlet-ops/src/ops-client.js";
 
@@ -377,4 +379,54 @@ test("16 D2: importRequestChunks throws a clear error for a table with more than
   const wide = Object.fromEntries(Array.from({ length: 101 }, (_, index) => [`column_${index}`, 1]));
   assert.throws(() => importRequestChunks("wide_table", [wide]), (error: unknown) => error instanceof RangeError && /wide_table/.test(error.message) && /100/.test(error.message));
   assert.throws(() => migrationBatchRows(101), RangeError);
+});
+
+test("16 F4: pull requests no credential table and writes no file for one, and the rollback import leaves the credential tables empty", async () => {
+  await withTempDir(async (dir) => {
+    const sourcePath = join(dir, "source.sqlite");
+    const exportDir = join(dir, "export");
+    const pullDir = join(dir, "pull");
+    const targetPath = join(dir, "target.sqlite");
+    const source = new NodeSqliteDatabase(sourcePath);
+    await populateSource(source);
+    source.close();
+    const manifest = await exportNodeSqliteFile(sourcePath, exportDir);
+    const excluded = Object.keys(DAILY_EXPORT_EXCLUDED);
+
+    // Pull: the object's export route is asked only for tables the daily export keeps (ADR 0093, 0086, 0075).
+    // The object's verify lists every application table, the credential tables included, as the real object does.
+    const objectTables: Record<string, { rowCount: number; sha256: string }> = { ...manifest.tables };
+    for (const table of excluded) objectTables[table] = { rowCount: 0, sha256: "synthetic-f4-checksum" };
+    let requested: string[] = [];
+    await withFakeOps((url) => {
+      if (url.pathname === "/_ops/import/verify") return { status: 200, body: { ok: true, tables: objectTables } };
+      const table = url.searchParams.get("table") ?? "";
+      const entry = objectTables[table];
+      if (url.pathname !== "/_ops/export" || entry === undefined) return { status: 400, body: { ok: false, code: "EXCLUDED_TABLE" } };
+      const path = join(exportDir, `${table}.jsonl`);
+      const content = existsSync(path) ? readFileSync(path, "utf8") : "";
+      return { status: 200, body: { ok: true, table, rowCount: entry.rowCount, sha256: entry.sha256, content } };
+    }, async (calls) => {
+      await pullObject(pullDir, configuration);
+      requested = calls.map((call) => call.url.searchParams.get("table") ?? "").filter((table) => table !== "");
+    });
+    for (const table of excluded) {
+      assert.equal(requested.includes(table), false, `${table} must not be requested by pull`);
+      assert.equal(existsSync(join(pullDir, `${table}.jsonl`)), false, `${table} must not be written by pull`);
+    }
+
+    // Rollback import: a credential row in the export file is skipped, so no session or challenge is written back to Node.
+    const credentialTable = excluded[0]!;
+    await writeFile(join(exportDir, `${credentialTable}.jsonl`), `${JSON.stringify({ session_secret_hash: "synthetic-f4-row" })}\n`, "utf8");
+    await writeFile(join(exportDir, "manifest.json"), `${JSON.stringify({ ...manifest, tables: { ...manifest.tables, [credentialTable]: { rowCount: 1, sha256: "synthetic" } } })}\n`, "utf8");
+    await migrateNodeSqliteFile(targetPath);
+    await importMigrationDirectory(targetPath, exportDir);
+    const target = new NodeSqliteDatabase(targetPath);
+    try {
+      const rows = target.prepare(`SELECT COUNT(*) AS count FROM ${credentialTable}`).get();
+      assert.equal(Number(rows?.count), 0);
+    } finally {
+      target.close();
+    }
+  });
 });

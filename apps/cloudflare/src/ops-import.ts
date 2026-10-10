@@ -10,6 +10,7 @@ import {
   quoteIdentifier,
 } from "../../../packages/platform-core/src/data-migration.js";
 import { schemaVersion } from "../../../packages/platform-core/src/schema-migrations.js";
+import { DAILY_EXPORT_EXCLUDED } from "./do-export.js";
 
 /**
  * Slice 16: idempotent, batched import into the tenant's Durable Object, shared by `POST /_ops/import`, the verify and
@@ -26,7 +27,8 @@ export type ImportRefusalCode =
   | "MALFORMED_ROW"
   | "BATCH_REJECTED"
   | "SCHEMA_NOT_READY"
-  | "CUTOVER_COMPLETE";
+  | "CUTOVER_COMPLETE"
+  | "EXCLUDED_TABLE";
 
 /**
  * Refuses unless the schema is exactly `requiredVersion`. The import never runs migrations itself: a missing or older
@@ -200,10 +202,16 @@ export function importBatch(database: SqlDatabase, table: string, rows: readonly
   };
 }
 
-/** The canonical content and checksum of one table, for the reverse export (rollback). */
+/**
+ * The canonical content and checksum of one table, for the reverse export (rollback). The bearer-credential tables that the
+ * daily export excludes are refused here too, so the same exclusion applies to every export path (F4, ADR 0093, 0086, 0075).
+ */
 export async function exportTable(database: SqlDatabase, table: string): Promise<{ table: string; rowCount: number; sha256: string; content: string }> {
   if (!applicationTableNames(database).includes(table)) {
     throw new ImportRefusedError("UNKNOWN_TABLE", "The table is not part of this deployment's schema");
+  }
+  if (Object.hasOwn(DAILY_EXPORT_EXCLUDED, table)) {
+    throw new ImportRefusedError("EXCLUDED_TABLE", "This table holds bearer credentials and is not exported");
   }
   const rows: SqlRow[] = database.prepare(`SELECT * FROM ${quoteIdentifier(table)}`).all();
   const { content, rowCount } = canonicalTableContent(rows);

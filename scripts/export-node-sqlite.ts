@@ -20,6 +20,7 @@ import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
 import { SqliteReceiptBlobStore } from "../domains/shortlet/src/receipt-blob-store.js";
 import { assertImportAllowed, importBatch } from "../apps/cloudflare/src/ops-import.js";
+import { DAILY_EXPORT_EXCLUDED } from "../apps/cloudflare/src/do-export.js";
 import { SHORTLET_SCHEMA_MIGRATIONS, SHORTLET_SCHEMA_VERSION } from "../apps/cloudflare/src/schema.js";
 import { assertOpsOk, opsRequest, remoteOpsConfiguration, type OpsRemoteConfiguration } from "../apps/shortlet-ops/src/ops-client.js";
 import { applySchemaMigrations } from "../packages/platform-core/src/schema-migrations.js";
@@ -108,6 +109,8 @@ export async function importMigrationDirectory(dbPath: string, inDir: string): P
   try {
     assertImportAllowed(database, SHORTLET_SCHEMA_VERSION);
     for (const table of Object.keys(manifest.tables)) {
+      // F4: the bearer-credential tables are not written back to Node. Sessions and challenges are re-established after a rollback.
+      if (Object.hasOwn(DAILY_EXPORT_EXCLUDED, table)) continue;
       const rows = await readRows(inDir, table);
       for (const chunk of importRequestChunks(table, rows)) {
         importBatch(database, table, chunk, SHORTLET_SCHEMA_VERSION);
@@ -162,6 +165,8 @@ export async function pullObject(outDir: string, configuration: OpsRemoteConfigu
   await writeFile(join(outDir, "verify.json"), `${JSON.stringify({ ok: true, tables }, null, 2)}\n`, "utf8");
   const counts: Record<string, number> = {};
   for (const table of Object.keys(tables)) {
+    // F4: the verify response still lists every table, so the manifest comparison holds. The credential tables have no file.
+    if (Object.hasOwn(DAILY_EXPORT_EXCLUDED, table)) continue;
     const exported = assertOpsOk(await opsRequest(configuration, `/_ops/export?table=${encodeURIComponent(table)}`, { method: "GET" }));
     if (typeof exported.content !== "string" || typeof exported.rowCount !== "number") throw new Error("The export response is malformed");
     await writeFile(join(outDir, `${table}.jsonl`), exported.content, "utf8");

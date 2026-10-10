@@ -14,6 +14,7 @@ import {
 } from "../../../packages/platform-core/src/data-migration.js";
 import { SHORTLET_SCHEMA_MIGRATIONS, SHORTLET_SCHEMA_VERSION } from "../src/schema.js";
 import { DurableObjectSqlDatabase } from "../src/do-sql-database.js";
+import { DAILY_EXPORT_EXCLUDED } from "../src/do-export.js";
 import { importBatch } from "../src/ops-import.js";
 import { populateSource } from "./data-migration-fixtures.js";
 import nodeExportFixture from "./fixtures/node-export.json?raw";
@@ -277,6 +278,17 @@ test("16 reverse export returns the rows the import wrote, so a rollback can rep
 
   const unknown = await call(target, "GET", "/_ops/export?table=not_a_table");
   expect(unknown.status).toBe(400);
+});
+
+test("16 F4: the ops export refuses each credential table the daily export excludes, and still serves an ordinary table", async () => {
+  const target = targetStub();
+  for (const table of Object.keys(DAILY_EXPORT_EXCLUDED)) {
+    const response = await call(target, "GET", `/_ops/export?table=${table}`);
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { code: string }).code).toBe("EXCLUDED_TABLE");
+  }
+  const ordinary = await call(target, "GET", "/_ops/export?table=operators");
+  expect(ordinary.status).toBe(200);
 });
 
 test("16 ADR 0075: a malformed JSON import body is refused without echoing any of its row content", async () => {
