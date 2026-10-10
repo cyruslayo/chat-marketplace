@@ -51,4 +51,4 @@ Check every item in `docs/agents/issue-tracker.md`.
 
 ### Wave 6 code close (10 Oct 2026)
 
-Status unchanged: **ready-for-human**, held. `infra/cf-17-retire-node-prod` is at `a92eae0` (held, unmerged, no PR) and is kept current by merging the wave 6 tip into it. Not resolved. Do not start until `ROLLBACK_WINDOW` closes after the human cutover in issue 16. See `map.md`, "Wave 6 completion (code)".
+Status unchanged: **ready-for-human**, held. `infra/cf-17-retire-node-prod` is held (unmerged, no PR) and is kept current by merging `origin/infra/cf-wave6` into it. Its tip moves, so read it with `git rev-parse origin/infra/cf-17-retire-node-prod`; at 10 Oct 2026 it was `d6c2f36`. Not resolved. Do not start until `ROLLBACK_WINDOW` closes after the human cutover in issue 16. See `map.md`, "Wave 6 completion (code)".

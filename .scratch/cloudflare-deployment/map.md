@@ -62,12 +62,12 @@ The frontier is the first slice in the table that is open, unblocked and unclaim
 | 07a | `ReceiptBlobStore` port, SQLite implementation, migration | task | resolved | 02b | 07b |
 | 07b | R2 receipt store | task | resolved | 03a, 07a | 10b, 12a |
 | **E: HTTP** | | | | | |
-| 08a | Narrow HTTP types; extract the guest request handler | task | ready-for-agent | 04a | 08b, 09c |
-| 08b | Extract the owner request handler | task | ready-for-agent | 04b, 08a | 08c |
-| 08c | In-process pilot handler; remove the localhost proxy | task | ready-for-agent | 08b | 09a, 10b |
-| 09a | Injected asset loader | task | ready-for-agent | 08c | 09b |
-| 09b | Build static assets for Cloudflare | task | ready-for-agent | 03a, 09a | 10b |
-| 09c | Fetch-to-node-HTTP shim | task | ready-for-agent | 01b, 03a, 08a | 10b |
+| 08a | Narrow HTTP types; extract the guest request handler | task | resolved | 04a | 08b, 09c |
+| 08b | Extract the owner request handler | task | resolved | 04b, 08a | 08c |
+| 08c | In-process pilot handler; remove the localhost proxy | task | resolved | 08b | 09a, 10b |
+| 09a | Injected asset loader | task | resolved | 08c | 09b |
+| 09b | Build static assets for Cloudflare | task | resolved | 03a, 09a | 10b |
+| 09c | Fetch-to-node-HTTP shim | task | resolved | 01b, 03a, 08a | 10b |
 | **F: Cloudflare assembly** | | | | | |
 | 10a | Cloudflare configuration loader | task | resolved | 05b | 10b |
 | 10b | Worker, Durable Object and typed `cf` config, running on `cf dev` | task | resolved (cf dev / dry-run blocked on a Windows beta spawn gap) | 01b, 03b, 04c, 07b, 08c, 09b, 09c, 10a | 11a, 12a, 12b, 13 |
@@ -262,8 +262,8 @@ Branch `infra/cf-wave6` at `cf260db`, from the review of `7181cbd`. Findings F1 
 
 Branches and tips:
 
-- `origin/infra/cf-wave6`: code tip **`8e769d2`**. The commit that adds this section sits on top of it.
-- `origin/infra/cf-17-retire-node-prod`: **`a92eae0`** (held, unmerged, no PR). It is kept current by merging the wave 6 tip into it. It is not merged to `main`.
+- `origin/infra/cf-wave6`: the wave 6 code work ends at `8e769d2`, and `91031fa` records wave 6 as complete for code work. The branch tip moves as later work is merged in, so read it with `git rev-parse origin/infra/cf-wave6`. At 10 Oct 2026 it was `91031fa`, with the docs commit that corrects this record on top of it.
+- `origin/infra/cf-17-retire-node-prod`: held, unmerged, no PR, not merged to `main`. It is kept current by merging `origin/infra/cf-wave6` into it, so its tip moves too: read it with `git rev-parse origin/infra/cf-17-retire-node-prod`. At 10 Oct 2026 it was `d6c2f36`, the merge of `91031fa` into it.
 
 Verification on the wave 6 code tip:
 
@@ -279,7 +279,7 @@ Decisions made on the user's behalf are recorded in `issues/16-data-migration-an
 - **D4:** the freeze (a process stop) and the 14-day rollback window. `ROLLBACK_WINDOW` in `docs/runbooks/cloudflare-cutover.md` is the single definition, with its exit criteria.
 - **D5:** the cutover marker outside object storage, and the break-glass rebuild (restore runbook, section 2, B0 to B7).
 - **D6:** the five bearer-credential tables are excluded from the cutover.
-- **Daily export covers 45 tables:** every application table except the five credential tables (`EXPORT_TABLES` in `apps/cloudflare/src/do-export.ts`; issue 12a, Comments). The 18-table figure in the 12a pointer below is superseded.
+- **Daily export covers 45 tables:** every application table except the five credential tables (`EXPORT_TABLES` in `apps/cloudflare/src/do-export.ts`; issue 12a, Comments). The 18-table figure of the first 12a pass (the context pointer for 12a below was written then) is superseded.
 
 **Human steps pending before wave 6 closes**, in order:
 
@@ -307,15 +307,15 @@ Decisions made on the user's behalf are recorded in `issues/16-data-migration-an
 
 **Wave 7:** no wave 7 is defined anywhere in `.scratch` or `docs`. It needs a user decision on its scope, issues and entry criteria. The handoff checklist's "next wave's open frontier" is empty here: 15, 16 and 17 are human-gated.
 
-**Stale rows to fix before the next frontier is read:** the map table still shows 08a to 09c as `ready-for-agent`. Their issue files and the wave 4 completion record say `resolved`. The table's 12a pointer also still says 18 export tables, now 45. Neither is changed in this record.
+**Stale rows, corrected in the 10 Oct 2026 docs pass:** the table rows for 08a, 08b, 08c, 09a, 09b and 09c now read `resolved`, matching their issue files and the wave 4 completion record. Every other row was checked against its issue file's Status line and already matched. The 12a pointer now says 45 export tables.
 
 ## Context pointers
 
-- 15, 16 and 17 (wave 6 code close, 10 Oct 2026): `infra/cf-wave6` at `8e769d2` (code tip). Issue 16 holds the decisions and fix passes. Issue 15 holds the staging evidence template, which is still blank. `infra/cf-17-retire-node-prod` at `a92eae0` (held). Full record in "Wave 6 completion (code)" above.
+- 15, 16 and 17 (wave 6 code close, 10 Oct 2026): `origin/infra/cf-wave6` (code merged here; read the tip with `git rev-parse`). Issue 16 holds the decisions and fix passes. Issue 15 holds the staging evidence template, which is still blank. `origin/infra/cf-17-retire-node-prod` (held; at 10 Oct 2026 it was `d6c2f36`). Full record in "Wave 6 completion (code)" above.
 - 16 and 15 (wave 6 agent pass): `infra/cf-wave6`. Node export fixture `apps/cloudflare/test/fixtures/node-export.json` (regenerate with `UPDATE_NODE_EXPORT_FIXTURE=1`); `scripts/export-node-sqlite.ts`; `apps/cloudflare/src/ops-import.ts`; `docs/runbooks/cloudflare-cutover.md` (DRAFT).
 - 13: `infra/cf-13-observability-edge`. `observability` (Workers Logs, invocation logs off) in `cloudflare.config.ts`; `packages/platform-core/src/security-headers.ts` as the single source for `GUEST_HTML_SECURITY_HEADERS`/`RECEIPT_SECURITY_HEADERS` (spread by `guest-server.ts` and `local-owner-server.ts`); `docs/runbooks/cloudflare-edge.md` (WAF 10/min login rule, Paystack IP allow-list, HTTPS-only domain, `workers.dev`/preview off). Workerd spec `apps/cloudflare/test/edge-security.spec.ts` (secret-leak capture + header parity). Dashboard/DNS steps remain human.
 - 12b: `infra/cf-12b-restore-runbook`. `docs/runbooks/cloudflare-restore.md` (PITR flow, the two-step route, rebuild from 12a exports via slice 16's `/_ops/import`, and the mandatory post-restore checks incl. Paystack reconciliation and R2-not-rolled-back); `POST /_ops/restore` in `src/ops-routes.ts` with `OpsStorageBookmarks` injected from `this.ctx.storage`. Workerd spec `apps/cloudflare/test/ops-restore.spec.ts`. **Gap:** workerd's local storage has no PITR, so the bookmark round trip is staging-only (slice 15).
-- 12a: `infra/cf-12a-export-alarm`. `src/do-export.ts` (18 store-derived `EXPORT_TABLES`, paged JSONL export to `EXPORTS` keyed `YYYY-MM-DD/<table>.jsonl` in Africa/Lagos, `deleteExpiredExports`, fail-closed `sweepOrphanReceipts`); `SHORTLET_EXPORT_RETENTION_DAYS` (400) and `SHORTLET_RECEIPT_ORPHAN_GRACE_HOURS` (24) via `loadExportConfiguration`; the `daily-export` alarm task in `shortlet-pilot-do.ts` gated once per Lagos day by `storage["export:lastDate"]`, with the alarm now always rescheduling. Workerd spec `apps/cloudflare/test/daily-export.spec.ts`. DPIA note in the issue (personal-data columns in the exported tables).
+- 12a: `infra/cf-12a-export-alarm`. `src/do-export.ts` (`EXPORT_TABLES`: 45 store-derived tables, replacing the 18 of the first 12a pass; paged JSONL export to `EXPORTS` keyed `YYYY-MM-DD/<table>.jsonl` in Africa/Lagos, `deleteExpiredExports`, fail-closed `sweepOrphanReceipts`); `SHORTLET_EXPORT_RETENTION_DAYS` (400) and `SHORTLET_RECEIPT_ORPHAN_GRACE_HOURS` (24) via `loadExportConfiguration`; the `daily-export` alarm task in `shortlet-pilot-do.ts` gated once per Lagos day by `storage["export:lastDate"]`, with the alarm now always rescheduling. Workerd spec `apps/cloudflare/test/daily-export.spec.ts`. DPIA note in the issue (personal-data columns in the exported tables).
 - 11b: `infra/cf-11b-ops-import-cli`. `POST /_ops/inventory/import` in `src/ops-routes.ts` (5 MiB limit via `readBodyWithLimit`, reuses `importInventoryCsv`, returns its summary verbatim); `apps/shortlet-ops/src/ops-client.ts` (`SHORTLET_OPS_URL` switch, https-only-except-localhost guard, both auth headers) wired into the five `shortlet-ops` CLIs and `operator:provision`/`operator:revoke`; `docs/pilot-deployment.md` documents the remote mode and that `pilot:local:*` stays Node-only. Workerd spec `apps/cloudflare/test/ops-inventory.spec.ts`; Node spec `test/ops-remote-cli.test.ts`. **Decision:** `importInventoryCsv` stays per-row (not all-or-nothing); run with `dryRun=true` first — recorded in the issue.
 - 11a: `infra/cf-11a-ops-operators`. `src/ops-auth.ts` (SHA-256 + `timingSafeEqual` shared-secret check), `src/access-jwt.ts` (RS256 JWKS verification of `Cf-Access-Jwt-Assertion`, aud/exp/nbf, cached certs, `CF_ACCESS_JWKS` test override), `src/ops-routes.ts` (the six `/_ops/operators*` routes over the CLI's domain functions, `Cache-Control: no-store`, 64 KiB body bound), `loadOpsConfiguration` in `cloudflare-config.ts`, and the `/_ops` dispatch in `shortlet-pilot-do.ts` (before the config load and provisioning gate). Workerd spec `apps/cloudflare/test/ops-routes.spec.ts`; shared fixtures in `apps/cloudflare/test/ops-test-helpers.ts`; test JWKS in `wrangler.test.jsonc`.
 - 10b: `infra/cf-10b-worker-do`. `apps/cloudflare/cloudflare.config.ts` (per-mode Worker/DO/R2/assets/typed vars and `bindings.secret()`), `src/worker.ts` (assets first, else `idFromName(tenantId)` with `locationHint: "afr"`), `src/shortlet-pilot-do.ts` (`ShortletPilot`: shared-handle compositions at `production: true`, live Paystack, `R2ReceiptBlobStore`, redacted telemetry sink, 32-runtime cap, provisioning gate, `/_ops` seam, task-list alarm), `src/do-alarm.ts`, `src/pilot-assets.ts`, `src/node-sqlite-stub.ts` + a Vite alias keeping the Node adapter out of the Worker. Worker-source tsconfig now imports Workers types as a module rather than the workers-types global script, so the handler graph type-checks; enforcement moved to `scripts/check-worker-bundle.mjs` (in `npm run check` and `test:workers`). Workerd spec: `apps/cloudflare/test/pilot-worker.spec.ts`. Node guard test: `test/cloudflare-worker-bundle.test.ts`. Toolchain gap: `cf build`/`cf dev` cannot spawn the extension-less plugin bin on Windows; `npx vite build` from `apps/cloudflare` succeeds (320 modules, 0 real `node:sqlite` imports).
