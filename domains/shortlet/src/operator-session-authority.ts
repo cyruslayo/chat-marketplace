@@ -28,6 +28,16 @@ function required(value: string, label: string): string {
   return value;
 }
 
+/** Table DDL, applied by the schema migrations (apps/cloudflare/src/schema.ts) and by this store's constructor. */
+export const OPERATOR_SESSION_SCHEMA = `CREATE TABLE IF NOT EXISTS operator_access_tokens (
+      token_hash TEXT PRIMARY KEY, actor_id TEXT NOT NULL, tenant_id TEXT NOT NULL,
+      created_at TEXT NOT NULL, expires_at TEXT NOT NULL, consumed_at TEXT
+    ); CREATE INDEX IF NOT EXISTS idx_operator_access_tokens_expiry ON operator_access_tokens(expires_at);
+    CREATE TABLE IF NOT EXISTS operator_sessions (
+      session_id TEXT PRIMARY KEY, session_secret_hash TEXT NOT NULL, actor_id TEXT NOT NULL,
+      tenant_id TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, revoked_at TEXT
+    ); CREATE INDEX IF NOT EXISTS idx_operator_sessions_actor ON operator_sessions(actor_id, tenant_id);`;
+
 export class SqliteOperatorSessionAuthority {
   readonly #db: SqlDatabase;
   readonly #clock: () => Date;
@@ -45,14 +55,7 @@ export class SqliteOperatorSessionAuthority {
     this.#clock = options.clock ?? (() => new Date());
     this.#audit = options.audit;
     this.#telemetry = options.telemetry;
-    this.#db.exec(`CREATE TABLE IF NOT EXISTS operator_access_tokens (
-      token_hash TEXT PRIMARY KEY, actor_id TEXT NOT NULL, tenant_id TEXT NOT NULL,
-      created_at TEXT NOT NULL, expires_at TEXT NOT NULL, consumed_at TEXT
-    ); CREATE INDEX IF NOT EXISTS idx_operator_access_tokens_expiry ON operator_access_tokens(expires_at);
-    CREATE TABLE IF NOT EXISTS operator_sessions (
-      session_id TEXT PRIMARY KEY, session_secret_hash TEXT NOT NULL, actor_id TEXT NOT NULL,
-      tenant_id TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, revoked_at TEXT
-    ); CREATE INDEX IF NOT EXISTS idx_operator_sessions_actor ON operator_sessions(actor_id, tenant_id);`);
+    this.#db.exec(OPERATOR_SESSION_SCHEMA);
   }
   #now(): Date {
     const now = this.#clock();

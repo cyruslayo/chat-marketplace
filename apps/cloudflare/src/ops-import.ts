@@ -4,16 +4,54 @@ import {
   applicationTableNames,
   canonicalTableContent,
   contentSha256,
+  cutoverCompletedAt,
   decodeValue,
+  migrationBatchRows,
   quoteIdentifier,
 } from "../../../packages/platform-core/src/data-migration.js";
+import { schemaVersion } from "../../../packages/platform-core/src/schema-migrations.js";
 
 /**
  * Slice 16: idempotent, batched import into the tenant's Durable Object, shared by `POST /_ops/import`, the verify and
  * export routes and the Node-side import. The target schema is the source of truth: a table or column the target does
  * not have is refused, never created.
+ *
+ * D1/D3: an import first checks that the schema is at the version the release expects, and that the one-way cutover flag
+ * is not set. Both checks run before any write, so a refusal creates and writes nothing.
  */
-export type ImportRefusalCode = "UNKNOWN_TABLE" | "UNKNOWN_COLUMN" | "NO_PRIMARY_KEY" | "MALFORMED_ROW" | "BATCH_REJECTED";
+export type ImportRefusalCode =
+  | "UNKNOWN_TABLE"
+  | "UNKNOWN_COLUMN"
+  | "NO_PRIMARY_KEY"
+  | "MALFORMED_ROW"
+  | "BATCH_REJECTED"
+  | "SCHEMA_NOT_READY"
+  | "CUTOVER_COMPLETE";
+
+/**
+ * Refuses unless the schema is exactly `requiredVersion`. The import never runs migrations itself: a missing or older
+ * schema is a deployment fault to fix by migrating, not something an import should repair (D3).
+ */
+export function assertSchemaCurrent(database: SqlDatabase, requiredVersion: number): void {
+  if (schemaVersion(database) !== requiredVersion) {
+    throw new ImportRefusedError("SCHEMA_NOT_READY", "The schema is not at the version this release expects, so nothing was written; run the migrations first");
+  }
+}
+
+/**
+ * Refuses once the one-way cutover flag is set (D1). Nothing in this module or in the import routes clears it.
+ */
+export function assertMigrationOpen(database: SqlDatabase): void {
+  if (cutoverCompletedAt(database) !== null) {
+    throw new ImportRefusedError("CUTOVER_COMPLETE", "The cutover is complete, so this object no longer accepts migration imports");
+  }
+}
+
+/** Both checks, in order: schema first, then the cutover flag. */
+export function assertImportAllowed(database: SqlDatabase, requiredVersion: number): void {
+  assertSchemaCurrent(database, requiredVersion);
+  assertMigrationOpen(database);
+}
 
 /** Messages name tables, columns and row positions only, never row values (ADR 0075). */
 export class ImportRefusedError extends Error {
@@ -100,7 +138,8 @@ function insertStatement(table: string, columns: readonly string[], primaryKey: 
  * Imports one batch in a single transaction. Rows are validated before anything is written, and a statement that
  * fails (for example a missing NOT NULL value) rolls back the whole batch, so nothing from it is kept.
  */
-export function importBatch(database: SqlDatabase, table: string, rows: readonly unknown[]): ImportBatchResult {
+export function importBatch(database: SqlDatabase, table: string, rows: readonly unknown[], requiredVersion: number): ImportBatchResult {
+  assertImportAllowed(database, requiredVersion);
   const shape = tableShape(database, table);
   const prepared = rows.map((raw, position) => preparedRow(raw, shape, position));
 
@@ -120,7 +159,7 @@ export function importBatch(database: SqlDatabase, table: string, rows: readonly
     if (columns.length === 0 || columns.length > MAX_STATEMENT_PARAMETERS) {
       throw new ImportRefusedError("MALFORMED_ROW", "A row has no usable columns");
     }
-    const rowsPerStatement = Math.floor(MAX_STATEMENT_PARAMETERS / columns.length);
+    const rowsPerStatement = migrationBatchRows(columns.length);
     for (let start = 0; start < group.length; start += rowsPerStatement) {
       const chunk = group.slice(start, start + rowsPerStatement);
       statements.push({

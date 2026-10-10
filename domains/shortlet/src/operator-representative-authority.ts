@@ -157,16 +157,8 @@ function project(
   };
 }
 
-export class SqliteOperatorRepresentativeGrantStore
-  implements OperatorRepresentativeAuthority
-{
-  readonly #clock: () => Date;
-  readonly #database: SqlDatabase;
-
-  constructor(database: SqlDatabase, options: { clock?: () => Date } = {}) {
-    this.#clock = options.clock ?? (() => new Date());
-    this.#database = database;
-    this.#database.exec(`
+/** Table DDL, applied by the schema migrations (apps/cloudflare/src/schema.ts) and by this store's constructor. */
+export const OPERATOR_REPRESENTATIVE_SCHEMA = `
       CREATE TABLE IF NOT EXISTS operator_representative_grants (
         grant_id TEXT PRIMARY KEY, actor_id TEXT NOT NULL, operator_id TEXT NOT NULL,
         tenant_id TEXT NOT NULL, permission TEXT NOT NULL, granted_at_iso TEXT NOT NULL,
@@ -186,7 +178,18 @@ export class SqliteOperatorRepresentativeGrantStore
         permission TEXT NOT NULL, transition TEXT NOT NULL,
         authorized_human_id TEXT NOT NULL, timestamp TEXT NOT NULL
       );
-    `);
+    `;
+
+export class SqliteOperatorRepresentativeGrantStore
+  implements OperatorRepresentativeAuthority
+{
+  readonly #clock: () => Date;
+  readonly #database: SqlDatabase;
+
+  constructor(database: SqlDatabase, options: { clock?: () => Date } = {}) {
+    this.#clock = options.clock ?? (() => new Date());
+    this.#database = database;
+    this.#database.exec(OPERATOR_REPRESENTATIVE_SCHEMA);
   }
 
   #transaction<T>(operation: () => T): T {

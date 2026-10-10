@@ -3,18 +3,21 @@ import type { Telemetry, TelemetryEvent, TransitionTelemetryEvent } from "./inde
 import type { SqlDatabase } from "./sql-database.js";
 import { redactSensitiveData } from "./redaction.js";
 
-export class SqliteTelemetry implements Telemetry {
-  readonly #sink?: (event: TelemetryEvent) => void;
-
-  constructor(private readonly database: SqlDatabase, options: { sink?: (event: TelemetryEvent) => void } = {}) {
-    this.#sink = options.sink;
-    database.exec(`CREATE TABLE IF NOT EXISTS telemetry_events (
+/** Table DDL, applied by the schema migrations (apps/cloudflare/src/schema.ts) and by this store's constructor. */
+export const TELEMETRY_SCHEMA = `CREATE TABLE IF NOT EXISTS telemetry_events (
       id INTEGER PRIMARY KEY,
       transition_key TEXT,
       recorded_at TEXT NOT NULL,
       payload_json TEXT NOT NULL
     );
-    CREATE UNIQUE INDEX IF NOT EXISTS telemetry_transition_key ON telemetry_events (transition_key)`);
+    CREATE UNIQUE INDEX IF NOT EXISTS telemetry_transition_key ON telemetry_events (transition_key)`;
+
+export class SqliteTelemetry implements Telemetry {
+  readonly #sink?: (event: TelemetryEvent) => void;
+
+  constructor(private readonly database: SqlDatabase, options: { sink?: (event: TelemetryEvent) => void } = {}) {
+    this.#sink = options.sink;
+    database.exec(TELEMETRY_SCHEMA);
   }
 
   track(event: object): void {

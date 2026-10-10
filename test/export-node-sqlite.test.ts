@@ -5,9 +5,9 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { NodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-database.js";
-import { checksumTables, compareMigration } from "../packages/platform-core/src/data-migration.js";
-import { populateSource, targetSchemaStatements } from "../apps/cloudflare/test/data-migration-fixtures.js";
-import { exportNodeSqliteFile, importMigrationDirectory, pullObject, pushMigrationDirectory } from "../scripts/export-node-sqlite.js";
+import { MAX_IMPORT_REQUEST_BYTES, checksumTables, compareMigration, migrationBatchRows } from "../packages/platform-core/src/data-migration.js";
+import { populateSource } from "../apps/cloudflare/test/data-migration-fixtures.js";
+import { exportNodeSqliteFile, importMigrationDirectory, migrateNodeSqliteFile, pullObject, pushMigrationDirectory } from "../scripts/export-node-sqlite.js";
 import type { OpsRemoteConfiguration } from "../apps/shortlet-ops/src/ops-client.js";
 
 /** Slice 16: the Node exporter and the Node side of the import share one canonical format with the Worker. */
@@ -39,16 +39,13 @@ test("16 AC1: exporting a populated Node database and importing it gives identic
 
     const source = new NodeSqliteDatabase(sourcePath);
     await populateSource(source);
-    const schema = targetSchemaStatements(source);
     source.close();
 
     const manifest = await exportNodeSqliteFile(sourcePath, outDir);
     assert.ok((manifest.tables.operators?.rowCount ?? 0) > 0);
 
-    const target = new NodeSqliteDatabase(targetPath);
-    for (const statement of schema) target.exec(statement);
-    target.close();
-
+    // The target gets its schema from the migrations, never from the source's DDL (D3).
+    await migrateNodeSqliteFile(targetPath);
     await importMigrationDirectory(targetPath, outDir);
 
     const verified = await checksumsOf(targetPath, Object.keys(manifest.tables));
@@ -148,9 +145,96 @@ test("16 push sends every table to /_ops/import in batches of at most 100 rows w
       assert.equal(headers["x-shortlet-ops-secret"], configuration.sharedSecret);
       assert.equal(headers["cf-access-client-id"], configuration.accessClientId);
       const payloads = batches.map((call) => JSON.parse(String(call.init.body)) as { table: string; rows: unknown[] });
-      assert.equal(payloads.every((payload) => payload.rows.length <= 100), true);
       assert.equal(payloads.filter((payload) => payload.table === "operators").length >= 2, true);
     });
+  });
+});
+
+test("16 D2: push sends each table in requests of floor(100 / column count) rows, not a fixed 100", async () => {
+  await withTempDir(async (dir) => {
+    const sourcePath = join(dir, "source.sqlite");
+    const outDir = join(dir, "export");
+    const source = new NodeSqliteDatabase(sourcePath);
+    await populateSource(source);
+    const insert = source.prepare("INSERT INTO operators (id, operator_json) VALUES ($id, $json)");
+    for (let index = 0; index < 150; index += 1) insert.run({ $id: `op-chunk-${index}`, $json: "{}" });
+    source.close();
+    await exportNodeSqliteFile(sourcePath, outDir);
+
+    await withFakeOps(() => ({ status: 200, body: { ok: true } }), async (calls) => {
+      await pushMigrationDirectory(outDir, configuration);
+      const payloads = calls
+        .filter((call) => call.url.pathname === "/_ops/import")
+        .map((call) => JSON.parse(String(call.init.body)) as { table: string; rows: Array<Record<string, unknown>> });
+      // operators has two columns, so each request carries at most 50 rows: 50 rows bind 100 parameters at most.
+      const operators = payloads.filter((payload) => payload.table === "operators");
+      assert.equal(Math.max(...operators.map((payload) => payload.rows.length)), migrationBatchRows(2));
+      assert.equal(migrationBatchRows(2), 50);
+      for (const payload of payloads) {
+        const columns = Object.keys(payload.rows[0] ?? {}).length;
+        assert.ok(payload.rows.length * columns <= 100, `request for ${payload.table} binds more than 100 parameters`);
+        assert.ok(payload.rows.length <= migrationBatchRows(Math.max(columns, 1)));
+      }
+    });
+  });
+});
+
+test("16 D2: push keeps each request body within the 5 MiB chunk bound and refuses one row that cannot fit, naming only its position", async () => {
+  await withTempDir(async (dir) => {
+    const sourcePath = join(dir, "source.sqlite");
+    const outDir = join(dir, "export");
+    const source = new NodeSqliteDatabase(sourcePath);
+    await populateSource(source);
+    source.close();
+    await exportNodeSqliteFile(sourcePath, outDir);
+
+    // Two rows of about 3 MiB each cannot share one request, so the client sends them separately.
+    const large = "x".repeat(3 * 1024 * 1024);
+    const extra = [{ id: "op-big-1", operator_json: large }, { id: "op-big-2", operator_json: large }];
+    const existing = await readFile(join(outDir, "operators.jsonl"), "utf8");
+    await writeFile(join(outDir, "operators.jsonl"), existing + extra.map((row) => `${JSON.stringify(row)}\n`).join(""), "utf8");
+
+    await withFakeOps(() => ({ status: 200, body: { ok: true } }), async (calls) => {
+      await pushMigrationDirectory(outDir, configuration);
+      const bodies = calls.filter((call) => call.url.pathname === "/_ops/import").map((call) => String(call.init.body));
+      for (const body of bodies) assert.ok(new TextEncoder().encode(body).byteLength <= MAX_IMPORT_REQUEST_BYTES);
+      assert.ok(bodies.filter((body) => body.includes("op-big-")).length >= 2);
+    });
+
+    // A single row over the bound is refused before any request, and the message names the table and row only.
+    const oversized = "y".repeat(MAX_IMPORT_REQUEST_BYTES);
+    await writeFile(join(outDir, "operators.jsonl"), `${JSON.stringify({ id: "op-huge", operator_json: oversized })}\n`, "utf8");
+    await withFakeOps(() => ({ status: 200, body: { ok: true } }), async () => {
+      await assert.rejects(pushMigrationDirectory(outDir, configuration), (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /operators/);
+        assert.equal(error.message.includes("yyyy"), false);
+        assert.equal(error.message.includes("op-huge"), false);
+        return true;
+      });
+    });
+  });
+});
+
+test("16 D3: importing into a Node file whose schema has not been migrated is refused and creates no table", async () => {
+  await withTempDir(async (dir) => {
+    const sourcePath = join(dir, "source.sqlite");
+    const outDir = join(dir, "export");
+    const targetPath = join(dir, "target.sqlite");
+    const source = new NodeSqliteDatabase(sourcePath);
+    await populateSource(source);
+    source.close();
+    await exportNodeSqliteFile(sourcePath, outDir);
+    // An empty file: no migrations have been applied to it.
+    new NodeSqliteDatabase(targetPath).close();
+
+    await assert.rejects(importMigrationDirectory(targetPath, outDir), /schema/i);
+    const check = new NodeSqliteDatabase(targetPath);
+    try {
+      assert.deepEqual(check.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all(), []);
+    } finally {
+      check.close();
+    }
   });
 });
 
@@ -211,15 +295,12 @@ test("16 ADR 0075: a malformed line in an export file is reported by table and l
     const targetPath = join(dir, "target.sqlite");
     const source = new NodeSqliteDatabase(sourcePath);
     await populateSource(source);
-    const schema = targetSchemaStatements(source);
     source.close();
     await exportNodeSqliteFile(sourcePath, outDir);
 
     // An unquoted value makes V8's JSON.parse echo the whole line in its message.
     await writeFile(join(outDir, "operators.jsonl"), `{"id":"op-1","operator_json":${ROW_SENTINEL}}\n`, "utf8");
-    const target = new NodeSqliteDatabase(targetPath);
-    for (const statement of schema) target.exec(statement);
-    target.close();
+    await migrateNodeSqliteFile(targetPath);
 
     await assert.rejects(importMigrationDirectory(targetPath, outDir), (error: unknown) => {
       assert.ok(error instanceof Error);

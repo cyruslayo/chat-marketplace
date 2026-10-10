@@ -192,11 +192,20 @@ function isReceiptContentType(value: unknown): value is ReceiptContentType {
 
 const RECEIPT_TABLE = "manual_transfer_receipts";
 
+/** Table DDL, applied by the schema migrations (apps/cloudflare/src/schema.ts) and by this store's constructor. */
+export const MANUAL_TRANSFERS_SCHEMA = `
+      CREATE TABLE IF NOT EXISTS manual_transfers (transfer_id TEXT PRIMARY KEY, offer_id TEXT NOT NULL, booking_reference TEXT NOT NULL UNIQUE, seq INTEGER NOT NULL, transfer_json TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS idx_manual_transfers_offer ON manual_transfers (offer_id, seq);
+    `;
+
 /**
  * Manual transfers and their receipt metadata in the shared SQLite database; the receipt bytes live in the injected
  * blob store and never leave it except to the back office (ADR 0090). Receipts saved before the blob store existed
  * keep their bytes in the row and are still served.
  */
+/** Receipt evidence table in its current shape (07a: opaque object key, no inline bytes for new rows). Used by the migrations and by the legacy rebuild below. */
+export const MANUAL_TRANSFER_RECEIPTS_SCHEMA = `CREATE TABLE IF NOT EXISTS manual_transfer_receipts (receipt_id TEXT PRIMARY KEY, transfer_id TEXT NOT NULL, content_type TEXT NOT NULL, bytes BLOB, object_key TEXT, size_bytes INTEGER)`;
+
 export class SqliteManualTransferStore implements ManualTransferStore {
   readonly #database: SqlDatabase;
   readonly #blobs: ReceiptBlobStore;
@@ -206,10 +215,7 @@ export class SqliteManualTransferStore implements ManualTransferStore {
   ) {
     this.#database = database;
     this.#blobs = blobs;
-    this.#database.exec(`
-      CREATE TABLE IF NOT EXISTS manual_transfers (transfer_id TEXT PRIMARY KEY, offer_id TEXT NOT NULL, booking_reference TEXT NOT NULL UNIQUE, seq INTEGER NOT NULL, transfer_json TEXT NOT NULL);
-      CREATE INDEX IF NOT EXISTS idx_manual_transfers_offer ON manual_transfers (offer_id, seq);
-    `);
+    this.#database.exec(MANUAL_TRANSFERS_SCHEMA);
     this.#migrateReceiptTable();
   }
 
@@ -219,7 +225,7 @@ export class SqliteManualTransferStore implements ManualTransferStore {
    * rows keep their bytes and get their size.
    */
   #migrateReceiptTable(): void {
-    const current = `CREATE TABLE ${RECEIPT_TABLE} (receipt_id TEXT PRIMARY KEY, transfer_id TEXT NOT NULL, content_type TEXT NOT NULL, bytes BLOB, object_key TEXT, size_bytes INTEGER)`;
+    const current = MANUAL_TRANSFER_RECEIPTS_SCHEMA;
     this.#database.transaction(() => {
       const existing = this.#database
         .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = $name")

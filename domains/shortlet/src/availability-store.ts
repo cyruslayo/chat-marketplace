@@ -82,12 +82,8 @@ function project(row: CommitmentRow): AvailabilityCommitment {
   };
 }
 
-export class SqliteAvailabilityStore {
-  readonly #database: SqlDatabase;
-
-  constructor(database: SqlDatabase) {
-    this.#database = database;
-    this.#database.exec(`
+/** Table DDL, applied by the schema migrations (apps/cloudflare/src/schema.ts) and by this store's constructor. */
+export const AVAILABILITY_SCHEMA = `
       CREATE TABLE IF NOT EXISTS availability_commitments (
         commitment_id TEXT PRIMARY KEY,
         unit_id TEXT NOT NULL,
@@ -105,7 +101,14 @@ export class SqliteAvailabilityStore {
       );
       CREATE INDEX IF NOT EXISTS idx_availability_active_unit_dates
         ON availability_commitments (unit_id, state, start_date, end_date);
-    `);
+    `;
+
+export class SqliteAvailabilityStore {
+  readonly #database: SqlDatabase;
+
+  constructor(database: SqlDatabase) {
+    this.#database = database;
+    this.#database.exec(AVAILABILITY_SCHEMA);
   }
 
   #withWriteTransaction<T>(operation: () => T): T {

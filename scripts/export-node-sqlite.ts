@@ -4,9 +4,11 @@
  * apps/cloudflare/src/ops-import.ts), so a checksum taken on either side can be compared directly.
  *
  *   tsx scripts/export-node-sqlite.ts --export <db.sqlite> <out-dir>
- *   tsx scripts/export-node-sqlite.ts --import <db.sqlite> <in-dir>        (a Node target whose schema exists)
+ *   tsx scripts/export-node-sqlite.ts --migrate <db.sqlite>                (applies the schema migrations to a Node file)
+ *   tsx scripts/export-node-sqlite.ts --import <db.sqlite> <in-dir>        (a Node target, migrated first; never creates tables)
  *   tsx scripts/export-node-sqlite.ts --push <in-dir>                      (remote: SHORTLET_OPS_URL and secrets from env)
  *   tsx scripts/export-node-sqlite.ts --pull <out-dir>                     (remote, read-only reverse export)
+ *   tsx scripts/export-node-sqlite.ts --cutover-complete                   (remote: sets the one-way cutover flag; refuses further imports)
  *   tsx scripts/export-node-sqlite.ts --compare <manifest.json> <verify.json>
  *
  * Output is files and counts only. No row content reaches the console (ADR 0075). The source file is opened read-only.
@@ -17,13 +19,15 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
 import { SqliteReceiptBlobStore } from "../domains/shortlet/src/receipt-blob-store.js";
-import { importBatch } from "../apps/cloudflare/src/ops-import.js";
+import { assertImportAllowed, importBatch } from "../apps/cloudflare/src/ops-import.js";
+import { SHORTLET_SCHEMA_MIGRATIONS, SHORTLET_SCHEMA_VERSION } from "../apps/cloudflare/src/schema.js";
 import { assertOpsOk, opsRequest, remoteOpsConfiguration, type OpsRemoteConfiguration } from "../apps/shortlet-ops/src/ops-client.js";
+import { applySchemaMigrations } from "../packages/platform-core/src/schema-migrations.js";
 import {
-  MIGRATION_BATCH_ROWS,
   buildExport,
   checksumTables,
   compareMigration,
+  importRequestChunks,
   sha256OfBytes,
   type MigrationManifest,
   type TableChecksum,
@@ -79,19 +83,34 @@ async function readRows(inDir: string, table: string): Promise<unknown[]> {
 }
 
 /**
+ * D3: applies the schema migrations to a Node SQLite file, the same path the Durable Object takes on startup. Idempotent.
+ * Used to prepare the restored file for the rollback import (runbook R5). Returns the version the file is at.
+ */
+export async function migrateNodeSqliteFile(dbPath: string): Promise<number> {
+  const database = new NodeSqliteDatabase(dbPath);
+  try {
+    return applySchemaMigrations(database, SHORTLET_SCHEMA_MIGRATIONS, new Date().toISOString()).version;
+  } finally {
+    database.close();
+  }
+}
+
+/**
  * Imports an export into a Node SQLite file (the rollback path, and the Node side of the parity test). Each table is
- * imported in batches through the same `importBatch` the Worker uses. Receipt files are restored to the blob table,
- * and each one is checked against its manifest SHA-256 first.
+ * imported in requests through the same `importBatch` the Worker uses. The schema is checked before any row is read, and
+ * an unmigrated file is refused, never created (D3). Receipt files are restored to the blob table, and each one is
+ * checked against its manifest SHA-256 first.
  */
 export async function importMigrationDirectory(dbPath: string, inDir: string): Promise<Record<string, number>> {
   const manifest = await readManifest(inDir);
   const database = new NodeSqliteDatabase(dbPath);
   const counts: Record<string, number> = {};
   try {
+    assertImportAllowed(database, SHORTLET_SCHEMA_VERSION);
     for (const table of Object.keys(manifest.tables)) {
       const rows = await readRows(inDir, table);
-      for (let start = 0; start < rows.length; start += MIGRATION_BATCH_ROWS) {
-        importBatch(database, table, rows.slice(start, start + MIGRATION_BATCH_ROWS));
+      for (const chunk of importRequestChunks(table, rows)) {
+        importBatch(database, table, chunk, SHORTLET_SCHEMA_VERSION);
       }
       counts[table] = rows.length;
     }
@@ -109,20 +128,21 @@ export async function importMigrationDirectory(dbPath: string, inDir: string): P
 }
 
 /**
- * Sends an export's rows to the object: one `POST /_ops/import` per 100-row batch, each batch one transaction on the
- * object. Stops at the first refused batch and throws the route's message. Receipts are not sent here (R2, by key).
+ * Sends an export's rows to the object: one `POST /_ops/import` per chunk (D2: floor(100 / columns) rows, and a body
+ * within the documented 5 MiB bound), each chunk one transaction on the object. Stops at the first refused chunk and
+ * throws the route's message. Receipts are not sent here (R2, by key).
  */
 export async function pushMigrationDirectory(inDir: string, configuration: OpsRemoteConfiguration): Promise<Record<string, number>> {
   const manifest = await readManifest(inDir);
   const counts: Record<string, number> = {};
   for (const table of Object.keys(manifest.tables)) {
     const rows = await readRows(inDir, table);
-    for (let start = 0; start < rows.length; start += MIGRATION_BATCH_ROWS) {
+    for (const chunk of importRequestChunks(table, rows)) {
       assertOpsOk(
         await opsRequest(configuration, "/_ops/import", {
           method: "POST",
           contentType: "application/json",
-          body: JSON.stringify({ table, rows: rows.slice(start, start + MIGRATION_BATCH_ROWS) }),
+          body: JSON.stringify({ table, rows: chunk }),
         }),
       );
     }
@@ -173,6 +193,10 @@ async function main(argv: readonly string[]): Promise<number> {
     console.log(`receipts=${manifest.receipts.length} moved=${manifest.movedTables.join(",") || "none"}`);
     return 0;
   }
+  if (flag === "--migrate" && first && !second) {
+    console.log(`schema version=${await migrateNodeSqliteFile(first)}`);
+    return 0;
+  }
   if (flag === "--import" && first && second) {
     const counts = await importMigrationDirectory(first, second);
     for (const [table, rows] of Object.entries(counts)) console.log(`${table} rows=${rows}`);
@@ -190,12 +214,18 @@ async function main(argv: readonly string[]): Promise<number> {
     for (const [table, rows] of Object.entries(counts)) console.log(`${table} sent=${rows}`);
     return 0;
   }
+  if (flag === "--cutover-complete" && !first) {
+    // D1: sets the one-way flag on the object. Refused by nothing, but nothing un-sets it. Run after verify, before DNS.
+    const response = assertOpsOk(await opsRequest(requireRemote(), "/_ops/cutover/complete", { method: "POST", contentType: "application/json", body: "{}" }));
+    console.log(`cutover completed at=${String(response.cutoverCompletedAt)}`);
+    return 0;
+  }
   if (flag === "--pull" && first && !second) {
     const counts = await pullObject(first, requireRemote());
     for (const [table, rows] of Object.entries(counts)) console.log(`${table} read=${rows}`);
     return 0;
   }
-  console.error("usage: export-node-sqlite.ts --export <db> <out-dir> | --import <db> <in-dir> | --push <in-dir> | --pull <out-dir> | --compare <manifest.json> <verify.json>");
+  console.error("usage: export-node-sqlite.ts --export <db> <out-dir> | --migrate <db> | --import <db> <in-dir> | --push <in-dir> | --pull <out-dir> | --compare <manifest.json> <verify.json>");
   return 2;
 }
 

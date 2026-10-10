@@ -44,7 +44,68 @@ Run the runbook in production, and record each step with its time and result.
 | 0090 | Receipts preserved | BLOB → R2 |
 | 0075 | No personal data in logs during migration | exporter output only to files and R2 |
 
-## Values to ask the user
+## Decisions (delegated by user, 10 Oct 2026)
+
+The user delegated these to the parent agent on 10 Oct 2026. Each has a rationale, the code or runbook that applies it, and its tests. Principles used throughout: no hidden dependencies, explicit state over convention, fail closed. Items that need a human fact are listed under "Needs user" and are not decided here.
+
+### D1. Re-import: upsert on primary key, then a one-way cutover flag
+
+- **Decided:** the import upserts by primary key while migration mode is on. A one-way flag, `migration_state.cutover_completed_at`, is set only by the authenticated `POST /_ops/cutover/complete` (idempotent: a second call returns the first timestamp). While the flag is set, every import is refused with `CUTOVER_COMPLETE` (409) before any write. Control tables (`schema_migrations`, `migration_state`) are not application tables, so an import names them as `UNKNOWN_TABLE` (400). No route clears the flag.
+- **Rationale:** the upsert keeps repeated pushes safe (AC3). Making the end of migration an explicit, recorded event removes the convention "stop pushing after cutover". A flag that import can write would let import undo the cutover, so import cannot reach it.
+- **Code:** `packages/platform-core/src/data-migration.ts` (`completeCutover`, `cutoverCompletedAt`, `CONTROL_TABLES`); `apps/cloudflare/src/ops-import.ts` (`assertMigrationOpen`); `apps/cloudflare/src/ops-routes.ts` (cutover route).
+- **Tests:** `apps/cloudflare/test/data-migration.spec.ts`: "16 D1: a re-import overwrites a changed row...", "16 D1: an import is refused with CUTOVER_COMPLETE...", "16 D1: the cutover flag cannot be unset, overwritten or read back through import".
+
+### D2. Limits: rows per request are derived per table; the 5 MiB bound is a documented chunk size
+
+- **Decided:** `MIGRATION_BATCH_ROWS = 100` is removed. A table's request holds `migrationBatchRows(columns) = floor(MAX_STATEMENT_PARAMETERS / columns)` rows. The Worker splits its statements by the same rule. `MAX_STATEMENT_PARAMETERS = 100` is kept, with a comment saying the figure is from the Cloudflare Durable Object limits page as reported by a search summary, not re-read; the runbook checklist item C1 verifies it against the live page before cutover. `MAX_IMPORT_REQUEST_BYTES = 5 MiB` is kept as a transport chunk size, named and documented in `data-migration.ts`. The client enforces it (`importRequestChunks`), and the Worker enforces it before it reads the body. A single row larger than the bound is refused with its table and position named, never its content (ADR 0075).
+- **Rationale:** a per-table derivation ties the request size to the real limit, not to a magic row count. The byte bound is a chunk size, not a booking or cost policy, so it is documented as such rather than presented as one.
+- **Tests:** `test/export-node-sqlite.test.ts`: "16 D2: push sends each table in requests of floor(100 / column count) rows...", "16 D2: push keeps each request body within the 5 MiB chunk bound...". `apps/cloudflare/test/data-migration.spec.ts`: "16 D2: an import request over the 5 MiB chunk bound is refused before its rows are read".
+
+### D3. Schema: versioned ordered migrations, one path for fresh and migrated installs
+
+- **Decided:** `apps/cloudflare/src/schema.ts` lists ordered migrations. Migration 1 is the baseline: the DDL each store owns, exported from its module and also run by that store's constructor, so nothing is copied. It covers every table the Node composition creates, except `receipt_blobs` (its bytes move to R2). Migration 2 creates the cutover flag table. `applySchemaMigrations` (`packages/platform-core/src/schema-migrations.ts`) records each version in `schema_migrations`, refuses a database that is ahead of the code, and refuses gaps. The Durable Object applies the migrations in its constructor through `blockConcurrencyWhile`. A Node file is migrated by `--migrate`, the same function. Import checks the schema version first: a mismatch is refused with `SCHEMA_NOT_READY` (409), and nothing is created.
+- **Why extend rather than reuse:** the existing schema did not work this way. Each store ran `CREATE TABLE IF NOT EXISTS` when it was constructed, so the object had a table only after its store was built. That path is kept (same SQL, idempotent) so Node and the existing tests are unchanged. The legacy `ALTER` steps in the guest store and the receipt-table rebuild stay for old Node files.
+- **Tests:** `test/schema-migrations.test.ts` (5 tests); `apps/cloudflare/test/data-migration.spec.ts`: "16 D3: an import into an object whose schema version is behind is refused...", "16 D3: a new object records every migration once, in order...", "16 D3: every application table the fixture's stores create is created by the migrations"; `test/export-node-sqlite.test.ts`: "16 D3: importing into a Node file whose schema has not been migrated is refused...".
+- **Known gap:** the table-coverage test checks only the tables the synthetic fixture's stores create. It does not construct every store of the production composition, so a store the fixture does not build could be missing from the baseline. The import would refuse such a table (`UNKNOWN_TABLE`) and push nothing, but a full-composition check is still to write.
+
+### D4. Freeze and rollback
+
+- **Decided:** no code change for read-only mode. The Node pilot has no clean seam: its timers write without any request (the notification sweep, `DEFAULT_NOTIFICATION_SWEEP_SECONDS` = 30 s by default), so a request guard would not stop writes. The freeze is specified in runbook step 1 as a process stop, with a verification command: `pgrep` must print nothing, and the database and `-wal` checksums must be the same after two sweep intervals. Node data is untouched through the window. Issue 17 runs only after the window closes.
+- **Rollback window:** `ROLLBACK_WINDOW` in the runbook is the single definition. It is 14 days after the cutover flag is set. It closes only when at least 14 days have passed and at least one full payout cycle and one verified restore from the daily export (12a, read back through 12b) have completed on Cloudflare with no discrepancy in the post-cutover checks. Otherwise it extends. Issue 17 runs only after it closes. The runbook adds a post-window reconciliation step (step 10) because deletes are not visible in a reverse export, and that drift grows with the window's length.
+
+### Other open decisions (status)
+
+1. **Target schema:** decided by D3.
+2. **Export scope:** decided. Export every application table, so no guest, operator or session state is left behind. Exceptions: `receipt_blobs` (moved to R2) and control tables (never exported). Checklist C2 covers the local-only table.
+3. **Batch byte bound:** decided by D2. The 5 MiB bound is a documented chunk size, enforced by the client and the Worker.
+4. **Upsert on re-import:** decided by D1. Confirmed as intended, until the flag is set.
+5. **Freeze mechanism, Worker route and DNS TTL:** the freeze is decided (D4: process stop, verified). The edge maintenance page, the route and the TTL are **Needs user**.
+6. **Receipt upload:** decided. `cf r2 objects put` with `--file`, `--content-type`, `--bucket-name` and `--mode production`; the flags were checked against the pinned CLI's help. The CLI's authentication is **Needs user**.
+7. **Data-protection gates (ADR 0095):** **Needs user**. Counsel, transfer basis, vendor terms and DPIA block any run on real data.
+8. **Receipt download (R4):** decided. Shell redirection of the raw bytes: `cf r2 objects get --help` says the body is written as raw bytes unless `--text` is given. The checksum against the manifest is the gate. Checklist C4 confirms it with a synthetic receipt on staging before production.
+9. **Post-cutover deletes:** decided. R3 adds a removed-rows comparison (`comm -23`) against the cutover export, and R4 reports removed receipt keys. Any removal stops the rollback until a person reviews it. Step 10 reconciles deletes against the daily export after the window.
+
+### Values from the earlier question list
+
+- Item 1 (`MAX_IMPORT_BATCH_BYTES`): decided by D2. Kept as 5 MiB, named `MAX_IMPORT_REQUEST_BYTES`, documented as a chunk size.
+- Item 2 (rows per request): decided by D2. Derived per table, so 100 is no longer a row count.
+- Item 3 (`MAX_STATEMENT_PARAMETERS`): kept. It is sourced from a search summary and listed as checklist C1 to verify against the live page.
+
+## Needs user
+
+These need human facts or decisions. None is decided in this issue.
+
+1. The production Cloudflare account, the `cf` authentication profile, and the Access service token. No values belong in the repository.
+2. The data-protection gates in ADR 0095 (counsel, transfer basis, vendor terms, DPIA). They block any run on real data.
+3. The edge freeze page (its mechanism and wording). The process stop applies either way.
+4. The Worker route, the DNS record and the TTL.
+5. The go or no-go for cutover, and the sign-off of the runbook (AC4).
+
+## Values to ask the user (superseded)
+
+The three questions below were answered in the Decisions section above. Kept for the record.
+
+
 
 1. **Import batch byte bound.** `MAX_IMPORT_BATCH_BYTES` in `apps/cloudflare/src/ops-routes.ts` reuses the 5 MiB inventory
    CSV limit from 11b. No ADR or issue sets a value for JSON import batches. Confirm it, or set another.
@@ -54,7 +115,7 @@ Run the runbook in production, and record each step with its time and result.
    `.scratch/cloudflare-deployment/PRD.md` (Durable Object limits) and `apps/cloudflare/src/do-sql-database.ts`. The live
    Cloudflare page was not re-read in this pass.
 
-## Open decisions for the user
+## Open decisions for the user (superseded: see Decisions above)
 
 These mirror the "Open decisions for the user" section of `docs/runbooks/cloudflare-cutover.md`, which is still a DRAFT.
 
@@ -114,6 +175,17 @@ Status unchanged: **ready-for-human**. Nothing here is a cutover, a production r
   None is fixed here. Each needs a decision on the test's intent, and AC5 (`npm test` green) is not met until they are.
 - **Untracked files.** The non-browser suite left `.scratch/eval-test/`, `.scratch/local-guest/` and `.scratch/local-owner/`
   (SQLite files). They are not committed. Removing them was denied, so they remain in the working tree.
+
+### Agent pass 2 on `infra/cf-wave6` (10 Oct 2026)
+
+Status unchanged: **ready-for-human**. Nothing here is a cutover, a production run or a resolution.
+
+- **Decisions.** D1 to D4, the rollback window and the other open decisions are recorded above under "Decisions (delegated by user, 10 Oct 2026)". The window is 14 days and closes only on the two conditions in the runbook's `ROLLBACK_WINDOW` section. The runbook also gained a post-window reconciliation step (step 10) and a removed-row check in R3.
+- **Implemented.** A migration runner with `schema_migrations` (`packages/platform-core/src/schema-migrations.ts`) and the ordered migrations in `apps/cloudflare/src/schema.ts`. The store DDL moved to exported constants that the stores and the migrations both use (no copies). The Durable Object applies the migrations in its constructor. The cutover flag and `POST /_ops/cutover/complete`. Import checks the schema and the flag before any write (409 `SCHEMA_NOT_READY` and `CUTOVER_COMPLETE`). The client chunks by `floor(100 / columns)` and by a documented 5 MiB request bound. The Node `--migrate` and `--cutover-complete` commands.
+- **Failing-first, honestly.** The new tests were written before the implementation. I did not capture a separate red run, so the red state is not in this log. The upsert test ("16 D1: a re-import overwrites...") pins behaviour that already existed.
+- **Checks.** `npm run check` exits 0. `npm run test:workers` passes 65 of 65 across 12 files (58 before this pass, plus seven new). The non-browser phase 1 (reproduced from `scripts/run-tests.mjs`) gives 1417 of 1417 pass, 0 fail (1407 tests with 3 failures in the previous pass). The browser phase was not run. `apps/local-guest/dist/client.js` was restored after each test run. No untracked files remain beyond the three new sources.
+- **Known gap.** The table-coverage test checks only the tables that the synthetic fixture's stores create. It does not construct every store of the production composition, so a missing baseline table would show up only as a refused import. A full-composition check is still to write.
+- **Remains.** Checklist items C1 (`MAX_STATEMENT_PARAMETERS` against the live page), C4 (receipt download on staging), C5 (`cf r2 objects list` flags) and C6 (ADR 0095 gates, **Needs user**). Step 10 needs the daily export's layout confirmed against 12a and 12b. Needs user: the Cloudflare account and `cf` profile, the edge freeze page, the Worker route and TTL, the go or no-go, and the runbook sign-off (AC4). The cutover log is empty, as it should be.
 
 ## Commits on `infra/cf-wave6`
 

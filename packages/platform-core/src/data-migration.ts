@@ -11,19 +11,106 @@ import type { SqlDatabase, SqlRow, SqlValue } from "./sql-database.js";
 export const MIGRATION_FORMAT_VERSION = 1;
 
 /**
- * Durable Object SQL binds at most this many parameters per statement. Source: the Cloudflare Durable Object limits page
- * (https://developers.cloudflare.com/durable-objects/platform/limits/), as cited by apps/cloudflare/src/do-sql-database.ts
- * and recorded as "100 bound parameters" in .scratch/cloudflare-deployment/PRD.md. A platform limit, not a booking policy.
+ * Durable Object SQL binds at most this many parameters per statement. The figure of 100 is the one given by the
+ * Cloudflare Durable Object limits page (https://developers.cloudflare.com/durable-objects/platform/limits/). It was
+ * taken from a search summary in issue 16's agent pass and has NOT been re-read against the live page. Checklist item
+ * before cutover, in docs/runbooks/cloudflare-cutover.md: verify this value against the live page. Also used by
+ * apps/cloudflare/src/do-sql-database.ts. A platform limit, not a booking policy.
  */
 export const MAX_STATEMENT_PARAMETERS = 100;
 
-/** Rows per import request. The client chunks requests; the Worker splits statements itself. */
-export const MIGRATION_BATCH_ROWS = 100;
+/**
+ * The largest request body the client sends to `POST /_ops/import`. This is a transport chunk size, not a policy:
+ * it reuses the 5 MiB inventory CSV bound the user approved in 11b, and the Worker enforces the same value before
+ * reading the body (ops-routes.ts). It bounds bytes per request; row count is bounded separately by the parameter
+ * limit above. Issue 16, "Values to ask the user", item 1, records the decision.
+ */
+export const MAX_IMPORT_REQUEST_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Rows per import request for a table with `columnCount` columns: as many as fit under the parameter limit, so no
+ * statement the Worker builds from one request binds more than MAX_STATEMENT_PARAMETERS (D2). Derived per table,
+ * never a fixed row count. The Worker splits its own statements by the same rule (ops-import.ts).
+ */
+export function migrationBatchRows(columnCount: number): number {
+  if (!Number.isInteger(columnCount) || columnCount < 1) throw new RangeError("A table must have at least one column to be batched");
+  return Math.floor(MAX_STATEMENT_PARAMETERS / columnCount);
+}
+
+/**
+ * Splits one table's rows into import requests (D2). A request holds at most migrationBatchRows(columns) rows and its
+ * body stays within MAX_IMPORT_REQUEST_BYTES. The byte count is conservative: the envelope and every row count a comma.
+ * A single row that cannot fit is refused by its position, never by its content (ADR 0075).
+ */
+export function importRequestChunks(table: string, rows: readonly unknown[]): unknown[][] {
+  if (rows.length === 0) return [];
+  const first = rows[0];
+  const columns = first !== null && typeof first === "object" && !Array.isArray(first) ? Object.keys(first).length : 0;
+  const perRequest = migrationBatchRows(columns);
+  const encoder = new TextEncoder();
+  const envelope = encoder.encode(JSON.stringify({ table, rows: [] })).byteLength;
+  const chunks: unknown[][] = [];
+  let current: unknown[] = [];
+  let bytes = envelope;
+  rows.forEach((row, index) => {
+    const rowBytes = encoder.encode(JSON.stringify(row) ?? "null").byteLength + 1;
+    if (envelope + rowBytes > MAX_IMPORT_REQUEST_BYTES) {
+      throw new Error(`Table ${table} row ${index + 1} is larger than one import request allows`);
+    }
+    if (current.length >= perRequest || bytes + rowBytes > MAX_IMPORT_REQUEST_BYTES) {
+      chunks.push(current);
+      current = [];
+      bytes = envelope;
+    }
+    current.push(row);
+    bytes += rowBytes;
+  });
+  if (current.length > 0) chunks.push(current);
+  return chunks;
+}
 
 /** The table that holds receipt bytes in the Node composition (07a). Its bytes move to R2, not to the table. */
 export const RECEIPT_BLOB_TABLE = "receipt_blobs";
 const RECEIPT_TABLE = "manual_transfer_receipts";
 const BYTES_TAG = "$bytes";
+
+/**
+ * Control tables hold migration and cutover state. They are not application data: they are never exported, verified,
+ * or imported, so an import cannot write them (D1). Created by the migrations in schema_migrations order.
+ */
+export const SCHEMA_MIGRATIONS_TABLE = "schema_migrations";
+export const CUTOVER_STATE_TABLE = "migration_state";
+export const CONTROL_TABLES: readonly string[] = [SCHEMA_MIGRATIONS_TABLE, CUTOVER_STATE_TABLE];
+const CUTOVER_COMPLETED_KEY = "cutover_completed_at";
+
+/** The DDL of the cutover flag, applied by the migrations (D1). The flag is one-way: nothing here or in import deletes it. */
+export const CUTOVER_STATE_DDL = `CREATE TABLE IF NOT EXISTS ${CUTOVER_STATE_TABLE} (state_key TEXT PRIMARY KEY, state_value TEXT NOT NULL)`;
+
+/** Reads the one-way cutover flag. Null when the table is absent (a Node file that never ran the migrations) or unset. */
+export function cutoverCompletedAt(database: SqlDatabase): string | null {
+  if (!tableExists(database, CUTOVER_STATE_TABLE)) return null;
+  const row = database
+    .prepare(`SELECT state_value FROM ${CUTOVER_STATE_TABLE} WHERE state_key = $key`)
+    .get({ $key: CUTOVER_COMPLETED_KEY });
+  return row === undefined ? null : String(row.state_value);
+}
+
+/**
+ * Sets the cutover flag once. A second call keeps the first timestamp and returns it. The flag has no unset path.
+ * Called only by the authenticated `POST /_ops/cutover/complete` route.
+ */
+export function completeCutover(database: SqlDatabase, at: string): string {
+  database
+    .prepare(`INSERT INTO ${CUTOVER_STATE_TABLE} (state_key, state_value) VALUES ($key, $value) ON CONFLICT (state_key) DO NOTHING`)
+    .run({ $key: CUTOVER_COMPLETED_KEY, $value: at });
+  const stored = cutoverCompletedAt(database);
+  if (stored === null) throw new Error("The cutover flag could not be recorded");
+  return stored;
+}
+
+function tableExists(database: SqlDatabase, table: string): boolean {
+  return database.prepare("SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = $name").get({ $name: table }) !== undefined;
+}
 
 export interface TableChecksum {
   readonly rowCount: number;
@@ -60,7 +147,7 @@ export interface MigrationExport {
 type TransportValue = string | number | null | { readonly $bytes: string };
 
 export function isApplicationTable(name: string): boolean {
-  return !name.startsWith("sqlite_") && !name.startsWith("_cf_");
+  return !name.startsWith("sqlite_") && !name.startsWith("_cf_") && !CONTROL_TABLES.includes(name);
 }
 
 export function applicationTableNames(database: SqlDatabase): string[] {

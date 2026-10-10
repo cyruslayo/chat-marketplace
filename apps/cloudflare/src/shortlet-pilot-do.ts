@@ -1,4 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
+import type { DurableObjectState } from "@cloudflare/workers-types";
+import { applySchemaMigrations } from "../../../packages/platform-core/src/schema-migrations.js";
 import { DirectPaystackClient, PaystackBankTransferClient } from "../../../domains/shortlet/src/index.js";
 import { SqliteOperatorRepository } from "../../../domains/shortlet/src/sqlite-operator-repository.js";
 import { SqliteOperatorRepresentativeGrantStore } from "../../../domains/shortlet/src/operator-representative-authority.js";
@@ -29,6 +31,7 @@ import { lagosDate, runDailyExport } from "./do-export.js";
 import { DurableObjectSqlDatabase } from "./do-sql-database.js";
 import { clientAddressFromCloudflareHeaderValue, createHttpResponseLike, toHttpRequestLike } from "./http-shim.js";
 import { createOpsHandler, type OpsHandler } from "./ops-routes.js";
+import { SHORTLET_SCHEMA_MIGRATIONS } from "./schema.js";
 import { cloudflareAssetLoader } from "./pilot-assets.js";
 import { R2ReceiptBlobStore } from "./r2-receipt-blob-store.js";
 
@@ -59,6 +62,15 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
   #runtime: PilotRuntime | null = null;
   #opsHandler: OpsHandler | null = null;
   #alarmScheduled = false;
+
+  constructor(ctx: DurableObjectState, env: CloudflareEnv) {
+    super(ctx, env);
+    // D3: the ordered migrations run before the object serves any request. A failing migration resets the object, so
+    // it never serves a half-migrated schema. Fresh and migrated objects take the same path.
+    void ctx.blockConcurrencyWhile(async () => {
+      applySchemaMigrations(new DurableObjectSqlDatabase(ctx.storage), SHORTLET_SCHEMA_MIGRATIONS, new Date().toISOString());
+    });
+  }
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);

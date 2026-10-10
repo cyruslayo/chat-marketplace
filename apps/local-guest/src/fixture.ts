@@ -158,13 +158,8 @@ const AUTHORITY_PERMISSIONS = [
  */
 type LocalBookingSqlRow = Record<string, unknown>;
 
-class LocalBookingContractRepository implements ContractRepository {
-  readonly #database: SqlDatabase;
-  #closed = false;
-
-  constructor(database: SqlDatabase) {
-    this.#database = database;
-    this.#database.exec(`
+/** Table DDL, applied by the schema migrations (apps/cloudflare/src/schema.ts) and by this store's constructor. */
+export const LOCAL_BOOKING_SCHEMA = `
       CREATE TABLE IF NOT EXISTS local_booking_contracts (
         contract_id TEXT PRIMARY KEY,
         contract_json TEXT NOT NULL
@@ -173,7 +168,15 @@ class LocalBookingContractRepository implements ContractRepository {
         reservation_id TEXT PRIMARY KEY,
         reservation_json TEXT NOT NULL
       );
-    `);
+    `;
+
+class LocalBookingContractRepository implements ContractRepository {
+  readonly #database: SqlDatabase;
+  #closed = false;
+
+  constructor(database: SqlDatabase) {
+    this.#database = database;
+    this.#database.exec(LOCAL_BOOKING_SCHEMA);
   }
 
   #rowContract(contractId: string): BookingContract | null {

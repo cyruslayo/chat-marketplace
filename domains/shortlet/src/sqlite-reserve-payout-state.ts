@@ -29,6 +29,16 @@ class SqliteCollection<T> implements ReservePayoutRecordCollection<T> {
   }
 }
 
+/** Table DDL, applied by the schema migrations (apps/cloudflare/src/schema.ts) and by this store's constructor. */
+export const RESERVE_PAYOUT_SCHEMA = `
+      CREATE TABLE IF NOT EXISTS reserve_payout_records (
+        collection TEXT NOT NULL,
+        record_key TEXT NOT NULL,
+        record_json TEXT NOT NULL,
+        PRIMARY KEY (collection, record_key)
+      );
+    `;
+
 /**
  * Reserve tranches, admin payout holds and executed commands on the shared handle (ADR 0004, ADR 0095). Records hold
  * ids, amounts and human reasons only, never credentials (ADR 0075).
@@ -41,14 +51,7 @@ export class SqliteReservePayoutStateStore implements ReservePayoutStateStore {
 
   constructor(database: SqlDatabase) {
     this.#database = database;
-    database.exec(`
-      CREATE TABLE IF NOT EXISTS reserve_payout_records (
-        collection TEXT NOT NULL,
-        record_key TEXT NOT NULL,
-        record_json TEXT NOT NULL,
-        PRIMARY KEY (collection, record_key)
-      );
-    `);
+    database.exec(RESERVE_PAYOUT_SCHEMA);
     this.tranches = new SqliteCollection(database, "tranches");
     this.adminHolds = new SqliteCollection(database, "admin_holds");
     this.executedCommands = new SqliteCollection(database, "executed_commands");

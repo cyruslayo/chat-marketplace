@@ -22,13 +22,16 @@ export function newReceiptObjectKey(): string {
   return crypto.randomUUID();
 }
 
+/** Table DDL, applied by the schema migrations (apps/cloudflare/src/schema.ts) and by this store's constructor. */
+export const RECEIPT_BLOB_SCHEMA = "CREATE TABLE IF NOT EXISTS receipt_blobs (object_key TEXT PRIMARY KEY, content_type TEXT NOT NULL, bytes BLOB NOT NULL)";
+
 /** Today's behaviour for Node and local use: the bytes sit in the shared SQLite file. */
 export class SqliteReceiptBlobStore implements ReceiptBlobStore {
   readonly #database: SqlDatabase;
   constructor(database: SqlDatabase) {
     this.#database = database;
     database.exec(
-      "CREATE TABLE IF NOT EXISTS receipt_blobs (object_key TEXT PRIMARY KEY, content_type TEXT NOT NULL, bytes BLOB NOT NULL)",
+      RECEIPT_BLOB_SCHEMA,
     );
   }
   async put(key: string, bytes: Uint8Array, contentType: string): Promise<void> {

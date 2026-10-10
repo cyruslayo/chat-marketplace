@@ -117,6 +117,20 @@ export class InMemoryBookingStateRepository implements BookingStateRepository {
   }
 }
 
+/** Table DDL, applied by the schema migrations (apps/cloudflare/src/schema.ts) and by this store's constructor. */
+export const BOOKING_STATE_SCHEMA = `
+      CREATE TABLE IF NOT EXISTS booking_contracts (
+        contract_id TEXT PRIMARY KEY,
+        contract_json TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS booking_reservations (
+        reservation_id TEXT PRIMARY KEY,
+        reservation_json TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_booking_contracts_offer
+        ON booking_contracts (contract_json);
+    `;
+
 /**
  * Durable SQLite implementation of BookingStateRepository for the Guest
  * composition. Authoritative contracts/reservations committed by the payment
@@ -128,18 +142,7 @@ export class SqliteBookingStateRepository implements BookingStateRepository {
 
   constructor(database: SqlDatabase) {
     this.#database = database;
-    this.#database.exec(`
-      CREATE TABLE IF NOT EXISTS booking_contracts (
-        contract_id TEXT PRIMARY KEY,
-        contract_json TEXT NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS booking_reservations (
-        reservation_id TEXT PRIMARY KEY,
-        reservation_json TEXT NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS idx_booking_contracts_offer
-        ON booking_contracts (contract_json);
-    `);
+    this.#database.exec(BOOKING_STATE_SCHEMA);
   }
 
   findContractById(id: string): BookingContract | null {

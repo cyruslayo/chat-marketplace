@@ -55,18 +55,21 @@ export function normalizeContactEmail(input: string): string {
   return `${local}@${domain}`;
 }
 
-export class SqliteGuestContactRepository implements GuestContactSource {
-  readonly #database: SqlDatabase;
-  constructor(database: SqlDatabase) {
-    this.#database = database;
-    database.exec(`CREATE TABLE IF NOT EXISTS guest_contacts (
+/** Table DDL, applied by the schema migrations (apps/cloudflare/src/schema.ts) and by this store's constructor. */
+export const GUEST_CONTACT_SCHEMA = `CREATE TABLE IF NOT EXISTS guest_contacts (
       guest_id TEXT NOT NULL,
       tenant_id TEXT NOT NULL,
       phone_number TEXT,
       contact_email TEXT,
       revision INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (guest_id, tenant_id)
-    )`);
+    )`;
+
+export class SqliteGuestContactRepository implements GuestContactSource {
+  readonly #database: SqlDatabase;
+  constructor(database: SqlDatabase) {
+    this.#database = database;
+    database.exec(GUEST_CONTACT_SCHEMA);
   }
 
   find(guestId: string, tenantId: string): GuestContact | null {
