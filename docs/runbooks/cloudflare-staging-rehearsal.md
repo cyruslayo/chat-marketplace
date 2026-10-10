@@ -204,6 +204,19 @@ If today's objects are absent, record `BLOCKED` with the time checked. Do not fo
 Record the restore point, the bookmark and each check's result. AC4 requires the restore to reach the chosen point
 and the checks to pass.
 
+**Break-glass drill (staging only, step 6c).** The restore runbook's break-glass (section 2, B0 to B7) is for a production
+disaster. Its positive path cannot be drilled on the staging object: that object is not clean, so B3 would stop. Run only the stop path:
+
+1. Confirm the staging object is cut over (`GET /_ops/status`: `cutoverCompletedAt` set). Use the staging cutover from step 7.1 of the cutover runbook.
+2. B0: list `_ops/cutover/` in the staging EXPORTS bucket (`shortlet-pilot-staging-exports`, `--mode staging`). Expect one key. Record its `completedAt`.
+3. B1: freeze the staging route. B2: run `cf r2 objects delete` on the key, with `--dry-run` first.
+4. B3: list again, then `GET /_ops/status`. Expect `cutoverCompletedAt` set and the key back (the object re-created the marker).
+   That is the expected result, and it means the rebuild must stop. Do not import. Record the result and lift the freeze.
+5. Record the drill in the cutover log, marked as a drill, with the staging bucket name.
+
+A pass is B3 stopping as described. A B3 that reads `cutoverCompletedAt` null would mean the flag was not in storage, which
+this drill does not expect; record it as a finding, not a pass.
+
 ## 7. Logs (issue step 7; AC: no secrets in logs)
 
 Logs are read in the dashboard (Workers & Pages, the Worker, then Observability or Logs), not with a live tail
@@ -258,5 +271,6 @@ Record references only.
 | 5d. Manual transfer receipt uploaded and verified | | | | | Receipt id: | |
 | 6a. Exports for today present | | | | | Object keys (count 18): | |
 | 6b. PITR drill: dry run, confirm, restart, checks | | | | | Restore point; bookmark: | |
+| 6c. Break-glass drill, stop path (B0 to B3 only) | | | | | Marker `completedAt`; B3 result: | |
 | 7. Log searches (zero matches expected) | | | | | Queries and time range: | |
 | 8. Go / no-go (user decision) | | | | | PR URL: | |
