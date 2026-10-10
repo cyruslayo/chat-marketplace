@@ -82,3 +82,9 @@ Status unchanged: **ready-for-human**.
 ### Wave 6 code close (10 Oct 2026)
 
 Status unchanged: **ready-for-human**. The agent prep is done and verified on `infra/cf-wave6` at `8e769d2` (see `map.md`, "Wave 6 completion (code)"). Not run: staging deploy, Paystack test-mode steps, forced restarts, the PITR drill, the Logs search and the go or no-go. The evidence template above is still blank. AC5 is pending a full run on the integration branch at merge time.
+
+### Rule change: merge to `main` before staging (10 Oct 2026)
+
+- The user relaxed the rule recorded in `map.md` ("Branching"), which this issue's "Why" section repeats: the integration branch merges to `main` before the staging rehearsal. Merging does not deploy. No CI workflow, deploy hook or auto-deploy exists in the repository (checked on `main` and on the integration branch, 10 Oct 2026).
+- Status is unchanged: **ready-for-human**. Staging, the Paystack test-mode steps, the forced restarts, the PITR drill, the Logs search and the go or no-go are still open and are not claimed here.
+- Production deploy still requires this issue to pass. Nothing may deploy from `main` until then. AC5 remains open until a full run is recorded at merge time.

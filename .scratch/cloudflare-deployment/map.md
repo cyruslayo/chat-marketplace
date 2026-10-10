@@ -19,6 +19,7 @@ Each slice:
 - Each slice gets a branch `infra/cf-<NNx>-<slug>`, with one PR into `infra/cloudflare-deployment`, never into `main`.
 - Merge `main` into the integration branch weekly. After each merge, grep for new `DatabaseSync` or `node:sqlite` uses outside `packages/platform-core/src/node-sqlite-database.ts`.
 - The integration branch merges to `main` only after slice 15 passes.
+  - **Rule relaxed by the user, 10 Oct 2026.** The integration branch may merge to `main` before the staging rehearsal (slice 15). Merging to `main` does not deploy anything: no CI workflow, deploy hook or auto-deploy exists in the repository, and `main` keeps the Node production entry. Production deploy still requires slice 15 to pass, and nothing may deploy from `main` until then. Production cutover (16) and retirement of the Node entry (17) keep their own gates.
 
 ## Workflow
 
