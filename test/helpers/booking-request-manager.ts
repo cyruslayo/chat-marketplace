@@ -1,6 +1,5 @@
 import { InMemoryAuditLog } from "../../packages/platform-core/src/index.js";
 import {
-  AvailabilityCalendar,
   UnitRepository,
   seedIssue01Units,
   GuestVerificationService,
@@ -9,12 +8,14 @@ import {
   BookingRequestManager
 } from "../../domains/shortlet/src/index.js";
 
+import { createTestAvailabilityCalendar } from "./availability-calendar.js";
+
 /** A BookingRequestManager over the Issue 01 units with an in-memory calendar and audit (shared by domain tests). */
 export function setupBookingRequestManager() {
   const repository = new UnitRepository();
   seedIssue01Units(repository);
   const audit = new InMemoryAuditLog();
-  const calendar = new AvailabilityCalendar({ repository, audit });
+  const calendar = createTestAvailabilityCalendar({ repository, audit });
   const identityStore = new RestrictedIdentityStore();
   const verificationResults: GuestIdentityVerificationResultSource = {
     getVerificationResult: ({ tenantId, guestId }) => ({ tenantId, guestId, governmentIdVerified: true })

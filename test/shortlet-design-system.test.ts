@@ -165,7 +165,7 @@ test("Browser navigations to failed page routes get a styled page; API clients k
   assert.match(page, /Gone &lt;now&gt;/);
 
   const directory = await mkdtemp(join(tmpdir(), "shortlet-design-system-"));
-  const environment = new LocalGuestEnvironment({ databasePath: join(directory, "guest.sqlite") });
+  const environment = LocalGuestEnvironment.openNode({ databasePath: join(directory, "guest.sqlite") });
   const server = startLocalGuestServer({ port: 0, environment, conciergeMode: "deterministic" });
   const port = await server.listen();
   t.after(async () => { await server.close(); await rm(directory, { recursive: true, force: true }); });

@@ -37,7 +37,7 @@ test("AC4 — Without JavaScript, every photo is still shown in its stored order
 
 test("AC5 — The full apartment page and the chat's apartment details use the same gallery", async () => {
   const directory = mkdtempSync(join(tmpdir(), "listing-gallery-"));
-  const environment = new LocalGuestEnvironment({ databasePath: join(directory, "guest.sqlite") });
+  const environment = LocalGuestEnvironment.openNode({ databasePath: join(directory, "guest.sqlite") });
   const server = startLocalGuestServer({ port: 0, environment });
   try {
     const unit = environment.unitRepository.findAll()[0]!;
@@ -71,7 +71,7 @@ test("A public apartment page keeps its stylesheet and gallery script for a Gues
   // Found during the gallery walkthrough: with session-scoped Guests (the pilot and production), an expired or unknown
   // session cookie made the shared stylesheet 401, so the public page rendered unstyled.
   const directory = mkdtempSync(join(tmpdir(), "listing-gallery-session-"));
-  const environment = new LocalGuestEnvironment({ databasePath: join(directory, "guest.sqlite") });
+  const environment = LocalGuestEnvironment.openNode({ databasePath: join(directory, "guest.sqlite") });
   const server = startLocalGuestServer({ port: 0, environment, sessionScopedGuestPrincipals: true });
   try {
     const port = await server.listen();

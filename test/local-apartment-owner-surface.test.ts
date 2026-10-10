@@ -17,7 +17,7 @@ test("Local Apartment Owner Experience — Full End-to-End Verification", async 
   const dbPath = join(testDir, "test_grants.sqlite");
   const clock = () => new Date("2026-08-10T10:00:00Z");
 
-  const env = new LocalApartmentOwnerEnvironment({
+  const env = LocalApartmentOwnerEnvironment.openNode({
     databasePath: dbPath,
     clock,
   });
@@ -188,7 +188,7 @@ test("Local Apartment Owner Experience — Full End-to-End Verification", async 
 
   await t.test("5. Local Server HTTP endpoints, HTML Dashboard render, and live reset", async () => {
     const httpDbPath = join(testDir, "test_grants_http.sqlite");
-    const httpEnv = new LocalApartmentOwnerEnvironment({
+    const httpEnv = LocalApartmentOwnerEnvironment.openNode({
       databasePath: httpDbPath,
       clock,
     });

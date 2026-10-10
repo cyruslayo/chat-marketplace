@@ -37,7 +37,7 @@ test("Paystack callback and handoff routes restore authoritative state in real C
     verifyWebhookSignature() { return true; },
   };
   let clockTime = new Date("2026-09-03T10:00:00Z");
-  const environment = new LocalGuestEnvironment({ databasePath, clock: () => clockTime, paystackClient });
+  const environment = LocalGuestEnvironment.openNode({ databasePath, clock: () => clockTime, paystackClient });
   const server = startLocalGuestServer({ port: 0, environment });
   const browser = await launchRealBrowser({ headless: true });
   let tab: RealBrowserTab | undefined;
@@ -69,6 +69,7 @@ test("Paystack callback and handoff routes restore authoritative state in real C
     await tab.waitForSelector("#composer-input");
     await bindThread(tab, threadId);
     await tab.navigate(`${base}/payments/offers/${encodeURIComponent(offerId)}/continue`);
+    await tab.waitForFunction("location.href.includes('checkout.paystack.com')", 10_000);
     const providerLocation = await tab.evaluate<string>("location.href");
     assert.equal(new URL(providerLocation).origin + new URL(providerLocation).pathname, "https://checkout.paystack.com/real-browser-proof");
     await tab.navigate(`${base}/?threadId=${threadId}`);

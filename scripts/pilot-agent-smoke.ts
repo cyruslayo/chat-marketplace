@@ -5,6 +5,7 @@ import type { A2UIServerMessage } from "@weaver/core";
 import type { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import type { AssistantDiagnosticEvent } from "../apps/local-guest/src/assistant/assistant-runtime.js";
 import type { AssistantConversationStep } from "../apps/local-guest/src/assistant/assistant-model.js";
+import { resolvePilotBaseUrl } from "./pilot-base-url.js";
 import {
   DEFAULT_PROVIDER_REQUEST_BUDGET_PER_JOURNEY,
   ProviderRequestBudget,
@@ -18,6 +19,12 @@ const openAiCompatible = process.env.CONCIERGE_MODE?.trim() === "openai-compatib
 const providerName = openAiCompatible ? process.env.LLM_PROVIDER_LABEL?.trim() || "openai-compatible" : "Google Gemini";
 const model = openAiCompatible ? process.env.LLM_MODEL?.trim() ?? "" : process.env.GEMINI_MODEL?.trim() || "gemini-3.8-flash";
 const credential = openAiCompatible ? process.env.LLM_API_KEY : process.env.GEMINI_API_KEY;
+// Slice 15: this smoke drives the assistant in-process and has no HTTP surface, so it cannot target a remote origin.
+// Refuse before argument parsing or any model client is created; local runs are unchanged.
+if (resolvePilotBaseUrl(process.argv.slice(2), process.env) !== null) {
+  process.stderr.write("pilot:local:agent-smoke runs in-process and cannot target a base URL. Run the staging journeys through pilot:acceptance:rodney with SHORTLET_BASE_URL.\n");
+  process.exit(2);
+}
 const configuredJourneys = parsePilotAgentSmokeRuns(process.argv.slice(2), process.env.PILOT_AGENT_SMOKE_RUNS);
 const requestBudget = new ProviderRequestBudget(configuredJourneys, DEFAULT_PROVIDER_REQUEST_BUDGET_PER_JOURNEY);
 const providerRequestsPerTurn: ProviderTurnUsage[] = [];
@@ -141,7 +148,7 @@ if (!credential) {
     assertLocalPilotReady(paths);
     await mkdir(reportDirectory, { recursive: true });
     smokeDatabasePath = resolve(reportDirectory, `runtime-${process.pid}.sqlite`);
-    environment = new LocalGuestEnvironment({
+    environment = LocalGuestEnvironment.openNode({
       databasePath: smokeDatabasePath,
       inventoryPath: paths.inventoryPath,
       tenantId: LOCAL_PILOT_TENANT_ID,

@@ -23,7 +23,7 @@ async function manualTransfer(f: SignedInOperator, guest: GuestManualTransfers, 
   const requestId = f.server.environment.createDemoIncomingBookingRequest({ guestId: `manual-guest-${guests}`, guestName: `Manual Guest ${guests}`, checkIn, checkOut }).facts.requestId;
   assert.equal((await decideRequest(f.session, requestId, "confirm")).status, 303);
   let transfer = guest.start(requestId);
-  if (options.upload !== false) transfer = guest.upload(requestId);
+  if (options.upload !== false) transfer = await guest.upload(requestId);
   return { requestId, transfer };
 }
 

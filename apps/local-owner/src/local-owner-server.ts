@@ -1,5 +1,8 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { readFileSync } from "node:fs";
+import type { HttpRequestLike, HttpResponseLike } from "../../../packages/platform-core/src/http-like.js";
+import type { AssetLoader } from "../../../packages/platform-core/src/asset-loader.js";
+import { nodeAssetLoader } from "../../../packages/platform-core/src/node-asset-loader.js";
+import { RECEIPT_SECURITY_HEADERS } from "../../../packages/platform-core/src/security-headers.js";
 import {
   DECLINE_REASONS,
   OperatorDecisionInputError,
@@ -34,10 +37,9 @@ import { formatStayDates } from "../../web-agent/src/booking-presentation.js";
 
 const OPERATOR_SESSION_COOKIE = "shortlet_operator_session";
 const OPERATOR_SECRET_COOKIE = "shortlet_operator_secret";
-const SHORTLET_FOUNDATION_CSS = readFileSync(new URL("../../web/src/shortlet-foundations.css", import.meta.url), "utf8");
 
 /** A malformed cookie is no cookie: the request is treated as signed out, never as a server error (ADR 0086). */
-function cookieValue(req: IncomingMessage, name: string): string | null {
+function cookieValue(req: HttpRequestLike, name: string): string | null {
   const raw = req.headers.cookie ?? "";
   const pair = raw.split(";").map((value) => value.trim()).find((value) => value.startsWith(`${name}=`));
   return pair ? pathSegment(pair.slice(name.length + 1)) : null;
@@ -48,12 +50,12 @@ function pathSegment(encoded: string): string | null {
   try { return decodeURIComponent(encoded); } catch { return null; }
 }
 
-function operatorPrincipal(req: IncomingMessage, env: LocalApartmentOwnerEnvironment): OperatorAuthenticatedPrincipal | null {
+function operatorPrincipal(req: HttpRequestLike, env: LocalApartmentOwnerEnvironment): OperatorAuthenticatedPrincipal | null {
   return env.sessionAuthority.resolveSession(cookieValue(req, OPERATOR_SESSION_COOKIE), cookieValue(req, OPERATOR_SECRET_COOKIE));
 }
 
 /** Where a page request without a usable session goes: sign-in, with a fixed reason code when there is one (ADR 0086). */
-function signInLocation(req: IncomingMessage, env: LocalApartmentOwnerEnvironment): string {
+function signInLocation(req: HttpRequestLike, env: LocalApartmentOwnerEnvironment): string {
   const rejection = env.sessionAuthority.sessionRejection(cookieValue(req, OPERATOR_SESSION_COOKIE), cookieValue(req, OPERATOR_SECRET_COOKIE));
   const reason: SignInReason | null = rejection === "expired" ? "expired" : rejection === "revoked" ? "signed-out" : null;
   return reason ? `/operator/login?reason=${reason}` : "/operator/login";
@@ -293,11 +295,45 @@ function decisionFromForm(kind: "confirm" | "decline", body: string): { readonly
   return { basedOnVersion: Number(version), attested: params.get("attest") === "yes", reason: params.get("reason") ?? "" };
 }
 
-async function readForm(req: IncomingMessage, limit = 4096): Promise<string> {
-  const buffers: Buffer[] = [];
-  let size = 0;
-  for await (const chunk of req) { const buffer = Buffer.from(chunk); size += buffer.length; if (size > limit) throw new DecisionFormError("Form too large"); buffers.push(buffer); }
-  return Buffer.concat(buffers).toString("utf8");
+/**
+ * Form posts are small (ADR 0080 no-JS back-office forms); chunks are collected as Buffer bytes so the same reader
+ * works without node:http (slice 08b), and the 4 KiB ceiling counts bytes, not decoded characters.
+ */
+function readForm(req: HttpRequestLike, limit = 4096): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const buffers: Buffer[] = [];
+    let size = 0;
+    let refused = false;
+    req.on("data", (chunk: Buffer) => {
+      if (refused) return;
+      const buffer = Buffer.from(chunk);
+      size += buffer.length;
+      if (size > limit) {
+        refused = true;
+        reject(new DecisionFormError("Form too large"));
+        return;
+      }
+      buffers.push(buffer);
+    });
+    req.on("end", () => {
+      if (!refused) resolve(Buffer.concat(buffers).toString("utf8"));
+    });
+    req.on("error", reject);
+  });
+}
+
+/** The local developer dashboard collects whatever the simulation sends (production never mounts these routes). */
+function readActionBody(req: HttpRequestLike): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const buffers: Buffer[] = [];
+    req.on("data", (chunk: Buffer) => {
+      buffers.push(Buffer.from(chunk));
+    });
+    req.on("end", () => {
+      resolve(Buffer.concat(buffers).toString("utf8"));
+    });
+    req.on("error", reject);
+  });
 }
 
 function operatorRequestHtml(env: LocalApartmentOwnerEnvironment, principal: OperatorPrincipal, requestId: string, error = ""): string {
@@ -1184,30 +1220,57 @@ export function renderOwnerDashboardHtml(overview: LocalOwnerStateOverview): str
 </html>`;
 }
 
-export function startLocalOwnerServer(options: {
-  port?: number;
+export interface OwnerRequestHandlerOptions {
   environment?: LocalApartmentOwnerEnvironment;
+  /** Slice 09a: the CSS the back office serves; the Node default is `nodeAssetLoader()` (no import-time reads). */
+  assets?: AssetLoader;
   secureCookie?: boolean;
   publicOrigin?: string;
   production?: boolean;
-} = {}) {
-  const port = options.port ?? 3000;
-  let env = options.environment ?? new LocalApartmentOwnerEnvironment();
+}
+
+/**
+ * Slice 08b: the request logic of the Operator back office, callable without a node:http server, typed only
+ * against the narrow HTTP interfaces the handler actually uses (slice 08a).
+ */
+export interface OwnerRequestHandler {
+  /** The live environment; a fresh one is installed by the local dashboard's /action/reset. */
+  readonly env: LocalApartmentOwnerEnvironment;
+  handle(req: HttpRequestLike, res: HttpResponseLike): Promise<void>;
+  /** Closes the live environment. The owner handler starts no timers. */
+  close(): Promise<void>;
+}
+
+export function createOwnerRequestHandler(
+  options: OwnerRequestHandlerOptions = {},
+): OwnerRequestHandler {
+  let env = options.environment ?? LocalApartmentOwnerEnvironment.openNode();
+  // Slice 09a: assets come from the injected loader (Node default `nodeAssetLoader()`), never from import-time reads.
+  const assets = options.assets ?? nodeAssetLoader();
   const production = options.production === true;
   if (production && !options.publicOrigin) throw new Error("Production Operator server requires SHORTLET_PUBLIC_ORIGIN");
   const cookieFlags = `${(options.secureCookie ?? production) ? "; Secure" : ""}; HttpOnly; SameSite=Lax; Path=/operator`;
-  const browserOriginAccepted = (req: IncomingMessage): boolean => {
+  const browserOriginAccepted = (req: HttpRequestLike): boolean => {
     const origin = req.headers.origin;
     if (origin === undefined) return true;
     return origin === (options.publicOrigin ?? `http://${req.headers.host ?? "localhost"}`);
   };
 
-  const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+  const handle = async (req: HttpRequestLike, res: HttpResponseLike): Promise<void> => {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
     if (req.method === "GET" && url.pathname === "/shortlet-foundations.css") {
-      res.writeHead(200, { "Content-Type": "text/css; charset=utf-8", "Cache-Control": "public, max-age=3600" });
-      res.end(SHORTLET_FOUNDATION_CSS);
+      // Slice 09a: a missing asset answers 500 for this request instead of failing at import.
+      try {
+        res.writeHead(200, {
+          "Content-Type": "text/css; charset=utf-8",
+          "Cache-Control": "public, max-age=3600",
+        });
+        res.end(assets.text("shortlet-foundations.css"));
+      } catch {
+        res.writeHead(500, { "Content-Type": "text/plain" });
+        res.end("Foundation styles missing; run npm run guest:local to build it.");
+      }
       return;
     }
 
@@ -1226,6 +1289,9 @@ export function startLocalOwnerServer(options: {
       } catch (error) { res.writeHead(401, { "Content-Type": "text/html; charset=utf-8" }); res.end(operatorLoginHtml(error instanceof Error ? error.message : "Authentication failed")); }
       return;
     }
+
+    // ADR 0090 retention runs before a signed-in back-office read, as it did when it sat inside the transfer listing.
+    if (req.method === "GET" && url.pathname.startsWith("/operator") && operatorPrincipal(req, env)) await env.purgeManualTransferReceipts();
 
     // Back-office pages fail closed (ADR 0086): a page without a usable session goes to sign-in with a fixed reason.
     const page = (render: (principal: OperatorPrincipal) => string): void => {
@@ -1273,17 +1339,16 @@ export function startLocalOwnerServer(options: {
     if (req.method === "GET" && receiptMatch) {
       const principal = operatorPrincipal(req, env);
       if (!principal) { res.writeHead(303, { Location: signInLocation(req, env) }); res.end(); return; }
-      let receipt: ReturnType<LocalApartmentOwnerEnvironment["manualTransferReceipt"]> = null;
-      try { receipt = env.manualTransferReceipt(decodeURIComponent(receiptMatch[1]!), commandPrincipal(principal)); } catch { receipt = null; }
+      let receipt: Awaited<ReturnType<LocalApartmentOwnerEnvironment["manualTransferReceipt"]>> = null;
+      try { receipt = await env.manualTransferReceipt(decodeURIComponent(receiptMatch[1]!), commandPrincipal(principal)); } catch { receipt = null; }
       // Unknown, deleted, or another owner's receipt all look the same (ADR 0082, 0090).
       if (!receipt) { res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" }); res.end("Receipt not found"); return; }
       res.writeHead(200, {
         "Content-Type": receipt.contentType,
         "Cache-Control": "no-store",
-        "X-Content-Type-Options": "nosniff",
-        // Images display inline; a PDF downloads rather than run in a viewer.
+        // Images display inline; a PDF downloads rather than run in a viewer. Shared with the Worker (slice 13).
         "Content-Disposition": receipt.contentType === "application/pdf" ? "attachment; filename=\"receipt.pdf\"" : "inline",
-        "Content-Security-Policy": "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'",
+        ...RECEIPT_SECURITY_HEADERS,
       });
       res.end(receipt.bytes);
       return;
@@ -1508,12 +1573,7 @@ export function startLocalOwnerServer(options: {
     }
 
     if (!production && req.method === "POST") {
-      const buffers: Buffer[] = [];
-      for await (const chunk of req) {
-        buffers.push(Buffer.from(chunk));
-      }
-      const rawBody = Buffer.concat(buffers).toString("utf8");
-      const params = new URLSearchParams(rawBody);
+      const params = new URLSearchParams(await readActionBody(req));
 
       if (url.pathname === "/action/demo-request") {
         env.createDemoIncomingBookingRequest();
@@ -1545,7 +1605,7 @@ export function startLocalOwnerServer(options: {
       if (url.pathname === "/action/reset") {
         env.close();
         resetLocalOwnerFixture(env.config.databasePath);
-        env = new LocalApartmentOwnerEnvironment(env.config);
+        env = LocalApartmentOwnerEnvironment.openNode(env.config);
         res.writeHead(302, { Location: "/" });
         res.end();
         return;
@@ -1556,31 +1616,53 @@ export function startLocalOwnerServer(options: {
     res.end("Not Found");
   };
 
-  // One bad request must never stop the back office: an unexpected error answers 500 and the server keeps serving.
-  // Nothing about the request is logged (ADR 0075).
+  return {
+    get env() {
+      return env;
+    },
+    handle(req, res) {
+      // One bad request must never stop the back office: an unexpected error answers 500 and the handler keeps serving.
+      // Nothing about the request is logged (ADR 0075).
+      return handle(req, res).catch(() => {
+        if (!res.headersSent) { res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" }); res.end("Something went wrong"); }
+        else res.destroy();
+      });
+    },
+    close: () =>
+      new Promise<void>((resolve) => {
+        env.close();
+        resolve();
+      }),
+  };
+}
+
+/** The node:http wrapper around the extracted request logic (slice 08b): identical options, handle and listeners. */
+export function startLocalOwnerServer(
+  options: OwnerRequestHandlerOptions & { port?: number } = {},
+) {
+  const { port, ...handlerOptions } = options;
+  const listenPort = port ?? 3000;
+  const handler = createOwnerRequestHandler(handlerOptions);
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
-    handle(req, res).catch(() => {
-      if (!res.headersSent) { res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" }); res.end("Something went wrong"); }
-      else res.destroy();
-    });
+    void handler.handle(req, res);
   });
 
   return {
     server,
     get env() {
-      return env;
+      return handler.env;
     },
     listen: () =>
       new Promise<number>((resolve) => {
-        server.listen(port, () => {
+        server.listen(listenPort, () => {
           const addr = server.address();
-          const actualPort = typeof addr === "object" && addr ? addr.port : port;
+          const actualPort = typeof addr === "object" && addr ? addr.port : listenPort;
           resolve(actualPort);
         });
       }),
     close: () =>
       new Promise<void>((resolve, reject) => {
-        env.close();
+        handler.close();
         server.close((err) => (err ? reject(err) : resolve()));
       }),
   };

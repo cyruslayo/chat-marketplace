@@ -268,7 +268,7 @@ test("AC3 — You can remove a block, and the dates become available again unles
     assert.equal(audited(f, "operator_block_removed").length, 1);
     // Guests can find and request the freed dates again: the discovery projection no longer lists the removed block.
     const unit = env.unitRepository.findById(unitId)!;
-    assert.deepEqual(unit.blockedDates.map((range: { start: string; end: string }) => `${range.start}/${range.end}`), ["2026-09-26/2026-09-28"]);
+    assert.deepEqual(unit.blockedDates.map((range) => `${range.start}/${range.end}`), ["2026-09-26/2026-09-28"]);
     const requestId = pendingRequest(f, "2026-09-24", "2026-09-26");
     // Now a request holds them: they are not available, and the request cannot be removed as a block.
     assert.equal(nights((await calendarPage(f, "?from=2026-09-24")).html, unitId).get("2026-09-24")!.state, "request_pending");

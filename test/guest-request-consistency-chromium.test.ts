@@ -67,6 +67,16 @@ test("AC3: the request-pending chat state shows the neutral banner and steps, an
   });
 });
 
+/**
+ * Navigates and waits until that exact document has finished loading. `navigate` returns on DOMContentLoaded or after a fixed
+ * budget, so under full-suite load it can return while the page is still arriving; reading the DOM then gives a partial page
+ * (the `ui-steps` list is the last section). A read waits for `readyState` to be complete on the expected URL instead.
+ */
+async function loadConventionalPage(tab: { navigate(url: string): Promise<void>; waitForFunction(expression: string, timeoutMs?: number): Promise<void> }, url: string): Promise<void> {
+  await tab.navigate(url);
+  await tab.waitForFunction(`document.readyState === "complete" && location.href === ${JSON.stringify(url)}`, 15_000);
+}
+
 test("AC5: without JavaScript, each conventional request page renders fully and its primary action works by form post", async () => {
   for (const state of ["draft", "review", "sent", "declined", "expired"] as const) {
     await withRequestScreen(state, async (fixture, path) => {
@@ -76,8 +86,8 @@ test("AC5: without JavaScript, each conventional request page renders fully and 
         await tab.setJavaScriptEnabled(false);
         await tab.setViewport(320, 900);
         // Let Chromium retain a real HttpOnly session cookie for native form navigation and redirects.
-        await tab.navigate(`${fixture.base}/`);
-        await tab.navigate(`${fixture.base}${path}`);
+        await loadConventionalPage(tab, `${fixture.base}/`);
+        await loadConventionalPage(tab, `${fixture.base}${path}`);
         const html = await tab.getContent();
         assert.match(html, /request-head/);
         assert.match(html, /ui-ticket/);

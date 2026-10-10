@@ -15,7 +15,7 @@ function resolve(text: string, now = THURSDAY) {
 }
 
 async function withApp(run: (app: LocalGuestApp, environment: LocalGuestEnvironment, threadId: string) => Promise<void>): Promise<void> {
-  const environment = new LocalGuestEnvironment({ databasePath: `.scratch/local-guest/real-dates-${crypto.randomUUID()}.sqlite` });
+  const environment = LocalGuestEnvironment.openNode({ databasePath: `.scratch/local-guest/real-dates-${crypto.randomUUID()}.sqlite` });
   try { await run(new LocalGuestApp(environment), environment, `g-${crypto.randomUUID()}`); } finally { environment.close(); }
 }
 

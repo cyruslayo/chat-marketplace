@@ -38,3 +38,53 @@ The integration branch merges to `main` only after the whole pilot is proven on 
 All ADRs in the PRD table, especially 0041, 0044, 0046, 0079, 0086, 0087, 0088 and 0090.
 
 ## Comments
+
+### Evidence template (prepared 10 Oct 2026; rehearsal not run)
+
+Prepared on `infra/cf-15-staging-prep`. Status stays `ready-for-human`. No rehearsal, deployment, Paystack test, PITR drill or merge has happened, and no result is claimed here.
+
+- Runbook: `docs/runbooks/cloudflare-staging-rehearsal.md` (steps 1 to 8, the preconditions and the full evidence-log template).
+- Harness change: `scripts/pilot-acceptance-rodney.ps1` accepts `-BaseUrl` or `SHORTLET_BASE_URL` (validated by `scripts/pilot-base-url.ts`); `scripts/pilot-agent-smoke.ts` refuses a base URL, since it is in-process only.
+- Open gates (ADR 0095, ADR 0065): counsel approval, Cloudflare and Google Gemini contracts and processor roles, the retention schedule, and the DPIA review. Real personal data must not be used on staging until these close. Staging uses Paystack test keys and synthetic data only.
+- User decisions: the staging origin is `https://staging.shortlet.ng` (set in `cloudflare.config.ts`); the agent smoke stays in-process with no remote HTTP mode, so the remote journeys are the Rodney acceptance run plus human-run real-Chrome journeys. Still open before the build: a host where `npm exec cf -- build --mode staging` works (it fails on the Windows install, issue 10b).
+
+Evidence log (one row per step; PASS, FAIL or BLOCKED; references only, never secret values, cookies, tokens, card data or webhook bodies):
+
+| Step | Date (Lagos) | Result | Operator | Commit SHA | References | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1. Build and deploy (secret names set) | | | | | Build log reference | |
+| 2. Ops provisioning (import, operators, operator id) | | | | | Import summary reference | |
+| 3. Journeys (agent smoke N/A; Rodney report; real-Chrome run) | | | | | Report paths (local) | |
+| 4. Forced restarts: discovery, request, offer, payment, confirmed, operator session | | | | | Stage and request, offer or reservation ids | |
+| 5a. Paystack test card payment and callback | | | | | Paystack test reference | |
+| 5b. Webhook with bad signature (expect 401) | | | | | Status code only | |
+| 5c. Webhook with good signature (exactly once) | | | | | Paystack reference; duplicate check | |
+| 5d. Manual transfer receipt uploaded and verified | | | | | Receipt id | |
+| 6a. Today's exports present (18 objects) | | | | | Object keys | |
+| 6b. PITR drill (dry run, confirm, restart, checks) | | | | | Restore point; PITR bookmark | |
+| 7. Workers Logs searches (zero matches expected) | | | | | Queries; time range; match counts | |
+| 8. Go / no-go (user decision) and merge PR | | | | | PR URL | |
+
+### Agent pass on `infra/cf-wave6` (10 Oct 2026)
+
+Status unchanged: **ready-for-human**.
+
+- The staging-prep branch `infra/cf-15-staging-prep` is merged into `infra/cf-wave6` (merge commit `b567a0b`, no conflicts).
+  The staging-prep work is in place: `docs/runbooks/cloudflare-staging-rehearsal.md`, the pilot base-URL resolver, and
+  the HTTPS URL guard.
+- Checks on `infra/cf-wave6`: `npm run check` passes, and `npm run test:workers` passes 58 of 58. The non-browser suite
+  gives 1404 of 1407 passing. Its 3 failures predate the merge (details in issue 16's comment), so AC5 is not met yet.
+  The browser phase was not run.
+- Not done and not claimed: the staging deployment, the Paystack test-mode steps, the forced restarts, the PITR drill, the
+  Logs search and the go/no-go. These need the user.
+- Data-protection gates (ADR 0095) still apply. Staging uses synthetic data only.
+
+### Wave 6 code close (10 Oct 2026)
+
+Status unchanged: **ready-for-human**. The agent prep is done and verified on `infra/cf-wave6` at `8e769d2` (see `map.md`, "Wave 6 completion (code)"). Not run: staging deploy, Paystack test-mode steps, forced restarts, the PITR drill, the Logs search and the go or no-go. The evidence template above is still blank. AC5 is pending a full run on the integration branch at merge time.
+
+### Rule change: merge to `main` before staging (10 Oct 2026)
+
+- The user relaxed the rule recorded in `map.md` ("Branching"), which this issue's "Why" section repeats: the integration branch merges to `main` before the staging rehearsal. Merging does not deploy. No CI workflow, deploy hook or auto-deploy exists in the repository (checked on `main` and on the integration branch, 10 Oct 2026).
+- Status is unchanged: **ready-for-human**. Staging, the Paystack test-mode steps, the forced restarts, the PITR drill, the Logs search and the go or no-go are still open and are not claimed here.
+- Production deploy still requires this issue to pass. Nothing may deploy from `main` until then. AC5 remains open until a full run is recorded at merge time.

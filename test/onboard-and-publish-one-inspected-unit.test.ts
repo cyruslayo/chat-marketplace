@@ -127,6 +127,7 @@ test("material unit change invalidates eligibility until reinspected", () => {
   flagMaterialUnitChange(repository, "unit-lagos-001");
 
   const updated = repository.findAll().find((u: any) => u.id === "unit-lagos-001");
+  assert.ok(updated);
   assert.equal(updated.published, false);
   assert.equal(updated.inspection.materialChangePending, true);
 
@@ -162,6 +163,7 @@ test("publication requires eligibility through the furthest sellable checkout", 
   assert.equal(latestPossibleCheckoutDate(publicationDate), "2026-11-03");
 
   const unit = repository.findById("unit-lagos-001");
+  assert.ok(unit);
   repository.save({
     ...unit,
     inspection: { ...unit.inspection, expiresAt: "2026-08-01" }
@@ -173,6 +175,7 @@ test("publication requires eligibility through the furthest sellable checkout", 
   );
 
   const boundaryUnit = repository.findById("unit-lagos-001");
+  assert.ok(boundaryUnit);
   repository.save({
     ...boundaryUnit,
     published: true,
@@ -187,7 +190,8 @@ test("operators and staff see actionable status without raw evidence exposure", 
   seedIssue01Units(repository);
 
   const unit = repository.findAll().find((u: any) => u.id === "unit-lagos-001");
-  const status: any = getUnitOnboardingStatus(unit);
+  // ADRs 0009 and 0056 make eligibility relative to the latest permissible checkout.
+  const status: any = getUnitOnboardingStatus(unit, new Date("2026-07-22T00:00:00Z"));
 
   assert.equal(status.unitId, "unit-lagos-001");
   assert.equal(status.published, true);

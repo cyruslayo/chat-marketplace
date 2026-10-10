@@ -25,7 +25,7 @@ export interface ListingPhotoContext {
 
 export async function createListingPhotoContext(photoUrls: readonly string[], width: number, height = 800): Promise<ListingPhotoContext> {
   const directory = mkdtempSync(join(tmpdir(), "listing-photos-browser-"));
-  const environment = new LocalGuestEnvironment({ databasePath: join(directory, "guest.sqlite") });
+  const environment = LocalGuestEnvironment.openNode({ databasePath: join(directory, "guest.sqlite") });
   const unit = environment.unitRepository.findAll()[0];
   assert.ok(unit);
   const unitDescription = "A bright, quiet apartment with a spacious living room, reliable power, secure parking, natural light, and room for a comfortable short stay.\n\nGuests have easy access to the surrounding neighbourhood and practical everyday amenities.";

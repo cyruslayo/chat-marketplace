@@ -25,7 +25,7 @@ async function waitForRail(tab: RealBrowserTab, label: string): Promise<void> {
 test("AC1: In real Chromium at 375px, the rail's current step matches the server projection after every event and after reload", async () => {
   const directory = mkdtempSync(join(tmpdir(), "journey-rail-"));
   const now = new Date("2026-09-03T10:00:00Z");
-  const server = startLocalGuestServer({ port: 0, environment: new LocalGuestEnvironment({ databasePath: join(directory, "guest.sqlite"), clock: () => now }) });
+  const server = startLocalGuestServer({ port: 0, environment: LocalGuestEnvironment.openNode({ databasePath: join(directory, "guest.sqlite"), clock: () => now }) });
   const browser = await launchRealBrowser();
   const tab = await browser.createTab();
   try {

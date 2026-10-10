@@ -175,7 +175,7 @@ test("Idle session runtimes are closed and evicted", async () => {
 
 test("/api/turn 500 responses carry a generic message", async () => {
   const directory = await mkdtemp(join(tmpdir(), "shortlet-guardrails-"));
-  const environment = new LocalGuestEnvironment({ databasePath: join(directory, "guest.sqlite") });
+  const environment = LocalGuestEnvironment.openNode({ databasePath: join(directory, "guest.sqlite") });
   Object.defineProperty(environment, "discoveryQuery", { value: { search: () => { throw new Error("SECRET-DETAIL sk_live_internal"); } } });
   const server = startLocalGuestServer({ port: 0, environment, conciergeMode: "deterministic" });
   try {

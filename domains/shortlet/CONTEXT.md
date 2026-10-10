@@ -24,9 +24,29 @@ _Avoid_: Property access, verbal permission, operator approval
 A person seeking or holding a shortlet reservation, whether or not they initiated the booking conversation.
 _Avoid_: Consumer, customer, user
 
+**Guest Account**:
+A durable, email-verified record that anchors a Guest's account identity and permitted continuity across devices; it does not replace the Guest's booking role.
+_Avoid_: User, customer, profile, login, booking party
+
+**Account Guest Id**:
+The opaque, stable domain Guest identity owned by a Guest Account and used for new account-authenticated actions.
+_Avoid_: Interaction principal, browser-session id, thread id, booking id
+
+**Linked Principal**:
+An interaction principal linked to one Guest Account after successful sign-in from the browser that controls that principal.
+_Avoid_: Account Guest Id, email claim, proof of ownership of every record
+
+**Sign-In Code**:
+A single-use, short-lived emailed code that a Guest types into a page to prove control of an email address.
+_Avoid_: Magic link, URL token, password, identity-verification result
+
+**Guest Account Session**:
+The server-owned, opaque, absolute-expiry browser binding that authenticates a Guest Account.
+_Avoid_: Interaction principal, cookie claims, sliding session, booking identity
+
 **Primary Guest**:
 The verified adult who submits the booking request, accepts the booking contract, and is responsible for the declared guest party.
-_Avoid_: Payer, account holder, additional occupant
+_Avoid_: Payer, Guest Account (which is not a booking role), additional occupant
 
 **Additional Occupant**:
 A declared member of the guest party for whom the primary guest remains responsible and who is not routinely identity-verified at launch.
@@ -59,8 +79,32 @@ An occupancy model granting one guest party exclusive use of a self-contained un
 _Avoid_: Private apartment, shared room, room category
 
 **Short Stay**:
-A reservation or aggregated continuous occupancy at one property lasting between one and fourteen consecutive nights under the launch product.
+A reservation or aggregated continuous occupancy at one property lasting between one and fourteen consecutive nights under the launch product. Longer stays are Extended Stays (ADR 0092).
 _Avoid_: Extended stay, monthly stay, tenancy
+
+**Extended Stay**:
+A reservation or aggregated continuous occupancy at one property of 30 to 90 consecutive nights at a unit that has opted in, contracted at once and paid one Billing Period at a time (ADR 0092).
+_Avoid_: Tenancy, lease, monthly rental, long let
+
+**Billing Period**:
+One of the consecutive 30-night spans of an Extended Stay, counted from check-in (the last may be shorter), fixed at confirmation with its dates, amount, nightly contracted values and due date (ADR 0092).
+_Avoid_: Month, rent period, instalment
+
+**Period Payment**:
+The payment for one Billing Period, made through its own payment session under the ordinary Payment Window and Live Payment Attempt rules; payable once the previous period has started and due 7 days before its first night (ADR 0092).
+_Avoid_: Rent, recurring charge, direct debit
+
+**Monthly Agreed Amounts**:
+The owner's agreed amount for a full Billing Period plus any mandatory charges; versioned unit configuration from which a full period's Extended Stay price is derived (ADR 0092, ADR 0089).
+_Avoid_: Monthly rent, guest price
+
+**Period Owner Payable**:
+The Owner Payable for one Billing Period, captured at confirmation; period 1 is due under ADR 0089, later periods when their Period Payment is verified and their first night has begun with no Blocking Fulfilment Complaint open (ADR 0092).
+_Avoid_: Monthly payout, rent remittance
+
+**Notice to End**:
+The Primary Guest's versioned request, after Verified Access, to end an Extended Stay early, setting a new last night and settling nights by nightly contracted value (ADR 0092).
+_Avoid_: Notice to quit, termination, eviction
 
 **Continuous Occupancy**:
 Adjacent or operationally continuous accommodation at the same property by the same primary guest or materially the same guest party, aggregated across units and reservations for stay-length enforcement.
@@ -87,6 +131,10 @@ _Avoid_: Verified badge, platform approved
 **Guest Identity Verification**:
 The platform's reusable assurance that the primary guest's government identity and minimum age have been verified, without disclosing raw identity evidence to an operator. For the pilot it is Check-In Eligibility, not Booking Eligibility: it must be established before physical access authority is granted, while the check-in procedure is deferred.
 _Avoid_: Contact verification, operator ID check
+
+**Identity Assurance**:
+The account-scoped, normalized outcome of evidence about a Guest, such as confirmed email or future check-in identity verification, with explicit verification and expiry timestamps when the outcome is time-bound.
+_Avoid_: Verified badge, KYC status, raw identity evidence, payer attribution
 
 **Payer Attribution**:
 The platform's channel-specific assessment of whether a received payment is reasonably attributable to the verified primary guest.

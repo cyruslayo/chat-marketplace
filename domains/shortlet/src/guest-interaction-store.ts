@@ -1,4 +1,4 @@
-import { DatabaseSync } from "node:sqlite";
+import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
 import { createHash } from "node:crypto";
 
 /**
@@ -159,7 +159,9 @@ export interface DurablePaymentJourneySnapshot {
 
 /** Deterministic projection of the recorded session secret into an opaque stored hash. */
 export function hashSessionSecret(secret: string): string {
-  return createHash("sha256").update(`guest-session-v1:${secret}`).digest("hex");
+  return createHash("sha256")
+    .update(`guest-session-v1:${secret}`)
+    .digest("hex");
 }
 
 interface ThreadRow {
@@ -274,10 +276,19 @@ interface PaymentJourneySnapshotRow {
 function parseNames(json: string): readonly string[] {
   try {
     const parsed: unknown = JSON.parse(json);
-    return Array.isArray(parsed) ? Object.freeze(parsed.filter((name): name is string => typeof name === "string")) : [];
+    return Array.isArray(parsed)
+      ? Object.freeze(
+          parsed.filter((name): name is string => typeof name === "string"),
+        )
+      : [];
   } catch {
     return [];
   }
+}
+
+function storedText(value: unknown): string {
+  if (typeof value !== "string") throw new TypeError("Stored interaction field must be text");
+  return value;
 }
 
 function boolToInt(value: boolean): number {
@@ -292,18 +303,8 @@ function requiredPurpose(value: unknown): "stay" | "security_deposit" {
   return value === "security_deposit" ? "security_deposit" : "stay";
 }
 
-export class SqliteGuestInteractionStore {
-  readonly databasePath: string;
-  #database: DatabaseSync;
-  #closed = false;
-  readonly #ownsDatabase: boolean;
-
-  constructor(databasePath: string, database?: DatabaseSync) {
-    this.databasePath = databasePath;
-    this.#database = database ?? new DatabaseSync(databasePath);
-    this.#ownsDatabase = database === undefined;
-    this.#database.exec("PRAGMA busy_timeout = 5000");
-    this.#database.exec(`
+/** Table DDL, applied by the schema migrations (apps/cloudflare/src/schema.ts) and by this store's constructor. */
+export const GUEST_INTERACTION_SCHEMA = `
       CREATE TABLE IF NOT EXISTS guest_session_bindings (
         session_id TEXT PRIMARY KEY,
         session_secret_hash TEXT NOT NULL,
@@ -435,77 +436,113 @@ export class SqliteGuestInteractionStore {
         stage TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
-    `);
-    const requestColumns = this.#database.prepare("PRAGMA table_info(guest_booking_requests)").all() as unknown as { name: string }[];
-    if (!requestColumns.some((column) => column.name === "phone_number")) this.#database.exec("ALTER TABLE guest_booking_requests ADD COLUMN phone_number TEXT");
-    const checkoutColumns = this.#database.prepare("PRAGMA table_info(guest_checkout_sessions)").all() as unknown as { name: string }[];
-    if (!checkoutColumns.some((column) => column.name === "contact_email")) this.#database.exec("ALTER TABLE guest_checkout_sessions ADD COLUMN contact_email TEXT");
-    if (!checkoutColumns.some((column) => column.name === "provider_environment")) this.#database.exec("ALTER TABLE guest_checkout_sessions ADD COLUMN provider_environment TEXT");
+    `;
+
+export class SqliteGuestInteractionStore {
+  readonly #database: SqlDatabase;
+
+  constructor(database: SqlDatabase) {
+    this.#database = database;
+    this.#database.exec(GUEST_INTERACTION_SCHEMA);
+    const requestColumns = this.#database
+      .prepare("PRAGMA table_info(guest_booking_requests)")
+      .all();
+    if (!requestColumns.some((column) => column.name === "phone_number"))
+      this.#database.exec(
+        "ALTER TABLE guest_booking_requests ADD COLUMN phone_number TEXT",
+      );
+    const checkoutColumns = this.#database
+      .prepare("PRAGMA table_info(guest_checkout_sessions)")
+      .all();
+    if (!checkoutColumns.some((column) => column.name === "contact_email"))
+      this.#database.exec(
+        "ALTER TABLE guest_checkout_sessions ADD COLUMN contact_email TEXT",
+      );
+    if (
+      !checkoutColumns.some((column) => column.name === "provider_environment")
+    )
+      this.#database.exec(
+        "ALTER TABLE guest_checkout_sessions ADD COLUMN provider_environment TEXT",
+      );
   }
 
   #transaction<T>(operation: () => T): T {
-    if (this.#database.isTransaction) return operation();
-    this.#database.exec("BEGIN IMMEDIATE");
-    try {
-      const result = operation();
-      this.#database.exec("COMMIT");
-      return result;
-    } catch (error) {
-      try {
-        this.#database.exec("ROLLBACK");
-      } catch {
-        /* preserve the original failure */
-      }
-      throw error;
-    }
+    return this.#database.transaction(operation);
   }
 
   // --- Browser session bindings ---
 
   saveSessionBinding(binding: DurableGuestSessionBinding): void {
-    this.#database.prepare(`
+    this.#database
+      .prepare(`
       INSERT INTO guest_session_bindings (session_id, session_secret_hash, principal_id, tenant_id)
       VALUES ($sessionId, $hash, $principalId, $tenantId)
       ON CONFLICT(session_id) DO UPDATE SET
         session_secret_hash = excluded.session_secret_hash,
         principal_id = excluded.principal_id,
         tenant_id = excluded.tenant_id
-    `).run({ $sessionId: binding.sessionId, $hash: binding.sessionSecretHash, $principalId: binding.principalId, $tenantId: binding.tenantId });
+    `)
+      .run({
+        $sessionId: binding.sessionId,
+        $hash: binding.sessionSecretHash,
+        $principalId: binding.principalId,
+        $tenantId: binding.tenantId,
+      });
   }
 
   findSessionBinding(sessionId: string): DurableGuestSessionBinding | null {
-    const row = this.#database.prepare("SELECT * FROM guest_session_bindings WHERE session_id = $sessionId").get({ $sessionId: sessionId }) as
-      | { session_id: string; session_secret_hash: string; principal_id: string; tenant_id: string }
+    const row = this.#database
+      .prepare(
+        "SELECT * FROM guest_session_bindings WHERE session_id = $sessionId",
+      )
+      .get({ $sessionId: sessionId }) as
+      | {
+          session_id: string;
+          session_secret_hash: string;
+          principal_id: string;
+          tenant_id: string;
+        }
       | undefined;
     if (!row) return null;
-    return Object.freeze({ sessionId: row.session_id, sessionSecretHash: row.session_secret_hash, principalId: row.principal_id, tenantId: row.tenant_id });
+    return Object.freeze({
+      sessionId: row.session_id,
+      sessionSecretHash: row.session_secret_hash,
+      principalId: row.principal_id,
+      tenantId: row.tenant_id,
+    });
   }
 
   listSessionBindingIds(): readonly string[] {
-    const rows = this.#database.prepare("SELECT session_id FROM guest_session_bindings").all() as unknown as { session_id: string }[];
-    return Object.freeze(rows.map((row) => row.session_id));
+    const rows = this.#database
+      .prepare("SELECT session_id FROM guest_session_bindings")
+      .all();
+    return Object.freeze(rows.map((row) => storedText(row.session_id)));
   }
 
   // --- Threads ---
 
   saveThread(thread: DurableGuestThreadRecord): void {
-    this.#database.prepare(`
+    this.#database
+      .prepare(`
       INSERT INTO guest_threads (thread_id, principal_id, tenant_id, thread_json)
       VALUES ($threadId, $principalId, $tenantId, $threadJson)
       ON CONFLICT(thread_id) DO UPDATE SET
         principal_id = excluded.principal_id,
         tenant_id = excluded.tenant_id,
         thread_json = excluded.thread_json
-    `).run({
-      $threadId: thread.threadId,
-      $principalId: thread.principalId,
-      $tenantId: thread.tenantId,
-      $threadJson: thread.threadJson,
-    });
+    `)
+      .run({
+        $threadId: thread.threadId,
+        $principalId: thread.principalId,
+        $tenantId: thread.tenantId,
+        $threadJson: thread.threadJson,
+      });
   }
 
   findThread(threadId: string): DurableGuestThreadRecord | null {
-    const row = this.#database.prepare("SELECT * FROM guest_threads WHERE thread_id = $threadId").get({ $threadId: threadId }) as ThreadRow | undefined;
+    const row = this.#database
+      .prepare("SELECT * FROM guest_threads WHERE thread_id = $threadId")
+      .get({ $threadId: threadId }) as ThreadRow | undefined;
     if (!row) return null;
     return Object.freeze({
       threadId: row.thread_id,
@@ -515,25 +552,40 @@ export class SqliteGuestInteractionStore {
     });
   }
 
-  findThreadsForPrincipal(principalId: string, tenantId: string): DurableGuestThreadRecord[] {
-    const rows = this.#database.prepare("SELECT * FROM guest_threads WHERE principal_id = $principalId AND tenant_id = $tenantId").all({ $principalId: principalId, $tenantId: tenantId }) as unknown as ThreadRow[];
-    return rows.map((row) => Object.freeze({
-      threadId: row.thread_id,
-      principalId: row.principal_id,
-      tenantId: row.tenant_id,
-      threadJson: row.thread_json,
-    }));
+  findThreadsForPrincipal(
+    principalId: string,
+    tenantId: string,
+  ): DurableGuestThreadRecord[] {
+    const rows = this.#database
+      .prepare(
+        "SELECT * FROM guest_threads WHERE principal_id = $principalId AND tenant_id = $tenantId",
+      )
+      .all({
+        $principalId: principalId,
+        $tenantId: tenantId,
+      });
+    return rows.map((row) =>
+      Object.freeze({
+        threadId: storedText(row.thread_id),
+        principalId: storedText(row.principal_id),
+        tenantId: storedText(row.tenant_id),
+        threadJson: storedText(row.thread_json),
+      }),
+    );
   }
 
   // --- Request Drafts ---
 
   listDraftIds(): readonly string[] {
-    const rows = this.#database.prepare("SELECT draft_id FROM guest_request_drafts").all() as unknown as { draft_id: string }[];
-    return Object.freeze(rows.map((row) => row.draft_id));
+    const rows = this.#database
+      .prepare("SELECT draft_id FROM guest_request_drafts")
+      .all();
+    return Object.freeze(rows.map((row) => storedText(row.draft_id)));
   }
 
   saveDraft(draft: DurableBookingRequestDraft): void {
-    this.#database.prepare(`
+    this.#database
+      .prepare(`
       INSERT INTO guest_request_drafts (
         draft_id, unit_id, primary_guest_id, primary_guest_name, occupants_json,
         self_booking_attestation_accepted, self_booking_attestation_version,
@@ -551,22 +603,27 @@ export class SqliteGuestInteractionStore {
         check_in = excluded.check_in,
         check_out = excluded.check_out,
         created_at = excluded.created_at
-    `).run({
-      $draftId: draft.draftId,
-      $unitId: draft.unitId,
-      $primaryGuestId: draft.primaryGuestId,
-      $primaryGuestName: draft.primaryGuestName,
-      $occupantsJson: JSON.stringify(draft.occupants),
-      $selfBookingAttestationAccepted: boolToInt(draft.selfBookingAttestationAccepted),
-      $selfBookingAttestationVersion: draft.selfBookingAttestationVersion,
-      $checkIn: draft.checkIn,
-      $checkOut: draft.checkOut,
-      $createdAt: draft.createdAt,
-    });
+    `)
+      .run({
+        $draftId: draft.draftId,
+        $unitId: draft.unitId,
+        $primaryGuestId: draft.primaryGuestId,
+        $primaryGuestName: draft.primaryGuestName,
+        $occupantsJson: JSON.stringify(draft.occupants),
+        $selfBookingAttestationAccepted: boolToInt(
+          draft.selfBookingAttestationAccepted,
+        ),
+        $selfBookingAttestationVersion: draft.selfBookingAttestationVersion,
+        $checkIn: draft.checkIn,
+        $checkOut: draft.checkOut,
+        $createdAt: draft.createdAt,
+      });
   }
 
   findDraft(draftId: string): DurableBookingRequestDraft | null {
-    const row = this.#database.prepare("SELECT * FROM guest_request_drafts WHERE draft_id = $draftId").get({ $draftId: draftId }) as BookingRequestDraftRow | undefined;
+    const row = this.#database
+      .prepare("SELECT * FROM guest_request_drafts WHERE draft_id = $draftId")
+      .get({ $draftId: draftId }) as BookingRequestDraftRow | undefined;
     if (!row) return null;
     return Object.freeze({
       draftId: row.draft_id,
@@ -574,7 +631,9 @@ export class SqliteGuestInteractionStore {
       primaryGuestId: row.primary_guest_id,
       primaryGuestName: row.primary_guest_name,
       occupants: parseNames(row.occupants_json),
-      selfBookingAttestationAccepted: parseBoolean(row.self_booking_attestation_accepted),
+      selfBookingAttestationAccepted: parseBoolean(
+        row.self_booking_attestation_accepted,
+      ),
       selfBookingAttestationVersion: row.self_booking_attestation_version,
       checkIn: row.check_in,
       checkOut: row.check_out,
@@ -585,12 +644,15 @@ export class SqliteGuestInteractionStore {
   // --- Booking Requests ---
 
   listBookingRequestIds(): readonly string[] {
-    const rows = this.#database.prepare("SELECT request_id FROM guest_booking_requests").all() as unknown as { request_id: string }[];
-    return Object.freeze(rows.map((row) => row.request_id));
+    const rows = this.#database
+      .prepare("SELECT request_id FROM guest_booking_requests")
+      .all();
+    return Object.freeze(rows.map((row) => storedText(row.request_id)));
   }
 
   saveBookingRequest(request: DurableBookingRequest): void {
-    this.#database.prepare(`
+    this.#database
+      .prepare(`
       INSERT INTO guest_booking_requests (
         request_id, draft_id, unit_id, tenant_id, operator_id, primary_guest_id,
         primary_guest_name, occupants_json, check_in, check_out, nights, quote_json,
@@ -625,35 +687,40 @@ export class SqliteGuestInteractionStore {
         declined_at = excluded.declined_at,
         decline_reason = excluded.decline_reason,
         phone_number = excluded.phone_number
-    `).run({
-      $requestId: request.requestId,
-      $draftId: request.draftId,
-      $unitId: request.unitId,
-      $tenantId: request.tenantId,
-      $operatorId: request.operatorId ?? null,
-      $primaryGuestId: request.primaryGuestId,
-      $primaryGuestName: request.primaryGuestName,
-      $occupantsJson: JSON.stringify(request.occupants),
-      $checkIn: request.checkIn,
-      $checkOut: request.checkOut,
-      $nights: request.nights,
-      $quoteJson: request.quoteJson,
-      $inventoryCommitmentId: request.inventoryCommitmentId,
-      $disclosedAt: request.disclosedAt,
-      $deliveryDeadlineAt: request.deliveryDeadlineAt,
-      $operatorResponseDeadlineAt: request.operatorResponseDeadlineAt,
-      $delivered: boolToInt(request.delivered),
-      $deliveredAt: request.deliveredAt ?? null,
-      $status: request.status,
-      $confirmedAt: request.confirmedAt ?? null,
-      $declinedAt: request.declinedAt ?? null,
-      $declineReason: request.declineReason ?? null,
-      $phoneNumber: request.phoneNumber,
-    });
+    `)
+      .run({
+        $requestId: request.requestId,
+        $draftId: request.draftId,
+        $unitId: request.unitId,
+        $tenantId: request.tenantId,
+        $operatorId: request.operatorId ?? null,
+        $primaryGuestId: request.primaryGuestId,
+        $primaryGuestName: request.primaryGuestName,
+        $occupantsJson: JSON.stringify(request.occupants),
+        $checkIn: request.checkIn,
+        $checkOut: request.checkOut,
+        $nights: request.nights,
+        $quoteJson: request.quoteJson,
+        $inventoryCommitmentId: request.inventoryCommitmentId,
+        $disclosedAt: request.disclosedAt,
+        $deliveryDeadlineAt: request.deliveryDeadlineAt,
+        $operatorResponseDeadlineAt: request.operatorResponseDeadlineAt,
+        $delivered: boolToInt(request.delivered),
+        $deliveredAt: request.deliveredAt ?? null,
+        $status: request.status,
+        $confirmedAt: request.confirmedAt ?? null,
+        $declinedAt: request.declinedAt ?? null,
+        $declineReason: request.declineReason ?? null,
+        $phoneNumber: request.phoneNumber,
+      });
   }
 
   findBookingRequest(requestId: string): DurableBookingRequest | null {
-    const row = this.#database.prepare("SELECT * FROM guest_booking_requests WHERE request_id = $requestId").get({ $requestId: requestId }) as BookingRequestRow | undefined;
+    const row = this.#database
+      .prepare(
+        "SELECT * FROM guest_booking_requests WHERE request_id = $requestId",
+      )
+      .get({ $requestId: requestId }) as BookingRequestRow | undefined;
     if (!row) return null;
     return Object.freeze({
       requestId: row.request_id,
@@ -685,18 +752,27 @@ export class SqliteGuestInteractionStore {
   // --- Conditional Booking Offers ---
 
   listConditionalOfferIds(): readonly string[] {
-    const rows = this.#database.prepare("SELECT offer_id FROM guest_conditional_offers").all() as unknown as { offer_id: string }[];
-    return Object.freeze(rows.map((row) => row.offer_id));
+    const rows = this.#database
+      .prepare("SELECT offer_id FROM guest_conditional_offers")
+      .all();
+    return Object.freeze(rows.map((row) => storedText(row.offer_id)));
   }
 
-  findConditionalOfferByRequestId(requestId: string): DurableConditionalOffer | null {
-    const row = this.#database.prepare("SELECT * FROM guest_conditional_offers WHERE request_id = $requestId LIMIT 1").get({ $requestId: requestId }) as ConditionalOfferRow | undefined;
+  findConditionalOfferByRequestId(
+    requestId: string,
+  ): DurableConditionalOffer | null {
+    const row = this.#database
+      .prepare(
+        "SELECT * FROM guest_conditional_offers WHERE request_id = $requestId LIMIT 1",
+      )
+      .get({ $requestId: requestId }) as ConditionalOfferRow | undefined;
     if (!row) return null;
     return this.findConditionalOffer(row.offer_id);
   }
 
   saveConditionalOffer(offer: DurableConditionalOffer): void {
-    this.#database.prepare(`
+    this.#database
+      .prepare(`
       INSERT INTO guest_conditional_offers (
         offer_id, request_id, inventory_commitment_id, unit_id, tenant_id, offer_json,
         status, issued_at, accepted_at, token_used, offer_version)
@@ -713,23 +789,28 @@ export class SqliteGuestInteractionStore {
         accepted_at = excluded.accepted_at,
         token_used = excluded.token_used,
         offer_version = excluded.offer_version
-    `).run({
-      $offerId: offer.offerId,
-      $requestId: offer.requestId,
-      $inventoryCommitmentId: offer.inventoryCommitmentId,
-      $unitId: offer.unitId,
-      $tenantId: offer.tenantId,
-      $offerJson: offer.offerJson,
-      $status: offer.status,
-      $issuedAt: offer.issuedAt,
-      $acceptedAt: offer.acceptedAt ?? null,
-      $tokenUsed: boolToInt(offer.tokenUsed),
-      $offerVersion: offer.offerVersion,
-    });
+    `)
+      .run({
+        $offerId: offer.offerId,
+        $requestId: offer.requestId,
+        $inventoryCommitmentId: offer.inventoryCommitmentId,
+        $unitId: offer.unitId,
+        $tenantId: offer.tenantId,
+        $offerJson: offer.offerJson,
+        $status: offer.status,
+        $issuedAt: offer.issuedAt,
+        $acceptedAt: offer.acceptedAt ?? null,
+        $tokenUsed: boolToInt(offer.tokenUsed),
+        $offerVersion: offer.offerVersion,
+      });
   }
 
   findConditionalOffer(offerId: string): DurableConditionalOffer | null {
-    const row = this.#database.prepare("SELECT * FROM guest_conditional_offers WHERE offer_id = $offerId").get({ $offerId: offerId }) as ConditionalOfferRow | undefined;
+    const row = this.#database
+      .prepare(
+        "SELECT * FROM guest_conditional_offers WHERE offer_id = $offerId",
+      )
+      .get({ $offerId: offerId }) as ConditionalOfferRow | undefined;
     if (!row) return null;
     return Object.freeze({
       offerId: row.offer_id,
@@ -749,12 +830,15 @@ export class SqliteGuestInteractionStore {
   // --- Checkout sessions ---
 
   listCheckoutSessionIds(): readonly string[] {
-    const rows = this.#database.prepare("SELECT checkout_id FROM guest_checkout_sessions").all() as unknown as { checkout_id: string }[];
-    return Object.freeze(rows.map((row) => row.checkout_id));
+    const rows = this.#database
+      .prepare("SELECT checkout_id FROM guest_checkout_sessions")
+      .all();
+    return Object.freeze(rows.map((row) => storedText(row.checkout_id)));
   }
 
   saveCheckoutSession(session: DurableCardCheckoutSession): void {
-    this.#database.prepare(`
+    this.#database
+      .prepare(`
       INSERT INTO guest_checkout_sessions (
         checkout_id, offer_id, psp_reference, total_amount_due_now_kobo,
         amount_kobo, purpose, currency, contact_email, provider_environment, expires_at, status)
@@ -771,23 +855,28 @@ export class SqliteGuestInteractionStore {
         provider_environment = excluded.provider_environment,
         expires_at = excluded.expires_at,
         status = excluded.status
-    `).run({
-      $checkoutId: session.checkoutId,
-      $offerId: session.offerId,
-      $pspReference: session.pspReference,
-      $totalAmountDueNowKobo: session.totalAmountDueNowKobo,
-      $amountKobo: session.amountKobo,
-      $purpose: session.purpose,
-      $currency: session.currency,
-      $contactEmail: session.contactEmail,
-      $providerEnvironment: session.providerEnvironment ?? null,
-      $expiresAt: session.expiresAt,
-      $status: session.status,
-    });
+    `)
+      .run({
+        $checkoutId: session.checkoutId,
+        $offerId: session.offerId,
+        $pspReference: session.pspReference,
+        $totalAmountDueNowKobo: session.totalAmountDueNowKobo,
+        $amountKobo: session.amountKobo,
+        $purpose: session.purpose,
+        $currency: session.currency,
+        $contactEmail: session.contactEmail,
+        $providerEnvironment: session.providerEnvironment ?? null,
+        $expiresAt: session.expiresAt,
+        $status: session.status,
+      });
   }
 
   findCheckoutSession(checkoutId: string): DurableCardCheckoutSession | null {
-    const row = this.#database.prepare("SELECT * FROM guest_checkout_sessions WHERE checkout_id = $checkoutId").get({ $checkoutId: checkoutId }) as CardCheckoutSessionRow | undefined;
+    const row = this.#database
+      .prepare(
+        "SELECT * FROM guest_checkout_sessions WHERE checkout_id = $checkoutId",
+      )
+      .get({ $checkoutId: checkoutId }) as CardCheckoutSessionRow | undefined;
     if (!row) return null;
     return Object.freeze({
       checkoutId: row.checkout_id,
@@ -798,26 +887,51 @@ export class SqliteGuestInteractionStore {
       purpose: requiredPurpose(row.purpose),
       currency: "NGN",
       contactEmail: row.contact_email ?? "",
-      ...(row.provider_environment === "test" || row.provider_environment === "live" ? { providerEnvironment: row.provider_environment } : {}),
+      ...(row.provider_environment === "test" ||
+      row.provider_environment === "live"
+        ? { providerEnvironment: row.provider_environment }
+        : {}),
       expiresAt: row.expires_at,
-      status: row.status === "completed" ? "completed" : row.status === "expired" ? "expired" : row.status === "failed" ? "failed" : "initiated",
+      status:
+        row.status === "completed"
+          ? "completed"
+          : row.status === "expired"
+            ? "expired"
+            : row.status === "failed"
+              ? "failed"
+              : "initiated",
     });
   }
 
-  findCheckoutSessionByOfferId(offerId: string): DurableCardCheckoutSession | null {
-    const row = this.#database.prepare("SELECT * FROM guest_checkout_sessions WHERE offer_id = $offerId").get({ $offerId: offerId }) as CardCheckoutSessionRow | undefined;
+  findCheckoutSessionByOfferId(
+    offerId: string,
+  ): DurableCardCheckoutSession | null {
+    const row = this.#database
+      .prepare(
+        "SELECT * FROM guest_checkout_sessions WHERE offer_id = $offerId",
+      )
+      .get({ $offerId: offerId }) as CardCheckoutSessionRow | undefined;
     return row ? this.findCheckoutSession(row.checkout_id) : null;
   }
 
-  findCheckoutSessionByReference(pspReference: string): DurableCardCheckoutSession | null {
-    const row = this.#database.prepare("SELECT * FROM guest_checkout_sessions WHERE psp_reference = $pspReference").get({ $pspReference: pspReference }) as CardCheckoutSessionRow | undefined;
+  findCheckoutSessionByReference(
+    pspReference: string,
+  ): DurableCardCheckoutSession | null {
+    const row = this.#database
+      .prepare(
+        "SELECT * FROM guest_checkout_sessions WHERE psp_reference = $pspReference",
+      )
+      .get({ $pspReference: pspReference }) as
+      | CardCheckoutSessionRow
+      | undefined;
     return row ? this.findCheckoutSession(row.checkout_id) : null;
   }
 
   // --- Live Payment Attempts ---
 
   saveLivePaymentAttempt(attempt: DurableLivePaymentAttempt): void {
-    this.#database.prepare(`
+    this.#database
+      .prepare(`
       INSERT INTO guest_live_payment_attempts (
         attempt_id, offer_id, method, purpose, status, started_at, expires_at)
       VALUES ($attemptId, $offerId, $method, $purpose, $status, $startedAt, $expiresAt)
@@ -828,19 +942,24 @@ export class SqliteGuestInteractionStore {
         status = excluded.status,
         started_at = excluded.started_at,
         expires_at = excluded.expires_at
-    `).run({
-      $attemptId: attempt.attemptId,
-      $offerId: attempt.offerId,
-      $method: attempt.method,
-      $purpose: attempt.purpose,
-      $status: attempt.status,
-      $startedAt: attempt.startedAt,
-      $expiresAt: attempt.expiresAt,
-    });
+    `)
+      .run({
+        $attemptId: attempt.attemptId,
+        $offerId: attempt.offerId,
+        $method: attempt.method,
+        $purpose: attempt.purpose,
+        $status: attempt.status,
+        $startedAt: attempt.startedAt,
+        $expiresAt: attempt.expiresAt,
+      });
   }
 
   findLivePaymentAttempt(attemptId: string): DurableLivePaymentAttempt | null {
-    const row = this.#database.prepare("SELECT * FROM guest_live_payment_attempts WHERE attempt_id = $attemptId").get({ $attemptId: attemptId }) as LivePaymentAttemptRow | undefined;
+    const row = this.#database
+      .prepare(
+        "SELECT * FROM guest_live_payment_attempts WHERE attempt_id = $attemptId",
+      )
+      .get({ $attemptId: attemptId }) as LivePaymentAttemptRow | undefined;
     if (!row) return null;
     return Object.freeze({
       attemptId: row.attempt_id,
@@ -853,20 +972,29 @@ export class SqliteGuestInteractionStore {
     });
   }
 
-  findLivePaymentAttemptByOfferId(offerId: string): DurableLivePaymentAttempt | null {
-    const row = this.#database.prepare("SELECT * FROM guest_live_payment_attempts WHERE offer_id = $offerId").get({ $offerId: offerId }) as LivePaymentAttemptRow | undefined;
+  findLivePaymentAttemptByOfferId(
+    offerId: string,
+  ): DurableLivePaymentAttempt | null {
+    const row = this.#database
+      .prepare(
+        "SELECT * FROM guest_live_payment_attempts WHERE offer_id = $offerId",
+      )
+      .get({ $offerId: offerId }) as LivePaymentAttemptRow | undefined;
     return row ? this.findLivePaymentAttempt(row.attempt_id) : null;
   }
 
   listLivePaymentAttemptOfferIds(): readonly string[] {
-    const rows = this.#database.prepare("SELECT DISTINCT offer_id FROM guest_live_payment_attempts").all() as unknown as { offer_id: string }[];
-    return Object.freeze(rows.map((row) => row.offer_id));
+    const rows = this.#database
+      .prepare("SELECT DISTINCT offer_id FROM guest_live_payment_attempts")
+      .all();
+    return Object.freeze(rows.map((row) => storedText(row.offer_id)));
   }
 
   // --- Processed PSP references ---
 
   saveProcessedPspReference(reference: DurableProcessedPspReference): void {
-    this.#database.prepare(`
+    this.#database
+      .prepare(`
       INSERT INTO guest_processed_psp_references (
         psp_reference, reservation_id, contract_id, offer_id, tenant_id)
       VALUES ($pspReference, $reservationId, $contractId, $offerId, $tenantId)
@@ -875,17 +1003,26 @@ export class SqliteGuestInteractionStore {
         contract_id = excluded.contract_id,
         offer_id = excluded.offer_id,
         tenant_id = excluded.tenant_id
-    `).run({
-      $pspReference: reference.pspReference,
-      $reservationId: reference.reservationId,
-      $contractId: reference.contractId,
-      $offerId: reference.offerId,
-      $tenantId: reference.tenantId ?? null,
-    });
+    `)
+      .run({
+        $pspReference: reference.pspReference,
+        $reservationId: reference.reservationId,
+        $contractId: reference.contractId,
+        $offerId: reference.offerId,
+        $tenantId: reference.tenantId ?? null,
+      });
   }
 
-  findProcessedPspReference(pspReference: string): DurableProcessedPspReference | null {
-    const row = this.#database.prepare("SELECT * FROM guest_processed_psp_references WHERE psp_reference = $pspReference").get({ $pspReference: pspReference }) as ProcessedPspReferenceRow | undefined;
+  findProcessedPspReference(
+    pspReference: string,
+  ): DurableProcessedPspReference | null {
+    const row = this.#database
+      .prepare(
+        "SELECT * FROM guest_processed_psp_references WHERE psp_reference = $pspReference",
+      )
+      .get({ $pspReference: pspReference }) as
+      | ProcessedPspReferenceRow
+      | undefined;
     if (!row) return null;
     return Object.freeze({
       pspReference: row.psp_reference,
@@ -897,26 +1034,28 @@ export class SqliteGuestInteractionStore {
   }
 
   listProcessedPspReferenceIds(): readonly string[] {
-    const rows = this.#database.prepare("SELECT psp_reference FROM guest_processed_psp_references").all() as unknown as { psp_reference: string }[];
-    return Object.freeze(rows.map((row) => row.psp_reference));
+    const rows = this.#database
+      .prepare("SELECT psp_reference FROM guest_processed_psp_references")
+      .all();
+    return Object.freeze(rows.map((row) => storedText(row.psp_reference)));
   }
 
   listBookingSnapshotOfferIds(): readonly string[] {
-    const rows = this.#database.prepare("SELECT offer_id FROM guest_booking_snapshots").all() as unknown as { offer_id: string }[];
-    return Object.freeze(rows.map((row) => row.offer_id));
+    const rows = this.#database
+      .prepare("SELECT offer_id FROM guest_booking_snapshots")
+      .all();
+    return Object.freeze(rows.map((row) => storedText(row.offer_id)));
   }
 
   close(): void {
-    if (!this.#closed) {
-      if (this.#ownsDatabase) this.#database.close();
-      this.#closed = true;
-    }
+    /* The composition owns the shared handle (ADR 0095). */
   }
 
   // --- Booking snapshots ---
 
   saveBookingSnapshot(snapshot: DurableBookingSnapshot): void {
-    this.#database.prepare(`
+    this.#database
+      .prepare(`
       INSERT INTO guest_booking_snapshots (
         reservation_id, contract_id, offer_id, reservation_json, contract_json, confirmed_at)
       VALUES ($reservationId, $contractId, $offerId, $reservationJson, $contractJson, $confirmedAt)
@@ -926,18 +1065,23 @@ export class SqliteGuestInteractionStore {
         reservation_json = excluded.reservation_json,
         contract_json = excluded.contract_json,
         confirmed_at = excluded.confirmed_at
-    `).run({
-      $reservationId: snapshot.reservationId,
-      $contractId: snapshot.contractId,
-      $offerId: snapshot.offerId,
-      $reservationJson: snapshot.reservationJson,
-      $contractJson: snapshot.contractJson,
-      $confirmedAt: snapshot.confirmedAt,
-    });
+    `)
+      .run({
+        $reservationId: snapshot.reservationId,
+        $contractId: snapshot.contractId,
+        $offerId: snapshot.offerId,
+        $reservationJson: snapshot.reservationJson,
+        $contractJson: snapshot.contractJson,
+        $confirmedAt: snapshot.confirmedAt,
+      });
   }
 
   findBookingSnapshotByOfferId(offerId: string): DurableBookingSnapshot | null {
-    const row = this.#database.prepare("SELECT * FROM guest_booking_snapshots WHERE offer_id = $offerId").get({ $offerId: offerId }) as BookingSnapshotRow | undefined;
+    const row = this.#database
+      .prepare(
+        "SELECT * FROM guest_booking_snapshots WHERE offer_id = $offerId",
+      )
+      .get({ $offerId: offerId }) as BookingSnapshotRow | undefined;
     if (!row) return null;
     return Object.freeze({
       reservationId: row.reservation_id,
@@ -949,8 +1093,14 @@ export class SqliteGuestInteractionStore {
     });
   }
 
-  findBookingSnapshotByReservationId(reservationId: string): DurableBookingSnapshot | null {
-    const row = this.#database.prepare("SELECT * FROM guest_booking_snapshots WHERE reservation_id = $reservationId").get({ $reservationId: reservationId }) as BookingSnapshotRow | undefined;
+  findBookingSnapshotByReservationId(
+    reservationId: string,
+  ): DurableBookingSnapshot | null {
+    const row = this.#database
+      .prepare(
+        "SELECT * FROM guest_booking_snapshots WHERE reservation_id = $reservationId",
+      )
+      .get({ $reservationId: reservationId }) as BookingSnapshotRow | undefined;
     if (!row) return null;
     return Object.freeze({
       reservationId: row.reservation_id,
@@ -965,7 +1115,8 @@ export class SqliteGuestInteractionStore {
   // --- Payment journey snapshots ---
 
   savePaymentJourneySnapshot(snapshot: DurablePaymentJourneySnapshot): void {
-    this.#database.prepare(`
+    this.#database
+      .prepare(`
       INSERT INTO guest_payment_journey_snapshots (
         offer_id, journey_json, journey_version, stage, updated_at)
       VALUES ($offerId, $journeyJson, $journeyVersion, $stage, $updatedAt)
@@ -974,17 +1125,24 @@ export class SqliteGuestInteractionStore {
         journey_version = excluded.journey_version,
         stage = excluded.stage,
         updated_at = excluded.updated_at
-    `).run({
-      $offerId: snapshot.offerId,
-      $journeyJson: snapshot.journeyJson,
-      $journeyVersion: snapshot.journeyVersion,
-      $stage: snapshot.stage,
-      $updatedAt: snapshot.updatedAt,
-    });
+    `)
+      .run({
+        $offerId: snapshot.offerId,
+        $journeyJson: snapshot.journeyJson,
+        $journeyVersion: snapshot.journeyVersion,
+        $stage: snapshot.stage,
+        $updatedAt: snapshot.updatedAt,
+      });
   }
 
-  findPaymentJourneySnapshot(offerId: string): DurablePaymentJourneySnapshot | null {
-    const row = this.#database.prepare("SELECT * FROM guest_payment_journey_snapshots WHERE offer_id = $offerId").get({ $offerId: offerId }) as PaymentJourneySnapshotRow | undefined;
+  findPaymentJourneySnapshot(
+    offerId: string,
+  ): DurablePaymentJourneySnapshot | null {
+    const row = this.#database
+      .prepare(
+        "SELECT * FROM guest_payment_journey_snapshots WHERE offer_id = $offerId",
+      )
+      .get({ $offerId: offerId }) as PaymentJourneySnapshotRow | undefined;
     if (!row) return null;
     return Object.freeze({
       offerId: row.offer_id,

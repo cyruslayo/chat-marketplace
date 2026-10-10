@@ -1,7 +1,16 @@
 import { existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { dirname } from "node:path";
-import { DatabaseSync } from "node:sqlite";
-import { createPlatformCommandEnvelope, InMemoryAuditLog, InMemoryTelemetry, type CommandPrincipal } from "../../../packages/platform-core/src/index.js";
+import { openNodeSqliteDatabase } from "../../../packages/platform-core/src/node-sqlite-database.js";
+import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
+import { SqliteAuditLog } from "../../../packages/platform-core/src/sqlite-audit-log.js";
+import { SqliteTelemetry } from "../../../packages/platform-core/src/sqlite-telemetry.js";
+import type { TelemetryEvent } from "../../../packages/platform-core/src/telemetry.js";
+import {
+  createPlatformCommandEnvelope,
+  type AuditLog,
+  type Telemetry,
+  type CommandPrincipal,
+} from "../../../packages/platform-core/src/index.js";
 import {
   AvailabilityCalendar,
   SqliteOperatorRepresentativeGrantStore,
@@ -18,6 +27,8 @@ import {
   UnitDiscoveryQuery,
   UnitRepository,
   JsonUnitRepository,
+  type UnitRepositoryContract,
+  type ReceiptBlobStore,
   unitPriceFromOwnerTerms,
   InMemorySecurityDepositAccountingRepository,
   type PaystackClient,
@@ -70,7 +81,10 @@ export interface LocalGuestFixtureConfig {
   readonly demoCheckOut?: string;
   readonly clock?: () => Date;
   /** Local PSP fixture port, also used to prove pending/failed restart paths. */
-  readonly verifyPayment?: (reference: string, amountKobo: number) => import("../../../domains/shortlet/src/card-payment.js").PSPVerifyResult;
+  readonly verifyPayment?: (
+    reference: string,
+    amountKobo: number,
+  ) => import("../../../domains/shortlet/src/card-payment.js").PSPVerifyResult;
   readonly paystackClient?: PaystackClient;
   /**
    * The production transfer provider (Paystack Pay with Transfer, P2). Pass it only once the ADR 0047 certification
@@ -142,13 +156,10 @@ const AUTHORITY_PERMISSIONS = [
  * Durable so a restarted application instance can re-serve the confirmed
  * Reservation summary from the same SQLite file.
  */
-class LocalBookingContractRepository implements ContractRepository {
-  readonly #database: import("node:sqlite").DatabaseSync;
-  #closed = false;
+type LocalBookingSqlRow = Record<string, unknown>;
 
-  constructor(database: import("node:sqlite").DatabaseSync) {
-    this.#database = database;
-    this.#database.exec(`
+/** Table DDL, applied by the schema migrations (apps/cloudflare/src/schema.ts) and by this store's constructor. */
+export const LOCAL_BOOKING_SCHEMA = `
       CREATE TABLE IF NOT EXISTS local_booking_contracts (
         contract_id TEXT PRIMARY KEY,
         contract_json TEXT NOT NULL
@@ -157,41 +168,73 @@ class LocalBookingContractRepository implements ContractRepository {
         reservation_id TEXT PRIMARY KEY,
         reservation_json TEXT NOT NULL
       );
-    `);
+    `;
+
+class LocalBookingContractRepository implements ContractRepository {
+  readonly #database: SqlDatabase;
+  #closed = false;
+
+  constructor(database: SqlDatabase) {
+    this.#database = database;
+    this.#database.exec(LOCAL_BOOKING_SCHEMA);
   }
 
   #rowContract(contractId: string): BookingContract | null {
     // A booking the back office confirmed (a verified manual transfer, B6) is written to the shared booking tables
     // by that process; read it from there when this process never recorded it.
-    const row = (this.#database.prepare("SELECT contract_json FROM local_booking_contracts WHERE contract_id = $id").get({ $id: contractId })
-      ?? this.#sharedRow("SELECT contract_json FROM booking_contracts WHERE contract_id = $id", contractId)) as { contract_json?: string } | undefined;
+    const row = (this.#database
+      .prepare(
+        "SELECT contract_json FROM local_booking_contracts WHERE contract_id = $id",
+      )
+      .get({ $id: contractId }) ??
+      this.#sharedRow(
+        "SELECT contract_json FROM booking_contracts WHERE contract_id = $id",
+        contractId,
+      )) as { contract_json?: string } | undefined;
     if (!row || typeof row.contract_json !== "string") return null;
     try {
       const parsed: unknown = JSON.parse(row.contract_json);
-      return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as BookingContract : null;
+      return parsed !== null &&
+        typeof parsed === "object" &&
+        !Array.isArray(parsed)
+        ? (parsed as BookingContract)
+        : null;
     } catch {
       return null;
     }
   }
 
-  recordConfirmedOutcome(reservation: ReservationLike, contract: BookingContract): void {
-    this.#database.exec("BEGIN IMMEDIATE");
-    try {
-      this.#database.prepare("INSERT INTO local_booking_contracts (contract_id, contract_json) VALUES ($id, $json) ON CONFLICT(contract_id) DO UPDATE SET contract_json = excluded.contract_json").run({ $id: contract.contractId, $json: JSON.stringify(contract) });
-      this.#database.prepare("INSERT INTO local_booking_reservations (reservation_id, reservation_json) VALUES ($id, $json) ON CONFLICT(reservation_id) DO UPDATE SET reservation_json = excluded.reservation_json").run({ $id: reservation.reservationId, $json: JSON.stringify(reservation) });
-      this.#database.exec("COMMIT");
-    } catch (error) {
-      try { this.#database.exec("ROLLBACK"); } catch { /* preserve the original failure */ }
-      throw error;
-    }
+  recordConfirmedOutcome(
+    reservation: ReservationLike,
+    contract: BookingContract,
+  ): void {
+    this.#database.transaction(() => {
+      this.#database
+        .prepare(
+          "INSERT INTO local_booking_contracts (contract_id, contract_json) VALUES ($id, $json) ON CONFLICT(contract_id) DO UPDATE SET contract_json = excluded.contract_json",
+        )
+        .run({ $id: contract.contractId, $json: JSON.stringify(contract) });
+      this.#database
+        .prepare(
+          "INSERT INTO local_booking_reservations (reservation_id, reservation_json) VALUES ($id, $json) ON CONFLICT(reservation_id) DO UPDATE SET reservation_json = excluded.reservation_json",
+        )
+        .run({
+          $id: reservation.reservationId,
+          $json: JSON.stringify(reservation),
+        });
+    });
   }
 
   findContractById(contractId: string): BookingContract | null {
     return this.#rowContract(contractId);
   }
 
-  #sharedRow(sql: string, id: string): unknown {
-    try { return this.#database.prepare(sql).get({ $id: id }); } catch { return undefined; }
+  #sharedRow(sql: string, id: string): LocalBookingSqlRow | undefined {
+    try {
+      return this.#database.prepare(sql).get({ $id: id });
+    } catch {
+      return undefined;
+    }
   }
 
   findArrivalDataByContractId(_contractId: string): null {
@@ -201,12 +244,23 @@ class LocalBookingContractRepository implements ContractRepository {
   }
 
   findReservationById(reservationId: string): ReservationLike | null {
-    const row = (this.#database.prepare("SELECT reservation_json FROM local_booking_reservations WHERE reservation_id = $id").get({ $id: reservationId })
-      ?? this.#sharedRow("SELECT reservation_json FROM booking_reservations WHERE reservation_id = $id", reservationId)) as { reservation_json?: string } | undefined;
+    const row = (this.#database
+      .prepare(
+        "SELECT reservation_json FROM local_booking_reservations WHERE reservation_id = $id",
+      )
+      .get({ $id: reservationId }) ??
+      this.#sharedRow(
+        "SELECT reservation_json FROM booking_reservations WHERE reservation_id = $id",
+        reservationId,
+      )) as { reservation_json?: string } | undefined;
     if (!row || typeof row.reservation_json !== "string") return null;
     try {
       const parsed: unknown = JSON.parse(row.reservation_json);
-      return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as ReservationLike : null;
+      return parsed !== null &&
+        typeof parsed === "object" &&
+        !Array.isArray(parsed)
+        ? (parsed as ReservationLike)
+        : null;
     } catch {
       return null;
     }
@@ -217,14 +271,33 @@ class LocalBookingContractRepository implements ContractRepository {
   }
 }
 
+/**
+ * What a composition hands the environment (ADR 0004: one handle, one inventory). The environment performs no
+ * filesystem access of its own; `LocalGuestEnvironment.openNode` is the Node composition that builds these from paths.
+ */
+export interface LocalGuestEnvironmentDependencies {
+  /** The one authoritative handle. Borrowed: the environment never closes it. */
+  readonly database: SqlDatabase;
+  readonly unitRepository: UnitRepositoryContract;
+  /** Seed the deterministic demo units into `unitRepository`. Demo and test compositions only. */
+  readonly seedDemoUnits?: boolean;
+  /** Where manual-transfer receipt bytes live (ADR 0090). Defaults to the shared SQLite file; Cloudflare passes R2. */
+  readonly receiptBlobs?: ReceiptBlobStore;
+  /**
+   * ADR 0075/0079: an observational sink for already-redacted telemetry. The Cloudflare composition forwards these
+   * to Workers Logs; Node passes none. The durable table stays authoritative.
+   */
+  readonly telemetrySink?: (event: TelemetryEvent) => void;
+}
+
 export class LocalGuestEnvironment {
   readonly config: LocalGuestFixtureConfig;
   readonly clock: () => Date;
-  readonly unitRepository: UnitRepository | JsonUnitRepository;
+  readonly unitRepository: UnitRepositoryContract;
   readonly calendar: AvailabilityCalendar;
   readonly grantStore: SqliteOperatorRepresentativeGrantStore;
-  readonly audit: InMemoryAuditLog;
-  readonly telemetry: InMemoryTelemetry;
+  readonly audit: AuditLog;
+  readonly telemetry: Telemetry;
   readonly discoveryQuery: UnitDiscoveryQuery;
   readonly bookingRequestApp: BookingRequestApplication;
   readonly conditionalOfferApp: ConditionalOfferApplication;
@@ -242,45 +315,97 @@ export class LocalGuestEnvironment {
   readonly livePaymentAttempts: SqliteLivePaymentAttemptRegistry;
   readonly guestContactApp: GuestContactApplication;
   #searchCounter = 0;
-  readonly #database: DatabaseSync;
+  readonly #database: SqlDatabase;
+  #ownsDatabase = false;
+  #closed = false;
 
-  constructor(config: Partial<LocalGuestFixtureConfig> = {}) {
-    this.config = { ...DEFAULT_LOCAL_GUEST_CONFIG, ...config };
-    if (this.config.production && !this.config.paystackClient) {
-      throw new Error("Production Guest composition requires Paystack configuration");
-    }
-    this.clock = this.config.clock ?? (() => new Date("2026-09-03T10:00:00Z"));
-
-    mkdirSync(dirname(this.config.databasePath), { recursive: true });
-
+  /**
+   * Today's path-based composition: creates the directory, opens the SQLite file and picks the JSON or in-memory
+   * inventory. The returned environment owns its handle and closes it in `close()`.
+   */
+  static openNode(
+    config: Partial<LocalGuestFixtureConfig> = {},
+  ): LocalGuestEnvironment {
+    const merged = { ...DEFAULT_LOCAL_GUEST_CONFIG, ...config };
+    mkdirSync(dirname(merged.databasePath), { recursive: true });
     // One durable SQLite file backs every authoritative repository in this
     // composition. A restarted application instance opens a fresh connection
     // over the same file; no application state is retained in memory across
     // the restart boundary. ADR-0039/0041/0070/0079.
-    this.#database = new DatabaseSync(this.config.databasePath);
-    this.#database.exec("PRAGMA busy_timeout = 5000");
-    this.#database.exec("PRAGMA foreign_keys = ON");
-    this.interactionStore = new SqliteGuestInteractionStore(this.config.databasePath, this.#database);
-    this.guestContactApp = new GuestContactApplication(new SqliteGuestContactRepository(this.#database));
-    if (this.config.initialGuestPhoneNumber && !this.guestContactApp.get(this.guestPrincipal())) this.guestContactApp.submitPhone({ phoneNumber: this.config.initialGuestPhoneNumber }, this.guestPrincipal());
-    if (this.config.initialGuestContactEmail && !this.guestContactApp.get(this.guestPrincipal())?.contactEmail) this.guestContactApp.submitEmail({ contactEmail: this.config.initialGuestContactEmail }, this.guestPrincipal());
-    this.livePaymentAttempts = new SqliteLivePaymentAttemptRegistry(this.interactionStore);
+    const database = openNodeSqliteDatabase(merged.databasePath);
+    try {
+      const environment = new LocalGuestEnvironment(config, {
+        database,
+        unitRepository: merged.inventoryPath
+          ? new JsonUnitRepository(merged.inventoryPath)
+          : new UnitRepository(),
+        seedDemoUnits: !merged.inventoryPath,
+      });
+      environment.#ownsDatabase = true;
+      return environment;
+    } catch (error) {
+      database.close();
+      throw error;
+    }
+  }
 
-    this.grantStore = new SqliteOperatorRepresentativeGrantStore(this.config.databasePath, { clock: this.clock });
-    this.unitRepository = this.config.inventoryPath ? new JsonUnitRepository(this.config.inventoryPath) : new UnitRepository();
+  constructor(
+    config: Partial<LocalGuestFixtureConfig>,
+    dependencies: LocalGuestEnvironmentDependencies,
+  ) {
+    this.config = { ...DEFAULT_LOCAL_GUEST_CONFIG, ...config };
+    if (this.config.production && !this.config.paystackClient) {
+      throw new Error(
+        "Production Guest composition requires Paystack configuration",
+      );
+    }
+    this.clock = this.config.clock ?? (() => new Date("2026-09-03T10:00:00Z"));
+
+    this.#database = dependencies.database;
+    const sqlDatabase = this.#database;
+    this.interactionStore = new SqliteGuestInteractionStore(sqlDatabase);
+    this.guestContactApp = new GuestContactApplication(
+      new SqliteGuestContactRepository(sqlDatabase),
+    );
+    if (
+      this.config.initialGuestPhoneNumber &&
+      !this.guestContactApp.get(this.guestPrincipal())
+    )
+      this.guestContactApp.submitPhone(
+        { phoneNumber: this.config.initialGuestPhoneNumber },
+        this.guestPrincipal(),
+      );
+    if (
+      this.config.initialGuestContactEmail &&
+      !this.guestContactApp.get(this.guestPrincipal())?.contactEmail
+    )
+      this.guestContactApp.submitEmail(
+        { contactEmail: this.config.initialGuestContactEmail },
+        this.guestPrincipal(),
+      );
+    this.livePaymentAttempts = new SqliteLivePaymentAttemptRegistry(
+      this.interactionStore,
+    );
+
+    this.grantStore = new SqliteOperatorRepresentativeGrantStore(
+      sqlDatabase,
+      { clock: this.clock },
+    );
+    this.unitRepository = dependencies.unitRepository;
     this.calendar = new AvailabilityCalendar({
       repository: this.unitRepository,
-      store: new SqliteAvailabilityStore(this.config.databasePath, this.#database),
+      store: new SqliteAvailabilityStore(sqlDatabase),
     });
-    this.audit = new InMemoryAuditLog();
-    this.telemetry = new InMemoryTelemetry();
+    this.audit = new SqliteAuditLog(sqlDatabase);
+    this.telemetry = new SqliteTelemetry(sqlDatabase, dependencies.telemetrySink === undefined ? {} : { sink: dependencies.telemetrySink });
 
     this.discoveryQuery = new UnitDiscoveryQuery({
       repository: this.unitRepository,
       audit: this.audit,
       telemetry: this.telemetry,
       clock: this.clock,
-      idFactory: () => `guest-demo-${String(++this.#searchCounter).padStart(3, "0")}`,
+      idFactory: () =>
+        `guest-demo-${String(++this.#searchCounter).padStart(3, "0")}`,
     });
 
     this.bookingRequestApp = createBookingRequestApplication({
@@ -305,9 +430,11 @@ export class LocalGuestEnvironment {
       operatorAuthority: this.grantStore,
     });
 
-    this.contractRepository = new LocalBookingContractRepository(this.#database);
-    const journeyRepository = new SqliteBookingPaymentJourneyRepository(this.#database, this.config.databasePath);
-    const bookingState = new SqliteBookingStateRepository(this.#database, this.config.databasePath);
+    this.contractRepository = new LocalBookingContractRepository(
+      this.#database,
+    );
+    const journeyRepository = new SqliteBookingPaymentJourneyRepository(sqlDatabase);
+    const bookingState = new SqliteBookingStateRepository(sqlDatabase);
 
     this.cardPaymentApp = createCardPaymentApplication({
       conditionalOfferApplication: this.conditionalOfferApp,
@@ -315,103 +442,151 @@ export class LocalGuestEnvironment {
       calendar: this.calendar,
       audit: this.audit,
       guestContacts: this.guestContactApp.repository,
-      ...(this.config.deterministicPsp === false ? {} : {
-        // Local deterministic PSP stub: no live PSP, no credentials. The amount
-        // is resolved from the authoritative checkout session, never the client.
-        pspClient: {
-          verifyTransaction: (pspReference: string) => {
-            const session = this.cardPaymentApp.manager.getCheckoutSessionByReference(pspReference);
-            if (this.config.verifyPayment) return this.config.verifyPayment(pspReference, session?.amountKobo ?? 0);
-            return {
-              verified: true,
-              status: "success" as const,
-              amountKobo: session?.amountKobo ?? 0,
-              currency: "NGN",
-              pspReference,
-              payerId: this.config.guestId,
-            };
-          },
-        },
-      }),
+      ...(this.config.deterministicPsp === false
+        ? {}
+        : {
+            // Local deterministic PSP stub: no live PSP, no credentials. The amount
+            // is resolved from the authoritative checkout session, never the client.
+            pspClient: {
+              verifyTransaction: (pspReference: string) => {
+                const session =
+                  this.cardPaymentApp.manager.getCheckoutSessionByReference(
+                    pspReference,
+                  );
+                if (this.config.verifyPayment)
+                  return this.config.verifyPayment(
+                    pspReference,
+                    session?.amountKobo ?? 0,
+                  );
+                return {
+                  verified: true,
+                  status: "success" as const,
+                  amountKobo: session?.amountKobo ?? 0,
+                  currency: "NGN",
+                  pspReference,
+                  payerId: this.config.guestId,
+                };
+              },
+            },
+          }),
       journeyRepository,
       liveAttempts: this.livePaymentAttempts,
       store: this.interactionStore,
-      securityDepositAccounting: new InMemorySecurityDepositAccountingRepository(),
-      ...(this.config.deterministicPsp === false ? {} : { securityDepositCapability: {
-        getCapability: ({ paymentMethod }) => ({
-          capabilityVersion: "local-demo-security-deposit-v1",
-          enabled: true,
-          pspProviderId: "local-demo-psp",
-          pspApproved: true,
-          counselApproved: true,
-          collectionModel: "separate_actual_charge",
-          paymentMethod,
-        }),
-      } }),
+      securityDepositAccounting:
+        new InMemorySecurityDepositAccountingRepository(),
+      ...(this.config.deterministicPsp === false
+        ? {}
+        : {
+            securityDepositCapability: {
+              getCapability: ({ paymentMethod }) => ({
+                capabilityVersion: "local-demo-security-deposit-v1",
+                enabled: true,
+                pspProviderId: "local-demo-psp",
+                pspApproved: true,
+                counselApproved: true,
+                collectionModel: "separate_actual_charge",
+                paymentMethod,
+              }),
+            },
+          }),
       bookingState,
       clock: this.clock,
-      onConfirmedOutcome: (outcome) => this.contractRepository.recordConfirmedOutcome(outcome.reservation, outcome.bookingContract),
-      ...(this.config.paystackClient === undefined ? {} : { paystackClient: this.config.paystackClient }),
+      onConfirmedOutcome: (outcome) =>
+        this.contractRepository.recordConfirmedOutcome(
+          outcome.reservation,
+          outcome.bookingContract,
+        ),
+      ...(this.config.paystackClient === undefined
+        ? {}
+        : { paystackClient: this.config.paystackClient }),
     });
 
-    const transferProvider = this.config.deterministicPsp === false
-      ? this.config.bankTransferProvider ?? null
-      : new LocalBankTransferProvider({
-        lookup: (reference) => {
-          const session = this.bankTransferApp?.manager.getSessionByReference(reference);
-          if (!session) return undefined;
-          const offer = this.conditionalOfferApp.manager.getOffer(session.offerId);
-          return { amountKobo: session.amountKobo, payerId: offer.parties.distinctPayer?.id ?? offer.parties.primaryGuest.id };
-        },
-      });
-    this.bankTransferApp = transferProvider === null ? null : createBankTransferPaymentApplication({
-      conditionalOfferApplication: this.conditionalOfferApp,
-      calendar: this.calendar,
-      audit: this.audit,
-      providerClient: transferProvider,
-      sessionStore: new SqliteBankTransferSessionStore(this.#database),
-      store: this.interactionStore,
-      onConfirmedOutcome: (outcome) => this.contractRepository.recordConfirmedOutcome(outcome.reservation, outcome.bookingContract),
-      guestContacts: this.guestContactApp.repository,
-      liveAttempts: this.livePaymentAttempts,
-      journeyRepository,
-      bookingState,
-      securityDepositAccounting: new InMemorySecurityDepositAccountingRepository(),
-      securityDepositCapability: {
-        getCapability: ({ paymentMethod }) => ({
-          capabilityVersion: "local-demo-security-deposit-v1",
-          enabled: true,
-          pspProviderId: "local-demo-psp",
-          pspApproved: true,
-          counselApproved: true,
-          collectionModel: "separate_actual_charge",
-          paymentMethod,
-        }),
-      },
-      clock: this.clock,
-    });
+    const transferProvider =
+      this.config.deterministicPsp === false
+        ? (this.config.bankTransferProvider ?? null)
+        : new LocalBankTransferProvider({
+            lookup: (reference) => {
+              const session =
+                this.bankTransferApp?.manager.getSessionByReference(reference);
+              if (!session) return undefined;
+              const offer = this.conditionalOfferApp.manager.getOffer(
+                session.offerId,
+              );
+              return {
+                amountKobo: session.amountKobo,
+                payerId:
+                  offer.parties.distinctPayer?.id ??
+                  offer.parties.primaryGuest.id,
+              };
+            },
+          });
+    this.bankTransferApp =
+      transferProvider === null
+        ? null
+        : createBankTransferPaymentApplication({
+            conditionalOfferApplication: this.conditionalOfferApp,
+            calendar: this.calendar,
+            audit: this.audit,
+            providerClient: transferProvider,
+            sessionStore: new SqliteBankTransferSessionStore(sqlDatabase),
+            store: this.interactionStore,
+            onConfirmedOutcome: (outcome) =>
+              this.contractRepository.recordConfirmedOutcome(
+                outcome.reservation,
+                outcome.bookingContract,
+              ),
+            guestContacts: this.guestContactApp.repository,
+            liveAttempts: this.livePaymentAttempts,
+            journeyRepository,
+            bookingState,
+            securityDepositAccounting:
+              new InMemorySecurityDepositAccountingRepository(),
+            securityDepositCapability: {
+              getCapability: ({ paymentMethod }) => ({
+                capabilityVersion: "local-demo-security-deposit-v1",
+                enabled: true,
+                pspProviderId: "local-demo-psp",
+                pspApproved: true,
+                counselApproved: true,
+                collectionModel: "separate_actual_charge",
+                paymentMethod,
+              }),
+            },
+            clock: this.clock,
+          });
 
-    this.manualTransfers = this.config.manualTransferAccount ? new ManualTransferManager({
-      offerManager: this.conditionalOfferApp.manager,
-      store: new SqliteManualTransferStore(this.#database),
-      account: this.config.manualTransferAccount,
-      liveAttempts: this.livePaymentAttempts,
-      calendar: this.calendar,
-      audit: this.audit,
-      receiptMaxBytes: this.config.receiptMaxBytes ?? DEFAULT_RECEIPT_MAX_BYTES,
-    }) : null;
+    this.manualTransfers = this.config.manualTransferAccount
+      ? new ManualTransferManager({
+          offerManager: this.conditionalOfferApp.manager,
+          store: new SqliteManualTransferStore(sqlDatabase, dependencies.receiptBlobs),
+          account: this.config.manualTransferAccount,
+          liveAttempts: this.livePaymentAttempts,
+          calendar: this.calendar,
+          audit: this.audit,
+          receiptMaxBytes:
+            this.config.receiptMaxBytes ?? DEFAULT_RECEIPT_MAX_BYTES,
+        })
+      : null;
 
     this.contractApp = createBookingContractApplication({
       repository: this.contractRepository,
       clock: this.clock,
     });
 
-    if (!this.config.inventoryPath) this.#seedUnits();
-    if (!this.config.production && this.config.seedRepresentativeGrant !== false) this.#seedRepresentativeGrant();
+    if (dependencies.seedDemoUnits === true) this.#seedUnits();
+    if (
+      !this.config.production &&
+      this.config.seedRepresentativeGrant !== false
+    )
+      this.#seedRepresentativeGrant();
   }
 
   guestPrincipal(): CommandPrincipal {
-    return { id: this.config.guestId, role: "guest", tenantId: this.config.tenantId };
+    return {
+      id: this.config.guestId,
+      role: "guest",
+      tenantId: this.config.tenantId,
+    };
   }
 
   /**
@@ -419,11 +594,19 @@ export class LocalGuestEnvironment {
    * representative person actor, never by impersonating the Operator ID.
    */
   representativePrincipal(): CommandPrincipal {
-    return { id: this.config.representativePersonId, role: "operator", tenantId: this.config.tenantId };
+    return {
+      id: this.config.representativePersonId,
+      role: "operator",
+      tenantId: this.config.tenantId,
+    };
   }
 
   systemPrincipal(): CommandPrincipal {
-    return { id: "platform-system-001", role: "system", tenantId: this.config.tenantId };
+    return {
+      id: "platform-system-001",
+      role: "system",
+      tenantId: this.config.tenantId,
+    };
   }
 
   demoOccupants(partySize: number): { name: string }[] {
@@ -433,7 +616,10 @@ export class LocalGuestEnvironment {
     }));
   }
 
-  selfBookingAttestation(): { readonly accepted: true; readonly version: string } {
+  selfBookingAttestation(): {
+    readonly accepted: true;
+    readonly version: string;
+  } {
     return { accepted: true, version: SELF_BOOKING_ATTESTATION_VERSION };
   }
 
@@ -444,10 +630,17 @@ export class LocalGuestEnvironment {
    */
   simulateOperatorAcceptance(requestId: string): { readonly offerId: string } {
     const representative = this.representativePrincipal();
-    const artifact = this.bookingRequestApp.getArtifact(requestId, representative);
-    const confirmAction = artifact.actions.find((action) => action.type === "confirm");
+    const artifact = this.bookingRequestApp.getArtifact(
+      requestId,
+      representative,
+    );
+    const confirmAction = artifact.actions.find(
+      (action) => action.type === "confirm",
+    );
     if (!confirmAction) {
-      throw new Error(`Cannot simulate operator acceptance for ${requestId}: no confirm action available`);
+      throw new Error(
+        `Cannot simulate operator acceptance for ${requestId}: no confirm action available`,
+      );
     }
     this.bookingRequestApp.confirm({
       artifactId: confirmAction.artifactId,
@@ -462,12 +655,28 @@ export class LocalGuestEnvironment {
   }
 
   /** Local-only deterministic fixture for decline and timeout browser tests. */
-  simulateOperatorDecline(requestId: string, reason = "Operator declined availability"): void {
+  simulateOperatorDecline(
+    requestId: string,
+    reason = "Operator declined availability",
+  ): void {
     const representative = this.representativePrincipal();
-    const artifact = this.bookingRequestApp.getArtifact(requestId, representative);
-    const declineAction = artifact.actions.find((action) => action.type === "decline");
-    if (!declineAction) throw new Error(`Cannot simulate operator decline for ${requestId}: no decline action available`);
-    this.bookingRequestApp.decline({ ...declineAction, principal: representative, action: "decline", reason });
+    const artifact = this.bookingRequestApp.getArtifact(
+      requestId,
+      representative,
+    );
+    const declineAction = artifact.actions.find(
+      (action) => action.type === "decline",
+    );
+    if (!declineAction)
+      throw new Error(
+        `Cannot simulate operator decline for ${requestId}: no decline action available`,
+      );
+    this.bookingRequestApp.decline({
+      ...declineAction,
+      principal: representative,
+      action: "decline",
+      reason,
+    });
   }
 
   #seedUnits(): void {
@@ -496,8 +705,16 @@ export class LocalGuestEnvironment {
       capacity: 4,
       bedrooms: 2,
       bathrooms: 2,
-      description: "A bright, quiet apartment with a spacious living room and reliable power.",
-      amenities: ["wifi", "24_7_power_generator", "parking", "air_conditioning", "security_guard", "swimming_pool"],
+      description:
+        "A bright, quiet apartment with a spacious living room and reliable power.",
+      amenities: [
+        "wifi",
+        "24_7_power_generator",
+        "parking",
+        "air_conditioning",
+        "security_guard",
+        "swimming_pool",
+      ],
       published: true,
       // ADR 0089: owner agreed ₦100,000/night + ₦8,333.34 charges at a 20% margin; the Guest sees ₦120,000 + ₦10,000.
       price: unitPriceFromOwnerTerms({
@@ -526,7 +743,11 @@ export class LocalGuestEnvironment {
         permissions: [...AUTHORITY_PERMISSIONS],
       },
       regulatory: {
-        licensing: { status: "verified", verifiedAt: "2026-01-15T00:00:00Z", expiresAt: "2027-01-15T00:00:00Z" },
+        licensing: {
+          status: "verified",
+          verifiedAt: "2026-01-15T00:00:00Z",
+          expiresAt: "2027-01-15T00:00:00Z",
+        },
         insurance: {
           status: "verified",
           verifiedAt: "2026-01-15T00:00:00Z",
@@ -537,7 +758,11 @@ export class LocalGuestEnvironment {
         },
       },
       blockedDates: [],
-      checkInWindow: { earliestAccessTime: "14:00", latestPermittedArrival: "22:00", timezone: "Africa/Lagos" }, // ADR 0031 launch boundary
+      checkInWindow: {
+        earliestAccessTime: "14:00",
+        latestPermittedArrival: "22:00",
+        timezone: "Africa/Lagos",
+      }, // ADR 0031 launch boundary
     });
 
     this.unitRepository.save({
@@ -549,8 +774,14 @@ export class LocalGuestEnvironment {
       capacity: 2,
       bedrooms: 1,
       bathrooms: 1,
-      description: "A serene entire-place suite with natural light, reliable power, and a calm residential setting.",
-      amenities: ["wifi", "24_7_power_generator", "air_conditioning", "security_guard"],
+      description:
+        "A serene entire-place suite with natural light, reliable power, and a calm residential setting.",
+      amenities: [
+        "wifi",
+        "24_7_power_generator",
+        "air_conditioning",
+        "security_guard",
+      ],
       published: true,
       // ADR 0089: owner agreed amounts at a 20% margin; the Guest sees ₦65,000 + ₦5,000.
       price: unitPriceFromOwnerTerms({
@@ -579,7 +810,11 @@ export class LocalGuestEnvironment {
         permissions: [...AUTHORITY_PERMISSIONS],
       },
       regulatory: {
-        licensing: { status: "verified", verifiedAt: "2026-02-01T00:00:00Z", expiresAt: "2027-02-01T00:00:00Z" },
+        licensing: {
+          status: "verified",
+          verifiedAt: "2026-02-01T00:00:00Z",
+          expiresAt: "2027-02-01T00:00:00Z",
+        },
         insurance: {
           status: "verified",
           verifiedAt: "2026-02-01T00:00:00Z",
@@ -590,7 +825,11 @@ export class LocalGuestEnvironment {
         },
       },
       blockedDates: [],
-      checkInWindow: { earliestAccessTime: "14:00", latestPermittedArrival: "22:00", timezone: "Africa/Lagos" }, // ADR 0031 launch boundary
+      checkInWindow: {
+        earliestAccessTime: "14:00",
+        latestPermittedArrival: "22:00",
+        timezone: "Africa/Lagos",
+      }, // ADR 0031 launch boundary
     });
   }
 
@@ -604,7 +843,11 @@ export class LocalGuestEnvironment {
 
     const grantCommand = createPlatformCommandEnvelope({
       commandName: "operator_representative.grant",
-      principal: { id: this.config.adminId, role: "admin", tenantId: this.config.tenantId },
+      principal: {
+        id: this.config.adminId,
+        role: "admin",
+        tenantId: this.config.tenantId,
+      },
       payload: {
         actorId: this.config.representativePersonId,
         operatorId: this.config.operatorId,
@@ -617,9 +860,16 @@ export class LocalGuestEnvironment {
     this.grantStore.createGrant(grantCommand);
   }
 
+  /** The one handle every repository in this composition shares (ADR 0004). */
+  get database(): SqlDatabase {
+    return this.#database;
+  }
+
   close(): void {
     this.grantStore.close();
-    if (!this.#database.isOpen) return;
+    if (this.#closed) return;
+    this.#closed = true;
+    if (!this.#ownsDatabase) return;
     try {
       this.#database.close();
     } catch {
@@ -628,7 +878,9 @@ export class LocalGuestEnvironment {
   }
 }
 
-export function resetLocalGuestFixture(databasePath = DEFAULT_LOCAL_GUEST_CONFIG.databasePath): void {
+export function resetLocalGuestFixture(
+  databasePath = DEFAULT_LOCAL_GUEST_CONFIG.databasePath,
+): void {
   if (!existsSync(databasePath)) return;
   try {
     unlinkSync(databasePath);

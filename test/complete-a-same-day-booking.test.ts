@@ -84,6 +84,35 @@ describe("Issue 15: Complete a same-day booking without shortcuts", () => {
     );
   });
 
+  it("AC 2b: The Latest Disclosure Cutoff is fixed to Africa/Lagos time, not the host timezone or clock date", () => {
+    const manager = new SameDayBookingManager({});
+
+    // 11:30 UTC is 12:30 WAT on 22 Jul 2026: past the cutoff in every host timezone.
+    const utcClock = () => new Date("2026-07-22T11:30:00Z");
+    const envelope = createCommandEnvelope("same_day_booking.create_request", {
+      unitId: sampleUnit.id,
+      checkIn: "2026-07-22",
+      checkOut: "2026-07-25",
+      primaryGuestId: "guest_15"
+    });
+
+    assert.throws(
+      () => manager.processSameDayBookingRequest(envelope, { unit: sampleUnit, clock: utcClock }),
+      (err: unknown) => err instanceof Error && err.message.includes("Latest Disclosure Cutoff")
+    );
+  });
+
+  it("AC 2c: An unparseable requested check-in time fails closed instead of accepting the disclosure", () => {
+    const manager = new SameDayBookingManager({});
+    const result = manager.evaluateSameDayBookingEligibility({
+      unit: sampleUnit,
+      requestedCheckInTime: "not-a-time",
+      clock: () => new Date("2026-07-22T10:00:00+01:00")
+    });
+
+    assert.equal(result.eligible, false);
+  });
+
   it("AC 3: Access instructions release only after the same-day Unit is Ready for Arrival and the booking is confirmed", () => {
     const manager = new SameDayBookingManager({});
 

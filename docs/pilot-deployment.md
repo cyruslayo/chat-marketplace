@@ -6,8 +6,9 @@ port and trusts only the configured public origin for browser-origin checks.
 
 ## Runtime and start
 
-- Node.js 22.13.0 or later (`node:sqlite` without a flag); `.nvmrc` pins the
-  tested version.
+- Node.js 22.18.0 or later (the repository minimum required by the typed
+  Cloudflare configuration; this also includes `node:sqlite` without a flag).
+  `.nvmrc` pins the tested version.
 - Install runtime dependencies with `npm ci --omit=dev` (with
   `NODE_ENV=production`, plain `npm ci` does the same).
 - Build the Guest browser bundle with `npm run build`, on every deploy.
@@ -167,3 +168,47 @@ recovery path.
 
 Health is `GET /healthz`; it returns only `{ "ok": true }` when the application
 has initialized and the SQLite file can be opened.
+
+## Remote operations (Cloudflare)
+
+When the pilot runs on Cloudflare the durable data lives inside the Durable
+Object, so `pilot:operator:*`, `pilot:inventory:import`, `operator:provision`
+and `operator:revoke` change from local file/SQLite access to authenticated
+HTTPS calls. Set `SHORTLET_OPS_URL` to the deployment's origin and the tools
+call the `/_ops` routes instead:
+
+- `SHORTLET_OPS_URL` — the pilot origin (https, or http only for `localhost`).
+- `SHORTLET_OPS_SECRET` — the `X-Shortlet-Ops-Secret` shared-secret value.
+- `CF_ACCESS_CLIENT_ID` / `CF_ACCESS_CLIENT_SECRET` — the Cloudflare Access
+  service-token credentials.
+
+With `SHORTLET_OPS_URL` unset the tools keep their local behaviour exactly.
+A provisioned operator token is printed once to stdout and is never written to
+a file or a log. `operator:revoke` revokes all of an actor's access through the
+ops route; revoking a single session stays a back-office action.
+
+The `pilot:local:*` commands remain **Node-only**: they run the local fixture
+pilot against a SQLite file and are not part of the Cloudflare deployment.
+
+## Building the Cloudflare Worker from a clean checkout
+
+The Worker is built and dry-run with the pinned `cf` CLI through npm scripts in the repository root. A clean checkout needs
+only the root install:
+
+```bash
+npm ci
+npm run worker:build
+npm run worker:deploy:dry-run:staging
+npm run worker:deploy:dry-run:production
+```
+
+Why the extra install exists (issue 16 C): `cf` finds the Cloudflare Vite plugin only in the project's own `node_modules`,
+which is `apps/cloudflare`, not the repository root. The Cloudflare app therefore keeps its own lockfile
+(`apps/cloudflare/package-lock.json`, pinned to the same plugin version as its manifest). Every worker script runs
+`scripts/ensure-worker-deps.mjs` first, which runs `npm ci --prefix apps/cloudflare` when those packages are missing. Nothing
+is linked or copied from a machine-specific path. The `worker:deploy:dry-run:*` scripts build and validate the configuration
+without uploading anything. Do not replace them with a real `cf deploy`: a real deploy is a separate, human-run step in the
+staging rehearsal and cutover runbooks.
+
+The consistency of the lockfile and the scripts is checked by `test/worker-build-setup.test.ts`, which runs in the non-browser
+test phase.

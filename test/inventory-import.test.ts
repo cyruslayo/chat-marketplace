@@ -4,7 +4,6 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
-  AvailabilityCalendar,
   JsonUnitRepository,
   UnitDiscoveryQuery,
   UnitRepository,
@@ -18,6 +17,8 @@ import {
   operatorResolverFromUnitRepository,
 } from "../domains/shortlet/src/inventory-import.js";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
+
+import { createTestAvailabilityCalendar } from "./helpers/availability-calendar.js";
 
 const NOW = new Date("2026-09-21T10:00:00.000Z");
 
@@ -450,7 +451,7 @@ test("AC16 — imported data survives restart", async () => {
     const restarted = new JsonUnitRepository(file);
     assert.equal(restarted.findById("unit-import-001")?.title, "Bright apartment in Ikeja");
     publishUnit(restarted as unknown as UnitRepository, "unit-import-001", { clock: () => NOW });
-    const guest = new LocalGuestEnvironment({ databasePath: join(directory, "guest.sqlite"), inventoryPath: file, initialGuestPhoneNumber: null, initialGuestContactEmail: null });
+    const guest = LocalGuestEnvironment.openNode({ databasePath: join(directory, "guest.sqlite"), inventoryPath: file, initialGuestPhoneNumber: null, initialGuestContactEmail: null });
     try {
       assert.deepEqual(guest.discoveryQuery.search({ location: "Lagos" }).facts.results.map((unit: { id: string }) => unit.id), ["unit-import-001"]);
     } finally {
@@ -562,7 +563,7 @@ test("Issue 13 AC3 — Re-importing a Unit keeps the blocks added in the back-of
   const contents = csv([csvRow().line]);
   run(repository, contents);
   // A block added in the back office writes the discovery projection (AvailabilityCalendar.addOperatorBlock).
-  const calendar = new AvailabilityCalendar({ repository });
+  const calendar = createTestAvailabilityCalendar({ repository });
   calendar.addOperatorBlock({ unitId: "unit-import-001", operatorId: "operator-pilot-001", start: "2026-10-01", end: "2026-10-03", reason: "owner_use", clock: () => NOW });
   const unchanged = run(repository, contents);
   assert.equal(unchanged.unchanged, 1);

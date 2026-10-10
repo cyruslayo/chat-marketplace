@@ -12,7 +12,7 @@ const SEARCH = "/stays/search?area=old-ikoyi&checkIn=2026-09-10&checkOut=2026-09
 
 async function withServer<T>(run: (base: string) => Promise<T>, setup?: (environment: LocalGuestEnvironment) => void): Promise<T> {
   const directory = mkdtempSync(join(tmpdir(), "guest-discovery-"));
-  const environment = new LocalGuestEnvironment({ databasePath: join(directory, "guest.sqlite"), clock: () => new Date("2026-09-03T10:00:00Z") });
+  const environment = LocalGuestEnvironment.openNode({ databasePath: join(directory, "guest.sqlite"), clock: () => new Date("2026-09-03T10:00:00Z") });
   setup?.(environment);
   const server = startLocalGuestServer({ port: 0, environment });
   try { return await run(`http://127.0.0.1:${await server.listen()}`); } finally { await server.close(); rmSync(directory, { recursive: true, force: true }); }
@@ -74,7 +74,7 @@ test("Photo count: a stay card with several photos shows \"1 / N\" over its phot
 
 test("Photo count: the chat's discovery card carries the stay's photo count as a Photos fact only when there are two or more photos", () => {
   const directory = mkdtempSync(join(tmpdir(), "guest-discovery-"));
-  const environment = new LocalGuestEnvironment({ databasePath: join(directory, "guest.sqlite"), clock: () => new Date("2026-09-03T10:00:00Z") });
+  const environment = LocalGuestEnvironment.openNode({ databasePath: join(directory, "guest.sqlite"), clock: () => new Date("2026-09-03T10:00:00Z") });
   const search = { location: "Lagos", checkIn: "2026-09-10", checkOut: "2026-09-13", partySize: 2 };
   const texts = () => discoveryArtifactToA2UI({ artifact: environment.discoveryQuery.search(search), surfaceId: "s" })
     .flatMap((message) => "updateComponents" in message ? message.updateComponents.components : [])

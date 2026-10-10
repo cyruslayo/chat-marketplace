@@ -5,7 +5,6 @@ import {
   createPlatformCommandEnvelope
 } from "../packages/platform-core/src/index.js";
 import {
-  AvailabilityCalendar,
   UnitRepository,
   seedIssue01Units,
   GuestVerificationService,
@@ -14,6 +13,8 @@ import {
   BookingRequestManager
 } from "../domains/shortlet/src/index.js";
 import { setupBookingRequestManager } from "./helpers/booking-request-manager.js";
+
+import { createTestAvailabilityCalendar } from "./helpers/availability-calendar.js";
 
 const setup = setupBookingRequestManager;
 
@@ -108,7 +109,7 @@ test("Disclosure remains fail-closed for cross-principal requests before invento
   const repository = new UnitRepository();
   seedIssue01Units(repository);
   const audit = new InMemoryAuditLog();
-  const calendar = new AvailabilityCalendar({ repository, audit });
+  const calendar = createTestAvailabilityCalendar({ repository, audit });
   const manager = new BookingRequestManager({ repository, audit, calendar });
   const unit = repository.findAll()[0];
   const clock = () => new Date("2026-07-22T10:00:00Z");
@@ -425,6 +426,7 @@ test("Technical delivery, delivery failure, Operator response, expiry, confirmat
   const types3 = entries3.map((e) => e.type);
   assert.ok(types3.includes("booking_request.expired"));
   const expireAudit = entries3.find((e) => e.type === "booking_request.expired");
+  assert.ok(expireAudit);
   assert.equal(expireAudit.commandEnvelopeId, expireEnv.commandId);
 });
 
@@ -549,7 +551,7 @@ test("Booking Request disclosure preserves booking requirements without requirin
   const repository = new UnitRepository();
   seedIssue01Units(repository);
   const audit = new InMemoryAuditLog();
-  const calendar = new AvailabilityCalendar({ repository, audit });
+  const calendar = createTestAvailabilityCalendar({ repository, audit });
   const verificationResults: GuestIdentityVerificationResultSource = {
     getVerificationResult: ({ tenantId, guestId }) => ({
       tenantId,

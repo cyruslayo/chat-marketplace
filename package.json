@@ -3,11 +3,20 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=22.13.0"
+    "node": ">=22.18.0"
   },
   "scripts": {
     "test": "node scripts/run-tests.mjs",
-    "check": "tsc --noEmit",
+    "check": "tsc --noEmit && tsc --noEmit -p apps/cloudflare && tsc --noEmit -p apps/cloudflare/tsconfig.test.json && tsc --noEmit -p apps/cloudflare/tsconfig.tooling.json && node scripts/check-worker-bundle.mjs",
+    "check:worker-bundle": "node scripts/check-worker-bundle.mjs",
+    "test:workers": "node scripts/check-worker-bundle.mjs && vitest run --config apps/cloudflare/vitest.config.ts",
+    "worker:dev": "node scripts/ensure-worker-deps.mjs && cd apps/cloudflare && cf dev",
+    "worker:build": "node scripts/ensure-worker-deps.mjs && cd apps/cloudflare && cf build",
+    "worker:build:staging": "node scripts/ensure-worker-deps.mjs && cd apps/cloudflare && cf build --mode staging",
+    "worker:build:production": "node scripts/ensure-worker-deps.mjs && cd apps/cloudflare && cf build --mode production",
+    "worker:deploy:dry-run:staging": "node scripts/ensure-worker-deps.mjs && cd apps/cloudflare && cf deploy --dry-run --mode staging",
+    "worker:deploy:dry-run:production": "node scripts/ensure-worker-deps.mjs && cd apps/cloudflare && cf deploy --dry-run --mode production",
+    "worker:types": "node scripts/ensure-worker-deps.mjs && cd apps/cloudflare && cf workers types",
     "build": "node apps/local-guest/scripts/build-client.mjs",
     "verify:weaver": "node scripts/verify-weaver-vendor.mjs",
     "owner:local": "tsx apps/local-owner/src/cli-start.ts",
@@ -43,8 +52,14 @@
     "tsx": "^4.23.1"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "2.0.0-beta.sha-52b0dc0e9",
+    "@cloudflare/vitest-plugin": "1.3.6",
+    "@cloudflare/workers-types": "5.20261005.1",
     "@types/node": "^26.1.1",
+    "cf": "1.0.0-beta.12",
     "happy-dom": "20.11.2",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vite": "8.3.2",
+    "vitest": "4.1.11"
   }
 }

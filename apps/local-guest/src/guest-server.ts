@@ -3,10 +3,11 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from "node:http";
+import type {
+  HttpRequestLike,
+  HttpResponseLike,
+} from "../../../packages/platform-core/src/http-like.js";
 import { createHash, timingSafeEqual } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   A2UI_V091_BASIC_CATALOG_ID,
   type A2UIComponent,
@@ -18,6 +19,9 @@ import type {
   CommandPrincipal,
   TransitionTelemetryEvent,
 } from "../../../packages/platform-core/src/index.js";
+import type { AssetLoader } from "../../../packages/platform-core/src/asset-loader.js";
+import { nodeAssetLoader } from "../../../packages/platform-core/src/node-asset-loader.js";
+import { GUEST_HTML_SECURITY_HEADERS } from "../../../packages/platform-core/src/security-headers.js";
 import {
   discoveryArtifactToA2UI,
   createWeaverWebAgentAdapter,
@@ -217,11 +221,6 @@ import {
   ASSISTANT_CONFIRM_ACTION_EVENT,
   ASSISTANT_CANCEL_ACTION_EVENT,
 } from "./assistant/pending-action-a2ui.js";
-
-const SHORTLET_FOUNDATION_CSS = readFileSync(
-  new URL("../../web/src/shortlet-foundations.css", import.meta.url),
-  "utf8",
-);
 
 export interface GuestSurfacePayload {
   readonly surfaceId: string;
@@ -1248,7 +1247,7 @@ export class LocalGuestApp {
     const config = this.#environment.config;
     this.#environment.close();
     resetLocalGuestFixture(config.databasePath);
-    this.#environment = new LocalGuestEnvironment(config);
+    this.#environment = LocalGuestEnvironment.openNode(config);
   }
 
   /**
@@ -5366,7 +5365,7 @@ export function renderGuestShellHtml(): string {
 export const JSON_BODY_LIMIT_BYTES = 64 * 1024;
 export const PROVIDER_BODY_LIMIT_BYTES = 256 * 1024;
 
-async function readJsonBody(req: IncomingMessage): Promise<unknown> {
+async function readJsonBody(req: HttpRequestLike): Promise<unknown> {
   const raw = (await readBoundedBody(req, JSON_BODY_LIMIT_BYTES)).toString(
     "utf8",
   );
@@ -5709,19 +5708,32 @@ export function renderConventionalSearchHtml(
   });
 }
 
-function readRawBody(req: IncomingMessage): Promise<Buffer> {
+function readRawBody(req: HttpRequestLike): Promise<Buffer> {
   return readBoundedBody(req, PROVIDER_BODY_LIMIT_BYTES);
 }
 
-function readFormBody(req: IncomingMessage): Promise<URLSearchParams> {
+/**
+ * Form posts are small (ADR 0080 no-JS forms); chunks are collected as Buffer bytes so the same reader works
+ * without node:http (slice 08a) and the 4 KiB ceiling counts bytes, not decoded characters.
+ */
+function readFormBody(req: HttpRequestLike): Promise<URLSearchParams> {
   return new Promise((resolve, reject) => {
-    let body = "";
-    req.setEncoding("utf8");
-    req.on("data", (chunk) => {
-      body += chunk;
-      if (body.length > 4096) reject(new Error("Form is too large"));
+    const buffers: Buffer[] = [];
+    let size = 0;
+    let refused = false;
+    req.on("data", (chunk: Buffer) => {
+      if (refused) return;
+      size += chunk.length;
+      if (size > 4096) {
+        refused = true;
+        reject(new Error("Form is too large"));
+        return;
+      }
+      buffers.push(Buffer.from(chunk));
     });
-    req.on("end", () => resolve(new URLSearchParams(body)));
+    req.on("end", () => {
+      if (!refused) resolve(new URLSearchParams(Buffer.concat(buffers).toString("utf8")));
+    });
     req.on("error", reject);
   });
 }
@@ -5858,8 +5870,8 @@ const PAGE_ERROR_COPY: Readonly<
 
 /** Page routes answer browser navigations with a styled page and API clients with JSON. */
 function sendPageError(
-  req: IncomingMessage,
-  res: ServerResponse,
+  req: HttpRequestLike,
+  res: HttpResponseLike,
   status: number,
   code: string,
 ): void {
@@ -6062,7 +6074,7 @@ export class BodyTooLargeError extends Error {
   }
 }
 
-function readBoundedBody(req: IncomingMessage, limit: number): Promise<Buffer> {
+function readBoundedBody(req: HttpRequestLike, limit: number): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
@@ -6234,7 +6246,7 @@ export function renderTransferPageHtml(input: {
   );
 }
 
-function sendJson(res: ServerResponse, status: number, body: unknown): void {
+function sendJson(res: HttpResponseLike, status: number, body: unknown): void {
   res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(body));
 }
@@ -6250,7 +6262,7 @@ const PUBLIC_GUEST_PATHS: ReadonlySet<string> = new Set([
 ]);
 const GUEST_SESSION_PATTERN = /^gs-[a-f0-9-]{36}$/;
 
-function readGuestSession(req: IncomingMessage): string | null | undefined {
+function readGuestSession(req: HttpRequestLike): string | null | undefined {
   const header = req.headers.cookie;
   if (typeof header !== "string") return undefined;
   const value = header
@@ -6281,7 +6293,7 @@ export function renderBetaInviteHtml(rejected: boolean): string {
   });
 }
 
-function issueGuestSession(res: ServerResponse, secureCookie: boolean): string {
+function issueGuestSession(res: HttpResponseLike, secureCookie: boolean): string {
   const sessionId = `gs-${crypto.randomUUID()}`;
   res.setHeader(
     "Set-Cookie",
@@ -6291,7 +6303,7 @@ function issueGuestSession(res: ServerResponse, secureCookie: boolean): string {
 }
 
 function browserOriginAccepted(
-  req: IncomingMessage,
+  req: HttpRequestLike,
   publicOrigin: string | undefined,
 ): boolean {
   const origin = req.headers.origin;
@@ -6370,7 +6382,7 @@ function resolveBrowserSession(
 function bindBrowserThread(
   env: LocalGuestEnvironment,
   cache: Map<string, BrowserSession>,
-  req: IncomingMessage,
+  req: HttpRequestLike,
   threadId: string,
   requireSession = false,
 ): boolean {
@@ -6454,13 +6466,9 @@ interface BrowserSession {
 
 const GUEST_HTML_HEADERS = {
   "Content-Type": "text/html; charset=utf-8",
-  // ADR-0078: serve the local accessible foundation while keeping remote styles disallowed.
-  "Content-Security-Policy":
-    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
-  // Issue 06c: "same-origin" (not "no-referrer") so a same-origin form post
-  // carries a real Origin for browserOriginAccepted; cross-origin requests
-  // still send no referrer.
-  "Referrer-Policy": "same-origin",
+  // ADR-0078: serve the local accessible foundation while keeping remote styles disallowed. Shared with the Worker
+  // so the two cannot drift (slice 13).
+  ...GUEST_HTML_SECURITY_HEADERS,
 } as const;
 
 function findGuestThreadForOffer(
@@ -6508,42 +6516,76 @@ export interface LocalGuestServerHandle {
   readonly environment: LocalGuestEnvironment;
   /** Issue 19: open per-session runtimes (each holds a SQLite connection); idle ones are evicted. */
   readonly activeSessionRuntimes: number;
+  /** How many session runtimes this server has built since it started, including rebuilds after eviction. */
+  readonly sessionRuntimesBuilt: number;
   listen(): Promise<number>;
   close(): Promise<void>;
 }
 
-export function startLocalGuestServer(
-  options: {
-    port?: number;
-    environment?: LocalGuestEnvironment;
-    clientScriptPath?: string;
-    geminiClient?: GeminiConciergeClient;
-    modelClient?: AssistantModelClient;
-    conciergeMode?:
-      | "deterministic"
-      | "gemini"
-      | "openai-compatible"
-      | "assistant-offline";
-    paystackClient?: PaystackClient;
-    /** Production-only deployment controls. Local fixture defaults remain unchanged. */
-    production?: boolean;
-    publicOrigin?: string;
-    secureCookie?: boolean;
-    sessionScopedGuestPrincipals?: boolean;
-    /** Staging beta gate: when set, a new Guest session needs `/?invite=<code>` (issue 22). */
-    betaInviteCode?: string;
-    /** Explicit local-pilot control; never enabled by production composition. */
-    localPayment?: boolean;
-    /** Explicit local-pilot photo mapping for synthetic, same-process assets. */
-    localPhotoUrl?: (url: string) => string;
-    fixtureRoutes?: boolean;
-    /** Issue 19: daily cap on model calls; when it is spent, turns use the deterministic concierge. */
-    modelCallBudget?: ModelCallBudget;
-    /** Issue 19: a session's runtime (environment, SQLite connection, assistant memory) is closed after this idle time. */
-    sessionRuntimeIdleMs?: number;
-  } = {},
-): LocalGuestServerHandle {
-  const port = options.port ?? LOCAL_GUEST_PORT;
+export interface GuestRequestHandlerOptions {
+  environment?: LocalGuestEnvironment;
+  clientScriptPath?: string;
+  /** Slice 09a: the bundles/CSS the handler serves; the Node default is `nodeAssetLoader()` (no import-time reads). */
+  assets?: AssetLoader;
+  geminiClient?: GeminiConciergeClient;
+  modelClient?: AssistantModelClient;
+  conciergeMode?:
+    | "deterministic"
+    | "gemini"
+    | "openai-compatible"
+    | "assistant-offline";
+  paystackClient?: PaystackClient;
+  /** Production-only deployment controls. Local fixture defaults remain unchanged. */
+  production?: boolean;
+  publicOrigin?: string;
+  secureCookie?: boolean;
+  sessionScopedGuestPrincipals?: boolean;
+  /** Staging beta gate: when set, a new Guest session needs `/?invite=<code>` (issue 22). */
+  betaInviteCode?: string;
+  /** Explicit local-pilot control; never enabled by production composition. */
+  localPayment?: boolean;
+  /** Explicit local-pilot photo mapping for synthetic, same-process assets. */
+  localPhotoUrl?: (url: string) => string;
+  fixtureRoutes?: boolean;
+  /** Issue 19: daily cap on model calls; when it is spent, turns use the deterministic concierge. */
+  modelCallBudget?: ModelCallBudget;
+  /** Issue 19: a session's runtime (environment, SQLite connection, assistant memory) is closed after this idle time. */
+  sessionRuntimeIdleMs?: number;
+  /**
+   * At most this many session runtimes are resident; opening one more evicts the least recently used. Unset means
+   * no cap. Runtimes share one SQLite handle, so an evicted session is rebuilt from durable state.
+   */
+  sessionRuntimeLimit?: number;
+}
+
+/**
+ * Slice 08a: the request logic of the Guest server, callable without a node:http server. It returns the request
+ * logic unchanged: a plain `(req: HttpRequestLike, res: HttpResponseLike) => Promise<void>`, plus what closes the
+ * per-session runtimes and the environment.
+ */
+export interface GuestRequestHandler {
+  readonly app: LocalGuestApp;
+  /** The live environment; a fresh one is installed by /api/reset. */
+  readonly environment: LocalGuestEnvironment;
+  /** Issue 19: open per-session runtimes (each holds a SQLite connection); idle ones are evicted. */
+  readonly activeSessionRuntimes: number;
+  /** How many session runtimes this handler has built since it was created, including rebuilds after eviction. */
+  readonly sessionRuntimesBuilt: number;
+  handle(req: HttpRequestLike, res: HttpResponseLike): Promise<void>;
+  /** Stops every timer the handler started, closes the runtimes and the default environment. */
+  close(): Promise<void>;
+}
+
+export function createGuestRequestHandler(
+  options: GuestRequestHandlerOptions = {},
+): GuestRequestHandler {
+  const sessionRuntimeLimit = options.sessionRuntimeLimit ?? null;
+  if (
+    sessionRuntimeLimit !== null &&
+    (!Number.isSafeInteger(sessionRuntimeLimit) || sessionRuntimeLimit < 1)
+  ) {
+    throw new Error("sessionRuntimeLimit must be a positive whole number");
+  }
   const sessionRuntimeIdleMs = options.sessionRuntimeIdleMs ?? null;
   if (
     sessionRuntimeIdleMs !== null &&
@@ -6586,7 +6628,7 @@ export function startLocalGuestServer(
   const secureCookie = options.secureCookie ?? production;
   const env =
     options.environment ??
-    new LocalGuestEnvironment({
+    LocalGuestEnvironment.openNode({
       initialGuestPhoneNumber: null,
       initialGuestContactEmail: null,
       production,
@@ -6638,6 +6680,7 @@ export function startLocalGuestServer(
       lastUsedMs: number;
     }
   >();
+  let sessionRuntimesBuilt = 0;
   // Durable state lives in SQLite, so an evicted session's runtime is rebuilt on its next request, exactly as after a
   // restart. Only the in-memory assistant conversation is lost.
   const evictIdleRuntimes = (nowMs: number): void => {
@@ -6661,17 +6704,35 @@ export function startLocalGuestServer(
     const existing = sessionRuntimes.get(session.sessionKey);
     if (existing) {
       existing.lastUsedMs = nowMs;
+      // Re-insert so the Map's first key is always the least recently used runtime.
+      sessionRuntimes.delete(session.sessionKey);
+      sessionRuntimes.set(session.sessionKey, existing);
       return existing;
     }
-    const runtimeEnvironment = new LocalGuestEnvironment({
-      ...env.config,
-      guestId: session.principalId,
-      initialGuestPhoneNumber: null,
-      initialGuestContactEmail: null,
-      production,
-      deterministicPsp: !production,
-      ...(paystackClient === undefined ? {} : { paystackClient }),
-    });
+    if (sessionRuntimeLimit !== null) {
+      while (sessionRuntimes.size >= sessionRuntimeLimit) {
+        const [leastRecentlyUsedKey, leastRecentlyUsed] =
+          sessionRuntimes.entries().next().value!;
+        sessionRuntimes.delete(leastRecentlyUsedKey);
+        leastRecentlyUsed.environment.close();
+      }
+    }
+    // ADR 0004: every session runtime shares the live environment's one handle and inventory. Closing a runtime
+    // environment never closes them, so eviction cannot disturb other sessions.
+    const shared = defaultApp.environment;
+    const runtimeEnvironment = new LocalGuestEnvironment(
+      {
+        ...shared.config,
+        guestId: session.principalId,
+        initialGuestPhoneNumber: null,
+        initialGuestContactEmail: null,
+        production,
+        deterministicPsp: !production,
+        ...(paystackClient === undefined ? {} : { paystackClient }),
+      },
+      { database: shared.database, unitRepository: shared.unitRepository },
+    );
+    sessionRuntimesBuilt += 1;
     const runtime = {
       environment: runtimeEnvironment,
       app: new LocalGuestApp(runtimeEnvironment, {
@@ -6690,13 +6751,14 @@ export function startLocalGuestServer(
     sessionRuntimes.set(session.sessionKey, runtime);
     return runtime;
   };
-  const clientScriptPath =
-    options.clientScriptPath ??
-    join(dirname(fileURLToPath(import.meta.url)), "..", "dist", "client.js");
+  // Slice 09a: assets come from the injected loader (Node default `nodeAssetLoader()`), never from import-time reads.
+  const assets = options.assets ?? nodeAssetLoader({ clientScriptPath: options.clientScriptPath });
 
-  const server = createServer(
-    async (req: IncomingMessage, res: ServerResponse) => {
-      const url = new URL(
+  const dispatch = async (
+    req: HttpRequestLike,
+    res: HttpResponseLike,
+  ): Promise<void> => {
+    const url = new URL(
         req.url ?? "/",
         `http://${req.headers.host ?? "localhost"}`,
       );
@@ -6731,11 +6793,17 @@ export function startLocalGuestServer(
         req.method === "GET" &&
         url.pathname === "/shortlet-foundations.css"
       ) {
-        res.writeHead(200, {
-          "Content-Type": "text/css; charset=utf-8",
-          "Cache-Control": "public, max-age=3600",
-        });
-        res.end(SHORTLET_FOUNDATION_CSS);
+        // Slice 09a: a missing asset answers 500 for this request instead of failing at import.
+        try {
+          res.writeHead(200, {
+            "Content-Type": "text/css; charset=utf-8",
+            "Cache-Control": "public, max-age=3600",
+          });
+          res.end(assets.text("shortlet-foundations.css"));
+        } catch {
+          res.writeHead(500, { "Content-Type": "text/plain" });
+          res.end("Foundation styles missing; run npm run guest:local to build it.");
+        }
         return;
       }
 
@@ -7056,10 +7124,7 @@ export function startLocalGuestServer(
       // Guest gallery issue 01: the full apartment page's script. Public, like /stays/* itself.
       if (req.method === "GET" && url.pathname === "/gallery.js") {
         try {
-          const script = readFileSync(
-            join(dirname(clientScriptPath), "gallery.js"),
-            "utf8",
-          );
+          const script = assets.text("gallery.js");
           res.writeHead(200, {
             "Content-Type": "text/javascript; charset=utf-8",
           });
@@ -7078,12 +7143,8 @@ export function startLocalGuestServer(
         (url.pathname === "/payment.js" || url.pathname === "/offer.js")
       ) {
         try {
-          const script = readFileSync(
-            join(
-              dirname(clientScriptPath),
-              url.pathname === "/offer.js" ? "offer.js" : "payment.js",
-            ),
-            "utf8",
+          const script = assets.text(
+            url.pathname === "/offer.js" ? "offer.js" : "payment.js",
           );
           res.writeHead(200, {
             "Content-Type": "text/javascript; charset=utf-8",
@@ -7099,7 +7160,7 @@ export function startLocalGuestServer(
       }
       if (req.method === "GET" && url.pathname === "/client.js") {
         try {
-          const script = readFileSync(clientScriptPath, "utf8");
+          const script = assets.text("client.js");
           res.writeHead(200, {
             "Content-Type": "text/javascript; charset=utf-8",
           });
@@ -7514,7 +7575,7 @@ export function startLocalGuestServer(
           return;
         }
         try {
-          manual.uploadReceipt(
+          await manual.uploadReceipt(
             createManualTransferCommand({
               commandName: "manual_transfer.upload_receipt",
               principal,
@@ -8567,11 +8628,9 @@ export function startLocalGuestServer(
 
       res.writeHead(404, { "Content-Type": "text/plain" });
       res.end("Not Found");
-    },
-  );
+    };
 
   return {
-    port,
     app: defaultApp,
     get environment() {
       return defaultApp.environment;
@@ -8579,20 +8638,58 @@ export function startLocalGuestServer(
     get activeSessionRuntimes() {
       return sessionRuntimes.size;
     },
+    get sessionRuntimesBuilt() {
+      return sessionRuntimesBuilt;
+    },
+    handle(req, res) {
+      return dispatch(req, res);
+    },
+    close: () =>
+      new Promise<void>((resolve) => {
+        for (const runtime of sessionRuntimes.values())
+          runtime.environment.close();
+        sessionRuntimes.clear();
+        defaultApp.environment.close();
+        resolve();
+      }),
+  };
+}
+
+export function startLocalGuestServer(
+  options: GuestRequestHandlerOptions & { port?: number } = {},
+): LocalGuestServerHandle {
+  const { port, ...handlerOptions } = options;
+  const listenPort = port ?? LOCAL_GUEST_PORT;
+  const handler = createGuestRequestHandler(handlerOptions);
+  const server = createServer((req: IncomingMessage, res: ServerResponse) => {
+    void handler.handle(req, res);
+  });
+  return {
+    port: listenPort,
+    get app() {
+      return handler.app;
+    },
+    get environment() {
+      return handler.environment;
+    },
+    get activeSessionRuntimes() {
+      return handler.activeSessionRuntimes;
+    },
+    get sessionRuntimesBuilt() {
+      return handler.sessionRuntimesBuilt;
+    },
     listen: () =>
       new Promise<number>((resolve) => {
-        server.listen(port, "127.0.0.1", () => {
+        server.listen(listenPort, "127.0.0.1", () => {
           const addr = server.address();
           const actualPort =
-            typeof addr === "object" && addr ? addr.port : port;
+            typeof addr === "object" && addr ? addr.port : listenPort;
           resolve(actualPort);
         });
       }),
     close: () =>
       new Promise<void>((resolve) => {
-        for (const runtime of sessionRuntimes.values())
-          runtime.environment.close();
-        defaultApp.environment.close();
+        void handler.close();
         // Fetch clients may leave keep-alive sockets open after a response;
         // close them before waiting for the server callback so test and CLI
         // shutdowns are deterministic.

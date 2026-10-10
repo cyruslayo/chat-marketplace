@@ -1,0 +1,37 @@
+{
+  // Internal Workers Vitest runtime configuration, not a deployment config.
+  // `main` is the test entrypoint: the real Worker plus the test-only harness object, so SELF.fetch drives the
+  // actual Worker into the Durable Object (slice 10b). Production configuration is cloudflare.config.ts.
+  "name": "shortlet-test-harness",
+  "main": "src/test-worker.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": {
+    "bindings": [
+      { "name": "TEST_HARNESS", "class_name": "TestHarnessDO" },
+      { "name": "SHORTLET", "class_name": "ShortletPilot" }
+    ]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TestHarnessDO", "ShortletPilot"] }],
+  "r2_buckets": [
+    { "binding": "RECEIPTS", "bucket_name": "test-receipts" },
+    { "binding": "EXPORTS", "bucket_name": "test-exports" }
+  ],
+  "assets": { "directory": "./public", "binding": "ASSETS" },
+  "vars": {
+    "SHORTLET_PUBLIC_ORIGIN": "https://pilot.example.test",
+    "SHORTLET_TENANT_ID": "tenant-synthetic",
+    "PAYSTACK_SECRET_KEY": "sk_test_synthetic",
+    "PAYSTACK_ENVIRONMENT": "test",
+    "SHORTLET_DEPLOYMENT": "staging",
+    "SHORTLET_BETA_INVITE_CODE": "synthetic-invite",
+    "CONCIERGE_MODE": "deterministic",
+    "RESEND_API_KEY": "re_test_synthetic",
+    "SHORTLET_NOTIFICATION_FROM": "Shortlet <notifications@example.test>",
+    "SHORTLET_OPERATOR_ALERT_EMAILS": "alerts@example.test",
+    "OPS_SHARED_SECRET": "synthetic-ops-shared-secret",
+    "CF_ACCESS_TEAM_DOMAIN": "shortlet.cloudflareaccess.test",
+    "CF_ACCESS_AUD": "synthetic-access-audience",
+    "CF_ACCESS_JWKS": "{\"keys\":[{\"kty\":\"RSA\",\"n\":\"s-OrNgEde0lVkMzmI5Eoo8Fseut09ZD3KpPKGcwvAynA3hjUDDm6kHYR58oo2tdPq_6y-faoZJEEU6HEvMn2eJK9nZtPEmPumk7cnzvhMbItYmTycOm_1A-q3Sp0vLevM5KfuivZ14FLS-wQUlh2MQNxT5XFdQ4_x0LZ0jGstqB0upBnCjWd17a6SFsm3rLhCnrf8j4N9TPvngIQOdZnGxwn_mnXrtKXYkCOEpjDkOMRCZtyw0TQDcd57lOonDphZlD6JM6ldnkL3bndrasRqOwX7ePGQg41lkB6hxiISMH_UZKqpZsR0yk0noTQ-MImic7DqpOTcUyGAGyWsloQaQ\",\"e\":\"AQAB\",\"kid\":\"synthetic-access-key\"}]}"
+  }
+}

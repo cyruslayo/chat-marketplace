@@ -7,6 +7,7 @@ import { loadPilotConfiguration } from "../apps/pilot/src/pilot-config.js";
 import { startPilotServer } from "../apps/pilot/src/pilot-server.js";
 import { createPlatformCommandEnvelope } from "../packages/platform-core/src/index.js";
 import { SqliteOperatorRepresentativeGrantStore, SqliteOperatorSessionAuthority, type PaystackClient } from "../domains/shortlet/src/index.js";
+import { createTestOperatorGrantStore, createTestOperatorSessionAuthority } from "./helpers/operator-authority.js";
 import { operatorCookieFrom, postOperatorLogin } from "./helpers/operator-session.js";
 import { PUBLIC_ORIGIN, productionFixture, type ProductionFixture } from "./helpers/pilot-fixture.js";
 import { approvingPaystack, guestEvent, postJson, provisionOperatorToken, surfaceAction } from "./helpers/guest-journey.js";
@@ -33,7 +34,7 @@ function cookieFrom(response: Response): string {
 async function setupAuthority(fixture: ProductionFixture): Promise<{ readonly token: string; readonly actorId: string }> {
   const actorId = "pilot-operator-actor";
   const clock = () => new Date();
-  const grants = new SqliteOperatorRepresentativeGrantStore(fixture.configuration.databasePath, { clock });
+  const grants = createTestOperatorGrantStore(fixture.configuration.databasePath, { clock });
   grants.createGrant(createPlatformCommandEnvelope({
     commandName: "operator_representative.grant",
     principal: { id: "pilot-admin", role: "admin", tenantId: fixture.configuration.tenantId },
@@ -46,7 +47,7 @@ async function setupAuthority(fixture: ProductionFixture): Promise<{ readonly to
     },
     idempotencyKey: "pilot-test-grant",
   }));
-  const sessions = new SqliteOperatorSessionAuthority(fixture.configuration.databasePath, { clock });
+  const sessions = createTestOperatorSessionAuthority(fixture.configuration.databasePath, { clock });
   const token = sessions.provisionAccessToken({ actorId, tenantId: fixture.configuration.tenantId, representativeAuthorized: true }).token;
   sessions.close();
   grants.close();

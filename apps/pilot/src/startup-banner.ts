@@ -1,11 +1,12 @@
 import { conciergeStartupFields, type ConciergeConfiguration } from "../../local-guest/src/assistant/concierge-configuration.js";
+import { LOOPBACK_ADDRESS } from "../../../packages/platform-core/src/loopback-address.js";
 
 /** The back-office entry point: owners never sign in, so this is where you start (ADR 0086). */
 export const OPERATOR_LOGIN_PATH = "/operator/login";
 
 /** Startup lines for `npm run pilot:local`. */
 export function localPilotStartupLines(input: { readonly port: number; readonly dataDirectory: string }): readonly string[] {
-  const origin = `http://127.0.0.1:${input.port}`;
+  const origin = `http://${LOOPBACK_ADDRESS}:${input.port}`;
   return [
     "Local Shortlet pilot started",
     `\nGuest:\n${origin}/`,

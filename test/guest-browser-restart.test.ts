@@ -84,7 +84,7 @@ interface RunningServer {
 }
 
 async function startServer(databasePath: string): Promise<RunningServer> {
-  const environment = new LocalGuestEnvironment({ databasePath });
+  const environment = LocalGuestEnvironment.openNode({ databasePath });
   const server = startLocalGuestServer({ port: 0, environment });
   const port = await server.listen();
   return {

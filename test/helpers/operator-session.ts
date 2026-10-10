@@ -25,7 +25,7 @@ export interface OperatorServer extends OperatorTarget {
 
 /** Starts `startLocalOwnerServer` over a fresh environment. Pass `clock` to test deadlines and session expiry. */
 export async function startOperatorServer(config: Partial<LocalOwnerFixtureConfig> & { readonly databasePath: string }): Promise<OperatorServer> {
-  const environment = new LocalApartmentOwnerEnvironment(config);
+  const environment = LocalApartmentOwnerEnvironment.openNode(config);
   const server = startLocalOwnerServer({ port: 0, environment });
   const port = await server.listen();
   return { environment, port, base: `http://localhost:${port}`, close: () => server.close() };

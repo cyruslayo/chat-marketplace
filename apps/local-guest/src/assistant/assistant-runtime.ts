@@ -623,6 +623,20 @@ export class AssistantRuntime {
           };
         }
 
+        // ADR 0041: production disclosure must wait for an authorized Operator's real confirmation.
+        if (environment.config.production) {
+          return {
+            ok: true,
+            message: "Your booking request has been submitted to the host and is awaiting review.",
+            surfaces: [
+              {
+                surfaceId: requestSurfaceId,
+                a2uiMessages: bookingRequestArtifactToA2UI({ artifact: requestArtifact, surfaceId: requestSurfaceId }),
+              },
+            ],
+          };
+        }
+
         // Attempt local operator simulation
         try {
           const { offerId } = environment.simulateOperatorAcceptance(disclosed.requestId);

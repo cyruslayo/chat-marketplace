@@ -59,7 +59,7 @@ async function startRealBrowserContext(config: Partial<LocalGuestFixtureConfig> 
   const databasePath = join(dir, "guest.sqlite");
   let clockTime = new Date("2026-09-03T10:00:00Z");
 
-  const environment = new LocalGuestEnvironment({
+  const environment = LocalGuestEnvironment.openNode({
     databasePath,
     clock: () => clockTime,
     ...config,
@@ -498,18 +498,41 @@ test("RB8 — A stale real tab restores the latest server projection", async () 
     // Tab A submits request
     await ctx.tabA.clickButton("Submit Booking Request");
     await ctx.tabA.waitForText("Booking Request");
+    await waitForDurable(ctx, () => ctx.server.environment.interactionStore.listBookingRequestIds().length === 1, "submitted Booking Request");
 
     // Tab B clicks stale submit button
+    const reviewSurfaceId = await ctx.tabB.evaluate<string>(`document.querySelector("#active-workspace .weaver-mount").dataset.surfaceId`);
+    // Hold its response so the readiness check is exercised under delayed recovery, not CPU timing.
+    await ctx.tabB.evaluate(`(() => {
+      const originalFetch = window.fetch;
+      const recoveryReleased = new Promise((resolve) => document.addEventListener("rb8-release-recovery", resolve, { once: true }));
+      window.fetch = async (...args) => {
+        const response = await originalFetch(...args);
+        if (args[0] === "/api/event") await recoveryReleased;
+        return response;
+      };
+      document.addEventListener("rb8-release-recovery", () => { window.fetch = originalFetch; }, { once: true });
+    })()`);
     const clickB = await ctx.tabB.clickButton("Submit Booking Request");
     assert.equal(clickB, true);
 
-    await ctx.tabB.waitForFunction(`document.querySelectorAll("#transcript .turn").length >= 2`, 15000);
+    assert.equal(await ctx.tabB.evaluate<boolean>(`document.getElementById("active-workspace").getAttribute("aria-busy") === "true"`), true, "the delayed recovery is still pending");
+    await ctx.tabB.evaluate(`document.dispatchEvent(new Event("rb8-release-recovery"))`);
+    // Existing turns precede recovery. Wait for its authoritative replacement and completion instead.
+    await ctx.tabB.waitForFunction(`(() => {
+      const workspace = document.getElementById("active-workspace");
+      const mount = workspace.querySelector(".weaver-mount");
+      return workspace.getAttribute("aria-busy") !== "true" && mount?.dataset.surfaceId && mount.dataset.surfaceId !== ${JSON.stringify(reviewSurfaceId)};
+    })()`, 15000);
+    // ADR 0078: let the replacement's deferred focus land before exercising the composer.
+    await ctx.tabB.evaluate(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
 
     // Tab B restores current server projection and retains conversation history
     const turnsCount = await ctx.tabB.evaluate<number>(`document.querySelectorAll("#transcript .turn").length`);
     assert.ok(turnsCount >= 2, "Tab B must preserve relevant conversation history");
 
     // Focus test: verify real-browser recovery does not create a focus trap
+    assert.equal(await ctx.tabB.evaluate<boolean>(`document.getElementById("active-workspace").getAttribute("aria-busy") === "true"`), false, "wait for stale-action recovery before checking focus");
     await ctx.tabB.waitForSelector("#composer-input", 15000);
     await ctx.tabB.focus("#composer-input");
     const focused = await ctx.tabB.isElementFocused("#composer-input");
@@ -560,7 +583,7 @@ test("RB10 — Two real tabs restore safely after server restart", async () => {
     await ctx.server.close();
 
     // Start a new server instance over the SAME durable SQLite database (ADR-0079)
-    const newEnv = new LocalGuestEnvironment({
+    const newEnv = LocalGuestEnvironment.openNode({
       databasePath: ctx.databasePath,
       clock: () => ctx.clockTime,
     });
@@ -607,7 +630,7 @@ test("RB11 — Restarted real tabs do not replay consequential commands", async 
     // Stop server and restart
     await ctx.server.close();
 
-    const newEnv = new LocalGuestEnvironment({
+    const newEnv = LocalGuestEnvironment.openNode({
       databasePath: ctx.databasePath,
       clock: () => ctx.clockTime,
     });

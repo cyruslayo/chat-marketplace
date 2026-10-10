@@ -2483,7 +2483,10 @@ newConversationButton.addEventListener("click", async () => {
   }
   newConversationConfirm.hidden = false;
   newConversationButton.setAttribute("aria-expanded", "true");
-  newConversationStart.focus();
+  // ADR 0078: move focus after the confirmation has been laid out, without racing pending surface focus.
+  requestAnimationFrame(() => {
+    if (!newConversationConfirm.hidden) newConversationStart.focus({ preventScroll: true });
+  });
 });
 newConversationStart.addEventListener("click", startNewConversation);
 newConversationCancel.addEventListener("click", closeNewConversationConfirm);

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { createPlatformCommandEnvelope, type PlatformCommandEnvelope, type CommandPrincipal, InMemoryAuditLog } from "../../../packages/platform-core/src/index.js";
 import type { ProductionRevenueReleaseRecord } from "./revenue-release.js";
+import { InMemoryReservePayoutStateStore, type ReservePayoutStateStore } from "./reserve-payout-state.js";
 import { journal, type RevenueLedgerLine, type RevenueAccountingRepository, type RevenueAdjustmentRecord, type LedgerJournal } from "./revenue-accounting.js";
 
 export type PayoutPlanType =
@@ -119,6 +120,8 @@ export interface ReservePayoutManagerOptions {
   readonly scopeAuthority?: OperatorScopeAuthority;
   readonly accountingRepository?: RevenueAccountingRepository;
   readonly clock?: () => Date;
+  /** Tranches, admin holds and executed commands. Defaults to memory; the pilot passes the SQLite store (ADR 0004, ADR 0095). */
+  readonly store?: ReservePayoutStateStore;
 }
 
 export interface SettlementLedgerBalances {
@@ -141,14 +144,12 @@ export interface SettlementLedgerBalances {
  * and enforces mandatory idempotency and authoritative tenant scope.
  */
 export class ReservePayoutManager {
-  readonly #tranches = new Map<string, ReserveTranche>();
-  readonly #adminHolds = new Map<string, AdminHoldRecord>();
+  readonly #store: ReservePayoutStateStore;
   readonly #reliabilityAuthority?: OperatorReliabilityAuthority;
   readonly #enforcementAuthority?: OperatorEnforcementAuthority;
   readonly #scopeAuthority?: OperatorScopeAuthority;
   readonly #accountingRepository?: RevenueAccountingRepository;
   readonly #clock: () => Date;
-  readonly #executedCommands = new Map<string, { commandName: string; fingerprint: string; result: unknown }>();
 
   constructor(options: ReservePayoutManagerOptions = {}) {
     this.#reliabilityAuthority = options.reliabilityAuthority;
@@ -156,6 +157,7 @@ export class ReservePayoutManager {
     this.#scopeAuthority = options.scopeAuthority;
     this.#accountingRepository = options.accountingRepository;
     this.#clock = options.clock ?? (() => new Date());
+    this.#store = options.store ?? new InMemoryReservePayoutStateStore();
   }
 
   /**
@@ -264,7 +266,7 @@ export class ReservePayoutManager {
     const reliabilityScore180d = rel.trailing180dReliabilityRate;
 
     // Check active admin hold
-    const adminHold = this.#adminHolds.get(operatorId);
+    const adminHold = this.#store.adminHolds.get(operatorId);
     if (adminHold && adminHold.holdActive) {
       activeEnforcementBlocked = true;
       reasons.push(`Active admin hold: ${adminHold.reason}`);
@@ -382,7 +384,7 @@ export class ReservePayoutManager {
 
     // Check hold overrides (ADR 0026, ADR 0063, ADR 0083)
     const overrideReasons: string[] = [];
-    const adminHold = this.#adminHolds.get(operatorId);
+    const adminHold = this.#store.adminHolds.get(operatorId);
     if (adminHold && adminHold.holdActive) {
       overrideReasons.push(`admin_hold: ${adminHold.reason}`);
     }
@@ -579,12 +581,12 @@ export class ReservePayoutManager {
    * Registers a reserve tranche for tracking.
    */
   registerReserveTranche(tranche: ReserveTranche): ReserveTranche {
-    this.#tranches.set(tranche.trancheId, { ...tranche });
+    this.#store.tranches.set(tranche.trancheId, { ...tranche });
     return { ...tranche };
   }
 
   getReserveTranche(trancheId: string): ReserveTranche | undefined {
-    return this.#tranches.get(trancheId);
+    return this.#store.tranches.get(trancheId);
   }
 
   /**
@@ -598,7 +600,7 @@ export class ReservePayoutManager {
     holds?: PayoutHoldConditions,
     auditLog?: InMemoryAuditLog
   ): ReserveTranche {
-    const tranche = this.#tranches.get(trancheId);
+    const tranche = this.#store.tranches.get(trancheId);
     if (!tranche) {
       throw new Error(`Reserve tranche not found: ${trancheId}`);
     }
@@ -651,14 +653,15 @@ export class ReservePayoutManager {
         journal: j
       };
 
-      // Atomic commit to ledger first. If it throws, tranche remains held.
-      this.#accountingRepository.postAdjustment({ adjustment: adj });
-
-      // Ledger write succeeded -> update state
-      tranche.status = "forfeited_for_liability";
-      tranche.releasedAtIso = currentIso;
-      tranche.ledgerJournalId = j.journalId;
-      this.#tranches.set(trancheId, tranche);
+      // One transaction: the ledger movement and the tranche status commit together, or neither does (ADR 0095).
+      const repository = this.#accountingRepository;
+      this.#store.transaction(() => {
+        repository.postAdjustment({ adjustment: adj });
+        tranche.status = "forfeited_for_liability";
+        tranche.releasedAtIso = currentIso;
+        tranche.ledgerJournalId = j.journalId;
+        this.#store.tranches.set(trancheId, tranche);
+      });
 
       auditLog?.record({
         action: "reserve_tranche_forfeited",
@@ -688,14 +691,15 @@ export class ReservePayoutManager {
       journal: j
     };
 
-    // Atomic commit to ledger first. If it throws, tranche remains held.
-    this.#accountingRepository.postAdjustment({ adjustment: adj });
-
-    // Ledger write succeeded -> update state
-    tranche.status = "released";
-    tranche.releasedAtIso = currentIso;
-    tranche.ledgerJournalId = j.journalId;
-    this.#tranches.set(trancheId, tranche);
+    // One transaction: the ledger movement and the tranche status commit together, or neither does (ADR 0095).
+    const repository = this.#accountingRepository;
+    this.#store.transaction(() => {
+      repository.postAdjustment({ adjustment: adj });
+      tranche.status = "released";
+      tranche.releasedAtIso = currentIso;
+      tranche.ledgerJournalId = j.journalId;
+      this.#store.tranches.set(trancheId, tranche);
+    });
 
     auditLog?.record({
       action: "reserve_tranche_released",
@@ -752,7 +756,7 @@ export class ReservePayoutManager {
       payload: envelope.payload
     });
 
-    const existing = this.#executedCommands.get(idempotencyKey);
+    const existing = this.#store.executedCommands.get(idempotencyKey);
     if (existing) {
       if (existing.commandName !== envelope.commandName || existing.fingerprint !== fingerprint) {
         throw new Error("Idempotency key was reused for a different command");
@@ -769,12 +773,14 @@ export class ReservePayoutManager {
       appliedAtIso: this.#clock().toISOString()
     };
 
-    this.#adminHolds.set(operatorId, record);
-
-    this.#executedCommands.set(idempotencyKey, {
-      commandName: envelope.commandName,
-      fingerprint,
-      result: record
+    // The hold and its idempotency record commit together, so a retry can never see one without the other.
+    this.#store.transaction(() => {
+      this.#store.adminHolds.set(operatorId, record);
+      this.#store.executedCommands.set(idempotencyKey, {
+        commandName: envelope.commandName,
+        fingerprint,
+        result: record
+      });
     });
 
     return { ...record };
@@ -801,7 +807,7 @@ export class ReservePayoutManager {
       throw new Error("Tranche ID required for reserve release command");
     }
 
-    const tranche = this.#tranches.get(trancheId);
+    const tranche = this.#store.tranches.get(trancheId);
     if (!tranche) {
       throw new Error(`Reserve tranche not found: ${trancheId}`);
     }
@@ -824,7 +830,7 @@ export class ReservePayoutManager {
       payload: envelope.payload
     });
 
-    const existing = this.#executedCommands.get(idempotencyKey);
+    const existing = this.#store.executedCommands.get(idempotencyKey);
     if (existing) {
       if (existing.commandName !== envelope.commandName || existing.fingerprint !== fingerprint) {
         throw new Error("Idempotency key was reused for a different command");
@@ -832,14 +838,15 @@ export class ReservePayoutManager {
       return existing.result as ReserveTranche;
     }
 
-    const result = this.releaseReserveTranche(trancheId, this.#clock().toISOString(), holds, auditLog);
-
-    this.#executedCommands.set(idempotencyKey, {
-      commandName: envelope.commandName,
-      fingerprint,
-      result
+    // The release (ledger and tranche) and its idempotency record commit together.
+    return this.#store.transaction(() => {
+      const result = this.releaseReserveTranche(trancheId, this.#clock().toISOString(), holds, auditLog);
+      this.#store.executedCommands.set(idempotencyKey, {
+        commandName: envelope.commandName,
+        fingerprint,
+        result
+      });
+      return result;
     });
-
-    return result;
   }
 }

@@ -18,7 +18,8 @@ test("AC1: In real Chromium, starting a new conversation keeps the Booking Reque
       // The confirmation opens in the page, takes focus and states the effect.
       assert.equal(await tab.clickButton("New conversation"), true);
       await tab.waitForFunction("!document.getElementById('new-conversation-confirm').hidden", 10_000);
-      assert.equal(await tab.isElementFocused("#new-conversation-start"), true);
+      // ADR 0078: wait for the confirmation's required focus target after the async committed-work lookup.
+      await tab.waitForFunction("document.activeElement?.id === 'new-conversation-start'", 10_000);
       const confirmText = await tab.evaluate<string>("document.getElementById('new-conversation-confirm').textContent");
       assert.match(confirmText, /Starting a new conversation doesn't withdraw or cancel your Booking Request for .+\./);
       assert.match(await tab.evaluate<string>("document.querySelector('#new-conversation-confirm a').getAttribute('href')"), /^\/booking-requests\/req-/);

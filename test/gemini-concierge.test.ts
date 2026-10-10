@@ -26,7 +26,7 @@ test("Gemini concierge asks a clarification without producing an authoritative s
 });
 
 test("Gemini search_stays tool arguments are validated before authoritative discovery executes", async () => {
-  const environment = new LocalGuestEnvironment();
+  const environment = LocalGuestEnvironment.openNode();
   try {
     const result = await handleGeminiTurn({ client: fake({ functionCalls: [{ name: "search_stays", id: "call-1", args } ] }, { text: "I found one matching stay in Old Ikoyi." }), history: [], text: "Four nights for two people.", demoCheckIn: environment.config.demoCheckIn, now, search: (filters) => { const artifact = environment.discoveryQuery.search({ ...filters }); return { resultCount: artifact.facts.results.length, location: filters.location, neighbourhood: filters.neighbourhood, checkIn: filters.checkIn, checkOut: filters.checkOut }; } });
     assert.equal(result.kind, "search");
@@ -58,7 +58,7 @@ test("Gemini tool result contains minimized authoritative search metadata rather
 });
 
 test("Gemini provider errors return a safe guest response without exposing provider details", async () => {
-  const environment = new LocalGuestEnvironment();
+  const environment = LocalGuestEnvironment.openNode();
   try {
     const app = new LocalGuestApp(environment, { geminiClient: { async generate() { throw new Error("secret provider authorization details"); } } });
     const result = await app.handleTurn("g-abcdef01", "hello");
@@ -67,7 +67,7 @@ test("Gemini provider errors return a safe guest response without exposing provi
 });
 
 test("Deterministic concierge remains the default and does not require GEMINI_API_KEY", async () => {
-  const environment = new LocalGuestEnvironment();
+  const environment = LocalGuestEnvironment.openNode();
   try {
     const app = new LocalGuestApp(environment);
     const result = await app.handleTurn("g-abcdef02", "I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people");

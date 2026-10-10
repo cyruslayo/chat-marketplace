@@ -47,10 +47,10 @@ function clone<T>(value: T): T {
 function readRecords(filePath: string): OperatorRecord[] {
   const parsed: unknown = JSON.parse(readFileSync(filePath, "utf8"));
   if (!Array.isArray(parsed)) throw new Error("Operator registry must contain a JSON array");
-  return parsed.map((record) => validateRecord(record));
+  return parsed.map((record) => validateOperatorRecord(record));
 }
 
-function validateRecord(value: unknown): OperatorRecord {
+export function validateOperatorRecord(value: unknown): OperatorRecord {
   if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error("Operator record must be an object");
   const record = value as Record<string, unknown>;
   const id = requiredText(record.id, "Operator ID");
@@ -84,7 +84,7 @@ export function createProvisionedOperator(input: { readonly id: string; readonly
   const now = input.now ?? new Date();
   if (!(now instanceof Date) || !Number.isFinite(now.getTime())) throw new Error("Operator provisioning clock is invalid");
   const timestamp = now.toISOString();
-  return validateRecord({
+  return validateOperatorRecord({
     id: input.id,
     tenantId: input.tenantId,
     name: input.name,
@@ -120,7 +120,7 @@ export class JsonOperatorRepository implements OperatorRepository {
   }
 
   create(operator: OperatorRecord): OperatorRecord {
-    const candidate = validateRecord(operator);
+    const candidate = validateOperatorRecord(operator);
     const records = readRecords(this.filePath);
     if (records.some((record) => record.id === candidate.id)) throw new OperatorConflictError(`Operator ${candidate.id} already exists`);
     writeFileSync(this.filePath, JSON.stringify([...records, candidate], null, 2), "utf8");
@@ -143,7 +143,7 @@ export class JsonOperatorRepository implements OperatorRepository {
     const now = this.#clock();
     if (!(now instanceof Date) || !Number.isFinite(now.getTime())) throw new Error("Operator update clock is invalid");
     const name = metadata.name === undefined ? records[index].name : requiredText(metadata.name, "Operator name");
-    const updated = validateRecord({ ...records[index], name, updatedAt: now.toISOString() });
+    const updated = validateOperatorRecord({ ...records[index], name, updatedAt: now.toISOString() });
     records[index] = updated;
     writeFileSync(this.filePath, JSON.stringify(records, null, 2), "utf8");
     return clone(updated);
@@ -162,7 +162,7 @@ function compatibleOperatorRecord(value: unknown, tenantId: string, now: Date): 
   const operator = asRecord(value);
   if (!operator || typeof operator.id !== "string" || typeof operator.name !== "string") return null;
   const timestamp = now.toISOString();
-  return validateRecord({
+  return validateOperatorRecord({
     ...operator,
     tenantId: typeof operator.tenantId === "string" ? operator.tenantId : tenantId,
     createdAt: typeof operator.createdAt === "string" ? operator.createdAt : timestamp,
@@ -172,7 +172,7 @@ function compatibleOperatorRecord(value: unknown, tenantId: string, now: Date): 
 }
 
 export function bootstrapOperatorsFromUnitRepository(input: {
-  readonly units: { findAll(): Unit[] };
+  readonly units: { findAll(): readonly Unit[] };
   readonly operators: OperatorRepository;
   readonly tenantId: string;
   readonly now?: Date;

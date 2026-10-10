@@ -1,7 +1,15 @@
-import { DatabaseSync } from "node:sqlite";
+import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
 
-export type AvailabilityCommitmentKind = "operator_hold" | "operator_block" | "booking_request_block" | "payment_pending" | "confirmed_booking";
-export type CreatableAvailabilityCommitmentKind = Exclude<AvailabilityCommitmentKind, "confirmed_booking">;
+export type AvailabilityCommitmentKind =
+  | "operator_hold"
+  | "operator_block"
+  | "booking_request_block"
+  | "payment_pending"
+  | "confirmed_booking";
+export type CreatableAvailabilityCommitmentKind = Exclude<
+  AvailabilityCommitmentKind,
+  "confirmed_booking"
+>;
 export type AvailabilityCommitmentState = "active" | "released" | "expired";
 
 export interface AvailabilityCommitment {
@@ -34,7 +42,9 @@ export interface CreateAvailabilityCommitment {
 }
 
 export class AvailabilityConflictError extends Error {
-  constructor(message = "Availability conflict: dates overlap an active commitment") {
+  constructor(
+    message = "Availability conflict: dates overlap an active commitment",
+  ) {
     super(message);
     this.name = "AvailabilityConflictError";
   }
@@ -68,22 +78,12 @@ function project(row: CommitmentRow): AvailabilityCommitment {
     extensionCount: row.extension_count,
     operatorId: row.operator_id,
     holderId: row.holder_id,
-    reason: row.reason
+    reason: row.reason,
   };
 }
 
-export class SqliteAvailabilityStore {
-  readonly databasePath: string;
-  #database: DatabaseSync;
-  #closed = false;
-  readonly #ownsDatabase: boolean;
-
-  constructor(databasePath: string, database?: DatabaseSync) {
-    this.databasePath = databasePath;
-    this.#database = database ?? new DatabaseSync(databasePath);
-    this.#ownsDatabase = database === undefined;
-    this.#database.exec("PRAGMA busy_timeout = 5000");
-    this.#database.exec(`
+/** Table DDL, applied by the schema migrations (apps/cloudflare/src/schema.ts) and by this store's constructor. */
+export const AVAILABILITY_SCHEMA = `
       CREATE TABLE IF NOT EXISTS availability_commitments (
         commitment_id TEXT PRIMARY KEY,
         unit_id TEXT NOT NULL,
@@ -101,34 +101,38 @@ export class SqliteAvailabilityStore {
       );
       CREATE INDEX IF NOT EXISTS idx_availability_active_unit_dates
         ON availability_commitments (unit_id, state, start_date, end_date);
-    `);
+    `;
+
+export class SqliteAvailabilityStore {
+  readonly #database: SqlDatabase;
+
+  constructor(database: SqlDatabase) {
+    this.#database = database;
+    this.#database.exec(AVAILABILITY_SCHEMA);
   }
 
   #withWriteTransaction<T>(operation: () => T): T {
-    // ADR-0041/0044: composition may atomically commit inventory with its
-    // associated domain records using the same SQLite connection.
-    if (this.#database.isTransaction) return operation();
-    this.#database.exec("BEGIN IMMEDIATE");
-    try {
-      const result = operation();
-      this.#database.exec("COMMIT");
-      return result;
-    } catch (error) {
-      try { this.#database.exec("ROLLBACK"); } catch { /* preserve the original failure */ }
-      throw error;
-    }
+    // ADR 0041/0044: preserve the caller's atomic inventory/domain boundary.
+    return this.#database.transaction(operation);
   }
 
   #expireStale(now: string): void {
-    this.#database.prepare(`
+    this.#database
+      .prepare(`
       UPDATE availability_commitments
       SET state = 'expired', released_at = $now
       WHERE state = 'active' AND expires_at IS NOT NULL AND expires_at <= $now
-    `).run({ $now: now });
+    `)
+      .run({ $now: now });
   }
 
-  #findConflict(unitId: string, start: string, end: string): CommitmentRow | undefined {
-    return this.#database.prepare(`
+  #findConflict(
+    unitId: string,
+    start: string,
+    end: string,
+  ): CommitmentRow | undefined {
+    return this.#database
+      .prepare(`
       SELECT commitment_id, unit_id, kind, start_date, end_date, state,
              created_at, expires_at, extension_count, operator_id, holder_id, reason
       FROM availability_commitments
@@ -136,47 +140,82 @@ export class SqliteAvailabilityStore {
         AND start_date < $end AND $start < end_date
       ORDER BY CASE kind WHEN 'operator_block' THEN 0 ELSE 1 END
       LIMIT 1
-    `).get({ $unitId: unitId, $start: start, $end: end }) as CommitmentRow | undefined;
+    `)
+      .get({ $unitId: unitId, $start: start, $end: end }) as
+      | CommitmentRow
+      | undefined;
   }
 
   create(commitment: CreateAvailabilityCommitment): AvailabilityCommitment {
-    if ((commitment as { kind: AvailabilityCommitmentKind }).kind === "confirmed_booking") {
-      throw new Error("confirmed_booking commitments must be created through the payment_pending transition");
+    if (
+      (commitment as { kind: AvailabilityCommitmentKind }).kind ===
+      "confirmed_booking"
+    ) {
+      throw new Error(
+        "confirmed_booking commitments must be created through the payment_pending transition",
+      );
     }
     return this.#withWriteTransaction(() => {
       this.#expireStale(commitment.createdAt);
-      const conflict = this.#findConflict(commitment.unitId, commitment.start, commitment.end);
+      const conflict = this.#findConflict(
+        commitment.unitId,
+        commitment.start,
+        commitment.end,
+      );
       if (conflict) {
-        const label = conflict.kind === "operator_block" ? "an operator block" : "an active hold";
-        throw new AvailabilityConflictError(`Availability conflict: dates overlap ${label}`);
+        const label =
+          conflict.kind === "operator_block"
+            ? "an operator block"
+            : "an active hold";
+        throw new AvailabilityConflictError(
+          `Availability conflict: dates overlap ${label}`,
+        );
       }
-      this.#database.prepare(`
+      this.#database
+        .prepare(`
         INSERT INTO availability_commitments
           (commitment_id, unit_id, kind, start_date, end_date, state, created_at,
            expires_at, extension_count, operator_id, holder_id, reason)
         VALUES ($commitmentId, $unitId, $kind, $start, $end, 'active', $createdAt,
                 $expiresAt, $extensionCount, $operatorId, $holderId, $reason)
-      `).run({
-        $commitmentId: commitment.commitmentId,
-        $unitId: commitment.unitId,
-        $kind: commitment.kind,
-        $start: commitment.start,
-        $end: commitment.end,
-        $createdAt: commitment.createdAt,
-        $expiresAt: commitment.expiresAt ?? null,
-        $extensionCount: commitment.extensionCount ?? 0,
-        $operatorId: commitment.operatorId ?? null,
-        $holderId: commitment.holderId ?? null,
-        $reason: commitment.reason ?? null
-      });
-      return { ...commitment, state: "active", expiresAt: commitment.expiresAt ?? null, extensionCount: commitment.extensionCount ?? 0, operatorId: commitment.operatorId ?? null, holderId: commitment.holderId ?? null, reason: commitment.reason ?? null };
+      `)
+        .run({
+          $commitmentId: commitment.commitmentId,
+          $unitId: commitment.unitId,
+          $kind: commitment.kind,
+          $start: commitment.start,
+          $end: commitment.end,
+          $createdAt: commitment.createdAt,
+          $expiresAt: commitment.expiresAt ?? null,
+          $extensionCount: commitment.extensionCount ?? 0,
+          $operatorId: commitment.operatorId ?? null,
+          $holderId: commitment.holderId ?? null,
+          $reason: commitment.reason ?? null,
+        });
+      return {
+        ...commitment,
+        state: "active",
+        expiresAt: commitment.expiresAt ?? null,
+        extensionCount: commitment.extensionCount ?? 0,
+        operatorId: commitment.operatorId ?? null,
+        holderId: commitment.holderId ?? null,
+        reason: commitment.reason ?? null,
+      };
     });
   }
 
-  assertActiveCommitment(commitmentId: string, unitId: string, start: string, end: string, now: string, expectedKind?: AvailabilityCommitmentKind): AvailabilityCommitment {
+  assertActiveCommitment(
+    commitmentId: string,
+    unitId: string,
+    start: string,
+    end: string,
+    now: string,
+    expectedKind?: AvailabilityCommitmentKind,
+  ): AvailabilityCommitment {
     return this.#withWriteTransaction(() => {
       this.#expireStale(now);
-      const row = this.#database.prepare(`
+      const row = this.#database
+        .prepare(`
         SELECT commitment_id, unit_id, kind, start_date, end_date, state,
                created_at, expires_at, extension_count, operator_id, holder_id, reason
         FROM availability_commitments
@@ -186,23 +225,42 @@ export class SqliteAvailabilityStore {
           AND start_date = $start
           AND end_date = $end
           AND ($kind IS NULL OR kind = $kind)
-      `).get({ $commitmentId: commitmentId, $unitId: unitId, $start: start, $end: end, $kind: expectedKind ?? null }) as CommitmentRow | undefined;
+      `)
+        .get({
+          $commitmentId: commitmentId,
+          $unitId: unitId,
+          $start: start,
+          $end: end,
+          $kind: expectedKind ?? null,
+        }) as CommitmentRow | undefined;
       if (!row) throw new Error("Availability commitment is no longer valid");
       return project(row);
     });
   }
 
-  findActive(unitId: string, start: string, end: string, now: string): AvailabilityCommitment[] {
+  findActive(
+    unitId: string,
+    start: string,
+    end: string,
+    now: string,
+  ): AvailabilityCommitment[] {
     return this.#withWriteTransaction(() => {
       this.#expireStale(now);
-      const rows = this.#database.prepare(`
+      // SAFETY: these columns are written by this store using the CommitmentRow schema above.
+      const rows = this.#database
+        .prepare(`
         SELECT commitment_id, unit_id, kind, start_date, end_date, state,
                created_at, expires_at, extension_count, operator_id, holder_id, reason
         FROM availability_commitments
         WHERE unit_id = $unitId AND state = 'active'
           AND start_date < $end AND $start < end_date
         ORDER BY CASE kind WHEN 'operator_block' THEN 0 ELSE 1 END, start_date
-      `).all({ $unitId: unitId, $start: start, $end: end }) as unknown as CommitmentRow[];
+      `)
+        .all({
+          $unitId: unitId,
+          $start: start,
+          $end: end,
+        }) as unknown as CommitmentRow[];
       return rows.map(project);
     });
   }
@@ -210,108 +268,195 @@ export class SqliteAvailabilityStore {
   releaseOperatorHold(commitmentId: string, now: string): void {
     this.#withWriteTransaction(() => {
       this.#expireStale(now);
-      const row = this.#database.prepare(`
+      const row = this.#database
+        .prepare(`
         SELECT kind, state FROM availability_commitments WHERE commitment_id = $commitmentId
-      `).get({ $commitmentId: commitmentId }) as { kind: AvailabilityCommitmentKind; state: AvailabilityCommitmentState } | undefined;
+      `)
+        .get({ $commitmentId: commitmentId }) as
+        | {
+            kind: AvailabilityCommitmentKind;
+            state: AvailabilityCommitmentState;
+          }
+        | undefined;
       if (!row || row.kind !== "operator_hold") {
         throw new Error("Availability commitment is not an Operator Hold");
       }
-      if (row.state !== "active") throw new Error("Operator Hold is no longer active");
-      this.#database.prepare(`
+      if (row.state !== "active")
+        throw new Error("Operator Hold is no longer active");
+      this.#database
+        .prepare(`
         UPDATE availability_commitments
         SET state = 'released', released_at = $now
         WHERE commitment_id = $commitmentId AND kind = 'operator_hold' AND state = 'active'
-      `).run({ $commitmentId: commitmentId, $now: now });
+      `)
+        .run({ $commitmentId: commitmentId, $now: now });
     });
   }
 
   /** One commitment in any state, or null. Read-only apart from lazy expiry. */
-  findCommitment(commitmentId: string, now: string): AvailabilityCommitment | null {
+  findCommitment(
+    commitmentId: string,
+    now: string,
+  ): AvailabilityCommitment | null {
     return this.#withWriteTransaction(() => {
       this.#expireStale(now);
-      const row = this.#database.prepare(`
+      const row = this.#database
+        .prepare(`
         SELECT commitment_id, unit_id, kind, start_date, end_date, state,
                created_at, expires_at, extension_count, operator_id, holder_id, reason
         FROM availability_commitments
         WHERE commitment_id = $commitmentId
-      `).get({ $commitmentId: commitmentId }) as CommitmentRow | undefined;
+      `)
+        .get({ $commitmentId: commitmentId }) as CommitmentRow | undefined;
       return row ? project(row) : null;
     });
   }
 
   /** B8: releases an active Operator Block. Anything else, or a block already released, is refused. */
-  releaseOperatorBlock(commitmentId: string, now: string): AvailabilityCommitment {
+  releaseOperatorBlock(
+    commitmentId: string,
+    now: string,
+  ): AvailabilityCommitment {
     return this.#withWriteTransaction(() => {
       this.#expireStale(now);
-      const row = this.#database.prepare(`
+      const row = this.#database
+        .prepare(`
         SELECT commitment_id, unit_id, kind, start_date, end_date, state,
                created_at, expires_at, extension_count, operator_id, holder_id, reason
         FROM availability_commitments
         WHERE commitment_id = $commitmentId
-      `).get({ $commitmentId: commitmentId }) as CommitmentRow | undefined;
-      if (!row || row.kind !== "operator_block") throw new Error("Availability commitment is not an Operator Block");
-      if (row.state !== "active") throw new Error("Operator Block is no longer active");
-      this.#database.prepare(`
+      `)
+        .get({ $commitmentId: commitmentId }) as CommitmentRow | undefined;
+      if (!row || row.kind !== "operator_block")
+        throw new Error("Availability commitment is not an Operator Block");
+      if (row.state !== "active")
+        throw new Error("Operator Block is no longer active");
+      this.#database
+        .prepare(`
         UPDATE availability_commitments
         SET state = 'released', released_at = $now
         WHERE commitment_id = $commitmentId AND kind = 'operator_block' AND state = 'active'
-      `).run({ $commitmentId: commitmentId, $now: now });
+      `)
+        .run({ $commitmentId: commitmentId, $now: now });
       return project({ ...row, state: "released" });
     });
   }
 
   /** Only an active, unexpired request block, and only forward: an expired or released block is never revived. */
-  extendBookingRequestBlock(commitmentId: string, expiresAt: string, now: string): void {
+  extendBookingRequestBlock(
+    commitmentId: string,
+    expiresAt: string,
+    now: string,
+  ): void {
     this.#withWriteTransaction(() => {
       this.#expireStale(now);
-      const result = this.#database.prepare(`UPDATE availability_commitments SET expires_at = $expiresAt WHERE commitment_id = $commitmentId AND kind = 'booking_request_block' AND state = 'active' AND expires_at > $now AND expires_at <= $expiresAt`).run({ $commitmentId: commitmentId, $expiresAt: expiresAt, $now: now });
-      if (result.changes !== 1) throw new Error("Booking request block is no longer active");
+      const result = this.#database
+        .prepare(
+          `UPDATE availability_commitments SET expires_at = $expiresAt WHERE commitment_id = $commitmentId AND kind = 'booking_request_block' AND state = 'active' AND expires_at > $now AND expires_at <= $expiresAt`,
+        )
+        .run({ $commitmentId: commitmentId, $expiresAt: expiresAt, $now: now });
+      if (result.changes !== 1)
+        throw new Error("Booking request block is no longer active");
     });
   }
 
   releaseBookingRequestBlock(commitmentId: string, now: string): void {
     this.#withWriteTransaction(() => {
       this.#expireStale(now);
-      const row = this.#database.prepare(`
+      const row = this.#database
+        .prepare(`
         SELECT kind, state FROM availability_commitments WHERE commitment_id = $commitmentId
-      `).get({ $commitmentId: commitmentId }) as { kind: AvailabilityCommitmentKind; state: AvailabilityCommitmentState } | undefined;
+      `)
+        .get({ $commitmentId: commitmentId }) as
+        | {
+            kind: AvailabilityCommitmentKind;
+            state: AvailabilityCommitmentState;
+          }
+        | undefined;
       if (row && row.kind !== "booking_request_block") {
-        throw new Error("Availability commitment is not a booking request block");
+        throw new Error(
+          "Availability commitment is not a booking request block",
+        );
       }
-      this.#database.prepare(`
+      this.#database
+        .prepare(`
         UPDATE availability_commitments
         SET state = 'released', released_at = $now
         WHERE commitment_id = $commitmentId AND kind = 'booking_request_block' AND state = 'active'
-      `).run({ $commitmentId: commitmentId, $now: now });
+      `)
+        .run({ $commitmentId: commitmentId, $now: now });
     });
   }
 
-  releaseConfirmedBooking(commitmentId: string, unitId: string, start: string, end: string, now: string): void {
+  releaseConfirmedBooking(
+    commitmentId: string,
+    unitId: string,
+    start: string,
+    end: string,
+    now: string,
+  ): void {
     this.#withWriteTransaction(() => {
       this.#expireStale(now);
-      const row = this.#database.prepare(`SELECT kind, state, unit_id, start_date, end_date FROM availability_commitments WHERE commitment_id = $commitmentId`).get({ $commitmentId: commitmentId }) as { kind: AvailabilityCommitmentKind; state: AvailabilityCommitmentState; unit_id: string; start_date: string; end_date: string } | undefined;
-      if (!row || row.kind !== "confirmed_booking" || row.unit_id !== unitId || row.start_date !== start || row.end_date !== end) throw new Error("Confirmed booking commitment does not match the expected inventory");
+      const row = this.#database
+        .prepare(
+          `SELECT kind, state, unit_id, start_date, end_date FROM availability_commitments WHERE commitment_id = $commitmentId`,
+        )
+        .get({ $commitmentId: commitmentId }) as
+        | {
+            kind: AvailabilityCommitmentKind;
+            state: AvailabilityCommitmentState;
+            unit_id: string;
+            start_date: string;
+            end_date: string;
+          }
+        | undefined;
+      if (
+        !row ||
+        row.kind !== "confirmed_booking" ||
+        row.unit_id !== unitId ||
+        row.start_date !== start ||
+        row.end_date !== end
+      )
+        throw new Error(
+          "Confirmed booking commitment does not match the expected inventory",
+        );
       if (row.state === "released") return;
-      if (row.state !== "active") throw new Error("Confirmed booking commitment is not active");
-      this.#database.prepare(`UPDATE availability_commitments SET state = 'released', released_at = $now WHERE commitment_id = $commitmentId AND state = 'active'`).run({ $commitmentId: commitmentId, $now: now });
+      if (row.state !== "active")
+        throw new Error("Confirmed booking commitment is not active");
+      this.#database
+        .prepare(
+          `UPDATE availability_commitments SET state = 'released', released_at = $now WHERE commitment_id = $commitmentId AND state = 'active'`,
+        )
+        .run({ $commitmentId: commitmentId, $now: now });
     });
   }
 
   releasePaymentPending(commitmentId: string, now: string): void {
     this.#withWriteTransaction(() => {
       this.#expireStale(now);
-      this.#database.prepare(`
+      this.#database
+        .prepare(`
         UPDATE availability_commitments
         SET state = 'released', released_at = $now
         WHERE commitment_id = $commitmentId AND kind = 'payment_pending' AND state = 'active'
-      `).run({ $commitmentId: commitmentId, $now: now });
+      `)
+        .run({ $commitmentId: commitmentId, $now: now });
     });
   }
 
-  extendPaymentPending(commitmentId: string, expiresAt: string, now: string): void {
+  extendPaymentPending(
+    commitmentId: string,
+    expiresAt: string,
+    now: string,
+  ): void {
     this.#withWriteTransaction(() => {
-      const result = this.#database.prepare(`UPDATE availability_commitments SET expires_at = $expiresAt WHERE commitment_id = $commitmentId AND kind = 'payment_pending' AND state = 'active' AND expires_at <= $now`).run({ $commitmentId: commitmentId, $expiresAt: expiresAt, $now: now });
-      if (result.changes !== 1) throw new Error("Payment Pending commitment is no longer active");
+      const result = this.#database
+        .prepare(
+          `UPDATE availability_commitments SET expires_at = $expiresAt WHERE commitment_id = $commitmentId AND kind = 'payment_pending' AND state = 'active' AND expires_at <= $now`,
+        )
+        .run({ $commitmentId: commitmentId, $expiresAt: expiresAt, $now: now });
+      if (result.changes !== 1)
+        throw new Error("Payment Pending commitment is no longer active");
     });
   }
 
@@ -319,90 +464,166 @@ export class SqliteAvailabilityStore {
    * ADR 0090: a manual transfer's verification hold keeps a still-active Payment Pending block until the verification
    * deadline. Only while active and unexpired, and only forward; it never revives an expired or released block.
    */
-  holdPaymentPendingUntil(commitmentId: string, expiresAt: string, now: string): void {
+  holdPaymentPendingUntil(
+    commitmentId: string,
+    expiresAt: string,
+    now: string,
+  ): void {
     this.#withWriteTransaction(() => {
       this.#expireStale(now);
-      const result = this.#database.prepare(`UPDATE availability_commitments SET expires_at = $expiresAt WHERE commitment_id = $commitmentId AND kind = 'payment_pending' AND state = 'active' AND expires_at > $now AND expires_at <= $expiresAt`).run({ $commitmentId: commitmentId, $expiresAt: expiresAt, $now: now });
-      if (result.changes !== 1) throw new Error("Payment Pending commitment is no longer active");
+      const result = this.#database
+        .prepare(
+          `UPDATE availability_commitments SET expires_at = $expiresAt WHERE commitment_id = $commitmentId AND kind = 'payment_pending' AND state = 'active' AND expires_at > $now AND expires_at <= $expiresAt`,
+        )
+        .run({ $commitmentId: commitmentId, $expiresAt: expiresAt, $now: now });
+      if (result.changes !== 1)
+        throw new Error("Payment Pending commitment is no longer active");
     });
   }
 
-  transitionPaymentPendingToConfirmedBooking({ commitmentId, unitId, start, end, now }: { commitmentId: string; unitId: string; start: string; end: string; now: string }): AvailabilityCommitment {
+  transitionPaymentPendingToConfirmedBooking({
+    commitmentId,
+    unitId,
+    start,
+    end,
+    now,
+  }: {
+    commitmentId: string;
+    unitId: string;
+    start: string;
+    end: string;
+    now: string;
+  }): AvailabilityCommitment {
     return this.#withWriteTransaction(() => {
       this.#expireStale(now);
-      const row = this.#database.prepare(`
+      const row = this.#database
+        .prepare(`
         SELECT commitment_id, unit_id, kind, start_date, end_date, state,
                created_at, expires_at, extension_count, operator_id, holder_id, reason
         FROM availability_commitments
         WHERE commitment_id = $commitmentId
-      `).get({ $commitmentId: commitmentId }) as CommitmentRow | undefined;
+      `)
+        .get({ $commitmentId: commitmentId }) as CommitmentRow | undefined;
       if (!row) throw new Error("Payment Pending commitment not found");
-      if (row.state !== "active") throw new Error("Payment Pending commitment is no longer active");
-      if (row.kind !== "payment_pending") throw new Error("Availability commitment is not Payment Pending");
-      if (row.unit_id !== unitId || row.start_date !== start || row.end_date !== end) {
-        throw new Error("Payment Pending commitment does not match the expected inventory");
+      if (row.state !== "active")
+        throw new Error("Payment Pending commitment is no longer active");
+      if (row.kind !== "payment_pending")
+        throw new Error("Availability commitment is not Payment Pending");
+      if (
+        row.unit_id !== unitId ||
+        row.start_date !== start ||
+        row.end_date !== end
+      ) {
+        throw new Error(
+          "Payment Pending commitment does not match the expected inventory",
+        );
       }
-      this.#database.prepare(`
+      this.#database
+        .prepare(`
         UPDATE availability_commitments
         SET kind = 'confirmed_booking', expires_at = NULL
         WHERE commitment_id = $commitmentId AND state = 'active' AND kind = 'payment_pending'
-      `).run({ $commitmentId: commitmentId });
+      `)
+        .run({ $commitmentId: commitmentId });
       return project({ ...row, kind: "confirmed_booking", expires_at: null });
     });
   }
 
-  transitionBookingRequestBlockToPaymentPending({ commitmentId, unitId, start, end, now }: { commitmentId: string; unitId: string; start: string; end: string; now: string }): AvailabilityCommitment {
+  transitionBookingRequestBlockToPaymentPending({
+    commitmentId,
+    unitId,
+    start,
+    end,
+    now,
+  }: {
+    commitmentId: string;
+    unitId: string;
+    start: string;
+    end: string;
+    now: string;
+  }): AvailabilityCommitment {
     return this.#withWriteTransaction(() => {
       this.#expireStale(now);
-      const row = this.#database.prepare(`
+      const row = this.#database
+        .prepare(`
         SELECT commitment_id, unit_id, kind, start_date, end_date, state,
                created_at, expires_at, extension_count, operator_id, holder_id, reason
         FROM availability_commitments
         WHERE commitment_id = $commitmentId AND state = 'active'
-      `).get({ $commitmentId: commitmentId }) as CommitmentRow | undefined;
-      if (!row || row.kind !== "booking_request_block" || row.unit_id !== unitId || row.start_date !== start || row.end_date !== end) {
-        throw new Error("Booking request block is no longer valid for payment pending transition");
+      `)
+        .get({ $commitmentId: commitmentId }) as CommitmentRow | undefined;
+      if (
+        !row ||
+        row.kind !== "booking_request_block" ||
+        row.unit_id !== unitId ||
+        row.start_date !== start ||
+        row.end_date !== end
+      ) {
+        throw new Error(
+          "Booking request block is no longer valid for payment pending transition",
+        );
       }
-      const expiresAt = new Date(new Date(now).getTime() + 20 * 60 * 1000).toISOString();
-      this.#database.prepare(`
+      const expiresAt = new Date(
+        new Date(now).getTime() + 20 * 60 * 1000,
+      ).toISOString();
+      this.#database
+        .prepare(`
         UPDATE availability_commitments
         SET kind = 'payment_pending', expires_at = $expiresAt
         WHERE commitment_id = $commitmentId AND state = 'active' AND kind = 'booking_request_block'
-      `).run({ $commitmentId: commitmentId, $expiresAt: expiresAt });
-      return project({ ...row, kind: "payment_pending", expires_at: expiresAt });
+      `)
+        .run({ $commitmentId: commitmentId, $expiresAt: expiresAt });
+      return project({
+        ...row,
+        kind: "payment_pending",
+        expires_at: expiresAt,
+      });
     });
   }
 
-  extendOperatorHold(commitmentId: string, now: string): AvailabilityCommitment {
+  extendOperatorHold(
+    commitmentId: string,
+    now: string,
+  ): AvailabilityCommitment {
     return this.#withWriteTransaction(() => {
       this.#expireStale(now);
-      const row = this.#database.prepare(`
+      const row = this.#database
+        .prepare(`
         SELECT commitment_id, unit_id, kind, start_date, end_date, state,
                created_at, expires_at, extension_count, operator_id, holder_id, reason
         FROM availability_commitments
         WHERE commitment_id = $commitmentId
-      `).get({ $commitmentId: commitmentId }) as CommitmentRow | undefined;
+      `)
+        .get({ $commitmentId: commitmentId }) as CommitmentRow | undefined;
       if (!row) throw new Error(`Operator Hold not found: ${commitmentId}`);
-      if (row.kind !== "operator_hold") throw new Error("Availability commitment is not an Operator Hold");
-      if (row.state === "expired") throw new Error("Operator Hold expired automatically");
-      if (row.state !== "active") throw new Error("Operator Hold is no longer active");
-      if (row.expires_at === null || new Date(now) >= new Date(row.expires_at)) throw new Error("Operator Hold expired automatically");
-      if (row.extension_count !== 0) throw new Error("Maximum extension limit reached: at most 1 extension permitted");
-      const maxExpiry = new Date(new Date(row.created_at).getTime() + 60 * 60 * 1000);
+      if (row.kind !== "operator_hold")
+        throw new Error("Availability commitment is not an Operator Hold");
+      if (row.state === "expired")
+        throw new Error("Operator Hold expired automatically");
+      if (row.state !== "active")
+        throw new Error("Operator Hold is no longer active");
+      if (row.expires_at === null || new Date(now) >= new Date(row.expires_at))
+        throw new Error("Operator Hold expired automatically");
+      if (row.extension_count !== 0)
+        throw new Error(
+          "Maximum extension limit reached: at most 1 extension permitted",
+        );
+      const maxExpiry = new Date(
+        new Date(row.created_at).getTime() + 60 * 60 * 1000,
+      );
       const newExpiry = maxExpiry.toISOString();
-      this.#database.prepare(`
+      this.#database
+        .prepare(`
         UPDATE availability_commitments
         SET expires_at = $expiresAt, extension_count = 1
         WHERE commitment_id = $commitmentId AND kind = 'operator_hold' AND state = 'active'
-      `).run({ $commitmentId: commitmentId, $expiresAt: newExpiry });
+      `)
+        .run({ $commitmentId: commitmentId, $expiresAt: newExpiry });
       return project({ ...row, expires_at: newExpiry, extension_count: 1 });
     });
   }
 
   close(): void {
-    if (!this.#closed) {
-      if (this.#ownsDatabase) this.#database.close();
-      this.#closed = true;
-    }
+    /* The composition owns the shared handle (ADR 0095). */
   }
 }

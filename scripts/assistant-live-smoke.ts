@@ -37,7 +37,7 @@ function parseThinkingLevel(val: string | undefined): "minimal" | "low" | "mediu
 }
 
 console.log("Initializing Live Gemini Interactions Assistant...");
-const env = new LocalGuestEnvironment();
+const env = LocalGuestEnvironment.openNode();
 const gemini = new GeminiInteractionsClient({
   apiKey,
   model: process.env.GEMINI_MODEL ?? DEFAULT_GEMINI_MODEL,

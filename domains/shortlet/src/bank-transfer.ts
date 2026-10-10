@@ -1,10 +1,26 @@
 import { createHash } from "node:crypto";
-import type { PlatformCommandEnvelope, CommandPrincipal } from "../../../packages/platform-core/src/index.js";
+import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
+import type {
+  PlatformCommandEnvelope,
+  CommandPrincipal,
+} from "../../../packages/platform-core/src/index.js";
 import type { ConditionalBookingOffer } from "./conditional-offer.js";
-import type { BookingContract, LedgerEntry, Reservation } from "./card-payment.js";
+import type {
+  BookingContract,
+  LedgerEntry,
+  Reservation,
+} from "./card-payment.js";
 import type { BookingStateRepository } from "./booking-state.js";
-import { deriveCompensationStatus, PAYMENT_PROCESSING_GRACE_MINUTES, type BookingPaymentJourneyRepository, type BookingPaymentCompensationPort } from "./booking-payment-journey.js";
-import { assertSecurityDepositCollectionAvailable, type SecurityDepositCollectionCapabilityProvider } from "./security-deposit.js";
+import {
+  deriveCompensationStatus,
+  PAYMENT_PROCESSING_GRACE_MINUTES,
+  type BookingPaymentJourneyRepository,
+  type BookingPaymentCompensationPort,
+} from "./booking-payment-journey.js";
+import {
+  assertSecurityDepositCollectionAvailable,
+  type SecurityDepositCollectionCapabilityProvider,
+} from "./security-deposit.js";
 import type { SecurityDepositAccountingRepository } from "./security-deposit-accounting.js";
 
 export interface BankTransferCheckoutSession {
@@ -19,7 +35,12 @@ export interface BankTransferCheckoutSession {
   readonly currency: "NGN";
   readonly expiresAt: string;
   readonly graceEndsAt: string;
-  status: "initiated" | "processing_in_grace" | "completed" | "expired" | "refunded";
+  status:
+    | "initiated"
+    | "processing_in_grace"
+    | "completed"
+    | "expired"
+    | "refunded";
   readonly processingStartedAt?: string;
 }
 
@@ -80,13 +101,24 @@ export interface ProviderTransferAccount {
 }
 
 export interface BankTransferProviderClient {
-  createTransferAccount(request: BankTransferAccountRequest): Promise<ProviderTransferAccount>;
+  createTransferAccount(
+    request: BankTransferAccountRequest,
+  ): Promise<ProviderTransferAccount>;
   verifyTransfer(transferReference: string): BankTransferProviderResult;
   /** Providers that verify over the network (Paystack) implement this; the server awaits it before processing. */
-  verifyTransferAsync?(transferReference: string): Promise<BankTransferProviderResult>;
+  verifyTransferAsync?(
+    transferReference: string,
+  ): Promise<BankTransferProviderResult>;
 }
 
-export type BankTransferProcessOutcome = { outcome: Outcome; reservation?: Reservation; bookingContract?: BookingContract; ledgerEntries?: readonly LedgerEntry[]; refundRecord?: BankTransferRefundRecord; reconciliationRecord?: BankTransferReconciliationRecord };
+export type BankTransferProcessOutcome = {
+  outcome: Outcome;
+  reservation?: Reservation;
+  bookingContract?: BookingContract;
+  ledgerEntries?: readonly LedgerEntry[];
+  refundRecord?: BankTransferRefundRecord;
+  reconciliationRecord?: BankTransferReconciliationRecord;
+};
 
 /**
  * Durable Expiring Bank Transfer sessions (P3), so a restart keeps the Guest's account instructions and the webhook
@@ -94,7 +126,9 @@ export type BankTransferProcessOutcome = { outcome: Outcome; reservation?: Reser
  */
 export interface BankTransferSessionStore {
   save(session: BankTransferCheckoutSession): void;
-  findByReference(transferReference: string): BankTransferCheckoutSession | null;
+  findByReference(
+    transferReference: string,
+  ): BankTransferCheckoutSession | null;
   /** The offer's most recent session (the deposit transfer follows the stay transfer). */
   findLatestByOffer(offerId: string): BankTransferCheckoutSession | null;
 }
@@ -104,43 +138,113 @@ function parseSession(json: string): BankTransferCheckoutSession | null {
     const parsed: unknown = JSON.parse(json);
     if (typeof parsed !== "object" || parsed === null) return null;
     const record = parsed as Record<string, unknown>;
-    return typeof record.transferReference === "string" && typeof record.offerId === "string" && typeof record.status === "string" ? parsed as BankTransferCheckoutSession : null;
-  } catch { return null; }
+    return typeof record.transferReference === "string" &&
+      typeof record.offerId === "string" &&
+      typeof record.status === "string"
+      ? (parsed as BankTransferCheckoutSession)
+      : null;
+  } catch {
+    return null;
+  }
 }
 
-export class SqliteBankTransferSessionStore implements BankTransferSessionStore {
-  readonly #database: import("node:sqlite").DatabaseSync;
-  constructor(database: import("node:sqlite").DatabaseSync) {
+/** Table DDL, applied by the schema migrations (apps/cloudflare/src/schema.ts) and by this store's constructor. */
+export const BANK_TRANSFER_SCHEMA = "CREATE TABLE IF NOT EXISTS bank_transfer_sessions (transfer_reference TEXT PRIMARY KEY, offer_id TEXT NOT NULL, seq INTEGER NOT NULL, session_json TEXT NOT NULL); CREATE INDEX IF NOT EXISTS idx_bank_transfer_sessions_offer ON bank_transfer_sessions (offer_id, seq)";
+
+export class SqliteBankTransferSessionStore
+  implements BankTransferSessionStore
+{
+  readonly #database: SqlDatabase;
+  constructor(database: SqlDatabase) {
     this.#database = database;
-    this.#database.exec("CREATE TABLE IF NOT EXISTS bank_transfer_sessions (transfer_reference TEXT PRIMARY KEY, offer_id TEXT NOT NULL, seq INTEGER NOT NULL, session_json TEXT NOT NULL); CREATE INDEX IF NOT EXISTS idx_bank_transfer_sessions_offer ON bank_transfer_sessions (offer_id, seq)");
+    this.#database.exec(
+      BANK_TRANSFER_SCHEMA,
+    );
   }
   save(session: BankTransferCheckoutSession): void {
-    const existing = this.#database.prepare("SELECT seq FROM bank_transfer_sessions WHERE transfer_reference = $reference").get({ $reference: session.transferReference }) as { seq?: number } | undefined;
-    const seq = existing?.seq ?? ((this.#database.prepare("SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM bank_transfer_sessions").get() as { next: number }).next);
-    this.#database.prepare("INSERT INTO bank_transfer_sessions (transfer_reference, offer_id, seq, session_json) VALUES ($reference, $offerId, $seq, $json) ON CONFLICT(transfer_reference) DO UPDATE SET session_json = excluded.session_json").run({ $reference: session.transferReference, $offerId: session.offerId, $seq: seq, $json: JSON.stringify(session) });
+    const existing = this.#database
+      .prepare(
+        "SELECT seq FROM bank_transfer_sessions WHERE transfer_reference = $reference",
+      )
+      .get({ $reference: session.transferReference }) as
+      | { seq?: number }
+      | undefined;
+    const seq =
+      existing?.seq ??
+      (
+        this.#database
+          .prepare(
+            "SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM bank_transfer_sessions",
+          )
+          .get() as { next: number }
+      ).next;
+    this.#database
+      .prepare(
+        "INSERT INTO bank_transfer_sessions (transfer_reference, offer_id, seq, session_json) VALUES ($reference, $offerId, $seq, $json) ON CONFLICT(transfer_reference) DO UPDATE SET session_json = excluded.session_json",
+      )
+      .run({
+        $reference: session.transferReference,
+        $offerId: session.offerId,
+        $seq: seq,
+        $json: JSON.stringify(session),
+      });
   }
-  findByReference(transferReference: string): BankTransferCheckoutSession | null {
-    const row = this.#database.prepare("SELECT session_json FROM bank_transfer_sessions WHERE transfer_reference = $reference").get({ $reference: transferReference }) as { session_json?: string } | undefined;
+  findByReference(
+    transferReference: string,
+  ): BankTransferCheckoutSession | null {
+    const row = this.#database
+      .prepare(
+        "SELECT session_json FROM bank_transfer_sessions WHERE transfer_reference = $reference",
+      )
+      .get({ $reference: transferReference }) as
+      | { session_json?: string }
+      | undefined;
     return row?.session_json ? parseSession(row.session_json) : null;
   }
   findLatestByOffer(offerId: string): BankTransferCheckoutSession | null {
-    const row = this.#database.prepare("SELECT session_json FROM bank_transfer_sessions WHERE offer_id = $offerId ORDER BY seq DESC LIMIT 1").get({ $offerId: offerId }) as { session_json?: string } | undefined;
+    const row = this.#database
+      .prepare(
+        "SELECT session_json FROM bank_transfer_sessions WHERE offer_id = $offerId ORDER BY seq DESC LIMIT 1",
+      )
+      .get({ $offerId: offerId }) as { session_json?: string } | undefined;
     return row?.session_json ? parseSession(row.session_json) : null;
   }
 }
 
 /** The provider could not issue a usable account. Nothing was recorded and no attempt holds the slot. */
 export class BankTransferProviderError extends Error {
-  constructor(message: string) { super(message); this.name = "BankTransferProviderError"; }
+  constructor(message: string) {
+    super(message);
+    this.name = "BankTransferProviderError";
+  }
 }
 
 export interface BankTransferPaymentManagerOptions {
   readonly offerManager: { getOffer(offerId: string): ConditionalBookingOffer };
   readonly calendar?: {
-    transitionPaymentPendingToConfirmedBooking(input: { commitmentId: string; unitId: string; start: string; end: string; clock: () => Date }): unknown;
-    releasePaymentPending?(commitmentId: string, options?: { clock?: () => Date }): void;
-    releaseConfirmedBooking?(input: { commitmentId: string; unitId: string; start: string; end: string; clock: () => Date }): void;
-    extendPaymentPending?(commitmentId: string, expiresAt: string, options?: { clock?: () => Date }): void;
+    transitionPaymentPendingToConfirmedBooking(input: {
+      commitmentId: string;
+      unitId: string;
+      start: string;
+      end: string;
+      clock: () => Date;
+    }): void;
+    releasePaymentPending?(
+      commitmentId: string,
+      options?: { clock?: () => Date },
+    ): void;
+    releaseConfirmedBooking?(input: {
+      commitmentId: string;
+      unitId: string;
+      start: string;
+      end: string;
+      clock: () => Date;
+    }): void;
+    extendPaymentPending?(
+      commitmentId: string,
+      expiresAt: string,
+      options?: { clock?: () => Date },
+    ): void;
   };
   readonly audit?: { record(entry: Record<string, unknown>): void };
   readonly providerClient: BankTransferProviderClient;
@@ -153,7 +257,9 @@ export interface BankTransferPaymentManagerOptions {
    * The shared interaction store. A confirmed transfer writes the same booking snapshot as a card payment, so the
    * Guest's booking pages and the back office (B4) see the Reservation (ADR 0005).
    */
-  readonly store?: import("./guest-interaction-store.js").SqliteGuestInteractionStore | null;
+  readonly store?:
+    | import("./guest-interaction-store.js").SqliteGuestInteractionStore
+    | null;
   readonly bookingState?: BookingStateRepository;
   readonly journeyRepository?: BookingPaymentJourneyRepository;
   readonly securityDepositCapability?: SecurityDepositCollectionCapabilityProvider;
@@ -161,14 +267,44 @@ export interface BankTransferPaymentManagerOptions {
   readonly compensationRefundProvider?: BookingPaymentCompensationPort;
 }
 
-type Outcome = "confirmed" | "deposit_required" | "processing_in_grace" | "late_payment_refunded" | "failed" | "expired";
-type Processed = { offerId: string; tenantId?: string; outcome: Outcome; reservationId?: string; contractId?: string; refundId?: string; reconciliationId?: string };
+type Outcome =
+  | "confirmed"
+  | "deposit_required"
+  | "processing_in_grace"
+  | "late_payment_refunded"
+  | "failed"
+  | "expired";
+type Processed = {
+  offerId: string;
+  tenantId?: string;
+  outcome: Outcome;
+  reservationId?: string;
+  contractId?: string;
+  refundId?: string;
+  reconciliationId?: string;
+};
 
 const GRACE_MS = PAYMENT_PROCESSING_GRACE_MINUTES * 60_000; // ADR-0044: one grace after the twenty-minute Payment Window.
-function deterministicSuffix(value: string): string { return createHash("sha256").update(value).digest("hex").slice(0, 12); }
-function authorizedPayer(offer: ConditionalBookingOffer): string { return offer.parties.distinctPayer?.id ?? offer.parties.primaryGuest.id; }
-function assertServer(principal: CommandPrincipal, offer: ConditionalBookingOffer): void {
-  if (principal.role !== "system" || !principal.id || !offer.tenantId || !principal.tenantId || principal.tenantId !== offer.tenantId) throw new Error("Trusted system principal with matching tenant is required");
+function deterministicSuffix(value: string): string {
+  return createHash("sha256").update(value).digest("hex").slice(0, 12);
+}
+function authorizedPayer(offer: ConditionalBookingOffer): string {
+  return offer.parties.distinctPayer?.id ?? offer.parties.primaryGuest.id;
+}
+function assertServer(
+  principal: CommandPrincipal,
+  offer: ConditionalBookingOffer,
+): void {
+  if (
+    principal.role !== "system" ||
+    !principal.id ||
+    !offer.tenantId ||
+    !principal.tenantId ||
+    principal.tenantId !== offer.tenantId
+  )
+    throw new Error(
+      "Trusted system principal with matching tenant is required",
+    );
 }
 
 export class BankTransferPaymentManager {
@@ -181,36 +317,66 @@ export class BankTransferPaymentManager {
   readonly #sessionStore?: BankTransferSessionStore;
   readonly #store?: BankTransferPaymentManagerOptions["store"];
   /** In-flight provider requests per offer, so concurrent starts share one account (ADR 0046). */
-  readonly #pendingInitializations = new Map<string, Promise<BankTransferCheckoutSession>>();
+  readonly #pendingInitializations = new Map<
+    string,
+    Promise<BankTransferCheckoutSession>
+  >();
   readonly #bookingState?: BookingStateRepository;
   readonly #journeys?: BookingPaymentJourneyRepository;
   readonly #securityDepositCapability?: SecurityDepositCollectionCapabilityProvider;
   readonly #securityDepositAccounting?: SecurityDepositAccountingRepository;
   readonly #compensationRefundProvider?: BankTransferPaymentManagerOptions["compensationRefundProvider"];
   readonly #sessionsByOffer = new Map<string, BankTransferCheckoutSession>();
-  readonly #sessionsByReference = new Map<string, BankTransferCheckoutSession>();
+  readonly #sessionsByReference = new Map<
+    string,
+    BankTransferCheckoutSession
+  >();
   readonly #reservations = new Map<string, Reservation>();
   readonly #contracts = new Map<string, BookingContract>();
   readonly #ledgerEntries = new Map<string, LedgerEntry[]>();
   readonly #refundRecords = new Map<string, BankTransferRefundRecord>();
-  readonly #reconciliationRecords = new Map<string, BankTransferReconciliationRecord>();
+  readonly #reconciliationRecords = new Map<
+    string,
+    BankTransferReconciliationRecord
+  >();
   readonly #processedReferences = new Map<string, Processed>();
 
   constructor(options: BankTransferPaymentManagerOptions) {
-    if (!options.offerManager || !options.providerClient || !options.guestContacts) throw new Error("offerManager, providerClient and guestContacts are required for BankTransferPaymentManager");
+    if (
+      !options.offerManager ||
+      !options.providerClient ||
+      !options.guestContacts
+    )
+      throw new Error(
+        "offerManager, providerClient and guestContacts are required for BankTransferPaymentManager",
+      );
     this.#guestContacts = options.guestContacts;
     this.#sessionStore = options.sessionStore;
     this.#store = options.store;
-    this.#offerManager = options.offerManager; this.#calendar = options.calendar; this.#audit = options.audit; this.#providerClient = options.providerClient; this.#liveAttempts = options.liveAttempts; this.#bookingState = options.bookingState; this.#journeys = options.journeyRepository; this.#securityDepositCapability = options.securityDepositCapability; this.#securityDepositAccounting = options.securityDepositAccounting; this.#compensationRefundProvider = options.compensationRefundProvider;
+    this.#offerManager = options.offerManager;
+    this.#calendar = options.calendar;
+    this.#audit = options.audit;
+    this.#providerClient = options.providerClient;
+    this.#liveAttempts = options.liveAttempts;
+    this.#bookingState = options.bookingState;
+    this.#journeys = options.journeyRepository;
+    this.#securityDepositCapability = options.securityDepositCapability;
+    this.#securityDepositAccounting = options.securityDepositAccounting;
+    this.#compensationRefundProvider = options.compensationRefundProvider;
   }
 
   /** The offer's current session, re-read from the durable store when there is one (another process may have written it). */
   #sessionForOffer(offerId: string): BankTransferCheckoutSession | undefined {
     const stored = this.#sessionStore?.findLatestByOffer(offerId);
-    if (stored) { this.#sessionsByOffer.set(offerId, stored); this.#sessionsByReference.set(stored.transferReference, stored); }
+    if (stored) {
+      this.#sessionsByOffer.set(offerId, stored);
+      this.#sessionsByReference.set(stored.transferReference, stored);
+    }
     return this.#sessionsByOffer.get(offerId);
   }
-  #sessionForReference(reference: string): BankTransferCheckoutSession | undefined {
+  #sessionForReference(
+    reference: string,
+  ): BankTransferCheckoutSession | undefined {
     const stored = this.#sessionStore?.findByReference(reference);
     if (stored) this.#sessionsByReference.set(reference, stored);
     return this.#sessionsByReference.get(reference);
@@ -228,187 +394,985 @@ export class BankTransferPaymentManager {
    * Window deadline fails closed with nothing recorded. While a transfer is payable it owns the one Live Payment
    * Attempt, and starting again returns the same account (ADR 0046).
    */
-  async initializeBankTransfer(envelope: PlatformCommandEnvelope<{ offerId: string }>, { clock = () => new Date() }: { clock?: () => Date } = {}): Promise<BankTransferCheckoutSession> {
-    if (!envelope || envelope.commandName !== "bank_transfer.initialize") throw new Error("Invalid bank transfer initialization command");
-    if (Object.keys(envelope.payload ?? {}).length !== 1 || !envelope.payload.offerId) throw new Error("Initialization accepts only offerId");
+  async initializeBankTransfer(
+    envelope: PlatformCommandEnvelope<{ offerId: string }>,
+    { clock = () => new Date() }: { clock?: () => Date } = {},
+  ): Promise<BankTransferCheckoutSession> {
+    if (!envelope || envelope.commandName !== "bank_transfer.initialize")
+      throw new Error("Invalid bank transfer initialization command");
+    if (
+      Object.keys(envelope.payload ?? {}).length !== 1 ||
+      !envelope.payload.offerId
+    )
+      throw new Error("Initialization accepts only offerId");
     const offer = this.#offerManager.getOffer(envelope.payload.offerId);
-    if (envelope.principal.role !== "guest" || !envelope.principal.id || envelope.principal.id !== authorizedPayer(offer)) throw new Error("Only the authoritative payer can initialize bank transfer");
-    if (!offer.tenantId || !envelope.principal.tenantId || envelope.principal.tenantId !== offer.tenantId) throw new Error("Cross-tenant offer access denied");
-    if (offer.status !== "accepted") throw new Error("Bank transfer initialization requires an accepted offer");
-    const now = clock(); const deadline = new Date(offer.paymentWindow.expiresAt).getTime(); const existingJourney = this.#journeys?.findByOfferId(offer.offerId);
-    if (now.getTime() >= deadline) { if (existingJourney?.stage === "stay_settled") this.#compensateStay(offer.offerId); throw new Error("Payment window has expired; cannot initialize bank transfer"); }
+    if (
+      envelope.principal.role !== "guest" ||
+      !envelope.principal.id ||
+      envelope.principal.id !== authorizedPayer(offer)
+    )
+      throw new Error(
+        "Only the authoritative payer can initialize bank transfer",
+      );
+    if (
+      !offer.tenantId ||
+      !envelope.principal.tenantId ||
+      envelope.principal.tenantId !== offer.tenantId
+    )
+      throw new Error("Cross-tenant offer access denied");
+    if (offer.status !== "accepted")
+      throw new Error(
+        "Bank transfer initialization requires an accepted offer",
+      );
+    const now = clock();
+    const deadline = new Date(offer.paymentWindow.expiresAt).getTime();
+    const existingJourney = this.#journeys?.findByOfferId(offer.offerId);
+    if (now.getTime() >= deadline) {
+      if (existingJourney?.stage === "stay_settled")
+        this.#compensateStay(offer.offerId);
+      throw new Error(
+        "Payment window has expired; cannot initialize bank transfer",
+      );
+    }
     const existing = this.#sessionForOffer(offer.offerId);
-    if (existing && (existing.status === "initiated" || existing.status === "processing_in_grace")) return { ...existing };
+    if (
+      existing &&
+      (existing.status === "initiated" ||
+        existing.status === "processing_in_grace")
+    )
+      return { ...existing };
     const pending = this.#pendingInitializations.get(offer.offerId);
     if (pending) return { ...(await pending) };
-    const started = this.#startTransfer(offer, envelope, clock, existingJourney);
+    const started = this.#startTransfer(
+      offer,
+      envelope,
+      clock,
+      existingJourney,
+    );
     this.#pendingInitializations.set(offer.offerId, started);
-    try { return { ...(await started) }; } finally { this.#pendingInitializations.delete(offer.offerId); }
+    try {
+      return { ...(await started) };
+    } finally {
+      this.#pendingInitializations.delete(offer.offerId);
+    }
   }
 
-  async #startTransfer(offer: ConditionalBookingOffer, envelope: PlatformCommandEnvelope<{ offerId: string }>, clock: () => Date, existingJourney: ReturnType<BookingPaymentJourneyRepository["findByOfferId"]> | undefined): Promise<BankTransferCheckoutSession> {
-    const now = clock(); const deadline = new Date(offer.paymentWindow.expiresAt).getTime();
-    if (offer.securityDeposit && offer.securityDeposit.amountKobo > 0 && (!this.#securityDepositCapability || !this.#journeys || !this.#securityDepositAccounting)) throw new Error("Refundable Security Deposit collection unavailable");
-    if (offer.securityDeposit && offer.securityDeposit.amountKobo > 0) assertSecurityDepositCollectionAvailable(this.#securityDepositCapability!, "bank_transfer");
+  async #startTransfer(
+    offer: ConditionalBookingOffer,
+    envelope: PlatformCommandEnvelope<{ offerId: string }>,
+    clock: () => Date,
+    existingJourney:
+      | ReturnType<BookingPaymentJourneyRepository["findByOfferId"]>
+      | undefined,
+  ): Promise<BankTransferCheckoutSession> {
+    const now = clock();
+    const deadline = new Date(offer.paymentWindow.expiresAt).getTime();
+    if (
+      offer.securityDeposit &&
+      offer.securityDeposit.amountKobo > 0 &&
+      (!this.#securityDepositCapability ||
+        !this.#journeys ||
+        !this.#securityDepositAccounting)
+    )
+      throw new Error("Refundable Security Deposit collection unavailable");
+    if (offer.securityDeposit && offer.securityDeposit.amountKobo > 0)
+      assertSecurityDepositCollectionAvailable(
+        this.#securityDepositCapability!,
+        "bank_transfer",
+      );
     // ADR 0046: another method's live attempt keeps the slot; ask the provider for nothing.
     const holder = this.#liveAttempts?.current(offer.offerId, now);
-    if (holder) throw new Error(`A live ${holder.method} ${holder.purpose} payment attempt already owns this offer`);
-    const contact = this.#guestContacts.find(authorizedPayer(offer), offer.tenantId!);
-    if (!contact?.contactEmail) throw new Error("A valid email address is required before payment continuation");
-    const stayAmountKobo = typeof offer.quote?.allInStayTotalKobo === "number" ? offer.quote.allInStayTotalKobo : offer.totalAmountDueNowKobo - (offer.refundableSecurityDepositKobo ?? 0);
-    const purpose = existingJourney?.stage === "stay_settled" ? "security_deposit" as const : "stay" as const;
+    if (holder)
+      throw new Error(
+        `A live ${holder.method} ${holder.purpose} payment attempt already owns this offer`,
+      );
+    const contact = this.#guestContacts.find(
+      authorizedPayer(offer),
+      offer.tenantId!,
+    );
+    if (!contact?.contactEmail)
+      throw new Error(
+        "A valid email address is required before payment continuation",
+      );
+    const stayAmountKobo =
+      typeof offer.quote?.allInStayTotalKobo === "number"
+        ? offer.quote.allInStayTotalKobo
+        : offer.totalAmountDueNowKobo -
+          (offer.refundableSecurityDepositKobo ?? 0);
+    const purpose =
+      existingJourney?.stage === "stay_settled"
+        ? ("security_deposit" as const)
+        : ("stay" as const);
     // Same amounts as the journey records: without a journey repository the stay component is the whole amount due now.
-    const amountKobo = purpose === "stay" ? (existingJourney?.stay.amountKobo ?? (this.#journeys ? stayAmountKobo : offer.totalAmountDueNowKobo)) : (existingJourney?.deposit.amountKobo ?? 0);
+    const amountKobo =
+      purpose === "stay"
+        ? (existingJourney?.stay.amountKobo ??
+          (this.#journeys ? stayAmountKobo : offer.totalAmountDueNowKobo))
+        : (existingJourney?.deposit.amountKobo ?? 0);
     const transferReference = `exp_trf_${deterministicSuffix(`${offer.offerId}:${envelope.commandId}:${purpose}`)}`;
 
     let account: ProviderTransferAccount;
     try {
-      account = await this.#providerClient.createTransferAccount({ reference: transferReference, amountKobo, currency: "NGN", expiresAt: offer.paymentWindow.expiresAt, email: contact.contactEmail, payerId: authorizedPayer(offer) });
+      account = await this.#providerClient.createTransferAccount({
+        reference: transferReference,
+        amountKobo,
+        currency: "NGN",
+        expiresAt: offer.paymentWindow.expiresAt,
+        email: contact.contactEmail,
+        payerId: authorizedPayer(offer),
+      });
     } catch {
-      throw new BankTransferProviderError("The payment provider could not issue a transfer account");
+      throw new BankTransferProviderError(
+        "The payment provider could not issue a transfer account",
+      );
     }
     // ADR 0047: the account must be this booking's, and must stop being payable no later than the Payment Window deadline.
-    const accountExpiry = typeof account?.expiresAt === "string" ? Date.parse(account.expiresAt) : Number.NaN;
-    if (!account || account.reference !== transferReference || typeof account.bankName !== "string" || account.bankName.trim() === "" || typeof account.accountNumber !== "string" || !/^\d{6,20}$/.test(account.accountNumber)) {
-      throw new BankTransferProviderError("The payment provider returned an unusable transfer account");
+    const accountExpiry =
+      typeof account?.expiresAt === "string"
+        ? Date.parse(account.expiresAt)
+        : Number.NaN;
+    if (
+      !account ||
+      account.reference !== transferReference ||
+      typeof account.bankName !== "string" ||
+      account.bankName.trim() === "" ||
+      typeof account.accountNumber !== "string" ||
+      !/^\d{6,20}$/.test(account.accountNumber)
+    ) {
+      throw new BankTransferProviderError(
+        "The payment provider returned an unusable transfer account",
+      );
     }
     const issuedAt = clock();
-    if (!Number.isFinite(accountExpiry) || accountExpiry > deadline) throw new BankTransferProviderError("The transfer account would stay payable after the Payment Window deadline");
-    if (accountExpiry <= issuedAt.getTime() || issuedAt.getTime() >= deadline) throw new BankTransferProviderError("The transfer account expired before it could be used");
+    if (!Number.isFinite(accountExpiry) || accountExpiry > deadline)
+      throw new BankTransferProviderError(
+        "The transfer account would stay payable after the Payment Window deadline",
+      );
+    if (accountExpiry <= issuedAt.getTime() || issuedAt.getTime() >= deadline)
+      throw new BankTransferProviderError(
+        "The transfer account expired before it could be used",
+      );
 
-    const journey = this.#journeys?.createIfAbsent({ offerId: offer.offerId, paymentMethod: "bank_transfer", originalPaymentDeadline: offer.paymentWindow.expiresAt, stayAmountKobo, deposit: offer.securityDeposit ?? null });
+    const journey = this.#journeys?.createIfAbsent({
+      offerId: offer.offerId,
+      paymentMethod: "bank_transfer",
+      originalPaymentDeadline: offer.paymentWindow.expiresAt,
+      stayAmountKobo,
+      deposit: offer.securityDeposit ?? null,
+    });
     const session: BankTransferCheckoutSession = {
-      checkoutId: `chk_trf_${deterministicSuffix(transferReference)}`, offerId: offer.offerId, transferReference,
-      bankName: account.bankName.trim(), accountNumber: account.accountNumber,
-      totalAmountDueNowKobo: offer.totalAmountDueNowKobo, amountKobo, purpose, currency: "NGN", expiresAt: new Date(accountExpiry).toISOString(),
-      graceEndsAt: new Date(deadline + GRACE_MS).toISOString(), status: "initiated"
+      checkoutId: `chk_trf_${deterministicSuffix(transferReference)}`,
+      offerId: offer.offerId,
+      transferReference,
+      bankName: account.bankName.trim(),
+      accountNumber: account.accountNumber,
+      totalAmountDueNowKobo: offer.totalAmountDueNowKobo,
+      amountKobo,
+      purpose,
+      currency: "NGN",
+      expiresAt: new Date(accountExpiry).toISOString(),
+      graceEndsAt: new Date(deadline + GRACE_MS).toISOString(),
+      status: "initiated",
     };
-    if (purpose === "security_deposit") this.#securityDepositAccounting!.createOrGet({ offerId: offer.offerId, snapshot: journey!.requiredDeposit!, paymentMethod: "bank_transfer" });
-    this.#liveAttempts?.acquire({ offerId: offer.offerId, method: "bank_transfer", purpose, attemptId: session.checkoutId, startedAt: issuedAt.toISOString(), expiresAt: session.graceEndsAt }); if (journey) this.#journeys!.update(offer.offerId, journey.journeyVersion, (value) => ({ ...value, stage: purpose === "stay" ? "stay_payment_active" : "deposit_payment_active", [purpose === "stay" ? "stay" : "deposit"]: { ...(purpose === "stay" ? value.stay : value.deposit), status: "active" } })); this.#put(session);
+    if (purpose === "security_deposit")
+      this.#securityDepositAccounting!.createOrGet({
+        offerId: offer.offerId,
+        snapshot: journey!.requiredDeposit!,
+        paymentMethod: "bank_transfer",
+      });
+    this.#liveAttempts?.acquire({
+      offerId: offer.offerId,
+      method: "bank_transfer",
+      purpose,
+      attemptId: session.checkoutId,
+      startedAt: issuedAt.toISOString(),
+      expiresAt: session.graceEndsAt,
+    });
+    if (journey)
+      this.#journeys!.update(
+        offer.offerId,
+        journey.journeyVersion,
+        (value) => ({
+          ...value,
+          stage:
+            purpose === "stay"
+              ? "stay_payment_active"
+              : "deposit_payment_active",
+          [purpose === "stay" ? "stay" : "deposit"]: {
+            ...(purpose === "stay" ? value.stay : value.deposit),
+            status: "active",
+          },
+        }),
+      );
+    this.#put(session);
     // ADR 0075: ids and times only; never the account number.
-    this.#audit?.record({ type: "bank_transfer.initialized", checkoutId: session.checkoutId, offerId: offer.offerId, commandEnvelopeId: envelope.commandId, initiatedAt: issuedAt.toISOString() });
+    this.#audit?.record({
+      type: "bank_transfer.initialized",
+      checkoutId: session.checkoutId,
+      offerId: offer.offerId,
+      commandEnvelopeId: envelope.commandId,
+      initiatedAt: issuedAt.toISOString(),
+    });
     return session;
   }
 
-  getPaymentJourney(offerId: string) { return this.#journeys?.findByOfferId(offerId) ?? null; }
-  getSession(offerId: string): BankTransferCheckoutSession | undefined { const s = this.#sessionForOffer(offerId); return s ? { ...s } : undefined; }
-  getSessionByReference(reference: string): BankTransferCheckoutSession | undefined { const s = this.#sessionForReference(reference); return s ? { ...s } : undefined; }
-  getBookingContract(offerId: string): BookingContract | undefined { return [...this.#contracts.values()].find((c) => c.offerId === offerId); }
-  getRefundRecord(offerId: string): BankTransferRefundRecord | undefined { return [...this.#refundRecords.values()].find((r) => r.offerId === offerId); }
-  getReconciliationRecord(offerId: string): BankTransferReconciliationRecord | undefined { return [...this.#reconciliationRecords.values()].find((r) => r.offerId === offerId); }
+  getPaymentJourney(offerId: string) {
+    return this.#journeys?.findByOfferId(offerId) ?? null;
+  }
+  getSession(offerId: string): BankTransferCheckoutSession | undefined {
+    const s = this.#sessionForOffer(offerId);
+    return s ? { ...s } : undefined;
+  }
+  getSessionByReference(
+    reference: string,
+  ): BankTransferCheckoutSession | undefined {
+    const s = this.#sessionForReference(reference);
+    return s ? { ...s } : undefined;
+  }
+  getBookingContract(offerId: string): BookingContract | undefined {
+    return [...this.#contracts.values()].find((c) => c.offerId === offerId);
+  }
+  getRefundRecord(offerId: string): BankTransferRefundRecord | undefined {
+    return [...this.#refundRecords.values()].find((r) => r.offerId === offerId);
+  }
+  getReconciliationRecord(
+    offerId: string,
+  ): BankTransferReconciliationRecord | undefined {
+    return [...this.#reconciliationRecords.values()].find(
+      (r) => r.offerId === offerId,
+    );
+  }
 
-  #validateProvider(session: BankTransferCheckoutSession, offer: ConditionalBookingOffer, result: BankTransferProviderResult): void {
-    if (!result || result.verified !== true || result.pspReference !== session.transferReference) throw new Error("Bank transfer provider verification failed: reference");
-    if (result.currency !== session.currency) throw new Error("Currency verification failed");
-    if (result.amountKobo !== session.amountKobo) throw new Error("Amount verification failed");
-    if (!result.payerId || result.payerId !== authorizedPayer(offer)) throw new Error("Payer attribution verification failed");
+  #validateProvider(
+    session: BankTransferCheckoutSession,
+    offer: ConditionalBookingOffer,
+    result: BankTransferProviderResult,
+  ): void {
+    if (
+      !result ||
+      result.verified !== true ||
+      result.pspReference !== session.transferReference
+    )
+      throw new Error("Bank transfer provider verification failed: reference");
+    if (result.currency !== session.currency)
+      throw new Error("Currency verification failed");
+    if (result.amountKobo !== session.amountKobo)
+      throw new Error("Amount verification failed");
+    if (!result.payerId || result.payerId !== authorizedPayer(offer))
+      throw new Error("Payer attribution verification failed");
     if (result.status === "pending") {
-      if (!result.processingStartedAt || new Date(result.processingStartedAt).getTime() > new Date(offer.paymentWindow.expiresAt).getTime()) throw new Error("Payment is not eligible for processing grace");
+      if (
+        !result.processingStartedAt ||
+        new Date(result.processingStartedAt).getTime() >
+          new Date(offer.paymentWindow.expiresAt).getTime()
+      )
+        throw new Error("Payment is not eligible for processing grace");
     }
   }
 
-  resolveExpiry(offerId: string, principal: CommandPrincipal, { clock = () => new Date() }: { clock?: () => Date } = {}): BankTransferCheckoutSession {
-    const offer = this.#offerManager.getOffer(offerId); assertServer(principal, offer); const session = this.#sessionForOffer(offerId);
+  resolveExpiry(
+    offerId: string,
+    principal: CommandPrincipal,
+    { clock = () => new Date() }: { clock?: () => Date } = {},
+  ): BankTransferCheckoutSession {
+    const offer = this.#offerManager.getOffer(offerId);
+    assertServer(principal, offer);
+    const session = this.#sessionForOffer(offerId);
     if (!session) throw new Error("No bank transfer session");
-    const now = clock(); if (now.getTime() < new Date(session.graceEndsAt).getTime()) throw new Error("Payment release deadline has not been reached");
-    if (session.status === "expired" || session.status === "refunded") return { ...session };
-    this.#calendar?.releasePaymentPending?.(offer.inventoryCommitmentId, { clock: () => now });
+    const now = clock();
+    if (now.getTime() < new Date(session.graceEndsAt).getTime())
+      throw new Error("Payment release deadline has not been reached");
+    if (session.status === "expired" || session.status === "refunded")
+      return { ...session };
+    this.#calendar?.releasePaymentPending?.(offer.inventoryCommitmentId, {
+      clock: () => now,
+    });
     if (session.purpose === "security_deposit") this.#compensateStay(offerId);
-    const expired = { ...session, status: "expired" as const }; this.#liveAttempts?.release(offerId); this.#put(expired);
-    this.#audit?.record({ type: "bank_transfer.expired", offerId, checkoutId: session.checkoutId, commandEnvelopeId: principal.id, expiredAt: now.toISOString() });
+    const expired = { ...session, status: "expired" as const };
+    this.#liveAttempts?.release(offerId);
+    this.#put(expired);
+    this.#audit?.record({
+      type: "bank_transfer.expired",
+      offerId,
+      checkoutId: session.checkoutId,
+      commandEnvelopeId: principal.id,
+      expiredAt: now.toISOString(),
+    });
     return { ...expired };
   }
 
-  verifyAndProcessTransfer(envelope: PlatformCommandEnvelope<{ transferReference: string }>, options: { clock?: () => Date } = {}): BankTransferProcessOutcome {
-    return this.#process(envelope, (reference) => this.#providerClient.verifyTransfer(reference), options);
+  verifyAndProcessTransfer(
+    envelope: PlatformCommandEnvelope<{ transferReference: string }>,
+    options: { clock?: () => Date } = {},
+  ): BankTransferProcessOutcome {
+    return this.#process(
+      envelope,
+      (reference) => this.#providerClient.verifyTransfer(reference),
+      options,
+    );
   }
 
   /**
    * Processes a result the server fetched from an asynchronous provider (Paystack, P2). The result is validated
    * exactly as a synchronous one: designated reference, exact amount and currency, authorized payer (ADR 0047).
    */
-  verifyAndProcessTransferWithProviderResult(envelope: PlatformCommandEnvelope<{ transferReference: string }>, result: BankTransferProviderResult, options: { clock?: () => Date } = {}): BankTransferProcessOutcome {
+  verifyAndProcessTransferWithProviderResult(
+    envelope: PlatformCommandEnvelope<{ transferReference: string }>,
+    result: BankTransferProviderResult,
+    options: { clock?: () => Date } = {},
+  ): BankTransferProcessOutcome {
     return this.#process(envelope, () => result, options);
   }
 
-  #process(envelope: PlatformCommandEnvelope<{ transferReference: string }>, obtain: (reference: string) => BankTransferProviderResult, { clock = () => new Date() }: { clock?: () => Date } = {}): BankTransferProcessOutcome {
-    if (!envelope || envelope.commandName !== "bank_transfer.verify_and_process") throw new Error("Invalid bank transfer verification command");
-    if (Object.keys(envelope.payload ?? {}).length !== 1 || !envelope.payload.transferReference) throw new Error("Verification accepts only transferReference");
-    const session = this.#sessionForReference(envelope.payload.transferReference); if (!session) throw new Error("Unknown transfer reference");
-    const offer = this.#offerManager.getOffer(session.offerId); assertServer(envelope.principal, offer);
+  #process(
+    envelope: PlatformCommandEnvelope<{ transferReference: string }>,
+    obtain: (reference: string) => BankTransferProviderResult,
+    { clock = () => new Date() }: { clock?: () => Date } = {},
+  ): BankTransferProcessOutcome {
+    if (
+      !envelope ||
+      envelope.commandName !== "bank_transfer.verify_and_process"
+    )
+      throw new Error("Invalid bank transfer verification command");
+    if (
+      Object.keys(envelope.payload ?? {}).length !== 1 ||
+      !envelope.payload.transferReference
+    )
+      throw new Error("Verification accepts only transferReference");
+    const session = this.#sessionForReference(
+      envelope.payload.transferReference,
+    );
+    if (!session) throw new Error("Unknown transfer reference");
+    const offer = this.#offerManager.getOffer(session.offerId);
+    assertServer(envelope.principal, offer);
     const processed = this.#processedReferences.get(session.transferReference);
     if (processed) {
-      if (processed.tenantId !== offer.tenantId || processed.offerId !== offer.offerId) throw new Error("Processed bank transfer reference is not authorized");
-      if (processed.outcome === "confirmed" && processed.reservationId && processed.contractId) return { outcome: "confirmed", reservation: this.#reservations.get(processed.reservationId), bookingContract: this.#contracts.get(processed.contractId), ledgerEntries: this.#ledgerEntries.get(processed.reservationId) };
-      if (processed.outcome === "late_payment_refunded" && processed.refundId && processed.reconciliationId) return { outcome: "late_payment_refunded", refundRecord: this.#refundRecords.get(processed.refundId), reconciliationRecord: this.#reconciliationRecords.get(processed.reconciliationId) };
+      if (
+        processed.tenantId !== offer.tenantId ||
+        processed.offerId !== offer.offerId
+      )
+        throw new Error("Processed bank transfer reference is not authorized");
+      if (
+        processed.outcome === "confirmed" &&
+        processed.reservationId &&
+        processed.contractId
+      )
+        return {
+          outcome: "confirmed",
+          reservation: this.#reservations.get(processed.reservationId),
+          bookingContract: this.#contracts.get(processed.contractId),
+          ledgerEntries: this.#ledgerEntries.get(processed.reservationId),
+        };
+      if (
+        processed.outcome === "late_payment_refunded" &&
+        processed.refundId &&
+        processed.reconciliationId
+      )
+        return {
+          outcome: "late_payment_refunded",
+          refundRecord: this.#refundRecords.get(processed.refundId),
+          reconciliationRecord: this.#reconciliationRecords.get(
+            processed.reconciliationId,
+          ),
+        };
     }
     // After a restart the in-memory processed record is gone; the durable session status still says it is done.
     // Re-running confirmation would roll back a live booking on failure, so a finished reference is never reprocessed.
-    if (!processed && (session.status === "completed" || session.status === "refunded")) throw new Error("Transfer reference was already processed");
+    if (
+      !processed &&
+      (session.status === "completed" || session.status === "refunded")
+    )
+      throw new Error("Transfer reference was already processed");
     let result: BankTransferProviderResult;
-    try { result = obtain(session.transferReference); this.#validateProvider(session, offer, result); } catch (error) { if (session.purpose === "security_deposit") this.#compensateStay(offer.offerId); throw error; }
-    const now = clock(); const deadline = new Date(session.expiresAt).getTime(); const graceEnd = new Date(session.graceEndsAt).getTime();
-    if (result.status === "pending") {
-      if (now.getTime() >= graceEnd) { this.resolveExpiry(offer.offerId, envelope.principal, { clock }); return { outcome: "expired" }; }
-      const updated = { ...session, status: "processing_in_grace" as const, processingStartedAt: result.processingStartedAt };
-      if (now.getTime() >= deadline) this.#calendar?.extendPaymentPending?.(offer.inventoryCommitmentId, session.graceEndsAt, { clock: () => now });
-      this.#put(updated); return { outcome: "processing_in_grace" };
+    try {
+      result = obtain(session.transferReference);
+      this.#validateProvider(session, offer, result);
+    } catch (error) {
+      if (session.purpose === "security_deposit")
+        this.#compensateStay(offer.offerId);
+      throw error;
     }
-    const eligibleSuccess = result.status === "success" && (now.getTime() < deadline || (session.processingStartedAt !== undefined && now.getTime() < graceEnd));
-    if (result.status === "success" && !eligibleSuccess) return this.#lateRefund(offer, session, result, envelope, now);
-    if (result.status !== "success" || now.getTime() >= graceEnd) { if (session.purpose === "security_deposit") this.#compensateStay(offer.offerId); return { outcome: "failed" }; }
-    if (session.purpose === "stay" && offer.securityDeposit && offer.securityDeposit.amountKobo > 0 && this.#journeys) {
-      const current = this.#journeys.findByOfferId(offer.offerId); if (!current) throw new Error("Payment journey not found"); if (current.stage === "confirmed" && current.finalReservationId && current.finalContractId) return { outcome: "confirmed", reservation: this.#reservations.get(current.finalReservationId), bookingContract: this.#contracts.get(current.finalContractId), ledgerEntries: this.#ledgerEntries.get(current.finalReservationId) };
-      this.#journeys.update(offer.offerId, current.journeyVersion, (value) => ({ ...value, stage: "stay_settled", stay: { ...value.stay, status: "settled", providerReference: session.transferReference, paidAt: now.toISOString() } }));
-      this.#put({ ...session, status: "completed" }); this.#liveAttempts?.release(offer.offerId); return { outcome: "deposit_required" };
+    const now = clock();
+    const deadline = new Date(session.expiresAt).getTime();
+    const graceEnd = new Date(session.graceEndsAt).getTime();
+    if (result.status === "pending") {
+      if (now.getTime() >= graceEnd) {
+        this.resolveExpiry(offer.offerId, envelope.principal, { clock });
+        return { outcome: "expired" };
+      }
+      const updated = {
+        ...session,
+        status: "processing_in_grace" as const,
+        processingStartedAt: result.processingStartedAt,
+      };
+      if (now.getTime() >= deadline)
+        this.#calendar?.extendPaymentPending?.(
+          offer.inventoryCommitmentId,
+          session.graceEndsAt,
+          { clock: () => now },
+        );
+      this.#put(updated);
+      return { outcome: "processing_in_grace" };
+    }
+    const eligibleSuccess =
+      result.status === "success" &&
+      (now.getTime() < deadline ||
+        (session.processingStartedAt !== undefined &&
+          now.getTime() < graceEnd));
+    if (result.status === "success" && !eligibleSuccess)
+      return this.#lateRefund(offer, session, result, envelope, now);
+    if (result.status !== "success" || now.getTime() >= graceEnd) {
+      if (session.purpose === "security_deposit")
+        this.#compensateStay(offer.offerId);
+      return { outcome: "failed" };
+    }
+    if (
+      session.purpose === "stay" &&
+      offer.securityDeposit &&
+      offer.securityDeposit.amountKobo > 0 &&
+      this.#journeys
+    ) {
+      const current = this.#journeys.findByOfferId(offer.offerId);
+      if (!current) throw new Error("Payment journey not found");
+      if (
+        current.stage === "confirmed" &&
+        current.finalReservationId &&
+        current.finalContractId
+      )
+        return {
+          outcome: "confirmed",
+          reservation: this.#reservations.get(current.finalReservationId),
+          bookingContract: this.#contracts.get(current.finalContractId),
+          ledgerEntries: this.#ledgerEntries.get(current.finalReservationId),
+        };
+      this.#journeys.update(offer.offerId, current.journeyVersion, (value) => ({
+        ...value,
+        stage: "stay_settled",
+        stay: {
+          ...value.stay,
+          status: "settled",
+          providerReference: session.transferReference,
+          paidAt: now.toISOString(),
+        },
+      }));
+      this.#put({ ...session, status: "completed" });
+      this.#liveAttempts?.release(offer.offerId);
+      return { outcome: "deposit_required" };
     }
     const compensationJourney = this.#journeys?.findByOfferId(offer.offerId);
-    if (session.purpose === "security_deposit" && compensationJourney?.compensation.deposit.required) {
-      this.#compensateStay(offer.offerId); this.#compensateDeposit(offer.offerId, now);
-      throw new Error("Booking finalization compensation is still being processed");
+    if (
+      session.purpose === "security_deposit" &&
+      compensationJourney?.compensation.deposit.required
+    ) {
+      this.#compensateStay(offer.offerId);
+      this.#compensateDeposit(offer.offerId, now);
+      throw new Error(
+        "Booking finalization compensation is still being processed",
+      );
     }
     if (session.purpose === "security_deposit") {
-      const collection = this.#securityDepositAccounting?.getByOfferId(offer.offerId); if (!collection) throw new Error("Deposit collection record not found");
-      try { const collected = this.#securityDepositAccounting!.recordCollection(collection.collectionId, { providerReference: session.transferReference, capabilityVersion: this.#securityDepositCapability?.getCapability({ paymentMethod: "bank_transfer" }).capabilityVersion, collectedAt: now.toISOString() }); if (!collected.providerReference) throw new Error("Deposit payment source was not recorded"); } catch (error) { this.#compensateStay(offer.offerId); throw error; }
-      const current = this.#journeys?.findByOfferId(offer.offerId); if (!current || (current.stage !== "deposit_payment_active" && current.stage !== "stay_settled")) throw new Error("Deposit payment is not the authorized next component");
-      this.#journeys!.update(offer.offerId, current.journeyVersion, (value) => ({ ...value, stage: "both_settled", deposit: { ...value.deposit, status: "settled", providerReference: session.transferReference, paidAt: now.toISOString() } }));
+      const collection = this.#securityDepositAccounting?.getByOfferId(
+        offer.offerId,
+      );
+      if (!collection) throw new Error("Deposit collection record not found");
+      try {
+        const collected = this.#securityDepositAccounting!.recordCollection(
+          collection.collectionId,
+          {
+            providerReference: session.transferReference,
+            capabilityVersion: this.#securityDepositCapability?.getCapability({
+              paymentMethod: "bank_transfer",
+            }).capabilityVersion,
+            collectedAt: now.toISOString(),
+          },
+        );
+        if (!collected.providerReference)
+          throw new Error("Deposit payment source was not recorded");
+      } catch (error) {
+        this.#compensateStay(offer.offerId);
+        throw error;
+      }
+      const current = this.#journeys?.findByOfferId(offer.offerId);
+      if (
+        !current ||
+        (current.stage !== "deposit_payment_active" &&
+          current.stage !== "stay_settled")
+      )
+        throw new Error("Deposit payment is not the authorized next component");
+      this.#journeys!.update(
+        offer.offerId,
+        current.journeyVersion,
+        (value) => ({
+          ...value,
+          stage: "both_settled",
+          deposit: {
+            ...value.deposit,
+            status: "settled",
+            providerReference: session.transferReference,
+            paidAt: now.toISOString(),
+          },
+        }),
+      );
     }
-    if (!this.#calendar) throw new Error("Authoritative availability calendar is required to confirm a Booking");
-    const reservationId = `res_trf_${deterministicSuffix(session.transferReference)}`; const contractId = `ctr_trf_${deterministicSuffix(session.transferReference)}`;
-    const reservation: Reservation = { reservationId, contractId, unitId: offer.unitId, primaryGuestId: offer.parties.primaryGuest.id, dates: { checkIn: offer.dates.checkIn, checkOut: offer.dates.checkOut }, status: "confirmed", confirmedAt: now.toISOString(), inventoryCommitmentId: offer.inventoryCommitmentId };
-    if (session.purpose === "security_deposit") { const collection = this.#securityDepositAccounting?.getByOfferId(offer.offerId); if (!collection || !collection.providerReference) throw new Error("Deposit collection is not bound to a successful source"); }
-    const bookingContract: BookingContract = { contractId, reservationId, offerId: offer.offerId, unitId: offer.unitId, tenantId: offer.tenantId, parties: offer.parties, dates: offer.dates, occupants: offer.occupants, quote: offer.quote, totalAmountDueNowKobo: offer.totalAmountDueNowKobo, ...(offer.securityDeposit ? { securityDeposit: { policyVersion: offer.securityDeposit.policyVersion, amountKobo: offer.securityDeposit.amountKobo, currency: "NGN" as const, collectionId: this.#securityDepositAccounting?.getByOfferId(offer.offerId)?.collectionId, status: "held" as const } } : {}), policies: offer.policies, disclosures: offer.disclosures, paymentDetails: { paymentMethod: "bank_transfer", transferReference: session.purpose === "security_deposit" ? (this.#journeys?.findByOfferId(offer.offerId)?.stay.providerReference ?? session.transferReference) : session.transferReference, amountKobo: session.purpose === "security_deposit" ? (this.#journeys?.findByOfferId(offer.offerId)?.stay.amountKobo ?? result.amountKobo) : result.amountKobo, currency: "NGN", paidAt: now.toISOString() }, createdAt: now.toISOString(), contractVersion: 1, checkout: { time: "11:00", timezone: "Africa/Lagos", source: "contractual" }, ...(offer.checkInWindow ? { checkInWindow: offer.checkInWindow } : {}), financialSummary: { originalBookingTotalKobo: offer.totalAmountDueNowKobo, currentContractTotalKobo: offer.totalAmountDueNowKobo, currency: "NGN", amendmentAdjustments: [] } };
-    const ledgerEntries: LedgerEntry[] = [{ entryId: `led_${reservationId}_1`, reservationId, type: "guest_payment_credit", amountKobo: session.purpose === "security_deposit" ? (this.#journeys?.findByOfferId(offer.offerId)?.stay.amountKobo ?? offer.totalAmountDueNowKobo) : offer.totalAmountDueNowKobo, currency: "NGN", createdAt: now.toISOString() }];
+    if (!this.#calendar)
+      throw new Error(
+        "Authoritative availability calendar is required to confirm a Booking",
+      );
+    const reservationId = `res_trf_${deterministicSuffix(session.transferReference)}`;
+    const contractId = `ctr_trf_${deterministicSuffix(session.transferReference)}`;
+    const reservation: Reservation = {
+      reservationId,
+      contractId,
+      unitId: offer.unitId,
+      primaryGuestId: offer.parties.primaryGuest.id,
+      dates: { checkIn: offer.dates.checkIn, checkOut: offer.dates.checkOut },
+      status: "confirmed",
+      confirmedAt: now.toISOString(),
+      inventoryCommitmentId: offer.inventoryCommitmentId,
+    };
+    if (session.purpose === "security_deposit") {
+      const collection = this.#securityDepositAccounting?.getByOfferId(
+        offer.offerId,
+      );
+      if (!collection || !collection.providerReference)
+        throw new Error(
+          "Deposit collection is not bound to a successful source",
+        );
+    }
+    const bookingContract: BookingContract = {
+      contractId,
+      reservationId,
+      offerId: offer.offerId,
+      unitId: offer.unitId,
+      tenantId: offer.tenantId,
+      parties: offer.parties,
+      dates: offer.dates,
+      occupants: offer.occupants,
+      quote: offer.quote,
+      totalAmountDueNowKobo: offer.totalAmountDueNowKobo,
+      ...(offer.securityDeposit
+        ? {
+            securityDeposit: {
+              policyVersion: offer.securityDeposit.policyVersion,
+              amountKobo: offer.securityDeposit.amountKobo,
+              currency: "NGN" as const,
+              collectionId: this.#securityDepositAccounting?.getByOfferId(
+                offer.offerId,
+              )?.collectionId,
+              status: "held" as const,
+            },
+          }
+        : {}),
+      policies: offer.policies,
+      disclosures: offer.disclosures,
+      paymentDetails: {
+        paymentMethod: "bank_transfer",
+        transferReference:
+          session.purpose === "security_deposit"
+            ? (this.#journeys?.findByOfferId(offer.offerId)?.stay
+                .providerReference ?? session.transferReference)
+            : session.transferReference,
+        amountKobo:
+          session.purpose === "security_deposit"
+            ? (this.#journeys?.findByOfferId(offer.offerId)?.stay.amountKobo ??
+              result.amountKobo)
+            : result.amountKobo,
+        currency: "NGN",
+        paidAt: now.toISOString(),
+      },
+      createdAt: now.toISOString(),
+      contractVersion: 1,
+      checkout: {
+        time: "11:00",
+        timezone: "Africa/Lagos",
+        source: "contractual",
+      },
+      ...(offer.checkInWindow ? { checkInWindow: offer.checkInWindow } : {}),
+      financialSummary: {
+        originalBookingTotalKobo: offer.totalAmountDueNowKobo,
+        currentContractTotalKobo: offer.totalAmountDueNowKobo,
+        currency: "NGN",
+        amendmentAdjustments: [],
+      },
+    };
+    const ledgerEntries: LedgerEntry[] = [
+      {
+        entryId: `led_${reservationId}_1`,
+        reservationId,
+        type: "guest_payment_credit",
+        amountKobo:
+          session.purpose === "security_deposit"
+            ? (this.#journeys?.findByOfferId(offer.offerId)?.stay.amountKobo ??
+              offer.totalAmountDueNowKobo)
+            : offer.totalAmountDueNowKobo,
+        currency: "NGN",
+        createdAt: now.toISOString(),
+      },
+    ];
     let inventoryConfirmed = false;
     try {
-      this.#calendar.transitionPaymentPendingToConfirmedBooking({ commitmentId: offer.inventoryCommitmentId, unitId: offer.unitId, start: offer.dates.checkIn, end: offer.dates.checkOut, clock: () => now });
+      this.#calendar.transitionPaymentPendingToConfirmedBooking({
+        commitmentId: offer.inventoryCommitmentId,
+        unitId: offer.unitId,
+        start: offer.dates.checkIn,
+        end: offer.dates.checkOut,
+        clock: () => now,
+      });
       inventoryConfirmed = true;
-      this.#bookingState?.saveBookingAtomically({ contract: bookingContract, reservation });
-      this.#store?.saveBookingSnapshot({ reservationId, contractId, offerId: offer.offerId, reservationJson: JSON.stringify(reservation), contractJson: JSON.stringify(bookingContract), confirmedAt: reservation.confirmedAt });
-      if (session.purpose === "security_deposit") { const collection = this.#securityDepositAccounting?.getByOfferId(offer.offerId); if (!collection) throw new Error("Deposit collection record not found"); this.#securityDepositAccounting!.bind(collection.collectionId, { reservationId, contractId }); }
+      this.#bookingState?.saveBookingAtomically({
+        contract: bookingContract,
+        reservation,
+      });
+      this.#store?.saveBookingSnapshot({
+        reservationId,
+        contractId,
+        offerId: offer.offerId,
+        reservationJson: JSON.stringify(reservation),
+        contractJson: JSON.stringify(bookingContract),
+        confirmedAt: reservation.confirmedAt,
+      });
+      if (session.purpose === "security_deposit") {
+        const collection = this.#securityDepositAccounting?.getByOfferId(
+          offer.offerId,
+        );
+        if (!collection) throw new Error("Deposit collection record not found");
+        this.#securityDepositAccounting!.bind(collection.collectionId, {
+          reservationId,
+          contractId,
+        });
+      }
     } catch (error) {
       let rollbackFailed = false;
-      try { if (inventoryConfirmed) this.#calendar.releaseConfirmedBooking?.({ commitmentId: offer.inventoryCommitmentId, unitId: offer.unitId, start: offer.dates.checkIn, end: offer.dates.checkOut, clock: () => now }); } catch { rollbackFailed = true; }
-      try { this.#bookingState?.removeBookingAtomically({ contractId, reservationId }); } catch { rollbackFailed = true; }
-      if (session.purpose === "security_deposit") { this.#compensateStay(offer.offerId); this.#compensateDeposit(offer.offerId, now); }
+      try {
+        if (inventoryConfirmed)
+          this.#calendar.releaseConfirmedBooking?.({
+            commitmentId: offer.inventoryCommitmentId,
+            unitId: offer.unitId,
+            start: offer.dates.checkIn,
+            end: offer.dates.checkOut,
+            clock: () => now,
+          });
+      } catch {
+        rollbackFailed = true;
+      }
+      try {
+        this.#bookingState?.removeBookingAtomically({
+          contractId,
+          reservationId,
+        });
+      } catch {
+        rollbackFailed = true;
+      }
+      if (session.purpose === "security_deposit") {
+        this.#compensateStay(offer.offerId);
+        this.#compensateDeposit(offer.offerId, now);
+      }
       if (rollbackFailed) this.#markFinalizationReconciliation(offer.offerId);
       throw error;
     }
-    this.#reservations.set(reservationId, reservation); this.#contracts.set(contractId, bookingContract); this.#ledgerEntries.set(reservationId, ledgerEntries); this.#put({ ...session, status: "completed" }); if (this.#journeys) { const current = this.#journeys.findByOfferId(offer.offerId); if (current?.stage === "both_settled") this.#journeys.update(offer.offerId, current.journeyVersion, (value) => ({ ...value, stage: "confirmed", finalReservationId: reservationId, finalContractId: contractId })); } this.#liveAttempts?.release(offer.offerId); this.#processedReferences.set(session.transferReference, { offerId: offer.offerId, tenantId: offer.tenantId, outcome: "confirmed", reservationId, contractId });
-    return { outcome: "confirmed", reservation, bookingContract, ledgerEntries: Object.freeze(ledgerEntries) };
+    this.#reservations.set(reservationId, reservation);
+    this.#contracts.set(contractId, bookingContract);
+    this.#ledgerEntries.set(reservationId, ledgerEntries);
+    this.#put({ ...session, status: "completed" });
+    if (this.#journeys) {
+      const current = this.#journeys.findByOfferId(offer.offerId);
+      if (current?.stage === "both_settled")
+        this.#journeys.update(
+          offer.offerId,
+          current.journeyVersion,
+          (value) => ({
+            ...value,
+            stage: "confirmed",
+            finalReservationId: reservationId,
+            finalContractId: contractId,
+          }),
+        );
+    }
+    this.#liveAttempts?.release(offer.offerId);
+    this.#processedReferences.set(session.transferReference, {
+      offerId: offer.offerId,
+      tenantId: offer.tenantId,
+      outcome: "confirmed",
+      reservationId,
+      contractId,
+    });
+    return {
+      outcome: "confirmed",
+      reservation,
+      bookingContract,
+      ledgerEntries: Object.freeze(ledgerEntries),
+    };
   }
 
-  #compensateDeposit(offerId: string, now: Date): void { if (!this.#securityDepositAccounting || !this.#compensationRefundProvider) return; const collection = this.#securityDepositAccounting.getByOfferId(offerId); if (!collection?.providerReference || collection.status === "refunded" || collection.status === "reconciliation_required") return; const obligationId = `payment-compensation:${offerId}:deposit`; try { const refund = this.#compensationRefundProvider.refundOrGet({ obligationId, offerId, paymentMethod: collection.paymentMethod, originalPaymentReference: collection.providerReference, amountKobo: collection.amountKobo, currency: "NGN" }); if (!refund.refundId || refund.amountKobo !== collection.amountKobo || refund.currency !== "NGN" || !["pending", "settled", "failed"].includes(refund.status)) throw new Error("Deposit compensation provider mismatch"); const updated = refund.status === "pending" ? this.#securityDepositAccounting.markRefundPending(collection.collectionId) : this.#securityDepositAccounting.refund(collection.collectionId, { refundedAt: now.toISOString(), refundSucceeded: refund.status === "settled" }); this.#setDepositCompensation(offerId, updated.collectionId, refund.status === "pending" ? "pending" : refund.status === "settled" ? "settled" : "reconciliation_required", refund.refundId, collection.providerReference, collection.amountKobo); } catch { const updated = this.#securityDepositAccounting.refund(collection.collectionId, { refundedAt: now.toISOString(), refundSucceeded: false }); this.#setDepositCompensation(offerId, updated.collectionId, "reconciliation_required", undefined, collection.providerReference, collection.amountKobo); } }
-  #setDepositCompensation(offerId: string, collectionId: string, status: "pending" | "settled" | "reconciliation_required", refundId: string | undefined, reference: string, amountKobo: number): void { const journey = this.#journeys?.findByOfferId(offerId); if (!journey) return; this.#journeys!.update(offerId, journey.journeyVersion, (value) => { const deposit = { ...value.compensation.deposit, required: true, status, collectionId, refundId, obligationId: `payment-compensation:${offerId}:deposit`, originalPaymentReference: reference, amountKobo, currency: "NGN" as const }; const compensation = { ...value.compensation, deposit, status: deriveCompensationStatus({ ...value.compensation, deposit }) }; return { ...value, stage: compensation.status === "pending" ? "compensation_pending" : compensation.status === "reconciliation_required" ? "reconciliation_required" : "compensated", compensation }; }); }
-  #markFinalizationReconciliation(offerId: string): void { const journey = this.#journeys?.findByOfferId(offerId); if (journey) this.#journeys!.update(offerId, journey.journeyVersion, (value) => ({ ...value, stage: "reconciliation_required", compensation: { ...value.compensation, status: "reconciliation_required" } })); }
-  #compensateStay(offerId: string): void { const journey = this.#journeys?.findByOfferId(offerId); if (!journey || journey.compensation.stay.status === "settled" || journey.compensation.stay.status === "reconciliation_required") return; const reference = journey.stay.providerReference; const obligationId = `payment-compensation:${offerId}:stay`; if (!reference || !this.#compensationRefundProvider) { this.#journeys?.update(offerId, journey.journeyVersion, (value) => ({ ...value, stage: "reconciliation_required", compensation: { ...value.compensation, stay: { ...value.compensation.stay, required: true, status: "reconciliation_required", obligationId, originalPaymentReference: reference, amountKobo: journey.stay.amountKobo, currency: "NGN" }, status: "reconciliation_required" } })); return; } let refund: ReturnType<BookingPaymentCompensationPort["refundOrGet"]>; try { refund = this.#compensationRefundProvider.refundOrGet({ obligationId, offerId, paymentMethod: "bank_transfer", originalPaymentReference: reference, amountKobo: journey.stay.amountKobo, currency: "NGN" }); if (!refund.refundId || refund.amountKobo !== journey.stay.amountKobo || refund.currency !== "NGN" || !["pending", "settled", "failed"].includes(refund.status)) throw new Error("Compensation provider mismatch"); } catch { this.#journeys?.update(offerId, journey.journeyVersion, (value) => ({ ...value, stage: "reconciliation_required", compensation: { ...value.compensation, stay: { ...value.compensation.stay, required: true, status: "reconciliation_required", obligationId, originalPaymentReference: reference, amountKobo: journey.stay.amountKobo, currency: "NGN" }, status: "reconciliation_required" } })); return; } const pending = refund.status === "pending"; this.#journeys?.update(offerId, journey.journeyVersion, (value) => { const stay = { ...value.compensation.stay, required: true, status: pending ? "pending" as const : refund.status === "failed" ? "reconciliation_required" as const : "settled" as const, refundId: refund.refundId, obligationId, originalPaymentReference: reference, amountKobo: journey.stay.amountKobo, currency: "NGN" as const }; const compensation = { ...value.compensation, stay, status: deriveCompensationStatus({ ...value.compensation, stay }) }; return { ...value, stage: compensation.status === "pending" ? "compensation_pending" : compensation.status === "reconciliation_required" ? "reconciliation_required" : "compensated", compensation }; }); }
-  #lateRefund(offer: ConditionalBookingOffer, session: BankTransferCheckoutSession, result: BankTransferProviderResult, envelope: PlatformCommandEnvelope<{ transferReference: string }>, now: Date) {
-    this.#calendar?.releasePaymentPending?.(offer.inventoryCommitmentId, { clock: () => now });
-    const refundId = `ref_${deterministicSuffix(session.transferReference)}`; const reconciliationId = `rec_${deterministicSuffix(session.transferReference)}`;
-    const refundRecord: BankTransferRefundRecord = { refundId, offerId: offer.offerId, transferReference: session.transferReference, amountKobo: result.amountKobo, currency: "NGN", reason: "late_payment_after_expiry", status: "initiated", createdAt: now.toISOString() };
-    const reconciliationRecord: BankTransferReconciliationRecord = { reconciliationId, offerId: offer.offerId, transferReference: session.transferReference, amountKobo: result.amountKobo, status: "quarantined_for_refund", createdAt: now.toISOString() };
-    this.#liveAttempts?.release(offer.offerId); if (session.purpose === "security_deposit") this.#compensateStay(offer.offerId); this.#refundRecords.set(refundId, refundRecord); this.#reconciliationRecords.set(reconciliationId, reconciliationRecord); this.#processedReferences.set(session.transferReference, { offerId: offer.offerId, tenantId: offer.tenantId, outcome: "late_payment_refunded", refundId, reconciliationId }); this.#put({ ...session, status: "refunded" });
-    this.#audit?.record({ type: "bank_transfer.late_payment_refunded", offerId: offer.offerId, commandEnvelopeId: envelope.commandId, refundId, reconciliationId, timestamp: now.toISOString() });
-    return { outcome: "late_payment_refunded" as const, refundRecord, reconciliationRecord };
+  #compensateDeposit(offerId: string, now: Date): void {
+    if (!this.#securityDepositAccounting || !this.#compensationRefundProvider)
+      return;
+    const collection = this.#securityDepositAccounting.getByOfferId(offerId);
+    if (
+      !collection?.providerReference ||
+      collection.status === "refunded" ||
+      collection.status === "reconciliation_required"
+    )
+      return;
+    const obligationId = `payment-compensation:${offerId}:deposit`;
+    try {
+      const refund = this.#compensationRefundProvider.refundOrGet({
+        obligationId,
+        offerId,
+        paymentMethod: collection.paymentMethod,
+        originalPaymentReference: collection.providerReference,
+        amountKobo: collection.amountKobo,
+        currency: "NGN",
+      });
+      if (
+        !refund.refundId ||
+        refund.amountKobo !== collection.amountKobo ||
+        refund.currency !== "NGN" ||
+        !["pending", "settled", "failed"].includes(refund.status)
+      )
+        throw new Error("Deposit compensation provider mismatch");
+      const updated =
+        refund.status === "pending"
+          ? this.#securityDepositAccounting.markRefundPending(
+              collection.collectionId,
+            )
+          : this.#securityDepositAccounting.refund(collection.collectionId, {
+              refundedAt: now.toISOString(),
+              refundSucceeded: refund.status === "settled",
+            });
+      this.#setDepositCompensation(
+        offerId,
+        updated.collectionId,
+        refund.status === "pending"
+          ? "pending"
+          : refund.status === "settled"
+            ? "settled"
+            : "reconciliation_required",
+        refund.refundId,
+        collection.providerReference,
+        collection.amountKobo,
+      );
+    } catch {
+      const updated = this.#securityDepositAccounting.refund(
+        collection.collectionId,
+        { refundedAt: now.toISOString(), refundSucceeded: false },
+      );
+      this.#setDepositCompensation(
+        offerId,
+        updated.collectionId,
+        "reconciliation_required",
+        undefined,
+        collection.providerReference,
+        collection.amountKobo,
+      );
+    }
+  }
+  #setDepositCompensation(
+    offerId: string,
+    collectionId: string,
+    status: "pending" | "settled" | "reconciliation_required",
+    refundId: string | undefined,
+    reference: string,
+    amountKobo: number,
+  ): void {
+    const journey = this.#journeys?.findByOfferId(offerId);
+    if (!journey) return;
+    this.#journeys!.update(offerId, journey.journeyVersion, (value) => {
+      const deposit = {
+        ...value.compensation.deposit,
+        required: true,
+        status,
+        collectionId,
+        refundId,
+        obligationId: `payment-compensation:${offerId}:deposit`,
+        originalPaymentReference: reference,
+        amountKobo,
+        currency: "NGN" as const,
+      };
+      const compensation = {
+        ...value.compensation,
+        deposit,
+        status: deriveCompensationStatus({ ...value.compensation, deposit }),
+      };
+      return {
+        ...value,
+        stage:
+          compensation.status === "pending"
+            ? "compensation_pending"
+            : compensation.status === "reconciliation_required"
+              ? "reconciliation_required"
+              : "compensated",
+        compensation,
+      };
+    });
+  }
+  #markFinalizationReconciliation(offerId: string): void {
+    const journey = this.#journeys?.findByOfferId(offerId);
+    if (journey)
+      this.#journeys!.update(offerId, journey.journeyVersion, (value) => ({
+        ...value,
+        stage: "reconciliation_required",
+        compensation: {
+          ...value.compensation,
+          status: "reconciliation_required",
+        },
+      }));
+  }
+  #compensateStay(offerId: string): void {
+    const journey = this.#journeys?.findByOfferId(offerId);
+    if (
+      !journey ||
+      journey.compensation.stay.status === "settled" ||
+      journey.compensation.stay.status === "reconciliation_required"
+    )
+      return;
+    const reference = journey.stay.providerReference;
+    const obligationId = `payment-compensation:${offerId}:stay`;
+    if (!reference || !this.#compensationRefundProvider) {
+      this.#journeys?.update(offerId, journey.journeyVersion, (value) => ({
+        ...value,
+        stage: "reconciliation_required",
+        compensation: {
+          ...value.compensation,
+          stay: {
+            ...value.compensation.stay,
+            required: true,
+            status: "reconciliation_required",
+            obligationId,
+            originalPaymentReference: reference,
+            amountKobo: journey.stay.amountKobo,
+            currency: "NGN",
+          },
+          status: "reconciliation_required",
+        },
+      }));
+      return;
+    }
+    let refund: ReturnType<BookingPaymentCompensationPort["refundOrGet"]>;
+    try {
+      refund = this.#compensationRefundProvider.refundOrGet({
+        obligationId,
+        offerId,
+        paymentMethod: "bank_transfer",
+        originalPaymentReference: reference,
+        amountKobo: journey.stay.amountKobo,
+        currency: "NGN",
+      });
+      if (
+        !refund.refundId ||
+        refund.amountKobo !== journey.stay.amountKobo ||
+        refund.currency !== "NGN" ||
+        !["pending", "settled", "failed"].includes(refund.status)
+      )
+        throw new Error("Compensation provider mismatch");
+    } catch {
+      this.#journeys?.update(offerId, journey.journeyVersion, (value) => ({
+        ...value,
+        stage: "reconciliation_required",
+        compensation: {
+          ...value.compensation,
+          stay: {
+            ...value.compensation.stay,
+            required: true,
+            status: "reconciliation_required",
+            obligationId,
+            originalPaymentReference: reference,
+            amountKobo: journey.stay.amountKobo,
+            currency: "NGN",
+          },
+          status: "reconciliation_required",
+        },
+      }));
+      return;
+    }
+    const pending = refund.status === "pending";
+    this.#journeys?.update(offerId, journey.journeyVersion, (value) => {
+      const stay = {
+        ...value.compensation.stay,
+        required: true,
+        status: pending
+          ? ("pending" as const)
+          : refund.status === "failed"
+            ? ("reconciliation_required" as const)
+            : ("settled" as const),
+        refundId: refund.refundId,
+        obligationId,
+        originalPaymentReference: reference,
+        amountKobo: journey.stay.amountKobo,
+        currency: "NGN" as const,
+      };
+      const compensation = {
+        ...value.compensation,
+        stay,
+        status: deriveCompensationStatus({ ...value.compensation, stay }),
+      };
+      return {
+        ...value,
+        stage:
+          compensation.status === "pending"
+            ? "compensation_pending"
+            : compensation.status === "reconciliation_required"
+              ? "reconciliation_required"
+              : "compensated",
+        compensation,
+      };
+    });
+  }
+  #lateRefund(
+    offer: ConditionalBookingOffer,
+    session: BankTransferCheckoutSession,
+    result: BankTransferProviderResult,
+    envelope: PlatformCommandEnvelope<{ transferReference: string }>,
+    now: Date,
+  ) {
+    this.#calendar?.releasePaymentPending?.(offer.inventoryCommitmentId, {
+      clock: () => now,
+    });
+    const refundId = `ref_${deterministicSuffix(session.transferReference)}`;
+    const reconciliationId = `rec_${deterministicSuffix(session.transferReference)}`;
+    const refundRecord: BankTransferRefundRecord = {
+      refundId,
+      offerId: offer.offerId,
+      transferReference: session.transferReference,
+      amountKobo: result.amountKobo,
+      currency: "NGN",
+      reason: "late_payment_after_expiry",
+      status: "initiated",
+      createdAt: now.toISOString(),
+    };
+    const reconciliationRecord: BankTransferReconciliationRecord = {
+      reconciliationId,
+      offerId: offer.offerId,
+      transferReference: session.transferReference,
+      amountKobo: result.amountKobo,
+      status: "quarantined_for_refund",
+      createdAt: now.toISOString(),
+    };
+    this.#liveAttempts?.release(offer.offerId);
+    if (session.purpose === "security_deposit")
+      this.#compensateStay(offer.offerId);
+    this.#refundRecords.set(refundId, refundRecord);
+    this.#reconciliationRecords.set(reconciliationId, reconciliationRecord);
+    this.#processedReferences.set(session.transferReference, {
+      offerId: offer.offerId,
+      tenantId: offer.tenantId,
+      outcome: "late_payment_refunded",
+      refundId,
+      reconciliationId,
+    });
+    this.#put({ ...session, status: "refunded" });
+    this.#audit?.record({
+      type: "bank_transfer.late_payment_refunded",
+      offerId: offer.offerId,
+      commandEnvelopeId: envelope.commandId,
+      refundId,
+      reconciliationId,
+      timestamp: now.toISOString(),
+    });
+    return {
+      outcome: "late_payment_refunded" as const,
+      refundRecord,
+      reconciliationRecord,
+    };
   }
 }

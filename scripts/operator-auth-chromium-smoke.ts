@@ -6,7 +6,7 @@ import { join } from "node:path";
 
 const dir = await mkdtemp(join(tmpdir(), "operator-chromium-"));
 const db = join(dir, "pilot.sqlite");
-const env = new LocalApartmentOwnerEnvironment({ databasePath: db });
+const env = LocalApartmentOwnerEnvironment.openNode({ databasePath: db });
 const server = startLocalOwnerServer({ port: 0, environment: env });
 const port = await server.listen();
 const browser = await launchRealBrowser();

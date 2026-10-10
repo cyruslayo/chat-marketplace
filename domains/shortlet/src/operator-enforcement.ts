@@ -1,5 +1,11 @@
 import type { PlatformCommandEnvelope, CommandPrincipal } from "../../../packages/platform-core/src/index.js";
 import type { OperatorRepresentativeAuthority } from "./operator-representative-authority.js";
+import {
+  InMemoryOperatorEnforcementStateStore,
+  type EnforcementRecordCollection,
+  type OperatorEnforcementStateStore,
+  type RestorationDisposition,
+} from "./operator-enforcement-state.js";
 
 export type MisconductAttribution = "operator_misconduct" | "platform_fault" | "provider_fault" | "extraordinary_event";
 export type EnforcementIncidentType = "calendar_error" | "cancellation" | "substitution" | "response_failure" | "negative_balance" | "turnover_defect" | "safety_failure" | "control_circumvention";
@@ -7,7 +13,7 @@ export type EnforcementSeverity = "minor" | "serious" | "egregious";
 export type EnforcementLevel = "coaching" | "restriction" | "unit_suspension" | "operator_pause" | "termination";
 export type TurnoverCapability = "eligible" | "suspended" | "revoked";
 
-type TurnoverRestorationKind = "evidence_only_miss" | "operational_delay_without_guest_impact" | "guest_impacting_failure";
+export type TurnoverRestorationKind = "evidence_only_miss" | "operational_delay_without_guest_impact" | "guest_impacting_failure";
 
 export interface IncidentRecordInput {
   incidentId: string;
@@ -128,23 +134,39 @@ interface RestorePayload {
   approvalTier?: "standard" | "senior";
 }
 
-/** ADR 0037/0038/0064/0072/0075: authoritative, human-controlled enforcement state. */
+/**
+ * ADR 0037/0038/0064/0072/0075: authoritative, human-controlled enforcement state. ADR 0004/0095: the state lives in
+ * an injected store (in memory by default, durable on the shared SQL handle in composition), never only in this
+ * instance, so a restart or an evicted runtime cannot lift a suspension.
+ */
 export class OperatorEnforcementManager {
-  readonly #incidents = new Map<string, IncidentRecordInput>();
-  readonly #protectiveActions = new Map<string, ProtectiveActionRecord>();
-  readonly #finalizedEnforcements = new Map<string, FinalizedEnforcementRecord>();
-  readonly #notices = new Map<string, EnforcementNoticeRecord>();
-  readonly #appeals = new Map<string, EnforcementAppealRecord>();
-  readonly #restoredUnits = new Set<string>();
-  readonly #restorationDispositions: Array<{ enforcementId: string; operatorId: string; unitId: string; disposition: "restored"; kind: TurnoverRestorationKind; recordedAtIso: string }> = [];
+  readonly #store: OperatorEnforcementStateStore;
+  readonly #incidents: EnforcementRecordCollection<IncidentRecordInput>;
+  readonly #protectiveActions: EnforcementRecordCollection<ProtectiveActionRecord>;
+  readonly #finalizedEnforcements: EnforcementRecordCollection<FinalizedEnforcementRecord>;
+  readonly #notices: EnforcementRecordCollection<EnforcementNoticeRecord>;
+  readonly #appeals: EnforcementRecordCollection<EnforcementAppealRecord>;
+  /** Keyed `operatorId:unitId`. */
+  readonly #restoredUnits: EnforcementRecordCollection<true>;
+  /** Keyed by enforcementId. */
+  readonly #restorationDispositions: EnforcementRecordCollection<RestorationDisposition>;
   readonly #operatorAuthority: OperatorRepresentativeAuthority;
-  readonly #initialDecisionMakers = new Map<string, string>();
+  /** Keyed by enforcementId; the value is the human who made the initial decision. */
+  readonly #initialDecisionMakers: EnforcementRecordCollection<string>;
   readonly #clock: () => Date;
-  #sequence = 0;
 
-  constructor(options: { clock?: () => Date; operatorAuthority?: OperatorRepresentativeAuthority } = {}) {
+  constructor(options: { clock?: () => Date; operatorAuthority?: OperatorRepresentativeAuthority; store?: OperatorEnforcementStateStore } = {}) {
     this.#clock = options.clock ?? (() => new Date());
     this.#operatorAuthority = options.operatorAuthority ?? { canActForOperator: () => false };
+    this.#store = options.store ?? new InMemoryOperatorEnforcementStateStore();
+    this.#incidents = this.#store.incidents;
+    this.#protectiveActions = this.#store.protectiveActions;
+    this.#finalizedEnforcements = this.#store.finalizedEnforcements;
+    this.#notices = this.#store.notices;
+    this.#appeals = this.#store.appeals;
+    this.#restoredUnits = this.#store.restoredUnits;
+    this.#restorationDispositions = this.#store.restorationDispositions;
+    this.#initialDecisionMakers = this.#store.initialDecisionMakers;
   }
 
   recordIncident(input: IncidentRecordInput): IncidentRecordInput {
@@ -157,15 +179,18 @@ export class OperatorEnforcementManager {
     this.#requireHumanCommand(envelope, "operator_enforcement.protective_action");
     const { operatorId, unitId, reason } = envelope.payload;
     if (!operatorId || !unitId || !reason || !envelope.principal.tenantId) throw new Error("Complete protective action scope is required");
-    const enforcementId = `enf_${++this.#sequence}`;
-    this.#restoredUnits.delete(`${operatorId}:${unitId}`);
-    const record: ProtectiveActionRecord = {
-      enforcementId, operatorId, unitId, tenantId: envelope.principal.tenantId, reason,
-      initiatedBy: envelope.principal.id, status: "protective_suspension_active", isFinalDecision: false,
-      initiatedAtIso: this.#clock().toISOString()
-    };
-    this.#protectiveActions.set(enforcementId, record);
-    return { ...record };
+    const tenantId = envelope.principal.tenantId;
+    return this.#store.transaction(() => {
+      const enforcementId = `enf_${this.#store.nextSequence()}`;
+      this.#restoredUnits.delete(`${operatorId}:${unitId}`);
+      const record: ProtectiveActionRecord = {
+        enforcementId, operatorId, unitId, tenantId, reason,
+        initiatedBy: envelope.principal.id, status: "protective_suspension_active", isFinalDecision: false,
+        initiatedAtIso: this.#clock().toISOString()
+      };
+      this.#protectiveActions.set(enforcementId, record);
+      return { ...record };
+    });
   }
 
   evaluateGraduatedEnforcement(params: { operatorId: string; unitId: string }): { misconductCount: number; enforcementLevel: EnforcementLevel; turnoverCapability: TurnoverCapability } {
@@ -212,8 +237,10 @@ export class OperatorEnforcementManager {
       decision: p.decision, authorizedHumanId: envelope.principal.id, classifiedIncidentIds: Object.freeze(ids),
       status: "finalized", isFinalDecision: true, finalizedAtIso: this.#clock().toISOString()
     };
-    this.#finalizedEnforcements.set(p.enforcementId, record);
-    this.#initialDecisionMakers.set(p.enforcementId, envelope.principal.id);
+    this.#store.transaction(() => {
+      this.#finalizedEnforcements.set(p.enforcementId, record);
+      this.#initialDecisionMakers.set(p.enforcementId, envelope.principal.id);
+    });
     return { ...record };
   }
 
@@ -259,10 +286,14 @@ export class OperatorEnforcementManager {
     if (!appeal || !final || appeal.operatorId !== p.operatorId || final.tenantId !== envelope.principal.tenantId) throw new Error("Appeal scope denied");
     if (!this.#isHuman(envelope.principal) || envelope.principal.id === this.#initialDecisionMakers.get(p.enforcementId)) throw new Error("Appeal reviewer must be an authorized independent human");
     if (appeal.status !== "appeal_pending") throw new Error("Appeal is already resolved");
-    appeal.status = p.decision;
-    appeal.reviewerId = envelope.principal.id;
-    appeal.resolvedAtIso = this.#clock().toISOString();
-    return { ...appeal };
+    const resolved: EnforcementAppealRecord = {
+      ...appeal,
+      status: p.decision,
+      reviewerId: envelope.principal.id,
+      resolvedAtIso: this.#clock().toISOString(),
+    };
+    this.#appeals.set(`appeal_${p.enforcementId}`, resolved);
+    return { ...resolved };
   }
 
   restoreTurnoverEligibility(envelope: PlatformCommandEnvelope<RestorePayload>): void {
@@ -281,15 +312,17 @@ export class OperatorEnforcementManager {
         : p.incidentRemediated === true && p.observedSuccessfulTurnoverRuns === 3 && p.runsAfterRealStays === 2 && p.fullOperationalReapproval === true && p.approvalTier === "senior";
     if (!qualifies) throw new Error("Required turnover remediation evidence is incomplete");
     // ADR 0037/0064: restoration is authorized human review, not Operator membership authority.
-    this.#restorationDispositions.push({
-      enforcementId: p.enforcementId,
-      operatorId: p.operatorId,
-      unitId: p.unitId,
-      disposition: "restored",
-      kind: p.kind,
-      recordedAtIso: this.#clock().toISOString()
+    this.#store.transaction(() => {
+      this.#restorationDispositions.set(p.enforcementId, {
+        enforcementId: p.enforcementId,
+        operatorId: p.operatorId,
+        unitId: p.unitId,
+        disposition: "restored",
+        kind: p.kind,
+        recordedAtIso: this.#clock().toISOString()
+      });
+      this.#restoredUnits.set(`${p.operatorId}:${p.unitId}`, true);
     });
-    this.#restoredUnits.add(`${p.operatorId}:${p.unitId}`);
   }
 
   getProjections(params: { operatorId: string; unitId: string }): OperatorUnitProjections {
@@ -311,7 +344,7 @@ export class OperatorEnforcementManager {
     if (!envelope.principal.tenantId || !this.#isHuman(envelope.principal)) throw new Error("Authorized human command principal is required");
   }
   #hasActiveProtection(params: { operatorId: string; unitId: string }): boolean {
-    return [...this.#protectiveActions.values()].some(a => a.operatorId === params.operatorId && a.unitId === params.unitId && !this.#restorationDispositions.some(d => d.enforcementId === a.enforcementId));
+    return [...this.#protectiveActions.values()].some(a => a.operatorId === params.operatorId && a.unitId === params.unitId && !this.#restorationDispositions.values().some(d => d.enforcementId === a.enforcementId));
   }
   #unitBelongsToTenant(operatorId: string, unitId: string, tenantId: string): boolean {
     return [...this.#protectiveActions.values()].some(a => a.operatorId === operatorId && a.unitId === unitId && a.tenantId === tenantId);
@@ -323,7 +356,7 @@ export class OperatorEnforcementManager {
   #classifiedTurnoverRoots(params: { operatorId: string; unitId: string }, includeRestored = false): IncidentRecordInput[] {
     const ids = new Set<string>();
     for (const final of this.#effectiveFinals()) {
-      if (!includeRestored && this.#restorationDispositions.some(d => d.enforcementId === final.enforcementId)) continue;
+      if (!includeRestored && this.#restorationDispositions.values().some(d => d.enforcementId === final.enforcementId)) continue;
       if (final.operatorId !== params.operatorId || final.unitId !== params.unitId) continue;
       for (const id of final.classifiedIncidentIds) ids.add(id);
     }
@@ -341,7 +374,7 @@ export class OperatorEnforcementManager {
     const finals = this.#effectiveFinals().filter(f => f.operatorId === params.operatorId && (f.unitId === params.unitId || f.decision === "operator_pause" || f.decision === "termination"));
     if (finals.some(f => f.decision === "termination")) return "termination";
     if (finals.some(f => f.decision === "operator_pause")) return "operator_pause";
-    const unitFinals = finals.filter(f => f.unitId === params.unitId && !this.#restorationDispositions.some(d => d.enforcementId === f.enforcementId));
+    const unitFinals = finals.filter(f => f.unitId === params.unitId && !this.#restorationDispositions.values().some(d => d.enforcementId === f.enforcementId));
     const rank: Record<EnforcementLevel, number> = { coaching: 0, restriction: 1, unit_suspension: 2, operator_pause: 3, termination: 4 };
     unitFinals.sort((a, b) => rank[b.decision] - rank[a.decision] || b.finalizedAtIso.localeCompare(a.finalizedAtIso) || b.enforcementId.localeCompare(a.enforcementId));
     return unitFinals[0]?.decision ?? (this.#hasActiveProtection(params) ? "unit_suspension" : "coaching");

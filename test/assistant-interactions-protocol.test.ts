@@ -457,7 +457,7 @@ test("AssistantRuntime executes the full stateless user-to-tool-to-function-resu
         : { id: "runtime-output", status: "completed", steps: [{ type: "model_output", content: [{ type: "text", text: "Authoritative search complete." }] }] } as Interactions.Interaction;
     } } },
   });
-  const env = new LocalGuestEnvironment({ databasePath: `.scratch/eval-test/runtime_protocol_${Date.now()}.sqlite` });
+  const env = LocalGuestEnvironment.openNode({ databasePath: `.scratch/eval-test/runtime_protocol_${Date.now()}.sqlite` });
   try {
     const response = await new AssistantRuntime(env, client).handleTurn("runtime-protocol", "Ikoyi for four nights and two guests");
 

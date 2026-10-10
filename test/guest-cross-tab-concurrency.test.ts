@@ -92,7 +92,7 @@ interface MultiTabServerContext {
 }
 
 async function startMultiTabContext(config: Partial<LocalGuestFixtureConfig> = {}): Promise<MultiTabServerContext> {
-  const environment = new LocalGuestEnvironment({
+  const environment = LocalGuestEnvironment.openNode({
     databasePath: `.scratch/local-guest/cross-tab-${Date.now()}-${crypto.randomUUID()}.sqlite`,
     ...config,
   });
@@ -897,7 +897,7 @@ test("AC15 — Two tabs restore safely after a server restart", async () => {
     await ctx.server.close();
 
     // Start a completely new server instance over the same SQLite database
-    const newEnv = new LocalGuestEnvironment({ databasePath: dbPath });
+    const newEnv = LocalGuestEnvironment.openNode({ databasePath: dbPath });
     const newServer = startLocalGuestServer({ port: 0, environment: newEnv });
     const newPort = await newServer.listen();
     const newBase = `http://127.0.0.1:${newPort}`;
@@ -958,7 +958,7 @@ test("AC16 — Server restart with two tabs does not replay consequential comman
     await ctx.server.close();
 
     // Restart server
-    const newEnv = new LocalGuestEnvironment({ databasePath: dbPath });
+    const newEnv = LocalGuestEnvironment.openNode({ databasePath: dbPath });
     const newServer = startLocalGuestServer({ port: 0, environment: newEnv });
     const newPort = await newServer.listen();
     const newBase = `http://127.0.0.1:${newPort}`;

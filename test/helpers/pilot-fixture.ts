@@ -16,7 +16,7 @@ export interface ProductionFixture {
 /** Persistent pilot files for one fixture Unit and its Operator, plus a provider-shaped Paystack fake. */
 export async function productionFixture(options: { readonly noDeposit?: boolean; readonly environment?: Readonly<Record<string, string>> } = {}): Promise<ProductionFixture> {
   const directory = await mkdtemp(join(tmpdir(), "shortlet-pilot-composition-"));
-  const source = new LocalGuestEnvironment({ databasePath: join(directory, "source.sqlite") });
+  const source = LocalGuestEnvironment.openNode({ databasePath: join(directory, "source.sqlite") });
   const units = source.unitRepository.findAll() as Unit[];
   source.close();
   const unit = options.noDeposit

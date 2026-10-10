@@ -24,7 +24,7 @@ function paystackGuest(options: { readonly chargeExpiry?: (requested: string) =>
   let now = new Date("2026-09-03T10:00:00.000Z");
   const clock = () => now;
   const fake = createPaystackHttpFake(options.chargeExpiry ? { chargeExpiry: options.chargeExpiry } : {});
-  const env = new LocalGuestEnvironment({
+  const env = LocalGuestEnvironment.openNode({
     databasePath: join(dir, "guest.sqlite"),
     deterministicPsp: false,
     paystackClient: new DirectPaystackClient(CONFIG, fake.fetcher),

@@ -1,6 +1,7 @@
 # Retire the Node production entry
 
-Status: ready-for-agent
+Status: ready-for-human
+Hold: do not start until the rollback window closes (`ROLLBACK_WINDOW` in `docs/runbooks/cloudflare-cutover.md`), which needs the human cutover in issue 16 first. The Node entry is the rollback path until then. Set by the wave-6 review (F7); the file had no hold note before.
 Type: task
 Blocked by: 16
 Branch: `infra/cf-17-retire-node-prod` (into `main`)
@@ -40,3 +41,14 @@ After cutover, Cloudflare is the only production platform. Leaving a working Nod
 Check every item in `docs/agents/issue-tracker.md`.
 
 ## Comments
+
+### Client-address rule (10 Oct 2026)
+
+- `clientAddress` is kept (as this issue requires), and it is keyed on `CF-Connecting-IP`, not on `X-Forwarded-For`. The Node
+  pilot's rightmost-`X-Forwarded-For` rule (issue 08c, map.md) is retired on `infra/cf-17-retire-node-prod`, commit `5793ec3`.
+  That branch reads the header through the shared `clientAddressFromCloudflareHeaderValue` rule, and an absent or blank header
+  fails closed to `unknown` (one shared bucket). The socket-address fallback is gone.
+
+### Wave 6 code close (10 Oct 2026)
+
+Status unchanged: **ready-for-human**, held. `infra/cf-17-retire-node-prod` is held (unmerged, no PR) and is kept current by merging `origin/infra/cf-wave6` into it. Its tip moves, so read it with `git rev-parse origin/infra/cf-17-retire-node-prod`; at 10 Oct 2026 it was `d6c2f36`. Not resolved. Do not start until `ROLLBACK_WINDOW` closes after the human cutover in issue 16. See `map.md`, "Wave 6 completion (code)".

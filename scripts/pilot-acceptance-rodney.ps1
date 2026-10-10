@@ -5,11 +5,13 @@ param(
   [switch]$UseExistingServer,
   [switch]$KeepServer,
   [switch]$KeepBrowserOnFailure,
-  [switch]$Help
+  [switch]$Help,
+  [string]$BaseUrl = ''
 )
 
 if ($Help) {
-  Write-Output 'Usage: npm run pilot:acceptance:rodney -- [--Reset] [--ShowBrowser] [--UseExistingServer] [--KeepServer] [--KeepBrowserOnFailure]'
+  Write-Output 'Usage: npm run pilot:acceptance:rodney -- [--Reset] [--ShowBrowser] [--UseExistingServer] [--KeepServer] [--KeepBrowserOnFailure] [--BaseUrl <https-origin>]'
+  Write-Output 'With --BaseUrl (or SHORTLET_BASE_URL) the journey targets that existing origin and never starts, stops or resets a server.'
   exit 0
 }
 
@@ -23,6 +25,7 @@ $sessions = Join-Path $root 'sessions'
 $reportPath = Join-Path $root 'acceptance-report.md'
 $jsonPath = Join-Path $root 'acceptance-result.json'
 $origin = 'http://127.0.0.1:3000'
+$script:remoteBaseUrl = $false
 $script:scenarios = [System.Collections.Generic.List[object]]::new()
 $script:failureSeen = $false
 $script:token = $null
@@ -405,6 +408,17 @@ $overall = 'ENVIRONMENT_FAILURE'
 $errorText = ''
 New-Item -ItemType Directory -Force -Path $logs,$shots,$sessions | Out-Null
 try {
+  # Slice 15: a configured base URL is validated by scripts/pilot-base-url.ts (one rule for both harnesses). The
+  # harness then drives that existing origin and never starts, stops or resets it.
+  if ($BaseUrl) { $env:SHORTLET_BASE_URL = $BaseUrl }
+  if ($env:SHORTLET_BASE_URL -and $env:SHORTLET_BASE_URL.Trim() -ne '') {
+    $resolvedOrigin = Invoke-Captured 'node' @('--import','tsx',(Join-Path $repo 'scripts/resolve-pilot-base-url.ts')) 'resolve-base-url.log'
+    if (-not $resolvedOrigin) { throw 'The configured base URL resolved to no origin.' }
+    $origin = $resolvedOrigin
+    $script:remoteBaseUrl = $true
+    $UseExistingServer = $true
+  }
+  if ($Reset -and $script:remoteBaseUrl) { throw '-Reset cannot target a configured base URL: resetting and bootstrapping only apply to the local pilot.' }
   if ($Reset -and $UseExistingServer) { throw '-Reset cannot be combined with -UseExistingServer. Stop the manual server yourself, then run the reset-owned command.' }
   $script:head = (git rev-parse HEAD).Trim()
   $allowedHarnessChanges = @('.gitignore','docs/pilot-local-run.md','package.json')
@@ -457,13 +471,15 @@ try {
     Invoke-Captured 'npm.cmd' @('run','pilot:local:bootstrap') 'bootstrap.log' | Out-Null
     Add-Scenario 'Explicit local state reset/bootstrap' 'Reset only the local pilot data, then bootstrap authoritative inventory before server start.' 'Reset and bootstrap commands completed; acceptance artifacts were cleaned in their dedicated directory.'
   }
-  if ($UseExistingServer) { if (-not $listener) { throw '-UseExistingServer was supplied but port 3000 has no listener.' }; Wait-Healthy; Add-Scenario 'Server lifecycle' 'Use existing healthy local pilot; restart skipped.' 'Existing server healthy.' }
+  if ($script:remoteBaseUrl) { Wait-Healthy; Add-Scenario 'Server lifecycle' 'Configured base URL is healthy; the harness does not start, stop or reset it.' "Origin $origin answered /healthz with ok:true." }
+  elseif ($UseExistingServer) { if (-not $listener) { throw '-UseExistingServer was supplied but port 3000 has no listener.' }; Wait-Healthy; Add-Scenario 'Server lifecycle' 'Use existing healthy local pilot; restart skipped.' 'Existing server healthy.' }
   else { Start-Pilot; Add-Scenario 'Server lifecycle' 'Harness starts pilot and waits for /healthz.' 'Owned npm run pilot:local server is healthy.' }
 
   $script:activeScenario = 'Guest A home'
   Start-Session 'guest-a'
   Assert-Rodney @('visible','#composer-input') 'Guest composer is visible.' 'Guest home composer'
-  Assert-AccessibleName 'heading' 'Shortlet Concierge' 'Guest page heading'
+  # The app bar's page heading is "Shortlet" since the desktop split refresh; "Shortlet Concierge" is the RootWebArea title.
+  Assert-AccessibleName 'heading' 'Shortlet' 'Guest page heading'
   Assert-AccessibleName 'textbox' 'Message the concierge' 'Guest composer textbox'
   Assert-AccessibleName 'button' 'Send' 'Guest send button'
   $homeText = Invoke-Rodney @('text','body')
@@ -738,7 +754,7 @@ try {
   if ($confirmedGuestText -notmatch 'Reservation confirmed|Booking Contract|Contract') { throw 'Verified local payment did not produce a confirmed Guest booking surface.' }
   $countsAfterPayment = Get-BookingCounts
   if ($countsAfterPayment.reservations -ne 1 -or $countsAfterPayment.contracts -ne 1) { throw "Expected exactly one Reservation and one Booking Contract; observed $($countsAfterPayment.reservations)/$($countsAfterPayment.contracts)." }
-  Assert-AccessibleName 'heading' 'Shortlet Concierge' 'Confirmed booking Guest shell'
+  Assert-AccessibleName 'heading' 'Shortlet' 'Confirmed booking Guest shell'
   Save-MobileShots '27-confirmed' 390
   Save-MobileShots '30-confirmed' 320
   Invoke-Rodney @('screenshot','-w','1280','-h','900',(Join-Path $shots 'viewport-reset.png')) | Out-Null
