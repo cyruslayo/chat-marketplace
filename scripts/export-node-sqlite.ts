@@ -60,11 +60,22 @@ async function readManifest(inDir: string): Promise<MigrationManifest> {
   return JSON.parse(await readFile(join(inDir, MANIFEST_FILE), "utf8")) as MigrationManifest;
 }
 
+/**
+ * Parses one table's JSONL. A parse error is rethrown with the table and line only: V8's JSON.parse message quotes part
+ * of the input, which is row data (ADR 0075).
+ */
 async function readRows(inDir: string, table: string): Promise<unknown[]> {
-  return (await readFile(join(inDir, `${table}.jsonl`), "utf8"))
-    .split("\n")
-    .filter((line) => line !== "")
-    .map((line) => JSON.parse(line) as unknown);
+  const lines = (await readFile(join(inDir, `${table}.jsonl`), "utf8")).split("\n");
+  const rows: unknown[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    if (lines[index] === "") continue;
+    try {
+      rows.push(JSON.parse(lines[index]!) as unknown);
+    } catch {
+      throw new Error(`Table ${table} line ${index + 1} is not valid JSON`);
+    }
+  }
+  return rows;
 }
 
 /**

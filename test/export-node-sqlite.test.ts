@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { NodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-database.js";
@@ -198,5 +198,35 @@ test("16 pull writes each table's reverse export and the object's verify result,
     }
     const verify = JSON.parse(await readFile(join(pullDir, "verify.json"), "utf8")) as { tables: Record<string, { rowCount: number; sha256: string }> };
     assert.deepEqual(compareMigration(manifest, verify.tables), []);
+  });
+});
+
+/** ADR 0075: a parse error in an export file must name the table and line, never echo the row. */
+const ROW_SENTINEL = "SENTINEL-ROW-VALUE-7731";
+
+test("16 ADR 0075: a malformed line in an export file is reported by table and line, never with its row content", async () => {
+  await withTempDir(async (dir) => {
+    const sourcePath = join(dir, "source.sqlite");
+    const outDir = join(dir, "export");
+    const targetPath = join(dir, "target.sqlite");
+    const source = new NodeSqliteDatabase(sourcePath);
+    await populateSource(source);
+    const schema = targetSchemaStatements(source);
+    source.close();
+    await exportNodeSqliteFile(sourcePath, outDir);
+
+    // An unquoted value makes V8's JSON.parse echo the whole line in its message.
+    await writeFile(join(outDir, "operators.jsonl"), `{"id":"op-1","operator_json":${ROW_SENTINEL}}\n`, "utf8");
+    const target = new NodeSqliteDatabase(targetPath);
+    for (const statement of schema) target.exec(statement);
+    target.close();
+
+    await assert.rejects(importMigrationDirectory(targetPath, outDir), (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /operators/);
+      assert.match(error.message, /line 1/);
+      assert.equal(error.message.includes(ROW_SENTINEL), false);
+      return true;
+    });
   });
 });

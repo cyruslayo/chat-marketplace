@@ -89,7 +89,13 @@ function requiredString(value: unknown, field: string): string {
 async function readJsonBody(request: Request, limit = MAX_OPS_BODY_BYTES): Promise<Record<string, unknown>> {
   const bytes = await readBodyWithLimit(request, limit);
   if (bytes.byteLength === 0) return {};
-  const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    // The parser's own message quotes part of the body, which is row data (ADR 0075), so it is never returned.
+    throw new Error("The request body is not valid JSON");
+  }
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("A JSON object body is required");
   return parsed as Record<string, unknown>;
 }

@@ -148,3 +148,21 @@ test("16 reverse export returns the rows the import wrote, so a rollback can rep
   const unknown = await call(target, "GET", "/_ops/export?table=not_a_table");
   expect(unknown.status).toBe(400);
 });
+
+test("16 ADR 0075: a malformed JSON import body is refused without echoing any of its row content", async () => {
+  const target = await targetStub(await schemaOf(await sourceStub()));
+  // Short enough to fall inside the window the JSON parser quotes back, so a leak would show the sentinel.
+  const sentinel = "SNT7731";
+  // An unquoted value: the JSON parser's message would otherwise quote part of the body back to the caller.
+  const body = `{"table":"operators","rows":[{"id":"op-leak-1","operator_json":${sentinel}}]}`;
+  const response = await target.fetch(`${ORIGIN}/_ops/import`, {
+    method: "POST",
+    headers: { ...opsHeaders(await accessToken({})), "content-type": "application/json" },
+    body,
+  });
+  expect(response.status).toBe(400);
+  const text = await response.text();
+  expect(text.includes(sentinel)).toBe(false);
+  expect(text.includes("op-leak-1")).toBe(false);
+  expect((await verify(target)).operators?.rowCount).toBe(0);
+});
