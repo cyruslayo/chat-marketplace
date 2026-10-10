@@ -66,7 +66,10 @@ const MAX_OPS_BODY_BYTES = 64 * 1024;
 /** The user-approved inventory CSV limit (5 MiB); enforced before the body is read. */
 const MAX_INVENTORY_CSV_BYTES = 5 * 1024 * 1024;
 
-/** Slice 16: an import batch reuses the 11b bound, which is a question for the user (see the issue's Answer). */
+/**
+ * Slice 16: an import batch reuses the 11b inventory CSV bound. It is not an import-specific value, so the user must
+ * confirm it (issue 16, "Values to ask the user", item 1).
+ */
 const MAX_IMPORT_BATCH_BYTES = MAX_INVENTORY_CSV_BYTES;
 
 function json(status: number, body: unknown): Response {

@@ -10,7 +10,11 @@ import type { SqlDatabase, SqlRow, SqlValue } from "./sql-database.js";
  */
 export const MIGRATION_FORMAT_VERSION = 1;
 
-/** Durable Object SQL binds at most this many parameters per statement (platform limit, not a booking policy). */
+/**
+ * Durable Object SQL binds at most this many parameters per statement. Source: the Cloudflare Durable Object limits page
+ * (https://developers.cloudflare.com/durable-objects/platform/limits/), as cited by apps/cloudflare/src/do-sql-database.ts
+ * and recorded as "100 bound parameters" in .scratch/cloudflare-deployment/PRD.md. A platform limit, not a booking policy.
+ */
 export const MAX_STATEMENT_PARAMETERS = 100;
 
 /** Rows per import request. The client chunks requests; the Worker splits statements itself. */
