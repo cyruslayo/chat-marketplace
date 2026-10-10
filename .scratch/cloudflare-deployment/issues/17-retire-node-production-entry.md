@@ -48,3 +48,7 @@ Check every item in `docs/agents/issue-tracker.md`.
   pilot's rightmost-`X-Forwarded-For` rule (issue 08c, map.md) is retired on `infra/cf-17-retire-node-prod`, commit `5793ec3`.
   That branch reads the header through the shared `clientAddressFromCloudflareHeaderValue` rule, and an absent or blank header
   fails closed to `unknown` (one shared bucket). The socket-address fallback is gone.
+
+### Wave 6 code close (10 Oct 2026)
+
+Status unchanged: **ready-for-human**, held. `infra/cf-17-retire-node-prod` is at `a92eae0` (held, unmerged, no PR) and is kept current by merging the wave 6 tip into it. Not resolved. Do not start until `ROLLBACK_WINDOW` closes after the human cutover in issue 16. See `map.md`, "Wave 6 completion (code)".
