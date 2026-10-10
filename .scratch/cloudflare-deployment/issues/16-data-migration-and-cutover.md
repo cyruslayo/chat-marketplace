@@ -161,8 +161,10 @@ Status unchanged: **ready-for-human**. Nothing here is a cutover, a production r
   user". The 100-parameter constant now cites the Cloudflare Durable Object limits page, and `PRD.md` records it.
 - **Bundle (e, report only).** Rebuilding `apps/local-guest/src/client.ts` with the same esbuild options matches commit
   `803d616`'s `dist/client.js` except for 50 path comments. They name `../chat-marketplace-cloudflare/node_modules/...`,
-  which is another checkout. Functionally the bundle is identical. The suite's build step rewrites this file, so the
-  working tree was restored and the file is not in these commits.
+  which is another checkout. Functionally the bundle is identical. The suite's build step rewrites this file.
+  **Correction (wave-6 fix pass):** the pass-1 wording said the file was not in these commits. It was: `dist/client.js`
+  was in the branch diff against `origin/infra/cloudflare-deployment`, carrying the other checkout's paths. The fix pass
+  reverts it to the `origin/infra/cloudflare-deployment` version. Any test run rewrites it, so restore it afterwards.
 - **Checks.** `npm run check` exits 0. `npm run test:workers` passes 58 of 58 across 12 files. The non-browser suite
   (phase 1 of `npm test`, reproduced because `package.json` has no `test:non-browser` script) gives 1407 tests: 1404 pass
   and 3 fail. The browser phase was not run.
