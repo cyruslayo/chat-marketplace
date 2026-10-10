@@ -260,7 +260,7 @@ Each finding was tested first (a red run before each change). Commits, oldest fi
 - **F12 (medium).** The Access verifier requires `iss = https://<team domain>` and refuses a missing issuer. Test: "16 F12" in `apps/cloudflare/test/ops-routes.spec.ts`.
 - **F13.** `importRequestChunks` sizes batches by the widest row and throws a `RangeError` naming the table for more than 100 parameters. It no longer emits empty chunks.
 - **F2 (documentation only; no booking code changed).** The same-day rule in production (`booking-request.ts`, about lines 378–384) is a fixed 10:55 WAT disclosure limit, not the unit's Contractual Check-In Window (ADR 0053). `SameDayBookingManager` has no production caller. Commit `4437f72` changed that manager and its test (plus two unrelated test fixes and `.gitignore`), not the production path. Earlier wave-6 notes that the three non-browser failures were the AC5 blocker are superseded: `4437f72` fixed them, and their tests now pass. Shortlet issue 15 has a correction note, and new needs-triage issue 48 tracks the production rule.
-- **F5.** Proposed ADR 0096 (`docs/adr/0096-export-payment-references-in-plaintext.md`, status `proposed`, Needs user decision) records the plaintext payment-reference conflict and three options. It is not accepted.
+- **F5.** ADR 0096 (`docs/adr/0096-export-payment-references-in-plaintext.md`) was proposed in this fix pass with three options. The user decided on 10 Oct 2026: **accepted as an exemption (Option A)** for the four payment-reference columns in the private daily export only. Its four conditions (private bucket, named access, 400-day retention, revisit encryption at rest before real data) are recorded in the ADR. Options B and C are kept as rejected, with reasons.
 - **Out-of-scope review.** Shortlet issue 49 records the reachability of the hardcoded conditional-offer key (`domains/shortlet/src/conditional-offer.ts`). The code was not changed.
 
 **Reconciled test counts (F7).** The earlier passes report different totals because each pass counted a different set of files. This is the latest run on `infra/cf-wave6` after the fix pass:
@@ -276,7 +276,7 @@ The pass-1 figures (58 of 58; 1407 tests with 3 failures) are superseded by the 
 
 1. Keep the one-way flag in the object's storage (today; a restore can clear it, mitigated by the status check), or store it outside the object (for example, an R2 marker that PITR does not rewind), which would let the code enforce the flag. The second option is a design change.
 2. The cutover push still sends the five bearer-credential tables into the object. Decide whether sessions and challenges should move at cutover, or be excluded from the cutover manifest too (which would need the verify and compare to exclude them).
-3. ADR 0096: the plaintext payment-reference export (exemption, encryption at rest, or keyed hash).
+3. ~~ADR 0096: the plaintext payment-reference export.~~ Decided 10 Oct 2026: accepted as an exemption (Option A), with conditions recorded in the ADR. Encryption at rest is to be revisited before real data (ADR 0096, condition 4).
 4. Shortlet issue 15's resolved status (reopen or not), and the production same-day rule (issue 48).
 
 **Fix pass 2 (parent decisions A, B and C; runbooks and `docs/pilot-deployment.md` updated).** Open decisions 1 and 2 above are decided by D5 and D6. Decided 10 Oct 2026: the rebuild after a cutover is the break-glass in the restore runbook (item 8 in the cutover runbook). Still open: the sign-in communication (item 7), and the recovery if the break-glass stops at B3.

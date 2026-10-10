@@ -255,7 +255,7 @@ Branch `infra/cf-wave6`, cut from `infra/cloudflare-deployment`, with the merge 
 
 ### Wave 6 fix pass (review findings, 10 Oct 2026)
 
-Branch `infra/cf-wave6` at `cf260db`, from the review of `7181cbd`. Findings F1 to F13 are fixed or documented as recorded in issue 16's fix-pass comment, which has the commits, the tests and the reconciled counts. The latest run: `npm run check` exit 0; `npm run test:workers` 78 of 78 across 14 files; non-browser phase 1 1431 of 1431 (browser phase not run). The alarm now runs the daily export without a notifier (F1). The ops export, pull and rollback exclude the five credential tables (F4). The one-way cutover flag is checkable through `GET /_ops/status` after a restore (F3, which PITR can rewind). Shortlet issue 15's same-day cutoff is not a production fix; issue 48 tracks it (F2). Proposed ADR 0096 is for the user's decision (F5). Issue 49 records the conditional-offer key review. Issue 17 is `ready-for-human` with a hold until the rollback window closes (F7).
+Branch `infra/cf-wave6` at `cf260db`, from the review of `7181cbd`. Findings F1 to F13 are fixed or documented as recorded in issue 16's fix-pass comment, which has the commits, the tests and the reconciled counts. The latest run: `npm run check` exit 0; `npm run test:workers` 78 of 78 across 14 files; non-browser phase 1 1431 of 1431 (browser phase not run). The alarm now runs the daily export without a notifier (F1). The ops export, pull and rollback exclude the five credential tables (F4). The one-way cutover flag is checkable through `GET /_ops/status` after a restore (F3, which PITR can rewind). Shortlet issue 15's same-day cutoff is not a production fix; issue 48 tracks it (F2). ADR 0096 was proposed in this pass (F5); the user accepted it as an exemption on 10 Oct 2026. Issue 49 records the conditional-offer key review. Issue 17 is `ready-for-human` with a hold until the rollback window closes (F7).
 
 ## Wave 6 completion (code, 10 Oct 2026)
 
@@ -290,7 +290,7 @@ Decisions made on the user's behalf are recorded in `issues/16-data-migration-an
 4. Paystack dashboard checks: callback and webhook URLs, signed delivery, and the bad-signature 401.
 5. The PITR drill on staging (issue 12b; issue 15 step 6b).
 6. The ADR 0095 gates and personal-data retention: counsel, transfer basis, vendor terms and DPIA (issue 16, Needs user 2).
-7. The ADR 0096 decision on the plaintext payment-reference export. It is `proposed` and not accepted.
+7. ~~The ADR 0096 decision on the plaintext payment-reference export.~~ Done 10 Oct 2026: ADR 0096 is accepted as an exemption (Option A). Its conditions stay open: the DPIA entries for the four columns (issue 12a), and the revisit of encryption at rest before real data (ADR 0095 gates).
 8. The break-glass B3 recovery decision (D5). B3 stops the rebuild if the flag survived.
 9. The guest and operator sign-in notice, checklist C10 (D6). Wording and channel are open.
 10. Live-page checks of the 100-parameter statement limit (checklist C1) and R2's 5 MiB minimum part size (12a).

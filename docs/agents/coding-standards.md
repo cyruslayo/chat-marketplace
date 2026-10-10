@@ -14,7 +14,7 @@ These rules apply to all code written in this repository. They are enforced by a
 
 ## Security
 
-- **Bearer credentials must never appear in audit logs, interaction state, or logs.** This is a hard rule derived from ADR 0075. Confirmation tokens, one-time passwords, access codes, and payment references are bearer credentials. Store only a hash or omit them entirely from audit records.
+- **Bearer credentials must never appear in audit logs, interaction state, or logs.** This is a hard rule derived from ADR 0075. Confirmation tokens, one-time passwords, access codes, and payment references are bearer credentials. Store only a hash or omit them entirely from audit records. Exemption (ADR 0096): the four payment-reference columns in the private Cloudflare daily export (`EXPORTS` bucket) are kept in plaintext under the conditions recorded in that ADR. This exemption covers that export only.
 - **Never roll a custom security primitive.** If you need a tamper-evident token, use `node:crypto` `createHmac`. If you need a signed assertion, use an established pattern. Base64-encoding is not encryption and is not tamper-evidence.
 
 ## Domain fidelity
