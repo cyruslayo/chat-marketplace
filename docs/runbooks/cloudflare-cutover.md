@@ -54,11 +54,21 @@ Record the manifest's SHA-256 (`sha256sum manifest.json`) in the log.
 
 ## 3. Receipts to R2
 
-Upload each file in `<EXPORT_DIR>/receipts/` to the private `RECEIPTS` bucket. The key is the file name, and the content
-type is in `manifest.json` under `receipts`. The upload method (for example `wrangler r2 object put` with `--remote`)
-is for the user to confirm. Do not use a public bucket or a presigned URL (ADR 0090).
+Upload each file in `<EXPORT_DIR>/receipts/` to the private `RECEIPTS` bucket, `shortlet-pilot-production-receipts`
+(`apps/cloudflare/cloudflare.config.ts`). Use the project's pinned `cf` CLI. Without `--local` it works on the remote
+bucket. The key is the file name, and the content type is in `manifest.json` under `receipts`:
 
-Check that the bucket holds exactly `manifest.receipts.length` objects with the expected sizes before continuing.
+```bash
+npm exec cf -- r2 objects put "<receipt-key>" --bucket-name "shortlet-pilot-production-receipts" --mode production \
+  --file "<EXPORT_DIR>/receipts/<receipt-key>" --content-type "<contentType from manifest.json>"
+```
+
+The command and its authentication are for the user to confirm (open decision 6). Do not use a public bucket or a
+presigned URL (ADR 0090).
+
+Check that the bucket holds exactly `manifest.receipts.length` objects with the expected sizes before continuing. List
+them with `npm exec cf -- r2 objects list --bucket-name "shortlet-pilot-production-receipts" --mode production`, following
+`--cursor` across pages. The list output must be compared by hand with the manifest's sizes.
 
 ## 4. Import
 
@@ -132,7 +142,10 @@ R3. **Find the rows written or changed after cutover.** The export files are can
     Every table gets one delta file, empty if nothing changed.
 
 R4. **Find the receipts written after cutover.** These are keys in `<POST_DIR>`'s manifest that are not in the cutover
-    manifest. Download each one from R2 by key into `<DELTA_DIR>/receipts/<key>`. Write `<DELTA_DIR>/manifest.json`
+    manifest. Download each one from R2 by key into `<DELTA_DIR>/receipts/<key>`. **Documented gap:** the pinned `cf`
+    CLI has `npm exec cf -- r2 objects get <key> --bucket-name "shortlet-pilot-production-receipts" --mode production`,
+    but its help does not document an option that writes the body to a file. Confirm how the body is written (open
+    decision 8) before relying on it. Do not guess a redirection. Write `<DELTA_DIR>/manifest.json`
     with `formatVersion`, a `tables` entry for every table (its `rowCount` and `sha256` of the delta file), and a
     `receipts` entry for each new receipt (`objectKey`, `contentType`, `size`, `sha256`, with the SHA-256 from
     `sha256sum`). `movedTables` is `["receipt_blobs"]`.
@@ -187,3 +200,5 @@ receipt object that has no row, so check the receipts before deleting anything.
 5. **Freeze mechanism and DNS route.** The maintenance page, the Worker route and the TTL are for the user to choose.
 6. **Receipt upload method.** Confirm the R2 upload command and its authentication.
 7. **Data-protection gates.** This runbook must not run on real data until ADR 0095's gates are cleared.
+8. **Receipt download (R4).** The pinned `cf r2 objects get` has no documented output-file option. Confirm the method, or
+   add a receipt-download step that uses a supported path.
