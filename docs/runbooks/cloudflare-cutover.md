@@ -35,7 +35,7 @@ which is why step 10 exists.
 | Check | Why |
 | --- | --- |
 | Staging rehearsal (issue 15) passed with these same steps and checksums matched. | Proves the procedure before production. |
-| Access service token, `OPS_SHARED_SECRET`, `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD` are set on the production Worker (issue 11a). | `/_ops` refuses everything otherwise. |
+| Access service token, `OPS_SHARED_SECRET`, `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD` are set on the production Worker (issue 11a). `CF_ACCESS_TEAM_DOMAIN` is the team domain without a scheme. An assertion is accepted only when its `iss` is `https://<that domain>` (F12). | `/_ops` refuses everything otherwise. |
 | The production Durable Object has run its schema migrations. It does this itself on first start (`apps/cloudflare/src/schema.ts`, D3). The verify response's `schemaVersion` must equal the number of migrations in that file (currently 2). | Import refuses with `SCHEMA_NOT_READY` otherwise, and never creates tables. |
 | **Checklist C1:** the value `MAX_STATEMENT_PARAMETERS = 100` in `packages/platform-core/src/data-migration.ts` is verified against the live Cloudflare Durable Object limits page before cutover. It came from a search summary, not the live page. Record the page's date and value in the log. | Chunk sizes and the object's own statement limit depend on it. |
 | **Checklist C2:** the production Node file has no table outside the object's schema. `local_pilot_clock` is a local-development table and must be absent. The export is refused by the object if a table is missing (`UNKNOWN_TABLE`), so a mismatch stops the push rather than losing data. | Export scope is every application table (issue 16, Decisions: export scope). |
