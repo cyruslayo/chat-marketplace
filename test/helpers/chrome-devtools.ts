@@ -4,7 +4,25 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, wri
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const CHROME_PATH = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
+/**
+ * Real-browser helper. The Chrome binary is `SHORTLET_CHROME_PATH` when set and not blank, otherwise the Windows default
+ * below. Set `SHORTLET_CHROME_NO_SANDBOX=1` only where Chrome's sandbox cannot run (for example some containers); the
+ * sandbox stays on otherwise. Both are read by `resolveChromeLaunch`, which the Chromium tests reach through launchRealBrowser.
+ */
+const DEFAULT_CHROME_PATH = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
+
+export interface ChromeLaunchConfig {
+  readonly executable: string;
+  readonly sandboxArgs: readonly string[];
+}
+
+export function resolveChromeLaunch(env: NodeJS.ProcessEnv = process.env): ChromeLaunchConfig {
+  const override = env.SHORTLET_CHROME_PATH?.trim();
+  return {
+    executable: override ? override : DEFAULT_CHROME_PATH,
+    sandboxArgs: env.SHORTLET_CHROME_NO_SANDBOX === "1" ? ["--no-sandbox"] : [],
+  };
+}
 
 export interface RealBrowserCookie {
   readonly name: string;
@@ -152,7 +170,8 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
     "about:blank",
   ].filter(Boolean);
 
-  const proc: ChildProcess = spawn(CHROME_PATH, args, { stdio: "ignore" });
+  const chrome = resolveChromeLaunch();
+  const proc: ChildProcess = spawn(chrome.executable, [...chrome.sandboxArgs, ...args], { stdio: "ignore" });
   const targetIds = new Set<string>();
 
   let wsUrl = "";
