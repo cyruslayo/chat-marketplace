@@ -174,8 +174,11 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
   const proc: ChildProcess = spawn(chrome.executable, [...chrome.sandboxArgs, ...args], { stdio: "ignore" });
   const targetIds = new Set<string>();
 
+  // The first launch on a cold CI runner can take longer than 4 s to open DevTools (CI run 38090026371 failed at 4.2 s
+  // with 40 attempts). The budget only matters when Chrome fails to start; a healthy launch returns on the first ready poll.
+  const DEVTOOLS_READY_ATTEMPTS = 150;
   let wsUrl = "";
-  for (let attempt = 0; attempt < 40; attempt++) {
+  for (let attempt = 0; attempt < DEVTOOLS_READY_ATTEMPTS; attempt++) {
     try {
       const res = await fetch(`http://127.0.0.1:${port}/json/version`);
       if (res.ok) {
