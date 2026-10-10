@@ -1,0 +1,187 @@
+{
+  "schemaVersion": 1,
+  "run": {
+    "id": "60b6d233-140a-4cef-9f60-e1fbffcc192a",
+    "startedAt": "2026-10-07T12:45:14.688Z",
+    "endedAt": "2026-10-07T12:46:06.797Z",
+    "durationMs": 52107,
+    "command": [
+      "scripts/run-tests.mjs",
+      "--suite=non-browser",
+      "--file=test/sqlite-repositories.test.ts",
+      "--file=test/sqlite-audit-log.test.ts",
+      "--file=test/sqlite-telemetry.test.ts",
+      "--file=test/sqlite-revenue-state.test.ts",
+      "--file=test/operator-server-robustness.test.ts",
+      "--file=test/assistant-interactions-protocol.test.ts",
+      "--file=test/weaver-runtime-safety.test.ts",
+      "--file=test/weaver-web-agent-adapter.test.ts",
+      "--file=test/weaver-dependency-boundary.test.ts",
+      "--report=<path>"
+    ],
+    "selectedFiles": [
+      "test/sqlite-repositories.test.ts",
+      "test/sqlite-audit-log.test.ts",
+      "test/sqlite-telemetry.test.ts",
+      "test/sqlite-revenue-state.test.ts",
+      "test/operator-server-robustness.test.ts",
+      "test/assistant-interactions-protocol.test.ts",
+      "test/weaver-runtime-safety.test.ts",
+      "test/weaver-web-agent-adapter.test.ts",
+      "test/weaver-dependency-boundary.test.ts"
+    ],
+    "owner": {
+      "pid": 69592,
+      "childPids": [
+        56236
+      ]
+    },
+    "phases": [
+      {
+        "suite": "non-browser",
+        "selectedFiles": [
+          "test/sqlite-repositories.test.ts",
+          "test/sqlite-audit-log.test.ts",
+          "test/sqlite-telemetry.test.ts",
+          "test/sqlite-revenue-state.test.ts",
+          "test/operator-server-robustness.test.ts",
+          "test/assistant-interactions-protocol.test.ts",
+          "test/weaver-runtime-safety.test.ts",
+          "test/weaver-web-agent-adapter.test.ts",
+          "test/weaver-dependency-boundary.test.ts"
+        ],
+        "durationMs": 52102,
+        "exitCode": 0,
+        "state": "passed",
+        "childPid": 56236
+      }
+    ],
+    "state": "passed",
+    "exitCode": 0
+  },
+  "counts": {
+    "passed": 51,
+    "failed": 0,
+    "skipped": 0,
+    "cancelled": 0
+  },
+  "files": [
+    {
+      "file": "test/sqlite-repositories.test.ts",
+      "state": "passed",
+      "durationMs": 609.5023,
+      "exitCode": 0,
+      "counts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "failures": []
+    },
+    {
+      "file": "test/sqlite-audit-log.test.ts",
+      "state": "passed",
+      "durationMs": 3082.3343,
+      "exitCode": 0,
+      "counts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "failures": []
+    },
+    {
+      "file": "test/sqlite-telemetry.test.ts",
+      "state": "passed",
+      "durationMs": 3420.4234,
+      "exitCode": 0,
+      "counts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "failures": []
+    },
+    {
+      "file": "test/sqlite-revenue-state.test.ts",
+      "state": "passed",
+      "durationMs": 2021.7079,
+      "exitCode": 0,
+      "counts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "failures": []
+    },
+    {
+      "file": "test/operator-server-robustness.test.ts",
+      "state": "passed",
+      "durationMs": 4311.9089,
+      "exitCode": 0,
+      "counts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "failures": []
+    },
+    {
+      "file": "test/assistant-interactions-protocol.test.ts",
+      "state": "passed",
+      "durationMs": 1142.0459,
+      "exitCode": 0,
+      "counts": {
+        "passed": 13,
+        "failed": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "failures": []
+    },
+    {
+      "file": "test/weaver-runtime-safety.test.ts",
+      "state": "passed",
+      "durationMs": 2127.9152,
+      "exitCode": 0,
+      "counts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "failures": []
+    },
+    {
+      "file": "test/weaver-web-agent-adapter.test.ts",
+      "state": "passed",
+      "durationMs": 2168.5425,
+      "exitCode": 0,
+      "counts": {
+        "passed": 11,
+        "failed": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "failures": []
+    },
+    {
+      "file": "test/weaver-dependency-boundary.test.ts",
+      "state": "passed",
+      "durationMs": 7387.9629,
+      "exitCode": 0,
+      "counts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "failures": []
+    }
+  ]
+}

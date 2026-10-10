@@ -17,17 +17,17 @@ Work top to bottom. The frontier is the first issue that is open, unblocked and 
 | 09 | Payment screens: choice, card, bank transfer, manual transfer, waiting, no reservation | task | 08 |
 | 10 | Confirmation and system pages: confirmed, error pages, conversation without JavaScript | task | 03, 04 |
 | 11 | Desktop split, dark mode and the final visual acceptance | task | 05, 06, 07, 08, 09, 10 |
-| 12 | Decide what "Amount due now" and "Amount paid" mean | grilling | none (needs the user) |
+| 12 | Decide what "Amount due now" and "Amount paid" mean | grilling | none (resolved) |
 
-Issue 12 needs a human answer. Issue 09 ships with today's amounts and labels if 12 is still open, and must not block on it.
+**Complete: issues 01–12 are resolved; no open frontier remains.** Issue 12's amount-label decision shipped in `c0db5d5`. Issue 09's page-based transfer flow is accepted by the user; its DoD audit and final answer are committed in `62a9e47`. Fresh close-out verification: clean typecheck, 1253 non-browser + 165 Chromium passes, 1 existing opt-in skip and 0 failures (pi-only `PI_REASONING_LEVEL` omitted from the verification subprocess environment).
 
-## Kickoff prompt for a new session
+## Historical kickoff prompt
 
 > Implement the guest UI consistency effort in `.scratch/guest-ui-consistency/`. Read `PRD.md`, then `map.md`, and follow the implementation protocol in `AGENTS.md` for each issue in order, starting at the frontier (issue 01).
 >
 > - The approved design is in `design/`: open the `.dc.html` files and compare with `design/renders/`. The live canvas is <https://claude.ai/artifact/TKQCWTF4SWNscKrjLkN1zX>.
 > - For each issue: claim it, read the ADRs it lists, write one failing test per acceptance criterion, implement, run `npm run check` and the full `npm test` (the browser phase takes ~12 minutes, so run it in the background), capture screenshots with the walkthrough, check the Definition of Done in `docs/agents/issue-tracker.md`, commit on `ui/guest-consistency`, then write the `## Answer` and a context pointer here.
-> - Don't invent copy, amounts or times; ask me. Issue 12 needs my decision. Don't block on it.
+> - Don't invent copy, amounts or times; ask me. Issue 12's decision is recorded in its resolved issue.
 
 ## Context pointers
 
@@ -42,6 +42,6 @@ Issue 12 needs a human answer. Issue 09 ships with today's amounts and labels if
 - 06: one `.unit-detail-sheet` on the chat workspace and `/stays/:id` (where line, serif title, `.ui-tiles`, price block, "About this apartment"); kit helpers `unitTilesHtml`/`unitIndicativePriceHtml`/`unitAboutHtml` in `guest-kit.ts`, `unitTiles`/`unitStayTotalLabel` in `booking-presentation.ts`. Tests: `test/guest-unit-detail-consistency*.test.ts`. Screenshots: `screenshots/06/`. Deviations in the issue Comments (no provider line, ADR 0006; dropped nightly-rate/fees/amount-due lines).
 - 07: shared request screen content in `apps/web-agent/src/request-presentation.ts` and markup in `guest-kit.ts`, used by chat and conventional draft/review/sent/not-accepted pages; native owner/freshness-checked POST actions reuse platform handlers; outcome recovery keeps criteria; neutral banner and steps replace the operator-response waiting panel. Tests: `test/guest-request-consistency*.test.ts`; 40 captures in `screenshots/07/`. Commit `f802424`; copy deviations and DoD recorded in the issue. Full suite: 1210 non-browser + 151 Chromium passes, 1 pre-existing skip, zero failures.
 - 08: shared live/expired offer content in `apps/web-agent/src/offer-presentation.ts` and `guest-kit.ts`, used by chat and `/conditional-offers/:id`; authoritative WAT countdown/lazy expiry, fail-closed outage retry, native owner/current-authority acceptance and expired recovery. Tests: `test/guest-offer-consistency*.test.ts`; 16 light captures in `screenshots/08/`. Implementation `26f719b`; AC1–AC5, ADR decisions and explicit DoD in `issues/08-offer-screens.md`. Exact staged suite: 1221 non-browser + 159 Chromium passes, 1 pre-existing skip, zero failures; typecheck clean. Issues 09/11 not worked.
-- 09: shared payment layout (`paymentLayoutHtml`/`paymentScreenHtml` and friends in `guest-kit.ts`, `apps/web-agent/src/payment-presentation.ts`); choice page is a native radio form posting to `/payments/offers/:id`; chat payment surface uses `.ui-banner--warning` + steps (no `.waiting-panel`). Tests: `test/guest-payment-consistency*.test.ts`; screenshots `screenshots/09/`. Implemented, uncommitted (working-tree reformatting; see issue Comments).
+- 09: shared payment layout (`paymentLayoutHtml`/`paymentScreenHtml` and friends in `guest-kit.ts`, `apps/web-agent/src/payment-presentation.ts`); choice page is a native radio form posting to `/payments/offers/:id`; chat payment surface uses `.ui-banner--warning` + steps (no `.waiting-panel`). Tests: `test/guest-payment-consistency*.test.ts`; screenshots `screenshots/09/`. Committed as `dc306fb`; the user accepted standalone pages for transfer details/copy/upload/waiting, with chat retaining the shared payment-ready screen (AC1/AC4 deviations accepted). Resolved after all seven DoD checks; audit/final answer `62a9e47`. Fresh typecheck clean; 1253 non-browser + 165 Chromium passes, 1 existing opt-in skip, 0 failures; verification environment note in the issue.
 - 12: amount labels decided and applied: "Total to complete booking" (stay + deposit), "This payment", "Stay payment paid"; table in `guest-content.ts`; `test/guest-amount-labels.test.ts`. Rationale in the issue.
 - 11: desktop split (full-width bar/rail, 460px conversation, 560/760px workspace), retired `.waiting-panel`/`.stay-result`, kit list in `docs/design/shortlet-design-system-direction.md`; tests `test/guest-final-acceptance-chromium.test.ts`, `test/guest-retired-classes.test.ts`; 264 captures in `screenshots/final/` (`capture-11-all.sh`). Commit `639e3cd`; 1230 non-browser + 165 Chromium passes, 1 pre-existing skip, zero failures.

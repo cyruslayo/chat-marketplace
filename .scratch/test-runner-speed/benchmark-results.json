@@ -1,0 +1,323 @@
+{
+  "schemaVersion": 1,
+  "selection": [
+    "test/sqlite-repositories.test.ts",
+    "test/sqlite-audit-log.test.ts",
+    "test/sqlite-telemetry.test.ts",
+    "test/sqlite-revenue-state.test.ts",
+    "test/operator-server-robustness.test.ts",
+    "test/assistant-interactions-protocol.test.ts",
+    "test/weaver-runtime-safety.test.ts",
+    "test/weaver-web-agent-adapter.test.ts",
+    "test/weaver-dependency-boundary.test.ts"
+  ],
+  "selectionSha256": {
+    "test/sqlite-repositories.test.ts": "d010c7c53d0f12908da49988586b8e7b5733c33d27f956fae6acdb22b4e9c9b2",
+    "test/sqlite-audit-log.test.ts": "18efcf519c79084896c834f0953600bda90d2212ecccabd955e9aa867754c0fb",
+    "test/sqlite-telemetry.test.ts": "4cbfc2a5835ba028995449fb22dd6b5c56704bfbdd6177ac7936efd47ecb9546",
+    "test/sqlite-revenue-state.test.ts": "f3b9359175ee6d07f42372ecf9fed10efffe52b06a1d93aede8467aa1c5e5dac",
+    "test/operator-server-robustness.test.ts": "92050ad2919977cf9f2eceaa2e4daabb37b620e55d987d91899703e9167fd9f4",
+    "test/assistant-interactions-protocol.test.ts": "9e69b112d536478e8dd50d3532d34564874859816dfa3d5e6c665d245d45e982",
+    "test/weaver-runtime-safety.test.ts": "343e62acd8c52c172e0b863874e3118b4b099e9180e41c999295408237049fd6",
+    "test/weaver-web-agent-adapter.test.ts": "7284608fcecc70a2eee833fd2b41eb2f51213f31c4ae477b0095939228e48c5f",
+    "test/weaver-dependency-boundary.test.ts": "8cec79714ee240fd8b4913f7883a174f317b1c35965bce16fdd2a7d2304a2d43"
+  },
+  "sourcesSha256": {
+    "scripts/run-tests.mjs": "db931f6877fe77343e79ec52922a8f7bb2c970409b2f49a97ae575ac5eda69dd",
+    "scripts/test-runner-reporter.mjs": "e4f97fd17d4873c0088c7666860266ca7160d84692d1b3bf25f3bf82401fed04",
+    "scripts/test-runner-results.mjs": "74bfad150e4d6789d97af419213fafe2087fb8d44598e5fc0e77237375428896",
+    "test/test-runner.test.ts": "2f4451c894f757ffd3533b5114200951089787552dbaa6d8d032a862bc41186a"
+  },
+  "postBenchmarkSourceSha256": {
+    "scripts/run-tests.mjs": "25da091d8a5050b74b33679ff00c0df700c44c7404f3a08d6a575f21966be62f",
+    "scripts/test-runner-reporter.mjs": "e4f97fd17d4873c0088c7666860266ca7160d84692d1b3bf25f3bf82401fed04",
+    "scripts/test-runner-reporter.d.mts": "5704d6d042be695d3f327d1956e2081d8b65b233cbbf7f6c13601439499d240f",
+    "scripts/test-runner-results.mjs": "2a44462731f3779d8a9b652187087d6d831e62b284bc2f10c1067993331e8440",
+    "scripts/test-runner-results.d.mts": "4ee03362365c97c7db8a9ea3d7d0497672a022bb04b3f6d15d8c9a1cedf7fc5e",
+    "test/test-runner.test.ts": "b2dfd17eaf9cce02aee2db978d355d0a38f8901b54cbb285816790c0d68429ef",
+    "package.json": "657624335f8a711e83318ca3876efa15b447cf1f1865db858f6b163a6c393a8f",
+    "AGENTS.md": "dcb611d58df5bbb1a10713af15aca43ed9c6ec9b936d957a930ebc7042325114",
+    "docs/agents/issue-tracker.md": "4bd081d19b1fd89b5b153dc89afa2953c531b2f3cc19abbcce588b59ca47eaf3"
+  },
+  "environment": {
+    "node": "v22.19.0",
+    "platform": "win32",
+    "release": "10.0.26100",
+    "architecture": "x64",
+    "cpuCount": 8,
+    "availableParallelism": 8,
+    "measuredDefaultNonBrowserWorkers": 7,
+    "selectedNonBrowserWorkers": 8,
+    "cpuModel": "Intel(R) Core(TM) i7-8565U CPU @ 1.80GHz",
+    "totalMemoryBytes": 16915578880
+  },
+  "method": {
+    "warmup": "one unmeasured bounded run of the same nine files with the current default",
+    "order": "repeat 1: current-default, 2, 4, 8; repeat 2: current-default, 2, 4, 8",
+    "repetitionsPerConfig": 2,
+    "workerOverride": "omitted for current-default; explicit values 2, 4, and 8 for candidates"
+  },
+  "warmup": {
+    "label": "warmup-current-default",
+    "configId": "current-default",
+    "runId": "60b6d233-140a-4cef-9f60-e1fbffcc192a",
+    "state": "passed",
+    "exitCode": 0,
+    "counts": {
+      "passed": 51,
+      "failed": 0,
+      "skipped": 0,
+      "cancelled": 0
+    },
+    "runnerDurationMs": 52107,
+    "wallDurationMs": 52231,
+    "report": "C:\\AI2026\\chat-marketplace\\.scratch\\test-runner-speed\\benchmark-runs\\warmup-current-default.json",
+    "sample": {
+      "durationMs": 52107,
+      "exitCode": 0,
+      "failures": 0
+    }
+  },
+  "measured": [
+    {
+      "label": "current-default-repeat-1",
+      "configId": "current-default",
+      "runId": "92e44f6a-4e29-4d3c-b48f-342afe8e4887",
+      "state": "passed",
+      "exitCode": 0,
+      "counts": {
+        "passed": 51,
+        "failed": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "runnerDurationMs": 30979,
+      "wallDurationMs": 36106,
+      "report": "C:\\AI2026\\chat-marketplace\\.scratch\\test-runner-speed\\benchmark-runs\\current-default-repeat-1.json",
+      "sample": {
+        "durationMs": 30979,
+        "exitCode": 0,
+        "failures": 0
+      }
+    },
+    {
+      "label": "2-workers-repeat-1",
+      "configId": "2-workers",
+      "runId": "40dacc45-650f-4394-8171-7bd2e648e12e",
+      "state": "passed",
+      "exitCode": 0,
+      "counts": {
+        "passed": 51,
+        "failed": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "runnerDurationMs": 18751,
+      "wallDurationMs": 18947,
+      "report": "C:\\AI2026\\chat-marketplace\\.scratch\\test-runner-speed\\benchmark-runs\\2-workers-repeat-1.json",
+      "sample": {
+        "durationMs": 18751,
+        "exitCode": 0,
+        "failures": 0
+      }
+    },
+    {
+      "label": "4-workers-repeat-1",
+      "configId": "4-workers",
+      "runId": "97c987ea-7965-4e57-a518-45f3f17f31d1",
+      "state": "passed",
+      "exitCode": 0,
+      "counts": {
+        "passed": 51,
+        "failed": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "runnerDurationMs": 12850,
+      "wallDurationMs": 13119,
+      "report": "C:\\AI2026\\chat-marketplace\\.scratch\\test-runner-speed\\benchmark-runs\\4-workers-repeat-1.json",
+      "sample": {
+        "durationMs": 12850,
+        "exitCode": 0,
+        "failures": 0
+      }
+    },
+    {
+      "label": "8-workers-repeat-1",
+      "configId": "8-workers",
+      "runId": "678d5229-739c-4547-905d-e433d83d4cd1",
+      "state": "passed",
+      "exitCode": 0,
+      "counts": {
+        "passed": 51,
+        "failed": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "runnerDurationMs": 10278,
+      "wallDurationMs": 10444,
+      "report": "C:\\AI2026\\chat-marketplace\\.scratch\\test-runner-speed\\benchmark-runs\\8-workers-repeat-1.json",
+      "sample": {
+        "durationMs": 10278,
+        "exitCode": 0,
+        "failures": 0
+      }
+    },
+    {
+      "label": "current-default-repeat-2",
+      "configId": "current-default",
+      "runId": "40af4454-bfd4-4b03-a5ac-0b26a6e6f1ad",
+      "state": "passed",
+      "exitCode": 0,
+      "counts": {
+        "passed": 51,
+        "failed": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "runnerDurationMs": 11498,
+      "wallDurationMs": 11652,
+      "report": "C:\\AI2026\\chat-marketplace\\.scratch\\test-runner-speed\\benchmark-runs\\current-default-repeat-2.json",
+      "sample": {
+        "durationMs": 11498,
+        "exitCode": 0,
+        "failures": 0
+      }
+    },
+    {
+      "label": "2-workers-repeat-2",
+      "configId": "2-workers",
+      "runId": "768898d7-d9a3-489b-8893-0e984e0c9530",
+      "state": "passed",
+      "exitCode": 0,
+      "counts": {
+        "passed": 51,
+        "failed": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "runnerDurationMs": 17040,
+      "wallDurationMs": 17211,
+      "report": "C:\\AI2026\\chat-marketplace\\.scratch\\test-runner-speed\\benchmark-runs\\2-workers-repeat-2.json",
+      "sample": {
+        "durationMs": 17040,
+        "exitCode": 0,
+        "failures": 0
+      }
+    },
+    {
+      "label": "4-workers-repeat-2",
+      "configId": "4-workers",
+      "runId": "2d95ff41-e04b-4c72-8082-ba7472bc82f6",
+      "state": "passed",
+      "exitCode": 0,
+      "counts": {
+        "passed": 51,
+        "failed": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "runnerDurationMs": 20671,
+      "wallDurationMs": 20904,
+      "report": "C:\\AI2026\\chat-marketplace\\.scratch\\test-runner-speed\\benchmark-runs\\4-workers-repeat-2.json",
+      "sample": {
+        "durationMs": 20671,
+        "exitCode": 0,
+        "failures": 0
+      }
+    },
+    {
+      "label": "8-workers-repeat-2",
+      "configId": "8-workers",
+      "runId": "8571a2e9-2bcf-456d-923e-0b0ae430a0fd",
+      "state": "passed",
+      "exitCode": 0,
+      "counts": {
+        "passed": 51,
+        "failed": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "runnerDurationMs": 16635,
+      "wallDurationMs": 16985,
+      "report": "C:\\AI2026\\chat-marketplace\\.scratch\\test-runner-speed\\benchmark-runs\\8-workers-repeat-2.json",
+      "sample": {
+        "durationMs": 16635,
+        "exitCode": 0,
+        "failures": 0
+      }
+    }
+  ],
+  "benchmarkConfigurations": [
+    {
+      "id": "current-default",
+      "workers": 7,
+      "samples": [
+        {
+          "durationMs": 30979,
+          "exitCode": 0,
+          "failures": 0
+        },
+        {
+          "durationMs": 11498,
+          "exitCode": 0,
+          "failures": 0
+        }
+      ]
+    },
+    {
+      "id": "2-workers",
+      "workers": 2,
+      "samples": [
+        {
+          "durationMs": 18751,
+          "exitCode": 0,
+          "failures": 0
+        },
+        {
+          "durationMs": 17040,
+          "exitCode": 0,
+          "failures": 0
+        }
+      ]
+    },
+    {
+      "id": "4-workers",
+      "workers": 4,
+      "samples": [
+        {
+          "durationMs": 12850,
+          "exitCode": 0,
+          "failures": 0
+        },
+        {
+          "durationMs": 20671,
+          "exitCode": 0,
+          "failures": 0
+        }
+      ]
+    },
+    {
+      "id": "8-workers",
+      "workers": 8,
+      "samples": [
+        {
+          "durationMs": 10278,
+          "exitCode": 0,
+          "failures": 0
+        },
+        {
+          "durationMs": 16635,
+          "exitCode": 0,
+          "failures": 0
+        }
+      ]
+    }
+  ],
+  "winner": {
+    "selectedId": "8-workers",
+    "workers": 8,
+    "medianMs": 13456.5,
+    "reason": "fastest zero-failure median"
+  }
+}
