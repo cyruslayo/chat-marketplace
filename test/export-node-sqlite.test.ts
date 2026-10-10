@@ -230,3 +230,43 @@ test("16 ADR 0075: a malformed line in an export file is reported by table and l
     });
   });
 });
+
+/**
+ * The committed Node export that the Workers test imports (apps/cloudflare/test/fixtures/node-export.json). It is the
+ * exporter's own output for the synthetic source, so the Workers side imports exactly what the Node exporter writes.
+ */
+const NODE_EXPORT_FIXTURE = new URL("../apps/cloudflare/test/fixtures/node-export.json", import.meta.url);
+/** The one random key the exporter draws: a legacy receipt without an object key. Pinned so the fixture is stable. */
+const FIXTURE_RANDOM_KEY = "00000000-0000-4000-8000-00000000fe16";
+
+async function withPinnedRandomUuid<T>(run: () => Promise<T>): Promise<T> {
+  const original = Object.getOwnPropertyDescriptor(globalThis.crypto, "randomUUID");
+  Object.defineProperty(globalThis.crypto, "randomUUID", { value: () => FIXTURE_RANDOM_KEY, configurable: true, writable: true });
+  try {
+    return await run();
+  } finally {
+    if (original) Object.defineProperty(globalThis.crypto, "randomUUID", original);
+    else delete (globalThis.crypto as unknown as Record<string, unknown>).randomUUID;
+  }
+}
+
+test("16 AC1 (fixture): the committed Node export is what scripts/export-node-sqlite.ts writes for the synthetic source", async () => {
+  await withTempDir(async (dir) => {
+    const sourcePath = join(dir, "source.sqlite");
+    const outDir = join(dir, "export");
+    const source = new NodeSqliteDatabase(sourcePath);
+    await populateSource(source);
+    source.close();
+
+    const manifest = await withPinnedRandomUuid(() => exportNodeSqliteFile(sourcePath, outDir));
+    const contents: Record<string, string> = {};
+    for (const table of Object.keys(manifest.tables)) contents[table] = await readFile(join(outDir, `${table}.jsonl`), "utf8");
+    const produced = `${JSON.stringify({ manifest, contents }, null, 2)}\n`;
+
+    if (process.env.UPDATE_NODE_EXPORT_FIXTURE === "1") {
+      await writeFile(NODE_EXPORT_FIXTURE, produced, "utf8");
+      return;
+    }
+    assert.equal(readFileSync(NODE_EXPORT_FIXTURE, "utf8"), produced, "The Node export fixture is stale: regenerate it with UPDATE_NODE_EXPORT_FIXTURE=1");
+  });
+});

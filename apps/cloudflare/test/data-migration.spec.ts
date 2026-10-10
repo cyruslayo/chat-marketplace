@@ -1,10 +1,11 @@
 import { env } from "cloudflare:workers";
 import { runInDurableObject } from "cloudflare:test";
 import { expect, test } from "vitest";
-import { buildExport, checksumTables, compareMigration, type MigrationExport } from "../../../packages/platform-core/src/data-migration.js";
+import { buildExport, checksumTables, compareMigration, type MigrationExport, type MigrationManifest } from "../../../packages/platform-core/src/data-migration.js";
 import { DurableObjectSqlDatabase } from "../src/do-sql-database.js";
 import { importBatch } from "../src/ops-import.js";
 import { populateSource, targetSchemaStatements } from "./data-migration-fixtures.js";
+import nodeExportFixture from "./fixtures/node-export.json?raw";
 import { ORIGIN, accessToken, opsHeaders } from "./ops-test-helpers.js";
 
 /** Slice 16: the import, verify and reverse-export routes, exercised through the Durable Object's own fetch. */
@@ -78,6 +79,21 @@ test("16 AC1: exporting a populated database and importing it into a Durable Obj
   }
   for (const table of Object.keys(verified).filter((name) => !Object.hasOwn(exported.manifest.tables, name))) {
     expect(verified[table]?.rowCount).toBe(0);
+  }
+});
+
+test("16 AC1 (end to end): the Node exporter's output imports into a Durable Object with identical counts and checksums", async () => {
+  // The fixture is what scripts/export-node-sqlite.ts writes for the same synthetic source (checked by the Node test).
+  const fixture = JSON.parse(nodeExportFixture) as { manifest: MigrationManifest; contents: Record<string, string> };
+  expect(fixture.manifest.tables.operators?.rowCount).toBeGreaterThan(0);
+  const target = await targetStub(await schemaOf(await sourceStub()));
+  for (const [table, content] of Object.entries(fixture.contents)) await importTable(target, table, jsonlRows(content));
+
+  const verified = await verify(target);
+  expect(compareMigration(fixture.manifest, verified)).toEqual([]);
+  expect(Object.keys(fixture.manifest.tables).sort()).toEqual(Object.keys(fixture.contents).sort());
+  for (const [table, expected] of Object.entries(fixture.manifest.tables)) {
+    expect(verified[table]).toEqual(expected);
   }
 });
 
