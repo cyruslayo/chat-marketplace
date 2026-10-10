@@ -3,26 +3,15 @@
 // (`launchRealBrowser` in test/helpers/chrome-devtools.ts) one file at a time. Under full-suite load, their fixed
 // render and click budgets ran out in a different test each run (issue operator-dashboard/12).
 // Extra arguments (for example --test-name-pattern) are passed to both phases.
+// `--non-browser` runs phase 1 only (CI's required job); the file split lives in scripts/test-phases.mjs.
 import { spawnSync } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { planTestPhases } from "./test-phases.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const tsx = join(root, "node_modules", "tsx", "dist", "cli.mjs");
-const files = readdirSync(join(root, "test")).filter((name) => name.endsWith(".test.ts")).sort().map((name) => `test/${name}`);
-// A file drives a real Chrome if it calls launchRealBrowser itself or imports a helper that does
-// (for example test/helpers/listing-photo-browser.ts).
-const browserHelpers = readdirSync(join(root, "test", "helpers"))
-  .filter((name) => name.endsWith(".ts") && name !== "chrome-devtools.ts" && readFileSync(join(root, "test", "helpers", name), "utf8").includes("launchRealBrowser"))
-  .map((name) => `./helpers/${name.replace(/\.ts$/, ".js")}`);
-const drivesBrowser = (file) => {
-  const source = readFileSync(join(root, file), "utf8");
-  return source.includes("launchRealBrowser") || browserHelpers.some((helper) => source.includes(`"${helper}"`));
-};
-const browserFiles = files.filter(drivesBrowser);
-const otherFiles = files.filter((file) => !browserFiles.includes(file));
-const extra = process.argv.slice(2);
+const { concurrent: otherFiles, browser: browserFiles, extra } = planTestPhases({ root, args: process.argv.slice(2) });
 
 function phase(label, list, options) {
   if (list.length === 0) return 0;
