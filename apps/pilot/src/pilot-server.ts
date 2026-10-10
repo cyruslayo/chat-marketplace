@@ -12,6 +12,7 @@ import { ResendEmailSender, type EmailSender } from "./notifications/email-sende
 import { PilotNotifier } from "./notifications/pilot-notifier.js";
 import { openNodeSqliteDatabase } from "../../../packages/platform-core/src/node-sqlite-database.js";
 import { LOOPBACK_ADDRESS } from "../../../packages/platform-core/src/loopback-address.js";
+import { clientAddressFromCloudflareHeaderValue } from "../../../packages/platform-core/src/http-fetch-shim.js";
 import { createPilotRequestHandler } from "./pilot-request-handler.js";
 
 export { BETA_BANNER_TEXT, withBetaBanner } from "./pilot-request-handler.js";
@@ -27,15 +28,15 @@ export interface PilotServerHandle {
 }
 
 /**
- * The address the request came from. The pilot listens on loopback behind the HTTPS reverse proxy
- * (docs/pilot-deployment.md), which appends the client address to X-Forwarded-For; the rightmost entry is the one
- * the proxy saw, so a client cannot choose its own key by sending the header.
+ * The address the request came from, as the Cloudflare edge reports it in cf-connecting-ip. The Worker reads the
+ * same header through the shared rule in packages/platform-core/src/http-fetch-shim.ts (apps/cloudflare/src/shortlet-pilot-do.ts),
+ * so both hosts key their rate limits identically. X-Forwarded-For is never read: any client can send it.
+ * An absent or blank header fails closed to "unknown" and shares one bucket. The socket address is not used:
+ * this listener binds loopback only (LOOPBACK_ADDRESS) for local development and tests, and production runs on
+ * Cloudflare (ADR 0095).
  */
 export function clientAddress(req: IncomingMessage): string {
-  const forwarded = req.headers["x-forwarded-for"];
-  const header = Array.isArray(forwarded) ? forwarded.join(",") : forwarded;
-  const last = header?.split(",").map((part) => part.trim()).filter((part) => part !== "").at(-1);
-  return last ?? req.socket.remoteAddress ?? "unknown";
+  return clientAddressFromCloudflareHeaderValue(req.headers["cf-connecting-ip"]);
 }
 
 export function startPilotServer(options: {

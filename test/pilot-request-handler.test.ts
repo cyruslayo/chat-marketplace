@@ -123,13 +123,6 @@ test("08c AC2: /healthz reads only the shared handle and never opens a new conne
   }
 });
 
-function rightmostForwarded(req: { headers: Record<string, unknown> }): string {
-  const forwarded = req.headers["x-forwarded-for"];
-  const header = Array.isArray(forwarded) ? forwarded.join(",") : forwarded;
-  const last = typeof header === "string" ? header.split(",").map((part) => part.trim()).filter((part) => part !== "").at(-1) : undefined;
-  return last ?? "unknown";
-}
-
 test("08c AC3: logins beyond operatorLoginsPerAddressPerHour are refused with 429 and Retry-After", async () => {
   const directory = await mkdtemp(join(tmpdir(), "pilot-handler-guard-"));
   try {
@@ -146,12 +139,11 @@ test("08c AC3: logins beyond operatorLoginsPerAddressPerHour are refused with 42
     try {
       const login = async (address: string): Promise<CapturedResponse> => {
         currentClientAddress = address;
-        const request = createFakeHttpRequest({ method: "POST", url: "/operator/login", headers: { "x-forwarded-for": address } });
+        const request = createFakeHttpRequest({ method: "POST", url: "/operator/login", headers: { "cf-connecting-ip": address } });
         const { response, finished } = createFakeHttpResponse();
         await handler.handle(request, response);
         return await finished;
       };
-      assert.equal(rightmostForwarded({ headers: { "x-forwarded-for": "10.0.0.1, 203.0.113.7" } }), "203.0.113.7", "the injected rule stays the rightmost forwarded entry");
       assert.equal((await login("203.0.113.7")).statusCode, 200, "the first login is dispatched to the owner handler");
       assert.equal((await login("203.0.113.7")).statusCode, 200, "the second login is within the limit");
       const refused = await login("203.0.113.7");

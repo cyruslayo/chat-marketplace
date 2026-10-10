@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { startPilotServer } from "../apps/pilot/src/pilot-server.js";
+import type { IncomingMessage } from "node:http";
+import { clientAddress, startPilotServer } from "../apps/pilot/src/pilot-server.js";
 import { PILOT_LIMIT_DEFAULTS } from "../apps/pilot/src/pilot-config.js";
 import { SlidingWindowRateLimiter } from "../apps/pilot/src/rate-limiter.js";
 import { ModelCallBudget } from "../apps/local-guest/src/assistant/model-call-budget.js";
@@ -32,13 +33,13 @@ async function withPilot(
 function turn(base: string, cookie: string, text: string, address?: string, threadId = `g-${crypto.randomUUID()}`): Promise<Response> {
   return fetch(`${base}/api/turn`, {
     method: "POST",
-    headers: { cookie, origin: PUBLIC_ORIGIN, "content-type": "application/json", ...(address ? { "x-forwarded-for": address } : {}) },
+    headers: { cookie, origin: PUBLIC_ORIGIN, "content-type": "application/json", ...(address ? { "cf-connecting-ip": address } : {}) },
     body: JSON.stringify({ threadId, text }),
   });
 }
 
 async function newSession(base: string, address?: string): Promise<Response> {
-  return fetch(`${base}/`, { headers: address ? { "x-forwarded-for": address } : {} });
+  return fetch(`${base}/`, { headers: address ? { "cf-connecting-ip": address } : {} });
 }
 
 test("Chat turns are rate-limited per session and per client address", async () => {
@@ -56,12 +57,12 @@ test("Chat turns are rate-limited per session and per client address", async () 
     assert.equal((await turn(base, second, "Hello", "198.51.100.1")).status, 200);
     assert.equal((await turn(base, second, "Hello", "198.51.100.1")).status, 429);
 
-    // Another address is unaffected, and the rightmost X-Forwarded-For entry (the proxy's view) is the key.
+    // Another address is unaffected: the cf-connecting-ip the edge reports is the key.
     const third = cookieFrom(await newSession(base, "203.0.113.7"));
-    assert.equal((await turn(base, third, "Hello", "198.51.100.1, 203.0.113.7")).status, 200);
+    assert.equal((await turn(base, third, "Hello", "203.0.113.7")).status, 200);
 
     // The no-JavaScript composer counts as a turn too.
-    const form = await fetch(`${base}/conversation`, { method: "POST", headers: { cookie: second, origin: PUBLIC_ORIGIN, "content-type": "application/x-www-form-urlencoded", "x-forwarded-for": "198.51.100.1" }, body: "message=Hello", redirect: "manual" });
+    const form = await fetch(`${base}/conversation`, { method: "POST", headers: { cookie: second, origin: PUBLIC_ORIGIN, "content-type": "application/x-www-form-urlencoded", "cf-connecting-ip": "198.51.100.1" }, body: "message=Hello", redirect: "manual" });
     assert.equal(form.status, 429);
     assert.match(await form.text(), /Please slow down/);
   });
@@ -76,10 +77,10 @@ test("New guest sessions and operator login attempts are rate-limited per client
     assert.equal(refused.headers.get("set-cookie"), null);
     assert.match(refused.headers.get("content-type") ?? "", /text\/html/);
     // A returning Guest with a session is not a new session.
-    assert.equal((await fetch(`${base}/`, { headers: { cookie: existing, "x-forwarded-for": "198.51.100.2" } })).status, 200);
+    assert.equal((await fetch(`${base}/`, { headers: { cookie: existing, "cf-connecting-ip": "198.51.100.2" } })).status, 200);
     assert.equal((await newSession(base, "203.0.113.8")).status, 200);
 
-    const login = (address: string) => fetch(`${base}/operator/login`, { method: "POST", headers: { origin: PUBLIC_ORIGIN, "content-type": "application/x-www-form-urlencoded", "x-forwarded-for": address }, body: "token=not-a-real-token" });
+    const login = (address: string) => fetch(`${base}/operator/login`, { method: "POST", headers: { origin: PUBLIC_ORIGIN, "content-type": "application/x-www-form-urlencoded", "cf-connecting-ip": address }, body: "token=not-a-real-token" });
     assert.equal((await login("198.51.100.3")).status, 401);
     assert.equal((await login("198.51.100.3")).status, 401);
     const locked = await login("198.51.100.3");
@@ -98,6 +99,24 @@ test("New guest sessions and operator login attempts are rate-limited per client
     await rm(fixture.directory, { recursive: true, force: true });
   }
   assert.throws(() => new SlidingWindowRateLimiter({ limit: 0, windowMs: 1000 }), /positive/);
+});
+
+test("clientAddress keys on cf-connecting-ip only and fails closed to unknown when it is absent", () => {
+  const request = (headers: IncomingMessage["headers"]) => ({ headers, socket: { remoteAddress: "127.0.0.1" } }) as unknown as IncomingMessage;
+  assert.equal(clientAddress(request({ "cf-connecting-ip": "203.0.113.7" })), "203.0.113.7");
+  assert.equal(clientAddress(request({ "cf-connecting-ip": "203.0.113.7", "x-forwarded-for": "198.51.100.9" })), "203.0.113.7", "X-Forwarded-For never overrides the edge's address");
+  assert.equal(clientAddress(request({ "x-forwarded-for": "198.51.100.9" })), "unknown", "a spoofable X-Forwarded-For alone is not trusted");
+  assert.equal(clientAddress(request({})), "unknown", "an absent address fails closed rather than falling back to the socket");
+  assert.equal(clientAddress(request({ "cf-connecting-ip": "   " })), "unknown", "a blank address fails closed");
+});
+
+test("A client cannot escape its per-address limit by varying X-Forwarded-For", async () => {
+  await withPilot({ SHORTLET_OPERATOR_LOGINS_PER_ADDRESS_PER_HOUR: "2" }, async (base) => {
+    const login = (headers: Record<string, string>) => fetch(`${base}/operator/login`, { method: "POST", headers: { origin: PUBLIC_ORIGIN, "content-type": "application/x-www-form-urlencoded", ...headers }, body: "token=not-a-real-token" });
+    assert.equal((await login({ "cf-connecting-ip": "198.51.100.3", "x-forwarded-for": "10.0.0.1" })).status, 401);
+    assert.equal((await login({ "cf-connecting-ip": "198.51.100.3", "x-forwarded-for": "10.0.0.2" })).status, 401);
+    assert.equal((await login({ "cf-connecting-ip": "198.51.100.3", "x-forwarded-for": "10.0.0.3" })).status, 429, "the spoofed forwarded address does not open a fresh bucket");
+  });
 });
 
 test("A daily model-call cap degrades the concierge to deterministic replies instead of erroring", async () => {
