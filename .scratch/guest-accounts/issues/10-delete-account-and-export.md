@@ -2,7 +2,8 @@
 
 Status: needs-info
 Type: task
-Blocked by: 01, 07, legal sign-off on issue 01 answer 6
+Blocked by: 01, 07
+Waiting on: legal review of issue 01 answer 6 (retention period and anonymise-vs-delete split, Nigeria Data Protection Act 2023)
 Requested: 2 Oct 2026
 
 ## Why
@@ -36,6 +37,6 @@ New `test/guest-account-deletion.test.ts`.
 
 ## Comments
 
-- 10 Oct 2026: no lawyer review of the retention period or the anonymise-vs-delete split (issue 01 answer 6, Nigeria Data Protection Act 2023) is recorded in this repository. Status set to `needs-info`; it moves to `ready-for-agent` only once legal sign-off is recorded here.
+- 10 Oct 2026: this issue waits on a legal review of issue 01 answer 6 (retention period and anonymise-vs-delete split, Nigeria Data Protection Act 2023). No such review is recorded in this repository. `needs-info` is used because the missing input is information for the decision; `ready-for-human` ("requires human implementation") does not describe this state. It moves to `ready-for-agent` only once legal sign-off is recorded here.
 - 10 Oct 2026: Stay Message Threads, Saved Stays, favourites and published reviews are not on `origin/main`. They belong to `.scratch/guest-stays-and-favourites/`. The export and deletion rules for them apply only once that effort lands.
-- 10 Oct 2026: the account export must omit payment references (`psp_reference`, `transfer_reference`). ADR 0096 exempts only the private R2 daily export from the bearer-credential rule.
+- 10 Oct 2026: the account export must omit payment references. ADR 0096 exempts only the private R2 daily export from the bearer-credential rule, and it lists exactly four payment-reference locations: `guest_checkout_sessions.psp_reference`, `guest_processed_psp_references.psp_reference`, `bank_transfer_sessions.transfer_reference`, and `pspReference` inside `audit_log` payload JSON.

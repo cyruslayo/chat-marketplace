@@ -41,7 +41,7 @@ None (documentation).
 
 ## Answer
 
-Landed on main via `3b40d73` (verified with `git log` on 10 Oct 2026; the earlier pointer `29a546a` is not in this repository).
+Landed on main via `3b40d73` (verified with `git log` on 10 Oct 2026; the earlier pointer `29a546a` is not present in the fetched refs of this repository).
 
 - **AC1:** Added `docs/adr/0094-anchor-identity-assurance-to-the-guest-account.md`, citing ADRs 0011, 0012, 0084 and 0085 and explicitly stating that it does not supersede ADR 0085.
 - **AC2:** The persisted result allow-list is exactly `tenantId`, `accountGuestId`, `level`, `method`, `status`, `verifiedAt`, `expiresAt` and optional `providerReference`; the ADR enumerates prohibited evidence and credential material. Verified outcomes require authoritative timestamps and expiry; no default freshness duration is approved.
