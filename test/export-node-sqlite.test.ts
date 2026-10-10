@@ -9,7 +9,9 @@ import { NodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-da
 import { MAX_IMPORT_REQUEST_BYTES, checksumTables, compareMigration, importRequestChunks, migrationBatchRows } from "../packages/platform-core/src/data-migration.js";
 import { populateSource } from "../apps/cloudflare/test/data-migration-fixtures.js";
 import { DAILY_EXPORT_EXCLUDED } from "../apps/cloudflare/src/do-export.js";
-import { exportNodeSqliteFile, importMigrationDirectory, migrateNodeSqliteFile, pullObject, pushMigrationDirectory } from "../scripts/export-node-sqlite.js";
+import { SHORTLET_SCHEMA_MIGRATIONS } from "../apps/cloudflare/src/schema.js";
+import { applySchemaMigrations } from "../packages/platform-core/src/schema-migrations.js";
+import { compareMigrationFiles, exportNodeSqliteFile, importMigrationDirectory, migrateNodeSqliteFile, pullObject, pushMigrationDirectory } from "../scripts/export-node-sqlite.js";
 import type { OpsRemoteConfiguration } from "../apps/shortlet-ops/src/ops-client.js";
 
 /** Slice 16: the Node exporter and the Node side of the import share one canonical format with the Worker. */
@@ -428,5 +430,80 @@ test("16 F4: pull requests no credential table and writes no file for one, and t
     } finally {
       target.close();
     }
+  });
+});
+
+/** Issue 16 B: one operator access token row in the source, so a credential table has rows to exclude (synthetic values). */
+function addCredentialRow(source: NodeSqliteDatabase): void {
+  applySchemaMigrations(source, SHORTLET_SCHEMA_MIGRATIONS, "2031-02-01T00:00:00Z");
+  source
+    .prepare("INSERT INTO operator_access_tokens (token_hash, actor_id, tenant_id, created_at, expires_at) VALUES ($hash, $actor, $tenant, $created, $expires)")
+    .run({ $hash: "synthetic-token-hash-b", $actor: "actor-synthetic", $tenant: "tenant-synthetic", $created: "2031-02-01T00:00:00Z", $expires: "2031-02-01T00:30:00Z" });
+}
+
+/** Issue 16 B: the zero-row verify response for the credential tables, as the object reports them after an import. */
+function emptyExcludedCounts(): Record<string, { rowCount: number }> {
+  return Object.fromEntries(Object.keys(DAILY_EXPORT_EXCLUDED).map((table) => [table, { rowCount: 0 }]));
+}
+
+test("16 B: the cutover manifest excludes the five credential tables, records their source row counts, and writes no file for them", async () => {
+  await withTempDir(async (dir) => {
+    const sourcePath = join(dir, "source.sqlite");
+    const source = new NodeSqliteDatabase(sourcePath);
+    await populateSource(source);
+    addCredentialRow(source);
+    const sourceCounts: Record<string, number> = {};
+    for (const table of Object.keys(DAILY_EXPORT_EXCLUDED)) {
+      sourceCounts[table] = Number(source.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get()!.n);
+    }
+    source.close();
+
+    const exportDir = join(dir, "export");
+    const manifest = await exportNodeSqliteFile(sourcePath, exportDir);
+    assert.deepEqual(Object.keys(manifest.excludedTables).sort(), Object.keys(DAILY_EXPORT_EXCLUDED).sort());
+    for (const table of Object.keys(DAILY_EXPORT_EXCLUDED)) {
+      assert.equal(manifest.excludedTables[table]?.sourceRowCount, sourceCounts[table], `${table} source count is recorded`);
+      assert.equal(Object.hasOwn(manifest.tables, table), false, `${table} must not be in the cutover manifest`);
+      assert.equal(existsSync(join(exportDir, `${table}.jsonl`)), false, `${table} must not be written to the export`);
+    }
+  });
+});
+
+test("16 B: a push sends no credential table to the object, and sends every other table that has rows", async () => {
+  await withTempDir(async (dir) => {
+    const sourcePath = join(dir, "source.sqlite");
+    const source = new NodeSqliteDatabase(sourcePath);
+    await populateSource(source);
+    addCredentialRow(source);
+    source.close();
+    const exportDir = join(dir, "export");
+    const manifest = await exportNodeSqliteFile(sourcePath, exportDir);
+
+    let sent: string[] = [];
+    await withFakeOps(() => ({ status: 200, body: { ok: true } }), async (calls) => {
+      await pushMigrationDirectory(exportDir, configuration);
+      sent = calls.map((call) => (JSON.parse(String(call.init.body)) as { table: string }).table);
+    });
+    for (const table of Object.keys(DAILY_EXPORT_EXCLUDED)) assert.equal(sent.includes(table), false, `${table} must not be pushed`);
+    for (const [table, checksum] of Object.entries(manifest.tables)) {
+      if (checksum.rowCount > 0) assert.ok(sent.includes(table), `${table} must be pushed`);
+    }
+  });
+});
+
+test("16 B: the compare fails when the object holds rows in a credential table, and fails closed when it reports none", async () => {
+  await withTempDir(async (dir) => {
+    const sourcePath = join(dir, "source.sqlite");
+    const source = new NodeSqliteDatabase(sourcePath);
+    await populateSource(source);
+    addCredentialRow(source);
+    source.close();
+    const manifest = await exportNodeSqliteFile(sourcePath, join(dir, "export"));
+
+    assert.deepEqual(compareMigrationFiles(manifest, { tables: manifest.tables, excludedTables: emptyExcludedCounts() }), []);
+    const populated = { ...emptyExcludedCounts(), guest_account_sessions: { rowCount: 1 } };
+    assert.deepEqual(compareMigrationFiles(manifest, { tables: manifest.tables, excludedTables: populated }), ["guest_account_sessions"]);
+    // A verify response without the excluded counts cannot show the target holds none: it is a mismatch, not a match.
+    assert.deepEqual(compareMigrationFiles(manifest, { tables: manifest.tables }), Object.keys(DAILY_EXPORT_EXCLUDED).sort());
   });
 });

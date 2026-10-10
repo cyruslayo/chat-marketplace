@@ -14,7 +14,8 @@ import {
 } from "../../../packages/platform-core/src/data-migration.js";
 import { SHORTLET_SCHEMA_MIGRATIONS, SHORTLET_SCHEMA_VERSION } from "../src/schema.js";
 import { DurableObjectSqlDatabase } from "../src/do-sql-database.js";
-import { DAILY_EXPORT_EXCLUDED } from "../src/do-export.js";
+import { DAILY_EXPORT_EXCLUDED, deleteExpiredExports } from "../src/do-export.js";
+import { cutoverMarkerKey } from "../src/cutover-marker.js";
 import { importBatch } from "../src/ops-import.js";
 import { populateSource } from "./data-migration-fixtures.js";
 import nodeExportFixture from "./fixtures/node-export.json?raw";
@@ -49,6 +50,7 @@ interface VerifyBody {
   readonly ok: boolean;
   readonly tables: Record<string, { rowCount: number; sha256: string }>;
   readonly cutoverCompletedAt: string | null;
+  readonly excludedTables: Record<string, { rowCount: number }>;
 }
 
 async function verifyBody(stub: Stub): Promise<VerifyBody> {
@@ -335,9 +337,9 @@ test("16 F3: the authenticated status route reports the schema version and the c
   expect(unauthenticated.status).toBe(401);
 
   const before = (await (await call(target, "GET", "/_ops/status")).json()) as {
-    ok: boolean; schemaVersion: number; expectedSchemaVersion: number; cutoverCompletedAt: string | null;
+    ok: boolean; schemaVersion: number; expectedSchemaVersion: number; cutoverCompletedAt: string | null; cutoverMarker: string;
   };
-  expect(before).toEqual({ ok: true, schemaVersion: SHORTLET_SCHEMA_VERSION, expectedSchemaVersion: SHORTLET_SCHEMA_VERSION, cutoverCompletedAt: null });
+  expect(before).toEqual({ ok: true, schemaVersion: SHORTLET_SCHEMA_VERSION, expectedSchemaVersion: SHORTLET_SCHEMA_VERSION, cutoverCompletedAt: null, cutoverMarker: "absent" });
 
   const completed = await call(target, "POST", "/_ops/cutover/complete", {});
   const at = ((await completed.json()) as { cutoverCompletedAt: string }).cutoverCompletedAt;
@@ -345,19 +347,84 @@ test("16 F3: the authenticated status route reports the schema version and the c
   expect(after.cutoverCompletedAt).toBe(at);
 });
 
-test("16 F3: a rewound object that reads no cutover flag accepts imports again until the flag is set, which the restore check must catch", async () => {
+test("16 A: a rewound object (its flag row deleted, as a point-in-time restore leaves it) still refuses import, because the R2 marker survives", async () => {
   const target = targetStub();
-  await call(target, "POST", "/_ops/cutover/complete", {});
+  const completed = await call(target, "POST", "/_ops/cutover/complete", {});
+  const at = ((await completed.json()) as { cutoverCompletedAt: string }).cutoverCompletedAt;
   // A point-in-time restore rewinds the flag row with the rest of the object's storage. Simulated here by removing it.
   await runInDurableObject(target, (_instance, ctx) => { new DurableObjectSqlDatabase(ctx.storage).exec("DELETE FROM migration_state"); });
 
-  await importTable(target, "operators", operatorRows("op-rewound", 1));
-  expect((await verify(target)).operators?.rowCount).toBe(1);
-  const status = (await (await call(target, "GET", "/_ops/status")).json()) as { cutoverCompletedAt: string | null };
-  expect(status.cutoverCompletedAt).toBeNull();
-
-  // The recovery the restore runbook prescribes sets the flag again; from then on every import is refused.
-  await call(target, "POST", "/_ops/cutover/complete", {});
-  const refused = await call(target, "POST", "/_ops/import", { table: "operators", rows: operatorRows("op-after-restore", 1) });
+  const refused = await call(target, "POST", "/_ops/import", { table: "operators", rows: operatorRows("op-rewound", 1) });
   expect(refused.status).toBe(409);
+  expect(((await refused.json()) as { code: string }).code).toBe("CUTOVER_COMPLETE");
+  expect((await verify(target)).operators?.rowCount).toBe(0);
+  // The import path re-asserted the flag from the marker, so the status reads the same timestamp again.
+  expect((await verifyBody(target)).cutoverCompletedAt).toBe(at);
+});
+
+test("16 A: the cutover marker is written to the EXPORTS bucket under the object's reserved key, and the status reports it", async () => {
+  const target = targetStub();
+  const before = (await (await call(target, "GET", "/_ops/status")).json()) as { cutoverMarker: string };
+  expect(before.cutoverMarker).toBe("absent");
+  expect(await env.EXPORTS.get(cutoverMarkerKey(target.id.toString()))).toBeNull();
+
+  await call(target, "POST", "/_ops/cutover/complete", {});
+  const marker = await env.EXPORTS.get(cutoverMarkerKey(target.id.toString()));
+  expect(marker).not.toBeNull();
+  const after = (await (await call(target, "GET", "/_ops/status")).json()) as { cutoverMarker: string };
+  expect(after.cutoverMarker).toBe("present");
+});
+
+test("16 A: an unauthenticated POST /_ops/cutover/complete writes neither the flag nor the marker", async () => {
+  const target = targetStub();
+  await call(target, "POST", "/_ops/cutover/complete", {}, false);
+  expect(await env.EXPORTS.get(cutoverMarkerKey(target.id.toString()))).toBeNull();
+  expect((await verifyBody(target)).cutoverCompletedAt).toBeNull();
+});
+
+test("16 A: the cutover marker survives the daily retention sweep, which deletes only dated export objects", async () => {
+  const target = targetStub();
+  await call(target, "POST", "/_ops/cutover/complete", {});
+  const key = cutoverMarkerKey(target.id.toString());
+  // A dated export from long before the cutoff: the sweep must delete it, which proves the sweep ran over this bucket.
+  await env.EXPORTS.put("2020-01-01/operators.jsonl", "{}\n", { httpMetadata: { contentType: "application/x-ndjson" } });
+  const farFuture = new Date("2040-01-01T00:00:00.000Z");
+  const deleted = await runInDurableObject(target, async (_instance, ctx) =>
+    deleteExpiredExports(
+      {
+        database: new DurableObjectSqlDatabase(ctx.storage),
+        receipts: env.RECEIPTS,
+        exports: env.EXPORTS,
+        clock: () => farFuture,
+        retentionDays: 1,
+        orphanGraceHours: 24,
+      },
+      "2040-01-01",
+    ),
+  );
+  expect(deleted).toBeGreaterThanOrEqual(1);
+  expect(await env.EXPORTS.get("2020-01-01/operators.jsonl")).toBeNull();
+  expect(await env.EXPORTS.get(key)).not.toBeNull();
+});
+
+test("16 B: an import naming a credential table is refused with EXCLUDED_TABLE, cites ADRs 0093, 0086 and 0075, and writes nothing", async () => {
+  const target = targetStub();
+  for (const table of Object.keys(DAILY_EXPORT_EXCLUDED)) {
+    const refused = await call(target, "POST", "/_ops/import", { table, rows: [{ id: "synthetic-credential-row" }] });
+    expect(refused.status).toBe(400);
+    const body = (await refused.json()) as { code: string; message: string };
+    expect(body.code).toBe("EXCLUDED_TABLE");
+    expect(body.message).toMatch(/ADR 0093/);
+    expect(body.message).toMatch(/ADR 0086/);
+    expect(body.message).toMatch(/ADR 0075/);
+  }
+  const verified = await verifyBody(target);
+  for (const table of Object.keys(DAILY_EXPORT_EXCLUDED)) expect(verified.excludedTables[table]?.rowCount).toBe(0);
+});
+
+test("16 B: verify reports the credential tables' counts apart from the application tables, and lists none of them as an application table", async () => {
+  const target = targetStub();
+  const verified = await verifyBody(target);
+  expect(Object.keys(verified.excludedTables).sort()).toEqual(Object.keys(DAILY_EXPORT_EXCLUDED).sort());
+  for (const table of Object.keys(DAILY_EXPORT_EXCLUDED)) expect(Object.hasOwn(verified.tables, table)).toBe(false);
 });

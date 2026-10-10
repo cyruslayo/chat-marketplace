@@ -29,6 +29,7 @@ import { runAlarmTasks, type AlarmTask } from "./do-alarm.js";
 import { lagosDate, runDailyExport } from "./do-export.js";
 import { DurableObjectSqlDatabase } from "./do-sql-database.js";
 import { clientAddressFromCloudflareHeaderValue, createHttpResponseLike, toHttpRequestLike } from "./http-shim.js";
+import { createCutoverMarkerStore, reconcileCutover } from "./cutover-marker.js";
 import { createOpsHandler, type OpsHandler } from "./ops-routes.js";
 import { SHORTLET_SCHEMA_MIGRATIONS } from "./schema.js";
 import { cloudflareAssetLoader } from "./pilot-assets.js";
@@ -73,7 +74,15 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
     // D3: the ordered migrations run before the object serves any request. A failing migration resets the object, so
     // it never serves a half-migrated schema. Fresh and migrated objects take the same path.
     void ctx.blockConcurrencyWhile(async () => {
-      applySchemaMigrations(new DurableObjectSqlDatabase(ctx.storage), SHORTLET_SCHEMA_MIGRATIONS, new Date().toISOString());
+      const database = new DurableObjectSqlDatabase(ctx.storage);
+      applySchemaMigrations(database, SHORTLET_SCHEMA_MIGRATIONS, new Date().toISOString());
+      // A (issue 16): on start, the database flag is re-asserted from the R2 marker, so a restore that rewound the flag cannot
+      // reopen imports. A failure here is not fatal: the object still starts, and the import path reconciles and refuses (fail closed).
+      try {
+        await reconcileCutover(database, createCutoverMarkerStore(env.EXPORTS, ctx.id.toString()));
+      } catch {
+        console.log(JSON.stringify({ event: "cutover_reconcile_deferred" }));
+      }
     });
   }
 
@@ -154,6 +163,7 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
         bookmarkForTime: (timeMs) => this.ctx.storage.getBookmarkForTime(timeMs),
         restoreOnNextSession: (bookmark) => { this.ctx.storage.onNextSessionRestoreBookmark(bookmark); },
       },
+      cutoverMarker: createCutoverMarkerStore(this.env.EXPORTS, this.ctx.id.toString()),
       audit: new SqliteAuditLog(database),
       clock,
       tenantId: this.env.SHORTLET_TENANT_ID?.trim() ?? "",

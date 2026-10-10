@@ -189,3 +189,26 @@ ops route; revoking a single session stays a back-office action.
 
 The `pilot:local:*` commands remain **Node-only**: they run the local fixture
 pilot against a SQLite file and are not part of the Cloudflare deployment.
+
+## Building the Cloudflare Worker from a clean checkout
+
+The Worker is built and dry-run with the pinned `cf` CLI through npm scripts in the repository root. A clean checkout needs
+only the root install:
+
+```bash
+npm ci
+npm run worker:build
+npm run worker:deploy:dry-run:staging
+npm run worker:deploy:dry-run:production
+```
+
+Why the extra install exists (issue 16 C): `cf` finds the Cloudflare Vite plugin only in the project's own `node_modules`,
+which is `apps/cloudflare`, not the repository root. The Cloudflare app therefore keeps its own lockfile
+(`apps/cloudflare/package-lock.json`, pinned to the same plugin version as its manifest). Every worker script runs
+`scripts/ensure-worker-deps.mjs` first, which runs `npm ci --prefix apps/cloudflare` when those packages are missing. Nothing
+is linked or copied from a machine-specific path. The `worker:deploy:dry-run:*` scripts build and validate the configuration
+without uploading anything. Do not replace them with a real `cf deploy`: a real deploy is a separate, human-run step in the
+staging rehearsal and cutover runbooks.
+
+The consistency of the lockfile and the scripts is checked by `test/worker-build-setup.test.ts`, which runs in the non-browser
+test phase.

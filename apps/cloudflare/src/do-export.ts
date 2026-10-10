@@ -1,5 +1,5 @@
 import type { R2Bucket, R2MultipartUpload, R2Object, R2UploadedPart } from "@cloudflare/workers-types";
-import { encodeValue } from "../../../packages/platform-core/src/data-migration.js";
+import { CREDENTIAL_TABLES, encodeValue } from "../../../packages/platform-core/src/data-migration.js";
 import type { SqlDatabase, SqlRow, SqlValue } from "../../../packages/platform-core/src/sql-database.js";
 
 /**
@@ -65,19 +65,12 @@ export const EXPORT_TABLES = [
 ] as const;
 
 /**
- * Tables the daily export does not write. Each entry cites the ADR that requires the exclusion. The only entries are bearer
- * credentials: a restore must not revive a session or a sign-in or access challenge that was live on the export day. The
- * export is an evidence record (12a, ADR 0079), so it is held to the rule for logs: ADR 0075 keeps secrets out of logs, and
- * ADR 0093 and ADR 0086 keep codes and session secrets out of records. Restore consequence: every guest and operator signs
- * in again after a rebuild (docs/runbooks/cloudflare-restore.md, section 2).
+ * Tables the daily export does not write: the bearer-credential tables, which are the one shared list in
+ * packages/platform-core/src/data-migration.ts (CREDENTIAL_TABLES, issue 16 B). Each entry cites the ADR that requires the
+ * exclusion. A restore must not revive a session or a sign-in or access challenge that was live on the export day, so every
+ * guest and operator signs in again after a rebuild (docs/runbooks/cloudflare-restore.md, section 2).
  */
-export const DAILY_EXPORT_EXCLUDED: Readonly<Record<string, string>> = {
-  guest_account_sessions: "bearer credential: hashed Guest Account Session secrets; a restore must not revive a revoked session (ADR 0093; ADR 0075)",
-  guest_session_bindings: "bearer credential: hashed interaction-session secrets bound to a principal (ADR 0070, ADR 0093; ADR 0075)",
-  guest_sign_in_codes: "bearer credential: sign-in challenge code hashes; codes never leave the immediate delivery call (ADR 0093; ADR 0075)",
-  operator_access_tokens: "bearer credential: hashed one-time operator access tokens (ADR 0086; ADR 0075)",
-  operator_sessions: "bearer credential: hashed operator session secrets; a restore must not revive a revoked session (ADR 0086; ADR 0075)",
-};
+export const DAILY_EXPORT_EXCLUDED: Readonly<Record<string, string>> = CREDENTIAL_TABLES;
 
 const PROJECTIONS: Readonly<Record<string, string>> = {
   manual_transfer_receipts: "receipt_id, transfer_id, content_type, object_key, size_bytes",

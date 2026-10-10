@@ -14,10 +14,10 @@ import type { SqlDatabase } from "../../../packages/platform-core/src/sql-databa
 import {
   MAX_IMPORT_REQUEST_BYTES,
   checksumTables,
-  completeCutover,
-  cutoverCompletedAt,
+  credentialTableCounts,
 } from "../../../packages/platform-core/src/data-migration.js";
-import { ImportRefusedError, assertSchemaCurrent, exportTable, importBatch } from "./ops-import.js";
+import { CutoverMarkerUnavailableError, completeCutoverWithMarker, cutoverStatus, type CutoverMarkerStore } from "./cutover-marker.js";
+import { ImportRefusedError, assertCutoverOpenForImport, assertSchemaCurrent, exportTable, importBatch } from "./ops-import.js";
 import { SHORTLET_SCHEMA_VERSION } from "./schema.js";
 import { schemaVersion } from "../../../packages/platform-core/src/schema-migrations.js";
 
@@ -57,6 +57,8 @@ export interface OpsRouteDependencies {
   readonly grantStore: OpsGrantAuthority;
   readonly sessionAuthority: OpsSessionAuthority;
   readonly storageBookmarks: OpsStorageBookmarks;
+  /** Issue 16 A: the cutover marker in the private EXPORTS bucket, outside the object's rewound storage. */
+  readonly cutoverMarker: CutoverMarkerStore;
   readonly audit: AuditLog;
   readonly clock: () => Date;
   readonly tenantId: string;
@@ -219,31 +221,48 @@ export function createOpsHandler(dependencies: OpsRouteDependencies): OpsHandler
       const body = await readJsonBody(request, MAX_IMPORT_REQUEST_BYTES);
       const table = requiredString(body.table, "table");
       if (!Array.isArray(body.rows)) throw new Error("rows must be an array");
+      // Issue 16 A: the schema, then the cutover marker and flag, are checked before any write (fail closed).
+      assertSchemaCurrent(dependencies.database, SHORTLET_SCHEMA_VERSION);
+      await assertCutoverOpenForImport(dependencies.database, dependencies.cutoverMarker);
       const result = importBatch(dependencies.database, table, body.rows, SHORTLET_SCHEMA_VERSION);
       // No audit record: the audit log is itself migrated, so an import must not add rows to it.
       return json(200, { ok: true, ...result });
     }
     if (request.method === "POST" && path === "/_ops/cutover/complete") {
-      // D1: the one-way flag. Set by this authenticated step only; a second call returns the first timestamp.
+      // D1 and A: the one-way cutover. The R2 marker is written first, then the database flag; a second call returns the first timestamp.
       assertSchemaCurrent(dependencies.database, SHORTLET_SCHEMA_VERSION);
-      const completedAt = completeCutover(dependencies.database, dependencies.clock().toISOString());
-      return json(200, { ok: true, cutoverCompletedAt: completedAt });
+      try {
+        const completedAt = await completeCutoverWithMarker(dependencies.database, dependencies.cutoverMarker, dependencies.clock().toISOString());
+        return json(200, { ok: true, cutoverCompletedAt: completedAt });
+      } catch (error) {
+        // Fail closed. A marker failure leaves the cutover unrecorded; a flag failure after the marker is finished by running this again.
+        if (error instanceof CutoverMarkerUnavailableError) {
+          return json(503, { ok: false, code: "CUTOVER_MARKER_UNAVAILABLE", message: "The cutover marker could not be written, so the cutover is not recorded. Nothing changed; run it again." });
+        }
+        return json(503, { ok: false, code: "CUTOVER_NOT_RECORDED", message: "The cutover marker is set but the object's flag was not recorded. Run this step again to finish it." });
+      }
     }
     if (request.method === "GET" && path === "/_ops/status") {
-      // F3: the cutover flag lives in the object's own storage, which a point-in-time restore rewinds. Check it after any restore.
+      // F3 and A: the cutover is read from the database flag and the R2 marker. A restore that rewinds the flag cannot hide the marker.
+      const cutover = await cutoverStatus(dependencies.database, dependencies.cutoverMarker);
       return json(200, {
         ok: true,
         schemaVersion: schemaVersion(dependencies.database),
         expectedSchemaVersion: SHORTLET_SCHEMA_VERSION,
-        cutoverCompletedAt: cutoverCompletedAt(dependencies.database),
+        cutoverCompletedAt: cutover.completedAt,
+        cutoverMarker: cutover.marker,
       });
     }
     if (request.method === "GET" && path === "/_ops/import/verify") {
+      // Application tables are compared with the manifest. The credential tables are reported apart, as counts only (issue 16 B).
+      const cutover = await cutoverStatus(dependencies.database, dependencies.cutoverMarker);
       return json(200, {
         ok: true,
         schemaVersion: schemaVersion(dependencies.database),
         tables: await checksumTables(dependencies.database),
-        cutoverCompletedAt: cutoverCompletedAt(dependencies.database),
+        excludedTables: Object.fromEntries(Object.entries(credentialTableCounts(dependencies.database)).map(([table, rowCount]) => [table, { rowCount }])),
+        cutoverCompletedAt: cutover.completedAt,
+        cutoverMarker: cutover.marker,
       });
     }
     if (request.method === "GET" && path === "/_ops/export") {
@@ -264,8 +283,13 @@ export function createOpsHandler(dependencies: OpsRouteDependencies): OpsHandler
         if (error instanceof BodyTooLargeError) return json(413, { ok: false, code: "BODY_TOO_LARGE" });
         if (error instanceof ImportRefusedError) {
           // A rejected batch is 422 (nothing written); a schema that is not ready or a completed cutover is 409 (nothing
-          // written); a refused table, column or row shape is 400.
-          const status = error.code === "BATCH_REJECTED" ? 422 : error.code === "SCHEMA_NOT_READY" || error.code === "CUTOVER_COMPLETE" ? 409 : 400;
+          // written); a cutover marker that cannot be read or written is 503 (nothing written, fail closed); a refused table,
+          // column or row shape is 400.
+          const status =
+            error.code === "BATCH_REJECTED" ? 422
+            : error.code === "SCHEMA_NOT_READY" || error.code === "CUTOVER_COMPLETE" ? 409
+            : error.code === "CUTOVER_MARKER_UNAVAILABLE" ? 503
+            : 400;
           return json(status, { ok: false, code: error.code, message: error.message });
         }
         return json(400, { ok: false, code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Bad request" });

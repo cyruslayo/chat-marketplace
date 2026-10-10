@@ -4,13 +4,17 @@ This runbook is for the human who runs the staging rehearsal. An agent prepared 
 authenticate to Cloudflare or Paystack, handle secrets, or decide go/no-go. Every step below is performed by the
 operator, and every result goes in the evidence log at the end (and into the issue's `## Comments`).
 
-Commands use the project-pinned `cf` CLI (`cf@1.0.0-beta.12`, slice 01c). The issue text writes `cf build` and
-`cf deploy`; in this repository the pinned binary is run through npm, so the commands are:
+Commands use the project-pinned `cf` CLI (`cf@1.0.0-beta.12`, slice 01c). The build and the dry run are npm scripts in the
+repository root. They install the Cloudflare app's own dependencies from its lockfile on first use (issue 16 C, see
+`docs/pilot-deployment.md`, "Building the Cloudflare Worker from a clean checkout"), so a clean checkout needs `npm ci` first:
 
 ```bash
-npm exec cf -- build --mode staging
-npm exec cf -- deploy --prebuilt --mode staging
+npm run worker:build:staging
+npm run worker:deploy:dry-run:staging
 ```
+
+The real upload is `cf deploy --prebuilt --mode staging` run from `apps/cloudflare` after the same install step. Run it only in
+section 1, step 3, as the operator.
 
 ## 0. Preconditions and open gates
 
@@ -28,7 +32,7 @@ Known tooling and configuration gaps to resolve before the build (each is record
 
 1. **`cf build` on the Windows development install fails.** The pinned beta spawns an extension-less plugin bin
    (`node_modules/@cloudflare/vite-plugin/bin/cf-vite`) and gets `ENOENT` (issues 10b, 13). Run this rehearsal from a
-   host where `npm exec cf -- build --mode staging` succeeds. If it does not succeed anywhere, stop: this is a
+   host where `npm run worker:build:staging` succeeds on a clean checkout. If it does not succeed anywhere, stop: this is a
    blocker, not a step to work around.
 2. **The staging origin is `https://staging.shortlet.ng`** (confirmed by the user). `apps/cloudflare/cloudflare.config.ts`
    sets `PUBLIC_ORIGIN.staging` to it. Before the build, confirm that this hostname routes to the staging Worker, because
@@ -59,16 +63,18 @@ evidence log or chat):
 ## 1. Build and deploy staging (issue step 1)
 
 1. Confirm a clean integration checkout at the commit you are rehearsing, and record its SHA in the evidence log.
-2. Build:
+2. Build and dry-run (no upload, no account login):
 
    ```bash
-   npm exec cf -- build --mode staging
+   npm ci
+   npm run worker:build:staging
+   npm run worker:deploy:dry-run:staging
    ```
 
-3. Provision the secrets (see the procedure below), then deploy the prebuilt artifact:
+3. Provision the secrets (see the procedure below), then deploy the prebuilt artifact from `apps/cloudflare`:
 
    ```bash
-   npm exec cf -- deploy --prebuilt --mode staging
+   (cd apps/cloudflare && npm exec cf -- deploy --prebuilt --mode staging)
    ```
 
 4. Do not expect `GET <staging origin>/healthz` to return `{"ok":true}` yet. Until the tenant is provisioned, health and
@@ -145,7 +151,7 @@ For each stage (discovery, request, offer, payment, confirmed), in order:
 2. Force a restart by redeploying the same prebuilt artifact:
 
    ```bash
-   npm exec cf -- deploy --prebuilt --mode staging
+   (cd apps/cloudflare && npm exec cf -- deploy --prebuilt --mode staging)
    ```
 
    Do not rebuild between stages, so the restart is the only change.
