@@ -173,3 +173,14 @@ test("11a AC4: revoking an operator's access refuses its session at once (ADR 00
   );
   expect(resolvesAfter).toBeNull();
 });
+
+test("16 F12: an Access assertion from another team's issuer, or with no issuer, is refused and a genuine one is accepted", async () => {
+  const otherTeam = await accessToken({ iss: "https://other-team.cloudflareaccess.test" });
+  const noIssuer = await accessToken({ iss: undefined });
+  for (const token of [otherTeam, noIssuer]) {
+    const response = await SELF.fetch(`${ORIGIN}/_ops/import/verify`, { headers: opsHeaders(token) });
+    expect(response.status).toBe(401);
+  }
+  const genuine = await SELF.fetch(`${ORIGIN}/_ops/import/verify`, { headers: opsHeaders(await accessToken({})) });
+  expect(genuine.status).toBe(200);
+});

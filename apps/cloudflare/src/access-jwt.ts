@@ -54,7 +54,9 @@ export function createAccessJwtVerifier(options: AccessJwtOptions): AccessVerifi
         if (!headerPart || !payloadPart || !signaturePart) return false;
         const header = decodeJson<{ alg?: string; kid?: string }>(headerPart);
         if (header.alg !== "RS256") return false;
-        const payload = decodeJson<{ aud?: string | string[]; exp?: number; nbf?: number }>(payloadPart);
+        const payload = decodeJson<{ aud?: string | string[]; exp?: number; nbf?: number; iss?: string }>(payloadPart);
+        // F12: the assertion must come from this team's Access issuer. A missing or foreign issuer is refused.
+        if (payload.iss !== `https://${options.teamDomain}`) return false;
         const nowSeconds = Math.floor((options.clock?.() ?? new Date()).getTime() / 1000);
         if (typeof payload.exp !== "number" || payload.exp <= nowSeconds) return false;
         if (typeof payload.nbf === "number" && payload.nbf > nowSeconds) return false;
