@@ -45,6 +45,15 @@ Durable Object point-in-time recovery covers 30 days. A daily off-object export 
 Check every item in `docs/agents/issue-tracker.md`.
 
 ## Comments
+### Issue 16 pass 4 (10 Oct 2026, `infra/cf-wave6`): coverage widened, bounds and listing fixed
+
+- **Coverage.** The daily export now writes every application table except the five bearer-credential tables in `DAILY_EXPORT_EXCLUDED` (`apps/cloudflare/src/do-export.ts`): `guest_account_sessions`, `guest_session_bindings`, `guest_sign_in_codes`, `operator_access_tokens` and `operator_sessions`. Each entry cites ADR 0075, 0086 or 0093. `EXPORT_TABLES` now lists 45 tables. The "Answer" above describes the 18-table set, which this pass supersedes.
+- **Exclusion rule.** The five are bearer credentials (session secrets, sign-in challenges, operator access tokens). The export is an evidence record (ADR 0079), so it is held to the log rule: ADR 0075 keeps secrets out of logs, and ADRs 0086 and 0093 keep session secrets and codes out of records. The guest sign-in code hash is an HMAC with a key that is not stored in the object, so the exclusion does not rest on brute force. `production-composition.spec.ts` test C now fails for any exclusion outside that named set, or for a reason without an ADR number.
+- **Personal data for the DPIA (14).** These included tables hold personal data: `guest_accounts` (`email_normalized`, `phone_number`), `guest_account_email_commands` (`email_normalized`, `phone_number`), `guest_contacts` (`contact_email`, `phone_number`), `guest_request_drafts` (`primary_guest_name`, `occupants_json`) and `guest_threads` (`thread_json`). `guest_account_rate_events` keys are HMACs. `guest_contacts` was excluded only by the 12a decision (DPIA note), and no ADR requires that, so it is included. Its inclusion is flagged for the DPIA and the ADR 0095 gates.
+- **Bounded memory.** Pages are keyed on rowid (`rowid > $after`), which replaces `LIMIT ... OFFSET`, whose cost grew with each page. The object streams to R2 in parts of at least 5 MiB, the R2 minimum part size, so memory holds one part and one page however large a table grows. A table under one part is written with a single put, as before. Values use the import transport (`encodeValue`), so a BLOB is `{"$bytes": ...}` and the restore route can read the file.
+- **Retention and receipt sweep.** A single R2 `list()` returns one page of at most 1,000 objects. With 45 tables the 400-day sweep would have stopped at the first 1,000 objects, so old exports would have survived. Both the retention sweep and the orphan-receipt sweep now follow the listing cursor. The values (400 days, 24 hours grace) are unchanged and are the user-approved values above.
+- **Tests (failing first).** `daily-export.spec.ts`: "16 D3 export: a table larger than one R2 part..." and "16 D3 retention: old exports beyond the first 1,000-object listing page...", both seen failing before the change. `production-composition.spec.ts` test C: the named-set and ADR-citation assertions, seen failing with the 32 exclusions. `restore-from-export.spec.ts`: see issue 12b.
+
 
 ## Answer
 

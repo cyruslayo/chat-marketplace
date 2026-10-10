@@ -117,7 +117,9 @@ table (D2), and its body stays within the documented 5 MiB chunk bound (`MAX_IMP
 transaction on the object. A request with a malformed row is refused whole and nothing from it is written, so the command
 stops at the first refused request. The object refuses with `SCHEMA_NOT_READY` if its schema is not current, and with
 `CUTOVER_COMPLETE` once step 7.1 has run. Before that, re-running the push is safe: rows are upserted on their primary key
-(D1), and nothing is duplicated.
+(D1), and nothing is duplicated. Tables are pushed in manifest order, which lists each parent table before the tables that
+reference it. The object enforces foreign keys, so a child row whose parent is not loaded yet is refused and nothing from that
+request is written.
 
 ## 5. Verify
 
@@ -238,16 +240,17 @@ R7. **Reconcile money.** For every Paystack transaction that arrived after the s
 Run this only when `ROLLBACK_WINDOW` has closed. It finds drift the rollback comparison (R3 and R4) cannot see: deletes
 made after cutover, and changes in the tables the daily export covers.
 
-**What the daily export is (issue 12a, `apps/cloudflare/src/do-export.ts`).** The object's alarm writes one file per
-table to the private `EXPORTS` bucket (`shortlet-pilot-production-exports`), at the key `YYYY-MM-DD/<table>.jsonl`. The
-date is the Africa/Lagos day (ADR 0078). Each file holds one `JSON.stringify` line per row, in rowid order, with the
-table's own column order and no `$bytes` encoding. A table that does not exist in the object gets an empty file. The
-export covers **only the 18 tables in `EXPORT_TABLES`**. It has no checksums, no manifest and no timestamp. It is written
-once per Lagos day, at the first alarm of that day, so rows written after that alarm are not in it. The bucket keeps
-400 days by default (`SHORTLET_EXPORT_RETENTION_DAYS`).
+**What the daily export is (issue 12a, widened by issue 16, `apps/cloudflare/src/do-export.ts`).** The object's alarm writes one
+file per table to the private `EXPORTS` bucket (`shortlet-pilot-production-exports`), at the key `YYYY-MM-DD/<table>.jsonl`. The
+date is the Africa/Lagos day (ADR 0078). Each file is a full snapshot of its table: one line per row, in rowid order, in the table's
+own column order, encoded as the import route reads it (a BLOB is `{"$bytes": ...}`). A table that does not exist in the object gets
+an empty file. The export covers **every application table except the five bearer-credential tables in `DAILY_EXPORT_EXCLUDED`**
+(issue 16, delegated decision of 10 Oct 2026). It has no checksums, no manifest and no timestamp. It is written once per Lagos day,
+at the first alarm of that day, so rows written after that alarm are not in it. The bucket keeps 400 days by default
+(`SHORTLET_EXPORT_RETENTION_DAYS`) (`SHORTLET_EXPORT_RETENTION_DAYS`).
 
 1. **Choose the export day.** List the `EXPORTS` bucket and take the newest `YYYY-MM-DD/` prefix. Follow `--cursor`
-   across pages. Download that day's 18 table files into `<RECON_DIR>/export/`:
+   across pages. Download that day's file for every table in `EXPORT_TABLES` into `<RECON_DIR>/export/`:
 
    ```bash
    npm exec cf -- r2 objects list --bucket-name "shortlet-pilot-production-exports" --mode production
@@ -259,10 +262,9 @@ once per Lagos day, at the first alarm of that day, so rows written after that a
    method is confirmed on a synthetic export file on staging before production (checklist C7).
 
 2. **Pull the object.** Run `--pull "<POST_DIR>"` (the command in step 5). Its `<table>.jsonl` files are canonical: keys
-   sorted, lines sorted, BLOBs as `{"$bytes": ...}`. They cover all application tables. Use only the 18 `EXPORT_TABLES`
-   files.
+   sorted, lines sorted, BLOBs as `{"$bytes": ...}`. They cover all application tables. Use only the files for the tables in `EXPORT_TABLES`.
 
-3. **Bring both sides to one form.** For each of the 18 tables, sort the keys of every line and then sort the lines
+3. **Bring both sides to one form.** For each exported table, sort the keys of every line and then sort the lines
    (`jq` is assumed; confirm it exists before the first run):
 
    ```bash
@@ -295,14 +297,12 @@ once per Lagos day, at the first alarm of that day, so rows written after that a
 6. **Record.** Log every discrepancy and every count. Any discrepancy means the window did not close:
    `ROLLBACK_WINDOW` extends, and this step runs again after the next full payout cycle.
 
-7. **Coverage gap (open, Needs user item 6).** This step reconciles 18 of the 50 application tables. The other 32 are
-   not in any daily export. They are listed by name, each with its reason, in `DAILY_EXPORT_EXCLUDED` in
-   `apps/cloudflare/test/production-composition.spec.ts`. They include the revenue ledger (`revenue_journals`,
-   `revenue_ledger_lines`, `revenue_releases`, `revenue_earned_commission` and the compatibility and adjustment tables),
-   `units`, `operators`, the operator and guest session tables, and `guest_accounts`. `guest_contacts` is excluded on
-   purpose. Their drift cannot be checked after the window with the export set as it stands. The rebuild path in
-   `docs/runbooks/cloudflare-restore.md` (section 2) cannot restore them from the daily export either, so the window's
-   closing condition cannot be fully evidenced for them until the user decides.
+7. **Coverage (decided, issue 16 and Needs user item 6).** This step reconciles every table in `EXPORT_TABLES`. The five tables
+   it does not cover are the bearer-credential tables in `DAILY_EXPORT_EXCLUDED` (`apps/cloudflare/src/do-export.ts`):
+   `guest_account_sessions`, `guest_session_bindings`, `guest_sign_in_codes`, `operator_access_tokens` and `operator_sessions`.
+   They hold no evidence, and a session or challenge is not reconciled after the window. The restore runbook
+   (`docs/runbooks/cloudflare-restore.md`, section 2) says what a rebuild cannot restore. The closing record for the window states
+   that these five were not compared.
 
 ## Checklist before cutover
 
@@ -323,8 +323,8 @@ These need human facts or decisions. None is decided in this runbook.
 3. The freeze mechanism at the edge: a maintenance page or a Worker response, and its wording. The process stop in step 1 applies either way.
 4. The Worker route, the DNS record and the TTL (step 7.2).
 5. The go or no-go for cutover, and the sign-off of this runbook (issue 16 AC4).
-6. Daily export coverage: 32 of 50 application tables are not in the daily export (step 10.7). Extend the 12a export set to
-   every application table, or accept that those tables carry no post-window evidence and say so in the window's closing record.
+6. Daily export coverage: **decided** (issue 16, delegated 10 Oct 2026). Every application table except the five bearer-credential
+   tables is in the daily export (step 10.7). The five exclusions and their reasons are for review at the sign-off in item 5.
 
 ## 11. Cutover log
 

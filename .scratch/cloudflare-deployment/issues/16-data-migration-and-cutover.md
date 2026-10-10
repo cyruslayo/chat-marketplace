@@ -213,6 +213,17 @@ Status unchanged: **ready-for-human**. Nothing here is a cutover, a production r
 - **Test helper.** `provisionTenant` in `ops-test-helpers.ts` now takes the stub, so the new spec provisions an object that no
   other test has built. The default is unchanged.
 
+### Agent pass 4 on `infra/cf-wave6` (10 Oct 2026): export coverage decided, restore and cutover order corrected
+
+Status unchanged: **ready-for-human**. Nothing here is a cutover, a production run or a resolution.
+
+- **Export scope (Needs user item 6, now decided).** The daily export covers every application table except the five bearer-credential tables in `DAILY_EXPORT_EXCLUDED` (`apps/cloudflare/src/do-export.ts`), each with its ADR. Details, the personal-data list for the DPIA, the bounds and the retention-listing fix are in the issue 12a comment. The cutover runbook's step 10 and its Needs-user item 6 are updated to match. The five exclusions and the choice to include `guest_contacts` are for review at the sign-off (AC4).
+- **Cutover push order (new finding, fixed).** The object enforces foreign keys, and `buildExport` listed tables alphabetically. The push sends the manifest's tables in that order, so `guest_account_email_commands` (and `guest_account_sessions` and `guest_sign_in_codes`, which are excluded from the export) would have been refused before `guest_accounts`, for any tenant with a guest account. `buildExport` now lists tables with `importOrder()`, parents first. Tests: "16 D1 cutover: the manifest lists each parent table before the tables that reference it..." in `test/export-node-sqlite.test.ts` (seen failing with the old order). The committed fixture is unchanged, because the synthetic source has no foreign-key children.
+- **Restore runbook.** Section 2 is corrected (see the issue 12b comment). The restore test loads a day's files parent-first through `POST /_ops/import` and checks that the rebuilt object exports the same bytes for every exported table.
+- **Chrome path.** `test/helpers/chrome-devtools.ts` reads `SHORTLET_CHROME_PATH` (blank means the default) and adds `--no-sandbox` only when `SHORTLET_CHROME_NO_SANDBOX=1`, through `resolveChromeLaunch`. The test is `test/chrome-devtools-config.test.ts`.
+- **Checks.** `npm run check` exits 0. `npm run test:workers` passes 72 of 72 across 14 files (68 before this pass, plus four new tests). The non-browser phase (phase 1 of `npm test`, reproduced because `package.json` has no separate script) gives 1423 of 1423 tests passing, 0 failing. The browser phase was not run.
+- **Open.** C1, C4, C5, C6 and C7 are unchanged. The runbook sign-off (AC4) and the edge freeze, route and DNS items remain Needs user. Also open: the DPIA entries for the personal-data columns, and the ADR 0075 transient and 180-day classes (provisional) against the 400-day export retention.
+
 ## Commits on `infra/cf-wave6`
 
 `16f5d28` ADR 0075 fixes with tests, `7bea2c7` comment and citation fixes, `19a833f` Node fixture end-to-end test,
