@@ -283,6 +283,10 @@ The pass-1 figures (58 of 58; 1407 tests with 3 failures) are superseded by the 
 
 - **C (worker build).** A clean `npm ci` followed by `npm run worker:build` failed with "@cloudflare/vite-plugin is declared in apps/cloudflare/package.json but is not installed". The `cf` CLI checks only `apps/cloudflare/node_modules`, and the repository root holds the install. Fix: `apps/cloudflare/package-lock.json` pins the same plugin version as the manifest (`test/worker-build-setup.test.ts`), and `scripts/ensure-worker-deps.mjs` runs `npm ci --prefix apps/cloudflare` before every `cf` script. Verified on a clean worktree: `npm run worker:build`, `npm run worker:build:production`, `npm run worker:deploy:dry-run:staging` and `npm run worker:deploy:dry-run:production` all exit 0, with no login and no upload.
 
+### Wave 6 code close (10 Oct 2026)
+
+Status unchanged: **ready-for-human**. Code is done and verified on `infra/cf-wave6` at `8e769d2` (see `map.md`, "Wave 6 completion (code)"). Decisions D1 to D6 stand. The human steps, including the runbook sign-off (AC4) and the go or no-go, are in the map's "Human steps pending" list. No production run has happened.
+
 ## Commits on `infra/cf-wave6`
 
 `16f5d28` ADR 0075 fixes with tests, `7bea2c7` comment and citation fixes, `19a833f` Node fixture end-to-end test,

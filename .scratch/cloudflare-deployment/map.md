@@ -78,8 +78,8 @@ The frontier is the first slice in the table that is open, unblocked and unclaim
 | 13 | Observability and edge security | task | resolved (agent side; the dashboard and DNS steps are a human checklist) | 10b | 15 |
 | 14 | ADR 0095 and DPIA update | grilling | resolved (architecture accepted; external gates open) | none | 15 |
 | **G: Release** | | | | | |
-| 15 | Staging rehearsal; merge to `main` | task | ready-for-human | 06d, 11b, 12a, 12b, 13, 14 (cross-border, contracts and retention gate) | 16 |
-| 16 | Data migration and cutover | task | ready-for-human | 15 | 17 |
+| 15 | Staging rehearsal; merge to `main` | task | ready-for-human (agent prep done; rehearsal and human gates open) | 06d, 11b, 12a, 12b, 13, 14 (cross-border, contracts and retention gate) | 16 |
+| 16 | Data migration and cutover | task | ready-for-human (agent code done; cutover is human) | 15 | 17 |
 | 17 | Retire the Node production entry | task | ready-for-human (hold until the rollback window closes) | 16 | none |
 
 **What can run at once.** Slices 01a, 02a, 05a and 14 have no blockers. After 01a lands, 01c can start; after 01c lands, 01b and 03a can proceed. After 02a lands, 02b, 02c, 02d, 06a, 06b and 06c can all run in parallel. After 02a and 03a land, 03b can start.
@@ -256,8 +256,62 @@ Branch `infra/cf-wave6`, cut from `infra/cloudflare-deployment`, with the merge 
 
 Branch `infra/cf-wave6` at `cf260db`, from the review of `7181cbd`. Findings F1 to F13 are fixed or documented as recorded in issue 16's fix-pass comment, which has the commits, the tests and the reconciled counts. The latest run: `npm run check` exit 0; `npm run test:workers` 78 of 78 across 14 files; non-browser phase 1 1431 of 1431 (browser phase not run). The alarm now runs the daily export without a notifier (F1). The ops export, pull and rollback exclude the five credential tables (F4). The one-way cutover flag is checkable through `GET /_ops/status` after a restore (F3, which PITR can rewind). Shortlet issue 15's same-day cutoff is not a production fix; issue 48 tracks it (F2). Proposed ADR 0096 is for the user's decision (F5). Issue 49 records the conditional-offer key review. Issue 17 is `ready-for-human` with a hold until the rollback window closes (F7).
 
+## Wave 6 completion (code, 10 Oct 2026)
+
+**Wave 6 is complete for code work. Release, cutover and retirement are not.** Issue 15's agent prep and issue 16's code are done and verified. Issue 17 is prepared and held. Issues 15 and 16 stay `ready-for-human`. Issue 17 stays prepared and held, not resolved. Nothing has been deployed, cut over, merged to `main` or sent to production.
+
+Branches and tips:
+
+- `origin/infra/cf-wave6`: code tip **`8e769d2`**. The commit that adds this section sits on top of it.
+- `origin/infra/cf-17-retire-node-prod`: **`a92eae0`** (held, unmerged, no PR). It is kept current by merging the wave 6 tip into it. It is not merged to `main`.
+
+Verification on the wave 6 code tip:
+
+- `npm run check`: clean.
+- `npm run test:workers`: **85 of 85**.
+- Non-browser suite: **1448 of 1448** on `infra/cf-wave6`, and **1455 of 1455** on `infra/cf-17-retire-node-prod`.
+- Browser phase: **164 of 166**, with one intentional skip and one environmental failure. The failure is the Paystack checkout test, blocked by the sandbox proxy. The Paystack checkout path is **unverified on a real network**.
+- `worker:build` and the staging and production dry-runs (`worker:deploy:dry-run:staging`, `worker:deploy:dry-run:production`) pass.
+
+Decisions made on the user's behalf are recorded in `issues/16-data-migration-and-cutover.md`, under "Decisions (delegated by user, 10 Oct 2026)". They are not restated here:
+
+- **D1 to D3:** re-import upsert and the one-way cutover flag, row and chunk limits, schema migrations.
+- **D4:** the freeze (a process stop) and the 14-day rollback window. `ROLLBACK_WINDOW` in `docs/runbooks/cloudflare-cutover.md` is the single definition, with its exit criteria.
+- **D5:** the cutover marker outside object storage, and the break-glass rebuild (restore runbook, section 2, B0 to B7).
+- **D6:** the five bearer-credential tables are excluded from the cutover.
+- **Daily export covers 45 tables:** every application table except the five credential tables (`EXPORT_TABLES` in `apps/cloudflare/src/do-export.ts`; issue 12a, Comments). The 18-table figure in the 12a pointer below is superseded.
+
+**Human steps pending before wave 6 closes**, in order:
+
+1. The Cloudflare account, the `cf` authentication profile and the secrets, through the supported procedure. No values go in the repository.
+2. Staging deploy and rehearsal (issue 15 steps 1 to 8; `docs/runbooks/cloudflare-staging-rehearsal.md`). Paystack test keys and synthetic data only.
+3. DNS, the Worker route and the freeze page (issue 16, Needs user 3 and 4).
+4. Paystack dashboard checks: callback and webhook URLs, signed delivery, and the bad-signature 401.
+5. The PITR drill on staging (issue 12b; issue 15 step 6b).
+6. The ADR 0095 gates and personal-data retention: counsel, transfer basis, vendor terms and DPIA (issue 16, Needs user 2).
+7. The ADR 0096 decision on the plaintext payment-reference export. It is `proposed` and not accepted.
+8. The break-glass B3 recovery decision (D5). B3 stops the rebuild if the flag survived.
+9. The guest and operator sign-in notice, checklist C10 (D6). Wording and channel are open.
+10. Live-page checks of the 100-parameter statement limit (checklist C1) and R2's 5 MiB minimum part size (12a).
+11. Runbook sign-off (issue 16, AC4).
+12. The go or no-go decision (issue 16, Needs user 5; issue 15 step 8).
+13. Merge `infra/cloudflare-deployment` to `main`. AC5 needs `npm run check`, `npm test` and `npm run test:workers` green at merge time, which includes the Paystack checkout test on a real network.
+14. Merge issue 17 after `ROLLBACK_WINDOW` closes.
+
+**Follow-ups** (not wave 6 blockers):
+
+- Shortlet issue 48 (`needs-triage`): the production same-day cutoff against ADR 0053. Shortlet issue 15 has a correction note, and whether to reopen it is open (issue 16, open decision 4).
+- Shortlet issue 49 (`needs-triage`): reachability of the hardcoded conditional-offer key in `domains/shortlet/src/conditional-offer.ts`.
+- The root `@cloudflare/vite-plugin` devDependency in `package.json` is unused by root code. The `apps/cloudflare` install is the one `cf` uses. The root entry is pinned and checked by `test/worker-build-setup.test.ts`. It has not been removed.
+- The AC5 browser flake fix (`8b97127`) is defensive. It waits for the page to load before reading. It is not a proven root-cause fix.
+
+**Wave 7:** no wave 7 is defined anywhere in `.scratch` or `docs`. It needs a user decision on its scope, issues and entry criteria. The handoff checklist's "next wave's open frontier" is empty here: 15, 16 and 17 are human-gated.
+
+**Stale rows to fix before the next frontier is read:** the map table still shows 08a to 09c as `ready-for-agent`. Their issue files and the wave 4 completion record say `resolved`. The table's 12a pointer also still says 18 export tables, now 45. Neither is changed in this record.
+
 ## Context pointers
 
+- 15, 16 and 17 (wave 6 code close, 10 Oct 2026): `infra/cf-wave6` at `8e769d2` (code tip). Issue 16 holds the decisions and fix passes. Issue 15 holds the staging evidence template, which is still blank. `infra/cf-17-retire-node-prod` at `a92eae0` (held). Full record in "Wave 6 completion (code)" above.
 - 16 and 15 (wave 6 agent pass): `infra/cf-wave6`. Node export fixture `apps/cloudflare/test/fixtures/node-export.json` (regenerate with `UPDATE_NODE_EXPORT_FIXTURE=1`); `scripts/export-node-sqlite.ts`; `apps/cloudflare/src/ops-import.ts`; `docs/runbooks/cloudflare-cutover.md` (DRAFT).
 - 13: `infra/cf-13-observability-edge`. `observability` (Workers Logs, invocation logs off) in `cloudflare.config.ts`; `packages/platform-core/src/security-headers.ts` as the single source for `GUEST_HTML_SECURITY_HEADERS`/`RECEIPT_SECURITY_HEADERS` (spread by `guest-server.ts` and `local-owner-server.ts`); `docs/runbooks/cloudflare-edge.md` (WAF 10/min login rule, Paystack IP allow-list, HTTPS-only domain, `workers.dev`/preview off). Workerd spec `apps/cloudflare/test/edge-security.spec.ts` (secret-leak capture + header parity). Dashboard/DNS steps remain human.
 - 12b: `infra/cf-12b-restore-runbook`. `docs/runbooks/cloudflare-restore.md` (PITR flow, the two-step route, rebuild from 12a exports via slice 16's `/_ops/import`, and the mandatory post-restore checks incl. Paystack reconciliation and R2-not-rolled-back); `POST /_ops/restore` in `src/ops-routes.ts` with `OpsStorageBookmarks` injected from `this.ctx.storage`. Workerd spec `apps/cloudflare/test/ops-restore.spec.ts`. **Gap:** workerd's local storage has no PITR, so the bookmark round trip is staging-only (slice 15).

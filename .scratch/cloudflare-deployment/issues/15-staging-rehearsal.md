@@ -78,3 +78,7 @@ Status unchanged: **ready-for-human**.
 - Not done and not claimed: the staging deployment, the Paystack test-mode steps, the forced restarts, the PITR drill, the
   Logs search and the go/no-go. These need the user.
 - Data-protection gates (ADR 0095) still apply. Staging uses synthetic data only.
+
+### Wave 6 code close (10 Oct 2026)
+
+Status unchanged: **ready-for-human**. The agent prep is done and verified on `infra/cf-wave6` at `8e769d2` (see `map.md`, "Wave 6 completion (code)"). Not run: staging deploy, Paystack test-mode steps, forced restarts, the PITR drill, the Logs search and the go or no-go. The evidence template above is still blank. AC5 is pending a full run on the integration branch at merge time.
