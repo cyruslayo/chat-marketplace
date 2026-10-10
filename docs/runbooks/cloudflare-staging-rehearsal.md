@@ -210,12 +210,14 @@ disaster. Its positive path cannot be drilled on the staging object: that object
 1. Confirm the staging object is cut over (`GET /_ops/status`: `cutoverCompletedAt` set). Use the staging cutover from step 7.1 of the cutover runbook.
 2. B0: list `_ops/cutover/` in the staging EXPORTS bucket (`shortlet-pilot-staging-exports`, `--mode staging`). Expect one key. Record its `completedAt`.
 3. B1: freeze the staging route. B2: run `cf r2 objects delete` on the key, with `--dry-run` first.
-4. B3: list again, then `GET /_ops/status`. Expect `cutoverCompletedAt` set and the key back (the object re-created the marker).
+4. B3: list again, then `GET /_ops/status`. Expect `cutoverCompletedAt` set. The marker may read `absent` (the staging object was
+   already running) or `present`. The status read does not re-create the marker, so the key may still be absent.
    That is the expected result, and it means the rebuild must stop. Do not import. Record the result and lift the freeze.
+   Then send one import to the staging object, expect `CUTOVER_COMPLETE` (409), and check that the key is back.
 5. Record the drill in the cutover log, marked as a drill, with the staging bucket name.
 
-A pass is B3 stopping as described. A B3 that reads `cutoverCompletedAt` null would mean the flag was not in storage, which
-this drill does not expect; record it as a finding, not a pass.
+A pass is B3 stopping as described, followed by the refused import and the re-created key. A B3 that reads `cutoverCompletedAt`
+null would mean the flag was not in storage, which this drill does not expect; record it as a finding, not a pass.
 
 ## 7. Logs (issue step 7; AC: no secrets in logs)
 
