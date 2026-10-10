@@ -10,6 +10,12 @@ declare module "*.csv?raw" {
   export default value;
 }
 
+/** Slice 16: the committed Node export read as text by the workerd migration test (not parsed by the bundler). */
+declare module "*.json?raw" {
+  const value: string;
+  export default value;
+}
+
 /** Test-runtime bindings (`wrangler.test.jsonc`). The deployable shape is `CloudflareEnv` in cloudflare-config.ts. */
 declare namespace Cloudflare {
   interface Env {
