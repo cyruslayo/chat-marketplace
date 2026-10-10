@@ -1,0 +1,9 @@
+{
+  "test/sql-port-operator-stores.test.ts": "da09bf4cf88882c533cb3b5a27e7aefa4d5d2cc2583d206fb097e8b3ed184b72",
+  ".scratch/cloudflare-deployment/issues/02d-convert-operator-stores.md": "33fb6e0a7d8abf2c8c6a8f7ffcc2a59cbaeb5c395b6e5e1432f8a6cd967e3912",
+  "domains/shortlet/src/guest-interaction-store.ts": "bef7f4dc7677db98e8c49f54aeb51bbe048c3678f3b75868ea14b3a8f4f42b02",
+  "domains/shortlet/src/operator-representative-authority.ts": "513762b2f305e372d97d7a838fbb497d3dc737c6e6f4873beded5dad9bb149d1",
+  "domains/shortlet/src/operator-session-authority.ts": "a8f6ca55a1b62266d561befe11c7335273a7eae291261edbf14b7ebc1363c6ed",
+  "test/block-and-hold-unit-availability.test.ts": "7e9ef37ce64b23d2d8e28a1ba685d90dfe88d93fd3763d69dacf09acbc42bbdc",
+  "test/pilot-notifications.test.ts": "32ba68b2e7274f7cf9b7f164a1153f58d4d7b5b920301dc43281b8e2b3d23d70"
+}

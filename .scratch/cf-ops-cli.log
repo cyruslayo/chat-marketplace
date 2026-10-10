@@ -1,0 +1,28 @@
+TAP version 13
+# Subtest: 11b AC3: a non-https, non-localhost ops URL is refused before any request is sent
+ok 1 - 11b AC3: a non-https, non-localhost ops URL is refused before any request is sent
+  ---
+  duration_ms: 5.041
+  type: 'test'
+  ...
+# Subtest: 11b AC4: with SHORTLET_OPS_URL unset the CLIs keep their local behaviour
+ok 2 - 11b AC4: with SHORTLET_OPS_URL unset the CLIs keep their local behaviour
+  ---
+  duration_ms: 0.5309
+  type: 'test'
+  ...
+# Subtest: 11b AC3: the operator CLIs send both authentication layers to the configured ops URL
+ok 3 - 11b AC3: the operator CLIs send both authentication layers to the configured ops URL
+  ---
+  duration_ms: 3667.0882
+  type: 'test'
+  ...
+1..3
+# tests 3
+# suites 0
+# pass 3
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 4950.5706

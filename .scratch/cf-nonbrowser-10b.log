@@ -1,0 +1,5 @@
+npm error Missing script: "test:non-browser"
+npm error
+npm error To see a list of scripts, run:
+npm error   npm run
+npm error A complete log of this run can be found in: C:\Users\Cyrus\AppData\Local\npm-cache\_logs\2026-10-07T17_19_08_384Z-debug-0.log

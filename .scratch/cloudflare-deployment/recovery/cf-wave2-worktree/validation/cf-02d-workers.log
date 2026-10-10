@@ -1,0 +1,13 @@
+
+> test:workers
+> vitest run --config apps/cloudflare/vitest.config.ts
+
+
+ RUN  v4.1.11 C:/AI2026/chat-marketplace-cloudflare-02d-reconciled
+
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  10:59:50
+   Duration  9.66s (transform 69ms, setup 0ms, import 123ms, tests 20ms, environment 0ms)
+

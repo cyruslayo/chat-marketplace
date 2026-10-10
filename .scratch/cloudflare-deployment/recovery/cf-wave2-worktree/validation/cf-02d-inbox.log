@@ -1,0 +1,290 @@
+TAP version 13
+# (node:111208) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC1 — An authenticated authorized representative can list actionable Booking Requests
+ok 1 - AC1 — An authenticated authorized representative can list actionable Booking Requests
+  ---
+  duration_ms: 859.1779
+  type: 'test'
+  ...
+# Subtest: AC2 — An unauthenticated user cannot access the request inbox
+ok 2 - AC2 — An unauthenticated user cannot access the request inbox
+  ---
+  duration_ms: 485.6451
+  type: 'test'
+  ...
+# Subtest: AC3 — An authenticated actor without an ADR-0082 grant cannot access an unauthorized request
+ok 3 - AC3 — An authenticated actor without an ADR-0082 grant cannot access an unauthorized request
+  ---
+  duration_ms: 512.8232
+  type: 'test'
+  ...
+# Subtest: AC4 — A cross-tenant representative cannot access another tenant’s request
+ok 4 - AC4 — A cross-tenant representative cannot access another tenant’s request
+  ---
+  duration_ms: 506.026
+  type: 'test'
+  ...
+# Subtest: AC5 — A representative can open an authorized request detail
+ok 5 - AC5 — A representative can open an authorized request detail
+  ---
+  duration_ms: 686.4325
+  type: 'test'
+  ...
+# Subtest: AC6 — Request detail shows authoritative material facts
+ok 6 - AC6 — Request detail shows authoritative material facts
+  ---
+  duration_ms: 626.377
+  type: 'test'
+  ...
+# Subtest: AC7 — Request detail shows the absolute response deadline in WAT
+ok 7 - AC7 — Request detail shows the absolute response deadline in WAT
+  ---
+  duration_ms: 986.2192
+  type: 'test'
+  ...
+# Subtest: AC8 — An authorized representative can confirm a pending Booking Request
+ok 8 - AC8 — An authorized representative can confirm a pending Booking Request
+  ---
+  duration_ms: 827.4759
+  type: 'test'
+  ...
+# Subtest: AC9 — Confirmation uses the existing authoritative command path
+ok 9 - AC9 — Confirmation uses the existing authoritative command path
+  ---
+  duration_ms: 1016.3294
+  type: 'test'
+  ...
+# Subtest: AC10 — Confirmation creates the existing Conditional Booking Offer
+ok 10 - AC10 — Confirmation creates the existing Conditional Booking Offer
+  ---
+  duration_ms: 575.9836
+  type: 'test'
+  ...
+# Subtest: AC11 — The Guest receives the Conditional Booking Offer
+ok 11 - AC11 — The Guest receives the Conditional Booking Offer
+  ---
+  duration_ms: 558.6415
+  type: 'test'
+  ...
+# Subtest: AC12 — An authorized representative can decline a pending Booking Request
+ok 12 - AC12 — An authorized representative can decline a pending Booking Request
+  ---
+  duration_ms: 580.7036
+  type: 'test'
+  ...
+# Subtest: AC13 — Decline uses the existing authoritative command path
+ok 13 - AC13 — Decline uses the existing authoritative command path
+  ---
+  duration_ms: 625.4007
+  type: 'test'
+  ...
+# Subtest: AC14 — The Guest receives the existing declined state
+ok 14 - AC14 — The Guest receives the existing declined state
+  ---
+  duration_ms: 548.1898
+  type: 'test'
+  ...
+# Subtest: AC15 — An expired Booking Request cannot be confirmed
+ok 15 - AC15 — An expired Booking Request cannot be confirmed
+  ---
+  duration_ms: 604.8096
+  type: 'test'
+  ...
+# Subtest: AC16 — An expired Booking Request cannot be declined after terminal expiry
+ok 16 - AC16 — An expired Booking Request cannot be declined after terminal expiry
+  ---
+  duration_ms: 483.2899
+  type: 'test'
+  ...
+# Subtest: AC17 — A stale Operator action fails closed
+ok 17 - AC17 — A stale Operator action fails closed
+  ---
+  duration_ms: 606.1331
+  type: 'test'
+  ...
+# Subtest: AC18 — Two representatives cannot successfully resolve the same request twice
+ok 18 - AC18 — Two representatives cannot successfully resolve the same request twice
+  ---
+  duration_ms: 5214.9646
+  type: 'test'
+  ...
+# Subtest: AC19 — A losing concurrent response cannot damage the winning response
+ok 19 - AC19 — A losing concurrent response cannot damage the winning response
+  ---
+  duration_ms: 580.3781
+  type: 'test'
+  ...
+# Subtest: AC20 — Refreshing a pending request does not mutate it
+ok 20 - AC20 — Refreshing a pending request does not mutate it
+  ---
+  duration_ms: 510.4072
+  type: 'test'
+  ...
+# Subtest: AC21 — Refreshing a confirmed request does not repeat confirmation
+ok 21 - AC21 — Refreshing a confirmed request does not repeat confirmation
+  ---
+  duration_ms: 576.5831
+  type: 'test'
+  ...
+# Subtest: AC22 — Refreshing a declined request does not repeat decline
+ok 22 - AC22 — Refreshing a declined request does not repeat decline
+  ---
+  duration_ms: 524.7446
+  type: 'test'
+  ...
+# Subtest: AC23 — Restart preserves pending requests
+ok 23 - AC23 — Restart preserves pending requests
+  ---
+  duration_ms: 520.494
+  type: 'test'
+  ...
+# Subtest: AC24 — Restart preserves completed Operator responses
+ok 24 - AC24 — Restart preserves completed Operator responses
+  ---
+  duration_ms: 552.581
+  type: 'test'
+  ...
+# Subtest: AC25 — Restart preserves a still-valid Operator session
+ok 25 - AC25 — Restart preserves a still-valid Operator session
+  ---
+  duration_ms: 570.9479
+  type: 'test'
+  ...
+# Subtest: AC26 — Representative-grant revocation blocks a future response immediately
+ok 26 - AC26 — Representative-grant revocation blocks a future response immediately
+  ---
+  duration_ms: 480.0334
+  type: 'test'
+  ...
+# Subtest: AC27 — Logout prevents further Operator actions
+ok 27 - AC27 — Logout prevents further Operator actions
+  ---
+  duration_ms: 625.4691
+  type: 'test'
+  ...
+# Subtest: AC28 — Confirmation creates safe audit evidence
+ok 28 - AC28 — Confirmation creates safe audit evidence
+  ---
+  duration_ms: 1139.4696
+  type: 'test'
+  ...
+# Subtest: AC29 — Decline creates safe audit evidence
+ok 29 - AC29 — Decline creates safe audit evidence
+  ---
+  duration_ms: 648.0047
+  type: 'test'
+  ...
+# Subtest: AC30 — Operator transition telemetry is emitted safely
+ok 30 - AC30 — Operator transition telemetry is emitted safely
+  ---
+  duration_ms: 680.8692
+  type: 'test'
+  ...
+# Subtest: AC31 — Telemetry failure does not block confirmation
+ok 31 - AC31 — Telemetry failure does not block confirmation
+  ---
+  duration_ms: 760.4828
+  type: 'test'
+  ...
+# Subtest: AC32 — Telemetry failure does not block decline
+ok 32 - AC32 — Telemetry failure does not block decline
+  ---
+  duration_ms: 934.7926
+  type: 'test'
+  ...
+# Subtest: AC33 — The Operator surface contains no protected identity evidence
+ok 33 - AC33 — The Operator surface contains no protected identity evidence
+  ---
+  duration_ms: 864.8397
+  type: 'test'
+  ...
+# Subtest: AC34 — The Operator surface contains no payment credentials
+ok 34 - AC34 — The Operator surface contains no payment credentials
+  ---
+  duration_ms: 777.5663
+  type: 'test'
+  ...
+# Subtest: AC35 — The Operator surface contains no physical-access credentials
+ok 35 - AC35 — The Operator surface contains no physical-access credentials
+  ---
+  duration_ms: 950.8392
+  type: 'test'
+  ...
+# Subtest: AC36 — The Operator surface works at 320 pixels
+ok 36 - AC36 — The Operator surface works at 320 pixels
+  ---
+  duration_ms: 0.447
+  type: 'test'
+  ...
+# Subtest: AC37 — The Operator surface works at 390 pixels
+ok 37 - AC37 — The Operator surface works at 390 pixels
+  ---
+  duration_ms: 0.2019
+  type: 'test'
+  ...
+# Subtest: AC38 — Keyboard-only confirmation works
+ok 38 - AC38 — Keyboard-only confirmation works
+  ---
+  duration_ms: 2246.0129
+  type: 'test'
+  ...
+# Subtest: AC39 — Keyboard-only decline works
+ok 39 - AC39 — Keyboard-only decline works
+  ---
+  duration_ms: 587.9169
+  type: 'test'
+  ...
+# Subtest: AC40 — Anonymous legacy fixture routes cannot perform production-capable Operator actions
+ok 40 - AC40 — Anonymous legacy fixture routes cannot perform production-capable Operator actions
+  ---
+  duration_ms: 631.3123
+  type: 'test'
+  ...
+# Subtest: AC41 — The complete Guest → Operator → Guest confirmation journey passes in real Chromium
+ok 41 - AC41 — The complete Guest → Operator → Guest confirmation journey passes in real Chromium
+  ---
+  duration_ms: 592.7924
+  type: 'test'
+  ...
+# Subtest: AC42 — The complete Guest → Operator → Guest decline journey passes in real Chromium
+ok 42 - AC42 — The complete Guest → Operator → Guest decline journey passes in real Chromium
+  ---
+  duration_ms: 484.1748
+  type: 'test'
+  ...
+# (node:135780) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: 02d AC1: Neither operator store opens a connection or accepts a path
+ok 43 - 02d AC1: Neither operator store opens a connection or accepts a path
+  ---
+  duration_ms: 6.6149
+  type: 'test'
+  ...
+# Subtest: 02d AC2: Operator sessions survive environment restart and expired or revoked sessions fail closed
+ok 44 - 02d AC2: Operator sessions survive environment restart and expired or revoked sessions fail closed
+  ---
+  duration_ms: 652.1947
+  type: 'test'
+  ...
+# Subtest: 02d AC3: Revoking a representative grant is atomic and a mid-revoke throw preserves grant and audit
+ok 45 - 02d AC3: Revoking a representative grant is atomic and a mid-revoke throw preserves grant and audit
+  ---
+  duration_ms: 4.0247
+  type: 'test'
+  ...
+# Subtest: 02d AC4: No databasePath field remains on a converted store
+ok 46 - 02d AC4: No databasePath field remains on a converted store
+  ---
+  duration_ms: 1.5
+  type: 'test'
+  ...
+1..46
+# tests 46
+# suites 0
+# pass 46
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 33804.9229

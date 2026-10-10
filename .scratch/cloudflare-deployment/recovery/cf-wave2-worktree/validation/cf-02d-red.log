@@ -1,0 +1,625 @@
+TAP version 13
+# (node:148472) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: 02d AC1: Neither operator store opens a connection or accepts a path
+ok 1 - 02d AC1: Neither operator store opens a connection or accepts a path
+  ---
+  duration_ms: 22.2701
+  type: 'test'
+  ...
+# Subtest: 02d AC2: Operator sessions survive environment restart and expired or revoked sessions fail closed
+not ok 2 - 02d AC2: Operator sessions survive environment restart and expired or revoked sessions fail closed
+  ---
+  duration_ms: 258.2577
+  type: 'test'
+  location: 'C:\\AI2026\\chat-marketplace-cloudflare-02d-reconciled\\test\\sql-port-operator-stores.test.ts:1:1296'
+  failureType: 'testCodeFailure'
+  error: 'this[#database].exec is not a function'
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    new SqliteOperatorRepresentativeGrantStore (C:\AI2026\chat-marketplace-cloudflare-02d-reconciled\domains\shortlet\src\operator-representative-authority.ts:169:20)
+    new LocalApartmentOwnerEnvironment (C:\AI2026\chat-marketplace-cloudflare-02d-reconciled\apps\local-owner\src\local-owner-environment.ts:545:23)
+    TestContext.<anonymous> (C:\AI2026\chat-marketplace-cloudflare-02d-reconciled\test\sql-port-operator-stores.test.ts:36:13)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: 02d AC3: Revoking a representative grant is atomic and a mid-revoke throw preserves grant and audit
+ok 3 - 02d AC3: Revoking a representative grant is atomic and a mid-revoke throw preserves grant and audit
+  ---
+  duration_ms: 11.1919
+  type: 'test'
+  ...
+# Subtest: 02d AC4: No databasePath field remains on a converted store
+not ok 4 - 02d AC4: No databasePath field remains on a converted store
+  ---
+  duration_ms: 5.3322
+  type: 'test'
+  location: 'C:\\AI2026\\chat-marketplace-cloudflare-02d-reconciled\\test\\sql-port-operator-stores.test.ts:1:4370'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input was expected to not match the regular expression /readonly\s+databasePath\s*:/. Input:
+    
+    'import type { BookingContract, Reservation } from "./card-payment.js";\r\n' +
+      'import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";\r\n' +
+      '\r\n' +
+      '/** Small in-memory authoritative aggregate store; adapters can replace it with a transactional repository. */\r\n' +
+      'export interface BookingStateRepository {\r\n' +
+      '  findContractById(contractId: string): BookingContract | null;\r\n' +
+      '  saveContract(contract: BookingContract): void;\r\n' +
+      '  /** Commits the two halves of a Booking together. */\r\n' +
+      '  saveBookingAtomically(input: {\r\n' +
+      '    contract: BookingContract;\r\n' +
+      '    reservation: Reservation;\r\n' +
+      '  }): void;\r\n' +
+      '  removeBookingAtomically(input: {\r\n' +
+      '    contractId: string;\r\n' +
+      '    reservationId: string;\r\n' +
+      '  }): void;\r\n' +
+      '  findReservationById(reservationId: string): Reservation | null;\r\n' +
+      '  saveReservation(reservation: Reservation): void;\r\n' +
+      '  mutateContract(\r\n' +
+      '    contractId: string,\r\n' +
+      '    expectedVersion: number,\r\n' +
+      '    mutation: (current: BookingContract) => BookingContract,\r\n' +
+      '  ): BookingContract;\r\n' +
+      '  transitionReservationStatus(\r\n' +
+      '    reservationId: string,\r\n' +
+      '    expectedStatus: "confirmed",\r\n' +
+      '    nextStatus: "cancelled" | "no_show",\r\n' +
+      '  ): Reservation;\r\n' +
+      '}\r\n' +
+      '\r\n' +
+      'export class InMemoryBookingStateRepository implements BookingStateRepository {\r\n' +
+      '  readonly #contracts = new Map<string, BookingContract>();\r\n' +
+      '  readonly #reservations = new Map<string, Reservation>();\r\n' +
+      '  constructor(\r\n' +
+      '    seed: {\r\n' +
+      '      contracts?: readonly BookingContract[];\r\n' +
+      '      reservations?: readonly Reservation[];\r\n' +
+      '    } = {},\r\n' +
+      '  ) {\r\n' +
+      '    seed.contracts?.forEach((contract) =>\r\n' +
+      '      this.#contracts.set(contract.contractId, contract),\r\n' +
+      '    );\r\n' +
+      '    seed.reservations?.forEach((reservation) =>\r\n' +
+      '      this.#reservations.set(reservation.reservationId, reservation),\r\n' +
+      '    );\r\n' +
+      '  }\r\n' +
+      '  findContractById(id: string): BookingContract | null {\r\n' +
+      '    return this.#contracts.get(id) ?? null;\r\n' +
+      '  }\r\n' +
+      '  saveContract(contract: BookingContract): void {\r\n' +
+      '    this.#contracts.set(contract.contractId, contract);\r\n' +
+      '  }\r\n' +
+      '  saveBookingAtomically(input: {\r\n' +
+      '    contract: BookingContract;\r\n' +
+      '    reservation: Reservation;\r\n' +
+      '  }): void {\r\n' +
+      '    if (\r\n' +
+      '      input.contract.reservationId !== input.reservation.reservationId ||\r\n' +
+      '      input.contract.contractId !== input.reservation.contractId\r\n' +
+      '    )\r\n' +
+      '      throw new Error("Booking identity mismatch");\r\n' +
+      '    const existingContract = this.#contracts.get(input.contract.contractId);\r\n' +
+      '    const existingReservation = this.#reservations.get(\r\n' +
+      '      input.reservation.reservationId,\r\n' +
+      '    );\r\n' +
+      '    if (\r\n' +
+      '      (existingContract &&\r\n' +
+      '        (existingContract.reservationId !== input.reservation.reservationId ||\r\n' +
+      '          existingContract.contractId !== input.contract.contractId)) ||\r\n' +
+      '      (existingReservation &&\r\n' +
+      '        (existingReservation.contractId !== input.contract.contractId ||\r\n' +
+      '          existingReservation.reservationId !==\r\n' +
+      '            input.reservation.reservationId))\r\n' +
+      '    )\r\n' +
+      '      throw new Error("Booking identity conflict");\r\n' +
+      '    this.#contracts.set(input.contract.contractId, input.contract);\r\n' +
+      '    this.#reservations.set(input.reservation.reservationId, input.reservation);\r\n' +
+      '  }\r\n' +
+      '  removeBookingAtomically(input: {\r\n' +
+      '    contractId: string;\r\n' +
+      '    reservationId: string;\r\n' +
+      '  }): void {\r\n' +
+      '    this.#contracts.delete(input.contractId);\r\n' +
+      '    this.#reservations.delete(input.reservationId);\r\n' +
+      '  }\r\n' +
+      '  findReservationById(id: string): Reservation | null {\r\n' +
+      '    return this.#reservations.get(id) ?? null;\r\n' +
+      '  }\r\n' +
+      '  saveReservation(reservation: Reservation): void {\r\n' +
+      '    this.#reservations.set(reservation.reservationId, reservation);\r\n' +
+      '  }\r\n' +
+      '  mutateContract(\r\n' +
+      '    id: string,\r\n' +
+      '    expectedVersion: number,\r\n' +
+      '    mutation: (current: BookingContract) => BookingContract,\r\n' +
+      '  ): BookingContract {\r\n' +
+      '    const current = this.#contracts.get(id);\r\n' +
+      '    if (!current || current.contractVersion !== expectedVersion)\r\n' +
+      '      throw new Error("STALE_ACTION");\r\n' +
+      '    const next = mutation(current);\r\n' +
+      '    if (next.contractVersion !== expectedVersion + 1)\r\n' +
+      '      throw new Error("Invalid atomic contract version");\r\n' +
+      '    this.#contracts.set(id, next);\r\n' +
+      '    return next;\r\n' +
+      '  }\r\n' +
+      '  transitionReservationStatus(\r\n' +
+      '    id: string,\r\n' +
+      '    expectedStatus: "confirmed",\r\n' +
+      '    nextStatus: "cancelled" | "no_show",\r\n' +
+      '  ): Reservation {\r\n' +
+      '    const current = this.#reservations.get(id);\r\n' +
+      '    if (!current || current.status !== expectedStatus)\r\n' +
+      '      throw new Error("STALE_ACTION");\r\n' +
+      '    const next = { ...current, status: nextStatus };\r\n' +
+      '    this.#reservations.set(id, next);\r\n' +
+      '    return next;\r\n' +
+      '  }\r\n' +
+      '}\r\n' +
+      '\r\n' +
+      '/**\r\n' +
+      ' * Durable SQLite implementation of BookingStateRepository for the Guest\r\n' +
+      ' * composition. Authoritative contracts/reservations committed by the payment\r\n' +
+      ' * confirmation path survive application restart in this repository.\r\n' +
+      ' */\r\n' +
+      'export class SqliteBookingStateRepository implements BookingStateRepository {\r\n' +
+      '  readonly databasePath: string;\r\n' +
+      '  readonly #database: SqlDatabase;\r\n' +
+      '  #closed = false;\r\n' +
+      '\r\n' +
+      '  constructor(database: SqlDatabase, databasePath: string) {\r\n' +
+      '    this.databasePath = databasePath;\r\n' +
+      '    this.#database = database;\r\n' +
+      '    this.#database.exec(`\r\n' +
+      '      CREATE TABLE IF NOT EXISTS booking_contracts (\r\n' +
+      '        contract_id TEXT PRIMARY KEY,\r\n' +
+      '        contract_json TEXT NOT NULL\r\n' +
+      '      );\r\n' +
+      '      CREATE TABLE IF NOT EXISTS booking_reservations (\r\n' +
+      '        reservation_id TEXT PRIMARY KEY,\r\n' +
+      '        reservation_json TEXT NOT NULL\r\n' +
+      '      );\r\n' +
+      '      CREATE INDEX IF NOT EXISTS idx_booking_contracts_offer\r\n' +
+      '        ON booking_contracts (contract_json);\r\n' +
+      '    `);\r\n' +
+      '  }\r\n' +
+      '\r\n' +
+      '  findContractById(id: string): BookingContract | null {\r\n' +
+      '    const row = this.#database\r\n' +
+      '      .prepare(\r\n' +
+      '        "SELECT contract_json FROM booking_contracts WHERE contract_id = $id",\r\n' +
+      '      )\r\n' +
+      '      .get({ $id: id });\r\n' +
+      '    if (!row || typeof row.contract_json !== "string") return null;\r\n' +
+      '    try {\r\n' +
+      '      const parsed: unknown = JSON.parse(row.contract_json);\r\n' +
+      '      return parsed !== null &&\r\n' +
+      '        typeof parsed === "object" &&\r\n' +
+      '        !Array.isArray(parsed)\r\n' +
+      '        ? (parsed as BookingContract)\r\n' +
+      '        : null;\r\n' +
+      '    } catch {\r\n' +
+      '      return null;\r\n' +
+      '    }\r\n' +
+      '  }\r\n' +
+      '\r\n' +
+      '  saveContract(contract: BookingContract): void {\r\n' +
+      '    this.#database\r\n' +
+      '      .prepare(\r\n' +
+      '        "INSERT INTO booking_contracts (contract_id, contract_json) VALUES ($id, $json) ON CONFLICT(contract_id) DO UPDATE SET contract_json = excluded.contract_json",\r\n' +
+      '      )\r\n' +
+      '      .run({ $id: contract.contractId, $json: JSON.stringify(contract) });\r\n' +
+      '  }\r\n' +
+      '\r\n' +
+      '  saveBookingAtomically(input: {\r\n' +
+      '    contract: BookingContract;\r\n' +
+      '    reservation: Reservation;\r\n' +
+      '  }): void {\r\n' +
+      '    if (\r\n' +
+      '      input.contract.reservationId !== input.reservation.reservationId ||\r\n' +
+      '      input.contract.contractId !== input.reservation.contractId\r\n' +
+      '    )\r\n' +
+      '      throw new Error("Booking identity mismatch");\r\n' +
+      '    const existingContract = this.findContractById(input.contract.contractId);\r\n' +
+      '    const existingReservation = this.findReservationById(\r\n' +
+      '      input.reservation.reservationId,\r\n' +
+      '    );\r\n' +
+      '    if (\r\n' +
+      '      (existingContract &&\r\n' +
+      '        (existingContract.reservationId !== input.reservation.reservationId ||\r\n' +
+      '          existingContract.contractId !== input.contract.contractId)) ||\r\n' +
+      '      (existingReservation &&\r\n' +
+      '        (existingReservation.contractId !== input.contract.contractId ||\r\n' +
+      '          existingReservation.reservationId !==\r\n' +
+      '            input.reservation.reservationId))\r\n' +
+      '    )\r\n' +
+      '      throw new Error("Booking identity conflict");\r\n' +
+      '    // ADR 0044/0046/0095: synchronous atomic write; nested callers retain their transaction boundary.\r\n' +
+      '    this.#database.transaction(() => {\r\n' +
+      '      this.saveContract(input.contract);\r\n' +
+      '      this.saveReservation(input.reservation);\r\n' +
+      '    });\r\n' +
+      '  }\r\n' +
+      '\r\n' +
+      '  removeBookingAtomically(input: {\r\n' +
+      '    contractId: string;\r\n' +
+      '    reservationId: string;\r\n' +
+      '  }): void {\r\n' +
+      '    this.#database\r\n' +
+      '      .prepare("DELETE FROM booking_contracts WHERE contract_id = $id")\r\n' +
+      '      .run({ $id: input.contractId });\r\n' +
+      '    this.#database\r\n' +
+      '      .prepare("DELETE FROM booking_reservations WHERE reservation_id = $id")\r\n' +
+      '      .run({ $id: input.reservationId });\r\n' +
+      '  }\r\n' +
+      '\r\n' +
+      '  findReservationById(id: string): Reservation | null {\r\n' +
+      '    const row = this.#database\r\n' +
+      '      .prepare(\r\n' +
+      '        "SELECT reservation_json FROM booking_reservations WHERE reservation_id = $id",\r\n' +
+      '      )\r\n' +
+      '      .get({ $id: id });\r\n' +
+      '    if (!row || typeof row.reservation_json !== "string") return null;\r\n' +
+      '    try {\r\n' +
+      '      const parsed: unknown = JSON.parse(row.reservation_json);\r\n' +
+      '      return parsed !== null &&\r\n' +
+      '        typeof parsed === "object" &&\r\n' +
+      '        !Array.isArray(parsed)\r\n' +
+      '        ? (parsed as Reservation)\r\n' +
+      '        : null;\r\n' +
+      '    } catch {\r\n' +
+      '      return null;\r\n' +
+      '    }\r\n' +
+      '  }\r\n' +
+      '\r\n' +
+      '  saveReservation(reservation: Reservation): void {\r\n' +
+      '    this.#database\r\n' +
+      '      .prepare(\r\n' +
+      '        "INSERT INTO booking_reservations (reservation_id, reservation_json) VALUES ($id, $json) ON CONFLICT(reservation_id) DO UPDATE SET reservation_json = excluded.reservation_json",\r\n' +
+      '      )\r\n' +
+      '      .run({\r\n' +
+      '        $id: reservation.reservationId,\r\n' +
+      '        $json: JSON.stringify(reservation),\r\n' +
+      '      });\r\n' +
+      '  }\r\n' +
+      '\r\n' +
+      '  mutateContract(\r\n' +
+      '    id: string,\r\n' +
+      '    expectedVersion: number,\r\n' +
+      '    mutation: (current: BookingContract) => BookingContract,\r\n' +
+      '  ): BookingContract {\r\n' +
+      '    const current = this.findContractById(id);\r\n' +
+      '    if (!current || current.contractVersion !== expectedVersion)\r\n' +
+      '      throw new Error("STALE_ACTION");\r\n' +
+      '    const next = mutation(current);\r\n' +
+      '    if (next.contractVersion !== expectedVersion + 1)\r\n' +
+      '      throw new Error("Invalid atomic contract version");\r\n' +
+      '    this.saveContract(next);\r\n' +
+      '    return next;\r\n' +
+      '  }\r\n' +
+      '\r\n' +
+      '  transitionReservationStatus(\r\n' +
+      '    id: string,\r\n' +
+      '    expectedStatus: "confirmed",\r\n' +
+      '    nextStatus: "cancelled" | "no_show",\r\n' +
+      '  ): Reservation {\r\n' +
+      '    const current = this.findReservationById(id);\r\n' +
+      '    if (!current || current.status !== expectedStatus)\r\n' +
+      '      throw new Error("STALE_ACTION");\r\n' +
+      '    const next = { ...current, status: nextStatus };\r\n' +
+      '    this.saveReservation(next);\r\n' +
+      '    return next;\r\n' +
+      '  }\r\n' +
+      '\r\n' +
+      '  close(): void {\r\n' +
+      '    if (!this.#closed) this.#closed = true;\r\n' +
+      '  }\r\n' +
+      '}\r\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    import type { BookingContract, Reservation } from "./card-payment.js";
+    import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
+    
+    /** Small in-memory authoritative aggregate store; adapters can replace it with a transactional repository. */
+    export interface BookingStateRepository {
+      findContractById(contractId: string): BookingContract | null;
+      saveContract(contract: BookingContract): void;
+      /** Commits the two halves of a Booking together. */
+      saveBookingAtomically(input: {
+        contract: BookingContract;
+        reservation: Reservation;
+      }): void;
+      removeBookingAtomically(input: {
+        contractId: string;
+        reservationId: string;
+      }): void;
+      findReservationById(reservationId: string): Reservation | null;
+      saveReservation(reservation: Reservation): void;
+      mutateContract(
+        contractId: string,
+        expectedVersion: number,
+        mutation: (current: BookingContract) => BookingContract,
+      ): BookingContract;
+      transitionReservationStatus(
+        reservationId: string,
+        expectedStatus: "confirmed",
+        nextStatus: "cancelled" | "no_show",
+      ): Reservation;
+    }
+    
+    export class InMemoryBookingStateRepository implements BookingStateRepository {
+      readonly #contracts = new Map<string, BookingContract>();
+      readonly #reservations = new Map<string, Reservation>();
+      constructor(
+        seed: {
+          contracts?: readonly BookingContract[];
+          reservations?: readonly Reservation[];
+        } = {},
+      ) {
+        seed.contracts?.forEach((contract) =>
+          this.#contracts.set(contract.contractId, contract),
+        );
+        seed.reservations?.forEach((reservation) =>
+          this.#reservations.set(reservation.reservationId, reservation),
+        );
+      }
+      findContractById(id: string): BookingContract | null {
+        return this.#contracts.get(id) ?? null;
+      }
+      saveContract(contract: BookingContract): void {
+        this.#contracts.set(contract.contractId, contract);
+      }
+      saveBookingAtomically(input: {
+        contract: BookingContract;
+        reservation: Reservation;
+      }): void {
+        if (
+          input.contract.reservationId !== input.reservation.reservationId ||
+          input.contract.contractId !== input.reservation.contractId
+        )
+          throw new Error("Booking identity mismatch");
+        const existingContract = this.#contracts.get(input.contract.contractId);
+        const existingReservation = this.#reservations.get(
+          input.reservation.reservationId,
+        );
+        if (
+          (existingContract &&
+            (existingContract.reservationId !== input.reservation.reservationId ||
+              existingContract.contractId !== input.contract.contractId)) ||
+          (existingReservation &&
+            (existingReservation.contractId !== input.contract.contractId ||
+              existingReservation.reservationId !==
+                input.reservation.reservationId))
+        )
+          throw new Error("Booking identity conflict");
+        this.#contracts.set(input.contract.contractId, input.contract);
+        this.#reservations.set(input.reservation.reservationId, input.reservation);
+      }
+      removeBookingAtomically(input: {
+        contractId: string;
+        reservationId: string;
+      }): void {
+        this.#contracts.delete(input.contractId);
+        this.#reservations.delete(input.reservationId);
+      }
+      findReservationById(id: string): Reservation | null {
+        return this.#reservations.get(id) ?? null;
+      }
+      saveReservation(reservation: Reservation): void {
+        this.#reservations.set(reservation.reservationId, reservation);
+      }
+      mutateContract(
+        id: string,
+        expectedVersion: number,
+        mutation: (current: BookingContract) => BookingContract,
+      ): BookingContract {
+        const current = this.#contracts.get(id);
+        if (!current || current.contractVersion !== expectedVersion)
+          throw new Error("STALE_ACTION");
+        const next = mutation(current);
+        if (next.contractVersion !== expectedVersion + 1)
+          throw new Error("Invalid atomic contract version");
+        this.#contracts.set(id, next);
+        return next;
+      }
+      transitionReservationStatus(
+        id: string,
+        expectedStatus: "confirmed",
+        nextStatus: "cancelled" | "no_show",
+      ): Reservation {
+        const current = this.#reservations.get(id);
+        if (!current || current.status !== expectedStatus)
+          throw new Error("STALE_ACTION");
+        const next = { ...current, status: nextStatus };
+        this.#reservations.set(id, next);
+        return next;
+      }
+    }
+    
+    /**
+     * Durable SQLite implementation of BookingStateRepository for the Guest
+     * composition. Authoritative contracts/reservations committed by the payment
+     * confirmation path survive application restart in this repository.
+     */
+    export class SqliteBookingStateRepository implements BookingStateRepository {
+      readonly databasePath: string;
+      readonly #database: SqlDatabase;
+      #closed = false;
+    
+      constructor(database: SqlDatabase, databasePath: string) {
+        this.databasePath = databasePath;
+        this.#database = database;
+        this.#database.exec(`
+          CREATE TABLE IF NOT EXISTS booking_contracts (
+            contract_id TEXT PRIMARY KEY,
+            contract_json TEXT NOT NULL
+          );
+          CREATE TABLE IF NOT EXISTS booking_reservations (
+            reservation_id TEXT PRIMARY KEY,
+            reservation_json TEXT NOT NULL
+          );
+          CREATE INDEX IF NOT EXISTS idx_booking_contracts_offer
+            ON booking_contracts (contract_json);
+        `);
+      }
+    
+      findContractById(id: string): BookingContract | null {
+        const row = this.#database
+          .prepare(
+            "SELECT contract_json FROM booking_contracts WHERE contract_id = $id",
+          )
+          .get({ $id: id });
+        if (!row || typeof row.contract_json !== "string") return null;
+        try {
+          const parsed: unknown = JSON.parse(row.contract_json);
+          return parsed !== null &&
+            typeof parsed === "object" &&
+            !Array.isArray(parsed)
+            ? (parsed as BookingContract)
+            : null;
+        } catch {
+          return null;
+        }
+      }
+    
+      saveContract(contract: BookingContract): void {
+        this.#database
+          .prepare(
+            "INSERT INTO booking_contracts (contract_id, contract_json) VALUES ($id, $json) ON CONFLICT(contract_id) DO UPDATE SET contract_json = excluded.contract_json",
+          )
+          .run({ $id: contract.contractId, $json: JSON.stringify(contract) });
+      }
+    
+      saveBookingAtomically(input: {
+        contract: BookingContract;
+        reservation: Reservation;
+      }): void {
+        if (
+          input.contract.reservationId !== input.reservation.reservationId ||
+          input.contract.contractId !== input.reservation.contractId
+        )
+          throw new Error("Booking identity mismatch");
+        const existingContract = this.findContractById(input.contract.contractId);
+        const existingReservation = this.findReservationById(
+          input.reservation.reservationId,
+        );
+        if (
+          (existingContract &&
+            (existingContract.reservationId !== input.reservation.reservationId ||
+              existingContract.contractId !== input.contract.contractId)) ||
+          (existingReservation &&
+            (existingReservation.contractId !== input.contract.contractId ||
+              existingReservation.reservationId !==
+                input.reservation.reservationId))
+        )
+          throw new Error("Booking identity conflict");
+        // ADR 0044/0046/0095: synchronous atomic write; nested callers retain their transaction boundary.
+        this.#database.transaction(() => {
+          this.saveContract(input.contract);
+          this.saveReservation(input.reservation);
+        });
+      }
+    
+      removeBookingAtomically(input: {
+        contractId: string;
+        reservationId: string;
+      }): void {
+        this.#database
+          .prepare("DELETE FROM booking_contracts WHERE contract_id = $id")
+          .run({ $id: input.contractId });
+        this.#database
+          .prepare("DELETE FROM booking_reservations WHERE reservation_id = $id")
+          .run({ $id: input.reservationId });
+      }
+    
+      findReservationById(id: string): Reservation | null {
+        const row = this.#database
+          .prepare(
+            "SELECT reservation_json FROM booking_reservations WHERE reservation_id = $id",
+          )
+          .get({ $id: id });
+        if (!row || typeof row.reservation_json !== "string") return null;
+        try {
+          const parsed: unknown = JSON.parse(row.reservation_json);
+          return parsed !== null &&
+            typeof parsed === "object" &&
+            !Array.isArray(parsed)
+            ? (parsed as Reservation)
+            : null;
+        } catch {
+          return null;
+        }
+      }
+    
+      saveReservation(reservation: Reservation): void {
+        this.#database
+          .prepare(
+            "INSERT INTO booking_reservations (reservation_id, reservation_json) VALUES ($id, $json) ON CONFLICT(reservation_id) DO UPDATE SET reservation_json = excluded.reservation_json",
+          )
+          .run({
+            $id: reservation.reservationId,
+            $json: JSON.stringify(reservation),
+          });
+      }
+    
+      mutateContract(
+        id: string,
+        expectedVersion: number,
+        mutation: (current: BookingContract) => BookingContract,
+      ): BookingContract {
+        const current = this.findContractById(id);
+        if (!current || current.contractVersion !== expectedVersion)
+          throw new Error("STALE_ACTION");
+        const next = mutation(current);
+        if (next.contractVersion !== expectedVersion + 1)
+          throw new Error("Invalid atomic contract version");
+        this.saveContract(next);
+        return next;
+      }
+    
+      transitionReservationStatus(
+        id: string,
+        expectedStatus: "confirmed",
+        nextStatus: "cancelled" | "no_show",
+      ): Reservation {
+        const current = this.findReservationById(id);
+        if (!current || current.status !== expectedStatus)
+          throw new Error("STALE_ACTION");
+        const next = { ...current, status: nextStatus };
+        this.saveReservation(next);
+        return next;
+      }
+    
+      close(): void {
+        if (!this.#closed) this.#closed = true;
+      }
+    }
+    
+  operator: 'doesNotMatch'
+  stack: |-
+    TestContext.<anonymous> (C:\AI2026\chat-marketplace-cloudflare-02d-reconciled\test\sql-port-operator-stores.test.ts:158:12)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+1..4
+# tests 4
+# suites 0
+# pass 2
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 4262.7569
