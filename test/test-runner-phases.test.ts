@@ -31,6 +31,16 @@ test("every file that calls launchRealBrowser directly is in the browser phase",
   assert.ok(plan.concurrent.every((file) => !callsChromeDirectly(file)), "a concurrent file calls launchRealBrowser");
 });
 
+test("the browser phase holds no file that only mentions launchRealBrowser", () => {
+  const plan = planTestPhases({ root, args: [] });
+  const browserHelperImports = readdirSync(join(root, "test", "helpers"))
+    .filter((name) => name.endsWith(".ts") && name !== "chrome-devtools.ts" && readFileSync(join(root, "test", "helpers", name), "utf8").includes("launchRealBrowser"))
+    .map((name) => `./helpers/${name.replace(/\.ts$/, ".js")}`);
+  const reachesChrome = (file: string) =>
+    callsChromeDirectly(file) || browserHelperImports.some((helper) => readFileSync(join(root, file), "utf8").includes(`"${helper}"`));
+  assert.ok(plan.browser.every(reachesChrome), "a browser-phase file neither calls launchRealBrowser nor imports a browser helper");
+});
+
 test("--non-browser plan runs no real-browser files and keeps every other file", () => {
   const defaults = planTestPhases({ root, args: [] });
   const nonBrowser = planTestPhases({ root, args: ["--non-browser"] });

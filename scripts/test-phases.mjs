@@ -23,7 +23,7 @@ export function planTestPhases({ root, args }) {
     .map((name) => `./helpers/${name.replace(/\.ts$/, ".js")}`);
   const drivesBrowser = (file) => {
     const source = readFileSync(join(root, file), "utf8");
-    return source.includes("launchRealBrowser") || browserHelpers.some((helper) => source.includes(`"${helper}"`));
+    return /launchRealBrowser\s*\(/.test(source) || browserHelpers.some((helper) => source.includes(`"${helper}"`));
   };
   const browserFiles = files.filter(drivesBrowser);
   const concurrent = files.filter((file) => !browserFiles.includes(file));
