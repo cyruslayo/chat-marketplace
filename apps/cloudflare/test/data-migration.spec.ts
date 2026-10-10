@@ -428,3 +428,80 @@ test("16 B: verify reports the credential tables' counts apart from the applicat
   expect(Object.keys(verified.excludedTables).sort()).toEqual(Object.keys(DAILY_EXPORT_EXCLUDED).sort());
   for (const table of Object.keys(DAILY_EXPORT_EXCLUDED)) expect(Object.hasOwn(verified.tables, table)).toBe(false);
 });
+
+/** The break-glass in docs/runbooks/cloudflare-restore.md, section 2 (B0 to B7), driven through the object and the EXPORTS binding. */
+interface CutoverStatusBody {
+  readonly ok: boolean;
+  readonly cutoverCompletedAt: string | null;
+  readonly cutoverMarker: string;
+}
+
+async function cutoverStatusBody(stub: Stub): Promise<CutoverStatusBody> {
+  const response = await call(stub, "GET", "/_ops/status");
+  expect(response.status).toBe(200);
+  const body = (await response.json()) as CutoverStatusBody;
+  return { ok: body.ok, cutoverCompletedAt: body.cutoverCompletedAt, cutoverMarker: body.cutoverMarker };
+}
+
+function loseFlag(stub: Stub): Promise<void> {
+  // A storage reset or restore that clears the one-way flag row, with the R2 marker untouched (issue 16 A).
+  return runInDurableObject(stub, (_instance, ctx) => { new DurableObjectSqlDatabase(ctx.storage).exec("DELETE FROM migration_state"); });
+}
+
+test("16 A break-glass (positive path): with the flag lost, the marker delete through R2 clears status, the import succeeds, and re-closing refuses imports again", async () => {
+  const target = targetStub();
+  const key = cutoverMarkerKey(target.id.toString());
+  const completed = await call(target, "POST", "/_ops/cutover/complete", {});
+  const at = ((await completed.json()) as { cutoverCompletedAt: string }).cutoverCompletedAt;
+  await loseFlag(target);
+
+  // B0: the marker is present and the status reads its timestamp. A status read does not re-assert the flag.
+  expect(await cutoverStatusBody(target)).toEqual({ ok: true, cutoverCompletedAt: at, cutoverMarker: "present" });
+
+  // B2: delete the marker through the binding, as `cf r2 objects delete` does. No import is attempted before this, because
+  // an import re-asserts the flag from the marker (the stop path below covers that).
+  await env.EXPORTS.delete(key);
+  expect(await env.EXPORTS.get(key)).toBeNull();
+
+  // B3: the flag is clear, so the status reads absent and unset.
+  expect(await cutoverStatusBody(target)).toEqual({ ok: true, cutoverCompletedAt: null, cutoverMarker: "absent" });
+
+  // B4: the rebuild's import is accepted.
+  const imported = await call(target, "POST", "/_ops/import", { table: "operators", rows: operatorRows("op-breakglass-rebuilt", 1) });
+  expect(imported.status).toBe(200);
+  expect((await verify(target)).operators?.rowCount).toBe(1);
+
+  // B5 and B6: re-close writes the marker, then the flag. The new timestamp is returned and the status reads both.
+  const reclosed = await call(target, "POST", "/_ops/cutover/complete", {});
+  expect(reclosed.status).toBe(200);
+  const reclosedAt = ((await reclosed.json()) as { cutoverCompletedAt: string }).cutoverCompletedAt;
+  expect(await cutoverStatusBody(target)).toEqual({ ok: true, cutoverCompletedAt: reclosedAt, cutoverMarker: "present" });
+  expect(await env.EXPORTS.get(key)).not.toBeNull();
+
+  const refusedAgain = await call(target, "POST", "/_ops/import", { table: "operators", rows: operatorRows("op-breakglass-after", 1) });
+  expect(refusedAgain.status).toBe(409);
+  expect(((await refusedAgain.json()) as { code: string }).code).toBe("CUTOVER_COMPLETE");
+  expect((await verify(target)).operators?.rowCount).toBe(1);
+});
+
+test("16 A break-glass (stop path): when the flag survived in storage, the marker delete does not hold, status shows the completed cutover, and the next import re-creates the marker and refuses", async () => {
+  const target = targetStub();
+  const key = cutoverMarkerKey(target.id.toString());
+  const completed = await call(target, "POST", "/_ops/cutover/complete", {});
+  const at = ((await completed.json()) as { cutoverCompletedAt: string }).cutoverCompletedAt;
+
+  // B2 with the flag still in storage (no loseFlag): the marker goes, but the flag row is intact.
+  await env.EXPORTS.delete(key);
+
+  // B3 stop signal: cutoverCompletedAt is set even though the marker reads absent. A status read does not re-create the marker.
+  expect(await cutoverStatusBody(target)).toEqual({ ok: true, cutoverCompletedAt: at, cutoverMarker: "absent" });
+  expect(await env.EXPORTS.get(key)).toBeNull();
+
+  // The next import reconciles: the flag with no marker repairs the marker, and the import is refused.
+  const refused = await call(target, "POST", "/_ops/import", { table: "operators", rows: operatorRows("op-stopped", 1) });
+  expect(refused.status).toBe(409);
+  expect(((await refused.json()) as { code: string }).code).toBe("CUTOVER_COMPLETE");
+  expect(await env.EXPORTS.get(key)).not.toBeNull();
+  expect(await cutoverStatusBody(target)).toEqual({ ok: true, cutoverCompletedAt: at, cutoverMarker: "present" });
+  expect((await verify(target)).operators?.rowCount).toBe(0);
+});

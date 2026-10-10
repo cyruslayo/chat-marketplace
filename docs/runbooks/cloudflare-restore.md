@@ -110,15 +110,18 @@ stops if the flag is still there.
   key means stop. Read the key and record its `completedAt`, the original cutover time:
   `npm exec cf -- r2 objects get "_ops/cutover/<object id>.json" --bucket-name "shortlet-pilot-production-exports" --mode production --text`.
 - **B1. Freeze and record.** Before B2, no request may reach this tenant's object: stop the Worker route or serve the freeze response
-  (the mechanism is in cutover runbook, section 1). Record the incident reason, the operator and the time in the cutover log.
+  (the mechanism is in cutover runbook, section 1). Send no import before B2: an import re-asserts the flag from a present marker,
+  so an import sent first would put the flag back. Record the incident reason, the operator and the time in the cutover log.
 - **B2. Delete the marker.** Run the dry run first, then the same command without `--dry-run`. Do not pass `--force`, so the CLI's
   confirmation shows the key:
   `npm exec cf -- r2 objects delete "_ops/cutover/<object id>.json" --bucket-name "shortlet-pilot-production-exports" --mode production --dry-run`.
 - **B3. Check that the flag did not survive. Stop if it did.** List the prefix again; the key must be absent. Then `GET /_ops/status`.
-  The status request starts the object, so the result is the state after its start. Expected: `cutoverCompletedAt` is `null` and
-  `cutoverMarker` is `absent`. If `cutoverCompletedAt` is set, or the key reappears, the flag survived in the object's storage and the
-  marker was re-created. Do not import, and do not run B4 or B5 into this object. A rebuild into this object is then not possible
-  under the current design; the recovery is a separate decision (cutover runbook, Needs user item 8).
+  Expected: `cutoverCompletedAt` is `null` and `cutoverMarker` is `absent`. Stop if `cutoverCompletedAt` is set. That means the flag
+  survived in the object's storage. The status read does not re-create the marker, so `cutoverMarker` may read `absent` (the object
+  was already running) or `present` (the status request started the object, and its start re-created the marker). Either way, do not
+  import, and do not run B4 or B5 into this object. The next import, or the object's next start, re-creates the marker and refuses
+  with `CUTOVER_COMPLETE`. A rebuild into this object is then not possible under the current design; the recovery is a separate
+  decision (cutover runbook, Needs user item 8).
 - **B4. Rebuild.** Run steps 3 and 4 above: load the chosen day and verify the counts. Imports are accepted in this window because
   the object's flag is clear, which is why B1 must hold.
 - **B5. Re-close.** Send `POST /_ops/cutover/complete` with `-d '{}'` and the same headers as the restore route in section 1. The
