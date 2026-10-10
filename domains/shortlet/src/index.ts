@@ -49,6 +49,8 @@ export * from "./sqlite-operator-enforcement-state.js";
 export * from "./operator-representative-authority.js";
 export * from "./operator-session-authority.js";
 export * from "./guest-account-authority.js";
+export * from "./guest-account-links.js";
+export * from "./guest-identity.js";
 export * from "./relocation-choice.js";
 export * from "./relocation-policy.js";
 export * from "./reserve-payout-trust.js";

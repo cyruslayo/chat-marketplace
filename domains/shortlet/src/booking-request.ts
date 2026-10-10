@@ -240,6 +240,7 @@ export class BookingRequestManager {
       declinedAt: request.declinedAt ?? null,
       declineReason: request.declineReason ?? null
       ,phoneNumber: request.phoneNumber ?? null
+      ,contactEmailSnapshot: request.contactEmailSnapshot ?? null
     });
   }
 
@@ -471,6 +472,8 @@ export class BookingRequestManager {
       deliveredAt: deliveredAtIso,
       status: "disclosed"
       ,phoneNumber: contact?.phoneNumber
+      // ADR 0093: the contact email this request is made with, recorded once at creation as its claim evidence.
+      ,contactEmailSnapshot: contact?.contactEmail ?? null
     };
 
     this.#requests.set(requestId, bookingRequest);

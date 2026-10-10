@@ -8,8 +8,9 @@ import { BOOKING_PAYMENT_JOURNEYS_SCHEMA } from "../../../domains/shortlet/src/b
 import { BOOKING_STATE_SCHEMA } from "../../../domains/shortlet/src/booking-state.js";
 import { CHECKIN_SUPPORT_SCHEMA } from "../../../domains/shortlet/src/checkin-support.js";
 import { GUEST_ACCOUNT_SCHEMA } from "../../../domains/shortlet/src/guest-account-authority.js";
+import { GUEST_ACCOUNT_LINK_SCHEMA } from "../../../domains/shortlet/src/guest-account-links.js";
 import { GUEST_CONTACT_SCHEMA } from "../../../domains/shortlet/src/guest-contact.js";
-import { GUEST_INTERACTION_SCHEMA } from "../../../domains/shortlet/src/guest-interaction-store.js";
+import { GUEST_INTERACTION_SCHEMA, GUEST_REQUEST_CONTACT_SCHEMA } from "../../../domains/shortlet/src/guest-interaction-store.js";
 import { MANUAL_TRANSFERS_SCHEMA, MANUAL_TRANSFER_RECEIPTS_SCHEMA } from "../../../domains/shortlet/src/manual-transfer.js";
 import { OWNER_PAYABLE_SCHEMA } from "../../../domains/shortlet/src/owner-payable.js";
 import { OPERATOR_REPRESENTATIVE_SCHEMA } from "../../../domains/shortlet/src/operator-representative-authority.js";
@@ -80,6 +81,7 @@ const BASELINE_STATEMENTS: readonly string[] = [
 export const SHORTLET_SCHEMA_MIGRATIONS: readonly SchemaMigration[] = [
   { version: 1, name: "baseline: the tables the stores create", statements: BASELINE_STATEMENTS },
   { version: CUTOVER_STATE_MIGRATION_VERSION, name: "one-way cutover flag", statements: [CUTOVER_STATE_DDL] },
+  { version: 3, name: "guest accounts: linked principals, request claims and request contact snapshots", statements: [GUEST_ACCOUNT_LINK_SCHEMA, GUEST_REQUEST_CONTACT_SCHEMA] },
 ];
 
 /** The version the import checks for before it writes anything (ops-import.ts). */

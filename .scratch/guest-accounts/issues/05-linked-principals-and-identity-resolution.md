@@ -1,6 +1,6 @@
 # Linked principals and Guest identity resolution
 
-Status: ready-for-agent
+Status: claimed
 Type: task
 Blocked by: 04
 Requested: 2 Oct 2026
@@ -35,8 +35,22 @@ Everything a Guest owns is keyed by a session principal: `guest_threads.principa
 
 ## Tests to add/update
 
-New `test/guest-account-linking.test.ts`. Re-run the session tests that cover `resolveBrowserSession`, restart persistence (`HANDOFF-guest-restart-persistence.md`) and committed work (issue 13a of `guest-chat-first-ux`).
+New `test/guest-account-linking.test.ts`. Re-run the session tests that cover `resolveBrowserSession`, restart persistence (`test/guest-browser-restart.test.ts`; the earlier `HANDOFF-guest-restart-persistence.md` reference pointed at a file that does not exist) and committed work (`test/guest-new-conversation.test.ts`, issue 13a of `guest-chat-first-ux`).
 
 ## ADR compliance
 
 0004, 0070, 0075, 0093.
+
+## Comments
+
+- 10 Oct 2026, ADR map (0004, 0070, 0075, 0093, 0094; 0085 and 0086 read as context): 0004, linking and claims never rewrite `guest_booking_requests`, `booking_contracts`, `booking_reservations` or `guest_booking_snapshots` (AC3 snapshots them). 0070, the account identity holds principal ids as interaction identities, separate from `accountGuestId`. 0075, nothing is logged, and no audit entries are emitted. 0093, one principal links to at most one account, claims are per request, conflicts fail closed. 0094, missing or conflicting ownership grants no account authority.
+- 10 Oct 2026, personal-data classification: the new tables (`guest_account_principals`, `guest_account_request_claims`, `guest_booking_request_contacts`) are exported in the daily export, following the existing precedent. Only bearer-credential tables (`CREDENTIAL_TABLES`) are excluded. Like `guest_accounts` and `guest_contacts`, they hold personal data (email and principal identifiers) and are flagged for the DPIA (see issue 12a). This is a human decision to confirm.
+
+## Answer
+
+- `guest_account_principals` (Linked Principals) and `guest_account_request_claims` (scoped claims) are in `domains/shortlet/src/guest-account-links.ts`, with `SqliteGuestAccountLinks`. They are applied by migration 3 in `apps/cloudflare/src/schema.ts`.
+- `GuestIdentityResolver`, `anonymousGuestIdentity`, `authorizesPrincipalOwner`, `authorizesBookingRequest` and `resolveGuestContact` are in `domains/shortlet/src/guest-identity.ts`.
+- The contact snapshot is `guest_booking_request_contacts`, inserted once when a request is first saved (`SqliteGuestInteractionStore.saveBookingRequest`), and never rewritten. Decision: this is a sibling insert-only table, not an `ALTER TABLE ... ADD COLUMN`. An `ALTER` migration fails with a duplicate column on Node files that the store constructor already touched, and `export-node-sqlite --migrate` runs on exactly those files (runbook R5). The table is created with `IF NOT EXISTS` in both the store constructor and migration 3. The reason is recorded in the code comment on `GUEST_REQUEST_CONTACT_SCHEMA`.
+- `committedWork(principal, identity?)` lists work from the identity's linked principals only. Without an account it behaves as before.
+- Test coverage: `test/guest-account-linking.test.ts` (14 tests).
+- Still for issue 06: the account session cookie, and wiring `resolveBrowserSession` and the Primary Guest checks to a resolved account identity.

@@ -23,7 +23,8 @@ type GuestServerOptions = Omit<NonNullable<Parameters<typeof startLocalGuestServ
 
 export async function restartFixture(config: Partial<LocalGuestFixtureConfig> = {}, serverOptions: GuestServerOptions = {}) {
   const directory = mkdtempSync(join(tmpdir(), "guest-restart-"));
-  const databasePath = join(directory, "guest.sqlite");
+  // A caller may point several environments at one database file (two devices of one tenant, ADR 0004).
+  const databasePath = config.databasePath ?? join(directory, "guest.sqlite");
   let now = new Date("2026-09-03T10:00:00Z");
   let server = startLocalGuestServer({ ...serverOptions, port: 0, environment: LocalGuestEnvironment.openNode({ ...config, databasePath, clock: () => now }) });
   let base = `http://127.0.0.1:${await server.listen()}`;
