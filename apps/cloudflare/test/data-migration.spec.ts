@@ -321,3 +321,43 @@ test("16 D2: an import request over the 5 MiB chunk bound is refused before its 
   expect(((await response.json()) as { code: string }).code).toBe("BODY_TOO_LARGE");
   expect((await verify(target)).operators?.rowCount).toBe(0);
 });
+
+test("16 F3: an unauthenticated POST /_ops/cutover/complete is refused with 401 and sets no flag", async () => {
+  const target = targetStub();
+  const refused = await call(target, "POST", "/_ops/cutover/complete", {}, false);
+  expect(refused.status).toBe(401);
+  expect((await verifyBody(target)).cutoverCompletedAt).toBeNull();
+});
+
+test("16 F3: the authenticated status route reports the schema version and the cutover flag, and refuses an unauthenticated read", async () => {
+  const target = targetStub();
+  const unauthenticated = await call(target, "GET", "/_ops/status", undefined, false);
+  expect(unauthenticated.status).toBe(401);
+
+  const before = (await (await call(target, "GET", "/_ops/status")).json()) as {
+    ok: boolean; schemaVersion: number; expectedSchemaVersion: number; cutoverCompletedAt: string | null;
+  };
+  expect(before).toEqual({ ok: true, schemaVersion: SHORTLET_SCHEMA_VERSION, expectedSchemaVersion: SHORTLET_SCHEMA_VERSION, cutoverCompletedAt: null });
+
+  const completed = await call(target, "POST", "/_ops/cutover/complete", {});
+  const at = ((await completed.json()) as { cutoverCompletedAt: string }).cutoverCompletedAt;
+  const after = (await (await call(target, "GET", "/_ops/status")).json()) as { cutoverCompletedAt: string | null };
+  expect(after.cutoverCompletedAt).toBe(at);
+});
+
+test("16 F3: a rewound object that reads no cutover flag accepts imports again until the flag is set, which the restore check must catch", async () => {
+  const target = targetStub();
+  await call(target, "POST", "/_ops/cutover/complete", {});
+  // A point-in-time restore rewinds the flag row with the rest of the object's storage. Simulated here by removing it.
+  await runInDurableObject(target, (_instance, ctx) => { new DurableObjectSqlDatabase(ctx.storage).exec("DELETE FROM migration_state"); });
+
+  await importTable(target, "operators", operatorRows("op-rewound", 1));
+  expect((await verify(target)).operators?.rowCount).toBe(1);
+  const status = (await (await call(target, "GET", "/_ops/status")).json()) as { cutoverCompletedAt: string | null };
+  expect(status.cutoverCompletedAt).toBeNull();
+
+  // The recovery the restore runbook prescribes sets the flag again; from then on every import is refused.
+  await call(target, "POST", "/_ops/cutover/complete", {});
+  const refused = await call(target, "POST", "/_ops/import", { table: "operators", rows: operatorRows("op-after-restore", 1) });
+  expect(refused.status).toBe(409);
+});

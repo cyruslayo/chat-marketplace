@@ -229,6 +229,15 @@ export function createOpsHandler(dependencies: OpsRouteDependencies): OpsHandler
       const completedAt = completeCutover(dependencies.database, dependencies.clock().toISOString());
       return json(200, { ok: true, cutoverCompletedAt: completedAt });
     }
+    if (request.method === "GET" && path === "/_ops/status") {
+      // F3: the cutover flag lives in the object's own storage, which a point-in-time restore rewinds. Check it after any restore.
+      return json(200, {
+        ok: true,
+        schemaVersion: schemaVersion(dependencies.database),
+        expectedSchemaVersion: SHORTLET_SCHEMA_VERSION,
+        cutoverCompletedAt: cutoverCompletedAt(dependencies.database),
+      });
+    }
     if (request.method === "GET" && path === "/_ops/import/verify") {
       return json(200, {
         ok: true,
