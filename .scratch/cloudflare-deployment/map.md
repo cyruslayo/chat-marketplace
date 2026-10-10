@@ -250,6 +250,12 @@ Started from `infra/cloudflare-deployment` at `3b40d73`. **10b is implemented an
 
 Branch `infra/cf-wave6`, cut from `infra/cloudflare-deployment`, with the merge commits for cf-15 (`b567a0b`) and cf-16 (`e3a52a0`). Issues 15 and 16 remain **ready-for-human**. Work done: the ADR 0075 leaks in the export and ops-body parsers are fixed (failing-first tests added); the Node-export-to-Durable-Object end-to-end test is in; the cutover runbook uses `cf` for R2, with the download step as a documented gap; the stale `ops-routes.ts` reference is removed; the parameter-limit source is cited. Checks: `npm run check` passes; `npm run test:workers` passes 58 of 58; the non-browser suite has 3 failures that predate the merge (listed in issue 16's comment). The AC5 gate (`npm test` green) is not met. Open decisions and values for the user are in issue 16 ("Values to ask the user", "Open decisions for the user"). Nothing is deployed, merged to `main` or cut over.
 
+**Superseded by the fix pass below:** the test counts (58 of 58) and the AC5 statement in this paragraph are historical. The three non-browser failures were fixed in `4437f72`.
+
+### Wave 6 fix pass (review findings, 10 Oct 2026)
+
+Branch `infra/cf-wave6` at `cf260db`, from the review of `7181cbd`. Findings F1 to F13 are fixed or documented as recorded in issue 16's fix-pass comment, which has the commits, the tests and the reconciled counts. The latest run: `npm run check` exit 0; `npm run test:workers` 78 of 78 across 14 files; non-browser phase 1 1431 of 1431 (browser phase not run). The alarm now runs the daily export without a notifier (F1). The ops export, pull and rollback exclude the five credential tables (F4). The one-way cutover flag is checkable through `GET /_ops/status` after a restore (F3, which PITR can rewind). Shortlet issue 15's same-day cutoff is not a production fix; issue 48 tracks it (F2). Proposed ADR 0096 is for the user's decision (F5). Issue 49 records the conditional-offer key review. Issue 17 is `ready-for-human` with a hold until the rollback window closes (F7).
+
 ## Context pointers
 
 - 16 and 15 (wave 6 agent pass): `infra/cf-wave6`. Node export fixture `apps/cloudflare/test/fixtures/node-export.json` (regenerate with `UPDATE_NODE_EXPORT_FIXTURE=1`); `scripts/export-node-sqlite.ts`; `apps/cloudflare/src/ops-import.ts`; `docs/runbooks/cloudflare-cutover.md` (DRAFT).

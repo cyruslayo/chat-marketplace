@@ -226,6 +226,43 @@ Status unchanged: **ready-for-human**. Nothing here is a cutover, a production r
 - **Checks.** `npm run check` exits 0. `npm run test:workers` passes 72 of 72 across 14 files (68 before this pass, plus four new tests). The non-browser phase (phase 1 of `npm test`, reproduced because `package.json` has no separate script) gives 1423 of 1423 tests passing, 0 failing. The browser phase was not run.
 - **Open.** C1, C4, C5, C6 and C7 are unchanged. The runbook sign-off (AC4) and the edge freeze, route and DNS items remain Needs user. Also open: the DPIA entries for the personal-data columns, and the ADR 0075 transient and 180-day classes (provisional) against the 400-day export retention.
 
+### Wave-6 fix pass (review findings F1 to F13, 10 Oct 2026)
+
+Status unchanged: **ready-for-human**. Nothing here is a cutover, a production run or a resolution.
+
+Each finding was tested first (a red run before each change). Commits, oldest first, on `infra/cf-wave6`: `f60b9f9` (F11), `a951f5e` (F9, F10, F13), `10d48ba` (F1), `b3a67d7` (F12), `cc7bda1` (F4), `11a9fe0` (F3), `695b266` (F3, F4, F6, F8 wording), `94df513` (F7, issue 17), `c3c8a2b` and `110d33e` (F2 and the conditional-offer issue), `40ae72a` (F5, ADR 0096), `cf260db` (F12 runbook).
+
+- **F1 (high).** The alarm was never scheduled without a notifier, so the daily export, orphan sweep and retention did not run. The alarm now runs on every path, runs the notifier sweep only when a notifier exists, and rebuilds the runtime after an eviction when the object is provisioned. Test: "12a AC6 (F1)" (`apps/cloudflare/test/daily-export.spec.ts`).
+- **F3 (medium).** A point-in-time restore rewinds the cutover flag with the rest of the object's storage. Code cannot prevent that while the flag shares the rewound storage. Done instead: an authenticated `GET /_ops/status` (schema version, expected version, flag); the restore runbook's post-restore check and recovery step; the cutover runbook's step 7.1 status check; and the D1 wording above. Tests: unauthenticated `POST /_ops/cutover/complete` is 401; the status route; a rewound object accepts an import until the flag is set again.
+- **F4 (medium).** `GET /_ops/export`, the Node pull and the rollback import now use `DAILY_EXPORT_EXCLUDED`. The verify response still lists the five tables with counts and hashes, so the compare holds. The cutover push still sends them, which is an open decision below. Sessions are re-established after a rollback.
+- **F6 (medium).** The export is per-table, read across awaits, so the day's files are not one point-in-time snapshot. The comments and both runbooks say so, and the restore runbook has a post-restore consistency step.
+- **F7.** Issue 17 is `ready-for-human` with a hold note; the map row matches. Reconciled counts are below.
+- **F8.** D1 now says the refusal covers `POST /_ops/import` and the control tables only.
+- **F9 (medium).** `schemaVersion` fails on a gap or duplicate (rows 1 and 3). `cutoverCompletedAt` throws when the flag table is missing although its migration ran. Import refuses both as `SCHEMA_NOT_READY` before any write. A never-migrated file still reads as not cut over.
+- **F10.** The local booking DDL is a literal in the production schema, with a test that fails if it drifts from the fixture.
+- **F11.** `apps/local-guest/dist/client.js` is restored to the `origin/infra/cloudflare-deployment` version. The "Bundle (e)" note above is corrected.
+- **F12 (medium).** The Access verifier requires `iss = https://<team domain>` and refuses a missing issuer. Test: "16 F12" in `apps/cloudflare/test/ops-routes.spec.ts`.
+- **F13.** `importRequestChunks` sizes batches by the widest row and throws a `RangeError` naming the table for more than 100 parameters. It no longer emits empty chunks.
+- **F2 (documentation only; no booking code changed).** The same-day rule in production (`booking-request.ts`, about lines 378–384) is a fixed 10:55 WAT disclosure limit, not the unit's Contractual Check-In Window (ADR 0053). `SameDayBookingManager` has no production caller. Commit `4437f72` changed that manager and its test (plus two unrelated test fixes and `.gitignore`), not the production path. Earlier wave-6 notes that the three non-browser failures were the AC5 blocker are superseded: `4437f72` fixed them, and their tests now pass. Shortlet issue 15 has a correction note, and new needs-triage issue 48 tracks the production rule.
+- **F5.** Proposed ADR 0096 (`docs/adr/0096-export-payment-references-in-plaintext.md`, status `proposed`, Needs user decision) records the plaintext payment-reference conflict and three options. It is not accepted.
+- **Out-of-scope review.** Shortlet issue 49 records the reachability of the hardcoded conditional-offer key (`domains/shortlet/src/conditional-offer.ts`). The code was not changed.
+
+**Reconciled test counts (F7).** The earlier passes report different totals because each pass counted a different set of files. This is the latest run on `infra/cf-wave6` after the fix pass:
+
+- `npm run check`: exit 0.
+- `npm run test:workers`: 78 of 78 pass across 14 files. Pass 4 said 72 of 72 across 14 files; the six new tests are F1, F12, F4 (one), and the three F3 tests.
+- Non-browser phase 1 (reproduced from `scripts/run-tests.mjs`, because `package.json` has no separate script): 1431 of 1431 pass, 0 fail. Pass 4 said 1423; the eight new non-browser tests are the F9, F10 and F13 tests, and the F4 pull test.
+- Browser phase: not run.
+
+The pass-1 figures (58 of 58; 1407 tests with 3 failures) are superseded by the later passes. Issue 17 has no test counts, so nothing there needed reconciling.
+
+**Open decisions (need user).**
+
+1. Keep the one-way flag in the object's storage (today; a restore can clear it, mitigated by the status check), or store it outside the object (for example, an R2 marker that PITR does not rewind), which would let the code enforce the flag. The second option is a design change.
+2. The cutover push still sends the five bearer-credential tables into the object. Decide whether sessions and challenges should move at cutover, or be excluded from the cutover manifest too (which would need the verify and compare to exclude them).
+3. ADR 0096: the plaintext payment-reference export (exemption, encryption at rest, or keyed hash).
+4. Shortlet issue 15's resolved status (reopen or not), and the production same-day rule (issue 48).
+
 ## Commits on `infra/cf-wave6`
 
 `16f5d28` ADR 0075 fixes with tests, `7bea2c7` comment and citation fixes, `19a833f` Node fixture end-to-end test,
