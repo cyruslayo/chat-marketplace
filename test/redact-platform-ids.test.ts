@@ -14,15 +14,22 @@ import {
   KNOWN_CARD_SHAPED_REQUEST_ID,
   TEST_PANS,
   V4_UUID_SHAPE,
-  containsLuhnValidDigitWindow,
+  cardRuleMatches,
+  containsLuhnValidCardShape,
   encodePanAsPlatformId,
   findV4IdWithDigits,
   isLuhnValid
 } from "./helpers/platform-id-fixtures.js";
 
 // ADR 0075 (one redactor for audit, telemetry and projections) & Issue 50.
-// A platform-generated id `<prefix>-<randomUUID()>` is exempt from the string rules under its id key, unless some run of
-// 16 to 19 digits in it (hyphens removed, every alignment) is Luhn-valid. Such an id is replaced by "[REDACTED]" whole.
+// A platform-generated id `<prefix>-<randomUUID()>` is exempt from the string rules under its id key, unless the gate
+// trips: (a) a match of the card rule's own regex is Luhn-valid, or (b) a whole run of 17 to 19 digits is Luhn-valid.
+// A gated value is replaced by "[REDACTED]" whole.
+//
+// PINNED LIMIT (documented in issue 50): a Luhn-valid 16-digit card number at an UNALIGNED hex offset inside an exact v4
+// id is not matched by the card rule, so it is not detected. This is the same as free text on main. It is defence in
+// depth only: client-supplied ids are lookup-validated before audit, and the client-chosen `g-` thread ids are excluded.
+// Tests named "PINNED LIMIT" make that choice explicit; changing them is a deliberate decision.
 
 const REDACTED = "[REDACTED]";
 
@@ -36,15 +43,18 @@ function keyVariants(key: string): string[] {
   return [key, snake.toUpperCase(), snake.charAt(0).toUpperCase() + snake.slice(1)];
 }
 
-const MISALIGNED_LUHN_VALID_ID = "req-aaaaaaaa-3352-4152-8480-7151aaaaaaaa";
 const LARGE_LUHN_VALID_19_DIGIT_ID = "req-21022665-8675-4290-889a-aaaaaaaaaaaa";
+// Unaligned (the card rule does not match it): PINNED LIMIT.
+const UNALIGNED_LUHN_VALID_ID = "req-aaaaaaaa-3352-4152-8480-7151aaaaaaaa";
+// The card rule's regex matches a 16-digit window only at hex offsets 0 and 16 (derived by test below).
+const CARD_RULE_ALIGNED_OFFSETS = [0, 16];
 
-test("Platform-generated ids are altered only when a 16 to 19 digit run in them is Luhn-valid, across 20,000 random ids", () => {
+test("Platform-generated ids are altered only when the gate trips (card rule match Luhn-valid, or whole 17-19 digit run Luhn-valid), across 20,000 random ids", () => {
   for (let index = 0; index < 20_000; index += 1) {
     const [key, prefix] = ID_KEY_PREFIXES[index % ID_KEY_PREFIXES.length]!;
     const id = `${prefix}-${randomUUID()}`;
     const output = redactOne(key, id);
-    assert.equal(output !== id, containsLuhnValidDigitWindow(id), `${key}=${id} -> ${String(output)}`);
+    assert.equal(output !== id, containsLuhnValidCardShape(id), `${key}=${id} -> ${String(output)}`);
   }
 });
 
@@ -59,7 +69,7 @@ test("Known card-shaped platform ids are kept intact in InMemoryAuditLog entries
   assert.equal(second?.requestId, KNOWN_CARD_SHAPED_REQUEST_ID);
 });
 
-test("Platform-generated ids are stored by SqliteAuditLog unchanged unless a 16 to 19 digit run in them is Luhn-valid, across 20,000 random ids", () => {
+test("Platform-generated ids are stored by SqliteAuditLog unchanged unless the gate trips, across 20,000 random ids", () => {
   const database = openNodeSqliteDatabase(":memory:");
   try {
     const audit = new SqliteAuditLog(database);
@@ -74,7 +84,7 @@ test("Platform-generated ids are stored by SqliteAuditLog unchanged unless a 16 
     assert.equal(stored.length, expected.length);
     stored.forEach((entry, index) => {
       const [key, id] = expected[index]!;
-      assert.equal(entry[key] !== id, containsLuhnValidDigitWindow(id), `row ${index} ${key}`);
+      assert.equal(entry[key] !== id, containsLuhnValidCardShape(id), `row ${index} ${key}`);
     });
   } finally {
     database.close();
@@ -141,19 +151,27 @@ test("Sensitive keys are still redacted even when the value is a platform-genera
   assert.deepEqual(redactSensitiveData({ cardNumber: `req-${randomUUID()}` }), { cardNumber: REDACTED });
 });
 
-test("Mastercard, Visa and Discover card numbers encoded in v4 platform ids are masked under every platform-id key and key-name variant", () => {
+test("The card rule matches a 16-digit window in a v4 platform id only at hex offsets 0 and 16 (enumerated)", () => {
+  const matched: number[] = [];
+  for (let offset = 0; offset <= 16; offset += 1) {
+    const id = findV4IdWithDigits("req", 16, offset, (digits) => isLuhnValid(digits));
+    if (cardRuleMatches(id)) matched.push(offset);
+  }
+  assert.deepEqual(matched, CARD_RULE_ALIGNED_OFFSETS);
+});
+
+test("Mastercard, Visa and Discover card numbers encoded in v4 platform ids (aligned, offset 0) are masked under every platform-id key and key-name variant", () => {
   for (const [key, prefix] of ID_KEY_PREFIXES) {
     for (const pan of Object.values(TEST_PANS)) {
       const value = encodePanAsPlatformId(prefix, pan);
       for (const variant of keyVariants(key)) {
-        const output = redactOne(variant, value);
-        assert.equal(output, REDACTED, `${variant}=${value}`);
+        assert.equal(redactOne(variant, value), REDACTED, `${variant}=${value}`);
       }
     }
   }
 });
 
-test("Card numbers encoded in v4 platform ids are masked inside nested objects and arrays", () => {
+test("Card numbers encoded in v4 platform ids (aligned) are masked inside nested objects and arrays", () => {
   for (const pan of Object.values(TEST_PANS)) {
     const value = encodePanAsPlatformId("req", pan);
     const output = redactSensitiveData({ payload: { items: [{ requestId: value }], deep: { offerId: value } } });
@@ -161,12 +179,12 @@ test("Card numbers encoded in v4 platform ids are masked inside nested objects a
   }
 });
 
-test("A Luhn-valid 16-digit card number at every hex offset 0 to 16 of a v4 platform id is masked under every platform-id key and key-name variant", () => {
+test("A Luhn-valid 16-digit card number at the aligned hex offsets 0 and 16 of a v4 platform id is masked under every platform-id key and key-name variant", () => {
   for (const [key, prefix] of ID_KEY_PREFIXES) {
-    for (let offset = 0; offset <= 16; offset += 1) {
+    for (const offset of CARD_RULE_ALIGNED_OFFSETS) {
       const id = findV4IdWithDigits(prefix, 16, offset, (digits) => isLuhnValid(digits));
       assert.match(id.slice(prefix.length + 1), V4_UUID_SHAPE, `${key} offset ${offset} is not v4-shaped`);
-      assert.equal(containsLuhnValidDigitWindow(id), true, `${key} offset ${offset} has no Luhn-valid window`);
+      assert.equal(cardRuleMatches(id), true, `${key} offset ${offset} is not card-rule shaped`);
       for (const variant of keyVariants(key)) {
         assert.equal(redactOne(variant, id), REDACTED, `${variant}=${id}`);
       }
@@ -179,30 +197,56 @@ test("A Luhn-valid 16-digit card number at every hex offset 0 to 16 of a v4 plat
   }
 });
 
-test("A Luhn-valid 17, 18 or 19 digit run at hex offset 0 or 4 of a v4 platform id is masked", () => {
+test("PINNED LIMIT: a Luhn-valid 16-digit card number at an unaligned hex offset (1 to 15) of a v4 platform id is not detected and stays unchanged, as free text on main", () => {
+  for (const [key, prefix] of ID_KEY_PREFIXES) {
+    for (let offset = 1; offset <= 15; offset += 1) {
+      if (CARD_RULE_ALIGNED_OFFSETS.includes(offset)) continue;
+      const id = findV4IdWithDigits(prefix, 16, offset, (digits, candidate) =>
+        isLuhnValid(digits) && !cardRuleMatches(candidate) && !containsLuhnValidCardShape(candidate)
+      );
+      assert.match(id.slice(prefix.length + 1), V4_UUID_SHAPE);
+      assert.equal(redactOne(key, id), id, `${key} offset ${offset}: ${id}`);
+    }
+  }
+});
+
+test("PINNED LIMIT: the review example req-aaaaaaaa-3352-4152-8480-7151aaaaaaaa (unaligned, card rule does not match) is not detected and stays unchanged", () => {
+  assert.equal(cardRuleMatches(UNALIGNED_LUHN_VALID_ID), false);
+  assert.equal(isLuhnValid("3352415284807151"), true);
+  assert.equal(redactOne("requestId", UNALIGNED_LUHN_VALID_ID), UNALIGNED_LUHN_VALID_ID);
+});
+
+test("A Luhn-valid whole run of 17, 18 or 19 digits at hex offset 0 or 4 of a v4 platform id is masked", () => {
   for (const length of [17, 18, 19]) {
     for (const offset of [0, 4]) {
       const id = findV4IdWithDigits("req", length, offset, (digits) => isLuhnValid(digits));
-      assert.equal(containsLuhnValidDigitWindow(id), true, `${length}-digit run at offset ${offset}`);
+      assert.equal(containsLuhnValidCardShape(id), true, `${length}-digit run at offset ${offset}`);
       assert.equal(redactOne("requestId", id), REDACTED, `${length}-digit run at offset ${offset}: ${id}`);
     }
   }
 });
 
-test("The 19-digit regression id req-21022665-8675-4290-889a-aaaaaaaaaaaa is masked, as on main", () => {
+test("The 19-digit regression id req-21022665-8675-4290-889a-aaaaaaaaaaaa (whole run Luhn-valid) is masked, as on main", () => {
   assert.equal(redactOne("requestId", LARGE_LUHN_VALID_19_DIGIT_ID), REDACTED);
 });
 
-test("A Luhn-valid card number at a misaligned offset of a v4 platform id is masked (req-aaaaaaaa-3352-4152-8480-7151aaaaaaaa)", () => {
-  assert.equal(redactOne("requestId", MISALIGNED_LUHN_VALID_ID), REDACTED);
+test("A 17 to 19 digit run that is not Luhn-valid as a whole is not masked even when one of its 16-digit windows is Luhn-valid (other windows are not tested)", () => {
+  for (const length of [17, 18, 19]) {
+    // Offset 4: the run is not card-rule aligned (offset 0 would be: its first 16 digits are followed by a hyphen).
+    const id = findV4IdWithDigits("req", length, 4, (digits, candidate) => {
+      if (isLuhnValid(digits)) return false;
+      const windowValid = Array.from({ length: length - 15 }, (_, start) => digits.slice(start, start + 16)).some(isLuhnValid);
+      return windowValid && !cardRuleMatches(candidate) && !containsLuhnValidCardShape(candidate);
+    });
+    assert.equal(redactOne("requestId", id), id, `${length}-digit run: ${id}`);
+  }
 });
 
-test("A v4 platform id whose 16 to 19 digit runs are all Luhn-invalid stays unchanged at every hex offset under every platform-id key", () => {
+test("A v4 platform id with no gate trip stays unchanged at every hex offset under every platform-id key", () => {
   for (const [key, prefix] of ID_KEY_PREFIXES) {
     for (let offset = 0; offset <= 16; offset += 1) {
-      const id = findV4IdWithDigits(prefix, 16, offset, (_digits, candidate) => !containsLuhnValidDigitWindow(candidate));
+      const id = findV4IdWithDigits(prefix, 16, offset, (_digits, candidate) => !containsLuhnValidCardShape(candidate));
       assert.match(id.slice(prefix.length + 1), V4_UUID_SHAPE);
-      assert.equal(containsLuhnValidDigitWindow(id), false);
       assert.equal(redactOne(key, id), id, `${key} offset ${offset}: ${id}`);
     }
   }
@@ -224,8 +268,8 @@ test("A 19-digit Luhn-valid number in free text stays unchanged, as on main (out
 });
 
 test("A platform id followed by a card number in the same value is masked (end anchor)", () => {
-  // The Luhn-valid appended card is masked by the Luhn gate even without the end anchor, so the Luhn-invalid case below
-  // is the one that isolates the anchor.
+  // The Luhn-valid appended card is masked by the gate even without the end anchor, so the Luhn-invalid case below is
+  // the one that isolates the anchor.
   const value = `${KNOWN_CARD_SHAPED_REQUEST_ID} card 4111 1111 1111 1111`;
   const output = String(redactOne("requestId", value));
   assert.notEqual(output, value);
@@ -244,9 +288,10 @@ test("A platform id with a trailing newline is not exempt and is masked as befor
   assert.equal(redactOne("requestId", `${pan}\n`), REDACTED);
 });
 
-test("Platform ids inside arrays under a listed key follow the same rules as scalars: clean ids stay, Luhn-valid ids are masked", () => {
+test("Platform ids inside arrays under a listed key follow the same rules as scalars: clean ids stay, gated ids are masked", () => {
+  const gated = encodePanAsPlatformId("req", TEST_PANS.visa);
   assert.deepEqual(
-    redactSensitiveData({ requestId: [KNOWN_CARD_SHAPED_REQUEST_ID, MISALIGNED_LUHN_VALID_ID] }),
+    redactSensitiveData({ requestId: [KNOWN_CARD_SHAPED_REQUEST_ID, gated] }),
     { requestId: [KNOWN_CARD_SHAPED_REQUEST_ID, REDACTED] }
   );
 });
@@ -256,7 +301,7 @@ test("Non-string values under a platform-id key are returned unchanged, as on ma
 });
 
 test("Guest thread ids (g-<uuid>) are not exempt under threadId, because the client chooses them (follow-up in issue 50)", () => {
-  const value = findV4IdWithDigits("g", 16, 0, (_digits, candidate) => !containsLuhnValidDigitWindow(candidate));
+  const value = findV4IdWithDigits("g", 16, 0, (_digits, candidate) => !containsLuhnValidCardShape(candidate));
   const output = redactOne("threadId", value);
   assert.notEqual(output, value);
   assert.match(String(output), /\[REDACTED\]/);

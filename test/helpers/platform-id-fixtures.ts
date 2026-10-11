@@ -66,15 +66,19 @@ export function isLuhnValid(digits: string): boolean {
   return sum % 10 === 0;
 }
 
-// Oracle: some run of digits (hyphens removed) has a Luhn-valid window of 16, 17, 18 or 19 digits, at any alignment.
-export function containsLuhnValidDigitWindow(value: string): boolean {
-  const runs = value.replace(/-/g, "").match(/\d{16,}/g) ?? [];
-  for (const run of runs) {
-    for (let length = 16; length <= 19; length += 1) {
-      for (let start = 0; start + length <= run.length; start += 1) {
-        if (isLuhnValid(run.slice(start, start + length))) return true;
-      }
-    }
+// Non-global copy of the card rule's shape, for `.test()` without lastIndex state.
+export function cardRuleMatches(value: string): boolean {
+  return /\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b/.test(value);
+}
+
+// Oracle for the gate: (a) some match of the card rule's own regex is Luhn-valid (separators removed), or (b) some maximal
+// run of 17 to 19 digits (hyphens removed) is Luhn-valid as a whole. Other windows of a longer run are NOT tested.
+export function containsLuhnValidCardShape(value: string): boolean {
+  for (const match of value.matchAll(CARD_SHAPE)) {
+    if (isLuhnValid(match[0].replace(/\D/g, ""))) return true;
+  }
+  for (const run of value.replace(/-/g, "").match(/\d+/g) ?? []) {
+    if (run.length >= 17 && run.length <= 19 && isLuhnValid(run)) return true;
   }
   return false;
 }

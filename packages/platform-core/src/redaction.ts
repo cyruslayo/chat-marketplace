@@ -19,7 +19,7 @@ const CARD_NUMBER_SHAPE = /\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b/g;
  *
  * Each key lists the prefixes its generators emit, taken from the `<prefix>-${randomUUID()}` call sites (and the
  * `quote-${idFactory()}` and `search-${idFactory()}` sites, whose default is randomUUID). A string under a listed key is:
- *   - masked as "[REDACTED]" when some run of 16 to 19 digits in it (hyphens removed, every alignment) is Luhn-valid,
+ *   - masked as "[REDACTED]" when the Luhn gate trips (a card-rule match that is Luhn-valid, or a whole 17 to 19 digit run that is Luhn-valid; see containsLuhnValidCardShape),
  *     whatever its shape (fail closed: the card rule alone can leave part of a 19-digit number unmasked);
  *   - exempt, when it is exactly `<prefix>-<random v4 UUID>` with a prefix listed for that key;
  *   - otherwise redacted by the string rules as before.
@@ -103,20 +103,22 @@ function isLuhnValid(digits: string): boolean {
   return sum % 10 === 0;
 }
 
-const LUHN_WINDOW_LENGTHS = [16, 17, 18, 19] as const;
-
 /**
- * Luhn gate. Hyphens are removed, every maximal run of 16 or more digits is taken, and every 16- to 19-digit window of it
- * is Luhn-tested, so a card number is caught at any hex offset and at 17 to 19 digits. Letters are not removed.
+ * Luhn gate for a platform id. Gated (true) when either:
+ *   (a) a match of the card rule's own regex (CARD_NUMBER_SHAPE: 16 digits in aligned 4-digit groups, optional single
+ *       separator) is Luhn-valid, separators removed; or
+ *   (b) a whole maximal run of 17 to 19 consecutive digits (hyphens removed) is Luhn-valid as a number.
+ * Other 16-digit windows of a longer run are not tested. Consequence, pinned by test/redact-platform-ids.test.ts:
+ * a Luhn-valid 16-digit card number at an UNALIGNED hex offset of an exact v4 id is not detected (the card rule does
+ * not match it; same as free text on main). This is defence in depth only: client-supplied ids are lookup-validated
+ * before audit and the client-chosen `g-` thread ids are excluded (issue 50).
  */
-function containsLuhnValidDigitWindow(value: string): boolean {
-  const runs = value.replace(/-/g, "").match(/\d{16,}/g) ?? [];
-  for (const run of runs) {
-    for (const length of LUHN_WINDOW_LENGTHS) {
-      for (let start = 0; start + length <= run.length; start += 1) {
-        if (isLuhnValid(run.slice(start, start + length))) return true;
-      }
-    }
+function containsLuhnValidCardShape(value: string): boolean {
+  for (const match of value.matchAll(CARD_NUMBER_SHAPE)) {
+    if (isLuhnValid(match[0].replace(/\D/g, ""))) return true;
+  }
+  for (const run of value.replace(/-/g, "").match(/\d+/g) ?? []) {
+    if (run.length >= 17 && run.length <= 19 && isLuhnValid(run)) return true;
   }
   return false;
 }
@@ -144,7 +146,7 @@ export function createSensitiveDataRedactor(policy: SensitiveDataRedactionPolicy
   // Arrays are walked with the same rules, so an id in an array is treated like the same id in a scalar.
   const redactIdKeyValue = (pattern: RegExp, value: unknown): unknown => {
     if (typeof value === "string") {
-      if (containsLuhnValidDigitWindow(value)) return "[REDACTED]";
+      if (containsLuhnValidCardShape(value)) return "[REDACTED]";
       if (pattern.test(value)) return value;
       return redact(value);
     }
