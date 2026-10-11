@@ -46,7 +46,7 @@ None (documentation). The agent checks AC3 with a grep listed in `## Answer`.
 
 ## Answer
 
-Implemented in commit `aa74d9d`.
+Landed on main via `3b40d73` (verified with `git log` on 10 Oct 2026; the earlier pointer `aa74d9d` is not present in the fetched refs of this repository).
 
 - **AC1:** Added `docs/adr/0093-establish-guest-accounts-and-sign-in-by-emailed-code.md`; ADR 0092 remains the accepted Extended Stays decision. ADR 0093 cites 0004, 0070, 0075, 0080, 0085 and 0086 and maps all intersecting decisions.
 - **AC2:** Code/session values trace to issue 01 Answer. The 25/email/hour and 100/address/hour code-checking quotas trace to the dated 4 Oct supplemental decision in issue 01 Comments.

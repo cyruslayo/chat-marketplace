@@ -2,7 +2,7 @@
 
 Status: ready-for-agent
 Type: task
-Blocked by: 06
+Blocked by: 06, 09
 Requested: 2 Oct 2026
 
 ## Why
@@ -12,7 +12,7 @@ A signed-in Guest needs one place to see and manage the account (user stories 10
 ## What to build
 
 - `GET /account` (signed-in only; signed-out Guests are sent to `/account/sign-in?return=/account`). Built with `pageShell` and kit components only: `.ui-page__header`, `.ui-panel`, `.ui-facts` for email, phone and identity status, `.ui-field`, `.ui-button`, `.ui-banner--*` for outcomes.
-- **Email.** "Change email" sends a `change_email` code to the new address (issue 04 `changeEmail`); the page shows the code step. A changed email lowers or resets assurance per ADR 0094.
+- **Email.** "Change email" sends a `change_email` code to the new address (issue 04 `changeEmail`); the page shows the code step. A changed email lowers or resets assurance per ADR 0094. Email change is a web-only platform command (ADR 0067, ADR 0072): it is not offered through WhatsApp, the concierge or any other agent channel.
 - **Phone.** Edit with `normalizeNigerianPhoneNumber` (`domains/shortlet/src/guest-contact.ts`); validation errors use its existing messages. Phone is stored, not verified (phone verification is out of scope).
 - **Identity status.** Read-only line using the labels from issue 01 (e.g. "Email confirmed"). No ID upload, form or provider link (ADR 0085).
 - **Sessions.** "Sign out" and "Sign out of all devices", each a POST form.
@@ -34,4 +34,4 @@ New `test/guest-account-page.test.ts` and a Chromium test using `withStagePage`.
 
 ## ADR compliance
 
-0070, 0075, 0078, 0080, 0084, 0085, 0093, 0094. Guest UI rules in `AGENTS.md`.
+0067, 0070, 0072, 0075, 0078, 0080, 0084, 0085, 0093, 0094. Guest UI rules in `AGENTS.md`.
