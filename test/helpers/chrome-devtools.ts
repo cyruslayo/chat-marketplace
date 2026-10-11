@@ -50,6 +50,8 @@ export interface RealBrowserTab {
   focus(selector: string): Promise<void>;
   isElementFocused(selector: string): Promise<boolean>;
   getCookies(): Promise<readonly RealBrowserCookie[]>;
+  /** Sets one cookie for `url` (the tab then sends it like a browser-issued cookie). Used to act as an existing device. */
+  setCookie(name: string, value: string, url: string): Promise<void>;
   getContent(): Promise<string>;
   getAccessibilityTree(): Promise<readonly RealBrowserAccessibilityNode[]>;
   captureScreenshot(): Promise<Uint8Array>;
@@ -394,6 +396,10 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
       `);
     }
 
+    async function setCookie(name: string, value: string, url: string): Promise<void> {
+      await send("Network.setCookie", { name, value, url }, sessionId);
+    }
+
     async function getCookies(): Promise<readonly RealBrowserCookie[]> {
       const res = await send<{ cookies: RealBrowserCookie[] }>("Network.getCookies", {}, sessionId);
       return res.cookies ?? [];
@@ -561,6 +567,7 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
       focus,
       isElementFocused,
       getCookies,
+      setCookie,
       getContent,
       getAccessibilityTree,
       captureScreenshot,
