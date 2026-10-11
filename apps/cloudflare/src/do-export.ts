@@ -34,6 +34,7 @@ export const EXPORT_TABLES = [
   "guest_checkout_sessions",
   "guest_conditional_offers",
   "guest_contacts",
+  "guest_identity_assurance",
   "guest_live_payment_attempts",
   "guest_payment_journey_snapshots",
   "guest_processed_psp_references",

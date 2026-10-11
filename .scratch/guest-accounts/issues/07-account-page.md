@@ -35,3 +35,7 @@ New `test/guest-account-page.test.ts` and a Chromium test using `withStagePage`.
 ## ADR compliance
 
 0067, 0070, 0072, 0075, 0078, 0080, 0084, 0085, 0093, 0094. Guest UI rules in `AGENTS.md`.
+
+## Comments
+
+- 11 Oct 2026, requirement from issue 09 (orchestrator decision, delegated by the human; not a human quote): the identity resolver (`domains/shortlet/src/guest-identity.ts`, `GuestAssurance`) still hardcodes `email-verified`. The account page must surface the government-ID level from the identity-assurance result (`currentAssurance`, issue 09) and must not treat it as an account gate (ADR 0085).

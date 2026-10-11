@@ -457,7 +457,8 @@ test("AC5 authorization: a request the account claims is refused when it carries
 });
 
 test("Schema: migration 3 creates the linking and snapshot tables on a database that already has migrations 1 and 2", () => {
-  assert.equal(SHORTLET_SCHEMA_VERSION, 3);
+  // Version 4 added the identity-assurance table (issue 09); this test still checks that migration 3 creates its own tables.
+  assert.equal(SHORTLET_SCHEMA_VERSION, 4);
   const database = openNodeSqliteDatabase(":memory:");
   try {
     applySchemaMigrations(database, SHORTLET_SCHEMA_MIGRATIONS.slice(0, 2), "2026-10-10T00:00:00.000Z");

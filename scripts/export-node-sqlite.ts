@@ -114,7 +114,7 @@ export async function importMigrationDirectory(dbPath: string, inDir: string): P
       if (Object.hasOwn(DAILY_EXPORT_EXCLUDED, table)) continue;
       const rows = await readRows(inDir, table);
       for (const chunk of importRequestChunks(table, rows)) {
-        importBatch(database, table, chunk, SHORTLET_SCHEMA_VERSION);
+        importBatch(database, table, chunk, SHORTLET_SCHEMA_VERSION, new Date());
       }
       counts[table] = rows.length;
     }
