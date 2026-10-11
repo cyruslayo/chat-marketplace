@@ -230,6 +230,7 @@ import {
   GUEST_ACCOUNT_COOKIE,
   GuestAccountRuntime,
   accountCredentialsOf,
+  clientAddressOf,
   loadGuestAccountComposition,
   safeReturnPath,
   usableCodeHashingKey,
@@ -238,9 +239,12 @@ import {
   type GuestAccountCredentials,
 } from "./guest-account-runtime.js";
 import { GUEST_ACCOUNT_COPY } from "../../web-agent/src/guest-content.js";
+import { SlidingWindowRateLimiter } from "../../pilot/src/rate-limiter.js";
 import {
+  GUEST_ACCOUNT_POLICY_DEFAULTS,
   GuestAccountAuthorityError,
   normalizeContactEmail,
+  revokeGuestAccountWithoutKey,
   type GuestAccountSession,
 } from "../../../domains/shortlet/src/index.js";
 import {
@@ -2185,6 +2189,15 @@ export class LocalGuestApp {
 
   #persistThread(thread: GuestThreadState): void {
     const environment = this.#environment;
+    // ADR 0004 / 0070 / 0093: a read or a refresh never changes a conversation's owner. A saved conversation this runtime
+    // does not own (a linked principal's) is not written at all; only a new conversation is saved under this runtime.
+    const saved = environment.interactionStore.findThread(thread.threadId);
+    if (
+      saved &&
+      (saved.principalId !== environment.guestPrincipal().id ||
+        saved.tenantId !== environment.config.tenantId)
+    )
+      return;
     const current = thread.lastSurfaces.at(-1);
     const activeStage =
       this.#stageForSurfaceId(current?.surfaceId ?? "") ??
@@ -6559,7 +6572,8 @@ function threadReadable(
 ): boolean {
   if (!session.threadIds.has(threadId)) return false;
   const record = env.interactionStore.findThread(threadId);
-  if (!record) return true;
+  // Fail closed (AGENTS anti-pattern 1): with no saved record there is nothing provably this session's to read.
+  if (!record) return false;
   return authorizesPrincipalOwner(session.identity, {
     principalId: record.principalId,
     tenantId: record.tenantId,
@@ -6992,12 +7006,24 @@ export function createGuestRequestHandler(
   const interactionCookieLine = (sessionId: string): string =>
     `${GUEST_SESSION_COOKIE}=${sessionId};${secureCookie ? " Secure;" : ""} HttpOnly; SameSite=Lax; Path=/`;
   /** Binds a fresh interaction session and retires the previous binding (ADR 0093): the old cookie stops working. */
-  const replaceInteractionSession = (previousKey: string | null, principalId: string): string => {
+  const replaceInteractionSession = (
+    previous: BrowserSession | null,
+    principalId: string,
+    keepOwnConversations: boolean,
+  ): string => {
     const sessionId = `gs-${crypto.randomUUID()}`;
-    registerBrowserSession(env, browserSessions, sessionId, principalId);
-    if (previousKey !== null) {
-      env.interactionStore.deleteSessionBinding(previousKey);
-      browserSessions.delete(previousKey);
+    const registered = registerBrowserSession(env, browserSessions, sessionId, principalId);
+    if (previous !== null && keepOwnConversations) {
+      // ADR 0093 continuity: only conversations this same principal saved carry over, never a linked or foreign one.
+      for (const threadId of previous.threadIds) {
+        const saved = env.interactionStore.findThread(threadId);
+        if (saved && saved.principalId === principalId && saved.tenantId === env.config.tenantId)
+          registered.threadIds.add(threadId);
+      }
+    }
+    if (previous !== null) {
+      env.interactionStore.deleteSessionBinding(previous.sessionKey);
+      browserSessions.delete(previous.sessionKey);
     }
     return sessionId;
   };
@@ -7006,17 +7032,42 @@ export function createGuestRequestHandler(
     if (typeof raw !== "string") return null;
     return resolveBrowserSession(env, browserSessions, raw, undefined, accountCredentialsOf(req), guestAccounts);
   };
-  /** Sign-in needs a browser session to link. A new one is issued only when no cookie exists and no invite gate applies. */
-  const sessionForSignIn = (req: HttpRequestLike, res: HttpResponseLike): BrowserSession | null => {
+  /**
+   * Binding writes (a new session for sign-in, or a rotation for sign-out) share the ADR 0093 per-address code-request
+   * budget, so unauthenticated requests cannot grow the binding table without limit (item 4).
+   */
+  const bindingLimiter = new SlidingWindowRateLimiter(
+    {
+      limit: { ...GUEST_ACCOUNT_POLICY_DEFAULTS, ...(accountComposition?.policy ?? {}) }.codeRequestsPerAddressPerHour,
+      windowMs: GUEST_ACCOUNT_POLICY_DEFAULTS.rateLimitWindowMs,
+    },
+    () => env.clock(),
+  );
+  type SignInSessionOutcome =
+    | { readonly kind: "session"; readonly session: BrowserSession }
+    | { readonly kind: "limited"; readonly retryAfterSeconds: number }
+    | { readonly kind: "none" };
+  /** Sign-in needs a browser session to link. A new one is issued only when no cookie exists and no invite gate applies, and the budget admits it. */
+  const sessionForSignIn = (
+    req: HttpRequestLike,
+    res: HttpResponseLike,
+    address: string,
+  ): SignInSessionOutcome => {
     const raw = readGuestSession(req);
-    if (raw === null) return null;
+    if (raw === null) return { kind: "none" };
     if (raw !== undefined) {
       const existing = existingBrowserSession(req);
-      if (existing) return existing;
+      if (existing) return { kind: "session", session: existing };
     }
-    if (options.betaInviteCode !== undefined) return null;
+    if (options.betaInviteCode !== undefined) return { kind: "none" };
+    const admitted = bindingLimiter.tryConsume(address);
+    if (!admitted.allowed)
+      return { kind: "limited", retryAfterSeconds: admitted.retryAfterSeconds };
     const sessionId = issueGuestSession(res, secureCookie);
-    return registerBrowserSession(env, browserSessions, sessionId, `guest-${crypto.randomUUID()}`);
+    return {
+      kind: "session",
+      session: registerBrowserSession(env, browserSessions, sessionId, `guest-${crypto.randomUUID()}`),
+    };
   };
   const handleAccountRoute = async (
     req: HttpRequestLike,
@@ -7026,13 +7077,44 @@ export function createGuestRequestHandler(
     const accounts = guestAccounts;
     const path = url.pathname;
     if (!accounts) {
-      // Disabled: a sign-out still expires the account cookie, so no stale cookie outlives the composition (N3).
+      // Item 2: sign-in is disabled, but a sign-out still ends the account server-side: the session hash needs no key, so
+      // the revocation goes through the store directly. Sign-out everywhere that cannot end anything refuses, claiming no
+      // success and keeping the cookie; a plain sign-out always clears the cookie and rotates the browser.
       if (req.method === "POST" && (path === "/account/sign-out" || path === "/account/sign-out-everywhere")) {
         if (!accountPostAccepted(req, options.publicOrigin)) {
           sendPageError(req, res, 403, "ORIGIN_REJECTED");
           return;
         }
-        res.setHeader("Set-Cookie", clearedAccountCookieLine());
+        const everywhere = path === "/account/sign-out-everywhere";
+        const admitted = bindingLimiter.tryConsume(clientAddressOf(req, accountComposition?.trustCloudflareClientAddress === true));
+        if (!admitted.allowed) {
+          sendAccountRateLimited(res, admitted.retryAfterSeconds);
+          return;
+        }
+        const presented = accountCredentialsOf(req);
+        const ended = presented === null
+          ? null
+          : revokeGuestAccountWithoutKey(env.database, {
+              sessionId: presented.sessionId,
+              sessionSecret: presented.sessionSecret,
+              tenantId: env.config.tenantId,
+              everywhere,
+              now: env.clock(),
+            });
+        if (everywhere && ended === null) {
+          res.writeHead(503, GUEST_HTML_HEADERS);
+          res.end(renderSignInUnavailableHtml());
+          return;
+        }
+        if (everywhere && ended !== null) {
+          env.interactionStore.deleteSessionBindingsForPrincipals(ended.principalIds, env.config.tenantId);
+          for (const [key, cached] of browserSessions) {
+            if (ended.principalIds.includes(cached.principalId)) browserSessions.delete(key);
+          }
+        }
+        const previous = existingBrowserSession(req);
+        const interactionId = replaceInteractionSession(previous, `guest-${crypto.randomUUID()}`, false);
+        res.setHeader("Set-Cookie", [interactionCookieLine(interactionId), clearedAccountCookieLine()]);
         res.writeHead(303, { Location: "/", "Cache-Control": "no-store" });
         res.end();
         return;
@@ -7043,10 +7125,7 @@ export function createGuestRequestHandler(
     }
     const credentials = accountCredentialsOf(req);
     if (req.method === "GET" && path === "/account/sign-in") {
-      if (!sessionForSignIn(req, res)) {
-        sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
-        return;
-      }
+      // Item 4: rendering the form writes no binding; the first POST that needs a session creates it.
       res.writeHead(200, GUEST_HTML_HEADERS);
       res.end(renderSignInHtml({ returnPath: safeReturnPath(url.searchParams.get("return")) }));
       return;
@@ -7085,7 +7164,12 @@ export function createGuestRequestHandler(
     };
 
     if (path === "/account/sign-in") {
-      if (!sessionForSignIn(req, res)) {
+      const admittedSession = sessionForSignIn(req, res, accounts.clientAddress(req));
+      if (admittedSession.kind === "limited") {
+        sendAccountRateLimited(res, admittedSession.retryAfterSeconds);
+        return;
+      }
+      if (admittedSession.kind === "none") {
         sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
         return;
       }
@@ -7115,11 +7199,16 @@ export function createGuestRequestHandler(
     }
 
     if (path === "/account/sign-in/code") {
-      const session = sessionForSignIn(req, res);
-      if (!session) {
+      const admittedSession = sessionForSignIn(req, res, accounts.clientAddress(req));
+      if (admittedSession.kind === "limited") {
+        sendAccountRateLimited(res, admittedSession.retryAfterSeconds);
+        return;
+      }
+      if (admittedSession.kind === "none") {
         sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
         return;
       }
+      const session = admittedSession.session;
       const challengeId = form.get("challengeId") ?? "";
       const code = form.get("code") ?? "";
       try {
@@ -7161,7 +7250,7 @@ export function createGuestRequestHandler(
         throw error;
       }
       // ADR 0093: sign-in rotates the interaction cookie, so the pre-sign-in value no longer authenticates.
-      const interactionId = replaceInteractionSession(session.sessionKey, session.principalId);
+      const interactionId = replaceInteractionSession(session, session.principalId, true);
       const maxAge = Math.max(1, Math.floor((Date.parse(verified.expiresAt) - env.clock().getTime()) / 1000));
       res.setHeader("Set-Cookie", [
         interactionCookieLine(interactionId),
@@ -7173,9 +7262,14 @@ export function createGuestRequestHandler(
     }
 
     if (path === "/account/sign-out") {
+      const admitted = bindingLimiter.tryConsume(accounts.clientAddress(req));
+      if (!admitted.allowed) {
+        sendAccountRateLimited(res, admitted.retryAfterSeconds);
+        return;
+      }
       accounts.signOut(credentials);
       const previous = existingBrowserSession(req);
-      const interactionId = replaceInteractionSession(previous?.sessionKey ?? null, `guest-${crypto.randomUUID()}`);
+      const interactionId = replaceInteractionSession(previous, `guest-${crypto.randomUUID()}`, false);
       res.setHeader("Set-Cookie", [interactionCookieLine(interactionId), clearedAccountCookieLine()]);
       res.writeHead(303, { Location: "/", "Cache-Control": "no-store" });
       res.end();
@@ -7188,6 +7282,11 @@ export function createGuestRequestHandler(
         sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
         return;
       }
+      const admitted = bindingLimiter.tryConsume(accounts.clientAddress(req));
+      if (!admitted.allowed) {
+        sendAccountRateLimited(res, admitted.retryAfterSeconds);
+        return;
+      }
       // ADR 0093 / ADR 0070: every account session ends, and so does the interaction authority of each Linked Principal.
       const principals = accounts.principalsOf(account.accountGuestId);
       accounts.signOutEverywhere(account.accountGuestId);
@@ -7195,7 +7294,7 @@ export function createGuestRequestHandler(
       for (const [key, cached] of browserSessions) {
         if (principals.includes(cached.principalId)) browserSessions.delete(key);
       }
-      const interactionId = replaceInteractionSession(null, `guest-${crypto.randomUUID()}`);
+      const interactionId = replaceInteractionSession(null, `guest-${crypto.randomUUID()}`, false);
       res.setHeader("Set-Cookie", [interactionCookieLine(interactionId), clearedAccountCookieLine()]);
       res.writeHead(303, { Location: "/", "Cache-Control": "no-store" });
       res.end();

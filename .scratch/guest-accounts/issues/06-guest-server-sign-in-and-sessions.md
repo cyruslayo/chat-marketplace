@@ -30,6 +30,7 @@ The authority (04) and linking (05) exist in the domain; the Guest app must let 
 - AC2: A wrong code shows an inline `.ui-field__error` with `role="alert"` and keeps the email; the attempt limit and expired code each show their own message.
 - AC3: The session secret changes at sign-in (the pre-sign-in cookie value no longer authenticates as the account).
 - AC4: Sign out everywhere closes an open stream in a second browser context and its next turn is refused.
+  - Scope note (11 Oct 2026, human-approved; see Comments): the app has no SSE or other stream, so the criterion is met by refusing the other device's next turn. The original wording above is kept unchanged.
 - AC5: Code requests over the limit get the standard rate-limited response.
 - AC6: A `return` value that is absolute, protocol-relative or off-site is ignored.
 - AC7: No server log, notification record or audit entry contains the email, the code or the cookie value.
@@ -102,3 +103,24 @@ Implemented on `ga-06-sign-in-sessions`:
 - Approval of `GUEST_ACCOUNT_COPY` (functional wording, not final).
 - Decision: conventional detail pages for linked principals (follow-up for issues 07 and 08, Q3).
 - Decision: whether a sign-in code send should record an audit row in `pilot_notifications` (key and status only, never the code).
+- 11 Oct 2026, HUMAN-APPROVED (AC4 scope, Q-b). The orchestrator asked: "Issue 06, AC4: the criterion says sign-out-everywhere closes an open stream; the app has no stream; the agent implemented the other device's next turn is refused; accept or reject?" The human replied: "Accept" (11 Oct 2026). The AC4 wording is kept; the scope note under AC4 records that the criterion is met by refusing the other device's next turn. This replaces the earlier "awaiting human approval" entry.
+- 11 Oct 2026, orchestrator decisions (delegated by the human, NOT human quotes): Q-a, a device's own conversation under its OWN principal is not account history and stays served from its interaction cookie (ADR 0093 concerns other linked principals' history). Q-c, the key minimum is a length check only; entropy cannot be checked here; 32 is kept and listed as "confirm or change" in Needs human. Q-d, docs/agents/issue-tracker.md is left alone. Q-f (UX), skipped.
+- 11 Oct 2026, security re-review of PR #102 (head 7f80e82), fixes with failing tests first:
+  - Item 1 (high): a linked read rewrote a saved conversation's owner. `#persistThread` wrote the reading session's principal. Fix: a write never changes ownership, and a runtime that does not own a saved conversation does not write it. Audit of every write path: `bindBrowserThread` saves only the owner's own record; the binding and session writes are the session's own; `guestContactApp.submitPhone/submitEmail` write the session principal's own contact row (not another principal's); conventional routes use the session principal, which the domain checks against the request's primary guest; telemetry carries no ownership. OPEN follow-up: a linked device's turn on another principal's conversation runs under the device's own principal inside the domain; the domain's ownership checks are relied on, and no test asserts them for every command.
+  - Item 2 (medium): sign-out everywhere with accounts disabled. Choice: the session hash needs no key, so the revocation goes through the store directly (`revokeGuestAccountWithoutKey`). If the credential does not resolve, sign-out everywhere refuses with 503, claims no success and keeps the cookie. A plain sign-out always clears the cookie and rotates the browser. Test: sign in, restart with accounts disabled on the same database, sign out everywhere, restart enabled; the old account cookie no longer authenticates and the linked device's cookie is retired.
+  - Item 3 (medium): sign-in emptied the device's own conversation until restart. Fix: the rotated session carries only the same principal's saved conversations.
+  - Item 4 (low): GET sign-in no longer writes a binding; the first POST that needs a session (sign-in and code) and the sign-out routes share the ADR 0093 per-address code-request budget (20 per address per hour, from policy defaults) before a binding is written. The pilot's own new-session limit still applies to the home page; this round does not change it.
+  - Item 5 (fail-closed): a conversation with no saved record is not served.
+  - Q-e (operations): production must set SHORTLET_PUBLIC_ORIGIN (required and HTTPS-only in `apps/pilot/src/pilot-config-core.ts`). It reaches the guest handler in `apps/pilot/src/pilot-server.ts` and `apps/cloudflare/src/shortlet-pilot-do.ts`. Without it, the Origin and Referer comparison falls back to the request host over http, so an HTTPS deployment refuses every account POST (fail closed).
+  - Q-b (AC4) is recorded above.
+- 11 Oct 2026, probes on the final code (each guard removed, the account test file run, file restored by hash): see the PR body. Equivalent mutants: the input prefix guard and the origin guard (return path), and the record-less guard (M21), which is defence in depth because the app already returns nothing without a saved record.
+- 11 Oct 2026, screenshots: still not captured (no Chrome here); handed to issue 11. Status stays `ready-for-agent`.
+
+### Needs human (updated)
+- `SHORTLET_GUEST_CODE_HASHING_KEY`: at least 32 characters (confirm or change; Q-c). Name chosen here, no value supplied.
+- `RESEND_API_KEY` and `SHORTLET_NOTIFICATION_FROM`: existing names.
+- `SHORTLET_TRUST_CF_CONNECTING_IP=true` in every Cloudflare-fronted deployment (Q6).
+- `SHORTLET_PUBLIC_ORIGIN` must be set in production (Q-e); it is already required there.
+- Approval of `GUEST_ACCOUNT_COPY`.
+- Decision: conventional detail pages for linked principals (follow-up for issues 07 and 08).
+- Decision: whether a code send records an audit row in `pilot_notifications`.

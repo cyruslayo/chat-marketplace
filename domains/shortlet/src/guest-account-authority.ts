@@ -709,3 +709,38 @@ export class SqliteGuestAccountAuthority {
     /* The composition owns the shared handle (ADR 0095). */
   }
 }
+
+/**
+ * Ends an account's session(s) from a session credential without the code-hashing key (ADR 0093, ADR 0070). Account
+ * sign-in can be disabled (no key, or no sender) while stored sessions still exist. A sign-out or sign-out everywhere
+ * must still end them, and the session hash needs no key: SHA-256 of the secret, compared in constant time. Returns the
+ * account and its Linked Principals when the credential resolves (tenant, not revoked, not expired), otherwise null.
+ * With `everywhere` false only the presented session ends; otherwise every session of the account in the tenant.
+ */
+export function revokeGuestAccountWithoutKey(
+  database: SqlDatabase,
+  input: { readonly sessionId: string; readonly sessionSecret: string; readonly tenantId: string; readonly everywhere: boolean; readonly now: Date },
+): { readonly accountGuestId: string; readonly principalIds: readonly string[] } | null {
+  const tables = database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'guest_account_sessions'").get([]);
+  if (tables === undefined) return null;
+  const row = database.prepare("SELECT session_secret_hash, tenant_id, account_guest_id, expires_at, revoked_at FROM guest_account_sessions WHERE session_id = ?").get([input.sessionId]);
+  if (!row || typeof row.session_secret_hash !== "string" || row.tenant_id !== input.tenantId || row.revoked_at !== null) return null;
+  if (typeof row.account_guest_id !== "string" || typeof row.expires_at !== "string") return null;
+  if (!verifyDigest(hashGuestAccountSessionSecret(input.sessionSecret), row.session_secret_hash)) return null;
+  const expiresAt = parsedTimestamp(row.expires_at);
+  if (!expiresAt || input.now.getTime() >= expiresAt.getTime()) return null;
+  const nowIso = input.now.toISOString();
+  const accountGuestId = row.account_guest_id;
+  if (input.everywhere) {
+    database.prepare("UPDATE guest_account_sessions SET revoked_at = ? WHERE account_guest_id = ? AND tenant_id = ? AND revoked_at IS NULL")
+      .run([nowIso, accountGuestId, input.tenantId]);
+  } else {
+    database.prepare("UPDATE guest_account_sessions SET revoked_at = ? WHERE session_id = ? AND revoked_at IS NULL").run([nowIso, input.sessionId]);
+  }
+  const principals = database.prepare("SELECT principal_id FROM guest_account_principals WHERE tenant_id = ? AND account_guest_id = ?").all([input.tenantId, accountGuestId]);
+  const principalIds = principals.map((principal) => {
+    if (typeof principal.principal_id !== "string" || principal.principal_id === "") throw new Error("Stored principal link is malformed");
+    return principal.principal_id;
+  });
+  return Object.freeze({ accountGuestId, principalIds: Object.freeze(principalIds) });
+}

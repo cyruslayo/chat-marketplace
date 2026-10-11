@@ -747,8 +747,8 @@ test("D3: a browser whose interaction binding was retired by sign-out everywhere
       assert.notEqual(`${INTERACTION_COOKIE}=${freshHome}`, staleB);
       const freshCookie = `${INTERACTION_COOKIE}=${freshHome}`;
       const page = await getPage(second.fixture.base, SIGN_IN_PATH, staleB);
-      assert.equal(page.status, 200, "the sign-in page starts a fresh session instead of refusing");
-      assert.ok(setCookieValue(page, INTERACTION_COOKIE), "the sign-in page issues a new interaction cookie");
+      assert.equal(page.status, 200, "the sign-in page renders for a browser with a retired binding");
+      assert.equal(setCookieValue(page, INTERACTION_COOKIE), undefined, "rendering the form writes no binding (item 4)");
       // The fresh session has no account identity: no account page, and no committed work.
       assert.equal((await getPage(second.fixture.base, "/account", freshCookie)).status, 401);
       assert.deepEqual((await getJson(second.fixture.base, "/api/committed-work", freshCookie)).body.committedWork, []);
@@ -835,4 +835,178 @@ test("Q7: a code-hashing key of exactly 32 characters enables sign-in", async ()
     await fixture.close();
   }
   assert.equal(loadGuestAccountComposition({ SHORTLET_GUEST_CODE_HASHING_KEY: "k".repeat(32) }).codeHashingKey, "k".repeat(32));
+});
+
+// ---- Security re-review of PR #102 (7f80e82). Written before the fixes; red evidence in the PR body. ----
+
+const SESSION_BINDING_COUNT = (fixture: { readonly environment: { readonly database: SqlDatabase } }): number =>
+  (fixture.environment.database.prepare("SELECT COUNT(*) AS count FROM guest_session_bindings").get([]) as { count: number }).count;
+
+// Item 1 (high): a linked read must not rewrite a pending-stage conversation's owner; after expiry the linked device's
+// cookie alone is refused on every route that reads or writes the conversation.
+test("Re-review 1: a linked read never rewrites a pending-stage conversation's owner, and after expiry the device's cookie alone is refused", async () => {
+  const sender = new CapturingEmailSender();
+  const { fixture } = await accountFixture({ sender });
+  try {
+    const second = await accountFixture({ sender, databasePath: fixture.databasePath });
+    try {
+      await advanceToPendingWithPhone(second.fixture);
+      const bThread = second.fixture.threadId;
+      const bPrincipal = second.fixture.environment.interactionStore.findThread(bThread)?.principalId;
+      assert.ok(bPrincipal, "device B owns a saved pending conversation");
+      await signInDevice(second.fixture, sender, EMAIL, second.fixture.cookie);
+      advance(fixture, CODE_REQUEST_COOLDOWN_MS * 2);
+      const deviceA = await signInDevice(fixture, sender, EMAIL, fixture.cookie);
+      const bothA = cookieHeader({ [INTERACTION_COOKIE]: deviceA.interaction.split("=")[1], [ACCOUNT_COOKIE]: deviceA.account.split("=")[1] });
+      // Device A binds B's conversation (an empty turn is refused after binding), lists committed work, then reads B's conversation.
+      assert.equal((await postJson(fixture.base, "/api/turn", { threadId: bThread, text: "" }, bothA)).status, 400);
+      assert.equal((await getJson(fixture.base, "/api/committed-work", bothA)).status, 200);
+      assert.equal((await getJson(fixture.base, `/api/state?threadId=${bThread}`, bothA)).status, 200);
+      // (a) the owner row is unchanged by the linked read.
+      const owner = () => (fixture.environment.database.prepare("SELECT principal_id FROM guest_threads WHERE thread_id = ?").get([bThread]) as { principal_id: string }).principal_id;
+      assert.equal(owner(), bPrincipal, "the linked read does not re-own the conversation");
+      // The account expires (31 days); device A's interaction cookie stays.
+      advance(fixture, 31 * 24 * 60 * 60 * 1000);
+      const cookieOnly = cookieHeader({ [INTERACTION_COOKIE]: deviceA.interaction.split("=")[1] });
+      // (b) after expiry the cookie alone reads and writes nothing of B's conversation.
+      const state = await getJson(fixture.base, `/api/state?threadId=${bThread}`, cookieOnly);
+      assert.deepEqual(state.body.timeline, [], "the state read is empty");
+      const conversation = await getPage(fixture.base, `/conversation?threadId=${bThread}`, cookieOnly);
+      assert.equal(conversation.body.includes("Ikoyi"), false, "the conversation page does not show the transcript");
+      const posted = await postForm(fixture.base, "/conversation", { threadId: bThread, message: "Hello there" }, cookieOnly);
+      assert.notEqual(posted.status, 303, "a message to the conversation is not accepted");
+      assert.equal(posted.status, 401);
+      assert.equal((await postJson(fixture.base, "/api/turn", { threadId: bThread, text: "I need an apartment in Ikoyi" }, cookieOnly)).status, 401);
+      assert.equal((await postJson(fixture.base, "/api/event", { threadId: bThread, name: "shortlet.noop", context: {} }, cookieOnly)).status, 401);
+      assert.equal(owner(), bPrincipal, "no refused request re-owns the conversation either");
+    } finally {
+      await second.fixture.close();
+    }
+  } finally {
+    await fixture.close();
+  }
+});
+
+// Item 2 (medium): sign out everywhere with accounts disabled must revoke server-side, or it must not claim success.
+test("Re-review 2: sign out everywhere while accounts are disabled revokes the account, so a restart with accounts enabled refuses the old cookie", async () => {
+  const sender = new CapturingEmailSender();
+  const { fixture } = await accountFixture({ sender });
+  const databasePath = fixture.databasePath;
+  const device = await signInDevice(fixture, sender, EMAIL, fixture.cookie);
+  const second = await accountFixture({ sender, databasePath });
+  advance(second.fixture, CODE_REQUEST_COOLDOWN_MS * 2);
+  const linked = await signInDevice(second.fixture, sender, EMAIL, second.fixture.cookie);
+  // Stop both servers without deleting the database directory (fixture.close() would delete it).
+  await second.fixture.close();
+  await fixture.server.close();
+  // Restart with accounts disabled on the same database, then sign out everywhere.
+  const disabled = await restartFixture({ databasePath: databasePath }, { sessionScopedGuestPrincipals: true, guestAccounts: null });
+  try {
+    const out = await postForm(disabled.base, "/account/sign-out-everywhere", {}, cookieHeader({ [ACCOUNT_COOKIE]: device.account.split("=")[1], [INTERACTION_COOKIE]: device.interaction.split("=")[1] }));
+    assert.equal(out.status, 303, "the revocation is possible without the key, so it succeeds");
+    assert.match(out.setCookies.find((cookie) => cookie.startsWith(`${ACCOUNT_COOKIE}=`)) ?? "", /Max-Age=0/);
+  } finally {
+    await disabled.close();
+  }
+  // Restart with accounts enabled on the same database.
+  const enabled = await accountFixture({ sender, databasePath: databasePath });
+  try {
+    assert.equal((await getPage(enabled.fixture.base, "/account", device.account)).status, 401, "the old account cookie no longer authenticates");
+    assert.equal((await getJson(enabled.fixture.base, "/api/committed-work", linked.interaction)).status, 401, "the linked device's cookie is retired");
+    const fresh = await getJson(enabled.fixture.base, "/api/committed-work", await freshAnonymousCookie(enabled.fixture.base));
+    assert.deepEqual(fresh.body.committedWork, []);
+  } finally {
+    await enabled.fixture.close();
+    await fixture.close();
+  }
+});
+
+// Item 3 (medium): signing in keeps the device's own conversation readable from its new cookie, as before sign-in.
+test("Re-review 3: after sign-in the device's own conversation is served from its new cookie, with the same timeline as before, and after a restart", async () => {
+  const { fixture, sender } = await accountFixture();
+  try {
+    await advanceToPendingWithPhone(fixture);
+    const threadId = fixture.threadId;
+    const before = await getJson(fixture.base, `/api/state?threadId=${threadId}`, fixture.cookie);
+    const beforeCount = (before.body.timeline as unknown[]).length;
+    assert.ok(beforeCount > 0, "the conversation has a timeline before sign-in");
+    const device = await signInDevice(fixture, sender, EMAIL, fixture.cookie);
+    const after = await getJson(fixture.base, `/api/state?threadId=${threadId}`, device.interaction);
+    assert.equal((after.body.timeline as unknown[]).length, beforeCount, "the timeline is kept at sign-in");
+    await fixture.restart();
+    const restarted = await getJson(fixture.base, `/api/state?threadId=${threadId}`, device.interaction);
+    assert.equal((restarted.body.timeline as unknown[]).length, beforeCount, "and after a restart");
+  } finally {
+    await fixture.close();
+  }
+});
+
+// Item 4 (low): unauthenticated GETs create no session bindings; cookieless POSTs are limited before a binding is issued.
+test("Re-review 4: 30 unauthenticated GETs of the sign-in page create no session bindings", async () => {
+  const { fixture } = await accountFixture();
+  try {
+    const before = SESSION_BINDING_COUNT(fixture);
+    for (let attempt = 1; attempt <= 30; attempt += 1) assert.equal((await getPage(fixture.base, SIGN_IN_PATH)).status, 200);
+    assert.equal(SESSION_BINDING_COUNT(fixture), before, "no binding is written by a GET");
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("Re-review 4: cookieless sign-in POSTs beyond the per-address budget are refused before a binding is issued", async () => {
+  const { fixture } = await accountFixture();
+  try {
+    const before = SESSION_BINDING_COUNT(fixture);
+    // The per-address budget for sign-in requests is the ADR 0093 code-request budget (20 per address per hour).
+    for (let attempt = 1; attempt <= 20; attempt += 1) {
+      const answer = await postForm(fixture.base, SIGN_IN_PATH, { email: `budget${attempt}@example.test`, return: "/" }, "");
+      assert.equal(answer.status, 200, `request ${attempt} is within the budget`);
+    }
+    assert.equal(SESSION_BINDING_COUNT(fixture), before + 20);
+    const refused = await postForm(fixture.base, SIGN_IN_PATH, { email: "budget21@example.test", return: "/" }, "");
+    assert.equal(refused.status, 429);
+    assert.match(refused.body, /data-error-code="RATE_LIMITED"/);
+    assert.equal(SESSION_BINDING_COUNT(fixture), before + 20, "the refused POST issued no binding");
+  } finally {
+    await fixture.close();
+  }
+});
+
+// Item 5 (fail-closed): a conversation id bound without a saved record reads as empty, never as content.
+test("Re-review 5: a conversation id bound without a saved record reads as empty, not as content", async () => {
+  const { fixture } = await accountFixture();
+  try {
+    const id = `g-${crypto.randomUUID()}`;
+    assert.equal((await postJson(fixture.base, "/api/turn", { threadId: id, text: "" }, fixture.cookie)).status, 400, "the binding is accepted");
+    const state = await getJson(fixture.base, `/api/state?threadId=${id}`, fixture.cookie);
+    assert.deepEqual(state.body.timeline, []);
+    assert.deepEqual(state.body.surfaces, []);
+  } finally {
+    await fixture.close();
+  }
+});
+
+// Re-review 2 failure path: without the key, a forged secret revokes nothing; the real cookie still works afterwards.
+test("Re-review 2 failure path: with accounts disabled a forged session secret revokes nothing, and the real cookie still authenticates", async () => {
+  const sender = new CapturingEmailSender();
+  const { fixture } = await accountFixture({ sender });
+  const databasePath = fixture.databasePath;
+  const device = await signInDevice(fixture, sender, EMAIL, fixture.cookie);
+  await fixture.server.close();
+  const disabled = await restartFixture({ databasePath }, { sessionScopedGuestPrincipals: true, guestAccounts: null });
+  try {
+    const [sessionId] = device.account.split("=")[1]!.split(".");
+    const forged = await postForm(disabled.base, "/account/sign-out-everywhere", {}, cookieHeader({ [ACCOUNT_COOKIE]: `${sessionId}.forged-secret`, [INTERACTION_COOKIE]: device.interaction.split("=")[1] }));
+    assert.equal(forged.status, 503, "nothing can be ended, so the page refuses and claims no success");
+    assert.equal(setCookieValue(forged, ACCOUNT_COOKIE), undefined, "the real cookie is not expired by a forged one");
+  } finally {
+    await disabled.close();
+  }
+  const enabled = await accountFixture({ sender, databasePath });
+  try {
+    assert.equal((await getPage(enabled.fixture.base, "/account", device.account)).status, 200, "the real account session still works");
+  } finally {
+    await enabled.fixture.close();
+    await fixture.close();
+  }
 });
