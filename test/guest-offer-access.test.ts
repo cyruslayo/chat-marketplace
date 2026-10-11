@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  advanceClock,
   ACCOUNT_COOKIE,
   CODE_REQUEST_COOLDOWN_MS,
   CapturingEmailSender,
@@ -18,13 +19,10 @@ import {
 
 const EMAIL = "owner@example.test";
 
-function advance(fixture: { setTime(value: string): void; environment: { clock(): Date } }, milliseconds: number): void {
-  fixture.setTime(new Date(fixture.environment.clock().getTime() + milliseconds).toISOString());
-}
 
 /** A device that holds a Booking Request awaiting the operator, then an accepted Conditional Booking Offer. */
-async function deviceWithOffer(fixture: Parameters<typeof advanceToPendingWithPhone>[0]) {
-  const pending = await advanceToPendingWithPhone(fixture);
+async function deviceWithOffer(fixture: Parameters<typeof advanceToPendingWithPhone>[0], email?: string) {
+  const pending = await advanceToPendingWithPhone(fixture, email === undefined ? {} : { email });
   const requestId = pending.surfaces[0]!.surfaceId.split(":").at(-1)!;
   fixture.environment.simulateOperatorAcceptance(requestId);
   const offer = fixture.environment.interactionStore.findConditionalOfferByRequestId(requestId);
@@ -36,7 +34,7 @@ async function deviceWithOffer(fixture: Parameters<typeof advanceToPendingWithPh
 // Re-review 6 (high, pre-existing on main): the payment page of an offer is readable only by the offer's own guest
 // (the primary guest, or the distinct payer), through the session's identity. Missing and foreign offers are refused
 // the same way.
-test("Re-review 6: the offer's own guest reads the payment page with the stay details", async () => {
+test("Offer access: the offer's own guest reads the payment page with the stay details", async () => {
   const { fixture } = await accountFixture();
   try {
     const { offerId, title } = await deviceWithOffer(fixture);
@@ -48,7 +46,7 @@ test("Re-review 6: the offer's own guest reads the payment page with the stay de
   }
 });
 
-test("Re-review 6: an anonymous session that presents the offer id gets no stay details", async () => {
+test("Offer access: an anonymous session that presents the offer id gets no stay details", async () => {
   const { fixture } = await accountFixture();
   try {
     const { offerId, title } = await deviceWithOffer(fixture);
@@ -62,21 +60,23 @@ test("Re-review 6: an anonymous session that presents the offer id gets no stay 
   }
 });
 
-test("Re-review 6 failure path: a missing offer and a foreign offer get the same refusal", async () => {
+test("Offer access failure path: a missing offer and a foreign offer get the same refusal", async () => {
   const { fixture } = await accountFixture();
   try {
     const { offerId } = await deviceWithOffer(fixture);
     const stranger = await freshAnonymousCookie(fixture.base);
     const foreign = await getPage(fixture.base, `/payments/offers/${encodeURIComponent(offerId)}`, stranger);
     const missing = await getPage(fixture.base, `/payments/offers/${encodeURIComponent("offer-does-not-exist")}`, fixture.cookie);
-    assert.equal(missing.status, foreign.status);
-    assert.equal(missing.body.match(/data-error-code="[^"]+"/)?.[0], foreign.body.match(/data-error-code="[^"]+"/)?.[0]);
+    assert.equal(missing.status, 404);
+    assert.equal(foreign.status, 404);
+    assert.equal(missing.body, foreign.body, "the two refusals are the same page, with no offer id echoed");
+    assert.match(foreign.body, /href="\/account\/sign-in"/, "the refusal carries plain sign-in guidance");
   } finally {
     await fixture.close();
   }
 });
 
-test("Re-review 6: a linked device reads the payment page while the account is live, and nothing after the account expires", async () => {
+test("Offer access: a linked device reads the payment page while the account is live, and nothing after the account expires", async () => {
   const sender = new CapturingEmailSender();
   const { fixture } = await accountFixture({ sender });
   try {
@@ -84,14 +84,14 @@ test("Re-review 6: a linked device reads the payment page while the account is l
     const owner = await signInDevice(fixture, sender, EMAIL, fixture.cookie);
     const second = await accountFixture({ sender, databasePath: fixture.databasePath });
     try {
-      advance(second.fixture, CODE_REQUEST_COOLDOWN_MS * 2);
+      advanceClock(second.fixture, CODE_REQUEST_COOLDOWN_MS * 2);
       const linked = await signInDevice(second.fixture, sender, EMAIL, second.fixture.cookie);
       const linkedCookies = cookieHeader({ [INTERACTION_COOKIE]: linked.interaction.split("=")[1], [ACCOUNT_COOKIE]: linked.account.split("=")[1] });
       const live = await getPage(second.fixture.base, `/payments/offers/${encodeURIComponent(offerId)}`, linkedCookies);
       assert.equal(live.status, 200);
       assert.ok(live.body.includes(title), "the linked device sees the stay while the account is live");
       // The account session expires; the device's interaction cookie stays.
-      advance(second.fixture, 31 * 24 * 60 * 60 * 1000);
+      advanceClock(second.fixture, 31 * 24 * 60 * 60 * 1000);
       const cookieOnly = cookieHeader({ [INTERACTION_COOKIE]: linked.interaction.split("=")[1] });
       const expired = await getPage(second.fixture.base, `/payments/offers/${encodeURIComponent(offerId)}`, cookieOnly);
       assert.equal(expired.body.includes(title), false, "after expiry the linked device sees no stay");
@@ -104,7 +104,7 @@ test("Re-review 6: a linked device reads the payment page while the account is l
   }
 });
 
-test("Re-review 6: sign out everywhere ends a linked device's access to the payment page", async () => {
+test("Offer access: sign out everywhere ends a linked device's access to the payment page", async () => {
   const sender = new CapturingEmailSender();
   const { fixture } = await accountFixture({ sender });
   try {
@@ -112,7 +112,7 @@ test("Re-review 6: sign out everywhere ends a linked device's access to the paym
     const owner = await signInDevice(fixture, sender, EMAIL, fixture.cookie);
     const second = await accountFixture({ sender, databasePath: fixture.databasePath });
     try {
-      advance(second.fixture, CODE_REQUEST_COOLDOWN_MS * 2);
+      advanceClock(second.fixture, CODE_REQUEST_COOLDOWN_MS * 2);
       const linked = await signInDevice(second.fixture, sender, EMAIL, second.fixture.cookie);
       const out = await postForm(fixture.base, "/account/sign-out-everywhere", {}, cookieHeader({ [ACCOUNT_COOKIE]: owner.account.split("=")[1], [INTERACTION_COOKIE]: owner.interaction.split("=")[1] }));
       assert.equal(out.status, 303);
@@ -127,7 +127,7 @@ test("Re-review 6: sign out everywhere ends a linked device's access to the paym
   }
 });
 
-test("Re-review 6: an anonymous session cannot start a payment method on someone else's offer", async () => {
+test("Offer access: an anonymous session cannot start a payment method on someone else's offer", async () => {
   const { fixture } = await accountFixture();
   try {
     const { offerId } = await deviceWithOffer(fixture);
@@ -141,7 +141,7 @@ test("Re-review 6: an anonymous session cannot start a payment method on someone
 });
 
 // Re-review 4 (low): a conversation with no session cookie is saved only under the guest principal's own record.
-test("Re-review 4: a cookieless turn never re-owns a conversation saved for another principal", async () => {
+test("Cookieless turn never re-owns a conversation saved for another principal", async () => {
   const { restartFixture } = await import("./helpers/guest-restart.js");
   const fixture = await restartFixture();
   try {
@@ -155,4 +155,43 @@ test("Re-review 4: a cookieless turn never re-owns a conversation saved for anot
   } finally {
     await fixture.close();
   }
+});
+
+test("Offer access: a device whose account claimed the request by its recorded email sees the offer; a stranger does not", async () => {
+  const sender = new CapturingEmailSender();
+  const { fixture } = await accountFixture({ sender });
+  try {
+    // The lost device makes the request with an email and never signs in.
+    const { offerId, title } = await deviceWithOffer(fixture, EMAIL);
+    const claimant = await accountFixture({ sender, databasePath: fixture.databasePath });
+    try {
+      advanceClock(claimant.fixture, CODE_REQUEST_COOLDOWN_MS * 2);
+      const device = await signInDevice(claimant.fixture, sender, EMAIL, claimant.fixture.cookie);
+      const cookies = cookieHeader({ [INTERACTION_COOKIE]: device.interaction.split("=")[1], [ACCOUNT_COOKIE]: device.account.split("=")[1] });
+      const shown = await getPage(claimant.fixture.base, `/payments/offers/${encodeURIComponent(offerId)}`, cookies);
+      assert.equal(shown.status, 200, "the claimed request's offer is shown to the claiming account");
+      assert.ok(shown.body.includes(title));
+      const stranger = await freshAnonymousCookie(claimant.fixture.base);
+      const refused = await getPage(claimant.fixture.base, `/payments/offers/${encodeURIComponent(offerId)}`, stranger);
+      assert.equal(refused.status, 404);
+      assert.equal(refused.body.includes(title), false);
+    } finally {
+      await claimant.fixture.close();
+    }
+  } finally {
+    await fixture.close();
+  }
+});
+
+// Fail closed: a lookup that throws refuses the gate (unit level, so the handler's own catch cannot mask it).
+test("Offer access: the gate refuses when the offer lookup throws (fail closed)", async () => {
+  const { offerAuthorized } = await import("../apps/local-guest/src/guest-server.js");
+  const { anonymousGuestIdentity } = await import("../domains/shortlet/src/index.js");
+  const identity = anonymousGuestIdentity("guest-owner", "tenant-1");
+  const session = { identity } as unknown as Parameters<typeof offerAuthorized>[1];
+  const throwing = { conditionalOfferApp: { manager: { getOffer: () => { throw new Error("offer store unavailable"); } } } };
+  assert.equal(offerAuthorized(throwing as unknown as Parameters<typeof offerAuthorized>[0], session, "offer-x"), false);
+  // Positive control: the same gate admits the owner when the lookup works.
+  const working = { conditionalOfferApp: { manager: { getOffer: () => ({ tenantId: "tenant-1", requestId: "req-x", parties: { primaryGuest: { id: "guest-owner" }, distinctPayer: null } }) } } };
+  assert.equal(offerAuthorized(working as unknown as Parameters<typeof offerAuthorized>[0], session, "offer-x"), true);
 });

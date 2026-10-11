@@ -105,3 +105,19 @@ export function renderSignInUnavailableHtml(): string {
     action: { href: "/", label: "Back to your conversation" },
   });
 }
+
+/**
+ * The refusal for an offer or payment link this browser may not open (Q2). The same page for a missing and a foreign
+ * offer: it names no offer and carries plain sign-in guidance (copy awaiting human approval).
+ */
+export function renderOfferNotFoundHtml(): string {
+  return pageShell({
+    title: `${GUEST_ACCOUNT_COPY.offerNotFoundTitle} · Shortlet`,
+    width: "narrow",
+    frame: appBar("/", "Back to your conversation", { href: SIGN_IN_PATH, label: GUEST_ACCOUNT_COPY.appBarSignIn, icon: "info" }),
+    body: `<section class="ui-panel ui-empty" data-error-code="PAYMENT_OFFER_NOT_FOUND" data-status="404"><h1>${escapeHtml(GUEST_ACCOUNT_COPY.offerNotFoundTitle)}</h1>` +
+      `<p>${escapeHtml(GUEST_ACCOUNT_COPY.offerNotFoundMessage)}</p>` +
+      `<a class="ui-button ui-button--primary ui-button--block" href="${SIGN_IN_PATH}">${escapeHtml(GUEST_ACCOUNT_COPY.signInTitle)}</a>` +
+      `<a class="ui-button ui-button--block" href="/">Back to your conversation</a></section>`,
+  });
+}

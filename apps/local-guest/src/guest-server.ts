@@ -250,6 +250,7 @@ import {
   type GuestAccountSession,
 } from "../../../domains/shortlet/src/index.js";
 import {
+  renderOfferNotFoundHtml,
   renderAccountHtml,
   renderRateLimitedHtml,
   renderSignInCodeHtml,
@@ -6564,15 +6565,11 @@ function withAccountIdentity(
 }
 
 /**
- * Whether a session may read a thread now (D2). The thread must be in the session's set, and when it is persisted its
- * owner must be in the identity resolved for this request, so a linked conversation stops once the account session ends.
- */
-/**
- * Whether a session may read or act on an offer's stay and money details (re-review 6, ADR 0070, 0075, 0093): the offer's
+ * Whether a session may read or act on an offer's stay and money details (offer access, ADR 0070, 0075, 0093): the offer's
  * primary guest in the session's identity (its own principal, a linked principal, or a claimed request), or its distinct
  * payer. A missing offer, a foreign one and one without a tenant are all refused the same way.
  */
-function offerAuthorized(
+export function offerAuthorized(
   env: LocalGuestEnvironment,
   session: BrowserSession,
   offerId: string,
@@ -6602,6 +6599,10 @@ function offerAuthorized(
   );
 }
 
+/**
+ * Whether a session may read a thread now (D2). The thread must be in the session's set, and when it is persisted its
+ * owner must be in the identity resolved for this request, so a linked conversation stops once the account session ends.
+ */
 function threadReadable(
   env: LocalGuestEnvironment,
   session: BrowserSession,
@@ -7143,13 +7144,20 @@ export function createGuestRequestHandler(
           res.end(renderSignInUnavailableHtml());
           return;
         }
+        const previous = existingBrowserSession(req);
         if (everywhere && ended !== null) {
           env.interactionStore.deleteSessionBindingsForPrincipals(ended.principalIds, env.config.tenantId);
           for (const [key, cached] of browserSessions) {
             if (ended.principalIds.includes(cached.principalId)) browserSessions.delete(key);
           }
         }
-        const previous = existingBrowserSession(req);
+        if (previous === null) {
+          // Round 4: no presented session, so no binding is written; the account cookie is cleared.
+          res.setHeader("Set-Cookie", clearedAccountCookieLine());
+          res.writeHead(303, { Location: "/", "Cache-Control": "no-store" });
+          res.end();
+          return;
+        }
         const interactionId = replaceInteractionSession(previous, `guest-${crypto.randomUUID()}`, false);
         res.setHeader("Set-Cookie", [interactionCookieLine(interactionId), clearedAccountCookieLine()]);
         res.writeHead(303, { Location: "/", "Cache-Control": "no-store" });
@@ -7302,6 +7310,13 @@ export function createGuestRequestHandler(
       // Sign-out is never rate limited (orchestrator decision): the budget meters only code sends and new bindings.
       accounts.signOut(credentials);
       const previous = existingBrowserSession(req);
+      if (previous === null) {
+        // Round 4: no presented session means nothing to rotate, so no binding is written; the account cookie is cleared.
+        res.setHeader("Set-Cookie", clearedAccountCookieLine());
+        res.writeHead(303, { Location: "/", "Cache-Control": "no-store" });
+        res.end();
+        return;
+      }
       const interactionId = replaceInteractionSession(previous, `guest-${crypto.randomUUID()}`, false);
       res.setHeader("Set-Cookie", [interactionCookieLine(interactionId), clearedAccountCookieLine()]);
       res.writeHead(303, { Location: "/", "Cache-Control": "no-store" });
@@ -7316,13 +7331,21 @@ export function createGuestRequestHandler(
         return;
       }
       // ADR 0093 / ADR 0070: every account session ends, and so does the interaction authority of each Linked Principal.
+      const presentedSession = existingBrowserSession(req);
       const principals = accounts.principalsOf(account.accountGuestId);
       accounts.signOutEverywhere(account.accountGuestId);
       env.interactionStore.deleteSessionBindingsForPrincipals(principals, account.tenantId);
       for (const [key, cached] of browserSessions) {
         if (principals.includes(cached.principalId)) browserSessions.delete(key);
       }
-      const interactionId = replaceInteractionSession(null, `guest-${crypto.randomUUID()}`, false);
+      if (presentedSession === null) {
+        // Round 4: no presented session, so no binding is written; the account cookie is cleared.
+        res.setHeader("Set-Cookie", clearedAccountCookieLine());
+        res.writeHead(303, { Location: "/", "Cache-Control": "no-store" });
+        res.end();
+        return;
+      }
+      const interactionId = replaceInteractionSession(presentedSession, `guest-${crypto.randomUUID()}`, false);
       res.setHeader("Set-Cookie", [interactionCookieLine(interactionId), clearedAccountCookieLine()]);
       res.writeHead(303, { Location: "/", "Cache-Control": "no-store" });
       res.end();
@@ -7378,7 +7401,13 @@ export function createGuestRequestHandler(
           return;
         }
         if (!offerAuthorized(env, requestSession, offerKey)) {
-          sendPageError(req, res, 404, "PAYMENT_OFFER_NOT_FOUND");
+          // API clients keep their JSON refusal; a browser navigation gets the page with plain sign-in guidance.
+          if (!prefersHtml(req.headers.accept)) {
+            sendPageError(req, res, 404, "PAYMENT_OFFER_NOT_FOUND");
+            return;
+          }
+          res.writeHead(404, GUEST_HTML_HEADERS);
+          res.end(renderOfferNotFoundHtml());
           return;
         }
       }

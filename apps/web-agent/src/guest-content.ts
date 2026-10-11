@@ -331,6 +331,8 @@ export const GUEST_ACCOUNT_COPY = Object.freeze({
   signOutEverywhereIntro: "This signs out every device on your account. Open conversations on those devices stop working.",
   appBarSignIn: "Sign in",
   appBarAccount: "Account",
+  offerNotFoundTitle: "We could not find that payment link",
+  offerNotFoundMessage: "This link does not belong to this browser, or it has expired. Sign in to see the stays on your account, or start again from your conversation.",
   rateLimitedTitle: "Please slow down",
   rateLimitedMessage: "Too many requests came from here in a short time. Wait a few minutes, then try again.",
   emailSubject: "Your Shortlet sign-in code",

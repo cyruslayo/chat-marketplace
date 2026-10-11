@@ -230,3 +230,8 @@ export async function freshAnonymousCookie(base: string): Promise<string> {
   assert.ok(value, "the home page issues a browser session");
   return `${INTERACTION_COOKIE}=${value}`;
 }
+
+/** Advances one fixture's clock. The authority and the session checks read the server's clock, so each device needs its own. */
+export function advanceClock(fixture: { setTime(value: string): void; environment: { clock(): Date } }, milliseconds: number): void {
+  fixture.setTime(new Date(fixture.environment.clock().getTime() + milliseconds).toISOString());
+}
