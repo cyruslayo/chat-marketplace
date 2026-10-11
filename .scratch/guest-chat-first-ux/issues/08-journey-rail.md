@@ -1,6 +1,6 @@
 # Journey rail and back to results
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 04a
 Findings: F5 (see ../PRD.md)
@@ -30,3 +30,10 @@ Add a compact rail (Search → Stay → Request → Offer → Pay → Confirmed)
 - [ ] No invented policy strings: guest-facing wording for money/legal states traces to CONTEXT.md or an ADR; gaps raised with the user.
 - [ ] No bearer credentials or contact values in telemetry or logs (ADR 0075).
 - [ ] `npm run check` and `npm test` pass.
+
+## Comments
+- 11 Oct 2026, **Status reconciliation**: `Status: ready-for-agent` -> `Status: resolved` (reconciled against origin/main 37b9c62).
+  - Answer: `scratch/issues/08-journey-rail.md` (repo root). `projectJourney` builds the six steps and marks an outcome step failed. `#journeyFor` reads the authoritative artifacts on every call, so a passed deadline shows as expired without a background job. `BACK_TO_RESULTS_EVENT` fails closed (`STALE_SURFACE`, `INVALID_ARTIFACT`, `INVALID_CONTEXT`) and runs no new search.
+  - Evidence: test/guest-journey-rail.test.ts (AC1–AC4 over HTTP, plus `projectJourney`); test/guest-journey-rail-chromium.test.ts (375px, 320px overflow). Code: apps/local-guest/src/journey-rail.ts (`projectJourney`); apps/local-guest/src/guest-server.ts (`#journeyFor`, `#handleBackToResults`). Landing: PR #59, commits 6e347ed, 5c4785f.
+  - Verified: non-browser tests for this group were run on 11 Oct 2026 (75 of 75 pass).
+  - Not verified: real-Chrome tests (`*-chromium.test.ts`, `mobile-guest-journey-chromium.test.ts`) were not run in the reconciliation sandbox (no Chrome); they pass in the CI `browser` job on main. The 320/390/768/1280 screenshots and the ADR 0078 capture sweep were not re-checked. The Definition of Done checklist was not re-ticked item by item in this reconciliation.

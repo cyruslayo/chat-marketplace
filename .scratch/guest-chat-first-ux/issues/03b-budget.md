@@ -1,6 +1,6 @@
 # Budget chip compared against the All-In Stay Total
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 03a
 Parent: [03](03-criteria-strip.md)
@@ -36,3 +36,8 @@ AC numbers are kept from the parent issue for traceability.
 
 ## Comments
 - 28 Sept 2026: the audit for launch-readiness issue 10 found this work implemented and tested on main, but this file was never set to resolved. The status is left for a human to confirm against the Definition of Done.
+- 11 Oct 2026, **Status reconciliation**: `Status: ready-for-agent` -> `Status: resolved` (reconciled against origin/main 37b9c62).
+  - Answer: `scratch/issues/03b-budget.md` (repo root). A budget chip (total for the stay or per night) is stored in the discovery context. A nightly budget is multiplied by the current nights at each search. `withinPrice` fails closed when a unit has no All-In Stay Total, and the "within budget" line appears only with a quote.
+  - Evidence: test/guest-budget.test.ts (AC6–AC10 with failure paths). Code: apps/local-guest/src/concierge.ts (`extractBudget`, `stayBudgetKobo`); domains/shortlet/src/browse.ts (`withinPrice`); apps/web-agent/src/discovery-a2ui.ts (`budgetNote`). Landing: PR #62, commits c1ce01b, 473b4ae.
+  - Verified: non-browser tests for this group were run on 11 Oct 2026 (75 of 75 pass).
+  - Not verified: real-Chrome tests (`*-chromium.test.ts`, `mobile-guest-journey-chromium.test.ts`) were not run in the reconciliation sandbox (no Chrome); they pass in the CI `browser` job on main. The 320/390/768/1280 screenshots and the ADR 0078 capture sweep were not re-checked. The Definition of Done checklist was not re-ticked item by item in this reconciliation.

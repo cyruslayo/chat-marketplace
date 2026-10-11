@@ -1,6 +1,6 @@
 # Criteria strip: Where, When and Guests chips with undo
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 02, 10
 Parent: [03](03-criteria-strip.md)
@@ -38,3 +38,8 @@ AC numbers are kept from the parent issue for traceability.
 
 ## Comments
 - 28 Sept 2026: the audit for launch-readiness issue 10 found this work implemented and tested on main, but this file was never set to resolved. The status is left for a human to confirm against the Definition of Done.
+- 11 Oct 2026, **Status reconciliation**: `Status: ready-for-agent` -> `Status: resolved` (reconciled against origin/main 37b9c62).
+  - Answer: `scratch/issues/03a-criteria-strip.md` (repo root). Where, When and Guests criteria are projected on every response. `shortlet.criteria.edit` and `.undo` are fail-closed (`CRITERIA_LOCKED`, `STALE_SURFACE`, `INVALID_CRITERIA`); undo keeps up to 11 prior searches. Below 48rem the strip is a compact summary with an Edit search toggle (26 Sept review).
+  - Evidence: test/guest-criteria-strip.test.ts; test/guest-criteria-strip-chromium.test.ts (AC5, keyboard only at 320px). Code: apps/local-guest/src/guest-server.ts (`#criteriaGuard`, `#handleCriteriaEdit`); apps/local-guest/src/concierge.ts (`applyCriteriaEdit`). Landing: PR #61, commits f347d9a, 0063055.
+  - Verified: non-browser tests for this group were run on 11 Oct 2026 (75 of 75 pass).
+  - Not verified: real-Chrome tests (`*-chromium.test.ts`, `mobile-guest-journey-chromium.test.ts`) were not run in the reconciliation sandbox (no Chrome); they pass in the CI `browser` job on main. The 320/390/768/1280 screenshots and the ADR 0078 capture sweep were not re-checked. The Definition of Done checklist was not re-ticked item by item in this reconciliation.

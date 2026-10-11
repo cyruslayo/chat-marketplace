@@ -1,6 +1,6 @@
 # Conventional booking pages with owner checks
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 06a
 Parent: [06](06-conventional-routes.md)
@@ -33,3 +33,8 @@ AC numbers are kept from the parent issue for traceability.
 
 ## Comments
 - 28 Sept 2026: the audit for launch-readiness issue 10 found this work implemented and tested on main, but this file was never set to resolved. The status is left for a human to confirm against the Definition of Done.
+- 11 Oct 2026, **Status reconciliation**: `Status: ready-for-agent` -> `Status: resolved` (reconciled against origin/main 37b9c62).
+  - Answer: `scratch/issues/06b-conventional-booking-pages.md` (repo root). `/booking-requests/:id`, `/booking-requests/drafts/:id`, `/conditional-offers/:id` and `/booking-contracts/:id` are served. A page is returned only when the principal owns the record through a stored thread projection and the domain checks pass. Anonymous gets 401; not owned or unknown gets 404 `BOOKING_RECORD_NOT_FOUND`.
+  - Evidence: test/guest-conventional-booking-pages.test.ts (AC1 with anonymous 401; AC4 owner checks). Code: apps/local-guest/src/guest-server.ts; `LocalGuestApp.conventionalBookingPage`. Landing: PR #57, commit d6c06f6.
+  - Verified: non-browser tests for this group were run on 11 Oct 2026 (75 of 75 pass).
+  - Not verified: real-Chrome tests (`*-chromium.test.ts`, `mobile-guest-journey-chromium.test.ts`) were not run in the reconciliation sandbox (no Chrome); they pass in the CI `browser` job on main. The 320/390/768/1280 screenshots and the ADR 0078 capture sweep were not re-checked. The Definition of Done checklist was not re-ticked item by item in this reconciliation.

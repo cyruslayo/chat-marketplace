@@ -1,6 +1,6 @@
 # Copy pass: one status line, plain vocabulary
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Findings: F6 (see ../PRD.md)
 
@@ -55,3 +55,10 @@ Open point: "apartment" does not fit a Unit that is a house. If house inventory 
 - [ ] No invented policy strings: guest-facing wording for money/legal states traces to CONTEXT.md or an ADR; gaps raised with the user.
 - [ ] No bearer credentials or contact values in telemetry or logs (ADR 0075).
 - [ ] `npm run check` and `npm test` pass.
+
+## Comments
+- 11 Oct 2026, **Status reconciliation**: `Status: ready-for-agent` -> `Status: resolved` (reconciled against origin/main 37b9c62).
+  - Answer: `scratch/issues/07-copy-pass.md` (repo root). `GUEST_GLOSSARY` in `guest-content.ts` is the single copy source. Each surface has one reservation status statement. Receipts render as `.receipt-marker` markers. The provider line appears on review, offer and confirmation, and the AC7 source scan keeps the fixed labels in the glossary.
+  - Evidence: test/guest-copy-pass.test.ts (one test per AC); AC4 in test/mobile-guest-journey-chromium.test.ts. Code: apps/web-agent/src/guest-content.ts (`GUEST_GLOSSARY`, `guestReservationStatus`, `accommodationProviderLine`). Landing: PR #52, commit dea991a.
+  - Verified: non-browser tests for this group were run on 11 Oct 2026 (75 of 75 pass).
+  - Not verified: real-Chrome tests (`*-chromium.test.ts`, `mobile-guest-journey-chromium.test.ts`) were not run in the reconciliation sandbox (no Chrome); they pass in the CI `browser` job on main. The 320/390/768/1280 screenshots and the ADR 0078 capture sweep were not re-checked. The Definition of Done checklist was not re-ticked item by item in this reconciliation.

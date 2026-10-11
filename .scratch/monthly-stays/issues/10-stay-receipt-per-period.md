@@ -1,6 +1,6 @@
 # Stay receipt for each Billing Period
 
-Status: ready-for-agent
+Status: needs-info
 Type: task
 Blocked by: 02, 06
 
@@ -37,3 +37,6 @@ Segment 1 books and pays personally, then claims the cost back from an employer.
 See `docs/agents/issue-tracker.md`. Include captures at 320, 390, 768 and 1280 under `screenshots/10/`.
 
 ## Comments
+- 11 Oct 2026, **Status reconciliation**: `Status: ready-for-agent` -> `Status: needs-info`. Reason: the acceptance criteria depend on counsel's answers, which are not recorded. Issue 02 (`02-legal-review-licence-and-receipts.md`) is still `Status: ready-for-human`, and its `## Answer` is not written. AC1 and AC3 here take the receipt field list and any tax line from issue 02 AC3. AC4 (credit note or corrected receipt) depends on counsel too. Issue 06 (`06-billing-periods-and-period-payments.md`, still `ready-for-agent`) defines the Billing Periods and Period Payments that AC1 and AC2 use. Blocked by lines are kept: 02, 06.
+- Open question: what receipt fields, tax lines, numbering rule and refund correction document does counsel require (issue 02 AC3 and the "Receipts" question 5)? Until counsel answers, this issue cannot name the fields without inventing them.
+- Reconciliation note (11 Oct 2026): status set from the reconciliation on origin/main 37b9c62. Not re-checked: the Definition of Done and the 320/390/768/1280 captions named in this file.
