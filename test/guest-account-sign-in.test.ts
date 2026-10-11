@@ -1010,3 +1010,82 @@ test("Re-review 2 failure path: with accounts disabled a forged session secret r
     await fixture.close();
   }
 });
+
+// Re-review 7 (medium): sign-out routes are never rate limited; a flood of cookieless sign-outs cannot block the signed-in
+// guest's own sign-out or sign-out everywhere.
+test("Re-review 7: 20 cookieless sign-outs from one address never block a signed-in sign-out or sign-out everywhere", async () => {
+  const sender = new CapturingEmailSender();
+  const { fixture } = await accountFixture({ sender });
+  try {
+    for (let attempt = 1; attempt <= 20; attempt += 1) {
+      assert.equal((await postForm(fixture.base, "/account/sign-out", {}, "")).status, 303, `cookieless sign-out ${attempt}`);
+    }
+    const device = await signInDevice(fixture, sender, EMAIL, fixture.cookie);
+    const out = await postForm(fixture.base, "/account/sign-out", {}, cookieHeader({ [ACCOUNT_COOKIE]: device.account.split("=")[1], [INTERACTION_COOKIE]: device.interaction.split("=")[1] }));
+    assert.equal(out.status, 303, "the signed-in sign-out is not refused");
+    assert.equal((await getPage(fixture.base, "/account", device.account)).status, 401, "and it revoked the account");
+    fixture.setTime(new Date(fixture.environment.clock().getTime() + CODE_REQUEST_COOLDOWN_MS * 2).toISOString());
+    const again = await signInDevice(fixture, sender, EMAIL, cookieHeader({ [INTERACTION_COOKIE]: setCookieValueOf(out, INTERACTION_COOKIE) }));
+    const everywhere = await postForm(fixture.base, "/account/sign-out-everywhere", {}, cookieHeader({ [ACCOUNT_COOKIE]: again.account.split("=")[1], [INTERACTION_COOKIE]: again.interaction.split("=")[1] }));
+    assert.equal(everywhere.status, 303, "the signed-in sign-out everywhere is not refused");
+    assert.equal((await getPage(fixture.base, "/account", again.account)).status, 401, "and it revoked the account");
+  } finally {
+    await fixture.close();
+  }
+});
+
+function setCookieValueOf(answer: { readonly setCookies: readonly string[] }, name: string): string {
+  const line = answer.setCookies.find((cookie) => cookie.startsWith(`${name}=`)) ?? "";
+  return line.split(";")[0]!.slice(name.length + 1);
+}
+
+// Re-review 8 (LOW, probe M4 survived): the key-free revocation refuses a session of another tenant, even with a valid secret.
+test("Re-review 8: the key-free revocation refuses a session of another tenant even when its secret is valid", async () => {
+  const { createGuestAccountFixture, signInGuestAccount } = await import("./helpers/guest-account-authority.js");
+  const { openNodeSqliteDatabase } = await import("../packages/platform-core/src/node-sqlite-database.js");
+  const { revokeGuestAccountWithoutKey } = await import("../domains/shortlet/src/guest-account-authority.js");
+  const accounts = await createGuestAccountFixture();
+  try {
+    const session = signInGuestAccount(accounts.authority, "tenant-check@example.test", "tenant-1");
+    const database = openNodeSqliteDatabase(accounts.databasePath);
+    try {
+      assert.equal(revokeGuestAccountWithoutKey(database, { sessionId: session.sessionId, sessionSecret: session.sessionSecret, tenantId: "tenant-2", everywhere: true, now: accounts.now() }), null);
+      assert.ok(accounts.authority.resolveSession(session.sessionId, session.sessionSecret), "the session is still live");
+    } finally {
+      database.close();
+    }
+  } finally {
+    await accounts.close();
+  }
+});
+
+// Re-review 9 (LOW, probe M7 survived): a conversation a linked device could read is not carried into the rotated session
+// for the interaction cookie alone.
+test("Re-review 9: a conversation of a linked principal is not carried into the rotated session for the interaction cookie alone", async () => {
+  const sender = new CapturingEmailSender();
+  const { fixture } = await accountFixture({ sender });
+  try {
+    await advanceToPendingWithPhone(fixture);
+    const ownerThread = fixture.threadId;
+    const owner = await signInDevice(fixture, sender, EMAIL, fixture.cookie);
+    const second = await accountFixture({ sender, databasePath: fixture.databasePath });
+    try {
+      second.fixture.setTime(new Date(second.fixture.environment.clock().getTime() + CODE_REQUEST_COOLDOWN_MS * 2).toISOString());
+      const linked = await signInDevice(second.fixture, sender, EMAIL, second.fixture.cookie);
+      // The linked device binds the owner's conversation through its account cookie, then the owner signs in again.
+      const linkedCookies = cookieHeader({ [INTERACTION_COOKIE]: linked.interaction.split("=")[1], [ACCOUNT_COOKIE]: linked.account.split("=")[1] });
+      assert.equal((await postJson(second.fixture.base, "/api/turn", { threadId: ownerThread, text: "" }, linkedCookies)).status, 400);
+      second.fixture.setTime(new Date(second.fixture.environment.clock().getTime() + CODE_REQUEST_COOLDOWN_MS * 2).toISOString());
+      const again = await signInDevice(second.fixture, sender, EMAIL, linked.interaction);
+      assert.ok(again.interaction);
+      const interactionOnly = cookieHeader({ [INTERACTION_COOKIE]: again.interaction.split("=")[1] });
+      const state = await getJson(second.fixture.base, `/api/state?threadId=${ownerThread}`, interactionOnly);
+      assert.deepEqual(state.body.timeline, [], "the rotated interaction cookie alone reads nothing of the owner's conversation");
+      assert.ok(owner.account);
+    } finally {
+      await second.fixture.close();
+    }
+  } finally {
+    await fixture.close();
+  }
+});

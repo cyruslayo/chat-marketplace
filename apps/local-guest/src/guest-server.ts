@@ -168,6 +168,7 @@ import {
 import {
   anonymousGuestIdentity,
   authorizesPrincipalOwner,
+  authorizesBookingRequest,
   hashSessionSecret,
   type GuestIdentity,
 } from "../../../domains/shortlet/src/index.js";
@@ -240,6 +241,7 @@ import {
 } from "./guest-account-runtime.js";
 import { GUEST_ACCOUNT_COPY } from "../../web-agent/src/guest-content.js";
 import { SlidingWindowRateLimiter } from "../../pilot/src/rate-limiter.js";
+import type { ConditionalBookingOffer } from "../../../domains/shortlet/src/index.js";
 import {
   GUEST_ACCOUNT_POLICY_DEFAULTS,
   GuestAccountAuthorityError,
@@ -6565,6 +6567,41 @@ function withAccountIdentity(
  * Whether a session may read a thread now (D2). The thread must be in the session's set, and when it is persisted its
  * owner must be in the identity resolved for this request, so a linked conversation stops once the account session ends.
  */
+/**
+ * Whether a session may read or act on an offer's stay and money details (re-review 6, ADR 0070, 0075, 0093): the offer's
+ * primary guest in the session's identity (its own principal, a linked principal, or a claimed request), or its distinct
+ * payer. A missing offer, a foreign one and one without a tenant are all refused the same way.
+ */
+function offerAuthorized(
+  env: LocalGuestEnvironment,
+  session: BrowserSession,
+  offerId: string,
+): boolean {
+  let offer: ConditionalBookingOffer;
+  try {
+    offer = env.conditionalOfferApp.manager.getOffer(offerId);
+  } catch {
+    return false;
+  }
+  if (!offer.tenantId) return false;
+  if (
+    authorizesBookingRequest(session.identity, {
+      requestId: offer.requestId,
+      primaryGuestId: offer.parties.primaryGuest.id,
+      tenantId: offer.tenantId,
+    })
+  )
+    return true;
+  const payerId = offer.parties.distinctPayer?.id;
+  return (
+    payerId !== undefined &&
+    authorizesPrincipalOwner(session.identity, {
+      principalId: payerId,
+      tenantId: offer.tenantId,
+    })
+  );
+}
+
 function threadReadable(
   env: LocalGuestEnvironment,
   session: BrowserSession,
@@ -6572,7 +6609,8 @@ function threadReadable(
 ): boolean {
   if (!session.threadIds.has(threadId)) return false;
   const record = env.interactionStore.findThread(threadId);
-  // Fail closed (AGENTS anti-pattern 1): with no saved record there is nothing provably this session's to read.
+  // Fail closed (AGENTS anti-pattern 1). Defence in depth: app.getState returns nothing without a saved record, so this
+  // guard is not what keeps content from a record-less id today; it stops a future read path from serving one.
   if (!record) return false;
   return authorizesPrincipalOwner(session.identity, {
     principalId: record.principalId,
@@ -6598,6 +6636,9 @@ function bindBrowserThread(
     const principal = env.guestPrincipal();
     const record = env.interactionStore.findThread(threadId);
     if (record) {
+      // Re-review 4: a conversation saved for another principal is never re-owned by a cookieless request.
+      if (record.principalId !== principal.id || record.tenantId !== env.config.tenantId)
+        return false;
       env.interactionStore.saveThread({
         threadId,
         principalId: principal.id,
@@ -7086,11 +7127,7 @@ export function createGuestRequestHandler(
           return;
         }
         const everywhere = path === "/account/sign-out-everywhere";
-        const admitted = bindingLimiter.tryConsume(clientAddressOf(req, accountComposition?.trustCloudflareClientAddress === true));
-        if (!admitted.allowed) {
-          sendAccountRateLimited(res, admitted.retryAfterSeconds);
-          return;
-        }
+        // Never rate limited (orchestrator decision).
         const presented = accountCredentialsOf(req);
         const ended = presented === null
           ? null
@@ -7262,11 +7299,7 @@ export function createGuestRequestHandler(
     }
 
     if (path === "/account/sign-out") {
-      const admitted = bindingLimiter.tryConsume(accounts.clientAddress(req));
-      if (!admitted.allowed) {
-        sendAccountRateLimited(res, admitted.retryAfterSeconds);
-        return;
-      }
+      // Sign-out is never rate limited (orchestrator decision): the budget meters only code sends and new bindings.
       accounts.signOut(credentials);
       const previous = existingBrowserSession(req);
       const interactionId = replaceInteractionSession(previous, `guest-${crypto.randomUUID()}`, false);
@@ -7280,11 +7313,6 @@ export function createGuestRequestHandler(
       const account = accounts.resolveAccount(credentials);
       if (!account) {
         sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
-        return;
-      }
-      const admitted = bindingLimiter.tryConsume(accounts.clientAddress(req));
-      if (!admitted.allowed) {
-        sendAccountRateLimited(res, admitted.retryAfterSeconds);
         return;
       }
       // ADR 0093 / ADR 0070: every account session ends, and so does the interaction authority of each Linked Principal.
@@ -7331,6 +7359,26 @@ export function createGuestRequestHandler(
           !reissuableBrowserRoute(req.method, url.pathname)
         ) {
           sendJson(res, 401, { ok: false, code: "AUTHENTICATION_REQUIRED" });
+          return;
+        }
+      }
+      // Re-review 6 (high, pre-existing on main): every route that names an offer reads its stay and money details, so the
+      // gate runs here, before any read. The refusal is the same for a missing offer and a foreign one.
+      const offerRoute = /^\/(payments\/offers|conditional-offers)\/([^/]+)(\/|$)/.exec(url.pathname);
+      if (offerRoute && (req.method === "GET" || req.method === "POST")) {
+        if (!requestSession) {
+          sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
+          return;
+        }
+        let offerKey: string;
+        try {
+          offerKey = decodeURIComponent(offerRoute[2]!);
+        } catch {
+          sendPageError(req, res, 400, "INVALID_OFFER");
+          return;
+        }
+        if (!offerAuthorized(env, requestSession, offerKey)) {
+          sendPageError(req, res, 404, "PAYMENT_OFFER_NOT_FOUND");
           return;
         }
       }

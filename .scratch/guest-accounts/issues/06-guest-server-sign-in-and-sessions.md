@@ -74,6 +74,8 @@ New `test/guest-account-sign-in.test.ts` (server) and `test/guest-account-sign-i
 
 ## Answer (provisional, not resolved)
 
+- Pointer (11 Oct 2026): the AC4 scope decision recorded in the first Comments round as an orchestrator decision (T1) is HUMAN-APPROVED, see the Comments entry "HUMAN-APPROVED (AC4 scope, Q-b)". The Answer below does not restate it.
+
 Implemented on `ga-06-sign-in-sessions`:
 - Routes: `GET /account/sign-in`, `POST /account/sign-in`, `POST /account/sign-in/code`, `GET /account`, `POST /account/sign-out`, `POST /account/sign-out-everywhere` in `apps/local-guest/src/guest-server.ts`, with pages in `apps/local-guest/src/guest-account-pages.ts`. Plain forms, origin-checked, no JavaScript needed.
 - Runtime and configuration: `apps/local-guest/src/guest-account-runtime.ts` (fail-closed loader, return-path sanitiser, client-address policy, sign-in, sign-out and identity over the existing authority, links and resolver).
@@ -89,7 +91,7 @@ Implemented on `ga-06-sign-in-sessions`:
   - Refused conflicting sign-in (M7 gap): a test asserts the session created by a refused link is revoked, and that no account cookie is set. Probe M13 removes the revoke and fails it.
   - Q4 (orchestrator decision): an account POST with no Origin and no same-origin Referer is refused (403). Tests cover no header, a foreign Referer and a same-origin Referer.
   - N3: with accounts disabled, the sign-out routes still expire the account cookie (303, `Max-Age=0`), and sign-in answers 503.
-  - T1 (orchestrator decision, recorded here): the AC4 test asserts that the second browser context's next turn is refused. The app has no SSE stream, so a refused next turn is the AC for "closes an open stream". Decided by the orchestrator on the human's behalf, not a human quote.
+  - T1 (orchestrator decision, recorded here; superseded by the HUMAN-APPROVED entry of 11 Oct 2026 below): the AC4 test asserts that the second browser context's next turn is refused. The app has no SSE stream, so a refused next turn is the AC for "closes an open stream". Decided by the orchestrator on the human's behalf, not a human quote.
   - Q5 (orchestrator decision, recorded here): the per-email lockout in the authority (five code requests per email per hour, and the cooldown) is accepted as issue 01 policy.
   - Q7 (orchestrator decision, confirm or change): a code-hashing key shorter than 32 characters disables sign-in (fail closed, no default key). The 32 is a named constant (`GUEST_CODE_HASHING_KEY_MIN_LENGTH`), not a literal in the logic. Tests: a 31-character key is refused, and a 32-character key is accepted.
   - Q8 (orchestrator decision, recorded here): the sign-in code is in the email body, which is accepted as inherent to emailed codes (ADR 0093).
@@ -124,3 +126,21 @@ Implemented on `ga-06-sign-in-sessions`:
 - Approval of `GUEST_ACCOUNT_COPY`.
 - Decision: conventional detail pages for linked principals (follow-up for issues 07 and 08).
 - Decision: whether a code send records an audit row in `pilot_notifications`.
+- 11 Oct 2026, round 3 security re-review of PR #102 (head 6e1fa81), base merged with origin/main (3533010):
+  - Item 1 (HIGH, pre-existing on main): `GET /payments/offers/:id` returned the stay, total and payment window to any session presenting the offer id. ADR 0075 says opaque identifiers confer no access, and the booking routes already require the owner's session. No ADR, CONTEXT.md entry or test makes the offer id a bearer link, so it is not one. Fix: a dispatch-level gate for `/payments/offers/:id[...]` and `/conditional-offers/:id[...]` checks that the session's identity holds the offer's primary guest (through its request, so its own, linked or claimed principals) or its distinct payer, before any read. A missing offer, a foreign one and one with no tenant get the same 404 `PAYMENT_OFFER_NOT_FOUND`. Tests: owner 200; anonymous session gets no stay details; missing and foreign refusals match; linked device 200 while live and nothing after expiry; sign-out everywhere then nothing; anonymous POST starts no payment.
+  - Audit of sibling routes (what each does now):
+    - `GET|POST /payments/offers/:id` (payment page and method form): gated by the offer check; the handler also checks the session.
+    - `/payments/offers/:id/manual-transfer` and `/receipt` (GET, POST): gated; the receipt is evidence only (ADR 0090).
+    - `/payments/offers/:id/transfer` (GET, POST): gated; starts bank transfer.
+    - `/payments/offers/:id/continue` (GET): gated.
+    - `POST /conditional-offers/:id/(accept|conversation|search)`: gated at dispatch; the conventional offer functions still check the principal against the offer's primary guest, so a linked device gets 404 (follow-up for issues 07 and 08).
+    - `GET|POST /booking-requests/(drafts/)?:id/...` and the booking-page GET: not gated by this change. They check the principal against the record's primary guest and return 404 to others (existing tests); linked devices get 404 (same follow-up). Draft ids are not offer ids.
+    - `/payments/paystack/callback` (GET): requires a session; a return signal only, the transition needs provider verification (ADR 0087). Not offer-keyed; not changed here.
+    - `/payments/local/checkout`, `/payments/local/complete`, `/payments/local/transfer/complete`: only with the explicit local-pilot composition (`localPayment`), which production refuses; session-gated. Not changed here.
+    - `/api/state`, `/api/turn`, `/api/event`, `/conversation`, `/api/committed-work`: thread-owner checks from rounds 1 and 2.
+    - `/guest/contact*`: the session principal's own contact row only.
+  - Item 2 (MEDIUM): sign-out routes are never rate limited (orchestrator decision, not a human quote). The per-address budget now meters only code sends and new-binding creation. Test: 20 cookieless sign-outs, then the signed-in sign-out and sign-out everywhere both succeed and revoke.
+  - Item 3 (LOW test gaps): M4 (tenant check in the key-free revocation) has a two-tenant test that only that check refuses. M7 (foreign ids carried at rotation): a test asserts the rotated interaction cookie alone reads nothing of a linked principal's conversation; this is EQUIVALENT under current invariants, because a non-linked id cannot enter the set (bind is owner-gated) and a linked id is readable only while its account is live. M3 (`threadReadable` record-less guard): EQUIVALENT, `app.getState` already returns nothing without a saved record; kept as defence in depth, with a comment.
+  - Item 4 (LOW): the cookieless branch of `bindBrowserThread` saves only the guest principal's own conversation; a foreign one is refused (401) and its owner row is unchanged.
+  - Q-a, Q-c, Q-d, Q-f: unchanged decisions from round 2.
+  - Probes (final code): see the PR body.
