@@ -476,7 +476,9 @@ export class BookingRequestManager {
       ,contactEmailSnapshot: contact?.contactEmail ?? null
     };
 
-    this.#requests.set(requestId, bookingRequest);
+    // ADR 0093: the contact email snapshot is persisted as claim evidence, and never leaves the domain through this object.
+    const { contactEmailSnapshot: _contactEmailSnapshot, ...publicRequest } = bookingRequest;
+    this.#requests.set(requestId, publicRequest);
     this.#persistRequest(bookingRequest);
 
     if (this.#audit) {
@@ -507,7 +509,7 @@ export class BookingRequestManager {
       }
     }
 
-    return { ...bookingRequest };
+    return { ...publicRequest };
   }
 
   markDelivered(

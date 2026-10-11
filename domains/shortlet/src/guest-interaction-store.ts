@@ -1,5 +1,6 @@
 import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
 import { createHash } from "node:crypto";
+import { normalizeContactEmail } from "./guest-contact.js";
 
 /**
  * Durable Guest booking interaction store (ADR-0070/0071/0074/0075/0079).
@@ -798,8 +799,10 @@ export class SqliteGuestInteractionStore {
         $declineReason: request.declineReason ?? null,
         $phoneNumber: request.phoneNumber,
       });
-    const snapshot = request.contactEmailSnapshot;
-    if (!existed && typeof snapshot === "string" && snapshot !== "") {
+    const snapshot = typeof request.contactEmailSnapshot === "string" && request.contactEmailSnapshot !== ""
+      ? normalizeContactEmail(request.contactEmailSnapshot)
+      : null;
+    if (!existed && snapshot !== null) {
       this.#database
         .prepare(`INSERT INTO guest_booking_request_contacts (request_id, tenant_id, contact_email, recorded_at)
           VALUES ($requestId, $tenantId, $contactEmail, $recordedAt)`)
@@ -848,7 +851,7 @@ export class SqliteGuestInteractionStore {
       .prepare(`SELECT r.request_id, r.primary_guest_id, r.tenant_id
         FROM guest_booking_request_contacts c
         JOIN guest_booking_requests r ON r.request_id = c.request_id AND r.tenant_id = c.tenant_id
-        WHERE c.tenant_id = $tenantId AND lower(c.contact_email) = $contactEmail
+        WHERE c.tenant_id = $tenantId AND c.contact_email = $contactEmail
         ORDER BY r.request_id`)
       .all({ $tenantId: tenantId, $contactEmail: contactEmail });
     return Object.freeze(rows.map((row) => Object.freeze({

@@ -539,7 +539,7 @@ export class SqliteGuestAccountAuthority {
         const proof: GuestAccountActionProof = Object.freeze({ challengeId, purpose: input.purpose, tenantId, accountGuestId, sessionId, accountRevision, expiresAt: expiresAt.toISOString() });
         return { verification: Object.freeze({ purpose: input.purpose, proof, verifiedAt: nowIso }), audit: { type: "guest.account.action_code.verified", fields: { tenantId, accountGuestId, purpose: input.purpose } } };
       }
-      let account = projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE tenant_id = ? AND lower(email_normalized) = ? AND status = 'active'").get([tenantId, email]) as unknown as AccountRow | undefined);
+      let account = projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE tenant_id = ? AND email_normalized = ? AND status = 'active'").get([tenantId, email]) as unknown as AccountRow | undefined);
       if (!account) {
         const accountGuestId = `gacct-${randomBytes(16).toString("base64url")}`;
         this.#database.prepare(`INSERT INTO guest_accounts
@@ -632,7 +632,7 @@ export class SqliteGuestAccountAuthority {
       if (!expiresAt || now.getTime() >= expiresAt.getTime() || proof.expiresAt !== expiresAt.toISOString()) return { failure: "action_proof_invalid" };
       const account = projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE account_guest_id = ? AND tenant_id = ? AND status = 'active'").get([proof.accountGuestId, proof.tenantId]) as unknown as AccountRow | undefined);
       if (!account || account.revision !== proof.accountRevision) return { failure: "action_proof_invalid" };
-      const conflict = projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE tenant_id = ? AND lower(email_normalized) = ? AND status = 'active'").get([proof.tenantId, newEmail]) as unknown as AccountRow | undefined);
+      const conflict = projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE tenant_id = ? AND email_normalized = ? AND status = 'active'").get([proof.tenantId, newEmail]) as unknown as AccountRow | undefined);
       if (conflict && conflict.accountGuestId !== proof.accountGuestId) return { failure: "account_conflict" };
       const proofUse = this.#database.prepare("UPDATE guest_sign_in_codes SET action_consumed_at = ? WHERE challenge_id = ? AND action_consumed_at IS NULL").run([nowIso, proof.challengeId]);
       if (proofUse.changes !== 1) return { failure: "action_proof_invalid" };
@@ -663,7 +663,7 @@ export class SqliteGuestAccountAuthority {
   findAccountByEmail(emailInput: string, tenantIdInput: string): GuestAccount | null {
     const email = normalizeContactEmail(emailInput);
     const tenantId = requiredText(tenantIdInput, "Tenant ID");
-    return projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE tenant_id = ? AND lower(email_normalized) = ? AND status = 'active'").get([tenantId, email]) as unknown as AccountRow | undefined);
+    return projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE tenant_id = ? AND email_normalized = ? AND status = 'active'").get([tenantId, email]) as unknown as AccountRow | undefined);
   }
 
   resolveSession(sessionIdInput: string | null | undefined, sessionSecretInput: string | null | undefined): GuestAuthenticatedAccount | null {

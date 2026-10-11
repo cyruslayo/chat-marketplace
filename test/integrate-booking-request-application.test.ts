@@ -22,7 +22,7 @@ import { createTestAvailabilityCalendar } from "./helpers/availability-calendar.
 const NOW = new Date("2026-07-22T10:00:00Z");
 const clock = () => NOW;
 
-function setup() {
+function setup(contactEmail: string | null = null) {
   const repository = new UnitRepository();
   seedIssue01Units(repository);
   const audit = new InMemoryAuditLog();
@@ -32,7 +32,7 @@ function setup() {
       tenantId === "tenant-lagos" && (actorId === operatorId || actorId.startsWith("rep-")),
   };
   const application = createBookingRequestApplication({
-    guestContacts: { find: () => ({ guestId: "guest-101", tenantId: "tenant-lagos", phoneNumber: "+2348012345678", contactEmail: null, revision: 1 }) },
+    guestContacts: { find: () => ({ guestId: "guest-101", tenantId: "tenant-lagos", phoneNumber: "+2348012345678", contactEmail, revision: 1 }) },
     repository,
     audit,
     calendar,
@@ -70,6 +70,12 @@ function actionEvent(artifact: ReturnType<ReturnType<typeof setup>["application"
     projectionVersion: action.projectionVersion,
   } } } } as unknown as WebServerEventHandoff;
 }
+
+test("the disclosed Booking Request does not carry the contact email snapshot out of the domain (ADR 0093)", () => {
+  const { application, unit } = setup("ada@example.test");
+  const { request } = disclose(application, "guest-103", unit.id);
+  assert.equal("contactEmailSnapshot" in request, false);
+});
 
 test("production application creates guest commands and minimizes the canonical artifact", () => {
   const { application, audit, unit } = setup();

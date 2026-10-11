@@ -48,7 +48,7 @@ export async function createGuestLinkingFixture(): Promise<GuestLinkingFixture> 
   const authority = new SqliteGuestAccountAuthority(database, { codeHashingKey: TEST_GUEST_CODE_HASHING_KEY, clock });
   const store = new SqliteGuestInteractionStore(database);
   database.exec(BOOKING_STATE_SCHEMA);
-  const links = new SqliteGuestAccountLinks(database, { requests: store, clock });
+  const links = new SqliteGuestAccountLinks(database, { requests: store, authority, clock });
   const resolver = new GuestIdentityResolver(authority, links);
   return {
     database,
@@ -58,7 +58,7 @@ export async function createGuestLinkingFixture(): Promise<GuestLinkingFixture> 
     resolver,
     signInDevice(principalId, email) {
       const session = signInGuestAccount(authority, email, LINKING_TENANT);
-      links.linkSignedInPrincipal({ principalId, tenantId: LINKING_TENANT, accountGuestId: session.account.accountGuestId, email });
+      links.linkSignedInPrincipal({ principalId, tenantId: LINKING_TENANT, session });
       // The per-email code-request cooldown is 60 seconds (ADR 0093), so each device signs in a minute later.
       currentTime = new Date(currentTime.getTime() + 61_000);
       return session;

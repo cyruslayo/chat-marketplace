@@ -1,6 +1,5 @@
 import type { SqlDatabase, SqlRow } from "../../../packages/platform-core/src/sql-database.js";
-import { GuestAccountAuthorityError } from "./guest-account-authority.js";
-import { normalizeContactEmail } from "./guest-contact.js";
+import { GuestAccountAuthorityError, type GuestAccountSession, type SqliteGuestAccountAuthority } from "./guest-account-authority.js";
 
 /**
  * Table DDL for Linked Principals and resource-scoped request claims (ADR 0093). Applied by the schema migrations
@@ -55,6 +54,8 @@ export interface SignedInPrincipalResult {
 
 export interface GuestAccountLinksOptions {
   readonly requests: GuestRequestContactIndex;
+  /** Verifies the sign-in session that proves a principal's account (ADR 0093). Only its resolveSession is used. */
+  readonly authority: Pick<SqliteGuestAccountAuthority, "resolveSession">;
   readonly clock?: () => Date;
 }
 
@@ -79,29 +80,36 @@ function projectLink(row: SqlRow | undefined): GuestPrincipalLink | null {
 export class SqliteGuestAccountLinks {
   readonly #database: SqlDatabase;
   readonly #requests: GuestRequestContactIndex;
+  readonly #authority: Pick<SqliteGuestAccountAuthority, "resolveSession">;
   readonly #clock: () => Date;
 
   constructor(database: SqlDatabase, options: GuestAccountLinksOptions) {
     this.#database = database;
     this.#requests = options.requests;
+    this.#authority = options.authority;
     this.#clock = options.clock ?? (() => new Date());
     this.#database.exec(GUEST_ACCOUNT_LINK_SCHEMA);
   }
 
   /**
-   * Called by a successful sign-in (issue 06). The proven email must be the account's own email, so a caller cannot claim
-   * requests under an address the account does not hold. Linking and claiming commit together or not at all.
+   * Called by a successful sign-in (issue 06). The proof is the authority's sign-in session, verified against the store
+   * here (ADR 0093): a plain email, a forged secret, a revoked or expired session, or one from another tenant fails
+   * closed. The account and its email come from the verified session, never from the caller. Linking and claiming commit
+   * together or not at all.
    */
-  linkSignedInPrincipal(input: { principalId: string; tenantId: string; accountGuestId: string; email: string }): SignedInPrincipalResult {
+  linkSignedInPrincipal(input: { principalId: string; tenantId: string; session: GuestAccountSession }): SignedInPrincipalResult {
     const principalId = requiredText(input.principalId, "Principal ID");
     const tenantId = requiredText(input.tenantId, "Tenant ID");
-    const accountGuestId = requiredText(input.accountGuestId, "Account Guest Id");
-    const email = normalizeContactEmail(input.email);
     return this.#database.transaction(() => {
+      const proven = input.session?.purpose === "sign_in"
+        ? this.#authority.resolveSession(input.session.sessionId, input.session.sessionSecret)
+        : null;
+      if (!proven || proven.tenantId !== tenantId) throw new GuestAccountAuthorityError("session_invalid", "The sign-in session is not valid for this tenant");
+      const accountGuestId = proven.accountGuestId;
       const account = this.#activeAccount(accountGuestId, tenantId);
-      if (!account || account.email.toLowerCase() !== email) throw new GuestAccountAuthorityError("invalid_input", "The proven email is not the Guest Account's email");
+      if (!account) throw new GuestAccountAuthorityError("session_invalid", "The sign-in session is not valid for this tenant");
       const link = this.#linkInTransaction(principalId, tenantId, accountGuestId);
-      this.#claimInTransaction(accountGuestId, tenantId, email);
+      this.#claimInTransaction(accountGuestId, tenantId, account.email);
       return { link, claimedRequestIds: this.claimedRequestIds(accountGuestId, tenantId) };
     });
   }
