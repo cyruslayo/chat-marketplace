@@ -139,6 +139,8 @@ import {
   offerScreenHtml,
   railHtml,
   requestScreenHtml,
+  signInOfferHtml,
+  type SignInOfferContent,
 } from "./guest-kit.js";
 import {
   paymentScreenContent,
@@ -240,6 +242,7 @@ import {
   type GuestAccountCredentials,
 } from "./guest-account-runtime.js";
 import { GUEST_ACCOUNT_COPY } from "../../web-agent/src/guest-content.js";
+import type { GuestContactApplication } from "../../web/src/guest-contact-application.js";
 import {
   GuestContactOwnedByAccountError,
   normalizeNigerianPhoneNumber,
@@ -290,6 +293,8 @@ export interface GuestSurfacePayload {
   readonly offerScreen?: OfferScreenContent;
   /** Issue 09: the shared payment screen content for a pending card payment. */
   readonly paymentScreen?: PaymentScreenContent;
+  /** Issue 08: the sign-in offer after a request is sent or a booking is confirmed; computed per response, never stored. */
+  readonly signInOffer?: SignInOfferContent;
 }
 
 /**
@@ -392,6 +397,8 @@ export interface ConventionalBookingPage {
   readonly requestScreen?: RequestScreenContent;
   readonly confirmation?: ConfirmationContent;
   readonly offerScreen?: OfferScreenContent;
+  /** Issue 08: shown beneath the request-sent or confirmation screen, for an anonymous browser only. */
+  readonly signInOffer?: SignInOfferContent;
 }
 
 export interface ConventionalStayDetails {
@@ -5613,6 +5620,7 @@ export function renderConventionalBookingHtml(
           : { amountPaidKobo: stay.amountPaidKobo }),
       })
     : "";
+  const signInOffer = page.signInOffer ? signInOfferHtml(page.signInOffer) : "";
   return pageShell({
     title: `${page.summary} · Shortlet`,
     width: "narrow",
@@ -5623,9 +5631,9 @@ export function renderConventionalBookingHtml(
     body: page.offerScreen
       ? `<div class="guest-editorial">${offerScreenHtml(page.offerScreen, ticket, breakdown)}</div><script src="/offer.js" defer></script>`
       : page.confirmation
-        ? `<div class="guest-editorial">${confirmationScreenHtml(page.confirmation, ticket, breakdown)}</div>`
+        ? `<div class="guest-editorial">${confirmationScreenHtml(page.confirmation, ticket, breakdown)}${signInOffer}</div>`
         : page.requestScreen
-          ? `<div class="guest-editorial">${requestScreenHtml(page.requestScreen, ticket, breakdown, stay?.allInStayTotalKobo === undefined ? undefined : formatNgnKobo(stay.allInStayTotalKobo))}</div>`
+          ? `<div class="guest-editorial">${requestScreenHtml(page.requestScreen, ticket, breakdown, stay?.allInStayTotalKobo === undefined ? undefined : formatNgnKobo(stay.allInStayTotalKobo))}${signInOffer}</div>`
           : `<div class="guest-editorial"><header class="ui-page__header" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h1>${escapeHtml(page.summary)}</h1></header>${ticket}${breakdown}<section class="ui-panel"><p>${escapeHtml(page.textFallback)}</p><a class="ui-button ui-button--primary ui-button--block" href="/?threadId=${encodeURIComponent(page.threadId)}">Back to your conversation</a></section></div>`,
   });
 }
@@ -6340,9 +6348,48 @@ export function renderTransferPageHtml(input: {
   );
 }
 
-function sendJson(res: HttpResponseLike, status: number, body: unknown): void {
-  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
+function sendJson(res: HttpResponseLike, status: number, body: unknown, headers: Readonly<Record<string, string>> = {}): void {
+  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", ...headers });
   res.end(JSON.stringify(body));
+}
+
+/** Responses that carry the Guest's contact email (issue 08) are never kept by a browser or a cache (ADR 0093). */
+const NO_STORE = Object.freeze({ "Cache-Control": "no-store" });
+
+/** Issue 08: a sent request or a confirmed booking, as a screen. Only the screen's own content decides, not the route. */
+function isSentOrConfirmed(screen: { readonly requestScreen?: RequestScreenContent; readonly confirmation?: ConfirmationContent }): boolean {
+  return screen.confirmation !== undefined || screen.requestScreen?.state === "sent";
+}
+
+/**
+ * Issue 08 (ADR 0085): an offer, never a gate. It is shown only to a browser with no account (a signed-in browser never sees it)
+ * and only while sign-in is enabled, because the form could not complete otherwise. The email is the contact the Guest already
+ * gave (ADR 0093). It is computed per response and never stored with the thread (ADR 0075).
+ */
+function signInOfferFor(input: {
+  readonly accounts: GuestAccountRuntime | null;
+  readonly contacts: GuestContactApplication;
+  readonly principal: CommandPrincipal;
+  readonly credentials: GuestAccountCredentials | null;
+  readonly returnPath: string;
+}): SignInOfferContent | undefined {
+  if (input.accounts === null) return undefined;
+  if (input.accounts.identityFor(input.principal.id, input.credentials).accountGuestId !== undefined) return undefined;
+  return { email: input.contacts.get(input.principal)?.contactEmail ?? "", returnPath: input.returnPath };
+}
+
+/** Issue 08: the offer rides on the last active request-sent or confirmation surface of a response, once per response. */
+export function surfacesWithSignInOffer(
+  surfaces: readonly GuestSurfacePayload[],
+  offerFor: () => SignInOfferContent | undefined,
+): { readonly surfaces: GuestSurfacePayload[]; readonly offered: boolean } {
+  let index = -1;
+  surfaces.forEach((surface, position) => {
+    if ((surface.status === undefined || surface.status === "active") && isSentOrConfirmed(surface)) index = position;
+  });
+  const offer = index < 0 ? undefined : offerFor();
+  if (offer === undefined) return { surfaces: [...surfaces], offered: false };
+  return { surfaces: surfaces.map((surface, position) => (position === index ? { ...surface, signInOffer: offer } : surface)), offered: true };
 }
 
 const GUEST_SESSION_COOKIE = "shortlet_guest_session";
@@ -7150,6 +7197,37 @@ export function createGuestRequestHandler(
     });
   };
 
+  /** Issue 08: the sign-in offer on a chat response, for the browser that asked (its own principal and account only). */
+  const withSignInOffer = (req: HttpRequestLike, environment: LocalGuestEnvironment, threadId: string, surfaces: readonly GuestSurfacePayload[]) => {
+    const session = resolveBrowserSession(
+      environment,
+      browserSessions,
+      readGuestSession(req),
+      sessionScopedGuestPrincipals ? undefined : environment.config.guestId,
+      accountCredentialsOf(req),
+      guestAccounts,
+    );
+    if (!session) return { surfaces: [...surfaces], offered: false };
+    return surfacesWithSignInOffer(surfaces, () =>
+      signInOfferFor({
+        accounts: guestAccounts,
+        contacts: environment.guestContactApp,
+        principal: { id: session.principalId, role: "guest", tenantId: session.tenantId },
+        credentials: accountCredentialsOf(req),
+        returnPath: `/?threadId=${encodeURIComponent(threadId)}`,
+      }),
+    );
+  };
+
+  const sendTurnResult = (req: HttpRequestLike, res: HttpResponseLike, environment: LocalGuestEnvironment, threadId: string, result: GuestTurnResult): void => {
+    if (!result.ok) {
+      sendJson(res, 200, result);
+      return;
+    }
+    const withOffer = withSignInOffer(req, environment, threadId, result.surfaces);
+    sendJson(res, 200, { ...result, surfaces: withOffer.surfaces }, withOffer.offered ? NO_STORE : {});
+  };
+
   const handleAccountRoute = async (
     req: HttpRequestLike,
     res: HttpResponseLike,
@@ -7918,8 +7996,18 @@ export function createGuestRequestHandler(
           sendPageError(req, res, 404, "BOOKING_RECORD_NOT_FOUND");
           return;
         }
-        res.writeHead(200, GUEST_HTML_HEADERS);
-        res.end(renderConventionalBookingHtml(bookingPage));
+        // Issue 08: the offer carries the Guest's contact email, so this response is never kept (ADR 0093).
+        const signInOffer = isSentOrConfirmed(bookingPage)
+          ? signInOfferFor({
+              accounts: guestAccounts,
+              contacts: app.environment.guestContactApp,
+              principal,
+              credentials: accountCredentialsOf(req),
+              returnPath: url.pathname,
+            })
+          : undefined;
+        res.writeHead(200, signInOffer === undefined ? GUEST_HTML_HEADERS : { ...GUEST_HTML_HEADERS, ...NO_STORE });
+        res.end(renderConventionalBookingHtml(signInOffer === undefined ? bookingPage : { ...bookingPage, signInOffer }));
         return;
       }
 
@@ -9319,7 +9407,8 @@ export function createGuestRequestHandler(
           });
           return;
         }
-        sendJson(res, 200, state);
+        const withOffer = withSignInOffer(req, app.environment, threadId, state.surfaces);
+        sendJson(res, 200, { ...state, surfaces: withOffer.surfaces }, withOffer.offered ? NO_STORE : {});
         return;
       }
 
@@ -9402,10 +9491,10 @@ export function createGuestRequestHandler(
               });
               return;
             }
-            sendJson(res, 200, await app.handleTurn(threadId, text));
+            sendTurnResult(req, res, app.environment, threadId, await app.handleTurn(threadId, text));
             return;
           }
-          sendJson(res, 200, await app.handleEventAsync(threadId, body));
+          sendTurnResult(req, res, app.environment, threadId, await app.handleEventAsync(threadId, body));
         } catch (error) {
           if (error instanceof BodyTooLargeError) {
             sendJson(res, 413, {

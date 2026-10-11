@@ -4,6 +4,7 @@
  * Styling lives in apps/web/src/shortlet-foundations.css (`ui-*`). Every value is escaped here; helpers never build URLs.
  */
 import {
+  GUEST_ACCOUNT_COPY,
   GUEST_FACT_LABELS,
   GUEST_GLOSSARY,
   GUEST_JOURNEY,
@@ -401,6 +402,20 @@ export function confirmationScreenHtml(
   breakdown: string,
 ): string {
   return `<section class="confirmed-screen"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h2>Reservation confirmed</h2>${statusHtml("success", "Stay payment verified")}</header>${ticket}${breakdown}<section class="ui-panel request-next" aria-label="Before you arrive"><h2>Before you arrive</h2>${stepsHtml(content.steps)}</section><div class="request-actions"><a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(content.conversationHref)}">Back to your conversation</a><a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.detailsHref)}">View booking details</a></div><section class="ui-panel booking-details" id="booking-details" tabindex="-1"><h2>Booking details</h2><p>${escapeHtml(content.details)}</p></section></section>`;
+}
+
+/** Issue 08: the sign-in offer. The email is the contact already given, and `returnPath` is the screen to come back to. */
+export interface SignInOfferContent {
+  readonly email: string;
+  readonly returnPath: string;
+}
+
+/**
+ * Issue 08 (ADR 0085, an offer and never a gate): a plain form to the account sign-in page (ADR 0080), shown beside the request
+ * sent and booking confirmed screens. The page and the chat workspace both render it from here, so the two read the same.
+ */
+export function signInOfferHtml(content: SignInOfferContent): string {
+  return `<section class="ui-panel" data-sign-in-offer aria-labelledby="sign-in-offer-title"><h2 id="sign-in-offer-title">${escapeHtml(GUEST_ACCOUNT_COPY.offerTitle)}</h2><p>${escapeHtml(GUEST_ACCOUNT_COPY.offerIntro)}</p><form method="post" action="/account/sign-in"><div class="ui-field"><label class="ui-field__label" for="sign-in-offer-email">${escapeHtml(GUEST_ACCOUNT_COPY.emailLabel)}</label><input id="sign-in-offer-email" name="email" type="email" autocomplete="email" inputmode="email" autocapitalize="off" spellcheck="false" maxlength="254" required value="${escapeHtml(content.email)}"></div><input type="hidden" name="return" value="${escapeHtml(content.returnPath)}"><button class="ui-button ui-button--secondary ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.offerButton)}</button></form></section>`;
 }
 
 /** Issue 07: one request screen layout. Slots receive only markup from this kit, never artifact-supplied HTML. */

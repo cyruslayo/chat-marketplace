@@ -27,10 +27,12 @@ import {
   paymentScreenHtml,
   requestScreenHtml,
   resultRowPartsHtml,
+  signInOfferHtml,
   stayCardInnerHtml,
   ticketHtml,
   unitAboutHtml,
   unitTilesHtml,
+  type SignInOfferContent,
   type StayCardParts,
 } from "./guest-kit.js";
 import type { ConfirmationContent } from "../../web-agent/src/confirmation-presentation.js";
@@ -69,6 +71,7 @@ interface GuestSurfacePayload {
   readonly confirmation?: ConfirmationContent;
   readonly offerScreen?: OfferScreenContent;
   readonly paymentScreen?: PaymentScreenContent;
+  readonly signInOffer?: SignInOfferContent;
 }
 interface GuestWaitingState {
   readonly kind: string;
@@ -553,6 +556,12 @@ function organizeBookingTicket(mount: HTMLElement): void {
       next?.element,
     ],
   );
+}
+
+/** Issue 08: the offer sits beneath the request-sent or confirmation screen, from the same kit helper the page uses. */
+function organizeSignInOffer(mount: HTMLElement, content: SignInOfferContent): void {
+  const root = mount.querySelector<HTMLElement>('[data-a2ui-component="Column"]');
+  root?.insertAdjacentHTML("beforeend", signInOfferHtml(content));
 }
 
 function organizeConfirmation(
@@ -1077,6 +1086,8 @@ function enhanceSurfacePresentation(mount: HTMLElement, kind: string): void {
     organizeOfferScreen(mount, activePayload.offerScreen);
   if (activePayload?.paymentScreen)
     organizePaymentScreen(mount, activePayload.paymentScreen);
+  if (activePayload?.signInOffer)
+    organizeSignInOffer(mount, activePayload.signInOffer);
 }
 
 function isMoney(text: string): boolean {
@@ -1143,6 +1154,11 @@ function isConfirmation(value: unknown): value is ConfirmationContent {
     isSafeInternalRoute(value.detailsHref) &&
     typeof value.details === "string"
   );
+}
+
+/** Issue 08: the sign-in offer's two values, the email and the return path; the markup comes from the kit. */
+function isSignInOffer(value: unknown): value is SignInOfferContent {
+  return isRecord(value) && typeof value.email === "string" && typeof value.returnPath === "string";
 }
 
 function isRequestScreen(value: unknown): value is RequestScreenContent {
@@ -1282,6 +1298,8 @@ function isSurfacePayload(value: unknown): value is GuestSurfacePayload {
   )
     return false;
   if (value.confirmation !== undefined && !isConfirmation(value.confirmation))
+    return false;
+  if (value.signInOffer !== undefined && !isSignInOffer(value.signInOffer))
     return false;
   if (value.offerScreen !== undefined && !isOfferScreen(value.offerScreen))
     return false;
