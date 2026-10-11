@@ -6637,7 +6637,7 @@ function bindBrowserThread(
     const principal = env.guestPrincipal();
     const record = env.interactionStore.findThread(threadId);
     if (record) {
-      // Re-review 4: a conversation saved for another principal is never re-owned by a cookieless request.
+      // A conversation saved for another principal is never re-owned by a cookieless request.
       if (record.principalId !== principal.id || record.tenantId !== env.config.tenantId)
         return false;
       env.interactionStore.saveThread({
@@ -7076,7 +7076,7 @@ export function createGuestRequestHandler(
   };
   /**
    * Binding writes (a new session for sign-in, or a rotation for sign-out) share the ADR 0093 per-address code-request
-   * budget, so unauthenticated requests cannot grow the binding table without limit (item 4).
+   * budget, so unauthenticated requests cannot grow the binding table without limit.
    */
   const bindingLimiter = new SlidingWindowRateLimiter(
     {
@@ -7119,7 +7119,7 @@ export function createGuestRequestHandler(
     const accounts = guestAccounts;
     const path = url.pathname;
     if (!accounts) {
-      // Item 2: sign-in is disabled, but a sign-out still ends the account server-side: the session hash needs no key, so
+      // Sign-in is disabled, but a sign-out still ends the account server-side: the session hash needs no key, so
       // the revocation goes through the store directly. Sign-out everywhere that cannot end anything refuses, claiming no
       // success and keeping the cookie; a plain sign-out always clears the cookie and rotates the browser.
       if (req.method === "POST" && (path === "/account/sign-out" || path === "/account/sign-out-everywhere")) {
@@ -7152,7 +7152,7 @@ export function createGuestRequestHandler(
           }
         }
         if (previous === null) {
-          // Round 4: no presented session, so no binding is written; the account cookie is cleared.
+          // No presented session: no binding is written and the account cookie is cleared.
           res.setHeader("Set-Cookie", clearedAccountCookieLine());
           res.writeHead(303, { Location: "/", "Cache-Control": "no-store" });
           res.end();
@@ -7170,7 +7170,7 @@ export function createGuestRequestHandler(
     }
     const credentials = accountCredentialsOf(req);
     if (req.method === "GET" && path === "/account/sign-in") {
-      // Item 4: rendering the form writes no binding; the first POST that needs a session creates it.
+      // Rendering the form writes no binding; the first POST that needs a session creates it.
       res.writeHead(200, GUEST_HTML_HEADERS);
       res.end(renderSignInHtml({ returnPath: safeReturnPath(url.searchParams.get("return")) }));
       return;
@@ -7311,7 +7311,7 @@ export function createGuestRequestHandler(
       accounts.signOut(credentials);
       const previous = existingBrowserSession(req);
       if (previous === null) {
-        // Round 4: no presented session means nothing to rotate, so no binding is written; the account cookie is cleared.
+        // No presented session: nothing to rotate, so no binding is written and the account cookie is cleared.
         res.setHeader("Set-Cookie", clearedAccountCookieLine());
         res.writeHead(303, { Location: "/", "Cache-Control": "no-store" });
         res.end();
@@ -7339,7 +7339,7 @@ export function createGuestRequestHandler(
         if (principals.includes(cached.principalId)) browserSessions.delete(key);
       }
       if (presentedSession === null) {
-        // Round 4: no presented session, so no binding is written; the account cookie is cleared.
+        // No presented session: no binding is written and the account cookie is cleared.
         res.setHeader("Set-Cookie", clearedAccountCookieLine());
         res.writeHead(303, { Location: "/", "Cache-Control": "no-store" });
         res.end();
@@ -7385,7 +7385,7 @@ export function createGuestRequestHandler(
           return;
         }
       }
-      // Re-review 6 (high, pre-existing on main): every route that names an offer reads its stay and money details, so the
+      // Every route that names an offer reads its stay and money details, so the
       // gate runs here, before any read. The refusal is the same for a missing offer and a foreign one.
       const offerRoute = /^\/(payments\/offers|conditional-offers)\/([^/]+)(\/|$)/.exec(url.pathname);
       if (offerRoute && (req.method === "GET" || req.method === "POST")) {

@@ -89,12 +89,12 @@ Implemented on `ga-06-sign-in-sessions`:
   - D2 (medium): a linked conversation is read only while its owner is in the identity resolved for that request. `/api/state` and the no-JavaScript conversation page check it on every request (`threadReadable`); a linked conversation is no longer served once the account session has expired.
   - D3 (medium): a browser whose interaction binding was retired (sign-out everywhere) gets a fresh, unlinked session on `/` and on the sign-in and code routes. Account pages stay gated; a fresh session never carries account identity.
   - Refused conflicting sign-in (M7 gap): a test asserts the session created by a refused link is revoked, and that no account cookie is set. Probe M13 removes the revoke and fails it.
-  - Q4 (orchestrator decision): an account POST with no Origin and no same-origin Referer is refused (403). Tests cover no header, a foreign Referer and a same-origin Referer.
+  - Q4 (orchestrator decision, delegated, not human-approved): an account POST with no Origin and no same-origin Referer is refused (403). Tests cover no header, a foreign Referer and a same-origin Referer.
   - N3: with accounts disabled, the sign-out routes still expire the account cookie (303, `Max-Age=0`), and sign-in answers 503.
   - T1 (orchestrator decision, recorded here; superseded by the HUMAN-APPROVED entry of 11 Oct 2026 below): the AC4 test asserts that the second browser context's next turn is refused. The app has no SSE stream, so a refused next turn is the AC for "closes an open stream". Decided by the orchestrator on the human's behalf, not a human quote.
-  - Q5 (orchestrator decision, recorded here): the per-email lockout in the authority (five code requests per email per hour, and the cooldown) is accepted as issue 01 policy.
+  - Q5 (orchestrator decision, delegated, not human-approved): the per-email lockout in the authority (five code requests per email per hour, and the cooldown) is accepted as issue 01 policy.
   - Q7 (orchestrator decision, confirm or change): a code-hashing key shorter than 32 characters disables sign-in (fail closed, no default key). The 32 is a named constant (`GUEST_CODE_HASHING_KEY_MIN_LENGTH`), not a literal in the logic. Tests: a 31-character key is refused, and a 32-character key is accepted.
-  - Q8 (orchestrator decision, recorded here): the sign-in code is in the email body, which is accepted as inherent to emailed codes (ADR 0093).
+  - Q8 (orchestrator decision, delegated, not human-approved): the sign-in code is in the email body, which is accepted as inherent to emailed codes (ADR 0093).
   - Route tests now send the Origin header a browser sends on a same-origin form POST (the test helper does this). The Chromium browser job sends a real Origin.
   - Probes: M1-M12 re-run on the new code (M2 split into the input, origin and output guards). M13-M19 added for the new fixes. Results are in the PR body. Two probes remain equivalent (input prefix guard and origin guard): removing either alone changes nothing, because the other guards reject the same inputs.
 
@@ -156,3 +156,22 @@ Implemented on `ga-06-sign-in-sessions`:
   - Label mapping (round 4): Re-review 1 = Linked read keeps owner; 2 = Disabled sign-out everywhere; 3 = Sign-in keeps own conversation; 4 = Binding budget and cookieless turn; 5 = Record-less conversation; 6 = Offer access; 7 = Sign-out not rate limited; 8 = Tenant-checked revocation; 9 = Rotation carries no linked conversation. The earlier round text keeps its old labels; the test names use the descriptive names.
   - Probes (final code d2eed6f+round 4): M1 to M40, see the PR body. Equivalents: M2 input `//` prefix guard, M2 origin guard, M33 rotation carries every id (equivalent under the owner-gated bind), M34 record-less guard (defence in depth).
   - Route audit (round 3, unchanged): see the round-3 entry above.
+
+### Round 5 (final small round on head of ga-06-sign-in-sessions)
+
+- 11 Oct 2026, round 5 (coordinator): tests, text and nits only; the one behaviour change is the refusal copy. Each new test was run; the red captured is the copy test against the old copy (1 failure before the change; L1 to L3 passed on the existing code, see the PR body). The coverage tests L1 to L3 passed on the existing code and are probed (each guard removed, the test must fail).
+  - L1 (LOW, test gap): a cross-origin POST to disabled-mode sign-out and to sign-out everywhere is refused (403) with no cookie cleared or rotated, and the account stays live after restart with accounts enabled. Probe L1 (origin check removed from the disabled-mode branch): both L1 tests fail (2 failures).
+  - L2 (LOW, test gap): the offer gate's JSON branch. An `Accept: application/json` client gets `{"ok":false,"code":"PAYMENT_OFFER_NOT_FOUND"}` as `application/json`, byte-identical for a missing and a foreign offer, with no offer id echoed. Probe L2 (the JSON branch removed so every client gets the HTML page).
+  - L3 (LOW, test gap): sign-out everywhere rotates the presented interaction session: a new interaction cookie is set, the presented cookie no longer reads the conversation, and the rotated session starts empty. Probe L3 (the rotated cookie is not sent).
+  - Copy (refusal page, `GUEST_ACCOUNT_COPY.offerNotFoundMessage`): the message no longer says "or it has expired" and no longer promises the stays on the account; it now reads "This link does not open here. Sign in with the account that made this booking, or return to your conversation." Status 404, identical bodies for missing and foreign, no offer id echoed. Copy awaits human approval (Needs human).
+  - Nits: the account test file uses the shared `advanceClock` helper at every clock step; the round labels in test and code comments (Re-review, Round, Item) are replaced by descriptive text, while the D, N, Q and M labels stay because the decision log above maps them; the trailing blank line at EOF is removed.
+  - Left as is: the "Back to your conversation" link text is also in `apps/web/src/ui-kit.ts` and `apps/local-guest/src/guest-server.ts`, so moving the copy of the refusal page alone would split the copy; it stays and is a follow-up for the copy pass.
+  - Round 1 labels Q4, Q5 and Q8 above are relabelled "delegated, not human-approved".
+- 11 Oct 2026, recorded orchestrator decisions (delegated, not human quotes): (a) a sign-out that presents only a live interaction cookie rotates each time; bounded, because 40 such requests leave the binding row count unchanged; (b) exporting `offerAuthorized` for a unit test is acceptable.
+- 11 Oct 2026, round 5 CI: the real-Chromium AC1 test (`test/guest-account-sign-in-chromium.test.ts`, no JavaScript) ran in the `browser` job of the dispatched run on the round-5 head (see the PR body for the run URL). Screenshots at 320, 390, 768 and 1280 were NOT captured here (no Chrome in this sandbox); they are handed to issue 11.
+
+### Needs human (round 5 additions)
+- AC1 evidence: the real-Chromium test passed in the CI `browser` job (run cited in the PR body). The 320/390/768/1280 screenshots and the overflow and 44px evidence at those widths are not captured; handed to issue 11.
+- Q1 (dormant distinct-payer branch of the offer gate): kept by orchestrator decision; the human decides whether to keep it or remove it. No production path sets `distinctPayer`; ADR 0013 requires the primary guest to pay at launch.
+- Q-f (UX): skipped in round 2; still open.
+- Approval of the refusal copy (`offerNotFoundMessage`, the rest of `GUEST_ACCOUNT_COPY`).

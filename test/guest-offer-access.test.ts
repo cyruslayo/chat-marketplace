@@ -31,7 +31,7 @@ async function deviceWithOffer(fixture: Parameters<typeof advanceToPendingWithPh
   return { offerId: offer.offerId, title };
 }
 
-// Re-review 6 (high, pre-existing on main): the payment page of an offer is readable only by the offer's own guest
+// The payment page of an offer is readable only by the offer's own guest
 // (the primary guest, or the distinct payer), through the session's identity. Missing and foreign offers are refused
 // the same way.
 test("Offer access: the offer's own guest reads the payment page with the stay details", async () => {
@@ -140,7 +140,7 @@ test("Offer access: an anonymous session cannot start a payment method on someon
   }
 });
 
-// Re-review 4 (low): a conversation with no session cookie is saved only under the guest principal's own record.
+// A conversation with no session cookie is saved only under the guest principal's own record.
 test("Cookieless turn never re-owns a conversation saved for another principal", async () => {
   const { restartFixture } = await import("./helpers/guest-restart.js");
   const fixture = await restartFixture();
@@ -194,4 +194,45 @@ test("Offer access: the gate refuses when the offer lookup throws (fail closed)"
   // Positive control: the same gate admits the owner when the lookup works.
   const working = { conditionalOfferApp: { manager: { getOffer: () => ({ tenantId: "tenant-1", requestId: "req-x", parties: { primaryGuest: { id: "guest-owner" }, distinctPayer: null } }) } } };
   assert.equal(offerAuthorized(working as unknown as Parameters<typeof offerAuthorized>[0], session, "offer-x"), true);
+});
+
+// L2: an API client that does not ask for HTML gets the refusal as JSON, the same for a missing and a foreign offer.
+test("Offer access JSON refusal: an API client gets the same application/json refusal for a missing and a foreign offer, with no offer id echoed", async () => {
+  const { fixture } = await accountFixture();
+  try {
+    const { offerId } = await deviceWithOffer(fixture);
+    const stranger = await freshAnonymousCookie(fixture.base);
+    const fetchJson = async (path: string, cookie: string) => {
+      const response = await fetch(`${fixture.base}${path}`, { headers: { accept: "application/json", cookie } });
+      return { status: response.status, contentType: response.headers.get("content-type") ?? "", text: await response.text() };
+    };
+    const missing = await fetchJson(`/payments/offers/${encodeURIComponent("offer-does-not-exist")}`, stranger);
+    const foreign = await fetchJson(`/payments/offers/${encodeURIComponent(offerId)}`, stranger);
+    for (const answer of [missing, foreign]) {
+      assert.equal(answer.status, 404);
+      assert.match(answer.contentType, /^application\/json/, "the refusal is JSON, not the HTML page");
+      assert.deepEqual(JSON.parse(answer.text), { ok: false, code: "PAYMENT_OFFER_NOT_FOUND" });
+      assert.equal(answer.text.includes(offerId), false, "no offer id is echoed");
+    }
+    assert.equal(missing.text, foreign.text, "the missing and foreign refusals are byte-identical");
+  } finally {
+    await fixture.close();
+  }
+});
+
+// Copy: the refusal cannot tell a missing link from a foreign one, so it does not claim the link has expired, and it does not
+// suggest that signing in shows the stays on the account of a different browser.
+test("Offer access refusal copy: the refusal page says the link does not open here, names the booking's account, and does not claim expiry", async () => {
+  const { fixture } = await accountFixture();
+  try {
+    const { offerId } = await deviceWithOffer(fixture);
+    const stranger = await freshAnonymousCookie(fixture.base);
+    const page = await getPage(fixture.base, `/payments/offers/${encodeURIComponent(offerId)}`, stranger);
+    assert.equal(page.status, 404);
+    assert.ok(page.body.includes("This link does not open here. Sign in with the account that made this booking, or return to your conversation."), "the refusal gives the neutral guidance");
+    assert.equal(page.body.includes("has expired"), false, "the refusal does not claim the link expired");
+    assert.equal(page.body.includes("Sign in to see the stays"), false, "the refusal does not promise the stays on this account");
+  } finally {
+    await fixture.close();
+  }
 });

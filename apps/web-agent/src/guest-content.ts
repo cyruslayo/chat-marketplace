@@ -332,7 +332,7 @@ export const GUEST_ACCOUNT_COPY = Object.freeze({
   appBarSignIn: "Sign in",
   appBarAccount: "Account",
   offerNotFoundTitle: "We could not find that payment link",
-  offerNotFoundMessage: "This link does not belong to this browser, or it has expired. Sign in to see the stays on your account, or start again from your conversation.",
+  offerNotFoundMessage: "This link does not open here. Sign in with the account that made this booking, or return to your conversation.",
   rateLimitedTitle: "Please slow down",
   rateLimitedMessage: "Too many requests came from here in a short time. Wait a few minutes, then try again.",
   emailSubject: "Your Shortlet sign-in code",
