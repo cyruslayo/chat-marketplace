@@ -129,9 +129,16 @@ export class SqliteGuestAccountLinks {
 
   /** The account a principal is linked to, or null. A missing or empty principal has no link. */
   accountForPrincipal(principalId: string): { readonly tenantId: string; readonly accountGuestId: string } | null {
+    const link = this.#linkAnyStatus(principalId);
+    // A closed account holds no current authority (issue 09): its principals resolve to no account.
+    if (!link || this.#activeAccount(link.accountGuestId, link.tenantId) === null) return null;
+    return { tenantId: link.tenantId, accountGuestId: link.accountGuestId };
+  }
+
+  /** The link row of a principal whatever the account's status. Claims use it so a closed owner is still an owner. */
+  #linkAnyStatus(principalId: string): GuestPrincipalLink | null {
     if (typeof principalId !== "string" || principalId.trim() === "") return null;
-    const link = projectLink(this.#database.prepare("SELECT * FROM guest_account_principals WHERE principal_id = ?").get([principalId.trim()]));
-    return link ? { tenantId: link.tenantId, accountGuestId: link.accountGuestId } : null;
+    return projectLink(this.#database.prepare("SELECT * FROM guest_account_principals WHERE principal_id = ?").get([principalId.trim()])) ?? null;
   }
 
   /** The Booking Requests an account holds by scoped claim in one tenant. */
@@ -178,7 +185,7 @@ export class SqliteGuestAccountLinks {
       if (match.tenantId !== tenantId) continue;
       const claim = this.#database.prepare("SELECT account_guest_id FROM guest_account_request_claims WHERE request_id = ?").get([match.requestId]);
       if (claim !== undefined && claim.account_guest_id !== accountGuestId) continue;
-      const owner = this.accountForPrincipal(match.primaryGuestId);
+      const owner = this.#linkAnyStatus(match.primaryGuestId);
       if (owner !== null && (owner.tenantId !== tenantId || owner.accountGuestId !== accountGuestId)) continue;
       if (claim === undefined) {
         this.#database

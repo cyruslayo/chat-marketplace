@@ -51,8 +51,6 @@ export * from "./operator-session-authority.js";
 export * from "./guest-account-authority.js";
 export * from "./guest-account-links.js";
 export * from "./guest-identity.js";
-export * from "./guest-identity-assurance.js";
-export * from "./guest-check-in-eligibility.js";
 export * from "./relocation-choice.js";
 export * from "./relocation-policy.js";
 export * from "./reserve-payout-trust.js";

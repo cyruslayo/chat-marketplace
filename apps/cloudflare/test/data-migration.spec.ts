@@ -131,7 +131,7 @@ test("16 AC2: a batch that would exceed 100 parameters is split automatically", 
   const target = targetStub();
   // Two columns per row: 60 rows would bind 120 parameters in one statement.
   const rows = operatorRows("op-split", 60);
-  const result = await runInDurableObject(target, (_instance, ctx) => importBatch(new DurableObjectSqlDatabase(ctx.storage), "operators", rows, SHORTLET_SCHEMA_VERSION));
+  const result = await runInDurableObject(target, (_instance, ctx) => importBatch(new DurableObjectSqlDatabase(ctx.storage), "operators", rows, SHORTLET_SCHEMA_VERSION, new Date()));
   expect(result.received).toBe(60);
   expect(result.statements).toBeGreaterThan(1);
   expect(result.maxParameters).toBeLessThanOrEqual(100);

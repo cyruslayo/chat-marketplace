@@ -94,7 +94,7 @@ test("16 D3 import: an import into an object whose cutover state is missing is r
   applySchemaMigrations(database, SHORTLET_SCHEMA_MIGRATIONS, APPLIED_AT);
   database.exec("DROP TABLE migration_state");
   assert.throws(
-    () => importBatch(database, "units", [], SHORTLET_SCHEMA_VERSION),
+    () => importBatch(database, "units", [], SHORTLET_SCHEMA_VERSION, new Date()),
     (error: unknown) => error instanceof ImportRefusedError && error.code === "SCHEMA_NOT_READY",
   );
   const tables = database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'migration_state'").all();

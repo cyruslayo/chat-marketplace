@@ -35,12 +35,12 @@ New `test/guest-identity-assurance.test.ts`. Re-run `test/verify-access-with-liv
 
 0011, 0070, 0075, 0084, 0085, 0094.
 
-## Open decisions (needs human decision)
+## Open decisions (decided; see Human decisions in Comments)
 
-1. **Default freshness duration.** Not approved. ADR 0094 requires an explicit authoritative `expiresAt` and says no default freshness duration is approved; ADR 0084's proposed 180 days is not adopted. Recommended: no default, `expiresAt` always explicit. Do not code a default until a human decides.
-2. **Account-merge re-verification trigger.** Not authorised by ADR 0094, which says a merge of two Guest Accounts is not authorised and conflicting links fail closed. Recommended: drop the trigger. Needs human decision before it is implemented.
+1. **Default freshness duration.** Decided: no default. ADR 0094 requires an explicit authoritative `expiresAt`, and ADR 0084's proposed 180 days is not adopted. AC2 refuses a verified outcome without an explicit `expiresAt`. Nothing in this issue applies a freshness period.
+2. **Account-merge re-verification trigger.** Decided: dropped. ADR 0094 does not authorise a merge of two Guest Accounts, and conflicting links fail closed. The trigger is not implemented.
 
-Status is left as `ready-for-agent` (the decision is not a triage state change in this doc pass); the implementer should not start AC2 or the merge trigger until these are decided.
+Status: `resolved` (header), set once CI verify and browser passed on the final head. The status and the decisions above are consistent with the Answer.
 
 ## Comments
 
@@ -60,20 +60,46 @@ Status is left as `ready-for-agent` (the decision is not a triage state change i
   4. `GuestIdentityResolver` (issue 05) still reports `email-verified` for every account, and the `GuestAssurance` type has no government-ID level. Surfacing the assurance level belongs with the account page and sign-in routes (issues 06 and 07), so it is not changed here.
   5. The local fake is not wired into the `.scratch/guest-ui-consistency` walkthrough, because the local guest composition is owned by issue 06.
 
+- Human decisions (verbatim, as the coordinator recorded them):
+  - 10 Oct 2026, the human replied "go with your recommendations" to a plan that stated: issue 09 drops the account-merge trigger; no default freshness period (use the explicit `expiresAt`, per ADR 0094).
+  - 11 Oct 2026, the human replied "go with your recommendations" for the fix round that followed the independent review of PR #101 (head 5424cb1).
+- 11 Oct 2026, review fix round (PR #101, head 5424cb1 to the fix commit):
+  1. Barrel: `domains/shortlet/src/index.ts` no longer re-exports the store or the check-in helper. The AC5 sweep now resolves barrel re-exports and covers `domains`, `packages`, `apps/web/src`, `apps/local-guest/src`, `apps/pilot/src`, `apps/cloudflare/src`, `apps/local-owner/src`, `apps/shortlet-ops/src` and `scripts`. Probes M7, M8 and M10 now fail.
+  2. Method and reference: `method` is an allowlist (ADR 0084's `nigeria_nin_v2_biometric_kyc`). The fixture method is accepted only when the store is constructed with `allowFixtureMethods`, which only test helpers do. `providerReference` must be an opaque reference: letters, digits, `_` and `-`, at most 64 characters, starting with a letter, with no run of 9 or more digits. The length bound is a storage bound, not a provider contract. The digit-run screen is conservative, because NIN, BVN and phone numbers are 10 to 11 digits (ADR 0075). The provider's format is to be confirmed at onboarding.
+  3. Import: `guest_identity_assurance` is not refused by name, because the daily export includes it and a restore needs it. Each row in an ops import goes through the same rules as a recorded outcome, plus the active-account check (`identityAssuranceRowForImport`). A failing row refuses the whole batch with a generic message. The ops routes are behind `ops-auth.ts` (shared secret header or Cloudflare Access JWT), which this change does not touch. The fixture moved from `apps/local-guest/src` to `test/helpers/`. The AC5 sweep fails on any non-test source importing it (probe M9).
+  4. Hardening: `currentAssurance` and `accountForPrincipal` require an active account. The claim path reads the owner with a lookup that ignores status, so a closed owner's requests are not claimed by a new account. `verifiedAt` cannot be later than the injected clock (required store option `clock`, no tolerance). A same-address write does not remove the outcome (test). The AC1 failure-path titles match their assertions.
+- Scope note: the closed-account rule changes the issue 05 `accountForPrincipal` (a closed account's principals now resolve to no account). The resolver then returns the anonymous identity for them, which is the intended result. All issue 05 tests pass unchanged.
+
 ## Answer
 
-Implemented on branch `ga-09-assurance-port`, stacked on `ga-base-05-99` (PRs #100 and #99). Acceptance tests live in `test/guest-identity-assurance.test.ts` (22 tests), with the shared fixture in `test/helpers/guest-identity-assurance.ts`.
+Implemented on branch `ga-09-assurance-port` (PR #101), stacked on `ga-base-05-99` (PRs #100 and #99). Acceptance tests are in `test/guest-identity-assurance.test.ts` (32 tests), with the shared fixture in `test/helpers/guest-identity-assurance.ts` and the test-only fake in `test/helpers/identity-assurance-fixture.ts`.
 
-- Store and service: `domains/shortlet/src/guest-identity-assurance.ts` (`SqliteGuestIdentityAssurance.recordOutcome` and `currentAssurance(accountGuestId, tenantId, now)`, lazy expiry, fail-closed projection of malformed rows) and `AccountBackedGuestIdentityVerificationResultSource` (the port in `guest-verification.ts`).
-- Check-in helper: `domains/shortlet/src/guest-check-in-eligibility.ts` (`GuestCheckInIdentityEligibility.evaluate`). Not called by any route.
-- Schema: migration 4 in `apps/cloudflare/src/schema.ts`, the table in `EXPORT_TABLES`.
+- Store and service: `domains/shortlet/src/guest-identity-assurance.ts`. `SqliteGuestIdentityAssurance(database, { clock, allowFixtureMethods? })` with `recordOutcome` and `currentAssurance(accountGuestId, tenantId, now)`. Expiry is lazy, a closed account has no current result, and malformed rows fail closed. Also `AccountBackedGuestIdentityVerificationResultSource` (the port in `guest-verification.ts`) and `identityAssuranceRowForImport`.
+- Check-in helper: `domains/shortlet/src/guest-check-in-eligibility.ts` (`GuestCheckInIdentityEligibility.evaluate`). Not imported by any route, and no barrel re-exports it.
+- Schema: migration 4 in `apps/cloudflare/src/schema.ts`. `guest_identity_assurance` is in `EXPORT_TABLES`. Ops import validates its rows in `apps/cloudflare/src/ops-import.ts`.
 
-Per acceptance criterion:
-- AC1: `AC1: a recorded verified outcome is returned for the account from any linked principal`; `AC1 failure path: a principal not linked to the account gets null`; `AC1 failure path: a principal read under another tenant gets null`; `AC1 failure path: an outcome for an account that is not an active account of this tenant is refused`; `AC1: the local fake records a verified outcome that the account-backed source returns`.
-- AC2: `AC2: an outcome whose explicit expiresAt has passed reads as expired at the next call without any background job`; `AC2 failure path: a verified outcome without an explicit expiresAt is refused, so no default expiry applies`; `AC2 failure path: a verified outcome with an invalid verifiedAt, or an expiry not later than verification, is refused`; `AC2 failure path: a stored verified result with no explicit expiry never reads as current`.
-- AC3: `AC3: changing the account email marks the outcome as needing re-verification`; `AC3 failure path: signing in on another device with the same account keeps the current outcome`.
-- AC4: `AC4: check-in eligibility fails closed for a Reservation whose Primary Guest has no account`; `AC4: check-in eligibility fails closed for an expired outcome`; `AC4 failure path: pending, failed, provider-unavailable and email-only outcomes are not eligible`; `AC4 failure path: a Reservation whose tenant differs from the account's tenant fails closed as no account`; `AC4 failure path: a Reservation without a tenant, Reservation id or Primary Guest is refused`.
-- AC5: `AC5: no discovery, request, offer or payment code path imports the eligibility helper or the assurance store` (transitive closure from the booking modules); `AC5: only the assurance module, the check-in helper, the barrel, the schema and the local fake import the guarded modules` (allowlist of direct importers).
-- AC6: `AC6: the stored record holds only the ADR 0094 fields`; `AC6 failure path: identity evidence passed alongside an outcome is never stored`; `AC6 failure path: a level or status outside ADR 0094 and ADR 0084 is refused`.
+Per acceptance criterion (test names mirror the criteria):
+- AC1: "AC1: a recorded verified outcome is returned for the account from any linked principal"; "AC1 failure path: a principal not linked to the account gets null"; "AC1 failure path: a principal linked to a different account reads that account's empty result, never the verified one"; "AC1 failure path: a principal read under another tenant gets null"; "AC1 failure path: an outcome for an account that is not an active account of this tenant is refused"; "AC1: the test-only fixture records a verified outcome that the account-backed source returns".
+- AC2: "AC2: an outcome whose explicit expiresAt has passed reads as expired at the next call without any background job"; "AC2 failure path: a verified outcome without an explicit expiresAt is refused, so no default expiry applies"; "AC2 failure path: a verified outcome with an invalid verifiedAt, or an expiry not later than verification, is refused"; "AC2 failure path: a stored verified result with no explicit expiry never reads as current".
+- AC3: "AC3: changing the account email marks the outcome as needing re-verification"; "AC3 failure path: signing in on another device with the same account keeps the current outcome"; "AC3 failure path: a same-address change-email does not remove the outcome".
+- AC4: "AC4: check-in eligibility fails closed for a Reservation whose Primary Guest has no account"; "AC4: check-in eligibility fails closed for an expired outcome"; "AC4 failure path: pending, failed, provider-unavailable and email-only outcomes are not eligible"; "AC4 failure path: a Reservation whose tenant differs from the account's tenant fails closed as no account"; "AC4 failure path: a Reservation without a tenant, Reservation id or Primary Guest is refused".
+- AC5: "AC5: no booking, route, application or payment module reaches the eligibility helper or the assurance store, through barrels or direct imports"; "AC5: only the schema manifest, the import validator and the check-in helper import the assurance store, and nothing imports the eligibility helper"; "AC5: no non-test source imports this issue's test-only fixtures".
+- AC6: "AC6: the stored record holds only the ADR 0094 fields"; "AC6 failure path: identity evidence passed alongside an outcome is never stored"; "AC6 failure path: a level or status outside ADR 0094 and ADR 0084 is refused"; "AC6: the ADR 0084 method and an opaque provider reference are accepted"; "AC6 failure path: a method that is not a platform-owned identifier is refused, and the test fixture method is refused by the production store"; "AC6 failure path: a provider reference that looks like a restricted identifier is refused"; "AC6 failure path: an ops import cannot write a current verified row without the same validation".
+- Hardening (review, not an AC): "Hardening: a verifiedAt later than the injected clock is refused, and one equal to it is accepted"; "Hardening: a closed Guest Account has no current outcome and its principals resolve to no account"; "Hardening: a request whose principal belongs to a closed account is not claimed by a new account on the same email".
 
-Also re-run unchanged: `test/verify-access-with-live-support.test.ts` (passes). Changed: `test/guest-account-linking.test.ts` pins `SHORTLET_SCHEMA_VERSION` to 4 (was 3, now that migration 4 exists).
+Red and green. Red (first run of the rewritten file, before the fix): 8 of 31 tests failed on the new behaviour, including the AC5 barrel sweep and the closed-account, clock, method, reference and import tests. Green: 32 of 32 in `test/guest-identity-assurance.test.ts`.
+
+Gate and suites (final code): `npm run check` exit 0. `npm run test:workers` exit 0 (14 files, 85 tests). `npm run test:non-browser` exit 0 (1519 of 1519; the browser phase of `npm test` runs in CI, as noted below). Related existing suites (linking, schema, export, authority, cutover, disclosure) pass unchanged except the schema-version pin and the `importBatch` clock argument at its four callers.
+
+Mutation probes (final code; scratchpad `ga09b-mutations.txt` and `ga09b-m18.py`): 35 probes. 34 are killed by a named test. The one that survives is P22 (the redundant `!tenantId || !guestId` guard in the source), documented as an equivalent mutation. M18 survived the first run and was killed after the closed-owner test was reworked to create the request after sign-in. The coordinator's M7 to M9 are: M7 direct helper import in `apps/web/src/booking-request-application.ts`, killed by both AC5 tests; M8 direct helper import in `apps/local-guest/src/guest-server.ts`, killed by both; M9 fixture import in `apps/cloudflare/src/shortlet-pilot-do.ts`, killed by the test-only guard. M10 re-adds the barrel re-export, killed by both AC5 tests.
+
+Definition of Done:
+1. Named tests per AC: yes.
+2. Failure paths tested and probed: yes.
+3. ADRs read and cited (0011, 0012, 0070, 0075, 0084, 0085, 0093, 0094): yes.
+4. No unused injected dependency: yes.
+5. No invented policy: the reference length bound and the digit-run screen are technical screens, documented in the module and in the decision entries above. Otherwise the values come from ADR 0094 and 0084.
+6. No credential or identity material in logs or audit: yes (no logging added; the import refusal names no value).
+7. `npm run check` clean, `npm run test:non-browser` and `npm run test:workers` green, and CI verify and browser green on the final head: see the PR #101 body for the run URLs and conclusions.
+
+Needs human: see the Comments (DPIA classification; claim-based Reservation resolution; `validateDisclosure`; the resolver's `email-verified`; walkthrough wiring). These are open questions and are not resolved in this issue.

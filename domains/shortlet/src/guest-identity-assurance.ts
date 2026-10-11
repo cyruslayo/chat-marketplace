@@ -1,4 +1,4 @@
-import type { SqlDatabase, SqlRow } from "../../../packages/platform-core/src/sql-database.js";
+import type { SqlDatabase, SqlRow, SqlValue } from "../../../packages/platform-core/src/sql-database.js";
 import type { SqliteGuestAccountLinks } from "./guest-account-links.js";
 import type { GuestIdentityVerificationResult, GuestIdentityVerificationResultSource } from "./guest-verification.js";
 
@@ -18,14 +18,29 @@ export type IdentityAssuranceLevel = (typeof IDENTITY_ASSURANCE_LEVELS)[number];
 export const IDENTITY_ASSURANCE_STATUSES = ["pending", "verified", "failed", "expired", "provider_unavailable"] as const;
 export type IdentityAssuranceStatus = (typeof IDENTITY_ASSURANCE_STATUSES)[number];
 
+/** ADR 0084 names this platform method for the selected Smile ID Biometric KYC flow (`method (nigeria_nin_v2_biometric_kyc)`). */
+export const NIGERIA_NIN_V2_BIOMETRIC_KYC_METHOD = "nigeria_nin_v2_biometric_kyc";
+/** Test-only fixture method. The store accepts it only when constructed with `allowFixtureMethods: true` (test helpers only). */
+export const FIXTURE_IDENTITY_METHOD = "local-fixture";
+
+/**
+ * Provider reference shape (ADR 0084: an opaque provider/job/verification reference; ADR 0075: restricted identifiers never
+ * stored). The length bound is a storage bound, not a provider contract. A run of 9 or more digits is refused because NIN, BVN
+ * and phone numbers are 10 to 11 digits. This is a conservative screen, and the provider's reference format is to be confirmed
+ * at onboarding.
+ */
+export const PROVIDER_REFERENCE_MAX_LENGTH = 64;
+const PROVIDER_REFERENCE_PATTERN = new RegExp(`^[A-Za-z][A-Za-z0-9_-]{0,${PROVIDER_REFERENCE_MAX_LENGTH - 1}}$`);
+const RESTRICTED_DIGIT_RUN = /\d{9,}/;
+
 export interface IdentityAssuranceOutcome {
   readonly tenantId: string;
   readonly accountGuestId: string;
   readonly level: IdentityAssuranceLevel;
-  /** Platform-owned identifier for the evidence method. It is not raw evidence. */
+  /** A platform-owned method identifier (ADR 0094). It is not raw evidence, and only allowlisted methods are accepted. */
   readonly method: string;
   readonly status: IdentityAssuranceStatus;
-  /** Required, and must be a valid timestamp, when the status is `verified`. */
+  /** Required, and must be a valid timestamp no later than the clock, when the status is `verified`. */
   readonly verifiedAt?: string | null;
   /** Required when the status is `verified`. The authoritative expiry; no default freshness period exists (ADR 0094). */
   readonly expiresAt?: string | null;
@@ -47,8 +62,9 @@ export interface CurrentIdentityAssurance {
 
 /**
  * Table DDL (ADR 0094). Applied by the schema migrations (apps/cloudflare/src/schema.ts, migration 4) and by this store's
- * constructor. The trigger removes the current result when the account's email changes, so re-verification is required for
- * any change path, including the authority's `changeEmail`. A sign-in on another device does not touch this table.
+ * constructor. The trigger removes the current result when the account's normalized email changes, so re-verification is
+ * required for any change path, including the authority's `changeEmail`. A same-address write and a sign-in on another device
+ * do not touch this table.
  */
 export const GUEST_IDENTITY_ASSURANCE_SCHEMA = `
       CREATE TABLE IF NOT EXISTS guest_identity_assurance (
@@ -71,6 +87,13 @@ export const GUEST_IDENTITY_ASSURANCE_SCHEMA = `
       END;
     `;
 
+export interface SqliteGuestIdentityAssuranceOptions {
+  /** The authoritative clock. A verified outcome cannot be recorded with a `verifiedAt` later than it. No default is applied. */
+  readonly clock: () => Date;
+  /** Test helpers only: accepts the fixture method. Production composition never sets it. */
+  readonly allowFixtureMethods?: boolean;
+}
+
 function requiredText(value: unknown, label: string): string {
   if (typeof value !== "string" || value.trim() === "") throw new Error(`${label} is required`);
   return value.trim();
@@ -91,15 +114,27 @@ function isStatus(value: unknown): value is IdentityAssuranceStatus {
   return typeof value === "string" && (IDENTITY_ASSURANCE_STATUSES as readonly string[]).includes(value);
 }
 
-/** Validates an outcome and returns the only fields that are stored. Anything else on the input is ignored, never persisted. */
-function normalizeOutcome(outcome: IdentityAssuranceOutcome) {
+function acceptedMethods(allowFixtureMethods: boolean): readonly string[] {
+  return allowFixtureMethods ? [NIGERIA_NIN_V2_BIOMETRIC_KYC_METHOD, FIXTURE_IDENTITY_METHOD] : [NIGERIA_NIN_V2_BIOMETRIC_KYC_METHOD];
+}
+
+/**
+ * Validates an outcome and returns the only fields that are stored. Anything else on the input is ignored, never persisted.
+ * The rules are the same for a recorded outcome and for an ops import row (see identityAssuranceRowForImport).
+ */
+function normalizeOutcome(outcome: IdentityAssuranceOutcome, now: Date, allowFixtureMethods: boolean) {
   const tenantId = requiredText(outcome?.tenantId, "Tenant ID");
   const accountGuestId = requiredText(outcome?.accountGuestId, "Account Guest Id");
   if (!isLevel(outcome.level)) throw new Error("Identity assurance level must be one of the ADR 0094 levels");
   if (!isStatus(outcome.status)) throw new Error("Identity assurance status must be one of the ADR 0084 recorded states");
-  const method = requiredText(outcome.method, "Identity assurance method");
+  if (typeof outcome.method !== "string" || !acceptedMethods(allowFixtureMethods).includes(outcome.method)) {
+    throw new Error("Identity assurance method must be a platform-owned identifier");
+  }
   const verifiedAt = timestampOrNull(outcome.verifiedAt, "verifiedAt");
   const expiresAt = timestampOrNull(outcome.expiresAt, "expiresAt");
+  if (verifiedAt !== null && Date.parse(verifiedAt) > now.getTime()) {
+    throw new Error("verifiedAt cannot be later than the clock");
+  }
   if (outcome.status === "verified") {
     if (verifiedAt === null) throw new Error("A verified outcome requires a verifiedAt timestamp");
     // No default freshness period: the expiry must be explicit and later than the verification (ADR 0094).
@@ -108,10 +143,15 @@ function normalizeOutcome(outcome: IdentityAssuranceOutcome) {
   if (verifiedAt !== null && expiresAt !== null && Date.parse(expiresAt) <= Date.parse(verifiedAt)) {
     throw new Error("expiresAt must be later than verifiedAt");
   }
-  const providerReference = outcome.providerReference === undefined || outcome.providerReference === null
-    ? null
-    : requiredText(outcome.providerReference, "Provider reference");
-  return { tenantId, accountGuestId, level: outcome.level, method, status: outcome.status, verifiedAt, expiresAt, providerReference };
+  let providerReference: string | null = null;
+  if (outcome.providerReference !== undefined && outcome.providerReference !== null) {
+    const reference = outcome.providerReference;
+    if (typeof reference !== "string" || !PROVIDER_REFERENCE_PATTERN.test(reference) || RESTRICTED_DIGIT_RUN.test(reference)) {
+      throw new Error("providerReference must be an opaque platform reference, not a restricted identifier");
+    }
+    providerReference = reference;
+  }
+  return { tenantId, accountGuestId, level: outcome.level, method: outcome.method, status: outcome.status, verifiedAt, expiresAt, providerReference };
 }
 
 /** Projects a stored row. A malformed row throws rather than being read as current assurance (fail closed). */
@@ -140,14 +180,55 @@ export function isCurrentGovernmentIdAssurance(current: CurrentIdentityAssurance
 }
 
 /**
+ * The validation an ops import applies to one `guest_identity_assurance` row (ops-import.ts). It is the recording rules plus
+ * the active-account check, so an import cannot write a current `verified` row that a recorded outcome could not. It returns
+ * the normalized row to insert. A failure throws a generic error that names no value.
+ */
+export function identityAssuranceRowForImport(database: SqlDatabase, row: Readonly<Record<string, SqlValue>>, now: Date): Record<string, SqlValue> {
+  const text = (value: SqlValue | undefined): string | undefined => {
+    if (value === undefined || value === null) return undefined;
+    if (typeof value !== "string") throw new Error("An identity assurance column has the wrong type");
+    return value;
+  };
+  const normalized = normalizeOutcome({
+    tenantId: text(row.tenant_id) as string,
+    accountGuestId: text(row.account_guest_id) as string,
+    level: text(row.level) as IdentityAssuranceLevel,
+    method: text(row.method) as string,
+    status: text(row.status) as IdentityAssuranceStatus,
+    verifiedAt: text(row.verified_at) ?? null,
+    expiresAt: text(row.expires_at) ?? null,
+    providerReference: text(row.provider_reference) ?? null,
+  }, now, false);
+  const account = database
+    .prepare("SELECT account_guest_id FROM guest_accounts WHERE account_guest_id = ? AND tenant_id = ? AND status = 'active'")
+    .get([normalized.accountGuestId, normalized.tenantId]);
+  if (account === undefined) throw new Error("Identity assurance requires an active Guest Account of this tenant");
+  return {
+    tenant_id: normalized.tenantId,
+    account_guest_id: normalized.accountGuestId,
+    level: normalized.level,
+    method: normalized.method,
+    status: normalized.status,
+    verified_at: normalized.verifiedAt,
+    expires_at: normalized.expiresAt,
+    provider_reference: normalized.providerReference,
+  };
+}
+
+/**
  * The identity-assurance store and service (ADR 0094). The store is account-scoped: a result belongs to one tenant and one
  * Guest Account, never to a principal, session, thread, request or payment.
  */
 export class SqliteGuestIdentityAssurance {
   readonly #database: SqlDatabase;
+  readonly #clock: () => Date;
+  readonly #allowFixtureMethods: boolean;
 
-  constructor(database: SqlDatabase) {
+  constructor(database: SqlDatabase, options: SqliteGuestIdentityAssuranceOptions) {
     this.#database = database;
+    this.#clock = options.clock;
+    this.#allowFixtureMethods = options.allowFixtureMethods === true;
     this.#database.exec(GUEST_IDENTITY_ASSURANCE_SCHEMA);
   }
 
@@ -156,7 +237,7 @@ export class SqliteGuestIdentityAssurance {
    * active Guest Account of the same tenant. Invalid input is refused before anything is written.
    */
   recordOutcome(outcome: IdentityAssuranceOutcome): void {
-    const record = normalizeOutcome(outcome);
+    const record = normalizeOutcome(outcome, this.#clock(), this.#allowFixtureMethods);
     const account = this.#database
       .prepare("SELECT account_guest_id FROM guest_accounts WHERE account_guest_id = ? AND tenant_id = ? AND status = 'active'")
       .get([record.accountGuestId, record.tenantId]);
@@ -171,15 +252,18 @@ export class SqliteGuestIdentityAssurance {
   }
 
   /**
-   * The current result for an account at `now`. Expiry is evaluated here, lazily, against the explicit `expiresAt`: a verified
-   * result reads as `expired` once `now` is at or after it. Nothing is rewritten, and no background job is needed.
+   * The current result for an active account at `now`. Expiry is evaluated here, lazily, against the explicit `expiresAt`: a
+   * verified result reads as `expired` once `now` is at or after it. A closed or missing account has no current result.
+   * Nothing is rewritten, and no background job is needed.
    */
   currentAssurance(accountGuestId: string, tenantId: string, now: Date): CurrentIdentityAssurance | null {
     const account = requiredText(accountGuestId, "Account Guest Id");
     const tenant = requiredText(tenantId, "Tenant ID");
     if (!(now instanceof Date) || Number.isNaN(now.getTime())) throw new Error("A valid clock instant is required");
     const row = this.#database
-      .prepare("SELECT * FROM guest_identity_assurance WHERE tenant_id = ? AND account_guest_id = ?")
+      .prepare(`SELECT a.* FROM guest_identity_assurance a
+        JOIN guest_accounts g ON g.account_guest_id = a.account_guest_id AND g.tenant_id = a.tenant_id
+        WHERE a.tenant_id = ? AND a.account_guest_id = ? AND g.status = 'active'`)
       .get([tenant, account]);
     if (row === undefined) return null;
     const stored = projectRow(row);

@@ -12,6 +12,9 @@ import {
   quoteIdentifier,
 } from "../../../packages/platform-core/src/data-migration.js";
 import { schemaVersion } from "../../../packages/platform-core/src/schema-migrations.js";
+import { identityAssuranceRowForImport } from "../../../domains/shortlet/src/guest-identity-assurance.js";
+
+const IDENTITY_ASSURANCE_TABLE = "guest_identity_assurance";
 import { CutoverMarkerUnavailableError, reconcileCutover, type CutoverMarkerStore } from "./cutover-marker.js";
 
 /**
@@ -31,7 +34,8 @@ export type ImportRefusalCode =
   | "SCHEMA_NOT_READY"
   | "CUTOVER_COMPLETE"
   | "CUTOVER_MARKER_UNAVAILABLE"
-  | "EXCLUDED_TABLE";
+  | "EXCLUDED_TABLE"
+  | "IDENTITY_ASSURANCE_REFUSED";
 
 /**
  * Refuses unless the schema is exactly `requiredVersion`. The import never runs migrations itself: a missing or older
@@ -179,12 +183,21 @@ function insertStatement(table: string, columns: readonly string[], primaryKey: 
  * Imports one batch in a single transaction. Rows are validated before anything is written, and a statement that
  * fails (for example a missing NOT NULL value) rolls back the whole batch, so nothing from it is kept.
  */
-export function importBatch(database: SqlDatabase, table: string, rows: readonly unknown[], requiredVersion: number): ImportBatchResult {
+export function importBatch(database: SqlDatabase, table: string, rows: readonly unknown[], requiredVersion: number, now: Date): ImportBatchResult {
   assertImportAllowed(database, requiredVersion);
   // Issue 16 B: a credential table is refused by name before any row is read (ADR 0093, 0086, 0075).
   if (isCredentialTable(table)) throw new ImportRefusedError("EXCLUDED_TABLE", CREDENTIAL_TABLE_REFUSAL);
   const shape = tableShape(database, table);
-  const prepared = rows.map((raw, position) => preparedRow(raw, shape, position));
+  let prepared = rows.map((raw, position) => preparedRow(raw, shape, position));
+  // Issue 09: an identity assurance row is held to the same rules as a recorded outcome (ADR 0094, ADR 0084), so a generic
+  // import cannot write a current verified result. The refusal names no value, and nothing from the batch is written.
+  if (table === IDENTITY_ASSURANCE_TABLE) {
+    try {
+      prepared = prepared.map((row) => identityAssuranceRowForImport(database, row, now));
+    } catch {
+      throw new ImportRefusedError("IDENTITY_ASSURANCE_REFUSED", "An identity assurance row failed validation, so nothing from the batch was written");
+    }
+  }
 
   // Rows that bind the same columns share statements, and each statement stays within the parameter limit.
   const groups = new Map<string, Record<string, SqlValue>[]>();

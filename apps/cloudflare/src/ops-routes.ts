@@ -224,7 +224,7 @@ export function createOpsHandler(dependencies: OpsRouteDependencies): OpsHandler
       // Issue 16 A: the schema, then the cutover marker and flag, are checked before any write (fail closed).
       assertSchemaCurrent(dependencies.database, SHORTLET_SCHEMA_VERSION);
       await assertCutoverOpenForImport(dependencies.database, dependencies.cutoverMarker);
-      const result = importBatch(dependencies.database, table, body.rows, SHORTLET_SCHEMA_VERSION);
+      const result = importBatch(dependencies.database, table, body.rows, SHORTLET_SCHEMA_VERSION, dependencies.clock());
       // No audit record: the audit log is itself migrated, so an import must not add rows to it.
       return json(200, { ok: true, ...result });
     }

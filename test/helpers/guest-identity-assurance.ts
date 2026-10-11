@@ -1,13 +1,9 @@
-import {
-  AccountBackedGuestIdentityVerificationResultSource,
-  GuestCheckInIdentityEligibility,
-  SqliteGuestIdentityAssurance,
-  type GuestAccountSession,
-  type IdentityAssuranceOutcome,
-} from "../../domains/shortlet/src/index.js";
+import { AccountBackedGuestIdentityVerificationResultSource, SqliteGuestIdentityAssurance, NIGERIA_NIN_V2_BIOMETRIC_KYC_METHOD, type IdentityAssuranceOutcome } from "../../domains/shortlet/src/guest-identity-assurance.js";
+import { GuestCheckInIdentityEligibility } from "../../domains/shortlet/src/guest-check-in-eligibility.js";
+import type { GuestAccountSession } from "../../domains/shortlet/src/guest-account-authority.js";
 import { createGuestLinkingFixture, LINKING_TENANT, type GuestLinkingFixture } from "./guest-account-linking.js";
 import { guestEmailChange } from "./guest-account-authority.js";
-import { LOCAL_FIXTURE_IDENTITY_METHOD } from "../../apps/local-guest/src/identity-assurance-fixture.js";
+
 
 export const ASSURANCE_TENANT = LINKING_TENANT;
 export const VERIFIED_AT = "2026-10-10T09:00:00.000Z";
@@ -19,7 +15,7 @@ export function verifiedOutcome(accountGuestId: string, overrides: Partial<Ident
     tenantId: ASSURANCE_TENANT,
     accountGuestId,
     level: "government-ID-verified",
-    method: LOCAL_FIXTURE_IDENTITY_METHOD,
+    method: NIGERIA_NIN_V2_BIOMETRIC_KYC_METHOD,
     status: "verified",
     verifiedAt: VERIFIED_AT,
     expiresAt: EXPIRES_AT,
@@ -48,7 +44,8 @@ export async function createGuestIdentityAssuranceFixture(): Promise<GuestIdenti
   const base = await createGuestLinkingFixture();
   let instant = new Date(VERIFIED_AT);
   const clock = () => instant;
-  const assurance = new SqliteGuestIdentityAssurance(base.database);
+  // The fixture store accepts the test-only fixture method; production composition does not (see the store options).
+  const assurance = new SqliteGuestIdentityAssurance(base.database, { clock, allowFixtureMethods: true });
   const source = new AccountBackedGuestIdentityVerificationResultSource({ links: base.links, assurance, clock });
   const eligibility = new GuestCheckInIdentityEligibility({ links: base.links, assurance, clock });
   return {
