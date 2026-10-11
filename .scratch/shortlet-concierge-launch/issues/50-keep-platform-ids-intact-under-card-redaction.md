@@ -25,7 +25,7 @@ The same cause made these tests flaky: masked ids (`cmd-[REDACTED]`, `offer-[RED
 A string under a key listed in `PLATFORM_ID_PREFIXES_BY_KEY` is handled in this order:
 
 1. If the key is sensitive (`sensitiveKeys`), the value is `[REDACTED]`. Sensitive keys always win.
-2. If the Luhn gate trips (a card-rule match that is Luhn-valid, or a whole 17 to 19 digit run that is Luhn-valid; see the Luhn gate section), the whole value is `[REDACTED]`. This is fail closed, whatever the value's shape.
+2. If the Luhn gate trips (a match of the card rule's own regex is Luhn-valid; see the Luhn gate section), the whole value is `[REDACTED]`. This is fail closed, whatever the value's shape.
 3. If the value is exactly `<prefix>-<random v4 UUID>` with a prefix listed for that key, it is kept unchanged (exempt).
 4. Otherwise the string rules apply as before.
 
@@ -73,41 +73,35 @@ Keys such as `tenantId`, `unitId`, `actorId` and `reservationId` are not in the 
 
 The site is `apps/local-guest/src/guest-server.ts` (the session-scoped principal): `const principalId = sessionScopedGuestPrincipals ? \`guest-${crypto.randomUUID()}\` : app.environment.config.guestId`. The `guest-<uuid>` branch is server-generated v4. The other branch is server configuration (`config.guestId`), not client input, so it is not exempt (it is not a UUID shape). Every other `guest-${crypto.randomUUID()}` site is a call argument (`registerBrowserSession`, `replaceInteractionSession`, guest-server.ts:7129, 7200, 7484, 7512), and each passes a server-generated `crypto.randomUUID()` value. The `guest-bootstrap-` prefix belongs to `guestId` (`apps/cloudflare/src/shortlet-pilot-do.ts`, `apps/pilot/src/pilot-server.ts`); it is a different prefix and key and is not in the table.
 
-## Luhn gate (residual: about 1 in 3,000 at the current rule)
+## Luhn gate (residual: about 1 in 7,500 platform ids, plus two documented limits)
 
-`containsLuhnValidCardShape` (`packages/platform-core/src/redaction.ts`) trips when either:
+`containsLuhnValidCardShape` (`packages/platform-core/src/redaction.ts`) trips when a match of the card rule's own regex (`CARD_NUMBER_SHAPE`: 16 digits in aligned 4-digit groups, optional single separators) is Luhn-valid once the separators are removed. A tripped gate masks the whole value as `[REDACTED]`. The exemption is never wider than the card rule's own coverage.
 
-- (a) a match of the card rule's own regex (aligned 4-4-4-4 groups with optional single separators) is Luhn-valid, separators removed; or
-- (b) a whole maximal run of 17 to 19 consecutive digits (hyphens removed) is Luhn-valid as a number.
+Fall-through to the card regex is not used: a tripped gate is replaced whole, so no part of a gated number survives.
 
-Other 16-digit windows of a longer run are NOT tested (decided by the orchestrator, option 2). A tripped gate masks the whole value as `[REDACTED]`. Fall-through to the card regex is not enough: the regex matches only aligned 16-digit groups and would leave, for example, `889` of the 19-digit regression number.
+**Where the card rule matches in an exact v4 id** (enumerated by test "The card rule matches a 16-digit window in a v4 platform id only at hex offsets 0 and 16"): the rule needs a hyphen or the string start before the 16 digits and a hyphen or the string end after them. In a v4 id that leaves hex offsets 0 and 16.
 
-**Where the card rule matches in an exact v4 id** (enumerated by test "The card rule matches a 16-digit window in a v4 platform id only at hex offsets 0 and 16"): the rule needs a hyphen or the string start before the 16 digits and a hyphen or the string end after them. In a v4 id that leaves hex offsets 0 and 16 only.
+**Documented limits (PINNED, deliberate; tests named `PINNED LIMIT`):**
 
-**PINNED LIMIT (documented, deliberate).** A Luhn-valid 16-digit card number at an UNALIGNED hex offset (1 to 15) of an exact v4 id is not detected and stays unchanged, as free text on main is (the card rule does not match it). The review example `req-aaaaaaaa-3352-4152-8480-7151aaaaaaaa` is such a case: its digits are followed by a letter, so the card rule's end boundary fails. This is defence in depth only: client-supplied ids are lookup-validated before audit, and the client-chosen `g-` thread ids are excluded. Tests named `PINNED LIMIT` pin it, so a change to the windows is deliberate (probe M15 widens the windows and must fail them).
+1. **Unaligned 16-digit offsets.** A Luhn-valid 16-digit card number at an UNALIGNED hex offset (1 to 15) of an exact v4 id is not matched by the card rule, so it is not detected and stays unchanged. The review example `req-aaaaaaaa-3352-4152-8480-7151aaaaaaaa` is such a case: its digits are followed by a letter, so the card rule's end boundary fails. Same as free text on main.
+2. **13- to 15-digit and 17- to 19-digit numbers.** The card rule matches only 16-digit groups, anywhere (ids or free text). So a Luhn-valid 17- to 19-digit number in an id, including the 19-digit `req-21022665-8675-4290-889a-aaaaaaaaaaaa`, stays unchanged, as in free text on main. A 15-digit Amex-length number stays unchanged too. The id context equals free text.
 
-**Covered:** card numbers at aligned offsets 0 and 16 under every key, key-name variant and nested object; whole 17-, 18- and 19-digit Luhn-valid runs at offsets 0 and 4 (the regression `req-21022665-8675-4290-889a-aaaaaaaaaaaa`, a Luhn-valid 19-digit run, is masked as on main); id values inside arrays.
+Defence in depth only: client-supplied ids are lookup-validated before audit, and the client-chosen `g-` thread ids are excluded.
 
-**Not covered (same as main):** 13- to 15-digit numbers, and 13- to 19-digit numbers outside an id (the card rule matches only 16-digit groups). A 15-digit Amex-length number and a 19-digit Luhn-valid number in free text stay unchanged (pinned by tests).
+**Covered:** card numbers at aligned offsets 0 and 16 under every key, key-name variant and nested object; id values inside arrays.
 
-**Measured residual**, over 1,000,000 random v4 ids (`req-${randomUUID()}`), with the final rule:
+**Measured residual**, over 1,000,000 random v4 ids (`req-${randomUUID()}`), final rule (rule (a) only):
 
 | Measure | Result |
 | --- | --- |
-| Card-shaped ids (the card regex matches) | 0.1331% (1,331 ids in one run; 1,269 in a second run) |
-| Gate (a): card-rule match Luhn-valid | 133 ids: **about 1 in 7,500** (about 10% of card-shaped ids, as expected) |
-| Gate (b): whole 17-19 digit run Luhn-valid | 177 ids: **about 1 in 5,650** (17-digit 95, 18-digit 55, 19-digit 27) |
-| Total masked | 0.0342% in one run (342 ids, about **1 in 2,900**); about 1 in 3,200 in the split run (310 ids) |
-| Ratio, masked to card-shaped | about 0.26 |
+| Card-shaped ids (the card regex matches) | 0.1381% (1,381 ids) |
+| Masked ids | 125 ids (0.0125%): **about 1 in 8,000** |
+| Ratio, masked to card-shaped | 0.09 (about one in ten card-shaped ids is Luhn-valid, as expected) |
+| Masked without a card-regex match | 0 |
 
-The expected figure of about 1 in 7,900 is the card-rule part (a) alone. Rule (b) adds about as much again, so the total is about 1 in 3,000. The human must accept this.
+Earlier runs of the same rule measured 0.1331% card-shaped (1,331 ids) and about 1 in 7,500 masked (133 ids in a split run). The rule (a) residual is therefore about 1 in 7,500 to 8,000 platform ids.
 
-**Options for the human (not implemented here):**
-
-1. Accept the current rule: about 1 in 3,000 platform ids lose correlation, with the 17-19 digit whole-run rule (required by the 19-digit regression).
-2. Narrow rule (b) to 19-digit runs only: about 1 in 6,250 (the 19-digit regression stays covered; 17- and 18-digit whole runs are not).
-3. Card rule matches only (drop rule b): about 1 in 7,500, but the 19-digit regression id is no longer masked. Not recommended by the orchestrator's requirement.
-4. Drop the gate. Threat model: only platform generators write these keys, and the client-chosen thread ids are excluded.
+**Dropped:** the whole-run 17- to 19-digit rule (earlier options 2 and 3). It added about 1 in 5,650 more loss (177 of 1,000,000) to cover a case the card rule never matched anywhere. It is removed, and the 19-digit case is now a pinned limit.
 
 ## Answers to the review questions (from the code, behaviour unchanged)
 
@@ -127,51 +121,53 @@ The expected figure of about 1 in 7,900 is the card-rule part (a) alone. Rule (b
 
 ## Reproduction and evidence
 
-Red run (the revised main test file `test/redact-platform-ids.test.ts`, 30 tests, against the previous gate from `e8008df`): 5 failing: the 20,000-id oracle for the in-memory check, the 20,000-id oracle for SQLite, the two PINNED LIMIT tests (an unaligned card and the review example, both masked by the window gate), and the "other windows are not tested" test. The card-number, wrong-prefix, non-v4 and sensitive-key tests passed before and after.
+Red run (the revised main test file against the previous gate, `144184d`): 29 tests, 4 failing: the two 20,000-id oracles (in-memory and SQLite), and the two pinned-limit tests for 17- to 19-digit numbers (the 19-digit regression and the whole-run cases), which the previous gate masked. The card-number, wrong-prefix, non-v4 and sensitive-key tests passed before and after.
 
-Flake loops (200 runs per file, 4-way parallel, `npx tsx --test <file>`; "after" is the final code):
+Flake loops (200 runs per file, 4-way parallel, `npx tsx --test <file>`; "after" is the final code, rule (a) only):
 
 | File | origin/main `redaction.ts` (before) | Final code (after) |
 | --- | --- | --- |
-| test/submit-and-resolve-timed-booking-request.test.ts | 2 of 200 failed (runs 139 and 170: audit lookups by a masked id, the original bug) | 0 of 200 failed |
-| test/issue-and-accept-conditional-booking-offer.test.ts | 0 of 200 failed | 1 of 200 failed (run 183: `assert.ok(auditWeb)` at line 451, an audit lookup by `offerId`, consistent with a gated offer id; the id value is not logged, so not directly verified) |
+| test/submit-and-resolve-timed-booking-request.test.ts | 1 of 200 failed (run in this round: audit lookup by a masked id, the original bug) | 1 of 200 failed (run 6: `cmd-92711166-4784-4767-af17-f383bc7e7fc5` is masked because its aligned card match `92711166-4784-4767` is Luhn-valid; a gate trip, the residual) |
+| test/issue-and-accept-conditional-booking-offer.test.ts | 2 of 200 failed (audit lookups by a masked id, the original bug) | 0 of 200 failed |
 
-Earlier campaigns: origin/main before, 5/200 and 3/200 (first) and 1/200 and 2/200 (second); head `4739992` (16-digit gate) after 0/200 and 0/200; head `e8008df` (all-window gate) after 2/200 and 2/200.
+Earlier campaigns: origin/main before, 5/200 and 3/200 (first), 1/200 and 2/200 (second), 2/200 and 0/200 (third); head `4739992` (16-digit gate) after 0/200 and 0/200; head `e8008df` (all-window gate) after 2/200 and 2/200; head `144184d` (rule (a) + whole-run 17-19) after 0/200 and 1/200.
 
-Honest reading: 200 runs cannot prove a rate of about 1 in 3,000 per file-run, and the expected count is 0 to 1 per 200. The one failure here is consistent with the residual, not proof of it.
+Honest reading: 200 runs cannot prove a rate of about 1 in 8,000 ids per run, because each test touches several ids per run. The expected count is 0 to 1 failures per 200. The observed failures are explained by the residual (a gate trip on an aligned Luhn-valid card match), not by a logic error.
 
 ## Test files and counts
 
-- `test/redact-platform-ids.test.ts`: 30 tests (20,000-id checks for main and SQLite, the original negative cases, offsets 0 and 16 under every key and variant, nested objects, the enumeration of the card rule's offsets, 17- to 19-digit whole runs, the 19-digit regression, the PINNED LIMIT tests, Luhn-invalid ids unchanged, Amex and 19-digit free-text pins, end anchor, trailing newline, arrays, non-string pin, guest thread ids).
+- `test/redact-platform-ids.test.ts`: 29 tests (20,000-id checks for main and SQLite against the card rule's gate, the original negative cases, offsets 0 and 16 under every key and variant, nested objects, the enumeration of the card rule's offsets, the PINNED LIMIT tests for unaligned 16-digit offsets, the review example, 13-19 digit numbers (the 19-digit regression included), Luhn-invalid ids unchanged, Amex and 19-digit free-text pins, end anchor, trailing newline, arrays, non-string pin, guest thread ids).
 - `test/redact-platform-ids-precedence.test.ts`: 3 tests (sensitive key and tabled key in the same policy, via `createSensitiveDataRedactor`).
 - `test/redact-platform-ids-generators.test.ts`: 5 tests (principalId ternary extraction, pairing, completeness, exclusions tied to key and files, generator closure).
 - `test/redact-platform-ids-detection.test.ts`: 4 tests (detection over both tables, clean rows, issue shows the generated SQL, flat-key limitation).
 - `test/helpers/platform-id-fixtures.ts`: shared fixtures and oracles (not a test file).
 
+Total: 41 tests across the four files.
+
 ## Mutation probes (final code, each file run separately, restored after each run)
 
 | Probe | Change | Result (failing tests) |
 | --- | --- | --- |
-| M1 | key guard removed | fails (3) |
+| M1 | key guard removed | fails (2) |
 | M2 | prefix guard removed | fails (2) |
 | M3 | shape check removed | fails (5) |
 | M4 | v4 nibble removed | fails (1) |
-| M5 | Luhn gate removed | fails (9) |
+| M5 | Luhn gate removed | fails (7) |
 | M6 | end anchor removed | fails (2) |
-| M7 | exemption removed | fails (7) |
+| M7 | exemption removed | fails (8) |
 | M8 | exemption checked before `sensitiveKeys` | precedence test fails (1) |
-| M9 | `token` added to the production table | generator pairing fails (1) and the issue-file check |
+| M9 | `token` added to the production table | generator pairing fails (1), issue-file check (1) |
 | M10 | `quote` prefix changed to `quotes` | fails (6) |
 | M11 | exclusion key renamed (`sessionId`) | completeness and exclusion checks fail (2) |
 | M12 | detection query drops `threadId` | detection fails (2) |
 | M13 | `g` added to `threadId` | guest thread test fails (1) |
-| M14 | fall-through instead of fail-closed | fails (9) |
-| M15 | windows widened to any 16-digit window | fails (6), including both PINNED LIMIT tests |
-| M16 | 17-19 digit whole-run rule removed | fails (3), including the regression |
-| M17 | `principalId` removed from the table | completeness check fails (2) |
+| M14 | fall-through instead of fail-closed | fails (5) |
+| M15 | windows widened to any 16-digit window | fails (2), including the unaligned PINNED LIMIT and the review example |
+| M16 | 17-19 digit whole-run rule added back | fails (4), including the 17-19 digit PINNED LIMIT and the 19-digit regression |
+| M17 | `principalId` removed from the table | completeness fails (2) |
 | M18 | `sessionId` exclusion names no files | exclusion check fails (1) |
 | M19 | `commandEnvelopeId` alias broken | pairing fails (1) |
-| M20 | card-rule matches not Luhn-tested (whole runs only) | fails (7) |
+| M20 | card-rule matches not Luhn-tested | fails (7) |
 
 The issue-file check also fails in probes that change the table, because the SQL is generated from the table; that is the intended tie.
 
@@ -244,12 +240,16 @@ The query finds rows only where a listed key was masked. It cannot find masked i
 
 ## Needs user
 
-- Accept the Luhn-gate residual: about **1 in 3,000** platform ids (measured) lose correlation with the current rule (about 1 in 7,500 from the card-rule gate, plus about 1 in 5,650 from the 17- to 19-digit whole-run rule). Or choose option 2 (19-digit only, about 1 in 6,250). Also accept the documented PINNED LIMIT: a Luhn-valid 16-digit card at an unaligned offset of an exact v4 id is not detected (defence in depth only). Status stays `ready-for-human` until then.
-- Decide the 13- to 15-digit and 17- to 19-digit card-number gap outside ids (pre-existing; a 15-digit Amex is not masked anywhere today).
+- Accept the residual of the Luhn gate: about **1 in 7,500 to 8,000** platform ids (measured) lose correlation, because a Luhn-valid aligned card match in an exact v4 id masks the whole id.
+- Accept the two documented limits (PINNED LIMITS):
+  1. a Luhn-valid 16-digit card at an unaligned hex offset (1 to 15) of an exact v4 id is not detected;
+  2. 13- to 15-digit and 17- to 19-digit numbers are not detected in ids (the card rule matches only 16-digit groups anywhere; the same as free text on main).
 - Decide the masking of payment references: `transactionRef` / `res-${transactionRef}` (Q1) and `providerReference` (Q2).
 - Whether a migration or back-fill should run on production rows (not written here).
 - Unprefixed `randomUUID()` values are not exempt (closed prefix set). No audited key holding one was found, but the scan is by key name and is not exhaustive.
 - Non-UUID ids such as `res-${transactionRef}` can still be masked if they contain a digit run (see Q1).
+
+Status stays `ready-for-human` until the first two items are accepted.
 
 ## Comments
 

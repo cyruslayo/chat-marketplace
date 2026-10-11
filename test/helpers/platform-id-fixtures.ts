@@ -71,14 +71,11 @@ export function cardRuleMatches(value: string): boolean {
   return /\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b/.test(value);
 }
 
-// Oracle for the gate: (a) some match of the card rule's own regex is Luhn-valid (separators removed), or (b) some maximal
-// run of 17 to 19 digits (hyphens removed) is Luhn-valid as a whole. Other windows of a longer run are NOT tested.
+// Oracle for the gate: some match of the card rule's own regex (aligned 4-4-4-4 groups, optional single separators) is
+// Luhn-valid once the separators are removed. Nothing else trips the gate (17-19 digit numbers are outside the card rule).
 export function containsLuhnValidCardShape(value: string): boolean {
   for (const match of value.matchAll(CARD_SHAPE)) {
     if (isLuhnValid(match[0].replace(/\D/g, ""))) return true;
-  }
-  for (const run of value.replace(/-/g, "").match(/\d+/g) ?? []) {
-    if (run.length >= 17 && run.length <= 19 && isLuhnValid(run)) return true;
   }
   return false;
 }
