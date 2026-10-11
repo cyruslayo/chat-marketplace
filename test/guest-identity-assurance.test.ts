@@ -7,7 +7,7 @@ import { SHORTLET_SCHEMA_MIGRATIONS, SHORTLET_SCHEMA_VERSION } from "../apps/clo
 import { importBatch } from "../apps/cloudflare/src/ops-import.js";
 import { applySchemaMigrations } from "../packages/platform-core/src/schema-migrations.js";
 import { openNodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-database.js";
-import { SqliteGuestIdentityAssurance } from "../domains/shortlet/src/guest-identity-assurance.js";
+import { DEFAULT_IDENTITY_ASSURANCE_REFERENCE_POLICY, SqliteGuestIdentityAssurance, identityAssuranceRowForImport } from "../domains/shortlet/src/guest-identity-assurance.js";
 import { recordLocalVerifiedIdentity } from "./helpers/identity-assurance-fixture.js";
 import {
   ASSURANCE_TENANT,
@@ -77,12 +77,21 @@ test("AC1 failure path: a principal read under another tenant gets null", async 
   });
 });
 
-test("AC1 failure path: an outcome for an account that is not an active account of this tenant is refused", async () => {
+test("AC1 failure path: an outcome for an account of another tenant or a missing account is refused", async () => {
   await withFixture((f) => {
     const session = f.signInDevice("guest-device-a", ADA);
     const accountGuestId = session.account.accountGuestId;
     assert.throws(() => f.assurance.recordOutcome(verifiedOutcome(accountGuestId, { tenantId: "tenant-other" })), /active Guest Account/);
     assert.throws(() => f.assurance.recordOutcome(verifiedOutcome("gacct-does-not-exist")), /active Guest Account/);
+    assert.equal(f.database.prepare("SELECT COUNT(*) AS n FROM guest_identity_assurance").get()?.n, 0);
+  });
+});
+
+test("AC1 failure path: an outcome for a closed Guest Account of this tenant is refused, as for a missing account", async () => {
+  await withFixture((f) => {
+    const accountGuestId = f.signInDevice("guest-device-a", ADA).account.accountGuestId;
+    f.database.prepare("UPDATE guest_accounts SET status = 'closed' WHERE account_guest_id = ?").run([accountGuestId]);
+    assert.throws(() => f.assurance.recordOutcome(verifiedOutcome(accountGuestId)), /active Guest Account/);
     assert.equal(f.database.prepare("SELECT COUNT(*) AS n FROM guest_identity_assurance").get()?.n, 0);
   });
 });
@@ -142,6 +151,14 @@ test("AC2 failure path: a stored verified result with no explicit expiry never r
       VALUES (?, ?, 'government-ID-verified', ?, 'verified', ?, NULL, NULL)`).run([T, accountGuestId, NIN_V2_METHOD, VERIFIED_AT]);
     assert.throws(() => f.assurance.currentAssurance(accountGuestId, T, f.now()), /malformed/);
     assert.throws(() => f.eligibility.evaluate(reservationFor("guest-device-a")), /malformed/);
+  });
+});
+
+test("Hardening: currentAssurance refuses an invalid clock instant rather than reading expiry against it", async () => {
+  await withFixture((f) => {
+    const accountGuestId = f.signInDevice("guest-device-a", ADA).account.accountGuestId;
+    f.assurance.recordOutcome(verifiedOutcome(accountGuestId));
+    assert.throws(() => f.assurance.currentAssurance(accountGuestId, T, new Date("not-a-date")), /valid clock/);
   });
 });
 
@@ -289,6 +306,10 @@ function sourceRootsUnder(directory: string): string[] {
 }
 const SOURCE_ROOTS = ["domains", "scripts", ...sourceRootsUnder("apps"), ...sourceRootsUnder("packages")];
 
+/** Every module form the sweep reads: TypeScript, JavaScript and their module variants. */
+const MODULE_EXTENSION = /\.(?:ts|tsx|mts|cts|js|mjs|cjs)$/;
+const moduleName = (file: string) => basename(file).replace(MODULE_EXTENSION, "");
+
 function sourceFiles(directory: string): string[] {
   if (!existsSync(directory)) return [];
   const out: string[] = [];
@@ -296,7 +317,7 @@ function sourceFiles(directory: string): string[] {
     const path = join(directory, entry.name);
     if (entry.name === "node_modules" || entry.name === "dist" || entry.name === "test") continue;
     if (entry.isDirectory()) out.push(...sourceFiles(path));
-    else if (entry.name.endsWith(".ts") && !entry.name.endsWith(".d.ts") && !entry.name.includes(".test.")) out.push(path);
+    else if (MODULE_EXTENSION.test(entry.name) && !entry.name.endsWith(".d.ts") && !entry.name.includes(".test.")) out.push(path);
   }
   return out;
 }
@@ -304,19 +325,28 @@ function sourceFiles(directory: string): string[] {
 const ALL_SOURCE = SOURCE_ROOTS.flatMap((root) => sourceFiles(join(ROOT, root)));
 const importCache = new Map<string, string[]>();
 
+/** A relative specifier resolved to the module file it names, across TypeScript and JavaScript forms. */
+function resolveSpecifier(file: string, specifier: string): string {
+  const base = resolve(dirname(file), specifier);
+  const candidates = base.endsWith(".js")
+    ? [`${base.slice(0, -3)}.ts`, base, `${base.slice(0, -3)}.mjs`, `${base.slice(0, -3)}.cjs`]
+    : [base, `${base}.ts`, `${base}.mjs`, `${base}.js`];
+  return candidates.find((candidate) => existsSync(candidate)) ?? base;
+}
+
 /** Relative imports and re-exports (`export * from`, bare `import "x"`, `import("x")`), resolved to the `.ts` file they name. */
 function importsOf(file: string): string[] {
   const cached = importCache.get(file);
   if (cached) return cached;
   const text = readFileSync(file, "utf8");
   const specifiers = [...text.matchAll(/\b(?:from|import)\s*\(?\s*["'](\.{1,2}\/[^"']+)["']/g)].map((match) => match[1]!);
-  const resolved = specifiers.map((specifier) => resolve(dirname(file), specifier.replace(/\.js$/, ".ts")));
+  const resolved = specifiers.map((specifier) => resolveSpecifier(file, specifier));
   importCache.set(file, resolved);
   return resolved;
 }
 
 const rel = (file: string) => relative(ROOT, file).split(sep).join("/");
-const isGuarded = (file: string) => [GUARDED_HELPER, GUARDED_STORE].includes(basename(file, ".ts"));
+const isGuarded = (file: string) => [GUARDED_HELPER, GUARDED_STORE].includes(moduleName(file));
 
 test("AC5: no booking, route, application or payment module reaches the eligibility helper or the assurance store, through barrels or direct imports", () => {
   const leaves = new Set(LEAF_FILES.map((file) => join(ROOT, file)));
@@ -339,7 +369,7 @@ test("AC5: no booking, route, application or payment module reaches the eligibil
 });
 
 test("AC5: only the schema manifest, the import validator and the check-in helper import the assurance store, and nothing imports the eligibility helper", () => {
-  const importersOf = (base: string) => ALL_SOURCE.filter((file) => importsOf(file).some((target) => basename(target, ".ts") === base)).map(rel).sort();
+  const importersOf = (base: string) => ALL_SOURCE.filter((file) => importsOf(file).some((target) => moduleName(target) === base)).map(rel).sort();
   assert.deepEqual(importersOf(GUARDED_STORE), STORE_IMPORTERS);
   assert.deepEqual(importersOf(GUARDED_HELPER), []);
 });
@@ -394,6 +424,54 @@ test("AC6 failure path: a level or status outside ADR 0094 and ADR 0084 is refus
     assert.throws(() => f.assurance.recordOutcome(verifiedOutcome(accountGuestId, { status: "not_started" as never })), /status must be one of the ADR 0084 recorded states/);
     assert.equal(f.database.prepare("SELECT COUNT(*) AS n FROM guest_identity_assurance").get()?.n, 0);
   });
+});
+
+test("AC6: the provider reference limits are store options with named defaults, and an override changes what is accepted", async () => {
+  await withFixture((f) => {
+    const accountGuestId = f.signInDevice("guest-device-a", ADA).account.accountGuestId;
+    const production = new SqliteGuestIdentityAssurance(f.database, { clock: () => f.now() });
+    const accepted = (store: SqliteGuestIdentityAssurance, providerReference: string) => {
+      store.recordOutcome(verifiedOutcome(accountGuestId, { providerReference }));
+      return store.currentAssurance(accountGuestId, T, f.now())?.providerReference === providerReference;
+    };
+    // Defaults (64 characters, runs of 9 digits): a store without options uses the named defaults.
+    assert.equal(accepted(production, "a".repeat(64)), true);
+    assert.throws(() => production.recordOutcome(verifiedOutcome(accountGuestId, { providerReference: "a".repeat(65) })), /providerReference/);
+    assert.equal(accepted(production, "ref-12345678"), true);
+    assert.throws(() => production.recordOutcome(verifiedOutcome(accountGuestId, { providerReference: "ref-123456789" })), /providerReference/);
+    // Overrides: an 8-character limit and a 4-digit run.
+    const strict = new SqliteGuestIdentityAssurance(f.database, { clock: () => f.now(), maxProviderReferenceLength: 8, restrictedDigitRunLength: 4 });
+    assert.equal(accepted(strict, "abc-12"), true);
+    assert.throws(() => strict.recordOutcome(verifiedOutcome(accountGuestId, { providerReference: "abcdefghi" })), /providerReference/);
+    assert.throws(() => strict.recordOutcome(verifiedOutcome(accountGuestId, { providerReference: "ab-12345" })), /providerReference/);
+    // Invalid options fail at construction, not later.
+    assert.throws(() => new SqliteGuestIdentityAssurance(f.database, { clock: () => f.now(), maxProviderReferenceLength: 0 }), /positive integer/);
+    assert.throws(() => new SqliteGuestIdentityAssurance(f.database, { clock: () => f.now(), restrictedDigitRunLength: 1.5 }), /positive integer/);
+  });
+});
+
+test("AC6: the ops import path applies the same reference limits, and its default is the one the store uses", () => {
+  const database = openNodeSqliteDatabase(":memory:");
+  try {
+    applySchemaMigrations(database, SHORTLET_SCHEMA_MIGRATIONS, "2026-10-10T00:00:00.000Z");
+    database.prepare("INSERT INTO guest_accounts (account_guest_id, tenant_id, email_normalized, phone_number, status, created_at, updated_at, revision) VALUES ('gacct-policy', ?, ?, NULL, 'active', ?, ?, 0)")
+      .run([T, ADA, VERIFIED_AT, VERIFIED_AT]);
+    const row = { tenant_id: T, account_guest_id: "gacct-policy", level: "government-ID-verified", method: NIN_V2_METHOD, status: "verified", verified_at: VERIFIED_AT, expires_at: EXPIRES_AT, provider_reference: "abc-12345" };
+    const now = new Date(VERIFIED_AT);
+    // The default screen (runs of 9 digits) accepts a 5-digit run; a 4-digit override refuses it.
+    assert.equal(identityAssuranceRowForImport(database, row, now)["provider_reference"], "abc-12345");
+    assert.throws(() => identityAssuranceRowForImport(database, row, now, { maxProviderReferenceLength: 64, restrictedDigitRunLength: 4 }), /providerReference/);
+  } finally {
+    database.close();
+  }
+});
+
+test("AC6: the provider reference limits in use are the named defaults, and the domain module keeps no hardcoded copy of them", () => {
+  assert.equal(DEFAULT_IDENTITY_ASSURANCE_REFERENCE_POLICY.maxProviderReferenceLength, 64);
+  assert.equal(DEFAULT_IDENTITY_ASSURANCE_REFERENCE_POLICY.restrictedDigitRunLength, 9);
+  const source = readFileSync(join(ROOT, "domains/shortlet/src/guest-identity-assurance.ts"), "utf8");
+  assert.equal(source.includes("{0,63}"), false, "no literal 64-character pattern");
+  assert.equal(source.includes("\\d{9,}"), false, "no literal 9-digit pattern");
 });
 
 test("AC6: the ADR 0084 method and an opaque provider reference are accepted", async () => {
@@ -546,11 +624,16 @@ test("Hardening: an invalid injected clock refuses recording and import rather t
   }
 });
 
-test("AC5: the sweep covers every apps and packages source root, including apps/web-agent/src", () => {
+test("AC5: every discovered source root contributes at least one module to the sweep", () => {
   // The roots are read from the filesystem, so a new app or package is swept without a list edit.
-  for (const root of ["apps/web-agent/src", "apps/web/src", "packages/platform-core/src"]) {
-    assert.ok(ALL_SOURCE.some((file) => rel(file).startsWith(`${root}/`)), `${root} is swept`);
+  assert.ok(SOURCE_ROOTS.includes("apps/web-agent/src"));
+  for (const root of SOURCE_ROOTS) {
+    assert.ok(ALL_SOURCE.some((file) => rel(file).startsWith(`${root}/`)), `${root} contributes a module`);
   }
+});
+
+test("AC5: the sweep reads JavaScript modules as well as TypeScript", () => {
+  assert.ok(ALL_SOURCE.some((file) => file.endsWith(".mjs")), "at least one .mjs module is swept");
 });
 
 // Schema ------------------------------------------------------------------------------------------------------------

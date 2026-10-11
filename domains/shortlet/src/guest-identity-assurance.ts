@@ -24,18 +24,43 @@ export const NIGERIA_NIN_V2_BIOMETRIC_KYC_METHOD = "nigeria_nin_v2_biometric_kyc
 export const FIXTURE_IDENTITY_METHOD = "local-fixture";
 
 /**
- * Provider reference shape (ADR 0084: an opaque provider/job/verification reference; ADR 0075: restricted identifiers never
- * stored).
- *
- * PROVISIONAL CONSERVATIVE CONSTANTS, awaiting Smile onboarding (ADR 0084 defines no reference format): the 64-character bound is a
- * storage bound, and the 9-digit screen is a heuristic (NIN, BVN and phone numbers are 10 to 11 digits). Separators (`-` and `_`) are
- * stripped before the digit screen, so a restricted number cannot hide behind them. Known trade-off: a legitimate provider reference
- * with 9 or more digits in a row, after separator stripping, is refused (fails closed) until the format is confirmed.
+ * The provider reference screen (ADR 0084: an opaque provider/job/verification reference; ADR 0075: restricted identifiers are never
+ * stored). PROVISIONAL CONSERVATIVE CONSTANTS, awaiting Smile onboarding: ADR 0084 defines no reference format. The length limit is a
+ * storage bound, and the digit-run limit is a heuristic (NIN, BVN and phone numbers are 10 to 11 digits). Both are named defaults that
+ * the store and the ops import take as options, so a change is a configuration decision, not an edit to the domain logic. Separators
+ * (`-` and `_`) are stripped before the digit-run screen, so a restricted number cannot hide behind them. Known trade-off: a legitimate
+ * reference with a run of the screened length after stripping is refused (fails closed) until the format is confirmed.
  */
-export const PROVIDER_REFERENCE_MAX_LENGTH = 64;
-const PROVIDER_REFERENCE_PATTERN = new RegExp(`^[A-Za-z][A-Za-z0-9_-]{0,${PROVIDER_REFERENCE_MAX_LENGTH - 1}}$`);
-const RESTRICTED_DIGIT_RUN = /\d{9,}/;
+export interface IdentityAssuranceReferencePolicy {
+  /** The longest accepted provider reference, in characters. */
+  readonly maxProviderReferenceLength: number;
+  /** A run of this many digits (after separators are stripped) refuses the reference. */
+  readonly restrictedDigitRunLength: number;
+}
+export const DEFAULT_IDENTITY_ASSURANCE_REFERENCE_POLICY: IdentityAssuranceReferencePolicy = Object.freeze({
+  maxProviderReferenceLength: 64,
+  restrictedDigitRunLength: 9,
+});
+const REFERENCE_SHAPE = /^[A-Za-z][A-Za-z0-9_-]*$/;
 const SEPARATORS = /[-_]/g;
+
+function resolveReferencePolicy(policy: Partial<IdentityAssuranceReferencePolicy> | undefined): IdentityAssuranceReferencePolicy {
+  const resolved = {
+    maxProviderReferenceLength: policy?.maxProviderReferenceLength ?? DEFAULT_IDENTITY_ASSURANCE_REFERENCE_POLICY.maxProviderReferenceLength,
+    restrictedDigitRunLength: policy?.restrictedDigitRunLength ?? DEFAULT_IDENTITY_ASSURANCE_REFERENCE_POLICY.restrictedDigitRunLength,
+  };
+  for (const value of Object.values(resolved)) {
+    if (!Number.isInteger(value) || value <= 0) throw new Error("Identity assurance reference policy values must be positive integers");
+  }
+  return Object.freeze(resolved);
+}
+
+/** Whether a provider reference passes the shape, length and digit-run screen of a policy. */
+function referenceAccepted(reference: string, policy: IdentityAssuranceReferencePolicy): boolean {
+  if (reference.length > policy.maxProviderReferenceLength) return false;
+  if (!REFERENCE_SHAPE.test(reference)) return false;
+  return !new RegExp(`\\d{${policy.restrictedDigitRunLength},}`).test(reference.replace(SEPARATORS, ""));
+}
 
 export interface IdentityAssuranceOutcome {
   readonly tenantId: string;
@@ -91,7 +116,7 @@ export const GUEST_IDENTITY_ASSURANCE_SCHEMA = `
       END;
     `;
 
-export interface SqliteGuestIdentityAssuranceOptions {
+export interface SqliteGuestIdentityAssuranceOptions extends Partial<IdentityAssuranceReferencePolicy> {
   /** The authoritative clock. A verified outcome cannot be recorded with a `verifiedAt` later than it. No default is applied. */
   readonly clock: () => Date;
   /** Test helpers only: accepts the fixture method. Production composition never sets it. */
@@ -126,7 +151,7 @@ function acceptedMethods(allowFixtureMethods: boolean): readonly string[] {
  * Validates an outcome and returns the only fields that are stored. Anything else on the input is ignored, never persisted.
  * The rules are the same for a recorded outcome and for an ops import row (see identityAssuranceRowForImport).
  */
-function normalizeOutcome(outcome: IdentityAssuranceOutcome, now: Date, allowFixtureMethods: boolean) {
+function normalizeOutcome(outcome: IdentityAssuranceOutcome, now: Date, allowFixtureMethods: boolean, policy: IdentityAssuranceReferencePolicy) {
   // The clock is the authority for "not later than now". An invalid clock would make that comparison fail open, so it is refused.
   if (!(now instanceof Date) || Number.isNaN(now.getTime())) throw new Error("A valid clock instant is required");
   const tenantId = requiredText(outcome?.tenantId, "Tenant ID");
@@ -152,7 +177,7 @@ function normalizeOutcome(outcome: IdentityAssuranceOutcome, now: Date, allowFix
   let providerReference: string | null = null;
   if (outcome.providerReference !== undefined && outcome.providerReference !== null) {
     const reference = outcome.providerReference;
-    if (typeof reference !== "string" || !PROVIDER_REFERENCE_PATTERN.test(reference) || RESTRICTED_DIGIT_RUN.test(reference.replace(SEPARATORS, ""))) {
+    if (typeof reference !== "string" || !referenceAccepted(reference, policy)) {
       throw new Error("providerReference must be an opaque platform reference, not a restricted identifier");
     }
     providerReference = reference;
@@ -190,7 +215,12 @@ export function isCurrentGovernmentIdAssurance(current: CurrentIdentityAssurance
  * the active-account check, so an import cannot write a current `verified` row that a recorded outcome could not. It returns
  * the normalized row to insert. A failure throws a generic error that names no value.
  */
-export function identityAssuranceRowForImport(database: SqlDatabase, row: Readonly<Record<string, SqlValue>>, now: Date): Record<string, SqlValue> {
+export function identityAssuranceRowForImport(
+  database: SqlDatabase,
+  row: Readonly<Record<string, SqlValue>>,
+  now: Date,
+  policy: Partial<IdentityAssuranceReferencePolicy> = DEFAULT_IDENTITY_ASSURANCE_REFERENCE_POLICY,
+): Record<string, SqlValue> {
   const text = (value: SqlValue | undefined): string | undefined => {
     if (value === undefined || value === null) return undefined;
     if (typeof value !== "string") throw new Error("An identity assurance column has the wrong type");
@@ -205,7 +235,7 @@ export function identityAssuranceRowForImport(database: SqlDatabase, row: Readon
     verifiedAt: text(row.verified_at) ?? null,
     expiresAt: text(row.expires_at) ?? null,
     providerReference: text(row.provider_reference) ?? null,
-  }, now, false);
+  }, now, false, resolveReferencePolicy(policy));
   // Restore: an exported row must import even when its account has since closed (the export is the record of what was true).
   // Any status is accepted here, but the account must exist in the same tenant. recordOutcome still requires an active account.
   const account = database
@@ -232,11 +262,13 @@ export class SqliteGuestIdentityAssurance {
   readonly #database: SqlDatabase;
   readonly #clock: () => Date;
   readonly #allowFixtureMethods: boolean;
+  readonly #policy: IdentityAssuranceReferencePolicy;
 
   constructor(database: SqlDatabase, options: SqliteGuestIdentityAssuranceOptions) {
     this.#database = database;
     this.#clock = options.clock;
     this.#allowFixtureMethods = options.allowFixtureMethods === true;
+    this.#policy = resolveReferencePolicy(options);
     this.#database.exec(GUEST_IDENTITY_ASSURANCE_SCHEMA);
   }
 
@@ -245,7 +277,7 @@ export class SqliteGuestIdentityAssurance {
    * active Guest Account of the same tenant. Invalid input is refused before anything is written.
    */
   recordOutcome(outcome: IdentityAssuranceOutcome): void {
-    const record = normalizeOutcome(outcome, this.#clock(), this.#allowFixtureMethods);
+    const record = normalizeOutcome(outcome, this.#clock(), this.#allowFixtureMethods, this.#policy);
     const account = this.#database
       .prepare("SELECT account_guest_id FROM guest_accounts WHERE account_guest_id = ? AND tenant_id = ? AND status = 'active'")
       .get([record.accountGuestId, record.tenantId]);
