@@ -14,14 +14,14 @@ This is the piece that makes the account ready for identity checks (the user's r
 - An Identity Assurance record per account, stored as ADR 0094 specifies: level, method, `verifiedAt`, `expiresAt`, opaque provider reference, status. Nothing else (no NIN, BVN, images, scores).
 - A store and a small service: `recordOutcome`, `currentAssurance(accountGuestId, tenantId, now)`. Expiry is evaluated lazily against the explicit authoritative `expiresAt` (AGENTS anti-pattern 2); no default freshness period is approved. Reject verified outcomes without valid explicit `verifiedAt` and `expiresAt`.
 - `GuestIdentityVerificationResultSource` (`domains/shortlet/src/guest-verification.ts:29`): an account-backed implementation that maps a Primary Guest id to its account (via Linked Principals) and returns the current result. A Primary Guest with no account returns `null`.
-- Email change (issue 07) and account merge mark assurance for re-verification per ADR 0084.
+- Email change (issue 07) removes the current assurance result, so re-verification is required (ADR 0094). The account-merge trigger is **not authorised** by ADR 0094 and is not implemented here; see Open decisions.
 - Check-in eligibility helper (no UI): `Reservation → account → current assurance`. Returns not-eligible for no account, expired, or not verified. It is not called anywhere in discovery, request, offer or payment.
 - A local fake that records a verified outcome, for tests and the walkthrough only.
 
 ## Acceptance criteria
 
 - AC1: A recorded verified outcome is returned for the account from any linked principal. Failure path: a principal not linked to the account gets `null`.
-- AC2: An outcome past its freshness period reads as expired at the next call without any background job.
+- AC2: An outcome whose explicit `expiresAt` has passed reads as expired at the next call without any background job. No default expiry is applied (see Open decisions).
 - AC3: Changing the account email marks the outcome as needing re-verification.
 - AC4: Check-in eligibility fails closed for a Reservation whose Primary Guest has no account, and for an expired outcome.
 - AC5: No discovery, request, offer or payment code path imports the eligibility helper (a test asserts the import graph or greps the modules).
@@ -34,3 +34,10 @@ New `test/guest-identity-assurance.test.ts`. Re-run `test/verify-access-with-liv
 ## ADR compliance
 
 0011, 0070, 0075, 0084, 0085, 0094.
+
+## Open decisions (needs human decision)
+
+1. **Default freshness duration.** Not approved. ADR 0094 requires an explicit authoritative `expiresAt` and says no default freshness duration is approved; ADR 0084's proposed 180 days is not adopted. Recommended: no default, `expiresAt` always explicit. Do not code a default until a human decides.
+2. **Account-merge re-verification trigger.** Not authorised by ADR 0094, which says a merge of two Guest Accounts is not authorised and conflicting links fail closed. Recommended: drop the trigger. Needs human decision before it is implemented.
+
+Status is left as `ready-for-agent` (the decision is not a triage state change in this doc pass); the implementer should not start AC2 or the merge trigger until these are decided.
