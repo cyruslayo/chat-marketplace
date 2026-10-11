@@ -282,9 +282,10 @@ export function createOpsHandler(dependencies: OpsRouteDependencies): OpsHandler
       } catch (error) {
         if (error instanceof BodyTooLargeError) return json(413, { ok: false, code: "BODY_TOO_LARGE" });
         if (error instanceof ImportRefusedError) {
-          // A rejected batch is 422 (nothing written); a schema that is not ready or a completed cutover is 409 (nothing
-          // written); a cutover marker that cannot be read or written is 503 (nothing written, fail closed); a refused table,
-          // column or row shape is 400.
+          // A rejected batch (BATCH_REJECTED, a database constraint failure) is 422 (nothing written); a schema that is not ready or a
+          // completed cutover is 409 (nothing written); a cutover marker that cannot be read or written is 503 (nothing written, fail
+          // closed). A refused table, column or row shape is 400, and so is an identity assurance row that fails validation
+          // (IDENTITY_ASSURANCE_REFUSED, ADR 0094), which names no value.
           const status =
             error.code === "BATCH_REJECTED" ? 422
             : error.code === "SCHEMA_NOT_READY" || error.code === "CUTOVER_COMPLETE" ? 409

@@ -13,9 +13,9 @@ import {
 } from "../../../packages/platform-core/src/data-migration.js";
 import { schemaVersion } from "../../../packages/platform-core/src/schema-migrations.js";
 import { identityAssuranceRowForImport } from "../../../domains/shortlet/src/guest-identity-assurance.js";
+import { CutoverMarkerUnavailableError, reconcileCutover, type CutoverMarkerStore } from "./cutover-marker.js";
 
 const IDENTITY_ASSURANCE_TABLE = "guest_identity_assurance";
-import { CutoverMarkerUnavailableError, reconcileCutover, type CutoverMarkerStore } from "./cutover-marker.js";
 
 /**
  * Slice 16: idempotent, batched import into the tenant's Durable Object, shared by `POST /_ops/import`, the verify and

@@ -25,13 +25,17 @@ export const FIXTURE_IDENTITY_METHOD = "local-fixture";
 
 /**
  * Provider reference shape (ADR 0084: an opaque provider/job/verification reference; ADR 0075: restricted identifiers never
- * stored). The length bound is a storage bound, not a provider contract. A run of 9 or more digits is refused because NIN, BVN
- * and phone numbers are 10 to 11 digits. This is a conservative screen, and the provider's reference format is to be confirmed
- * at onboarding.
+ * stored).
+ *
+ * PROVISIONAL CONSERVATIVE CONSTANTS, awaiting Smile onboarding (ADR 0084 defines no reference format): the 64-character bound is a
+ * storage bound, and the 9-digit screen is a heuristic (NIN, BVN and phone numbers are 10 to 11 digits). Separators (`-` and `_`) are
+ * stripped before the digit screen, so a restricted number cannot hide behind them. Known trade-off: a legitimate provider reference
+ * with 9 or more digits in a row, after separator stripping, is refused (fails closed) until the format is confirmed.
  */
 export const PROVIDER_REFERENCE_MAX_LENGTH = 64;
 const PROVIDER_REFERENCE_PATTERN = new RegExp(`^[A-Za-z][A-Za-z0-9_-]{0,${PROVIDER_REFERENCE_MAX_LENGTH - 1}}$`);
 const RESTRICTED_DIGIT_RUN = /\d{9,}/;
+const SEPARATORS = /[-_]/g;
 
 export interface IdentityAssuranceOutcome {
   readonly tenantId: string;
@@ -123,6 +127,8 @@ function acceptedMethods(allowFixtureMethods: boolean): readonly string[] {
  * The rules are the same for a recorded outcome and for an ops import row (see identityAssuranceRowForImport).
  */
 function normalizeOutcome(outcome: IdentityAssuranceOutcome, now: Date, allowFixtureMethods: boolean) {
+  // The clock is the authority for "not later than now". An invalid clock would make that comparison fail open, so it is refused.
+  if (!(now instanceof Date) || Number.isNaN(now.getTime())) throw new Error("A valid clock instant is required");
   const tenantId = requiredText(outcome?.tenantId, "Tenant ID");
   const accountGuestId = requiredText(outcome?.accountGuestId, "Account Guest Id");
   if (!isLevel(outcome.level)) throw new Error("Identity assurance level must be one of the ADR 0094 levels");
@@ -146,7 +152,7 @@ function normalizeOutcome(outcome: IdentityAssuranceOutcome, now: Date, allowFix
   let providerReference: string | null = null;
   if (outcome.providerReference !== undefined && outcome.providerReference !== null) {
     const reference = outcome.providerReference;
-    if (typeof reference !== "string" || !PROVIDER_REFERENCE_PATTERN.test(reference) || RESTRICTED_DIGIT_RUN.test(reference)) {
+    if (typeof reference !== "string" || !PROVIDER_REFERENCE_PATTERN.test(reference) || RESTRICTED_DIGIT_RUN.test(reference.replace(SEPARATORS, ""))) {
       throw new Error("providerReference must be an opaque platform reference, not a restricted identifier");
     }
     providerReference = reference;
@@ -200,10 +206,12 @@ export function identityAssuranceRowForImport(database: SqlDatabase, row: Readon
     expiresAt: text(row.expires_at) ?? null,
     providerReference: text(row.provider_reference) ?? null,
   }, now, false);
+  // Restore: an exported row must import even when its account has since closed (the export is the record of what was true).
+  // Any status is accepted here, but the account must exist in the same tenant. recordOutcome still requires an active account.
   const account = database
-    .prepare("SELECT account_guest_id FROM guest_accounts WHERE account_guest_id = ? AND tenant_id = ? AND status = 'active'")
+    .prepare("SELECT account_guest_id FROM guest_accounts WHERE account_guest_id = ? AND tenant_id = ?")
     .get([normalized.accountGuestId, normalized.tenantId]);
-  if (account === undefined) throw new Error("Identity assurance requires an active Guest Account of this tenant");
+  if (account === undefined) throw new Error("Identity assurance requires a Guest Account of this tenant");
   return {
     tenant_id: normalized.tenantId,
     account_guest_id: normalized.accountGuestId,

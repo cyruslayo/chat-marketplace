@@ -278,11 +278,16 @@ const GUARDED_STORE = "guest-identity-assurance";
 /** Leaves: the migration manifest and the import validator. Traversal stops here, so a route that imports them does not reach the store. */
 const LEAF_FILES = ["apps/cloudflare/src/ops-import.ts", "apps/cloudflare/src/schema.ts"];
 const STORE_IMPORTERS = [...LEAF_FILES, "domains/shortlet/src/guest-check-in-eligibility.ts"].sort();
-/** Every source root that can host a booking, route, application, payment or composition module (barrels included). */
-const SOURCE_ROOTS = [
-  "domains", "packages", "apps/web/src", "apps/local-guest/src", "apps/pilot/src", "apps/cloudflare/src",
-  "apps/local-owner/src", "apps/shortlet-ops/src", "scripts",
-];
+/**
+ * Every source root that can host a booking, route, application, payment or composition module. Read from the filesystem, so a new
+ * app or package is swept without a list edit: `apps/*\/src`, `packages/*\/src`, plus `domains` and `scripts`.
+ */
+function sourceRootsUnder(directory: string): string[] {
+  return readdirSync(join(ROOT, directory), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && existsSync(join(ROOT, directory, entry.name, "src")))
+    .map((entry) => `${directory}/${entry.name}/src`);
+}
+const SOURCE_ROOTS = ["domains", "scripts", ...sourceRootsUnder("apps"), ...sourceRootsUnder("packages")];
 
 function sourceFiles(directory: string): string[] {
   if (!existsSync(directory)) return [];
@@ -418,13 +423,19 @@ test("AC6 failure path: a method that is not a platform-owned identifier is refu
 test("AC6 failure path: a provider reference that looks like a restricted identifier is refused", async () => {
   await withFixture((f) => {
     const accountGuestId = f.signInDevice("guest-device-a", ADA).account.accountGuestId;
-    const refused = ["22233344455", "job-12345678901", "ref 1234", "ref-123456789", "x".repeat(65), "", "-leading-dash"];
+    const refused = [
+      "22233344455", "job-12345678901", "ref 1234", "ref-123456789", "x".repeat(65), "", "-leading-dash",
+      // A digit run hidden behind separators is still a digit run (separators are stripped before the screen).
+      "a1234-5678-901", "a1234_5678_901", "a0801-234-5678", "a222-2222-222", "a1234567-8901",
+    ];
     for (const providerReference of refused) {
       assert.throws(() => f.assurance.recordOutcome(verifiedOutcome(accountGuestId, { providerReference })), /providerReference/, providerReference);
     }
-    // Control: an 8-digit run inside an opaque reference is still accepted.
+    // Controls: an 8-digit run inside an opaque reference is still accepted, and so is a reference with a few digits.
     f.assurance.recordOutcome(verifiedOutcome(accountGuestId, { providerReference: "ref-12345678" }));
     assert.equal(f.assurance.currentAssurance(accountGuestId, T, f.now())?.providerReference, "ref-12345678");
+    f.assurance.recordOutcome(verifiedOutcome(accountGuestId, { providerReference: "a1-b2-c3-d4_e5" }));
+    assert.equal(f.assurance.currentAssurance(accountGuestId, T, f.now())?.providerReference, "a1-b2-c3-d4_e5");
   });
 });
 
@@ -454,6 +465,91 @@ test("AC6 failure path: an ops import cannot write a current verified row withou
     assert.equal(database.prepare("SELECT COUNT(*) AS n FROM guest_identity_assurance").get()?.n, 1);
   } finally {
     database.close();
+  }
+});
+
+test("AC6: an ops import restores an identity assurance row for an active account and for a closed account of the same tenant", () => {
+  const database = openNodeSqliteDatabase(":memory:");
+  try {
+    applySchemaMigrations(database, SHORTLET_SCHEMA_MIGRATIONS, "2026-10-10T00:00:00.000Z");
+    const insertAccount = database.prepare("INSERT INTO guest_accounts (account_guest_id, tenant_id, email_normalized, phone_number, status, created_at, updated_at, revision) VALUES (?, ?, ?, NULL, ?, ?, ?, 0)");
+    insertAccount.run(["gacct-active", T, "active@example.test", "active", VERIFIED_AT, VERIFIED_AT]);
+    insertAccount.run(["gacct-closed", T, "closed@example.test", "closed", VERIFIED_AT, VERIFIED_AT]);
+    const rowFor = (accountGuestId: string) => ({
+      tenant_id: T, account_guest_id: accountGuestId, level: "government-ID-verified", method: NIN_V2_METHOD,
+      status: "verified", verified_at: VERIFIED_AT, expires_at: EXPIRES_AT, provider_reference: null,
+    });
+    // A daily export written while the account was active restores after the account has since closed.
+    importBatch(database, "guest_identity_assurance", [rowFor("gacct-active"), rowFor("gacct-closed")], SHORTLET_SCHEMA_VERSION, new Date(VERIFIED_AT));
+    assert.equal(database.prepare("SELECT COUNT(*) AS n FROM guest_identity_assurance").get()?.n, 2);
+  } finally {
+    database.close();
+  }
+});
+
+test("AC6 failure path: an ops import refuses a row for a missing account or another tenant's account, with a generic message", () => {
+  const database = openNodeSqliteDatabase(":memory:");
+  try {
+    applySchemaMigrations(database, SHORTLET_SCHEMA_MIGRATIONS, "2026-10-10T00:00:00.000Z");
+    database.prepare("INSERT INTO guest_accounts (account_guest_id, tenant_id, email_normalized, phone_number, status, created_at, updated_at, revision) VALUES ('gacct-other', 'tenant-other', 'other@example.test', NULL, 'active', ?, ?, 0)")
+      .run([VERIFIED_AT, VERIFIED_AT]);
+    const base = { tenant_id: T, level: "government-ID-verified", method: NIN_V2_METHOD, status: "verified", verified_at: VERIFIED_AT, expires_at: EXPIRES_AT, provider_reference: null };
+    const now = new Date(VERIFIED_AT);
+    for (const accountGuestId of ["gacct-missing", "gacct-other"]) {
+      assert.throws(
+        () => importBatch(database, "guest_identity_assurance", [{ ...base, account_guest_id: accountGuestId }], SHORTLET_SCHEMA_VERSION, now),
+        (error: unknown) => error instanceof Error && error.message === "An identity assurance row failed validation, so nothing from the batch was written" && !error.message.includes(accountGuestId),
+        accountGuestId,
+      );
+    }
+    assert.equal(database.prepare("SELECT COUNT(*) AS n FROM guest_identity_assurance").get()?.n, 0);
+  } finally {
+    database.close();
+  }
+});
+
+test("AC6 failure path: an ops import refuses a provider reference that hides a restricted digit run behind separators", () => {
+  const database = openNodeSqliteDatabase(":memory:");
+  try {
+    applySchemaMigrations(database, SHORTLET_SCHEMA_MIGRATIONS, "2026-10-10T00:00:00.000Z");
+    database.prepare("INSERT INTO guest_accounts (account_guest_id, tenant_id, email_normalized, phone_number, status, created_at, updated_at, revision) VALUES ('gacct-import-2', ?, ?, NULL, 'active', ?, ?, 0)")
+      .run([T, ADA, VERIFIED_AT, VERIFIED_AT]);
+    const row = { tenant_id: T, account_guest_id: "gacct-import-2", level: "government-ID-verified", method: NIN_V2_METHOD, status: "verified", verified_at: VERIFIED_AT, expires_at: EXPIRES_AT };
+    for (const provider_reference of ["a1234-5678-901", "a1234_5678_901", "a0801-234-5678", "a222-2222-222", "a1234567-8901"]) {
+      assert.throws(
+        () => importBatch(database, "guest_identity_assurance", [{ ...row, provider_reference }], SHORTLET_SCHEMA_VERSION, new Date(VERIFIED_AT)),
+        /failed validation/,
+        provider_reference,
+      );
+    }
+    importBatch(database, "guest_identity_assurance", [{ ...row, provider_reference: "a1-b2-c3" }], SHORTLET_SCHEMA_VERSION, new Date(VERIFIED_AT));
+    assert.equal(database.prepare("SELECT COUNT(*) AS n FROM guest_identity_assurance").get()?.n, 1);
+  } finally {
+    database.close();
+  }
+});
+
+test("Hardening: an invalid injected clock refuses recording and import rather than failing open", () => {
+  const database = openNodeSqliteDatabase(":memory:");
+  try {
+    applySchemaMigrations(database, SHORTLET_SCHEMA_MIGRATIONS, "2026-10-10T00:00:00.000Z");
+    database.prepare("INSERT INTO guest_accounts (account_guest_id, tenant_id, email_normalized, phone_number, status, created_at, updated_at, revision) VALUES ('gacct-clock', ?, ?, NULL, 'active', ?, ?, 0)")
+      .run([T, ADA, VERIFIED_AT, VERIFIED_AT]);
+    const invalid = new Date("not-a-date");
+    const store = new SqliteGuestIdentityAssurance(database, { clock: () => invalid });
+    assert.throws(() => store.recordOutcome(verifiedOutcome("gacct-clock")), /valid clock/);
+    const row = { tenant_id: T, account_guest_id: "gacct-clock", level: "government-ID-verified", method: NIN_V2_METHOD, status: "verified", verified_at: VERIFIED_AT, expires_at: EXPIRES_AT, provider_reference: null };
+    assert.throws(() => importBatch(database, "guest_identity_assurance", [row], SHORTLET_SCHEMA_VERSION, invalid), /failed validation/);
+    assert.equal(database.prepare("SELECT COUNT(*) AS n FROM guest_identity_assurance").get()?.n, 0);
+  } finally {
+    database.close();
+  }
+});
+
+test("AC5: the sweep covers every apps and packages source root, including apps/web-agent/src", () => {
+  // The roots are read from the filesystem, so a new app or package is swept without a list edit.
+  for (const root of ["apps/web-agent/src", "apps/web/src", "packages/platform-core/src"]) {
+    assert.ok(ALL_SOURCE.some((file) => rel(file).startsWith(`${root}/`)), `${root} is swept`);
   }
 });
 

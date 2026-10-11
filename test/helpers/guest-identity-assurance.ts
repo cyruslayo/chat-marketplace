@@ -1,9 +1,13 @@
-import { AccountBackedGuestIdentityVerificationResultSource, SqliteGuestIdentityAssurance, NIGERIA_NIN_V2_BIOMETRIC_KYC_METHOD, type IdentityAssuranceOutcome } from "../../domains/shortlet/src/guest-identity-assurance.js";
+import {
+  AccountBackedGuestIdentityVerificationResultSource,
+  NIGERIA_NIN_V2_BIOMETRIC_KYC_METHOD,
+  SqliteGuestIdentityAssurance,
+  type IdentityAssuranceOutcome,
+} from "../../domains/shortlet/src/guest-identity-assurance.js";
 import { GuestCheckInIdentityEligibility } from "../../domains/shortlet/src/guest-check-in-eligibility.js";
 import type { GuestAccountSession } from "../../domains/shortlet/src/guest-account-authority.js";
 import { createGuestLinkingFixture, LINKING_TENANT, type GuestLinkingFixture } from "./guest-account-linking.js";
 import { guestEmailChange } from "./guest-account-authority.js";
-
 
 export const ASSURANCE_TENANT = LINKING_TENANT;
 export const VERIFIED_AT = "2026-10-10T09:00:00.000Z";
