@@ -1,6 +1,6 @@
 # Keep platform ids intact under the card-number redaction rule
 
-Status: claimed
+Status: resolved
 Type: AFK
 Scope: outside the guest-accounts effort (ga-08-sign-in-offer). No guest-accounts files are touched.
 
@@ -129,4 +129,7 @@ Repeat the same predicate for `telemetry_events`. Extend it to the other keys in
 
 ## Comments
 
-- Red run (before the fix), flake loops and mutation probes are recorded above. The full ADR table and CI run links are in the PR body.
+- Red run (before the fix), flake loops and mutation probes are recorded above. The full ADR table is in the PR body.
+- PR: https://github.com/cyruslayo/chat-marketplace/pull/105 (branch `fix-redaction-platform-ids`, code commit `e4f647b`).
+- CI on `e4f647b`: `verify` (pull_request) run 38140324946 succeeded; `browser` (workflow_dispatch) run 38140325981 succeeded. Both are re-run on the final head after this status commit.
+- Scope: this change is outside the guest-accounts effort (ga-08-sign-in-offer) and touches no guest-accounts files.
