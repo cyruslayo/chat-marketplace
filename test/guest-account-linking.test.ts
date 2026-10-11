@@ -190,7 +190,7 @@ test("AC5 resolver: a principal linked to account X, presented under account Y's
   });
 });
 
-test("AC7 failure path: a verified session cannot link a principal in another tenant, and writes nothing", async () => {
+test("Human decision 2 (11 Oct 2026): a verified session cannot link a principal in another tenant, and writes nothing", async () => {
   await withFixture((fixture) => {
     fixture.saveRequest({ requestId: "request-grace", primaryGuestId: "guest-device-b", contactEmail: "grace@example.test" });
     const session = fixture.signInDevice("guest-device-a", "ada@example.test");
@@ -222,7 +222,7 @@ test("AC4 failure path: an account identity from another tenant lists no work, e
   }
 });
 
-test("AC7 email case: a request recorded as Ada@x.test is claimed by an account for ada@x.test, in either direction", async () => {
+test("Human decision 3 (11 Oct 2026): a request recorded as Ada@x.test is claimed by ada@x.test, in either direction", async () => {
   await withFixture((fixture) => {
     // The store writes the snapshot normalised (lowercase), so both recorded and signed-in addresses meet in one form.
     fixture.saveRequest({ requestId: "request-legacy-case", primaryGuestId: "guest-device-b", contactEmail: "Ada@x.test" });
@@ -236,7 +236,7 @@ test("AC7 email case: a request recorded as Ada@x.test is claimed by an account 
   });
 });
 
-test("AC7 email case: different addresses still do not match, whatever their case", async () => {
+test("Human decision 3 (11 Oct 2026): different addresses still do not match, whatever their case", async () => {
   await withFixture((fixture) => {
     fixture.saveRequest({ requestId: "request-other-local", primaryGuestId: "guest-device-b", contactEmail: "ada2@x.test" });
     fixture.saveRequest({ requestId: "request-other-domain", primaryGuestId: "guest-device-c", contactEmail: "ada@y.test" });
@@ -245,7 +245,7 @@ test("AC7 email case: different addresses still do not match, whatever their cas
   });
 });
 
-test("AC7 email case: normalizeContactEmail trims and lowercases the whole address", () => {
+test("Human decision 1 (10 Oct 2026): normalizeContactEmail trims and lowercases the whole address", () => {
   assert.equal(normalizeContactEmail("  Ada.Lovelace@X.Test "), "ada.lovelace@x.test");
   assert.equal(normalizeContactEmail("ada@x.test"), "ada@x.test");
 });
@@ -348,7 +348,7 @@ test("Contact lookup consults the account's contact first, then the session prin
   });
 });
 
-test("Linking proof (decision 2): a plain email string is not proof of sign-in, so linking with it fails closed and writes nothing", async () => {
+test("Human decision 2 (11 Oct 2026): a plain email string is not proof of sign-in, so linking with it fails closed and writes nothing", async () => {
   await withFixture((fixture) => {
     const owner = fixture.signInDevice("guest-owner", "ada@example.test");
     const principalsBefore = fixture.database.prepare("SELECT * FROM guest_account_principals ORDER BY principal_id").all();
@@ -365,7 +365,7 @@ test("Linking proof (decision 2): a plain email string is not proof of sign-in, 
   });
 });
 
-test("Linking proof (decision 2): a forged session secret is refused and writes nothing", async () => {
+test("Human decision 2 (11 Oct 2026): a forged session secret is refused and writes nothing", async () => {
   await withFixture((fixture) => {
     fixture.saveRequest({ requestId: "request-forged-secret", primaryGuestId: "guest-device-b", contactEmail: "ada@example.test" });
     const genuine = fixture.signInDevice("guest-device-a", "ada@example.test");
@@ -381,7 +381,7 @@ test("Linking proof (decision 2): a forged session secret is refused and writes 
   });
 });
 
-test("Linking proof (decision 2): a revoked sign-in session is refused and writes nothing", async () => {
+test("Human decision 2 (11 Oct 2026): a revoked sign-in session is refused and writes nothing", async () => {
   await withFixture((fixture) => {
     const session = fixture.signInDevice("guest-device-a", "ada@example.test");
     fixture.authority.revokeSession(session.sessionId, LINKING_TENANT);
@@ -393,7 +393,7 @@ test("Linking proof (decision 2): a revoked sign-in session is refused and write
   });
 });
 
-test("Linking proof (decision 2): a genuine verified sign-in links the principal and claims its matching requests", async () => {
+test("Human decision 2 (11 Oct 2026): a genuine verified sign-in links the principal and claims its matching requests", async () => {
   await withFixture((fixture) => {
     fixture.saveRequest({ requestId: "request-genuine", primaryGuestId: "guest-device-b", contactEmail: "ada@example.test" });
     const session = signInGuestAccount(fixture.authority, "ada@example.test", LINKING_TENANT);
@@ -403,7 +403,7 @@ test("Linking proof (decision 2): a genuine verified sign-in links the principal
   });
 });
 
-test("Email case (decision 3): signing in with a differently-cased address finds the same account and creates no duplicate", async () => {
+test("Human decision 3 (11 Oct 2026): signing in with a differently-cased address finds the same account and creates no duplicate", async () => {
   await withFixture((fixture) => {
     const first = fixture.signInDevice("guest-device-a", "Ada@Example.Test");
     const second = fixture.signInDevice("guest-device-b", "ada@example.test");
@@ -413,7 +413,7 @@ test("Email case (decision 3): signing in with a differently-cased address finds
   });
 });
 
-test("Email case (decision 3): a stored snapshot that is not in normalised form is not claimed, because the comparison is exact", async () => {
+test("Human decision 3 (11 Oct 2026): a stored snapshot that is not in normalised form is not claimed, because the comparison is exact", async () => {
   await withFixture((fixture) => {
     fixture.saveRequest({ requestId: "request-raw-snapshot", primaryGuestId: "guest-device-b", contactEmail: null });
     // A row written outside the store's normalising path, as an unnormalised value would be. No SQL lower() may match it.
@@ -424,7 +424,7 @@ test("Email case (decision 3): a stored snapshot that is not in normalised form 
   });
 });
 
-test("Email case (decision 3): an account row stored in a non-normalised form is not matched by lookup, because the comparison is exact", async () => {
+test("Human decision 3 (11 Oct 2026): an account row stored in a non-normalised form is not matched by lookup, because the comparison is exact", async () => {
   await withFixture((fixture) => {
     // Sign-in and email change both store the normalised value, so this row is reachable only by writing it directly.
     const session = fixture.signInDevice("guest-device-a", "ada@x.test");
@@ -434,7 +434,7 @@ test("Email case (decision 3): an account row stored in a non-normalised form is
   });
 });
 
-test("Email case (decision 3): a non-ASCII address is allowed and matches in any case", async () => {
+test("Human decision 3 (11 Oct 2026): a non-ASCII address is allowed and matches in any case", async () => {
   await withFixture((fixture) => {
     fixture.saveRequest({ requestId: "request-non-ascii", primaryGuestId: "guest-device-b", contactEmail: "\u00d1and\u00fa@x.test" });
     const session = fixture.signInDevice("guest-device-a", "\u00f1AND\u00da@X.test");
@@ -442,7 +442,7 @@ test("Email case (decision 3): a non-ASCII address is allowed and matches in any
   });
 });
 
-test("AC5 authorization (task D): a request the account claims is refused when it carries another tenant", async () => {
+test("AC5 authorization: a request the account claims is refused when it carries another tenant", async () => {
   await withFixture((fixture) => {
     fixture.saveRequest({ requestId: "request-claimed", primaryGuestId: "guest-device-b", contactEmail: "ada@example.test" });
     const session = fixture.signInDevice("guest-device-a", "ada@example.test");
