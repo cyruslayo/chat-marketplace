@@ -9,19 +9,22 @@ const sensitiveKeys = new Set([
   "verificationcode", "signincode", "paymentreference", "pspreference",
 ]);
 
-// The card-number rule: 16 digits with optional single separators. The Luhn gate below tests exactly these matches.
+// The card-number rule: 16 digits with optional single separators.
 const CARD_NUMBER_SHAPE = /\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b/g;
 
 /**
- * Platform-generated correlation ids that are exempt from the string-pattern rules (not from `sensitiveKeys`, which
- * always wins). The card-number rule reads any 16-digit run, dashes included, so a `req-`/`cmd-`/`offer-` UUID with a
- * digit run was masked and audit rows lost their correlation ids.
+ * Platform-generated correlation ids that are exempt from the string-pattern rules under their own key (not from
+ * `sensitiveKeys`, which always wins). The card-number rule reads any 16-digit run, dashes included, so a `req-`/`cmd-`/
+ * `offer-` UUID with a digit run was masked and audit rows lost their correlation ids.
  *
  * Each key lists the prefixes its generators emit, taken from the `<prefix>-${randomUUID()}` call sites (and the
- * `quote-${idFactory()}` and `search-${idFactory()}` sites, whose default is randomUUID). An exempt value must be
- * `<prefix>-<random v4 UUID>` with a prefix listed for that key, and must not contain a Luhn-valid card-shaped run
- * (see `containsLuhnValidCardShape`). Anything else is redacted as before. Key coverage is checked against the generator
- * call sites and the audit literals by test/redact-platform-ids-generators.test.ts.
+ * `quote-${idFactory()}` and `search-${idFactory()}` sites, whose default is randomUUID). A string under a listed key is:
+ *   - masked as "[REDACTED]" when some run of 16 to 19 digits in it (hyphens removed, every alignment) is Luhn-valid,
+ *     whatever its shape (fail closed: the card rule alone can leave part of a 19-digit number unmasked);
+ *   - exempt, when it is exactly `<prefix>-<random v4 UUID>` with a prefix listed for that key;
+ *   - otherwise redacted by the string rules as before.
+ * Key coverage is checked against the generator call sites and the audit literals by
+ * test/redact-platform-ids-generators.test.ts.
  */
 const idPrefixesByKey: Readonly<Record<string, readonly string[]>> = {
   requestId: ["req"],
@@ -38,7 +41,10 @@ const idPrefixesByKey: Readonly<Record<string, readonly string[]>> = {
   commitmentId: ["blk", "oph", "brb"],
   payoutId: ["payout"],
   recoveryId: ["recovery"],
-  refundId: ["guest-refund"]
+  refundId: ["guest-refund"],
+  // Server-generated `guest-<uuid>` (apps/local-guest/src/guest-server.ts, session-scoped principal); the other branch of
+  // that ternary is server configuration (`config.guestId`), not client input.
+  principalId: ["guest"]
 };
 
 // Aggregate ids carry whichever aggregate is being audited or projected, so they take the union of the prefixes above.
@@ -53,18 +59,25 @@ export const ID_KEY_GENERATOR_ALIASES: Readonly<Record<string, string>> = {
 };
 
 /**
- * Audited keys whose value can carry a randomUUID-prefixed generator but that are deliberately NOT exempt. Each needs
- * a reason. Follow-ups are recorded in issue 50.
+ * Audited keys whose value can carry a randomUUID-prefixed generator but that are deliberately NOT exempt. Each names its
+ * key, the files that emit the prefix (checked by the generator test), and a reason. Follow-ups are recorded in issue 50.
  */
-export const PLATFORM_ID_CONSCIOUSLY_EXCLUDED: ReadonlyArray<{ readonly key: string; readonly prefix: string; readonly reason: string }> = [
+export const PLATFORM_ID_CONSCIOUSLY_EXCLUDED: ReadonlyArray<{
+  readonly key: string;
+  readonly prefix: string;
+  readonly files: readonly string[];
+  readonly reason: string;
+}> = [
   {
     key: "threadId",
     prefix: "g",
+    files: ["apps/local-guest/src/guest-server.ts", "apps/local-guest/src/client.ts"],
     reason: "Guest thread ids (g-<uuid>) are chosen by the client: THREAD_ID_PATTERN in apps/local-guest/src/guest-server.ts:578 lets the client set them, so exempting them would let a client carry a card number under an exempt key. Follow-up: constrain the source first."
   },
   {
     key: "sessionId",
     prefix: "gs",
+    files: ["apps/local-guest/src/guest-server.ts"],
     reason: "Guest session ids (gs-<uuid>) are credential-like session identifiers and stay masked (orchestrator decision, issue 50)."
   }
 ];
@@ -90,13 +103,20 @@ function isLuhnValid(digits: string): boolean {
   return sum % 10 === 0;
 }
 
+const LUHN_WINDOW_LENGTHS = [16, 17, 18, 19] as const;
+
 /**
- * Luhn gate for the exemption. True when some card-shaped run (exactly the card rule's matches, separators removed)
- * is a Luhn-valid 16-digit number. Only 16-digit runs are tested because the card rule masks only that shape.
+ * Luhn gate. Hyphens are removed, every maximal run of 16 or more digits is taken, and every 16- to 19-digit window of it
+ * is Luhn-tested, so a card number is caught at any hex offset and at 17 to 19 digits. Letters are not removed.
  */
-function containsLuhnValidCardShape(value: string): boolean {
-  for (const match of value.matchAll(CARD_NUMBER_SHAPE)) {
-    if (isLuhnValid(match[0].replace(/\D/g, ""))) return true;
+function containsLuhnValidDigitWindow(value: string): boolean {
+  const runs = value.replace(/-/g, "").match(/\d{16,}/g) ?? [];
+  for (const run of runs) {
+    for (const length of LUHN_WINDOW_LENGTHS) {
+      for (let start = 0; start + length <= run.length; start += 1) {
+        if (isLuhnValid(run.slice(start, start + length))) return true;
+      }
+    }
   }
   return false;
 }
@@ -119,9 +139,17 @@ export function createSensitiveDataRedactor(policy: SensitiveDataRedactionPolicy
       new RegExp(`^(?:${prefixes.join("|")})-${PLATFORM_ID_UUID_V4}$`)
     ])
   );
-  const isExemptPlatformId = (normalizedKey: string, value: string): boolean => {
-    const pattern = idPatternsByKey.get(normalizedKey);
-    return pattern !== undefined && pattern.test(value) && !containsLuhnValidCardShape(value);
+
+  // Strings under a listed key: the Luhn gate first (fail closed), then the exact-shape exemption, then the string rules.
+  // Arrays are walked with the same rules, so an id in an array is treated like the same id in a scalar.
+  const redactIdKeyValue = (pattern: RegExp, value: unknown): unknown => {
+    if (typeof value === "string") {
+      if (containsLuhnValidDigitWindow(value)) return "[REDACTED]";
+      if (pattern.test(value)) return value;
+      return redact(value);
+    }
+    if (Array.isArray(value)) return value.map((item) => redactIdKeyValue(pattern, item));
+    return redact(value);
   };
 
   const redact = (data: unknown): unknown => {
@@ -140,12 +168,12 @@ export function createSensitiveDataRedactor(policy: SensitiveDataRedactionPolicy
       for (const [key, value] of Object.entries(data)) {
         if (key === "__proto__" || key === "constructor" || key === "prototype") continue;
         const normalizedKey = normalizeKey(key);
+        const pattern = idPatternsByKey.get(normalizedKey);
         if (sensitive.has(normalizedKey)) {
           // Sensitive keys are checked first and always win over the platform-id exemption.
           copy[key] = "[REDACTED]";
-        } else if (typeof value === "string" && isExemptPlatformId(normalizedKey, value)) {
-          // ADR 0075: an exact platform-id shape under its own key, with no Luhn-valid card-shaped run, is exempt.
-          copy[key] = value;
+        } else if (pattern !== undefined) {
+          copy[key] = redactIdKeyValue(pattern, value);
         } else {
           copy[key] = redact(value);
         }

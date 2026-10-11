@@ -92,3 +92,20 @@ test("The issue file shows the full detection query for audit_log and telemetry_
     platformIdMaskedRowsSql("telemetry_events").trim()
   ]);
 });
+
+test("The detection query matches flat, exact-case top-level keys only: a nested or differently cased id is not found (documented limitation)", () => {
+  const database = openNodeSqliteDatabase(":memory:");
+  database.exec(AUDIT_LOG_SCHEMA);
+  try {
+    const rows = [
+      { label: "nested", payload: { type: "legacy.masked", payload: { requestId: "req-[REDACTED]-bea8-8d50c54c0c30" } } },
+      { label: "cased", payload: { type: "legacy.masked", RequestId: "req-[REDACTED]-bea8-8d50c54c0c30" } }
+    ];
+    for (const row of rows) {
+      database.prepare("INSERT INTO audit_log (recorded_at, payload_json) VALUES (?, ?)").run([row.label, JSON.stringify(row.payload)]);
+    }
+    assert.deepEqual(database.prepare(platformIdMaskedRowsSql("audit_log")).all().map((row) => String(row.recorded_at)), []);
+  } finally {
+    database.close();
+  }
+});

@@ -1,5 +1,6 @@
 // Shared fixtures for the platform-id redaction tests (ADR 0075, Issue 50). Oracles here are written independently of
-// the production module: the card shape is the card rule's own regex, and Luhn is the standard mod-10 check.
+// the production module: the v4 shape is the RFC 4122 layout, Luhn is the standard mod-10 check, and the digit windows
+// are every 16- to 19-digit window of a digit run after hyphens are removed.
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { PLATFORM_ID_PREFIXES_BY_KEY } from "../../packages/platform-core/src/redaction.js";
@@ -28,7 +29,7 @@ export const ID_KEY_PREFIXES: ReadonlyArray<readonly [string, string]> = [
   ["runId", "turn"]
 ];
 
-// Fixed values that the card-number rule masked before the fix. Their digit stretches are not Luhn-valid.
+// Fixed values that the card-number rule masked before the fix. Their digit windows are not Luhn-valid.
 export const KNOWN_CARD_SHAPED_OFFER_ID = "offer-17477973-5806-4004-bea8-8d50c54c0c30";
 export const KNOWN_CARD_SHAPED_COMMAND_ID = "cmd-63bde504-acc8-40f0-9792-588939387591";
 export const KNOWN_CARD_SHAPED_REQUEST_ID = "req-63bde504-acc8-40f0-9792-588939387591";
@@ -37,7 +38,10 @@ export const CARD_NUMBER = "4111111111111111";
 // The card rule's own shape (see packages/platform-core/src/redaction.ts): 16 digits, optional single separators.
 export const CARD_SHAPE = /\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b/g;
 
-// Test PANs (all Luhn-valid). Digit 13 is 4, so each fits the v4 id layout: the digit becomes the version nibble.
+// RFC 4122 version 4 layout of the 36-character UUID (what randomUUID() produces).
+export const V4_UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+// Test PANs (all Luhn-valid). Digit 13 is 4, so each fits the v4 id layout at offset 0: the digit is the version nibble.
 export const TEST_PANS = {
   mastercard: "5555555555554444",
   visa: "4242424242424242",
@@ -62,13 +66,57 @@ export function isLuhnValid(digits: string): boolean {
   return sum % 10 === 0;
 }
 
-// Oracle: some card-shaped run in the value is a Luhn-valid 16-digit number.
-export function containsLuhnValidCardShape(value: string): boolean {
-  return [...value.matchAll(CARD_SHAPE)].some((match) => isLuhnValid(match[0].replace(/\D/g, "")));
+// Oracle: some run of digits (hyphens removed) has a Luhn-valid window of 16, 17, 18 or 19 digits, at any alignment.
+export function containsLuhnValidDigitWindow(value: string): boolean {
+  const runs = value.replace(/-/g, "").match(/\d{16,}/g) ?? [];
+  for (const run of runs) {
+    for (let length = 16; length <= 19; length += 1) {
+      for (let start = 0; start + length <= run.length; start += 1) {
+        if (isLuhnValid(run.slice(start, start + length))) return true;
+      }
+    }
+  }
+  return false;
 }
 
-// Encodes a 16-digit PAN as the digits of a v4 UUID under the given prefix: group 1 holds PAN[0..7], group 2 PAN[8..11],
-// and group 3 starts with the version nibble, so PAN[12] must be 4.
+// Builds `${prefix}-<uuid>` with `digits` at hex offset `offset` (0..31) of the 32 hex digits. Every other position is a
+// letter, except the version nibble (index 12, must be 4) and the variant (index 16, must be 8, 9, a or b).
+// Throws when the digits break the v4 layout.
+export function v4IdWithDigitsAt(prefix: string, offset: number, digits: string): string {
+  const hex = Array.from({ length: 32 }, () => "a");
+  hex[12] = "4";
+  hex[16] = "b";
+  [...digits].forEach((digit, index) => {
+    hex[offset + index] = digit;
+  });
+  const joined = hex.join("");
+  const uuid = `${joined.slice(0, 8)}-${joined.slice(8, 12)}-${joined.slice(12, 16)}-${joined.slice(16, 20)}-${joined.slice(20, 32)}`;
+  if (!V4_UUID_SHAPE.test(uuid)) throw new Error(`digits at offset ${offset} break the v4 layout`);
+  return `${prefix}-${uuid}`;
+}
+
+// Deterministic search for `length` digits at `offset` whose id satisfies accept(digits, id).
+export function findV4IdWithDigits(
+  prefix: string,
+  length: number,
+  offset: number,
+  accept: (digits: string, id: string) => boolean
+): string {
+  for (let counter = 0; counter < 1_000_000; counter += 1) {
+    // Free digits come from the counter; the positions the v4 layout fixes (hex 12 = 4, hex 16 = 8) are set explicitly.
+    const chars = counter.toString().padStart(length, "0").split("");
+    for (let index = 0; index < length; index += 1) {
+      if (offset + index === 12) chars[index] = "4";
+      if (offset + index === 16) chars[index] = "8";
+    }
+    const digits = chars.join("");
+    const id = v4IdWithDigitsAt(prefix, offset, digits);
+    if (accept(digits, id)) return id;
+  }
+  throw new Error(`no ${length}-digit id found at offset ${offset}`);
+}
+
+// Encodes a 16-digit PAN as the digits of a v4 UUID at offset 0 (the test PANs above): digit 13 is the version nibble.
 export function encodePanAsPlatformId(prefix: string, pan: string): string {
   if (pan.length !== 16 || pan[12] !== "4") throw new Error("PAN must be 16 digits with digit 13 equal to 4");
   return `${prefix}-${pan.slice(0, 8)}-${pan.slice(8, 12)}-${pan.slice(12, 16)}-8000-000000000000`;
@@ -82,8 +130,9 @@ export function sourceFiles(directory: string): string[] {
   });
 }
 
-// Detection query over legacy rows: a listed id key whose stored value contains a [REDACTED] mark. The keys come
-// from the exemption table, so a key added there is covered automatically.
+// Detection query over legacy rows: a listed id key whose stored value contains a [REDACTED] mark. It matches flat,
+// exact-case, top-level keys only (production writes flat camelCase keys). The keys come from the exemption table, so a
+// key added there is covered automatically. To extend: add the key to PLATFORM_ID_PREFIXES_BY_KEY and regenerate the SQL.
 export function platformIdMaskedRowsSql(table: "audit_log" | "telemetry_events"): string {
   const predicate = Object.keys(PLATFORM_ID_PREFIXES_BY_KEY)
     .map((key) => `json_extract(payload_json, '$.${key}') LIKE '%[REDACTED]%'`)
