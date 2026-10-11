@@ -242,7 +242,7 @@ import {
   type GuestAccountCredentials,
 } from "./guest-account-runtime.js";
 import { GUEST_ACCOUNT_COPY } from "../../web-agent/src/guest-content.js";
-import type { GuestContactApplication } from "../../web/src/guest-contact-application.js";
+import { SqliteGuestContactRepository, type GuestContactSource } from "../../../domains/shortlet/src/guest-contact.js";
 import {
   GuestContactOwnedByAccountError,
   normalizeNigerianPhoneNumber,
@@ -6368,14 +6368,18 @@ function isSentOrConfirmed(screen: { readonly requestScreen?: RequestScreenConte
  */
 function signInOfferFor(input: {
   readonly accounts: GuestAccountRuntime | null;
-  readonly contacts: GuestContactApplication;
+  /** The principal's own request contact row, never the account-aware view: a linked principal's view is the account email (D1). */
+  readonly ownContacts: GuestContactSource;
   readonly principal: CommandPrincipal;
   readonly credentials: GuestAccountCredentials | null;
   readonly returnPath: string;
 }): SignInOfferContent | undefined {
-  if (input.accounts === null) return undefined;
+  if (input.accounts === null || !input.principal.tenantId) return undefined;
+  // D1 (ADR 0093, 0075), fail closed: a principal linked to ANY account gets no offer, even when its account session is not presented.
+  if (input.accounts.linkedAccountOf(input.principal.id) !== null) return undefined;
   if (input.accounts.identityFor(input.principal.id, input.credentials).accountGuestId !== undefined) return undefined;
-  return { email: input.contacts.get(input.principal)?.contactEmail ?? "", returnPath: input.returnPath };
+  const own = input.ownContacts.find(input.principal.id, input.principal.tenantId);
+  return { email: own?.contactEmail ?? "", returnPath: input.returnPath };
 }
 
 /** Issue 08: the offer rides on the last active request-sent or confirmation surface of a response, once per response. */
@@ -7211,7 +7215,7 @@ export function createGuestRequestHandler(
     return surfacesWithSignInOffer(surfaces, () =>
       signInOfferFor({
         accounts: guestAccounts,
-        contacts: environment.guestContactApp,
+        ownContacts: new SqliteGuestContactRepository(environment.database),
         principal: { id: session.principalId, role: "guest", tenantId: session.tenantId },
         credentials: accountCredentialsOf(req),
         returnPath: `/?threadId=${encodeURIComponent(threadId)}`,
@@ -8000,7 +8004,7 @@ export function createGuestRequestHandler(
         const signInOffer = isSentOrConfirmed(bookingPage)
           ? signInOfferFor({
               accounts: guestAccounts,
-              contacts: app.environment.guestContactApp,
+              ownContacts: new SqliteGuestContactRepository(app.environment.database),
               principal,
               credentials: accountCredentialsOf(req),
               returnPath: url.pathname,

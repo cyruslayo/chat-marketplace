@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { GUEST_ACCOUNT_COPY } from "../apps/web-agent/src/guest-content.js";
 import { ACCOUNT_COOKIE, freshAnonymousCookie, getJson, getPage, postForm, requestSignInCode, setCookieValue, signInDevice, wrongCodeFor, type HttpAnswer } from "./helpers/guest-account-sign-in.js";
-import { OFFER_TEST_EMAIL, offeredSurfaceOf, offerFieldsOf, offerOf, routeFor, withOfferStageDevice, type OfferedSurface } from "./helpers/sign-in-offer.js";
+import { OFFER_TEST_EMAIL, offeredSurfaceOf, offerFieldsOf, offerOf, postJsonAs, routeFor, withOfferStageDevice, type OfferedSurface, type OfferStageDevice } from "./helpers/sign-in-offer.js";
+import { guestAction } from "./helpers/guest-restart.js";
 import { surfacesWithSignInOffer, type GuestSurfacePayload } from "../apps/local-guest/src/guest-server.js";
 import type { RestartStage } from "./helpers/guest-restart.js";
 
@@ -126,7 +128,7 @@ test("AC3: A signed-in Guest never sees the panel.", async () => {
   }
 });
 
-test("AC4: Declining or ignoring the offer changes nothing in the booking flow (existing booking and payment tests stay green).", async () => {
+test("AC4: Declining or ignoring the offer leaves the booking state unchanged, and the Guest's payment page still returns 200.", async () => {
   await withOfferStageDevice("pending", async ({ fixture, cookie, routes }) => {
     const path = routeFor(routes, "/booking-requests/");
     const before = await fixture.state(cookie);
@@ -212,4 +214,90 @@ test("AC1 failure path: the sign-in offer's email reaches only the browser that 
     assert.ok(stored.length > 0, "the conversation database is on disk");
     for (const bytes of stored) assert.equal(bytes.includes("signInOffer"), false, "the offer key is not persisted");
   });
+});
+
+/**
+ * D1 (ADR 0093, 0075): a browser whose interaction cookie is linked to an account but which holds no live account session gets no
+ * offer and no account email, on every route that could carry them.
+ */
+async function assertNoOfferOrAccountEmail(fixture: OfferStageDevice["fixture"], cookie: string, path: string): Promise<void> {
+  const page = await getPage(fixture.base, path, cookie);
+  assert.equal(offerOf(page.body), null, "the page shows no offer");
+  assert.equal(page.body.includes(`name="email"`), false, "the page carries no pre-filled email field");
+  assert.equal(page.body.includes(OFFER_TEST_EMAIL), false, "the page carries no account email");
+  const state = await getJson(fixture.base, `/api/state?threadId=${fixture.threadId}`, cookie);
+  assert.equal(JSON.stringify(state.body).includes("signInOffer"), false, "/api/state carries no offer");
+  assert.equal(JSON.stringify(state.body).includes(OFFER_TEST_EMAIL), false, "/api/state carries no account email");
+  const turn = await postJsonAs(fixture.base, "/api/turn", { threadId: fixture.threadId, text: "Thank you" }, cookie);
+  assert.equal(JSON.stringify(turn.body).includes("signInOffer"), false, "/api/turn carries no offer");
+  assert.equal(JSON.stringify(turn.body).includes(OFFER_TEST_EMAIL), false, "/api/turn carries no account email");
+}
+
+test("D1: a linked interaction cookie with no account session gets no offer and no account email", async () => {
+  await withOfferStageDevice("pending", async ({ fixture, sender, cookie, routes }) => {
+    const path = routeFor(routes, "/booking-requests/");
+    const signedIn = await signInDevice(fixture, sender, OFFER_TEST_EMAIL, cookie, path);
+    // Only the interaction cookie is sent: the account cookie is gone, so the principal is linked but not signed in.
+    await assertNoOfferOrAccountEmail(fixture, signedIn.interaction, path);
+  });
+});
+
+test("D1: after sign-out everywhere, the old linked interaction cookie gets no offer and no account email", async () => {
+  await withOfferStageDevice("pending", async ({ fixture, sender, cookie, routes }) => {
+    const path = routeFor(routes, "/booking-requests/");
+    const signedIn = await signInDevice(fixture, sender, OFFER_TEST_EMAIL, cookie, path);
+    const ended = await postForm(fixture.base, "/account/sign-out-everywhere", {}, [signedIn.interaction, signedIn.account].join("; "));
+    assert.equal(ended.status, 303, "sign-out everywhere ends the account");
+    await assertNoOfferOrAccountEmail(fixture, signedIn.interaction, path);
+  });
+});
+
+test("D1: after the account session expires, the linked interaction cookie gets no offer and no account email", async () => {
+  await withOfferStageDevice("pending", async ({ fixture, sender, cookie, routes }) => {
+    const path = routeFor(routes, "/booking-requests/");
+    const signedIn = await signInDevice(fixture, sender, OFFER_TEST_EMAIL, cookie, path);
+    // The account session lives thirty days (ADR 0093). The clock stays put, because moving it would also expire the request;
+    // the session's own expiry is set to the past instead, so only the account session has ended.
+    const database = new DatabaseSync(fixture.databasePath);
+    database.prepare("UPDATE guest_account_sessions SET expires_at = ?").run("2026-09-01T00:00:00.000Z");
+    database.close();
+    await assertNoOfferOrAccountEmail(fixture, signedIn.interaction, path);
+  });
+});
+
+test("T1: the turn and event responses that carry the offer are never kept (Cache-Control no-store), and the offer is in their JSON", async () => {
+  await withOfferStageDevice("review", async ({ fixture, cookie }) => {
+    // The review action sends the request, exactly as the stage helper does, but over the event route.
+    const state = await fixture.state(cookie) as { readonly surfaces: readonly GuestSurfacePayload[] };
+    const event = await postJsonAs(fixture.base, "/api/event", { threadId: fixture.threadId, ...guestAction(state.surfaces[0]!) }, cookie);
+    assert.equal(event.status, 200, "the event route answers");
+    assert.ok(offeredSurfaceOf((event.body.surfaces ?? []) as readonly GuestSurfacePayload[]), "the event that sends the request carries the offer");
+    assert.equal(event.headers.get("cache-control"), "no-store", "the event response with the Guest's email is not kept");
+    // A later turn on the same live screen carries the offer in its JSON too, and is also not kept.
+    const turn = await postJsonAs(fixture.base, "/api/turn", { threadId: fixture.threadId, text: "Thank you" }, cookie);
+    assert.equal(turn.status, 200, "the turn route answers");
+    assert.ok(offeredSurfaceOf((turn.body.surfaces ?? []) as readonly GuestSurfacePayload[]), "the turn response carries the offer");
+    assert.equal(turn.headers.get("cache-control"), "no-store", "the turn response with the Guest's email is not kept");
+  });
+});
+
+test("T2: the pre-filled email is escaped in the offer, whatever the contact row holds", async () => {
+  await withOfferStageDevice("pending", async ({ fixture, cookie, routes }) => {
+    const principalId = fixture.environment.interactionStore.findThread(fixture.threadId)?.principalId;
+    assert.ok(principalId);
+    const hostile = `a"><script>x@example.test`;
+    fixture.environment.guestContactApp.submitEmail({ contactEmail: hostile }, { id: principalId, role: "guest", tenantId: fixture.environment.config.tenantId });
+    const section = offerOf((await getPage(fixture.base, routeFor(routes, "/booking-requests/"), cookie)).body);
+    assert.ok(section, "the offer is shown");
+    assert.equal(section.includes("<script>"), false, "no raw markup from the email");
+    assert.ok(section.includes("a&quot;&gt;&lt;script&gt;x@example.test"), "the email is escaped in its field");
+  });
+});
+
+test("T2: the offer's return path is escaped in its hidden field, whatever it holds", async () => {
+  const kit: Record<string, unknown> = await import("../apps/local-guest/src/guest-kit.js");
+  const signInOfferHtml = kit.signInOfferHtml as (content: { readonly email: string; readonly returnPath: string }) => string;
+  const html = signInOfferHtml({ email: OFFER_TEST_EMAIL, returnPath: `/x"><script>alert(1)</script>` });
+  assert.equal(html.includes("<script>"), false, "no raw markup from the return path");
+  assert.ok(html.includes(`name="return" value="/x&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;"`), "the return path is escaped in its field");
 });

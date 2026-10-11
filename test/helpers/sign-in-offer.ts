@@ -82,3 +82,13 @@ export function routeFor(routes: readonly string[], prefix: "/booking-requests/"
   assert.ok(route, `the stage produced a ${prefix} page`);
   return route;
 }
+
+/** A JSON POST as a browser sends it from this origin: the Origin header the chat's turn and event routes require. */
+export async function postJsonAs(base: string, path: string, body: unknown, cookie: string): Promise<{ readonly status: number; readonly headers: Headers; readonly body: Record<string, unknown> }> {
+  const response = await fetch(`${base}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: new URL(base).origin, cookie },
+    body: JSON.stringify(body),
+  });
+  return { status: response.status, headers: response.headers, body: await response.json() as Record<string, unknown> };
+}
