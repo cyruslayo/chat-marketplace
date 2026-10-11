@@ -36,6 +36,17 @@ The slice is done when a Guest can sign in with a code on any device and see the
 | --- | --- | --- | --- | --- |
 Issue 10's legal review progresses alongside implementation but it must be resolved before account completion and final issue-11 captures.
 
+### Phase 4: follow-ups from the 11 Oct 2026 review (filed, not started)
+
+Filed from the Comments of issues 06, 07, 08, 09 and 10. None is claimed. Statuses are the canonical states in `docs/agents/triage-labels.md`.
+
+| Order | # | Issue | Type | Blocked by |
+| --- | --- | --- | --- | --- |
+| – | 12 | Hide or replace the `/guest/contact` email form for linked devices; closed-account fallback (ready-for-human) | task | 07, 10 |
+| – | 13 | Conventional offer and booking pages for linked devices and the offer's own Guest (ready-for-human) | task | 06 |
+| – | 14 | Concierge mention of sign-in and the "my account" link (ready-for-human) | task | 07, 08 |
+| – | 15 | Deployment requirements, secrets, Worker wiring and copy approval (ready-for-human) | task | 06, 07, 08 |
+
 ## Kickoff prompt for a new session
 
 > Implement phase 1 of the guest accounts effort (the "log in and see my stays" slice), then stays issues 03 and 04 from `.scratch/guest-stays-and-favourites/`. Read `.scratch/guest-accounts/PRD.md`, then `map.md`, and follow the implementation protocol in `AGENTS.md` (ADR table, one failing test per acceptance criterion, Definition of Done in `docs/agents/issue-tracker.md`). Work on branch `feat/guest-accounts` from an up-to-date `main`. For each issue: claim it, read the ADRs it lists, write the failing tests, implement, run `npm run check` and the full `npm test` (browser phase in the background, about 12 minutes), commit, then write the `## Answer` and a context pointer here.
