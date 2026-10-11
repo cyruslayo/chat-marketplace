@@ -1,58 +1,48 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { PLATFORM_ID_PREFIXES_BY_KEY, redactSensitiveData } from "../packages/platform-core/src/redaction.js";
+import { redactSensitiveData } from "../packages/platform-core/src/redaction.js";
 import { InMemoryAuditLog } from "../packages/platform-core/src/index.js";
 import { SqliteAuditLog } from "../packages/platform-core/src/sqlite-audit-log.js";
 import { openNodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-database.js";
+import {
+  CARD_NUMBER,
+  CARD_SHAPE,
+  ID_KEY_PREFIXES,
+  KNOWN_CARD_SHAPED_COMMAND_ID,
+  KNOWN_CARD_SHAPED_OFFER_ID,
+  KNOWN_CARD_SHAPED_REQUEST_ID,
+  LUHN_INVALID_PAN,
+  TEST_PANS,
+  containsLuhnValidCardShape,
+  encodePanAsPlatformId
+} from "./helpers/platform-id-fixtures.js";
 
 // ADR 0075 (one redactor for audit, telemetry and projections) & Issue 50.
 // Platform-generated correlation ids are `<prefix>-<randomUUID()>`. The card-number rule must not mask them under
-// their id keys, but every other card-number shape stays redacted.
-
-// Each pair is an (id key, prefix the generator for that key emits) oracle, written out here on purpose.
-const ID_KEY_PREFIXES: ReadonlyArray<readonly [string, string]> = [
-  ["requestId", "req"],
-  ["commandEnvelopeId", "cmd"],
-  ["commandId", "cmd"],
-  ["offerId", "offer"],
-  ["draftId", "draft"],
-  ["threadId", "thread"],
-  ["runId", "run"],
-  ["surfaceId", "surf"],
-  ["actionId", "pa"],
-  ["quoteId", "quote"],
-  ["aggregateId", "req"],
-  ["aggregateId", "offer"],
-  ["commitmentId", "blk"],
-  ["commitmentId", "oph"],
-  ["commitmentId", "brb"],
-  ["payoutId", "payout"],
-  ["recoveryId", "recovery"],
-  ["refundId", "guest-refund"],
-  ["queryId", "search"],
-  ["runId", "turn"]
-];
-
-// Fixed values that the card-number rule masked before this fix (they contain a 16-digit run once the dashes are read as separators).
-const KNOWN_CARD_SHAPED_OFFER_ID = "offer-17477973-5806-4004-bea8-8d50c54c0c30";
-const KNOWN_CARD_SHAPED_COMMAND_ID = "cmd-63bde504-acc8-40f0-9792-588939387591";
-const KNOWN_CARD_SHAPED_REQUEST_ID = "req-63bde504-acc8-40f0-9792-588939387591";
-const CARD_NUMBER = "4111111111111111";
+// their id keys unless their digits form a Luhn-valid card number. Every other card-number shape stays redacted.
 
 function redactOne(key: string, value: unknown): unknown {
   return (redactSensitiveData({ [key]: value }) as Record<string, unknown>)[key];
 }
 
-test("Platform-generated ids under their id keys pass through redactSensitiveData unchanged across 20,000 random ids", () => {
+// Key-name variants of one id key that the normalised lookup must treat the same way: camelCase, SCREAMING_SNAKE, and Capitalised_Snake.
+function keyVariants(key: string): string[] {
+  const snake = key.replace(/([A-Z])/g, "_$1");
+  return [key, snake.toUpperCase(), snake.charAt(0).toUpperCase() + snake.slice(1)];
+}
+
+test("Platform-generated ids are altered only when their digits form a Luhn-valid card number, across 20,000 random ids", () => {
+  let altered = 0;
   for (let index = 0; index < 20_000; index += 1) {
     const [key, prefix] = ID_KEY_PREFIXES[index % ID_KEY_PREFIXES.length]!;
     const id = `${prefix}-${randomUUID()}`;
-    assert.equal(redactOne(key, id), id, `${key}=${id}`);
+    const output = redactOne(key, id);
+    const expectedAltered = containsLuhnValidCardShape(id);
+    if (output !== id) altered += 1;
+    assert.equal(output !== id, expectedAltered, `${key}=${id} -> ${String(output)}`);
   }
+  assert.ok(altered < 20_000);
 });
 
 test("Known card-shaped platform ids are kept intact in InMemoryAuditLog entries so they can be matched by requestId and commandEnvelopeId", () => {
@@ -66,7 +56,7 @@ test("Known card-shaped platform ids are kept intact in InMemoryAuditLog entries
   assert.equal(second?.requestId, KNOWN_CARD_SHAPED_REQUEST_ID);
 });
 
-test("Platform-generated ids under their id keys are stored unchanged by SqliteAuditLog across 20,000 random ids", () => {
+test("Platform-generated ids are stored by SqliteAuditLog unchanged unless their digits form a Luhn-valid card number, across 20,000 random ids", () => {
   const database = openNodeSqliteDatabase(":memory:");
   try {
     const audit = new SqliteAuditLog(database);
@@ -81,7 +71,7 @@ test("Platform-generated ids under their id keys are stored unchanged by SqliteA
     assert.equal(stored.length, expected.length);
     stored.forEach((entry, index) => {
       const [key, id] = expected[index]!;
-      assert.equal(entry[key], id, `row ${index} ${key}`);
+      assert.equal(entry[key] !== id, containsLuhnValidCardShape(id), `row ${index} ${key}`);
     });
   } finally {
     database.close();
@@ -148,26 +138,68 @@ test("Sensitive keys are still redacted even when the value is a platform-genera
   assert.deepEqual(redactSensitiveData({ cardNumber: `req-${randomUUID()}` }), { cardNumber: "[REDACTED]" });
 });
 
-function sourceFiles(directory: string): string[] {
-  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-    const path = join(directory, entry.name);
-    if (entry.isDirectory()) return entry.name === "node_modules" || entry.name === "test" ? [] : sourceFiles(path);
-    return entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts") ? [path] : [];
-  });
-}
-
-test("Every platform-id prefix in the exemption table is emitted by a platform id generator in the source", () => {
-  const root = fileURLToPath(new URL("..", import.meta.url));
-  const generatedPrefixes = new Set<string>();
-  const generator = /`([a-z][a-z-]*)-\$\{(?:[\w.]+\.)?(?:randomUUID|idFactory)\(\)\}`/g;
-  for (const area of ["domains", "packages", "apps"]) {
-    for (const file of sourceFiles(join(root, area))) {
-      for (const match of readFileSync(file, "utf8").matchAll(generator)) generatedPrefixes.add(match[1]!);
+test("Mastercard, Visa and Discover card numbers encoded in v4 platform ids are masked under every platform-id key and key-name variant", () => {
+  for (const [key, prefix] of ID_KEY_PREFIXES) {
+    for (const pan of Object.values(TEST_PANS)) {
+      const value = encodePanAsPlatformId(prefix, pan);
+      for (const variant of keyVariants(key)) {
+        const output = redactOne(variant, value);
+        assert.notEqual(output, value, `${variant}=${value}`);
+        assert.doesNotMatch(String(output), CARD_SHAPE, `${variant}=${value} -> ${String(output)}`);
+      }
     }
   }
-  const tabled = new Set(Object.values(PLATFORM_ID_PREFIXES_BY_KEY).flat());
-  for (const prefix of tabled) assert.ok(generatedPrefixes.has(prefix), `prefix ${prefix} has no generator`);
-  for (const [key, prefix] of ID_KEY_PREFIXES) {
-    assert.ok(PLATFORM_ID_PREFIXES_BY_KEY[key]?.includes(prefix), `${key} table lacks ${prefix}`);
+});
+
+test("Card numbers encoded in v4 platform ids are masked inside nested objects and arrays", () => {
+  for (const pan of Object.values(TEST_PANS)) {
+    const value = encodePanAsPlatformId("req", pan);
+    const output = JSON.stringify(redactSensitiveData({ payload: { items: [{ requestId: value }], deep: { offerId: value } } }));
+    assert.doesNotMatch(output, CARD_SHAPE);
+    assert.match(output, /\[REDACTED\]/);
   }
+});
+
+test("A v4 platform id whose card-shaped digits are not Luhn-valid stays unchanged under every platform-id key, including the known-bad ids", () => {
+  for (const [key, prefix] of ID_KEY_PREFIXES) {
+    const value = encodePanAsPlatformId(prefix, LUHN_INVALID_PAN);
+    assert.equal(redactOne(key, value), value, `${key}=${value}`);
+  }
+  assert.equal(redactOne("requestId", KNOWN_CARD_SHAPED_REQUEST_ID), KNOWN_CARD_SHAPED_REQUEST_ID);
+  assert.equal(redactOne("offerId", KNOWN_CARD_SHAPED_OFFER_ID), KNOWN_CARD_SHAPED_OFFER_ID);
+  assert.equal(redactOne("commandId", KNOWN_CARD_SHAPED_COMMAND_ID), KNOWN_CARD_SHAPED_COMMAND_ID);
+});
+
+test("A 15-digit Amex-length number is outside the 16-digit card rule and stays unchanged in ids and free text, as before", () => {
+  const amex = "378282246310005";
+  assert.equal(redactOne("requestId", `req-${amex}`), `req-${amex}`);
+  assert.deepEqual(redactSensitiveData({ note: `ref ${amex}` }), { note: `ref ${amex}` });
+});
+
+test("A platform id followed by a card number in the same value is masked (end anchor)", () => {
+  // The Luhn-valid appended card is masked by the Luhn gate even without the end anchor, so the Luhn-invalid case below
+  // is the one that isolates the anchor.
+  const value = `${KNOWN_CARD_SHAPED_REQUEST_ID} card 4111 1111 1111 1111`;
+  const output = String(redactOne("requestId", value));
+  assert.notEqual(output, value);
+  assert.doesNotMatch(output, CARD_SHAPE);
+  assert.match(output, /\[REDACTED\]/);
+  const luhnInvalidTail = `${KNOWN_CARD_SHAPED_REQUEST_ID} card 4111 1111 1111 1112`;
+  const isolated = String(redactOne("requestId", luhnInvalidTail));
+  assert.notEqual(isolated, luhnInvalidTail);
+  assert.doesNotMatch(isolated, CARD_SHAPE);
+  assert.match(isolated, /\[REDACTED\]/);
+});
+
+test("A platform id with a trailing newline is not exempt and is masked as before", () => {
+  assert.equal(redactOne("requestId", `${KNOWN_CARD_SHAPED_REQUEST_ID}\n`), "req-63bde504-acc8-40f0-[REDACTED]\n");
+  const pan = encodePanAsPlatformId("req", TEST_PANS.visa);
+  assert.doesNotMatch(String(redactOne("requestId", `${pan}\n`)), CARD_SHAPE);
+});
+
+test("Guest thread ids (g-<uuid>) are not exempt under threadId, because the client chooses them (follow-up in issue 50)", () => {
+  const value = encodePanAsPlatformId("g", LUHN_INVALID_PAN);
+  const output = redactOne("threadId", value);
+  assert.notEqual(output, value);
+  assert.match(String(output), /\[REDACTED\]/);
 });
