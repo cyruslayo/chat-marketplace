@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import { GUEST_ACCOUNT_COPY } from "../apps/web-agent/src/guest-content.js";
-import { ACCOUNT_COOKIE, getJson, getPage, postForm, requestSignInCode, setCookieValue, signInDevice, wrongCodeFor, type HttpAnswer } from "./helpers/guest-account-sign-in.js";
+import { ACCOUNT_COOKIE, freshAnonymousCookie, getJson, getPage, postForm, requestSignInCode, setCookieValue, signInDevice, wrongCodeFor, type HttpAnswer } from "./helpers/guest-account-sign-in.js";
 import { OFFER_TEST_EMAIL, offeredSurfaceOf, offerFieldsOf, offerOf, routeFor, withOfferStageDevice, type OfferedSurface } from "./helpers/sign-in-offer.js";
 import { surfacesWithSignInOffer, type GuestSurfacePayload } from "../apps/local-guest/src/guest-server.js";
 import type { RestartStage } from "./helpers/guest-restart.js";
@@ -195,4 +196,20 @@ test("AC1 failure path: the offer appears once per response, beneath the last li
   const result = surfacesWithSignInOffer(surfaces, () => ({ email: OFFER_TEST_EMAIL, returnPath: "/?threadId=g-test" }));
   assert.equal(result.surfaces.filter((surface) => surface.signInOffer !== undefined).length, 1, "one panel per response");
   assert.equal(result.surfaces[1]!.signInOffer?.returnPath, "/?threadId=g-test", "the panel rides on the last live screen");
+});
+
+test("AC1 failure path: the sign-in offer's email reaches only the browser that owns the conversation, and the offer is never stored with the conversation", async () => {
+  await withOfferStageDevice("pending", async ({ fixture, cookie }) => {
+    // Another browser that asks for the same conversation gets nothing of it, so it gets no offer and no email.
+    const stranger = await freshAnonymousCookie(fixture.base);
+    const other = await getJson(fixture.base, `/api/state?threadId=${fixture.threadId}`, stranger);
+    assert.equal(JSON.stringify(other.body).includes(OFFER_TEST_EMAIL), false, "a stranger never receives the email");
+    assert.equal(JSON.stringify(other.body).includes("signInOffer"), false, "a stranger never receives the offer");
+    // The owner does receive it in the response.
+    assert.ok(offeredSurfaceOf(await chatSurfaces(fixture.base, fixture.threadId, cookie) as readonly GuestSurfacePayload[]), "the owner is offered sign-in");
+    // The offer is computed per response: the stored conversation never carries the key (ADR 0075).
+    const stored = [fixture.databasePath, `${fixture.databasePath}-wal`].filter((path) => existsSync(path)).map((path) => readFileSync(path).toString("latin1"));
+    assert.ok(stored.length > 0, "the conversation database is on disk");
+    for (const bytes of stored) assert.equal(bytes.includes("signInOffer"), false, "the offer key is not persisted");
+  });
 });

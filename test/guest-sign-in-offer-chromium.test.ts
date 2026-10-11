@@ -4,7 +4,7 @@ import { GUEST_ACCOUNT_COPY } from "../apps/web-agent/src/guest-content.js";
 import { launchRealBrowser, type RealBrowserTab } from "./helpers/chrome-devtools.js";
 import { ACCOUNT_COOKIE, INTERACTION_COOKIE, accountFixture, cookieHeader, getJson } from "./helpers/guest-account-sign-in.js";
 import { assertReflowAndTargets, sendRequest } from "./helpers/guest-browser.js";
-import { OFFER_TEST_EMAIL, recordContactFor } from "./helpers/sign-in-offer.js";
+import { OFFER_TEST_EMAIL, recordContactFor, routeFor, withOfferStageDevice } from "./helpers/sign-in-offer.js";
 
 /** ADR 0078: the four launch widths, with the 320px floor. */
 const VIEWPORTS = [[320, 640], [390, 844], [768, 1024], [1280, 800]] as const;
@@ -120,4 +120,27 @@ test("AC3: A signed-in Guest never sees the panel.", async () => {
     await browser.close();
     await fixture.close();
   }
+});
+
+test("AC1: An anonymous Guest sees the offer on the request-sent and confirmation screens, in both the page and the chat workspace, with the same text. Parity test. (confirmation screen, real Chromium)", async () => {
+  await withOfferStageDevice("confirmed", async ({ fixture, cookie, routes }) => {
+    const path = routeFor(routes, "/booking-contracts/");
+    const browser = await launchRealBrowser();
+    try {
+      const tab = await browser.createTab();
+      // The tab takes the device's own browser session, so the confirmed booking is that device's (ADR 0070).
+      await tab.navigate(`${fixture.base}/`);
+      const [name, ...value] = cookie.split("=");
+      await tab.setCookie(name!, value.join("="), fixture.base);
+      for (const [width, height] of VIEWPORTS) {
+        await tab.setViewport(width, height);
+        await tab.navigate(`${fixture.base}${path}`);
+        await tab.waitForSelector("[data-sign-in-offer]", 10_000);
+        await assertReflowAndTargets(tab, `confirmation page with the offer at ${width}px`);
+      }
+      assert.ok((await offerTextOf(tab)).includes(GUEST_ACCOUNT_COPY.offerTitle), "the confirmation screen shows the offer");
+    } finally {
+      await browser.close();
+    }
+  });
 });
