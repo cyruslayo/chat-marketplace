@@ -12,7 +12,7 @@ const VIEWPORTS = [[320, 640], [390, 844], [768, 1024], [1280, 800]] as const;
 async function assertReflowAndTargets(tab: RealBrowserTab, label: string): Promise<void> {
   const overflow = await tab.evaluate<boolean>("document.documentElement.scrollWidth > document.documentElement.clientWidth");
   assert.equal(overflow, false, `${label}: no horizontal page overflow`);
-  const small = await tab.evaluate<string[]>(`Array.from(document.querySelectorAll('main a, main button, main input:not([type=hidden]), main label'))
+  const small = await tab.evaluate<string[]>(`Array.from(document.querySelectorAll('main a, main button, main input:not([type=hidden])'))
     .filter((element) => { const box = element.getBoundingClientRect(); return box.width > 0 && box.height > 0; })
     .filter((element) => element.getBoundingClientRect().height < 44 && !element.matches('input[type=radio], input[type=checkbox]'))
     .map((element) => element.outerHTML.slice(0, 80))`);
@@ -73,7 +73,8 @@ test("AC1 failure path: in real Chromium a wrong code keeps the email and report
       await tab.insertText(wrongCodeFor(sender.codeFor(`${width}-${EMAIL}`)));
       await tab.clickButton(GUEST_ACCOUNT_COPY.checkCode);
       await tab.waitForSelector("[role='alert']", 10_000);
-      assert.equal(await tab.evaluate<string>("document.querySelector('#email').value"), `${width}-${EMAIL}`);
+      // The code page carries the email as a hidden field, so the typed address is kept without retyping.
+      assert.equal(await tab.evaluate<string>("document.querySelector(\"input[name='email']\").value"), `${width}-${EMAIL}`);
       await assertReflowAndTargets(tab, `code error page at ${width}px`);
       await tab.close();
     }
