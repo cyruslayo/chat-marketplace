@@ -42,7 +42,7 @@ export const TRUST_CLOUDFLARE_CLIENT_ADDRESS_ENV = "SHORTLET_TRUST_CF_CONNECTING
  * (`RESEND_API_KEY`, `SHORTLET_NOTIFICATION_FROM`). A missing value leaves that part unset, so sign-in stays disabled.
  */
 export function loadGuestAccountComposition(environment: Readonly<Record<string, string | undefined>>): GuestAccountComposition {
-  const codeHashingKey = environment[GUEST_CODE_HASHING_KEY_ENV]?.trim() || null;
+  const codeHashingKey = usableCodeHashingKey(environment[GUEST_CODE_HASHING_KEY_ENV]?.trim() || null);
   const apiKey = environment.RESEND_API_KEY?.trim() ?? "";
   const from = environment.SHORTLET_NOTIFICATION_FROM?.trim() ?? "";
   const sender = apiKey && from ? new ResendEmailSender({ apiKey, from }) : null;
@@ -89,17 +89,42 @@ export function clientAddressOf(req: HttpRequestLike, trustCloudflare: boolean):
   return typeof socket?.remoteAddress === "string" && socket.remoteAddress !== "" ? socket.remoteAddress : "unknown";
 }
 
-/** A safe same-origin path for `return` (AC6). Anything absolute, protocol-relative or off-site becomes `/`. */
+/** The path a Guest lands on when a `return` value is not safe (AC6). */
+export const DEFAULT_RETURN_PATH = "/";
+
+/**
+ * Minimum length of the code-hashing key (Q7). Orchestrator choice: confirm or change (see the issue's Needs human list).
+ * A shorter key disables sign-in rather than being used. There is no default key.
+ */
+export const GUEST_CODE_HASHING_KEY_MIN_LENGTH = 32;
+
+/** A key the composition may use, or null: missing, or shorter than the minimum (fail closed, Q7). */
+export function usableCodeHashingKey(key: string | null | undefined): string | null {
+  return typeof key === "string" && key.length >= GUEST_CODE_HASHING_KEY_MIN_LENGTH ? key : null;
+}
+
+/** A single-slash local path: not protocol-relative, not backslash-led, no control characters or backslash. */
+function isLocalPath(path: string): boolean {
+  return path.startsWith("/") && !path.startsWith("//") && !path.startsWith("/\\") && !/[\u0000-\u001f\u007f\\]/.test(path);
+}
+
+/**
+ * A safe same-origin path for `return` (AC6, D1). The input is checked, then the URL-normalised output is checked again:
+ * normalisation can turn an accepted input into a protocol-relative path ('/..//x' becomes '//x'), so the output is what
+ * is redirected to. Anything else becomes the default path.
+ */
 export function safeReturnPath(value: string | null | undefined): string {
-  if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//") || value.startsWith("/\\")) return "/";
-  if (/[\u0000-\u001f\u007f\\]/.test(value)) return "/";
+  if (typeof value !== "string" || !isLocalPath(value)) return DEFAULT_RETURN_PATH;
   const base = "http://guest.invalid";
+  let resolved: string;
   try {
     const url = new URL(value, base);
-    return url.origin === base ? `${url.pathname}${url.search}${url.hash}` : "/";
+    if (url.origin !== base) return DEFAULT_RETURN_PATH;
+    resolved = `${url.pathname}${url.search}${url.hash}`;
   } catch {
-    return "/";
+    return DEFAULT_RETURN_PATH;
   }
+  return isLocalPath(resolved) ? resolved : DEFAULT_RETURN_PATH;
 }
 
 /** Thrown when the code was issued but the email could not be sent. Carries no provider text (ADR 0075). */

@@ -232,6 +232,7 @@ import {
   accountCredentialsOf,
   loadGuestAccountComposition,
   safeReturnPath,
+  usableCodeHashingKey,
   SignInDeliveryError,
   type GuestAccountComposition,
   type GuestAccountCredentials,
@@ -6342,6 +6343,17 @@ function codeFormError(code: string): AccountFormError {
   return { code, message };
 }
 
+/**
+ * The routes that start a fresh, unlinked session when the cookie has no binding (D3): the home page and the sign-in
+ * and sign-out forms. Account identity is never granted by these; the pages behind an account stay gated.
+ */
+function reissuableBrowserRoute(method: string | undefined, path: string): boolean {
+  if (method === "GET") return path === "/" || path === "/account/sign-in";
+  if (method === "POST")
+    return path === "/account/sign-in" || path === "/account/sign-in/code" || path === "/account/sign-out";
+  return false;
+}
+
 function readGuestSession(req: HttpRequestLike): string | null | undefined {
   const header = req.headers.cookie;
   if (typeof header !== "string") return undefined;
@@ -6380,6 +6392,26 @@ function issueGuestSession(res: HttpResponseLike, secureCookie: boolean): string
     `${GUEST_SESSION_COOKIE}=${sessionId};${secureCookie ? " Secure;" : ""} HttpOnly; SameSite=Lax; Path=/`,
   );
   return sessionId;
+}
+
+/**
+ * The Origin check for the account POSTs (Q4). An Origin that matches is accepted. Without an Origin, a same-origin
+ * Referer is accepted; with neither, the request is refused.
+ */
+function accountPostAccepted(
+  req: HttpRequestLike,
+  publicOrigin: string | undefined,
+): boolean {
+  if (typeof req.headers.origin === "string")
+    return browserOriginAccepted(req, publicOrigin);
+  const referer = req.headers.referer;
+  if (typeof referer !== "string") return false;
+  const expected = publicOrigin ?? `http://${req.headers.host ?? "localhost"}`;
+  try {
+    return new URL(referer).origin === new URL(expected).origin;
+  } catch {
+    return false;
+  }
 }
 
 function browserOriginAccepted(
@@ -6514,6 +6546,24 @@ function withAccountIdentity(
     ? accounts.identityFor(session.principalId, accountCredentials)
     : anonymousGuestIdentity(session.principalId, session.tenantId);
   return { ...session, identity };
+}
+
+/**
+ * Whether a session may read a thread now (D2). The thread must be in the session's set, and when it is persisted its
+ * owner must be in the identity resolved for this request, so a linked conversation stops once the account session ends.
+ */
+function threadReadable(
+  env: LocalGuestEnvironment,
+  session: BrowserSession,
+  threadId: string,
+): boolean {
+  if (!session.threadIds.has(threadId)) return false;
+  const record = env.interactionStore.findThread(threadId);
+  if (!record) return true;
+  return authorizesPrincipalOwner(session.identity, {
+    principalId: record.principalId,
+    tenantId: record.tenantId,
+  });
 }
 
 function bindBrowserThread(
@@ -6832,10 +6882,12 @@ export function createGuestRequestHandler(
     options.guestAccounts === undefined
       ? loadGuestAccountComposition(process.env)
       : options.guestAccounts;
+  // Q7: a missing or short key leaves the key unusable, which disables sign-in.
+  const accountKey = usableCodeHashingKey(accountComposition?.codeHashingKey);
   const guestAccounts =
     accountComposition &&
     sessionScopedGuestPrincipals &&
-    accountComposition.codeHashingKey &&
+    accountKey &&
     accountComposition.sender
       ? new GuestAccountRuntime({
           database: env.database,
@@ -6844,7 +6896,7 @@ export function createGuestRequestHandler(
           requests: env.interactionStore,
           composition: {
             ...accountComposition,
-            codeHashingKey: accountComposition.codeHashingKey,
+            codeHashingKey: accountKey,
             sender: accountComposition.sender,
           },
         })
@@ -6958,7 +7010,10 @@ export function createGuestRequestHandler(
   const sessionForSignIn = (req: HttpRequestLike, res: HttpResponseLike): BrowserSession | null => {
     const raw = readGuestSession(req);
     if (raw === null) return null;
-    if (raw !== undefined) return existingBrowserSession(req);
+    if (raw !== undefined) {
+      const existing = existingBrowserSession(req);
+      if (existing) return existing;
+    }
     if (options.betaInviteCode !== undefined) return null;
     const sessionId = issueGuestSession(res, secureCookie);
     return registerBrowserSession(env, browserSessions, sessionId, `guest-${crypto.randomUUID()}`);
@@ -6969,12 +7024,23 @@ export function createGuestRequestHandler(
     url: URL,
   ): Promise<void> => {
     const accounts = guestAccounts;
+    const path = url.pathname;
     if (!accounts) {
+      // Disabled: a sign-out still expires the account cookie, so no stale cookie outlives the composition (N3).
+      if (req.method === "POST" && (path === "/account/sign-out" || path === "/account/sign-out-everywhere")) {
+        if (!accountPostAccepted(req, options.publicOrigin)) {
+          sendPageError(req, res, 403, "ORIGIN_REJECTED");
+          return;
+        }
+        res.setHeader("Set-Cookie", clearedAccountCookieLine());
+        res.writeHead(303, { Location: "/", "Cache-Control": "no-store" });
+        res.end();
+        return;
+      }
       res.writeHead(503, GUEST_HTML_HEADERS);
       res.end(renderSignInUnavailableHtml());
       return;
     }
-    const path = url.pathname;
     const credentials = accountCredentialsOf(req);
     if (req.method === "GET" && path === "/account/sign-in") {
       if (!sessionForSignIn(req, res)) {
@@ -7000,7 +7066,7 @@ export function createGuestRequestHandler(
       return;
     }
     // ADR 0093 / ADR 0080: every state-changing form is origin-checked like the other Guest POSTs.
-    if (!browserOriginAccepted(req, options.publicOrigin)) {
+    if (!accountPostAccepted(req, options.publicOrigin)) {
       sendPageError(req, res, 403, "ORIGIN_REJECTED");
       return;
     }
@@ -7049,7 +7115,7 @@ export function createGuestRequestHandler(
     }
 
     if (path === "/account/sign-in/code") {
-      const session = existingBrowserSession(req);
+      const session = sessionForSignIn(req, res);
       if (!session) {
         sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
         return;
@@ -7162,7 +7228,8 @@ export function createGuestRequestHandler(
           !requestSession &&
           sessionScopedGuestPrincipals &&
           !PUBLIC_GUEST_PATHS.has(url.pathname) &&
-          !url.pathname.startsWith("/stays/")
+          !url.pathname.startsWith("/stays/") &&
+          !reissuableBrowserRoute(req.method, url.pathname)
         ) {
           sendJson(res, 401, { ok: false, code: "AUTHENTICATION_REQUIRED" });
           return;
@@ -7205,8 +7272,9 @@ export function createGuestRequestHandler(
           res.end("Unauthorized");
           return;
         }
-        if (rawSession === undefined) {
-          // Staging beta: no Guest session starts without the invite code (issue 22).
+        if (requestSession === null) {
+          // No cookie, or a well-formed cookie with no binding (retired by sign-out or sign-out everywhere, D3): a fresh,
+          // unlinked session starts. Staging beta: no Guest session starts without the invite code (issue 22).
           const offeredInvite = url.searchParams.get("invite");
           if (
             options.betaInviteCode !== undefined &&
@@ -8730,7 +8798,7 @@ export function createGuestRequestHandler(
             sendPageError(req, res, 400, "INVALID_CONVERSATION");
             return;
           }
-          const state = session.threadIds.has(threadId)
+          const state = threadReadable(app.environment, session, threadId)
             ? app.getState(threadId)
             : undefined;
           const committedWork = app.committedWork({
@@ -8887,7 +8955,7 @@ export function createGuestRequestHandler(
           });
           return;
         }
-        if (!session.threadIds.has(threadId)) {
+        if (!threadReadable(app.environment, session, threadId)) {
           sendJson(res, 200, {
             ok: true,
             threadId,

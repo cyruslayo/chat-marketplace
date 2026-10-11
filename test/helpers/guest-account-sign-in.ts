@@ -118,6 +118,8 @@ export async function postForm(base: string, path: string, fields: Record<string
     headers: {
       "content-type": "application/x-www-form-urlencoded",
       accept: "text/html",
+      // A browser sends Origin on a same-origin form POST; the account POSTs refuse one without it (Q4).
+      origin: new URL(base).origin,
       ...(cookies ? { cookie: cookies } : {}),
     },
     body: new URLSearchParams(fields).toString(),

@@ -1,6 +1,6 @@
 # Guest server: sign-in, sign-out and account session cookie
 
-Status: claimed
+Status: ready-for-agent
 Type: task
 Blocked by: 05
 Requested: 2 Oct 2026
@@ -80,3 +80,25 @@ Implemented on `ga-06-sign-in-sessions`:
 - Committed work and thread ownership: identity is resolved per request, the binding is re-checked on every request, and claimed requests list only their own conversation.
 - WhatsApp: account intents redirect to the web (`domains/shortlet/src/whatsapp-adapter.ts`).
 - No migration added. `apps/pilot/src/*` changed only for the `NotificationKind` and the message builder.
+- 11 Oct 2026, orchestrator decision Q1: while open, the status is `ready-for-agent` (the canonical triage label). `claimed` is not a triage state and is no longer used here. It stays `ready-for-agent` until every DoD item is met, including the UI screenshots, which are handed to issue 11.
+- 11 Oct 2026, security review of PR #102 (head `d9cfd8a`), fixes on `ga-06-sign-in-sessions`, each with a failing test first (red run in the PR body):
+  - D1 (high, open redirect): `safeReturnPath` now re-validates the normalised output (single leading slash, not `//` or `/\`, no control characters or backslash) and falls back to `/`. Route tests POST the raw return values `/..//evil.example`, `/%2e%2e//x`, `/a/..//x`, `/.//x` and `/x/../..//x` to `/account/sign-in/code`, and check the 303 Location.
+  - D2 (medium): a linked conversation is read only while its owner is in the identity resolved for that request. `/api/state` and the no-JavaScript conversation page check it on every request (`threadReadable`); a linked conversation is no longer served once the account session has expired.
+  - D3 (medium): a browser whose interaction binding was retired (sign-out everywhere) gets a fresh, unlinked session on `/` and on the sign-in and code routes. Account pages stay gated; a fresh session never carries account identity.
+  - Refused conflicting sign-in (M7 gap): a test asserts the session created by a refused link is revoked, and that no account cookie is set. Probe M13 removes the revoke and fails it.
+  - Q4 (orchestrator decision): an account POST with no Origin and no same-origin Referer is refused (403). Tests cover no header, a foreign Referer and a same-origin Referer.
+  - N3: with accounts disabled, the sign-out routes still expire the account cookie (303, `Max-Age=0`), and sign-in answers 503.
+  - T1 (orchestrator decision, recorded here): the AC4 test asserts that the second browser context's next turn is refused. The app has no SSE stream, so a refused next turn is the AC for "closes an open stream". Decided by the orchestrator on the human's behalf, not a human quote.
+  - Q5 (orchestrator decision, recorded here): the per-email lockout in the authority (five code requests per email per hour, and the cooldown) is accepted as issue 01 policy.
+  - Q7 (orchestrator decision, confirm or change): a code-hashing key shorter than 32 characters disables sign-in (fail closed, no default key). The 32 is a named constant (`GUEST_CODE_HASHING_KEY_MIN_LENGTH`), not a literal in the logic. Tests: a 31-character key is refused, and a 32-character key is accepted.
+  - Q8 (orchestrator decision, recorded here): the sign-in code is in the email body, which is accepted as inherent to emailed codes (ADR 0093).
+  - Route tests now send the Origin header a browser sends on a same-origin form POST (the test helper does this). The Chromium browser job sends a real Origin.
+  - Probes: M1-M12 re-run on the new code (M2 split into the input, origin and output guards). M13-M19 added for the new fixes. Results are in the PR body. Two probes remain equivalent (input prefix guard and origin guard): removing either alone changes nothing, because the other guards reject the same inputs.
+
+### Needs human (updated)
+- `SHORTLET_GUEST_CODE_HASHING_KEY`: the HMAC key for codes and rate scopes. Name chosen here, no value supplied. Must be at least 32 characters (Q7, confirm or change); a shorter key disables sign-in.
+- `RESEND_API_KEY` and `SHORTLET_NOTIFICATION_FROM`: existing notifier names. Sign-in is disabled without them.
+- `SHORTLET_TRUST_CF_CONNECTING_IP=true` must be set in every Cloudflare-fronted deployment (Q6). Without it, every client shares the socket address, so the per-address budget becomes a global one. Name chosen here.
+- Approval of `GUEST_ACCOUNT_COPY` (functional wording, not final).
+- Decision: conventional detail pages for linked principals (follow-up for issues 07 and 08, Q3).
+- Decision: whether a sign-in code send should record an audit row in `pilot_notifications` (key and status only, never the code).

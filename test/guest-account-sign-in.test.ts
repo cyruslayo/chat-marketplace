@@ -26,6 +26,8 @@ import {
 } from "./helpers/guest-account-sign-in.js";
 
 const EMAIL = "ada@example.test";
+/** A key that meets the 32-character minimum (Q7). */
+const TEST_KEY = "configured-test-key-0123456789abcdef";
 const SIGN_IN_PATH = "/account/sign-in";
 const CODE_PATH = "/account/sign-in/code";
 
@@ -71,8 +73,9 @@ test("AC1 failure path: a code request without a browser session still starts on
   try {
     const { challengeId } = await requestSignInCode(fixture.base, EMAIL, "");
     assert.ok(challengeId, "the sign-in page issues a browser session when none exists");
+    // A cookieless code POST starts a fresh session, as the sign-in page does; the empty challenge is then refused.
     const missing = await postForm(fixture.base, CODE_PATH, { email: EMAIL, challengeId: "", code: sender.codeFor(EMAIL), return: "/" }, "");
-    assert.equal(missing.status, 401);
+    assert.equal(missing.status, 400);
     assert.equal(setCookieValue(missing, ACCOUNT_COOKIE), undefined);
   } finally {
     await fixture.close();
@@ -156,7 +159,7 @@ test("AC3 failure path: a pre-sign-in cookie presented with the account cookie d
   }
 });
 
-test("AC4: Sign out everywhere closes an open stream in a second browser context and its next turn is refused", async () => {
+test("AC4: Sign out everywhere closes an open stream in a second browser context: the second context's next turn is refused", async () => {
   const { fixture, sender } = await accountFixture();
   try {
     // Device A and device B share one account. The conversation on B is open in its own browser context.
@@ -548,7 +551,7 @@ test("AC5 failure path: a forged client-address header is ignored unless Cloudfl
     fetch(`${base}${SIGN_IN_PATH}`, {
       method: "POST",
       redirect: "manual",
-      headers: { "content-type": "application/x-www-form-urlencoded", accept: "text/html", cookie, ...forged(attempt) },
+      headers: { "content-type": "application/x-www-form-urlencoded", accept: "text/html", origin: new URL(base).origin, cookie, ...forged(attempt) },
       body: new URLSearchParams({ email: `guest${attempt}@example.test`, return: "/" }).toString(),
     });
   const { fixture } = await accountFixture();
@@ -628,7 +631,7 @@ test("AC6: A valid same-origin path with a query is kept", async () => {
 });
 
 test("AC5 failure path: the configuration loader leaves Cloudflare address trust off unless SHORTLET_TRUST_CF_CONNECTING_IP is exactly true", async () => {
-  const base = { SHORTLET_GUEST_CODE_HASHING_KEY: "configured-test-key", RESEND_API_KEY: "re_test_key", SHORTLET_NOTIFICATION_FROM: "Shortlet <notify@example.test>" };
+  const base = { SHORTLET_GUEST_CODE_HASHING_KEY: TEST_KEY, RESEND_API_KEY: "re_test_key", SHORTLET_NOTIFICATION_FROM: "Shortlet <notify@example.test>" };
   assert.equal(loadGuestAccountComposition(base).trustCloudflareClientAddress, false, "unset means the socket address");
   assert.equal(loadGuestAccountComposition({ ...base, [TRUST_CLOUDFLARE_CLIENT_ADDRESS_ENV]: "yes" }).trustCloudflareClientAddress, false, "only the exact value enables it");
   // The server built from the loader's output: a rotating forged header is ignored by default and honoured when configured.
@@ -636,13 +639,13 @@ test("AC5 failure path: the configuration loader leaves Cloudflare address trust
     fetch(`${base_}${SIGN_IN_PATH}`, {
       method: "POST",
       redirect: "manual",
-      headers: { "content-type": "application/x-www-form-urlencoded", accept: "text/html", cookie, "cf-connecting-ip": `198.51.100.${attempt}` },
+      headers: { "content-type": "application/x-www-form-urlencoded", accept: "text/html", origin: new URL(base_).origin, cookie, "cf-connecting-ip": `198.51.100.${attempt}` },
       body: new URLSearchParams({ email: `loader${attempt}@example.test`, return: "/" }).toString(),
     });
   for (const [configured, expectedAt21] of [[false, 429], [true, 200]] as const) {
     const loaded = loadGuestAccountComposition(configured ? { ...base, [TRUST_CLOUDFLARE_CLIENT_ADDRESS_ENV]: "true" } : base);
     const sender = new CapturingEmailSender();
-    const fixture = await restartFixture({}, { sessionScopedGuestPrincipals: true, guestAccounts: { ...loaded, codeHashingKey: "configured-test-key", sender } });
+    const fixture = await restartFixture({}, { sessionScopedGuestPrincipals: true, guestAccounts: { ...loaded, codeHashingKey: TEST_KEY, sender } });
     try {
       for (let attempt = 1; attempt <= 20; attempt += 1) assert.equal((await sign(fixture.base, fixture.cookie, attempt)).status, 200, `request ${attempt}`);
       assert.equal((await sign(fixture.base, fixture.cookie, 21)).status, expectedAt21, `trust configured: ${configured}`);
@@ -650,4 +653,186 @@ test("AC5 failure path: the configuration loader leaves Cloudflare address trust
       await fixture.close();
     }
   }
+});
+
+// ---- Security review of PR #102 (D1, D2, D3, M7 gap, Q4, N3, Q7). Written before the fixes; red evidence in scratchpad. ----
+
+// D1: return values that URL normalisation turns into a protocol-relative path. The form value arrives raw.
+const D1_INPUTS = ["/..//evil.example", "/%2e%2e//x", "/a/..//x", "/.//x", "/x/../..//x"] as const;
+for (const raw of D1_INPUTS) {
+  test(`D1: POST /account/sign-in/code never redirects to a protocol-relative location (${raw})`, async () => {
+    const email = `d1-${raw.length}-${raw.charCodeAt(1)}@example.test`;
+    const { fixture, sender } = await accountFixture();
+    try {
+      const page = await getPage(fixture.base, `${SIGN_IN_PATH}?return=${raw}`, fixture.cookie);
+      assert.match(page.body, /name="return" value="\/"/, "the sign-in form carries the sanitised path");
+      const { challengeId } = await requestSignInCode(fixture.base, email, fixture.cookie, raw);
+      const done = await postForm(fixture.base, CODE_PATH, { email, challengeId, code: sender.codeFor(email), return: raw }, fixture.cookie);
+      assert.equal(done.status, 303);
+      assert.equal(done.location, "/", `${raw} is replaced by the default path`);
+    } finally {
+      await fixture.close();
+    }
+  });
+}
+
+test("D1 control: a same-origin path whose dot segments resolve inside the site is kept", async () => {
+  const email = "d1-control@example.test";
+  const { fixture, sender } = await accountFixture();
+  try {
+    const { challengeId } = await requestSignInCode(fixture.base, email, fixture.cookie, "/stays/../stays/search");
+    const done = await postForm(fixture.base, CODE_PATH, { email, challengeId, code: sender.codeFor(email), return: "/stays/../stays/search" }, fixture.cookie);
+    assert.equal(done.location, "/stays/search");
+  } finally {
+    await fixture.close();
+  }
+});
+
+// D2: a linked conversation is not readable with the interaction cookie alone once the account session has expired.
+test("D2: a linked conversation is not readable with the interaction cookie alone after the account session expires", async () => {
+  const sender = new CapturingEmailSender();
+  const { fixture } = await accountFixture({ sender });
+  try {
+    const bText = "I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people";
+    const second = await accountFixture({ sender, databasePath: fixture.databasePath });
+    try {
+      await second.fixture.send("/api/turn", { text: bText });
+      const bThread = second.fixture.threadId;
+      const deviceB = await signInDevice(second.fixture, sender, EMAIL, second.fixture.cookie);
+      advance(fixture, CODE_REQUEST_COOLDOWN_MS * 2);
+      const deviceA = await signInDevice(fixture, sender, EMAIL, fixture.cookie);
+      const bothCookies = cookieHeader({ [INTERACTION_COOKIE]: deviceA.interaction.split("=")[1], [ACCOUNT_COOKIE]: deviceA.account.split("=")[1] });
+      // Device A binds B's conversation through a request (an empty turn is refused after binding, so it changes nothing).
+      assert.equal((await postJson(fixture.base, "/api/turn", { threadId: bThread, text: "" }, bothCookies)).status, 400);
+      // While the account is live, A lists its linked work (this loads B's conversation into the server's cache), then reads it.
+      assert.equal((await getJson(fixture.base, "/api/committed-work", bothCookies)).status, 200);
+      // Before expiry device A's account reads B's conversation (control).
+      const during = await getJson(fixture.base, `/api/state?threadId=${bThread}`, bothCookies);
+      assert.equal((during.body.timeline as unknown[]).length > 0, true, "the linked conversation is readable while the account session is live");
+      // The account session expires (30 days, absolute); the interaction cookie stays.
+      advance(fixture, 31 * 24 * 60 * 60 * 1000);
+      const interactionOnly = cookieHeader({ [INTERACTION_COOKIE]: deviceA.interaction.split("=")[1] });
+      const after = await getJson(fixture.base, `/api/state?threadId=${bThread}`, interactionOnly);
+      assert.deepEqual(after.body.timeline, [], "the expired account reads no timeline for the linked conversation");
+      assert.deepEqual(after.body.surfaces, []);
+      const page = await getPage(fixture.base, `/conversation?threadId=${bThread}`, interactionOnly);
+      assert.equal(page.body.includes("Ikoyi"), false, "the conversation page does not render the linked conversation");
+      assert.ok(deviceB.account);
+    } finally {
+      await second.fixture.close();
+    }
+  } finally {
+    await fixture.close();
+  }
+});
+
+// D3: a browser whose interaction binding was retired gets a fresh, unlinked session on / and on the sign-in page.
+test("D3: a browser whose interaction binding was retired by sign-out everywhere starts a fresh unlinked session on / and on the sign-in page", async () => {
+  const sender = new CapturingEmailSender();
+  const { fixture } = await accountFixture({ sender });
+  try {
+    const stale = await signInDevice(fixture, sender, EMAIL, fixture.cookie);
+    const second = await accountFixture({ sender, databasePath: fixture.databasePath });
+    try {
+      advance(second.fixture, CODE_REQUEST_COOLDOWN_MS * 2);
+      const deviceB = await signInDevice(second.fixture, sender, EMAIL, second.fixture.cookie);
+      // Device A signs out everywhere: device B's binding is retired.
+      const out = await postForm(fixture.base, "/account/sign-out-everywhere", {}, cookieHeader({ [ACCOUNT_COOKIE]: stale.account.split("=")[1], [INTERACTION_COOKIE]: stale.interaction.split("=")[1] }));
+      assert.equal(out.status, 303);
+      const staleB = deviceB.interaction;
+      const home = await getPage(second.fixture.base, "/", staleB);
+      assert.equal(home.status, 200, "the home page starts a fresh session instead of refusing");
+      const freshHome = setCookieValue(home, INTERACTION_COOKIE);
+      assert.ok(freshHome, "a new interaction cookie is issued");
+      assert.notEqual(`${INTERACTION_COOKIE}=${freshHome}`, staleB);
+      const freshCookie = `${INTERACTION_COOKIE}=${freshHome}`;
+      const page = await getPage(second.fixture.base, SIGN_IN_PATH, staleB);
+      assert.equal(page.status, 200, "the sign-in page starts a fresh session instead of refusing");
+      assert.ok(setCookieValue(page, INTERACTION_COOKIE), "the sign-in page issues a new interaction cookie");
+      // The fresh session has no account identity: no account page, and no committed work.
+      assert.equal((await getPage(second.fixture.base, "/account", freshCookie)).status, 401);
+      assert.deepEqual((await getJson(second.fixture.base, "/api/committed-work", freshCookie)).body.committedWork, []);
+    } finally {
+      await second.fixture.close();
+    }
+  } finally {
+    await fixture.close();
+  }
+});
+
+// M7 gap: a refused conflicting sign-in revokes the session it created and sets no account cookie.
+test("AC13 failure path: a refused conflicting sign-in revokes the session it created and sets no account cookie", async () => {
+  const sender = new CapturingEmailSender();
+  const { fixture } = await accountFixture({ sender });
+  try {
+    const first = await signInDevice(fixture, sender, EMAIL, fixture.cookie);
+    const other = "other-account@example.test";
+    advance(fixture, CODE_REQUEST_COOLDOWN_MS * 2);
+    const { challengeId } = await requestSignInCode(fixture.base, other, first.interaction);
+    const refused = await postForm(fixture.base, CODE_PATH, { email: other, challengeId, code: sender.codeFor(other), return: "/" }, first.interaction);
+    assert.equal(refused.status, 409);
+    assert.equal(setCookieValue(refused, ACCOUNT_COOKIE), undefined, "no account cookie for the refused sign-in");
+    const active = fixture.environment.database.prepare("SELECT COUNT(*) AS count FROM guest_account_sessions WHERE revoked_at IS NULL").get([]) as { count: number };
+    assert.equal(active.count, 1, "only the first device's session is usable");
+  } finally {
+    await fixture.close();
+  }
+});
+
+// Q4: an account POST with no Origin and no same-origin Referer is refused.
+test("Q4: an account POST with no Origin and no same-origin Referer is refused and changes nothing", async () => {
+  const sender = new CapturingEmailSender();
+  const { fixture } = await accountFixture({ sender });
+  try {
+    const device = await signInDevice(fixture, sender, EMAIL, fixture.cookie);
+    const cookies = cookieHeader({ [ACCOUNT_COOKIE]: device.account.split("=")[1], [INTERACTION_COOKIE]: device.interaction.split("=")[1] });
+    const bare = await fetch(`${fixture.base}/account/sign-out`, { method: "POST", redirect: "manual", headers: { accept: "text/html", cookie: cookies, "content-type": "application/x-www-form-urlencoded" }, body: "" });
+    assert.equal(bare.status, 403, "no Origin and no Referer is refused");
+    assert.equal((await getPage(fixture.base, "/account", device.account)).status, 200, "the refused sign-out changed nothing");
+    const foreign = await fetch(`${fixture.base}/account/sign-out`, { method: "POST", redirect: "manual", headers: { accept: "text/html", cookie: cookies, referer: "https://attacker.example/page", "content-type": "application/x-www-form-urlencoded" }, body: "" });
+    assert.equal(foreign.status, 403, "a foreign Referer is refused");
+    const sameOrigin = await fetch(`${fixture.base}/account/sign-out`, { method: "POST", redirect: "manual", headers: { accept: "text/html", cookie: cookies, referer: `${fixture.base}/account`, "content-type": "application/x-www-form-urlencoded" }, body: "" });
+    assert.equal(sameOrigin.status, 303, "a same-origin Referer is accepted");
+  } finally {
+    await fixture.close();
+  }
+});
+
+// N3: with accounts disabled, sign-out still expires the account cookie.
+test("N3: with accounts disabled, sign-out still expires the account cookie instead of failing with a bare 503", async () => {
+  const fixture = await restartFixture({}, { sessionScopedGuestPrincipals: true, guestAccounts: null });
+  try {
+    const out = await postForm(fixture.base, "/account/sign-out", {}, cookieHeader({ [ACCOUNT_COOKIE]: "gass-stale.stale", [INTERACTION_COOKIE]: fixture.cookie.split("=")[1] }));
+    assert.equal(out.status, 303);
+    assert.match(out.setCookies.find((cookie) => cookie.startsWith(`${ACCOUNT_COOKIE}=`)) ?? "", /Max-Age=0/);
+    assert.equal((await getPage(fixture.base, SIGN_IN_PATH, fixture.cookie)).status, 503);
+  } finally {
+    await fixture.close();
+  }
+});
+
+// Q7: the code-hashing key must be at least 32 characters; a shorter key disables sign-in (no default).
+test("Q7: a code-hashing key shorter than 32 characters disables sign-in and sends no code (fail closed)", async () => {
+  const sender = new CapturingEmailSender();
+  const { fixture } = await accountFixture({ sender, codeHashingKey: "x".repeat(31) });
+  try {
+    assert.equal((await getPage(fixture.base, SIGN_IN_PATH, fixture.cookie)).status, 503);
+    assert.equal((await postForm(fixture.base, SIGN_IN_PATH, { email: EMAIL, return: "/" }, fixture.cookie)).status, 503);
+    assert.equal(sender.messages.length, 0);
+  } finally {
+    await fixture.close();
+  }
+  assert.equal(loadGuestAccountComposition({ SHORTLET_GUEST_CODE_HASHING_KEY: "x".repeat(31) }).codeHashingKey, null);
+});
+
+test("Q7: a code-hashing key of exactly 32 characters enables sign-in", async () => {
+  const { fixture, sender } = await accountFixture({ codeHashingKey: "k".repeat(32) });
+  try {
+    const { answer } = await requestSignInCode(fixture.base, EMAIL, fixture.cookie);
+    assert.equal(answer.status, 200);
+    assert.equal(sender.messages.length, 1);
+  } finally {
+    await fixture.close();
+  }
+  assert.equal(loadGuestAccountComposition({ SHORTLET_GUEST_CODE_HASHING_KEY: "k".repeat(32) }).codeHashingKey, "k".repeat(32));
 });
