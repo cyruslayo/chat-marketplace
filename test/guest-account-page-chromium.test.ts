@@ -62,7 +62,7 @@ test("AC3 and AC5: in real Chromium an invalid phone keeps the typed value and r
       const tab = await browser.createTab();
       await tab.setJavaScriptEnabled(false);
       await tab.setViewport(width, height);
-      await tab.navigate(`${fixture.base}/account/sign-in`);
+      await tab.navigate(`${fixture.base}/account/sign-in?return=/account`);
       await tab.waitForSelector("#email", 10_000);
       await tab.focus("#email");
       await tab.insertText(`${width}-${EMAIL}`);
@@ -95,7 +95,7 @@ test("AC2 and AC5: in real Chromium the email-change code step reflows at every 
     const tab = await browser.createTab();
     await tab.setJavaScriptEnabled(false);
     await tab.setViewport(320, 640);
-    await tab.navigate(`${fixture.base}/account/sign-in`);
+    await tab.navigate(`${fixture.base}/account/sign-in?return=/account`);
     await tab.waitForSelector("#email", 10_000);
     await tab.focus("#email");
     await tab.insertText(EMAIL);
