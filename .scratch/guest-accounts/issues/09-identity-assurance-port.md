@@ -40,7 +40,7 @@ New `test/guest-identity-assurance.test.ts`. Re-run `test/verify-access-with-liv
 1. **Default freshness duration.** Decided: no default. ADR 0094 requires an explicit authoritative `expiresAt`, and ADR 0084's proposed 180 days is not adopted. AC2 refuses a verified outcome without an explicit `expiresAt`. Nothing in this issue applies a freshness period.
 2. **Account-merge re-verification trigger.** Decided: dropped. ADR 0094 does not authorise a merge of two Guest Accounts, and conflicting links fail closed. The trigger is not implemented.
 
-Status: `resolved` (header). It rests on CI run 38105428700 (head 5361367, see the CI classification in the Answer): browser attempt 1 success; verify attempt 1 failed once in `test:non-browser` (1 of 1524, the failing test unidentified); verify attempt 2 passed on the same head; local runs 1524 of 1524. The unidentified failure is not resolved here; re-check it if it recurs. The decisions above are consistent with the Answer.
+Status: `resolved` (header). It rests on the final-head CI run 38108692903 (head 303d603: verify and browser both green on attempt 1; see the CI classification in the Answer). Earlier evidence, CI run 38105428700 (head 5361367): browser attempt 1 success; verify attempt 1 failed once in `test:non-browser` (1 of 1524, the failing test unidentified); verify attempt 2 passed on the same head; local runs 1524 of 1524. The unidentified failure is not resolved here; re-check it if it recurs. The decisions above are consistent with the Answer.
 
 ## Comments
 
@@ -119,6 +119,8 @@ Definition of Done:
 5. No invented policy: see the provisional constants above. The method allowlist and the status vocabulary come from ADR 0084 and 0094.
 6. No credential or identity material in logs or audit: yes. The import refusal names no value, and the Worker spec checks that.
 7. DoD item 7's `npm test` is covered by its two phases: `npm run test:workers` and `npm run test:non-browser` run locally, and the browser phase runs in CI (the `browser` job). Local `npm run check`, `test:workers` and `test:non-browser` are green on the final head. CI facts are in the CI classification below and in the PR #101 body.
+
+CI classification (run 38108692903, head 303d603): `verify` attempt 1 success (`npm run check`, `test:workers`, `test:non-browser` all green); `browser` attempt 1 success (real-browser tests green). No failure on this head.
 
 CI classification (run 38105428700, head 5361367): `browser` attempt 1 success. `verify` attempt 1 failed once in `test:non-browser` (1 of 1524): the failing test is UNIDENTIFIED, because the MCP job-log tool returns only the last 5000 lines and the full log blob was unreachable from the sandbox; the same suite passed 3 times locally (1524 of 1524) and the reviewer reproduced 1524 of 1524. `verify` attempt 2 on the same head passed. Thin evidence: one failed and one passed attempt, with no identified test. Not a root-caused fix.
 
