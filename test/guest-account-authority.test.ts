@@ -580,3 +580,28 @@ test("T1 failure path: the authority refuses a change-email code to the account'
     await fixture.close();
   }
 });
+
+test("T2b (isolation): a change-email code is refused for an account whose id differs, even when the session id and secret are the issuing session's", async () => {
+  // The account comparison in verifyCode is defence in depth: the session check refuses the same case on its own (see the source comment).
+  const fixture = await createGuestAccountFixture();
+  try {
+    const ada = signInGuestAccount(fixture.authority, TEST_GUEST_EMAIL);
+    fixture.advance(61_000);
+    const other = signInGuestAccount(fixture.authority, "other@example.test");
+    const challenge = fixture.authority.requestCode({
+      tenantId: ada.account.tenantId, email: "ada.new@example.test", purpose: "change_email", clientAddress: TEST_GUEST_ADDRESS,
+      accountGuestId: ada.account.accountGuestId, sessionId: ada.sessionId, sessionSecret: ada.sessionSecret, expectedRevision: ada.account.revision,
+    });
+    assert.throws(
+      () => fixture.authority.verifyCode({
+        tenantId: ada.account.tenantId, email: "ada.new@example.test", purpose: "change_email", clientAddress: TEST_GUEST_ADDRESS,
+        challengeId: challenge.challengeId, code: challenge.code,
+        accountGuestId: other.account.accountGuestId, sessionId: ada.sessionId, sessionSecret: ada.sessionSecret,
+      }),
+      (error: unknown) => error instanceof GuestAccountAuthorityError && error.code === "session_invalid",
+      "the issuing session id with another account id is refused",
+    );
+  } finally {
+    await fixture.close();
+  }
+});

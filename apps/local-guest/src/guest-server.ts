@@ -5961,8 +5961,15 @@ function sendPageError(
   res: HttpResponseLike,
   status: number,
   code: string,
+  // Account routes pass true: their refusals are never cached (delta 2).
+  noStore = false,
 ): void {
   if (!prefersHtml(req.headers.accept)) {
+    if (noStore) {
+      res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+      res.end(JSON.stringify({ ok: false, code }));
+      return;
+    }
     sendJson(res, status, { ok: false, code });
     return;
   }
@@ -5970,7 +5977,7 @@ function sendPageError(
     title: "This action couldn't be completed",
     message: "Return to your conversation for the current options.",
   };
-  res.writeHead(status, GUEST_HTML_HEADERS);
+  res.writeHead(status, noStore ? ACCOUNT_PAGE_HEADERS : GUEST_HTML_HEADERS);
   res.end(
     errorPage({
       status,
@@ -7156,7 +7163,7 @@ export function createGuestRequestHandler(
       // success and keeping the cookie; a plain sign-out always clears the cookie and rotates the browser.
       if (req.method === "POST" && (path === "/account/sign-out" || path === "/account/sign-out-everywhere")) {
         if (!accountPostAccepted(req, options.publicOrigin)) {
-          sendPageError(req, res, 403, "ORIGIN_REJECTED");
+          sendPageError(req, res, 403, "ORIGIN_REJECTED", true);
           return;
         }
         const everywhere = path === "/account/sign-out-everywhere";
@@ -7172,7 +7179,7 @@ export function createGuestRequestHandler(
               now: env.clock(),
             });
         if (everywhere && ended === null) {
-          res.writeHead(503, GUEST_HTML_HEADERS);
+          res.writeHead(503, ACCOUNT_PAGE_HEADERS);
           res.end(renderSignInUnavailableHtml());
           return;
         }
@@ -7196,14 +7203,14 @@ export function createGuestRequestHandler(
         res.end();
         return;
       }
-      res.writeHead(503, GUEST_HTML_HEADERS);
+      res.writeHead(503, ACCOUNT_PAGE_HEADERS);
       res.end(renderSignInUnavailableHtml());
       return;
     }
     const credentials = accountCredentialsOf(req);
     if (req.method === "GET" && path === "/account/sign-in") {
       // Rendering the form writes no binding; the first POST that needs a session creates it.
-      res.writeHead(200, GUEST_HTML_HEADERS);
+      res.writeHead(200, ACCOUNT_PAGE_HEADERS);
       res.end(renderSignInHtml({ returnPath: safeReturnPath(url.searchParams.get("return")) }));
       return;
     }
@@ -7235,20 +7242,20 @@ export function createGuestRequestHandler(
     }
     // ADR 0093 / ADR 0080: every state-changing form is origin-checked like the other Guest POSTs.
     if (!accountPostAccepted(req, options.publicOrigin)) {
-      sendPageError(req, res, 403, "ORIGIN_REJECTED");
+      sendPageError(req, res, 403, "ORIGIN_REJECTED", true);
       return;
     }
     let form: URLSearchParams;
     try {
       form = await readFormBody(req);
     } catch {
-      sendPageError(req, res, 400, "INVALID_EVENT");
+      sendPageError(req, res, 400, "INVALID_EVENT", true);
       return;
     }
     const returnPath = safeReturnPath(form.get("return"));
     const email = form.get("email") ?? "";
     const invalidEmail = (): void => {
-      res.writeHead(400, GUEST_HTML_HEADERS);
+      res.writeHead(400, ACCOUNT_PAGE_HEADERS);
       res.end(renderSignInHtml({ returnPath, email, error: { code: "invalid_email", message: GUEST_ACCOUNT_COPY.errors.invalidEmail } }));
     };
 
@@ -7259,7 +7266,7 @@ export function createGuestRequestHandler(
         return;
       }
       if (admittedSession.kind === "none") {
-        sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
+        sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED", true);
         return;
       }
       try {
@@ -7270,7 +7277,7 @@ export function createGuestRequestHandler(
       }
       try {
         const sent = await accounts.requestSignInCode({ email, clientAddress: accounts.clientAddress(req) });
-        res.writeHead(200, GUEST_HTML_HEADERS);
+        res.writeHead(200, ACCOUNT_PAGE_HEADERS);
         res.end(renderSignInCodeHtml({ email: sent.email, challengeId: sent.challengeId, returnPath, minutes: accounts.signInCodeLifetimeMinutes }));
       } catch (error) {
         if (error instanceof GuestAccountAuthorityError && error.code === "rate_limited") {
@@ -7278,7 +7285,7 @@ export function createGuestRequestHandler(
           return;
         }
         if (error instanceof SignInDeliveryError) {
-          res.writeHead(503, GUEST_HTML_HEADERS);
+          res.writeHead(503, ACCOUNT_PAGE_HEADERS);
           res.end(renderSignInHtml({ returnPath, email, error: { code: "send_failed", message: GUEST_ACCOUNT_COPY.errors.sendFailed } }));
           return;
         }
@@ -7294,7 +7301,7 @@ export function createGuestRequestHandler(
         return;
       }
       if (admittedSession.kind === "none") {
-        sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
+        sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED", true);
         return;
       }
       const session = admittedSession.session;
@@ -7319,7 +7326,7 @@ export function createGuestRequestHandler(
           invalidEmail();
           return;
         }
-        res.writeHead(200, GUEST_HTML_HEADERS);
+        res.writeHead(200, ACCOUNT_PAGE_HEADERS);
         res.end(renderSignInCodeHtml({ email, challengeId, returnPath, minutes: accounts.signInCodeLifetimeMinutes, error: codeFormError(error.code) }));
         return;
       }
@@ -7328,12 +7335,12 @@ export function createGuestRequestHandler(
         accounts.linkVerifiedSignIn(session.principalId, verified);
       } catch (error) {
         if (error instanceof GuestAccountAuthorityError && error.code === "account_conflict") {
-          res.writeHead(409, GUEST_HTML_HEADERS);
+          res.writeHead(409, ACCOUNT_PAGE_HEADERS);
           res.end(renderSignInHtml({ returnPath, email, error: { code: "account_conflict", message: GUEST_ACCOUNT_COPY.errors.linkConflict } }));
           return;
         }
         if (error instanceof GuestAccountAuthorityError && error.code === "session_invalid") {
-          sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
+          sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED", true);
           return;
         }
         throw error;
@@ -7354,7 +7361,7 @@ export function createGuestRequestHandler(
       const account = accounts.resolveAccount(credentials);
       const status = account ? accounts.accountStatus(account.accountGuestId) : null;
       if (!credentials || !account || !status) {
-        sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
+        sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED", true);
         return;
       }
       const session = existingBrowserSession(req);
@@ -7412,7 +7419,7 @@ export function createGuestRequestHandler(
             return;
           }
           if (error instanceof GuestAccountAuthorityError && error.code === "session_invalid") {
-            sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
+            sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED", true);
             return;
           }
           // Q6: the same address is refused by the authority too; a race with the check above answers the same page, never a 500.
@@ -7447,7 +7454,7 @@ export function createGuestRequestHandler(
           return;
         }
         if (error.code === "session_invalid") {
-          sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
+          sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED", true);
           return;
         }
         if (error.code === "account_conflict") {
@@ -7484,7 +7491,7 @@ export function createGuestRequestHandler(
     if (path === "/account/sign-out-everywhere") {
       const account = accounts.resolveAccount(credentials);
       if (!account) {
-        sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
+        sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED", true);
         return;
       }
       // ADR 0093 / ADR 0070: every account session ends, and so does the interaction authority of each Linked Principal.

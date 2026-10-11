@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SHORTLET_SCHEMA_MIGRATIONS, SHORTLET_SCHEMA_VERSION } from "../apps/cloudflare/src/schema.js";
@@ -292,16 +292,14 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 /** The check-in helper and the assurance store. Nothing may reach the helper; the store has the listed importers only. */
 const GUARDED_HELPER = "guest-check-in-eligibility";
 const GUARDED_STORE = "guest-identity-assurance";
-/**
- * Leaves: the migration manifest and the import validator. Traversal stops here, so a route that imports them does not reach the store.
- * Nothing else is a leaf: the account composition below is traversed like any other module (review D1).
- */
+const OPS_IMPORT = "apps/cloudflare/src/ops-import.ts";
+const SCHEMA = "apps/cloudflare/src/schema.ts";
+const CHECK_IN_HELPER = "domains/shortlet/src/guest-check-in-eligibility.ts";
 /**
  * The local guest server is the gateway (review D1): the account runtime, and so the store, is reachable only through it. A traversal
  * stops at the gateway, and its direct importers are pinned below, so a booking or route module cannot reach the store around it.
  */
 const COMPOSITION_ROOT = "apps/local-guest/src/guest-server.ts";
-const LEAF_FILES = ["apps/cloudflare/src/ops-import.ts", "apps/cloudflare/src/schema.ts", COMPOSITION_ROOT];
 /** The only modules that compose the gateway: the pilot server and Worker, the local and pilot CLIs, and the preflight script. */
 const GATEWAY_IMPORTERS = [
   "apps/cloudflare/src/shortlet-pilot-do.ts",
@@ -311,6 +309,19 @@ const GATEWAY_IMPORTERS = [
   "scripts/assistant-preflight.ts",
 ].sort();
 /**
+ * Leaves: traversal stops at these, so the modules they import are not walked from an entry. Stopping is safe only because each leaf's
+ * importers are pinned exactly below (review 1): a new importer of a leaf fails the guard, so it cannot reach the store unseen.
+ */
+const LEAF_FILES = [OPS_IMPORT, SCHEMA, COMPOSITION_ROOT];
+/** Who may import each leaf, and why. Any other importer fails the guard. */
+const LEAF_IMPORTERS: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  // The ops HTTP routes use the import validator; the Node export script round-trips the daily export.
+  [OPS_IMPORT]: ["apps/cloudflare/src/ops-routes.ts", "scripts/export-node-sqlite.ts"].sort(),
+  // The ops routes check the schema version; the Durable Object applies the migrations; the Node script applies them for restores.
+  [SCHEMA]: ["apps/cloudflare/src/ops-routes.ts", "apps/cloudflare/src/shortlet-pilot-do.ts", "scripts/export-node-sqlite.ts"].sort(),
+  [COMPOSITION_ROOT]: GATEWAY_IMPORTERS,
+});
+/**
  * Issue 07 account composition. The identity-status reader (read-only `currentAssurance`) is imported only by the account runtime, and
  * the runtime only by the gateway. Both may reach the store; no other module may (AC5).
  */
@@ -318,28 +329,43 @@ const STATUS_READER = "apps/local-guest/src/guest-identity-status.ts";
 const ACCOUNT_RUNTIME = "apps/local-guest/src/guest-account-runtime.ts";
 const ACCOUNT_PAGES = "apps/local-guest/src/guest-account-pages.ts";
 const ACCOUNT_COMPOSITION = [ACCOUNT_RUNTIME, STATUS_READER];
-const STORE_IMPORTERS = [...LEAF_FILES.filter((file) => file !== COMPOSITION_ROOT), "domains/shortlet/src/guest-check-in-eligibility.ts", STATUS_READER].sort();
+/** The modules that import the store directly: the two migration manifests and the import validator, the check-in helper and the reader. */
+const STORE_IMPORTERS = [OPS_IMPORT, SCHEMA, CHECK_IN_HELPER, STATUS_READER].sort();
 /**
- * Every source root that can host a booking, route, application, payment or composition module. Read from the filesystem, so a new
- * app or package is swept without a list edit: `apps/*\/src`, `packages/*\/src`, plus `domains` and `scripts`.
+ * Every source root that can host a booking, route, application, payment or composition module, including the app scripts (review 4d).
+ * Read from the filesystem, so a new app or package is swept without a list edit: `apps/*\/src`, `apps/*\/scripts`, `packages/*\/src`,
+ * plus `domains` and `scripts`.
  */
-function sourceRootsUnder(directory: string): string[] {
+function sourceRootsUnder(directory: string, child: string): string[] {
   return readdirSync(join(ROOT, directory), { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && existsSync(join(ROOT, directory, entry.name, "src")))
-    .map((entry) => `${directory}/${entry.name}/src`);
+    .filter((entry) => entry.isDirectory() && existsSync(join(ROOT, directory, entry.name, child)))
+    .map((entry) => `${directory}/${entry.name}/${child}`);
 }
-const SOURCE_ROOTS = ["domains", "scripts", ...sourceRootsUnder("apps"), ...sourceRootsUnder("packages")];
+const SOURCE_ROOTS = ["domains", "scripts", ...sourceRootsUnder("apps", "src"), ...sourceRootsUnder("apps", "scripts"), ...sourceRootsUnder("packages", "src")];
 
-/** Every module form the sweep reads: TypeScript, JavaScript and their module variants. */
+/** Every module form the sweep reads: TypeScript, JavaScript and their module variants (review 4a). */
 const MODULE_EXTENSION = /\.(?:ts|tsx|mts|cts|js|mjs|cjs)$/;
 const moduleName = (file: string) => basename(file).replace(MODULE_EXTENSION, "");
+
+/**
+ * Every module specifier a file names: `import`/`export ... from`, bare `import "x"`, `import("x")`, `require("x")` and
+ * `import x = require("x")` (review 4a, 4b). Relative specifiers only: the sweep is about the repository's own modules.
+ */
+const SPECIFIER_PATTERNS = [
+  /\b(?:from|import)\s*\(?\s*["'](\.{1,2}\/[^"']+)["']/g,
+  /(?<![\w$.])require\s*\(\s*["'](\.{1,2}\/[^"']+)["']\s*\)/g,
+];
+export function relativeSpecifiers(text: string): string[] {
+  return SPECIFIER_PATTERNS.flatMap((pattern) => [...text.matchAll(pattern)].map((match) => match[1]!));
+}
 
 function sourceFiles(directory: string): string[] {
   if (!existsSync(directory)) return [];
   const out: string[] = [];
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name);
-    if (entry.name === "node_modules" || entry.name === "dist" || entry.name === "test") continue;
+    if (entry.name === "node_modules" || entry.name === "dist") continue;
+    // Review 4e: a `test` directory is walked like any other, so a non-test module cannot hide in it. Only `.test.` files are skipped.
     if (entry.isDirectory()) out.push(...sourceFiles(path));
     else if (MODULE_EXTENSION.test(entry.name) && !entry.name.endsWith(".d.ts") && !entry.name.includes(".test.")) out.push(path);
   }
@@ -349,33 +375,38 @@ function sourceFiles(directory: string): string[] {
 const ALL_SOURCE = SOURCE_ROOTS.flatMap((root) => sourceFiles(join(ROOT, root)));
 const importCache = new Map<string, string[]>();
 
-/** A relative specifier resolved to the module file it names, across TypeScript and JavaScript forms. */
+/**
+ * A relative specifier resolved to the module file it names. A directory-style import resolves to its index module (review 4), so it is
+ * never read as a file. A specifier that names nothing resolves to a path that does not exist and is skipped by the caller.
+ */
 function resolveSpecifier(file: string, specifier: string): string {
-  const base = resolve(dirname(file), specifier);
+  // A query (for example Vite's `?raw` asset import) names an asset, not a module: the path before it is what is resolved.
+  const base = resolve(dirname(file), specifier.split("?")[0]!);
+  const withoutJs = base.endsWith(".js") ? base.slice(0, -3) : base;
   const candidates = base.endsWith(".js")
-    ? [`${base.slice(0, -3)}.ts`, base, `${base.slice(0, -3)}.mjs`, `${base.slice(0, -3)}.cjs`]
-    : [base, `${base}.ts`, `${base}.mjs`, `${base}.js`];
-  return candidates.find((candidate) => existsSync(candidate)) ?? base;
+    ? [`${withoutJs}.ts`, base, `${withoutJs}.mjs`, `${withoutJs}.cjs`, join(withoutJs, "index.ts"), join(withoutJs, "index.js")]
+    : [base, `${base}.ts`, `${base}.mjs`, `${base}.cjs`, `${base}.js`, join(base, "index.ts"), join(base, "index.js")];
+  return candidates.find((candidate) => existsSync(candidate) && statSync(candidate).isFile()) ?? base;
 }
 
-/** Relative imports and re-exports (`export * from`, bare `import "x"`, `import("x")`), resolved to the `.ts` file they name. */
+/** The repository modules a file imports, resolved to the files they name. Only module files are read; an asset target is a leaf. */
 function importsOf(file: string): string[] {
   const cached = importCache.get(file);
   if (cached) return cached;
-  const text = readFileSync(file, "utf8");
-  const specifiers = [...text.matchAll(/\b(?:from|import)\s*\(?\s*["'](\.{1,2}\/[^"']+)["']/g)].map((match) => match[1]!);
-  const resolved = specifiers.map((specifier) => resolveSpecifier(file, specifier));
+  if (!MODULE_EXTENSION.test(file) || !existsSync(file)) return [];
+  const resolved = relativeSpecifiers(readFileSync(file, "utf8")).map((specifier) => resolveSpecifier(file, specifier));
   importCache.set(file, resolved);
   return resolved;
 }
 
 const rel = (file: string) => relative(ROOT, file).split(sep).join("/");
 const isGuarded = (file: string) => [GUARDED_HELPER, GUARDED_STORE].includes(moduleName(file));
+const importersOf = (base: string) => ALL_SOURCE.filter((file) => importsOf(file).some((target) => moduleName(target) === base)).map(rel).sort();
 
 test("AC5: no booking, route, application or payment module reaches the eligibility helper or the assurance store, through barrels or direct imports", () => {
   const leaves = new Set(LEAF_FILES.map((file) => join(ROOT, file)));
   const composition = new Set(ACCOUNT_COMPOSITION.map((file) => join(ROOT, file)));
-  // The account runtime and reader are reached only through the gateway (pinned above), so they are not entries themselves.
+  // The account runtime and reader are reached only through the gateway (pinned below), so they are not entries themselves.
   const entries = ALL_SOURCE.filter((file) => !isGuarded(file) && !leaves.has(file) && !composition.has(file));
   assert.ok(entries.length > 100, "the sweep covers every source root");
   const violations: string[] = [];
@@ -388,27 +419,30 @@ test("AC5: no booking, route, application or payment module reaches the eligibil
       seen.add(file);
       if (isGuarded(file)) violations.push(`${rel(entry)} reaches ${rel(file)}`);
       if (file !== entry && leaves.has(file)) continue;
-      if (existsSync(file)) queue.push(...importsOf(file));
+      queue.push(...importsOf(file));
     }
   }
   assert.deepEqual(violations, []);
 });
 
-test("AC5: only the schema manifest, the import validator and the check-in helper import the assurance store, and nothing imports the eligibility helper", () => {
-  const importersOf = (base: string) => ALL_SOURCE.filter((file) => importsOf(file).some((target) => moduleName(target) === base)).map(rel).sort();
+test("AC5 (review 1): each leaf is imported by exactly the pinned modules, so no route or booking module can reach the store through a leaf", () => {
+  for (const leaf of LEAF_FILES) {
+    assert.deepEqual(importersOf(moduleName(leaf)), [...LEAF_IMPORTERS[leaf]!].sort(), `the importers of ${leaf}`);
+  }
+});
+
+test("AC5: only the schema manifest, the import validator, the check-in helper and the status reader import the assurance store, and nothing imports the eligibility helper", () => {
   assert.deepEqual(importersOf(GUARDED_STORE), STORE_IMPORTERS);
   assert.deepEqual(importersOf(GUARDED_HELPER), []);
 });
 
 test("AC5 (issue 07, review D1): only the five composition entrypoints import the gateway, only the gateway imports the account runtime, and only the runtime imports the identity-status reader", () => {
-  const importersOf = (base: string) => ALL_SOURCE.filter((file) => importsOf(file).some((target) => moduleName(target) === base)).map(rel).sort();
   assert.deepEqual(importersOf(moduleName(COMPOSITION_ROOT)), GATEWAY_IMPORTERS);
   assert.deepEqual(importersOf(moduleName(ACCOUNT_RUNTIME)), [COMPOSITION_ROOT]);
   assert.deepEqual(importersOf(moduleName(STATUS_READER)), [ACCOUNT_RUNTIME]);
 });
 
 test("AC5 (issue 07): the account pages import neither the store nor the eligibility helper", () => {
-  const importersOf = (base: string) => ALL_SOURCE.filter((file) => importsOf(file).some((target) => moduleName(target) === base)).map(rel).sort();
   const pageTargets = importsOf(join(ROOT, ACCOUNT_PAGES)).map(moduleName);
   assert.ok(!pageTargets.includes(GUARDED_STORE) && !pageTargets.includes(GUARDED_HELPER), "the account pages import no assurance module");
 });
@@ -423,6 +457,49 @@ test("AC5: no non-test source imports this issue's test-only fixtures", () => {
     .filter((target) => testOnly.has(target))
     .map((target) => `${rel(file)} imports ${rel(target)}`));
   assert.deepEqual(violations, []);
+});
+
+test("AC5 (review 4a, 4b): require() and import x = require() are module edges the sweep reads", () => {
+  assert.deepEqual(relativeSpecifiers('const x = require("./a.js");'), ["./a.js"]);
+  assert.deepEqual(relativeSpecifiers('import b = require("../b.js");'), ["../b.js"]);
+  assert.deepEqual(relativeSpecifiers('const c = await import("./c.js"); export * from "./d.js";'), ["./c.js", "./d.js"]);
+  assert.deepEqual(relativeSpecifiers('const r = createRequire(import.meta.url); r.resolve("./e.js");'), [], "a method named require on another object is not a module edge");
+});
+
+test("AC5 (review 4c): no source module imports through a non-literal import() or require() that the sweep cannot resolve", () => {
+  // Minimal allowlist, empty on purpose: a dynamic import must name its module with a string literal (review 4c).
+  const DYNAMIC_ALLOWLIST: readonly string[] = [];
+  const dynamic = /(?<![\w$.])(?:import|require)\s*\(\s*(?!["'])/;
+  // Comments are removed first, so prose such as "import (runbook R5)" is not a call. A `//` inside a string literal can hide a
+  // call on the same line; that is accepted for this detection guard and noted in the test.
+  const code = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+  const violations = ALL_SOURCE.filter((file) => !DYNAMIC_ALLOWLIST.includes(rel(file)) && dynamic.test(code(readFileSync(file, "utf8"))))
+    .map(rel);
+  assert.deepEqual(violations, []);
+});
+
+test("AC5: every discovered source root contributes at least one module to the sweep", () => {
+  // The roots are read from the filesystem, so a new app or package is swept without a list edit.
+  assert.ok(SOURCE_ROOTS.includes("apps/web-agent/src"));
+  for (const root of SOURCE_ROOTS) {
+    assert.ok(ALL_SOURCE.some((file) => file.startsWith(join(ROOT, root) + sep)), `${root} contributes a module`);
+  }
+});
+
+test("AC5 (review 4d): the apps' scripts directories are swept as source roots", () => {
+  assert.ok(SOURCE_ROOTS.some((root) => root.startsWith("apps/") && root.endsWith("/scripts")), "an app scripts directory is a source root");
+});
+
+test("AC5 (review 4e): no non-test module hides in a test-named directory or file under a source root", () => {
+  // `.test.` files are skipped as tests. A module in a `test` directory is walked like any other, so it is an entry and is checked.
+  const testDirectoryModules = ALL_SOURCE.filter((file) => /(^|\/)test\//.test(rel(file)) && !/\.test\./.test(rel(file)));
+  for (const file of testDirectoryModules) {
+    assert.ok(importsOf(file).every((target) => !moduleName(target).startsWith(GUARDED_STORE)), `${rel(file)} must not reach the store`);
+  }
+});
+
+test("AC5: the sweep reads JavaScript modules as well as TypeScript", () => {
+  assert.ok(ALL_SOURCE.some((file) => file.endsWith(".mjs")), "at least one .mjs module is swept");
 });
 
 // AC6 ---------------------------------------------------------------------------------------------------------------

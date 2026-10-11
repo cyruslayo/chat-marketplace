@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import test from "node:test";
 import { SqliteGuestIdentityAssurance } from "../domains/shortlet/src/guest-identity-assurance.js";
 import { GUEST_ACCOUNT_COPY } from "../apps/web-agent/src/guest-content.js";
@@ -15,6 +17,7 @@ import {
   cookieHeader,
   getPage,
   postForm,
+  requestSignInCode,
   signInDevice,
   wrongCodeFor,
 } from "./helpers/guest-account-sign-in.js";
@@ -605,10 +608,9 @@ test("T3: an address held by another account gets the same code step at the requ
     const held = await requestEmailChange(a.fixture.base, deviceCookies(deviceA), OTHER_EMAIL);
     assert.equal(free.status, 200);
     assert.equal(held.status, 200, "an address held elsewhere is not disclosed at the request step");
-    const shape = (body: string) => body.replace(/value="[^"]*"/g, "value").replace(/gacct-[A-Za-z0-9_-]+/g, "");
-    assert.match(held.body, /name="challengeId"/);
-    assert.match(free.body, /name="challengeId"/);
-    assert.equal(shape(held.body).includes('name="code"'), shape(free.body).includes('name="code"'));
+    // The whole normalised body must match: only the typed address and the per-request challenge may differ.
+    const shape = (body: string) => body.replace(/value="[^"]*"/g, 'value=""').replace(/gacct-[A-Za-z0-9_-]+/g, "");
+    assert.equal(shape(held.body), shape(free.body), "the code step is the same page for a held address and a free one");
     assert.ok(deviceB.account);
   } finally {
     await b.fixture.close();
@@ -645,5 +647,99 @@ test("Nit: the code step shows its back link and its lifetime from GUEST_ACCOUNT
     assert.ok(requested.body.includes("It expires in 10 minutes."), "the lifetime sentence comes from the copy block");
   } finally {
     await fixture.close();
+  }
+});
+
+// Delta review (issue 07): no-store on every account-route response that can carry an email, phone or typed value.
+
+test("AC5 (delta 2): every account sign-in response sends Cache-Control no-store (sign-in form, code page, errors, conflict)", async () => {
+  const sender = new CapturingEmailSender();
+  const { a, b, deviceA, deviceB } = await twoAccounts(sender);
+  try {
+    const noStore = (answer: Response, label: string) => assert.match(answer.headers.get("cache-control") ?? "", /no-store/, `${label} is not cached`);
+    const get = await fetch(`${a.fixture.base}/account/sign-in`, { redirect: "manual", headers: { accept: "text/html" } });
+    assert.equal(get.status, 200);
+    noStore(get, "GET /account/sign-in");
+    const badEmail = await fetch(`${a.fixture.base}/account/sign-in`, { method: "POST", redirect: "manual", headers: { "content-type": "application/x-www-form-urlencoded", origin: new URL(a.fixture.base).origin, accept: "text/html" }, body: "email=not-an-email" });
+    assert.equal(badEmail.status, 400);
+    noStore(badEmail, "POST /account/sign-in with an invalid email");
+    // A fresh browser: the code page carries the typed email in a hidden field.
+    const sent = await postForm(a.fixture.base, "/account/sign-in", { email: "fresh@example.test" }, "");
+    assert.equal(sent.status, 200);
+    const sentHeaders = await fetch(`${a.fixture.base}/account/sign-in`, { redirect: "manual", headers: { accept: "text/html" } });
+    noStore(sentHeaders, "the sign-in form after a request");
+    // Wrong code on the code step (the typed email and challenge come back in the body).
+    const wrong = await fetch(`${a.fixture.base}/account/sign-in/code`, { method: "POST", redirect: "manual", headers: { "content-type": "application/x-www-form-urlencoded", origin: new URL(a.fixture.base).origin, accept: "text/html" }, body: new URLSearchParams({ email: "fresh@example.test", challengeId: /name="challengeId" value="([^"]+)"/.exec(sent.body)?.[1] ?? "", code: "000000" }).toString() });
+    assert.equal(wrong.status, 200);
+    noStore(wrong, "POST /account/sign-in/code with a wrong code");
+    // Conflict: device A is linked to Ada and signs in as another address (the request names that address).
+    advanceClock(a.fixture, CODE_REQUEST_COOLDOWN_MS * 2); // the other address's code was requested for device B moments ago
+    const other = await requestSignInCode(a.fixture.base, OTHER_EMAIL, deviceA.interaction);
+    assert.ok(other.challengeId, "the conflicting sign-in gets a challenge");
+    const conflict = await fetch(`${a.fixture.base}/account/sign-in/code`, { method: "POST", redirect: "manual", headers: { "content-type": "application/x-www-form-urlencoded", origin: new URL(a.fixture.base).origin, accept: "text/html", cookie: deviceA.interaction }, body: new URLSearchParams({ email: OTHER_EMAIL, challengeId: other.challengeId, code: sender.codeFor(OTHER_EMAIL) }).toString() });
+    assert.equal(conflict.status, 409, "the account conflict answers 409");
+    noStore(conflict, "POST /account/sign-in/code on a conflicting link");
+    assert.ok(deviceB.account);
+  } finally {
+    await b.fixture.close();
+    await a.fixture.close();
+  }
+});
+
+test("AC4 (delta 2): the account route's 401 and 403 refusals send Cache-Control no-store", async () => {
+  const { fixture, sender } = await accountFixture();
+  try {
+    const device = await signInDevice(fixture, sender, EMAIL, fixture.cookie);
+    const unauthenticated = await fetch(`${fixture.base}/account/email`, { method: "POST", redirect: "manual", headers: { "content-type": "application/x-www-form-urlencoded", origin: new URL(fixture.base).origin, accept: "text/html" }, body: `email=${encodeURIComponent(NEW_EMAIL)}` });
+    assert.equal(unauthenticated.status, 401);
+    assert.match(unauthenticated.headers.get("cache-control") ?? "", /no-store/, "the 401 is not cached");
+    const crossOrigin = await fetch(`${fixture.base}/account/phone`, { method: "POST", redirect: "manual", headers: { "content-type": "application/x-www-form-urlencoded", origin: "https://evil.example", accept: "text/html", cookie: deviceCookies(device) }, body: "phone=12345" });
+    assert.equal(crossOrigin.status, 403);
+    assert.match(crossOrigin.headers.get("cache-control") ?? "", /no-store/, "the 403 is not cached");
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("Delta 3 (ADR 0078): no hard-coded English copy remains in the account pages module; every label comes from GUEST_ACCOUNT_COPY", () => {
+  const source = readFileSync(join(process.cwd(), "apps", "local-guest", "src", "guest-account-pages.ts"), "utf8");
+  // Text between tags, and quoted sentences: the two places a label can hide in this module.
+  const textNodes = [...source.matchAll(/>([A-Za-z][^<>${}`]*)</g)].map((match) => match[1]!.trim());
+  const quoted = [...source.matchAll(/"([A-Z][a-z]+(?: [^"\n]*)?)"/g)].map((match) => match[1]!).filter((text) => text.includes(" "));
+  assert.deepEqual(textNodes, [], "no text node is written inline");
+  assert.deepEqual(quoted, [], "no quoted sentence is written inline");
+  assert.ok(!source.includes("Back to your conversation"), "the back-link label is copy");
+  assert.ok(!source.includes("Try again"), "the retry label is copy");
+});
+
+test("AC3 (delta 5): a phone input with no error names only its help text in aria-describedby", async () => {
+  const { fixture, sender } = await accountFixture();
+  try {
+    const device = await signInDevice(fixture, sender, EMAIL, fixture.cookie);
+    const page = await accountPage(fixture.base, deviceCookies(device));
+    const phoneTag = /<input id="phone"[^>]*>/.exec(page.body)?.[0] ?? "";
+    assert.match(phoneTag, /aria-describedby="phone-help"/, "only the help text is named when there is no error");
+    assert.ok(!/aria-invalid/.test(phoneTag), "no error state is claimed");
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("AC4 (delta 5, mirror of D4): an interaction cookie of account B with the account cookie of account A shows nothing and writes nothing", async () => {
+  const sender = new CapturingEmailSender();
+  const { a, b, deviceA, deviceB } = await twoAccounts(sender);
+  try {
+    const mixed = `${deviceB.interaction}; ${deviceA.account}`;
+    const page = await getPage(a.fixture.base, "/account", mixed);
+    assert.equal(page.status, 303, "the mismatched browser is sent to sign-in");
+    assert.ok(!page.body.includes(EMAIL) && !page.body.includes(OTHER_EMAIL), "no account email is shown");
+    const before = (a.fixture.environment.database.prepare("SELECT guest_id, tenant_id, phone_number, revision FROM guest_contacts ORDER BY guest_id, tenant_id").all([]) as unknown[]);
+    const refused = await postForm(a.fixture.base, "/account/phone", { phone: "+2348099999999" }, mixed);
+    assert.equal(refused.status, 303);
+    const after = (a.fixture.environment.database.prepare("SELECT guest_id, tenant_id, phone_number, revision FROM guest_contacts ORDER BY guest_id, tenant_id").all([]) as unknown[]);
+    assert.deepEqual(after, before, "no contact row changed");
+  } finally {
+    await b.fixture.close();
+    await a.fixture.close();
   }
 });

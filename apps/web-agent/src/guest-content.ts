@@ -342,7 +342,10 @@ export const GUEST_ACCOUNT_COPY = Object.freeze({
   signInRequired: "Sign in to see your account.",
   // Issue 07 account page. Functional wording, not final: awaiting human approval with the rest of this block.
   accountTitle: "Your account",
+  brandName: "Shortlet",
   brandEyebrow: "Shortlet",
+  backToConversation: "Back to your conversation",
+  tryAgain: "Try again",
   backToAccount: "Back to your account",
   codeExpiresIn: (minutes: number): string => `It expires in ${minutes} minutes.`,
   accountIntro: "Check your details, change your email or phone, and manage where you are signed in.",

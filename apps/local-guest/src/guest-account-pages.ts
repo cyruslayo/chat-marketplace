@@ -32,10 +32,10 @@ function inlineError(id: string, error: AccountFormError | undefined): string {
 export function renderSignInHtml(input: { readonly returnPath: string; readonly email?: string; readonly error?: AccountFormError }): string {
   const invalid = input.error === undefined ? "" : ` aria-invalid="true" aria-describedby="email-error"`;
   return pageShell({
-    title: `${GUEST_ACCOUNT_COPY.signInTitle} · Shortlet`,
+    title: `${GUEST_ACCOUNT_COPY.signInTitle} · ${GUEST_ACCOUNT_COPY.brandName}`,
     width: "narrow",
-    frame: appBar("/", "Back to your conversation", { href: SIGN_IN_PATH, label: GUEST_ACCOUNT_COPY.appBarSignIn, icon: "info" }),
-    body: `<header class="ui-page__header"><p class="ui-eyebrow">Shortlet</p><h1>${GUEST_ACCOUNT_COPY.signInTitle}</h1><p>${escapeHtml(GUEST_ACCOUNT_COPY.signInIntro)}</p></header>` +
+    frame: appBar("/", GUEST_ACCOUNT_COPY.backToConversation, { href: SIGN_IN_PATH, label: GUEST_ACCOUNT_COPY.appBarSignIn, icon: "info" }),
+    body: `<header class="ui-page__header"><p class="ui-eyebrow">${GUEST_ACCOUNT_COPY.brandEyebrow}</p><h1>${GUEST_ACCOUNT_COPY.signInTitle}</h1><p>${escapeHtml(GUEST_ACCOUNT_COPY.signInIntro)}</p></header>` +
       `<form class="ui-panel" method="post" action="${SIGN_IN_PATH}">` +
       `<div class="ui-field"><label class="ui-field__label" for="email">${escapeHtml(GUEST_ACCOUNT_COPY.emailLabel)}</label>` +
       `<input id="email" name="email" type="email" autocomplete="email" inputmode="email" autocapitalize="off" spellcheck="false" maxlength="254" required value="${escapeHtml(input.email ?? "")}"${invalid}>` +
@@ -56,10 +56,10 @@ export function renderSignInCodeHtml(input: {
 }): string {
   const invalid = input.error === undefined ? "" : ` aria-invalid="true" aria-describedby="code-error"`;
   return pageShell({
-    title: `${GUEST_ACCOUNT_COPY.codeTitle} · Shortlet`,
+    title: `${GUEST_ACCOUNT_COPY.codeTitle} · ${GUEST_ACCOUNT_COPY.brandName}`,
     width: "narrow",
-    frame: appBar("/", "Back to your conversation", { href: SIGN_IN_PATH, label: GUEST_ACCOUNT_COPY.appBarSignIn, icon: "info" }),
-    body: `<header class="ui-page__header"><p class="ui-eyebrow">Shortlet</p><h1>${GUEST_ACCOUNT_COPY.codeTitle}</h1><p>${escapeHtml(GUEST_ACCOUNT_COPY.codeIntro)} It expires in ${input.minutes} minutes.</p></header>` +
+    frame: appBar("/", GUEST_ACCOUNT_COPY.backToConversation, { href: SIGN_IN_PATH, label: GUEST_ACCOUNT_COPY.appBarSignIn, icon: "info" }),
+    body: `<header class="ui-page__header"><p class="ui-eyebrow">${GUEST_ACCOUNT_COPY.brandEyebrow}</p><h1>${GUEST_ACCOUNT_COPY.codeTitle}</h1><p>${escapeHtml(GUEST_ACCOUNT_COPY.codeIntro)} ${escapeHtml(GUEST_ACCOUNT_COPY.codeExpiresIn(input.minutes))}</p></header>` +
       `<form class="ui-panel" method="post" action="${CODE_PATH}">` +
       `<input type="hidden" name="email" value="${escapeHtml(input.email)}">` +
       `<input type="hidden" name="challengeId" value="${escapeHtml(input.challengeId)}">` +
@@ -112,9 +112,9 @@ export function renderAccountHtml(input: AccountPageInput): string {
   const phoneInvalid = input.phoneError === undefined ? "" : ` aria-invalid="true"`;
   const notice = input.notice === undefined ? "" : `<p class="ui-banner ui-banner--success" role="status" data-notice="${input.notice}">${escapeHtml(NOTICES[input.notice])}</p>`;
   return pageShell({
-    title: `${GUEST_ACCOUNT_COPY.accountTitle} · Shortlet`,
+    title: `${GUEST_ACCOUNT_COPY.accountTitle} · ${GUEST_ACCOUNT_COPY.brandName}`,
     width: "narrow",
-    frame: appBar("/", "Back to your conversation", { href: "/account", label: GUEST_ACCOUNT_COPY.appBarAccount, icon: "users" }),
+    frame: appBar("/", GUEST_ACCOUNT_COPY.backToConversation, { href: "/account", label: GUEST_ACCOUNT_COPY.appBarAccount, icon: "users" }),
     body: `<header class="ui-page__header"><p class="ui-eyebrow">${GUEST_ACCOUNT_COPY.brandEyebrow}</p><h1>${GUEST_ACCOUNT_COPY.accountTitle}</h1><p>${escapeHtml(GUEST_ACCOUNT_COPY.accountIntro)}</p></header>` +
       notice +
       `<section class="ui-panel" data-account-state="signed-in"><h2>${GUEST_ACCOUNT_COPY.detailsHeading}</h2>` +
@@ -145,7 +145,7 @@ export function renderAccountHtml(input: AccountPageInput): string {
 export function renderEmailChangeCodeHtml(input: { readonly newEmail: string; readonly challengeId: string; readonly minutes: number; readonly error?: AccountFormError }): string {
   const invalid = input.error === undefined ? "" : ` aria-invalid="true" aria-describedby="code-error"`;
   return pageShell({
-    title: `${GUEST_ACCOUNT_COPY.changeEmailCodeTitle} · Shortlet`,
+    title: `${GUEST_ACCOUNT_COPY.changeEmailCodeTitle} · ${GUEST_ACCOUNT_COPY.brandName}`,
     width: "narrow",
     frame: appBar(ACCOUNT_PATH, GUEST_ACCOUNT_COPY.backToAccount, { href: ACCOUNT_PATH, label: GUEST_ACCOUNT_COPY.appBarAccount, icon: "users" }),
     body: `<header class="ui-page__header"><p class="ui-eyebrow">${GUEST_ACCOUNT_COPY.brandEyebrow}</p><h1>${GUEST_ACCOUNT_COPY.changeEmailCodeTitle}</h1>` +
@@ -172,7 +172,7 @@ export function renderRateLimitedHtml(): string {
     code: "RATE_LIMITED",
     title: GUEST_ACCOUNT_COPY.rateLimitedTitle,
     message: GUEST_ACCOUNT_COPY.rateLimitedMessage,
-    action: { href: SIGN_IN_PATH, label: "Try again" },
+    action: { href: SIGN_IN_PATH, label: GUEST_ACCOUNT_COPY.tryAgain },
   });
 }
 
@@ -183,7 +183,7 @@ export function renderSignInUnavailableHtml(): string {
     code: "ACCOUNT_SIGN_IN_UNAVAILABLE",
     title: GUEST_ACCOUNT_COPY.signInTitle,
     message: GUEST_ACCOUNT_COPY.unavailable,
-    action: { href: "/", label: "Back to your conversation" },
+    action: { href: "/", label: GUEST_ACCOUNT_COPY.backToConversation },
   });
 }
 
@@ -193,12 +193,12 @@ export function renderSignInUnavailableHtml(): string {
  */
 export function renderOfferNotFoundHtml(): string {
   return pageShell({
-    title: `${GUEST_ACCOUNT_COPY.offerNotFoundTitle} · Shortlet`,
+    title: `${GUEST_ACCOUNT_COPY.offerNotFoundTitle} · ${GUEST_ACCOUNT_COPY.brandName}`,
     width: "narrow",
-    frame: appBar("/", "Back to your conversation", { href: SIGN_IN_PATH, label: GUEST_ACCOUNT_COPY.appBarSignIn, icon: "info" }),
+    frame: appBar("/", GUEST_ACCOUNT_COPY.backToConversation, { href: SIGN_IN_PATH, label: GUEST_ACCOUNT_COPY.appBarSignIn, icon: "info" }),
     body: `<section class="ui-panel ui-empty" data-error-code="PAYMENT_OFFER_NOT_FOUND" data-status="404"><h1>${escapeHtml(GUEST_ACCOUNT_COPY.offerNotFoundTitle)}</h1>` +
       `<p>${escapeHtml(GUEST_ACCOUNT_COPY.offerNotFoundMessage)}</p>` +
       `<a class="ui-button ui-button--primary ui-button--block" href="${SIGN_IN_PATH}">${escapeHtml(GUEST_ACCOUNT_COPY.signInTitle)}</a>` +
-      `<a class="ui-button ui-button--block" href="/">Back to your conversation</a></section>`,
+      `<a class="ui-button ui-button--block" href="/">${escapeHtml(GUEST_ACCOUNT_COPY.backToConversation)}</a></section>`,
   });
 }
