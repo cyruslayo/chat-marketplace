@@ -70,6 +70,14 @@ Status: `resolved` (header), set once CI verify and browser passed on the final 
   4. Hardening: `currentAssurance` and `accountForPrincipal` require an active account. The claim path reads the owner with a lookup that ignores status, so a closed owner's requests are not claimed by a new account. `verifiedAt` cannot be later than the injected clock (required store option `clock`, no tolerance). A same-address write does not remove the outcome (test). The AC1 failure-path titles match their assertions.
 - Scope note: the closed-account rule changes the issue 05 `accountForPrincipal` (a closed account's principals now resolve to no account). The resolver then returns the anonymous identity for them, which is the intended result. All issue 05 tests pass unchanged.
 
+
+- Orchestrator decisions (delegated by the human, 11 Oct 2026; these are not human quotes and are not human-approved):
+  1. `guest_identity_assurance` is classified as personal data for the DPIA, following the issue 05 precedent (exported, not a credential table). Decided.
+  2. Claim-based Reservation resolution (ADR 0094, root Booking Request lineage) is not built in issue 09. It belongs in the check-in wiring issue. Until then a principal not linked to an account fails closed as `no_account`.
+  3. `GuestVerificationService.validateDisclosure` is left unchanged, because it has no production caller and `test/verify-primary-guest-payer-and-occupants.test.ts` depends on it. Follow-up: retire or re-point it when check-in wiring exists.
+  4. Surfacing the government-ID level in the identity resolver (`domains/shortlet/src/guest-identity.ts`, which hardcodes `email-verified`) is assigned to issue 07. A one-line requirement is recorded in issue 07's Comments.
+  5. The local fixture stays out of the walkthrough until issue 06 finishes local composition.
+
 ## Answer
 
 Implemented on branch `ga-09-assurance-port` (PR #101), stacked on `ga-base-05-99` (PRs #100 and #99). Acceptance tests are in `test/guest-identity-assurance.test.ts` (32 tests), with the shared fixture in `test/helpers/guest-identity-assurance.ts` and the test-only fake in `test/helpers/identity-assurance-fixture.ts`.
@@ -102,4 +110,10 @@ Definition of Done:
 6. No credential or identity material in logs or audit: yes (no logging added; the import refusal names no value).
 7. `npm run check` clean, `npm run test:non-browser` and `npm run test:workers` green, and CI verify and browser green on the final head: see the PR #101 body for the run URLs and conclusions.
 
-Needs human: see the Comments (DPIA classification; claim-based Reservation resolution; `validateDisclosure`; the resolver's `email-verified`; walkthrough wiring). These are open questions and are not resolved in this issue.
+Orchestrator decisions (see Comments; delegated by the human, not human-approved) cover the five items formerly listed as Needs human: the DPIA classification is decided; claim-based Reservation resolution is a follow-up (until then an unlinked principal fails closed as `no_account`); `validateDisclosure` is a follow-up; the resolver's government-ID level is assigned to issue 07; the walkthrough wiring waits for issue 06.
+
+Follow-up items (not in issue 09):
+- Check-in wiring issue: claim-based Reservation resolution (ADR 0094 root Booking Request lineage), and retire or re-point `GuestVerificationService.validateDisclosure`.
+- Issue 07: surface the government-ID level from `currentAssurance` in the identity resolver (`guest-identity.ts` currently hardcodes `email-verified`).
+- After issue 06 local composition: wire the test-only fixture into the walkthrough only if a non-test path is chosen; today it stays in `test/`.
+- The provider's reference format and the digit-run screen are to be confirmed at Smile onboarding (ADR 0084).
