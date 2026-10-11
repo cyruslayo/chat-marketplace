@@ -59,6 +59,9 @@ jobs:
           fi
           echo "SHORTLET_CHROME_PATH=$chrome" >> "$GITHUB_ENV"
           "$chrome" --version
+      # The local guest server reads dist/client.js from disk; the committed copy is not rebuilt per change, so CI builds it here.
+      - name: Build the guest client bundle (CI workspace only)
+        run: npm run build
       - name: Real-browser tests (one file at a time)
         env:
           # The runner user cannot start Chrome's sandbox; see test/helpers/chrome-devtools.ts.
