@@ -1,9 +1,10 @@
-import { SqliteGuestContactRepository, type GuestContact } from "../../../domains/shortlet/src/index.js";
+import type { GuestContact, GuestContactStore } from "../../../domains/shortlet/src/index.js";
 import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
 
 export class GuestContactApplication {
-  readonly repository: SqliteGuestContactRepository;
-  constructor(repository: SqliteGuestContactRepository) { this.repository = repository; }
+  /** The single contact view: an account-aware store over `guest_contacts` (issue 07). */
+  readonly repository: GuestContactStore;
+  constructor(repository: GuestContactStore) { this.repository = repository; }
 
   get(principal: CommandPrincipal): GuestContact | null {
     const { guestId, tenantId } = this.#guestContext(principal);

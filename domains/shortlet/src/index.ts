@@ -35,6 +35,7 @@ export * from "./booking-amendment.js";
 export * from "./booking-state.js";
 export * from "./guest-interaction-store.js";
 export * from "./guest-contact.js";
+export * from "./guest-account-contacts.js";
 export * from "./checkout-overstay.js";
 export * from "./cancellation-noshow.js";
 export * from "./deposit-claim.js";

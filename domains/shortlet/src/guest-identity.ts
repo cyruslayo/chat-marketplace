@@ -3,10 +3,16 @@ import type { SqliteGuestAccountLinks } from "./guest-account-links.js";
 import type { GuestContact, GuestContactSource } from "./guest-contact.js";
 
 /**
- * `email-verified` when a valid Guest Account Session is presented; `anonymous` otherwise. Later assurance levels come
- * from ADR 0094 and the identity-assurance port (issue 09).
+ * `email-verified` when a valid Guest Account Session is presented; `government-ID-verified` only while the account holds a
+ * current, verified government-ID result (ADR 0094, issue 09); `anonymous` otherwise. The level is a display and check-in
+ * input, never a booking gate (ADR 0085).
  */
-export type GuestAssurance = "anonymous" | "email-verified";
+export type GuestAssurance = "anonymous" | "email-verified" | "government-ID-verified";
+
+/** The current government-ID result of an account, read through the identity-assurance port (issue 07, ADR 0094). */
+export interface GuestAssuranceSource {
+  hasCurrentGovernmentId(accountGuestId: string, tenantId: string): boolean;
+}
 
 /**
  * What one browser session may read and act on (ADR 0093). `principalIds` is the session principal plus the Linked
@@ -57,13 +63,16 @@ export function anonymousGuestIdentity(principalId: string, tenantId: string): G
 export class GuestIdentityResolver {
   readonly #authority: Pick<SqliteGuestAccountAuthority, "resolveSession">;
   readonly #links: Pick<SqliteGuestAccountLinks, "accountForPrincipal" | "linkedPrincipals" | "claimedRequestIds">;
+  readonly #assurance: GuestAssuranceSource;
 
   constructor(
     authority: Pick<SqliteGuestAccountAuthority, "resolveSession">,
     links: Pick<SqliteGuestAccountLinks, "accountForPrincipal" | "linkedPrincipals" | "claimedRequestIds">,
+    assurance: GuestAssuranceSource,
   ) {
     this.#authority = authority;
     this.#links = links;
+    this.#assurance = assurance;
   }
 
   resolve(input: GuestIdentityResolutionInput): GuestIdentity | null {
@@ -84,7 +93,8 @@ export class GuestIdentityResolver {
       principalId,
       tenantId,
       accountGuestId: account.accountGuestId,
-      assurance: "email-verified" as const,
+      // The real level from the port (issue 07): a current government-ID result, else email-verified (the session proves the email).
+      assurance: this.#assurance.hasCurrentGovernmentId(account.accountGuestId, tenantId) ? ("government-ID-verified" as const) : ("email-verified" as const),
       principalIds: Object.freeze(principalIds),
       claimedRequestIds: this.#links.claimedRequestIds(account.accountGuestId, tenantId),
     });

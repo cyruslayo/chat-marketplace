@@ -666,6 +666,13 @@ export class SqliteGuestAccountAuthority {
     return projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE tenant_id = ? AND email_normalized = ? AND status = 'active'").get([tenantId, email]) as unknown as AccountRow | undefined);
   }
 
+  /** The active account with this id in the tenant, or null (issue 07: the account page reads its own email and revision). */
+  findAccount(accountGuestIdInput: string, tenantIdInput: string): GuestAccount | null {
+    const accountGuestId = requiredText(accountGuestIdInput, "Account Guest Id");
+    const tenantId = requiredText(tenantIdInput, "Tenant ID");
+    return projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE account_guest_id = ? AND tenant_id = ? AND status = 'active'").get([accountGuestId, tenantId]) as unknown as AccountRow | undefined);
+  }
+
   resolveSession(sessionIdInput: string | null | undefined, sessionSecretInput: string | null | undefined): GuestAuthenticatedAccount | null {
     if (!sessionIdInput || !sessionSecretInput) return null;
     const row = this.#sessionRow(sessionIdInput);
