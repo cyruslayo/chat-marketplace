@@ -1,6 +1,6 @@
 # Keep platform ids intact under the card-number redaction rule
 
-Status: ready-for-human
+Status: resolved
 Type: AFK
 Blocked by: none
 Scope: outside the guest-accounts effort (ga-08-sign-in-offer). No guest-accounts files are touched.
@@ -255,3 +255,17 @@ Status stays `ready-for-human` until the first two items are accepted.
 
 - CI run links for this change are in the PR body (https://github.com/cyruslayo/chat-marketplace/pull/105), including the dispatched `browser` run on the final head.
 - Scope: this change is outside the guest-accounts effort (ga-08-sign-in-offer) and touches no guest-accounts files.
+
+### 11 Oct 2026: human decision
+
+- Decision: the user replied "merge 105" to a message that asked them to:
+  1. accept the residual of about 1 in 8,000 platform ids masked whole on a Luhn-valid aligned card match (see "Luhn gate");
+  2. accept the two documented limits: a Luhn-valid 16-digit card at an unaligned offset 1 to 15 of an exact v4 id is not detected; 13 to 15 and 17 to 19 digit numbers in ids are not detected (the card rule has never matched them anywhere).
+- Merged: PR #105 merged as 8b23923 on 11 Oct 2026.
+- CI on the main push, run 38156816936 (https://github.com/cyruslayo/chat-marketplace/actions/runs/38156816936), checked 11 Oct 2026 at about 16:48 UTC: `verify` completed with success (npm run check, test:workers and test:non-browser all success). `browser` was still in progress at the time of the check (its "Real-browser tests (one file at a time)" step was in progress; run overall status `in_progress`, conclusion empty). The browser conclusion is not yet recorded here and should be checked on the run page.
+- Open follow-ups (not decided, not filed):
+  - `test/receipt-blob-store.test.ts:89` is flaky (about 1 in 1,300).
+  - Payment references in audit: `res-${transactionRef}` (`packages/platform-core/src/reconciliation.ts:245,251`) and `providerReference`.
+  - `THREAD_ID_PATTERN` (`apps/local-guest/src/guest-server.ts:578`) must be constrained before `g-` thread ids are exempted.
+  - 13 to 19 digit card gap (see the pinned limits above).
+  - Back-fill of already-redacted production audit rows (not recoverable from the audit tables; detection query in this issue).
