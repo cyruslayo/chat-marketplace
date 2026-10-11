@@ -168,6 +168,7 @@ import {
 import {
   anonymousGuestIdentity,
   authorizesPrincipalOwner,
+  authorizesBookingRequest,
   hashSessionSecret,
   type GuestIdentity,
 } from "../../../domains/shortlet/src/index.js";
@@ -226,6 +227,37 @@ import {
   ASSISTANT_CONFIRM_ACTION_EVENT,
   ASSISTANT_CANCEL_ACTION_EVENT,
 } from "./assistant/pending-action-a2ui.js";
+import {
+  GUEST_ACCOUNT_COOKIE,
+  GuestAccountRuntime,
+  accountCredentialsOf,
+  clientAddressOf,
+  loadGuestAccountComposition,
+  safeReturnPath,
+  usableCodeHashingKey,
+  SignInDeliveryError,
+  type GuestAccountComposition,
+  type GuestAccountCredentials,
+} from "./guest-account-runtime.js";
+import { GUEST_ACCOUNT_COPY } from "../../web-agent/src/guest-content.js";
+import { SlidingWindowRateLimiter } from "../../pilot/src/rate-limiter.js";
+import type { ConditionalBookingOffer } from "../../../domains/shortlet/src/index.js";
+import {
+  GUEST_ACCOUNT_POLICY_DEFAULTS,
+  GuestAccountAuthorityError,
+  normalizeContactEmail,
+  revokeGuestAccountWithoutKey,
+  type GuestAccountSession,
+} from "../../../domains/shortlet/src/index.js";
+import {
+  renderOfferNotFoundHtml,
+  renderAccountHtml,
+  renderRateLimitedHtml,
+  renderSignInCodeHtml,
+  renderSignInHtml,
+  renderSignInUnavailableHtml,
+  type AccountFormError,
+} from "./guest-account-pages.js";
 
 export interface GuestSurfacePayload {
   readonly surfaceId: string;
@@ -1488,20 +1520,40 @@ export class LocalGuestApp {
     const scope = committedWorkScope(environment, principal, identity);
     if (scope === null || !principal.tenantId) return [];
     const work: GuestCommittedWork[] = [];
-    try {
-      for (const record of environment.interactionStore.findThreadsForPrincipals(
-        scope,
+    // The conversations to consider: every thread of the scope's principals, then, for each Booking Request the account
+    // holds by claim (ADR 0093), only that request's conversation, owned by its Primary Guest. Nothing else of that
+    // principal is listed.
+    const candidates: { threadId: string; principalId: string; claimedRequestId: string | null }[] = [];
+    for (const record of environment.interactionStore.findThreadsForPrincipals(
+      scope,
+      principal.tenantId,
+    ))
+      candidates.push({ threadId: record.threadId, principalId: record.principalId, claimedRequestId: null });
+    for (const requestId of identity?.claimedRequestIds ?? []) {
+      const request = environment.interactionStore.findBookingRequest(requestId);
+      if (!request || request.tenantId !== principal.tenantId) continue;
+      for (const record of environment.interactionStore.findThreadsForPrincipal(
+        request.primaryGuestId,
         principal.tenantId,
-      )) {
+      ))
+        candidates.push({ threadId: record.threadId, principalId: record.principalId, claimedRequestId: requestId });
+    }
+    const listed = new Set<string>();
+    try {
+      for (const record of candidates) {
+        if (listed.has(record.threadId)) continue;
         const owner: CommandPrincipal = {
           id: record.principalId,
           role: "guest",
           tenantId: principal.tenantId,
         };
+        const owners = record.claimedRequestId === null ? scope : [record.principalId];
         const loaded =
           this.#threads.get(record.threadId) ??
-          this.#loadThread(record.threadId, scope);
+          this.#loadThread(record.threadId, owners);
         if (!loaded || (!loaded.requestId && !loaded.offerId)) continue;
+        if (record.claimedRequestId !== null && loaded.requestId !== record.claimedRequestId) continue;
+        listed.add(record.threadId);
         // A thread records its offer only on its next refresh, and this read
         // never issues one (ADR-0079). Judge the durable offer for a confirmed
         // request so an expired offer is never called a live request.
@@ -2140,6 +2192,15 @@ export class LocalGuestApp {
 
   #persistThread(thread: GuestThreadState): void {
     const environment = this.#environment;
+    // ADR 0004 / 0070 / 0093: a read or a refresh never changes a conversation's owner. A saved conversation this runtime
+    // does not own (a linked principal's) is not written at all; only a new conversation is saved under this runtime.
+    const saved = environment.interactionStore.findThread(thread.threadId);
+    if (
+      saved &&
+      (saved.principalId !== environment.guestPrincipal().id ||
+        saved.tenantId !== environment.config.tenantId)
+    )
+      return;
     const current = thread.lastSurfaces.at(-1);
     const activeStage =
       this.#stageForSurfaceId(current?.surfaceId ?? "") ??
@@ -6277,6 +6338,38 @@ const PUBLIC_GUEST_PATHS: ReadonlySet<string> = new Set([
 ]);
 const GUEST_SESSION_PATTERN = /^gs-[a-f0-9-]{36}$/;
 
+/** The standard rate-limited response (ADR 0093): 429 with Retry-After, the pilot's status, code and recovery. */
+function sendAccountRateLimited(res: HttpResponseLike, retryAfterSeconds: number): void {
+  res.writeHead(429, {
+    "Retry-After": String(retryAfterSeconds),
+    "Cache-Control": "no-store",
+    "Content-Type": "text/html; charset=utf-8",
+  });
+  res.end(renderRateLimitedHtml());
+}
+
+/** The inline message for a refused code, keyed by the authority's reason code (AC2). */
+function codeFormError(code: string): AccountFormError {
+  const errors = GUEST_ACCOUNT_COPY.errors;
+  const message =
+    code === "code_expired" ? errors.codeExpired
+      : code === "code_attempts_exhausted" ? errors.attemptsExhausted
+        : code === "code_consumed" ? errors.codeConsumed
+          : errors.codeInvalid;
+  return { code, message };
+}
+
+/**
+ * The routes that start a fresh, unlinked session when the cookie has no binding (D3): the home page and the sign-in
+ * and sign-out forms. Account identity is never granted by these; the pages behind an account stay gated.
+ */
+function reissuableBrowserRoute(method: string | undefined, path: string): boolean {
+  if (method === "GET") return path === "/" || path === "/account/sign-in";
+  if (method === "POST")
+    return path === "/account/sign-in" || path === "/account/sign-in/code" || path === "/account/sign-out";
+  return false;
+}
+
 function readGuestSession(req: HttpRequestLike): string | null | undefined {
   const header = req.headers.cookie;
   if (typeof header !== "string") return undefined;
@@ -6315,6 +6408,26 @@ function issueGuestSession(res: HttpResponseLike, secureCookie: boolean): string
     `${GUEST_SESSION_COOKIE}=${sessionId};${secureCookie ? " Secure;" : ""} HttpOnly; SameSite=Lax; Path=/`,
   );
   return sessionId;
+}
+
+/**
+ * The Origin check for the account POSTs (Q4). An Origin that matches is accepted. Without an Origin, a same-origin
+ * Referer is accepted; with neither, the request is refused.
+ */
+function accountPostAccepted(
+  req: HttpRequestLike,
+  publicOrigin: string | undefined,
+): boolean {
+  if (typeof req.headers.origin === "string")
+    return browserOriginAccepted(req, publicOrigin);
+  const referer = req.headers.referer;
+  if (typeof referer !== "string") return false;
+  const expected = publicOrigin ?? `http://${req.headers.host ?? "localhost"}`;
+  try {
+    return new URL(referer).origin === new URL(expected).origin;
+  } catch {
+    return false;
+  }
 }
 
 function browserOriginAccepted(
@@ -6383,6 +6496,8 @@ function resolveBrowserSession(
   cache: Map<string, BrowserSession>,
   sessionId: string | null | undefined,
   expectedPrincipalId?: string,
+  accountCredentials: GuestAccountCredentials | null = null,
+  accounts: GuestAccountRuntime | null = null,
 ): BrowserSession | null {
   if (sessionId === null || typeof sessionId !== "string") return null;
   const sessionKey = hashSessionSecret(sessionId);
@@ -6394,7 +6509,18 @@ function resolveBrowserSession(
       cached.tenantId !== env.config.tenantId
     )
       return null;
-    return cached;
+    // The durable binding is checked on every request, so a session retired by another server instance stops at once
+    // (ADR 0070, ADR 0093). The cache only saves the rebuild, never the authority.
+    const live = env.interactionStore.findSessionBinding(sessionKey);
+    if (
+      !live ||
+      live.principalId !== cached.principalId ||
+      live.tenantId !== cached.tenantId
+    ) {
+      cache.delete(sessionKey);
+      return null;
+    }
+    return withAccountIdentity(cached, accountCredentials, accounts);
   }
   const binding = env.interactionStore.findSessionBinding(sessionKey);
   if (!binding) return null;
@@ -6408,7 +6534,7 @@ function resolveBrowserSession(
     sessionKey,
     principalId: binding.principalId,
     tenantId: binding.tenantId,
-    // Until a Guest Account Session cookie is presented (issue 06), the browser's identity is its own principal only.
+    // Replaced per request by withAccountIdentity; the cache never holds an account identity.
     identity: anonymousGuestIdentity(binding.principalId, binding.tenantId),
     // The thread set is derived from the durable principal-scoped threads; the
     // browser session itself never authorizes a thread id on its own.
@@ -6419,7 +6545,78 @@ function resolveBrowserSession(
     ),
   };
   cache.set(sessionKey, session);
-  return session;
+  return withAccountIdentity(session, accountCredentials, accounts);
+}
+
+/**
+ * The browser session with its identity for this request (ADR 0093). A valid, linked account cookie widens the identity to
+ * the account's Linked Principals; anything else is the browser's own principal. Resolved on every call, so a revoked
+ * account session stops applying at once.
+ */
+function withAccountIdentity(
+  session: BrowserSession,
+  accountCredentials: GuestAccountCredentials | null,
+  accounts: GuestAccountRuntime | null,
+): BrowserSession {
+  const identity = accounts
+    ? accounts.identityFor(session.principalId, accountCredentials)
+    : anonymousGuestIdentity(session.principalId, session.tenantId);
+  return { ...session, identity };
+}
+
+/**
+ * Whether a session may read or act on an offer's stay and money details (offer access, ADR 0070, 0075, 0093): the offer's
+ * primary guest in the session's identity (its own principal, a linked principal, or a claimed request), or its distinct
+ * payer. A missing offer, a foreign one and one without a tenant are all refused the same way.
+ */
+export function offerAuthorized(
+  env: LocalGuestEnvironment,
+  session: BrowserSession,
+  offerId: string,
+): boolean {
+  let offer: ConditionalBookingOffer;
+  try {
+    offer = env.conditionalOfferApp.manager.getOffer(offerId);
+  } catch {
+    return false;
+  }
+  if (!offer.tenantId) return false;
+  if (
+    authorizesBookingRequest(session.identity, {
+      requestId: offer.requestId,
+      primaryGuestId: offer.parties.primaryGuest.id,
+      tenantId: offer.tenantId,
+    })
+  )
+    return true;
+  const payerId = offer.parties.distinctPayer?.id;
+  return (
+    payerId !== undefined &&
+    authorizesPrincipalOwner(session.identity, {
+      principalId: payerId,
+      tenantId: offer.tenantId,
+    })
+  );
+}
+
+/**
+ * Whether a session may read a thread now (D2). The thread must be in the session's set, and when it is persisted its
+ * owner must be in the identity resolved for this request, so a linked conversation stops once the account session ends.
+ */
+function threadReadable(
+  env: LocalGuestEnvironment,
+  session: BrowserSession,
+  threadId: string,
+): boolean {
+  if (!session.threadIds.has(threadId)) return false;
+  const record = env.interactionStore.findThread(threadId);
+  // Fail closed (AGENTS anti-pattern 1). Defence in depth: app.getState returns nothing without a saved record, so this
+  // guard is not what keeps content from a record-less id today; it stops a future read path from serving one.
+  if (!record) return false;
+  return authorizesPrincipalOwner(session.identity, {
+    principalId: record.principalId,
+    tenantId: record.tenantId,
+  });
 }
 
 function bindBrowserThread(
@@ -6428,6 +6625,7 @@ function bindBrowserThread(
   req: HttpRequestLike,
   threadId: string,
   requireSession = false,
+  accounts: GuestAccountRuntime | null = null,
 ): boolean {
   const sessionId = readGuestSession(req);
   if (sessionId === null) return false;
@@ -6439,6 +6637,9 @@ function bindBrowserThread(
     const principal = env.guestPrincipal();
     const record = env.interactionStore.findThread(threadId);
     if (record) {
+      // A conversation saved for another principal is never re-owned by a cookieless request.
+      if (record.principalId !== principal.id || record.tenantId !== env.config.tenantId)
+        return false;
       env.interactionStore.saveThread({
         threadId,
         principalId: principal.id,
@@ -6453,6 +6654,8 @@ function bindBrowserThread(
     cache,
     sessionId,
     env.config.guestId,
+    accountCredentialsOf(req),
+    accounts,
   );
   if (!session) return false;
   // The thread row is owned by the principal/tenant (ADR-0070); persisting it
@@ -6467,12 +6670,14 @@ function bindBrowserThread(
       })
     )
       return false;
-    env.interactionStore.saveThread({
-      threadId,
-      principalId: session.principalId,
-      tenantId: session.tenantId,
-      threadJson: record.threadJson,
-    });
+    // A linked principal's thread keeps its owner (ADR 0004): only the owner's own thread is re-saved.
+    if (record.principalId === session.principalId)
+      env.interactionStore.saveThread({
+        threadId,
+        principalId: session.principalId,
+        tenantId: session.tenantId,
+        threadJson: record.threadJson,
+      });
   }
   session.threadIds.add(threadId);
   return true;
@@ -6524,10 +6729,12 @@ function findGuestThreadForOffer(
   env: LocalGuestEnvironment,
   offerId: string,
   principal: { readonly id: string; readonly tenantId?: string },
+  principalIds: readonly string[] = [principal.id],
 ): string | null {
   if (!principal.tenantId) return null;
-  for (const thread of env.interactionStore.findThreadsForPrincipal(
-    principal.id,
+  // ADR 0093: the session principal's own threads and its account's Linked Principals' threads, and nothing else.
+  for (const thread of env.interactionStore.findThreadsForPrincipals(
+    principalIds.includes(principal.id) ? principalIds : [],
     principal.tenantId,
   )) {
     try {
@@ -6551,8 +6758,9 @@ function threadFrame(
   app: LocalGuestApp,
   offerId: string,
   principal: CommandPrincipal,
+  principalIds?: readonly string[],
 ): { readonly threadId: string | null; readonly journey?: GuestJourney } {
-  const threadId = findGuestThreadForOffer(app.environment, offerId, principal);
+  const threadId = findGuestThreadForOffer(app.environment, offerId, principal, principalIds);
   const journey =
     threadId === null ? undefined : app.journeyForThread(threadId, principal);
   return { threadId, ...(journey === undefined ? {} : { journey }) };
@@ -6591,6 +6799,11 @@ export interface GuestRequestHandlerOptions {
   sessionScopedGuestPrincipals?: boolean;
   /** Staging beta gate: when set, a new Guest session needs `/?invite=<code>` (issue 22). */
   betaInviteCode?: string;
+  /**
+   * Guest Account sign-in (issue 06). Undefined reads the composition from configuration; `null` disables sign-in. Sign-in
+   * needs session-scoped principals, a code-hashing key and an email sender, and is disabled when any is missing.
+   */
+  guestAccounts?: GuestAccountComposition | null;
   /** Explicit local-pilot control; never enabled by production composition. */
   localPayment?: boolean;
   /** Explicit local-pilot photo mapping for synthetic, same-process assets. */
@@ -6720,6 +6933,30 @@ export function createGuestRequestHandler(
     assistantRuntime,
     ...modelCallBudget,
   });
+  // Guest Account sign-in (issue 06). Disabled, not defaulted, when its key, sender or session scoping is missing.
+  const accountComposition =
+    options.guestAccounts === undefined
+      ? loadGuestAccountComposition(process.env)
+      : options.guestAccounts;
+  // Q7: a missing or short key leaves the key unusable, which disables sign-in.
+  const accountKey = usableCodeHashingKey(accountComposition?.codeHashingKey);
+  const guestAccounts =
+    accountComposition &&
+    sessionScopedGuestPrincipals &&
+    accountKey &&
+    accountComposition.sender
+      ? new GuestAccountRuntime({
+          database: env.database,
+          tenantId: env.config.tenantId,
+          clock: () => env.clock(),
+          requests: env.interactionStore,
+          composition: {
+            ...accountComposition,
+            codeHashingKey: accountKey,
+            sender: accountComposition.sender,
+          },
+        })
+      : null;
   const browserSessions = new Map<string, BrowserSession>();
   const sessionRuntimes = new Map<
     string,
@@ -6803,6 +7040,322 @@ export function createGuestRequestHandler(
   // Slice 09a: assets come from the injected loader (Node default `nodeAssetLoader()`), never from import-time reads.
   const assets = options.assets ?? nodeAssetLoader({ clientScriptPath: options.clientScriptPath });
 
+  // ---- Guest Account routes (issue 06, ADR 0093). Plain forms: each works without JavaScript (ADR 0080). ----
+  const accountCookieLine = (value: string, maxAgeSeconds: number): string =>
+    `${GUEST_ACCOUNT_COOKIE}=${value};${secureCookie ? " Secure;" : ""} HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAgeSeconds}`;
+  const clearedAccountCookieLine = (): string =>
+    `${GUEST_ACCOUNT_COOKIE}=;${secureCookie ? " Secure;" : ""} HttpOnly; SameSite=Lax; Path=/; Max-Age=0`;
+  const interactionCookieLine = (sessionId: string): string =>
+    `${GUEST_SESSION_COOKIE}=${sessionId};${secureCookie ? " Secure;" : ""} HttpOnly; SameSite=Lax; Path=/`;
+  /** Binds a fresh interaction session and retires the previous binding (ADR 0093): the old cookie stops working. */
+  const replaceInteractionSession = (
+    previous: BrowserSession | null,
+    principalId: string,
+    keepOwnConversations: boolean,
+  ): string => {
+    const sessionId = `gs-${crypto.randomUUID()}`;
+    const registered = registerBrowserSession(env, browserSessions, sessionId, principalId);
+    if (previous !== null && keepOwnConversations) {
+      // ADR 0093 continuity: only conversations this same principal saved carry over, never a linked or foreign one.
+      for (const threadId of previous.threadIds) {
+        const saved = env.interactionStore.findThread(threadId);
+        if (saved && saved.principalId === principalId && saved.tenantId === env.config.tenantId)
+          registered.threadIds.add(threadId);
+      }
+    }
+    if (previous !== null) {
+      env.interactionStore.deleteSessionBinding(previous.sessionKey);
+      browserSessions.delete(previous.sessionKey);
+    }
+    return sessionId;
+  };
+  const existingBrowserSession = (req: HttpRequestLike): BrowserSession | null => {
+    const raw = readGuestSession(req);
+    if (typeof raw !== "string") return null;
+    return resolveBrowserSession(env, browserSessions, raw, undefined, accountCredentialsOf(req), guestAccounts);
+  };
+  /**
+   * Binding writes (a new session for sign-in, or a rotation for sign-out) share the ADR 0093 per-address code-request
+   * budget, so unauthenticated requests cannot grow the binding table without limit.
+   */
+  const bindingLimiter = new SlidingWindowRateLimiter(
+    {
+      limit: { ...GUEST_ACCOUNT_POLICY_DEFAULTS, ...(accountComposition?.policy ?? {}) }.codeRequestsPerAddressPerHour,
+      windowMs: GUEST_ACCOUNT_POLICY_DEFAULTS.rateLimitWindowMs,
+    },
+    () => env.clock(),
+  );
+  type SignInSessionOutcome =
+    | { readonly kind: "session"; readonly session: BrowserSession }
+    | { readonly kind: "limited"; readonly retryAfterSeconds: number }
+    | { readonly kind: "none" };
+  /** Sign-in needs a browser session to link. A new one is issued only when no cookie exists and no invite gate applies, and the budget admits it. */
+  const sessionForSignIn = (
+    req: HttpRequestLike,
+    res: HttpResponseLike,
+    address: string,
+  ): SignInSessionOutcome => {
+    const raw = readGuestSession(req);
+    if (raw === null) return { kind: "none" };
+    if (raw !== undefined) {
+      const existing = existingBrowserSession(req);
+      if (existing) return { kind: "session", session: existing };
+    }
+    if (options.betaInviteCode !== undefined) return { kind: "none" };
+    const admitted = bindingLimiter.tryConsume(address);
+    if (!admitted.allowed)
+      return { kind: "limited", retryAfterSeconds: admitted.retryAfterSeconds };
+    const sessionId = issueGuestSession(res, secureCookie);
+    return {
+      kind: "session",
+      session: registerBrowserSession(env, browserSessions, sessionId, `guest-${crypto.randomUUID()}`),
+    };
+  };
+  const handleAccountRoute = async (
+    req: HttpRequestLike,
+    res: HttpResponseLike,
+    url: URL,
+  ): Promise<void> => {
+    const accounts = guestAccounts;
+    const path = url.pathname;
+    if (!accounts) {
+      // Sign-in is disabled, but a sign-out still ends the account server-side: the session hash needs no key, so
+      // the revocation goes through the store directly. Sign-out everywhere that cannot end anything refuses, claiming no
+      // success and keeping the cookie; a plain sign-out always clears the cookie and rotates the browser.
+      if (req.method === "POST" && (path === "/account/sign-out" || path === "/account/sign-out-everywhere")) {
+        if (!accountPostAccepted(req, options.publicOrigin)) {
+          sendPageError(req, res, 403, "ORIGIN_REJECTED");
+          return;
+        }
+        const everywhere = path === "/account/sign-out-everywhere";
+        // Never rate limited (orchestrator decision).
+        const presented = accountCredentialsOf(req);
+        const ended = presented === null
+          ? null
+          : revokeGuestAccountWithoutKey(env.database, {
+              sessionId: presented.sessionId,
+              sessionSecret: presented.sessionSecret,
+              tenantId: env.config.tenantId,
+              everywhere,
+              now: env.clock(),
+            });
+        if (everywhere && ended === null) {
+          res.writeHead(503, GUEST_HTML_HEADERS);
+          res.end(renderSignInUnavailableHtml());
+          return;
+        }
+        const previous = existingBrowserSession(req);
+        if (everywhere && ended !== null) {
+          env.interactionStore.deleteSessionBindingsForPrincipals(ended.principalIds, env.config.tenantId);
+          for (const [key, cached] of browserSessions) {
+            if (ended.principalIds.includes(cached.principalId)) browserSessions.delete(key);
+          }
+        }
+        if (previous === null) {
+          // No presented session: no binding is written and the account cookie is cleared.
+          res.setHeader("Set-Cookie", clearedAccountCookieLine());
+          res.writeHead(303, { Location: "/", "Cache-Control": "no-store" });
+          res.end();
+          return;
+        }
+        const interactionId = replaceInteractionSession(previous, `guest-${crypto.randomUUID()}`, false);
+        res.setHeader("Set-Cookie", [interactionCookieLine(interactionId), clearedAccountCookieLine()]);
+        res.writeHead(303, { Location: "/", "Cache-Control": "no-store" });
+        res.end();
+        return;
+      }
+      res.writeHead(503, GUEST_HTML_HEADERS);
+      res.end(renderSignInUnavailableHtml());
+      return;
+    }
+    const credentials = accountCredentialsOf(req);
+    if (req.method === "GET" && path === "/account/sign-in") {
+      // Rendering the form writes no binding; the first POST that needs a session creates it.
+      res.writeHead(200, GUEST_HTML_HEADERS);
+      res.end(renderSignInHtml({ returnPath: safeReturnPath(url.searchParams.get("return")) }));
+      return;
+    }
+    if (req.method === "GET" && path === "/account") {
+      if (!accounts.resolveAccount(credentials)) {
+        sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
+        return;
+      }
+      res.writeHead(200, GUEST_HTML_HEADERS);
+      res.end(renderAccountHtml());
+      return;
+    }
+    if (req.method !== "POST") {
+      res.writeHead(404, { "Content-Type": "text/plain" });
+      res.end("Not found");
+      return;
+    }
+    // ADR 0093 / ADR 0080: every state-changing form is origin-checked like the other Guest POSTs.
+    if (!accountPostAccepted(req, options.publicOrigin)) {
+      sendPageError(req, res, 403, "ORIGIN_REJECTED");
+      return;
+    }
+    let form: URLSearchParams;
+    try {
+      form = await readFormBody(req);
+    } catch {
+      sendPageError(req, res, 400, "INVALID_EVENT");
+      return;
+    }
+    const returnPath = safeReturnPath(form.get("return"));
+    const email = form.get("email") ?? "";
+    const invalidEmail = (): void => {
+      res.writeHead(400, GUEST_HTML_HEADERS);
+      res.end(renderSignInHtml({ returnPath, email, error: { code: "invalid_email", message: GUEST_ACCOUNT_COPY.errors.invalidEmail } }));
+    };
+
+    if (path === "/account/sign-in") {
+      const admittedSession = sessionForSignIn(req, res, accounts.clientAddress(req));
+      if (admittedSession.kind === "limited") {
+        sendAccountRateLimited(res, admittedSession.retryAfterSeconds);
+        return;
+      }
+      if (admittedSession.kind === "none") {
+        sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
+        return;
+      }
+      try {
+        normalizeContactEmail(email);
+      } catch {
+        invalidEmail();
+        return;
+      }
+      try {
+        const sent = await accounts.requestSignInCode({ email, clientAddress: accounts.clientAddress(req) });
+        res.writeHead(200, GUEST_HTML_HEADERS);
+        res.end(renderSignInCodeHtml({ email: sent.email, challengeId: sent.challengeId, returnPath, minutes: accounts.signInCodeLifetimeMinutes }));
+      } catch (error) {
+        if (error instanceof GuestAccountAuthorityError && error.code === "rate_limited") {
+          sendAccountRateLimited(res, error.retryAfterSeconds ?? 1);
+          return;
+        }
+        if (error instanceof SignInDeliveryError) {
+          res.writeHead(503, GUEST_HTML_HEADERS);
+          res.end(renderSignInHtml({ returnPath, email, error: { code: "send_failed", message: GUEST_ACCOUNT_COPY.errors.sendFailed } }));
+          return;
+        }
+        throw error;
+      }
+      return;
+    }
+
+    if (path === "/account/sign-in/code") {
+      const admittedSession = sessionForSignIn(req, res, accounts.clientAddress(req));
+      if (admittedSession.kind === "limited") {
+        sendAccountRateLimited(res, admittedSession.retryAfterSeconds);
+        return;
+      }
+      if (admittedSession.kind === "none") {
+        sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
+        return;
+      }
+      const session = admittedSession.session;
+      const challengeId = form.get("challengeId") ?? "";
+      const code = form.get("code") ?? "";
+      try {
+        normalizeContactEmail(email);
+      } catch {
+        invalidEmail();
+        return;
+      }
+      let verified: GuestAccountSession;
+      try {
+        verified = accounts.verifySignInCode({ challengeId, email, code, clientAddress: accounts.clientAddress(req) });
+      } catch (error) {
+        if (!(error instanceof GuestAccountAuthorityError)) throw error;
+        if (error.code === "rate_limited") {
+          sendAccountRateLimited(res, error.retryAfterSeconds ?? 1);
+          return;
+        }
+        if (error.code === "invalid_input") {
+          invalidEmail();
+          return;
+        }
+        res.writeHead(200, GUEST_HTML_HEADERS);
+        res.end(renderSignInCodeHtml({ email, challengeId, returnPath, minutes: accounts.signInCodeLifetimeMinutes, error: codeFormError(error.code) }));
+        return;
+      }
+      // The link uses the authority's verified session (ADR 0093, issue 05 Human decision 2) and happens before any cookie.
+      try {
+        accounts.linkVerifiedSignIn(session.principalId, verified);
+      } catch (error) {
+        if (error instanceof GuestAccountAuthorityError && error.code === "account_conflict") {
+          res.writeHead(409, GUEST_HTML_HEADERS);
+          res.end(renderSignInHtml({ returnPath, email, error: { code: "account_conflict", message: GUEST_ACCOUNT_COPY.errors.linkConflict } }));
+          return;
+        }
+        if (error instanceof GuestAccountAuthorityError && error.code === "session_invalid") {
+          sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
+          return;
+        }
+        throw error;
+      }
+      // ADR 0093: sign-in rotates the interaction cookie, so the pre-sign-in value no longer authenticates.
+      const interactionId = replaceInteractionSession(session, session.principalId, true);
+      const maxAge = Math.max(1, Math.floor((Date.parse(verified.expiresAt) - env.clock().getTime()) / 1000));
+      res.setHeader("Set-Cookie", [
+        interactionCookieLine(interactionId),
+        accountCookieLine(`${verified.sessionId}.${verified.sessionSecret}`, maxAge),
+      ]);
+      res.writeHead(303, { Location: returnPath, "Cache-Control": "no-store" });
+      res.end();
+      return;
+    }
+
+    if (path === "/account/sign-out") {
+      // Sign-out is never rate limited (orchestrator decision): the budget meters only code sends and new bindings.
+      accounts.signOut(credentials);
+      const previous = existingBrowserSession(req);
+      if (previous === null) {
+        // No presented session: nothing to rotate, so no binding is written and the account cookie is cleared.
+        res.setHeader("Set-Cookie", clearedAccountCookieLine());
+        res.writeHead(303, { Location: "/", "Cache-Control": "no-store" });
+        res.end();
+        return;
+      }
+      const interactionId = replaceInteractionSession(previous, `guest-${crypto.randomUUID()}`, false);
+      res.setHeader("Set-Cookie", [interactionCookieLine(interactionId), clearedAccountCookieLine()]);
+      res.writeHead(303, { Location: "/", "Cache-Control": "no-store" });
+      res.end();
+      return;
+    }
+
+    if (path === "/account/sign-out-everywhere") {
+      const account = accounts.resolveAccount(credentials);
+      if (!account) {
+        sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
+        return;
+      }
+      // ADR 0093 / ADR 0070: every account session ends, and so does the interaction authority of each Linked Principal.
+      const presentedSession = existingBrowserSession(req);
+      const principals = accounts.principalsOf(account.accountGuestId);
+      accounts.signOutEverywhere(account.accountGuestId);
+      env.interactionStore.deleteSessionBindingsForPrincipals(principals, account.tenantId);
+      for (const [key, cached] of browserSessions) {
+        if (principals.includes(cached.principalId)) browserSessions.delete(key);
+      }
+      if (presentedSession === null) {
+        // No presented session: no binding is written and the account cookie is cleared.
+        res.setHeader("Set-Cookie", clearedAccountCookieLine());
+        res.writeHead(303, { Location: "/", "Cache-Control": "no-store" });
+        res.end();
+        return;
+      }
+      const interactionId = replaceInteractionSession(presentedSession, `guest-${crypto.randomUUID()}`, false);
+      res.setHeader("Set-Cookie", [interactionCookieLine(interactionId), clearedAccountCookieLine()]);
+      res.writeHead(303, { Location: "/", "Cache-Control": "no-store" });
+      res.end();
+      return;
+    }
+
+    res.writeHead(404, { "Content-Type": "text/plain" });
+    res.end("Not found");
+  };
+
   const dispatch = async (
     req: HttpRequestLike,
     res: HttpResponseLike,
@@ -6818,16 +7371,43 @@ export function createGuestRequestHandler(
           env,
           browserSessions,
           rawSession,
-          sessionScopedGuestPrincipals ? undefined : env.config.guestId,
+          sessionScopedGuestPrincipals ? undefined : env.config.guestId, accountCredentialsOf(req), guestAccounts,
         );
         // Public pages and their static assets load for anyone, even with an expired or unknown session cookie.
         if (
           !requestSession &&
           sessionScopedGuestPrincipals &&
           !PUBLIC_GUEST_PATHS.has(url.pathname) &&
-          !url.pathname.startsWith("/stays/")
+          !url.pathname.startsWith("/stays/") &&
+          !reissuableBrowserRoute(req.method, url.pathname)
         ) {
           sendJson(res, 401, { ok: false, code: "AUTHENTICATION_REQUIRED" });
+          return;
+        }
+      }
+      // Every route that names an offer reads its stay and money details, so the
+      // gate runs here, before any read. The refusal is the same for a missing offer and a foreign one.
+      const offerRoute = /^\/(payments\/offers|conditional-offers)\/([^/]+)(\/|$)/.exec(url.pathname);
+      if (offerRoute && (req.method === "GET" || req.method === "POST")) {
+        if (!requestSession) {
+          sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
+          return;
+        }
+        let offerKey: string;
+        try {
+          offerKey = decodeURIComponent(offerRoute[2]!);
+        } catch {
+          sendPageError(req, res, 400, "INVALID_OFFER");
+          return;
+        }
+        if (!offerAuthorized(env, requestSession, offerKey)) {
+          // API clients keep their JSON refusal; a browser navigation gets the page with plain sign-in guidance.
+          if (!prefersHtml(req.headers.accept)) {
+            sendPageError(req, res, 404, "PAYMENT_OFFER_NOT_FOUND");
+            return;
+          }
+          res.writeHead(404, GUEST_HTML_HEADERS);
+          res.end(renderOfferNotFoundHtml());
           return;
         }
       }
@@ -6837,6 +7417,11 @@ export function createGuestRequestHandler(
       // This shadowed application is the same existing Guest application code,
       // selected by the server-owned browser session in production.
       const app = requestRuntime.app;
+
+      if (url.pathname === "/account" || url.pathname.startsWith("/account/")) {
+        await handleAccountRoute(req, res, url);
+        return;
+      }
 
       if (
         req.method === "GET" &&
@@ -6863,8 +7448,9 @@ export function createGuestRequestHandler(
           res.end("Unauthorized");
           return;
         }
-        if (rawSession === undefined) {
-          // Staging beta: no Guest session starts without the invite code (issue 22).
+        if (requestSession === null) {
+          // No cookie, or a well-formed cookie with no binding (retired by sign-out or sign-out everywhere, D3): a fresh,
+          // unlinked session starts. Staging beta: no Guest session starts without the invite code (issue 22).
           const offeredInvite = url.searchParams.get("invite");
           if (
             options.betaInviteCode !== undefined &&
@@ -6904,7 +7490,7 @@ export function createGuestRequestHandler(
             rawSession,
             sessionScopedGuestPrincipals
               ? undefined
-              : app.environment.config.guestId,
+              : app.environment.config.guestId, accountCredentialsOf(req), guestAccounts,
           );
           if (!resolved) {
             res.writeHead(401, { "Content-Type": "text/plain" });
@@ -6971,7 +7557,7 @@ export function createGuestRequestHandler(
           readGuestSession(req),
           sessionScopedGuestPrincipals
             ? undefined
-            : app.environment.config.guestId,
+            : app.environment.config.guestId, accountCredentialsOf(req), guestAccounts,
         );
         if (!session) {
           sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
@@ -7057,7 +7643,7 @@ export function createGuestRequestHandler(
           readGuestSession(req),
           sessionScopedGuestPrincipals
             ? undefined
-            : app.environment.config.guestId,
+            : app.environment.config.guestId, accountCredentialsOf(req), guestAccounts,
         );
         if (!session) {
           sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
@@ -7138,7 +7724,7 @@ export function createGuestRequestHandler(
           readGuestSession(req),
           sessionScopedGuestPrincipals
             ? undefined
-            : app.environment.config.guestId,
+            : app.environment.config.guestId, accountCredentialsOf(req), guestAccounts,
         );
         if (!session) {
           sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
@@ -7240,7 +7826,7 @@ export function createGuestRequestHandler(
           readGuestSession(req),
           sessionScopedGuestPrincipals
             ? undefined
-            : app.environment.config.guestId,
+            : app.environment.config.guestId, accountCredentialsOf(req), guestAccounts,
         );
         if (!session) {
           sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
@@ -7276,7 +7862,7 @@ export function createGuestRequestHandler(
           readGuestSession(req),
           sessionScopedGuestPrincipals
             ? undefined
-            : app.environment.config.guestId,
+            : app.environment.config.guestId, accountCredentialsOf(req), guestAccounts,
         );
         if (!session) {
           sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
@@ -7327,7 +7913,7 @@ export function createGuestRequestHandler(
           const threadId = findGuestThreadForOffer(
             app.environment,
             offerId,
-            principal,
+            principal, session.identity.principalIds,
           );
           const href =
             contactEmailMissing && artifact.facts.status === "ready"
@@ -7431,7 +8017,7 @@ export function createGuestRequestHandler(
             pageShell({
               title: `${status.label} · Shortlet`,
               width: "narrow",
-              frame: appFrameHtml(threadFrame(app, offerId, principal)),
+              frame: appFrameHtml(threadFrame(app, offerId, principal, session.identity.principalIds)),
               body: `<div class="guest-editorial">${paymentScreenHtml(content, ticket, breakdown, canContinue ? (choice !== undefined ? { sections: choice } : { actions: `<a class="ui-button ui-button--primary ui-button--block" href="${href}">${label}</a>` }) : {})}</div>`,
             }),
           );
@@ -7464,7 +8050,7 @@ export function createGuestRequestHandler(
           readGuestSession(req),
           sessionScopedGuestPrincipals
             ? undefined
-            : app.environment.config.guestId,
+            : app.environment.config.guestId, accountCredentialsOf(req), guestAccounts,
         );
         if (!session) {
           sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
@@ -7536,7 +8122,7 @@ export function createGuestRequestHandler(
               now: app.environment.clock(),
               receiptMaxBytes,
               error,
-              ...threadFrame(app, offerId, principal),
+              ...threadFrame(app, offerId, principal, session.identity.principalIds),
               contractId:
                 transfer.decision?.kind === "confirmed"
                   ? transfer.decision.contractId
@@ -7687,7 +8273,7 @@ export function createGuestRequestHandler(
           readGuestSession(req),
           sessionScopedGuestPrincipals
             ? undefined
-            : app.environment.config.guestId,
+            : app.environment.config.guestId, accountCredentialsOf(req), guestAccounts,
         );
         if (!session) {
           sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
@@ -7773,7 +8359,7 @@ export function createGuestRequestHandler(
             transfer,
             now: app.environment.clock(),
             contract: transfers.manager.getBookingContract(offerId) ?? null,
-            ...threadFrame(app, offerId, principal),
+            ...threadFrame(app, offerId, principal, session.identity.principalIds),
             localPayment: options.localPayment === true,
             stay: {
               unitTitle: paymentFacts.unit,
@@ -7816,7 +8402,7 @@ export function createGuestRequestHandler(
           readGuestSession(req),
           sessionScopedGuestPrincipals
             ? undefined
-            : app.environment.config.guestId,
+            : app.environment.config.guestId, accountCredentialsOf(req), guestAccounts,
         );
         if (!session) {
           sendJson(res, 401, { ok: false, code: "AUTHENTICATION_REQUIRED" });
@@ -7874,7 +8460,7 @@ export function createGuestRequestHandler(
           readGuestSession(req),
           sessionScopedGuestPrincipals
             ? undefined
-            : app.environment.config.guestId,
+            : app.environment.config.guestId, accountCredentialsOf(req), guestAccounts,
         );
         if (!session) {
           sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
@@ -7967,7 +8553,7 @@ export function createGuestRequestHandler(
           readGuestSession(req),
           sessionScopedGuestPrincipals
             ? undefined
-            : app.environment.config.guestId,
+            : app.environment.config.guestId, accountCredentialsOf(req), guestAccounts,
         );
         const reference = url.searchParams.get("reference");
         const checkout = reference
@@ -8006,7 +8592,7 @@ export function createGuestRequestHandler(
           readGuestSession(req),
           sessionScopedGuestPrincipals
             ? undefined
-            : app.environment.config.guestId,
+            : app.environment.config.guestId, accountCredentialsOf(req), guestAccounts,
         );
         if (!session) {
           sendJson(res, 401, { ok: false, code: "AUTHENTICATION_REQUIRED" });
@@ -8050,7 +8636,7 @@ export function createGuestRequestHandler(
           const threadId = findGuestThreadForOffer(
             app.environment,
             checkout.offerId,
-            principal,
+            principal, session.identity.principalIds,
           );
           if (!threadId) throw new Error("Local payment thread is unavailable");
           app.environment.cardPaymentApp.verifyAndConfirm(
@@ -8083,7 +8669,7 @@ export function createGuestRequestHandler(
           readGuestSession(req),
           sessionScopedGuestPrincipals
             ? undefined
-            : app.environment.config.guestId,
+            : app.environment.config.guestId, accountCredentialsOf(req), guestAccounts,
         );
         const reference = url.searchParams.get("reference");
         if (!session || !reference) {
@@ -8130,7 +8716,7 @@ export function createGuestRequestHandler(
           const threadId = findGuestThreadForOffer(
             app.environment,
             checkout.offerId,
-            principal,
+            principal, session.identity.principalIds,
           );
           if (!threadId) {
             sendJson(res, 404, {
@@ -8152,7 +8738,7 @@ export function createGuestRequestHandler(
           const threadId = findGuestThreadForOffer(
             app.environment,
             checkout.offerId,
-            principal,
+            principal, session.identity.principalIds,
           );
           if (threadId) {
             res.writeHead(303, {
@@ -8270,7 +8856,7 @@ export function createGuestRequestHandler(
           readGuestSession(req),
           sessionScopedGuestPrincipals
             ? undefined
-            : app.environment.config.guestId,
+            : app.environment.config.guestId, accountCredentialsOf(req), guestAccounts,
         );
         if (!session) {
           res.writeHead(401, { "Content-Type": "text/plain" });
@@ -8367,7 +8953,7 @@ export function createGuestRequestHandler(
           readGuestSession(req),
           sessionScopedGuestPrincipals
             ? undefined
-            : app.environment.config.guestId,
+            : app.environment.config.guestId, accountCredentialsOf(req), guestAccounts,
         );
         if (req.method === "GET") {
           if (!session) {
@@ -8388,14 +8974,14 @@ export function createGuestRequestHandler(
             sendPageError(req, res, 400, "INVALID_CONVERSATION");
             return;
           }
-          const state = session.threadIds.has(threadId)
+          const state = threadReadable(app.environment, session, threadId)
             ? app.getState(threadId)
             : undefined;
           const committedWork = app.committedWork({
             id: session.principalId,
             role: "guest",
             tenantId: session.tenantId,
-          });
+          }, session.identity);
           res.writeHead(200, GUEST_HTML_HEADERS);
           res.end(
             renderNoScriptConversationHtml({
@@ -8439,7 +9025,7 @@ export function createGuestRequestHandler(
             browserSessions,
             req,
             threadId,
-            true,
+            true, guestAccounts,
           )
         ) {
           sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
@@ -8494,7 +9080,7 @@ export function createGuestRequestHandler(
           readGuestSession(req),
           sessionScopedGuestPrincipals
             ? undefined
-            : app.environment.config.guestId,
+            : app.environment.config.guestId, accountCredentialsOf(req), guestAccounts,
         );
         if (!session) {
           sendJson(res, 401, {
@@ -8510,7 +9096,7 @@ export function createGuestRequestHandler(
             id: session.principalId,
             role: "guest",
             tenantId: session.tenantId,
-          }),
+          }, session.identity),
         });
         return;
       }
@@ -8533,6 +9119,9 @@ export function createGuestRequestHandler(
           app.environment,
           browserSessions,
           sessionId,
+          undefined,
+          accountCredentialsOf(req),
+          guestAccounts,
         );
         if (!session) {
           sendJson(res, 401, {
@@ -8542,7 +9131,7 @@ export function createGuestRequestHandler(
           });
           return;
         }
-        if (!session.threadIds.has(threadId)) {
+        if (!threadReadable(app.environment, session, threadId)) {
           sendJson(res, 200, {
             ok: true,
             threadId,
@@ -8619,7 +9208,7 @@ export function createGuestRequestHandler(
               browserSessions,
               req,
               threadId,
-              sessionScopedGuestPrincipals,
+              sessionScopedGuestPrincipals, guestAccounts,
             )
           ) {
             sendJson(res, 401, {

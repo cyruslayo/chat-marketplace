@@ -123,7 +123,12 @@ export class WhatsAppChannelAdapter {
       "upload_identity_document",
       "amend_material_contract_terms",
       "request_deposit_claim_payout",
-      "view_full_primary_guest_identity"
+      "view_full_primary_guest_identity",
+      // Guest Account changes stay on authenticated web surfaces (ADR 0067, ADR 0093).
+      "change_account_email",
+      "export_account_data",
+      "delete_account",
+      "sign_out_everywhere"
     ]);
 
     if (highImpactIntents.has(intent) && !isAuthenticatedWebSession) {

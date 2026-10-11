@@ -546,6 +546,28 @@ export class SqliteGuestInteractionStore {
       });
   }
 
+  /**
+   * Retires one browser session binding (ADR 0093): the sign-in and sign-out rotations replace the cookie, so the old
+   * value stops authorizing anything. Rows of other sessions are untouched.
+   */
+  deleteSessionBinding(sessionId: string): void {
+    this.#database
+      .prepare("DELETE FROM guest_session_bindings WHERE session_id = $sessionId")
+      .run({ $sessionId: sessionId });
+  }
+
+  /**
+   * Retires every browser session bound to any of the given principals in one tenant (ADR 0070, ADR 0093): sign-out
+   * everywhere ends the interaction authority attached to the account's Linked Principals. An empty set deletes nothing.
+   */
+  deleteSessionBindingsForPrincipals(principalIds: readonly string[], tenantId: string): void {
+    for (const principalId of principalIds) {
+      this.#database
+        .prepare("DELETE FROM guest_session_bindings WHERE principal_id = $principalId AND tenant_id = $tenantId")
+        .run({ $principalId: principalId, $tenantId: tenantId });
+    }
+  }
+
   findSessionBinding(sessionId: string): DurableGuestSessionBinding | null {
     const row = this.#database
       .prepare(
