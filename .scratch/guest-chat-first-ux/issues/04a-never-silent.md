@@ -1,6 +1,6 @@
 # Never silent: answer every message and keep the surface
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 07, 02
 Parent: [04](04-never-silent.md)
@@ -34,3 +34,10 @@ AC numbers are kept from the parent issue for traceability.
 - [ ] No invented policy strings: guest-facing wording for money/legal states traces to CONTEXT.md or an ADR; gaps raised with the user.
 - [ ] No bearer credentials or contact values in telemetry or logs (ADR 0075).
 - [ ] `npm run check` and `npm test` pass.
+
+## Comments
+- 11 Oct 2026, **Status reconciliation**: `Status: ready-for-agent` -> `Status: resolved` (reconciled against origin/main 37b9c62).
+  - Answer: `scratch/issues/04a-never-silent.md` (repo root). Every turn after booking starts gets a stage reply, so none is silent. Facility questions are answered only from `unit.amenities`. A change after submission gets a stage-specific explanation and changes nothing (ADR-0060). The client deletes a surface before re-creating it (ADR-0074).
+  - Evidence: test/guest-never-silent.test.ts (AC1, AC2, AC4); AC5 in test/mobile-guest-journey-chromium.test.ts. Code: apps/local-guest/src/guest-server.ts (`#handleTurn`, `#stageReply`, `#changeExplanation`); apps/local-guest/src/concierge.ts (`amenityQuestions`). Landing: PR #55, commit bf814be.
+  - Verified: non-browser tests for this group were run on 11 Oct 2026 (75 of 75 pass).
+  - Not verified: real-Chrome tests (`*-chromium.test.ts`, `mobile-guest-journey-chromium.test.ts`) were not run in the reconciliation sandbox (no Chrome); they pass in the CI `browser` job on main. The 320/390/768/1280 screenshots and the ADR 0078 capture sweep were not re-checked. The Definition of Done checklist was not re-ticked item by item in this reconciliation.

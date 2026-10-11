@@ -1,6 +1,6 @@
 # Waiting states with server-driven countdowns
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 08
 Findings: F7 (see ../PRD.md)
@@ -41,3 +41,10 @@ For awaiting-Operator and payment-window states, show a countdown to the deadlin
 - [ ] No invented policy strings: guest-facing wording for money/legal states traces to CONTEXT.md or an ADR; gaps raised with the user.
 - [ ] No bearer credentials or contact values in telemetry or logs (ADR 0075).
 - [ ] `npm run check` and `npm test` pass.
+
+## Comments
+- 11 Oct 2026, **Status reconciliation**: `Status: ready-for-agent` -> `Status: resolved` (reconciled against origin/main 37b9c62).
+  - Answer: `scratch/issues/10-waiting-states.md` (repo root). `#waitingFor` builds the waiting state on each response from the authoritative artifact (ADR-0041 operator deadline, ADR-0044 payment window); it is never stored. The countdown is `deadlineAt` minus `serverNow`, and expiry comes only from the server. There is no withdraw action, and the composer is never disabled.
+  - Evidence: test/guest-waiting-states.test.ts (AC1–AC6 over HTTP, with failure paths); test/guest-waiting-states-chromium.test.ts (AC1, AC2). Code: apps/local-guest/src/guest-server.ts (`#waitingFor`); apps/web-agent/src/guest-content.ts (`guestWaitingCopy`). Landing: PR #60, commit 68b390d.
+  - Verified: non-browser tests for this group were run on 11 Oct 2026 (75 of 75 pass).
+  - Not verified: real-Chrome tests (`*-chromium.test.ts`, `mobile-guest-journey-chromium.test.ts`) were not run in the reconciliation sandbox (no Chrome); they pass in the CI `browser` job on main. The 320/390/768/1280 screenshots and the ADR 0078 capture sweep were not re-checked. The Definition of Done checklist was not re-ticked item by item in this reconciliation.
