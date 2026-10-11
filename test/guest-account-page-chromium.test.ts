@@ -53,33 +53,60 @@ test("AC5: the account page reflows at 320, 390, 768 and 1280 with no horizontal
   }
 });
 
-test("AC3 and AC5: in real Chromium an invalid phone keeps the typed value and reflows at every launch width", async () => {
+/**
+ * Signs a fresh real browser in through the no-JavaScript form and lands on /account. Each browser has its own profile, so the caller
+ * uses one browser per Guest address (a shared profile would link the next address to the first account, review T4 / account_conflict).
+ */
+async function signInInBrowser(tab: RealBrowserTab, base: string, sender: CapturingEmailSender, email: string): Promise<void> {
+  await tab.setJavaScriptEnabled(false);
+  await tab.setViewport(390, 844);
+  await tab.navigate(`${base}/account/sign-in?return=/account`);
+  await tab.waitForSelector("#email", 10_000);
+  await tab.focus("#email");
+  await tab.insertText(email);
+  assert.equal(await tab.clickButton(GUEST_ACCOUNT_COPY.sendCode), true);
+  await tab.waitForSelector("#code", 10_000);
+  await tab.focus("#code");
+  await tab.insertText(sender.codeFor(email));
+  assert.equal(await tab.clickButton(GUEST_ACCOUNT_COPY.checkCode), true);
+  await tab.waitForFunction("location.pathname === '/account'", 10_000);
+}
+
+test("AC3: in real Chromium an invalid phone keeps the typed value in the field", async () => {
+  const sender = new CapturingEmailSender();
+  const { fixture } = await accountFixture({ sender });
+  const browser = await launchRealBrowser();
+  try {
+    const tab = await browser.createTab();
+    await signInInBrowser(tab, fixture.base, sender, EMAIL);
+    await tab.waitForSelector("#phone", 10_000);
+    await tab.focus("#phone");
+    await tab.insertText("12345");
+    await tab.clickButton(GUEST_ACCOUNT_COPY.savePhone);
+    await tab.waitForSelector("#phone-error", 10_000);
+    assert.equal(await tab.evaluate<string>("document.querySelector('#phone').value"), "12345", "the typed value is kept");
+  } finally {
+    await browser.close();
+    await fixture.close();
+  }
+});
+
+test("AC5: the phone error page reflows at 320, 390, 768 and 1280 with 44px controls (real Chromium, no JavaScript)", async () => {
   const sender = new CapturingEmailSender();
   const { fixture } = await accountFixture({ sender });
   try {
     for (const [width, height] of VIEWPORTS) {
-      // A fresh browser per width: a shared profile keeps the first sign-in and links the next address to another account.
+      // A fresh browser per width: a shared profile would link the next sign-in to the first account.
       const browser = await launchRealBrowser();
       try {
         const tab = await browser.createTab();
-        await tab.setJavaScriptEnabled(false);
+        await signInInBrowser(tab, fixture.base, sender, `${width}-${EMAIL}`);
         await tab.setViewport(width, height);
-        await tab.navigate(`${fixture.base}/account/sign-in?return=/account`);
-        await tab.waitForSelector("#email", 10_000);
-        await tab.focus("#email");
-        await tab.insertText(`${width}-${EMAIL}`);
-        await tab.clickButton(GUEST_ACCOUNT_COPY.sendCode);
-        await tab.waitForSelector("#code", 10_000);
-        await tab.focus("#code");
-        await tab.insertText(sender.codeFor(`${width}-${EMAIL}`));
-        await tab.clickButton(GUEST_ACCOUNT_COPY.checkCode);
-        await tab.waitForFunction("location.pathname === '/account'", 10_000);
         await tab.waitForSelector("#phone", 10_000);
         await tab.focus("#phone");
         await tab.insertText("12345");
         await tab.clickButton(GUEST_ACCOUNT_COPY.savePhone);
         await tab.waitForSelector("#phone-error", 10_000);
-        assert.equal(await tab.evaluate<string>("document.querySelector('#phone').value"), "12345", "the typed value is kept");
         await assertReflowAndTargets(tab, `phone error at ${width}px`);
       } finally {
         await browser.close();
@@ -90,24 +117,32 @@ test("AC3 and AC5: in real Chromium an invalid phone keeps the typed value and r
   }
 });
 
-test("AC2 and AC5: in real Chromium the email-change code step reflows at every launch width and keeps the new address", async () => {
+test("AC2: in real Chromium the email-change code step keeps the new address", async () => {
   const sender = new CapturingEmailSender();
   const { fixture } = await accountFixture({ sender });
   const browser = await launchRealBrowser();
   try {
     const tab = await browser.createTab();
-    await tab.setJavaScriptEnabled(false);
-    await tab.setViewport(320, 640);
-    await tab.navigate(`${fixture.base}/account/sign-in?return=/account`);
-    await tab.waitForSelector("#email", 10_000);
-    await tab.focus("#email");
-    await tab.insertText(EMAIL);
-    await tab.clickButton(GUEST_ACCOUNT_COPY.sendCode);
+    await signInInBrowser(tab, fixture.base, sender, EMAIL);
+    await tab.waitForSelector("#new-email", 10_000);
+    await tab.focus("#new-email");
+    await tab.insertText(NEW_EMAIL);
+    await tab.clickButton(GUEST_ACCOUNT_COPY.changeEmailButton);
     await tab.waitForSelector("#code", 10_000);
-    await tab.focus("#code");
-    await tab.insertText(sender.codeFor(EMAIL));
-    await tab.clickButton(GUEST_ACCOUNT_COPY.checkCode);
-    await tab.waitForFunction("location.pathname === '/account'", 10_000);
+    assert.equal(await tab.evaluate<string>("document.querySelector(\"input[name='email']\").value"), NEW_EMAIL, "the new address is kept on the code step");
+  } finally {
+    await browser.close();
+    await fixture.close();
+  }
+});
+
+test("AC5: the email-change code step reflows at 320, 390, 768 and 1280 with 44px controls (real Chromium)", async () => {
+  const sender = new CapturingEmailSender();
+  const { fixture } = await accountFixture({ sender });
+  const browser = await launchRealBrowser();
+  try {
+    const tab = await browser.createTab();
+    await signInInBrowser(tab, fixture.base, sender, EMAIL);
     await tab.waitForSelector("#new-email", 10_000);
     await tab.focus("#new-email");
     await tab.insertText(NEW_EMAIL);
@@ -117,8 +152,6 @@ test("AC2 and AC5: in real Chromium the email-change code step reflows at every 
       await tab.setViewport(width, height);
       await assertReflowAndTargets(tab, `email code step at ${width}px`);
     }
-    assert.equal(await tab.evaluate<string>("document.querySelector(\"input[name='email']\").value"), NEW_EMAIL, "the new address is kept on the code step");
-    await tab.close();
   } finally {
     await browser.close();
     await fixture.close();

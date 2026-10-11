@@ -292,16 +292,33 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 /** The check-in helper and the assurance store. Nothing may reach the helper; the store has the listed importers only. */
 const GUARDED_HELPER = "guest-check-in-eligibility";
 const GUARDED_STORE = "guest-identity-assurance";
-/** Leaves: the migration manifest and the import validator. Traversal stops here, so a route that imports them does not reach the store. */
-const LEAF_FILES = ["apps/cloudflare/src/ops-import.ts", "apps/cloudflare/src/schema.ts", "apps/local-guest/src/guest-identity-status.ts"];
 /**
- * Issue 07 added one leaf: the account identity-status reader (read-only, `currentAssurance` only). The account runtime is its
- * only importer, so the account page shows the real level (ADR 0094) without any page or booking module reaching the store.
+ * Leaves: the migration manifest and the import validator. Traversal stops here, so a route that imports them does not reach the store.
+ * Nothing else is a leaf: the account composition below is traversed like any other module (review D1).
+ */
+/**
+ * The local guest server is the gateway (review D1): the account runtime, and so the store, is reachable only through it. A traversal
+ * stops at the gateway, and its direct importers are pinned below, so a booking or route module cannot reach the store around it.
+ */
+const COMPOSITION_ROOT = "apps/local-guest/src/guest-server.ts";
+const LEAF_FILES = ["apps/cloudflare/src/ops-import.ts", "apps/cloudflare/src/schema.ts", COMPOSITION_ROOT];
+/** The only modules that compose the gateway: the pilot server and Worker, the local and pilot CLIs, and the preflight script. */
+const GATEWAY_IMPORTERS = [
+  "apps/cloudflare/src/shortlet-pilot-do.ts",
+  "apps/local-guest/src/cli-start.ts",
+  "apps/pilot/src/local-pilot-server.ts",
+  "apps/pilot/src/pilot-server.ts",
+  "scripts/assistant-preflight.ts",
+].sort();
+/**
+ * Issue 07 account composition. The identity-status reader (read-only `currentAssurance`) is imported only by the account runtime, and
+ * the runtime only by the gateway. Both may reach the store; no other module may (AC5).
  */
 const STATUS_READER = "apps/local-guest/src/guest-identity-status.ts";
 const ACCOUNT_RUNTIME = "apps/local-guest/src/guest-account-runtime.ts";
 const ACCOUNT_PAGES = "apps/local-guest/src/guest-account-pages.ts";
-const STORE_IMPORTERS = [...LEAF_FILES, "domains/shortlet/src/guest-check-in-eligibility.ts"].sort();
+const ACCOUNT_COMPOSITION = [ACCOUNT_RUNTIME, STATUS_READER];
+const STORE_IMPORTERS = [...LEAF_FILES.filter((file) => file !== COMPOSITION_ROOT), "domains/shortlet/src/guest-check-in-eligibility.ts", STATUS_READER].sort();
 /**
  * Every source root that can host a booking, route, application, payment or composition module. Read from the filesystem, so a new
  * app or package is swept without a list edit: `apps/*\/src`, `packages/*\/src`, plus `domains` and `scripts`.
@@ -357,7 +374,9 @@ const isGuarded = (file: string) => [GUARDED_HELPER, GUARDED_STORE].includes(mod
 
 test("AC5: no booking, route, application or payment module reaches the eligibility helper or the assurance store, through barrels or direct imports", () => {
   const leaves = new Set(LEAF_FILES.map((file) => join(ROOT, file)));
-  const entries = ALL_SOURCE.filter((file) => !isGuarded(file) && !leaves.has(file));
+  const composition = new Set(ACCOUNT_COMPOSITION.map((file) => join(ROOT, file)));
+  // The account runtime and reader are reached only through the gateway (pinned above), so they are not entries themselves.
+  const entries = ALL_SOURCE.filter((file) => !isGuarded(file) && !leaves.has(file) && !composition.has(file));
   assert.ok(entries.length > 100, "the sweep covers every source root");
   const violations: string[] = [];
   for (const entry of entries) {
@@ -381,9 +400,15 @@ test("AC5: only the schema manifest, the import validator and the check-in helpe
   assert.deepEqual(importersOf(GUARDED_HELPER), []);
 });
 
-test("AC5 (issue 07): only the account runtime imports the identity-status reader, and the account pages import neither the store nor the eligibility helper", () => {
+test("AC5 (issue 07, review D1): only the five composition entrypoints import the gateway, only the gateway imports the account runtime, and only the runtime imports the identity-status reader", () => {
   const importersOf = (base: string) => ALL_SOURCE.filter((file) => importsOf(file).some((target) => moduleName(target) === base)).map(rel).sort();
+  assert.deepEqual(importersOf(moduleName(COMPOSITION_ROOT)), GATEWAY_IMPORTERS);
+  assert.deepEqual(importersOf(moduleName(ACCOUNT_RUNTIME)), [COMPOSITION_ROOT]);
   assert.deepEqual(importersOf(moduleName(STATUS_READER)), [ACCOUNT_RUNTIME]);
+});
+
+test("AC5 (issue 07): the account pages import neither the store nor the eligibility helper", () => {
+  const importersOf = (base: string) => ALL_SOURCE.filter((file) => importsOf(file).some((target) => moduleName(target) === base)).map(rel).sort();
   const pageTargets = importsOf(join(ROOT, ACCOUNT_PAGES)).map(moduleName);
   assert.ok(!pageTargets.includes(GUARDED_STORE) && !pageTargets.includes(GUARDED_HELPER), "the account pages import no assurance module");
 });

@@ -258,6 +258,8 @@ import {
   renderOfferNotFoundHtml,
   renderAccountHtml,
   renderEmailChangeCodeHtml,
+  ACCOUNT_PAGE_HEADERS,
+  accountNoticeFrom,
   type AccountPageInput,
   renderRateLimitedHtml,
   renderSignInCodeHtml,
@@ -7212,14 +7214,18 @@ export function createGuestRequestHandler(
       const session = existingBrowserSession(req);
       const staleInteraction = typeof readGuestSession(req) === "string" && session === null;
       const account = accounts.resolveAccount(credentials);
-      const status = account && !staleInteraction ? accounts.accountStatus(account.accountGuestId) : null;
+      // Review D4: a presented interaction session must be linked to the same account as the account cookie, or nothing is shown.
+      const mismatched = session !== null && account !== null && accounts.linkedAccountOf(session.principalId) !== account.accountGuestId;
+      const status = account && !staleInteraction && !mismatched ? accounts.accountStatus(account.accountGuestId) : null;
       if (!status) {
         res.writeHead(303, { Location: "/account/sign-in?return=/account", "Cache-Control": "no-store" });
         res.end();
         return;
       }
-      res.writeHead(200, GUEST_HTML_HEADERS);
-      res.end(accountPageHtml(session, status, {}));
+      // Review D3: the notice is read from a fixed allowlist; any other value is ignored and never reflected.
+      const notice = accountNoticeFrom(url.searchParams.get("notice"));
+      res.writeHead(200, ACCOUNT_PAGE_HEADERS);
+      res.end(accountPageHtml(session, status, notice === undefined ? {} : { notice }));
       return;
     }
     if (req.method !== "POST") {
@@ -7352,9 +7358,15 @@ export function createGuestRequestHandler(
         return;
       }
       const session = existingBrowserSession(req);
+      // Review D4: an interaction session of another account refuses the request before anything is read or written.
+      if (session !== null && accounts.linkedAccountOf(session.principalId) !== account.accountGuestId) {
+        res.writeHead(303, { Location: "/account/sign-in?return=/account", "Cache-Control": "no-store" });
+        res.end();
+        return;
+      }
       const minutes = accounts.signInCodeLifetimeMinutes;
       const sendAccountPage = (extra: Partial<Omit<AccountPageInput, "email" | "phone" | "governmentIdVerified">>, status400: boolean): void => {
-        res.writeHead(status400 ? 400 : 200, GUEST_HTML_HEADERS);
+        res.writeHead(status400 ? 400 : 200, ACCOUNT_PAGE_HEADERS);
         res.end(accountPageHtml(session, status, extra));
       };
       if (path === "/account/phone") {
@@ -7392,7 +7404,7 @@ export function createGuestRequestHandler(
         }
         try {
           const sent = await accounts.requestEmailChangeCode({ credentials: credentials, accountGuestId: account.accountGuestId, email: normalized, clientAddress: accounts.clientAddress(req) });
-          res.writeHead(200, GUEST_HTML_HEADERS);
+          res.writeHead(200, ACCOUNT_PAGE_HEADERS);
           res.end(renderEmailChangeCodeHtml({ newEmail: sent.email, challengeId: sent.challengeId, minutes }));
         } catch (error) {
           if (error instanceof GuestAccountAuthorityError && error.code === "rate_limited") {
@@ -7401,6 +7413,11 @@ export function createGuestRequestHandler(
           }
           if (error instanceof GuestAccountAuthorityError && error.code === "session_invalid") {
             sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
+            return;
+          }
+          // Q6: the same address is refused by the authority too; a race with the check above answers the same page, never a 500.
+          if (error instanceof GuestAccountAuthorityError && error.code === "invalid_input") {
+            sendAccountPage({ emailDraft: typed, emailError: { code: "same_email", message: GUEST_ACCOUNT_COPY.errors.sameEmail } }, true);
             return;
           }
           if (error instanceof SignInDeliveryError) {
@@ -7437,7 +7454,7 @@ export function createGuestRequestHandler(
           sendAccountPage({ emailError: { code: "email_in_use", message: GUEST_ACCOUNT_COPY.errors.emailInUse } }, true);
           return;
         }
-        res.writeHead(200, GUEST_HTML_HEADERS);
+        res.writeHead(200, ACCOUNT_PAGE_HEADERS);
         res.end(renderEmailChangeCodeHtml({ newEmail, challengeId, minutes, error: codeFormError(error.code) }));
         return;
       }

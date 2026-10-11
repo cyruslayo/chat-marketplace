@@ -58,3 +58,20 @@ New `test/guest-account-page.test.ts` and a Chromium test using `withStagePage`.
 - The only account-email writer is the code-verified `changeEmail` (AC2). A changed email removes the current identity-assurance result (ADR 0094, trigger in the store schema).
 - Identity status: the account page reads the real level from the read-only leaf `apps/local-guest/src/guest-identity-status.ts` (the only assurance-store importer outside schema and ops import, per the AC5 guard). The resolver reports `government-ID-verified` only for a current result. Labels are copy from issue 01. Assurance is display only, never a gate (ADR 0085).
 - Status: left `ready-for-agent`. See the Needs-human list in the PR body: copy approval, the 06 AC9 change, the single-writer decision, and the phone fallback.
+
+- 11 Oct 2026, security review of PR #103 (head ff0153f), fixes on `ga-07-account-page` (delegated, not human-approved, except where stated):
+  - D1 (AC5 guard, MEDIUM): the status reader is no longer a traversal leaf. The local guest server is the gateway (a leaf), its five direct importers are pinned, and only the server may import the runtime and only the runtime the reader. Probe A (a booking-style module importing the runtime) and A2 (importing the server) now fail the guard, and probe B (importing the reader) stays killed.
+  - D2: one `aria-describedby` on the phone input naming the help and the error.
+  - D3: success notices are read from a fixed allowlist (`accountNoticeFrom`); unknown values are ignored and never reflected. Copy comes from `GUEST_ACCOUNT_COPY`.
+  - D4: GET /account, and the POST routes, refuse (303 to sign-in, nothing written) when the presented interaction session is linked to a different account than the account cookie.
+  - D5: account responses and the account form-error pages send `Cache-Control: no-store`.
+  - T1 and T2: authority tests for the change-email session and revision check and for the session and account binding of the verify step. T1 also covers the same-address refusal. Probes M1, M2, M3, M5 and M6 are killed.
+  - T3: route tests for a replayed code, a code after the session is revoked, the per-address cooldown at the route, and an address held by another account (identical code step at the request step, `email_in_use` at confirm).
+  - T4: the Chromium file has one criterion per test (AC3, AC5 phone error, AC2, AC5 code step, plus the account page reflow test). Their red state is not applicable: the file runs only in the CI browser job.
+  - T5: the 06 AC9 failure-path test name now says it redirects (303).
+  - Nits: the code step's back link, brand eyebrow and lifetime sentence come from `GUEST_ACCOUNT_COPY`; `invalid_input` from the authority is answered as the same-address page (Q6). Q6 cannot be triggered from HTTP without fault injection, so it has no direct test.
+- Q1 (delegated, not human-approved): closed accounts are not reachable yet (no closure code). The fallback for a linked principal whose account is closed (no contact email; `saveEmail` refused, a dead end at the contact prompts) is owned by issue 10 (account closure). Recorded in issue 10 Comments.
+- Q2 (delegated, accepted risk): the resolver reads the assurance store on every account-authenticated request, so a malformed verified row makes every account request fail (500). This fails closed and is accepted here; the row is written only through the validated paths of issue 09.
+- Q5 (delegated): the Chromium test uses `launchRealBrowser` rather than `withStagePage`. Acceptable; the browser helper is the one the other Chromium account test uses.
+- Probe results on this branch: see the PR body.
+- The phone display fallback to the principal's own row when no account contact row exists remains for human confirmation (decision (e)).

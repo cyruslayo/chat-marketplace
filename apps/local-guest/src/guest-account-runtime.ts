@@ -326,6 +326,12 @@ export class GuestAccountRuntime {
     if (account && credentials) this.authority.revokeSession(credentials.sessionId, this.#tenantId);
   }
 
+  /** The account a Linked Principal belongs to in this tenant, or null (review D4: the interaction principal must agree with the account). */
+  linkedAccountOf(principalId: string): string | null {
+    const link = this.links.accountForPrincipal(principalId);
+    return link !== null && link.tenantId === this.#tenantId ? link.accountGuestId : null;
+  }
+
   /** The principals linked to an account, for retiring their interaction authority (ADR 0070). */
   principalsOf(accountGuestId: string): readonly string[] {
     return this.links.linkedPrincipals(accountGuestId, this.#tenantId);

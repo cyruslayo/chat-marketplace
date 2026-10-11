@@ -1,6 +1,9 @@
 import { appBarHtml, errorPage, escapeHtml, pageShell } from "../../web/src/ui-kit.js";
 import { GUEST_ACCOUNT_COPY } from "../../web-agent/src/guest-content.js";
 
+/** Account responses carry personal data, so the browser and any cache must not keep them (review D5). */
+export const ACCOUNT_PAGE_HEADERS = Object.freeze({ "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+
 /** A form error: the reason code is kept on the page for support and tests, and the copy is shown inline (ADR 0078). */
 export interface AccountFormError {
   readonly code: string;
@@ -74,12 +77,17 @@ export function renderSignInCodeHtml(input: {
   });
 }
 
-/** The one-line notice shown after a completed change (a fixed set, never user content). */
+/** The one-line notice shown after a completed change: a fixed allowlist of values, and their copy (review D3). */
 const NOTICES = {
   "email-changed": GUEST_ACCOUNT_COPY.emailChangedNotice,
   "phone-saved": GUEST_ACCOUNT_COPY.phoneSavedNotice,
 } as const;
 export type AccountNotice = keyof typeof NOTICES;
+
+/** The notice for a query value: only an allowlisted value is recognised, anything else is ignored and never reflected. */
+export function accountNoticeFrom(value: string | null): AccountNotice | undefined {
+  return value === "email-changed" || value === "phone-saved" ? value : undefined;
+}
 
 export interface AccountPageInput {
   readonly email: string;
@@ -99,13 +107,15 @@ export interface AccountPageInput {
 export function renderAccountHtml(input: AccountPageInput): string {
   const identity = input.governmentIdVerified ? GUEST_ACCOUNT_COPY.identityIdChecked : GUEST_ACCOUNT_COPY.identityIdNotChecked;
   const emailInvalid = input.emailError === undefined ? "" : ` aria-invalid="true" aria-describedby="new-email-error"`;
-  const phoneInvalid = input.phoneError === undefined ? "" : ` aria-invalid="true" aria-describedby="phone-error"`;
+  // One attribute naming the help and, when present, the error (review D2).
+  const phoneDescribedBy = input.phoneError === undefined ? "phone-help" : "phone-help phone-error";
+  const phoneInvalid = input.phoneError === undefined ? "" : ` aria-invalid="true"`;
   const notice = input.notice === undefined ? "" : `<p class="ui-banner ui-banner--success" role="status" data-notice="${input.notice}">${escapeHtml(NOTICES[input.notice])}</p>`;
   return pageShell({
     title: `${GUEST_ACCOUNT_COPY.accountTitle} · Shortlet`,
     width: "narrow",
     frame: appBar("/", "Back to your conversation", { href: "/account", label: GUEST_ACCOUNT_COPY.appBarAccount, icon: "users" }),
-    body: `<header class="ui-page__header"><p class="ui-eyebrow">Shortlet</p><h1>${GUEST_ACCOUNT_COPY.accountTitle}</h1><p>${escapeHtml(GUEST_ACCOUNT_COPY.accountIntro)}</p></header>` +
+    body: `<header class="ui-page__header"><p class="ui-eyebrow">${GUEST_ACCOUNT_COPY.brandEyebrow}</p><h1>${GUEST_ACCOUNT_COPY.accountTitle}</h1><p>${escapeHtml(GUEST_ACCOUNT_COPY.accountIntro)}</p></header>` +
       notice +
       `<section class="ui-panel" data-account-state="signed-in"><h2>${GUEST_ACCOUNT_COPY.detailsHeading}</h2>` +
       `<dl class="ui-facts ui-facts--stacked">` +
@@ -121,7 +131,7 @@ export function renderAccountHtml(input: AccountPageInput): string {
       `<form class="ui-panel" method="post" action="/account/phone"><h2>${GUEST_ACCOUNT_COPY.phoneLabel}</h2>` +
       `<div class="ui-field"><label class="ui-field__label" for="phone">${escapeHtml(GUEST_ACCOUNT_COPY.phoneLabel)}</label>` +
       `<p class="ui-field__hint" id="phone-help">${escapeHtml(GUEST_ACCOUNT_COPY.phoneHint)}</p>` +
-      `<input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" maxlength="32" aria-describedby="phone-help" value="${escapeHtml(input.phoneDraft ?? "")}"${phoneInvalid}>` +
+      `<input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" maxlength="32" aria-describedby="${phoneDescribedBy}" value="${escapeHtml(input.phoneDraft ?? "")}"${phoneInvalid}>` +
       `${inlineError("phone-error", input.phoneError)}</div>` +
       `<button class="ui-button ui-button--primary ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.savePhone)}</button></form>` +
       `<section class="ui-panel"><h2>${GUEST_ACCOUNT_COPY.sessionsHeading}</h2>` +
@@ -137,9 +147,9 @@ export function renderEmailChangeCodeHtml(input: { readonly newEmail: string; re
   return pageShell({
     title: `${GUEST_ACCOUNT_COPY.changeEmailCodeTitle} · Shortlet`,
     width: "narrow",
-    frame: appBar(ACCOUNT_PATH, "Back to your account", { href: ACCOUNT_PATH, label: GUEST_ACCOUNT_COPY.appBarAccount, icon: "users" }),
-    body: `<header class="ui-page__header"><p class="ui-eyebrow">Shortlet</p><h1>${GUEST_ACCOUNT_COPY.changeEmailCodeTitle}</h1>` +
-      `<p>${escapeHtml(GUEST_ACCOUNT_COPY.changeEmailCodeIntro)} It expires in ${input.minutes} minutes.</p></header>` +
+    frame: appBar(ACCOUNT_PATH, GUEST_ACCOUNT_COPY.backToAccount, { href: ACCOUNT_PATH, label: GUEST_ACCOUNT_COPY.appBarAccount, icon: "users" }),
+    body: `<header class="ui-page__header"><p class="ui-eyebrow">${GUEST_ACCOUNT_COPY.brandEyebrow}</p><h1>${GUEST_ACCOUNT_COPY.changeEmailCodeTitle}</h1>` +
+      `<p>${escapeHtml(GUEST_ACCOUNT_COPY.changeEmailCodeIntro)} ${escapeHtml(GUEST_ACCOUNT_COPY.codeExpiresIn(input.minutes))}</p></header>` +
       `<form class="ui-panel" method="post" action="${EMAIL_CODE_PATH}">` +
       `<input type="hidden" name="email" value="${escapeHtml(input.newEmail)}">` +
       `<input type="hidden" name="challengeId" value="${escapeHtml(input.challengeId)}">` +

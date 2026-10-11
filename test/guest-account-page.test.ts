@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { SqliteGuestIdentityAssurance } from "../domains/shortlet/src/guest-identity-assurance.js";
+import { GUEST_ACCOUNT_COPY } from "../apps/web-agent/src/guest-content.js";
 import { guestAction } from "./helpers/guest-restart.js";
 import type { GuestTurnSuccess } from "../apps/local-guest/src/guest-server.js";
 import { recordLocalVerifiedIdentity } from "./helpers/identity-assurance-fixture.js";
 import {
   ACCOUNT_COOKIE,
   CapturingEmailSender,
+  CODE_REQUEST_COOLDOWN_MS,
   TEST_GUEST_PHONE,
   accountFixture,
   advanceClock,
@@ -417,6 +419,230 @@ test("AC6 control: an anonymous principal's contact email is saved as before (no
     const principal = fixture.environment.guestPrincipal();
     fixture.environment.guestContactApp.submitEmail({ contactEmail: OTHER_EMAIL }, principal);
     assert.equal(fixture.environment.guestContactApp.get(principal)?.contactEmail, OTHER_EMAIL);
+  } finally {
+    await fixture.close();
+  }
+});
+
+// Review fixes (issue 07, PR #103 security review). Each test below is red on the code before its fix.
+
+/** A raw GET with the given cookie header, to read response headers the page helpers do not return. */
+async function rawGet(base: string, path: string, cookies: string): Promise<Response> {
+  return await fetch(`${base}${path}`, { redirect: "manual", headers: { accept: "text/html", cookie: cookies } });
+}
+
+test("AC3 (review D2): the phone input names its help and its error in one aria-describedby attribute", async () => {
+  const { fixture, sender } = await accountFixture();
+  try {
+    const device = await signInDevice(fixture, sender, EMAIL, fixture.cookie);
+    const answer = await postForm(fixture.base, "/account/phone", { phone: "12345" }, deviceCookies(device));
+    const phoneTag = /<input id="phone"[^>]*>/.exec(answer.body)?.[0] ?? "";
+    assert.ok(phoneTag, "the phone input is rendered");
+    assert.equal((phoneTag.match(/aria-describedby=/g) ?? []).length, 1, "the input carries one aria-describedby attribute");
+    assert.match(phoneTag, /aria-describedby="phone-help phone-error"/, "the one attribute names both the help and the error");
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("AC1 (review D3): a saved phone number shows its success notice on the account page", async () => {
+  const { fixture, sender } = await accountFixture();
+  try {
+    const device = await signInDevice(fixture, sender, EMAIL, fixture.cookie);
+    const saved = await postForm(fixture.base, "/account/phone", { phone: TEST_GUEST_PHONE }, deviceCookies(device));
+    assert.equal(saved.location, "/account?notice=phone-saved");
+    const page = await getPage(fixture.base, "/account?notice=phone-saved", deviceCookies(device));
+    assert.ok(page.body.includes(GUEST_ACCOUNT_COPY.phoneSavedNotice), "the notice from the copy block is rendered");
+    assert.match(page.body, /role="status"/);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("AC2 (review D3): a completed email change shows its success notice on the account page", async () => {
+  const { fixture, sender } = await accountFixture();
+  try {
+    const device = await signInDevice(fixture, sender, EMAIL, fixture.cookie);
+    const changed = await changeEmailOverHttp(fixture.base, deviceCookies(device), sender, NEW_EMAIL);
+    assert.equal(changed.location, "/account?notice=email-changed");
+    const page = await getPage(fixture.base, "/account?notice=email-changed", deviceCookies(device));
+    assert.ok(page.body.includes(GUEST_ACCOUNT_COPY.emailChangedNotice));
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("AC1 failure path (review D3): an unknown notice value is ignored and never reflected into the page", async () => {
+  const { fixture, sender } = await accountFixture();
+  try {
+    const device = await signInDevice(fixture, sender, EMAIL, fixture.cookie);
+    const probe = "<script>alert(1)</script>";
+    const page = await getPage(fixture.base, `/account?notice=${encodeURIComponent(probe)}`, deviceCookies(device));
+    assert.equal(page.status, 200);
+    assert.ok(!page.body.includes("alert(1)"), "the notice value is not reflected");
+    assert.ok(!/role="status"/.test(page.body), "no notice banner is shown for an unknown value");
+  } finally {
+    await fixture.close();
+  }
+});
+
+/** Two accounts on one database: device A signed in as Ada, device B signed in as another address (review D4). */
+async function twoAccounts(sender: CapturingEmailSender) {
+  const a = await accountFixture({ sender });
+  const b = await accountFixture({ sender, databasePath: a.fixture.databasePath });
+  const deviceA = await signInDevice(a.fixture, sender, EMAIL, a.fixture.cookie);
+  const deviceB = await signInDevice(b.fixture, sender, OTHER_EMAIL, b.fixture.cookie);
+  return { a, b, deviceA, deviceB };
+}
+
+test("AC1 failure path (review D4): an interaction cookie of one account with the account cookie of another shows no account data", async () => {
+  const sender = new CapturingEmailSender();
+  const { a, b, deviceA, deviceB } = await twoAccounts(sender);
+  try {
+    const mixed = `${deviceA.interaction}; ${deviceB.account}`;
+    const page = await getPage(a.fixture.base, "/account", mixed);
+    assert.equal(page.status, 303, "the mismatched browser is sent to sign-in");
+    assert.equal(page.location, SIGN_IN_RETURN);
+    assert.ok(!page.body.includes(EMAIL), "Ada's email is not shown");
+    assert.ok(!page.body.includes(OTHER_EMAIL), "the other account's email is not shown either");
+  } finally {
+    await b.fixture.close();
+    await a.fixture.close();
+  }
+});
+
+test("AC4 (review D4): a phone POST with a mismatched interaction cookie is refused and saves nothing", async () => {
+  const sender = new CapturingEmailSender();
+  const { a, b, deviceA, deviceB } = await twoAccounts(sender);
+  try {
+    const snapshot = () => (a.fixture.environment.database.prepare("SELECT guest_id, tenant_id, phone_number, contact_email, revision FROM guest_contacts ORDER BY guest_id, tenant_id").all([]) as unknown[]);
+    const before = snapshot();
+    const refused = await postForm(a.fixture.base, "/account/phone", { phone: "+2348099999999" }, `${deviceA.interaction}; ${deviceB.account}`);
+    assert.equal(refused.status, 303, "the mismatched browser is sent to sign-in");
+    assert.deepEqual(snapshot(), before, "no contact row changed");
+  } finally {
+    await b.fixture.close();
+    await a.fixture.close();
+  }
+});
+
+test("AC5 (review D5): the account page and its form-error pages send Cache-Control no-store", async () => {
+  const { fixture, sender } = await accountFixture();
+  try {
+    const device = await signInDevice(fixture, sender, EMAIL, fixture.cookie);
+    const cookies = deviceCookies(device);
+    const page = await rawGet(fixture.base, "/account", cookies);
+    assert.match(page.headers.get("cache-control") ?? "", /no-store/, "the account page is not cached");
+    const badPhone = await fetch(`${fixture.base}/account/phone`, { method: "POST", redirect: "manual", headers: { "content-type": "application/x-www-form-urlencoded", origin: new URL(fixture.base).origin, cookie: cookies }, body: "phone=12345" });
+    assert.equal(badPhone.status, 400);
+    assert.match(badPhone.headers.get("cache-control") ?? "", /no-store/, "the phone error page is not cached");
+    const emailForm = await fetch(`${fixture.base}/account/email`, { method: "POST", redirect: "manual", headers: { "content-type": "application/x-www-form-urlencoded", origin: new URL(fixture.base).origin, cookie: cookies }, body: `email=${encodeURIComponent(NEW_EMAIL)}` });
+    assert.equal(emailForm.status, 200);
+    assert.match(emailForm.headers.get("cache-control") ?? "", /no-store/, "the code step is not cached");
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("T3: a replayed change-email code is refused and does not change the email again", async () => {
+  const { fixture, sender } = await accountFixture();
+  try {
+    const device = await signInDevice(fixture, sender, EMAIL, fixture.cookie);
+    const cookies = deviceCookies(device);
+    const requested = await requestEmailChange(fixture.base, cookies, NEW_EMAIL);
+    const code = sender.codeFor(NEW_EMAIL);
+    const challengeId = challengeIdOf(requested);
+    assert.equal((await postForm(fixture.base, "/account/email/code", { email: NEW_EMAIL, challengeId, code }, cookies)).status, 303);
+    const replay = await postForm(fixture.base, "/account/email/code", { email: NEW_EMAIL, challengeId, code }, cookies);
+    assert.equal(replay.status, 200);
+    assert.ok(replay.body.includes('data-error-code="code_consumed"'), "the replay reads as consumed");
+    assert.ok((await accountPage(fixture.base, cookies)).body.includes(NEW_EMAIL), "the first change stands");
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("T3: a change-email code presented after the account session is revoked is refused and changes nothing", async () => {
+  const { fixture, sender } = await accountFixture();
+  try {
+    const device = await signInDevice(fixture, sender, EMAIL, fixture.cookie);
+    const cookies = deviceCookies(device);
+    const requested = await requestEmailChange(fixture.base, cookies, NEW_EMAIL);
+    const code = sender.codeFor(NEW_EMAIL);
+    const revoked = await postForm(fixture.base, "/account/sign-out-everywhere", {}, cookies);
+    assert.equal(revoked.status, 303);
+    const after = await postForm(fixture.base, "/account/email/code", { email: NEW_EMAIL, challengeId: challengeIdOf(requested), code }, cookies);
+    assert.equal(after.status, 401, "the revoked session cannot confirm the change");
+    const row = fixture.environment.database.prepare("SELECT email_normalized FROM guest_accounts").get([]) as { email_normalized: string };
+    assert.equal(row.email_normalized, EMAIL, "the account email is unchanged");
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("T3: a second email-change request for the same address is rate limited at the route with Retry-After", async () => {
+  const { fixture, sender } = await accountFixture();
+  try {
+    const device = await signInDevice(fixture, sender, EMAIL, fixture.cookie);
+    const cookies = deviceCookies(device);
+    assert.equal((await requestEmailChange(fixture.base, cookies, NEW_EMAIL)).status, 200);
+    const sent = sender.messages.length;
+    const again = await requestEmailChange(fixture.base, cookies, NEW_EMAIL);
+    assert.equal(again.status, 429, "the cooldown answers 429");
+    assert.ok(again.retryAfter && Number(again.retryAfter) >= 1, "Retry-After is set");
+    assert.equal(sender.messages.length, sent, "no second code was sent");
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("T3: an address held by another account gets the same code step at the request step as a free address", async () => {
+  const sender = new CapturingEmailSender();
+  const { a, b, deviceA, deviceB } = await twoAccounts(sender);
+  try {
+    const free = await requestEmailChange(a.fixture.base, deviceCookies(deviceA), NEW_EMAIL);
+    advanceClock(a.fixture, CODE_REQUEST_COOLDOWN_MS * 2);
+    const held = await requestEmailChange(a.fixture.base, deviceCookies(deviceA), OTHER_EMAIL);
+    assert.equal(free.status, 200);
+    assert.equal(held.status, 200, "an address held elsewhere is not disclosed at the request step");
+    const shape = (body: string) => body.replace(/value="[^"]*"/g, "value").replace(/gacct-[A-Za-z0-9_-]+/g, "");
+    assert.match(held.body, /name="challengeId"/);
+    assert.match(free.body, /name="challengeId"/);
+    assert.equal(shape(held.body).includes('name="code"'), shape(free.body).includes('name="code"'));
+    assert.ok(deviceB.account);
+  } finally {
+    await b.fixture.close();
+    await a.fixture.close();
+  }
+});
+
+test("T3 failure path: confirming an address held by another account is refused with email_in_use and changes nothing", async () => {
+  const sender = new CapturingEmailSender();
+  const { a, b, deviceA, deviceB } = await twoAccounts(sender);
+  try {
+    // The other address's sign-in code was requested a moment ago on the shared database: wait out its cooldown first.
+    advanceClock(a.fixture, CODE_REQUEST_COOLDOWN_MS * 2);
+    const requested = await requestEmailChange(a.fixture.base, deviceCookies(deviceA), OTHER_EMAIL);
+    assert.equal(requested.status, 200, `the request step answers (got ${requested.status}: ${requested.body.slice(0, 160).replace(/\s+/g, " ")})`);
+    const refused = await postForm(a.fixture.base, "/account/email/code", { email: OTHER_EMAIL, challengeId: challengeIdOf(requested), code: sender.codeFor(OTHER_EMAIL) }, deviceCookies(deviceA));
+    assert.equal(refused.status, 400);
+    assert.ok(refused.body.includes('data-error-code="email_in_use"'));
+    assert.ok((await accountPage(a.fixture.base, deviceCookies(deviceA))).body.includes(EMAIL), "Ada keeps her email");
+    assert.ok(deviceB.interaction);
+  } finally {
+    await b.fixture.close();
+    await a.fixture.close();
+  }
+});
+
+test("Nit: the code step shows its back link and its lifetime from GUEST_ACCOUNT_COPY", async () => {
+  const { fixture, sender } = await accountFixture();
+  try {
+    const device = await signInDevice(fixture, sender, EMAIL, fixture.cookie);
+    const requested = await requestEmailChange(fixture.base, deviceCookies(device), NEW_EMAIL);
+    // The literal wording the copy block produces; the page must render it from GUEST_ACCOUNT_COPY, not from inline strings.
+    assert.ok(requested.body.includes("Back to your account"), "the back link text comes from the copy block");
+    assert.ok(requested.body.includes("It expires in 10 minutes."), "the lifetime sentence comes from the copy block");
   } finally {
     await fixture.close();
   }

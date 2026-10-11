@@ -320,7 +320,7 @@ test("AC9: Sign-out rotates the browser to a fresh unlinked anonymous interactio
   }
 });
 
-test("AC9 failure path: a signed-out request to /account is refused", async () => {
+test("AC9 failure path: a signed-out request to /account redirects to sign-in (303) and shows no account data", async () => {
   const { fixture } = await accountFixture();
   try {
     const page = await getPage(fixture.base, "/account", fixture.cookie);

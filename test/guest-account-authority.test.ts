@@ -494,3 +494,89 @@ test("Action-purpose codes produce no sign-in session and their proof is bound t
     await fixture.close();
   }
 });
+
+// Review gaps T1 and T2 (issue 07): the change-email code is bound to the session and account it was issued to.
+
+test("T1: a change-email code cannot be requested with a session secret that does not hold the account, or with a stale revision (fails closed)", async () => {
+  const fixture = await createGuestAccountFixture();
+  try {
+    const session = signInGuestAccount(fixture.authority, TEST_GUEST_EMAIL);
+    const base = { tenantId: session.account.tenantId, email: "ada.new@example.test", purpose: "change_email" as const, clientAddress: TEST_GUEST_ADDRESS, accountGuestId: session.account.accountGuestId, sessionId: session.sessionId };
+    assert.throws(
+      () => fixture.authority.requestCode({ ...base, sessionSecret: "not-the-secret", expectedRevision: session.account.revision }),
+      (error: unknown) => error instanceof GuestAccountAuthorityError && error.code === "session_invalid",
+      "a wrong session secret cannot start an email change",
+    );
+    assert.throws(
+      () => fixture.authority.requestCode({ ...base, sessionSecret: session.sessionSecret, expectedRevision: session.account.revision + 1 }),
+      (error: unknown) => error instanceof GuestAccountAuthorityError && error.code === "session_invalid",
+      "a stale account revision cannot start an email change",
+    );
+    // Neither refusal sends a code: the valid request afterwards is the first one recorded.
+    const issued = fixture.authority.requestCode({ ...base, sessionSecret: session.sessionSecret, expectedRevision: session.account.revision });
+    assert.ok(issued.challengeId, "the valid session and revision still get a challenge");
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("T2: a change-email code verifies only for the session it was issued to", async () => {
+  const fixture = await createGuestAccountFixture();
+  try {
+    const first = signInGuestAccount(fixture.authority, TEST_GUEST_EMAIL);
+    fixture.advance(61_000);
+    const second = signInGuestAccount(fixture.authority, TEST_GUEST_EMAIL);
+    const input = { tenantId: first.account.tenantId, email: "ada.new@example.test", purpose: "change_email" as const, clientAddress: TEST_GUEST_ADDRESS, accountGuestId: first.account.accountGuestId };
+    const challenge = fixture.authority.requestCode({ ...input, sessionId: first.sessionId, sessionSecret: first.sessionSecret, expectedRevision: first.account.revision });
+    assert.throws(
+      () => fixture.authority.verifyCode({ ...input, challengeId: challenge.challengeId, code: challenge.code, sessionId: second.sessionId, sessionSecret: second.sessionSecret }),
+      (error: unknown) => error instanceof GuestAccountAuthorityError && error.code === "session_invalid",
+      "another valid session of the same account cannot spend the code",
+    );
+    const verified = fixture.authority.verifyCode({ ...input, challengeId: challenge.challengeId, code: challenge.code, sessionId: first.sessionId, sessionSecret: first.sessionSecret });
+    assert.equal(verified.purpose, "change_email", "the issuing session still verifies it (the failed attempt above did not consume it)");
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("T2: a change-email code verifies only for the account it was issued to", async () => {
+  const fixture = await createGuestAccountFixture();
+  try {
+    const ada = signInGuestAccount(fixture.authority, TEST_GUEST_EMAIL);
+    fixture.advance(61_000);
+    const other = signInGuestAccount(fixture.authority, "other@example.test");
+    const challenge = fixture.authority.requestCode({
+      tenantId: ada.account.tenantId, email: "ada.new@example.test", purpose: "change_email", clientAddress: TEST_GUEST_ADDRESS,
+      accountGuestId: ada.account.accountGuestId, sessionId: ada.sessionId, sessionSecret: ada.sessionSecret, expectedRevision: ada.account.revision,
+    });
+    assert.throws(
+      () => fixture.authority.verifyCode({
+        tenantId: ada.account.tenantId, email: "ada.new@example.test", purpose: "change_email", clientAddress: TEST_GUEST_ADDRESS,
+        challengeId: challenge.challengeId, code: challenge.code,
+        accountGuestId: other.account.accountGuestId, sessionId: other.sessionId, sessionSecret: other.sessionSecret,
+      }),
+      (error: unknown) => error instanceof GuestAccountAuthorityError && error.code === "session_invalid",
+      "another account's valid session cannot spend the code",
+    );
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("T1 failure path: the authority refuses a change-email code to the account's own address and issues no challenge", async () => {
+  const fixture = await createGuestAccountFixture();
+  try {
+    const session = signInGuestAccount(fixture.authority, TEST_GUEST_EMAIL);
+    assert.throws(
+      () => fixture.authority.requestCode({
+        tenantId: session.account.tenantId, email: TEST_GUEST_EMAIL, purpose: "change_email", clientAddress: TEST_GUEST_ADDRESS,
+        accountGuestId: session.account.accountGuestId, sessionId: session.sessionId, sessionSecret: session.sessionSecret, expectedRevision: session.account.revision,
+      }),
+      (error: unknown) => error instanceof GuestAccountAuthorityError && error.code === "invalid_input",
+      "the account's current address is not a change",
+    );
+  } finally {
+    await fixture.close();
+  }
+});
