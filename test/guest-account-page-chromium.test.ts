@@ -56,33 +56,36 @@ test("AC5: the account page reflows at 320, 390, 768 and 1280 with no horizontal
 test("AC3 and AC5: in real Chromium an invalid phone keeps the typed value and reflows at every launch width", async () => {
   const sender = new CapturingEmailSender();
   const { fixture } = await accountFixture({ sender });
-  const browser = await launchRealBrowser();
   try {
     for (const [width, height] of VIEWPORTS) {
-      const tab = await browser.createTab();
-      await tab.setJavaScriptEnabled(false);
-      await tab.setViewport(width, height);
-      await tab.navigate(`${fixture.base}/account/sign-in?return=/account`);
-      await tab.waitForSelector("#email", 10_000);
-      await tab.focus("#email");
-      await tab.insertText(`${width}-${EMAIL}`);
-      await tab.clickButton(GUEST_ACCOUNT_COPY.sendCode);
-      await tab.waitForSelector("#code", 10_000);
-      await tab.focus("#code");
-      await tab.insertText(sender.codeFor(`${width}-${EMAIL}`));
-      await tab.clickButton(GUEST_ACCOUNT_COPY.checkCode);
-      await tab.waitForFunction("location.pathname === '/account'", 10_000);
-      await tab.waitForSelector("#phone", 10_000);
-      await tab.focus("#phone");
-      await tab.insertText("12345");
-      await tab.clickButton(GUEST_ACCOUNT_COPY.savePhone);
-      await tab.waitForSelector("#phone-error", 10_000);
-      assert.equal(await tab.evaluate<string>("document.querySelector('#phone').value"), "12345", "the typed value is kept");
-      await assertReflowAndTargets(tab, `phone error at ${width}px`);
-      await tab.close();
+      // A fresh browser per width: a shared profile keeps the first sign-in and links the next address to another account.
+      const browser = await launchRealBrowser();
+      try {
+        const tab = await browser.createTab();
+        await tab.setJavaScriptEnabled(false);
+        await tab.setViewport(width, height);
+        await tab.navigate(`${fixture.base}/account/sign-in?return=/account`);
+        await tab.waitForSelector("#email", 10_000);
+        await tab.focus("#email");
+        await tab.insertText(`${width}-${EMAIL}`);
+        await tab.clickButton(GUEST_ACCOUNT_COPY.sendCode);
+        await tab.waitForSelector("#code", 10_000);
+        await tab.focus("#code");
+        await tab.insertText(sender.codeFor(`${width}-${EMAIL}`));
+        await tab.clickButton(GUEST_ACCOUNT_COPY.checkCode);
+        await tab.waitForFunction("location.pathname === '/account'", 10_000);
+        await tab.waitForSelector("#phone", 10_000);
+        await tab.focus("#phone");
+        await tab.insertText("12345");
+        await tab.clickButton(GUEST_ACCOUNT_COPY.savePhone);
+        await tab.waitForSelector("#phone-error", 10_000);
+        assert.equal(await tab.evaluate<string>("document.querySelector('#phone').value"), "12345", "the typed value is kept");
+        await assertReflowAndTargets(tab, `phone error at ${width}px`);
+      } finally {
+        await browser.close();
+      }
     }
   } finally {
-    await browser.close();
     await fixture.close();
   }
 });
