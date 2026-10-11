@@ -1,5 +1,6 @@
 import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
 import { createHash } from "node:crypto";
+import { normalizeContactEmail } from "./guest-contact.js";
 
 /**
  * Durable Guest booking interaction store (ADR-0070/0071/0074/0075/0079).
@@ -83,6 +84,11 @@ export interface DurableBookingRequest {
   readonly declinedAt: string | null;
   readonly declineReason: string | null;
   readonly phoneNumber: string | null;
+  /**
+   * The contact email the request was made with, recorded once when the request is first saved and never rewritten
+   * (ADR 0093). Absent or null on legacy requests, which are therefore not claimable by email.
+   */
+  readonly contactEmailSnapshot?: string | null;
 }
 
 export interface DurableConditionalOffer {
@@ -286,6 +292,39 @@ function parseNames(json: string): readonly string[] {
   }
 }
 
+function bookingRequestFromRow(row: BookingRequestRow): DurableBookingRequest {
+  return Object.freeze({
+    requestId: row.request_id,
+    draftId: row.draft_id,
+    unitId: row.unit_id,
+    tenantId: row.tenant_id,
+    operatorId: row.operator_id,
+    primaryGuestId: row.primary_guest_id,
+    primaryGuestName: row.primary_guest_name,
+    occupants: parseNames(row.occupants_json),
+    checkIn: row.check_in,
+    checkOut: row.check_out,
+    nights: row.nights,
+    quoteJson: row.quote_json,
+    inventoryCommitmentId: row.inventory_commitment_id,
+    disclosedAt: row.disclosed_at,
+    deliveryDeadlineAt: row.delivery_deadline_at,
+    operatorResponseDeadlineAt: row.operator_response_deadline_at,
+    delivered: parseBoolean(row.delivered),
+    deliveredAt: row.delivered_at,
+    status: row.status,
+    confirmedAt: row.confirmed_at,
+    declinedAt: row.declined_at,
+    declineReason: row.decline_reason,
+    phoneNumber: row.phone_number,
+  });
+}
+
+/** Non-empty, de-duplicated principal ids. Blank entries are dropped so an empty scope reads nothing. */
+function distinctPrincipals(principalIds: readonly string[]): string[] {
+  return [...new Set(principalIds.filter((id) => typeof id === "string" && id.trim() !== ""))];
+}
+
 function storedText(value: unknown): string {
   if (typeof value !== "string") throw new TypeError("Stored interaction field must be text");
   return value;
@@ -302,6 +341,22 @@ function parseBoolean(value: number): boolean {
 function requiredPurpose(value: unknown): "stay" | "security_deposit" {
   return value === "security_deposit" ? "security_deposit" : "stay";
 }
+
+/**
+ * The immutable contact-email snapshot of each Booking Request (ADR 0093). One row per request, inserted only when the
+ * request is first saved, so the claim evidence never changes after creation and is never read from guest_contacts.
+ * Kept as its own table rather than a column so that migrations and the Node constructor cannot both add it.
+ */
+export const GUEST_REQUEST_CONTACT_SCHEMA = `
+      CREATE TABLE IF NOT EXISTS guest_booking_request_contacts (
+        request_id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        contact_email TEXT NOT NULL,
+        recorded_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_guest_request_contacts_email
+        ON guest_booking_request_contacts (tenant_id, contact_email);
+    `;
 
 /** Table DDL, applied by the schema migrations (apps/cloudflare/src/schema.ts) and by this store's constructor. */
 export const GUEST_INTERACTION_SCHEMA = `
@@ -444,6 +499,7 @@ export class SqliteGuestInteractionStore {
   constructor(database: SqlDatabase) {
     this.#database = database;
     this.#database.exec(GUEST_INTERACTION_SCHEMA);
+    this.#database.exec(GUEST_REQUEST_CONTACT_SCHEMA);
     const requestColumns = this.#database
       .prepare("PRAGMA table_info(guest_booking_requests)")
       .all();
@@ -574,6 +630,31 @@ export class SqliteGuestInteractionStore {
     );
   }
 
+  /**
+   * The threads of any of the given principals in one tenant (ADR 0093). An empty principal set or a missing tenant reads
+   * nothing; a session never reads another principal's threads by default.
+   */
+  findThreadsForPrincipals(
+    principalIds: readonly string[],
+    tenantId: string,
+  ): DurableGuestThreadRecord[] {
+    const ids = distinctPrincipals(principalIds);
+    if (ids.length === 0 || !tenantId) return [];
+    const rows = this.#database
+      .prepare(`SELECT * FROM guest_threads
+        WHERE tenant_id = ? AND principal_id IN (${ids.map(() => "?").join(", ")})
+        ORDER BY thread_id`)
+      .all([tenantId, ...ids]);
+    return rows.map((row) =>
+      Object.freeze({
+        threadId: storedText(row.thread_id),
+        principalId: storedText(row.principal_id),
+        tenantId: storedText(row.tenant_id),
+        threadJson: storedText(row.thread_json),
+      }),
+    );
+  }
+
   // --- Request Drafts ---
 
   listDraftIds(): readonly string[] {
@@ -651,6 +732,11 @@ export class SqliteGuestInteractionStore {
   }
 
   saveBookingRequest(request: DurableBookingRequest): void {
+    this.#transaction(() => {
+    // ADR 0093: the contact snapshot is recorded only when the request is first saved, never on a later state change.
+    const existed = this.#database
+      .prepare("SELECT 1 AS present FROM guest_booking_requests WHERE request_id = $requestId")
+      .get({ $requestId: request.requestId }) !== undefined;
     this.#database
       .prepare(`
       INSERT INTO guest_booking_requests (
@@ -713,6 +799,21 @@ export class SqliteGuestInteractionStore {
         $declineReason: request.declineReason ?? null,
         $phoneNumber: request.phoneNumber,
       });
+    const snapshot = typeof request.contactEmailSnapshot === "string" && request.contactEmailSnapshot !== ""
+      ? normalizeContactEmail(request.contactEmailSnapshot)
+      : null;
+    if (!existed && snapshot !== null) {
+      this.#database
+        .prepare(`INSERT INTO guest_booking_request_contacts (request_id, tenant_id, contact_email, recorded_at)
+          VALUES ($requestId, $tenantId, $contactEmail, $recordedAt)`)
+        .run({
+          $requestId: request.requestId,
+          $tenantId: request.tenantId,
+          $contactEmail: snapshot,
+          $recordedAt: request.disclosedAt,
+        });
+    }
+    });
   }
 
   findBookingRequest(requestId: string): DurableBookingRequest | null {
@@ -722,31 +823,42 @@ export class SqliteGuestInteractionStore {
       )
       .get({ $requestId: requestId }) as BookingRequestRow | undefined;
     if (!row) return null;
-    return Object.freeze({
-      requestId: row.request_id,
-      draftId: row.draft_id,
-      unitId: row.unit_id,
-      tenantId: row.tenant_id,
-      operatorId: row.operator_id,
-      primaryGuestId: row.primary_guest_id,
-      primaryGuestName: row.primary_guest_name,
-      occupants: parseNames(row.occupants_json),
-      checkIn: row.check_in,
-      checkOut: row.check_out,
-      nights: row.nights,
-      quoteJson: row.quote_json,
-      inventoryCommitmentId: row.inventory_commitment_id,
-      disclosedAt: row.disclosed_at,
-      deliveryDeadlineAt: row.delivery_deadline_at,
-      operatorResponseDeadlineAt: row.operator_response_deadline_at,
-      delivered: parseBoolean(row.delivered),
-      deliveredAt: row.delivered_at,
-      status: row.status,
-      confirmedAt: row.confirmed_at,
-      declinedAt: row.declined_at,
-      declineReason: row.decline_reason,
-      phoneNumber: row.phone_number,
-    });
+    return bookingRequestFromRow(row);
+  }
+
+  /**
+   * The Booking Requests whose primary guest is one of the given principals, in one tenant (ADR 0093). An empty
+   * principal set or a missing tenant reads nothing.
+   */
+  findBookingRequestsForPrincipals(principalIds: readonly string[], tenantId: string): DurableBookingRequest[] {
+    const ids = distinctPrincipals(principalIds);
+    if (ids.length === 0 || !tenantId) return [];
+    const rows = this.#database
+      .prepare(`SELECT * FROM guest_booking_requests
+        WHERE tenant_id = ? AND primary_guest_id IN (${ids.map(() => "?").join(", ")})
+        ORDER BY disclosed_at, request_id`)
+      .all([tenantId, ...ids]) as unknown as BookingRequestRow[];
+    return rows.map(bookingRequestFromRow);
+  }
+
+  /**
+   * The Booking Requests recorded with exactly this contact email in one tenant (ADR 0093). It reads the immutable snapshot
+   * only, never the mutable guest contact, so a request without a snapshot can never match.
+   */
+  findBookingRequestIdsByContactEmail(contactEmail: string, tenantId: string): readonly { requestId: string; primaryGuestId: string; tenantId: string }[] {
+    if (!contactEmail || !tenantId) return [];
+    const rows = this.#database
+      .prepare(`SELECT r.request_id, r.primary_guest_id, r.tenant_id
+        FROM guest_booking_request_contacts c
+        JOIN guest_booking_requests r ON r.request_id = c.request_id AND r.tenant_id = c.tenant_id
+        WHERE c.tenant_id = $tenantId AND c.contact_email = $contactEmail
+        ORDER BY r.request_id`)
+      .all({ $tenantId: tenantId, $contactEmail: contactEmail });
+    return Object.freeze(rows.map((row) => Object.freeze({
+      requestId: storedText(row.request_id),
+      primaryGuestId: storedText(row.primary_guest_id),
+      tenantId: storedText(row.tenant_id),
+    })));
   }
 
   // --- Conditional Booking Offers ---

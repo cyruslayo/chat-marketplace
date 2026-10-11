@@ -165,7 +165,12 @@ import {
   parseGuestProjection,
   type GuestPersistentProjection,
 } from "./guest-projection.js";
-import { hashSessionSecret } from "../../../domains/shortlet/src/index.js";
+import {
+  anonymousGuestIdentity,
+  authorizesPrincipalOwner,
+  hashSessionSecret,
+  type GuestIdentity,
+} from "../../../domains/shortlet/src/index.js";
 import { multipartBoundary, multipartFile } from "./multipart.js";
 import { DEFAULT_RECEIPT_MAX_BYTES } from "./fixture.js";
 import { createPlatformCommandEnvelope as createManualTransferCommand } from "../../../packages/platform-core/src/index.js";
@@ -1475,26 +1480,27 @@ export class LocalGuestApp {
    * unreadable, failed or expired record is never listed. Fails closed to an
    * empty list for any principal that is not this runtime's Guest (ADR-0070).
    */
-  committedWork(principal: CommandPrincipal): GuestCommittedWork[] {
+  committedWork(
+    principal: CommandPrincipal,
+    identity?: GuestIdentity,
+  ): GuestCommittedWork[] {
     const environment = this.#environment;
-    const guest = environment.guestPrincipal();
-    if (
-      principal.role !== "guest" ||
-      !principal.id ||
-      principal.id !== guest.id ||
-      !principal.tenantId ||
-      principal.tenantId !== environment.config.tenantId
-    )
-      return [];
+    const scope = committedWorkScope(environment, principal, identity);
+    if (scope === null || !principal.tenantId) return [];
     const work: GuestCommittedWork[] = [];
     try {
-      for (const record of environment.interactionStore.findThreadsForPrincipal(
-        principal.id,
+      for (const record of environment.interactionStore.findThreadsForPrincipals(
+        scope,
         principal.tenantId,
       )) {
+        const owner: CommandPrincipal = {
+          id: record.principalId,
+          role: "guest",
+          tenantId: principal.tenantId,
+        };
         const loaded =
           this.#threads.get(record.threadId) ??
-          this.#loadThread(record.threadId);
+          this.#loadThread(record.threadId, scope);
         if (!loaded || (!loaded.requestId && !loaded.offerId)) continue;
         // A thread records its offer only on its next refresh, and this read
         // never issues one (ADR-0079). Judge the durable offer for a confirmed
@@ -1508,7 +1514,7 @@ export class LocalGuestApp {
             : null);
         const thread: GuestThreadState =
           offerId === loaded.offerId ? loaded : { ...loaded, offerId };
-        const journey = this.#journeyFor(thread);
+        const journey = this.#journeyFor(thread, owner);
         if (journey === undefined || journey.outcome !== undefined) continue;
         const unitTitle = this.#currentUnit(thread)?.title;
         const base = {
@@ -2000,9 +2006,13 @@ export class LocalGuestApp {
    * shows as expired without waiting for a background job. Reading never
    * issues a command (ADR-0079).
    */
-  #journeyFor(thread: GuestThreadState): GuestJourney | undefined {
+  #journeyFor(
+    thread: GuestThreadState,
+    viewer?: CommandPrincipal,
+  ): GuestJourney | undefined {
     const environment = this.#environment;
-    const guest = environment.guestPrincipal();
+    // The viewer is the thread's owner: a Linked Principal's own offers and requests are read as that principal (ADR 0093).
+    const guest = viewer ?? environment.guestPrincipal();
     try {
       if (thread.offerId) {
         // ADR-0005: "Confirmed" only once the durable Booking Contract exists.
@@ -2208,14 +2218,19 @@ export class LocalGuestApp {
    * loading: the current surface is re-derived from authoritative domain
    * state, and an already-existing offer/request is only read, never created.
    */
-  #loadThread(threadId: string): GuestThreadState | null {
+  #loadThread(
+    threadId: string,
+    principalIds?: readonly string[],
+  ): GuestThreadState | null {
     const existing = this.#threads.get(threadId);
     if (existing) return existing;
     const environment = this.#environment;
     const record = environment.interactionStore.findThread(threadId);
     if (!record) return null;
+    // Callers that list an account's work pass the account's principal set, which the store already scoped (ADR 0093).
+    const owners = principalIds ?? [environment.guestPrincipal().id];
     if (
-      record.principalId !== environment.guestPrincipal().id ||
+      !owners.includes(record.principalId) ||
       record.tenantId !== environment.config.tenantId
     ) {
       return null;
@@ -6331,6 +6346,32 @@ function safePublicOrigin(value: string): URL | null {
 }
 
 /**
+ * The principals whose committed work a caller may list (ADR 0093). With an account identity, that is the identity's
+ * principal set, and the caller must be one of them. Without one, only the runtime's own Guest principal qualifies. A
+ * missing tenant or a foreign tenant fails closed.
+ */
+function committedWorkScope(
+  env: LocalGuestEnvironment,
+  principal: CommandPrincipal,
+  identity?: GuestIdentity,
+): readonly string[] | null {
+  if (
+    principal.role !== "guest" ||
+    !principal.id ||
+    !principal.tenantId ||
+    principal.tenantId !== env.config.tenantId
+  )
+    return null;
+  if (identity?.accountGuestId !== undefined) {
+    return identity.tenantId === principal.tenantId &&
+      identity.principalIds.includes(principal.id)
+      ? identity.principalIds
+      : null;
+  }
+  return principal.id === env.guestPrincipal().id ? [principal.id] : null;
+}
+
+/**
  * Resolves a browser session against the durable session-binding table
  * (ADR-0070/0075). A syntactically valid cookie is never enough: its salted
  * hash must match a stored binding whose principal/tenant match the current
@@ -6367,6 +6408,8 @@ function resolveBrowserSession(
     sessionKey,
     principalId: binding.principalId,
     tenantId: binding.tenantId,
+    // Until a Guest Account Session cookie is presented (issue 06), the browser's identity is its own principal only.
+    identity: anonymousGuestIdentity(binding.principalId, binding.tenantId),
     // The thread set is derived from the durable principal-scoped threads; the
     // browser session itself never authorizes a thread id on its own.
     threadIds: new Set(
@@ -6416,9 +6459,12 @@ function bindBrowserThread(
   // makes the thread re-derivable after a restart by the same session binding.
   const record = env.interactionStore.findThread(threadId);
   if (record) {
+    // ADR 0070/0093: the session principal or a Linked Principal of its account owns the thread; nothing else does.
     if (
-      record.principalId !== session.principalId ||
-      record.tenantId !== session.tenantId
+      !authorizesPrincipalOwner(session.identity, {
+        principalId: record.principalId,
+        tenantId: record.tenantId,
+      })
     )
       return false;
     env.interactionStore.saveThread({
@@ -6443,6 +6489,7 @@ function registerBrowserSession(
     sessionKey,
     principalId,
     tenantId: env.config.tenantId,
+    identity: anonymousGuestIdentity(principalId, env.config.tenantId),
     threadIds: new Set(),
   };
   cache.set(sessionKey, session);
@@ -6461,6 +6508,8 @@ interface BrowserSession {
   readonly sessionKey: string;
   readonly principalId: string;
   readonly tenantId: string;
+  /** What this browser may act on (ADR 0093). Thread ownership is checked against it, never against the cookie alone. */
+  readonly identity: GuestIdentity;
   readonly threadIds: Set<string>;
 }
 

@@ -451,8 +451,8 @@ export class SqliteGuestAccountAuthority {
         }
         const account = projectAccount(this.#database.prepare("SELECT * FROM guest_accounts WHERE account_guest_id = ? AND tenant_id = ?").get([accountGuestId, tenantId]) as unknown as AccountRow | undefined);
         if (!account || account.revision !== expectedRevision) return { failure: "session_invalid" };
-        if (input.purpose === "change_email" && account.email === email) return { failure: "invalid_input" };
-        if (input.purpose !== "change_email" && account.email !== email) return { failure: "session_invalid" };
+        if (input.purpose === "change_email" && account.email.toLowerCase() === email) return { failure: "invalid_input" };
+        if (input.purpose !== "change_email" && account.email.toLowerCase() !== email) return { failure: "session_invalid" };
       }
       const retryAfterMs = this.#requestRateFailure(rateScopeKey, emailKey, addressKey, now);
       if (retryAfterMs !== null) return { failure: "rate_limited", retryAfterSeconds: Math.max(1, Math.ceil(retryAfterMs / 1000)) };

@@ -240,6 +240,7 @@ export class BookingRequestManager {
       declinedAt: request.declinedAt ?? null,
       declineReason: request.declineReason ?? null
       ,phoneNumber: request.phoneNumber ?? null
+      ,contactEmailSnapshot: request.contactEmailSnapshot ?? null
     });
   }
 
@@ -471,9 +472,13 @@ export class BookingRequestManager {
       deliveredAt: deliveredAtIso,
       status: "disclosed"
       ,phoneNumber: contact?.phoneNumber
+      // ADR 0093: the contact email this request is made with, recorded once at creation as its claim evidence.
+      ,contactEmailSnapshot: contact?.contactEmail ?? null
     };
 
-    this.#requests.set(requestId, bookingRequest);
+    // ADR 0093: the contact email snapshot is persisted as claim evidence, and never leaves the domain through this object.
+    const { contactEmailSnapshot: _contactEmailSnapshot, ...publicRequest } = bookingRequest;
+    this.#requests.set(requestId, publicRequest);
     this.#persistRequest(bookingRequest);
 
     if (this.#audit) {
@@ -504,7 +509,7 @@ export class BookingRequestManager {
       }
     }
 
-    return { ...bookingRequest };
+    return { ...publicRequest };
   }
 
   markDelivered(

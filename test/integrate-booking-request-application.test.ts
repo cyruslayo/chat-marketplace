@@ -6,7 +6,12 @@ import {
   UnitRepository,
   BookingRequestManager,
   seedIssue01Units,
+  SqliteGuestAccountAuthority,
+  SqliteGuestAccountLinks,
+  SqliteGuestInteractionStore,
 } from "../domains/shortlet/src/index.js";
+import { openNodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-database.js";
+import { signInGuestAccount, TEST_GUEST_CODE_HASHING_KEY } from "./helpers/guest-account-authority.js";
 import { createPlatformCommandEnvelope, InMemoryAuditLog } from "../packages/platform-core/src/index.js";
 import {
   createBookingRequestApplication,
@@ -22,7 +27,7 @@ import { createTestAvailabilityCalendar } from "./helpers/availability-calendar.
 const NOW = new Date("2026-07-22T10:00:00Z");
 const clock = () => NOW;
 
-function setup() {
+function setup(contactEmail: string | null = null, store: SqliteGuestInteractionStore | null = null) {
   const repository = new UnitRepository();
   seedIssue01Units(repository);
   const audit = new InMemoryAuditLog();
@@ -32,10 +37,11 @@ function setup() {
       tenantId === "tenant-lagos" && (actorId === operatorId || actorId.startsWith("rep-")),
   };
   const application = createBookingRequestApplication({
-    guestContacts: { find: () => ({ guestId: "guest-101", tenantId: "tenant-lagos", phoneNumber: "+2348012345678", contactEmail: null, revision: 1 }) },
+    guestContacts: { find: () => ({ guestId: "guest-101", tenantId: "tenant-lagos", phoneNumber: "+2348012345678", contactEmail, revision: 1 }) },
     repository,
     audit,
     calendar,
+    store,
     operatorAuthority,
     guestVerification: new GuestVerificationService({ repository, verificationResults: {
       getVerificationResult: ({ tenantId, guestId }) => ({ tenantId, guestId, governmentIdVerified: true }),
@@ -70,6 +76,32 @@ function actionEvent(artifact: ReturnType<ReturnType<typeof setup>["application"
     projectionVersion: action.projectionVersion,
   } } } } as unknown as WebServerEventHandoff;
 }
+
+test("disclosure through the application writes the normalised contact snapshot, and a verified sign-in with that email claims the request", () => {
+  const database = openNodeSqliteDatabase(":memory:");
+  try {
+    const store = new SqliteGuestInteractionStore(database);
+    const { application, unit } = setup("Ada@Example.test", store);
+    const { request } = disclose(application, "guest-103", unit.id);
+    // The snapshot is recorded once at disclosure, normalised on write (Human decision 3).
+    const row = database.prepare("SELECT contact_email FROM guest_booking_request_contacts WHERE request_id = ?").get([request.requestId]);
+    assert.equal(row?.contact_email, "ada@example.test");
+    // A verified sign-in with that email claims the request for the account (ADR 0093).
+    const authority = new SqliteGuestAccountAuthority(database, { codeHashingKey: TEST_GUEST_CODE_HASHING_KEY });
+    const links = new SqliteGuestAccountLinks(database, { requests: store, authority });
+    const session = signInGuestAccount(authority, "ada@example.test", "tenant-lagos");
+    const result = links.linkSignedInPrincipal({ principalId: "guest-103", tenantId: "tenant-lagos", session });
+    assert.ok(result.claimedRequestIds.includes(request.requestId));
+  } finally {
+    database.close();
+  }
+});
+
+test("the disclosed Booking Request does not carry the contact email snapshot out of the domain (ADR 0093)", () => {
+  const { application, unit } = setup("ada@example.test");
+  const { request } = disclose(application, "guest-103", unit.id);
+  assert.equal("contactEmailSnapshot" in request, false);
+});
 
 test("production application creates guest commands and minimizes the canonical artifact", () => {
   const { application, audit, unit } = setup();

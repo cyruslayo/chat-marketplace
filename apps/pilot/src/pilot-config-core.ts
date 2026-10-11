@@ -39,6 +39,15 @@ export interface PilotNotificationConfiguration {
 /** Existing notification cadence; well inside the first reminder (ADR 0041). */
 export const DEFAULT_NOTIFICATION_SWEEP_SECONDS = 30;
 
+/**
+ * An operator alert recipient as configured: validated by the guest email rules, but only the domain is lowercased, so the
+ * local part keeps its case as before the 10-11 Oct 2026 guest email decisions (those cover guest emails only).
+ */
+function operatorAlertAddress(entry: string): string {
+  const normalised = normalizeContactEmail(entry);
+  return `${entry.slice(0, entry.lastIndexOf("@"))}@${normalised.slice(normalised.lastIndexOf("@") + 1)}`;
+}
+
 export function notificationConfiguration(source: PilotEnvironmentSource): PilotNotificationConfiguration | null {
   const resendApiKey = source.RESEND_API_KEY?.trim() ?? "";
   const from = source.SHORTLET_NOTIFICATION_FROM?.trim() ?? "";
@@ -48,7 +57,7 @@ export function notificationConfiguration(source: PilotEnvironmentSource): Pilot
   const fromAddress = /<([^<>]+)>\s*$/.exec(from)?.[1] ?? from;
   try { normalizeContactEmail(fromAddress); } catch { throw new Error("SHORTLET_NOTIFICATION_FROM must be an email address or Name <address>"); }
   const operatorAlertEmails = alertList.split(",").map((entry) => entry.trim()).filter((entry) => entry !== "").map((entry) => {
-    try { return normalizeContactEmail(entry); } catch { throw new Error("SHORTLET_OPERATOR_ALERT_EMAILS must be a comma-separated list of email addresses"); }
+    try { return operatorAlertAddress(entry); } catch { throw new Error("SHORTLET_OPERATOR_ALERT_EMAILS must be a comma-separated list of email addresses"); }
   });
   if (operatorAlertEmails.length === 0) throw new Error("SHORTLET_OPERATOR_ALERT_EMAILS must name at least one address");
   return Object.freeze({ resendApiKey, from, operatorAlertEmails: Object.freeze(operatorAlertEmails), sweepSeconds: positiveWholeNumber(source.SHORTLET_NOTIFICATION_SWEEP_SECONDS, "SHORTLET_NOTIFICATION_SWEEP_SECONDS", DEFAULT_NOTIFICATION_SWEEP_SECONDS) });

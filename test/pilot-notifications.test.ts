@@ -620,3 +620,13 @@ test("The production pilot runs the notifier when notifications are configured",
     await rm(plain.directory, { recursive: true, force: true });
   }
 });
+
+test("operator alert recipients keep their local part as configured and only the domain is lowercased (as before the guest email decision)", () => {
+  // The 10-11 Oct 2026 decisions cover guest emails only. Operator alert recipients keep the previous normalisation.
+  const configured = notificationConfiguration({
+    RESEND_API_KEY: "re_x",
+    SHORTLET_NOTIFICATION_FROM: "Shortlet <bookings@shortlet.example>",
+    SHORTLET_OPERATOR_ALERT_EMAILS: " Ops.Team@Shortlet.Example ",
+  });
+  assert.deepEqual(configured?.operatorAlertEmails, ["Ops.Team@shortlet.example"]);
+});

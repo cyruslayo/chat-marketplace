@@ -213,10 +213,11 @@ test("16 D1: the cutover flag cannot be unset, overwritten or read back through 
 test("16 D3: an import into an object whose schema version is behind is refused and creates no table", async () => {
   const target = targetStub();
   await verify(target);
-  // Simulate an object that has applied only migration 1: remove migration 2 and its table.
+  // Simulate an object that has applied only migration 1: remove every later migration record and the cutover table.
+  // (A gap in the record is refused as damaged, so the later versions must go together.)
   await runInDurableObject(target, (_instance, ctx) => {
     const database = new DurableObjectSqlDatabase(ctx.storage);
-    database.exec("DELETE FROM schema_migrations WHERE version = 2");
+    database.exec("DELETE FROM schema_migrations WHERE version >= 2");
     database.exec("DROP TABLE migration_state");
   });
   const before = await allTableNames(target);
