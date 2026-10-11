@@ -340,6 +340,10 @@ export const GUEST_ACCOUNT_COPY = Object.freeze({
     `Your Shortlet sign-in code is ${code}. It expires in ${minutes} minutes. If you did not ask for this code, you can ignore this email.`,
   unavailable: "Sign-in is not available right now. You can keep searching and booking without signing in.",
   signInRequired: "Sign in to see your account.",
+  // Issue 08 sign-in offer after a request is sent and after a booking is confirmed. Functional wording, not final: awaiting human approval (Needs human: copy approval).
+  offerTitle: "Sign in to see this booking on your other devices",
+  offerIntro: "We will email you a six-digit code. Signing in is optional, and your booking stays as it is.",
+  offerButton: "Send me a code",
   // Issue 07 account page. Functional wording, not final: awaiting human approval with the rest of this block.
   accountTitle: "Your account",
   brandName: "Shortlet",
