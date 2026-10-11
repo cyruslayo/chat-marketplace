@@ -11,6 +11,26 @@ import { formatMoney } from "../../../web/src/ui-kit.js";
 import { formatStayDates } from "../../../web-agent/src/booking-presentation.js";
 import { formatWat } from "../../../local-owner/src/back-office-view.js";
 import type { EmailMessage, EmailSender } from "./email-sender.js";
+import { GUEST_ACCOUNT_COPY } from "../../../web-agent/src/guest-content.js";
+
+/**
+ * The Guest sign-in code email (issue 06, ADR 0093). It is sent once per challenge, directly through the sender, when the
+ * code is issued. The code is in the body only: no notification record, log or audit entry carries it (ADR 0075), and the
+ * idempotency key is built from the opaque challenge id, never from the code or the email.
+ */
+export function guestSignInCodeMessage(input: {
+  readonly email: string;
+  readonly code: string;
+  readonly minutes: number;
+  readonly challengeId: string;
+}): EmailMessage {
+  return {
+    to: [input.email],
+    subject: GUEST_ACCOUNT_COPY.emailSubject,
+    text: GUEST_ACCOUNT_COPY.emailBody(input.code, input.minutes),
+    idempotencyKey: `guest.sign_in_code:${input.challengeId}`,
+  };
+}
 
 /**
  * Operator and Guest email notifications (launch-readiness issue 23).
@@ -36,7 +56,8 @@ export type NotificationKind =
   | "guest.payment_confirmed"
   | "guest.request_declined"
   | "guest.request_expired"
-  | "guest.request_not_delivered";
+  | "guest.request_not_delivered"
+  | "guest.sign_in_code";
 
 export interface PilotNotifierOptions {
   /** The shared pilot handle (ADR 0004); the notifier borrows it and never closes it. */

@@ -1,6 +1,6 @@
 # Guest server: sign-in, sign-out and account session cookie
 
-Status: ready-for-agent
+Status: claimed
 Type: task
 Blocked by: 05
 Requested: 2 Oct 2026
@@ -55,3 +55,28 @@ New `test/guest-account-sign-in.test.ts` (server) and `test/guest-account-sign-i
 - 10 Oct 2026: ADR 0093 requires sign-out to rotate to a fresh unlinked principal (AC9) and ADR 0067 keeps account changes on authenticated web surfaces (AC10). Both are added as acceptance criteria.
 - 10 Oct 2026, **open decision (needs human confirmation)**: account cookie shape. Recommended: a dedicated account cookie (ADR 0093 wording). The alternative, account columns on `guest_session_bindings`, is not recommended because it mixes account state into the interaction binding. Not confirmed.
 - 11 Oct 2026, moved from issue 05 (Human decision 2, "go with your recommendations"): the route-level parts of issue 05 AC4 and AC5 are acceptance criteria AC11 and AC12 here, the sign-in proof is AC13, and the bookings part of issue 05 AC1 is AC14. Issue 05 is `resolved` at store and authorization-decision level. Issue 05's linking now requires the verified sign-in session, so the route must pass it.
+- 11 Oct 2026, implementation (branch `ga-06-sign-in-sessions`, stacked on PRs #100 and #99; base `ga-base-05-99`): AC1-AC14 implemented and each has named tests in `test/guest-account-sign-in.test.ts` (40 tests) and `test/guest-sign-in-code-notification.test.ts` (3). The Chromium test `test/guest-account-sign-in-chromium.test.ts` is written but was not run here (no Chrome in this sandbox); it runs in the `browser` job.
+- 11 Oct 2026, notification routing (coordinator decision 1): `guest.sign_in_code` is now a `NotificationKind`, and `guestSignInCodeMessage` in `apps/pilot/src/notifications/pilot-notifier.ts` builds the message (idempotency key `guest.sign_in_code:<challengeId>`, code in the body only). The message is sent directly through the `EmailSender` when the code is issued. It is NOT routed through the pilot notifier sweep and NOT recorded in `pilot_notifications`, because that sweep works from database state and a request-time code send has no sweep to run in. Recording would only store a key and a status (never the code), so an audit row is an open question for the human, not a requirement that the code be stored.
+- 11 Oct 2026, AC11 and AC14 wording (coordinator decision 2): AC11 names `findGuestThreadForOffer` and `bindBrowserThread`; both authorize through the linked-principal set and are tested (refusal of an unlinked thread, refusal of a missing tenant). AC14 says the records are "shown over HTTP"; the committed-work listing (`/api/committed-work`, and the no-JavaScript conversation page) shows them for linked principals and claimed requests, and tests assert that. NOT covered: the conventional detail pages (`/booking-requests/...`, `/conditional-offers/...`, `/payments/offers/...`) still authorize by the session principal, so a second device can see a listing entry whose detail page is not openable. The AC wording does not require those pages to open for linked principals, so this is recorded as a follow-up for issue 07 or 08, with a decision needed on whether AC14 should be read as "openable". No test asserts that they open.
+- 11 Oct 2026, probes (ADR-free test quality check): every security guard was removed in turn and `test/guest-account-sign-in.test.ts` run. Results are in the PR body. Two return-path guards (g2 `//` and `/\\` prefixes, g4 same-origin URL resolution) are equivalent mutants: each is redundant with the other for every input, so removing either alone changes nothing observable. Both stay as defence in depth.
+- 11 Oct 2026, UI evidence NOT captured: no Chrome in this sandbox, so no 320/390/768/1280 screenshots, overflow or 44px evidence were produced by this agent. The Chromium test asserts overflow and 44px targets at those widths and runs in the `browser` job. Screenshots under `.scratch/guest-accounts/screenshots/06/` are handed to issue 11.
+- 11 Oct 2026, copy (not final, needs human approval): `GUEST_ACCOUNT_COPY` in `apps/web-agent/src/guest-content.ts` holds functional wording for the sign-in, code, account and error screens and the sign-in email (subject and body). It is not marketing copy and must be approved or replaced before issue 08 or launch.
+- 11 Oct 2026, status: left `claimed`, not `resolved`. Reason: the UI evidence above is not captured, and the open follow-up on conventional detail pages needs a decision. Resolve only after the human decides both, and after CI is green on the final head.
+
+### Needs human (provisioning; names chosen here, no values supplied)
+- `SHORTLET_GUEST_CODE_HASHING_KEY`: the HMAC key for codes and rate scopes. Name chosen here. Sign-in is disabled without it.
+- `RESEND_API_KEY` and `SHORTLET_NOTIFICATION_FROM`: existing notifier names, used for the sign-in email. Sign-in is disabled without them.
+- `SHORTLET_TRUST_CF_CONNECTING_IP=true`: only for Cloudflare-fronted deployments. Name chosen here. Unset or any other value uses the socket address.
+- Copy approval for `GUEST_ACCOUNT_COPY`.
+- Decision: the conventional detail pages for linked principals (see above).
+- Decision: whether a sign-in code send should record an audit row in `pilot_notifications` (the row would store only the idempotency key and status).
+
+## Answer (provisional, not resolved)
+
+Implemented on `ga-06-sign-in-sessions`:
+- Routes: `GET /account/sign-in`, `POST /account/sign-in`, `POST /account/sign-in/code`, `GET /account`, `POST /account/sign-out`, `POST /account/sign-out-everywhere` in `apps/local-guest/src/guest-server.ts`, with pages in `apps/local-guest/src/guest-account-pages.ts`. Plain forms, origin-checked, no JavaScript needed.
+- Runtime and configuration: `apps/local-guest/src/guest-account-runtime.ts` (fail-closed loader, return-path sanitiser, client-address policy, sign-in, sign-out and identity over the existing authority, links and resolver).
+- Cookies: `shortlet_guest_account` (`<sessionId>.<secret>`, HttpOnly, SameSite=Lax, Secure when configured); the interaction cookie rotates on sign-in and sign-out.
+- Committed work and thread ownership: identity is resolved per request, the binding is re-checked on every request, and claimed requests list only their own conversation.
+- WhatsApp: account intents redirect to the web (`domains/shortlet/src/whatsapp-adapter.ts`).
+- No migration added. `apps/pilot/src/*` changed only for the `NotificationKind` and the message builder.

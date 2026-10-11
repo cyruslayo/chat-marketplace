@@ -1,0 +1,653 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { restartFixture } from "./helpers/guest-restart.js";
+import { loadGuestAccountComposition, TRUST_CLOUDFLARE_CLIENT_ADDRESS_ENV } from "../apps/local-guest/src/guest-account-runtime.js";
+import { WhatsAppChannelAdapter } from "../domains/shortlet/src/whatsapp-adapter.js";
+import type { SqlDatabase } from "../packages/platform-core/src/sql-database.js";
+import {
+  ACCOUNT_COOKIE,
+  CODE_REQUEST_COOLDOWN_MS,
+  CapturingAuditSink,
+  CapturingEmailSender,
+  INTERACTION_COOKIE,
+  accountComposition,
+  accountFixture,
+  advanceToPendingWithPhone,
+  freshAnonymousCookie,
+  cookieHeader,
+  getJson,
+  getPage,
+  postForm,
+  postJson,
+  requestSignInCode,
+  setCookieValue,
+  signInDevice,
+  wrongCodeFor,
+} from "./helpers/guest-account-sign-in.js";
+
+const EMAIL = "ada@example.test";
+const SIGN_IN_PATH = "/account/sign-in";
+const CODE_PATH = "/account/sign-in/code";
+
+/** Advances one device's clock (the authority reads the device's clock, so a second device needs its own call). */
+function advance(fixture: { setTime(value: string): void; environment: { clock(): Date } }, milliseconds: number): void {
+  fixture.setTime(new Date(fixture.environment.clock().getTime() + milliseconds).toISOString());
+}
+
+/** Rows in one table of the fixture's database: the writes a refused request must not make (AC13). */
+function countRows(fixture: { readonly environment: { readonly database: SqlDatabase } }, table: string): number {
+  return (fixture.environment.database.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get([]) as { count: number }).count;
+}
+
+test("AC1: Without JavaScript, a Guest can request a code, enter it and land back on the page they came from, signed in.", async () => {
+  const { fixture, sender } = await accountFixture();
+  try {
+    const page = await getPage(fixture.base, `${SIGN_IN_PATH}?return=/stays/search`, fixture.cookie);
+    assert.equal(page.status, 200);
+    assert.match(page.body, /<form[^>]*method="post"[^>]*action="\/account\/sign-in"/);
+    assert.match(page.body, /name="email"[^>]*type="email"|type="email"[^>]*name="email"/);
+
+    const { answer: codePage, challengeId } = await requestSignInCode(fixture.base, EMAIL, fixture.cookie, "/stays/search");
+    assert.equal(codePage.status, 200);
+    assert.match(codePage.body, /name="code"/);
+    assert.equal(sender.messages.length, 1);
+
+    const done = await postForm(fixture.base, CODE_PATH, { email: EMAIL, challengeId, code: sender.codeFor(EMAIL), return: "/stays/search" }, fixture.cookie);
+    assert.equal(done.status, 303);
+    assert.equal(done.location, "/stays/search");
+    const account = setCookieValue(done, ACCOUNT_COOKIE);
+    assert.ok(account, "the account cookie is set");
+
+    const signedIn = await getPage(fixture.base, "/account", cookieHeader({ [ACCOUNT_COOKIE]: account }));
+    assert.equal(signedIn.status, 200);
+    assert.match(signedIn.body, /data-account-state="signed-in"/);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("AC1 failure path: a code request without a browser session still starts one, and a code cannot be checked without its challenge", async () => {
+  const { fixture, sender } = await accountFixture();
+  try {
+    const { challengeId } = await requestSignInCode(fixture.base, EMAIL, "");
+    assert.ok(challengeId, "the sign-in page issues a browser session when none exists");
+    const missing = await postForm(fixture.base, CODE_PATH, { email: EMAIL, challengeId: "", code: sender.codeFor(EMAIL), return: "/" }, "");
+    assert.equal(missing.status, 401);
+    assert.equal(setCookieValue(missing, ACCOUNT_COOKIE), undefined);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("AC2: A wrong code shows an inline field error with role alert and keeps the email", async () => {
+  const { fixture, sender } = await accountFixture();
+  try {
+    const { challengeId } = await requestSignInCode(fixture.base, EMAIL, fixture.cookie);
+    const wrong = await postForm(fixture.base, CODE_PATH, { email: EMAIL, challengeId, code: wrongCodeFor(sender.codeFor(EMAIL)), return: "/" }, fixture.cookie);
+    assert.equal(wrong.status, 200);
+    assert.match(wrong.body, /class="ui-field__error"[^>]*role="alert"|role="alert"[^>]*class="ui-field__error"/);
+    assert.match(wrong.body, /data-error-code="code_invalid"/);
+    assert.match(wrong.body, new RegExp(`name="email"[^>]*value="${EMAIL.replace(/[.]/g, "\\.")}"|value="${EMAIL.replace(/[.]/g, "\\.")}"[^>]*name="email"`));
+    assert.equal(setCookieValue(wrong, ACCOUNT_COOKIE), undefined);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("AC2: After the attempt limit the code fails with its own message, even when the right code is entered", async () => {
+  const { fixture, sender } = await accountFixture();
+  try {
+    const { challengeId } = await requestSignInCode(fixture.base, EMAIL, fixture.cookie);
+    const right = sender.codeFor(EMAIL);
+    let last = await postForm(fixture.base, CODE_PATH, { email: EMAIL, challengeId, code: wrongCodeFor(right), return: "/" }, fixture.cookie);
+    for (let attempt = 2; attempt <= 5; attempt += 1) {
+      last = await postForm(fixture.base, CODE_PATH, { email: EMAIL, challengeId, code: wrongCodeFor(right), return: "/" }, fixture.cookie);
+    }
+    assert.match(last.body, /data-error-code="code_attempts_exhausted"/);
+    const afterLimit = await postForm(fixture.base, CODE_PATH, { email: EMAIL, challengeId, code: right, return: "/" }, fixture.cookie);
+    assert.match(afterLimit.body, /data-error-code="code_attempts_exhausted"/);
+    assert.equal(setCookieValue(afterLimit, ACCOUNT_COOKIE), undefined);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("AC2: An expired code fails with its own message and creates no session", async () => {
+  const { fixture, sender } = await accountFixture();
+  try {
+    const { challengeId } = await requestSignInCode(fixture.base, EMAIL, fixture.cookie);
+    const code = sender.codeFor(EMAIL);
+    advance(fixture, 10 * 60 * 1000 + 1000);
+    const expired = await postForm(fixture.base, CODE_PATH, { email: EMAIL, challengeId, code, return: "/" }, fixture.cookie);
+    assert.match(expired.body, /data-error-code="code_expired"/);
+    assert.equal(setCookieValue(expired, ACCOUNT_COOKIE), undefined);
+    assert.equal(countRows(fixture, "guest_account_sessions"), 0);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("AC3: The session secret changes at sign-in (the pre-sign-in cookie value no longer authenticates as the account)", async () => {
+  const { fixture, sender } = await accountFixture();
+  try {
+    const before = fixture.cookie;
+    const device = await signInDevice(fixture, sender, EMAIL, before);
+    assert.notEqual(device.interaction, before, "the interaction cookie is rotated at sign-in");
+    const preSignIn = await getJson(fixture.base, "/api/committed-work", before);
+    assert.equal(preSignIn.status, 401, "the pre-sign-in cookie no longer authenticates");
+    const rotated = await getJson(fixture.base, "/api/committed-work", device.interaction);
+    assert.equal(rotated.status, 200);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("AC3 failure path: a pre-sign-in cookie presented with the account cookie does not authenticate as the account", async () => {
+  const { fixture, sender } = await accountFixture();
+  try {
+    const before = fixture.cookie;
+    const device = await signInDevice(fixture, sender, EMAIL, before);
+    // The browser that still holds the pre-sign-in interaction cookie, plus the newly issued account cookie.
+    const replayed = await getPage(fixture.base, "/account", cookieHeader({ [INTERACTION_COOKIE]: before.split("=")[1], [ACCOUNT_COOKIE]: device.account.split("=")[1] }));
+    assert.equal(replayed.status, 401);
+    assert.match(replayed.body, /AUTHENTICATION_REQUIRED/);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("AC4: Sign out everywhere closes an open stream in a second browser context and its next turn is refused", async () => {
+  const { fixture, sender } = await accountFixture();
+  try {
+    // Device A and device B share one account. The conversation on B is open in its own browser context.
+    const deviceA = await signInDevice(fixture, sender, EMAIL, fixture.cookie);
+    const second = await accountFixture({ sender, databasePath: fixture.databasePath });
+    try {
+      advance(second.fixture, CODE_REQUEST_COOLDOWN_MS * 2);
+      const deviceB = await signInDevice(second.fixture, sender, EMAIL, second.fixture.cookie);
+      const before = await postJson(second.fixture.base, "/api/turn", { threadId: second.fixture.threadId, text: "" }, deviceB.interaction);
+      assert.equal(before.status, 400, "device B's conversation is authorized before sign-out everywhere");
+
+      const out = await postForm(fixture.base, "/account/sign-out-everywhere", {}, cookieHeader({ [ACCOUNT_COOKIE]: deviceA.account.split("=")[1], [INTERACTION_COOKIE]: deviceA.interaction.split("=")[1] }));
+      assert.equal(out.status, 303);
+
+      const refused = await postJson(second.fixture.base, "/api/turn", { threadId: second.fixture.threadId, text: "I need an apartment in Ikoyi" }, deviceB.interaction);
+      assert.equal(refused.status, 401);
+      assert.equal(refused.body.code, "AUTHENTICATION_REQUIRED");
+      const withAccount = await getPage(second.fixture.base, "/account", deviceB.account);
+      assert.equal(withAccount.status, 401);
+    } finally {
+      await second.fixture.close();
+    }
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("AC4 failure path: sign out everywhere requires a current account session", async () => {
+  const { fixture } = await accountFixture();
+  try {
+    const anonymous = await postForm(fixture.base, "/account/sign-out-everywhere", {}, fixture.cookie);
+    assert.equal(anonymous.status, 401);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("AC5: Code requests over the limit get the standard rate-limited response", async () => {
+  const { fixture } = await accountFixture();
+  try {
+    // Five requests per email per hour (ADR 0093); the cooldown between them is respected.
+    for (let attempt = 1; attempt <= 5; attempt += 1) {
+      const { answer } = await requestSignInCode(fixture.base, EMAIL, fixture.cookie);
+      assert.equal(answer.status, 200, `request ${attempt} is within the limit`);
+      advance(fixture, CODE_REQUEST_COOLDOWN_MS);
+    }
+    const refused = await requestSignInCode(fixture.base, EMAIL, fixture.cookie);
+    assert.equal(refused.answer.status, 429);
+    assert.match(refused.answer.body, /data-error-code="RATE_LIMITED"/);
+    assert.ok(refused.answer.retryAfter && Number(refused.answer.retryAfter) >= 1, "the standard Retry-After header is set");
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("AC5 failure path: a second code request inside the cooldown is refused", async () => {
+  const { fixture } = await accountFixture();
+  try {
+    assert.equal((await requestSignInCode(fixture.base, EMAIL, fixture.cookie)).answer.status, 200);
+    const tooSoon = await requestSignInCode(fixture.base, EMAIL, fixture.cookie);
+    assert.equal(tooSoon.answer.status, 429);
+    assert.match(tooSoon.answer.body, /data-error-code="RATE_LIMITED"/);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("AC6: A return value that is absolute, protocol-relative or off-site is ignored", async () => {
+  const { fixture, sender } = await accountFixture();
+  try {
+    for (const hostile of ["https://evil.example/x", "//evil.example/x", "/\\evil.example", "javascript:alert(1)", "http://127.0.0.1:1/"]) {
+      const page = await getPage(fixture.base, `${SIGN_IN_PATH}?return=${encodeURIComponent(hostile)}`, fixture.cookie);
+      assert.match(page.body, /name="return" value="\/"/, `${hostile} is not carried into the form`);
+    }
+    const { challengeId } = await requestSignInCode(fixture.base, EMAIL, fixture.cookie, "//evil.example/x");
+    const done = await postForm(fixture.base, CODE_PATH, { email: EMAIL, challengeId, code: sender.codeFor(EMAIL), return: "//evil.example/x" }, fixture.cookie);
+    assert.equal(done.status, 303);
+    assert.equal(done.location, "/");
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("AC7: No server log, notification record or audit entry contains the email, the code or the cookie value", async () => {
+  const audit = new CapturingAuditSink();
+  const sender = new CapturingEmailSender();
+  const { fixture } = await accountFixture({ sender, audit });
+  const captured: string[] = [];
+  const originals = { log: console.log, info: console.info, warn: console.warn, error: console.error, out: process.stdout.write.bind(process.stdout), err: process.stderr.write.bind(process.stderr) };
+  const capture = (...parts: unknown[]) => { captured.push(parts.map(String).join(" ")); };
+  console.log = capture; console.info = capture; console.warn = capture; console.error = capture;
+  process.stdout.write = ((chunk: string | Uint8Array) => { captured.push(String(chunk)); return true; }) as typeof process.stdout.write;
+  process.stderr.write = ((chunk: string | Uint8Array) => { captured.push(String(chunk)); return true; }) as typeof process.stderr.write;
+  try {
+    const { challengeId } = await requestSignInCode(fixture.base, EMAIL, fixture.cookie);
+    const code = sender.codeFor(EMAIL);
+    await postForm(fixture.base, CODE_PATH, { email: EMAIL, challengeId, code: wrongCodeFor(code), return: "/" }, fixture.cookie);
+    const done = await postForm(fixture.base, CODE_PATH, { email: EMAIL, challengeId, code, return: "/" }, fixture.cookie);
+    const account = setCookieValue(done, ACCOUNT_COOKIE)!;
+    await getPage(fixture.base, "/account", cookieHeader({ [ACCOUNT_COOKIE]: account }));
+    await postForm(fixture.base, "/account/sign-out", {}, cookieHeader({ [ACCOUNT_COOKIE]: account }));
+    const secret = account.split(".").slice(1).join(".");
+    const sensitive = [EMAIL, code, wrongCodeFor(code), secret, setCookieValue(done, INTERACTION_COOKIE) ?? "", account];
+    const surfaces = [...captured, JSON.stringify(audit.entries), JSON.stringify(sender.messages.map((entry) => ({ subject: entry.subject, idempotencyKey: entry.idempotencyKey })))];
+    for (const surface of surfaces) {
+      for (const value of sensitive) {
+        if (value !== "") assert.equal(surface.includes(value), false, "no log, notification record or audit entry carries a credential or email");
+      }
+    }
+    assert.ok(audit.entries.length > 0, "the audit sink received the sign-in events it is given");
+  } finally {
+    console.log = originals.log; console.info = originals.info; console.warn = originals.warn; console.error = originals.error;
+    process.stdout.write = originals.out as typeof process.stdout.write;
+    process.stderr.write = originals.err as typeof process.stderr.write;
+    await fixture.close();
+  }
+});
+
+test("AC8: Searching, requesting and paying work unchanged without signing in", async () => {
+  const { fixture } = await accountFixture();
+  try {
+    const search = await getPage(fixture.base, "/stays/search?area=old-ikoyi&checkIn=2026-09-10&checkOut=2026-09-13&partySize=2", fixture.cookie);
+    assert.equal(search.status, 200);
+    const turn = await fixture.send("/api/turn", { text: "I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people" });
+    assert.equal(turn.ok, true);
+    const listed = await getJson(fixture.base, "/api/committed-work", fixture.cookie);
+    assert.equal(listed.status, 200);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("AC9: Sign-out rotates the browser to a fresh unlinked anonymous interaction principal: after POST /account/sign-out the old account cookie does not authenticate, and the previous principal's account history is not shown (ADR 0093)", async () => {
+  const { fixture, sender } = await accountFixture();
+  try {
+    // The live request is made on the device before it signs in; sign-in keeps the principal and rotates the cookie.
+    await advanceToPendingWithPhone(fixture);
+    const device = await signInDevice(fixture, sender, EMAIL, fixture.cookie);
+    const beforeOut = await getJson(fixture.base, "/api/committed-work", device.interaction + "; " + device.account);
+    assert.equal(beforeOut.status, 200);
+    assert.equal((beforeOut.body.committedWork as unknown[]).length, 1, "the account shows its live request before sign-out");
+
+    const out = await postForm(fixture.base, "/account/sign-out", {}, cookieHeader({ [ACCOUNT_COOKIE]: device.account.split("=")[1], [INTERACTION_COOKIE]: device.interaction.split("=")[1] }));
+    assert.equal(out.status, 303);
+    const freshInteraction = setCookieValue(out, INTERACTION_COOKIE);
+    assert.ok(freshInteraction && `${INTERACTION_COOKIE}=${freshInteraction}` !== device.interaction, "the browser gets a fresh interaction cookie");
+    assert.match(out.setCookies.find((cookie) => cookie.startsWith(`${ACCOUNT_COOKIE}=`)) ?? "", /Max-Age=0/);
+
+    const oldAccount = await getPage(fixture.base, "/account", device.account);
+    assert.equal(oldAccount.status, 401, "the old account cookie does not authenticate");
+    const fresh = await getJson(fixture.base, "/api/committed-work", cookieHeader({ [INTERACTION_COOKIE]: freshInteraction }));
+    assert.equal(fresh.status, 200);
+    assert.deepEqual(fresh.body.committedWork, [], "the previous principal's account history is not shown");
+    const oldCookie = await getJson(fixture.base, "/api/committed-work", device.interaction);
+    assert.equal(oldCookie.status, 401, "the signed-out interaction cookie is retired");
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("AC9 failure path: a signed-out request to /account is refused", async () => {
+  const { fixture } = await accountFixture();
+  try {
+    const page = await getPage(fixture.base, "/account", fixture.cookie);
+    assert.equal(page.status, 401);
+    assert.match(page.body, /data-error-code="AUTHENTICATION_REQUIRED"/);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("AC10: Account changes (email change, data export, deletion) are reachable only from authenticated web surfaces; WhatsApp and other agent channels redirect to the web (ADR 0067)", () => {
+  const adapter = new WhatsAppChannelAdapter();
+  for (const intent of ["change_account_email", "export_account_data", "delete_account", "sign_out_everywhere"]) {
+    const result = adapter.executeAction({ intent, payload: {} }) as { redirectedToWeb?: boolean; webUrl?: string };
+    assert.equal(result.redirectedToWeb, true, `${intent} is redirected to the web`);
+    assert.match(result.webUrl ?? "", /^https:\/\//);
+  }
+});
+
+test("AC10 failure path: an account change from WhatsApp is answered with the web link and is not executed", () => {
+  const adapter = new WhatsAppChannelAdapter();
+  const result = adapter.executeAction({ intent: "change_account_email", payload: { email: "new@example.test" } }) as { redirectedToWeb?: boolean; replyMessage?: string };
+  assert.equal(result.redirectedToWeb, true);
+  assert.match(result.replyMessage ?? "", /secure web portal/);
+});
+
+test("AC11: a thread owned by an unlinked principal is refused over HTTP even with a valid account cookie", async () => {
+  const { fixture, sender } = await accountFixture();
+  try {
+    // An anonymous device creates a conversation. It is owned by its own principal.
+    const stranger = await accountFixture({ sender, databasePath: fixture.databasePath });
+    try {
+      await stranger.fixture.send("/api/turn", { text: "I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people" });
+      const device = await signInDevice(fixture, sender, EMAIL, fixture.cookie);
+      const refused = await postJson(fixture.base, "/api/turn", { threadId: stranger.fixture.threadId, text: "" }, cookieHeader({ [INTERACTION_COOKIE]: device.interaction.split("=")[1], [ACCOUNT_COOKIE]: device.account.split("=")[1] }));
+      assert.equal(refused.status, 401);
+      assert.equal(refused.body.code, "AUTHENTICATION_REQUIRED");
+      // Control: the signed-in device's own conversation is still authorized.
+      const own = await postJson(fixture.base, "/api/turn", { threadId: fixture.threadId, text: "" }, device.interaction);
+      assert.equal(own.status, 400);
+    } finally {
+      await stranger.fixture.close();
+    }
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("AC11 failure path: a thread whose record has a missing tenant is refused over HTTP with a valid account cookie", async () => {
+  const { fixture, sender } = await accountFixture();
+  try {
+    const device = await signInDevice(fixture, sender, EMAIL, fixture.cookie);
+    await fixture.send("/api/turn", { text: "I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people" }, device.interaction);
+    const own = fixture.environment.interactionStore.findThread(fixture.threadId);
+    assert.ok(own);
+    fixture.environment.interactionStore.saveThread({ threadId: "g-missing-tenant", principalId: own.principalId, tenantId: "", threadJson: own.threadJson });
+    const refused = await postJson(fixture.base, "/api/turn", { threadId: "g-missing-tenant", text: "" }, device.interaction);
+    assert.equal(refused.status, 401);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("AC12: the committedWork callers pass the resolved identity, so the union of live work from the account's linked principals is shown over HTTP, and only from them", async () => {
+  const { fixture, sender } = await accountFixture();
+  try {
+    await advanceToPendingWithPhone(fixture);
+    const deviceA = await signInDevice(fixture, sender, EMAIL, fixture.cookie);
+    const second = await accountFixture({ sender, databasePath: fixture.databasePath });
+    try {
+      advance(second.fixture, CODE_REQUEST_COOLDOWN_MS * 2);
+      const deviceB = await signInDevice(second.fixture, sender, EMAIL, second.fixture.cookie);
+      const shown = await getJson(second.fixture.base, "/api/committed-work", cookieHeader({ [INTERACTION_COOKIE]: deviceB.interaction.split("=")[1], [ACCOUNT_COOKIE]: deviceB.account.split("=")[1] }));
+      assert.equal(shown.status, 200);
+      assert.equal((shown.body.committedWork as unknown[]).length, 1, "device B shows the live request made on device A");
+      const stranger = await getJson(second.fixture.base, "/api/committed-work", await freshAnonymousCookie(second.fixture.base));
+      assert.deepEqual(stranger.body.committedWork, [], "an unlinked session on the same database shows none of it");
+    } finally {
+      await second.fixture.close();
+    }
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("AC12 failure path: an account cookie that does not resolve shows no committed work", async () => {
+  const { fixture } = await accountFixture();
+  try {
+    const forged = await getJson(fixture.base, "/api/committed-work", cookieHeader({ [INTERACTION_COOKIE]: fixture.cookie.split("=")[1], [ACCOUNT_COOKIE]: "gass-forged.forged" }));
+    assert.equal(forged.status, 200);
+    assert.deepEqual(forged.body.committedWork, []);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("AC13: sign-in passes the authority's verified session to linkSignedInPrincipal; a plain email or an unverified session cannot link a principal over HTTP, and the route writes nothing in that case", async () => {
+  const { fixture, sender } = await accountFixture();
+  try {
+    const before = { principals: countRows(fixture, "guest_account_principals"), claims: countRows(fixture, "guest_account_request_claims") };
+    // A plain email with no code: the sign-in code page cannot link.
+    const { challengeId } = await requestSignInCode(fixture.base, EMAIL, fixture.cookie);
+    const guessed = await postForm(fixture.base, CODE_PATH, { email: EMAIL, challengeId, code: wrongCodeFor(sender.codeFor(EMAIL)), return: "/" }, fixture.cookie);
+    assert.equal(setCookieValue(guessed, ACCOUNT_COOKIE), undefined);
+    // A forged account cookie (an email-shaped value, a wrong secret) is never a verified session.
+    const forged = await getJson(fixture.base, "/api/committed-work", cookieHeader({ [INTERACTION_COOKIE]: fixture.cookie.split("=")[1], [ACCOUNT_COOKIE]: `gass-${EMAIL}.secret` }));
+    assert.deepEqual(forged.body.committedWork, []);
+    assert.deepEqual({ principals: countRows(fixture, "guest_account_principals"), claims: countRows(fixture, "guest_account_request_claims") }, before, "the route wrote nothing");
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("AC13 failure path: a verified sign-in links the device's principal to exactly one account", async () => {
+  const { fixture, sender } = await accountFixture();
+  try {
+    await signInDevice(fixture, sender, EMAIL, fixture.cookie);
+    assert.equal(countRows(fixture, "guest_account_principals"), 1);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("AC14: after a second device signs into the account, the Booking Requests, Conditional Booking Offers and Reservations of the account's linked principals (and claimed requests) are shown over HTTP, and nothing from an unlinked principal is shown", async () => {
+  const { fixture, sender } = await accountFixture();
+  try {
+    const pending = await advanceToPendingWithPhone(fixture);
+    // The operator accepts the request (the same step the fixture's own offer stage takes).
+    fixture.environment.simulateOperatorAcceptance(pending.surfaces[0]!.surfaceId.split(":").at(-1)!);
+    const deviceA = await signInDevice(fixture, sender, EMAIL, fixture.cookie);
+    const second = await accountFixture({ sender, databasePath: fixture.databasePath });
+    try {
+      advance(second.fixture, CODE_REQUEST_COOLDOWN_MS * 2);
+      const deviceB = await signInDevice(second.fixture, sender, EMAIL, second.fixture.cookie);
+      const shown = await getJson(second.fixture.base, "/api/committed-work", cookieHeader({ [INTERACTION_COOKIE]: deviceB.interaction.split("=")[1], [ACCOUNT_COOKIE]: deviceB.account.split("=")[1] }));
+      const kinds = (shown.body.committedWork as { kind: string }[]).map((entry) => entry.kind);
+      assert.ok(kinds.includes("offer"), "device B shows the conditional offer made on device A");
+      assert.ok(deviceA.account);
+      const stranger = await getJson(second.fixture.base, "/api/committed-work", await freshAnonymousCookie(second.fixture.base));
+      assert.deepEqual(stranger.body.committedWork, [], "an unlinked principal sees none of the account's work");
+    } finally {
+      await second.fixture.close();
+    }
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("AC14 (claimed requests): a Booking Request claimed by its recorded email is shown over HTTP on the new device, and nothing else of the old device is", async () => {
+  const { fixture, sender } = await accountFixture();
+  try {
+    // The lost device made the request with an email; it never signed in.
+    const pending = await advanceToPendingWithPhone(fixture, { email: EMAIL });
+    const requestId = pending.surfaces[0]!.surfaceId.split(":").at(-1)!;
+    const replacement = await accountFixture({ sender, databasePath: fixture.databasePath });
+    try {
+      advance(replacement.fixture, CODE_REQUEST_COOLDOWN_MS * 2);
+      const device = await signInDevice(replacement.fixture, sender, EMAIL, replacement.fixture.cookie);
+      const shown = await getJson(replacement.fixture.base, "/api/committed-work", cookieHeader({ [INTERACTION_COOKIE]: device.interaction.split("=")[1], [ACCOUNT_COOKIE]: device.account.split("=")[1] }));
+      const listed = shown.body.committedWork as { kind: string; route: string }[];
+      assert.deepEqual(listed.map((entry) => [entry.kind, entry.route.includes(requestId)]), [["request", true]]);
+      // Failure path: a session that did not sign in to this account sees none of the claimed request.
+      const stranger = await getJson(replacement.fixture.base, "/api/committed-work", await freshAnonymousCookie(replacement.fixture.base));
+      assert.deepEqual(stranger.body.committedWork, []);
+    } finally {
+      await replacement.fixture.close();
+    }
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("AC1 failure path: a cross-origin sign-in form post is refused and sends no code", async () => {
+  const { fixture, sender } = await accountFixture();
+  try {
+    const response = await fetch(`${fixture.base}${SIGN_IN_PATH}`, {
+      method: "POST",
+      redirect: "manual",
+      headers: { "content-type": "application/x-www-form-urlencoded", accept: "text/html", cookie: fixture.cookie, origin: "https://attacker.example" },
+      body: new URLSearchParams({ email: EMAIL, return: "/" }).toString(),
+    });
+    assert.equal(response.status, 403);
+    assert.equal(sender.messages.length, 0, "no code is sent for a refused origin");
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("AC1 failure path: sign-in is disabled with no code sent when the code-hashing key is missing (fail closed)", async () => {
+  const sender = new CapturingEmailSender();
+  const fixture = await restartFixture({}, { sessionScopedGuestPrincipals: true, guestAccounts: { codeHashingKey: "", sender } });
+  try {
+    const page = await getPage(fixture.base, SIGN_IN_PATH, fixture.cookie);
+    assert.equal(page.status, 503);
+    assert.match(page.body, /data-error-code="ACCOUNT_SIGN_IN_UNAVAILABLE"/);
+    const posted = await postForm(fixture.base, SIGN_IN_PATH, { email: EMAIL, return: "/" }, fixture.cookie);
+    assert.equal(posted.status, 503);
+    assert.equal(sender.messages.length, 0);
+  } finally {
+    await fixture.close();
+  }
+  // Configuration reads the key and the sender only from the environment: nothing is defaulted.
+  const unset = loadGuestAccountComposition({});
+  assert.equal(unset.codeHashingKey, null);
+  assert.equal(unset.sender, null);
+});
+
+test("AC3: The account cookie is HttpOnly and SameSite=Lax, and Secure when secure cookies are configured", async () => {
+  const sender = new CapturingEmailSender();
+  const fixture = await restartFixture({}, { sessionScopedGuestPrincipals: true, secureCookie: true, guestAccounts: accountComposition({ sender }) });
+  try {
+    const { challengeId } = await requestSignInCode(fixture.base, EMAIL, fixture.cookie);
+    const done = await postForm(fixture.base, CODE_PATH, { email: EMAIL, challengeId, code: sender.codeFor(EMAIL), return: "/" }, fixture.cookie);
+    const line = done.setCookies.find((cookie) => cookie.startsWith(`${ACCOUNT_COOKIE}=`)) ?? "";
+    assert.match(line, /HttpOnly/);
+    assert.match(line, /SameSite=Lax/);
+    assert.match(line, /; Secure/);
+    assert.match(line, /Max-Age=\d+/);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("AC5 failure path: a forged client-address header is ignored unless Cloudflare trust is configured", async () => {
+  // Only the per-address limit can fire here: every request is for a different email, and each carries a rotating header.
+  const forged = (attempt: number) => ({ "cf-connecting-ip": `203.0.113.${attempt}` });
+  const send = (base: string, cookie: string, attempt: number) =>
+    fetch(`${base}${SIGN_IN_PATH}`, {
+      method: "POST",
+      redirect: "manual",
+      headers: { "content-type": "application/x-www-form-urlencoded", accept: "text/html", cookie, ...forged(attempt) },
+      body: new URLSearchParams({ email: `guest${attempt}@example.test`, return: "/" }).toString(),
+    });
+  const { fixture } = await accountFixture();
+  try {
+    // Twenty code requests per client address per hour (ADR 0093), from one socket address.
+    for (let attempt = 1; attempt <= 20; attempt += 1) assert.equal((await send(fixture.base, fixture.cookie, attempt)).status, 200, `request ${attempt}`);
+    assert.equal((await send(fixture.base, fixture.cookie, 21)).status, 429, "the socket address is limited; the forged header is not trusted");
+  } finally {
+    await fixture.close();
+  }
+  const trusted = await accountFixture({ trustCloudflareClientAddress: true });
+  try {
+    // With Cloudflare trust configured, each forwarded address has its own allowance.
+    for (let attempt = 1; attempt <= 21; attempt += 1) assert.equal((await send(trusted.fixture.base, trusted.fixture.cookie, attempt)).status, 200, `trusted request ${attempt}`);
+  } finally {
+    await trusted.fixture.close();
+  }
+});
+
+// AC6 (return validation): each hostile class is ignored on its own and in combination. The return value reaches the
+// form only through the sanitiser, so the hidden field is the observable.
+const HOSTILE_RETURNS: readonly [string, string][] = [
+  ["https://evil.example/x", "absolute URL"],
+  ["//evil.example/x", "protocol-relative"],
+  ["/\\evil.example", "backslash"],
+  ["javascript:alert(1)", "javascript scheme"],
+  ["http://127.0.0.1:1/", "loopback absolute"],
+  ["evil.example", "no leading slash"],
+];
+
+for (const [hostile, label] of HOSTILE_RETURNS) {
+  test(`AC6: A return value that is absolute, protocol-relative or off-site is ignored (${label})`, async () => {
+    const { fixture } = await accountFixture();
+    try {
+      const page = await getPage(fixture.base, `${SIGN_IN_PATH}?return=${encodeURIComponent(hostile)}`, fixture.cookie);
+      assert.match(page.body, /name="return" value="\/"/, `${hostile} is not carried into the form`);
+    } finally {
+      await fixture.close();
+    }
+  });
+}
+
+test("AC6 failure path: encoded-slash and encoded-backslash variants of a protocol-relative path are ignored", async () => {
+  const { fixture } = await accountFixture();
+  try {
+    // Raw query text, so the server decodes the percent-encodings itself.
+    for (const raw of ["/%2F%2Fevil.example", "/%5C%5Cevil.example", "/%2F%5Cevil.example"]) {
+      const page = await getPage(fixture.base, `${SIGN_IN_PATH}?return=${raw}`, fixture.cookie);
+      assert.match(page.body, /name="return" value="\/"/, `${raw} is not carried into the form`);
+    }
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("AC6 failure path: a CR, LF or tab in the return value is ignored, so no header or path is injected", async () => {
+  const { fixture } = await accountFixture();
+  try {
+    for (const raw of ["/%0D%0ASet-Cookie:%20x=1", "/%0Aevil", "/%09/evil.example"]) {
+      const page = await getPage(fixture.base, `${SIGN_IN_PATH}?return=${raw}`, fixture.cookie);
+      assert.match(page.body, /name="return" value="\/"/, `${raw} is not carried into the form`);
+      assert.equal(page.setCookies.length, 0, "no cookie is injected by a return value");
+    }
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("AC6: A valid same-origin path with a query is kept", async () => {
+  const { fixture } = await accountFixture();
+  try {
+    const page = await getPage(fixture.base, `${SIGN_IN_PATH}?return=${encodeURIComponent("/stays/search?area=old-ikoyi&partySize=2")}`, fixture.cookie);
+    assert.match(page.body, /name="return" value="\/stays\/search\?area=old-ikoyi&amp;partySize=2"/);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("AC5 failure path: the configuration loader leaves Cloudflare address trust off unless SHORTLET_TRUST_CF_CONNECTING_IP is exactly true", async () => {
+  const base = { SHORTLET_GUEST_CODE_HASHING_KEY: "configured-test-key", RESEND_API_KEY: "re_test_key", SHORTLET_NOTIFICATION_FROM: "Shortlet <notify@example.test>" };
+  assert.equal(loadGuestAccountComposition(base).trustCloudflareClientAddress, false, "unset means the socket address");
+  assert.equal(loadGuestAccountComposition({ ...base, [TRUST_CLOUDFLARE_CLIENT_ADDRESS_ENV]: "yes" }).trustCloudflareClientAddress, false, "only the exact value enables it");
+  // The server built from the loader's output: a rotating forged header is ignored by default and honoured when configured.
+  const sign = (base_: string, cookie: string, attempt: number) =>
+    fetch(`${base_}${SIGN_IN_PATH}`, {
+      method: "POST",
+      redirect: "manual",
+      headers: { "content-type": "application/x-www-form-urlencoded", accept: "text/html", cookie, "cf-connecting-ip": `198.51.100.${attempt}` },
+      body: new URLSearchParams({ email: `loader${attempt}@example.test`, return: "/" }).toString(),
+    });
+  for (const [configured, expectedAt21] of [[false, 429], [true, 200]] as const) {
+    const loaded = loadGuestAccountComposition(configured ? { ...base, [TRUST_CLOUDFLARE_CLIENT_ADDRESS_ENV]: "true" } : base);
+    const sender = new CapturingEmailSender();
+    const fixture = await restartFixture({}, { sessionScopedGuestPrincipals: true, guestAccounts: { ...loaded, codeHashingKey: "configured-test-key", sender } });
+    try {
+      for (let attempt = 1; attempt <= 20; attempt += 1) assert.equal((await sign(fixture.base, fixture.cookie, attempt)).status, 200, `request ${attempt}`);
+      assert.equal((await sign(fixture.base, fixture.cookie, 21)).status, expectedAt21, `trust configured: ${configured}`);
+    } finally {
+      await fixture.close();
+    }
+  }
+});

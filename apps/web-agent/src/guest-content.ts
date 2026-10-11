@@ -309,3 +309,42 @@ export function stayTotalLabel(quoted: boolean, nights?: number): string {
   if (!quoted) return "Indicative nightly rate";
   return nights === undefined || nights <= 0 ? GUEST_GLOSSARY.allInStayTotal : `${GUEST_GLOSSARY.allInStayTotal} for ${nights} ${nights === 1 ? "night" : "nights"}`;
 }
+
+/**
+ * Guest Account sign-in copy (issue 06). Plain, functional wording only: the final marketing copy is awaiting human
+ * approval (see the issue's Comments). Each error carries the reason code its page exposes as `data-error-code`.
+ */
+export const GUEST_ACCOUNT_COPY = Object.freeze({
+  signInTitle: "Sign in",
+  signInIntro: "We'll email you a six-digit code. Enter it here to sign in on this device.",
+  emailLabel: "Email address",
+  sendCode: "Send code",
+  codeTitle: "Enter your code",
+  codeIntro: "We sent a six-digit code to the email address you gave. It expires soon.",
+  codeLabel: "Six-digit code",
+  checkCode: "Check code",
+  requestNewCode: "Request a new code",
+  signedIn: "Signed in",
+  signedInIntro: "You are signed in on this device.",
+  signOut: "Sign out",
+  signOutEverywhere: "Sign out everywhere",
+  signOutEverywhereIntro: "This signs out every device on your account. Open conversations on those devices stop working.",
+  appBarSignIn: "Sign in",
+  appBarAccount: "Account",
+  rateLimitedTitle: "Please slow down",
+  rateLimitedMessage: "Too many requests came from here in a short time. Wait a few minutes, then try again.",
+  emailSubject: "Your Shortlet sign-in code",
+  emailBody: (code: string, minutes: number): string =>
+    `Your Shortlet sign-in code is ${code}. It expires in ${minutes} minutes. If you did not ask for this code, you can ignore this email.`,
+  unavailable: "Sign-in is not available right now. You can keep searching and booking without signing in.",
+  signInRequired: "Sign in to see your account.",
+  errors: Object.freeze({
+    invalidEmail: "Enter a valid email address.",
+    codeInvalid: "That code is not right. Check the email and try again.",
+    codeExpired: "That code has expired. Request a new code.",
+    attemptsExhausted: "Too many wrong attempts. Request a new code.",
+    codeConsumed: "That code has already been used. Request a new code.",
+    sendFailed: "We could not send the code. Try again in a few minutes.",
+    linkConflict: "This browser is already linked to a different account. Sign out there first.",
+  }),
+});
