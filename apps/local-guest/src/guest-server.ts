@@ -240,6 +240,11 @@ import {
   type GuestAccountCredentials,
 } from "./guest-account-runtime.js";
 import { GUEST_ACCOUNT_COPY } from "../../web-agent/src/guest-content.js";
+import {
+  GuestContactOwnedByAccountError,
+  normalizeNigerianPhoneNumber,
+  type GuestAccount,
+} from "../../../domains/shortlet/src/index.js";
 import { SlidingWindowRateLimiter } from "../../pilot/src/rate-limiter.js";
 import type { ConditionalBookingOffer } from "../../../domains/shortlet/src/index.js";
 import {
@@ -252,6 +257,8 @@ import {
 import {
   renderOfferNotFoundHtml,
   renderAccountHtml,
+  renderEmailChangeCodeHtml,
+  type AccountPageInput,
   renderRateLimitedHtml,
   renderSignInCodeHtml,
   renderSignInHtml,
@@ -4322,9 +4329,11 @@ export class LocalGuestApp {
       return this.#contactSurface(thread, "email", resumeContext, {
         value,
         error:
-          error instanceof Error
-            ? error.message
-            : "Email address could not be saved.",
+          error instanceof GuestContactOwnedByAccountError
+            ? GUEST_ACCOUNT_COPY.errors.emailOwnedByAccount
+            : error instanceof Error
+              ? error.message
+              : "Email address could not be saved.",
       });
     }
     // Resume the server-issued payment action after the contact application
@@ -7111,6 +7120,27 @@ export function createGuestRequestHandler(
       session: registerBrowserSession(env, browserSessions, sessionId, `guest-${crypto.randomUUID()}`),
     };
   };
+  /**
+   * The account page for a signed-in browser (issue 07). The phone is read through the same contact view the Booking Request uses,
+   * so the page and the next request agree (AC6). Without a browser session the account's own contact row is read.
+   */
+  const accountPageHtml = (
+    session: BrowserSession | null,
+    status: { readonly account: GuestAccount; readonly governmentIdVerified: boolean },
+    extra: Partial<Omit<AccountPageInput, "email" | "phone" | "governmentIdVerified">>,
+  ): string => {
+    const tenantId = env.config.tenantId;
+    const contact = session
+      ? env.guestContactApp.repository.find(session.principalId, tenantId)
+      : env.guestContactApp.repository.find(status.account.accountGuestId, tenantId);
+    return renderAccountHtml({
+      email: status.account.email,
+      phone: contact?.phoneNumber ?? null,
+      governmentIdVerified: status.governmentIdVerified,
+      ...extra,
+    });
+  };
+
   const handleAccountRoute = async (
     req: HttpRequestLike,
     res: HttpResponseLike,
@@ -7176,12 +7206,20 @@ export function createGuestRequestHandler(
       return;
     }
     if (req.method === "GET" && path === "/account") {
-      if (!accounts.resolveAccount(credentials)) {
-        sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
+      // Issue 07: a signed-out browser is sent to sign-in and sees no account data (AC1).
+      // A presented interaction cookie that no longer resolves (for example the pre-sign-in value) never shows the account (ADR
+      // 0093), so it is treated as signed out. Without that cookie, a live account session alone is enough.
+      const session = existingBrowserSession(req);
+      const staleInteraction = typeof readGuestSession(req) === "string" && session === null;
+      const account = accounts.resolveAccount(credentials);
+      const status = account && !staleInteraction ? accounts.accountStatus(account.accountGuestId) : null;
+      if (!status) {
+        res.writeHead(303, { Location: "/account/sign-in?return=/account", "Cache-Control": "no-store" });
+        res.end();
         return;
       }
       res.writeHead(200, GUEST_HTML_HEADERS);
-      res.end(renderAccountHtml());
+      res.end(accountPageHtml(session, status, {}));
       return;
     }
     if (req.method !== "POST") {
@@ -7306,6 +7344,108 @@ export function createGuestRequestHandler(
       return;
     }
 
+    if (path === "/account/email" || path === "/account/email/code" || path === "/account/phone") {
+      const account = accounts.resolveAccount(credentials);
+      const status = account ? accounts.accountStatus(account.accountGuestId) : null;
+      if (!credentials || !account || !status) {
+        sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
+        return;
+      }
+      const session = existingBrowserSession(req);
+      const minutes = accounts.signInCodeLifetimeMinutes;
+      const sendAccountPage = (extra: Partial<Omit<AccountPageInput, "email" | "phone" | "governmentIdVerified">>, status400: boolean): void => {
+        res.writeHead(status400 ? 400 : 200, GUEST_HTML_HEADERS);
+        res.end(accountPageHtml(session, status, extra));
+      };
+      if (path === "/account/phone") {
+        const typed = form.get("phone") ?? "";
+        let phoneNumber: string;
+        try {
+          phoneNumber = normalizeNigerianPhoneNumber(typed);
+        } catch (error) {
+          // ADR 0078: the typed value survives and the existing validation message is shown inline.
+          sendAccountPage({ phoneDraft: typed, phoneError: { code: "invalid_phone", message: error instanceof Error ? error.message : GUEST_ACCOUNT_COPY.errors.phoneSaveFailed } }, true);
+          return;
+        }
+        try {
+          env.guestContactApp.repository.savePhone({ guestId: session ? session.principalId : account.accountGuestId, tenantId: env.config.tenantId, phoneNumber });
+        } catch {
+          sendAccountPage({ phoneDraft: typed, phoneError: { code: "phone_save_failed", message: GUEST_ACCOUNT_COPY.errors.phoneSaveFailed } }, true);
+          return;
+        }
+        res.writeHead(303, { Location: "/account?notice=phone-saved", "Cache-Control": "no-store" });
+        res.end();
+        return;
+      }
+      if (path === "/account/email") {
+        const typed = form.get("email") ?? "";
+        let normalized: string;
+        try {
+          normalized = normalizeContactEmail(typed);
+        } catch {
+          sendAccountPage({ emailDraft: typed, emailError: { code: "invalid_email", message: GUEST_ACCOUNT_COPY.errors.invalidEmail } }, true);
+          return;
+        }
+        if (normalized === status.account.email) {
+          sendAccountPage({ emailDraft: typed, emailError: { code: "same_email", message: GUEST_ACCOUNT_COPY.errors.sameEmail } }, true);
+          return;
+        }
+        try {
+          const sent = await accounts.requestEmailChangeCode({ credentials: credentials, accountGuestId: account.accountGuestId, email: normalized, clientAddress: accounts.clientAddress(req) });
+          res.writeHead(200, GUEST_HTML_HEADERS);
+          res.end(renderEmailChangeCodeHtml({ newEmail: sent.email, challengeId: sent.challengeId, minutes }));
+        } catch (error) {
+          if (error instanceof GuestAccountAuthorityError && error.code === "rate_limited") {
+            sendAccountRateLimited(res, error.retryAfterSeconds ?? 1);
+            return;
+          }
+          if (error instanceof GuestAccountAuthorityError && error.code === "session_invalid") {
+            sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
+            return;
+          }
+          if (error instanceof SignInDeliveryError) {
+            sendAccountPage({ emailDraft: typed, emailError: { code: "send_failed", message: GUEST_ACCOUNT_COPY.errors.sendFailed } }, true);
+            return;
+          }
+          throw error;
+        }
+        return;
+      }
+      // POST /account/email/code: the code sent to the new address must be entered before the account email changes (AC2).
+      const newEmail = form.get("email") ?? "";
+      const challengeId = form.get("challengeId") ?? "";
+      const code = form.get("code") ?? "";
+      try {
+        normalizeContactEmail(newEmail);
+      } catch {
+        sendAccountPage({ emailError: { code: "invalid_email", message: GUEST_ACCOUNT_COPY.errors.invalidEmail } }, true);
+        return;
+      }
+      try {
+        accounts.confirmEmailChange({ credentials: credentials, accountGuestId: account.accountGuestId, challengeId, email: newEmail, code, clientAddress: accounts.clientAddress(req) });
+      } catch (error) {
+        if (!(error instanceof GuestAccountAuthorityError)) throw error;
+        if (error.code === "rate_limited") {
+          sendAccountRateLimited(res, error.retryAfterSeconds ?? 1);
+          return;
+        }
+        if (error.code === "session_invalid") {
+          sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
+          return;
+        }
+        if (error.code === "account_conflict") {
+          sendAccountPage({ emailError: { code: "email_in_use", message: GUEST_ACCOUNT_COPY.errors.emailInUse } }, true);
+          return;
+        }
+        res.writeHead(200, GUEST_HTML_HEADERS);
+        res.end(renderEmailChangeCodeHtml({ newEmail, challengeId, minutes, error: codeFormError(error.code) }));
+        return;
+      }
+      res.writeHead(303, { Location: "/account?notice=email-changed", "Cache-Control": "no-store" });
+      res.end();
+      return;
+    }
+
     if (path === "/account/sign-out") {
       // Sign-out is never rate limited (orchestrator decision): the budget meters only code sends and new bindings.
       accounts.signOut(credentials);
@@ -7374,11 +7514,14 @@ export function createGuestRequestHandler(
           sessionScopedGuestPrincipals ? undefined : env.config.guestId, accountCredentialsOf(req), guestAccounts,
         );
         // Public pages and their static assets load for anyone, even with an expired or unknown session cookie.
+        // A signed-out browser asking for the account page is sent to sign-in by the account route itself (issue 07 AC1).
+        const accountPageRedirect = req.method === "GET" && url.pathname === "/account";
         if (
           !requestSession &&
           sessionScopedGuestPrincipals &&
           !PUBLIC_GUEST_PATHS.has(url.pathname) &&
           !url.pathname.startsWith("/stays/") &&
+          !accountPageRedirect &&
           !reissuableBrowserRoute(req.method, url.pathname)
         ) {
           sendJson(res, 401, { ok: false, code: "AUTHENTICATION_REQUIRED" });
@@ -8926,9 +9069,11 @@ export function createGuestRequestHandler(
             res.end(
               renderGuestContactHtml(
                 app.environment.guestContactApp.get(contactPrincipal),
-                error instanceof Error
-                  ? error.message
-                  : "Contact could not be saved",
+                error instanceof GuestContactOwnedByAccountError
+                  ? GUEST_ACCOUNT_COPY.errors.emailOwnedByAccount
+                  : error instanceof Error
+                    ? error.message
+                    : "Contact could not be saved",
                 contactKind,
                 contactKind === "phone"
                   ? { phoneNumber: submittedValue }

@@ -11,6 +11,9 @@ const SIGN_IN_PATH = "/account/sign-in";
 const CODE_PATH = "/account/sign-in/code";
 const SIGN_OUT_PATH = "/account/sign-out";
 const SIGN_OUT_EVERYWHERE_PATH = "/account/sign-out-everywhere";
+const ACCOUNT_PATH = "/account";
+const EMAIL_PATH = "/account/email";
+const EMAIL_CODE_PATH = "/account/email/code";
 
 function appBar(backHref: string, backLabel: string, action: { href: string; label: string; icon: "info" | "users" }): string {
   return appBarHtml({ backHref, backLabel, action });
@@ -71,16 +74,84 @@ export function renderSignInCodeHtml(input: {
   });
 }
 
-/** The account page: the signed-in state and the two sign-out actions. Account details arrive with issue 07. */
-export function renderAccountHtml(): string {
+/** The one-line notice shown after a completed change (a fixed set, never user content). */
+const NOTICES = {
+  "email-changed": GUEST_ACCOUNT_COPY.emailChangedNotice,
+  "phone-saved": GUEST_ACCOUNT_COPY.phoneSavedNotice,
+} as const;
+export type AccountNotice = keyof typeof NOTICES;
+
+export interface AccountPageInput {
+  readonly email: string;
+  readonly phone: string | null;
+  readonly governmentIdVerified: boolean;
+  readonly notice?: AccountNotice;
+  readonly emailDraft?: string;
+  readonly emailError?: AccountFormError;
+  readonly phoneDraft?: string;
+  readonly phoneError?: AccountFormError;
+}
+
+/**
+ * The account page (issue 07): the details as facts, the email change and the phone forms, and the two sign-out actions. Every
+ * control is a plain POST form (ADR 0080), and the identity status is copy from issue 01 (never a gate, ADR 0085).
+ */
+export function renderAccountHtml(input: AccountPageInput): string {
+  const identity = input.governmentIdVerified ? GUEST_ACCOUNT_COPY.identityIdChecked : GUEST_ACCOUNT_COPY.identityIdNotChecked;
+  const emailInvalid = input.emailError === undefined ? "" : ` aria-invalid="true" aria-describedby="new-email-error"`;
+  const phoneInvalid = input.phoneError === undefined ? "" : ` aria-invalid="true" aria-describedby="phone-error"`;
+  const notice = input.notice === undefined ? "" : `<p class="ui-banner ui-banner--success" role="status" data-notice="${input.notice}">${escapeHtml(NOTICES[input.notice])}</p>`;
   return pageShell({
-    title: `${GUEST_ACCOUNT_COPY.appBarAccount} · Shortlet`,
+    title: `${GUEST_ACCOUNT_COPY.accountTitle} · Shortlet`,
     width: "narrow",
     frame: appBar("/", "Back to your conversation", { href: "/account", label: GUEST_ACCOUNT_COPY.appBarAccount, icon: "users" }),
-    body: `<section class="ui-panel" data-account-state="signed-in"><h1>${GUEST_ACCOUNT_COPY.appBarAccount}</h1><p>${escapeHtml(GUEST_ACCOUNT_COPY.signedInIntro)}</p>` +
+    body: `<header class="ui-page__header"><p class="ui-eyebrow">Shortlet</p><h1>${GUEST_ACCOUNT_COPY.accountTitle}</h1><p>${escapeHtml(GUEST_ACCOUNT_COPY.accountIntro)}</p></header>` +
+      notice +
+      `<section class="ui-panel" data-account-state="signed-in"><h2>${GUEST_ACCOUNT_COPY.detailsHeading}</h2>` +
+      `<dl class="ui-facts ui-facts--stacked">` +
+      `<div><dt>${escapeHtml(GUEST_ACCOUNT_COPY.emailLabel)}</dt><dd data-fact="email">${escapeHtml(input.email)}</dd></div>` +
+      `<div><dt>${escapeHtml(GUEST_ACCOUNT_COPY.phoneLabel)}</dt><dd data-fact="phone">${escapeHtml(input.phone ?? GUEST_ACCOUNT_COPY.phoneNotAdded)}</dd></div>` +
+      `<div><dt>${escapeHtml(GUEST_ACCOUNT_COPY.identityLabel)}</dt><dd data-fact="identity">${escapeHtml(GUEST_ACCOUNT_COPY.identityEmailConfirmed)}</dd><dd data-fact="identity-id">${escapeHtml(identity)}</dd></div>` +
+      `</dl></section>` +
+      `<form class="ui-panel" method="post" action="/account/email"><h2>${GUEST_ACCOUNT_COPY.changeEmailHeading}</h2><p>${escapeHtml(GUEST_ACCOUNT_COPY.changeEmailIntro)}</p>` +
+      `<div class="ui-field"><label class="ui-field__label" for="new-email">${escapeHtml(GUEST_ACCOUNT_COPY.emailLabel)}</label>` +
+      `<input id="new-email" name="email" type="email" autocomplete="email" inputmode="email" autocapitalize="off" spellcheck="false" maxlength="254" required value="${escapeHtml(input.emailDraft ?? "")}"${emailInvalid}>` +
+      `${inlineError("new-email-error", input.emailError)}</div>` +
+      `<button class="ui-button ui-button--primary ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.changeEmailButton)}</button></form>` +
+      `<form class="ui-panel" method="post" action="/account/phone"><h2>${GUEST_ACCOUNT_COPY.phoneLabel}</h2>` +
+      `<div class="ui-field"><label class="ui-field__label" for="phone">${escapeHtml(GUEST_ACCOUNT_COPY.phoneLabel)}</label>` +
+      `<p class="ui-field__hint" id="phone-help">${escapeHtml(GUEST_ACCOUNT_COPY.phoneHint)}</p>` +
+      `<input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" maxlength="32" aria-describedby="phone-help" value="${escapeHtml(input.phoneDraft ?? "")}"${phoneInvalid}>` +
+      `${inlineError("phone-error", input.phoneError)}</div>` +
+      `<button class="ui-button ui-button--primary ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.savePhone)}</button></form>` +
+      `<section class="ui-panel"><h2>${GUEST_ACCOUNT_COPY.sessionsHeading}</h2>` +
       `<form method="post" action="${SIGN_OUT_PATH}"><button class="ui-button ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.signOut)}</button></form>` +
       `<form method="post" action="${SIGN_OUT_EVERYWHERE_PATH}"><p>${escapeHtml(GUEST_ACCOUNT_COPY.signOutEverywhereIntro)}</p>` +
       `<button class="ui-button ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.signOutEverywhere)}</button></form></section>`,
+  });
+}
+
+/** The code step for an email change (issue 07 AC2): the new address and challenge are carried in hidden fields. */
+export function renderEmailChangeCodeHtml(input: { readonly newEmail: string; readonly challengeId: string; readonly minutes: number; readonly error?: AccountFormError }): string {
+  const invalid = input.error === undefined ? "" : ` aria-invalid="true" aria-describedby="code-error"`;
+  return pageShell({
+    title: `${GUEST_ACCOUNT_COPY.changeEmailCodeTitle} · Shortlet`,
+    width: "narrow",
+    frame: appBar(ACCOUNT_PATH, "Back to your account", { href: ACCOUNT_PATH, label: GUEST_ACCOUNT_COPY.appBarAccount, icon: "users" }),
+    body: `<header class="ui-page__header"><p class="ui-eyebrow">Shortlet</p><h1>${GUEST_ACCOUNT_COPY.changeEmailCodeTitle}</h1>` +
+      `<p>${escapeHtml(GUEST_ACCOUNT_COPY.changeEmailCodeIntro)} It expires in ${input.minutes} minutes.</p></header>` +
+      `<form class="ui-panel" method="post" action="${EMAIL_CODE_PATH}">` +
+      `<input type="hidden" name="email" value="${escapeHtml(input.newEmail)}">` +
+      `<input type="hidden" name="challengeId" value="${escapeHtml(input.challengeId)}">` +
+      `<div class="ui-field"><label class="ui-field__label" for="code">${escapeHtml(GUEST_ACCOUNT_COPY.codeLabel)}</label>` +
+      `<input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required${invalid}>` +
+      `${inlineError("code-error", input.error)}</div>` +
+      `<button class="ui-button ui-button--primary ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.changeEmailCheckButton)}</button>` +
+      `</form>` +
+      `<form class="ui-panel" method="post" action="${EMAIL_PATH}">` +
+      `<input type="hidden" name="email" value="${escapeHtml(input.newEmail)}">` +
+      `<button class="ui-button ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.requestNewCode)}</button>` +
+      `</form>`,
   });
 }
 

@@ -14,6 +14,24 @@ import type { EmailMessage, EmailSender } from "./email-sender.js";
 import { GUEST_ACCOUNT_COPY } from "../../../web-agent/src/guest-content.js";
 
 /**
+ * The email-change code (issue 07, ADR 0093 `change_email`). It goes to the NEW address, so the proof of control is of that address.
+ * Like the sign-in code it is sent directly through the sender, with the code in the body only.
+ */
+export function guestEmailChangeCodeMessage(input: {
+  readonly email: string;
+  readonly code: string;
+  readonly minutes: number;
+  readonly challengeId: string;
+}): EmailMessage {
+  return {
+    to: [input.email],
+    subject: GUEST_ACCOUNT_COPY.emailChangeSubject,
+    text: GUEST_ACCOUNT_COPY.emailChangeBody(input.code, input.minutes),
+    idempotencyKey: `guest.email_change_code:${input.challengeId}`,
+  };
+}
+
+/**
  * The Guest sign-in code email (issue 06, ADR 0093). It is sent once per challenge, directly through the sender, when the
  * code is issued. The code is in the body only: no notification record, log or audit entry carries it (ADR 0075), and the
  * idempotency key is built from the opaque challenge id, never from the code or the email.

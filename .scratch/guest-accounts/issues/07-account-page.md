@@ -39,3 +39,22 @@ New `test/guest-account-page.test.ts` and a Chromium test using `withStagePage`.
 ## Comments
 
 - 11 Oct 2026, requirement from issue 09 (orchestrator decision, delegated by the human; not a human quote): the identity resolver (`domains/shortlet/src/guest-identity.ts`, `GuestAssurance`) still hardcodes `email-verified`. The account page must surface the government-ID level from the identity-assurance result (`currentAssurance`, issue 09) and must not treat it as an account gate (ADR 0085).
+
+## Comments
+
+- 11 Oct 2026, implementation (branch `ga-07-account-page`, from origin/main 5700cd4). Red run before implementation: `test/guest-account-page.test.ts` had 14 failing tests and the AC5 guard had 2 failing. Full evidence is in the PR body.
+- 11 Oct 2026, delegated decisions (orchestrator, NOT human-approved):
+  - (a) The 06 AC9 failure path for `GET /account` is superseded by this issue's AC1: a signed-out or stale-cookie request redirects 303 to `/account/sign-in?return=/account`. The 06 test assertions were updated. The redirect target is a constant, so there is no user-influenced return value on that path. Recorded in the 06 Comments too.
+  - (b) Contact single writer: the Guest Account owns the email. The only account-email writer is `changeEmail`, which is code-verified. `GuestAccountContacts` (domains/shortlet/src/guest-account-contacts.ts) is the one contact view: a linked principal's contact email is the account's active email, and `saveEmail` refuses for linked principals (`GuestContactOwnedByAccountError`). Existing requests keep their snapshot (ADR 0004).
+  - (c) The `/guest/contact` email form is still reachable for linked devices. It refuses with `GUEST_ACCOUNT_COPY.errors.emailOwnedByAccount`. Hiding it is a follow-up for issue 08.
+  - (d) The concierge "my account" chat link (ADR 0080 parity) is NOT built. No acceptance criterion covers it, and the concierge has no account intent. Follow-up.
+  - (e) Phone display: the account phone is read from the account's contact row first, then falls back to the principal's own row. This matches what the next Booking Request uses. For human confirmation.
+- 11 Oct 2026, 06 Q3 (conventional booking and offer detail pages for linked devices): not covered by these ACs, so left for issue 08.
+- 11 Oct 2026, UI evidence: the Chromium test (`test/guest-account-page-chromium.test.ts`) is written and was NOT run locally (no Chrome). It runs in the CI `browser` job. Screenshots at 320/390/768/1280 are NOT captured and are handed to issue 11. The issue stays `ready-for-agent`.
+
+## Answer (contact details decision, AC6 and the single writer)
+
+- The Guest Account is the source for the email. The repository (`guest_contacts`) keeps phone and name, and it is read through the account-aware view `GuestAccountContacts`. For a linked principal the view returns the account's active email, so the account page and the next Booking Request agree (AC6, tested by "AC6: the contact email used in the next Booking Request is the account email").
+- The only account-email writer is the code-verified `changeEmail` (AC2). A changed email removes the current identity-assurance result (ADR 0094, trigger in the store schema).
+- Identity status: the account page reads the real level from the read-only leaf `apps/local-guest/src/guest-identity-status.ts` (the only assurance-store importer outside schema and ops import, per the AC5 guard). The resolver reports `government-ID-verified` only for a current result. Labels are copy from issue 01. Assurance is display only, never a gate (ADR 0085).
+- Status: left `ready-for-agent`. See the Needs-human list in the PR body: copy approval, the 06 AC9 change, the single-writer decision, and the phone fallback.

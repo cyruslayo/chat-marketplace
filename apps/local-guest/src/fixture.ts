@@ -24,6 +24,7 @@ import {
   SqliteLivePaymentAttemptRegistry,
   SqliteAvailabilityStore,
   SqliteGuestContactRepository,
+  GuestAccountContacts,
   UnitDiscoveryQuery,
   UnitRepository,
   JsonUnitRepository,
@@ -364,8 +365,12 @@ export class LocalGuestEnvironment {
     this.#database = dependencies.database;
     const sqlDatabase = this.#database;
     this.interactionStore = new SqliteGuestInteractionStore(sqlDatabase);
+    // Issue 07: one contact view for reads and writes. A linked principal's email is the account email (ADR 0093, 0094).
     this.guestContactApp = new GuestContactApplication(
-      new SqliteGuestContactRepository(sqlDatabase),
+      new GuestAccountContacts({
+        database: sqlDatabase,
+        contacts: new SqliteGuestContactRepository(sqlDatabase),
+      }),
     );
     if (
       this.config.initialGuestPhoneNumber &&

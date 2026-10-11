@@ -293,7 +293,14 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const GUARDED_HELPER = "guest-check-in-eligibility";
 const GUARDED_STORE = "guest-identity-assurance";
 /** Leaves: the migration manifest and the import validator. Traversal stops here, so a route that imports them does not reach the store. */
-const LEAF_FILES = ["apps/cloudflare/src/ops-import.ts", "apps/cloudflare/src/schema.ts"];
+const LEAF_FILES = ["apps/cloudflare/src/ops-import.ts", "apps/cloudflare/src/schema.ts", "apps/local-guest/src/guest-identity-status.ts"];
+/**
+ * Issue 07 added one leaf: the account identity-status reader (read-only, `currentAssurance` only). The account runtime is its
+ * only importer, so the account page shows the real level (ADR 0094) without any page or booking module reaching the store.
+ */
+const STATUS_READER = "apps/local-guest/src/guest-identity-status.ts";
+const ACCOUNT_RUNTIME = "apps/local-guest/src/guest-account-runtime.ts";
+const ACCOUNT_PAGES = "apps/local-guest/src/guest-account-pages.ts";
 const STORE_IMPORTERS = [...LEAF_FILES, "domains/shortlet/src/guest-check-in-eligibility.ts"].sort();
 /**
  * Every source root that can host a booking, route, application, payment or composition module. Read from the filesystem, so a new
@@ -372,6 +379,13 @@ test("AC5: only the schema manifest, the import validator and the check-in helpe
   const importersOf = (base: string) => ALL_SOURCE.filter((file) => importsOf(file).some((target) => moduleName(target) === base)).map(rel).sort();
   assert.deepEqual(importersOf(GUARDED_STORE), STORE_IMPORTERS);
   assert.deepEqual(importersOf(GUARDED_HELPER), []);
+});
+
+test("AC5 (issue 07): only the account runtime imports the identity-status reader, and the account pages import neither the store nor the eligibility helper", () => {
+  const importersOf = (base: string) => ALL_SOURCE.filter((file) => importsOf(file).some((target) => moduleName(target) === base)).map(rel).sort();
+  assert.deepEqual(importersOf(moduleName(STATUS_READER)), [ACCOUNT_RUNTIME]);
+  const pageTargets = importsOf(join(ROOT, ACCOUNT_PAGES)).map(moduleName);
+  assert.ok(!pageTargets.includes(GUARDED_STORE) && !pageTargets.includes(GUARDED_HELPER), "the account pages import no assurance module");
 });
 
 test("AC5: no non-test source imports this issue's test-only fixtures", () => {

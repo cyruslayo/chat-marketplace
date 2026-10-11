@@ -49,7 +49,7 @@ export async function createGuestLinkingFixture(): Promise<GuestLinkingFixture> 
   const store = new SqliteGuestInteractionStore(database);
   database.exec(BOOKING_STATE_SCHEMA);
   const links = new SqliteGuestAccountLinks(database, { requests: store, authority, clock });
-  const resolver = new GuestIdentityResolver(authority, links);
+  const resolver = new GuestIdentityResolver(authority, links, { hasCurrentGovernmentId: () => false });
   return {
     database,
     authority,

@@ -2,17 +2,21 @@ import type { HttpRequestLike } from "../../../packages/platform-core/src/http-l
 import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
 import {
   GUEST_ACCOUNT_POLICY_DEFAULTS,
+  GuestAccountAuthorityError,
   SqliteGuestAccountAuthority,
+  type GuestAccount,
   type GuestAccountAuditSink,
   type GuestAccountPolicyOptions,
   type GuestAccountSession,
   type GuestAccountTelemetrySink,
 } from "../../../domains/shortlet/src/guest-account-authority.js";
+import { createPlatformCommandEnvelope } from "../../../packages/platform-core/src/envelope.js";
 import { SqliteGuestAccountLinks, type GuestRequestContactIndex, type SignedInPrincipalResult } from "../../../domains/shortlet/src/guest-account-links.js";
 import { GuestIdentityResolver, anonymousGuestIdentity, type GuestIdentity } from "../../../domains/shortlet/src/guest-identity.js";
 import { normalizeContactEmail } from "../../../domains/shortlet/src/guest-contact.js";
 import { ResendEmailSender, type EmailSender } from "../../../apps/pilot/src/notifications/email-sender.js";
-import { guestSignInCodeMessage } from "../../../apps/pilot/src/notifications/pilot-notifier.js";
+import { guestEmailChangeCodeMessage, guestSignInCodeMessage } from "../../../apps/pilot/src/notifications/pilot-notifier.js";
+import { accountAssuranceReader, type GuestAccountAssuranceReader } from "./guest-identity-status.js";
 
 /** The account cookie (ADR 0093): opaque, HttpOnly, SameSite=Lax. It carries no account, email, tenant or permission. */
 export const GUEST_ACCOUNT_COOKIE = "shortlet_guest_account";
@@ -151,6 +155,7 @@ export class GuestAccountRuntime {
   readonly authority: SqliteGuestAccountAuthority;
   readonly links: SqliteGuestAccountLinks;
   readonly #resolver: GuestIdentityResolver;
+  readonly #assurance: GuestAccountAssuranceReader;
   readonly #sender: EmailSender;
   readonly #tenantId: string;
   readonly #trustCloudflare: boolean;
@@ -166,7 +171,8 @@ export class GuestAccountRuntime {
       ...(composition.policy ? { policy: composition.policy } : {}),
     });
     this.links = new SqliteGuestAccountLinks(options.database, { requests: options.requests, authority: this.authority, clock: options.clock });
-    this.#resolver = new GuestIdentityResolver(this.authority, this.links);
+    this.#assurance = accountAssuranceReader(options.database, options.clock);
+    this.#resolver = new GuestIdentityResolver(this.authority, this.links, this.#assurance);
     this.#sender = composition.sender;
     this.#tenantId = options.tenantId;
     this.#trustCloudflare = composition.trustCloudflareClientAddress === true;
@@ -237,6 +243,81 @@ export class GuestAccountRuntime {
     const account = this.authority.resolveSession(credentials.sessionId, credentials.sessionSecret);
     if (!account || account.tenantId !== this.#tenantId) return null;
     return { accountGuestId: account.accountGuestId, tenantId: account.tenantId };
+  }
+
+  /**
+   * The account a signed-in browser holds, with whether its current government-ID result stands (issue 07, ADR 0094). The page
+   * reads only this; the level is never a gate.
+   */
+  accountStatus(accountGuestId: string): { readonly account: GuestAccount; readonly governmentIdVerified: boolean } | null {
+    const account = this.authority.findAccount(accountGuestId, this.#tenantId);
+    if (account === null) return null;
+    return { account, governmentIdVerified: this.#assurance.hasCurrentGovernmentId(accountGuestId, this.#tenantId) };
+  }
+
+  /**
+   * Sends the code for an email change to the NEW address (ADR 0093, `change_email` purpose). The session and the account revision
+   * are checked by the authority; the authority also refuses the account's current address and enforces the send limits.
+   */
+  async requestEmailChangeCode(input: {
+    readonly credentials: GuestAccountCredentials;
+    readonly accountGuestId: string;
+    readonly email: string;
+    readonly clientAddress: string;
+  }): Promise<{ readonly challengeId: string; readonly email: string }> {
+    const email = normalizeContactEmail(input.email);
+    const account = this.authority.findAccount(input.accountGuestId, this.#tenantId);
+    if (account === null) throw new GuestAccountAuthorityError("session_invalid", "A current Guest Account Session is required");
+    const challenge = this.authority.requestCode({
+      tenantId: this.#tenantId,
+      email,
+      purpose: "change_email",
+      clientAddress: input.clientAddress,
+      accountGuestId: input.accountGuestId,
+      sessionId: input.credentials.sessionId,
+      sessionSecret: input.credentials.sessionSecret,
+      expectedRevision: account.revision,
+    });
+    try {
+      await this.#sender.send(guestEmailChangeCodeMessage({ email, code: challenge.code, minutes: this.#lifetimeMinutes, challengeId: challenge.challengeId }));
+    } catch {
+      throw new SignInDeliveryError();
+    }
+    return { challengeId: challenge.challengeId, email };
+  }
+
+  /**
+   * Changes the account email only after the code sent to the new address is entered (issue 07 AC2, ADR 0072). A wrong, expired or
+   * replayed code throws the authority's own error and changes nothing. The change is a platform command with its own proof.
+   */
+  confirmEmailChange(input: {
+    readonly credentials: GuestAccountCredentials;
+    readonly accountGuestId: string;
+    readonly challengeId: string;
+    readonly email: string;
+    readonly code: string;
+    readonly clientAddress: string;
+  }): GuestAccount {
+    const email = normalizeContactEmail(input.email);
+    const verified = this.authority.verifyCode({
+      challengeId: input.challengeId,
+      tenantId: this.#tenantId,
+      email,
+      code: input.code,
+      purpose: "change_email",
+      clientAddress: input.clientAddress,
+      accountGuestId: input.accountGuestId,
+      sessionId: input.credentials.sessionId,
+      sessionSecret: input.credentials.sessionSecret,
+    });
+    const command = createPlatformCommandEnvelope({
+      commandName: "guest_account.change_email",
+      principal: { id: input.accountGuestId, role: "guest", tenantId: this.#tenantId },
+      payload: { email },
+      idempotencyKey: `guest_account.change_email:${input.challengeId}`,
+      expectedVersion: verified.proof.accountRevision,
+    });
+    return this.authority.changeEmail({ command, proof: verified.proof, sessionSecret: input.credentials.sessionSecret });
   }
 
   /** Revokes the account session behind a cookie (ADR 0093). A cookie that resolves to nothing revokes nothing. */

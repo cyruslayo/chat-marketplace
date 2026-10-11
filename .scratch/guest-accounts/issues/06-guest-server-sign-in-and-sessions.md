@@ -175,3 +175,5 @@ Implemented on `ga-06-sign-in-sessions`:
 - Q1 (dormant distinct-payer branch of the offer gate): kept by orchestrator decision; the human decides whether to keep it or remove it. No production path sets `distinctPayer`; ADR 0013 requires the primary guest to pay at launch.
 - Q-f (UX): skipped in round 2; still open.
 - Approval of the refusal copy (`offerNotFoundMessage`, the rest of `GUEST_ACCOUNT_COPY`).
+
+- 11 Oct 2026, issue 07 change to AC9 (delegated, not human-approved; orchestrator decision (a) for issue 07): the failure path "a signed-out request to `/account` is refused" is SUPERSEDED for `GET /account` by issue 07 AC1. A signed-out request, or one whose pre-sign-in interaction cookie no longer resolves, now gets `303` to `/account/sign-in?return=/account` with no account data (no 401 body). The redirect target is a fixed constant, so no caller-supplied return value is involved. The sign-in form's `return` still passes `safeReturnPath`. The 06 test assertions for these cases were updated to 303 (test/guest-account-sign-in.test.ts). Other 401 refusals (sign-out, POSTs, API routes) are unchanged.

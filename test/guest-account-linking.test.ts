@@ -116,12 +116,17 @@ test("AC4 (app level with an explicit identity; the HTTP route is issue 06): com
     await deviceC.advance("pending", undefined, "I need an apartment in Ikoyi from 25 Sept for 2 nights for 1 person");
     const authority = new SqliteGuestAccountAuthority(handle, { codeHashingKey: TEST_GUEST_CODE_HASHING_KEY });
     const links = new SqliteGuestAccountLinks(handle, { requests: new SqliteGuestInteractionStore(handle), authority });
-    const resolver = new GuestIdentityResolver(authority, links);
+    const resolver = new GuestIdentityResolver(authority, links, { hasCurrentGovernmentId: () => false });
     const session = signInGuestAccount(authority, "ada@example.test", tenantId);
     links.linkSignedInPrincipal({ principalId: deviceA.environment.guestPrincipal().id, tenantId, session });
     links.linkSignedInPrincipal({ principalId: deviceB.environment.guestPrincipal().id, tenantId, session });
     const identity = resolver.resolve({ principalId: deviceA.environment.guestPrincipal().id, tenantId, accountSession: { sessionId: session.sessionId, sessionSecret: session.sessionSecret } });
     assert.ok(identity);
+    // Issue 07: the resolver reports the level the identity-assurance port gives, and email-verified otherwise.
+    assert.equal(identity.assurance, "email-verified");
+    const verifiedResolver = new GuestIdentityResolver(authority, links, { hasCurrentGovernmentId: () => true });
+    const verifiedIdentity = verifiedResolver.resolve({ principalId: deviceA.environment.guestPrincipal().id, tenantId, accountSession: { sessionId: session.sessionId, sessionSecret: session.sessionSecret } });
+    assert.equal(verifiedIdentity?.assurance, "government-ID-verified");
 
     const listed = deviceA.app.committedWork(deviceA.environment.guestPrincipal(), identity);
     assert.deepEqual(listed.map((work) => work.threadId).sort(), [deviceA.threadId, deviceB.threadId].sort());

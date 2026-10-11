@@ -150,8 +150,10 @@ test("AC3 failure path: a pre-sign-in cookie presented with the account cookie d
     const device = await signInDevice(fixture, sender, EMAIL, before);
     // The browser that still holds the pre-sign-in interaction cookie, plus the newly issued account cookie.
     const replayed = await getPage(fixture.base, "/account", cookieHeader({ [INTERACTION_COOKIE]: before.split("=")[1], [ACCOUNT_COOKIE]: device.account.split("=")[1] }));
-    assert.equal(replayed.status, 401);
-    assert.match(replayed.body, /AUTHENTICATION_REQUIRED/);
+    // Issue 07 AC1: the account page sends a browser without a live account to sign-in and shows no account data.
+    assert.equal(replayed.status, 303);
+    assert.equal(replayed.location, "/account/sign-in?return=/account");
+    assert.ok(!replayed.body.includes("ada@example.test"));
   } finally {
     await fixture.close();
   }
@@ -176,7 +178,7 @@ test("AC4: Sign out everywhere closes an open stream in a second browser context
       assert.equal(refused.status, 401);
       assert.equal(refused.body.code, "AUTHENTICATION_REQUIRED");
       const withAccount = await getPage(second.fixture.base, "/account", deviceB.account);
-      assert.equal(withAccount.status, 401);
+      assert.equal(withAccount.status, 303, "the account page sends a revoked browser to sign-in");
     } finally {
       await second.fixture.close();
     }
@@ -307,7 +309,7 @@ test("AC9: Sign-out rotates the browser to a fresh unlinked anonymous interactio
     assert.match(out.setCookies.find((cookie) => cookie.startsWith(`${ACCOUNT_COOKIE}=`)) ?? "", /Max-Age=0/);
 
     const oldAccount = await getPage(fixture.base, "/account", device.account);
-    assert.equal(oldAccount.status, 401, "the old account cookie does not authenticate");
+    assert.equal(oldAccount.status, 303, "the old account cookie does not authenticate (sent to sign-in)");
     const fresh = await getJson(fixture.base, "/api/committed-work", cookieHeader({ [INTERACTION_COOKIE]: freshInteraction }));
     assert.equal(fresh.status, 200);
     assert.deepEqual(fresh.body.committedWork, [], "the previous principal's account history is not shown");
@@ -322,8 +324,10 @@ test("AC9 failure path: a signed-out request to /account is refused", async () =
   const { fixture } = await accountFixture();
   try {
     const page = await getPage(fixture.base, "/account", fixture.cookie);
-    assert.equal(page.status, 401);
-    assert.match(page.body, /data-error-code="AUTHENTICATION_REQUIRED"/);
+    // Issue 07 AC1: a signed-out request redirects to sign-in and shows no account data (replaces the 06 401 refusal).
+    assert.equal(page.status, 303);
+    assert.equal(page.location, "/account/sign-in?return=/account");
+    assert.ok(!page.body.includes("data-account-state"));
   } finally {
     await fixture.close();
   }
@@ -748,7 +752,7 @@ test("D3: a browser whose interaction binding was retired by sign-out everywhere
       assert.equal(page.status, 200, "the sign-in page renders for a browser with a retired binding");
       assert.equal(setCookieValue(page, INTERACTION_COOKIE), undefined, "rendering the form writes no binding");
       // The fresh session has no account identity: no account page, and no committed work.
-      assert.equal((await getPage(second.fixture.base, "/account", freshCookie)).status, 401);
+      assert.equal((await getPage(second.fixture.base, "/account", freshCookie)).status, 303);
       assert.deepEqual((await getJson(second.fixture.base, "/api/committed-work", freshCookie)).body.committedWork, []);
     } finally {
       await second.fixture.close();
@@ -973,7 +977,7 @@ test("Disabled sign-out everywhere: sign out everywhere while accounts are disab
   // Restart with accounts enabled on the same database.
   const enabled = await accountFixture({ sender, databasePath: databasePath });
   try {
-    assert.equal((await getPage(enabled.fixture.base, "/account", device.account)).status, 401, "the old account cookie no longer authenticates");
+    assert.equal((await getPage(enabled.fixture.base, "/account", device.account)).status, 303, "the old account cookie no longer authenticates");
     assert.equal((await getJson(enabled.fixture.base, "/api/committed-work", linked.interaction)).status, 401, "the linked device's cookie is retired");
     const fresh = await getJson(enabled.fixture.base, "/api/committed-work", await freshAnonymousCookie(enabled.fixture.base));
     assert.deepEqual(fresh.body.committedWork, []);
@@ -1113,12 +1117,12 @@ test("Sign-out not rate limited: 20 cookieless sign-outs from one address never 
     const device = await signInDevice(fixture, sender, EMAIL, fixture.cookie);
     const out = await postForm(fixture.base, "/account/sign-out", {}, cookieHeader({ [ACCOUNT_COOKIE]: device.account.split("=")[1], [INTERACTION_COOKIE]: device.interaction.split("=")[1] }));
     assert.equal(out.status, 303, "the signed-in sign-out is not refused");
-    assert.equal((await getPage(fixture.base, "/account", device.account)).status, 401, "and it revoked the account");
+    assert.equal((await getPage(fixture.base, "/account", device.account)).status, 303, "and it revoked the account");
     advanceClock(fixture, CODE_REQUEST_COOLDOWN_MS * 2);
     const again = await signInDevice(fixture, sender, EMAIL, cookieHeader({ [INTERACTION_COOKIE]: setCookieValueOf(out, INTERACTION_COOKIE) }));
     const everywhere = await postForm(fixture.base, "/account/sign-out-everywhere", {}, cookieHeader({ [ACCOUNT_COOKIE]: again.account.split("=")[1], [INTERACTION_COOKIE]: again.interaction.split("=")[1] }));
     assert.equal(everywhere.status, 303, "the signed-in sign-out everywhere is not refused");
-    assert.equal((await getPage(fixture.base, "/account", again.account)).status, 401, "and it revoked the account");
+    assert.equal((await getPage(fixture.base, "/account", again.account)).status, 303, "and it revoked the account");
   } finally {
     await fixture.close();
   }
@@ -1226,7 +1230,7 @@ test("Sign-out not rate limited: sign out everywhere with an account cookie and 
     assert.equal(out.status, 303, "the account cookie alone ends the account");
     const created = bindingIds(fixture).filter((id) => !before.has(id));
     assert.deepEqual(created, [], "no binding is written without a presented interaction session");
-    assert.equal((await getPage(fixture.base, "/account", device.account)).status, 401, "and it revoked the account");
+    assert.equal((await getPage(fixture.base, "/account", device.account)).status, 303, "and it revoked the account");
   } finally {
     await fixture.close();
   }
