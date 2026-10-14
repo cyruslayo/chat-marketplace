@@ -1,6 +1,6 @@
 # 03 · Captures, reflow and target checks, full verification
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: 02
 
@@ -55,3 +55,7 @@ Do not commit. Delete any walkthrough log you create.
 - Temporary HEAD worktree (`C:/AI2026/cm-base`) and its node_modules junction were removed; the main tree's node_modules is intact.
 
 No fixes were needed to the landing test files. Nothing was committed. Status left claimed.
+
+## Answer
+
+**Resolved 14 Oct 2026, commit 44fcec4.** Capture and audit harness capture-landing.ts; findings in screenshots/03. Verified by the issue 10 gate. The owner chose to resolve the first wave (01–05) with the second, since the gate tests cover their criteria.

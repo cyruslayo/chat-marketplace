@@ -1,6 +1,6 @@
 # 04 · Light/dark switch and landing typography scale
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: 03
 
@@ -192,3 +192,7 @@ Verification (after the corrections):
 - Captures: `screenshots/04/` overwritten; new `landing-first-390x800.png` and `landing-first-360x640.png`. Viewed: first 390x800 (H1, phone with message box, CTA below the fold, one-row header with the moon button) and the 1280 light full page (copy left, phone right, segmented Light|Dark).
 
 Not committed. Status left `claimed`.
+
+## Answer
+
+**Resolved 14 Oct 2026, commit 44fcec4.** Light/dark switch (no-JS form post /welcome/theme) and the type scale; the switch became a single icon button in 08. Verified by the issue 10 gate. The owner chose to resolve the first wave (01–05) with the second, since the gate tests cover their criteria.

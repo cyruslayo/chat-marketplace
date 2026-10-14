@@ -1,6 +1,6 @@
 # 10 · Captures, budgets and full verification for the new landing page
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: 09
 
@@ -76,3 +76,7 @@ The verification gate for the wave of issues 07–10, in the same form as issue 
 - AC4 split: `Issue 10 AC4` (fonts ≤ 160 KB, every request same-origin, default render with no hero or closing photo element) passes. `Issue 10 AC4 (owner-deferred)` is skipped with the owner's reason; its assertions are unchanged. Measured numbers, recorded for later: hero image 71.6 KB at both widths (budgets 120 KB at 1440, 50 KB at 390); first contentful paint 2988 ms vs hero image finished 2005 ms at 1440; 2456 ms vs 1793 ms at 390; app-layer example photos on the default page about 290 KB.
 - Not run: the complete suite a second time (owner decision). Evidence for the wave is the full run 1ba3c8e4 plus the isolated runs above.
 - Screenshots the full suite rewrote under `.scratch/ui-recovery/` (57 files) are left as they are for the owner's decision.
+
+## Answer
+
+**Resolved 14 Oct 2026, commit 44fcec4.** Gate: captures in screenshots/10; AC3 contrast and AC4 font/origin tests. Full run 1ba3c8e4 plus isolated reruns, with the owner exception to DoD item 9; photo budgets owner-deferred. Verified by the issue 10 gate. The owner chose to resolve the first wave (01–05) with the second, since the gate tests cover their criteria.

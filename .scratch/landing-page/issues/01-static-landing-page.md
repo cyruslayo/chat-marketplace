@@ -1,6 +1,6 @@
 # 01 · Static landing page at /welcome
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: none
 
@@ -142,3 +142,7 @@ Open items:
 - Nothing blocks issue 02. The stage contract is exactly as specified; the test in AC7 enforces it.
 - `CONTEXT.md` terms were not separately re-checked beyond the guest vocabulary in `guest-content.ts`.
 - The pre-existing uncommitted change to `docs/design/shortlet-landing-page-direction.md` is untouched.
+
+## Answer
+
+**Resolved 14 Oct 2026, commit 44fcec4.** Static landing page at /welcome, complete without JavaScript (landing-page-html.ts, guest-server.ts routes, shortlet-landing.css). Later restructured by 08. Verified by the issue 10 gate. The owner chose to resolve the first wave (01–05) with the second, since the gate tests cover their criteria.

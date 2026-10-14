@@ -1,6 +1,6 @@
 # 05 · Landing copy from the panel deck, FAQ fix, "Nothing due yet" tags
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: 04
 
@@ -118,3 +118,7 @@ Deviations:
 Copy not applied exactly: none. Typographic apostrophes are used throughout. Q2–Q6 answers are unchanged. The phone copy is unchanged, and the snapshot test checks it.
 
 Status: claimed. Not committed, not pushed, full `npm test` not run.
+
+## Answer
+
+**Resolved 14 Oct 2026, commit 44fcec4.** Approved copy deck in landing-copy.ts. Addition 1 (status tags) moved to the money timeline by owner decision (06 item 4). Verified by the issue 10 gate. The owner chose to resolve the first wave (01–05) with the second, since the gate tests cover their criteria.

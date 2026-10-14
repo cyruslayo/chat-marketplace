@@ -1,6 +1,6 @@
 # 08 · Rebuild the landing page as "A + C · Lagos, in conversation"
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: 07, 06 (items 3, 4 and 6)
 
@@ -211,3 +211,7 @@ Open items for the orchestrator:
 - The TDD record has gaps: Issue 08 AC3 and AC8 were never seen failing on their own (sub-task A).
 
 Status stays `claimed` until issue 10's wave gate.
+
+## Answer
+
+**Resolved 14 Oct 2026, commit 44fcec4.** Ten-section page ("A + C · Lagos, in conversation"): photo hero with a real form, chat window, trust strip, apartments, steps, money band, questions, closing, footer; placeholder switch. Verified by the issue 10 gate. The owner chose to resolve the first wave (01–05) with the second, since the gate tests cover their criteria.

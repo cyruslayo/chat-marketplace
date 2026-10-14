@@ -1,6 +1,6 @@
 # 09 · Motion for the new layout: hero chat window and one pinned phone
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: 08
 
@@ -93,3 +93,7 @@ The orchestrator's review found that opacity 0.45 fails contrast on inactive ste
 - Behaviour change: below 64rem the beats no longer play; they show their final states, as this issue specifies. Five Issue 02 tests were updated to match (listed above).
 - Runs: build 0; non-browser 40/40; Chromium 40/40; check 0; `screenshots/09/` findings clean.
 - Status stays `claimed` until issue 10.
+
+## Answer
+
+**Resolved 14 Oct 2026, commit 44fcec4.** Motion for the new layout: hero once, pinned phone on desktop, app bar over the hero, colour-only dimming. Verified by the issue 10 gate. The owner chose to resolve the first wave (01–05) with the second, since the gate tests cover their criteria.

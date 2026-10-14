@@ -1,6 +1,6 @@
 # 07 · Brand layer foundations: logomark, self-hosted fonts, landing tokens
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: 05, 06 (items 1 and 2)
 
@@ -94,3 +94,7 @@ The brand layer that sits around the app on the landing page (direction doc, "Tw
   - the orchestrator checked the light and dark app-bar crops (`screenshots/audit/07-header-check.png`).
 
 Status stays `claimed` until issue 10's wave gate (Definition of Done, items 8 and 9).
+
+## Answer
+
+**Resolved 14 Oct 2026, commit 44fcec4.** Brand layer: logomark (landing-brand.ts), self-hosted WOFF2 fonts in assets/fonts, landing colour token block, .landing-money. Verified by the issue 10 gate. The owner chose to resolve the first wave (01–05) with the second, since the gate tests cover their criteria.

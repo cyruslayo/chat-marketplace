@@ -1,6 +1,6 @@
 # 02 · Landing motion script
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: 01
 
@@ -118,3 +118,7 @@ Open problems: none known. The Browser pane (preview) was not used; the Chromium
 - `[hidden]` is scoped to `.landing-transcript [hidden], .landing-beat__screen[hidden]`; the global `!important` rule is gone.
 - Known limit: transient lines (`data-landing-only`, kept `hidden` as instructed) still change page height while they show. The height-stability test covers beats 3 and 5, which have none.
 - Tests: `test/landing-page-chromium.test.ts` 12/12 (new: off-screen reset before scroll; height stable through beats 3 and 5; beforeprint). `test/landing-page-motion.test.ts` 7/7 and `test/landing-page.test.ts` 9/9 (the non-browser run reported 16 in total).
+
+## Answer
+
+**Resolved 14 Oct 2026, commit 44fcec4.** Motion script landing-page.ts / landing-motion.ts (stage contract, timings, print). The behaviour was later changed by 09: the hero plays once, beats pin on desktop only. Verified by the issue 10 gate. The owner chose to resolve the first wave (01–05) with the second, since the gate tests cover their criteria.
