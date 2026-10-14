@@ -4,6 +4,8 @@ status: accepted
 
 # Host the pilot on Cloudflare
 
+**Amended by ADR 0101 (multi-domain hosting and platform accounts):** the tenant's one Durable Object becomes a platform object (accounts, conversations, tasks) plus one object class per domain.
+
 Renumbered from 0092 to 0095 on 5 October 2026 when reconciling with `main`: ADR 0092 already records Extended Stays, and ADRs 0093/0094 record Guest Accounts and Identity Assurance. This changes the identifier only; the accepted hosting decision and its open data-protection gates are unchanged.
 
 ## Context

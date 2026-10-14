@@ -1,6 +1,6 @@
 # ADR draft: multi-domain Cloudflare hosting (amends 0095) and platform accounts (amends 0093)
 
-Status: ready-for-human
+Status: resolved
 Type: grilling
 Blocked by: 01
 Requested: 14 Oct 2026
@@ -47,4 +47,10 @@ Before starting, also list `docs/adr/` and read any other ADR that touches the f
 
 Decision slice. DoD items 3 and 5 apply: every listed ADR is read and cited, and nothing is decided that the owner has not confirmed. No production code changes.
 
+## Answer
+
+Resolved by `docs/adr/0101-multi-domain-cloudflare-hosting-and-platform-accounts.md` (status `accepted`, 14 Oct 2026). It amends ADR 0095 and the placement parts of ADR 0093/0094: one Worker routing by domain; per tenant a platform Durable Object owning accounts, conversations and tasks, plus one Durable Object class per domain owning that domain's transactions; accounts and emailed-code sign-in become platform-owned; identity assurance stays a shortlet requirement keyed by the Account Guest Id; R2 holds receipts and product images. It states which object owns accounts, conversations and each domain's transactions (AC1) and lists the pilot-data migration consequences — account/thread tables split out of `ShortletPilot`, `guest_identity_assurance` stays, export/restore span both objects, mechanism is the existing export/import (AC2). Unblocks 16 and 17. No production code changed.
+
 ## Comments
+
+- 14 Oct 2026 (owner): Accepted ADR 0101 as-is. AC3 satisfied.

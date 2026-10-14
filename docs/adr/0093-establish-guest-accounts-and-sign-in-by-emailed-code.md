@@ -1,5 +1,7 @@
 # Establish Guest Accounts and sign-in by emailed code
 
+**Amended by ADR 0101:** accounts and emailed-code sign-in are platform-owned (the platform Durable Object); the identity, code, session and audit rules below are unchanged.
+
 ## Context
 
 Guest browser sessions currently identify a Guest through a temporary interaction principal. Clearing a cookie or changing devices loses continuity, while the platform needs a stable identity anchor for account management and future check-in assurance. Guest authentication is distinct from Operator authentication in ADR 0086: Guests must receive a one-time code by email, while Operator tokens are intentionally not delivered by email.

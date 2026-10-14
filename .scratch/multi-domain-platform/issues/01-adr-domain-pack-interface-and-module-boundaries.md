@@ -1,6 +1,6 @@
 # ADR draft: domain pack interface and module boundaries
 
-Status: ready-for-human
+Status: resolved
 Type: grilling
 Blocked by: none
 Requested: 14 Oct 2026
@@ -48,4 +48,11 @@ Before starting, also list `docs/adr/` and read any other ADR that touches the f
 
 Decision slice. DoD items 3 and 5 apply: every listed ADR is read and cited, and nothing is decided that the owner has not confirmed. No production code changes.
 
+## Answer
+
+Resolved by `docs/adr/0099-define-the-domain-pack-interface-and-module-boundaries.md` (status `accepted`, 14 Oct 2026). It fixes the seam between the Concierge Platform and its domain packs: one public façade per domain (`domains/<domain>/src/index.ts`) enforced by a boundary test with a shrinking allow-list; the full platform-owned service list (Conversation/router, Agent, Interactions, Surfaces, Payments, Accounts, Handoff, Audit, Telemetry, Redaction, storage ports); one action gate for agent and deterministic actions (ADR 0072, 0074, 0080); packs declare prompt, tools, surfaces, action specs, routes, migrations and an event hook and never reach in; domain-owned transaction models, ledgers and identity assurance; hosts as composition roots; the interface designed against exactly two packs (shortlet, commerce). The concrete TypeScript shape is deferred to slice 02. No production code changed.
+
 ## Comments
+
+- 14 Oct 2026 (agent): Drafted `docs/adr/0099-define-the-domain-pack-interface-and-module-boundaries.md` with status `proposed`. Number 0099 chosen because 0097/0098 are reserved for guest-stays 02 and weaver 03 (`../WORK-MAP.md`, decision 3). Awaiting the owner's review and acceptance (AC3).
+- 14 Oct 2026 (owner): Accepted ADR 0099 as-is. AC3 satisfied.

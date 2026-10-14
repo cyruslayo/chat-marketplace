@@ -1,5 +1,7 @@
 # Anchor Identity Assurance to the Guest Account
 
+**Amended by ADR 0101 (placement only):** assurance records stay with shortlet, keyed by the platform's Account Guest Id; the ownership, expiry and invalidation rules below are unchanged.
+
 ## Context
 
 `GuestIdentityVerificationResultSource` currently resolves a verification result using a tenant and Guest id. Guest ids created by anonymous browser sessions are temporary interaction principals, so the current boundary cannot reliably reuse identity assurance across devices. The Guest Account and stable Account Guest Id established by ADR 0093 provide the durable identity anchor.

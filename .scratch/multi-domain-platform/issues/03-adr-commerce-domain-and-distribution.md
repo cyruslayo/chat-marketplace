@@ -1,6 +1,6 @@
 # ADR draft: commerce as the second domain, distribution channels, instastore as specification
 
-Status: ready-for-human
+Status: resolved
 Type: grilling
 Blocked by: none
 Requested: 14 Oct 2026
@@ -46,4 +46,10 @@ Before starting, also list `docs/adr/` and read any other ADR that touches the f
 
 Decision slice. DoD items 3 and 5 apply: every listed ADR is read and cited, and nothing is decided that the owner has not confirmed. No production code changes.
 
+## Answer
+
+Resolved by `docs/adr/0100-make-commerce-the-second-domain.md` (status `accepted`, 14 Oct 2026). It records: commerce as the second domain pack at `domains/commerce`, registering through the `DomainPack` interface (ADR 0099) and never importing shortlet; the front doors (own app for all verticals, ChatGPT app commerce-only, merchant store links), extending ADR 0067 with ChatGPT for commerce; instastore as the ported specification, then frozen; a shared `Product` with one Merchant Offer per product at MVP; operator-assisted merchant onboarding first; merchants verified before their stores appear to the agent (ADR 0001); and `CONTEXT-MAP.md` updated so commerce is an active domain (AC2). Cites the OpenAI guideline URLs and the instastore migrations. Unblocks 04, 18 and 28. No production code changed.
+
 ## Comments
+
+- 14 Oct 2026 (owner): Accepted ADR 0100 as-is. AC3 satisfied.

@@ -43,11 +43,11 @@ The frontier is the first slice in the table that is open, unblocked and unclaim
 | # | Slice | Type | Status | Blocked by | Unlocks |
 | --- | --- | --- | --- | --- | --- |
 | **A: Decisions** | | | | | |
-| 01 | [ADR draft: domain pack interface and module boundaries](issues/01-adr-domain-pack-interface-and-module-boundaries.md) | grilling | ready-for-human | none | 02, 05 |
-| 02 | [Design it twice: walk shortlet and commerce flows through DomainPack and ActionSpec](issues/02-design-the-domain-pack-interface-twice.md) | research | ready-for-agent | 01 | 07, 11 |
-| 03 | [ADR draft: commerce as the second domain, distribution channels, instastore as specification](issues/03-adr-commerce-domain-and-distribution.md) | grilling | ready-for-human | none | 04, 18, 28 |
+| 01 | [ADR draft: domain pack interface and module boundaries](issues/01-adr-domain-pack-interface-and-module-boundaries.md) | grilling | resolved | none | 02, 05 |
+| 02 | [Design it twice: walk shortlet and commerce flows through DomainPack and ActionSpec](issues/02-design-the-domain-pack-interface-twice.md) | research | resolved | 01 | 07, 11 |
+| 03 | [ADR draft: commerce as the second domain, distribution channels, instastore as specification](issues/03-adr-commerce-domain-and-distribution.md) | grilling | resolved | none | 04, 18, 28 |
 | 04 | [ADR draft: commerce payments on Paystack split per store (supersedes 0002)](issues/04-adr-commerce-payments-paystack-split.md) | grilling | needs-info | 03 | 22 |
-| 05 | [ADR draft: multi-domain Cloudflare hosting (amends 0095) and platform accounts (amends 0093)](issues/05-adr-multi-domain-hosting-and-platform-accounts.md) | grilling | ready-for-human | 01 | 16, 17 |
+| 05 | [ADR draft: multi-domain Cloudflare hosting (amends 0095) and platform accounts (amends 0093)](issues/05-adr-multi-domain-hosting-and-platform-accounts.md) | grilling | resolved | 01 | 16, 17 |
 | **B: Deep modules** | | | | | |
 | 06 | [Boundary test: no imports past domains/*/src/index](issues/06-boundary-test-for-domain-imports.md) | task | ready-for-agent | none | 10 |
 | 07 | [Platform Interactions gate and ActionSpec; convert card-payment and bank-transfer actions](issues/07-platform-interactions-action-gate.md) | task | ready-for-agent | 02 | 08a, 08b, 14a |
@@ -96,4 +96,7 @@ Update these when a slice changes them.
 
 ## Context pointers (resolved slices)
 
-None yet.
+- **01** → [`docs/adr/0099-define-the-domain-pack-interface-and-module-boundaries.md`](../../docs/adr/0099-define-the-domain-pack-interface-and-module-boundaries.md) (accepted 14 Oct 2026).
+- **02** → [issue 02 `## Answer`](issues/02-design-the-domain-pack-interface-twice.md#answer) — chosen `DomainPack`/`ActionSpec` shape; unblocks 07 and 11.
+- **03** → [`docs/adr/0100-make-commerce-the-second-domain.md`](../../docs/adr/0100-make-commerce-the-second-domain.md) (accepted 14 Oct 2026); `CONTEXT-MAP.md` updated to active commerce.
+- **05** → [`docs/adr/0101-multi-domain-cloudflare-hosting-and-platform-accounts.md`](../../docs/adr/0101-multi-domain-cloudflare-hosting-and-platform-accounts.md) (accepted 14 Oct 2026); amends 0095, 0093, 0094.
