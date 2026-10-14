@@ -1,0 +1,90 @@
+== width 320px ==
+theme light (page height 7840px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+theme dark (page height 7840px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+
+== width 390px ==
+theme light (page height 6934px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 6
+    - li "Confirmed" at 296,551 45x37
+    - li "Confirmed" at 296,1666 45x37
+    - li "Confirmed" at 296,2376 45x37
+    - li "Confirmed" at 296,3201 45x37
+    - li "Confirmed" at 296,4143 45x37
+    - li "Confirmed" at 296,5024 45x37
+  controls under 44x44: 0
+theme dark (page height 6934px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 6
+    - li "Confirmed" at 296,551 45x37
+    - li "Confirmed" at 296,1666 45x37
+    - li "Confirmed" at 296,2376 45x37
+    - li "Confirmed" at 296,3201 45x37
+    - li "Confirmed" at 296,4143 45x37
+    - li "Confirmed" at 296,5024 45x37
+  controls under 44x44: 0
+
+== width 768px ==
+theme light (page height 6078px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 1
+    - li "Confirmed" at 501,4386 54x37
+  controls under 44x44: 0
+theme dark (page height 6078px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 1
+    - li "Confirmed" at 501,4386 54x37
+  controls under 44x44: 0
+
+== width 1280px ==
+theme light (page height 4623px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 6
+    - li "Confirmed" at 1144,169 51x37
+    - li "Confirmed" at 1149,1000 46x37
+    - li "Confirmed" at 536,1410 51x37
+    - li "Confirmed" at 1149,1955 46x37
+    - li "Confirmed" at 536,2695 51x37
+    - li "Confirmed" at 1149,3240 46x37
+  controls under 44x44: 0
+theme dark (page height 4623px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 6
+    - li "Confirmed" at 1144,169 51x37
+    - li "Confirmed" at 1149,1000 46x37
+    - li "Confirmed" at 536,1410 51x37
+    - li "Confirmed" at 1149,1955 46x37
+    - li "Confirmed" at 536,2695 51x37
+    - li "Confirmed" at 1149,3240 46x37
+  controls under 44x44: 0
+

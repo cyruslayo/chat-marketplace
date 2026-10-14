@@ -1,0 +1,365 @@
+== width 320px ==
+  hero phone top 410px, bottom 777px (viewport height 7447px at this capture)
+theme light (page height 7447px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 30
+    - overflowing li "Search" at 17,427 8x25
+    - overflowing li "Request" at 136,427 8x25
+    - overflowing li "Offer" at 189,427 8x25
+    - overflowing li "Pay" at 242,427 8x25
+    - overflowing li "Confirmed" at 295,427 8x25
+    - overflowing li "Stay" at 93,1528 8x25
+    - overflowing li "Request" at 144,1528 8x25
+    - overflowing li "Offer" at 194,1528 8x25
+    - overflowing li "Pay" at 245,1528 8x25
+    - overflowing li "Confirmed" at 295,1528 8x25
+    - overflowing li "Search" at 17,2236 8x25
+    - overflowing li "Request" at 136,2236 8x25
+    - overflowing li "Offer" at 189,2236 8x25
+    - overflowing li "Pay" at 242,2236 8x25
+    - overflowing li "Confirmed" at 295,2236 8x25
+    - overflowing li "Search" at 17,3184 8x25
+    - overflowing li "Stay" at 66,3184 8x25
+    - overflowing li "Offer" at 197,3184 8x25
+    - overflowing li "Pay" at 246,3184 8x25
+    - overflowing li "Confirmed" at 295,3184 8x25
+    - overflowing li "Search" at 17,4206 8x25
+    - overflowing li "Stay" at 66,4206 8x25
+    - overflowing li "Offer" at 197,4206 8x25
+    - overflowing li "Pay" at 246,4206 8x25
+    - overflowing li "Confirmed" at 295,4206 8x25
+    - overflowing li "Search" at 17,5183 8x25
+    - overflowing li "Stay" at 63,5183 8x25
+    - overflowing li "Request" at 110,5183 8x25
+    - overflowing li "Offer" at 156,5183 8x25
+    - overflowing li "Pay" at 202,5183 8x25
+  controls under 44x44: 0
+  text nodes checked: 165; text under 12px: 0
+  longest prose line: 43 characters (limit 75)
+    - .landing-lede "One conversation does the sear...": 35
+    - .landing-caption__body "Area, dates and guests are pic...": 39
+    - .landing-caption__body "Every result shows the All-In ...": 40
+    - .landing-caption__body "Dates, guests and total sit on...": 42
+    - .landing-caption__body "The Operator is the verified c...": 43
+    - .landing-caption__body "The offer shows exactly what y...": 40
+    - .landing-faq__item > p "No. The dates are yours once t...": 32
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 34
+    - .landing-faq__item > p "No payment is due, and you can...": 30
+    - .landing-faq__item > p "[AREAS WITH PUBLISHED INVENTOR...": 21
+    - .landing-faq__item > p "[APPROVED FEE ANSWER]...": 21
+    - .landing-faq__item > p "Not online for this pilot. Any...": 37
+  sizes (px): H1 36, H2 28.0006, H3 22.0006, lede 17, caption 16.0006, eyebrow 13, faqQuestion 17.0006, faqAnswer 15.0006, bubble 15, chip 14, rail 12, pain 15
+  hero phone top 410px, bottom 777px (viewport height 7447px at this capture)
+theme dark (page height 7447px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 30
+    - overflowing li "Search" at 17,427 8x25
+    - overflowing li "Request" at 136,427 8x25
+    - overflowing li "Offer" at 189,427 8x25
+    - overflowing li "Pay" at 242,427 8x25
+    - overflowing li "Confirmed" at 295,427 8x25
+    - overflowing li "Stay" at 93,1528 8x25
+    - overflowing li "Request" at 144,1528 8x25
+    - overflowing li "Offer" at 194,1528 8x25
+    - overflowing li "Pay" at 245,1528 8x25
+    - overflowing li "Confirmed" at 295,1528 8x25
+    - overflowing li "Search" at 17,2236 8x25
+    - overflowing li "Request" at 136,2236 8x25
+    - overflowing li "Offer" at 189,2236 8x25
+    - overflowing li "Pay" at 242,2236 8x25
+    - overflowing li "Confirmed" at 295,2236 8x25
+    - overflowing li "Search" at 17,3184 8x25
+    - overflowing li "Stay" at 66,3184 8x25
+    - overflowing li "Offer" at 197,3184 8x25
+    - overflowing li "Pay" at 246,3184 8x25
+    - overflowing li "Confirmed" at 295,3184 8x25
+    - overflowing li "Search" at 17,4206 8x25
+    - overflowing li "Stay" at 66,4206 8x25
+    - overflowing li "Offer" at 197,4206 8x25
+    - overflowing li "Pay" at 246,4206 8x25
+    - overflowing li "Confirmed" at 295,4206 8x25
+    - overflowing li "Search" at 17,5183 8x25
+    - overflowing li "Stay" at 63,5183 8x25
+    - overflowing li "Request" at 110,5183 8x25
+    - overflowing li "Offer" at 156,5183 8x25
+    - overflowing li "Pay" at 202,5183 8x25
+  controls under 44x44: 0
+  text nodes checked: 165; text under 12px: 0
+  longest prose line: 43 characters (limit 75)
+    - .landing-lede "One conversation does the sear...": 35
+    - .landing-caption__body "Area, dates and guests are pic...": 39
+    - .landing-caption__body "Every result shows the All-In ...": 40
+    - .landing-caption__body "Dates, guests and total sit on...": 42
+    - .landing-caption__body "The Operator is the verified c...": 43
+    - .landing-caption__body "The offer shows exactly what y...": 40
+    - .landing-faq__item > p "No. The dates are yours once t...": 32
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 34
+    - .landing-faq__item > p "No payment is due, and you can...": 30
+    - .landing-faq__item > p "[AREAS WITH PUBLISHED INVENTOR...": 21
+    - .landing-faq__item > p "[APPROVED FEE ANSWER]...": 21
+    - .landing-faq__item > p "Not online for this pilot. Any...": 37
+  sizes (px): H1 36, H2 28.0006, H3 22.0006, lede 17, caption 16.0006, eyebrow 13, faqQuestion 17.0006, faqAnswer 15.0006, bubble 15, chip 14, rail 12, pain 15
+
+== width 390px ==
+  hero phone top 406px, bottom 773px (viewport height 6888px at this capture)
+theme light (page height 6888px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 30
+    - overflowing li "Search" at 19,423 8x25
+    - overflowing li "Request" at 165,423 8x25
+    - overflowing li "Offer" at 231,423 8x25
+    - overflowing li "Pay" at 297,423 8x25
+    - overflowing li "Confirmed" at 363,423 8x25
+    - overflowing li "Stay" at 109,1447 8x25
+    - overflowing li "Request" at 172,1447 8x25
+    - overflowing li "Offer" at 236,1447 8x25
+    - overflowing li "Pay" at 299,1447 8x25
+    - overflowing li "Confirmed" at 363,1447 8x25
+    - overflowing li "Search" at 19,2157 8x25
+    - overflowing li "Request" at 165,2157 8x25
+    - overflowing li "Offer" at 231,2157 8x25
+    - overflowing li "Pay" at 297,2157 8x25
+    - overflowing li "Confirmed" at 363,2157 8x25
+    - overflowing li "Search" at 19,3006 8x25
+    - overflowing li "Stay" at 81,3006 8x25
+    - overflowing li "Offer" at 239,3006 8x25
+    - overflowing li "Pay" at 301,3006 8x25
+    - overflowing li "Confirmed" at 363,3006 8x25
+    - overflowing li "Search" at 19,3969 8x25
+    - overflowing li "Stay" at 81,3969 8x25
+    - overflowing li "Offer" at 239,3969 8x25
+    - overflowing li "Pay" at 301,3969 8x25
+    - overflowing li "Confirmed" at 363,3969 8x25
+    - overflowing li "Search" at 19,4857 8x25
+    - overflowing li "Stay" at 79,4857 8x25
+    - overflowing li "Request" at 138,4857 8x25
+    - overflowing li "Offer" at 198,4857 8x25
+    - overflowing li "Pay" at 257,4857 8x25
+  controls under 44x44: 0
+  text nodes checked: 165; text under 12px: 0
+  longest prose line: 49 characters (limit 75)
+    - .landing-lede "One conversation does the sear...": 45
+    - .landing-caption__body "Area, dates and guests are pic...": 49
+    - .landing-caption__body "Every result shows the All-In ...": 49
+    - .landing-caption__body "Dates, guests and total sit on...": 48
+    - .landing-caption__body "The Operator is the verified c...": 46
+    - .landing-caption__body "The offer shows exactly what y...": 49
+    - .landing-faq__item > p "No. The dates are yours once t...": 41
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 45
+    - .landing-faq__item > p "No payment is due, and you can...": 35
+    - .landing-faq__item > p "[AREAS WITH PUBLISHED INVENTOR...": 32
+    - .landing-faq__item > p "[APPROVED FEE ANSWER]...": 21
+    - .landing-faq__item > p "Not online for this pilot. Any...": 45
+  sizes (px): H1 38.3327, H2 29.1673, H3 22.7298, lede 17.2188, caption 16.0736, eyebrow 13, faqQuestion 17.0736, faqAnswer 15.0736, bubble 15, chip 14, rail 12, pain 15
+  hero phone top 406px, bottom 773px (viewport height 6888px at this capture)
+theme dark (page height 6888px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 30
+    - overflowing li "Search" at 19,423 8x25
+    - overflowing li "Request" at 165,423 8x25
+    - overflowing li "Offer" at 231,423 8x25
+    - overflowing li "Pay" at 297,423 8x25
+    - overflowing li "Confirmed" at 363,423 8x25
+    - overflowing li "Stay" at 109,1447 8x25
+    - overflowing li "Request" at 172,1447 8x25
+    - overflowing li "Offer" at 236,1447 8x25
+    - overflowing li "Pay" at 299,1447 8x25
+    - overflowing li "Confirmed" at 363,1447 8x25
+    - overflowing li "Search" at 19,2157 8x25
+    - overflowing li "Request" at 165,2157 8x25
+    - overflowing li "Offer" at 231,2157 8x25
+    - overflowing li "Pay" at 297,2157 8x25
+    - overflowing li "Confirmed" at 363,2157 8x25
+    - overflowing li "Search" at 19,3006 8x25
+    - overflowing li "Stay" at 81,3006 8x25
+    - overflowing li "Offer" at 239,3006 8x25
+    - overflowing li "Pay" at 301,3006 8x25
+    - overflowing li "Confirmed" at 363,3006 8x25
+    - overflowing li "Search" at 19,3969 8x25
+    - overflowing li "Stay" at 81,3969 8x25
+    - overflowing li "Offer" at 239,3969 8x25
+    - overflowing li "Pay" at 301,3969 8x25
+    - overflowing li "Confirmed" at 363,3969 8x25
+    - overflowing li "Search" at 19,4857 8x25
+    - overflowing li "Stay" at 79,4857 8x25
+    - overflowing li "Request" at 138,4857 8x25
+    - overflowing li "Offer" at 198,4857 8x25
+    - overflowing li "Pay" at 257,4857 8x25
+  controls under 44x44: 0
+  text nodes checked: 165; text under 12px: 0
+  longest prose line: 49 characters (limit 75)
+    - .landing-lede "One conversation does the sear...": 45
+    - .landing-caption__body "Area, dates and guests are pic...": 49
+    - .landing-caption__body "Every result shows the All-In ...": 49
+    - .landing-caption__body "Dates, guests and total sit on...": 48
+    - .landing-caption__body "The Operator is the verified c...": 46
+    - .landing-caption__body "The offer shows exactly what y...": 49
+    - .landing-faq__item > p "No. The dates are yours once t...": 41
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 45
+    - .landing-faq__item > p "No payment is due, and you can...": 35
+    - .landing-faq__item > p "[AREAS WITH PUBLISHED INVENTOR...": 32
+    - .landing-faq__item > p "[APPROVED FEE ANSWER]...": 21
+    - .landing-faq__item > p "Not online for this pilot. Any...": 45
+  sizes (px): H1 38.3327, H2 29.1673, H3 22.7298, lede 17.2188, caption 16.0736, eyebrow 13, faqQuestion 17.0736, faqAnswer 15.0736, bubble 15, chip 14, rail 12, pain 15
+
+== width 768px ==
+  hero phone top 532px, bottom 1164px (viewport height 6661px at this capture)
+theme light (page height 6661px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 14 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 169; text under 12px: 0
+  longest prose line: 71 characters (limit 75)
+    - .landing-lede "One conversation does the sear...": 53
+    - .landing-caption__body "Area, dates and guests are pic...": 69
+    - .landing-caption__body "Every result shows the All-In ...": 69
+    - .landing-caption__body "Dates, guests and total sit on...": 71
+    - .landing-caption__body "The Operator is the verified c...": 68
+    - .landing-caption__body "The offer shows exactly what y...": 71
+    - .landing-faq__item > p "No. The dates are yours once t...": 70
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 70
+    - .landing-faq__item > p "No payment is due, and you can...": 57
+    - .landing-faq__item > p "[AREAS WITH PUBLISHED INVENTOR...": 32
+    - .landing-faq__item > p "[APPROVED FEE ANSWER]...": 21
+    - .landing-faq__item > p "Not online for this pilot. Any...": 69
+  sizes (px): H1 50.9325, H2 35.4675, H3 26.6675, lede 18.4, caption 16.4675, eyebrow 13, faqQuestion 17.4675, faqAnswer 15.4675, bubble 15, chip 14, rail 12, pain 15
+  hero phone top 532px, bottom 1164px (viewport height 6661px at this capture)
+theme dark (page height 6661px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 14 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 169; text under 12px: 0
+  longest prose line: 71 characters (limit 75)
+    - .landing-lede "One conversation does the sear...": 53
+    - .landing-caption__body "Area, dates and guests are pic...": 69
+    - .landing-caption__body "Every result shows the All-In ...": 69
+    - .landing-caption__body "Dates, guests and total sit on...": 71
+    - .landing-caption__body "The Operator is the verified c...": 68
+    - .landing-caption__body "The offer shows exactly what y...": 71
+    - .landing-faq__item > p "No. The dates are yours once t...": 70
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 70
+    - .landing-faq__item > p "No payment is due, and you can...": 57
+    - .landing-faq__item > p "[AREAS WITH PUBLISHED INVENTOR...": 32
+    - .landing-faq__item > p "[APPROVED FEE ANSWER]...": 21
+    - .landing-faq__item > p "Not online for this pilot. Any...": 69
+  sizes (px): H1 50.9325, H2 35.4675, H3 26.6675, lede 18.4, caption 16.4675, eyebrow 13, faqQuestion 17.4675, faqAnswer 15.4675, bubble 15, chip 14, rail 12, pain 15
+
+== width 1280px ==
+  hero phone top 143px, bottom 818px (viewport height 5173px at this capture)
+theme light (page height 5173px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 14 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 169; text under 12px: 0
+  longest prose line: 71 characters (limit 75)
+    - .landing-lede "One conversation does the sear...": 53
+    - .landing-caption__body "Area, dates and guests are pic...": 69
+    - .landing-caption__body "Every result shows the All-In ...": 55
+    - .landing-caption__body "Dates, guests and total sit on...": 71
+    - .landing-caption__body "The Operator is the verified c...": 49
+    - .landing-caption__body "The offer shows exactly what y...": 71
+    - .landing-faq__item > p "No. The dates are yours once t...": 70
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 70
+    - .landing-faq__item > p "No payment is due, and you can...": 57
+    - .landing-faq__item > p "[AREAS WITH PUBLISHED INVENTOR...": 32
+    - .landing-faq__item > p "[APPROVED FEE ANSWER]...": 21
+    - .landing-faq__item > p "Not online for this pilot. Any...": 69
+  sizes (px): H1 67.999, H2 44, H3 32, lede 20, caption 17, eyebrow 13, faqQuestion 18, faqAnswer 16, bubble 15, chip 14, rail 12, pain 15
+  hero phone top 143px, bottom 818px (viewport height 5173px at this capture)
+theme dark (page height 5173px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 14 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 169; text under 12px: 0
+  longest prose line: 71 characters (limit 75)
+    - .landing-lede "One conversation does the sear...": 53
+    - .landing-caption__body "Area, dates and guests are pic...": 69
+    - .landing-caption__body "Every result shows the All-In ...": 55
+    - .landing-caption__body "Dates, guests and total sit on...": 71
+    - .landing-caption__body "The Operator is the verified c...": 49
+    - .landing-caption__body "The offer shows exactly what y...": 71
+    - .landing-faq__item > p "No. The dates are yours once t...": 70
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 70
+    - .landing-faq__item > p "No payment is due, and you can...": 57
+    - .landing-faq__item > p "[AREAS WITH PUBLISHED INVENTOR...": 32
+    - .landing-faq__item > p "[APPROVED FEE ANSWER]...": 21
+    - .landing-faq__item > p "Not online for this pilot. Any...": 69
+  sizes (px): H1 67.999, H2 44, H3 32, lede 20, caption 17, eyebrow 13, faqQuestion 18, faqAnswer 16, bubble 15, chip 14, rail 12, pain 15
+
+== 1280 at 200% zoom (640 CSS px) ==
+  hero phone top 452px, bottom 819px (viewport height 6265px at this capture)
+theme light (page height 6265px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 165; text under 12px: 0
+  longest prose line: 71 characters (limit 75)
+    - .landing-lede "One conversation does the sear...": 54
+    - .landing-caption__body "Area, dates and guests are pic...": 69
+    - .landing-caption__body "Every result shows the All-In ...": 69
+    - .landing-caption__body "Dates, guests and total sit on...": 71
+    - .landing-caption__body "The Operator is the verified c...": 68
+    - .landing-caption__body "The offer shows exactly what y...": 71
+    - .landing-faq__item > p "No. The dates are yours once t...": 70
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 70
+    - .landing-faq__item > p "No payment is due, and you can...": 57
+    - .landing-faq__item > p "[AREAS WITH PUBLISHED INVENTOR...": 32
+    - .landing-faq__item > p "[APPROVED FEE ANSWER]...": 21
+    - .landing-faq__item > p "Not online for this pilot. Any...": 69
+  sizes (px): H1 46.6659, H2 33.3341, H3 25.3341, lede 18, caption 16.3341, eyebrow 13, faqQuestion 17.3341, faqAnswer 15.3341, bubble 15, chip 14, rail 12, pain 15
+  hero phone top 452px, bottom 819px (viewport height 6265px at this capture)
+theme dark (page height 6265px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 165; text under 12px: 0
+  longest prose line: 71 characters (limit 75)
+    - .landing-lede "One conversation does the sear...": 54
+    - .landing-caption__body "Area, dates and guests are pic...": 69
+    - .landing-caption__body "Every result shows the All-In ...": 69
+    - .landing-caption__body "Dates, guests and total sit on...": 71
+    - .landing-caption__body "The Operator is the verified c...": 68
+    - .landing-caption__body "The offer shows exactly what y...": 71
+    - .landing-faq__item > p "No. The dates are yours once t...": 70
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 70
+    - .landing-faq__item > p "No payment is due, and you can...": 57
+    - .landing-faq__item > p "[AREAS WITH PUBLISHED INVENTOR...": 32
+    - .landing-faq__item > p "[APPROVED FEE ANSWER]...": 21
+    - .landing-faq__item > p "Not online for this pilot. Any...": 69
+  sizes (px): H1 46.6659, H2 33.3341, H3 25.3341, lede 18, caption 16.3341, eyebrow 13, faqQuestion 17.3341, faqAnswer 15.3341, bubble 15, chip 14, rail 12, pain 15
+
+== first viewport, motion allowed, no scrolling ==
+  390x800: phone message box 716..764px (inside the first viewport); CTA 797..895px; scrollY 0; guest message shown on load: true
+  360x640: phone message box 572..620px (inside the first viewport); CTA 653..771px; scrollY 0; guest message shown on load: true
+  320x568: phone message box 571..619px (NOT inside the first viewport); CTA 652..818px; scrollY 0; guest message shown on load: true
+

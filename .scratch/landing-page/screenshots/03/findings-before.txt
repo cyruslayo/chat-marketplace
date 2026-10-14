@@ -1,0 +1,64 @@
+== width 320px ==
+theme light (page height 7840px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  controls under 44x44: 1
+    - a.landing-skip "Skip to main content" at 16,-72 171x40
+theme dark (page height 7840px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  controls under 44x44: 1
+    - a.landing-skip "Skip to main content" at 16,-72 171x40
+
+== width 390px ==
+theme light (page height 6934px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  controls under 44x44: 1
+    - a.landing-skip "Skip to main content" at 16,-72 171x40
+theme dark (page height 6934px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  controls under 44x44: 1
+    - a.landing-skip "Skip to main content" at 16,-72 171x40
+
+== width 768px ==
+theme light (page height 6078px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  controls under 44x44: 1
+    - a.landing-skip "Skip to main content" at 16,-72 171x40
+theme dark (page height 6078px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  controls under 44x44: 1
+    - a.landing-skip "Skip to main content" at 16,-72 171x40
+
+== width 1280px ==
+theme light (page height 4623px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  controls under 44x44: 1
+    - a.landing-skip "Skip to main content" at 16,-72 171x40
+theme dark (page height 4623px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  controls under 44x44: 1
+    - a.landing-skip "Skip to main content" at 16,-72 171x40
+

@@ -1,0 +1,64 @@
+== width 320px ==
+theme light (page height 7826px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+theme dark (page height 7826px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+
+== width 390px ==
+theme light (page height 6847px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+theme dark (page height 6847px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+
+== width 768px ==
+theme light (page height 6058px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+theme dark (page height 6058px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+
+== width 1280px ==
+theme light (page height 4537px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+theme dark (page height 4537px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+

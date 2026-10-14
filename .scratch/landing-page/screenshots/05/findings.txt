@@ -1,0 +1,245 @@
+== width 320px ==
+  hero phone top 372px, bottom 739px (viewport height 7944px at this capture)
+theme light (page height 7944px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 170; text under 12px: 0
+  longest prose line: 44 characters (limit 75)
+    - .landing-lede "No form on every site, no agen...": 38
+    - .landing-caption__body "Area, dates and guests come fr...": 37
+    - .landing-caption__body "Fewer results, by design: only...": 43
+    - .landing-caption__body "Dates, guests and total sit on...": 41
+    - .landing-caption__body "The Operator is the verified c...": 44
+    - .landing-caption__body "The offer shows exactly what y...": 41
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 35
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 34
+    - .landing-faq__item > p "No payment is due, and you can...": 30
+    - .landing-faq__item > p "[AREAS WITH PUBLISHED INVENTOR...": 21
+    - .landing-faq__item > p "[APPROVED FEE ANSWER]...": 21
+    - .landing-faq__item > p "Not online for this pilot. Any...": 37
+  sizes (px): H1 36, H2 28.0006, H3 22.0006, lede 17, caption 16.0006, eyebrow 13, faqQuestion 17.0006, faqAnswer 15.0006, bubble 15, chip 14, rail 12, pain 15
+  hero phone top 372px, bottom 739px (viewport height 7944px at this capture)
+theme dark (page height 7944px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 170; text under 12px: 0
+  longest prose line: 44 characters (limit 75)
+    - .landing-lede "No form on every site, no agen...": 38
+    - .landing-caption__body "Area, dates and guests come fr...": 37
+    - .landing-caption__body "Fewer results, by design: only...": 43
+    - .landing-caption__body "Dates, guests and total sit on...": 41
+    - .landing-caption__body "The Operator is the verified c...": 44
+    - .landing-caption__body "The offer shows exactly what y...": 41
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 35
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 34
+    - .landing-faq__item > p "No payment is due, and you can...": 30
+    - .landing-faq__item > p "[AREAS WITH PUBLISHED INVENTOR...": 21
+    - .landing-faq__item > p "[APPROVED FEE ANSWER]...": 21
+    - .landing-faq__item > p "Not online for this pilot. Any...": 37
+  sizes (px): H1 36, H2 28.0006, H3 22.0006, lede 17, caption 16.0006, eyebrow 13, faqQuestion 17.0006, faqAnswer 15.0006, bubble 15, chip 14, rail 12, pain 15
+
+== width 390px ==
+  hero phone top 365px, bottom 733px (viewport height 7180px at this capture)
+theme light (page height 7180px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 170; text under 12px: 0
+  longest prose line: 50 characters (limit 75)
+    - .landing-lede "No form on every site, no agen...": 45
+    - .landing-caption__body "Area, dates and guests come fr...": 42
+    - .landing-caption__body "Fewer results, by design: only...": 49
+    - .landing-caption__body "Dates, guests and total sit on...": 48
+    - .landing-caption__body "The Operator is the verified c...": 48
+    - .landing-caption__body "The offer shows exactly what y...": 50
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 43
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 45
+    - .landing-faq__item > p "No payment is due, and you can...": 35
+    - .landing-faq__item > p "[AREAS WITH PUBLISHED INVENTOR...": 32
+    - .landing-faq__item > p "[APPROVED FEE ANSWER]...": 21
+    - .landing-faq__item > p "Not online for this pilot. Any...": 45
+  sizes (px): H1 38.3327, H2 29.1673, H3 22.7298, lede 17.2188, caption 16.0736, eyebrow 13, faqQuestion 17.0736, faqAnswer 15.0736, bubble 15, chip 14, rail 12, pain 15
+  hero phone top 365px, bottom 733px (viewport height 7180px at this capture)
+theme dark (page height 7180px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 170; text under 12px: 0
+  longest prose line: 50 characters (limit 75)
+    - .landing-lede "No form on every site, no agen...": 45
+    - .landing-caption__body "Area, dates and guests come fr...": 42
+    - .landing-caption__body "Fewer results, by design: only...": 49
+    - .landing-caption__body "Dates, guests and total sit on...": 48
+    - .landing-caption__body "The Operator is the verified c...": 48
+    - .landing-caption__body "The offer shows exactly what y...": 50
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 43
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 45
+    - .landing-faq__item > p "No payment is due, and you can...": 35
+    - .landing-faq__item > p "[AREAS WITH PUBLISHED INVENTOR...": 32
+    - .landing-faq__item > p "[APPROVED FEE ANSWER]...": 21
+    - .landing-faq__item > p "Not online for this pilot. Any...": 45
+  sizes (px): H1 38.3327, H2 29.1673, H3 22.7298, lede 17.2188, caption 16.0736, eyebrow 13, faqQuestion 17.0736, faqAnswer 15.0736, bubble 15, chip 14, rail 12, pain 15
+
+== width 768px ==
+  hero phone top 478px, bottom 1110px (viewport height 6960px at this capture)
+theme light (page height 6960px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 14 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 174; text under 12px: 0
+  longest prose line: 74 characters (limit 75)
+    - .landing-lede "No form on every site, no agen...": 54
+    - .landing-caption__body "Area, dates and guests come fr...": 64
+    - .landing-caption__body "Fewer results, by design: only...": 71
+    - .landing-caption__body "Dates, guests and total sit on...": 66
+    - .landing-caption__body "The Operator is the verified c...": 69
+    - .landing-caption__body "The offer shows exactly what y...": 73
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 74
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 70
+    - .landing-faq__item > p "No payment is due, and you can...": 57
+    - .landing-faq__item > p "[AREAS WITH PUBLISHED INVENTOR...": 32
+    - .landing-faq__item > p "[APPROVED FEE ANSWER]...": 21
+    - .landing-faq__item > p "Not online for this pilot. Any...": 69
+  sizes (px): H1 50.9325, H2 35.4675, H3 26.6675, lede 18.4, caption 16.4675, eyebrow 13, faqQuestion 17.4675, faqAnswer 15.4675, bubble 15, chip 14, rail 12, pain 15
+  hero phone top 478px, bottom 1110px (viewport height 6960px at this capture)
+theme dark (page height 6960px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 14 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 174; text under 12px: 0
+  longest prose line: 74 characters (limit 75)
+    - .landing-lede "No form on every site, no agen...": 54
+    - .landing-caption__body "Area, dates and guests come fr...": 64
+    - .landing-caption__body "Fewer results, by design: only...": 71
+    - .landing-caption__body "Dates, guests and total sit on...": 66
+    - .landing-caption__body "The Operator is the verified c...": 69
+    - .landing-caption__body "The offer shows exactly what y...": 73
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 74
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 70
+    - .landing-faq__item > p "No payment is due, and you can...": 57
+    - .landing-faq__item > p "[AREAS WITH PUBLISHED INVENTOR...": 32
+    - .landing-faq__item > p "[APPROVED FEE ANSWER]...": 21
+    - .landing-faq__item > p "Not online for this pilot. Any...": 69
+  sizes (px): H1 50.9325, H2 35.4675, H3 26.6675, lede 18.4, caption 16.4675, eyebrow 13, faqQuestion 17.4675, faqAnswer 15.4675, bubble 15, chip 14, rail 12, pain 15
+
+== width 1280px ==
+  hero phone top 143px, bottom 818px (viewport height 5247px at this capture)
+theme light (page height 5247px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 14 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 174; text under 12px: 0
+  longest prose line: 74 characters (limit 75)
+    - .landing-lede "No form on every site, no agen...": 54
+    - .landing-caption__body "Area, dates and guests come fr...": 64
+    - .landing-caption__body "Fewer results, by design: only...": 53
+    - .landing-caption__body "Dates, guests and total sit on...": 66
+    - .landing-caption__body "The Operator is the verified c...": 48
+    - .landing-caption__body "The offer shows exactly what y...": 73
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 74
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 70
+    - .landing-faq__item > p "No payment is due, and you can...": 57
+    - .landing-faq__item > p "[AREAS WITH PUBLISHED INVENTOR...": 32
+    - .landing-faq__item > p "[APPROVED FEE ANSWER]...": 21
+    - .landing-faq__item > p "Not online for this pilot. Any...": 69
+  sizes (px): H1 67.999, H2 44, H3 32, lede 20, caption 17, eyebrow 13, faqQuestion 18, faqAnswer 16, bubble 15, chip 14, rail 12, pain 15
+  hero phone top 143px, bottom 818px (viewport height 5247px at this capture)
+theme dark (page height 5247px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 14 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 174; text under 12px: 0
+  longest prose line: 74 characters (limit 75)
+    - .landing-lede "No form on every site, no agen...": 54
+    - .landing-caption__body "Area, dates and guests come fr...": 64
+    - .landing-caption__body "Fewer results, by design: only...": 53
+    - .landing-caption__body "Dates, guests and total sit on...": 66
+    - .landing-caption__body "The Operator is the verified c...": 48
+    - .landing-caption__body "The offer shows exactly what y...": 73
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 74
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 70
+    - .landing-faq__item > p "No payment is due, and you can...": 57
+    - .landing-faq__item > p "[AREAS WITH PUBLISHED INVENTOR...": 32
+    - .landing-faq__item > p "[APPROVED FEE ANSWER]...": 21
+    - .landing-faq__item > p "Not online for this pilot. Any...": 69
+  sizes (px): H1 67.999, H2 44, H3 32, lede 20, caption 17, eyebrow 13, faqQuestion 18, faqAnswer 16, bubble 15, chip 14, rail 12, pain 15
+
+== 1280 at 200% zoom (640 CSS px) ==
+  hero phone top 403px, bottom 770px (viewport height 6535px at this capture)
+theme light (page height 6535px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 170; text under 12px: 0
+  longest prose line: 74 characters (limit 75)
+    - .landing-lede "No form on every site, no agen...": 45
+    - .landing-caption__body "Area, dates and guests come fr...": 64
+    - .landing-caption__body "Fewer results, by design: only...": 71
+    - .landing-caption__body "Dates, guests and total sit on...": 66
+    - .landing-caption__body "The Operator is the verified c...": 69
+    - .landing-caption__body "The offer shows exactly what y...": 73
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 74
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 70
+    - .landing-faq__item > p "No payment is due, and you can...": 57
+    - .landing-faq__item > p "[AREAS WITH PUBLISHED INVENTOR...": 32
+    - .landing-faq__item > p "[APPROVED FEE ANSWER]...": 21
+    - .landing-faq__item > p "Not online for this pilot. Any...": 69
+  sizes (px): H1 46.6659, H2 33.3341, H3 25.3341, lede 18, caption 16.3341, eyebrow 13, faqQuestion 17.3341, faqAnswer 15.3341, bubble 15, chip 14, rail 12, pain 15
+  hero phone top 403px, bottom 770px (viewport height 6535px at this capture)
+theme dark (page height 6535px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 12 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 170; text under 12px: 0
+  longest prose line: 74 characters (limit 75)
+    - .landing-lede "No form on every site, no agen...": 45
+    - .landing-caption__body "Area, dates and guests come fr...": 64
+    - .landing-caption__body "Fewer results, by design: only...": 71
+    - .landing-caption__body "Dates, guests and total sit on...": 66
+    - .landing-caption__body "The Operator is the verified c...": 69
+    - .landing-caption__body "The offer shows exactly what y...": 73
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 74
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 70
+    - .landing-faq__item > p "No payment is due, and you can...": 57
+    - .landing-faq__item > p "[AREAS WITH PUBLISHED INVENTOR...": 32
+    - .landing-faq__item > p "[APPROVED FEE ANSWER]...": 21
+    - .landing-faq__item > p "Not online for this pilot. Any...": 69
+  sizes (px): H1 46.6659, H2 33.3341, H3 25.3341, lede 18, caption 16.3341, eyebrow 13, faqQuestion 17.3341, faqAnswer 15.3341, bubble 15, chip 14, rail 12, pain 15
+
+== first viewport, motion allowed, no scrolling ==
+  390x800: phone message box 676..724px (inside the first viewport); CTA 757..899px; scrollY 0; guest message shown on load: true
+  360x640: phone message box 538..586px (inside the first viewport); CTA 619..785px; scrollY 0; guest message shown on load: true
+  320x568: phone message box 563..611px (NOT inside the first viewport); CTA 644..858px; scrollY 0; guest message shown on load: true
+

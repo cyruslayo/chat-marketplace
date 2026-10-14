@@ -16,6 +16,14 @@ export interface RealBrowserCookie {
   readonly sameSite?: string;
 }
 
+/** One platform font from CSS.getPlatformFontsForNode: which font file actually drew the glyphs. */
+export interface RealBrowserPlatformFont {
+  readonly familyName: string;
+  readonly postScriptName: string;
+  readonly isCustomFont: boolean;
+  readonly glyphCount: number;
+}
+
 export interface RealBrowserAccessibilityNode {
   readonly role: string;
   readonly name: string;
@@ -35,11 +43,15 @@ export interface RealBrowserTab {
   getCookies(): Promise<readonly RealBrowserCookie[]>;
   getContent(): Promise<string>;
   getAccessibilityTree(): Promise<readonly RealBrowserAccessibilityNode[]>;
+  /** The platform fonts that drew the first element matching the selector (raw CDP CSS.getPlatformFontsForNode). */
+  getPlatformFonts(selector: string): Promise<readonly RealBrowserPlatformFont[]>;
   captureScreenshot(): Promise<Uint8Array>;
   close(): Promise<void>;
   setViewport(width: number, height: number): Promise<void>;
   setCssViewport(width: number, height: number): Promise<void>;
   setOffline(offline: boolean): Promise<void>;
+  /** Issue 10: throttles the network to the Lighthouse Fast 3G profile, or removes the throttle. */
+  setNetworkProfile(profile: "fast3g" | "none"): Promise<void>;
   pressKey(key: string): Promise<void>;
   setReducedMotion(reduced: boolean): Promise<void>;
   /** Disables page scripts, as a browser with JavaScript turned off would (issue 06c). */
@@ -384,6 +396,16 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
       }));
     }
 
+    async function getPlatformFonts(selector: string): Promise<readonly RealBrowserPlatformFont[]> {
+      await send("DOM.enable", {}, sessionId);
+      await send("CSS.enable", {}, sessionId);
+      const document = await send<{ root: { nodeId: number } }>("DOM.getDocument", { depth: 0 }, sessionId);
+      const found = await send<{ nodeId: number }>("DOM.querySelector", { nodeId: document.root.nodeId, selector }, sessionId);
+      if (!found.nodeId) throw new Error(`No element matches ${selector}`);
+      const result = await send<{ fonts: readonly RealBrowserPlatformFont[] }>("CSS.getPlatformFontsForNode", { nodeId: found.nodeId }, sessionId);
+      return result.fonts;
+    }
+
     async function captureScreenshot(): Promise<Uint8Array> {
       const result = await send<{ data: string }>("Page.captureScreenshot", { format: "png", captureBeyondViewport: false }, sessionId);
       return Buffer.from(result.data, "base64");
@@ -412,6 +434,15 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
 
     async function setOffline(offline: boolean): Promise<void> {
       await send("Network.emulateNetworkConditions", { offline, latency: offline ? 0 : 20, downloadThroughput: offline ? 0 : 1_000_000, uploadThroughput: offline ? 0 : 1_000_000 }, sessionId);
+    }
+
+    // Issue 10 (landing budgets): "fast3g" is the Lighthouse Fast 3G profile (562.5 ms round trip, 1.6 Mbit/s down, 750 kbit/s up);
+    // "none" removes the throttle.
+    async function setNetworkProfile(profile: "fast3g" | "none"): Promise<void> {
+      const conditions = profile === "fast3g"
+        ? { offline: false, latency: 563, downloadThroughput: 204_800, uploadThroughput: 93_750 }
+        : { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 };
+      await send("Network.emulateNetworkConditions", conditions, sessionId);
     }
 
     async function pressKey(key: string): Promise<void> {
@@ -537,11 +568,13 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
       getCookies,
       getContent,
       getAccessibilityTree,
+      getPlatformFonts,
       captureScreenshot,
       close,
       setViewport,
       setCssViewport,
       setOffline,
+      setNetworkProfile,
       pressKey,
       setReducedMotion,
       setJavaScriptEnabled,

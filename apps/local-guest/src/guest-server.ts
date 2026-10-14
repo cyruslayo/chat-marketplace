@@ -217,10 +217,30 @@ import {
   ASSISTANT_CONFIRM_ACTION_EVENT,
   ASSISTANT_CANCEL_ACTION_EVENT,
 } from "./assistant/pending-action-a2ui.js";
+import { renderLandingHtml, type LandingTheme } from "./landing-page-html.js";
 
 const SHORTLET_FOUNDATION_CSS = readFileSync(
   new URL("../../web/src/shortlet-foundations.css", import.meta.url),
   "utf8",
+);
+const SHORTLET_LANDING_CSS = readFileSync(
+  new URL("../../web/src/shortlet-landing.css", import.meta.url),
+  "utf8",
+);
+/** Landing photos (landing PRD, issue 01): an allow-list of published path to file, never a path built from the URL. */
+const LANDING_PHOTOS: ReadonlyMap<string, Buffer> = new Map(
+  ["ikoyi-living.jpg", "ikoyi-bedroom.jpg", "lekki-living.jpg", "lekki-bedroom.jpg"].map((name) => [
+    `/landing/photos/${name}`,
+    readFileSync(new URL(`../assets/landing/${name}`, import.meta.url)),
+  ]),
+);
+
+/** Landing fonts (landing PRD, issue 07): the three self-hosted WOFF2 files, an allow-list like the photos. OFL licences sit beside them. */
+const LANDING_FONTS: ReadonlyMap<string, Buffer> = new Map(
+  ["newsreader-500.woff2", "newsreader-italic-400.woff2", "hanken-grotesk-400-700.woff2"].map((name) => [
+    `/landing/fonts/${name}`,
+    readFileSync(new URL(`../assets/fonts/${name}`, import.meta.url)),
+  ]),
 );
 
 export interface GuestSurfacePayload {
@@ -6247,6 +6267,16 @@ const PUBLIC_GUEST_PATHS: ReadonlySet<string> = new Set([
   "/payment.js",
   "/offer.js",
   "/shortlet-foundations.css",
+  // Landing page (issue 01): public, so a stale session never blocks the marketing page or its assets.
+  "/welcome",
+  // Light/dark switch (issue 04): the public form POST. Listed so a stale guest session cookie cannot block it.
+  "/welcome/theme",
+  "/shortlet-landing.css",
+  // Landing motion script (issue 02): public, like the other page scripts.
+  "/landing.js",
+  ...LANDING_PHOTOS.keys(),
+  // Landing fonts (issue 07): public, like the photos, so a stale session never blocks a font.
+  ...LANDING_FONTS.keys(),
 ]);
 const GUEST_SESSION_PATTERN = /^gs-[a-f0-9-]{36}$/;
 
@@ -6260,6 +6290,21 @@ function readGuestSession(req: IncomingMessage): string | null | undefined {
     ?.slice(GUEST_SESSION_COOKIE.length + 1);
   if (value === undefined) return undefined;
   return GUEST_SESSION_PATTERN.test(value) ? value : null;
+}
+
+/** Light/dark display preference (issue 04, ADR-0075): a cookie the landing page alone reads. Never logged, never used for anything else. */
+const LANDING_THEME_COOKIE = "shortlet_theme";
+
+/** The saved landing theme, or "system" when the cookie is absent or not exactly light or dark. */
+function readLandingTheme(req: IncomingMessage): LandingTheme {
+  const header = req.headers.cookie;
+  if (typeof header !== "string") return "system";
+  const value = header
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${LANDING_THEME_COOKIE}=`))
+    ?.slice(LANDING_THEME_COOKIE.length + 1);
+  return value === "light" || value === "dark" ? value : "system";
 }
 
 /** Compares digests so neither the code's length nor its content leaks through timing. */
@@ -6739,6 +6784,72 @@ export function startLocalGuestServer(
         return;
       }
 
+      if (req.method === "GET" && url.pathname === "/shortlet-landing.css") {
+        res.writeHead(200, {
+          "Content-Type": "text/css; charset=utf-8",
+          "Cache-Control": "public, max-age=3600",
+        });
+        res.end(SHORTLET_LANDING_CSS);
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/welcome") {
+        // Public and session-free: the landing page never reads or issues a Guest session (issue 01).
+        res.writeHead(200, { ...GUEST_HTML_HEADERS, Vary: "Cookie" });
+        res.end(renderLandingHtml(readLandingTheme(req)));
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/welcome/theme") {
+        // Issue 04: the only public write on the landing page. It stores a display preference, nothing else.
+        if (!browserOriginAccepted(req, options.publicOrigin)) {
+          res.writeHead(403, { "Content-Type": "text/plain" });
+          res.end("Origin rejected");
+          return;
+        }
+        let themes: string[];
+        try {
+          themes = (await readFormBody(req)).getAll("theme");
+        } catch {
+          themes = [];
+        }
+        // Exactly one value, and only light or dark. Anything else is rejected and the saved cookie is left as it is.
+        const theme = themes.length === 1 ? themes[0] : undefined;
+        if (theme !== "light" && theme !== "dark") {
+          res.writeHead(400, { "Content-Type": "text/plain" });
+          res.end("Theme must be light or dark");
+          return;
+        }
+        res.writeHead(303, {
+          Location: "/welcome",
+          "Set-Cookie": `${LANDING_THEME_COOKIE}=${theme}; Path=/; Max-Age=31536000; SameSite=Lax`,
+          "Cache-Control": "no-store",
+        });
+        res.end();
+        return;
+      }
+
+      const landingPhoto = req.method === "GET" ? LANDING_PHOTOS.get(url.pathname) : undefined;
+      if (landingPhoto !== undefined) {
+        res.writeHead(200, {
+          "Content-Type": "image/jpeg",
+          "Cache-Control": "public, max-age=3600",
+        });
+        res.end(landingPhoto);
+        return;
+      }
+
+      const landingFont = req.method === "GET" ? LANDING_FONTS.get(url.pathname) : undefined;
+      if (landingFont !== undefined) {
+        // Issue 07: immutable long cache. A changed font ships under a new file name.
+        res.writeHead(200, {
+          "Content-Type": "font/woff2",
+          "Cache-Control": "public, max-age=31536000, immutable",
+        });
+        res.end(landingFont);
+        return;
+      }
+
       if (req.method === "GET" && url.pathname === "/") {
         if (rawSession === null) {
           // A malformed session cookie is rejected, never silently replaced.
@@ -7053,6 +7164,25 @@ export function startLocalGuestServer(
         return;
       }
 
+      // Landing motion script (issue 02): public and session-free. The page is complete without it.
+      if (req.method === "GET" && url.pathname === "/landing.js") {
+        try {
+          const script = readFileSync(
+            join(dirname(clientScriptPath), "landing.js"),
+            "utf8",
+          );
+          res.writeHead(200, {
+            "Content-Type": "text/javascript; charset=utf-8",
+          });
+          res.end(script);
+        } catch {
+          res.writeHead(404, { "Content-Type": "text/plain" });
+          res.end(
+            "Landing script missing; run npm run build to build it.",
+          );
+        }
+        return;
+      }
       // Guest gallery issue 01: the full apartment page's script. Public, like /stays/* itself.
       if (req.method === "GET" && url.pathname === "/gallery.js") {
         try {

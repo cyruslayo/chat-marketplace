@@ -49,3 +49,16 @@ await build({
   sourcemap: false,
   logLevel: "warning",
 });
+
+// The landing page's motion script (landing PRD, issue 02). Public at /landing.js; the page works without it.
+await build({
+  entryPoints: ["apps/local-guest/src/landing-page.ts"],
+  bundle: true,
+  format: "iife",
+  platform: "browser",
+  target: "es2022",
+  outfile: "apps/local-guest/dist/landing.js",
+  minify: false,
+  sourcemap: false,
+  logLevel: "warning",
+});
