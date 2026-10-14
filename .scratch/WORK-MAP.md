@@ -72,6 +72,8 @@ Run it on `origin/main` and on `origin/fix-stale-issue-statuses` (PR #108) and c
 
 ## 1. At a glance
 
+> **New effort, not yet in the counts below:** [`multi-domain-platform`](multi-domain-platform/map.md), added 14 Oct 2026. It adds the commerce domain beside shortlets, one concierge across domains, and a later ChatGPT app for commerce, preceded by a deep-module refactor. 33 issue files: 29 ready-for-agent, 3 ready-for-human, 1 needs-info. Its ADR slices (01, 03, 04, 05) need the owner, and its ADR numbers come after 0097/0098 (decision 3). Fold it into the counts at the next regeneration.
+
 Counts per status per effort, from PR #108. Each row of the lists below is one issue file.
 
 | Effort | ready-for-agent | ready-for-human | needs-info | needs-triage | claimed | split | resolved | Files |
