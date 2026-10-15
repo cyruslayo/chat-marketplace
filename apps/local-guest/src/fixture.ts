@@ -29,14 +29,19 @@ import {
   UnitRepository,
   JsonUnitRepository,
   type UnitRepositoryContract,
-  type ReceiptBlobStore,
   unitPriceFromOwnerTerms,
   InMemorySecurityDepositAccountingRepository,
-  type PaystackClient,
   type BookingContract,
   type ContractRepository,
   type ReservationLike,
 } from "../../../domains/shortlet/src/index.js";
+import {
+  PaystackPayments,
+  type BankTransferProviderClient,
+  type Payments,
+  type PaystackClient,
+  type ReceiptBlobStore,
+} from "../../../packages/platform-core/src/payments/index.js";
 import {
   createBookingRequestApplication,
   createConditionalOfferApplication,
@@ -88,11 +93,13 @@ export interface LocalGuestFixtureConfig {
     amountKobo: number,
   ) => import("../../../domains/shortlet/src/index.js").PSPVerifyResult;
   readonly paystackClient?: PaystackClient;
+  /** The platform Payments module (ADR 0099 rule 2). Built from the values below when not supplied. */
+  readonly payments?: Payments;
   /**
    * The production transfer provider (Paystack Pay with Transfer, P2). Pass it only once the ADR 0047 certification
    * has passed in Paystack test mode (ADR 0088 activation); without it production offers no bank transfer.
    */
-  readonly bankTransferProvider?: import("../../../domains/shortlet/src/index.js").BankTransferProviderClient;
+  readonly bankTransferProvider?: BankTransferProviderClient;
   /**
    * The one business account for manual bank transfer (ADR 0090). Configuration, never code; without it manual
    * transfer is never offered.
@@ -304,6 +311,8 @@ export class LocalGuestEnvironment {
   readonly bookingRequestApp: BookingRequestApplication;
   readonly conditionalOfferApp: ConditionalOfferApplication;
   readonly cardPaymentApp: CardPaymentApplication;
+  /** The platform Payments module this environment composed (ADR 0099 rule 2); undefined when hosted checkout is off. */
+  readonly payments?: Payments;
   /**
    * Bank transfer through the provider port (P1, ADR 0047). Composed with the deterministic local provider only;
    * production has none until the Paystack adapter (P2), so a transfer can never start with an invented account.
@@ -356,7 +365,7 @@ export class LocalGuestEnvironment {
     dependencies: LocalGuestEnvironmentDependencies,
   ) {
     this.config = { ...DEFAULT_LOCAL_GUEST_CONFIG, ...config };
-    if (this.config.production && !this.config.paystackClient) {
+    if (this.config.production && !this.config.paystackClient && !this.config.payments) {
       throw new Error(
         "Production Guest composition requires Paystack configuration",
       );
@@ -442,6 +451,15 @@ export class LocalGuestEnvironment {
     const journeyRepository = new SqliteBookingPaymentJourneyRepository(sqlDatabase);
     const bookingState = new SqliteBookingStateRepository(sqlDatabase);
 
+    // ADR 0099 rule 2: the host builds the platform Payments module once and passes it to the packs.
+    const payments = this.config.payments ?? (this.config.paystackClient === undefined
+      ? undefined
+      : new PaystackPayments({
+          card: this.config.paystackClient,
+          ...(this.config.bankTransferProvider === undefined ? {} : { transfers: this.config.bankTransferProvider }),
+        }));
+    this.payments = payments;
+
     this.cardPaymentApp = createCardPaymentApplication({
       conditionalOfferApplication: this.conditionalOfferApp,
       repository: this.unitRepository,
@@ -502,13 +520,14 @@ export class LocalGuestEnvironment {
           outcome.reservation,
           outcome.bookingContract,
         ),
-      ...(this.config.paystackClient === undefined
+      ...(payments === undefined
         ? {}
-        : { paystackClient: this.config.paystackClient }),
+        : { payments }),
     });
 
     const transferProvider =
-      this.config.deterministicPsp === false
+      payments?.transfers ??
+      (this.config.deterministicPsp === false
         ? (this.config.bankTransferProvider ?? null)
         : new LocalBankTransferProvider({
             lookup: (reference) => {
@@ -525,7 +544,7 @@ export class LocalGuestEnvironment {
                   offer.parties.primaryGuest.id,
               };
             },
-          });
+          }));
     this.bankTransferApp =
       transferProvider === null
         ? null

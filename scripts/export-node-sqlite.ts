@@ -18,7 +18,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
-import { SqliteReceiptBlobStore } from "../domains/shortlet/src/receipt-blob-store.js";
+import { SqliteReceiptBlobStore } from "../packages/platform-core/src/payments/receipt-blob-store.js";
 import { assertImportAllowed, importBatch } from "../apps/cloudflare/src/ops-import.js";
 import { DAILY_EXPORT_EXCLUDED } from "../apps/cloudflare/src/do-export.js";
 import { SHORTLET_SCHEMA_MIGRATIONS, SHORTLET_SCHEMA_VERSION } from "../apps/cloudflare/src/schema.js";

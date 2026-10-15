@@ -184,11 +184,7 @@ import {
 } from "../../../domains/shortlet/src/index.js";
 import {
   BankTransferProviderError,
-  DirectPaystackClient,
-  isApprovedPaystackCheckoutUrl,
-  loadPaystackConfiguration,
   type BankTransferCheckoutSession,
-  type PaystackClient,
 } from "../../../domains/shortlet/src/index.js";
 import {
   applyCriteriaEdit,
@@ -1049,7 +1045,7 @@ export class LocalGuestApp {
   ): Promise<GuestTurnResult> {
     const event = readEventPayload(payload);
     if (
-      this.#environment.config.paystackClient &&
+      this.#environment.payments &&
       event?.name === "shortlet.card-payment.initialize-checkout"
     ) {
       const result = await this.#handlePaystackCardCheckout(threadId, event);
@@ -1064,7 +1060,7 @@ export class LocalGuestApp {
     threadId: string,
     event: GuestEventPayload,
   ): Promise<GuestTurnResult> {
-    if (!this.#environment.config.paystackClient)
+    if (!this.#environment.payments)
       return {
         ok: false,
         code: "PAYSTACK_UNAVAILABLE",
@@ -1102,7 +1098,7 @@ export class LocalGuestApp {
         await this.#environment.cardPaymentApp.initializePaystackCheckout(
           thread.offerId!,
           this.#environment.guestPrincipal(),
-          this.#environment.config.paystackClient,
+          this.#environment.payments,
         );
       const artifact = this.#environment.cardPaymentApp.getArtifact(
         thread.offerId!,

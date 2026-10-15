@@ -1,4 +1,4 @@
-import type { PaystackHttpFetcher, PaystackHttpResponse } from "../../domains/shortlet/src/index.js";
+import type { PaystackHttpFetcher, PaystackHttpResponse } from "../../packages/platform-core/src/payments/index.js";
 
 export interface PaystackFakeRequest {
   readonly url: string;

@@ -1,13 +1,20 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import type { PSPVerifyResult } from "./card-payment.js";
-import type { BankTransferAccountRequest, BankTransferProviderClient, BankTransferProviderResult, ProviderTransferAccount } from "./bank-transfer.js";
+import type { PSPVerifyResult } from "./provider.js";
+import type { BankTransferAccountRequest, BankTransferProviderClient, BankTransferProviderResult, ProviderTransferAccount } from "./provider.js";
 
 export type PaystackEnvironment = "test" | "live";
+
+/**
+ * The provider metadata key carrying the authoritative payer id (ADR 0013). Configurable so the platform
+ * adapter stays domain-neutral (ADR 0099 rule 4); the legacy value is the default for existing deployments.
+ */
+export const DEFAULT_PAYER_METADATA_KEY = "shortlet_guest_id";
 
 export interface PaystackConfiguration {
   readonly secretKey: string;
   readonly environment: PaystackEnvironment;
   readonly callbackBaseUrl: string;
+  readonly payerMetadataKey?: string;
 }
 
 export type PaystackPublicConfiguration = Omit<PaystackConfiguration, "secretKey">;
@@ -16,6 +23,7 @@ export interface PaystackEnvironmentSource {
   readonly PAYSTACK_SECRET_KEY?: string;
   readonly PAYSTACK_ENVIRONMENT?: string;
   readonly PAYSTACK_CALLBACK_BASE_URL?: string;
+  readonly PAYSTACK_PAYER_METADATA_KEY?: string;
   readonly NODE_ENV?: string;
 }
 
@@ -27,7 +35,7 @@ export class PaystackConfigurationError extends Error {
 }
 
 /**
- * Loads only the three pilot configuration values. Production cannot use the
+ * Loads only the pilot configuration values. Production cannot use the
  * deterministic local PSP or an absent/invalid secret.
  */
 export function loadPaystackConfiguration(
@@ -38,6 +46,7 @@ export function loadPaystackConfiguration(
   const secretKey = source.PAYSTACK_SECRET_KEY?.trim() ?? "";
   const environment = source.PAYSTACK_ENVIRONMENT?.trim() ?? "";
   const callbackBaseUrl = source.PAYSTACK_CALLBACK_BASE_URL?.trim() ?? "";
+  const payerMetadataKey = source.PAYSTACK_PAYER_METADATA_KEY?.trim();
 
   if (runtime === "test" && secretKey === "" && environment === "" && callbackBaseUrl === "") return undefined;
   if (secretKey === "") throw new PaystackConfigurationError("PAYSTACK_SECRET_KEY is required");
@@ -57,7 +66,7 @@ export function loadPaystackConfiguration(
     throw new PaystackConfigurationError("Production Paystack configuration requires live environment and an HTTPS callback base URL");
   }
 
-  return Object.freeze({ secretKey, environment, callbackBaseUrl: parsedCallback.origin });
+  return Object.freeze({ secretKey, environment, callbackBaseUrl: parsedCallback.origin, ...(payerMetadataKey === undefined || payerMetadataKey === "" ? {} : { payerMetadataKey }) });
 }
 
 export function paystackCallbackUrl(configuration: PaystackConfiguration): string {
@@ -122,6 +131,8 @@ export interface PaystackInitializeInput {
   readonly reference: string;
   readonly callbackUrl: string;
   readonly payerId?: string;
+  /** Overrides the configured metadata key for the payer id (ADR 0013, 0099 rule 4). */
+  readonly payerMetadataKey?: string;
 }
 
 export interface PaystackInitializeResult {
@@ -151,6 +162,10 @@ export class DirectPaystackClient implements PaystackClient {
     return { environment: this.#configuration.environment, callbackBaseUrl: this.#configuration.callbackBaseUrl };
   }
 
+  #metadataKey(override: string | undefined): string {
+    return override ?? this.#configuration.payerMetadataKey ?? DEFAULT_PAYER_METADATA_KEY;
+  }
+
   async initializeTransaction(input: PaystackInitializeInput): Promise<PaystackInitializeResult> {
     if (!Number.isSafeInteger(input.amountKobo) || input.amountKobo < 0) throw new Error("Paystack amount must be a non-negative integer in kobo");
     const payload = {
@@ -160,7 +175,7 @@ export class DirectPaystackClient implements PaystackClient {
       reference: input.reference,
       callback_url: input.callbackUrl,
       channels: ["card"],
-      ...(input.payerId === undefined ? {} : { metadata: JSON.stringify({ shortlet_guest_id: input.payerId }) }),
+      ...(input.payerId === undefined ? {} : { metadata: JSON.stringify({ [this.#metadataKey(input.payerMetadataKey)]: input.payerId }) }),
     };
     const response = await this.#fetcher(`${PAYSTACK_API_URL}/transaction/initialize`, {
       method: "POST",
@@ -190,7 +205,7 @@ export class DirectPaystackClient implements PaystackClient {
     const currency = data?.currency;
     const domain = paystackEnvironment(data?.domain);
     const metadata = typeof data?.metadata === "string" ? (() => { try { return JSON.parse(data.metadata) as unknown; } catch { return undefined; } })() : data?.metadata;
-    const payerId = recordOf(metadata)?.shortlet_guest_id;
+    const payerId = recordOf(metadata)?.[this.#metadataKey(undefined)];
     if (typeof returnedReference !== "string" || typeof amountKobo !== "number" || !Number.isSafeInteger(amountKobo) || typeof currency !== "string") throw new Error("Paystack verification returned an invalid transaction");
     return Object.freeze({
       verified: true,
@@ -240,6 +255,10 @@ export class PaystackBankTransferClient implements BankTransferProviderClient {
     this.#transactions = new DirectPaystackClient(configuration, this.#fetcher);
   }
 
+  #metadataKey(): string {
+    return this.#configuration.payerMetadataKey ?? DEFAULT_PAYER_METADATA_KEY;
+  }
+
   async createTransferAccount(request: BankTransferAccountRequest): Promise<ProviderTransferAccount> {
     if (!Number.isSafeInteger(request.amountKobo) || request.amountKobo <= 0) throw new Error("Paystack amount must be a positive integer in kobo");
     // ADR 0088: Paystack would silently extend a shorter expiry past the deadline, so fail closed instead.
@@ -254,7 +273,7 @@ export class PaystackBankTransferClient implements BankTransferProviderClient {
         currency: request.currency,
         reference: request.reference,
         bank_transfer: { account_expires_at: request.expiresAt },
-        ...(request.payerId === undefined ? {} : { metadata: JSON.stringify({ shortlet_guest_id: request.payerId }) }),
+        ...(request.payerId === undefined ? {} : { metadata: JSON.stringify({ [this.#metadataKey()]: request.payerId }) }),
       }),
     });
     const envelope = assertProviderResponse(response, await response.json(), "transfer charge");

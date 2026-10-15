@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
-import { CardPaymentManager, InMemoryBookingPaymentJourneyRepository, DirectPaystackClient, PaystackConfigurationError, isApprovedPaystackCheckoutUrl, loadPaystackConfiguration, type ConditionalBookingOffer, type PSPVerifyResult } from "../domains/shortlet/src/index.js";
+import { CardPaymentManager, InMemoryBookingPaymentJourneyRepository, type ConditionalBookingOffer } from "../domains/shortlet/src/index.js";
+import { DirectPaystackClient, PaystackConfigurationError, isApprovedPaystackCheckoutUrl, loadPaystackConfiguration, type PSPVerifyResult } from "../packages/platform-core/src/payments/index.js";
 import { cardPaymentArtifactFromState } from "../apps/web/src/card-payment-artifact.js";
 import { renderGuestShellHtml } from "../apps/local-guest/src/guest-server.js";
 import { createPaystackHttpFake } from "./helpers/paystack-http.js";

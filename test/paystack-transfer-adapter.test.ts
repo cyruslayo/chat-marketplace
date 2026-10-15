@@ -8,7 +8,8 @@ import { DatabaseSync } from "node:sqlite";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { startLocalGuestServer } from "../apps/local-guest/src/guest-server.js";
 import { paystackTransfersEnabled } from "../apps/pilot/src/pilot-config.js";
-import { BankTransferProviderError, DirectPaystackClient, PAYSTACK_TRANSFER_MINIMUM_EXPIRY_MINUTES, PaystackBankTransferClient, type PaystackConfiguration, type Unit } from "../domains/shortlet/src/index.js";
+import { BankTransferProviderError, type Unit } from "../domains/shortlet/src/index.js";
+import { DirectPaystackClient, PAYSTACK_TRANSFER_MINIMUM_EXPIRY_MINUTES, PaystackBankTransferClient, type PaystackConfiguration } from "../packages/platform-core/src/payments/index.js";
 import { PAYSTACK_FAKE_TRANSFER_ACCOUNT, createPaystackHttpFake } from "./helpers/paystack-http.js";
 
 // P2 — Paystack transfer adapter and webhook (.scratch/guest-payments/issues/02-paystack-transfer-adapter.md).

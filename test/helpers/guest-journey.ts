@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createPlatformCommandEnvelope } from "../../packages/platform-core/src/index.js";
-import { DirectPaystackClient, SqliteOperatorRepresentativeGrantStore, SqliteOperatorSessionAuthority, type PaystackHttpFetcher } from "../../domains/shortlet/src/index.js";
+import { SqliteOperatorRepresentativeGrantStore, SqliteOperatorSessionAuthority } from "../../domains/shortlet/src/index.js";
+import { DirectPaystackClient, type PaystackHttpFetcher } from "../../packages/platform-core/src/payments/index.js";
 import { createTestOperatorGrantStore, createTestOperatorSessionAuthority } from "./operator-authority.js";
 import { PUBLIC_ORIGIN, type ProductionFixture } from "./pilot-fixture.js";
 

@@ -184,12 +184,16 @@ import {
 } from "../../../domains/shortlet/src/index.js";
 import {
   BankTransferProviderError,
+  type BankTransferCheckoutSession,
+} from "../../../domains/shortlet/src/index.js";
+import {
   DirectPaystackClient,
+  PaystackPayments,
   isApprovedPaystackCheckoutUrl,
   loadPaystackConfiguration,
-  type BankTransferCheckoutSession,
   type PaystackClient,
-} from "../../../domains/shortlet/src/index.js";
+  type Payments,
+} from "../../../packages/platform-core/src/payments/index.js";
 import {
   applyCriteriaEdit,
   budgetLabel,
@@ -1962,6 +1966,8 @@ export interface GuestRequestHandlerOptions {
     | "openai-compatible"
     | "assistant-offline";
   paystackClient?: PaystackClient;
+  /** The platform Payments module (ADR 0099 rule 2). Built from `paystackClient` when not supplied. */
+  payments?: Payments;
   /** Production-only deployment controls. Local fixture defaults remain unchanged. */
   production?: boolean;
   publicOrigin?: string;
@@ -2070,6 +2076,12 @@ export function createGuestRequestHandler(
         : { paystackClient: configuredPaystack }),
     });
   const paystackClient = configuredPaystack ?? env.config.paystackClient;
+  const payments =
+    options.payments ??
+    env.config.payments ??
+    (paystackClient === undefined
+      ? undefined
+      : new PaystackPayments({ card: paystackClient }));
 
   let assistantRuntime: AssistantRuntime | undefined;
   let assistantModelClient: AssistantModelClient | undefined;
@@ -2184,7 +2196,7 @@ export function createGuestRequestHandler(
         initialGuestContactEmail: null,
         production,
         deterministicPsp: !production,
-        ...(paystackClient === undefined ? {} : { paystackClient }),
+        ...(payments === undefined ? {} : { payments }),
       },
       { database: shared.database, unitRepository: shared.unitRepository },
     );
@@ -3809,7 +3821,7 @@ export function createGuestRequestHandler(
             res.end();
             return;
           }
-          if (!paystackClient) {
+          if (!payments) {
             sendPageError(req, res, 503, "PAYSTACK_UNAVAILABLE");
             return;
           }
@@ -3817,7 +3829,7 @@ export function createGuestRequestHandler(
             await app.environment.cardPaymentApp.initializePaystackCheckout(
               offerId,
               principal,
-              paystackClient,
+              payments,
             );
           if (!isApprovedPaystackCheckoutUrl(checkout.checkoutUrl)) {
             sendPageError(req, res, 502, "INVALID_CHECKOUT_URL");
@@ -3948,7 +3960,7 @@ export function createGuestRequestHandler(
       ) {
         // ADR-0087: a callback is only a return signal; verification below is
         // the sole path allowed to advance the existing payment transition.
-        if (!paystackClient) {
+        if (!payments) {
           sendJson(res, 503, { ok: false, code: "PAYSTACK_UNAVAILABLE" });
           return;
         }
@@ -4017,7 +4029,7 @@ export function createGuestRequestHandler(
           await app.environment.cardPaymentApp.verifyAndConfirmPaystack(
             reference,
             app.environment.systemPrincipal(),
-            paystackClient,
+            payments,
           );
           res.writeHead(303, {
             Location: `/?threadId=${encodeURIComponent(threadId)}`,
@@ -4044,66 +4056,51 @@ export function createGuestRequestHandler(
       }
 
       if (req.method === "POST" && url.pathname === "/webhooks/paystack") {
-        // ADR-0087: validate the raw signed body before parsing event meaning.
-        if (!paystackClient) {
+        // ADR-0087: the platform Payments module validates the raw signed body before parsing event meaning.
+        if (!payments) {
           sendJson(res, 503, { ok: false, code: "PAYSTACK_UNAVAILABLE" });
           return;
         }
         try {
           const rawBody = await readRawBody(req);
-          if (
-            !paystackClient.verifyWebhookSignature(
-              rawBody,
+          const outcome = await payments.handleWebhook({
+            rawBody,
+            signature:
               typeof req.headers["x-paystack-signature"] === "string"
                 ? req.headers["x-paystack-signature"]
                 : undefined,
-            )
-          ) {
+          });
+          if (outcome.kind === "invalid-signature") {
             sendJson(res, 401, {
               ok: false,
               code: "INVALID_WEBHOOK_SIGNATURE",
             });
             return;
           }
-          const parsed: unknown = JSON.parse(rawBody.toString("utf8"));
-          if (
-            parsed === null ||
-            typeof parsed !== "object" ||
-            Array.isArray(parsed)
-          ) {
+          if (outcome.kind === "invalid") {
             sendJson(res, 400, { ok: false, code: "INVALID_WEBHOOK" });
             return;
           }
-          const event = parsed as { event?: unknown; data?: unknown };
-          if (event.event !== "charge.success") {
+          if (outcome.kind === "ignored") {
             sendJson(res, 200, { ok: true, ignored: true });
             return;
           }
-          const data =
-            event.data !== null &&
-            typeof event.data === "object" &&
-            !Array.isArray(event.data)
-              ? (event.data as { reference?: unknown })
-              : undefined;
-          if (typeof data?.reference !== "string" || data.reference === "") {
-            sendJson(res, 400, { ok: false, code: "INVALID_WEBHOOK" });
-            return;
-          }
+          const reference = outcome.reference;
           const checkout =
             app.environment.cardPaymentApp.getCheckoutSessionByReference(
-              data.reference,
+              reference,
             );
           if (!checkout) {
             // P2: a Pay with Transfer reference. The signed event is only a prompt; the server re-verifies with
             // Paystack and processes once (ADR 0047). Late money is recorded for a full refund (ADR 0045).
             const transfers = app.environment.bankTransferApp;
-            if (!transfers?.getSessionByReference(data.reference)) {
+            if (!transfers?.getSessionByReference(reference)) {
               sendJson(res, 200, { ok: true, ignored: true });
               return;
             }
             try {
               await transfers.verifyAndProcessFromProvider(
-                data.reference,
+                reference,
                 app.environment.systemPrincipal(),
               );
             } catch {
@@ -4114,9 +4111,9 @@ export function createGuestRequestHandler(
           }
           try {
             await app.environment.cardPaymentApp.verifyAndConfirmPaystack(
-              data.reference,
+              reference,
               app.environment.systemPrincipal(),
-              paystackClient,
+              payments,
             );
           } catch {
             /* the authoritative unresolved/failed state is retained */

@@ -3,7 +3,8 @@ import { randomUUID } from "node:crypto";
 import { LocalGuestEnvironment } from "../../local-guest/src/fixture.js";
 import { createGuestRequestHandler, type GuestRequestHandler } from "../../local-guest/src/guest-server.js";
 import { LocalApartmentOwnerEnvironment, createOwnerRequestHandler } from "../../local-owner/src/index.js";
-import { DirectPaystackClient, JsonOperatorRepository, JsonUnitRepository, PaystackBankTransferClient, type PaystackClient } from "../../../domains/shortlet/src/index.js";
+import { JsonOperatorRepository, JsonUnitRepository } from "../../../domains/shortlet/src/index.js";
+import { DirectPaystackClient, PaystackBankTransferClient, PaystackPayments, type PaystackClient, type Payments } from "../../../packages/platform-core/src/payments/index.js";
 import { loadPilotConfiguration, type PilotConfiguration } from "./pilot-config.js";
 import type { AssistantModelClient } from "../../local-guest/src/assistant/assistant-model.js";
 import { createConciergeModelClient } from "../../local-guest/src/assistant/concierge-configuration.js";
@@ -44,14 +45,22 @@ export function startPilotServer(options: {
   readonly clock?: () => Date;
   /** Test harnesses may inject a provider-shaped fake, never a deterministic PSP fallback. */
   readonly paystackClient?: PaystackClient;
+  /** The platform Payments module, so a host composes it once (ADR 0099 rule 2). Built from the client when absent. */
+  readonly payments?: Payments;
   /** Test harnesses may inject a provider-shaped fake model client in place of the configured provider. */
   readonly modelClient?: AssistantModelClient;
   /** Test harnesses may inject a fake email sender in place of Resend; notifications must still be configured. */
   readonly emailSender?: EmailSender;
 } = {}): PilotServerHandle {
   const configuration = options.configuration ?? loadPilotConfiguration();
+  // ADR 0099 rule 2: the host builds the platform Payments module once and passes it to the pack.
   const paystackClient = options.paystackClient ?? new DirectPaystackClient(configuration.paystack);
   const clock = options.clock ?? (() => new Date());
+  const payments = options.payments ?? new PaystackPayments({
+    card: paystackClient,
+    // ADR 0088: Pay with Transfer only when explicitly enabled after certification.
+    ...(configuration.paystackTransfersEnabled ? { transfers: new PaystackBankTransferClient(configuration.paystack, { clock }) } : {}),
+  });
   const demoCheckIn = new Date(clock().getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   // Production takes only live Paystack; staging (the closed beta) takes only test Paystack (issue 22).
   const expectedPaystackEnvironment = configuration.deployment === "staging" ? "test" : "live";
@@ -81,9 +90,7 @@ export function startPilotServer(options: {
     production: true,
     deterministicPsp: false,
     clock,
-    paystackClient,
-    // ADR 0088: Pay with Transfer only when explicitly enabled after certification.
-    ...(configuration.paystackTransfersEnabled ? { bankTransferProvider: new PaystackBankTransferClient(configuration.paystack, { clock }) } : {}),
+    payments,
     // ADR 0090: manual transfer only when the business account is configured.
     manualTransferAccount: configuration.manualTransferAccount,
     ...(configuration.receiptMaxBytes === null ? {} : { receiptMaxBytes: configuration.receiptMaxBytes }),
@@ -116,7 +123,7 @@ export function startPilotServer(options: {
     publicOrigin: configuration.publicOrigin,
     secureCookie: true,
     sessionScopedGuestPrincipals: true,
-    paystackClient,
+    payments,
     modelCallBudget: new ModelCallBudget(configuration.limits.dailyModelCallCap, clock),
     sessionRuntimeIdleMs: configuration.limits.sessionRuntimeIdleMinutes * 60_000,
   });

@@ -1,4 +1,4 @@
-import { loadPaystackConfiguration, type PaystackConfiguration, type PaystackEnvironmentSource } from "../../../domains/shortlet/src/paystack.js";
+import { loadPaystackConfiguration, type PaystackConfiguration, type PaystackEnvironmentSource } from "../../../packages/platform-core/src/payments/index.js";
 import { normalizeContactEmail } from "../../../domains/shortlet/src/index.js";
 import type { ManualTransferAccount } from "../../../domains/shortlet/src/index.js";
 import { loadConciergeConfiguration, type ConciergeConfiguration, type ConciergeEnvironmentSource } from "../../local-guest/src/assistant/concierge-configuration.js";

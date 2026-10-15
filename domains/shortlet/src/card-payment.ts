@@ -120,20 +120,9 @@ export interface LedgerEntry {
   readonly createdAt: string;
 }
 
-export interface PSPVerifyResult {
-  readonly verified: boolean;
-  readonly status: "success" | "abandoned" | "failed" | "ongoing" | "pending" | "processing" | "reversed" | "queued" | "unknown";
-  readonly amountKobo: number;
-  readonly currency: string;
-  readonly pspReference: string;
-  readonly payerId?: string;
-  readonly environment?: "test" | "live";
-  readonly cardMetadata?: { readonly brand: string; readonly last4: string };
-  readonly failureReason?: string;
-}
-
-/** Test fixtures may alias the provider response type, but production commands cannot carry it. */
-export type MockPSPVerifyResult = PSPVerifyResult;
+/** The provider transaction types now live in the platform Payments module (ADR 0099 rule 2); re-exported for callers. */
+import type { PSPVerifyResult } from "../../../packages/platform-core/src/payments/index.js";
+export type { MockPSPVerifyResult, PSPVerifyResult } from "../../../packages/platform-core/src/payments/index.js";
 
 export type CardPaymentVerificationOutcome = { readonly outcome: "deposit_required"; readonly journey: import("./booking-payment-journey.js").BookingPaymentJourney } | { readonly outcome: "confirmed"; readonly reservation: Reservation; readonly bookingContract: BookingContract; readonly ledgerEntries: readonly LedgerEntry[] };
 

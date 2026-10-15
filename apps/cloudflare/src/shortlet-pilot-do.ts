@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import type { DurableObjectState } from "@cloudflare/workers-types";
 import { applySchemaMigrations } from "../../../packages/platform-core/src/schema-migrations.js";
-import { DirectPaystackClient, PaystackBankTransferClient } from "../../../domains/shortlet/src/index.js";
+import { DirectPaystackClient, PaystackBankTransferClient, PaystackPayments } from "../../../packages/platform-core/src/payments/index.js";
 import { SqliteOperatorRepository } from "../../../domains/shortlet/src/index.js";
 import { SqliteOperatorRepresentativeGrantStore } from "../../../domains/shortlet/src/index.js";
 import { SqliteOperatorSessionAuthority } from "../../../domains/shortlet/src/index.js";
@@ -205,6 +205,11 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
           : "Pilot production composition requires a live Paystack client bound to SHORTLET_PUBLIC_ORIGIN",
       );
     }
+    // ADR 0099 rule 2: the host builds the platform Payments module once and passes it to the pack.
+    const payments = new PaystackPayments({
+      card: paystackClient,
+      ...(configuration.paystackTransfersEnabled ? { transfers: new PaystackBankTransferClient(configuration.paystack, { clock }) } : {}),
+    });
 
     const demoCheckIn = new Date(clock().getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const guestEnvironment = new LocalGuestEnvironment(
@@ -223,9 +228,7 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
         production: true,
         deterministicPsp: false,
         clock,
-        paystackClient,
-        // ADR 0088: Pay with Transfer only when explicitly enabled after certification.
-        ...(configuration.paystackTransfersEnabled ? { bankTransferProvider: new PaystackBankTransferClient(configuration.paystack, { clock }) } : {}),
+        payments,
         // ADR 0090: manual transfer only when the business account is configured.
         manualTransferAccount: configuration.manualTransferAccount,
         ...(configuration.receiptMaxBytes === null ? {} : { receiptMaxBytes: configuration.receiptMaxBytes }),
@@ -261,7 +264,7 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
       publicOrigin: configuration.publicOrigin,
       secureCookie: true,
       sessionScopedGuestPrincipals: true,
-      paystackClient,
+      payments,
       modelCallBudget: new ModelCallBudget(configuration.limits.dailyModelCallCap, clock),
       sessionRuntimeIdleMs: configuration.limits.sessionRuntimeIdleMinutes * 60_000,
       // 04c: the user-approved production cap; the Durable Object has 128 MB of memory.

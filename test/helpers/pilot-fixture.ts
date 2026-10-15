@@ -3,7 +3,8 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { LocalGuestEnvironment } from "../../apps/local-guest/src/fixture.js";
 import { loadPilotConfiguration } from "../../apps/pilot/src/pilot-config.js";
-import type { PaystackClient, Unit } from "../../domains/shortlet/src/index.js";
+import type { Unit } from "../../domains/shortlet/src/index.js";
+import type { PaystackClient } from "../../packages/platform-core/src/payments/index.js";
 
 export const PUBLIC_ORIGIN = "https://pilot.example.com";
 

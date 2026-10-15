@@ -11,7 +11,7 @@ import { startLocalPilotServer } from "../apps/pilot/src/local-pilot-server.js";
 import { bootstrapLocalPilot, issueLocalOperatorToken, localPilotPaths, resetLocalPilot } from "../apps/pilot/src/local-pilot.js";
 import { startLocalGuestServer } from "../apps/local-guest/src/guest-server.js";
 import { formatNgnKobo } from "../apps/web-agent/src/index.js";
-import type { PaystackClient } from "../domains/shortlet/src/index.js";
+import type { PaystackClient } from "../packages/platform-core/src/payments/index.js";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { launchRealBrowser, type RealBrowserInstance, type RealBrowserTab } from "./helpers/chrome-devtools.js";
 

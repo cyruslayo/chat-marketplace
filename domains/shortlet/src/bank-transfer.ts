@@ -44,20 +44,15 @@ export interface BankTransferCheckoutSession {
   readonly processingStartedAt?: string;
 }
 
-export interface BankTransferProviderResult {
-  readonly verified: boolean;
-  readonly status: "success" | "pending" | "failed";
-  readonly amountKobo: number;
-  readonly currency: string;
-  readonly pspReference: string;
-  readonly payerId?: string;
-  /** Provider evidence that the designated transaction was in flight before the deadline. */
-  readonly processingStartedAt?: string;
-  readonly failureReason?: string;
-}
-
-/** Retained as a test-fixture compatibility name; production commands cannot carry it. */
-export type MockBankTransferVerifyResult = BankTransferProviderResult;
+/** The provider transfer contracts live in the platform Payments module (ADR 0099 rule 2); re-exported for callers. */
+import type { BankTransferAccountRequest, BankTransferProviderClient, BankTransferProviderResult, ProviderTransferAccount } from "../../../packages/platform-core/src/payments/index.js";
+export type {
+  BankTransferAccountRequest,
+  BankTransferProviderClient,
+  BankTransferProviderResult,
+  MockBankTransferVerifyResult,
+  ProviderTransferAccount,
+} from "../../../packages/platform-core/src/payments/index.js";
 
 export interface BankTransferRefundRecord {
   readonly refundId: string;
@@ -77,38 +72,6 @@ export interface BankTransferReconciliationRecord {
   readonly amountKobo: number;
   readonly status: "quarantined_for_refund" | "reconciled";
   readonly createdAt: string;
-}
-
-/** What the platform asks the provider for: one expiring account bound to this booking reference and exact amount (ADR 0047). */
-export interface BankTransferAccountRequest {
-  readonly reference: string;
-  readonly amountKobo: number;
-  readonly currency: "NGN";
-  /** The Payment Window deadline; the account must stop being payable by then (ADR 0044, 0047). */
-  readonly expiresAt: string;
-  readonly email: string;
-  /** The authoritative payer, bound in provider metadata so verification can attribute the sender (ADR 0013). */
-  readonly payerId?: string;
-}
-
-/** The provider-issued account. The platform never derives account details itself (ADR 0047). */
-export interface ProviderTransferAccount {
-  readonly bankName: string;
-  readonly accountNumber: string;
-  readonly reference: string;
-  /** The provider's own expiry for the account; never later than the Payment Window deadline. */
-  readonly expiresAt: string;
-}
-
-export interface BankTransferProviderClient {
-  createTransferAccount(
-    request: BankTransferAccountRequest,
-  ): Promise<ProviderTransferAccount>;
-  verifyTransfer(transferReference: string): BankTransferProviderResult;
-  /** Providers that verify over the network (Paystack) implement this; the server awaits it before processing. */
-  verifyTransferAsync?(
-    transferReference: string,
-  ): Promise<BankTransferProviderResult>;
 }
 
 export type BankTransferProcessOutcome = {

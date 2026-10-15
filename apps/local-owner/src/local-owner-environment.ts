@@ -1,5 +1,6 @@
 import { openNodeSqliteDatabase } from "../../../packages/platform-core/src/node-sqlite-database.js";
 import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
+import type { ReceiptBlobStore } from "../../../packages/platform-core/src/payments/receipt-blob-store.js";
 import { createHash } from "node:crypto";
 import { existsSync, unlinkSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
@@ -33,7 +34,6 @@ import {
   SqliteAvailabilityStore,
   JsonUnitRepository,
   type UnitRepositoryContract,
-  type ReceiptBlobStore,
   JsonOperatorRepository,
   SqliteBookingPaymentJourneyRepository,
   SqliteBookingStateRepository,

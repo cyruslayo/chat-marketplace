@@ -4,7 +4,8 @@ import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
 import { createPlatformCommandEnvelope } from "../packages/platform-core/src/index.js";
 import { NodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-database.js";
-import { SqliteManualTransferStore, SqliteReceiptBlobStore, type ReceiptBlobStore } from "../domains/shortlet/src/index.js";
+import { SqliteManualTransferStore } from "../domains/shortlet/src/index.js";
+import { SqliteReceiptBlobStore, type ReceiptBlobStore } from "../packages/platform-core/src/payments/receipt-blob-store.js";
 import { TEST_MANUAL_ACCOUNT, TEST_RECEIPTS, guestPaymentPage, multipartBody, type GuestPaymentPage } from "./helpers/guest-payment-page.js";
 
 // 07a: receipt bytes go through a ReceiptBlobStore port (ADR 0090); Node keeps them in SQLite.

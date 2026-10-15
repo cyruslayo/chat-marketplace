@@ -7,7 +7,7 @@ import type { ConditionalBookingOffer } from "./conditional-offer.js";
 import type { LivePaymentAttemptRegistryPort } from "./payment-attempt.js";
 import type { BookingContract, Reservation } from "./card-payment.js";
 import type { BookingStateRepository } from "./booking-state.js";
-import { newReceiptObjectKey, SqliteReceiptBlobStore, type ReceiptBlobStore } from "./receipt-blob-store.js";
+import { newReceiptObjectKey, SqliteReceiptBlobStore, type ReceiptBlobStore } from "../../../packages/platform-core/src/payments/receipt-blob-store.js";
 
 /**
  * Manual bank transfer with receipt upload (ADR 0090, P5). The Guest pays the business account and uploads a

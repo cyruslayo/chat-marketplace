@@ -1,7 +1,7 @@
 import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
 import { SqliteAuditLog } from "../../../packages/platform-core/src/sqlite-audit-log.js";
 import { seedIssue01Units } from "../../../domains/shortlet/src/browse.js";
-import { SqliteReceiptBlobStore } from "../../../domains/shortlet/src/receipt-blob-store.js";
+import { SqliteReceiptBlobStore } from "../../../packages/platform-core/src/payments/receipt-blob-store.js";
 import { SqliteManualTransferStore } from "../../../domains/shortlet/src/manual-transfer.js";
 import { createProvisionedOperator } from "../../../domains/shortlet/src/operator.js";
 import { SqliteOperatorRepository } from "../../../domains/shortlet/src/sqlite-operator-repository.js";

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { PaystackClient } from "../domains/shortlet/src/index.js";
+import type { PaystackClient } from "../packages/platform-core/src/payments/index.js";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { startLocalGuestServer } from "../apps/local-guest/src/guest-server.js";
 import { launchRealBrowser, type RealBrowserTab } from "./helpers/chrome-devtools.js";
