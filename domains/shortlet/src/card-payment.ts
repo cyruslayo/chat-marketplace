@@ -158,7 +158,7 @@ export interface CardPaymentManagerOptions {
   readonly securityDepositAccounting?: SecurityDepositAccountingRepository;
   readonly compensationRefundProvider?: BookingPaymentCompensationPort;
   readonly store?: import("./guest-interaction-store.js").SqliteGuestInteractionStore | null;
-  readonly guestContacts?: import("./guest-contact.js").GuestContactSource;
+  readonly guestContacts?: import("../../../packages/platform-core/src/accounts/contact.js").GuestContactSource;
 }
 
 export class CardPaymentManager {

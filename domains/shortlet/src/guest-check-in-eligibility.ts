@@ -1,4 +1,4 @@
-import type { SqliteGuestAccountLinks } from "./guest-account-links.js";
+import type { SqliteGuestAccountLinks } from "../../../packages/platform-core/src/accounts/links.js";
 import { isCurrentGovernmentIdAssurance, type SqliteGuestIdentityAssurance } from "./guest-identity-assurance.js";
 
 /**

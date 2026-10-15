@@ -9,11 +9,12 @@ import {
   type GuestAccountPolicyOptions,
   type GuestAccountSession,
   type GuestAccountTelemetrySink,
-} from "../../../domains/shortlet/src/guest-account-authority.js";
+} from "../../../domains/shortlet/src/index.js";
 import { createPlatformCommandEnvelope } from "../../../packages/platform-core/src/envelope.js";
-import { SqliteGuestAccountLinks, type GuestRequestContactIndex, type SignedInPrincipalResult } from "../../../domains/shortlet/src/guest-account-links.js";
-import { GuestIdentityResolver, anonymousGuestIdentity, type GuestIdentity } from "../../../domains/shortlet/src/guest-identity.js";
-import { normalizeContactEmail } from "../../../domains/shortlet/src/guest-contact.js";
+import { createPlatformAccounts } from "../../../packages/platform-core/src/accounts/accounts.js";
+import { SqliteGuestAccountLinks, type GuestRequestContactIndex, type SignedInPrincipalResult } from "../../../domains/shortlet/src/index.js";
+import { GuestIdentityResolver, anonymousGuestIdentity, type GuestIdentity } from "../../../domains/shortlet/src/index.js";
+import { normalizeContactEmail } from "../../../domains/shortlet/src/index.js";
 import { ResendEmailSender, type EmailSender } from "../../../apps/pilot/src/notifications/email-sender.js";
 import { guestEmailChangeCodeMessage, guestSignInCodeMessage } from "../../../apps/pilot/src/notifications/pilot-notifier.js";
 import { accountAssuranceReader, type GuestAccountAssuranceReader } from "./guest-identity-status.js";
@@ -163,14 +164,17 @@ export class GuestAccountRuntime {
 
   constructor(options: GuestAccountRuntimeOptions) {
     const { composition } = options;
-    this.authority = new SqliteGuestAccountAuthority(options.database, {
+    const accounts = createPlatformAccounts({
+      database: options.database,
       codeHashingKey: composition.codeHashingKey,
       clock: options.clock,
+      requests: options.requests,
       ...(composition.audit ? { audit: composition.audit } : {}),
       ...(composition.telemetry ? { telemetry: composition.telemetry } : {}),
       ...(composition.policy ? { policy: composition.policy } : {}),
     });
-    this.links = new SqliteGuestAccountLinks(options.database, { requests: options.requests, authority: this.authority, clock: options.clock });
+    this.authority = accounts.authority;
+    this.links = accounts.links;
     this.#assurance = accountAssuranceReader(options.database, options.clock);
     this.#resolver = new GuestIdentityResolver(this.authority, this.links, this.#assurance);
     this.#sender = composition.sender;

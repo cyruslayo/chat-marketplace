@@ -1,7 +1,7 @@
 import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
-import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
-import type { PlatformCommandEnvelope } from "../../../packages/platform-core/src/envelope.js";
-import { normalizeContactEmail } from "./guest-contact.js";
+import type { SqlDatabase } from "../sql-database.js";
+import type { PlatformCommandEnvelope } from "../envelope.js";
+import { normalizeContactEmail } from "./contact.js";
 
 export type GuestSignInCodePurpose = "sign_in" | "change_email" | "delete_account" | "export_data";
 export type GuestAccountStatus = "active" | "closed";

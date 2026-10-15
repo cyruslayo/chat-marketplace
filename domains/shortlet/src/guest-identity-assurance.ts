@@ -1,5 +1,5 @@
 import type { SqlDatabase, SqlRow, SqlValue } from "../../../packages/platform-core/src/sql-database.js";
-import type { SqliteGuestAccountLinks } from "./guest-account-links.js";
+import type { SqliteGuestAccountLinks } from "../../../packages/platform-core/src/accounts/links.js";
 import type { GuestIdentityVerificationResult, GuestIdentityVerificationResultSource } from "./guest-verification.js";
 
 /**

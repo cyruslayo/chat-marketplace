@@ -1,4 +1,4 @@
-import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
+import type { SqlDatabase } from "../sql-database.js";
 
 export interface GuestContact {
   readonly guestId: string;

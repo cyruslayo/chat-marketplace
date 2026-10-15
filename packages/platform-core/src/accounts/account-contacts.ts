@@ -1,5 +1,5 @@
-import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
-import type { GuestContact, GuestContactSource } from "./guest-contact.js";
+import type { SqlDatabase } from "../sql-database.js";
+import type { GuestContact, GuestContactSource } from "./contact.js";
 
 /**
  * The contact store operations the account projection wraps. `SqliteGuestContactRepository` satisfies it.

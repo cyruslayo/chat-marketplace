@@ -7,7 +7,7 @@ import { startPilotServer } from "../apps/pilot/src/pilot-server.js";
 import { startLocalPilotServer } from "../apps/pilot/src/local-pilot-server.js";
 import { bootstrapLocalPilot, localPilotPaths } from "../apps/pilot/src/local-pilot.js";
 import { LocalApartmentOwnerEnvironment } from "../apps/local-owner/src/local-owner-environment.js";
-import { SqliteGuestAccountAuthority } from "../domains/shortlet/src/guest-account-authority.js";
+import { SqliteGuestAccountAuthority } from "../packages/platform-core/src/accounts/authority.js";
 import { nodeSqlitePathOpenCount } from "../packages/platform-core/src/node-sqlite-database.js";
 import { productionFixture } from "./helpers/pilot-fixture.js";
 import { mkdtemp } from "node:fs/promises";

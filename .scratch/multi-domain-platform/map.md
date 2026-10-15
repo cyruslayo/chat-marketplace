@@ -62,8 +62,8 @@ The frontier is the first slice in the table that is open, unblocked and unclaim
 | 14a | [Split guest-server.ts: generic shell (sessions, conversation and action endpoints, assets)](issues/14a-split-guest-server-shell.md) | task | resolved | 07 | 14b |
 | 14b | [Shortlet route module composed by the shell](issues/14b-shortlet-route-module.md) | task | resolved | 14a | 27 |
 | **C: Platform services** | | | | | |
-| 15 | [Platform Payments: move the Paystack port, webhook, transfer verification and receipt store out of shortlet](issues/15-platform-payments-module.md) | task | ready-for-agent | 09a | 22 |
-| 16 | [Platform Accounts: move guest accounts and sign-in by emailed code out of shortlet](issues/16-platform-accounts-module.md) | task | ready-for-agent | 05, 10 | 17 |
+| 15 | [Platform Payments: move the Paystack port, webhook, transfer verification and receipt store out of shortlet](issues/15-platform-payments-module.md) | task | resolved | 09a | 22 |
+| 16 | [Platform Accounts: move guest accounts and sign-in by emailed code out of shortlet](issues/16-platform-accounts-module.md) | task | resolved | 05, 10 | 17 |
 | 17 | [Cloudflare platform Durable Object (accounts, conversations) and Worker routing by domain](issues/17-cloudflare-platform-do-and-domain-routing.md) | task | ready-for-agent | 05, 13, 16 | 24 |
 | **D: Commerce** | | | | | |
 | 18 | [Commerce pack scaffold: registration, migrations, Merchant and Store with verification gating](issues/18-commerce-pack-scaffold-merchant-store.md) | task | ready-for-agent | 03, 12 | 19 |
@@ -112,3 +112,5 @@ Update these when a slice changes them.
 - **13** → thread holds several tasks with one active; per-task pack (prompt/tools/projections); router confirms a cross-domain intent instead of switching; `start_task`/`switch_task` save and restore task state. Unblocks 17, 23, 26.
 - **14a** → `guest-shell.ts` (URL parsing, static assets, `RouteModule` dispatch) extracted with no domain import; the shortlet router registers through the shell. Scope note: sessions/endpoints stay in the shortlet module for 14b. Unblocks 14b.
 - **14b** → the shortlet application class moved to `shortlet-app.ts`; `guest-server.ts` re-exports it. 9,601 → 4,649 lines. The `< 1,000` remainder (renderers + router) is justified: moving it relocates the `guest-account-runtime` importer and breaks `guest-identity-assurance` AC5's single-gateway pin. Unblocks 27.
+- **15** → [`packages/platform-core/src/payments/`](../../packages/platform-core/src/payments/) — `Payments`/`PaystackPayments` (`start`/`confirm`/`verifyTransfer`/`handleWebhook`), the moved Paystack adapter and receipt store; `domains/shortlet/src/paystack.ts` and `receipt-blob-store.ts` deleted. Hosts build `PaystackPayments` once and pass it (pilot-server, shortlet-pilot-do, guest-server, fixture). `test/platform-payments.test.ts`. Unblocks 22.
+- **16** → [`packages/platform-core/src/accounts/`](../../packages/platform-core/src/accounts/) — the moved contact, authority, links and account-contacts modules plus `Accounts`/`createPlatformAccounts`; shortlet re-exports them and keeps identity assurance. `test/platform-accounts.test.ts`. Unblocks 17.

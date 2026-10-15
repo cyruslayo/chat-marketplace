@@ -1,5 +1,5 @@
-import type { SqlDatabase, SqlRow } from "../../../packages/platform-core/src/sql-database.js";
-import { GuestAccountAuthorityError, type GuestAccountSession, type SqliteGuestAccountAuthority } from "./guest-account-authority.js";
+import type { SqlDatabase, SqlRow } from "../sql-database.js";
+import { GuestAccountAuthorityError, type GuestAccountSession, type SqliteGuestAccountAuthority } from "./authority.js";
 
 /**
  * Table DDL for Linked Principals and resource-scoped request claims (ADR 0093). Applied by the schema migrations

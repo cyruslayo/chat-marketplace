@@ -1,6 +1,6 @@
-import type { GuestAuthenticatedAccount, SqliteGuestAccountAuthority } from "./guest-account-authority.js";
-import type { SqliteGuestAccountLinks } from "./guest-account-links.js";
-import type { GuestContact, GuestContactSource } from "./guest-contact.js";
+import type { GuestAuthenticatedAccount, SqliteGuestAccountAuthority } from "../../../packages/platform-core/src/accounts/authority.js";
+import type { SqliteGuestAccountLinks } from "../../../packages/platform-core/src/accounts/links.js";
+import type { GuestContact, GuestContactSource } from "../../../packages/platform-core/src/accounts/contact.js";
 
 /**
  * `email-verified` when a valid Guest Account Session is presented; `government-ID-verified` only while the account holds a

@@ -10,7 +10,7 @@ import {
   SelfBookingAttestation,
   SELF_BOOKING_ATTESTATION_VERSION
 } from "./guest-verification.js";
-import type { GuestContactSource } from "./guest-contact.js";
+import type { GuestContactSource } from "../../../packages/platform-core/src/accounts/contact.js";
 
 /** ADR 0043: Delivery Pending lasts at most five minutes (the Technical Delivery Window). */
 export const TECHNICAL_DELIVERY_WINDOW_MINUTES = 5;

@@ -5,7 +5,7 @@ import {
   type IdentityAssuranceOutcome,
 } from "../../domains/shortlet/src/guest-identity-assurance.js";
 import { GuestCheckInIdentityEligibility } from "../../domains/shortlet/src/guest-check-in-eligibility.js";
-import type { GuestAccountSession } from "../../domains/shortlet/src/guest-account-authority.js";
+import type { GuestAccountSession } from "../../packages/platform-core/src/accounts/authority.js";
 import { createGuestLinkingFixture, LINKING_TENANT, type GuestLinkingFixture } from "./guest-account-linking.js";
 import { guestEmailChange } from "./guest-account-authority.js";
 

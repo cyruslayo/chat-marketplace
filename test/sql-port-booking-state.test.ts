@@ -8,7 +8,7 @@ import { SqliteManualTransferStore } from "../domains/shortlet/src/manual-transf
 import { SqliteOwnerPayableLedger } from "../domains/shortlet/src/owner-payable.js";
 import { SqliteBankTransferSessionStore } from "../domains/shortlet/src/bank-transfer.js";
 import { SqliteCheckInSupportStore } from "../domains/shortlet/src/checkin-support.js";
-import { SqliteGuestContactRepository } from "../domains/shortlet/src/guest-contact.js";
+import { SqliteGuestContactRepository } from "../packages/platform-core/src/accounts/contact.js";
 import type { Reservation } from "../domains/shortlet/src/card-payment.js";
 
 const reservation: Reservation = {

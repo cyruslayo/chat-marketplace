@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { SqliteGuestAccountAuthority, type GuestAccountAuthorityOptions, type GuestAccountSession } from "../../domains/shortlet/src/guest-account-authority.js";
+import { SqliteGuestAccountAuthority, type GuestAccountAuthorityOptions, type GuestAccountSession } from "../../packages/platform-core/src/accounts/authority.js";
 import { openNodeSqliteDatabase } from "../../packages/platform-core/src/node-sqlite-database.js";
 import type { SqlDatabase } from "../../packages/platform-core/src/sql-database.js";
 import { createPlatformCommandEnvelope } from "../../packages/platform-core/src/envelope.js";

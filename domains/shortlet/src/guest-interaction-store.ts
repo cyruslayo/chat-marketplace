@@ -1,6 +1,6 @@
 import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
 import { createHash } from "node:crypto";
-import { normalizeContactEmail } from "./guest-contact.js";
+import { normalizeContactEmail } from "../../../packages/platform-core/src/accounts/contact.js";
 
 /**
  * Durable Guest booking interaction store (ADR-0070/0071/0074/0075/0079).

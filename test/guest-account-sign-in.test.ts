@@ -1137,7 +1137,7 @@ function setCookieValueOf(answer: { readonly setCookies: readonly string[] }, na
 test("Tenant-checked revocation: the key-free revocation refuses a session of another tenant even when its secret is valid", async () => {
   const { createGuestAccountFixture, signInGuestAccount } = await import("./helpers/guest-account-authority.js");
   const { openNodeSqliteDatabase } = await import("../packages/platform-core/src/node-sqlite-database.js");
-  const { revokeGuestAccountWithoutKey } = await import("../domains/shortlet/src/guest-account-authority.js");
+  const { revokeGuestAccountWithoutKey } = await import("../packages/platform-core/src/accounts/authority.js");
   const accounts = await createGuestAccountFixture();
   try {
     const session = signInGuestAccount(accounts.authority, "tenant-check@example.test", "tenant-1");

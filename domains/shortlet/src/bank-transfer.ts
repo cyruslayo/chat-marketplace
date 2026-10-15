@@ -212,7 +212,7 @@ export interface BankTransferPaymentManagerOptions {
   readonly audit?: { record(entry: Record<string, unknown>): void };
   readonly providerClient: BankTransferProviderClient;
   /** The payer's email for the provider comes from authoritative Guest contact state, never the client (ADR 0075). */
-  readonly guestContacts: import("./guest-contact.js").GuestContactSource;
+  readonly guestContacts: import("../../../packages/platform-core/src/accounts/contact.js").GuestContactSource;
   readonly liveAttempts?: import("./payment-attempt.js").LivePaymentAttemptRegistryPort;
   /** Durable sessions (P3). Without it sessions live only in this process. */
   readonly sessionStore?: BankTransferSessionStore;
