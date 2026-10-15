@@ -39,7 +39,7 @@ function paystackGuest(options: { readonly chargeExpiry?: (requested: string) =>
   const draft = env.bookingRequestApp.createDraft({ unitId: unit.id, primaryGuest: { id: env.config.guestId, name: env.config.guestName }, occupants: env.demoOccupants(2), selfBookingAttestation: env.selfBookingAttestation(), checkIn: "2026-09-10", checkOut: "2026-09-13" }, env.guestPrincipal());
   const request = env.bookingRequestApp.disclose(draft.draftId, env.guestPrincipal());
   const { offerId } = env.simulateOperatorAcceptance(request.requestId);
-  const offer = env.conditionalOfferApp.manager.getOffer(offerId);
+  const offer = env.conditionalOfferApp.getOffer(offerId);
   env.conditionalOfferApp.accept({ offerId, confirmationToken: offer.confirmationToken, expectedVersion: offer.offerVersion, principal: env.guestPrincipal() });
   const contracts = () => { const db = new DatabaseSync(env.config.databasePath); try { return (db.prepare("SELECT COUNT(*) AS count FROM booking_contracts").get() as { count: number }).count; } finally { db.close(); } };
   return {
@@ -82,7 +82,7 @@ test("AC1 — A transfer charge is created with the booking reference, exact amo
     late.advance((20 - PAYSTACK_TRANSFER_MINIMUM_EXPIRY_MINUTES) * MINUTE + 1);
     await assert.rejects(late.env.bankTransferApp!.initializeTransfer(late.offerId, late.env.guestPrincipal()), BankTransferProviderError);
     assert.equal(late.fake.requests.filter((request) => request.url.endsWith("/charge")).length, 0);
-    assert.equal(late.env.bankTransferApp!.manager.getSession(late.offerId), undefined);
+    assert.equal(late.env.bankTransferApp!.getSession(late.offerId), undefined);
     assert.equal(late.env.livePaymentAttempts.current(late.offerId, late.now()), undefined);
   } finally { late.close(); }
 
@@ -90,7 +90,7 @@ test("AC1 — A transfer charge is created with the booking reference, exact amo
   const extended = paystackGuest({ chargeExpiry: (requested) => new Date(Date.parse(requested) + MINUTE).toISOString() });
   try {
     await assert.rejects(extended.env.bankTransferApp!.initializeTransfer(extended.offerId, extended.env.guestPrincipal()), /after the Payment Window deadline/);
-    assert.equal(extended.env.bankTransferApp!.manager.getSession(extended.offerId), undefined);
+    assert.equal(extended.env.bankTransferApp!.getSession(extended.offerId), undefined);
   } finally { extended.close(); }
 
   // Production switches transfers on only by explicit, known configuration (ADR 0088 activation).
@@ -153,11 +153,11 @@ test("AC3 — A success reported after the deadline never confirms the booking a
     const event = JSON.stringify({ event: "charge.success", data: { reference: session.transferReference } });
     assert.equal((await fetch(`http://localhost:${port}/webhooks/paystack`, { method: "POST", headers: { "content-type": "application/json", "x-paystack-signature": signed(event) }, body: event })).status, 200);
     assert.equal(g.contracts(), 0, "never confirms");
-    const refund = g.env.bankTransferApp!.manager.getRefundRecord(g.offerId);
+    const refund = g.env.bankTransferApp!.getRefundRecord(g.offerId);
     assert.ok(refund, "recorded for refund");
     assert.equal(refund.amountKobo, session.amountKobo, "in full");
     assert.equal(refund.reason, "late_payment_after_expiry");
-    assert.equal(g.env.bankTransferApp!.manager.getReconciliationRecord(g.offerId)?.status, "quarantined_for_refund");
+    assert.equal(g.env.bankTransferApp!.getReconciliationRecord(g.offerId)?.status, "quarantined_for_refund");
     assert.notEqual(g.env.bankTransferApp!.getArtifact(g.offerId, g.env.guestPrincipal()).facts.status, "confirmed");
   } finally { await server.close(); g.close(); }
 });

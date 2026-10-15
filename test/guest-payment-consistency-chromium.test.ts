@@ -80,7 +80,7 @@ test("AC4: the copy button on the bank transfer page copies the account number a
   const tab = await browser.createTab();
   try {
     assert.equal((await g.post(`${g.paymentPage}/transfer`)).status, 303);
-    const account = g.env.bankTransferApp!.manager.getSession(g.offerId)!.accountNumber;
+    const account = g.env.bankTransferApp!.getSession(g.offerId)!.accountNumber;
     await tab.setExtraHeaders({ cookie: g.cookie });
     await tab.navigate(`${g.base}${g.paymentPage}/transfer`);
     await tab.waitForFunction("document.querySelector('.bank-details button[data-copy-text]') && !document.querySelector('.bank-details button[data-copy-text]').hidden", 10_000);

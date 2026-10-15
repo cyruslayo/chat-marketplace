@@ -1,10 +1,87 @@
 import type { WebServerEventHandoff } from "@weaver/web";
-import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
+import type { ActionSpec, CommandPrincipal } from "../../../packages/platform-core/src/index.js";
+import { resolveAction } from "../../../packages/platform-core/src/index.js";
 import type { GuestConductApplication } from "./guest-conduct-application.js";
 import type { GuestConductArtifact } from "./guest-conduct-artifact.js";
 export const GUEST_CONDUCT_APPLY_REVIEWED_EVENT = "shortlet.guest-conduct.apply-reviewed-decision";
 export const GUEST_CONDUCT_REQUEST_SUPPORT_EVENT = "shortlet.guest-conduct.request-human-support";
-type Context = { readonly artifactId: string; readonly reservationId: string; readonly allegationId?: string; readonly expectedAllegationVersion?: number; readonly ruleVersion?: string; readonly evidenceVersion?: string; readonly projectionVersion: string };
-export type GuestConductActionResult = { readonly ok: true; readonly artifact: GuestConductArtifact } | { readonly ok: false; readonly code: "UNSUPPORTED_ACTION" | "INVALID_CONTEXT" | "STALE_ACTION" | "ACTION_NOT_AUTHORIZED"; readonly message: string };
-function contextOf(event: WebServerEventHandoff): Context | undefined { const value: unknown = event?.message?.action?.context; if (!value || typeof value !== "object" || Array.isArray(value)) return undefined; const record = value as Record<string, unknown>; const allowed = ["artifactId", "reservationId", "allegationId", "expectedAllegationVersion", "ruleVersion", "evidenceVersion", "projectionVersion"]; if (Object.keys(record).some((k) => !allowed.includes(k)) || typeof record.artifactId !== "string" || typeof record.reservationId !== "string" || typeof record.projectionVersion !== "string") return undefined; if (record.allegationId !== undefined && typeof record.allegationId !== "string") return undefined; if (record.expectedAllegationVersion !== undefined && typeof record.expectedAllegationVersion !== "number") return undefined; if (record.ruleVersion !== undefined && typeof record.ruleVersion !== "string") return undefined; if (record.evidenceVersion !== undefined && typeof record.evidenceVersion !== "string") return undefined; return record as Context; }
-export function resolveGuestConductServerEvent(input: { readonly event: WebServerEventHandoff; readonly application: GuestConductApplication; readonly principal: CommandPrincipal }): GuestConductActionResult { const name = input.event?.message?.action?.name; if (name !== GUEST_CONDUCT_APPLY_REVIEWED_EVENT && name !== GUEST_CONDUCT_REQUEST_SUPPORT_EVENT) return { ok: false, code: "UNSUPPORTED_ACTION", message: "The action is not supported." }; const c = contextOf(input.event); if (!c) return { ok: false, code: "INVALID_CONTEXT", message: "The action context is invalid." }; try { const current = input.application.getArtifact(c.reservationId, input.principal); if (current.id !== c.artifactId || current.projectionVersion !== c.projectionVersion) return { ok: false, code: "STALE_ACTION", message: "The conduct action is stale; refresh the current matter." }; if (name === GUEST_CONDUCT_REQUEST_SUPPORT_EVENT) return { ok: true, artifact: input.application.requestHumanSupport(c.reservationId, input.principal) }; if (!c.allegationId || c.expectedAllegationVersion === undefined || !c.ruleVersion || !c.evidenceVersion) return { ok: false, code: "INVALID_CONTEXT", message: "The reviewed decision context is invalid." }; const refreshed = input.application.applyReviewedDecision({ reservationId: c.reservationId, allegationId: c.allegationId, expectedAllegationVersion: c.expectedAllegationVersion, ruleVersion: c.ruleVersion, evidenceVersion: c.evidenceVersion, principal: input.principal }); return { ok: true, artifact: refreshed }; } catch (error) { return { ok: false, code: error instanceof Error && error.message === "STALE_ACTION" ? "STALE_ACTION" : "ACTION_NOT_AUTHORIZED", message: "The conduct action was rejected." }; } }
+type GuestConductActionRejectionCode = "UNSUPPORTED_ACTION" | "INVALID_CONTEXT" | "STALE_ACTION" | "ACTION_NOT_AUTHORIZED";
+export type GuestConductActionResult = { readonly ok: true; readonly artifact: GuestConductArtifact } | { readonly ok: false; readonly code: GuestConductActionRejectionCode; readonly message: string };
+interface GuestConductContext {
+  readonly artifactId: string;
+  readonly reservationId: string;
+  readonly projectionVersion: string;
+  readonly allegationId?: string;
+  readonly expectedAllegationVersion?: number;
+  readonly ruleVersion?: string;
+  readonly evidenceVersion?: string;
+}
+
+const STALE_MESSAGE = "The conduct action is stale; refresh the current matter.";
+const RUN_REJECTED_MESSAGE = "The conduct action was rejected.";
+const staleAwareCode = (error: unknown): GuestConductActionRejectionCode => (error instanceof Error && error.message === "STALE_ACTION" ? "STALE_ACTION" : "ACTION_NOT_AUTHORIZED");
+
+const baseRequired: ActionSpec<GuestConductContext, GuestConductArtifact, unknown>["context"]["required"] = {
+  artifactId: { type: "string" },
+  reservationId: { type: "string" },
+  projectionVersion: { type: "string" },
+};
+
+function guestConductSpec(
+  name: typeof GUEST_CONDUCT_APPLY_REVIEWED_EVENT | typeof GUEST_CONDUCT_REQUEST_SUPPORT_EVENT,
+  application: GuestConductApplication,
+  required: ActionSpec<GuestConductContext, GuestConductArtifact, unknown>["context"]["required"],
+): ActionSpec<GuestConductContext, GuestConductArtifact, unknown> {
+  return {
+    name,
+    artifact: {
+      load: (context, principal) => application.getArtifact(context.reservationId, principal),
+      loadRejected: { code: "ACTION_NOT_AUTHORIZED", message: RUN_REJECTED_MESSAGE },
+      loadRejectedCode: staleAwareCode,
+    },
+    context: {
+      required,
+      optional: {
+        allegationId: { type: "string" },
+        expectedAllegationVersion: { type: "number" },
+        ruleVersion: { type: "string" },
+        evidenceVersion: { type: "string" },
+      },
+    },
+    expect: [
+      { expected: (context) => context.artifactId, actual: (artifact) => artifact.id },
+      { expected: (context) => context.projectionVersion, actual: (artifact) => artifact.projectionVersion },
+    ],
+    isAuthorized: () => true,
+    run: ({ context, principal }) => {
+      if (name === GUEST_CONDUCT_REQUEST_SUPPORT_EVENT) return application.requestHumanSupport(context.reservationId, principal);
+      return application.applyReviewedDecision({
+        reservationId: context.reservationId,
+        allegationId: context.allegationId!,
+        expectedAllegationVersion: context.expectedAllegationVersion!,
+        ruleVersion: context.ruleVersion!,
+        evidenceVersion: context.evidenceVersion!,
+        principal,
+      });
+    },
+    rejectionMessages: { stale: STALE_MESSAGE, runRejected: RUN_REJECTED_MESSAGE },
+    runRejectedCode: staleAwareCode,
+  };
+}
+
+export function resolveGuestConductServerEvent(input: { readonly event: WebServerEventHandoff; readonly application: GuestConductApplication; readonly principal: CommandPrincipal }): GuestConductActionResult {
+  const reviewedRequired: ActionSpec<GuestConductContext, GuestConductArtifact, unknown>["context"]["required"] = {
+    ...baseRequired,
+    allegationId: { type: "string", nonEmpty: true },
+    expectedAllegationVersion: { type: "number" },
+    ruleVersion: { type: "string", nonEmpty: true },
+    evidenceVersion: { type: "string", nonEmpty: true },
+  };
+  const specs = [
+    guestConductSpec(GUEST_CONDUCT_REQUEST_SUPPORT_EVENT, input.application, baseRequired),
+    guestConductSpec(GUEST_CONDUCT_APPLY_REVIEWED_EVENT, input.application, reviewedRequired),
+  ];
+  const outcome = resolveAction(input.event, specs, input.principal);
+  if (!outcome.ok) return { ok: false, code: outcome.code as GuestConductActionRejectionCode, message: outcome.message };
+  return { ok: true, artifact: outcome.artifact };
+}

@@ -1,6 +1,6 @@
 import { loadPaystackConfiguration, type PaystackConfiguration, type PaystackEnvironmentSource } from "../../../domains/shortlet/src/paystack.js";
-import { normalizeContactEmail } from "../../../domains/shortlet/src/guest-contact.js";
-import type { ManualTransferAccount } from "../../../domains/shortlet/src/manual-transfer-account.js";
+import { normalizeContactEmail } from "../../../domains/shortlet/src/index.js";
+import type { ManualTransferAccount } from "../../../domains/shortlet/src/index.js";
 import { loadConciergeConfiguration, type ConciergeConfiguration, type ConciergeEnvironmentSource } from "../../local-guest/src/assistant/concierge-configuration.js";
 
 export interface PilotEnvironmentSource extends PaystackEnvironmentSource, ConciergeEnvironmentSource {

@@ -11,6 +11,7 @@ import {
 } from "../apps/web-agent/src/index.js";
 import type { GuestSurfacePayload, GuestTurnResult, GuestTurnSuccess } from "../apps/local-guest/src/guest-server.js";
 import { guestAction, restartFixture } from "./helpers/guest-restart.js";
+import { getBookingRequestManager } from "../apps/web/src/index.js";
 import { repricedByOwner } from "./helpers/owner-terms.js";
 
 const TWO_NIGHTS = "I need an apartment in Ikoyi from 10 Sept for 2 nights for 2 people";
@@ -49,7 +50,7 @@ function quoteFor(fixture: Awaited<ReturnType<typeof restartFixture>>, unitId: s
 test("AC3: \"make it 3 nights\" on a draft proposes a re-quoted draft that needs confirmation", async () => {
   const { fixture, surface: draftSurface, draftId } = await twoNightDraft();
   try {
-    const manager = fixture.environment.bookingRequestApp.manager;
+    const manager = getBookingRequestManager(fixture.environment.bookingRequestApp);
     const unitId = manager.getDraft(draftId).unitId;
     const proposed = success(await fixture.send("/api/turn", { text: "make it 3 nights" }));
     const proposal = proposed.surfaces[0]!;
@@ -103,7 +104,7 @@ test("AC3 failure path: keeping the current draft changes nothing and costs noth
     const kept = success(await fixture.send("/api/event", guestAction(proposal, DRAFT_REPLACEMENT_KEEP_EVENT)));
     assert.deepEqual(kept.messages, ["Your Request Draft is unchanged."]);
     assert.equal(kept.surfaces[0]!.surfaceId.split(":").at(-1), draftId);
-    assert.equal(fixture.environment.bookingRequestApp.manager.getDraft(draftId).checkOut, "2026-09-12");
+    assert.equal(fixture.environment.bookingRequestApp.getDraft(draftId).checkOut, "2026-09-12");
     rejected(await fixture.send("/api/event", guestAction(proposal, DRAFT_REPLACEMENT_ACCEPT_EVENT)), "STALE_SURFACE");
     // The kept draft still reviews and submits.
     const review = success(await fixture.send("/api/event", guestAction(kept.surfaces[0]!, REQUEST_DRAFT_REVIEW_EVENT)));
@@ -118,7 +119,7 @@ test("AC3 failure path: a stay over the 14-night limit is refused and the draft 
     assert.equal(refused.surfaces.length, 0);
     assert.match(refused.messages[0]!, /14 nights/);
     assert.equal(refused.messages.at(-1), "Your Request Draft is unchanged.");
-    assert.equal(fixture.environment.bookingRequestApp.manager.getDraft(draftId).checkOut, "2026-09-12");
+    assert.equal(fixture.environment.bookingRequestApp.getDraft(draftId).checkOut, "2026-09-12");
   } finally { await fixture.close(); }
 });
 
@@ -129,7 +130,7 @@ test("AC3 failure path: a party the apartment can't take is refused and the draf
     assert.equal(refused.surfaces.length, 0);
     assert.match(refused.messages[0]!, /isn't available for .+ for 9 guests\.$/);
     assert.equal(refused.messages.at(-1), "Your Request Draft is unchanged.");
-    assert.equal(fixture.environment.bookingRequestApp.manager.getDraft(draftId).occupants.length, 2);
+    assert.equal(fixture.environment.bookingRequestApp.getDraft(draftId).occupants.length, 2);
   } finally { await fixture.close(); }
 });
 
@@ -150,9 +151,9 @@ test("AC3 failure path: a tampered or stale accept fails closed", async () => {
     const newer = success(await fixture.send("/api/turn", { text: "make it 4 nights" })).surfaces[0]!;
     assert.equal(newer.surfaceId, proposal.surfaceId);
     rejected(await fixture.send("/api/event", accept), "INVALID_CONTEXT");
-    assert.equal(fixture.environment.bookingRequestApp.manager.getDraft(draftId).checkOut, "2026-09-12");
+    assert.equal(fixture.environment.bookingRequestApp.getDraft(draftId).checkOut, "2026-09-12");
     const accepted = success(await fixture.send("/api/event", guestAction(newer, DRAFT_REPLACEMENT_ACCEPT_EVENT)));
-    assert.equal(fixture.environment.bookingRequestApp.manager.getDraft(accepted.surfaces[0]!.surfaceId.split(":").at(-1)!).checkOut, "2026-09-14");
+    assert.equal(fixture.environment.bookingRequestApp.getDraft(accepted.surfaces[0]!.surfaceId.split(":").at(-1)!).checkOut, "2026-09-14");
   } finally { await fixture.close(); }
 });
 
@@ -160,14 +161,14 @@ test("AC3 failure path: a price change before accepting re-proposes instead of r
   const { fixture, draftId } = await twoNightDraft();
   try {
     const proposal = success(await fixture.send("/api/turn", { text: "make it 3 nights" })).surfaces[0]!;
-    const unitId = fixture.environment.bookingRequestApp.manager.getDraft(draftId).unitId;
+    const unitId = fixture.environment.bookingRequestApp.getDraft(draftId).unitId;
     const unit = fixture.environment.unitRepository.findById(unitId) as Unit;
     fixture.environment.unitRepository.save({ id: unitId, price: repricedByOwner(unit.price, { ownerNightlyKobo: unit.price.ownerTerms!.agreed.nightlyKobo + 1_000_000 }) });
     const reproposed = success(await fixture.send("/api/event", guestAction(proposal, DRAFT_REPLACEMENT_ACCEPT_EVENT)));
     assert.match(reproposed.messages[0]!, /^The price changed before you chose\./);
     assert.match(reproposed.surfaces[0]!.surfaceId, /:request:replacement:/);
     assert.ok(texts(reproposed.surfaces[0]!).some((line) => line.endsWith(`All-In Stay Total: ${formatNgnKobo(quoteFor(fixture, unitId, "2026-09-13").allInStayTotalKobo)}`)));
-    assert.equal(fixture.environment.bookingRequestApp.manager.getDraft(draftId).checkOut, "2026-09-12");
+    assert.equal(fixture.environment.bookingRequestApp.getDraft(draftId).checkOut, "2026-09-12");
   } finally { await fixture.close(); }
 });
 
@@ -182,7 +183,7 @@ test("AC3 failure path: relative dates are confirmed before a replacement is pro
     assert.doesNotMatch(asked.messages[0]!, /search/i);
     const confirmed = success(await fixture.send("/api/turn", { text: "yes" }));
     assert.match(confirmed.surfaces[0]!.surfaceId, /:request:replacement:/);
-    assert.equal(fixture.environment.bookingRequestApp.manager.getDraft(draftId).checkIn, "2026-09-10");
+    assert.equal(fixture.environment.bookingRequestApp.getDraft(draftId).checkIn, "2026-09-10");
   } finally { await fixture.close(); }
 });
 
@@ -205,7 +206,7 @@ test("AC3 failure path: a date check the Guest doesn't confirm is dropped, so th
     assert.ok(proposal, `a proposal, not another date check: ${proposed.messages.join(" ")}`);
     assert.match(proposal.surfaceId, /:request:replacement:/);
     const accepted = success(await fixture.send("/api/event", guestAction(proposal, DRAFT_REPLACEMENT_ACCEPT_EVENT)));
-    const replacement = fixture.environment.bookingRequestApp.manager.getDraft(accepted.surfaces[0]!.surfaceId.split(":").at(-1)!);
+    const replacement = fixture.environment.bookingRequestApp.getDraft(accepted.surfaces[0]!.surfaceId.split(":").at(-1)!);
     assert.equal(replacement.checkIn, "2026-09-10", "the unconfirmed Friday is not used");
     assert.equal(replacement.checkOut, "2026-09-14");
     assert.notEqual(replacement.draftId, draftId);
@@ -220,6 +221,6 @@ test("AC3 failure path: answering a date check with different dates uses those d
     const proposal = proposed.surfaces[0];
     assert.ok(proposal, proposed.messages.join(" "));
     const accepted = success(await fixture.send("/api/event", guestAction(proposal, DRAFT_REPLACEMENT_ACCEPT_EVENT)));
-    assert.equal(fixture.environment.bookingRequestApp.manager.getDraft(accepted.surfaces[0]!.surfaceId.split(":").at(-1)!).checkIn, "2026-09-20");
+    assert.equal(fixture.environment.bookingRequestApp.getDraft(accepted.surfaces[0]!.surfaceId.split(":").at(-1)!).checkIn, "2026-09-20");
   } finally { await fixture.close(); }
 });

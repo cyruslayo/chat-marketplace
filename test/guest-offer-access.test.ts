@@ -27,7 +27,7 @@ async function deviceWithOffer(fixture: Parameters<typeof advanceToPendingWithPh
   fixture.environment.simulateOperatorAcceptance(requestId);
   const offer = fixture.environment.interactionStore.findConditionalOfferByRequestId(requestId);
   assert.ok(offer, "the operator accepted the request, so an offer exists");
-  const title = fixture.environment.conditionalOfferApp.manager.getOffer(offer.offerId).unit.title;
+  const title = fixture.environment.conditionalOfferApp.getOffer(offer.offerId).unit.title;
   return { offerId: offer.offerId, title };
 }
 
@@ -189,10 +189,10 @@ test("Offer access: the gate refuses when the offer lookup throws (fail closed)"
   const { anonymousGuestIdentity } = await import("../domains/shortlet/src/index.js");
   const identity = anonymousGuestIdentity("guest-owner", "tenant-1");
   const session = { identity } as unknown as Parameters<typeof offerAuthorized>[1];
-  const throwing = { conditionalOfferApp: { manager: { getOffer: () => { throw new Error("offer store unavailable"); } } } };
+  const throwing = { conditionalOfferApp: { getOffer: () => { throw new Error("offer store unavailable"); } } };
   assert.equal(offerAuthorized(throwing as unknown as Parameters<typeof offerAuthorized>[0], session, "offer-x"), false);
   // Positive control: the same gate admits the owner when the lookup works.
-  const working = { conditionalOfferApp: { manager: { getOffer: () => ({ tenantId: "tenant-1", requestId: "req-x", parties: { primaryGuest: { id: "guest-owner" }, distinctPayer: null } }) } } };
+  const working = { conditionalOfferApp: { getOffer: () => ({ tenantId: "tenant-1", requestId: "req-x", parties: { primaryGuest: { id: "guest-owner" }, distinctPayer: null } }) } };
   assert.equal(offerAuthorized(working as unknown as Parameters<typeof offerAuthorized>[0], session, "offer-x"), true);
 });
 

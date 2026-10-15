@@ -1,5 +1,6 @@
 import type { WebServerEventHandoff } from "@weaver/web";
-import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
+import type { ActionSpec, CommandPrincipal } from "../../../packages/platform-core/src/index.js";
+import { resolveAction } from "../../../packages/platform-core/src/index.js";
 import type { CancellationApplication } from "./cancellation-application.js";
 import type { CancellationArtifact } from "./cancellation-artifact.js";
 
@@ -7,34 +8,89 @@ export const CANCELLATION_CANCEL_EVENT = "shortlet.cancellation.cancel" as const
 export const CANCELLATION_REVIEW_EVENT = "shortlet.cancellation.apply-reviewed" as const;
 export const CANCELLATION_NO_SHOW_EVENT = "shortlet.cancellation.confirm-no-show" as const;
 export type CancellationActionContext = Readonly<{ artifactId: string; reservationId: string; expectedReservationStatus: "confirmed"; expectedContractVersion: number; policyVersion: string; economicsVersion: string; arrivalVersion: string; projectionVersion: string; contactAttemptVersion?: string; decisionVersion?: string }>;
-export type CancellationActionResult = { readonly ok: true; readonly artifact: CancellationArtifact } | { readonly ok: false; readonly code: "UNSUPPORTED_ACTION" | "INVALID_CONTEXT" | "STALE_ACTION" | "ACTION_NOT_AUTHORIZED"; readonly message: string };
-const EVENT_NAMES = [CANCELLATION_CANCEL_EVENT, CANCELLATION_REVIEW_EVENT, CANCELLATION_NO_SHOW_EVENT] as const;
-function contextOf(event: WebServerEventHandoff): CancellationActionContext | undefined {
-  const value: unknown = event?.message?.action?.context;
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const record = value as Record<string, unknown>;
-  const allowed = ["artifactId", "reservationId", "expectedReservationStatus", "expectedContractVersion", "policyVersion", "economicsVersion", "arrivalVersion", "projectionVersion", "contactAttemptVersion", "decisionVersion"];
-  if (Object.keys(record).some((key) => !allowed.includes(key))) return undefined;
-  const required = ["artifactId", "reservationId", "expectedReservationStatus", "expectedContractVersion", "policyVersion", "economicsVersion", "arrivalVersion", "projectionVersion"];
-  if (required.some((key) => !(key in record))) return undefined;
-  if (typeof record.artifactId !== "string" || typeof record.reservationId !== "string" || record.expectedReservationStatus !== "confirmed" || typeof record.expectedContractVersion !== "number" || !Number.isInteger(record.expectedContractVersion) || typeof record.policyVersion !== "string" || typeof record.economicsVersion !== "string" || typeof record.arrivalVersion !== "string" || typeof record.projectionVersion !== "string") return undefined;
-  if (record.contactAttemptVersion !== undefined && typeof record.contactAttemptVersion !== "string") return undefined;
-  if (record.decisionVersion !== undefined && typeof record.decisionVersion !== "string") return undefined;
-  return record as unknown as CancellationActionContext;
-}
+export type CancellationActionResult = { readonly ok: true; readonly artifact: CancellationArtifact } | { readonly ok: false; readonly code: CancellationActionRejectionCode; readonly message: string };
+type CancellationActionRejectionCode = "UNSUPPORTED_ACTION" | "INVALID_CONTEXT" | "STALE_ACTION" | "ACTION_NOT_AUTHORIZED";
+type CancellationEventName = typeof CANCELLATION_CANCEL_EVENT | typeof CANCELLATION_REVIEW_EVENT | typeof CANCELLATION_NO_SHOW_EVENT;
+
+const STALE_MESSAGE = "The cancellation action is stale; refresh the current cancellation.";
+const RUN_REJECTED_MESSAGE = "The cancellation action was rejected.";
+
 export function cancellationActionContext(action: { readonly artifactId: string; readonly reservationId: string; readonly expectedReservationStatus: "confirmed"; readonly expectedContractVersion: number; readonly policyVersion: string; readonly economicsVersion: string; readonly arrivalVersion: string; readonly projectionVersion: string; readonly contactAttemptVersion?: string; readonly decisionVersion?: string }): CancellationActionContext {
   return Object.freeze({ artifactId: action.artifactId, reservationId: action.reservationId, expectedReservationStatus: action.expectedReservationStatus, expectedContractVersion: action.expectedContractVersion, policyVersion: action.policyVersion, economicsVersion: action.economicsVersion, arrivalVersion: action.arrivalVersion, projectionVersion: action.projectionVersion, ...(action.contactAttemptVersion ? { contactAttemptVersion: action.contactAttemptVersion } : {}), ...(action.decisionVersion ? { decisionVersion: action.decisionVersion } : {}) });
 }
+
+function cancellationSpec(
+  name: CancellationEventName,
+  actionType: "cancel_booking" | "apply_reviewed_cancellation" | "confirm_no_show",
+  application: CancellationApplication,
+  expect: ActionSpec<CancellationActionContext, CancellationArtifact>["expect"],
+  crossMatch?: ActionSpec<CancellationActionContext, CancellationArtifact>["crossMatch"],
+): ActionSpec<CancellationActionContext, CancellationArtifact, { readonly reservationId: string }> {
+  return {
+    name,
+    artifact: {
+      load: (context, principal) => application.getArtifact(context.reservationId, principal),
+      loadRejected: { code: "ACTION_NOT_AUTHORIZED", message: RUN_REJECTED_MESSAGE },
+    },
+    context: {
+      required: {
+        artifactId: { type: "string" },
+        reservationId: { type: "string" },
+        expectedReservationStatus: { type: "string", enum: ["confirmed"] },
+        expectedContractVersion: { type: "integer" },
+        policyVersion: { type: "string" },
+        economicsVersion: { type: "string" },
+        arrivalVersion: { type: "string" },
+        projectionVersion: { type: "string" },
+      },
+      optional: {
+        contactAttemptVersion: { type: "string" },
+        decisionVersion: { type: "string" },
+      },
+    },
+    ...(crossMatch ? { crossMatch } : {}),
+    expect,
+    isAuthorized: (_context, artifact) => artifact.actions.some((candidate) => candidate.type === actionType),
+    authorizationRejected: { code: "STALE_ACTION", message: STALE_MESSAGE },
+    command: (context) => ({ commandName: name, payload: { reservationId: context.reservationId } }),
+    run: ({ context, principal }) => {
+      if (actionType === "cancel_booking") return application.cancel(context.reservationId, principal, context);
+      if (actionType === "confirm_no_show") return application.confirmNoShow(context.reservationId, principal, context);
+      return application.processReviewedCancellation(context.reservationId, principal, context);
+    },
+    rejectionMessages: { stale: STALE_MESSAGE, runRejected: RUN_REJECTED_MESSAGE },
+    runRejectedCode: (error) => (error instanceof Error && error.message === "STALE_ACTION" ? "STALE_ACTION" : "ACTION_NOT_AUTHORIZED"),
+  };
+}
+
+const baseExpect: ActionSpec<CancellationActionContext, CancellationArtifact>["expect"] = [
+  { expected: (context) => context.artifactId, actual: (artifact) => artifact.id },
+  { expected: (context) => context.reservationId, actual: (artifact) => artifact.facts.reservationId },
+  { expected: (context) => context.expectedReservationStatus, actual: (artifact) => artifact.facts.reservationStatus },
+  { expected: (context) => context.expectedContractVersion, actual: (artifact) => artifact.facts.contractVersion },
+  { expected: (context) => context.policyVersion, actual: (artifact) => artifact.facts.policy.version },
+  { expected: (context) => context.economicsVersion, actual: (artifact) => artifact.facts.economicsVersion },
+  { expected: (context) => context.arrivalVersion, actual: (artifact) => artifact.facts.arrivalVersion },
+  { expected: (context) => context.projectionVersion, actual: (artifact) => artifact.projectionVersion },
+];
+
 export function resolveCancellationServerEvent(input: { readonly event: WebServerEventHandoff; readonly application: CancellationApplication; readonly principal: CommandPrincipal }): CancellationActionResult {
-  const name = input.event?.message?.action?.name;
-  if (!EVENT_NAMES.includes(name as typeof EVENT_NAMES[number])) return { ok: false, code: "UNSUPPORTED_ACTION", message: "The action is not supported." };
-  const context = contextOf(input.event); if (!context) return { ok: false, code: "INVALID_CONTEXT", message: "The action context is invalid." };
-  try {
-    const current = input.application.getArtifact(context.reservationId, input.principal);
-    const action = current.actions.find((candidate) => candidate.type === (name === CANCELLATION_CANCEL_EVENT ? "cancel_booking" : name === CANCELLATION_NO_SHOW_EVENT ? "confirm_no_show" : "apply_reviewed_cancellation"));
-    if (current.id !== context.artifactId || current.facts.reservationId !== context.reservationId || current.facts.reservationStatus !== context.expectedReservationStatus || current.facts.contractVersion !== context.expectedContractVersion || current.facts.policy.version !== context.policyVersion || current.facts.economicsVersion !== context.economicsVersion || current.facts.arrivalVersion !== context.arrivalVersion || current.projectionVersion !== context.projectionVersion || !action || (name === CANCELLATION_NO_SHOW_EVENT && context.contactAttemptVersion !== current.facts.contactAttemptVersion)) return { ok: false, code: "STALE_ACTION", message: "The cancellation action is stale; refresh the current cancellation." };
-    if (name === CANCELLATION_CANCEL_EVENT) return { ok: true, artifact: input.application.cancel(context.reservationId, input.principal, context) };
-    if (name === CANCELLATION_NO_SHOW_EVENT) return { ok: true, artifact: input.application.confirmNoShow(context.reservationId, input.principal, context) };
-    return { ok: true, artifact: input.application.processReviewedCancellation(context.reservationId, input.principal, context) };
-  } catch (error) { return { ok: false, code: error instanceof Error && error.message === "STALE_ACTION" ? "STALE_ACTION" : "ACTION_NOT_AUTHORIZED", message: "The cancellation action was rejected." }; }
+  const { application } = input;
+  const specs = [
+    cancellationSpec(CANCELLATION_CANCEL_EVENT, "cancel_booking", application, baseExpect),
+    cancellationSpec(CANCELLATION_REVIEW_EVENT, "apply_reviewed_cancellation", application, baseExpect),
+    cancellationSpec(
+      CANCELLATION_NO_SHOW_EVENT,
+      "confirm_no_show",
+      application,
+      baseExpect,
+      (context, artifact) =>
+        context.contactAttemptVersion !== artifact.facts.contactAttemptVersion
+          ? { code: "STALE_ACTION", message: STALE_MESSAGE }
+          : true,
+    ),
+  ];
+  const outcome = resolveAction(input.event, specs, input.principal);
+  if (!outcome.ok) return { ok: false, code: outcome.code as CancellationActionRejectionCode, message: outcome.message };
+  return { ok: true, artifact: outcome.artifact };
 }

@@ -1,6 +1,6 @@
 # Boundary test: no imports past domains/*/src/index
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: none
 Requested: 14 Oct 2026
@@ -47,4 +47,20 @@ Before starting, also list `docs/adr/` and read any other ADR that touches the f
 
 Apply every item of the Definition of Done in `docs/agents/issue-tracker.md`. Shortlet behaviour must not change: the existing tests and the guest UI walkthrough/capture checks are the safety net.
 
+## Answer
+
+Landed:
+- `test/domain-boundary.test.ts` — scans non-test `.ts` files outside `domains/<d>/` for import specifiers that resolve past `domains/<d>/src/index`, and compares them to an allow-list. Unknown keys are outside a domain's `src` or its own `index`, and same-domain imports are allowed (ADR 0099 rule 1). No new mechanism: it follows `test/weaver-dependency-boundary.test.ts`.
+- `test/fixtures/domain-boundary-allowlist.json` — today's 91 offending (file, module) pairs across 39 files / 41 modules, matching the PRD's "41 internal modules imported past index".
+
+Tests (one per AC, `test/domain-boundary.test.ts`):
+- AC1 "A new deep import outside the allow-list fails the test" — green.
+- AC2 "A stale allow-list entry (pair no longer present) fails the test" — green.
+- AC3 "Imports through domains/<d>/src/index and imports inside the same domain pass" — green.
+- AC4 "The repository has no unlisted deep import and no stale allow-list entry" — green (the ratchet holds on the real tree).
+
+Verification: `npm run check` clean. `npm run test:non-browser` phase 1: 1743 pass / 4 fail, and the 4 failures reproduce unchanged on the stashed baseline (`test/export-node-sqlite.test.ts`, `test/redact-platform-ids-{detection,generators}.test.ts`) — they are pre-existing and unrelated to this slice. The allow-list only shrinks; slice 10 empties it.
+
 ## Comments
+
+- 14 Oct 2026 (agent): Scoped the scan to non-test `.ts` files outside `domains/`, skipping `.scratch` (the effort/issue-tracker scratch area of throwaway scripts), `node_modules`, `vendor`, build output. With those exclusions the module count is the PRD's 41.

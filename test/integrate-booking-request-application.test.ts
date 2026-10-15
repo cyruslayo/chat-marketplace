@@ -175,11 +175,7 @@ test("Delivery changes Booking Request action authority and rejects its old proj
   assert.equal(undelivered.facts.delivered, false);
   assert.deepEqual(undelivered.actions, []);
 
-  application.manager.markDelivered(createPlatformCommandEnvelope({
-    commandName: "booking_request.mark_delivered",
-    principal: { id: "system", role: "system" },
-    payload: { requestId: request.requestId },
-  }), { clock });
+  application.markDelivered(request.requestId);
 
   const delivered = application.getArtifact(request.requestId, operator);
   assert.equal(delivered.facts.delivered, true);

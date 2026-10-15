@@ -48,14 +48,14 @@ test("AC1 — After accepting the offer the Guest can choose bank transfer or ca
     const chosen = await t.post(`${t.paymentPage}/transfer`);
     assert.equal(chosen.status, 303);
     assert.equal(chosen.headers.get("location"), t.transferPage);
-    assert.equal(t.env.bankTransferApp!.manager.getSession(t.offerId)?.status, "initiated");
+    assert.equal(t.env.bankTransferApp!.getSession(t.offerId)?.status, "initiated");
     // The payment page now sends the Guest to their transfer, never back to the choice.
     assert.equal((await t.get(t.paymentPage)).headers.get("location"), t.transferPage);
     // A cross-origin POST starts nothing.
     const other = await guestWithOffer();
     try {
       assert.equal((await other.post(`${other.paymentPage}/transfer`, {}, { origin: "https://attacker.example" })).status, 403);
-      assert.equal(other.env.bankTransferApp!.manager.getSession(other.offerId), undefined);
+      assert.equal(other.env.bankTransferApp!.getSession(other.offerId), undefined);
     } finally { await other.close(); }
   } finally { await t.close(); }
 });
@@ -65,7 +65,7 @@ test("AC2 — The transfer screen shows the bank, account number, exact amount, 
   let keep = false;
   try {
     assert.equal((await g.post(`${g.paymentPage}/transfer`)).status, 303);
-    const session = g.env.bankTransferApp!.manager.getSession(g.offerId)!;
+    const session = g.env.bankTransferApp!.getSession(g.offerId)!;
     const transferHtml = await (await g.get(g.transferPage)).text();
     const text = visibleText(transferHtml);
     assert.match(transferHtml, /class="ui-ticket" aria-label="Your stay"/);
@@ -112,12 +112,12 @@ test("AC3 — The page states before the choice that a transfer can't be switche
     const refused = await g.get(`${g.paymentPage}/continue`);
     assert.equal(refused.status, 409);
     assert.match(visibleText(await refused.text()), /Your bank transfer is still open/);
-    assert.equal(g.env.cardPaymentApp.manager.getCheckoutSession(g.offerId), undefined, "no card checkout started");
+    assert.equal(g.env.cardPaymentApp.getCheckoutSession(g.offerId), undefined, "no card checkout started");
     assert.equal(g.env.livePaymentAttempts.current(g.offerId, g.env.clock())?.method, "bank_transfer");
     // Starting the transfer again returns the same account (ADR 0046).
-    const first = g.env.bankTransferApp!.manager.getSession(g.offerId)!.accountNumber;
+    const first = g.env.bankTransferApp!.getSession(g.offerId)!.accountNumber;
     assert.equal((await g.post(`${g.paymentPage}/transfer`)).status, 303);
-    assert.equal(g.env.bankTransferApp!.manager.getSession(g.offerId)!.accountNumber, first);
+    assert.equal(g.env.bankTransferApp!.getSession(g.offerId)!.accountNumber, first);
   } finally { await g.close(); }
 });
 

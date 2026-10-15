@@ -9,6 +9,7 @@ export * from "./sqlite-operator-repository.js";
 export * from "./availability.js";
 export * from "./availability-store.js";
 export * from "./guest-verification.js";
+export * from "./manual-transfer-account.js";
 export * from "./instagram-adapter.js";
 export * from "./quote.js";
 export * from "./owner-terms.js";

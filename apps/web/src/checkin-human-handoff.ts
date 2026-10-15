@@ -1,4 +1,4 @@
-import type { CheckInHumanOwnershipPort, ComplaintCategory } from "../../../domains/shortlet/src/checkin-support.js";
+import type { CheckInHumanOwnershipPort, ComplaintCategory } from "../../../domains/shortlet/src/index.js";
 import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
 import type { HumanHandoffApplication } from "./human-handoff-application.js";
 export interface ReservationThreadLookup { getThreadId(reservationId: string): string; }

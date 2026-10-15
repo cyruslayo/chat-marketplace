@@ -91,7 +91,7 @@ test("AC2 — The Guest can upload one receipt (allowed types and size only) bef
     assert.equal((await upload(g, TEST_RECEIPTS.pdf, "again.pdf", "application/pdf")).status, 409);
     assert.equal(receipts(g), 1);
     // The dates stay held through the verification deadline (ADR 0090).
-    const offer = g.env.conditionalOfferApp.manager.getOffer(g.offerId);
+    const offer = g.env.conditionalOfferApp.getOffer(g.offerId);
     g.advance(40 * MINUTE); // past the Payment Window, inside the hold
     assert.equal(g.env.calendar.getAuthoritativeAvailability({ unitId: offer.unitId, checkIn: offer.dates.checkIn, checkOut: offer.dates.checkOut, clock: g.now }).isAvailable, false);
   } finally { await g.close(); }
@@ -154,7 +154,7 @@ test("AC4 — The receipt never confirms the booking by itself; only the back-of
     g.advance(20 * MINUTE + MANUAL_TRANSFER_VERIFICATION_HOLD_MINUTES * MINUTE);
     assert.equal(g.env.manualTransfers!.current(g.offerId, g.now())!.status, "expired");
     assert.equal(contracts(g), 0);
-    const offer = g.env.conditionalOfferApp.manager.getOffer(g.offerId);
+    const offer = g.env.conditionalOfferApp.getOffer(g.offerId);
     assert.equal(g.env.calendar.getAuthoritativeAvailability({ unitId: offer.unitId, checkIn: offer.dates.checkIn, checkOut: offer.dates.checkOut, clock: g.now }).isAvailable, true);
     // No log or audit carries the receipt, its name or its bytes (ADR 0075).
     const audit = JSON.stringify(g.env.audit.entries());

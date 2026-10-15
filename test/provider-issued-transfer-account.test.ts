@@ -65,7 +65,7 @@ test("AC1 — Starting a bank transfer returns the bank name, account number and
     const draft = env.bookingRequestApp.createDraft({ unitId: "unit-lagos-ikoyi-001", primaryGuest: { id: env.config.guestId, name: env.config.guestName }, occupants: env.demoOccupants(2), selfBookingAttestation: env.selfBookingAttestation(), checkIn: "2026-09-10", checkOut: "2026-09-13" }, env.guestPrincipal());
     const request = env.bookingRequestApp.disclose(draft.draftId, env.guestPrincipal());
     const { offerId } = env.simulateOperatorAcceptance(request.requestId);
-    const localOffer = env.conditionalOfferApp.manager.getOffer(offerId);
+    const localOffer = env.conditionalOfferApp.getOffer(offerId);
     env.conditionalOfferApp.accept({ offerId, confirmationToken: localOffer.confirmationToken, expectedVersion: localOffer.offerVersion, principal: env.guestPrincipal() });
     const local = await env.bankTransferApp.initializeTransfer(offerId, env.guestPrincipal());
     assert.equal(local.bankName, LOCAL_TRANSFER_BANK_NAME);

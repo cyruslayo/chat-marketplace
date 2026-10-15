@@ -1,6 +1,6 @@
 import { createPlatformCommandEnvelope, type CommandPrincipal } from "../../../packages/platform-core/src/index.js";
-import type { BookingStateRepository } from "../../../domains/shortlet/src/booking-state.js";
-import { calculateAuthoritativeRemedy, midStayIncidentId, type ActiveStayProvider, type MidStayCureProvider, type MidStayEconomicsProvider, type MidStayEvidenceProvider, type MidStayFailureAssessmentProvider, type MidStayHumanDecisionProvider, type MidStayIncidentRecord, type MidStayIncidentRepository } from "../../../domains/shortlet/src/mid-stay-failure.js";
+import type { BookingStateRepository } from "../../../domains/shortlet/src/index.js";
+import { calculateAuthoritativeRemedy, midStayIncidentId, type ActiveStayProvider, type MidStayCureProvider, type MidStayEconomicsProvider, type MidStayEvidenceProvider, type MidStayFailureAssessmentProvider, type MidStayHumanDecisionProvider, type MidStayIncidentRecord, type MidStayIncidentRepository } from "../../../domains/shortlet/src/index.js";
 import { midStayFailureArtifact, type MidStayFailureArtifact } from "./mid-stay-failure-artifact.js";
 import type { MidStayActionContext, MidStayReviewedActionContext } from "./mid-stay-failure-actions.js";
 export interface MidStayHandoffPort { requestHumanSupport(input: { reservationId: string; category: "safety_issue" | "habitability_failure" | "general_support" }): void; isHumanOwned?(reservationId: string): boolean; }

@@ -1,6 +1,7 @@
 import { BankTransferPaymentManager, type BankTransferCheckoutSession, type BankTransferPaymentManagerOptions } from "../../../domains/shortlet/src/index.js";
-import { createPlatformCommandEnvelope, type CommandPrincipal } from "../../../packages/platform-core/src/index.js";
+import { createPlatformCommandEnvelope, type CommandPrincipal, type PlatformCommandEnvelope } from "../../../packages/platform-core/src/index.js";
 import type { ConditionalOfferApplication } from "./conditional-offer-application.js";
+import { getConditionalOfferManager } from "./conditional-offer-application.js";
 import { bankTransferArtifactFromState, type BankTransferArtifact } from "./bank-transfer-artifact.js";
 
 export interface BankTransferPaymentApplicationOptions {
@@ -22,27 +23,66 @@ export interface BankTransferPaymentApplicationOptions {
   readonly onConfirmedOutcome?: (outcome: { readonly reservation: import("../../../domains/shortlet/src/index.js").Reservation; readonly bookingContract: import("../../../domains/shortlet/src/index.js").BookingContract }) => void;
 }
 
+const managers = new WeakMap<BankTransferPaymentApplication, BankTransferPaymentManager>();
+/** Composition seam: the underlying domain manager, for wiring sibling applications. Not a public application API. */
+export function getBankTransferManager(application: BankTransferPaymentApplication): BankTransferPaymentManager {
+  const manager = managers.get(application);
+  if (!manager) throw new Error("BankTransferPaymentApplication is not initialized");
+  return manager;
+}
+
 export class BankTransferPaymentApplication {
-  readonly manager: BankTransferPaymentManager;
+  readonly #manager: BankTransferPaymentManager;
   readonly #conditionalOfferApplication: ConditionalOfferApplication;
   readonly #clock: () => Date;
   readonly #providerClient: BankTransferPaymentManagerOptions["providerClient"];
   readonly #onConfirmedOutcome?: BankTransferPaymentApplicationOptions["onConfirmedOutcome"];
-  constructor(manager: BankTransferPaymentManager, conditionalOfferApplication: ConditionalOfferApplication, clock: () => Date, providerClient: BankTransferPaymentManagerOptions["providerClient"], onConfirmedOutcome?: BankTransferPaymentApplicationOptions["onConfirmedOutcome"]) { this.manager = manager; this.#conditionalOfferApplication = conditionalOfferApplication; this.#clock = clock; this.#providerClient = providerClient; this.#onConfirmedOutcome = onConfirmedOutcome; }
+  constructor(manager: BankTransferPaymentManager, conditionalOfferApplication: ConditionalOfferApplication, clock: () => Date, providerClient: BankTransferPaymentManagerOptions["providerClient"], onConfirmedOutcome?: BankTransferPaymentApplicationOptions["onConfirmedOutcome"]) { this.#manager = manager; managers.set(this, manager); this.#conditionalOfferApplication = conditionalOfferApplication; this.#clock = clock; this.#providerClient = providerClient; this.#onConfirmedOutcome = onConfirmedOutcome; }
   #recordConfirmed<T extends { readonly outcome: string; readonly reservation?: import("../../../domains/shortlet/src/index.js").Reservation; readonly bookingContract?: import("../../../domains/shortlet/src/index.js").BookingContract }>(outcome: T): T {
     if (outcome.outcome === "confirmed" && outcome.reservation && outcome.bookingContract) this.#onConfirmedOutcome?.({ reservation: outcome.reservation, bookingContract: outcome.bookingContract });
     return outcome;
   }
   getArtifact(offerId: string, viewer: CommandPrincipal): BankTransferArtifact {
-    const offer = this.#conditionalOfferApplication.manager.getOffer(offerId);
-    const session = this.manager.getSession(offerId); const contract = this.manager.getBookingContract(offerId);
-    return bankTransferArtifactFromState({ offer, viewer, session, contract, journey: this.manager.getPaymentJourney(offerId), refundRecord: this.manager.getRefundRecord(offerId), reconciliationRecord: this.manager.getReconciliationRecord(offerId), now: this.#clock() });
+    const offer = this.#conditionalOfferApplication.getOffer(offerId);
+    const session = this.#manager.getSession(offerId); const contract = this.#manager.getBookingContract(offerId);
+    return bankTransferArtifactFromState({ offer, viewer, session, contract, journey: this.#manager.getPaymentJourney(offerId), refundRecord: this.#manager.getRefundRecord(offerId), reconciliationRecord: this.#manager.getReconciliationRecord(offerId), now: this.#clock() });
   }
+  /** Façade read of the active bank transfer session for an offer. */
+  getSession(offerId: string): BankTransferCheckoutSession | undefined {
+    return this.#manager.getSession(offerId);
+  }
+
+  /** Façade read of the Booking Contract associated with an offer, if any. */
+  getBookingContract(offerId: string): ReturnType<BankTransferPaymentManager["getBookingContract"]> {
+    return this.#manager.getBookingContract(offerId);
+  }
+
+  /** Façade read of a bank transfer session by provider reference. */
+  getSessionByReference(reference: string): BankTransferCheckoutSession | undefined {
+    return this.#manager.getSessionByReference(reference);
+  }
+
+  /** Façade read of the refund record for an offer. */
+  getRefundRecord(offerId: string): ReturnType<BankTransferPaymentManager["getRefundRecord"]> {
+    return this.#manager.getRefundRecord(offerId);
+  }
+
+  /** Façade read of the reconciliation record for an offer. */
+  getReconciliationRecord(offerId: string): ReturnType<BankTransferPaymentManager["getReconciliationRecord"]> {
+    return this.#manager.getReconciliationRecord(offerId);
+  }
+
   initializeTransfer(offerId: string, trustedPayerPrincipal: CommandPrincipal): Promise<BankTransferCheckoutSession> {
-    return this.manager.initializeBankTransfer(createPlatformCommandEnvelope({ commandName: "bank_transfer.initialize", principal: trustedPayerPrincipal, payload: { offerId } }), { clock: this.#clock });
+    return this.initializeTransferFromCommand(
+      createPlatformCommandEnvelope({ commandName: "bank_transfer.initialize", principal: trustedPayerPrincipal, payload: { offerId } }),
+    );
+  }
+  /** Runs the gate-built platform command for `shortlet.bank-transfer.initialize` (ADR 0072). */
+  initializeTransferFromCommand(envelope: PlatformCommandEnvelope<{ readonly offerId: string }>): Promise<BankTransferCheckoutSession> {
+    return this.#manager.initializeBankTransfer(envelope, { clock: this.#clock });
   }
   verifyAndProcess(transferReference: string, trustedServerPrincipal: CommandPrincipal) {
-    return this.#recordConfirmed(this.manager.verifyAndProcessTransfer(createPlatformCommandEnvelope({ commandName: "bank_transfer.verify_and_process", principal: trustedServerPrincipal, payload: { transferReference } }), { clock: this.#clock }));
+    return this.#recordConfirmed(this.#manager.verifyAndProcessTransfer(createPlatformCommandEnvelope({ commandName: "bank_transfer.verify_and_process", principal: trustedServerPrincipal, payload: { transferReference } }), { clock: this.#clock }));
   }
   /**
    * Verifies with the provider server-side, awaiting a network provider when it has one (Paystack), then processes
@@ -51,18 +91,18 @@ export class BankTransferPaymentApplication {
   async verifyAndProcessFromProvider(transferReference: string, trustedServerPrincipal: CommandPrincipal) {
     const envelope = createPlatformCommandEnvelope({ commandName: "bank_transfer.verify_and_process", principal: trustedServerPrincipal, payload: { transferReference } });
     const provider = this.#providerClient;
-    if (!provider.verifyTransferAsync) return this.#recordConfirmed(this.manager.verifyAndProcessTransfer(envelope, { clock: this.#clock }));
-    if (!this.manager.getSessionByReference(transferReference)) throw new Error("Unknown transfer reference");
+    if (!provider.verifyTransferAsync) return this.#recordConfirmed(this.#manager.verifyAndProcessTransfer(envelope, { clock: this.#clock }));
+    if (!this.#manager.getSessionByReference(transferReference)) throw new Error("Unknown transfer reference");
     const result = await provider.verifyTransferAsync(transferReference);
-    return this.#recordConfirmed(this.manager.verifyAndProcessTransferWithProviderResult(envelope, result, { clock: this.#clock }));
+    return this.#recordConfirmed(this.#manager.verifyAndProcessTransferWithProviderResult(envelope, result, { clock: this.#clock }));
   }
   resolveExpiry(offerId: string, trustedServerPrincipal: CommandPrincipal) {
-    return this.manager.resolveExpiry(offerId, trustedServerPrincipal, { clock: this.#clock });
+    return this.#manager.resolveExpiry(offerId, trustedServerPrincipal, { clock: this.#clock });
   }
 }
 
 export function createBankTransferPaymentApplication(options: BankTransferPaymentApplicationOptions): BankTransferPaymentApplication {
   if (!options.bookingState?.saveBookingAtomically || !options.bookingState.removeBookingAtomically) throw new Error("Atomic BookingState authority is required");
   const { conditionalOfferApplication, clock = () => new Date(), onConfirmedOutcome, ...dependencies } = options;
-  return new BankTransferPaymentApplication(new BankTransferPaymentManager({ ...dependencies, offerManager: conditionalOfferApplication.manager }), conditionalOfferApplication, clock, dependencies.providerClient, onConfirmedOutcome);
+  return new BankTransferPaymentApplication(new BankTransferPaymentManager({ ...dependencies, offerManager: getConditionalOfferManager(conditionalOfferApplication) }), conditionalOfferApplication, clock, dependencies.providerClient, onConfirmedOutcome);
 }

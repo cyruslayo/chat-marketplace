@@ -1,7 +1,7 @@
 import type { AuditLog } from "../../../packages/platform-core/src/index.js";
-import type { UnitRepositoryContract } from "../../../domains/shortlet/src/browse.js";
-import { importInventoryCsv, operatorResolverFromRepository } from "../../../domains/shortlet/src/inventory-import.js";
-import { bootstrapOperatorsFromUnitRepository, type OperatorRepository } from "../../../domains/shortlet/src/operator.js";
+import type { UnitRepositoryContract } from "../../../domains/shortlet/src/index.js";
+import { importInventoryCsv, operatorResolverFromRepository } from "../../../domains/shortlet/src/index.js";
+import { bootstrapOperatorsFromUnitRepository, type OperatorRepository } from "../../../domains/shortlet/src/index.js";
 import { readBodyWithLimit, BodyTooLargeError } from "./bounded-body.js";
 import {
   runOperatorCreateCommand,

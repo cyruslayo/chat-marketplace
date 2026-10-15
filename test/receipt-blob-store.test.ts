@@ -116,7 +116,7 @@ test("07a AC4: two uploads racing through the put leave one receipt and no orpha
   try {
     await g.post(manualPage(g));
     g.advance(5 * 60_000);
-    const offer = g.env.conditionalOfferApp.manager.getOffer(g.offerId);
+    const offer = g.env.conditionalOfferApp.getOffer(g.offerId);
     const command = () => createPlatformCommandEnvelope({
       commandName: "manual_transfer.upload_receipt",
       principal: { id: offer.parties.primaryGuest.id, role: "guest", tenantId: offer.tenantId ?? g.env.config.tenantId },

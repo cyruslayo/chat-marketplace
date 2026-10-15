@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import type { BookingAmendmentManager, PendingAmendment } from "../../../domains/shortlet/src/booking-amendment.js";
-import type { BookingContract } from "../../../domains/shortlet/src/card-payment.js";
+import type { BookingAmendmentManager, PendingAmendment } from "../../../domains/shortlet/src/index.js";
+import type { BookingContract } from "../../../domains/shortlet/src/index.js";
 export const BOOKING_AMENDMENT_ARTIFACT_KIND = "shortlet.booking-amendment";
 export const BOOKING_AMENDMENT_SCHEMA_VERSION = "shortlet.booking-amendment/v1";
 export interface BookingAmendmentArtifact { readonly id: string; readonly kind: typeof BOOKING_AMENDMENT_ARTIFACT_KIND; readonly schemaVersion: typeof BOOKING_AMENDMENT_SCHEMA_VERSION; readonly projectionVersion: string; readonly facts: { readonly contractId: string; readonly reservationId: string; readonly currentContractVersion: number; readonly current: { readonly checkIn: string; readonly checkOut: string; readonly occupants: readonly string[]; readonly checkout: string; readonly totalKobo: number; readonly currency: "NGN" }; readonly proposal?: { readonly amendmentId: string; readonly amendmentVersion: number; readonly status: string; readonly checkIn: string; readonly checkOut: string; readonly occupants: readonly string[]; readonly checkout?: string; readonly revisedAllInStayTotalKobo: number; readonly quoteId: string; readonly quoteVersion: string | number; readonly financialAdjustment: { readonly type: string; readonly amountKobo: number; readonly currency: "NGN" }; readonly humanApprovalRequired: boolean; readonly humanApprovalSatisfied: boolean; readonly deadline?: string } } }

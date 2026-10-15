@@ -1,6 +1,6 @@
 import { createPlatformCommandEnvelope, type CommandPrincipal } from "../../../packages/platform-core/src/index.js";
-import type { EarnedCommissionSource } from "../../../domains/shortlet/src/revenue-accounting.js";
-import { calculateContributionRate, calculateRequiredSeedCapital, calculateTargetBalance, protectionFundJournal, PROTECTION_FUND_POLICY, type ProtectionFundAccountingRepository, type ProtectionFundCapitalProvider, type ProtectionFundMetricsProvider, type RemedyFundingRecord, type ProtectionFundSnapshot } from "../../../domains/shortlet/src/protection-fund-accounting.js";
+import type { EarnedCommissionSource } from "../../../domains/shortlet/src/index.js";
+import { calculateContributionRate, calculateRequiredSeedCapital, calculateTargetBalance, protectionFundJournal, PROTECTION_FUND_POLICY, type ProtectionFundAccountingRepository, type ProtectionFundCapitalProvider, type ProtectionFundMetricsProvider, type RemedyFundingRecord, type ProtectionFundSnapshot } from "../../../domains/shortlet/src/index.js";
 
 export interface ProtectionFundFinanceAuthorization { canView(principal: CommandPrincipal): boolean; }
 export interface ProtectionFundRecoveryAuthority { getRecovery(recoveryRef: string): { readonly recoveryId: string; readonly recoveryVersion: string; readonly fundingRecordId: string; readonly status: "settled" | "pending" | "failed"; readonly amountKobo: number; readonly currency: "NGN"; readonly source: "operator_settlement" | "reserve_application" | "future_payout_offset" | "contractual_recovery" }; }

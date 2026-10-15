@@ -3,6 +3,9 @@ import { SecurityContext } from "./thread.js";
 import type { AuditLog, Telemetry } from "./index.js";
 import { redactSensitiveData } from "./redaction.js";
 
+/** The surface kinds the platform accepts on its own; packs add their summary kinds. */
+const PLATFORM_SURFACE_KINDS: readonly string[] = ["surface_render", "confirmation_card", "status_display"];
+
 /**
  * ADR 0004, ADR 0011, ADR 0068, ADR 0070, ADR 0071, ADR 0074, ADR 0075 & Issue 37:
  * Enforces cross-tenant and sensitive-data interaction security guardrails.
@@ -10,12 +13,14 @@ import { redactSensitiveData } from "./redaction.js";
 export class InteractionSecurityEngine {
   readonly #audit?: AuditLog;
   readonly #telemetry?: Telemetry;
+  readonly #summaryKinds: readonly string[];
   readonly #usedTokens = new Set<string>();
   readonly #revokedSessions = new Set<string>();
 
-  constructor(options?: { audit?: AuditLog; telemetry?: Telemetry }) {
+  constructor(options?: { audit?: AuditLog; telemetry?: Telemetry; summaryKinds?: readonly string[] }) {
     this.#audit = options?.audit;
     this.#telemetry = options?.telemetry;
+    this.#summaryKinds = options?.summaryKinds ?? PLATFORM_SURFACE_KINDS;
   }
 
   revokeSession(sessionId: string): void {
@@ -135,7 +140,7 @@ export class InteractionSecurityEngine {
       throw new Error("Untyped or invalid A2UI surface component: executable UI and malicious content rejected");
     }
 
-    const validKinds = ["surface_render", "booking_summary", "confirmation_card", "status_display"];
+    const validKinds = this.#summaryKinds;
     if (!surfaceData.kind || !validKinds.includes(surfaceData.kind)) {
       throw new Error("Untyped or invalid A2UI surface component: executable UI and malicious content rejected");
     }

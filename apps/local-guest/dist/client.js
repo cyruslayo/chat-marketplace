@@ -8912,6 +8912,78 @@ Known schemas:
     const trimmed = text.trim();
     return trimmed.startsWith(prefix) ? trimmed.slice(prefix.length) : void 0;
   }
+  var GUEST_ACCOUNT_COPY = Object.freeze({
+    signInTitle: "Sign in",
+    signInIntro: "We'll email you a six-digit code. Enter it here to sign in on this device.",
+    emailLabel: "Email address",
+    sendCode: "Send code",
+    codeTitle: "Enter your code",
+    codeIntro: "We sent a six-digit code to the email address you gave. It expires soon.",
+    codeLabel: "Six-digit code",
+    checkCode: "Check code",
+    requestNewCode: "Request a new code",
+    signedIn: "Signed in",
+    signedInIntro: "You are signed in on this device.",
+    signOut: "Sign out",
+    signOutEverywhere: "Sign out everywhere",
+    signOutEverywhereIntro: "This signs out every device on your account. Open conversations on those devices stop working.",
+    appBarSignIn: "Sign in",
+    appBarAccount: "Account",
+    offerNotFoundTitle: "We could not find that payment link",
+    offerNotFoundMessage: "This link does not open here. Sign in with the account that made this booking, or return to your conversation.",
+    rateLimitedTitle: "Please slow down",
+    rateLimitedMessage: "Too many requests came from here in a short time. Wait a few minutes, then try again.",
+    emailSubject: "Your Shortlet sign-in code",
+    emailBody: (code, minutes) => `Your Shortlet sign-in code is ${code}. It expires in ${minutes} minutes. If you did not ask for this code, you can ignore this email.`,
+    unavailable: "Sign-in is not available right now. You can keep searching and booking without signing in.",
+    signInRequired: "Sign in to see your account.",
+    // Issue 08 sign-in offer after a request is sent and after a booking is confirmed. Functional wording, not final: awaiting human approval (Needs human: copy approval).
+    offerTitle: "Sign in to see this booking on your other devices",
+    offerIntro: "We will email you a six-digit code. Signing in is optional, and your booking stays as it is.",
+    offerButton: "Send me a code",
+    // Issue 07 account page. Functional wording, not final: awaiting human approval with the rest of this block.
+    accountTitle: "Your account",
+    brandName: "Shortlet",
+    brandEyebrow: "Shortlet",
+    backToConversation: "Back to your conversation",
+    tryAgain: "Try again",
+    backToAccount: "Back to your account",
+    codeExpiresIn: (minutes) => `It expires in ${minutes} minutes.`,
+    accountIntro: "Check your details, change your email or phone, and manage where you are signed in.",
+    detailsHeading: "Your details",
+    phoneLabel: "Phone number",
+    phoneHint: "We save this number for your bookings. We do not check it yet.",
+    phoneNotAdded: "No phone added yet",
+    savePhone: "Save phone number",
+    identityLabel: "Identity status",
+    identityEmailConfirmed: "Email confirmed",
+    identityIdChecked: "ID checked",
+    identityIdNotChecked: "ID not checked yet \u2013 we'll do this before check-in",
+    changeEmailHeading: "Change email",
+    changeEmailIntro: "We will send a code to the new address. Your email changes only after you enter that code.",
+    changeEmailButton: "Send code to new email",
+    changeEmailCodeTitle: "Confirm your new email",
+    changeEmailCodeIntro: "We sent a six-digit code to the new address. Enter it to change your account email.",
+    changeEmailCheckButton: "Confirm new email",
+    emailChangeSubject: "Confirm your new Shortlet email",
+    emailChangeBody: (code, minutes) => `Your Shortlet code to confirm this email address is ${code}. It expires in ${minutes} minutes. If you did not ask for this change, you can ignore this email.`,
+    emailChangedNotice: "Your account email has been changed.",
+    phoneSavedNotice: "Your phone number has been saved.",
+    sessionsHeading: "Where you are signed in",
+    errors: Object.freeze({
+      sameEmail: "That is already your account email.",
+      emailInUse: "That email address belongs to another account. Use a different address.",
+      emailOwnedByAccount: "Your contact email is your account email. Change it on your account page.",
+      phoneSaveFailed: "Your phone number could not be saved. Try again.",
+      invalidEmail: "Enter a valid email address.",
+      codeInvalid: "That code is not right. Check the email and try again.",
+      codeExpired: "That code has expired. Request a new code.",
+      attemptsExhausted: "Too many wrong attempts. Request a new code.",
+      codeConsumed: "That code has already been used. Request a new code.",
+      sendFailed: "We could not send the code. Try again in a few minutes.",
+      linkConflict: "This browser is already linked to a different account. Sign out there first."
+    })
+  });
 
   // apps/web-agent/src/discovery-a2ui.ts
   function formatNgnKobo(kobo) {
@@ -9137,6 +9209,9 @@ Known schemas:
   }
   function confirmationScreenHtml(content, ticket, breakdown) {
     return `<section class="confirmed-screen"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h2>Reservation confirmed</h2>${statusHtml("success", "Stay payment verified")}</header>${ticket}${breakdown}<section class="ui-panel request-next" aria-label="Before you arrive"><h2>Before you arrive</h2>${stepsHtml(content.steps)}</section><div class="request-actions"><a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(content.conversationHref)}">Back to your conversation</a><a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.detailsHref)}">View booking details</a></div><section class="ui-panel booking-details" id="booking-details" tabindex="-1"><h2>Booking details</h2><p>${escapeHtml(content.details)}</p></section></section>`;
+  }
+  function signInOfferHtml(content) {
+    return `<section class="ui-panel" data-sign-in-offer aria-labelledby="sign-in-offer-title"><h2 id="sign-in-offer-title">${escapeHtml(GUEST_ACCOUNT_COPY.offerTitle)}</h2><p>${escapeHtml(GUEST_ACCOUNT_COPY.offerIntro)}</p><form method="post" action="/account/sign-in"><div class="ui-field"><label class="ui-field__label" for="sign-in-offer-email">${escapeHtml(GUEST_ACCOUNT_COPY.emailLabel)}</label><input id="sign-in-offer-email" name="email" type="email" autocomplete="email" inputmode="email" autocapitalize="off" spellcheck="false" maxlength="254" required value="${escapeHtml(content.email)}"></div><input type="hidden" name="return" value="${escapeHtml(content.returnPath)}"><button class="ui-button ui-button--secondary ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.offerButton)}</button></form></section>`;
   }
   function requestScreenHtml(content, ticket, breakdown, actionTotal) {
     const form = (action, primary) => `<form method="post" action="${escapeHtml(action.path)}">${action.surfaceId === void 0 ? "" : `<input type="hidden" name="surfaceId" value="${escapeHtml(action.surfaceId)}">`}<button class="ui-button ui-button--${primary ? "primary" : "secondary"} ui-button--block" type="submit"${action.surfaceId === "" ? " disabled" : ""}>${escapeHtml(action.label)}</button></form>`;
@@ -9497,6 +9572,10 @@ Known schemas:
         next?.element
       ]
     );
+  }
+  function organizeSignInOffer(mount, content) {
+    const root = mount.querySelector('[data-a2ui-component="Column"]');
+    root?.insertAdjacentHTML("beforeend", signInOfferHtml(content));
   }
   function organizeConfirmation(mount, content) {
     const root = mount.querySelector(
@@ -9928,6 +10007,8 @@ Known schemas:
       organizeOfferScreen(mount, activePayload.offerScreen);
     if (activePayload?.paymentScreen)
       organizePaymentScreen(mount, activePayload.paymentScreen);
+    if (activePayload?.signInOffer)
+      organizeSignInOffer(mount, activePayload.signInOffer);
   }
   function isMoney(text) {
     const value = text.trim();
@@ -9955,6 +10036,9 @@ Known schemas:
   }
   function isConfirmation(value) {
     return isRecord3(value) && typeof value.bookingReference === "string" && value.bookingReference !== "" && typeof value.depositCollected === "boolean" && isStringList(value.steps) && isSafeInternalRoute(value.conversationHref) && isSafeInternalRoute(value.detailsHref) && typeof value.details === "string";
+  }
+  function isSignInOffer(value) {
+    return isRecord3(value) && typeof value.email === "string" && typeof value.returnPath === "string";
   }
   function isRequestScreen(value) {
     if (!isRecord3(value) || typeof value.state !== "string" || !["draft", "review", "sent", "not-accepted"].includes(value.state) || typeof value.tone !== "string" || !["neutral", "warning", "danger"].includes(value.tone) || typeof value.title !== "string" || typeof value.status !== "string" || !isStringList(value.steps) || !isStringList(value.notes))
@@ -10009,6 +10093,8 @@ Known schemas:
     if (value.requestScreen !== void 0 && !isRequestScreen(value.requestScreen))
       return false;
     if (value.confirmation !== void 0 && !isConfirmation(value.confirmation))
+      return false;
+    if (value.signInOffer !== void 0 && !isSignInOffer(value.signInOffer))
       return false;
     if (value.offerScreen !== void 0 && !isOfferScreen(value.offerScreen))
       return false;

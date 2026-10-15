@@ -1,5 +1,5 @@
 import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
-import type { BookingContract } from "../../../domains/shortlet/src/card-payment.js";
+import type { BookingContract } from "../../../domains/shortlet/src/index.js";
 import type { BookingAmendmentApplication } from "./booking-amendment-application.js";
 import type { CheckoutAmendmentPort, EffectiveCheckoutTermsProvider } from "./checkout-overstay-application.js";
 /** Production Issue 18 bridge: checkout terms are read and written through the amendment application. */

@@ -7,6 +7,7 @@ import {
   type CommandPrincipal,
 } from "../../../packages/platform-core/src/index.js";
 import type { BookingRequestApplication } from "./booking-request-application.js";
+import { getBookingRequestManager } from "./booking-request-application.js";
 import type { OperatorRepresentativeAuthority } from "../../../domains/shortlet/src/index.js";
 import {
   conditionalOfferArtifactFromOffer,
@@ -20,15 +21,24 @@ export interface ConditionalOfferApplicationDependencies {
   readonly calendar?: unknown;
   readonly clock?: () => Date;
   readonly operatorAuthority?: OperatorRepresentativeAuthority;
-  readonly store?: import("../../../domains/shortlet/src/guest-interaction-store.js").SqliteGuestInteractionStore | null;
+  readonly store?: import("../../../domains/shortlet/src/index.js").SqliteGuestInteractionStore | null;
+}
+
+const managers = new WeakMap<ConditionalOfferApplication, ConditionalOfferManager>();
+/** Composition seam: the underlying domain manager, for wiring sibling applications. Not a public application API. */
+export function getConditionalOfferManager(application: ConditionalOfferApplication): ConditionalOfferManager {
+  const manager = managers.get(application);
+  if (!manager) throw new Error("ConditionalOfferApplication is not initialized");
+  return manager;
 }
 
 export class ConditionalOfferApplication {
-  readonly manager: ConditionalOfferManager;
+  readonly #manager: ConditionalOfferManager;
   readonly #clock: () => Date;
 
   constructor(manager: ConditionalOfferManager, clock: () => Date = () => new Date()) {
-    this.manager = manager;
+    this.#manager = manager;
+    managers.set(this, manager);
     this.#clock = clock;
   }
 
@@ -38,11 +48,16 @@ export class ConditionalOfferApplication {
       principal,
       payload: { requestId },
     });
-    return this.manager.issueOffer(envelope, { clock: this.#clock });
+    return this.#manager.issueOffer(envelope, { clock: this.#clock });
   }
 
   getArtifact(offerId: string, viewer: CommandPrincipal): ConditionalOfferArtifact {
-    return conditionalOfferArtifactFromOffer(this.manager.getOffer(offerId), viewer, this.#clock());
+    return conditionalOfferArtifactFromOffer(this.getOffer(offerId), viewer, this.#clock());
+  }
+
+  /** Façade read of the authoritative Conditional Booking Offer. */
+  getOffer(offerId: string): ConditionalBookingOffer {
+    return this.#manager.getOffer(offerId);
   }
 
   accept({
@@ -62,7 +77,7 @@ export class ConditionalOfferApplication {
       expectedVersion,
       payload: { offerId, confirmationToken },
     });
-    return this.manager.acceptOffer(envelope, { clock: this.#clock });
+    return this.#manager.acceptOffer(envelope, { clock: this.#clock });
   }
 }
 
@@ -76,7 +91,7 @@ export function createConditionalOfferApplication({
   return new ConditionalOfferApplication(
     new ConditionalOfferManager({
       ...managerDependencies,
-      bookingRequestManager: bookingRequestApplication.manager,
+      bookingRequestManager: getBookingRequestManager(bookingRequestApplication),
       operatorAuthority,
       store,
     }),

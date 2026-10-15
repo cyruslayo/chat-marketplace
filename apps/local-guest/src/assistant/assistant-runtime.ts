@@ -1,20 +1,5 @@
 import type { A2UIServerMessage } from "@weaver/core";
-import {
-  discoveryArtifactToA2UI,
-  bookingRequestArtifactToA2UI,
-  conditionalOfferArtifactToA2UI,
-  cardPaymentArtifactToA2UI,
-  bookingContractArtifactToA2UI,
-  unitDetailArtifactToA2UI,
-} from "../../../web-agent/src/index.js";
-import { unitDetailArtifactFromProjection } from "../../../web/src/unit-detail-artifact.js";
 import type { CommandPrincipal } from "../../../../packages/platform-core/src/index.js";
-import {
-  StayDateRange,
-  toDiscoveryProjection,
-  isEligibleUnit,
-  allInStayTotalKobo,
-} from "../../../../domains/shortlet/src/index.js";
 import type { LocalGuestEnvironment } from "../fixture.js";
 import type {
   AssistantConversationStep,
@@ -23,16 +8,19 @@ import type {
   AssistantToolResult,
 } from "./assistant-model.js";
 import {
-  ASSISTANT_SYSTEM_INSTRUCTION,
-  executeAssistantTool,
-  assistantToolsForState,
-  validateAssistantToolCall,
+  AssistantPackRegistry,
+  composeSystemInstruction,
   MAX_ASSISTANT_TOOL_ROUNDS,
+  PLATFORM_TASK_TOOLS,
+  PLATFORM_TASK_TOOL_NAMES,
+  type AssistantDomainPack,
   type AssistantToolContext,
-} from "./assistant-tools.js";
+} from "./assistant-platform.js";
+import { createShortletAssistantPack } from "./shortlet-assistant-pack.js";
 import {
   cloneTaskState,
   createInitialTaskState,
+  type AssistantTask,
   type AssistantTaskState,
   type AssistantThreadState,
 } from "./assistant-state.js";
@@ -42,7 +30,6 @@ import {
   type PendingAssistantAction,
 } from "./pending-actions.js";
 import {
-  pendingActionToA2UI,
   ASSISTANT_CONFIRM_ACTION_EVENT,
   ASSISTANT_CANCEL_ACTION_EVENT,
 } from "./pending-action-a2ui.js";
@@ -88,6 +75,8 @@ export interface AssistantDiagnosticEvent {
 
 export interface AssistantRuntimeOptions {
   readonly onDiagnostic?: (event: AssistantDiagnosticEvent) => void;
+  /** Additional domain packs to register (used by hosts that host more than one domain). */
+  readonly additionalPacks?: readonly AssistantDomainPack[];
 }
 
 interface AssistantEventContext {
@@ -109,11 +98,73 @@ export class AssistantRuntime {
   readonly #modelClient: AssistantModelClient;
   readonly #onDiagnostic?: (event: AssistantDiagnosticEvent) => void;
   readonly #threads = new Map<string, AssistantThreadState>();
+  readonly #packs = new AssistantPackRegistry();
 
   constructor(environment: LocalGuestEnvironment, modelClient: AssistantModelClient, options: AssistantRuntimeOptions = {}) {
     this.#environment = environment;
     this.#modelClient = modelClient;
     this.#onDiagnostic = options.onDiagnostic;
+    this.#packs.register(createShortletAssistantPack(environment));
+    for (const pack of options.additionalPacks ?? []) this.#packs.register(pack);
+  }
+
+  get #activePack(): AssistantDomainPack {
+    return this.#packs.active;
+  }
+
+  #packForThread(threadId: string): AssistantDomainPack {
+    const thread = this.#threads.get(threadId);
+    const domain = thread ? thread.tasks.find((task) => task.taskId === thread.activeTaskId)?.domain : undefined;
+    return (domain ? this.#packs.packFor(domain) : undefined) ?? this.#activePack;
+  }
+
+  #isPlatformTaskTool(name: string): boolean {
+    return PLATFORM_TASK_TOOL_NAMES.includes(name);
+  }
+
+  /** Starts or switches conversation tasks: the previous task's state is saved and the target's restored. */
+  #applyTaskTool(
+    name: string,
+    args: Record<string, unknown>,
+    tasks: AssistantTask[],
+    activeTaskId: string,
+    currentState: AssistantTaskState,
+  ): { state: AssistantTaskState; activeTaskId: string; result: Record<string, unknown> } {
+    const active = tasks.find((task) => task.taskId === activeTaskId);
+    if (active) active.state = currentState;
+
+    if (name === "switch_task") {
+      const targetId = typeof args.taskId === "string" ? args.taskId : "";
+      const target = tasks.find((task) => task.taskId === targetId);
+      if (!target) return { state: currentState, activeTaskId, result: { error: "UNKNOWN_TASK", message: "That task is not in this conversation." } };
+      return { state: cloneTaskState(target.state), activeTaskId: target.taskId, result: { switched: target.taskId, domain: target.domain } };
+    }
+
+    const domain = typeof args.domain === "string" ? args.domain : "";
+    if (!this.#packs.packFor(domain)) {
+      return { state: currentState, activeTaskId, result: { error: "UNKNOWN_DOMAIN", message: "That domain is not registered." } };
+    }
+    const existing = tasks.find((task) => task.domain === domain);
+    if (existing) return { state: cloneTaskState(existing.state), activeTaskId: existing.taskId, result: { started: domain, taskId: existing.taskId } };
+    const created: AssistantTask = { taskId: `task-${tasks.length + 1}`, domain, state: createInitialTaskState() };
+    tasks.push(created);
+    return { state: createInitialTaskState(), activeTaskId: created.taskId, result: { started: domain, taskId: created.taskId } };
+  }
+
+  /** With more than one domain registered, a cross-domain intent asks for confirmation rather than switching. */
+  #route(text: string, activeDomain: string): AssistantTurnOutput | undefined {
+    const lower = text.toLowerCase();
+    const active = this.#packs.packFor(activeDomain) ?? this.#activePack;
+    if (active.intentKeywords.some((keyword) => lower.includes(keyword))) return undefined;
+    for (const id of this.#packs.ids()) {
+      if (id === active.id) continue;
+      const pack = this.#packs.packFor(id);
+      if (pack?.intentKeywords.some((keyword) => lower.includes(keyword))) {
+        const label = `${id.charAt(0).toUpperCase()}${id.slice(1)}`;
+        return { ok: true, messages: [`Start a ${label} search? Your ${active.id} search is saved.`], surfaces: [] };
+      }
+    }
+    return undefined;
   }
 
   get environment(): LocalGuestEnvironment {
@@ -127,12 +178,15 @@ export class AssistantRuntime {
   getThread(threadId: string): AssistantThreadState {
     let thread = this.#threads.get(threadId);
     if (!thread) {
+      const initialTask: AssistantTask = { taskId: "task-1", domain: this.#activePack.id, state: createInitialTaskState() };
       thread = {
         threadId,
         guestActorId: this.#environment.config.guestId,
         tenantId: this.#environment.config.tenantId,
         conversationHistory: [],
-        taskState: createInitialTaskState(),
+        tasks: [initialTask],
+        activeTaskId: initialTask.taskId,
+        taskState: initialTask.state,
         activeSurfaces: new Map(),
         supersededSurfaces: new Set(),
         discoveryArtifactId: null,
@@ -147,12 +201,21 @@ export class AssistantRuntime {
 
     // 1. Transactional Candidates (Item 24)
     // Work on clones so provider/tool failures don't leave partial state
-    const candidateTaskState = cloneTaskState(thread.taskState);
+    let candidateTaskState = cloneTaskState(thread.taskState);
+    let candidateActiveTaskId = thread.activeTaskId;
+    const candidateTasks: AssistantTask[] = thread.tasks.map((task) => ({ ...task }));
     const candidateHistory: AssistantConversationStep[] = [...thread.conversationHistory];
     const candidateSurfaces: { surfaceId: string; a2uiMessages: readonly unknown[] }[] = [];
     const candidateActiveSurfaces = new Map<string, string>(thread.activeSurfaces);
     const candidateSuperseded = new Set<string>(thread.supersededSurfaces);
     let candidateDiscoveryArtifactId = thread.discoveryArtifactId;
+
+    // The active task decides the active pack: its tools, prompt and projections.
+    const candidateDomain = () => candidateTasks.find((task) => task.taskId === candidateActiveTaskId)?.domain ?? this.#activePack.id;
+    const candidatePack = () => this.#packs.packFor(candidateDomain()) ?? this.#activePack;
+    const taskTools = () => this.#packs.size > 1
+      ? [...PLATFORM_TASK_TOOLS, ...candidatePack().toolsForState(candidateTaskState)]
+      : [...candidatePack().toolsForState(candidateTaskState)];
 
     const supersede = (stage: string) => {
       const surfaceId = candidateActiveSurfaces.get(stage);
@@ -210,6 +273,13 @@ export class AssistantRuntime {
       }
     }
 
+    // 2b. Router: with more than one domain registered, a cross-domain intent asks for confirmation
+    // before any switch (never a silent task switch).
+    if (this.#packs.size > 1) {
+      const routed = this.#route(text, candidateDomain());
+      if (routed) return routed;
+    }
+
     // 3. User message turn
     candidateHistory.push({ role: "user", text });
 
@@ -230,8 +300,8 @@ export class AssistantRuntime {
         const isFunctionResultContinuation = round > 1 && candidateHistory.at(-1)?.role === "tool_results";
         activeStage = isFunctionResultContinuation ? "function_result_round_trip" : "provider_request";
         const modelResponse = await this.#modelClient.generate({
-          systemInstruction: ASSISTANT_SYSTEM_INSTRUCTION,
-          tools: assistantToolsForState(candidateTaskState),
+          systemInstruction: composeSystemInstruction(candidatePack()),
+          tools: taskTools(),
           history: candidateHistory,
           timeoutMs: 20_000,
         });
@@ -265,7 +335,11 @@ export class AssistantRuntime {
         for (const call of modelResponse.toolCalls) {
           activeStage = "tool_execution";
           activeToolName = call.name;
-          const invalidCall = validateAssistantToolCall(call.name, call.args, candidateTaskState);
+          const offered = taskTools().some((tool) => tool.name === call.name);
+          const precondition = this.#isPlatformTaskTool(call.name)
+            ? undefined
+            : candidatePack().validateToolCall(call.name, call.args, candidateTaskState);
+          const invalidCall = precondition ?? (offered ? undefined : { code: "invalid_tool_for_state" as const, message: "That operation is not available for the current Guest workflow." });
           if (invalidCall) {
             this.#diagnose({
               stage: "tool_execution",
@@ -282,6 +356,13 @@ export class AssistantRuntime {
             });
             continue;
           }
+          if (this.#isPlatformTaskTool(call.name)) {
+            const applied = this.#applyTaskTool(call.name, call.args, candidateTasks, candidateActiveTaskId, candidateTaskState);
+            candidateTaskState = applied.state;
+            candidateActiveTaskId = applied.activeTaskId;
+            toolResults.push({ callId: call.id, name: call.name, result: applied.result });
+            continue;
+          }
           const toolContext: AssistantToolContext = {
             environment: this.#environment,
             taskState: candidateTaskState,
@@ -292,7 +373,7 @@ export class AssistantRuntime {
           };
 
           activeStage = "application_operation";
-          const execution = executeAssistantTool(call.name, call.args, toolContext);
+          const execution = candidatePack().executeTool(call.name, call.args, toolContext);
           hasSuccessfulApplicationOperation = true;
           const resultCount = getSafeResultCount(execution.result);
           this.#diagnose({
@@ -324,7 +405,7 @@ export class AssistantRuntime {
             activeStage = "a2ui";
             candidateSurfaces.push({
               surfaceId,
-              a2uiMessages: discoveryArtifactToA2UI({ artifact: execution.discoveryArtifact, surfaceId }),
+              a2uiMessages: candidatePack().discoverySurface(execution.discoveryArtifact, surfaceId),
             });
           } else if (call.name === "get_unit_details") {
             const stayRef = String(call.args.stayRef ?? "").trim();
@@ -335,19 +416,11 @@ export class AssistantRuntime {
               supersede(UNIT_STAGE);
               candidateActiveSurfaces.set(UNIT_STAGE, surfaceId);
 
-              const unit = this.#environment.unitRepository.findById(stay.unitId);
-              if (!unit) throw new Error("The selected Unit no longer exists");
               const checkIn = candidateTaskState.stayIntent.checkIn ?? this.#environment.config.demoCheckIn;
               const checkOut = candidateTaskState.stayIntent.checkOut ?? this.#environment.config.demoCheckOut;
               if (!checkOut) throw new Error("The selected stay has no checkout date");
-              const unitProjection = toDiscoveryProjection(
-                unit,
-                new StayDateRange(checkIn, checkOut, this.#environment.clock()),
-              );
-
-              const unitDetailArtifact = unitDetailArtifactFromProjection({ unit: unitProjection, checkIn, checkOut, projectionVersion: 1, viewer: this.#environment.guestPrincipal() });
               activeStage = "a2ui";
-              const a2uiMessages = unitDetailArtifactToA2UI({ artifact: unitDetailArtifact, surfaceId });
+              const a2uiMessages = candidatePack().unitDetailSurface({ unitId: stay.unitId, checkIn, checkOut, surfaceId });
 
               candidateSurfaces.push({ surfaceId, a2uiMessages });
             }
@@ -367,10 +440,7 @@ export class AssistantRuntime {
             candidateActiveSurfaces.set(PENDING_ACTION_STAGE, surfaceId);
 
             activeStage = "a2ui";
-            const a2uiMessages = pendingActionToA2UI({
-              action,
-              surfaceId,
-            });
+            const a2uiMessages = candidatePack().pendingActionSurface(action, surfaceId);
             candidateSurfaces.push({ surfaceId, a2uiMessages });
           }
         }
@@ -388,7 +458,7 @@ export class AssistantRuntime {
         round++;
         activeStage = "function_result_round_trip";
         const finalModelResponse = await this.#modelClient.generate({
-          systemInstruction: ASSISTANT_SYSTEM_INSTRUCTION,
+          systemInstruction: composeSystemInstruction(candidatePack()),
           tools: [],
           history: candidateHistory,
         });
@@ -402,6 +472,8 @@ export class AssistantRuntime {
 
       // 4. Commit Transaction (Item 24)
       thread.taskState = candidateTaskState;
+      thread.tasks = candidateTasks;
+      thread.activeTaskId = candidateActiveTaskId;
       thread.conversationHistory.length = 0;
       thread.conversationHistory.push(...candidateHistory);
       thread.activeSurfaces = candidateActiveSurfaces;
@@ -419,6 +491,8 @@ export class AssistantRuntime {
         const message = fallbackForProjectedOperation(candidateSurfaces[0]?.surfaceId ?? "");
         candidateHistory.push({ role: "assistant", text: message });
         thread.taskState = candidateTaskState;
+        thread.tasks = candidateTasks;
+        thread.activeTaskId = candidateActiveTaskId;
         thread.conversationHistory.length = 0;
         thread.conversationHistory.push(...candidateHistory);
         thread.activeSurfaces = candidateActiveSurfaces;
@@ -551,47 +625,18 @@ export class AssistantRuntime {
         const environment = this.#environment;
         const guest: CommandPrincipal = environment.guestPrincipal();
 
-        // Pre-execution revalidation: re-read current Unit/discovery truth for the same Unit, dates, and party size
-        const currentUnit = environment.unitRepository.findById(refs.unitId);
-        if (!currentUnit) {
+        // Pre-execution revalidation: re-read current Unit/discovery truth for the same Unit, dates, and party size.
+        const verdict = this.#packForThread(threadId).revalidateProposal(action);
+        if (!verdict.ok) {
           context.candidateTaskState.pendingAction = null;
-          return { ok: false, code: "STALE_SURFACE", message: "The requested accommodation is no longer available. Please explore current stays." };
-        }
-
-        let dateRange: StayDateRange;
-        try {
-          dateRange = new StayDateRange(refs.checkIn, refs.checkOut, environment.clock());
-        } catch {
-          context.candidateTaskState.pendingAction = null;
-          return { ok: false, code: "STALE_SURFACE", message: "The stay dates are no longer valid. Please select current dates." };
-        }
-
-        const partySize = refs.partySize ?? 1;
-        const eligible = isEligibleUnit(currentUnit, environment.clock(), dateRange);
-        const capacityOk = currentUnit.capacity >= partySize;
-        const notBlocked = !currentUnit.blockedDates?.some((range: any) => dateRange.overlaps(range));
-
-        if (!eligible || !capacityOk || !notBlocked) {
-          context.candidateTaskState.pendingAction = null;
-          return { ok: false, code: "STALE_SURFACE", message: "This stay is no longer available for your dates and party size. Please choose another stay." };
-        }
-
-        // Verify displayed pricing is still consistent
-        const currentStayTotal = allInStayTotalKobo(currentUnit, dateRange);
-        if (refs.stayTotalKobo !== undefined && currentStayTotal !== null && refs.stayTotalKobo !== currentStayTotal) {
-          context.candidateTaskState.pendingAction = null;
-          return { ok: false, code: "STALE_SURFACE", message: "Pricing for this stay has changed. Please review the updated quote." };
-        }
-        if (refs.refundableDepositKobo !== undefined && currentUnit.price?.refundableSecurityDepositKobo !== refs.refundableDepositKobo) {
-          context.candidateTaskState.pendingAction = null;
-          return { ok: false, code: "STALE_SURFACE", message: "The security deposit requirement has changed. Please review the updated quote." };
+          return { ok: false, code: verdict.code, message: verdict.message };
         }
 
         const draft = environment.bookingRequestApp.createDraft(
           {
             unitId: refs.unitId,
             primaryGuest: { id: environment.config.guestId, name: environment.config.guestName },
-            occupants: environment.demoOccupants(partySize),
+            occupants: environment.demoOccupants(refs.partySize ?? 1),
             selfBookingAttestation: environment.selfBookingAttestation(),
             checkIn: refs.checkIn,
             checkOut: refs.checkOut,
@@ -631,7 +676,7 @@ export class AssistantRuntime {
             surfaces: [
               {
                 surfaceId: requestSurfaceId,
-                a2uiMessages: bookingRequestArtifactToA2UI({ artifact: requestArtifact, surfaceId: requestSurfaceId }),
+                a2uiMessages: this.#packForThread(threadId).bookingRequestSurface(requestArtifact, requestSurfaceId),
               },
             ],
           };
@@ -652,11 +697,11 @@ export class AssistantRuntime {
             surfaces: [
               {
                 surfaceId: requestSurfaceId,
-                a2uiMessages: bookingRequestArtifactToA2UI({ artifact: requestArtifact, surfaceId: requestSurfaceId }),
+                a2uiMessages: this.#packForThread(threadId).bookingRequestSurface(requestArtifact, requestSurfaceId),
               },
               {
                 surfaceId: offerSurfaceId,
-                a2uiMessages: conditionalOfferArtifactToA2UI({ artifact: offerArtifact, surfaceId: offerSurfaceId }),
+                a2uiMessages: this.#packForThread(threadId).conditionalOfferSurface(offerArtifact, offerSurfaceId),
               },
             ],
           };
@@ -678,7 +723,7 @@ export class AssistantRuntime {
             surfaces: [
               {
                 surfaceId: requestSurfaceId,
-                a2uiMessages: bookingRequestArtifactToA2UI({ artifact: requestArtifact, surfaceId: requestSurfaceId }),
+                a2uiMessages: this.#packForThread(threadId).bookingRequestSurface(requestArtifact, requestSurfaceId),
               },
             ],
           };
@@ -732,7 +777,7 @@ export class AssistantRuntime {
             surfaces: [
               {
                 surfaceId: paymentSurfaceId,
-                a2uiMessages: cardPaymentArtifactToA2UI({ artifact: paymentArtifact, surfaceId: paymentSurfaceId }),
+                a2uiMessages: this.#packForThread(threadId).cardPaymentSurface(paymentArtifact, paymentSurfaceId),
               },
             ],
           };
@@ -771,7 +816,7 @@ export class AssistantRuntime {
           return { ok: false, code: "STALE_SURFACE", message: "Payment details or amounts have changed. Please review the updated checkout." };
         }
 
-        let session = this.#environment.cardPaymentApp.manager.getCheckoutSession(offerId);
+        let session = this.#environment.cardPaymentApp.getCheckoutSession(offerId);
         if (!session) {
           session = this.#environment.cardPaymentApp.initializeCheckout(offerId, this.#environment.guestPrincipal());
         }
@@ -811,11 +856,11 @@ export class AssistantRuntime {
             surfaces: [
               {
                 surfaceId: paymentSurfaceId,
-                a2uiMessages: cardPaymentArtifactToA2UI({ artifact: updatedPaymentArtifact, surfaceId: paymentSurfaceId }),
+                a2uiMessages: this.#packForThread(threadId).cardPaymentSurface(updatedPaymentArtifact, paymentSurfaceId),
               },
               {
                 surfaceId: bookingSurfaceId,
-                a2uiMessages: bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: bookingSurfaceId }),
+                a2uiMessages: this.#packForThread(threadId).bookingContractSurface(contractArtifact, bookingSurfaceId),
               },
             ],
           };

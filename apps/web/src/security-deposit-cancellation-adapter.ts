@@ -1,4 +1,4 @@
-import type { SecurityDepositAccountingRepository } from "../../../domains/shortlet/src/security-deposit-accounting.js";
+import type { SecurityDepositAccountingRepository } from "../../../domains/shortlet/src/index.js";
 import type { SecurityDepositCancellationRefundPort } from "./cancellation-application.js";
 
 export interface SecurityDepositOriginalSourceRefundProvider {

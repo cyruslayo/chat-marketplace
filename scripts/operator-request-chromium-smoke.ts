@@ -41,7 +41,7 @@ try {
   await login.waitForText("Decline Booking Request");
   await login.clickButton("Decline Booking Request");
   await new Promise((resolve) => setTimeout(resolve, 250));
-  if (guest.bookingRequestApp.manager.getRequest(secondRequest.requestId).status !== "declined") throw new Error("Guest decline was not persisted");
+  if (guest.bookingRequestApp.getRequest(secondRequest.requestId).status !== "declined") throw new Error("Guest decline was not persisted");
   console.log("operator Chromium decline journey: passed");
   await login.close();
 } finally {

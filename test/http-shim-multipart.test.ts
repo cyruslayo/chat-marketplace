@@ -99,7 +99,7 @@ test("09c AC2: a multipart receipt upload (no-JS form, ADR 0080) parses in the g
     );
     const request = environment.bookingRequestApp.disclose(draft.draftId, principal);
     const { offerId } = environment.simulateOperatorAcceptance(request.requestId);
-    const offer = environment.conditionalOfferApp.manager.getOffer(offerId);
+    const offer = environment.conditionalOfferApp.getOffer(offerId);
     environment.conditionalOfferApp.accept({
       offerId,
       confirmationToken: offer.confirmationToken,

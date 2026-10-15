@@ -78,17 +78,17 @@ test("Paystack callback and handoff routes restore authoritative state in real C
     providerStatus = "pending";
     await tab.navigate(`${base}/payments/paystack/callback?reference=${encodeURIComponent(providerReference)}`);
     assert.equal((await tab.evaluate<string>("location.href")).startsWith(`${base}/?threadId=`), true);
-    assert.equal(environment.cardPaymentApp.manager.getPaymentJourney(offerId)?.stage, "stay_payment_processing");
+    assert.equal(environment.cardPaymentApp.getPaymentJourney(offerId)?.stage, "stay_payment_processing");
 
     providerStatus = "success";
     await tab.navigate(`${base}/payments/paystack/callback?reference=${encodeURIComponent(providerReference)}`);
     assert.equal((await tab.evaluate<string>("location.href")).startsWith(`${base}/?threadId=`), true);
-    assert.equal(environment.cardPaymentApp.manager.getPaymentJourney(offerId)?.stage, "stay_settled");
+    assert.equal(environment.cardPaymentApp.getPaymentJourney(offerId)?.stage, "stay_settled");
     await tab.navigate(`${base}/payments/offers/${encodeURIComponent(offerId)}/continue`);
     const depositReference = providerReference;
     assert.notEqual(depositReference, "");
     await tab.navigate(`${base}/payments/paystack/callback?reference=${encodeURIComponent(depositReference)}`);
-    assert.equal(environment.cardPaymentApp.manager.getPaymentJourney(offerId)?.stage, "confirmed");
+    assert.equal(environment.cardPaymentApp.getPaymentJourney(offerId)?.stage, "confirmed");
 
     await tab.navigate(`${base}/payments/paystack/callback?reference=${encodeURIComponent(providerReference)}`);
     assert.equal(environment.interactionStore.listBookingSnapshotOfferIds().length, 1);

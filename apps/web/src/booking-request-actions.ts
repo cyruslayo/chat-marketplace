@@ -1,5 +1,6 @@
 import type { WebServerEventHandoff } from "@weaver/web";
-import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
+import type { ActionSpec, CommandPrincipal } from "../../../packages/platform-core/src/index.js";
+import { resolveAction } from "../../../packages/platform-core/src/index.js";
 import {
   BOOKING_REQUEST_ARTIFACT_KIND,
   BOOKING_REQUEST_SCHEMA_VERSION,
@@ -10,7 +11,6 @@ import { BookingRequestApplication } from "./booking-request-application.js";
 export const BOOKING_REQUEST_CONFIRM_EVENT = "shortlet.booking-request.confirm";
 export const BOOKING_REQUEST_DECLINE_EVENT = "shortlet.booking-request.decline";
 
-type BookingRequestEventName = typeof BOOKING_REQUEST_CONFIRM_EVENT | typeof BOOKING_REQUEST_DECLINE_EVENT;
 export type BookingRequestServerEventRejectionCode =
   | "UNSUPPORTED_ACTION" | "INVALID_CONTEXT" | "INVALID_ARTIFACT" | "ARTIFACT_MISMATCH"
   | "REQUEST_MISMATCH" | "STALE_ACTION" | "ACTION_NOT_AUTHORIZED";
@@ -35,34 +35,55 @@ interface BookingRequestActionContext {
   readonly projectionVersion: number;
 }
 
-function reject(code: BookingRequestServerEventRejectionCode, message: string): BookingRequestServerEventRejection {
-  return { ok: false, code, message };
-}
-
-function readContext(event: WebServerEventHandoff): BookingRequestActionContext | undefined {
-  const context: unknown = event?.message?.action?.context;
-  if (context === null || typeof context !== "object" || Array.isArray(context)) return undefined;
-  const record = context as Record<string, unknown>;
-  const keys = Object.keys(record);
-  if (keys.length !== 4 || !keys.every((key) => ["artifactId", "requestId", "expectedStatus", "projectionVersion"].includes(key))) return undefined;
-  if (typeof record.artifactId !== "string" || record.artifactId.trim() === "") return undefined;
-  if (typeof record.requestId !== "string" || record.requestId.trim() === "") return undefined;
-  if (typeof record.expectedStatus !== "string" || record.expectedStatus.trim() === "") return undefined;
-  if (typeof record.projectionVersion !== "number" || !Number.isInteger(record.projectionVersion)) return undefined;
+function bookingRequestSpec(
+  name: typeof BOOKING_REQUEST_CONFIRM_EVENT | typeof BOOKING_REQUEST_DECLINE_EVENT,
+  action: "confirm" | "decline",
+  application: BookingRequestApplication,
+  load: (context: BookingRequestActionContext, principal: CommandPrincipal) => BookingRequestArtifact,
+): ActionSpec<BookingRequestActionContext, BookingRequestArtifact, { readonly requestId: string }> {
   return {
-    artifactId: record.artifactId,
-    requestId: record.requestId,
-    expectedStatus: record.expectedStatus,
-    projectionVersion: record.projectionVersion,
+    name,
+    artifact: {
+      kind: BOOKING_REQUEST_ARTIFACT_KIND,
+      schemaVersion: BOOKING_REQUEST_SCHEMA_VERSION,
+      load,
+      validate: (artifact) =>
+        artifact.id === `booking-request:${artifact.facts.requestId}` &&
+        Number.isInteger(artifact.projectionVersion) &&
+        Array.isArray(artifact.actions),
+    },
+    context: {
+      required: {
+        artifactId: { type: "string", nonEmpty: true },
+        requestId: { type: "string", nonEmpty: true },
+        expectedStatus: { type: "string", nonEmpty: true },
+        projectionVersion: { type: "integer" },
+      },
+    },
+    crossMatch: (context, artifact) =>
+      context.artifactId !== artifact.id
+        ? { code: "ARTIFACT_MISMATCH", message: "The action does not match the authoritative artifact." }
+        : context.requestId !== artifact.facts.requestId
+          ? { code: "REQUEST_MISMATCH", message: "The action does not match the Booking Request." }
+          : true,
+    expect: [
+      { expected: (context) => context.expectedStatus, actual: (artifact) => artifact.facts.status },
+      { expected: (context) => context.projectionVersion, actual: (artifact) => artifact.projectionVersion },
+    ],
+    isAuthorized: (context, artifact) =>
+      artifact.actions.some((candidate) => candidate.type === action && candidate.requestId === context.requestId),
+    command: (context) => ({
+      commandName: action === "confirm" ? "booking_request.confirm" : "booking_request.decline",
+      payload: { requestId: context.requestId },
+    }),
+    run: ({ context, principal }) => {
+      const result = action === "confirm"
+        ? application.confirm({ ...context, action, principal })
+        : application.decline({ ...context, action, principal });
+      return application.getArtifact(result.requestId, principal);
+    },
+    rejectionMessages: { stale: "The action is stale; refresh the Booking Request.", runRejected: "The Booking Request action was rejected." },
   };
-}
-
-function validArtifact(artifact: BookingRequestArtifact): boolean {
-  return artifact.kind === BOOKING_REQUEST_ARTIFACT_KIND
-    && artifact.schemaVersion === BOOKING_REQUEST_SCHEMA_VERSION
-    && artifact.id === `booking-request:${artifact.facts.requestId}`
-    && Number.isInteger(artifact.projectionVersion)
-    && Array.isArray(artifact.actions);
 }
 
 export function resolveBookingRequestServerEvent({
@@ -76,30 +97,13 @@ export function resolveBookingRequestServerEvent({
   readonly application: BookingRequestApplication;
   readonly principal: CommandPrincipal;
 }): BookingRequestServerEventResult {
-  const name = event?.message?.action?.name;
-  if (name !== BOOKING_REQUEST_CONFIRM_EVENT && name !== BOOKING_REQUEST_DECLINE_EVENT) {
-    return reject("UNSUPPORTED_ACTION", "The action is not supported.");
-  }
-  const context = readContext(event);
-  if (!context) return reject("INVALID_CONTEXT", "The action context is invalid.");
-  if (!validArtifact(artifact)) return reject("INVALID_ARTIFACT", "The authoritative artifact is invalid.");
-  if (context.artifactId !== artifact.id) return reject("ARTIFACT_MISMATCH", "The action does not match the authoritative artifact.");
-  if (context.requestId !== artifact.facts.requestId) return reject("REQUEST_MISMATCH", "The action does not match the Booking Request.");
-  if (context.expectedStatus !== artifact.facts.status || context.projectionVersion !== artifact.projectionVersion) {
-    return reject("STALE_ACTION", "The action is stale; refresh the Booking Request.");
-  }
-  const action = name === BOOKING_REQUEST_CONFIRM_EVENT ? "confirm" : "decline";
-  if (!artifact.actions.some((candidate) => candidate.type === action && candidate.requestId === context.requestId)) {
-    return reject("ACTION_NOT_AUTHORIZED", "The requested action is not authorized.");
-  }
-  try {
-    const result = action === "confirm"
-      ? application.confirm({ ...context, action, principal })
-      : application.decline({ ...context, action, principal });
-    return { ok: true, artifact: application.getArtifact(result.requestId, principal) };
-  } catch {
-    return reject("ACTION_NOT_AUTHORIZED", "The Booking Request action was rejected.");
-  }
+  const specs = [
+    bookingRequestSpec(BOOKING_REQUEST_CONFIRM_EVENT, "confirm", application, () => artifact),
+    bookingRequestSpec(BOOKING_REQUEST_DECLINE_EVENT, "decline", application, () => artifact),
+  ];
+  const outcome = resolveAction(event, specs, principal);
+  if (!outcome.ok) return { ok: false, code: outcome.code as BookingRequestServerEventRejectionCode, message: outcome.message };
+  return { ok: true, artifact: outcome.artifact };
 }
 
 export interface CreateBookingRequestServerEventHandlerOptions {
@@ -118,29 +122,17 @@ export function createBookingRequestServerEventHandler({
   onRejected,
 }: CreateBookingRequestServerEventHandlerOptions): (event: WebServerEventHandoff) => void {
   return (event) => {
-    const name = event?.message?.action?.name;
-    if (name !== BOOKING_REQUEST_CONFIRM_EVENT && name !== BOOKING_REQUEST_DECLINE_EVENT) {
-      onRejected?.(reject("UNSUPPORTED_ACTION", "The action is not supported."));
-      return;
-    }
-    const context = readContext(event);
-    if (!context) {
-      onRejected?.(reject("INVALID_CONTEXT", "The action context is invalid."));
-      return;
-    }
     const principal = getPrincipal();
-    let artifact: BookingRequestArtifact;
-    try {
-      artifact = getArtifact(context.requestId, principal);
-    } catch {
-      onRejected?.(reject("INVALID_ARTIFACT", "No authoritative artifact is available."));
+    const load = (context: BookingRequestActionContext) => getArtifact(context.requestId, principal);
+    const specs = [
+      bookingRequestSpec(BOOKING_REQUEST_CONFIRM_EVENT, "confirm", application, load),
+      bookingRequestSpec(BOOKING_REQUEST_DECLINE_EVENT, "decline", application, load),
+    ];
+    const outcome = resolveAction(event, specs, principal);
+    if (!outcome.ok) {
+      onRejected?.({ ok: false, code: outcome.code as BookingRequestServerEventRejectionCode, message: outcome.message });
       return;
     }
-    const result = resolveBookingRequestServerEvent({ event, artifact, application, principal });
-    if (!result.ok) {
-      onRejected?.(result);
-      return;
-    }
-    onUpdated(result.artifact);
+    onUpdated(outcome.artifact);
   };
 }

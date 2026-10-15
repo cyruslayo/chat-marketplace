@@ -1,9 +1,9 @@
 import { createPlatformCommandEnvelope, type CommandPrincipal } from "../../../packages/platform-core/src/index.js";
-import type { BookingStateRepository } from "../../../domains/shortlet/src/booking-state.js";
-import type { BookingContract, Reservation } from "../../../domains/shortlet/src/card-payment.js";
-import { RevenueReleaseManager, type AuthoritativeRevenueEconomics, type ProductionRevenueReleaseRecord } from "../../../domains/shortlet/src/revenue-release.js";
-import type { RevenueAccountingRepository, RevenueAdjustmentRecord } from "../../../domains/shortlet/src/revenue-accounting.js";
-import { journal } from "../../../domains/shortlet/src/revenue-accounting.js";
+import type { BookingStateRepository } from "../../../domains/shortlet/src/index.js";
+import type { BookingContract, Reservation } from "../../../domains/shortlet/src/index.js";
+import { RevenueReleaseManager, type AuthoritativeRevenueEconomics, type ProductionRevenueReleaseRecord } from "../../../domains/shortlet/src/index.js";
+import type { RevenueAccountingRepository, RevenueAdjustmentRecord } from "../../../domains/shortlet/src/index.js";
+import { journal } from "../../../domains/shortlet/src/index.js";
 import { revenueReleaseArtifact, type RevenueReleaseArtifact } from "./revenue-release-artifact.js";
 
 export interface RevenueReleaseAccessProvider { getAccess(reservationId: string): { readonly version: string; readonly status: "awaiting_access" | "verified_access" | "late_voluntary_arrival" | "failed_access" | "under_human_review"; readonly verifiedAt?: string; readonly protectionWindowStartsAt?: string }; }
@@ -27,7 +27,8 @@ function releaseMatches(release: ProductionRevenueReleaseRecord, reservation: Re
 
 export class RevenueReleaseApplication {
   readonly #o: RevenueReleaseApplicationOptions;
-  constructor(options: RevenueReleaseApplicationOptions) { this.#o = options; }
+  readonly #manager: RevenueReleaseManager;
+  constructor(options: RevenueReleaseApplicationOptions) { this.#o = options; this.#manager = options.manager; }
   #evaluate(reservation: Reservation, contract: BookingContract): RevenueEligibilityEvaluation {
     // ADR 0074: terminal Reservation lifecycle state is authoritative and must fail closed before mutable gates.
     if (reservation.status === "cancelled") return { status: "blocked", blockerReasonCodes: ["cancelled_reservation"] };
@@ -60,7 +61,7 @@ export class RevenueReleaseApplication {
     if (existing) { if (!releaseMatches(existing, reservation, contract)) throw new Error("Existing Revenue Release authority mismatch"); return existing; }
     if (reservation.status !== "confirmed") throw new Error("Revenue release requires a confirmed Reservation");
     const evaluation = this.#evaluate(reservation, contract); if (evaluation.status !== "eligible" || !evaluation.economics || !evaluation.plan || !evaluation.checkout || !evaluation.risk) { if (evaluation.status === "awaiting_access") throw new Error("Revenue release requires authoritative Verified Access"); throw new Error(`Revenue release blocked: ${evaluation.blockerReasonCodes.join(",")}`); }
-    const result = this.#o.manager.commitProductionRelease({ reservationId, contractId: contract.contractId, contractVersion: contract.contractVersion, unitId: contract.unitId, tenantId: contract.tenantId ?? "", operatorId: contract.parties.operator.id, accessVersion: evaluation.access!.version, accessStatus: evaluation.access!.status as "verified_access" | "late_voluntary_arrival", verifiedAccessAt: evaluation.access!.verifiedAt!, protectionWindowStartsAt: evaluation.access!.protectionWindowStartsAt!, economics: evaluation.economics, payoutPlan: evaluation.plan.plan, payoutPlanVersion: evaluation.plan.planVersion, effectiveCheckoutAt: evaluation.checkout.checkoutIso, effectiveCheckoutVersion: evaluation.checkout.version, riskHoldVersion: evaluation.risk.version, riskHoldKobo: evaluation.risk.amountKobo, now: this.#o.clock() }, this.#o.accounting);
+    const result = this.#manager.commitProductionRelease({ reservationId, contractId: contract.contractId, contractVersion: contract.contractVersion, unitId: contract.unitId, tenantId: contract.tenantId ?? "", operatorId: contract.parties.operator.id, accessVersion: evaluation.access!.version, accessStatus: evaluation.access!.status as "verified_access" | "late_voluntary_arrival", verifiedAccessAt: evaluation.access!.verifiedAt!, protectionWindowStartsAt: evaluation.access!.protectionWindowStartsAt!, economics: evaluation.economics, payoutPlan: evaluation.plan.plan, payoutPlanVersion: evaluation.plan.planVersion, effectiveCheckoutAt: evaluation.checkout.checkoutIso, effectiveCheckoutVersion: evaluation.checkout.version, riskHoldVersion: evaluation.risk.version, riskHoldKobo: evaluation.risk.amountKobo, now: this.#o.clock() }, this.#o.accounting);
     this.#o.audit?.record({ type: "revenue_release.committed", releaseId: result.releaseId, reservationId, contractVersion: contract.contractVersion, accessVersion: evaluation.access!.version, economicsVersion: evaluation.economics.economicsVersion, commissionPolicyVersion: evaluation.economics.commissionPolicyVersion, commissionRate: evaluation.economics.capturedCommissionRate, ledgerJournalId: result.ledgerJournalId, commandId: envelope.commandId, serverTimestamp: result.releasedAt }); return result;
   }
   postAdjustment(adjustmentRef: string, principal: CommandPrincipal): RevenueAdjustmentRecord {

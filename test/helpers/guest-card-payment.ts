@@ -62,9 +62,9 @@ export function guestCardPayments(
     },
     pspClient: {
       verifyTransaction: (pspReference: string) => {
-        const session = app.manager.getCheckoutSessionByReference(pspReference);
+        const session = app.getCheckoutSessionByReference(pspReference);
         const payerId = session
-          ? env.conditionalOfferApp.manager.getOffer(session.offerId).parties
+          ? env.conditionalOfferApp.getOffer(session.offerId).parties
               .primaryGuest.id
           : undefined;
         return {
@@ -113,7 +113,7 @@ export function guestCardPayments(
     return offer.offerId;
   };
   const guestFor = (offerId: string): CommandPrincipal => {
-    const offer = env.conditionalOfferApp.manager.getOffer(offerId);
+    const offer = env.conditionalOfferApp.getOffer(offerId);
     return {
       id: offer.parties.primaryGuest.id,
       role: "guest",
@@ -128,7 +128,7 @@ export function guestCardPayments(
 
   const accept = (requestId: string): string => {
     const offerId = offerIdFor(requestId);
-    const offer = env.conditionalOfferApp.manager.getOffer(offerId);
+    const offer = env.conditionalOfferApp.getOffer(offerId);
     if (offer.status !== "accepted")
       env.conditionalOfferApp.accept({
         offerId,
@@ -140,7 +140,7 @@ export function guestCardPayments(
   };
   const startCard = (requestId: string): string => {
     const offerId = accept(requestId);
-    const open = app.manager.getCheckoutSession(offerId);
+    const open = app.getCheckoutSession(offerId);
     return open?.status === "initiated"
       ? open.pspReference
       : app.initializeCheckout(offerId, guestFor(offerId)).pspReference;
@@ -149,7 +149,7 @@ export function guestCardPayments(
     requestId: string,
     status: ProviderStatus = "success",
   ): void => {
-    const session = app.manager.getCheckoutSession(offerIdFor(requestId));
+    const session = app.getCheckoutSession(offerIdFor(requestId));
     if (!session) throw new Error(`No checkout for ${requestId}`);
     providerStatus = status;
     try {

@@ -1,7 +1,7 @@
 import { createPlatformCommandEnvelope, type CommandPrincipal } from "../../../packages/platform-core/src/index.js";
-import type { BookingContract, Reservation } from "../../../domains/shortlet/src/card-payment.js";
-import type { BookingStateRepository } from "../../../domains/shortlet/src/booking-state.js";
-import type { RelocationApprovalDecision } from "../../../domains/shortlet/src/relocation-policy.js";
+import type { BookingContract, Reservation } from "../../../domains/shortlet/src/index.js";
+import type { BookingStateRepository } from "../../../domains/shortlet/src/index.js";
+import type { RelocationApprovalDecision } from "../../../domains/shortlet/src/index.js";
 import { relocationArtifactId, projectRelocationArtifact, type RelocationArtifact, type RelocationAction } from "./relocation-artifact.js";
 
 export interface RelocationEligibility { readonly eligible: boolean; readonly eligibilityId: string; readonly eligibilityVersion: string; readonly source: "failed_access" | "mid_stay_failure"; readonly failureActor: "operator" | "platform" | "guest" | "unknown"; readonly soleGuestCausation?: boolean; readonly currentGuestRemedy: "relocation_or_refund" | "none"; readonly remainingStay: { readonly checkIn: string; readonly checkOut: string; readonly nights: number }; }

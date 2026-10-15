@@ -56,7 +56,9 @@ export class InMemoryTelemetry implements Telemetry {
 
 export * from "./thread.js";
 export * from "./surface.js";
+export * from "./catalogue-registry.js";
 export * from "./envelope.js";
+export * from "./interactions.js";
 export * from "./human-handoff.js";
 export * from "./stream-replay.js";
 export * from "./provider-contracts.js";

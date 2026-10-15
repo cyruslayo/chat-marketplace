@@ -1,7 +1,7 @@
 import type { DurableObjectNamespace, R2Bucket, Fetcher } from "@cloudflare/workers-types";
 import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
-import { SqliteOperatorRepository } from "../../../domains/shortlet/src/sqlite-operator-repository.js";
-import { SqliteUnitRepository } from "../../../domains/shortlet/src/sqlite-unit-repository.js";
+import { SqliteOperatorRepository } from "../../../domains/shortlet/src/index.js";
+import { SqliteUnitRepository } from "../../../domains/shortlet/src/index.js";
 import { loadPilotCoreConfiguration, required, type PilotCoreConfiguration, type PilotEnvironmentSource } from "../../pilot/src/pilot-config-core.js";
 import { createAccessJwtVerifier, type AccessJwks, type AccessVerifier } from "./access-jwt.js";
 

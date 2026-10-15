@@ -42,7 +42,7 @@ function card(html: string, transferId: string): { readonly text: string; readon
 const order = (html: string) => [...html.matchAll(/data-transfer-id="([^"]+)"/g)].map((match) => match[1]!);
 const version = (html: string, transferId: string) => card(html, transferId).html.match(/name="expectedVersion" value="(\d+)"/)?.[1] ?? "0";
 const contracts = (f: SignedInOperator) => { const db = new DatabaseSync(f.server.environment.config.databasePath); try { return (db.prepare("SELECT COUNT(*) AS count FROM booking_contracts").get() as { count: number }).count; } finally { db.close(); } };
-const datesFree = (f: SignedInOperator, requestId: string) => { const request = f.server.environment.bookingRequestApp.manager.getRequest(requestId) as { unitId: string; checkIn: string; checkOut: string }; return f.server.environment.calendar.getAuthoritativeAvailability({ unitId: request.unitId, checkIn: request.checkIn, checkOut: request.checkOut, clock: f.server.environment.clock }).isAvailable; };
+const datesFree = (f: SignedInOperator, requestId: string) => { const request = f.server.environment.bookingRequestApp.getRequest(requestId) as { unitId: string; checkIn: string; checkOut: string }; return f.server.environment.calendar.getAuthoritativeAvailability({ unitId: request.unitId, checkIn: request.checkIn, checkOut: request.checkOut, clock: f.server.environment.clock }).isAvailable; };
 
 async function act(f: SignedInOperator, transferId: string, action: "confirm" | "reject" | "late-credit", fields: Record<string, string>, options: { cookie?: string; origin?: string; expectedVersion?: string } = {}) {
   const expectedVersion = options.expectedVersion ?? version(await queue(f), transferId);

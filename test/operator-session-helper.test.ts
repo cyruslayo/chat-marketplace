@@ -18,7 +18,7 @@ async function signedIn(start = "2026-09-03T10:00:00Z") {
   return { dir, server, session, requestId: request.facts.requestId, advance(ms: number) { now = new Date(now.getTime() + ms); } };
 }
 async function done(f: { server: OperatorServer; dir: string }) { await f.server.close(); await rm(f.dir, { recursive: true, force: true }); }
-const status = (f: Awaited<ReturnType<typeof signedIn>>) => f.server.environment.bookingRequestApp.manager.getRequest(f.requestId).status;
+const status = (f: Awaited<ReturnType<typeof signedIn>>) => f.server.environment.bookingRequestApp.getRequest(f.requestId).status;
 
 test("The helper signs in: a signed-in operator can open the inbox and the request", async () => {
   const f = await signedIn();

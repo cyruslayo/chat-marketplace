@@ -30,10 +30,10 @@ function form(html: string, action: "confirm" | "decline"): string {
   return match[0];
 }
 
-const status = (f: SignedInOperator, id: string) => f.server.environment.bookingRequestApp.manager.getRequest(id).status;
+const status = (f: SignedInOperator, id: string) => f.server.environment.bookingRequestApp.getRequest(id).status;
 const offers = (f: SignedInOperator) => f.server.environment.audit.entries().filter((entry) => entry.type === "operator_request_confirmed").length;
 const calendarEvents = (f: SignedInOperator, id: string) => f.server.environment.audit.entries().filter((entry) => entry.type === "calendar_accuracy_event" && entry.requestId === id);
-const guestView = (f: SignedInOperator, id: string) => f.server.environment.bookingRequestApp.getArtifact(id, { id: f.server.environment.bookingRequestApp.manager.getRequest(id).primaryGuest.id, role: "guest", tenantId: f.server.environment.config.tenantId });
+const guestView = (f: SignedInOperator, id: string) => f.server.environment.bookingRequestApp.getArtifact(id, { id: f.server.environment.bookingRequestApp.getRequest(id).primaryGuest.id, role: "guest", tenantId: f.server.environment.config.tenantId });
 
 /** The four standard failure paths for an action, none of which may change the request. */
 async function assertStandardRefusals(f: SignedInOperator, id: string, decision: "confirm" | "decline") {

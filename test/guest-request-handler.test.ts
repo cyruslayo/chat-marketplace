@@ -199,7 +199,7 @@ async function acceptedOfferEnvironment(directory: string): Promise<{
   );
   const request = environment.bookingRequestApp.disclose(draft.draftId, environment.guestPrincipal());
   const { offerId } = environment.simulateOperatorAcceptance(request.requestId);
-  const offer = environment.conditionalOfferApp.manager.getOffer(offerId);
+  const offer = environment.conditionalOfferApp.getOffer(offerId);
   environment.conditionalOfferApp.accept({
     offerId,
     confirmationToken: offer.confirmationToken,

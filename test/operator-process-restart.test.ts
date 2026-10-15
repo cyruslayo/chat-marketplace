@@ -75,7 +75,7 @@ test("06d AC4: The operator restart test passes end to end: session, grant, requ
     const release = production.app.releaseRevenue("reservation-1", revenuePrincipal);
     pauseOperator(env());
     const grants = env().grantStore.listGrants();
-    const requestStatus = env().bookingRequestApp.manager.getRequest(id).status;
+    const requestStatus = env().bookingRequestApp.getRequest(id).status;
     const auditBefore = env().audit.entries();
     const projections = env().enforcementManager.getProjections(scope);
     assert.ok(grants.some((grant) => !grant.revokedAtIso), "a representative grant is active");
@@ -85,7 +85,7 @@ test("06d AC4: The operator restart test passes end to end: session, grant, requ
 
     assert.equal((await operatorGet({ base: f.server.base, cookie: f.initialCookie }, "/operator/requests")).status, 200, "the session issued before the restart still works");
     assert.deepEqual(env().grantStore.listGrants(), grants, "the representative grant survived");
-    assert.equal(env().bookingRequestApp.manager.getRequest(id).status, requestStatus, "the request action survived");
+    assert.equal(env().bookingRequestApp.getRequest(id).status, requestStatus, "the request action survived");
     assert.deepEqual(env().accountingRepository.findReleaseByReservationId("reservation-1"), release, "revenue survived");
     assert.deepEqual(env().enforcementManager.getProjections(scope), projections, "enforcement survived");
     assert.deepEqual(env().audit.entries().slice(0, auditBefore.length), auditBefore, "the audit trail survived in order");

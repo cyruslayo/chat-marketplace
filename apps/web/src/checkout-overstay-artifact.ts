@@ -12,7 +12,7 @@ export interface CheckoutArtifact {
 }
 export function checkoutArtifactId(reservationId: string): string { return `checkout:${reservationId}`; }
 export function checkoutArtifactFromApplication(application: CheckoutOverstayApplication, reservation: CheckoutReservation, principal: CommandPrincipal, term: EffectiveCheckoutTerms): CheckoutArtifact {
-  const schedule = application.manager.calculateCheckoutSchedule({ reservationId: reservation.reservationId, checkoutDate: reservation.checkoutDate, contractualCheckoutTime: term.checkoutTime });
+  const schedule = application.calculateCheckoutSchedule({ reservationId: reservation.reservationId, checkoutDate: reservation.checkoutDate, contractualCheckoutTime: term.checkoutTime });
   const options = application.currentOptions(reservation, term);
   const incident = application.currentIncident(reservation.reservationId);
   const markers = [reservation.reservationId, reservation.status, term.termVersion, term.checkoutTime, term.amendmentVersion ?? "", ...options.flatMap((o) => [o.requestedTime, o.quoteId, String(o.feeKobo), o.policyVersion]), incident?.incidentId ?? "", incident?.remedyBasis ?? "", incident?.status ?? "", application.humanStatus(reservation.reservationId)];

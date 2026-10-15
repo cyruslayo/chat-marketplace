@@ -51,11 +51,21 @@ export interface AssistantTaskState {
   pendingAction?: PendingAssistantAction | null;
 }
 
+/** One conversation task: a flow in one domain. A thread may hold several, with one active. */
+export interface AssistantTask {
+  readonly taskId: string;
+  readonly domain: string;
+  state: AssistantTaskState;
+}
+
 export interface AssistantThreadState {
   readonly threadId: string;
   readonly guestActorId: string;
   readonly tenantId: string;
   readonly conversationHistory: AssistantConversationStep[];
+  tasks: AssistantTask[];
+  activeTaskId: string;
+  /** The active task's state (mirrors `tasks[activeTaskId].state`). */
   taskState: AssistantTaskState;
   activeSurfaces: Map<string, string>;
   supersededSurfaces: Set<string>;

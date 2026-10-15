@@ -1,5 +1,6 @@
 import type { WebServerEventHandoff } from "@weaver/web";
-import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
+import type { ActionSpec, CommandPrincipal } from "../../../packages/platform-core/src/index.js";
+import { resolveAction } from "../../../packages/platform-core/src/index.js";
 import {
   CONDITIONAL_OFFER_ARTIFACT_KIND,
   CONDITIONAL_OFFER_SCHEMA_VERSION,
@@ -20,28 +21,44 @@ type ConditionalOfferActionContext = {
 export type ConditionalOfferServerEventRejectionCode = "UNSUPPORTED_ACTION" | "INVALID_CONTEXT" | "INVALID_ARTIFACT" | "ARTIFACT_MISMATCH" | "OFFER_MISMATCH" | "STALE_ACTION" | "ACTION_NOT_AUTHORIZED";
 export type ConditionalOfferServerEventResult = { readonly ok: true; readonly artifact: ConditionalOfferArtifact } | { readonly ok: false; readonly code: ConditionalOfferServerEventRejectionCode; readonly message: string };
 
-function reject(code: ConditionalOfferServerEventRejectionCode, message: string): ConditionalOfferServerEventResult {
-  return { ok: false, code, message };
-}
-
-function readContext(event: WebServerEventHandoff): ConditionalOfferActionContext | undefined {
-  const context: unknown = event?.message?.action?.context;
-  if (context === null || typeof context !== "object" || Array.isArray(context)) return undefined;
-  const record = context as Record<string, unknown>;
-  const required = ["artifactId", "offerId", "expectedStatus", "offerVersion", "projectionVersion", "confirmationToken"];
-  const keys = Object.keys(record);
-  if (keys.length !== required.length || !required.every((key) => keys.includes(key))) return undefined;
-  if (typeof record.artifactId !== "string" || !record.artifactId || typeof record.offerId !== "string" || !record.offerId) return undefined;
-  if (typeof record.expectedStatus !== "string" || typeof record.confirmationToken !== "string" || !record.confirmationToken) return undefined;
-  if (typeof record.offerVersion !== "number" || !Number.isInteger(record.offerVersion) || typeof record.projectionVersion !== "number" || !Number.isInteger(record.projectionVersion)) return undefined;
-  return record as unknown as ConditionalOfferActionContext;
-}
-
-function validArtifact(artifact: ConditionalOfferArtifact): boolean {
-  return artifact.kind === CONDITIONAL_OFFER_ARTIFACT_KIND
-    && artifact.schemaVersion === CONDITIONAL_OFFER_SCHEMA_VERSION
-    && artifact.id === `conditional-offer:${artifact.facts.offerId}`
-    && Number.isInteger(artifact.projectionVersion);
+function conditionalOfferAcceptSpec(application: ConditionalOfferApplication): ActionSpec<ConditionalOfferActionContext, ConditionalOfferArtifact, { readonly offerId: string; readonly confirmationToken: string }> {
+  return {
+    name: CONDITIONAL_OFFER_ACCEPT_EVENT,
+    artifact: {
+      kind: CONDITIONAL_OFFER_ARTIFACT_KIND,
+      schemaVersion: CONDITIONAL_OFFER_SCHEMA_VERSION,
+      load: (context, principal) => application.getArtifact(context.offerId, principal),
+      validate: (artifact) => artifact.id === `conditional-offer:${artifact.facts.offerId}` && Number.isInteger(artifact.projectionVersion),
+    },
+    context: {
+      required: {
+        artifactId: { type: "string", nonEmpty: true },
+        offerId: { type: "string", nonEmpty: true },
+        expectedStatus: { type: "string" },
+        offerVersion: { type: "integer" },
+        projectionVersion: { type: "integer" },
+        confirmationToken: { type: "string", nonEmpty: true },
+      },
+    },
+    crossMatch: (context, artifact) =>
+      context.artifactId !== artifact.id
+        ? { code: "ARTIFACT_MISMATCH", message: "The action does not match the authoritative artifact." }
+        : context.offerId !== artifact.facts.offerId
+          ? { code: "OFFER_MISMATCH", message: "The action does not match the Conditional Booking Offer." }
+          : true,
+    expect: [
+      { expected: (context) => context.expectedStatus, actual: (artifact) => artifact.facts.status },
+      { expected: (context) => context.offerVersion, actual: (artifact) => artifact.facts.offerVersion },
+      { expected: (context) => context.projectionVersion, actual: (artifact) => artifact.projectionVersion },
+    ],
+    isAuthorized: (context, artifact) => artifact.actions.some((candidate) => candidate.type === "accept" && candidate.confirmationToken === context.confirmationToken),
+    command: (context) => ({ commandName: "conditional_offer.accept", payload: { offerId: context.offerId, confirmationToken: context.confirmationToken } }),
+    run: ({ context, principal }) => {
+      application.accept({ offerId: context.offerId, confirmationToken: context.confirmationToken, expectedVersion: context.offerVersion, principal });
+      return application.getArtifact(context.offerId, principal);
+    },
+    rejectionMessages: { stale: "The action is stale; refresh the Conditional Booking Offer.", runRejected: "The Conditional Booking Offer action was rejected." },
+  };
 }
 
 export function resolveConditionalOfferServerEvent({
@@ -53,29 +70,9 @@ export function resolveConditionalOfferServerEvent({
   readonly application: ConditionalOfferApplication;
   readonly principal: CommandPrincipal;
 }): ConditionalOfferServerEventResult {
-  if (event?.message?.action?.name !== CONDITIONAL_OFFER_ACCEPT_EVENT) return reject("UNSUPPORTED_ACTION", "The action is not supported.");
-  const context = readContext(event);
-  if (!context) return reject("INVALID_CONTEXT", "The action context is invalid.");
-  let artifact: ConditionalOfferArtifact;
-  try {
-    artifact = application.getArtifact(context.offerId, principal);
-  } catch {
-    return reject("INVALID_ARTIFACT", "No authoritative artifact is available.");
-  }
-  if (!validArtifact(artifact)) return reject("INVALID_ARTIFACT", "The authoritative artifact is invalid.");
-  if (context.artifactId !== artifact.id) return reject("ARTIFACT_MISMATCH", "The action does not match the authoritative artifact.");
-  if (context.offerId !== artifact.facts.offerId) return reject("OFFER_MISMATCH", "The action does not match the Conditional Booking Offer.");
-  if (context.expectedStatus !== artifact.facts.status || context.offerVersion !== artifact.facts.offerVersion || context.projectionVersion !== artifact.projectionVersion) {
-    return reject("STALE_ACTION", "The action is stale; refresh the Conditional Booking Offer.");
-  }
-  const action = artifact.actions.find((candidate) => candidate.type === "accept");
-  if (!action || action.confirmationToken !== context.confirmationToken) return reject("ACTION_NOT_AUTHORIZED", "The requested action is not authorized.");
-  try {
-    application.accept({ offerId: context.offerId, confirmationToken: context.confirmationToken, expectedVersion: context.offerVersion, principal });
-    return { ok: true, artifact: application.getArtifact(context.offerId, principal) };
-  } catch {
-    return reject("ACTION_NOT_AUTHORIZED", "The Conditional Booking Offer action was rejected.");
-  }
+  const outcome = resolveAction(event, [conditionalOfferAcceptSpec(application)], principal);
+  if (!outcome.ok) return { ok: false, code: outcome.code as ConditionalOfferServerEventRejectionCode, message: outcome.message };
+  return { ok: true, artifact: outcome.artifact };
 }
 
 export interface CreateConditionalOfferServerEventHandlerOptions {
@@ -86,10 +83,10 @@ export interface CreateConditionalOfferServerEventHandlerOptions {
 }
 
 export function createConditionalOfferServerEventHandler({ application, getPrincipal, onUpdated, onRejected }: CreateConditionalOfferServerEventHandlerOptions): (event: WebServerEventHandoff) => void {
+  const spec = conditionalOfferAcceptSpec(application);
   return (event) => {
-    const principal = getPrincipal();
-    const result = resolveConditionalOfferServerEvent({ event, application, principal });
+    const result = resolveAction(event, [spec], getPrincipal());
     if (result.ok) onUpdated(result.artifact);
-    else onRejected?.(result);
+    else onRejected?.({ ok: false, code: result.code as ConditionalOfferServerEventRejectionCode, message: result.message });
   };
 }

@@ -1,9 +1,73 @@
 import type { WebServerEventHandoff } from "@weaver/web";
-import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
+import type { ActionSpec, CommandPrincipal } from "../../../packages/platform-core/src/index.js";
+import { resolveAction } from "../../../packages/platform-core/src/index.js";
 import type { DepositClaimApplication } from "./deposit-claim-application.js";
 import { depositClaimArtifact, type DepositClaimArtifact, type DepositClaimActionType } from "./deposit-claim-artifact.js";
 export const EVENTS = { accept: "shortlet.deposit-claim.accept", dispute: "shortlet.deposit-claim.dispute", "apply-reviewed-decision": "shortlet.deposit-claim.apply-reviewed-decision", "waive-appeal": "shortlet.deposit-claim.waive-appeal" } as const;
-type Context = { artifactId: string; claimId: string; expectedClaimVersion: number; projectionVersion: string; decisionId?: string; decisionVersion?: string; evidenceVersion?: string; policyVersion?: string };
-export type DepositClaimActionResult = { readonly ok: true; readonly artifact: DepositClaimArtifact } | { readonly ok: false; readonly code: "UNSUPPORTED_ACTION" | "INVALID_CONTEXT" | "STALE_ACTION" | "ACTION_NOT_AUTHORIZED"; readonly message: string };
-function context(event: WebServerEventHandoff): Context | undefined { const raw: unknown = event?.message?.action?.context; if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined; const record = raw as Record<string, unknown>; const required = ["artifactId", "claimId", "expectedClaimVersion", "projectionVersion"]; const optional = ["decisionId", "decisionVersion", "evidenceVersion", "policyVersion"]; if (Object.keys(record).some((key) => !required.includes(key) && !optional.includes(key)) || required.some((key) => typeof record[key] !== (key === "expectedClaimVersion" ? "number" : "string")) || optional.some((key) => record[key] !== undefined && typeof record[key] !== "string")) return undefined; return record as Context; }
-export function resolveDepositClaimServerEvent(input: { readonly event: WebServerEventHandoff; readonly application: DepositClaimApplication; readonly principal: CommandPrincipal }): DepositClaimActionResult { const name = input.event?.message?.action?.name; const type = (Object.keys(EVENTS) as DepositClaimActionType[]).find((key) => EVENTS[key] === name); if (!type) return { ok: false, code: "UNSUPPORTED_ACTION", message: "The action is not supported." }; const c = context(input.event); if (!c) return { ok: false, code: "INVALID_CONTEXT", message: "The action context is invalid." }; try { const current = input.application.getArtifact(c.claimId.replace(/^deposit-claim:/, ""), input.principal); const artifact = depositClaimArtifact(input.application, current.reservationId, input.principal); const action = artifact.actions.find((candidate) => candidate.type === type); if (!action || c.artifactId !== artifact.id || c.claimId !== artifact.id || c.expectedClaimVersion !== artifact.facts.claimVersion || c.projectionVersion !== artifact.projectionVersion || (type === "apply-reviewed-decision" && (c.decisionId !== action.decisionId || c.decisionVersion !== action.decisionVersion || c.evidenceVersion !== action.evidenceVersion || c.policyVersion !== action.policyVersion))) return { ok: false, code: "STALE_ACTION", message: "The claim action is stale; refresh the claim." }; if (type === "accept") input.application.respond(c.claimId, input.principal, "accept"); else if (type === "dispute") input.application.respond(c.claimId, input.principal, "dispute"); else if (type === "waive-appeal") input.application.waiveAppeal(c.claimId, input.principal, { decisionId: c.decisionId ?? "", decisionVersion: c.decisionVersion ?? "" }); else input.application.applyReviewedDecision(c.claimId, input.principal, { expectedClaimVersion: c.expectedClaimVersion, decisionId: c.decisionId ?? "", decisionVersion: c.decisionVersion ?? "", evidenceVersion: c.evidenceVersion ?? "", policyVersion: c.policyVersion ?? "" }); return { ok: true, artifact: depositClaimArtifact(input.application, current.reservationId, input.principal) }; } catch (error) { const message = error instanceof Error ? error.message : ""; return { ok: false, code: message === "STALE_ACTION" ? "STALE_ACTION" : "ACTION_NOT_AUTHORIZED", message: "The claim action was rejected." }; } }
+type DepositClaimActionRejectionCode = "UNSUPPORTED_ACTION" | "INVALID_CONTEXT" | "STALE_ACTION" | "ACTION_NOT_AUTHORIZED";
+export type DepositClaimActionResult = { readonly ok: true; readonly artifact: DepositClaimArtifact } | { readonly ok: false; readonly code: DepositClaimActionRejectionCode; readonly message: string };
+interface DepositClaimContext { readonly artifactId: string; readonly claimId: string; readonly expectedClaimVersion: number; readonly projectionVersion: string; readonly decisionId?: string; readonly decisionVersion?: string; readonly evidenceVersion?: string; readonly policyVersion?: string }
+
+const STALE_MESSAGE = "The claim action is stale; refresh the claim.";
+const RUN_REJECTED_MESSAGE = "The claim action was rejected.";
+const staleAwareCode = (error: unknown): DepositClaimActionRejectionCode => (error instanceof Error && error.message === "STALE_ACTION" ? "STALE_ACTION" : "ACTION_NOT_AUTHORIZED");
+
+function depositClaimSpec(type: DepositClaimActionType, application: DepositClaimApplication): ActionSpec<DepositClaimContext, DepositClaimArtifact, unknown> {
+  const load = (context: DepositClaimContext, principal: CommandPrincipal): DepositClaimArtifact => {
+    const current = application.getArtifact(context.claimId.replace(/^deposit-claim:/, ""), principal);
+    return depositClaimArtifact(application, current.reservationId, principal);
+  };
+  return {
+    name: EVENTS[type],
+    artifact: {
+      load,
+      loadRejected: { code: "ACTION_NOT_AUTHORIZED", message: RUN_REJECTED_MESSAGE },
+      loadRejectedCode: staleAwareCode,
+    },
+    context: {
+      required: {
+        artifactId: { type: "string" },
+        claimId: { type: "string" },
+        expectedClaimVersion: { type: "number" },
+        projectionVersion: { type: "string" },
+      },
+      optional: {
+        decisionId: { type: "string" },
+        decisionVersion: { type: "string" },
+        evidenceVersion: { type: "string" },
+        policyVersion: { type: "string" },
+      },
+    },
+    crossMatch: (context, artifact) => {
+      const action = artifact.actions.find((candidate) => candidate.type === type);
+      if (!action || context.artifactId !== artifact.id || context.claimId !== artifact.id || context.expectedClaimVersion !== artifact.facts.claimVersion || context.projectionVersion !== artifact.projectionVersion) {
+        return { code: "STALE_ACTION", message: STALE_MESSAGE };
+      }
+      if (
+        type === "apply-reviewed-decision" &&
+        (context.decisionId !== action.decisionId || context.decisionVersion !== action.decisionVersion || context.evidenceVersion !== action.evidenceVersion || context.policyVersion !== action.policyVersion)
+      ) {
+        return { code: "STALE_ACTION", message: STALE_MESSAGE };
+      }
+      return true;
+    },
+    expect: [],
+    isAuthorized: () => true,
+    run: ({ context, principal }) => {
+      if (type === "accept") application.respond(context.claimId, principal, "accept");
+      else if (type === "dispute") application.respond(context.claimId, principal, "dispute");
+      else if (type === "waive-appeal") application.waiveAppeal(context.claimId, principal, { decisionId: context.decisionId ?? "", decisionVersion: context.decisionVersion ?? "" });
+      else application.applyReviewedDecision(context.claimId, principal, { expectedClaimVersion: context.expectedClaimVersion, decisionId: context.decisionId ?? "", decisionVersion: context.decisionVersion ?? "", evidenceVersion: context.evidenceVersion ?? "", policyVersion: context.policyVersion ?? "" });
+      return load(context, principal);
+    },
+    rejectionMessages: { stale: STALE_MESSAGE, runRejected: RUN_REJECTED_MESSAGE },
+    runRejectedCode: staleAwareCode,
+  };
+}
+
+export function resolveDepositClaimServerEvent(input: { readonly event: WebServerEventHandoff; readonly application: DepositClaimApplication; readonly principal: CommandPrincipal }): DepositClaimActionResult {
+  const specs = (Object.keys(EVENTS) as DepositClaimActionType[]).map((type) => depositClaimSpec(type, input.application));
+  const outcome = resolveAction(input.event, specs, input.principal);
+  if (!outcome.ok) return { ok: false, code: outcome.code as DepositClaimActionRejectionCode, message: outcome.message };
+  return { ok: true, artifact: outcome.artifact };
+}

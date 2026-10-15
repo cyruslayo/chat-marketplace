@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
-import type { CheckInSupportManager, ComplaintCategory } from "../../../domains/shortlet/src/checkin-support.js";
+import type { CheckInSupportManager, ComplaintCategory } from "../../../domains/shortlet/src/index.js";
 
 export const CHECK_IN_SUPPORT_ARTIFACT_KIND = "shortlet.check-in-support";
 export const CHECK_IN_SUPPORT_SCHEMA_VERSION = "shortlet.check-in-support/v1";

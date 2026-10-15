@@ -20,12 +20,37 @@ export interface HandoffAudit { record(entry: Record<string, string | number>): 
 const VALID_CATEGORIES = new Set<string>(["safety_or_access", "relocation", "refund", "identity", "payer", "payment_inconsistency", "deposit", "substitution", "cancellation", "authority", "discrimination", "fraud", "general_support", "general", "general_billing", "habitability"]);
 const VALID_TRIGGERS = new Set<string>(["user_request", "failed_access", "safety", "material_refund", "identity", "payment_inconsistency", "substitution", "authority", "fraud", "material_complaint"]);
 const TRUSTED_ROLES = new Set<TrustedRole>(["authorized_staff", "admin", "system"]);
-const SAFE_DETAIL_KEYS = new Set(["amountKobo", "currency", "domainReference", "reservationId", "bookingId", "safeReference"]);
 const MAX_NOTICE = 500;
+
+/**
+ * The pack-supplied handoff profile (ADR 0099 rule 4). The pack chooses the safe detail
+ * fields, the support queues it routes to, and which support path a matter takes; the
+ * platform owns the handoff lifecycle (ADR 0076).
+ */
+export interface HandoffDomainConfig {
+  readonly safeDetailKeys: readonly string[];
+  readonly supportQueues: Readonly<Record<SupportPath, string>>;
+  readonly supportPathFor: (request: HandoffRequest) => SupportPath;
+}
+
+/** A handoff request. The `matter` record and any extra keys are pack-defined. */
+export interface HandoffRequest {
+  readonly trigger: string;
+  readonly category: string;
+  readonly matter?: Readonly<Record<string, unknown>>;
+  readonly [key: string]: unknown;
+}
+
+/** Platform defaults: platform-owned support queues, a generic safe-key set, category routing. */
+export const DEFAULT_HANDOFF_DOMAIN: HandoffDomainConfig = {
+  safeDetailKeys: ["amountKobo", "currency", "domainReference", "safeReference"],
+  supportQueues: { general_support: "General Support (8 AM - 8 PM WAT)", active_stay_emergency_support: "Active-Stay Emergency Support (24/7)" },
+  supportPathFor: (request) => (request.category === "safety_or_access" ? "active_stay_emergency_support" : "general_support"),
+};
 
 function isTrusted(actor: CommandPrincipal | undefined): actor is CommandPrincipal & { role: TrustedRole } { return !!actor && TRUSTED_ROLES.has(actor.role as TrustedRole); }
 function copyState(state: HandoffState): HandoffState { return { ...state, committedActions: state.committedActions.map((a) => ({ ...a, details: { ...a.details } })), contextPacket: state.contextPacket ? { ...state.contextPacket, minimizedData: { ...state.contextPacket.minimizedData } } : undefined }; }
-function safeDetails(details: Record<string, unknown>): Readonly<Record<string, string | number>> { const result: Record<string, string | number> = {}; for (const key of SAFE_DETAIL_KEYS) { const value = details[key]; if ((typeof value === "string" && value.length <= 120) || (typeof value === "number" && Number.isFinite(value))) result[key] = value; } return result; }
+function safeDetails(keys: readonly string[], details: Record<string, unknown>): Readonly<Record<string, string | number>> { const result: Record<string, string | number> = {}; for (const key of keys) { const value = details[key]; if ((typeof value === "string" && value.length <= 120) || (typeof value === "number" && Number.isFinite(value))) result[key] = value; } return result; }
 function safeText(value: string, max: number): string { return value.replace(/[<>]/g, "").replace(/[\u0000-\u001f]/g, "").trim().slice(0, max); }
 
 export class HumanHandoffManager {
@@ -33,13 +58,14 @@ export class HumanHandoffManager {
   readonly #handoffStates = new Map<string, HandoffState>();
   readonly #clock: () => Date;
   readonly #audit?: HandoffAudit;
-  constructor(threadManager: InteractionThreadManager, options: { readonly clock?: () => Date; readonly audit?: HandoffAudit } = {}) { this.#threadManager = threadManager; this.#clock = options.clock ?? (() => new Date()); this.#audit = options.audit; }
+  readonly #domain: HandoffDomainConfig;
+  constructor(threadManager: InteractionThreadManager, options: { readonly clock?: () => Date; readonly audit?: HandoffAudit; readonly domain?: HandoffDomainConfig } = {}) { this.#threadManager = threadManager; this.#clock = options.clock ?? (() => new Date()); this.#audit = options.audit; this.#domain = options.domain ?? DEFAULT_HANDOFF_DOMAIN; }
   #state(threadId: string): HandoffState { let state = this.#handoffStates.get(threadId); if (!state) { state = { threadId, mode: "automated", assignedOwner: null, committedActions: [], handoffVersion: 0 }; this.#handoffStates.set(threadId, state); } return state; }
   #transition(state: HandoffState, patch: Partial<HandoffState>, auditType: string, actor?: CommandPrincipal): HandoffState { const next = { ...state, ...patch, handoffVersion: state.handoffVersion + 1 }; this.#handoffStates.set(state.threadId, next); this.#audit?.record({ type: auditType, threadId: state.threadId, handoffVersion: next.handoffVersion, ...(actor ? { actorId: actor.id } : {}), recordedAt: this.#clock().toISOString() }); return next; }
-  recordCommittedAction(threadId: string, runId: string, context: SecurityContext, action: { actionId: string; type: string; details: Record<string, unknown> }): void { this.#threadManager.getThread(threadId, context); if (!runId || !action.actionId || !action.type) throw new Error("Committed action identity is required"); const state = this.#state(threadId); const committed = { actionId: action.actionId, type: action.type, details: safeDetails(action.details), timestamp: this.#clock().toISOString() }; this.#handoffStates.set(threadId, { ...state, committedActions: [...state.committedActions, committed] }); }
+  recordCommittedAction(threadId: string, runId: string, context: SecurityContext, action: { actionId: string; type: string; details: Record<string, unknown> }): void { this.#threadManager.getThread(threadId, context); if (!runId || !action.actionId || !action.type) throw new Error("Committed action identity is required"); const state = this.#state(threadId); const committed = { actionId: action.actionId, type: action.type, details: safeDetails(this.#domain.safeDetailKeys, action.details), timestamp: this.#clock().toISOString() }; this.#handoffStates.set(threadId, { ...state, committedActions: [...state.committedActions, committed] }); }
   stopAgentRun(threadId: string, runId: string, context: SecurityContext) { const result = this.#threadManager.stopAgentRun(threadId, runId, context); this.#audit?.record({ type: "agent_run.stopped", threadId, runId, handoffVersion: this.#state(threadId).handoffVersion, recordedAt: this.#clock().toISOString() }); return { ...result, committedActionsPreserved: true, committedActions: [...this.#state(threadId).committedActions] }; }
   stopCurrentAgentRun(threadId: string, context: SecurityContext) { const run = this.#threadManager.getActiveRun(threadId, context); if (!run) return { status: "none", committedActionsPreserved: true, committedActions: [...this.#state(threadId).committedActions] }; return this.stopAgentRun(threadId, run.runId, context); }
-  initiateHandoff(threadId: string, context: SecurityContext, options: { trigger: string; category: string; activeStay: boolean }, actor?: CommandPrincipal): HandoffState { this.#threadManager.getThread(threadId, context); if (!VALID_TRIGGERS.has(options.trigger) || !VALID_CATEGORIES.has(options.category)) throw new Error("Unsupported handoff classification"); const activeRun = this.#threadManager.getActiveRun(threadId, context); if (activeRun) this.#threadManager.stopAgentRun(threadId, activeRun.runId, context); const state = this.#state(threadId); const path = options.activeStay || options.category === "safety_or_access" ? "active_stay_emergency_support" : "general_support"; const next = this.#transition(state, { mode: "handoff-requested", supportPath: path, targetQueue: path === "general_support" ? "General Support (8 AM - 8 PM WAT)" : "Active-Stay Emergency Support (24/7)", contextPacket: { summary: safeText(`Handoff requested for ${options.category}`, 300), minimizedData: { trigger: options.trigger, category: options.category, activeStay: options.activeStay } } }, "handoff.requested", actor); this.#audit?.record({ type: "handoff.support_path_selected", threadId, supportPath: path, handoffVersion: next.handoffVersion }); return copyState(next); }
+  initiateHandoff(threadId: string, context: SecurityContext, request: HandoffRequest, actor?: CommandPrincipal): HandoffState { this.#threadManager.getThread(threadId, context); if (!VALID_TRIGGERS.has(request.trigger) || !VALID_CATEGORIES.has(request.category)) throw new Error("Unsupported handoff classification"); const activeRun = this.#threadManager.getActiveRun(threadId, context); if (activeRun) this.#threadManager.stopAgentRun(threadId, activeRun.runId, context); const state = this.#state(threadId); const path = this.#domain.supportPathFor(request); const next = this.#transition(state, { mode: "handoff-requested", supportPath: path, targetQueue: this.#domain.supportQueues[path], contextPacket: { summary: safeText(`Handoff requested for ${request.category}`, 300), minimizedData: { trigger: request.trigger, category: request.category } } }, "handoff.requested", actor); this.#audit?.record({ type: "handoff.support_path_selected", threadId, supportPath: path, handoffVersion: next.handoffVersion }); return copyState(next); }
   assignHumanOwner(threadId: string, context: SecurityContext, owner: { responderId: string; role: string }, actor: CommandPrincipal): HandoffState { this.#threadManager.getThread(threadId, context); if (!isTrusted(actor)) throw new Error("Only authorized staff may assign human ownership"); if (!owner.responderId || !owner.role) throw new Error("Trusted responder assignment is required"); const state = this.#state(threadId); if (state.mode !== "handoff-requested") throw new Error("Human ownership requires handoff-requested state"); return copyState(this.#transition(state, { mode: "human-owned", assignedOwner: owner.responderId, assignedOwnerRole: owner.role }, "handoff.owner_assigned", actor)); }
   getHandoffStatus(threadId: string, context: SecurityContext): HandoffState { this.#threadManager.getThread(threadId, context); return copyState(this.#state(threadId)); }
   sendAutonomousMessage(threadId: string, context: SecurityContext, _message: string): void { this.#threadManager.getThread(threadId, context); if (this.#state(threadId).mode !== "automated") throw new Error("Autonomous messaging suppressed: Human responder owns the interaction thread"); }

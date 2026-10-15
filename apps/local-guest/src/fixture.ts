@@ -40,6 +40,7 @@ import {
 import {
   createBookingRequestApplication,
   createConditionalOfferApplication,
+  getConditionalOfferManager,
   createCardPaymentApplication,
   createBankTransferPaymentApplication,
   type BankTransferPaymentApplication,
@@ -50,7 +51,7 @@ import {
   type BookingContractApplication,
   GuestContactApplication,
 } from "../../../apps/web/src/index.js";
-import { SELF_BOOKING_ATTESTATION_VERSION } from "../../../domains/shortlet/src/guest-verification.js";
+import { SELF_BOOKING_ATTESTATION_VERSION } from "../../../domains/shortlet/src/index.js";
 import { LocalBankTransferProvider } from "./local-bank-transfer-provider.js";
 
 export const LOCAL_GUEST_PORT = 3001;
@@ -85,7 +86,7 @@ export interface LocalGuestFixtureConfig {
   readonly verifyPayment?: (
     reference: string,
     amountKobo: number,
-  ) => import("../../../domains/shortlet/src/card-payment.js").PSPVerifyResult;
+  ) => import("../../../domains/shortlet/src/index.js").PSPVerifyResult;
   readonly paystackClient?: PaystackClient;
   /**
    * The production transfer provider (Paystack Pay with Transfer, P2). Pass it only once the ADR 0047 certification
@@ -455,7 +456,7 @@ export class LocalGuestEnvironment {
             pspClient: {
               verifyTransaction: (pspReference: string) => {
                 const session =
-                  this.cardPaymentApp.manager.getCheckoutSessionByReference(
+                  this.cardPaymentApp.getCheckoutSessionByReference(
                     pspReference,
                   );
                 if (this.config.verifyPayment)
@@ -512,9 +513,9 @@ export class LocalGuestEnvironment {
         : new LocalBankTransferProvider({
             lookup: (reference) => {
               const session =
-                this.bankTransferApp?.manager.getSessionByReference(reference);
+                this.bankTransferApp?.getSessionByReference(reference);
               if (!session) return undefined;
-              const offer = this.conditionalOfferApp.manager.getOffer(
+              const offer = this.conditionalOfferApp.getOffer(
                 session.offerId,
               );
               return {
@@ -562,7 +563,7 @@ export class LocalGuestEnvironment {
 
     this.manualTransfers = this.config.manualTransferAccount
       ? new ManualTransferManager({
-          offerManager: this.conditionalOfferApp.manager,
+          offerManager: getConditionalOfferManager(this.conditionalOfferApp),
           store: new SqliteManualTransferStore(sqlDatabase, dependencies.receiptBlobs),
           account: this.config.manualTransferAccount,
           liveAttempts: this.livePaymentAttempts,

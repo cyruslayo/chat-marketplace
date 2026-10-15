@@ -306,7 +306,7 @@ test("AC3 — Two tabs cannot accept one Conditional Booking Offer twice", async
 
     // The offer manager must show the offer accepted only once (tokenUsed = true)
     const offerId = offerSurface.surfaceId.split(":").at(-1)!;
-    const offer = ctx.server.environment.conditionalOfferApp.manager.getOffer(offerId);
+    const offer = ctx.server.environment.conditionalOfferApp.getOffer(offerId);
     assert.equal(offer.status, "accepted");
     assert.equal(offer.tokenUsed, true);
   } finally {
@@ -821,7 +821,7 @@ test("AC13 — Cross-tab payment races do not reset the Payment Window", async (
     const paymentReadySurface = paymentReadyRes.body.surfaces[0] as GuestSurfacePayload;
 
     const offerId = stateRes.surfaces[0]!.surfaceId.split(":").at(-1)!;
-    const initialOffer = ctx.server.environment.conditionalOfferApp.manager.getOffer(offerId);
+    const initialOffer = ctx.server.environment.conditionalOfferApp.getOffer(offerId);
     const originalExpiresAt = initialOffer.paymentWindow.expiresAt;
 
     // Both tabs attempt to initialize checkout concurrently
@@ -837,7 +837,7 @@ test("AC13 — Cross-tab payment races do not reset the Payment Window", async (
     ]);
 
     // Check that the offer's payment window deadline has NOT been altered or reset
-    const currentOffer = ctx.server.environment.conditionalOfferApp.manager.getOffer(offerId);
+    const currentOffer = ctx.server.environment.conditionalOfferApp.getOffer(offerId);
     assert.equal(currentOffer.paymentWindow.expiresAt, originalExpiresAt, "Payment Window deadline must not change");
   } finally {
     await ctx.close();

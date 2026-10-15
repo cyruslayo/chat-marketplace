@@ -65,7 +65,7 @@ test("AC1 — For a unit with agreed amounts and a margin rate, the quote's All-
     const env = f.server.environment;
     const requestId = env.createDemoIncomingBookingRequest({ guestId: "margin-guest-1", guestName: "Margin Guest", checkIn: "2026-09-10", checkOut: "2026-09-12" }).facts.requestId;
     assert.equal((await decideRequest(f.session, requestId, "confirm")).status, 303);
-    const request = env.bookingRequestApp.manager.getRequest(requestId) as Parameters<typeof bookingRequestArtifactFromRequest>[0] & { tenantId: string };
+    const request = env.bookingRequestApp.getRequest(requestId) as Parameters<typeof bookingRequestArtifactFromRequest>[0] & { tenantId: string };
     const offer = JSON.parse(env.interactionStore.findConditionalOfferByRequestId(requestId)!.offerJson) as ConditionalBookingOffer;
     assert.ok((offer.quote as { ownerSettlement?: unknown }).ownerSettlement, "the back office has the settlement");
     const guest = { id: "margin-guest-1", role: "guest" as const, tenantId: request.tenantId };

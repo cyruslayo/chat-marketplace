@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { CancellationRefundBreakdown, CancellationPolicySnapshot } from "../../../domains/shortlet/src/cancellation-noshow.js";
+import type { CancellationRefundBreakdown, CancellationPolicySnapshot } from "../../../domains/shortlet/src/index.js";
 
 export const CANCELLATION_ARTIFACT_KIND = "shortlet.cancellation" as const;
 export const CANCELLATION_SCHEMA_VERSION = "shortlet.cancellation/v1" as const;

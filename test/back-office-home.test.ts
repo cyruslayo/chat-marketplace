@@ -123,7 +123,7 @@ test("AC3 — An expired or revoked session lands on sign-in with a plain reason
   const f = await startSignedInOperator();
   try {
     const requestId = request(f, "2026-09-10", "2026-09-13");
-    const status = () => f.server.environment.bookingRequestApp.manager.getRequest(requestId).status;
+    const status = () => f.server.environment.bookingRequestApp.getRequest(requestId).status;
 
     // No session fails closed: GETs go to sign-in without a reason, actions are refused.
     const anonymous = await operatorGet(f.session, "/operator", "");

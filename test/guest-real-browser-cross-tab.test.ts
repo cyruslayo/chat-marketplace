@@ -284,7 +284,7 @@ test("RB2 — Two real tabs cannot accept one Conditional Booking Offer twice", 
   try {
     const { offerId } = await advanceToConditionalOffer(ctx);
 
-    const offerBefore = ctx.server.environment.conditionalOfferApp.manager.getOffer(offerId);
+    const offerBefore = ctx.server.environment.conditionalOfferApp.getOffer(offerId);
     assert.ok(offerBefore);
     const paymentExpiryBefore = offerBefore.paymentWindow.expiresAt;
 
@@ -298,10 +298,10 @@ test("RB2 — Two real tabs cannot accept one Conditional Booking Offer twice", 
     assert.equal(clickB, true);
 
 
-    await waitForDurable(ctx, () => ctx.server.environment.conditionalOfferApp.manager.getOffer(offerId).status === "accepted", "accepted Conditional Booking Offer");
+    await waitForDurable(ctx, () => ctx.server.environment.conditionalOfferApp.getOffer(offerId).status === "accepted", "accepted Conditional Booking Offer");
 
     // Durable store: offer is single-use, payment window remains unchanged
-    const offerAfter = ctx.server.environment.conditionalOfferApp.manager.getOffer(offerId);
+    const offerAfter = ctx.server.environment.conditionalOfferApp.getOffer(offerId);
     assert.ok(offerAfter);
     assert.equal(offerAfter.status, "accepted");
     assert.equal(offerAfter.tokenUsed, true);
@@ -324,7 +324,7 @@ test("RB3 — Two real tabs cannot create multiple Live Payment Attempts", async
   try {
     const { offerId } = await advanceToPaymentReady(ctx);
 
-    const offer = ctx.server.environment.conditionalOfferApp.manager.getOffer(offerId);
+    const offer = ctx.server.environment.conditionalOfferApp.getOffer(offerId);
     assert.ok(offer);
     const windowExpiresBefore = offer.paymentWindow.expiresAt;
 
@@ -346,11 +346,11 @@ test("RB3 — Two real tabs cannot create multiple Live Payment Attempts", async
     assert.equal(attempts[0], offerId);
 
     // Exactly one authoritative checkout session exists
-    const session = ctx.server.environment.cardPaymentApp.manager.getCheckoutSession(offerId);
+    const session = ctx.server.environment.cardPaymentApp.getCheckoutSession(offerId);
     assert.ok(session, "exactly one authoritative checkout session may exist");
 
     // Payment window must not reset
-    const offerAfter = ctx.server.environment.conditionalOfferApp.manager.getOffer(offerId);
+    const offerAfter = ctx.server.environment.conditionalOfferApp.getOffer(offerId);
     assert.equal(offerAfter.paymentWindow.expiresAt, windowExpiresBefore, "Payment Window must not reset");
   } finally {
     await ctx.close();

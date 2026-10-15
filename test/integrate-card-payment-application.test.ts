@@ -12,7 +12,7 @@ test("CardPaymentApplication composes the existing ConditionalOfferManager and s
   const calls: string[] = [];
   const application = createCardPaymentApplication({ guestContacts: { find: () => ({ guestId: "guest", tenantId: "tenant", phoneNumber: "+2348012345678", contactEmail: "guest@example.com", revision: 1 }) }, conditionalOfferApplication: conditional, bookingState: new InMemoryBookingStateRepository(), clock: () => new Date("2026-08-01T12:05:00.000Z"), calendar: { transitionPaymentPendingToConfirmedBooking: () => undefined }, pspClient: { verifyTransaction: (reference) => { calls.push(reference); return { verified: true, status: "success", amountKobo: 10000, currency: "NGN", pspReference: reference, payerId: "guest" }; } } });
   assert.ok(application instanceof CardPaymentApplication);
-  assert.equal(application.manager, application.manager);
+  assert.equal(typeof application.getCheckoutSession, "function");
   const payer = { id: "guest", role: "guest" as const, tenantId: "tenant" };
   const session = application.initializeCheckout("offer-1", payer);
   assert.equal(session.offerId, "offer-1");

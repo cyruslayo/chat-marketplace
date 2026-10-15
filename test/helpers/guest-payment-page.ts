@@ -51,7 +51,7 @@ export async function guestPaymentPage(options: {
     const draft = env.bookingRequestApp.createDraft({ unitId: unit.id, primaryGuest: { id: env.config.guestId, name: env.config.guestName }, occupants: env.demoOccupants(2), selfBookingAttestation: env.selfBookingAttestation(), checkIn: "2026-09-10", checkOut: "2026-09-13" }, env.guestPrincipal());
     const request = env.bookingRequestApp.disclose(draft.draftId, env.guestPrincipal());
     offerId = env.simulateOperatorAcceptance(request.requestId).offerId;
-    const offer = env.conditionalOfferApp.manager.getOffer(offerId);
+    const offer = env.conditionalOfferApp.getOffer(offerId);
     env.conditionalOfferApp.accept({ offerId, confirmationToken: offer.confirmationToken, expectedVersion: offer.offerVersion, principal: env.guestPrincipal() });
   }
   const server = startLocalGuestServer({ port: 0, environment: env, localPayment: true, conciergeMode: "deterministic" });

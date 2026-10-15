@@ -65,7 +65,7 @@ test("AC3: an expired offer has a failed rail step, no accept action and both na
       assert.equal(response.status, 409);
       const offerId = decodeURIComponent(path.split("/").at(-1)!);
       assert.equal(
-        fixture.environment.conditionalOfferApp.manager.getOffer(offerId)
+        fixture.environment.conditionalOfferApp.getOffer(offerId)
           .status,
         "issued",
         "projection expiry grants no acceptance",

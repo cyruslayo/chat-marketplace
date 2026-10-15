@@ -38,7 +38,7 @@ function row(html: string, id: string) {
   return found;
 }
 
-const status = (f: SignedInOperator, id: string) => f.server.environment.bookingRequestApp.manager.getRequest(id).status;
+const status = (f: SignedInOperator, id: string) => f.server.environment.bookingRequestApp.getRequest(id).status;
 
 test("AC1 — Requests awaiting a response come first, ordered by deadline, each showing its owner and apartment, the absolute WAT deadline, and the time left from server time", async () => {
   const f = await startSignedInOperator({ start: "2026-09-03T10:00:00Z" });

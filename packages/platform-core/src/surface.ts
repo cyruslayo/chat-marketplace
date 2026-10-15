@@ -1,3 +1,10 @@
+import { CatalogueRegistry } from "./catalogue-registry.js";
+
+/**
+ * The catalogue ids the shortlet pack registers today. Kept as the default so a manager
+ * constructed without a registry keeps accepting them; hosts register packs explicitly
+ * (ADR 0099 rule 4, slice 12).
+ */
 export const APPROVED_CATALOGUES: readonly string[] = Object.freeze([
   "common/v1",
   "discovery/v1",
@@ -33,16 +40,24 @@ interface ManagedSurface {
 
 export type ManagedSurfaceSnapshot = Readonly<ManagedSurface>;
 
+function defaultCatalogueRegistry(): CatalogueRegistry {
+  const registry = new CatalogueRegistry();
+  registry.register("shortlet", APPROVED_CATALOGUES);
+  return registry;
+}
+
 export class GenerativeSurfaceManager {
   #surfaces = new Map<string, ManagedSurface>();
   readonly #clock: () => Date;
+  readonly #catalogues: CatalogueRegistry;
 
-  constructor(options: { readonly clock?: () => Date } = {}) {
+  constructor(options: { readonly clock?: () => Date; readonly catalogues?: CatalogueRegistry } = {}) {
     this.#clock = options.clock ?? (() => new Date());
+    this.#catalogues = options.catalogues ?? defaultCatalogueRegistry();
   }
 
   #validateCatalogue(catalogue: string): void {
-    if (!APPROVED_CATALOGUES.includes(catalogue)) {
+    if (!this.#catalogues.has(catalogue)) {
       throw new Error(`Unsupported catalogue: ${catalogue}`);
     }
   }

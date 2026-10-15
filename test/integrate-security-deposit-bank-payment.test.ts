@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createPlatformCommandEnvelope, type CommandPrincipal } from "../packages/platform-core/src/index.js";
 import { BankTransferPaymentManager, InMemoryBookingPaymentJourneyRepository, InMemorySecurityDepositAccountingRepository, InMemoryBookingStateRepository, LivePaymentAttemptRegistry, type ConditionalBookingOffer } from "../domains/shortlet/src/index.js";
 import { ConditionalOfferApplication } from "../apps/web/src/conditional-offer-application.js";
-import { createBankTransferPaymentApplication } from "../apps/web/src/bank-transfer-application.js";
+import { createBankTransferPaymentApplication, getBankTransferManager } from "../apps/web/src/bank-transfer-application.js";
 import { TEST_GUEST_CONTACTS, issueTransferAccount } from "./helpers/bank-transfer-provider.js";
 
 const guest: CommandPrincipal = { id: "guest-bank-25", role: "guest", tenantId: "tenant-bank-25" };
@@ -24,6 +24,6 @@ test("Bank production factory wires the shared staged authorities", async () => 
   const journeys = new InMemoryBookingPaymentJourneyRepository(); const accounting = new InMemorySecurityDepositAccountingRepository(); let manager: BankTransferPaymentManager;
   const conditional = new ConditionalOfferApplication(Object.assign({ getOffer: () => offer }, { manager: { getOffer: () => offer } }) as unknown as ConstructorParameters<typeof ConditionalOfferApplication>[0]);
   const app = createBankTransferPaymentApplication({ conditionalOfferApplication: conditional, journeyRepository: journeys, securityDepositAccounting: accounting, bookingState: new InMemoryBookingStateRepository(), securityDepositCapability: { getCapability: () => ({ capabilityVersion: "cap-factory-bank", enabled: true, pspProviderId: "psp", pspApproved: true, counselApproved: true, collectionModel: "separate_actual_charge", paymentMethod: "bank_transfer" }) }, liveAttempts: new LivePaymentAttemptRegistry(), calendar: { transitionPaymentPendingToConfirmedBooking: () => undefined }, guestContacts: TEST_GUEST_CONTACTS, providerClient: { createTransferAccount: issueTransferAccount, verifyTransfer(reference) { const session = manager.getSessionByReference(reference)!; return { verified: true, status: "success", amountKobo: session.amountKobo, currency: "NGN", pspReference: reference, payerId: guest.id }; } } });
-  manager = app.manager; const session = await app.initializeTransfer(offer.offerId, guest); const result = app.verifyAndProcess(session.transferReference, system);
+  manager = getBankTransferManager(app); const session = await app.initializeTransfer(offer.offerId, guest); const result = app.verifyAndProcess(session.transferReference, system);
   assert.equal(result.outcome, "deposit_required"); assert.equal(app.getArtifact(offer.offerId, guest).facts.status, "deposit_required");
 });

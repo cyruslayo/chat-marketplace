@@ -20,8 +20,8 @@ type BookingRequestManagerDependencies = ConstructorParameters<typeof BookingReq
 export type BookingRequestApplicationDependencies = BookingRequestManagerDependencies & {
   readonly operatorAuthority?: OperatorRepresentativeAuthority;
   readonly clock?: () => Date;
-  readonly store?: import("../../../domains/shortlet/src/guest-interaction-store.js").SqliteGuestInteractionStore | null;
-  readonly guestContacts: import("../../../domains/shortlet/src/guest-contact.js").GuestContactSource;
+  readonly store?: import("../../../domains/shortlet/src/index.js").SqliteGuestInteractionStore | null;
+  readonly guestContacts: import("../../../domains/shortlet/src/index.js").GuestContactSource;
 };
 
 export interface BookingRequestDecisionInput {
@@ -38,8 +38,16 @@ function snapshot(manager: BookingRequestManager, requestId: string): BookingReq
   return manager.getRequest(requestId) as unknown as BookingRequestProjectionInput;
 }
 
+const managers = new WeakMap<BookingRequestApplication, BookingRequestManager>();
+/** Composition seam: the underlying domain manager, for wiring sibling applications. Not a public application API. */
+export function getBookingRequestManager(application: BookingRequestApplication): BookingRequestManager {
+  const manager = managers.get(application);
+  if (!manager) throw new Error("BookingRequestApplication is not initialized");
+  return manager;
+}
+
 export class BookingRequestApplication {
-  readonly manager: BookingRequestManager;
+  readonly #manager: BookingRequestManager;
   readonly #operatorAuthority?: OperatorRepresentativeAuthority;
   readonly #clock: () => Date;
 
@@ -47,7 +55,8 @@ export class BookingRequestApplication {
     manager: BookingRequestManager,
     options: { operatorAuthority?: OperatorRepresentativeAuthority; clock?: () => Date } = {}
   ) {
-    this.manager = manager;
+    this.#manager = manager;
+    managers.set(this, manager);
     this.#operatorAuthority = options.operatorAuthority;
     this.#clock = options.clock ?? (() => new Date());
   }
@@ -59,7 +68,7 @@ export class BookingRequestApplication {
       principal,
       payload: trustedPayload,
     });
-    return this.manager.createDraft(envelope, { clock: this.#clock });
+    return this.#manager.createDraft(envelope, { clock: this.#clock });
   }
 
   disclose(draftId: string, principal: CommandPrincipal, autoDeliver = true) {
@@ -68,11 +77,11 @@ export class BookingRequestApplication {
       principal,
       payload: { draftId, autoDeliver },
     });
-    return this.manager.discloseBookingRequest(envelope, { clock: this.#clock });
+    return this.#manager.discloseBookingRequest(envelope, { clock: this.#clock });
   }
 
   getArtifact(requestId: string, viewer: CommandPrincipal): BookingRequestArtifact {
-    const current = snapshot(this.manager, requestId);
+    const current = snapshot(this.#manager, requestId);
     if (current.status === "disclosed") {
       if (!current.delivered) {
         const deliveryEnvelope = createPlatformCommandEnvelope({
@@ -80,16 +89,34 @@ export class BookingRequestApplication {
           principal: { id: "system", role: "system" },
           payload: { requestId },
         });
-        this.manager.checkAndResolveDeliveryFailure(deliveryEnvelope, { clock: this.#clock });
+        this.#manager.checkAndResolveDeliveryFailure(deliveryEnvelope, { clock: this.#clock });
       }
       const expiryEnvelope = createPlatformCommandEnvelope({
         commandName: "booking_request.expire",
         principal: { id: "system", role: "system" },
         payload: { requestId },
       });
-      this.manager.checkAndResolveExpiry(expiryEnvelope, { clock: this.#clock });
+      this.#manager.checkAndResolveExpiry(expiryEnvelope, { clock: this.#clock });
     }
-    return bookingRequestArtifactFromRequest(snapshot(this.manager, requestId), viewer, this.#operatorAuthority);
+    return bookingRequestArtifactFromRequest(snapshot(this.#manager, requestId), viewer, this.#operatorAuthority);
+  }
+
+  /** Façade read of the authoritative Booking Request. */
+  getRequest(requestId: string): ReturnType<BookingRequestManager["getRequest"]> {
+    return this.#manager.getRequest(requestId);
+  }
+
+  /** Façade read of a Booking Request draft. */
+  getDraft(draftId: string): ReturnType<BookingRequestManager["getDraft"]> {
+    return this.#manager.getDraft(draftId);
+  }
+
+  /** Records the trusted delivery transition (system actor). */
+  markDelivered(requestId: string): void {
+    this.#manager.markDelivered(
+      createPlatformCommandEnvelope({ commandName: "booking_request.mark_delivered", principal: { id: "system", role: "system" }, payload: { requestId } }),
+      { clock: this.#clock },
+    );
   }
 
   confirm(input: BookingRequestDecisionInput) {
@@ -101,7 +128,7 @@ export class BookingRequestApplication {
   }
 
   private decide(input: BookingRequestDecisionInput, commandName: "booking_request.confirm" | "booking_request.decline") {
-    const current = snapshot(this.manager, input.requestId);
+    const current = snapshot(this.#manager, input.requestId);
     const expectedArtifactId = bookingRequestArtifactId(input.requestId);
     if (input.artifactId !== expectedArtifactId) throw new Error("Booking Request artifact mismatch");
     if (current.requestId !== input.requestId) throw new Error("Booking Request identity mismatch");
@@ -121,8 +148,8 @@ export class BookingRequestApplication {
       payload,
     });
     return commandName === "booking_request.confirm"
-      ? this.manager.confirmBookingRequest(envelope, { clock: this.#clock })
-      : this.manager.declineBookingRequest(envelope, { clock: this.#clock });
+      ? this.#manager.confirmBookingRequest(envelope, { clock: this.#clock })
+      : this.#manager.declineBookingRequest(envelope, { clock: this.#clock });
   }
 
   private assertOperator(request: BookingRequestProjectionInput, principal: CommandPrincipal): void {

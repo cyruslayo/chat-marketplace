@@ -227,7 +227,7 @@ test("Review fix: Request to Book after changing the search starts a draft for t
     const next = success(await fixture.send("/api/event", guestAction(detail.surfaces[0]!, REQUEST_TO_BOOK_EVENT)));
     const secondDraftId = next.surfaces[0]!.surfaceId.split(":").at(-1)!;
     assert.notEqual(secondDraftId, firstDraftId);
-    const record = fixture.environment.bookingRequestApp.manager.getDraft(secondDraftId);
+    const record = fixture.environment.bookingRequestApp.getDraft(secondDraftId);
     assert.equal(record.occupants.length, 3, "the new draft is for the new party size");
     assert.equal(next.journey?.current, "request");
   } finally { await fixture.close(); }

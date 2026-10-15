@@ -1,0 +1,152 @@
+import type { AssistantToolDefinition } from "./assistant-model.js";
+import type { AssistantTaskState } from "./assistant-state.js";
+import type { PendingAssistantAction } from "./pending-actions.js";
+import type { LocalGuestEnvironment } from "../fixture.js";
+
+/**
+ * The platform half of the concierge agent (ADR 0099: the platform owns the Agent; a pack
+ * supplies its prompt section, tools and surfaces). Everything here is domain-agnostic; the
+ * shortlet pack lives in `shortlet-assistant-pack.ts`.
+ */
+
+/** Bounded tool rounds: the loop never runs longer than this. */
+export const MAX_ASSISTANT_TOOL_ROUNDS = 4;
+
+/** The domain-agnostic preamble the runtime prefixes to every pack's prompt section. */
+export const ASSISTANT_PLATFORM_PREAMBLE = `You are the Shortlet Guest Assistant.
+You assist guests with discovering accommodation, answering questions about stays and pricing, and preparing booking actions.`;
+
+export interface AssistantToolPreconditionFailure {
+  readonly code: "invalid_tool_for_state" | "invalid_reference";
+  readonly message: string;
+}
+
+export interface AssistantToolContext {
+  readonly environment: LocalGuestEnvironment;
+  readonly taskState: AssistantTaskState;
+  readonly threadId: string;
+  readonly userTextHistory: readonly string[];
+  readonly now: Date;
+  readonly demoCheckIn: string;
+  readonly onSearchExecuted?: (filters: {
+    location: string;
+    neighbourhood?: string;
+    checkIn: string;
+    checkOut: string;
+    partySize: number;
+  }) => { readonly surfaceId: string; readonly artifactId: string; readonly unitProjections: readonly unknown[] };
+}
+
+export interface AssistantToolExecutionResult {
+  readonly result: Record<string, unknown>;
+  readonly updatedTaskState: AssistantTaskState;
+  readonly pendingActionCreated?: PendingAssistantAction;
+  readonly discoveryArtifact?: { readonly id: string };
+  readonly searchSurfacePayload?: { readonly surfaceId: string; readonly a2uiMessages: readonly unknown[] };
+  readonly requestDraftSurface?: { readonly draftId: string; readonly surfaceId: string; readonly a2uiMessages: readonly unknown[] };
+}
+
+export interface AssistantSurfaceMessages {
+  readonly surfaceId: string;
+  readonly a2uiMessages: readonly unknown[];
+}
+
+/**
+ * A domain pack for the concierge agent: its prompt section, its tools and its projections.
+ * The runtime composes the instruction from the platform preamble plus the active pack's
+ * section and exposes only the active pack's tools (ADR 0073/0099).
+ */
+export interface AssistantDomainPack {
+  readonly id: string;
+  readonly promptSection: string;
+  /** Words that signal the user is asking for this domain, used by the router. */
+  readonly intentKeywords: readonly string[];
+  readonly toolNames: readonly string[];
+  toolsForState(taskState: AssistantTaskState): readonly AssistantToolDefinition[];
+  validateToolCall(name: string, args: Record<string, unknown>, taskState: AssistantTaskState): AssistantToolPreconditionFailure | undefined;
+  executeTool(name: string, args: Record<string, unknown>, context: AssistantToolContext): AssistantToolExecutionResult;
+  /** Projections the runtime renders for this pack's authoritative results. */
+  discoverySurface(artifact: unknown, surfaceId: string): readonly unknown[];
+  unitDetailSurface(input: { readonly unitId: string; readonly checkIn: string; readonly checkOut: string; readonly surfaceId: string }): readonly unknown[];
+  pendingActionSurface(action: PendingAssistantAction, surfaceId: string): readonly unknown[];
+  bookingRequestSurface(artifact: unknown, surfaceId: string): readonly unknown[];
+  conditionalOfferSurface(artifact: unknown, surfaceId: string): readonly unknown[];
+  cardPaymentSurface(artifact: unknown, surfaceId: string): readonly unknown[];
+  bookingContractSurface(artifact: unknown, surfaceId: string): readonly unknown[];
+  /** Re-reads authoritative truth before a proposed booking request is confirmed. */
+  revalidateProposal(action: PendingAssistantAction): { readonly ok: true } | { readonly ok: false; readonly code: string; readonly message: string };
+}
+
+export function composeSystemInstruction(pack: AssistantDomainPack): string {
+  return `${ASSISTANT_PLATFORM_PREAMBLE}\n${pack.promptSection}`;
+}
+
+/** Platform-owned tools that manage conversation tasks; offered only when more than one domain is registered. */
+export const START_TASK_TOOL: AssistantToolDefinition = {
+  name: "start_task",
+  description: "Start a new task in another domain. Requires guest confirmation before switching.",
+  category: "read",
+  parametersSchema: {
+    type: "object",
+    properties: { domain: { type: "string", description: "Registered domain id, e.g. 'shop'" } },
+    required: ["domain"],
+    additionalProperties: false,
+  },
+};
+
+export const SWITCH_TASK_TOOL: AssistantToolDefinition = {
+  name: "switch_task",
+  description: "Switch to an existing task in this conversation.",
+  category: "read",
+  parametersSchema: {
+    type: "object",
+    properties: { taskId: { type: "string", description: "The task id to activate" } },
+    required: ["taskId"],
+    additionalProperties: false,
+  },
+};
+
+export const PLATFORM_TASK_TOOLS: readonly AssistantToolDefinition[] = [START_TASK_TOOL, SWITCH_TASK_TOOL];
+export const PLATFORM_TASK_TOOL_NAMES: readonly string[] = PLATFORM_TASK_TOOLS.map((tool) => tool.name);
+
+export class AssistantPackRegistry {
+  readonly #packs = new Map<string, AssistantDomainPack>();
+  #activeId: string | undefined;
+
+  register(pack: AssistantDomainPack): void {
+    this.#packs.set(pack.id, pack);
+    this.#activeId ??= pack.id;
+  }
+
+  get size(): number {
+    return this.#packs.size;
+  }
+
+  ids(): readonly string[] {
+    return [...this.#packs.keys()];
+  }
+
+  packFor(id: string): AssistantDomainPack | undefined {
+    return this.#packs.get(id);
+  }
+
+  get active(): AssistantDomainPack {
+    const pack = this.#activeId === undefined ? undefined : this.#packs.get(this.#activeId);
+    if (!pack) throw new Error("No assistant domain pack is registered");
+    return pack;
+  }
+
+  activate(id: string): void {
+    if (!this.#packs.has(id)) throw new Error(`Unknown assistant domain pack: ${id}`);
+    this.#activeId = id;
+  }
+
+  hasTool(name: string): boolean {
+    return this.#packs.get(this.#activeId ?? "")?.toolNames.includes(name) ?? false;
+  }
+
+  /** Tool names the active pack offers given the current task state. */
+  toolNamesForState(taskState: AssistantTaskState): readonly string[] {
+    return this.active.toolsForState(taskState).map((tool) => tool.name);
+  }
+}

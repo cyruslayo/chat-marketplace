@@ -146,7 +146,7 @@ test("Assistant booking intent creates an authoritative non-submitting Request D
     assert.doesNotMatch(JSON.stringify(messages), /shortlet\.request-draft\.submit/);
     const harness = setupHarness();
     harness.mountSurface(bookingIntent.surfaces![0]!.surfaceId, messages);
-    assert.ok(env.bookingRequestApp.manager.getDraft(thread.taskState.currentDraftId));
+    assert.ok(env.bookingRequestApp.getDraft(thread.taskState.currentDraftId));
   } finally {
     env.close();
   }

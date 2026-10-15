@@ -65,8 +65,8 @@ test("AC2: the payment choice is a radio group with one submit that reaches toda
       assert.equal(refused.status, 400, JSON.stringify(body));
     }
     assert.equal((await g.post(g.paymentPage, { method: "card" }, { origin: "https://attacker.example" })).status, 403);
-    assert.equal(g.env.bankTransferApp!.manager.getSession(g.offerId), undefined);
-    assert.equal(g.env.cardPaymentApp.manager.getCheckoutSession(g.offerId), undefined);
+    assert.equal(g.env.bankTransferApp!.getSession(g.offerId), undefined);
+    assert.equal(g.env.cardPaymentApp.getCheckoutSession(g.offerId), undefined);
     assert.equal(g.env.livePaymentAttempts.current(g.offerId, g.env.clock()), undefined);
 
     // Card reaches the existing card continuation.
@@ -78,7 +78,7 @@ test("AC2: the payment choice is a radio group with one submit that reaches toda
     assert.equal(bank.status, 307);
     assert.equal(bank.headers.get("location"), `${g.paymentPage}/transfer`);
     assert.equal((await g.post(`${g.paymentPage}/transfer`)).status, 303);
-    assert.equal(g.env.bankTransferApp!.manager.getSession(g.offerId)?.status, "initiated");
+    assert.equal(g.env.bankTransferApp!.getSession(g.offerId)?.status, "initiated");
   } finally { await g.close(); }
 });
 
@@ -126,7 +126,7 @@ test("AC5: the waiting screen shows the projected verification deadline and rece
   const t = await guestPaymentPage();
   try {
     assert.equal((await t.post(`${t.paymentPage}/transfer`)).status, 303);
-    const session = t.env.bankTransferApp!.manager.getSession(t.offerId)!;
+    const session = t.env.bankTransferApp!.getSession(t.offerId)!;
     t.advance(25 * 60 * 1000);
     const text = visibleText(await (await t.get(`${t.paymentPage}/transfer`)).text());
     assert.ok(text.includes(formatWAT(session.expiresAt)), "the account's real expiry");

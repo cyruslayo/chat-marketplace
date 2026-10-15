@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import type { BookingContract, Reservation } from "../../../domains/shortlet/src/card-payment.js";
-import type { ProductionRevenueReleaseRecord, AuthoritativeRevenueEconomics } from "../../../domains/shortlet/src/revenue-release.js";
-import type { RevenueAdjustmentRecord } from "../../../domains/shortlet/src/revenue-accounting.js";
+import type { BookingContract, Reservation } from "../../../domains/shortlet/src/index.js";
+import type { ProductionRevenueReleaseRecord, AuthoritativeRevenueEconomics } from "../../../domains/shortlet/src/index.js";
+import type { RevenueAdjustmentRecord } from "../../../domains/shortlet/src/index.js";
 import type { RevenueEligibilityEvaluation } from "./revenue-release-application.js";
 export const REVENUE_RELEASE_ARTIFACT_KIND = "shortlet.revenue-release";
 export const REVENUE_RELEASE_ARTIFACT_SCHEMA = "shortlet.revenue-release/v1";

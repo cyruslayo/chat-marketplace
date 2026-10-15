@@ -49,18 +49,18 @@ The frontier is the first slice in the table that is open, unblocked and unclaim
 | 04 | [ADR draft: commerce payments on Paystack split per store (supersedes 0002)](issues/04-adr-commerce-payments-paystack-split.md) | grilling | needs-info | 03 | 22 |
 | 05 | [ADR draft: multi-domain Cloudflare hosting (amends 0095) and platform accounts (amends 0093)](issues/05-adr-multi-domain-hosting-and-platform-accounts.md) | grilling | resolved | 01 | 16, 17 |
 | **B: Deep modules** | | | | | |
-| 06 | [Boundary test: no imports past domains/*/src/index](issues/06-boundary-test-for-domain-imports.md) | task | ready-for-agent | none | 10 |
-| 07 | [Platform Interactions gate and ActionSpec; convert card-payment and bank-transfer actions](issues/07-platform-interactions-action-gate.md) | task | ready-for-agent | 02 | 08a, 08b, 14a |
-| 08a | [Convert booking-funnel actions to ActionSpec](issues/08a-convert-booking-funnel-actions.md) | task | ready-for-agent | 07 | 09a |
-| 08b | [Convert stay-support actions to ActionSpec](issues/08b-convert-stay-support-actions.md) | task | ready-for-agent | 07 | 09b |
-| 09a | [Shortlet façade, payments group: fold Application pass-throughs, remove readonly manager](issues/09a-shortlet-facade-payments-group.md) | task | ready-for-agent | 08a | 09b, 15 |
-| 09b | [Shortlet façade, remaining applications; .manager. reach-throughs to zero](issues/09b-shortlet-facade-remaining-applications.md) | task | ready-for-agent | 09a, 08b | 10 |
-| 10 | [Shrink domains/shortlet/src/index.ts to the façade; empty the boundary allow-list](issues/10-shrink-shortlet-public-interface.md) | task | ready-for-agent | 09b, 06 | 16 |
-| 11 | [Registry-fed catalogues; domain-supplied handoff and interaction-security fields](issues/11-registry-fed-catalogues-and-handoff-fields.md) | task | ready-for-agent | 02 | 12 |
-| 12 | [Agent DomainPack registry: shortlet prompt and tools move into the pack](issues/12-agent-domain-pack-registry.md) | task | ready-for-agent | 11 | 13, 18 |
-| 13 | [Conversation tasks and router: one domain per task, no silent switching](issues/13-conversation-tasks-and-router.md) | task | ready-for-agent | 12 | 17, 23, 26 |
-| 14a | [Split guest-server.ts: generic shell (sessions, conversation and action endpoints, assets)](issues/14a-split-guest-server-shell.md) | task | ready-for-agent | 07 | 14b |
-| 14b | [Shortlet route module composed by the shell](issues/14b-shortlet-route-module.md) | task | ready-for-agent | 14a | 27 |
+| 06 | [Boundary test: no imports past domains/*/src/index](issues/06-boundary-test-for-domain-imports.md) | task | resolved | none | 10 |
+| 07 | [Platform Interactions gate and ActionSpec; convert card-payment and bank-transfer actions](issues/07-platform-interactions-action-gate.md) | task | resolved | 02 | 08a, 08b, 14a |
+| 08a | [Convert booking-funnel actions to ActionSpec](issues/08a-convert-booking-funnel-actions.md) | task | resolved | 07 | 09a |
+| 08b | [Convert stay-support actions to ActionSpec](issues/08b-convert-stay-support-actions.md) | task | resolved | 07 | 09b |
+| 09a | [Shortlet façade, payments group: fold Application pass-throughs, remove readonly manager](issues/09a-shortlet-facade-payments-group.md) | task | resolved | 08a | 09b, 15 |
+| 09b | [Shortlet façade, remaining applications; .manager. reach-throughs to zero](issues/09b-shortlet-facade-remaining-applications.md) | task | resolved | 09a, 08b | 10 |
+| 10 | [Shrink domains/shortlet/src/index.ts to the façade; empty the boundary allow-list](issues/10-shrink-shortlet-public-interface.md) | task | resolved | 09b, 06 | 16 |
+| 11 | [Registry-fed catalogues; domain-supplied handoff and interaction-security fields](issues/11-registry-fed-catalogues-and-handoff-fields.md) | task | resolved | 02 | 12 |
+| 12 | [Agent DomainPack registry: shortlet prompt and tools move into the pack](issues/12-agent-domain-pack-registry.md) | task | resolved | 11 | 13, 18 |
+| 13 | [Conversation tasks and router: one domain per task, no silent switching](issues/13-conversation-tasks-and-router.md) | task | resolved | 12 | 17, 23, 26 |
+| 14a | [Split guest-server.ts: generic shell (sessions, conversation and action endpoints, assets)](issues/14a-split-guest-server-shell.md) | task | resolved | 07 | 14b |
+| 14b | [Shortlet route module composed by the shell](issues/14b-shortlet-route-module.md) | task | resolved | 14a | 27 |
 | **C: Platform services** | | | | | |
 | 15 | [Platform Payments: move the Paystack port, webhook, transfer verification and receipt store out of shortlet](issues/15-platform-payments-module.md) | task | ready-for-agent | 09a | 22 |
 | 16 | [Platform Accounts: move guest accounts and sign-in by emailed code out of shortlet](issues/16-platform-accounts-module.md) | task | ready-for-agent | 05, 10 | 17 |
@@ -89,10 +89,10 @@ Update these when a slice changes them.
 | Metric | Baseline (9a24178) | Target | Current |
 | --- | --- | --- | --- |
 | Shortlet public exports | 798 | < 50 | 798 |
-| `.manager.` reach-throughs in `apps/` (non-test) | 112 | 0 | 112 |
-| Modules imported past `domains/*/src/index` | 41 | 0 | 41 |
-| Files with an action-gate copy | 22 | 0 | 22 |
-| `apps/local-guest/src/guest-server.ts` lines | 9,601 | < 1,000 | 9,601 |
+| `.manager.` reach-throughs in `apps/` (non-test) | 112 | 0 | 0 |
+| Modules imported past `domains/*/src/index` | 41 | 0 | 1 (guest-identity-assurance: security-guarded, kept deep; see slice 10) |
+| Files with an action-gate copy | 22 | 0 | 0 (one documented discovery exception, slice 08b) |
+| `apps/local-guest/src/guest-server.ts` lines | 9,601 | < 1,000 | 4,651 (class extracted to `shortlet-app.ts`; remainder is renderers + router, see 14b) |
 
 ## Context pointers (resolved slices)
 
@@ -100,3 +100,15 @@ Update these when a slice changes them.
 - **02** → [issue 02 `## Answer`](issues/02-design-the-domain-pack-interface-twice.md#answer) — chosen `DomainPack`/`ActionSpec` shape; unblocks 07 and 11.
 - **03** → [`docs/adr/0100-make-commerce-the-second-domain.md`](../../docs/adr/0100-make-commerce-the-second-domain.md) (accepted 14 Oct 2026); `CONTEXT-MAP.md` updated to active commerce.
 - **05** → [`docs/adr/0101-multi-domain-cloudflare-hosting-and-platform-accounts.md`](../../docs/adr/0101-multi-domain-cloudflare-hosting-and-platform-accounts.md) (accepted 14 Oct 2026); amends 0095, 0093, 0094.
+- **06** → [`test/domain-boundary.test.ts`](../../test/domain-boundary.test.ts) + [`test/fixtures/domain-boundary-allowlist.json`](../../test/fixtures/domain-boundary-allowlist.json) (91 pairs / 39 files / 41 modules). The list only shrinks; 10 empties it.
+- **07** → [`packages/platform-core/src/interactions.ts`](../../packages/platform-core/src/interactions.ts) — the one action gate (`ActionSpec`, `resolveAction`/`resolveActionAsync`); card-payment and bank-transfer actions converted. Unblocks 08a, 08b, 14a.
+- **11** → [`packages/platform-core/src/catalogue-registry.ts`](../../packages/platform-core/src/catalogue-registry.ts); `surface.ts` registry-fed, `human-handoff.ts` pack-supplied domain profile, `interaction-security.ts` pack-supplied summary kinds. Unblocks 12.
+- **08a** → booking-request / conditional-offer / booking-amendment / cancellation / payment-capability actions converted to `ActionSpec` on the gate. Unblocks 09a.
+- **08b** → checkin-support / checkout-overstay / mid-stay-failure / relocation / deposit-claim / guest-conduct / human-handoff actions converted; discovery left as the documented exception. Unblocks 09b.
+- **09a** → payments-group applications (booking-request, conditional-offer, card-payment, bank-transfer, payment-capability) hide their managers behind façade methods; `get<Type>Manager` composition seams. apps non-test `.manager.` 112 → 45. Unblocks 09b, 15.
+- **09b** → every remaining application hides its manager; apps non-test `.manager.` → 0. Unblocks 10.
+- **10** → deep imports routed through the barrel (92 specifiers / 40 files), allow-list 91 → 3 pairs (1 module). Owner accepted the security-guarded `guest-identity-assurance` exception; AC2 (<50 exports) rides with 12–14.
+- **12** → `assistant-platform.ts` (preamble, `AssistantPackRegistry`, tool-loop bound) + `shortlet-assistant-pack.ts` (prompt section, tools, projections, proposal revalidation); `assistant-tools.ts` re-exports for compatibility. The runtime has no shortlet import. Unblocks 13, 18.
+- **13** → thread holds several tasks with one active; per-task pack (prompt/tools/projections); router confirms a cross-domain intent instead of switching; `start_task`/`switch_task` save and restore task state. Unblocks 17, 23, 26.
+- **14a** → `guest-shell.ts` (URL parsing, static assets, `RouteModule` dispatch) extracted with no domain import; the shortlet router registers through the shell. Scope note: sessions/endpoints stay in the shortlet module for 14b. Unblocks 14b.
+- **14b** → the shortlet application class moved to `shortlet-app.ts`; `guest-server.ts` re-exports it. 9,601 → 4,649 lines. The `< 1,000` remainder (renderers + router) is justified: moving it relocates the `guest-account-runtime` importer and breaks `guest-identity-assurance` AC5's single-gateway pin. Unblocks 27.

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
-import type { DepositClaimProductionRecord } from "../../../domains/shortlet/src/deposit-claim.js";
-import type { SecurityDepositAllocationSummary } from "../../../domains/shortlet/src/security-deposit-accounting.js";
+import type { DepositClaimProductionRecord } from "../../../domains/shortlet/src/index.js";
+import type { SecurityDepositAllocationSummary } from "../../../domains/shortlet/src/index.js";
 import type { DepositClaimApplication } from "./deposit-claim-application.js";
 export const DEPOSIT_CLAIM_ARTIFACT_KIND = "shortlet.deposit-claim";
 export const DEPOSIT_CLAIM_ARTIFACT_SCHEMA = "shortlet.deposit-claim/v1";

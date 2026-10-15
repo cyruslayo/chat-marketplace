@@ -13,6 +13,7 @@ import {
   type CommandPrincipal,
 } from "../../packages/platform-core/src/index.js";
 import { TEST_MANUAL_ACCOUNT, TEST_RECEIPTS } from "./guest-payment-page.js";
+import { getConditionalOfferManager } from "../../apps/web/src/index.js";
 
 /**
  * The Guest side of a manual transfer (P5), writing to the back office's SQLite file through its own connection, as
@@ -32,7 +33,7 @@ export function guestManualTransfers(
   const sqlDatabase = new NodeSqliteDatabase(database);
   const store = new SqliteGuestInteractionStore(sqlDatabase);
   const manager = new ManualTransferManager({
-    offerManager: env.conditionalOfferApp.manager,
+    offerManager: getConditionalOfferManager(env.conditionalOfferApp),
     store: new SqliteManualTransferStore(sqlDatabase),
     account: TEST_MANUAL_ACCOUNT,
     liveAttempts: new SqliteLivePaymentAttemptRegistry(store),
@@ -46,7 +47,7 @@ export function guestManualTransfers(
     return offer.offerId;
   };
   const guestFor = (offerId: string): CommandPrincipal => {
-    const offer = env.conditionalOfferApp.manager.getOffer(offerId);
+    const offer = env.conditionalOfferApp.getOffer(offerId);
     return {
       id: offer.parties.primaryGuest.id,
       role: "guest",
@@ -56,7 +57,7 @@ export function guestManualTransfers(
   return {
     start(requestId) {
       const offerId = offerIdFor(requestId);
-      const offer = env.conditionalOfferApp.manager.getOffer(offerId);
+      const offer = env.conditionalOfferApp.getOffer(offerId);
       if (offer.status !== "accepted")
         env.conditionalOfferApp.accept({
           offerId,

@@ -1,8 +1,8 @@
 import { createPlatformCommandEnvelope, type CommandPrincipal } from "../../../packages/platform-core/src/index.js";
-import type { BookingStateRepository } from "../../../domains/shortlet/src/booking-state.js";
-import type { BookingContract, Reservation } from "../../../domains/shortlet/src/card-payment.js";
-import type { SecurityDepositAccountingRepository } from "../../../domains/shortlet/src/security-deposit-accounting.js";
-import type { DepositClaimAppealDisposition, DepositClaimAppealGround, DepositClaimAssertionItem, DepositClaimEvidenceAuthority, DepositClaimProductionItem, DepositClaimProductionRecord, DepositClaimRepository, DepositClaimParty } from "../../../domains/shortlet/src/deposit-claim.js";
+import type { BookingStateRepository } from "../../../domains/shortlet/src/index.js";
+import type { BookingContract, Reservation } from "../../../domains/shortlet/src/index.js";
+import type { SecurityDepositAccountingRepository } from "../../../domains/shortlet/src/index.js";
+import type { DepositClaimAppealDisposition, DepositClaimAppealGround, DepositClaimAssertionItem, DepositClaimEvidenceAuthority, DepositClaimProductionItem, DepositClaimProductionRecord, DepositClaimRepository, DepositClaimParty } from "../../../domains/shortlet/src/index.js";
 import type { EffectiveCheckoutTermsProvider } from "./checkout-overstay-application.js";
 
 export interface DepositClaimPolicyResult { readonly policyVersion: string; readonly reservationId: string; readonly itemId: string; readonly evidenceVersion: string; readonly permittedCategory: boolean; readonly covered: boolean; readonly specific: boolean; readonly quantified: boolean; readonly excluded: boolean; readonly exclusionReason?: "ordinary_wear" | "routine_cleaning" | "turnover" | "utilities" | "maintenance" | "deterioration" | "pre_existing" | "undisclosed_penalty" | "vague_inconvenience" | "future_revenue"; }

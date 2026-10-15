@@ -1,0 +1,14 @@
+[
+  [
+    "apps/cloudflare/src/ops-import.ts",
+    "domains/shortlet/src/guest-identity-assurance"
+  ],
+  [
+    "apps/cloudflare/src/schema.ts",
+    "domains/shortlet/src/guest-identity-assurance"
+  ],
+  [
+    "apps/local-guest/src/guest-identity-status.ts",
+    "domains/shortlet/src/guest-identity-assurance"
+  ]
+]

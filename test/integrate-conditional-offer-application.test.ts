@@ -3,8 +3,8 @@ import test from "node:test";
 import type { WebServerEventHandoff } from "@weaver/web";
 import { InMemoryAuditLog } from "../packages/platform-core/src/index.js";
 import { BookingRequestManager, ConditionalOfferManager, GuestVerificationService, UnitRepository, seedIssue01Units } from "../domains/shortlet/src/index.js";
-import { createBookingRequestApplication } from "../apps/web/src/booking-request-application.js";
-import { createConditionalOfferApplication } from "../apps/web/src/conditional-offer-application.js";
+import { createBookingRequestApplication, getBookingRequestManager } from "../apps/web/src/booking-request-application.js";
+import { createConditionalOfferApplication, getConditionalOfferManager } from "../apps/web/src/conditional-offer-application.js";
 import { acceptConventionalConditionalOffer } from "../apps/web/src/presentation.js";
 import { resolveConditionalOfferServerEvent } from "../apps/web/src/conditional-offer-actions.js";
 
@@ -42,9 +42,9 @@ test("Conditional Offer application shares Booking Request state and creates tru
   const request = confirmedRequest(s, "guest-101", "2026-08-01", "2026-08-05");
   const operator = { id: "rep-operator", role: "operator" as const, tenantId: "tenant-lagos" };
   const offer = s.application.issue(request.requestId, operator);
-  assert.equal(s.application.manager instanceof ConditionalOfferManager, true);
-  assert.equal(s.application.manager.constructor.name, "ConditionalOfferManager");
-  assert.equal(s.bookingRequestApplication.manager.constructor.name, "BookingRequestManager");
+  assert.equal(getConditionalOfferManager(s.application) instanceof ConditionalOfferManager, true);
+  assert.equal(getConditionalOfferManager(s.application).constructor.name, "ConditionalOfferManager");
+  assert.equal(getBookingRequestManager(s.bookingRequestApplication).constructor.name, "BookingRequestManager");
   assert.equal(offer.status, "issued");
   const artifact = s.application.getArtifact(offer.offerId, { id: "guest-101", role: "guest", tenantId: "tenant-lagos" });
   assert.equal(artifact.kind, "shortlet.conditional-booking-offer");

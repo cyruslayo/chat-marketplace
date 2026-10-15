@@ -91,8 +91,9 @@ test("Prompt, tool, listing, upload, and malicious A2UI content remain untrusted
     /Untyped or invalid A2UI surface component: executable UI and malicious content rejected/
   );
 
-  // Valid typed A2UI succeeds
-  const validSurface = engine.renderTypedA2UI({ kind: "booking_summary", title: "Lekki Apartment Stay" });
+  // Valid typed A2UI succeeds once the pack registers its summary kind (ADR 0099 rule 4)
+  const domainEngine = new InteractionSecurityEngine({ summaryKinds: ["surface_render", "booking_summary", "confirmation_card", "status_display"] });
+  const validSurface = domainEngine.renderTypedA2UI({ kind: "booking_summary", title: "Lekki Apartment Stay" });
   assert.equal(validSurface.kind, "booking_summary");
 });
 

@@ -91,6 +91,7 @@ import {
 import {
   createBookingRequestApplication,
   createConditionalOfferApplication,
+  getConditionalOfferManager,
   createCheckInSupportApplication,
   type CheckInSupportApplication,
   type BookingRequestApplication,
@@ -103,7 +104,7 @@ import {
 import { SqliteAuditLog } from "../../../packages/platform-core/src/sqlite-audit-log.js";
 import { SqliteTelemetry } from "../../../packages/platform-core/src/sqlite-telemetry.js";
 import type { TelemetryEvent } from "../../../packages/platform-core/src/telemetry.js";
-import { SqliteRevenueAccountingRepository, SqliteRevenueReleaseStateStore } from "../../../domains/shortlet/src/sqlite-revenue-accounting.js";
+import { SqliteRevenueAccountingRepository, SqliteRevenueReleaseStateStore } from "../../../domains/shortlet/src/index.js";
 
 export interface LocalOwnerFixtureConfig {
   readonly databasePath: string;
@@ -990,7 +991,7 @@ export class LocalApartmentOwnerEnvironment {
     readonly ownerName: string;
     readonly apartmentTitle: string;
   } {
-    const request = this.bookingRequestApp.manager.getRequest(requestId) as {
+    const request = this.bookingRequestApp.getRequest(requestId) as {
       operatorId?: string;
       unitId?: string;
     };
@@ -1029,7 +1030,7 @@ export class LocalApartmentOwnerEnvironment {
       .listBookingRequestIds()
       .flatMap((requestId) => {
         try {
-          const request = this.bookingRequestApp.manager.getRequest(
+          const request = this.bookingRequestApp.getRequest(
             requestId,
           ) as { operatorId?: string; tenantId?: string; status: string };
           if (
@@ -1099,7 +1100,7 @@ export class LocalApartmentOwnerEnvironment {
     requestId: string,
     principal: CommandPrincipal,
   ): BookingRequestArtifact {
-    const request = this.bookingRequestApp.manager.getRequest(requestId) as {
+    const request = this.bookingRequestApp.getRequest(requestId) as {
       operatorId?: string;
       tenantId?: string;
     };
@@ -1320,7 +1321,7 @@ export class LocalApartmentOwnerEnvironment {
    * ids, time and reason code only; no free text and no guest data.
    */
   #recordCalendarAccuracyEvent(requestId: string): void {
-    const request = this.bookingRequestApp.manager.getRequest(requestId) as {
+    const request = this.bookingRequestApp.getRequest(requestId) as {
       unitId?: string;
       operatorId?: string;
       tenantId?: string;
@@ -1414,7 +1415,7 @@ export class LocalApartmentOwnerEnvironment {
       quote?: { allInStayTotalKobo?: number };
     };
     try {
-      request = this.bookingRequestApp.manager.getRequest(
+      request = this.bookingRequestApp.getRequest(
         requestId,
       ) as typeof request;
     } catch {
@@ -1508,7 +1509,7 @@ export class LocalApartmentOwnerEnvironment {
       ? this.#bookingState.findContractById(reservation.contractId)
       : null;
     if (!reservation || !contract) throw new Error("Booking not found");
-    const request = this.bookingRequestApp.manager.getRequest(requestId) as {
+    const request = this.bookingRequestApp.getRequest(requestId) as {
       phoneNumber?: string | null;
     };
     const checkIn = this.#checkInState(reservation.reservationId);
@@ -1899,7 +1900,7 @@ export class LocalApartmentOwnerEnvironment {
     const app = this.#checkInSupport(staff.id);
     // ADR 0030: support is scheduled for the window before check-in is recorded; the signed-in user is the responder.
     try {
-      app.manager.projectCheckInStatus(current.reservationId);
+      app.projectCheckInStatus(current.reservationId);
     } catch {
       app.scheduleSupport(current.reservationId, staff);
     }
@@ -2067,7 +2068,7 @@ export class LocalApartmentOwnerEnvironment {
       : null;
     // Only a Reservation received money and owes an owner anything (ADR 0005).
     if (!snapshot || !reservation || !contract) return null;
-    const request = this.bookingRequestApp.manager.getRequest(
+    const request = this.bookingRequestApp.getRequest(
       booking.requestId,
     ) as { operatorId?: string };
     if (!request.operatorId) return null;
@@ -2355,7 +2356,7 @@ export class LocalApartmentOwnerEnvironment {
    */
   #manualTransfers(): ManualTransferManager {
     return new ManualTransferManager({
-      offerManager: this.conditionalOfferApp.manager,
+      offerManager: getConditionalOfferManager(this.conditionalOfferApp),
       store: this.#manualTransferStore,
       account: null,
       liveAttempts: new SqliteLivePaymentAttemptRegistry(this.interactionStore),
@@ -2632,7 +2633,7 @@ export class LocalApartmentOwnerEnvironment {
   #requestHolding(commitment: AvailabilityCommitment): string | null {
     for (const requestId of this.interactionStore.listBookingRequestIds()) {
       try {
-        const request = this.bookingRequestApp.manager.getRequest(
+        const request = this.bookingRequestApp.getRequest(
           requestId,
         ) as { inventoryCommitmentId?: string };
         if (request.inventoryCommitmentId === commitment.commitmentId)

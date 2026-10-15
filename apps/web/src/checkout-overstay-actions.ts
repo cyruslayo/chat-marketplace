@@ -1,9 +1,56 @@
 import type { WebServerEventHandoff } from "@weaver/web";
-import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
+import type { ActionSpec, CommandPrincipal } from "../../../packages/platform-core/src/index.js";
+import { resolveAction } from "../../../packages/platform-core/src/index.js";
 import type { CheckoutOverstayApplication } from "./checkout-overstay-application.js";
 import type { CheckoutArtifact } from "./checkout-overstay-artifact.js";
 export const CHECKOUT_ACCEPT_LATE_CHECKOUT_EVENT = "shortlet.checkout.accept-late-checkout";
 type Context = { readonly artifactId: string; readonly reservationId: string; readonly requestedTime: "12:00" | "13:00" | "14:00"; readonly quoteId: string; readonly expectedCheckoutTime: string; readonly expectedTermVersion: string; readonly projectionVersion: string };
-export type CheckoutActionResult = { readonly ok: true; readonly artifact: CheckoutArtifact } | { readonly ok: false; readonly code: "UNSUPPORTED_ACTION" | "INVALID_CONTEXT" | "STALE_ACTION" | "ACTION_NOT_AUTHORIZED"; readonly message: string };
-function contextOf(event: WebServerEventHandoff): Context | undefined { const value: unknown = event?.message?.action?.context; if (!value || typeof value !== "object" || Array.isArray(value)) return undefined; const record = value as Record<string, unknown>; const allowed = ["artifactId", "reservationId", "requestedTime", "quoteId", "expectedCheckoutTime", "expectedTermVersion", "projectionVersion"]; const required = allowed; if (Object.keys(record).some((key) => !allowed.includes(key)) || required.some((key) => typeof record[key] !== "string")) return undefined; if (!/^(12|13|14):00$/.test(record.requestedTime as string)) return undefined; return record as Context; }
-export function resolveCheckoutServerEvent(input: { readonly event: WebServerEventHandoff; readonly application: CheckoutOverstayApplication; readonly principal: CommandPrincipal }): CheckoutActionResult { if (input.event?.message?.action?.name !== CHECKOUT_ACCEPT_LATE_CHECKOUT_EVENT) return { ok: false, code: "UNSUPPORTED_ACTION", message: "The action is not supported." }; const context = contextOf(input.event); if (!context) return { ok: false, code: "INVALID_CONTEXT", message: "The action context is invalid." }; try { const current = input.application.getArtifact(context.reservationId, input.principal); const action = current.actions.find((candidate) => candidate.requestedTime === context.requestedTime); if (context.artifactId !== current.id || context.reservationId !== current.facts.reservationId || context.projectionVersion !== current.projectionVersion || context.expectedCheckoutTime !== current.facts.effectiveCheckoutTime || context.expectedTermVersion !== current.facts.termVersion || !action || action.quoteId !== context.quoteId) return { ok: false, code: "STALE_ACTION", message: "The checkout action is stale; refresh the current checkout." }; return { ok: true, artifact: input.application.acceptLateCheckout(context.reservationId, context.requestedTime, input.principal, context) }; } catch { return { ok: false, code: "ACTION_NOT_AUTHORIZED", message: "The checkout action was rejected." }; } }
+type CheckoutActionRejectionCode = "UNSUPPORTED_ACTION" | "INVALID_CONTEXT" | "STALE_ACTION" | "ACTION_NOT_AUTHORIZED";
+export type CheckoutActionResult = { readonly ok: true; readonly artifact: CheckoutArtifact } | { readonly ok: false; readonly code: CheckoutActionRejectionCode; readonly message: string };
+
+const STALE_MESSAGE = "The checkout action is stale; refresh the current checkout.";
+const RUN_REJECTED_MESSAGE = "The checkout action was rejected.";
+const staleAwareCode = (error: unknown): CheckoutActionRejectionCode => (error instanceof Error && error.message === "STALE_ACTION" ? "STALE_ACTION" : "ACTION_NOT_AUTHORIZED");
+
+function checkoutAcceptLateCheckoutSpec(application: CheckoutOverstayApplication): ActionSpec<Context, CheckoutArtifact, unknown> {
+  return {
+    name: CHECKOUT_ACCEPT_LATE_CHECKOUT_EVENT,
+    artifact: {
+      load: (context, principal) => application.getArtifact(context.reservationId, principal),
+      loadRejected: { code: "ACTION_NOT_AUTHORIZED", message: RUN_REJECTED_MESSAGE },
+      loadRejectedCode: staleAwareCode,
+    },
+    context: {
+      required: {
+        artifactId: { type: "string" },
+        reservationId: { type: "string" },
+        requestedTime: { type: "string", pattern: "^(12|13|14):00$" },
+        quoteId: { type: "string" },
+        expectedCheckoutTime: { type: "string" },
+        expectedTermVersion: { type: "string" },
+        projectionVersion: { type: "string" },
+      },
+    },
+    crossMatch: (context, artifact) => {
+      const action = artifact.actions.find((candidate) => candidate.requestedTime === context.requestedTime);
+      return !action || action.quoteId !== context.quoteId ? { code: "STALE_ACTION", message: STALE_MESSAGE } : true;
+    },
+    expect: [
+      { expected: (context) => context.artifactId, actual: (artifact) => artifact.id },
+      { expected: (context) => context.reservationId, actual: (artifact) => artifact.facts.reservationId },
+      { expected: (context) => context.projectionVersion, actual: (artifact) => artifact.projectionVersion },
+      { expected: (context) => context.expectedCheckoutTime, actual: (artifact) => artifact.facts.effectiveCheckoutTime },
+      { expected: (context) => context.expectedTermVersion, actual: (artifact) => artifact.facts.termVersion },
+    ],
+    isAuthorized: () => true,
+    run: ({ context, principal }) => application.acceptLateCheckout(context.reservationId, context.requestedTime, principal, context),
+    rejectionMessages: { stale: STALE_MESSAGE, runRejected: RUN_REJECTED_MESSAGE },
+    runRejectedCode: staleAwareCode,
+  };
+}
+
+export function resolveCheckoutServerEvent(input: { readonly event: WebServerEventHandoff; readonly application: CheckoutOverstayApplication; readonly principal: CommandPrincipal }): CheckoutActionResult {
+  const outcome = resolveAction(input.event, [checkoutAcceptLateCheckoutSpec(input.application)], input.principal);
+  if (!outcome.ok) return { ok: false, code: outcome.code as CheckoutActionRejectionCode, message: outcome.message };
+  return { ok: true, artifact: outcome.artifact };
+}
