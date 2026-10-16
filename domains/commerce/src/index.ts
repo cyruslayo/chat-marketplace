@@ -3,7 +3,10 @@ import { CommerceDirectory } from "./commerce-directory.js";
 import { CommerceCatalogue } from "./commerce-catalogue.js";
 import { CommerceCart } from "./commerce-cart.js";
 import { CommerceOrders } from "./commerce-order.js";
+import { MerchantBackOffice } from "./merchant-back-office.js";
 import { COMMERCE_SCHEMA_MIGRATIONS } from "./commerce-schema.js";
+
+export type { MerchantBackOfficePrincipal, MerchantBackOfficeRole } from "./merchant-back-office.js";
 
 /**
  * The commerce pack's prompt section. Commerce vocabulary only (Merchant, Store, Consumer); no
@@ -30,6 +33,7 @@ export function createCommercePack(deps: CommercePackDeps) {
   const catalogue = new CommerceCatalogue(deps.database, deps.clock);
   const cart = new CommerceCart(deps.database, deps.clock);
   const orders = new CommerceOrders(deps.database, deps.clock);
+  const backOffice = new MerchantBackOffice(directory, catalogue, orders);
   return {
     id: "commerce",
     promptSection: COMMERCE_PROMPT_SECTION,
@@ -53,5 +57,6 @@ export function createCommercePack(deps: CommercePackDeps) {
     catalogue,
     cart,
     orders,
+    backOffice,
   };
 }

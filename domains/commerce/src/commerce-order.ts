@@ -148,6 +148,13 @@ export class CommerceOrders {
     return row ? readOrder(row) : null;
   }
 
+  ordersForStore(storeId: string): readonly MerchantOrder[] {
+    return this.database
+      .prepare("SELECT * FROM merchant_orders WHERE store_id = $storeId ORDER BY created_at")
+      .all({ $storeId: storeId })
+      .map(readOrder);
+  }
+
   #buildOrder(input: CreateOrderInput, normalizedPhone: string): MerchantOrder {
     const store = this.database.prepare("SELECT id, status FROM stores WHERE id = $id").get({ $id: input.storeId });
     if (!store || store.status !== "active") throw new Error("The store is unavailable.");

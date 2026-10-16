@@ -73,8 +73,8 @@ The frontier is the first slice in the table that is open, unblocked and unclaim
 | 22 | [Commerce checkout through platform Payments (Paystack split and manual transfer)](issues/22-commerce-checkout-through-platform-payments.md) | task | ready-for-agent | 04, 15, 21 | 23 |
 | 23 | [Commerce agent tools, commerce-* catalogues and presentations](issues/23-commerce-agent-tools-and-catalogues.md) | task | ready-for-agent | 13, 21, weaver-catalogues 03 | 27, 29 |
 | 24 | [CommerceMarket Durable Object and routing](issues/24-commerce-durable-object-and-routing.md) | task | ready-for-agent | 17, 21 | 29 |
-| 25a | [Merchant back office: onboarding and catalogue management](issues/25a-merchant-back-office-onboarding-and-catalogue.md) | task | ready-for-agent | 19 | 25b |
-| 25b | [Merchant back office: delivery zones and order fulfilment](issues/25b-merchant-back-office-delivery-and-orders.md) | task | ready-for-agent | 25a, 21 | none |
+| 25a | [Merchant back office: onboarding and catalogue management](issues/25a-merchant-back-office-onboarding-and-catalogue.md) | task | claimed | 19 | 25b |
+| 25b | [Merchant back office: delivery zones and order fulfilment](issues/25b-merchant-back-office-delivery-and-orders.md) | task | claimed | 25a, 21 | none |
 | **E: Concierge UX** | | | | | |
 | 26 | [Shell task rail, vertical starters, domain chips; events routed to their task](issues/26-shell-task-rail-and-vertical-starters.md) | task | ready-for-agent | 13 | 27 |
 | 27 | [Store page and order tracking page from the same presentation helpers as chat](issues/27-store-page-and-order-tracking.md) | task | ready-for-agent | 23, 14b | none |

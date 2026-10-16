@@ -232,6 +232,21 @@ export class CommerceCatalogue {
     return sortResults(results, input.sort ?? "newest");
   }
 
+  /** The merchant's own catalogue read: offers for one store, without the consumer gating. */
+  offersForStore(storeId: string): readonly OfferSearchResult[] {
+    return this.database
+      .prepare(
+        `SELECT o.id AS offer_id, o.product_id, o.store_id, o.price_kobo, o.compare_at_price_kobo, o.stock, o.created_at,
+                p.name AS product_name, p.category, p.description, p.image_keys_json
+         FROM merchant_offers o
+         JOIN products p ON p.id = o.product_id
+         WHERE o.store_id = $storeId
+         ORDER BY o.id`,
+      )
+      .all({ $storeId: storeId })
+      .map(readOfferSearchResult);
+  }
+
   /** AC2: a variant carries its own stock, and an out-of-stock variant fails closed. */
   selectVariant(offerId: string, variantId: string): OfferVariant {
     const row = this.database

@@ -70,6 +70,20 @@ export class CommerceDirectory {
       .map(readStore);
   }
 
+  storeById(storeId: string): Store | null {
+    const row = this.database
+      .prepare("SELECT id, merchant_id, slug, name, status, created_at, updated_at FROM stores WHERE id = $id")
+      .get({ $id: storeId });
+    return row ? readStore(row) : null;
+  }
+
+  storesOfMerchant(merchantId: string): readonly Store[] {
+    return this.database
+      .prepare("SELECT id, merchant_id, slug, name, status, created_at, updated_at FROM stores WHERE merchant_id = $merchantId ORDER BY slug")
+      .all({ $merchantId: merchantId })
+      .map(readStore);
+  }
+
   updateMerchantStatus(merchantId: string, status: MerchantStatus): void {
     const result = this.database
       .prepare("UPDATE merchants SET status = $status, updated_at = $updatedAt WHERE id = $id")
