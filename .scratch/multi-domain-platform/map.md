@@ -64,7 +64,7 @@ The frontier is the first slice in the table that is open, unblocked and unclaim
 | **C: Platform services** | | | | | |
 | 15 | [Platform Payments: move the Paystack port, webhook, transfer verification and receipt store out of shortlet](issues/15-platform-payments-module.md) | task | resolved | 09a | 22 |
 | 16 | [Platform Accounts: move guest accounts and sign-in by emailed code out of shortlet](issues/16-platform-accounts-module.md) | task | resolved | 05, 10 | 17 |
-| 17 | [Cloudflare platform Durable Object (accounts, conversations) and Worker routing by domain](issues/17-cloudflare-platform-do-and-domain-routing.md) | task | ready-for-agent | 05, 13, 16 | 24 |
+| 17 | [Cloudflare platform Durable Object (accounts, conversations) and Worker routing by domain](issues/17-cloudflare-platform-do-and-domain-routing.md) | task | claimed | 05, 13, 16 | 24 |
 | **D: Commerce** | | | | | |
 | 18 | [Commerce pack scaffold: registration, migrations, Merchant and Store with verification gating](issues/18-commerce-pack-scaffold-merchant-store.md) | task | claimed | 03, 12 | 19 |
 | 19 | [Commerce catalogue: Product, Merchant Offer, Variant, delivery zones, R2 images, search](issues/19-commerce-catalogue-offers-variants-delivery.md) | task | claimed | 18 | 20, 25a |
@@ -79,7 +79,7 @@ The frontier is the first slice in the table that is open, unblocked and unclaim
 | 26 | [Shell task rail, vertical starters, domain chips; events routed to their task](issues/26-shell-task-rail-and-vertical-starters.md) | task | claimed | 13 | 27 |
 | 27 | [Store page and order tracking page from the same presentation helpers as chat](issues/27-store-page-and-order-tracking.md) | task | ready-for-agent | 23, 14b | none |
 | **F: ChatGPT** | | | | | |
-| 28 | [Research: ChatGPT app submission for commerce (link-out checkout, Nigeria, review checklist)](issues/28-research-chatgpt-commerce-submission.md) | research | ready-for-agent | 03 | 29 |
+| 28 | [Research: ChatGPT app submission for commerce (link-out checkout, Nigeria, review checklist)](issues/28-research-chatgpt-commerce-submission.md) | research | resolved | 03 | 29 |
 | 29 | [Commerce MCP server on Cloudflare: read tools, checkout link-out, widgets from presentations](issues/29-commerce-mcp-server-on-cloudflare.md) | task | ready-for-agent | 23, 24, 28 | none |
 
 ## Metrics
@@ -121,3 +121,4 @@ Update these when a slice changes them.
 - **25a/25b** → [issue 25a](issues/25a-merchant-back-office-onboarding-and-catalogue.md#answer) / [issue 25b](issues/25b-merchant-back-office-delivery-and-orders.md#answer) — `apps/local-merchant` back office. Merged to main.
 - **26** → [issue 26 `## Answer`](issues/26-shell-task-rail-and-vertical-starters.md#answer) — shell task rail, vertical starters, domain chip and step header; per-task workspace save/restore; `platform.task.start`/`platform.task.switch`; `recordTaskEvent` badges; `test/assistant-task-rail.test.ts` + `test/guest-task-rail-chromium.test.ts`. Implemented but **resolution deferred** on pre-existing environmental full-suite blockers (see issue `## Comments`). Unblocks 27.
 - **Consolidation** → lanes A, B, C(15,16), D(18–25b) and E(26) are merged into `main`; the commerce pack was widened (`label`/`starterDescription`/`taskSummary`) to satisfy the slice-26 `AssistantDomainPack` interface. Remaining open slices: 17, 22, 23, 24, 27.
+- **28** → [issue 28 `## Answer`](issues/28-research-chatgpt-commerce-submission.md#answer) — external (link-out) checkout is the recommended path; Paystack is not an embedded-checkout PSP, so slice 29 uses read tools + a Paystack checkout link-out; physical-goods only; country allowlist via `publication.countries`; four HTTPS legal URLs and a dashboard-entered no-MFA reviewer account; submission checklist listed. Unblocks 29.
