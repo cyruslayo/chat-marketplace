@@ -25,6 +25,7 @@ const SKIP_DIRECTORIES = new Set([
   "vendor",
   ".git",
   ".scratch",
+  ".delta",
   "dist",
   "build",
   "coverage",

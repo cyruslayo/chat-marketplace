@@ -1,6 +1,6 @@
 # Commerce pack scaffold: registration, migrations, Merchant and Store with verification gating
 
-Status: ready-for-agent
+Status: claimed
 Type: task
 Blocked by: 03, 12
 Requested: 14 Oct 2026
@@ -48,4 +48,23 @@ Before starting, also list `docs/adr/` and read any other ADR that touches the f
 
 Apply every item of the Definition of Done in `docs/agents/issue-tracker.md`. Shortlet behaviour must not change: the existing tests and the guest UI walkthrough/capture checks are the safety net.
 
+## Answer
+
+Implemented the commerce domain scaffold at `domains/commerce/src/` with a single façade, `createCommercePack(deps)`:
+
+- `merchant.ts` / `store.ts` — Merchant (`pending/verified/suspended`) and Store (`active/suspended`) types and fail-closed parsers; the Store slug regex `^[a-z0-9]+(-[a-z0-9]+)*$` is ported from instastore `0007` and enforced in the parse layer (SQLite has no Postgres `~`).
+- `commerce-directory.ts` — normalized `merchants`/`stores` tables (`MERCHANT_SCHEMA`, `STORE_SCHEMA`), ordered `COMMERCE_SCHEMA_MIGRATIONS`, and `CommerceDirectory` (`createMerchant`, `createStore`, `consumerStores`). `consumerStores()` JOINs to merchants and returns only `verified` merchants' `active` stores.
+- `index.ts` — `createCommercePack(deps)` only. Returns an `id: "commerce"` pack that is structurally an `AssistantDomainPack` (registers through `AssistantPackRegistry` with no special case) plus `migrations` and the `directory`.
+
+Acceptance criteria → tests in `test/commerce-merchant-store.test.ts`:
+
+- AC1 — the commerce pack registers through `AssistantPackRegistry` with no special case (typed `AssistantDomainPack` assignability).
+- AC2 — a store whose merchant is `pending` or `suspended` is never returned to consumers.
+- AC3 — a `suspended` store is never returned to consumers; the verified/active store is (positive control).
+- AC4 — the façade exports only `createCommercePack` and the boundary allow-list has no `domains/commerce` entry (the generic `test/domain-boundary.test.ts` walks `domains/**`).
+
+ADR compliance: 0001 (merchant as seller of record), 0003 (second domain pack), 0099 (one façade / boundary), 0100 (verification gating, `domains/commerce`, vocabulary).
+
 ## Comments
+
+- 16 Oct 2026 (agent): `npm run check` is clean and `test/commerce-merchant-store.test.ts` passes (4/4). `test/domain-boundary.test.ts` AC4 confirms the only unlisted deep imports are `.delta/worktrees/*` copies of the existing `guest-identity-assurance` exception — zero `domains/commerce` violations. The full `npm test` run cannot be green in this session for two pre-existing, environmental reasons unrelated to this slice: (1) `.delta/worktrees/` (concurrent sessions' `enter_worktree` checkouts) is not in the boundary test's `SKIP_DIRECTORIES`, so AC4 scans those copies; (2) several `apps/local-guest` server tests require `PAYSTACK_SECRET_KEY`, which is not set in this shell. Neither was introduced here; left `Status: claimed` rather than `resolved` until the suite can be run green.
