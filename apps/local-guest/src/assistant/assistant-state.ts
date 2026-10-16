@@ -51,11 +51,23 @@ export interface AssistantTaskState {
   pendingAction?: PendingAssistantAction | null;
 }
 
+/** One rendered surface a task currently owns (presentation only; authoritative state lives in the domain). */
+export interface AssistantTurnSurface {
+  readonly surfaceId: string;
+  readonly a2uiMessages: readonly unknown[];
+}
+
 /** One conversation task: a flow in one domain. A thread may hold several, with one active. */
 export interface AssistantTask {
   readonly taskId: string;
   readonly domain: string;
   state: AssistantTaskState;
+  /** The task's own workspace, saved when it is deactivated and restored when it is re-opened. */
+  activeSurfaces: Map<string, string>;
+  supersededSurfaces: Set<string>;
+  lastSurfaces: readonly AssistantTurnSurface[];
+  /** Unread async events for this task, shown as a rail badge and cleared when the task is opened. */
+  badge: number;
 }
 
 export interface AssistantThreadState {
@@ -67,8 +79,10 @@ export interface AssistantThreadState {
   activeTaskId: string;
   /** The active task's state (mirrors `tasks[activeTaskId].state`). */
   taskState: AssistantTaskState;
+  /** The active task's live workspace (mirrors the active task's fields). */
   activeSurfaces: Map<string, string>;
   supersededSurfaces: Set<string>;
+  lastSurfaces: readonly AssistantTurnSurface[];
   discoveryArtifactId: string | null;
 }
 

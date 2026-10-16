@@ -8,6 +8,8 @@ import {
   GUEST_FACT_LABELS,
   GUEST_GLOSSARY,
   GUEST_JOURNEY,
+  GUEST_TASK_RAIL,
+  GUEST_VERTICALS,
   UNIT_DETAIL_ABOUT_HEADING,
   stayTotalLabel,
 } from "../../web-agent/src/guest-content.js";
@@ -641,4 +643,60 @@ export function appFrameHtml(input: {
       ? undefined
       : projectJourney(input.publicStep));
   return `${appBarHtml({ backHref, backLabel: BACK_LABEL })}${railHtml(journey)}`;
+}
+
+/** One task in the shell rail; `domainLabel` and `status` come from the pack. */
+export interface TaskRailEntry {
+  readonly taskId: string;
+  readonly domain: string;
+  readonly domainLabel: string;
+  readonly status: string;
+  readonly tone?: "info" | "success" | "warning" | "danger";
+  readonly active: boolean;
+  readonly badge?: number;
+}
+
+/** One vertical offered by a starter card. */
+export interface VerticalStarter {
+  readonly domain: string;
+  readonly label: string;
+  readonly description?: string;
+}
+
+/** The task rail's accessible chrome; the chat client builds the same DOM and classes from data. */
+export function taskRailHtml(tasks: readonly TaskRailEntry[]): string {
+  if (tasks.length <= 1) return "";
+  const items = tasks
+    .map((task) => {
+      const badge =
+        task.badge === undefined || task.badge <= 0
+          ? ""
+          : `<span class="ui-task-badge">${escapeHtml(String(task.badge))}<span class="ui-sr-only"> ${GUEST_TASK_RAIL.updates}</span></span>`;
+      const current = task.active
+        ? `<span class="ui-sr-only"> (${GUEST_TASK_RAIL.currentTask})</span>`
+        : "";
+      return `<li class="ui-task-rail__item${task.active ? " ui-task-rail__item--current" : ""}" data-task-id="${escapeHtml(task.taskId)}" data-domain="${escapeHtml(task.domain)}"${task.active ? ' aria-current="true"' : ""}><span class="ui-domain-chip">${escapeHtml(task.domainLabel)}</span><span class="ui-task-rail__status">${escapeHtml(task.status)}</span>${badge}${current}</li>`;
+    })
+    .join("");
+  return `<nav class="ui-task-rail-nav" aria-label="${GUEST_TASK_RAIL.railLabel}"><ol class="ui-task-rail">${items}</ol></nav>`;
+}
+
+/** The vertical starter cards, shown only when more than one vertical is registered. */
+export function verticalStartersHtml(verticals: readonly VerticalStarter[]): string {
+  if (verticals.length <= 1) return "";
+  const cards = verticals
+    .map((vertical) => {
+      const description =
+        vertical.description === undefined
+          ? ""
+          : `<p class="ui-vertical-starter__description">${escapeHtml(vertical.description)}</p>`;
+      return `<li class="ui-vertical-starter" data-domain="${escapeHtml(vertical.domain)}"><span class="ui-vertical-starter__title">${escapeHtml(vertical.label)}</span>${description}</li>`;
+    })
+    .join("");
+  return `<section class="ui-vertical-starters" aria-label="${escapeHtml(GUEST_VERTICALS.heading)}"><h2>${escapeHtml(GUEST_VERTICALS.heading)}</h2><ul>${cards}</ul></section>`;
+}
+
+/** The domain chip and step header for the active task, shown above the conversation. */
+export function taskStepHeaderHtml(domainLabel: string, status: string): string {
+  return `<header class="ui-step-header"><span class="ui-domain-chip">${escapeHtml(domainLabel)}</span><span class="ui-step-header__status">${escapeHtml(status)}</span></header>`;
 }

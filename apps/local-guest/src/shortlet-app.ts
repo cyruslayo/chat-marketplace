@@ -211,7 +211,15 @@ import {
   type GeminiConciergeClient,
 } from "./gemini-concierge.js";
 import type { Content } from "@google/genai";
-import { AssistantRuntime } from "./assistant/assistant-runtime.js";
+import {
+  AssistantRuntime,
+  type AssistantTaskRailEntry,
+  type AssistantVertical,
+} from "./assistant/assistant-runtime.js";
+import {
+  TASK_START_EVENT,
+  TASK_SWITCH_EVENT,
+} from "./assistant/assistant-platform.js";
 import { ScriptedAssistantModel } from "./assistant/scripted-assistant-model.js";
 import {
   createConciergeModelClient,
@@ -324,6 +332,11 @@ export interface GuestTimelineEntry {
   readonly text: string;
 }
 
+/** Slice 26: a task in the shell task rail, projected from the assistant runtime. */
+export type GuestTask = AssistantTaskRailEntry;
+/** Slice 26: a registered vertical offered by a starter card. */
+export type GuestVertical = AssistantVertical;
+
 export interface GuestStateSnapshot {
   readonly ok: true;
   readonly threadId: string;
@@ -332,6 +345,9 @@ export interface GuestStateSnapshot {
   /** Issue 08: the journey rail, derived from authoritative state on every read. */
   readonly journey?: GuestJourney;
   readonly criteria?: GuestCriteria;
+  /** Slice 26: the shell task rail, present only when the assistant runtime has tasks. */
+  readonly tasks?: readonly GuestTask[];
+  readonly verticals?: readonly GuestVertical[];
 }
 
 export interface GuestTurnSuccess {
@@ -344,6 +360,9 @@ export interface GuestTurnSuccess {
   readonly criteria?: GuestCriteria;
   /** Issue 11 AC3: one-tap answers to the criterion the reply just asked for. */
   readonly quickReplies?: readonly string[];
+  /** Slice 26: the shell task rail, present only when the assistant runtime has tasks. */
+  readonly tasks?: readonly GuestTask[];
+  readonly verticals?: readonly GuestVertical[];
 }
 
 /**
@@ -684,6 +703,39 @@ export class LocalGuestApp {
     return this.#assistantRuntime;
   }
 
+  #taskRailFor(threadId: string): readonly GuestTask[] {
+    return this.#assistantRuntime?.getTaskRail(threadId) ?? [];
+  }
+
+  #verticals(): readonly GuestVertical[] {
+    return this.#assistantRuntime?.registeredVerticals() ?? [];
+  }
+
+  /** Assistant surfaces are authoritative projections; the shell renders them, never as fallback. */
+  #assistantSurfaces(surfaces: readonly { readonly surfaceId: string; readonly a2uiMessages: readonly unknown[] }[]): GuestSurfacePayload[] {
+    return surfaces.map((surface) => ({
+      surfaceId: surface.surfaceId,
+      a2uiMessages: surface.a2uiMessages as GuestSurfacePayload["a2uiMessages"],
+      status: "active" as const,
+    }));
+  }
+
+  #assistantResult(output: {
+    readonly messages?: readonly string[];
+    readonly message?: string;
+    readonly surfaces?: readonly { readonly surfaceId: string; readonly a2uiMessages: readonly unknown[] }[];
+    readonly tasks?: readonly AssistantTaskRailEntry[];
+  }): GuestTurnResult {
+    return {
+      ok: true,
+      messages: output.messages ?? (output.message ? [output.message] : []),
+      surfaces: this.#assistantSurfaces(output.surfaces ?? []),
+      ...(output.tasks === undefined || output.tasks.length === 0
+        ? {}
+        : { tasks: output.tasks, verticals: this.#verticals() }),
+    };
+  }
+
   async handleTurn(threadId: string, text: string): Promise<GuestTurnResult> {
     const result = await this.#handleTurn(threadId, text);
     const decorated = this.#decorateResult(result);
@@ -712,11 +764,7 @@ export class LocalGuestApp {
           message: output.message ?? "The assistant is unavailable.",
         };
       }
-      return {
-        ok: true,
-        messages: output.messages ?? (output.message ? [output.message] : []),
-        surfaces: (output.surfaces ?? []) as readonly GuestSurfacePayload[],
-      };
+      return this.#assistantResult(output);
     }
 
     const thread =
@@ -1177,7 +1225,9 @@ export class LocalGuestApp {
     if (this.#assistantRuntime) {
       if (
         event.name === ASSISTANT_CONFIRM_ACTION_EVENT ||
-        event.name === ASSISTANT_CANCEL_ACTION_EVENT
+        event.name === ASSISTANT_CANCEL_ACTION_EVENT ||
+        event.name === TASK_START_EVENT ||
+        event.name === TASK_SWITCH_EVENT
       ) {
         const output = this.#assistantRuntime.handleAssistantEvent(
           threadId,
@@ -1191,11 +1241,7 @@ export class LocalGuestApp {
             message: output.message ?? "The action failed.",
           };
         }
-        return {
-          ok: true,
-          messages: output.messages ?? (output.message ? [output.message] : []),
-          surfaces: (output.surfaces ?? []) as readonly GuestSurfacePayload[],
-        };
+        return this.#assistantResult(output);
       }
     }
 
@@ -1806,6 +1852,20 @@ export class LocalGuestApp {
   }
 
   getState(threadId: string): GuestStateSnapshot | undefined {
+    if (this.#assistantRuntime) {
+      const assistantThread = this.#assistantRuntime.getThread(threadId);
+      const tasks = this.#assistantRuntime.getTaskRail(threadId);
+      if (tasks.length > 0) {
+        return {
+          ok: true,
+          threadId,
+          timeline: [],
+          surfaces: this.#assistantSurfaces(assistantThread.lastSurfaces),
+          tasks,
+          verticals: this.#verticals(),
+        };
+      }
+    }
     const thread = this.#threads.get(threadId) ?? this.#loadThread(threadId);
     if (!thread) return undefined;
     const priorSurfaceId = thread.lastSurfaces.at(-1)?.surfaceId;

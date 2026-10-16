@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en-NG">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Slice 26 — Shell task rail reference</title>
+<link rel="stylesheet" href="../../../apps/web/src/shortlet-foundations.css">
+<style>
+  :root { --layout-gutter-mobile: 1rem; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--color-canvas); color: var(--color-text); font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  .stage { display: grid; gap: var(--space-4); padding: var(--space-4); }
+  .stage h2 { font-size: var(--font-size-h3); }
+  .stage { border-block-end: 1px solid var(--color-border-subtle); }
+  .columns { display: grid; gap: var(--space-4); }
+  @media (min-width: 64rem) { .columns { grid-template-columns: minmax(22rem, 28.75rem) minmax(0, 1fr); } }
+  .workspace { border: 1px solid var(--color-border); border-radius: var(--radius-workspace); background: var(--color-surface-elevated); padding: var(--space-4); }
+</style>
+</head>
+<body>
+
+<section class="stage" aria-labelledby="rail-h">
+  <h2 id="rail-h">Task rail (mobile: horizontal scroll, current disabled)</h2>
+  <nav class="ui-task-rail-nav" aria-label="Conversation tasks">
+    <ol class="ui-task-rail">
+      <li><button class="ui-task-rail__item" data-task-id="task-1" data-domain="shortlet">
+        <span class="ui-domain-chip">Stays</span><span class="ui-task-rail__status">Stay</span>
+        <span class="ui-task-badge">1<span class="ui-sr-only"> updates</span></span>
+        <span class="ui-sr-only"> Open task</span>
+      </button></li>
+      <li><button class="ui-task-rail__item ui-task-rail__item--current" data-task-id="task-2" data-domain="shop" aria-current="true" disabled>
+        <span class="ui-domain-chip">Shop</span><span class="ui-task-rail__status">Browse</span>
+        <span class="ui-sr-only"> (Current task)</span>
+      </button></li>
+    </ol>
+  </nav>
+</section>
+
+<section class="stage" aria-labelledby="starters-h">
+  <h2 id="starters-h">Vertical starters</h2>
+  <section class="ui-vertical-starters" aria-label="What would you like to do?">
+    <h2>What would you like to do?</h2>
+    <ul>
+      <li><button class="ui-vertical-starter" data-domain="shortlet">
+        <span class="ui-vertical-starter__title">Stays</span>
+        <p class="ui-vertical-starter__description">Find an inspected apartment in Lagos or Abuja and book it.</p>
+      </button></li>
+      <li><button class="ui-vertical-starter" data-domain="shop">
+        <span class="ui-vertical-starter__title">Shop</span>
+        <p class="ui-vertical-starter__description">Browse products from verified merchants.</p>
+      </button></li>
+    </ul>
+  </section>
+</section>
+
+<section class="stage" aria-labelledby="step-h">
+  <h2 id="step-h">Per-domain step header + workspace</h2>
+  <header class="ui-step-header">
+    <span class="ui-domain-chip">Stays</span>
+    <span class="ui-step-header__status">Stay</span>
+  </header>
+  <div class="columns">
+    <div class="workspace" aria-label="Conversation">Conversation transcript here.</div>
+    <div class="workspace" aria-label="Workspace">Active task workspace here.</div>
+  </div>
+</section>
+
+</body>
+</html>

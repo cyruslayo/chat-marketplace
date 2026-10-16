@@ -4,6 +4,8 @@ import type { AssistantDomainPack } from "../../apps/local-guest/src/assistant/a
 export function createFakeShopPack(): AssistantDomainPack {
   return {
     id: "shop",
+    label: "Shop",
+    starterDescription: "Browse products from verified merchants.",
     promptSection: "You help guests shop for products.",
     intentKeywords: ["shop", "store", "product", "products", "cart", "buy"],
     toolNames: ["shop_search"],
@@ -15,6 +17,7 @@ export function createFakeShopPack(): AssistantDomainPack {
     }],
     validateToolCall: (name) => (name === "shop_search" ? undefined : { code: "invalid_tool_for_state", message: "That operation is not available for the current Guest workflow." }),
     executeTool: () => { throw new Error("The fake shop pack does not execute tools in these tests."); },
+    taskSummary: () => ({ label: "Shopping", status: "Browse" }),
     discoverySurface: () => [],
     unitDetailSurface: () => [],
     pendingActionSurface: () => [],

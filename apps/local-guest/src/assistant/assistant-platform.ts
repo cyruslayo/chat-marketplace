@@ -51,6 +51,13 @@ export interface AssistantSurfaceMessages {
   readonly a2uiMessages: readonly unknown[];
 }
 
+/** One task's place in the shell task rail: a domain label plus its current step. */
+export interface AssistantTaskSummary {
+  readonly label: string;
+  readonly status: string;
+  readonly tone?: "info" | "success" | "warning" | "danger";
+}
+
 /**
  * A domain pack for the concierge agent: its prompt section, its tools and its projections.
  * The runtime composes the instruction from the platform preamble plus the active pack's
@@ -58,6 +65,10 @@ export interface AssistantSurfaceMessages {
  */
 export interface AssistantDomainPack {
   readonly id: string;
+  /** The vertical's display name, e.g. "Stays" or "Shop" (ADR 0077: one copy source). */
+  readonly label: string;
+  /** One line for the vertical starter card; omitted when there is no starter. */
+  readonly starterDescription?: string;
   readonly promptSection: string;
   /** Words that signal the user is asking for this domain, used by the router. */
   readonly intentKeywords: readonly string[];
@@ -65,6 +76,8 @@ export interface AssistantDomainPack {
   toolsForState(taskState: AssistantTaskState): readonly AssistantToolDefinition[];
   validateToolCall(name: string, args: Record<string, unknown>, taskState: AssistantTaskState): AssistantToolPreconditionFailure | undefined;
   executeTool(name: string, args: Record<string, unknown>, context: AssistantToolContext): AssistantToolExecutionResult;
+  /** Where a task in this domain is right now, for the shell task rail. */
+  taskSummary(taskState: AssistantTaskState): AssistantTaskSummary;
   /** Projections the runtime renders for this pack's authoritative results. */
   discoverySurface(artifact: unknown, surfaceId: string): readonly unknown[];
   unitDetailSurface(input: { readonly unitId: string; readonly checkIn: string; readonly checkOut: string; readonly surfaceId: string }): readonly unknown[];
@@ -105,6 +118,10 @@ export const SWITCH_TASK_TOOL: AssistantToolDefinition = {
     additionalProperties: false,
   },
 };
+
+/** Shell-owned events for the task rail and vertical starters; they reuse the same task logic as the tools. */
+export const TASK_START_EVENT = "platform.task.start";
+export const TASK_SWITCH_EVENT = "platform.task.switch";
 
 export const PLATFORM_TASK_TOOLS: readonly AssistantToolDefinition[] = [START_TASK_TOOL, SWITCH_TASK_TOOL];
 export const PLATFORM_TASK_TOOL_NAMES: readonly string[] = PLATFORM_TASK_TOOLS.map((tool) => tool.name);

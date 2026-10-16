@@ -57,6 +57,24 @@ export const GUEST_JOURNEY = Object.freeze({
   backToResults: "Back to results",
 });
 
+/**
+ * Shell task rail (slice 26). Domain labels and task statuses come from the pack;
+ * this is the one copy source for the rail's accessible chrome.
+ */
+export const GUEST_TASK_RAIL = Object.freeze({
+  railLabel: "Conversation tasks",
+  currentTask: "Current task",
+  openTask: "Open task",
+  updates: "updates",
+});
+
+/** Vertical starter cards (slice 26): the PRD names the two launch verticals Stays and Shop. */
+export const GUEST_VERTICALS = Object.freeze({
+  heading: "What would you like to do?",
+  staysDescription: "Find an inspected apartment in Lagos or Abuja and book it.",
+  shopDescription: "Browse products from verified merchants.",
+});
+
 /** Issue 13a: committed work a new conversation leaves untouched (ADR-0079). */
 export type GuestCommittedWorkKind = "request" | "offer" | "reservation";
 

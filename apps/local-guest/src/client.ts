@@ -15,6 +15,8 @@ import {
   GUEST_FACT_LABELS,
   GUEST_GLOSSARY,
   GUEST_NEW_CONVERSATION,
+  GUEST_TASK_RAIL,
+  GUEST_VERTICALS,
   UNIT_DETAIL_ABOUT_HEADING,
   guestFactValue,
   guestNewConversationCopy,
@@ -113,6 +115,22 @@ interface GuestCriteria {
   };
   readonly areas: readonly { readonly id: string; readonly label: string }[];
 }
+interface GuestTask {
+  readonly taskId: string;
+  readonly domain: string;
+  readonly domainLabel: string;
+  readonly status: string;
+  readonly tone?: "info" | "success" | "warning" | "danger";
+  readonly active: boolean;
+  readonly badge?: number;
+}
+
+interface GuestVertical {
+  readonly domain: string;
+  readonly label: string;
+  readonly description?: string;
+}
+
 interface GuestResponse {
   readonly ok: boolean;
   readonly code?: string;
@@ -123,6 +141,8 @@ interface GuestResponse {
   readonly journey?: GuestJourney;
   readonly criteria?: GuestCriteria;
   readonly quickReplies?: readonly string[];
+  readonly tasks?: readonly GuestTask[];
+  readonly verticals?: readonly GuestVertical[];
 }
 interface GuestCommittedWork {
   readonly kind: GuestCommittedWorkKind;
@@ -152,6 +172,9 @@ const errorAnnouncer = requiredElement<HTMLElement>("error-announcer");
 const emptyState = requiredElement<HTMLElement>("empty-state");
 const workingStatus = requiredElement<HTMLElement>("working-status");
 const journeyRail = requiredElement<HTMLElement>("journey-rail");
+const taskRail = requiredElement<HTMLElement>("task-rail");
+const verticalStarters = requiredElement<HTMLElement>("vertical-starters");
+const taskStepHeader = requiredElement<HTMLElement>("task-step-header");
 const criteriaStrip = requiredElement<HTMLElement>("criteria-strip");
 const criteriaEditor = requiredElement<HTMLFormElement>("criteria-editor");
 const criteriaStatus = requiredElement<HTMLElement>("criteria-status");
@@ -1367,6 +1390,37 @@ function isCriteria(value: unknown): value is GuestCriteria {
   );
 }
 
+function isGuestTask(value: unknown): value is GuestTask {
+  if (
+    !isRecord(value) ||
+    typeof value.taskId !== "string" ||
+    typeof value.domain !== "string" ||
+    typeof value.domainLabel !== "string" ||
+    typeof value.status !== "string" ||
+    typeof value.active !== "boolean"
+  )
+    return false;
+  if (
+    value.tone !== undefined &&
+    !["info", "success", "warning", "danger"].includes(String(value.tone))
+  )
+    return false;
+  return (
+    value.badge === undefined ||
+    (typeof value.badge === "number" && Number.isInteger(value.badge) && value.badge >= 0)
+  );
+}
+
+function isGuestVertical(value: unknown): value is GuestVertical {
+  if (
+    !isRecord(value) ||
+    typeof value.domain !== "string" ||
+    typeof value.label !== "string"
+  )
+    return false;
+  return value.description === undefined || typeof value.description === "string";
+}
+
 function readGuestResponse(value: unknown): GuestResponse {
   if (!isRecord(value) || typeof value.ok !== "boolean")
     throw new Error("Invalid server response");
@@ -1394,6 +1448,17 @@ function readGuestResponse(value: unknown): GuestResponse {
     throw new Error("Invalid response criteria");
   if (value.quickReplies !== undefined && !isStringList(value.quickReplies))
     throw new Error("Invalid response quick replies");
+  if (
+    value.tasks !== undefined &&
+    (!Array.isArray(value.tasks) || value.tasks.some((task) => !isGuestTask(task)))
+  )
+    throw new Error("Invalid response tasks");
+  if (
+    value.verticals !== undefined &&
+    (!Array.isArray(value.verticals) ||
+      value.verticals.some((vertical) => !isGuestVertical(vertical)))
+  )
+    throw new Error("Invalid response verticals");
   return value as unknown as GuestResponse;
 }
 
@@ -1975,6 +2040,152 @@ function renderJourney(journey: GuestJourney | undefined): void {
   if (current) list.scrollLeft = Math.max(0, current.offsetLeft - list.offsetLeft - list.clientWidth / 2 + current.offsetWidth / 2);
 }
 
+const TASK_START_EVENT = "platform.task.start";
+const TASK_SWITCH_EVENT = "platform.task.switch";
+let taskEventInFlight = false;
+
+function taskRailSurfaceId(): string {
+  return `thread-${threadId}:tasks`;
+}
+
+/** Slice 26: the task rail mirrors the server projection; the browser never switches on its own. */
+function renderTaskRail(tasks: readonly GuestTask[] | undefined): void {
+  if (!tasks || tasks.length <= 1) {
+    taskRail.replaceChildren();
+    taskRail.hidden = true;
+    renderTaskStepHeader(undefined);
+    return;
+  }
+  const list = document.createElement("ol");
+  list.className = "ui-task-rail";
+  for (const task of tasks) {
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ui-task-rail__item";
+    if (task.active) button.classList.add("ui-task-rail__item--current");
+    button.dataset.taskId = task.taskId;
+    button.dataset.domain = task.domain;
+    if (task.active) button.setAttribute("aria-current", "true");
+    button.disabled = task.active;
+    const chip = document.createElement("span");
+    chip.className = "ui-domain-chip";
+    chip.textContent = task.domainLabel;
+    const status = document.createElement("span");
+    status.className = "ui-task-rail__status";
+    status.textContent = task.status;
+    button.append(chip, status);
+    if (task.badge !== undefined && task.badge > 0) {
+      const badge = document.createElement("span");
+      badge.className = "ui-task-badge";
+      badge.textContent = String(task.badge);
+      const updates = document.createElement("span");
+      updates.className = "ui-sr-only";
+      updates.textContent = ` ${GUEST_TASK_RAIL.updates}`;
+      badge.appendChild(updates);
+      button.appendChild(badge);
+    }
+    const state = document.createElement("span");
+    state.className = "ui-sr-only";
+    state.textContent = ` ${task.active ? GUEST_TASK_RAIL.currentTask : GUEST_TASK_RAIL.openTask}`;
+    button.appendChild(state);
+    button.addEventListener("click", () => {
+      void sendTaskEvent(TASK_SWITCH_EVENT, { taskId: task.taskId });
+    });
+    item.appendChild(button);
+    list.appendChild(item);
+  }
+  taskRail.replaceChildren(list);
+  taskRail.hidden = false;
+  renderTaskStepHeader(tasks);
+}
+
+/** Slice 26: the active task's domain chip and step, shown above the conversation. */
+function renderTaskStepHeader(tasks: readonly GuestTask[] | undefined): void {
+  const active = tasks?.find((task) => task.active);
+  if (!active) {
+    taskStepHeader.replaceChildren();
+    taskStepHeader.hidden = true;
+    return;
+  }
+  taskStepHeader.replaceChildren();
+  const chip = document.createElement("span");
+  chip.className = "ui-domain-chip";
+  chip.textContent = active.domainLabel;
+  const status = document.createElement("span");
+  status.className = "ui-step-header__status";
+  status.textContent = active.status;
+  taskStepHeader.append(chip, status);
+  taskStepHeader.hidden = false;
+}
+
+/** Slice 26: vertical starter cards choose a domain; hidden with only one vertical. */
+function renderVerticalStarters(verticals: readonly GuestVertical[] | undefined): void {
+  verticalStarters.replaceChildren();
+  if (!verticals || verticals.length <= 1) {
+    verticalStarters.hidden = true;
+    return;
+  }
+  const heading = document.createElement("h2");
+  heading.textContent = GUEST_VERTICALS.heading;
+  verticalStarters.appendChild(heading);
+  const list = document.createElement("ul");
+  for (const vertical of verticals) {
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ui-vertical-starter";
+    button.dataset.domain = vertical.domain;
+    const title = document.createElement("span");
+    title.className = "ui-vertical-starter__title";
+    title.textContent = vertical.label;
+    button.appendChild(title);
+    if (vertical.description) {
+      const description = document.createElement("p");
+      description.className = "ui-vertical-starter__description";
+      description.textContent = vertical.description;
+      button.appendChild(description);
+    }
+    button.addEventListener("click", () => {
+      void sendTaskEvent(TASK_START_EVENT, { domain: vertical.domain });
+    });
+    item.appendChild(button);
+    list.appendChild(item);
+  }
+  verticalStarters.appendChild(list);
+  verticalStarters.hidden = false;
+  emptyState.hidden = true;
+}
+
+/** Sends a task-rail event; unlike surface actions, it needs no active surface. */
+async function sendTaskEvent(name: string, context: Readonly<Record<string, unknown>>): Promise<void> {
+  if (taskEventInFlight || isLoading) return;
+  taskEventInFlight = true;
+  taskRail.setAttribute("aria-busy", "true");
+  try {
+    const response = await postJson("/api/event", {
+      threadId,
+      name,
+      surfaceId: taskRailSurfaceId(),
+      sourceComponentId: "task-rail",
+      timestamp: new Date().toISOString(),
+      context,
+    });
+    if (!response.ok) {
+      addTurn("assistant", response.message ?? "That task could not be opened.");
+      announce(response.message ?? "That task could not be opened.", true);
+      return;
+    }
+    renderResponse(response);
+  } catch {
+    addTurn("assistant", "That task could not be opened. Please try again.");
+    announce("That task could not be opened. Please try again.", true);
+  } finally {
+    taskEventInFlight = false;
+    taskRail.removeAttribute("aria-busy");
+  }
+}
+
 type CriteriaField = "where" | "when" | "guests" | "budget";
 const CRITERIA_FIELDS: readonly CriteriaField[] = ["where", "when", "guests", "budget"];
 const CRITERIA_NAMES: Readonly<Record<CriteriaField, string>> = { where: "Where", when: "When", guests: "Guests", budget: "Budget" };
@@ -2261,6 +2472,8 @@ function renderResponse(response: GuestResponse): boolean {
   }
   renderJourney(response.journey);
   renderCriteria(response.criteria);
+  renderTaskRail(response.tasks);
+  renderVerticalStarters(response.verticals);
   for (const message of response.messages ?? []) addTurn("assistant", message);
   renderQuickReplies(response.quickReplies);
   if ((response.messages ?? []).length > 0) trackTelemetry("text-response-rendered");
@@ -2276,7 +2489,12 @@ async function refreshServerState(): Promise<boolean> {
     const response = (await postJson(
       `/api/state?threadId=${encodeURIComponent(threadId)}`,
     )) as GuestStateResponse;
-    if (response.ok) { renderJourney(response.journey); renderCriteria(response.criteria);}
+    if (response.ok) {
+      renderJourney(response.journey);
+      renderCriteria(response.criteria);
+      renderTaskRail(response.tasks);
+      renderVerticalStarters(response.verticals);
+    }
     if (response.ok && response.surfaces && response.surfaces.length > 0) {
       renderSurfaces(response.surfaces);
       return true;
@@ -2420,7 +2638,16 @@ composerForm.addEventListener("submit", (event) => {
 async function restoreServerState(): Promise<boolean> {
   try {
     const response = await postJson(`/api/state?threadId=${encodeURIComponent(threadId)}`) as GuestStateResponse;
-    if (!response.ok || !response.timeline || response.timeline.length === 0) return false;
+    if (!response.ok) return false;
+    // Slice 26: assistant conversations keep their task rail and workspace in memory (no timeline yet).
+    if (response.tasks && response.tasks.length > 1) {
+      renderTaskRail(response.tasks);
+      renderVerticalStarters(response.verticals);
+      renderSurfaces(response.surfaces ?? []);
+      announce("Your conversation has been restored.");
+      return true;
+    }
+    if (!response.timeline || response.timeline.length === 0) return false;
     for (const entry of response.timeline) addTimelineEntry(entry);
     renderJourney(response.journey);
     renderCriteria(response.criteria);

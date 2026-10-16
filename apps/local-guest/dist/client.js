@@ -8849,6 +8849,17 @@ Known schemas:
     confirmed: "Confirmed",
     backToResults: "Back to results"
   });
+  var GUEST_TASK_RAIL = Object.freeze({
+    railLabel: "Conversation tasks",
+    currentTask: "Current task",
+    openTask: "Open task",
+    updates: "updates"
+  });
+  var GUEST_VERTICALS = Object.freeze({
+    heading: "What would you like to do?",
+    staysDescription: "Find an inspected apartment in Lagos or Abuja and book it.",
+    shopDescription: "Browse products from verified merchants."
+  });
   var COMMITTED_WORK_NAMES = {
     request: GUEST_GLOSSARY.bookingRequest,
     offer: GUEST_GLOSSARY.conditionalBookingOffer,
@@ -9263,6 +9274,9 @@ Known schemas:
   var emptyState = requiredElement("empty-state");
   var workingStatus = requiredElement("working-status");
   var journeyRail = requiredElement("journey-rail");
+  var taskRail = requiredElement("task-rail");
+  var verticalStarters = requiredElement("vertical-starters");
+  var taskStepHeader = requiredElement("task-step-header");
   var criteriaStrip = requiredElement("criteria-strip");
   var criteriaEditor = requiredElement("criteria-editor");
   var criteriaStatus = requiredElement("criteria-status");
@@ -10125,6 +10139,18 @@ Known schemas:
     const labelled = (field2) => field2 === void 0 || isRecord3(field2) && typeof field2.label === "string";
     return labelled(value.where) && labelled(value.when) && labelled(value.guests) && labelled(value.budget);
   }
+  function isGuestTask(value) {
+    if (!isRecord3(value) || typeof value.taskId !== "string" || typeof value.domain !== "string" || typeof value.domainLabel !== "string" || typeof value.status !== "string" || typeof value.active !== "boolean")
+      return false;
+    if (value.tone !== void 0 && !["info", "success", "warning", "danger"].includes(String(value.tone)))
+      return false;
+    return value.badge === void 0 || typeof value.badge === "number" && Number.isInteger(value.badge) && value.badge >= 0;
+  }
+  function isGuestVertical(value) {
+    if (!isRecord3(value) || typeof value.domain !== "string" || typeof value.label !== "string")
+      return false;
+    return value.description === void 0 || typeof value.description === "string";
+  }
   function readGuestResponse(value) {
     if (!isRecord3(value) || typeof value.ok !== "boolean")
       throw new Error("Invalid server response");
@@ -10140,6 +10166,10 @@ Known schemas:
       throw new Error("Invalid response criteria");
     if (value.quickReplies !== void 0 && !isStringList(value.quickReplies))
       throw new Error("Invalid response quick replies");
+    if (value.tasks !== void 0 && (!Array.isArray(value.tasks) || value.tasks.some((task) => !isGuestTask(task))))
+      throw new Error("Invalid response tasks");
+    if (value.verticals !== void 0 && (!Array.isArray(value.verticals) || value.verticals.some((vertical) => !isGuestVertical(vertical))))
+      throw new Error("Invalid response verticals");
     return value;
   }
   var threadId = getThreadId();
@@ -10579,6 +10609,142 @@ Known schemas:
     journeyRail.hidden = false;
     if (current) list.scrollLeft = Math.max(0, current.offsetLeft - list.offsetLeft - list.clientWidth / 2 + current.offsetWidth / 2);
   }
+  var TASK_START_EVENT = "platform.task.start";
+  var TASK_SWITCH_EVENT = "platform.task.switch";
+  var taskEventInFlight = false;
+  function taskRailSurfaceId() {
+    return `thread-${threadId}:tasks`;
+  }
+  function renderTaskRail(tasks) {
+    if (!tasks || tasks.length <= 1) {
+      taskRail.replaceChildren();
+      taskRail.hidden = true;
+      renderTaskStepHeader(void 0);
+      return;
+    }
+    const list = document.createElement("ol");
+    list.className = "ui-task-rail";
+    for (const task of tasks) {
+      const item = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "ui-task-rail__item";
+      if (task.active) button.classList.add("ui-task-rail__item--current");
+      button.dataset.taskId = task.taskId;
+      button.dataset.domain = task.domain;
+      if (task.active) button.setAttribute("aria-current", "true");
+      button.disabled = task.active;
+      const chip = document.createElement("span");
+      chip.className = "ui-domain-chip";
+      chip.textContent = task.domainLabel;
+      const status = document.createElement("span");
+      status.className = "ui-task-rail__status";
+      status.textContent = task.status;
+      button.append(chip, status);
+      if (task.badge !== void 0 && task.badge > 0) {
+        const badge = document.createElement("span");
+        badge.className = "ui-task-badge";
+        badge.textContent = String(task.badge);
+        const updates = document.createElement("span");
+        updates.className = "ui-sr-only";
+        updates.textContent = ` ${GUEST_TASK_RAIL.updates}`;
+        badge.appendChild(updates);
+        button.appendChild(badge);
+      }
+      const state = document.createElement("span");
+      state.className = "ui-sr-only";
+      state.textContent = ` ${task.active ? GUEST_TASK_RAIL.currentTask : GUEST_TASK_RAIL.openTask}`;
+      button.appendChild(state);
+      button.addEventListener("click", () => {
+        void sendTaskEvent(TASK_SWITCH_EVENT, { taskId: task.taskId });
+      });
+      item.appendChild(button);
+      list.appendChild(item);
+    }
+    taskRail.replaceChildren(list);
+    taskRail.hidden = false;
+    renderTaskStepHeader(tasks);
+  }
+  function renderTaskStepHeader(tasks) {
+    const active = tasks?.find((task) => task.active);
+    if (!active) {
+      taskStepHeader.replaceChildren();
+      taskStepHeader.hidden = true;
+      return;
+    }
+    taskStepHeader.replaceChildren();
+    const chip = document.createElement("span");
+    chip.className = "ui-domain-chip";
+    chip.textContent = active.domainLabel;
+    const status = document.createElement("span");
+    status.className = "ui-step-header__status";
+    status.textContent = active.status;
+    taskStepHeader.append(chip, status);
+    taskStepHeader.hidden = false;
+  }
+  function renderVerticalStarters(verticals) {
+    verticalStarters.replaceChildren();
+    if (!verticals || verticals.length <= 1) {
+      verticalStarters.hidden = true;
+      return;
+    }
+    const heading = document.createElement("h2");
+    heading.textContent = GUEST_VERTICALS.heading;
+    verticalStarters.appendChild(heading);
+    const list = document.createElement("ul");
+    for (const vertical of verticals) {
+      const item = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "ui-vertical-starter";
+      button.dataset.domain = vertical.domain;
+      const title = document.createElement("span");
+      title.className = "ui-vertical-starter__title";
+      title.textContent = vertical.label;
+      button.appendChild(title);
+      if (vertical.description) {
+        const description = document.createElement("p");
+        description.className = "ui-vertical-starter__description";
+        description.textContent = vertical.description;
+        button.appendChild(description);
+      }
+      button.addEventListener("click", () => {
+        void sendTaskEvent(TASK_START_EVENT, { domain: vertical.domain });
+      });
+      item.appendChild(button);
+      list.appendChild(item);
+    }
+    verticalStarters.appendChild(list);
+    verticalStarters.hidden = false;
+    emptyState.hidden = true;
+  }
+  async function sendTaskEvent(name, context) {
+    if (taskEventInFlight || isLoading) return;
+    taskEventInFlight = true;
+    taskRail.setAttribute("aria-busy", "true");
+    try {
+      const response = await postJson("/api/event", {
+        threadId,
+        name,
+        surfaceId: taskRailSurfaceId(),
+        sourceComponentId: "task-rail",
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        context
+      });
+      if (!response.ok) {
+        addTurn("assistant", response.message ?? "That task could not be opened.");
+        announce(response.message ?? "That task could not be opened.", true);
+        return;
+      }
+      renderResponse(response);
+    } catch {
+      addTurn("assistant", "That task could not be opened. Please try again.");
+      announce("That task could not be opened. Please try again.", true);
+    } finally {
+      taskEventInFlight = false;
+      taskRail.removeAttribute("aria-busy");
+    }
+  }
   var CRITERIA_FIELDS = ["where", "when", "guests", "budget"];
   var CRITERIA_NAMES = { where: "Where", when: "When", guests: "Guests", budget: "Budget" };
   var CRITERIA_EMPTY = { where: "Add area", when: "Add dates", guests: "Add guests", budget: "Add budget" };
@@ -10848,6 +11014,8 @@ Known schemas:
     }
     renderJourney(response.journey);
     renderCriteria(response.criteria);
+    renderTaskRail(response.tasks);
+    renderVerticalStarters(response.verticals);
     for (const message of response.messages ?? []) addTurn("assistant", message);
     renderQuickReplies(response.quickReplies);
     if ((response.messages ?? []).length > 0) trackTelemetry("text-response-rendered");
@@ -10864,6 +11032,8 @@ Known schemas:
       if (response.ok) {
         renderJourney(response.journey);
         renderCriteria(response.criteria);
+        renderTaskRail(response.tasks);
+        renderVerticalStarters(response.verticals);
       }
       if (response.ok && response.surfaces && response.surfaces.length > 0) {
         renderSurfaces(response.surfaces);
@@ -10997,7 +11167,15 @@ Known schemas:
   async function restoreServerState() {
     try {
       const response = await postJson(`/api/state?threadId=${encodeURIComponent(threadId)}`);
-      if (!response.ok || !response.timeline || response.timeline.length === 0) return false;
+      if (!response.ok) return false;
+      if (response.tasks && response.tasks.length > 1) {
+        renderTaskRail(response.tasks);
+        renderVerticalStarters(response.verticals);
+        renderSurfaces(response.surfaces ?? []);
+        announce("Your conversation has been restored.");
+        return true;
+      }
+      if (!response.timeline || response.timeline.length === 0) return false;
       for (const entry of response.timeline) addTimelineEntry(entry);
       renderJourney(response.journey);
       renderCriteria(response.criteria);
