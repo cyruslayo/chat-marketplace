@@ -18,12 +18,14 @@ import {
 function stubPack(overrides: Partial<AssistantDomainPack> = {}): AssistantDomainPack {
   return {
     id: "stub",
+    label: "Stub",
     promptSection: "STUB SECTION",
     intentKeywords: [],
     toolNames: ["stub_tool"],
     toolsForState: () => [],
     validateToolCall: () => undefined,
     executeTool: () => { throw new Error("not executed"); },
+    taskSummary: () => ({ label: "Stub", status: "Ready" }),
     discoverySurface: () => [],
     unitDetailSurface: () => [],
     pendingActionSurface: () => [],

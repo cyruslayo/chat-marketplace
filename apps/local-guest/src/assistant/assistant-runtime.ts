@@ -13,7 +13,10 @@ import {
   MAX_ASSISTANT_TOOL_ROUNDS,
   PLATFORM_TASK_TOOLS,
   PLATFORM_TASK_TOOL_NAMES,
+  TASK_START_EVENT,
+  TASK_SWITCH_EVENT,
   type AssistantDomainPack,
+  type AssistantTaskSummary,
   type AssistantToolContext,
 } from "./assistant-platform.js";
 import { createShortletAssistantPack } from "./shortlet-assistant-pack.js";
@@ -23,6 +26,7 @@ import {
   type AssistantTask,
   type AssistantTaskState,
   type AssistantThreadState,
+  type AssistantTurnSurface,
 } from "./assistant-state.js";
 import {
   isExplicitConfirmation,
@@ -39,7 +43,26 @@ export interface AssistantTurnOutput {
   readonly code?: string;
   readonly message?: string;
   readonly messages?: readonly string[];
-  readonly surfaces?: readonly { readonly surfaceId: string; readonly a2uiMessages: readonly unknown[] }[];
+  readonly surfaces?: readonly AssistantTurnSurface[];
+  readonly tasks?: readonly AssistantTaskRailEntry[];
+}
+
+/** A task's entry in the shell rail, derived from the active pack's `taskSummary`. */
+export interface AssistantTaskRailEntry {
+  readonly taskId: string;
+  readonly domain: string;
+  readonly domainLabel: string;
+  readonly status: string;
+  readonly tone?: AssistantTaskSummary["tone"];
+  readonly active: boolean;
+  readonly badge?: number;
+}
+
+/** A registered vertical offered by a starter card. */
+export interface AssistantVertical {
+  readonly domain: string;
+  readonly label: string;
+  readonly description?: string;
 }
 
 export type AssistantDiagnosticStage =
@@ -83,6 +106,8 @@ interface AssistantEventContext {
   readonly actionId?: unknown;
   readonly threadId?: unknown;
   readonly surfaceId?: unknown;
+  readonly taskId?: unknown;
+  readonly domain?: unknown;
 }
 
 const DISCOVERY_STAGE = "discovery";
@@ -122,33 +147,81 @@ export class AssistantRuntime {
     return PLATFORM_TASK_TOOL_NAMES.includes(name);
   }
 
-  /** Starts or switches conversation tasks: the previous task's state is saved and the target's restored. */
+  /** Starts or switches conversation tasks: the previous task's state and workspace are saved and the target's restored. */
   #applyTaskTool(
     name: string,
     args: Record<string, unknown>,
     tasks: AssistantTask[],
     activeTaskId: string,
     currentState: AssistantTaskState,
-  ): { state: AssistantTaskState; activeTaskId: string; result: Record<string, unknown> } {
+    workspace: {
+      activeSurfaces: Map<string, string>;
+      supersededSurfaces: Set<string>;
+      lastSurfaces: readonly AssistantTurnSurface[];
+    },
+  ): {
+    state: AssistantTaskState;
+    activeTaskId: string;
+    workspace: {
+      activeSurfaces: Map<string, string>;
+      supersededSurfaces: Set<string>;
+      lastSurfaces: readonly AssistantTurnSurface[];
+    };
+    result: Record<string, unknown>;
+  } {
     const active = tasks.find((task) => task.taskId === activeTaskId);
-    if (active) active.state = currentState;
+    if (active) {
+      active.state = currentState;
+      active.activeSurfaces = workspace.activeSurfaces;
+      active.supersededSurfaces = workspace.supersededSurfaces;
+      active.lastSurfaces = workspace.lastSurfaces;
+    }
+
+    const restore = (target: AssistantTask): typeof workspace & { state: AssistantTaskState; activeTaskId: string } => {
+      // Opening a task consumes its badge (the Guest is now looking at it).
+      target.badge = 0;
+      return {
+        state: cloneTaskState(target.state),
+        activeTaskId: target.taskId,
+        activeSurfaces: new Map(target.activeSurfaces),
+        supersededSurfaces: new Set(target.supersededSurfaces),
+        lastSurfaces: target.lastSurfaces,
+      };
+    };
 
     if (name === "switch_task") {
       const targetId = typeof args.taskId === "string" ? args.taskId : "";
       const target = tasks.find((task) => task.taskId === targetId);
-      if (!target) return { state: currentState, activeTaskId, result: { error: "UNKNOWN_TASK", message: "That task is not in this conversation." } };
-      return { state: cloneTaskState(target.state), activeTaskId: target.taskId, result: { switched: target.taskId, domain: target.domain } };
+      if (!target) return { state: currentState, activeTaskId, workspace, result: { error: "UNKNOWN_TASK", message: "That task is not in this conversation." } };
+      const restored = restore(target);
+      return { state: restored.state, activeTaskId: restored.activeTaskId, workspace: restored, result: { switched: target.taskId, domain: target.domain } };
     }
 
     const domain = typeof args.domain === "string" ? args.domain : "";
     if (!this.#packs.packFor(domain)) {
-      return { state: currentState, activeTaskId, result: { error: "UNKNOWN_DOMAIN", message: "That domain is not registered." } };
+      return { state: currentState, activeTaskId, workspace, result: { error: "UNKNOWN_DOMAIN", message: "That domain is not registered." } };
     }
     const existing = tasks.find((task) => task.domain === domain);
-    if (existing) return { state: cloneTaskState(existing.state), activeTaskId: existing.taskId, result: { started: domain, taskId: existing.taskId } };
-    const created: AssistantTask = { taskId: `task-${tasks.length + 1}`, domain, state: createInitialTaskState() };
+    if (existing) {
+      const restored = restore(existing);
+      return { state: restored.state, activeTaskId: restored.activeTaskId, workspace: restored, result: { started: domain, taskId: existing.taskId } };
+    }
+    const created: AssistantTask = {
+      taskId: `task-${tasks.length + 1}`,
+      domain,
+      state: createInitialTaskState(),
+      activeSurfaces: new Map(),
+      supersededSurfaces: new Set(),
+      lastSurfaces: [],
+      badge: 0,
+    };
     tasks.push(created);
-    return { state: createInitialTaskState(), activeTaskId: created.taskId, result: { started: domain, taskId: created.taskId } };
+    return {
+      state: createInitialTaskState(),
+      activeTaskId: created.taskId,
+      workspace: { activeSurfaces: new Map(), supersededSurfaces: new Set(), lastSurfaces: [] },
+      result: { started: domain, taskId: created.taskId },
+    };
   }
 
   /** With more than one domain registered, a cross-domain intent asks for confirmation rather than switching. */
@@ -178,7 +251,15 @@ export class AssistantRuntime {
   getThread(threadId: string): AssistantThreadState {
     let thread = this.#threads.get(threadId);
     if (!thread) {
-      const initialTask: AssistantTask = { taskId: "task-1", domain: this.#activePack.id, state: createInitialTaskState() };
+      const initialTask: AssistantTask = {
+        taskId: "task-1",
+        domain: this.#activePack.id,
+        state: createInitialTaskState(),
+        activeSurfaces: new Map(),
+        supersededSurfaces: new Set(),
+        lastSurfaces: [],
+        badge: 0,
+      };
       thread = {
         threadId,
         guestActorId: this.#environment.config.guestId,
@@ -189,6 +270,7 @@ export class AssistantRuntime {
         taskState: initialTask.state,
         activeSurfaces: new Map(),
         supersededSurfaces: new Set(),
+        lastSurfaces: [],
         discoveryArtifactId: null,
       };
       this.#threads.set(threadId, thread);
@@ -205,9 +287,10 @@ export class AssistantRuntime {
     let candidateActiveTaskId = thread.activeTaskId;
     const candidateTasks: AssistantTask[] = thread.tasks.map((task) => ({ ...task }));
     const candidateHistory: AssistantConversationStep[] = [...thread.conversationHistory];
-    const candidateSurfaces: { surfaceId: string; a2uiMessages: readonly unknown[] }[] = [];
-    const candidateActiveSurfaces = new Map<string, string>(thread.activeSurfaces);
-    const candidateSuperseded = new Set<string>(thread.supersededSurfaces);
+    const candidateSurfaces: AssistantTurnSurface[] = [];
+    let candidateActiveSurfaces = new Map<string, string>(thread.activeSurfaces);
+    let candidateSuperseded = new Set<string>(thread.supersededSurfaces);
+    let candidateLastSurfaces: readonly AssistantTurnSurface[] = thread.lastSurfaces;
     let candidateDiscoveryArtifactId = thread.discoveryArtifactId;
 
     // The active task decides the active pack: its tools, prompt and projections.
@@ -245,11 +328,14 @@ export class AssistantRuntime {
         thread.conversationHistory.push({ role: "assistant", text: execution.message });
         thread.activeSurfaces = candidateActiveSurfaces;
         thread.supersededSurfaces = candidateSuperseded;
+        thread.lastSurfaces = execution.surfaces.length > 0 ? execution.surfaces : candidateLastSurfaces;
+        this.#syncActiveTask(thread);
 
         return {
           ok: true,
           messages: [execution.message],
           surfaces: execution.surfaces,
+          tasks: this.getTaskRail(threadId),
         };
       }
 
@@ -264,11 +350,14 @@ export class AssistantRuntime {
         thread.conversationHistory.push({ role: "assistant", text: "Action cancelled. Let me know how else I can help." });
         thread.activeSurfaces = candidateActiveSurfaces;
         thread.supersededSurfaces = candidateSuperseded;
+        thread.lastSurfaces = candidateLastSurfaces;
+        this.#syncActiveTask(thread);
 
         return {
           ok: true,
           messages: ["Action cancelled. Let me know how else I can help."],
           surfaces: [],
+          tasks: this.getTaskRail(threadId),
         };
       }
     }
@@ -357,9 +446,19 @@ export class AssistantRuntime {
             continue;
           }
           if (this.#isPlatformTaskTool(call.name)) {
-            const applied = this.#applyTaskTool(call.name, call.args, candidateTasks, candidateActiveTaskId, candidateTaskState);
+            const applied = this.#applyTaskTool(
+              call.name,
+              call.args,
+              candidateTasks,
+              candidateActiveTaskId,
+              candidateTaskState,
+              { activeSurfaces: candidateActiveSurfaces, supersededSurfaces: candidateSuperseded, lastSurfaces: candidateLastSurfaces },
+            );
             candidateTaskState = applied.state;
             candidateActiveTaskId = applied.activeTaskId;
+            candidateActiveSurfaces = applied.workspace.activeSurfaces;
+            candidateSuperseded = applied.workspace.supersededSurfaces;
+            candidateLastSurfaces = applied.workspace.lastSurfaces;
             toolResults.push({ callId: call.id, name: call.name, result: applied.result });
             continue;
           }
@@ -478,12 +577,15 @@ export class AssistantRuntime {
       thread.conversationHistory.push(...candidateHistory);
       thread.activeSurfaces = candidateActiveSurfaces;
       thread.supersededSurfaces = candidateSuperseded;
+      thread.lastSurfaces = candidateSurfaces.length > 0 ? candidateSurfaces : candidateLastSurfaces;
       thread.discoveryArtifactId = candidateDiscoveryArtifactId;
+      this.#syncActiveTask(thread);
 
       return {
         ok: true,
         messages: [finalAssistantReply],
         surfaces: candidateSurfaces,
+        tasks: this.getTaskRail(threadId),
       };
     } catch (error) {
       this.#diagnose(createFailureDiagnostic(activeStage, round, activeToolName, error));
@@ -497,8 +599,10 @@ export class AssistantRuntime {
         thread.conversationHistory.push(...candidateHistory);
         thread.activeSurfaces = candidateActiveSurfaces;
         thread.supersededSurfaces = candidateSuperseded;
+        thread.lastSurfaces = candidateSurfaces;
         thread.discoveryArtifactId = candidateDiscoveryArtifactId;
-        return { ok: true, messages: [message], surfaces: candidateSurfaces };
+        this.#syncActiveTask(thread);
+        return { ok: true, messages: [message], surfaces: candidateSurfaces, tasks: this.getTaskRail(threadId) };
       }
       // Rollback: thread is not mutated on error
       return {
@@ -517,11 +621,23 @@ export class AssistantRuntime {
     }
   }
 
+  /** Mirrors the thread's active workspace back onto the active task object. */
+  #syncActiveTask(thread: AssistantThreadState): void {
+    const active = thread.tasks.find((task) => task.taskId === thread.activeTaskId);
+    if (!active) return;
+    active.state = thread.taskState;
+    active.activeSurfaces = thread.activeSurfaces;
+    active.supersededSurfaces = thread.supersededSurfaces;
+    active.lastSurfaces = thread.lastSurfaces;
+  }
+
   handleAssistantEvent(threadId: string, eventName: string, context: AssistantEventContext | null | undefined): AssistantTurnOutput {
     const thread = this.getThread(threadId);
-    const candidateTaskState = cloneTaskState(thread.taskState);
-    const candidateActiveSurfaces = new Map<string, string>(thread.activeSurfaces);
-    const candidateSuperseded = new Set<string>(thread.supersededSurfaces);
+    const candidateTasks = thread.tasks.map((task) => ({ ...task }));
+    let candidateTaskState = cloneTaskState(thread.taskState);
+    let candidateActiveSurfaces = new Map<string, string>(thread.activeSurfaces);
+    let candidateSuperseded = new Set<string>(thread.supersededSurfaces);
+    let candidateLastSurfaces: readonly AssistantTurnSurface[] = thread.lastSurfaces;
 
     const supersede = (stage: string) => {
       const surfaceId = candidateActiveSurfaces.get(stage);
@@ -530,6 +646,46 @@ export class AssistantRuntime {
         candidateActiveSurfaces.delete(stage);
       }
     };
+
+    if (eventName === TASK_START_EVENT || eventName === TASK_SWITCH_EVENT) {
+      const applied = this.#applyTaskTool(
+        eventName === TASK_SWITCH_EVENT ? "switch_task" : "start_task",
+        { domain: context?.domain, taskId: context?.taskId },
+        candidateTasks,
+        thread.activeTaskId,
+        candidateTaskState,
+        { activeSurfaces: candidateActiveSurfaces, supersededSurfaces: candidateSuperseded, lastSurfaces: candidateLastSurfaces },
+      );
+      const error = applied.result.error;
+      if (typeof error === "string") {
+        return { ok: false, code: error, message: String(applied.result.message ?? "That task could not be opened.") };
+      }
+      candidateTaskState = applied.state;
+      candidateActiveSurfaces = applied.workspace.activeSurfaces;
+      candidateSuperseded = applied.workspace.supersededSurfaces;
+      candidateLastSurfaces = applied.workspace.lastSurfaces;
+
+      thread.taskState = candidateTaskState;
+      thread.tasks = candidateTasks;
+      thread.activeTaskId = applied.activeTaskId;
+      thread.activeSurfaces = candidateActiveSurfaces;
+      thread.supersededSurfaces = candidateSuperseded;
+      thread.lastSurfaces = candidateLastSurfaces;
+      this.#syncActiveTask(thread);
+
+      const activeDomain = candidateTasks.find((task) => task.taskId === applied.activeTaskId)?.domain;
+      const activeLabel = (activeDomain ? this.#packs.packFor(activeDomain) : undefined)?.label ?? "new";
+      const message = eventName === TASK_SWITCH_EVENT
+        ? `Switched to your ${activeLabel} task.`
+        : `Started a ${activeLabel} task.`;
+
+      return {
+        ok: true,
+        messages: [message],
+        surfaces: candidateLastSurfaces,
+        tasks: this.getTaskRail(threadId),
+      };
+    }
 
     if (eventName === ASSISTANT_CONFIRM_ACTION_EVENT || eventName === ASSISTANT_CANCEL_ACTION_EVENT) {
       // ADR-0074: only the current authoritative surface retains action authority.
@@ -549,11 +705,14 @@ export class AssistantRuntime {
       thread.taskState = candidateTaskState;
       thread.activeSurfaces = candidateActiveSurfaces;
       thread.supersededSurfaces = candidateSuperseded;
+      thread.lastSurfaces = candidateLastSurfaces;
+      this.#syncActiveTask(thread);
 
       return {
         ok: true,
         messages: ["Action cancelled."],
         surfaces: [],
+        tasks: this.getTaskRail(threadId),
       };
     }
 
@@ -577,15 +736,62 @@ export class AssistantRuntime {
       thread.taskState = candidateTaskState;
       thread.activeSurfaces = candidateActiveSurfaces;
       thread.supersededSurfaces = candidateSuperseded;
+      thread.lastSurfaces = execution.surfaces.length > 0 ? execution.surfaces : candidateLastSurfaces;
+      this.#syncActiveTask(thread);
 
       return {
         ok: true,
         messages: [execution.message],
         surfaces: execution.surfaces,
+        tasks: this.getTaskRail(threadId),
       };
     }
 
     return { ok: false, code: "UNSUPPORTED_EVENT", message: "Unknown assistant action." };
+  }
+
+  /** The shell task rail: each task's domain, label, status, active flag and badge, in task order. */
+  getTaskRail(threadId: string): readonly AssistantTaskRailEntry[] {
+    const thread = this.#threads.get(threadId);
+    if (!thread) return [];
+    return thread.tasks.map((task) => {
+      const pack = this.#packs.packFor(task.domain);
+      const summary = pack?.taskSummary(task.state);
+      return {
+        taskId: task.taskId,
+        domain: task.domain,
+        domainLabel: pack?.label ?? task.domain,
+        status: summary?.status ?? "",
+        ...(summary?.tone === undefined ? {} : { tone: summary.tone }),
+        active: task.taskId === thread.activeTaskId,
+        ...(task.badge > 0 ? { badge: task.badge } : {}),
+      };
+    });
+  }
+
+  /** Registered verticals for starter cards (only meaningful with more than one domain). */
+  registeredVerticals(): readonly AssistantVertical[] {
+    return this.#packs.ids().map((id) => {
+      const pack = this.#packs.packFor(id);
+      return {
+        domain: id,
+        label: pack?.label ?? id,
+        ...(pack?.starterDescription === undefined ? {} : { description: pack.starterDescription }),
+      };
+    });
+  }
+
+  /** Records an async event against a background task: it gets a badge and the open workspace is untouched. */
+  recordTaskEvent(threadId: string, taskId: string): { ok: boolean; code?: string; message?: string } {
+    const thread = this.#threads.get(threadId);
+    if (!thread) return { ok: false, code: "UNKNOWN_THREAD", message: "Unknown conversation." };
+    if (taskId === thread.activeTaskId) {
+      return { ok: false, code: "ACTIVE_TASK", message: "The open task is not a background task." };
+    }
+    const task = thread.tasks.find((candidate) => candidate.taskId === taskId);
+    if (!task) return { ok: false, code: "UNKNOWN_TASK", message: "That task is not in this conversation." };
+    task.badge += 1;
+    return { ok: true };
   }
 
   #executePendingAction(

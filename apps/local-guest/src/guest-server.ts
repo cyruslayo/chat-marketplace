@@ -91,6 +91,10 @@ import {
   stayTicketHtml,
   transferSummaryHtml,
   uploadCardHtml,
+  taskRailHtml,
+  verticalStartersHtml,
+  type TaskRailEntry,
+  type VerticalStarter,
   type KitStatusTone,
   unitAboutHtml,
   unitIndicativePriceHtml,
@@ -220,6 +224,7 @@ import {
 } from "./gemini-concierge.js";
 import type { Content } from "@google/genai";
 import { AssistantRuntime } from "./assistant/assistant-runtime.js";
+import type { AssistantDomainPack } from "./assistant/assistant-platform.js";
 import { ScriptedAssistantModel } from "./assistant/scripted-assistant-model.js";
 import {
   createConciergeModelClient,
@@ -246,7 +251,7 @@ import {
   type GuestAccountComposition,
   type GuestAccountCredentials,
 } from "./guest-account-runtime.js";
-import { GUEST_ACCOUNT_COPY } from "../../web-agent/src/guest-content.js";
+import { GUEST_ACCOUNT_COPY, GUEST_TASK_RAIL, GUEST_VERTICALS } from "../../web-agent/src/guest-content.js";
 import { SqliteGuestContactRepository, type GuestContactSource } from "../../../domains/shortlet/src/index.js";
 import {
   GuestContactOwnedByAccountError,
@@ -330,6 +335,10 @@ export function renderGuestShellHtml(): string {
     .committed-work p { margin: 0; }
     /* Issue 08: the journey rail is the shared .ui-rail; the shell only hides it until there is a journey to show. */
     #journey-rail[hidden] { display: none; }
+    /* Slice 26: the task rail, starters and step header are shell chrome; they stay hidden until a multi-domain runtime populates them. */
+    #task-rail[hidden], #task-step-header[hidden], #vertical-starters[hidden] { display: none; }
+    #task-step-header { position: sticky; top: 0; z-index: 2; }
+    #vertical-starters { margin-block-end: var(--space-4); }
     main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
     /* ADR-0078: keep the conversation independently scrollable at the 320px launch viewport. */
     #transcript { flex: 1 1 0; min-height: 22dvh; padding: var(--space-6) var(--layout-gutter-mobile) var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; }
@@ -528,9 +537,12 @@ export function renderGuestShellHtml(): string {
       </div>
     </section>
     <nav id="journey-rail" class="ui-rail-nav" aria-label="${GUEST_JOURNEY.railLabel}" hidden><ol class="ui-rail"></ol></nav>
+    <nav id="task-rail" class="ui-task-rail-nav" aria-label="${GUEST_TASK_RAIL.railLabel}" hidden><ol class="ui-task-rail"></ol></nav>
     <main id="main-content" tabindex="-1">
       <section id="transcript" role="log" aria-live="polite" aria-relevant="additions" aria-labelledby="conversation-heading">
         <h2 id="conversation-heading" class="conversation-heading">Conversation</h2>
+        <header id="task-step-header" class="ui-step-header" hidden></header>
+        <section id="vertical-starters" class="ui-vertical-starters" hidden></section>
         <section id="empty-state" aria-labelledby="empty-state-heading">
           <h2 id="empty-state-heading">Find a place to stay</h2>
           <p>Start with a city, your dates (or length of stay), and number of guests. We’ll find available entire-place stays and guide you through requesting one.</p>
@@ -639,6 +651,8 @@ export function renderNoScriptConversationHtml(input: {
   readonly timeline: readonly GuestTimelineEntry[];
   readonly surfaces: readonly GuestSurfacePayload[];
   readonly journey?: GuestJourney;
+  readonly tasks?: readonly TaskRailEntry[];
+  readonly verticals?: readonly VerticalStarter[];
   readonly error?: string;
   readonly draft?: string;
   readonly committedWork?: readonly GuestCommittedWork[];
@@ -678,8 +692,8 @@ export function renderNoScriptConversationHtml(input: {
   return pageShell({
     title: "Conversation · Shortlet",
     width: "narrow",
-    frame: `${appBarHtml({ backHref: "/", backLabel: "Back to your conversation", action: { href: "/conversation", label: GUEST_NEW_CONVERSATION.control, icon: "message-plus" } })}${renderJourneyRailHtml(input.journey)}`,
-    body: `<div class="guest-editorial no-js-conversation" data-page="conversation"><h1 class="ui-sr-only">Conversation</h1>${committed}${turns ? `<ol class="no-js-transcript" aria-label="Conversation">${turns}</ol>` : ""}${surfaces}<form id="composer" class="composer" method="post" action="/conversation" aria-label="Message the concierge"><div class="ui-field"><label class="ui-field__label" for="composer-input">Your message</label><p class="ui-field__hint" id="composer-hint">Share a city or neighbourhood, dates or nights, and number of guests.</p><input id="composer-input" name="message" type="text" autocomplete="off" enterkeyhint="send" maxlength="${MAX_TURN_TEXT_LENGTH}" required aria-describedby="composer-hint${error ? " composer-error" : ""}"${error ? ' aria-invalid="true"' : ""} value="${escapeHtml(input.draft ?? "")}">${error}</div><input type="hidden" name="threadId" value="${escapeHtml(input.threadId)}"><button class="ui-button ui-button--primary" type="submit">Send</button></form></div>`,
+    frame: `${appBarHtml({ backHref: "/", backLabel: "Back to your conversation", action: { href: "/conversation", label: GUEST_NEW_CONVERSATION.control, icon: "message-plus" } })}${renderJourneyRailHtml(input.journey)}${taskRailHtml(input.tasks ?? [])}`,
+    body: `<div class="guest-editorial no-js-conversation" data-page="conversation"><h1 class="ui-sr-only">Conversation</h1>${verticalStartersHtml(input.verticals ?? [])}${committed}${turns ? `<ol class="no-js-transcript" aria-label="Conversation">${turns}</ol>` : ""}${surfaces}<form id="composer" class="composer" method="post" action="/conversation" aria-label="Message the concierge"><div class="ui-field"><label class="ui-field__label" for="composer-input">Your message</label><p class="ui-field__hint" id="composer-hint">Share a city or neighbourhood, dates or nights, and number of guests.</p><input id="composer-input" name="message" type="text" autocomplete="off" enterkeyhint="send" maxlength="${MAX_TURN_TEXT_LENGTH}" required aria-describedby="composer-hint${error ? " composer-error" : ""}"${error ? ' aria-invalid="true"' : ""} value="${escapeHtml(input.draft ?? "")}">${error}</div><input type="hidden" name="threadId" value="${escapeHtml(input.threadId)}"><button class="ui-button ui-button--primary" type="submit">Send</button></form></div>`,
   });
 }
 
@@ -1987,6 +2001,8 @@ export interface GuestRequestHandlerOptions {
   fixtureRoutes?: boolean;
   /** Issue 19: daily cap on model calls; when it is spent, turns use the deterministic concierge. */
   modelCallBudget?: ModelCallBudget;
+  /** Slice 26: extra domain packs registered with the assistant runtime (multi-domain shell). */
+  additionalPacks?: readonly AssistantDomainPack[];
   /** Issue 19: a session's runtime (environment, SQLite connection, assistant memory) is closed after this idle time. */
   sessionRuntimeIdleMs?: number;
   /**
@@ -2089,7 +2105,9 @@ export function createGuestRequestHandler(
 
   if (mode === "assistant-offline") {
     assistantModelClient = options.modelClient ?? new ScriptedAssistantModel();
-    assistantRuntime = new AssistantRuntime(env, assistantModelClient);
+    assistantRuntime = new AssistantRuntime(env, assistantModelClient, {
+      additionalPacks: options.additionalPacks,
+    });
   } else if (mode === "gemini" || mode === "openai-compatible") {
     // The production pilot passes a validated client; development commands read the same settings from the environment.
     assistantModelClient =
@@ -2104,7 +2122,9 @@ export function createGuestRequestHandler(
         assistantModelClient,
         options.modelCallBudget,
       );
-    assistantRuntime = new AssistantRuntime(env, assistantModelClient);
+    assistantRuntime = new AssistantRuntime(env, assistantModelClient, {
+      additionalPacks: options.additionalPacks,
+    });
   }
   const modelCallBudget = options.modelCallBudget
     ? { modelCallBudget: options.modelCallBudget }
@@ -2209,6 +2229,7 @@ export function createGuestRequestHandler(
               assistantRuntime: new AssistantRuntime(
                 runtimeEnvironment,
                 assistantModelClient,
+                { additionalPacks: options.additionalPacks },
               ),
             }
           : {}),
@@ -4277,6 +4298,8 @@ export function createGuestRequestHandler(
               timeline: state?.timeline ?? [],
               surfaces: state?.surfaces ?? [],
               journey: state?.journey,
+              tasks: state?.tasks,
+              verticals: state?.verticals,
               committedWork,
             }),
           );
@@ -4329,6 +4352,8 @@ export function createGuestRequestHandler(
               timeline: state?.timeline ?? [],
               surfaces: state?.surfaces ?? [],
               journey: state?.journey,
+              tasks: state?.tasks,
+              verticals: state?.verticals,
               error: "Type a short message to send.",
               draft: text.slice(0, MAX_TURN_TEXT_LENGTH),
             }),
@@ -4346,6 +4371,8 @@ export function createGuestRequestHandler(
               timeline: state?.timeline ?? [],
               surfaces: state?.surfaces ?? [],
               journey: state?.journey,
+              tasks: state?.tasks,
+              verticals: state?.verticals,
               error: result.message,
               draft: text,
             }),

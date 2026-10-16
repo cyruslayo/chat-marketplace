@@ -6,6 +6,7 @@ import {
   cardPaymentArtifactToA2UI,
   bookingContractArtifactToA2UI,
   unitDetailArtifactToA2UI,
+  GUEST_JOURNEY,
 } from "../../../web-agent/src/index.js";
 import { unitDetailArtifactFromProjection } from "../../../web/src/unit-detail-artifact.js";
 import { requestDraftArtifactFromProjection } from "../../../web/src/request-draft-artifact.js";
@@ -21,6 +22,7 @@ import { pendingActionToA2UI } from "./pending-action-a2ui.js";
 import {
   ASSISTANT_PLATFORM_PREAMBLE,
   type AssistantDomainPack,
+  type AssistantTaskSummary,
   type AssistantToolContext,
   type AssistantToolExecutionResult,
   type AssistantToolPreconditionFailure,
@@ -809,16 +811,34 @@ export function executeAssistantTool(
   }
 }
 
+/** The shortlet task's current step for the shell rail, reusing the journey rail's canonical step names. */
+function shortletTaskSummary(taskState: AssistantTaskState): AssistantTaskSummary {
+  const status =
+    taskState.currentContractId || taskState.currentReservationId
+      ? GUEST_JOURNEY.confirmed
+      : taskState.currentOfferId
+        ? GUEST_JOURNEY.offer
+        : taskState.currentBookingRequestId || taskState.currentDraftId
+          ? GUEST_JOURNEY.request
+          : taskState.shortlist.length > 0 || taskState.selectedStayRef
+            ? GUEST_JOURNEY.stay
+            : GUEST_JOURNEY.search;
+  return { label: "Stay", status };
+}
+
 /** The shortlet pack: prompt section, tools and surface projections for the shortlet domain. */
 export function createShortletAssistantPack(environment: LocalGuestEnvironment): AssistantDomainPack {
   return {
     id: "shortlet",
+    label: "Stays",
+    starterDescription: "Find an inspected apartment in Lagos or Abuja and book it.",
     promptSection: SHORTLET_PROMPT_SECTION,
     intentKeywords: ["stay", "stays", "apartment", "apartments", "book", "booking", "ikoyi", "lekki", "lagos", "abuja", "check-in", "checkin"],
     toolNames: ASSISTANT_TOOL_DEFINITIONS.map((tool) => tool.name),
     toolsForState: assistantToolsForState,
     validateToolCall: validateAssistantToolCall,
     executeTool: executeAssistantTool,
+    taskSummary: shortletTaskSummary,
     discoverySurface: (artifact, surfaceId) => discoveryArtifactToA2UI({ artifact: artifact as never, surfaceId }),
     unitDetailSurface: ({ unitId, checkIn, checkOut, surfaceId }) => {
       const unit = environment.unitRepository.findById(unitId);
