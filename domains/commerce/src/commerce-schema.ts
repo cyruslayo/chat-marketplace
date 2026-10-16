@@ -63,8 +63,19 @@ export const DELIVERY_ZONE_SCHEMA = `CREATE TABLE IF NOT EXISTS delivery_zones (
   updated_at TEXT NOT NULL
 )`;
 
-/** The commerce domain's ordered schema. Version 1 is merchants/stores; version 2 adds the catalogue. */
+export const CART_LINE_SCHEMA = `CREATE TABLE IF NOT EXISTS cart_lines (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  offer_id TEXT NOT NULL REFERENCES merchant_offers(id),
+  variant_id TEXT REFERENCES offer_variants(id),
+  quantity INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+)`;
+
+/** The commerce domain's ordered schema. Version 1 is merchants/stores; version 2 adds the catalogue; version 3 adds carts. */
 export const COMMERCE_SCHEMA_MIGRATIONS: readonly SchemaMigration[] = [
   { version: 1, name: "commerce baseline: merchants and stores", statements: [MERCHANT_SCHEMA, STORE_SCHEMA] },
   { version: 2, name: "commerce catalogue: products, offers, variants, delivery zones", statements: [PRODUCT_SCHEMA, MERCHANT_OFFER_SCHEMA, OFFER_VARIANT_SCHEMA, DELIVERY_ZONE_SCHEMA] },
+  { version: 3, name: "commerce carts: server-side cart lines per task", statements: [CART_LINE_SCHEMA] },
 ];

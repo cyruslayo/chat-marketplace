@@ -179,6 +179,16 @@ export class CommerceCatalogue {
     return variant;
   }
 
+  updateOfferPrice(offerId: string, priceKobo: number): void {
+    if (typeof priceKobo !== "number" || !Number.isInteger(priceKobo) || priceKobo < 0) {
+      throw new TypeError("The offer must have a non-negative integer priceKobo");
+    }
+    const result = this.database
+      .prepare("UPDATE merchant_offers SET price_kobo = $priceKobo, updated_at = $updatedAt WHERE id = $id")
+      .run({ $priceKobo: priceKobo, $updatedAt: this.clock().toISOString(), $id: offerId });
+    if (result.changes === 0) throw new Error("The offer does not exist.");
+  }
+
   createDeliveryZone(input: DeliveryZoneInput): DeliveryZone {
     const now = this.clock().toISOString();
     const zone = parseDeliveryZoneRecord({ ...input, createdAt: now, updatedAt: now }, "Delivery Zone");

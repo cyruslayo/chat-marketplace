@@ -1,6 +1,6 @@
 # Marketplace Cart and Store Carts, server-side per task
 
-Status: ready-for-agent
+Status: claimed
 Type: task
 Blocked by: 19
 Requested: 14 Oct 2026
@@ -43,4 +43,25 @@ Before starting, also list `docs/adr/` and read any other ADR that touches the f
 
 Apply every item of the Definition of Done in `docs/agents/issue-tracker.md`. Shortlet behaviour must not change: the existing tests and the guest UI walkthrough/capture checks are the safety net.
 
+## Answer
+
+Implemented a server-side Marketplace Cart keyed by task in `domains/commerce/src/`:
+
+- `commerce-schema.ts` — added migration version 3 (`cart_lines`: task_id, offer_id, optional variant_id, quantity).
+- `commerce-cart.ts` — `CommerceCart` (`addLine`, `changeQuantity`, `removeLine`, `cart`). Lines hold only (offer, optional variant, quantity); `cart(taskId)` re-reads the current offer price and store/merchant status, groups lines into Store Carts, and marks a line unavailable when its store is suspended or its merchant is not verified.
+- `commerce-directory.ts` — added `updateMerchantStatus` / `updateStoreStatus` (used by AC4 and later operator actions).
+- `commerce-catalogue.ts` — added `updateOfferPrice` (used by AC2 and later offer CRUD).
+- `index.ts` — `createCommercePack` now exposes `cart`.
+
+Acceptance criteria → `test/commerce-cart.test.ts`:
+
+- AC1 — items from two stores form two Store Carts.
+- AC2 — a cart line shows the current offer price after the price changes.
+- AC3 — adding more than available stock is rejected (and an increment past stock is rejected).
+- AC4 — a line is marked unavailable when its store is suspended or its merchant becomes unverified.
+
+ADR 0002 (deprecated) informs the "one store per checkout" shape: the Marketplace Cart groups into Store Carts but is never itself a checkout boundary (CONTEXT). ADR 0099 (one façade), ADR 0100 (verified-merchant gating).
+
 ## Comments
+
+- 16 Oct 2026 (agent): `npm run check` clean; `test/commerce-cart.test.ts` (4/4), `test/commerce-catalogue.test.ts` (4/4) and `test/commerce-merchant-store.test.ts` (4/4) pass; boundary test AC4 green. Full `npm test` still blocked by the `PAYSTACK_SECRET_KEY` prerequisite noted on slice 18.

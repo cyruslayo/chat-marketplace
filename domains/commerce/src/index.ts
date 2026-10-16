@@ -1,6 +1,7 @@
 import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
 import { CommerceDirectory } from "./commerce-directory.js";
 import { CommerceCatalogue } from "./commerce-catalogue.js";
+import { CommerceCart } from "./commerce-cart.js";
 import { COMMERCE_SCHEMA_MIGRATIONS } from "./commerce-schema.js";
 
 /**
@@ -26,6 +27,7 @@ export interface CommercePackDeps {
 export function createCommercePack(deps: CommercePackDeps) {
   const directory = new CommerceDirectory(deps.database, deps.clock);
   const catalogue = new CommerceCatalogue(deps.database, deps.clock);
+  const cart = new CommerceCart(deps.database, deps.clock);
   return {
     id: "commerce",
     promptSection: COMMERCE_PROMPT_SECTION,
@@ -47,5 +49,6 @@ export function createCommercePack(deps: CommercePackDeps) {
     migrations: COMMERCE_SCHEMA_MIGRATIONS,
     directory,
     catalogue,
+    cart,
   };
 }

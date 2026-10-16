@@ -69,4 +69,18 @@ export class CommerceDirectory {
       .all()
       .map(readStore);
   }
+
+  updateMerchantStatus(merchantId: string, status: MerchantStatus): void {
+    const result = this.database
+      .prepare("UPDATE merchants SET status = $status, updated_at = $updatedAt WHERE id = $id")
+      .run({ $status: status, $updatedAt: this.clock().toISOString(), $id: merchantId });
+    if (result.changes === 0) throw new Error("The merchant does not exist.");
+  }
+
+  updateStoreStatus(storeId: string, status: StoreStatus): void {
+    const result = this.database
+      .prepare("UPDATE stores SET status = $status, updated_at = $updatedAt WHERE id = $id")
+      .run({ $status: status, $updatedAt: this.clock().toISOString(), $id: storeId });
+    if (result.changes === 0) throw new Error("The store does not exist.");
+  }
 }
