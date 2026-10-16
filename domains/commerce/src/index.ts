@@ -36,6 +36,8 @@ export function createCommercePack(deps: CommercePackDeps) {
   const backOffice = new MerchantBackOffice(directory, catalogue, orders);
   return {
     id: "commerce",
+    label: "Shop",
+    starterDescription: "Browse products from verified merchants.",
     promptSection: COMMERCE_PROMPT_SECTION,
     intentKeywords: ["shop", "shopping", "buy", "store", "product", "products", "cart", "order", "merchant", "delivery"],
     toolNames: [],
@@ -44,6 +46,7 @@ export function createCommercePack(deps: CommercePackDeps) {
     executeTool: (): never => {
       throw new Error("The commerce pack has no tools in this slice.");
     },
+    taskSummary: (): { readonly label: string; readonly status: string } => ({ label: "Shopping", status: "Browse" }),
     discoverySurface: (): readonly unknown[] => [],
     unitDetailSurface: (): readonly unknown[] => [],
     pendingActionSurface: (): readonly unknown[] => [],
