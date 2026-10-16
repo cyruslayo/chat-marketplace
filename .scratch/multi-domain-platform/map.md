@@ -69,7 +69,7 @@ The frontier is the first slice in the table that is open, unblocked and unclaim
 | 18 | [Commerce pack scaffold: registration, migrations, Merchant and Store with verification gating](issues/18-commerce-pack-scaffold-merchant-store.md) | task | claimed | 03, 12 | 19 |
 | 19 | [Commerce catalogue: Product, Merchant Offer, Variant, delivery zones, R2 images, search](issues/19-commerce-catalogue-offers-variants-delivery.md) | task | claimed | 18 | 20, 25a |
 | 20 | [Marketplace Cart and Store Carts, server-side per task](issues/20-commerce-marketplace-and-store-carts.md) | task | claimed | 19 | 21 |
-| 21 | [Merchant Order: port instastore order rules and lifecycle](issues/21-commerce-merchant-order-rules.md) | task | ready-for-agent | 20 | 22, 23, 24, 25b |
+| 21 | [Merchant Order: port instastore order rules and lifecycle](issues/21-commerce-merchant-order-rules.md) | task | claimed | 20 | 22, 23, 24, 25b |
 | 22 | [Commerce checkout through platform Payments (Paystack split and manual transfer)](issues/22-commerce-checkout-through-platform-payments.md) | task | ready-for-agent | 04, 15, 21 | 23 |
 | 23 | [Commerce agent tools, commerce-* catalogues and presentations](issues/23-commerce-agent-tools-and-catalogues.md) | task | ready-for-agent | 13, 21, weaver-catalogues 03 | 27, 29 |
 | 24 | [CommerceMarket Durable Object and routing](issues/24-commerce-durable-object-and-routing.md) | task | ready-for-agent | 17, 21 | 29 |
