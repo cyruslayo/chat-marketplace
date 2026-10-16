@@ -1,5 +1,7 @@
 import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
-import { CommerceDirectory, COMMERCE_SCHEMA_MIGRATIONS } from "./commerce-directory.js";
+import { CommerceDirectory } from "./commerce-directory.js";
+import { CommerceCatalogue } from "./commerce-catalogue.js";
+import { COMMERCE_SCHEMA_MIGRATIONS } from "./commerce-schema.js";
 
 /**
  * The commerce pack's prompt section. Commerce vocabulary only (Merchant, Store, Consumer); no
@@ -23,6 +25,7 @@ export interface CommercePackDeps {
  */
 export function createCommercePack(deps: CommercePackDeps) {
   const directory = new CommerceDirectory(deps.database, deps.clock);
+  const catalogue = new CommerceCatalogue(deps.database, deps.clock);
   return {
     id: "commerce",
     promptSection: COMMERCE_PROMPT_SECTION,
@@ -43,5 +46,6 @@ export function createCommercePack(deps: CommercePackDeps) {
     revalidateProposal: (): { readonly ok: true } => ({ ok: true }),
     migrations: COMMERCE_SCHEMA_MIGRATIONS,
     directory,
+    catalogue,
   };
 }

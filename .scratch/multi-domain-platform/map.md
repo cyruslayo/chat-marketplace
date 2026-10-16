@@ -67,7 +67,7 @@ The frontier is the first slice in the table that is open, unblocked and unclaim
 | 17 | [Cloudflare platform Durable Object (accounts, conversations) and Worker routing by domain](issues/17-cloudflare-platform-do-and-domain-routing.md) | task | ready-for-agent | 05, 13, 16 | 24 |
 | **D: Commerce** | | | | | |
 | 18 | [Commerce pack scaffold: registration, migrations, Merchant and Store with verification gating](issues/18-commerce-pack-scaffold-merchant-store.md) | task | claimed | 03, 12 | 19 |
-| 19 | [Commerce catalogue: Product, Merchant Offer, Variant, delivery zones, R2 images, search](issues/19-commerce-catalogue-offers-variants-delivery.md) | task | ready-for-agent | 18 | 20, 25a |
+| 19 | [Commerce catalogue: Product, Merchant Offer, Variant, delivery zones, R2 images, search](issues/19-commerce-catalogue-offers-variants-delivery.md) | task | claimed | 18 | 20, 25a |
 | 20 | [Marketplace Cart and Store Carts, server-side per task](issues/20-commerce-marketplace-and-store-carts.md) | task | ready-for-agent | 19 | 21 |
 | 21 | [Merchant Order: port instastore order rules and lifecycle](issues/21-commerce-merchant-order-rules.md) | task | ready-for-agent | 20 | 22, 23, 24, 25b |
 | 22 | [Commerce checkout through platform Payments (Paystack split and manual transfer)](issues/22-commerce-checkout-through-platform-payments.md) | task | ready-for-agent | 04, 15, 21 | 23 |

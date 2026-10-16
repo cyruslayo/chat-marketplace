@@ -1,31 +1,7 @@
 import type { SqlDatabase, SqlRow } from "../../../packages/platform-core/src/sql-database.js";
-import type { SchemaMigration } from "../../../packages/platform-core/src/schema-migrations.js";
+import { MERCHANT_SCHEMA, STORE_SCHEMA } from "./commerce-schema.js";
 import { parseMerchantRecord, type Merchant, type MerchantStatus } from "./merchant.js";
 import { parseStoreRecord, type Store, type StoreStatus } from "./store.js";
-
-/** Table DDL, applied by the migrations and by this directory's constructor (IF NOT EXISTS, so both are idempotent). */
-export const MERCHANT_SCHEMA = `CREATE TABLE IF NOT EXISTS merchants (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  status TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-)`;
-
-export const STORE_SCHEMA = `CREATE TABLE IF NOT EXISTS stores (
-  id TEXT PRIMARY KEY,
-  merchant_id TEXT NOT NULL REFERENCES merchants(id),
-  slug TEXT NOT NULL UNIQUE,
-  name TEXT NOT NULL,
-  status TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-)`;
-
-/** The commerce domain's ordered schema. Version 1 is the baseline: Merchant and Store. */
-export const COMMERCE_SCHEMA_MIGRATIONS: readonly SchemaMigration[] = [
-  { version: 1, name: "commerce baseline: merchants and stores", statements: [MERCHANT_SCHEMA, STORE_SCHEMA] },
-];
 
 export interface MerchantInput {
   readonly id: string;
