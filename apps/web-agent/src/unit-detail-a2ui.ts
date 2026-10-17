@@ -2,7 +2,7 @@ import {
   A2UI_V091_BASIC_CATALOG_ID,
   type A2UIComponent,
   type A2UIServerMessage,
-} from "@weaver/core";
+} from "@cylayo/weaver-core";
 import { formatNgnKobo, type DiscoveryUnitProjection } from "./discovery-a2ui.js";
 import { unitDetailArtifactFromProjection, type UnitDetailArtifact } from "../../web/src/unit-detail-artifact.js";
 import { GUEST_FACT_LABELS, GUEST_GLOSSARY, GUEST_JOURNEY, UNIT_DETAIL_ABOUT_HEADING, guestAmenityLabel, guestFact, guestInspectionDisclosure } from "./guest-content.js";

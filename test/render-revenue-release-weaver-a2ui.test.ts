@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { setupRevenueRelease, revenueNow } from "./revenue-release-fixtures.js";
 import { journal } from "../domains/shortlet/src/revenue-accounting.js";
 import { createRevenueReleaseWebAgentAdapter } from "../apps/web-agent/src/presentation.js";
-import { A2UI_V091_BASIC_CATALOG_ID } from "@weaver/core";
+import { A2UI_V091_BASIC_CATALOG_ID } from "@cylayo/weaver-core";
 test("Revenue Release uses the canonical read-only artifact through Weaver Basic Catalog", () => { const s = setupRevenueRelease(); const release = s.app.releaseRevenue("reservation-1", { id: "system", role: "system", tenantId: "tenant" }); const view = createRevenueReleaseWebAgentAdapter({ application: s.app, principal: { id: "operator-1", role: "operator", tenantId: "tenant" }, createSurfaceId: (id) => `surface:${id}` }).get("reservation-1"); assert.equal(view.artifact.id, "revenue-release:reservation-1"); assert.equal(view.artifact.actions.length, 0); assert.equal(view.artifact.facts.status, "released"); assert.equal(view.artifact.facts.protectionWindowStartsAt, release.protectionWindowStartsAt); const create = view.a2uiMessages[0]; assert.ok("createSurface" in create); assert.equal(create.createSurface.catalogId, A2UI_V091_BASIC_CATALOG_ID); const text = JSON.stringify(view.a2uiMessages); assert.match(text, /payable|Rolling Reserve|Operator Net/); assert.doesNotMatch(text, /provider-reference|tenant|Guest|PAN|CVV|OTP|SecurityContext/i); });
 
 test("Weaver projects pending protection and blocked states without financial actions", () => {

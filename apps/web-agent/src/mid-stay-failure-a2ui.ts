@@ -1,4 +1,4 @@
-import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage } from "@weaver/core";
+import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage } from "@cylayo/weaver-core";
 import type { MidStayFailureArtifact } from "../../web/src/mid-stay-failure-artifact.js";
 import { MID_STAY_APPLY_REVIEWED_EVENT, MID_STAY_REQUEST_SUPPORT_EVENT } from "../../web/src/mid-stay-failure-actions.js";
 import { midStayActionContext } from "../../web/src/mid-stay-failure-artifact.js";

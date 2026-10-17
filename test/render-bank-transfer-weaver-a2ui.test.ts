@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { A2UI_V091_BASIC_CATALOG_ID } from "@weaver/core";
+import { A2UI_V091_BASIC_CATALOG_ID } from "@cylayo/weaver-core";
 import { bankTransferArtifactToA2UI } from "../apps/web-agent/src/bank-transfer-a2ui.js";
 import type { BankTransferArtifact } from "../apps/web/src/bank-transfer-artifact.js";
 function artifact(status: BankTransferArtifact["facts"]["status"], authorized = true): BankTransferArtifact { const facts = { offerId: "offer", status, unit: "Unit", unitId: "unit", checkIn: "2026-08-10", checkOut: "2026-08-12", amountDueNowKobo: 10000, currency: "NGN" as const, paymentWindowExpiresAt: "2026-08-01T12:20:00Z", graceEndsAt: "2026-08-01T12:30:00Z", ...(status === "transfer_initiated" ? { bankName: "Bank", accountNumber: "012345", transferReference: "ref" } : {}), ...(status === "confirmed" ? { reservationId: "reservation", contractId: "contract", contractVersion: 1, amountPaidKobo: 10000, paidAt: "2026-08-01T12:10:00Z" } : {}), ...(status === "late_payment_refund_pending" ? { refundId: "refund", reconciliationId: "reconciliation", reconciliationStatus: "quarantined_for_refund" } : {}) }; return { id: "bank-transfer:offer", kind: "shortlet.bank-transfer", schemaVersion: "shortlet.bank-transfer/v1", projectionVersion: status === "ready" ? 1 : 2, facts, actions: authorized && status === "ready" ? [{ type: "initialize_transfer", artifactId: "bank-transfer:offer", offerId: "offer", expectedStatus: "ready", projectionVersion: 1 }] : [], sensitivity: "booking-sensitive" }; }

@@ -109,5 +109,4 @@ Goal 1 (durable restart restoration) complete and verified:
 - `test/local-guest-shell.test.ts`, `test/local-guest-weaver-demo.test.ts`, `test/guest-booking-journey.test.ts` (17/17 passing)
 - `npm run check` (clean; zero type errors)
 - `npm test` (full suite passes, 621/621 tests across 6 suites)
-- `npm run verify:weaver` (clean)
 - `git diff --check` (clean)

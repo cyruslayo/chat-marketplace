@@ -1,4 +1,4 @@
-import type { WebServerEventHandoff } from "@weaver/web";
+import type { WebServerEventHandoff } from "@cylayo/weaver-web";
 import type { ActionSpec, CommandPrincipal } from "../../../packages/platform-core/src/index.js";
 import { resolveActionAsync } from "../../../packages/platform-core/src/index.js";
 import { BANK_TRANSFER_ARTIFACT_KIND, BANK_TRANSFER_SCHEMA_VERSION, type BankTransferArtifact } from "./bank-transfer-artifact.js";

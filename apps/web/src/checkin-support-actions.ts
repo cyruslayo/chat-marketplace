@@ -1,4 +1,4 @@
-import type { WebServerEventHandoff } from "@weaver/web";
+import type { WebServerEventHandoff } from "@cylayo/weaver-web";
 import type { ActionSpec, CommandPrincipal } from "../../../packages/platform-core/src/index.js";
 import { resolveAction } from "../../../packages/platform-core/src/index.js";
 import type { CheckInSupportApplication } from "./checkin-support-application.js";

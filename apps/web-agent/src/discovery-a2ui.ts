@@ -2,7 +2,7 @@ import {
   A2UI_V091_BASIC_CATALOG_ID,
   type A2UIComponent,
   type A2UIServerMessage,
-} from "@weaver/core";
+} from "@cylayo/weaver-core";
 import { formatMoney } from "../../web/src/ui-kit.js";
 import { GUEST_COMPARE_LABELS, GUEST_FACT_LABELS, GUEST_GLOSSARY, formatGuestDate, guestAmenityLabel, guestFact, stayTotalLabel } from "./guest-content.js";
 

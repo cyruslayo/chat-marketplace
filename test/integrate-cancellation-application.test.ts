@@ -6,7 +6,7 @@ import type { BookingContract, Reservation } from "../domains/shortlet/src/card-
 import { CancellationApplication, InMemoryCancellationCaseRepository } from "../apps/web/src/cancellation-application.js";
 import { createCancellationWebAgentAdapter } from "../apps/web-agent/src/presentation.js";
 import { resolveCancellationServerEvent } from "../apps/web/src/cancellation-actions.js";
-import type { WebServerEventHandoff } from "@weaver/web";
+import type { WebServerEventHandoff } from "@cylayo/weaver-web";
 
 const contract: BookingContract = { contractId: "c1", reservationId: "r1", offerId: "o1", unitId: "u1", tenantId: "t1", parties: { primaryGuest: { id: "g1", name: "Guest" }, operator: { id: "op" }, distinctPayer: null }, dates: { checkIn: "2026-09-01", checkOut: "2026-09-03", nights: 2 }, occupants: [{ name: "Guest" }], quote: {}, totalAmountDueNowKobo: 10000, policies: { cancellationPolicy: { type: "flexible", version: "A", policySummary: "Flexible" }, guestConductRules: [] }, paymentDetails: { paymentMethod: "fresh_card", pspReference: "backend-card-ref", amountKobo: 10000, currency: "NGN", paidAt: "2026-08-01T00:00:00Z" }, createdAt: "2026-08-01T00:00:00Z", contractVersion: 1 };
 const reservation: Reservation = { reservationId: "r1", contractId: "c1", unitId: "u1", primaryGuestId: "g1", dates: { checkIn: "2026-09-01", checkOut: "2026-09-03" }, status: "confirmed", confirmedAt: "2026-08-01T00:00:00Z", inventoryCommitmentId: "commit-1" };

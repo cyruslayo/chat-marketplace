@@ -11,8 +11,8 @@ import {
   type A2UIComponent,
   type A2UIServerMessage,
   type JsonObject,
-} from "@weaver/core";
-import type { WebServerEventHandoff } from "@weaver/web";
+} from "@cylayo/weaver-core";
+import type { WebServerEventHandoff } from "@cylayo/weaver-web";
 import type {
   CommandPrincipal,
   TransitionTelemetryEvent,

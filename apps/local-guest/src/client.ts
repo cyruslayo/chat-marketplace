@@ -3,7 +3,7 @@
  * Presentation-only browser shell. Weaver renders server-produced A2UI; the
  * browser never owns booking state or executes generated business logic.
  */
-import { createBasicWebRuntime } from "@weaver/web";
+import { createBasicWebRuntime } from "@cylayo/weaver-web";
 import { icon } from "../../web/src/ui-kit.js";
 import {
   buildListingGallery,

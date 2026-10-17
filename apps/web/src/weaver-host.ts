@@ -1,15 +1,16 @@
-import type { A2UIServerMessage, MessageProcessorResult } from "@weaver/core";
+import type { A2UIServerMessage, MessageProcessorResult, WeaverRuntimeSafetyConfig } from "@cylayo/weaver-core";
 import {
   createBasicWebRuntime,
   type BasicResourcePolicy,
   type WebServerEventHandoff,
   type WebSurfaceMountOptions,
   type WebSurfaceMountResult,
-} from "@weaver/web";
+} from "@cylayo/weaver-web";
 
 export interface WeaverWebHostOptions {
   readonly onServerEvent?: (event: WebServerEventHandoff) => void;
   readonly resourcePolicy?: BasicResourcePolicy;
+  readonly safety?: WeaverRuntimeSafetyConfig;
 }
 
 export type WeaverWebHostProcessResult = {
@@ -29,6 +30,7 @@ export interface WeaverWebHost {
 
 export function createWeaverWebHost(options: WeaverWebHostOptions = {}): WeaverWebHost {
   const created = createBasicWebRuntime({
+    ...(options.safety === undefined ? {} : { runtime: { safety: options.safety } }),
     ...(options.resourcePolicy === undefined ? {} : { basic: { resourcePolicy: options.resourcePolicy } }),
     ...(options.onServerEvent === undefined ? {} : { rendering: { onServerEvent: options.onServerEvent } }),
   });

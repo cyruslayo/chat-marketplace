@@ -1,4 +1,4 @@
-import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage } from "@weaver/core";
+import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage } from "@cylayo/weaver-core";
 import type { GuestConductArtifact } from "../../web/src/guest-conduct-artifact.js";
 import { GUEST_CONDUCT_APPLY_REVIEWED_EVENT, GUEST_CONDUCT_REQUEST_SUPPORT_EVENT } from "../../web/src/guest-conduct-actions.js";
 export function guestConductArtifactToA2UI(input: { readonly artifact: GuestConductArtifact; readonly surfaceId: string }): readonly A2UIServerMessage[] {

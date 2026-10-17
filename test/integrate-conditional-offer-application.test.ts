@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { WebServerEventHandoff } from "@weaver/web";
+import type { WebServerEventHandoff } from "@cylayo/weaver-web";
 import { InMemoryAuditLog } from "../packages/platform-core/src/index.js";
 import { BookingRequestManager, ConditionalOfferManager, GuestVerificationService, UnitRepository, seedIssue01Units } from "../domains/shortlet/src/index.js";
 import { createBookingRequestApplication, getBookingRequestManager } from "../apps/web/src/booking-request-application.js";

@@ -1,4 +1,4 @@
-import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage } from "@weaver/core";
+import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage } from "@cylayo/weaver-core";
 import { PAYMENT_CAPABILITY_INITIALIZE_USSD_EVENT } from "../../web/src/payment-capability-actions.js";
 import type { PaymentCapabilityArtifact } from "../../web/src/payment-capability-artifact.js";
 export function paymentCapabilityArtifactToA2UI({ artifact, surfaceId }: { artifact: PaymentCapabilityArtifact; surfaceId: string }): readonly A2UIServerMessage[] {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { A2UI_V091_BASIC_CATALOG_ID, createBasicCatalogV091Registration, createWeaverRuntime, type A2UIServerMessage } from "@weaver/core";
+import { A2UI_V091_BASIC_CATALOG_ID, createBasicCatalogV091Registration, createWeaverRuntime, type A2UIServerMessage } from "@cylayo/weaver-core";
 import { bookingContractArtifactToA2UI, bookingRequestArtifactToA2UI, cardPaymentArtifactToA2UI, conditionalOfferArtifactToA2UI, requestDraftArtifactToA2UI } from "../apps/web-agent/src/index.js";
 import { cardPaymentArtifactFromState } from "../apps/web/src/card-payment-artifact.js";
 import type { BookingContractArtifact, BookingRequestArtifact, CardPaymentArtifact, ConditionalOfferArtifact } from "../apps/web/src/index.js";

@@ -46,7 +46,7 @@ If `CONCIERGE_MODE=gemini` is selected without `GEMINI_API_KEY`, startup fails c
 
 ## Optional local pilot live-agent smoke
 
-This explicit smoke is separate from `npm test`, `npm run check`, `npm run verify:weaver`, and `pilot:acceptance:rodney`. It uses the already-bootstrapped local pilot inventory and the existing Gemini `AssistantModelClient` adapter. By default it makes one four-turn journey with a hard limit of 10 Gemini provider requests (two requests per turn plus two continuation calls); API usage may incur cost. The request count includes bounded connection retries.
+This explicit smoke is separate from `npm test`, `npm run check`, and `pilot:acceptance:rodney`. It uses the already-bootstrapped local pilot inventory and the existing Gemini `AssistantModelClient` adapter. By default it makes one four-turn journey with a hard limit of 10 Gemini provider requests (two requests per turn plus two continuation calls); API usage may incur cost. The request count includes bounded connection retries.
 
 PowerShell:
 

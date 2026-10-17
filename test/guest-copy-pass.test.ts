@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { A2UIServerMessage } from "@weaver/core";
+import type { A2UIServerMessage } from "@cylayo/weaver-core";
 import { restartFixture, type RestartStage } from "./helpers/guest-restart.js";
 import { formatGuestHistorySummary } from "../apps/local-guest/src/conversational-shell.js";
 import { renderConventionalUnitDetailHtml, renderGuestShellHtml, type GuestStateSnapshot, type GuestSurfacePayload, type GuestTurnSuccess } from "../apps/local-guest/src/guest-server.js";

@@ -1,4 +1,4 @@
-import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage } from "@weaver/core";
+import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage } from "@cylayo/weaver-core";
 import { BANK_TRANSFER_INITIALIZE_EVENT } from "../../web/src/bank-transfer-actions.js";
 import type { BankTransferArtifact } from "../../web/src/bank-transfer-artifact.js";
 import { formatBookingDeadline, formatBookingMoney, nightsBetween, ticketFactComponents, ticketFactIds } from "./booking-presentation.js";

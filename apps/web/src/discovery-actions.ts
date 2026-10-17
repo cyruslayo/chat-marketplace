@@ -1,4 +1,4 @@
-import type { WebServerEventHandoff } from "@weaver/web";
+import type { WebServerEventHandoff } from "@cylayo/weaver-web";
 
 const VIEW_UNIT_ACTION_NAME = "shortlet.discovery.view-unit";
 const DISCOVERY_ARTIFACT_KIND = "shortlet.discovery-results";

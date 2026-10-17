@@ -1,4 +1,4 @@
-import type { A2UIServerMessage } from "@weaver/core";
+import type { A2UIServerMessage } from "@cylayo/weaver-core";
 import type { CommandPrincipal } from "../../../../packages/platform-core/src/index.js";
 import type { LocalGuestEnvironment } from "../fixture.js";
 import type {
