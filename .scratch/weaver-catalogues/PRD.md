@@ -46,7 +46,7 @@ The web A2UI integration has two gaps.
 
 | ADR | Constraint | Applies to |
 | --- | --- | --- |
-| 0081 | Weaver is the A2UI v0.9.1 runtime. No Weaver types in domains, platform-core or authoritative models. Custom catalogues are deferred until the Basic Catalog is shown to be insufficient. Upgrades need replay, parity and verified rollback. | All issues. 03 writes ADR 0096 recording the evidence. `test/weaver-dependency-boundary.test.ts` stays green. |
+| 0081 | Weaver is the A2UI v0.9.1 runtime. No Weaver types in domains, platform-core or authoritative models. Custom catalogues are deferred until the Basic Catalog is shown to be insufficient. Upgrades need replay, parity and verified rollback. | All issues. 03 writes ADR 0102 recording the evidence. `test/weaver-dependency-boundary.test.ts` stays green. |
 | 0073 | Catalogues are named `shortlet-discovery/v1` and `shortlet-booking/v1` under a platform-controlled namespace. Schemas are compile-time bundles. No dynamic schema, raw HTML from the agent, hidden controls or automatic contractual or financial submission. Every outbound message passes A2UI, catalogue and semantic validation. | 03–07 |
 | 0074 / 0068 | An unsupported catalogue or a render failure fails closed to complete text plus a conventional route, and never silently omits meaning. State is restored from server projections. | 03 (stale-client test), 04–07 |
 | 0075 | Renderers accept validated typed properties only and never execute agent content. | 03–07. Props are schema-checked with `additionalProperties: false`, and every value is escaped by the kit's `escapeHtml`. |

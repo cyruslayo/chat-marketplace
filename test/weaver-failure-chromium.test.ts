@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import test from "node:test";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { startLocalGuestServer } from "../apps/local-guest/src/guest-server.js";
+import { SHORTLET_DISCOVERY_CATALOG_ID } from "../apps/web-agent/src/shortlet-catalogs.js";
 import { launchRealBrowser } from "./helpers/chrome-devtools.js";
 
 test("AC20 — A controlled Weaver rendering failure preserves a safe conventional fallback in real Chromium", async () => {
@@ -32,8 +33,12 @@ test("AC20 — A controlled Weaver rendering failure preserves a safe convention
           summary: "Broken rich workspace",
           textFallback: "Safe fallback for the current workspace.",
           conventionalRoute: "/stays/search",
-          // Deliberately invalid A2UI: the client must not mount or guess.
-          a2uiMessages: [{ version: "v0.9.1", updateComponents: { surfaceId: `thread-${threadId}:faulty`, components: [] } }],
+          // The approved catalogue is known, but its component is not in the
+          // Basic-equivalent schema cached by this client version.
+          a2uiMessages: [
+            { version: "v0.9.1", createSurface: { surfaceId: `thread-${threadId}:faulty`, catalogId: SHORTLET_DISCOVERY_CATALOG_ID } },
+            { version: "v0.9.1", updateComponents: { surfaceId: `thread-${threadId}:faulty`, components: [{ id: "root", component: "StayCard", title: "Unsupported rich surface" }] } },
+          ],
         }],
       });
       return {
@@ -46,6 +51,11 @@ test("AC20 — A controlled Weaver rendering failure preserves a safe convention
     await tab.waitForText("Safe fallback for the current workspace", 15000);
     assert.equal(await tab.evaluate<string>("document.querySelector('#active-workspace .weaver-mount')?.dataset.renderer || ''"), "fallback");
     assert.equal(await tab.evaluate<boolean>("Boolean(document.querySelector('#active-workspace a[href=\"/stays/search\"]'))"), true);
+    const telemetryDeadline = Date.now() + 5000;
+    while (!server.environment.telemetry.events().some((event) => event.type === "interaction.weaver-rendering-failure") && Date.now() < telemetryDeadline) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    assert.ok(server.environment.telemetry.events().some((event) => event.type === "interaction.weaver-rendering-failure"));
     assert.equal(server.environment.interactionStore.listBookingRequestIds().length, 0, "presentation failure does not create booking state");
   } finally {
     await stopIntercept?.();
