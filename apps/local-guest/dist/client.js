@@ -9094,6 +9094,44 @@ Known schemas:
     return { ok: true, value: facade };
   }
 
+  // apps/web-agent/src/shortlet-catalogs.ts
+  var SHORTLET_CATALOG_NAMESPACE = "urn:chat-marketplace:shortlet";
+  var SHORTLET_DISCOVERY_CATALOG_ID = `${SHORTLET_CATALOG_NAMESPACE}/discovery/v1`;
+  var SHORTLET_BOOKING_CATALOG_ID = `${SHORTLET_CATALOG_NAMESPACE}/booking/v1`;
+  function defineShortletCatalog(schema) {
+    return schema;
+  }
+  function shortletCatalog(catalogId) {
+    const basic = createBasicCatalogV091Registration();
+    const schema = structuredClone(basic.schema);
+    schema["$id"] = catalogId;
+    schema["catalogId"] = catalogId;
+    return { catalogId, schema: defineShortletCatalog(schema) };
+  }
+  var SHORTLET_DISCOVERY_CATALOG = shortletCatalog(SHORTLET_DISCOVERY_CATALOG_ID);
+  var SHORTLET_BOOKING_CATALOG = shortletCatalog(SHORTLET_BOOKING_CATALOG_ID);
+
+  // apps/local-guest/src/shortlet-renderers.ts
+  var SHORTLET_RENDERERS = [];
+
+  // apps/local-guest/src/shortlet-runtime.ts
+  function createShortletWebRuntime(options = {}) {
+    const resourcePolicy = options.resourcePolicy ?? (() => void 0);
+    const created = createBasicWebRuntime({
+      additionalCatalogs: [SHORTLET_DISCOVERY_CATALOG, SHORTLET_BOOKING_CATALOG],
+      additionalRenderers: [
+        ...createBasicCatalogRendererRegistrations({ catalogId: SHORTLET_DISCOVERY_CATALOG.catalogId, resourcePolicy }),
+        ...createBasicCatalogRendererRegistrations({ catalogId: SHORTLET_BOOKING_CATALOG.catalogId, resourcePolicy }),
+        ...SHORTLET_RENDERERS
+      ],
+      ...options.safety === void 0 ? {} : { runtime: { safety: options.safety } },
+      basic: { resourcePolicy },
+      ...options.onServerEvent === void 0 ? {} : { rendering: { onServerEvent: options.onServerEvent } }
+    });
+    if (!created.ok) throw new Error("Unable to create the Shortlet Weaver web runtime", { cause: created.error });
+    return created.value;
+  }
+
   // apps/web/src/ui-kit.ts
   function escapeHtml(value) {
     return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
@@ -9892,12 +9930,12 @@ Known schemas:
       if (stored && /^g-[a-f0-9-]{6,64}$/.test(stored)) return stored;
     } catch {
     }
-    const created2 = `g-${crypto.randomUUID()}`;
+    const created = `g-${crypto.randomUUID()}`;
     try {
-      window.sessionStorage.setItem("shortlet-concierge-thread", created2);
+      window.sessionStorage.setItem("shortlet-concierge-thread", created);
     } catch {
     }
-    return created2;
+    return created;
   }
   function isRecord3(value) {
     return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -11698,20 +11736,19 @@ Known schemas:
     const target = event.target instanceof Element ? event.target.closest("button") : null;
     if (target && !target.closest("[hidden]")) lastActivatedControl = target;
   }, { capture: true });
-  var created = createBasicWebRuntime({
-    basic: {
-      resourcePolicy: ({ kind, url }) => kind === "image" ? safeImageResourceUrl(url) : void 0
-    },
-    rendering: { onServerEvent: (event) => {
-      void sendEvent(event.message.action);
-    } }
-  });
-  if (!created.ok) {
+  var weaver;
+  try {
+    weaver = createShortletWebRuntime({
+      resourcePolicy: ({ kind, url }) => kind === "image" ? safeImageResourceUrl(url) : void 0,
+      onServerEvent: (event) => {
+        void sendEvent(event.message.action);
+      }
+    });
+  } catch {
     addTurn("assistant", "The interface runtime could not start. Please reload the page.");
     announce("The interface runtime could not start. Please reload the page.", true);
     throw new Error("Unable to create the Weaver web runtime");
   }
-  var weaver = created.value;
   workspaceReopen.addEventListener("click", () => {
     workspaceOpener = workspaceReopen;
     shellState = reopenFocusedSurface(shellState);

@@ -8,7 +8,7 @@ Work top to bottom. The frontier is the first issue that is open, unblocked and 
 | --- | --- | --- | --- |
 | 01 | [Move to `@cylayo/weaver-*` 0.2.1 from npm](issues/01-weaver-0-2-1-from-npm.md) | task | none |
 | 02 | [Build A2UI envelopes with `createA2UIV091Producer`](issues/02-producer-envelopes.md) | task | 01 |
-| 03 | [ADR 0096, `shortlet-*` catalogue definitions and the runtime factory](issues/03-catalogues-and-runtime.md) | task | 01 |
+| 03 | [ADR 0102, `shortlet-*` catalogue definitions and the runtime factory](issues/03-catalogues-and-runtime.md) | task | 01 |
 | 04 | [`shortlet-booking/v1`: StayTicket and PriceBreakdown](issues/04-booking-catalogue.md) | task | 02, 03 |
 | 05 | [Unit detail on `shortlet-discovery/v1`](issues/05-unit-detail-catalogue.md) | task | 03 |
 | 06 | [Discovery cards on `shortlet-discovery/v1`](issues/06-discovery-cards-catalogue.md) | task | 03 |
@@ -22,7 +22,7 @@ A wave is the set of issues that are unblocked once every earlier wave has resol
 | Wave | Issues | What it delivers | Gate before the next wave |
 | --- | --- | --- | --- |
 | 1 | 01 | 0.2.1 from npm, `@weaver/*` imports renamed, vendor removed. No behaviour change. | Full `npm test` green with unchanged expectations, which is the replay and parity gate (ADR 0079), and a clean `npm ci`. |
-| 2 | 02, 03 | Producer-built envelopes with byte-for-byte equal output. ADR 0096, the two catalogue registrations, `createShortletWebRuntime`, and validation and stale-client tests. No surface uses the new catalogues yet. | Every existing builder output still validates. The client runs on `createShortletWebRuntime` with no visible change. |
+| 2 | 02, 03 | Producer-built envelopes with byte-for-byte equal output. ADR 0102, the two catalogue registrations, `createShortletWebRuntime`, and validation and stale-client tests. No surface uses the new catalogues yet. | Every existing builder output still validates. The client runs on `createShortletWebRuntime` with no visible change. |
 | 3 | 04, 05, 06 | Booking ticket and breakdown, unit detail, and discovery cards move to typed components. `organizeBookingTicket`, `organizeUnitDetail` and `decorateDiscoveryCards` are deleted. | Each chat-to-page parity Chromium suite is green with unchanged expectations, plus captures at 320, 390, 768 and 1280. |
 | 4 | 07 | Comparison moves to `StayComparison`, and `decorateComparison` is deleted. | Compare suites green, plus captures. |
 | 5 | 08 | Dead helpers removed, a retirement guard test, docs updated, and the full light and dark capture sweep. | The effort is complete. |
@@ -42,8 +42,10 @@ The waves show what is independent in scope, so the order inside a wave is free.
 >
 > - The Weaver 0.2.1 API reference is the `v0.2.1` tag of <https://github.com/cyruslayo/weaver> and the published `.d.ts` in `node_modules/@cylayo/weaver-*`. Don't use APIs that exist only on Weaver main, such as `defineCatalog`.
 > - For each guest UI issue, follow `.scratch/guest-ui-consistency/`: use the kit, run the walkthrough, and capture at 320, 390, 768 and 1280.
-> - Don't invent copy, amounts or catalogue identifiers beyond ADR 0096; ask me.
+> - Don't invent copy, amounts or catalogue identifiers beyond ADR 0102; ask me.
 
 ## Context pointers
 
 (Append one line per resolved issue: what landed and where.)
+
+- 03 resolved in `b0c1454`: accepted ADR 0102, centralized discovery/booking registrations, shared guest runtime, strict outbound message validation, rebuilt client, and stale-runtime/fallback coverage. Full `npm run check`, `npm run build`, focused tests (6 passed), complete `NODE_ENV=test npm test` (1809 unit and 177 browser passed; 2 skipped), and 21 serial capture groups passed; no overflow (only hidden 1×1 native radios, with normal labels). Issue evidence: [03](issues/03-catalogues-and-runtime.md).

@@ -51,3 +51,5 @@ The 0.2.x line adds the producer, stream ingestion and safety budgets that later
 | 0074 | A failure fails closed to text plus a conventional route. | AC5 |
 
 ## Comments
+
+- 17 Oct 2026: Not resolved by the Weaver03 integration. This issue has no implementation answer or Definition of Done evidence recorded here. Before resolution, document evidence separately for AC1–AC6 (exact npm pins and lockfile hashes; removal/import boundary; authoritative-package boundary; both largest fixtures within default budgets; configured-budget fail-closed behavior; unchanged render/parity/Chromium expectations), and for the verification gate (`npm run check`, build, full `npm test`, clean `npm ci` followed by check), including the landing commit/revertability. The integrated Weaver03 full-suite pass is useful combined evidence for AC6 but does not establish the other criteria or the clean-install gate.

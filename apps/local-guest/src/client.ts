@@ -3,7 +3,8 @@
  * Presentation-only browser shell. Weaver renders server-produced A2UI; the
  * browser never owns booking state or executes generated business logic.
  */
-import { createBasicWebRuntime } from "@cylayo/weaver-web";
+import { createShortletWebRuntime } from "./shortlet-runtime.js";
+import type { BasicWebRuntime } from "@cylayo/weaver-web";
 import { icon } from "../../web/src/ui-kit.js";
 import {
   buildListingGallery,
@@ -2574,18 +2575,17 @@ activeWorkspace.addEventListener("click", (event) => {
   if (target && !target.closest("[hidden]")) lastActivatedControl = target;
 }, { capture: true });
 
-const created = createBasicWebRuntime({
-  basic: {
+let weaver: BasicWebRuntime;
+try {
+  weaver = createShortletWebRuntime({
     resourcePolicy: ({ kind, url }) => kind === "image" ? safeImageResourceUrl(url) : undefined,
-  },
-  rendering: { onServerEvent: (event) => { void sendEvent(event.message.action); } },
-});
-if (!created.ok) {
+    onServerEvent: (event) => { void sendEvent(event.message.action); },
+  });
+} catch {
   addTurn("assistant", "The interface runtime could not start. Please reload the page.");
   announce("The interface runtime could not start. Please reload the page.", true);
   throw new Error("Unable to create the Weaver web runtime");
 }
-const weaver = created.value;
 
 workspaceReopen.addEventListener("click", () => {
   workspaceOpener = workspaceReopen;

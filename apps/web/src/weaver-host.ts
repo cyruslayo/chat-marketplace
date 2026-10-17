@@ -1,11 +1,11 @@
 import type { A2UIServerMessage, MessageProcessorResult, WeaverRuntimeSafetyConfig } from "@cylayo/weaver-core";
-import {
-  createBasicWebRuntime,
-  type BasicResourcePolicy,
-  type WebServerEventHandoff,
-  type WebSurfaceMountOptions,
-  type WebSurfaceMountResult,
+import type {
+  BasicResourcePolicy,
+  WebServerEventHandoff,
+  WebSurfaceMountOptions,
+  WebSurfaceMountResult,
 } from "@cylayo/weaver-web";
+import { createShortletWebRuntime } from "../../local-guest/src/shortlet-runtime.js";
 
 export interface WeaverWebHostOptions {
   readonly onServerEvent?: (event: WebServerEventHandoff) => void;
@@ -29,16 +29,7 @@ export interface WeaverWebHost {
 }
 
 export function createWeaverWebHost(options: WeaverWebHostOptions = {}): WeaverWebHost {
-  const created = createBasicWebRuntime({
-    ...(options.safety === undefined ? {} : { runtime: { safety: options.safety } }),
-    ...(options.resourcePolicy === undefined ? {} : { basic: { resourcePolicy: options.resourcePolicy } }),
-    ...(options.onServerEvent === undefined ? {} : { rendering: { onServerEvent: options.onServerEvent } }),
-  });
-  if (!created.ok) {
-    throw new Error("Unable to create the Weaver web runtime", { cause: created.error });
-  }
-
-  const webRuntime = created.value;
+  const webRuntime = createShortletWebRuntime(options);
   return {
     catalogId: webRuntime.catalogId,
     process(messages) {
