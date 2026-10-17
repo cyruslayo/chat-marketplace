@@ -1114,6 +1114,8 @@ export class LocalGuestApp {
       return this.#withJourney(threadId, decorated);
     }
     const result = this.#decorateResult(this.#handleEvent(threadId, payload));
+    // ADR 0093: keep each durable work projection current for reads through any linked principal; remote compositions persist it below.
+    if (result.ok) this.#rememberResult(threadId, undefined, result);
     if (result.ok && this.#environment.guestDataIsRemote) await this.#persistRemoteThread(threadId);
     await this.#flushRemoteContact();
     return this.#withJourney(threadId, result);

@@ -143,13 +143,22 @@ test("AC4 (app level with an explicit identity; the HTTP route is issue 06): com
     const session = signInGuestAccount(authority, "ada@example.test", tenantId);
     links.linkSignedInPrincipal({ principalId: deviceA.environment.guestPrincipal().id, tenantId, session });
     links.linkSignedInPrincipal({ principalId: deviceB.environment.guestPrincipal().id, tenantId, session });
+    assert.deepEqual([...links.linkedPrincipals(session.account.accountGuestId, tenantId)].sort(), [deviceA.environment.guestPrincipal().id, deviceB.environment.guestPrincipal().id].sort());
     const identity = await resolver.resolve({ principalId: deviceA.environment.guestPrincipal().id, tenantId, accountSession: { sessionId: session.sessionId, sessionSecret: session.sessionSecret } });
     assert.ok(identity);
     // Issue 07: the resolver reports the level the identity-assurance port gives, and email-verified otherwise.
     assert.equal(identity.assurance, "email-verified");
+    assert.deepEqual([...identity.principalIds].sort(), [deviceA.environment.guestPrincipal().id, deviceB.environment.guestPrincipal().id].sort());
     const verifiedResolver = new GuestIdentityResolver(authority, links, { hasCurrentGovernmentId: () => true });
     const verifiedIdentity = await verifiedResolver.resolve({ principalId: deviceA.environment.guestPrincipal().id, tenantId, accountSession: { sessionId: session.sessionId, sessionSecret: session.sessionSecret } });
     assert.equal(verifiedIdentity?.assurance, "government-ID-verified");
+    const linkedThreadRows = new SqliteGuestInteractionStore(handle).findThreadsForPrincipals(verifiedIdentity!.principalIds, tenantId);
+    assert.deepEqual(linkedThreadRows.map((row) => row.threadId).sort(), [deviceA.threadId, deviceB.threadId].sort());
+    assert.ok(linkedThreadRows.every(({ threadJson }) => {
+      const projection: unknown = JSON.parse(threadJson);
+      return projection !== null && typeof projection === "object" &&
+        "requestId" in projection && typeof projection.requestId === "string" && projection.requestId !== "";
+    }), "successful async events persist each linked device's request projection");
 
     const listed = await deviceA.app.committedWork(deviceA.environment.guestPrincipal(), identity);
     assert.deepEqual(listed.map((work) => work.threadId).sort(), [deviceA.threadId, deviceB.threadId].sort());
