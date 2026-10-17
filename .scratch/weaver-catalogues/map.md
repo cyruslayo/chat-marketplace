@@ -47,3 +47,5 @@ The waves show what is independent in scope, so the order inside a wave is free.
 ## Context pointers
 
 (Append one line per resolved issue: what landed and where.)
+
+- 03 resolved in `b0c1454`: accepted ADR 0102, centralized discovery/booking registrations, shared guest runtime, strict outbound message validation, rebuilt client, and stale-runtime/fallback coverage. Full `npm run check`, `npm run build`, focused tests (6 passed), complete `NODE_ENV=test npm test` (1809 unit and 177 browser passed; 2 skipped), and 21 serial capture groups passed; no overflow (only hidden 1×1 native radios, with normal labels). Issue evidence: [03](issues/03-catalogues-and-runtime.md).

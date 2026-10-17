@@ -1,6 +1,6 @@
 # ADR 0102, `shortlet-*` catalogue definitions and the runtime factory
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: 01
 Requested: 6 Oct 2026
@@ -100,4 +100,4 @@ Implemented on isolated branch `work/weaver-03`, based on canonical `main` at `e
 6. **Sensitive data:** no credentials, restricted identity material, or bearer references were added to telemetry or logs.
 7. **Validation:** `npm run check` and full `npm test` pass as recorded above.
 
-Issue remains claimed and unresolved pending parent review and integration authorization.
+Resolved after independent review and parent acceptance. Implementation commit: `b0c1454` (`feat(guest): add validated shortlet catalogue runtime`). Full validation evidence above applies to this exact candidate based on canonical main `e26e253`.
