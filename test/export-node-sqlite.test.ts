@@ -352,7 +352,8 @@ test("16 AC1 (fixture): the committed Node export is what scripts/export-node-sq
       await writeFile(NODE_EXPORT_FIXTURE, produced, "utf8");
       return;
     }
-    assert.equal(readFileSync(NODE_EXPORT_FIXTURE, "utf8"), produced, "The Node export fixture is stale: regenerate it with UPDATE_NODE_EXPORT_FIXTURE=1");
+    const committed = readFileSync(NODE_EXPORT_FIXTURE, "utf8").replace(/\r\n?/g, "\n");
+    assert.equal(committed, produced, "The Node export fixture is stale: regenerate it with UPDATE_NODE_EXPORT_FIXTURE=1");
   });
 });
 

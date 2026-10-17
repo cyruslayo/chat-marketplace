@@ -2830,9 +2830,8 @@ export function createGuestRequestHandler(
             return;
           }
           const sessionId = issueGuestSession(res, secureCookie);
-          const principalId = sessionScopedGuestPrincipals
-            ? `guest-${crypto.randomUUID()}`
-            : app.environment.config.guestId;
+          let principalId = app.environment.config.guestId;
+          if (sessionScopedGuestPrincipals) principalId = `guest-${crypto.randomUUID()}`;
           const registered = registerBrowserSession(
             env,
             browserSessions,

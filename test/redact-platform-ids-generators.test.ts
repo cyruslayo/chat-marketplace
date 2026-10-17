@@ -18,7 +18,8 @@ import { sourceFiles } from "./helpers/platform-id-fixtures.js";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const sources = ["domains", "packages", "apps"].flatMap((area) => sourceFiles(join(root, area))).map((file) => ({
-  file: relative(root, file),
+  // Exclusion records use repository-style paths; normalize Windows separators before comparing them.
+  file: relative(root, file).replaceAll("\\", "/"),
   text: readFileSync(file, "utf8")
 }));
 
