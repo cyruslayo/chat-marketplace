@@ -5,7 +5,7 @@ import {
   createBasicCatalogV091Registration,
   createWeaverRuntime,
   type A2UIServerMessage,
-} from "@weaver/core";
+} from "@cylayo/weaver-core";
 import {
   createWeaverWebAgentAdapter,
   discoveryArtifactToA2UI,

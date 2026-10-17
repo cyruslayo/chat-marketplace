@@ -1,4 +1,4 @@
-import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage } from "@weaver/core";
+import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage } from "@cylayo/weaver-core";
 import { formatBookingMoney, formatStayDates } from "./booking-presentation.js";
 import { GUEST_GLOSSARY, guestReservationStatus } from "./guest-content.js";
 

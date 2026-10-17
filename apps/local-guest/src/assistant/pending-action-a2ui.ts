@@ -2,7 +2,7 @@ import {
   A2UI_V091_BASIC_CATALOG_ID,
   type A2UIComponent,
   type A2UIServerMessage,
-} from "@weaver/core";
+} from "@cylayo/weaver-core";
 import type { PendingAssistantAction } from "./pending-actions.js";
 
 export const ASSISTANT_CONFIRM_ACTION_EVENT = "shortlet.assistant.confirm-action";

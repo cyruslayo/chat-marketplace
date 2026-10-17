@@ -8,7 +8,7 @@ Requested: 6 Oct 2026
 The web A2UI integration has two gaps.
 
 1. **The vendored Weaver is out of date.**
-   - The app consumes `@weaver/core` and `@weaver/web` 0.1.2 as tarballs in `vendor/weaver/`. They were vendored because Weaver was not on a registry at the time.
+   - The app previously consumed `@weaver/core` and `@weaver/web` 0.1.2 as tarballs in `vendor/weaver/`, before the 0.2.1 packages were published to npm.
    - The published release is `@cylayo/weaver-core` and `@cylayo/weaver-web` **0.2.1**, from tag `v0.2.1` (`05cd279`) at <https://github.com/cyruslayo/weaver>.
    - 0.2.0 added the producer (`createA2UIV091Producer`), validated JSONL stream ingestion and runtime safety budgets. 0.2.1 only moved the packages to the `@cylayo` scope.
    - Renderer and registry APIs are unchanged.

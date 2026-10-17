@@ -1,4 +1,4 @@
-import type { WebServerEventHandoff } from "@weaver/web";
+import type { WebServerEventHandoff } from "@cylayo/weaver-web";
 import type { ActionSpec, CommandPrincipal, SecurityContext } from "../../../packages/platform-core/src/index.js";
 import { resolveAction } from "../../../packages/platform-core/src/index.js";
 import type { HumanHandoffApplication } from "./human-handoff-application.js";

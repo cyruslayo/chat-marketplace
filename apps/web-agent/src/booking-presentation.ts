@@ -1,6 +1,6 @@
 import { formatNgnKobo } from "./discovery-a2ui.js";
 import type { CardPaymentStatus } from "../../web/src/card-payment-artifact.js";
-import type { A2UIComponent } from "@weaver/core";
+import type { A2UIComponent } from "@cylayo/weaver-core";
 import { GUEST_FACT_LABELS, GUEST_GLOSSARY, guestFact, guestReservationStatus } from "./guest-content.js";
 
 export type BookingProgressStage = "request" | "operator-review" | "offer" | "payment" | "payment-processing" | "confirmed";

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { A2UI_V091_BASIC_CATALOG_ID, createBasicCatalogV091Registration, createWeaverRuntime } from "@weaver/core";
+import { A2UI_V091_BASIC_CATALOG_ID, createBasicCatalogV091Registration, createWeaverRuntime } from "@cylayo/weaver-core";
 import { bookingRequestArtifactToA2UI } from "../apps/web-agent/src/index.js";
 import type { BookingRequestArtifact } from "../apps/web/src/index.js";
 

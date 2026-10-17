@@ -9,8 +9,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Window } from "happy-dom";
-import { createBasicWebRuntime } from "@weaver/web";
-import type { A2UIServerMessage, A2UIClientActionMessage } from "@weaver/core";
+import { createBasicWebRuntime } from "@cylayo/weaver-web";
+import type { A2UIServerMessage, A2UIClientActionMessage } from "@cylayo/weaver-core";
 import {
   startLocalGuestServer,
   type GuestSurfacePayload,

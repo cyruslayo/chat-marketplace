@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { A2UIComponent } from "@weaver/core";
+import type { A2UIComponent } from "@cylayo/weaver-core";
 import { unitDetailArtifactToA2UI, unitTiles } from "../apps/web-agent/src/index.js";
 import { formatNgnKobo } from "../apps/web-agent/src/discovery-a2ui.js";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { relocationArtifactToA2UI } from "../apps/web-agent/src/relocation-a2ui.js";
-import { A2UI_V091_BASIC_CATALOG_ID } from "@weaver/core";
+import { A2UI_V091_BASIC_CATALOG_ID } from "@cylayo/weaver-core";
 import { createRelocationWebAgentAdapter } from "../apps/web-agent/src/presentation.js";
 import { resolveRelocationServerEvent } from "../apps/web/src/relocation-actions.js";
 import { setup } from "./integrate-relocation-application.test.js";

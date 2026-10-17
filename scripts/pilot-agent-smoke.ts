@@ -1,7 +1,7 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { GoogleGenAI } from "@google/genai";
-import type { A2UIServerMessage } from "@weaver/core";
+import type { A2UIServerMessage } from "@cylayo/weaver-core";
 import type { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import type { AssistantDiagnosticEvent } from "../apps/local-guest/src/assistant/assistant-runtime.js";
 import type { AssistantConversationStep } from "../apps/local-guest/src/assistant/assistant-model.js";
@@ -434,7 +434,7 @@ async function anyRenderable(surfaces: readonly { readonly surfaceId: string; re
 }
 
 async function renderable(surfaceId: string, messages: readonly unknown[]): Promise<{ readonly ok: true } | { readonly ok: false; readonly failureClass: RenderFailureClass }> {
-  const [{ Window }, { createBasicWebRuntime }] = await Promise.all([import("happy-dom"), import("@weaver/web")]);
+  const [{ Window }, { createBasicWebRuntime }] = await Promise.all([import("happy-dom"), import("@cylayo/weaver-web")]);
   const window = new Window();
   try {
     const created = createBasicWebRuntime();

@@ -2,7 +2,7 @@ import {
   A2UI_V091_BASIC_CATALOG_ID,
   type A2UIComponent,
   type A2UIServerMessage,
-} from "@weaver/core";
+} from "@cylayo/weaver-core";
 import {
   BOOKING_REQUEST_CONFIRM_EVENT,
   BOOKING_REQUEST_DECLINE_EVENT,

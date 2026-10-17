@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { A2UI_V091_BASIC_CATALOG_ID, type A2UIServerMessage } from "@weaver/core";
-import { type BasicResourcePolicy, type WebServerEventHandoff } from "@weaver/web";
+import { A2UI_V091_BASIC_CATALOG_ID, type A2UIServerMessage } from "@cylayo/weaver-core";
+import { type BasicResourcePolicy, type WebServerEventHandoff } from "@cylayo/weaver-web";
 import { Window } from "happy-dom";
-import { discoveryArtifactToA2UI } from "../apps/web-agent/src/index.js";
+import { COMPARE_SIZE, compareArtifactToA2UI, discoveryArtifactToA2UI } from "../apps/web-agent/src/index.js";
 import { createWeaverWebHost } from "../apps/web/src/index.js";
 import { UnitDiscoveryQuery, UnitRepository, seedIssue01Units } from "../domains/shortlet/src/index.js";
 import { InMemoryAuditLog, InMemoryTelemetry } from "../packages/platform-core/src/index.js";
+import { restartFixture } from "./helpers/guest-restart.js";
 
 const FIXED_NOW = new Date("2026-07-22T00:00:00Z");
 const DISCOVERY_SURFACE_ID = "task-4-discovery-surface";
@@ -166,4 +167,60 @@ test("AC8 — Explicit policy is respected", () => {
   assert.equal(images[0].getAttribute("src"), approvedUrl);
   assert.notEqual(images[1].getAttribute("src"), blockedUrl);
   assert.equal(images[1].getAttribute("data-a2ui-resource-state"), "blocked");
+});
+
+test("AC5 — Resolution budget failure rejects the whole surface instead of mounting a partial render", () => {
+  const host = createWeaverWebHost({ safety: { maxResolvedInstances: 1 } });
+  const surfaceId = "over-budget-surface";
+  processSuccessfully(host, [
+    { version: "v0.9.1", createSurface: { surfaceId, catalogId: A2UI_V091_BASIC_CATALOG_ID } },
+    { version: "v0.9.1", updateComponents: { surfaceId, components: [
+      { id: "root", component: "Column", children: ["child"] },
+      { id: "child", component: "Text", text: "must not partially render" },
+    ] } },
+  ]);
+  const { target } = targetElement();
+  const mounted = host.mount({ surfaceId, target });
+  assert.equal(mounted.ok, false);
+  if (mounted.ok) return;
+  assert.equal(mounted.error.code, "SURFACE_RESOLUTION_FAILED");
+  if (mounted.error.code === "SURFACE_RESOLUTION_FAILED") {
+    assert.equal(mounted.error.cause.code, "COMPONENT_TREE_RESOLUTION_FAILED");
+    if (mounted.error.cause.code === "COMPONENT_TREE_RESOLUTION_FAILED") {
+      assert.equal(mounted.error.cause.cause.code, "RESOLUTION_BUDGET_EXCEEDED");
+    }
+  }
+  assert.equal(target.childNodes.length, 0);
+  assert.doesNotMatch(target.textContent ?? "", /must not partially render/);
+});
+
+test("AC4 — Largest local discovery and two-stay comparison fixtures resolve on the default runtime budget", async () => {
+  const fixture = await restartFixture();
+  try {
+    const artifact = fixture.environment.discoveryQuery.search({
+      location: "Lagos",
+      checkIn: "2026-09-10",
+      checkOut: "2026-09-13",
+      partySize: 2,
+    });
+    const results = artifact.facts.results;
+    assert.ok(results.length >= COMPARE_SIZE, "the maximum local Lagos fixture supports a two-stay comparison");
+
+    const host = createWeaverWebHost();
+    const discoverySurfaceId = "largest-local-discovery";
+    const discoveryMessages = discoveryArtifactToA2UI({ artifact, surfaceId: discoverySurfaceId });
+    processSuccessfully(host, discoveryMessages);
+    assert.equal(host.mount({ surfaceId: discoverySurfaceId, target: targetElement().target }).ok, true);
+
+    const compareSurfaceId = "largest-local-comparison";
+    const compareMessages = compareArtifactToA2UI({
+      artifact,
+      unitIds: [results[0]!.id, results[1]!.id],
+      surfaceId: compareSurfaceId,
+    });
+    processSuccessfully(host, compareMessages);
+    assert.equal(host.mount({ surfaceId: compareSurfaceId, target: targetElement().target }).ok, true);
+  } finally {
+    await fixture.close();
+  }
 });

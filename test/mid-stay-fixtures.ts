@@ -1,4 +1,4 @@
-import type { WebServerEventHandoff } from "@weaver/web";
+import type { WebServerEventHandoff } from "@cylayo/weaver-web";
 import type { BookingContract, MidStayFailureAssessment } from "../domains/shortlet/src/index.js";
 import { InMemoryBookingStateRepository } from "../domains/shortlet/src/booking-state.js";
 import { InMemoryMidStayIncidentRepository } from "../domains/shortlet/src/index.js";

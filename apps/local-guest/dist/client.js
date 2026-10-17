@@ -1,6 +1,6 @@
 "use strict";
 (() => {
-  // node_modules/@weaver/web/dist/basic/layout.js
+  // node_modules/@cylayo/weaver-web/dist/basic/layout.js
   function applyBasicHook(element, component) {
     element.setAttribute("data-a2ui-component", component);
   }
@@ -43,7 +43,7 @@
     return relationship.kind === "single" ? relationship.child === void 0 ? [] : [relationship.child] : relationship.children;
   }
 
-  // node_modules/@weaver/web/dist/basic/markdown.js
+  // node_modules/@cylayo/weaver-web/dist/basic/markdown.js
   function appendText(document2, parent, text) {
     const lines = text.split("\n");
     lines.forEach((line, index) => {
@@ -106,7 +106,7 @@
     return [...output.childNodes];
   }
 
-  // node_modules/@weaver/web/dist/basic/styles.js
+  // node_modules/@cylayo/weaver-web/dist/basic/styles.js
   var basicSpace = "var(--a2ui-space, 8px)";
   var basicRadius = "var(--a2ui-radius, 8px)";
   var basicOutline = "var(--a2ui-color-outline, rgba(0, 0, 0, 0.22))";
@@ -123,7 +123,7 @@
     appendBasicStyle(element, `border: 1px solid ${basicOutline}; border-radius: ${basicRadius}`);
   }
 
-  // node_modules/@weaver/web/dist/basic/renderers.js
+  // node_modules/@cylayo/weaver-web/dist/basic/renderers.js
   var textElements = {
     h1: "h1",
     h2: "h2",
@@ -482,7 +482,7 @@
     return button;
   };
 
-  // node_modules/@weaver/web/dist/basic/icon.js
+  // node_modules/@cylayo/weaver-web/dist/basic/icon.js
   var SVG_NAMESPACE = "http://www.w3.org/2000/svg";
   function createSvg(document2, svgPath) {
     const svg = document2.createElementNS(SVG_NAMESPACE, "svg");
@@ -514,7 +514,7 @@
     };
   }
 
-  // node_modules/@weaver/web/dist/basic/inputs.js
+  // node_modules/@cylayo/weaver-web/dist/basic/inputs.js
   function createBasicInputRenderers(regexMatcher, dateTimeInputLocalValueResolver) {
     let opaqueId2 = 0;
     const nextId = (kind) => `weaver-basic-${kind}-${++opaqueId2}`;
@@ -874,7 +874,7 @@
       control.setAttribute(name, normalized);
   }
 
-  // node_modules/@weaver/web/dist/basic/media.js
+  // node_modules/@cylayo/weaver-web/dist/basic/media.js
   var imageFits = {
     contain: "contain",
     cover: "cover",
@@ -966,7 +966,7 @@
     return { Image, Video, AudioPlayer };
   }
 
-  // node_modules/@weaver/web/dist/basic/createBasicCatalogRendererRegistrations.js
+  // node_modules/@cylayo/weaver-web/dist/basic/createBasicCatalogRendererRegistrations.js
   function createBasicCatalogRendererRegistrations(options) {
     const inputs = createBasicInputRenderers(options.regexMatcher, options.dateTimeInputLocalValueResolver);
     const media = createBasicMediaRenderers(options.resourcePolicy);
@@ -992,7 +992,7 @@
     ];
   }
 
-  // node_modules/@weaver/web/dist/basic/theme.js
+  // node_modules/@cylayo/weaver-web/dist/basic/theme.js
   function createBasicCatalogThemeAdapter(options) {
     return (input) => {
       if (input.catalogId !== options.catalogId)
@@ -1006,22 +1006,108 @@
     };
   }
 
-  // node_modules/@weaver/core/dist/data-model/clone.js
+  // node_modules/@cylayo/weaver-core/dist/data-model/clone.js
+  function setObjectValue(target, key3, value) {
+    Object.defineProperty(target, key3, {
+      configurable: true,
+      enumerable: true,
+      value,
+      writable: true
+    });
+  }
   function cloneJson(value) {
     if (value === null || typeof value !== "object")
       return value;
-    if (Array.isArray(value))
-      return value.map(cloneJson);
-    const result = {};
-    for (const [key3, entry] of Object.entries(value))
-      result[key3] = cloneJson(entry);
-    return result;
+    const root = Array.isArray(value) ? [] : {};
+    const frames = Array.isArray(value) ? [{ source: value, target: root, index: 0 }] : [
+      {
+        source: value,
+        target: root,
+        keys: Object.keys(value),
+        index: 0
+      }
+    ];
+    while (frames.length > 0) {
+      const frame = frames[frames.length - 1];
+      let key3;
+      let child;
+      if (Array.isArray(frame.source)) {
+        if (frame.index === frame.source.length) {
+          frames.pop();
+          continue;
+        }
+        key3 = frame.index;
+        child = frame.source[frame.index];
+        frame.index += 1;
+      } else {
+        if (!("keys" in frame))
+          throw new Error("Invalid clone frame");
+        if (frame.index === frame.keys.length) {
+          frames.pop();
+          continue;
+        }
+        key3 = frame.keys[frame.index];
+        child = frame.source[key3];
+        frame.index += 1;
+      }
+      if (child !== null && typeof child === "object") {
+        const childClone = Array.isArray(child) ? [] : {};
+        if (Array.isArray(frame.target))
+          frame.target[key3] = childClone;
+        else
+          setObjectValue(frame.target, key3, childClone);
+        frames.push(Array.isArray(child) ? { source: child, target: childClone, index: 0 } : {
+          source: child,
+          target: childClone,
+          keys: Object.keys(child),
+          index: 0
+        });
+      } else if (Array.isArray(frame.target)) {
+        frame.target[key3] = child;
+      } else {
+        setObjectValue(frame.target, key3, child);
+      }
+    }
+    return root;
   }
   function equalJson(left, right) {
-    return JSON.stringify(left) === JSON.stringify(right);
+    const pairs = [{ left, right }];
+    while (pairs.length > 0) {
+      const pair = pairs.pop();
+      if (pair.left === pair.right)
+        continue;
+      if (pair.left === null || pair.right === null || typeof pair.left !== "object" || typeof pair.right !== "object")
+        return false;
+      if (Array.isArray(pair.left) !== Array.isArray(pair.right))
+        return false;
+      if (Array.isArray(pair.left)) {
+        if (pair.left.length !== pair.right.length)
+          return false;
+        for (let index = 0; index < pair.left.length; index += 1)
+          pairs.push({
+            left: pair.left[index],
+            right: pair.right[index]
+          });
+        continue;
+      }
+      const leftKeys = Object.keys(pair.left);
+      const rightKeys = Object.keys(pair.right);
+      if (leftKeys.length !== rightKeys.length)
+        return false;
+      for (let index = 0; index < leftKeys.length; index += 1) {
+        if (leftKeys[index] !== rightKeys[index])
+          return false;
+        const key3 = leftKeys[index];
+        pairs.push({
+          left: pair.left[key3],
+          right: pair.right[key3]
+        });
+      }
+    }
+    return true;
   }
 
-  // node_modules/@weaver/core/dist/data-model/pointer.js
+  // node_modules/@cylayo/weaver-core/dist/data-model/pointer.js
   var success = (value) => ({ ok: true, value });
   function parsePointer(path) {
     if (path === "/")
@@ -1093,7 +1179,7 @@
     return true;
   }
 
-  // node_modules/@weaver/core/dist/data-context/path.js
+  // node_modules/@cylayo/weaver-core/dist/data-context/path.js
   var success2 = (value) => ({ ok: true, value });
   function resolveScopedPath(path, scopeTokens) {
     if (path.startsWith("/")) {
@@ -1127,7 +1213,7 @@
     return success2({ absolutePath: formatPointer(tokens), tokens });
   }
 
-  // node_modules/@weaver/core/dist/data-context/DataContext.js
+  // node_modules/@cylayo/weaver-core/dist/data-context/DataContext.js
   var success3 = (value) => ({ ok: true, value });
   var DataContext = class _DataContext {
     #dataModel;
@@ -1199,7 +1285,7 @@
     }
   };
 
-  // node_modules/@weaver/core/dist/data-context/types.js
+  // node_modules/@cylayo/weaver-core/dist/data-context/types.js
   function isDataPathBinding(value) {
     if (value === null || typeof value !== "object" || Array.isArray(value))
       return false;
@@ -1207,7 +1293,7 @@
     return keys.length === 1 && keys[0] === "path" && typeof value.path === "string";
   }
 
-  // node_modules/@weaver/core/dist/functions/FunctionRegistry.js
+  // node_modules/@cylayo/weaver-core/dist/functions/FunctionRegistry.js
   var key = (catalogId, name) => JSON.stringify([catalogId, name]);
   var FunctionRegistry = class {
     #catalogs;
@@ -1265,7 +1351,7 @@
     }
   };
 
-  // node_modules/@weaver/core/dist/functions/types.js
+  // node_modules/@cylayo/weaver-core/dist/functions/types.js
   function isFunctionCall(value) {
     if (value === null || typeof value !== "object" || Array.isArray(value))
       return false;
@@ -1282,7 +1368,7 @@
     return !("returnType" in record) || typeof record.returnType === "string" && ["string", "number", "boolean", "array", "object", "any", "void"].includes(record.returnType);
   }
 
-  // node_modules/@weaver/core/dist/functions/FunctionEvaluator.js
+  // node_modules/@cylayo/weaver-core/dist/functions/FunctionEvaluator.js
   var MAX_DEFAULT_DEPTH = 32;
   var RecursiveFunctionFailure = class {
     error;
@@ -1296,17 +1382,46 @@
     const prototype = Object.getPrototypeOf(value);
     return prototype === Object.prototype || prototype === null;
   }
-  function isJsonSafe(value, ancestors = /* @__PURE__ */ new Set()) {
+  function isJsonSafe(value) {
     if (value === null || typeof value === "string" || typeof value === "boolean")
       return true;
     if (typeof value === "number")
       return Number.isFinite(value);
-    if (typeof value !== "object" || ancestors.has(value))
+    if (typeof value !== "object")
       return false;
-    ancestors.add(value);
-    const safe = Array.isArray(value) ? Object.keys(value).length === value.length && value.every((entry) => isJsonSafe(entry, ancestors)) : isPlainObject(value) && Object.values(value).every((entry) => isJsonSafe(entry, ancestors));
-    ancestors.delete(value);
-    return safe;
+    const active = /* @__PURE__ */ new Set();
+    const stack = [{ value, exit: false }];
+    while (stack.length > 0) {
+      const frame = stack.pop();
+      if (frame.exit) {
+        active.delete(frame.value);
+        continue;
+      }
+      const current = frame.value;
+      if (current === null || typeof current === "string" || typeof current === "boolean")
+        continue;
+      if (typeof current === "number") {
+        if (!Number.isFinite(current))
+          return false;
+        continue;
+      }
+      if (typeof current !== "object" || active.has(current))
+        return false;
+      if (Array.isArray(current)) {
+        if (Object.keys(current).length !== current.length)
+          return false;
+      } else if (!isPlainObject(current))
+        return false;
+      active.add(current);
+      stack.push({ value: current, exit: true });
+      if (Array.isArray(current))
+        for (const entry of current)
+          stack.push({ value: entry, exit: false });
+      else
+        for (const entry of Object.values(current))
+          stack.push({ value: entry, exit: false });
+    }
+    return true;
   }
   function defensiveValue(value, catalogId, functionName) {
     if (value === void 0)
@@ -1396,7 +1511,13 @@
             code: "FUNCTION_VALIDATION_FAILED",
             message: "Function call validation failed",
             catalogId,
-            issues: [{ path: "/", message: "Unable to inspect FunctionCall", keyword: "type" }]
+            issues: [
+              {
+                path: "/",
+                message: "Unable to inspect FunctionCall",
+                keyword: "type"
+              }
+            ]
           }
         };
       }
@@ -1410,7 +1531,9 @@
             message: "Validated value is not a FunctionCall",
             catalogId,
             functionName: "",
-            issues: [{ path: "/", message: "Expected FunctionCall", keyword: "type" }]
+            issues: [
+              { path: "/", message: "Expected FunctionCall", keyword: "type" }
+            ]
           }
         };
       }
@@ -1498,7 +1621,10 @@
           }
         };
       }
-      return { ok: true, value: result === void 0 ? void 0 : cloneJson(result) };
+      return {
+        ok: true,
+        value: result === void 0 ? void 0 : cloneJson(result)
+      };
     }
     #resolveArgument(catalogId, functionName, value, definition, dataContext, depth) {
       if (definition.kind === "arrayOfDynamicValues") {
@@ -1540,14 +1666,7 @@
     }
   };
 
-  // node_modules/@weaver/core/dist/actions/ActionContextResolver.js
-  function cloneJson2(value) {
-    if (value === null || typeof value !== "object")
-      return value;
-    if (Array.isArray(value))
-      return value.map(cloneJson2);
-    return Object.fromEntries(Object.entries(value).map(([key3, entry]) => [key3, cloneJson2(entry)]));
-  }
+  // node_modules/@cylayo/weaver-core/dist/actions/ActionContextResolver.js
   function isAllowedLiteral(value) {
     return typeof value === "string" || typeof value === "boolean" || typeof value === "number" && Number.isFinite(value) || Array.isArray(value);
   }
@@ -1564,39 +1683,83 @@
         if (isDataPathBinding(value)) {
           const binding = dataContext.resolveBinding(value);
           if (!binding.ok) {
-            return { ok: false, error: { code: "ACTION_CONTEXT_RESOLUTION_FAILED", message: "Event context binding could not be resolved", key: key3 } };
+            return {
+              ok: false,
+              error: {
+                code: "ACTION_CONTEXT_RESOLUTION_FAILED",
+                message: "Event context binding could not be resolved",
+                key: key3
+              }
+            };
           }
           if (binding.value === void 0) {
-            return { ok: false, error: { code: "ACTION_CONTEXT_VALUE_UNAVAILABLE", message: "Event context value is unavailable", key: key3 } };
+            return {
+              ok: false,
+              error: {
+                code: "ACTION_CONTEXT_VALUE_UNAVAILABLE",
+                message: "Event context value is unavailable",
+                key: key3
+              }
+            };
           }
-          resolved[key3] = cloneJson2(binding.value);
+          resolved[key3] = cloneJson(binding.value);
           continue;
         }
         if (isFunctionCall(value)) {
           const definition = this.catalogs.getFunctionDefinition(catalogId, value.call);
           if (definition.ok && definition.value.returnType === "void") {
-            return { ok: false, error: { code: "ACTION_CONTEXT_VOID_FUNCTION", message: "Void functions cannot produce event context", key: key3, functionName: value.call } };
+            return {
+              ok: false,
+              error: {
+                code: "ACTION_CONTEXT_VOID_FUNCTION",
+                message: "Void functions cannot produce event context",
+                key: key3,
+                functionName: value.call
+              }
+            };
           }
           const evaluated = this.functionEvaluator.evaluate(catalogId, value, dataContext);
           if (!evaluated.ok) {
-            return { ok: false, error: { code: "ACTION_CONTEXT_RESOLUTION_FAILED", message: "Event context function failed", key: key3, cause: evaluated.error } };
+            return {
+              ok: false,
+              error: {
+                code: "ACTION_CONTEXT_RESOLUTION_FAILED",
+                message: "Event context function failed",
+                key: key3,
+                cause: evaluated.error
+              }
+            };
           }
           if (evaluated.value === void 0) {
-            return { ok: false, error: { code: "ACTION_CONTEXT_VALUE_UNAVAILABLE", message: "Event context value is unavailable", key: key3 } };
+            return {
+              ok: false,
+              error: {
+                code: "ACTION_CONTEXT_VALUE_UNAVAILABLE",
+                message: "Event context value is unavailable",
+                key: key3
+              }
+            };
           }
-          resolved[key3] = cloneJson2(evaluated.value);
+          resolved[key3] = cloneJson(evaluated.value);
           continue;
         }
         if (!isAllowedLiteral(value)) {
-          return { ok: false, error: { code: "ACTION_CONTEXT_RESOLUTION_FAILED", message: "Event context value is not an allowed DynamicValue", key: key3 } };
+          return {
+            ok: false,
+            error: {
+              code: "ACTION_CONTEXT_RESOLUTION_FAILED",
+              message: "Event context value is not an allowed DynamicValue",
+              key: key3
+            }
+          };
         }
-        resolved[key3] = cloneJson2(value);
+        resolved[key3] = cloneJson(value);
       }
       return { ok: true, value: resolved };
     }
   };
 
-  // node_modules/@weaver/core/dist/checks/CheckEvaluator.js
+  // node_modules/@cylayo/weaver-core/dist/checks/CheckEvaluator.js
   function actualType2(value) {
     if (value === null)
       return "null";
@@ -1740,13 +1903,9 @@
     }
   };
 
-  // node_modules/@weaver/core/dist/actions/ActionDispatcher.js
-  function cloneJson3(value) {
-    if (value === null || typeof value !== "object")
-      return value;
-    if (Array.isArray(value))
-      return value.map(cloneJson3);
-    return Object.fromEntries(Object.entries(value).map(([key3, entry]) => [key3, cloneJson3(entry)]));
+  // node_modules/@cylayo/weaver-core/dist/actions/ActionDispatcher.js
+  function cloneActionJson(value) {
+    return cloneJson(value);
   }
   function isPlainObject2(value) {
     return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -1758,7 +1917,13 @@
     const index = instance.collectionIndex;
     const separator = instance.scopePath.lastIndexOf("/");
     if (index === void 0 || separator < 0 || instance.scopePath.slice(separator + 1) !== String(index)) {
-      return { ok: false, error: { code: "INVALID_COLLECTION_INDEX", index: index ?? Number.NaN } };
+      return {
+        ok: false,
+        error: {
+          code: "INVALID_COLLECTION_INDEX",
+          index: index ?? Number.NaN
+        }
+      };
     }
     const collectionPath = instance.scopePath.slice(0, separator) || "/";
     return root.createCollectionItemContext(collectionPath, index);
@@ -1779,56 +1944,134 @@
     dispatch({ surface, instance, actionProperty }) {
       const metadata = this.catalogs.getActionProperties(surface.catalogId, instance.component);
       if (!metadata.ok || !metadata.value.includes(actionProperty)) {
-        return { ok: false, error: {
-          code: "ACTION_PROPERTY_NOT_ALLOWED",
-          message: "Property is not a catalog-declared Action",
-          actionProperty,
-          ...metadata.ok ? {} : { cause: metadata.error }
-        } };
+        return {
+          ok: false,
+          error: {
+            code: "ACTION_PROPERTY_NOT_ALLOWED",
+            message: "Property is not a catalog-declared Action",
+            actionProperty,
+            ...metadata.ok ? {} : { cause: metadata.error }
+          }
+        };
       }
       if (!Object.hasOwn(instance.definition, actionProperty)) {
-        return { ok: false, error: { code: "ACTION_NOT_FOUND", message: "Requested action is absent", actionProperty } };
+        return {
+          ok: false,
+          error: {
+            code: "ACTION_NOT_FOUND",
+            message: "Requested action is absent",
+            actionProperty
+          }
+        };
       }
       const action = instance.definition[actionProperty];
       if (!isPlainObject2(action)) {
-        return { ok: false, error: { code: "ACTION_INVALID", message: "Action definition is invalid", actionProperty } };
+        return {
+          ok: false,
+          error: {
+            code: "ACTION_INVALID",
+            message: "Action definition is invalid",
+            actionProperty
+          }
+        };
       }
       const dataContext = contextFor(surface, instance);
       if (!dataContext.ok) {
-        return { ok: false, error: { code: "ACTION_DATA_CONTEXT_FAILED", message: "Instance data scope could not be reconstructed", cause: dataContext.error } };
+        return {
+          ok: false,
+          error: {
+            code: "ACTION_DATA_CONTEXT_FAILED",
+            message: "Instance data scope could not be reconstructed",
+            cause: dataContext.error
+          }
+        };
       }
       const checks = this.checkEvaluator.evaluate(surface.catalogId, instance, dataContext.value);
       if (!checks.ok) {
-        return { ok: false, error: { code: "ACTION_CHECK_EVALUATION_FAILED", message: "Component checks could not be evaluated", cause: checks.error } };
+        return {
+          ok: false,
+          error: {
+            code: "ACTION_CHECK_EVALUATION_FAILED",
+            message: "Component checks could not be evaluated",
+            cause: checks.error
+          }
+        };
       }
       if (checks.value.status !== "valid") {
-        return { ok: false, error: { code: "ACTION_BLOCKED_BY_CHECKS", message: "Only valid components may dispatch actions", checks: structuredClone(checks.value) } };
+        return {
+          ok: false,
+          error: {
+            code: "ACTION_BLOCKED_BY_CHECKS",
+            message: "Only valid components may dispatch actions",
+            checks: cloneActionJson(checks.value)
+          }
+        };
       }
       const hasFunction = Object.hasOwn(action, "functionCall");
       const hasEvent = Object.hasOwn(action, "event");
       if (hasFunction === hasEvent) {
-        return { ok: false, error: { code: "ACTION_INVALID", message: "Action must have exactly one path", actionProperty } };
+        return {
+          ok: false,
+          error: {
+            code: "ACTION_INVALID",
+            message: "Action must have exactly one path",
+            actionProperty
+          }
+        };
       }
       if (hasFunction) {
         const call = action.functionCall;
         if (!isFunctionCall(call)) {
-          return { ok: false, error: { code: "ACTION_INVALID", message: "Local function action is invalid", actionProperty } };
+          return {
+            ok: false,
+            error: {
+              code: "ACTION_INVALID",
+              message: "Local function action is invalid",
+              actionProperty
+            }
+          };
         }
         const evaluated = this.functionEvaluator.evaluateAction(surface.catalogId, call, dataContext.value);
         if (!evaluated.ok) {
-          return { ok: false, error: { code: "LOCAL_FUNCTION_FAILED", message: "Local action function failed", cause: evaluated.error } };
+          return {
+            ok: false,
+            error: {
+              code: "LOCAL_FUNCTION_FAILED",
+              message: "Local action function failed",
+              cause: evaluated.error
+            }
+          };
         }
-        return { ok: true, value: { kind: "localFunction", value: evaluated.value === void 0 ? void 0 : cloneJson3(evaluated.value) } };
+        return {
+          ok: true,
+          value: {
+            kind: "localFunction",
+            value: evaluated.value === void 0 ? void 0 : cloneJson(evaluated.value)
+          }
+        };
       }
       const event = action.event;
       if (!isPlainObject2(event) || typeof event.name !== "string" || !isPlainObject2(event.context)) {
-        return { ok: false, error: { code: "ACTION_INVALID", message: "Server event action is invalid", actionProperty } };
+        return {
+          ok: false,
+          error: {
+            code: "ACTION_INVALID",
+            message: "Server event action is invalid",
+            actionProperty
+          }
+        };
       }
       const context = this.#contextResolver.resolve(surface.catalogId, event.context, dataContext.value);
       if (!context.ok)
         return context;
       if (surface.sendDataModel && !isPlainObject2(surface.dataModel)) {
-        return { ok: false, error: { code: "CLIENT_DATA_MODEL_NOT_OBJECT", message: "Synchronized surface data must be a JSON object" } };
+        return {
+          ok: false,
+          error: {
+            code: "CLIENT_DATA_MODEL_NOT_OBJECT",
+            message: "Synchronized surface data must be a JSON object"
+          }
+        };
       }
       const message = {
         version: "v0.9.1",
@@ -1837,25 +2080,32 @@
           surfaceId: surface.surfaceId,
           sourceComponentId: instance.sourceComponentId,
           timestamp: this.#now().toISOString(),
-          context: cloneJson3(context.value)
+          context: cloneJson(context.value)
         }
       };
       let transportMetadata;
       if (surface.sendDataModel) {
-        transportMetadata = { a2uiClientDataModel: {
-          version: "v0.9.1",
-          surfaces: { [surface.surfaceId]: cloneJson3(surface.dataModel) }
-        } };
+        transportMetadata = {
+          a2uiClientDataModel: {
+            version: "v0.9.1",
+            surfaces: {
+              [surface.surfaceId]: cloneJson(surface.dataModel)
+            }
+          }
+        };
       }
-      return { ok: true, value: {
-        kind: "serverEvent",
-        message,
-        ...transportMetadata === void 0 ? {} : { metadata: transportMetadata }
-      } };
+      return {
+        ok: true,
+        value: {
+          kind: "serverEvent",
+          message,
+          ...transportMetadata === void 0 ? {} : { metadata: transportMetadata }
+        }
+      };
     }
   };
 
-  // node_modules/@weaver/core/dist/basic-functions/formatString.js
+  // node_modules/@cylayo/weaver-core/dist/basic-functions/formatString.js
   var _a;
   var ExpressionParser = class {
     source;
@@ -2003,7 +2253,7 @@
     throw new Error("Unterminated interpolation");
   }
 
-  // node_modules/@weaver/core/dist/basic-catalog/generated-basic-catalog.js
+  // node_modules/@cylayo/weaver-core/dist/basic-catalog/generated-basic-catalog.js
   var A2UI_V091_BASIC_CATALOG_ID = "https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json";
   var A2UI_V091_BASIC_CATALOG = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -4549,25 +4799,15 @@
     }
   };
 
-  // node_modules/@weaver/core/dist/basic-catalog/index.js
-  function cloneJson4(value) {
-    if (value === null || typeof value !== "object")
-      return value;
-    if (Array.isArray(value))
-      return value.map((entry) => cloneJson4(entry));
-    const result = {};
-    for (const [key3, entry] of Object.entries(value))
-      result[key3] = cloneJson4(entry);
-    return result;
-  }
+  // node_modules/@cylayo/weaver-core/dist/basic-catalog/index.js
   function createBasicCatalogV091Registration() {
     return {
       catalogId: A2UI_V091_BASIC_CATALOG_ID,
-      schema: cloneJson4(A2UI_V091_BASIC_CATALOG)
+      schema: cloneJson(A2UI_V091_BASIC_CATALOG)
     };
   }
 
-  // node_modules/@weaver/core/dist/catalog/schema.js
+  // node_modules/@cylayo/weaver-core/dist/catalog/schema.js
   var A2UI_CATALOG_SCHEMA = {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     type: "object",
@@ -5658,7 +5898,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@weaver/core/dist/catalog/schema-validator.js
+  // node_modules/@cylayo/weaver-core/dist/catalog/schema-validator.js
   var DRAFT = "2020-12";
   var TYPES = /* @__PURE__ */ new Set(["null", "boolean", "object", "array", "number", "string", "integer"]);
   function pointer(location2) {
@@ -5792,7 +6032,7 @@ Known schemas:
     return visit(schema, schema);
   }
 
-  // node_modules/@weaver/core/dist/catalog/CatalogRegistry.js
+  // node_modules/@cylayo/weaver-core/dist/catalog/CatalogRegistry.js
   var COMPONENT_ID_REF = "common_types.json#/$defs/ComponentId";
   var CHILD_LIST_REF = "common_types.json#/$defs/ChildList";
   var CHECKABLE_REF = "common_types.json#/$defs/Checkable";
@@ -5919,7 +6159,10 @@ Known schemas:
     return result;
   }
   function discoverStructure(componentSchema) {
-    const structure = { singleChildFields: [], childListFields: [] };
+    const structure = {
+      singleChildFields: [],
+      childListFields: []
+    };
     const properties = componentSchema.properties;
     if (properties === null || Array.isArray(properties) || typeof properties !== "object")
       return structure;
@@ -5937,11 +6180,17 @@ Known schemas:
     const locations = [];
     const visit = (schema, path) => {
       if (schema.$ref === COMPONENT_ID_REF) {
-        locations.push({ path: path.map((segment) => ({ ...segment })), kind: "single" });
+        locations.push({
+          path: path.map((segment) => ({ ...segment })),
+          kind: "single"
+        });
         return;
       }
       if (schema.$ref === CHILD_LIST_REF) {
-        locations.push({ path: path.map((segment) => ({ ...segment })), kind: "list" });
+        locations.push({
+          path: path.map((segment) => ({ ...segment })),
+          kind: "list"
+        });
         return;
       }
       if (isPlainObject3(schema.properties)) {
@@ -5986,7 +6235,10 @@ Known schemas:
     const visit = (schema, path) => {
       const valueKind = dynamicKind(schema);
       if (valueKind !== void 0) {
-        locations.push({ path: path.map((segment) => ({ ...segment })), valueKind });
+        locations.push({
+          path: path.map((segment) => ({ ...segment })),
+          valueKind
+        });
         return;
       }
       if (isPlainObject3(schema.properties)) {
@@ -6011,7 +6263,7 @@ Known schemas:
         if (branches.length === schema.oneOf.length && bindingBranches.length === 1 && !hasFunctionCall) {
           locations.push({
             path: path.map((segment) => ({ ...segment })),
-            literalSchemas: branches.filter((branch) => branch !== bindingBranches[0]).map(cloneJson5)
+            literalSchemas: branches.filter((branch) => branch !== bindingBranches[0]).map(cloneJson)
           });
           return;
         }
@@ -6045,21 +6297,15 @@ Known schemas:
     }
     return definitions;
   }
-  function cloneJson5(value) {
-    if (value === null || typeof value !== "object")
-      return value;
-    if (Array.isArray(value))
-      return value.map((entry) => cloneJson5(entry));
-    const result = {};
-    for (const [key3, entry] of Object.entries(value))
-      result[key3] = cloneJson5(entry);
-    return result;
-  }
   function error(code, catalogId, message) {
     return { code, catalogId, message };
   }
   function normalizeErrors(errors) {
-    return errors.map(({ path, message, keyword }) => ({ path, message, keyword }));
+    return errors.map(({ path, message, keyword }) => ({
+      path,
+      message,
+      keyword
+    }));
   }
   var CatalogRegistry = class {
     #validateCatalogShape = new SchemaValidator(A2UI_CATALOG_SCHEMA);
@@ -6068,31 +6314,50 @@ Known schemas:
     register(registration) {
       const { catalogId } = registration;
       if (this.#catalogs.has(catalogId)) {
-        return { ok: false, error: error("CATALOG_ALREADY_REGISTERED", catalogId, "Catalog is already registered") };
+        return {
+          ok: false,
+          error: error("CATALOG_ALREADY_REGISTERED", catalogId, "Catalog is already registered")
+        };
       }
       let schema;
       try {
-        schema = cloneJson5(registration.schema);
+        schema = cloneJson(registration.schema);
       } catch {
-        return { ok: false, error: error("INVALID_CATALOG_SCHEMA", catalogId, "Catalog schema must be JSON data") };
+        return {
+          ok: false,
+          error: error("INVALID_CATALOG_SCHEMA", catalogId, "Catalog schema must be JSON data")
+        };
       }
       const catalogShape = this.#validateCatalogShape.validate(schema);
       if (!catalogShape.valid || schema.catalogId !== catalogId) {
         const issues = normalizeErrors(catalogShape.issues);
         if (schema.catalogId !== catalogId) {
-          issues.push({ path: "/catalogId", message: "Must match the registration catalogId", keyword: "const" });
+          issues.push({
+            path: "/catalogId",
+            message: "Must match the registration catalogId",
+            keyword: "const"
+          });
         }
         return {
           ok: false,
-          error: { ...error("INVALID_CATALOG_SCHEMA", catalogId, "Catalog schema is invalid"), issues }
+          error: {
+            ...error("INVALID_CATALOG_SCHEMA", catalogId, "Catalog schema is invalid"),
+            issues
+          }
         };
       }
       const themeSchema = schema.$defs?.theme;
       if (themeSchema === void 0) {
-        return { ok: false, error: error("THEME_SCHEMA_NOT_FOUND", catalogId, "Catalog does not define $defs.theme") };
+        return {
+          ok: false,
+          error: error("THEME_SCHEMA_NOT_FOUND", catalogId, "Catalog does not define $defs.theme")
+        };
       }
       if (themeSchema === null || Array.isArray(themeSchema) || typeof themeSchema !== "object") {
-        return { ok: false, error: error("INVALID_CATALOG_SCHEMA", catalogId, "Catalog theme schema is invalid") };
+        return {
+          ok: false,
+          error: error("INVALID_CATALOG_SCHEMA", catalogId, "Catalog theme schema is invalid")
+        };
       }
       const components = schema.components;
       const validators2 = /* @__PURE__ */ new Map();
@@ -6108,7 +6373,10 @@ Known schemas:
       const checkableComponents = /* @__PURE__ */ new Set();
       const functions = schema.functions === void 0 ? {} : schema.functions;
       if (!isPlainObject3(functions)) {
-        return { ok: false, error: error("INVALID_CATALOG_SCHEMA", catalogId, "Catalog functions must be an object") };
+        return {
+          ok: false,
+          error: error("INVALID_CATALOG_SCHEMA", catalogId, "Catalog functions must be an object")
+        };
       }
       let themeValidator;
       try {
@@ -6125,9 +6393,11 @@ Known schemas:
           const bindableValues = discoverBindableValues(componentSchema);
           bindableValueLocations.set(componentName, bindableValues.map(({ path }) => ({ path })));
           for (const [index, bindable] of bindableValues.entries()) {
-            const compilationSchema2 = cloneJson5(schema);
+            const compilationSchema2 = cloneJson(schema);
             compilationSchema2.$id = `https://weaver.invalid/catalog/${this.#registrationSequence}/${encodeURIComponent(componentName)}/bindable-${index}/catalog.json`;
-            compilationSchema2.$defs[`weaverBindable${index}`] = { oneOf: bindable.literalSchemas };
+            compilationSchema2.$defs[`weaverBindable${index}`] = {
+              oneOf: bindable.literalSchemas
+            };
             compilationSchema2.$ref = `#/$defs/weaverBindable${index}`;
             if (!referencesResolve(compilationSchema2))
               throw new Error("unresolved schema reference");
@@ -6136,9 +6406,9 @@ Known schemas:
           actionProperties.set(componentName, discoverActionProperties(componentSchema));
           if (isCheckable(componentSchema))
             checkableComponents.add(componentName);
-          const compilationSchema = cloneJson5(schema);
+          const compilationSchema = cloneJson(schema);
           compilationSchema.$id = `https://weaver.invalid/catalog/${this.#registrationSequence}/${encodeURIComponent(componentName)}/catalog.json`;
-          compilationSchema.$defs.weaverComponent = cloneJson5(componentSchema);
+          compilationSchema.$defs.weaverComponent = cloneJson(componentSchema);
           compilationSchema.$ref = "#/$defs/weaverComponent";
           if (!referencesResolve(compilationSchema))
             throw new Error("unresolved schema reference");
@@ -6151,23 +6421,26 @@ Known schemas:
           const definition = discoverFunctionDefinition(catalogId, functionName, functionSchema);
           if (definition === void 0)
             throw new Error("unsupported function return type");
-          const compilationSchema = cloneJson5(schema);
+          const compilationSchema = cloneJson(schema);
           compilationSchema.$id = `https://weaver.invalid/catalog/${this.#registrationSequence}/${encodeURIComponent(functionName)}/function.json`;
-          compilationSchema.$defs.weaverFunction = cloneJson5(functionSchema);
+          compilationSchema.$defs.weaverFunction = cloneJson(functionSchema);
           compilationSchema.$ref = "#/$defs/weaverFunction";
           if (!referencesResolve(compilationSchema))
             throw new Error("unresolved schema reference");
           functionValidators.set(functionName, new SchemaValidator(compilationSchema));
           functionDefinitions.set(functionName, definition);
         }
-        const themeCompilationSchema = cloneJson5(schema);
+        const themeCompilationSchema = cloneJson(schema);
         themeCompilationSchema.$id = `https://weaver.invalid/catalog/${this.#registrationSequence}/theme/catalog.json`;
         themeCompilationSchema.$ref = "#/$defs/theme";
         if (!referencesResolve(themeCompilationSchema))
           throw new Error("unresolved schema reference");
         themeValidator = new SchemaValidator(themeCompilationSchema);
       } catch {
-        return { ok: false, error: error("INVALID_CATALOG_SCHEMA", catalogId, "Catalog schemas could not be compiled") };
+        return {
+          ok: false,
+          error: error("INVALID_CATALOG_SCHEMA", catalogId, "Catalog schemas could not be compiled")
+        };
       }
       this.#registrationSequence += 1;
       this.#catalogs.set(catalogId, {
@@ -6185,17 +6458,20 @@ Known schemas:
         checkableComponents,
         themeValidator
       });
-      return { ok: true, value: { catalogId, schema: cloneJson5(schema) } };
+      return { ok: true, value: { catalogId, schema: cloneJson(schema) } };
     }
     has(catalogId) {
       return this.#catalogs.has(catalogId);
     }
     get(catalogId) {
       const catalog = this.#catalogs.get(catalogId);
-      return catalog === void 0 ? void 0 : { catalogId, schema: cloneJson5(catalog.schema) };
+      return catalog === void 0 ? void 0 : { catalogId, schema: cloneJson(catalog.schema) };
     }
     list() {
-      return [...this.#catalogs].map(([catalogId, catalog]) => ({ catalogId, schema: cloneJson5(catalog.schema) }));
+      return [...this.#catalogs].map(([catalogId, catalog]) => ({
+        catalogId,
+        schema: cloneJson(catalog.schema)
+      }));
     }
     getSupportedCatalogIds() {
       return [...this.#catalogs.keys()];
@@ -6210,7 +6486,10 @@ Known schemas:
     getFunctionDefinition(catalogId, functionName) {
       const catalog = this.#catalogs.get(catalogId);
       if (catalog === void 0) {
-        return { ok: false, error: error("CATALOG_NOT_FOUND", catalogId, "Catalog is not registered") };
+        return {
+          ok: false,
+          error: error("CATALOG_NOT_FOUND", catalogId, "Catalog is not registered")
+        };
       }
       const definition = catalog.functionDefinitions.get(functionName);
       if (definition === void 0) {
@@ -6227,7 +6506,10 @@ Known schemas:
     validateFunctionCall(catalogId, functionCall) {
       const catalog = this.#catalogs.get(catalogId);
       if (catalog === void 0) {
-        return { ok: false, error: error("CATALOG_NOT_FOUND", catalogId, "Catalog is not registered") };
+        return {
+          ok: false,
+          error: error("CATALOG_NOT_FOUND", catalogId, "Catalog is not registered")
+        };
       }
       const functionName = isPlainObject3(functionCall) && typeof functionCall.call === "string" ? functionCall.call : void 0;
       if (functionName === void 0 || !catalog.functionValidators.has(functionName)) {
@@ -6241,7 +6523,11 @@ Known schemas:
       }
       const issues = [];
       if (!isPlainObject3(functionCall) || !isPlainObject3(functionCall.args) || "returnType" in functionCall && (typeof functionCall.returnType !== "string" || !FUNCTION_RETURN_TYPES.includes(functionCall.returnType))) {
-        issues.push({ path: "/", message: "FunctionCall must contain a call name and object args", keyword: "type" });
+        issues.push({
+          path: "/",
+          message: "FunctionCall must contain a call name and object args",
+          keyword: "type"
+        });
       }
       const validator = catalog.functionValidators.get(functionName);
       if (issues.length === 0) {
@@ -6264,7 +6550,10 @@ Known schemas:
     getComponentStructure(catalogId, componentName) {
       const catalog = this.#catalogs.get(catalogId);
       if (catalog === void 0) {
-        return { ok: false, error: error("CATALOG_NOT_FOUND", catalogId, "Catalog is not registered") };
+        return {
+          ok: false,
+          error: error("CATALOG_NOT_FOUND", catalogId, "Catalog is not registered")
+        };
       }
       const structure = catalog.structures.get(componentName);
       if (structure === void 0) {
@@ -6287,7 +6576,10 @@ Known schemas:
     getComponentStructureLocations(catalogId, componentName) {
       const catalog = this.#catalogs.get(catalogId);
       if (catalog === void 0) {
-        return { ok: false, error: error("CATALOG_NOT_FOUND", catalogId, "Catalog is not registered") };
+        return {
+          ok: false,
+          error: error("CATALOG_NOT_FOUND", catalogId, "Catalog is not registered")
+        };
       }
       const locations = catalog.structureLocations.get(componentName);
       if (locations === void 0) {
@@ -6310,7 +6602,10 @@ Known schemas:
     getDynamicProperties(catalogId, componentName) {
       const catalog = this.#catalogs.get(catalogId);
       if (catalog === void 0) {
-        return { ok: false, error: error("CATALOG_NOT_FOUND", catalogId, "Catalog is not registered") };
+        return {
+          ok: false,
+          error: error("CATALOG_NOT_FOUND", catalogId, "Catalog is not registered")
+        };
       }
       const definitions = catalog.dynamicProperties.get(componentName);
       if (definitions === void 0) {
@@ -6322,12 +6617,18 @@ Known schemas:
           }
         };
       }
-      return { ok: true, value: definitions.map((definition) => ({ ...definition })) };
+      return {
+        ok: true,
+        value: definitions.map((definition) => ({ ...definition }))
+      };
     }
     getDynamicValueLocations(catalogId, componentName) {
       const catalog = this.#catalogs.get(catalogId);
       if (catalog === void 0) {
-        return { ok: false, error: error("CATALOG_NOT_FOUND", catalogId, "Catalog is not registered") };
+        return {
+          ok: false,
+          error: error("CATALOG_NOT_FOUND", catalogId, "Catalog is not registered")
+        };
       }
       const locations = catalog.dynamicValueLocations.get(componentName);
       if (locations === void 0) {
@@ -6350,11 +6651,25 @@ Known schemas:
     getBindableValueLocations(catalogId, componentName) {
       const catalog = this.#catalogs.get(catalogId);
       if (catalog === void 0)
-        return { ok: false, error: error("CATALOG_NOT_FOUND", catalogId, "Catalog is not registered") };
+        return {
+          ok: false,
+          error: error("CATALOG_NOT_FOUND", catalogId, "Catalog is not registered")
+        };
       const locations = catalog.bindableValueLocations.get(componentName);
       if (locations === void 0)
-        return { ok: false, error: { ...error("COMPONENT_STRUCTURE_NOT_FOUND", catalogId, "Component property metadata is not available"), component: componentName } };
-      return { ok: true, value: locations.map(({ path }) => ({ path: path.map((segment) => ({ ...segment })) })) };
+        return {
+          ok: false,
+          error: {
+            ...error("COMPONENT_STRUCTURE_NOT_FOUND", catalogId, "Component property metadata is not available"),
+            component: componentName
+          }
+        };
+      return {
+        ok: true,
+        value: locations.map(({ path }) => ({
+          path: path.map((segment) => ({ ...segment }))
+        }))
+      };
     }
     /** Validates a hydrated bindable value without exposing the private schema validator. */
     validateBindableValue(catalogId, componentName, location2, value) {
@@ -6365,7 +6680,10 @@ Known schemas:
     getActionProperties(catalogId, componentName) {
       const catalog = this.#catalogs.get(catalogId);
       if (catalog === void 0) {
-        return { ok: false, error: error("CATALOG_NOT_FOUND", catalogId, "Catalog is not registered") };
+        return {
+          ok: false,
+          error: error("CATALOG_NOT_FOUND", catalogId, "Catalog is not registered")
+        };
       }
       const properties = catalog.actionProperties.get(componentName);
       if (properties === void 0) {
@@ -6382,7 +6700,10 @@ Known schemas:
     validateTheme(catalogId, theme) {
       const catalog = this.#catalogs.get(catalogId);
       if (catalog === void 0) {
-        return { ok: false, error: error("CATALOG_NOT_FOUND", catalogId, "Catalog is not registered") };
+        return {
+          ok: false,
+          error: error("CATALOG_NOT_FOUND", catalogId, "Catalog is not registered")
+        };
       }
       const validation = catalog.themeValidator.validate(theme);
       if (!validation.valid) {
@@ -6399,7 +6720,10 @@ Known schemas:
     validateComponent(catalogId, component) {
       const catalog = this.#catalogs.get(catalogId);
       if (catalog === void 0) {
-        return { ok: false, error: error("CATALOG_NOT_FOUND", catalogId, "Catalog is not registered") };
+        return {
+          ok: false,
+          error: error("CATALOG_NOT_FOUND", catalogId, "Catalog is not registered")
+        };
       }
       const validator = catalog.validators.get(component.component);
       if (validator === void 0) {
@@ -6430,21 +6754,128 @@ Known schemas:
     }
   };
 
-  // node_modules/@weaver/core/dist/component-tree/ComponentTreeResolver.js
-  function cloneJson6(value) {
-    if (value === null || typeof value !== "object")
-      return value;
-    if (Array.isArray(value))
-      return value.map(cloneJson6);
-    return Object.fromEntries(Object.entries(value).map(([key3, entry]) => [key3, cloneJson6(entry)]));
+  // node_modules/@cylayo/weaver-core/dist/runtime/safety.js
+  var DEFAULT_MAX_RESOLUTION_DEPTH = 32;
+  var DEFAULT_MAX_RESOLVED_INSTANCES = 1e3;
+  var MAX_CONFIGURED_RESOLUTION_DEPTH = 256;
+  var MAX_CONFIGURED_RESOLVED_INSTANCES = 1e5;
+  var MAX_ERROR_COMPONENT_ID_LENGTH = 128;
+  function boundedComponentId(componentId) {
+    return componentId.length <= MAX_ERROR_COMPONENT_ID_LENGTH ? componentId : `${componentId.slice(0, MAX_ERROR_COMPONENT_ID_LENGTH - 3)}...`;
   }
+  function invalidLimit(limit, reason) {
+    return { code: "INVALID_SAFETY_LIMIT", limit, reason };
+  }
+  function normalizeLimit(limit, value, maximum) {
+    if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
+      return {
+        ok: false,
+        error: invalidLimit(limit, "MUST_BE_POSITIVE_SAFE_INTEGER")
+      };
+    }
+    if (value > maximum) {
+      return { ok: false, error: invalidLimit(limit, "EXCEEDS_HOST_MAXIMUM") };
+    }
+    return { ok: true, value };
+  }
+  function normalizeResolutionSafety(config) {
+    if (config !== void 0 && (config === null || typeof config !== "object" || Array.isArray(config))) {
+      return {
+        ok: false,
+        error: { code: "INVALID_SAFETY_CONFIGURATION", reason: "MUST_BE_OBJECT" }
+      };
+    }
+    const depth = normalizeLimit("maxResolutionDepth", config?.maxResolutionDepth ?? DEFAULT_MAX_RESOLUTION_DEPTH, MAX_CONFIGURED_RESOLUTION_DEPTH);
+    if (!depth.ok)
+      return depth;
+    const instances = normalizeLimit("maxResolvedInstances", config?.maxResolvedInstances ?? DEFAULT_MAX_RESOLVED_INSTANCES, MAX_CONFIGURED_RESOLVED_INSTANCES);
+    if (!instances.ok)
+      return instances;
+    return {
+      ok: true,
+      value: Object.freeze({
+        maxResolutionDepth: depth.value,
+        maxResolvedInstances: instances.value
+      })
+    };
+  }
+  var ResolutionBudget = class {
+    policy;
+    #treeNodes = 0;
+    #instances = 0;
+    constructor(policy) {
+      this.policy = policy;
+    }
+    checkDepth(depth, phase, componentId) {
+      if (depth <= this.policy.maxResolutionDepth)
+        return void 0;
+      return {
+        code: "RESOLUTION_BUDGET_EXCEEDED",
+        message: `Maximum ${phase} resolution depth exceeded`,
+        budget: "depth",
+        limit: this.policy.maxResolutionDepth,
+        observed: depth,
+        phase,
+        componentId: boundedComponentId(componentId)
+      };
+    }
+    consumeTreeNode(componentId) {
+      const observed = this.#treeNodes + 1;
+      if (observed > this.policy.maxResolvedInstances) {
+        return {
+          code: "RESOLUTION_BUDGET_EXCEEDED",
+          message: "Maximum resolved component-tree node count exceeded",
+          budget: "instances",
+          limit: this.policy.maxResolvedInstances,
+          observed,
+          phase: "component-tree",
+          componentId: boundedComponentId(componentId)
+        };
+      }
+      this.#treeNodes = observed;
+      return void 0;
+    }
+    consumeInstance(componentId) {
+      const observed = this.#instances + 1;
+      if (observed > this.policy.maxResolvedInstances) {
+        return {
+          code: "RESOLUTION_BUDGET_EXCEEDED",
+          message: "Maximum resolved component-instance count exceeded",
+          budget: "instances",
+          limit: this.policy.maxResolvedInstances,
+          observed,
+          phase: "component-instances",
+          componentId: boundedComponentId(componentId)
+        };
+      }
+      this.#instances = observed;
+      return void 0;
+    }
+  };
+  function createResolutionBudget(policy) {
+    return new ResolutionBudget(policy);
+  }
+  function isResolutionBudgetExceededError(value) {
+    return value !== null && typeof value === "object" && value.code === "RESOLUTION_BUDGET_EXCEEDED";
+  }
+  function defaultResolutionSafetyPolicy() {
+    return Object.freeze({
+      maxResolutionDepth: DEFAULT_MAX_RESOLUTION_DEPTH,
+      maxResolvedInstances: DEFAULT_MAX_RESOLVED_INSTANCES
+    });
+  }
+
+  // node_modules/@cylayo/weaver-core/dist/component-tree/ComponentTreeResolver.js
   function resolverError(error2) {
     return {
       code: error2.code === "CATALOG_NOT_FOUND" ? "CATALOG_NOT_FOUND" : "COMPONENT_STRUCTURE_NOT_FOUND",
       message: error2.message,
       catalogId: error2.catalogId,
       ...error2.component === void 0 ? {} : { component: error2.component },
-      cause: { ...error2, ...error2.issues === void 0 ? {} : { issues: error2.issues.map((issue3) => ({ ...issue3 })) } }
+      cause: {
+        ...error2,
+        ...error2.issues === void 0 ? {} : { issues: error2.issues.map((issue3) => ({ ...issue3 })) }
+      }
     };
   }
   function dynamicChildList(value) {
@@ -6456,40 +6887,44 @@ Known schemas:
   function pointer2(location2) {
     return "/" + location2.map((segment) => segment.kind === "property" ? segment.name.replaceAll("~", "~0").replaceAll("/", "~1") : String(segment.index)).join("/");
   }
-  function runtimeValues(value, metadata) {
-    const found = [];
-    const visit = (current, offset, location2) => {
+  function* runtimeValues(value, metadata) {
+    function* visit(current, offset, location2) {
       if (offset === metadata.path.length) {
         const leaf = location2.at(-1);
         if (leaf?.kind === "property")
-          found.push({ value: current, location: location2, property: leaf.name });
+          yield { value: current, location: location2, property: leaf.name };
         return;
       }
       const segment = metadata.path[offset];
       if (segment.kind === "property") {
         if (current !== null && !Array.isArray(current) && typeof current === "object" && Object.hasOwn(current, segment.name)) {
-          visit(current[segment.name], offset + 1, [...location2, { kind: "property", name: segment.name }]);
+          yield* visit(current[segment.name], offset + 1, [
+            ...location2,
+            { kind: "property", name: segment.name }
+          ]);
         }
         return;
       }
       if (!Array.isArray(current))
         return;
       for (let index = 0; index < current.length; index += 1) {
-        visit(current[index], offset + 1, [...location2, { kind: "arrayIndex", index }]);
+        yield* visit(current[index], offset + 1, [
+          ...location2,
+          { kind: "arrayIndex", index }
+        ]);
       }
-    };
-    visit(value, 0, []);
-    return found;
+    }
+    yield* visit(value, 0, []);
   }
   var ComponentTreeResolver = class {
     catalogs;
     constructor(catalogs) {
       this.catalogs = catalogs;
     }
-    resolve(surface) {
-      return this.resolveFrom(surface, "root");
+    resolve(surface, budget = createResolutionBudget(defaultResolutionSafetyPolicy())) {
+      return this.resolveFrom(surface, "root", budget);
     }
-    resolveFrom(surface, componentId) {
+    resolveFrom(surface, componentId, budget = createResolutionBudget(defaultResolutionSafetyPolicy())) {
       if (!this.catalogs.has(surface.catalogId)) {
         const missing = this.catalogs.getComponentStructureLocations(surface.catalogId, componentId);
         if (!missing.ok)
@@ -6499,17 +6934,37 @@ Known schemas:
       if (startingComponent === void 0)
         return { ok: true, value: { ready: false, issues: [] } };
       const issues = [];
-      const resolveNode = (component, ancestry) => {
+      const resolveNode = (component, ancestry, depth, counted = false) => {
+        const depthError = budget.checkDepth(depth, "component-tree", component.id);
+        if (depthError !== void 0)
+          return depthError;
+        if (!counted) {
+          const countError = budget.consumeTreeNode(component.id);
+          if (countError !== void 0)
+            return countError;
+        }
         const metadata = this.catalogs.getComponentStructureLocations(surface.catalogId, component.component);
         if (!metadata.ok)
           return resolverError(metadata.error);
         const relationships = [];
         const ancestryPath = [...ancestry, component.id];
         const resolveTarget = (property, location2, targetId) => {
-          const issueLocation = { location: location2.map((segment) => ({ ...segment })), propertyPath: pointer2(location2) };
+          const issueLocation = {
+            location: location2.map((segment) => ({ ...segment })),
+            propertyPath: pointer2(location2)
+          };
+          const countError = budget.consumeTreeNode(targetId);
+          if (countError !== void 0)
+            return countError;
           const target = surface.components[targetId];
           if (target === void 0) {
-            issues.push({ code: "MISSING_COMPONENT_REFERENCE", sourceId: component.id, property, targetId, ...issueLocation });
+            issues.push({
+              code: "MISSING_COMPONENT_REFERENCE",
+              sourceId: component.id,
+              property,
+              targetId,
+              ...issueLocation
+            });
             return void 0;
           }
           if (ancestryPath.includes(targetId)) {
@@ -6523,7 +6978,7 @@ Known schemas:
             });
             return void 0;
           }
-          return resolveNode(target, ancestryPath);
+          return resolveNode(target, ancestryPath, depth + 1, true);
         };
         for (const structural of metadata.value) {
           for (const runtime of runtimeValues(component, structural)) {
@@ -6534,20 +6989,35 @@ Known schemas:
               const node = resolveTarget(property, location2, value);
               if (node !== void 0 && "code" in node)
                 return node;
-              relationships.push({ kind: "single", property, location: location2, targetId: value, ...node === void 0 ? {} : { node } });
+              relationships.push({
+                kind: "single",
+                property,
+                location: location2,
+                targetId: value,
+                ...node === void 0 ? {} : { node }
+              });
               continue;
             }
             if (Array.isArray(value)) {
-              const targetIds = value.filter((entry) => typeof entry === "string");
+              const targetIds = [];
               const nodes = [];
-              for (const targetId of targetIds) {
-                const node = resolveTarget(property, location2, targetId);
+              for (const entry of value) {
+                if (typeof entry !== "string")
+                  continue;
+                targetIds.push(entry);
+                const node = resolveTarget(property, location2, entry);
                 if (node !== void 0 && "code" in node)
                   return node;
                 if (node !== void 0)
                   nodes.push(node);
               }
-              relationships.push({ kind: "list", property, location: location2, targetIds, nodes });
+              relationships.push({
+                kind: "list",
+                property,
+                location: location2,
+                targetIds,
+                nodes
+              });
               continue;
             }
             const template = dynamicChildList(value);
@@ -6563,30 +7033,37 @@ Known schemas:
                 propertyPath: pointer2(location2)
               });
             }
-            relationships.push({ kind: "template", property, location: location2, ...template });
+            relationships.push({
+              kind: "template",
+              property,
+              location: location2,
+              ...template
+            });
           }
         }
-        return { id: component.id, component: component.component, definition: cloneJson6(component), relationships };
+        return {
+          id: component.id,
+          component: component.component,
+          definition: cloneJson(component),
+          relationships
+        };
       };
-      const root = resolveNode(startingComponent, []);
+      const root = resolveNode(startingComponent, [], 1);
       if ("code" in root)
         return { ok: false, error: root };
       return { ok: true, value: { ready: true, root, issues } };
     }
   };
 
-  // node_modules/@weaver/core/dist/component-instances/ComponentInstanceResolver.js
-  function cloneJson7(value) {
-    if (value === null || typeof value !== "object")
-      return value;
-    if (Array.isArray(value))
-      return value.map(cloneJson7);
-    return Object.fromEntries(Object.entries(value).map(([key3, entry]) => [key3, cloneJson7(entry)]));
-  }
-  function failure(cause) {
+  // node_modules/@cylayo/weaver-core/dist/component-instances/ComponentInstanceResolver.js
+  function treeFailure(cause) {
     return {
       ok: false,
-      error: { code: "COMPONENT_TREE_RESOLUTION_FAILED", message: cause.message, cause }
+      error: {
+        code: "COMPONENT_TREE_RESOLUTION_FAILED",
+        message: cause.message,
+        cause
+      }
     };
   }
   function cloneStructuralIssue(issue3) {
@@ -6613,11 +7090,14 @@ Known schemas:
     constructor(componentTrees) {
       this.componentTrees = componentTrees;
     }
-    resolve(surface) {
-      const tree = this.componentTrees.resolve(surface);
+    resolve(surface, budget = createResolutionBudget(defaultResolutionSafetyPolicy())) {
+      const tree = this.componentTrees.resolve(surface, budget);
       if (!tree.ok)
-        return failure(tree.error);
-      if (!tree.value.ready || tree.value.root === void 0) {
+        return treeFailure(tree.error);
+      return this.resolveFromTree(surface, tree.value, budget);
+    }
+    resolveFromTree(surface, tree, budget = createResolutionBudget(defaultResolutionSafetyPolicy())) {
+      if (!tree.ready || tree.root === void 0) {
         return { ok: true, value: { ready: false, issues: [] } };
       }
       const issues = [];
@@ -6632,12 +7112,15 @@ Known schemas:
       const addStructuralIssues = (root, structural) => {
         for (const issue3 of structural) {
           if (!isTemplateReferenceIssue(root, issue3))
-            addIssue({ code: "STRUCTURAL_ISSUE", issue: cloneStructuralIssue(issue3) });
+            addIssue({
+              code: "STRUCTURAL_ISSUE",
+              issue: cloneStructuralIssue(issue3)
+            });
         }
       };
-      addStructuralIssues(tree.value.root, tree.value.issues);
+      addStructuralIssues(tree.root, tree.issues);
       const active = /* @__PURE__ */ new Set();
-      const instantiate = (node, context, incomingProperty) => {
+      const instantiate = (node, context, incomingProperty, depth) => {
         const identity = `${node.id}\0${context.scopePath}`;
         if (active.has(identity)) {
           addIssue({
@@ -6648,11 +7131,17 @@ Known schemas:
           });
           return void 0;
         }
+        const depthError = budget.checkDepth(depth, "component-instances", node.id);
+        if (depthError !== void 0)
+          throw depthError;
+        const countError = budget.consumeInstance(node.id);
+        if (countError !== void 0)
+          throw countError;
         active.add(identity);
         const relationships = [];
         for (const relationship of node.relationships) {
           if (relationship.kind === "single") {
-            const child = relationship.node === void 0 ? void 0 : instantiate(relationship.node, context, relationship.property);
+            const child = relationship.node === void 0 ? void 0 : instantiate(relationship.node, context, relationship.property, depth + 1);
             relationships.push({
               kind: "single",
               property: relationship.property,
@@ -6667,7 +7156,7 @@ Known schemas:
               property: relationship.property,
               location: relationship.location.map((segment) => ({ ...segment })),
               children: relationship.nodes.flatMap((childNode) => {
-                const child = instantiate(childNode, context, relationship.property);
+                const child = instantiate(childNode, context, relationship.property, depth + 1);
                 return child === void 0 ? [] : [child];
               })
             });
@@ -6696,7 +7185,10 @@ Known schemas:
           if (!resolvedPath.ok)
             continue;
           if (collection.value === void 0) {
-            const cause = { code: "COLLECTION_NOT_FOUND", path: resolvedPath.value };
+            const cause = {
+              code: "COLLECTION_NOT_FOUND",
+              path: resolvedPath.value
+            };
             addIssue({
               code: "TEMPLATE_COLLECTION_NOT_FOUND",
               sourceComponentId: node.id,
@@ -6708,7 +7200,10 @@ Known schemas:
             continue;
           }
           if (!Array.isArray(collection.value)) {
-            const cause = { code: "COLLECTION_NOT_ARRAY", path: resolvedPath.value };
+            const cause = {
+              code: "COLLECTION_NOT_ARRAY",
+              path: resolvedPath.value
+            };
             addIssue({
               code: "TEMPLATE_COLLECTION_NOT_ARRAY",
               sourceComponentId: node.id,
@@ -6728,7 +7223,7 @@ Known schemas:
             });
             continue;
           }
-          const subtree = this.componentTrees.resolveFrom(surface, relationship.componentId);
+          const subtree = this.componentTrees.resolveFrom(surface, relationship.componentId, budget);
           if (!subtree.ok) {
             active.delete(identity);
             throw subtree.error;
@@ -6740,7 +7235,7 @@ Known schemas:
             const childContext = context.createCollectionItemContext(relationship.path, index);
             if (!childContext.ok)
               continue;
-            const child = instantiate(subtree.value.root, childContext.value, relationship.property);
+            const child = instantiate(subtree.value.root, childContext.value, relationship.property, depth + 1);
             if (child !== void 0)
               children.push(child);
           }
@@ -6751,33 +7246,27 @@ Known schemas:
           component: node.component,
           scopePath: context.scopePath,
           ...context.collectionIndex === void 0 ? {} : { collectionIndex: context.collectionIndex },
-          definition: cloneJson7(node.definition),
+          definition: cloneJson(node.definition),
           relationships
         };
       };
       try {
-        const root = instantiate(tree.value.root, DataContext.root(surface.dataModel), "root");
-        return { ok: true, value: { ready: true, ...root === void 0 ? {} : { root }, issues } };
+        const root = instantiate(tree.root, DataContext.root(surface.dataModel), "root", 1);
+        return {
+          ok: true,
+          value: { ready: true, ...root === void 0 ? {} : { root }, issues }
+        };
       } catch (error2) {
-        return failure(error2);
+        if (isResolutionBudgetExceededError(error2) && error2.phase === "component-instances")
+          return { ok: false, error: error2 };
+        return treeFailure(error2);
       }
     }
   };
 
-  // node_modules/@weaver/core/dist/component-properties/ComponentPropertyResolver.js
-  function cloneJson8(value) {
-    if (value === null || typeof value !== "object")
-      return value;
-    if (Array.isArray(value))
-      return value.map(cloneJson8);
-    return Object.fromEntries(Object.entries(value).map(([key3, entry]) => [key3, cloneJson8(entry)]));
-  }
+  // node_modules/@cylayo/weaver-core/dist/component-properties/ComponentPropertyResolver.js
   function clonePlain(value) {
-    if (value === null || typeof value !== "object")
-      return value;
-    if (Array.isArray(value))
-      return value.map(clonePlain);
-    return Object.fromEntries(Object.entries(value).map(([key3, entry]) => [key3, clonePlain(entry)]));
+    return cloneJson(value);
   }
   function isFunctionCall2(value) {
     return value !== null && !Array.isArray(value) && typeof value === "object" && typeof value.call === "string" && value.args !== null && !Array.isArray(value.args) && typeof value.args === "object";
@@ -6813,7 +7302,11 @@ Known schemas:
     }
   }
   function catalogFailure(cause) {
-    return { code: "CATALOG_PROPERTY_METADATA_FAILED", message: cause.message, cause };
+    return {
+      code: "CATALOG_PROPERTY_METADATA_FAILED",
+      message: cause.message,
+      cause
+    };
   }
   var ComponentPropertyResolver = class {
     catalogs;
@@ -6841,7 +7334,7 @@ Known schemas:
       for (const [property, original] of Object.entries(instance.definition)) {
         if (property === "id" || property === "component")
           continue;
-        properties[property] = cloneJson8(original);
+        properties[property] = cloneJson(original);
       }
       const hydrateValue = (original, valueKind, location2) => {
         const property = location2[0]?.kind === "property" ? location2[0].name : "";
@@ -6853,7 +7346,7 @@ Known schemas:
             unresolved.push({
               property,
               reason: "FUNCTION_EVALUATION_FAILED",
-              functionCall: cloneJson8(original),
+              functionCall: cloneJson(original),
               ...nestedLocation(location2)
             });
             issues.push(functionError(instance.sourceComponentId, property, evaluated.error, location2));
@@ -6865,7 +7358,7 @@ Known schemas:
           const resolved = dataContext.resolveBinding(original);
           value = resolved.ok ? resolved.value : void 0;
         } else {
-          value = cloneJson8(original);
+          value = cloneJson(original);
         }
         if (value !== void 0 && !compatible(valueKind, value)) {
           issues.push({
@@ -6877,7 +7370,7 @@ Known schemas:
           });
           return value === null ? null : void 0;
         }
-        return value === void 0 ? void 0 : functionOwned ? clonePlain(value) : cloneJson8(value);
+        return value === void 0 ? void 0 : functionOwned ? clonePlain(value) : cloneJson(value);
       };
       const apply = (schemaPath, offset, original, target, runtimePath, valueKind) => {
         if (offset === schemaPath.length)
@@ -6907,7 +7400,7 @@ Known schemas:
       const applyBindable = (schemaPath, offset, original, target, runtimePath) => {
         if (offset === schemaPath.length) {
           if (!isDataPathBinding(original))
-            return cloneJson8(original);
+            return cloneJson(original);
           const property = runtimePath[0]?.kind === "property" ? runtimePath[0].name : "";
           const resolved = dataContext.resolveBinding(original);
           if (!resolved.ok) {
@@ -6933,7 +7426,7 @@ Known schemas:
             });
             return resolved.value === null ? null : void 0;
           }
-          return cloneJson8(resolved.value);
+          return cloneJson(resolved.value);
         }
         const segment = schemaPath[offset];
         if (segment.kind === "property") {
@@ -6984,7 +7477,11 @@ Known schemas:
       if (!instances.ready || instances.root === void 0) {
         return {
           ok: true,
-          value: { ready: false, instanceIssues: clonePlain(instances.issues), issues: [] }
+          value: {
+            ready: false,
+            instanceIssues: clonePlain(instances.issues),
+            issues: []
+          }
         };
       }
       const issues = [];
@@ -7000,7 +7497,9 @@ Known schemas:
               relationships.push({
                 kind: "single",
                 property: relationship.property,
-                location: relationship.location.map((segment) => ({ ...segment }))
+                location: relationship.location.map((segment) => ({
+                  ...segment
+                }))
               });
             } else {
               const child = hydrate(relationship.child, context);
@@ -7009,7 +7508,9 @@ Known schemas:
               relationships.push({
                 kind: "single",
                 property: relationship.property,
-                location: relationship.location.map((segment) => ({ ...segment })),
+                location: relationship.location.map((segment) => ({
+                  ...segment
+                })),
                 child: child.value
               });
             }
@@ -7034,7 +7535,13 @@ Known schemas:
           const children = [];
           for (const childInstance of relationship.children) {
             const index = childInstance.collectionIndex;
-            const childContext = index === void 0 ? { ok: false, error: { code: "INVALID_COLLECTION_INDEX", index: Number.NaN } } : context.createCollectionItemContext(relationship.collectionPath, index);
+            const childContext = index === void 0 ? {
+              ok: false,
+              error: {
+                code: "INVALID_COLLECTION_INDEX",
+                index: Number.NaN
+              }
+            } : context.createCollectionItemContext(relationship.collectionPath, index);
             if (!childContext.ok) {
               return {
                 ok: false,
@@ -7090,7 +7597,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@weaver/core/dist/input-binding/InputBindingWriter.js
+  // node_modules/@cylayo/weaver-core/dist/input-binding/InputBindingWriter.js
   function compatible2(kind, value) {
     switch (kind) {
       case "dynamicString":
@@ -7179,7 +7686,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@weaver/core/dist/data-model/DataModel.js
+  // node_modules/@cylayo/weaver-core/dist/data-model/DataModel.js
   var success4 = (value) => ({ ok: true, value });
   var DataModel = class {
     #state = {};
@@ -7399,12 +7906,184 @@ Known schemas:
     }
   };
 
-  // node_modules/@weaver/core/dist/protocol/a2ui/v0_9_1/outbound/client-capabilities.js
+  // node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/validation.js
+  var MESSAGE_KEYS = [
+    "createSurface",
+    "updateComponents",
+    "updateDataModel",
+    "deleteSurface"
+  ];
+  function isRecord(value) {
+    if (typeof value !== "object" || value === null || Array.isArray(value))
+      return false;
+    const prototype = Object.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null;
+  }
+  function issue2(path, message, surfaceId) {
+    return surfaceId === void 0 ? { code: "VALIDATION_FAILED", path, message } : { code: "VALIDATION_FAILED", path, message, surfaceId };
+  }
+  function getSurfaceId(payload) {
+    if (!isRecord(payload))
+      return void 0;
+    return typeof payload.surfaceId === "string" ? payload.surfaceId : void 0;
+  }
+  function validateExactKeys(value, allowed, path, issues, surfaceId) {
+    for (const key3 of Object.keys(value)) {
+      if (!allowed.includes(key3)) {
+        issues.push(issue2(`${path}/${key3}`, "Unexpected property", surfaceId));
+      }
+    }
+  }
+  function validateString(value, path, issues, surfaceId) {
+    if (typeof value !== "string") {
+      issues.push(issue2(path, "Expected string", surfaceId));
+    }
+  }
+  function isJsonValue(value) {
+    if (value === null || typeof value === "string" || typeof value === "boolean")
+      return true;
+    if (typeof value === "number")
+      return Number.isFinite(value);
+    if (typeof value !== "object")
+      return false;
+    const active = /* @__PURE__ */ new Set();
+    const stack = [{ value, exit: false }];
+    while (stack.length > 0) {
+      const frame = stack.pop();
+      if (frame.exit) {
+        active.delete(frame.value);
+        continue;
+      }
+      const current = frame.value;
+      if (current === null || typeof current === "string" || typeof current === "boolean")
+        continue;
+      if (typeof current === "number") {
+        if (!Number.isFinite(current))
+          return false;
+        continue;
+      }
+      if (typeof current !== "object" || active.has(current))
+        return false;
+      if (Array.isArray(current)) {
+        if (Object.keys(current).length !== current.length)
+          return false;
+      } else if (!isRecord(current))
+        return false;
+      active.add(current);
+      stack.push({ value: current, exit: true });
+      if (Array.isArray(current))
+        for (const entry of current)
+          stack.push({ value: entry, exit: false });
+      else
+        for (const entry of Object.values(current))
+          stack.push({ value: entry, exit: false });
+    }
+    return true;
+  }
+  function validateCreateSurface(payload, issues) {
+    if (!isRecord(payload)) {
+      issues.push(issue2("/createSurface", "Expected object"));
+      return;
+    }
+    const surfaceId = getSurfaceId(payload);
+    validateExactKeys(payload, ["surfaceId", "catalogId", "theme", "sendDataModel"], "/createSurface", issues, surfaceId);
+    validateString(payload.surfaceId, "/createSurface/surfaceId", issues, surfaceId);
+    validateString(payload.catalogId, "/createSurface/catalogId", issues, surfaceId);
+    if ("theme" in payload && (!isRecord(payload.theme) || !isJsonValue(payload.theme))) {
+      issues.push(issue2("/createSurface/theme", "Expected JSON object", surfaceId));
+    }
+    if ("sendDataModel" in payload && typeof payload.sendDataModel !== "boolean") {
+      issues.push(issue2("/createSurface/sendDataModel", "Expected boolean", surfaceId));
+    }
+  }
+  function validateUpdateComponents(payload, issues) {
+    if (!isRecord(payload)) {
+      issues.push(issue2("/updateComponents", "Expected object"));
+      return;
+    }
+    const surfaceId = getSurfaceId(payload);
+    validateExactKeys(payload, ["surfaceId", "components"], "/updateComponents", issues, surfaceId);
+    validateString(payload.surfaceId, "/updateComponents/surfaceId", issues, surfaceId);
+    if (!Array.isArray(payload.components)) {
+      issues.push(issue2("/updateComponents/components", "Expected array", surfaceId));
+      return;
+    }
+    if (payload.components.length === 0) {
+      issues.push(issue2("/updateComponents/components", "Expected at least one component", surfaceId));
+    }
+    payload.components.forEach((component, index) => {
+      const path = `/updateComponents/components/${index}`;
+      if (!isRecord(component)) {
+        issues.push(issue2(path, "Expected object", surfaceId));
+        return;
+      }
+      validateString(component.id, `${path}/id`, issues, surfaceId);
+      validateString(component.component, `${path}/component`, issues, surfaceId);
+      for (const [key3, value] of Object.entries(component)) {
+        if (!isJsonValue(value)) {
+          issues.push(issue2(`${path}/${key3}`, "Expected JSON value", surfaceId));
+        }
+      }
+    });
+  }
+  function validateUpdateDataModel(payload, issues) {
+    if (!isRecord(payload)) {
+      issues.push(issue2("/updateDataModel", "Expected object"));
+      return;
+    }
+    const surfaceId = getSurfaceId(payload);
+    validateExactKeys(payload, ["surfaceId", "path", "value"], "/updateDataModel", issues, surfaceId);
+    validateString(payload.surfaceId, "/updateDataModel/surfaceId", issues, surfaceId);
+    if ("path" in payload)
+      validateString(payload.path, "/updateDataModel/path", issues, surfaceId);
+    if ("value" in payload && !isJsonValue(payload.value)) {
+      issues.push(issue2("/updateDataModel/value", "Expected JSON value", surfaceId));
+    }
+  }
+  function validateDeleteSurface(payload, issues) {
+    if (!isRecord(payload)) {
+      issues.push(issue2("/deleteSurface", "Expected object"));
+      return;
+    }
+    const surfaceId = getSurfaceId(payload);
+    validateExactKeys(payload, ["surfaceId"], "/deleteSurface", issues, surfaceId);
+    validateString(payload.surfaceId, "/deleteSurface/surfaceId", issues, surfaceId);
+  }
+  var validators = {
+    createSurface: validateCreateSurface,
+    updateComponents: validateUpdateComponents,
+    updateDataModel: validateUpdateDataModel,
+    deleteSurface: validateDeleteSurface
+  };
+  function validateA2UIServerMessage(input) {
+    const issues = [];
+    try {
+      if (!isRecord(input))
+        return { ok: false, issues: [issue2("/", "Expected object")] };
+      if (input.version !== "v0.9" && input.version !== "v0.9.1") {
+        issues.push(issue2("/version", "Expected v0.9 or v0.9.1"));
+      }
+      const presentMessageKeys = MESSAGE_KEYS.filter((key3) => key3 in input);
+      if (presentMessageKeys.length !== 1) {
+        issues.push(issue2("/", "Expected exactly one A2UI message type"));
+      }
+      validateExactKeys(input, ["version", ...MESSAGE_KEYS], "", issues);
+      if (presentMessageKeys.length === 1) {
+        const key3 = presentMessageKeys[0];
+        validators[key3](input[key3], issues);
+      }
+      return issues.length === 0 ? { ok: true, value: input } : { ok: false, issues };
+    } catch {
+      return { ok: false, issues: [issue2("/", "Unable to inspect input")] };
+    }
+  }
+
+  // node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/outbound/client-capabilities.js
   function buildA2UIClientCapabilities(input) {
     return { "v0.9": { supportedCatalogIds: [...input.supportedCatalogIds] } };
   }
 
-  // node_modules/@weaver/core/dist/protocol/a2ui/v0_9_1/outbound/validation-error.js
+  // node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/outbound/validation-error.js
   function buildA2UIValidationFailedClientMessage(input) {
     if (input.surfaceId.length === 0)
       throw new TypeError("surfaceId must not be empty");
@@ -7421,12 +8100,12 @@ Known schemas:
   function mapA2UIValidationFailure(input) {
     if (input.result.ok)
       return { ok: false, error: { code: "NOT_A_VALIDATION_FAILURE" } };
-    const failure2 = input.result.error;
+    const failure = input.result.error;
     let issue3;
-    if (failure2.code === "PROTOCOL_VALIDATION_FAILED") {
-      issue3 = failure2.issues[0];
-    } else if (failure2.code === "CATALOG_REGISTRY_ERROR") {
-      issue3 = mapCatalogFailure(failure2.catalogError, input.input);
+    if (failure.code === "PROTOCOL_VALIDATION_FAILED") {
+      issue3 = failure.issues[0];
+    } else if (failure.code === "CATALOG_REGISTRY_ERROR") {
+      issue3 = mapCatalogFailure(failure.catalogError, input.input);
     }
     if (issue3 === void 0)
       return { ok: false, error: { code: "NOT_A_VALIDATION_FAILURE" } };
@@ -7463,22 +8142,22 @@ Known schemas:
     };
   }
   function extractInboundSurfaceId(input) {
-    if (!isRecord(input))
+    if (!isRecord2(input))
       return void 0;
     for (const key3 of ["createSurface", "updateComponents", "updateDataModel", "deleteSurface"]) {
       const payload = input[key3];
-      if (isRecord(payload) && typeof payload.surfaceId === "string" && payload.surfaceId.length > 0) {
+      if (isRecord2(payload) && typeof payload.surfaceId === "string" && payload.surfaceId.length > 0) {
         return payload.surfaceId;
       }
     }
     return void 0;
   }
   function findComponentIndex(input, componentId) {
-    if (!isRecord(input) || !isRecord(input.updateComponents) || !Array.isArray(input.updateComponents.components))
+    if (!isRecord2(input) || !isRecord2(input.updateComponents) || !Array.isArray(input.updateComponents.components))
       return void 0;
     if (componentId === void 0)
       return 0;
-    const index = input.updateComponents.components.findIndex((component) => isRecord(component) && component.id === componentId);
+    const index = input.updateComponents.components.findIndex((component) => isRecord2(component) && component.id === componentId);
     return index < 0 ? void 0 : index;
   }
   function prefixPath(base, path) {
@@ -7486,170 +8165,11 @@ Known schemas:
       return base;
     return `${base}${path.startsWith("/") ? path : `/${path}`}`;
   }
-  function isRecord(value) {
+  function isRecord2(value) {
     return typeof value === "object" && value !== null && !Array.isArray(value);
   }
 
-  // node_modules/@weaver/core/dist/protocol/a2ui/v0_9_1/validation.js
-  var MESSAGE_KEYS = [
-    "createSurface",
-    "updateComponents",
-    "updateDataModel",
-    "deleteSurface"
-  ];
-  function isRecord2(value) {
-    if (typeof value !== "object" || value === null || Array.isArray(value))
-      return false;
-    const prototype = Object.getPrototypeOf(value);
-    return prototype === Object.prototype || prototype === null;
-  }
-  function issue2(path, message, surfaceId) {
-    return surfaceId === void 0 ? { code: "VALIDATION_FAILED", path, message } : { code: "VALIDATION_FAILED", path, message, surfaceId };
-  }
-  function getSurfaceId(payload) {
-    if (!isRecord2(payload))
-      return void 0;
-    return typeof payload.surfaceId === "string" ? payload.surfaceId : void 0;
-  }
-  function validateExactKeys(value, allowed, path, issues, surfaceId) {
-    for (const key3 of Object.keys(value)) {
-      if (!allowed.includes(key3)) {
-        issues.push(issue2(`${path}/${key3}`, "Unexpected property", surfaceId));
-      }
-    }
-  }
-  function validateString(value, path, issues, surfaceId) {
-    if (typeof value !== "string") {
-      issues.push(issue2(path, "Expected string", surfaceId));
-    }
-  }
-  function isJsonValue(value, ancestors = /* @__PURE__ */ new Set()) {
-    if (value === null || typeof value === "string" || typeof value === "boolean")
-      return true;
-    if (typeof value === "number")
-      return Number.isFinite(value);
-    if (typeof value !== "object")
-      return false;
-    if (ancestors.has(value))
-      return false;
-    ancestors.add(value);
-    const valid = Array.isArray(value) ? Object.keys(value).length === value.length && value.every((entry) => isJsonValue(entry, ancestors)) : isRecord2(value) && Object.values(value).every((entry) => isJsonValue(entry, ancestors));
-    ancestors.delete(value);
-    return valid;
-  }
-  function validateCreateSurface(payload, issues) {
-    if (!isRecord2(payload)) {
-      issues.push(issue2("/createSurface", "Expected object"));
-      return;
-    }
-    const surfaceId = getSurfaceId(payload);
-    validateExactKeys(payload, ["surfaceId", "catalogId", "theme", "sendDataModel"], "/createSurface", issues, surfaceId);
-    validateString(payload.surfaceId, "/createSurface/surfaceId", issues, surfaceId);
-    validateString(payload.catalogId, "/createSurface/catalogId", issues, surfaceId);
-    if ("theme" in payload && (!isRecord2(payload.theme) || !isJsonValue(payload.theme))) {
-      issues.push(issue2("/createSurface/theme", "Expected JSON object", surfaceId));
-    }
-    if ("sendDataModel" in payload && typeof payload.sendDataModel !== "boolean") {
-      issues.push(issue2("/createSurface/sendDataModel", "Expected boolean", surfaceId));
-    }
-  }
-  function validateUpdateComponents(payload, issues) {
-    if (!isRecord2(payload)) {
-      issues.push(issue2("/updateComponents", "Expected object"));
-      return;
-    }
-    const surfaceId = getSurfaceId(payload);
-    validateExactKeys(payload, ["surfaceId", "components"], "/updateComponents", issues, surfaceId);
-    validateString(payload.surfaceId, "/updateComponents/surfaceId", issues, surfaceId);
-    if (!Array.isArray(payload.components)) {
-      issues.push(issue2("/updateComponents/components", "Expected array", surfaceId));
-      return;
-    }
-    if (payload.components.length === 0) {
-      issues.push(issue2("/updateComponents/components", "Expected at least one component", surfaceId));
-    }
-    payload.components.forEach((component, index) => {
-      const path = `/updateComponents/components/${index}`;
-      if (!isRecord2(component)) {
-        issues.push(issue2(path, "Expected object", surfaceId));
-        return;
-      }
-      validateString(component.id, `${path}/id`, issues, surfaceId);
-      validateString(component.component, `${path}/component`, issues, surfaceId);
-      for (const [key3, value] of Object.entries(component)) {
-        if (!isJsonValue(value)) {
-          issues.push(issue2(`${path}/${key3}`, "Expected JSON value", surfaceId));
-        }
-      }
-    });
-  }
-  function validateUpdateDataModel(payload, issues) {
-    if (!isRecord2(payload)) {
-      issues.push(issue2("/updateDataModel", "Expected object"));
-      return;
-    }
-    const surfaceId = getSurfaceId(payload);
-    validateExactKeys(payload, ["surfaceId", "path", "value"], "/updateDataModel", issues, surfaceId);
-    validateString(payload.surfaceId, "/updateDataModel/surfaceId", issues, surfaceId);
-    if ("path" in payload)
-      validateString(payload.path, "/updateDataModel/path", issues, surfaceId);
-    if ("value" in payload && !isJsonValue(payload.value)) {
-      issues.push(issue2("/updateDataModel/value", "Expected JSON value", surfaceId));
-    }
-  }
-  function validateDeleteSurface(payload, issues) {
-    if (!isRecord2(payload)) {
-      issues.push(issue2("/deleteSurface", "Expected object"));
-      return;
-    }
-    const surfaceId = getSurfaceId(payload);
-    validateExactKeys(payload, ["surfaceId"], "/deleteSurface", issues, surfaceId);
-    validateString(payload.surfaceId, "/deleteSurface/surfaceId", issues, surfaceId);
-  }
-  var validators = {
-    createSurface: validateCreateSurface,
-    updateComponents: validateUpdateComponents,
-    updateDataModel: validateUpdateDataModel,
-    deleteSurface: validateDeleteSurface
-  };
-  function validateA2UIServerMessage(input) {
-    const issues = [];
-    try {
-      if (!isRecord2(input))
-        return { ok: false, issues: [issue2("/", "Expected object")] };
-      if (input.version !== "v0.9" && input.version !== "v0.9.1") {
-        issues.push(issue2("/version", "Expected v0.9 or v0.9.1"));
-      }
-      const presentMessageKeys = MESSAGE_KEYS.filter((key3) => key3 in input);
-      if (presentMessageKeys.length !== 1) {
-        issues.push(issue2("/", "Expected exactly one A2UI message type"));
-      }
-      validateExactKeys(input, ["version", ...MESSAGE_KEYS], "", issues);
-      if (presentMessageKeys.length === 1) {
-        const key3 = presentMessageKeys[0];
-        validators[key3](input[key3], issues);
-      }
-      return issues.length === 0 ? { ok: true, value: input } : { ok: false, issues };
-    } catch {
-      return { ok: false, issues: [issue2("/", "Unable to inspect input")] };
-    }
-  }
-
-  // node_modules/@weaver/core/dist/surfaces/clone.js
-  function cloneJson9(value) {
-    if (value === null || typeof value !== "object")
-      return value;
-    if (Array.isArray(value)) {
-      return value.map((entry) => cloneJson9(entry));
-    }
-    const clone = {};
-    for (const [key3, entry] of Object.entries(value)) {
-      clone[key3] = cloneJson9(entry);
-    }
-    return clone;
-  }
-
-  // node_modules/@weaver/core/dist/surfaces/SurfaceStore.js
+  // node_modules/@cylayo/weaver-core/dist/surfaces/SurfaceStore.js
   var success5 = (value) => ({ ok: true, value });
   var SurfaceStore = class {
     #surfaces = /* @__PURE__ */ new Map();
@@ -7664,14 +8184,17 @@ Known schemas:
       const surface = {
         surfaceId: input.surfaceId,
         catalogId: input.catalogId,
-        ...input.theme === void 0 ? {} : { theme: cloneJson9(input.theme) },
+        ...input.theme === void 0 ? {} : { theme: cloneJson(input.theme) },
         sendDataModel: input.sendDataModel ?? false,
         components: /* @__PURE__ */ new Map(),
         dataModel: new DataModel()
       };
       this.#surfaces.set(input.surfaceId, surface);
       const snapshot = this.#snapshot(surface);
-      this.#notify(input.surfaceId, () => ({ type: "created", surface: this.#snapshot(surface) }));
+      this.#notify(input.surfaceId, () => ({
+        type: "created",
+        surface: this.#snapshot(surface)
+      }));
       return success5(snapshot);
     }
     has(surfaceId) {
@@ -7723,7 +8246,7 @@ Known schemas:
         ids.add(component.id);
       }
       for (const component of components) {
-        surface.components.set(component.id, cloneJson9(component));
+        surface.components.set(component.id, cloneJson(component));
       }
       const componentIds = [...ids];
       const snapshot = this.#snapshot(surface);
@@ -7758,12 +8281,12 @@ Known schemas:
     #snapshot(surface) {
       const components = {};
       for (const [id, component] of surface.components) {
-        components[id] = cloneJson9(component);
+        components[id] = cloneJson(component);
       }
       return {
         surfaceId: surface.surfaceId,
         catalogId: surface.catalogId,
-        ...surface.theme === void 0 ? {} : { theme: cloneJson9(surface.theme) },
+        ...surface.theme === void 0 ? {} : { theme: cloneJson(surface.theme) },
         sendDataModel: surface.sendDataModel,
         components,
         dataModel: this.#dataSnapshot(surface.dataModel)
@@ -7777,7 +8300,10 @@ Known schemas:
       return result.value;
     }
     #mapDataModelResult(result) {
-      return result.ok ? success5(result.value) : { ok: false, error: { code: "DATA_MODEL_ERROR", dataModelError: result.error } };
+      return result.ok ? success5(result.value) : {
+        ok: false,
+        error: { code: "DATA_MODEL_ERROR", dataModelError: result.error }
+      };
     }
     #mutateData(surfaceId, path, mutate) {
       const surface = this.#surfaces.get(surfaceId);
@@ -7789,7 +8315,7 @@ Known schemas:
         return mutation;
       const snapshot = this.#snapshot(surface);
       const change = mutation.value;
-      const changed = change !== void 0 && JSON.stringify(change.previousValue) !== JSON.stringify(change.value);
+      const changed = change !== void 0 && !equalJson(change.previousValue, change.value);
       if (changed) {
         this.#notify(surfaceId, () => ({
           type: "dataModelUpdated",
@@ -7812,7 +8338,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@weaver/core/dist/message-processor/A2UIMessageProcessor.js
+  // node_modules/@cylayo/weaver-core/dist/message-processor/A2UIMessageProcessor.js
   var A2UIMessageProcessor = class {
     store;
     catalogs;
@@ -7897,7 +8423,10 @@ Known schemas:
     }
   };
 
-  // node_modules/@weaver/core/dist/runtime/WeaverRuntime.js
+  // node_modules/@cylayo/weaver-core/dist/runtime/WeaverRuntime.js
+  function cloneRuntimeJson(value) {
+    return cloneJson(value);
+  }
   var WeaverRuntime = class {
     #services;
     /** @internal Construct runtimes through createWeaverRuntime(). */
@@ -7917,31 +8446,50 @@ Known schemas:
       const surface = this.#services.store.get(surfaceId);
       if (surface === void 0)
         return { ok: false, error: { code: "SURFACE_NOT_FOUND", surfaceId } };
-      const tree = this.#services.trees.resolve(surface);
+      const budget = createResolutionBudget(this.#services.safety);
+      const tree = this.#services.trees.resolve(surface, budget);
       if (!tree.ok)
-        return { ok: false, error: { code: "COMPONENT_TREE_RESOLUTION_FAILED", cause: tree.error } };
-      const instances = this.#services.instances.resolve(surface);
+        return {
+          ok: false,
+          error: { code: "COMPONENT_TREE_RESOLUTION_FAILED", cause: tree.error }
+        };
+      const instances = this.#services.instances.resolveFromTree(surface, tree.value, budget);
       if (!instances.ok)
-        return { ok: false, error: { code: "COMPONENT_INSTANCE_RESOLUTION_FAILED", cause: instances.error } };
+        return {
+          ok: false,
+          error: {
+            code: "COMPONENT_INSTANCE_RESOLUTION_FAILED",
+            cause: instances.error
+          }
+        };
       const hydrated = this.#services.properties.resolveTree(surface, instances.value);
       if (!hydrated.ok)
-        return { ok: false, error: { code: "COMPONENT_PROPERTY_RESOLUTION_FAILED", cause: hydrated.error } };
+        return {
+          ok: false,
+          error: {
+            code: "COMPONENT_PROPERTY_RESOLUTION_FAILED",
+            cause: hydrated.error
+          }
+        };
       const checks = this.#services.checks.evaluateTree(surface, instances.value);
       if (!checks.ok)
-        return { ok: false, error: { code: "CHECK_EVALUATION_FAILED", cause: checks.error } };
+        return {
+          ok: false,
+          error: { code: "CHECK_EVALUATION_FAILED", cause: checks.error }
+        };
       return {
         ok: true,
         value: {
           surfaceId: surface.surfaceId,
           catalogId: surface.catalogId,
-          ...surface.theme === void 0 ? {} : { theme: structuredClone(surface.theme) },
+          ...surface.theme === void 0 ? {} : { theme: cloneJson(surface.theme) },
           sendDataModel: surface.sendDataModel,
           tree: hydrated.value,
           checks: checks.value,
           issues: {
-            tree: structuredClone(tree.value.issues),
-            instances: structuredClone(instances.value.issues),
-            properties: structuredClone(hydrated.value.issues)
+            tree: cloneRuntimeJson(tree.value.issues),
+            instances: cloneRuntimeJson(instances.value.issues),
+            properties: cloneRuntimeJson(hydrated.value.issues)
           }
         }
       };
@@ -7956,7 +8504,10 @@ Known schemas:
         property: request.property,
         value: request.value
       });
-      return written.ok ? written : { ok: false, error: { code: "INPUT_WRITE_FAILED", cause: written.error } };
+      return written.ok ? written : {
+        ok: false,
+        error: { code: "INPUT_WRITE_FAILED", cause: written.error }
+      };
     }
     dispatchAction(request) {
       const current = this.#resolveCurrentInstance(request);
@@ -7967,7 +8518,10 @@ Known schemas:
         instance: current.value.instance,
         actionProperty: request.actionProperty
       });
-      return dispatched.ok ? dispatched : { ok: false, error: { code: "ACTION_DISPATCH_FAILED", cause: dispatched.error } };
+      return dispatched.ok ? dispatched : {
+        ok: false,
+        error: { code: "ACTION_DISPATCH_FAILED", cause: dispatched.error }
+      };
     }
     subscribeSurface(surfaceId, subscriber) {
       return this.#services.store.subscribe(surfaceId, () => subscriber(this.resolveSurface(surfaceId)));
@@ -7983,18 +8537,27 @@ Known schemas:
     #resolveCurrentInstance(identity) {
       const surface = this.#services.store.get(identity.surfaceId);
       if (surface === void 0)
-        return { ok: false, error: { code: "SURFACE_NOT_FOUND", surfaceId: identity.surfaceId } };
-      const instances = this.#services.instances.resolve(surface);
+        return {
+          ok: false,
+          error: { code: "SURFACE_NOT_FOUND", surfaceId: identity.surfaceId }
+        };
+      const instances = this.#services.instances.resolve(surface, createResolutionBudget(this.#services.safety));
       if (!instances.ok)
-        return { ok: false, error: { code: "INSTANCE_RESOLUTION_FAILED", cause: instances.error } };
+        return {
+          ok: false,
+          error: { code: "INSTANCE_RESOLUTION_FAILED", cause: instances.error }
+        };
       const instance = instances.value.root === void 0 ? void 0 : findInstance(instances.value.root, identity.sourceComponentId, identity.scopePath);
       if (instance === void 0) {
-        return { ok: false, error: {
-          code: "INSTANCE_NOT_FOUND",
-          surfaceId: identity.surfaceId,
-          sourceComponentId: identity.sourceComponentId,
-          scopePath: identity.scopePath
-        } };
+        return {
+          ok: false,
+          error: {
+            code: "INSTANCE_NOT_FOUND",
+            surfaceId: identity.surfaceId,
+            sourceComponentId: identity.sourceComponentId,
+            scopePath: identity.scopePath
+          }
+        };
       }
       return { ok: true, value: { surface, instance } };
     }
@@ -8013,38 +8576,62 @@ Known schemas:
     return void 0;
   }
   function createWeaverRuntime(config = { catalogs: [] }) {
+    const safety = normalizeResolutionSafety(config.safety);
+    if (!safety.ok)
+      return {
+        ok: false,
+        error: { code: "SAFETY_CONFIGURATION_FAILED", safetyError: safety.error }
+      };
     const catalogs = new CatalogRegistry();
     for (const registration of config.catalogs) {
       const result = catalogs.register(registration);
       if (!result.ok)
-        return { ok: false, error: { code: "CATALOG_CONFIGURATION_FAILED", catalogError: result.error } };
+        return {
+          ok: false,
+          error: {
+            code: "CATALOG_CONFIGURATION_FAILED",
+            catalogError: result.error
+          }
+        };
     }
     const functions = new FunctionRegistry(catalogs);
     for (const registration of config.functions ?? []) {
       const result = functions.register(registration);
       if (!result.ok)
-        return { ok: false, error: { code: "FUNCTION_CONFIGURATION_FAILED", functionError: result.error } };
+        return {
+          ok: false,
+          error: {
+            code: "FUNCTION_CONFIGURATION_FAILED",
+            functionError: result.error
+          }
+        };
     }
     const store = new SurfaceStore();
     const functionEvaluator = new FunctionEvaluator(catalogs, functions);
     const trees = new ComponentTreeResolver(catalogs);
     const instances = new ComponentInstanceResolver(trees);
     const checks = new CheckEvaluator(catalogs, functionEvaluator);
-    return { ok: true, value: new WeaverRuntime({
-      catalogs,
-      functions,
-      store,
-      processor: new A2UIMessageProcessor(store, catalogs),
-      trees,
-      instances,
-      properties: new ComponentPropertyResolver(catalogs, functionEvaluator),
-      checks,
-      inputs: new InputBindingWriter(store, catalogs),
-      actions: new ActionDispatcher(catalogs, functionEvaluator, checks, { ...config.now === void 0 ? {} : { now: config.now } })
-    }) };
+    return {
+      ok: true,
+      value: new WeaverRuntime({
+        catalogs,
+        functions,
+        store,
+        processor: new A2UIMessageProcessor(store, catalogs),
+        trees,
+        instances,
+        properties: new ComponentPropertyResolver(catalogs, functionEvaluator),
+        checks,
+        inputs: new InputBindingWriter(store, catalogs),
+        actions: new ActionDispatcher(catalogs, functionEvaluator, checks, {
+          ...config.now === void 0 ? {} : { now: config.now }
+        }),
+        safety: safety.value
+      })
+    };
   }
 
-  // node_modules/@weaver/web/dist/renderers/errors.js
+  // node_modules/@cylayo/weaver-web/dist/renderers/errors.js
   var RendererRegistryConfigurationError = class extends Error {
     code = "RENDERER_ALREADY_REGISTERED";
     catalogId;
@@ -8057,7 +8644,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@weaver/web/dist/renderers/RendererRegistry.js
+  // node_modules/@cylayo/weaver-web/dist/renderers/RendererRegistry.js
   var key2 = (catalogId, component) => JSON.stringify([catalogId, component]);
   var RendererRegistry = class {
     #renderers = /* @__PURE__ */ new Map();
@@ -8085,7 +8672,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@weaver/web/dist/surface/WebSurfaceRenderer.js
+  // node_modules/@cylayo/weaver-web/dist/surface/WebSurfaceRenderer.js
   var identityKey = (sourceComponentId, scopePath) => JSON.stringify([sourceComponentId, scopePath]);
   var controlIdentityKey = (sourceComponentId, scopePath, localKey) => JSON.stringify([sourceComponentId, scopePath, localKey]);
   var WebSurfaceRenderer = class {
@@ -8462,7 +9049,7 @@ Known schemas:
     return result.ok ? { ok: true, value: { ...result.value } } : structuredClone(result);
   }
 
-  // node_modules/@weaver/web/dist/basic-web-runtime/createBasicWebRuntime.js
+  // node_modules/@cylayo/weaver-web/dist/basic-web-runtime/createBasicWebRuntime.js
   function createBasicWebRuntime(config = {}) {
     const catalogId = A2UI_V091_BASIC_CATALOG_ID;
     const runtimeCreated = createWeaverRuntime({
