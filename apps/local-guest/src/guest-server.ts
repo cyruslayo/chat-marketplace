@@ -252,7 +252,7 @@ import {
   type GuestAccountCredentials,
 } from "./guest-account-runtime.js";
 import { GUEST_ACCOUNT_COPY, GUEST_TASK_RAIL, GUEST_VERTICALS } from "../../web-agent/src/guest-content.js";
-import { SqliteGuestContactRepository, type GuestContactSource } from "../../../domains/shortlet/src/index.js";
+import type { GuestContactSource } from "../../../domains/shortlet/src/index.js";
 import {
   GuestContactOwnedByAccountError,
   normalizeNigerianPhoneNumber,
@@ -1511,9 +1511,10 @@ function signInOfferFor(input: {
   readonly returnPath: string;
 }): SignInOfferContent | undefined {
   if (input.accounts === null || !input.principal.tenantId) return undefined;
+  if (input.accounts.usesRemoteAuthority) return undefined;
   // D1 (ADR 0093, 0075), fail closed: a principal linked to ANY account gets no offer, even when its account session is not presented.
   if (input.accounts.linkedAccountOf(input.principal.id) !== null) return undefined;
-  if (input.accounts.identityFor(input.principal.id, input.credentials).accountGuestId !== undefined) return undefined;
+  if (input.accounts.identityForLocal(input.principal.id, input.credentials).accountGuestId !== undefined) return undefined;
   const own = input.ownContacts.find(input.principal.id, input.principal.tenantId);
   return { email: own?.contactEmail ?? "", returnPath: input.returnPath };
 }
@@ -1679,14 +1680,14 @@ function safePublicOrigin(value: string): URL | null {
  * environment. The raw session secret is never persisted, so a database leak
  * cannot replay a bearer cookie; only the salted hash is stored and compared.
  */
-function resolveBrowserSession(
+async function resolveBrowserSession(
   env: LocalGuestEnvironment,
   cache: Map<string, BrowserSession>,
   sessionId: string | null | undefined,
   expectedPrincipalId?: string,
   accountCredentials: GuestAccountCredentials | null = null,
   accounts: GuestAccountRuntime | null = null,
-): BrowserSession | null {
+): Promise<BrowserSession | null> {
   if (sessionId === null || typeof sessionId !== "string") return null;
   const sessionKey = hashSessionSecret(sessionId);
   const cached = cache.get(sessionKey);
@@ -1699,7 +1700,7 @@ function resolveBrowserSession(
       return null;
     // The durable binding is checked on every request, so a session retired by another server instance stops at once
     // (ADR 0070, ADR 0093). The cache only saves the rebuild, never the authority.
-    const live = env.interactionStore.findSessionBinding(sessionKey);
+    const live = await env.guestData.findSessionBinding(sessionKey);
     if (
       !live ||
       live.principalId !== cached.principalId ||
@@ -1708,9 +1709,9 @@ function resolveBrowserSession(
       cache.delete(sessionKey);
       return null;
     }
-    return withAccountIdentity(cached, accountCredentials, accounts);
+    return await withAccountIdentity(cached, accountCredentials, accounts);
   }
-  const binding = env.interactionStore.findSessionBinding(sessionKey);
+  const binding = await env.guestData.findSessionBinding(sessionKey);
   if (!binding) return null;
   if (
     (expectedPrincipalId !== undefined &&
@@ -1733,7 +1734,7 @@ function resolveBrowserSession(
     ),
   };
   cache.set(sessionKey, session);
-  return withAccountIdentity(session, accountCredentials, accounts);
+  return await withAccountIdentity(session, accountCredentials, accounts);
 }
 
 /**
@@ -1741,13 +1742,13 @@ function resolveBrowserSession(
  * the account's Linked Principals; anything else is the browser's own principal. Resolved on every call, so a revoked
  * account session stops applying at once.
  */
-function withAccountIdentity(
+async function withAccountIdentity(
   session: BrowserSession,
   accountCredentials: GuestAccountCredentials | null,
   accounts: GuestAccountRuntime | null,
-): BrowserSession {
+): Promise<BrowserSession> {
   const identity = accounts
-    ? accounts.identityFor(session.principalId, accountCredentials)
+    ? await accounts.identityFor(session.principalId, accountCredentials)
     : anonymousGuestIdentity(session.principalId, session.tenantId);
   return { ...session, identity };
 }
@@ -1791,13 +1792,13 @@ export function offerAuthorized(
  * Whether a session may read a thread now (D2). The thread must be in the session's set, and when it is persisted its
  * owner must be in the identity resolved for this request, so a linked conversation stops once the account session ends.
  */
-function threadReadable(
+async function threadReadable(
   env: LocalGuestEnvironment,
   session: BrowserSession,
   threadId: string,
-): boolean {
+): Promise<boolean> {
   if (!session.threadIds.has(threadId)) return false;
-  const record = env.interactionStore.findThread(threadId);
+  const record = await env.guestData.findThread(threadId);
   // Fail closed (AGENTS anti-pattern 1). Defence in depth: app.getState returns nothing without a saved record, so this
   // guard is not what keeps content from a record-less id today; it stops a future read path from serving one.
   if (!record) return false;
@@ -1807,14 +1808,14 @@ function threadReadable(
   });
 }
 
-function bindBrowserThread(
+async function bindBrowserThread(
   env: LocalGuestEnvironment,
   cache: Map<string, BrowserSession>,
   req: HttpRequestLike,
   threadId: string,
   requireSession = false,
   accounts: GuestAccountRuntime | null = null,
-): boolean {
+): Promise<boolean> {
   const sessionId = readGuestSession(req);
   if (sessionId === null) return false;
   if (sessionId === undefined) {
@@ -1823,12 +1824,12 @@ function bindBrowserThread(
     // anonymous turn (legacy local behavior). The thread is still persisted
     // under the demo principal so it is restorable.
     const principal = env.guestPrincipal();
-    const record = env.interactionStore.findThread(threadId);
+    const record = await env.guestData.findThread(threadId);
     if (record) {
       // A conversation saved for another principal is never re-owned by a cookieless request.
       if (record.principalId !== principal.id || record.tenantId !== env.config.tenantId)
         return false;
-      env.interactionStore.saveThread({
+      await env.guestData.saveThread({
         threadId,
         principalId: principal.id,
         tenantId: env.config.tenantId,
@@ -1837,7 +1838,7 @@ function bindBrowserThread(
     }
     return true;
   }
-  const session = resolveBrowserSession(
+  const session = await resolveBrowserSession(
     env,
     cache,
     sessionId,
@@ -1848,7 +1849,7 @@ function bindBrowserThread(
   if (!session) return false;
   // The thread row is owned by the principal/tenant (ADR-0070); persisting it
   // makes the thread re-derivable after a restart by the same session binding.
-  const record = env.interactionStore.findThread(threadId);
+  const record = await env.guestData.findThread(threadId);
   if (record) {
     // ADR 0070/0093: the session principal or a Linked Principal of its account owns the thread; nothing else does.
     if (
@@ -1860,7 +1861,7 @@ function bindBrowserThread(
       return false;
     // A linked principal's thread keeps its owner (ADR 0004): only the owner's own thread is re-saved.
     if (record.principalId === session.principalId)
-      env.interactionStore.saveThread({
+      await env.guestData.saveThread({
         threadId,
         principalId: session.principalId,
         tenantId: session.tenantId,
@@ -1871,12 +1872,12 @@ function bindBrowserThread(
   return true;
 }
 
-function registerBrowserSession(
+async function registerBrowserSession(
   env: LocalGuestEnvironment,
   cache: Map<string, BrowserSession>,
   sessionId: string,
   principalId = env.config.guestId,
-): BrowserSession {
+): Promise<BrowserSession> {
   const sessionKey = hashSessionSecret(sessionId);
   const session: BrowserSession = {
     sessionKey,
@@ -1888,7 +1889,7 @@ function registerBrowserSession(
   cache.set(sessionKey, session);
   // Persist the binding (hash only, never the raw secret) so a restarted
   // application instance can re-authenticate the same browser session.
-  env.interactionStore.saveSessionBinding({
+  await env.guestData.saveSessionBinding({
     sessionId: sessionKey,
     sessionSecretHash: sessionKey,
     principalId,
@@ -1913,15 +1914,15 @@ const GUEST_HTML_HEADERS = {
   ...GUEST_HTML_SECURITY_HEADERS,
 } as const;
 
-function findGuestThreadForOffer(
+async function findGuestThreadForOffer(
   env: LocalGuestEnvironment,
   offerId: string,
   principal: { readonly id: string; readonly tenantId?: string },
   principalIds: readonly string[] = [principal.id],
-): string | null {
+): Promise<string | null> {
   if (!principal.tenantId) return null;
   // ADR 0093: the session principal's own threads and its account's Linked Principals' threads, and nothing else.
-  for (const thread of env.interactionStore.findThreadsForPrincipals(
+  for (const thread of await env.guestData.findThreadsForPrincipals(
     principalIds.includes(principal.id) ? principalIds : [],
     principal.tenantId,
   )) {
@@ -1942,15 +1943,15 @@ function findGuestThreadForOffer(
 }
 
 /** The conversation a payment page belongs to and its journey, for the shared app frame. */
-function threadFrame(
+async function threadFrame(
   app: LocalGuestApp,
   offerId: string,
   principal: CommandPrincipal,
   principalIds?: readonly string[],
-): { readonly threadId: string | null; readonly journey?: GuestJourney } {
-  const threadId = findGuestThreadForOffer(app.environment, offerId, principal, principalIds);
+): Promise<{ readonly threadId: string | null; readonly journey?: GuestJourney }> {
+  const threadId = await findGuestThreadForOffer(app.environment, offerId, principal, principalIds);
   const journey =
-    threadId === null ? undefined : app.journeyForThread(threadId, principal);
+    threadId === null ? undefined : await app.journeyForThread(threadId, principal);
   return { threadId, ...(journey === undefined ? {} : { journey }) };
 }
 
@@ -2138,7 +2139,7 @@ export function createGuestRequestHandler(
   // Guest Account sign-in (issue 06). Disabled, not defaulted, when its key, sender or session scoping is missing.
   const accountComposition =
     options.guestAccounts === undefined
-      ? loadGuestAccountComposition(process.env)
+      ? loadGuestAccountComposition(process.env) as GuestAccountComposition
       : options.guestAccounts;
   // Q7: a missing or short key leaves the key unusable, which disables sign-in.
   const accountKey = usableCodeHashingKey(accountComposition?.codeHashingKey);
@@ -2151,7 +2152,10 @@ export function createGuestRequestHandler(
           database: env.database,
           tenantId: env.config.tenantId,
           clock: () => env.clock(),
-          requests: env.interactionStore,
+           requests: env.interactionStore,
+           ...(accountComposition.remoteAccounts === undefined ? {} : { remoteAccounts: accountComposition.remoteAccounts }),
+           ...(accountComposition.remoteAccountState === undefined ? {} : { accountState: accountComposition.remoteAccountState }),
+           ...(accountComposition.remoteAssuranceInvalidator === undefined ? {} : { assuranceInvalidator: accountComposition.remoteAssuranceInvalidator }),
           composition: {
             ...accountComposition,
             codeHashingKey: accountKey,
@@ -2218,7 +2222,12 @@ export function createGuestRequestHandler(
         deterministicPsp: !production,
         ...(payments === undefined ? {} : { payments }),
       },
-      { database: shared.database, unitRepository: shared.unitRepository },
+      {
+        database: shared.database,
+        unitRepository: shared.unitRepository,
+        guestData: shared.guestData,
+        guestDataIsRemote: shared.guestDataIsRemote,
+      },
     );
     sessionRuntimesBuilt += 1;
     const runtime = {
@@ -2251,28 +2260,28 @@ export function createGuestRequestHandler(
   const interactionCookieLine = (sessionId: string): string =>
     `${GUEST_SESSION_COOKIE}=${sessionId};${secureCookie ? " Secure;" : ""} HttpOnly; SameSite=Lax; Path=/`;
   /** Binds a fresh interaction session and retires the previous binding (ADR 0093): the old cookie stops working. */
-  const replaceInteractionSession = (
+  const replaceInteractionSession = async (
     previous: BrowserSession | null,
     principalId: string,
     keepOwnConversations: boolean,
-  ): string => {
+  ): Promise<string> => {
     const sessionId = `gs-${crypto.randomUUID()}`;
-    const registered = registerBrowserSession(env, browserSessions, sessionId, principalId);
+    const registered = await registerBrowserSession(env, browserSessions, sessionId, principalId);
     if (previous !== null && keepOwnConversations) {
       // ADR 0093 continuity: only conversations this same principal saved carry over, never a linked or foreign one.
       for (const threadId of previous.threadIds) {
-        const saved = env.interactionStore.findThread(threadId);
+        const saved = await env.guestData.findThread(threadId);
         if (saved && saved.principalId === principalId && saved.tenantId === env.config.tenantId)
           registered.threadIds.add(threadId);
       }
     }
     if (previous !== null) {
-      env.interactionStore.deleteSessionBinding(previous.sessionKey);
+      await env.guestData.deleteSessionBinding(previous.sessionKey);
       browserSessions.delete(previous.sessionKey);
     }
     return sessionId;
   };
-  const existingBrowserSession = (req: HttpRequestLike): BrowserSession | null => {
+  const existingBrowserSession = async (req: HttpRequestLike): Promise<BrowserSession | null> => {
     const raw = readGuestSession(req);
     if (typeof raw !== "string") return null;
     return resolveBrowserSession(env, browserSessions, raw, undefined, accountCredentialsOf(req), guestAccounts);
@@ -2293,15 +2302,15 @@ export function createGuestRequestHandler(
     | { readonly kind: "limited"; readonly retryAfterSeconds: number }
     | { readonly kind: "none" };
   /** Sign-in needs a browser session to link. A new one is issued only when no cookie exists and no invite gate applies, and the budget admits it. */
-  const sessionForSignIn = (
+  const sessionForSignIn = async (
     req: HttpRequestLike,
     res: HttpResponseLike,
     address: string,
-  ): SignInSessionOutcome => {
+  ): Promise<SignInSessionOutcome> => {
     const raw = readGuestSession(req);
     if (raw === null) return { kind: "none" };
     if (raw !== undefined) {
-      const existing = existingBrowserSession(req);
+      const existing = await existingBrowserSession(req);
       if (existing) return { kind: "session", session: existing };
     }
     if (options.betaInviteCode !== undefined) return { kind: "none" };
@@ -2311,22 +2320,22 @@ export function createGuestRequestHandler(
     const sessionId = issueGuestSession(res, secureCookie);
     return {
       kind: "session",
-      session: registerBrowserSession(env, browserSessions, sessionId, `guest-${crypto.randomUUID()}`),
+      session: await registerBrowserSession(env, browserSessions, sessionId, `guest-${crypto.randomUUID()}`),
     };
   };
   /**
    * The account page for a signed-in browser (issue 07). The phone is read through the same contact view the Booking Request uses,
    * so the page and the next request agree (AC6). Without a browser session the account's own contact row is read.
    */
-  const accountPageHtml = (
+  const accountPageHtml = async (
     session: BrowserSession | null,
     status: { readonly account: GuestAccount; readonly governmentIdVerified: boolean },
     extra: Partial<Omit<AccountPageInput, "email" | "phone" | "governmentIdVerified">>,
-  ): string => {
+  ): Promise<string> => {
     const tenantId = env.config.tenantId;
     const contact = session
-      ? env.guestContactApp.repository.find(session.principalId, tenantId)
-      : env.guestContactApp.repository.find(status.account.accountGuestId, tenantId);
+      ? await env.guestData.findContact(session.principalId, tenantId)
+      : await env.guestData.findContact(status.account.accountGuestId, tenantId);
     return renderAccountHtml({
       email: status.account.email,
       phone: contact?.phoneNumber ?? null,
@@ -2336,8 +2345,8 @@ export function createGuestRequestHandler(
   };
 
   /** Issue 08: the sign-in offer on a chat response, for the browser that asked (its own principal and account only). */
-  const withSignInOffer = (req: HttpRequestLike, environment: LocalGuestEnvironment, threadId: string, surfaces: readonly GuestSurfacePayload[]) => {
-    const session = resolveBrowserSession(
+  const withSignInOffer = async (req: HttpRequestLike, environment: LocalGuestEnvironment, threadId: string, surfaces: readonly GuestSurfacePayload[]) => {
+    const session = await resolveBrowserSession(
       environment,
       browserSessions,
       readGuestSession(req),
@@ -2349,7 +2358,7 @@ export function createGuestRequestHandler(
     return surfacesWithSignInOffer(surfaces, () =>
       signInOfferFor({
         accounts: guestAccounts,
-        ownContacts: new SqliteGuestContactRepository(environment.database),
+        ownContacts: { find: () => null },
         principal: { id: session.principalId, role: "guest", tenantId: session.tenantId },
         credentials: accountCredentialsOf(req),
         returnPath: `/?threadId=${encodeURIComponent(threadId)}`,
@@ -2357,12 +2366,12 @@ export function createGuestRequestHandler(
     );
   };
 
-  const sendTurnResult = (req: HttpRequestLike, res: HttpResponseLike, environment: LocalGuestEnvironment, threadId: string, result: GuestTurnResult): void => {
+  const sendTurnResult = async (req: HttpRequestLike, res: HttpResponseLike, environment: LocalGuestEnvironment, threadId: string, result: GuestTurnResult): Promise<void> => {
     if (!result.ok) {
       sendJson(res, 200, result);
       return;
     }
-    const withOffer = withSignInOffer(req, environment, threadId, result.surfaces);
+    const withOffer = await withSignInOffer(req, environment, threadId, result.surfaces);
     sendJson(res, 200, { ...result, surfaces: withOffer.surfaces }, withOffer.offered ? NO_STORE : {});
   };
 
@@ -2399,9 +2408,9 @@ export function createGuestRequestHandler(
           res.end(renderSignInUnavailableHtml());
           return;
         }
-        const previous = existingBrowserSession(req);
+        const previous = await existingBrowserSession(req);
         if (everywhere && ended !== null) {
-          env.interactionStore.deleteSessionBindingsForPrincipals(ended.principalIds, env.config.tenantId);
+          await env.guestData.deleteSessionBindingsForPrincipals(ended.principalIds, env.config.tenantId);
           for (const [key, cached] of browserSessions) {
             if (ended.principalIds.includes(cached.principalId)) browserSessions.delete(key);
           }
@@ -2413,7 +2422,7 @@ export function createGuestRequestHandler(
           res.end();
           return;
         }
-        const interactionId = replaceInteractionSession(previous, `guest-${crypto.randomUUID()}`, false);
+        const interactionId = await replaceInteractionSession(previous, `guest-${crypto.randomUUID()}`, false);
         res.setHeader("Set-Cookie", [interactionCookieLine(interactionId), clearedAccountCookieLine()]);
         res.writeHead(303, { Location: "/", "Cache-Control": "no-store" });
         res.end();
@@ -2434,12 +2443,12 @@ export function createGuestRequestHandler(
       // Issue 07: a signed-out browser is sent to sign-in and sees no account data (AC1).
       // A presented interaction cookie that no longer resolves (for example the pre-sign-in value) never shows the account (ADR
       // 0093), so it is treated as signed out. Without that cookie, a live account session alone is enough.
-      const session = existingBrowserSession(req);
+      const session = await existingBrowserSession(req);
       const staleInteraction = typeof readGuestSession(req) === "string" && session === null;
-      const account = accounts.resolveAccount(credentials);
+      const account = await accounts.resolveAccount(credentials);
       // Review D4: a presented interaction session must be linked to the same account as the account cookie, or nothing is shown.
-      const mismatched = session !== null && account !== null && accounts.linkedAccountOf(session.principalId) !== account.accountGuestId;
-      const status = account && !staleInteraction && !mismatched ? accounts.accountStatus(account.accountGuestId) : null;
+      const mismatched = session !== null && account !== null && await accounts.linkedAccountOf(session.principalId) !== account.accountGuestId;
+      const status = account && !staleInteraction && !mismatched ? await accounts.accountStatus(account.accountGuestId) : null;
       if (!status) {
         res.writeHead(303, { Location: "/account/sign-in?return=/account", "Cache-Control": "no-store" });
         res.end();
@@ -2448,7 +2457,7 @@ export function createGuestRequestHandler(
       // Review D3: the notice is read from a fixed allowlist; any other value is ignored and never reflected.
       const notice = accountNoticeFrom(url.searchParams.get("notice"));
       res.writeHead(200, ACCOUNT_PAGE_HEADERS);
-      res.end(accountPageHtml(session, status, notice === undefined ? {} : { notice }));
+      res.end(await accountPageHtml(session, status, notice === undefined ? {} : { notice }));
       return;
     }
     if (req.method !== "POST") {
@@ -2476,7 +2485,7 @@ export function createGuestRequestHandler(
     };
 
     if (path === "/account/sign-in") {
-      const admittedSession = sessionForSignIn(req, res, accounts.clientAddress(req));
+      const admittedSession = await sessionForSignIn(req, res, accounts.clientAddress(req));
       if (admittedSession.kind === "limited") {
         sendAccountRateLimited(res, admittedSession.retryAfterSeconds);
         return;
@@ -2511,7 +2520,7 @@ export function createGuestRequestHandler(
     }
 
     if (path === "/account/sign-in/code") {
-      const admittedSession = sessionForSignIn(req, res, accounts.clientAddress(req));
+      const admittedSession = await sessionForSignIn(req, res, accounts.clientAddress(req));
       if (admittedSession.kind === "limited") {
         sendAccountRateLimited(res, admittedSession.retryAfterSeconds);
         return;
@@ -2531,7 +2540,7 @@ export function createGuestRequestHandler(
       }
       let verified: GuestAccountSession;
       try {
-        verified = accounts.verifySignInCode({ challengeId, email, code, clientAddress: accounts.clientAddress(req) });
+        verified = await accounts.verifySignInCode({ challengeId, email, code, clientAddress: accounts.clientAddress(req) });
       } catch (error) {
         if (!(error instanceof GuestAccountAuthorityError)) throw error;
         if (error.code === "rate_limited") {
@@ -2548,7 +2557,8 @@ export function createGuestRequestHandler(
       }
       // The link uses the authority's verified session (ADR 0093, issue 05 Human decision 2) and happens before any cookie.
       try {
-        accounts.linkVerifiedSignIn(session.principalId, verified);
+         if (accounts.linkVerifiedSignInAcrossDomains) await accounts.linkVerifiedSignInAcrossDomains(session.principalId, verified);
+         else await accounts.linkVerifiedSignIn(session.principalId, verified);
       } catch (error) {
         if (error instanceof GuestAccountAuthorityError && error.code === "account_conflict") {
           res.writeHead(409, ACCOUNT_PAGE_HEADERS);
@@ -2562,7 +2572,7 @@ export function createGuestRequestHandler(
         throw error;
       }
       // ADR 0093: sign-in rotates the interaction cookie, so the pre-sign-in value no longer authenticates.
-      const interactionId = replaceInteractionSession(session, session.principalId, true);
+      const interactionId = await replaceInteractionSession(session, session.principalId, true);
       const maxAge = Math.max(1, Math.floor((Date.parse(verified.expiresAt) - env.clock().getTime()) / 1000));
       res.setHeader("Set-Cookie", [
         interactionCookieLine(interactionId),
@@ -2574,23 +2584,23 @@ export function createGuestRequestHandler(
     }
 
     if (path === "/account/email" || path === "/account/email/code" || path === "/account/phone") {
-      const account = accounts.resolveAccount(credentials);
-      const status = account ? accounts.accountStatus(account.accountGuestId) : null;
+      const account = await accounts.resolveAccount(credentials);
+      const status = account ? await accounts.accountStatus(account.accountGuestId) : null;
       if (!credentials || !account || !status) {
         sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED", true);
         return;
       }
-      const session = existingBrowserSession(req);
+      const session = await existingBrowserSession(req);
       // Review D4: an interaction session of another account refuses the request before anything is read or written.
-      if (session !== null && accounts.linkedAccountOf(session.principalId) !== account.accountGuestId) {
+      if (session !== null && await accounts.linkedAccountOf(session.principalId) !== account.accountGuestId) {
         res.writeHead(303, { Location: "/account/sign-in?return=/account", "Cache-Control": "no-store" });
         res.end();
         return;
       }
       const minutes = accounts.signInCodeLifetimeMinutes;
-      const sendAccountPage = (extra: Partial<Omit<AccountPageInput, "email" | "phone" | "governmentIdVerified">>, status400: boolean): void => {
+      const sendAccountPage = async (extra: Partial<Omit<AccountPageInput, "email" | "phone" | "governmentIdVerified">>, status400: boolean): Promise<void> => {
         res.writeHead(status400 ? 400 : 200, ACCOUNT_PAGE_HEADERS);
-        res.end(accountPageHtml(session, status, extra));
+        res.end(await accountPageHtml(session, status, extra));
       };
       if (path === "/account/phone") {
         const typed = form.get("phone") ?? "";
@@ -2599,13 +2609,13 @@ export function createGuestRequestHandler(
           phoneNumber = normalizeNigerianPhoneNumber(typed);
         } catch (error) {
           // ADR 0078: the typed value survives and the existing validation message is shown inline.
-          sendAccountPage({ phoneDraft: typed, phoneError: { code: "invalid_phone", message: error instanceof Error ? error.message : GUEST_ACCOUNT_COPY.errors.phoneSaveFailed } }, true);
+          await sendAccountPage({ phoneDraft: typed, phoneError: { code: "invalid_phone", message: error instanceof Error ? error.message : GUEST_ACCOUNT_COPY.errors.phoneSaveFailed } }, true);
           return;
         }
         try {
-          env.guestContactApp.repository.savePhone({ guestId: session ? session.principalId : account.accountGuestId, tenantId: env.config.tenantId, phoneNumber });
+          await env.guestData.savePhone({ guestId: session ? session.principalId : account.accountGuestId, tenantId: env.config.tenantId, phoneNumber });
         } catch {
-          sendAccountPage({ phoneDraft: typed, phoneError: { code: "phone_save_failed", message: GUEST_ACCOUNT_COPY.errors.phoneSaveFailed } }, true);
+          await sendAccountPage({ phoneDraft: typed, phoneError: { code: "phone_save_failed", message: GUEST_ACCOUNT_COPY.errors.phoneSaveFailed } }, true);
           return;
         }
         res.writeHead(303, { Location: "/account?notice=phone-saved", "Cache-Control": "no-store" });
@@ -2618,11 +2628,11 @@ export function createGuestRequestHandler(
         try {
           normalized = normalizeContactEmail(typed);
         } catch {
-          sendAccountPage({ emailDraft: typed, emailError: { code: "invalid_email", message: GUEST_ACCOUNT_COPY.errors.invalidEmail } }, true);
+          await sendAccountPage({ emailDraft: typed, emailError: { code: "invalid_email", message: GUEST_ACCOUNT_COPY.errors.invalidEmail } }, true);
           return;
         }
         if (normalized === status.account.email) {
-          sendAccountPage({ emailDraft: typed, emailError: { code: "same_email", message: GUEST_ACCOUNT_COPY.errors.sameEmail } }, true);
+          await sendAccountPage({ emailDraft: typed, emailError: { code: "same_email", message: GUEST_ACCOUNT_COPY.errors.sameEmail } }, true);
           return;
         }
         try {
@@ -2640,11 +2650,11 @@ export function createGuestRequestHandler(
           }
           // Q6: the same address is refused by the authority too; a race with the check above answers the same page, never a 500.
           if (error instanceof GuestAccountAuthorityError && error.code === "invalid_input") {
-            sendAccountPage({ emailDraft: typed, emailError: { code: "same_email", message: GUEST_ACCOUNT_COPY.errors.sameEmail } }, true);
+            await sendAccountPage({ emailDraft: typed, emailError: { code: "same_email", message: GUEST_ACCOUNT_COPY.errors.sameEmail } }, true);
             return;
           }
           if (error instanceof SignInDeliveryError) {
-            sendAccountPage({ emailDraft: typed, emailError: { code: "send_failed", message: GUEST_ACCOUNT_COPY.errors.sendFailed } }, true);
+            await sendAccountPage({ emailDraft: typed, emailError: { code: "send_failed", message: GUEST_ACCOUNT_COPY.errors.sendFailed } }, true);
             return;
           }
           throw error;
@@ -2658,11 +2668,11 @@ export function createGuestRequestHandler(
       try {
         normalizeContactEmail(newEmail);
       } catch {
-        sendAccountPage({ emailError: { code: "invalid_email", message: GUEST_ACCOUNT_COPY.errors.invalidEmail } }, true);
+        await sendAccountPage({ emailError: { code: "invalid_email", message: GUEST_ACCOUNT_COPY.errors.invalidEmail } }, true);
         return;
       }
       try {
-        accounts.confirmEmailChange({ credentials: credentials, accountGuestId: account.accountGuestId, challengeId, email: newEmail, code, clientAddress: accounts.clientAddress(req) });
+        await accounts.confirmEmailChange({ credentials: credentials, accountGuestId: account.accountGuestId, challengeId, email: newEmail, code, clientAddress: accounts.clientAddress(req) });
       } catch (error) {
         if (!(error instanceof GuestAccountAuthorityError)) throw error;
         if (error.code === "rate_limited") {
@@ -2674,7 +2684,7 @@ export function createGuestRequestHandler(
           return;
         }
         if (error.code === "account_conflict") {
-          sendAccountPage({ emailError: { code: "email_in_use", message: GUEST_ACCOUNT_COPY.errors.emailInUse } }, true);
+          await sendAccountPage({ emailError: { code: "email_in_use", message: GUEST_ACCOUNT_COPY.errors.emailInUse } }, true);
           return;
         }
         res.writeHead(200, ACCOUNT_PAGE_HEADERS);
@@ -2688,8 +2698,8 @@ export function createGuestRequestHandler(
 
     if (path === "/account/sign-out") {
       // Sign-out is never rate limited (orchestrator decision): the budget meters only code sends and new bindings.
-      accounts.signOut(credentials);
-      const previous = existingBrowserSession(req);
+      await accounts.signOut(credentials);
+      const previous = await existingBrowserSession(req);
       if (previous === null) {
         // No presented session: nothing to rotate, so no binding is written and the account cookie is cleared.
         res.setHeader("Set-Cookie", clearedAccountCookieLine());
@@ -2697,7 +2707,7 @@ export function createGuestRequestHandler(
         res.end();
         return;
       }
-      const interactionId = replaceInteractionSession(previous, `guest-${crypto.randomUUID()}`, false);
+      const interactionId = await replaceInteractionSession(previous, `guest-${crypto.randomUUID()}`, false);
       res.setHeader("Set-Cookie", [interactionCookieLine(interactionId), clearedAccountCookieLine()]);
       res.writeHead(303, { Location: "/", "Cache-Control": "no-store" });
       res.end();
@@ -2705,16 +2715,16 @@ export function createGuestRequestHandler(
     }
 
     if (path === "/account/sign-out-everywhere") {
-      const account = accounts.resolveAccount(credentials);
+      const account = await accounts.resolveAccount(credentials);
       if (!account) {
         sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED", true);
         return;
       }
       // ADR 0093 / ADR 0070: every account session ends, and so does the interaction authority of each Linked Principal.
-      const presentedSession = existingBrowserSession(req);
-      const principals = accounts.principalsOf(account.accountGuestId);
-      accounts.signOutEverywhere(account.accountGuestId);
-      env.interactionStore.deleteSessionBindingsForPrincipals(principals, account.tenantId);
+      const presentedSession = await existingBrowserSession(req);
+      const principals = await accounts.principalsOf(account.accountGuestId);
+      await accounts.signOutEverywhere(account.accountGuestId);
+      await env.guestData.deleteSessionBindingsForPrincipals(principals, account.tenantId);
       for (const [key, cached] of browserSessions) {
         if (principals.includes(cached.principalId)) browserSessions.delete(key);
       }
@@ -2725,7 +2735,7 @@ export function createGuestRequestHandler(
         res.end();
         return;
       }
-      const interactionId = replaceInteractionSession(presentedSession, `guest-${crypto.randomUUID()}`, false);
+      const interactionId = await replaceInteractionSession(presentedSession, `guest-${crypto.randomUUID()}`, false);
       res.setHeader("Set-Cookie", [interactionCookieLine(interactionId), clearedAccountCookieLine()]);
       res.writeHead(303, { Location: "/", "Cache-Control": "no-store" });
       res.end();
@@ -2747,7 +2757,7 @@ export function createGuestRequestHandler(
       const rawSession = readGuestSession(req);
       let requestSession: BrowserSession | null = null;
       if (rawSession !== undefined && rawSession !== null) {
-        requestSession = resolveBrowserSession(
+        requestSession = await resolveBrowserSession(
           env,
           browserSessions,
           rawSession,
@@ -2830,10 +2840,9 @@ export function createGuestRequestHandler(
             return;
           }
           const sessionId = issueGuestSession(res, secureCookie);
-          const principalId = sessionScopedGuestPrincipals
-            ? `guest-${crypto.randomUUID()}`
-            : app.environment.config.guestId;
-          const registered = registerBrowserSession(
+          let principalId = app.environment.config.guestId;
+          if (sessionScopedGuestPrincipals) principalId = `guest-${crypto.randomUUID()}`;
+          const registered = await registerBrowserSession(
             env,
             browserSessions,
             sessionId,
@@ -2849,7 +2858,7 @@ export function createGuestRequestHandler(
         } else {
           // A well-formed cookie must resolve to a durable binding; an unknown
           // id is rejected rather than silently minted into a new session.
-          const resolved = resolveBrowserSession(
+          const resolved = await resolveBrowserSession(
             app.environment,
             browserSessions,
             rawSession,
@@ -2916,7 +2925,7 @@ export function createGuestRequestHandler(
           url.pathname,
         );
       if (req.method === "POST" && requestPost) {
-        const session = resolveBrowserSession(
+        const session = await resolveBrowserSession(
           env,
           browserSessions,
           readGuestSession(req),
@@ -2946,7 +2955,7 @@ export function createGuestRequestHandler(
           role: "guest",
           tenantId: session.tenantId,
         };
-        const page = app.conventionalBookingPage(kind, id, principal);
+        const page = await app.conventionalBookingPage(kind, id, principal);
         if (!page) {
           sendPageError(req, res, 404, "BOOKING_RECORD_NOT_FOUND");
           return;
@@ -2968,7 +2977,7 @@ export function createGuestRequestHandler(
             sendPageError(req, res, 409, "STALE_SURFACE");
             return;
           }
-          const result = app.conventionalRequestAction(
+          const result = await app.conventionalRequestAction(
             id,
             action,
             form.get("surfaceId") ?? "",
@@ -2983,7 +2992,7 @@ export function createGuestRequestHandler(
           destination = `/conversation?threadId=${encodeURIComponent(page.threadId)}`;
         } else if (kind === "request" && action === "search") {
           destination =
-            app.conventionalRequestSearch(id, principal) ?? undefined;
+            (await app.conventionalRequestSearch(id, principal)) ?? undefined;
         }
         if (!destination) {
           sendPageError(req, res, 409, "ACTION_NOT_AUTHORIZED");
@@ -3002,7 +3011,7 @@ export function createGuestRequestHandler(
           url.pathname,
         );
       if (req.method === "POST" && offerPost) {
-        const session = resolveBrowserSession(
+        const session = await resolveBrowserSession(
           env,
           browserSessions,
           readGuestSession(req),
@@ -3030,7 +3039,7 @@ export function createGuestRequestHandler(
           role: "guest",
           tenantId: session.tenantId,
         };
-        const page = app.conventionalBookingPage("offer", id, principal);
+        const page = await app.conventionalBookingPage("offer", id, principal);
         if (!page) {
           sendPageError(req, res, 404, "BOOKING_RECORD_NOT_FOUND");
           return;
@@ -3051,7 +3060,7 @@ export function createGuestRequestHandler(
             sendPageError(req, res, 409, "STALE_SURFACE");
             return;
           }
-          const result = app.conventionalOfferAccept(
+          const result = await app.conventionalOfferAccept(
             id,
             form.get("surfaceId") ?? "",
             principal,
@@ -3063,7 +3072,7 @@ export function createGuestRequestHandler(
           destination = conventionalCardPaymentRoute(id);
         } else if (offerPost[2] === "conversation")
           destination = `/conversation?threadId=${encodeURIComponent(page.threadId)}`;
-        else destination = app.conventionalOfferSearch(id, principal);
+        else destination = await app.conventionalOfferSearch(id, principal);
         if (!destination) {
           sendPageError(req, res, 409, "ACTION_NOT_AUTHORIZED");
           return;
@@ -3083,7 +3092,7 @@ export function createGuestRequestHandler(
       if (bookingPageMatch) {
         // ADR-0070/0080: booking records are never public. Unlike /stays/*,
         // these routes need the owner's browser session and re-check ownership.
-        const session = resolveBrowserSession(
+        const session = await resolveBrowserSession(
           env,
           browserSessions,
           readGuestSession(req),
@@ -3107,7 +3116,7 @@ export function createGuestRequestHandler(
           role: "guest",
           tenantId: session.tenantId,
         };
-        const bookingPage = app.conventionalBookingPage(
+        const bookingPage = await app.conventionalBookingPage(
           bookingPageMatch.kind,
           recordId,
           principal,
@@ -3120,7 +3129,7 @@ export function createGuestRequestHandler(
         const signInOffer = isSentOrConfirmed(bookingPage)
           ? signInOfferFor({
               accounts: guestAccounts,
-              ownContacts: new SqliteGuestContactRepository(app.environment.database),
+              ownContacts: { find: () => null },
               principal,
               credentials: accountCredentialsOf(req),
               returnPath: url.pathname,
@@ -3142,7 +3151,7 @@ export function createGuestRequestHandler(
           res.end("Origin rejected");
           return;
         }
-        const session = resolveBrowserSession(
+        const session = await resolveBrowserSession(
           env,
           browserSessions,
           readGuestSession(req),
@@ -3178,7 +3187,7 @@ export function createGuestRequestHandler(
         return;
       }
       if (req.method === "GET" && paymentPageMatch) {
-        const session = resolveBrowserSession(
+        const session = await resolveBrowserSession(
           env,
           browserSessions,
           readGuestSession(req),
@@ -3231,8 +3240,8 @@ export function createGuestRequestHandler(
             artifact.facts.journeyStage === "deposit_payment_processing";
           const status = guestPaymentStatus(artifact.facts.status, processing);
           const contactEmailMissing =
-            !app.environment.guestContactApp.get(principal)?.contactEmail;
-          const threadId = findGuestThreadForOffer(
+            !(await app.environment.guestData.findContact(principal.id, principal.tenantId!))?.contactEmail;
+          const threadId = await findGuestThreadForOffer(
             app.environment,
             offerId,
             principal, session.identity.principalIds,
@@ -3339,7 +3348,7 @@ export function createGuestRequestHandler(
             pageShell({
               title: `${status.label} · Shortlet`,
               width: "narrow",
-              frame: appFrameHtml(threadFrame(app, offerId, principal, session.identity.principalIds)),
+              frame: appFrameHtml(await threadFrame(app, offerId, principal, session.identity.principalIds)),
               body: `<div class="guest-editorial">${paymentScreenHtml(content, ticket, breakdown, canContinue ? (choice !== undefined ? { sections: choice } : { actions: `<a class="ui-button ui-button--primary ui-button--block" href="${href}">${label}</a>` }) : {})}</div>`,
             }),
           );
@@ -3366,7 +3375,7 @@ export function createGuestRequestHandler(
           res.end("Origin rejected");
           return;
         }
-        const session = resolveBrowserSession(
+        const session = await resolveBrowserSession(
           env,
           browserSessions,
           readGuestSession(req),
@@ -3420,7 +3429,7 @@ export function createGuestRequestHandler(
         const manualPage = `/payments/offers/${encodeURIComponent(offerId)}/manual-transfer`;
         const receiptMaxBytes =
           app.environment.config.receiptMaxBytes ?? DEFAULT_RECEIPT_MAX_BYTES;
-        const render = (status: number, error = "") => {
+        const render = async (status: number, error = "") => {
           const transfer = manual.current(offerId, app.environment.clock());
           if (!transfer) {
             res.writeHead(303, {
@@ -3444,7 +3453,7 @@ export function createGuestRequestHandler(
               now: app.environment.clock(),
               receiptMaxBytes,
               error,
-              ...threadFrame(app, offerId, principal, session.identity.principalIds),
+              ...await threadFrame(app, offerId, principal, session.identity.principalIds),
               contractId:
                 transfer.decision?.kind === "confirmed"
                   ? transfer.decision.contractId
@@ -3473,7 +3482,7 @@ export function createGuestRequestHandler(
           );
         };
         if (req.method === "GET") {
-          render(200);
+          await render(200);
           return;
         }
         if (!manualMatch[2]) {
@@ -3500,12 +3509,12 @@ export function createGuestRequestHandler(
         const bodyLimit = receiptMaxBytes + 16 * 1024;
         if (!boundary) {
           req.resume();
-          render(400, "Choose a receipt file to upload.");
+          await render(400, "Choose a receipt file to upload.");
           return;
         }
         if (Number.isFinite(declared) && declared > bodyLimit) {
           req.resume();
-          render(
+          await render(
             413,
             "That file is too large. Upload a smaller photo or PDF of your receipt.",
           );
@@ -3515,7 +3524,7 @@ export function createGuestRequestHandler(
         try {
           body = await readBoundedBody(req, bodyLimit);
         } catch {
-          render(
+          await render(
             413,
             "That file is too large. Upload a smaller photo or PDF of your receipt.",
           );
@@ -3525,7 +3534,7 @@ export function createGuestRequestHandler(
         try {
           bytes = multipartFile(body, boundary, "receipt");
         } catch {
-          render(
+          await render(
             400,
             "The upload could not be read. Choose your receipt file again.",
           );
@@ -3558,7 +3567,7 @@ export function createGuestRequestHandler(
                     : problem === "receipt_already_uploaded"
                       ? "Your receipt was already received."
                       : "The receipt was not accepted. No payment was recorded.";
-          render(
+          await render(
             problem === "receipt_too_large"
               ? 413
               : problem === "payment_window_closed" ||
@@ -3589,7 +3598,7 @@ export function createGuestRequestHandler(
           res.end("Origin rejected");
           return;
         }
-        const session = resolveBrowserSession(
+        const session = await resolveBrowserSession(
           env,
           browserSessions,
           readGuestSession(req),
@@ -3681,7 +3690,7 @@ export function createGuestRequestHandler(
             transfer,
             now: app.environment.clock(),
             contract: transfers.getBookingContract(offerId) ?? null,
-            ...threadFrame(app, offerId, principal, session.identity.principalIds),
+            ...await threadFrame(app, offerId, principal, session.identity.principalIds),
             localPayment: options.localPayment === true,
             stay: {
               unitTitle: paymentFacts.unit,
@@ -3718,7 +3727,7 @@ export function createGuestRequestHandler(
           res.end("Origin rejected");
           return;
         }
-        const session = resolveBrowserSession(
+        const session = await resolveBrowserSession(
           env,
           browserSessions,
           readGuestSession(req),
@@ -3776,7 +3785,7 @@ export function createGuestRequestHandler(
       if (req.method === "GET" && continuationMatch) {
         // ADR-0087: payment initialization is a server-owned continuation, not
         // a browser-selected amount, currency, reference, callback, or URL.
-        const session = resolveBrowserSession(
+        const session = await resolveBrowserSession(
           env,
           browserSessions,
           readGuestSession(req),
@@ -3869,7 +3878,7 @@ export function createGuestRequestHandler(
         req.method === "GET" &&
         url.pathname === "/payments/local/checkout"
       ) {
-        const session = resolveBrowserSession(
+        const session = await resolveBrowserSession(
           env,
           browserSessions,
           readGuestSession(req),
@@ -3908,7 +3917,7 @@ export function createGuestRequestHandler(
           res.end("Origin rejected");
           return;
         }
-        const session = resolveBrowserSession(
+        const session = await resolveBrowserSession(
           env,
           browserSessions,
           readGuestSession(req),
@@ -3955,7 +3964,7 @@ export function createGuestRequestHandler(
             checkout.offerId,
             principal,
           );
-          const threadId = findGuestThreadForOffer(
+          const threadId = await findGuestThreadForOffer(
             app.environment,
             checkout.offerId,
             principal, session.identity.principalIds,
@@ -3985,7 +3994,7 @@ export function createGuestRequestHandler(
           sendJson(res, 503, { ok: false, code: "PAYSTACK_UNAVAILABLE" });
           return;
         }
-        const session = resolveBrowserSession(
+        const session = await resolveBrowserSession(
           env,
           browserSessions,
           readGuestSession(req),
@@ -4035,7 +4044,7 @@ export function createGuestRequestHandler(
             checkout.offerId,
             principal,
           );
-          const threadId = findGuestThreadForOffer(
+          const threadId = await findGuestThreadForOffer(
             app.environment,
             checkout.offerId,
             principal, session.identity.principalIds,
@@ -4057,7 +4066,7 @@ export function createGuestRequestHandler(
           });
           res.end();
         } catch {
-          const threadId = findGuestThreadForOffer(
+          const threadId = await findGuestThreadForOffer(
             app.environment,
             checkout.offerId,
             principal, session.identity.principalIds,
@@ -4157,7 +4166,7 @@ export function createGuestRequestHandler(
         url.pathname === "/guest/contact/phone" ||
         url.pathname === "/guest/contact/email"
       ) {
-        const session = resolveBrowserSession(
+        const session = await resolveBrowserSession(
           env,
           browserSessions,
           readGuestSession(req),
@@ -4182,7 +4191,7 @@ export function createGuestRequestHandler(
           res.writeHead(200, GUEST_HTML_HEADERS);
           res.end(
             renderGuestContactHtml(
-              app.environment.guestContactApp.get(contactPrincipal),
+              await app.environment.guestData.findContact(contactPrincipal.id, contactPrincipal.tenantId!),
               "",
               requestedKind,
             ),
@@ -4204,26 +4213,22 @@ export function createGuestRequestHandler(
             const expectedRevision = Number(form.get("expectedRevision"));
             if (contactKind === "phone") {
               submittedValue = form.get("phoneNumber") ?? "";
-              app.environment.guestContactApp.submitPhone(
-                {
+              await app.environment.guestData.savePhone({
+                  guestId: contactPrincipal.id, tenantId: contactPrincipal.tenantId!,
                   phoneNumber: submittedValue,
                   ...(Number.isInteger(expectedRevision)
                     ? { expectedRevision }
                     : {}),
-                },
-                contactPrincipal,
-              );
+                });
             } else {
               submittedValue = form.get("contactEmail") ?? "";
-              app.environment.guestContactApp.submitEmail(
-                {
+              await app.environment.guestData.saveEmail({
+                  guestId: contactPrincipal.id, tenantId: contactPrincipal.tenantId!,
                   contactEmail: submittedValue,
                   ...(Number.isInteger(expectedRevision)
                     ? { expectedRevision }
                     : {}),
-                },
-                contactPrincipal,
-              );
+                });
             }
             res.writeHead(303, { Location: "/guest/contact" });
             res.end();
@@ -4232,7 +4237,7 @@ export function createGuestRequestHandler(
             res.writeHead(400, GUEST_HTML_HEADERS);
             res.end(
               renderGuestContactHtml(
-                app.environment.guestContactApp.get(contactPrincipal),
+                await app.environment.guestData.findContact(contactPrincipal.id, contactPrincipal.tenantId!),
                 error instanceof GuestContactOwnedByAccountError
                   ? GUEST_ACCOUNT_COPY.errors.emailOwnedByAccount
                   : error instanceof Error
@@ -4256,7 +4261,7 @@ export function createGuestRequestHandler(
         // Issue 06c / ADR-0080: the composer works without JavaScript. The turn
         // runs through the same handleTurn as /api/turn, and the browser session
         // must own the thread (ADR-0070). Message text is never logged (ADR-0075).
-        const session = resolveBrowserSession(
+        const session = await resolveBrowserSession(
           env,
           browserSessions,
           readGuestSession(req),
@@ -4283,10 +4288,10 @@ export function createGuestRequestHandler(
             sendPageError(req, res, 400, "INVALID_CONVERSATION");
             return;
           }
-          const state = threadReadable(app.environment, session, threadId)
-            ? app.getState(threadId)
+          const state = await threadReadable(app.environment, session, threadId)
+            ? await app.getStateAsync(threadId)
             : undefined;
-          const committedWork = app.committedWork({
+          const committedWork = await app.committedWork({
             id: session.principalId,
             role: "guest",
             tenantId: session.tenantId,
@@ -4331,7 +4336,7 @@ export function createGuestRequestHandler(
             : submittedThreadId;
         if (
           !session ||
-          !bindBrowserThread(
+          !await bindBrowserThread(
             app.environment,
             browserSessions,
             req,
@@ -4344,7 +4349,7 @@ export function createGuestRequestHandler(
         }
         const text = form.get("message") ?? "";
         if (text.trim() === "" || text.length > MAX_TURN_TEXT_LENGTH) {
-          const state = app.getState(threadId);
+          const state = await app.getStateAsync(threadId);
           res.writeHead(400, GUEST_HTML_HEADERS);
           res.end(
             renderNoScriptConversationHtml({
@@ -4363,7 +4368,7 @@ export function createGuestRequestHandler(
         const result = await app.handleTurn(threadId, text);
         if (!result.ok) {
           // The same rejection the JavaScript client announces, keeping the draft.
-          const state = app.getState(threadId);
+          const state = await app.getStateAsync(threadId);
           res.writeHead(422, GUEST_HTML_HEADERS);
           res.end(
             renderNoScriptConversationHtml({
@@ -4389,7 +4394,7 @@ export function createGuestRequestHandler(
 
       if (req.method === "GET" && url.pathname === "/api/committed-work") {
         // Issue 13a: principal-scoped, never keyed by a client-supplied thread id.
-        const session = resolveBrowserSession(
+        const session = await resolveBrowserSession(
           app.environment,
           browserSessions,
           readGuestSession(req),
@@ -4407,7 +4412,7 @@ export function createGuestRequestHandler(
         }
         sendJson(res, 200, {
           ok: true,
-          committedWork: app.committedWork({
+          committedWork: await app.committedWork({
             id: session.principalId,
             role: "guest",
             tenantId: session.tenantId,
@@ -4430,7 +4435,7 @@ export function createGuestRequestHandler(
         // ownership claim; browser refresh must present the server-issued
         // session binding before any projection is returned.
         const sessionId = readGuestSession(req);
-        const session = resolveBrowserSession(
+        const session = await resolveBrowserSession(
           app.environment,
           browserSessions,
           sessionId,
@@ -4446,7 +4451,7 @@ export function createGuestRequestHandler(
           });
           return;
         }
-        if (!threadReadable(app.environment, session, threadId)) {
+        if (!await threadReadable(app.environment, session, threadId)) {
           sendJson(res, 200, {
             ok: true,
             threadId,
@@ -4455,7 +4460,7 @@ export function createGuestRequestHandler(
           });
           return;
         }
-        const state = app.getState(threadId);
+        const state = await app.getStateAsync(threadId);
         if (!state) {
           sendJson(res, 200, {
             ok: true,
@@ -4465,7 +4470,7 @@ export function createGuestRequestHandler(
           });
           return;
         }
-        const withOffer = withSignInOffer(req, app.environment, threadId, state.surfaces);
+        const withOffer = await withSignInOffer(req, app.environment, threadId, state.surfaces);
         sendJson(res, 200, { ...state, surfaces: withOffer.surfaces }, withOffer.offered ? NO_STORE : {});
         return;
       }
@@ -4519,7 +4524,7 @@ export function createGuestRequestHandler(
             return;
           }
           if (
-            !bindBrowserThread(
+            !await bindBrowserThread(
               app.environment,
               browserSessions,
               req,
@@ -4549,10 +4554,10 @@ export function createGuestRequestHandler(
               });
               return;
             }
-            sendTurnResult(req, res, app.environment, threadId, await app.handleTurn(threadId, text));
+            await sendTurnResult(req, res, app.environment, threadId, await app.handleTurn(threadId, text));
             return;
           }
-          sendTurnResult(req, res, app.environment, threadId, await app.handleEventAsync(threadId, body));
+          await sendTurnResult(req, res, app.environment, threadId, await app.handleEventAsync(threadId, body));
         } catch (error) {
           if (error instanceof BodyTooLargeError) {
             sendJson(res, 413, {

@@ -47,18 +47,18 @@ function validInput(unitId: string) {
   };
 }
 
-test("Unverified Primary Guests and prohibited third-party bookings cannot progress to disclosure", () => {
+test("Unverified Primary Guests and prohibited third-party bookings cannot progress to disclosure", async () => {
   const { service, repository, unit } = setup();
   const noSourceService = new GuestVerificationService({ repository });
-  assert.throws(
-    () => noSourceService.validateDisclosure({
+  await assert.rejects(
+    noSourceService.validateDisclosure({
       ...validInput(unit.id),
       primaryGuest: { id: "guest-1", name: "Chidi Okafor", isGovernmentIdVerified: true }
     }),
     /Unverified Primary Guest/i
   );
-  assert.throws(
-    () => service.validateDisclosure({
+  await assert.rejects(
+    service.validateDisclosure({
       ...validInput(unit.id),
       occupants: [{ name: "Someone Else" }]
     }),
@@ -66,10 +66,10 @@ test("Unverified Primary Guests and prohibited third-party bookings cannot progr
   );
 });
 
-test("Occupancy and named-occupant rules are checked against Unit capacity and policy", () => {
+test("Occupancy and named-occupant rules are checked against Unit capacity and policy", async () => {
   const { service, unit } = setup();
-  assert.throws(
-    () => service.validateDisclosure({
+  await assert.rejects(
+    service.validateDisclosure({
       ...validInput(unit.id),
       occupants: [
         { name: "Chidi Okafor" },
@@ -81,34 +81,34 @@ test("Occupancy and named-occupant rules are checked against Unit capacity and p
     }),
     /Occupancy exceeds Unit capacity/i
   );
-  assert.throws(
-    () => service.validateDisclosure({ ...validInput(unit.id), occupants: [{ name: "   " }] }),
+  await assert.rejects(
+    service.validateDisclosure({ ...validInput(unit.id), occupants: [{ name: "   " }] }),
     /All overnight occupants must be named/i
   );
-  assert.throws(
-    () => service.validateDisclosure({ ...validInput(unit.id), occupants: [] }),
+  await assert.rejects(
+    service.validateDisclosure({ ...validInput(unit.id), occupants: [] }),
     /At least one overnight occupant/i
   );
 });
 
-test("A permitted distinct payer requires the accepted attestations and cannot replace the Primary Guest", () => {
+test("A permitted distinct payer requires the accepted attestations and cannot replace the Primary Guest", async () => {
   const { service, unit } = setup();
-  assert.throws(
-    () => service.validateDisclosure({
+  await assert.rejects(
+    service.validateDisclosure({
       ...validInput(unit.id),
       distinctPayer: { id: "payer-1", name: "Sponsor" }
     }),
     /Distinct payer attestation/i
   );
-  assert.throws(
-    () => service.validateDisclosure({
+  await assert.rejects(
+    service.validateDisclosure({
       ...validInput(unit.id),
       distinctPayer: { id: "payer-1", name: "Sponsor" },
       distinctPayerAttestation: { accepted: true, version: "unsupported" }
     }),
     /Distinct payer attestation/i
   );
-  const result = service.validateDisclosure({
+  const result = await service.validateDisclosure({
     ...validInput(unit.id),
     distinctPayer: { id: "payer-1", name: "Sponsor" },
     distinctPayerAttestation: payerAttestation
@@ -117,7 +117,7 @@ test("A permitted distinct payer requires the accepted attestations and cannot r
   assert.equal(result.distinctPayerAttached, true);
 });
 
-test("Restricted identity data is minimized, tenant-scoped, redacted, and never exposed through ordinary interaction/A2UI state", () => {
+test("Restricted identity data is minimized, tenant-scoped, redacted, and never exposed through ordinary interaction/A2UI state", async () => {
   const { service, identityStore, unit } = setup();
   const completeContext: SecurityContext = {
     principalId: "guest-1",
@@ -134,7 +134,7 @@ test("Restricted identity data is minimized, tenant-scoped, redacted, and never 
       fullAddress: "15 Victoria Island Way, Lagos"
     }
   }, completeContext);
-  const result = service.validateDisclosure({
+  const result = await service.validateDisclosure({
     ...validInput(unit.id),
     primaryGuest: {
       id: "guest-1",
@@ -156,7 +156,7 @@ test("Restricted identity data is minimized, tenant-scoped, redacted, and never 
   assert.equal(raw?.ninNumber, "12345678901");
 });
 
-test("Restricted identity writes require complete, tenant-bound, operation-specific authorization", () => {
+test("Restricted identity writes require complete, tenant-bound, operation-specific authorization", async () => {
   const evidence = { ninNumber: "12345678901" };
   const context: SecurityContext = {
     principalId: "staff-1",
@@ -185,7 +185,7 @@ test("Restricted identity writes require complete, tenant-bound, operation-speci
   assert.deepEqual(readAndWriteStore.getRawIdentityEvidence("tenant-lagos", "guest-1", context), evidence);
 });
 
-test("Authoritative verification results are tenant-and-guest bound and caller booleans cannot authorize disclosure", () => {
+test("Authoritative verification results are tenant-and-guest bound and caller booleans cannot authorize disclosure", async () => {
   const { repository, unit } = setup();
   const input = validInput(unit.id);
   const resultFor = (result: { tenantId: string; guestId: string; governmentIdVerified: boolean } | null) =>
@@ -200,26 +200,26 @@ test("Authoritative verification results are tenant-and-guest bound and caller b
     [{ tenantId: "tenant-lagos", guestId: "guest-other", governmentIdVerified: true }, "wrong guest"],
     [{ tenantId: "tenant-lagos", guestId: "guest-1", governmentIdVerified: false }, "unverified"]
   ] as const) {
-    assert.throws(
-      () => resultFor(result).validateDisclosure(input),
+    await assert.rejects(
+      resultFor(result).validateDisclosure(input),
       /Unverified Primary Guest/i,
       message
     );
   }
 
-  const approved = resultFor({ tenantId: "tenant-lagos", guestId: "guest-1", governmentIdVerified: true })
+  const approved = await resultFor({ tenantId: "tenant-lagos", guestId: "guest-1", governmentIdVerified: true })
     .validateDisclosure(input);
   assert.equal(approved.approvedForDisclosure, true);
 });
 
-test("Self-Booking and distinct-payer attestations require the authenticated Primary Guest actor", () => {
+test("Self-Booking and distinct-payer attestations require the authenticated Primary Guest actor", async () => {
   const { service, unit } = setup();
-  assert.throws(
-    () => service.validateDisclosure({ ...validInput(unit.id), attestingPrincipalId: "guest-other" }),
+  await assert.rejects(
+    service.validateDisclosure({ ...validInput(unit.id), attestingPrincipalId: "guest-other" }),
     /Primary Guest/i
   );
-  assert.throws(
-    () => service.validateDisclosure({
+  await assert.rejects(
+    service.validateDisclosure({
       ...validInput(unit.id),
       attestingPrincipalId: "guest-other",
       distinctPayer: { id: "payer-1", name: "Sponsor" },
@@ -227,7 +227,7 @@ test("Self-Booking and distinct-payer attestations require the authenticated Pri
     }),
     /Primary Guest/i
   );
-  const result = service.validateDisclosure({
+  const result = await service.validateDisclosure({
     ...validInput(unit.id),
     distinctPayer: { id: "payer-1", name: "Sponsor" },
     distinctPayerAttestation: payerAttestation
@@ -236,8 +236,8 @@ test("Self-Booking and distinct-payer attestations require the authenticated Pri
   assert.equal(result.distinctPayerAttestationVersion, DISTINCT_PAYER_ATTESTATION_VERSION);
 });
 
-test("Unsupported or missing Self-Booking attestation cannot disclose", () => {
+test("Unsupported or missing Self-Booking attestation cannot disclose", async () => {
   const { service, unit } = setup();
-  assert.throws(() => service.validateDisclosure({ ...validInput(unit.id), selfBookingAttestation: undefined as never }), /Self-Booking attestation/i);
-  assert.throws(() => service.validateDisclosure({ ...validInput(unit.id), selfBookingAttestation: { accepted: true, version: "unsupported" } }), /Self-Booking attestation/i);
+  await assert.rejects(service.validateDisclosure({ ...validInput(unit.id), selfBookingAttestation: undefined as never }), /Self-Booking attestation/i);
+  await assert.rejects(service.validateDisclosure({ ...validInput(unit.id), selfBookingAttestation: { accepted: true, version: "unsupported" } }), /Self-Booking attestation/i);
 });

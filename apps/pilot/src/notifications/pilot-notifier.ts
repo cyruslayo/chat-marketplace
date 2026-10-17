@@ -12,6 +12,7 @@ import { formatStayDates } from "../../../web-agent/src/booking-presentation.js"
 import { formatWat } from "../../../local-owner/src/back-office-view.js";
 import type { EmailMessage, EmailSender } from "./email-sender.js";
 import { GUEST_ACCOUNT_COPY } from "../../../web-agent/src/guest-content.js";
+import type { GuestDataPort } from "../../../local-guest/src/guest-data-port.js";
 
 /**
  * The email-change code (issue 07, ADR 0093 `change_email`). It goes to the NEW address, so the proof of control is of that address.
@@ -80,6 +81,8 @@ export type NotificationKind =
 export interface PilotNotifierOptions {
   /** The shared pilot handle (ADR 0004); the notifier borrows it and never closes it. */
   readonly database: SqlDatabase;
+  /** ADR 0101: Cloudflare guest contacts and interaction bindings are read through PLATFORM. */
+  readonly guestData?: GuestDataPort;
   readonly publicOrigin: string;
   readonly sender: EmailSender;
   /** Where Operator alerts go: the people covering the response window (ADR 0042). */
@@ -176,7 +179,7 @@ function allInStayTotalKobo(quoteJson: string): number | null {
 
 export class PilotNotifier {
   readonly #store: SqliteGuestInteractionStore;
-  readonly #contacts: SqliteGuestContactRepository;
+  readonly #contacts: SqliteGuestContactRepository | null;
   readonly #log: NotificationLog;
   readonly #options: PilotNotifierOptions;
   readonly #clock: () => Date;
@@ -187,8 +190,11 @@ export class PilotNotifier {
 
   constructor(options: PilotNotifierOptions) {
     this.#options = options;
-    this.#store = new SqliteGuestInteractionStore(options.database);
-    this.#contacts = new SqliteGuestContactRepository(options.database);
+    this.#store = new SqliteGuestInteractionStore(
+      options.database,
+      options.guestData ? { includeThreadSessionSchema: false } : {},
+    );
+    this.#contacts = options.guestData ? null : new SqliteGuestContactRepository(options.database);
     this.#log = new NotificationLog(options.database);
     this.#clock = options.clock ?? (() => new Date());
     this.#lookbackMs = options.lookbackMs ?? DEFAULT_LOOKBACK_MS;
@@ -462,10 +468,10 @@ export class PilotNotifier {
   ): Promise<void> {
     const title = this.#options.unitTitle(request.unitId);
     const stay = `${formatStayDates(request.checkIn, request.checkOut)}, ${request.nights} ${request.nights === 1 ? "night" : "nights"}`;
-    await this.#deliver(kind, key, now, report, () => {
-      const email =
-        this.#contacts.find(request.primaryGuestId, request.tenantId)
-          ?.contactEmail ?? null;
+    await this.#deliver(kind, key, now, report, async () => {
+      const email = this.#options.guestData
+        ? (await this.#options.guestData.findContact(request.primaryGuestId, request.tenantId))?.contactEmail ?? null
+        : this.#contacts?.find(request.primaryGuestId, request.tenantId)?.contactEmail ?? null;
       return email ? { to: [email], ...content(title, stay) } : null;
     });
   }
@@ -475,7 +481,7 @@ export class PilotNotifier {
     key: string,
     now: Date,
     report: { sent: number; failed: number; skipped: number },
-    compose: () => Omit<EmailMessage, "idempotencyKey"> | null,
+    compose: () => Omit<EmailMessage, "idempotencyKey"> | null | Promise<Omit<EmailMessage, "idempotencyKey"> | null>,
   ): Promise<void> {
     const existing = this.#log.find(key);
     if (
@@ -483,7 +489,7 @@ export class PilotNotifier {
       (existing.status !== "failed" || existing.attempts >= this.#maxAttempts)
     )
       return;
-    const message = compose();
+    const message = await compose();
     if (!message) {
       // No address to send to (the Guest gave no email); recorded so it is not re-evaluated every sweep.
       this.#log.record(key, kind, "skipped", existing?.attempts ?? 0, now);

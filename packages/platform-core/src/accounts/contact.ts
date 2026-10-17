@@ -6,6 +6,8 @@ export interface GuestContact {
   readonly phoneNumber: string | null;
   readonly contactEmail: string | null;
   readonly revision: number;
+  /** Remote projection metadata indicating that PLATFORM owns the email field. */
+  readonly accountEmailOwned?: boolean;
 }
 
 export interface GuestContactSource {
@@ -69,9 +71,9 @@ export const GUEST_CONTACT_SCHEMA = `CREATE TABLE IF NOT EXISTS guest_contacts (
 
 export class SqliteGuestContactRepository implements GuestContactSource {
   readonly #database: SqlDatabase;
-  constructor(database: SqlDatabase) {
+  constructor(database: SqlDatabase, options: { readonly createSchema?: boolean } = {}) {
     this.#database = database;
-    database.exec(GUEST_CONTACT_SCHEMA);
+    if (options.createSchema !== false) database.exec(GUEST_CONTACT_SCHEMA);
   }
 
   find(guestId: string, tenantId: string): GuestContact | null {

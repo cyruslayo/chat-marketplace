@@ -16,31 +16,23 @@ import type { SqlDatabase, SqlRow, SqlValue } from "../../../packages/platform-c
  * Table names come from the stores themselves, not invented. `manual_transfer_receipts` exports its metadata only:
  * the receipt bytes live in R2 (ADR 0090) and a legacy BLOB column is not inlined into a JSON object.
  */
-export const EXPORT_TABLES = [
-  "audit_log",
+export const SHORTLET_EXPORT_TABLES = [
   "availability_commitments",
   "booking_contracts",
   "booking_reservations",
   "bank_transfer_sessions",
   "checkin_support_state",
-  "guest_account_email_commands",
-  "guest_account_rate_events",
-  "guest_accounts",
-  "guest_account_principals",
-  "guest_account_request_claims",
   "guest_booking_request_contacts",
   "guest_booking_requests",
   "guest_booking_snapshots",
   "guest_checkout_sessions",
   "guest_conditional_offers",
-  "guest_contacts",
   "guest_identity_assurance",
   "guest_live_payment_attempts",
   "guest_payment_journey_snapshots",
   "guest_processed_psp_references",
   "guest_refunds",
   "guest_request_drafts",
-  "guest_threads",
   "booking_payment_journeys",
   "local_booking_contracts",
   "local_booking_reservations",
@@ -64,9 +56,24 @@ export const EXPORT_TABLES = [
   "revenue_journals",
   "revenue_ledger_lines",
   "revenue_releases",
-  "telemetry_events",
   "units",
 ] as const;
+
+/** ADR 0101 platform-owned records. Credential exclusions remain excluded from both per-object exports. */
+export const PLATFORM_EXPORT_TABLES = [
+  "audit_log",
+  "guest_account_rate_events",
+  "guest_accounts",
+  "guest_account_principals",
+  "guest_account_request_claims",
+  "guest_contacts",
+  "guest_threads",
+  "telemetry_events",
+] as const;
+export const PLATFORM_OWNED_TABLES: ReadonlySet<string> = new Set(PLATFORM_EXPORT_TABLES);
+
+/** Full legacy/local export manifest for fixture and migration compatibility; production alarms use per-DO ownership lists. */
+export const EXPORT_TABLES = [...SHORTLET_EXPORT_TABLES, ...PLATFORM_EXPORT_TABLES].sort() as readonly string[];
 
 /**
  * Tables the daily export does not write: the bearer-credential tables, which are the one shared list in
@@ -104,11 +111,12 @@ export function exportObjectKey(date: string, table: string): string {
 
 export interface DailyExportDependencies {
   readonly database: SqlDatabase;
-  readonly receipts: R2Bucket;
+  readonly receipts?: R2Bucket;
   readonly exports: R2Bucket;
   readonly clock: () => Date;
   readonly retentionDays: number;
   readonly orphanGraceHours: number;
+  readonly tableOwner?: "shortlet" | "platform";
 }
 
 export interface DailyExportReport {
@@ -218,6 +226,7 @@ export async function deleteExpiredExports(dependencies: DailyExportDependencies
  * closed and deletes nothing.
  */
 export async function sweepOrphanReceipts(dependencies: DailyExportDependencies): Promise<number> {
+  if (!dependencies.receipts) return 0;
   if (!tableExists(dependencies.database, "manual_transfer_receipts")) return 0;
   const cutoff = dependencies.clock().getTime() - dependencies.orphanGraceHours * HOUR_MS;
   const listed = await listEveryObject(dependencies.receipts);
@@ -237,7 +246,8 @@ export async function sweepOrphanReceipts(dependencies: DailyExportDependencies)
 export async function runDailyExport(dependencies: DailyExportDependencies): Promise<DailyExportReport> {
   const date = lagosDate(dependencies.clock());
   const rowsByTable: Record<string, number> = {};
-  for (const table of EXPORT_TABLES) rowsByTable[table] = await exportTable(dependencies, date, table);
+  const tables = dependencies.tableOwner === "platform" ? PLATFORM_EXPORT_TABLES : dependencies.tableOwner === "shortlet" ? SHORTLET_EXPORT_TABLES : EXPORT_TABLES;
+  for (const table of tables) rowsByTable[table] = await exportTable(dependencies, date, table);
   const expiredExportsDeleted = await deleteExpiredExports(dependencies, date);
   const orphanReceiptsDeleted = await sweepOrphanReceipts(dependencies);
   return { date, rowsByTable, expiredExportsDeleted, orphanReceiptsDeleted };

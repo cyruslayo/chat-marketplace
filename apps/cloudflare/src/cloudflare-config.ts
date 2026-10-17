@@ -8,11 +8,13 @@ import { createAccessJwtVerifier, type AccessJwks, type AccessVerifier } from ".
 /** Inherits every shared Paystack, concierge, notification and guardrail var/secret, not Node file paths. */
 export interface CloudflareEnv extends Omit<PilotEnvironmentSource, "SHORTLET_DB_PATH" | "SHORTLET_INVENTORY_PATH" | "SHORTLET_OPERATORS_PATH"> {
   readonly SHORTLET: DurableObjectNamespace;
+  readonly PLATFORM: DurableObjectNamespace;
   readonly RECEIPTS: R2Bucket;
   readonly EXPORTS: R2Bucket;
   readonly ASSETS: Fetcher;
   /** 04c/10a: the production cap on resident per-session Guest runtimes; unset keeps the approved default. */
   readonly SHORTLET_GUEST_RUNTIME_LIMIT?: string;
+  readonly SHORTLET_GUEST_CODE_HASHING_KEY?: string;
   /** 11a: the `/_ops` shared secret (secret binding; never committed). */
   readonly OPS_SHARED_SECRET?: string;
   /** 11a: the Cloudflare Access team domain, e.g. `shortlet.cloudflareaccess.com`. */

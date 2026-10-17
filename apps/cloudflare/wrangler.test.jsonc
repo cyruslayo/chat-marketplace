@@ -9,10 +9,13 @@
   "durable_objects": {
     "bindings": [
       { "name": "TEST_HARNESS", "class_name": "TestHarnessDO" },
-      { "name": "SHORTLET", "class_name": "ShortletPilot" }
+      { "name": "SHORTLET", "class_name": "ShortletPilot" },
+      { "name": "PLATFORM", "class_name": "PlatformDO" },
+      { "name": "ISOLATED_SHORTLET", "class_name": "IsolatedShortletPilot" },
+      { "name": "ISOLATED_PLATFORM", "class_name": "IsolatedPlatformDO" }
     ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TestHarnessDO", "ShortletPilot"] }],
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TestHarnessDO", "ShortletPilot", "PlatformDO", "IsolatedShortletPilot", "IsolatedPlatformDO"] }],
   "r2_buckets": [
     { "binding": "RECEIPTS", "bucket_name": "test-receipts" },
     { "binding": "EXPORTS", "bucket_name": "test-exports" }
@@ -22,11 +25,13 @@
     "SHORTLET_PUBLIC_ORIGIN": "https://pilot.example.test",
     "SHORTLET_TENANT_ID": "tenant-synthetic",
     "PAYSTACK_SECRET_KEY": "sk_test_synthetic",
+    "PAYSTACK_CALLBACK_BASE_URL": "https://pilot.example.test",
     "PAYSTACK_ENVIRONMENT": "test",
     "SHORTLET_DEPLOYMENT": "staging",
     "SHORTLET_BETA_INVITE_CODE": "synthetic-invite",
     "CONCIERGE_MODE": "deterministic",
     "RESEND_API_KEY": "re_test_synthetic",
+    "SHORTLET_GUEST_CODE_HASHING_KEY": "synthetic-guest-code-hashing-key-at-least-32-characters",
     "SHORTLET_NOTIFICATION_FROM": "Shortlet <notifications@example.test>",
     "SHORTLET_OPERATOR_ALERT_EMAILS": "alerts@example.test",
     "OPS_SHARED_SECRET": "synthetic-ops-shared-secret",

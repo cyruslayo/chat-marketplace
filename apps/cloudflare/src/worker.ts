@@ -2,6 +2,14 @@ import type { Request as WorkerRequest, Response as WorkerResponse } from "@clou
 import type { CloudflareEnv } from "./cloudflare-config.js";
 
 export { ShortletPilot } from "./shortlet-pilot-do.js";
+export { PlatformDO } from "./platform-do.js";
+
+/** Account/session and thread ownership routes terminate at the platform authority (ADR 0101). */
+export function isPlatformPath(pathname: string): boolean {
+  return pathname === "/account" || pathname.startsWith("/account/") ||
+    pathname === "/api/threads" || pathname.startsWith("/api/threads/") ||
+    pathname === "/threads" || pathname.startsWith("/threads/");
+}
 
 /**
  * The Worker is only a router (ADR 0004/0095). Static Assets serve the browser bundles and CSS before this runs
@@ -22,7 +30,15 @@ export default {
         }) as unknown as WorkerResponse,
       );
     }
-    // ADR 0004/0095: one Durable Object per tenant, placed nearest the launch region.
-    return env.SHORTLET.get(env.SHORTLET.idFromName(tenantId), { locationHint: "afr" }).fetch(request);
+    const pathname = new URL(request.url).pathname;
+    if (pathname === "/_internal" || pathname.startsWith("/_internal/")) {
+      return Promise.resolve(new Response(JSON.stringify({ ok: false, code: "NOT_FOUND" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
+      }) as unknown as WorkerResponse);
+    }
+    // ADR 0095/0101: each authority uses the same tenant name and best-effort placement hint.
+    const namespace = isPlatformPath(pathname) ? env.PLATFORM : env.SHORTLET;
+    return namespace.get(namespace.idFromName(tenantId), { locationHint: "afr" }).fetch(request);
   },
 };

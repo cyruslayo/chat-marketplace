@@ -7,6 +7,8 @@ import { createProvisionedOperator } from "../../../domains/shortlet/src/operato
 import { SqliteUnitRepository } from "../../../domains/shortlet/src/sqlite-unit-repository.js";
 import { SqliteOperatorRepresentativeGrantStore } from "../../../domains/shortlet/src/operator-representative-authority.js";
 import { DurableObjectSqlDatabase } from "../src/do-sql-database.js";
+import worker from "../src/worker.js";
+import type { CloudflareEnv } from "../src/cloudflare-config.js";
 
 /** Shared fixtures for the `/_ops` workerd specs (AGENTS.md: no duplicated test fixtures). */
 export const ORIGIN = "https://pilot.example.test";
@@ -59,6 +61,30 @@ export function opsHeaders(token: string): Record<string, string> {
 }
 
 export const opsStub = () => env.SHORTLET.get(env.SHORTLET.idFromName(TENANT));
+
+/** Unique per-test tenant key; isolated DO wrappers derive their config and peer namespace names from this exact key. */
+export function isolatedTenantName(label: string): string {
+  return `test-${label}-${crypto.randomUUID()}`;
+}
+
+export function isolatedShortletStub(tenantId: string) {
+  return env.ISOLATED_SHORTLET.get(env.ISOLATED_SHORTLET.idFromName(tenantId));
+}
+
+export function isolatedPlatformStub(tenantId: string) {
+  return env.ISOLATED_PLATFORM.get(env.ISOLATED_PLATFORM.idFromName(tenantId));
+}
+
+/** Invoke the actual Worker router with a cloned test env bound to the isolated paired namespaces and tenant. */
+export function isolatedWorkerFetch(tenantId: string, request: Request): Promise<Response> {
+  const scopedEnv = {
+    ...env,
+    SHORTLET: env.ISOLATED_SHORTLET,
+    PLATFORM: env.ISOLATED_PLATFORM,
+    SHORTLET_TENANT_ID: tenantId,
+  } as unknown as CloudflareEnv;
+  return worker.fetch(request as unknown as import("@cloudflare/workers-types").Request, scopedEnv) as unknown as Promise<Response>;
+}
 
 export async function withState<T>(run: (database: DurableObjectSqlDatabase) => T): Promise<T> {
   return runInDurableObject(opsStub(), (_instance, ctx) => run(new DurableObjectSqlDatabase(ctx.storage)));

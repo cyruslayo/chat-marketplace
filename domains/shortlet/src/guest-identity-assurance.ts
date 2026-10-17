@@ -65,6 +65,8 @@ function referenceAccepted(reference: string, policy: IdentityAssuranceReference
 export interface IdentityAssuranceOutcome {
   readonly tenantId: string;
   readonly accountGuestId: string;
+  /** Platform-owned email version captured before recording; absent legacy imports remain unusable. */
+  readonly accountEmailRevision?: number;
   readonly level: IdentityAssuranceLevel;
   /** A platform-owned method identifier (ADR 0094). It is not raw evidence, and only allowlisted methods are accepted. */
   readonly method: string;
@@ -81,6 +83,7 @@ export interface IdentityAssuranceOutcome {
 export interface CurrentIdentityAssurance {
   readonly tenantId: string;
   readonly accountGuestId: string;
+  readonly accountEmailRevision: number | null;
   readonly level: IdentityAssuranceLevel;
   readonly method: string;
   readonly status: IdentityAssuranceStatus;
@@ -89,31 +92,54 @@ export interface CurrentIdentityAssurance {
   readonly providerReference: string | null;
 }
 
+/** Minimal authoritative account state fetched from PLATFORM; no email or credential is returned. */
+export type AccountAssuranceState =
+  | { readonly status: "active"; readonly emailRevision: number }
+  | { readonly status: "closed" | "missing" };
+
+export interface AccountAssuranceStateReader {
+  readAccountAssuranceState(input: { readonly tenantId: string; readonly accountGuestId: string }): Promise<AccountAssuranceState>;
+}
+
+/** Guard every assurance trust read against the current platform email version; transport/schema errors fail closed. */
+export async function currentAssuranceForAccount(
+  assurance: Pick<SqliteGuestIdentityAssurance, "currentAssurance">,
+  accountState: AccountAssuranceStateReader,
+  accountGuestId: string,
+  tenantId: string,
+  now: Date,
+): Promise<CurrentIdentityAssurance | null> {
+  try {
+    const [current, state] = await Promise.all([
+      Promise.resolve(assurance.currentAssurance(accountGuestId, tenantId, now)),
+      accountState.readAccountAssuranceState({ tenantId, accountGuestId }),
+    ]);
+    if (!state || state.status !== "active" || !Number.isSafeInteger(state.emailRevision) || state.emailRevision < 0 ||
+      current === null || current.accountEmailRevision === null || current.accountEmailRevision !== state.emailRevision) return null;
+    return current;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Table DDL (ADR 0094). Applied by the schema migrations (apps/cloudflare/src/schema.ts, migration 4) and by this store's
- * constructor. The trigger removes the current result when the account's normalized email changes, so re-verification is
- * required for any change path, including the authority's `changeEmail`. A same-address write and a sign-in on another device
- * do not touch this table.
+ * constructor. Account email changes invalidate this record through the typed PlatformDO → ShortletPilot seam (ADR 0101);
+ * the independent databases cannot enforce that invariant with a trigger.
  */
 export const GUEST_IDENTITY_ASSURANCE_SCHEMA = `
       CREATE TABLE IF NOT EXISTS guest_identity_assurance (
         tenant_id TEXT NOT NULL,
         account_guest_id TEXT NOT NULL,
+        account_email_revision INTEGER,
         level TEXT NOT NULL CHECK (level IN ('email-verified', 'phone-verified', 'government-ID-verified')),
         method TEXT NOT NULL,
         status TEXT NOT NULL CHECK (status IN ('pending', 'verified', 'failed', 'expired', 'provider_unavailable')),
         verified_at TEXT,
         expires_at TEXT,
-        provider_reference TEXT,
-        PRIMARY KEY (tenant_id, account_guest_id),
-        FOREIGN KEY (account_guest_id) REFERENCES guest_accounts(account_guest_id)
-      );
-      CREATE TRIGGER IF NOT EXISTS guest_identity_assurance_on_email_change
-        AFTER UPDATE OF email_normalized ON guest_accounts
-        WHEN NEW.email_normalized <> OLD.email_normalized
-      BEGIN
-        DELETE FROM guest_identity_assurance WHERE tenant_id = NEW.tenant_id AND account_guest_id = NEW.account_guest_id;
-      END;
+         provider_reference TEXT,
+         PRIMARY KEY (tenant_id, account_guest_id)
+       );
     `;
 
 export interface SqliteGuestIdentityAssuranceOptions extends Partial<IdentityAssuranceReferencePolicy> {
@@ -156,6 +182,10 @@ function normalizeOutcome(outcome: IdentityAssuranceOutcome, now: Date, allowFix
   if (!(now instanceof Date) || Number.isNaN(now.getTime())) throw new Error("A valid clock instant is required");
   const tenantId = requiredText(outcome?.tenantId, "Tenant ID");
   const accountGuestId = requiredText(outcome?.accountGuestId, "Account Guest Id");
+  const accountEmailRevision = outcome.accountEmailRevision;
+  if (accountEmailRevision !== undefined && (!Number.isSafeInteger(accountEmailRevision) || accountEmailRevision < 0)) {
+    throw new Error("accountEmailRevision must be a non-negative safe integer");
+  }
   if (!isLevel(outcome.level)) throw new Error("Identity assurance level must be one of the ADR 0094 levels");
   if (!isStatus(outcome.status)) throw new Error("Identity assurance status must be one of the ADR 0084 recorded states");
   if (typeof outcome.method !== "string" || !acceptedMethods(allowFixtureMethods).includes(outcome.method)) {
@@ -182,7 +212,7 @@ function normalizeOutcome(outcome: IdentityAssuranceOutcome, now: Date, allowFix
     }
     providerReference = reference;
   }
-  return { tenantId, accountGuestId, level: outcome.level, method: outcome.method, status: outcome.status, verifiedAt, expiresAt, providerReference };
+  return { tenantId, accountGuestId, accountEmailRevision: accountEmailRevision ?? null, level: outcome.level, method: outcome.method, status: outcome.status, verifiedAt, expiresAt, providerReference };
 }
 
 /** Projects a stored row. A malformed row throws rather than being read as current assurance (fail closed). */
@@ -196,6 +226,7 @@ function projectRow(row: SqlRow): CurrentIdentityAssurance {
   return {
     tenantId: row.tenant_id,
     accountGuestId: row.account_guest_id,
+    accountEmailRevision: typeof row.account_email_revision === "number" && Number.isSafeInteger(row.account_email_revision) && row.account_email_revision >= 0 ? row.account_email_revision : null,
     level: row.level,
     method: row.method,
     status: row.status,
@@ -226,9 +257,12 @@ export function identityAssuranceRowForImport(
     if (typeof value !== "string") throw new Error("An identity assurance column has the wrong type");
     return value;
   };
+  const revisionValue = row.account_email_revision;
+  if (typeof revisionValue !== "number" || !Number.isSafeInteger(revisionValue) || revisionValue < 0) throw new Error("Legacy identity assurance has no trustworthy platform email version");
   const normalized = normalizeOutcome({
     tenantId: text(row.tenant_id) as string,
     accountGuestId: text(row.account_guest_id) as string,
+    accountEmailRevision: revisionValue,
     level: text(row.level) as IdentityAssuranceLevel,
     method: text(row.method) as string,
     status: text(row.status) as IdentityAssuranceStatus,
@@ -238,13 +272,10 @@ export function identityAssuranceRowForImport(
   }, now, false, resolveReferencePolicy(policy));
   // Restore: an exported row must import even when its account has since closed (the export is the record of what was true).
   // Any status is accepted here, but the account must exist in the same tenant. recordOutcome still requires an active account.
-  const account = database
-    .prepare("SELECT account_guest_id FROM guest_accounts WHERE account_guest_id = ? AND tenant_id = ?")
-    .get([normalized.accountGuestId, normalized.tenantId]);
-  if (account === undefined) throw new Error("Identity assurance requires a Guest Account of this tenant");
   return {
     tenant_id: normalized.tenantId,
     account_guest_id: normalized.accountGuestId,
+    account_email_revision: normalized.accountEmailRevision,
     level: normalized.level,
     method: normalized.method,
     status: normalized.status,
@@ -278,17 +309,28 @@ export class SqliteGuestIdentityAssurance {
    */
   recordOutcome(outcome: IdentityAssuranceOutcome): void {
     const record = normalizeOutcome(outcome, this.#clock(), this.#allowFixtureMethods, this.#policy);
-    const account = this.#database
-      .prepare("SELECT account_guest_id FROM guest_accounts WHERE account_guest_id = ? AND tenant_id = ? AND status = 'active'")
-      .get([record.accountGuestId, record.tenantId]);
-    if (account === undefined) throw new Error("Identity assurance requires an active Guest Account of this tenant");
+    let account: SqlRow | undefined;
+    let accountTablePresent = true;
+    try {
+      account = this.#database
+        .prepare("SELECT account_guest_id, email_revision FROM guest_accounts WHERE account_guest_id = ? AND tenant_id = ? AND status = 'active'")
+        .get([record.accountGuestId, record.tenantId]);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("no such table: guest_accounts")) accountTablePresent = false;
+      else throw error;
+    }
+    if (accountTablePresent && account === undefined) throw new Error("Identity assurance requires an active Guest Account of this tenant");
+    const storedRevision = account?.email_revision;
+    const accountEmailRevision = record.accountEmailRevision ?? (typeof storedRevision === "number" ? storedRevision : null);
+    if (!accountTablePresent && accountEmailRevision === null) throw new Error("Identity assurance requires an active account email version");
+    if (account !== undefined && accountEmailRevision !== storedRevision) throw new Error("Identity assurance account email version is stale");
     this.#database
-      .prepare(`INSERT INTO guest_identity_assurance (tenant_id, account_guest_id, level, method, status, verified_at, expires_at, provider_reference)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      .prepare(`INSERT INTO guest_identity_assurance (tenant_id, account_guest_id, account_email_revision, level, method, status, verified_at, expires_at, provider_reference)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (tenant_id, account_guest_id) DO UPDATE SET
-          level = excluded.level, method = excluded.method, status = excluded.status,
+          account_email_revision = excluded.account_email_revision, level = excluded.level, method = excluded.method, status = excluded.status,
           verified_at = excluded.verified_at, expires_at = excluded.expires_at, provider_reference = excluded.provider_reference`)
-      .run([record.tenantId, record.accountGuestId, record.level, record.method, record.status, record.verifiedAt, record.expiresAt, record.providerReference]);
+      .run([record.tenantId, record.accountGuestId, accountEmailRevision, record.level, record.method, record.status, record.verifiedAt, record.expiresAt, record.providerReference]);
   }
 
   /**
@@ -301,14 +343,26 @@ export class SqliteGuestIdentityAssurance {
     const tenant = requiredText(tenantId, "Tenant ID");
     if (!(now instanceof Date) || Number.isNaN(now.getTime())) throw new Error("A valid clock instant is required");
     const row = this.#database
-      .prepare(`SELECT a.* FROM guest_identity_assurance a
-        JOIN guest_accounts g ON g.account_guest_id = a.account_guest_id AND g.tenant_id = a.tenant_id
-        WHERE a.tenant_id = ? AND a.account_guest_id = ? AND g.status = 'active'`)
+      .prepare("SELECT * FROM guest_identity_assurance WHERE tenant_id = ? AND account_guest_id = ?")
       .get([tenant, account]);
     if (row === undefined) return null;
     const stored = projectRow(row);
     const expired = stored.status === "verified" && stored.expiresAt !== null && now.getTime() >= Date.parse(stored.expiresAt);
     return Object.freeze({ ...stored, status: expired ? "expired" : stored.status });
+  }
+
+  /** Local composition adapter. Cloudflare's split composition injects the async PlatformDO reader instead. */
+  async readAccountAssuranceState(input: { readonly tenantId: string; readonly accountGuestId: string }): Promise<AccountAssuranceState> {
+    try {
+      const row = this.#database.prepare("SELECT status, email_revision FROM guest_accounts WHERE tenant_id = ? AND account_guest_id = ?")
+        .get([input.tenantId, input.accountGuestId]);
+      if (!row) return { status: "missing" };
+      if (row.status === "closed") return { status: "closed" };
+      if (row.status !== "active" || !Number.isSafeInteger(row.email_revision) || Number(row.email_revision) < 0) return { status: "missing" };
+      return { status: "active", emailRevision: Number(row.email_revision) };
+    } catch {
+      return { status: "missing" };
+    }
   }
 }
 
@@ -321,26 +375,30 @@ export class AccountBackedGuestIdentityVerificationResultSource implements Guest
   readonly #links: Pick<SqliteGuestAccountLinks, "accountForPrincipal">;
   readonly #assurance: Pick<SqliteGuestIdentityAssurance, "currentAssurance">;
   readonly #clock: () => Date;
+  readonly #accountState: AccountAssuranceStateReader;
 
   constructor({
     links,
     assurance,
+    accountState,
     clock,
   }: {
     links: Pick<SqliteGuestAccountLinks, "accountForPrincipal">;
-    assurance: Pick<SqliteGuestIdentityAssurance, "currentAssurance">;
+    assurance: Pick<SqliteGuestIdentityAssurance, "currentAssurance" | "readAccountAssuranceState">;
+    accountState?: AccountAssuranceStateReader;
     clock: () => Date;
   }) {
     this.#links = links;
     this.#assurance = assurance;
+    this.#accountState = accountState ?? assurance;
     this.#clock = clock;
   }
 
-  getVerificationResult({ tenantId, guestId }: { tenantId: string; guestId: string }): GuestIdentityVerificationResult | null {
+  async getVerificationResult({ tenantId, guestId }: { tenantId: string; guestId: string }): Promise<GuestIdentityVerificationResult | null> {
     if (!tenantId || !guestId) return null;
     const link = this.#links.accountForPrincipal(guestId);
     if (link === null || link.tenantId !== tenantId) return null;
-    const current = this.#assurance.currentAssurance(link.accountGuestId, tenantId, this.#clock());
+    const current = await currentAssuranceForAccount(this.#assurance, this.#accountState, link.accountGuestId, tenantId, this.#clock());
     return { tenantId, guestId, governmentIdVerified: isCurrentGovernmentIdAssurance(current) };
   }
 }

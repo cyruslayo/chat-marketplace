@@ -7,10 +7,7 @@ import { BANK_TRANSFER_SCHEMA } from "../../../domains/shortlet/src/index.js";
 import { BOOKING_PAYMENT_JOURNEYS_SCHEMA } from "../../../domains/shortlet/src/index.js";
 import { BOOKING_STATE_SCHEMA } from "../../../domains/shortlet/src/index.js";
 import { CHECKIN_SUPPORT_SCHEMA } from "../../../domains/shortlet/src/index.js";
-import { GUEST_ACCOUNT_SCHEMA } from "../../../domains/shortlet/src/index.js";
-import { GUEST_ACCOUNT_LINK_SCHEMA } from "../../../domains/shortlet/src/index.js";
 import { GUEST_IDENTITY_ASSURANCE_SCHEMA } from "../../../domains/shortlet/src/guest-identity-assurance.js";
-import { GUEST_CONTACT_SCHEMA } from "../../../domains/shortlet/src/index.js";
 import { GUEST_INTERACTION_SCHEMA, GUEST_REQUEST_CONTACT_SCHEMA } from "../../../domains/shortlet/src/index.js";
 import { MANUAL_TRANSFERS_SCHEMA, MANUAL_TRANSFER_RECEIPTS_SCHEMA } from "../../../domains/shortlet/src/index.js";
 import { OWNER_PAYABLE_SCHEMA } from "../../../domains/shortlet/src/index.js";
@@ -22,6 +19,10 @@ import { REVENUE_ACCOUNTING_SCHEMA, REVENUE_COMPATIBILITY_SCHEMA } from "../../.
 import { RESERVE_PAYOUT_SCHEMA } from "../../../domains/shortlet/src/index.js";
 import { UNIT_SCHEMA } from "../../../domains/shortlet/src/index.js";
 import { PILOT_NOTIFICATIONS_SCHEMA } from "../../pilot/src/notifications/pilot-notifier.js";
+import { GUEST_ACCOUNT_SCHEMA } from "../../../packages/platform-core/src/accounts/authority.js";
+import { GUEST_ACCOUNT_LINK_SCHEMA } from "../../../packages/platform-core/src/accounts/links.js";
+import { GUEST_CONTACT_SCHEMA } from "../../../packages/platform-core/src/accounts/contact.js";
+import { THREAD_SESSION_SCHEMA } from "../../../domains/shortlet/src/guest-interaction-store.js";
 
 /**
  * Slice 16 / D3: the Durable Object's schema, as ordered migrations. The object applies them on startup
@@ -54,8 +55,6 @@ export const LOCAL_BOOKING_DDL = `
     `;
 
 const BASELINE_STATEMENTS: readonly string[] = [
-  AUDIT_LOG_SCHEMA,
-  TELEMETRY_SCHEMA,
   UNIT_SCHEMA,
   OPERATOR_SCHEMA,
   AVAILABILITY_SCHEMA,
@@ -66,9 +65,7 @@ const BASELINE_STATEMENTS: readonly string[] = [
   OPERATOR_ENFORCEMENT_SCHEMA,
   OPERATOR_SESSION_SCHEMA,
   OPERATOR_REPRESENTATIVE_SCHEMA,
-  GUEST_ACCOUNT_SCHEMA,
   GUEST_INTERACTION_SCHEMA,
-  GUEST_CONTACT_SCHEMA,
   MANUAL_TRANSFERS_SCHEMA,
   MANUAL_TRANSFER_RECEIPTS_SCHEMA,
   OWNER_PAYABLE_SCHEMA,
@@ -82,10 +79,21 @@ const BASELINE_STATEMENTS: readonly string[] = [
 export const SHORTLET_SCHEMA_MIGRATIONS: readonly SchemaMigration[] = [
   { version: 1, name: "baseline: the tables the stores create", statements: BASELINE_STATEMENTS },
   { version: CUTOVER_STATE_MIGRATION_VERSION, name: "one-way cutover flag", statements: [CUTOVER_STATE_DDL] },
-  { version: 3, name: "guest accounts: linked principals, request claims and request contact snapshots", statements: [GUEST_ACCOUNT_LINK_SCHEMA, GUEST_REQUEST_CONTACT_SCHEMA] },
+  { version: 3, name: "shortlet booking request contact snapshots", statements: [GUEST_REQUEST_CONTACT_SCHEMA] },
   // Personal-data table (ADR 0094, issue 09): exported in the daily export under the issue 05 precedent, flagged for the DPIA. Not a credential.
   { version: 4, name: "guest accounts: identity assurance anchored to the account", statements: [GUEST_IDENTITY_ASSURANCE_SCHEMA] },
 ];
 
 /** The version the import checks for before it writes anything (ops-import.ts). */
 export const SHORTLET_SCHEMA_VERSION = SHORTLET_SCHEMA_MIGRATIONS.length;
+
+/** ADR 0101: a distinct migration ledger and schema authority for the per-tenant platform Durable Object. */
+export const PLATFORM_SCHEMA_MIGRATIONS: readonly SchemaMigration[] = [
+  { version: 1, name: "platform accounts, links, contacts and interaction threads", statements: [AUDIT_LOG_SCHEMA, TELEMETRY_SCHEMA, GUEST_ACCOUNT_SCHEMA, GUEST_ACCOUNT_LINK_SCHEMA, GUEST_CONTACT_SCHEMA, THREAD_SESSION_SCHEMA] },
+  { version: CUTOVER_STATE_MIGRATION_VERSION, name: "one-way platform cutover flag", statements: [CUTOVER_STATE_DDL] },
+  { version: 3, name: "retryable post-commit email assurance cleanup", statements: [
+    "ALTER TABLE guest_account_email_commands ADD COLUMN assurance_cleanup_completed INTEGER NOT NULL DEFAULT 0 CHECK (assurance_cleanup_completed IN (0, 1))",
+  ] },
+];
+
+export const PLATFORM_SCHEMA_VERSION = PLATFORM_SCHEMA_MIGRATIONS.length;

@@ -514,6 +514,8 @@ export interface LocalOwnerEnvironmentDependencies {
    * to Workers Logs; Node passes none. The durable table stays authoritative.
    */
   readonly telemetrySink?: (event: TelemetryEvent) => void;
+  /** ADR 0101: guest interaction tables are owned by PLATFORM in split Cloudflare composition. */
+  readonly guestDataIsRemote?: boolean;
 }
 
 export class LocalApartmentOwnerEnvironment {
@@ -592,7 +594,10 @@ export class LocalApartmentOwnerEnvironment {
     this.clock = this.config.clock ?? DEFAULT_OWNER_CLOCK;
 
     this.#sqlDatabase = dependencies.database;
-    this.interactionStore = new SqliteGuestInteractionStore(this.#sqlDatabase);
+    // ADR 0101: the shared Cloudflare handle is Shortlet-owned; Guest threads and session bindings stay on PLATFORM.
+    this.interactionStore = new SqliteGuestInteractionStore(this.#sqlDatabase, {
+      includeThreadSessionSchema: dependencies.guestDataIsRemote !== true,
+    });
     this.#bookingState = new SqliteBookingStateRepository(this.#sqlDatabase);
     this.#checkInStore = new SqliteCheckInSupportStore(this.#sqlDatabase);
     this.#manualTransferStore = new SqliteManualTransferStore(

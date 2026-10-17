@@ -4,10 +4,10 @@ import { expect, test } from "vitest";
 import { SqliteAuditLog } from "../../../packages/platform-core/src/sqlite-audit-log.js";
 import { DurableObjectSqlDatabase } from "../src/do-sql-database.js";
 import { runAlarmTasks } from "../src/do-alarm.js";
-import { ORIGIN, provisionTenant } from "./ops-test-helpers.js";
-import { EXPORT_TABLES, deleteExpiredExports, exportObjectKey, exportTable, lagosDate, runDailyExport, type DailyExportDependencies } from "../src/do-export.js";
+import { ORIGIN, isolatedPlatformStub, isolatedTenantName, provisionTenant } from "./ops-test-helpers.js";
+import { SHORTLET_EXPORT_TABLES, PLATFORM_EXPORT_TABLES, deleteExpiredExports, exportObjectKey, exportTable, lagosDate, runDailyExport, type DailyExportDependencies } from "../src/do-export.js";
 
-const stubFor = (name: string) => env.SHORTLET.get(env.SHORTLET.idFromName(name));
+const stubFor = (name: string) => env.SHORTLET.get(env.SHORTLET.idFromName(`${name}-${crypto.randomUUID()}`));
 
 async function exportDependencies(
   stub: ReturnType<typeof stubFor>,
@@ -32,28 +32,41 @@ async function listKeys(bucket: typeof env.RECEIPTS): Promise<string[]> {
 
 test("12a AC1: after the alarm the EXPORTS bucket holds one JSONL object per listed table for the day", async () => {
   const stub = stubFor(`12a-ac1-${crypto.randomUUID()}`);
+  const evidence = `12a-evidence-${crypto.randomUUID()}`;
   await runInDurableObject(stub, (_instance, ctx) => {
     const audit = new SqliteAuditLog(new DurableObjectSqlDatabase(ctx.storage));
-    audit.record({ action: "12a-evidence", operatorId: "op-evidence" });
-    audit.record({ action: "12a-evidence-two" });
+    audit.record({ action: evidence, operatorId: "op-evidence" });
+    audit.record({ action: `${evidence}-two` });
   });
 
   await runInDurableObject(stub, async (instance) => { await instance.alarm(); });
 
   const date = lagosDate(new Date());
   const keys = await listKeys(env.EXPORTS);
-  for (const table of EXPORT_TABLES) expect(keys).toContain(exportObjectKey(date, table));
-
-  const auditObject = await env.EXPORTS.get(exportObjectKey(date, "audit_log"));
-  expect(auditObject).not.toBeNull();
-  const lines = (await auditObject!.text()).split("\n").filter((line) => line !== "");
-  expect(lines.length).toBe(2);
-  // The audit table stores its entry as JSON; the export is a faithful row copy.
-  expect(JSON.parse(JSON.parse(lines[0]!).payload_json).action).toBe("12a-evidence");
+  for (const table of SHORTLET_EXPORT_TABLES) expect(keys).toContain(exportObjectKey(date, table));
+  const sharedAuditExport = await env.EXPORTS.get(exportObjectKey(date, "audit_log"));
+  if (sharedAuditExport !== null) {
+    const exportedAudit = await sharedAuditExport.text();
+    expect(exportedAudit).not.toContain(evidence);
+  }
 
   // The alarm reschedules itself after the export (the notifier sweep is not configured on this object).
   const scheduled = await runInDurableObject(stub, (_instance, ctx) => ctx.storage.getAlarm());
   expect(scheduled).toEqual(expect.any(Number));
+});
+
+test("Slice 17 AC3: the platform alarm exports platform-owned tables separately", async () => {
+  const platform = isolatedPlatformStub(isolatedTenantName("platform-export"));
+  await runInDurableObject(platform, (_instance, ctx) => {
+    new SqliteAuditLog(new DurableObjectSqlDatabase(ctx.storage)).record({ action: "platform-export-probe" });
+  });
+  await runInDurableObject(platform, async (instance) => { await instance.alarm(); });
+  const date = lagosDate(new Date());
+  const keys = await listKeys(env.EXPORTS);
+  for (const table of PLATFORM_EXPORT_TABLES) expect(keys).toContain(exportObjectKey(date, table));
+  const auditObject = await env.EXPORTS.get(exportObjectKey(date, "audit_log"));
+  expect(auditObject).not.toBeNull();
+  expect((await auditObject!.text())).toContain("platform-export-probe");
 });
 
 test("12a AC2: running the export twice on the same day overwrites the same objects", async () => {
@@ -149,7 +162,7 @@ async function everyKey(bucket: typeof env.EXPORTS): Promise<string[]> {
 }
 
 test("16 D3 export: a table larger than one R2 part is streamed in parts and keeps every row in rowid order", async () => {
-  const stub = stubFor(`16-d3-large-${crypto.randomUUID()}`);
+  const stub = isolatedPlatformStub(isolatedTenantName("16-d3-large"));
   const date = "2031-03-03";
   await runInDurableObject(stub, (_instance, ctx) => {
     const database = new DurableObjectSqlDatabase(ctx.storage);
@@ -168,6 +181,7 @@ test("16 D3 export: a table larger than one R2 part is streamed in parts and kee
       clock: () => new Date("2031-03-03T10:00:00Z"),
       retentionDays: 400,
       orphanGraceHours: 24,
+      tableOwner: "platform",
     }, date, "telemetry_events"),
   );
 
@@ -218,5 +232,5 @@ test("12a AC6 (F1): with notifications unset, a provisioned object schedules its
 
   await runInDurableObject(stub, async (instance) => { await instance.alarm(); });
   const keys = await listKeys(env.EXPORTS);
-  expect(keys).toContain(exportObjectKey(lagosDate(new Date()), "audit_log"));
+  expect(keys).toContain(exportObjectKey(lagosDate(new Date()), "units"));
 });

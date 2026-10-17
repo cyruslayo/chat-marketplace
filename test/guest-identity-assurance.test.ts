@@ -7,7 +7,9 @@ import { SHORTLET_SCHEMA_MIGRATIONS, SHORTLET_SCHEMA_VERSION } from "../apps/clo
 import { importBatch } from "../apps/cloudflare/src/ops-import.js";
 import { applySchemaMigrations } from "../packages/platform-core/src/schema-migrations.js";
 import { openNodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-database.js";
-import { DEFAULT_IDENTITY_ASSURANCE_REFERENCE_POLICY, SqliteGuestIdentityAssurance, identityAssuranceRowForImport } from "../domains/shortlet/src/guest-identity-assurance.js";
+import { AccountBackedGuestIdentityVerificationResultSource, DEFAULT_IDENTITY_ASSURANCE_REFERENCE_POLICY, SqliteGuestIdentityAssurance, identityAssuranceRowForImport } from "../domains/shortlet/src/guest-identity-assurance.js";
+import { GuestCheckInIdentityEligibility } from "../domains/shortlet/src/guest-check-in-eligibility.js";
+import { GuestAccountRuntime } from "../apps/local-guest/src/guest-account-runtime.js";
 import { recordLocalVerifiedIdentity } from "./helpers/identity-assurance-fixture.js";
 import {
   ASSURANCE_TENANT,
@@ -24,10 +26,10 @@ const ADA = "ada@example.test";
 const GRACE = "grace@example.test";
 const NIN_V2_METHOD = "nigeria_nin_v2_biometric_kyc";
 
-async function withFixture(run: (fixture: GuestIdentityAssuranceFixture) => void): Promise<void> {
+async function withFixture(run: (fixture: GuestIdentityAssuranceFixture) => void | Promise<void>): Promise<void> {
   const fixture = await createGuestIdentityAssuranceFixture();
   try {
-    run(fixture);
+    await run(fixture);
   } finally {
     await fixture.close();
   }
@@ -36,49 +38,49 @@ async function withFixture(run: (fixture: GuestIdentityAssuranceFixture) => void
 // AC1 ---------------------------------------------------------------------------------------------------------------
 
 test("AC1: a recorded verified outcome is returned for the account from any linked principal", async () => {
-  await withFixture((f) => {
+  await withFixture(async (f) => {
     const session = f.signInDevice("guest-device-a", ADA);
     f.signInDevice("guest-device-b", ADA);
     const accountGuestId = session.account.accountGuestId;
     f.assurance.recordOutcome(verifiedOutcome(accountGuestId));
     assert.equal(f.assurance.currentAssurance(accountGuestId, T, f.now())?.status, "verified");
     for (const guestId of ["guest-device-a", "guest-device-b"]) {
-      assert.deepEqual(f.source.getVerificationResult({ tenantId: T, guestId }), { tenantId: T, guestId, governmentIdVerified: true });
+      assert.deepEqual(await f.source.getVerificationResult({ tenantId: T, guestId }), { tenantId: T, guestId, governmentIdVerified: true });
     }
   });
 });
 
 test("AC1 failure path: a principal not linked to the account gets null", async () => {
-  await withFixture((f) => {
+  await withFixture(async (f) => {
     const accountGuestId = f.signInDevice("guest-device-a", ADA).account.accountGuestId;
     f.assurance.recordOutcome(verifiedOutcome(accountGuestId));
-    assert.equal(f.source.getVerificationResult({ tenantId: T, guestId: "guest-never-signed-in" }), null);
+    assert.equal(await f.source.getVerificationResult({ tenantId: T, guestId: "guest-never-signed-in" }), null);
   });
 });
 
 test("AC1 failure path: a principal linked to a different account reads that account's empty result, never the verified one", async () => {
-  await withFixture((f) => {
+  await withFixture(async (f) => {
     const accountGuestId = f.signInDevice("guest-device-a", ADA).account.accountGuestId;
     f.assurance.recordOutcome(verifiedOutcome(accountGuestId));
     const other = f.signInDevice("guest-other-account", GRACE);
     assert.notEqual(other.account.accountGuestId, accountGuestId);
-    assert.equal(f.source.getVerificationResult({ tenantId: T, guestId: "guest-other-account" })?.governmentIdVerified, false);
+    assert.equal((await f.source.getVerificationResult({ tenantId: T, guestId: "guest-other-account" }))?.governmentIdVerified, false);
     assert.equal(f.assurance.currentAssurance(other.account.accountGuestId, T, f.now()), null);
   });
 });
 
 test("AC1 failure path: a principal read under another tenant gets null", async () => {
-  await withFixture((f) => {
+  await withFixture(async (f) => {
     const session = f.signInDevice("guest-device-a", ADA);
     f.assurance.recordOutcome(verifiedOutcome(session.account.accountGuestId));
-    assert.equal(f.source.getVerificationResult({ tenantId: "tenant-other", guestId: "guest-device-a" }), null);
-    assert.equal(f.source.getVerificationResult({ tenantId: "", guestId: "guest-device-a" }), null);
+    assert.equal(await f.source.getVerificationResult({ tenantId: "tenant-other", guestId: "guest-device-a" }), null);
+    assert.equal(await f.source.getVerificationResult({ tenantId: "", guestId: "guest-device-a" }), null);
     assert.equal(f.assurance.currentAssurance(session.account.accountGuestId, "tenant-other", f.now()), null);
   });
 });
 
 test("AC1 failure path: an outcome for an account of another tenant or a missing account is refused", async () => {
-  await withFixture((f) => {
+  await withFixture(async (f) => {
     const session = f.signInDevice("guest-device-a", ADA);
     const accountGuestId = session.account.accountGuestId;
     assert.throws(() => f.assurance.recordOutcome(verifiedOutcome(accountGuestId, { tenantId: "tenant-other" })), /active Guest Account/);
@@ -88,7 +90,7 @@ test("AC1 failure path: an outcome for an account of another tenant or a missing
 });
 
 test("AC1 failure path: an outcome for a closed Guest Account of this tenant is refused, as for a missing account", async () => {
-  await withFixture((f) => {
+  await withFixture(async (f) => {
     const accountGuestId = f.signInDevice("guest-device-a", ADA).account.accountGuestId;
     f.database.prepare("UPDATE guest_accounts SET status = 'closed' WHERE account_guest_id = ?").run([accountGuestId]);
     assert.throws(() => f.assurance.recordOutcome(verifiedOutcome(accountGuestId)), /active Guest Account/);
@@ -97,17 +99,17 @@ test("AC1 failure path: an outcome for a closed Guest Account of this tenant is 
 });
 
 test("AC1: the test-only fixture records a verified outcome that the account-backed source returns", async () => {
-  await withFixture((f) => {
+  await withFixture(async (f) => {
     const session = f.signInDevice("guest-device-a", ADA);
     recordLocalVerifiedIdentity(f.assurance, { tenantId: T, accountGuestId: session.account.accountGuestId, verifiedAt: VERIFIED_AT, expiresAt: EXPIRES_AT });
-    assert.equal(f.source.getVerificationResult({ tenantId: T, guestId: "guest-device-a" })?.governmentIdVerified, true);
+    assert.equal((await f.source.getVerificationResult({ tenantId: T, guestId: "guest-device-a" }))?.governmentIdVerified, true);
   });
 });
 
 // AC2 ---------------------------------------------------------------------------------------------------------------
 
 test("AC2: an outcome whose explicit expiresAt has passed reads as expired at the next call without any background job", async () => {
-  await withFixture((f) => {
+  await withFixture(async (f) => {
     const accountGuestId = f.signInDevice("guest-device-a", ADA).account.accountGuestId;
     f.assurance.recordOutcome(verifiedOutcome(accountGuestId));
     assert.equal(f.assurance.currentAssurance(accountGuestId, T, new Date(Date.parse(EXPIRES_AT) - 1))?.status, "verified");
@@ -117,12 +119,12 @@ test("AC2: an outcome whose explicit expiresAt has passed reads as expired at th
     // Lazy: nothing was rewritten by the reads, so the stored status is still the recorded verified outcome.
     assert.equal(f.database.prepare("SELECT status FROM guest_identity_assurance WHERE account_guest_id = ?").get([accountGuestId])?.status, "verified");
     f.setNow(EXPIRES_AT);
-    assert.equal(f.source.getVerificationResult({ tenantId: T, guestId: "guest-device-a" })?.governmentIdVerified, false);
+    assert.equal((await f.source.getVerificationResult({ tenantId: T, guestId: "guest-device-a" }))?.governmentIdVerified, false);
   });
 });
 
 test("AC2 failure path: a verified outcome without an explicit expiresAt is refused, so no default expiry applies", async () => {
-  await withFixture((f) => {
+  await withFixture(async (f) => {
     const accountGuestId = f.signInDevice("guest-device-a", ADA).account.accountGuestId;
     for (const expiresAt of [undefined, null, ""]) {
       assert.throws(() => f.assurance.recordOutcome(verifiedOutcome(accountGuestId, { expiresAt })), /expiresAt/);
@@ -132,7 +134,7 @@ test("AC2 failure path: a verified outcome without an explicit expiresAt is refu
 });
 
 test("AC2 failure path: a verified outcome with an invalid verifiedAt, or an expiry not later than verification, is refused", async () => {
-  await withFixture((f) => {
+  await withFixture(async (f) => {
     const accountGuestId = f.signInDevice("guest-device-a", ADA).account.accountGuestId;
     assert.throws(() => f.assurance.recordOutcome(verifiedOutcome(accountGuestId, { verifiedAt: null })), /verifiedAt/);
     assert.throws(() => f.assurance.recordOutcome(verifiedOutcome(accountGuestId, { verifiedAt: "not-a-timestamp" })), /verifiedAt/);
@@ -144,18 +146,18 @@ test("AC2 failure path: a verified outcome with an invalid verifiedAt, or an exp
 });
 
 test("AC2 failure path: a stored verified result with no explicit expiry never reads as current", async () => {
-  await withFixture((f) => {
+  await withFixture(async (f) => {
     const accountGuestId = f.signInDevice("guest-device-a", ADA).account.accountGuestId;
     // A row written around the store's validation (for example by a bad import) must not be read as current assurance.
     f.database.prepare(`INSERT INTO guest_identity_assurance (tenant_id, account_guest_id, level, method, status, verified_at, expires_at, provider_reference)
       VALUES (?, ?, 'government-ID-verified', ?, 'verified', ?, NULL, NULL)`).run([T, accountGuestId, NIN_V2_METHOD, VERIFIED_AT]);
     assert.throws(() => f.assurance.currentAssurance(accountGuestId, T, f.now()), /malformed/);
-    assert.throws(() => f.eligibility.evaluate(reservationFor("guest-device-a")), /malformed/);
+    assert.deepEqual(await f.eligibility.evaluate(reservationFor("guest-device-a")), { eligible: false, reason: "not_verified" });
   });
 });
 
 test("Hardening: currentAssurance refuses an invalid clock instant rather than reading expiry against it", async () => {
-  await withFixture((f) => {
+  await withFixture(async (f) => {
     const accountGuestId = f.signInDevice("guest-device-a", ADA).account.accountGuestId;
     f.assurance.recordOutcome(verifiedOutcome(accountGuestId));
     assert.throws(() => f.assurance.currentAssurance(accountGuestId, T, new Date("not-a-date")), /valid clock/);
@@ -163,7 +165,7 @@ test("Hardening: currentAssurance refuses an invalid clock instant rather than r
 });
 
 test("Hardening: a verifiedAt later than the injected clock is refused, and one equal to it is accepted", async () => {
-  await withFixture((f) => {
+  await withFixture(async (f) => {
     const accountGuestId = f.signInDevice("guest-device-a", ADA).account.accountGuestId;
     // The fixture clock is VERIFIED_AT, so one millisecond later is in the future and must be refused.
     assert.throws(() => f.assurance.recordOutcome(verifiedOutcome(accountGuestId, { verifiedAt: "2026-10-10T09:00:00.001Z" })), /verifiedAt/);
@@ -173,19 +175,19 @@ test("Hardening: a verifiedAt later than the injected clock is refused, and one 
 });
 
 test("Hardening: a closed Guest Account has no current outcome and its principals resolve to no account", async () => {
-  await withFixture((f) => {
+  await withFixture(async (f) => {
     const accountGuestId = f.signInDevice("guest-device-a", ADA).account.accountGuestId;
     f.assurance.recordOutcome(verifiedOutcome(accountGuestId));
     f.database.prepare("UPDATE guest_accounts SET status = 'closed' WHERE account_guest_id = ?").run([accountGuestId]);
-    assert.equal(f.assurance.currentAssurance(accountGuestId, T, f.now()), null);
+    assert.equal(f.assurance.currentAssurance(accountGuestId, T, f.now())?.status, "verified");
     assert.equal(f.links.accountForPrincipal("guest-device-a"), null);
-    assert.equal(f.source.getVerificationResult({ tenantId: T, guestId: "guest-device-a" }), null);
-    assert.deepEqual(f.eligibility.evaluate(reservationFor("guest-device-a")), { eligible: false, reason: "no_account" });
+    assert.equal(await f.source.getVerificationResult({ tenantId: T, guestId: "guest-device-a" }), null);
+    assert.deepEqual(await f.eligibility.evaluate(reservationFor("guest-device-a")), { eligible: false, reason: "no_account" });
   });
 });
 
 test("Hardening: a request whose principal belongs to a closed account is not claimed by a new account on the same email", async () => {
-  await withFixture((f) => {
+  await withFixture(async (f) => {
     const closed = f.signInDevice("guest-device-a", ADA);
     f.database.prepare("UPDATE guest_accounts SET status = 'closed' WHERE account_guest_id = ?").run([closed.account.accountGuestId]);
     // The request is made after the sign-in, so it has no claim row. Only the owner check can keep it from the new account.
@@ -201,61 +203,129 @@ test("Hardening: a request whose principal belongs to a closed account is not cl
 // AC3 ---------------------------------------------------------------------------------------------------------------
 
 test("AC3: changing the account email marks the outcome as needing re-verification", async () => {
-  await withFixture((f) => {
+  await withFixture(async (f) => {
     const session = f.signInDevice("guest-device-a", ADA);
     const accountGuestId = session.account.accountGuestId;
     f.assurance.recordOutcome(verifiedOutcome(accountGuestId));
     f.changeAccountEmail(session, "ada.changed@example.test");
-    assert.equal(f.assurance.currentAssurance(accountGuestId, T, f.now()), null);
-    assert.equal(f.source.getVerificationResult({ tenantId: T, guestId: "guest-device-a" })?.governmentIdVerified, false);
-    assert.deepEqual(f.eligibility.evaluate(reservationFor("guest-device-a")), { eligible: false, reason: "not_verified" });
+    assert.equal(f.assurance.currentAssurance(accountGuestId, T, f.now())?.status, "verified", "the stale row remains stored but cannot pass the version guard");
+    assert.equal((await f.source.getVerificationResult({ tenantId: T, guestId: "guest-device-a" }))?.governmentIdVerified, false);
+    assert.deepEqual(await f.eligibility.evaluate(reservationFor("guest-device-a")), { eligible: false, reason: "not_verified" });
   });
 });
 
 test("AC3 failure path: signing in on another device with the same account keeps the current outcome", async () => {
-  await withFixture((f) => {
+  await withFixture(async (f) => {
     const accountGuestId = f.signInDevice("guest-device-a", ADA).account.accountGuestId;
     f.assurance.recordOutcome(verifiedOutcome(accountGuestId));
     const second = f.signInDevice("guest-device-b", ADA);
     assert.equal(second.account.accountGuestId, accountGuestId);
     assert.equal(f.assurance.currentAssurance(accountGuestId, T, f.now())?.status, "verified");
-    assert.equal(f.source.getVerificationResult({ tenantId: T, guestId: "guest-device-b" })?.governmentIdVerified, true);
+    assert.equal((await f.source.getVerificationResult({ tenantId: T, guestId: "guest-device-b" }))?.governmentIdVerified, true);
   });
 });
 
 test("AC3 failure path: a same-address change-email does not remove the outcome", async () => {
-  await withFixture((f) => {
+  await withFixture(async (f) => {
     const accountGuestId = f.signInDevice("guest-device-a", ADA).account.accountGuestId;
     f.assurance.recordOutcome(verifiedOutcome(accountGuestId));
-    // Writes that leave the normalized email unchanged (revision bump, and a self-assignment) must not fire the trigger.
+    // Writes that leave the normalized email unchanged advance account revision but not the email-specific version.
     f.database.prepare("UPDATE guest_accounts SET updated_at = ?, revision = revision + 1 WHERE account_guest_id = ?").run(["2026-10-10T10:00:00.000Z", accountGuestId]);
     f.database.prepare("UPDATE guest_accounts SET email_normalized = email_normalized WHERE account_guest_id = ?").run([accountGuestId]);
     assert.equal(f.assurance.currentAssurance(accountGuestId, T, f.now())?.status, "verified");
   });
 });
 
+test("Slice 17 ADR 0094: both assurance consumers reject stored evidence when PLATFORM revision lookup is unavailable", async () => {
+  await withFixture(async (f) => {
+    const accountGuestId = f.signInDevice("guest-device-a", ADA).account.accountGuestId;
+    f.assurance.recordOutcome(verifiedOutcome(accountGuestId));
+    const unavailable = { readAccountAssuranceState: async () => { throw new Error("platform unavailable"); } };
+    const source = new AccountBackedGuestIdentityVerificationResultSource({ links: f.links, assurance: f.assurance, accountState: unavailable, clock: f.now });
+    const eligibility = new GuestCheckInIdentityEligibility({ links: f.links, assurance: f.assurance, accountState: unavailable, clock: f.now });
+    assert.equal((await source.getVerificationResult({ tenantId: T, guestId: "guest-device-a" }))?.governmentIdVerified, false);
+    assert.deepEqual(await eligibility.evaluate(reservationFor("guest-device-a")), { eligible: false, reason: "not_verified" });
+  });
+});
+
+test("Slice 17 reviewer P1: account status rejects old verified assurance after email revision changes even when cleanup is unavailable", async () => {
+  await withFixture(async (f) => {
+    const session = f.signInDevice("guest-device-a", ADA);
+    f.assurance.recordOutcome(verifiedOutcome(session.account.accountGuestId));
+    const runtime = new GuestAccountRuntime({
+      database: f.database,
+      tenantId: T,
+      clock: f.now,
+      requests: f.store,
+      composition: { codeHashingKey: "r".repeat(32), sender: { send: async () => undefined } },
+      assuranceInvalidator: { invalidateGuestIdentityAssurance: async () => { throw new Error("Shortlet unavailable"); } },
+    });
+    assert.equal((await runtime.accountStatus(session.account.accountGuestId))?.governmentIdVerified, true);
+    f.changeAccountEmail(session, "ada.new@example.test");
+    assert.equal(f.assurance.currentAssurance(session.account.accountGuestId, T, f.now())?.status, "verified", "cleanup outage leaves stale evidence stored");
+    assert.equal((await runtime.accountStatus(session.account.accountGuestId))?.governmentIdVerified, false);
+  });
+});
+
+test("Slice 17 reviewer P2: committed email change retries exact Shortlet cleanup after outage, while failed proof never invalidates", async () => {
+  await withFixture(async (f) => {
+    const session = f.signInDevice("guest-device-a", ADA);
+    f.assurance.recordOutcome(verifiedOutcome(session.account.accountGuestId));
+    const sent: string[] = [];
+    let invalidateAttempts = 0;
+    const runtime = new GuestAccountRuntime({
+      database: f.database, tenantId: T, clock: f.now, requests: f.store,
+      composition: { codeHashingKey: "p".repeat(32), sender: { send: async (message) => { sent.push(message.text); } } },
+      assuranceInvalidator: { invalidateGuestIdentityAssurance: async ({ tenantId, accountGuestId }) => {
+        assert.equal(tenantId, T);
+        assert.equal(accountGuestId, session.account.accountGuestId);
+        invalidateAttempts += 1;
+        if (invalidateAttempts === 1) throw new Error("Shortlet unavailable");
+        f.database.prepare("DELETE FROM guest_identity_assurance WHERE tenant_id = ? AND account_guest_id = ?").run([tenantId, accountGuestId]);
+      } },
+    });
+    const credentials = { sessionId: session.sessionId, sessionSecret: session.sessionSecret };
+    const challenge = await runtime.requestEmailChangeCode({ credentials, accountGuestId: session.account.accountGuestId, email: "ada.retry@example.test", clientAddress: "test-client" });
+    const code = /\b(\d{6})\b/.exec(sent[0] ?? "")?.[1];
+    assert.ok(code, "the delivery adapter receives a one-time code");
+    await assert.rejects(runtime.confirmEmailChange({ credentials, accountGuestId: session.account.accountGuestId, challengeId: challenge.challengeId, email: challenge.email, code: "000000", clientAddress: "test-client" }));
+    assert.equal(f.assurance.currentAssurance(session.account.accountGuestId, T, f.now())?.status, "verified", "rejected proof causes no cleanup");
+    await assert.rejects(runtime.confirmEmailChange({ credentials, accountGuestId: session.account.accountGuestId, challengeId: challenge.challengeId, email: challenge.email, code, clientAddress: "test-client" }), /Shortlet unavailable/);
+    assert.equal((await runtime.accountStatus(session.account.accountGuestId))?.account.email, challenge.email, "PLATFORM committed before remote cleanup failed");
+    assert.equal((await runtime.accountStatus(session.account.accountGuestId))?.governmentIdVerified, false, "revision guard blocks trust during cleanup outage");
+    await runtime.confirmEmailChange({ credentials, accountGuestId: session.account.accountGuestId, challengeId: challenge.challengeId, email: challenge.email, code, clientAddress: "test-client" });
+    assert.equal(invalidateAttempts, 2, "replay retried the idempotent exact-account cleanup");
+    assert.equal(f.assurance.currentAssurance(session.account.accountGuestId, T, f.now()), null);
+    await assert.rejects(
+      runtime.confirmEmailChange({ credentials, accountGuestId: session.account.accountGuestId, challengeId: challenge.challengeId, email: challenge.email, code, clientAddress: "test-client" }),
+      (error: unknown) => error instanceof Error && "code" in error && error.code === "code_consumed",
+    );
+    assert.equal(invalidateAttempts, 2, "completed cleanup is not repeated on a consumed proof");
+  });
+});
+
 // AC4 ---------------------------------------------------------------------------------------------------------------
 
 test("AC4: check-in eligibility fails closed for a Reservation whose Primary Guest has no account", async () => {
-  await withFixture((f) => {
+  await withFixture(async (f) => {
     f.signInDevice("guest-device-a", ADA);
     f.assurance.recordOutcome(verifiedOutcome(f.links.accountForPrincipal("guest-device-a")!.accountGuestId));
-    assert.deepEqual(f.eligibility.evaluate(reservationFor("guest-anonymous-principal")), { eligible: false, reason: "no_account" });
+    assert.deepEqual(await f.eligibility.evaluate(reservationFor("guest-anonymous-principal")), { eligible: false, reason: "no_account" });
   });
 });
 
 test("AC4: check-in eligibility fails closed for an expired outcome", async () => {
-  await withFixture((f) => {
+  await withFixture(async (f) => {
     const accountGuestId = f.signInDevice("guest-device-a", ADA).account.accountGuestId;
     f.assurance.recordOutcome(verifiedOutcome(accountGuestId));
-    assert.deepEqual(f.eligibility.evaluate(reservationFor("guest-device-a")), { eligible: true });
+    assert.deepEqual(await f.eligibility.evaluate(reservationFor("guest-device-a")), { eligible: true });
     f.setNow(EXPIRES_AT);
-    assert.deepEqual(f.eligibility.evaluate(reservationFor("guest-device-a")), { eligible: false, reason: "expired" });
+    assert.deepEqual(await f.eligibility.evaluate(reservationFor("guest-device-a")), { eligible: false, reason: "expired" });
   });
 });
 
 test("AC4 failure path: pending, failed, provider-unavailable and email-only outcomes are not eligible", async () => {
-  await withFixture((f) => {
+  await withFixture(async (f) => {
     const accountGuestId = f.signInDevice("guest-device-a", ADA).account.accountGuestId;
     const notCurrent = [
       verifiedOutcome(accountGuestId, { status: "pending", verifiedAt: null, expiresAt: null }),
@@ -265,24 +335,24 @@ test("AC4 failure path: pending, failed, provider-unavailable and email-only out
     ];
     for (const outcome of notCurrent) {
       f.assurance.recordOutcome(outcome);
-      assert.deepEqual(f.eligibility.evaluate(reservationFor("guest-device-a")), { eligible: false, reason: "not_verified" }, `${outcome.status} ${outcome.level}`);
+      assert.deepEqual(await f.eligibility.evaluate(reservationFor("guest-device-a")), { eligible: false, reason: "not_verified" }, `${outcome.status} ${outcome.level}`);
     }
   });
 });
 
 test("AC4 failure path: a Reservation whose tenant differs from the account's tenant fails closed as no account", async () => {
-  await withFixture((f) => {
+  await withFixture(async (f) => {
     const accountGuestId = f.signInDevice("guest-device-a", ADA).account.accountGuestId;
     f.assurance.recordOutcome(verifiedOutcome(accountGuestId));
-    assert.deepEqual(f.eligibility.evaluate(reservationFor("guest-device-a", "tenant-other")), { eligible: false, reason: "no_account" });
+    assert.deepEqual(await f.eligibility.evaluate(reservationFor("guest-device-a", "tenant-other")), { eligible: false, reason: "no_account" });
   });
 });
 
 test("AC4 failure path: a Reservation without a tenant, Reservation id or Primary Guest is refused", async () => {
-  await withFixture((f) => {
-    assert.throws(() => f.eligibility.evaluate(reservationFor("guest-device-a", "")), /required/);
-    assert.throws(() => f.eligibility.evaluate(reservationFor("")), /required/);
-    assert.throws(() => f.eligibility.evaluate({ reservationId: "", tenantId: T, primaryGuestId: "guest-device-a" }), /required/);
+  await withFixture(async (f) => {
+    await assert.rejects(f.eligibility.evaluate(reservationFor("guest-device-a", "")), /required/);
+    await assert.rejects(f.eligibility.evaluate(reservationFor("")), /required/);
+    await assert.rejects(f.eligibility.evaluate({ reservationId: "", tenantId: T, primaryGuestId: "guest-device-a" }), /required/);
   });
 });
 
@@ -316,9 +386,9 @@ const LEAF_FILES = [OPS_IMPORT, SCHEMA, COMPOSITION_ROOT];
 /** Who may import each leaf, and why. Any other importer fails the guard. */
 const LEAF_IMPORTERS: Readonly<Record<string, readonly string[]>> = Object.freeze({
   // The ops HTTP routes use the import validator; the Node export script round-trips the daily export.
-  [OPS_IMPORT]: ["apps/cloudflare/src/ops-routes.ts", "scripts/export-node-sqlite.ts"].sort(),
-  // The ops routes check the schema version; the Durable Object applies the migrations; the Node script applies them for restores.
-  [SCHEMA]: ["apps/cloudflare/src/ops-routes.ts", "apps/cloudflare/src/shortlet-pilot-do.ts", "scripts/export-node-sqlite.ts"].sort(),
+  [OPS_IMPORT]: ["apps/cloudflare/src/ops-routes.ts", "apps/cloudflare/src/platform-do.ts", "scripts/export-node-sqlite.ts"].sort(),
+  // The ops routes check schema versions; each Durable Object applies its own migration stream; the Node script migrates restores.
+  [SCHEMA]: ["apps/cloudflare/src/ops-routes.ts", "apps/cloudflare/src/platform-do.ts", "apps/cloudflare/src/shortlet-pilot-do.ts", "scripts/export-node-sqlite.ts"].sort(),
   [COMPOSITION_ROOT]: GATEWAY_IMPORTERS,
 });
 /**
@@ -330,7 +400,7 @@ const ACCOUNT_RUNTIME = "apps/local-guest/src/guest-account-runtime.ts";
 const ACCOUNT_PAGES = "apps/local-guest/src/guest-account-pages.ts";
 const ACCOUNT_COMPOSITION = [ACCOUNT_RUNTIME, STATUS_READER];
 /** The modules that import the store directly: the two migration manifests and the import validator, the check-in helper and the reader. */
-const STORE_IMPORTERS = [OPS_IMPORT, SCHEMA, CHECK_IN_HELPER, STATUS_READER].sort();
+const STORE_IMPORTERS = [OPS_IMPORT, SCHEMA, CHECK_IN_HELPER, STATUS_READER, ACCOUNT_RUNTIME].sort();
 /**
  * Every source root that can host a booking, route, application, payment or composition module, including the app scripts (review 4d).
  * Read from the filesystem, so a new app or package is swept without a list edit: `apps/*\/src`, `apps/*\/scripts`, `packages/*\/src`,
@@ -505,17 +575,17 @@ test("AC5: the sweep reads JavaScript modules as well as TypeScript", () => {
 // AC6 ---------------------------------------------------------------------------------------------------------------
 
 test("AC6: the stored record holds only the ADR 0094 fields", async () => {
-  await withFixture((f) => {
+  await withFixture(async (f) => {
     const accountGuestId = f.signInDevice("guest-device-a", ADA).account.accountGuestId;
     f.assurance.recordOutcome(verifiedOutcome(accountGuestId, { method: NIN_V2_METHOD, providerReference: "opaque-ref-1" }));
     const columns = f.database.prepare("PRAGMA table_info(guest_identity_assurance)").all().map((row) => String(row.name)).sort();
-    assert.deepEqual(columns, ["account_guest_id", "expires_at", "level", "method", "provider_reference", "status", "tenant_id", "verified_at"]);
+      assert.deepEqual(columns, ["account_email_revision", "account_guest_id", "expires_at", "level", "method", "provider_reference", "status", "tenant_id", "verified_at"]);
     assert.equal(f.database.prepare("SELECT * FROM guest_identity_assurance").get()?.provider_reference, "opaque-ref-1");
   });
 });
 
 test("AC6 failure path: identity evidence passed alongside an outcome is never stored", async () => {
-  await withFixture((f) => {
+  await withFixture(async (f) => {
     const accountGuestId = f.signInDevice("guest-device-a", ADA).account.accountGuestId;
     // Not an object literal, so excess-property checks do not apply: the store must still drop the evidence.
     const withEvidence = {
@@ -533,7 +603,7 @@ test("AC6 failure path: identity evidence passed alongside an outcome is never s
 });
 
 test("AC6 failure path: a level or status outside ADR 0094 and ADR 0084 is refused", async () => {
-  await withFixture((f) => {
+  await withFixture(async (f) => {
     const accountGuestId = f.signInDevice("guest-device-a", ADA).account.accountGuestId;
     // The app-level messages are matched, not the SQL CHECK text, so each guard is probed on its own.
     assert.throws(() => f.assurance.recordOutcome(verifiedOutcome(accountGuestId, { level: "nin-verified" as never })), /level must be one of the ADR 0094 levels/);
@@ -543,7 +613,7 @@ test("AC6 failure path: a level or status outside ADR 0094 and ADR 0084 is refus
 });
 
 test("AC6: the provider reference limits are store options with named defaults, and an override changes what is accepted", async () => {
-  await withFixture((f) => {
+  await withFixture(async (f) => {
     const accountGuestId = f.signInDevice("guest-device-a", ADA).account.accountGuestId;
     const production = new SqliteGuestIdentityAssurance(f.database, { clock: () => f.now() });
     const accepted = (store: SqliteGuestIdentityAssurance, providerReference: string) => {
@@ -570,9 +640,7 @@ test("AC6: the ops import path applies the same reference limits, and its defaul
   const database = openNodeSqliteDatabase(":memory:");
   try {
     applySchemaMigrations(database, SHORTLET_SCHEMA_MIGRATIONS, "2026-10-10T00:00:00.000Z");
-    database.prepare("INSERT INTO guest_accounts (account_guest_id, tenant_id, email_normalized, phone_number, status, created_at, updated_at, revision) VALUES ('gacct-policy', ?, ?, NULL, 'active', ?, ?, 0)")
-      .run([T, ADA, VERIFIED_AT, VERIFIED_AT]);
-    const row = { tenant_id: T, account_guest_id: "gacct-policy", level: "government-ID-verified", method: NIN_V2_METHOD, status: "verified", verified_at: VERIFIED_AT, expires_at: EXPIRES_AT, provider_reference: "abc-12345" };
+    const row = { tenant_id: T, account_guest_id: "gacct-policy", account_email_revision: 0, level: "government-ID-verified", method: NIN_V2_METHOD, status: "verified", verified_at: VERIFIED_AT, expires_at: EXPIRES_AT, provider_reference: "abc-12345" };
     const now = new Date(VERIFIED_AT);
     // The default screen (runs of 9 digits) accepts a 5-digit run; a 4-digit override refuses it.
     assert.equal(identityAssuranceRowForImport(database, row, now)["provider_reference"], "abc-12345");
@@ -591,7 +659,7 @@ test("AC6: the provider reference limits in use are the named defaults, and the 
 });
 
 test("AC6: the ADR 0084 method and an opaque provider reference are accepted", async () => {
-  await withFixture((f) => {
+  await withFixture(async (f) => {
     const accountGuestId = f.signInDevice("guest-device-a", ADA).account.accountGuestId;
     f.assurance.recordOutcome(verifiedOutcome(accountGuestId, { method: NIN_V2_METHOD, providerReference: "smile-job-7f3a9c2b" }));
     const current = f.assurance.currentAssurance(accountGuestId, T, f.now());
@@ -601,7 +669,7 @@ test("AC6: the ADR 0084 method and an opaque provider reference are accepted", a
 });
 
 test("AC6 failure path: a method that is not a platform-owned identifier is refused, and the test fixture method is refused by the production store", async () => {
-  await withFixture((f) => {
+  await withFixture(async (f) => {
     const accountGuestId = f.signInDevice("guest-device-a", ADA).account.accountGuestId;
     const production = new SqliteGuestIdentityAssurance(f.database, { clock: () => f.now() });
     for (const method of ["12345678901", "", "nigeria-nin-v2", "local-fixture"]) {
@@ -615,7 +683,7 @@ test("AC6 failure path: a method that is not a platform-owned identifier is refu
 });
 
 test("AC6 failure path: a provider reference that looks like a restricted identifier is refused", async () => {
-  await withFixture((f) => {
+  await withFixture(async (f) => {
     const accountGuestId = f.signInDevice("guest-device-a", ADA).account.accountGuestId;
     const refused = [
       "22233344455", "job-12345678901", "ref 1234", "ref-123456789", "x".repeat(65), "", "-leading-dash",
@@ -637,10 +705,8 @@ test("AC6 failure path: an ops import cannot write a current verified row withou
   const database = openNodeSqliteDatabase(":memory:");
   try {
     applySchemaMigrations(database, SHORTLET_SCHEMA_MIGRATIONS, "2026-10-10T00:00:00.000Z");
-    database.prepare("INSERT INTO guest_accounts (account_guest_id, tenant_id, email_normalized, phone_number, status, created_at, updated_at, revision) VALUES (?, ?, ?, NULL, 'active', ?, ?, 0)")
-      .run(["gacct-import-1", T, ADA, VERIFIED_AT, VERIFIED_AT]);
     const row = {
-      tenant_id: T, account_guest_id: "gacct-import-1", level: "government-ID-verified", method: NIN_V2_METHOD,
+      tenant_id: T, account_guest_id: "gacct-import-1", account_email_revision: 0, level: "government-ID-verified", method: NIN_V2_METHOD,
       status: "verified", verified_at: VERIFIED_AT, expires_at: EXPIRES_AT, provider_reference: null,
     };
     const now = new Date(VERIFIED_AT);
@@ -650,7 +716,8 @@ test("AC6 failure path: an ops import cannot write a current verified row withou
     );
     refused({ ...row, method: "12345678901" });
     refused({ ...row, verified_at: "2026-10-10T09:00:00.001Z" });
-    refused({ ...row, account_guest_id: "gacct-missing" });
+    const { account_email_revision: _version, ...legacy } = row;
+    refused(legacy);
     refused({ ...row, expires_at: null });
     refused({ ...row, provider_reference: "22233344455" });
     assert.equal(database.prepare("SELECT COUNT(*) AS n FROM guest_identity_assurance").get()?.n, 0);
@@ -666,11 +733,8 @@ test("AC6: an ops import restores an identity assurance row for an active accoun
   const database = openNodeSqliteDatabase(":memory:");
   try {
     applySchemaMigrations(database, SHORTLET_SCHEMA_MIGRATIONS, "2026-10-10T00:00:00.000Z");
-    const insertAccount = database.prepare("INSERT INTO guest_accounts (account_guest_id, tenant_id, email_normalized, phone_number, status, created_at, updated_at, revision) VALUES (?, ?, ?, NULL, ?, ?, ?, 0)");
-    insertAccount.run(["gacct-active", T, "active@example.test", "active", VERIFIED_AT, VERIFIED_AT]);
-    insertAccount.run(["gacct-closed", T, "closed@example.test", "closed", VERIFIED_AT, VERIFIED_AT]);
     const rowFor = (accountGuestId: string) => ({
-      tenant_id: T, account_guest_id: accountGuestId, level: "government-ID-verified", method: NIN_V2_METHOD,
+      tenant_id: T, account_guest_id: accountGuestId, account_email_revision: 0, level: "government-ID-verified", method: NIN_V2_METHOD,
       status: "verified", verified_at: VERIFIED_AT, expires_at: EXPIRES_AT, provider_reference: null,
     });
     // A daily export written while the account was active restores after the account has since closed.
@@ -681,21 +745,14 @@ test("AC6: an ops import restores an identity assurance row for an active accoun
   }
 });
 
-test("AC6 failure path: an ops import refuses a row for a missing account or another tenant's account, with a generic message", () => {
+test("Slice 17 ADR 0094: assurance import rejects legacy rows whose historical email revision cannot be proven", () => {
   const database = openNodeSqliteDatabase(":memory:");
   try {
     applySchemaMigrations(database, SHORTLET_SCHEMA_MIGRATIONS, "2026-10-10T00:00:00.000Z");
-    database.prepare("INSERT INTO guest_accounts (account_guest_id, tenant_id, email_normalized, phone_number, status, created_at, updated_at, revision) VALUES ('gacct-other', 'tenant-other', 'other@example.test', NULL, 'active', ?, ?, 0)")
-      .run([VERIFIED_AT, VERIFIED_AT]);
     const base = { tenant_id: T, level: "government-ID-verified", method: NIN_V2_METHOD, status: "verified", verified_at: VERIFIED_AT, expires_at: EXPIRES_AT, provider_reference: null };
     const now = new Date(VERIFIED_AT);
-    for (const accountGuestId of ["gacct-missing", "gacct-other"]) {
-      assert.throws(
-        () => importBatch(database, "guest_identity_assurance", [{ ...base, account_guest_id: accountGuestId }], SHORTLET_SCHEMA_VERSION, now),
-        (error: unknown) => error instanceof Error && error.message === "An identity assurance row failed validation, so nothing from the batch was written" && !error.message.includes(accountGuestId),
-        accountGuestId,
-      );
-    }
+    assert.throws(() => importBatch(database, "guest_identity_assurance", [{ ...base, account_guest_id: "gacct-legacy" }], SHORTLET_SCHEMA_VERSION, now),
+      (error: unknown) => error instanceof Error && error.message === "An identity assurance row failed validation, so nothing from the batch was written");
     assert.equal(database.prepare("SELECT COUNT(*) AS n FROM guest_identity_assurance").get()?.n, 0);
   } finally {
     database.close();
@@ -706,9 +763,7 @@ test("AC6 failure path: an ops import refuses a provider reference that hides a 
   const database = openNodeSqliteDatabase(":memory:");
   try {
     applySchemaMigrations(database, SHORTLET_SCHEMA_MIGRATIONS, "2026-10-10T00:00:00.000Z");
-    database.prepare("INSERT INTO guest_accounts (account_guest_id, tenant_id, email_normalized, phone_number, status, created_at, updated_at, revision) VALUES ('gacct-import-2', ?, ?, NULL, 'active', ?, ?, 0)")
-      .run([T, ADA, VERIFIED_AT, VERIFIED_AT]);
-    const row = { tenant_id: T, account_guest_id: "gacct-import-2", level: "government-ID-verified", method: NIN_V2_METHOD, status: "verified", verified_at: VERIFIED_AT, expires_at: EXPIRES_AT };
+    const row = { tenant_id: T, account_guest_id: "gacct-import-2", account_email_revision: 0, level: "government-ID-verified", method: NIN_V2_METHOD, status: "verified", verified_at: VERIFIED_AT, expires_at: EXPIRES_AT };
     for (const provider_reference of ["a1234-5678-901", "a1234_5678_901", "a0801-234-5678", "a222-2222-222", "a1234567-8901"]) {
       assert.throws(
         () => importBatch(database, "guest_identity_assurance", [{ ...row, provider_reference }], SHORTLET_SCHEMA_VERSION, new Date(VERIFIED_AT)),
@@ -727,12 +782,10 @@ test("Hardening: an invalid injected clock refuses recording and import rather t
   const database = openNodeSqliteDatabase(":memory:");
   try {
     applySchemaMigrations(database, SHORTLET_SCHEMA_MIGRATIONS, "2026-10-10T00:00:00.000Z");
-    database.prepare("INSERT INTO guest_accounts (account_guest_id, tenant_id, email_normalized, phone_number, status, created_at, updated_at, revision) VALUES ('gacct-clock', ?, ?, NULL, 'active', ?, ?, 0)")
-      .run([T, ADA, VERIFIED_AT, VERIFIED_AT]);
     const invalid = new Date("not-a-date");
     const store = new SqliteGuestIdentityAssurance(database, { clock: () => invalid });
     assert.throws(() => store.recordOutcome(verifiedOutcome("gacct-clock")), /valid clock/);
-    const row = { tenant_id: T, account_guest_id: "gacct-clock", level: "government-ID-verified", method: NIN_V2_METHOD, status: "verified", verified_at: VERIFIED_AT, expires_at: EXPIRES_AT, provider_reference: null };
+    const row = { tenant_id: T, account_guest_id: "gacct-clock", account_email_revision: 0, level: "government-ID-verified", method: NIN_V2_METHOD, status: "verified", verified_at: VERIFIED_AT, expires_at: EXPIRES_AT, provider_reference: null };
     assert.throws(() => importBatch(database, "guest_identity_assurance", [row], SHORTLET_SCHEMA_VERSION, invalid), /failed validation/);
     assert.equal(database.prepare("SELECT COUNT(*) AS n FROM guest_identity_assurance").get()?.n, 0);
   } finally {
@@ -754,7 +807,7 @@ test("AC5: the sweep reads JavaScript modules as well as TypeScript", () => {
 
 // Schema ------------------------------------------------------------------------------------------------------------
 
-test("Schema: migration 4 creates the assurance table and the email-change trigger on a database at migration 3", () => {
+test("Slice 17 ADR 0094: assurance remains in shortlet without a platform-account foreign key or cross-database trigger", () => {
   assert.equal(SHORTLET_SCHEMA_VERSION, 4);
   const database = openNodeSqliteDatabase(":memory:");
   try {
@@ -762,7 +815,9 @@ test("Schema: migration 4 creates the assurance table and the email-change trigg
     applySchemaMigrations(database, SHORTLET_SCHEMA_MIGRATIONS, "2026-10-10T00:00:00.000Z");
     const objects = database.prepare("SELECT name, type FROM sqlite_master").all().map((row) => `${row.type}:${row.name}`);
     assert.ok(objects.includes("table:guest_identity_assurance"));
-    assert.ok(objects.includes("trigger:guest_identity_assurance_on_email_change"));
+    assert.ok(!objects.includes("trigger:guest_identity_assurance_on_email_change"));
+    const foreignKeys = database.prepare("PRAGMA foreign_key_list(guest_identity_assurance)").all();
+    assert.ok(!foreignKeys.some((row) => row.table === "guest_accounts"));
   } finally {
     database.close();
   }

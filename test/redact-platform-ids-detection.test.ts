@@ -86,7 +86,8 @@ test("The detection query returns no rows for clean platform ids, masked free te
 });
 
 test("The issue file shows the full detection query for audit_log and telemetry_events, generated from the exemption table", () => {
-  const blocks = [...readFileSync(issuePath, "utf8").matchAll(/```sql\n([\s\S]*?)```/g)].map((match) => match[1]!.trim());
+  const issue = readFileSync(issuePath, "utf8").replace(/\r\n?/g, "\n");
+  const blocks = [...issue.matchAll(/```sql\n([\s\S]*?)```/g)].map((match) => match[1]!.trim());
   assert.deepEqual(blocks, [
     platformIdMaskedRowsSql("audit_log").trim(),
     platformIdMaskedRowsSql("telemetry_events").trim()
