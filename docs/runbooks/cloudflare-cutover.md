@@ -105,6 +105,13 @@ Record the manifest's SHA-256 (`sha256sum manifest.json`) in the log.
 Keep `<EXPORT_DIR>` write-protected as immutable source evidence. Make `<MIGRATION_DIR>` as a separate derived copy and
 record every row-count and checksum change in a transform ledger beside it. Never edit the original export.
 
+Use the export tool to create that derived copy; it preserves the original files and writes a count/checksum-only
+`transform-ledger.json` in the destination:
+
+```bash
+npx tsx scripts/export-node-sqlite.ts --prepare-split "<EXPORT_DIR>" "<MIGRATION_DIR>"
+```
+
 - **Legacy account schema default:** if pre-split `guest_accounts` rows lack `email_revision`, add the target schema's
   declared default `0` to each derived row and recompute that table's canonical row count and SHA-256. This is a
   representation change for the new account schema only; it is not evidence for Identity Assurance.
@@ -273,8 +280,9 @@ R4. **Find the receipts written or removed after cutover.** Keys in `<POST_DIR>`
     the delta file), and a `receipts` entry for each new receipt (`objectKey`, `contentType`, `size`, `sha256`, with the
     SHA-256 from `sha256sum`). `movedTables` is `["receipt_blobs"]`.
 
-R5. **Apply the delta to the frozen Node file.** Use the copy from step 1, not the original file's current state. The file
-    must be migrated first (D3). The migration creates only the tables that are missing, and it is idempotent on a migrated file:
+R5. **Apply the delta to the frozen Node files.** Use the copy from step 1, not the original file's current state. Migrate
+    SHORTLET at `<RESTORED_DB_PATH>` and PLATFORM at `<RESTORED_DB_PATH>.platform.sqlite`; the tool applies each owner's
+    production migration list to its own file, creating only missing tables and remaining idempotent (D3):
 
     ```bash
     npx tsx scripts/export-node-sqlite.ts --migrate "<RESTORED_DB_PATH>"

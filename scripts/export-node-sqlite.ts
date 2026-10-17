@@ -4,8 +4,8 @@
  * apps/cloudflare/src/ops-import.ts), so a checksum taken on either side can be compared directly.
  *
  *   tsx scripts/export-node-sqlite.ts --export <db.sqlite> <out-dir>
- *   tsx scripts/export-node-sqlite.ts --migrate <db.sqlite>                (applies the schema migrations to a Node file)
- *   tsx scripts/export-node-sqlite.ts --import <db.sqlite> <in-dir>        (a Node target, migrated first; never creates tables)
+ *   tsx scripts/export-node-sqlite.ts --migrate <db.sqlite>                (migrates SHORTLET and adjacent <db>.platform.sqlite)
+ *   tsx scripts/export-node-sqlite.ts --import <db.sqlite> <in-dir>        (paired Node target, migrated first; never creates tables)
  *   tsx scripts/export-node-sqlite.ts --push <in-dir>                      (remote: SHORTLET_OPS_URL and secrets from env)
  *   tsx scripts/export-node-sqlite.ts --pull <out-dir>                     (remote, read-only reverse export)
  *   tsx scripts/export-node-sqlite.ts --cutover-complete                   (remote: sets the one-way cutover flag; refuses further imports)
@@ -14,14 +14,16 @@
  * Output is files and counts only. No row content reaches the console (ADR 0075). The source file is opened read-only.
  * Uploading receipt files to R2 by key is a separate, described step in docs/runbooks/cloudflare-cutover.md.
  */
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { cp, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
 import { SqliteReceiptBlobStore } from "../packages/platform-core/src/payments/receipt-blob-store.js";
 import { assertImportAllowed, importBatch } from "../apps/cloudflare/src/ops-import.js";
 import { DAILY_EXPORT_EXCLUDED } from "../apps/cloudflare/src/do-export.js";
-import { SHORTLET_SCHEMA_MIGRATIONS, SHORTLET_SCHEMA_VERSION } from "../apps/cloudflare/src/schema.js";
+import { PLATFORM_SCHEMA_MIGRATIONS, PLATFORM_SCHEMA_VERSION, SHORTLET_SCHEMA_MIGRATIONS, SHORTLET_SCHEMA_VERSION } from "../apps/cloudflare/src/schema.js";
+import { PLATFORM_OWNED_TABLES } from "../apps/cloudflare/src/do-export.js";
 import { assertOpsOk, opsRequest, remoteOpsConfiguration, type OpsRemoteConfiguration } from "../apps/shortlet-ops/src/ops-client.js";
 import { applySchemaMigrations } from "../packages/platform-core/src/schema-migrations.js";
 import {
@@ -29,7 +31,9 @@ import {
   checksumTables,
   compareExcludedTables,
   compareMigration,
+  contentSha256,
   importRequestChunks,
+  importOrder,
   sha256OfBytes,
   type MigrationManifest,
   type TableChecksum,
@@ -40,6 +44,11 @@ const RECEIPT_DIRECTORY = "receipts";
 const MANIFEST_FILE = "manifest.json";
 const OBJECT_KEY_PATTERN = /^[A-Za-z0-9-]+$/;
 
+/** Local rollback target keeps the two production authorities in distinct SQLite files. */
+export function platformDatabasePath(shortletDatabasePath: string): string {
+  return `${shortletDatabasePath}.platform.sqlite`;
+}
+
 /** Writes the export to `outDir` and returns its manifest. Receipt keys are opaque UUIDs, checked before use as file names. */
 export async function exportNodeSqliteFile(dbPath: string, outDir: string): Promise<MigrationManifest> {
   const handle = new DatabaseSync(dbPath, { readOnly: true });
@@ -48,6 +57,44 @@ export async function exportNodeSqliteFile(dbPath: string, outDir: string): Prom
     bundle = await buildExport(new NodeSqliteDatabase(handle));
   } finally {
     handle.close();
+  }
+
+  // A split Node rollback copy has one file per production authority. A frozen pre-split source remains a single file;
+  // in that case buildExport reads its original rows unchanged and the import below routes them by the accepted owner map.
+  const platformPath = platformDatabasePath(dbPath);
+  if (existsSync(platformPath)) {
+    const platformHandle = new DatabaseSync(platformPath, { readOnly: true });
+    try {
+      const platformBundle = await buildExport(new NodeSqliteDatabase(platformHandle));
+      const tables = { ...bundle.manifest.tables };
+      const contents = { ...bundle.contents };
+      for (const table of PLATFORM_OWNED_TABLES) {
+        const splitRows = platformBundle.manifest.tables[table]?.rowCount ?? 0;
+        if (splitRows > 0 || tables[table] === undefined) {
+          const checksum = platformBundle.manifest.tables[table];
+          if (checksum !== undefined) tables[table] = checksum;
+          const content = platformBundle.contents[table];
+          if (content !== undefined) contents[table] = content;
+        }
+      }
+      const excludedTables = { ...bundle.manifest.excludedTables };
+      for (const [table, count] of Object.entries(platformBundle.manifest.excludedTables)) {
+        excludedTables[table] = {
+          sourceRowCount: (excludedTables[table]?.sourceRowCount ?? 0) + count.sourceRowCount,
+        };
+      }
+      bundle = {
+        manifest: {
+          ...bundle.manifest,
+          tables,
+          excludedTables,
+        },
+        contents,
+        receiptBytes: bundle.receiptBytes,
+      };
+    } finally {
+      platformHandle.close();
+    }
   }
 
   await mkdir(join(outDir, RECEIPT_DIRECTORY), { recursive: true });
@@ -85,16 +132,107 @@ async function readRows(inDir: string, table: string): Promise<unknown[]> {
 }
 
 /**
- * D3: applies the schema migrations to a Node SQLite file, the same path the Durable Object takes on startup. Idempotent.
- * Used to prepare the restored file for the rollback import (runbook R5). Returns the version the file is at.
+ * D3: applies each owner's production schema migrations to its paired Node SQLite file. Idempotent; the platform file is
+ * `${dbPath}.platform.sqlite`, preserving the separate authorities and migration ledgers used by the Durable Objects.
  */
 export async function migrateNodeSqliteFile(dbPath: string): Promise<number> {
   const database = new NodeSqliteDatabase(dbPath);
+  const platform = new NodeSqliteDatabase(platformDatabasePath(dbPath));
   try {
+    applySchemaMigrations(platform, PLATFORM_SCHEMA_MIGRATIONS, new Date().toISOString());
     return applySchemaMigrations(database, SHORTLET_SCHEMA_MIGRATIONS, new Date().toISOString()).version;
   } finally {
     database.close();
+    platform.close();
   }
+}
+
+/**
+ * Creates the runbook's derived pre-split import directory without modifying frozen source evidence. Only transformations
+ * accepted by the slice-17 runbook are applied: legacy account email_revision defaults to zero; unverifiable legacy
+ * identity assurance is omitted rather than assigned a revision. The ledger contains counts/checksums, never row values.
+ */
+export async function prepareLegacySplitExport(sourceDir: string, derivedDir: string): Promise<MigrationManifest> {
+  await assertDisjointExportDirectories(sourceDir, derivedDir);
+  const original = await readManifest(sourceDir);
+  const sourceManifestContent = await readFile(join(sourceDir, MANIFEST_FILE), "utf8");
+  await mkdir(derivedDir, { recursive: true });
+  await cp(join(sourceDir, RECEIPT_DIRECTORY), join(derivedDir, RECEIPT_DIRECTORY), { recursive: true, force: true }).catch((error: unknown) => {
+    if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT") throw error;
+  });
+  const tables: Record<string, TableChecksum> = { ...original.tables };
+  const ledger: Array<Record<string, string | number>> = [];
+
+  for (const table of Object.keys(original.tables)) {
+    const sourceRows = await readRows(sourceDir, table);
+    if (table === "guest_accounts" && sourceRows.some((row) => isRecord(row) && !Object.hasOwn(row, "email_revision"))) {
+      const rows = sourceRows.map((row) => {
+        if (!isRecord(row)) throw new Error("The guest_accounts export contains a malformed row");
+        return Object.hasOwn(row, "email_revision") ? row : { ...row, email_revision: 0 };
+      });
+      const content = canonicalJsonl(rows);
+      await writeFile(join(derivedDir, `${table}.jsonl`), content, "utf8");
+      tables[table] = { rowCount: rows.length, sha256: await contentSha256(content) };
+      ledger.push({ table, transform: "default-email_revision-to-zero", sourceRows: sourceRows.length, derivedRows: rows.length, sourceSha256: original.tables[table]!.sha256, derivedSha256: tables[table]!.sha256 });
+      continue;
+    }
+    if (table === "guest_identity_assurance" && sourceRows.some((row) => isRecord(row) && !Object.hasOwn(row, "account_email_revision"))) {
+      const content = "";
+      await writeFile(join(derivedDir, `${table}.jsonl`), content, "utf8");
+      tables[table] = { rowCount: 0, sha256: await contentSha256(content) };
+      ledger.push({ table, transform: "omit-unbound-legacy-assurance-reverify-required", sourceRows: sourceRows.length, derivedRows: 0, sourceSha256: original.tables[table]!.sha256, derivedSha256: tables[table]!.sha256 });
+      continue;
+    }
+    await cp(join(sourceDir, `${table}.jsonl`), join(derivedDir, `${table}.jsonl`));
+  }
+
+  const manifest: MigrationManifest = { ...original, tables };
+  await writeFile(join(derivedDir, MANIFEST_FILE), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+  await writeFile(join(derivedDir, "transform-ledger.json"), `${JSON.stringify({ sourceManifestSha256: await contentSha256(sourceManifestContent), transforms: ledger }, null, 2)}\n`, "utf8");
+  return manifest;
+}
+
+/** Resolve through existing symlinked parents, preserving the not-yet-created suffix for safe destination checks. */
+async function canonicalPathWithExistingParents(input: string): Promise<string> {
+  let candidate = resolve(input);
+  const missingSegments: string[] = [];
+  while (true) {
+    try {
+      const existingRealPath = await realpath(candidate);
+      return resolve(existingRealPath, ...missingSegments.reverse());
+    } catch (error: unknown) {
+      if (!(error instanceof Error) || !("code" in error) || (error.code !== "ENOENT" && error.code !== "ENOTDIR")) throw error;
+      const parent = dirname(candidate);
+      if (parent === candidate) throw error;
+      missingSegments.push(basename(candidate));
+      candidate = parent;
+    }
+  }
+}
+
+async function assertDisjointExportDirectories(sourceDir: string, derivedDir: string): Promise<void> {
+  const [sourcePath, derivedPath] = await Promise.all([
+    canonicalPathWithExistingParents(sourceDir),
+    canonicalPathWithExistingParents(derivedDir),
+  ]);
+  // Windows paths are case-insensitive even when their spelling differs; realpath resolves symlinks where present.
+  const source = process.platform === "win32" ? sourcePath.toLocaleLowerCase("en-US") : sourcePath;
+  const derived = process.platform === "win32" ? derivedPath.toLocaleLowerCase("en-US") : derivedPath;
+  const isSameOrAncestor = (ancestor: string, descendant: string): boolean => {
+    const difference = relative(ancestor, descendant);
+    return difference === "" || (!isAbsolute(difference) && difference !== ".." && !difference.startsWith(`..${sep}`));
+  };
+  if (isSameOrAncestor(source, derived) || isSameOrAncestor(derived, source)) {
+    throw new Error("The derived export directory must not be the source directory or overlap it");
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function canonicalJsonl(rows: readonly Record<string, unknown>[]): string {
+  return rows.map((row) => `${JSON.stringify(Object.fromEntries(Object.entries(row).sort(([left], [right]) => left.localeCompare(right))))}\n`).join("");
 }
 
 /**
@@ -106,15 +244,20 @@ export async function migrateNodeSqliteFile(dbPath: string): Promise<number> {
 export async function importMigrationDirectory(dbPath: string, inDir: string): Promise<Record<string, number>> {
   const manifest = await readManifest(inDir);
   const database = new NodeSqliteDatabase(dbPath);
+  const platform = new NodeSqliteDatabase(platformDatabasePath(dbPath));
   const counts: Record<string, number> = {};
   try {
     assertImportAllowed(database, SHORTLET_SCHEMA_VERSION);
-    for (const table of Object.keys(manifest.tables)) {
+    assertImportAllowed(platform, PLATFORM_SCHEMA_VERSION);
+    const tables = Object.keys(manifest.tables);
+    const platformTables = importOrder(platform, tables.filter((table) => PLATFORM_OWNED_TABLES.has(table)));
+    const shortletTables = importOrder(database, tables.filter((table) => !PLATFORM_OWNED_TABLES.has(table)));
+    for (const table of [...platformTables, ...shortletTables]) {
       // F4: the bearer-credential tables are not written back to Node. Sessions and challenges are re-established after a rollback.
       if (Object.hasOwn(DAILY_EXPORT_EXCLUDED, table)) continue;
       const rows = await readRows(inDir, table);
       for (const chunk of importRequestChunks(table, rows)) {
-        importBatch(database, table, chunk, SHORTLET_SCHEMA_VERSION, new Date());
+        importBatch(PLATFORM_OWNED_TABLES.has(table) ? platform : database, table, chunk, PLATFORM_OWNED_TABLES.has(table) ? PLATFORM_SCHEMA_VERSION : SHORTLET_SCHEMA_VERSION, new Date());
       }
       counts[table] = rows.length;
     }
@@ -127,6 +270,7 @@ export async function importMigrationDirectory(dbPath: string, inDir: string): P
     }
   } finally {
     database.close();
+    platform.close();
   }
   return counts;
 }
@@ -139,7 +283,11 @@ export async function importMigrationDirectory(dbPath: string, inDir: string): P
 export async function pushMigrationDirectory(inDir: string, configuration: OpsRemoteConfiguration): Promise<Record<string, number>> {
   const manifest = await readManifest(inDir);
   const counts: Record<string, number> = {};
-  for (const table of Object.keys(manifest.tables)) {
+  const names = Object.keys(manifest.tables);
+  const order = schemaImportOrder(names);
+  for (const table of order) {
+    // ADR 0093/0086/0075: a hand-edited manifest cannot revive credentials either.
+    if (Object.hasOwn(DAILY_EXPORT_EXCLUDED, table)) continue;
     const rows = await readRows(inDir, table);
     for (const chunk of importRequestChunks(table, rows)) {
       assertOpsOk(
@@ -164,9 +312,18 @@ export async function pullObject(outDir: string, configuration: OpsRemoteConfigu
   const verify = assertOpsOk(await opsRequest(configuration, "/_ops/import/verify", { method: "GET" }));
   const tables = verify.tables as Record<string, TableChecksum>;
   // Issue 16 B: the credential tables' object counts travel with the checksums, so the compare can check them on both sides.
-  await writeFile(join(outDir, "verify.json"), `${JSON.stringify({ ok: true, tables, excludedTables: verify.excludedTables ?? {} }, null, 2)}\n`, "utf8");
+  const platform = verify.platform !== null && typeof verify.platform === "object" ? verify.platform as Record<string, unknown> : {};
+  const flattened = {
+    ...(tables ?? {}),
+    ...(platform.tables !== null && typeof platform.tables === "object" ? platform.tables as Record<string, TableChecksum> : {}),
+  };
+  const excluded = {
+    ...((verify.excludedTables !== null && typeof verify.excludedTables === "object") ? verify.excludedTables as Record<string, { rowCount: number }> : {}),
+    ...((platform.excludedTables !== null && typeof platform.excludedTables === "object") ? platform.excludedTables as Record<string, { rowCount: number }> : {}),
+  };
+  await writeFile(join(outDir, "verify.json"), `${JSON.stringify({ ok: true, tables: flattened, excludedTables: excluded, platform }, null, 2)}\n`, "utf8");
   const counts: Record<string, number> = {};
-  for (const table of Object.keys(tables)) {
+  for (const table of Object.keys(flattened)) {
     // F4: the verify response still lists every table, so the manifest comparison holds. The credential tables have no file.
     if (Object.hasOwn(DAILY_EXPORT_EXCLUDED, table)) continue;
     const exported = assertOpsOk(await opsRequest(configuration, `/_ops/export?table=${encodeURIComponent(table)}`, { method: "GET" }));
@@ -175,6 +332,22 @@ export async function pullObject(outDir: string, configuration: OpsRemoteConfigu
     counts[table] = exported.rowCount;
   }
   return counts;
+}
+
+/** Owner-local FK order is derived from the exact production migration schemas (ADR 0101). */
+function schemaImportOrder(tables: readonly string[]): string[] {
+  const shortletTables = tables.filter((table) => !PLATFORM_OWNED_TABLES.has(table));
+  const platformTables = tables.filter((table) => PLATFORM_OWNED_TABLES.has(table));
+  const shortlet = new NodeSqliteDatabase(":memory:");
+  const platform = new NodeSqliteDatabase(":memory:");
+  try {
+    applySchemaMigrations(platform, PLATFORM_SCHEMA_MIGRATIONS, new Date().toISOString());
+    applySchemaMigrations(shortlet, SHORTLET_SCHEMA_MIGRATIONS, new Date().toISOString());
+    return [...importOrder(platform, platformTables), ...importOrder(shortlet, shortletTables)];
+  } finally {
+    platform.close();
+    shortlet.close();
+  }
 }
 
 function requireRemote(): OpsRemoteConfiguration {
@@ -213,6 +386,11 @@ async function main(argv: readonly string[]): Promise<number> {
     console.log(`receipts=${manifest.receipts.length} moved=${manifest.movedTables.join(",") || "none"}`);
     return 0;
   }
+  if (flag === "--prepare-split" && first && second) {
+    const manifest = await prepareLegacySplitExport(first, second);
+    console.log(`prepared tables=${Object.keys(manifest.tables).length}; transform ledger written`);
+    return 0;
+  }
   if (flag === "--migrate" && first && !second) {
     console.log(`schema version=${await migrateNodeSqliteFile(first)}`);
     return 0;
@@ -248,7 +426,7 @@ async function main(argv: readonly string[]): Promise<number> {
     for (const [table, rows] of Object.entries(counts)) console.log(`${table} read=${rows}`);
     return 0;
   }
-  console.error("usage: export-node-sqlite.ts --export <db> <out-dir> | --migrate <db> | --import <db> <in-dir> | --push <in-dir> | --pull <out-dir> | --compare <manifest.json> <verify.json>");
+  console.error("usage: export-node-sqlite.ts --export <db> <out-dir> | --prepare-split <source-dir> <derived-dir> | --migrate <db> | --import <db> <in-dir> | --push <in-dir> | --pull <out-dir> | --compare <manifest.json> <verify.json>");
   return 2;
 }
 

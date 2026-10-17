@@ -71,6 +71,13 @@ export const PLATFORM_EXPORT_TABLES = [
   "telemetry_events",
 ] as const;
 export const PLATFORM_OWNED_TABLES: ReadonlySet<string> = new Set(PLATFORM_EXPORT_TABLES);
+/** Credential tables owned by PLATFORM are excluded from export but retain owner-specific source/target counts. */
+export const PLATFORM_CREDENTIAL_TABLES: ReadonlySet<string> = new Set([
+  "guest_account_sessions",
+  "guest_session_bindings",
+  "guest_sign_in_codes",
+  "guest_account_email_commands",
+]);
 
 /** Full legacy/local export manifest for fixture and migration compatibility; production alarms use per-DO ownership lists. */
 export const EXPORT_TABLES = [...SHORTLET_EXPORT_TABLES, ...PLATFORM_EXPORT_TABLES].sort() as readonly string[];

@@ -18,7 +18,7 @@ import { normalizeContactEmail } from "../../../domains/shortlet/src/index.js";
 import type { EmailSender } from "../../../apps/pilot/src/notifications/email-sender.js";
 import { guestEmailChangeCodeMessage, guestSignInCodeMessage } from "../../../apps/pilot/src/notifications/pilot-notifier.js";
 import { accountAssuranceInvalidator, accountAssuranceReader, type GuestAccountAssuranceInvalidator, type GuestAccountAssuranceReader } from "./guest-identity-status.js";
-import type { AccountAssuranceStateReader } from "../../../domains/shortlet/src/guest-identity-assurance.js";
+import type { AccountAssuranceStateReader } from "../../../packages/platform-core/src/accounts/assurance-state.js";
 import { GUEST_CODE_HASHING_KEY_ENV, usableCodeHashingKey, type RemoteGuestAccounts } from "../../../packages/platform-core/src/accounts/remote-port.js";
 import { TRUST_CLOUDFLARE_CLIENT_ADDRESS_ENV } from "./guest-account-composition.js";
 export { TRUST_CLOUDFLARE_CLIENT_ADDRESS_ENV } from "./guest-account-composition.js";

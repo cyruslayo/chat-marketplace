@@ -83,7 +83,7 @@ test("AC3: Identity assurance is keyed by the Account Guest Id and resolves thro
 
     // The assurance row is the account's, and resolves for the principal linked to it.
     assert.equal(fixture.assurance.currentAssurance(accountGuestId, ASSURANCE_TENANT, fixture.now())?.accountGuestId, accountGuestId);
-    assert.deepEqual(fixture.source.getVerificationResult({ tenantId: ASSURANCE_TENANT, guestId: "guest-device-ac3" }), {
+    assert.deepEqual(await fixture.source.getVerificationResult({ tenantId: ASSURANCE_TENANT, guestId: "guest-device-ac3" }), {
       tenantId: ASSURANCE_TENANT,
       guestId: "guest-device-ac3",
       governmentIdVerified: true,

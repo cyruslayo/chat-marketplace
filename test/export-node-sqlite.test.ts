@@ -1,28 +1,35 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { NodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-database.js";
-import { MAX_IMPORT_REQUEST_BYTES, checksumTables, compareMigration, importRequestChunks, migrationBatchRows } from "../packages/platform-core/src/data-migration.js";
+import { MAX_IMPORT_REQUEST_BYTES, checksumTables, compareMigration, contentSha256, importRequestChunks, migrationBatchRows, type MigrationManifest } from "../packages/platform-core/src/data-migration.js";
 import { populateSource } from "../apps/cloudflare/test/data-migration-fixtures.js";
-import { DAILY_EXPORT_EXCLUDED } from "../apps/cloudflare/src/do-export.js";
-import { SHORTLET_SCHEMA_MIGRATIONS } from "../apps/cloudflare/src/schema.js";
+import { DAILY_EXPORT_EXCLUDED, PLATFORM_CREDENTIAL_TABLES, PLATFORM_OWNED_TABLES } from "../apps/cloudflare/src/do-export.js";
+import { PLATFORM_SCHEMA_MIGRATIONS, SHORTLET_SCHEMA_MIGRATIONS } from "../apps/cloudflare/src/schema.js";
 import { applySchemaMigrations } from "../packages/platform-core/src/schema-migrations.js";
-import { compareMigrationFiles, exportNodeSqliteFile, importMigrationDirectory, migrateNodeSqliteFile, pullObject, pushMigrationDirectory } from "../scripts/export-node-sqlite.js";
+import { compareMigrationFiles, exportNodeSqliteFile, importMigrationDirectory, migrateNodeSqliteFile, platformDatabasePath, prepareLegacySplitExport, pullObject, pushMigrationDirectory } from "../scripts/export-node-sqlite.js";
 import type { OpsRemoteConfiguration } from "../apps/shortlet-ops/src/ops-client.js";
 
 /** Slice 16: the Node exporter and the Node side of the import share one canonical format with the Worker. */
 
 /** Checksums of a Node file, with the handle closed so the temp directory can be removed on Windows. */
 async function checksumsOf(path: string, tables: readonly string[]): Promise<Record<string, { rowCount: number; sha256: string }>> {
+  const shortletTables = tables.filter((table) => !PLATFORM_OWNED_TABLES.has(table));
+  const platformTables = tables.filter((table) => PLATFORM_OWNED_TABLES.has(table));
   const database = new NodeSqliteDatabase(path);
+  const platform = new NodeSqliteDatabase(platformDatabasePath(path));
   try {
-    return await checksumTables(database, tables);
+    return {
+      ...await checksumTables(database, shortletTables),
+      ...await checksumTables(platform, platformTables),
+    };
   } finally {
     database.close();
+    platform.close();
   }
 }
 
@@ -361,7 +368,7 @@ test("Slice 17 ADR 0093: exports retain accounts but exclude email-change replay
   await withTempDir(async (dir) => {
     const sourcePath = join(dir, "source.sqlite");
     await migrateNodeSqliteFile(sourcePath);
-    const source = new NodeSqliteDatabase(sourcePath);
+    const source = new NodeSqliteDatabase(platformDatabasePath(sourcePath));
     try {
       source.prepare("INSERT INTO guest_accounts (account_guest_id, tenant_id, email_normalized, status, created_at, updated_at, revision) VALUES ($id, $tenant, $email, 'active', $at, $at, 0)")
         .run({ $id: "gacct-cutoverprobe", $tenant: "tenant-synthetic", $email: "probe@example.test", $at: "2031-02-01T00:00:00Z" });
@@ -374,6 +381,140 @@ test("Slice 17 ADR 0093: exports retain accounts but exclude email-change replay
     const order = Object.keys(manifest.tables);
     assert.ok(order.includes("guest_accounts"), "account records remain in the migration manifest");
     assert.ok(!order.includes("guest_account_email_commands"), "email-change replay material is not exported");
+    assert.equal(manifest.excludedTables.guest_account_email_commands?.sourceRowCount, 1, "platform credential counts remain owner-aware");
+    const targetPath = join(dir, "restored.sqlite");
+    await migrateNodeSqliteFile(targetPath);
+    await importMigrationDirectory(targetPath, join(dir, "export"));
+    const restoredPlatform = new NodeSqliteDatabase(platformDatabasePath(targetPath));
+    try {
+      assert.deepEqual(restoredPlatform.prepare("SELECT account_guest_id, email_normalized FROM guest_accounts").all(), [
+        { account_guest_id: "gacct-cutoverprobe", email_normalized: "probe@example.test" },
+      ]);
+      assert.equal(Number(restoredPlatform.prepare("SELECT COUNT(*) AS n FROM guest_account_email_commands").get()?.n), 0,
+        "credential/replay material is not restored");
+    } finally {
+      restoredPlatform.close();
+    }
+  });
+});
+
+test("Slice 17 legacy transform preserves frozen export and explicitly defaults accounts while omitting unbound assurance", async () => {
+  await withTempDir(async (dir) => {
+    const sourceDir = join(dir, "frozen-export");
+    const derivedDir = join(dir, "derived-import");
+    const legacyAccount = `${JSON.stringify({ account_guest_id: "gacct-legacy", email_normalized: "legacy@example.test" })}\n`;
+    const legacyAssurance = `${JSON.stringify({ tenant_id: "tenant-synthetic", account_guest_id: "gacct-legacy", level: "government-ID-verified" })}\n`;
+    await mkdir(sourceDir, { recursive: true });
+    await writeFile(join(sourceDir, "guest_accounts.jsonl"), legacyAccount, "utf8");
+    await writeFile(join(sourceDir, "guest_identity_assurance.jsonl"), legacyAssurance, "utf8");
+    const original: MigrationManifest = {
+      formatVersion: 1,
+      tables: {
+        guest_accounts: { rowCount: 1, sha256: await contentSha256(legacyAccount) },
+        guest_identity_assurance: { rowCount: 1, sha256: await contentSha256(legacyAssurance) },
+      },
+      excludedTables: {},
+      movedTables: [],
+      receipts: [],
+    };
+    await writeFile(join(sourceDir, "manifest.json"), `${JSON.stringify(original, null, 2)}\n`, "utf8");
+
+    const transformed = await prepareLegacySplitExport(sourceDir, derivedDir);
+    const accountText = await readFile(join(derivedDir, "guest_accounts.jsonl"), "utf8");
+    const assuranceText = await readFile(join(derivedDir, "guest_identity_assurance.jsonl"), "utf8");
+    assert.deepEqual(JSON.parse(accountText), { account_guest_id: "gacct-legacy", email_normalized: "legacy@example.test", email_revision: 0 });
+    assert.equal(assuranceText, "");
+    assert.deepEqual(transformed.tables.guest_identity_assurance, { rowCount: 0, sha256: await contentSha256("") });
+    assert.equal(await readFile(join(sourceDir, "guest_accounts.jsonl"), "utf8"), legacyAccount);
+    assert.equal(await readFile(join(sourceDir, "guest_identity_assurance.jsonl"), "utf8"), legacyAssurance);
+    const ledger = await readFile(join(derivedDir, "transform-ledger.json"), "utf8");
+    assert.match(ledger, /default-email_revision-to-zero/);
+    assert.match(ledger, /omit-unbound-legacy-assurance-reverify-required/);
+    assert.equal(ledger.includes("legacy@example.test"), false);
+  });
+});
+
+async function writeMinimalExport(directory: string): Promise<void> {
+  await mkdir(directory, { recursive: true });
+  await writeFile(join(directory, "manifest.json"), `${JSON.stringify({
+    formatVersion: 1,
+    tables: {},
+    excludedTables: {},
+    movedTables: [],
+    receipts: [],
+  } satisfies MigrationManifest)}\n`, "utf8");
+  await writeFile(join(directory, "frozen-sentinel.bin"), Buffer.from([0, 4, 255, 7]));
+}
+
+async function directorySnapshot(directory: string): Promise<string> {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const snapshot: Array<{ path: string; bytes: string }> = [];
+  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) {
+      snapshot.push({ path: entry.name, bytes: await directorySnapshot(path) });
+    } else if (entry.isFile()) {
+      snapshot.push({ path: entry.name, bytes: (await readFile(path)).toString("base64") });
+    }
+  }
+  return JSON.stringify(snapshot);
+}
+
+test("Slice 17: prepare split export rejects identical, aliased and nested paths before writing, preserving source bytes", async () => {
+  await withTempDir(async (root) => {
+    const source = join(root, "foo");
+    await writeMinimalExport(source);
+    const aliases = [
+      source,
+      resolve(relative(process.cwd(), source), ".", "child", ".."),
+    ];
+    if (process.platform === "win32") aliases.push(source.toUpperCase());
+
+    for (const [index, derived] of aliases.entries()) {
+      const before = await directorySnapshot(source);
+      await assert.rejects(prepareLegacySplitExport(source, derived), /must not be the source directory or overlap it/);
+      assert.equal(await directorySnapshot(source), before, `identical/alias case ${index} leaves source bytes unchanged`);
+      assert.equal(existsSync(join(source, "transform-ledger.json")), false, "rejection writes no ledger into source");
+    }
+
+    const nestedOutput = join(source, "nested", "derived");
+    const beforeNested = await directorySnapshot(source);
+    await assert.rejects(prepareLegacySplitExport(source, nestedOutput), /must not be the source directory or overlap it/);
+    assert.equal(await directorySnapshot(source), beforeNested, "nested destination rejection leaves source bytes unchanged");
+    assert.equal(existsSync(join(source, "nested")), false, "rejection does not create nested output directories");
+
+    const container = join(root, "container");
+    const nestedSource = join(container, "frozen");
+    await writeMinimalExport(nestedSource);
+    const beforeAncestor = await directorySnapshot(container);
+    await assert.rejects(prepareLegacySplitExport(nestedSource, container), /must not be the source directory or overlap it/);
+    assert.equal(await directorySnapshot(container), beforeAncestor, "ancestor destination rejection leaves all source bytes unchanged");
+    assert.equal(existsSync(join(container, "transform-ledger.json")), false, "rejection writes no ledger in ancestor output");
+  });
+});
+
+test("Slice 17: prepare split export resolves symlink aliases and still accepts sibling-prefix directories", async (t) => {
+  await withTempDir(async (root) => {
+    const source = join(root, "foo");
+    await writeMinimalExport(source);
+    const alias = join(root, "source-alias");
+    try {
+      await symlink(source, alias, process.platform === "win32" ? "junction" : "dir");
+    } catch (error: unknown) {
+      if (error !== null && typeof error === "object" && "code" in error && ["EPERM", "EACCES", "UNKNOWN"].includes(String(error.code))) {
+        t.skip(`directory symlinks unavailable: ${String(error.code)}`);
+        return;
+      }
+      throw error;
+    }
+    const before = await directorySnapshot(source);
+    await assert.rejects(prepareLegacySplitExport(source, alias), /must not be the source directory or overlap it/);
+    assert.equal(await directorySnapshot(source), before, "symlink alias rejection preserves the source bytes");
+
+    const siblingPrefix = join(root, "foobar");
+    await prepareLegacySplitExport(source, siblingPrefix);
+    assert.equal(existsSync(join(siblingPrefix, "manifest.json")), true, "a sibling whose name shares a prefix is a valid destination");
+    assert.equal(await directorySnapshot(source), before, "valid sibling derivation also preserves the source bytes");
   });
 });
 
@@ -392,6 +533,7 @@ test("16 F4: pull requests no credential table and writes no file for one, and t
     const source = new NodeSqliteDatabase(sourcePath);
     await populateSource(source);
     source.close();
+    await migrateNodeSqliteFile(sourcePath);
     const manifest = await exportNodeSqliteFile(sourcePath, exportDir);
     const excluded = Object.keys(DAILY_EXPORT_EXCLUDED);
 
@@ -421,9 +563,15 @@ test("16 F4: pull requests no credential table and writes no file for one, and t
     const credentialTable = excluded[0]!;
     await writeFile(join(exportDir, `${credentialTable}.jsonl`), `${JSON.stringify({ session_secret_hash: "synthetic-f4-row" })}\n`, "utf8");
     await writeFile(join(exportDir, "manifest.json"), `${JSON.stringify({ ...manifest, tables: { ...manifest.tables, [credentialTable]: { rowCount: 1, sha256: "synthetic" } } })}\n`, "utf8");
+    const pushed: string[] = [];
+    await withFakeOps(() => ({ status: 200, body: { ok: true } }), async (calls) => {
+      await pushMigrationDirectory(exportDir, configuration);
+      pushed.push(...calls.map((call) => (JSON.parse(String(call.init.body)) as { table: string }).table));
+    });
+    assert.equal(pushed.includes(credentialTable), false, "a hand-edited manifest still cannot upload credential material");
     await migrateNodeSqliteFile(targetPath);
     await importMigrationDirectory(targetPath, exportDir);
-    const target = new NodeSqliteDatabase(targetPath);
+    const target = new NodeSqliteDatabase(platformDatabasePath(targetPath));
     try {
       const rows = target.prepare(`SELECT COUNT(*) AS count FROM ${credentialTable}`).get();
       assert.equal(Number(rows?.count), 0);
@@ -434,8 +582,14 @@ test("16 F4: pull requests no credential table and writes no file for one, and t
 });
 
 /** Issue 16 B: one operator access token row in the source, so a credential table has rows to exclude (synthetic values). */
-function addCredentialRow(source: NodeSqliteDatabase): void {
+function addCredentialRow(source: NodeSqliteDatabase, sourcePath: string): void {
   applySchemaMigrations(source, SHORTLET_SCHEMA_MIGRATIONS, "2031-02-01T00:00:00Z");
+  const platform = new NodeSqliteDatabase(platformDatabasePath(sourcePath));
+  try {
+    applySchemaMigrations(platform, PLATFORM_SCHEMA_MIGRATIONS, "2031-02-01T00:00:00Z");
+  } finally {
+    platform.close();
+  }
   source
     .prepare("INSERT INTO operator_access_tokens (token_hash, actor_id, tenant_id, created_at, expires_at) VALUES ($hash, $actor, $tenant, $created, $expires)")
     .run({ $hash: "synthetic-token-hash-b", $actor: "actor-synthetic", $tenant: "tenant-synthetic", $created: "2031-02-01T00:00:00Z", $expires: "2031-02-01T00:30:00Z" });
@@ -451,12 +605,23 @@ test("16 B: the cutover manifest excludes the five credential tables, records th
     const sourcePath = join(dir, "source.sqlite");
     const source = new NodeSqliteDatabase(sourcePath);
     await populateSource(source);
-    addCredentialRow(source);
-    const sourceCounts: Record<string, number> = {};
-    for (const table of Object.keys(DAILY_EXPORT_EXCLUDED)) {
-      sourceCounts[table] = Number(source.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get()!.n);
-    }
     source.close();
+    await migrateNodeSqliteFile(sourcePath);
+    const migratedSource = new NodeSqliteDatabase(sourcePath);
+    addCredentialRow(migratedSource, sourcePath);
+    migratedSource.close();
+    const sourceForCounts = new NodeSqliteDatabase(sourcePath);
+    const platformSource = new NodeSqliteDatabase(platformDatabasePath(sourcePath));
+    const sourceCounts: Record<string, number> = {};
+    try {
+      for (const table of Object.keys(DAILY_EXPORT_EXCLUDED)) {
+        const owner = PLATFORM_OWNED_TABLES.has(table) || PLATFORM_CREDENTIAL_TABLES.has(table) ? platformSource : sourceForCounts;
+        sourceCounts[table] = Number(owner.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get()!.n);
+      }
+    } finally {
+      platformSource.close();
+      sourceForCounts.close();
+    }
 
     const exportDir = join(dir, "export");
     const manifest = await exportNodeSqliteFile(sourcePath, exportDir);
@@ -474,8 +639,11 @@ test("16 B: a push sends no credential table to the object, and sends every othe
     const sourcePath = join(dir, "source.sqlite");
     const source = new NodeSqliteDatabase(sourcePath);
     await populateSource(source);
-    addCredentialRow(source);
     source.close();
+    await migrateNodeSqliteFile(sourcePath);
+    const migratedSource = new NodeSqliteDatabase(sourcePath);
+    addCredentialRow(migratedSource, sourcePath);
+    migratedSource.close();
     const exportDir = join(dir, "export");
     const manifest = await exportNodeSqliteFile(sourcePath, exportDir);
 
@@ -496,8 +664,11 @@ test("16 B: the compare fails when the object holds rows in a credential table, 
     const sourcePath = join(dir, "source.sqlite");
     const source = new NodeSqliteDatabase(sourcePath);
     await populateSource(source);
-    addCredentialRow(source);
     source.close();
+    await migrateNodeSqliteFile(sourcePath);
+    const migratedSource = new NodeSqliteDatabase(sourcePath);
+    addCredentialRow(migratedSource, sourcePath);
+    migratedSource.close();
     const manifest = await exportNodeSqliteFile(sourcePath, join(dir, "export"));
 
     assert.deepEqual(compareMigrationFiles(manifest, { tables: manifest.tables, excludedTables: emptyExcludedCounts() }), []);

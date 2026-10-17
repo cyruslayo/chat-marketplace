@@ -1,5 +1,6 @@
 import type { SqlDatabase, SqlRow, SqlValue } from "../../../packages/platform-core/src/sql-database.js";
 import type { SqliteGuestAccountLinks } from "../../../packages/platform-core/src/accounts/links.js";
+import type { AccountAssuranceState, AccountAssuranceStateReader } from "../../../packages/platform-core/src/accounts/assurance-state.js";
 import type { GuestIdentityVerificationResult, GuestIdentityVerificationResultSource } from "./guest-verification.js";
 
 /**
@@ -90,15 +91,6 @@ export interface CurrentIdentityAssurance {
   readonly verifiedAt: string | null;
   readonly expiresAt: string | null;
   readonly providerReference: string | null;
-}
-
-/** Minimal authoritative account state fetched from PLATFORM; no email or credential is returned. */
-export type AccountAssuranceState =
-  | { readonly status: "active"; readonly emailRevision: number }
-  | { readonly status: "closed" | "missing" };
-
-export interface AccountAssuranceStateReader {
-  readAccountAssuranceState(input: { readonly tenantId: string; readonly accountGuestId: string }): Promise<AccountAssuranceState>;
 }
 
 /** Guard every assurance trust read against the current platform email version; transport/schema errors fail closed. */

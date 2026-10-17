@@ -22,7 +22,7 @@ import { PILOT_NOTIFICATIONS_SCHEMA } from "../../pilot/src/notifications/pilot-
 import { GUEST_ACCOUNT_SCHEMA } from "../../../packages/platform-core/src/accounts/authority.js";
 import { GUEST_ACCOUNT_LINK_SCHEMA } from "../../../packages/platform-core/src/accounts/links.js";
 import { GUEST_CONTACT_SCHEMA } from "../../../packages/platform-core/src/accounts/contact.js";
-import { THREAD_SESSION_SCHEMA } from "../../../domains/shortlet/src/guest-interaction-store.js";
+import { THREAD_SESSION_SCHEMA } from "../../../domains/shortlet/src/index.js";
 
 /**
  * Slice 16 / D3: the Durable Object's schema, as ordered migrations. The object applies them on startup

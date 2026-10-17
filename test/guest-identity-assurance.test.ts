@@ -400,7 +400,7 @@ const ACCOUNT_RUNTIME = "apps/local-guest/src/guest-account-runtime.ts";
 const ACCOUNT_PAGES = "apps/local-guest/src/guest-account-pages.ts";
 const ACCOUNT_COMPOSITION = [ACCOUNT_RUNTIME, STATUS_READER];
 /** The modules that import the store directly: the two migration manifests and the import validator, the check-in helper and the reader. */
-const STORE_IMPORTERS = [OPS_IMPORT, SCHEMA, CHECK_IN_HELPER, STATUS_READER, ACCOUNT_RUNTIME].sort();
+const STORE_IMPORTERS = [OPS_IMPORT, SCHEMA, CHECK_IN_HELPER, STATUS_READER].sort();
 /**
  * Every source root that can host a booking, route, application, payment or composition module, including the app scripts (review 4d).
  * Read from the filesystem, so a new app or package is swept without a list edit: `apps/*\/src`, `apps/*\/scripts`, `packages/*\/src`,

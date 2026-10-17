@@ -1,5 +1,6 @@
 import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
-import { SqliteGuestIdentityAssurance, currentAssuranceForAccount, isCurrentGovernmentIdAssurance, type AccountAssuranceStateReader } from "../../../domains/shortlet/src/guest-identity-assurance.js";
+import { SqliteGuestIdentityAssurance, currentAssuranceForAccount, isCurrentGovernmentIdAssurance } from "../../../domains/shortlet/src/guest-identity-assurance.js";
+import type { AccountAssuranceStateReader } from "../../../packages/platform-core/src/accounts/assurance-state.js";
 
 /**
  * The read-only identity-status reader for the account (issue 07, ADR 0094). It is the only module outside the schema manifest

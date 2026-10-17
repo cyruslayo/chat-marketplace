@@ -1,5 +1,6 @@
 import type { SqliteGuestAccountLinks } from "../../../packages/platform-core/src/accounts/links.js";
-import { currentAssuranceForAccount, isCurrentGovernmentIdAssurance, type AccountAssuranceStateReader, type SqliteGuestIdentityAssurance } from "./guest-identity-assurance.js";
+import { currentAssuranceForAccount, isCurrentGovernmentIdAssurance, type SqliteGuestIdentityAssurance } from "./guest-identity-assurance.js";
+import type { AccountAssuranceStateReader } from "../../../packages/platform-core/src/accounts/assurance-state.js";
 
 /**
  * Check-In Eligibility for identity assurance (ADR 0085, ADR 0094, issue 09). Reservation -> Primary Guest -> Linked Principal ->

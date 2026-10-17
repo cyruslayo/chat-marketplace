@@ -1,18 +1,11 @@
 import type { CloudflareEnv } from "./cloudflare-config.js";
 import type { Request as WorkerRequest, RequestInit as WorkerRequestInit, Response as WorkerResponse } from "@cloudflare/workers-types";
 import type { AsyncGuestRequestContactIndex, BookingRequestContactMatch } from "../../../packages/platform-core/src/accounts/links.js";
+import type { AccountAssuranceState, AccountAssuranceStateReader } from "../../../packages/platform-core/src/accounts/assurance-state.js";
 import { PLATFORM_OWNED_TABLES } from "./do-export.js";
 import type { RemoteGuestAccounts } from "../../../packages/platform-core/src/accounts/remote-port.js";
 import type { GuestDataPort } from "../../local-guest/src/guest-data-port.js";
 import { GuestAccountAuthorityError, type GuestAccountAuthorityErrorCode } from "../../../packages/platform-core/src/accounts/authority.js";
-
-type AccountAssuranceState =
-  | { readonly status: "active"; readonly emailRevision: number }
-  | { readonly status: "closed" | "missing" };
-
-interface AccountAssuranceStateReader {
-  readAccountAssuranceState(input: { readonly tenantId: string; readonly accountGuestId: string }): Promise<AccountAssuranceState>;
-}
 
 const INTERNAL_PREFIX = "/_internal/";
 

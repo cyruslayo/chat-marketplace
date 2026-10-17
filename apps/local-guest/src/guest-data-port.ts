@@ -1,5 +1,5 @@
 import type { GuestContact } from "../../../packages/platform-core/src/accounts/contact.js";
-import type { DurableGuestSessionBinding, DurableGuestThreadRecord } from "../../../domains/shortlet/src/guest-interaction-store.js";
+import type { DurableGuestSessionBinding, DurableGuestThreadRecord } from "../../../domains/shortlet/src/index.js";
 
 /** Async seam for durable Guest identity/session/contact data owned by PLATFORM in Cloudflare. */
 export interface GuestDataPort {

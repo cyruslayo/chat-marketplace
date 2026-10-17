@@ -252,7 +252,7 @@ import {
   type GuestAccountCredentials,
 } from "./guest-account-runtime.js";
 import { GUEST_ACCOUNT_COPY, GUEST_TASK_RAIL, GUEST_VERTICALS } from "../../web-agent/src/guest-content.js";
-import type { GuestContactSource } from "../../../domains/shortlet/src/index.js";
+import type { GuestContact, GuestContactSource } from "../../../domains/shortlet/src/index.js";
 import {
   GuestContactOwnedByAccountError,
   normalizeNigerianPhoneNumber,
@@ -1502,20 +1502,19 @@ function isSentOrConfirmed(screen: { readonly requestScreen?: RequestScreenConte
  * and only while sign-in is enabled, because the form could not complete otherwise. The email is the contact the Guest already
  * gave (ADR 0093). It is computed per response and never stored with the thread (ADR 0075).
  */
-function signInOfferFor(input: {
+async function signInOfferFor(input: {
   readonly accounts: GuestAccountRuntime | null;
   /** The principal's own request contact row, never the account-aware view: a linked principal's view is the account email (D1). */
-  readonly ownContacts: GuestContactSource;
+  readonly ownContacts: { find(principalId: string, tenantId: string): Promise<GuestContact | null> };
   readonly principal: CommandPrincipal;
   readonly credentials: GuestAccountCredentials | null;
   readonly returnPath: string;
-}): SignInOfferContent | undefined {
+}): Promise<SignInOfferContent | undefined> {
   if (input.accounts === null || !input.principal.tenantId) return undefined;
-  if (input.accounts.usesRemoteAuthority) return undefined;
   // D1 (ADR 0093, 0075), fail closed: a principal linked to ANY account gets no offer, even when its account session is not presented.
-  if (input.accounts.linkedAccountOf(input.principal.id) !== null) return undefined;
-  if (input.accounts.identityForLocal(input.principal.id, input.credentials).accountGuestId !== undefined) return undefined;
-  const own = input.ownContacts.find(input.principal.id, input.principal.tenantId);
+  if (await input.accounts.linkedAccountOf(input.principal.id) !== null) return undefined;
+  if ((await input.accounts.identityFor(input.principal.id, input.credentials)).accountGuestId !== undefined) return undefined;
+  const own = await input.ownContacts.find(input.principal.id, input.principal.tenantId);
   return { email: own?.contactEmail ?? "", returnPath: input.returnPath };
 }
 
@@ -2355,15 +2354,14 @@ export function createGuestRequestHandler(
       guestAccounts,
     );
     if (!session) return { surfaces: [...surfaces], offered: false };
-    return surfacesWithSignInOffer(surfaces, () =>
-      signInOfferFor({
+    const offer = await signInOfferFor({
         accounts: guestAccounts,
-        ownContacts: { find: () => null },
+        ownContacts: { find: (principalId, tenantId) => environment.guestData.findContact(principalId, tenantId) },
         principal: { id: session.principalId, role: "guest", tenantId: session.tenantId },
         credentials: accountCredentialsOf(req),
         returnPath: `/?threadId=${encodeURIComponent(threadId)}`,
-      }),
-    );
+      });
+    return surfacesWithSignInOffer(surfaces, () => offer);
   };
 
   const sendTurnResult = async (req: HttpRequestLike, res: HttpResponseLike, environment: LocalGuestEnvironment, threadId: string, result: GuestTurnResult): Promise<void> => {
@@ -3127,9 +3125,9 @@ export function createGuestRequestHandler(
         }
         // Issue 08: the offer carries the Guest's contact email, so this response is never kept (ADR 0093).
         const signInOffer = isSentOrConfirmed(bookingPage)
-          ? signInOfferFor({
+          ? await signInOfferFor({
               accounts: guestAccounts,
-              ownContacts: { find: () => null },
+              ownContacts: { find: (principalId, tenantId) => env.guestData.findContact(principalId, tenantId) },
               principal,
               credentials: accountCredentialsOf(req),
               returnPath: url.pathname,
