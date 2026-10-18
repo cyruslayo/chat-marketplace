@@ -434,6 +434,8 @@
   .ui-appbar__action { min-block-size: var(--control-min-target); }
   .ui-icon-button { display: inline-flex; flex: none; inline-size: var(--control-min-target); block-size: var(--control-min-target); align-items: center; justify-content: center; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-pill); background: var(--color-surface); color: var(--color-text); text-decoration: none; cursor: pointer; }
   .ui-icon-button:hover { border-color: var(--color-action); color: var(--color-action); }
+  /* Commerce offer card (ADR 0078): the title sits under the card padding, not under the browser's default heading margin. */
+  .ui-panel[data-commerce-offer] > h2 { margin-block-start: 0; }
 
   .ui-rail-nav { border-block-end: 1px solid var(--color-border-subtle); background: var(--color-surface); }
   .ui-rail { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--space-1); margin: 0; padding: var(--space-2) var(--layout-gutter-mobile) var(--space-3); list-style: none; }

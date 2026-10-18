@@ -12,6 +12,25 @@ export function escapeHtml(value: string): string {
  * The single NGN display format (ADR-0078: money is stored in kobo and shown unambiguously).
  * Whole naira are shown without decimals; kobo appear only when non-zero (₦202,000, ₦18,450.50).
  */
+/** A timestamp in Africa/Lagos (WAT) for display, e.g. "11:00 am WAT, 18 Oct 2026". Neutral: any domain may use it (ADR 0078). */
+export function formatWatDateTime(iso: string): string {
+  const date = new Date(iso);
+  if (!Number.isFinite(date.getTime())) return "time unavailable";
+  const parts = new Intl.DateTimeFormat("en-NG", {
+    timeZone: "Africa/Lagos",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).formatToParts(date);
+  const value = (type: Intl.DateTimeFormatPartTypes): string => parts.find((part) => part.type === type)?.value ?? "";
+  const dateText = `${value("day")} ${value("month")} ${value("year")}`;
+  const timeText = `${value("hour")}:${value("minute")} ${value("dayPeriod")}`;
+  return `${timeText} WAT, ${dateText}`;
+}
+
 export function formatMoney(kobo: number): string {
   const sign = kobo < 0 ? "-" : "";
   const absoluteKobo = Math.abs(kobo);

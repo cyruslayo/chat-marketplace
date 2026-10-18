@@ -1,31 +1,32 @@
-import { createHash, timingSafeEqual } from "node:crypto";
 import type { HttpRequestLike, HttpResponseLike } from "../../../packages/platform-core/src/http-like.js";
 import { GUEST_HTML_SECURITY_HEADERS } from "../../../packages/platform-core/src/security-headers.js";
 import type { createCommercePack } from "../../../domains/commerce/src/index.js";
-import { normalizePhone } from "../../../domains/commerce/src/order.js";
 import { commerceDiscoveryPresentation, commerceOrderPresentation } from "../../web-agent/src/commerce-presentation.js";
+import { COMMERCE_GUEST_COPY as COPY, commerceSoldBy } from "../../web-agent/src/guest-content.js";
 import { appFrameHtml, commerceOfferHtml } from "./guest-kit.js";
 import type { RouteModule } from "./guest-shell.js";
-import { escapeHtml, pageShell } from "../../web/src/ui-kit.js";
+import { escapeHtml, formatWatDateTime, pageShell } from "../../web/src/ui-kit.js";
 
 type Commerce = ReturnType<typeof createCommercePack>;
+
+// Implementation limits, not traced to an ADR: they bound request size and form input, and are not policy.
+/** The largest tracking form body that is read; a larger request is refused. */
+const TRACKING_BODY_LIMIT_BYTES = 4096;
+/** The maximum length of the public order code field. */
+const PUBLIC_CODE_MAX_LENGTH = 100;
+/** The maximum length of the phone field. */
+const PHONE_MAX_LENGTH = 32;
+/** The shared-cache lifetime of public store and offer pages, in seconds. */
+const PUBLIC_PAGE_MAX_AGE_SECONDS = 60;
 
 function sendHtml(res: HttpResponseLike, html: string, status = 200, privatePage = false): void {
   res.writeHead(status, {
     ...GUEST_HTML_SECURITY_HEADERS,
     "Content-Type": "text/html; charset=utf-8",
-    "Cache-Control": privatePage ? "no-store" : "public, max-age=60",
+    "Cache-Control": privatePage ? "no-store" : `public, max-age=${PUBLIC_PAGE_MAX_AGE_SECONDS}`,
     "Referrer-Policy": "no-referrer",
   });
   res.end(html);
-}
-
-function safeMatchPhone(provided: string, stored: string): boolean {
-  const submitted = normalizePhone(provided);
-  const expected = normalizePhone(stored);
-  if (submitted.length === 0 || expected.length === 0) return false;
-  const hash = (value: string) => createHash("sha256").update(value, "utf8").digest();
-  return timingSafeEqual(hash(submitted), hash(expected));
 }
 
 function decodeSegment(value: string): string | null {
@@ -36,12 +37,18 @@ function decodeSegment(value: string): string | null {
   }
 }
 
-function trackPage(result?: { readonly publicCode: string; readonly status: string; readonly updatedAt: string }, error?: string): string {
+interface TrackedOrder {
+  readonly publicCode: string;
+  readonly status: string;
+  readonly updatedAt: string;
+}
+
+function trackPage(result?: TrackedOrder, error?: string): string {
   const content = result === undefined
-    ? `<section class="ui-panel ui-stack"><h1>Track your order</h1><p>Enter the public code and the phone number used for the order. We use both to protect your order details.</p><form method="post" action="/orders/track" class="ui-stack"><div class="ui-field"><label class="ui-field__label" for="public-code">Public order code</label><input id="public-code" name="publicCode" type="text" required maxlength="100" autocomplete="off" autocapitalize="characters" spellcheck="false"></div><div class="ui-field"><label class="ui-field__label" for="order-phone">Phone number used for the order</label><input id="order-phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" required maxlength="32" aria-describedby="order-phone-help"><p class="ui-field__hint" id="order-phone-help">Only used to verify this order.</p></div><button class="ui-button ui-button--primary ui-button--block" type="submit">Track order</button></form></section>`
-    : `<section class="ui-panel ui-stack" aria-live="polite"><h1>Order status</h1><p><strong>Public code</strong><br>${escapeHtml(result.publicCode)}</p><p><strong>Status</strong><br>${escapeHtml(result.status)}</p><p><strong>Last updated</strong><br><time datetime="${escapeHtml(result.updatedAt)}">${escapeHtml(result.updatedAt)}</time></p><a class="ui-button ui-button--secondary ui-button--block" href="/orders/track">Track another order</a></section>`;
+    ? `<section class="ui-panel ui-stack"><h1>${COPY.trackOrderTitle}</h1><p>${COPY.trackOrderIntro}</p><form method="post" action="/orders/track" class="ui-stack"><div class="ui-field"><label class="ui-field__label" for="public-code">${COPY.publicCodeLabel}</label><input id="public-code" name="publicCode" type="text" required maxlength="${PUBLIC_CODE_MAX_LENGTH}" autocomplete="off" autocapitalize="characters" spellcheck="false"></div><div class="ui-field"><label class="ui-field__label" for="order-phone">${COPY.phoneLabel}</label><input id="order-phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" required maxlength="${PHONE_MAX_LENGTH}" aria-describedby="order-phone-help"><p class="ui-field__hint" id="order-phone-help">${COPY.phoneHint}</p></div><button class="ui-button ui-button--primary ui-button--block" type="submit">${COPY.trackOrderSubmit}</button></form></section>`
+    : `<section class="ui-panel ui-stack" aria-live="polite"><h1>${COPY.orderStatusTitle}</h1><p><strong>${COPY.publicCodeHeading}</strong><br>${escapeHtml(result.publicCode)}</p><p><strong>${COPY.statusHeading}</strong><br>${escapeHtml(result.status)}</p><p><strong>${COPY.lastUpdatedHeading}</strong><br><time datetime="${escapeHtml(result.updatedAt)}">${escapeHtml(formatWatDateTime(result.updatedAt))}</time></p><a class="ui-button ui-button--secondary ui-button--block" href="/orders/track">${COPY.trackAnotherOrder}</a></section>`;
   const alert = error === undefined ? "" : `<p class="ui-banner ui-banner--warning" role="alert">${escapeHtml(error)}</p>`;
-  return pageShell({ title: "Track your order · Shop", width: "narrow", frame: appFrameHtml({ threadId: null }), body: `${content}${alert}` });
+  return pageShell({ title: `${COPY.trackOrderTitle} · ${COPY.pageTitleSuffix}`, width: "narrow", frame: appFrameHtml({ threadId: null }), body: `${content}${alert}` });
 }
 
 function readForm(req: HttpRequestLike): Promise<URLSearchParams> {
@@ -50,7 +57,7 @@ function readForm(req: HttpRequestLike): Promise<URLSearchParams> {
     let size = 0;
     req.on("data", (chunk) => {
       size += chunk.length;
-      if (size > 4096) {
+      if (size > TRACKING_BODY_LIMIT_BYTES) {
         reject(new Error("request body too large"));
         req.resume();
         return;
@@ -62,6 +69,10 @@ function readForm(req: HttpRequestLike): Promise<URLSearchParams> {
   });
 }
 
+function notFoundPage(title: string, body: string, frame: string): string {
+  return pageShell({ title: `${title} · ${COPY.pageTitleSuffix}`, width: "narrow", body: `<section class="ui-panel ui-empty"><h1>${title}</h1><p>${body}</p></section>`, frame });
+}
+
 function storePage(commerce: Commerce, slug: string): string | null {
   const store = commerce.directory.consumerStores().find((candidate) => candidate.slug === slug);
   if (!store) return null;
@@ -70,6 +81,8 @@ function storePage(commerce: Commerce, slug: string): string | null {
   const offers = commerce.catalogue.offersForStore(store.id).filter((offer) => offer.stock > 0);
   const presented = commerceDiscoveryPresentation(offers.map((offer) => ({
     offerId: offer.offerId,
+    storeName: store.name,
+    merchantName: merchant.name,
     productName: offer.productName,
     category: offer.category,
     description: offer.description,
@@ -77,8 +90,8 @@ function storePage(commerce: Commerce, slug: string): string | null {
     stock: offer.stock,
   })));
   const cards = presented.offers.map((offer) => commerceOfferHtml(offer, `/s/${encodeURIComponent(slug)}/offers/${encodeURIComponent(offer.offerId)}`)).join("");
-  const body = `<header class="ui-page__header"><p class="ui-eyebrow">Verified store</p><h1>${escapeHtml(store.name)}</h1><p>Sold by ${escapeHtml(merchant.name)}</p></header>${cards || `<section class="ui-panel ui-empty"><h2>No offers available</h2><p>This Store has no offers to show right now.</p></section>`}<p><a class="ui-link" href="/orders/track">Track an order</a></p>`;
-  return pageShell({ title: `${store.name} · Shop`, body, frame: appFrameHtml({ threadId: null }) });
+  const body = `<header class="ui-page__header"><p class="ui-eyebrow">${COPY.verifiedStore}</p><h1>${escapeHtml(store.name)}</h1><p>${escapeHtml(commerceSoldBy(merchant.name))}</p></header>${cards || `<section class="ui-panel ui-empty"><h2>${COPY.noOffersTitle}</h2><p>${COPY.noOffersBody}</p></section>`}<p><a class="ui-link" href="/orders/track">${COPY.trackOrderLink}</a></p>`;
+  return pageShell({ title: `${store.name} · ${COPY.pageTitleSuffix}`, body, frame: appFrameHtml({ threadId: null }) });
 }
 
 export function createCommerceRouteModule(commerce: Commerce): RouteModule {
@@ -94,18 +107,15 @@ export function createCommerceRouteModule(commerce: Commerce): RouteModule {
           const form = await readForm(req);
           const code = form.get("publicCode");
           const phone = form.get("phone");
-          const order = typeof code === "string" && typeof phone === "string" && code.trim() !== ""
-            ? commerce.orders.orderByPublicCode(code.trim())
-            : null;
-          // ADR 0075: fail closed and return one generic response for unknown codes and mismatched phones.
-          if (!order || typeof phone !== "string" || !safeMatchPhone(phone, order.customerPhone)) {
-            sendHtml(res, trackPage(undefined, "We could not find an order with those details. Check the code and phone number and try again."), 200, true);
+          // ADR 0075: one domain lookup for every input. An unknown code, a wrong phone and a blank phone share one response.
+          const tracked = commerce.orders.trackOrder(typeof code === "string" ? code : "", typeof phone === "string" ? phone : "");
+          if (tracked === null) {
+            sendHtml(res, trackPage(undefined, COPY.orderNotFound), 200, true);
             return true;
           }
-          const presentation = commerceOrderPresentation({ publicCode: order.publicCode, status: order.status, updatedAt: order.updatedAt });
-          sendHtml(res, trackPage(presentation), 200, true);
+          sendHtml(res, trackPage(commerceOrderPresentation(tracked)), 200, true);
         } catch {
-          sendHtml(res, trackPage(undefined, "We could not check the order right now. Please try again."), 400, true);
+          sendHtml(res, trackPage(undefined, COPY.orderLookupFailed), 400, true);
         }
         return true;
       }
@@ -113,7 +123,7 @@ export function createCommerceRouteModule(commerce: Commerce): RouteModule {
       if (req.method === "GET" && storeMatch) {
         const body = storePage(commerce, storeMatch[1]!);
         if (body === null) {
-          sendHtml(res, pageShell({ title: "Store unavailable · Shop", width: "narrow", body: `<section class="ui-panel ui-empty"><h1>Store unavailable</h1><p>This Store could not be found.</p></section>`, frame: appFrameHtml({ threadId: null }) }), 404);
+          sendHtml(res, notFoundPage(COPY.storeUnavailableTitle, COPY.storeUnavailableBody, appFrameHtml({ threadId: null })), 404);
         } else sendHtml(res, body);
         return true;
       }
@@ -124,15 +134,15 @@ export function createCommerceRouteModule(commerce: Commerce): RouteModule {
         const offerId = decodeSegment(offerMatch[2]!);
         const offer = store && offerId !== null && commerce.catalogue.offersForStore(store.id).find((candidate) => candidate.offerId === offerId);
         if (!store || !merchant || merchant.status !== "verified" || !offer || offer.stock <= 0) {
-          sendHtml(res, pageShell({ title: "Offer unavailable · Shop", width: "narrow", body: `<section class="ui-panel ui-empty"><h1>Offer unavailable</h1><p>This offer is not available.</p></section>`, frame: appFrameHtml({ threadId: null }) }), 404);
+          sendHtml(res, notFoundPage(COPY.offerUnavailableTitle, COPY.offerUnavailableBody, appFrameHtml({ threadId: null })), 404);
         } else {
-          const presentation = commerceDiscoveryPresentation([{ offerId: offer.offerId, productName: offer.productName, category: offer.category, description: offer.description, priceKobo: offer.priceKobo, stock: offer.stock }]).offers[0]!;
-          sendHtml(res, pageShell({ title: `${presentation.productName} · ${store.name}`, width: "narrow", frame: appFrameHtml({ threadId: null }), body: `<header class="ui-page__header"><p class="ui-eyebrow">${escapeHtml(store.name)} · Sold by ${escapeHtml(merchant.name)}</p><h1>${escapeHtml(presentation.productName)}</h1></header>${commerceOfferHtml(presentation, `/s/${encodeURIComponent(store.slug)}`)}<p><a class="ui-link" href="/">Continue in chat for cart and checkout</a></p>` }));
+          const presentation = commerceDiscoveryPresentation([{ offerId: offer.offerId, storeName: store.name, merchantName: merchant.name, productName: offer.productName, category: offer.category, description: offer.description, priceKobo: offer.priceKobo, stock: offer.stock }]).offers[0]!;
+          sendHtml(res, pageShell({ title: `${presentation.productName} · ${store.name}`, width: "narrow", frame: appFrameHtml({ threadId: null }), body: `<header class="ui-page__header"><p class="ui-eyebrow">${escapeHtml(store.name)}</p><h1>${escapeHtml(presentation.productName)}</h1></header>${commerceOfferHtml(presentation, null)}<p><a class="ui-link" href="/">${COPY.continueInChatLink}</a></p>` }));
         }
         return true;
       }
       if (req.method === "GET" && url.pathname === "/cart") {
-        sendHtml(res, pageShell({ title: "Shopping cart · Shop", width: "narrow", frame: appFrameHtml({ threadId: null }), body: `<section class="ui-panel ui-empty"><h1>Your Store Cart</h1><p>Continue in the Shop chat to manage your cart and proceed to checkout.</p><a class="ui-button ui-button--primary ui-button--block" href="/">Continue in chat</a></section>` }));
+        sendHtml(res, pageShell({ title: `${COPY.cartPageTitle} · ${COPY.pageTitleSuffix}`, width: "narrow", frame: appFrameHtml({ threadId: null }), body: `<section class="ui-panel ui-empty"><h1>${COPY.cartTitle}</h1><p>${COPY.cartBody}</p><a class="ui-button ui-button--primary ui-button--block" href="/">${COPY.continueInChatButton}</a></section>` }));
         return true;
       }
       return false;

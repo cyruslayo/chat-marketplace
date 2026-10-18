@@ -101,7 +101,7 @@ test("real Chromium renders visible discovery, cart and order facts from registe
   assert.equal(assistant.handleAssistantEvent(threadId, TASK_START_EVENT, { domain: "commerce" }).ok, true);
 
   const turns = [
-    { prompt: "Search for the tote", expected: ["Visible Northstar Tote", "NGN 8,500", "17 available"], catalogId: COMMERCE_DISCOVERY_CATALOG_ID },
+    { prompt: "Search for the tote", expected: ["Visible Northstar Tote", "₦8,500", "17 available"], catalogId: COMMERCE_DISCOVERY_CATALOG_ID },
     { prompt: "Add this to my cart", expected: ["Visible Northstar Tote", "2 × NGN 8,500"], catalogId: COMMERCE_CART_CATALOG_ID },
     { prompt: "Track my order", expected: [order.publicCode, "Pending Verification"], catalogId: COMMERCE_ORDER_CATALOG_ID },
   ] as const;

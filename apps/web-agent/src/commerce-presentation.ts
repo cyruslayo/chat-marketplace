@@ -1,5 +1,7 @@
 import { type A2UIComponent, type A2UIServerMessage } from "@cylayo/weaver-core";
 import { COMMERCE_CART_CATALOG_ID, COMMERCE_DISCOVERY_CATALOG_ID, COMMERCE_ORDER_CATALOG_ID } from "./commerce-catalogs.js";
+import { formatMoney, formatWatDateTime } from "../../web/src/ui-kit.js";
+import { COMMERCE_GUEST_COPY, commerceSoldBy } from "./guest-content.js";
 export const COMMERCE_CHECKOUT_CONFIRM_ACTION = "commerce.checkout.confirm";
 
 /** Technical interaction budgets; IDs and authoritative numeric facts are never truncated. */
@@ -41,6 +43,9 @@ export function projectCommerceText(value: string, limits: CommerceProjectionLim
 
 export interface CommerceOfferPresentation {
   readonly offerId: string;
+  /** The Store and its verified Merchant identify the seller of record (ADR 0001); chat and pages render these same facts. */
+  readonly storeName: string;
+  readonly merchantName: string;
   readonly productName: string;
   readonly category: string;
   readonly description: string;
@@ -79,7 +84,7 @@ export interface CommerceCheckoutPresentation {
 
 export function commerceDiscoveryPresentation(offers: readonly CommerceOfferPresentation[], limits = DEFAULT_COMMERCE_PROJECTION_LIMITS) {
   const bounded = validateCommerceProjectionLimits(limits);
-  return { title: "Products", offers: offers.slice(0, bounded.maxResults).map((offer) => ({ offerId: offer.offerId, productName: projectCommerceText(offer.productName, bounded), category: projectCommerceText(offer.category, bounded), description: projectCommerceText(offer.description, bounded), priceKobo: offer.priceKobo, stock: offer.stock })) };
+  return { title: "Products", offers: offers.slice(0, bounded.maxResults).map((offer) => ({ offerId: offer.offerId, productName: projectCommerceText(offer.productName, bounded), category: projectCommerceText(offer.category, bounded), description: projectCommerceText(offer.description, bounded), priceKobo: offer.priceKobo, stock: offer.stock, storeName: projectCommerceText(offer.storeName, bounded), merchantName: projectCommerceText(offer.merchantName, bounded) })) };
 }
 
 export function commerceCartPresentation(cart: CommerceCartPresentation, limits = DEFAULT_COMMERCE_PROJECTION_LIMITS) {
@@ -88,7 +93,7 @@ export function commerceCartPresentation(cart: CommerceCartPresentation, limits 
 }
 
 export function commerceOrderPresentation(order: CommerceOrderPresentation, limits = DEFAULT_COMMERCE_PROJECTION_LIMITS) {
-  return { title: "Order status", publicCode: order.publicCode, status: projectCommerceText(order.status, limits), updatedAt: projectCommerceText(order.updatedAt, limits) };
+  return { title: COMMERCE_GUEST_COPY.orderStatusTitle, publicCode: order.publicCode, status: projectCommerceText(order.status, limits), updatedAt: projectCommerceText(order.updatedAt, limits) };
 }
 
 export function commerceCheckoutPresentation(checkout: CommerceCheckoutPresentation, limits = DEFAULT_COMMERCE_PROJECTION_LIMITS) {
@@ -105,7 +110,7 @@ function messages(surfaceId: string, catalogId: string, title: string, lines: re
 export function commerceDiscoverySurface(artifact: unknown, surfaceId: string, limits = DEFAULT_COMMERCE_PROJECTION_LIMITS): readonly unknown[] {
   const offers = Array.isArray(artifact) ? artifact as CommerceOfferPresentation[] : [];
   const presentation = commerceDiscoveryPresentation(offers, limits);
-  return messages(surfaceId, COMMERCE_DISCOVERY_CATALOG_ID, presentation.title, presentation.offers.map((offer) => `${offer.productName} · ${offer.category} · NGN ${(offer.priceKobo / 100).toLocaleString("en-NG")} · ${offer.stock} available\n${offer.description}`));
+  return messages(surfaceId, COMMERCE_DISCOVERY_CATALOG_ID, presentation.title, presentation.offers.map((offer) => `${offer.productName} · ${offer.category} · ${formatMoney(offer.priceKobo)} · ${offer.stock} ${COMMERCE_GUEST_COPY.available}\n${commerceSoldBy(offer.merchantName, offer.storeName)}\n${offer.description}`));
 }
 
 export function commerceCartSurface(cart: CommerceCartPresentation, surfaceId: string, limits = DEFAULT_COMMERCE_PROJECTION_LIMITS): readonly unknown[] {
@@ -115,7 +120,7 @@ export function commerceCartSurface(cart: CommerceCartPresentation, surfaceId: s
 
 export function commerceOrderSurface(order: CommerceOrderPresentation, surfaceId: string, limits = DEFAULT_COMMERCE_PROJECTION_LIMITS): readonly unknown[] {
   const presentation = commerceOrderPresentation(order, limits);
-  return messages(surfaceId, COMMERCE_ORDER_CATALOG_ID, presentation.title, [`${presentation.publicCode} · ${presentation.status} · ${presentation.updatedAt}`]);
+  return messages(surfaceId, COMMERCE_ORDER_CATALOG_ID, presentation.title, [`${presentation.publicCode} · ${presentation.status} · ${formatWatDateTime(presentation.updatedAt)}`]);
 }
 
 /** Guest copy for each non-proposed checkout status. Every string already exists in the commerce runtime; none is new copy. */

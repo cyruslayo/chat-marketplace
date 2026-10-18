@@ -406,3 +406,42 @@ export const GUEST_ACCOUNT_COPY = Object.freeze({
     linkConflict: "This browser is already linked to a different account. Sign out there first.",
   }),
 });
+
+/** Commerce guest copy for the store, offer and order-tracking pages (ADR 0077: chat and pages share these strings). */
+export const COMMERCE_GUEST_COPY = Object.freeze({
+  soldBy: "Sold by",
+  verifiedStore: "Verified store",
+  viewOffer: "View offer",
+  available: "available",
+  storeUnavailableTitle: "Store unavailable",
+  storeUnavailableBody: "This store could not be found.",
+  offerUnavailableTitle: "Offer unavailable",
+  offerUnavailableBody: "This offer is not available.",
+  noOffersTitle: "No offers available",
+  noOffersBody: "This store has no offers to show right now.",
+  trackOrderLink: "Track an order",
+  trackOrderTitle: "Track your order",
+  trackOrderIntro: "Enter the public code and the phone number used for the order. We use both to protect your order details.",
+  publicCodeLabel: "Public order code",
+  phoneLabel: "Phone number used for the order",
+  phoneHint: "Only used to verify this order.",
+  trackOrderSubmit: "Track order",
+  orderNotFound: "We could not find an order with those details. Check the code and phone number and try again.",
+  orderLookupFailed: "We could not check the order right now. Please try again.",
+  orderStatusTitle: "Order status",
+  publicCodeHeading: "Public code",
+  statusHeading: "Status",
+  lastUpdatedHeading: "Last updated",
+  trackAnotherOrder: "Track another order",
+  continueInChatLink: "Continue in chat for cart and checkout",
+  continueInChatButton: "Continue in chat",
+  cartTitle: "Your store cart",
+  cartBody: "Continue in the Shop chat to manage your cart and proceed to checkout.",
+  cartPageTitle: "Shopping cart",
+  pageTitleSuffix: "Shop",
+});
+
+/** The one "Sold by" line: the Merchant (seller of record, ADR 0001), with the Store when a card or chat row names it. */
+export function commerceSoldBy(merchantName: string, storeName?: string): string {
+  return storeName === undefined ? `${COMMERCE_GUEST_COPY.soldBy} ${merchantName}` : `${COMMERCE_GUEST_COPY.soldBy} ${merchantName} · ${storeName}`;
+}

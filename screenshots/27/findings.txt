@@ -1,0 +1,1 @@
+No horizontal overflow and no visible controls below 44px; store, offer, tracking (matched and unmatched) and chat discovery rendered their expected facts at 320, 390, 768 and 1280 in light and dark.

@@ -37,6 +37,7 @@ test("AC3: Captures at the four widths pass the overflow and 44px checks", async
               .map((node) => node.textContent?.trim() || node.getAttribute('aria-label') || node.tagName),
             text: document.querySelector('main')?.innerText || ''
           }))()`));
+          results[results.length - 1]!.path = path;
         }
       }
     }
@@ -48,6 +49,7 @@ test("AC3: Captures at the four widths pass the overflow and 44px checks", async
         assert.match(result.text, /₦4,200/);
       } else assert.match(result.text, /Track your order/);
     }
+    await tab.navigate(`http://127.0.0.1:${port}/s/browser-store`);
     assert.match(await tab.getContent(), /Visible Store Offer/);
   } finally {
     await tab?.close();

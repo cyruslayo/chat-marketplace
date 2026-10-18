@@ -4,6 +4,7 @@
  * Styling lives in apps/web/src/shortlet-foundations.css (`ui-*`). Every value is escaped here; helpers never build URLs.
  */
 import {
+  COMMERCE_GUEST_COPY,
   GUEST_ACCOUNT_COPY,
   GUEST_FACT_LABELS,
   GUEST_GLOSSARY,
@@ -11,6 +12,7 @@ import {
   GUEST_TASK_RAIL,
   GUEST_VERTICALS,
   UNIT_DETAIL_ABOUT_HEADING,
+  commerceSoldBy,
   stayTotalLabel,
 } from "../../web-agent/src/guest-content.js";
 import { formatNgnKobo } from "../../web-agent/src/discovery-a2ui.js";
@@ -459,9 +461,15 @@ export function statusHtml(tone: KitStatusTone, text: string): string {
   return statusBadge(text, tone);
 }
 
-/** Store and offer pages consume the same bounded offer presentation used by the Commerce chat tool (ADR 0077). */
-export function commerceOfferHtml(offer: CommerceOfferPresentation, href: string): string {
-  return `<article class="ui-panel" data-commerce-offer="${escapeHtml(offer.offerId)}"><h2><a class="ui-link" href="${escapeHtml(href)}">${escapeHtml(offer.productName)}</a></h2><p class="ui-field__hint">${escapeHtml(offer.category)}</p><p>${escapeHtml(offer.description)}</p><p class="ui-money-total">${formatNgnKobo(offer.priceKobo)}</p><p class="ui-field__hint">${escapeHtml(String(offer.stock))} available</p><a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(href)}">View offer</a></article>`;
+/**
+ * Store and offer pages consume the same bounded offer presentation used by the Commerce chat tool (ADR 0077).
+ * `href` links the card to its offer page on a store page. On the offer page itself (`null`) the card has no
+ * link back and no "View offer" action: the page's next step is the chat link beneath it.
+ */
+export function commerceOfferHtml(offer: CommerceOfferPresentation, href: string | null): string {
+  const title = href === null ? escapeHtml(offer.productName) : `<a class="ui-link" href="${escapeHtml(href)}">${escapeHtml(offer.productName)}</a>`;
+  const action = href === null ? "" : `<a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(href)}">${COMMERCE_GUEST_COPY.viewOffer}</a>`;
+  return `<article class="ui-panel" data-commerce-offer="${escapeHtml(offer.offerId)}"><h2>${title}</h2><p class="ui-field__hint">${escapeHtml(offer.category)}</p><p class="ui-field__hint">${escapeHtml(commerceSoldBy(offer.merchantName, offer.storeName))}</p><p>${escapeHtml(offer.description)}</p><p class="ui-money-total">${formatNgnKobo(offer.priceKobo)}</p><p class="ui-field__hint">${escapeHtml(String(offer.stock))} ${COMMERCE_GUEST_COPY.available}</p>${action}</article>`;
 }
 
 // Hidden until /payment.js reveals it: without JavaScript the account number stays plain, selectable text (ADR 0080).

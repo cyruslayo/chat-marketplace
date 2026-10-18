@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import type { SqlDatabase, SqlRow } from "../../../packages/platform-core/src/sql-database.js";
 import { MERCHANT_ORDER_SCHEMA } from "./commerce-schema.js";
 import {
@@ -45,6 +46,22 @@ function readOrder(row: SqlRow): MerchantOrder {
  * The Merchant Order repository: port of instastore `create_store_order` and `set_order_status`
  * (0017_payment_verification_fact.sql) onto the commerce Product/Offer/Variant model.
  */
+/** The only order facts a public tracking lookup may return (ADR 0075): no customer, address, payment or item data. */
+export interface PublicOrderTracking {
+  readonly publicCode: string;
+  readonly status: MerchantOrderStatus;
+  readonly updatedAt: string;
+}
+
+// Implementation constants, not traced to an ADR: digest inputs that no normalised phone can equal. A blank phone and a
+// missing order each hash one of these, so the compare runs the same way for every lookup.
+const EMPTY_PHONE_MARKER = "\u0000empty-phone";
+const NO_ORDER_MARKER = "\u0000no-order";
+
+function phoneDigest(value: string): Buffer {
+  return createHash("sha256").update(value, "utf8").digest();
+}
+
 export class CommerceOrders {
   constructor(private readonly database: SqlDatabase, private readonly clock: () => Date) {
     database.exec(MERCHANT_ORDER_SCHEMA);
@@ -146,6 +163,22 @@ export class CommerceOrders {
   orderByPublicCode(publicCode: string): MerchantOrder | null {
     const row = this.database.prepare("SELECT * FROM merchant_orders WHERE public_code = $publicCode").get({ $publicCode: publicCode });
     return row ? readOrder(row) : null;
+  }
+
+  /**
+   * Public order tracking (ADR 0075): the code and the phone used for the order must both match. Every call normalises both
+   * phones, hashes both, and runs one constant-time compare with no early return, whether the order is missing or the phone is
+   * empty. Only the minimal projection is returned.
+   */
+  trackOrder(publicCode: string, phone: string): PublicOrderTracking | null {
+    const order = this.orderByPublicCode(publicCode.trim());
+    const submitted = normalizePhone(phone);
+    const stored = normalizePhone(order ? order.customerPhone : "");
+    const submittedDigest = phoneDigest(submitted === "" ? EMPTY_PHONE_MARKER : submitted);
+    const storedDigest = phoneDigest(order && stored !== "" ? stored : NO_ORDER_MARKER);
+    const phonesEqual = timingSafeEqual(submittedDigest, storedDigest);
+    if (order === null || submitted === "" || stored === "" || !phonesEqual) return null;
+    return { publicCode: order.publicCode, status: order.status, updatedAt: order.updatedAt };
   }
 
   ordersForStore(storeId: string): readonly MerchantOrder[] {
