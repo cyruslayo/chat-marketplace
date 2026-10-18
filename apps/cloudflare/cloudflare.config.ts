@@ -98,6 +98,9 @@ function workerFor(environment: PilotEnvironment) {
       RESEND_API_KEY: bindings.secret(),
       SHORTLET_GUEST_CODE_HASHING_KEY: bindings.secret(),
       OPS_SHARED_SECRET: bindings.secret(),
+      // Issue 24 (user decision 18 Oct 2026, ADR 0075): the keyed payment reference secret; the id is a plain var, so rotation is a new id.
+      COMMERCE_REFERENCE_HMAC_KEY: bindings.secret(),
+      COMMERCE_REFERENCE_HMAC_KEY_ID: bindings.text("k1"),
     },
   });
 }

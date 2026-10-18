@@ -1,3 +1,4 @@
+import { COMMERCE_TEST_REFERENCE_KEYS } from "../../../test/helpers/commerce-database.js";
 import { env } from "cloudflare:workers";
 import { runInDurableObject } from "cloudflare:test";
 import { afterEach, expect, test } from "vitest";
@@ -93,7 +94,7 @@ test("16 restore: a day's export loaded parent-first into a new object exports t
   const sourceOrderId = await runInDurableObject(sourceCommerce, (_instance, ctx) => {
     const database = new DurableObjectSqlDatabase(ctx.storage);
     seedCommerceFixture(database, { ...orderIds, priceKobo: 1000, stock: 3, deliveryFeeKobo: 0, clock: orderClock });
-    return createCommercePack({ database, clock: orderClock }).orders.createOrder(parseCreateOrderInput(checkoutPayload(orderIds, { submittedTotalKobo: 1000, paymentReference: restoredPaymentReference }))).id;
+    return createCommercePack({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS, database, clock: orderClock }).orders.createOrder(parseCreateOrderInput(checkoutPayload(orderIds, { submittedTotalKobo: 1000, paymentReference: restoredPaymentReference }))).id;
   });
   await runInDurableObject(sourcePlatform, (_instance, ctx) => {
     const database = new DurableObjectSqlDatabase(ctx.storage);
@@ -132,7 +133,7 @@ test("16 restore: a day's export loaded parent-first into a new object exports t
   // The restored object holds the order, the export never held the raw reference, and a retry finds the same order by hash.
   expect(await countRows(targetCommerce, "merchant_orders")).toBe(1);
   expect((await dayLines(DAY_ONE, "merchant_orders")).join("\n")).not.toContain(restoredPaymentReference);
-  const restoredOrderId = await runInDurableObject(targetCommerce, (_instance, ctx) => createCommercePack({ database: new DurableObjectSqlDatabase(ctx.storage), clock: orderClock })
+  const restoredOrderId = await runInDurableObject(targetCommerce, (_instance, ctx) => createCommercePack({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS, database: new DurableObjectSqlDatabase(ctx.storage), clock: orderClock })
     .orders.createOrder(parseCreateOrderInput(checkoutPayload(orderIds, { submittedTotalKobo: 1000, paymentReference: restoredPaymentReference }))).id);
   expect(restoredOrderId).toBe(sourceOrderId);
 }, 30_000);

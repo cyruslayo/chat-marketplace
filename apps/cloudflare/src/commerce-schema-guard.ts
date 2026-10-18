@@ -19,15 +19,18 @@ export function assertMerchantOrdersShape(database: SqlDatabase): void {
   if (!columns.has("payment_reference_hash") || columns.has("payment_reference")) throw new CommerceSchemaShapeError();
 }
 
-/** A payment_reference_hash is the lowercase hex SHA-256 of a reference: exactly 64 lowercase hex characters (issue 24 review 10). */
-const PAYMENT_REFERENCE_HASH = /^[0-9a-f]{64}$/;
+/**
+ * A payment_reference_hash is `<keyId>:<64 lowercase hex>`: the key id, then the HMAC-SHA-256 hex of the trimmed reference (issue 24
+ * review 10; user decision 18 Oct 2026, keyed hash). The key id matches the domain key id rule (lowercase, digits, hyphens).
+ */
+const PAYMENT_REFERENCE_HASH = /^[a-z0-9][a-z0-9-]{0,31}:[0-9a-f]{64}$/;
 
 /** Throws when any imported merchant_orders row lacks a well-formed payment_reference_hash. The values are never echoed. */
 export function assertPaymentReferenceHashes(rows: readonly unknown[]): void {
   for (const row of rows) {
     const hash = typeof row === "object" && row !== null ? (row as Record<string, unknown>).payment_reference_hash : undefined;
     if (typeof hash !== "string" || !PAYMENT_REFERENCE_HASH.test(hash)) {
-      throw new Error("payment_reference_hash must be 64 lowercase hex characters");
+      throw new Error("payment_reference_hash must be <keyId>:<64 lowercase hex characters>");
     }
   }
 }

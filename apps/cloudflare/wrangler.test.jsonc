@@ -30,6 +30,8 @@
     "PAYSTACK_CALLBACK_BASE_URL": "https://pilot.example.test",
     "PAYSTACK_ENVIRONMENT": "test",
     "SHORTLET_DEPLOYMENT": "staging",
+    "COMMERCE_REFERENCE_HMAC_KEY": "synthetic-test-only-commerce-reference-key",
+    "COMMERCE_REFERENCE_HMAC_KEY_ID": "k1",
     "SHORTLET_BETA_INVITE_CODE": "synthetic-invite",
     "CONCIERGE_MODE": "deterministic",
     "RESEND_API_KEY": "re_test_synthetic",

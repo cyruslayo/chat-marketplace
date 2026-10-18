@@ -3,3 +3,5 @@
 PAYSTACK_SECRET_KEY="sk_test_replace_me"
 GEMINI_API_KEY="replace_me"
 RESEND_API_KEY="re_test_replace_me"
+COMMERCE_REFERENCE_HMAC_KEY="replace_me_with_at_least_32_bytes_of_random_secret"
+COMMERCE_REFERENCE_HMAC_KEY_ID="k1"

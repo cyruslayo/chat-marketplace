@@ -1,3 +1,4 @@
+import { COMMERCE_TEST_REFERENCE_KEYS } from "./helpers/commerce-database.js";
 import { migrateCommerceDatabase } from "./helpers/commerce-database.js";
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -23,7 +24,7 @@ interface RenderedSurface { readonly text: string; readonly components: number; 
 function seedBrowserCommerce() {
   const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:", clock: () => new Date("2026-10-18T10:00:00Z") });
   migrateCommerceDatabase(environment.database);
-  const commerce = createCommercePack({ database: environment.database, clock: environment.clock });
+  const commerce = createCommercePack({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS, database: environment.database, clock: environment.clock });
   commerce.directory.createMerchant({ id: "browser-merchant", name: "Harbour Goods Ltd", status: "verified" });
   commerce.directory.createStore({ id: "browser-store", merchantId: "browser-merchant", slug: "harbour-goods", name: "Harbour Goods", status: "active" });
   commerce.catalogue.createProduct({ id: "browser-tote", name: "Visible Northstar Tote", category: "Accessories", description: "Cotton carry bag with reinforced handles." });
@@ -33,7 +34,7 @@ function seedBrowserCommerce() {
 }
 
 function commercePack(environment: ReturnType<typeof seedBrowserCommerce>["environment"]) {
-  return createCommerceAssistantPack({
+  return createCommerceAssistantPack({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS,
     database: environment.database,
     clock: environment.clock,
     audit: environment.audit,

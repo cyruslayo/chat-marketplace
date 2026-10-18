@@ -58,7 +58,7 @@ evidence log or chat):
   `CF_ACCESS_AUD`, `SHORTLET_EXPORT_RETENTION_DAYS`, `SHORTLET_RECEIPT_ORPHAN_GRACE_HOURS`,
   `SHORTLET_NOTIFICATION_FROM`, `SHORTLET_OPERATOR_ALERT_EMAILS`, `SHORTLET_NOTIFICATION_SWEEP_SECONDS`.
 - Secrets declared with `bindings.secret()`: `PAYSTACK_SECRET_KEY` (a **test** key), `GEMINI_API_KEY`,
-  `RESEND_API_KEY`, `OPS_SHARED_SECRET`.
+  `RESEND_API_KEY`, `OPS_SHARED_SECRET`, `COMMERCE_REFERENCE_HMAC_KEY` (commerce payment reference key, ADR 0075; the id is the plain var `COMMERCE_REFERENCE_HMAC_KEY_ID`).
 
 ## 1. Build and deploy staging (issue step 1)
 
@@ -89,9 +89,9 @@ npm exec cf -- workers secrets bulk --help
 npm exec cf -- deploy --help
 ```
 
-- Set each secret by **name** only: `PAYSTACK_SECRET_KEY`, `GEMINI_API_KEY`, `RESEND_API_KEY`, `OPS_SHARED_SECRET`.
+- Set each secret by **name** only: `PAYSTACK_SECRET_KEY`, `GEMINI_API_KEY`, `RESEND_API_KEY`, `OPS_SHARED_SECRET`, `COMMERCE_REFERENCE_HMAC_KEY`.
 - Prefer the form that takes values interactively or from standard input, so no value enters shell history.
-- If a secrets file is used, create it outside the repository, use only the four names above, and delete it
+- If a secrets file is used, create it outside the repository, use only the five names above, and delete it
   immediately after the deploy. Never commit it, never paste it into chat and never write a value into a log.
 - Use Paystack **test** keys only. A key marked live or production must not reach staging.
 - Record in the evidence log only the names set and the date. Do not record values, prefixes or hashes.

@@ -1,5 +1,6 @@
+import { COMMERCE_TEST_REFERENCE_KEYS } from "./helpers/commerce-database.js";
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { paymentReferenceHash } from "../domains/commerce/src/payment-reference.js";
 import test from "node:test";
 import { NodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-database.js";
 import { applySchemaMigrations, schemaVersion } from "../packages/platform-core/src/schema-migrations.js";
@@ -16,7 +17,7 @@ function memory(): NodeSqliteDatabase {
 }
 
 function pack(database: NodeSqliteDatabase) {
-  return createCommercePack({ database, clock: CLOCK });
+  return createCommercePack({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS, database, clock: CLOCK });
 }
 
 test("issue 24 review 3: the order service creates no merchant_orders table; only the migration ledger does", () => {
@@ -155,7 +156,7 @@ test("AC5: only allowed status transitions succeed and the first move to Process
 });
 
 /** Issue 24 decision 7: the stored hash of a payment reference is SHA-256 over its trimmed value. */
-const sha256 = (value: string) => createHash("sha256").update(value.trim()).digest("hex");
+const sha256 = (value: string) => paymentReferenceHash(COMMERCE_TEST_REFERENCE_KEYS, value);
 
 /** Every row of every table, serialised, so a test can search the whole database for a value. */
 function dumpAllRows(database: NodeSqliteDatabase): string {

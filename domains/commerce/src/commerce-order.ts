@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type { SqlDatabase, SqlRow } from "../../../packages/platform-core/src/sql-database.js";
 import {
   NEXT_ORDER_STATUSES,
@@ -10,6 +9,7 @@ import {
   type MerchantOrderStatus,
   type OrderItem,
 } from "./order.js";
+import { assertPaymentReferenceKeys, paymentReferenceHashCandidates, type PaymentReferenceKeys } from "./payment-reference.js";
 
 function readOrder(row: SqlRow): MerchantOrder {
   return parseMerchantOrder(
@@ -40,21 +40,14 @@ function readOrder(row: SqlRow): MerchantOrder {
   );
 }
 
-/**
- * The Merchant Order repository: port of instastore `create_store_order` and `set_order_status`
- * (0017_payment_verification_fact.sql) onto the commerce Product/Offer/Variant model.
- */
-/**
- * Issue 24 decision 7: the idempotency key is the SHA-256 of the trimmed payment reference (the normalisation). The raw
- * reference is used only to compute it and is never written, returned or logged.
- */
-export function hashPaymentReference(paymentReference: string): string {
-  return createHash("sha256").update(paymentReference.trim()).digest("hex");
-}
-
 export class CommerceOrders {
-  /** The merchant_orders table comes only from the migration ledger (issue 24 review 3); this constructor creates nothing. */
-  constructor(private readonly database: SqlDatabase, private readonly clock: () => Date) {}
+  /**
+   * The merchant_orders table comes only from the migration ledger (issue 24 review 3). The keys are validated here, so a
+   * pack cannot be built without a usable payment reference key (fail closed, user decision 18 Oct 2026).
+   */
+  constructor(private readonly database: SqlDatabase, private readonly clock: () => Date, private readonly keys: PaymentReferenceKeys) {
+    assertPaymentReferenceKeys(keys);
+  }
 
   /**
    * Validates a checkout against the Store, Offer, zone, stock and total rules without reserving stock or writing an
@@ -67,16 +60,18 @@ export class CommerceOrders {
   createOrder(input: CreateOrderInput): MerchantOrder {
     const normalizedPhone = this.#requirePhone(input);
 
-    // Idempotency on the payment reference hash, before any stock mutation.
-    const paymentReferenceHash = hashPaymentReference(input.paymentReference);
-    const existing = this.database
-      .prepare("SELECT * FROM merchant_orders WHERE payment_reference_hash = $paymentReferenceHash")
-      .get({ $paymentReferenceHash: paymentReferenceHash });
-    if (existing) {
-      if (String(existing.customer_phone) === normalizedPhone) return readOrder(existing);
-      throw new Error("This payment reference has already been used.");
+    // Idempotency on the keyed payment reference hash (current key, then previous keys), before any stock mutation.
+    const candidates = paymentReferenceHashCandidates(this.keys, input.paymentReference);
+    const paymentReferenceHash = candidates[0]!;
+    for (const candidate of candidates) {
+      const existing = this.database
+        .prepare("SELECT * FROM merchant_orders WHERE payment_reference_hash = $paymentReferenceHash")
+        .get({ $paymentReferenceHash: candidate });
+      if (existing) {
+        if (String(existing.customer_phone) === normalizedPhone) return readOrder(existing);
+        throw new Error("This payment reference has already been used.");
+      }
     }
-
     return this.database.transaction(() => {
       const order = this.#buildOrder(input, normalizedPhone, true);
       this.database

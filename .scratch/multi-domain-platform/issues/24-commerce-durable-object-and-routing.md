@@ -104,6 +104,20 @@ The independent review (CHANGES REQUIRED) found that `test/domain-boundary.test.
 9. **Shared fixtures:** the JPEG, PNG and WebP bytes are in `test/helpers/product-image-fixtures.ts`. The Workers multi-criterion ops test is split into one test per criterion in `commerce-market.spec.ts`.
 10. **Hash format on import:** a `merchant_orders` import row must carry a 64-character lowercase hex `payment_reference_hash`, or the DO refuses it with `INVALID_PAYMENT_REFERENCE_HASH` before any write (`assertPaymentReferenceHashes`). Tests: `test/commerce-schema-guard.test.ts` and `commerce-market.spec.ts`.
 
-The hash stays plain SHA-256. Keyed hashing is a pending user question.
+Superseded: the hash is now keyed (see "Keyed payment reference hash" below).
 
 **Issue 27 collision (migration 5):** `mdp/27-store-and-tracking` (94c7eec) also adds commerce migration 5, a `merchant_order_tracking_attempts` table with an FK to `merchant_orders.public_code`, and it changes the idempotency check and `normalizePhone`. Issue 27 merges first. After that, this branch merges main, renumbers the hash rebuild to 6 and the cutover to 7, and rebuilds `merchant_orders` while keeping the tracking table and its FK. Tests derive versions from the migration list rather than hard-coding them.
+
+### Keyed payment reference hash, 18 Oct 2026
+
+User decision 18 (18 Oct 2026): payment references are hashed with a keyed HMAC-SHA-256, not a plain SHA-256. Reason: Shortlet references are predictable (`psp_ref_<4 random chars>_<timestamp>`, `domains/shortlet/src/card-payment.ts:322`), so a plain hash in the export could be brute-forced offline. The rule follows ADR 0075 (secrets and bearer credentials) and the coding-standards bearer-credential rule.
+
+- **Format:** `merchant_orders.payment_reference_hash` stores `<keyId>:<64 lowercase hex>`, the HMAC-SHA-256 of the trimmed reference. The key id is stored in clear so a rotation can add a key without losing old orders.
+- **Domain:** `domains/commerce/src/payment-reference.ts`. The keys are injected into `createCommercePack`; the domain never reads the environment. The pack throws at construction when the current key is missing, short (under 32 bytes) or has a malformed id. Lookup tries the current key and any configured previous keys (`previousKeys`).
+- **Cloudflare:** the secret `COMMERCE_REFERENCE_HMAC_KEY` and the var `COMMERCE_REFERENCE_HMAC_KEY_ID` (declared in `cloudflare.config.ts`, `env.d.ts` and `cloudflare-config.ts`). The DO reads them before it builds the pack. A missing or short key fails closed with `COMMERCE_REFERENCE_KEY_INVALID`. The Workers test config uses a synthetic test-only key.
+- **Node:** the local merchant reads the same variables from the environment and refuses to start without them. `test/helpers/commerce-database.ts` holds a fixed test-only key.
+- **Restore:** the import check accepts only `<keyId>:<64 lowercase hex>`. A plain 64-hex value is refused.
+- **Secret inventory:** `apps/cloudflare/.dev.vars.example`, `.env.example`, `docs/runbooks/cloudflare-staging-rehearsal.md` and `docs/runbooks/commerce-migration-failure.md` section 4.
+- **Open:** the Worker reads only the current key. Rotation needs the previous-key wiring first (runbook section 4).
+
+Tests: `test/commerce-reference-hash.test.ts` (same reference and key gives the same order; a different key gives a different hash; the stored value is `keyId:HMAC`; a missing or short key throws at construction; an order stored under a previous key is found after rotation; restore accepts the keyed format and refuses plain hex; the Worker key reader fails closed without echoing the key). The raw reference never appears in the database dump, which `test/commerce-order.test.ts` checks.

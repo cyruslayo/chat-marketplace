@@ -29,7 +29,7 @@ test("issue 24 review 2: a database with no merchant_orders table fails the shap
   database.close();
 });
 
-const VALID_HASH = "a".repeat(64);
+const VALID_HASH = `k1:${"a".repeat(64)}`;
 
 test("issue 24 review 10: an import row with a 64-character lowercase hex payment_reference_hash is accepted", () => {
   assert.doesNotThrow(() => assertPaymentReferenceHashes([{ id: "order", payment_reference_hash: VALID_HASH }]));

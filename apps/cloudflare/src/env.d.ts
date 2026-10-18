@@ -37,5 +37,7 @@ declare namespace Cloudflare {
     RECEIPTS: import("@cloudflare/workers-types").R2Bucket;
     EXPORTS: import("@cloudflare/workers-types").R2Bucket;
     ASSETS: import("@cloudflare/workers-types").Fetcher;
+    COMMERCE_REFERENCE_HMAC_KEY: string;
+    COMMERCE_REFERENCE_HMAC_KEY_ID: string;
   }
 }

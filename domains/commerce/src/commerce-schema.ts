@@ -101,7 +101,7 @@ export const MERCHANT_ORDER_SCHEMA = `CREATE TABLE IF NOT EXISTS merchant_orders
 
 /**
  * The current merchant_orders shape (issue 24 decision 7, ADR 0096 not amended). The raw payment reference is never stored:
- * `payment_reference_hash` is the SHA-256 of the trimmed reference, and it is the idempotency key. Version 4 created the
+ * `payment_reference_hash` is the keyed HMAC-SHA-256 (`<keyId>:<hex>`) of the trimmed reference, and it is the idempotency key. Version 4 created the
  * raw column; migration 5 rebuilds the table to this shape. The order service creates this shape too, so a fresh database
  * already matches the migrated one.
  */

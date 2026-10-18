@@ -12,6 +12,8 @@ export interface MerchantFixtureConfig {
   readonly storeId: string;
   readonly seedFixture?: boolean;
   readonly clock?: () => Date;
+  /** Keyed payment reference hashing (user decision 18 Oct 2026). Required: the environment refuses to start without it. */
+  readonly paymentReferenceKeys?: import("../../../domains/commerce/src/index.js").PaymentReferenceKeys;
 }
 
 export const DEFAULT_MERCHANT_CONFIG: MerchantFixtureConfig = {
@@ -44,7 +46,8 @@ export class MerchantEnvironment {
     this.config = { ...DEFAULT_MERCHANT_CONFIG, ...config };
     this.clock = this.config.clock ?? DEFAULT_CLOCK;
     this.#database = database;
-    this.pack = createCommercePack({ database, clock: this.clock });
+    if (this.config.paymentReferenceKeys === undefined) throw new Error("A payment reference key is required");
+    this.pack = createCommercePack({ database, clock: this.clock, paymentReferenceKeys: this.config.paymentReferenceKeys });
     if (this.config.seedFixture !== false) this.#seedFixture();
   }
 

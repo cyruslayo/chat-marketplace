@@ -1,3 +1,4 @@
+import { COMMERCE_TEST_REFERENCE_KEYS } from "./helpers/commerce-database.js";
 import { migrateCommerceDatabase } from "./helpers/commerce-database.js";
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -24,7 +25,7 @@ const context = { environment: { guestPrincipal: () => ({ id: "guest", role: "gu
 async function scriptedCommerceFixture(checkoutExecutor?: CommerceCheckoutExecutor, projectionLimits?: { readonly maxResults: number; readonly maxTextCodePoints: number }) {
   const env = LocalGuestEnvironment.openNode({ databasePath: ":memory:" });
   migrateCommerceDatabase(env.database);
-  const commerce = createCommercePack({ database: env.database, clock: env.clock });
+  const commerce = createCommercePack({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS, database: env.database, clock: env.clock });
   commerce.directory.createMerchant({ id: "scripted-m", name: "Verified Merchant", status: "verified" });
   commerce.directory.createStore({ id: "scripted-s", merchantId: "scripted-m", slug: "scripted-store", name: "Scripted Store", status: "active" });
   commerce.catalogue.createProduct({ id: "scripted-p", name: "Soap", category: "Care" });
@@ -50,7 +51,7 @@ async function scriptedCommerceFixture(checkoutExecutor?: CommerceCheckoutExecut
     }
     return null;
   }]);
-  const pack = createCommerceAssistantPack({
+  const pack = createCommerceAssistantPack({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS,
     database: env.database,
     clock: env.clock,
     audit: env.audit,
@@ -70,7 +71,7 @@ async function scriptedCommerceFixture(checkoutExecutor?: CommerceCheckoutExecut
 test("AC1: a shopping intent starts a commerce task and only commerce tools are offered", () => {
   const database = new NodeSqliteDatabase(":memory:");
   migrateCommerceDatabase(database);
-  const pack = createCommerceAssistantPack({ database, clock });
+  const pack = createCommerceAssistantPack({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS, database, clock });
   const registry = new AssistantPackRegistry();
   registry.register(pack);
   assert.ok(pack.intentKeywords.includes("shopping"));
@@ -90,12 +91,12 @@ test("AC1 scripted assistant: shopping intent confirms commerce task and exposes
     if (last?.role === "tool_results") return { text: "Products found." };
     return null;
   }]);
-  const commerce = createCommercePack({ database: environment.database, clock: environment.clock });
+  const commerce = createCommercePack({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS, database: environment.database, clock: environment.clock });
   commerce.directory.createMerchant({ id: "scripted-merchant", name: "Merchant", status: "verified" });
   commerce.directory.createStore({ id: "scripted-store", merchantId: "scripted-merchant", slug: "soap-store", name: "Soap Store", status: "active" });
   commerce.catalogue.createProduct({ id: "scripted-product", name: "Soap", category: "Care" });
   commerce.catalogue.createOffer({ id: "scripted-offer", productId: "scripted-product", storeId: "scripted-store", priceKobo: 500, stock: 2 });
-  const runtime = new AssistantRuntime(environment, model, { additionalPacks: [createCommerceAssistantPack({ database: environment.database, clock: environment.clock })] });
+  const runtime = new AssistantRuntime(environment, model, { additionalPacks: [createCommerceAssistantPack({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS, database: environment.database, clock: environment.clock })] });
   const intent = await runtime.handleTurn("scripted-commerce", "I want to shop");
   assert.match(intent.messages?.[0] ?? "", /Start a Commerce search/);
   const started = runtime.handleAssistantEvent("scripted-commerce", TASK_START_EVENT, { domain: "commerce" });
@@ -112,8 +113,8 @@ test("AC1 scripted assistant: shopping intent confirms commerce task and exposes
 test("AC2: propose_checkout never pays without an explicit confirmation command", () => {
   const database = new NodeSqliteDatabase(":memory:");
   migrateCommerceDatabase(database);
-  const pack = createCommerceAssistantPack({ database, clock });
-  const commerce = createCommercePack({ database, clock });
+  const pack = createCommerceAssistantPack({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS, database, clock });
+  const commerce = createCommercePack({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS, database, clock });
   commerce.directory.createMerchant({ id: "m1", name: "Merchant", status: "verified" });
   commerce.directory.createStore({ id: "s1", merchantId: "m1", slug: "store", name: "Store", status: "active" });
   commerce.catalogue.createProduct({ id: "p1", name: "Soap", category: "Care" });
@@ -181,8 +182,8 @@ test("AC3 scripted assistant: discovery, cart and order surfaces all validate an
 test("AC4: checkout has a deterministic text and typed-surface path with no payment execution", () => {
   const database = new NodeSqliteDatabase(":memory:");
   migrateCommerceDatabase(database);
-  const pack = createCommerceAssistantPack({ database, clock });
-  const commerce = createCommercePack({ database, clock });
+  const pack = createCommerceAssistantPack({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS, database, clock });
+  const commerce = createCommercePack({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS, database, clock });
   const prompt = pack.promptSection;
   assert.match(prompt, /Merchant Offer/);
   assert.doesNotMatch(prompt, /shortlet|booking|guest/i);
@@ -296,7 +297,7 @@ test("commerce projections enforce configured Unicode-safe text and result budge
   const limits = { maxResults: 2, maxTextCodePoints: 24 };
   const invalidLimitsDatabase = new NodeSqliteDatabase(":memory:");
   migrateCommerceDatabase(invalidLimitsDatabase);
-  assert.throws(() => createCommerceAssistantPack({ database: invalidLimitsDatabase, clock, projectionLimits: { maxResults: 0, maxTextCodePoints: 24 } }), /positive safe integers/);
+  assert.throws(() => createCommerceAssistantPack({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS, database: invalidLimitsDatabase, clock, projectionLimits: { maxResults: 0, maxTextCodePoints: 24 } }), /positive safe integers/);
   invalidLimitsDatabase.close();
   const emojiBounded = projectCommerceText(`${"😀".repeat(20)} FORBIDDEN`, limits);
   assert.equal(Array.from(emojiBounded).length, 24);

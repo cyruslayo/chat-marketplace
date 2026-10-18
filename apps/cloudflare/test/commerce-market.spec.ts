@@ -1,4 +1,5 @@
-import { createHash } from "node:crypto";
+import { COMMERCE_TEST_REFERENCE_KEYS } from "../../../test/helpers/commerce-database.js";
+import { paymentReferenceHash } from "../../../domains/commerce/src/payment-reference.js";
 import { env, SELF, runInDurableObject } from "cloudflare:test";
 import { expect, test } from "vitest";
 import { createCommercePack, parseCreateOrderInput } from "../../../domains/commerce/src/index.js";
@@ -38,7 +39,7 @@ test("24 AC1: commerce data lives only in the commerce DO after order traffic, d
   await runInDurableObject(commerce, (_instance, ctx) => {
     const database = new DurableObjectSqlDatabase(ctx.storage);
     seedCommerceFixture(database, { ...ids, priceKobo: 800, stock: 3, deliveryFeeKobo: 100, clock });
-    createCommercePack({ database, clock }).orders.createOrder(parseCreateOrderInput(checkoutPayload(ids)));
+    createCommercePack({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS, database, clock }).orders.createOrder(parseCreateOrderInput(checkoutPayload(ids)));
   });
   const [commerceTables, shortletTables, platformTables] = await Promise.all([
     runInDurableObject(commerce, (_instance, ctx) => tableNames(new DurableObjectSqlDatabase(ctx.storage))),
@@ -60,7 +61,7 @@ test("24 AC1 / decision 7: commerce export carries only the payment reference ha
   await runInDurableObject(stub, (_instance, ctx) => {
     const database = new DurableObjectSqlDatabase(ctx.storage);
     seedCommerceFixture(database, { ...CHECKOUT_IDS, priceKobo: 1000, stock: 1, deliveryFeeKobo: 0, clock });
-    createCommercePack({ database, clock }).orders.createOrder(parseCreateOrderInput(checkoutPayload(CHECKOUT_IDS, { submittedTotalKobo: 1000, paymentReference: "export-secret-ref" })));
+    createCommercePack({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS, database, clock }).orders.createOrder(parseCreateOrderInput(checkoutPayload(CHECKOUT_IDS, { submittedTotalKobo: 1000, paymentReference: "export-secret-ref" })));
   });
   const date = "2040-02-02";
   await runInDurableObject(stub, async (_instance, ctx) => {
@@ -78,7 +79,7 @@ test("24 AC1 / decision 7: commerce export carries only the payment reference ha
     const row = JSON.parse(rows[0]!) as Record<string, unknown>;
     expect(row).toHaveProperty("public_code");
     expect(row).not.toHaveProperty("payment_reference");
-    expect(row.payment_reference_hash).toBe(createHash("sha256").update("export-secret-ref").digest("hex"));
+    expect(row.payment_reference_hash).toBe(paymentReferenceHash(COMMERCE_TEST_REFERENCE_KEYS, "export-secret-ref"));
   } finally {
     await env.EXPORTS.delete(exportObjectKey(date, "merchant_orders"));
   }
@@ -169,7 +170,7 @@ test("24 AC2: internal checkout with a submitted total that does not match the s
 test("issue 24 decision 11: internal checkout for a store whose merchant is not verified is refused with ORDER_REJECTED and reserves nothing", async () => {
   const { stub, tenantId } = await seededCheckoutCommerce("unverified");
   await runInDurableObject(stub, (_instance, ctx) => {
-    createCommercePack({ database: new DurableObjectSqlDatabase(ctx.storage), clock: () => new Date() }).directory.updateMerchantStatus(CHECKOUT_IDS.merchantId, "suspended");
+    createCommercePack({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS, database: new DurableObjectSqlDatabase(ctx.storage), clock: () => new Date() }).directory.updateMerchantStatus(CHECKOUT_IDS.merchantId, "suspended");
   });
   const refused = await internalCheckout(stub, tenantId, checkoutPayload(CHECKOUT_IDS, { submittedTotalKobo: 1000, paymentReference: "unverified-ref" }));
   expect(refused.status).toBe(400);

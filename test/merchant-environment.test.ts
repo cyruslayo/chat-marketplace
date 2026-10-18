@@ -1,3 +1,4 @@
+import { COMMERCE_TEST_REFERENCE_KEYS } from "./helpers/commerce-database.js";
 import { migrateCommerceDatabase } from "./helpers/commerce-database.js";
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -7,7 +8,7 @@ import { MerchantEnvironment } from "../apps/local-merchant/src/merchant-environ
 test("the merchant environment composes the commerce pack and seeds its store", () => {
   const database = new NodeSqliteDatabase(":memory:");
   migrateCommerceDatabase(database);
-  const environment = new MerchantEnvironment({}, database);
+  const environment = new MerchantEnvironment({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS }, database);
 
   assert.equal(environment.merchantPrincipal().role, "merchant");
   assert.equal(environment.merchantPrincipal().id, "merchant-lagos-001");

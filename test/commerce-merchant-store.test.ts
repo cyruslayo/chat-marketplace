@@ -1,3 +1,4 @@
+import { COMMERCE_TEST_REFERENCE_KEYS } from "./helpers/commerce-database.js";
 import { migrateCommerceDatabase } from "./helpers/commerce-database.js";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -22,7 +23,7 @@ function memory(): NodeSqliteDatabase {
 
 test("AC1: the commerce pack registers through the same registry as shortlet with no special case", () => {
   const database = memory();
-  const pack: AssistantDomainPack = createCommercePack({ database, clock: CLOCK });
+  const pack: AssistantDomainPack = createCommercePack({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS, database, clock: CLOCK });
   const registry = new AssistantPackRegistry();
   registry.register(pack);
 
@@ -33,7 +34,7 @@ test("AC1: the commerce pack registers through the same registry as shortlet wit
 
 test("AC2: a store whose merchant is not verified is never returned to consumers", () => {
   const database = memory();
-  const { directory } = createCommercePack({ database, clock: CLOCK });
+  const { directory } = createCommercePack({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS, database, clock: CLOCK });
 
   directory.createMerchant({ id: "merchant-pending", name: "Pending Merchant", status: "pending" });
   directory.createStore({ id: "store-pending", merchantId: "merchant-pending", slug: "pending-store", name: "Pending Store", status: "active" });
@@ -47,7 +48,7 @@ test("AC2: a store whose merchant is not verified is never returned to consumers
 
 test("AC3: a suspended store is never returned to consumers", () => {
   const database = memory();
-  const { directory } = createCommercePack({ database, clock: CLOCK });
+  const { directory } = createCommercePack({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS, database, clock: CLOCK });
 
   directory.createMerchant({ id: "merchant-verified", name: "Verified Merchant", status: "verified" });
   directory.createStore({ id: "store-suspended", merchantId: "merchant-verified", slug: "suspended-store", name: "Suspended Store", status: "suspended" });
@@ -60,8 +61,8 @@ test("AC3: a suspended store is never returned to consumers", () => {
 });
 
 test("AC4: the boundary test covers domains/commerce", () => {
-  // The façade's runtime exports: the pack factory and the untrusted-checkout parser that hosts must use (ADR 0099).
-  assert.deepEqual(Object.keys(commerceIndex).sort(), ["createCommercePack", "parseCreateOrderInput"]);
+  // The façade runtime exports: the pack factory, the untrusted-checkout parser, and the payment reference key minimum (ADR 0099).
+  assert.deepEqual(Object.keys(commerceIndex).sort(), ["PAYMENT_REFERENCE_KEY_MIN_BYTES", "createCommercePack", "parseCreateOrderInput"]);
 
   const allowlist = JSON.parse(
     readFileSync(new URL("./fixtures/domain-boundary-allowlist.json", import.meta.url), "utf8"),

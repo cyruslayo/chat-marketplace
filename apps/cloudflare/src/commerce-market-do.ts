@@ -2,6 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 import type { DurableObjectState } from "@cloudflare/workers-types";
 import { createCommercePack, parseCreateOrderInput, type CreateOrderInput } from "../../../domains/commerce/src/index.js";
 import { assertMerchantOrdersShape, assertPaymentReferenceHashes, COMMERCE_MIGRATION_FAILED, CommerceSchemaShapeError, COMMERCE_SCHEMA_SHAPE_INVALID, INVALID_PAYMENT_REFERENCE_HASH } from "./commerce-schema-guard.js";
+import { CommerceReferenceKeyError, COMMERCE_REFERENCE_KEY_INVALID, paymentReferenceKeysFromEnv } from "./commerce-reference-keys.js";
 import { applySchemaMigrations } from "../../../packages/platform-core/src/schema-migrations.js";
 import { checksumTables } from "../../../packages/platform-core/src/data-migration.js";
 import { schemaVersion } from "../../../packages/platform-core/src/schema-migrations.js";
@@ -40,7 +41,8 @@ export class CommerceMarket extends DurableObject<CloudflareEnv> {
     void ctx.blockConcurrencyWhile(async () => {
       const database = new DurableObjectSqlDatabase(ctx.storage);
       try {
-        const pack = createCommercePack({ database, clock: () => new Date() });
+        // The key is read here, before the pack is built; a missing or short key fails closed (user decision 18 Oct 2026).
+        const pack = createCommercePack({ database, clock: () => new Date(), paymentReferenceKeys: paymentReferenceKeysFromEnv(env) });
         this.#pack = pack;
         const migrations = commerceMigrationsWithCutover(pack.migrations);
         this.#schemaVersion = migrations.length;
@@ -48,7 +50,9 @@ export class CommerceMarket extends DurableObject<CloudflareEnv> {
         assertMerchantOrdersShape(database);
       } catch (error) {
         // Issue 24 reviews 2 and 5: fail closed. Every request is refused with the fixed code; the error and any row are never logged.
-        this.#failure = error instanceof CommerceSchemaShapeError ? COMMERCE_SCHEMA_SHAPE_INVALID : COMMERCE_MIGRATION_FAILED;
+        this.#failure = error instanceof CommerceSchemaShapeError ? COMMERCE_SCHEMA_SHAPE_INVALID
+          : error instanceof CommerceReferenceKeyError ? COMMERCE_REFERENCE_KEY_INVALID
+          : COMMERCE_MIGRATION_FAILED;
         console.error(this.#failure);
         return;
       }
@@ -79,7 +83,9 @@ export class CommerceMarket extends DurableObject<CloudflareEnv> {
   }
 
   #commerce(): ReturnType<typeof createCommercePack> {
-    return this.#pack ??= createCommercePack({ database: new DurableObjectSqlDatabase(this.ctx.storage), clock: () => new Date() });
+    // Built once in the constructor, with its keys. A null pack means start-up failed, and fetch refuses before this runs.
+    if (this.#pack === null) throw new Error("The commerce pack is not ready");
+    return this.#pack;
   }
 
   /**

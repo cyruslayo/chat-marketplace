@@ -1,3 +1,4 @@
+import { COMMERCE_TEST_REFERENCE_KEYS } from "../../../test/helpers/commerce-database.js";
 import { createCommercePack } from "../../../domains/commerce/src/index.js";
 import type { DurableObjectSqlDatabase } from "../src/do-sql-database.js";
 
@@ -22,7 +23,7 @@ export interface CommerceFixtureOptions extends CommerceFixtureIds {
  * commerce pack, inside the Durable Object that owns the commerce SQL (pass `new DurableObjectSqlDatabase(ctx.storage)`).
  */
 export function seedCommerceFixture(database: DurableObjectSqlDatabase, options: CommerceFixtureOptions): void {
-  const pack = createCommercePack({ database, clock: options.clock ?? (() => new Date()) });
+  const pack = createCommercePack({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS, database, clock: options.clock ?? (() => new Date()) });
   pack.directory.createMerchant({ id: options.merchantId, name: "Merchant", status: "verified" });
   pack.directory.createStore({ id: options.storeId, merchantId: options.merchantId, slug: options.storeId, name: "Store", status: "active" });
   pack.catalogue.createProduct({ id: options.productId, name: "Product", category: "Goods" });

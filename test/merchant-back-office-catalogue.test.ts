@@ -1,3 +1,4 @@
+import { COMMERCE_TEST_REFERENCE_KEYS } from "./helpers/commerce-database.js";
 import { migrateCommerceDatabase } from "./helpers/commerce-database.js";
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -15,7 +16,7 @@ function memory(): NodeSqliteDatabase {
 }
 
 function pack(database: NodeSqliteDatabase) {
-  return createCommercePack({ database, clock: CLOCK });
+  return createCommercePack({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS, database, clock: CLOCK });
 }
 
 function setupMerchantStore(database: NodeSqliteDatabase, merchantId: string, storeId: string, status: "verified" | "pending" = "verified") {

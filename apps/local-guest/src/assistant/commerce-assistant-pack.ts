@@ -34,6 +34,8 @@ function projectOffer(offer: { readonly offerId: string; readonly productName: s
 export function createCommerceAssistantPack(input: {
   readonly database: SqlDatabase;
   readonly clock: () => Date;
+  /** Keyed payment reference hashing (user decision 18 Oct 2026); the composition root supplies it. */
+  readonly paymentReferenceKeys: import("../../../../domains/commerce/src/index.js").PaymentReferenceKeys;
   /** Bounded interaction payload budgets; defaults are technical limits, not commerce policy. */
   readonly projectionLimits?: CommerceProjectionLimits;
   readonly audit?: AuditLog;
