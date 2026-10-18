@@ -1,0 +1,12 @@
+discovery-light-320: expected catalogue content 'Northstar Cotton Tote' is not visible; surface=task-task-2:commerce-discovery:51543ae4-ed5c-4702-b1e2-a9b096d2cde3
+discovery-light-390: expected catalogue content 'Northstar Cotton Tote' is not visible; surface=task-task-2:commerce-discovery:51543ae4-ed5c-4702-b1e2-a9b096d2cde3
+discovery-light-768: expected catalogue content 'Northstar Cotton Tote' is not visible; surface=task-task-2:commerce-discovery:51543ae4-ed5c-4702-b1e2-a9b096d2cde3
+discovery-light-1280: expected catalogue content 'Northstar Cotton Tote' is not visible; surface=task-task-2:commerce-discovery:51543ae4-ed5c-4702-b1e2-a9b096d2cde3
+cart-light-320: expected catalogue content 'Northstar Cotton Tote' is not visible; surface=task-task-2:commerce-cart:capture-store
+cart-light-390: expected catalogue content 'Northstar Cotton Tote' is not visible; surface=task-task-2:commerce-cart:capture-store
+cart-light-768: expected catalogue content 'Northstar Cotton Tote' is not visible; surface=task-task-2:commerce-cart:capture-store
+cart-light-1280: expected catalogue content 'Northstar Cotton Tote' is not visible; surface=task-task-2:commerce-cart:capture-store
+order-light-320: expected catalogue content 'ORD-B2BE0BA613B44436A9B5CB03F41AE89F' is not visible; surface=task-task-2:commerce-order:ORD-B2BE0BA613B44436A9B5CB03F41AE89F
+order-light-390: expected catalogue content 'ORD-B2BE0BA613B44436A9B5CB03F41AE89F' is not visible; surface=task-task-2:commerce-order:ORD-B2BE0BA613B44436A9B5CB03F41AE89F
+order-light-768: expected catalogue content 'ORD-B2BE0BA613B44436A9B5CB03F41AE89F' is not visible; surface=task-task-2:commerce-order:ORD-B2BE0BA613B44436A9B5CB03F41AE89F
+order-light-1280: expected catalogue content 'ORD-B2BE0BA613B44436A9B5CB03F41AE89F' is not visible; surface=task-task-2:commerce-order:ORD-B2BE0BA613B44436A9B5CB03F41AE89F
