@@ -236,7 +236,13 @@ export class InteractionSecurityEngine {
     const payloadString = typeof payload === "string" ? payload : JSON.stringify(payload);
     const expectedHmac = crypto.createHmac("sha256", secret).update(payloadString).digest("hex");
 
-    if (signature !== expectedHmac && signature !== `sig_${secret}_valid`) {
+    // Fail closed: only a full-length hex digest can match, and the comparison is constant-time over equal-length buffers.
+    if (!/^[0-9a-f]{64}$/i.test(signature)) {
+      throw new Error("Invalid provider signature: payload tampering detected");
+    }
+    const provided = Buffer.from(signature, "hex");
+    const expected = Buffer.from(expectedHmac, "hex");
+    if (provided.length !== expected.length || !crypto.timingSafeEqual(provided, expected)) {
       throw new Error("Invalid provider signature: payload tampering detected");
     }
 
