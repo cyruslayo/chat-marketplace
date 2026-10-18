@@ -23,6 +23,8 @@ import type { AssetLoader } from "../../../packages/platform-core/src/asset-load
 import { nodeAssetLoader } from "../../../packages/platform-core/src/node-asset-loader.js";
 import { GUEST_HTML_SECURITY_HEADERS } from "../../../packages/platform-core/src/security-headers.js";
 import { createGuestShell, type StaticAsset } from "./guest-shell.js";
+import { createCommerceRouteModule } from "./commerce-route-module.js";
+import { createCommercePack } from "../../../domains/commerce/src/index.js";
 import {
   discoveryArtifactToA2UI,
   createWeaverWebAgentAdapter,
@@ -4587,10 +4589,14 @@ export function createGuestRequestHandler(
       res.end("Not Found");
     };
 
+  const commerceRoutes = createCommerceRouteModule(
+    createCommercePack({ database: defaultApp.environment.database, clock: () => defaultApp.environment.clock() }),
+  );
   const shell = createGuestShell({
     assets,
     staticAssets: SHORTLET_STATIC_ASSETS,
     routeModules: [
+      commerceRoutes,
       {
         name: "shortlet",
         tryHandle: async (req, res) => {

@@ -37,6 +37,7 @@ import type { RequestScreenContent } from "../../web-agent/src/request-presentat
 import type { ConfirmationContent } from "../../web-agent/src/confirmation-presentation.js";
 import type { OfferScreenContent } from "../../web-agent/src/offer-presentation.js";
 import type { PaymentScreenContent } from "../../web-agent/src/payment-presentation.js";
+import type { CommerceOfferPresentation } from "../../web-agent/src/commerce-presentation.js";
 
 /** The absolute deadline in Africa/Lagos time (ADR 0078), without the "Pay by" prefix. */
 export function formatWAT(iso: string): string {
@@ -456,6 +457,11 @@ export type KitStatusTone = "success" | "warning" | "danger" | "neutral";
 
 export function statusHtml(tone: KitStatusTone, text: string): string {
   return statusBadge(text, tone);
+}
+
+/** Store and offer pages consume the same bounded offer presentation used by the Commerce chat tool (ADR 0077). */
+export function commerceOfferHtml(offer: CommerceOfferPresentation, href: string): string {
+  return `<article class="ui-panel" data-commerce-offer="${escapeHtml(offer.offerId)}"><h2><a class="ui-link" href="${escapeHtml(href)}">${escapeHtml(offer.productName)}</a></h2><p class="ui-field__hint">${escapeHtml(offer.category)}</p><p>${escapeHtml(offer.description)}</p><p class="ui-money-total">${formatNgnKobo(offer.priceKobo)}</p><p class="ui-field__hint">${escapeHtml(String(offer.stock))} available</p><a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(href)}">View offer</a></article>`;
 }
 
 // Hidden until /payment.js reveals it: without JavaScript the account number stays plain, selectable text (ADR 0080).
