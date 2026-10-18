@@ -738,9 +738,15 @@ export class LocalGuestApp {
   }
 
   async handleTurn(threadId: string, text: string): Promise<GuestTurnResult> {
+    await this.#hydrateRemoteContact();
+    if (this.#environment.guestDataIsRemote && !this.#threads.has(threadId)) await this.#loadRemoteThread(threadId);
     const result = await this.#handleTurn(threadId, text);
     const decorated = this.#decorateResult(result);
-    if (decorated.ok) this.#rememberResult(threadId, text, decorated);
+    if (decorated.ok) {
+      this.#rememberResult(threadId, text, decorated);
+      if (this.#environment.guestDataIsRemote) await this.#persistRemoteThread(threadId);
+    }
+    await this.#flushRemoteContact();
     return this.#withJourney(threadId, decorated);
   }
 
@@ -770,7 +776,7 @@ export class LocalGuestApp {
 
     const thread =
       this.#threads.get(threadId) ??
-      this.#loadThread(threadId) ??
+      (this.#environment.guestDataIsRemote ? null : this.#loadThread(threadId)) ??
       this.#createThread(threadId);
     const refreshed = this.#refreshWorkflow(thread);
     // Issue 04a AC1: every message gets a reply for the stage the Guest is in,
@@ -1092,6 +1098,8 @@ export class LocalGuestApp {
     threadId: string,
     payload: unknown,
   ): Promise<GuestTurnResult> {
+    await this.#hydrateRemoteContact();
+    if (this.#environment.guestDataIsRemote && !this.#threads.has(threadId)) await this.#loadRemoteThread(threadId);
     const event = readEventPayload(payload);
     if (
       this.#environment.payments &&
@@ -1099,10 +1107,19 @@ export class LocalGuestApp {
     ) {
       const result = await this.#handlePaystackCardCheckout(threadId, event);
       const decorated = this.#decorateResult(result);
-      if (decorated.ok) this.#rememberResult(threadId, undefined, decorated);
+      if (decorated.ok) {
+        this.#rememberResult(threadId, undefined, decorated);
+        if (this.#environment.guestDataIsRemote) await this.#persistRemoteThread(threadId);
+      }
+      await this.#flushRemoteContact();
       return this.#withJourney(threadId, decorated);
     }
-    return this.handleEvent(threadId, payload);
+    const result = this.#decorateResult(this.#handleEvent(threadId, payload));
+    // ADR 0093: keep each durable work projection current for reads through any linked principal; remote compositions persist it below.
+    if (result.ok) this.#rememberResult(threadId, undefined, result);
+    if (result.ok && this.#environment.guestDataIsRemote) await this.#persistRemoteThread(threadId);
+    await this.#flushRemoteContact();
+    return this.#withJourney(threadId, result);
   }
 
   async #handlePaystackCardCheckout(
@@ -1121,7 +1138,7 @@ export class LocalGuestApp {
         code: "INVALID_THREAD",
         message: "Unknown conversation.",
       };
-    const thread = this.#threads.get(threadId) ?? this.#loadThread(threadId);
+    const thread = this.#threads.get(threadId) ?? (this.#environment.guestDataIsRemote ? null : this.#loadThread(threadId));
     if (!thread)
       return {
         ok: false,
@@ -1247,7 +1264,7 @@ export class LocalGuestApp {
       }
     }
 
-    const thread = this.#threads.get(threadId) ?? this.#loadThread(threadId);
+    const thread = this.#threads.get(threadId) ?? (this.#environment.guestDataIsRemote ? null : this.#loadThread(threadId));
     if (!thread) {
       return {
         ok: false,
@@ -1364,11 +1381,11 @@ export class LocalGuestApp {
    * and the domain record must name the Guest (ADR-0070). Reads go through the
    * conventional view functions, never an agent-only path (ADR-0072).
    */
-  conventionalBookingPage(
+  async conventionalBookingPage(
     kind: ConventionalBookingPageKind,
     id: string,
     principal: CommandPrincipal,
-  ): ConventionalBookingPage | null {
+  ): Promise<ConventionalBookingPage | null> {
     const environment = this.#environment;
     const guest = environment.guestPrincipal();
     if (
@@ -1381,7 +1398,7 @@ export class LocalGuestApp {
     )
       return null;
     try {
-      for (const record of environment.interactionStore.findThreadsForPrincipal(
+      for (const record of await environment.guestData.findThreadsForPrincipal(
         principal.id,
         principal.tenantId,
       )) {
@@ -1406,7 +1423,7 @@ export class LocalGuestApp {
         if (!correlated) continue;
         const thread =
           this.#threads.get(record.threadId) ??
-          this.#loadThread(record.threadId);
+          (environment.guestDataIsRemote ? await this.#loadRemoteThread(record.threadId) : this.#loadThread(record.threadId));
         if (!thread) return null;
         const page = this.#bookingPage(thread, kind, id, principal);
         const journey = this.#journeyFor(thread);
@@ -1424,10 +1441,10 @@ export class LocalGuestApp {
    * Guest UI consistency issue 03: the journey rail for a standalone page. Only the Guest's own thread resolves
    * (ADR-0070); anything else is undefined, and the page then shows no rail rather than someone else's progress.
    */
-  journeyForThread(
+  async journeyForThread(
     threadId: string,
     principal: CommandPrincipal,
-  ): GuestJourney | undefined {
+  ): Promise<GuestJourney | undefined> {
     const environment = this.#environment;
     const guest = environment.guestPrincipal();
     if (
@@ -1439,23 +1456,22 @@ export class LocalGuestApp {
     )
       return undefined;
     if (
-      !environment.interactionStore
-        .findThreadsForPrincipal(principal.id, principal.tenantId)
+      !(await environment.guestData.findThreadsForPrincipal(principal.id, principal.tenantId))
         .some((record) => record.threadId === threadId)
     )
       return undefined;
-    const thread = this.#threads.get(threadId) ?? this.#loadThread(threadId);
+    const thread = this.#threads.get(threadId) ?? (environment.guestDataIsRemote ? await this.#loadRemoteThread(threadId) : this.#loadThread(threadId));
     return thread === null ? undefined : this.#journeyFor(thread);
   }
 
   /** ADR-0072/0080: conventional forms resolve the same current action and handler as Weaver. */
-  conventionalRequestAction(
+  async conventionalRequestAction(
     id: string,
     action: "review" | "submit",
     surfaceId: string,
     principal: CommandPrincipal,
-  ): GuestTurnResult {
-    const page = this.conventionalBookingPage("draft", id, principal);
+  ): Promise<GuestTurnResult> {
+    const page = await this.conventionalBookingPage("draft", id, principal);
     const thread = page === null ? undefined : this.#threads.get(page.threadId);
     if (
       !page ||
@@ -1484,7 +1500,7 @@ export class LocalGuestApp {
         code: "ACTION_NOT_AUTHORIZED",
         message: "That action is not available.",
       };
-    return this.handleEvent(page.threadId, {
+    return this.handleEventAsync(page.threadId, {
       name:
         action === "review"
           ? REQUEST_DRAFT_REVIEW_EVENT
@@ -1502,12 +1518,12 @@ export class LocalGuestApp {
   }
 
   /** ADR-0072/0080: the native form resolves current server authority, then reuses the Weaver command handler. */
-  conventionalOfferAccept(
+  async conventionalOfferAccept(
     id: string,
     surfaceId: string,
     principal: CommandPrincipal,
-  ): GuestTurnResult {
-    const page = this.conventionalBookingPage("offer", id, principal);
+  ): Promise<GuestTurnResult> {
+    const page = await this.conventionalBookingPage("offer", id, principal);
     const thread = page ? this.#threads.get(page.threadId) : undefined;
     if (
       !page ||
@@ -1533,7 +1549,7 @@ export class LocalGuestApp {
         code: "ACTION_NOT_AUTHORIZED",
         message: "That action is not available.",
       };
-    return this.handleEvent(page.threadId, {
+    return this.handleEventAsync(page.threadId, {
       name: "shortlet.conditional-offer.accept",
       surfaceId,
       sourceComponentId: "offer-form",
@@ -1549,22 +1565,22 @@ export class LocalGuestApp {
     });
   }
 
-  conventionalOfferSearch(
+  async conventionalOfferSearch(
     id: string,
     principal: CommandPrincipal,
-  ): string | null {
-    const page = this.conventionalBookingPage("offer", id, principal);
+  ): Promise<string | null> {
+    const page = await this.conventionalBookingPage("offer", id, principal);
     const thread = page ? this.#threads.get(page.threadId) : undefined;
     if (!page?.offerScreen?.searchPath || !thread?.discoveryArtifact)
       return null;
     return conventionalSearchRoute(thread.discoveryArtifact.facts.filters);
   }
 
-  conventionalRequestSearch(
+  async conventionalRequestSearch(
     id: string,
     principal: CommandPrincipal,
-  ): string | null {
-    const page = this.conventionalBookingPage("request", id, principal);
+  ): Promise<string | null> {
+    const page = await this.conventionalBookingPage("request", id, principal);
     const thread = page === null ? undefined : this.#threads.get(page.threadId);
     if (
       !page ||
@@ -1582,10 +1598,10 @@ export class LocalGuestApp {
    * unreadable, failed or expired record is never listed. Fails closed to an
    * empty list for any principal that is not this runtime's Guest (ADR-0070).
    */
-  committedWork(
+  async committedWork(
     principal: CommandPrincipal,
     identity?: GuestIdentity,
-  ): GuestCommittedWork[] {
+  ): Promise<GuestCommittedWork[]> {
     const environment = this.#environment;
     const scope = committedWorkScope(environment, principal, identity);
     if (scope === null || !principal.tenantId) return [];
@@ -1594,7 +1610,7 @@ export class LocalGuestApp {
     // holds by claim (ADR 0093), only that request's conversation, owned by its Primary Guest. Nothing else of that
     // principal is listed.
     const candidates: { threadId: string; principalId: string; claimedRequestId: string | null }[] = [];
-    for (const record of environment.interactionStore.findThreadsForPrincipals(
+    for (const record of await environment.guestData.findThreadsForPrincipals(
       scope,
       principal.tenantId,
     ))
@@ -1602,7 +1618,7 @@ export class LocalGuestApp {
     for (const requestId of identity?.claimedRequestIds ?? []) {
       const request = environment.interactionStore.findBookingRequest(requestId);
       if (!request || request.tenantId !== principal.tenantId) continue;
-      for (const record of environment.interactionStore.findThreadsForPrincipal(
+      for (const record of await environment.guestData.findThreadsForPrincipal(
         request.primaryGuestId,
         principal.tenantId,
       ))
@@ -1620,7 +1636,7 @@ export class LocalGuestApp {
         const owners = record.claimedRequestId === null ? scope : [record.principalId];
         const loaded =
           this.#threads.get(record.threadId) ??
-          this.#loadThread(record.threadId, owners);
+          (environment.guestDataIsRemote ? await this.#loadRemoteThread(record.threadId, owners) : this.#loadThread(record.threadId, owners));
         if (!loaded || (!loaded.requestId && !loaded.offerId)) continue;
         if (record.claimedRequestId !== null && loaded.requestId !== record.claimedRequestId) continue;
         listed.add(record.threadId);
@@ -1868,7 +1884,7 @@ export class LocalGuestApp {
         };
       }
     }
-    const thread = this.#threads.get(threadId) ?? this.#loadThread(threadId);
+    const thread = this.#threads.get(threadId) ?? (this.#environment.guestDataIsRemote ? null : this.#loadThread(threadId));
     if (!thread) return undefined;
     const priorSurfaceId = thread.lastSurfaces.at(-1)?.surfaceId;
     const refreshed = this.#refreshWorkflow(thread);
@@ -2276,6 +2292,7 @@ export class LocalGuestApp {
 
   #persistThread(thread: GuestThreadState): void {
     const environment = this.#environment;
+    if (environment.guestDataIsRemote) return;
     // ADR 0004 / 0070 / 0093: a read or a refresh never changes a conversation's owner. A saved conversation this runtime
     // does not own (a linked principal's) is not written at all; only a new conversation is saved under this runtime.
     const saved = environment.interactionStore.findThread(thread.threadId);
@@ -2367,11 +2384,71 @@ export class LocalGuestApp {
     threadId: string,
     principalIds?: readonly string[],
   ): GuestThreadState | null {
+    if (this.#environment.guestDataIsRemote) return null;
     const existing = this.#threads.get(threadId);
     if (existing) return existing;
     const environment = this.#environment;
     const record = environment.interactionStore.findThread(threadId);
     if (!record) return null;
+    return this.#hydrateThreadRecord(record, principalIds);
+  }
+
+  async getStateAsync(threadId: string): Promise<GuestStateSnapshot | undefined> {
+    await this.#hydrateRemoteContact();
+    if (this.#environment.guestDataIsRemote && !this.#threads.has(threadId)) await this.#loadRemoteThread(threadId);
+    const state = this.getState(threadId);
+    if (this.#environment.guestDataIsRemote) await this.#persistRemoteThread(threadId);
+    return state;
+  }
+
+  async #hydrateRemoteContact(): Promise<void> {
+    const environment = this.#environment;
+    if (!environment.guestDataIsRemote || !environment.remoteGuestContacts) return;
+    const principal = environment.guestPrincipal();
+    if (!principal.tenantId) return;
+    environment.remoteGuestContacts.hydrate(await environment.guestData.findContact(principal.id, principal.tenantId));
+  }
+
+  async #flushRemoteContact(): Promise<void> {
+    const environment = this.#environment;
+    const cache = environment.remoteGuestContacts;
+    if (!environment.guestDataIsRemote || !cache) return;
+    const pending = cache.takePending();
+    if (!pending) return;
+    const saved = pending.kind === "phone"
+      ? await environment.guestData.savePhone(pending.input)
+      : await environment.guestData.saveEmail(pending.input);
+    cache.accept(saved);
+  }
+
+  async #loadRemoteThread(threadId: string, principalIds?: readonly string[]): Promise<GuestThreadState | null> {
+    const existing = this.#threads.get(threadId);
+    if (existing) return existing;
+    const record = await this.#environment.guestData.findThread(threadId);
+    return record ? this.#hydrateThreadRecord(record, principalIds) : null;
+  }
+
+  async #persistRemoteThread(threadId: string): Promise<void> {
+    const thread = this.#threads.get(threadId);
+    if (!thread) return;
+    const environment = this.#environment;
+    const principalId = environment.guestPrincipal().id;
+    const existing = await environment.guestData.findThread(threadId);
+    if (existing && (existing.principalId !== principalId || existing.tenantId !== environment.config.tenantId)) return;
+    const current = thread.lastSurfaces.at(-1);
+    const activeStage = this.#stageForSurfaceId(current?.surfaceId ?? "") ?? this.#inferActiveStage(thread);
+    await environment.guestData.saveThread({
+      threadId, principalId, tenantId: environment.config.tenantId,
+      threadJson: JSON.stringify(this.#projectionFor(thread, activeStage)),
+    });
+  }
+
+  #hydrateThreadRecord(
+    record: { readonly threadId: string; readonly principalId: string; readonly tenantId: string; readonly threadJson: string },
+    principalIds?: readonly string[],
+  ): GuestThreadState | null {
+    const threadId = record.threadId;
+    const environment = this.#environment;
     // Callers that list an account's work pass the account's principal set, which the store already scoped (ADR 0093).
     const owners = principalIds ?? [environment.guestPrincipal().id];
     if (
@@ -2828,7 +2905,7 @@ export class LocalGuestApp {
   ): void {
     const thread =
       this.#threads.get(threadId) ??
-      this.#loadThread(threadId) ??
+      (this.#environment.guestDataIsRemote ? null : this.#loadThread(threadId)) ??
       this.#createThread(threadId);
     if (userText !== undefined)
       thread.timeline.push({ role: "user", text: userText });
@@ -2864,7 +2941,7 @@ export class LocalGuestApp {
     } catch {
       /* presentation telemetry is best-effort */
     }
-    this.#persistThread(thread);
+    if (!this.#environment.guestDataIsRemote) this.#persistThread(thread);
   }
 
   #decorateResult(result: GuestTurnResult): GuestTurnResult {

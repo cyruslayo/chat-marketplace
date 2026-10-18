@@ -18,6 +18,7 @@ export function verifiedOutcome(accountGuestId: string, overrides: Partial<Ident
   return {
     tenantId: ASSURANCE_TENANT,
     accountGuestId,
+    accountEmailRevision: 0,
     level: "government-ID-verified",
     method: NIGERIA_NIN_V2_BIOMETRIC_KYC_METHOD,
     status: "verified",

@@ -12,14 +12,16 @@ import { ACCESS_JWT_HEADER, OPS_SECRET_HEADER, sharedSecretMatches } from "./ops
 import type { AccessVerifier } from "./access-jwt.js";
 import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
 import {
+  CREDENTIAL_TABLE_REFUSAL,
   MAX_IMPORT_REQUEST_BYTES,
   checksumTables,
-  credentialTableCounts,
+  isCredentialTable,
 } from "../../../packages/platform-core/src/data-migration.js";
 import { CutoverMarkerUnavailableError, completeCutoverWithMarker, cutoverStatus, type CutoverMarkerStore } from "./cutover-marker.js";
-import { ImportRefusedError, assertCutoverOpenForImport, assertSchemaCurrent, exportTable, importBatch } from "./ops-import.js";
+import { ImportRefusedError, assertCutoverOpenForImport, assertSchemaCurrent, credentialTableCountsForOwner, exportTable, importBatch } from "./ops-import.js";
 import { SHORTLET_SCHEMA_VERSION } from "./schema.js";
 import { schemaVersion } from "../../../packages/platform-core/src/schema-migrations.js";
+import { PLATFORM_OWNED_TABLES } from "./do-export.js";
 
 /**
  * Slice 11a: the authenticated `/_ops/*` routes. They call exactly the domain functions the operator CLIs call
@@ -62,6 +64,9 @@ export interface OpsRouteDependencies {
   readonly audit: AuditLog;
   readonly clock: () => Date;
   readonly tenantId: string;
+  readonly platformMigration?: {
+    request<T>(operation: "import" | "export" | "verify" | "status" | "cutover", input?: Readonly<Record<string, unknown>>): Promise<T>;
+  };
 }
 
 export interface OpsHandler {
@@ -221,6 +226,10 @@ export function createOpsHandler(dependencies: OpsRouteDependencies): OpsHandler
       const body = await readJsonBody(request, MAX_IMPORT_REQUEST_BYTES);
       const table = requiredString(body.table, "table");
       if (!Array.isArray(body.rows)) throw new Error("rows must be an array");
+      if (PLATFORM_OWNED_TABLES.has(table)) {
+        if (!dependencies.platformMigration) throw new Error("PLATFORM migration authority is unavailable");
+        return json(200, await dependencies.platformMigration.request("import", { table, rows: body.rows }));
+      }
       // Issue 16 A: the schema, then the cutover marker and flag, are checked before any write (fail closed).
       assertSchemaCurrent(dependencies.database, SHORTLET_SCHEMA_VERSION);
       await assertCutoverOpenForImport(dependencies.database, dependencies.cutoverMarker);
@@ -229,11 +238,14 @@ export function createOpsHandler(dependencies: OpsRouteDependencies): OpsHandler
       return json(200, { ok: true, ...result });
     }
     if (request.method === "POST" && path === "/_ops/cutover/complete") {
-      // D1 and A: the one-way cutover. The R2 marker is written first, then the database flag; a second call returns the first timestamp.
+      // ADR 0101: record cutover independently in both authorities. Each object persists its own marker before its SQL flag.
       assertSchemaCurrent(dependencies.database, SHORTLET_SCHEMA_VERSION);
       try {
+        const platform = dependencies.platformMigration
+          ? await dependencies.platformMigration.request<{ readonly cutoverCompletedAt: string }>("cutover")
+          : null;
         const completedAt = await completeCutoverWithMarker(dependencies.database, dependencies.cutoverMarker, dependencies.clock().toISOString());
-        return json(200, { ok: true, cutoverCompletedAt: completedAt });
+        return json(200, { ok: true, cutoverCompletedAt: completedAt, platformCutoverCompletedAt: platform?.cutoverCompletedAt ?? null });
       } catch (error) {
         // Fail closed. A marker failure leaves the cutover unrecorded; a flag failure after the marker is finished by running this again.
         if (error instanceof CutoverMarkerUnavailableError) {
@@ -245,29 +257,43 @@ export function createOpsHandler(dependencies: OpsRouteDependencies): OpsHandler
     if (request.method === "GET" && path === "/_ops/status") {
       // F3 and A: the cutover is read from the database flag and the R2 marker. A restore that rewinds the flag cannot hide the marker.
       const cutover = await cutoverStatus(dependencies.database, dependencies.cutoverMarker);
+      const platform = dependencies.platformMigration
+        ? await dependencies.platformMigration.request<Record<string, unknown>>("status")
+        : null;
       return json(200, {
         ok: true,
         schemaVersion: schemaVersion(dependencies.database),
         expectedSchemaVersion: SHORTLET_SCHEMA_VERSION,
         cutoverCompletedAt: cutover.completedAt,
         cutoverMarker: cutover.marker,
+        platform,
       });
     }
     if (request.method === "GET" && path === "/_ops/import/verify") {
       // Application tables are compared with the manifest. The credential tables are reported apart, as counts only (issue 16 B).
       const cutover = await cutoverStatus(dependencies.database, dependencies.cutoverMarker);
+      const platform = dependencies.platformMigration
+        ? await dependencies.platformMigration.request<Record<string, unknown>>("verify")
+        : null;
       return json(200, {
         ok: true,
         schemaVersion: schemaVersion(dependencies.database),
         tables: await checksumTables(dependencies.database),
-        excludedTables: Object.fromEntries(Object.entries(credentialTableCounts(dependencies.database)).map(([table, rowCount]) => [table, { rowCount }])),
+        excludedTables: Object.fromEntries(Object.entries(credentialTableCountsForOwner(dependencies.database, "shortlet")).map(([table, rowCount]) => [table, { rowCount }])),
         cutoverCompletedAt: cutover.completedAt,
         cutoverMarker: cutover.marker,
+        platform,
       });
     }
     if (request.method === "GET" && path === "/_ops/export") {
-      // Slice 16: the reverse export used by the rollback runbook. Read-only, one table per request.
-      return json(200, { ok: true, ...(await exportTable(dependencies.database, requiredString(url.searchParams.get("table"), "table"))) });
+      // Slice 16 / ADR 0101: reverse export is routed to the table's owning object.
+      const table = requiredString(url.searchParams.get("table"), "table");
+      if (isCredentialTable(table)) throw new ImportRefusedError("EXCLUDED_TABLE", CREDENTIAL_TABLE_REFUSAL);
+      if (PLATFORM_OWNED_TABLES.has(table)) {
+        if (!dependencies.platformMigration) throw new Error("PLATFORM migration authority is unavailable");
+        return json(200, await dependencies.platformMigration.request("export", { table }));
+      }
+      return json(200, { ok: true, ...(await exportTable(dependencies.database, table)) });
     }
     return json(404, { ok: false, code: "NOT_FOUND" });
   };

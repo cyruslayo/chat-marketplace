@@ -39,6 +39,11 @@ export interface GuestRequestContactIndex {
   findBookingRequestIdsByContactEmail(contactEmail: string, tenantId: string): readonly BookingRequestContactMatch[];
 }
 
+/** Remote/domain-pack implementation; deliberately asynchronous so callers cannot hide network I/O in a SQLite transaction. */
+export interface AsyncGuestRequestContactIndex {
+  findBookingRequestIdsByContactEmail(contactEmail: string, tenantId: string): Promise<readonly BookingRequestContactMatch[]>;
+}
+
 export interface GuestPrincipalLink {
   readonly principalId: string;
   readonly tenantId: string;
@@ -54,6 +59,7 @@ export interface SignedInPrincipalResult {
 
 export interface GuestAccountLinksOptions {
   readonly requests: GuestRequestContactIndex;
+  readonly asyncRequests?: AsyncGuestRequestContactIndex;
   /** Verifies the sign-in session that proves a principal's account (ADR 0093). Only its resolveSession is used. */
   readonly authority: Pick<SqliteGuestAccountAuthority, "resolveSession">;
   readonly clock?: () => Date;
@@ -80,12 +86,14 @@ function projectLink(row: SqlRow | undefined): GuestPrincipalLink | null {
 export class SqliteGuestAccountLinks {
   readonly #database: SqlDatabase;
   readonly #requests: GuestRequestContactIndex;
+  readonly #asyncRequests: AsyncGuestRequestContactIndex;
   readonly #authority: Pick<SqliteGuestAccountAuthority, "resolveSession">;
   readonly #clock: () => Date;
 
   constructor(database: SqlDatabase, options: GuestAccountLinksOptions) {
     this.#database = database;
     this.#requests = options.requests;
+    this.#asyncRequests = options.asyncRequests ?? { findBookingRequestIdsByContactEmail: async (email, tenant) => this.#requests.findBookingRequestIdsByContactEmail(email, tenant) };
     this.#authority = options.authority;
     this.#clock = options.clock ?? (() => new Date());
     this.#database.exec(GUEST_ACCOUNT_LINK_SCHEMA);
@@ -111,6 +119,59 @@ export class SqliteGuestAccountLinks {
       const link = this.#linkInTransaction(principalId, tenantId, accountGuestId);
       this.#claimInTransaction(accountGuestId, tenantId, account.email);
       return { link, claimedRequestIds: this.claimedRequestIds(accountGuestId, tenantId) };
+    });
+  }
+
+  /**
+   * Cross-DO sign-in linking (ADR 0101). Phase one snapshots the proven active account then awaits authoritative Shortlet
+   * request contacts with no Platform SQLite transaction open. Phase two re-resolves the session and checks the account's
+   * email/revision snapshot before atomically linking and claiming. Any lookup, validation, or stale-snapshot failure commits
+   * neither link nor claim; callers remain responsible for revoking a newly-issued session on failure.
+   */
+  async linkSignedInPrincipalWithLookup(input: { principalId: string; tenantId: string; session: GuestAccountSession }): Promise<SignedInPrincipalResult> {
+    const principalId = requiredText(input.principalId, "Principal ID");
+    const tenantId = requiredText(input.tenantId, "Tenant ID");
+    const firstProof = input.session?.purpose === "sign_in"
+      ? this.#authority.resolveSession(input.session.sessionId, input.session.sessionSecret)
+      : null;
+    if (!firstProof || firstProof.tenantId !== tenantId || firstProof.accountGuestId !== input.session.account.accountGuestId) {
+      throw new GuestAccountAuthorityError("session_invalid", "The sign-in session is not valid for this tenant");
+    }
+    const firstAccount = this.#activeAccountSnapshot(firstProof.accountGuestId, tenantId);
+    if (!firstAccount || firstAccount.email !== input.session.account.email || firstAccount.emailRevision !== input.session.account.emailRevision) {
+      throw new GuestAccountAuthorityError("session_invalid", "The sign-in session is not valid for this tenant");
+    }
+
+    const rawMatches = await this.#asyncRequests.findBookingRequestIdsByContactEmail(firstAccount.email, tenantId);
+    if (!Array.isArray(rawMatches)) throw new GuestAccountAuthorityError("invalid_input", "The request contact lookup returned invalid data");
+    const matches = rawMatches.map((match) => {
+      if (!match || typeof match !== "object" ||
+        typeof match.requestId !== "string" || match.requestId.trim() === "" ||
+        typeof match.primaryGuestId !== "string" || match.primaryGuestId.trim() === "" ||
+        typeof match.tenantId !== "string" || match.tenantId !== tenantId) {
+        throw new GuestAccountAuthorityError("invalid_input", "The request contact lookup returned invalid data");
+      }
+      return { requestId: match.requestId.trim(), primaryGuestId: match.primaryGuestId.trim(), tenantId };
+    });
+    const uniqueMatches = new Map<string, BookingRequestContactMatch>();
+    for (const match of matches) {
+      const previous = uniqueMatches.get(match.requestId);
+      if (previous && previous.primaryGuestId !== match.primaryGuestId) {
+        throw new GuestAccountAuthorityError("invalid_input", "The request contact lookup returned ambiguous data");
+      }
+      uniqueMatches.set(match.requestId, match);
+    }
+
+    return this.#database.transaction(() => {
+      const proven = this.#authority.resolveSession(input.session.sessionId, input.session.sessionSecret);
+      const current = this.#activeAccountSnapshot(firstProof.accountGuestId, tenantId);
+      if (!proven || proven.tenantId !== tenantId || proven.accountGuestId !== firstProof.accountGuestId ||
+        !current || current.email !== firstAccount.email || current.revision !== firstAccount.revision || current.emailRevision !== firstAccount.emailRevision) {
+        throw new GuestAccountAuthorityError("session_invalid", "The sign-in session changed during account linking");
+      }
+      const link = this.#linkInTransaction(principalId, tenantId, firstProof.accountGuestId);
+      this.#claimMatchesInTransaction(firstProof.accountGuestId, tenantId, [...uniqueMatches.values()]);
+      return { link, claimedRequestIds: this.claimedRequestIds(firstProof.accountGuestId, tenantId) };
     });
   }
 
@@ -161,6 +222,13 @@ export class SqliteGuestAccountLinks {
     return typeof row?.email_normalized === "string" ? { email: row.email_normalized } : null;
   }
 
+  #activeAccountSnapshot(accountGuestId: string, tenantId: string): { readonly email: string; readonly revision: number; readonly emailRevision: number } | null {
+    const row = this.#database.prepare("SELECT email_normalized, revision, email_revision FROM guest_accounts WHERE account_guest_id = ? AND tenant_id = ? AND status = 'active'").get([accountGuestId, tenantId]);
+    return typeof row?.email_normalized === "string" && Number.isSafeInteger(row.revision) && Number.isSafeInteger(row.email_revision)
+      ? { email: row.email_normalized, revision: Number(row.revision), emailRevision: Number(row.email_revision) }
+      : null;
+  }
+
   #linkInTransaction(principalId: string, tenantId: string, accountGuestId: string): GuestPrincipalLink {
     const row = this.#database.prepare("SELECT * FROM guest_account_principals WHERE principal_id = ?").get([principalId]);
     if (row !== undefined) {
@@ -181,8 +249,11 @@ export class SqliteGuestAccountLinks {
    * another account is not moved, and neither is a request whose principal is linked to another account.
    */
   #claimInTransaction(accountGuestId: string, tenantId: string, email: string): void {
-    for (const match of this.#requests.findBookingRequestIdsByContactEmail(email, tenantId)) {
-      if (match.tenantId !== tenantId) continue;
+    this.#claimMatchesInTransaction(accountGuestId, tenantId, this.#requests.findBookingRequestIdsByContactEmail(email, tenantId));
+  }
+
+  #claimMatchesInTransaction(accountGuestId: string, tenantId: string, matches: readonly BookingRequestContactMatch[]): void {
+    for (const match of matches) {
       const claim = this.#database.prepare("SELECT account_guest_id FROM guest_account_request_claims WHERE request_id = ?").get([match.requestId]);
       if (claim !== undefined && claim.account_guest_id !== accountGuestId) continue;
       const owner = this.#linkAnyStatus(match.primaryGuestId);

@@ -2,6 +2,8 @@ import { existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { dirname } from "node:path";
 import { openNodeSqliteDatabase } from "../../../packages/platform-core/src/node-sqlite-database.js";
 import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
+import type { GuestDataPort } from "./guest-data-port.js";
+import { RemoteGuestContactCache } from "./remote-guest-contact-cache.js";
 import { SqliteAuditLog } from "../../../packages/platform-core/src/sqlite-audit-log.js";
 import { SqliteTelemetry } from "../../../packages/platform-core/src/sqlite-telemetry.js";
 import type { TelemetryEvent } from "../../../packages/platform-core/src/telemetry.js";
@@ -297,6 +299,9 @@ export interface LocalGuestEnvironmentDependencies {
    * to Workers Logs; Node passes none. The durable table stays authoritative.
    */
   readonly telemetrySink?: (event: TelemetryEvent) => void;
+  /** Cloudflare supplies PLATFORM's async thread/session/contact authority; local compositions use SQLite below. */
+  readonly guestData?: GuestDataPort;
+  readonly guestDataIsRemote?: boolean;
 }
 
 export class LocalGuestEnvironment {
@@ -323,8 +328,11 @@ export class LocalGuestEnvironment {
   readonly contractApp: BookingContractApplication;
   readonly contractRepository: LocalBookingContractRepository;
   readonly interactionStore: SqliteGuestInteractionStore;
+  readonly guestData: GuestDataPort;
+  readonly guestDataIsRemote: boolean;
   readonly livePaymentAttempts: SqliteLivePaymentAttemptRegistry;
   readonly guestContactApp: GuestContactApplication;
+  readonly remoteGuestContacts: RemoteGuestContactCache | null;
   #searchCounter = 0;
   readonly #database: SqlDatabase;
   #ownsDatabase = false;
@@ -374,15 +382,31 @@ export class LocalGuestEnvironment {
 
     this.#database = dependencies.database;
     const sqlDatabase = this.#database;
-    this.interactionStore = new SqliteGuestInteractionStore(sqlDatabase);
+    const guestDataIsRemote = dependencies.guestDataIsRemote === true;
+    if (guestDataIsRemote && dependencies.guestData === undefined) throw new Error("Remote Guest data authority is required for this composition");
+    this.interactionStore = new SqliteGuestInteractionStore(sqlDatabase, { includeThreadSessionSchema: !guestDataIsRemote });
     // Issue 07: one contact view for reads and writes. A linked principal's email is the account email (ADR 0093, 0094).
+    const contacts = guestDataIsRemote ? null : new SqliteGuestContactRepository(sqlDatabase);
+    this.remoteGuestContacts = guestDataIsRemote ? new RemoteGuestContactCache() : null;
     this.guestContactApp = new GuestContactApplication(
-      new GuestAccountContacts({
-        database: sqlDatabase,
-        contacts: new SqliteGuestContactRepository(sqlDatabase),
-      }),
+      this.remoteGuestContacts ?? new GuestAccountContacts({ database: sqlDatabase, contacts: contacts! }),
     );
-    if (
+    const interactions = this.interactionStore;
+    this.guestData = dependencies.guestData ?? {
+      async saveSessionBinding(binding) { interactions.saveSessionBinding(binding); },
+      async findSessionBinding(sessionId) { return interactions.findSessionBinding(sessionId); },
+      async deleteSessionBinding(sessionId) { interactions.deleteSessionBinding(sessionId); },
+      async deleteSessionBindingsForPrincipals(principalIds, tenantId) { interactions.deleteSessionBindingsForPrincipals(principalIds, tenantId); },
+      async saveThread(thread) { interactions.saveThread(thread); },
+      async findThread(threadId) { return interactions.findThread(threadId); },
+      async findThreadsForPrincipal(principalId, tenantId) { return interactions.findThreadsForPrincipal(principalId, tenantId); },
+      async findThreadsForPrincipals(principalIds, tenantId) { return interactions.findThreadsForPrincipals(principalIds, tenantId); },
+      async findContact(guestId, tenantId) { return contacts!.find(guestId, tenantId); },
+      async savePhone(input) { return contacts!.savePhone(input); },
+      async saveEmail(input) { return contacts!.saveEmail(input); },
+    };
+    this.guestDataIsRemote = guestDataIsRemote;
+    if (!guestDataIsRemote &&
       this.config.initialGuestPhoneNumber &&
       !this.guestContactApp.get(this.guestPrincipal())
     )
@@ -390,7 +414,7 @@ export class LocalGuestEnvironment {
         { phoneNumber: this.config.initialGuestPhoneNumber },
         this.guestPrincipal(),
       );
-    if (
+    if (!guestDataIsRemote &&
       this.config.initialGuestContactEmail &&
       !this.guestContactApp.get(this.guestPrincipal())?.contactEmail
     )

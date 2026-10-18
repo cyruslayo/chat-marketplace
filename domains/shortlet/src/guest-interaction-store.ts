@@ -359,7 +359,7 @@ export const GUEST_REQUEST_CONTACT_SCHEMA = `
     `;
 
 /** Table DDL, applied by the schema migrations (apps/cloudflare/src/schema.ts) and by this store's constructor. */
-export const GUEST_INTERACTION_SCHEMA = `
+export const THREAD_SESSION_SCHEMA = `
       CREATE TABLE IF NOT EXISTS guest_session_bindings (
         session_id TEXT PRIMARY KEY,
         session_secret_hash TEXT NOT NULL,
@@ -377,7 +377,9 @@ export const GUEST_INTERACTION_SCHEMA = `
       );
       CREATE INDEX IF NOT EXISTS idx_guest_threads_principal
         ON guest_threads (principal_id, tenant_id);
+    `;
 
+export const GUEST_INTERACTION_SCHEMA = `
       CREATE TABLE IF NOT EXISTS guest_request_drafts (
         draft_id TEXT PRIMARY KEY,
         unit_id TEXT NOT NULL,
@@ -496,9 +498,12 @@ export const GUEST_INTERACTION_SCHEMA = `
 export class SqliteGuestInteractionStore {
   readonly #database: SqlDatabase;
 
-  constructor(database: SqlDatabase) {
+  constructor(database: SqlDatabase, options: { readonly includeThreadSessionSchema?: boolean } = {}) {
     this.#database = database;
     this.#database.exec(GUEST_INTERACTION_SCHEMA);
+    // Local SQLite adapters retain their historical co-located composition; the Cloudflare split opts out and mounts this
+    // schema only in PlatformDO (ADR 0101).
+    if (options.includeThreadSessionSchema !== false) this.#database.exec(THREAD_SESSION_SCHEMA);
     this.#database.exec(GUEST_REQUEST_CONTACT_SCHEMA);
     const requestColumns = this.#database
       .prepare("PRAGMA table_info(guest_booking_requests)")

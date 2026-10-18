@@ -11,6 +11,7 @@ import type { TelemetryEvent } from "../../../packages/platform-core/src/telemet
 import { createConciergeModelClient } from "../../local-guest/src/assistant/concierge-configuration.js";
 import { ModelCallBudget } from "../../local-guest/src/assistant/model-call-budget.js";
 import { LocalGuestEnvironment } from "../../local-guest/src/fixture.js";
+import { GUEST_CODE_HASHING_KEY_ENV, loadGuestAccountComposition } from "../../local-guest/src/guest-account-composition.js";
 import { createGuestRequestHandler } from "../../local-guest/src/guest-server.js";
 import { LocalApartmentOwnerEnvironment, createOwnerRequestHandler } from "../../local-owner/src/index.js";
 import { ResendEmailSender } from "../../pilot/src/notifications/email-sender.js";
@@ -34,6 +35,7 @@ import { createOpsHandler, type OpsHandler } from "./ops-routes.js";
 import { SHORTLET_SCHEMA_MIGRATIONS } from "./schema.js";
 import { cloudflareAssetLoader } from "./pilot-assets.js";
 import { R2ReceiptBlobStore } from "./r2-receipt-blob-store.js";
+import { platformGuestAccountDependencies, platformGuestData, platformMigrationClient } from "./do-clients.js";
 
 /**
  * The assembled pilot (ADR 0004/0095): one SQLite-backed Durable Object is the single system of record. It builds
@@ -79,7 +81,7 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
       // A (issue 16): on start, the database flag is re-asserted from the R2 marker, so a restore that rewound the flag cannot
       // reopen imports. A failure here is not fatal: the object still starts, and the import path reconciles and refuses (fail closed).
       try {
-        await reconcileCutover(database, createCutoverMarkerStore(env.EXPORTS, ctx.id.toString()));
+        await reconcileCutover(database, createCutoverMarkerStore(env.EXPORTS, ctx.id.toString(), "shortlet"));
       } catch {
         console.log(JSON.stringify({ event: "cutover_reconcile_deferred" }));
       }
@@ -88,6 +90,7 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
+    if (url.pathname === "/_internal" || url.pathname.startsWith("/_internal/")) return this.#handleInternal(request, url.pathname);
     // 11a: authenticated ops routes are dispatched first, so provisioning does not depend on the guest/owner
     // configuration (Paystack, concierge) being valid, nor on the tenant being provisioned yet.
     // F1: the alarm (the daily export, and the notifier sweep when configured) is scheduled on every path, including the
@@ -129,6 +132,31 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
     return await stream.done;
   }
 
+  async #handleInternal(request: Request, path: string): Promise<Response> {
+    const tenantId = this.env.SHORTLET_TENANT_ID?.trim() ?? "";
+    if (!tenantId || request.method !== "POST") return new Response("Not found", { status: 404 });
+    let body: unknown;
+    try { body = await request.json(); } catch { return new Response("Bad request", { status: 400 }); }
+    if (body === null || typeof body !== "object" || Array.isArray(body)) return new Response("Bad request", { status: 400 });
+    const input = body as Record<string, unknown>;
+    if (input.tenantId !== tenantId) return Response.json({ ok: false, code: "INVALID_SCOPE" }, { status: 403 });
+    const database = new DurableObjectSqlDatabase(this.ctx.storage);
+    if (path === "/_internal/guest-request-contact-matches") {
+      if (typeof input.contactEmail !== "string" || input.contactEmail.trim() === "") return new Response("Bad request", { status: 400 });
+      const matches = database.prepare(`SELECT r.request_id, r.primary_guest_id, r.tenant_id
+        FROM guest_booking_request_contacts c
+        JOIN guest_booking_requests r ON r.request_id = c.request_id AND r.tenant_id = c.tenant_id
+        WHERE c.tenant_id = ? AND c.contact_email = ? ORDER BY r.request_id`).all([tenantId, input.contactEmail]);
+      return Response.json({ matches: matches.map((row) => ({ requestId: row.request_id, primaryGuestId: row.primary_guest_id, tenantId: row.tenant_id })) });
+    }
+    if (path === "/_internal/guest-identity-assurance/invalidate") {
+      if (typeof input.accountGuestId !== "string" || input.accountGuestId.trim() === "") return new Response("Bad request", { status: 400 });
+      const deleted = database.prepare("DELETE FROM guest_identity_assurance WHERE tenant_id = ? AND account_guest_id = ?").run([tenantId, input.accountGuestId]);
+      return Response.json({ ok: true, deleted: deleted.changes });
+    }
+    return new Response("Not found", { status: 404 });
+  }
+
   /**
    * 11a: authenticated operator routes, dispatched before the guest/owner routes and before the provisioning gate,
    * so provisioning stays available on an unprovisioned object. The composition here is deliberately lighter than
@@ -163,10 +191,11 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
         bookmarkForTime: (timeMs) => this.ctx.storage.getBookmarkForTime(timeMs),
         restoreOnNextSession: (bookmark) => { this.ctx.storage.onNextSessionRestoreBookmark(bookmark); },
       },
-      cutoverMarker: createCutoverMarkerStore(this.env.EXPORTS, this.ctx.id.toString()),
+      cutoverMarker: createCutoverMarkerStore(this.env.EXPORTS, this.ctx.id.toString(), "shortlet"),
       audit: new SqliteAuditLog(database),
       clock,
       tenantId: this.env.SHORTLET_TENANT_ID?.trim() ?? "",
+      platformMigration: platformMigrationClient(this.env, this.env.SHORTLET_TENANT_ID?.trim() ?? ""),
     });
   }
 
@@ -233,7 +262,7 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
         manualTransferAccount: configuration.manualTransferAccount,
         ...(configuration.receiptMaxBytes === null ? {} : { receiptMaxBytes: configuration.receiptMaxBytes }),
       },
-      { database, unitRepository, receiptBlobs, telemetrySink },
+      { database, unitRepository, receiptBlobs, telemetrySink, guestData: platformGuestData(this.env, configuration.tenantId), guestDataIsRemote: true },
     );
     const operatorEnvironment = new LocalApartmentOwnerEnvironment(
       {
@@ -249,7 +278,7 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
         production: true,
         clock,
       },
-      { database, unitRepository, operatorRepository, receiptBlobs, telemetrySink },
+      { database, unitRepository, operatorRepository, receiptBlobs, telemetrySink, guestDataIsRemote: true },
     );
 
     const modelClient = createConciergeModelClient(configuration.concierge);
@@ -264,6 +293,14 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
       publicOrigin: configuration.publicOrigin,
       secureCookie: true,
       sessionScopedGuestPrincipals: true,
+      guestAccounts: {
+        ...loadGuestAccountComposition({
+          [GUEST_CODE_HASHING_KEY_ENV]: this.env.SHORTLET_GUEST_CODE_HASHING_KEY,
+          RESEND_API_KEY: this.env.RESEND_API_KEY,
+          SHORTLET_NOTIFICATION_FROM: this.env.SHORTLET_NOTIFICATION_FROM,
+        }),
+        ...platformGuestAccountDependencies(this.env, configuration.tenantId),
+      },
       payments,
       modelCallBudget: new ModelCallBudget(configuration.limits.dailyModelCallCap, clock),
       sessionRuntimeIdleMs: configuration.limits.sessionRuntimeIdleMinutes * 60_000,
@@ -279,8 +316,9 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
     });
 
     const notifier = configuration.notifications
-      ? new PilotNotifier({
+        ? new PilotNotifier({
           database,
+          guestData: platformGuestData(this.env, configuration.tenantId),
           publicOrigin: configuration.publicOrigin,
           sender: new ResendEmailSender({ apiKey: configuration.notifications.resendApiKey, from: configuration.notifications.from }),
           operatorAlertEmails: configuration.notifications.operatorAlertEmails,
@@ -335,6 +373,7 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
       clock: () => new Date(),
       retentionDays: configuration.retentionDays,
       orphanGraceHours: configuration.orphanGraceHours,
+      tableOwner: "shortlet",
     });
     await this.ctx.storage.put("export:lastDate", today);
   }

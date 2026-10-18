@@ -25,6 +25,11 @@ declare namespace Cloudflare {
     SHORTLET: import("@cloudflare/workers-types").DurableObjectNamespace<
       import("./shortlet-pilot-do.js").ShortletPilot
     >;
+    PLATFORM: import("@cloudflare/workers-types").DurableObjectNamespace<
+      import("./platform-do.js").PlatformDO
+    >;
+    ISOLATED_SHORTLET: import("@cloudflare/workers-types").DurableObjectNamespace;
+    ISOLATED_PLATFORM: import("@cloudflare/workers-types").DurableObjectNamespace;
     RECEIPTS: import("@cloudflare/workers-types").R2Bucket;
     EXPORTS: import("@cloudflare/workers-types").R2Bucket;
     ASSETS: import("@cloudflare/workers-types").Fetcher;

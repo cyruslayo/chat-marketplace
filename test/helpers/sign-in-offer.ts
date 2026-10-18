@@ -57,8 +57,8 @@ export async function withOfferStageDevice<T>(
   );
   try {
     const routes: string[] = [];
-    const turn = await fixture.advance(stage, (current, result) => {
-      if (current === "discovery") recordContactFor(fixture, fixture.threadId);
+    const turn = await fixture.advance(stage, async (current, result) => {
+      if (current === "discovery") await recordContactFor(fixture, fixture.threadId);
       for (const surface of result.surfaces) if (surface.conventionalRoute && !routes.includes(surface.conventionalRoute)) routes.push(surface.conventionalRoute);
     });
     return await run({ fixture, sender, cookie: fixture.cookie, routes, turn });
@@ -68,12 +68,12 @@ export async function withOfferStageDevice<T>(
 }
 
 /** Gives a conversation's principal the phone and email a booking needs (the same writes the contact steps make). */
-export function recordContactFor(fixture: Awaited<ReturnType<typeof restartFixture>>, threadId: string): void {
+export async function recordContactFor(fixture: Awaited<ReturnType<typeof restartFixture>>, threadId: string): Promise<void> {
   const principalId = fixture.environment.interactionStore.findThread(threadId)?.principalId;
   assert.ok(principalId, "the conversation has an owning principal");
   const principal = { id: principalId, role: "guest" as const, tenantId: fixture.environment.config.tenantId };
-  fixture.environment.guestContactApp.submitPhone({ phoneNumber: TEST_GUEST_PHONE }, principal);
-  fixture.environment.guestContactApp.submitEmail({ contactEmail: OFFER_TEST_EMAIL }, principal);
+  await fixture.environment.guestContactApp.submitPhone({ phoneNumber: TEST_GUEST_PHONE }, principal);
+  await fixture.environment.guestContactApp.submitEmail({ contactEmail: OFFER_TEST_EMAIL }, principal);
 }
 
 /** The standalone page for a booking route prefix, from the routes a stage produced. */

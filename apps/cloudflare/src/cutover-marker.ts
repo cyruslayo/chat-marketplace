@@ -23,8 +23,11 @@ export const CUTOVER_MARKER_PREFIX = "_ops/cutover/";
 const CUTOVER_MARKER_FORMAT = 1;
 
 /** The marker key for one object. Under the reserved prefix, so it is never an export day (do-export.ts). */
-export function cutoverMarkerKey(objectName: string): string {
-  return `${CUTOVER_MARKER_PREFIX}${objectName}.json`;
+export type CutoverObjectKind = "platform" | "shortlet";
+
+/** Namespaces a marker by authority while retaining the tenant-derived Durable Object name. */
+export function cutoverMarkerKey(objectName: string, objectKind: CutoverObjectKind = "shortlet"): string {
+  return `${CUTOVER_MARKER_PREFIX}${objectKind}/${objectName}.json`;
 }
 
 /** The marker could not be read or written, or its binding is absent. Always treated as "refuse", never as "not cut over". */
@@ -63,8 +66,8 @@ function parseMarker(text: string): CutoverMarker {
  * The R2 marker store. `bucket` is the EXPORTS binding; it is undefined when the binding is absent, and then every operation
  * fails closed. Creation is conditional (`onlyIf etagDoesNotMatch "*"`), so two creations never overwrite each other.
  */
-export function createCutoverMarkerStore(bucket: R2Bucket | undefined, objectName: string): CutoverMarkerStore {
-  const key = cutoverMarkerKey(objectName);
+export function createCutoverMarkerStore(bucket: R2Bucket | undefined, objectName: string, objectKind: CutoverObjectKind = "shortlet"): CutoverMarkerStore {
+  const key = cutoverMarkerKey(objectName, objectKind);
   const unavailable = (): CutoverMarkerUnavailableError => new CutoverMarkerUnavailableError("The cutover marker store is not available");
   const read = async (): Promise<CutoverMarker | null> => {
     if (bucket === undefined) throw unavailable();

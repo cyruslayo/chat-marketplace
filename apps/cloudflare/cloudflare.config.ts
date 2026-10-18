@@ -56,9 +56,13 @@ function workerFor(environment: PilotEnvironment) {
     // 13: Workers Logs (ADR 0075). The handlers log nothing about requests; the Durable Object emits only redacted
     // telemetry and alarm-failure records. Invocation logs are off so no request metadata is recorded.
     observability: { enabled: true, logs: { enabled: true, invocationLogs: false } },
-    exports: { ShortletPilot: exports.durableObject({ storage: "sqlite" }) },
+    exports: {
+      ShortletPilot: exports.durableObject({ storage: "sqlite" }),
+      PlatformDO: exports.durableObject({ storage: "sqlite" }),
+    },
     env: {
       SHORTLET: bindings.durableObject({ worker: name, exportName: "ShortletPilot" }),
+      PLATFORM: bindings.durableObject({ worker: name, exportName: "PlatformDO" }),
       RECEIPTS: bindings.r2({ name: `${name}-receipts` }),
       EXPORTS: bindings.r2({ name: `${name}-exports` }),
       ASSETS: bindings.assets(),
@@ -90,6 +94,7 @@ function workerFor(environment: PilotEnvironment) {
       PAYSTACK_SECRET_KEY: bindings.secret(),
       GEMINI_API_KEY: bindings.secret(),
       RESEND_API_KEY: bindings.secret(),
+      SHORTLET_GUEST_CODE_HASHING_KEY: bindings.secret(),
       OPS_SHARED_SECRET: bindings.secret(),
     },
   });

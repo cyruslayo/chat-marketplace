@@ -7,9 +7,18 @@
 > payment data until the data-protection gates in ADR 0095 are cleared (counsel approval of the cross-border transfer
 > basis, vendor terms and the DPIA). Staging rehearsal (issue 15) comes first.
 
-The Node pilot keeps one SQLite file (`SHORTLET_DB_PATH`) and its receipts. The Cloudflare pilot keeps all state in
-one SQLite-backed Durable Object per tenant, with receipts in the private `RECEIPTS` R2 bucket (ADRs 0004, 0090, 0095).
-This runbook moves the data, switches traffic, and defines how to go back.
+The Node pilot keeps one SQLite file (`SHORTLET_DB_PATH`) and its receipts. Cloudflare keeps platform state and shortlet
+transactions in separate SQLite-backed Durable Objects; receipts remain in the private `RECEIPTS` R2 bucket (ADRs 0004,
+0090, 0095, 0101). This runbook moves the data through the authenticated `/_ops` gateway, switches traffic, and defines
+how to go back.
+
+| Authority | Durable Object | Owned migration data |
+| --- | --- | --- |
+| PLATFORM | `env.PLATFORM.idFromName(SHORTLET_TENANT_ID)` | Guest Accounts, linked principals/claims, contacts, threads, account rate events, audit log and telemetry. |
+| SHORTLET | `env.SHORTLET.idFromName(SHORTLET_TENANT_ID)` | Shortlet bookings, payments, operators, units, revenue and `guest_identity_assurance`. |
+
+The gateway routes each table to its owner. Load PLATFORM parents before SHORTLET children; status and verify expose both
+authorities. Ownership and assurance placement follow ADR 0101.
 
 Record every step with its start time, end time, result and operator in the log at the end. Do not write secrets,
 tokens or guest data in the log. Counts and checksums are enough.
@@ -36,9 +45,9 @@ which is why step 10 exists.
 | --- | --- |
 | Staging rehearsal (issue 15) passed with these same steps and checksums matched. | Proves the procedure before production. |
 | Access service token, `OPS_SHARED_SECRET`, `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD` are set on the production Worker (issue 11a). `CF_ACCESS_TEAM_DOMAIN` is the team domain without a scheme. An assertion is accepted only when its `iss` is `https://<that domain>` (F12). | `/_ops` refuses everything otherwise. |
-| The production Durable Object has run its schema migrations. It does this itself on first start (`apps/cloudflare/src/schema.ts`, D3). The verify response's `schemaVersion` must equal the number of migrations in that file (currently 2). | Import refuses with `SCHEMA_NOT_READY` otherwise, and never creates tables. |
-| The production Worker has the `EXPORTS` R2 binding. It holds the cutover marker (issue 16 A). Before the cutover, `GET /_ops/status` reports `"cutoverMarker": "absent"` and `"cutoverCompletedAt": null`. | Without the binding, every import is refused (`CUTOVER_MARKER_UNAVAILABLE`, 503), so nothing is written. The marker is the record that survives a point-in-time restore. |
-| The object holds no bearer-credential rows at step 5. Operator access tokens are issued on the object only after the compare passes (step 5). | The five credential tables are not moved (ADRs 0093, 0086, 0075). The compare checks that the object reports zero rows in each of them (issue 16 B). |
+| Both production Durable Objects have run their own schema migrations (`apps/cloudflare/src/schema.ts`). Verify reports the SHORTLET version at top level and the PLATFORM version under `platform`; each must equal its own migration count. | Each import authority refuses with `SCHEMA_NOT_READY` when its schema is not current. |
+| The production Worker has the `EXPORTS` R2 binding. It holds separate markers under `_ops/cutover/shortlet/` and `_ops/cutover/platform/`. Before cutover, status reports each marker absent and each completion time null. | Without the binding, imports fail closed; markers survive point-in-time restore of either object. |
+| Neither object holds bearer credentials expected to move. Operator access tokens are issued only after both verifies pass. | All six credential/replay tables are excluded (ADRs 0093, 0086, 0075); verify reports counts under the owning authority and they must be zero on both targets. |
 | **Checklist C1:** the value `MAX_STATEMENT_PARAMETERS = 100` in `packages/platform-core/src/data-migration.ts` is verified against the live Cloudflare Durable Object limits page before cutover. It came from a search summary, not the live page. Record the page's date and value in the log. | Chunk sizes and the object's own statement limit depend on it. |
 | **Checklist C2:** the production Node file has no table outside the object's schema. `local_pilot_clock` is a local-development table and must be absent. The export is refused by the object if a table is missing (`UNKNOWN_TABLE`), so a mismatch stops the push rather than losing data. | Export scope is every application table (issue 16, Decisions: export scope). |
 | `SHORTLET_PUBLIC_ORIGIN` is the final origin and the Paystack dashboard's callback and webhook URLs are known. | Needed for step 6. |
@@ -86,10 +95,37 @@ npx tsx scripts/export-node-sqlite.ts --export "<SHORTLET_DB_PATH>" "<EXPORT_DIR
 This writes one `<table>.jsonl` per application table, a `receipts/` folder with one file per receipt (named by its opaque key),
 and `manifest.json`. The manifest holds the row count and SHA-256 per table, and the receipt sizes and SHA-256. It
 prints counts only. The source file is opened read-only. Control tables (`schema_migrations`, `migration_state`) are
-never exported. The five bearer-credential tables are not in the manifest either: `manifest.json` records only each one's source
+never exported. The six bearer-credential/replay tables are not in the manifest either: `manifest.json` records only each one's source
 row count under `excludedTables` (issue 16 B), and no file is written for them.
 
 Record the manifest's SHA-256 (`sha256sum manifest.json`) in the log.
+
+### 2.1 Prepare a pre-split export for the two-object schema
+
+Keep `<EXPORT_DIR>` write-protected as immutable source evidence. Make `<MIGRATION_DIR>` as a separate derived copy and
+record every row-count and checksum change in a transform ledger beside it. Never edit the original export.
+
+Use the export tool to create that derived copy; it preserves the original files and writes a count/checksum-only
+`transform-ledger.json` in the destination:
+
+```bash
+npx tsx scripts/export-node-sqlite.ts --prepare-split "<EXPORT_DIR>" "<MIGRATION_DIR>"
+```
+
+- **Legacy account schema default:** if pre-split `guest_accounts` rows lack `email_revision`, add the target schema's
+  declared default `0` to each derived row and recompute that table's canonical row count and SHA-256. This is a
+  representation change for the new account schema only; it is not evidence for Identity Assurance.
+- **Legacy Identity Assurance:** the pre-split `guest_identity_assurance` schema has no `account_email_revision`, so its
+  rows cannot be bound to the platform account email revision. Omit those rows from the derived import, set the derived
+  assurance table to the canonical empty-table checksum, and record the omitted row count. Do not add revision `0`, treat
+  `verified` as current, or claim source/target checksum equality for those rows. Guests must complete fresh verification.
+- **Credential/replay material:** retain source counts in the transform ledger and exclude all six current credential
+  tables, including `guest_account_email_commands`. No credential table file is imported; guests and operators sign in again.
+- Keep all other source files and counts unchanged. The transformed manifest is the comparison baseline; preserve the
+  original manifest and ledger to account for the intentional differences.
+
+This transform applies when the source schema lacks the revision columns. A new two-object daily export carries the current
+assurance shape and restores those rows normally after its PLATFORM account parents.
 
 ## 3. Receipts to R2
 
@@ -112,37 +148,41 @@ them with `npm exec cf -- r2 objects list --bucket-name "shortlet-pilot-producti
 ## 4. Import
 
 ```bash
-npx tsx scripts/export-node-sqlite.ts --push "<EXPORT_DIR>"
+npx tsx scripts/export-node-sqlite.ts --push "<MIGRATION_DIR>"
 ```
 
-This sends each table's rows to `POST /_ops/import`. Each request holds at most `floor(100 / column count)` rows of that
+For a legacy source, push the transformed `<MIGRATION_DIR>` from section 2.1, retaining `<EXPORT_DIR>` unchanged. The
+gateway routes PLATFORM-owned tables to PLATFORM and shortlet transactions to SHORTLET. Load parents in PLATFORM first
+(accounts before linked principals and claims), followed by remaining PLATFORM tables and then SHORTLET tables; use
+`importOrder()` within each owner. Each request holds at most `floor(100 / column count)` rows of that
 table (D2), and its body stays within the documented 5 MiB chunk bound (`MAX_IMPORT_REQUEST_BYTES`). Each request is one
-transaction on the object. A request with a malformed row is refused whole and nothing from it is written, so the command
-stops at the first refused request. The object refuses with `SCHEMA_NOT_READY` if its schema is not current, and with
-`CUTOVER_COMPLETE` once step 7.1 has run. The object refuses a credential table by name with `EXCLUDED_TABLE` (400), citing ADRs 0093,
+transaction on the owning object. A request with a malformed row is refused whole and nothing from it is written, so the command
+stops at the first refused request. The owning object refuses with `SCHEMA_NOT_READY` if its schema is not current, and with
+`CUTOVER_COMPLETE` once step 7.1 has run. The gateway refuses a credential table by name with `EXCLUDED_TABLE` (400), citing ADRs 0093,
 0086 and 0075, and it refuses every import with `CUTOVER_MARKER_UNAVAILABLE` (503) when the marker cannot be read, so nothing is written.
-Before that, re-running the push is safe: rows are upserted on their primary key
-(D1), and nothing is duplicated. Tables are pushed in manifest order, which lists each parent table before the tables that
-reference it. The object enforces foreign keys, so a child row whose parent is not loaded yet is refused and nothing from that
-request is written.
+Before cutover, re-running the push is safe: rows are upserted on their primary key (D1), and nothing is duplicated. Each
+object enforces its foreign keys, so a child row whose parent is not loaded yet is refused and nothing from that request is written.
 
 ## 5. Verify
 
 ```bash
 npx tsx scripts/export-node-sqlite.ts --pull "<VERIFY_DIR>"
-npx tsx scripts/export-node-sqlite.ts --compare "<EXPORT_DIR>/manifest.json" "<VERIFY_DIR>/verify.json"
+npx tsx scripts/export-node-sqlite.ts --compare "<MIGRATION_DIR>/manifest.json" "<VERIFY_DIR>/verify.json"
 ```
 
-`--pull` reads each table back from the object (read-only) and writes `verify.json` and the table files there. `verify.json`
-holds the application tables with checksums, and the five bearer-credential tables under `excludedTables` with counts only. They
-have no table file, because the object refuses to export them (F4).
+`GET /_ops/import/verify` is the combined verify. Its top-level `tables` and `excludedTables` belong to SHORTLET; nested
+`platform.tables` and `platform.excludedTables` belong to PLATFORM. Reverse export through `GET /_ops/export?table=…` is
+routed to the same owner. Compare every transformed manifest table with its owner's checksum, and compare all six credential
+counts with zero on both targets. Record the assurance omission and account-default transform separately; do not report an
+unqualified full-source match.
 
-`--compare` checks both sides. Each application table is compared by row count and checksum. Each credential table is
+`--compare` checks the transformed manifest's single-object view; confirm both owner maps from the combined verify separately.
+Each application table is compared by row count and checksum. Each credential table is
 compared by count: the Node file's count (`excludedSourceRows`, recorded in the manifest and dropped by design) and the object's
 count (`excludedTargetRows`), which must be zero. The compare must print `match`. A `mismatch` names the tables that differ,
 credential tables included. Stop on a mismatch. Do not switch traffic. Keep `verify.json` with the log. The verify response
-also carries `schemaVersion`, `cutoverCompletedAt` and `cutoverMarker`: record them (expected: the migration count, no
-timestamp, `absent`).
+also carries `schemaVersion` and the nested PLATFORM status; record both migration counts and both pre-cutover marker/time
+pairs (`absent`/null).
 
 ## 6. Paystack callback and webhook URLs
 
@@ -156,24 +196,26 @@ confirm which environment is being changed before saving.
 
 ## 7. Complete the cutover flag, then switch DNS
 
-**7.1 Set the one-way cutover.** This is the point after which the object accepts no migration import (D1). Run it
+**7.1 Set the one-way cutover.** This is the point after which either object accepts no migration import (D1). Run it
 only after steps 5 and 6 have passed:
 
 ```bash
 npx tsx scripts/export-node-sqlite.ts --cutover-complete
 ```
 
-The route writes the cutover marker to the `EXPORTS` bucket first (issue 16 A), at `_ops/cutover/<object>.json`, outside the
-object's storage. Then it sets the object's flag. It prints the timestamp. Failure is fail closed:
+The authenticated gateway completes both authorities independently. Each writes its marker first, then its SQL flag:
+`_ops/cutover/shortlet/<SHORTLET object id>.json` and `_ops/cutover/platform/<PLATFORM object id>.json`. The response
+contains `cutoverCompletedAt` and `platformCutoverCompletedAt`; preserve both timestamps. If either authority fails, do not
+switch DNS. Failure is fail closed:
 
 - A failed marker write returns `503 CUTOVER_MARKER_UNAVAILABLE` and records nothing. Fix the binding, then run the step again.
 - A failure after the marker returns `503 CUTOVER_NOT_RECORDED`. Run the step again to finish the flag. Imports are refused
   in the meantime, because the marker is set.
 
-Calling it again returns the first timestamp. Then `GET /_ops/status` must show that same `cutoverCompletedAt` and
-`"cutoverMarker": "present"`. No route or script in this repository clears the marker or the flag.
-A point-in-time restore rewinds the object's storage, including the flag, but not the marker. The object re-asserts the flag
-from the marker when it starts and before any import, so no manual flag step follows a restore. The restore runbook
+Calling it again returns both first timestamps. Then `GET /_ops/status` must show both values and both markers as `present`.
+No route or script in this repository clears either marker or flag. A point-in-time restore rewinds one object's storage,
+including its flag, but not its kind-specific marker. Each object re-asserts its own flag from that marker when it starts and
+before any import, so no manual flag step follows a restore. The restore runbook
 (section 3) checks the status instead. Record the time in the log. `ROLLBACK_WINDOW` starts here.
 
 **7.2 Switch DNS.** Point the public hostname at the Cloudflare Worker route. The route and the TTL are **Needs user**.
@@ -215,7 +257,7 @@ R3. **Find the rows added, changed or deleted after cutover.** The export files 
     LC_ALL=C comm -23 "<TMP>/before.txt" "<TMP>/after.txt" > "<REMOVED_DIR>/<table>.jsonl" # deleted or changed (old value)
     ```
 
-    Every table gets one delta file, empty if nothing changed, except the five bearer-credential tables, which are not pulled (step 5). A non-empty `<REMOVED_DIR>` file is a row the object no
+    Every table gets one delta file, empty if nothing changed, except the six bearer-credential/replay tables, which are not pulled (step 5). A non-empty `<REMOVED_DIR>` file is a row the object no
     longer has. **Known drift risk:** the import is upsert-only and has no delete path (D1), so R5 cannot remove a row from
     Node. Any non-empty removed set stops the rollback until a person has reviewed each row and recorded the decision in
     the log. The removed set is only as complete as the cutover export: keep `<EXPORT_DIR>` with the log. The risk grows with
@@ -238,8 +280,9 @@ R4. **Find the receipts written or removed after cutover.** Keys in `<POST_DIR>`
     the delta file), and a `receipts` entry for each new receipt (`objectKey`, `contentType`, `size`, `sha256`, with the
     SHA-256 from `sha256sum`). `movedTables` is `["receipt_blobs"]`.
 
-R5. **Apply the delta to the frozen Node file.** Use the copy from step 1, not the original file's current state. The file
-    must be migrated first (D3). The migration creates only the tables that are missing, and it is idempotent on a migrated file:
+R5. **Apply the delta to the frozen Node files.** Use the copy from step 1, not the original file's current state. Migrate
+    SHORTLET at `<RESTORED_DB_PATH>` and PLATFORM at `<RESTORED_DB_PATH>.platform.sqlite`; the tool applies each owner's
+    production migration list to its own file, creating only missing tables and remaining idempotent (D3):
 
     ```bash
     npx tsx scripts/export-node-sqlite.ts --migrate "<RESTORED_DB_PATH>"
@@ -247,7 +290,7 @@ R5. **Apply the delta to the frozen Node file.** Use the copy from step 1, not t
     ```
 
     The import upserts changed rows on their primary key and writes the receipts into the Node blob table. It checks
-    each receipt against its SHA-256 first. It never deletes. The five bearer-credential tables are skipped, so no session or
+    each receipt against its SHA-256 first. It never deletes. The six bearer-credential/replay tables are skipped, so no session or
     sign-in challenge is written back to Node (F4): sessions are re-established in Node after a rollback.
 
 R6. **Restore the Node pilot.** Start it against `<RESTORED_DB_PATH>`. Point DNS back at the Node origin. Restore the
@@ -262,12 +305,12 @@ R7. **Reconcile money.** For every Paystack transaction that arrived after the s
 Run this only when `ROLLBACK_WINDOW` has closed. It finds drift the rollback comparison (R3 and R4) cannot see: deletes
 made after cutover, and changes in the tables the daily export covers.
 
-**What the daily export is (issue 12a, widened by issue 16, `apps/cloudflare/src/do-export.ts`).** The object's alarm writes one
-file per table to the private `EXPORTS` bucket (`shortlet-pilot-production-exports`), at the key `YYYY-MM-DD/<table>.jsonl`. The
+**What the daily export is (issue 12a, widened by issue 16, `apps/cloudflare/src/do-export.ts`).** Each authority's alarm writes its
+owned files to the private `EXPORTS` bucket (`shortlet-pilot-production-exports`), at keys `YYYY-MM-DD/<table>.jsonl`. The
 date is the Africa/Lagos day (ADR 0078). Each file holds one table's rows as read during that alarm, in pages: one line per row, in rowid order, in the table's
 own column order, encoded as the import route reads it (a BLOB is `{"$bytes": ...}`). The tables are read one after another, so
 the day's files are per-table snapshots, not one point-in-time snapshot across tables (F6). A table that does not exist in the object gets
-an empty file. The export covers **every application table except the five bearer-credential tables in `DAILY_EXPORT_EXCLUDED`**
+an empty file. The union of both exports covers **every application table except the six bearer-credential/replay tables in `DAILY_EXPORT_EXCLUDED`**
 (issue 16, delegated decision of 10 Oct 2026). It has no checksums, no manifest and no timestamp. It is written once per Lagos day,
 at the first alarm of that day, so rows written after that alarm are not in it. The bucket keeps 400 days by default
 (`SHORTLET_EXPORT_RETENTION_DAYS`) (`SHORTLET_EXPORT_RETENTION_DAYS`).
@@ -320,12 +363,13 @@ at the first alarm of that day, so rows written after that alarm are not in it. 
 6. **Record.** Log every discrepancy and every count. Any discrepancy means the window did not close:
    `ROLLBACK_WINDOW` extends, and this step runs again after the next full payout cycle.
 
-7. **Coverage (decided, issue 16 and Needs user item 6).** This step reconciles every table in `EXPORT_TABLES`. The five tables
+7. **Coverage (decided, issue 16 and Needs user item 6).** This step reconciles every table in `EXPORT_TABLES`. The six tables
    it does not cover are the bearer-credential tables in `DAILY_EXPORT_EXCLUDED` (`apps/cloudflare/src/do-export.ts`):
-   `guest_account_sessions`, `guest_session_bindings`, `guest_sign_in_codes`, `operator_access_tokens` and `operator_sessions`.
+    `guest_account_sessions`, `guest_session_bindings`, `guest_sign_in_codes`, `guest_account_email_commands`,
+    `operator_access_tokens` and `operator_sessions`.
    They hold no evidence, and a session or challenge is not reconciled after the window. The restore runbook
    (`docs/runbooks/cloudflare-restore.md`, section 2) says what a rebuild cannot restore. The closing record for the window states
-   that these five were not compared.
+    that these six were not compared.
 
 ## Checklist before cutover
 
@@ -336,7 +380,7 @@ at the first alarm of that day, so rows written after that alarm are not in it. 
 - [ ] C5: the `cf r2 objects list` flags confirmed with `--help`.
 - [ ] C6: the data-protection gates (ADR 0095) cleared. **Needs user.**
 - [ ] C7: the `EXPORTS` daily-export download method (step 10.1) confirmed with a synthetic export file on staging.
-- [ ] C8: `GET /_ops/status` before the cutover reports `cutoverMarker: "absent"` and `cutoverCompletedAt: null`, and the `EXPORTS` binding is confirmed (issue 16 A).
+- [ ] C8: `GET /_ops/status` before cutover reports top-level SHORTLET and nested PLATFORM markers `absent` and completion timestamps `null`; confirm the `EXPORTS` binding (issue 16 A).
 - [ ] C9: the compare at step 5 printed `match`, with `excludedTargetRows=0` (issue 16 B).
 - [ ] C11: `npm ci`, then `npm run worker:build:production` and `npm run worker:deploy:dry-run:production` pass on a clean checkout of the
   release commit, with no account login and no upload (issue 16 C; `docs/pilot-deployment.md`).
@@ -351,8 +395,8 @@ These need human facts or decisions. None is decided in this runbook.
 3. The freeze mechanism at the edge: a maintenance page or a Worker response, and its wording. The process stop in step 1 applies either way.
 4. The Worker route, the DNS record and the TTL (step 7.2).
 5. The go or no-go for cutover, and the sign-off of this runbook (issue 16 AC4).
-6. Daily export coverage: **decided** (issue 16, delegated 10 Oct 2026). Every application table except the five bearer-credential
-   tables is in the daily export (step 10.7). The five exclusions and their reasons are for review at the sign-off in item 5.
+6. Daily export coverage: **decided** (issue 16, delegated 10 Oct 2026). Every application table except the six bearer-credential/replay
+   tables is in the daily export (step 10.7). The six exclusions and their reasons are for review at the sign-off in item 5.
 7. The cutover and sign-in communication (checklist C10): the wording and the channel for telling guests and operators that they sign
    in again. **Decided:** the sign-in is required, because sessions and codes are not moved (issue 16 B).
 8. Rebuilds after a cutover (restore runbook, section 2): a rebuild from export cannot load into a tenant whose cutover marker is set,
