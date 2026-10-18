@@ -5,6 +5,9 @@ import { importOrder, importRequestChunks } from "../../../packages/platform-cor
 import { SqliteAuditLog } from "../../../packages/platform-core/src/sqlite-audit-log.js";
 import { DurableObjectSqlDatabase } from "../src/do-sql-database.js";
 import { COMMERCE_EXPORT_TABLES, EXPORT_TABLES, PLATFORM_EXPORT_TABLES, SHORTLET_EXPORT_TABLES, exportObjectKey, exportTable, type DailyExportDependencies } from "../src/do-export.js";
+import { createCommercePack } from "../../../domains/commerce/src/index.js";
+import { parseCreateOrderInput } from "../../../domains/commerce/src/order.js";
+import { checkoutPayload, seedCommerceFixture, type CommerceFixtureIds } from "./commerce-test-helpers.js";
 import { currentAssuranceForAccount, SqliteGuestIdentityAssurance } from "../../../domains/shortlet/src/guest-identity-assurance.js";
 import { ORIGIN, accessToken, opsHeaders, provisionTenant } from "./ops-test-helpers.js";
 
@@ -83,6 +86,16 @@ test("16 restore: a day's export loaded parent-first into a new object exports t
   const sourcePlatform = freshPlatformStub("restore-source-platform");
   const sourceCommerce = freshCommerceStub("restore-source-commerce");
   await provisionTenant(source);
+  // Issue 24 decision 7 (closes the restore gap): an export that holds a merchant order restores. The export carries the
+  // payment reference hash, never the raw reference, and a retry against the restored object finds the same order.
+  const orderClock = () => new Date("2031-02-01T00:00:00Z");
+  const orderIds: CommerceFixtureIds = { merchantId: "restore-merchant", storeId: "restore-store", productId: "restore-product", offerId: "restore-offer", zoneId: "restore-zone" };
+  const restoredPaymentReference = "restore-raw-reference";
+  const sourceOrderId = await runInDurableObject(sourceCommerce, (_instance, ctx) => {
+    const database = new DurableObjectSqlDatabase(ctx.storage);
+    seedCommerceFixture(database, { ...orderIds, priceKobo: 1000, stock: 3, deliveryFeeKobo: 0, clock: orderClock });
+    return createCommercePack({ database, clock: orderClock }).orders.createOrder(parseCreateOrderInput(checkoutPayload(orderIds, { submittedTotalKobo: 1000, paymentReference: restoredPaymentReference }))).id;
+  });
   await runInDurableObject(sourcePlatform, (_instance, ctx) => {
     const database = new DurableObjectSqlDatabase(ctx.storage);
     new SqliteAuditLog(database).record({ action: "restore-probe", operatorId: "op-restore" });
@@ -117,6 +130,12 @@ test("16 restore: a day's export loaded parent-first into a new object exports t
     expect(await dayLines(DAY_TWO, table), `${table} after restore`).toEqual(await dayLines(DAY_ONE, table));
   }
   expect(await countRows(targetPlatform, "guest_account_principals")).toBe(1);
+  // The restored object holds the order, the export never held the raw reference, and a retry finds the same order by hash.
+  expect(await countRows(targetCommerce, "merchant_orders")).toBe(1);
+  expect((await dayLines(DAY_ONE, "merchant_orders")).join("\n")).not.toContain(restoredPaymentReference);
+  const restoredOrderId = await runInDurableObject(targetCommerce, (_instance, ctx) => createCommercePack({ database: new DurableObjectSqlDatabase(ctx.storage), clock: orderClock })
+    .orders.createOrder(parseCreateOrderInput(checkoutPayload(orderIds, { submittedTotalKobo: 1000, paymentReference: restoredPaymentReference }))).id);
+  expect(restoredOrderId).toBe(sourceOrderId);
 }, 30_000);
 
 test("16 restore: loading every day oldest first keeps a row deleted after the older day, so only the newest day is loaded", async () => {

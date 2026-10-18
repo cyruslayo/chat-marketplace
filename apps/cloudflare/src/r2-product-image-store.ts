@@ -5,6 +5,33 @@ import { InteractionSecurityEngine } from "../../../packages/platform-core/src/i
 export const PRODUCT_IMAGE_MIME_TYPES: readonly string[] = ["image/jpeg", "image/png", "image/webp"];
 export const PRODUCT_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 
+/**
+ * Issue 24 decision 8: magic-byte signatures. The declared MIME type must match the file's leading bytes, so a renamed or
+ * mislabelled file is refused. A type without a signature here is refused too (fail closed).
+ */
+export const JPEG_SIGNATURE: readonly number[] = [0xff, 0xd8, 0xff];
+export const PNG_SIGNATURE: readonly number[] = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+/** WebP is a RIFF container: "RIFF" at offset 0, then four size bytes, then "WEBP" at offset 8. */
+export const WEBP_RIFF_SIGNATURE: readonly number[] = [0x52, 0x49, 0x46, 0x46];
+export const WEBP_FORM_SIGNATURE: readonly number[] = [0x57, 0x45, 0x42, 0x50];
+const WEBP_FORM_OFFSET = 8;
+const WEBP_MIN_BYTES = WEBP_FORM_OFFSET + WEBP_FORM_SIGNATURE.length;
+
+function startsWith(bytes: Uint8Array, signature: readonly number[], offset = 0): boolean {
+  if (bytes.byteLength < offset + signature.length) return false;
+  return signature.every((byte, index) => bytes[offset + index] === byte);
+}
+
+/** True only when the leading bytes match the signature for the declared MIME type. */
+export function bytesMatchMimeType(bytes: Uint8Array, mimeType: string): boolean {
+  switch (mimeType) {
+    case "image/jpeg": return startsWith(bytes, JPEG_SIGNATURE);
+    case "image/png": return startsWith(bytes, PNG_SIGNATURE);
+    case "image/webp": return bytes.byteLength >= WEBP_MIN_BYTES && startsWith(bytes, WEBP_RIFF_SIGNATURE) && startsWith(bytes, WEBP_FORM_SIGNATURE, WEBP_FORM_OFFSET);
+    default: return false;
+  }
+}
+
 export interface ProductImagePolicy {
   readonly allowedMimeTypes: readonly string[];
   readonly maxSizeBytes: number;
@@ -24,6 +51,7 @@ export class R2ProductImageStore {
       { filename: "product-image", mimeType: contentType, sizeBytes: bytes.byteLength },
       { allowedMimeTypes: [...this.policy.allowedMimeTypes], maxSizeBytes: this.policy.maxSizeBytes },
     );
+    if (!bytesMatchMimeType(bytes, contentType)) throw new Error("Image bytes do not match the declared content type");
     const key = `product-images/${crypto.randomUUID()}`;
     await this.bucket.put(key, bytes, { httpMetadata: { contentType } });
     return key;

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { env, SELF, runInDurableObject } from "cloudflare:test";
 import { expect, test } from "vitest";
 import { createCommercePack } from "../../../domains/commerce/src/index.js";
@@ -53,7 +54,7 @@ test("24 AC1: commerce data lives only in the commerce DO after order traffic, d
   expect(commerceTables.some(table => PLATFORM_EXPORT_TABLES.includes(table as typeof PLATFORM_EXPORT_TABLES[number]))).toBe(false);
 });
 
-test("24 AC1: commerce export omits merchant_orders.payment_reference and its value", async () => {
+test("24 AC1 / decision 7: commerce export carries only the payment reference hash, never the raw reference", async () => {
   const tenantId = `commerce-export-${crypto.randomUUID()}`;
   const stub = isolatedCommerce(tenantId);
   const clock = () => new Date("2026-10-18T00:00:00Z");
@@ -74,9 +75,11 @@ test("24 AC1: commerce export omits merchant_orders.payment_reference and its va
   try {
     const rows = text.split("\n").filter(line => line !== "");
     expect(rows).toHaveLength(1);
-    expect(text).not.toContain("payment_reference");
     expect(text).not.toContain("export-secret-ref");
-    expect(JSON.parse(rows[0]!)).toHaveProperty("public_code");
+    const row = JSON.parse(rows[0]!) as Record<string, unknown>;
+    expect(row).toHaveProperty("public_code");
+    expect(row).not.toHaveProperty("payment_reference");
+    expect(row.payment_reference_hash).toBe(createHash("sha256").update("export-secret-ref").digest("hex"));
   } finally {
     await env.EXPORTS.delete(exportObjectKey(date, "merchant_orders"));
   }
@@ -161,6 +164,17 @@ test("24 AC2: internal checkout with a submitted total that does not match the s
   expect(await runInDurableObject(stub, (_instance, ctx) => offerStock(new DurableObjectSqlDatabase(ctx.storage), CHECKOUT_IDS.offerId))).toBe(1);
 });
 
+test("issue 24 decision 11: internal checkout for a store whose merchant is not verified is refused with ORDER_REJECTED and reserves nothing", async () => {
+  const { stub, tenantId } = await seededCheckoutCommerce("unverified");
+  await runInDurableObject(stub, (_instance, ctx) => {
+    createCommercePack({ database: new DurableObjectSqlDatabase(ctx.storage), clock: () => new Date() }).directory.updateMerchantStatus(CHECKOUT_IDS.merchantId, "suspended");
+  });
+  const refused = await internalCheckout(stub, tenantId, checkoutPayload(CHECKOUT_IDS, { submittedTotalKobo: 1000, paymentReference: "unverified-ref" }));
+  expect(refused.status).toBe(400);
+  expect(await refused.json()).toMatchObject({ ok: false, code: "ORDER_REJECTED" });
+  expect(await runInDurableObject(stub, (_instance, ctx) => offerStock(new DurableObjectSqlDatabase(ctx.storage), CHECKOUT_IDS.offerId))).toBe(1);
+});
+
 test("24 AC2 refusal: internal checkout for an unavailable store, zone or offer, or insufficient stock is refused with ORDER_REJECTED and reserves nothing", async () => {
   const { stub, tenantId } = await seededCheckoutCommerce("domain-rules");
   const refusals: Array<[string, Record<string, unknown>]> = [
@@ -212,17 +226,25 @@ test("24 AC2 refusal: checkout with malformed items, offerId, paymentReference o
   expect(state).toEqual({ orders: 0, stock: 1 });
 });
 
+/** Minimal files that carry each type's magic bytes (issue 24 decision 8). */
+const JPEG_FILE = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+const PNG_FILE = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d]);
+const WEBP_FILE = Uint8Array.from([0x52, 0x49, 0x46, 0x46, 0x10, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38, 0x20]);
+
 test("24 AC2: product images store a valid JPEG, PNG or WebP privately and refuse an oversize or disallowed upload", async () => {
   const store = new R2ProductImageStore(env.PRODUCT_IMAGES);
-  const bytes = new Uint8Array([1, 2, 3, 4]);
+  const bytes = PNG_FILE;
   const key = await store.put(bytes, "image/png");
   expect(key).toMatch(/^product-images\/[\da-f-]+$/);
   expect(await store.get(key)).toEqual({ bytes, contentType: "image/png" });
-  for (const contentType of ["image/jpeg", "image/png", "image/webp"]) {
-    const accepted = await store.put(bytes, contentType);
-    expect(await store.get(accepted), contentType).toEqual({ bytes, contentType });
+  for (const [contentType, file] of [["image/jpeg", JPEG_FILE], ["image/png", PNG_FILE], ["image/webp", WEBP_FILE]] as const) {
+    const accepted = await store.put(file, contentType);
+    expect(await store.get(accepted), contentType).toEqual({ bytes: file, contentType });
     await store.delete(accepted);
   }
+  // Decision 8: the declared type must match the magic bytes, so mislabelled and short files are refused.
+  await expect(store.put(JPEG_FILE, "image/png")).rejects.toThrow("do not match");
+  await expect(store.put(new Uint8Array([1, 2, 3, 4]), "image/webp")).rejects.toThrow("do not match");
   expect(await store.get("https://example.test/public.png")).toBeNull();
   await expect(store.put(new Uint8Array(PRODUCT_IMAGE_MAX_BYTES + 1), "image/png")).rejects.toThrow("size exceeds maximum");
   await expect(store.put(bytes, "image/gif")).rejects.toThrow("disallowed");
@@ -240,7 +262,8 @@ test("24 AC1: authenticated Shortlet ops route commerce import/export/verify/sta
   }));
   const status = await ops("GET", "/_ops/status");
   expect(status.status).toBe(200);
-  expect((await status.json() as { commerce: { expectedSchemaVersion: number } }).commerce.expectedSchemaVersion).toBe(5);
+  // Migrations 1 to 5 (the pack's, with the hashed payment reference at 5) plus the cutover flag at 6.
+  expect((await status.json() as { commerce: { expectedSchemaVersion: number } }).commerce.expectedSchemaVersion).toBe(6);
   const row = { id: "commerce-ops-merchant", name: "Merchant", status: "verified", created_at: "2026-10-18", updated_at: "2026-10-18" };
   const imported = await ops("POST", "/_ops/import", { table: "merchants", rows: [row] });
   expect(imported.status).toBe(200);

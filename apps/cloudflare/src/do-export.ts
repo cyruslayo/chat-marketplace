@@ -98,9 +98,10 @@ export const DAILY_EXPORT_EXCLUDED: Readonly<Record<string, string>> = CREDENTIA
 
 const PROJECTIONS: Readonly<Record<string, string>> = {
   manual_transfer_receipts: "receipt_id, transfer_id, content_type, object_key, size_bytes",
-  // Issue 24 decision (ADR 0096 not amended): the payment reference is never exported. Phone and address stay in the
-  // export and remain behind the ADR 0095 data-protection gates.
-  merchant_orders: "id, store_id, public_code, customer_name, customer_phone, customer_instagram, items_json, subtotal_kobo, shipping_fee_kobo, total_kobo, status, shipping_address_json, delivery_zone_id, delivery_city, delivery_zone_name, delivery_provider, delivery_estimate, payment_verified_at, payment_event_id, inventory_restocked, created_at, updated_at",
+  // Issue 24 decision 7 (ADR 0096 not amended): the raw payment reference is not a column and is never exported. The export
+  // carries only payment_reference_hash, the SHA-256 of the trimmed reference, which a restore needs for idempotency. Phone
+  // and address stay in the export and remain behind the ADR 0095 data-protection gates.
+  merchant_orders: "id, store_id, public_code, customer_name, customer_phone, customer_instagram, items_json, subtotal_kobo, shipping_fee_kobo, total_kobo, status, shipping_address_json, delivery_zone_id, delivery_city, delivery_zone_name, delivery_provider, delivery_estimate, payment_reference_hash, payment_verified_at, payment_event_id, inventory_restocked, created_at, updated_at",
 };
 
 /** A page keeps each read well inside the Durable Object limits. Pages are keyed on rowid, so no read rescans earlier rows. */

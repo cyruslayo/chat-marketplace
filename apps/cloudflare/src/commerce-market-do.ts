@@ -5,7 +5,7 @@ import { applySchemaMigrations } from "../../../packages/platform-core/src/schem
 import { checksumTables } from "../../../packages/platform-core/src/data-migration.js";
 import { schemaVersion } from "../../../packages/platform-core/src/schema-migrations.js";
 import { DurableObjectSqlDatabase } from "./do-sql-database.js";
-import { COMMERCE_SCHEMA_MIGRATIONS_WITH_CUTOVER, COMMERCE_SCHEMA_VERSION } from "./schema.js";
+import { commerceMigrationsWithCutover } from "./schema.js";
 import type { CloudflareEnv } from "./cloudflare-config.js";
 import { lagosDate, runDailyExport } from "./do-export.js";
 import { loadExportConfiguration } from "./cloudflare-config.js";
@@ -31,11 +31,17 @@ function hasExactKeys(input: Readonly<Record<string, unknown>>, keys: readonly s
 /** Commerce transaction authority. It never shares SQL or a synchronous transaction with another DO (ADR 0099/0101). */
 export class CommerceMarket extends DurableObject<CloudflareEnv> {
   #pack: ReturnType<typeof createCommercePack> | null = null;
+  /** The expected schema version: the pack's migrations plus the cutover flag (set once, before any request is served). */
+  #schemaVersion = 0;
   constructor(ctx: DurableObjectState, env: CloudflareEnv) {
     super(ctx, env);
     void ctx.blockConcurrencyWhile(async () => {
       const database = new DurableObjectSqlDatabase(ctx.storage);
-      applySchemaMigrations(database, COMMERCE_SCHEMA_MIGRATIONS_WITH_CUTOVER, new Date().toISOString());
+      const pack = createCommercePack({ database, clock: () => new Date() });
+      this.#pack = pack;
+      const migrations = commerceMigrationsWithCutover(pack.migrations);
+      this.#schemaVersion = migrations.length;
+      applySchemaMigrations(database, migrations, new Date().toISOString());
       try { await reconcileCutover(database, createCutoverMarkerStore(env.EXPORTS, ctx.id.toString(), "commerce")); } catch {
         // Import remains fail-closed if the marker cannot be reconciled. Only the fixed code is logged, never the error or references.
         console.error("COMMERCE_CUTOVER_RECONCILE_FAILED");
@@ -96,19 +102,19 @@ export class CommerceMarket extends DurableObject<CloudflareEnv> {
     const marker = createCutoverMarkerStore(this.env.EXPORTS, this.ctx.id.toString(), "commerce");
     try {
       if (operation === "import" && typeof input.table === "string" && Array.isArray(input.rows) && hasExactKeys(input, OPS_KEYS.import)) {
-        assertSchemaCurrent(database, COMMERCE_SCHEMA_VERSION);
+        assertSchemaCurrent(database, this.#schemaVersion);
         await assertCutoverOpenForImport(database, marker);
-        return Response.json({ ok: true, ...importBatch(database, input.table, input.rows, COMMERCE_SCHEMA_VERSION, new Date()) });
+        return Response.json({ ok: true, ...importBatch(database, input.table, input.rows, this.#schemaVersion, new Date()) });
       }
       if (operation === "export" && typeof input.table === "string" && hasExactKeys(input, OPS_KEYS.export)) return Response.json({ ok: true, ...(await exportTable(database, input.table)) });
       if ((operation === "verify" || operation === "status") && hasExactKeys(input, OPS_KEYS.metadata)) {
         const cutover = await cutoverStatus(database, marker);
-        return Response.json({ ok: true, schemaVersion: schemaVersion(database), expectedSchemaVersion: COMMERCE_SCHEMA_VERSION,
+        return Response.json({ ok: true, schemaVersion: schemaVersion(database), expectedSchemaVersion: this.#schemaVersion,
           ...(operation === "verify" ? { tables: await checksumTables(database), excludedTables: {} } : {}),
           cutoverCompletedAt: cutover.completedAt, cutoverMarker: cutover.marker });
       }
       if (operation === "cutover" && hasExactKeys(input, OPS_KEYS.cutover)) {
-        assertSchemaCurrent(database, COMMERCE_SCHEMA_VERSION);
+        assertSchemaCurrent(database, this.#schemaVersion);
         return Response.json({ ok: true, cutoverCompletedAt: await completeCutoverWithMarker(database, marker, new Date().toISOString()) });
       }
       return new Response("Not found", { status: 404 });

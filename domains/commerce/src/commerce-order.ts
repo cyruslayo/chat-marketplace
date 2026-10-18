@@ -1,5 +1,6 @@
+import { createHash } from "node:crypto";
 import type { SqlDatabase, SqlRow } from "../../../packages/platform-core/src/sql-database.js";
-import { MERCHANT_ORDER_SCHEMA } from "./commerce-schema.js";
+import { MERCHANT_ORDER_HASHED_SCHEMA } from "./commerce-schema.js";
 import {
   NEXT_ORDER_STATUSES,
   isMerchantOrderStatus,
@@ -31,7 +32,6 @@ function readOrder(row: SqlRow): MerchantOrder {
       deliveryZoneName: row.delivery_zone_name,
       deliveryProvider: row.delivery_provider,
       deliveryEstimate: row.delivery_estimate,
-      paymentReference: row.payment_reference,
       paymentVerifiedAt: row.payment_verified_at,
       paymentEventId: row.payment_event_id,
       createdAt: row.created_at,
@@ -45,9 +45,17 @@ function readOrder(row: SqlRow): MerchantOrder {
  * The Merchant Order repository: port of instastore `create_store_order` and `set_order_status`
  * (0017_payment_verification_fact.sql) onto the commerce Product/Offer/Variant model.
  */
+/**
+ * Issue 24 decision 7: the idempotency key is the SHA-256 of the trimmed payment reference (the normalisation). The raw
+ * reference is used only to compute it and is never written, returned or logged.
+ */
+export function hashPaymentReference(paymentReference: string): string {
+  return createHash("sha256").update(paymentReference.trim()).digest("hex");
+}
+
 export class CommerceOrders {
   constructor(private readonly database: SqlDatabase, private readonly clock: () => Date) {
-    database.exec(MERCHANT_ORDER_SCHEMA);
+    database.exec(MERCHANT_ORDER_HASHED_SCHEMA);
   }
 
   /**
@@ -61,10 +69,11 @@ export class CommerceOrders {
   createOrder(input: CreateOrderInput): MerchantOrder {
     const normalizedPhone = this.#requirePhone(input);
 
-    // Idempotency on the payment reference, before any stock mutation.
+    // Idempotency on the payment reference hash, before any stock mutation.
+    const paymentReferenceHash = hashPaymentReference(input.paymentReference);
     const existing = this.database
-      .prepare("SELECT * FROM merchant_orders WHERE payment_reference = $paymentReference")
-      .get({ $paymentReference: input.paymentReference });
+      .prepare("SELECT * FROM merchant_orders WHERE payment_reference_hash = $paymentReferenceHash")
+      .get({ $paymentReferenceHash: paymentReferenceHash });
     if (existing) {
       if (String(existing.customer_phone) === normalizedPhone) return readOrder(existing);
       throw new Error("This payment reference has already been used.");
@@ -78,12 +87,12 @@ export class CommerceOrders {
              id, store_id, public_code, customer_name, customer_phone, customer_instagram,
              items_json, subtotal_kobo, shipping_fee_kobo, total_kobo, status, shipping_address_json,
              delivery_zone_id, delivery_city, delivery_zone_name, delivery_provider, delivery_estimate,
-             payment_reference, created_at, updated_at
+             payment_reference_hash, created_at, updated_at
            ) VALUES (
              $id, $storeId, $publicCode, $customerName, $customerPhone, $customerInstagram,
              $itemsJson, $subtotalKobo, $shippingFeeKobo, $totalKobo, $status, $shippingAddressJson,
              $deliveryZoneId, $deliveryCity, $deliveryZoneName, $deliveryProvider, $deliveryEstimate,
-             $paymentReference, $createdAt, $updatedAt
+             $paymentReferenceHash, $createdAt, $updatedAt
            )`,
         )
         .run({
@@ -104,7 +113,7 @@ export class CommerceOrders {
           $deliveryZoneName: order.deliveryZoneName ?? null,
           $deliveryProvider: order.deliveryProvider ?? null,
           $deliveryEstimate: order.deliveryEstimate ?? null,
-          $paymentReference: order.paymentReference,
+          $paymentReferenceHash: paymentReferenceHash,
           $createdAt: order.createdAt,
           $updatedAt: order.updatedAt,
         });
@@ -170,8 +179,15 @@ export class CommerceOrders {
 
   /** Shared checkout rules. Stock is decremented only when `reserveStock` is true, so a quote never mutates stock. */
   #buildOrder(input: CreateOrderInput, normalizedPhone: string, reserveStock: boolean): MerchantOrder {
-    const store = this.database.prepare("SELECT id, status FROM stores WHERE id = $id").get({ $id: input.storeId });
-    if (!store || store.status !== "active") throw new Error("The store is unavailable.");
+    // ADR 0100 / ADR 0001: a store takes orders only while it is active AND its merchant is verified, the same
+    // visibility rule the catalogue and directory apply. A refusal uses the generic message so it reveals no merchant state.
+    const store = this.database
+      .prepare(
+        `SELECT s.id, s.status AS store_status, m.status AS merchant_status
+         FROM stores s JOIN merchants m ON m.id = s.merchant_id WHERE s.id = $id`,
+      )
+      .get({ $id: input.storeId });
+    if (!store || store.store_status !== "active" || store.merchant_status !== "verified") throw new Error("The store is unavailable.");
 
     const zone = this.database.prepare("SELECT * FROM delivery_zones WHERE id = $id").get({ $id: input.deliveryZoneId });
     if (!zone) throw new Error("The delivery zone is unavailable.");
@@ -263,7 +279,6 @@ export class CommerceOrders {
       deliveryZoneName: zone.name === null || zone.name === undefined ? undefined : String(zone.name),
       deliveryProvider: zone.provider === null || zone.provider === undefined ? undefined : String(zone.provider),
       deliveryEstimate: zone.estimate === null || zone.estimate === undefined ? undefined : String(zone.estimate),
-      paymentReference: input.paymentReference,
       createdAt: now,
       updatedAt: now,
     };

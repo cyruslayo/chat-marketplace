@@ -23,7 +23,6 @@ import { GUEST_ACCOUNT_SCHEMA } from "../../../packages/platform-core/src/accoun
 import { GUEST_ACCOUNT_LINK_SCHEMA } from "../../../packages/platform-core/src/accounts/links.js";
 import { GUEST_CONTACT_SCHEMA } from "../../../packages/platform-core/src/accounts/contact.js";
 import { THREAD_SESSION_SCHEMA } from "../../../domains/shortlet/src/index.js";
-import { commerceSchemaMigrations } from "../../../domains/commerce/src/index.js";
 
 /**
  * Slice 16 / D3: the Durable Object's schema, as ordered migrations. The object applies them on startup
@@ -99,10 +98,11 @@ export const PLATFORM_SCHEMA_MIGRATIONS: readonly SchemaMigration[] = [
 
 export const PLATFORM_SCHEMA_VERSION = PLATFORM_SCHEMA_MIGRATIONS.length;
 
-/** ADR 0101: CommerceMarket has its own migration ledger and owns every commerce transaction table. */
-export const COMMERCE_SCHEMA_MIGRATIONS_WITH_CUTOVER: readonly SchemaMigration[] = [
-  ...commerceSchemaMigrations,
-  { version: 5, name: "one-way commerce cutover flag", statements: [CUTOVER_STATE_DDL] },
-];
-
-export const COMMERCE_SCHEMA_VERSION = COMMERCE_SCHEMA_MIGRATIONS_WITH_CUTOVER.length;
+/**
+ * ADR 0101: CommerceMarket has its own migration ledger and owns every commerce transaction table. The domain pack's
+ * migrations arrive from `createCommercePack(...).migrations` (ADR 0099: the domain façade exports only the pack), and the
+ * cutover flag is appended after them, so its version follows the pack's migration count.
+ */
+export function commerceMigrationsWithCutover(packMigrations: readonly SchemaMigration[]): readonly SchemaMigration[] {
+  return [...packMigrations, { version: packMigrations.length + 1, name: "one-way commerce cutover flag", statements: [CUTOVER_STATE_DDL] }];
+}

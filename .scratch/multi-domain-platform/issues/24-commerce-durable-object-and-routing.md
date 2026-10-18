@@ -65,3 +65,26 @@ Recorded from the user's answers to the open review questions. Status is unchang
 - **Still open:** the AC2 "product images in R2 wired through the DO" part, since no upload API exists yet. Image content sniffing is not in place: the store checks the declared MIME type and size only.
 - **Still open (user decision pending):** the restore path for `payment_reference`. The export omits the column, which is NOT NULL and UNIQUE, so the restore runbook needs a follow-up before orders go live. Not changed in this slice.
 - **Test changes to shared fixtures (AC3):** the Shortlet Workers tests pass. Additive edits were made to `restore-from-export.spec.ts`, `ops-test-helpers.ts` and `wrangler.test.jsonc` for the commerce namespaces and tenant.
+
+### Implementation decisions, 18 Oct 2026
+
+These supersede the Export, "Still open" and restore-path bullets above. Status is unchanged.
+
+- **Decision 7, hashed payment reference (ADR 0096 not amended):** `merchant_orders` stores only `payment_reference_hash`, the SHA-256 of the trimmed reference (`hashPaymentReference` in `commerce-order.ts`). Migration 5 (`commerce-schema.ts`) rebuilds the table around the hash. Migration 4 is unchanged. Idempotent lookup hashes the incoming reference first. The MerchantOrder read model has neither the reference nor the hash, so no API returns either. The export now includes `payment_reference_hash` and never the raw value. The restore gap is closed: `restore-from-export.spec.ts` restores an export that holds an order, and a retry against the restored object returns the same order.
+- **Decision 8, image content check:** `r2-product-image-store.ts` checks the magic bytes after `validateFileUpload`, using the named signatures `JPEG_SIGNATURE`, `PNG_SIGNATURE`, `WEBP_RIFF_SIGNATURE` and `WEBP_FORM_SIGNATURE`. A mismatch, or a type with no signature, is refused.
+- **Decision 9 (user decision):** product image upload through the DO moves to the merchant back-office work. The AC2 part "product images in R2 wired through the DO" is therefore not part of this issue. No code.
+- **Decision 11, merchant verification (ADR 0100, ADR 0001):** `#buildOrder`, which both `createOrder` and the internal checkout quote use, refuses unless the store is active and its merchant is verified, the same rule the catalogue applies. The refusal uses the generic "The store is unavailable." message. `normalizePhone` and `trackOrder` are unchanged.
+- **Decision 13, multi-item rollback:** item 1 has stock, item 2 oversells, and the order is refused with item 1's stock unchanged and no order row. This passed on first run because the Node transaction already rolls back on a throw, so no transaction fix was needed.
+- **Structural fix (ADR 0099):** the candidate's `commerceSchemaMigrations` re-export broke the boundary test, which allows the commerce façade to export only `createCommercePack`. The re-export is removed. The Durable Object takes its migrations from `createCommercePack(...).migrations`. The cutover flag moves from version 5 to version 6. This is safe because the commerce object was never deployed, so no live database has applied version 5 as the cutover.
+- **Migration limit:** migration 5 aborts while any legacy `merchant_orders` row exists, because SQLite cannot compute SHA-256. Commerce orders are not live, so no production row is affected. A converter, if one is ever needed, is a separate decision.
+
+ADR compliance for this slice:
+
+| ADR | Constraint | Where it is applied |
+| --- | --- | --- |
+| Coding standards, bearer credentials (ADR 0075) | Store payment references only as a hash; never log, return or audit them | `hashPaymentReference`, `commerce-order.ts`; export projection, `do-export.ts` |
+| ADR 0096 (exemption, shortlet columns only) | Unchanged; the commerce export holds a hash, not the raw reference | `do-export.ts` `PROJECTIONS.merchant_orders` |
+| ADR 0100 and ADR 0001 | Verified merchant gate for orders and checkout | `commerce-order.ts` `#buildOrder` |
+| ADR 0099 | The domain façade exports only `createCommercePack` | `domains/commerce/src/index.ts` |
+| ADR 0101 | Commerce migrations and cutover belong to the commerce object | `commerce-market-do.ts`, `schema.ts` `commerceMigrationsWithCutover` |
+| ADR 0095 | Synchronous SQL transactions with no network I/O | `createOrder` transaction |

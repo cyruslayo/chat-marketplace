@@ -7,7 +7,6 @@ import { MerchantBackOffice } from "./merchant-back-office.js";
 import { COMMERCE_SCHEMA_MIGRATIONS } from "./commerce-schema.js";
 
 export type { MerchantBackOfficePrincipal, MerchantBackOfficeRole } from "./merchant-back-office.js";
-export { COMMERCE_SCHEMA_MIGRATIONS as commerceSchemaMigrations } from "./commerce-schema.js";
 
 /**
  * The commerce pack's prompt section. Commerce vocabulary only (Merchant, Store, Consumer); no

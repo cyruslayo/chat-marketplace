@@ -72,7 +72,7 @@ export interface MerchantOrder {
   readonly deliveryZoneName?: string;
   readonly deliveryProvider?: string;
   readonly deliveryEstimate?: string;
-  readonly paymentReference: string;
+  // Issue 24 decision 7: the read model carries no payment reference and no hash; only the write path sees the reference.
   readonly paymentVerifiedAt?: string;
   readonly paymentEventId?: string;
   readonly createdAt: string;
@@ -195,7 +195,6 @@ export function parseMerchantOrder(value: unknown, label: string): MerchantOrder
     ...(record.deliveryZoneName === undefined || record.deliveryZoneName === null ? {} : { deliveryZoneName: nonBlank(record.deliveryZoneName, "deliveryZoneName") }),
     ...(record.deliveryProvider === undefined || record.deliveryProvider === null ? {} : { deliveryProvider: nonBlank(record.deliveryProvider, "deliveryProvider") }),
     ...(record.deliveryEstimate === undefined || record.deliveryEstimate === null ? {} : { deliveryEstimate: nonBlank(record.deliveryEstimate, "deliveryEstimate") }),
-    paymentReference: nonBlank(record.paymentReference, "paymentReference"),
     ...(record.paymentVerifiedAt === undefined || record.paymentVerifiedAt === null ? {} : { paymentVerifiedAt: nonBlank(record.paymentVerifiedAt, "paymentVerifiedAt") }),
     ...(record.paymentEventId === undefined || record.paymentEventId === null ? {} : { paymentEventId: nonBlank(record.paymentEventId, "paymentEventId") }),
     createdAt: nonBlank(record.createdAt, "createdAt"),
