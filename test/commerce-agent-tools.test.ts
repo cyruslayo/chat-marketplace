@@ -15,6 +15,7 @@ import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-ru
 import { ScriptedAssistantModel } from "../apps/local-guest/src/assistant/scripted-assistant-model.js";
 import { TASK_START_EVENT } from "../apps/local-guest/src/assistant/assistant-platform.js";
 import { COMMERCE_CHECKOUT_CONFIRM_ACTION } from "../apps/web-agent/src/commerce-presentation.js";
+import { assertSurfaceReferencesResolve, checkoutConfirmContext } from "./helpers/a2ui-surface-integrity.js";
 
 const clock = () => new Date("2026-10-16T00:00:00.000Z");
 const context = { environment: { guestPrincipal: () => ({ id: "guest", role: "guest" as const, tenantId: "tenant" }) } as never, taskState: createInitialTaskState(), threadId: "thread-shopping", taskId: "commerce-task-1", userTextHistory: ["I want to shop"], now: clock(), demoCheckIn: "2026-10-20" };
@@ -205,9 +206,7 @@ test("AC4 scripted assistant and conventional route use the same authorized, ver
   assert.equal(typeof proposal?.proposalId, "string");
   const surface = turn.surfaces?.find(item => item.surfaceId.includes(":commerce-checkout:"));
   assert.ok(surface);
-  const componentMessage = surface.a2uiMessages[1] as { updateComponents: { components: Array<{ id: string; action?: { event: { context: Record<string, unknown> } } }> } };
-  const confirmContext = componentMessage.updateComponents.components.find(component => component.id === "checkout-confirm")?.action?.event.context;
-  assert.ok(confirmContext);
+  const confirmContext = checkoutConfirmContext(surface.a2uiMessages);
   const confirmation = { proposalId: String(confirmContext.proposalId), taskId: fixture.taskId, expectedVersion: Number(confirmContext.expectedVersion), cartVersion: String(confirmContext.cartVersion), confirmedTotalKobo: Number(confirmContext.confirmedTotalKobo) };
   const principal = fixture.env.guestPrincipal();
 
@@ -268,8 +267,7 @@ test("checkout proposal creation and confirmation fail closed for missing, blank
   assert.equal(validTurn.ok, true);
   const surface = validTurn.surfaces?.find(item => item.surfaceId.includes(":commerce-checkout:"));
   assert.ok(surface);
-  const components = (surface.a2uiMessages[1] as { updateComponents: { components: Array<{ id: string; action?: { event: { context: Record<string, unknown> } } }> } }).updateComponents.components;
-  const action = components.find(component => component.id === "checkout-confirm")?.action?.event.context;
+  const action = checkoutConfirmContext(surface.a2uiMessages);
   assert.ok(action);
   const confirmation = { proposalId: String(action.proposalId), taskId: fixture.taskId, expectedVersion: Number(action.expectedVersion), cartVersion: String(action.cartVersion), confirmedTotalKobo: Number(action.confirmedTotalKobo) };
   const principal = validPrincipal();
@@ -351,8 +349,7 @@ test("checkout keeps full private product names for freshness while bounding onl
   const firstSurfaceJson = JSON.stringify(firstSurface.a2uiMessages);
   assert.equal(firstSurfaceJson.includes(fullProductName), false);
   assert.ok(Array.from(firstSurfaceJson).length > displayLimit);
-  const firstContext = (firstSurface.a2uiMessages[1] as { updateComponents: { components: Array<{ id: string; action?: { event: { context: Record<string, unknown> } } }> } }).updateComponents.components.find(component => component.id === "checkout-confirm")?.action?.event.context;
-  assert.ok(firstContext);
+  const firstContext = checkoutConfirmContext(firstSurface.a2uiMessages);
   const firstConfirmation = { proposalId: String(firstContext.proposalId), taskId: fixture.taskId, expectedVersion: Number(firstContext.expectedVersion), cartVersion: String(firstContext.cartVersion), confirmedTotalKobo: Number(firstContext.confirmedTotalKobo) };
   fixture.env.database.prepare("UPDATE products SET name = $name WHERE id = $id").run({ $name: `${fullProductName} changed`, $id: "long-name-product" });
   const changedName = fixture.pack.confirmCheckoutConventional(firstConfirmation, fixture.env.guestPrincipal());
@@ -365,13 +362,32 @@ test("checkout keeps full private product names for freshness while bounding onl
   assert.equal(secondProposalTurn.ok, true);
   const secondSurface = secondProposalTurn.surfaces?.find(surface => surface.surfaceId.includes(":commerce-checkout:"));
   assert.ok(secondSurface);
-  const secondContext = (secondSurface.a2uiMessages[1] as { updateComponents: { components: Array<{ id: string; action?: { event: { context: Record<string, unknown> } } }> } }).updateComponents.components.find(component => component.id === "checkout-confirm")?.action?.event.context;
-  assert.ok(secondContext);
+  const secondContext = checkoutConfirmContext(secondSurface.a2uiMessages);
   const confirmation = { proposalId: String(secondContext.proposalId), taskId: fixture.taskId, expectedVersion: Number(secondContext.expectedVersion), cartVersion: String(secondContext.cartVersion), confirmedTotalKobo: Number(secondContext.confirmedTotalKobo) };
   const confirmed = fixture.pack.confirmCheckoutConventional(confirmation, fixture.env.guestPrincipal());
   assert.equal(confirmed.ok, true);
   if (confirmed.ok) assert.equal(confirmed.artifact.proposal.status, "payment_unavailable");
   assert.equal(executorCalls, 1);
   assert.equal(fixture.env.audit.entries().filter(entry => entry.action === "commerce.checkout.confirm").length, 1);
+  fixture.env.database.close();
+});
+
+test("AC4 scripted post-confirm checkout surface references only emitted components and states that payment is unavailable", async () => {
+  const fixture = await scriptedCommerceFixture({ execute: () => ({ status: "payment_unavailable" }) });
+  const turn = await fixture.assistant.handleTurn(fixture.threadId, "Prepare checkout");
+  assert.equal(turn.ok, true);
+  const surface = turn.surfaces?.find(item => item.surfaceId.includes(":commerce-checkout:"));
+  assert.ok(surface);
+  assertSurfaceReferencesResolve(surface.a2uiMessages, "proposed checkout");
+  const confirmContext = checkoutConfirmContext(surface.a2uiMessages);
+  const confirmed = fixture.assistant.handleAssistantEvent(fixture.threadId, COMMERCE_CHECKOUT_CONFIRM_ACTION, confirmContext);
+  assert.equal(confirmed.ok, true);
+  const result = confirmed.surfaces?.at(-1);
+  assert.ok(result, "confirmation projects a post-confirm checkout surface");
+  assertSurfaceReferencesResolve(result.a2uiMessages, "post-confirm checkout");
+  const rendered = JSON.stringify(result.a2uiMessages);
+  assert.match(rendered, /Total: NGN/);
+  assert.match(rendered, /Payment unavailable\. No order or payment was created\./);
+  assert.equal(fixture.env.database.prepare("SELECT COUNT(*) AS count FROM commerce_checkout_proposals WHERE status = 'payment_unavailable'").get()?.count, 1);
   fixture.env.database.close();
 });

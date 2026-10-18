@@ -3,7 +3,7 @@ import type { AssistantToolDefinition } from "./assistant-model.js";
 import type { AssistantTaskState } from "./assistant-state.js";
 import { createCommercePack } from "../../../../domains/commerce/src/index.js";
 import type { SqlDatabase } from "../../../../packages/platform-core/src/sql-database.js";
-import { COMMERCE_CHECKOUT_CONFIRM_ACTION, DEFAULT_COMMERCE_PROJECTION_LIMITS, projectCommerceText, validateCommerceProjectionLimits, commerceDiscoverySurface, commerceCartSurface, commerceOrderSurface, commerceCheckoutSurface, commerceDiscoveryPresentation, commerceCartPresentation, commerceOrderPresentation, type CommerceProjectionLimits } from "../../../web-agent/src/commerce-presentation.js";
+import { COMMERCE_CHECKOUT_CONFIRM_ACTION, COMMERCE_CHECKOUT_STATUS_COPY, DEFAULT_COMMERCE_PROJECTION_LIMITS, projectCommerceText, validateCommerceProjectionLimits, commerceDiscoverySurface, commerceCartSurface, commerceOrderSurface, commerceCheckoutSurface, commerceDiscoveryPresentation, commerceCartPresentation, commerceOrderPresentation, type CommerceProjectionLimits } from "../../../web-agent/src/commerce-presentation.js";
 import { CommerceCheckoutCommandBoundary, confirmCommerceCheckoutAction, confirmCommerceCheckoutConventional, type CommerceCheckoutProposal, type CommerceCheckoutConfirmation, type CommerceCheckoutExecutor } from "./commerce-checkout-command.js";
 import type { CommandPrincipal } from "../../../../packages/platform-core/src/envelope.js";
 import type { AuditLog } from "../../../../packages/platform-core/src/index.js";
@@ -169,7 +169,7 @@ export function createCommerceAssistantPack(input: {
       const surfaceId = `task-${activeTaskId}:commerce-checkout-result:${proposal.id}:${proposal.status}`;
       return {
         ok: true,
-        message: proposal.status === "payment_started" ? "The platform accepted the payment-start command." : "Checkout confirmation was authorized, but payment is unavailable; no order or payment was created.",
+        message: proposal.status === "payment_started" ? COMMERCE_CHECKOUT_STATUS_COPY.payment_started : proposal.status === "dispatching" ? COMMERCE_CHECKOUT_STATUS_COPY.dispatching : "Checkout confirmation was authorized, but payment is unavailable; no order or payment was created.",
         surface: { surfaceId, a2uiMessages: commerceCheckoutSurface(presentation, surfaceId, projectionLimits) },
       };
     },
