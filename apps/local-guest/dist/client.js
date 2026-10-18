@@ -9114,14 +9114,31 @@ Known schemas:
   // apps/local-guest/src/shortlet-renderers.ts
   var SHORTLET_RENDERERS = [];
 
+  // apps/web-agent/src/commerce-catalogs.ts
+  var COMMERCE_CATALOG_NAMESPACE = "urn:chat-marketplace:commerce";
+  var COMMERCE_DISCOVERY_CATALOG_ID = `${COMMERCE_CATALOG_NAMESPACE}/discovery/v1`;
+  var COMMERCE_CART_CATALOG_ID = `${COMMERCE_CATALOG_NAMESPACE}/cart/v1`;
+  var COMMERCE_ORDER_CATALOG_ID = `${COMMERCE_CATALOG_NAMESPACE}/order/v1`;
+  function commerceCatalog(catalogId) {
+    const schema = structuredClone(createBasicCatalogV091Registration().schema);
+    schema["$id"] = catalogId;
+    schema["catalogId"] = catalogId;
+    return { catalogId, schema };
+  }
+  var COMMERCE_DISCOVERY_CATALOG = commerceCatalog(COMMERCE_DISCOVERY_CATALOG_ID);
+  var COMMERCE_CART_CATALOG = commerceCatalog(COMMERCE_CART_CATALOG_ID);
+  var COMMERCE_ORDER_CATALOG = commerceCatalog(COMMERCE_ORDER_CATALOG_ID);
+  var COMMERCE_CATALOGS = [COMMERCE_DISCOVERY_CATALOG, COMMERCE_CART_CATALOG, COMMERCE_ORDER_CATALOG];
+
   // apps/local-guest/src/shortlet-runtime.ts
   function createShortletWebRuntime(options = {}) {
     const resourcePolicy = options.resourcePolicy ?? (() => void 0);
     const created = createBasicWebRuntime({
-      additionalCatalogs: [SHORTLET_DISCOVERY_CATALOG, SHORTLET_BOOKING_CATALOG],
+      additionalCatalogs: [SHORTLET_DISCOVERY_CATALOG, SHORTLET_BOOKING_CATALOG, ...COMMERCE_CATALOGS],
       additionalRenderers: [
         ...createBasicCatalogRendererRegistrations({ catalogId: SHORTLET_DISCOVERY_CATALOG.catalogId, resourcePolicy }),
         ...createBasicCatalogRendererRegistrations({ catalogId: SHORTLET_BOOKING_CATALOG.catalogId, resourcePolicy }),
+        ...COMMERCE_CATALOGS.flatMap(({ catalogId }) => createBasicCatalogRendererRegistrations({ catalogId, resourcePolicy })),
         ...SHORTLET_RENDERERS
       ],
       ...options.safety === void 0 ? {} : { runtime: { safety: options.safety } },
