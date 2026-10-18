@@ -64,7 +64,7 @@ The frontier is the first slice in the table that is open, unblocked and unclaim
 | **C: Platform services** | | | | | |
 | 15 | [Platform Payments: move the Paystack port, webhook, transfer verification and receipt store out of shortlet](issues/15-platform-payments-module.md) | task | resolved | 09a | 22 |
 | 16 | [Platform Accounts: move guest accounts and sign-in by emailed code out of shortlet](issues/16-platform-accounts-module.md) | task | resolved | 05, 10 | 17 |
-| 17 | [Cloudflare platform Durable Object (accounts, conversations) and Worker routing by domain](issues/17-cloudflare-platform-do-and-domain-routing.md) | task | claimed | 05, 13, 16 | 24 |
+| 17 | [Cloudflare platform Durable Object (accounts, conversations) and Worker routing by domain](issues/17-cloudflare-platform-do-and-domain-routing.md) | task | resolved | 05, 13, 16 | 24 |
 | **D: Commerce** | | | | | |
 | 18 | [Commerce pack scaffold: registration, migrations, Merchant and Store with verification gating](issues/18-commerce-pack-scaffold-merchant-store.md) | task | claimed | 03, 12 | 19 |
 | 19 | [Commerce catalogue: Product, Merchant Offer, Variant, delivery zones, R2 images, search](issues/19-commerce-catalogue-offers-variants-delivery.md) | task | claimed | 18 | 20, 25a |
@@ -96,6 +96,8 @@ Update these when a slice changes them.
 
 ## Context pointers (resolved slices)
 
+- **17** → [`apps/cloudflare/src/platform-do.ts`](../../apps/cloudflare/src/platform-do.ts), [`apps/cloudflare/src/do-clients.ts`](../../apps/cloudflare/src/do-clients.ts), [`apps/local-guest/src/guest-data-port.ts`](../../apps/local-guest/src/guest-data-port.ts), and the [Cloudflare cutover runbook](../../docs/runbooks/cloudflare-cutover.md) — PLATFORM and SHORTLET Durable Objects with typed routing, legacy split export/import, email-revision-bound assurance, and per-authority cutover. Final accepted merge `7511d9d`; evidence in [issue 17](issues/17-cloudflare-platform-do-and-domain-routing.md#answer). Unblocks 24 (which remains blocked by issue 21).
+
 - **01** → [`docs/adr/0099-define-the-domain-pack-interface-and-module-boundaries.md`](../../docs/adr/0099-define-the-domain-pack-interface-and-module-boundaries.md) (accepted 14 Oct 2026).
 - **02** → [issue 02 `## Answer`](issues/02-design-the-domain-pack-interface-twice.md#answer) — chosen `DomainPack`/`ActionSpec` shape; unblocks 07 and 11.
 - **03** → [`docs/adr/0100-make-commerce-the-second-domain.md`](../../docs/adr/0100-make-commerce-the-second-domain.md) (accepted 14 Oct 2026); `CONTEXT-MAP.md` updated to active commerce.
@@ -120,5 +122,5 @@ Update these when a slice changes them.
 - **21** → [issue 21 `## Answer`](issues/21-commerce-merchant-order-rules.md#answer) — Merchant Order rules and lifecycle. Merged to main.
 - **25a/25b** → [issue 25a](issues/25a-merchant-back-office-onboarding-and-catalogue.md#answer) / [issue 25b](issues/25b-merchant-back-office-delivery-and-orders.md#answer) — `apps/local-merchant` back office. Merged to main.
 - **26** → [issue 26 `## Answer`](issues/26-shell-task-rail-and-vertical-starters.md#answer) — shell task rail, vertical starters, domain chip and step header; per-task workspace save/restore; `platform.task.start`/`platform.task.switch`; `recordTaskEvent` badges; `test/assistant-task-rail.test.ts` + `test/guest-task-rail-chromium.test.ts`. Implemented but **resolution deferred** on pre-existing environmental full-suite blockers (see issue `## Comments`). Unblocks 27.
-- **Consolidation** → lanes A, B, C(15,16), D(18–25b) and E(26) are merged into `main`; the commerce pack was widened (`label`/`starterDescription`/`taskSummary`) to satisfy the slice-26 `AssistantDomainPack` interface. Remaining open slices: 17, 22, 23, 24, 27.
+- **Consolidation** → lanes A, B, C(15–17), D(18–25b) and E(26) are merged into `main`; the commerce pack was widened (`label`/`starterDescription`/`taskSummary`) to satisfy the slice-26 `AssistantDomainPack` interface. Remaining open slices: 22, 23, 24, 27.
 - **28** → [issue 28 `## Answer`](issues/28-research-chatgpt-commerce-submission.md#answer) — external (link-out) checkout is the recommended path; Paystack is not an embedded-checkout PSP, so slice 29 uses read tools + a Paystack checkout link-out; physical-goods only; country allowlist via `publication.countries`; four HTTPS legal URLs and a dashboard-entered no-MFA reviewer account; submission checklist listed. Unblocks 29.
