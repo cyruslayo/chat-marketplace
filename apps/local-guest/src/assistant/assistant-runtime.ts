@@ -108,6 +108,10 @@ interface AssistantEventContext {
   readonly surfaceId?: unknown;
   readonly taskId?: unknown;
   readonly domain?: unknown;
+  readonly proposalId?: unknown;
+  readonly expectedVersion?: unknown;
+  readonly cartVersion?: unknown;
+  readonly confirmedTotalKobo?: unknown;
 }
 
 const DISCOVERY_STAGE = "discovery";
@@ -466,6 +470,7 @@ export class AssistantRuntime {
             environment: this.#environment,
             taskState: candidateTaskState,
             threadId,
+            taskId: candidateActiveTaskId,
             userTextHistory,
             now: this.#environment.clock(),
             demoCheckIn: this.#environment.config.demoCheckIn,
@@ -541,6 +546,13 @@ export class AssistantRuntime {
             activeStage = "a2ui";
             const a2uiMessages = candidatePack().pendingActionSurface(action, surfaceId);
             candidateSurfaces.push({ surfaceId, a2uiMessages });
+          } else if (execution.projectedSurface) {
+            const surface = execution.projectedSurface;
+            const stage = `commerce:${surface.kind}`;
+            supersede(stage);
+            candidateActiveSurfaces.set(stage, surface.surfaceId);
+            activeStage = "a2ui";
+            candidateSurfaces.push({ surfaceId: surface.surfaceId, a2uiMessages: surface.a2uiMessages });
           }
         }
 
@@ -638,6 +650,7 @@ export class AssistantRuntime {
     let candidateActiveSurfaces = new Map<string, string>(thread.activeSurfaces);
     let candidateSuperseded = new Set<string>(thread.supersededSurfaces);
     let candidateLastSurfaces: readonly AssistantTurnSurface[] = thread.lastSurfaces;
+    const candidateSurfaces: AssistantTurnSurface[] = [];
 
     const supersede = (stage: string) => {
       const surfaceId = candidateActiveSurfaces.get(stage);
@@ -685,6 +698,36 @@ export class AssistantRuntime {
         surfaces: candidateLastSurfaces,
         tasks: this.getTaskRail(threadId),
       };
+    }
+
+    const actionTask = candidateTasks.find((task) => task.taskId === thread.activeTaskId);
+    const actionPack = actionTask ? this.#packs.packFor(actionTask.domain) : undefined;
+    if (actionPack?.platformActionNames?.includes(eventName)) {
+      const activeTask = actionTask;
+      const pack = actionPack;
+      const activeSurfaceId = candidateActiveSurfaces.get("commerce:checkout");
+      if (activeTask?.domain !== "commerce" || !pack?.handlePlatformAction || !activeSurfaceId || context?.surfaceId !== activeSurfaceId || context.taskId !== activeTask.taskId) {
+        return { ok: false, code: "STALE_SURFACE", message: "That checkout confirmation is no longer active." };
+      }
+      const result = pack.handlePlatformAction({
+        actionName: eventName,
+        context: { proposalId: context.proposalId, taskId: activeTask.taskId, expectedVersion: context.expectedVersion, cartVersion: context.cartVersion, confirmedTotalKobo: context.confirmedTotalKobo, surfaceId: activeSurfaceId },
+        principal: this.#environment.guestPrincipal(),
+        taskId: activeTask.taskId,
+        activeSurfaceId,
+      });
+      if (!result.ok) return { ok: false, code: result.code, message: result.message };
+      supersede("commerce:checkout");
+      const resultSurfaces = result.surface ? [result.surface] : [];
+      if (result.surface) {
+        candidateActiveSurfaces.set("commerce:checkout", result.surface.surfaceId);
+        candidateSurfaces.push(result.surface);
+      }
+      thread.activeSurfaces = candidateActiveSurfaces;
+      thread.supersededSurfaces = candidateSuperseded;
+      thread.lastSurfaces = resultSurfaces.length > 0 ? resultSurfaces : candidateLastSurfaces;
+      this.#syncActiveTask(thread);
+      return { ok: true, messages: [result.message], surfaces: resultSurfaces, tasks: this.getTaskRail(threadId) };
     }
 
     if (eventName === ASSISTANT_CONFIRM_ACTION_EVENT || eventName === ASSISTANT_CANCEL_ACTION_EVENT) {

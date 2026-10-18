@@ -20,5 +20,7 @@ export * from "./revenue-release-a2ui.js";
 export * from "./protection-fund-a2ui.js";
 export * from "./booking-presentation.js";
 export * from "./shortlet-catalogs.js";
+export * from "./commerce-catalogs.js";
+export * from "./commerce-presentation.js";
 export * from "./validate-shortlet-messages.js";
 export * from "./guest-content.js";

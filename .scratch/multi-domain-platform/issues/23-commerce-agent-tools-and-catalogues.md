@@ -1,6 +1,6 @@
 # Commerce agent tools, commerce-* catalogues and presentations
 
-Status: ready-for-agent
+Status: claimed
 Type: task
 Blocked by: 13, 21, weaver-catalogues 03
 Requested: 14 Oct 2026
@@ -49,3 +49,5 @@ Before starting, also list `docs/adr/` and read any other ADR that touches the f
 Apply every item of the Definition of Done in `docs/agents/issue-tracker.md`. Shortlet behaviour must not change: the existing tests and the guest UI walkthrough/capture checks are the safety net.
 
 ## Comments
+
+- 18 Oct 2026: checkout confirmation is now represented by a persisted task/tenant/principal-scoped, versioned proposal and the `commerce.checkout.confirm` ActionSpec/PlatformCommandEnvelope. The assistant surface and conventional `confirmCheckoutConventional` entry use the same validator/authorization/revalidation/command handler. With no slice-22 executor configured, an authorized command returns `payment_unavailable`, writes minimal audit evidence and creates no order or payment. Scripted `AssistantRuntime` tests cover AC2–AC4, including unauthorized/stale rejection, retry idempotency and real Weaver catalogue registration/mounting. Validation: `npm run check` and focused commerce test suites.

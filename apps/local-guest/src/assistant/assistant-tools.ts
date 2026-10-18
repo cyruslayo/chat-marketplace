@@ -20,3 +20,4 @@ export {
   resolveCheckInDate,
   type SearchStaysToolArgs,
 } from "./shortlet-assistant-pack.js";
+export { createCommerceAssistantPack } from "./commerce-assistant-pack.js";
