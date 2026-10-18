@@ -28,9 +28,14 @@ declare namespace Cloudflare {
     PLATFORM: import("@cloudflare/workers-types").DurableObjectNamespace<
       import("./platform-do.js").PlatformDO
     >;
+    COMMERCE: import("@cloudflare/workers-types").DurableObjectNamespace<
+      import("./commerce-market-do.js").CommerceMarket
+    >;
     ISOLATED_SHORTLET: import("@cloudflare/workers-types").DurableObjectNamespace;
     ISOLATED_PLATFORM: import("@cloudflare/workers-types").DurableObjectNamespace;
+    ISOLATED_COMMERCE: import("@cloudflare/workers-types").DurableObjectNamespace;
     RECEIPTS: import("@cloudflare/workers-types").R2Bucket;
+    PRODUCT_IMAGES: import("@cloudflare/workers-types").R2Bucket;
     EXPORTS: import("@cloudflare/workers-types").R2Bucket;
     ASSETS: import("@cloudflare/workers-types").Fetcher;
   }

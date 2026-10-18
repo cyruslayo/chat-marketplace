@@ -3,12 +3,18 @@ import type { CloudflareEnv } from "./cloudflare-config.js";
 
 export { ShortletPilot } from "./shortlet-pilot-do.js";
 export { PlatformDO } from "./platform-do.js";
+export { CommerceMarket } from "./commerce-market-do.js";
 
 /** Account/session and thread ownership routes terminate at the platform authority (ADR 0101). */
 export function isPlatformPath(pathname: string): boolean {
   return pathname === "/account" || pathname.startsWith("/account/") ||
     pathname === "/api/threads" || pathname.startsWith("/api/threads/") ||
     pathname === "/threads" || pathname.startsWith("/threads/");
+}
+
+/** The commerce API is never public; it is refused here so no authority receives the request (issue 24 decision). */
+export function isCommerceApiPath(pathname: string): boolean {
+  return pathname === "/api/commerce" || pathname.startsWith("/api/commerce/");
 }
 
 /**
@@ -31,7 +37,7 @@ export default {
       );
     }
     const pathname = new URL(request.url).pathname;
-    if (pathname === "/_internal" || pathname.startsWith("/_internal/")) {
+    if (isCommerceApiPath(pathname) || pathname === "/_internal" || pathname.startsWith("/_internal/")) {
       return Promise.resolve(new Response(JSON.stringify({ ok: false, code: "NOT_FOUND" }), {
         status: 404,
         headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },

@@ -1,0 +1,119 @@
+import { DurableObject } from "cloudflare:workers";
+import type { DurableObjectState } from "@cloudflare/workers-types";
+import { createCommercePack } from "../../../domains/commerce/src/index.js";
+import { applySchemaMigrations } from "../../../packages/platform-core/src/schema-migrations.js";
+import { checksumTables } from "../../../packages/platform-core/src/data-migration.js";
+import { schemaVersion } from "../../../packages/platform-core/src/schema-migrations.js";
+import { DurableObjectSqlDatabase } from "./do-sql-database.js";
+import { COMMERCE_SCHEMA_MIGRATIONS_WITH_CUTOVER, COMMERCE_SCHEMA_VERSION } from "./schema.js";
+import type { CloudflareEnv } from "./cloudflare-config.js";
+import { lagosDate, runDailyExport } from "./do-export.js";
+import { loadExportConfiguration } from "./cloudflare-config.js";
+import { assertCutoverOpenForImport, assertSchemaCurrent, exportTable, importBatch } from "./ops-import.js";
+import { completeCutoverWithMarker, cutoverStatus, createCutoverMarkerStore, reconcileCutover } from "./cutover-marker.js";
+import { parseCreateOrderInput, type CreateOrderInput } from "../../../domains/commerce/src/order.js";
+
+const DAILY_ALARM_MS = 24 * 60 * 60 * 1000;
+
+/** The exact key sets each internal ops request may carry; `tenantId` is checked before any of these apply. */
+const OPS_KEYS = {
+  import: ["tenantId", "table", "rows"],
+  export: ["tenantId", "table"],
+  metadata: ["tenantId"],
+  cutover: ["tenantId"],
+} as const;
+
+function hasExactKeys(input: Readonly<Record<string, unknown>>, keys: readonly string[]): boolean {
+  const actual = Object.keys(input);
+  return actual.length === keys.length && keys.every(key => actual.includes(key));
+}
+
+/** Commerce transaction authority. It never shares SQL or a synchronous transaction with another DO (ADR 0099/0101). */
+export class CommerceMarket extends DurableObject<CloudflareEnv> {
+  #pack: ReturnType<typeof createCommercePack> | null = null;
+  constructor(ctx: DurableObjectState, env: CloudflareEnv) {
+    super(ctx, env);
+    void ctx.blockConcurrencyWhile(async () => {
+      const database = new DurableObjectSqlDatabase(ctx.storage);
+      applySchemaMigrations(database, COMMERCE_SCHEMA_MIGRATIONS_WITH_CUTOVER, new Date().toISOString());
+      try { await reconcileCutover(database, createCutoverMarkerStore(env.EXPORTS, ctx.id.toString(), "commerce")); } catch {
+        // Import remains fail-closed if the marker cannot be reconciled. Only the fixed code is logged, never the error or references.
+        console.error("COMMERCE_CUTOVER_RECONCILE_FAILED");
+      }
+      if (await ctx.storage.getAlarm() === null) await ctx.storage.setAlarm(Date.now() + DAILY_ALARM_MS);
+    });
+  }
+
+  async alarm(): Promise<void> {
+    const today = lagosDate(new Date());
+    if ((await this.ctx.storage.get<string>("commerce:export:lastDate")) !== today) {
+      const config = loadExportConfiguration(this.env);
+      await runDailyExport({ database: new DurableObjectSqlDatabase(this.ctx.storage), exports: this.env.EXPORTS, clock: () => new Date(), ...config, tableOwner: "commerce" });
+      await this.ctx.storage.put("commerce:export:lastDate", today);
+    }
+    await this.ctx.storage.setAlarm(Date.now() + DAILY_ALARM_MS);
+  }
+
+  async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    if (url.pathname.startsWith("/_internal/")) return this.#internal(request, url.pathname);
+    // No public order route: checkout is reachable only through the internal client (ADR 0101, issue 24 decision).
+    return new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } });
+  }
+
+  #commerce(): ReturnType<typeof createCommercePack> {
+    return this.#pack ??= createCommercePack({ database: new DurableObjectSqlDatabase(this.ctx.storage), clock: () => new Date() });
+  }
+
+  /**
+   * Internal checkout (issue 24 decision, ADR 0096): validates the store, offers, zone and server-computed total with the
+   * domain rules, then stops with payment_unavailable. No order row is written and no stock is reserved, and the
+   * payment reference is neither stored here nor returned.
+   */
+  #checkout(input: Record<string, unknown>): Response {
+    let checkout: CreateOrderInput;
+    try { checkout = parseCreateOrderInput(input); } catch { return Response.json({ ok: false, code: "BAD_REQUEST" }, { status: 400, headers: { "Cache-Control": "no-store" } }); }
+    try {
+      this.#commerce().orders.quoteCheckout(checkout);
+    } catch (error) {
+      return Response.json({ ok: false, code: "ORDER_REJECTED", message: error instanceof Error ? error.message : "Order rejected" }, { status: 400, headers: { "Cache-Control": "no-store" } });
+    }
+    return Response.json({ ok: false, code: "payment_unavailable" }, { status: 409, headers: { "Cache-Control": "no-store" } });
+  }
+
+  async #internal(request: Request, path: string): Promise<Response> {
+    if (request.method !== "POST") return new Response("Not found", { status: 404 });
+    let body: unknown;
+    try { body = await request.json(); } catch { return new Response("Bad request", { status: 400 }); }
+    if (!body || typeof body !== "object" || Array.isArray(body)) return new Response("Bad request", { status: 400 });
+    const input = body as Record<string, unknown>;
+    const tenantId = this.env.SHORTLET_TENANT_ID?.trim() ?? "";
+    if (!tenantId || input.tenantId !== tenantId) return Response.json({ ok: false, code: "INVALID_SCOPE" }, { status: 403 });
+    if (path === "/_internal/checkout") return this.#checkout(input);
+    if (!path.startsWith("/_internal/ops/")) return new Response("Not found", { status: 404 });
+    const operation = path.slice("/_internal/ops/".length);
+    const database = new DurableObjectSqlDatabase(this.ctx.storage);
+    const marker = createCutoverMarkerStore(this.env.EXPORTS, this.ctx.id.toString(), "commerce");
+    try {
+      if (operation === "import" && typeof input.table === "string" && Array.isArray(input.rows) && hasExactKeys(input, OPS_KEYS.import)) {
+        assertSchemaCurrent(database, COMMERCE_SCHEMA_VERSION);
+        await assertCutoverOpenForImport(database, marker);
+        return Response.json({ ok: true, ...importBatch(database, input.table, input.rows, COMMERCE_SCHEMA_VERSION, new Date()) });
+      }
+      if (operation === "export" && typeof input.table === "string" && hasExactKeys(input, OPS_KEYS.export)) return Response.json({ ok: true, ...(await exportTable(database, input.table)) });
+      if ((operation === "verify" || operation === "status") && hasExactKeys(input, OPS_KEYS.metadata)) {
+        const cutover = await cutoverStatus(database, marker);
+        return Response.json({ ok: true, schemaVersion: schemaVersion(database), expectedSchemaVersion: COMMERCE_SCHEMA_VERSION,
+          ...(operation === "verify" ? { tables: await checksumTables(database), excludedTables: {} } : {}),
+          cutoverCompletedAt: cutover.completedAt, cutoverMarker: cutover.marker });
+      }
+      if (operation === "cutover" && hasExactKeys(input, OPS_KEYS.cutover)) {
+        assertSchemaCurrent(database, COMMERCE_SCHEMA_VERSION);
+        return Response.json({ ok: true, cutoverCompletedAt: await completeCutoverWithMarker(database, marker, new Date().toISOString()) });
+      }
+      return new Response("Not found", { status: 404 });
+    } catch {
+      return Response.json({ ok: false, code: "COMMERCE_MIGRATION_OPERATION_FAILED" }, { status: 400 });
+    }
+  }
+}

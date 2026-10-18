@@ -7,18 +7,18 @@
 > payment data until the data-protection gates in ADR 0095 are cleared (counsel approval of the cross-border transfer
 > basis, vendor terms and the DPIA). Staging rehearsal (issue 15) comes first.
 
-The Node pilot keeps one SQLite file (`SHORTLET_DB_PATH`) and its receipts. Cloudflare keeps platform state and shortlet
-transactions in separate SQLite-backed Durable Objects; receipts remain in the private `RECEIPTS` R2 bucket (ADRs 0004,
-0090, 0095, 0101). This runbook moves the data through the authenticated `/_ops` gateway, switches traffic, and defines
+The Node pilot keeps one SQLite file (`SHORTLET_DB_PATH`) and its receipts. Cloudflare keeps platform state, shortlet
+transactions, and commerce transactions in separate SQLite-backed Durable Objects; receipts remain in the private `RECEIPTS` R2 bucket and product images in the private `PRODUCT_IMAGES` bucket (ADRs 0004,
+0090, 0095, 0101). This runbook moves the shortlet/platform cutover data through the authenticated `/_ops` gateway; commerce has its own per-tenant authority and is not part of the legacy Node SQLite export.
 how to go back.
 
 | Authority | Durable Object | Owned migration data |
 | --- | --- | --- |
 | PLATFORM | `env.PLATFORM.idFromName(SHORTLET_TENANT_ID)` | Guest Accounts, linked principals/claims, contacts, threads, account rate events, audit log and telemetry. |
 | SHORTLET | `env.SHORTLET.idFromName(SHORTLET_TENANT_ID)` | Shortlet bookings, payments, operators, units, revenue and `guest_identity_assurance`. |
+| COMMERCE | `env.COMMERCE.idFromName(SHORTLET_TENANT_ID)` | Merchants, stores, products, offers, carts, delivery zones and merchant orders. |
 
-The gateway routes each table to its owner. Load PLATFORM parents before SHORTLET children; status and verify expose both
-authorities. Ownership and assurance placement follow ADR 0101.
+The gateway routes each table to its owner. The legacy migration loads PLATFORM parents before SHORTLET children; commerce rows are created through CommerceMarket and routed to its own SQLite database. Status and verify expose all three authorities. Ownership and assurance placement follow ADR 0101.
 
 Record every step with its start time, end time, result and operator in the log at the end. Do not write secrets,
 tokens or guest data in the log. Counts and checksums are enough.
@@ -45,9 +45,9 @@ which is why step 10 exists.
 | --- | --- |
 | Staging rehearsal (issue 15) passed with these same steps and checksums matched. | Proves the procedure before production. |
 | Access service token, `OPS_SHARED_SECRET`, `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD` are set on the production Worker (issue 11a). `CF_ACCESS_TEAM_DOMAIN` is the team domain without a scheme. An assertion is accepted only when its `iss` is `https://<that domain>` (F12). | `/_ops` refuses everything otherwise. |
-| Both production Durable Objects have run their own schema migrations (`apps/cloudflare/src/schema.ts`). Verify reports the SHORTLET version at top level and the PLATFORM version under `platform`; each must equal its own migration count. | Each import authority refuses with `SCHEMA_NOT_READY` when its schema is not current. |
-| The production Worker has the `EXPORTS` R2 binding. It holds separate markers under `_ops/cutover/shortlet/` and `_ops/cutover/platform/`. Before cutover, status reports each marker absent and each completion time null. | Without the binding, imports fail closed; markers survive point-in-time restore of either object. |
-| Neither object holds bearer credentials expected to move. Operator access tokens are issued only after both verifies pass. | All six credential/replay tables are excluded (ADRs 0093, 0086, 0075); verify reports counts under the owning authority and they must be zero on both targets. |
+| All three production Durable Objects have run their own schema migrations (`apps/cloudflare/src/schema.ts`). Verify reports the SHORTLET version at top level and PLATFORM / COMMERCE versions under `platform` / `commerce`; each must equal its own migration count. | Each import authority refuses with `SCHEMA_NOT_READY` when its schema is not current. |
+| The production Worker has the `EXPORTS` R2 binding. It holds separate markers under `_ops/cutover/{shortlet,platform,commerce}/`. Before cutover, status reports each marker absent and each completion time null. | Without the binding, imports fail closed; markers survive point-in-time restore of each object. |
+| No object holds bearer credentials expected to move. Operator access tokens are issued only after all three verifies pass. | All six credential/replay tables are excluded (ADRs 0093, 0086, 0075); verify reports counts under the owning authority and they must be zero on each target. |
 | **Checklist C1:** the value `MAX_STATEMENT_PARAMETERS = 100` in `packages/platform-core/src/data-migration.ts` is verified against the live Cloudflare Durable Object limits page before cutover. It came from a search summary, not the live page. Record the page's date and value in the log. | Chunk sizes and the object's own statement limit depend on it. |
 | **Checklist C2:** the production Node file has no table outside the object's schema. `local_pilot_clock` is a local-development table and must be absent. The export is refused by the object if a table is missing (`UNKNOWN_TABLE`), so a mismatch stops the push rather than losing data. | Export scope is every application table (issue 16, Decisions: export scope). |
 | `SHORTLET_PUBLIC_ORIGIN` is the final origin and the Paystack dashboard's callback and webhook URLs are known. | Needed for step 6. |
@@ -176,12 +176,12 @@ routed to the same owner. Compare every transformed manifest table with its owne
 counts with zero on both targets. Record the assurance omission and account-default transform separately; do not report an
 unqualified full-source match.
 
-`--compare` checks the transformed manifest's single-object view; confirm both owner maps from the combined verify separately.
+`--compare` checks the transformed manifest's legacy source view; confirm the SHORTLET, PLATFORM and COMMERCE owner maps from the combined verify separately. Commerce is its own authority and is not represented in the legacy Node manifest.
 Each application table is compared by row count and checksum. Each credential table is
 compared by count: the Node file's count (`excludedSourceRows`, recorded in the manifest and dropped by design) and the object's
 count (`excludedTargetRows`), which must be zero. The compare must print `match`. A `mismatch` names the tables that differ,
 credential tables included. Stop on a mismatch. Do not switch traffic. Keep `verify.json` with the log. The verify response
-also carries `schemaVersion` and the nested PLATFORM status; record both migration counts and both pre-cutover marker/time
+also carries `schemaVersion` and nested PLATFORM and COMMERCE status; record all three migration counts and marker/time
 pairs (`absent`/null).
 
 ## 6. Paystack callback and webhook URLs
@@ -203,16 +203,16 @@ only after steps 5 and 6 have passed:
 npx tsx scripts/export-node-sqlite.ts --cutover-complete
 ```
 
-The authenticated gateway completes both authorities independently. Each writes its marker first, then its SQL flag:
-`_ops/cutover/shortlet/<SHORTLET object id>.json` and `_ops/cutover/platform/<PLATFORM object id>.json`. The response
-contains `cutoverCompletedAt` and `platformCutoverCompletedAt`; preserve both timestamps. If either authority fails, do not
+The authenticated gateway completes all three authorities independently. Each writes its marker first, then its SQL flag:
+`_ops/cutover/shortlet/<SHORTLET object id>.json`, `_ops/cutover/platform/<PLATFORM object id>.json` and `_ops/cutover/commerce/<COMMERCE object id>.json`. The response
+contains `cutoverCompletedAt`, `platformCutoverCompletedAt` and `commerceCutoverCompletedAt`; preserve all timestamps. If any authority fails, do not
 switch DNS. Failure is fail closed:
 
 - A failed marker write returns `503 CUTOVER_MARKER_UNAVAILABLE` and records nothing. Fix the binding, then run the step again.
 - A failure after the marker returns `503 CUTOVER_NOT_RECORDED`. Run the step again to finish the flag. Imports are refused
   in the meantime, because the marker is set.
 
-Calling it again returns both first timestamps. Then `GET /_ops/status` must show both values and both markers as `present`.
+Calling it again returns all first timestamps. Then `GET /_ops/status` must show all values and all markers as `present`.
 No route or script in this repository clears either marker or flag. A point-in-time restore rewinds one object's storage,
 including its flag, but not its kind-specific marker. Each object re-asserts its own flag from that marker when it starts and
 before any import, so no manual flag step follows a restore. The restore runbook

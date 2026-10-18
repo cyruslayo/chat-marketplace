@@ -35,7 +35,7 @@ import { createOpsHandler, type OpsHandler } from "./ops-routes.js";
 import { SHORTLET_SCHEMA_MIGRATIONS } from "./schema.js";
 import { cloudflareAssetLoader } from "./pilot-assets.js";
 import { R2ReceiptBlobStore } from "./r2-receipt-blob-store.js";
-import { platformGuestAccountDependencies, platformGuestData, platformMigrationClient } from "./do-clients.js";
+import { commerceMigrationClient, platformGuestAccountDependencies, platformGuestData, platformMigrationClient } from "./do-clients.js";
 
 /**
  * The assembled pilot (ADR 0004/0095): one SQLite-backed Durable Object is the single system of record. It builds
@@ -196,6 +196,7 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
       clock,
       tenantId: this.env.SHORTLET_TENANT_ID?.trim() ?? "",
       platformMigration: platformMigrationClient(this.env, this.env.SHORTLET_TENANT_ID?.trim() ?? ""),
+      commerceMigration: commerceMigrationClient(this.env, this.env.SHORTLET_TENANT_ID?.trim() ?? ""),
     });
   }
 

@@ -21,7 +21,7 @@ import { CutoverMarkerUnavailableError, completeCutoverWithMarker, cutoverStatus
 import { ImportRefusedError, assertCutoverOpenForImport, assertSchemaCurrent, credentialTableCountsForOwner, exportTable, importBatch } from "./ops-import.js";
 import { SHORTLET_SCHEMA_VERSION } from "./schema.js";
 import { schemaVersion } from "../../../packages/platform-core/src/schema-migrations.js";
-import { PLATFORM_OWNED_TABLES } from "./do-export.js";
+import { COMMERCE_OWNED_TABLES, PLATFORM_OWNED_TABLES } from "./do-export.js";
 
 /**
  * Slice 11a: the authenticated `/_ops/*` routes. They call exactly the domain functions the operator CLIs call
@@ -65,6 +65,9 @@ export interface OpsRouteDependencies {
   readonly clock: () => Date;
   readonly tenantId: string;
   readonly platformMigration?: {
+    request<T>(operation: "import" | "export" | "verify" | "status" | "cutover", input?: Readonly<Record<string, unknown>>): Promise<T>;
+  };
+  readonly commerceMigration?: {
     request<T>(operation: "import" | "export" | "verify" | "status" | "cutover", input?: Readonly<Record<string, unknown>>): Promise<T>;
   };
 }
@@ -230,6 +233,10 @@ export function createOpsHandler(dependencies: OpsRouteDependencies): OpsHandler
         if (!dependencies.platformMigration) throw new Error("PLATFORM migration authority is unavailable");
         return json(200, await dependencies.platformMigration.request("import", { table, rows: body.rows }));
       }
+      if (COMMERCE_OWNED_TABLES.has(table)) {
+        if (!dependencies.commerceMigration) throw new Error("COMMERCE migration authority is unavailable");
+        return json(200, await dependencies.commerceMigration.request("import", { table, rows: body.rows }));
+      }
       // Issue 16 A: the schema, then the cutover marker and flag, are checked before any write (fail closed).
       assertSchemaCurrent(dependencies.database, SHORTLET_SCHEMA_VERSION);
       await assertCutoverOpenForImport(dependencies.database, dependencies.cutoverMarker);
@@ -244,8 +251,9 @@ export function createOpsHandler(dependencies: OpsRouteDependencies): OpsHandler
         const platform = dependencies.platformMigration
           ? await dependencies.platformMigration.request<{ readonly cutoverCompletedAt: string }>("cutover")
           : null;
+        const commerce = dependencies.commerceMigration ? await dependencies.commerceMigration.request<{ readonly cutoverCompletedAt: string }>("cutover") : null;
         const completedAt = await completeCutoverWithMarker(dependencies.database, dependencies.cutoverMarker, dependencies.clock().toISOString());
-        return json(200, { ok: true, cutoverCompletedAt: completedAt, platformCutoverCompletedAt: platform?.cutoverCompletedAt ?? null });
+        return json(200, { ok: true, cutoverCompletedAt: completedAt, platformCutoverCompletedAt: platform?.cutoverCompletedAt ?? null, commerceCutoverCompletedAt: commerce?.cutoverCompletedAt ?? null });
       } catch (error) {
         // Fail closed. A marker failure leaves the cutover unrecorded; a flag failure after the marker is finished by running this again.
         if (error instanceof CutoverMarkerUnavailableError) {
@@ -260,6 +268,7 @@ export function createOpsHandler(dependencies: OpsRouteDependencies): OpsHandler
       const platform = dependencies.platformMigration
         ? await dependencies.platformMigration.request<Record<string, unknown>>("status")
         : null;
+      const commerce = dependencies.commerceMigration ? await dependencies.commerceMigration.request<Record<string, unknown>>("status") : null;
       return json(200, {
         ok: true,
         schemaVersion: schemaVersion(dependencies.database),
@@ -267,6 +276,7 @@ export function createOpsHandler(dependencies: OpsRouteDependencies): OpsHandler
         cutoverCompletedAt: cutover.completedAt,
         cutoverMarker: cutover.marker,
         platform,
+        commerce,
       });
     }
     if (request.method === "GET" && path === "/_ops/import/verify") {
@@ -275,6 +285,7 @@ export function createOpsHandler(dependencies: OpsRouteDependencies): OpsHandler
       const platform = dependencies.platformMigration
         ? await dependencies.platformMigration.request<Record<string, unknown>>("verify")
         : null;
+      const commerce = dependencies.commerceMigration ? await dependencies.commerceMigration.request<Record<string, unknown>>("verify") : null;
       return json(200, {
         ok: true,
         schemaVersion: schemaVersion(dependencies.database),
@@ -283,6 +294,7 @@ export function createOpsHandler(dependencies: OpsRouteDependencies): OpsHandler
         cutoverCompletedAt: cutover.completedAt,
         cutoverMarker: cutover.marker,
         platform,
+        commerce,
       });
     }
     if (request.method === "GET" && path === "/_ops/export") {
@@ -292,6 +304,10 @@ export function createOpsHandler(dependencies: OpsRouteDependencies): OpsHandler
       if (PLATFORM_OWNED_TABLES.has(table)) {
         if (!dependencies.platformMigration) throw new Error("PLATFORM migration authority is unavailable");
         return json(200, await dependencies.platformMigration.request("export", { table }));
+      }
+      if (COMMERCE_OWNED_TABLES.has(table)) {
+        if (!dependencies.commerceMigration) throw new Error("COMMERCE migration authority is unavailable");
+        return json(200, await dependencies.commerceMigration.request("export", { table }));
       }
       return json(200, { ok: true, ...(await exportTable(dependencies.database, table)) });
     }

@@ -125,6 +125,44 @@ export function parseOrderItem(value: unknown): OrderItem {
   };
 }
 
+/**
+ * Boundary guard for an untrusted checkout body (ADR 0099 domain boundary). Rejects any shape the Merchant Order
+ * contract cannot represent before the order service sees it; it does not check stock, price or the total.
+ */
+export function parseCreateOrderInput(value: unknown): CreateOrderInput {
+  if (!isRecord(value)) {
+    throw new TypeError("Create order input must be an object");
+  }
+  if (!Array.isArray(value.items) || value.items.length === 0) {
+    throw new TypeError("Create order input must have at least one item");
+  }
+  if (!isRecord(value.shippingAddress) || Object.keys(value.shippingAddress).length === 0) {
+    throw new TypeError("Create order input must have a non-empty shipping address");
+  }
+  return {
+    storeId: nonBlank(value.storeId, "storeId"),
+    deliveryZoneId: nonBlank(value.deliveryZoneId, "deliveryZoneId"),
+    customerName: nonBlank(value.customerName, "customerName"),
+    customerPhone: nonBlank(value.customerPhone, "customerPhone"),
+    ...(value.customerInstagram === undefined || value.customerInstagram === null ? {} : { customerInstagram: nonBlank(value.customerInstagram, "customerInstagram") }),
+    shippingAddress: value.shippingAddress,
+    items: value.items.map(parseOrderItemInput),
+    submittedTotalKobo: nonNegativeInteger(value.submittedTotalKobo, "submittedTotalKobo"),
+    paymentReference: nonBlank(value.paymentReference, "paymentReference"),
+  };
+}
+
+function parseOrderItemInput(value: unknown): OrderItemInput {
+  if (!isRecord(value)) {
+    throw new TypeError("Order item input must be an object");
+  }
+  return {
+    offerId: nonBlank(value.offerId, "offerId"),
+    ...(value.variantId === undefined ? {} : { variantId: nonBlank(value.variantId, "variantId") }),
+    quantity: requirePositiveInteger(value.quantity, "quantity"),
+  };
+}
+
 export function parseMerchantOrder(value: unknown, label: string): MerchantOrder {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new TypeError(`${label} must be an object`);

@@ -11,13 +11,16 @@
       { "name": "TEST_HARNESS", "class_name": "TestHarnessDO" },
       { "name": "SHORTLET", "class_name": "ShortletPilot" },
       { "name": "PLATFORM", "class_name": "PlatformDO" },
+      { "name": "COMMERCE", "class_name": "CommerceMarket" },
       { "name": "ISOLATED_SHORTLET", "class_name": "IsolatedShortletPilot" },
-      { "name": "ISOLATED_PLATFORM", "class_name": "IsolatedPlatformDO" }
+      { "name": "ISOLATED_PLATFORM", "class_name": "IsolatedPlatformDO" },
+      { "name": "ISOLATED_COMMERCE", "class_name": "IsolatedCommerceMarket" }
     ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TestHarnessDO", "ShortletPilot", "PlatformDO", "IsolatedShortletPilot", "IsolatedPlatformDO"] }],
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TestHarnessDO", "ShortletPilot", "PlatformDO", "CommerceMarket", "IsolatedShortletPilot", "IsolatedPlatformDO", "IsolatedCommerceMarket"] }],
   "r2_buckets": [
     { "binding": "RECEIPTS", "bucket_name": "test-receipts" },
+    { "binding": "PRODUCT_IMAGES", "bucket_name": "test-product-images" },
     { "binding": "EXPORTS", "bucket_name": "test-exports" }
   ],
   "assets": { "directory": "./public", "binding": "ASSETS" },

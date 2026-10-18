@@ -4,7 +4,7 @@ import { afterEach, expect, test } from "vitest";
 import { importOrder, importRequestChunks } from "../../../packages/platform-core/src/data-migration.js";
 import { SqliteAuditLog } from "../../../packages/platform-core/src/sqlite-audit-log.js";
 import { DurableObjectSqlDatabase } from "../src/do-sql-database.js";
-import { EXPORT_TABLES, PLATFORM_EXPORT_TABLES, SHORTLET_EXPORT_TABLES, exportObjectKey, exportTable, type DailyExportDependencies } from "../src/do-export.js";
+import { COMMERCE_EXPORT_TABLES, EXPORT_TABLES, PLATFORM_EXPORT_TABLES, SHORTLET_EXPORT_TABLES, exportObjectKey, exportTable, type DailyExportDependencies } from "../src/do-export.js";
 import { currentAssuranceForAccount, SqliteGuestIdentityAssurance } from "../../../domains/shortlet/src/guest-identity-assurance.js";
 import { ORIGIN, accessToken, opsHeaders, provisionTenant } from "./ops-test-helpers.js";
 
@@ -22,6 +22,7 @@ const DAY_TWO = `${EXPORT_YEAR}-03-02`;
 
 const freshStub = (name: string) => env.SHORTLET.get(env.SHORTLET.idFromName(`${name}-${crypto.randomUUID()}`));
 const freshPlatformStub = (name: string) => env.PLATFORM.get(env.PLATFORM.idFromName(`${name}-${crypto.randomUUID()}`));
+const freshCommerceStub = (name: string) => env.COMMERCE.get(env.COMMERCE.idFromName(`${name}-${crypto.randomUUID()}`));
 
 afterEach(async () => {
   for (const day of [DAY_ONE, DAY_TWO]) {
@@ -29,7 +30,7 @@ afterEach(async () => {
   }
 });
 
-async function exportTables(stub: ReturnType<typeof freshStub> | ReturnType<typeof freshPlatformStub>, date: string, tables: readonly string[], tableOwner: "shortlet" | "platform"): Promise<void> {
+async function exportTables(stub: ReturnType<typeof freshStub> | ReturnType<typeof freshPlatformStub> | ReturnType<typeof freshCommerceStub>, date: string, tables: readonly string[], tableOwner: "shortlet" | "platform" | "commerce"): Promise<void> {
   await runInDurableObject(stub, async (_instance, ctx) => {
     const dependencies: DailyExportDependencies = {
       database: new DurableObjectSqlDatabase(ctx.storage),
@@ -44,9 +45,10 @@ async function exportTables(stub: ReturnType<typeof freshStub> | ReturnType<type
   });
 }
 
-async function exportEveryTable(shortlet: ReturnType<typeof freshStub>, platform: ReturnType<typeof freshPlatformStub>, date: string): Promise<void> {
+async function exportEveryTable(shortlet: ReturnType<typeof freshStub>, platform: ReturnType<typeof freshPlatformStub>, commerce: ReturnType<typeof freshCommerceStub>, date: string): Promise<void> {
   await exportTables(shortlet, date, SHORTLET_EXPORT_TABLES, "shortlet");
   await exportTables(platform, date, PLATFORM_EXPORT_TABLES, "platform");
+  await exportTables(commerce, date, COMMERCE_EXPORT_TABLES, "commerce");
 }
 
 async function dayLines(date: string, table: string): Promise<string[]> {
@@ -56,25 +58,30 @@ async function dayLines(date: string, table: string): Promise<string[]> {
 }
 
 /** The runbook's load step: one table's rows through `POST /_ops/import`, in the request chunks the client uses. */
-async function loadTable(stub: ReturnType<typeof freshStub>, table: string, lines: readonly string[], headers: Record<string, string>, platform?: ReturnType<typeof freshPlatformStub>): Promise<void> {
+async function loadTable(stub: ReturnType<typeof freshStub>, table: string, lines: readonly string[], headers: Record<string, string>, platform?: ReturnType<typeof freshPlatformStub>, commerce?: ReturnType<typeof freshCommerceStub>): Promise<void> {
   const rows = lines.map((line) => JSON.parse(line) as unknown);
   for (const chunk of importRequestChunks(table, rows)) {
     const response = PLATFORM_EXPORT_TABLES.includes(table as typeof PLATFORM_EXPORT_TABLES[number])
       ? await (platform ?? (() => { throw new Error(`PLATFORM stub required for ${table}`); })()).fetch("https://do.internal/_internal/ops/import", {
           method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ tenantId: "tenant-synthetic", table, rows: chunk }),
         })
-      : await stub.fetch(`${ORIGIN}/_ops/import`, { method: "POST", headers, body: JSON.stringify({ table, rows: chunk }) });
+      : COMMERCE_EXPORT_TABLES.includes(table as typeof COMMERCE_EXPORT_TABLES[number])
+        ? await (commerce ?? (() => { throw new Error(`COMMERCE stub required for ${table}`); })()).fetch("https://do.internal/_internal/ops/import", {
+            method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ tenantId: "tenant-synthetic", table, rows: chunk }),
+          })
+        : await stub.fetch(`${ORIGIN}/_ops/import`, { method: "POST", headers, body: JSON.stringify({ table, rows: chunk }) });
     expect(response.status, `${table} import`).toBe(200);
   }
 }
 
-async function countRows(stub: ReturnType<typeof freshStub> | ReturnType<typeof freshPlatformStub>, table: string): Promise<number> {
+async function countRows(stub: ReturnType<typeof freshStub> | ReturnType<typeof freshPlatformStub> | ReturnType<typeof freshCommerceStub>, table: string): Promise<number> {
   return runInDurableObject(stub, (_instance, ctx) => Number(new DurableObjectSqlDatabase(ctx.storage).prepare(`SELECT COUNT(*) AS n FROM ${table}`).get()?.n));
 }
 
 test("16 restore: a day's export loaded parent-first into a new object exports the same bytes for every exported table", async () => {
   const source = freshStub("restore-source");
   const sourcePlatform = freshPlatformStub("restore-source-platform");
+  const sourceCommerce = freshCommerceStub("restore-source-commerce");
   await provisionTenant(source);
   await runInDurableObject(sourcePlatform, (_instance, ctx) => {
     const database = new DurableObjectSqlDatabase(ctx.storage);
@@ -86,21 +93,25 @@ test("16 restore: a day's export loaded parent-first into a new object exports t
     database.prepare("INSERT INTO guest_account_principals (principal_id, tenant_id, account_guest_id, linked_at) VALUES ($principal, $tenant, $id, $at)")
       .run({ $principal: "principal-restoreprobe", $tenant: "tenant-synthetic", $id: "gacct-restoreprobe", $at: "2031-02-01T00:00:00Z" });
   });
-  await exportEveryTable(source, sourcePlatform, DAY_ONE);
+  await exportEveryTable(source, sourcePlatform, sourceCommerce, DAY_ONE);
 
   const target = freshStub("restore-target");
   const targetPlatform = freshPlatformStub("restore-target-platform");
+  const targetCommerce = freshCommerceStub("restore-target-commerce");
   const headers = opsHeaders(await accessToken({}));
   const platformOrder = await runInDurableObject(sourcePlatform, (_instance, ctx) => importOrder(new DurableObjectSqlDatabase(ctx.storage), PLATFORM_EXPORT_TABLES));
   const shortletOrder = await runInDurableObject(source, (_instance, ctx) => importOrder(new DurableObjectSqlDatabase(ctx.storage), SHORTLET_EXPORT_TABLES));
+  const commerceOrder = await runInDurableObject(sourceCommerce, (_instance, ctx) => importOrder(new DurableObjectSqlDatabase(ctx.storage), COMMERCE_EXPORT_TABLES));
   expect([...platformOrder].sort()).toEqual([...PLATFORM_EXPORT_TABLES].sort());
   expect([...shortletOrder].sort()).toEqual([...SHORTLET_EXPORT_TABLES].sort());
+  expect([...commerceOrder].sort()).toEqual([...COMMERCE_EXPORT_TABLES].sort());
   expect(platformOrder.indexOf("guest_accounts")).toBeLessThan(platformOrder.indexOf("guest_account_principals"));
 
   // Restore parent ownership first: PLATFORM account row, then its PLATFORM child, then SHORTLET assurance/transactions.
-  for (const table of platformOrder) await loadTable(target, table, await dayLines(DAY_ONE, table), headers, targetPlatform);
+  for (const table of platformOrder) await loadTable(target, table, await dayLines(DAY_ONE, table), headers, targetPlatform, targetCommerce);
+  for (const table of commerceOrder) await loadTable(target, table, await dayLines(DAY_ONE, table), headers, targetPlatform, targetCommerce);
   for (const table of shortletOrder) await loadTable(target, table, await dayLines(DAY_ONE, table), headers);
-  await exportEveryTable(target, targetPlatform, DAY_TWO);
+  await exportEveryTable(target, targetPlatform, targetCommerce, DAY_TWO);
 
   for (const table of EXPORT_TABLES) {
     expect(await dayLines(DAY_TWO, table), `${table} after restore`).toEqual(await dayLines(DAY_ONE, table));

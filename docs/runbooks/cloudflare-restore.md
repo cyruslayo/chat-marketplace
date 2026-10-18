@@ -1,12 +1,12 @@
 # Restore the Cloudflare pilot (Durable Object)
 
-The production pilot's system of record is two SQLite-backed Durable Objects per tenant: PLATFORM owns accounts and
-conversations, while SHORTLET owns shortlet transactions (ADR 0101). This runbook covers
+The production pilot's system of record is three SQLite-backed Durable Objects per tenant: PLATFORM owns accounts and
+conversations, SHORTLET owns shortlet transactions, and COMMERCE owns marketplace transactions (ADR 0101). This runbook covers
 recovering it after corruption, a bad import, or a botched migration. **Any restore loses writes made after the
 restore point**, so the money and receipt checks at the end are mandatory, not optional (ADRs 0045/0089).
 
-The tenant is `SHORTLET_TENANT_ID`. The Worker routes to `PLATFORM.idFromName(tenantId)` and
-`SHORTLET.idFromName(tenantId)`. The authenticated OPS gateway routes each imported or exported table to its owner.
+The tenant is `SHORTLET_TENANT_ID`. The Worker routes to `PLATFORM.idFromName(tenantId)`,
+`SHORTLET.idFromName(tenantId)` and `COMMERCE.idFromName(tenantId)`. The authenticated OPS gateway routes each imported or exported table to its owner.
 
 ## 1. Point-in-time recovery (PITR)
 
@@ -15,10 +15,10 @@ you schedule a bookmark and the object applies it on its **next session** (resta
 
 Choose the restore time as the last moment you believe the data was correct — for example just before a bad import
 or a faulty deploy (take it from the deploy/build log or the incident timeline). PITR is object-scoped: schedule the
-bookmark independently for both the tenant's PLATFORM and SHORTLET objects, using each object's ID and preserving the
-two bookmarks together in the incident record. The authenticated `/_ops/restore` endpoint shown below is served by
-SHORTLET only; it does not schedule the PLATFORM restore. Use the Cloudflare Durable Object recovery control for PLATFORM
-for that half of the restore. Do not return traffic until both restores have applied and both status records have been checked.
+bookmark independently for all three tenant objects, using each object's ID and preserving the three bookmarks together
+in the incident record. The authenticated `/_ops/restore` endpoint shown below is served by SHORTLET only. Use the
+Cloudflare Durable Object recovery control for PLATFORM and COMMERCE. Do not return traffic until all three restores have
+applied and all three status records have been checked.
 For SHORTLET, then:
 
 1. **Dry run — get the bookmark.** Call the authenticated route with no `confirm`:
@@ -88,68 +88,68 @@ omitted assurance rows. Leave all other data unchanged. Exclude credential/repla
 transform ledger account for these intentional differences.
 
 1. **Choose the day.** Take the newest `YYYY-MM-DD/` prefix that has an object for every name in `EXPORT_TABLES` across
-   both owners. Writes
+    all three owners. Writes
    made after that day's alarm are not in it.
-2. **Create both objects.** Before any request reaches either object, check both kind-scoped markers (break-glass B0 below). A marker that exists
+2. **Create all three objects.** Before any request reaches an object, check all kind-scoped markers (break-glass B0 below). A marker that exists
    is re-asserted into its owner's flag when that object starts, and the object starts on its first request, so a marker found
-   here changes what this step may do. If no marker exists, requests to the origin create both tenant objects, each applying
-   its own schema migrations on start. Then check `GET /_ops/status`: top-level `schemaVersion` and nested
-   `platform.schemaVersion` must equal the corresponding migration counts; both `cutoverMarker` values must be `absent` and
-   both `cutoverCompletedAt` values `null`. A `present` marker
+    here changes what this step may do. If no marker exists, requests to the origin create all tenant objects, each applying
+    its own schema migrations on start. Then check `GET /_ops/status`: top-level `schemaVersion`, nested
+    `platform.schemaVersion` and `commerce.schemaVersion` must equal the corresponding migration counts; all `cutoverMarker` values must be `absent` and
+    all `cutoverCompletedAt` values `null`. A `present` marker
    means this tenant's cutover is recorded in R2 (issue 16 A), so every import is refused with `CUTOVER_COMPLETE`; the only
    rebuild path is the break-glass below. An `unavailable` marker refuses every import (`CUTOVER_MARKER_UNAVAILABLE`); fix the
    marker's access first, and never use the break-glass to get past it.
 3. **Load each table, parents first.** Load PLATFORM parent rows first (accounts before linked principals and claims), then
-   the remaining PLATFORM tables, then SHORTLET-owned rows. Use `importOrder()` (`packages/platform-core/src/data-migration.ts`)
+    the remaining PLATFORM tables, then SHORTLET-owned rows, then COMMERCE-owned rows. Use `importOrder()` (`packages/platform-core/src/data-migration.ts`)
    within each owner; the gateway routes each `POST /_ops/import` table to its owner. Each object enforces its foreign
    keys, so a child row whose parent is not loaded yet is refused:
    answers `422 BATCH_REJECTED`, nothing from that request is written, and the load must stop there and be fixed. Split
    each file into requests of `floor(100 / column count)` rows, with each body at most 5 MiB, as `importRequestChunks`
    does. POST each request to `/_ops/import` as `{ "table": "<table>", "rows": [ ... ] }`. No packaged command loads a day
    export (`--push` reads the cutover manifest, which a day export does not have). The restore test is the reference loop.
-4. **Verify both authorities.** `GET /_ops/import/verify` returns the SHORTLET map at top level and PLATFORM maps nested
-   under `platform`. Compare each table's row count/checksum to its owner export and the transformed manifest. All excluded
+4. **Verify all authorities.** `GET /_ops/import/verify` returns the SHORTLET map at top level and PLATFORM and COMMERCE maps nested
+    under `platform` and `commerce`. Compare each table's row count/checksum to its owner export and the transformed manifest. All excluded
    credential/replay counts must be zero. For a legacy transform, reconcile the account default and assurance omission in
    the ledger, and do not report equality for the intentionally omitted assurance rows.
-5. **Confirm both cutover states.** Each object re-asserts its own flag from its `_ops/cutover/{shortlet|platform}/…` marker
-   at start and before import. Check `GET /_ops/status` after step 4: both kind-scoped marker/completion pairs must agree
-   with tenant history. Outside break-glass, no step here sets flags or markers. The break-glass re-closes both at B5.
+5. **Confirm all cutover states.** Each object re-asserts its own flag from its `_ops/cutover/{shortlet|platform|commerce}/…` marker
+    at start and before import. Check `GET /_ops/status` after step 4: all kind-scoped marker/completion pairs must agree
+    with tenant history. Outside break-glass, no step here sets flags or markers. The break-glass re-closes all three at B5.
 
 **Break-glass: rebuild into a tenant whose cutover markers exist (decided 10 Oct 2026, issue 16 item 8).** The normal rebuild is
-refused by design when either marker exists. No API route clears either marker, and no route clears either object's flag. This break-glass is
+refused by design when any marker exists. No API route clears a marker, and no route clears an object's flag. This break-glass is
 for disaster recovery into the same tenant only. It needs a person with R2 write access to the production `EXPORTS` bucket
 (`shortlet-pilot-production-exports`), and every step is recorded in the cutover log (cutover runbook, section 11).
 
 Deleting the markers is not enough on its own. Each object keeps its flag in its own storage, and each start can re-create its
-kind-scoped marker from that flag. The delete holds only when both objects' storage no longer carries the flag. B3 checks this, and the rebuild
+kind-scoped marker from that flag. The delete holds only when all three objects' storage no longer carries the flag. B3 checks this, and the rebuild
 stops if the flag is still there.
 
-- **B0. Record both markers.** The object ids are the Durable Objects' hex ids, so list and record each key by kind; do not compute them.
+- **B0. Record all markers.** The object ids are the Durable Objects' hex ids, so list and record each key by kind; do not compute them.
   `npm exec cf -- r2 objects list --bucket-name "shortlet-pilot-production-exports" --mode production --prefix "_ops/cutover/"`.
-  Find `_ops/cutover/shortlet/<SHORTLET object id>.json` and `_ops/cutover/platform/<PLATFORM object id>.json` for this tenant.
-  If neither exists, use the normal procedure; if only one exists, stop and investigate partial cutover. Read both keys and record
+  Find `_ops/cutover/shortlet/<SHORTLET object id>.json`, `_ops/cutover/platform/<PLATFORM object id>.json` and `_ops/cutover/commerce/<COMMERCE object id>.json` for this tenant.
+  If none exist, use the normal procedure; if only some exist, stop and investigate partial cutover. Read all keys and record
   each `completedAt`:
   `npm exec cf -- r2 objects get "<kind-scoped-key>" --bucket-name "shortlet-pilot-production-exports" --mode production --text`.
 - **B1. Freeze and record.** Before B2, no request may reach this tenant's object: stop the Worker route or serve the freeze response
   (the mechanism is in cutover runbook, section 1). Send no import before B2: an import re-asserts the flag from a present marker,
   so an import sent first would put the flag back. Record the incident reason, the operator and the time in the cutover log.
-- **B2. Delete both markers.** Run the dry run for each exact kind-scoped key first, then delete each without `--dry-run`. Do not pass `--force`, so the CLI's
+- **B2. Delete all three markers.** Run the dry run for each exact kind-scoped key first, then delete each without `--dry-run`. Do not pass `--force`, so the CLI's
   confirmation shows the key:
   `npm exec cf -- r2 objects delete "<kind-scoped-key>" --bucket-name "shortlet-pilot-production-exports" --mode production --dry-run`.
-- **B3. Check that neither flag survived. Stop if either did.** List the prefix again; both keys must be absent. Then `GET /_ops/status`.
-  Expected: top-level and nested `platform.cutoverCompletedAt` are `null`, and both markers are `absent`. Stop if either completion time
+- **B3. Check that no flag survived. Stop if any did.** List the prefix again; all three keys must be absent. Then `GET /_ops/status`.
+  Expected: top-level, nested `platform.cutoverCompletedAt` and `commerce.cutoverCompletedAt` are `null`, and all markers are `absent`. Stop if any completion time
   is set. That means the corresponding flag
   survived in that object's storage. The status read does not re-create the marker, so that `cutoverMarker` may read `absent` (the object
   was already running) or `present` (the status request started the object, and its start re-created the marker). Either way, do not
   import, and do not run B4 or B5. The next import, or that object's next start, re-creates its marker and refuses
   with `CUTOVER_COMPLETE`. A rebuild into this object is then not possible under the current design; the recovery is a separate
   decision (cutover runbook, Needs user item 8).
-- **B4. Rebuild.** Run steps 3 and 4 above: load the chosen day and verify both owner maps. Imports are accepted only while both
+- **B4. Rebuild.** Run steps 3 and 4 above: load the chosen day and verify all owner maps. Imports are accepted only while all
   objects' flags are clear, which is why B1 must hold.
-- **B5. Re-close.** Send `POST /_ops/cutover/complete` with `-d '{}'` and the same headers as the restore route in section 1. Both
-  kind-scoped markers are written before their respective flags. Record `cutoverCompletedAt` and `platformCutoverCompletedAt`; a
+- **B5. Re-close.** Send `POST /_ops/cutover/complete` with `-d '{}'` and the same headers as the restore route in section 1. All
+  kind-scoped markers are written before their respective flags. Record all three completion timestamps; a
   repeat call returns the first values. Keep both original B0 timestamps alongside them.
-- **B6. Confirm.** `GET /_ops/status` must show both markers `present` and both completion times equal to B5's values.
+- **B6. Confirm.** `GET /_ops/status` must show all markers `present` and all completion times equal to B5's values.
 - **B7. Lift the freeze and log.** Only after B6. Add the log row: date, reason, operator, the original `completedAt` (B0), the B3
   result, the B5 timestamp and the step 4 counts.
 
@@ -169,6 +169,8 @@ Rows created and then deleted within one day are in no export.
   rolled back into Node, so sessions are re-established after a rollback as well (cutover runbook, step R5).
 - Receipt bytes. The `RECEIPTS` bucket is separate and is not rebuilt from the export. The metadata rows are restored,
   so check each receipt object exists (section 3).
+- Product image bytes. The `PRODUCT_IMAGES` bucket is separate and is not rebuilt from the export. Product rows restore their
+  opaque image keys; verify each referenced object exists before returning Commerce storefront traffic.
 - The cutover flag and the cutover marker. The flag is rebuilt from the marker on start. The marker is not in any export and is
   not restored by a rebuild; it survives both a point-in-time restore and a rebuild because it is kept outside the object.
 
@@ -196,20 +198,20 @@ Rows created and then deleted within one day are in no export.
     -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET"
   ```
 
-  - Top-level `schemaVersion` must equal `expectedSchemaVersion`; nested `platform.schemaVersion` must equal the PLATFORM migration count.
-  - If cutover had completed before the restore point, top-level and nested `platform.cutoverCompletedAt` must not be `null`, and
-    both marker fields must be `present`. Record both timestamps. Either completion time `null` while its marker is `present` is
+  - Top-level `schemaVersion` must equal `expectedSchemaVersion`; nested `platform.schemaVersion` and `commerce.schemaVersion` must equal their migration counts.
+  - If cutover had completed before the restore point, top-level, nested `platform.cutoverCompletedAt` and `commerce.cutoverCompletedAt` must not be `null`, and
+    all marker fields must be `present`. Record all timestamps. Any completion time `null` while its marker is `present` is
     not a valid state: stop and report it, because that object should have re-asserted its flag.
   - Either `cutoverMarker: "unavailable"` means that marker could not be read, so every import is refused. Restore the `EXPORTS` binding
     and check again. Do not treat `unavailable` as "not cut over".
   - A restore that was meant to go back before the cutover, so that either object should accept imports again, is a decision for a
     person (issue 16, Needs user item 8). It is not available through this runbook.
-  - A rebuild from exports (section 2, step 5) has the same check for both authorities.
+  - A rebuild from exports (section 2, step 5) has the same check for all three authorities.
 - **Post-restore consistency.** Before returning to service, record each of these in the log:
   1. The load of the chosen day finished with every request accepted. A `BATCH_REJECTED` (422) during the load means a child row
      was loaded before its parent, or a foreign key failed. Stop, fix the load, and start again from an empty object.
   2. `GET /_ops/import/verify` `tables[<table>].rowCount` equals the line count of that day's file for every table in
-     `EXPORT_TABLES` (section 2, step 4), across the top-level SHORTLET and nested PLATFORM table maps. All six excluded credential
+     `EXPORT_TABLES` (section 2, step 4), across the top-level SHORTLET and nested PLATFORM and COMMERCE table maps. All six excluded credential
      tables read `0` at their owning object.
   3. Because the day's files are per-table snapshots, rows written after the alarm are absent, and related rows can be
      out of step across tables. Record the day, the alarm time (from the export) and the writes the business knows of after it.

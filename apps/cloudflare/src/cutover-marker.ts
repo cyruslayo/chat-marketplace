@@ -23,7 +23,7 @@ export const CUTOVER_MARKER_PREFIX = "_ops/cutover/";
 const CUTOVER_MARKER_FORMAT = 1;
 
 /** The marker key for one object. Under the reserved prefix, so it is never an export day (do-export.ts). */
-export type CutoverObjectKind = "platform" | "shortlet";
+export type CutoverObjectKind = "platform" | "shortlet" | "commerce";
 
 /** Namespaces a marker by authority while retaining the tenant-derived Durable Object name. */
 export function cutoverMarkerKey(objectName: string, objectKind: CutoverObjectKind = "shortlet"): string {

@@ -21,10 +21,11 @@ const IDENTITY_ASSURANCE_TABLE = "guest_identity_assurance";
 const CREDENTIAL_TABLES_BY_OWNER = {
   platform: ["guest_account_sessions", "guest_session_bindings", "guest_sign_in_codes", "guest_account_email_commands"],
   shortlet: ["operator_access_tokens", "operator_sessions"],
-} as const satisfies Readonly<Record<"platform" | "shortlet", readonly (keyof typeof CREDENTIAL_TABLES)[]>>;
+  commerce: [],
+} as const satisfies Readonly<Record<"platform" | "shortlet" | "commerce", readonly (keyof typeof CREDENTIAL_TABLES)[]>>;
 
 /** Counts only the credential tables owned by this schema; the other DO's credentials are reported by that DO's verifier. */
-export function credentialTableCountsForOwner(database: SqlDatabase, owner: "platform" | "shortlet"): Record<string, number> {
+export function credentialTableCountsForOwner(database: SqlDatabase, owner: "platform" | "shortlet" | "commerce"): Record<string, number> {
   const counts: Record<string, number> = {};
   for (const table of CREDENTIAL_TABLES_BY_OWNER[owner]) {
     const present = database.prepare("SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = ?").get([table]);

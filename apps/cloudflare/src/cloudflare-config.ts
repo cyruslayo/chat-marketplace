@@ -9,7 +9,9 @@ import { createAccessJwtVerifier, type AccessJwks, type AccessVerifier } from ".
 export interface CloudflareEnv extends Omit<PilotEnvironmentSource, "SHORTLET_DB_PATH" | "SHORTLET_INVENTORY_PATH" | "SHORTLET_OPERATORS_PATH"> {
   readonly SHORTLET: DurableObjectNamespace;
   readonly PLATFORM: DurableObjectNamespace;
+  readonly COMMERCE: DurableObjectNamespace;
   readonly RECEIPTS: R2Bucket;
+  readonly PRODUCT_IMAGES: R2Bucket;
   readonly EXPORTS: R2Bucket;
   readonly ASSETS: Fetcher;
   /** 04c/10a: the production cap on resident per-session Guest runtimes; unset keeps the approved default. */

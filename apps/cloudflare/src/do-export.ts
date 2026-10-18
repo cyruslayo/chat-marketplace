@@ -79,8 +79,14 @@ export const PLATFORM_CREDENTIAL_TABLES: ReadonlySet<string> = new Set([
   "guest_account_email_commands",
 ]);
 
+/** ADR 0101: commerce application tables are exported only by CommerceMarket. */
+export const COMMERCE_EXPORT_TABLES = [
+  "cart_lines", "delivery_zones", "merchant_offers", "merchant_orders", "merchants", "offer_variants", "products", "stores",
+] as const;
+export const COMMERCE_OWNED_TABLES: ReadonlySet<string> = new Set(COMMERCE_EXPORT_TABLES);
+
 /** Full legacy/local export manifest for fixture and migration compatibility; production alarms use per-DO ownership lists. */
-export const EXPORT_TABLES = [...SHORTLET_EXPORT_TABLES, ...PLATFORM_EXPORT_TABLES].sort() as readonly string[];
+export const EXPORT_TABLES = [...SHORTLET_EXPORT_TABLES, ...PLATFORM_EXPORT_TABLES, ...COMMERCE_EXPORT_TABLES].sort() as readonly string[];
 
 /**
  * Tables the daily export does not write: the bearer-credential tables, which are the one shared list in
@@ -92,6 +98,9 @@ export const DAILY_EXPORT_EXCLUDED: Readonly<Record<string, string>> = CREDENTIA
 
 const PROJECTIONS: Readonly<Record<string, string>> = {
   manual_transfer_receipts: "receipt_id, transfer_id, content_type, object_key, size_bytes",
+  // Issue 24 decision (ADR 0096 not amended): the payment reference is never exported. Phone and address stay in the
+  // export and remain behind the ADR 0095 data-protection gates.
+  merchant_orders: "id, store_id, public_code, customer_name, customer_phone, customer_instagram, items_json, subtotal_kobo, shipping_fee_kobo, total_kobo, status, shipping_address_json, delivery_zone_id, delivery_city, delivery_zone_name, delivery_provider, delivery_estimate, payment_verified_at, payment_event_id, inventory_restocked, created_at, updated_at",
 };
 
 /** A page keeps each read well inside the Durable Object limits. Pages are keyed on rowid, so no read rescans earlier rows. */
@@ -123,7 +132,7 @@ export interface DailyExportDependencies {
   readonly clock: () => Date;
   readonly retentionDays: number;
   readonly orphanGraceHours: number;
-  readonly tableOwner?: "shortlet" | "platform";
+  readonly tableOwner?: "shortlet" | "platform" | "commerce";
 }
 
 export interface DailyExportReport {
@@ -253,7 +262,7 @@ export async function sweepOrphanReceipts(dependencies: DailyExportDependencies)
 export async function runDailyExport(dependencies: DailyExportDependencies): Promise<DailyExportReport> {
   const date = lagosDate(dependencies.clock());
   const rowsByTable: Record<string, number> = {};
-  const tables = dependencies.tableOwner === "platform" ? PLATFORM_EXPORT_TABLES : dependencies.tableOwner === "shortlet" ? SHORTLET_EXPORT_TABLES : EXPORT_TABLES;
+  const tables = dependencies.tableOwner === "platform" ? PLATFORM_EXPORT_TABLES : dependencies.tableOwner === "shortlet" ? SHORTLET_EXPORT_TABLES : dependencies.tableOwner === "commerce" ? COMMERCE_EXPORT_TABLES : EXPORT_TABLES;
   for (const table of tables) rowsByTable[table] = await exportTable(dependencies, date, table);
   const expiredExportsDeleted = await deleteExpiredExports(dependencies, date);
   const orphanReceiptsDeleted = await sweepOrphanReceipts(dependencies);

@@ -2,7 +2,7 @@ import type { CloudflareEnv } from "./cloudflare-config.js";
 import type { Request as WorkerRequest, RequestInit as WorkerRequestInit, Response as WorkerResponse } from "@cloudflare/workers-types";
 import type { AsyncGuestRequestContactIndex, BookingRequestContactMatch } from "../../../packages/platform-core/src/accounts/links.js";
 import type { AccountAssuranceState, AccountAssuranceStateReader } from "../../../packages/platform-core/src/accounts/assurance-state.js";
-import { PLATFORM_OWNED_TABLES } from "./do-export.js";
+import { COMMERCE_OWNED_TABLES, PLATFORM_OWNED_TABLES } from "./do-export.js";
 import type { RemoteGuestAccounts } from "../../../packages/platform-core/src/accounts/remote-port.js";
 import type { GuestDataPort } from "../../local-guest/src/guest-data-port.js";
 import { GuestAccountAuthorityError, type GuestAccountAuthorityErrorCode } from "../../../packages/platform-core/src/accounts/authority.js";
@@ -150,6 +150,44 @@ export function platformMigrationClient(env: CloudflareEnv, tenantId: string): {
       }
       const raw = await postJson(stub, `ops/${operation}`, { tenantId: normalizedTenant, ...input });
       return raw as T;
+    },
+  };
+}
+
+/**
+ * The only path that reaches the internal checkout route (no public Worker route does). Non-2xx answers are returned, not
+ * thrown: 409 payment_unavailable and 400 refusals are expected outcomes the caller maps to a customer response.
+ */
+export function commerceCheckoutClient(env: CloudflareEnv, tenantId: string): {
+  checkout(input: Readonly<Record<string, unknown>>): Promise<{ readonly status: number; readonly body: unknown }>;
+} {
+  const normalizedTenant = tenantId.trim();
+  if (!normalizedTenant || normalizedTenant !== env.SHORTLET_TENANT_ID?.trim()) throw new Error("Tenant does not match the configured commerce tenant");
+  const stub = env.COMMERCE.get(env.COMMERCE.idFromName(normalizedTenant), { locationHint: "afr" });
+  return {
+    async checkout(input) {
+      const response = await stub.fetch(`https://do.internal${INTERNAL_PREFIX}checkout`, {
+        // The configured tenant is spread last, so a caller-supplied tenantId can never reach the DO.
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...input, tenantId: normalizedTenant }),
+      });
+      return { status: response.status, body: await response.json().catch(() => null) as unknown };
+    },
+  };
+}
+
+/** Typed RPC to CommerceMarket; commerce ops never address another owner's SQL database. */
+export function commerceMigrationClient(env: CloudflareEnv, tenantId: string): {
+  request<T>(operation: "import" | "export" | "verify" | "status" | "cutover", input?: Readonly<Record<string, unknown>>): Promise<T>;
+} {
+  const normalizedTenant = tenantId.trim();
+  if (!normalizedTenant || normalizedTenant !== env.SHORTLET_TENANT_ID?.trim()) throw new Error("Tenant does not match the configured commerce tenant");
+  const stub = env.COMMERCE.get(env.COMMERCE.idFromName(normalizedTenant), { locationHint: "afr" });
+  return {
+    async request<T>(operation: "import" | "export" | "verify" | "status" | "cutover", input: Readonly<Record<string, unknown>> = {}): Promise<T> {
+      if (operation === "import" || operation === "export") {
+        if (typeof input.table !== "string" || !COMMERCE_OWNED_TABLES.has(input.table)) throw new Error("Table is not owned by COMMERCE");
+      }
+      return await postJson(stub, `ops/${operation}`, { tenantId: normalizedTenant, ...input }) as T;
     },
   };
 }

@@ -81,6 +81,7 @@ export function isolatedWorkerFetch(tenantId: string, request: Request): Promise
     ...env,
     SHORTLET: env.ISOLATED_SHORTLET,
     PLATFORM: env.ISOLATED_PLATFORM,
+    COMMERCE: env.ISOLATED_COMMERCE,
     SHORTLET_TENANT_ID: tenantId,
   } as unknown as CloudflareEnv;
   return worker.fetch(request as unknown as import("@cloudflare/workers-types").Request, scopedEnv) as unknown as Promise<Response>;

@@ -59,11 +59,14 @@ function workerFor(environment: PilotEnvironment) {
     exports: {
       ShortletPilot: exports.durableObject({ storage: "sqlite" }),
       PlatformDO: exports.durableObject({ storage: "sqlite" }),
+      CommerceMarket: exports.durableObject({ storage: "sqlite" }),
     },
     env: {
       SHORTLET: bindings.durableObject({ worker: name, exportName: "ShortletPilot" }),
       PLATFORM: bindings.durableObject({ worker: name, exportName: "PlatformDO" }),
+      COMMERCE: bindings.durableObject({ worker: name, exportName: "CommerceMarket" }),
       RECEIPTS: bindings.r2({ name: `${name}-receipts` }),
+      PRODUCT_IMAGES: bindings.r2({ name: `${name}-product-images` }),
       EXPORTS: bindings.r2({ name: `${name}-exports` }),
       ASSETS: bindings.assets(),
       SHORTLET_PUBLIC_ORIGIN: bindings.text(PUBLIC_ORIGIN[environment]),

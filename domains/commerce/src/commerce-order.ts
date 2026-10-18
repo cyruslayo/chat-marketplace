@@ -50,9 +50,16 @@ export class CommerceOrders {
     database.exec(MERCHANT_ORDER_SCHEMA);
   }
 
+  /**
+   * Validates a checkout against the Store, Offer, zone, stock and total rules without reserving stock or writing an
+   * order. The internal checkout route uses it while payment is unavailable; createOrder runs the same rules.
+   */
+  quoteCheckout(input: CreateOrderInput): void {
+    this.#buildOrder(input, this.#requirePhone(input), false);
+  }
+
   createOrder(input: CreateOrderInput): MerchantOrder {
-    const normalizedPhone = normalizePhone(input.customerPhone);
-    if (normalizedPhone.length < 7) throw new Error("A valid phone number is required.");
+    const normalizedPhone = this.#requirePhone(input);
 
     // Idempotency on the payment reference, before any stock mutation.
     const existing = this.database
@@ -64,7 +71,7 @@ export class CommerceOrders {
     }
 
     return this.database.transaction(() => {
-      const order = this.#buildOrder(input, normalizedPhone);
+      const order = this.#buildOrder(input, normalizedPhone, true);
       this.database
         .prepare(
           `INSERT INTO merchant_orders (
@@ -155,7 +162,14 @@ export class CommerceOrders {
       .map(readOrder);
   }
 
-  #buildOrder(input: CreateOrderInput, normalizedPhone: string): MerchantOrder {
+  #requirePhone(input: CreateOrderInput): string {
+    const normalizedPhone = normalizePhone(input.customerPhone);
+    if (normalizedPhone.length < 7) throw new Error("A valid phone number is required.");
+    return normalizedPhone;
+  }
+
+  /** Shared checkout rules. Stock is decremented only when `reserveStock` is true, so a quote never mutates stock. */
+  #buildOrder(input: CreateOrderInput, normalizedPhone: string, reserveStock: boolean): MerchantOrder {
     const store = this.database.prepare("SELECT id, status FROM stores WHERE id = $id").get({ $id: input.storeId });
     if (!store || store.status !== "active") throw new Error("The store is unavailable.");
 
@@ -205,10 +219,12 @@ export class CommerceOrders {
       }
       if (availableStock < quantity) throw new Error("Insufficient stock.");
 
-      if (item.variantId !== undefined) {
-        this.database.prepare("UPDATE offer_variants SET stock = stock - $quantity WHERE id = $variantId").run({ $quantity: quantity, $variantId: item.variantId });
-      } else {
-        this.database.prepare("UPDATE merchant_offers SET stock = stock - $quantity WHERE id = $offerId").run({ $quantity: quantity, $offerId: item.offerId });
+      if (reserveStock) {
+        if (item.variantId !== undefined) {
+          this.database.prepare("UPDATE offer_variants SET stock = stock - $quantity WHERE id = $variantId").run({ $quantity: quantity, $variantId: item.variantId });
+        } else {
+          this.database.prepare("UPDATE merchant_offers SET stock = stock - $quantity WHERE id = $offerId").run({ $quantity: quantity, $offerId: item.offerId });
+        }
       }
 
       const priceKobo = Number(offer.price_kobo);
