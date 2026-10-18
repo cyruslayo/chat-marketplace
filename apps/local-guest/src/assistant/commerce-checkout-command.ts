@@ -3,7 +3,7 @@ import { resolveAction } from "../../../../packages/platform-core/src/interactio
 import type { CommandPrincipal, PlatformCommandEnvelope } from "../../../../packages/platform-core/src/envelope.js";
 import type { SqlDatabase, SqlRow } from "../../../../packages/platform-core/src/sql-database.js";
 import type { AuditLog } from "../../../../packages/platform-core/src/index.js";
-import { COMMERCE_CHECKOUT_CONFIRM_ACTION } from "../../../web-agent/src/commerce-presentation.js";
+import { COMMERCE_CHECKOUT_CONFIRM_ACTION, type CommerceCheckoutStatus } from "../../../web-agent/src/commerce-presentation.js";
 
 export const COMMERCE_CHECKOUT_COMMAND = "commerce.checkout.confirm";
 
@@ -34,7 +34,7 @@ export interface CommerceCheckoutProposal {
   readonly shippingFeeKobo: number;
   readonly totalKobo: number;
   readonly version: number;
-  readonly status: "proposed" | "dispatching" | "payment_unavailable" | "payment_started";
+  readonly status: CommerceCheckoutStatus;
 }
 
 export interface CommerceCheckoutConfirmation {

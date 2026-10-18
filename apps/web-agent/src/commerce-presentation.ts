@@ -60,6 +60,10 @@ export interface CommerceOrderPresentation {
   readonly updatedAt: string;
 }
 
+/** Every checkout proposal status the command path can store or project (ADR 0103). */
+export type CommerceCheckoutStatus = "proposed" | "dispatching" | "payment_unavailable" | "payment_started";
+type NonProposedCheckoutStatus = Exclude<CommerceCheckoutStatus, "proposed">;
+
 export interface CommerceCheckoutPresentation {
   readonly proposalId: string;
   readonly taskId: string;
@@ -70,7 +74,7 @@ export interface CommerceCheckoutPresentation {
   readonly subtotalKobo: number;
   readonly shippingFeeKobo: number;
   readonly totalKobo: number;
-  readonly status: string;
+  readonly status: CommerceCheckoutStatus;
 }
 
 export function commerceDiscoveryPresentation(offers: readonly CommerceOfferPresentation[], limits = DEFAULT_COMMERCE_PROJECTION_LIMITS) {
@@ -89,11 +93,12 @@ export function commerceOrderPresentation(order: CommerceOrderPresentation, limi
 
 export function commerceCheckoutPresentation(checkout: CommerceCheckoutPresentation, limits = DEFAULT_COMMERCE_PROJECTION_LIMITS) {
   const bounded = validateCommerceProjectionLimits(limits);
-  return { proposalId: checkout.proposalId, taskId: checkout.taskId, expectedVersion: checkout.expectedVersion, cartVersion: checkout.cartVersion, storeName: projectCommerceText(checkout.storeName, bounded), lines: checkout.lines.slice(0, bounded.maxResults).map((line) => ({ productName: projectCommerceText(line.productName, bounded), quantity: line.quantity, priceKobo: line.priceKobo })), subtotalKobo: checkout.subtotalKobo, shippingFeeKobo: checkout.shippingFeeKobo, totalKobo: checkout.totalKobo, status: projectCommerceText(checkout.status, bounded) };
+  return { proposalId: checkout.proposalId, taskId: checkout.taskId, expectedVersion: checkout.expectedVersion, cartVersion: checkout.cartVersion, storeName: projectCommerceText(checkout.storeName, bounded), lines: checkout.lines.slice(0, bounded.maxResults).map((line) => ({ productName: projectCommerceText(line.productName, bounded), quantity: line.quantity, priceKobo: line.priceKobo })), subtotalKobo: checkout.subtotalKobo, shippingFeeKobo: checkout.shippingFeeKobo, totalKobo: checkout.totalKobo, status: checkout.status };
 }
 
 function messages(surfaceId: string, catalogId: string, title: string, lines: readonly string[]): readonly A2UIServerMessage[] {
-  const components: A2UIComponent[] = [{ id: "commerce-root", component: "Column", children: ["commerce-title", ...lines.map((_, i) => `commerce-line-${i}`)] }, { id: "commerce-title", component: "Text", text: title, variant: "h2" }, ...lines.map((text, i) => ({ id: `commerce-line-${i}`, component: "Text" as const, text }))];
+  // Weaver resolves the A2UI tree from the protocol's canonical root component ID.
+  const components: A2UIComponent[] = [{ id: "root", component: "Column", children: ["commerce-title", ...lines.map((_, i) => `commerce-line-${i}`)] }, { id: "commerce-title", component: "Text", text: title, variant: "h2" }, ...lines.map((text, i) => ({ id: `commerce-line-${i}`, component: "Text" as const, text }))];
   return [{ version: "v0.9.1", createSurface: { surfaceId, catalogId } }, { version: "v0.9.1", updateComponents: { surfaceId, components } }];
 }
 
@@ -113,17 +118,38 @@ export function commerceOrderSurface(order: CommerceOrderPresentation, surfaceId
   return messages(surfaceId, COMMERCE_ORDER_CATALOG_ID, presentation.title, [`${presentation.publicCode} · ${presentation.status} · ${presentation.updatedAt}`]);
 }
 
+/** Guest copy for each non-proposed checkout status. Every string already exists in the commerce runtime; none is new copy. */
+export const COMMERCE_CHECKOUT_STATUS_COPY: Record<NonProposedCheckoutStatus, string> = Object.freeze({
+  payment_unavailable: "Payment unavailable. No order or payment was created.",
+  payment_started: "The platform accepted the payment-start command.",
+  dispatching: "This checkout command is already being processed.",
+});
+
+function checkoutStatusCopy(status: NonProposedCheckoutStatus): string {
+  // The type covers compile-time callers only; a value read from storage can still arrive here at runtime, so keep the guard.
+  if (!Object.hasOwn(COMMERCE_CHECKOUT_STATUS_COPY, status)) throw new RangeError("Checkout status has no approved copy.");
+  return COMMERCE_CHECKOUT_STATUS_COPY[status];
+}
+
 export function commerceCheckoutSurface(checkout: CommerceCheckoutPresentation, surfaceId: string, limits = DEFAULT_COMMERCE_PROJECTION_LIMITS): readonly unknown[] {
   const presentation = commerceCheckoutPresentation(checkout, limits);
   const lines = presentation.lines.map((line, index) => ({ id: `checkout-line-${index}`, component: "Text" as const, text: `${line.productName} · ${line.quantity} × NGN ${(line.priceKobo / 100).toLocaleString("en-NG")}` }));
+  // The confirmation controls are built once and the root's child list is derived from the same array, so a status-dependent
+  // component can never be referenced while absent (the post-confirm surface emits no confirm label).
+  const confirmation: A2UIComponent[] = presentation.status === "proposed"
+    ? [{ id: "checkout-confirm", component: "Button" as const, child: "checkout-confirm-label", variant: "primary" as const, action: { event: { name: COMMERCE_CHECKOUT_CONFIRM_ACTION, context: { proposalId: presentation.proposalId, taskId: presentation.taskId, expectedVersion: presentation.expectedVersion, cartVersion: presentation.cartVersion, confirmedTotalKobo: presentation.totalKobo, surfaceId } } }, accessibility: { label: `Confirm checkout total NGN ${(presentation.totalKobo / 100).toLocaleString("en-NG")}` } }]
+    : [{ id: "checkout-confirm", component: "Text" as const, text: checkoutStatusCopy(presentation.status) }];
+  // The button references this label through `child`; it is emitted but is not a root child, or the text would render twice.
+  const confirmLabels: A2UIComponent[] = presentation.status === "proposed" ? [{ id: "checkout-confirm-label", component: "Text" as const, text: "Confirm checkout" }] : [];
   const components: A2UIComponent[] = [
-    { id: "checkout-root", component: "Column", children: ["checkout-title", ...lines.map((line) => line.id), "checkout-subtotal", "checkout-delivery", "checkout-total", "checkout-confirm", "checkout-confirm-label"] },
+    { id: "root", component: "Column", children: ["checkout-title", ...lines.map((line) => line.id), "checkout-subtotal", "checkout-delivery", "checkout-total", ...confirmation.map((component) => component.id)] },
     { id: "checkout-title", component: "Text", text: `Checkout · ${presentation.storeName}`, variant: "h2" },
     ...lines,
     { id: "checkout-subtotal", component: "Text", text: `Subtotal: NGN ${(presentation.subtotalKobo / 100).toLocaleString("en-NG")}` },
     { id: "checkout-delivery", component: "Text", text: `Delivery: NGN ${(presentation.shippingFeeKobo / 100).toLocaleString("en-NG")}` },
     { id: "checkout-total", component: "Text", text: `Total: NGN ${(presentation.totalKobo / 100).toLocaleString("en-NG")}` },
-    ...(presentation.status === "proposed" ? [{ id: "checkout-confirm", component: "Button" as const, child: "checkout-confirm-label", variant: "primary" as const, action: { event: { name: COMMERCE_CHECKOUT_CONFIRM_ACTION, context: { proposalId: presentation.proposalId, taskId: presentation.taskId, expectedVersion: presentation.expectedVersion, cartVersion: presentation.cartVersion, confirmedTotalKobo: presentation.totalKobo, surfaceId } } }, accessibility: { label: `Confirm checkout total NGN ${(presentation.totalKobo / 100).toLocaleString("en-NG")}` } }, { id: "checkout-confirm-label", component: "Text" as const, text: "Confirm checkout" }] : [{ id: "checkout-confirm", component: "Text" as const, text: "Payment unavailable. No order or payment was created." }]),
+    ...confirmation,
+    ...confirmLabels,
   ];
   return [{ version: "v0.9.1", createSurface: { surfaceId, catalogId: COMMERCE_CART_CATALOG_ID } }, { version: "v0.9.1", updateComponents: { surfaceId, components } }];
 }
