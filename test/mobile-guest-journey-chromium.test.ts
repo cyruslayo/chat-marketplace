@@ -171,13 +171,65 @@ test("AC5: New turns scroll into view inside the transcript at 320px and 1280px"
   for (const width of [320, 1280] as const) {
     const c = await startContext(width, width === 320 ? 700 : 800);
     try {
+      if (width === 320) {
+        await c.tab.evaluate(`(() => {
+          const transcript = document.getElementById("transcript");
+          const trace = [];
+          let framesScheduled = 0;
+          let framesCompleted = 0;
+          const snapshot = (phase) => {
+            const latest = transcript.querySelector(".turn.assistant:last-of-type");
+            const bounds = transcript.getBoundingClientRect();
+            const turnBounds = latest?.getBoundingClientRect();
+            trace.push({ phase, time: performance.now(), framesPending: framesScheduled - framesCompleted, scrollTop: transcript.scrollTop, scrollHeight: transcript.scrollHeight, clientHeight: transcript.clientHeight, turnTop: turnBounds?.top ?? null, turnBottom: turnBounds?.bottom ?? null, containerTop: bounds.top, containerBottom: bounds.bottom, assistantTurns: transcript.querySelectorAll(".turn.assistant").length, mountedSurfaces: document.querySelectorAll(".weaver-mount").length });
+            if (trace.length > 12) trace.shift();
+          };
+          const observer = new MutationObserver((records) => {
+            if (records.some((record) => [...record.addedNodes].some((node) => node instanceof Element && (node.matches(".turn.assistant") || node.querySelector(".turn.assistant"))))) snapshot("assistant-appended");
+          });
+          observer.observe(transcript, { childList: true, subtree: true });
+          const requestFrame = window.requestAnimationFrame.bind(window);
+          window.requestAnimationFrame = (callback) => {
+            framesScheduled++;
+            return requestFrame((time) => {
+              framesCompleted++;
+              snapshot("frame-before-callback");
+              callback(time);
+              snapshot("frame-after-callback");
+            });
+          };
+          window.__guestScrollTrace = { snapshot, values: trace };
+        })()`);
+      }
       await sendPrompt(c.tab, PROMPT);
       await c.tab.waitForFunction("document.querySelectorAll('#transcript .turn.assistant').length >= 1");
+      if (width === 320) {
+        const trace = await c.tab.evaluate<readonly Readonly<Record<string, unknown>>[]>("(() => { const trace = window.__guestScrollTrace; trace.snapshot('assistant-present'); return trace.values; })()");
+        console.log(`[scroll-trace] 320px append/frame timing and geometry: ${JSON.stringify(trace)}`);
+      }
       if (width === 1280) {
         for (let turn = 2; turn <= 4; turn++) {
           await sendPrompt(c.tab, PROMPT);
           await c.tab.waitForFunction(`document.querySelectorAll('#transcript .turn.assistant').length >= ${turn}`);
         }
+      }
+      const visibleTurn = `(() => {
+        const transcript = document.getElementById('transcript');
+        const latest = transcript.querySelector('.turn.assistant:last-of-type');
+        if (!latest) return false;
+        const container = transcript.getBoundingClientRect();
+        const turn = latest.getBoundingClientRect();
+        return transcript.scrollHeight > transcript.clientHeight && transcript.scrollTop > 0 && turn.top >= container.top - 1 && turn.bottom <= container.bottom + 1;
+      })()`;
+      try {
+        // The client corrects the synchronous append scroll in requestAnimationFrame,
+        // after the transcript has acquired its post-append layout dimensions.
+        await c.tab.waitForFunction(visibleTurn);
+      } catch (error) {
+        const trace = width === 320
+          ? await c.tab.evaluate<readonly Readonly<Record<string, unknown>>[]>("window.__guestScrollTrace.values").catch(() => [])
+          : [];
+        throw new Error(`${error instanceof Error ? error.message : String(error)}; final scroll state=${await c.tab.evaluate<string>(`(() => { const transcript = document.getElementById('transcript'); const latest = transcript.querySelector('.turn.assistant:last-of-type'); const container = transcript.getBoundingClientRect(); const turn = latest?.getBoundingClientRect(); return JSON.stringify({ scrollTop: transcript.scrollTop, scrollHeight: transcript.scrollHeight, clientHeight: transcript.clientHeight, turnTop: turn?.top ?? null, turnBottom: turn?.bottom ?? null, containerTop: container.top, containerBottom: container.bottom, assistantTurns: transcript.querySelectorAll('.turn.assistant').length, mountedSurfaces: document.querySelectorAll('.weaver-mount').length }); })()`)}; frame/mutation trace=${JSON.stringify(trace)}`);
       }
       const visibility = await c.tab.evaluate<{ readonly scrollHeight: number; readonly clientHeight: number; readonly scrollTop: number; readonly mainHeight: number; readonly appHeight: number; readonly lastTop: number; readonly lastBottom: number; readonly containerTop: number; readonly containerBottom: number }>("(() => { const transcript = document.getElementById('transcript'); const last = transcript.querySelector('.turn.assistant:last-of-type'); const container = transcript.getBoundingClientRect(); const turn = last.getBoundingClientRect(); return { scrollHeight: transcript.scrollHeight, clientHeight: transcript.clientHeight, scrollTop: transcript.scrollTop, mainHeight: document.querySelector('main').clientHeight, appHeight: document.querySelector('.app').clientHeight, lastTop: turn.top, lastBottom: turn.bottom, containerTop: container.top, containerBottom: container.bottom }; })()");
       assert.ok(visibility.scrollHeight > visibility.clientHeight, `Transcript did not become a scroll container at ${width}px: ${JSON.stringify(visibility)}`);

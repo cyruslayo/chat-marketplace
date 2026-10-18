@@ -7,7 +7,7 @@ Requested: 6 Oct 2026
 
 The web A2UI integration has two gaps.
 
-1. **The vendored Weaver is out of date.**
+1. **Historical migration context — completed in issue 01 (`6503849`).**
    - The app previously consumed `@weaver/core` and `@weaver/web` 0.1.2 as tarballs in `vendor/weaver/`, before the 0.2.1 packages were published to npm.
    - The published release is `@cylayo/weaver-core` and `@cylayo/weaver-web` **0.2.1**, from tag `v0.2.1` (`05cd279`) at <https://github.com/cyruslayo/weaver>.
    - 0.2.0 added the producer (`createA2UIV091Producer`), validated JSONL stream ingestion and runtime safety budgets. 0.2.1 only moved the packages to the `@cylayo` scope.
@@ -30,7 +30,7 @@ The web A2UI integration has two gaps.
 
 | Topic | Decision |
 | --- | --- |
-| Dependency source | npm, exact pins `"@cylayo/weaver-core": "0.2.1"` and `"@cylayo/weaver-web": "0.2.1"`. Delete `vendor/weaver/`, `scripts/verify-weaver-vendor.mjs` and `npm run verify:weaver`. No ADR requires vendoring, and the lockfile's sha512 integrity is as tamper-evident as the vendored hashes. |
+| Dependency source (implemented in issue 01, `6503849`) | npm, exact pins `"@cylayo/weaver-core": "0.2.1"` and `"@cylayo/weaver-web": "0.2.1"`; the vendored tarballs and verifier were removed and the retired package script was deleted. No ADR requires vendoring, and the lockfile's sha512 integrity is as tamper-evident as the previous vendored hashes. |
 | Catalogue helper | Stay on 0.2.1. Use plain `CatalogRegistration { catalogId, schema }` with a small local typed `defineShortletCatalog` that mirrors upstream `defineCatalog`, and swap it out when Weaver releases it. |
 | Scope | The three named organizers plus `decorateComparison`. The downstream `organizeRequestScreen`, `organizeOfferScreen`, `organizePaymentScreen` and `organizeConfirmation` stay; they keep reading the `.ui-ticket` and `.ui-price-breakdown` the new renderers produce. |
 | Renderer markup | Renderers call the existing `guest-kit.ts` helpers (`ticketHtml`, `breakdownHtml`, `unitTilesHtml`, `unitAboutHtml`, `stayCardInnerHtml`, `resultRowPartsHtml`) with typed props and parse the result through a `<template>`, as `replaceWithKitMarkup` does today. One markup source serves the page and the chat. |
