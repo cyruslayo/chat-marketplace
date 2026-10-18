@@ -20,7 +20,6 @@
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TestHarnessDO", "ShortletPilot", "PlatformDO", "CommerceMarket", "IsolatedShortletPilot", "IsolatedPlatformDO", "IsolatedCommerceMarket"] }],
   "r2_buckets": [
     { "binding": "RECEIPTS", "bucket_name": "test-receipts" },
-    { "binding": "PRODUCT_IMAGES", "bucket_name": "test-product-images" },
     { "binding": "EXPORTS", "bucket_name": "test-exports" }
   ],
   "assets": { "directory": "./public", "binding": "ASSETS" },

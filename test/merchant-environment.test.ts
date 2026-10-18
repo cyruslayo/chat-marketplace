@@ -1,3 +1,4 @@
+import { migrateCommerceDatabase } from "./helpers/commerce-database.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { NodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-database.js";
@@ -5,6 +6,7 @@ import { MerchantEnvironment } from "../apps/local-merchant/src/merchant-environ
 
 test("the merchant environment composes the commerce pack and seeds its store", () => {
   const database = new NodeSqliteDatabase(":memory:");
+  migrateCommerceDatabase(database);
   const environment = new MerchantEnvironment({}, database);
 
   assert.equal(environment.merchantPrincipal().role, "merchant");

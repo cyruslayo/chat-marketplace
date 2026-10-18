@@ -4,18 +4,30 @@ import test from "node:test";
 import { NodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-database.js";
 import { applySchemaMigrations, schemaVersion } from "../packages/platform-core/src/schema-migrations.js";
 import { createCommercePack } from "../domains/commerce/src/index.js";
+import { COMMERCE_TEST_CLOCK as CLOCK, commerceMigrations, migrateCommerceDatabase } from "./helpers/commerce-database.js";
 
 /** Slice 21: Merchant Order — port of instastore create_store_order / set_order_status. */
 
-const CLOCK = () => new Date("2026-10-16T00:00:00.000Z");
-
+/** A migrated database: the ledger creates merchant_orders, not the order service (issue 24 review 3). */
 function memory(): NodeSqliteDatabase {
-  return new NodeSqliteDatabase(":memory:");
+  const database = new NodeSqliteDatabase(":memory:");
+  migrateCommerceDatabase(database);
+  return database;
 }
 
 function pack(database: NodeSqliteDatabase) {
   return createCommercePack({ database, clock: CLOCK });
 }
+
+test("issue 24 review 3: the order service creates no merchant_orders table; only the migration ledger does", () => {
+  const database = new NodeSqliteDatabase(":memory:");
+  pack(database);
+  const tableNames = () => database.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map(row => String(row.name));
+  assert.equal(tableNames().includes("merchant_orders"), false);
+  migrateCommerceDatabase(database);
+  assert.equal(tableNames().includes("merchant_orders"), true);
+  database.close();
+});
 
 function setupStore(database: NodeSqliteDatabase, merchantId: string, storeId: string) {
   const { directory } = pack(database);
@@ -215,9 +227,11 @@ test("issue 24 decision 13: an oversell on item 2 refuses the order and leaves i
 });
 
 test("issue 24 decision 7: migration 5 replaces the raw payment_reference column with a NOT NULL UNIQUE hash, and refuses to rebuild over legacy orders", () => {
-  const migrations = createCommercePack({ database: memory(), clock: CLOCK }).migrations;
-  const database = memory();
-  applySchemaMigrations(database, migrations.slice(0, 4), CLOCK().toISOString());
+  const database = new NodeSqliteDatabase(":memory:");
+  const migrations = commerceMigrations(database);
+  // The hash migration is found by its content, so the test follows the ledger when later migrations are added.
+  const hashVersion = migrations.find(migration => migration.statements.some(statement => statement.includes("payment_reference_hash")))!.version;
+  applySchemaMigrations(database, migrations.slice(0, hashVersion - 1), CLOCK().toISOString());
   pack(database);
   setupStore(database, "merchant", "store");
   addOffer(database, "store", "offer", 1000, 5);
@@ -228,7 +242,7 @@ test("issue 24 decision 7: migration 5 replaces the raw payment_reference column
   ).run();
 
   assert.throws(() => applySchemaMigrations(database, migrations, CLOCK().toISOString()), /constraint|check/i);
-  assert.equal(schemaVersion(database), 4);
+  assert.equal(schemaVersion(database), hashVersion - 1);
 
   database.prepare("DELETE FROM merchant_orders").run();
   applySchemaMigrations(database, migrations, CLOCK().toISOString());

@@ -8,7 +8,7 @@
 > basis, vendor terms and the DPIA). Staging rehearsal (issue 15) comes first.
 
 The Node pilot keeps one SQLite file (`SHORTLET_DB_PATH`) and its receipts. Cloudflare keeps platform state, shortlet
-transactions, and commerce transactions in separate SQLite-backed Durable Objects; receipts remain in the private `RECEIPTS` R2 bucket and product images in the private `PRODUCT_IMAGES` bucket (ADRs 0004,
+transactions, and commerce transactions in separate SQLite-backed Durable Objects; receipts remain in the private `RECEIPTS` R2 bucket and product images (no product image bucket yet; issue 24 decision 9) (ADRs 0004,
 0090, 0095, 0101). This runbook moves the shortlet/platform cutover data through the authenticated `/_ops` gateway; commerce has its own per-tenant authority and is not part of the legacy Node SQLite export.
 how to go back.
 

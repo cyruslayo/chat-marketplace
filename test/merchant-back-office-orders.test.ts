@@ -1,3 +1,4 @@
+import { migrateCommerceDatabase } from "./helpers/commerce-database.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { NodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-database.js";
@@ -8,7 +9,9 @@ import { createCommercePack } from "../domains/commerce/src/index.js";
 const CLOCK = () => new Date("2026-10-16T00:00:00.000Z");
 
 function memory(): NodeSqliteDatabase {
-  return new NodeSqliteDatabase(":memory:");
+  const database = new NodeSqliteDatabase(":memory:");
+  migrateCommerceDatabase(database);
+  return database;
 }
 
 function pack(database: NodeSqliteDatabase) {

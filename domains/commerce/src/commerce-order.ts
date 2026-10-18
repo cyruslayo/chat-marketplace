@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import type { SqlDatabase, SqlRow } from "../../../packages/platform-core/src/sql-database.js";
-import { MERCHANT_ORDER_HASHED_SCHEMA } from "./commerce-schema.js";
 import {
   NEXT_ORDER_STATUSES,
   isMerchantOrderStatus,
@@ -54,9 +53,8 @@ export function hashPaymentReference(paymentReference: string): string {
 }
 
 export class CommerceOrders {
-  constructor(private readonly database: SqlDatabase, private readonly clock: () => Date) {
-    database.exec(MERCHANT_ORDER_HASHED_SCHEMA);
-  }
+  /** The merchant_orders table comes only from the migration ledger (issue 24 review 3); this constructor creates nothing. */
+  constructor(private readonly database: SqlDatabase, private readonly clock: () => Date) {}
 
   /**
    * Validates a checkout against the Store, Offer, zone, stock and total rules without reserving stock or writing an

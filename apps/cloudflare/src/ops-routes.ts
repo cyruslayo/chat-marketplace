@@ -114,6 +114,18 @@ async function readJsonBody(request: Request, limit = MAX_OPS_BODY_BYTES): Promi
   return parsed as Record<string, unknown>;
 }
 
+/**
+ * Issue 24 review 6: a status or verify answer for Shortlet does not need commerce, so a commerce failure is reported as a
+ * fixed code in its own section and never fails the Shortlet answer. The error text is not returned.
+ */
+async function commerceReport<T>(call: () => Promise<T>): Promise<T | { readonly ok: false; readonly code: "COMMERCE_UNAVAILABLE" }> {
+  try {
+    return await call();
+  } catch {
+    return { ok: false, code: "COMMERCE_UNAVAILABLE" };
+  }
+}
+
 export function createOpsHandler(dependencies: OpsRouteDependencies): OpsHandler {
   const authorized = async (request: Request): Promise<boolean> => {
     try {
@@ -251,7 +263,13 @@ export function createOpsHandler(dependencies: OpsRouteDependencies): OpsHandler
         const platform = dependencies.platformMigration
           ? await dependencies.platformMigration.request<{ readonly cutoverCompletedAt: string }>("cutover")
           : null;
-        const commerce = dependencies.commerceMigration ? await dependencies.commerceMigration.request<{ readonly cutoverCompletedAt: string }>("cutover") : null;
+        // Commerce is genuinely needed here: a cutover that cannot record commerce must not record Shortlet (issue 24 review 6).
+        let commerce: { readonly cutoverCompletedAt: string } | null = null;
+        if (dependencies.commerceMigration) {
+          try { commerce = await dependencies.commerceMigration.request<{ readonly cutoverCompletedAt: string }>("cutover"); } catch {
+            return json(503, { ok: false, code: "COMMERCE_CUTOVER_UNAVAILABLE", message: "The commerce cutover could not be recorded, so the Shortlet cutover is not recorded either. Nothing changed; run it again." });
+          }
+        }
         const completedAt = await completeCutoverWithMarker(dependencies.database, dependencies.cutoverMarker, dependencies.clock().toISOString());
         return json(200, { ok: true, cutoverCompletedAt: completedAt, platformCutoverCompletedAt: platform?.cutoverCompletedAt ?? null, commerceCutoverCompletedAt: commerce?.cutoverCompletedAt ?? null });
       } catch (error) {
@@ -268,7 +286,7 @@ export function createOpsHandler(dependencies: OpsRouteDependencies): OpsHandler
       const platform = dependencies.platformMigration
         ? await dependencies.platformMigration.request<Record<string, unknown>>("status")
         : null;
-      const commerce = dependencies.commerceMigration ? await dependencies.commerceMigration.request<Record<string, unknown>>("status") : null;
+      const commerce = dependencies.commerceMigration ? await commerceReport(() => dependencies.commerceMigration!.request<Record<string, unknown>>("status")) : null;
       return json(200, {
         ok: true,
         schemaVersion: schemaVersion(dependencies.database),
@@ -285,7 +303,7 @@ export function createOpsHandler(dependencies: OpsRouteDependencies): OpsHandler
       const platform = dependencies.platformMigration
         ? await dependencies.platformMigration.request<Record<string, unknown>>("verify")
         : null;
-      const commerce = dependencies.commerceMigration ? await dependencies.commerceMigration.request<Record<string, unknown>>("verify") : null;
+      const commerce = dependencies.commerceMigration ? await commerceReport(() => dependencies.commerceMigration!.request<Record<string, unknown>>("verify")) : null;
       return json(200, {
         ok: true,
         schemaVersion: schemaVersion(dependencies.database),

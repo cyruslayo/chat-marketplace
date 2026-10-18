@@ -1,3 +1,4 @@
+import { migrateCommerceDatabase } from "./helpers/commerce-database.js";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -14,7 +15,9 @@ import * as commerceIndex from "../domains/commerce/src/index.js";
 const CLOCK = () => new Date("2026-10-16T00:00:00.000Z");
 
 function memory(): NodeSqliteDatabase {
-  return new NodeSqliteDatabase(":memory:");
+  const database = new NodeSqliteDatabase(":memory:");
+  migrateCommerceDatabase(database);
+  return database;
 }
 
 test("AC1: the commerce pack registers through the same registry as shortlet with no special case", () => {
@@ -57,7 +60,8 @@ test("AC3: a suspended store is never returned to consumers", () => {
 });
 
 test("AC4: the boundary test covers domains/commerce", () => {
-  assert.deepEqual(Object.keys(commerceIndex).sort(), ["createCommercePack"]);
+  // The façade's runtime exports: the pack factory and the untrusted-checkout parser that hosts must use (ADR 0099).
+  assert.deepEqual(Object.keys(commerceIndex).sort(), ["createCommercePack", "parseCreateOrderInput"]);
 
   const allowlist = JSON.parse(
     readFileSync(new URL("./fixtures/domain-boundary-allowlist.json", import.meta.url), "utf8"),

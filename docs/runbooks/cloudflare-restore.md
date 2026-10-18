@@ -169,7 +169,7 @@ Rows created and then deleted within one day are in no export.
   rolled back into Node, so sessions are re-established after a rollback as well (cutover runbook, step R5).
 - Receipt bytes. The `RECEIPTS` bucket is separate and is not rebuilt from the export. The metadata rows are restored,
   so check each receipt object exists (section 3).
-- Product image bytes. The `PRODUCT_IMAGES` bucket is separate and is not rebuilt from the export. Product rows restore their
+- Product image bytes: there is no product image bucket yet (issue 24 decision 9; the merchant back-office issue adds it). They are not in the export. Product rows restore their
   opaque image keys; verify each referenced object exists before returning Commerce storefront traffic.
 - The cutover flag and the cutover marker. The flag is rebuilt from the marker on start. The marker is not in any export and is
   not restored by a rebuild; it survives both a point-in-time restore and a rebuild because it is kept outside the object.

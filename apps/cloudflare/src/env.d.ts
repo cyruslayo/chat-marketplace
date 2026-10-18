@@ -35,7 +35,6 @@ declare namespace Cloudflare {
     ISOLATED_PLATFORM: import("@cloudflare/workers-types").DurableObjectNamespace;
     ISOLATED_COMMERCE: import("@cloudflare/workers-types").DurableObjectNamespace;
     RECEIPTS: import("@cloudflare/workers-types").R2Bucket;
-    PRODUCT_IMAGES: import("@cloudflare/workers-types").R2Bucket;
     EXPORTS: import("@cloudflare/workers-types").R2Bucket;
     ASSETS: import("@cloudflare/workers-types").Fetcher;
   }

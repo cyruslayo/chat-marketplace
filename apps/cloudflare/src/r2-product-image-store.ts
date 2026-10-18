@@ -1,7 +1,10 @@
 import type { R2Bucket } from "@cloudflare/workers-types";
 import { InteractionSecurityEngine } from "../../../packages/platform-core/src/interaction-security.js";
 
-/** Issue 24 decision: raster product images only, at most 5 MiB each. Named here, never inline in `put`. */
+/**
+ * Policy source: the user's decision of 18 Oct 2026, recorded in issue 24 under "Implementation decisions, 18 Oct 2026"
+ * (decisions 8 and 9): raster product images only, at most 5 MiB each. Named here, never inline in `put`.
+ */
 export const PRODUCT_IMAGE_MIME_TYPES: readonly string[] = ["image/jpeg", "image/png", "image/webp"];
 export const PRODUCT_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 

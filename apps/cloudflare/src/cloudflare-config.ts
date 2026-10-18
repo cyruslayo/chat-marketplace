@@ -11,7 +11,6 @@ export interface CloudflareEnv extends Omit<PilotEnvironmentSource, "SHORTLET_DB
   readonly PLATFORM: DurableObjectNamespace;
   readonly COMMERCE: DurableObjectNamespace;
   readonly RECEIPTS: R2Bucket;
-  readonly PRODUCT_IMAGES: R2Bucket;
   readonly EXPORTS: R2Bucket;
   readonly ASSETS: Fetcher;
   /** 04c/10a: the production cap on resident per-session Guest runtimes; unset keeps the approved default. */

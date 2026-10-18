@@ -1,3 +1,4 @@
+import { migrateCommerceDatabase } from "./helpers/commerce-database.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { A2UIServerMessage } from "@cylayo/weaver-core";
@@ -21,6 +22,7 @@ interface RenderedSurface { readonly text: string; readonly components: number; 
 /** Seeds one verified store with a tote (18 in stock) and one active delivery zone. */
 function seedBrowserCommerce() {
   const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:", clock: () => new Date("2026-10-18T10:00:00Z") });
+  migrateCommerceDatabase(environment.database);
   const commerce = createCommercePack({ database: environment.database, clock: environment.clock });
   commerce.directory.createMerchant({ id: "browser-merchant", name: "Harbour Goods Ltd", status: "verified" });
   commerce.directory.createStore({ id: "browser-store", merchantId: "browser-merchant", slug: "harbour-goods", name: "Harbour Goods", status: "active" });

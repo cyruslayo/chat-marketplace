@@ -1,11 +1,10 @@
 import { createHash } from "node:crypto";
 import { env, SELF, runInDurableObject } from "cloudflare:test";
 import { expect, test } from "vitest";
-import { createCommercePack } from "../../../domains/commerce/src/index.js";
-import { parseCreateOrderInput } from "../../../domains/commerce/src/order.js";
+import { createCommercePack, parseCreateOrderInput } from "../../../domains/commerce/src/index.js";
+import { commerceMigrations } from "../../../test/helpers/commerce-database.js";
 import { DurableObjectSqlDatabase } from "../src/do-sql-database.js";
 import { COMMERCE_EXPORT_TABLES, PLATFORM_EXPORT_TABLES, SHORTLET_EXPORT_TABLES, exportObjectKey, exportTable, lagosDate, type DailyExportDependencies } from "../src/do-export.js";
-import { PRODUCT_IMAGE_MAX_BYTES, R2ProductImageStore } from "../src/r2-product-image-store.js";
 import { commerceCheckoutClient, commerceMigrationClient } from "../src/do-clients.js";
 import type { CloudflareEnv } from "../src/cloudflare-config.js";
 import { accessToken, isolatedWorkerFetch, opsHeaders } from "./ops-test-helpers.js";
@@ -98,11 +97,14 @@ test("24 AC1: commerce DO refuses internal ops for a missing or foreign tenant (
   expect(matched.status).toBe(200);
 });
 
-test("24 AC1: commerce migration client throws on a tenant mismatch and accepts only the configured tenant (fail closed)", () => {
+test("24 AC1: commerce migration client refuses a foreign tenant on the call, fail closed (review 6: lazy)", async () => {
   const commerceEnv = env as unknown as CloudflareEnv;
-  expect(() => commerceMigrationClient(commerceEnv, "tenant-foreign")).toThrow("Tenant does not match the configured commerce tenant");
-  expect(() => commerceMigrationClient(commerceEnv, "   ")).toThrow("Tenant does not match the configured commerce tenant");
-  expect(() => commerceMigrationClient(commerceEnv, "tenant-synthetic")).not.toThrow();
+  await expect(commerceMigrationClient(commerceEnv, "tenant-foreign").request("status")).rejects.toThrow("Tenant does not match the configured commerce tenant");
+  await expect(commerceMigrationClient(commerceEnv, "   ").request("status")).rejects.toThrow("Tenant does not match the configured commerce tenant");
+});
+
+test("24 AC1: commerce migration client builds for the configured tenant without a call (review 6: lazy)", () => {
+  expect(() => commerceMigrationClient(env as unknown as CloudflareEnv, "tenant-synthetic")).not.toThrow();
 });
 
 test("24 AC2: internal checkout client throws on a tenant mismatch and accepts only the configured tenant (fail closed)", () => {
@@ -226,56 +228,66 @@ test("24 AC2 refusal: checkout with malformed items, offerId, paymentReference o
   expect(state).toEqual({ orders: 0, stock: 1 });
 });
 
-/** Minimal files that carry each type's magic bytes (issue 24 decision 8). */
-const JPEG_FILE = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
-const PNG_FILE = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d]);
-const WEBP_FILE = Uint8Array.from([0x52, 0x49, 0x46, 0x46, 0x10, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38, 0x20]);
 
-test("24 AC2: product images store a valid JPEG, PNG or WebP privately and refuse an oversize or disallowed upload", async () => {
-  const store = new R2ProductImageStore(env.PRODUCT_IMAGES);
-  const bytes = PNG_FILE;
-  const key = await store.put(bytes, "image/png");
-  expect(key).toMatch(/^product-images\/[\da-f-]+$/);
-  expect(await store.get(key)).toEqual({ bytes, contentType: "image/png" });
-  for (const [contentType, file] of [["image/jpeg", JPEG_FILE], ["image/png", PNG_FILE], ["image/webp", WEBP_FILE]] as const) {
-    const accepted = await store.put(file, contentType);
-    expect(await store.get(accepted), contentType).toEqual({ bytes: file, contentType });
-    await store.delete(accepted);
-  }
-  // Decision 8: the declared type must match the magic bytes, so mislabelled and short files are refused.
-  await expect(store.put(JPEG_FILE, "image/png")).rejects.toThrow("do not match");
-  await expect(store.put(new Uint8Array([1, 2, 3, 4]), "image/webp")).rejects.toThrow("do not match");
-  expect(await store.get("https://example.test/public.png")).toBeNull();
-  await expect(store.put(new Uint8Array(PRODUCT_IMAGE_MAX_BYTES + 1), "image/png")).rejects.toThrow("size exceeds maximum");
-  await expect(store.put(bytes, "image/gif")).rejects.toThrow("disallowed");
-  await expect(store.put(bytes, "application/pdf")).rejects.toThrow("disallowed");
-  await store.delete(key);
-  expect(await store.get(key)).toBeNull();
-  expect((await SELF.fetch("https://pilot.example.test/api/commerce/product-images")).status).toBe(404);
-});
-
-test("24 AC1: authenticated Shortlet ops route commerce import/export/verify/status/cutover through the typed client", async () => {
-  const tenantId = `commerce-ops-${crypto.randomUUID()}`;
+/** Shortlet ops calls for one tenant; each test names the single criterion it checks (issue 24 review 9). */
+async function commerceOps(tenantId: string) {
   const headers = opsHeaders(await accessToken());
-  const ops = (method: string, path: string, body?: unknown) => isolatedWorkerFetch(tenantId, new Request(`https://pilot.example.test${path}`, {
+  return (method: string, path: string, body?: unknown) => isolatedWorkerFetch(tenantId, new Request(`https://pilot.example.test${path}`, {
     method, headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   }));
+}
+const MERCHANT_ROW = { id: "commerce-ops-merchant", name: "Merchant", status: "verified", created_at: "2026-10-18", updated_at: "2026-10-18" };
+
+test("24 AC1: the Shortlet status route reports the commerce expected schema version derived from the migration list", async () => {
+  const tenantId = `commerce-status-${crypto.randomUUID()}`;
+  const ops = await commerceOps(tenantId);
   const status = await ops("GET", "/_ops/status");
   expect(status.status).toBe(200);
-  // Migrations 1 to 5 (the pack's, with the hashed payment reference at 5) plus the cutover flag at 6.
-  expect((await status.json() as { commerce: { expectedSchemaVersion: number } }).commerce.expectedSchemaVersion).toBe(6);
-  const row = { id: "commerce-ops-merchant", name: "Merchant", status: "verified", created_at: "2026-10-18", updated_at: "2026-10-18" };
-  const imported = await ops("POST", "/_ops/import", { table: "merchants", rows: [row] });
+  const expected = await runInDurableObject(env.ISOLATED_COMMERCE.get(env.ISOLATED_COMMERCE.idFromName(`expected-${tenantId}`)), (_instance, ctx) => commerceMigrations(new DurableObjectSqlDatabase(ctx.storage)).length + 1);
+  expect((await status.json() as { commerce: { expectedSchemaVersion: number } }).commerce.expectedSchemaVersion).toBe(expected);
+});
+
+test("24 AC1: a Shortlet ops import of a commerce table is accepted by the commerce object", async () => {
+  const ops = await commerceOps(`commerce-import-${crypto.randomUUID()}`);
+  const imported = await ops("POST", "/_ops/import", { table: "merchants", rows: [MERCHANT_ROW] });
   expect(imported.status).toBe(200);
+});
+
+test("24 AC1: a Shortlet ops export of a commerce table returns the rows the commerce object holds", async () => {
+  const ops = await commerceOps(`commerce-export-ops-${crypto.randomUUID()}`);
+  expect((await ops("POST", "/_ops/import", { table: "merchants", rows: [MERCHANT_ROW] })).status).toBe(200);
   const exported = await ops("GET", "/_ops/export?table=merchants");
   expect(exported.status).toBe(200);
   expect((await exported.json() as { rowCount: number }).rowCount).toBe(1);
+});
+
+test("24 AC1: the Shortlet verify route lists merchant_orders among the commerce tables", async () => {
+  const ops = await commerceOps(`commerce-verify-${crypto.randomUUID()}`);
   const verify = await ops("GET", "/_ops/import/verify");
   expect((await verify.json() as { commerce: { tables: Record<string, unknown> } }).commerce.tables).toHaveProperty("merchant_orders");
-  const cutover = await ops("POST", "/_ops/cutover/complete", {});
-  expect(cutover.status).toBe(200);
-  const refused = await ops("POST", "/_ops/import", { table: "merchants", rows: [{ ...row, id: "after-cutover" }] });
+});
+
+test("24 AC1: the Shortlet cutover records the commerce cutover, and a commerce import is refused afterwards", async () => {
+  const ops = await commerceOps(`commerce-cutover-${crypto.randomUUID()}`);
+  expect((await ops("POST", "/_ops/cutover/complete", {})).status).toBe(200);
+  const refused = await ops("POST", "/_ops/import", { table: "merchants", rows: [{ ...MERCHANT_ROW, id: "after-cutover" }] });
   expect(refused.status).toBe(400);
+});
+
+test("issue 24 review 10: a commerce import of a merchant_orders row with a raw payment reference is refused and writes nothing", async () => {
+  const tenantName = `commerce-hash-import-${crypto.randomUUID()}`;
+  const commerce = env.ISOLATED_COMMERCE.get(env.ISOLATED_COMMERCE.idFromName(tenantName));
+  const response = await commerce.fetch("https://do.internal/_internal/ops/import", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ tenantId: tenantName, table: "merchant_orders", rows: [{ id: "raw-order", payment_reference_hash: "raw-payment-reference" }] }),
+  });
+  expect(response.status).toBe(400);
+  expect(await response.json()).toEqual({ ok: false, code: "INVALID_PAYMENT_REFERENCE_HASH" });
+  const rows = await runInDurableObject(commerce, (_instance, ctx) => Number(new DurableObjectSqlDatabase(ctx.storage).prepare("SELECT COUNT(*) AS total FROM merchant_orders").get()?.total ?? 0));
+  expect(rows).toBe(0);
+});
+
+test("24 AC1: commerce ops are not exposed on the Shortlet Worker's internal path", async () => {
   expect((await SELF.fetch("https://pilot.example.test/_internal/ops/status", { method: "POST", body: "{}" })).status).toBe(404);
 });
 

@@ -175,15 +175,19 @@ export function commerceCheckoutClient(env: CloudflareEnv, tenantId: string): {
   };
 }
 
-/** Typed RPC to CommerceMarket; commerce ops never address another owner's SQL database. */
+/**
+ * Typed RPC to CommerceMarket; commerce ops never address another owner's SQL database. Lazy (issue 24 review 6): building the
+ * client touches no binding and cannot throw, so a missing COMMERCE binding or a failing commerce object is seen only by the
+ * call that needs commerce. The tenant check and the stub lookup both run per request.
+ */
 export function commerceMigrationClient(env: CloudflareEnv, tenantId: string): {
   request<T>(operation: "import" | "export" | "verify" | "status" | "cutover", input?: Readonly<Record<string, unknown>>): Promise<T>;
 } {
   const normalizedTenant = tenantId.trim();
-  if (!normalizedTenant || normalizedTenant !== env.SHORTLET_TENANT_ID?.trim()) throw new Error("Tenant does not match the configured commerce tenant");
-  const stub = env.COMMERCE.get(env.COMMERCE.idFromName(normalizedTenant), { locationHint: "afr" });
   return {
     async request<T>(operation: "import" | "export" | "verify" | "status" | "cutover", input: Readonly<Record<string, unknown>> = {}): Promise<T> {
+      if (!normalizedTenant || normalizedTenant !== env.SHORTLET_TENANT_ID?.trim()) throw new Error("Tenant does not match the configured commerce tenant");
+      const stub = env.COMMERCE.get(env.COMMERCE.idFromName(normalizedTenant), { locationHint: "afr" });
       if (operation === "import" || operation === "export") {
         if (typeof input.table !== "string" || !COMMERCE_OWNED_TABLES.has(input.table)) throw new Error("Table is not owned by COMMERCE");
       }

@@ -1,3 +1,4 @@
+import { migrateCommerceDatabase } from "./helpers/commerce-database.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { Window } from "happy-dom";
@@ -22,6 +23,7 @@ const context = { environment: { guestPrincipal: () => ({ id: "guest", role: "gu
 
 async function scriptedCommerceFixture(checkoutExecutor?: CommerceCheckoutExecutor, projectionLimits?: { readonly maxResults: number; readonly maxTextCodePoints: number }) {
   const env = LocalGuestEnvironment.openNode({ databasePath: ":memory:" });
+  migrateCommerceDatabase(env.database);
   const commerce = createCommercePack({ database: env.database, clock: env.clock });
   commerce.directory.createMerchant({ id: "scripted-m", name: "Verified Merchant", status: "verified" });
   commerce.directory.createStore({ id: "scripted-s", merchantId: "scripted-m", slug: "scripted-store", name: "Scripted Store", status: "active" });
@@ -67,6 +69,7 @@ async function scriptedCommerceFixture(checkoutExecutor?: CommerceCheckoutExecut
 
 test("AC1: a shopping intent starts a commerce task and only commerce tools are offered", () => {
   const database = new NodeSqliteDatabase(":memory:");
+  migrateCommerceDatabase(database);
   const pack = createCommerceAssistantPack({ database, clock });
   const registry = new AssistantPackRegistry();
   registry.register(pack);
@@ -78,6 +81,7 @@ test("AC1: a shopping intent starts a commerce task and only commerce tools are 
 
 test("AC1 scripted assistant: shopping intent confirms commerce task and exposes only its six tools", async () => {
   const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:" });
+  migrateCommerceDatabase(environment.database);
   let offeredTools: readonly string[] = [];
   const model = new ScriptedAssistantModel([request => {
     offeredTools = request.tools.map(tool => tool.name);
@@ -107,6 +111,7 @@ test("AC1 scripted assistant: shopping intent confirms commerce task and exposes
 
 test("AC2: propose_checkout never pays without an explicit confirmation command", () => {
   const database = new NodeSqliteDatabase(":memory:");
+  migrateCommerceDatabase(database);
   const pack = createCommerceAssistantPack({ database, clock });
   const commerce = createCommercePack({ database, clock });
   commerce.directory.createMerchant({ id: "m1", name: "Merchant", status: "verified" });
@@ -175,6 +180,7 @@ test("AC3 scripted assistant: discovery, cart and order surfaces all validate an
 
 test("AC4: checkout has a deterministic text and typed-surface path with no payment execution", () => {
   const database = new NodeSqliteDatabase(":memory:");
+  migrateCommerceDatabase(database);
   const pack = createCommerceAssistantPack({ database, clock });
   const commerce = createCommercePack({ database, clock });
   const prompt = pack.promptSection;
@@ -289,6 +295,7 @@ test("checkout proposal creation and confirmation fail closed for missing, blank
 test("commerce projections enforce configured Unicode-safe text and result budgets before tool and A2UI output", async () => {
   const limits = { maxResults: 2, maxTextCodePoints: 24 };
   const invalidLimitsDatabase = new NodeSqliteDatabase(":memory:");
+  migrateCommerceDatabase(invalidLimitsDatabase);
   assert.throws(() => createCommerceAssistantPack({ database: invalidLimitsDatabase, clock, projectionLimits: { maxResults: 0, maxTextCodePoints: 24 } }), /positive safe integers/);
   invalidLimitsDatabase.close();
   const emojiBounded = projectCommerceText(`${"😀".repeat(20)} FORBIDDEN`, limits);

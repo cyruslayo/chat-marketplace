@@ -5,8 +5,7 @@ import { importOrder, importRequestChunks } from "../../../packages/platform-cor
 import { SqliteAuditLog } from "../../../packages/platform-core/src/sqlite-audit-log.js";
 import { DurableObjectSqlDatabase } from "../src/do-sql-database.js";
 import { COMMERCE_EXPORT_TABLES, EXPORT_TABLES, PLATFORM_EXPORT_TABLES, SHORTLET_EXPORT_TABLES, exportObjectKey, exportTable, type DailyExportDependencies } from "../src/do-export.js";
-import { createCommercePack } from "../../../domains/commerce/src/index.js";
-import { parseCreateOrderInput } from "../../../domains/commerce/src/order.js";
+import { createCommercePack, parseCreateOrderInput } from "../../../domains/commerce/src/index.js";
 import { checkoutPayload, seedCommerceFixture, type CommerceFixtureIds } from "./commerce-test-helpers.js";
 import { currentAssuranceForAccount, SqliteGuestIdentityAssurance } from "../../../domains/shortlet/src/guest-identity-assurance.js";
 import { ORIGIN, accessToken, opsHeaders, provisionTenant } from "./ops-test-helpers.js";

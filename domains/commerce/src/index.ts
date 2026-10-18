@@ -7,6 +7,9 @@ import { MerchantBackOffice } from "./merchant-back-office.js";
 import { COMMERCE_SCHEMA_MIGRATIONS } from "./commerce-schema.js";
 
 export type { MerchantBackOfficePrincipal, MerchantBackOfficeRole } from "./merchant-back-office.js";
+// The checkout boundary for untrusted bodies (ADR 0099): hosts parse with this and never reach into order.ts.
+export { parseCreateOrderInput } from "./order.js";
+export type { CreateOrderInput } from "./order.js";
 
 /**
  * The commerce pack's prompt section. Commerce vocabulary only (Merchant, Store, Consumer); no

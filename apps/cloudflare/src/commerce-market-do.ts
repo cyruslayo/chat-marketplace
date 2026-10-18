@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import type { DurableObjectState } from "@cloudflare/workers-types";
-import { createCommercePack } from "../../../domains/commerce/src/index.js";
+import { createCommercePack, parseCreateOrderInput, type CreateOrderInput } from "../../../domains/commerce/src/index.js";
+import { assertMerchantOrdersShape, assertPaymentReferenceHashes, COMMERCE_MIGRATION_FAILED, CommerceSchemaShapeError, COMMERCE_SCHEMA_SHAPE_INVALID, INVALID_PAYMENT_REFERENCE_HASH } from "./commerce-schema-guard.js";
 import { applySchemaMigrations } from "../../../packages/platform-core/src/schema-migrations.js";
 import { checksumTables } from "../../../packages/platform-core/src/data-migration.js";
 import { schemaVersion } from "../../../packages/platform-core/src/schema-migrations.js";
@@ -11,7 +12,6 @@ import { lagosDate, runDailyExport } from "./do-export.js";
 import { loadExportConfiguration } from "./cloudflare-config.js";
 import { assertCutoverOpenForImport, assertSchemaCurrent, exportTable, importBatch } from "./ops-import.js";
 import { completeCutoverWithMarker, cutoverStatus, createCutoverMarkerStore, reconcileCutover } from "./cutover-marker.js";
-import { parseCreateOrderInput, type CreateOrderInput } from "../../../domains/commerce/src/order.js";
 
 const DAILY_ALARM_MS = 24 * 60 * 60 * 1000;
 
@@ -33,15 +33,25 @@ export class CommerceMarket extends DurableObject<CloudflareEnv> {
   #pack: ReturnType<typeof createCommercePack> | null = null;
   /** The expected schema version: the pack's migrations plus the cutover flag (set once, before any request is served). */
   #schemaVersion = 0;
+  /** A fixed code when the schema could not be brought to the expected shape; the object then refuses every request. */
+  #failure: string | null = null;
   constructor(ctx: DurableObjectState, env: CloudflareEnv) {
     super(ctx, env);
     void ctx.blockConcurrencyWhile(async () => {
       const database = new DurableObjectSqlDatabase(ctx.storage);
-      const pack = createCommercePack({ database, clock: () => new Date() });
-      this.#pack = pack;
-      const migrations = commerceMigrationsWithCutover(pack.migrations);
-      this.#schemaVersion = migrations.length;
-      applySchemaMigrations(database, migrations, new Date().toISOString());
+      try {
+        const pack = createCommercePack({ database, clock: () => new Date() });
+        this.#pack = pack;
+        const migrations = commerceMigrationsWithCutover(pack.migrations);
+        this.#schemaVersion = migrations.length;
+        applySchemaMigrations(database, migrations, new Date().toISOString());
+        assertMerchantOrdersShape(database);
+      } catch (error) {
+        // Issue 24 reviews 2 and 5: fail closed. Every request is refused with the fixed code; the error and any row are never logged.
+        this.#failure = error instanceof CommerceSchemaShapeError ? COMMERCE_SCHEMA_SHAPE_INVALID : COMMERCE_MIGRATION_FAILED;
+        console.error(this.#failure);
+        return;
+      }
       try { await reconcileCutover(database, createCutoverMarkerStore(env.EXPORTS, ctx.id.toString(), "commerce")); } catch {
         // Import remains fail-closed if the marker cannot be reconciled. Only the fixed code is logged, never the error or references.
         console.error("COMMERCE_CUTOVER_RECONCILE_FAILED");
@@ -61,6 +71,7 @@ export class CommerceMarket extends DurableObject<CloudflareEnv> {
   }
 
   async fetch(request: Request): Promise<Response> {
+    if (this.#failure !== null) return Response.json({ ok: false, code: this.#failure }, { status: 503, headers: { "Cache-Control": "no-store" } });
     const url = new URL(request.url);
     if (url.pathname.startsWith("/_internal/")) return this.#internal(request, url.pathname);
     // No public order route: checkout is reachable only through the internal client (ADR 0101, issue 24 decision).
@@ -102,6 +113,12 @@ export class CommerceMarket extends DurableObject<CloudflareEnv> {
     const marker = createCutoverMarkerStore(this.env.EXPORTS, this.ctx.id.toString(), "commerce");
     try {
       if (operation === "import" && typeof input.table === "string" && Array.isArray(input.rows) && hasExactKeys(input, OPS_KEYS.import)) {
+        // Issue 24 review 10: a restored order must carry a well-formed hash. The refusal names the code only, never the values.
+        if (input.table === "merchant_orders") {
+          try { assertPaymentReferenceHashes(input.rows as unknown[]); } catch {
+            return Response.json({ ok: false, code: INVALID_PAYMENT_REFERENCE_HASH }, { status: 400, headers: { "Cache-Control": "no-store" } });
+          }
+        }
         assertSchemaCurrent(database, this.#schemaVersion);
         await assertCutoverOpenForImport(database, marker);
         return Response.json({ ok: true, ...importBatch(database, input.table, input.rows, this.#schemaVersion, new Date()) });
