@@ -5,6 +5,7 @@ import { type BasicResourcePolicy, type WebServerEventHandoff } from "@cylayo/we
 import { Window } from "happy-dom";
 import { COMPARE_SIZE, compareArtifactToA2UI, discoveryArtifactToA2UI } from "../apps/web-agent/src/index.js";
 import { createWeaverWebHost } from "../apps/web/src/index.js";
+import { mountGuestSurfaceOrFallback } from "../apps/local-guest/src/guest-surface-fallback.js";
 import { UnitDiscoveryQuery, UnitRepository, seedIssue01Units } from "../domains/shortlet/src/index.js";
 import { InMemoryAuditLog, InMemoryTelemetry } from "../packages/platform-core/src/index.js";
 import { restartFixture } from "./helpers/guest-restart.js";
@@ -192,6 +193,53 @@ test("AC5 — Resolution budget failure rejects the whole surface instead of mou
   }
   assert.equal(target.childNodes.length, 0);
   assert.doesNotMatch(target.textContent ?? "", /must not partially render/);
+});
+
+test("AC5 — A real resolution budget error displays the guest text fallback and conventional route", () => {
+  const host = createWeaverWebHost({ safety: { maxResolvedInstances: 1 } });
+  const surfaceId = "over-budget-fallback-surface";
+  const fallbackText = "The stay details are available in the standard search.";
+  const conventionalRoute = "/stays/search?area=lagos";
+  processSuccessfully(host, [
+    { version: "v0.9.1", createSurface: { surfaceId, catalogId: A2UI_V091_BASIC_CATALOG_ID } },
+    { version: "v0.9.1", updateComponents: { surfaceId, components: [
+      { id: "root", component: "Column", children: ["child"] },
+      { id: "child", component: "Text", text: "must not partially render" },
+    ] } },
+  ]);
+  const { window, target } = targetElement();
+  const surface = {
+    surfaceId,
+    mode: "inline-surface" as const,
+    status: "active" as const,
+    summary: "Stay search results",
+    textFallback: fallbackText,
+    conventionalRoute,
+    conventionalRouteLabel: "Open search results",
+  };
+
+  const mounted = mountGuestSurfaceOrFallback({
+    attemptMount: () => host.mount({ surfaceId, target }),
+    mount: target as HTMLElement,
+    surface,
+  });
+
+  assert.equal(mounted.ok, false);
+  if (mounted.ok) return;
+  assert.equal(mounted.error.code, "SURFACE_RESOLUTION_FAILED");
+  if (mounted.error.code === "SURFACE_RESOLUTION_FAILED") {
+    assert.equal(mounted.error.cause.code, "COMPONENT_TREE_RESOLUTION_FAILED");
+    if (mounted.error.cause.code === "COMPONENT_TREE_RESOLUTION_FAILED") {
+      assert.equal(mounted.error.cause.cause.code, "RESOLUTION_BUDGET_EXCEEDED");
+    }
+  }
+  assert.equal(target.getAttribute("data-renderer"), "fallback");
+  assert.equal(target.textContent?.includes(fallbackText), true);
+  assert.equal(target.textContent?.includes("must not partially render"), false);
+  const route = target.querySelector("a.fallback-link");
+  assert.ok(route);
+  assert.equal(route.getAttribute("href"), conventionalRoute);
+  assert.equal(route.textContent, "Open search results");
 });
 
 test("AC4 — Largest local discovery and two-stay comparison fixtures resolve on the default runtime budget", async () => {

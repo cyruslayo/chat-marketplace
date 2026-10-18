@@ -9881,6 +9881,30 @@ Known schemas:
     return `<a class="ui-result-row" href="${escapeHtml(parts.href)}"><span class="ui-result-row__thumb">${thumb}</span><span class="ui-result-row__body"><span class="ui-result-row__title">${escapeHtml(parts.title)}</span><span class="ui-result-row__price">${escapeHtml(parts.total)} <span>${escapeHtml(parts.totalLabel)}</span></span></span>${icon("chevron-right")}</a>`;
   }
 
+  // apps/local-guest/src/guest-surface-fallback.ts
+  function mountGuestSurfaceOrFallback(options) {
+    const result = options.attemptMount();
+    if (result.ok) return result;
+    options.mount.replaceChildren();
+    options.mount.dataset.renderer = "fallback";
+    const document2 = options.mount.ownerDocument;
+    const box = document2.createElement("div");
+    box.className = "surface-fallback";
+    const text = document2.createElement("p");
+    text.textContent = options.surface.textFallback ?? fallbackSummary(options.surface);
+    box.appendChild(text);
+    if (options.surface.conventionalRoute) {
+      const link = document2.createElement("a");
+      link.href = options.surface.conventionalRoute;
+      link.className = "fallback-link";
+      link.textContent = options.surface.conventionalRouteLabel ?? "Open full details";
+      box.appendChild(link);
+      options.onConventionalRouteFallback?.();
+    }
+    options.mount.appendChild(box);
+    return result;
+  }
+
   // apps/local-guest/src/client.ts
   function requiredElement(id) {
     const element = document.getElementById(id);
@@ -10893,22 +10917,7 @@ Known schemas:
     };
   }
   function fallback(mount, surface) {
-    mount.replaceChildren();
-    mount.dataset.renderer = "fallback";
-    const box = document.createElement("div");
-    box.className = "surface-fallback";
-    const text = document.createElement("p");
-    text.textContent = surface.textFallback ?? fallbackSummary(surface);
-    box.appendChild(text);
-    if (surface.conventionalRoute) {
-      const link = document.createElement("a");
-      link.href = surface.conventionalRoute;
-      link.className = "fallback-link";
-      link.textContent = surface.conventionalRouteLabel ?? "Open full details";
-      box.appendChild(link);
-      trackTelemetry("conventional-route-fallback");
-    }
-    mount.appendChild(box);
+    mountGuestSurfaceOrFallback({ attemptMount: () => ({ ok: false }), mount, surface, onConventionalRouteFallback: () => trackTelemetry("conventional-route-fallback") });
   }
   function showReopen() {
     const current = shellState.activeSurface;
@@ -11147,11 +11156,15 @@ Known schemas:
         return;
       }
     }
-    const mounted = weaver.mount({ surfaceId: surface.surfaceId, target: mount });
+    const mounted = mountGuestSurfaceOrFallback({
+      attemptMount: () => weaver.mount({ surfaceId: surface.surfaceId, target: mount }),
+      mount,
+      surface: presentation,
+      onConventionalRouteFallback: () => trackTelemetry("conventional-route-fallback")
+    });
     if (!mounted.ok) {
       trackTelemetry("weaver-rendering-failure");
       trackTelemetry("fallback-rendered");
-      fallback(mount, { ...presentation, status: "fallback" });
       announce("The workspace could not be displayed safely. A standard route remains available.", true);
       showReopen();
       return;

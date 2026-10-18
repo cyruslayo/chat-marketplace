@@ -23,7 +23,7 @@ Shared CSS and shell structure may also have shifted, so the full sweep must re-
   - the `guest-kit.ts` header comment: the renderers in `shortlet-renderers.ts` call these helpers
   - the "Guest UI kit" section of `docs/design/shortlet-design-system-direction.md`: list the catalogue components and their kit helpers
   - the AGENTS.md "Guest UI work" bullet: use the kit, and add a typed `shortlet-*` component through ADR 0096 rather than DOM patching
-  - `vendor/weaver` mentions anywhere left over from 01
+  - Current setup/build guidance must not direct contributors to the retired vendored packages or verifier. Keep dated issue comments and validation records as historical evidence; clarify their historical context rather than rewriting what was true when recorded.
 - **Capture sweep.** Run the full `capture-11-all.sh` sweep, light and dark, one screen group per process, into `.scratch/guest-ui-consistency/screenshots/final/`, and review the `findings-*.txt`. Delete `walkthrough-06.log` afterwards.
 
 ## Acceptance criteria
