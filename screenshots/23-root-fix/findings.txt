@@ -1,0 +1,1 @@
+No horizontal overflow; no visible controls below 44px; all commerce surfaces rendered their expected content.

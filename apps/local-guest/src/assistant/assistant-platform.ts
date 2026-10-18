@@ -1,7 +1,8 @@
 import type { AssistantToolDefinition } from "./assistant-model.js";
-import type { AssistantTaskState } from "./assistant-state.js";
+import type { AssistantTaskState, AssistantTurnSurface } from "./assistant-state.js";
 import type { PendingAssistantAction } from "./pending-actions.js";
 import type { LocalGuestEnvironment } from "../fixture.js";
+import type { CommandPrincipal } from "../../../../packages/platform-core/src/envelope.js";
 
 /**
  * The platform half of the concierge agent (ADR 0099: the platform owns the Agent; a pack
@@ -25,6 +26,7 @@ export interface AssistantToolContext {
   readonly environment: LocalGuestEnvironment;
   readonly taskState: AssistantTaskState;
   readonly threadId: string;
+  readonly taskId: string;
   readonly userTextHistory: readonly string[];
   readonly now: Date;
   readonly demoCheckIn: string;
@@ -44,6 +46,7 @@ export interface AssistantToolExecutionResult {
   readonly discoveryArtifact?: { readonly id: string };
   readonly searchSurfacePayload?: { readonly surfaceId: string; readonly a2uiMessages: readonly unknown[] };
   readonly requestDraftSurface?: { readonly draftId: string; readonly surfaceId: string; readonly a2uiMessages: readonly unknown[] };
+  readonly projectedSurface?: { readonly kind: "discovery" | "cart" | "checkout" | "order"; readonly surfaceId: string; readonly a2uiMessages: readonly unknown[] };
 }
 
 export interface AssistantSurfaceMessages {
@@ -73,6 +76,8 @@ export interface AssistantDomainPack {
   /** Words that signal the user is asking for this domain, used by the router. */
   readonly intentKeywords: readonly string[];
   readonly toolNames: readonly string[];
+  /** Domain-owned consequential action names routed to this pack's platform command adapter. */
+  readonly platformActionNames?: readonly string[];
   toolsForState(taskState: AssistantTaskState): readonly AssistantToolDefinition[];
   validateToolCall(name: string, args: Record<string, unknown>, taskState: AssistantTaskState): AssistantToolPreconditionFailure | undefined;
   executeTool(name: string, args: Record<string, unknown>, context: AssistantToolContext): AssistantToolExecutionResult;
@@ -88,6 +93,8 @@ export interface AssistantDomainPack {
   bookingContractSurface(artifact: unknown, surfaceId: string): readonly unknown[];
   /** Re-reads authoritative truth before a proposed booking request is confirmed. */
   revalidateProposal(action: PendingAssistantAction): { readonly ok: true } | { readonly ok: false; readonly code: string; readonly message: string };
+  /** Optional pack-owned command adapter; the pack must route through the platform ActionSpec gate. */
+  handlePlatformAction?(input: { readonly actionName: string; readonly context: Record<string, unknown>; readonly principal: CommandPrincipal; readonly taskId: string; readonly activeSurfaceId?: string }): { readonly ok: true; readonly message: string; readonly surface?: AssistantTurnSurface } | { readonly ok: false; readonly code: string; readonly message: string };
 }
 
 export function composeSystemInstruction(pack: AssistantDomainPack): string {

@@ -37,6 +37,7 @@ import {
   REQUEST_TO_BOOK_EVENT,
   BACK_TO_RESULTS_EVENT,
   SEE_ALL_DISCOVERY_EVENT,
+  COMMERCE_CHECKOUT_CONFIRM_ACTION,
   COMPARE_UNIT_EVENT,
   DRAFT_REPLACEMENT_ACCEPT_EVENT,
   DRAFT_REPLACEMENT_KEEP_EVENT,
@@ -1244,7 +1245,8 @@ export class LocalGuestApp {
         event.name === ASSISTANT_CONFIRM_ACTION_EVENT ||
         event.name === ASSISTANT_CANCEL_ACTION_EVENT ||
         event.name === TASK_START_EVENT ||
-        event.name === TASK_SWITCH_EVENT
+        event.name === TASK_SWITCH_EVENT ||
+        event.name === COMMERCE_CHECKOUT_CONFIRM_ACTION
       ) {
         const output = this.#assistantRuntime.handleAssistantEvent(
           threadId,

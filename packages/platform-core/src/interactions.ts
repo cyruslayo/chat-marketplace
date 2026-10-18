@@ -108,7 +108,12 @@ export interface ActionSpec<Context, Artifact extends ActionArtifact, Payload = 
   /** The rejection when `isAuthorized` is false; defaults to ACTION_NOT_AUTHORIZED. */
   readonly authorizationRejected?: ActionRejection;
   /** G13: the platform command the gate will envelope and hand to `run`. Omit when the domain method owns command creation. */
-  readonly command?: (context: Context, artifact: Artifact) => { readonly commandName: string; readonly payload: Payload };
+  readonly command?: (context: Context, artifact: Artifact) => {
+    readonly commandName: string;
+    readonly payload: Payload;
+    readonly idempotencyKey?: string;
+    readonly expectedVersion?: number | string;
+  };
   /** G13: the domain run, executed with the gate-built envelope; returns the refreshed projection. */
   readonly run: (input: ActionRunInput<Context, Artifact, Payload>) => Artifact | Promise<Artifact>;
   readonly rejectionMessages: {
@@ -216,7 +221,13 @@ function prepareAction<Context, Artifact extends ActionArtifact, Payload>(
   }
 
   const command = spec.command?.(context, artifact);
-  const envelope = command ? createPlatformCommandEnvelope({ commandName: command.commandName, principal, payload: command.payload }) : undefined;
+  const envelope = command ? createPlatformCommandEnvelope({
+    commandName: command.commandName,
+    principal,
+    payload: command.payload,
+    ...(command.idempotencyKey === undefined ? {} : { idempotencyKey: command.idempotencyKey }),
+    ...(command.expectedVersion === undefined ? {} : { expectedVersion: command.expectedVersion }),
+  }) : undefined;
   return { kind: "ready", spec, input: { context, artifact, principal, ...(envelope === undefined ? {} : { envelope }) } };
 }
 

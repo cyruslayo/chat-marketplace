@@ -9114,14 +9114,31 @@ Known schemas:
   // apps/local-guest/src/shortlet-renderers.ts
   var SHORTLET_RENDERERS = [];
 
+  // apps/web-agent/src/commerce-catalogs.ts
+  var COMMERCE_CATALOG_NAMESPACE = "urn:chat-marketplace:commerce";
+  var COMMERCE_DISCOVERY_CATALOG_ID = `${COMMERCE_CATALOG_NAMESPACE}/discovery/v1`;
+  var COMMERCE_CART_CATALOG_ID = `${COMMERCE_CATALOG_NAMESPACE}/cart/v1`;
+  var COMMERCE_ORDER_CATALOG_ID = `${COMMERCE_CATALOG_NAMESPACE}/order/v1`;
+  function commerceCatalog(catalogId) {
+    const schema = structuredClone(createBasicCatalogV091Registration().schema);
+    schema["$id"] = catalogId;
+    schema["catalogId"] = catalogId;
+    return { catalogId, schema };
+  }
+  var COMMERCE_DISCOVERY_CATALOG = commerceCatalog(COMMERCE_DISCOVERY_CATALOG_ID);
+  var COMMERCE_CART_CATALOG = commerceCatalog(COMMERCE_CART_CATALOG_ID);
+  var COMMERCE_ORDER_CATALOG = commerceCatalog(COMMERCE_ORDER_CATALOG_ID);
+  var COMMERCE_CATALOGS = [COMMERCE_DISCOVERY_CATALOG, COMMERCE_CART_CATALOG, COMMERCE_ORDER_CATALOG];
+
   // apps/local-guest/src/shortlet-runtime.ts
   function createShortletWebRuntime(options = {}) {
     const resourcePolicy = options.resourcePolicy ?? (() => void 0);
     const created = createBasicWebRuntime({
-      additionalCatalogs: [SHORTLET_DISCOVERY_CATALOG, SHORTLET_BOOKING_CATALOG],
+      additionalCatalogs: [SHORTLET_DISCOVERY_CATALOG, SHORTLET_BOOKING_CATALOG, ...COMMERCE_CATALOGS],
       additionalRenderers: [
         ...createBasicCatalogRendererRegistrations({ catalogId: SHORTLET_DISCOVERY_CATALOG.catalogId, resourcePolicy }),
         ...createBasicCatalogRendererRegistrations({ catalogId: SHORTLET_BOOKING_CATALOG.catalogId, resourcePolicy }),
+        ...COMMERCE_CATALOGS.flatMap(({ catalogId }) => createBasicCatalogRendererRegistrations({ catalogId, resourcePolicy })),
         ...SHORTLET_RENDERERS
       ],
       ...options.safety === void 0 ? {} : { runtime: { safety: options.safety } },
@@ -9879,6 +9896,30 @@ Known schemas:
   function resultRowPartsHtml(parts) {
     const thumb = parts.photoSrc === void 0 ? icon("photo") : `<img src="${escapeHtml(parts.photoSrc)}" alt="" width="64" height="64" loading="lazy" decoding="async" referrerpolicy="no-referrer">`;
     return `<a class="ui-result-row" href="${escapeHtml(parts.href)}"><span class="ui-result-row__thumb">${thumb}</span><span class="ui-result-row__body"><span class="ui-result-row__title">${escapeHtml(parts.title)}</span><span class="ui-result-row__price">${escapeHtml(parts.total)} <span>${escapeHtml(parts.totalLabel)}</span></span></span>${icon("chevron-right")}</a>`;
+  }
+
+  // apps/local-guest/src/guest-surface-fallback.ts
+  function mountGuestSurfaceOrFallback(options) {
+    const result = options.attemptMount();
+    if (result.ok) return result;
+    options.mount.replaceChildren();
+    options.mount.dataset.renderer = "fallback";
+    const document2 = options.mount.ownerDocument;
+    const box = document2.createElement("div");
+    box.className = "surface-fallback";
+    const text = document2.createElement("p");
+    text.textContent = options.surface.textFallback ?? fallbackSummary(options.surface);
+    box.appendChild(text);
+    if (options.surface.conventionalRoute) {
+      const link = document2.createElement("a");
+      link.href = options.surface.conventionalRoute;
+      link.className = "fallback-link";
+      link.textContent = options.surface.conventionalRouteLabel ?? "Open full details";
+      box.appendChild(link);
+      options.onConventionalRouteFallback?.();
+    }
+    options.mount.appendChild(box);
+    return result;
   }
 
   // apps/local-guest/src/client.ts
@@ -10893,22 +10934,7 @@ Known schemas:
     };
   }
   function fallback(mount, surface) {
-    mount.replaceChildren();
-    mount.dataset.renderer = "fallback";
-    const box = document.createElement("div");
-    box.className = "surface-fallback";
-    const text = document.createElement("p");
-    text.textContent = surface.textFallback ?? fallbackSummary(surface);
-    box.appendChild(text);
-    if (surface.conventionalRoute) {
-      const link = document.createElement("a");
-      link.href = surface.conventionalRoute;
-      link.className = "fallback-link";
-      link.textContent = surface.conventionalRouteLabel ?? "Open full details";
-      box.appendChild(link);
-      trackTelemetry("conventional-route-fallback");
-    }
-    mount.appendChild(box);
+    mountGuestSurfaceOrFallback({ attemptMount: () => ({ ok: false }), mount, surface, onConventionalRouteFallback: () => trackTelemetry("conventional-route-fallback") });
   }
   function showReopen() {
     const current = shellState.activeSurface;
@@ -11147,11 +11173,15 @@ Known schemas:
         return;
       }
     }
-    const mounted = weaver.mount({ surfaceId: surface.surfaceId, target: mount });
+    const mounted = mountGuestSurfaceOrFallback({
+      attemptMount: () => weaver.mount({ surfaceId: surface.surfaceId, target: mount }),
+      mount,
+      surface: presentation,
+      onConventionalRouteFallback: () => trackTelemetry("conventional-route-fallback")
+    });
     if (!mounted.ok) {
       trackTelemetry("weaver-rendering-failure");
       trackTelemetry("fallback-rendered");
-      fallback(mount, { ...presentation, status: "fallback" });
       announce("The workspace could not be displayed safely. A standard route remains available.", true);
       showReopen();
       return;
