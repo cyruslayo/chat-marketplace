@@ -32,8 +32,11 @@ const AUDIT = `(() => {
 
 type Audit = { overflow: number; small: string[]; text: string };
 const findings: string[] = [];
+// One line per capture (AC3 evidence): overflow and undersized-control counts for every page, width and theme.
+const records: string[] = [];
 
 function check(name: string, audit: Audit, expected: readonly string[], absent: readonly string[] = []) {
+  records.push(`${name}: overflow ${audit.overflow}px, controls under 44px ${audit.small.length}`);
   if (audit.overflow > 0) findings.push(`${name}: horizontal overflow ${audit.overflow}px`);
   if (audit.small.length > 0) findings.push(`${name}: controls below 44px: ${audit.small.join(" | ")}`);
   for (const fact of expected) if (!audit.text.includes(fact)) findings.push(`${name}: expected content '${fact}' is not visible`);
@@ -50,6 +53,11 @@ commerce.catalogue.createOffer({ id: "capture-tote-offer", productId: "capture-t
 commerce.catalogue.createProduct({ id: "capture-cup", name: "Coastal Ceramic Cup", category: "Home", description: "Hand-finished stoneware for tea and coffee." });
 commerce.catalogue.createOffer({ id: "capture-cup-offer", productId: "capture-cup", storeId: "capture-store", priceKobo: 325000, stock: 7 });
 commerce.catalogue.createDeliveryZone({ id: "capture-zone", storeId: "capture-store", city: "Lagos", name: "Lagos Mainland", provider: "Harbour Goods", feeKobo: 120000, isActive: true, sortOrder: 0 });
+// A store with a 60-character name, to check the top bar and card text at 320px (issue 27 review).
+const LONG_STORE_NAME = "Harbour Goods Import and Trading Company of Lagos Island Ltd";
+commerce.directory.createStore({ id: "capture-long-store", merchantId: "capture-merchant", slug: "harbour-goods-import-and-trading", name: LONG_STORE_NAME, status: "active" });
+commerce.catalogue.createProduct({ id: "capture-kettle", name: "Enamel Kettle", category: "Home", description: "Two-litre enamel kettle for everyday use." });
+commerce.catalogue.createOffer({ id: "capture-kettle-offer", productId: "capture-kettle", storeId: "capture-long-store", priceKobo: 450000, stock: 5 });
 const order = commerce.orders.createOrder({ storeId: "capture-store", deliveryZoneId: "capture-zone", customerName: "Capture Guest", customerPhone: PHONE, shippingAddress: { street: "Demo Street" }, items: [{ offerId: "capture-tote-offer", quantity: 1 }], submittedTotalKobo: 970000, paymentReference: "capture-reference" });
 
 const server = startLocalGuestServer({ port: 0, environment });
@@ -60,6 +68,8 @@ try {
   const pages = [
     ["store", "/s/harbour-goods", ["Northstar Cotton Tote", "Coastal Ceramic Cup", "Sold by Harbour Goods Ltd · Harbour Goods", "17 available", "₦8,500"]],
     ["offer", "/s/harbour-goods/offers/capture-tote-offer", ["Northstar Cotton Tote", "Sold by Harbour Goods Ltd · Harbour Goods", "A durable everyday carry bag"]],
+    ["store-long", "/s/harbour-goods-import-and-trading", [LONG_STORE_NAME, "Enamel Kettle"]],
+    ["offer-long", "/s/harbour-goods-import-and-trading/offers/capture-kettle-offer", [LONG_STORE_NAME, "Enamel Kettle", "Two-litre enamel kettle"]],
   ] as const;
   for (const [kind, path, expected] of pages) {
     if (ONLY && !ONLY.includes(kind)) continue;
@@ -181,5 +191,5 @@ try {
   chatEnvironment.database.close();
 }
 
-writeFileSync(`${output}/findings.txt`, findings.length === 0 ? "No horizontal overflow and no visible controls below 44px; store, offer, tracking (matched and unmatched) and chat discovery rendered their expected facts at 320, 390, 768 and 1280 in light and dark.\n" : `${findings.join("\n")}\n`);
+writeFileSync(`${output}/findings.txt`, `${records.join("\n")}\n${findings.length === 0 ? "No horizontal overflow and no visible controls below 44px; store, offer, long-name store, tracking (matched and unmatched) and chat discovery rendered their expected facts at 320, 390, 768 and 1280 in light and dark.\n" : `${findings.join("\n")}\n`}`);
 console.log(findings.length === 0 ? "Capture clean: no overflow, no undersized controls, expected facts visible." : findings.join("\n"));

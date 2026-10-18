@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { SqlDatabase, SqlRow } from "../../../packages/platform-core/src/sql-database.js";
-import { MERCHANT_ORDER_SCHEMA, TRACKING_ATTEMPT_SCHEMA } from "./commerce-schema.js";
+import { MERCHANT_ORDER_SCHEMA } from "./commerce-schema.js";
 import {
   NEXT_ORDER_STATUSES,
   isMerchantOrderStatus,
@@ -68,14 +68,24 @@ export interface OrderTrackingPolicy {
 const DEFAULT_MAX_FAILED_TRACKING_ATTEMPTS = 5;
 const DEFAULT_TRACKING_WINDOW_MS = 15 * 60_000;
 
+function positiveIntegerOption(value: number, field: string): number {
+  if (!Number.isSafeInteger(value) || value <= 0) throw new RangeError(`${field} must be a positive integer`);
+  return value;
+}
+
 function phoneDigest(value: string): Buffer {
   return createHash("sha256").update(value, "utf8").digest();
 }
 
 export class CommerceOrders {
-  constructor(private readonly database: SqlDatabase, private readonly clock: () => Date, private readonly trackingPolicy: OrderTrackingPolicy = {}) {
+  private readonly maxFailedTrackingAttempts: number;
+  private readonly trackingWindowMs: number;
+
+  constructor(private readonly database: SqlDatabase, private readonly clock: () => Date, trackingPolicy: OrderTrackingPolicy = {}) {
     database.exec(MERCHANT_ORDER_SCHEMA);
-    database.exec(TRACKING_ATTEMPT_SCHEMA);
+    // The attempts table comes only from the commerce migrations (COMMERCE_SCHEMA_MIGRATIONS), never from this constructor.
+    this.maxFailedTrackingAttempts = positiveIntegerOption(trackingPolicy.maxFailedAttempts ?? DEFAULT_MAX_FAILED_TRACKING_ATTEMPTS, "maxFailedAttempts");
+    this.trackingWindowMs = positiveIntegerOption(trackingPolicy.windowMs ?? DEFAULT_TRACKING_WINDOW_MS, "windowMs");
   }
 
   createOrder(input: CreateOrderInput): MerchantOrder {
@@ -198,8 +208,8 @@ export class CommerceOrders {
       const now = this.clock().getTime();
       const attempt = this.#trackingAttempt(order.publicCode);
       // Lazy expiry: an attempt window that has ended no longer counts, whatever the stored row says.
-      const current = attempt !== null && now < attempt.windowStartedAt + this.#trackingWindowMs() ? attempt : null;
-      if (current !== null && current.failedAttempts >= this.#maxFailedTrackingAttempts()) return null;
+      const current = attempt !== null && now < attempt.windowStartedAt + this.trackingWindowMs ? attempt : null;
+      if (current !== null && current.failedAttempts >= this.maxFailedTrackingAttempts) return null;
 
       if (matches) {
         this.database.prepare("DELETE FROM merchant_order_tracking_attempts WHERE public_code = $publicCode").run({ $publicCode: order.publicCode });
@@ -226,13 +236,6 @@ export class CommerceOrders {
     return row ? { failedAttempts: Number(row.failed_attempts), windowStartedAt: Date.parse(String(row.window_started_at)) } : null;
   }
 
-  #maxFailedTrackingAttempts(): number {
-    return this.trackingPolicy.maxFailedAttempts ?? DEFAULT_MAX_FAILED_TRACKING_ATTEMPTS;
-  }
-
-  #trackingWindowMs(): number {
-    return this.trackingPolicy.windowMs ?? DEFAULT_TRACKING_WINDOW_MS;
-  }
 
   ordersForStore(storeId: string): readonly MerchantOrder[] {
     return this.database

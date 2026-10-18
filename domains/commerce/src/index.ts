@@ -6,6 +6,7 @@ import { CommerceOrders, type OrderTrackingPolicy } from "./commerce-order.js";
 import { MerchantBackOffice } from "./merchant-back-office.js";
 import { COMMERCE_SCHEMA_MIGRATIONS } from "./commerce-schema.js";
 
+
 export type { MerchantBackOfficePrincipal, MerchantBackOfficeRole } from "./merchant-back-office.js";
 
 /**

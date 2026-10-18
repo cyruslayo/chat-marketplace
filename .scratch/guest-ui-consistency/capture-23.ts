@@ -12,7 +12,7 @@ import { checkoutConfirmContext } from "../../test/helpers/a2ui-surface-integrit
 
 // Run from the worktree root: `npx tsx .scratch/guest-ui-consistency/capture-23.ts`.
 // Earlier captures stay as evidence: screenshots/23 (original) and screenshots/23-root-fix (before the checkout fix).
-const output = "screenshots/23-checkout-fix";
+const output = process.argv[2] ?? "screenshots/23-checkout-fix";
 mkdirSync(output, { recursive: true });
 
 const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:", clock: () => new Date("2026-10-18T10:00:00Z") });

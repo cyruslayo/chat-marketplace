@@ -25,6 +25,7 @@ import { GUEST_HTML_SECURITY_HEADERS } from "../../../packages/platform-core/src
 import { createGuestShell, type StaticAsset } from "./guest-shell.js";
 import { createCommerceRouteModule } from "./commerce-route-module.js";
 import { createCommercePack } from "../../../domains/commerce/src/index.js";
+import { applySchemaMigrations } from "../../../packages/platform-core/src/schema-migrations.js";
 import {
   discoveryArtifactToA2UI,
   createWeaverWebAgentAdapter,
@@ -4589,9 +4590,11 @@ export function createGuestRequestHandler(
       res.end("Not Found");
     };
 
-  const commerceRoutes = createCommerceRouteModule(
-    createCommercePack({ database: defaultApp.environment.database, clock: () => defaultApp.environment.clock() }),
-  );
+  // Commerce public routes read the tracking-attempts table, which only the commerce migrations create (issue 27).
+  const commerceClock = () => defaultApp.environment.clock();
+  const commercePack = createCommercePack({ database: defaultApp.environment.database, clock: commerceClock });
+  applySchemaMigrations(defaultApp.environment.database, commercePack.migrations, commerceClock().toISOString());
+  const commerceRoutes = createCommerceRouteModule(commercePack);
   const shell = createGuestShell({
     assets,
     staticAssets: SHORTLET_STATIC_ASSETS,

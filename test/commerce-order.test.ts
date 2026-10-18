@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { NodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-database.js";
 import { createCommercePack } from "../domains/commerce/src/index.js";
+import { applySchemaMigrations } from "../packages/platform-core/src/schema-migrations.js";
 import { normalizePhone } from "../domains/commerce/src/order.js";
+import { createCommerceFixture } from "./helpers/commerce-fixture.js";
 
 /** Slice 21: Merchant Order — port of instastore create_store_order / set_order_status. */
 
@@ -142,8 +144,9 @@ test("AC5: only allowed status transitions succeed and the first move to Process
 });
 
 /** Issue 27 (user decision, 18 Oct 2026): Nigerian local and international phone forms share one canonical value. */
-test("Phone normalisation: Nigerian local and international forms share one canonical value", () => {
-  for (const form of ["0801 234 5678", "08012345678", "+2348012345678", "2348012345678", "+234 801 234 5678", "+234 0801 234 5678"]) {
+test("Phone normalisation: a Nigerian mobile number has one canonical value", () => {
+  assert.equal(normalizePhone("07031234567"), "+2347031234567");
+  for (const form of ["0801 234 5678", "08012345678", "+2348012345678", "2348012345678", "+234 801 234 5678", "+234 0801 234 5678", "00234 801 234 5678"]) {
     assert.equal(normalizePhone(form), "+2348012345678", form);
   }
 });
@@ -151,6 +154,8 @@ test("Phone normalisation: Nigerian local and international forms share one cano
 test("Phone normalisation keeps non-Nigerian numbers as digits and plus", () => {
   assert.equal(normalizePhone("+44 20 7946 0958"), "+442079460958");
   assert.equal(normalizePhone("(020) 7946-0958"), "02079460958");
+  // A UK mobile has the same shape as a Nigerian local number but not a Nigerian mobile prefix, so it is left alone.
+  assert.equal(normalizePhone("07911123456"), "07911123456");
   assert.equal(normalizePhone("no digits here"), "");
 });
 
@@ -161,15 +166,22 @@ const WRONG_PHONE = "0800 000 0000";
 const RIGHT_PHONE = "+234 801 234 5678";
 
 function trackingFixture(now: () => number, policy: { maxFailedAttempts?: number; windowMs?: number } = {}) {
-  const database = memory();
-  const commerce = createCommercePack({ database, clock: () => new Date(now()), trackingPolicy: policy });
-  commerce.directory.createMerchant({ id: "merchant", name: "Merchant", status: "verified" });
-  commerce.directory.createStore({ id: "store", merchantId: "merchant", slug: "store", name: "Store", status: "active" });
-  commerce.catalogue.createProduct({ id: "product", name: "Product", category: "Category" });
-  commerce.catalogue.createOffer({ id: "offer", productId: "product", storeId: "store", priceKobo: 10000, stock: 50 });
-  commerce.catalogue.createDeliveryZone({ id: "zone", storeId: "store", city: "Lagos", name: "Mainland", provider: "Bolt", feeKobo: 0, isActive: true, sortOrder: 0 });
-  const order = commerce.orders.createOrder(baseInput("store", "zone", { customerPhone: RIGHT_PHONE, submittedTotalKobo: 10000, paymentReference: "ref-track-1" }));
-  return { database, commerce, order };
+  return createCommerceFixture({
+    clock: () => new Date(now()),
+    trackingPolicy: policy,
+    storeSlug: "store",
+    storeName: "Store",
+    merchantName: "Merchant",
+    productName: "Product",
+    priceKobo: 10000,
+    stock: 50,
+    feeKobo: 0,
+    zoneName: "Mainland",
+    provider: "Bolt",
+    customerPhone: RIGHT_PHONE,
+    submittedTotalKobo: 10000,
+    paymentReference: "ref-track-1",
+  });
 }
 
 test("AC2 tracking: the sixth attempt with the correct phone inside the window is still refused", () => {
@@ -234,6 +246,45 @@ test("AC2 tracking: the attempt limit and window are configurable options", () =
     assert.equal(commerce.orders.trackOrder(order.publicCode, RIGHT_PHONE), null);
     now = START + MINUTE;
     assert.equal(commerce.orders.trackOrder(order.publicCode, RIGHT_PHONE)?.publicCode, order.publicCode);
+  } finally {
+    database.close();
+  }
+});
+
+test("Options: the tracking limits must be positive integers, and bad values fail closed", () => {
+  for (const policy of [{ maxFailedAttempts: 0 }, { maxFailedAttempts: -1 }, { maxFailedAttempts: 2.5 }, { maxFailedAttempts: Number.NaN }, { windowMs: 0 }, { windowMs: -60_000 }, { windowMs: Number.NaN }, { windowMs: 1.5 }]) {
+    const database = memory();
+    try {
+      assert.throws(() => createCommercePack({ database, clock: CLOCK, trackingPolicy: policy }), RangeError, JSON.stringify(policy));
+    } finally {
+      database.close();
+    }
+  }
+});
+
+test("Migrations are the only source of the tracking-attempts table", () => {
+  const database = memory();
+  try {
+    createCommercePack({ database, clock: CLOCK });
+    assert.equal(database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'merchant_order_tracking_attempts'").get(), undefined);
+    applySchemaMigrations(database, createCommercePack({ database, clock: CLOCK }).migrations, CLOCK().toISOString());
+    assert.ok(database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'merchant_order_tracking_attempts'").get());
+  } finally {
+    database.close();
+  }
+});
+
+test("Idempotency: the same payment reference with a differently written, same canonical phone returns the existing order", () => {
+  const database = memory();
+  const { orders } = pack(database);
+  setupStore(database, "merchant", "store");
+  addOffer(database, "store", "offer", 10000, 5);
+  addZone(database, "store", "zone", 0);
+  try {
+    const first = orders.createOrder(baseInput("store", "zone", { customerPhone: "0803 123 4567", submittedTotalKobo: 10000, paymentReference: "ref-canonical" }));
+    const second = orders.createOrder(baseInput("store", "zone", { customerPhone: "+234 803 123 4567", submittedTotalKobo: 10000, paymentReference: "ref-canonical" }));
+    assert.equal(second.id, first.id);
+    assert.equal(second.customerPhone, "+2348031234567");
   } finally {
     database.close();
   }

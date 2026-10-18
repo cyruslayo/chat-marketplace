@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { PassThrough } from "node:stream";
-import { NodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-database.js";
 import type { HttpRequestLike, HttpResponseLike } from "../packages/platform-core/src/http-like.js";
-import { createCommercePack } from "../domains/commerce/src/index.js";
+import { createCommerceFixture } from "./helpers/commerce-fixture.js";
 import { createCommerceRouteModule } from "../apps/local-guest/src/commerce-route-module.js";
 import { commerceDiscoveryPresentation, commerceDiscoverySurface } from "../apps/web-agent/src/commerce-presentation.js";
 import { assertSurfaceReferencesResolve } from "./helpers/a2ui-surface-integrity.js";
@@ -13,15 +12,23 @@ import { formatWatDateTime } from "../apps/web/src/ui-kit.js";
 const clock = () => new Date("2026-10-18T10:00:00.000Z");
 
 function fixture() {
-  const database = new NodeSqliteDatabase(":memory:");
-  const commerce = createCommercePack({ database, clock });
-  commerce.directory.createMerchant({ id: "merchant", name: "Verified Merchant", status: "verified" });
-  commerce.directory.createStore({ id: "store", merchantId: "merchant", slug: "daily-goods", name: "Daily Goods", status: "active" });
-  commerce.catalogue.createProduct({ id: "product", name: "Oat Soap", category: "Bath", description: "Unscented daily soap" });
-  commerce.catalogue.createOffer({ id: "offer", productId: "product", storeId: "store", priceKobo: 125050, stock: 7 });
-  commerce.catalogue.createDeliveryZone({ id: "zone", storeId: "store", city: "Lagos", name: "Lagos Island", provider: "Merchant", feeKobo: 2500, isActive: true, sortOrder: 0 });
-  const order = commerce.orders.createOrder({ storeId: "store", deliveryZoneId: "zone", customerName: "Consumer", customerPhone: "+234 801 234 5678", shippingAddress: { street: "Market Road" }, items: [{ offerId: "offer", quantity: 1 }], submittedTotalKobo: 127550, paymentReference: "test-payment-ref" });
-  return { database, commerce, order };
+  return createCommerceFixture({
+    clock,
+    storeSlug: "daily-goods",
+    storeName: "Daily Goods",
+    merchantName: "Verified Merchant",
+    productName: "Oat Soap",
+    productCategory: "Bath",
+    productDescription: "Unscented daily soap",
+    priceKobo: 125050,
+    stock: 7,
+    feeKobo: 2500,
+    zoneName: "Lagos Island",
+    provider: "Merchant",
+    customerPhone: "+234 801 234 5678",
+    submittedTotalKobo: 127550,
+    paymentReference: "test-payment-ref",
+  });
 }
 
 async function request(module: ReturnType<typeof createCommerceRouteModule>, method: string, path: string, body = "") {
