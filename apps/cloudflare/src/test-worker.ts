@@ -3,3 +3,42 @@
 export { default } from "./worker.js";
 export * from "./worker.js";
 export { TestHarnessDO } from "./test-harness-do.js";
+export { ShortletPilot } from "./shortlet-pilot-do.js";
+export { PlatformDO } from "./platform-do.js";
+
+import type { DurableObjectNamespace, DurableObjectState } from "@cloudflare/workers-types";
+import type { CloudflareEnv } from "./cloudflare-config.js";
+import { PlatformDO } from "./platform-do.js";
+import { ShortletPilot } from "./shortlet-pilot-do.js";
+
+interface IsolatedTenantEnv extends CloudflareEnv {
+  readonly ISOLATED_SHORTLET: DurableObjectNamespace;
+  readonly ISOLATED_PLATFORM: DurableObjectNamespace;
+}
+
+/** Test-only namespaces whose IDs and configured tenant are the same per-test tenant key. */
+export class IsolatedShortletPilot extends ShortletPilot {
+  constructor(ctx: DurableObjectState, env: IsolatedTenantEnv) {
+    const tenantId = ctx.id.name;
+    if (!tenantId) throw new Error("Isolated test Durable Object must use idFromName");
+    super(ctx, {
+      ...env,
+      SHORTLET_TENANT_ID: tenantId,
+      SHORTLET: env.ISOLATED_SHORTLET,
+      PLATFORM: env.ISOLATED_PLATFORM,
+    });
+  }
+}
+
+export class IsolatedPlatformDO extends PlatformDO {
+  constructor(ctx: DurableObjectState, env: IsolatedTenantEnv) {
+    const tenantId = ctx.id.name;
+    if (!tenantId) throw new Error("Isolated test Durable Object must use idFromName");
+    super(ctx, {
+      ...env,
+      SHORTLET_TENANT_ID: tenantId,
+      SHORTLET: env.ISOLATED_SHORTLET,
+      PLATFORM: env.ISOLATED_PLATFORM,
+    });
+  }
+}

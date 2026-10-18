@@ -70,7 +70,7 @@ test("AC3: \"make it 3 nights\" on a draft proposes a re-quoted draft that needs
     const state = await fixture.state();
     assert.equal(state.ok, true);
     assert.equal(manager.getDraft(draftId).checkOut, "2026-09-12");
-    assert.equal(fixture.app.conventionalBookingPage("draft", draftId, fixture.environment.guestPrincipal())?.threadId, fixture.threadId);
+    assert.equal((await fixture.app.conventionalBookingPage("draft", draftId, fixture.environment.guestPrincipal()))?.threadId, fixture.threadId);
 
     const accepted = success(await fixture.send("/api/event", guestAction(proposal, DRAFT_REPLACEMENT_ACCEPT_EVENT)));
     const next = accepted.surfaces[0]!;

@@ -121,9 +121,9 @@ test("AC1 failure path: committed work is never listed for another principal or 
   try {
     await fixture.advance("pending");
     const tenantId = fixture.environment.config.tenantId;
-    assert.deepEqual(fixture.app.committedWork({ id: "guest-someone-else", role: "guest", tenantId }), []);
-    assert.deepEqual(fixture.app.committedWork({ id: fixture.environment.guestPrincipal().id, role: "operator", tenantId }), []);
-    assert.deepEqual(fixture.app.committedWork({ id: fixture.environment.guestPrincipal().id, role: "guest", tenantId: "tenant-other" }), []);
+    assert.deepEqual(await fixture.app.committedWork({ id: "guest-someone-else", role: "guest", tenantId }), []);
+    assert.deepEqual(await fixture.app.committedWork({ id: fixture.environment.guestPrincipal().id, role: "operator", tenantId }), []);
+    assert.deepEqual(await fixture.app.committedWork({ id: fixture.environment.guestPrincipal().id, role: "guest", tenantId: "tenant-other" }), []);
     const forged = await committedWork(fixture, "shortlet_guest_session=forged");
     assert.equal(forged.status, 401);
     assert.equal(forged.body.committedWork, undefined);

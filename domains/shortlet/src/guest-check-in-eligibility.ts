@@ -1,5 +1,6 @@
 import type { SqliteGuestAccountLinks } from "../../../packages/platform-core/src/accounts/links.js";
-import { isCurrentGovernmentIdAssurance, type SqliteGuestIdentityAssurance } from "./guest-identity-assurance.js";
+import { currentAssuranceForAccount, isCurrentGovernmentIdAssurance, type SqliteGuestIdentityAssurance } from "./guest-identity-assurance.js";
+import type { AccountAssuranceStateReader } from "../../../packages/platform-core/src/accounts/assurance-state.js";
 
 /**
  * Check-In Eligibility for identity assurance (ADR 0085, ADR 0094, issue 09). Reservation -> Primary Guest -> Linked Principal ->
@@ -27,29 +28,33 @@ export class GuestCheckInIdentityEligibility {
   readonly #links: Pick<SqliteGuestAccountLinks, "accountForPrincipal">;
   readonly #assurance: Pick<SqliteGuestIdentityAssurance, "currentAssurance">;
   readonly #clock: () => Date;
+  readonly #accountState: AccountAssuranceStateReader;
 
   constructor({
     links,
     assurance,
     clock,
+    accountState,
   }: {
     links: Pick<SqliteGuestAccountLinks, "accountForPrincipal">;
-    assurance: Pick<SqliteGuestIdentityAssurance, "currentAssurance">;
+    assurance: Pick<SqliteGuestIdentityAssurance, "currentAssurance" | "readAccountAssuranceState">;
     clock: () => Date;
+    accountState?: AccountAssuranceStateReader;
   }) {
     this.#links = links;
     this.#assurance = assurance;
     this.#clock = clock;
+    this.#accountState = accountState ?? assurance;
   }
 
   /** Evaluated lazily against the clock at call time (AGENTS anti-pattern 2). Every path that is not verified is not eligible. */
-  evaluate(reservation: IdentityEligibilityReservation): CheckInIdentityEligibility {
+  async evaluate(reservation: IdentityEligibilityReservation): Promise<CheckInIdentityEligibility> {
     if (!nonEmpty(reservation?.reservationId) || !nonEmpty(reservation.tenantId) || !nonEmpty(reservation.primaryGuestId)) {
       throw new Error("Reservation, tenant and Primary Guest are required for Check-In identity eligibility");
     }
     const link = this.#links.accountForPrincipal(reservation.primaryGuestId);
     if (link === null || link.tenantId !== reservation.tenantId) return { eligible: false, reason: "no_account" };
-    const current = this.#assurance.currentAssurance(link.accountGuestId, reservation.tenantId, this.#clock());
+    const current = await currentAssuranceForAccount(this.#assurance, this.#accountState, link.accountGuestId, reservation.tenantId, this.#clock());
     if (current === null) return { eligible: false, reason: "not_verified" };
     if (current.status === "expired") return { eligible: false, reason: "expired" };
     if (!isCurrentGovernmentIdAssurance(current)) return { eligible: false, reason: "not_verified" };

@@ -1,5 +1,6 @@
 import type { SqlDatabase, SqlRow, SqlValue } from "../../../packages/platform-core/src/sql-database.js";
 import {
+  CREDENTIAL_TABLES,
   CREDENTIAL_TABLE_REFUSAL,
   MAX_STATEMENT_PARAMETERS,
   applicationTableNames,
@@ -16,6 +17,22 @@ import { identityAssuranceRowForImport } from "../../../domains/shortlet/src/gue
 import { CutoverMarkerUnavailableError, reconcileCutover, type CutoverMarkerStore } from "./cutover-marker.js";
 
 const IDENTITY_ASSURANCE_TABLE = "guest_identity_assurance";
+
+const CREDENTIAL_TABLES_BY_OWNER = {
+  platform: ["guest_account_sessions", "guest_session_bindings", "guest_sign_in_codes", "guest_account_email_commands"],
+  shortlet: ["operator_access_tokens", "operator_sessions"],
+} as const satisfies Readonly<Record<"platform" | "shortlet", readonly (keyof typeof CREDENTIAL_TABLES)[]>>;
+
+/** Counts only the credential tables owned by this schema; the other DO's credentials are reported by that DO's verifier. */
+export function credentialTableCountsForOwner(database: SqlDatabase, owner: "platform" | "shortlet"): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const table of CREDENTIAL_TABLES_BY_OWNER[owner]) {
+    const present = database.prepare("SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = ?").get([table]);
+    if (present === undefined) throw new Error(`The ${owner} credential schema is missing a required table`);
+    counts[table] = Number(database.prepare(`SELECT COUNT(*) AS n FROM ${quoteIdentifier(table)}`).get()?.n ?? 0);
+  }
+  return counts;
+}
 
 /**
  * Slice 16: idempotent, batched import into the tenant's Durable Object, shared by `POST /_ops/import`, the verify and
@@ -192,6 +209,8 @@ export function importBatch(database: SqlDatabase, table: string, rows: readonly
   // Issue 09: an identity assurance row is held to the same rules as a recorded outcome (ADR 0094, ADR 0084), so a generic
   // import cannot write a current verified result. The refusal names no value, and nothing from the batch is written.
   if (table === IDENTITY_ASSURANCE_TABLE) {
+    // A pre-split row has no account_email_revision. Refuse it instead of inventing revision 0: the AC3 migration
+    // transform omits those legacy assurance rows and requires the Guest to complete fresh verification.
     try {
       prepared = prepared.map((row) => identityAssuranceRowForImport(database, row, now));
     } catch {

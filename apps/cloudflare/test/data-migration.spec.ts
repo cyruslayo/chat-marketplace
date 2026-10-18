@@ -4,8 +4,12 @@ import { expect, test } from "vitest";
 import {
   applicationTableNames,
   buildExport,
+  canonicalTableContent,
   checksumTables,
   compareMigration,
+  contentSha256,
+  cutoverCompletedAt,
+  importOrder,
   MAX_IMPORT_REQUEST_BYTES,
   RECEIPT_BLOB_TABLE,
   migrationBatchRows,
@@ -14,8 +18,8 @@ import {
 } from "../../../packages/platform-core/src/data-migration.js";
 import { SHORTLET_SCHEMA_MIGRATIONS, SHORTLET_SCHEMA_VERSION } from "../src/schema.js";
 import { DurableObjectSqlDatabase } from "../src/do-sql-database.js";
-import { DAILY_EXPORT_EXCLUDED, deleteExpiredExports } from "../src/do-export.js";
-import { cutoverMarkerKey } from "../src/cutover-marker.js";
+import { DAILY_EXPORT_EXCLUDED, deleteExpiredExports, exportObjectKey, exportTable as exportDailyTable, PLATFORM_EXPORT_TABLES } from "../src/do-export.js";
+import { completeCutoverWithMarker, createCutoverMarkerStore, cutoverMarkerKey } from "../src/cutover-marker.js";
 import { importBatch } from "../src/ops-import.js";
 import { populateSource } from "./data-migration-fixtures.js";
 import nodeExportFixture from "./fixtures/node-export.json?raw";
@@ -26,7 +30,7 @@ import { ORIGIN, accessToken, opsHeaders } from "./ops-test-helpers.js";
  * Every target object is empty: its constructor applies the schema migrations, as it does in production (D3).
  */
 
-const uniqueStub = (label: string) => env.SHORTLET.get(env.SHORTLET.idFromName(`${label}-${crypto.randomUUID()}`));
+const uniqueStub = (label: string) => env.ISOLATED_SHORTLET.get(env.ISOLATED_SHORTLET.idFromName(`test-${label}-${crypto.randomUUID()}`));
 
 type Stub = ReturnType<typeof uniqueStub>;
 
@@ -51,6 +55,14 @@ interface VerifyBody {
   readonly tables: Record<string, { rowCount: number; sha256: string }>;
   readonly cutoverCompletedAt: string | null;
   readonly excludedTables: Record<string, { rowCount: number }>;
+  readonly platform?: {
+    readonly excludedTables?: Record<string, { rowCount: number }>;
+    readonly tables?: Record<string, { rowCount: number; sha256: string }>;
+  };
+}
+
+function excludedCredentialCounts(verified: VerifyBody): Record<string, { rowCount: number }> {
+  return { ...(verified.platform?.excludedTables ?? {}), ...verified.excludedTables };
 }
 
 async function verifyBody(stub: Stub): Promise<VerifyBody> {
@@ -60,7 +72,8 @@ async function verifyBody(stub: Stub): Promise<VerifyBody> {
 }
 
 async function verify(stub: Stub): Promise<Record<string, { rowCount: number; sha256: string }>> {
-  return (await verifyBody(stub)).tables;
+  const verified = await verifyBody(stub);
+  return { ...verified.tables, ...(verified.platform?.tables as Record<string, { rowCount: number; sha256: string }> | undefined) };
 }
 
 function jsonlRows(content: string): unknown[] {
@@ -73,7 +86,7 @@ async function importTable(stub: Stub, table: string, rows: readonly unknown[]):
   const perRequest = first !== undefined && typeof first === "object" && first !== null ? migrationBatchRows(Object.keys(first).length) : 1;
   for (let start = 0; start < rows.length; start += perRequest) {
     const response = await call(stub, "POST", "/_ops/import", { table, rows: rows.slice(start, start + perRequest) });
-    expect(response.status).toBe(200);
+    expect(response.status, `${table}: ${JSON.stringify(await response.json())}`).toBe(200);
   }
 }
 
@@ -338,9 +351,10 @@ test("16 F3: the authenticated status route reports the schema version and the c
   expect(unauthenticated.status).toBe(401);
 
   const before = (await (await call(target, "GET", "/_ops/status")).json()) as {
-    ok: boolean; schemaVersion: number; expectedSchemaVersion: number; cutoverCompletedAt: string | null; cutoverMarker: string;
+    ok: boolean; schemaVersion: number; expectedSchemaVersion: number; cutoverCompletedAt: string | null; cutoverMarker: string; platform: Record<string, unknown> | null;
   };
-  expect(before).toEqual({ ok: true, schemaVersion: SHORTLET_SCHEMA_VERSION, expectedSchemaVersion: SHORTLET_SCHEMA_VERSION, cutoverCompletedAt: null, cutoverMarker: "absent" });
+  expect(before).toMatchObject({ ok: true, schemaVersion: SHORTLET_SCHEMA_VERSION, expectedSchemaVersion: SHORTLET_SCHEMA_VERSION, cutoverCompletedAt: null, cutoverMarker: "absent" });
+  expect(before.platform).toMatchObject({ ok: true, schemaVersion: expect.any(Number), cutoverMarker: expect.any(String) });
 
   const completed = await call(target, "POST", "/_ops/cutover/complete", {});
   const at = ((await completed.json()) as { cutoverCompletedAt: string }).cutoverCompletedAt;
@@ -367,10 +381,10 @@ test("16 A: the cutover marker is written to the EXPORTS bucket under the object
   const target = targetStub();
   const before = (await (await call(target, "GET", "/_ops/status")).json()) as { cutoverMarker: string };
   expect(before.cutoverMarker).toBe("absent");
-  expect(await env.EXPORTS.get(cutoverMarkerKey(target.id.toString()))).toBeNull();
+  expect(await env.EXPORTS.get(cutoverMarkerKey(target.id.toString(), "shortlet"))).toBeNull();
 
   await call(target, "POST", "/_ops/cutover/complete", {});
-  const marker = await env.EXPORTS.get(cutoverMarkerKey(target.id.toString()));
+  const marker = await env.EXPORTS.get(cutoverMarkerKey(target.id.toString(), "shortlet"));
   expect(marker).not.toBeNull();
   const after = (await (await call(target, "GET", "/_ops/status")).json()) as { cutoverMarker: string };
   expect(after.cutoverMarker).toBe("present");
@@ -379,14 +393,14 @@ test("16 A: the cutover marker is written to the EXPORTS bucket under the object
 test("16 A: an unauthenticated POST /_ops/cutover/complete writes neither the flag nor the marker", async () => {
   const target = targetStub();
   await call(target, "POST", "/_ops/cutover/complete", {}, false);
-  expect(await env.EXPORTS.get(cutoverMarkerKey(target.id.toString()))).toBeNull();
+  expect(await env.EXPORTS.get(cutoverMarkerKey(target.id.toString(), "shortlet"))).toBeNull();
   expect((await verifyBody(target)).cutoverCompletedAt).toBeNull();
 });
 
 test("16 A: the cutover marker survives the daily retention sweep, which deletes only dated export objects", async () => {
   const target = targetStub();
   await call(target, "POST", "/_ops/cutover/complete", {});
-  const key = cutoverMarkerKey(target.id.toString());
+  const key = cutoverMarkerKey(target.id.toString(), "shortlet");
   // A dated export from long before the cutoff: the sweep must delete it, which proves the sweep ran over this bucket.
   await env.EXPORTS.put("2020-01-01/operators.jsonl", "{}\n", { httpMetadata: { contentType: "application/x-ndjson" } });
   const farFuture = new Date("2040-01-01T00:00:00.000Z");
@@ -420,13 +434,14 @@ test("16 B: an import naming a credential table is refused with EXCLUDED_TABLE, 
     expect(body.message).toMatch(/ADR 0075/);
   }
   const verified = await verifyBody(target);
-  for (const table of Object.keys(DAILY_EXPORT_EXCLUDED)) expect(verified.excludedTables[table]?.rowCount).toBe(0);
+  const counts = excludedCredentialCounts(verified);
+  for (const table of Object.keys(DAILY_EXPORT_EXCLUDED)) expect(counts[table]?.rowCount).toBe(0);
 });
 
 test("16 B: verify reports the credential tables' counts apart from the application tables, and lists none of them as an application table", async () => {
   const target = targetStub();
   const verified = await verifyBody(target);
-  expect(Object.keys(verified.excludedTables).sort()).toEqual(Object.keys(DAILY_EXPORT_EXCLUDED).sort());
+  expect(Object.keys(excludedCredentialCounts(verified)).sort()).toEqual(Object.keys(DAILY_EXPORT_EXCLUDED).sort());
   for (const table of Object.keys(DAILY_EXPORT_EXCLUDED)) expect(Object.hasOwn(verified.tables, table)).toBe(false);
 });
 
@@ -505,4 +520,42 @@ test("16 A break-glass (stop path): when the flag survived in storage, the marke
   expect(await env.EXPORTS.get(key)).not.toBeNull();
   expect(await cutoverStatusBody(target)).toEqual({ ok: true, cutoverCompletedAt: at, cutoverMarker: "present" });
   expect((await verify(target)).operators?.rowCount).toBe(0);
+});
+test("Slice 17: PLATFORM and SHORTLET cutover markers for one tenant have distinct object-kind keys", () => {
+  const tenantObjectId = "tenant-derived-object-id";
+  expect(cutoverMarkerKey(tenantObjectId, "platform")).not.toBe(cutoverMarkerKey(tenantObjectId, "shortlet"));
+});
+
+test.each(["first invocation", "repeat invocation"])("Slice 17 AC3: same-tenant %s keeps per-DO cutover isolated", async () => {
+  // The test harness fixes SHORTLET_TENANT_ID for the public gateway. Use a fresh tenant-derived name for both DO classes
+  // in this focused cutover test; the SQL flags live only on these unique test-owned objects.
+  const tenantName = `test-migration-two-do-cutover-${crypto.randomUUID()}`;
+  const shortlet = env.ISOLATED_SHORTLET.get(env.ISOLATED_SHORTLET.idFromName(tenantName));
+  const platform = env.ISOLATED_PLATFORM.get(env.ISOLATED_PLATFORM.idFromName(tenantName));
+  const timestamp = new Date().toISOString();
+  const shortletMarkerKey = cutoverMarkerKey(shortlet.id.toString(), "shortlet");
+  const platformMarkerKey = cutoverMarkerKey(platform.id.toString(), "platform");
+  try {
+    const shortletTime = await runInDurableObject(shortlet, async (_instance, ctx) => {
+      const database = new DurableObjectSqlDatabase(ctx.storage);
+      const marker = createCutoverMarkerStore(env.EXPORTS, shortlet.id.toString(), "shortlet");
+      const first = await completeCutoverWithMarker(database, marker, timestamp);
+      return completeCutoverWithMarker(database, marker, "2038-01-17T00:00:00.000Z").then((second) => ({ first, second, stored: cutoverCompletedAt(database) }));
+    });
+    const platformTime = await runInDurableObject(platform, async (_instance, ctx) => {
+      const database = new DurableObjectSqlDatabase(ctx.storage);
+      const marker = createCutoverMarkerStore(env.EXPORTS, platform.id.toString(), "platform");
+      const first = await completeCutoverWithMarker(database, marker, timestamp);
+      const second = await completeCutoverWithMarker(database, marker, "2038-01-17T00:00:00.000Z");
+      return { first, second, stored: cutoverCompletedAt(database) };
+    });
+    expect(shortletTime).toEqual({ first: timestamp, second: timestamp, stored: timestamp });
+    expect(platformTime).toEqual({ first: timestamp, second: timestamp, stored: timestamp });
+    expect(shortletMarkerKey).not.toBe(platformMarkerKey);
+    expect(await env.EXPORTS.get(shortletMarkerKey)).not.toBeNull();
+    expect(await env.EXPORTS.get(platformMarkerKey)).not.toBeNull();
+  } finally {
+    await env.EXPORTS.delete(shortletMarkerKey);
+    await env.EXPORTS.delete(platformMarkerKey);
+  }
 });

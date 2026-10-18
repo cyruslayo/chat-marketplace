@@ -92,6 +92,7 @@ export const CREDENTIAL_TABLES: Readonly<Record<string, string>> = Object.freeze
   guest_account_sessions: "bearer credential: hashed Guest Account Session secrets; a restore must not revive a revoked session (ADR 0093; ADR 0075)",
   guest_session_bindings: "bearer credential: hashed interaction-session secrets bound to a principal (ADR 0070, ADR 0093; ADR 0075)",
   guest_sign_in_codes: "bearer credential: sign-in challenge code hashes; codes never leave the immediate delivery call (ADR 0093; ADR 0075)",
+  guest_account_email_commands: "account email-change replay material bound to a consumed proof; excluded from export (ADR 0093; ADR 0075)",
   operator_access_tokens: "bearer credential: hashed one-time operator access tokens (ADR 0086; ADR 0075)",
   operator_sessions: "bearer credential: hashed operator session secrets; a restore must not revive a revoked session (ADR 0086; ADR 0075)",
 });

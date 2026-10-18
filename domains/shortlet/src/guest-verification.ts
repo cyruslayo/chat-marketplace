@@ -27,7 +27,7 @@ export interface GuestIdentityVerificationResult {
 }
 
 export interface GuestIdentityVerificationResultSource {
-  getVerificationResult(input: { tenantId: string; guestId: string }): GuestIdentityVerificationResult | null;
+  getVerificationResult(input: { tenantId: string; guestId: string }): GuestIdentityVerificationResult | null | Promise<GuestIdentityVerificationResult | null>;
 }
 
 export interface OvernightOccupant {
@@ -156,7 +156,7 @@ export class GuestVerificationService {
     this.#verificationResults = verificationResults;
   }
 
-  validateDisclosure({
+  async validateDisclosure({
     tenantId,
     unitId,
     primaryGuest,
@@ -170,7 +170,7 @@ export class GuestVerificationService {
     if (!primaryGuest || !attestingPrincipalId || attestingPrincipalId !== primaryGuest.id) {
       throw new Error("Authenticated principal must be the Primary Guest");
     }
-    const verificationResult = this.validateCheckInEligibility({ tenantId, guestId: primaryGuest.id });
+    const verificationResult = await this.validateCheckInEligibility({ tenantId, guestId: primaryGuest.id });
     const eligibility = this.#validateBookingRequirements({
       tenantId,
       unitId,
@@ -212,13 +212,13 @@ export class GuestVerificationService {
     };
   }
 
-  validateCheckInEligibility({ tenantId, guestId }: CheckInEligibilityInput): GuestIdentityVerificationResult {
+  async validateCheckInEligibility({ tenantId, guestId }: CheckInEligibilityInput): Promise<GuestIdentityVerificationResult> {
     if (!tenantId || !guestId) throw new Error("Tenant and Guest are required for Check-In Eligibility");
-    return this.#requireIdentityVerification(tenantId, guestId);
+    return await this.#requireIdentityVerification(tenantId, guestId);
   }
 
-  #requireIdentityVerification(tenantId: string, guestId: string): GuestIdentityVerificationResult {
-    const verificationResult = this.#verificationResults?.getVerificationResult({ tenantId, guestId });
+  async #requireIdentityVerification(tenantId: string, guestId: string): Promise<GuestIdentityVerificationResult> {
+    const verificationResult = await this.#verificationResults?.getVerificationResult({ tenantId, guestId });
     if (
       !verificationResult ||
       verificationResult.tenantId !== tenantId ||

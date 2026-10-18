@@ -98,11 +98,11 @@ test("AC4: A route for someone else's draft or offer fails closed", async () => 
     ];
     for (const route of routes) {
       const [kind, id] = bookingKind(route)!;
-      assert.ok(fixture.app.conventionalBookingPage(kind, id, owner), `${kind} is served to its owner`);
+      assert.ok(await fixture.app.conventionalBookingPage(kind, id, owner), `${kind} is served to its owner`);
       for (const intruder of intruders) {
-        assert.equal(fixture.app.conventionalBookingPage(kind, id, intruder), null, `${kind} fails closed for ${JSON.stringify(intruder)}`);
+        assert.equal(await fixture.app.conventionalBookingPage(kind, id, intruder), null, `${kind} fails closed for ${JSON.stringify(intruder)}`);
       }
-      assert.equal(fixture.app.conventionalBookingPage(kind, `${id}-unknown`, owner), null, `unknown ${kind} fails closed`);
+      assert.equal(await fixture.app.conventionalBookingPage(kind, `${id}-unknown`, owner), null, `unknown ${kind} fails closed`);
     }
   } finally { await fixture.close(); }
 

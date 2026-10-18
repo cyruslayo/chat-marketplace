@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { GuestAccountAuthorityError, authorizesBookingRequest, authorizesPrincipalOwner, anonymousGuestIdentity, GuestIdentityResolver, SqliteGuestAccountAuthority, SqliteGuestAccountLinks, SqliteGuestContactRepository, SqliteGuestInteractionStore } from "../domains/shortlet/src/index.js";
 import { applySchemaMigrations } from "../packages/platform-core/src/schema-migrations.js";
 import { normalizeContactEmail, resolveGuestContact, type GuestIdentity } from "../domains/shortlet/src/index.js";
-import { SHORTLET_SCHEMA_MIGRATIONS, SHORTLET_SCHEMA_VERSION } from "../apps/cloudflare/src/schema.js";
+import { PLATFORM_SCHEMA_MIGRATIONS, SHORTLET_SCHEMA_MIGRATIONS, SHORTLET_SCHEMA_VERSION } from "../apps/cloudflare/src/schema.js";
 import { openNodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-database.js";
 import { createGuestLinkingFixture, linkedTableRows, LINKING_TENANT, type GuestLinkingFixture } from "./helpers/guest-account-linking.js";
 import { restartFixture } from "./helpers/guest-restart.js";
@@ -18,8 +18,31 @@ async function withFixture(run: (fixture: GuestLinkingFixture) => void | Promise
   }
 }
 
+test("Slice 17 AC1: async remote contact lookup runs before the link transaction and stale email snapshots commit no ownership", async () => {
+  await withFixture(async (fixture) => {
+    const session = signInGuestAccount(fixture.authority, "ada@example.test", LINKING_TENANT);
+    fixture.saveRequest({ requestId: "request-stale", primaryGuestId: "guest-stale", contactEmail: "ada@example.test" });
+    const remoteLinks = new SqliteGuestAccountLinks(fixture.database, {
+      requests: fixture.store,
+      authority: fixture.authority,
+      asyncRequests: {
+        async findBookingRequestIdsByContactEmail() {
+          // Re-entering the database here proves the async domain lookup is not inside a synchronous SQLite transaction.
+          fixture.database.transaction(() => fixture.database.prepare("SELECT 1").get());
+          fixture.database.prepare("UPDATE guest_accounts SET email_normalized = ?, email_revision = email_revision + 1, revision = revision + 1 WHERE account_guest_id = ?")
+            .run(["ada.changed@example.test", session.account.accountGuestId]);
+          return [{ requestId: "request-stale", primaryGuestId: "guest-stale", tenantId: LINKING_TENANT }];
+        },
+      },
+    });
+    await assert.rejects(remoteLinks.linkSignedInPrincipalWithLookup({ principalId: "guest-new-device", tenantId: LINKING_TENANT, session }), /changed during account linking/);
+    assert.deepEqual(fixture.database.prepare("SELECT principal_id FROM guest_account_principals WHERE principal_id = ?").get(["guest-new-device"]), undefined);
+    assert.deepEqual(fixture.database.prepare("SELECT request_id FROM guest_account_request_claims WHERE request_id = ?").get(["request-stale"]), undefined);
+  });
+});
+
 test("AC1 (store and decision level): after a Guest on device A signs in, a second principal on device B that signs into the same account sees A's threads and requests, and the offer lineage authorizes", async () => {
-  await withFixture((fixture) => {
+  await withFixture(async (fixture) => {
     fixture.saveThread({ threadId: "thread-a", principalId: "guest-device-a" });
     fixture.saveRequest({ requestId: "request-a", primaryGuestId: "guest-device-a", contactEmail: "ada@example.test" });
     fixture.saveBooking({ requestId: "request-a", offerId: "offer-a", reservationId: "reservation-a", contractId: "contract-a" });
@@ -27,7 +50,7 @@ test("AC1 (store and decision level): after a Guest on device A signs in, a seco
     const accountA = fixture.signInDevice("guest-device-a", "ada@example.test");
     const accountB = fixture.signInDevice("guest-device-b", "ada@example.test");
     assert.equal(accountA.account.accountGuestId, accountB.account.accountGuestId);
-    const identityB = fixture.resolver.resolve({ principalId: "guest-device-b", tenantId: LINKING_TENANT, accountSession: { sessionId: accountB.sessionId, sessionSecret: accountB.sessionSecret } });
+    const identityB = await fixture.resolver.resolve({ principalId: "guest-device-b", tenantId: LINKING_TENANT, accountSession: { sessionId: accountB.sessionId, sessionSecret: accountB.sessionSecret } });
     assert.ok(identityB);
     assert.deepEqual([...identityB.principalIds].sort(), ["guest-device-a", "guest-device-b"]);
 
@@ -41,27 +64,27 @@ test("AC1 (store and decision level): after a Guest on device A signs in, a seco
 });
 
 test("AC1 failure path (store and decision level): a third principal that is not linked to the account sees none of its threads or requests", async () => {
-  await withFixture((fixture) => {
+  await withFixture(async (fixture) => {
     fixture.saveThread({ threadId: "thread-a", principalId: "guest-device-a" });
     fixture.saveRequest({ requestId: "request-a", primaryGuestId: "guest-device-a", contactEmail: "ada@example.test" });
     fixture.saveBooking({ requestId: "request-a", offerId: "offer-a", reservationId: "reservation-a", contractId: "contract-a" });
     fixture.signInDevice("guest-device-a", "ada@example.test");
     const account = fixture.authority.findAccountByEmail("ada@example.test", LINKING_TENANT)!;
     const sessionOfThird = fixture.signInDevice("guest-device-c", "grace@example.test");
-    const thirdIdentity = fixture.resolver.resolve({ principalId: "guest-device-c", tenantId: LINKING_TENANT, accountSession: { sessionId: sessionOfThird.sessionId, sessionSecret: sessionOfThird.sessionSecret } });
+    const thirdIdentity = await fixture.resolver.resolve({ principalId: "guest-device-c", tenantId: LINKING_TENANT, accountSession: { sessionId: sessionOfThird.sessionId, sessionSecret: sessionOfThird.sessionSecret } });
     assert.ok(thirdIdentity);
     assert.notEqual(thirdIdentity.accountGuestId, account.accountGuestId);
     assert.deepEqual(fixture.store.findThreadsForPrincipals(thirdIdentity.principalIds, LINKING_TENANT), []);
     assert.deepEqual(fixture.store.findBookingRequestsForPrincipals(thirdIdentity.principalIds, LINKING_TENANT), []);
     assert.equal(authorizesBookingRequest(thirdIdentity, fixture.store.findBookingRequest("request-a")!), false);
     // An anonymous third device with no account session sees none either.
-    const anonymous = fixture.resolver.resolve({ principalId: "guest-device-d", tenantId: LINKING_TENANT });
+    const anonymous = await fixture.resolver.resolve({ principalId: "guest-device-d", tenantId: LINKING_TENANT });
     assert.deepEqual(fixture.store.findThreadsForPrincipals(anonymous!.principalIds, LINKING_TENANT), []);
   });
 });
 
 test("AC2: Linking a principal that is already linked to another account fails and changes nothing", async () => {
-  await withFixture((fixture) => {
+  await withFixture(async (fixture) => {
     const first = fixture.signInDevice("guest-shared-device", "ada@example.test");
     const other = fixture.signInDevice("guest-other-account", "grace@example.test");
     const linkedBefore = fixture.database.prepare("SELECT * FROM guest_account_principals ORDER BY principal_id").all();
@@ -76,7 +99,7 @@ test("AC2: Linking a principal that is already linked to another account fails a
 });
 
 test("AC2: Re-linking a principal to the same account is a no-op", async () => {
-  await withFixture((fixture) => {
+  await withFixture(async (fixture) => {
     const session = fixture.signInDevice("guest-device-a", "ada@example.test");
     const before = fixture.database.prepare("SELECT * FROM guest_account_principals").all();
     fixture.links.linkSignedInPrincipal({ principalId: "guest-device-a", tenantId: LINKING_TENANT, session });
@@ -85,7 +108,7 @@ test("AC2: Re-linking a principal to the same account is a no-op", async () => {
 });
 
 test("AC3: No row in guest_booking_requests, booking_contracts, booking_reservations or guest_booking_snapshots changes when principals are linked", async () => {
-  await withFixture((fixture) => {
+  await withFixture(async (fixture) => {
     fixture.saveRequest({ requestId: "request-a", primaryGuestId: "guest-device-a", contactEmail: "ada@example.test" });
     fixture.saveRequest({ requestId: "request-b", primaryGuestId: "guest-device-b", contactEmail: "ada@example.test" });
     fixture.saveBooking({ requestId: "request-b", offerId: "offer-b", reservationId: "reservation-b", contractId: "contract-b" });
@@ -120,23 +143,32 @@ test("AC4 (app level with an explicit identity; the HTTP route is issue 06): com
     const session = signInGuestAccount(authority, "ada@example.test", tenantId);
     links.linkSignedInPrincipal({ principalId: deviceA.environment.guestPrincipal().id, tenantId, session });
     links.linkSignedInPrincipal({ principalId: deviceB.environment.guestPrincipal().id, tenantId, session });
-    const identity = resolver.resolve({ principalId: deviceA.environment.guestPrincipal().id, tenantId, accountSession: { sessionId: session.sessionId, sessionSecret: session.sessionSecret } });
+    assert.deepEqual([...links.linkedPrincipals(session.account.accountGuestId, tenantId)].sort(), [deviceA.environment.guestPrincipal().id, deviceB.environment.guestPrincipal().id].sort());
+    const identity = await resolver.resolve({ principalId: deviceA.environment.guestPrincipal().id, tenantId, accountSession: { sessionId: session.sessionId, sessionSecret: session.sessionSecret } });
     assert.ok(identity);
     // Issue 07: the resolver reports the level the identity-assurance port gives, and email-verified otherwise.
     assert.equal(identity.assurance, "email-verified");
+    assert.deepEqual([...identity.principalIds].sort(), [deviceA.environment.guestPrincipal().id, deviceB.environment.guestPrincipal().id].sort());
     const verifiedResolver = new GuestIdentityResolver(authority, links, { hasCurrentGovernmentId: () => true });
-    const verifiedIdentity = verifiedResolver.resolve({ principalId: deviceA.environment.guestPrincipal().id, tenantId, accountSession: { sessionId: session.sessionId, sessionSecret: session.sessionSecret } });
+    const verifiedIdentity = await verifiedResolver.resolve({ principalId: deviceA.environment.guestPrincipal().id, tenantId, accountSession: { sessionId: session.sessionId, sessionSecret: session.sessionSecret } });
     assert.equal(verifiedIdentity?.assurance, "government-ID-verified");
+    const linkedThreadRows = new SqliteGuestInteractionStore(handle).findThreadsForPrincipals(verifiedIdentity!.principalIds, tenantId);
+    assert.deepEqual(linkedThreadRows.map((row) => row.threadId).sort(), [deviceA.threadId, deviceB.threadId].sort());
+    assert.ok(linkedThreadRows.every(({ threadJson }) => {
+      const projection: unknown = JSON.parse(threadJson);
+      return projection !== null && typeof projection === "object" &&
+        "requestId" in projection && typeof projection.requestId === "string" && projection.requestId !== "";
+    }), "successful async events persist each linked device's request projection");
 
-    const listed = deviceA.app.committedWork(deviceA.environment.guestPrincipal(), identity);
+    const listed = await deviceA.app.committedWork(deviceA.environment.guestPrincipal(), identity);
     assert.deepEqual(listed.map((work) => work.threadId).sort(), [deviceA.threadId, deviceB.threadId].sort());
 
     // Only from linked principals: the unlinked device's live work is not listed under the account.
     assert.equal(listed.some((work) => work.threadId === deviceC.threadId), false);
     // And a principal outside the account's linked set gets nothing from that identity (fail closed).
-    assert.deepEqual(deviceC.app.committedWork(deviceC.environment.guestPrincipal(), identity), []);
+    assert.deepEqual(await deviceC.app.committedWork(deviceC.environment.guestPrincipal(), identity), []);
     // Without an account the existing behaviour is unchanged: only the device's own work.
-    assert.deepEqual(deviceA.app.committedWork(deviceA.environment.guestPrincipal()).map((work) => work.threadId), [deviceA.threadId]);
+    assert.deepEqual((await deviceA.app.committedWork(deviceA.environment.guestPrincipal())).map((work) => work.threadId), [deviceA.threadId]);
   } finally {
     handle.close();
     await deviceC.close();
@@ -146,12 +178,12 @@ test("AC4 (app level with an explicit identity; the HTTP route is issue 06): com
 });
 
 test("AC5 (authorization decision only; the HTTP refusal is issue 06): a thread, request or offer of an unlinked principal is not authorized under a valid account identity, and a missing or other tenant is refused", async () => {
-  await withFixture((fixture) => {
+  await withFixture(async (fixture) => {
     fixture.saveThread({ threadId: "thread-stranger", principalId: "guest-stranger" });
     fixture.saveRequest({ requestId: "request-stranger", primaryGuestId: "guest-stranger", contactEmail: null });
     fixture.saveBooking({ requestId: "request-stranger", offerId: "offer-stranger", reservationId: "reservation-stranger", contractId: "contract-stranger" });
     const session = fixture.signInDevice("guest-device-a", "ada@example.test");
-    const identity = fixture.resolver.resolve({ principalId: "guest-device-a", tenantId: LINKING_TENANT, accountSession: { sessionId: session.sessionId, sessionSecret: session.sessionSecret } });
+    const identity = await fixture.resolver.resolve({ principalId: "guest-device-a", tenantId: LINKING_TENANT, accountSession: { sessionId: session.sessionId, sessionSecret: session.sessionSecret } });
     assert.ok(identity?.accountGuestId, "the account session is valid");
 
     const strangerThread = fixture.store.findThread("thread-stranger")!;
@@ -173,10 +205,10 @@ test("AC5 (authorization decision only; the HTTP refusal is issue 06): a thread,
 });
 
 test("AC5 resolver: a principal with no link row, presented under an account session, resolves to anonymous", async () => {
-  await withFixture((fixture) => {
+  await withFixture(async (fixture) => {
     const session = fixture.signInDevice("guest-device-a", "ada@example.test");
     // guest-never-linked has no link row at all: the account session must not lend it the account's history.
-    const identity = fixture.resolver.resolve({ principalId: "guest-never-linked", tenantId: LINKING_TENANT, accountSession: { sessionId: session.sessionId, sessionSecret: session.sessionSecret } });
+    const identity = await fixture.resolver.resolve({ principalId: "guest-never-linked", tenantId: LINKING_TENANT, accountSession: { sessionId: session.sessionId, sessionSecret: session.sessionSecret } });
     assert.equal(identity?.accountGuestId, undefined);
     assert.equal(identity?.assurance, "anonymous");
     assert.deepEqual(identity?.principalIds, ["guest-never-linked"]);
@@ -185,10 +217,10 @@ test("AC5 resolver: a principal with no link row, presented under an account ses
 });
 
 test("AC5 resolver: a principal linked to account X, presented under account Y's session, resolves to anonymous", async () => {
-  await withFixture((fixture) => {
+  await withFixture(async (fixture) => {
     fixture.signInDevice("guest-owned-by-x", "ada@example.test");
     const sessionY = fixture.signInDevice("guest-device-y", "grace@example.test");
-    const identity = fixture.resolver.resolve({ principalId: "guest-owned-by-x", tenantId: LINKING_TENANT, accountSession: { sessionId: sessionY.sessionId, sessionSecret: sessionY.sessionSecret } });
+    const identity = await fixture.resolver.resolve({ principalId: "guest-owned-by-x", tenantId: LINKING_TENANT, accountSession: { sessionId: sessionY.sessionId, sessionSecret: sessionY.sessionSecret } });
     assert.equal(identity?.accountGuestId, undefined);
     assert.equal(identity?.assurance, "anonymous");
     assert.deepEqual(identity?.principalIds, ["guest-owned-by-x"]);
@@ -196,7 +228,7 @@ test("AC5 resolver: a principal linked to account X, presented under account Y's
 });
 
 test("Human decision 2 (11 Oct 2026): a verified session cannot link a principal in another tenant, and writes nothing", async () => {
-  await withFixture((fixture) => {
+  await withFixture(async (fixture) => {
     fixture.saveRequest({ requestId: "request-grace", primaryGuestId: "guest-device-b", contactEmail: "grace@example.test" });
     const session = fixture.signInDevice("guest-device-a", "ada@example.test");
     const principalsBefore = fixture.database.prepare("SELECT * FROM guest_account_principals ORDER BY principal_id").all();
@@ -220,15 +252,15 @@ test("AC4 failure path: an account identity from another tenant lists no work, e
     const sameTenant: GuestIdentity = { principalId: principal.id, tenantId: device.environment.config.tenantId, accountGuestId: "gacct-same-tenant", assurance: "email-verified", principalIds: [principal.id], claimedRequestIds: [] };
     const otherTenant: GuestIdentity = { ...sameTenant, tenantId: "tenant-other" };
     // The same identity, in its own tenant, lists the live work, so the empty result below is the tenant check, not an empty fixture.
-    assert.equal(device.app.committedWork(principal, sameTenant).length, 1);
-    assert.deepEqual(device.app.committedWork(principal, otherTenant), []);
+    assert.equal((await device.app.committedWork(principal, sameTenant)).length, 1);
+    assert.deepEqual(await device.app.committedWork(principal, otherTenant), []);
   } finally {
     await device.close();
   }
 });
 
 test("Human decision 3 (11 Oct 2026): a request recorded as Ada@x.test is claimed by ada@x.test, in either direction", async () => {
-  await withFixture((fixture) => {
+  await withFixture(async (fixture) => {
     // The store writes the snapshot normalised (lowercase), so both recorded and signed-in addresses meet in one form.
     fixture.saveRequest({ requestId: "request-legacy-case", primaryGuestId: "guest-device-b", contactEmail: "Ada@x.test" });
     const session = fixture.signInDevice("guest-device-a", "ada@x.test");
@@ -242,7 +274,7 @@ test("Human decision 3 (11 Oct 2026): a request recorded as Ada@x.test is claime
 });
 
 test("Human decision 3 (11 Oct 2026): different addresses still do not match, whatever their case", async () => {
-  await withFixture((fixture) => {
+  await withFixture(async (fixture) => {
     fixture.saveRequest({ requestId: "request-other-local", primaryGuestId: "guest-device-b", contactEmail: "ada2@x.test" });
     fixture.saveRequest({ requestId: "request-other-domain", primaryGuestId: "guest-device-c", contactEmail: "ada@y.test" });
     const session = fixture.signInDevice("guest-device-a", "ADA@x.test");
@@ -256,34 +288,34 @@ test("Human decision 1 (10 Oct 2026): normalizeContactEmail trims and lowercases
 });
 
 test("AC6: An anonymous session (no account) resolves to its own principal only and reads exactly as before", async () => {
-  await withFixture((fixture) => {
+  await withFixture(async (fixture) => {
     fixture.saveThread({ threadId: "thread-anon", principalId: "guest-anon" });
     fixture.saveThread({ threadId: "thread-other", principalId: "guest-other" });
-    const anonymous = fixture.resolver.resolve({ principalId: "guest-anon", tenantId: LINKING_TENANT });
+    const anonymous = await fixture.resolver.resolve({ principalId: "guest-anon", tenantId: LINKING_TENANT });
     assert.deepEqual(anonymous, anonymousGuestIdentity("guest-anon", LINKING_TENANT));
     assert.equal(anonymous?.accountGuestId, undefined);
     assert.equal(anonymous?.assurance, "anonymous");
     assert.deepEqual(fixture.store.findThreadsForPrincipals(anonymous!.principalIds, LINKING_TENANT).map((thread) => thread.threadId), ["thread-anon"]);
     // A session presented with a wrong secret, or with a session that was never issued, is anonymous, not an account.
-    const forged = fixture.resolver.resolve({ principalId: "guest-anon", tenantId: LINKING_TENANT, accountSession: { sessionId: "gass-forged", sessionSecret: "forged" } });
+    const forged = await fixture.resolver.resolve({ principalId: "guest-anon", tenantId: LINKING_TENANT, accountSession: { sessionId: "gass-forged", sessionSecret: "forged" } });
     assert.equal(forged?.accountGuestId, undefined);
     assert.equal(forged?.assurance, "anonymous");
     assert.deepEqual(forged?.principalIds, ["guest-anon"]);
     // Missing principal or tenant yields no identity at all.
-    assert.equal(fixture.resolver.resolve({ principalId: "", tenantId: LINKING_TENANT }), null);
-    assert.equal(fixture.resolver.resolve({ principalId: "guest-anon", tenantId: "" }), null);
+    assert.equal(await fixture.resolver.resolve({ principalId: "", tenantId: LINKING_TENANT }), null);
+    assert.equal(await fixture.resolver.resolve({ principalId: "guest-anon", tenantId: "" }), null);
   });
 });
 
 test("AC7 (store and decision level): after signing in with an email, a Booking Request made on another device with that contact email is claimed by the account", async () => {
-  await withFixture((fixture) => {
+  await withFixture(async (fixture) => {
     // Device B made the request before anyone signed in, with the contact email it recorded.
     fixture.saveRequest({ requestId: "request-on-device-b", primaryGuestId: "guest-device-b", contactEmail: "ada@example.test" });
     assert.equal(fixture.links.accountForPrincipal("guest-device-b"), null);
 
     // Device A signs in with that email on a new device; the principal and the matching request join the account.
     const session = fixture.signInDevice("guest-device-a", "ada@example.test");
-    const identity = fixture.resolver.resolve({ principalId: "guest-device-a", tenantId: LINKING_TENANT, accountSession: { sessionId: session.sessionId, sessionSecret: session.sessionSecret } });
+    const identity = await fixture.resolver.resolve({ principalId: "guest-device-a", tenantId: LINKING_TENANT, accountSession: { sessionId: session.sessionId, sessionSecret: session.sessionSecret } });
     assert.ok(identity);
     assert.deepEqual(fixture.links.claimedRequestIds(session.account.accountGuestId, LINKING_TENANT), ["request-on-device-b"]);
     assert.equal(authorizesBookingRequest(identity, fixture.store.findBookingRequest("request-on-device-b")!), true);
@@ -294,7 +326,7 @@ test("AC7 (store and decision level): after signing in with an email, a Booking 
 });
 
 test("AC7 failure path: a request with a different contact email does not appear, and a principal already linked to another account is not moved", async () => {
-  await withFixture((fixture) => {
+  await withFixture(async (fixture) => {
     fixture.saveRequest({ requestId: "request-other-email", primaryGuestId: "guest-device-b", contactEmail: "grace@example.test" });
     // A request by a principal that already belongs to another account, even with the same email, is not claimed or moved.
     const owner = fixture.signInDevice("guest-owned-elsewhere", "grace@example.test");
@@ -302,7 +334,7 @@ test("AC7 failure path: a request with a different contact email does not appear
 
     const session = fixture.signInDevice("guest-device-a", "ada@example.test");
     assert.deepEqual(fixture.links.claimedRequestIds(session.account.accountGuestId, LINKING_TENANT), []);
-    const identity = fixture.resolver.resolve({ principalId: "guest-device-a", tenantId: LINKING_TENANT, accountSession: { sessionId: session.sessionId, sessionSecret: session.sessionSecret } });
+    const identity = await fixture.resolver.resolve({ principalId: "guest-device-a", tenantId: LINKING_TENANT, accountSession: { sessionId: session.sessionId, sessionSecret: session.sessionSecret } });
     assert.equal(authorizesBookingRequest(identity!, fixture.store.findBookingRequest("request-other-email")!), false);
     assert.equal(authorizesBookingRequest(identity!, fixture.store.findBookingRequest("request-owned-elsewhere")!), false);
     assert.equal(fixture.links.accountForPrincipal("guest-owned-elsewhere")?.accountGuestId, owner.account.accountGuestId);
@@ -318,7 +350,7 @@ test("AC7 failure path: a request with a different contact email does not appear
 });
 
 test("AC7 failure path: a legacy request with no recorded contact snapshot is not claimable by its current contact", async () => {
-  await withFixture((fixture) => {
+  await withFixture(async (fixture) => {
     fixture.saveRequest({ requestId: "request-legacy", primaryGuestId: "guest-device-b", contactEmail: null });
     // Even if the principal's current, mutable contact is the same email, no historical snapshot means no claim.
     new SqliteGuestContactRepository(fixture.database).saveEmail({ guestId: "guest-device-b", tenantId: LINKING_TENANT, contactEmail: "ada@example.test" });
@@ -328,7 +360,7 @@ test("AC7 failure path: a legacy request with no recorded contact snapshot is no
 });
 
 test("AC7 snapshot: a request's contact email is recorded once at creation and never rewritten by a later save", async () => {
-  await withFixture((fixture) => {
+  await withFixture(async (fixture) => {
     const request = fixture.saveRequest({ requestId: "request-frozen", primaryGuestId: "guest-device-b", contactEmail: "ada@example.test" });
     // A later save of the same request with a different email cannot rewrite the snapshot.
     fixture.store.saveBookingRequest({ ...request, status: "confirmed", confirmedAt: "2026-10-02T09:00:00.000Z", contactEmailSnapshot: "grace@example.test" });
@@ -339,11 +371,11 @@ test("AC7 snapshot: a request's contact email is recorded once at creation and n
 });
 
 test("Contact lookup consults the account's contact first, then the session principal's contact", async () => {
-  await withFixture((fixture) => {
+  await withFixture(async (fixture) => {
     const contacts = new SqliteGuestContactRepository(fixture.database);
     contacts.savePhone({ guestId: "guest-device-a", tenantId: LINKING_TENANT, phoneNumber: "08012345678" });
     const session = fixture.signInDevice("guest-device-a", "ada@example.test");
-    const identity = fixture.resolver.resolve({ principalId: "guest-device-a", tenantId: LINKING_TENANT, accountSession: { sessionId: session.sessionId, sessionSecret: session.sessionSecret } })!;
+    const identity = await fixture.resolver.resolve({ principalId: "guest-device-a", tenantId: LINKING_TENANT, accountSession: { sessionId: session.sessionId, sessionSecret: session.sessionSecret } })!;
     // No contact is recorded against the account yet, so the session principal's contact is used.
     assert.equal(resolveGuestContact(identity, contacts)?.guestId, "guest-device-a");
     // Once the account has its own contact, that one wins.
@@ -354,7 +386,7 @@ test("Contact lookup consults the account's contact first, then the session prin
 });
 
 test("Human decision 2 (11 Oct 2026): a plain email string is not proof of sign-in, so linking with it fails closed and writes nothing", async () => {
-  await withFixture((fixture) => {
+  await withFixture(async (fixture) => {
     const owner = fixture.signInDevice("guest-owner", "ada@example.test");
     const principalsBefore = fixture.database.prepare("SELECT * FROM guest_account_principals ORDER BY principal_id").all();
     const claimsBefore = fixture.database.prepare("SELECT * FROM guest_account_request_claims ORDER BY request_id").all();
@@ -371,7 +403,7 @@ test("Human decision 2 (11 Oct 2026): a plain email string is not proof of sign-
 });
 
 test("Human decision 2 (11 Oct 2026): a forged session secret is refused and writes nothing", async () => {
-  await withFixture((fixture) => {
+  await withFixture(async (fixture) => {
     fixture.saveRequest({ requestId: "request-forged-secret", primaryGuestId: "guest-device-b", contactEmail: "ada@example.test" });
     const genuine = fixture.signInDevice("guest-device-a", "ada@example.test");
     const linksBefore = fixture.database.prepare("SELECT * FROM guest_account_principals ORDER BY principal_id").all();
@@ -387,7 +419,7 @@ test("Human decision 2 (11 Oct 2026): a forged session secret is refused and wri
 });
 
 test("Human decision 2 (11 Oct 2026): a revoked sign-in session is refused and writes nothing", async () => {
-  await withFixture((fixture) => {
+  await withFixture(async (fixture) => {
     const session = fixture.signInDevice("guest-device-a", "ada@example.test");
     fixture.authority.revokeSession(session.sessionId, LINKING_TENANT);
     assert.throws(
@@ -399,7 +431,7 @@ test("Human decision 2 (11 Oct 2026): a revoked sign-in session is refused and w
 });
 
 test("Human decision 2 (11 Oct 2026): a genuine verified sign-in links the principal and claims its matching requests", async () => {
-  await withFixture((fixture) => {
+  await withFixture(async (fixture) => {
     fixture.saveRequest({ requestId: "request-genuine", primaryGuestId: "guest-device-b", contactEmail: "ada@example.test" });
     const session = signInGuestAccount(fixture.authority, "ada@example.test", LINKING_TENANT);
     const result = fixture.links.linkSignedInPrincipal({ principalId: "guest-device-a", tenantId: LINKING_TENANT, session });
@@ -409,7 +441,7 @@ test("Human decision 2 (11 Oct 2026): a genuine verified sign-in links the princ
 });
 
 test("Human decision 3 (11 Oct 2026): signing in with a differently-cased address finds the same account and creates no duplicate", async () => {
-  await withFixture((fixture) => {
+  await withFixture(async (fixture) => {
     const first = fixture.signInDevice("guest-device-a", "Ada@Example.Test");
     const second = fixture.signInDevice("guest-device-b", "ada@example.test");
     assert.equal(second.account.accountGuestId, first.account.accountGuestId);
@@ -419,7 +451,7 @@ test("Human decision 3 (11 Oct 2026): signing in with a differently-cased addres
 });
 
 test("Human decision 3 (11 Oct 2026): a stored snapshot that is not in normalised form is not claimed, because the comparison is exact", async () => {
-  await withFixture((fixture) => {
+  await withFixture(async (fixture) => {
     fixture.saveRequest({ requestId: "request-raw-snapshot", primaryGuestId: "guest-device-b", contactEmail: null });
     // A row written outside the store's normalising path, as an unnormalised value would be. No SQL lower() may match it.
     fixture.database.prepare("INSERT INTO guest_booking_request_contacts (request_id, tenant_id, contact_email, recorded_at) VALUES (?, ?, ?, ?)")
@@ -430,7 +462,7 @@ test("Human decision 3 (11 Oct 2026): a stored snapshot that is not in normalise
 });
 
 test("Human decision 3 (11 Oct 2026): an account row stored in a non-normalised form is not matched by lookup, because the comparison is exact", async () => {
-  await withFixture((fixture) => {
+  await withFixture(async (fixture) => {
     // Sign-in and email change both store the normalised value, so this row is reachable only by writing it directly.
     const session = fixture.signInDevice("guest-device-a", "ada@x.test");
     fixture.database.prepare("UPDATE guest_accounts SET email_normalized = ? WHERE account_guest_id = ?").run(["Ada@x.test", session.account.accountGuestId]);
@@ -440,7 +472,7 @@ test("Human decision 3 (11 Oct 2026): an account row stored in a non-normalised 
 });
 
 test("Human decision 3 (11 Oct 2026): a non-ASCII address is allowed and matches in any case", async () => {
-  await withFixture((fixture) => {
+  await withFixture(async (fixture) => {
     fixture.saveRequest({ requestId: "request-non-ascii", primaryGuestId: "guest-device-b", contactEmail: "\u00d1and\u00fa@x.test" });
     const session = fixture.signInDevice("guest-device-a", "\u00f1AND\u00da@X.test");
     assert.deepEqual(fixture.links.claimedRequestIds(session.account.accountGuestId, LINKING_TENANT), ["request-non-ascii"]);
@@ -448,10 +480,10 @@ test("Human decision 3 (11 Oct 2026): a non-ASCII address is allowed and matches
 });
 
 test("AC5 authorization: a request the account claims is refused when it carries another tenant", async () => {
-  await withFixture((fixture) => {
+  await withFixture(async (fixture) => {
     fixture.saveRequest({ requestId: "request-claimed", primaryGuestId: "guest-device-b", contactEmail: "ada@example.test" });
     const session = fixture.signInDevice("guest-device-a", "ada@example.test");
-    const identity = fixture.resolver.resolve({ principalId: "guest-device-a", tenantId: LINKING_TENANT, accountSession: { sessionId: session.sessionId, sessionSecret: session.sessionSecret } });
+    const identity = await fixture.resolver.resolve({ principalId: "guest-device-a", tenantId: LINKING_TENANT, accountSession: { sessionId: session.sessionId, sessionSecret: session.sessionSecret } });
     assert.ok(identity);
     const claimed = fixture.store.findBookingRequest("request-claimed")!;
     // Control: the claim alone authorizes this request, because its primary guest is not linked.
@@ -461,18 +493,25 @@ test("AC5 authorization: a request the account claims is refused when it carries
   });
 });
 
-test("Schema: migration 3 creates the linking and snapshot tables on a database that already has migrations 1 and 2", () => {
-  // Version 4 added the identity-assurance table (issue 09); this test still checks that migration 3 creates its own tables.
+test("Slice 17 ADR 0101: linked principals live on platform while immutable request contacts remain shortlet", () => {
   assert.equal(SHORTLET_SCHEMA_VERSION, 4);
-  const database = openNodeSqliteDatabase(":memory:");
+  const shortlet = openNodeSqliteDatabase(":memory:");
+  const platform = openNodeSqliteDatabase(":memory:");
   try {
-    applySchemaMigrations(database, SHORTLET_SCHEMA_MIGRATIONS.slice(0, 2), "2026-10-10T00:00:00.000Z");
-    applySchemaMigrations(database, SHORTLET_SCHEMA_MIGRATIONS, "2026-10-10T00:00:00.000Z");
-    const tables = database.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((row) => row.name);
-    for (const table of ["guest_account_principals", "guest_account_request_claims", "guest_booking_request_contacts"]) {
-      assert.ok(tables.includes(table), `${table} exists after migration 3`);
+    applySchemaMigrations(shortlet, SHORTLET_SCHEMA_MIGRATIONS, "2026-10-10T00:00:00.000Z");
+    applySchemaMigrations(platform, PLATFORM_SCHEMA_MIGRATIONS, "2026-10-10T00:00:00.000Z");
+    const shortletTables = new Set(shortlet.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((row) => row.name));
+    const platformTables = new Set(platform.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((row) => row.name));
+    for (const table of ["guest_accounts", "guest_account_sessions", "guest_account_email_commands", "guest_account_rate_events", "guest_account_principals", "guest_account_request_claims", "guest_contacts", "guest_threads", "guest_session_bindings", "audit_log", "telemetry_events"]) {
+      assert.ok(platformTables.has(table), `${table} exists in PLATFORM`);
+      assert.ok(!shortletTables.has(table), `${table} is absent from SHORTLET`);
+    }
+    for (const table of ["guest_booking_request_contacts", "guest_identity_assurance", "guest_booking_requests", "booking_reservations"]) {
+      assert.ok(shortletTables.has(table), `${table} exists in SHORTLET`);
+      assert.ok(!platformTables.has(table), `${table} is absent from PLATFORM`);
     }
   } finally {
-    database.close();
+    shortlet.close();
+    platform.close();
   }
 });
