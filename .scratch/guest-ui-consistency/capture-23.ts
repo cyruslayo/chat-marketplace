@@ -10,9 +10,15 @@ import { createCommercePack } from "../../domains/commerce/src/index.js";
 import { COMMERCE_CHECKOUT_CONFIRM_ACTION } from "../../apps/web-agent/src/commerce-presentation.js";
 import { checkoutConfirmContext } from "../../test/helpers/a2ui-surface-integrity.js";
 
-// Run from the worktree root: `npx tsx .scratch/guest-ui-consistency/capture-23.ts`.
+// Usage (run from the worktree root): `npx tsx .scratch/guest-ui-consistency/capture-23.ts <output-dir>`.
+// The output directory is required, so a bare run cannot overwrite issue 23 evidence. Issue 27 uses screenshots/27/checkout-23.
+// screenshots/23-checkout-fix is issue 23 evidence: pass it only to reproduce issue 23 deliberately.
 // Earlier captures stay as evidence: screenshots/23 (original) and screenshots/23-root-fix (before the checkout fix).
-const output = process.argv[2] ?? "screenshots/23-checkout-fix";
+const output = process.argv[2];
+if (!output) {
+  console.error("Usage: npx tsx .scratch/guest-ui-consistency/capture-23.ts <output-dir>   (for example screenshots/27/checkout-23)");
+  process.exit(2);
+}
 mkdirSync(output, { recursive: true });
 
 const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:", clock: () => new Date("2026-10-18T10:00:00Z") });

@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { NodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-database.js";
 import { createCommercePack } from "../domains/commerce/src/index.js";
-import { applySchemaMigrations } from "../packages/platform-core/src/schema-migrations.js";
+import { applySchemaMigrations, schemaVersion } from "../packages/platform-core/src/schema-migrations.js";
+import { TRACKING_ATTEMPT_SCHEMA } from "../domains/commerce/src/commerce-schema.js";
 import { normalizePhone } from "../domains/commerce/src/order.js";
 import { createCommerceFixture } from "./helpers/commerce-fixture.js";
 
@@ -285,6 +286,45 @@ test("Idempotency: the same payment reference with a differently written, same c
     const second = orders.createOrder(baseInput("store", "zone", { customerPhone: "+234 803 123 4567", submittedTotalKobo: 10000, paymentReference: "ref-canonical" }));
     assert.equal(second.id, first.id);
     assert.equal(second.customerPhone, "+2348031234567");
+  } finally {
+    database.close();
+  }
+});
+
+test("Invalid phone: order creation rejects a phone number below the minimum length", () => {
+  const database = memory();
+  const { orders } = pack(database);
+  setupStore(database, "merchant", "store");
+  addOffer(database, "store", "offer", 10000, 5);
+  addZone(database, "store", "zone", 0);
+  try {
+    assert.throws(() => orders.createOrder(baseInput("store", "zone", { customerPhone: "12345", submittedTotalKobo: 10000, paymentReference: "ref-short-phone" })), /valid phone number is required/);
+    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM merchant_orders").get()?.count, 0);
+  } finally {
+    database.close();
+  }
+});
+
+test("Upgrade: a pre-change attempts table and its rows survive the migration, and the ledger reaches version 5", () => {
+  const database = memory();
+  const commerce = pack(database);
+  setupStore(database, "merchant", "store");
+  addOffer(database, "store", "offer", 10000, 5);
+  addZone(database, "store", "zone", 0);
+  try {
+    const order = commerce.orders.createOrder(baseInput("store", "zone", { customerPhone: "+234 801 234 5678", submittedTotalKobo: 10000, paymentReference: "ref-upgrade" }));
+    // The pre-change database: the table exists from the earlier constructor, and the migration ledger has no rows.
+    database.exec(TRACKING_ATTEMPT_SCHEMA);
+    database.prepare("INSERT INTO merchant_order_tracking_attempts (public_code, failed_attempts, window_started_at) VALUES ($publicCode, $failedAttempts, $windowStartedAt)").run({ $publicCode: order.publicCode, $failedAttempts: 3, $windowStartedAt: CLOCK().toISOString() });
+    assert.equal(schemaVersion(database), 0);
+
+    applySchemaMigrations(database, commerce.migrations, CLOCK().toISOString());
+
+    assert.equal(schemaVersion(database), 5);
+    const rows = database.prepare("SELECT public_code, failed_attempts FROM merchant_order_tracking_attempts").all();
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]?.public_code, order.publicCode);
+    assert.equal(Number(rows[0]?.failed_attempts), 3);
   } finally {
     database.close();
   }

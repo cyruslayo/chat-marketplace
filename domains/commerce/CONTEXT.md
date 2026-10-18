@@ -62,4 +62,4 @@ _Avoid_: Ban, block
 A Consumer phone number in one canonical form, `+234` followed by the ten-digit national number. A local number (`0801…`), an international number (`+234…`, `234…`) or a `00234…` number with a Nigerian mobile prefix (070, 080, 081, 090, 091) is the same number. Other numbers keep their digits and plus.
 _Avoid_: Phone format
 
-_Decision (user, 18 Oct 2026, issue 27)_: the Tracking Lock limits (5 wrong-phone attempts, 15 minutes) and the Nigerian Mobile Number rule above are the user's decisions. The limits are configurable options with these defaults; the mobile prefix list is a coordinator recommendation awaiting user confirmation.
+_Decision (user, 18 Oct 2026, issue 27)_: the Tracking Lock limits (5 wrong-phone attempts, 15 minutes) and the Nigerian Mobile Number rule above are the user's decisions. The limits are configurable options with these defaults; the mobile prefix list (070, 080, 081, 090, 091) was confirmed by the user on 18 Oct 2026, with canonical storage as +234 followed by the national number.

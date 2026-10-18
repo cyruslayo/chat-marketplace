@@ -80,7 +80,7 @@ export interface MerchantOrder {
 }
 
 /**
- * Nigerian mobile prefixes; coordinator recommendation of 18 Oct 2026, awaiting user confirmation.
+ * Nigerian mobile prefixes; confirmed by the user, 18 Oct 2026. Canonical storage is +234 and the ten-digit national number.
  * They are the two digits after the local trunk zero (070, 080, 081, 090, 091).
  */
 export const NIGERIAN_MOBILE_PREFIXES: readonly string[] = ["70", "80", "81", "90", "91"];

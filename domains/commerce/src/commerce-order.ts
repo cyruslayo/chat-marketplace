@@ -236,7 +236,6 @@ export class CommerceOrders {
     return row ? { failedAttempts: Number(row.failed_attempts), windowStartedAt: Date.parse(String(row.window_started_at)) } : null;
   }
 
-
   ordersForStore(storeId: string): readonly MerchantOrder[] {
     return this.database
       .prepare("SELECT * FROM merchant_orders WHERE store_id = $storeId ORDER BY created_at")
