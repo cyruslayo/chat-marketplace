@@ -99,10 +99,18 @@ export const MERCHANT_ORDER_SCHEMA = `CREATE TABLE IF NOT EXISTS merchant_orders
   updated_at TEXT NOT NULL
 )`;
 
-/** The commerce domain's ordered schema: merchants/stores, catalogue, carts, orders. */
+/** Failed public-tracking attempts per existing order, for the lock window (issue 27). Never one row per unknown code. */
+export const TRACKING_ATTEMPT_SCHEMA = `CREATE TABLE IF NOT EXISTS merchant_order_tracking_attempts (
+  public_code TEXT PRIMARY KEY REFERENCES merchant_orders(public_code),
+  failed_attempts INTEGER NOT NULL,
+  window_started_at TEXT NOT NULL
+)`;
+
+/** The commerce domain's ordered schema: merchants/stores, catalogue, carts, orders, tracking attempts. */
 export const COMMERCE_SCHEMA_MIGRATIONS: readonly SchemaMigration[] = [
   { version: 1, name: "commerce baseline: merchants and stores", statements: [MERCHANT_SCHEMA, STORE_SCHEMA] },
   { version: 2, name: "commerce catalogue: products, offers, variants, delivery zones", statements: [PRODUCT_SCHEMA, MERCHANT_OFFER_SCHEMA, OFFER_VARIANT_SCHEMA, DELIVERY_ZONE_SCHEMA] },
   { version: 3, name: "commerce carts: server-side cart lines per task", statements: [CART_LINE_SCHEMA] },
   { version: 4, name: "commerce orders: merchant orders and lifecycle", statements: [MERCHANT_ORDER_SCHEMA] },
+  { version: 5, name: "commerce order tracking: failed-attempt lock per public code", statements: [TRACKING_ATTEMPT_SCHEMA] },
 ];

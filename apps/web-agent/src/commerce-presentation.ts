@@ -115,7 +115,7 @@ export function commerceDiscoverySurface(artifact: unknown, surfaceId: string, l
 
 export function commerceCartSurface(cart: CommerceCartPresentation, surfaceId: string, limits = DEFAULT_COMMERCE_PROJECTION_LIMITS): readonly unknown[] {
   const presentation = commerceCartPresentation(cart, limits);
-  return messages(surfaceId, COMMERCE_CART_CATALOG_ID, presentation.title, presentation.lines.map((line) => `${line.productName} · ${line.quantity} × NGN ${(line.priceKobo / 100).toLocaleString("en-NG")}`));
+  return messages(surfaceId, COMMERCE_CART_CATALOG_ID, presentation.title, presentation.lines.map((line) => `${line.productName} · ${line.quantity} × ${formatMoney(line.priceKobo)}`));
 }
 
 export function commerceOrderSurface(order: CommerceOrderPresentation, surfaceId: string, limits = DEFAULT_COMMERCE_PROJECTION_LIMITS): readonly unknown[] {
@@ -138,11 +138,11 @@ function checkoutStatusCopy(status: NonProposedCheckoutStatus): string {
 
 export function commerceCheckoutSurface(checkout: CommerceCheckoutPresentation, surfaceId: string, limits = DEFAULT_COMMERCE_PROJECTION_LIMITS): readonly unknown[] {
   const presentation = commerceCheckoutPresentation(checkout, limits);
-  const lines = presentation.lines.map((line, index) => ({ id: `checkout-line-${index}`, component: "Text" as const, text: `${line.productName} · ${line.quantity} × NGN ${(line.priceKobo / 100).toLocaleString("en-NG")}` }));
+  const lines = presentation.lines.map((line, index) => ({ id: `checkout-line-${index}`, component: "Text" as const, text: `${line.productName} · ${line.quantity} × ${formatMoney(line.priceKobo)}` }));
   // The confirmation controls are built once and the root's child list is derived from the same array, so a status-dependent
   // component can never be referenced while absent (the post-confirm surface emits no confirm label).
   const confirmation: A2UIComponent[] = presentation.status === "proposed"
-    ? [{ id: "checkout-confirm", component: "Button" as const, child: "checkout-confirm-label", variant: "primary" as const, action: { event: { name: COMMERCE_CHECKOUT_CONFIRM_ACTION, context: { proposalId: presentation.proposalId, taskId: presentation.taskId, expectedVersion: presentation.expectedVersion, cartVersion: presentation.cartVersion, confirmedTotalKobo: presentation.totalKobo, surfaceId } } }, accessibility: { label: `Confirm checkout total NGN ${(presentation.totalKobo / 100).toLocaleString("en-NG")}` } }]
+    ? [{ id: "checkout-confirm", component: "Button" as const, child: "checkout-confirm-label", variant: "primary" as const, action: { event: { name: COMMERCE_CHECKOUT_CONFIRM_ACTION, context: { proposalId: presentation.proposalId, taskId: presentation.taskId, expectedVersion: presentation.expectedVersion, cartVersion: presentation.cartVersion, confirmedTotalKobo: presentation.totalKobo, surfaceId } } }, accessibility: { label: `Confirm checkout total ${formatMoney(presentation.totalKobo)}` } }]
     : [{ id: "checkout-confirm", component: "Text" as const, text: checkoutStatusCopy(presentation.status) }];
   // The button references this label through `child`; it is emitted but is not a root child, or the text would render twice.
   const confirmLabels: A2UIComponent[] = presentation.status === "proposed" ? [{ id: "checkout-confirm-label", component: "Text" as const, text: "Confirm checkout" }] : [];
@@ -150,9 +150,9 @@ export function commerceCheckoutSurface(checkout: CommerceCheckoutPresentation, 
     { id: "root", component: "Column", children: ["checkout-title", ...lines.map((line) => line.id), "checkout-subtotal", "checkout-delivery", "checkout-total", ...confirmation.map((component) => component.id)] },
     { id: "checkout-title", component: "Text", text: `Checkout · ${presentation.storeName}`, variant: "h2" },
     ...lines,
-    { id: "checkout-subtotal", component: "Text", text: `Subtotal: NGN ${(presentation.subtotalKobo / 100).toLocaleString("en-NG")}` },
-    { id: "checkout-delivery", component: "Text", text: `Delivery: NGN ${(presentation.shippingFeeKobo / 100).toLocaleString("en-NG")}` },
-    { id: "checkout-total", component: "Text", text: `Total: NGN ${(presentation.totalKobo / 100).toLocaleString("en-NG")}` },
+    { id: "checkout-subtotal", component: "Text", text: `Subtotal: ${formatMoney(presentation.subtotalKobo)}` },
+    { id: "checkout-delivery", component: "Text", text: `Delivery: ${formatMoney(presentation.shippingFeeKobo)}` },
+    { id: "checkout-total", component: "Text", text: `Total: ${formatMoney(presentation.totalKobo)}` },
     ...confirmation,
     ...confirmLabels,
   ];

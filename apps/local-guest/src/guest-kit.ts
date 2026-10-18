@@ -466,10 +466,12 @@ export function statusHtml(tone: KitStatusTone, text: string): string {
  * `href` links the card to its offer page on a store page. On the offer page itself (`null`) the card has no
  * link back and no "View offer" action: the page's next step is the chat link beneath it.
  */
-export function commerceOfferHtml(offer: CommerceOfferPresentation, href: string | null): string {
+export function commerceOfferHtml(offer: CommerceOfferPresentation, href: string | null, options: { readonly omitHeading?: boolean } = {}): string {
   const title = href === null ? escapeHtml(offer.productName) : `<a class="ui-link" href="${escapeHtml(href)}">${escapeHtml(offer.productName)}</a>`;
+  // A page that already shows the product name in its own heading omits the card heading.
+  const heading = options.omitHeading ? "" : `<h2>${title}</h2>`;
   const action = href === null ? "" : `<a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(href)}">${COMMERCE_GUEST_COPY.viewOffer}</a>`;
-  return `<article class="ui-panel" data-commerce-offer="${escapeHtml(offer.offerId)}"><h2>${title}</h2><p class="ui-field__hint">${escapeHtml(offer.category)}</p><p class="ui-field__hint">${escapeHtml(commerceSoldBy(offer.merchantName, offer.storeName))}</p><p>${escapeHtml(offer.description)}</p><p class="ui-money-total">${formatNgnKobo(offer.priceKobo)}</p><p class="ui-field__hint">${escapeHtml(String(offer.stock))} ${COMMERCE_GUEST_COPY.available}</p>${action}</article>`;
+  return `<article class="ui-panel" data-commerce-offer="${escapeHtml(offer.offerId)}">${heading}<p class="ui-field__hint">${escapeHtml(offer.category)}</p><p class="ui-field__hint">${escapeHtml(commerceSoldBy(offer.merchantName, offer.storeName))}</p><p>${escapeHtml(offer.description)}</p><p class="ui-money-total">${formatNgnKobo(offer.priceKobo)}</p><p class="ui-field__hint">${escapeHtml(String(offer.stock))} ${COMMERCE_GUEST_COPY.available}</p>${action}</article>`;
 }
 
 // Hidden until /payment.js reveals it: without JavaScript the account number stays plain, selectable text (ADR 0080).
@@ -646,6 +648,8 @@ export function appFrameHtml(input: {
   readonly threadId: string | null;
   readonly journey?: GuestJourney;
   readonly publicStep?: JourneyStep;
+  /** The top-bar name; omitted for the platform brand. */
+  readonly brand?: string;
 }): string {
   const backHref =
     input.threadId === null
@@ -656,7 +660,7 @@ export function appFrameHtml(input: {
     (input.publicStep === undefined
       ? undefined
       : projectJourney(input.publicStep));
-  return `${appBarHtml({ backHref, backLabel: BACK_LABEL })}${railHtml(journey)}`;
+  return `${appBarHtml({ backHref, backLabel: BACK_LABEL, ...(input.brand === undefined ? {} : { brand: input.brand }) })}${railHtml(journey)}`;
 }
 
 /** One task in the shell rail; `domainLabel` and `status` come from the pack. */

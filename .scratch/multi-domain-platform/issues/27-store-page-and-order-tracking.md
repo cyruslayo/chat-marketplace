@@ -44,3 +44,5 @@ Before starting, also list `docs/adr/` and read any other ADR that touches the f
 Apply every item of the Definition of Done in `docs/agents/issue-tracker.md`. Shortlet behaviour must not change: the existing tests and the guest UI walkthrough/capture checks are the safety net.
 
 ## Comments
+
+- 18 Oct 2026: Copy approved by the user, 18 Oct 2026 (`COMMERCE_GUEST_COPY` as committed).

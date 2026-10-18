@@ -91,7 +91,7 @@ function storePage(commerce: Commerce, slug: string): string | null {
   })));
   const cards = presented.offers.map((offer) => commerceOfferHtml(offer, `/s/${encodeURIComponent(slug)}/offers/${encodeURIComponent(offer.offerId)}`)).join("");
   const body = `<header class="ui-page__header"><p class="ui-eyebrow">${COPY.verifiedStore}</p><h1>${escapeHtml(store.name)}</h1><p>${escapeHtml(commerceSoldBy(merchant.name))}</p></header>${cards || `<section class="ui-panel ui-empty"><h2>${COPY.noOffersTitle}</h2><p>${COPY.noOffersBody}</p></section>`}<p><a class="ui-link" href="/orders/track">${COPY.trackOrderLink}</a></p>`;
-  return pageShell({ title: `${store.name} · ${COPY.pageTitleSuffix}`, body, frame: appFrameHtml({ threadId: null }) });
+  return pageShell({ title: `${store.name} · ${COPY.pageTitleSuffix}`, body, frame: appFrameHtml({ threadId: null, brand: store.name }) });
 }
 
 export function createCommerceRouteModule(commerce: Commerce): RouteModule {
@@ -137,7 +137,7 @@ export function createCommerceRouteModule(commerce: Commerce): RouteModule {
           sendHtml(res, notFoundPage(COPY.offerUnavailableTitle, COPY.offerUnavailableBody, appFrameHtml({ threadId: null })), 404);
         } else {
           const presentation = commerceDiscoveryPresentation([{ offerId: offer.offerId, storeName: store.name, merchantName: merchant.name, productName: offer.productName, category: offer.category, description: offer.description, priceKobo: offer.priceKobo, stock: offer.stock }]).offers[0]!;
-          sendHtml(res, pageShell({ title: `${presentation.productName} · ${store.name}`, width: "narrow", frame: appFrameHtml({ threadId: null }), body: `<header class="ui-page__header"><p class="ui-eyebrow">${escapeHtml(store.name)}</p><h1>${escapeHtml(presentation.productName)}</h1></header>${commerceOfferHtml(presentation, null)}<p><a class="ui-link" href="/">${COPY.continueInChatLink}</a></p>` }));
+          sendHtml(res, pageShell({ title: `${presentation.productName} · ${store.name}`, width: "narrow", frame: appFrameHtml({ threadId: null, brand: store.name }), body: `<header class="ui-page__header"><p class="ui-eyebrow">${escapeHtml(store.name)}</p><h1>${escapeHtml(presentation.productName)}</h1></header>${commerceOfferHtml(presentation, null, { omitHeading: true })}<p><a class="ui-link" href="/">${COPY.continueInChatLink}</a></p>` }));
         }
         return true;
       }

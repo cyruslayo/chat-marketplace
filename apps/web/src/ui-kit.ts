@@ -78,11 +78,13 @@ export interface AppBarInput {
   readonly backHref: string;
   readonly backLabel: string;
   readonly action?: { readonly href: string; readonly label: string; readonly icon: IconName };
+  /** The name shown in the top bar; a merchant store passes its own name. Defaults to the platform name. */
+  readonly brand?: string;
 }
 
 export function appBarHtml(input: AppBarInput): string {
   const action = input.action === undefined ? "" : `<a class="ui-button ui-button--small ui-appbar__action" href="${escapeHtml(input.action.href)}">${icon(input.action.icon)}${escapeHtml(input.action.label)}</a>`;
-  return `<header class="ui-appbar"><a class="ui-icon-button" href="${escapeHtml(input.backHref)}" aria-label="${escapeHtml(input.backLabel)}">${icon("arrow-left")}</a><a class="ui-appbar__brand" href="/">Shortlet</a><span class="ui-appbar__grow"></span>${action}</header>`;
+  return `<header class="ui-appbar"><a class="ui-icon-button" href="${escapeHtml(input.backHref)}" aria-label="${escapeHtml(input.backLabel)}">${icon("arrow-left")}</a><a class="ui-appbar__brand" href="/">${escapeHtml(input.brand ?? "Shortlet")}</a><span class="ui-appbar__grow"></span>${action}</header>`;
 }
 
 /** Decorative inline icon; pair with visible text or an aria-label on the control. */

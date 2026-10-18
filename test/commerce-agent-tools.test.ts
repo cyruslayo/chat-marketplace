@@ -386,7 +386,8 @@ test("AC4 scripted post-confirm checkout surface references only emitted compone
   assert.ok(result, "confirmation projects a post-confirm checkout surface");
   assertSurfaceReferencesResolve(result.a2uiMessages, "post-confirm checkout");
   const rendered = JSON.stringify(result.a2uiMessages);
-  assert.match(rendered, /Total: NGN/);
+  assert.match(rendered, /Total: ₦\d/);
+  assert.doesNotMatch(rendered, /NGN/);
   assert.match(rendered, /Payment unavailable\. No order or payment was created\./);
   assert.equal(fixture.env.database.prepare("SELECT COUNT(*) AS count FROM commerce_checkout_proposals WHERE status = 'payment_unavailable'").get()?.count, 1);
   fixture.env.database.close();

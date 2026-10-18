@@ -79,9 +79,33 @@ export interface MerchantOrder {
   readonly updatedAt: string;
 }
 
-/** instastore `create_store_order`: keep only digits and `+`. */
+/**
+ * instastore `create_store_order` kept only digits and `+`. Nigerian numbers also share one canonical form
+ * (`+234` then the ten-digit national number), whether written locally (`0801…`, `0801 234 5678`) or internationally
+ * (`+234…`, `234…`). Local forms are only read as Nigerian when they are eleven digits starting 07, 08 or 09.
+ * Any other number keeps the digits-and-plus behaviour.
+ */
 export function normalizePhone(raw: string): string {
-  return raw.replace(/[^0-9+]/g, "");
+  const compact = raw.replace(/[^0-9+]/g, "");
+  const national = nigerianNationalNumber(compact);
+  return national === null ? compact : `+234${national}`;
+}
+
+function nigerianNationalNumber(compact: string): string | null {
+  const digits = compact.replace(/^\+/, "");
+  if (!/^[0-9]+$/.test(digits)) return null;
+  let national: string;
+  if (compact.startsWith("+") || digits.startsWith("234")) {
+    if (!digits.startsWith("234")) return null;
+    national = digits.slice(3);
+  } else if (digits.length === 11 && /^0[789]/.test(digits)) {
+    national = digits.slice(1);
+  } else {
+    return null;
+  }
+  // `+234 0801…` writes the trunk zero after the country code; it is the same number.
+  if (national.length === 11 && national.startsWith("0")) national = national.slice(1);
+  return /^[0-9]{10}$/.test(national) ? national : null;
 }
 
 function requirePositiveInteger(value: unknown, field: string): number {

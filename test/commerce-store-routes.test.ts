@@ -231,3 +231,52 @@ test("AC2: the domain tracking lookup returns only the minimal projection, or nu
     database.close();
   }
 });
+
+/** Issue 27 (user decision, 18 Oct 2026): a locked lookup answers exactly like a wrong phone (no lock oracle, ADR 0075). */
+test("AC2 tracking: a locked lookup returns the same bytes, status and headers as a wrong phone", async () => {
+  const { database, commerce, order } = fixture();
+  try {
+    const module = createCommerceRouteModule(commerce);
+    const form = (phone: string) => new URLSearchParams({ publicCode: order.publicCode, phone }).toString();
+    const wrong = await request(module, "POST", "/orders/track", form("08000000000"));
+    for (let attempt = 1; attempt < 5; attempt++) await request(module, "POST", "/orders/track", form("08000000000"));
+    const lockedCorrect = await request(module, "POST", "/orders/track", form("+234 801 234 5678"));
+    const lockedWrong = await request(module, "POST", "/orders/track", form("08000000000"));
+    assert.equal(lockedCorrect.status, wrong.status);
+    assert.deepEqual(lockedCorrect.headers, wrong.headers);
+    assert.equal(lockedCorrect.body, wrong.body);
+    assert.equal(lockedWrong.body, wrong.body);
+    assert.doesNotMatch(lockedCorrect.body, /Order status/);
+  } finally {
+    database.close();
+  }
+});
+
+test("Store and offer pages show the store name in the top bar, and tracking keeps the Shortlet brand", async () => {
+  const { database, commerce } = fixture();
+  try {
+    const module = createCommerceRouteModule(commerce);
+    const store = await request(module, "GET", "/s/daily-goods");
+    const offer = await request(module, "GET", "/s/daily-goods/offers/offer");
+    const tracking = await request(module, "GET", "/orders/track");
+    assert.match(store.body, /<a class="ui-appbar__brand" href="\/">Daily Goods<\/a>/);
+    assert.match(offer.body, /<a class="ui-appbar__brand" href="\/">Daily Goods<\/a>/);
+    assert.match(tracking.body, /<a class="ui-appbar__brand" href="\/">Shortlet<\/a>/);
+  } finally {
+    database.close();
+  }
+});
+
+test("The offer page shows the product name once in its heading, and the store page keeps its card headings", async () => {
+  const { database, commerce } = fixture();
+  try {
+    const module = createCommerceRouteModule(commerce);
+    const store = await request(module, "GET", "/s/daily-goods");
+    const offer = await request(module, "GET", "/s/daily-goods/offers/offer");
+    assert.match(offer.body, /<h1>Oat Soap<\/h1>/);
+    assert.doesNotMatch(offer.body, /<h2>[^<]*Oat Soap/);
+    assert.match(store.body, /<h2><a class="ui-link" href="[^"]*">Oat Soap<\/a><\/h2>/);
+  } finally {
+    database.close();
+  }
+});

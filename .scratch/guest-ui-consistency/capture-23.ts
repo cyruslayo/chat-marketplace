@@ -48,11 +48,11 @@ if (!started.ok) throw new Error(`Could not start Commerce task: ${JSON.stringif
 
 // Checkout captures: the proposed state, then the result of the real confirm event (payment_unavailable).
 const captures = [
-  { kind: "discovery", prompt: "Search for a cotton tote", expected: ["Northstar Cotton Tote", "NGN 8,500", "17 available"], summary: "Products" },
-  { kind: "cart", prompt: "Add this to my cart", expected: ["Northstar Cotton Tote", "2 × NGN 8,500"], summary: "Harbour Goods" },
+  { kind: "discovery", prompt: "Search for a cotton tote", expected: ["Northstar Cotton Tote", "₦8,500", "17 available"], summary: "Products" },
+  { kind: "cart", prompt: "Add this to my cart", expected: ["Northstar Cotton Tote", "2 × ₦8,500"], summary: "Harbour Goods" },
   { kind: "order", prompt: "Track my order", expected: [order.publicCode, "Pending Verification"], summary: "Order status" },
-  { kind: "checkout-proposed", prompt: "Prepare checkout", expected: ["Checkout · Harbour Goods", "Total: NGN 18,200", "Confirm checkout"], summary: "Checkout" },
-  { kind: "checkout-result", prompt: "", expected: ["Checkout · Harbour Goods", "Total: NGN 18,200", "Payment unavailable. No order or payment was created."], summary: "Checkout result" },
+  { kind: "checkout-proposed", prompt: "Prepare checkout", expected: ["Checkout · Harbour Goods", "Total: ₦18,200", "Confirm checkout"], summary: "Checkout" },
+  { kind: "checkout-result", prompt: "", expected: ["Checkout · Harbour Goods", "Total: ₦18,200", "Payment unavailable. No order or payment was created."], summary: "Checkout result" },
 ] as const;
 
 type ProjectedSurface = { readonly surfaceId: string; readonly a2uiMessages: readonly unknown[] };

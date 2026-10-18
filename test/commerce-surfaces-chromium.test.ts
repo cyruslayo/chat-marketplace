@@ -102,7 +102,7 @@ test("real Chromium renders visible discovery, cart and order facts from registe
 
   const turns = [
     { prompt: "Search for the tote", expected: ["Visible Northstar Tote", "₦8,500", "17 available"], catalogId: COMMERCE_DISCOVERY_CATALOG_ID },
-    { prompt: "Add this to my cart", expected: ["Visible Northstar Tote", "2 × NGN 8,500"], catalogId: COMMERCE_CART_CATALOG_ID },
+    { prompt: "Add this to my cart", expected: ["Visible Northstar Tote", "2 × ₦8,500"], catalogId: COMMERCE_CART_CATALOG_ID },
     { prompt: "Track my order", expected: [order.publicCode, "Pending Verification"], catalogId: COMMERCE_ORDER_CATALOG_ID },
   ] as const;
   const fixture = await restartFixture();
@@ -151,8 +151,8 @@ test("real Chromium renders the proposed checkout and the post-confirm payment-u
   const proposed = proposedTurn.surfaces?.at(-1);
   assert.ok(proposed, "checkout proposal projects a surface");
   assertSurfaceReferencesResolve(proposed.a2uiMessages, "proposed checkout");
-  // Subtotal NGN 17,000 (2 x 8,500) plus delivery NGN 1,200 is the total shown to the guest.
-  const proposedFacts = ["Checkout · Harbour Goods", "Subtotal: NGN 17,000", "Delivery: NGN 1,200", "Total: NGN 18,200", "Confirm checkout"];
+  // Subtotal ₦17,000 (2 x ₦8,500) plus delivery ₦1,200 is the total shown to the guest.
+  const proposedFacts = ["Checkout · Harbour Goods", "Subtotal: ₦17,000", "Delivery: ₦1,200", "Total: ₦18,200", "Confirm checkout"];
 
   const fixture = await restartFixture();
   const browser = await launchRealBrowser();
@@ -167,7 +167,7 @@ test("real Chromium renders the proposed checkout and the post-confirm payment-u
     const result = confirmed.surfaces?.at(-1);
     assert.ok(result, "confirmation projects a post-confirm checkout surface");
     assertSurfaceReferencesResolve(result.a2uiMessages, "post-confirm checkout");
-    const resultFacts = ["Checkout · Harbour Goods", "Total: NGN 18,200", "Payment unavailable. No order or payment was created."];
+    const resultFacts = ["Checkout · Harbour Goods", "Total: ₦18,200", "Payment unavailable. No order or payment was created."];
     const resultRender = await renderSurfaceInTab(browser, fixture, result, "Checkout result", resultFacts);
     assertRenderedFacts(resultRender, resultFacts, "post-confirm checkout");
     assert.equal(resultRender.text.includes("Confirm checkout"), false, "post-confirm surface does not offer a second confirm action");

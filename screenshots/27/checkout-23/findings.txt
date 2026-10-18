@@ -1,0 +1,1 @@
+No horizontal overflow; no visible controls below 44px; all commerce surfaces (discovery, cart, order, checkout proposed, checkout payment_unavailable) rendered their expected content at 320, 390, 768 and 1280.
