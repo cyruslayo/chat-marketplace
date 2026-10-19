@@ -27,6 +27,8 @@ interface GeneratorSite {
   lhs: string | null;
   prefix: string;
   file: string;
+  // True for generatePlatformId calls (regenerate on the card-shape gate); false for a bare template generator.
+  helper: boolean;
 }
 
 const TEMPLATE = /`([a-z][a-z-]*)-\$\{(?:[\w.]+\.)?(?:randomUUID|idFactory)\(\)\}/g;
@@ -72,12 +74,20 @@ function assignedName(text: string, index: number): string | null {
 function generatorSites(): GeneratorSite[] {
   return sources.flatMap(({ file, text }) => {
     if (!text.includes("randomUUID") && !text.includes("idFactory") && !text.includes("generatePlatformId")) return [];
-    const templates = [...text.matchAll(TEMPLATE)].map((match) => ({ index: match.index, prefix: match[1]! }));
-    const helperCalls = [...text.matchAll(HELPER_CALL)].map((match) => ({ index: match.index, prefix: match[1]! }));
+    // Matches on comment lines (JSDoc or line comments that describe the pattern) are documentation, not generators.
+    const onCodeLine = (index: number) => {
+      const lineStart = text.lastIndexOf("\n", index - 1) + 1;
+      const lineEnd = text.indexOf("\n", index);
+      const line = text.slice(lineStart, lineEnd === -1 ? text.length : lineEnd).trimStart();
+      return !line.startsWith("//") && !line.startsWith("*") && !line.startsWith("/*");
+    };
+    const templates = [...text.matchAll(TEMPLATE)].filter((match) => onCodeLine(match.index)).map((match) => ({ index: match.index, prefix: match[1]!, helper: false }));
+    const helperCalls = [...text.matchAll(HELPER_CALL)].filter((match) => onCodeLine(match.index)).map((match) => ({ index: match.index, prefix: match[1]!, helper: true }));
     return [...templates, ...helperCalls].map((site) => ({
       lhs: assignedName(text, site.index),
       prefix: site.prefix,
-      file
+      file,
+      helper: site.helper
     }));
   });
 }
@@ -172,4 +182,21 @@ test("Every prefix in the exemption table is emitted by a platform id generator 
   const generated = new Set(sites.map((site) => site.prefix));
   const tabled = new Set(Object.values(PLATFORM_ID_PREFIXES_BY_KEY).flat());
   for (const prefix of tabled) assert.ok(generated.has(prefix), `prefix ${prefix} has no generator`);
+});
+
+// A tabled prefix generated as a call argument has no assigned key, so the redactor cannot exempt it by key. Every such
+// site must be switched to generatePlatformId or be listed here with a reason. The list is empty by design.
+const CALL_ARGUMENT_EXCEPTIONS: ReadonlyArray<{ readonly file: string; readonly prefix: string; readonly reason: string }> = [];
+
+test("Every tabled prefix generated as a call argument is switched to generatePlatformId or listed as an exception", () => {
+  const tabled = new Set(
+    Object.entries(PLATFORM_ID_PREFIXES_BY_KEY)
+      .filter(([key]) => key !== "aggregateId")
+      .flatMap(([, prefixes]) => prefixes)
+  );
+  const offenders = sites
+    .filter((site) => site.lhs === null && !site.helper && tabled.has(site.prefix))
+    .filter((site) => !CALL_ARGUMENT_EXCEPTIONS.some((entry) => entry.file === site.file && entry.prefix === site.prefix))
+    .map((site) => `${site.file}: ${site.prefix}-`);
+  assert.deepEqual([...new Set(offenders)], []);
 });

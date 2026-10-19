@@ -1,4 +1,4 @@
-import { generatePlatformId } from "../../../packages/platform-core/src/platform-id.js";
+import { generatePlatformId } from "../../../packages/platform-core/src/index.js";
 import { createHash } from "node:crypto";
 import { ownerPayableDueAt } from "./checkin-support.js";
 import { normalizeBankReference } from "./manual-transfer.js";

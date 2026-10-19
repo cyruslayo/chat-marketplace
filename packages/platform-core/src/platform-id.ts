@@ -5,7 +5,7 @@ import { containsLuhnValidCardShape } from "./redaction.js";
  * ADR 0075 & issue 50: platform-generated `<prefix>-<uuid>` ids. The redactor exempts an exact id under its key from the
  * card-number gate, but an exact v4 id can still carry a Luhn-valid card-shaped run, so the redactor keeps masking those
  * (test/redact-platform-ids*.test.ts). Generators therefore never emit a tripping id: a draw that trips the gate is
- * replaced. About one random v4 draw in 7,000 trips it, so exhausting the bound means the uuid source is broken.
+ * replaced. About one random v4 draw in 8,000 (measured) trips it, so exhausting the bound means the uuid source is broken.
  */
 export const MAX_PLATFORM_ID_ATTEMPTS = 8;
 

@@ -1,4 +1,4 @@
-import { generatePlatformId } from "../../../packages/platform-core/src/platform-id.js";
+import { generatePlatformId } from "../../../packages/platform-core/src/index.js";
 import { PlatformCommandEnvelope, createPlatformCommandEnvelope } from "../../../packages/platform-core/src/index.js";
 import { StayDateRange } from "./browse.js";
 import { createStayQuote } from "./quote.js";

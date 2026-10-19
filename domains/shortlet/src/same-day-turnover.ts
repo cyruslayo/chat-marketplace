@@ -1,4 +1,4 @@
-import { generatePlatformId } from "../../../packages/platform-core/src/platform-id.js";
+import { generatePlatformId } from "../../../packages/platform-core/src/index.js";
 /**
  * Qualify a Unit for Same-Day Turnover (Issue 14).
  * Implements ADR 0034, 0035, 0036, 0037, 0038.

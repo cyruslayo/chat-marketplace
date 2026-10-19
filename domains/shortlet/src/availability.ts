@@ -1,4 +1,4 @@
-import { generatePlatformId } from "../../../packages/platform-core/src/platform-id.js";
+import { generatePlatformId } from "../../../packages/platform-core/src/index.js";
 import {
   AvailabilityConflictError,
   SqliteAvailabilityStore,

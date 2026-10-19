@@ -1,4 +1,4 @@
-import { generatePlatformId } from "../../../packages/platform-core/src/platform-id.js";
+import { generatePlatformId } from "../../../packages/platform-core/src/index.js";
 import { StayDateRange } from "./browse.js";
 import { ownerSettlementFor, unitOwnerTerms } from "./owner-terms.js";
 import { calculateSecurityDepositPolicySnapshot, calculateRefundableSecurityDeposit, SECURITY_DEPOSIT_POLICY_VERSION, type SecurityDepositPolicySnapshot } from "./security-deposit.js";

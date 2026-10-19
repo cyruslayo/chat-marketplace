@@ -1,4 +1,4 @@
-import { generatePlatformId } from "../../../../packages/platform-core/src/platform-id.js";
+import { generatePlatformId } from "../../../../packages/platform-core/src/index.js";
 import { StayDateRange, createStayQuote, toDiscoveryProjection, isEligibleUnit, allInStayTotalKobo, type Unit } from "../../../../domains/shortlet/src/index.js";
 import {
   discoveryArtifactToA2UI,

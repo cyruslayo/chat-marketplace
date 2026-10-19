@@ -1,4 +1,4 @@
-import { generatePlatformId } from "../../../packages/platform-core/src/platform-id.js";
+import { generatePlatformId } from "../../../packages/platform-core/src/index.js";
 import { PlatformCommandEnvelope } from "../../../packages/platform-core/src/index.js";
 import { createStayQuote } from "./quote.js";
 import { getUnitOnboardingStatus } from "./onboarding.js";
