@@ -137,7 +137,11 @@ test("AC3 — Tapping a photo, or \"Show all\", opens a full-screen viewer at th
       await context.tab.waitForFunction("['5 of 7', '6 of 7'].includes(document.querySelector('.listing-viewer__count').textContent)", 5000);
       await context.tab.evaluate("document.querySelector('dialog.listing-viewer').dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }))");
       await context.tab.waitForFunction("document.querySelector('.listing-viewer__count').textContent === '7 of 7'", 5000);
+      // Let the smooth scroll reach the end before reading the state: the count follows the scroll to its final photo.
+      await context.tab.waitForFunction("(() => { const t = document.querySelector('.listing-viewer__track'); return t.scrollLeft >= t.scrollWidth - t.clientWidth - 1; })()", 5000);
+      await new Promise((resolve) => setTimeout(resolve, 400));
       state = await context.tab.evaluate<Viewer>(viewer);
+      assert.equal(state.count, "7 of 7", "the final photo is the one the track reached");
       assert.equal(state.nextDisabled, true, "no next after the last photo");
       await context.tab.evaluate("document.querySelector('.listing-viewer__prev').click()");
       await context.tab.waitForFunction("document.querySelector('.listing-viewer__count').textContent === '6 of 7'", 5000);
@@ -176,6 +180,30 @@ test("AC3 — Tapping a photo, or \"Show all\", opens a full-screen viewer at th
     } finally {
       await context.close();
     }
+  }
+});
+
+test("AC6 — In the viewer, Next, Previous, Home and End leave the \"X of N\" count and the buttons on the photo asked for, also once the smooth scroll has settled (not an intermediate photo passed on the way)", async () => {
+  const context = await createListingPhotoContext(PHOTOS, 390, 900);
+  try {
+    await openStayPage(context);
+    await context.tab.evaluate("document.querySelectorAll('.listing-gallery__open')[0].click()");
+    await context.tab.waitForFunction("document.querySelector('dialog.listing-viewer')?.open === true", 5000);
+    const settled = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 1500));
+    const state = "(() => { const dialog = document.querySelector('dialog.listing-viewer'); return { count: dialog.querySelector('.listing-viewer__count').textContent, prevDisabled: dialog.querySelector('.listing-viewer__prev').disabled, nextDisabled: dialog.querySelector('.listing-viewer__next').disabled }; })()";
+    const steps: ReadonlyArray<readonly [string, string, boolean, boolean]> = [
+      ["End", "7 of 7", false, true],
+      ["Home", "1 of 7", true, false],
+      ["End", "7 of 7", false, true],
+      ["ArrowLeft", "6 of 7", false, false]
+    ];
+    for (const [key, count, prevDisabled, nextDisabled] of steps) {
+      await context.tab.evaluate(`document.querySelector('dialog.listing-viewer').dispatchEvent(new KeyboardEvent('keydown', { key: '${key}', bubbles: true }))`);
+      await settled();
+      assert.deepEqual(await context.tab.evaluate<{ count: string; prevDisabled: boolean; nextDisabled: boolean }>(state), { count, prevDisabled, nextDisabled }, key);
+    }
+  } finally {
+    await context.close();
   }
 });
 

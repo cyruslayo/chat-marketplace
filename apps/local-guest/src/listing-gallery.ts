@@ -247,28 +247,38 @@ function createViewer(doc: Document, title: string, photos: readonly GalleryPhot
 
   let current = 0;
   let opener: HTMLElement | null = null;
-  const render = (index: number) => {
-    current = index;
+  // The photo a programmatic scroll is heading for (Next, Previous, Home, End), or null. Steps are taken from it, so two
+  // quick presses move two photos even while the first smooth scroll is still passing the photos in between.
+  let pendingIndex: number | null = null;
+  const show = (index: number) => {
     counter.textContent = `${index + 1} of ${count}`;
     prev.disabled = index === 0;
     next.disabled = index === count - 1;
   };
+  const stepBase = () => pendingIndex ?? current;
+  // The count and buttons follow where the track is, on every scroll event, rather than intersection reports: a smooth
+  // scroll passes intermediate photos, and a report from one of them arriving last would leave the count on the wrong
+  // photo. The final scroll event reports the position the track stopped at, so the final state is that position.
+  track.addEventListener("scroll", () => {
+    current = Math.max(0, Math.min(count - 1, Math.round(track.scrollLeft / Math.max(1, track.clientWidth))));
+    show(current);
+    if (pendingIndex !== null && Math.abs(track.scrollLeft - pendingIndex * track.clientWidth) < 2) pendingIndex = null;
+  }, { passive: true });
+  // A swipe or wheel gesture takes over from any programmatic scroll still in flight.
+  for (const gesture of ["pointerdown", "touchstart", "wheel"] as const) track.addEventListener(gesture, () => { pendingIndex = null; }, { passive: true });
   const go = (index: number) => {
     const target = Math.max(0, Math.min(count - 1, index));
+    pendingIndex = target;
+    show(target);
     track.scrollTo({ left: target * track.clientWidth });
-    render(target);
   };
-  const observer = new view.IntersectionObserver((entries) => {
-    for (const entry of entries) if (entry.isIntersecting) render([...track.children].indexOf(entry.target));
-  }, { root: track, threshold: 0.6 });
-  for (const item of track.children) observer.observe(item);
 
-  prev.addEventListener("click", () => go(current - 1));
-  next.addEventListener("click", () => go(current + 1));
+  prev.addEventListener("click", () => go(stepBase() - 1));
+  next.addEventListener("click", () => go(stepBase() + 1));
   close.addEventListener("click", () => dialog.close());
   dialog.addEventListener("keydown", (event) => {
-    if (event.key === "ArrowRight") { event.preventDefault(); go(current + 1); }
-    else if (event.key === "ArrowLeft") { event.preventDefault(); go(current - 1); }
+    if (event.key === "ArrowRight") { event.preventDefault(); go(stepBase() + 1); }
+    else if (event.key === "ArrowLeft") { event.preventDefault(); go(stepBase() - 1); }
     else if (event.key === "Home") { event.preventDefault(); go(0); }
     else if (event.key === "End") { event.preventDefault(); go(count - 1); }
   });
@@ -297,7 +307,9 @@ function createViewer(doc: Document, title: string, photos: readonly GalleryPhot
       track.style.scrollBehavior = "auto";
       track.scrollLeft = index * track.clientWidth;
       track.style.scrollBehavior = previous;
-      render(index);
+      pendingIndex = null;
+      current = index;
+      show(index);
       close.focus();
     },
   };

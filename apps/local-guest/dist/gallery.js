@@ -150,31 +150,37 @@
     doc.body.append(dialog);
     let current = 0;
     let opener = null;
-    const render = (index) => {
-      current = index;
+    let pendingIndex = null;
+    const show = (index) => {
       counter.textContent = `${index + 1} of ${count}`;
       prev.disabled = index === 0;
       next.disabled = index === count - 1;
     };
+    const stepBase = () => pendingIndex ?? current;
+    track.addEventListener("scroll", () => {
+      current = Math.max(0, Math.min(count - 1, Math.round(track.scrollLeft / Math.max(1, track.clientWidth))));
+      show(current);
+      if (pendingIndex !== null && Math.abs(track.scrollLeft - pendingIndex * track.clientWidth) < 2) pendingIndex = null;
+    }, { passive: true });
+    for (const gesture of ["pointerdown", "touchstart", "wheel"]) track.addEventListener(gesture, () => {
+      pendingIndex = null;
+    }, { passive: true });
     const go = (index) => {
       const target = Math.max(0, Math.min(count - 1, index));
+      pendingIndex = target;
+      show(target);
       track.scrollTo({ left: target * track.clientWidth });
-      render(target);
     };
-    const observer = new view.IntersectionObserver((entries) => {
-      for (const entry of entries) if (entry.isIntersecting) render([...track.children].indexOf(entry.target));
-    }, { root: track, threshold: 0.6 });
-    for (const item of track.children) observer.observe(item);
-    prev.addEventListener("click", () => go(current - 1));
-    next.addEventListener("click", () => go(current + 1));
+    prev.addEventListener("click", () => go(stepBase() - 1));
+    next.addEventListener("click", () => go(stepBase() + 1));
     close.addEventListener("click", () => dialog.close());
     dialog.addEventListener("keydown", (event) => {
       if (event.key === "ArrowRight") {
         event.preventDefault();
-        go(current + 1);
+        go(stepBase() + 1);
       } else if (event.key === "ArrowLeft") {
         event.preventDefault();
-        go(current - 1);
+        go(stepBase() - 1);
       } else if (event.key === "Home") {
         event.preventDefault();
         go(0);
@@ -202,7 +208,9 @@
         track.style.scrollBehavior = "auto";
         track.scrollLeft = index * track.clientWidth;
         track.style.scrollBehavior = previous;
-        render(index);
+        pendingIndex = null;
+        current = index;
+        show(index);
         close.focus();
       }
     };
