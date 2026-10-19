@@ -55,3 +55,13 @@ test("generatePlatformId draws from randomUUID by default", () => {
   assert.match(id, /^offer-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   assert.equal(containsLuhnValidCardShape(id), false);
 });
+
+// The pilot bootstrap guest id (apps/cloudflare/src/shortlet-pilot-do.ts, apps/pilot/src/pilot-server.ts) is config guestId,
+// which becomes the audited principalId (apps/local-guest/src/guest-server.ts). It must survive the redactor unchanged.
+test("20,000 generated guest-bootstrap ids survive redactSensitiveData unchanged under principalId", () => {
+  for (let index = 0; index < 20_000; index += 1) {
+    const principalId = generatePlatformId("guest-bootstrap");
+    assert.match(principalId, /^guest-bootstrap-[0-9a-f-]{36}$/);
+    assert.deepEqual(redactSensitiveData({ principalId }), { principalId }, principalId);
+  }
+});

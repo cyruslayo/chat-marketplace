@@ -143,9 +143,10 @@ test("Every (key, prefix) pair in the exemption table has a generator call site 
     if (key === "aggregateId") continue; // derived union; checked by the source-prefix test below
     const lhs = ID_KEY_GENERATOR_ALIASES[key] ?? key;
     for (const prefix of prefixes) {
+      const source = CONFIG_FIELD_SOURCES[`${key}:${prefix}`] ?? lhs;
       assert.ok(
-        sites.some((site) => site.lhs === lhs && site.prefix === prefix),
-        `no generator assigns ${prefix}- to ${lhs} (table key ${key})`
+        sites.some((site) => site.lhs === source && site.prefix === prefix),
+        `no generator assigns ${prefix}- to ${source} (table key ${key})`
       );
     }
   }
@@ -186,6 +187,11 @@ test("Every prefix in the exemption table is emitted by a platform id generator 
 
 // A tabled prefix generated as a call argument has no assigned key, so the redactor cannot exempt it by key. Every such
 // site must be switched to generatePlatformId or be listed here with a reason. The list is empty by design.
+// A table pair whose generator assigns a config field rather than the audited key. The pilot bootstrap guest id is generated as
+// config guestId (apps/cloudflare/src/shortlet-pilot-do.ts, apps/pilot/src/pilot-server.ts) and the guest server stores that
+// config value as the audited principalId (apps/local-guest/src/guest-server.ts: `let principalId = config.guestId`).
+const CONFIG_FIELD_SOURCES: Readonly<Record<string, string>> = { "principalId:guest-bootstrap": "guestId" };
+
 const CALL_ARGUMENT_EXCEPTIONS: ReadonlyArray<{ readonly file: string; readonly prefix: string; readonly reason: string }> = [];
 
 test("Every tabled prefix generated as a call argument is switched to generatePlatformId or listed as an exception", () => {

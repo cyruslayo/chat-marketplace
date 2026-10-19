@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import type { DurableObjectState } from "@cloudflare/workers-types";
 import { applySchemaMigrations } from "../../../packages/platform-core/src/schema-migrations.js";
+import { generatePlatformId } from "../../../packages/platform-core/src/index.js";
 import { DirectPaystackClient, PaystackBankTransferClient, PaystackPayments } from "../../../packages/platform-core/src/payments/index.js";
 import { SqliteOperatorRepository } from "../../../domains/shortlet/src/index.js";
 import { SqliteOperatorRepresentativeGrantStore } from "../../../domains/shortlet/src/index.js";
@@ -249,7 +250,7 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
         representativePersonId: "production-session-actor",
         representativePersonName: "Production Operator Representative",
         adminId: "production-operations",
-        guestId: `guest-bootstrap-${crypto.randomUUID()}`,
+        guestId: generatePlatformId("guest-bootstrap"),
         guestName: "Guest",
         initialGuestPhoneNumber: null,
         initialGuestContactEmail: null,
