@@ -76,7 +76,7 @@ These supersede the Export, "Still open" and restore-path bullets above. Status 
 - **Decision 11, merchant verification (ADR 0100, ADR 0001):** `#buildOrder`, which both `createOrder` and the internal checkout quote use, refuses unless the store is active and its merchant is verified, the same rule the catalogue applies. The refusal uses the generic "The store is unavailable." message. `normalizePhone` and `trackOrder` are unchanged.
 - **Decision 13, multi-item rollback:** item 1 has stock, item 2 oversells, and the order is refused with item 1's stock unchanged and no order row. This passed on first run because the Node transaction already rolls back on a throw, so no transaction fix was needed.
 - **Structural fix (ADR 0099), corrected in review:** the candidate re-exported `commerceSchemaMigrations`, which broke the boundary test (AC4). The façade now exports `createCommercePack`, `parseCreateOrderInput` and the `CreateOrderInput` type, the parser and type hosts need for untrusted checkout bodies. The Durable Object takes migrations from `createCommercePack(...).migrations`. The cutover flag moves from version 5 to version 6. This is safe only because the commerce object was never deployed. The boundary allow-list was not extended. Earlier text in this comment that said the façade exports only `createCommercePack` was wrong.
-- **Migration limit:** migration 5 aborts while any legacy `merchant_orders` row exists, because SQLite cannot compute SHA-256. Commerce orders are not live, so no production row is affected. A converter, if one is ever needed, is a separate decision.
+- **Migration limit:** migration 6 aborts while any legacy `merchant_orders` row exists, because SQLite cannot compute SHA-256. Commerce orders are not live, so no production row is affected. A converter, if one is ever needed, is a separate decision.
 
 ADR compliance for this slice:
 
@@ -100,7 +100,7 @@ The independent review (CHANGES REQUIRED) found that `test/domain-boundary.test.
 5. **Migration failure:** the DO catches a failed start, logs only `COMMERCE_MIGRATION_FAILED` (or `COMMERCE_SCHEMA_SHAPE_INVALID`), and answers every request with 503 and that code. Runbook: `docs/runbooks/commerce-migration-failure.md`.
 6. **Shortlet independent of Commerce:** `commerceMigrationClient` is lazy. The tenant check and the binding lookup happen per call, so building it cannot throw. `/_ops/status` and `/_ops/import/verify` report `commerce: { ok: false, code: "COMMERCE_UNAVAILABLE" }` instead of failing. `/_ops/cutover/complete` still needs commerce and fails closed with `COMMERCE_CUTOVER_UNAVAILABLE`, recording no Shortlet cutover. Tests: `apps/cloudflare/test/shortlet-ops-commerce-isolation.spec.ts`.
 7. **Decision 9:** the `PRODUCT_IMAGES` binding is removed from `cloudflare.config.ts`, `cloudflare-config.ts`, `env.d.ts` and `wrangler.test.jsonc`. `r2-product-image-store.ts` is a tested unit (node test) with the decision-8 signature check. It has no production caller until the merchant back-office issue. The Workers image test was removed.
-8. **Policy sources:** the 5 MiB limit and the JPEG, PNG and WebP list come from the user's decision of 18 Oct 2026, under "Implementation decisions, 18 Oct 2026" above (decisions 8 and 9), and the constants cite it. **Unsourced, left alone:** the 7-digit minimum for `normalizePhone` in `commerce-order.ts` (`#requirePhone`) has no ADR or CONTEXT source. Surface it to the user.
+8. **Policy sources:** the 5 MiB limit and the JPEG, PNG and WebP list come from the user's decision of 18 Oct 2026, under "Implementation decisions, 18 Oct 2026" above (decisions 8 and 9), and the constants cite it. **The 7-digit minimum is a user decision (19 Oct 2026):** kept, and recorded in `domains/commerce/CONTEXT.md`. It is enforced by `#requirePhone` in `commerce-order.ts`.
 9. **Shared fixtures:** the JPEG, PNG and WebP bytes are in `test/helpers/product-image-fixtures.ts`. The Workers multi-criterion ops test is split into one test per criterion in `commerce-market.spec.ts`.
 10. **Hash format on import:** a `merchant_orders` import row must carry a 64-character lowercase hex `payment_reference_hash`, or the DO refuses it with `INVALID_PAYMENT_REFERENCE_HASH` before any write (`assertPaymentReferenceHashes`). Tests: `test/commerce-schema-guard.test.ts` and `commerce-market.spec.ts`.
 
@@ -121,3 +121,14 @@ User decision 18 (18 Oct 2026): payment references are hashed with a keyed HMAC-
 - **Open:** the Worker reads only the current key. Rotation needs the previous-key wiring first (runbook section 4).
 
 Tests: `test/commerce-reference-hash.test.ts` (same reference and key gives the same order; a different key gives a different hash; the stored value is `keyId:HMAC`; a missing or short key throws at construction; an order stored under a previous key is found after rotation; restore accepts the keyed format and refuses plain hex; the Worker key reader fails closed without echoing the key). The raw reference never appears in the database dump, which `test/commerce-order.test.ts` checks.
+
+### User decisions, 19 Oct 2026
+
+The user accepted these on 19 Oct 2026. Status is unchanged.
+
+1. **AC2 re-scoped.** Order creation is covered through the CommerceMarket object's internal and restore path. Internal checkout returns `409 payment_unavailable` until issue 22. Product images moved to the merchant back-office work (decision 9).
+2. **AC3 accepted.** The additive edits to `restore-from-export.spec.ts`, `ops-test-helpers.ts` and `wrangler.test.jsonc` count as "Shortlet Workers tests pass unchanged". Nothing existing was weakened.
+3. **The 7-digit phone minimum is kept** as a user decision. It is recorded in `domains/commerce/CONTEXT.md`, next to the Nigerian Mobile Number rule.
+4. **No order-upgrade converter.** Migration 6 refuses databases with orders, and the runbook reset applies (`docs/runbooks/commerce-migration-failure.md`).
+5. **`R2ProductImageStore` stays a tested unit with no caller** until the back-office issue.
+6. **Keyed-hash rotation in the Worker is a separate follow-up.** Do not rotate the key until it is wired.

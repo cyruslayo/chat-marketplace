@@ -10,7 +10,7 @@ is logged, and no error text, row or payment reference is included.
 
 | Code | Meaning | Logged line |
 | --- | --- | --- |
-| `COMMERCE_MIGRATION_FAILED` | A ledger migration statement failed. The usual cause is migration 5 refusing to rebuild `merchant_orders` while legacy order rows exist. | `COMMERCE_MIGRATION_FAILED` |
+| `COMMERCE_MIGRATION_FAILED` | A ledger migration statement failed. The usual cause is migration 6 (the keyed-hash rebuild) refusing to rebuild `merchant_orders` while legacy order rows exist. | `COMMERCE_MIGRATION_FAILED` |
 | `COMMERCE_SCHEMA_SHAPE_INVALID` | The ledger finished, but `merchant_orders` does not have `payment_reference_hash` or still has `payment_reference`. | `COMMERCE_SCHEMA_SHAPE_INVALID` |
 
 Shortlet keeps working. `GET /_ops/status` and `GET /_ops/import/verify` report `commerce: { ok: false, code: "COMMERCE_UNAVAILABLE" }`.
@@ -46,6 +46,7 @@ because Shortlet references are predictable.
 
 - **Secret:** `COMMERCE_REFERENCE_HMAC_KEY` (a Worker secret, set by name only, never committed). It must be at least 32 bytes.
 - **Id:** `COMMERCE_REFERENCE_HMAC_KEY_ID` (a plain var, such as `k1`). It is stored in clear with each hash, so it must not hold a secret.
+- **Node servers (outside tests):** the Node pilot servers (`apps/pilot`, `local-pilot-server.ts` and `pilot-server.ts`) and the local merchant (`apps/local-merchant`) build the commerce pack, so they need both variables set. They refuse to start without them and name the variables, never their values. The test-only key is never a fallback outside the test runner: it needs `NODE_ENV=test` and the explicit opt-in `COMMERCE_REFERENCE_TEST_KEY=allow`.
 - **Missing or short key:** the commerce object refuses every request with `503 COMMERCE_REFERENCE_KEY_INVALID`. Shortlet keeps working.
   The logged line is the fixed code only. Neither the key nor the reference is logged.
 - **Restore:** a restored `merchant_orders` row must carry a `<keyId>:<64 lowercase hex>` hash, or the import is refused with
