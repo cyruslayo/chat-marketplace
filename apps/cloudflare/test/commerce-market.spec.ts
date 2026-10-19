@@ -178,57 +178,58 @@ test("issue 24 decision 11: internal checkout for a store whose merchant is not 
   expect(await runInDurableObject(stub, (_instance, ctx) => offerStock(new DurableObjectSqlDatabase(ctx.storage), CHECKOUT_IDS.offerId))).toBe(1);
 });
 
-test("24 AC2 refusal: internal checkout for an unavailable store, zone or offer, or insufficient stock is refused with ORDER_REJECTED and reserves nothing", async () => {
-  const { stub, tenantId } = await seededCheckoutCommerce("domain-rules");
-  const refusals: Array<[string, Record<string, unknown>]> = [
-    ["the store does not exist", { storeId: "missing-store" }],
-    ["the delivery zone does not exist", { deliveryZoneId: "missing-zone" }],
-    ["the offer is not in this store", { items: [{ offerId: "missing-offer", quantity: 1 }] }],
-    ["the requested quantity exceeds stock", { items: [{ offerId: CHECKOUT_IDS.offerId, quantity: 2 }], submittedTotalKobo: 2000 }],
-  ];
-  for (const [label, overrides] of refusals) {
-    const response = await internalCheckout(stub, tenantId, checkoutPayload(CHECKOUT_IDS, { submittedTotalKobo: 1000, ...overrides }));
-    expect(response.status, label).toBe(400);
-    expect(await response.json(), label).toMatchObject({ ok: false, code: "ORDER_REJECTED" });
-  }
+/**
+ * One refused checkout, asserted on its own (final review F10): the status, the fixed code, and that nothing was written.
+ * Each refusal gets its own seeded object, so a failure names exactly one criterion.
+ */
+async function expectCheckoutRefused(label: string, overrides: Record<string, unknown>, code: "ORDER_REJECTED" | "BAD_REQUEST"): Promise<void> {
+  const { stub, tenantId } = await seededCheckoutCommerce(label.replace(/[^a-z0-9]+/gi, "-").toLowerCase());
+  const response = await internalCheckout(stub, tenantId, checkoutPayload(CHECKOUT_IDS, overrides));
+  expect(response.status).toBe(400);
+  expect(await response.json()).toMatchObject({ ok: false, code });
   const state = await runInDurableObject(stub, (_instance, ctx) => {
     const database = new DurableObjectSqlDatabase(ctx.storage);
     return { orders: orderCount(database), stock: offerStock(database, CHECKOUT_IDS.offerId) };
   });
   expect(state).toEqual({ orders: 0, stock: 1 });
-});
+}
 
-test("24 AC2 refusal: checkout with malformed items, offerId, paymentReference or other fields is refused with BAD_REQUEST and creates no order", async () => {
-  const { stub, tenantId } = await seededCheckoutCommerce("malformed");
-  const malformed: Array<[string, Record<string, unknown>]> = [
-    ["items is not an array", { items: "checkout-offer" }],
-    ["items is empty", { items: [] }],
-    ["an item is not an object", { items: ["checkout-offer"] }],
-    ["item offerId is not a string", { items: [{ offerId: 7, quantity: 1 }] }],
-    ["item offerId is blank", { items: [{ offerId: "   ", quantity: 1 }] }],
-    ["item quantity is zero", { items: [{ offerId: "checkout-offer", quantity: 0 }] }],
-    ["item quantity is fractional", { items: [{ offerId: "checkout-offer", quantity: 1.5 }] }],
-    ["item variantId is not a string", { items: [{ offerId: "checkout-offer", variantId: 3, quantity: 1 }] }],
-    ["offerId is missing from the item", { items: [{ quantity: 1 }] }],
-    ["paymentReference is not a string", { paymentReference: 12345 }],
-    ["paymentReference is blank", { paymentReference: "" }],
-    ["submittedTotalKobo is not an integer", { submittedTotalKobo: "1000" }],
-    ["storeId is missing", { storeId: undefined }],
-    ["customerName is not a string", { customerName: 42 }],
-    ["shippingAddress is empty", { shippingAddress: {} }],
-  ];
-  for (const [label, overrides] of malformed) {
-    const response = await internalCheckout(stub, tenantId, checkoutPayload(CHECKOUT_IDS, overrides));
-    expect(response.status, label).toBe(400);
-    expect(await response.json(), label).toEqual({ ok: false, code: "BAD_REQUEST" });
-  }
-  const state = await runInDurableObject(stub, (_instance, ctx) => {
-    const database = new DurableObjectSqlDatabase(ctx.storage);
-    return { orders: orderCount(database), stock: offerStock(database, CHECKOUT_IDS.offerId) };
+/** Domain-rule refusals: ORDER_REJECTED, nothing reserved (24 AC2 refusal). */
+const DOMAIN_REFUSALS: Array<[string, Record<string, unknown>]> = [
+  ["unknown store", { storeId: "missing-store" }],
+  ["unknown delivery zone", { deliveryZoneId: "missing-zone" }],
+  ["offer not in this store", { items: [{ offerId: "missing-offer", quantity: 1 }] }],
+  ["quantity above stock", { items: [{ offerId: CHECKOUT_IDS.offerId, quantity: 2 }], submittedTotalKobo: 2000 }],
+];
+for (const [label, overrides] of DOMAIN_REFUSALS) {
+  test(`24 AC2 refusal: internal checkout refuses ${label} with ORDER_REJECTED and reserves nothing`, async () => {
+    await expectCheckoutRefused(label, { submittedTotalKobo: 1000, ...overrides }, "ORDER_REJECTED");
   });
-  expect(state).toEqual({ orders: 0, stock: 1 });
-});
+}
 
+/** Shape refusals: BAD_REQUEST before any domain rule runs, nothing written (24 AC2 refusal). */
+const SHAPE_REFUSALS: Array<[string, Record<string, unknown>]> = [
+  ["items is not an array", { items: "checkout-offer" }],
+  ["items is empty", { items: [] }],
+  ["an item is not an object", { items: ["checkout-offer"] }],
+  ["item offerId is not a string", { items: [{ offerId: 7, quantity: 1 }] }],
+  ["item offerId is blank", { items: [{ offerId: "   ", quantity: 1 }] }],
+  ["item quantity is zero", { items: [{ offerId: "checkout-offer", quantity: 0 }] }],
+  ["item quantity is fractional", { items: [{ offerId: "checkout-offer", quantity: 1.5 }] }],
+  ["item variantId is not a string", { items: [{ offerId: "checkout-offer", variantId: 3, quantity: 1 }] }],
+  ["offerId missing from the item", { items: [{ quantity: 1 }] }],
+  ["paymentReference is not a string", { paymentReference: 12345 }],
+  ["paymentReference is blank", { paymentReference: "" }],
+  ["submittedTotalKobo is not an integer", { submittedTotalKobo: "1000" }],
+  ["storeId is missing", { storeId: undefined }],
+  ["customerName is not a string", { customerName: 42 }],
+  ["shippingAddress is empty", { shippingAddress: {} }],
+];
+for (const [label, overrides] of SHAPE_REFUSALS) {
+  test(`24 AC2 refusal: checkout with ${label} is refused with BAD_REQUEST and creates no order`, async () => {
+    await expectCheckoutRefused(label, overrides, "BAD_REQUEST");
+  });
+}
 
 /** Shortlet ops calls for one tenant; each test names the single criterion it checks (issue 24 review 9). */
 async function commerceOps(tenantId: string) {

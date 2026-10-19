@@ -145,6 +145,10 @@ export const TRACKING_ATTEMPT_SCHEMA = `CREATE TABLE IF NOT EXISTS merchant_orde
  *
  * With foreign_keys ON, merchant_orders cannot be dropped while tracking attempts reference it. The rebuild therefore copies
  * the attempts out, drops them, rebuilds the orders, recreates the attempts table and copies the rows back.
+ *
+ * The copy-back is unreachable in practice: with foreign_keys ON an attempt row can exist only alongside its order, and the
+ * guard above refuses any database with orders, so the copy moves zero rows. It is kept on purpose, so that a future rebuild
+ * which does keep orders (a JavaScript data step, not yet decided by the user) preserves the attempts without a new migration.
  */
 const KEYED_HASH_MIGRATION_STATEMENTS: readonly string[] = [
   "CREATE TABLE commerce_order_hash_guard (legacy_orders INTEGER NOT NULL CHECK (legacy_orders = 0))",

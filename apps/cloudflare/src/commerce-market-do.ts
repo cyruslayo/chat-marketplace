@@ -3,6 +3,7 @@ import type { DurableObjectState } from "@cloudflare/workers-types";
 import { createCommercePack, parseCreateOrderInput, type CreateOrderInput } from "../../../domains/commerce/src/index.js";
 import { assertMerchantOrdersShape, assertPaymentReferenceHashes, COMMERCE_MIGRATION_FAILED, CommerceSchemaShapeError, COMMERCE_SCHEMA_SHAPE_INVALID, INVALID_PAYMENT_REFERENCE_HASH } from "./commerce-schema-guard.js";
 import { CommerceReferenceKeyError, COMMERCE_REFERENCE_KEY_INVALID, paymentReferenceKeysFromEnv } from "./commerce-reference-keys.js";
+import { commerceAlarmPlan } from "./commerce-alarm.js";
 import { applySchemaMigrations } from "../../../packages/platform-core/src/schema-migrations.js";
 import { checksumTables } from "../../../packages/platform-core/src/data-migration.js";
 import { schemaVersion } from "../../../packages/platform-core/src/schema-migrations.js";
@@ -65,8 +66,12 @@ export class CommerceMarket extends DurableObject<CloudflareEnv> {
   }
 
   async alarm(): Promise<void> {
+    // Final review F5: a failed object never exports. It logs the fixed code and only reschedules.
     const today = lagosDate(new Date());
-    if ((await this.ctx.storage.get<string>("commerce:export:lastDate")) !== today) {
+    const plan = commerceAlarmPlan({ failure: this.#failure, lastExportDate: (await this.ctx.storage.get<string>("commerce:export:lastDate")) ?? null, today });
+    if (plan.runExport === false) {
+      if (plan.logCode !== null) console.error(plan.logCode);
+    } else {
       const config = loadExportConfiguration(this.env);
       await runDailyExport({ database: new DurableObjectSqlDatabase(this.ctx.storage), exports: this.env.EXPORTS, clock: () => new Date(), ...config, tableOwner: "commerce" });
       await this.ctx.storage.put("commerce:export:lastDate", today);
