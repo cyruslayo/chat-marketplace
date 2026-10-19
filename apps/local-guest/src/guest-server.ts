@@ -1979,6 +1979,15 @@ export interface LocalGuestServerHandle {
 export const GUEST_COMMERCE_COMPOSITION = { local: "local", disabled: "disabled" } as const;
 export type GuestCommerceComposition = (typeof GUEST_COMMERCE_COMPOSITION)[keyof typeof GUEST_COMMERCE_COMPOSITION];
 export const DEFAULT_GUEST_COMMERCE_COMPOSITION: GuestCommerceComposition = GUEST_COMMERCE_COMPOSITION.local;
+/** The commerce pack's domain id (domains/commerce/src/index.ts), which the disabled composition refuses. */
+const COMMERCE_DOMAIN_PACK_ID = "commerce";
+
+/** Fails closed: a missing value takes the default; any other value that is not a known composition throws. */
+function resolveGuestCommerceComposition(value: unknown): GuestCommerceComposition {
+  if (value === undefined) return DEFAULT_GUEST_COMMERCE_COMPOSITION;
+  if (value === GUEST_COMMERCE_COMPOSITION.local || value === GUEST_COMMERCE_COMPOSITION.disabled) return value;
+  throw new Error('commerce must be "local" or "disabled"');
+}
 
 export interface GuestRequestHandlerOptions {
   environment?: LocalGuestEnvironment;
@@ -2063,6 +2072,14 @@ export function createGuestRequestHandler(
     throw new Error(
       "sessionRuntimeIdleMs must be a positive whole number of milliseconds",
     );
+  }
+  const commerceComposition = resolveGuestCommerceComposition(options.commerce);
+  // ADR 0101: a handler that composes no commerce must not be given the commerce pack either.
+  if (
+    commerceComposition === GUEST_COMMERCE_COMPOSITION.disabled &&
+    (options.additionalPacks ?? []).some((pack) => pack.id === COMMERCE_DOMAIN_PACK_ID)
+  ) {
+    throw new Error("commerce is disabled, so no commerce domain pack may be added");
   }
   const rawMode = options.conciergeMode ?? process.env.CONCIERGE_MODE;
   const mode:
@@ -4605,7 +4622,7 @@ export function createGuestRequestHandler(
   // Local composition only. Commerce public routes read the tracking-attempts table, which only the commerce migrations
   // create (issue 27). The Shortlet Worker passes commerce: "disabled", so its object never runs the commerce ledger (ADR 0101).
   const commerceRouteModules: ReturnType<typeof createCommerceRouteModule>[] = [];
-  if ((options.commerce ?? DEFAULT_GUEST_COMMERCE_COMPOSITION) === GUEST_COMMERCE_COMPOSITION.local) {
+  if (commerceComposition === GUEST_COMMERCE_COMPOSITION.local) {
     const commerceClock = () => defaultApp.environment.clock();
     const commercePack = createCommercePack({ database: defaultApp.environment.database, clock: commerceClock });
     applySchemaMigrations(defaultApp.environment.database, commercePack.migrations, commerceClock().toISOString());

@@ -5,11 +5,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import {
+  GUEST_COMMERCE_COMPOSITION,
   createGuestRequestHandler,
   startLocalGuestServer,
+  type GuestCommerceComposition,
   type GuestRequestHandler,
   type LocalGuestServerHandle,
 } from "../apps/local-guest/src/guest-server.js";
+import type { AssistantDomainPack } from "../apps/local-guest/src/assistant/assistant-platform.js";
+import { createCommercePack } from "../domains/commerce/src/index.js";
 import type {
   HttpRequestLike,
   HttpResponseLike,
@@ -384,14 +388,17 @@ test("ADR 0101: a handler composed with commerce disabled leaves the Shortlet da
   try {
     const handler = createGuestRequestHandler({
       environment,
-      commerce: "disabled",
+      commerce: GUEST_COMMERCE_COMPOSITION.disabled,
       fixtureRoutes: false,
       sessionScopedGuestPrincipals: true,
     });
     try {
-      const response = await fakeTransport(handler).request("GET", "/");
+      const transport = fakeTransport(handler);
+      const response = await transport.request("GET", "/");
       assert.equal(response.statusCode, 200, "the Shortlet guest page still renders");
       assert.deepEqual(commerceArtifactsIn(environment.database), { tables: [], ledgerNames: [] });
+      const track = await transport.request("GET", "/orders/track");
+      assert.equal(track.statusCode, 404, "the commerce order-tracking route is not mounted");
     } finally {
       await handler.close();
     }
@@ -408,14 +415,75 @@ test("ADR 0101: a handler composed with the default commerce option creates the 
   try {
     const handler = createGuestRequestHandler({ environment, fixtureRoutes: false, sessionScopedGuestPrincipals: true });
     try {
-      const response = await fakeTransport(handler).request("GET", "/");
+      const transport = fakeTransport(handler);
+      const response = await transport.request("GET", "/");
       assert.equal(response.statusCode, 200);
       const artifacts = commerceArtifactsIn(environment.database);
       assert.deepEqual([...artifacts.tables].sort(), [...COMMERCE_TABLE_NAMES].sort());
       assert.equal(artifacts.ledgerNames.length, COMMERCE_SCHEMA_MIGRATIONS.length);
+      const track = await transport.request("GET", "/orders/track");
+      assert.equal(track.statusCode, 200, "the commerce order-tracking route is mounted locally");
     } finally {
       await handler.close();
     }
+  } finally {
+    environment.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("ADR 0101: an unknown commerce composition value fails closed at construction", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "guest-handler-bad-commerce-"));
+  const environment = LocalGuestEnvironment.openNode({ databasePath: join(directory, "guest.sqlite") });
+  try {
+    // A JavaScript caller can pass any string; "Local" is not the value "local" and must not compose commerce by accident.
+    const unknownValue = "Local" as unknown as GuestCommerceComposition;
+    assert.throws(
+      () => createGuestRequestHandler({ environment, commerce: unknownValue, fixtureRoutes: false }),
+      /commerce must be "local" or "disabled"/,
+    );
+    assert.deepEqual(commerceArtifactsIn(environment.database), { tables: [], ledgerNames: [] });
+  } finally {
+    environment.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("ADR 0101: a commerce-disabled handler refuses a commerce domain pack at construction", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "guest-handler-commerce-pack-"));
+  const environment = LocalGuestEnvironment.openNode({ databasePath: join(directory, "guest.sqlite") });
+  try {
+    // The real commerce pack, typed as an assistant pack: the guard keys on its domain id, "commerce".
+    const commercePack = createCommercePack({ database: environment.database, clock: () => new Date() }) as unknown as AssistantDomainPack;
+    assert.throws(
+      () =>
+        createGuestRequestHandler({
+          environment,
+          commerce: GUEST_COMMERCE_COMPOSITION.disabled,
+          additionalPacks: [commercePack],
+          fixtureRoutes: false,
+        }),
+      /commerce is disabled, so no commerce domain pack may be added/,
+    );
+  } finally {
+    environment.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("ADR 0101: a commerce-disabled handler accepts a non-commerce additional pack", async () => {
+  // Control for the guard: only a commerce pack is refused, not every additional pack.
+  const directory = await mkdtemp(join(tmpdir(), "guest-handler-other-pack-"));
+  const environment = LocalGuestEnvironment.openNode({ databasePath: join(directory, "guest.sqlite") });
+  try {
+    const otherPack = { id: "stays", label: "Stays", promptSection: "", intentKeywords: [], toolNames: [], toolsForState: () => [] } as unknown as AssistantDomainPack;
+    const handler = createGuestRequestHandler({
+      environment,
+      commerce: GUEST_COMMERCE_COMPOSITION.disabled,
+      additionalPacks: [otherPack],
+      fixtureRoutes: false,
+    });
+    await handler.close();
   } finally {
     environment.close();
     await rm(directory, { recursive: true, force: true });
