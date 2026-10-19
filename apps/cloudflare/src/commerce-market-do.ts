@@ -8,11 +8,11 @@ import { applySchemaMigrations } from "../../../packages/platform-core/src/schem
 import { checksumTables } from "../../../packages/platform-core/src/data-migration.js";
 import { schemaVersion } from "../../../packages/platform-core/src/schema-migrations.js";
 import { DurableObjectSqlDatabase } from "./do-sql-database.js";
-import { commerceMigrationsWithCutover } from "./schema.js";
+import { commerceMigrationsWithCutover } from "./commerce-migrations.js";
 import type { CloudflareEnv } from "./cloudflare-config.js";
 import { lagosDate, runDailyExport } from "./do-export.js";
 import { loadExportConfiguration } from "./cloudflare-config.js";
-import { assertCutoverOpenForImport, assertSchemaCurrent, exportTable, importBatch } from "./ops-import.js";
+import { assertCutoverOpenForImport, assertSchemaCurrent, exportTable, importBatch } from "./ops-import-core.js";
 import { completeCutoverWithMarker, cutoverStatus, createCutoverMarkerStore, reconcileCutover } from "./cutover-marker.js";
 
 const DAILY_ALARM_MS = 24 * 60 * 60 * 1000;

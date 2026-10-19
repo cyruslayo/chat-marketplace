@@ -98,11 +98,5 @@ export const PLATFORM_SCHEMA_MIGRATIONS: readonly SchemaMigration[] = [
 
 export const PLATFORM_SCHEMA_VERSION = PLATFORM_SCHEMA_MIGRATIONS.length;
 
-/**
- * ADR 0101: CommerceMarket has its own migration ledger and owns every commerce transaction table. The domain pack's
- * migrations arrive from `createCommercePack(...).migrations` (ADR 0099: the domain façade exports only the pack), and the
- * cutover flag is appended after them, so its version follows the pack's migration count.
- */
-export function commerceMigrationsWithCutover(packMigrations: readonly SchemaMigration[]): readonly SchemaMigration[] {
-  return [...packMigrations, { version: packMigrations.length + 1, name: "one-way commerce cutover flag", statements: [CUTOVER_STATE_DDL] }];
-}
+/** The commerce migration list lives in commerce-migrations.ts (the commerce object imports it directly). Re-exported here for the Shortlet surface. */
+export { commerceMigrationsWithCutover } from "./commerce-migrations.js";
