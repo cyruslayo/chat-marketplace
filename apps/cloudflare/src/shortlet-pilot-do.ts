@@ -291,6 +291,8 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
       ...(modelClient ? { modelClient } : {}),
       ...(configuration.betaInviteCode === null ? {} : { betaInviteCode: configuration.betaInviteCode }),
       production: true,
+      // ADR 0101: commerce data lives only in the CommerceMarket object, so the Shortlet object runs no commerce ledger or routes.
+      commerce: "disabled",
       publicOrigin: configuration.publicOrigin,
       secureCookie: true,
       sessionScopedGuestPrincipals: true,

@@ -1974,6 +1974,8 @@ export interface LocalGuestServerHandle {
 export interface GuestRequestHandlerOptions {
   /** Payment reference keys for the commerce pack (user decision 18 Oct 2026). Omitted: read from the environment (see commerce-reference-keys-local). */
   paymentReferenceKeys?: PaymentReferenceKeys;
+  /** "disabled" removes the commerce ledger and routes from this handler (the Shortlet Worker). Default: local composition. */
+  commerce?: "local" | "disabled";
   environment?: LocalGuestEnvironment;
   clientScriptPath?: string;
   /** Slice 09a: the bundles/CSS the handler serves; the Node default is `nodeAssetLoader()` (no import-time reads). */
@@ -4593,20 +4595,25 @@ export function createGuestRequestHandler(
       res.end("Not Found");
     };
 
+  // Local composition only. The commerce ledger and its public routes run on this environment's database, so the Shortlet
+  // Worker passes commerce: "disabled": commerce data lives in the CommerceMarket object (ADR 0101), never in the Shortlet object.
   // Commerce public routes read the tracking-attempts table, which only the commerce migrations create (issue 27).
-  const commerceClock = () => defaultApp.environment.clock();
-  const commercePack = createCommercePack({
-    database: defaultApp.environment.database,
-    clock: commerceClock,
-    paymentReferenceKeys: options.paymentReferenceKeys ?? commerceReferenceKeysFromProcessEnv(process.env, process.env.NODE_ENV),
-  });
-  applySchemaMigrations(defaultApp.environment.database, commercePack.migrations, commerceClock().toISOString());
-  const commerceRoutes = createCommerceRouteModule(commercePack);
+  const commerceRouteModules: ReturnType<typeof createCommerceRouteModule>[] = [];
+  if (options.commerce !== "disabled") {
+    const commerceClock = () => defaultApp.environment.clock();
+    const commercePack = createCommercePack({
+      database: defaultApp.environment.database,
+      clock: commerceClock,
+      paymentReferenceKeys: options.paymentReferenceKeys ?? commerceReferenceKeysFromProcessEnv(process.env, process.env.NODE_ENV),
+    });
+    applySchemaMigrations(defaultApp.environment.database, commercePack.migrations, commerceClock().toISOString());
+    commerceRouteModules.push(createCommerceRouteModule(commercePack));
+  }
   const shell = createGuestShell({
     assets,
     staticAssets: SHORTLET_STATIC_ASSETS,
     routeModules: [
-      commerceRoutes,
+      ...commerceRouteModules,
       {
         name: "shortlet",
         tryHandle: async (req, res) => {
