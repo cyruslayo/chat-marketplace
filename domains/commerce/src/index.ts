@@ -12,7 +12,7 @@ export type { MerchantBackOfficePrincipal, MerchantBackOfficeRole } from "./merc
 export { parseCreateOrderInput } from "./order.js";
 export type { CreateOrderInput } from "./order.js";
 export type { PaymentReferenceKeys } from "./payment-reference.js";
-export { PAYMENT_REFERENCE_KEY_MIN_BYTES } from "./payment-reference.js";
+export { PAYMENT_REFERENCE_KEY_MIN_BYTES, assertPaymentReferenceKeys } from "./payment-reference.js";
 
 /**
  * The commerce pack's prompt section. Commerce vocabulary only (Merchant, Store, Consumer); no

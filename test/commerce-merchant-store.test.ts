@@ -62,7 +62,7 @@ test("AC3: a suspended store is never returned to consumers", () => {
 
 test("AC4: the boundary test covers domains/commerce", () => {
   // The façade runtime exports: the pack factory, the untrusted-checkout parser, and the payment reference key minimum (ADR 0099).
-  assert.deepEqual(Object.keys(commerceIndex).sort(), ["PAYMENT_REFERENCE_KEY_MIN_BYTES", "createCommercePack", "parseCreateOrderInput"]);
+  assert.deepEqual(Object.keys(commerceIndex).sort(), ["PAYMENT_REFERENCE_KEY_MIN_BYTES", "assertPaymentReferenceKeys", "createCommercePack", "parseCreateOrderInput"]);
 
   const allowlist = JSON.parse(
     readFileSync(new URL("./fixtures/domain-boundary-allowlist.json", import.meta.url), "utf8"),

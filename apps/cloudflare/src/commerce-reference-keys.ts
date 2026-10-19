@@ -1,4 +1,4 @@
-import { PAYMENT_REFERENCE_KEY_MIN_BYTES, type PaymentReferenceKeys } from "../../../domains/commerce/src/index.js";
+import { assertPaymentReferenceKeys, type PaymentReferenceKeys } from "../../../domains/commerce/src/index.js";
 
 /** Fixed code for a missing or unusable payment reference key. Logged or returned alone; the key is never included. */
 export const COMMERCE_REFERENCE_KEY_INVALID = "COMMERCE_REFERENCE_KEY_INVALID";
@@ -17,13 +17,19 @@ export interface CommerceReferenceKeyEnv {
 }
 
 /**
- * Reads the current payment reference key from the Worker environment. Fails closed: a missing id, a missing key or a key
- * shorter than the minimum throws CommerceReferenceKeyError, which names no value.
+ * Reads the current payment reference key from the Worker environment. Fails closed: a missing or malformed id, a missing key
+ * or a key shorter than the minimum throws CommerceReferenceKeyError, which names no value. The domain's own rules
+ * (assertPaymentReferenceKeys) decide what is valid, so the id pattern and the minimum live in one place.
  */
 export function paymentReferenceKeysFromEnv(env: CommerceReferenceKeyEnv): PaymentReferenceKeys {
   const secret = env.COMMERCE_REFERENCE_HMAC_KEY;
   const keyId = env.COMMERCE_REFERENCE_HMAC_KEY_ID;
-  if (typeof secret !== "string" || Buffer.byteLength(secret, "utf8") < PAYMENT_REFERENCE_KEY_MIN_BYTES) throw new CommerceReferenceKeyError();
-  if (typeof keyId !== "string" || keyId.trim() === "") throw new CommerceReferenceKeyError();
-  return { currentKeyId: keyId.trim(), currentKey: secret };
+  if (typeof secret !== "string" || typeof keyId !== "string" || keyId.trim() === "") throw new CommerceReferenceKeyError();
+  const keys: PaymentReferenceKeys = { currentKeyId: keyId.trim(), currentKey: secret };
+  try {
+    assertPaymentReferenceKeys(keys);
+  } catch {
+    throw new CommerceReferenceKeyError();
+  }
+  return keys;
 }

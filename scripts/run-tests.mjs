@@ -16,8 +16,8 @@ const { concurrent: otherFiles, browser: browserFiles, extra } = planTestPhases(
 function phase(label, list, options) {
   if (list.length === 0) return 0;
   console.log(`\n# ${label}: ${list.length} files`);
-  // NODE_ENV defaults to test so the local guest may use its named test-only payment reference key (issue 24 keyed hash).
-  const result = spawnSync(process.execPath, [tsx, "--test", ...options, ...extra, ...list], { cwd: root, stdio: "inherit", env: { ...process.env, NODE_ENV: process.env.NODE_ENV ?? "test" } });
+  // NODE_ENV defaults to test, and the test runner opts children in to the test-only payment reference key (issue 24, final review F1).
+  const result = spawnSync(process.execPath, [tsx, "--test", ...options, ...extra, ...list], { cwd: root, stdio: "inherit", env: { ...process.env, NODE_ENV: process.env.NODE_ENV ?? "test", COMMERCE_REFERENCE_TEST_KEY: process.env.COMMERCE_REFERENCE_TEST_KEY ?? "allow" } });
   if (result.error) throw result.error;
   return result.status ?? 1;
 }

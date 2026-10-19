@@ -106,3 +106,13 @@ test("decision 18: the Worker reads the keys from its secret and id; a missing o
   assert.throws(() => paymentReferenceKeysFromEnv({ COMMERCE_REFERENCE_HMAC_KEY_ID: "k1" } as never), (error: unknown) => (error as { code?: string }).code === COMMERCE_REFERENCE_KEY_INVALID);
   assert.throws(() => paymentReferenceKeysFromEnv({ COMMERCE_REFERENCE_HMAC_KEY: secret } as never), (error: unknown) => (error as { code?: string }).code === COMMERCE_REFERENCE_KEY_INVALID);
 });
+
+test("final review F4: the Worker key reader refuses a malformed key id with COMMERCE_REFERENCE_KEY_INVALID, without echoing the key", () => {
+  const secret = "x".repeat(32);
+  for (const badId of ["K1", "k 1", "-k1", "k1:", "a".repeat(33)]) {
+    assert.throws(() => paymentReferenceKeysFromEnv({ COMMERCE_REFERENCE_HMAC_KEY: secret, COMMERCE_REFERENCE_HMAC_KEY_ID: badId }), (error: unknown) => {
+      const failure = error as { code?: string; message: string };
+      return failure.code === COMMERCE_REFERENCE_KEY_INVALID && !failure.message.includes(secret) && !failure.message.includes(badId);
+    }, badId);
+  }
+});
