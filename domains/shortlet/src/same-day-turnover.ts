@@ -1,3 +1,4 @@
+import { generatePlatformId } from "../../../packages/platform-core/src/platform-id.js";
 /**
  * Qualify a Unit for Same-Day Turnover (Issue 14).
  * Implements ADR 0034, 0035, 0036, 0037, 0038.
@@ -109,7 +110,7 @@ export function createTurnoverRun({
     throw new Error("unitId, operatorId, priorCheckoutAt, and readinessDeadline are required");
   }
 
-  const runId = `turn-${idFactory()}`;
+  const runId = generatePlatformId("turn", idFactory);
   const nowIso = clock().toISOString();
 
   return {

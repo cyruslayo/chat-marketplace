@@ -1,3 +1,4 @@
+import { generatePlatformId } from "./platform-id.js";
 import { CatalogueRegistry } from "./catalogue-registry.js";
 
 /**
@@ -65,7 +66,7 @@ export class GenerativeSurfaceManager {
   createSurface({ catalogue, projectionVersion = 1, facts = {}, workflowState = {}, textFallback = "", conventionalRoute = "", expiresAtIso }: CreateSurfaceOptions) {
     this.#validateCatalogue(catalogue);
 
-    const surfaceId = `surf-${crypto.randomUUID()}`;
+    const surfaceId = generatePlatformId("surf");
     const surface: ManagedSurface = {
       surfaceId,
       catalogue,
@@ -85,7 +86,7 @@ export class GenerativeSurfaceManager {
   renderWithFallback({ catalogue, projectionVersion = 1, workflowState = {}, textFallback = "", conventionalRoute = "", expiresAtIso }: CreateSurfaceOptions): ManagedSurfaceSnapshot {
     this.#validateCatalogue(catalogue);
 
-    const surfaceId = `surf-${crypto.randomUUID()}`;
+    const surfaceId = generatePlatformId("surf");
     const surface: ManagedSurface = {
       surfaceId,
       catalogue,

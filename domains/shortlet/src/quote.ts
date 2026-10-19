@@ -1,3 +1,4 @@
+import { generatePlatformId } from "../../../packages/platform-core/src/platform-id.js";
 import { StayDateRange } from "./browse.js";
 import { ownerSettlementFor, unitOwnerTerms } from "./owner-terms.js";
 import { calculateSecurityDepositPolicySnapshot, calculateRefundableSecurityDeposit, SECURITY_DEPOSIT_POLICY_VERSION, type SecurityDepositPolicySnapshot } from "./security-deposit.js";
@@ -255,7 +256,7 @@ export function createStayQuote({
   const expiresAtMs = now.getTime() + 30 * 60 * 1000;
   const expiresAtIso = new Date(expiresAtMs).toISOString();
 
-  const quoteId = `quote-${idFactory()}`;
+  const quoteId = generatePlatformId("quote", idFactory);
 
   return Object.freeze({
     quoteId,

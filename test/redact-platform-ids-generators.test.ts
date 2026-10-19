@@ -30,6 +30,8 @@ interface GeneratorSite {
 }
 
 const TEMPLATE = /`([a-z][a-z-]*)-\$\{(?:[\w.]+\.)?(?:randomUUID|idFactory)\(\)\}/g;
+// The shared helper (packages/platform-core/src/platform-id.ts): generatePlatformId("<prefix>" ...) at the call site.
+const HELPER_CALL = /generatePlatformId\(\s*"([a-z][a-z-]*)"/g;
 
 function identifierBefore(text: string, index: number): string | null {
   const match = /([A-Za-z_$][\w$]*)\s*$/.exec(text.slice(Math.max(0, index - 200), index));
@@ -69,10 +71,12 @@ function assignedName(text: string, index: number): string | null {
 
 function generatorSites(): GeneratorSite[] {
   return sources.flatMap(({ file, text }) => {
-    if (!text.includes("randomUUID") && !text.includes("idFactory")) return [];
-    return [...text.matchAll(TEMPLATE)].map((match) => ({
-      lhs: assignedName(text, match.index),
-      prefix: match[1]!,
+    if (!text.includes("randomUUID") && !text.includes("idFactory") && !text.includes("generatePlatformId")) return [];
+    const templates = [...text.matchAll(TEMPLATE)].map((match) => ({ index: match.index, prefix: match[1]! }));
+    const helperCalls = [...text.matchAll(HELPER_CALL)].map((match) => ({ index: match.index, prefix: match[1]! }));
+    return [...templates, ...helperCalls].map((site) => ({
+      lhs: assignedName(text, site.index),
+      prefix: site.prefix,
       file
     }));
   });

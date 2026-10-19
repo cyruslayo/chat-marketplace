@@ -1,3 +1,4 @@
+import { generatePlatformId } from "./platform-id.js";
 export interface CommandPrincipal {
   id: string;
   role: "guest" | "operator" | "agent" | "system" | "admin" | "authorized_staff";
@@ -37,7 +38,7 @@ export function createPlatformCommandEnvelope<T>({
   }
 
   return Object.freeze({
-    commandId: `cmd-${crypto.randomUUID()}`,
+    commandId: generatePlatformId("cmd"),
     commandName,
     principal: Object.freeze({ ...principal }),
     idempotencyKey: idempotencyKey ?? `idempotency-${crypto.randomUUID()}`,

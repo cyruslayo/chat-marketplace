@@ -1,3 +1,4 @@
+import { generatePlatformId } from "../../../packages/platform-core/src/platform-id.js";
 import { PlatformCommandEnvelope } from "../../../packages/platform-core/src/index.js";
 import { createStayQuote } from "./quote.js";
 import { getUnitOnboardingStatus } from "./onboarding.js";
@@ -227,7 +228,7 @@ export class ConditionalOfferManager {
       throw new Error("Offer creation failed: the unit's Contractual Check-In Window is invalid");
     }
 
-    const offerId = `offer-${crypto.randomUUID()}`;
+    const offerId = generatePlatformId("offer");
     const offerVersion = 1;
     const paymentWindowDurationMinutes = 20; // ADR 0044
     const paymentWindowStart = request.confirmedAt ? new Date(request.confirmedAt) : now;

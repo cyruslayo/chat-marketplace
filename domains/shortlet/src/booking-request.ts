@@ -1,3 +1,4 @@
+import { generatePlatformId } from "../../../packages/platform-core/src/platform-id.js";
 import { PlatformCommandEnvelope, createPlatformCommandEnvelope } from "../../../packages/platform-core/src/index.js";
 import { StayDateRange } from "./browse.js";
 import { createStayQuote } from "./quote.js";
@@ -165,7 +166,7 @@ export class BookingRequestManager {
       ? { accepted: distinctPayerAttestation.accepted === true, version: distinctPayerAttestation.version }
       : undefined;
 
-    const draftId = `draft-${crypto.randomUUID()}`;
+    const draftId = generatePlatformId("draft");
     const now = clock();
 
     const draft = Object.freeze({
@@ -436,7 +437,7 @@ export class BookingRequestManager {
       });
     }
 
-    const requestId = `req-${crypto.randomUUID()}`;
+    const requestId = generatePlatformId("req");
     const disclosedAtIso = now.toISOString();
 
     const isDelivered = autoDeliver;

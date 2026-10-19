@@ -1,3 +1,4 @@
+import { generatePlatformId } from "../../../packages/platform-core/src/platform-id.js";
 import {
   createServer,
   type IncomingMessage,
@@ -2839,7 +2840,7 @@ export function createGuestRequestHandler(
           }
           const sessionId = issueGuestSession(res, secureCookie);
           let principalId = app.environment.config.guestId;
-          if (sessionScopedGuestPrincipals) principalId = `guest-${crypto.randomUUID()}`;
+          if (sessionScopedGuestPrincipals) principalId = generatePlatformId("guest");
           const registered = await registerBrowserSession(
             env,
             browserSessions,

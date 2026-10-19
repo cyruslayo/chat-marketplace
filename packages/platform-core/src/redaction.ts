@@ -111,7 +111,7 @@ function isLuhnValid(digits: string): boolean {
  * matched anywhere, so they are not detected in ids either (the same as free text on main). Defence in depth only:
  * client-supplied ids are lookup-validated before audit and the client-chosen `g-` thread ids are excluded.
  */
-function containsLuhnValidCardShape(value: string): boolean {
+export function containsLuhnValidCardShape(value: string): boolean {
   for (const match of value.matchAll(CARD_NUMBER_SHAPE)) {
     if (isLuhnValid(match[0].replace(/\D/g, ""))) return true;
   }

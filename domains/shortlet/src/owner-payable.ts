@@ -1,4 +1,5 @@
-import { createHash, randomUUID } from "node:crypto";
+import { generatePlatformId } from "../../../packages/platform-core/src/platform-id.js";
+import { createHash } from "node:crypto";
 import { ownerPayableDueAt } from "./checkin-support.js";
 import { normalizeBankReference } from "./manual-transfer.js";
 import type { OwnerSettlementSnapshot } from "./owner-terms.js";
@@ -368,7 +369,7 @@ export function recordOwnerPayout(input: {
     throw new OwnerPayoutError("exceeds_due");
 
   const payout: OwnerPayout = Object.freeze({
-    payoutId: `payout-${randomUUID()}`,
+    payoutId: generatePlatformId("payout"),
     reservationId: input.reservationId,
     amountKobo: input.amountKobo,
     paidOn: input.paidOn,
@@ -426,7 +427,7 @@ export function recordOwnerRecovery(input: {
     throw new OwnerRecoveryError("exceeds_overpaid");
 
   const recovery: OwnerRecovery = Object.freeze({
-    recoveryId: `recovery-${randomUUID()}`,
+    recoveryId: generatePlatformId("recovery"),
     reservationId: input.reservationId,
     amountKobo: input.amountKobo,
     receivedOn: input.receivedOn,
@@ -589,7 +590,7 @@ export function recordGuestRefund(input: {
   if (input.amountKobo > outstanding)
     throw new GuestRefundError("exceeds_owed");
   const refund: GuestRefund = Object.freeze({
-    refundId: `guest-refund-${randomUUID()}`,
+    refundId: generatePlatformId("guest-refund"),
     reservationId: input.reservationId,
     amountKobo: input.amountKobo,
     refundedOn: input.refundedOn,

@@ -1,3 +1,4 @@
+import { generatePlatformId } from "../../../packages/platform-core/src/platform-id.js";
 import {
   AvailabilityConflictError,
   SqliteAvailabilityStore,
@@ -78,7 +79,7 @@ export class AvailabilityCalendar {
   }) {
     const createdAt = clock().toISOString();
     const block = this.#store.create({
-      commitmentId: `blk-${crypto.randomUUID()}`,
+      commitmentId: generatePlatformId("blk"),
       unitId,
       kind: "operator_block",
       start: dateValue(start),
@@ -212,7 +213,7 @@ export class AvailabilityCalendar {
   }) {
     const createdAt = clock();
     const hold = this.#store.create({
-      commitmentId: `oph-${crypto.randomUUID()}`,
+      commitmentId: generatePlatformId("oph"),
       unitId,
       kind: "operator_hold",
       start: dateValue(start),
@@ -265,7 +266,7 @@ export class AvailabilityCalendar {
   }) {
     const now = clock();
     const commitment = this.#store.create({
-      commitmentId: `brb-${crypto.randomUUID()}`,
+      commitmentId: generatePlatformId("brb"),
       unitId,
       kind: "booking_request_block",
       start: dateValue(start),
