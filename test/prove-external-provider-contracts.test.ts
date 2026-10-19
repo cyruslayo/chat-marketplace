@@ -151,6 +151,15 @@ test("A non-string signature fails closed with the tamper error, not a type erro
   );
 });
 
+test("A non-string expected signature fails closed with the tamper error, not a type error", () => {
+  const registry = new ProviderContractRegistry();
+  const payload: PaymentRequestPayload = { transactionRef: "tx-type-2", amountKobo: 5000, currency: "NGN", payerId: "pyr-006", signature: "sig_valid_123" };
+  assert.throws(
+    () => registry.processPaymentRequest(payload, undefined as unknown as string, () => ({ status: "success", providerReference: "pref-type-2" })),
+    /Invalid provider signature: payload tampering detected/
+  );
+});
+
 test("An empty signature fails closed even when the expected signature is also empty", () => {
   const registry = new ProviderContractRegistry();
   const payload: PaymentRequestPayload = { transactionRef: "tx-empty-1", amountKobo: 5000, currency: "NGN", payerId: "pyr-004", signature: "" };

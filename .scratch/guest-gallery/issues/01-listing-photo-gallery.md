@@ -57,7 +57,7 @@ Delivered on `ui/listing-gallery`. The tests are in `test/listing-gallery.test.t
   - Next, Previous and the arrow keys step from the photo asked for while a programmatic scroll is still in flight (`pendingIndex`), so two quick presses move two photos. A swipe or wheel gesture clears the pending photo. A press that would not move the track returns at once.
   - The first and last photo use `aria-disabled` rather than `disabled`, so keyboard focus stays on the button; a press there does nothing. The visual state is the same `opacity` rule.
   - The visible count is not a live region. A visually hidden live region (`ui-sr-only`, `aria-live="polite"`) is written once the scroll settles, so screen readers hear the final photo, not each photo a scroll passes.
-  - Design of the change: commits 6bb8767 (count follows the track; pending steps) and the accessibility follow-up commit that adds `aria-disabled` and the live region.
+  - Design of the change: commits 6bb8767 (count follows the track; pending steps) and 6f56132 (`aria-disabled` endpoints and the settled live region).
 - **Loading (the LCP guidance).** The cover loads eager with `fetchpriority="high"`; the rest lazily. Every image uses `referrerpolicy="no-referrer"`. Reduced motion turns off smooth scrolling.
 - **The full page** loads `/gallery.js`, a second esbuild entry built from `gallery-page.ts` and committed with `client.js`. The CSP blocks inline scripts. Without JavaScript nothing is hidden.
 - **Fixed while walking through:** with session-scoped Guests (the pilot and production), an expired or unknown session cookie made `/shortlet-foundations.css` return 401, so the public apartment page rendered unstyled. `PUBLIC_GUEST_PATHS` now exempts the page's static assets; this has its own test.

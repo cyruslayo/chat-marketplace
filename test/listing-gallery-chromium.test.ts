@@ -183,7 +183,7 @@ test("AC3 — Tapping a photo, or \"Show all\", opens a full-screen viewer at th
   }
 });
 
-test("AC3 — With the viewer open, the previous and next buttons and the arrow, Home and End keys move the \"X of N\" count to the photo asked for, also when presses interrupt a smooth scroll in progress, and the count and buttons stay on that photo once the scroll settles", async () => {
+test("AC3 (keyboard) — With the viewer open, the previous and next buttons and the arrow, Home and End keys move the \"X of N\" count to the photo asked for, also when presses interrupt a smooth scroll in progress, and the count and buttons stay on that photo once the scroll settles", async () => {
   const context = await createListingPhotoContext(PHOTOS, 390, 900);
   try {
     await openStayPage(context);
