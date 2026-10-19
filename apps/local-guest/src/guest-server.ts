@@ -1970,8 +1970,20 @@ export interface LocalGuestServerHandle {
   close(): Promise<void>;
 }
 
+/**
+ * Whether this handler composes the commerce domain on its database. "local" (the default) applies the commerce
+ * migrations and mounts the commerce routes. "disabled" does neither: the Shortlet Worker uses it, because commerce
+ * data lives in its own object (ADR 0101), and applying the commerce ledger to the Shortlet database collides with
+ * the Shortlet migration ledger.
+ */
+export const GUEST_COMMERCE_COMPOSITION = { local: "local", disabled: "disabled" } as const;
+export type GuestCommerceComposition = (typeof GUEST_COMMERCE_COMPOSITION)[keyof typeof GUEST_COMMERCE_COMPOSITION];
+export const DEFAULT_GUEST_COMMERCE_COMPOSITION: GuestCommerceComposition = GUEST_COMMERCE_COMPOSITION.local;
+
 export interface GuestRequestHandlerOptions {
   environment?: LocalGuestEnvironment;
+  /** Commerce composition on this handler's database. Default: "local". The Shortlet Worker passes "disabled" (ADR 0101). */
+  commerce?: GuestCommerceComposition;
   clientScriptPath?: string;
   /** Slice 09a: the bundles/CSS the handler serves; the Node default is `nodeAssetLoader()` (no import-time reads). */
   assets?: AssetLoader;
@@ -4590,16 +4602,20 @@ export function createGuestRequestHandler(
       res.end("Not Found");
     };
 
-  // Commerce public routes read the tracking-attempts table, which only the commerce migrations create (issue 27).
-  const commerceClock = () => defaultApp.environment.clock();
-  const commercePack = createCommercePack({ database: defaultApp.environment.database, clock: commerceClock });
-  applySchemaMigrations(defaultApp.environment.database, commercePack.migrations, commerceClock().toISOString());
-  const commerceRoutes = createCommerceRouteModule(commercePack);
+  // Local composition only. Commerce public routes read the tracking-attempts table, which only the commerce migrations
+  // create (issue 27). The Shortlet Worker passes commerce: "disabled", so its object never runs the commerce ledger (ADR 0101).
+  const commerceRouteModules: ReturnType<typeof createCommerceRouteModule>[] = [];
+  if ((options.commerce ?? DEFAULT_GUEST_COMMERCE_COMPOSITION) === GUEST_COMMERCE_COMPOSITION.local) {
+    const commerceClock = () => defaultApp.environment.clock();
+    const commercePack = createCommercePack({ database: defaultApp.environment.database, clock: commerceClock });
+    applySchemaMigrations(defaultApp.environment.database, commercePack.migrations, commerceClock().toISOString());
+    commerceRouteModules.push(createCommerceRouteModule(commercePack));
+  }
   const shell = createGuestShell({
     assets,
     staticAssets: SHORTLET_STATIC_ASSETS,
     routeModules: [
-      commerceRoutes,
+      ...commerceRouteModules,
       {
         name: "shortlet",
         tryHandle: async (req, res) => {

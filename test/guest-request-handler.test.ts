@@ -21,6 +21,8 @@ import {
   type CapturedResponse,
 } from "./helpers/http-like.js";
 import type { Unit } from "../domains/shortlet/src/index.js";
+import { COMMERCE_SCHEMA_MIGRATIONS } from "../domains/commerce/src/commerce-schema.js";
+import type { SqlDatabase } from "../packages/platform-core/src/sql-database.js";
 
 /** AC1: a minimal object implementing only the narrow interfaces type-checks. */
 class MinimalRequestLike implements HttpRequestLike {
@@ -335,6 +337,83 @@ test("08a AC3: close() stops every timer the handler started; idle eviction stay
       assert.equal(handler.activeSessionRuntimes, 0);
     } finally {
       testContext.mock.reset();
+      await handler.close();
+    }
+  } finally {
+    environment.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+/** The commerce tables the commerce migrations create (domains/commerce/src/commerce-schema.ts). */
+const COMMERCE_TABLE_NAMES = [
+  "merchants",
+  "stores",
+  "products",
+  "merchant_offers",
+  "offer_variants",
+  "delivery_zones",
+  "cart_lines",
+  "merchant_orders",
+  "merchant_order_tracking_attempts",
+] as const;
+
+/** Commerce artifacts present on a database: commerce tables, and commerce rows in the schema_migrations ledger. */
+function commerceArtifactsIn(database: SqlDatabase): { tables: string[]; ledgerNames: string[] } {
+  const commerceLedgerNames = COMMERCE_SCHEMA_MIGRATIONS.map((migration) => migration.name);
+  const tables = database
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+    .all()
+    .map((row) => String(row.name))
+    .filter((name) => (COMMERCE_TABLE_NAMES as readonly string[]).includes(name));
+  // A database no migration has touched has no ledger table at all, which holds no commerce rows.
+  const hasLedger = database.prepare("SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'").get() !== undefined;
+  const ledgerNames = hasLedger
+    ? database
+        .prepare("SELECT name FROM schema_migrations ORDER BY version")
+        .all()
+        .map((row) => String(row.name))
+        .filter((name) => commerceLedgerNames.includes(name))
+    : [];
+  return { tables, ledgerNames };
+}
+
+test("ADR 0101: a handler composed with commerce disabled leaves the Shortlet database with no commerce tables or ledger rows", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "guest-handler-no-commerce-"));
+  const environment = LocalGuestEnvironment.openNode({ databasePath: join(directory, "shortlet.sqlite") });
+  try {
+    const handler = createGuestRequestHandler({
+      environment,
+      commerce: "disabled",
+      fixtureRoutes: false,
+      sessionScopedGuestPrincipals: true,
+    });
+    try {
+      const response = await fakeTransport(handler).request("GET", "/");
+      assert.equal(response.statusCode, 200, "the Shortlet guest page still renders");
+      assert.deepEqual(commerceArtifactsIn(environment.database), { tables: [], ledgerNames: [] });
+    } finally {
+      await handler.close();
+    }
+  } finally {
+    environment.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("ADR 0101: a handler composed with the default commerce option creates the commerce tables and ledger rows", async () => {
+  // Control for the test above: the same probe must find commerce artifacts when commerce is composed locally.
+  const directory = await mkdtemp(join(tmpdir(), "guest-handler-local-commerce-"));
+  const environment = LocalGuestEnvironment.openNode({ databasePath: join(directory, "guest.sqlite") });
+  try {
+    const handler = createGuestRequestHandler({ environment, fixtureRoutes: false, sessionScopedGuestPrincipals: true });
+    try {
+      const response = await fakeTransport(handler).request("GET", "/");
+      assert.equal(response.statusCode, 200);
+      const artifacts = commerceArtifactsIn(environment.database);
+      assert.deepEqual([...artifacts.tables].sort(), [...COMMERCE_TABLE_NAMES].sort());
+      assert.equal(artifacts.ledgerNames.length, COMMERCE_SCHEMA_MIGRATIONS.length);
+    } finally {
       await handler.close();
     }
   } finally {
