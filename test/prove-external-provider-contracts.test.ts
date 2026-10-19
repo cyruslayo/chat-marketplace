@@ -121,3 +121,32 @@ test("Automated contract success is recorded separately from production-equivale
   assert.ok(auditEntries.some(e => e.type === "provider.contract_success_recorded"));
   assert.ok(auditEntries.some(e => e.type === "provider.capability_certified"));
 });
+
+// Signature comparison is constant-time and fails closed (issue 50 hardening). "sig_valid_123" stays a literal here: it is
+// a fake-provider fixture, not an HMAC, so the shared providerHmacSignature helper does not apply.
+test("A payment request whose signature differs in length from the expected signature fails closed", () => {
+  const registry = new ProviderContractRegistry();
+  const payload: PaymentRequestPayload = { transactionRef: "tx-len-1", amountKobo: 5000, currency: "NGN", payerId: "pyr-002", signature: "sig_valid_1234" };
+  assert.throws(
+    () => registry.processPaymentRequest(payload, "sig_valid_123", () => ({ status: "success", providerReference: "pref-len" })),
+    /Invalid provider signature/
+  );
+});
+
+test("A payment request whose signature differs in its last character fails closed", () => {
+  const registry = new ProviderContractRegistry();
+  const payload: PaymentRequestPayload = { transactionRef: "tx-last-1", amountKobo: 5000, currency: "NGN", payerId: "pyr-003", signature: "sig_valid_124" };
+  assert.throws(
+    () => registry.processPaymentRequest(payload, "sig_valid_123", () => ({ status: "success", providerReference: "pref-last" })),
+    /Invalid provider signature/
+  );
+});
+
+test("An empty signature fails closed even when the expected signature is also empty", () => {
+  const registry = new ProviderContractRegistry();
+  const payload: PaymentRequestPayload = { transactionRef: "tx-empty-1", amountKobo: 5000, currency: "NGN", payerId: "pyr-004", signature: "" };
+  assert.throws(
+    () => registry.processPaymentRequest(payload, "", () => ({ status: "success", providerReference: "pref-empty" })),
+    /Invalid provider signature/
+  );
+});

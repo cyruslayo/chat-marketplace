@@ -1,4 +1,13 @@
+import { timingSafeEqual } from "node:crypto";
 import { PlatformCommandEnvelope } from "./envelope.js";
+
+// Constant-time comparison of two signature strings. Fails closed: an empty value never matches and unequal lengths
+// never match, so only a non-empty signature of identical length can pass.
+function signaturesMatch(provided: string, expected: string): boolean {
+  const left = Buffer.from(provided, "utf8");
+  const right = Buffer.from(expected, "utf8");
+  return left.length === right.length && left.length > 0 && timingSafeEqual(left, right);
+}
 
 export interface PaymentRequestPayload {
   readonly transactionRef: string;
@@ -89,7 +98,7 @@ export class ProviderContractRegistry {
     expectedSignature: string,
     providerCall: () => PaymentResponseResult
   ): PaymentResponseResult {
-    if (payload.signature !== expectedSignature) {
+    if (!signaturesMatch(payload.signature, expectedSignature)) {
       throw new Error("Invalid provider signature: payload tampering detected");
     }
 
