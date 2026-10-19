@@ -25,7 +25,7 @@ test("AC3 checkout surface references only emitted components and keeps one root
 });
 
 test("AC3 discovery, cart and order surfaces reference only emitted components and keep one root", () => {
-  assertSurfaceReferencesResolve(commerceDiscoverySurface([{ offerId: "offer-1", productName: "Northstar Tote", category: "Accessories", description: "Cotton tote.", priceKobo: 850000, stock: 18 }], "discovery"), "discovery");
+  assertSurfaceReferencesResolve(commerceDiscoverySurface([{ offerId: "offer-1", productName: "Northstar Tote", category: "Accessories", description: "Cotton tote.", priceKobo: 850000, stock: 18, storeName: "Harbour Goods", merchantName: "Northstar Trading" }], "discovery"), "discovery");
   assertSurfaceReferencesResolve(commerceDiscoverySurface([], "discovery-empty"), "empty discovery");
   assertSurfaceReferencesResolve(commerceCartSurface({ storeId: "store-1", storeName: "Harbour Goods", lines: [{ productName: "Northstar Tote", quantity: 2, priceKobo: 850000 }] }, "cart"), "cart");
   assertSurfaceReferencesResolve(commerceOrderSurface({ publicCode: "ORD-1", status: "Pending Verification", updatedAt: "2026-10-18" }, "order"), "order");

@@ -79,9 +79,37 @@ export interface MerchantOrder {
   readonly updatedAt: string;
 }
 
-/** instastore `create_store_order`: keep only digits and `+`. */
+/**
+ * Nigerian mobile prefixes; confirmed by the user, 18 Oct 2026. Canonical storage is +234 and the ten-digit national number.
+ * They are the two digits after the local trunk zero (070, 080, 081, 090, 091).
+ */
+export const NIGERIAN_MOBILE_PREFIXES: readonly string[] = ["70", "80", "81", "90", "91"];
+const NIGERIAN_LOCAL_MOBILE = new RegExp(`^0(${NIGERIAN_MOBILE_PREFIXES.join("|")})[0-9]{8}$`);
+
+/**
+ * instastore `create_store_order` kept only digits and `+`. Nigerian numbers also share one canonical form
+ * (`+234` then the ten-digit national number), whether written locally (`0801…`), internationally (`+234…`, `234…`) or
+ * with the international dialling prefix (`00234…`). Local numbers are read as Nigerian only for the mobile prefixes
+ * above. Any other number keeps the digits-and-plus behaviour.
+ */
 export function normalizePhone(raw: string): string {
-  return raw.replace(/[^0-9+]/g, "");
+  const compact = raw.replace(/[^0-9+]/g, "");
+  const national = nigerianNationalNumber(compact);
+  return national === null ? compact : `+234${national}`;
+}
+
+function nigerianNationalNumber(compact: string): string | null {
+  const international = compact.startsWith("+") || compact.startsWith("00");
+  const digits = compact.startsWith("+") ? compact.slice(1) : compact.startsWith("00") ? compact.slice(2) : compact;
+  if (!/^[0-9]+$/.test(digits)) return null;
+  if (digits.startsWith("234")) {
+    let national = digits.slice(3);
+    // `+234 0801…` writes the trunk zero after the country code; it is the same number.
+    if (national.length === 11 && national.startsWith("0")) national = national.slice(1);
+    return /^[0-9]{10}$/.test(national) ? national : null;
+  }
+  if (international) return null;
+  return NIGERIAN_LOCAL_MOBILE.test(digits) ? digits.slice(1) : null;
 }
 
 function requirePositiveInteger(value: unknown, field: string): number {

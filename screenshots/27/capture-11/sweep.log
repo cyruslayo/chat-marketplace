@@ -1,0 +1,106 @@
+== chat-compare
+captured chat-compare
+
+no overflow, no small controls
+== chat-home
+captured chat-home
+
+no overflow, no small controls
+== chat-results
+captured chat-results
+
+no overflow, no small controls
+== chat-unit
+captured chat-unit
+
+no overflow, no small controls
+== search-page
+captured search-page
+
+no overflow, no small controls
+== unit-page
+captured unit-page
+
+no overflow, no small controls
+== request-draft
+captured request-draft-page
+captured request-draft-chat
+
+no overflow, no small controls
+== request-review
+captured request-review-page
+captured request-review-chat
+
+no overflow, no small controls
+== request-sent
+captured request-sent-page
+captured request-sent-chat
+
+no overflow, no small controls
+== request-declined
+captured request-declined-page
+captured request-declined-chat
+
+no overflow, no small controls
+== request-expired
+captured request-expired-page
+captured request-expired-chat
+
+no overflow, no small controls
+== offer-live
+captured offer-live-page
+captured offer-live-chat
+
+no overflow, no small controls
+== offer-expired
+captured offer-expired-page
+captured offer-expired-chat
+
+no overflow, no small controls
+== payment-choice
+captured payment-choice-page
+captured payment-choice-chat
+
+8 findings:
+payment-choice-page-light-320: small controls: INPUT 1x1 | INPUT 1x1
+payment-choice-page-light-390: small controls: INPUT 1x1 | INPUT 1x1
+payment-choice-page-light-768: small controls: INPUT 1x1 | INPUT 1x1
+payment-choice-page-light-1280: small controls: INPUT 1x1 | INPUT 1x1
+payment-choice-page-dark-320: small controls: INPUT 1x1 | INPUT 1x1
+payment-choice-page-dark-390: small controls: INPUT 1x1 | INPUT 1x1
+payment-choice-page-dark-768: small controls: INPUT 1x1 | INPUT 1x1
+payment-choice-page-dark-1280: small controls: INPUT 1x1 | INPUT 1x1
+== bank-transfer
+captured bank-transfer-page
+captured bank-transfer-chat
+
+no overflow, no small controls
+== manual-transfer
+captured manual-transfer-page
+captured manual-transfer-chat
+
+no overflow, no small controls
+== manual-waiting
+captured manual-waiting-page
+captured manual-waiting-chat
+
+no overflow, no small controls
+== no-reservation
+captured no-reservation-page
+no-reservation: no chat workspace for this stage
+
+no overflow, no small controls
+== confirmed
+captured confirmed-page
+captured confirmed-chat
+
+no overflow, no small controls
+== error-page
+captured error-page
+
+no overflow, no small controls
+== no-js
+captured no-js-conversation
+
+no overflow, no small controls
+FINISHED

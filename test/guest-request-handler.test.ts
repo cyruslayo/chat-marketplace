@@ -5,11 +5,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import {
+  GUEST_COMMERCE_COMPOSITION,
   createGuestRequestHandler,
   startLocalGuestServer,
+  type GuestCommerceComposition,
   type GuestRequestHandler,
   type LocalGuestServerHandle,
 } from "../apps/local-guest/src/guest-server.js";
+import type { AssistantDomainPack } from "../apps/local-guest/src/assistant/assistant-platform.js";
+import { createCommercePack } from "../domains/commerce/src/index.js";
 import type {
   HttpRequestLike,
   HttpResponseLike,
@@ -21,6 +25,8 @@ import {
   type CapturedResponse,
 } from "./helpers/http-like.js";
 import type { Unit } from "../domains/shortlet/src/index.js";
+import { COMMERCE_SCHEMA_MIGRATIONS } from "../domains/commerce/src/commerce-schema.js";
+import type { SqlDatabase } from "../packages/platform-core/src/sql-database.js";
 
 /** AC1: a minimal object implementing only the narrow interfaces type-checks. */
 class MinimalRequestLike implements HttpRequestLike {
@@ -337,6 +343,147 @@ test("08a AC3: close() stops every timer the handler started; idle eviction stay
       testContext.mock.reset();
       await handler.close();
     }
+  } finally {
+    environment.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+/** The commerce tables the commerce migrations create (domains/commerce/src/commerce-schema.ts). */
+const COMMERCE_TABLE_NAMES = [
+  "merchants",
+  "stores",
+  "products",
+  "merchant_offers",
+  "offer_variants",
+  "delivery_zones",
+  "cart_lines",
+  "merchant_orders",
+  "merchant_order_tracking_attempts",
+] as const;
+
+/** Commerce artifacts present on a database: commerce tables, and commerce rows in the schema_migrations ledger. */
+function commerceArtifactsIn(database: SqlDatabase): { tables: string[]; ledgerNames: string[] } {
+  const commerceLedgerNames = COMMERCE_SCHEMA_MIGRATIONS.map((migration) => migration.name);
+  const tables = database
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+    .all()
+    .map((row) => String(row.name))
+    .filter((name) => (COMMERCE_TABLE_NAMES as readonly string[]).includes(name));
+  // A database no migration has touched has no ledger table at all, which holds no commerce rows.
+  const hasLedger = database.prepare("SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'").get() !== undefined;
+  const ledgerNames = hasLedger
+    ? database
+        .prepare("SELECT name FROM schema_migrations ORDER BY version")
+        .all()
+        .map((row) => String(row.name))
+        .filter((name) => commerceLedgerNames.includes(name))
+    : [];
+  return { tables, ledgerNames };
+}
+
+test("ADR 0101: a handler composed with commerce disabled leaves the Shortlet database with no commerce tables or ledger rows", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "guest-handler-no-commerce-"));
+  const environment = LocalGuestEnvironment.openNode({ databasePath: join(directory, "shortlet.sqlite") });
+  try {
+    const handler = createGuestRequestHandler({
+      environment,
+      commerce: GUEST_COMMERCE_COMPOSITION.disabled,
+      fixtureRoutes: false,
+      sessionScopedGuestPrincipals: true,
+    });
+    try {
+      const transport = fakeTransport(handler);
+      const response = await transport.request("GET", "/");
+      assert.equal(response.statusCode, 200, "the Shortlet guest page still renders");
+      assert.deepEqual(commerceArtifactsIn(environment.database), { tables: [], ledgerNames: [] });
+      const track = await transport.request("GET", "/orders/track");
+      assert.equal(track.statusCode, 404, "the commerce order-tracking route is not mounted");
+    } finally {
+      await handler.close();
+    }
+  } finally {
+    environment.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("ADR 0101: a handler composed with the default commerce option creates the commerce tables and ledger rows", async () => {
+  // Control for the test above: the same probe must find commerce artifacts when commerce is composed locally.
+  const directory = await mkdtemp(join(tmpdir(), "guest-handler-local-commerce-"));
+  const environment = LocalGuestEnvironment.openNode({ databasePath: join(directory, "guest.sqlite") });
+  try {
+    const handler = createGuestRequestHandler({ environment, fixtureRoutes: false, sessionScopedGuestPrincipals: true });
+    try {
+      const transport = fakeTransport(handler);
+      const response = await transport.request("GET", "/");
+      assert.equal(response.statusCode, 200);
+      const artifacts = commerceArtifactsIn(environment.database);
+      assert.deepEqual([...artifacts.tables].sort(), [...COMMERCE_TABLE_NAMES].sort());
+      assert.equal(artifacts.ledgerNames.length, COMMERCE_SCHEMA_MIGRATIONS.length);
+      const track = await transport.request("GET", "/orders/track");
+      assert.equal(track.statusCode, 200, "the commerce order-tracking route is mounted locally");
+    } finally {
+      await handler.close();
+    }
+  } finally {
+    environment.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("ADR 0101: an unknown commerce composition value fails closed at construction", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "guest-handler-bad-commerce-"));
+  const environment = LocalGuestEnvironment.openNode({ databasePath: join(directory, "guest.sqlite") });
+  try {
+    // A JavaScript caller can pass any string; "Local" is not the value "local" and must not compose commerce by accident.
+    const unknownValue = "Local" as unknown as GuestCommerceComposition;
+    assert.throws(
+      () => createGuestRequestHandler({ environment, commerce: unknownValue, fixtureRoutes: false }),
+      /commerce must be "local" or "disabled"/,
+    );
+    assert.deepEqual(commerceArtifactsIn(environment.database), { tables: [], ledgerNames: [] });
+  } finally {
+    environment.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("ADR 0101: a commerce-disabled handler refuses a commerce domain pack at construction", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "guest-handler-commerce-pack-"));
+  const environment = LocalGuestEnvironment.openNode({ databasePath: join(directory, "guest.sqlite") });
+  try {
+    // The real commerce pack, typed as an assistant pack: the guard keys on its domain id, "commerce".
+    const commercePack = createCommercePack({ database: environment.database, clock: () => new Date() }) as unknown as AssistantDomainPack;
+    assert.throws(
+      () =>
+        createGuestRequestHandler({
+          environment,
+          commerce: GUEST_COMMERCE_COMPOSITION.disabled,
+          additionalPacks: [commercePack],
+          fixtureRoutes: false,
+        }),
+      /commerce is disabled, so no commerce domain pack may be added/,
+    );
+  } finally {
+    environment.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("ADR 0101: a commerce-disabled handler accepts a non-commerce additional pack", async () => {
+  // Control for the guard: only a commerce pack is refused, not every additional pack.
+  const directory = await mkdtemp(join(tmpdir(), "guest-handler-other-pack-"));
+  const environment = LocalGuestEnvironment.openNode({ databasePath: join(directory, "guest.sqlite") });
+  try {
+    const otherPack = { id: "stays", label: "Stays", promptSection: "", intentKeywords: [], toolNames: [], toolsForState: () => [] } as unknown as AssistantDomainPack;
+    const handler = createGuestRequestHandler({
+      environment,
+      commerce: GUEST_COMMERCE_COMPOSITION.disabled,
+      additionalPacks: [otherPack],
+      fixtureRoutes: false,
+    });
+    await handler.close();
   } finally {
     environment.close();
     await rm(directory, { recursive: true, force: true });

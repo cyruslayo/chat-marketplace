@@ -77,6 +77,13 @@ export class CommerceDirectory {
     return row ? readStore(row) : null;
   }
 
+  merchantById(merchantId: string): Merchant | null {
+    const row = this.database
+      .prepare("SELECT id, name, status, created_at, updated_at FROM merchants WHERE id = $id")
+      .get({ $id: merchantId });
+    return row ? readMerchant(row) : null;
+  }
+
   storesOfMerchant(merchantId: string): readonly Store[] {
     return this.database
       .prepare("SELECT id, merchant_id, slug, name, status, created_at, updated_at FROM stores WHERE merchant_id = $merchantId ORDER BY slug")

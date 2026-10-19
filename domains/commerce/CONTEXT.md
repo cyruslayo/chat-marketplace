@@ -47,3 +47,19 @@ _Avoid_: Platform
 **Marketplace Commission**:
 The platform's fee earned on a merchant order.
 _Avoid_: Merchant revenue
+
+## Order tracking
+
+**Public Order Code**:
+The identifier printed for a Merchant Order, shown to the Consumer and used with the phone number to track it.
+_Avoid_: Order number, tracking number
+
+**Tracking Lock**:
+The state in which tracking for one Public Order Code refuses every lookup. A Tracking Lock starts after five wrong-phone attempts within fifteen minutes of the first failure, lasts for the rest of that window, and answers exactly like a wrong phone so that it reveals nothing.
+_Avoid_: Ban, block
+
+**Nigerian Mobile Number**:
+A Consumer phone number in one canonical form, `+234` followed by the ten-digit national number. A local number (`0801…`), an international number (`+234…`, `234…`) or a `00234…` number with a Nigerian mobile prefix (070, 080, 081, 090, 091) is the same number. Other numbers keep their digits and plus.
+_Avoid_: Phone format
+
+_Decision (user, 18 Oct 2026, issue 27)_: the Tracking Lock limits (5 wrong-phone attempts, 15 minutes) and the Nigerian Mobile Number rule above are the user's decisions. The limits are configurable options with these defaults; the mobile prefix list (070, 080, 081, 090, 091) was confirmed by the user on 18 Oct 2026, with canonical storage as +234 followed by the national number.

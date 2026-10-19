@@ -1,0 +1,8 @@
+payment-choice-page-light-320: small controls: INPUT 1x1 | INPUT 1x1
+payment-choice-page-light-390: small controls: INPUT 1x1 | INPUT 1x1
+payment-choice-page-light-768: small controls: INPUT 1x1 | INPUT 1x1
+payment-choice-page-light-1280: small controls: INPUT 1x1 | INPUT 1x1
+payment-choice-page-dark-320: small controls: INPUT 1x1 | INPUT 1x1
+payment-choice-page-dark-390: small controls: INPUT 1x1 | INPUT 1x1
+payment-choice-page-dark-768: small controls: INPUT 1x1 | INPUT 1x1
+payment-choice-page-dark-1280: small controls: INPUT 1x1 | INPUT 1x1

@@ -24,6 +24,9 @@ import type { AssetLoader } from "../../../packages/platform-core/src/asset-load
 import { nodeAssetLoader } from "../../../packages/platform-core/src/node-asset-loader.js";
 import { GUEST_HTML_SECURITY_HEADERS } from "../../../packages/platform-core/src/security-headers.js";
 import { createGuestShell, type StaticAsset } from "./guest-shell.js";
+import { createCommerceRouteModule } from "./commerce-route-module.js";
+import { createCommercePack } from "../../../domains/commerce/src/index.js";
+import { applySchemaMigrations } from "../../../packages/platform-core/src/schema-migrations.js";
 import {
   discoveryArtifactToA2UI,
   createWeaverWebAgentAdapter,
@@ -1968,8 +1971,29 @@ export interface LocalGuestServerHandle {
   close(): Promise<void>;
 }
 
+/**
+ * Whether this handler composes the commerce domain on its database. "local" (the default) applies the commerce
+ * migrations and mounts the commerce routes. "disabled" does neither: the Shortlet Worker uses it, because commerce
+ * data lives in its own object (ADR 0101), and applying the commerce ledger to the Shortlet database collides with
+ * the Shortlet migration ledger.
+ */
+export const GUEST_COMMERCE_COMPOSITION = { local: "local", disabled: "disabled" } as const;
+export type GuestCommerceComposition = (typeof GUEST_COMMERCE_COMPOSITION)[keyof typeof GUEST_COMMERCE_COMPOSITION];
+export const DEFAULT_GUEST_COMMERCE_COMPOSITION: GuestCommerceComposition = GUEST_COMMERCE_COMPOSITION.local;
+/** The commerce pack's domain id (domains/commerce/src/index.ts), which the disabled composition refuses. */
+const COMMERCE_DOMAIN_PACK_ID = "commerce";
+
+/** Fails closed: a missing value takes the default; any other value that is not a known composition throws. */
+function resolveGuestCommerceComposition(value: unknown): GuestCommerceComposition {
+  if (value === undefined) return DEFAULT_GUEST_COMMERCE_COMPOSITION;
+  if (value === GUEST_COMMERCE_COMPOSITION.local || value === GUEST_COMMERCE_COMPOSITION.disabled) return value;
+  throw new Error('commerce must be "local" or "disabled"');
+}
+
 export interface GuestRequestHandlerOptions {
   environment?: LocalGuestEnvironment;
+  /** Commerce composition on this handler's database. Default: "local". The Shortlet Worker passes "disabled" (ADR 0101). */
+  commerce?: GuestCommerceComposition;
   clientScriptPath?: string;
   /** Slice 09a: the bundles/CSS the handler serves; the Node default is `nodeAssetLoader()` (no import-time reads). */
   assets?: AssetLoader;
@@ -2049,6 +2073,14 @@ export function createGuestRequestHandler(
     throw new Error(
       "sessionRuntimeIdleMs must be a positive whole number of milliseconds",
     );
+  }
+  const commerceComposition = resolveGuestCommerceComposition(options.commerce);
+  // ADR 0101: a handler that composes no commerce must not be given the commerce pack either.
+  if (
+    commerceComposition === GUEST_COMMERCE_COMPOSITION.disabled &&
+    (options.additionalPacks ?? []).some((pack) => pack.id === COMMERCE_DOMAIN_PACK_ID)
+  ) {
+    throw new Error("commerce is disabled, so no commerce domain pack may be added");
   }
   const rawMode = options.conciergeMode ?? process.env.CONCIERGE_MODE;
   const mode:
@@ -4588,10 +4620,20 @@ export function createGuestRequestHandler(
       res.end("Not Found");
     };
 
+  // Local composition only. Commerce public routes read the tracking-attempts table, which only the commerce migrations
+  // create (issue 27). The Shortlet Worker passes commerce: "disabled", so its object never runs the commerce ledger (ADR 0101).
+  const commerceRouteModules: ReturnType<typeof createCommerceRouteModule>[] = [];
+  if (commerceComposition === GUEST_COMMERCE_COMPOSITION.local) {
+    const commerceClock = () => defaultApp.environment.clock();
+    const commercePack = createCommercePack({ database: defaultApp.environment.database, clock: commerceClock });
+    applySchemaMigrations(defaultApp.environment.database, commercePack.migrations, commerceClock().toISOString());
+    commerceRouteModules.push(createCommerceRouteModule(commercePack));
+  }
   const shell = createGuestShell({
     assets,
     staticAssets: SHORTLET_STATIC_ASSETS,
     routeModules: [
+      ...commerceRouteModules,
       {
         name: "shortlet",
         tryHandle: async (req, res) => {

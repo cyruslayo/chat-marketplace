@@ -13,7 +13,7 @@ import { createConciergeModelClient } from "../../local-guest/src/assistant/conc
 import { ModelCallBudget } from "../../local-guest/src/assistant/model-call-budget.js";
 import { LocalGuestEnvironment } from "../../local-guest/src/fixture.js";
 import { GUEST_CODE_HASHING_KEY_ENV, loadGuestAccountComposition } from "../../local-guest/src/guest-account-composition.js";
-import { createGuestRequestHandler } from "../../local-guest/src/guest-server.js";
+import { GUEST_COMMERCE_COMPOSITION, createGuestRequestHandler } from "../../local-guest/src/guest-server.js";
 import { LocalApartmentOwnerEnvironment, createOwnerRequestHandler } from "../../local-owner/src/index.js";
 import { ResendEmailSender } from "../../pilot/src/notifications/email-sender.js";
 import { PilotNotifier } from "../../pilot/src/notifications/pilot-notifier.js";
@@ -290,6 +290,8 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
       conciergeMode: configuration.concierge.mode,
       ...(modelClient ? { modelClient } : {}),
       ...(configuration.betaInviteCode === null ? {} : { betaInviteCode: configuration.betaInviteCode }),
+      // ADR 0101: commerce data lives only in the commerce object, so the Shortlet object runs no commerce ledger or routes.
+      commerce: GUEST_COMMERCE_COMPOSITION.disabled,
       production: true,
       publicOrigin: configuration.publicOrigin,
       secureCookie: true,

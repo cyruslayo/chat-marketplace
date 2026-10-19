@@ -10,9 +10,15 @@ import { createCommercePack } from "../../domains/commerce/src/index.js";
 import { COMMERCE_CHECKOUT_CONFIRM_ACTION } from "../../apps/web-agent/src/commerce-presentation.js";
 import { checkoutConfirmContext } from "../../test/helpers/a2ui-surface-integrity.js";
 
-// Run from the worktree root: `npx tsx .scratch/guest-ui-consistency/capture-23.ts`.
+// Usage (run from the worktree root): `npx tsx .scratch/guest-ui-consistency/capture-23.ts <output-dir>`.
+// The output directory is required, so a bare run cannot overwrite issue 23 evidence. Issue 27 uses screenshots/27/checkout-23.
+// screenshots/23-checkout-fix is issue 23 evidence: pass it only to reproduce issue 23 deliberately.
 // Earlier captures stay as evidence: screenshots/23 (original) and screenshots/23-root-fix (before the checkout fix).
-const output = "screenshots/23-checkout-fix";
+const output = process.argv[2];
+if (!output) {
+  console.error("Usage: npx tsx .scratch/guest-ui-consistency/capture-23.ts <output-dir>   (for example screenshots/27/checkout-23)");
+  process.exit(2);
+}
 mkdirSync(output, { recursive: true });
 
 const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:", clock: () => new Date("2026-10-18T10:00:00Z") });
@@ -48,11 +54,11 @@ if (!started.ok) throw new Error(`Could not start Commerce task: ${JSON.stringif
 
 // Checkout captures: the proposed state, then the result of the real confirm event (payment_unavailable).
 const captures = [
-  { kind: "discovery", prompt: "Search for a cotton tote", expected: ["Northstar Cotton Tote", "NGN 8,500", "17 available"], summary: "Products" },
-  { kind: "cart", prompt: "Add this to my cart", expected: ["Northstar Cotton Tote", "2 × NGN 8,500"], summary: "Harbour Goods" },
+  { kind: "discovery", prompt: "Search for a cotton tote", expected: ["Northstar Cotton Tote", "₦8,500", "17 available"], summary: "Products" },
+  { kind: "cart", prompt: "Add this to my cart", expected: ["Northstar Cotton Tote", "2 × ₦8,500"], summary: "Harbour Goods" },
   { kind: "order", prompt: "Track my order", expected: [order.publicCode, "Pending Verification"], summary: "Order status" },
-  { kind: "checkout-proposed", prompt: "Prepare checkout", expected: ["Checkout · Harbour Goods", "Total: NGN 18,200", "Confirm checkout"], summary: "Checkout" },
-  { kind: "checkout-result", prompt: "", expected: ["Checkout · Harbour Goods", "Total: NGN 18,200", "Payment unavailable. No order or payment was created."], summary: "Checkout result" },
+  { kind: "checkout-proposed", prompt: "Prepare checkout", expected: ["Checkout · Harbour Goods", "Total: ₦18,200", "Confirm checkout"], summary: "Checkout" },
+  { kind: "checkout-result", prompt: "", expected: ["Checkout · Harbour Goods", "Total: ₦18,200", "Payment unavailable. No order or payment was created."], summary: "Checkout result" },
 ] as const;
 
 type ProjectedSurface = { readonly surfaceId: string; readonly a2uiMessages: readonly unknown[] };
