@@ -16,7 +16,8 @@ const { concurrent: otherFiles, browser: browserFiles, extra } = planTestPhases(
 function phase(label, list, options) {
   if (list.length === 0) return 0;
   console.log(`\n# ${label}: ${list.length} files`);
-  const result = spawnSync(process.execPath, [tsx, "--test", ...options, ...extra, ...list], { cwd: root, stdio: "inherit" });
+  // NODE_ENV defaults to test so the local guest may use its named test-only payment reference key (issue 24 keyed hash).
+  const result = spawnSync(process.execPath, [tsx, "--test", ...options, ...extra, ...list], { cwd: root, stdio: "inherit", env: { ...process.env, NODE_ENV: process.env.NODE_ENV ?? "test" } });
   if (result.error) throw result.error;
   return result.status ?? 1;
 }

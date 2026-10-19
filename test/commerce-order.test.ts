@@ -4,6 +4,7 @@ import { NodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-da
 import { applySchemaMigrations, schemaVersion } from "../packages/platform-core/src/schema-migrations.js";
 import { createCommercePack, parseCreateOrderInput } from "../domains/commerce/src/index.js";
 import { normalizePhone } from "../domains/commerce/src/order.js";
+import { commerceMigrationsWithCutover } from "../apps/cloudflare/src/schema.js";
 import { paymentReferenceHash, type PaymentReferenceKeys } from "../domains/commerce/src/payment-reference.js";
 import { createCommerceFixture } from "./helpers/commerce-fixture.js";
 import { COMMERCE_TEST_CLOCK as CLOCK, COMMERCE_TEST_REFERENCE_KEYS, commerceMigrations, migrateCommerceDatabase } from "./helpers/commerce-database.js";
@@ -328,11 +329,13 @@ test("Upgrade: a version-5 database with an order and tracking attempts is refus
   database.close();
 });
 
-test("Upgrade: a version-5 database with no orders applies the keyed-hash rebuild, and the tracking table keeps its foreign key", () => {
+test("Upgrade: a version-5 database with no orders applies the keyed-hash rebuild and the cutover flag, and the tracking table keeps its foreign key", () => {
   const { database, migrations } = versionFiveDatabase();
-  applySchemaMigrations(database, migrations, CLOCK().toISOString());
+  const withCutover = commerceMigrationsWithCutover(migrations);
+  applySchemaMigrations(database, withCutover, CLOCK().toISOString());
 
-  assert.equal(schemaVersion(database), migrations.length);
+  assert.equal(schemaVersion(database), withCutover.length);
+  assert.equal(withCutover.length, migrations.length + 1);
   const foreignKeys = database.prepare("PRAGMA foreign_key_list(merchant_order_tracking_attempts)").all();
   assert.equal(foreignKeys.some(key => key.table === "merchant_orders" && key.to === "public_code"), true);
   const orderColumns = database.prepare("PRAGMA table_info(merchant_orders)").all().map(column => column.name);
