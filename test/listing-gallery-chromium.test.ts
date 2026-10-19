@@ -116,7 +116,7 @@ test("AC3 — Tapping a photo, or \"Show all\", opens a full-screen viewer at th
     const context = await createListingPhotoContext(PHOTOS, width, 900);
     try {
       await openStayPage(context);
-      const viewer = `(() => { const dialog = document.querySelector('dialog.listing-viewer'); const rect = dialog?.getBoundingClientRect(); return { open: Boolean(dialog?.open), modal: Boolean(dialog?.matches(':modal')), count: dialog?.querySelector('.listing-viewer__count')?.textContent ?? '', full: rect ? rect.width >= innerWidth - 1 && rect.height >= innerHeight - 1 : false, prevDisabled: dialog?.querySelector('.listing-viewer__prev')?.disabled, nextDisabled: dialog?.querySelector('.listing-viewer__next')?.disabled, active: document.activeElement?.className ?? '' }; })()`;
+      const viewer = `(() => { const dialog = document.querySelector('dialog.listing-viewer'); const rect = dialog?.getBoundingClientRect(); return { open: Boolean(dialog?.open), modal: Boolean(dialog?.matches(':modal')), count: dialog?.querySelector('.listing-viewer__count')?.textContent ?? '', full: rect ? rect.width >= innerWidth - 1 && rect.height >= innerHeight - 1 : false, prevDisabled: dialog?.querySelector('.listing-viewer__prev')?.getAttribute('aria-disabled') === 'true', nextDisabled: dialog?.querySelector('.listing-viewer__next')?.getAttribute('aria-disabled') === 'true', active: document.activeElement?.className ?? '' }; })()`;
       type Viewer = { open: boolean; modal: boolean; count: string; full: boolean; prevDisabled: boolean; nextDisabled: boolean; active: string };
       // No viewer (and no extra image requests) until it is first opened.
       assert.equal(await context.tab.evaluate<boolean>("document.querySelector('dialog.listing-viewer') === null"), true);
@@ -183,25 +183,46 @@ test("AC3 — Tapping a photo, or \"Show all\", opens a full-screen viewer at th
   }
 });
 
-test("AC6 — In the viewer, Next, Previous, Home and End leave the \"X of N\" count and the buttons on the photo asked for, also once the smooth scroll has settled (not an intermediate photo passed on the way)", async () => {
+test("AC3 — With the viewer open, the previous and next buttons and the arrow, Home and End keys move the \"X of N\" count to the photo asked for, also when presses interrupt a smooth scroll in progress, and the count and buttons stay on that photo once the scroll settles", async () => {
   const context = await createListingPhotoContext(PHOTOS, 390, 900);
   try {
     await openStayPage(context);
     await context.tab.evaluate("document.querySelectorAll('.listing-gallery__open')[0].click()");
     await context.tab.waitForFunction("document.querySelector('dialog.listing-viewer')?.open === true", 5000);
     const settled = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 1500));
-    const state = "(() => { const dialog = document.querySelector('dialog.listing-viewer'); return { count: dialog.querySelector('.listing-viewer__count').textContent, prevDisabled: dialog.querySelector('.listing-viewer__prev').disabled, nextDisabled: dialog.querySelector('.listing-viewer__next').disabled }; })()";
+    const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+    const state = "(() => { const dialog = document.querySelector('dialog.listing-viewer'); return { count: dialog.querySelector('.listing-viewer__count').textContent, prevDisabled: dialog.querySelector('.listing-viewer__prev')?.getAttribute('aria-disabled') === 'true', nextDisabled: dialog.querySelector('.listing-viewer__next')?.getAttribute('aria-disabled') === 'true' }; })()";
+    const press = (key: string) => context.tab.evaluate(`document.querySelector('dialog.listing-viewer').dispatchEvent(new KeyboardEvent('keydown', { key: '${key}', bubbles: true }))`);
     const steps: ReadonlyArray<readonly [string, string, boolean, boolean]> = [
       ["End", "7 of 7", false, true],
       ["Home", "1 of 7", true, false],
       ["End", "7 of 7", false, true],
       ["ArrowLeft", "6 of 7", false, false]
     ];
+    // Next pressed while End is still scrolling past the photos in between: the press steps from the photo asked for (the
+    // last one, so it stays there), not from the photo the scroll happens to be passing.
+    await press("Home");
+    await settled();
+    await press("End");
+    await context.tab.waitForFunction("(() => { const t = document.querySelector('.listing-viewer__track'); return t.scrollLeft >= 2.5 * t.clientWidth && document.querySelector('.listing-viewer__count').textContent !== '7 of 7'; })()", 5000);
+    await press("ArrowRight");
+    await settled();
+    assert.equal(await context.tab.evaluate<string>("document.querySelector('.listing-viewer__count').textContent"), "7 of 7", "Next during End");
+    // The live region is written once the scroll settles, and the visible count is not a live region.
+    assert.equal(await context.tab.evaluate<string>("document.querySelector('dialog.listing-viewer [aria-live]').textContent"), "7 of 7");
+    assert.equal(await context.tab.evaluate<boolean>("document.querySelector('.listing-viewer__count').hasAttribute('aria-live')"), false);
     for (const [key, count, prevDisabled, nextDisabled] of steps) {
-      await context.tab.evaluate(`document.querySelector('dialog.listing-viewer').dispatchEvent(new KeyboardEvent('keydown', { key: '${key}', bubbles: true }))`);
+      await press(key);
       await settled();
       assert.deepEqual(await context.tab.evaluate<{ count: string; prevDisabled: boolean; nextDisabled: boolean }>(state), { count, prevDisabled, nextDisabled }, key);
     }
+    // Presses that interrupt a smooth scroll still in flight: each one steps from the photo asked for, not the one passed.
+    for (const key of ["Home", "End", "Home", "End", "ArrowLeft"]) {
+      await press(key);
+      await pause(60);
+    }
+    await settled();
+    assert.deepEqual(await context.tab.evaluate<{ count: string; prevDisabled: boolean; nextDisabled: boolean }>(state), { count: "6 of 7", prevDisabled: false, nextDisabled: false }, "after interrupted presses");
   } finally {
     await context.close();
   }

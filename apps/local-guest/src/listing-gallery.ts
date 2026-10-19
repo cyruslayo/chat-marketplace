@@ -76,7 +76,7 @@ export const LISTING_GALLERY_STYLE = [
   ".listing-viewer__item img{display:block;max-width:100%;max-height:100%;width:auto;height:auto;min-height:0;object-fit:contain}",
   ".listing-viewer button{min-width:var(--control-min-target);min-height:var(--control-min-target);border:1px solid currentColor;border-radius:var(--radius-pill);background:var(--color-surface-viewer);color:var(--color-text-on-viewer);font-size:1.25rem;cursor:pointer}",
   ".listing-viewer button:focus-visible{outline:3px solid var(--color-focus);outline-offset:2px}",
-  ".listing-viewer button:disabled{opacity:.35;cursor:default}",
+  ".listing-viewer button:disabled,.listing-viewer button[aria-disabled=\"true\"]{opacity:.35;cursor:default}",
   ".listing-viewer__prev,.listing-viewer__next{position:absolute;top:50%;transform:translateY(-50%)}",
   ".listing-viewer__prev{inset-inline-start:var(--space-2)}",
   ".listing-viewer__next{inset-inline-end:var(--space-2)}",
@@ -209,7 +209,6 @@ function createViewer(doc: Document, title: string, photos: readonly GalleryPhot
   bar.className = "listing-viewer__bar";
   const counter = doc.createElement("p");
   counter.className = "listing-viewer__count";
-  counter.setAttribute("aria-live", "polite");
   const close = doc.createElement("button");
   close.type = "button";
   close.className = "listing-viewer__close";
@@ -242,7 +241,11 @@ function createViewer(doc: Document, title: string, photos: readonly GalleryPhot
   next.className = "listing-viewer__next";
   next.setAttribute("aria-label", "Next photo");
   next.textContent = "›";
-  dialog.append(bar, track, prev, next);
+  // Screen readers hear the count once a scroll settles, not on every photo the scroll passes.
+  const announcer = doc.createElement("p");
+  announcer.className = "ui-sr-only";
+  announcer.setAttribute("aria-live", "polite");
+  dialog.append(bar, track, prev, next, announcer);
   doc.body.append(dialog);
 
   let current = 0;
@@ -250,35 +253,62 @@ function createViewer(doc: Document, title: string, photos: readonly GalleryPhot
   // The photo a programmatic scroll is heading for (Next, Previous, Home, End), or null. Steps are taken from it, so two
   // quick presses move two photos even while the first smooth scroll is still passing the photos in between.
   let pendingIndex: number | null = null;
+  // A scroll position within this many pixels of a photo's start counts as being on that photo.
+  const SCROLL_SETTLE_TOLERANCE_PX = 2;
+  const clampIndex = (index: number) => Math.max(0, Math.min(count - 1, index));
+  // The visible count follows the track. Endpoints use aria-disabled rather than disabled, so keyboard focus stays on them.
   const show = (index: number) => {
     counter.textContent = `${index + 1} of ${count}`;
-    prev.disabled = index === 0;
-    next.disabled = index === count - 1;
+    prev.setAttribute("aria-disabled", String(index === 0));
+    next.setAttribute("aria-disabled", String(index === count - 1));
+  };
+  const announce = () => {
+    announcer.textContent = counter.textContent;
+  };
+  const settle = () => {
+    pendingIndex = null;
+    announce();
   };
   const stepBase = () => pendingIndex ?? current;
-  // The count and buttons follow where the track is, on every scroll event, rather than intersection reports: a smooth
-  // scroll passes intermediate photos, and a report from one of them arriving last would leave the count on the wrong
-  // photo. The final scroll event reports the position the track stopped at, so the final state is that position.
+  // The count follows the scroll position on every scroll event, rather than intersection reports: a smooth scroll passes
+  // intermediate photos, and a report from one of them arriving last would leave the count on the wrong photo.
   track.addEventListener("scroll", () => {
-    current = Math.max(0, Math.min(count - 1, Math.round(track.scrollLeft / Math.max(1, track.clientWidth))));
+    current = clampIndex(Math.round(track.scrollLeft / Math.max(1, track.clientWidth)));
     show(current);
-    if (pendingIndex !== null && Math.abs(track.scrollLeft - pendingIndex * track.clientWidth) < 2) pendingIndex = null;
+    if (pendingIndex !== null && Math.abs(track.scrollLeft - pendingIndex * track.clientWidth) < SCROLL_SETTLE_TOLERANCE_PX) settle();
   }, { passive: true });
+  // A scroll that ends while a programmatic one is still pending may be an earlier scroll ending: only an end with nothing
+  // pending announces, so a stale end cannot clear the target.
+  track.addEventListener("scrollend", () => {
+    if (pendingIndex === null) announce();
+  });
   // A swipe or wheel gesture takes over from any programmatic scroll still in flight.
   for (const gesture of ["pointerdown", "touchstart", "wheel"] as const) track.addEventListener(gesture, () => { pendingIndex = null; }, { passive: true });
   const go = (index: number) => {
-    const target = Math.max(0, Math.min(count - 1, index));
+    const target = clampIndex(index);
+    if (Math.abs(track.scrollLeft - target * track.clientWidth) < SCROLL_SETTLE_TOLERANCE_PX) {
+      // The track is already there: no scroll will run, so nothing is pending.
+      pendingIndex = null;
+      current = target;
+      show(target);
+      announce();
+      return;
+    }
     pendingIndex = target;
     show(target);
     track.scrollTo({ left: target * track.clientWidth });
   };
+  // Endpoints do not move: a step past the first or last photo returns without scrolling.
+  const stepTo = (index: number) => {
+    if (index >= 0 && index < count) go(index);
+  };
 
-  prev.addEventListener("click", () => go(stepBase() - 1));
-  next.addEventListener("click", () => go(stepBase() + 1));
+  prev.addEventListener("click", () => stepTo(stepBase() - 1));
+  next.addEventListener("click", () => stepTo(stepBase() + 1));
   close.addEventListener("click", () => dialog.close());
   dialog.addEventListener("keydown", (event) => {
-    if (event.key === "ArrowRight") { event.preventDefault(); go(stepBase() + 1); }
-    else if (event.key === "ArrowLeft") { event.preventDefault(); go(stepBase() - 1); }
+    if (event.key === "ArrowRight") { event.preventDefault(); stepTo(stepBase() + 1); }
+    else if (event.key === "ArrowLeft") { event.preventDefault(); stepTo(stepBase() - 1); }
     else if (event.key === "Home") { event.preventDefault(); go(0); }
     else if (event.key === "End") { event.preventDefault(); go(count - 1); }
   });
