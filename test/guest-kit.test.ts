@@ -171,3 +171,12 @@ test("AC6: pill components use --radius-pill, never --radius-round", async () =>
   assert.doesNotMatch(kit, /var\(--radius-round\)/);
   assert.match(css, /:where\(\.guest-editorial \.ui-chip, \.guest-editorial \.ui-button, \.guest-editorial \.ui-status\) \{ border-radius: var\(--radius-pill\); \}/);
 });
+
+test("The default app bar without a brand is byte-identical to the Shortlet bar it replaces", () => {
+  const expected = `<header class="ui-appbar"><a class="ui-icon-button" href="/" aria-label="Back to your conversation">${icon("arrow-left")}</a><a class="ui-appbar__brand" href="/">Shortlet</a><span class="ui-appbar__grow"></span></header>`;
+  assert.equal(appBarHtml({ backHref: "/", backLabel: "Back to your conversation" }), expected);
+});
+
+test("A store brand is escaped in the app bar", () => {
+  assert.match(appBarHtml({ backHref: "/", backLabel: "Back", brand: `Daily <Goods>` }), /<a class="ui-appbar__brand" href="\/">Daily &lt;Goods&gt;<\/a>/);
+});

@@ -77,7 +77,7 @@ The frontier is the first slice in the table that is open, unblocked and unclaim
 | 25b | [Merchant back office: delivery zones and order fulfilment](issues/25b-merchant-back-office-delivery-and-orders.md) | task | claimed | 25a, 21 | none |
 | **E: Concierge UX** | | | | | |
 | 26 | [Shell task rail, vertical starters, domain chips; events routed to their task](issues/26-shell-task-rail-and-vertical-starters.md) | task | claimed | 13 | 27 |
-| 27 | [Store page and order tracking page from the same presentation helpers as chat](issues/27-store-page-and-order-tracking.md) | task | ready-for-agent | 23, 14b | none |
+| 27 | [Store page and order tracking page from the same presentation helpers as chat](issues/27-store-page-and-order-tracking.md) | task | resolved | 23, 14b | none |
 | **F: ChatGPT** | | | | | |
 | 28 | [Research: ChatGPT app submission for commerce (link-out checkout, Nigeria, review checklist)](issues/28-research-chatgpt-commerce-submission.md) | research | resolved | 03 | 29 |
 | 29 | [Commerce MCP server on Cloudflare: read tools, checkout link-out, widgets from presentations](issues/29-commerce-mcp-server-on-cloudflare.md) | task | ready-for-agent | 23, 24, 28 | none |
@@ -125,3 +125,4 @@ Update these when a slice changes them.
 - **Consolidation** → lanes A, B, C(15–17), D(18–25b) and E(26) are merged into `main`; the commerce pack was widened (`label`/`starterDescription`/`taskSummary`) to satisfy the slice-26 `AssistantDomainPack` interface. Remaining open slices: 22, 23, 24, 27.
 - **28** → [issue 28 `## Answer`](issues/28-research-chatgpt-commerce-submission.md#answer) — external (link-out) checkout is the recommended path; Paystack is not an embedded-checkout PSP, so slice 29 uses read tools + a Paystack checkout link-out; physical-goods only; country allowlist via `publication.countries`; four HTTPS legal URLs and a dashboard-entered no-MFA reviewer account; submission checklist listed. Unblocks 29.
 - **23** → [issue 23 `## Answer`](issues/23-commerce-agent-tools-and-catalogues.md#answer) — commerce discovery, cart and order catalogues (`commerce-*/v1`) and presentations, the six commerce pack tools, and the checkout proposal and confirm command. Merged to `main` at `bba2a73` (local, not pushed).
+- **27** → [issue 27 `## Answer`](issues/27-store-page-and-order-tracking.md#answer) — commerce store page, offer page, cart and checkout handoff, and order tracking (public code plus matching phone, 5 attempts / 15 minutes lock) from the same presentation helpers as chat. Merged to local `main` at `23879d7` (not pushed).

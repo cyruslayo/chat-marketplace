@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import type { SqlDatabase, SqlRow } from "../../../packages/platform-core/src/sql-database.js";
 import {
   NEXT_ORDER_STATUSES,
@@ -40,13 +41,53 @@ function readOrder(row: SqlRow): MerchantOrder {
   );
 }
 
+/**
+ * The Merchant Order repository: port of instastore `create_store_order` and `set_order_status`
+ * (0017_payment_verification_fact.sql) onto the commerce Product/Offer/Variant model.
+ */
+/** The only order facts a public tracking lookup may return (ADR 0075): no customer, address, payment or item data. */
+export interface PublicOrderTracking {
+  readonly publicCode: string;
+  readonly status: MerchantOrderStatus;
+  readonly updatedAt: string;
+}
+
+// Implementation constants, not traced to an ADR: digest inputs that no normalised phone can equal. A blank phone and a
+// missing order each hash one of these, so the compare runs the same way for every lookup.
+const EMPTY_PHONE_MARKER = "\u0000empty-phone";
+const NO_ORDER_MARKER = "\u0000no-order";
+
+/** Tracking lock policy (ADR 0075 abuse limit): decided by the user on 18 Oct 2026 for issue 27, not an ADR value. */
+export interface OrderTrackingPolicy {
+  /** Wrong-phone attempts for one public code before its tracking is locked. */
+  readonly maxFailedAttempts?: number;
+  /** The lock window, which starts at the first failed attempt and does not extend while locked. */
+  readonly windowMs?: number;
+}
+const DEFAULT_MAX_FAILED_TRACKING_ATTEMPTS = 5;
+const DEFAULT_TRACKING_WINDOW_MS = 15 * 60_000;
+
+function positiveIntegerOption(value: number, field: string): number {
+  if (!Number.isSafeInteger(value) || value <= 0) throw new RangeError(`${field} must be a positive integer`);
+  return value;
+}
+
+function phoneDigest(value: string): Buffer {
+  return createHash("sha256").update(value, "utf8").digest();
+}
+
 export class CommerceOrders {
+  private readonly maxFailedTrackingAttempts: number;
+  private readonly trackingWindowMs: number;
+
   /**
-   * The merchant_orders table comes only from the migration ledger (issue 24 review 3). The keys are validated here, so a
-   * pack cannot be built without a usable payment reference key (fail closed, user decision 18 Oct 2026).
+   * The merchant_orders and tracking attempts tables come only from the migration ledger (issue 24 review 3, issue 27). The
+   * keys are validated here, so a pack cannot be built without a usable payment reference key (fail closed, user decision 18 Oct 2026).
    */
-  constructor(private readonly database: SqlDatabase, private readonly clock: () => Date, private readonly keys: PaymentReferenceKeys) {
+  constructor(private readonly database: SqlDatabase, private readonly clock: () => Date, private readonly keys: PaymentReferenceKeys, trackingPolicy: OrderTrackingPolicy = {}) {
     assertPaymentReferenceKeys(keys);
+    this.maxFailedTrackingAttempts = positiveIntegerOption(trackingPolicy.maxFailedAttempts ?? DEFAULT_MAX_FAILED_TRACKING_ATTEMPTS, "maxFailedAttempts");
+    this.trackingWindowMs = positiveIntegerOption(trackingPolicy.windowMs ?? DEFAULT_TRACKING_WINDOW_MS, "windowMs");
   }
 
   /**
@@ -68,7 +109,7 @@ export class CommerceOrders {
         .prepare("SELECT * FROM merchant_orders WHERE payment_reference_hash = $paymentReferenceHash")
         .get({ $paymentReferenceHash: candidate });
       if (existing) {
-        if (String(existing.customer_phone) === normalizedPhone) return readOrder(existing);
+        if (normalizePhone(String(existing.customer_phone)) === normalizedPhone) return readOrder(existing);
         throw new Error("This payment reference has already been used.");
       }
     }
@@ -155,6 +196,56 @@ export class CommerceOrders {
   orderByPublicCode(publicCode: string): MerchantOrder | null {
     const row = this.database.prepare("SELECT * FROM merchant_orders WHERE public_code = $publicCode").get({ $publicCode: publicCode });
     return row ? readOrder(row) : null;
+  }
+
+  /**
+   * Public order tracking (ADR 0075): the code and the phone used for the order must both match. Every call normalises both
+   * phones, hashes both, and runs one constant-time compare with no early return, whether the order is missing or the phone is
+   * empty. Only the minimal projection is returned.
+   */
+  trackOrder(publicCode: string, phone: string): PublicOrderTracking | null {
+    const code = publicCode.trim();
+    const order = this.orderByPublicCode(code);
+    const submitted = normalizePhone(phone);
+    const stored = normalizePhone(order ? order.customerPhone : "");
+    const submittedDigest = phoneDigest(submitted === "" ? EMPTY_PHONE_MARKER : submitted);
+    const storedDigest = phoneDigest(order && stored !== "" ? stored : NO_ORDER_MARKER);
+    const phonesEqual = timingSafeEqual(submittedDigest, storedDigest);
+    const matches = order !== null && submitted !== "" && stored !== "" && phonesEqual;
+
+    // Attempts are recorded only for codes that exist, so unknown codes never create rows (ADR 0075). A locked code returns
+    // null whether or not the phone is right, and a locked lookup writes nothing.
+    return this.database.transaction(() => {
+      if (order === null) return null;
+      const now = this.clock().getTime();
+      const attempt = this.#trackingAttempt(order.publicCode);
+      // Lazy expiry: an attempt window that has ended no longer counts, whatever the stored row says.
+      const current = attempt !== null && now < attempt.windowStartedAt + this.trackingWindowMs ? attempt : null;
+      if (current !== null && current.failedAttempts >= this.maxFailedTrackingAttempts) return null;
+
+      if (matches) {
+        this.database.prepare("DELETE FROM merchant_order_tracking_attempts WHERE public_code = $publicCode").run({ $publicCode: order.publicCode });
+        return { publicCode: order.publicCode, status: order.status, updatedAt: order.updatedAt };
+      }
+
+      const failedAttempts = (current?.failedAttempts ?? 0) + 1;
+      const windowStartedAt = current?.windowStartedAt ?? now;
+      this.database
+        .prepare(
+          `INSERT INTO merchant_order_tracking_attempts (public_code, failed_attempts, window_started_at)
+           VALUES ($publicCode, $failedAttempts, $windowStartedAt)
+           ON CONFLICT(public_code) DO UPDATE SET failed_attempts = excluded.failed_attempts, window_started_at = excluded.window_started_at`,
+        )
+        .run({ $publicCode: order.publicCode, $failedAttempts: failedAttempts, $windowStartedAt: new Date(windowStartedAt).toISOString() });
+      return null;
+    });
+  }
+
+  #trackingAttempt(publicCode: string): { readonly failedAttempts: number; readonly windowStartedAt: number } | null {
+    const row = this.database
+      .prepare("SELECT failed_attempts, window_started_at FROM merchant_order_tracking_attempts WHERE public_code = $publicCode")
+      .get({ $publicCode: publicCode });
+    return row ? { failedAttempts: Number(row.failed_attempts), windowStartedAt: Date.parse(String(row.window_started_at)) } : null;
   }
 
   ordersForStore(storeId: string): readonly MerchantOrder[] {

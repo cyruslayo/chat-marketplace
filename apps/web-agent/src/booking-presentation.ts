@@ -2,25 +2,13 @@ import { formatNgnKobo } from "./discovery-a2ui.js";
 import type { CardPaymentStatus } from "../../web/src/card-payment-artifact.js";
 import type { A2UIComponent } from "@cylayo/weaver-core";
 import { GUEST_FACT_LABELS, GUEST_GLOSSARY, guestFact, guestReservationStatus } from "./guest-content.js";
+import { formatWatDateTime } from "../../web/src/ui-kit.js";
 
 export type BookingProgressStage = "request" | "operator-review" | "offer" | "payment" | "payment-processing" | "confirmed";
 
+/** Shortlet's name for the neutral WAT formatter in ui-kit; the output is unchanged. */
 export function formatBookingDateTime(iso: string): string {
-  const date = new Date(iso);
-  if (!Number.isFinite(date.getTime())) return "time unavailable";
-  const parts = new Intl.DateTimeFormat("en-NG", {
-    timeZone: "Africa/Lagos",
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  }).formatToParts(date);
-  const value = (type: Intl.DateTimeFormatPartTypes): string => parts.find((part) => part.type === type)?.value ?? "";
-  const dateText = `${value("day")} ${value("month")} ${value("year")}`;
-  const timeText = `${value("hour")}:${value("minute")} ${value("dayPeriod")}`;
-  return `${timeText} WAT, ${dateText}`;
+  return formatWatDateTime(iso);
 }
 
 export function formatBookingDeadline(iso: string): string {

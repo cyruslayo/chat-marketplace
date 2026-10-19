@@ -3,6 +3,11 @@
 import { createServer, request } from "node:http";
 import { restartFixture, type RestartStage } from "../../test/helpers/guest-restart.js";
 import { TEST_MANUAL_ACCOUNT } from "../../test/helpers/guest-payment-page.js";
+import { LOCAL_TEST_ONLY_COMMERCE_REFERENCE_KEYS } from "../../apps/local-guest/src/commerce-reference-keys-local.js";
+
+// Local fixture only: the walkthrough sets the test-only payment reference key (user decision 18 Oct 2026), never a secret.
+process.env.COMMERCE_REFERENCE_HMAC_KEY ??= LOCAL_TEST_ONLY_COMMERCE_REFERENCE_KEYS.currentKey;
+process.env.COMMERCE_REFERENCE_HMAC_KEY_ID ??= LOCAL_TEST_ONLY_COMMERCE_REFERENCE_KEYS.currentKeyId;
 
 type Stop = { readonly port: number; readonly stage: RestartStage; readonly label: string; readonly start?: "manual-transfer" | "transfer" };
 

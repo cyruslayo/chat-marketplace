@@ -27,8 +27,8 @@ function stringArg(args: Record<string, unknown>, key: string): string {
   return value.trim();
 }
 
-function projectOffer(offer: { readonly offerId: string; readonly productName: string; readonly category: string; readonly description: string; readonly priceKobo: number; readonly stock: number }, limits: CommerceProjectionLimits) {
-  return { offerId: offer.offerId, productName: projectCommerceText(offer.productName, limits), category: projectCommerceText(offer.category, limits), description: projectCommerceText(offer.description, limits), priceKobo: offer.priceKobo, stock: offer.stock };
+function projectOffer(offer: { readonly offerId: string; readonly productName: string; readonly category: string; readonly description: string; readonly priceKobo: number; readonly stock: number; readonly storeName: string; readonly merchantName: string }, limits: CommerceProjectionLimits) {
+  return { offerId: offer.offerId, productName: projectCommerceText(offer.productName, limits), category: projectCommerceText(offer.category, limits), description: projectCommerceText(offer.description, limits), priceKobo: offer.priceKobo, stock: offer.stock, storeName: projectCommerceText(offer.storeName, limits), merchantName: projectCommerceText(offer.merchantName, limits) };
 }
 
 export function createCommerceAssistantPack(input: {
@@ -44,6 +44,12 @@ export function createCommerceAssistantPack(input: {
 }) {
   const projectionLimits = validateCommerceProjectionLimits(input.projectionLimits ?? DEFAULT_COMMERCE_PROJECTION_LIMITS);
   const commerce = createCommercePack(input);
+  // Fail closed (ADR 0001): an offer whose Store or verified Merchant cannot be resolved is not projected to chat.
+  const sellerOf = (storeId: string): { readonly storeName: string; readonly merchantName: string } | null => {
+    const store = commerce.directory.storeById(storeId);
+    const merchant = store ? commerce.directory.merchantById(store.merchantId) : null;
+    return store && merchant && merchant.status === "verified" ? { storeName: store.name, merchantName: merchant.name } : null;
+  };
   const checkout = new CommerceCheckoutCommandBoundary({
     database: input.database,
     audit: input.audit,
@@ -79,7 +85,7 @@ export function createCommerceAssistantPack(input: {
       if (name === "search_products") {
         const query = typeof args.query === "string" ? projectCommerceText(args.query, projectionLimits) : undefined;
         const category = typeof args.category === "string" ? projectCommerceText(args.category, projectionLimits) : undefined;
-        const offers = commerce.catalogue.searchOffers({ ...(query ? { query } : {}), ...(category ? { category } : {}) }).slice(0, projectionLimits.maxResults).map((offer) => projectOffer(offer, projectionLimits));
+        const offers = commerce.catalogue.searchOffers({ ...(query ? { query } : {}), ...(category ? { category } : {}) }).slice(0, projectionLimits.maxResults).flatMap((offer) => { const seller = sellerOf(offer.storeId); return seller ? [projectOffer({ ...offer, ...seller }, projectionLimits)] : []; });
         const surfaceId = `task-${taskId}:commerce-discovery:${crypto.randomUUID()}`;
         return { result: { offers, presentation: commerceDiscoveryPresentation(offers, projectionLimits) }, updatedTaskState: context.taskState, projectedSurface: { kind: "discovery", surfaceId, a2uiMessages: commerceDiscoverySurface(offers, surfaceId, projectionLimits) } };
       }
@@ -87,7 +93,9 @@ export function createCommerceAssistantPack(input: {
         const offerId = stringArg(args, "offerId");
         const offer = commerce.catalogue.searchOffers().find((item) => item.offerId === offerId);
         if (!offer) throw new Error("The Merchant Offer is unavailable.");
-        const safeOffer = projectOffer(offer, projectionLimits);
+        const seller = sellerOf(offer.storeId);
+        if (!seller) throw new Error("The Merchant Offer is unavailable.");
+        const safeOffer = projectOffer({ ...offer, ...seller }, projectionLimits);
         const surfaceId = `task-${taskId}:commerce-offer:${offer.offerId}`;
         return { result: { offer: safeOffer }, updatedTaskState: context.taskState, projectedSurface: { kind: "discovery", surfaceId, a2uiMessages: commerceDiscoverySurface([safeOffer], surfaceId, projectionLimits) } };
       }

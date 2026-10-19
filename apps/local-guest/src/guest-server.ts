@@ -23,6 +23,10 @@ import type { AssetLoader } from "../../../packages/platform-core/src/asset-load
 import { nodeAssetLoader } from "../../../packages/platform-core/src/node-asset-loader.js";
 import { GUEST_HTML_SECURITY_HEADERS } from "../../../packages/platform-core/src/security-headers.js";
 import { createGuestShell, type StaticAsset } from "./guest-shell.js";
+import { createCommerceRouteModule } from "./commerce-route-module.js";
+import { createCommercePack, type PaymentReferenceKeys } from "../../../domains/commerce/src/index.js";
+import { commerceReferenceKeysFromProcessEnv } from "./commerce-reference-keys-local.js";
+import { applySchemaMigrations } from "../../../packages/platform-core/src/schema-migrations.js";
 import {
   discoveryArtifactToA2UI,
   createWeaverWebAgentAdapter,
@@ -1968,6 +1972,8 @@ export interface LocalGuestServerHandle {
 }
 
 export interface GuestRequestHandlerOptions {
+  /** Payment reference keys for the commerce pack (user decision 18 Oct 2026). Omitted: read from the environment (see commerce-reference-keys-local). */
+  paymentReferenceKeys?: PaymentReferenceKeys;
   environment?: LocalGuestEnvironment;
   clientScriptPath?: string;
   /** Slice 09a: the bundles/CSS the handler serves; the Node default is `nodeAssetLoader()` (no import-time reads). */
@@ -4587,10 +4593,20 @@ export function createGuestRequestHandler(
       res.end("Not Found");
     };
 
+  // Commerce public routes read the tracking-attempts table, which only the commerce migrations create (issue 27).
+  const commerceClock = () => defaultApp.environment.clock();
+  const commercePack = createCommercePack({
+    database: defaultApp.environment.database,
+    clock: commerceClock,
+    paymentReferenceKeys: options.paymentReferenceKeys ?? commerceReferenceKeysFromProcessEnv(process.env, process.env.NODE_ENV),
+  });
+  applySchemaMigrations(defaultApp.environment.database, commercePack.migrations, commerceClock().toISOString());
+  const commerceRoutes = createCommerceRouteModule(commercePack);
   const shell = createGuestShell({
     assets,
     staticAssets: SHORTLET_STATIC_ASSETS,
     routeModules: [
+      commerceRoutes,
       {
         name: "shortlet",
         tryHandle: async (req, res) => {

@@ -4,6 +4,7 @@
  * Styling lives in apps/web/src/shortlet-foundations.css (`ui-*`). Every value is escaped here; helpers never build URLs.
  */
 import {
+  COMMERCE_GUEST_COPY,
   GUEST_ACCOUNT_COPY,
   GUEST_FACT_LABELS,
   GUEST_GLOSSARY,
@@ -11,6 +12,7 @@ import {
   GUEST_TASK_RAIL,
   GUEST_VERTICALS,
   UNIT_DETAIL_ABOUT_HEADING,
+  commerceSoldBy,
   stayTotalLabel,
 } from "../../web-agent/src/guest-content.js";
 import { formatNgnKobo } from "../../web-agent/src/discovery-a2ui.js";
@@ -37,6 +39,7 @@ import type { RequestScreenContent } from "../../web-agent/src/request-presentat
 import type { ConfirmationContent } from "../../web-agent/src/confirmation-presentation.js";
 import type { OfferScreenContent } from "../../web-agent/src/offer-presentation.js";
 import type { PaymentScreenContent } from "../../web-agent/src/payment-presentation.js";
+import type { CommerceOfferPresentation } from "../../web-agent/src/commerce-presentation.js";
 
 /** The absolute deadline in Africa/Lagos time (ADR 0078), without the "Pay by" prefix. */
 export function formatWAT(iso: string): string {
@@ -458,6 +461,19 @@ export function statusHtml(tone: KitStatusTone, text: string): string {
   return statusBadge(text, tone);
 }
 
+/**
+ * Store and offer pages consume the same bounded offer presentation used by the Commerce chat tool (ADR 0077).
+ * `href` links the card to its offer page on a store page. On the offer page itself (`null`) the card has no
+ * link back and no "View offer" action: the page's next step is the chat link beneath it.
+ */
+export function commerceOfferHtml(offer: CommerceOfferPresentation, href: string | null, options: { readonly omitHeading?: boolean } = {}): string {
+  const title = href === null ? escapeHtml(offer.productName) : `<a class="ui-link" href="${escapeHtml(href)}">${escapeHtml(offer.productName)}</a>`;
+  // A page that already shows the product name in its own heading omits the card heading.
+  const heading = options.omitHeading ? "" : `<h2>${title}</h2>`;
+  const action = href === null ? "" : `<a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(href)}">${COMMERCE_GUEST_COPY.viewOffer}</a>`;
+  return `<article class="ui-panel" data-commerce-offer="${escapeHtml(offer.offerId)}">${heading}<p class="ui-field__hint">${escapeHtml(offer.category)}</p><p class="ui-field__hint">${escapeHtml(commerceSoldBy(offer.merchantName, offer.storeName))}</p><p>${escapeHtml(offer.description)}</p><p class="ui-money-total">${formatNgnKobo(offer.priceKobo)}</p><p class="ui-field__hint">${escapeHtml(String(offer.stock))} ${COMMERCE_GUEST_COPY.available}</p>${action}</article>`;
+}
+
 // Hidden until /payment.js reveals it: without JavaScript the account number stays plain, selectable text (ADR 0080).
 export function copyAccountNumberHtml(accountNumber: string): string {
   return ` <button class="ui-button ui-button--secondary transfer-copy" type="button" data-copy-text="${escapeHtml(accountNumber)}" hidden>Copy account number</button><span class="ui-field__hint transfer-copy-status" role="status" data-copy-status></span>`;
@@ -632,6 +648,8 @@ export function appFrameHtml(input: {
   readonly threadId: string | null;
   readonly journey?: GuestJourney;
   readonly publicStep?: JourneyStep;
+  /** The top-bar name; omitted for the platform brand. */
+  readonly brand?: string;
 }): string {
   const backHref =
     input.threadId === null
@@ -642,7 +660,7 @@ export function appFrameHtml(input: {
     (input.publicStep === undefined
       ? undefined
       : projectJourney(input.publicStep));
-  return `${appBarHtml({ backHref, backLabel: BACK_LABEL })}${railHtml(journey)}`;
+  return `${appBarHtml({ backHref, backLabel: BACK_LABEL, ...(input.brand === undefined ? {} : { brand: input.brand }) })}${railHtml(journey)}`;
 }
 
 /** One task in the shell rail; `domainLabel` and `status` come from the pack. */

@@ -12,6 +12,25 @@ export function escapeHtml(value: string): string {
  * The single NGN display format (ADR-0078: money is stored in kobo and shown unambiguously).
  * Whole naira are shown without decimals; kobo appear only when non-zero (₦202,000, ₦18,450.50).
  */
+/** A timestamp in Africa/Lagos (WAT) for display, e.g. "11:00 am WAT, 18 Oct 2026". Neutral: any domain may use it (ADR 0078). */
+export function formatWatDateTime(iso: string): string {
+  const date = new Date(iso);
+  if (!Number.isFinite(date.getTime())) return "time unavailable";
+  const parts = new Intl.DateTimeFormat("en-NG", {
+    timeZone: "Africa/Lagos",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).formatToParts(date);
+  const value = (type: Intl.DateTimeFormatPartTypes): string => parts.find((part) => part.type === type)?.value ?? "";
+  const dateText = `${value("day")} ${value("month")} ${value("year")}`;
+  const timeText = `${value("hour")}:${value("minute")} ${value("dayPeriod")}`;
+  return `${timeText} WAT, ${dateText}`;
+}
+
 export function formatMoney(kobo: number): string {
   const sign = kobo < 0 ? "-" : "";
   const absoluteKobo = Math.abs(kobo);
@@ -59,11 +78,13 @@ export interface AppBarInput {
   readonly backHref: string;
   readonly backLabel: string;
   readonly action?: { readonly href: string; readonly label: string; readonly icon: IconName };
+  /** The name shown in the top bar; a merchant store passes its own name. Defaults to the platform name. */
+  readonly brand?: string;
 }
 
 export function appBarHtml(input: AppBarInput): string {
   const action = input.action === undefined ? "" : `<a class="ui-button ui-button--small ui-appbar__action" href="${escapeHtml(input.action.href)}">${icon(input.action.icon)}${escapeHtml(input.action.label)}</a>`;
-  return `<header class="ui-appbar"><a class="ui-icon-button" href="${escapeHtml(input.backHref)}" aria-label="${escapeHtml(input.backLabel)}">${icon("arrow-left")}</a><a class="ui-appbar__brand" href="/">Shortlet</a><span class="ui-appbar__grow"></span>${action}</header>`;
+  return `<header class="ui-appbar"><a class="ui-icon-button" href="${escapeHtml(input.backHref)}" aria-label="${escapeHtml(input.backLabel)}">${icon("arrow-left")}</a><a class="ui-appbar__brand" href="/">${escapeHtml(input.brand ?? "Shortlet")}</a><span class="ui-appbar__grow"></span>${action}</header>`;
 }
 
 /** Decorative inline icon; pair with visible text or an aria-label on the control. */

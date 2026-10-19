@@ -2,7 +2,7 @@ import type { SqlDatabase } from "../../../packages/platform-core/src/sql-databa
 import { CommerceDirectory } from "./commerce-directory.js";
 import { CommerceCatalogue } from "./commerce-catalogue.js";
 import { CommerceCart } from "./commerce-cart.js";
-import { CommerceOrders } from "./commerce-order.js";
+import { CommerceOrders, type OrderTrackingPolicy } from "./commerce-order.js";
 import { MerchantBackOffice } from "./merchant-back-office.js";
 import { COMMERCE_SCHEMA_MIGRATIONS } from "./commerce-schema.js";
 import type { PaymentReferenceKeys } from "./payment-reference.js";
@@ -30,6 +30,8 @@ export interface CommercePackDeps {
   readonly clock: () => Date;
   /** Keyed payment reference hashing (user decision 18 Oct 2026). Required: the pack refuses to build without it. */
   readonly paymentReferenceKeys: PaymentReferenceKeys;
+  /** Public order tracking lock limits; the defaults are the user decision of 18 Oct 2026 (issue 27). */
+  readonly trackingPolicy?: OrderTrackingPolicy;
 }
 
 /**
@@ -40,7 +42,7 @@ export function createCommercePack(deps: CommercePackDeps) {
   const directory = new CommerceDirectory(deps.database, deps.clock);
   const catalogue = new CommerceCatalogue(deps.database, deps.clock);
   const cart = new CommerceCart(deps.database, deps.clock);
-  const orders = new CommerceOrders(deps.database, deps.clock, deps.paymentReferenceKeys);
+  const orders = new CommerceOrders(deps.database, deps.clock, deps.paymentReferenceKeys, deps.trackingPolicy);
   const backOffice = new MerchantBackOffice(directory, catalogue, orders);
   return {
     id: "commerce",

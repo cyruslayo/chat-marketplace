@@ -1,15 +1,16 @@
-import { COMMERCE_TEST_REFERENCE_KEYS } from "./helpers/commerce-database.js";
 import assert from "node:assert/strict";
-import { paymentReferenceHash } from "../domains/commerce/src/payment-reference.js";
 import test from "node:test";
 import { NodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-database.js";
 import { applySchemaMigrations, schemaVersion } from "../packages/platform-core/src/schema-migrations.js";
-import { createCommercePack } from "../domains/commerce/src/index.js";
-import { COMMERCE_TEST_CLOCK as CLOCK, commerceMigrations, migrateCommerceDatabase } from "./helpers/commerce-database.js";
+import { createCommercePack, parseCreateOrderInput } from "../domains/commerce/src/index.js";
+import { normalizePhone } from "../domains/commerce/src/order.js";
+import { paymentReferenceHash, type PaymentReferenceKeys } from "../domains/commerce/src/payment-reference.js";
+import { createCommerceFixture } from "./helpers/commerce-fixture.js";
+import { COMMERCE_TEST_CLOCK as CLOCK, COMMERCE_TEST_REFERENCE_KEYS, commerceMigrations, migrateCommerceDatabase } from "./helpers/commerce-database.js";
 
 /** Slice 21: Merchant Order — port of instastore create_store_order / set_order_status. */
 
-/** A migrated database: the ledger creates merchant_orders, not the order service (issue 24 review 3). */
+/** A migrated database: the ledger creates the order and attempt tables, not the order service (issue 24 review 3). */
 function memory(): NodeSqliteDatabase {
   const database = new NodeSqliteDatabase(":memory:");
   migrateCommerceDatabase(database);
@@ -17,18 +18,8 @@ function memory(): NodeSqliteDatabase {
 }
 
 function pack(database: NodeSqliteDatabase) {
-  return createCommercePack({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS, database, clock: CLOCK });
+  return createCommercePack({ database, clock: CLOCK, paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS });
 }
-
-test("issue 24 review 3: the order service creates no merchant_orders table; only the migration ledger does", () => {
-  const database = new NodeSqliteDatabase(":memory:");
-  pack(database);
-  const tableNames = () => database.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map(row => String(row.name));
-  assert.equal(tableNames().includes("merchant_orders"), false);
-  migrateCommerceDatabase(database);
-  assert.equal(tableNames().includes("merchant_orders"), true);
-  database.close();
-});
 
 function setupStore(database: NodeSqliteDatabase, merchantId: string, storeId: string) {
   const { directory } = pack(database);
@@ -155,8 +146,244 @@ test("AC5: only allowed status transitions succeed and the first move to Process
   database.close();
 });
 
-/** Issue 24 decision 7: the stored hash of a payment reference is SHA-256 over its trimmed value. */
-const sha256 = (value: string) => paymentReferenceHash(COMMERCE_TEST_REFERENCE_KEYS, value);
+/** Issue 27 (user decision, 18 Oct 2026): Nigerian local and international phone forms share one canonical value. */
+test("Phone normalisation: a Nigerian mobile number has one canonical value", () => {
+  assert.equal(normalizePhone("07031234567"), "+2347031234567");
+  for (const form of ["0801 234 5678", "08012345678", "+2348012345678", "2348012345678", "+234 801 234 5678", "+234 0801 234 5678", "00234 801 234 5678"]) {
+    assert.equal(normalizePhone(form), "+2348012345678", form);
+  }
+});
+
+test("Phone normalisation keeps non-Nigerian numbers as digits and plus", () => {
+  assert.equal(normalizePhone("+44 20 7946 0958"), "+442079460958");
+  assert.equal(normalizePhone("(020) 7946-0958"), "02079460958");
+  // A UK mobile has the same shape as a Nigerian local number but not a Nigerian mobile prefix, so it is left alone.
+  assert.equal(normalizePhone("07911123456"), "07911123456");
+  assert.equal(normalizePhone("no digits here"), "");
+});
+
+/** Issue 27 (user decision, 18 Oct 2026): tracking attempts are limited per public code within a fifteen-minute window. */
+const START = Date.parse("2026-10-18T10:00:00.000Z");
+const MINUTE = 60_000;
+const WRONG_PHONE = "0800 000 0000";
+const RIGHT_PHONE = "+234 801 234 5678";
+
+function trackingFixture(now: () => number, policy: { maxFailedAttempts?: number; windowMs?: number } = {}) {
+  return createCommerceFixture({
+    clock: () => new Date(now()),
+    trackingPolicy: policy,
+    storeSlug: "store",
+    storeName: "Store",
+    merchantName: "Merchant",
+    productName: "Product",
+    priceKobo: 10000,
+    stock: 50,
+    feeKobo: 0,
+    zoneName: "Mainland",
+    provider: "Bolt",
+    customerPhone: RIGHT_PHONE,
+    submittedTotalKobo: 10000,
+    paymentReference: "ref-track-1",
+  });
+}
+
+test("AC2 tracking: the sixth attempt with the correct phone inside the window is still refused", () => {
+  let now = START;
+  const { database, commerce, order } = trackingFixture(() => now);
+  try {
+    for (let attempt = 0; attempt < 5; attempt++) assert.equal(commerce.orders.trackOrder(order.publicCode, WRONG_PHONE), null);
+    now = START + 14 * MINUTE;
+    assert.equal(commerce.orders.trackOrder(order.publicCode, RIGHT_PHONE), null);
+  } finally {
+    database.close();
+  }
+});
+
+test("AC2 tracking: the lock expires when the fifteen-minute window ends", () => {
+  let now = START;
+  const { database, commerce, order } = trackingFixture(() => now);
+  try {
+    for (let attempt = 0; attempt < 5; attempt++) commerce.orders.trackOrder(order.publicCode, WRONG_PHONE);
+    now = START + 15 * MINUTE - 1;
+    assert.equal(commerce.orders.trackOrder(order.publicCode, RIGHT_PHONE), null);
+    now = START + 15 * MINUTE;
+    assert.equal(commerce.orders.trackOrder(order.publicCode, RIGHT_PHONE)?.publicCode, order.publicCode);
+  } finally {
+    database.close();
+  }
+});
+
+test("AC2 tracking: a correct phone before the limit clears only that code's failures", () => {
+  let now = START;
+  const { database, commerce, order } = trackingFixture(() => now);
+  try {
+    const second = commerce.orders.createOrder(baseInput("store", "zone", { customerPhone: "+234 803 111 2222", submittedTotalKobo: 10000, paymentReference: "ref-track-2" }));
+    for (let round = 0; round < 2; round++) {
+      for (let attempt = 0; attempt < 4; attempt++) assert.equal(commerce.orders.trackOrder(order.publicCode, WRONG_PHONE), null);
+      assert.equal(commerce.orders.trackOrder(order.publicCode, RIGHT_PHONE)?.publicCode, order.publicCode, `round ${round}`);
+    }
+    for (let attempt = 0; attempt < 5; attempt++) commerce.orders.trackOrder(second.publicCode, WRONG_PHONE);
+    assert.equal(commerce.orders.trackOrder(second.publicCode, "+234 803 111 2222"), null);
+    assert.equal(commerce.orders.trackOrder(order.publicCode, RIGHT_PHONE)?.publicCode, order.publicCode);
+  } finally {
+    database.close();
+  }
+});
+
+test("AC2 tracking: unknown codes create no attempt rows", () => {
+  const { database, commerce } = trackingFixture(() => START);
+  try {
+    for (let attempt = 0; attempt < 50; attempt++) assert.equal(commerce.orders.trackOrder(`ORD-UNKNOWN-${attempt}`, WRONG_PHONE), null);
+    assert.equal(Number(database.prepare("SELECT COUNT(*) AS count FROM merchant_order_tracking_attempts").get()?.count), 0);
+  } finally {
+    database.close();
+  }
+});
+
+test("AC2 tracking: the attempt limit and window are configurable options", () => {
+  let now = START;
+  const { database, commerce, order } = trackingFixture(() => now, { maxFailedAttempts: 2, windowMs: MINUTE });
+  try {
+    commerce.orders.trackOrder(order.publicCode, WRONG_PHONE);
+    commerce.orders.trackOrder(order.publicCode, WRONG_PHONE);
+    assert.equal(commerce.orders.trackOrder(order.publicCode, RIGHT_PHONE), null);
+    now = START + MINUTE;
+    assert.equal(commerce.orders.trackOrder(order.publicCode, RIGHT_PHONE)?.publicCode, order.publicCode);
+  } finally {
+    database.close();
+  }
+});
+
+test("Options: the tracking limits must be positive integers, and bad values fail closed", () => {
+  for (const policy of [{ maxFailedAttempts: 0 }, { maxFailedAttempts: -1 }, { maxFailedAttempts: 2.5 }, { maxFailedAttempts: Number.NaN }, { windowMs: 0 }, { windowMs: -60_000 }, { windowMs: Number.NaN }, { windowMs: 1.5 }]) {
+    const database = memory();
+    try {
+      assert.throws(() => createCommercePack({ database, clock: CLOCK, paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS, trackingPolicy: policy }), RangeError, JSON.stringify(policy));
+    } finally {
+      database.close();
+    }
+  }
+});
+
+test("Migrations are the only source of the tracking-attempts table and of merchant_orders", () => {
+  const database = new NodeSqliteDatabase(":memory:");
+  pack(database);
+  const tableNames = () => database.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map(row => String(row.name));
+  assert.equal(tableNames().includes("merchant_order_tracking_attempts"), false);
+  assert.equal(tableNames().includes("merchant_orders"), false);
+  migrateCommerceDatabase(database);
+  assert.equal(tableNames().includes("merchant_order_tracking_attempts"), true);
+  assert.equal(tableNames().includes("merchant_orders"), true);
+  database.close();
+});
+
+test("issue 24 review 3: the order service creates no merchant_orders table; only the migration ledger does", () => {
+  const database = new NodeSqliteDatabase(":memory:");
+  pack(database);
+  assert.equal(database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'merchant_orders'").get(), undefined);
+  database.close();
+});
+
+/** Index of the first migration whose statements contain `marker`, so tests follow the ledger instead of hard-coded numbers. */
+function versionWith(migrations: ReturnType<typeof commerceMigrations>, marker: string): number {
+  return migrations.find(migration => migration.statements.some(statement => statement.includes(marker)))!.version;
+}
+
+/** A version-5 database (raw payment reference column and the tracking table, before the keyed hash), with the given parents. */
+function versionFiveDatabase() {
+  const database = new NodeSqliteDatabase(":memory:");
+  const migrations = commerceMigrations(database);
+  const keyedVersion = versionWith(migrations, "payment_reference_hash");
+  applySchemaMigrations(database, migrations.slice(0, keyedVersion - 1), CLOCK().toISOString());
+  setupStore(database, "merchant", "store");
+  addOffer(database, "store", "offer", 1000, 5);
+  addZone(database, "store", "zone", 0);
+  return { database, migrations, keyedVersion };
+}
+
+function insertLegacyOrder(database: NodeSqliteDatabase, publicCode: string, paymentReference: string): void {
+  database.prepare(
+    `INSERT INTO merchant_orders (id, store_id, public_code, customer_name, customer_phone, items_json, subtotal_kobo, shipping_fee_kobo, total_kobo, status, shipping_address_json, payment_reference, created_at, updated_at)
+     VALUES ($id, 'store', $publicCode, 'Ada', '+2348031234567', '[{"offerId":"offer","productId":"product-offer","name":"Product offer","category":"Category","priceKobo":1000,"quantity":1}]', 1000, 0, 1000, 'Pending Verification', '{"address":"1"}', $paymentReference, $at, $at)`,
+  ).run({ $id: `legacy-${publicCode}`, $publicCode: publicCode, $paymentReference: paymentReference, $at: CLOCK().toISOString() });
+}
+
+function insertAttempt(database: NodeSqliteDatabase, publicCode: string, failedAttempts: number): void {
+  database.prepare("INSERT INTO merchant_order_tracking_attempts (public_code, failed_attempts, window_started_at) VALUES ($publicCode, $failedAttempts, $windowStartedAt)")
+    .run({ $publicCode: publicCode, $failedAttempts: failedAttempts, $windowStartedAt: CLOCK().toISOString() });
+}
+
+test("Upgrade: a version-5 database with an order and tracking attempts is refused by the keyed-hash migration, and nothing is lost", () => {
+  const { database, migrations, keyedVersion } = versionFiveDatabase();
+  insertLegacyOrder(database, "ORD-LEGACY", "legacy-raw-reference");
+  insertAttempt(database, "ORD-LEGACY", 3);
+
+  assert.throws(() => applySchemaMigrations(database, migrations, CLOCK().toISOString()), /constraint|check/i);
+  assert.equal(schemaVersion(database), keyedVersion - 1);
+  const attempts = database.prepare("SELECT public_code, failed_attempts FROM merchant_order_tracking_attempts").all();
+  assert.equal(attempts.length, 1);
+  assert.equal(attempts[0]?.public_code, "ORD-LEGACY");
+  assert.equal(Number(attempts[0]?.failed_attempts), 3);
+  assert.equal(Number(database.prepare("SELECT COUNT(*) AS n FROM merchant_orders WHERE payment_reference = 'legacy-raw-reference'").get()?.n), 1);
+  database.close();
+});
+
+test("Upgrade: a version-5 database with no orders applies the keyed-hash rebuild, and the tracking table keeps its foreign key", () => {
+  const { database, migrations } = versionFiveDatabase();
+  applySchemaMigrations(database, migrations, CLOCK().toISOString());
+
+  assert.equal(schemaVersion(database), migrations.length);
+  const foreignKeys = database.prepare("PRAGMA foreign_key_list(merchant_order_tracking_attempts)").all();
+  assert.equal(foreignKeys.some(key => key.table === "merchant_orders" && key.to === "public_code"), true);
+  const orderColumns = database.prepare("PRAGMA table_info(merchant_orders)").all().map(column => column.name);
+  assert.equal(orderColumns.includes("payment_reference_hash"), true);
+  assert.equal(orderColumns.includes("payment_reference"), false);
+  database.close();
+});
+
+test("Fresh database: the ledger reaches its final version and creates the keyed order shape and the attempts table with its foreign key", () => {
+  const database = memory();
+  const migrations = commerceMigrations(database);
+  assert.equal(schemaVersion(database), migrations.length);
+  assert.equal(versionWith(migrations, "payment_reference_hash"), migrations.length);
+  assert.equal(versionWith(migrations, "merchant_order_tracking_attempts"), migrations.length - 1);
+  const foreignKeys = database.prepare("PRAGMA foreign_key_list(merchant_order_tracking_attempts)").all();
+  assert.equal(foreignKeys.some(key => key.table === "merchant_orders"), true);
+  database.close();
+});
+
+test("Idempotency: the same payment reference with a differently written, same canonical phone returns the existing order", () => {
+  const database = memory();
+  const { orders } = pack(database);
+  setupStore(database, "merchant", "store");
+  addOffer(database, "store", "offer", 10000, 5);
+  addZone(database, "store", "zone", 0);
+  try {
+    const first = orders.createOrder(baseInput("store", "zone", { customerPhone: "0803 123 4567", submittedTotalKobo: 10000, paymentReference: "ref-canonical" }));
+    const second = orders.createOrder(baseInput("store", "zone", { customerPhone: "+234 803 123 4567", submittedTotalKobo: 10000, paymentReference: "ref-canonical" }));
+    assert.equal(second.id, first.id);
+    assert.equal(second.customerPhone, "+2348031234567");
+  } finally {
+    database.close();
+  }
+});
+
+test("Invalid phone: order creation rejects a phone number below the minimum length", () => {
+  const database = memory();
+  const { orders } = pack(database);
+  setupStore(database, "merchant", "store");
+  addOffer(database, "store", "offer", 10000, 5);
+  addZone(database, "store", "zone", 0);
+  try {
+    assert.throws(() => orders.createOrder(baseInput("store", "zone", { customerPhone: "12345", submittedTotalKobo: 10000, paymentReference: "ref-short-phone" })), /valid phone number is required/);
+    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM merchant_orders").get()?.count, 0);
+  } finally {
+    database.close();
+  }
+});
+
+/** Issue 24 decision 7 and user decision 18 Oct 2026: the stored hash is the keyed HMAC of the trimmed reference. */
+const keyedHash = (value: string) => paymentReferenceHash(COMMERCE_TEST_REFERENCE_KEYS, value);
 
 /** Every row of every table, serialised, so a test can search the whole database for a value. */
 function dumpAllRows(database: NodeSqliteDatabase): string {
@@ -176,10 +403,10 @@ test("issue 24 decision 7: the raw payment reference never reaches the database 
 
   const dump = dumpAllRows(database);
   assert.equal(dump.includes("raw-ref-secret"), false);
-  assert.equal(dump.includes(sha256("raw-ref-secret")), true);
+  assert.equal(dump.includes(keyedHash("raw-ref-secret")), true);
   const returned = JSON.stringify([order, orders.orderById(order.id), orders.orderByPublicCode(order.publicCode)]);
   assert.equal(returned.includes("raw-ref-secret"), false);
-  assert.equal(returned.includes(sha256("raw-ref-secret")), false);
+  assert.equal(returned.includes(keyedHash("raw-ref-secret")), false);
 
   assert.equal(orders.createOrder(input).id, order.id);
   database.close();
@@ -227,7 +454,7 @@ test("issue 24 decision 13: an oversell on item 2 refuses the order and leaves i
   database.close();
 });
 
-test("issue 24 decision 7: migration 5 replaces the raw payment_reference column with a NOT NULL UNIQUE hash, and refuses to rebuild over legacy orders", () => {
+test("issue 24 decision 7: the keyed-hash migration replaces the raw payment_reference column with a NOT NULL UNIQUE hash, and refuses to rebuild over legacy orders", () => {
   const database = new NodeSqliteDatabase(":memory:");
   const migrations = commerceMigrations(database);
   // The hash migration is found by its content, so the test follows the ledger when later migrations are added.
