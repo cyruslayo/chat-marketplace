@@ -122,7 +122,7 @@ test("Automated contract success is recorded separately from production-equivale
   assert.ok(auditEntries.some(e => e.type === "provider.capability_certified"));
 });
 
-// Signature comparison is constant-time and fails closed (issue 50 hardening). "sig_valid_123" stays a literal here: it is
+// Signature comparison is constant-time and fails closed (ADR 0075). "sig_valid_123" stays a literal here: it is
 // a fake-provider fixture, not an HMAC, so the shared providerHmacSignature helper does not apply.
 test("A payment request whose signature differs in length from the expected signature fails closed", () => {
   const registry = new ProviderContractRegistry();
@@ -139,6 +139,15 @@ test("A payment request whose signature differs in its last character fails clos
   assert.throws(
     () => registry.processPaymentRequest(payload, "sig_valid_123", () => ({ status: "success", providerReference: "pref-last" })),
     /Invalid provider signature/
+  );
+});
+
+test("A non-string signature fails closed with the tamper error, not a type error", () => {
+  const registry = new ProviderContractRegistry();
+  const payload = { transactionRef: "tx-type-1", amountKobo: 5000, currency: "NGN", payerId: "pyr-005", signature: undefined } as unknown as PaymentRequestPayload;
+  assert.throws(
+    () => registry.processPaymentRequest(payload, "sig_valid_123", () => ({ status: "success", providerReference: "pref-type" })),
+    /Invalid provider signature: payload tampering detected/
   );
 });
 

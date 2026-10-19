@@ -3,7 +3,8 @@ import { PlatformCommandEnvelope } from "./envelope.js";
 
 // Constant-time comparison of two signature strings. Fails closed: an empty value never matches and unequal lengths
 // never match, so only a non-empty signature of identical length can pass.
-function signaturesMatch(provided: string, expected: string): boolean {
+function signaturesMatch(provided: unknown, expected: unknown): boolean {
+  if (typeof provided !== "string" || typeof expected !== "string") return false;
   const left = Buffer.from(provided, "utf8");
   const right = Buffer.from(expected, "utf8");
   return left.length === right.length && left.length > 0 && timingSafeEqual(left, right);
