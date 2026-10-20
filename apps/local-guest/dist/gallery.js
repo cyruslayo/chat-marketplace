@@ -39,7 +39,7 @@
     ".listing-viewer__item img{display:block;max-width:100%;max-height:100%;width:auto;height:auto;min-height:0;object-fit:contain}",
     ".listing-viewer button{min-width:var(--control-min-target);min-height:var(--control-min-target);border:1px solid currentColor;border-radius:var(--radius-pill);background:var(--color-surface-viewer);color:var(--color-text-on-viewer);font-size:1.25rem;cursor:pointer}",
     ".listing-viewer button:focus-visible{outline:3px solid var(--color-focus);outline-offset:2px}",
-    ".listing-viewer button:disabled{opacity:.35;cursor:default}",
+    '.listing-viewer button:disabled,.listing-viewer button[aria-disabled="true"]{opacity:.35;cursor:default}',
     ".listing-viewer__prev,.listing-viewer__next{position:absolute;top:50%;transform:translateY(-50%)}",
     ".listing-viewer__prev{inset-inline-start:var(--space-2)}",
     ".listing-viewer__next{inset-inline-end:var(--space-2)}",
@@ -113,7 +113,6 @@
     bar.className = "listing-viewer__bar";
     const counter = doc.createElement("p");
     counter.className = "listing-viewer__count";
-    counter.setAttribute("aria-live", "polite");
     const close = doc.createElement("button");
     close.type = "button";
     close.className = "listing-viewer__close";
@@ -146,35 +145,66 @@
     next.className = "listing-viewer__next";
     next.setAttribute("aria-label", "Next photo");
     next.textContent = "\u203A";
-    dialog.append(bar, track, prev, next);
+    const announcer = doc.createElement("p");
+    announcer.className = "ui-sr-only";
+    announcer.setAttribute("aria-live", "polite");
+    dialog.append(bar, track, prev, next, announcer);
     doc.body.append(dialog);
     let current = 0;
     let opener = null;
-    const render = (index) => {
-      current = index;
+    let pendingIndex = null;
+    const SCROLL_SETTLE_TOLERANCE_PX = 2;
+    const clampIndex = (index) => Math.max(0, Math.min(count - 1, index));
+    const show = (index) => {
       counter.textContent = `${index + 1} of ${count}`;
-      prev.disabled = index === 0;
-      next.disabled = index === count - 1;
+      prev.setAttribute("aria-disabled", String(index === 0));
+      next.setAttribute("aria-disabled", String(index === count - 1));
     };
+    const announce = () => {
+      announcer.textContent = counter.textContent;
+    };
+    const settle = () => {
+      pendingIndex = null;
+      announce();
+    };
+    const stepBase = () => pendingIndex ?? current;
+    track.addEventListener("scroll", () => {
+      current = clampIndex(Math.round(track.scrollLeft / Math.max(1, track.clientWidth)));
+      show(current);
+      if (pendingIndex !== null && Math.abs(track.scrollLeft - pendingIndex * track.clientWidth) < SCROLL_SETTLE_TOLERANCE_PX) settle();
+    }, { passive: true });
+    track.addEventListener("scrollend", () => {
+      if (pendingIndex === null) announce();
+    });
+    for (const gesture of ["pointerdown", "touchstart", "wheel"]) track.addEventListener(gesture, () => {
+      pendingIndex = null;
+    }, { passive: true });
     const go = (index) => {
-      const target = Math.max(0, Math.min(count - 1, index));
+      const target = clampIndex(index);
+      if (Math.abs(track.scrollLeft - target * track.clientWidth) < SCROLL_SETTLE_TOLERANCE_PX) {
+        pendingIndex = null;
+        current = target;
+        show(target);
+        announce();
+        return;
+      }
+      pendingIndex = target;
+      show(target);
       track.scrollTo({ left: target * track.clientWidth });
-      render(target);
     };
-    const observer = new view.IntersectionObserver((entries) => {
-      for (const entry of entries) if (entry.isIntersecting) render([...track.children].indexOf(entry.target));
-    }, { root: track, threshold: 0.6 });
-    for (const item of track.children) observer.observe(item);
-    prev.addEventListener("click", () => go(current - 1));
-    next.addEventListener("click", () => go(current + 1));
+    const stepTo = (index) => {
+      if (index >= 0 && index < count) go(index);
+    };
+    prev.addEventListener("click", () => stepTo(stepBase() - 1));
+    next.addEventListener("click", () => stepTo(stepBase() + 1));
     close.addEventListener("click", () => dialog.close());
     dialog.addEventListener("keydown", (event) => {
       if (event.key === "ArrowRight") {
         event.preventDefault();
-        go(current + 1);
+        stepTo(stepBase() + 1);
       } else if (event.key === "ArrowLeft") {
         event.preventDefault();
-        go(current - 1);
+        stepTo(stepBase() - 1);
       } else if (event.key === "Home") {
         event.preventDefault();
         go(0);
@@ -202,7 +232,9 @@
         track.style.scrollBehavior = "auto";
         track.scrollLeft = index * track.clientWidth;
         track.style.scrollBehavior = previous;
-        render(index);
+        pendingIndex = null;
+        current = index;
+        show(index);
         close.focus();
       }
     };

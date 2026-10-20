@@ -58,6 +58,7 @@ export * from "./thread.js";
 export * from "./surface.js";
 export * from "./catalogue-registry.js";
 export * from "./envelope.js";
+export { generatePlatformId, MAX_PLATFORM_ID_ATTEMPTS } from "./platform-id.js";
 export * from "./interactions.js";
 export * from "./human-handoff.js";
 export * from "./stream-replay.js";

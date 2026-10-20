@@ -1,3 +1,4 @@
+import { generatePlatformId } from "../../../packages/platform-core/src/index.js";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { calculateTaxKobo } from "./quote.js";
@@ -427,7 +428,7 @@ export class UnitDiscoveryQuery {
     // ADR-0015: with a budget, results are ranked by All-In Stay Total (stable).
     // Every result has a total here: price filters dropped units without one.
     if (filters.maxPriceKobo !== undefined) results.sort((left: DiscoveryProjection, right: DiscoveryProjection) => (left.price.allInStayTotalKobo ?? 0) - (right.price.allInStayTotalKobo ?? 0));
-    const queryId = `search-${this.idFactory()}`;
+    const queryId = generatePlatformId("search", () => this.idFactory());
     const artifact = createInteractionArtifact({ id: queryId, filters, results, quoted: dateRange !== null && filters.partySize !== undefined });
     this.audit.record({ type: "unit.search", queryId, filters: { ...filters }, resultUnitIds: results.map((unit: any) => unit.id) });
     try {

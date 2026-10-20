@@ -1,3 +1,4 @@
+import { generatePlatformId } from "../../../packages/platform-core/src/index.js";
 import {
   createServer,
   type IncomingMessage,
@@ -2354,7 +2355,7 @@ export function createGuestRequestHandler(
     const sessionId = issueGuestSession(res, secureCookie);
     return {
       kind: "session",
-      session: await registerBrowserSession(env, browserSessions, sessionId, `guest-${crypto.randomUUID()}`),
+      session: await registerBrowserSession(env, browserSessions, sessionId, generatePlatformId("guest")),
     };
   };
   /**
@@ -2455,7 +2456,7 @@ export function createGuestRequestHandler(
           res.end();
           return;
         }
-        const interactionId = await replaceInteractionSession(previous, `guest-${crypto.randomUUID()}`, false);
+        const interactionId = await replaceInteractionSession(previous, generatePlatformId("guest"), false);
         res.setHeader("Set-Cookie", [interactionCookieLine(interactionId), clearedAccountCookieLine()]);
         res.writeHead(303, { Location: "/", "Cache-Control": "no-store" });
         res.end();
@@ -2740,7 +2741,7 @@ export function createGuestRequestHandler(
         res.end();
         return;
       }
-      const interactionId = await replaceInteractionSession(previous, `guest-${crypto.randomUUID()}`, false);
+      const interactionId = await replaceInteractionSession(previous, generatePlatformId("guest"), false);
       res.setHeader("Set-Cookie", [interactionCookieLine(interactionId), clearedAccountCookieLine()]);
       res.writeHead(303, { Location: "/", "Cache-Control": "no-store" });
       res.end();
@@ -2768,7 +2769,7 @@ export function createGuestRequestHandler(
         res.end();
         return;
       }
-      const interactionId = await replaceInteractionSession(presentedSession, `guest-${crypto.randomUUID()}`, false);
+      const interactionId = await replaceInteractionSession(presentedSession, generatePlatformId("guest"), false);
       res.setHeader("Set-Cookie", [interactionCookieLine(interactionId), clearedAccountCookieLine()]);
       res.writeHead(303, { Location: "/", "Cache-Control": "no-store" });
       res.end();
@@ -2874,7 +2875,7 @@ export function createGuestRequestHandler(
           }
           const sessionId = issueGuestSession(res, secureCookie);
           let principalId = app.environment.config.guestId;
-          if (sessionScopedGuestPrincipals) principalId = `guest-${crypto.randomUUID()}`;
+          if (sessionScopedGuestPrincipals) principalId = generatePlatformId("guest");
           const registered = await registerBrowserSession(
             env,
             browserSessions,

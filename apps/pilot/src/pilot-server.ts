@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { randomUUID } from "node:crypto";
+import { generatePlatformId } from "../../../packages/platform-core/src/index.js";
 import { LocalGuestEnvironment } from "../../local-guest/src/fixture.js";
 import { createGuestRequestHandler, type GuestRequestHandler } from "../../local-guest/src/guest-server.js";
 import { LocalApartmentOwnerEnvironment, createOwnerRequestHandler } from "../../local-owner/src/index.js";
@@ -82,7 +82,7 @@ export function startPilotServer(options: {
     representativePersonId: "production-session-actor",
     representativePersonName: "Production Operator Representative",
     adminId: "production-operations",
-    guestId: `guest-bootstrap-${randomUUID()}`,
+    guestId: generatePlatformId("guest-bootstrap"),
     guestName: "Guest",
     initialGuestPhoneNumber: null,
     initialGuestContactEmail: null,

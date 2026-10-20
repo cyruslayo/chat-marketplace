@@ -1,3 +1,4 @@
+import { generatePlatformId } from "./platform-id.js";
 export interface SecurityContext {
   principalId: string;
   tenantId: string;
@@ -60,7 +61,7 @@ export class InteractionThreadManager {
 
   createThread(context: SecurityContext) {
     this.#assertActiveContext(context);
-    const threadId = `thread-${crypto.randomUUID()}`;
+    const threadId = generatePlatformId("thread");
     const thread = {
       threadId,
       principalId: context.principalId,
@@ -154,7 +155,7 @@ export class InteractionThreadManager {
         throw new Error("One mutating Agent Run allowed per thread");
       }
     }
-    const runId = `run-${crypto.randomUUID()}`;
+    const runId = generatePlatformId("run");
     const run = {
       runId,
       threadId,

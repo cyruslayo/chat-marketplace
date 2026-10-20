@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { InteractionSecurityEngine } from "../packages/platform-core/src/interaction-security.js";
 import { InMemoryAuditLog, InMemoryTelemetry } from "../packages/platform-core/src/index.js";
+import { providerHmacSignature } from "./helpers/provider-signature.js";
 
 // ADR 0004, ADR 0011, ADR 0068, ADR 0070, ADR 0071, ADR 0074, ADR 0075 & Issue 37
 
@@ -159,6 +160,55 @@ test("Browser security, URL allow-lists, safe uploads, typed rendering, and prov
     () => engine.validateProviderSignature({ event: "charge.success" }, "invalid_sig", "secret_key_123"),
     /Invalid provider signature: payload tampering detected/
   );
-  const validSig = engine.validateProviderSignature({ event: "charge.success" }, "sig_secret_key_123_valid", "secret_key_123");
+  const payload = { event: "charge.success" };
+  const validSig = engine.validateProviderSignature(payload, providerHmacSignature(payload, "secret_key_123"), "secret_key_123");
   assert.equal(validSig, true);
+});
+
+const SIGNATURE_SECRET = "secret_key_123";
+const SIGNED_PAYLOAD = { event: "charge.success", amountKobo: 500000 };
+
+test("A provider signature computed as HMAC-SHA256 over the payload with the secret passes", () => {
+  const engine = new InteractionSecurityEngine();
+  const signature = providerHmacSignature(SIGNED_PAYLOAD, SIGNATURE_SECRET);
+  assert.equal(engine.validateProviderSignature(SIGNED_PAYLOAD, signature, SIGNATURE_SECRET), true);
+  assert.equal(engine.validateProviderSignature(JSON.stringify(SIGNED_PAYLOAD), signature, SIGNATURE_SECRET), true);
+});
+
+test("A tampered payload fails the provider signature check", () => {
+  const engine = new InteractionSecurityEngine();
+  const signature = providerHmacSignature(SIGNED_PAYLOAD, SIGNATURE_SECRET);
+  assert.throws(
+    () => engine.validateProviderSignature({ ...SIGNED_PAYLOAD, amountKobo: 1 }, signature, SIGNATURE_SECRET),
+    /Invalid provider signature: payload tampering detected/
+  );
+});
+
+test("The former literal sig_<secret>_valid shortcut no longer passes the provider signature check", () => {
+  const engine = new InteractionSecurityEngine();
+  assert.throws(
+    () => engine.validateProviderSignature(SIGNED_PAYLOAD, `sig_${SIGNATURE_SECRET}_valid`, SIGNATURE_SECRET),
+    /Invalid provider signature: payload tampering detected/
+  );
+});
+
+test("A provider signature of the wrong length fails closed", () => {
+  const engine = new InteractionSecurityEngine();
+  const signature = providerHmacSignature(SIGNED_PAYLOAD, SIGNATURE_SECRET);
+  assert.throws(
+    () => engine.validateProviderSignature(SIGNED_PAYLOAD, signature.slice(0, 62), SIGNATURE_SECRET),
+    /Invalid provider signature/
+  );
+  assert.throws(
+    () => engine.validateProviderSignature(SIGNED_PAYLOAD, `${signature}00`, SIGNATURE_SECRET),
+    /Invalid provider signature/
+  );
+});
+
+test("A non-hex provider signature of the expected length fails closed", () => {
+  const engine = new InteractionSecurityEngine();
+  assert.throws(
+    () => engine.validateProviderSignature(SIGNED_PAYLOAD, "z".repeat(64), SIGNATURE_SECRET),
+    /Invalid provider signature/
+  );
 });

@@ -1,3 +1,4 @@
+import { generatePlatformId } from "../../../../packages/platform-core/src/index.js";
 import { StayDateRange, createStayQuote, toDiscoveryProjection, isEligibleUnit, allInStayTotalKobo, type Unit } from "../../../../domains/shortlet/src/index.js";
 import {
   discoveryArtifactToA2UI,
@@ -605,7 +606,7 @@ export function executeAssistantTool(
       }
       taskState.selectedStayRef = stay.stayRef;
 
-      const actionId = `pa-${crypto.randomUUID()}`;
+      const actionId = generatePlatformId("pa");
       const expiresAt = new Date(context.now.getTime() + 15 * 60 * 1000).toISOString();
       const pendingAction: PendingAssistantAction = {
         id: actionId,
@@ -723,7 +724,7 @@ export function executeAssistantTool(
         context.environment.guestPrincipal(),
       );
 
-      const actionId = `pa-${crypto.randomUUID()}`;
+      const actionId = generatePlatformId("pa");
       const expiresAt = new Date(context.now.getTime() + 15 * 60 * 1000).toISOString();
       const pendingAction: PendingAssistantAction = {
         id: actionId,
@@ -770,7 +771,7 @@ export function executeAssistantTool(
         taskState.currentOfferId,
         context.environment.guestPrincipal(),
       );
-      const actionId = `pa-${crypto.randomUUID()}`;
+      const actionId = generatePlatformId("pa");
       const expiresAt = new Date(context.now.getTime() + 15 * 60 * 1000).toISOString();
       const pendingAction: PendingAssistantAction = {
         id: actionId,
