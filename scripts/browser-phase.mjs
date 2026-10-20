@@ -11,6 +11,8 @@ import { spawn, spawnSync } from "node:child_process";
 export const BROWSER_FILE_TIMEOUT_MS = 15 * 60 * 1000;
 export const BROWSER_FILE_TIMEOUT_ENV = "SHORTLET_BROWSER_FILE_TIMEOUT_MS";
 
+const COUNTERS = ["tests", "pass", "fail", "skipped", "cancelled"];
+
 export function browserFileTimeoutMs(env = process.env) {
   const raw = env[BROWSER_FILE_TIMEOUT_ENV];
   if (raw === undefined || raw.trim() === "") return BROWSER_FILE_TIMEOUT_MS;
@@ -19,6 +21,48 @@ export function browserFileTimeoutMs(env = process.env) {
     throw new Error(`${BROWSER_FILE_TIMEOUT_ENV} must be a positive whole number of milliseconds, got "${raw}"`);
   }
   return value;
+}
+
+/** The TAP summary a file printed at its end: the last value of each counter, or undefined when it printed none. */
+export function parseTapSummary(output) {
+  const found = {};
+  for (const line of output.split(/\r?\n/)) {
+    const match = /^# (tests|pass|fail|skipped|cancelled) (\d+)$/.exec(line);
+    if (match) found[match[1]] = Number(match[2]);
+  }
+  if (!COUNTERS.some((name) => name in found)) return undefined;
+  return Object.fromEntries(COUNTERS.map((name) => [name, found[name] ?? 0]));
+}
+
+/** A file passes only when it exits zero, printed a summary, and no test failed. Everything else is failed or timed out. */
+export function browserFileStatus({ timedOut, exitCode, summary }) {
+  if (timedOut) return "timed-out";
+  if (summary === undefined) return "failed";
+  return exitCode === 0 && summary.fail === 0 ? "passed" : "failed";
+}
+
+/** Adds the files' counters. A file with no summary (a crash or a timeout) counts as failed. */
+export function aggregateBrowserPhase(results) {
+  const totals = { files: results.length, passed: 0, failed: 0, timedOut: 0, tests: 0, pass: 0, fail: 0, skipped: 0, cancelled: 0 };
+  for (const result of results) {
+    if (result.status === "passed") totals.passed += 1;
+    else if (result.status === "timed-out") totals.timedOut += 1;
+    if (result.status !== "passed") totals.failed += 1;
+    for (const name of COUNTERS) totals[name] += result.summary?.[name] ?? 0;
+  }
+  return totals;
+}
+
+/** The totals in the format the suite always printed, then one phase line. */
+export function formatBrowserPhaseTotals(totals) {
+  return [
+    `# tests ${totals.tests}`,
+    `# pass ${totals.pass}`,
+    `# fail ${totals.fail}`,
+    `# skipped ${totals.skipped}`,
+    `# cancelled ${totals.cancelled}`,
+    `# Phase 2: ${totals.files} files, ${totals.passed} passed, ${totals.failed} failed, ${totals.timedOut} timed out`,
+  ];
 }
 
 // Kills the process and everything it started. On Windows, taskkill /T walks the tree (the Chrome children included).
@@ -45,8 +89,9 @@ function withoutNodeTestContext(env) {
 }
 
 /**
- * Runs one browser test file alone. Resolves with its status: "passed", "failed" (exit code non-zero) or "timed-out"
- * (killed when the timeout ran out). It never rejects for a failing test; only a failure to start the process does.
+ * Runs one browser test file alone and captures its output (forwarded as it arrives, so the log stays live). Resolves with
+ * the file's status, exit code, elapsed time and TAP summary. It never rejects for a failing test; only a failure to start
+ * the process does.
  */
 export function runBrowserFile({ root, tsx, file, extra = [], timeoutMs, log = console.log }) {
   return new Promise((resolve, reject) => {
@@ -54,11 +99,20 @@ export function runBrowserFile({ root, tsx, file, extra = [], timeoutMs, log = c
     const posix = process.platform !== "win32";
     const child = spawn(process.execPath, [tsx, "--test", "--test-concurrency=1", ...extra, file], {
       cwd: root,
-      stdio: "inherit",
+      stdio: ["inherit", "pipe", "pipe"],
       // On POSIX the child leads its own process group, so the group can be killed as one.
       detached: posix,
       // A nested `node --test` must not inherit the parent runner's context: it would run as a subtest and exit early.
       env: withoutNodeTestContext(process.env),
+    });
+    let output = "";
+    child.stdout.on("data", (chunk) => {
+      output += chunk;
+      process.stdout.write(chunk);
+    });
+    child.stderr.on("data", (chunk) => {
+      output += chunk;
+      process.stderr.write(chunk);
     });
     let timedOut = false;
     const timer = setTimeout(() => {
@@ -72,13 +126,15 @@ export function runBrowserFile({ root, tsx, file, extra = [], timeoutMs, log = c
     child.on("exit", (code) => {
       clearTimeout(timer);
       const elapsedMs = Date.now() - started;
+      const summary = parseTapSummary(output);
+      const exitCode = timedOut ? null : (code ?? 1);
+      const status = browserFileStatus({ timedOut, exitCode, summary });
       if (timedOut) {
         log(`# ${file}: timed out after ${Math.round(timeoutMs / 1000)} s; its process tree was killed`);
-        resolve({ file, status: "timed-out", exitCode: null, elapsedMs });
-        return;
+      } else if (summary === undefined) {
+        log(`# ${file}: exited ${exitCode} without a test summary (a crash)`);
       }
-      const exitCode = code ?? 1;
-      resolve({ file, status: exitCode === 0 ? "passed" : "failed", exitCode, elapsedMs });
+      resolve({ file, status, exitCode, elapsedMs, summary });
     });
   });
 }
