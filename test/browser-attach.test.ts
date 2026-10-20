@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { attachToOwnBrowser, type DevToolsEndpoint } from "./helpers/chrome-devtools.js";
+import { spawn } from "node:child_process";
+import { attachToOwnBrowser, terminateOwnedChromeProcess, type DevToolsEndpoint } from "./helpers/chrome-devtools.js";
+import { killProcessTree } from "../scripts/browser-phase.mjs";
 
 // Before anything is sent to the browser, its /json/version must name the browser the profile directory named. Any failure
 // on that path (a network error, a bad status, unreadable JSON, a different browser) must run the cleanup the launch
@@ -77,4 +79,82 @@ test("A different browser on the port runs the cleanup once and is rethrown", as
     /not the browser this run launched/
   );
   assert.equal(cleanedUp, 1);
+});
+
+test("A rejected browser endpoint does not disclose its path, query, or fragment", async () => {
+  const secret = "sentinel-private-reference";
+  await assert.rejects(
+    attachToOwnBrowser({
+      endpoint,
+      fetchImpl: stubFetch(() => json({ webSocketDebuggerUrl: `ws://127.0.0.1:51234/devtools/browser/${secret}?reference=${secret}#${secret}` })),
+      onFailure: () => {},
+    }),
+    (error: unknown) => error instanceof Error && !error.message.includes(secret)
+  );
+});
+
+test("A stalled DevTools fetch aborts within its bound and runs cleanup once", async () => {
+  let cleanedUp = 0;
+  const fetchImpl = ((_input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+    init?.signal?.addEventListener("abort", () => reject(new Error("request aborted")), { once: true });
+  })) as typeof fetch;
+  await assert.rejects(
+    attachToOwnBrowser({ endpoint, fetchImpl, timeoutMs: 20, onFailure: () => { cleanedUp += 1; } }),
+    /did not answer \/json\/version within 20 ms/
+  );
+  assert.equal(cleanedUp, 1);
+});
+
+test("A stalled DevTools JSON body is bounded and runs cleanup once", async () => {
+  let cleanedUp = 0;
+  const fetchImpl = (async () => ({ ok: true, json: () => new Promise<unknown>(() => {}) }) as Response) as typeof fetch;
+  await assert.rejects(
+    attachToOwnBrowser({ endpoint, fetchImpl, timeoutMs: 20, onFailure: () => { cleanedUp += 1; } }),
+    /did not answer \/json\/version within 20 ms/
+  );
+  assert.equal(cleanedUp, 1);
+});
+
+test("Fetch and JSON timeouts await asynchronous cleanup before rejecting once", async () => {
+  for (const stage of ["fetch", "json"] as const) {
+    let cleanupCalls = 0;
+    let finishCleanup!: () => void;
+    let settled = false;
+    const fetchImpl = stage === "fetch"
+      ? (((_input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new Error("request aborted")), { once: true });
+        })) as typeof fetch)
+      : ((async () => ({ ok: true, json: () => new Promise<unknown>(() => {}) }) as Response) as typeof fetch);
+    const attachment = attachToOwnBrowser({
+      endpoint,
+      fetchImpl,
+      timeoutMs: 20,
+      onFailure: async () => {
+        cleanupCalls += 1;
+        await new Promise<void>((resolve) => { finishCleanup = resolve; });
+      },
+    });
+    const observed = attachment.then(() => { settled = true; }, () => { settled = true; });
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    assert.equal(cleanupCalls, 1, `${stage} timeout invokes cleanup once`);
+    assert.equal(settled, false, `${stage} timeout waits while cleanup remains pending`);
+    finishCleanup();
+    await assert.rejects(attachment, /did not answer \/json\/version within 20 ms/);
+    await observed;
+    assert.equal(settled, true);
+  }
+});
+
+test("Owned-browser termination waits for the launched process to exit", async () => {
+  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+    detached: process.platform !== "win32",
+    stdio: "ignore",
+  });
+  assert.ok(child.pid !== undefined);
+  try {
+    await terminateOwnedChromeProcess(child, 3000);
+    assert.ok(child.exitCode !== null || child.signalCode !== null);
+  } finally {
+    if (child.pid !== undefined && child.exitCode === null && child.signalCode === null) killProcessTree(child.pid);
+  }
 });

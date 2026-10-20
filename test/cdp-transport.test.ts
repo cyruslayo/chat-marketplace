@@ -5,18 +5,18 @@ import { CDP_CALL_TIMEOUT_MS, createCdpTransport, type CdpSocket } from "./helpe
 // A fake socket: records what the transport writes and lets a test deliver frames or close the socket.
 class FakeSocket implements CdpSocket {
   readonly sent: string[] = [];
-  private handlers: { message(data: unknown): void; close(): void } | undefined;
+  private handlers: { message(data: unknown): void; close(details?: { readonly code?: number; readonly reason?: string }): void } | undefined;
   send(data: string): void {
     this.sent.push(data);
   }
-  subscribe(handlers: { message(data: unknown): void; close(): void }): void {
+  subscribe(handlers: { message(data: unknown): void; close(details?: { readonly code?: number; readonly reason?: string }): void }): void {
     this.handlers = handlers;
   }
   reply(frame: unknown): void {
     this.handlers?.message(JSON.stringify(frame));
   }
-  close(): void {
-    this.handlers?.close();
+  close(details?: { readonly code?: number; readonly reason?: string }): void {
+    this.handlers?.close(details);
   }
   lastId(): number {
     return (JSON.parse(this.sent[this.sent.length - 1]!) as { id: number }).id;
@@ -38,7 +38,7 @@ test("A CDP call with no reply rejects after its timeout, naming the method and 
   await assert.rejects(
     transport.send("Runtime.evaluate", { expression: "1" }, "session-1", { timeoutMs: 30 }),
     (error: unknown) => error instanceof Error &&
-      error.message === "CDP Runtime.evaluate timed out after 30 ms (page http://127.0.0.1:9/stays/unit-1)"
+      error.message === "CDP Runtime.evaluate timed out after 30 ms (page http://127.0.0.1:9/<route:2>)"
   );
   assert.equal(transport.pendingCount(), 0, "the timed-out call was removed from the pending table");
 });
@@ -69,9 +69,31 @@ test("When the socket closes, every pending call rejects naming its method, and 
   const second = transport.send("Runtime.evaluate", { expression: "2" }, "session-1");
   assert.equal(transport.pendingCount(), 2);
   socket.close();
-  await assert.rejects(first, /CDP socket closed before Page\.navigate replied \(page http:\/\/127\.0\.0\.1:9\/stays\/unit-1\)/);
-  await assert.rejects(second, /CDP socket closed before Runtime\.evaluate replied/);
+  await assert.rejects(first, /CDP socket closed \(code unknown, reason <empty>; browser exit status unavailable\) before Page\.navigate replied \(page http:\/\/127\.0\.0\.1:9\/<route:2>\)/);
+  await assert.rejects(second, /CDP socket closed .* before Runtime\.evaluate replied/);
   assert.equal(transport.pendingCount(), 0);
+});
+
+test("Close diagnostics include scrubbed socket and browser status without URL credentials", async () => {
+  const socket = new FakeSocket();
+  const secret = "sentinel-private-reference";
+  const pageUrl = `http://127.0.0.1:9/payments/paystack/callback/${secret}?reference=${secret}#${secret}`;
+  const transport = createCdpTransport({
+    socket,
+    describePage: () => pageUrl,
+    describeBrowserExit: () => "Chrome exit code 2, signal SIGTERM",
+  });
+  const pending = transport.send("Runtime.evaluate", { expression: "1" }, "session-1");
+  socket.close({ code: 1006, reason: `connection ended at ${pageUrl}` });
+  await assert.rejects(pending, (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.match(error.message, /code 1006/);
+    assert.match(error.message, /reason <redacted \d+ characters>/);
+    assert.match(error.message, /Chrome exit code 2, signal SIGTERM/);
+    assert.match(error.message, /http:\/\/127\.0\.0\.1:9\/<route:4>/);
+    assert.equal(error.message.includes(secret), false);
+    return true;
+  });
 });
 
 test("A call made after the socket closed rejects at once and is not written to the socket", async () => {

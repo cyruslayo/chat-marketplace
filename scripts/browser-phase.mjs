@@ -67,12 +67,13 @@ export function formatBrowserPhaseTotals(totals) {
 
 // Kills the process and everything it started. On Windows, taskkill /T walks the tree (the Chrome children included).
 export function killProcessTree(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return;
   if (process.platform === "win32") {
-    spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore" });
-    return;
+    const result = spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore", timeout: 5_000 });
+    if (result.status === 0) return;
   }
   try {
-    process.kill(-pid, "SIGKILL");
+    process.kill(process.platform === "win32" ? pid : -pid, "SIGKILL");
   } catch {
     try {
       process.kill(pid, "SIGKILL");
@@ -115,26 +116,40 @@ export function runBrowserFile({ root, tsx, file, extra = [], timeoutMs, log = c
       process.stderr.write(chunk);
     });
     let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      killProcessTree(child.pid);
-    }, timeoutMs);
-    child.on("error", (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-    child.on("exit", (code) => {
+    let settled = false;
+    let timer;
+    const finish = (code) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
       const elapsedMs = Date.now() - started;
       const summary = parseTapSummary(output);
       const exitCode = timedOut ? null : (code ?? 1);
       const status = browserFileStatus({ timedOut, exitCode, summary });
       if (timedOut) {
-        log(`# ${file}: timed out after ${Math.round(timeoutMs / 1000)} s; its process tree was killed`);
+        log(`# ${file}: timed out after ${Math.round(timeoutMs / 1000)} s; a process-tree kill was requested`);
       } else if (summary === undefined) {
         log(`# ${file}: exited ${exitCode} without a test summary (a crash)`);
       }
       resolve({ file, status, exitCode, elapsedMs, summary });
+    };
+    timer = setTimeout(() => {
+      timedOut = true;
+      killProcessTree(child.pid);
+      // A descendant can keep the pipes open after the direct child exits. Close our readers and
+      // report the timeout at its deadline instead of waiting forever for the stream `close` event.
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+      finish(null);
+    }, timeoutMs);
+    child.on("error", (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.on("close", (code) => {
+      finish(code);
     });
   });
 }

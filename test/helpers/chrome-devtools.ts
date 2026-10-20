@@ -1,8 +1,9 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { closeSync, futimesSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, renameSync, rmSync, rmdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
+import { killProcessTree } from "../../scripts/browser-phase.mjs";
 import { createCdpTransport, type CdpCallOptions, type CdpSocket } from "./cdp-transport.js";
 
 /**
@@ -87,13 +88,14 @@ function redactDiagnostics(value: string): string {
   return value
     .replace(/(?:\+?234|0)\d[\d\s().-]{8,}/g, "[redacted-phone]")
     .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[redacted-email]")
-    .replace(/(?:shortlet_guest_session|shortlet_operator_session|shortlet_operator_secret)=[^;\s]+/gi, "$1=[redacted-cookie]");
+    .replace(/(shortlet_guest_session|shortlet_operator_session|shortlet_operator_secret)=[^;\s]+/gi, "$1=[redacted-cookie]");
 }
 
 function safeDiagnosticUrl(value: string): string {
   try {
     const parsed = new URL(value);
-    return `${parsed.origin}${parsed.pathname}`;
+    const depth = parsed.pathname.split("/").filter(Boolean).length;
+    return `${parsed.origin}${depth === 0 ? "/" : `/<route:${depth}>`}`;
   } catch {
     return "<invalid-url>";
   }
@@ -127,10 +129,46 @@ export function assertOwnBrowserEndpoint(endpoint: DevToolsEndpoint, webSocketUr
   try {
     answered = new URL(webSocketUrl).pathname;
   } catch {
-    throw new Error(`DevTools reported an unreadable websocket URL (${webSocketUrl}); it is not the browser this run launched`);
+    throw new Error("DevTools reported an unreadable websocket URL; it is not the browser this run launched");
   }
   if (answered !== endpoint.browserPath) {
-    throw new Error(`DevTools on port ${endpoint.port} reports browser ${answered}, which is not the browser this run launched (${endpoint.browserPath})`);
+    throw new Error(`DevTools on port ${endpoint.port} reported a different browser endpoint; it is not the browser this run launched`);
+  }
+}
+
+/** Kills only the Chrome process this helper launched and waits for its exit before profile cleanup. */
+export async function terminateOwnedChromeProcess(
+  proc: ChildProcess,
+  timeoutMs = OWNED_CHROME_TERMINATION_TIMEOUT_MS,
+): Promise<void> {
+  if (proc.pid === undefined || proc.exitCode !== null || proc.signalCode !== null) return;
+  let clearWait: (() => void) | undefined;
+  const exited = new Promise<boolean>((resolve) => {
+    let settled = false;
+    let cleanup = () => {};
+    const finish = (didExit: boolean) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(didExit);
+    };
+    const onExit = () => finish(true);
+    const timer = setTimeout(() => finish(false), timeoutMs);
+    cleanup = () => {
+      clearTimeout(timer);
+      proc.off("exit", onExit);
+    };
+    clearWait = cleanup;
+    proc.once("exit", onExit);
+  });
+  if (proc.exitCode !== null || proc.signalCode !== null) {
+    clearWait?.();
+    return;
+  }
+  killProcessTree(proc.pid);
+  const stopped = await exited;
+  if (!stopped && proc.exitCode === null && proc.signalCode === null) {
+    throw new Error(`Launched Chrome process ${proc.pid} did not exit within ${timeoutMs} ms after termination was requested`);
   }
 }
 
@@ -142,14 +180,12 @@ const BROWSER_LOCK_DIR = join(tmpdir(), "chat-marketplace-real-browser.lock");
  * taken over at once, so this bound only ever applies to a live holder.
  */
 export const BROWSER_LOCK_WAIT_MS = 5 * 60_000;
-/**
- * An owner file not touched for this long has no live heartbeat, so its holder is gone or frozen. The heartbeat is a timer
- * on the holder's event loop, so it stops while the holder runs a synchronous block. The threshold is therefore far above
- * any synchronous work a browser test does (a few seconds at most): a live holder is never taken over for being busy.
- */
+/** Age after which a lock directory with no readable owner record can be reclaimed. */
 export const BROWSER_LOCK_STALE_MS = 30_000;
 const BROWSER_LOCK_POLL_MS = 50;
 const BROWSER_LOCK_HEARTBEAT_MS = 1_000;
+export const DEVTOOLS_ATTACH_TIMEOUT_MS = 10_000;
+export const OWNED_CHROME_TERMINATION_TIMEOUT_MS = 5_000;
 /** Budget for the cleanup calls in close(); a tab that cannot close quickly does not hold the run up. */
 const CLOSE_CALL_TIMEOUT_MS = 5_000;
 
@@ -164,6 +200,7 @@ export interface BrowserLockOptions {
 interface BrowserLockOwner {
   readonly pid: number;
   readonly startedAt: string;
+  readonly lockToken?: string;
 }
 
 // The owner file is JSON {pid, startedAt}. An older owner file held the bare PID; it is still read, with an unknown start.
@@ -181,10 +218,28 @@ function readBrowserLockOwner(ownerPath: string): BrowserLockOwner | undefined {
     parsed = undefined;
   }
   if (typeof parsed === "object" && parsed !== null && "pid" in parsed && "startedAt" in parsed && typeof parsed.pid === "number" && typeof parsed.startedAt === "string") {
-    return { pid: parsed.pid, startedAt: parsed.startedAt };
+    const lockToken = "lockToken" in parsed && typeof parsed.lockToken === "string" ? parsed.lockToken : undefined;
+    return { pid: parsed.pid, startedAt: parsed.startedAt, ...(lockToken ? { lockToken } : {}) };
   }
   const legacy = Number(text);
   return Number.isInteger(legacy) && legacy > 0 ? { pid: legacy, startedAt: "unknown" } : undefined;
+}
+
+export interface BrowserLockEntry {
+  readonly ownerPath: string;
+  readonly owner: BrowserLockOwner | undefined;
+}
+
+function findBrowserLockEntry(lockDir: string): BrowserLockEntry | undefined {
+  let entries: string[];
+  try {
+    entries = readdirSync(lockDir);
+  } catch {
+    return undefined;
+  }
+  const marker = entries.find((name) => name.startsWith("owner-") && name.endsWith(".json"));
+  const ownerPath = marker ? join(lockDir, marker) : entries.includes("owner") ? join(lockDir, "owner") : undefined;
+  return ownerPath ? { ownerPath, owner: readBrowserLockOwner(ownerPath) } : undefined;
 }
 
 function processAlive(pid: number): boolean {
@@ -205,62 +260,106 @@ function mtimeMs(path: string): number | undefined {
   }
 }
 
-/**
- * Takes over a lock that looks stale, without racing another waiter. The lock directory is first renamed to a unique name
- * (a rename is atomic: only one waiter moves it). Its owner is then read again. If it is still the stale holder, the
- * directory is removed. If a live owner has appeared in the meantime (another waiter took the lock between our check and
- * our rename), the directory is put back so that live owner keeps its lock. A failed put-back is logged; the directory is
- * never deleted in that case.
- */
-function takeOverStaleLock(lockDir: string, expected: BrowserLockOwner | undefined, log: (message: string) => void, reason: string): void {
-  const trash = `${lockDir}.stale-${process.pid}-${randomUUID()}`;
-  try {
-    renameSync(lockDir, trash);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
-    throw error;
+function sameLockOwner(left: BrowserLockOwner | undefined, right: BrowserLockOwner | undefined): boolean {
+  return left !== undefined && right !== undefined && left.pid === right.pid && left.startedAt === right.startedAt && left.lockToken === right.lockToken;
+}
+
+/** Removes a dead owner's unique marker, then removes the directory only when it is empty. */
+export function takeOverStaleLock(lockDir: string, entry: BrowserLockEntry | undefined, log: (message: string) => void, reason: string): boolean {
+  if (entry?.owner) {
+    if (processAlive(entry.owner.pid) || !sameLockOwner(readBrowserLockOwner(entry.ownerPath), entry.owner)) return false;
+    try {
+      unlinkSync(entry.ownerPath);
+      // Another acquisition cannot publish while this path exists. A token-specific marker also prevents an
+      // old observation from unlinking a replacement owner's marker after this directory is reclaimed.
+      rmdirSync(lockDir);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return true;
+      if (["ENOTEMPTY", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? "")) return false;
+      throw error;
+    }
+  } else {
+    try {
+      rmdirSync(lockDir);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return true;
+      if (["ENOTEMPTY", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? "")) return false;
+      throw error;
+    }
   }
-  const owner = readBrowserLockOwner(join(trash, "owner"));
-  const stillStale = owner
-    ? expected !== undefined && owner.pid === expected.pid && owner.startedAt === expected.startedAt
-    : (mtimeMs(trash) ?? 0) < Date.now() - BROWSER_LOCK_STALE_MS;
-  if (stillStale) {
-    rmSync(trash, { recursive: true, force: true });
-    log(`Took over the stale real-browser lock at ${lockDir}: ${reason}`);
-    return;
-  }
-  try {
-    renameSync(trash, lockDir);
-  } catch (error) {
-    log(`Could not restore the real-browser lock at ${lockDir} after a takeover found a live owner (${(error as Error).message}); its holder is unaffected but the lock directory is at ${trash}`);
-  }
+  log(`Took over the stale real-browser lock at ${lockDir}: ${reason}`);
+  return true;
 }
 
 export async function acquireBrowserLock(options: BrowserLockOptions = {}): Promise<() => void> {
   const lockDir = options.lockDir ?? BROWSER_LOCK_DIR;
   const waitMs = options.waitMs ?? BROWSER_LOCK_WAIT_MS;
   const log = options.log ?? ((message: string) => console.warn(message));
-  const ownerPath = join(lockDir, "owner");
   const deadline = Date.now() + waitMs;
   for (;;) {
-    try {
-      mkdirSync(lockDir);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      const holder = readBrowserLockOwner(ownerPath);
-      if (holder && !processAlive(holder.pid)) {
-        takeOverStaleLock(lockDir, holder, log, `holder PID ${holder.pid} (started ${holder.startedAt}) is no longer running.`);
-        continue;
+    const lockToken = randomUUID();
+    const startedAt = new Date().toISOString();
+    const owner = { pid: process.pid, startedAt, lockToken };
+    const candidateDir = `${lockDir}.candidate-${process.pid}-${lockToken}`;
+    const ownerName = `owner-${lockToken}.json`;
+    const candidateOwnerPath = join(candidateDir, ownerName);
+    const ownerPath = join(lockDir, ownerName);
+    let published = false;
+    if (mtimeMs(lockDir) === undefined) {
+      try {
+        mkdirSync(candidateDir);
+        writeFileSync(candidateOwnerPath, JSON.stringify(owner), "utf8");
+        renameSync(candidateDir, lockDir);
+        published = true;
+      } catch (error) {
+        try { rmSync(candidateDir, { recursive: true, force: true }); } catch {}
+        if (mtimeMs(lockDir) === undefined) throw error;
       }
-      // A holder that is alive but has stopped its heartbeat is treated the same way. Without an owner file, the lock
-      // directory's own age decides.
-      const beat = mtimeMs(holder ? ownerPath : lockDir);
-      if (beat === undefined) continue;
-      if (Date.now() - beat > BROWSER_LOCK_STALE_MS) {
-        const who = holder ? `PID ${holder.pid}` : "unrecorded";
-        takeOverStaleLock(lockDir, holder, log, `no heartbeat for ${Math.round((Date.now() - beat) / 1000)} s (holder ${who}).`);
-        continue;
+    }
+    if (published) {
+      let ownerFd: number;
+      try {
+        ownerFd = openSync(ownerPath, "r+");
+      } catch (error) {
+        try { unlinkSync(ownerPath); } catch {}
+        try { rmdirSync(lockDir); } catch {}
+        throw error;
       }
+      const heartbeat = setInterval(() => {
+        if (!sameLockOwner(readBrowserLockOwner(ownerPath), owner)) {
+          clearInterval(heartbeat);
+          return;
+        }
+        try {
+          futimesSync(ownerFd!, new Date(), new Date());
+        } catch {
+          clearInterval(heartbeat);
+        }
+      }, BROWSER_LOCK_HEARTBEAT_MS);
+      heartbeat.unref();
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        clearInterval(heartbeat);
+        closeSync(ownerFd);
+        if (!sameLockOwner(readBrowserLockOwner(ownerPath), owner)) return;
+        try {
+          unlinkSync(ownerPath);
+          rmdirSync(lockDir);
+        } catch (error) {
+          if (!["ENOENT", "ENOTEMPTY", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+        }
+      };
+    }
+    const entry = findBrowserLockEntry(lockDir);
+    const holder = entry?.owner;
+    if (holder && !processAlive(holder.pid)) {
+      if (takeOverStaleLock(lockDir, entry, log, `holder PID ${holder.pid} (started ${holder.startedAt}) is no longer running.`)) continue;
+    }
+    // A live PID remains the owner even when its heartbeat is old.
+    const beat = mtimeMs(entry?.ownerPath ?? lockDir);
+    if (beat === undefined) {
       if (Date.now() >= deadline) {
         const who = holder ? `holder PID ${holder.pid} (started ${holder.startedAt})` : "no recorded holder";
         throw new Error(`Timed out after ${waitMs} ms waiting for the real-browser lock at ${lockDir}; ${who}.`);
@@ -268,22 +367,14 @@ export async function acquireBrowserLock(options: BrowserLockOptions = {}): Prom
       await new Promise((resolve) => setTimeout(resolve, BROWSER_LOCK_POLL_MS));
       continue;
     }
-    // Acquired: record this holder, keep its heartbeat fresh, and release on request.
-    writeFileSync(ownerPath, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }), "utf8");
-    const heartbeat = setInterval(() => {
-      try {
-        utimesSync(ownerPath, new Date(), new Date());
-      } catch {
-        clearInterval(heartbeat);
-      }
-    }, BROWSER_LOCK_HEARTBEAT_MS);
-    heartbeat.unref();
-    return () => {
-      clearInterval(heartbeat);
-      try {
-        rmSync(lockDir, { recursive: true, force: true });
-      } catch {}
-    };
+    if (!entry && Date.now() - beat > BROWSER_LOCK_STALE_MS) {
+      if (takeOverStaleLock(lockDir, undefined, log, `no heartbeat for ${Math.round((Date.now() - beat) / 1000)} s (holder unrecorded).`)) continue;
+    }
+    if (Date.now() >= deadline) {
+      const who = holder ? `holder PID ${holder.pid} (started ${holder.startedAt})` : "no recorded holder";
+      throw new Error(`Timed out after ${waitMs} ms waiting for the real-browser lock at ${lockDir}; ${who}.`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, BROWSER_LOCK_POLL_MS));
   }
 }
 
@@ -301,18 +392,36 @@ interface DevToolsVersion {
 export async function attachToOwnBrowser(options: {
   readonly endpoint: DevToolsEndpoint;
   readonly fetchImpl?: typeof fetch;
-  readonly onFailure: (error: unknown) => void;
+  readonly timeoutMs?: number;
+  readonly onFailure: (error: unknown) => void | Promise<void>;
 }): Promise<DevToolsVersion> {
-  try {
-    const response = await (options.fetchImpl ?? fetch)(`http://127.0.0.1:${options.endpoint.port}/json/version`);
+  const timeoutMs = options.timeoutMs ?? DEVTOOLS_ATTACH_TIMEOUT_MS;
+  const controller = new AbortController();
+  let timedOut = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const request = async (): Promise<DevToolsVersion> => {
+    const response = await (options.fetchImpl ?? fetch)(`http://127.0.0.1:${options.endpoint.port}/json/version`, { signal: controller.signal });
     if (!response.ok) throw new Error(`DevTools on port ${options.endpoint.port} answered ${response.status} to /json/version`);
     const body: unknown = await response.json();
     const url = typeof body === "object" && body !== null && "webSocketDebuggerUrl" in body && typeof body.webSocketDebuggerUrl === "string" ? body.webSocketDebuggerUrl : "";
     assertOwnBrowserEndpoint(options.endpoint, url);
     return body as DevToolsVersion;
+  };
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+      reject(new Error(`DevTools on port ${options.endpoint.port} did not answer /json/version within ${timeoutMs} ms`));
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([request(), timeout]);
   } catch (error) {
-    options.onFailure(error);
+    if (timedOut) error = new Error(`DevTools on port ${options.endpoint.port} did not answer /json/version within ${timeoutMs} ms`);
+    await options.onFailure(error);
     throw error;
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
   }
 }
 
@@ -349,7 +458,17 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
   ].filter(Boolean);
 
   const chrome = resolveChromeLaunch();
-  const proc: ChildProcess = spawn(chrome.executable, [...chrome.sandboxArgs, ...args], { stdio: "ignore" });
+  const proc: ChildProcess = spawn(chrome.executable, [...chrome.sandboxArgs, ...args], {
+    stdio: "ignore",
+    detached: process.platform !== "win32",
+  });
+  let browserExit: { readonly code: number | null; readonly signal: NodeJS.Signals | null } | undefined;
+  proc.once("exit", (code, signal) => { browserExit = { code, signal }; });
+  const cleanupOwnedChrome = async () => {
+    await terminateOwnedChromeProcess(proc);
+    try { rmSync(userDataDir, { recursive: true, force: true }); } catch {}
+    releaseBrowserLock();
+  };
   const targetIds = new Set<string>();
 
   // The first launch on a cold CI runner can take longer than 4 s to write its profile (CI run 38090026371 failed at 4.2 s
@@ -366,9 +485,7 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
   }
 
   if (!endpoint) {
-    proc.kill();
-    try { rmSync(userDataDir, { recursive: true, force: true }); } catch {}
-    releaseBrowserLock();
+    await cleanupOwnedChrome();
     throw new Error(`Chrome did not report its DevTools port in ${userDataDir}`);
   }
   const port = endpoint.port;
@@ -377,26 +494,22 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
   // Confirm the answering browser is this one before anything is sent to it.
   const reported = await attachToOwnBrowser({
     endpoint,
-    onFailure: () => {
-      proc.kill();
-      try { rmSync(userDataDir, { recursive: true, force: true }); } catch {}
-      releaseBrowserLock();
-    },
+    onFailure: async () => cleanupOwnedChrome(),
   });
 
   const ws = new WebSocket(wsUrl);
   try {
     await new Promise<void>((resolve, reject) => {
       ws.onopen = () => resolve();
-      ws.onerror = (e) => reject(new Error(`WebSocket error: ${String(e)}`));
+      ws.onerror = () => reject(new Error("WebSocket error while connecting to the launched browser"));
     });
   } catch (error) {
     try { ws.close(); } catch {}
-    if (proc.exitCode === null) {
-      try { proc.kill("SIGKILL"); } catch {}
+    try {
+      await cleanupOwnedChrome();
+    } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], "WebSocket attach failed and Chrome cleanup did not complete");
     }
-    try { rmSync(userDataDir, { recursive: true, force: true }); } catch {}
-    releaseBrowserLock();
     throw error;
   }
 
@@ -407,12 +520,15 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
     send: (data) => ws.send(data),
     subscribe: (handlers) => {
       ws.onmessage = (event) => handlers.message(event.data);
-      ws.onclose = () => handlers.close();
+      ws.onclose = (event) => handlers.close({ code: event.code, reason: event.reason });
     },
   };
   const transport = createCdpTransport({
     socket,
     describePage: (sessionId) => (sessionId ? pageUrls.get(sessionId) : undefined) ?? "<unknown page>",
+    describeBrowserExit: () => browserExit
+      ? `Chrome exit code ${browserExit.code ?? "<none>"}, signal ${browserExit.signal ?? "<none>"}`
+      : "Chrome process had not exited",
     onEvent: (message) => {
       if (message.method === "Page.frameNavigated" && message.sessionId) {
         const frame = (message.params as { frame?: { url?: unknown; parentId?: unknown } } | undefined)?.frame;
@@ -783,17 +899,13 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
       try { ws.close(); } catch { finish(); }
     });
     try {
-      if (proc.exitCode === null) {
-        await new Promise<void>((resolve) => {
-          const timer = setTimeout(resolve, 10000);
-          proc.once("exit", () => { clearTimeout(timer); resolve(); });
-          try { proc.kill("SIGKILL"); } catch { clearTimeout(timer); resolve(); }
-        });
-      }
-    } finally {
-      try { rmSync(userDataDir, { recursive: true, force: true }); } catch {}
-      if (options.releaseLock !== false) releaseLock();
+      await terminateOwnedChromeProcess(proc);
+    } catch (error) {
+      closed = false;
+      throw error;
     }
+    try { rmSync(userDataDir, { recursive: true, force: true }); } catch {}
+    if (options.releaseLock !== false) releaseLock();
   }
 
   return {
