@@ -33,4 +33,18 @@ Requested: 20 Oct 2026
 
 ## Answer
 
+### Owner approval — 20 Oct 2026
+
+The owner replied **"accept recommendations"** after the session report explicitly recommended options **(a), items 1–5**:
+
+1. Carry the exact first message by POST into a new conversation, with session issuance and the existing beta gate; never put the message in a URL. Implement under issue 14 after the port, preserving existing work and the application's conversation seam.
+2. Keep `/welcome` public on staging; sending still meets the same invite gate as `/`.
+3. Add **Furnished** to the shortlet glossary as a property of a published Unit, true for every launch Unit. This records approval; the glossary edit has not yet been made.
+4. Show only **1–14-night stays** on the landing until counsel signs off. No monthly/1–6-month positioning is approved.
+5. Keep **"Any deposit sits on its own line"** as conditional wording. Pilot deposits remain zero at launch; this approves neither collection nor a change to the feature flag or counsel/PSP gates.
+
+**Still open (item 6):** approved photography and the two FAQ answers. Keep unapproved photography and unanswered FAQ entries off the public page. Issue 13 remains `ready-for-human` for those decisions; no new copy beyond the selections above is approved.
+
+The same reply approved fast-forwarding the tracker branch to local `main` (`ad5ad72`), completed without a push or deployment. It did not accept a future ADR draft or authorize later branch merges.
+
 ## Comments
