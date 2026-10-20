@@ -27,6 +27,14 @@ export function isCommerceApiPath(pathname: string): boolean {
  */
 export default {
   fetch(request: WorkerRequest, env: CloudflareEnv) {
+    const pathname = new URL(request.url).pathname;
+    // ADR 0101 / issue 24: private paths are refused even before tenant provisioning.
+    if (isCommerceApiPath(pathname) || pathname === "/_internal" || pathname.startsWith("/_internal/")) {
+      return Promise.resolve(new Response(JSON.stringify({ ok: false, code: "NOT_FOUND" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
+      }) as unknown as WorkerResponse);
+    }
     const tenantId = env.SHORTLET_TENANT_ID?.trim() ?? "";
     if (tenantId === "") {
       return Promise.resolve(
@@ -35,13 +43,6 @@ export default {
           headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
         }) as unknown as WorkerResponse,
       );
-    }
-    const pathname = new URL(request.url).pathname;
-    if (isCommerceApiPath(pathname) || pathname === "/_internal" || pathname.startsWith("/_internal/")) {
-      return Promise.resolve(new Response(JSON.stringify({ ok: false, code: "NOT_FOUND" }), {
-        status: 404,
-        headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
-      }) as unknown as WorkerResponse);
     }
     // ADR 0095/0101: each authority uses the same tenant name and best-effort placement hint.
     const namespace = isPlatformPath(pathname) ? env.PLATFORM : env.SHORTLET;
