@@ -1,6 +1,6 @@
 # Disable commerce on the Node pilot hosts
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: none
 Requested: 20 Oct 2026
@@ -77,4 +77,10 @@ Read-only self-review rechecked the ADR table: only the three Node pilot files i
 4. No unused injected dependency: yes; no dependency added.
 5. No invented policy: yes; disabled composition is the owner's 20 Oct decision and the existing composition vocabulary; no new environment switch or domain threshold.
 6. No bearer credentials or restricted identity material added to logs/audit: yes; synthetic fixtures only, no credential logging introduced.
-7. `npm run check`: clean. Full suite: one contention failure, isolated rerun 23/23 passed; Workers 159/159 passed. **Owner exception granted** on 20 Oct 2026: after the report explicitly requested acceptance of this single contention failure and permission to restore the 29 screenshots plus two generated bundles, the owner replied **"accept all"**. This waives only the literal zero-failure full-run requirement for this issue, not future failures or gates. Exactly the 31 manifest paths were restored to `HEAD`; inherited changes, including `HANDOFF.md`, were left untouched. No merge, push, deployment, deletion or ADR acceptance was authorized. Implementation is ready to commit; resolution follows that commit.
+7. `npm run check`: clean. Full suite: one contention failure, isolated rerun 23/23 passed; Workers 159/159 passed. **Owner exception granted** on 20 Oct 2026: after the report explicitly requested acceptance of this single contention failure and permission to restore the 29 screenshots plus two generated bundles, the owner replied **"accept all"**. This waives only the literal zero-failure full-run requirement for this issue, not future failures or gates. Exactly the 31 manifest paths were restored to `HEAD`; inherited changes, including `HANDOFF.md`, were left untouched. No merge, push, deployment, deletion or ADR acceptance was authorized. Implementation committed as `ebfa4c1` on `stays-launch/27-commerce-off-pilot-hosts`; resolution follows that commit. Tooling reformatted the touched TypeScript files; read-only review confirmed no unrelated semantic changes. Existing test expectations are unchanged.
+
+## Answer
+
+Implemented in `ebfa4c1`: both Node pilot hosts explicitly disable the commerce composition. Production/staging load a fixed `disabled` configuration and reject other injected values before resource allocation. The development demo, Cloudflare composition, domain code and guest kit are unchanged.
+
+Acceptance evidence: five new tests covering AC1–4 and startup validation; 35/35 targeted tests and 44/44 existing local-pilot browser tests, zero expectation edits; build/check passed; Workers 159/159 passed. Full run `afc4005d` had exactly one contention failure, whose file passed 23/23 in isolated run `e73fd1e7`; the owner explicitly accepted this exception on 20 Oct 2026. All seven DoD items are checked above, with item 7's single owner-approved exception disclosed. The 31 approved verification side effects were restored, not committed. Direct self-review only, per the owner's no-subagent instruction. Branch is not merged, pushed or deployed.

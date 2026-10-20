@@ -36,7 +36,7 @@ Goal: a closed, founder-operated paid pilot with 10–20 real, inspected units i
 | 24 | [Structured logging and assistant diagnostics](issues/24-structured-logging.md) | task | ready-for-agent | 18 |
 | 25 | [Backups, WAL and schema versioning](issues/25-backups-wal-and-schema-versioning.md) | task | ready-for-agent | 21 |
 | 26 | [Tester feedback link](issues/26-tester-feedback-link.md) | task | ready-for-agent | none |
-| 27 | [Disable commerce on the Node pilot hosts](issues/27-disable-commerce-on-node-pilot-hosts.md) | task | claimed | none |
+| 27 | [Disable commerce on the Node pilot hosts](issues/27-disable-commerce-on-node-pilot-hosts.md) | task | resolved | none |
 
 Issues 16–26 come from the production audit of 28 Sept 2026. The closed beta (test payments, invited testers) needs 16–19, 22, 23 and 10. The paid pilot additionally needs 20, 21, 24 and 25.
 
@@ -54,3 +54,4 @@ Issues 16–26 come from the production audit of 28 Sept 2026. The closed beta (
 - 19: hourly rate limits at the pilot front server, a daily model-call cap that falls back to the deterministic concierge, body limits, idle session-runtime eviction (`docs/pilot-deployment.md` "Guardrails"). Default values confirmed by the user. Branch `launch/guardrails-and-notifications`.
 - 23: Resend email notifications via a sweeping `PilotNotifier` (`apps/pilot/src/notifications/`); Operator alerts go to `SHORTLET_OPERATOR_ALERT_EMAILS`. Branch `launch/guardrails-and-notifications`.
 - 10: most criteria were already met on main; "show me the apartment" now opens a result or asks which one (`viewResultIntent`). All six criteria are covered by `test/guest-must-fix-ux.test.ts`. Branch `ux/issue-10-must-fix`.
+- 27: [answer and gate evidence](issues/27-disable-commerce-on-node-pilot-hosts.md#answer) — `ebfa4c1`, branch `stays-launch/27-commerce-off-pilot-hosts`; Node production/staging and local pilots disable commerce, fixed configuration fails closed, demo/Cloudflare/stays unchanged. Build/check passed; targeted 35/35, existing local-pilot browser 44/44, Workers 159/159. Full-suite single contention failure passed 23/23 alone; owner explicitly accepted that exception and restoration of the 31 verification side effects. Resolved on the branch, not merged/pushed/deployed.
