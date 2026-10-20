@@ -46,3 +46,7 @@ Before starting, also list `docs/adr/` and read any other ADR that touches the f
 Apply every item of the Definition of Done in `docs/agents/issue-tracker.md`. Shortlet behaviour must not change: the existing tests and the guest UI walkthrough/capture checks are the safety net.
 
 ## Comments
+
+### 20 Oct 2026 — stays-first launch
+
+Parked, not cancelled, by the owner's stays-only launch decision in [issue 30](30-defer-commerce-until-stays-launch.md). Commerce stays off in every public deployment until the owner reopens it and the recorded prerequisites are met. Status remains `ready-for-agent`, still blocked by slice 04; this status does not authorize starting parked work.
