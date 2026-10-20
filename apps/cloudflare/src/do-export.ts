@@ -223,18 +223,61 @@ export async function exportTable(dependencies: DailyExportDependencies, date: s
 }
 
 /** Deletes export objects older than the configured retention (ADR 0075, provisional; value from configuration). */
-export async function deleteExpiredExports(dependencies: DailyExportDependencies, today: string): Promise<number> {
+/**
+ * Deletes the expired export objects (final review F9, ADR 0095, ADR 0101). Keys are `YYYY-MM-DD/<table>.jsonl`, so ownership is by
+ * table name. The sweep finds expired day folders with a delimiter listing (one entry per day, not per object). An owner's alarm passes
+ * its own tables, and for each expired day it asks for each owned table's exact key, so it never lists or deletes another owner's
+ * objects. With no owner (ad hoc, and the unscoped retention sweep), every object of an expired day is swept. Retention is unchanged:
+ * a day is expired when it is before the cutoff and is not today.
+ */
+export async function deleteExpiredExports(dependencies: DailyExportDependencies, today: string, ownedTables?: readonly string[]): Promise<number> {
   const cutoff = lagosDate(new Date(dependencies.clock().getTime() - dependencies.retentionDays * DAY_MS));
-  const listed = await listEveryObject(dependencies.exports);
   let deleted = 0;
-  for (const object of listed) {
-    const date = object.key.split("/")[0] ?? "";
-    if (DATE_PATTERN.test(date) && date < cutoff && date !== today) {
-      await dependencies.exports.delete(object.key);
-      deleted += 1;
+  for (const day of await expiredExportDays(dependencies.exports, cutoff, today)) {
+    if (ownedTables === undefined) {
+      for (const object of await listDay(dependencies.exports, day)) {
+        await dependencies.exports.delete(object.key);
+        deleted += 1;
+      }
+      continue;
+    }
+    for (const table of ownedTables) {
+      const key = exportObjectKey(day, table);
+      const page = await dependencies.exports.list({ prefix: key });
+      if (page.objects.some((object) => object.key === key)) {
+        await dependencies.exports.delete(key);
+        deleted += 1;
+      }
     }
   }
   return deleted;
+}
+
+/** Every object under one day folder, across pages. */
+async function listDay(bucket: R2Bucket, day: string): Promise<R2Object[]> {
+  const objects: R2Object[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await bucket.list({ prefix: `${day}/`, cursor });
+    objects.push(...page.objects);
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor !== undefined);
+  return objects;
+}
+
+/** The expired day folders, from one root listing with a "/" delimiter. The _ops/ marker prefix is not a day and is skipped. */
+async function expiredExportDays(bucket: R2Bucket, cutoff: string, today: string): Promise<string[]> {
+  const days: string[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await bucket.list({ delimiter: "/", cursor });
+    for (const prefix of page.delimitedPrefixes) {
+      const day = prefix.replace(/\/$/, "");
+      if (DATE_PATTERN.test(day) && day < cutoff && day !== today) days.push(day);
+    }
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor !== undefined);
+  return days;
 }
 
 /**
@@ -265,7 +308,7 @@ export async function runDailyExport(dependencies: DailyExportDependencies): Pro
   const rowsByTable: Record<string, number> = {};
   const tables = dependencies.tableOwner === "platform" ? PLATFORM_EXPORT_TABLES : dependencies.tableOwner === "shortlet" ? SHORTLET_EXPORT_TABLES : dependencies.tableOwner === "commerce" ? COMMERCE_EXPORT_TABLES : EXPORT_TABLES;
   for (const table of tables) rowsByTable[table] = await exportTable(dependencies, date, table);
-  const expiredExportsDeleted = await deleteExpiredExports(dependencies, date);
+  const expiredExportsDeleted = await deleteExpiredExports(dependencies, date, tables);
   const orphanReceiptsDeleted = await sweepOrphanReceipts(dependencies);
   return { date, rowsByTable, expiredExportsDeleted, orphanReceiptsDeleted };
 }
