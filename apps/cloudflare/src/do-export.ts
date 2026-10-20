@@ -222,7 +222,6 @@ export async function exportTable(dependencies: DailyExportDependencies, date: s
   }
 }
 
-/** Deletes export objects older than the configured retention (ADR 0075, provisional; value from configuration). */
 /**
  * Deletes the expired export objects (final review F9, ADR 0095, ADR 0101). Keys are `YYYY-MM-DD/<table>.jsonl`, so ownership is by
  * table name. The sweep finds expired day folders with a delimiter listing (one entry per day, not per object). An owner's alarm passes
@@ -230,27 +229,40 @@ export async function exportTable(dependencies: DailyExportDependencies, date: s
  * objects. With no owner (ad hoc, and the unscoped retention sweep), every object of an expired day is swept. Retention is unchanged:
  * a day is expired when it is before the cutoff and is not today.
  */
-export async function deleteExpiredExports(dependencies: DailyExportDependencies, today: string, ownedTables?: readonly string[]): Promise<number> {
-  const cutoff = lagosDate(new Date(dependencies.clock().getTime() - dependencies.retentionDays * DAY_MS));
+/** What the retention sweep needs: the bucket, the clock and the retention. A failed object can run it without a database or a pack. */
+export interface ExpiredExportSweep {
+  readonly exports: R2Bucket;
+  readonly clock: () => Date;
+  readonly retentionDays: number;
+}
+
+/** Retention sweep for one owner (see deleteExpiredExports). Sweeps nothing else and writes nothing. */
+export async function sweepExpiredExports(sweep: ExpiredExportSweep, today: string, ownedTables?: readonly string[]): Promise<number> {
+  const cutoff = lagosDate(new Date(sweep.clock().getTime() - sweep.retentionDays * DAY_MS));
   let deleted = 0;
-  for (const day of await expiredExportDays(dependencies.exports, cutoff, today)) {
+  for (const day of await expiredExportDays(sweep.exports, cutoff, today)) {
     if (ownedTables === undefined) {
-      for (const object of await listDay(dependencies.exports, day)) {
-        await dependencies.exports.delete(object.key);
+      for (const object of await listDay(sweep.exports, day)) {
+        await sweep.exports.delete(object.key);
         deleted += 1;
       }
       continue;
     }
     for (const table of ownedTables) {
       const key = exportObjectKey(day, table);
-      const page = await dependencies.exports.list({ prefix: key });
+      const page = await sweep.exports.list({ prefix: key });
       if (page.objects.some((object) => object.key === key)) {
-        await dependencies.exports.delete(key);
+        await sweep.exports.delete(key);
         deleted += 1;
       }
     }
   }
   return deleted;
+}
+
+/** Deletes the expired export objects of the given owner tables (ADR 0095, ADR 0101, final review F9). */
+export async function deleteExpiredExports(dependencies: DailyExportDependencies, today: string, ownedTables?: readonly string[]): Promise<number> {
+  return sweepExpiredExports({ exports: dependencies.exports, clock: dependencies.clock, retentionDays: dependencies.retentionDays }, today, ownedTables);
 }
 
 /** Every object under one day folder, across pages. */

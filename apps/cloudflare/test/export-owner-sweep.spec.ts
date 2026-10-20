@@ -1,7 +1,8 @@
 import type { R2Bucket } from "@cloudflare/workers-types";
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
-import { COMMERCE_EXPORT_TABLES, EXPORT_TABLES, PLATFORM_EXPORT_TABLES, SHORTLET_EXPORT_TABLES, deleteExpiredExports, exportObjectKey, type DailyExportDependencies } from "../src/do-export.js";
+import { COMMERCE_EXPORT_TABLES, EXPORT_TABLES, PLATFORM_EXPORT_TABLES, SHORTLET_EXPORT_TABLES, deleteExpiredExports, exportObjectKey, lagosDate, type DailyExportDependencies } from "../src/do-export.js";
+import { runInDurableObject } from "cloudflare:test";
 
 /**
  * Final review F9 (ADR 0095, ADR 0101): every owner's alarm sweeps only its own tables' expired exports. Export keys stay
@@ -90,4 +91,35 @@ test("F9: every exported table has exactly one owner, so every key is swept by e
   const owners = [...SHORTLET_EXPORT_TABLES, ...PLATFORM_EXPORT_TABLES, ...COMMERCE_EXPORT_TABLES];
   expect(new Set(owners).size).toBe(owners.length);
   expect([...owners].sort()).toEqual([...EXPORT_TABLES].sort());
+});
+
+/**
+ * Review of 8febb76: a commerce object in its failed state still sweeps its own expired exports (ADR 0075 retention, ADR 0095
+ * and ADR 0101 ownership). It exports nothing, and it deletes nothing that another owner or a retained day owns.
+ */
+test("review of 8febb76: a failed commerce object's alarm deletes its own expired exports, sweeps nothing else, and exports nothing", async () => {
+  const stub = env.ISOLATED_COMMERCE.get(env.ISOLATED_COMMERCE.idFromName(`failing-${crypto.randomUUID()}`));
+  const today = lagosDate(new Date());
+  const expired = "2020-01-01";
+  const recent = lagosDate(new Date(Date.now() - 2 * 24 * 60 * 60 * 1000));
+  const commerceExpired = exportObjectKey(expired, "merchants");
+  const commerceOrdersExpired = exportObjectKey(expired, "merchant_orders");
+  const commerceRecent = exportObjectKey(recent, "merchants");
+  const shortletExpired = exportObjectKey(expired, "units");
+  const platformExpired = exportObjectKey(expired, "audit_log");
+  const commerceToday = exportObjectKey(today, "merchants");
+  for (const key of [commerceExpired, commerceOrdersExpired, commerceRecent, shortletExpired, platformExpired]) await env.EXPORTS.put(key, "{}");
+
+  await runInDurableObject(stub, async (instance) => {
+    await instance.alarm();
+  });
+
+  const present = async (key: string) => (await env.EXPORTS.head(key)) !== null;
+  expect(await present(commerceExpired)).toBe(false);
+  expect(await present(commerceOrdersExpired)).toBe(false);
+  expect(await present(commerceRecent)).toBe(true);
+  expect(await present(shortletExpired)).toBe(true);
+  expect(await present(platformExpired)).toBe(true);
+  expect(await present(commerceToday)).toBe(false);
+  for (const key of [commerceRecent, shortletExpired, platformExpired]) await env.EXPORTS.delete(key);
 });

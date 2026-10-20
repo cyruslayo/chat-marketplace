@@ -10,7 +10,7 @@ import { schemaVersion } from "../../../packages/platform-core/src/schema-migrat
 import { DurableObjectSqlDatabase } from "./do-sql-database.js";
 import { commerceMigrationsWithCutover } from "./commerce-migrations.js";
 import type { CommerceObjectEnv } from "./commerce-env.js";
-import { lagosDate, runDailyExport } from "./do-export.js";
+import { COMMERCE_EXPORT_TABLES, lagosDate, runDailyExport, sweepExpiredExports } from "./do-export.js";
 import { loadExportConfiguration } from "./export-config.js";
 import { assertCutoverOpenForImport, assertSchemaCurrent, exportTable, importBatch } from "./ops-import-core.js";
 import { completeCutoverWithMarker, cutoverStatus, createCutoverMarkerStore, reconcileCutover } from "./cutover-marker.js";
@@ -66,15 +66,22 @@ export class CommerceMarket extends DurableObject<CommerceObjectEnv> {
   }
 
   async alarm(): Promise<void> {
-    // Final review F5: a failed object never exports. It logs the fixed code and only reschedules.
+    // Final review F5 and the review of 8febb76: a failed object does not export, but it still sweeps its own expired exports.
     const today = lagosDate(new Date());
     const plan = commerceAlarmPlan({ failure: this.#failure, lastExportDate: (await this.ctx.storage.get<string>("commerce:export:lastDate")) ?? null, today });
-    if (plan.runExport === false) {
-      if (plan.logCode !== null) console.error(plan.logCode);
-    } else {
+    if (plan.logCode !== null) console.error(plan.logCode);
+    if (plan.runExport) {
       const config = loadExportConfiguration(this.env);
       await runDailyExport({ database: new DurableObjectSqlDatabase(this.ctx.storage), exports: this.env.EXPORTS, clock: () => new Date(), ...config, tableOwner: "commerce" });
       await this.ctx.storage.put("commerce:export:lastDate", today);
+    } else if (plan.runRetentionSweep) {
+      // The owner-scoped sweep needs only the bucket, the clock, the retention and the commerce tables: no export, no database, no pack.
+      try {
+        const config = loadExportConfiguration(this.env);
+        await sweepExpiredExports({ exports: this.env.EXPORTS, clock: () => new Date(), retentionDays: config.retentionDays }, today, COMMERCE_EXPORT_TABLES);
+      } catch {
+        console.error("COMMERCE_RETENTION_SWEEP_FAILED");
+      }
     }
     await this.ctx.storage.setAlarm(Date.now() + DAILY_ALARM_MS);
   }
