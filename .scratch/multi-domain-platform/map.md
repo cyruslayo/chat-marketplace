@@ -81,6 +81,9 @@ The frontier is the first slice in the table that is open, unblocked and unclaim
 | **F: ChatGPT** | | | | | |
 | 28 | [Research: ChatGPT app submission for commerce (link-out checkout, Nigeria, review checklist)](issues/28-research-chatgpt-commerce-submission.md) | research | resolved | 03 | 29 |
 | 29 | [Commerce MCP server on Cloudflare: read tools, checkout link-out, widgets from presentations](issues/29-commerce-mcp-server-on-cloudflare.md) | task | ready-for-agent | 23, 24, 28 | none |
+| **Stays-first launch (20 Oct 2026)** | | | | | |
+| 30 | [Record the decision to defer commerce until after the stays launch](issues/30-defer-commerce-until-stays-launch.md) | task | ready-for-agent | none | 31 |
+| 31 | [Fix the chat UX defects found when commerce is turned on](issues/31-commerce-on-chat-ux-fixes.md) | task | needs-triage | 30, owner reopens commerce | none |
 
 ## Metrics
 

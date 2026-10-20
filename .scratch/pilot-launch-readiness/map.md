@@ -36,6 +36,7 @@ Goal: a closed, founder-operated paid pilot with 10–20 real, inspected units i
 | 24 | [Structured logging and assistant diagnostics](issues/24-structured-logging.md) | task | ready-for-agent | 18 |
 | 25 | [Backups, WAL and schema versioning](issues/25-backups-wal-and-schema-versioning.md) | task | ready-for-agent | 21 |
 | 26 | [Tester feedback link](issues/26-tester-feedback-link.md) | task | ready-for-agent | none |
+| 27 | [Disable commerce on the Node pilot hosts](issues/27-disable-commerce-on-node-pilot-hosts.md) | task | ready-for-agent | none |
 
 Issues 16–26 come from the production audit of 28 Sept 2026. The closed beta (test payments, invited testers) needs 16–19, 22, 23 and 10. The paid pilot additionally needs 20, 21, 24 and 25.
 
