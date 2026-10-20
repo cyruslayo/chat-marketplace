@@ -1,5 +1,4 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { createServer } from "node:net";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -99,15 +98,39 @@ function safeDiagnosticUrl(value: string): string {
   }
 }
 
-async function getAvailablePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const srv = createServer();
-    srv.listen(0, "127.0.0.1", () => {
-      const address = srv.address();
-      const port = typeof address === "object" && address ? address.port : 0;
-      srv.close((err) => (err ? reject(err) : resolve(port)));
-    });
-  });
+/** The DevTools endpoint Chrome reports in DevToolsActivePort, inside its own profile directory. */
+export interface DevToolsEndpoint {
+  readonly port: number;
+  readonly browserPath: string;
+}
+
+/**
+ * Parses DevToolsActivePort: line 1 is the port Chrome bound (launched with --remote-debugging-port=0), line 2 the browser
+ * websocket path. Anything else is not used.
+ */
+export function parseDevToolsActivePort(text: string): DevToolsEndpoint | undefined {
+  const [portLine, pathLine] = text.split(/\r?\n/);
+  const port = Number((portLine ?? "").trim());
+  const browserPath = (pathLine ?? "").trim();
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return undefined;
+  if (!browserPath.startsWith("/devtools/browser/")) return undefined;
+  return { port, browserPath };
+}
+
+/**
+ * The browser that answers on the port must be the one the profile directory named. Anything else on that port (for
+ * example a user's own browser with remote debugging on) is refused, and the run fails rather than attaching to it.
+ */
+export function assertOwnBrowserEndpoint(endpoint: DevToolsEndpoint, webSocketUrl: string): void {
+  let answered: string;
+  try {
+    answered = new URL(webSocketUrl).pathname;
+  } catch {
+    throw new Error(`DevTools reported an unreadable websocket URL (${webSocketUrl}); it is not the browser this run launched`);
+  }
+  if (answered !== endpoint.browserPath) {
+    throw new Error(`DevTools on port ${endpoint.port} reports browser ${answered}, which is not the browser this run launched (${endpoint.browserPath})`);
+  }
 }
 
 const BROWSER_LOCK_DIR = join(tmpdir(), "chat-marketplace-real-browser.lock");
@@ -233,11 +256,11 @@ export async function acquireBrowserLock(options: BrowserLockOptions = {}): Prom
 export async function launchRealBrowser(options: { headless?: boolean } = {}): Promise<RealBrowserInstance> {
   const releaseBrowserLock = await acquireBrowserLock();
   const headless = options.headless ?? true;
-  const port = await getAvailablePort();
+  // Chrome picks the port (0) and records it in DevToolsActivePort inside this profile; the helper trusts only that file.
   const userDataDir = mkdtempSync(join(tmpdir(), "guest-chrome-"));
 
   const args = [
-    `--remote-debugging-port=${port}`,
+    `--remote-debugging-port=0`,
     headless ? "--headless=new" : "",
     `--user-data-dir=${userDataDir}`,
     "--no-first-run",
@@ -266,31 +289,37 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
   const proc: ChildProcess = spawn(chrome.executable, [...chrome.sandboxArgs, ...args], { stdio: "ignore" });
   const targetIds = new Set<string>();
 
-  // The first launch on a cold CI runner can take longer than 4 s to open DevTools (CI run 38090026371 failed at 4.2 s
-  // with 40 attempts). The budget only matters when Chrome fails to start; a healthy launch returns on the first ready poll.
+  // The first launch on a cold CI runner can take longer than 4 s to write its profile (CI run 38090026371 failed at 4.2 s
+  // with 40 attempts). The budget only matters when Chrome fails to start; a healthy launch returns on the first poll.
   const DEVTOOLS_READY_ATTEMPTS = 150;
-  let wsUrl = "";
-  for (let attempt = 0; attempt < DEVTOOLS_READY_ATTEMPTS; attempt++) {
+  let endpoint: DevToolsEndpoint | undefined;
+  for (let attempt = 0; attempt < DEVTOOLS_READY_ATTEMPTS && !endpoint && proc.exitCode === null; attempt++) {
     try {
-      const res = await fetch(`http://127.0.0.1:${port}/json/version`);
-      if (res.ok) {
-        const data = (await res.json()) as { webSocketDebuggerUrl?: string; "User-Agent"?: string };
-        if (data.webSocketDebuggerUrl) {
-          wsUrl = data.webSocketDebuggerUrl;
-          break;
-        }
-      }
+      endpoint = parseDevToolsActivePort(readFileSync(join(userDataDir, "DevToolsActivePort"), "utf8"));
     } catch {
-      // Chrome is starting up
+      endpoint = undefined;
     }
-    await new Promise((r) => setTimeout(r, 100));
+    if (!endpoint) await new Promise((r) => setTimeout(r, 100));
   }
 
-  if (!wsUrl) {
+  if (!endpoint) {
     proc.kill();
     try { rmSync(userDataDir, { recursive: true, force: true }); } catch {}
     releaseBrowserLock();
-    throw new Error(`Failed to connect to Chrome DevTools on port ${port}`);
+    throw new Error(`Chrome did not report its DevTools port in ${userDataDir}`);
+  }
+  const port = endpoint.port;
+  const wsUrl = `ws://127.0.0.1:${port}${endpoint.browserPath}`;
+
+  // Confirm the answering browser is this one before anything is sent to it.
+  const reported = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json() as { webSocketDebuggerUrl?: string };
+  try {
+    assertOwnBrowserEndpoint(endpoint, reported.webSocketDebuggerUrl ?? "");
+  } catch (error) {
+    proc.kill();
+    try { rmSync(userDataDir, { recursive: true, force: true }); } catch {}
+    releaseBrowserLock();
+    throw error;
   }
 
   const ws = new WebSocket(wsUrl);
@@ -332,7 +361,7 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
   });
   const send = transport.send;
 
-  const versionData = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json() as { "User-Agent"?: string; Browser?: string };
+  const versionData = reported as { "User-Agent"?: string; Browser?: string };
   const userAgent = versionData["User-Agent"] ?? versionData.Browser ?? "Chromium";
 
   async function createTab(initialUrl = "about:blank"): Promise<RealBrowserTab> {
