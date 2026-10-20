@@ -43,7 +43,9 @@ The owner replied **"accept recommendations"** after the session report explicit
 4. Show only **1–14-night stays** on the landing until counsel signs off. No monthly/1–6-month positioning is approved.
 5. Keep **"Any deposit sits on its own line"** as conditional wording. Pilot deposits remain zero at launch; this approves neither collection nor a change to the feature flag or counsel/PSP gates.
 
-**Still open (item 6):** approved photography and the two FAQ answers. Keep unapproved photography and unanswered FAQ entries off the public page. Issue 13 remains `ready-for-human` for those decisions; no new copy beyond the selections above is approved.
+**Still open (item 6):** approved real Unit photography and the two FAQ answers. Keep unapproved photography and unanswered FAQ entries off the normal public page. Issue 13 remains `ready-for-human` for those decisions.
+
+**Live-demo exception, subsequently approved on 20 Oct 2026:** the owner wants to use the current photos for live demonstrations before Operator onboarding, and replied **"yes"** to a distinct demo mode labelled **"Demo — illustrative photos, not live listings."** Real bookings and payments remain unavailable for demo inventory. This approves the demo presentation and that exact label, not real Unit publication, new claims about properties, payment collection, unlabelled public stock photography, or the pending FAQ answers. Existing photography approval flags remain false. Issue 11 records the corresponding renderer scope clarification.
 
 The same reply approved fast-forwarding the tracker branch to local `main` (`ad5ad72`), completed without a push or deployment. It did not accept a future ADR draft or authorize later branch merges.
 

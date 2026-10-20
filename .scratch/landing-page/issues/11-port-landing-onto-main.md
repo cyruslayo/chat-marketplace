@@ -53,3 +53,17 @@ Work on a new branch cut from `main` (for example `landing/11-port-onto-main`).
 - Commit on the branch; ask the owner before merging to `main`.
 
 ## Comments
+
+### Read-only port discovery — 20 Oct 2026
+
+No landing code has been ported yet. Branch `landing/11-port-onto-main` currently contains only `f4c02da`, recording the owner's issue-13 selections (a), items 1–5. Modern web guidance was searched and its HTML guide read; relevant landing/hosting ADRs were discovered and read before implementation planning.
+
+**Scope conflict for owner confirmation:** "bring over the new files unchanged" would retain public unapproved photographs. On `feat/landing-page`, `landing-page-html.ts` gates the brand hero/closing images and apartment cards, but `resultRow()` always supplies `stay.livingPhoto`; `beatTwoScreen()` and `beatFiveScreen()` also emit the example JPEGs without the `placeholders` gate. `apps/local-guest/assets/landing/CREDITS.md` identifies all four JPEGs as temporary Unsplash placeholders, and every photography approval flag is false. This contradicts the session rule that placeholders/unapproved photos never render on the public page.
+
+Recommendation sent to the owner: permit the smallest renderer change within this port to gate **all** unapproved images on the public render while preserving the explicit local placeholders preview. Reuse the existing no-photo kit treatment; do not invent copy, approve photos, modify foundations CSS, or alter approved phone-screen text. Keep existing tests at their current strength and add public-render image-request coverage; report any necessary old → new expectation mapping. Await confirmation before this renderer change.
+
+### Owner clarification — 20 Oct 2026
+
+The owner clarified that the current photos must remain available for live demonstrations before Operators and their listings are onboarded. The owner then replied **"yes"** to the explicit recommendation: a demo mode labelled **"Demo — illustrative photos, not live listings."**, with real bookings and payments unavailable for demo inventory.
+
+This authorizes the labelled demo presentation and that exact label, not publication of fictional Units or approval of the Unsplash files as real Unit photography. Preserve the original approval flags. Normal public mode must suppress all unapproved images, including inside the chat/phone examples; explicit demo mode may show these current photos. Demo mode is presentation only: it must not seed, publish or expose demo Units as bookable inventory, change stays policy or payment controls, or enable commerce. Add tests distinguishing normal/public and demo renders, and proving the sample Unit ids have no booking/payment authority. The real-photography and FAQ approvals in issue 13 remain open.
