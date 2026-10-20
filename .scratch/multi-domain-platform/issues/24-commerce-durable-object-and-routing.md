@@ -1,6 +1,6 @@
 # CommerceMarket Durable Object and routing
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 17, 21
 Requested: 14 Oct 2026
@@ -14,7 +14,9 @@ Commerce transactions need their own DO per slice 05.
 
 ## What to build
 
-Add a `CommerceMarket` DO class (SQLite) in `apps/cloudflare`, wire the commerce pack's repositories to it via `do-sql-database.ts`, route commerce requests, store product images and receipts in R2.
+Add the SQLite-backed `CommerceMarket` Durable Object in `apps/cloudflare`. Give it the commerce migration ledger, typed internal clients, import/export paths, and commerce-owned alarms. Keep the commerce schema and transaction state inside that object.
+
+The 19 Oct user decisions narrow this issue's routing and image scope. Public commerce API paths return 404. Order creation uses the internal/restore paths. Internal checkout validates the server-side quote and returns `409 payment_unavailable` without writing an order or reserving stock until issue 22. Product image upload through the DO belongs to the merchant back-office work; `R2ProductImageStore` remains a tested unit without a caller. Shortlet receipt handling stays with Shortlet.
 
 ## Out of scope
 
@@ -22,9 +24,9 @@ Add a `CommerceMarket` DO class (SQLite) in `apps/cloudflare`, wire the commerce
 
 ## Acceptance criteria
 
-- AC1: Commerce data lives only in the commerce DO.
-- AC2: Order creation and checkout run under the Workers test suite.
-- AC3: Shortlet Workers tests pass unchanged.
+- AC1: Commerce tables and transactions live only in the commerce DO; its imports, tenant checks, exports, and retention sweeps stay commerce-scoped.
+- AC2: Workers tests cover internal and restore order paths. Valid internal checkout returns `409 payment_unavailable`, creates no order, and reserves no stock. Public commerce API paths return 404.
+- AC3: Shortlet Workers tests continue to pass. Additive fixture and test configuration changes are allowed; existing assertions must not be weakened.
 
 ## Tests
 
@@ -34,13 +36,66 @@ Workers Vitest additions.
 
 | ADR | Why it matters here |
 | --- | --- |
+| `docs/adr/0001-merchants-are-sellers-of-record.md` | The order belongs to one merchant and its store. |
+| `docs/adr/0004-web-and-backend-own-authoritative-state.md` | The DO is the transaction authority. |
+| `docs/adr/0075-secure-and-minimize-agent-interaction-data.md` | Payment references and personal data need restricted handling. |
 | `docs/adr/0095-host-the-pilot-on-cloudflare.md` | As amended by slice 05. |
+| `docs/adr/0096-export-payment-references-in-plaintext.md` | Its plaintext exception applies only to named Shortlet export columns. |
+| `docs/adr/0099-define-the-domain-pack-interface-and-module-boundaries.md` | Commerce owns its façade, migrations, ledger, and transaction model. |
+| `docs/adr/0100-make-commerce-the-second-domain.md` | Commerce stays independent from Shortlet; verified merchants gate orders. |
+| `docs/adr/0101-multi-domain-cloudflare-hosting-and-platform-accounts.md` | Each domain has its own DO; commerce R2 objects stay private and opaque-keyed. |
+| `docs/adr/0103-adopt-commerce-discovery-cart-and-order-catalogues.md` | Issue 23 checkout stays unavailable until payment is connected; no order is created. |
 
 Before starting, also list `docs/adr/` and read any other ADR that touches the files you change (AGENTS.md implementation protocol).
 
 ## Definition of Done
 
 Apply every item of the Definition of Done in `docs/agents/issue-tracker.md`. Shortlet behaviour must not change: the existing tests and the guest UI walkthrough/capture checks are the safety net.
+
+## Answer
+
+Implemented `CommerceMarket` as the commerce-owned SQLite authority, with migrations, typed internal clients, scoped import/export and commerce-owned alarms. Public commerce API paths and private `/_internal` paths are refused by the Worker before tenant provisioning or authority lookup, including when the tenant binding is absent, empty or whitespace (`e77e03a`). Ordinary unprovisioned Shortlet paths retain their 503 response.
+
+Order creation runs directly against the commerce object's database in Workers tests and through restore/retry. There is no internal HTTP order-create route. Internal checkout validates a server-side quote and returns `409 payment_unavailable` without order or stock writes. ADR 0103 governs this unavailable-checkout boundary, not the order-creation rules. Commerce stores and exports only keyed payment-reference hashes (ADR 0075/0096); its tables and transactions remain separate from platform and Shortlet (ADR 0099/0100/0101).
+
+Product-image upload through the DO remains deferred by the 19 Oct user decisions. `R2ProductImageStore` is a tested unit without a caller. No order-upgrade converter or Worker previous-key rotation was added; do not rotate the key until `previousKeys` is wired. Payment collection remains issue 22, blocked on slice 04. No issue 29 work is authorized by this closeout.
+
+### Acceptance evidence
+
+| Criterion | Named test evidence | State |
+| --- | --- | --- |
+| AC1: commerce tables and transactions stay in CommerceMarket. | `apps/cloudflare/test/commerce-market.spec.ts`: `24 AC1: commerce data lives only in the commerce DO after order traffic, disjoint from platform and shortlet`; tenant failures, import/export and cutover have separate named cases. `apps/cloudflare/test/export-owner-sweep.spec.ts`: `F9` owner and failure-sweep cases. | Passed in both final Workers runs. |
+| AC2: Workers order/restore paths, unavailable checkout without writes, public API 404. | `commerce-market.spec.ts` AC1 directly calls `CommerceOrders.createOrder` through `runInDurableObject` using the commerce object's SQL storage. Its dedicated `24 AC2: internal checkout with a server-matching total returns 409 payment_unavailable and writes no order and reserves no stock` test checks checkout; bad total, wrong tenant, unverified merchant and public 404 have separate cases. `restore-from-export.spec.ts`: `16 restore: a day's export loaded parent-first into a new object exports the same bytes for every exported table` restores a Merchant Order and retries `createOrder` by its keyed hash. `platform-routing.spec.ts`: `24 AC2: public commerce API paths return 404 without tenant provisioning (%j)` covers absent/empty/whitespace bindings. Node domain AC1–AC5 tests in `test/commerce-order.test.ts` are supplemental, not Workers evidence. | Passed in both final Workers runs. |
+| AC3: Shortlet behavior retained without weakened assertions. | `commerce-market.spec.ts`: `24 AC3: Shortlet Worker paths retain their routing and unprovisioned response`; `platform-routing.spec.ts`: `24 AC3: unprovisioned Shortlet paths retain 503 (%j)`. Existing Shortlet/restore assertions are retained alongside additive commerce fixtures. | Both Workers runs and all 34 browser files passed. |
+
+### Definition of Done — checked at closeout
+
+| Item | Evidence | State |
+| --- | --- | --- |
+| 1. One named test per acceptance criterion. | AC1–AC3 cases above. | Passed. |
+| 2. Named failure paths. | Foreign tenant, unexpected keys, malformed checkout, unavailable payment, bad total, unverified merchant, public route refusal, schema/hash errors and cutover refusal; absent/empty/whitespace provisioning regressions. | Passed. |
+| 3. Relevant ADRs listed and read. | ADRs 0001, 0004, 0075, 0095, 0096, 0099, 0100, 0101 and 0103; constraints mapped above and in the implementation/review records below. | Verified. |
+| 4. No unused injected dependency. | Commerce database, export bucket, configuration and pack are used by the implementation. | Final standards review found no blocker. |
+| 5. No invented policy value. | HMAC, image limits, retention, public-code and phone decisions trace to recorded user decisions, ADRs or existing configuration. | Verified; image upload and payment policy remain outside this slice. |
+| 6. No restricted credential in logs or audit. | Fixed startup codes, keyed-hash tests, export projection and import validation. | Tests passed; final review found no blocker. |
+| 7. Type check and full suite pass. | Tested code commit `e77e03a64d4564d727d1b0a6c6a3f84c12c6ba95`; complete results below. | Passed; user-approved local `main` integration completed. |
+
+### Final validation and integration
+
+All final gates below ran against code commit `e77e03a64d4564d727d1b0a6c6a3f84c12c6ba95` in `C:\AI2026\worktrees\mdp-24-commerce-do`. Heavy suites ran serially after machine-wide runner checks. Log paths are relative to `%TEMP%\opencode\`; each gate has a matching `.metadata.json` with command, SHA and timestamps, plus an `.exit.txt` recording `EXIT=0`.
+
+| Gate | Result | Raw log and exit sidecar |
+| --- | --- | --- |
+| `npm run check` | All TypeScript checks and the Worker bundle guard passed, exit 0. | `mdp24-routing-final-check.log`, `mdp24-routing-final-check.exit.txt` |
+| `NODE_ENV=test npm test` | Phase 1: 263 files, 1,980/1,980 passed. Phase 2: 34/34 browser files passed; 183 tests, 181 passed, 2 skipped, 0 failed or timed out. Exit 0; no `not ok` or missing-summary lines. | `mdp24-routing-fullsuite.log`, `mdp24-routing-fullsuite.exit.txt` |
+| `npm run test:workers` run 1 | 23 files, 159 tests passed, exit 0. | `mdp24-routing-workers-1.log`, `mdp24-routing-workers-1.exit.txt` |
+| `npm run test:workers` run 2 | 23 files, 159 tests passed, exit 0. | `mdp24-routing-workers-2.log`, `mdp24-routing-workers-2.exit.txt` |
+
+Workers are not part of `npm test`; both separate runs above are required evidence. Earlier incomplete runs and the historical daily-export timeout do not replace these final passes.
+
+Independent GPT-6 Luna medium standards/spec reviews are in `mdp24-final-standards.jsonl` and `mdp24-final-spec.jsonl`. Standards found no blocker; the sole spec blocker was the unprovisioned 503-vs-404 routing order. It was fixed test-first in `e77e03a`: six expected red failures, then 10/10 focused tests passed. The independent follow-up in `mdp24-routing-review.jsonl` explicitly closed that blocker and found no remaining standards/spec blocker. Review exit sidecars record 0. The evidence mappings for issue 21 ADR 0103 and this issue's order/checkout/restore paths were checked; Node tests are not presented as Workers tests.
+
+The user approved the fast-forward of local `main` from `8d13cf0` to `e77e03a` and subsequently requested closing issues 21 and 24. Integration evidence is `mdp24-approved-fast-forward.log` and `mdp24-approved-fast-forward-preservation.json`. All 312 pre-existing canonical dirty files and both feature-worktree documentation drafts were verified unchanged by integration. Test-generated artifacts were restored: all 1,176 artifact hashes matched the baseline (`mdp24-routing-restoration.json`). This closeout is documentation-only; no application code changed after the tested commit. Nothing was pushed or deployed.
 
 ## Comments
 
@@ -59,6 +114,7 @@ Recorded from the user's answers to the open review questions. Status is unchang
   | `INVALID_SCOPE` | 403 | Internal request whose `tenantId` is missing or is not the DO's configured tenant |
   | `payment_unavailable` | 409 | Valid checkout; payment is not connected, so nothing is written |
   | `NOT_FOUND` | 404 | Any public `/api/commerce/*` request, refused by the Worker |
+
 - **Export (ADR 0096, not amended):** `merchant_orders.payment_reference` is excluded from the commerce export, and the commerce DO writes no audit payloads that could carry it. The exported phone and address stay behind the ADR 0095 data-protection gates. Consequence: a restore of a day with orders cannot rebuild the NOT NULL `payment_reference` column from that export, so the restore runbook needs a follow-up before orders are live.
 - **Checkout (internal only):** `/_internal/checkout` validates the store, offers, zone and server-computed total with the domain rules (`quoteCheckout`, which shares `#buildOrder` with `createOrder` and skips the stock write), then returns 409. Invalid checkouts return the existing 400 refusals. The typed `commerceCheckoutClient` sets the configured tenant after the caller's fields. It has no production caller yet.
 - **Images (ADR 0101):** `R2ProductImageStore.put` validates with `InteractionSecurityEngine.validateFileUpload`, allowing JPEG, PNG and WebP up to 5 MiB. Both limits are named constants and can be overridden through the policy argument.
@@ -132,3 +188,13 @@ The user accepted these on 19 Oct 2026. Status is unchanged.
 4. **No order-upgrade converter.** Migration 6 refuses databases with orders, and the runbook reset applies (`docs/runbooks/commerce-migration-failure.md`).
 5. **`R2ProductImageStore` stays a tested unit with no caller** until the back-office issue.
 6. **Keyed-hash rotation in the Worker is a separate follow-up.** Do not rotate the key until it is wired.
+
+### Harness integration checkpoint (20 Oct 2026; historical)
+
+The reviewed browser-timeout harness commit `248cfbf` was merged into the feature branch by merge commit `06134baf`. `applyTestEnvDefaults(process.env)` remained in place. Shared defaults set `NODE_ENV=test` and `COMMERCE_REFERENCE_TEST_KEY=allow` only when callers have not set them.
+
+The focused environment regression passed 4/4, the focused non-browser commerce suite passed 48/48, and `npm run check` passed on `06134baf`. Logs are `%TEMP%\opencode\codex-mdp24-06134ba-env.log`, `%TEMP%\opencode\codex-mdp24-06134ba-focused.log`, and `%TEMP%\opencode\codex-mdp24-06134ba-check.log`. Workers/full-suite gates, final review and approved integration were still pending at that checkpoint; the final acceptance and validation tables above supersede the draft's pending states.
+
+### Resolution (20 Oct 2026)
+
+The user requested closeout after the final green gates and approved integration. All seven Definition of Done items are checked above. The two preserved issue-document drafts are incorporated into the closeout; their order/checkout/restore evidence now explicitly distinguishes direct Workers DO creation from supplemental Node domain tests. Issue 22 remains blocked on slice 04 (`needs-info`). Issue 29 is not started, and Worker key rotation remains deferred. No application or policy changes were made during closeout.
