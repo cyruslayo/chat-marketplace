@@ -76,3 +76,39 @@ test("A wait for a live holder is bounded: it fails naming the lock path and the
 test("The default wait bound is a few minutes, longer than any single browser test", () => {
   assert.ok(BROWSER_LOCK_WAIT_MS >= 120_000 && BROWSER_LOCK_WAIT_MS <= 600_000, `default ${BROWSER_LOCK_WAIT_MS} ms`);
 });
+
+test("The stale threshold is 30 s or more, above any browser test's synchronous work", async () => {
+  const { BROWSER_LOCK_STALE_MS } = await import("./helpers/chrome-devtools.js");
+  assert.ok(BROWSER_LOCK_STALE_MS >= 30_000, `stale threshold ${BROWSER_LOCK_STALE_MS} ms`);
+});
+
+test("Two waiters on one stale lock: exactly one takes it over, and the other waits until the first releases", async () => {
+  const dir = freshDir();
+  const lockDir = join(dir, "lock");
+  mkdirSync(lockDir);
+  writeFileSync(join(lockDir, "owner"), JSON.stringify({ pid: deadPid(), startedAt: "2026-10-19T10:00:00.000Z" }), "utf8");
+  const logged: string[] = [];
+  const log = (message: string) => logged.push(message);
+  const first = acquireBrowserLock({ lockDir, waitMs: 5000, log });
+  const second = acquireBrowserLock({ lockDir, waitMs: 5000, log });
+  const winner = await Promise.race([
+    first.then((release) => ({ who: "first", release })),
+    second.then((release) => ({ who: "second", release })),
+  ]);
+  let loserDone = false;
+  const loser = (winner.who === "first" ? second : first).then((release) => {
+    loserDone = true;
+    return release;
+  });
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.equal(loserDone, false, "the other waiter does not hold the lock while the winner holds it");
+    assert.equal(logged.length, 1, "exactly one takeover is logged");
+    winner.release();
+    const release = await loser;
+    release();
+  } finally {
+    winner.release();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

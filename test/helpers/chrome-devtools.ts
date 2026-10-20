@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { createCdpTransport, type CdpCallOptions, type CdpSocket } from "./cdp-transport.js";
 
@@ -141,8 +142,12 @@ const BROWSER_LOCK_DIR = join(tmpdir(), "chat-marketplace-real-browser.lock");
  * taken over at once, so this bound only ever applies to a live holder.
  */
 export const BROWSER_LOCK_WAIT_MS = 5 * 60_000;
-/** An owner file not touched for this long has no live heartbeat, so its holder is gone or frozen. */
-const BROWSER_LOCK_STALE_MS = 8_000;
+/**
+ * An owner file not touched for this long has no live heartbeat, so its holder is gone or frozen. The heartbeat is a timer
+ * on the holder's event loop, so it stops while the holder runs a synchronous block. The threshold is therefore far above
+ * any synchronous work a browser test does (a few seconds at most): a live holder is never taken over for being busy.
+ */
+export const BROWSER_LOCK_STALE_MS = 30_000;
 const BROWSER_LOCK_POLL_MS = 50;
 const BROWSER_LOCK_HEARTBEAT_MS = 1_000;
 /** Budget for the cleanup calls in close(); a tab that cannot close quickly does not hold the run up. */
@@ -200,6 +205,37 @@ function mtimeMs(path: string): number | undefined {
   }
 }
 
+/**
+ * Takes over a lock that looks stale, without racing another waiter. The lock directory is first renamed to a unique name
+ * (a rename is atomic: only one waiter moves it). Its owner is then read again. If it is still the stale holder, the
+ * directory is removed. If a live owner has appeared in the meantime (another waiter took the lock between our check and
+ * our rename), the directory is put back so that live owner keeps its lock. A failed put-back is logged; the directory is
+ * never deleted in that case.
+ */
+function takeOverStaleLock(lockDir: string, expected: BrowserLockOwner | undefined, log: (message: string) => void, reason: string): void {
+  const trash = `${lockDir}.stale-${process.pid}-${randomUUID()}`;
+  try {
+    renameSync(lockDir, trash);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  const owner = readBrowserLockOwner(join(trash, "owner"));
+  const stillStale = owner
+    ? expected !== undefined && owner.pid === expected.pid && owner.startedAt === expected.startedAt
+    : (mtimeMs(trash) ?? 0) < Date.now() - BROWSER_LOCK_STALE_MS;
+  if (stillStale) {
+    rmSync(trash, { recursive: true, force: true });
+    log(`Took over the stale real-browser lock at ${lockDir}: ${reason}`);
+    return;
+  }
+  try {
+    renameSync(trash, lockDir);
+  } catch (error) {
+    log(`Could not restore the real-browser lock at ${lockDir} after a takeover found a live owner (${(error as Error).message}); its holder is unaffected but the lock directory is at ${trash}`);
+  }
+}
+
 export async function acquireBrowserLock(options: BrowserLockOptions = {}): Promise<() => void> {
   const lockDir = options.lockDir ?? BROWSER_LOCK_DIR;
   const waitMs = options.waitMs ?? BROWSER_LOCK_WAIT_MS;
@@ -213,8 +249,7 @@ export async function acquireBrowserLock(options: BrowserLockOptions = {}): Prom
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       const holder = readBrowserLockOwner(ownerPath);
       if (holder && !processAlive(holder.pid)) {
-        log(`Took over the stale real-browser lock at ${lockDir}: holder PID ${holder.pid} (started ${holder.startedAt}) is no longer running.`);
-        rmSync(lockDir, { recursive: true, force: true });
+        takeOverStaleLock(lockDir, holder, log, `holder PID ${holder.pid} (started ${holder.startedAt}) is no longer running.`);
         continue;
       }
       // A holder that is alive but has stopped its heartbeat is treated the same way. Without an owner file, the lock
@@ -223,8 +258,7 @@ export async function acquireBrowserLock(options: BrowserLockOptions = {}): Prom
       if (beat === undefined) continue;
       if (Date.now() - beat > BROWSER_LOCK_STALE_MS) {
         const who = holder ? `PID ${holder.pid}` : "unrecorded";
-        log(`Took over the stale real-browser lock at ${lockDir}: no heartbeat for ${Math.round((Date.now() - beat) / 1000)} s (holder ${who}).`);
-        rmSync(lockDir, { recursive: true, force: true });
+        takeOverStaleLock(lockDir, holder, log, `no heartbeat for ${Math.round((Date.now() - beat) / 1000)} s (holder ${who}).`);
         continue;
       }
       if (Date.now() >= deadline) {
@@ -250,6 +284,35 @@ export async function acquireBrowserLock(options: BrowserLockOptions = {}): Prom
         rmSync(lockDir, { recursive: true, force: true });
       } catch {}
     };
+  }
+}
+
+interface DevToolsVersion {
+  readonly webSocketDebuggerUrl?: string;
+  readonly Browser?: string;
+  readonly "User-Agent"?: string;
+}
+
+/**
+ * Confirms the browser answering on the endpoint is the one this run launched, before anything is sent to it. Any failure
+ * (a network error, a bad status, unreadable JSON, a different browser) runs onFailure, which the caller uses to kill
+ * Chrome, remove its profile and release the lock, and the failure is rethrown.
+ */
+export async function attachToOwnBrowser(options: {
+  readonly endpoint: DevToolsEndpoint;
+  readonly fetchImpl?: typeof fetch;
+  readonly onFailure: (error: unknown) => void;
+}): Promise<DevToolsVersion> {
+  try {
+    const response = await (options.fetchImpl ?? fetch)(`http://127.0.0.1:${options.endpoint.port}/json/version`);
+    if (!response.ok) throw new Error(`DevTools on port ${options.endpoint.port} answered ${response.status} to /json/version`);
+    const body: unknown = await response.json();
+    const url = typeof body === "object" && body !== null && "webSocketDebuggerUrl" in body && typeof body.webSocketDebuggerUrl === "string" ? body.webSocketDebuggerUrl : "";
+    assertOwnBrowserEndpoint(options.endpoint, url);
+    return body as DevToolsVersion;
+  } catch (error) {
+    options.onFailure(error);
+    throw error;
   }
 }
 
@@ -312,15 +375,14 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
   const wsUrl = `ws://127.0.0.1:${port}${endpoint.browserPath}`;
 
   // Confirm the answering browser is this one before anything is sent to it.
-  const reported = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json() as { webSocketDebuggerUrl?: string };
-  try {
-    assertOwnBrowserEndpoint(endpoint, reported.webSocketDebuggerUrl ?? "");
-  } catch (error) {
-    proc.kill();
-    try { rmSync(userDataDir, { recursive: true, force: true }); } catch {}
-    releaseBrowserLock();
-    throw error;
-  }
+  const reported = await attachToOwnBrowser({
+    endpoint,
+    onFailure: () => {
+      proc.kill();
+      try { rmSync(userDataDir, { recursive: true, force: true }); } catch {}
+      releaseBrowserLock();
+    },
+  });
 
   const ws = new WebSocket(wsUrl);
   try {
