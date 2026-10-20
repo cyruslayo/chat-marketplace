@@ -3,6 +3,7 @@ import { createServer } from "node:net";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createCdpTransport, type CdpCallOptions, type CdpSocket } from "./cdp-transport.js";
 
 /**
  * Real-browser helper. The Chrome binary is `SHORTLET_CHROME_PATH` when set and not blank, otherwise the Windows default
@@ -42,7 +43,7 @@ export interface RealBrowserTab {
   readonly targetId: string;
   readonly sessionId: string;
   navigate(url: string): Promise<void>;
-  evaluate<T = unknown>(expression: string): Promise<T>;
+  evaluate<T = unknown>(expression: string, options?: CdpCallOptions): Promise<T>;
   waitForSelector(selector: string, timeoutMs?: number): Promise<void>;
   waitForText(text: string, timeoutMs?: number): Promise<void>;
   waitForFunction(expression: string, timeoutMs?: number): Promise<void>;
@@ -111,32 +112,121 @@ async function getAvailablePort(): Promise<number> {
 
 const BROWSER_LOCK_DIR = join(tmpdir(), "chat-marketplace-real-browser.lock");
 
-async function acquireBrowserLock(): Promise<() => void> {
+/**
+ * How long one launch waits for another process's browser before it fails. A holder keeps the lock for one browser
+ * session (one test: seconds to about a minute), so five minutes is generous. A holder that is no longer running is
+ * taken over at once, so this bound only ever applies to a live holder.
+ */
+export const BROWSER_LOCK_WAIT_MS = 5 * 60_000;
+/** An owner file not touched for this long has no live heartbeat, so its holder is gone or frozen. */
+const BROWSER_LOCK_STALE_MS = 8_000;
+const BROWSER_LOCK_POLL_MS = 50;
+const BROWSER_LOCK_HEARTBEAT_MS = 1_000;
+/** Budget for the cleanup calls in close(); a tab that cannot close quickly does not hold the run up. */
+const CLOSE_CALL_TIMEOUT_MS = 5_000;
+
+export interface BrowserLockOptions {
+  /** Where the lock lives; the shared tmp directory by default. */
+  readonly lockDir?: string;
+  /** How long to wait for a live holder before failing. */
+  readonly waitMs?: number;
+  readonly log?: (message: string) => void;
+}
+
+interface BrowserLockOwner {
+  readonly pid: number;
+  readonly startedAt: string;
+}
+
+// The owner file is JSON {pid, startedAt}. An older owner file held the bare PID; it is still read, with an unknown start.
+function readBrowserLockOwner(ownerPath: string): BrowserLockOwner | undefined {
+  let text: string;
+  try {
+    text = readFileSync(ownerPath, "utf8");
+  } catch {
+    return undefined;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    parsed = undefined;
+  }
+  if (typeof parsed === "object" && parsed !== null && "pid" in parsed && "startedAt" in parsed && typeof parsed.pid === "number" && typeof parsed.startedAt === "string") {
+    return { pid: parsed.pid, startedAt: parsed.startedAt };
+  }
+  const legacy = Number(text);
+  return Number.isInteger(legacy) && legacy > 0 ? { pid: legacy, startedAt: "unknown" } : undefined;
+}
+
+function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // EPERM: the process exists but belongs to someone else, so it is alive.
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+function mtimeMs(path: string): number | undefined {
+  try {
+    return statSync(path).mtimeMs;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function acquireBrowserLock(options: BrowserLockOptions = {}): Promise<() => void> {
+  const lockDir = options.lockDir ?? BROWSER_LOCK_DIR;
+  const waitMs = options.waitMs ?? BROWSER_LOCK_WAIT_MS;
+  const log = options.log ?? ((message: string) => console.warn(message));
+  const ownerPath = join(lockDir, "owner");
+  const deadline = Date.now() + waitMs;
   for (;;) {
     try {
-      mkdirSync(BROWSER_LOCK_DIR);
-      const ownerPath = join(BROWSER_LOCK_DIR, "owner");
-      writeFileSync(ownerPath, String(process.pid), "utf8");
-      const heartbeat = setInterval(() => {
-        try { utimesSync(ownerPath, new Date(), new Date()); } catch { clearInterval(heartbeat); }
-      }, 1_000);
-      heartbeat.unref();
-      return () => { clearInterval(heartbeat); try { rmSync(BROWSER_LOCK_DIR, { recursive: true, force: true }); } catch {} };
-    } catch {
-      try {
-        const ownerPath = join(BROWSER_LOCK_DIR, "owner");
-        if (Date.now() - statSync(ownerPath).mtimeMs > 8_000) {
-          rmSync(BROWSER_LOCK_DIR, { recursive: true, force: true });
-          continue;
-        }
-        const owner = Number(readFileSync(ownerPath, "utf8"));
-        if (!Number.isInteger(owner) || owner <= 0) throw new Error("invalid lock owner");
-        try { process.kill(owner, 0); } catch { rmSync(BROWSER_LOCK_DIR, { recursive: true, force: true }); continue; }
-      } catch {
-        try { rmSync(BROWSER_LOCK_DIR, { recursive: true, force: true }); } catch {}
+      mkdirSync(lockDir);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      const holder = readBrowserLockOwner(ownerPath);
+      if (holder && !processAlive(holder.pid)) {
+        log(`Took over the stale real-browser lock at ${lockDir}: holder PID ${holder.pid} (started ${holder.startedAt}) is no longer running.`);
+        rmSync(lockDir, { recursive: true, force: true });
+        continue;
       }
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      // A holder that is alive but has stopped its heartbeat is treated the same way. Without an owner file, the lock
+      // directory's own age decides.
+      const beat = mtimeMs(holder ? ownerPath : lockDir);
+      if (beat === undefined) continue;
+      if (Date.now() - beat > BROWSER_LOCK_STALE_MS) {
+        const who = holder ? `PID ${holder.pid}` : "unrecorded";
+        log(`Took over the stale real-browser lock at ${lockDir}: no heartbeat for ${Math.round((Date.now() - beat) / 1000)} s (holder ${who}).`);
+        rmSync(lockDir, { recursive: true, force: true });
+        continue;
+      }
+      if (Date.now() >= deadline) {
+        const who = holder ? `holder PID ${holder.pid} (started ${holder.startedAt})` : "no recorded holder";
+        throw new Error(`Timed out after ${waitMs} ms waiting for the real-browser lock at ${lockDir}; ${who}.`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, BROWSER_LOCK_POLL_MS));
+      continue;
     }
+    // Acquired: record this holder, keep its heartbeat fresh, and release on request.
+    writeFileSync(ownerPath, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }), "utf8");
+    const heartbeat = setInterval(() => {
+      try {
+        utimesSync(ownerPath, new Date(), new Date());
+      } catch {
+        clearInterval(heartbeat);
+      }
+    }, BROWSER_LOCK_HEARTBEAT_MS);
+    heartbeat.unref();
+    return () => {
+      clearInterval(heartbeat);
+      try {
+        rmSync(lockDir, { recursive: true, force: true });
+      } catch {}
+    };
   }
 }
 
@@ -219,37 +309,28 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
     throw error;
   }
 
-  let messageId = 1;
-  const pendingRequests = new Map<number, { resolve: (val: unknown) => void; reject: (err: unknown) => void }>();
+  // The page URL of each session, for error messages: the last navigation the helper started or the main frame reported.
+  const pageUrls = new Map<string, string>();
   const eventListeners = new Set<(message: { method: string; params?: unknown; sessionId?: string }) => void>();
-
-  ws.onmessage = (event) => {
-    try {
-      const raw = typeof event.data === "string" ? event.data : event.data.toString();
-      const parsed = JSON.parse(raw) as { id?: number; result?: unknown; error?: unknown; method?: string; params?: unknown; sessionId?: string };
-      if (typeof parsed.id === "number" && pendingRequests.has(parsed.id)) {
-        const { resolve, reject } = pendingRequests.get(parsed.id)!;
-        pendingRequests.delete(parsed.id);
-        if (parsed.error) reject(new Error(JSON.stringify(parsed.error)));
-        else resolve(parsed.result);
-      }
-      if (parsed.method) {
-        for (const listener of eventListeners) {
-          listener({ method: parsed.method, params: parsed.params, sessionId: parsed.sessionId });
-        }
-      }
-    } catch {
-      // Ignore unparseable frame
-    }
+  const socket: CdpSocket = {
+    send: (data) => ws.send(data),
+    subscribe: (handlers) => {
+      ws.onmessage = (event) => handlers.message(event.data);
+      ws.onclose = () => handlers.close();
+    },
   };
-
-  const send = <T = unknown>(method: string, params?: Record<string, unknown>, sessionId?: string): Promise<T> => {
-    const id = messageId++;
-    return new Promise<T>((resolve, reject) => {
-      pendingRequests.set(id, { resolve: resolve as (val: unknown) => void, reject });
-      ws.send(JSON.stringify({ id, method, ...(params ? { params } : {}), ...(sessionId ? { sessionId } : {}) }));
-    });
-  };
+  const transport = createCdpTransport({
+    socket,
+    describePage: (sessionId) => (sessionId ? pageUrls.get(sessionId) : undefined) ?? "<unknown page>",
+    onEvent: (message) => {
+      if (message.method === "Page.frameNavigated" && message.sessionId) {
+        const frame = (message.params as { frame?: { url?: unknown; parentId?: unknown } } | undefined)?.frame;
+        if (frame && !frame.parentId && typeof frame.url === "string") pageUrls.set(message.sessionId, frame.url);
+      }
+      for (const listener of eventListeners) listener(message);
+    },
+  });
+  const send = transport.send;
 
   const versionData = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json() as { "User-Agent"?: string; Browser?: string };
   const userAgent = versionData["User-Agent"] ?? versionData.Browser ?? "Chromium";
@@ -267,6 +348,7 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
     await send("Network.enable", {}, sessionId);
 
     async function navigate(url: string): Promise<void> {
+      pageUrls.set(sessionId, url);
       let resolveLoad: () => void;
       const loadPromise = new Promise<void>((r) => {
         resolveLoad = r;
@@ -287,7 +369,7 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
       }
     }
 
-    async function evaluate<T = unknown>(expression: string): Promise<T> {
+    async function evaluate<T = unknown>(expression: string, options?: CdpCallOptions): Promise<T> {
       const res = await send<{ result: { value?: T; type: string; description?: string }; exceptionDetails?: unknown }>(
         "Runtime.evaluate",
         {
@@ -296,6 +378,7 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
           returnByValue: true,
         },
         sessionId,
+        options,
       );
       if (res.exceptionDetails) {
         throw new Error(`Evaluation exception: ${JSON.stringify(res.exceptionDetails)}`);
@@ -597,7 +680,7 @@ export async function launchRealBrowser(options: { headless?: boolean } = {}): P
     if (closed) return;
     closed = true;
     for (const targetId of [...targetIds]) {
-      try { await send("Target.closeTarget", { targetId }); } catch {}
+      try { await send("Target.closeTarget", { targetId }, undefined, { timeoutMs: CLOSE_CALL_TIMEOUT_MS }); } catch {}
       targetIds.delete(targetId);
     }
     await new Promise<void>((resolve) => {
