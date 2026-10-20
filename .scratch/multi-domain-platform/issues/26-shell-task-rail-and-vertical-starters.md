@@ -69,3 +69,7 @@ Resolution is deferred (issue stays `claimed`) because the full `npm test` phase
 Slice-26 evidence is green: `npm run check` clean; `assistant-task-rail`, `conversation-router`, `assistant-pack-registry`, `guest-shell`, `guest-retired-classes`, `guest-kit`, `guest-journey-rail`, `shortlet-ui-foundations` all pass (35 tests), and AC3 passes under `SHORTLET_TASK_RAIL_BROWSER=1` with `NODE_ENV=test`.
 
 New user-facing copy (needs owner sign-off): task rail `aria-label` "Conversation tasks", "Current task", "Open task", "updates"; vertical starter heading "What would you like to do?" with the PRD-sourced "Stays"/"Shop" labels and descriptions.
+
+### 20 Oct 2026 — stays-first launch
+
+Parked, not cancelled, by the owner's stays-only launch decision in [issue 30](30-defer-commerce-until-stays-launch.md). Commerce stays off in every public deployment until the owner reopens it and the recorded prerequisites are met. Status remains `claimed`, with resolution still deferred; issue 31 records the additional commerce-on UX blockers. No copy is approved by this comment.

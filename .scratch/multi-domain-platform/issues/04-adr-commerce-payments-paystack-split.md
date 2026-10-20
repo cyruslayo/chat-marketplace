@@ -48,3 +48,7 @@ Before starting, also list `docs/adr/` and read any other ADR that touches the f
 Decision slice. DoD items 3 and 5 apply: every listed ADR is read and cited, and nothing is decided that the owner has not confirmed. No production code changes.
 
 ## Comments
+
+### 20 Oct 2026 — stays-first launch
+
+Parked, not cancelled, by the owner's stays-only launch decision in [issue 30](30-defer-commerce-until-stays-launch.md). Commerce stays off in every public deployment until the owner reopens it and the recorded prerequisites are met. Status remains `needs-info`; provider confirmation, legal review and owner acceptance remain required.
