@@ -25,11 +25,6 @@ function safePageDescription(value: string): string {
   }
 }
 
-function safeCloseReason(value: string | undefined): string {
-  if (!value) return "<empty>";
-  return `<redacted ${Math.min(value.length, 1000)} characters>`;
-}
-
 export interface CdpCallOptions {
   /** Overrides the transport default for this call only. */
   readonly timeoutMs?: number;
@@ -73,6 +68,16 @@ export function createCdpTransport(options: CdpTransportOptions): CdpTransport {
   const pending = new Map<number, PendingCall>();
   let nextId = 1;
   let closed = false;
+  let closeContext: { readonly code: number | undefined; readonly reasonLength: number } | undefined;
+
+  function closedDiagnostic(): string {
+    const code = closeContext?.code === undefined ? "unknown" : String(closeContext.code);
+    const reason = closeContext === undefined || closeContext.reasonLength === 0
+      ? "<empty>"
+      : `<redacted ${closeContext.reasonLength} characters>`;
+    const browserExit = options.describeBrowserExit?.() ?? "browser exit status unavailable";
+    return `code ${code}, reason ${reason}; ${browserExit}`;
+  }
 
   // Removes a call from the pending table and stops its timer; returns it, or undefined when it already settled.
   function take(id: number): PendingCall | undefined {
@@ -109,12 +114,13 @@ export function createCdpTransport(options: CdpTransportOptions): CdpTransport {
     },
     close(details) {
       closed = true;
+      closeContext = {
+        code: details?.code,
+        reasonLength: Math.min(details?.reason?.length ?? 0, 1000),
+      };
       for (const id of [...pending.keys()]) {
         const call = take(id);
-        const code = details?.code === undefined ? "unknown" : String(details.code);
-        const reason = safeCloseReason(details?.reason);
-        const browserExit = options.describeBrowserExit?.() ?? "browser exit status unavailable";
-        call?.reject(new Error(`CDP socket closed (code ${code}, reason ${reason}; ${browserExit}) before ${call.method} replied (page ${safePageDescription(describePage(call.sessionId))})`));
+        call?.reject(new Error(`CDP socket closed (${closedDiagnostic()}) before ${call.method} replied (page ${safePageDescription(describePage(call.sessionId))})`));
       }
     },
   });
@@ -124,7 +130,7 @@ export function createCdpTransport(options: CdpTransportOptions): CdpTransport {
       const timeoutMs = callOptions?.timeoutMs ?? defaultTimeoutMs;
       return new Promise<T>((resolve, reject) => {
         if (closed) {
-          reject(new Error(`CDP socket is closed; cannot send ${method} (page ${safePageDescription(describePage(sessionId))})`));
+          reject(new Error(`CDP socket is closed; cannot send ${method} (${closedDiagnostic()}) (page ${safePageDescription(describePage(sessionId))})`));
           return;
         }
         const id = nextId++;

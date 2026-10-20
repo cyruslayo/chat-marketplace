@@ -104,6 +104,33 @@ test("A call made after the socket closed rejects at once and is not written to 
   assert.equal(socket.sent.length, 0);
 });
 
+test("A send after close includes sanitized close details and the current browser status", async () => {
+  const socket = new FakeSocket();
+  const secret = "sentinel-private-reference";
+  const pageUrl = `http://127.0.0.1:9/payments/${secret}?reference=${secret}#${secret}`;
+  const closeReason = `closed at ${pageUrl}`;
+  let browserExit = "status before close";
+  const transport = createCdpTransport({
+    socket,
+    describePage: () => pageUrl,
+    describeBrowserExit: () => browserExit,
+  });
+  socket.close({ code: 1006, reason: closeReason });
+  browserExit = "Chrome exit code 2, signal SIGTERM";
+
+  await assert.rejects(transport.send("Runtime.evaluate", { expression: "1" }, "session-1"), (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.match(error.message, /CDP socket is closed; cannot send Runtime\.evaluate/);
+    assert.match(error.message, /code 1006/);
+    assert.match(error.message, new RegExp(`reason <redacted ${Math.min(closeReason.length, 1000)} characters>`));
+    assert.match(error.message, /Chrome exit code 2, signal SIGTERM/);
+    assert.match(error.message, /http:\/\/127\.0\.0\.1:9\/<route:2>/);
+    assert.equal(error.message.includes(secret), false);
+    return true;
+  });
+  assert.equal(socket.sent.length, 0);
+});
+
 test("A per-call timeout overrides the transport default", async () => {
   const socket = new FakeSocket();
   const transport = transportFor(socket, 60_000);
