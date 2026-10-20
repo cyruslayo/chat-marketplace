@@ -1,6 +1,6 @@
 # Record the decision to defer commerce until after the stays launch
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: none
 Requested: 20 Oct 2026
@@ -78,4 +78,10 @@ DoD self-check:
 4. No unused dependency: yes; no implementation dependencies added.
 5. No invented policy: yes; records the 20 Oct owner decision and issue-specified reopening conditions without approving payments, commission or photography.
 6. No bearer credentials/restricted identity in audit/logs: yes; docs link synthetic evidence only and add no logging.
-7. Check clean; one full-suite environment/browser-cleanup failure, isolated file 43/43 passed, Workers 159/159 passed. **Owner exception granted:** after a report requested this specific issue-30 exception, restoration of the 29 listed verification side effects, and commit/merge of the docs-only branch to local `main` with ADR 0104 still proposed, the owner replied **"accept all"**. This approves those three actions only, not a push, deployment, future gate exception, or ADR acceptance. Exactly the 24 PNGs and five generated outputs were restored in this worktree; the intended Markdown changes and inherited root files were preserved. Commit the documentation before resolution; ADR 0104 remains `proposed`.
+7. Check clean; one full-suite environment/browser-cleanup failure, isolated file 43/43 passed, Workers 159/159 passed. **Owner exception granted:** after a report requested this specific issue-30 exception, restoration of the 29 listed verification side effects, and commit/merge of the docs-only branch to local `main` with ADR 0104 still proposed, the owner replied **"accept all"**. This approves those three actions only, not a push, deployment, future gate exception, or ADR acceptance. Exactly the 24 PNGs and five generated outputs were restored in this worktree; the intended Markdown changes and inherited root files were preserved. Documentation committed as `0ebeea9` before resolution; ADR 0104 remains `proposed`.
+
+## Answer
+
+Committed in `0ebeea9` on `mdp/30-defer-commerce`: the map parks 04/22/26/29/31 with a reason and issue link; 04/22/26/29 have dated comments with unchanged statuses; proposed ADR 0104 names the owner-reopening, payment-ADR, checkout, task-rail, blocker-fix and Worker-route gates plus the local-demo exception; pilot readiness links code issue 27. Eight Markdown paths only. No product code, existing test expectation, accepted ADR, or parked status changed.
+
+Four documentation checks passed; build/check passed; 1,980 non-browser tests and 159 Workers tests passed. One full-suite browser file had a Chrome cleanup/lock timeout and passed 43/43 alone. The owner explicitly accepted that issue-specific exception, restoration of the 29 verification side effects, and local main integration while the ADR stays proposed. All seven DoD checks and complete run IDs are above. Direct self-review only, per the owner's instruction; no independent reviewer claim. No push or deployment; issue 31 remains parked and unstarted.

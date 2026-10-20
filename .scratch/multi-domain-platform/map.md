@@ -88,7 +88,7 @@ The frontier is the first slice in the table that is open, unblocked and unclaim
 | 28 | [Research: ChatGPT app submission for commerce (link-out checkout, Nigeria, review checklist)](issues/28-research-chatgpt-commerce-submission.md) | research | resolved | 03 | 29 |
 | 29 | [Commerce MCP server on Cloudflare: read tools, checkout link-out, widgets from presentations](issues/29-commerce-mcp-server-on-cloudflare.md) | task | ready-for-agent | 23, 24, 28 | none |
 | **Stays-first launch (20 Oct 2026)** | | | | | |
-| 30 | [Record the decision to defer commerce until after the stays launch](issues/30-defer-commerce-until-stays-launch.md) | task | claimed | none | 31 |
+| 30 | [Record the decision to defer commerce until after the stays launch](issues/30-defer-commerce-until-stays-launch.md) | task | resolved | none | 31 |
 | 31 | [Fix the chat UX defects found when commerce is turned on](issues/31-commerce-on-chat-ux-fixes.md) | task | needs-triage | 30, owner reopens commerce | none |
 
 ## Metrics
@@ -104,6 +104,8 @@ Update these when a slice changes them.
 | `apps/local-guest/src/guest-server.ts` lines | 9,601 | < 1,000 | 4,651 (class extracted to `shortlet-app.ts`; remainder is renderers + router, see 14b) |
 
 ## Context pointers (resolved slices)
+
+- **30** → [answer, ADR mapping and gate evidence](issues/30-defer-commerce-until-stays-launch.md#answer) — documentation commit `0ebeea9`, branch `mdp/30-defer-commerce`; parks 04/22/26/29/31 without status changes, adds proposed [ADR 0104](../../docs/adr/0104-launch-stays-first-keep-commerce-off-in-public-deployments.md), links pilot code issue 27. Four docs checks, build/check, 1,980 non-browser and 159 Workers tests passed; one browser cleanup/lock timeout passed 43/43 alone, with explicit owner exception. Owner approved local main integration; ADR acceptance, public commerce, push and deployment remain unauthorized.
 
 - **17** → [`apps/cloudflare/src/platform-do.ts`](../../apps/cloudflare/src/platform-do.ts), [`apps/cloudflare/src/do-clients.ts`](../../apps/cloudflare/src/do-clients.ts), [`apps/local-guest/src/guest-data-port.ts`](../../apps/local-guest/src/guest-data-port.ts), and the [Cloudflare cutover runbook](../../docs/runbooks/cloudflare-cutover.md) — PLATFORM and SHORTLET Durable Objects with typed routing, legacy split export/import, email-revision-bound assurance, and per-authority cutover. Final accepted merge `7511d9d`; evidence in [issue 17](issues/17-cloudflare-platform-do-and-domain-routing.md#answer). Unblocked 24; issues 21 and 24 are now resolved as recorded in their final closeout entries below.
 
