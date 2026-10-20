@@ -199,6 +199,8 @@ function insertStatement(table: string, columns: readonly string[], primaryKey: 
  * Imports one batch in a single transaction. Rows are validated before anything is written, and a statement that
  * fails (for example a missing NOT NULL value) rolls back the whole batch, so nothing from it is kept.
  */
+const IDENTITY_ASSURANCE_TABLE = "guest_identity_assurance";
+
 /**
  * The per-table rule hook. A caller that owns a table with extra rules (the Shortlet object's identity assurance rows, in
  * ops-import.ts) supplies it. The core carries no table-specific rule, so it imports no assurance module (final review).
@@ -206,6 +208,11 @@ function insertStatement(table: string, columns: readonly string[], primaryKey: 
 export type ImportRowPreparation = (table: string, rows: Record<string, SqlValue>[]) => Record<string, SqlValue>[];
 
 export function importBatch(database: SqlDatabase, table: string, rows: readonly unknown[], requiredVersion: number, now: Date, prepare?: ImportRowPreparation): ImportBatchResult {
+  // The identity assurance rule (ADR 0094, ADR 0084) is owned by the Shortlet import surface. Without it the core refuses the table
+  // before any read or write, so the rule can never be skipped by a caller that forgets it (final review, fail closed).
+  if (table === IDENTITY_ASSURANCE_TABLE && prepare === undefined) {
+    throw new ImportRefusedError("IDENTITY_ASSURANCE_REFUSED", "An identity assurance row needs its identity rule, so nothing from the batch was written");
+  }
   assertImportAllowed(database, requiredVersion);
   // Issue 16 B: a credential table is refused by name before any row is read (ADR 0093, 0086, 0075).
   if (isCredentialTable(table)) throw new ImportRefusedError("EXCLUDED_TABLE", CREDENTIAL_TABLE_REFUSAL);

@@ -38,7 +38,7 @@ export class IsolatedCommerceMarket extends CommerceMarket {
   constructor(ctx: DurableObjectState, env: IsolatedTenantEnv) {
     const tenantId = ctx.id.name;
     if (!tenantId) throw new Error("Isolated test Durable Object must use idFromName");
-    super(ctx, { ...env, SHORTLET_TENANT_ID: tenantId, COMMERCE: env.ISOLATED_COMMERCE });
+    super(ctx, { ...env, SHORTLET_TENANT_ID: tenantId });
   }
 }
 

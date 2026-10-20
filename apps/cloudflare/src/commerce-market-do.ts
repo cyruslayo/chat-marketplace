@@ -9,9 +9,9 @@ import { checksumTables } from "../../../packages/platform-core/src/data-migrati
 import { schemaVersion } from "../../../packages/platform-core/src/schema-migrations.js";
 import { DurableObjectSqlDatabase } from "./do-sql-database.js";
 import { commerceMigrationsWithCutover } from "./commerce-migrations.js";
-import type { CloudflareEnv } from "./cloudflare-config.js";
+import type { CommerceObjectEnv } from "./commerce-env.js";
 import { lagosDate, runDailyExport } from "./do-export.js";
-import { loadExportConfiguration } from "./cloudflare-config.js";
+import { loadExportConfiguration } from "./export-config.js";
 import { assertCutoverOpenForImport, assertSchemaCurrent, exportTable, importBatch } from "./ops-import-core.js";
 import { completeCutoverWithMarker, cutoverStatus, createCutoverMarkerStore, reconcileCutover } from "./cutover-marker.js";
 
@@ -31,13 +31,13 @@ function hasExactKeys(input: Readonly<Record<string, unknown>>, keys: readonly s
 }
 
 /** Commerce transaction authority. It never shares SQL or a synchronous transaction with another DO (ADR 0099/0101). */
-export class CommerceMarket extends DurableObject<CloudflareEnv> {
+export class CommerceMarket extends DurableObject<CommerceObjectEnv> {
   #pack: ReturnType<typeof createCommercePack> | null = null;
   /** The expected schema version: the pack's migrations plus the cutover flag (set once, before any request is served). */
   #schemaVersion = 0;
   /** A fixed code when the schema could not be brought to the expected shape; the object then refuses every request. */
   #failure: string | null = null;
-  constructor(ctx: DurableObjectState, env: CloudflareEnv) {
+  constructor(ctx: DurableObjectState, env: CommerceObjectEnv) {
     super(ctx, env);
     void ctx.blockConcurrencyWhile(async () => {
       const database = new DurableObjectSqlDatabase(ctx.storage);
