@@ -6,6 +6,8 @@ Goal: a closed, founder-operated paid pilot with 10–20 real, inspected units i
 
 **Product direction (decided 27 Sept 2026, issue 11):** the web app is all-in-one. Guests explore cities, find apartments, book, pay and manage their stay there; the agent drives discovery and Weaver renders the UI. WhatsApp is, at most, a human-run support channel that sends guests back into the app. The product is not WhatsApp first.
 
+**Stays-only launch (20 Oct 2026):** [issue 27 — disable commerce on both Node pilot hosts](issues/27-disable-commerce-on-node-pilot-hosts.md) is the code half of the owner's [commerce deferral decision (multi-domain 30)](../multi-domain-platform/issues/30-defer-commerce-until-stays-launch.md). Commerce remains off in public deployments; the local guest demo is a development tool.
+
 ## Issues
 
 | # | Issue | Type | Status | Blocked by |

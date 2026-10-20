@@ -25,6 +25,12 @@ Cross-effort blockers name the effort, for example `weaver-catalogues 03`.
 | E: Concierge UX | Task rail, store pages | after 13 and 23 |
 | F: ChatGPT | MCP server for commerce | last |
 
+### Deferred until after the stays launch
+
+Owner decision, 20 Oct 2026: **launch stays only** and keep commerce off in every public deployment. [Issue 30](issues/30-defer-commerce-until-stays-launch.md) records the reason and proposed ADR; [pilot readiness 27](../pilot-launch-readiness/issues/27-disable-commerce-on-node-pilot-hosts.md) is the Node code half. The public `/welcome` landing is stays-only, with no Shop section.
+
+Parked, not cancelled: **04** (commerce payments decision), **22** (checkout), **26** (task rail/starters resolution), **29** (ChatGPT commerce host), and **31** (commerce-on chat UX fixes). Their recorded statuses and dependency edges are unchanged; being otherwise unblocked does not authorize starting parked work. Only the owner reopens commerce after the prerequisites in proposed [ADR 0104](../../docs/adr/0104-launch-stays-first-keep-commerce-off-in-public-deployments.md) are met. The local demo may retain commerce for development.
+
 ## Workflow
 
 The frontier is the first slice in the table that is open, unblocked and unclaimed. Agents can take the frontiers of different lanes at the same time.
@@ -82,7 +88,7 @@ The frontier is the first slice in the table that is open, unblocked and unclaim
 | 28 | [Research: ChatGPT app submission for commerce (link-out checkout, Nigeria, review checklist)](issues/28-research-chatgpt-commerce-submission.md) | research | resolved | 03 | 29 |
 | 29 | [Commerce MCP server on Cloudflare: read tools, checkout link-out, widgets from presentations](issues/29-commerce-mcp-server-on-cloudflare.md) | task | ready-for-agent | 23, 24, 28 | none |
 | **Stays-first launch (20 Oct 2026)** | | | | | |
-| 30 | [Record the decision to defer commerce until after the stays launch](issues/30-defer-commerce-until-stays-launch.md) | task | ready-for-agent | none | 31 |
+| 30 | [Record the decision to defer commerce until after the stays launch](issues/30-defer-commerce-until-stays-launch.md) | task | claimed | none | 31 |
 | 31 | [Fix the chat UX defects found when commerce is turned on](issues/31-commerce-on-chat-ux-fixes.md) | task | needs-triage | 30, owner reopens commerce | none |
 
 ## Metrics
