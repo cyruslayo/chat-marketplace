@@ -9573,6 +9573,15 @@ Known schemas:
     // Shown when the live-work check can't be read; still true under ADR-0079.
     unknown: "Starting a new conversation doesn't withdraw or cancel anything you've already sent."
   });
+  var GUEST_CONTINUE_CONVERSATION = Object.freeze({
+    heading: "You already have a conversation open",
+    lede: "Pick up where you left off, or start a new conversation with the message you just typed.",
+    continue: "Continue your conversation",
+    startNewHeading: GUEST_NEW_CONVERSATION.confirmHeading,
+    startNew: GUEST_NEW_CONVERSATION.confirm,
+    reassurance: GUEST_NEW_CONVERSATION.unknown,
+    failed: "The concierge could not answer just now. Your message is kept below; send it again."
+  });
   var GUEST_DISCLOSURE_WORDING = [
     { domain: /^Refundable Security Deposit is quoted separately and held as guest liability\.?$/, guest: `${GUEST_GLOSSARY.refundableSecurityDeposit} is quoted and collected separately from the stay payment.` },
     { domain: /^Optional services come strictly from the controlled catalogue with no off-platform payment\.?$/, guest: "Optional services are added only when you select them, with no off-platform payment." }
