@@ -33,3 +33,8 @@ Issues 11–15 (20 Oct 2026) bring the page onto `main` after the multi-domain p
 - 08 (resolved, 44fcec4): the ten-section page in `landing-page-html.ts`, plus the `placeholders` / `helpLinks` options, `landing-units.ts` and `landing-photos.ts` (gated by `approved`).
 - 09 (resolved, 44fcec4): motion in `landing-page.ts`. The hero plays once, the phone pins at 64rem+, the app bar overlays the hero, and inactive steps are dimmed by colour.
 - 10 (resolved, 44fcec4): the gate. Evidence: `screenshots/10/`, full run 1ba3c8e4 and isolated reruns, with the owner exception to DoD item 9. The photo budget test is skipped (owner-deferred until 06 item 5).
+- 11 (resolved 21 Oct 2026, `016ff47`): the landing page ported onto the route-module shell (`landing-route-module.ts`, text and binary asset loaders, explicit demo mode). Branch `landing/11-port-onto-main`, not merged.
+- 12 (resolved 21 Oct 2026, `338ca27`): landing assets served by Cloudflare Static Assets from `apps/local-guest/scripts/build-client.mjs` and `apps/cloudflare/public/_headers`; `PAYSTACK_CALLBACK_BASE_URL` declared in `cloudflare.config.ts`.
+- 13 (ready-for-human): decisions 1–5 approved 20 Oct 2026; photography and FAQ answers still open.
+- 14 (resolved 21 Oct 2026, `71e8c97`): `POST /welcome/start` carries the first message into a new conversation (`guest-server.ts`, `turn-limits.ts`, `GUEST_CONTINUE_CONVERSATION`), with the landing sends counted in the pilot rate limits.
+- 15 (resolved 21 Oct 2026): the wave gate. Evidence: `screenshots/15/`, full runs `full-suite-15.txt`, `-15b.txt`, `-15c.txt` (the last green).
