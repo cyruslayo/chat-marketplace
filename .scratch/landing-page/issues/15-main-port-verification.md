@@ -68,3 +68,11 @@ The gate for the port, in the same form as issue 10.
 **Status of DoD item 9:** across the two full runs every failure is explained and cleared: three in the first (one application, fixed; two environment/load, rerun green) and one in the second (application, fixed). There is still no single full run that is green on the final tree, because the last fix landed after the last run and was verified by the isolated reruns named above, as the gate allows. The owner may still ask for a third full run, or accept this evidence.
 
 The suite again rewrote the issue 11 demo captures under `.scratch/landing-page/screenshots/11/`; those were restored, so the committed demo evidence is unchanged. The 34 rewritten PNGs outside `.scratch/landing-page/` are listed above and untouched. 11, 12, 14 and 15 remain claimed; nothing resolved, merged, pushed or deployed.
+
+### Third full suite — 21 Oct 2026 (tree `68e271e`, started 15:56, log `full-suite-15c.txt`)
+
+`npm test` on the final tree, run once in the background: **exit 0. Phase 1: 2040 tests, 2040 passed, 0 failed (the other node:test groups the runner prints, 227 tests, also 0 failed, 3 pre-existing skips). Phase 2 (real browser, one file at a time): 35 files, 35 passed, 0 failed, 0 timed out.** No failure to classify.
+
+This is the single green full run on the final tree that the earlier entries lacked, so DoD item 9 is met for the landing wave: `npm run check` clean, this full run green, `npm run test:workers` 24 files / 162 tests green (run before the last build-script change; the affected `landing-assets.spec.ts` was rerun after it, 3/3), and the captures in `screenshots/15/` clean. The three-run history is: run 1, three failures (one application, fixed; two environment/load, green alone); run 2, one failure (application, fixed); run 3, none.
+
+The 34 tracked PNGs outside `.scratch/landing-page/` that the suite rewrites are listed above and left uncommitted. 11, 12, 14 and 15 are still `claimed` pending the owner's go-ahead to resolve them together; nothing merged, pushed or deployed.
