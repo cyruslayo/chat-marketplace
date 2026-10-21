@@ -1,12 +1,19 @@
 import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
-import { tsImport } from "tsx/esm/api";
 
-// Reuse the route's closed allow-list rather than keeping a second list of published files.
-const { LANDING_BINARY_ASSETS } = await tsImport(
-  "../src/landing-assets.ts",
-  import.meta.url,
+// Reuse the route's closed allow-list rather than keeping a second list of published files. esbuild (a runtime dependency)
+// compiles the TypeScript module in memory, so the production build needs no development-only loader.
+const allowList = await build({
+  entryPoints: [fileURLToPath(new URL("../src/landing-assets.ts", import.meta.url))],
+  bundle: true,
+  write: false,
+  format: "esm",
+  platform: "node",
+});
+const { LANDING_BINARY_ASSETS } = await import(
+  `data:text/javascript;base64,${Buffer.from(allowList.outputFiles[0].text).toString("base64")}`
 );
 
 // Landing motion stays separate from the guest bundle; preserve the Cloudflare public-copy block below.
