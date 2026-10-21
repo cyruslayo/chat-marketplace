@@ -1,6 +1,6 @@
 "use strict";
 (() => {
-  // node_modules/@cylayo/weaver-web/dist/basic/layout.js
+  // ../../../node_modules/@cylayo/weaver-web/dist/basic/layout.js
   function applyBasicHook(element, component) {
     element.setAttribute("data-a2ui-component", component);
   }
@@ -43,7 +43,7 @@
     return relationship.kind === "single" ? relationship.child === void 0 ? [] : [relationship.child] : relationship.children;
   }
 
-  // node_modules/@cylayo/weaver-web/dist/basic/markdown.js
+  // ../../../node_modules/@cylayo/weaver-web/dist/basic/markdown.js
   function appendText(document2, parent, text) {
     const lines = text.split("\n");
     lines.forEach((line, index) => {
@@ -106,7 +106,7 @@
     return [...output.childNodes];
   }
 
-  // node_modules/@cylayo/weaver-web/dist/basic/styles.js
+  // ../../../node_modules/@cylayo/weaver-web/dist/basic/styles.js
   var basicSpace = "var(--a2ui-space, 8px)";
   var basicRadius = "var(--a2ui-radius, 8px)";
   var basicOutline = "var(--a2ui-color-outline, rgba(0, 0, 0, 0.22))";
@@ -123,7 +123,7 @@
     appendBasicStyle(element, `border: 1px solid ${basicOutline}; border-radius: ${basicRadius}`);
   }
 
-  // node_modules/@cylayo/weaver-web/dist/basic/renderers.js
+  // ../../../node_modules/@cylayo/weaver-web/dist/basic/renderers.js
   var textElements = {
     h1: "h1",
     h2: "h2",
@@ -482,7 +482,7 @@
     return button;
   };
 
-  // node_modules/@cylayo/weaver-web/dist/basic/icon.js
+  // ../../../node_modules/@cylayo/weaver-web/dist/basic/icon.js
   var SVG_NAMESPACE = "http://www.w3.org/2000/svg";
   function createSvg(document2, svgPath) {
     const svg = document2.createElementNS(SVG_NAMESPACE, "svg");
@@ -514,7 +514,7 @@
     };
   }
 
-  // node_modules/@cylayo/weaver-web/dist/basic/inputs.js
+  // ../../../node_modules/@cylayo/weaver-web/dist/basic/inputs.js
   function createBasicInputRenderers(regexMatcher, dateTimeInputLocalValueResolver) {
     let opaqueId2 = 0;
     const nextId = (kind) => `weaver-basic-${kind}-${++opaqueId2}`;
@@ -874,7 +874,7 @@
       control.setAttribute(name, normalized);
   }
 
-  // node_modules/@cylayo/weaver-web/dist/basic/media.js
+  // ../../../node_modules/@cylayo/weaver-web/dist/basic/media.js
   var imageFits = {
     contain: "contain",
     cover: "cover",
@@ -966,7 +966,7 @@
     return { Image, Video, AudioPlayer };
   }
 
-  // node_modules/@cylayo/weaver-web/dist/basic/createBasicCatalogRendererRegistrations.js
+  // ../../../node_modules/@cylayo/weaver-web/dist/basic/createBasicCatalogRendererRegistrations.js
   function createBasicCatalogRendererRegistrations(options) {
     const inputs = createBasicInputRenderers(options.regexMatcher, options.dateTimeInputLocalValueResolver);
     const media = createBasicMediaRenderers(options.resourcePolicy);
@@ -992,7 +992,7 @@
     ];
   }
 
-  // node_modules/@cylayo/weaver-web/dist/basic/theme.js
+  // ../../../node_modules/@cylayo/weaver-web/dist/basic/theme.js
   function createBasicCatalogThemeAdapter(options) {
     return (input) => {
       if (input.catalogId !== options.catalogId)
@@ -1006,7 +1006,7 @@
     };
   }
 
-  // node_modules/@cylayo/weaver-core/dist/data-model/clone.js
+  // ../../../node_modules/@cylayo/weaver-core/dist/data-model/clone.js
   function setObjectValue(target, key3, value) {
     Object.defineProperty(target, key3, {
       configurable: true,
@@ -1107,7 +1107,7 @@
     return true;
   }
 
-  // node_modules/@cylayo/weaver-core/dist/data-model/pointer.js
+  // ../../../node_modules/@cylayo/weaver-core/dist/data-model/pointer.js
   var success = (value) => ({ ok: true, value });
   function parsePointer(path) {
     if (path === "/")
@@ -1179,7 +1179,7 @@
     return true;
   }
 
-  // node_modules/@cylayo/weaver-core/dist/data-context/path.js
+  // ../../../node_modules/@cylayo/weaver-core/dist/data-context/path.js
   var success2 = (value) => ({ ok: true, value });
   function resolveScopedPath(path, scopeTokens) {
     if (path.startsWith("/")) {
@@ -1213,7 +1213,7 @@
     return success2({ absolutePath: formatPointer(tokens), tokens });
   }
 
-  // node_modules/@cylayo/weaver-core/dist/data-context/DataContext.js
+  // ../../../node_modules/@cylayo/weaver-core/dist/data-context/DataContext.js
   var success3 = (value) => ({ ok: true, value });
   var DataContext = class _DataContext {
     #dataModel;
@@ -1285,7 +1285,7 @@
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/data-context/types.js
+  // ../../../node_modules/@cylayo/weaver-core/dist/data-context/types.js
   function isDataPathBinding(value) {
     if (value === null || typeof value !== "object" || Array.isArray(value))
       return false;
@@ -1293,7 +1293,7 @@
     return keys.length === 1 && keys[0] === "path" && typeof value.path === "string";
   }
 
-  // node_modules/@cylayo/weaver-core/dist/functions/FunctionRegistry.js
+  // ../../../node_modules/@cylayo/weaver-core/dist/functions/FunctionRegistry.js
   var key = (catalogId, name) => JSON.stringify([catalogId, name]);
   var FunctionRegistry = class {
     #catalogs;
@@ -1351,7 +1351,7 @@
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/functions/types.js
+  // ../../../node_modules/@cylayo/weaver-core/dist/functions/types.js
   function isFunctionCall(value) {
     if (value === null || typeof value !== "object" || Array.isArray(value))
       return false;
@@ -1368,7 +1368,7 @@
     return !("returnType" in record) || typeof record.returnType === "string" && ["string", "number", "boolean", "array", "object", "any", "void"].includes(record.returnType);
   }
 
-  // node_modules/@cylayo/weaver-core/dist/functions/FunctionEvaluator.js
+  // ../../../node_modules/@cylayo/weaver-core/dist/functions/FunctionEvaluator.js
   var MAX_DEFAULT_DEPTH = 32;
   var RecursiveFunctionFailure = class {
     error;
@@ -1666,7 +1666,7 @@
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/actions/ActionContextResolver.js
+  // ../../../node_modules/@cylayo/weaver-core/dist/actions/ActionContextResolver.js
   function isAllowedLiteral(value) {
     return typeof value === "string" || typeof value === "boolean" || typeof value === "number" && Number.isFinite(value) || Array.isArray(value);
   }
@@ -1759,7 +1759,7 @@
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/checks/CheckEvaluator.js
+  // ../../../node_modules/@cylayo/weaver-core/dist/checks/CheckEvaluator.js
   function actualType2(value) {
     if (value === null)
       return "null";
@@ -1903,7 +1903,7 @@
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/actions/ActionDispatcher.js
+  // ../../../node_modules/@cylayo/weaver-core/dist/actions/ActionDispatcher.js
   function cloneActionJson(value) {
     return cloneJson(value);
   }
@@ -2105,7 +2105,7 @@
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/basic-functions/formatString.js
+  // ../../../node_modules/@cylayo/weaver-core/dist/basic-functions/formatString.js
   var _a;
   var ExpressionParser = class {
     source;
@@ -2253,7 +2253,7 @@
     throw new Error("Unterminated interpolation");
   }
 
-  // node_modules/@cylayo/weaver-core/dist/basic-catalog/generated-basic-catalog.js
+  // ../../../node_modules/@cylayo/weaver-core/dist/basic-catalog/generated-basic-catalog.js
   var A2UI_V091_BASIC_CATALOG_ID = "https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json";
   var A2UI_V091_BASIC_CATALOG = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -4799,7 +4799,7 @@
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/basic-catalog/index.js
+  // ../../../node_modules/@cylayo/weaver-core/dist/basic-catalog/index.js
   function createBasicCatalogV091Registration() {
     return {
       catalogId: A2UI_V091_BASIC_CATALOG_ID,
@@ -4807,7 +4807,7 @@
     };
   }
 
-  // node_modules/@cylayo/weaver-core/dist/catalog/schema.js
+  // ../../../node_modules/@cylayo/weaver-core/dist/catalog/schema.js
   var A2UI_CATALOG_SCHEMA = {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     type: "object",
@@ -4827,7 +4827,7 @@
     additionalProperties: true
   };
 
-  // node_modules/@cfworker/json-schema/dist/esm/deep-compare-strict.js
+  // ../../../node_modules/@cfworker/json-schema/dist/esm/deep-compare-strict.js
   function deepCompareStrict(a, b) {
     const typeofa = typeof a;
     if (typeofa !== typeof b) {
@@ -4868,7 +4868,7 @@
     return a === b;
   }
 
-  // node_modules/@cfworker/json-schema/dist/esm/pointer.js
+  // ../../../node_modules/@cfworker/json-schema/dist/esm/pointer.js
   function encodePointer(p) {
     return encodeURI(escapePointer(p));
   }
@@ -4876,7 +4876,7 @@
     return p.replace(/~/g, "~0").replace(/\//g, "~1");
   }
 
-  // node_modules/@cfworker/json-schema/dist/esm/dereference.js
+  // ../../../node_modules/@cfworker/json-schema/dist/esm/dereference.js
   var schemaArrayKeyword = {
     prefixItems: true,
     items: true,
@@ -4997,7 +4997,7 @@
     return lookup;
   }
 
-  // node_modules/@cfworker/json-schema/dist/esm/format.js
+  // ../../../node_modules/@cfworker/json-schema/dist/esm/format.js
   var DATE = /^(\d\d\d\d)-(\d\d)-(\d\d)$/;
   var DAYS = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
   var TIME = /^(\d\d):(\d\d):(\d\d)(\.\d+)?(z|[+-]\d\d(?::?\d\d)?)?$/i;
@@ -5090,7 +5090,7 @@
     }
   }
 
-  // node_modules/@cfworker/json-schema/dist/esm/types.js
+  // ../../../node_modules/@cfworker/json-schema/dist/esm/types.js
   var OutputFormat;
   (function(OutputFormat2) {
     OutputFormat2[OutputFormat2["Flag"] = 1] = "Flag";
@@ -5098,7 +5098,7 @@
     OutputFormat2[OutputFormat2["Detailed"] = 4] = "Detailed";
   })(OutputFormat || (OutputFormat = {}));
 
-  // node_modules/@cfworker/json-schema/dist/esm/ucs2-length.js
+  // ../../../node_modules/@cfworker/json-schema/dist/esm/ucs2-length.js
   function ucs2length(s) {
     let result = 0;
     let length2 = s.length;
@@ -5117,7 +5117,7 @@
     return result;
   }
 
-  // node_modules/@cfworker/json-schema/dist/esm/validate.js
+  // ../../../node_modules/@cfworker/json-schema/dist/esm/validate.js
   function validate(instance, schema, draft = "2019-09", lookup = dereference(schema), shortCircuit = true, recursiveAnchor = null, instanceLocation = "#", schemaLocation = "#", evaluated = /* @__PURE__ */ Object.create(null)) {
     if (schema === true) {
       return { valid: true, errors: [] };
@@ -5875,7 +5875,7 @@ Known schemas:
     return { valid: errors.length === 0, errors };
   }
 
-  // node_modules/@cfworker/json-schema/dist/esm/validator.js
+  // ../../../node_modules/@cfworker/json-schema/dist/esm/validator.js
   var Validator = class {
     schema;
     draft;
@@ -5898,7 +5898,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/catalog/schema-validator.js
+  // ../../../node_modules/@cylayo/weaver-core/dist/catalog/schema-validator.js
   var DRAFT = "2020-12";
   var TYPES = /* @__PURE__ */ new Set(["null", "boolean", "object", "array", "number", "string", "integer"]);
   function pointer(location2) {
@@ -6032,7 +6032,7 @@ Known schemas:
     return visit(schema, schema);
   }
 
-  // node_modules/@cylayo/weaver-core/dist/catalog/CatalogRegistry.js
+  // ../../../node_modules/@cylayo/weaver-core/dist/catalog/CatalogRegistry.js
   var COMPONENT_ID_REF = "common_types.json#/$defs/ComponentId";
   var CHILD_LIST_REF = "common_types.json#/$defs/ChildList";
   var CHECKABLE_REF = "common_types.json#/$defs/Checkable";
@@ -6754,7 +6754,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/runtime/safety.js
+  // ../../../node_modules/@cylayo/weaver-core/dist/runtime/safety.js
   var DEFAULT_MAX_RESOLUTION_DEPTH = 32;
   var DEFAULT_MAX_RESOLVED_INSTANCES = 1e3;
   var MAX_CONFIGURED_RESOLUTION_DEPTH = 256;
@@ -6865,7 +6865,7 @@ Known schemas:
     });
   }
 
-  // node_modules/@cylayo/weaver-core/dist/component-tree/ComponentTreeResolver.js
+  // ../../../node_modules/@cylayo/weaver-core/dist/component-tree/ComponentTreeResolver.js
   function resolverError(error2) {
     return {
       code: error2.code === "CATALOG_NOT_FOUND" ? "CATALOG_NOT_FOUND" : "COMPONENT_STRUCTURE_NOT_FOUND",
@@ -7055,7 +7055,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/component-instances/ComponentInstanceResolver.js
+  // ../../../node_modules/@cylayo/weaver-core/dist/component-instances/ComponentInstanceResolver.js
   function treeFailure(cause) {
     return {
       ok: false,
@@ -7264,7 +7264,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/component-properties/ComponentPropertyResolver.js
+  // ../../../node_modules/@cylayo/weaver-core/dist/component-properties/ComponentPropertyResolver.js
   function clonePlain(value) {
     return cloneJson(value);
   }
@@ -7597,7 +7597,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/input-binding/InputBindingWriter.js
+  // ../../../node_modules/@cylayo/weaver-core/dist/input-binding/InputBindingWriter.js
   function compatible2(kind, value) {
     switch (kind) {
       case "dynamicString":
@@ -7686,7 +7686,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/data-model/DataModel.js
+  // ../../../node_modules/@cylayo/weaver-core/dist/data-model/DataModel.js
   var success4 = (value) => ({ ok: true, value });
   var DataModel = class {
     #state = {};
@@ -7906,7 +7906,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/validation.js
+  // ../../../node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/validation.js
   var MESSAGE_KEYS = [
     "createSurface",
     "updateComponents",
@@ -8078,12 +8078,12 @@ Known schemas:
     }
   }
 
-  // node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/outbound/client-capabilities.js
+  // ../../../node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/outbound/client-capabilities.js
   function buildA2UIClientCapabilities(input) {
     return { "v0.9": { supportedCatalogIds: [...input.supportedCatalogIds] } };
   }
 
-  // node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/outbound/validation-error.js
+  // ../../../node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/outbound/validation-error.js
   function buildA2UIValidationFailedClientMessage(input) {
     if (input.surfaceId.length === 0)
       throw new TypeError("surfaceId must not be empty");
@@ -8169,7 +8169,7 @@ Known schemas:
     return typeof value === "object" && value !== null && !Array.isArray(value);
   }
 
-  // node_modules/@cylayo/weaver-core/dist/surfaces/SurfaceStore.js
+  // ../../../node_modules/@cylayo/weaver-core/dist/surfaces/SurfaceStore.js
   var success5 = (value) => ({ ok: true, value });
   var SurfaceStore = class {
     #surfaces = /* @__PURE__ */ new Map();
@@ -8338,7 +8338,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/message-processor/A2UIMessageProcessor.js
+  // ../../../node_modules/@cylayo/weaver-core/dist/message-processor/A2UIMessageProcessor.js
   var A2UIMessageProcessor = class {
     store;
     catalogs;
@@ -8423,7 +8423,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/runtime/WeaverRuntime.js
+  // ../../../node_modules/@cylayo/weaver-core/dist/runtime/WeaverRuntime.js
   function cloneRuntimeJson(value) {
     return cloneJson(value);
   }
@@ -8631,7 +8631,7 @@ Known schemas:
     };
   }
 
-  // node_modules/@cylayo/weaver-web/dist/renderers/errors.js
+  // ../../../node_modules/@cylayo/weaver-web/dist/renderers/errors.js
   var RendererRegistryConfigurationError = class extends Error {
     code = "RENDERER_ALREADY_REGISTERED";
     catalogId;
@@ -8644,7 +8644,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@cylayo/weaver-web/dist/renderers/RendererRegistry.js
+  // ../../../node_modules/@cylayo/weaver-web/dist/renderers/RendererRegistry.js
   var key2 = (catalogId, component) => JSON.stringify([catalogId, component]);
   var RendererRegistry = class {
     #renderers = /* @__PURE__ */ new Map();
@@ -8672,7 +8672,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@cylayo/weaver-web/dist/surface/WebSurfaceRenderer.js
+  // ../../../node_modules/@cylayo/weaver-web/dist/surface/WebSurfaceRenderer.js
   var identityKey = (sourceComponentId, scopePath) => JSON.stringify([sourceComponentId, scopePath]);
   var controlIdentityKey = (sourceComponentId, scopePath, localKey) => JSON.stringify([sourceComponentId, scopePath, localKey]);
   var WebSurfaceRenderer = class {
@@ -9049,7 +9049,7 @@ Known schemas:
     return result.ok ? { ok: true, value: { ...result.value } } : structuredClone(result);
   }
 
-  // node_modules/@cylayo/weaver-web/dist/basic-web-runtime/createBasicWebRuntime.js
+  // ../../../node_modules/@cylayo/weaver-web/dist/basic-web-runtime/createBasicWebRuntime.js
   function createBasicWebRuntime(config = {}) {
     const catalogId = A2UI_V091_BASIC_CATALOG_ID;
     const runtimeCreated = createWeaverRuntime({
@@ -9153,6 +9153,23 @@ Known schemas:
   function escapeHtml(value) {
     return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
   }
+  function formatWatDateTime(iso) {
+    const date2 = new Date(iso);
+    if (!Number.isFinite(date2.getTime())) return "time unavailable";
+    const parts = new Intl.DateTimeFormat("en-NG", {
+      timeZone: "Africa/Lagos",
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true
+    }).formatToParts(date2);
+    const value = (type) => parts.find((part) => part.type === type)?.value ?? "";
+    const dateText = `${value("day")} ${value("month")} ${value("year")}`;
+    const timeText = `${value("hour")}:${value("minute")} ${value("dayPeriod")}`;
+    return `${timeText} WAT, ${dateText}`;
+  }
   function formatMoney(kobo) {
     const sign = kobo < 0 ? "-" : "";
     const absoluteKobo = Math.abs(kobo);
@@ -9239,7 +9256,7 @@ Known schemas:
     ".listing-viewer__item img{display:block;max-width:100%;max-height:100%;width:auto;height:auto;min-height:0;object-fit:contain}",
     ".listing-viewer button{min-width:var(--control-min-target);min-height:var(--control-min-target);border:1px solid currentColor;border-radius:var(--radius-pill);background:var(--color-surface-viewer);color:var(--color-text-on-viewer);font-size:1.25rem;cursor:pointer}",
     ".listing-viewer button:focus-visible{outline:3px solid var(--color-focus);outline-offset:2px}",
-    ".listing-viewer button:disabled{opacity:.35;cursor:default}",
+    '.listing-viewer button:disabled,.listing-viewer button[aria-disabled="true"]{opacity:.35;cursor:default}',
     ".listing-viewer__prev,.listing-viewer__next{position:absolute;top:50%;transform:translateY(-50%)}",
     ".listing-viewer__prev{inset-inline-start:var(--space-2)}",
     ".listing-viewer__next{inset-inline-end:var(--space-2)}",
@@ -9351,7 +9368,6 @@ Known schemas:
     bar.className = "listing-viewer__bar";
     const counter = doc.createElement("p");
     counter.className = "listing-viewer__count";
-    counter.setAttribute("aria-live", "polite");
     const close = doc.createElement("button");
     close.type = "button";
     close.className = "listing-viewer__close";
@@ -9384,35 +9400,66 @@ Known schemas:
     next.className = "listing-viewer__next";
     next.setAttribute("aria-label", "Next photo");
     next.textContent = "\u203A";
-    dialog.append(bar, track, prev, next);
+    const announcer2 = doc.createElement("p");
+    announcer2.className = "ui-sr-only";
+    announcer2.setAttribute("aria-live", "polite");
+    dialog.append(bar, track, prev, next, announcer2);
     doc.body.append(dialog);
     let current = 0;
     let opener = null;
-    const render = (index) => {
-      current = index;
+    let pendingIndex = null;
+    const SCROLL_SETTLE_TOLERANCE_PX = 2;
+    const clampIndex = (index) => Math.max(0, Math.min(count - 1, index));
+    const show = (index) => {
       counter.textContent = `${index + 1} of ${count}`;
-      prev.disabled = index === 0;
-      next.disabled = index === count - 1;
+      prev.setAttribute("aria-disabled", String(index === 0));
+      next.setAttribute("aria-disabled", String(index === count - 1));
     };
+    const announce2 = () => {
+      announcer2.textContent = counter.textContent;
+    };
+    const settle = () => {
+      pendingIndex = null;
+      announce2();
+    };
+    const stepBase = () => pendingIndex ?? current;
+    track.addEventListener("scroll", () => {
+      current = clampIndex(Math.round(track.scrollLeft / Math.max(1, track.clientWidth)));
+      show(current);
+      if (pendingIndex !== null && Math.abs(track.scrollLeft - pendingIndex * track.clientWidth) < SCROLL_SETTLE_TOLERANCE_PX) settle();
+    }, { passive: true });
+    track.addEventListener("scrollend", () => {
+      if (pendingIndex === null) announce2();
+    });
+    for (const gesture of ["pointerdown", "touchstart", "wheel"]) track.addEventListener(gesture, () => {
+      pendingIndex = null;
+    }, { passive: true });
     const go = (index) => {
-      const target = Math.max(0, Math.min(count - 1, index));
+      const target = clampIndex(index);
+      if (Math.abs(track.scrollLeft - target * track.clientWidth) < SCROLL_SETTLE_TOLERANCE_PX) {
+        pendingIndex = null;
+        current = target;
+        show(target);
+        announce2();
+        return;
+      }
+      pendingIndex = target;
+      show(target);
       track.scrollTo({ left: target * track.clientWidth });
-      render(target);
     };
-    const observer = new view.IntersectionObserver((entries) => {
-      for (const entry of entries) if (entry.isIntersecting) render([...track.children].indexOf(entry.target));
-    }, { root: track, threshold: 0.6 });
-    for (const item of track.children) observer.observe(item);
-    prev.addEventListener("click", () => go(current - 1));
-    next.addEventListener("click", () => go(current + 1));
+    const stepTo = (index) => {
+      if (index >= 0 && index < count) go(index);
+    };
+    prev.addEventListener("click", () => stepTo(stepBase() - 1));
+    next.addEventListener("click", () => stepTo(stepBase() + 1));
     close.addEventListener("click", () => dialog.close());
     dialog.addEventListener("keydown", (event) => {
       if (event.key === "ArrowRight") {
         event.preventDefault();
-        go(current + 1);
+        stepTo(stepBase() + 1);
       } else if (event.key === "ArrowLeft") {
         event.preventDefault();
-        go(current - 1);
+        stepTo(stepBase() - 1);
       } else if (event.key === "Home") {
         event.preventDefault();
         go(0);
@@ -9440,7 +9487,9 @@ Known schemas:
         track.style.scrollBehavior = "auto";
         track.scrollLeft = index * track.clientWidth;
         track.style.scrollBehavior = previous;
-        render(index);
+        pendingIndex = null;
+        current = index;
+        show(index);
         close.focus();
       }
     };
@@ -9637,6 +9686,38 @@ Known schemas:
       linkConflict: "This browser is already linked to a different account. Sign out there first."
     })
   });
+  var COMMERCE_GUEST_COPY = Object.freeze({
+    soldBy: "Sold by",
+    verifiedStore: "Verified store",
+    viewOffer: "View offer",
+    available: "available",
+    storeUnavailableTitle: "Store unavailable",
+    storeUnavailableBody: "This store could not be found.",
+    offerUnavailableTitle: "Offer unavailable",
+    offerUnavailableBody: "This offer is not available.",
+    noOffersTitle: "No offers available",
+    noOffersBody: "This store has no offers to show right now.",
+    trackOrderLink: "Track an order",
+    trackOrderTitle: "Track your order",
+    trackOrderIntro: "Enter the public code and the phone number used for the order. We use both to protect your order details.",
+    publicCodeLabel: "Public order code",
+    phoneLabel: "Phone number used for the order",
+    phoneHint: "Only used to verify this order.",
+    trackOrderSubmit: "Track order",
+    orderNotFound: "We could not find an order with those details. Check the code and phone number and try again.",
+    orderLookupFailed: "We could not check the order right now. Please try again.",
+    orderStatusTitle: "Order status",
+    publicCodeHeading: "Public code",
+    statusHeading: "Status",
+    lastUpdatedHeading: "Last updated",
+    trackAnotherOrder: "Track another order",
+    continueInChatLink: "Continue in chat for cart and checkout",
+    continueInChatButton: "Continue in chat",
+    cartTitle: "Your store cart",
+    cartBody: "Continue in the Shop chat to manage your cart and proceed to checkout.",
+    cartPageTitle: "Shopping cart",
+    pageTitleSuffix: "Shop"
+  });
 
   // apps/web-agent/src/discovery-a2ui.ts
   function formatNgnKobo(kobo) {
@@ -9661,21 +9742,7 @@ Known schemas:
 
   // apps/web-agent/src/booking-presentation.ts
   function formatBookingDateTime(iso) {
-    const date2 = new Date(iso);
-    if (!Number.isFinite(date2.getTime())) return "time unavailable";
-    const parts = new Intl.DateTimeFormat("en-NG", {
-      timeZone: "Africa/Lagos",
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true
-    }).formatToParts(date2);
-    const value = (type) => parts.find((part) => part.type === type)?.value ?? "";
-    const dateText = `${value("day")} ${value("month")} ${value("year")}`;
-    const timeText = `${value("hour")}:${value("minute")} ${value("dayPeriod")}`;
-    return `${timeText} WAT, ${dateText}`;
+    return formatWatDateTime(iso);
   }
   function formatBookingDeadline(iso) {
     const dateTime = formatBookingDateTime(iso);

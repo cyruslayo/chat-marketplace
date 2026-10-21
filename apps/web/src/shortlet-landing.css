@@ -1,0 +1,1911 @@
+/* Public landing page at /welcome (landing PRD, issue 01). Mobile-first; desktop rows from 64rem.
+   Layout and the chat pieces the guest foundations do not have (bubbles, criteria chips, composer, phone frame).
+   Colour literals are allowed only inside the marked brand token block below (owner decision, 14 Oct 2026). Everything else
+   uses tokens, and no hex appears there. Dark mode comes from the foundations' [data-theme] token blocks; the brand block
+   repeats the same selector pattern for the landing tokens. test/landing-page.test.ts (AC8, Issue 07 AC4) enforces both rules. */
+
+/* landing-brand-tokens:start */
+/* Landing brand colour tokens (direction doc, "Colour (landing tokens, light)"). Every text/background pair below meets
+   WCAG AA 4.5:1 in light, dark and system-dark (Issue 07 AC4). The photo scrim and the on-deep text keep the same values
+   in both themes because the photo sections stay dark. */
+:root {
+  --landing-ground: #F4EFE6;
+  --landing-paper: #FBF8F2;
+  --landing-ink: #14231C;
+  --landing-ink-muted: #55625A;
+  --landing-forest: #0B4A38;
+  --landing-on-forest: #FBF8F2;
+  --landing-forest-deep: #0B3D2E;
+  --landing-on-deep: #F4EFE6;
+  --landing-on-deep-muted: #CFD8D2;
+  --landing-accent: #E8C98A;
+  --landing-accent-ink: #856429;
+  --landing-scrim: rgba(7, 30, 23, 0.73);
+  /* Money band cards: the same values in every theme (the band stays dark, the highlight card stays cream). */
+  --landing-band-card: #0F4636;
+  --landing-band-highlight: #FBF8F2;
+  --landing-band-highlight-ink: #14231C;
+  --landing-band-highlight-accent: #856429;
+  --landing-band-status-ink: #7A4C00;
+  --landing-band-status-surface: #FFF2D6;
+  --landing-band-status-border: #EBC77F;
+  --landing-mark: var(--landing-forest);
+  --landing-mark-cut: var(--landing-ground);
+}
+
+:root[data-theme="dark"] {
+  --landing-ground: #111814;
+  --landing-paper: #18211C;
+  --landing-ink: #E6EBE5;
+  --landing-ink-muted: #A3AFA7;
+  --landing-forest: #1E5E47;
+  --landing-on-forest: #E6EBE5;
+  --landing-forest-deep: #0B3D2E;
+  --landing-on-deep: #F4EFE6;
+  --landing-on-deep-muted: #CFD8D2;
+  --landing-accent: #E8C98A;
+  --landing-accent-ink: #E8C98A;
+  --landing-scrim: rgba(7, 30, 23, 0.73);
+  /* Money band cards: the same values in every theme (the band stays dark, the highlight card stays cream). */
+  --landing-band-card: #0F4636;
+  --landing-band-highlight: #FBF8F2;
+  --landing-band-highlight-ink: #14231C;
+  --landing-band-highlight-accent: #856429;
+  --landing-band-status-ink: #7A4C00;
+  --landing-band-status-surface: #FFF2D6;
+  --landing-band-status-border: #EBC77F;
+  /* Forest is a button fill, too dark to draw the mark on the dark grounds (about 2:1). The mark uses the brass accent. */
+  --landing-mark: var(--landing-accent);
+  --landing-mark-cut: var(--landing-ground);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"] {
+    --landing-ground: #111814;
+    --landing-paper: #18211C;
+    --landing-ink: #E6EBE5;
+    --landing-ink-muted: #A3AFA7;
+    --landing-forest: #1E5E47;
+    --landing-on-forest: #E6EBE5;
+    --landing-forest-deep: #0B3D2E;
+    --landing-on-deep: #F4EFE6;
+    --landing-on-deep-muted: #CFD8D2;
+    --landing-accent: #E8C98A;
+    --landing-accent-ink: #E8C98A;
+    --landing-scrim: rgba(7, 30, 23, 0.73);
+    /* Money band cards: the same values in every theme (the band stays dark, the highlight card stays cream). */
+    --landing-band-card: #0F4636;
+    --landing-band-highlight: #FBF8F2;
+    --landing-band-highlight-ink: #14231C;
+    --landing-band-highlight-accent: #856429;
+    --landing-band-status-ink: #7A4C00;
+    --landing-band-status-surface: #FFF2D6;
+    --landing-band-status-border: #EBC77F;
+    /* Same as the dark set: the mark uses the brass accent on dark grounds (forest is about 2:1 there). */
+    --landing-mark: var(--landing-accent);
+    --landing-mark-cut: var(--landing-ground);
+  }
+}
+/* landing-brand-tokens:end */
+
+/* Brand fonts (issue 07, direction doc "Type"). Self-hosted subset WOFF2 files, Latin plus U+20A6 (Newsreader only).
+   font-display: swap paints the fallback stack first; the system stacks stay the fallback for every face. No third-party host.
+   Hanken Grotesk has no U+20A6 glyph, so prices use the display face (--landing-font-money), never a mixed fallback. */
+@font-face {
+  font-family: "Newsreader";
+  src: url("/landing/fonts/newsreader-500.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Newsreader";
+  src: url("/landing/fonts/newsreader-italic-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Hanken Grotesk";
+  src: url("/landing/fonts/hanken-grotesk-400-700.woff2") format("woff2");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Landing font tokens. The brand layer uses these; everything inside .landing-phone keeps the app's own fonts. */
+:root {
+  --landing-font-display: "Newsreader", var(--font-display);
+  --landing-font-body: "Hanken Grotesk", var(--font-sans);
+  /* Prices with ₦: the display face has the glyph, so the whole amount stays in one font. Issue 08 uses the money class. */
+  --landing-font-money: var(--landing-font-display);
+}
+
+/* Landing type scale (issue 04). Each role is clamp(size at 320px, rem intercept + vw slope, size at 1280px), so it grows
+   with the viewport and keeps growing at 200% zoom (ADR-0078). Slope and intercept are fitted to the two end sizes:
+   slope = (max - min) x 5/3 vw, intercept = min - (max - min) / 3 rem. */
+:root {
+  --landing-size-h1: clamp(2.25rem, 1.5833rem + 3.3333vw, 4.25rem);
+  --landing-size-h2: clamp(1.75rem, 1.4167rem + 1.6667vw, 2.75rem);
+  --landing-size-h3: clamp(1.375rem, 1.1667rem + 1.0417vw, 2rem);
+  --landing-size-lede: clamp(1.0625rem, 1rem + 0.3125vw, 1.25rem);
+  --landing-size-body: clamp(1rem, 0.9792rem + 0.1042vw, 1.0625rem);
+  --landing-size-faq-question: clamp(1.0625rem, 1.0417rem + 0.1042vw, 1.125rem);
+  --landing-size-faq-answer: clamp(0.9375rem, 0.9167rem + 0.1042vw, 1rem);
+  /* Section spacing: 2.5 to 3.5rem on phones, 4 to 6rem on desktop (the desktop value replaces it at 64rem). */
+  --landing-section-space: clamp(var(--space-10), calc(var(--space-8) + 2vw), 3.5rem);
+}
+
+/* Issue 10 step 1a: the page ground is the landing ground (--landing-ground), not the foundations canvas. The How and Questions
+   sections paint no background of their own and show this one. The html rule is unlayered, so it beats the foundations' layered
+   html background (overscroll shows the same ground). */
+html {
+  background: var(--landing-ground);
+}
+
+body {
+  margin: 0;
+  background: var(--landing-ground);
+  color: var(--color-text);
+  font-family: var(--landing-font-body);
+}
+
+.landing-skip {
+  position: absolute;
+  inset-block-start: var(--space-2);
+  inset-inline-start: var(--space-4);
+  z-index: var(--layer-skip-link);
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 44px;
+  min-inline-size: 44px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-text);
+  transform: translateY(-200%);
+}
+
+.landing-skip:focus {
+  transform: none;
+}
+
+/* App bar (issue 08): static on solid ground with a hairline. Its contents use the shared container (.landing-container). */
+header.ui-appbar {
+  display: block;
+  min-block-size: 0;
+  padding: 0;
+  border-block-end: 1px solid var(--color-border-subtle);
+  background: var(--landing-ground);
+}
+
+.landing-appbar__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-block-size: 4rem;
+}
+
+/* The three in-page links show from 48rem; below that the bar is the mark, the theme icon and "Start". */
+.landing-appbar__nav {
+  display: none;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+@media (min-width: 48rem) {
+  .landing-appbar__nav {
+    display: flex;
+    margin-inline-start: var(--space-8);
+  }
+}
+
+.landing-appbar__action {
+  flex: none;
+  min-block-size: var(--control-min-target);
+}
+
+.landing-appbar__short {
+  display: none;
+}
+
+/* The bar on the hero photo: transparent, cream text and a hairline. The script applies it while the hero is in view (issue 09). */
+header.ui-appbar.landing-appbar--on-photo {
+  border-block-end-color: var(--landing-on-deep-muted);
+  background: transparent;
+  color: var(--landing-on-deep);
+}
+
+header.ui-appbar.landing-appbar--on-photo .ui-appbar__brand,
+header.ui-appbar.landing-appbar--on-photo .landing-link {
+  color: var(--landing-on-deep);
+}
+
+/* The mark on the photo: cream shape, and the keyhole cut takes the deep forest the photograph sits on. */
+header.ui-appbar.landing-appbar--on-photo .landing-mark__shape {
+  fill: var(--landing-on-deep);
+}
+
+header.ui-appbar.landing-appbar--on-photo .landing-mark__cut {
+  fill: var(--landing-forest-deep);
+}
+
+/* Focus rings stay visible on the photo: cream instead of the page focus colour. */
+header.ui-appbar.landing-appbar--on-photo :focus-visible {
+  outline-color: var(--landing-on-deep);
+}
+
+/* With JavaScript (issue 09) the bar is sticky over the top of the hero. Its height (4rem row and the 1px hairline) leaves the
+   flow through the negative margin, and the hero's content takes the same height as padding, so the headline does not move
+   when the bar changes style. Without JavaScript this class is absent and the bar is the static solid bar above the hero. */
+header.ui-appbar.landing-appbar--sticky {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 20;
+  margin-block-end: calc(-4rem - 1px);
+}
+
+header.ui-appbar.landing-appbar--sticky ~ main > .landing-hero .landing-hero__inner {
+  padding-block-start: calc(4rem + 1px);
+}
+
+/* The pinned phone sticks below the sticky bar, not under it (issue 09). */
+header.ui-appbar.landing-appbar--sticky ~ main .landing-beats.is-pinned > .landing-pinned {
+  inset-block-start: calc(4rem + 1px + var(--space-6));
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  header.ui-appbar.landing-appbar--sticky {
+    transition: background-color 250ms ease-out, border-color 250ms ease-out;
+  }
+}
+
+/* Shared content container (issue 08): max 1200px, gutters clamp(16px, 4vw, 40px), centred. */
+.landing-container {
+  box-sizing: border-box;
+  inline-size: 100%;
+  max-inline-size: var(--layout-landing-max);
+  padding-inline: clamp(var(--layout-gutter-mobile), 4vw, 2.5rem);
+  margin-inline: auto;
+}
+
+.landing-link {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: var(--control-min-target);
+  color: var(--color-text-secondary);
+}
+
+/* Logomark beside the wordmark (brand layer). The fill and the cut-out are landing tokens with semantic fallbacks: the
+   brand green on light, and the surface the mark sits on (the app bar is a surface, the footer is the page canvas). */
+header.ui-appbar .ui-appbar__brand,
+.landing-footer .ui-appbar__brand {
+  gap: var(--space-2);
+  font-family: var(--landing-font-display);
+  font-weight: 500;
+  font-synthesis-weight: none;
+}
+
+/* Prices with the naira sign: one font from the first digit to the last (Issue 07 AC3). Issue 08 puts this class on prices. */
+.landing-money {
+  font-family: var(--landing-font-money);
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+.landing-mark {
+  flex: none;
+  inline-size: 28px;
+  block-size: 28px;
+}
+
+.landing-mark__shape {
+  fill: var(--landing-mark, var(--color-action));
+}
+
+.landing-mark__cut {
+  fill: var(--landing-mark-cut, var(--color-canvas));
+}
+
+/* The keyhole sits on the app bar, which is solid landing ground (issue 08), so it takes the ground token. */
+header.ui-appbar .landing-mark__cut {
+  fill: var(--landing-mark-cut);
+}
+
+main {
+  display: block;
+  inline-size: 100%;
+}
+
+/* Sections use the same container edges as the app bar (issue 08). */
+.landing-section {
+  display: grid;
+  gap: var(--space-6);
+  box-sizing: border-box;
+  inline-size: 100%;
+  max-inline-size: var(--layout-landing-max);
+  padding-block: var(--landing-section-space);
+  padding-inline: clamp(var(--layout-gutter-mobile), 4vw, 2.5rem);
+  margin-inline: auto;
+}
+
+/* The hero is full-bleed: a solid forest ground paints first, the photograph sits under the flat scrim, and the text
+   (on-deep tokens) is readable before or without the photograph (direction doc, Photography). */
+.landing-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: grid;
+  padding-block: var(--landing-section-space);
+  background: var(--landing-forest-deep);
+  color: var(--landing-on-deep);
+}
+
+.landing-hero__photo {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.landing-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--landing-scrim);
+}
+
+.landing-hero__inner {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: var(--space-6);
+}
+
+.landing-hero .ui-eyebrow {
+  color: var(--landing-accent);
+}
+
+.landing-hero .ui-field__hint {
+  color: var(--landing-on-deep-muted);
+}
+
+/* The accent word: the italic display face in the accent colour, one per headline (direction doc, Type). */
+.landing-hero__accent {
+  font-style: italic;
+  font-weight: 400;
+  color: var(--landing-accent);
+}
+
+/* Eyebrows on the landing: a little larger and wider-spaced than the app's metadata eyebrow. */
+main .ui-eyebrow {
+  font-size: 0.8125rem;
+  line-height: 1.3;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+}
+
+/* Hero H1: the display face, the largest step of the scale. */
+.landing-hero h1 {
+  margin: 0;
+  /* The foundations colour every h1 with the page text colour; the hero headline is on the photo, so it takes the on-deep token. */
+  color: var(--landing-on-deep);
+  max-inline-size: 18ch;
+  text-wrap: balance;
+  font-family: var(--landing-font-display);
+  font-size: var(--landing-size-h1);
+  line-height: 1.05;
+  font-weight: 500;
+  font-synthesis-weight: none;
+  letter-spacing: -0.015em;
+}
+
+.landing-lede {
+  max-inline-size: 46ch;
+  font-size: var(--landing-size-lede);
+  line-height: 1.5;
+}
+
+.landing-hero__intro,
+.landing-hero__cta,
+.landing-section__intro {
+  display: grid;
+  gap: var(--space-3);
+  align-content: start;
+}
+
+.landing-hero__intro > p,
+.landing-hero__cta > p,
+.landing-section__intro > p {
+  margin: 0;
+}
+
+/* Scoped to the section's own headings: a bare `.landing-section h2` also matched the kit's ticket title inside a phone. */
+.landing-section > h2,
+.landing-section__intro h2 {
+  margin: 0;
+  max-inline-size: 22ch;
+  font-family: var(--landing-font-display);
+  font-size: var(--landing-size-h2);
+  line-height: 1.12;
+  font-weight: 500;
+  font-synthesis-weight: none;
+}
+
+/* The light/dark switch (issue 08): one 44px round icon button at every width. CSS keeps only the button for the theme that is
+   NOT in effect (rules below the phone block). The name stays "Switch to dark theme" or "Switch to light theme". */
+.landing-theme {
+  display: flex;
+  flex: none;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.landing-theme > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--control-min-target);
+  block-size: var(--control-min-target);
+  min-inline-size: var(--control-min-target);
+  min-block-size: var(--control-min-target);
+  padding: 0;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-round);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.landing-theme > button:hover {
+  border-color: var(--color-action);
+  color: var(--color-action);
+}
+
+.landing-theme > button:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.landing-theme__icon {
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+}
+
+/* The name is kept for assistive technology and the no-JS form; the icon carries the look. */
+.landing-theme__label {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+:root[data-theme="dark"] .landing-theme__option[value="dark"],
+:root[data-theme="light"] .landing-theme__option[value="light"] {
+  display: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"] .landing-theme__option[value="dark"] {
+    display: none;
+  }
+}
+
+@media (prefers-color-scheme: light) {
+  :root[data-theme="system"] .landing-theme__option[value="light"] {
+    display: none;
+  }
+}
+
+/* The hero composer (issue 08 AC2): a real form. The visible label sits above one pill that holds the text field and the
+   submit button. The text field has no name, so nothing typed is serialised into the URL. */
+form.landing-composer {
+  display: grid;
+  gap: var(--space-2);
+  inline-size: 100%;
+  max-inline-size: 40rem;
+  margin: 0;
+  justify-self: center;
+  text-align: start;
+}
+
+.landing-composer__label {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.landing-composer__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-block-size: var(--control-min-field);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--elevation-raised);
+}
+
+.landing-composer__row:focus-within {
+  border-color: var(--color-action);
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.landing-composer__input {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  min-block-size: 3rem;
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  /* 16px or more: the phone browser does not zoom into the field. */
+  font-size: 1rem;
+  outline: none;
+}
+
+.landing-composer__input::placeholder {
+  color: var(--color-text-muted);
+  opacity: 1;
+}
+
+.landing-composer__send {
+  flex: none;
+  gap: var(--space-2);
+}
+
+.landing-composer__send .ui-icon {
+  display: none;
+  inline-size: 1.125rem;
+  block-size: 1.125rem;
+}
+
+.landing-cta {
+  justify-self: start;
+  inline-size: auto;
+}
+
+/* The phone preview: one frame for every screen. Below desktop it spans the page gutters, so the rail fits its labels. */
+.landing-phone {
+  display: grid;
+  font-family: var(--font-sans);
+  gap: var(--space-2);
+  align-content: start;
+  /* The frame is the container for its own rail (the @container rule in the rail block). */
+  container-type: inline-size;
+  inline-size: min(100%, 26rem);
+  margin-inline: auto;
+  padding: var(--space-2);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-hero);
+  background: var(--color-surface);
+  box-shadow: var(--elevation-overlay);
+}
+
+.landing-phone__bar {
+  display: flex;
+  align-items: center;
+  min-block-size: var(--control-min-target);
+}
+
+.landing-phone__brand {
+  font-family: var(--font-display);
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.landing-transcript {
+  display: grid;
+  align-content: start;
+  gap: var(--space-3);
+  min-block-size: 14rem;
+  padding-block: var(--space-2);
+}
+
+.landing-transcript > div {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+}
+
+.landing-who {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-metadata);
+}
+
+/* Chat bubbles: the concierge on the left, the guest on the right. */
+/* Bubbles and chips use the app's own sizes (15px and 14px), not the landing's scale, inside the phone. */
+.landing-bot,
+.landing-me {
+  margin: 0;
+  max-inline-size: 85%;
+  padding: var(--space-3);
+  font-size: 0.9375rem;
+  line-height: 1.45;
+}
+
+.landing-bot {
+  display: grid;
+  gap: var(--space-1);
+  justify-self: start;
+  border-radius: var(--radius-card) var(--radius-card) var(--radius-card) var(--radius-small);
+  background: var(--color-surface-subtle);
+  color: var(--color-text);
+}
+
+.landing-bot b {
+  font-weight: 650;
+}
+
+.landing-me {
+  justify-self: end;
+  align-self: end;
+  border-radius: var(--radius-card) var(--radius-card) var(--radius-small) var(--radius-card);
+  background: var(--color-action);
+  color: var(--color-on-action);
+}
+
+/* Criteria chips the concierge extracts from the message. */
+.landing-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.landing-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-block-size: 2rem;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+  line-height: 1.3;
+}
+
+.landing-chip .ui-icon {
+  inline-size: 1rem;
+  block-size: 1rem;
+}
+
+.landing-typing {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-block-size: 1.5rem;
+}
+
+.landing-typing i {
+  inline-size: 7px;
+  block-size: 7px;
+  border-radius: var(--radius-round);
+  background: currentColor;
+  opacity: 0.35;
+}
+
+.landing-marker {
+  margin: 0;
+  justify-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-metadata);
+}
+
+.landing-photos {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  inline-size: 100%;
+}
+
+.landing-photos img,
+.landing-banner__photo {
+  display: block;
+  inline-size: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: var(--radius-card);
+  background: var(--color-surface-subtle);
+}
+
+.landing-banner__photo {
+  inline-size: 4rem;
+  flex: none;
+}
+
+.landing-send {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+  inline-size: 100%;
+}
+
+.landing-send__button {
+  inline-size: 100%;
+}
+
+/* A search result: the kit row plus the deposit line under it. Inside the phone they are the only tappable rows. */
+.landing-transcript .ui-result-row {
+  inline-size: 100%;
+  min-block-size: 4.5rem;
+  background: var(--color-surface);
+}
+
+.landing-deposit {
+  margin: calc(-1 * var(--space-1)) 0 0 var(--space-2);
+}
+
+.landing-breakdown {
+  inline-size: 100%;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.landing-breakdown > p {
+  margin: 0;
+}
+
+/* The example window's own message box (app layer: the kit's colours and the app's font). It is decorative: the real field is
+   the hero form above it. */
+.landing-chat__composer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-block-size: var(--control-min-field);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+}
+
+.landing-chat__field {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-small);
+  overflow-wrap: anywhere;
+}
+
+.landing-chat__send {
+  display: grid;
+  flex: none;
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  place-items: center;
+  border-radius: var(--radius-round);
+  background: var(--color-action);
+  color: var(--color-on-action);
+}
+
+.landing-chat__send .ui-icon {
+  inline-size: 1.125rem;
+  block-size: 1.125rem;
+}
+
+/* Beats: the caption, then the screen it describes. */
+.landing-beats {
+  display: grid;
+  gap: var(--space-10);
+}
+
+/* How it works (issue 08 sub-task B): the five steps are an ordered list. A progress line runs down the step column, one marker
+   per step. Without JavaScript every marker looks complete (filled); the script sets data-state only while pinned. */
+.landing-steps {
+  display: grid;
+  gap: var(--space-10);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--landing-ink);
+}
+
+.landing-beat {
+  display: grid;
+  gap: var(--space-6);
+  /* Top-aligned: the step's marker sits level with its eyebrow, not in the middle of a tall screen. */
+  align-items: start;
+  position: relative;
+  padding-inline-start: var(--space-8);
+}
+
+.landing-beat::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block-start: 0.4rem;
+  inline-size: 0.875rem;
+  block-size: 0.875rem;
+  box-sizing: border-box;
+  border: 2px solid var(--landing-ink-muted);
+  border-radius: var(--radius-round);
+  background: var(--landing-ink-muted);
+}
+
+.landing-beat:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0.4375rem;
+  inset-block-start: 1.4rem;
+  inset-block-end: calc(var(--space-10) * -1);
+  inline-size: 2px;
+  background: var(--landing-ink-muted);
+  opacity: 0.5;
+}
+
+.landing-beat[data-state="done"]::before {
+  background: var(--landing-ink-muted);
+}
+
+.landing-beat[data-state="current"]::before {
+  border-color: var(--landing-accent-ink);
+  background: var(--landing-accent-ink);
+  box-shadow: 0 0 0 4px var(--landing-ground);
+}
+
+.landing-beat[data-state="upcoming"]::before {
+  border-color: var(--landing-ink-muted);
+  background: var(--landing-ground);
+}
+
+.landing-caption {
+  display: grid;
+  gap: var(--space-3);
+  align-content: start;
+}
+
+.landing-caption > p,
+.landing-caption > h3 {
+  margin: 0;
+}
+
+/* Beat H3: the display face, one step below section H2. */
+.landing-caption > h3 {
+  color: var(--landing-ink);
+  font-family: var(--landing-font-display);
+  font-size: var(--landing-size-h3);
+  line-height: 1.2;
+  font-weight: 500;
+  font-synthesis-weight: none;
+}
+
+/* 56ch (was 60ch): the approved beat copy wraps to 76 characters at 60ch on 1280 (limit 75, issue 05 AC5). */
+.landing-caption__body {
+  max-inline-size: 56ch;
+  color: var(--landing-ink);
+  font-family: var(--landing-font-body);
+  font-size: var(--landing-size-body);
+  line-height: 1.6;
+}
+
+/* The approved pain line is plain text: "Instead of …" (issue 08 AC4). No strike-through, no icon. */
+.landing-pain {
+  color: var(--landing-ink-muted);
+  font-family: var(--landing-font-body);
+  font-size: 0.9375rem;
+  line-height: 1.45;
+}
+
+/* Apartments (issue 08 sub-task C, row 5): photo cards, one column on phones, two from 48rem, three from 64rem. */
+.landing-units {
+  display: grid;
+  /* One track that can shrink: without minmax(0, 1fr) the track takes the photo's 800px intrinsic width and overflows a phone. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 48rem) {
+  .landing-units {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 64rem) {
+  .landing-units {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.landing-unit__link {
+  display: grid;
+  gap: var(--space-2);
+  min-inline-size: 0;
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+a.landing-unit__link:hover .landing-unit__area {
+  text-decoration: underline;
+}
+
+a.landing-unit__link:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 3px;
+  border-radius: var(--radius-card);
+}
+
+.landing-unit__photo {
+  display: block;
+  inline-size: 100%;
+  block-size: auto;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: var(--radius-card);
+}
+
+@media (max-width: 47.999rem) {
+  .landing-unit__photo {
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+  }
+}
+
+/* A placeholder card is a dashed frame with its label as text. It exists only on local builds (Issue 08 AC6). */
+.landing-unit__photo--placeholder {
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  padding: var(--space-4);
+  border: 1px dashed var(--color-border);
+  background: var(--landing-paper);
+  color: var(--landing-ink-muted);
+  font-size: 0.875rem;
+  font-weight: 650;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.landing-unit__area {
+  font-size: var(--landing-size-body);
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.landing-unit__city {
+  color: var(--color-text-secondary);
+  font-size: 0.9375rem;
+}
+
+/* Questions (issue 08 sub-task C, row 8): native details in a ruled list. The first one is open in the markup. */
+.landing-faq {
+  display: grid;
+  border-block-start: 1px solid var(--color-border-subtle);
+}
+
+.landing-faq__item {
+  border-block-end: 1px solid var(--color-border-subtle);
+}
+
+.landing-faq__item > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-block-size: var(--control-min-target);
+  padding-block: var(--space-3);
+  cursor: pointer;
+  list-style: none;
+  /* The question is the body face and a step larger than its answer (issue 04 table). */
+  font-family: var(--landing-font-body);
+  font-size: var(--landing-size-faq-question);
+  line-height: 1.35;
+  font-weight: 650;
+}
+
+.landing-faq__item > summary::-webkit-details-marker {
+  display: none;
+}
+
+/* The chevron is drawn with borders, so the marker carries no text and no colour literal. */
+.landing-faq__item > summary::after {
+  content: "";
+  flex: none;
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-inline-end: 2px solid currentColor;
+  border-block-end: 2px solid currentColor;
+  transform: translateY(-25%) rotate(45deg);
+}
+
+.landing-faq__item[open] > summary::after {
+  transform: translateY(25%) rotate(-135deg);
+}
+
+.landing-faq__item > summary:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.landing-faq__item > p {
+  margin: 0;
+  padding-block-end: var(--space-4);
+  max-inline-size: 60ch;
+  color: var(--color-text-secondary);
+  font-size: var(--landing-size-faq-answer);
+  line-height: 1.55;
+}
+
+@media (min-width: 64rem) {
+  .landing-questions {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    align-items: start;
+    gap: var(--space-12);
+  }
+}
+
+/* Closing (issue 08 sub-task C, row 9): a photograph under the flat scrim. The solid forest paints first, so the text reads without the photo. */
+.landing-closing {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: grid;
+  padding-block: var(--landing-section-space);
+  background: var(--landing-forest-deep);
+  color: var(--landing-on-deep);
+}
+
+.landing-closing__photo {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.landing-closing::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--landing-scrim);
+}
+
+.landing-closing__inner {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: var(--space-6);
+  justify-items: center;
+  text-align: center;
+}
+
+.landing-closing h2 {
+  margin: 0;
+  max-inline-size: 22ch;
+  font-family: var(--landing-font-display);
+  font-size: var(--landing-size-h2);
+  line-height: 1.12;
+  font-weight: 500;
+  font-synthesis-weight: none;
+  color: var(--landing-on-deep);
+}
+
+.landing-closing__accent {
+  font-style: italic;
+  font-weight: 400;
+  color: var(--landing-accent);
+}
+
+.landing-closing .ui-field__hint {
+  margin: 0;
+  color: var(--landing-on-deep-muted);
+}
+
+.landing-closing .landing-composer {
+  inline-size: 100%;
+}
+
+/* Footer (issue 08 sub-task C, row 10): deep green in both themes. Its mark uses the accent, with the footer ground as the keyhole. */
+.landing-footer {
+  background: var(--landing-forest-deep);
+  color: var(--landing-on-deep-muted);
+  padding-block: var(--space-12);
+}
+
+.landing-footer__inner {
+  display: grid;
+  gap: var(--space-8);
+}
+
+.landing-footer__brand {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+}
+
+.landing-footer .ui-appbar__brand {
+  color: var(--landing-on-deep);
+}
+
+.landing-footer .landing-mark__shape {
+  fill: var(--landing-accent);
+}
+
+.landing-footer .landing-mark__cut {
+  fill: var(--landing-forest-deep);
+}
+
+.landing-footer__line,
+.landing-footer__text,
+.landing-footer__copy {
+  margin: 0;
+}
+
+.landing-footer__line {
+  font-size: var(--landing-size-body);
+  color: var(--landing-on-deep-muted);
+}
+
+.landing-footer__columns {
+  display: grid;
+  gap: var(--space-8);
+}
+
+@media (min-width: 48rem) {
+  .landing-footer__columns {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.landing-footer__heading {
+  margin: 0 0 var(--space-2);
+  color: var(--landing-accent);
+  font-size: 0.8125rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  line-height: 1.3;
+}
+
+.landing-footer__list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.landing-footer .landing-link {
+  color: var(--landing-on-deep);
+}
+
+.landing-footer__copy {
+  font-size: 0.875rem;
+}
+
+/* Below desktop the phone spans the page gutters (the rail needs the width for "Confirmed" at 12px). */
+@media (max-width: 63.999rem) {
+  .landing-phone {
+    inline-size: 100%;
+    padding: var(--space-2);
+    border-radius: var(--radius-card);
+  }
+}
+
+@media (min-width: 64rem) {
+  .landing-hero,
+  .landing-section,
+  .landing-closing {
+    padding-block: clamp(var(--space-16), calc(var(--space-12) + 2vw), 6rem);
+  }
+
+  /* The hero is one centred column at every width; the example window overlaps its bottom edge (see the chat block). */
+  .landing-hero__inner {
+    gap: var(--space-8);
+  }
+
+  /* Every step has the same two columns: its text left, its screen right (no alternating order, issue 08 sub-task B). */
+  .landing-beat {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 24rem);
+    gap: var(--space-12);
+  }
+
+  /* Pinned phone (issue 02): the captions take the left column, one sticky phone the right. */
+  .landing-beats.is-pinned {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 24rem);
+    align-items: start;
+    gap: var(--space-12);
+  }
+
+  .landing-beats.is-pinned > .landing-steps {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .landing-beats.is-pinned .landing-beat {
+    grid-template-columns: minmax(0, 1fr);
+    /* rem, not vh: the page height must not grow with the viewport, or the pinning rule would always hold. */
+    min-block-size: 18rem;
+    align-content: center;
+  }
+
+  .landing-beats.is-pinned > .landing-pinned {
+    grid-column: 2;
+    grid-row: 1;
+    position: sticky;
+    inset-block-start: var(--space-6);
+    display: grid;
+    gap: var(--space-2);
+  }
+}
+
+/* Transient (`only`) elements and screen wrappers hidden by the script or the server HTML take no space. Scoped, so
+   the rule wins over the transcript's own display rules by specificity alone. */
+.landing-transcript [hidden],
+.landing-beat__screen[hidden] {
+  display: none;
+}
+
+/* Staged elements not yet revealed keep their final layout space (no page-height change while a beat plays). */
+.landing-pending {
+  visibility: hidden;
+}
+
+/* Screen-reader-only live region for the pinned phone (announces the active beat's name). */
+.landing-live {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Inactive steps are dimmed by colour, never by opacity (issue 09 correction): their text is still content, so it keeps the
+   muted ink token, which meets 4.5:1 on the ground in light and dark. The active step keeps full ink. */
+.landing-caption.is-dim > h3,
+.landing-caption.is-dim > .landing-caption__body,
+.landing-caption.is-dim > .landing-pain,
+.landing-caption.is-dim > .ui-eyebrow {
+  color: var(--landing-ink-muted);
+}
+
+/* A slot pairs a transient line with the staged element it stands in for. The transient line overlays the reserved
+   (visibility-hidden) space of that element, so showing it never changes the page height (issue 02). */
+.landing-slot {
+  position: relative;
+}
+
+.landing-slot > [data-landing-only] {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+}
+
+.landing-slot > [data-landing-only]:not([hidden]) {
+  display: grid;
+  justify-items: start;
+}
+
+.landing-slot > .landing-marker:not([hidden]) {
+  display: flex;
+  justify-content: center;
+}
+
+.landing-slot > div[data-landing-stage]:not(.ui-banner) {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+}
+
+/* The typed hero message stays on one line, so typing never grows the composer (and the page). */
+.landing-chat__field {
+  /* contain: the typed text does not count towards the column's width, so the window never re-wraps while typing. */
+  contain: inline-size;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* While typing, the newest characters stay in view: the line is end-aligned, so overflow clips at the start. */
+.landing-chat__field.is-typing {
+  display: flex;
+  justify-content: flex-end;
+  text-overflow: clip;
+}
+
+/* Entrance and send press: motion only when the reader allows it (ADR 0078). */
+@media (prefers-reduced-motion: no-preference) {
+  .landing-enter {
+    animation: landing-enter 300ms ease-out both;
+  }
+
+  .landing-caption > h3,
+  .landing-caption > .ui-eyebrow,
+  .landing-caption__body,
+  .landing-pain {
+    transition: color 300ms ease-out;
+  }
+
+  .landing-chat__send {
+    transition: transform 250ms ease-out;
+  }
+
+  .landing-chat__send.is-sending {
+    transform: scale(0.9);
+  }
+
+  @keyframes landing-enter {
+    from {
+      opacity: 0;
+      transform: translateY(0.5rem);
+    }
+
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}
+
+/* Journey rail inside the phone previews: the foundation breaks labels anywhere, which split "Confirmed" mid-word at
+   390 px and in the pinned phone. Whole words only; a slightly smaller label and tighter columns keep each word in its column. */
+.landing-phone .ui-rail {
+  column-gap: 0;
+  /* The rail spans the full frame width (the frame's own padding is cancelled), so six columns fit "Confirmed" at 390.
+     Always one row: the foundation's 3-column rule at narrow viewports is overridden here. */
+  margin-inline: calc(-1 * var(--space-2));
+  padding-inline: 0;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  row-gap: 0;
+}
+
+/* A frame narrower than 21rem (about 336 px of content) cannot hold six labels in equal columns. Only the current step's
+   label stays visible; the other steps keep their bars (min 0.5rem) and their label text stays in the DOM, transparent and
+   clipped, for the aria-hidden rail. Measured by the frame, so it follows the phone wherever it is used. */
+@container (max-width: 21rem) {
+  .landing-phone .ui-rail {
+    grid-template-columns: repeat(6, auto);
+    justify-content: space-between;
+  }
+
+  .landing-phone .ui-rail > li:not([data-state="current"]) {
+    color: transparent;
+    max-inline-size: 0;
+    min-inline-size: 0.5rem;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+}
+
+.landing-phone .ui-rail > li {
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
+  /* 12px is the floor for any text on the landing page (criterion 9). */
+  font-size: 0.75rem;
+  /* Tight enough that "Confirmed" fits its 56 px column at 390 (measured in test/landing-page-chromium.test.ts). */
+  letter-spacing: -0.03em;
+}
+
+/* The current step keeps its accent colour; a 650 weight made "Confirmed" (the last step) 2 px too wide for its column. */
+.landing-phone .ui-rail > li[data-state="current"] {
+  font-weight: 500;
+}
+
+/* Phones (below 48rem): one-row app bar, an icon theme switch, and a hero whose whole phone is in the first viewport. */
+@media (max-width: 47.999rem) {
+  /* The app bar is one row at 320: the spacer shrinks and the bar shows the mark, the theme icon and "Start". */
+  .ui-appbar__grow {
+    flex: 1 1 0;
+    min-inline-size: 0;
+  }
+
+  .landing-appbar__long {
+    display: none;
+  }
+
+  .landing-appbar__short {
+    display: inline;
+  }
+
+  .landing-appbar__action {
+    min-inline-size: var(--control-min-target);
+    padding-inline: var(--space-3);
+  }
+
+  .landing-hero {
+    padding-block-start: var(--space-6);
+  }
+
+  /* The hero composer's button is a 48px icon button; its name stays "See what you can book" in the visually hidden text. */
+  .landing-composer__row {
+    padding-inline-end: var(--space-1);
+  }
+
+  .landing-composer__send {
+    inline-size: 3rem;
+    block-size: 3rem;
+    min-inline-size: 3rem;
+    padding: 0;
+    justify-content: center;
+    border-radius: var(--radius-round);
+  }
+
+  .landing-composer__send .ui-icon {
+    display: block;
+  }
+
+  .landing-composer__text {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+}
+
+/* Short phone viewports (360 x 640, 320 x 568): the hero's message box must still be on the first screen. Here the H1 has
+   a 2rem minimum and a steeper-start slope; taller phones keep the approved scale above. */
+@media (max-width: 47.999rem) and (max-height: 45rem) {
+  :root {
+    --landing-size-h1: clamp(2rem, 1rem + 3vw, 4.25rem);
+  }
+
+  .landing-hero {
+    padding-block-start: var(--space-4);
+  }
+
+  .landing-hero__intro {
+    gap: var(--space-2);
+  }
+
+  /* Issue 08 AC2 / direction doc: the composer and reassurance fit the first viewport at 360 x 640 and 320 x 568. */
+  .landing-lede {
+    font-size: 1rem;
+    line-height: 1.4;
+  }
+
+  .landing-hero__inner {
+    gap: var(--space-4);
+  }
+
+  .landing-hero {
+    padding-block-end: var(--space-4);
+  }
+}
+
+/* Hero content is centred at every width (issue 08). The composer is the form above; the chips are real buttons. */
+.landing-hero__intro,
+.landing-hero__cta {
+  justify-items: center;
+  text-align: center;
+}
+
+.landing-hero__intro > * {
+  justify-self: center;
+}
+
+.landing-hero__cta {
+  justify-items: center;
+}
+
+.landing-hero__cta > .landing-composer,
+.landing-hero__cta > .landing-suggest-row {
+  justify-self: center;
+}
+
+.landing-suggest-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+  inline-size: 100%;
+  max-inline-size: 40rem;
+}
+
+/* Example chips (issue 08 AC8): real buttons on the photo. Clicking one fills the field; it never submits. */
+.landing-suggest {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: var(--control-min-target);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--landing-on-deep-muted);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--landing-on-deep);
+  font: inherit;
+  font-size: 0.9375rem;
+  line-height: 1.3;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.landing-suggest:hover {
+  border-color: var(--landing-accent);
+  color: var(--landing-accent);
+}
+
+.landing-suggest:focus-visible {
+  outline: 3px solid var(--landing-accent);
+  outline-offset: 2px;
+}
+
+/* The example conversation (issue 08 AC3): one chat window that overlaps the bottom edge of the hero. The window is app
+   layer: the kit's colours, the app's font and the kit's result rows. Its stage contract is in the markup. */
+.landing-chat-wrap {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  gap: var(--space-3);
+  margin-block: calc(-1 * var(--space-6)) 0;
+  padding-block-end: var(--landing-section-space);
+}
+
+.landing-chat-wrap .landing-example {
+  text-align: center;
+}
+
+.landing-chat {
+  position: relative;
+  container-type: inline-size;
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-2);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-hero);
+  background: var(--color-surface);
+  box-shadow: var(--elevation-overlay);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+}
+
+.landing-chat__bar {
+  display: flex;
+  align-items: center;
+  min-block-size: var(--control-min-target);
+  padding-inline: var(--space-2);
+}
+
+.landing-chat__brand {
+  font-family: var(--font-display);
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+/* The journey rail across the top of the window: the same six steps as the phones, one row. */
+.landing-chat .ui-rail {
+  column-gap: 0;
+  row-gap: 0;
+  margin: 0;
+  padding-inline: var(--space-2);
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.landing-chat .ui-rail > li {
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
+  font-size: 0.75rem;
+  letter-spacing: -0.03em;
+}
+
+.landing-chat .ui-rail > li[data-state="current"] {
+  font-weight: 500;
+}
+
+/* A narrow window cannot hold six labels: only the current step keeps its label, as in the phones. */
+@container (max-width: 21rem) {
+  .landing-chat .ui-rail {
+    grid-template-columns: repeat(6, auto);
+    justify-content: space-between;
+  }
+
+  .landing-chat .ui-rail > li:not([data-state="current"]) {
+    color: transparent;
+    max-inline-size: 0;
+    min-inline-size: 0.5rem;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+}
+
+/* One column on phones: greeting, message, criteria, reply, results, then the message box. */
+.landing-chat__panes {
+  display: grid;
+  gap: var(--space-3);
+  align-content: start;
+  padding: var(--space-2);
+}
+
+.landing-chat__panes > * {
+  min-inline-size: 0;
+}
+
+.landing-chat__results {
+  display: grid;
+  gap: var(--space-2);
+  align-content: start;
+}
+
+.landing-chat .ui-result-row {
+  inline-size: 100%;
+  min-block-size: 4.5rem;
+  background: var(--color-surface);
+}
+
+/* Trust strip (issue 08 AC6 layout): four facts in one ruled row. Brand layer: landing tokens and the body face. */
+.landing-trust {
+  border-block: 1px solid var(--color-border-subtle);
+  background: var(--landing-paper);
+  color: var(--landing-ink);
+  font-family: var(--landing-font-body);
+}
+
+.landing-trust__list {
+  display: grid;
+  margin: 0;
+  padding: var(--space-2) 0;
+  list-style: none;
+}
+
+.landing-trust__item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+  padding-block: var(--space-4);
+  border-block-end: 1px solid var(--color-border-subtle);
+}
+
+.landing-trust__item:last-child {
+  border-block-end: 0;
+}
+
+.landing-trust__item > .ui-icon {
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  color: var(--landing-accent-ink);
+}
+
+.landing-trust__text {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+}
+
+.landing-trust__title {
+  display: block;
+  color: var(--landing-ink);
+  font-size: 1rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.landing-trust__line {
+  display: block;
+  color: var(--landing-ink-muted);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+@media (min-width: 48rem) {
+  .landing-trust__list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: var(--space-8);
+  }
+}
+
+@media (min-width: 64rem) {
+  .landing-chat-wrap {
+    margin-block-start: -4rem;
+  }
+
+  .landing-chat__panes {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: var(--space-8);
+    align-items: start;
+    padding: var(--space-4);
+  }
+
+  .landing-chat__panes > * {
+    grid-column: 1;
+  }
+
+  /* The results fill the right pane, beside the conversation's six rows in the left pane. */
+  .landing-chat__results {
+    grid-column: 2;
+    grid-row: 1 / span 6;
+    align-self: stretch;
+  }
+
+  .landing-trust__list {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    column-gap: 0;
+    padding-block: 0;
+  }
+
+  .landing-trust__item {
+    padding-inline: var(--space-5);
+    padding-block: var(--space-6);
+    border-block-end: 0;
+    border-inline-start: 1px solid var(--color-border-subtle);
+  }
+
+  .landing-trust__item:first-child {
+    padding-inline-start: 0;
+    border-inline-start: 0;
+  }
+}
+
+/* Phones (below 48rem): the example chips sit in ONE row that scrolls sideways inside its own row (direction doc, Phone
+   layout). Placed last and scoped to the hero so it wins over the wrapping rule above; the page never scrolls sideways. */
+@media (max-width: 47.999rem) {
+  .landing-hero .landing-suggest-row {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    inline-size: 100%;
+    max-inline-size: none;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding: var(--space-1);
+    scroll-snap-type: x proximity;
+  }
+
+  .landing-hero .landing-suggest {
+    flex: none;
+    scroll-snap-align: start;
+  }
+}
+
+/* How it works heading: the second sentence is the italic accent. On the light ground the accent uses the ink-level token
+   (the pale accent is for the deep band and the photo). */
+.landing-section__accent {
+  font-style: italic;
+  font-weight: 400;
+  color: var(--landing-accent-ink);
+}
+
+/* Banner headings (the phone's bold "Reply due by" and "Reservation confirmed") sit on their own line; the text after them
+   starts on the next line. The markup also carries a real space after each heading (issue 08 AC7). */
+.landing-banner__title {
+  display: block;
+}
+
+/* Your money (issue 08 sub-task B): a deep band with the three-card timeline. Colours are landing tokens only. */
+.landing-timeline {
+  display: grid;
+  box-sizing: border-box;
+  inline-size: 100%;
+  padding-block: var(--landing-section-space);
+  background: var(--landing-forest-deep);
+  color: var(--landing-on-deep);
+  font-family: var(--landing-font-body);
+}
+
+.landing-timeline__inner {
+  display: grid;
+  gap: var(--space-8);
+}
+
+.landing-timeline__intro {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.landing-timeline__intro > p {
+  margin: 0;
+}
+
+.landing-timeline .ui-eyebrow {
+  color: var(--landing-accent);
+}
+
+.landing-timeline h2 {
+  margin: 0;
+  max-inline-size: 22ch;
+  color: var(--landing-on-deep);
+  font-family: var(--landing-font-display);
+  font-size: var(--landing-size-h2);
+  line-height: 1.12;
+  font-weight: 500;
+  font-synthesis-weight: none;
+}
+
+.landing-timeline__accent {
+  font-style: italic;
+  font-weight: 400;
+  color: var(--landing-accent);
+}
+
+.landing-timeline__cards {
+  display: grid;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.landing-timeline__card {
+  display: grid;
+  gap: var(--space-3);
+  align-content: start;
+  justify-items: start;
+  padding: var(--space-6);
+  border: 1px solid var(--landing-band-card);
+  border-radius: var(--radius-card);
+  background: var(--landing-band-card);
+  color: var(--landing-on-deep);
+}
+
+/* Card 3 is the cream card on the approved board: the one that says what is due now. The band tokens keep the same values in
+   every theme, so the band and its cards do not change between light and dark. */
+.landing-timeline__card--warning {
+  border-color: var(--landing-band-highlight);
+  background: var(--landing-band-highlight);
+  color: var(--landing-band-highlight-ink);
+}
+
+.landing-timeline__numeral {
+  margin: 0;
+  color: var(--landing-accent);
+  font-family: var(--landing-font-display);
+  font-size: clamp(2.5rem, 2rem + 2vw, 3.5rem);
+  line-height: 1;
+}
+
+.landing-timeline__card--warning .landing-timeline__numeral {
+  color: var(--landing-band-highlight-accent);
+}
+
+/* The kit's status tag on the cream card uses the light warning values, whatever the theme (the tag stays text, not colour). */
+.landing-timeline__card--warning .ui-status {
+  color: var(--landing-band-status-ink);
+  background: var(--landing-band-status-surface);
+  border-color: var(--landing-band-status-border);
+}
+
+.landing-timeline__card h3 {
+  margin: 0;
+  color: inherit;
+  font-family: var(--landing-font-display);
+  font-size: clamp(1.25rem, 1.1rem + 0.5vw, 1.625rem);
+  line-height: 1.2;
+  font-weight: 500;
+  font-synthesis-weight: none;
+}
+
+.landing-timeline__body {
+  max-inline-size: 36ch;
+  margin: 0;
+  color: inherit;
+  font-size: var(--landing-size-body);
+  line-height: 1.6;
+}
+
+@media (min-width: 64rem) {
+  .landing-timeline__cards {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: stretch;
+  }
+}
+
+/* Issue 10 (deposit wrap): inside the landing phone frames an amount never breaks inside its number. The label wraps instead.
+   The kit is unchanged; the confirmed and request screens already set this. */
+.landing-phone .ui-price-breakdown__value {
+  flex-shrink: 0;
+  white-space: nowrap;
+}

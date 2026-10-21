@@ -2,6 +2,19 @@ import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { build } from "esbuild";
 
+// Landing motion stays separate from the guest bundle; preserve the Cloudflare public-copy block below.
+await build({
+  entryPoints: ["apps/local-guest/src/landing-page.ts"],
+  bundle: true,
+  format: "iife",
+  platform: "browser",
+  target: "es2022",
+  outfile: "apps/local-guest/dist/landing.js",
+  minify: false,
+  sourcemap: false,
+  logLevel: "warning",
+});
+
 // The full apartment page's gallery script (guest-gallery issue 01), shared with the chat bundle's gallery.
 await build({
   entryPoints: ["apps/local-guest/src/gallery-page.ts"],
@@ -56,7 +69,10 @@ await build({
 // (ADR 0081 identical bytes; AGENTS.md: the CSS is never formatted). `dist/` stays the Node-served output.
 mkdirSync("apps/cloudflare/public", { recursive: true });
 for (const name of ["gallery.js", "offer.js", "payment.js", "client.js"]) {
-  copyFileSync(`apps/local-guest/dist/${name}`, join("apps/cloudflare/public", name));
+  copyFileSync(
+    `apps/local-guest/dist/${name}`,
+    join("apps/cloudflare/public", name),
+  );
 }
 copyFileSync(
   "apps/web/src/shortlet-foundations.css",
@@ -67,13 +83,23 @@ copyFileSync(
 // routes): the CSS is an hour of shared caching; the scripts set neither `Cache-Control` nor an extra header.
 writeFileSync(
   "apps/cloudflare/public/_headers",
-  ["\
-/shortlet-foundations.css", "  Content-Type: text/css; charset=utf-8", "  Cache-Control: public, max-age=3600",
-  "", "/gallery.js", "  Content-Type: text/javascript; charset=utf-8",
-  "", "/offer.js", "  Content-Type: text/javascript; charset=utf-8",
-  "", "/payment.js", "  Content-Type: text/javascript; charset=utf-8",
-  "", "/client.js", "  Content-Type: text/javascript; charset=utf-8",
-  "",
+  [
+    "\
+/shortlet-foundations.css",
+    "  Content-Type: text/css; charset=utf-8",
+    "  Cache-Control: public, max-age=3600",
+    "",
+    "/gallery.js",
+    "  Content-Type: text/javascript; charset=utf-8",
+    "",
+    "/offer.js",
+    "  Content-Type: text/javascript; charset=utf-8",
+    "",
+    "/payment.js",
+    "  Content-Type: text/javascript; charset=utf-8",
+    "",
+    "/client.js",
+    "  Content-Type: text/javascript; charset=utf-8",
+    "",
   ].join("\n"),
 );
-

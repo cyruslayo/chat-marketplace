@@ -22,6 +22,9 @@ export function nodeAssetLoader(
   const paths: Record<AssetName, () => string> = {
     "shortlet-foundations.css": () =>
       join(REPO_ROOT, "apps", "web", "src", "shortlet-foundations.css"),
+    "shortlet-landing.css": () =>
+      join(REPO_ROOT, "apps", "web", "src", "shortlet-landing.css"),
+    "landing.js": () => join(scriptDirectory, "landing.js"),
     "client.js": () => clientScriptPath,
     "gallery.js": () => join(scriptDirectory, "gallery.js"),
     "offer.js": () => join(scriptDirectory, "offer.js"),
