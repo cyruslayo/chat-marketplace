@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { loadPilotConfiguration, type PilotEnvironmentSource } from "../apps/pilot/src/pilot-config.js";
 import { loadCloudflareConfiguration, cloudflareProvisioningState, type CloudflareEnv } from "../apps/cloudflare/src/cloudflare-config.js";
@@ -113,4 +114,9 @@ test("First boot is not provisioned until SQLite contains valid inventory and te
     operators.create({ ...operator, id: "unrelated-operator" });
     assert.throws(() => cloudflareProvisioningState(configuration, database), /Operator|operator/);
   } finally { database.close(); await rm(fixture.directory, { recursive: true, force: true }); }
+});
+
+test("Landing 12: cloudflare.config.ts declares PAYSTACK_CALLBACK_BASE_URL as the environment's public origin, because the guest runtime reads it from Workers process.env", () => {
+  const source = readFileSync("apps/cloudflare/cloudflare.config.ts", "utf8");
+  assert.match(source, /PAYSTACK_CALLBACK_BASE_URL:\s*bindings\.text\(PUBLIC_ORIGIN\[environment\]\)/);
 });

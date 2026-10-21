@@ -1,6 +1,13 @@
 import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { build } from "esbuild";
+import { tsImport } from "tsx/esm/api";
+
+// Reuse the route's closed allow-list rather than keeping a second list of published files.
+const { LANDING_BINARY_ASSETS } = await tsImport(
+  "../src/landing-assets.ts",
+  import.meta.url,
+);
 
 // Landing motion stays separate from the guest bundle; preserve the Cloudflare public-copy block below.
 await build({
@@ -65,19 +72,32 @@ await build({
   logLevel: "warning",
 });
 
-// Slice 09b: Cloudflare Static Assets output — the four bundles and the foundations CSS, byte for byte
+// Slice 09b / landing 12: Cloudflare Static Assets output — browser bundles, styles and landing binaries, byte for byte
 // (ADR 0081 identical bytes; AGENTS.md: the CSS is never formatted). `dist/` stays the Node-served output.
 mkdirSync("apps/cloudflare/public", { recursive: true });
-for (const name of ["gallery.js", "offer.js", "payment.js", "client.js"]) {
+for (const name of [
+  "gallery.js",
+  "offer.js",
+  "payment.js",
+  "client.js",
+  "landing.js",
+]) {
   copyFileSync(
     `apps/local-guest/dist/${name}`,
     join("apps/cloudflare/public", name),
   );
 }
-copyFileSync(
-  "apps/web/src/shortlet-foundations.css",
-  "apps/cloudflare/public/shortlet-foundations.css",
-);
+for (const name of ["shortlet-foundations.css", "shortlet-landing.css"]) {
+  copyFileSync(
+    join("apps/web/src", name),
+    join("apps/cloudflare/public", name),
+  );
+}
+for (const [path, asset] of Object.entries(LANDING_BINARY_ASSETS)) {
+  const target = join("apps/cloudflare/public", path.slice(1));
+  mkdirSync(dirname(target), { recursive: true });
+  copyFileSync(join("apps/local-guest/assets", asset.file), target);
+}
 
 // `_headers` mirrors the values the Node handlers send today (guest-server.ts script routes, and both CSS
 // routes): the CSS is an hour of shared caching; the scripts set neither `Cache-Control` nor an extra header.
@@ -100,6 +120,20 @@ writeFileSync(
     "",
     "/client.js",
     "  Content-Type: text/javascript; charset=utf-8",
+    "",
+    "/landing.js",
+    "  Content-Type: text/javascript; charset=utf-8",
+    "",
+    "/shortlet-landing.css",
+    "  Content-Type: text/css; charset=utf-8",
+    "  Cache-Control: public, max-age=3600",
+    ...Object.entries(LANDING_BINARY_ASSETS).flatMap(([path, asset]) => [
+      "",
+      path,
+      `  Content-Type: ${asset.contentType}`,
+      "  Cache-Control: public, max-age=31536000, immutable",
+      "  X-Content-Type-Options: nosniff",
+    ]),
     "",
   ].join("\n"),
 );

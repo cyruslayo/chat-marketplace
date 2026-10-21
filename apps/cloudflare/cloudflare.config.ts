@@ -79,6 +79,8 @@ function workerFor(environment: PilotEnvironment) {
           : {}),
       // ADR 0087: production takes live Paystack; staging and the local development run take test keys.
       PAYSTACK_ENVIRONMENT: bindings.text(staging ? "test" : "live"),
+      // The guest runtime also reads the callback base from Workers process.env (declared bindings only); it must equal the public origin (ADR 0087).
+      PAYSTACK_CALLBACK_BASE_URL: bindings.text(PUBLIC_ORIGIN[environment]),
       // ADR 0088/0090: transfers and manual bank transfer stay off until explicitly certified and configured.
       SHORTLET_PAYSTACK_TRANSFERS: bindings.text("disabled"),
       CONCIERGE_MODE: bindings.text("deterministic"),

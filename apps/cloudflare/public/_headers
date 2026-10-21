@@ -13,3 +13,45 @@
 
 /client.js
   Content-Type: text/javascript; charset=utf-8
+
+/landing.js
+  Content-Type: text/javascript; charset=utf-8
+
+/shortlet-landing.css
+  Content-Type: text/css; charset=utf-8
+  Cache-Control: public, max-age=3600
+
+/landing/fonts/hanken-grotesk-400-700.woff2
+  Content-Type: font/woff2
+  Cache-Control: public, max-age=31536000, immutable
+  X-Content-Type-Options: nosniff
+
+/landing/fonts/newsreader-500.woff2
+  Content-Type: font/woff2
+  Cache-Control: public, max-age=31536000, immutable
+  X-Content-Type-Options: nosniff
+
+/landing/fonts/newsreader-italic-400.woff2
+  Content-Type: font/woff2
+  Cache-Control: public, max-age=31536000, immutable
+  X-Content-Type-Options: nosniff
+
+/landing/photos/ikoyi-living.jpg
+  Content-Type: image/jpeg
+  Cache-Control: public, max-age=31536000, immutable
+  X-Content-Type-Options: nosniff
+
+/landing/photos/ikoyi-bedroom.jpg
+  Content-Type: image/jpeg
+  Cache-Control: public, max-age=31536000, immutable
+  X-Content-Type-Options: nosniff
+
+/landing/photos/lekki-living.jpg
+  Content-Type: image/jpeg
+  Cache-Control: public, max-age=31536000, immutable
+  X-Content-Type-Options: nosniff
+
+/landing/photos/lekki-bedroom.jpg
+  Content-Type: image/jpeg
+  Cache-Control: public, max-age=31536000, immutable
+  X-Content-Type-Options: nosniff
