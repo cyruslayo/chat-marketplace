@@ -1,6 +1,7 @@
 import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runInNewContext } from "node:vm";
 import { build } from "esbuild";
 
 // Reuse the route's closed allow-list rather than keeping a second list of published files. esbuild (a runtime dependency)
@@ -9,12 +10,12 @@ const allowList = await build({
   entryPoints: [fileURLToPath(new URL("../src/landing-assets.ts", import.meta.url))],
   bundle: true,
   write: false,
-  format: "esm",
+  format: "iife",
+  globalName: "landingAssets",
   platform: "node",
 });
-const { LANDING_BINARY_ASSETS } = await import(
-  `data:text/javascript;base64,${Buffer.from(allowList.outputFiles[0].text).toString("base64")}`
-);
+// The bundle is evaluated, not imported, so the build has no non-literal import() (the source sweep forbids one).
+const { LANDING_BINARY_ASSETS } = runInNewContext(`${allowList.outputFiles[0].text}\nlandingAssets`);
 
 // Landing motion stays separate from the guest bundle; preserve the Cloudflare public-copy block below.
 await build({
