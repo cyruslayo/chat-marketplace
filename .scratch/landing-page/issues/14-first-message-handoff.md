@@ -1,6 +1,6 @@
 # 14 · Carry the landing search box message into a new conversation
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: 11, 13 (decision 1 must be (a); if the owner picks (b), close this as wontfix and change the copy under 13 instead)
 Requested: 20 Oct 2026
@@ -58,3 +58,9 @@ Behaviour: empty/over-long (>2000) message or a missing field: 400 with the comp
 **Tests:** `test/landing-handoff.test.ts` (6: AC1 and its two failure paths, AC2, AC3, AC4, AC5), `test/pilot-guardrails.test.ts` (landing sends count as turns/new sessions), and the earlier landing tests that asserted the old unnamed GET composer were updated (`landing-page.test.ts`, the real-Chrome `Issue 08 AC2`, which now also asserts the typed text is the first Guest message). `npm run check` clean; 70 targeted Node tests pass; real-Chrome `Issue 08 AC2` passes; `npm run test:workers` 24 files / 162 tests pass. Mutation checks: disabling the continue-offer fails AC3; removing `no-store` fails 4 tests. Honest note: my first "red" run failed on a missing test environment (`NODE_ENV=test`, `COMMERCE_REFERENCE_TEST_KEY=allow`), not on the feature; the guardrail test was genuinely red first (429 expected, 303 actual), and the `no-store` assertions were added together with the header, then proved by mutation.
 
 **Self-review (direct, no subagents):** checked fail-closed identity (malformed cookie 401; unresolved cookie only gets a new session through the same invite gate as `/`; existing session never needs the code), no static time/threshold values (limits are the configured pilot limits), no `any`, no logs added, message HTML-escaped in every hidden/echo field. Known limits: the Cloudflare Worker has no pilot rate limiter at all today (existing gap, unchanged; the landing route inherits whatever `/conversation` has there); a 2000-character message can exceed the 4 KiB form-body ceiling once URL-encoded (same as `/conversation`); the invite and continue pages repeat the message in a hidden field, which is why they are `no-store`. Not done here (issue 15): full suite, visual/capture gate at 320/390/768/1280, `docs/design/shortlet-landing-page-direction.md` wording ("until the seam is approved the composers link to the app") not yet updated.
+
+## Answer
+
+**Resolved 21 Oct 2026** with 11, 12 and 15 (`71e8c97`). The landing composers POST `message` to `/welcome/start`; the route issues a session behind the existing beta invite gate, offers the open conversation first (ADR-0079), otherwise starts a new thread whose first Guest message is the exact text, runs the first turn through `handleTurn`, and redirects 303 to the conversation. Tests: `test/landing-handoff.test.ts` (one named test per AC1–5 plus the failed-turn retry), `test/pilot-guardrails.test.ts`, the updated landing tests and the real-Chrome check; ADR table and self-review above; three full `npm test` runs, the last green.
+
+**Recorded gaps (owner proceeded knowing these):** the new guest copy `GUEST_CONTINUE_CONVERSATION` (heading, lede, failure line) was written by me from the existing `GUEST_NEW_CONVERSATION` strings and has not had separate owner copy approval; the Cloudflare Worker has no pilot rate limiter, so landing sends there are unlimited (existing gap, unchanged); and `docs/design/shortlet-landing-page-direction.md` still says the composers do not carry text until the seam is approved, which is now out of date. Not merged, pushed or deployed.

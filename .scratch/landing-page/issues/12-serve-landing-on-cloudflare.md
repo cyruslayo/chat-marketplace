@@ -1,6 +1,6 @@
 # 12 · Serve the landing page on Cloudflare
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: 11
 Requested: 20 Oct 2026
@@ -76,3 +76,9 @@ Seeding worked. The dev server was started once to create the Durable Object fil
 **Real-browser check** against the Workers runtime (Vite dev server using the project's own `vite.config.ts`, widened `fs.allow` only, via a scratch script outside the repo; synthetic `.dev.vars`; DO seeded offline as above; port 3041; shared headless Chrome via `test/helpers/chrome-devtools.ts`). `GET /welcome`: 200 with the unchanged `content-security-policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`. In the page: `/landing/fonts/newsreader-500.woff2`, `hanken-grotesk-400-700.woff2`, `newsreader-italic-400.woff2`, `/shortlet-foundations.css`, `/shortlet-landing.css` and `/landing.js` all loaded with status 200 and non-zero size; the three font faces reported `loaded`; both stylesheets exposed their rules (10 and 223); `landing.js` executed (script-added `landing-enter`/`landing-pending` classes present). The only non-200 was the browser's automatic `/favicon.ico` (404), unrelated to CSP. No shared security header was changed. No demo photos are referenced in the default (non-demo) page, so none were exercised.
 
 **Caveats:** the browser probe is a scratch script, not a committed test, because it needs the offline-seeded dev server; the procedure above is the record. Dev mode serves `public/` directly, so this proves CSP and resource loading on the Workers runtime, not the production Static Assets front door (covered by `env.ASSETS.fetch` in the Workers spec). Evidence: `npm run check` clean; Workers `landing-assets` + `cloudflare-config` specs 5/5 passed.
+
+## Answer
+
+**Resolved 21 Oct 2026** with 11, 14 and 15 (`338ca27` assets and callback binding, `d6fda26` and `22ec719` build-script fixes). Landing text and binary assets are copied into Cloudflare Static Assets through the existing allow-list with generated MIME and cache headers; the Worker router, provisioning and shared CSP are unchanged. `cloudflare.config.ts` now declares `PAYSTACK_CALLBACK_BASE_URL` (a defect found while running the browser check). Tests: three named Workers tests for AC1–3; Workers suite 24 files / 162 tests green; three full `npm test` runs, the last green.
+
+**Recorded gaps against the Definition of Done (owner proceeded knowing these):** (1) AC4, the real-browser CSP check, has no committed named test. It was run once with a scratch script against an offline-seeded Workers dev server and is recorded in the ledger above; the procedure needs a seeded dev server, so it is not repeatable in `npm test`. (2) That check ran in dev mode, so it proves CSP and resource loading on the Workers runtime, not the production Static Assets front door (covered by `env.ASSETS.fetch` in the Workers spec). Not merged, pushed or deployed.

@@ -1,6 +1,6 @@
 # 15 · Verify the ported landing page on main (wave gate for 11, 12 and 14)
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: 11, 12 (and 14 if it is in the wave)
 Requested: 20 Oct 2026
@@ -76,3 +76,7 @@ The suite again rewrote the issue 11 demo captures under `.scratch/landing-page/
 This is the single green full run on the final tree that the earlier entries lacked, so DoD item 9 is met for the landing wave: `npm run check` clean, this full run green, `npm run test:workers` 24 files / 162 tests green (run before the last build-script change; the affected `landing-assets.spec.ts` was rerun after it, 3/3), and the captures in `screenshots/15/` clean. The three-run history is: run 1, three failures (one application, fixed; two environment/load, green alone); run 2, one failure (application, fixed); run 3, none.
 
 The 34 tracked PNGs outside `.scratch/landing-page/` that the suite rewrites are listed above and left uncommitted. 11, 12, 14 and 15 are still `claimed` pending the owner's go-ahead to resolve them together; nothing merged, pushed or deployed.
+
+## Answer
+
+**Resolved 21 Oct 2026**, together with 11, 12 and 14. Gate evidence is in the three ledger entries above: build and check clean; Workers 24 files / 162 tests; captures in `screenshots/15/` with no overflow, no control under 44px and no text under 12px; three full `npm test` runs (run 1: three failures classified and fixed or cleared; run 2: one application failure fixed; run 3, tree `68e271e`: green, exit 0). Gap recorded: AC1 (app-layer parity) rests on the `landing-phone-text.json` fixture tests, not a separate side-by-side diff against the live app screens. The 34 tracked PNGs the suite rewrites outside `.scratch/landing-page/` are listed above and were not committed. Awaiting the owner's decision before any merge to `main`, push or deployment.

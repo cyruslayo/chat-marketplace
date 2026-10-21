@@ -1,6 +1,6 @@
 # 11 · Port the landing page onto main as a route module
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: none
 Requested: 20 Oct 2026
@@ -124,3 +124,7 @@ AC4 old → new adaptation ledger (no existing asserted expectation removed or r
 Active LSP probes reported no findings in changed landing files but could not positively certify silent-clean files, so the successful compiler check is the type-check evidence. Separately, active root-workspace probes reproduced pre-existing errors in unchanged capture scripts: `capture-23.ts:44` and `capture-27.ts:141` omit `paymentReferenceKeys`; `capture-phase2.ts:9` uses the obsolete one-argument constructor. These are outside this port and were recorded as session deferrals, not silently fixed or suppressed. Root tracked status remains only the inherited `HANDOFF.md` modification. The new demo-capture check then caught the notice behind the sticky app bar (`4f6e7cee-d32e-4b48-a67e-567282ffb277`, notice top 0 versus header bottom 65). Moving that existing kit banner into the hero's padded introduction fixed the cause without changing CSS or copy. Run `82e7af2b-c62c-4b8a-9165-ad6ccbebc8e7` passed at 320, 390, 768 and 1280 in light and dark: no horizontal overflow, no controls under 44px, no text under 12px, and the notice below the header. Eight captures and `demo-findings.json` are under `screenshots/11/`; the 320-light and 1280-dark screens were also inspected visually. Final compiler/bundle check `019a6075-313c-420e-bc69-41fcbca9ef61` and dedicated acceptance run `35149990-5756-4e0c-bf6f-0f75ddfe1955` both passed. The new demo check is additional to the original browser expectations; its selected run does not claim to be a whole-file rerun.
 
 Self-review against the ADR table found no authority/policy change: loaders and composition are host concerns, image flags remain false, the banner is presentation-only, kit/content reuse and byte-preserving CSS are retained. This is direct-agent self-review, not independent review. Whitespace review found only the original trailing space in each bundled OFL license (Hanken Grotesk line 22, Newsreader line 21); both third-party license texts are preserved byte-identically rather than reformatted. All other staged files pass `git diff --cached --check`. Full-suite/Workers/final visual wave gates remain for issue 15; issue remains claimed and must not be resolved or merged yet.
+
+## Answer
+
+**Resolved 21 Oct 2026** with 12, 14 and 15 as one wave on `landing/11-port-onto-main` (port commit `016ff47`; wave tip `0679c5a` plus this resolution). Evidence is the ledger above and issue 15: `npm run check` clean, three full `npm test` runs (the third green on the final tree, exit 0), `npm run test:workers` green, captures in `screenshots/15/` and `screenshots/11/`. DoD checked: items 1–2 per the mirrored AC checks recorded above; 3 ADR table above; 4 no new classes; 5 no invented policy (demo label and photo flags are owner-approved in 13); 6 no credentials logged; 7 met by the third full run. Not merged, pushed or deployed.
