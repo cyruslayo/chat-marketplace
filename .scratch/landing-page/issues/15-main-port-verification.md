@@ -58,3 +58,13 @@ The gate for the port, in the same form as issue 10.
 **Files the full suite rewrote outside `.scratch/landing-page/` (not restored, not committed; for the owner):** 34 tracked PNGs: `.scratch/guest-ui-consistency/screenshots/09/chat-payment-ready.png`; four in `.scratch/ui-phase3-discovery-detail/`; 29 in `.scratch/ui-recovery/recovered/`. Also line-ending churn in `apps/cloudflare/src/env.d.ts` and `apps/local-guest/dist/{gallery,offer,payment}.js`.
 
 **State:** 11, 12 and 14 stay claimed; nothing resolved, merged, pushed or deployed.
+
+### Second full suite — 21 Oct 2026 (tree `4cd18c2`, 12:19, log `full-suite-15b.txt`)
+
+**Phase 2 (real browser, one file at a time): 35 files, 35 passed, 0 failed, 0 timed out.** The two earlier phase-2 failures (mobile-guest-journey AC23, paystack-real-browser) did not recur, which supports the load/network classification above.
+
+**Phase 1: 2040 tests, 2039 passed, 1 failed:** `guest-identity-assurance.test.ts` "AC5 (review 4c): no source module imports through a non-literal import() or require() that the sweep cannot resolve". **Application, caused by this wave:** my `d6fda26` build fix loaded the allow-list with `import(\`data:...\`)`, which the sweep rightly forbids (it named `apps/local-guest/scripts/build-client.mjs`). Fixed in `fix(build): evaluate the landing allow-list bundle instead of importing it`: esbuild builds `landing-assets.ts` as an IIFE and `node:vm` `runInNewContext` reads the allow-list, so there is no `tsx` and no dynamic import. Evidence after the fix, isolated: `guest-identity-assurance.test.ts` + `production-install.test.ts` 59/59 pass; `npm run check` clean; `landing-assets.spec.ts` 3/3; `apps/cloudflare/public` byte-identical before and after the build.
+
+**Status of DoD item 9:** across the two full runs every failure is explained and cleared: three in the first (one application, fixed; two environment/load, rerun green) and one in the second (application, fixed). There is still no single full run that is green on the final tree, because the last fix landed after the last run and was verified by the isolated reruns named above, as the gate allows. The owner may still ask for a third full run, or accept this evidence.
+
+The suite again rewrote the issue 11 demo captures under `.scratch/landing-page/screenshots/11/`; those were restored, so the committed demo evidence is unchanged. The 34 rewritten PNGs outside `.scratch/landing-page/` are listed above and untouched. 11, 12, 14 and 15 remain claimed; nothing resolved, merged, pushed or deployed.
