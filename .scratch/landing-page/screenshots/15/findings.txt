@@ -1,0 +1,449 @@
+== width 320px ==
+  hero phone top 675px, bottom 1617px (viewport height 9843px at this capture)
+theme light (page height 9843px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 2
+    - button.landing-suggest "Lekki, 3 nights from Friday, 4 of us" at 298,559 254x44
+    - button.landing-suggest "Ikoyi, 2 weeks from 10 Sept" at 560,559 210x44
+  visible controls checked: 23 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 197; text under 12px: 0
+  longest prose line: 45 characters (limit 75)
+    - .landing-lede "Say what you need. See only wh...": 37
+    - .landing-caption__body "Area, dates and guests come fr...": 33
+    - .landing-caption__body "Fewer results, by design: only...": 36
+    - .landing-caption__body "Dates, guests and total sit on...": 34
+    - .landing-caption__body "The Operator is the verified c...": 34
+    - .landing-caption__body "The offer shows exactly what y...": 36
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 43
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 40
+    - .landing-faq__item > p "No payment is due, and you can...": 35
+    - .landing-faq__item > p "Not online for this pilot. Any...": 45
+  sizes (px): H1 36, H2 28.0006, H3 22.0006, lede 17, caption 16.0006, eyebrow 13, faqQuestion 17.0006, faqAnswer 15.0006, bubble 15, chip 14, rail 12, pain 15
+  content left edges (px): app bar 16; hero 16; chat window 16; trust strip 16; apartments absent; how it works 16; your money 16; questions 16; closing 16; footer 16
+  content edge spread: 0px (must be 0 or 1)
+  section backgrounds: app bar (ui-appbar landing-appbar--sticky landing-appbar--on-photo) = rgba(0, 0, 0, 0); section landing-hero = rgb(11, 61, 46); section landing-trust = rgb(251, 248, 242); section #how = rgba(0, 0, 0, 0); section #money = rgb(11, 61, 46); section #questions = rgba(0, 0, 0, 0); section landing-closing = rgb(11, 61, 46); footer landing-footer = rgb(11, 61, 46); body = rgb(244, 239, 230)
+  deposit row "Refundable Security Deposit (separate): ₦20,000": line tops 6923, 6944, 6922; row box 78,6922,196,42; value "₦20,000" box 224,6922,50,42
+  hero phone top 675px, bottom 1617px (viewport height 9843px at this capture)
+theme dark (page height 9843px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 2
+    - button.landing-suggest "Lekki, 3 nights from Friday, 4 of us" at 298,559 254x44
+    - button.landing-suggest "Ikoyi, 2 weeks from 10 Sept" at 560,559 210x44
+  visible controls checked: 23 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 197; text under 12px: 0
+  longest prose line: 45 characters (limit 75)
+    - .landing-lede "Say what you need. See only wh...": 37
+    - .landing-caption__body "Area, dates and guests come fr...": 33
+    - .landing-caption__body "Fewer results, by design: only...": 36
+    - .landing-caption__body "Dates, guests and total sit on...": 34
+    - .landing-caption__body "The Operator is the verified c...": 34
+    - .landing-caption__body "The offer shows exactly what y...": 36
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 43
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 40
+    - .landing-faq__item > p "No payment is due, and you can...": 35
+    - .landing-faq__item > p "Not online for this pilot. Any...": 45
+  sizes (px): H1 36, H2 28.0006, H3 22.0006, lede 17, caption 16.0006, eyebrow 13, faqQuestion 17.0006, faqAnswer 15.0006, bubble 15, chip 14, rail 12, pain 15
+  content left edges (px): app bar 16; hero 16; chat window 16; trust strip 16; apartments absent; how it works 16; your money 16; questions 16; closing 16; footer 16
+  content edge spread: 0px (must be 0 or 1)
+  section backgrounds: app bar (ui-appbar landing-appbar--sticky landing-appbar--on-photo) = rgba(0, 0, 0, 0); section landing-hero = rgb(11, 61, 46); section landing-trust = rgb(24, 33, 28); section #how = rgba(0, 0, 0, 0); section #money = rgb(11, 61, 46); section #questions = rgba(0, 0, 0, 0); section landing-closing = rgb(11, 61, 46); footer landing-footer = rgb(11, 61, 46); body = rgb(17, 24, 20)
+  deposit row "Refundable Security Deposit (separate): ₦20,000": line tops 6923, 6944, 6922; row box 78,6922,196,42; value "₦20,000" box 224,6922,50,42
+
+== width 390px ==
+  hero phone top 644px, bottom 1424px (viewport height 8720px at this capture)
+theme light (page height 8720px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 2
+    - button.landing-suggest "Lekki, 3 nights from Friday, 4 of us" at 300,528 254x44
+    - button.landing-suggest "Ikoyi, 2 weeks from 10 Sept" at 562,528 210x44
+  visible controls checked: 23 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 197; text under 12px: 0
+  longest prose line: 52 characters (limit 75)
+    - .landing-lede "Say what you need. See only wh...": 42
+    - .landing-caption__body "Area, dates and guests come fr...": 42
+    - .landing-caption__body "Fewer results, by design: only...": 45
+    - .landing-caption__body "Dates, guests and total sit on...": 41
+    - .landing-caption__body "The Operator is the verified c...": 46
+    - .landing-caption__body "The offer shows exactly what y...": 43
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 52
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 51
+    - .landing-faq__item > p "No payment is due, and you can...": 48
+    - .landing-faq__item > p "Not online for this pilot. Any...": 49
+  sizes (px): H1 38.3327, H2 29.1673, H3 22.7298, lede 17.2188, caption 16.0736, eyebrow 13, faqQuestion 17.0736, faqAnswer 15.0736, bubble 15, chip 14, rail 12, pain 15
+  content left edges (px): app bar 18; hero 18; chat window 18; trust strip 18; apartments absent; how it works 18; your money 18; questions 18; closing 18; footer 18
+  content edge spread: 0px (must be 0 or 1)
+  section backgrounds: app bar (ui-appbar landing-appbar--sticky landing-appbar--on-photo) = rgba(0, 0, 0, 0); section landing-hero = rgb(11, 61, 46); section landing-trust = rgb(251, 248, 242); section #how = rgba(0, 0, 0, 0); section #money = rgb(11, 61, 46); section #questions = rgba(0, 0, 0, 0); section landing-closing = rgb(11, 61, 46); footer landing-footer = rgb(11, 61, 46); body = rgb(244, 239, 230)
+  deposit row "Refundable Security Deposit (separate): ₦20,000": line tops 6087, 6108, 6086; row box 80,6086,262,42; value "₦20,000" box 292,6086,50,42
+  hero phone top 644px, bottom 1424px (viewport height 8720px at this capture)
+theme dark (page height 8720px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 2
+    - button.landing-suggest "Lekki, 3 nights from Friday, 4 of us" at 300,528 254x44
+    - button.landing-suggest "Ikoyi, 2 weeks from 10 Sept" at 562,528 210x44
+  visible controls checked: 23 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 197; text under 12px: 0
+  longest prose line: 52 characters (limit 75)
+    - .landing-lede "Say what you need. See only wh...": 42
+    - .landing-caption__body "Area, dates and guests come fr...": 42
+    - .landing-caption__body "Fewer results, by design: only...": 45
+    - .landing-caption__body "Dates, guests and total sit on...": 41
+    - .landing-caption__body "The Operator is the verified c...": 46
+    - .landing-caption__body "The offer shows exactly what y...": 43
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 52
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 51
+    - .landing-faq__item > p "No payment is due, and you can...": 48
+    - .landing-faq__item > p "Not online for this pilot. Any...": 49
+  sizes (px): H1 38.3327, H2 29.1673, H3 22.7298, lede 17.2188, caption 16.0736, eyebrow 13, faqQuestion 17.0736, faqAnswer 15.0736, bubble 15, chip 14, rail 12, pain 15
+  content left edges (px): app bar 18; hero 18; chat window 18; trust strip 18; apartments absent; how it works 18; your money 18; questions 18; closing 18; footer 18
+  content edge spread: 0px (must be 0 or 1)
+  section backgrounds: app bar (ui-appbar landing-appbar--sticky landing-appbar--on-photo) = rgba(0, 0, 0, 0); section landing-hero = rgb(11, 61, 46); section landing-trust = rgb(24, 33, 28); section #how = rgba(0, 0, 0, 0); section #money = rgb(11, 61, 46); section #questions = rgba(0, 0, 0, 0); section landing-closing = rgb(11, 61, 46); footer landing-footer = rgb(11, 61, 46); body = rgb(17, 24, 20)
+  deposit row "Refundable Security Deposit (separate): ₦20,000": line tops 6087, 6108, 6086; row box 80,6086,262,42; value "₦20,000" box 292,6086,50,42
+
+== width 768px ==
+  hero phone top 677px, bottom 1352px (viewport height 7685px at this capture)
+theme light (page height 7685px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 26 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 200; text under 12px: 0
+  longest prose line: 74 characters (limit 75)
+    - .landing-lede "Say what you need. See only wh...": 57
+    - .landing-caption__body "Area, dates and guests come fr...": 65
+    - .landing-caption__body "Fewer results, by design: only...": 71
+    - .landing-caption__body "Dates, guests and total sit on...": 72
+    - .landing-caption__body "The Operator is the verified c...": 69
+    - .landing-caption__body "The offer shows exactly what y...": 70
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 74
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 70
+    - .landing-faq__item > p "No payment is due, and you can...": 71
+    - .landing-faq__item > p "Not online for this pilot. Any...": 69
+  sizes (px): H1 50.9325, H2 35.4675, H3 26.6675, lede 18.4, caption 16.4675, eyebrow 13, faqQuestion 17.4675, faqAnswer 15.4675, bubble 15, chip 14, rail 12, pain 15
+  content left edges (px): app bar 30.72; hero 30.72; chat window 30.72; trust strip 30.72; apartments absent; how it works 30.72; your money 30.72; questions 30.72; closing 30.72; footer 30.72
+  content edge spread: 0px (must be 0 or 1)
+  section backgrounds: app bar (ui-appbar landing-appbar--sticky landing-appbar--on-photo) = rgba(0, 0, 0, 0); section landing-hero = rgb(11, 61, 46); section landing-trust = rgb(251, 248, 242); section #how = rgba(0, 0, 0, 0); section #money = rgb(11, 61, 46); section #questions = rgba(0, 0, 0, 0); section landing-closing = rgb(11, 61, 46); footer landing-footer = rgb(11, 61, 46); body = rgb(244, 239, 230)
+  deposit row "Refundable Security Deposit (separate): ₦20,000": line tops 5141, 5140; row box 93,5140,615,21; value "₦20,000" box 657,5140,50,21
+  hero phone top 677px, bottom 1352px (viewport height 7685px at this capture)
+theme dark (page height 7685px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 26 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 200; text under 12px: 0
+  longest prose line: 74 characters (limit 75)
+    - .landing-lede "Say what you need. See only wh...": 57
+    - .landing-caption__body "Area, dates and guests come fr...": 65
+    - .landing-caption__body "Fewer results, by design: only...": 71
+    - .landing-caption__body "Dates, guests and total sit on...": 72
+    - .landing-caption__body "The Operator is the verified c...": 69
+    - .landing-caption__body "The offer shows exactly what y...": 70
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 74
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 70
+    - .landing-faq__item > p "No payment is due, and you can...": 71
+    - .landing-faq__item > p "Not online for this pilot. Any...": 69
+  sizes (px): H1 50.9325, H2 35.4675, H3 26.6675, lede 18.4, caption 16.4675, eyebrow 13, faqQuestion 17.4675, faqAnswer 15.4675, bubble 15, chip 14, rail 12, pain 15
+  content left edges (px): app bar 30.72; hero 30.72; chat window 30.72; trust strip 30.72; apartments absent; how it works 30.72; your money 30.72; questions 30.72; closing 30.72; footer 30.72
+  content edge spread: 0px (must be 0 or 1)
+  section backgrounds: app bar (ui-appbar landing-appbar--sticky landing-appbar--on-photo) = rgba(0, 0, 0, 0); section landing-hero = rgb(11, 61, 46); section landing-trust = rgb(24, 33, 28); section #how = rgba(0, 0, 0, 0); section #money = rgb(11, 61, 46); section #questions = rgba(0, 0, 0, 0); section landing-closing = rgb(11, 61, 46); footer landing-footer = rgb(11, 61, 46); body = rgb(17, 24, 20)
+  deposit row "Refundable Security Deposit (separate): ₦20,000": line tops 5141, 5140; row box 93,5140,615,21; value "₦20,000" box 657,5140,50,21
+
+== width 1280px ==
+  hero phone top 759px, bottom 1239px (viewport height 6340px at this capture)
+theme light (page height 6340px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 26 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 200; text under 12px: 0
+  longest prose line: 74 characters (limit 75)
+    - .landing-lede "Say what you need. See only wh...": 57
+    - .landing-caption__body "Area, dates and guests come fr...": 65
+    - .landing-caption__body "Fewer results, by design: only...": 71
+    - .landing-caption__body "Dates, guests and total sit on...": 72
+    - .landing-caption__body "The Operator is the verified c...": 69
+    - .landing-caption__body "The offer shows exactly what y...": 70
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 74
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 70
+    - .landing-faq__item > p "No payment is due, and you can...": 71
+    - .landing-faq__item > p "Not online for this pilot. Any...": 69
+  sizes (px): H1 67.999, H2 44, H3 32, lede 20, caption 17, eyebrow 13, faqQuestion 18, faqAnswer 16, bubble 15, chip 14, rail 12, pain 15
+  content left edges (px): app bar 80; hero 80; chat window 80; trust strip 80; apartments absent; how it works 80; your money 80; questions 80; closing 80; footer 80
+  content edge spread: 0px (must be 0 or 1)
+  section backgrounds: app bar (ui-appbar landing-appbar--sticky landing-appbar--on-photo) = rgba(0, 0, 0, 0); section landing-hero = rgb(11, 61, 46); section landing-trust = rgb(251, 248, 242); section #how = rgba(0, 0, 0, 0); section #money = rgb(11, 61, 46); section #questions = rgba(0, 0, 0, 0); section landing-closing = rgb(11, 61, 46); footer landing-footer = rgb(11, 61, 46); body = rgb(244, 239, 230)
+  deposit row "Refundable Security Deposit (separate): ₦20,000": line tops 4159, 4158; row box 846,4158,324,21; value "₦20,000" box 1120,4158,50,21
+  hero phone top 759px, bottom 1239px (viewport height 6340px at this capture)
+theme dark (page height 6340px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 26 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 200; text under 12px: 0
+  longest prose line: 74 characters (limit 75)
+    - .landing-lede "Say what you need. See only wh...": 57
+    - .landing-caption__body "Area, dates and guests come fr...": 65
+    - .landing-caption__body "Fewer results, by design: only...": 71
+    - .landing-caption__body "Dates, guests and total sit on...": 72
+    - .landing-caption__body "The Operator is the verified c...": 69
+    - .landing-caption__body "The offer shows exactly what y...": 70
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 74
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 70
+    - .landing-faq__item > p "No payment is due, and you can...": 71
+    - .landing-faq__item > p "Not online for this pilot. Any...": 69
+  sizes (px): H1 67.999, H2 44, H3 32, lede 20, caption 17, eyebrow 13, faqQuestion 18, faqAnswer 16, bubble 15, chip 14, rail 12, pain 15
+  content left edges (px): app bar 80; hero 80; chat window 80; trust strip 80; apartments absent; how it works 80; your money 80; questions 80; closing 80; footer 80
+  content edge spread: 0px (must be 0 or 1)
+  section backgrounds: app bar (ui-appbar landing-appbar--sticky landing-appbar--on-photo) = rgba(0, 0, 0, 0); section landing-hero = rgb(11, 61, 46); section landing-trust = rgb(24, 33, 28); section #how = rgba(0, 0, 0, 0); section #money = rgb(11, 61, 46); section #questions = rgba(0, 0, 0, 0); section landing-closing = rgb(11, 61, 46); footer landing-footer = rgb(11, 61, 46); body = rgb(17, 24, 20)
+  deposit row "Refundable Security Deposit (separate): ₦20,000": line tops 4159, 4158; row box 846,4158,324,21; value "₦20,000" box 1120,4158,50,21
+
+== width 1440px ==
+  hero phone top 765px, bottom 1246px (viewport height 6369px at this capture)
+theme light (page height 6369px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 26 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 200; text under 12px: 0
+  longest prose line: 74 characters (limit 75)
+    - .landing-lede "Say what you need. See only wh...": 57
+    - .landing-caption__body "Area, dates and guests come fr...": 65
+    - .landing-caption__body "Fewer results, by design: only...": 71
+    - .landing-caption__body "Dates, guests and total sit on...": 72
+    - .landing-caption__body "The Operator is the verified c...": 69
+    - .landing-caption__body "The offer shows exactly what y...": 70
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 74
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 70
+    - .landing-faq__item > p "No payment is due, and you can...": 71
+    - .landing-faq__item > p "Not online for this pilot. Any...": 69
+  sizes (px): H1 68, H2 44, H3 32, lede 20, caption 17, eyebrow 13, faqQuestion 18, faqAnswer 16, bubble 15, chip 14, rail 12, pain 15
+  content left edges (px): app bar 160; hero 160; chat window 160; trust strip 160; apartments absent; how it works 160; your money 160; questions 160; closing 160; footer 160
+  content edge spread: 0px (must be 0 or 1)
+  section backgrounds: app bar (ui-appbar landing-appbar--sticky landing-appbar--on-photo) = rgba(0, 0, 0, 0); section landing-hero = rgb(11, 61, 46); section landing-trust = rgb(251, 248, 242); section #how = rgba(0, 0, 0, 0); section #money = rgb(11, 61, 46); section #questions = rgba(0, 0, 0, 0); section landing-closing = rgb(11, 61, 46); footer landing-footer = rgb(11, 61, 46); body = rgb(244, 239, 230)
+  deposit row "Refundable Security Deposit (separate): ₦20,000": line tops 4168, 4167; row box 926,4167,324,21; value "₦20,000" box 1200,4167,50,21
+  hero phone top 765px, bottom 1246px (viewport height 6369px at this capture)
+theme dark (page height 6369px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 26 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 200; text under 12px: 0
+  longest prose line: 74 characters (limit 75)
+    - .landing-lede "Say what you need. See only wh...": 57
+    - .landing-caption__body "Area, dates and guests come fr...": 65
+    - .landing-caption__body "Fewer results, by design: only...": 71
+    - .landing-caption__body "Dates, guests and total sit on...": 72
+    - .landing-caption__body "The Operator is the verified c...": 69
+    - .landing-caption__body "The offer shows exactly what y...": 70
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 74
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 70
+    - .landing-faq__item > p "No payment is due, and you can...": 71
+    - .landing-faq__item > p "Not online for this pilot. Any...": 69
+  sizes (px): H1 68, H2 44, H3 32, lede 20, caption 17, eyebrow 13, faqQuestion 18, faqAnswer 16, bubble 15, chip 14, rail 12, pain 15
+  content left edges (px): app bar 160; hero 160; chat window 160; trust strip 160; apartments absent; how it works 160; your money 160; questions 160; closing 160; footer 160
+  content edge spread: 0px (must be 0 or 1)
+  section backgrounds: app bar (ui-appbar landing-appbar--sticky landing-appbar--on-photo) = rgba(0, 0, 0, 0); section landing-hero = rgb(11, 61, 46); section landing-trust = rgb(24, 33, 28); section #how = rgba(0, 0, 0, 0); section #money = rgb(11, 61, 46); section #questions = rgba(0, 0, 0, 0); section landing-closing = rgb(11, 61, 46); footer landing-footer = rgb(11, 61, 46); body = rgb(17, 24, 20)
+  deposit row "Refundable Security Deposit (separate): ₦20,000": line tops 4168, 4167; row box 926,4167,324,21; value "₦20,000" box 1200,4167,50,21
+
+== placeholders:true render, width 390px ==
+  hero phone top 644px, bottom 1424px (viewport height 10254px at this capture)
+theme light (placeholders:true) (page height 10254px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 2
+    - button.landing-suggest "Lekki, 3 nights from Friday, 4 of us" at 300,528 254x44
+    - button.landing-suggest "Ikoyi, 2 weeks from 10 Sept" at 562,528 210x44
+  visible controls checked: 27 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 211; text under 12px: 0
+  longest prose line: 52 characters (limit 75)
+    - .landing-lede "Say what you need. See only wh...": 42
+    - .landing-caption__body "Area, dates and guests come fr...": 42
+    - .landing-caption__body "Fewer results, by design: only...": 45
+    - .landing-caption__body "Dates, guests and total sit on...": 41
+    - .landing-caption__body "The Operator is the verified c...": 46
+    - .landing-caption__body "The offer shows exactly what y...": 43
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 52
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 51
+    - .landing-faq__item > p "No payment is due, and you can...": 48
+    - .landing-faq__item > p "[AREAS WITH PUBLISHED INVENTOR...": 32
+    - .landing-faq__item > p "[APPROVED FEE ANSWER]...": 21
+    - .landing-faq__item > p "Not online for this pilot. Any...": 49
+  sizes (px): H1 38.3327, H2 29.1673, H3 22.7298, lede 17.2188, caption 16.0736, eyebrow 13, faqQuestion 17.0736, faqAnswer 15.0736, bubble 15, chip 14, rail 12, pain 15
+  content left edges (px): app bar 18; hero 18; chat window 18; trust strip 18; apartments 18; how it works 18; your money 18; questions 18; closing 18; footer 18
+  content edge spread: 0px (must be 0 or 1)
+  section backgrounds: app bar (ui-appbar landing-appbar--sticky landing-appbar--on-photo) = rgba(0, 0, 0, 0); section landing-hero = rgb(11, 61, 46); section landing-trust = rgb(251, 248, 242); section #apartments = rgba(0, 0, 0, 0); section #how = rgba(0, 0, 0, 0); section #money = rgb(11, 61, 46); section #questions = rgba(0, 0, 0, 0); section landing-closing = rgb(11, 61, 46); footer landing-footer = rgb(11, 61, 46); body = rgb(244, 239, 230)
+  deposit row "Refundable Security Deposit (separate): ₦20,000": line tops 7477, 7498, 7476; row box 80,7476,262,42; value "₦20,000" box 292,7476,50,42
+  hero phone top 644px, bottom 1424px (viewport height 10254px at this capture)
+theme dark (placeholders:true) (page height 10254px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 2
+    - button.landing-suggest "Lekki, 3 nights from Friday, 4 of us" at 300,528 254x44
+    - button.landing-suggest "Ikoyi, 2 weeks from 10 Sept" at 562,528 210x44
+  visible controls checked: 27 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 211; text under 12px: 0
+  longest prose line: 52 characters (limit 75)
+    - .landing-lede "Say what you need. See only wh...": 42
+    - .landing-caption__body "Area, dates and guests come fr...": 42
+    - .landing-caption__body "Fewer results, by design: only...": 45
+    - .landing-caption__body "Dates, guests and total sit on...": 41
+    - .landing-caption__body "The Operator is the verified c...": 46
+    - .landing-caption__body "The offer shows exactly what y...": 43
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 52
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 51
+    - .landing-faq__item > p "No payment is due, and you can...": 48
+    - .landing-faq__item > p "[AREAS WITH PUBLISHED INVENTOR...": 32
+    - .landing-faq__item > p "[APPROVED FEE ANSWER]...": 21
+    - .landing-faq__item > p "Not online for this pilot. Any...": 49
+  sizes (px): H1 38.3327, H2 29.1673, H3 22.7298, lede 17.2188, caption 16.0736, eyebrow 13, faqQuestion 17.0736, faqAnswer 15.0736, bubble 15, chip 14, rail 12, pain 15
+  content left edges (px): app bar 18; hero 18; chat window 18; trust strip 18; apartments 18; how it works 18; your money 18; questions 18; closing 18; footer 18
+  content edge spread: 0px (must be 0 or 1)
+  section backgrounds: app bar (ui-appbar landing-appbar--sticky landing-appbar--on-photo) = rgba(0, 0, 0, 0); section landing-hero = rgb(11, 61, 46); section landing-trust = rgb(24, 33, 28); section #apartments = rgba(0, 0, 0, 0); section #how = rgba(0, 0, 0, 0); section #money = rgb(11, 61, 46); section #questions = rgba(0, 0, 0, 0); section landing-closing = rgb(11, 61, 46); footer landing-footer = rgb(11, 61, 46); body = rgb(17, 24, 20)
+  deposit row "Refundable Security Deposit (separate): ₦20,000": line tops 7477, 7498, 7476; row box 80,7476,262,42; value "₦20,000" box 292,7476,50,42
+
+== placeholders:true render, width 1440px ==
+  hero phone top 765px, bottom 1246px (viewport height 7267px at this capture)
+theme light (placeholders:true) (page height 7267px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 30 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 214; text under 12px: 0
+  longest prose line: 74 characters (limit 75)
+    - .landing-lede "Say what you need. See only wh...": 57
+    - .landing-caption__body "Area, dates and guests come fr...": 65
+    - .landing-caption__body "Fewer results, by design: only...": 71
+    - .landing-caption__body "Dates, guests and total sit on...": 72
+    - .landing-caption__body "The Operator is the verified c...": 69
+    - .landing-caption__body "The offer shows exactly what y...": 70
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 74
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 70
+    - .landing-faq__item > p "No payment is due, and you can...": 71
+    - .landing-faq__item > p "[AREAS WITH PUBLISHED INVENTOR...": 32
+    - .landing-faq__item > p "[APPROVED FEE ANSWER]...": 21
+    - .landing-faq__item > p "Not online for this pilot. Any...": 69
+  sizes (px): H1 68, H2 44, H3 32, lede 20, caption 17, eyebrow 13, faqQuestion 18, faqAnswer 16, bubble 15, chip 14, rail 12, pain 15
+  content left edges (px): app bar 160; hero 160; chat window 160; trust strip 160; apartments 160; how it works 160; your money 160; questions 160; closing 160; footer 160
+  content edge spread: 0px (must be 0 or 1)
+  section backgrounds: app bar (ui-appbar landing-appbar--sticky landing-appbar--on-photo) = rgba(0, 0, 0, 0); section landing-hero = rgb(11, 61, 46); section landing-trust = rgb(251, 248, 242); section #apartments = rgba(0, 0, 0, 0); section #how = rgba(0, 0, 0, 0); section #money = rgb(11, 61, 46); section #questions = rgba(0, 0, 0, 0); section landing-closing = rgb(11, 61, 46); footer landing-footer = rgb(11, 61, 46); body = rgb(244, 239, 230)
+  deposit row "Refundable Security Deposit (separate): ₦20,000": line tops 4944, 4943; row box 926,4943,324,21; value "₦20,000" box 1200,4943,50,21
+  hero phone top 765px, bottom 1246px (viewport height 7267px at this capture)
+theme dark (placeholders:true) (page height 7267px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 30 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 214; text under 12px: 0
+  longest prose line: 74 characters (limit 75)
+    - .landing-lede "Say what you need. See only wh...": 57
+    - .landing-caption__body "Area, dates and guests come fr...": 65
+    - .landing-caption__body "Fewer results, by design: only...": 71
+    - .landing-caption__body "Dates, guests and total sit on...": 72
+    - .landing-caption__body "The Operator is the verified c...": 69
+    - .landing-caption__body "The offer shows exactly what y...": 70
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 74
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 70
+    - .landing-faq__item > p "No payment is due, and you can...": 71
+    - .landing-faq__item > p "[AREAS WITH PUBLISHED INVENTOR...": 32
+    - .landing-faq__item > p "[APPROVED FEE ANSWER]...": 21
+    - .landing-faq__item > p "Not online for this pilot. Any...": 69
+  sizes (px): H1 68, H2 44, H3 32, lede 20, caption 17, eyebrow 13, faqQuestion 18, faqAnswer 16, bubble 15, chip 14, rail 12, pain 15
+  content left edges (px): app bar 160; hero 160; chat window 160; trust strip 160; apartments 160; how it works 160; your money 160; questions 160; closing 160; footer 160
+  content edge spread: 0px (must be 0 or 1)
+  section backgrounds: app bar (ui-appbar landing-appbar--sticky landing-appbar--on-photo) = rgba(0, 0, 0, 0); section landing-hero = rgb(11, 61, 46); section landing-trust = rgb(24, 33, 28); section #apartments = rgba(0, 0, 0, 0); section #how = rgba(0, 0, 0, 0); section #money = rgb(11, 61, 46); section #questions = rgba(0, 0, 0, 0); section landing-closing = rgb(11, 61, 46); footer landing-footer = rgb(11, 61, 46); body = rgb(17, 24, 20)
+  deposit row "Refundable Security Deposit (separate): ₦20,000": line tops 4944, 4943; row box 926,4943,324,21; value "₦20,000" box 1200,4943,50,21
+
+== 1280 at 200% zoom (640 CSS px) ==
+  hero phone top 592px, bottom 1289px (viewport height 7851px at this capture)
+theme light (page height 7851px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 1
+    - button.landing-suggest "Ikoyi, 2 weeks from 10 Sept" at 570,491 210x44
+  visible controls checked: 23 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 197; text under 12px: 0
+  longest prose line: 74 characters (limit 75)
+    - .landing-lede "Say what you need. See only wh...": 57
+    - .landing-caption__body "Area, dates and guests come fr...": 65
+    - .landing-caption__body "Fewer results, by design: only...": 71
+    - .landing-caption__body "Dates, guests and total sit on...": 72
+    - .landing-caption__body "The Operator is the verified c...": 69
+    - .landing-caption__body "The offer shows exactly what y...": 70
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 74
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 70
+    - .landing-faq__item > p "No payment is due, and you can...": 71
+    - .landing-faq__item > p "Not online for this pilot. Any...": 69
+  sizes (px): H1 46.6659, H2 33.3341, H3 25.3341, lede 18, caption 16.3341, eyebrow 13, faqQuestion 17.3341, faqAnswer 15.3341, bubble 15, chip 14, rail 12, pain 15
+  content left edges (px): app bar 25.6; hero 25.6; chat window 25.6; trust strip 25.6; apartments absent; how it works 25.59; your money 25.6; questions 25.6; closing 25.6; footer 25.6
+  content edge spread: 0.01px (must be 0 or 1)
+  section backgrounds: app bar (ui-appbar landing-appbar--sticky landing-appbar--on-photo) = rgba(0, 0, 0, 0); section landing-hero = rgb(11, 61, 46); section landing-trust = rgb(251, 248, 242); section #how = rgba(0, 0, 0, 0); section #money = rgb(11, 61, 46); section #questions = rgba(0, 0, 0, 0); section landing-closing = rgb(11, 61, 46); footer landing-footer = rgb(11, 61, 46); body = rgb(244, 239, 230)
+  deposit row "Refundable Security Deposit (separate): ₦20,000": line tops 5248, 5247; row box 88,5247,497,21; value "₦20,000" box 535,5247,50,21
+  hero phone top 592px, bottom 1289px (viewport height 7851px at this capture)
+theme dark (page height 7851px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 1
+    - button.landing-suggest "Ikoyi, 2 weeks from 10 Sept" at 570,491 210x44
+  visible controls checked: 23 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 197; text under 12px: 0
+  longest prose line: 74 characters (limit 75)
+    - .landing-lede "Say what you need. See only wh...": 57
+    - .landing-caption__body "Area, dates and guests come fr...": 65
+    - .landing-caption__body "Fewer results, by design: only...": 71
+    - .landing-caption__body "Dates, guests and total sit on...": 72
+    - .landing-caption__body "The Operator is the verified c...": 69
+    - .landing-caption__body "The offer shows exactly what y...": 70
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 74
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 70
+    - .landing-faq__item > p "No payment is due, and you can...": 71
+    - .landing-faq__item > p "Not online for this pilot. Any...": 69
+  sizes (px): H1 46.6659, H2 33.3341, H3 25.3341, lede 18, caption 16.3341, eyebrow 13, faqQuestion 17.3341, faqAnswer 15.3341, bubble 15, chip 14, rail 12, pain 15
+  content left edges (px): app bar 25.6; hero 25.6; chat window 25.6; trust strip 25.6; apartments absent; how it works 25.59; your money 25.6; questions 25.6; closing 25.6; footer 25.6
+  content edge spread: 0.01px (must be 0 or 1)
+  section backgrounds: app bar (ui-appbar landing-appbar--sticky landing-appbar--on-photo) = rgba(0, 0, 0, 0); section landing-hero = rgb(11, 61, 46); section landing-trust = rgb(24, 33, 28); section #how = rgba(0, 0, 0, 0); section #money = rgb(11, 61, 46); section #questions = rgba(0, 0, 0, 0); section landing-closing = rgb(11, 61, 46); footer landing-footer = rgb(11, 61, 46); body = rgb(17, 24, 20)
+  deposit row "Refundable Security Deposit (separate): ₦20,000": line tops 5248, 5247; row box 88,5247,497,21; value "₦20,000" box 535,5247,50,21
+
+== first viewport, motion allowed, no scrolling ==
+  390x800: hero H1 118..279px (inside the first viewport); reassurance 588..628px (inside); hero composer 418..512px (inside the first viewport); CTA 418..628px; scrollY 0; guest message shown on load: true
+  360x640: hero H1 123..224px (inside the first viewport); reassurance 507..547px (inside); hero composer 337..431px (inside the first viewport); CTA 337..547px; scrollY 0; guest message shown on load: true
+  320x568: hero H1 123..257px (inside the first viewport); reassurance 563..603px (NOT inside); hero composer 393..487px (inside the first viewport); CTA 393..603px; scrollY 0; guest message shown on load: true
+
+== pinned desktop 1280 (motion allowed) ==
+  step 2 light: active caption 2; pinned phone 89..580px of 800px viewport
+  step 2 dark: active caption 2; pinned phone 89..580px of 800px viewport
+  step 4 light: active caption 4; pinned phone 89..631px of 800px viewport
+  step 4 dark: active caption 4; pinned phone 89..631px of 800px viewport
+

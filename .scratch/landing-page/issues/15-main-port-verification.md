@@ -1,6 +1,6 @@
 # 15 · Verify the ported landing page on main (wave gate for 11, 12 and 14)
 
-Status: ready-for-agent
+Status: claimed
 Type: task
 Blocked by: 11, 12 (and 14 if it is in the wave)
 Requested: 20 Oct 2026
@@ -34,3 +34,27 @@ The gate for the port, in the same form as issue 10.
 - Ask the owner before merging to `main`.
 
 ## Comments
+
+### Gate run — 21 Oct 2026 (branch `landing/11-port-onto-main`, commits through `d6fda26`)
+
+**Build/check:** `npm run build` and `npm run check` clean (`build-15.txt`, `check-15.txt`). The build refreshed the tracked `dist/client.js` for issue 14's new copy export; committed as `e5a0b76`.
+
+**Full suite (once, background):** `npm test`, 11:19 start, log `full-suite-15.txt`. Phase 1: 2040 tests, 1 failed; phase 2: 35 browser files, 33 passed, 2 failed. Classification, with isolated reruns one file at a time:
+
+| Failure | Class | Evidence |
+| --- | --- | --- |
+| `production-install.test.ts` "A production install followed by the documented build and start commands starts the pilot" | **Application, caused by this wave (issue 12)** | `build-client.mjs` imported `tsx/esm/api`, a development dependency. Fixed in `d6fda26` by compiling the (import-free) `landing-assets.ts` in memory with `esbuild`, already a runtime dependency. No manifest or pin change; `apps/cloudflare/public` byte-identical before/after; test passes 4/4; check and the Workers asset spec pass. |
+| `mobile-guest-journey-chromium.test.ts` AC23 "desktop viewport" | Load-sensitive flake, not application | Same file alone: 43/43 passed (`iso-mobile-15.txt`). Not touched by this wave. |
+| `paystack-real-browser.test.ts` | Environment | Failure text: `checkout.paystack.com's DNS address could not be found` (`DNS_PROBE_STARTED`). Alone, 1/1 passed (`iso-paystack-15.txt`); DNS resolves now. |
+
+**Not a clean green full run:** the full run predates the `d6fda26` fix, so no single full run is green for the final tree. Failures were cleared by the fix and isolated reruns, not by a second full suite. Prior gate exceptions (issues 27/30) do not apply to the landing, so DoD item 9 is not claimed; the owner decides between one more full run and an exception.
+
+**Workers:** `npm run test:workers` 24 files / 162 tests passed (`workers-15.txt`), including `landing-assets.spec.ts`; `/welcome` and its assets in the Workers runtime were checked in a real browser under the unchanged CSP in issue 12.
+
+**Captures** (`screenshots/15/`, 26 PNGs + `findings.txt`, script `.scratch/landing-page/capture-landing.ts`, restored from `44fcec4` with two harness-only fixes: `LocalGuestEnvironment.openNode`, and a fresh tab per still shot because a second tall screenshot in one headless tab stalls CDP): light and dark at 320, 390, 768, 1280, 1440; 200% zoom (640 CSS px) in both; placeholders render at 390 and 1440 in both; first viewports 320×568, 360×640, 390×800; pinned steps 2 and 4 in both themes. Findings across all 16 full-page renders: horizontal overflow none, controls under 44px 0, text under 12px 0, content-edge spread 0px (0.01px at 200%), rail labels intact. At 320×568 the composer is inside the first viewport and the reassurance line is not (563..603px), the same accepted state as issue 10. Visually inspected: 390×800 first viewport and pinned step 4 dark. The demo-mode captures remain in `screenshots/11/`.
+
+**AC1 (app-layer parity):** `test/fixtures/landing-phone-text.json` and the landing phone-text tests passed in the full run (landing files in phase 1). No separate side-by-side diff against the live app screens was produced beyond that fixture test.
+
+**Files the full suite rewrote outside `.scratch/landing-page/` (not restored, not committed; for the owner):** 31 tracked PNGs: `.scratch/guest-ui-consistency/screenshots/09/chat-payment-ready.png`; four in `.scratch/ui-phase3-discovery-detail/`; 26 in `.scratch/ui-recovery/recovered/`. Also line-ending churn in `apps/cloudflare/src/env.d.ts` and `apps/local-guest/dist/{gallery,offer,payment}.js`.
+
+**State:** 11, 12 and 14 stay claimed; nothing resolved, merged, pushed or deployed.
