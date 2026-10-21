@@ -55,6 +55,6 @@ The gate for the port, in the same form as issue 10.
 
 **AC1 (app-layer parity):** `test/fixtures/landing-phone-text.json` and the landing phone-text tests passed in the full run (landing files in phase 1). No separate side-by-side diff against the live app screens was produced beyond that fixture test.
 
-**Files the full suite rewrote outside `.scratch/landing-page/` (not restored, not committed; for the owner):** 31 tracked PNGs: `.scratch/guest-ui-consistency/screenshots/09/chat-payment-ready.png`; four in `.scratch/ui-phase3-discovery-detail/`; 26 in `.scratch/ui-recovery/recovered/`. Also line-ending churn in `apps/cloudflare/src/env.d.ts` and `apps/local-guest/dist/{gallery,offer,payment}.js`.
+**Files the full suite rewrote outside `.scratch/landing-page/` (not restored, not committed; for the owner):** 34 tracked PNGs: `.scratch/guest-ui-consistency/screenshots/09/chat-payment-ready.png`; four in `.scratch/ui-phase3-discovery-detail/`; 29 in `.scratch/ui-recovery/recovered/`. Also line-ending churn in `apps/cloudflare/src/env.d.ts` and `apps/local-guest/dist/{gallery,offer,payment}.js`.
 
 **State:** 11, 12 and 14 stay claimed; nothing resolved, merged, pushed or deployed.
