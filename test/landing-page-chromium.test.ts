@@ -1918,9 +1918,19 @@ test("Issue 08 AC2: The hero composer is a labelled text field with a submit but
         `the URL carries no part of the typed text (${fragment}): ${href}`,
       );
     }
+    // Issue 14: the composer POSTs, so the only query is the opaque thread id of the conversation it opened.
+    assert.match(
+      new URL(href).search,
+      /^\?threadId=g-[a-f0-9-]+$/,
+      `only the opaque thread id is in the URL: ${href}`,
+    );
     assert.ok(
-      new URL(href).search === "" || new URL(href).search === "?",
-      `no query string carries the message: ${href}`,
+      (
+        await page.tab.evaluate<string>(
+          "document.querySelector('.no-js-transcript')?.textContent ?? ''",
+        )
+      ).includes(typed),
+      "the typed text is the first Guest message in the opened conversation",
     );
   } finally {
     await page.close();

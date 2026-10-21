@@ -288,15 +288,15 @@ test("AC5: Every call to action links to the guest app and no form sends message
     "/welcome/theme",
     "the only form posts the theme choice",
   );
-  // Issue 08 AC2: the hero composer is the second form. It submits with GET to the app and names no field.
+  // Issue 08 AC2: the hero composer is the second form. Issue 14: it POSTs the named `message` field to /welcome/start.
   const composer = forms.find(
     (form) => attr(form, "class") === "landing-composer",
   );
   assert.ok(
     composer &&
-      attr(composer, "action") === "/" &&
-      attr(composer, "method") === "get",
-    "the hero composer submits to / with GET",
+      attr(composer, "action") === "/welcome/start" &&
+      attr(composer, "method") === "post",
+    "the hero composer submits to /welcome/start with POST",
   );
   assert.equal(
     elements.filter((element) => attr(element, "action") !== undefined).length,
@@ -1392,8 +1392,8 @@ test("Issue 08 AC2: The hero composer is a labelled text field with a submit but
   );
   assert.match(
     form,
-    /^<form class="landing-composer" action="\/" method="get">/,
-    "the form submits to the app with GET and no message fields",
+    /^<form class="landing-composer" action="\/welcome\/start" method="post">/,
+    "issue 14: the form POSTs the message in the body, never a GET query string",
   );
   const labelFor =
     /<label(?: class="[^"]*")? for="([^"]+)">Describe your stay<\/label>/.exec(
@@ -1417,12 +1417,9 @@ test("Issue 08 AC2: The hero composer is a labelled text field with a submit but
     ),
     "the placeholder is the approved hint",
   );
-  // Failure path: no named or hidden field exists, so nothing typed can reach the query string.
-  assert.doesNotMatch(
-    input,
-    /\bname=/,
-    "the text field has no name attribute, so its value is never serialised into the URL",
-  );
+  // Failure path: the field is named for the POST body only; the form is never a GET form, so the text cannot reach a URL.
+  assert.match(input, /\bname="message"/, "the text field is the named message field");
+  assert.doesNotMatch(form, /method="get"/i, "no GET form carries the text");
   assert.doesNotMatch(form, /type="hidden"/, "no hidden field carries text");
   const submit = /<button\b[^>]*type="submit"[^>]*>([\s\S]*?)<\/button>/.exec(
     form,

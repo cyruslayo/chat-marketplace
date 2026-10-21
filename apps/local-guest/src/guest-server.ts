@@ -25,6 +25,7 @@ import { nodeAssetLoader } from "../../../packages/platform-core/src/node-asset-
 import { GUEST_HTML_SECURITY_HEADERS } from "../../../packages/platform-core/src/security-headers.js";
 import { createGuestShell, type StaticAsset } from "./guest-shell.js";
 import { createCommerceRouteModule } from "./commerce-route-module.js";
+import { MAX_TURN_TEXT_LENGTH } from "./turn-limits.js";
 import { createLandingRouteModule } from "./landing-route-module.js";
 import { nodeLandingAssetLoader } from "./node-landing-assets.js";
 import type { LandingBinaryAssetLoader } from "./landing-assets.js";
@@ -72,6 +73,7 @@ import {
   type GuestCommittedWorkKind,
   guestNewConversationCopy,
   GUEST_NEW_CONVERSATION,
+  GUEST_CONTINUE_CONVERSATION,
   accommodationProviderLine,
   guestOperatorName,
   guestReservationStatus,
@@ -640,7 +642,6 @@ export function renderConventionalUnitDetailHtml(
   });
 }
 
-const MAX_TURN_TEXT_LENGTH = 2000;
 
 /**
  * Issue 06c: the server-rendered conversation for browsers without
@@ -1693,7 +1694,8 @@ function reissuableBrowserRoute(
     return (
       path === "/account/sign-in" ||
       path === "/account/sign-in/code" ||
-      path === "/account/sign-out"
+      path === "/account/sign-out" ||
+      path === "/welcome/start"
     );
   return false;
 }
@@ -1717,15 +1719,37 @@ function betaInviteCodeMatches(offered: string, expected: string): boolean {
   return timingSafeEqual(digest(offered.trim()), digest(expected));
 }
 
-/** Staging beta gate (launch-readiness issue 22). A plain GET form, so it works without JavaScript (ADR 0080). */
-export function renderBetaInviteHtml(rejected: boolean): string {
+/**
+ * Staging beta gate (launch-readiness issue 22). A plain form, so it works without JavaScript (ADR 0080). From the landing
+ * page (issue 14) it posts the code with the Guest's message in the body, never in the address.
+ */
+export function renderBetaInviteHtml(
+  rejected: boolean,
+  landingMessage?: string,
+): string {
   const error = rejected
     ? `<p id="invite-error" class="ui-field__error" role="alert">That invite code is not valid. Check the invite link you were sent.</p>`
     : "";
   return pageShell({
     title: "Shortlet beta",
     width: "narrow",
-    body: `<header class="ui-page__header"><p class="ui-eyebrow">Shortlet</p><h1>Shortlet beta</h1><p>This beta is open to invited testers. Open the invite link you were sent, or enter your invite code.</p></header><form class="ui-panel" method="get" action="/"><div class="ui-field"><label class="ui-field__label" for="invite">Invite code</label><input id="invite" name="invite" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="200" required${rejected ? ` aria-invalid="true" aria-describedby="invite-error"` : ""}>${error}</div><button class="ui-button ui-button--primary ui-button--block" type="submit">Continue</button></form>`,
+    body: `<header class="ui-page__header"><p class="ui-eyebrow">Shortlet</p><h1>Shortlet beta</h1><p>This beta is open to invited testers. Open the invite link you were sent, or enter your invite code.</p></header><form class="ui-panel" method="${landingMessage === undefined ? "get" : "post"}" action="${landingMessage === undefined ? "/" : "/welcome/start"}">${landingMessage === undefined ? "" : `<input type="hidden" name="message" value="${escapeHtml(landingMessage)}">`}<div class="ui-field"><label class="ui-field__label" for="invite">Invite code</label><input id="invite" name="invite" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="200" required${rejected ? ` aria-invalid="true" aria-describedby="invite-error"` : ""}>${error}</div><button class="ui-button ui-button--primary ui-button--block" type="submit">Continue</button></form>`,
+  });
+}
+
+/**
+ * Issue 14 / ADR-0079: the landing message arrived while the Guest already has a conversation open. Continue is offered
+ * first; the new conversation only starts when the Guest chooses it, and the message is carried in the body, not a URL.
+ */
+export function renderLandingContinueHtml(
+  continueHref: string,
+  message: string,
+): string {
+  const copy = GUEST_CONTINUE_CONVERSATION;
+  return pageShell({
+    title: "Continue your conversation · Shortlet",
+    width: "narrow",
+    body: `<header class="ui-page__header"><p class="ui-eyebrow">Shortlet</p><h1>${escapeHtml(copy.heading)}</h1><p>${escapeHtml(copy.lede)}</p></header><section class="ui-panel"><a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(continueHref)}">${escapeHtml(copy.continue)}</a></section><form class="ui-panel" method="post" action="/welcome/start"><h2>${escapeHtml(copy.startNewHeading)}</h2><p>${escapeHtml(copy.reassurance)}</p><input type="hidden" name="message" value="${escapeHtml(message)}"><input type="hidden" name="startNew" value="1"><button class="ui-button ui-button--block" type="submit">${escapeHtml(copy.startNew)}</button></form>`,
   });
 }
 
@@ -3344,6 +3368,123 @@ export function createGuestRequestHandler(
 
     if (url.pathname === "/account" || url.pathname.startsWith("/account/")) {
       await handleAccountRoute(req, res, url);
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/welcome/start") {
+      // Issue 14 / decision 13.1(a): the landing composers start a conversation. The message travels only in this body
+      // (ADR-0075): it is never put in a URL, redirect or log line. Sending is discovery only (ADR-0005).
+      if (!browserOriginAccepted(req, options.publicOrigin)) {
+        res.writeHead(403);
+        res.end("Origin rejected");
+        return;
+      }
+      if (rawSession === null) {
+        // A malformed session cookie is rejected, never silently replaced (as GET /).
+        res.writeHead(401, { "Content-Type": "text/plain" });
+        res.end("Unauthorized");
+        return;
+      }
+      // Every page below can echo the typed message, so none may be cached.
+      const LANDING_START_HTML_HEADERS = { ...GUEST_HTML_HEADERS, "Cache-Control": "no-store" };
+      let form: URLSearchParams;
+      try {
+        form = await readFormBody(req);
+      } catch {
+        sendPageError(req, res, 400, "INVALID_CONVERSATION");
+        return;
+      }
+      const text = form.get("message") ?? "";
+      if (text.trim() === "" || text.length > MAX_TURN_TEXT_LENGTH) {
+        // The composer's own validation; nothing is started and the text is kept.
+        res.writeHead(400, LANDING_START_HTML_HEADERS);
+        res.end(
+          renderNoScriptConversationHtml({
+            threadId: `g-${crypto.randomUUID()}`,
+            timeline: [],
+            surfaces: [],
+            error: "Type a short message to send.",
+            draft: text.slice(0, MAX_TURN_TEXT_LENGTH),
+          }),
+        );
+        return;
+      }
+      let session = requestSession;
+      const existingSession = session !== null;
+      if (session === null) {
+        // The same invite gate and session issuance as GET / (issue 22); the code arrives in the body.
+        const offeredInvite = form.get("invite");
+        if (
+          options.betaInviteCode !== undefined &&
+          (offeredInvite === null ||
+            !betaInviteCodeMatches(offeredInvite, options.betaInviteCode))
+        ) {
+          res.writeHead(offeredInvite === null ? 200 : 403, LANDING_START_HTML_HEADERS);
+          res.end(renderBetaInviteHtml(offeredInvite !== null, text));
+          return;
+        }
+        const sessionId = issueGuestSession(res, secureCookie);
+        session = await registerBrowserSession(
+          env,
+          browserSessions,
+          sessionId,
+          sessionScopedGuestPrincipals
+            ? generatePlatformId("guest")
+            : app.environment.config.guestId,
+        );
+      }
+      const runtime = runtimeForSession(session);
+      if (existingSession && form.get("startNew") !== "1") {
+        // ADR-0079: offer the open conversation first. Nothing is started or withdrawn here.
+        for (const openThreadId of [...session.threadIds].reverse()) {
+          if (!(await threadReadable(runtime.environment, session, openThreadId)))
+            continue;
+          const openState = await runtime.app.getStateAsync(openThreadId);
+          if (openState && openState.timeline.length > 0) {
+            res.writeHead(200, LANDING_START_HTML_HEADERS);
+            res.end(
+              renderLandingContinueHtml(
+                `/conversation?threadId=${encodeURIComponent(openThreadId)}`,
+                text,
+              ),
+            );
+            return;
+          }
+        }
+      }
+      const threadId = `g-${crypto.randomUUID()}`;
+      session.threadIds.add(threadId);
+      let failure: string | null = null;
+      try {
+        const result = await runtime.app.handleTurn(threadId, text);
+        if (!result.ok) failure = result.message;
+      } catch {
+        failure = GUEST_CONTINUE_CONVERSATION.failed;
+      }
+      if (failure !== null) {
+        // The message and the thread are kept: the composer here posts the retry to /conversation.
+        const state = await runtime.app.getStateAsync(threadId);
+        res.writeHead(422, LANDING_START_HTML_HEADERS);
+        res.end(
+          renderNoScriptConversationHtml({
+            threadId,
+            timeline: state?.timeline ?? [],
+            surfaces: state?.surfaces ?? [],
+            journey: state?.journey,
+            tasks: state?.tasks,
+            verticals: state?.verticals,
+            error: failure,
+            draft: text,
+          }),
+        );
+        return;
+      }
+      // Post/redirect/get: refreshing the transcript never re-sends the message.
+      res.writeHead(303, {
+        Location: `/conversation?threadId=${encodeURIComponent(threadId)}`,
+        "Cache-Control": "no-store",
+      });
+      res.end();
       return;
     }
 

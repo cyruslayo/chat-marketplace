@@ -107,6 +107,17 @@ export const GUEST_NEW_CONVERSATION = Object.freeze({
   unknown: "Starting a new conversation doesn't withdraw or cancel anything you've already sent.",
 });
 
+/** Issue 14 / ADR-0079: shown when a landing message arrives and the Guest already has a conversation open. */
+export const GUEST_CONTINUE_CONVERSATION = Object.freeze({
+  heading: "You already have a conversation open",
+  lede: "Pick up where you left off, or start a new conversation with the message you just typed.",
+  continue: "Continue your conversation",
+  startNewHeading: GUEST_NEW_CONVERSATION.confirmHeading,
+  startNew: GUEST_NEW_CONVERSATION.confirm,
+  reassurance: GUEST_NEW_CONVERSATION.unknown,
+  failed: "The concierge could not answer just now. Your message is kept below; send it again.",
+});
+
 export type GuestWaitingKind ="operator-response" | "offer-payment-window" | "payment-window";
 
 export interface GuestWaitingCopy {

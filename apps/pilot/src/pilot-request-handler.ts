@@ -71,7 +71,14 @@ function requestGuard(
   return (req, url) => {
     const address = clientAddress(req);
     const refused = (result: ReturnType<SlidingWindowRateLimiter["tryConsume"]>) => result.allowed ? null : { retryAfterSeconds: result.retryAfterSeconds };
-    if (req.method === "POST" && (url.pathname === "/api/turn" || url.pathname === "/conversation")) {
+    // Issue 14: the landing composers' POST /welcome/start runs a first turn, so it is a chat turn; with no session cookie it also
+    // starts a Guest session, which bounds new sessions (and invite-code guessing in staging) exactly as GET / does.
+    const landingStart = req.method === "POST" && url.pathname === "/welcome/start";
+    if (landingStart && guestSessionKey(req) === null) {
+      const refusedSession = refused(sessionsPerAddress.tryConsume(address));
+      if (refusedSession !== null) return refusedSession;
+    }
+    if (req.method === "POST" && (url.pathname === "/api/turn" || url.pathname === "/conversation" || landingStart)) {
       // Both limits are checked before either is charged, so a refused turn uses up neither allowance.
       const session = guestSessionKey(req);
       const waits = [turnsPerAddress.retryAfterSeconds(address), session ? turnsPerSession.retryAfterSeconds(session) : null]

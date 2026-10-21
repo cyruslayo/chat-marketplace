@@ -34,6 +34,7 @@ import {
   splitHeadingAtAccent,
 } from "./landing-copy.js";
 import { brandMarkSvg } from "./landing-brand.js";
+import { MAX_TURN_TEXT_LENGTH } from "./turn-limits.js";
 import {
   LANDING_UNITS,
   unitsToRender,
@@ -159,11 +160,12 @@ function appBar(theme: LandingTheme): string {
 }
 
 /**
- * The hero's composer (issue 08 AC2): a real form with a visible label, a text field with NO name (so nothing typed is ever
- * serialised into the URL) and a submit button. Sub-task C reuses it for the closing composer.
+ * The hero's composer (issue 08 AC2, issue 14): a real form with a visible label and a text field named `message`. It POSTs to
+ * `/welcome/start`, so what is typed travels only in the request body and never in a URL, history or log. Sub-task C reuses it
+ * for the closing composer.
  */
 export function composerHtml(id: string): string {
-  return `<form class="landing-composer" action="/" method="get"><label class="landing-composer__label" for="${escapeHtml(id)}">${escapeHtml(LANDING_COPY.composerLabel)}</label><div class="landing-composer__row"><input class="landing-composer__input" id="${escapeHtml(id)}" type="text" placeholder="${escapeHtml(LANDING_COPY.composerPlaceholder)}" autocomplete="off"><button class="ui-button ui-button--primary landing-composer__send" type="submit"><span class="landing-composer__text">${escapeHtml(LANDING_COPY.primaryAction)}</span>${icon("arrow-right")}</button></div></form>`;
+  return `<form class="landing-composer" action="/welcome/start" method="post"><label class="landing-composer__label" for="${escapeHtml(id)}">${escapeHtml(LANDING_COPY.composerLabel)}</label><div class="landing-composer__row"><input class="landing-composer__input" id="${escapeHtml(id)}" name="message" type="text" maxlength="${MAX_TURN_TEXT_LENGTH}" required placeholder="${escapeHtml(LANDING_COPY.composerPlaceholder)}" autocomplete="off"><button class="ui-button ui-button--primary landing-composer__send" type="submit"><span class="landing-composer__text">${escapeHtml(LANDING_COPY.primaryAction)}</span>${icon("arrow-right")}</button></div></form>`;
 }
 
 /** Example chips (issue 08 AC8): real buttons. With JavaScript they fill the field; without it they are inert. */

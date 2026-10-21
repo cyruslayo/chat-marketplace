@@ -195,3 +195,27 @@ test("/api/turn 500 responses carry a generic message", async () => {
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("Landing 14: Sending from the landing page counts as a chat turn, and without a session as a new Guest session", async () => {
+  const send = (base: string, address: string, cookie?: string) => fetch(`${base}/welcome/start`, {
+    method: "POST",
+    redirect: "manual",
+    headers: { origin: PUBLIC_ORIGIN, "content-type": "application/x-www-form-urlencoded", "x-forwarded-for": address, ...(cookie ? { cookie } : {}) },
+    body: new URLSearchParams({ message: "Somewhere in Ikoyi for two", startNew: "1" }).toString(),
+  });
+  await withPilot({ SHORTLET_NEW_SESSIONS_PER_ADDRESS_PER_HOUR: "2" }, async (base) => {
+    assert.equal((await send(base, "198.51.100.20")).status, 303);
+    assert.equal((await send(base, "198.51.100.20")).status, 303);
+    const refused = await send(base, "198.51.100.20");
+    assert.equal(refused.status, 429);
+    assert.equal(refused.headers.get("set-cookie"), null, "a refused send starts no session");
+    assert.match(await refused.text(), /Please slow down/);
+    assert.equal((await send(base, "203.0.113.20")).status, 303, "another address is unaffected");
+  });
+  await withPilot({ SHORTLET_CHAT_TURNS_PER_SESSION_PER_HOUR: "2", SHORTLET_CHAT_TURNS_PER_ADDRESS_PER_HOUR: "50" }, async (base) => {
+    const cookie = cookieFrom(await send(base, "198.51.100.21"));
+    assert.equal((await send(base, "198.51.100.21", cookie)).status, 303);
+    assert.equal((await send(base, "198.51.100.21", cookie)).status, 303);
+    assert.equal((await send(base, "198.51.100.21", cookie)).status, 429, "a session's third counted turn in the hour is refused");
+  });
+});
