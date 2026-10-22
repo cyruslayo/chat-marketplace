@@ -226,16 +226,6 @@ test("AC4: the demo Worker pays period 1, then period 2 in its own session, refu
     vi.unstubAllGlobals();
     await abortAllDurableObjects();
     vi.stubGlobal("fetch", paystackFetchStub);
-    // Cold start: the first read goes to the Durable Object store, as demo-extended-stay.spec.ts does before its HTTP
-    // callback after a restart. Without it the first HTTP request after abort fails on the guest session store
-    // ("no such table: guest_threads"), a cold-start defect recorded in the issue Comments.
-    const restartedNamespace = (env as unknown as { readonly DEMO_SHORTLET: CloudflareEnv["SHORTLET"] }).DEMO_SHORTLET;
-    const restartedStub = restartedNamespace.get(restartedNamespace.idFromName(tenant));
-    const persistedPeriods = await runInDurableObject(restartedStub, (_instance, ctx) => {
-      const store = new SqliteGuestInteractionStore(new DurableObjectSqlDatabase(ctx.storage));
-      return store.listPeriodPayments(offerId).map((payment) => payment.periodIndex);
-    });
-    expect(persistedPeriods, "period 2 survives the restart, period 3 does not exist as paid").toEqual([2]);
     const afterRestart = await readSchedule();
     expect(afterRestart).toContain(`data-period="2" data-status="paid"`);
     expect(afterRestart.match(/data-status="paid"/g)).toHaveLength(2);

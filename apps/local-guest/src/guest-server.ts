@@ -1903,6 +1903,9 @@ async function resolveBrowserSession(
     binding.tenantId !== env.config.tenantId
   )
     return null;
+  // ADR 0101: in the Cloudflare split the guest threads live in the platform store, reached through guestData. The
+  // interaction store here has no guest_threads table in that composition, so reading it on a cold cache failed.
+  const threads = await env.guestData.findThreadsForPrincipal(binding.principalId, binding.tenantId);
   const session: BrowserSession = {
     sessionKey,
     principalId: binding.principalId,
@@ -1911,11 +1914,7 @@ async function resolveBrowserSession(
     identity: anonymousGuestIdentity(binding.principalId, binding.tenantId),
     // The thread set is derived from the durable principal-scoped threads; the
     // browser session itself never authorizes a thread id on its own.
-    threadIds: new Set(
-      env.interactionStore
-        .findThreadsForPrincipal(binding.principalId, binding.tenantId)
-        .map((thread) => thread.threadId),
-    ),
+    threadIds: new Set(threads.map((thread) => thread.threadId)),
   };
   cache.set(sessionKey, session);
   return await withAccountIdentity(session, accountCredentials, accounts);
