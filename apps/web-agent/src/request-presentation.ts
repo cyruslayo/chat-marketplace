@@ -13,6 +13,8 @@ export interface RequestScreenContent {
   readonly steps: readonly string[];
   readonly notes: readonly string[];
   readonly banner?: string;
+  /** Demo-launch issue 12: an Extended Stay schedule, shown under the amount due now. */
+  readonly schedule?: { readonly heading: string; readonly periods: readonly string[]; readonly firstPeriodOnly: string };
   readonly provider?: string;
   readonly guests?: string;
   readonly selfBooking?: boolean;
@@ -32,8 +34,9 @@ export function draftScreenContent(artifact: RequestDraftArtifact, route: string
     title: review ? `Review ${GUEST_GLOSSARY.bookingRequest}` : "Request Draft",
     status: guestReservationStatus("draft"), tone: "neutral",
     steps: review ? guestWaitingCopy("operator-response", facts.operatorName).outcomes : ["Review these details before you send the request.", bookingProgressText("request").replace(/^Next:\s*/, "")],
-    // Demo-launch issue 12: the same Billing Period schedule the chat review shows (ADR 0077).
-    notes: [...(facts.billingPeriods?.length ? [GUEST_FACT_LABELS.paymentSchedule, ...billingPeriodLines(facts.billingPeriods), GUEST_FACT_LABELS.firstPeriodOnly] : []), ...(review && names.length > 0 ? [guestFact(GUEST_FACT_LABELS.guests, names.join(", "))] : []), `Cancellation terms: ${facts.cancellationPolicy.summary}`, ...(review ? [`${GUEST_GLOSSARY.revalidation}.`] : []), ...artifact.disclosures.map(guestDisclosure)],
+    // Demo-launch issue 12: the Billing Period schedule sits under the amount due now, for the chat and the page (ADR 0077).
+    ...(facts.billingPeriods?.length ? { schedule: { heading: GUEST_FACT_LABELS.paymentSchedule, periods: billingPeriodLines(facts.billingPeriods), firstPeriodOnly: GUEST_FACT_LABELS.firstPeriodOnly } } : {}),
+    notes: [...(review && names.length > 0 ? [guestFact(GUEST_FACT_LABELS.guests, names.join(", "))] : []), `Cancellation terms: ${facts.cancellationPolicy.summary}`, ...(review ? [`${GUEST_GLOSSARY.revalidation}.`] : []), ...artifact.disclosures.map(guestDisclosure)],
     ...(review ? { provider: accommodationProviderLine(facts.operatorName) } : {
       guests: names.length ? names.join(", ") : `${facts.occupants.length} ${facts.occupants.length === 1 ? "guest" : "guests"}`,
       ...(facts.selfBookingAttestation === undefined ? {} : { selfBooking: facts.selfBookingAttestation.accepted }),

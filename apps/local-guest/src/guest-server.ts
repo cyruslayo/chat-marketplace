@@ -23,6 +23,8 @@ import type {
 import type { AssetLoader } from "../../../packages/platform-core/src/asset-loader.js";
 import { nodeAssetLoader } from "../../../packages/platform-core/src/node-asset-loader.js";
 import { GUEST_HTML_SECURITY_HEADERS } from "../../../packages/platform-core/src/security-headers.js";
+import { toDiscoveryProjection, StayDateRange, dateKeyInLagos, type ExtendedStayPolicy } from "../../../domains/shortlet/src/index.js";
+import { extendedStayUnitFacts } from "../../web-agent/src/extended-stay-presentation.js";
 import { createGuestShell, type StaticAsset } from "./guest-shell.js";
 import { createCommerceRouteModule } from "./commerce-route-module.js";
 import { MAX_TURN_TEXT_LENGTH } from "./turn-limits.js";
@@ -625,10 +627,25 @@ async function readJsonBody(req: HttpRequestLike): Promise<unknown> {
   }
 }
 
+// Demo-launch issue 12: the standalone page derives the Extended Stay monthly facts from the same domain projection as chat.
+// The page has no dates, so it quotes the first 30 nights from tomorrow (Lagos), the first Billing Period. No policy means
+// production, where no Extended Stay result exists, so nothing is shown (ADR 0092, ADR 0105).
+function extendedStayPageFacts(unit: Unit, options: { readonly policy: ExtendedStayPolicy; readonly now: Date } | undefined): readonly string[] {
+  if (options === undefined) return [];
+  const today = dateKeyInLagos(options.now, "now");
+  const checkIn = new Date(`${today}T00:00:00.000Z`);
+  checkIn.setUTCDate(checkIn.getUTCDate() + 1);
+  const checkInKey = checkIn.toISOString().slice(0, 10);
+  const checkOut = new Date(checkIn.getTime() + options.policy.billingPeriodNights * 86_400_000).toISOString().slice(0, 10);
+  const projection = toDiscoveryProjection(unit, new StayDateRange(checkInKey, checkOut, options.now, options.policy), options.policy, options.now);
+  return extendedStayUnitFacts(projection.extendedStay);
+}
+
 export function renderConventionalUnitDetailHtml(
   unit: Unit,
   photoUrl?: (url: string) => string,
   demo = false,
+  extendedStay?: { readonly policy: ExtendedStayPolicy; readonly now: Date },
 ): string {
   const photos = normalizePhotoUrls(unit.photoUrls);
   // Guest gallery issue 01: the shared gallery. Every photo shows and links to its full image without JavaScript
@@ -641,7 +658,7 @@ export function renderConventionalUnitDetailHtml(
     title: unit.title,
     frame: appFrameHtml({ threadId: null, publicStep: "stay" }),
     style: `${LISTING_GALLERY_STYLE}.unit-detail-sheet{position:relative;z-index:1;display:grid;gap:var(--space-4);margin-block-start:calc(-1 * var(--space-6));padding:var(--space-5);border:1px solid var(--color-border-subtle);border-radius:var(--radius-sheet) var(--radius-sheet) var(--radius-card) var(--radius-card);background:var(--color-surface);box-shadow:var(--elevation-active)}.unit-detail-sheet h1,.unit-detail-sheet h2,.unit-detail-sheet p,.unit-detail-sheet ul{margin:0}.unit-detail-location{display:flex;align-items:center;gap:var(--space-1);color:var(--color-text-secondary)}.unit-detail-description{white-space:pre-line}.unit-detail-page{display:grid;gap:var(--space-4)}.unit-detail-page .listing-gallery{z-index:0}.unit-detail-page .ui-action-bar{position:sticky}.unit-detail-page .ui-ticket{margin-block:var(--space-2)}.stay-results{list-style:none;margin:0;padding:0;display:grid;gap:var(--space-4)}.stay-card-photo{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:var(--radius-card);background:var(--color-surface-subtle)}.stay-card-photo--empty{display:grid;place-items:center;color:var(--color-text-secondary)}.stay-card-facts{display:flex;flex-wrap:wrap;gap:var(--space-2)}.stay-card-facts span{display:inline-flex;min-block-size:2.75rem;align-items:center;padding:var(--space-2) var(--space-3);border:1px solid var(--color-border-subtle);border-radius:var(--radius-pill);background:var(--color-surface-subtle);font-size:var(--font-size-small)}.stay-card-price{display:grid;gap:var(--space-1);padding-block-start:var(--space-3);border-block-start:1px solid var(--color-border-subtle)}.stay-card-price p{margin:0}.guest-editorial .ui-button--primary,.guest-editorial .ui-button--block{border-radius:var(--radius-pill)}.ui-panel p{margin:0}`,
-    body: `<div class="guest-editorial unit-detail-page">${photoMarkup}<section class="unit-detail-sheet" aria-label="Stay details">${demo ? demoListingChipHtml() : ""}<p class="unit-detail-location">${icon("pin")}${escapeHtml(unit.location.neighbourhood)}, ${escapeHtml(unit.location.city)} · exact address after payment</p><h1>${escapeHtml(unit.title)}</h1>${unitTilesHtml(unitTiles(unit.bedrooms, unit.bathrooms, unit.capacity))}${unitIndicativePriceHtml(unit.price.nightlyKobo)}${unitAboutHtml(unit.description)}</section><div class="ui-action-bar"><p class="ui-action-bar__sum"><strong>${formatNgnKobo(unit.price.nightlyKobo)}</strong><span class="ui-money-metadata">Price per night (indicative)</span></p><a class="ui-button ui-button--primary ui-button--block" href="/">Continue to Request to Book</a></div></div>`,
+    body: `<div class="guest-editorial unit-detail-page">${photoMarkup}<section class="unit-detail-sheet" aria-label="Stay details">${demo ? demoListingChipHtml() : ""}<p class="unit-detail-location">${icon("pin")}${escapeHtml(unit.location.neighbourhood)}, ${escapeHtml(unit.location.city)} · exact address after payment</p><h1>${escapeHtml(unit.title)}</h1>${unitTilesHtml(unitTiles(unit.bedrooms, unit.bathrooms, unit.capacity))}${unitIndicativePriceHtml(unit.price.nightlyKobo)}${extendedStayPageFacts(unit, extendedStay).map((text) => `<p class="ui-money-metadata">${escapeHtml(text)}</p>`).join("")}${unitAboutHtml(unit.description)}</section><div class="ui-action-bar"><p class="ui-action-bar__sum"><strong>${formatNgnKobo(unit.price.nightlyKobo)}</strong><span class="ui-money-metadata">Price per night (indicative)</span></p><a class="ui-button ui-button--primary ui-button--block" href="/">Continue to Request to Book</a></div></div>`,
   });
 }
 
@@ -3592,7 +3609,7 @@ export function createGuestRequestHandler(
         return;
       }
       res.writeHead(200, GUEST_HTML_HEADERS);
-      res.end(renderConventionalUnitDetailHtml(unit, options.localPhotoUrl, app.environment.config.demo === true));
+      res.end(renderConventionalUnitDetailHtml(unit, options.localPhotoUrl, app.environment.config.demo === true, app.environment.extendedStayPolicy ? { policy: app.environment.extendedStayPolicy, now: app.environment.clock() } : undefined));
       return;
     }
 

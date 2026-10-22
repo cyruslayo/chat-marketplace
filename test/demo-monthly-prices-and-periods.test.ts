@@ -5,6 +5,9 @@ import { UnitDiscoveryQuery, UnitRepository, type Unit } from "../domains/shortl
 import { createStayQuote, type BillingPeriodQuote } from "../domains/shortlet/src/quote.js";
 import { DEMO_EXTENDED_STAY_POLICY } from "../domains/shortlet/src/extended-stay.js";
 import { discoveryArtifactToA2UI, formatNgnKobo } from "../apps/web-agent/src/discovery-a2ui.js";
+import { utilitiesSummary } from "../apps/web-agent/src/extended-stay-presentation.js";
+import { renderConventionalUnitDetailHtml } from "../apps/local-guest/src/guest-server.js";
+import { escapeHtml } from "../apps/web/src/ui-kit.js";
 import { unitDetailArtifactToA2UI } from "../apps/web-agent/src/unit-detail-a2ui.js";
 import { requestDraftArtifactToA2UI } from "../apps/web-agent/src/request-draft-a2ui.js";
 import { GUEST_FACT_LABELS } from "../apps/web-agent/src/guest-content.js";
@@ -144,4 +147,24 @@ test("AC6: the chat and the standalone unit detail show the same demo listing ch
   const chat = texts(unitDetailArtifactToA2UI({ artifact: detail, surfaceId: "ac6", demo: true }));
   assert.ok(chat.includes(GUEST_FACT_LABELS.demoListing), "demo chip");
   assert.ok(chat.some((text) => text.startsWith(`${GUEST_FACT_LABELS.monthlyPrice}: `)), "monthly price");
+});
+
+// Round 2 (orchestrator review): the standalone unit detail page shows the same monthly price and utilities as chat.
+const PAGE_NOW = SYNTHETIC_NOW;
+const PAGE_CHECK_IN = "2026-09-04";
+const PAGE_CHECK_OUT = addDays(PAGE_CHECK_IN, 30);
+
+test("AC6 page: the standalone unit detail shows the same monthly price and utilities as the chat sheet", () => {
+  const unit = extendedStayUnit({ claimsThrough: CLAIMS_THROUGH, marginBasisPoints: 1234 });
+  const chatFact = discoveryFor([unit]).search({ checkIn: PAGE_CHECK_IN, checkOut: PAGE_CHECK_OUT, partySize: 1 }).facts.results[0]!.extendedStay!;
+  const page = renderConventionalUnitDetailHtml(unit, undefined, true, { policy: DEMO_EXTENDED_STAY_POLICY, now: PAGE_NOW });
+  assert.ok(page.includes(escapeHtml(`${GUEST_FACT_LABELS.monthlyPrice}: ${formatNgnKobo(chatFact.monthlyPeriodAmountKobo)} for 30 nights`)), "monthly price on the page");
+  assert.ok(page.includes(escapeHtml(`${GUEST_FACT_LABELS.utilitiesIncluded}: ${utilitiesSummary(chatFact.utilitiesAndServicing)}`)), "utilities on the page");
+});
+
+test("AC3 page: a production page (no Extended Stay policy) and an ineligible unit show no monthly facts", () => {
+  const unit = extendedStayUnit({ claimsThrough: CLAIMS_THROUGH });
+  assert.equal(renderConventionalUnitDetailHtml(unit, undefined, false).includes(GUEST_FACT_LABELS.monthlyPrice), false, "no policy");
+  const ineligible: Unit = { ...unit, extendedStay: { optedIn: false } };
+  assert.equal(renderConventionalUnitDetailHtml(ineligible, undefined, true, { policy: DEMO_EXTENDED_STAY_POLICY, now: PAGE_NOW }).includes(GUEST_FACT_LABELS.monthlyPrice), false, "ineligible unit");
 });

@@ -425,6 +425,12 @@ export function signInOfferHtml(content: SignInOfferContent): string {
 }
 
 /** Issue 07: one request screen layout. Slots receive only markup from this kit, never artifact-supplied HTML. */
+/** Demo-launch issue 12 (ADR 0092): the Extended Stay schedule, shown under the amount it explains, in existing kit panel markup. */
+function paymentScheduleHtml(schedule: { readonly heading: string; readonly periods: readonly string[]; readonly firstPeriodOnly: string }): string {
+  const periods = schedule.periods.map((text) => `<li>${escapeHtml(text)}</li>`).join("");
+  return `<section class="ui-panel" aria-label="${escapeHtml(schedule.heading)}"><h2>${escapeHtml(schedule.heading)}</h2><p>${escapeHtml(schedule.firstPeriodOnly)}</p><ol>${periods}</ol></section>`;
+}
+
 export function requestScreenHtml(
   content: RequestScreenContent,
   ticket: string,
@@ -453,7 +459,7 @@ export function requestScreenHtml(
     editable && actionTotal !== undefined
       ? `<p class="ui-action-bar__sum"><strong>${escapeHtml(actionTotal)}</strong><span class="ui-money-metadata">${GUEST_GLOSSARY.allInStayTotal}</span></p>`
       : "";
-  return `<section class="request-screen" data-request-state="${content.state}"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">${GUEST_GLOSSARY.bookingRequest}</p><h2>${escapeHtml(content.title)}</h2>${statusHtml(content.tone, content.status)}</header>${banner}<div class="request-ticket">${ticket}</div>${who}<div class="request-breakdown">${breakdown}</div>${content.provider === undefined ? "" : `<p class="request-provider">${escapeHtml(content.provider)}</p>`}${content.sentAt === undefined ? "" : `<p class="ui-field__hint">${escapeHtml(content.sentAt)}</p>`}${deadline}<section class="ui-panel request-next"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>${content.notes.length ? `<div class="request-notes">${content.notes.map((note) => `<p>${escapeHtml(note)}</p>`).join("")}</div>` : ""}<div class="request-actions${editable ? " ui-action-bar" : ""}">${sum}${form(content.primary, true)}${content.secondary === undefined ? "" : form(content.secondary, false)}</div></section>`;
+  return `<section class="request-screen" data-request-state="${content.state}"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">${GUEST_GLOSSARY.bookingRequest}</p><h2>${escapeHtml(content.title)}</h2>${statusHtml(content.tone, content.status)}</header>${banner}<div class="request-ticket">${ticket}</div>${who}<div class="request-breakdown">${breakdown}</div>${content.schedule === undefined ? "" : paymentScheduleHtml(content.schedule)}${content.provider === undefined ? "" : `<p class="request-provider">${escapeHtml(content.provider)}</p>`}${content.sentAt === undefined ? "" : `<p class="ui-field__hint">${escapeHtml(content.sentAt)}</p>`}${deadline}<section class="ui-panel request-next"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>${content.notes.length ? `<div class="request-notes">${content.notes.map((note) => `<p>${escapeHtml(note)}</p>`).join("")}</div>` : ""}<div class="request-actions${editable ? " ui-action-bar" : ""}">${sum}${form(content.primary, true)}${content.secondary === undefined ? "" : form(content.secondary, false)}</div></section>`;
 }
 
 export type KitStatusTone = "success" | "warning" | "danger" | "neutral";
