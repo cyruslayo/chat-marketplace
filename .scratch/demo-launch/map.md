@@ -16,7 +16,7 @@ Parent: [PRD.md](PRD.md)
 | 10 | [Pay each demo Billing Period through a separate payment session](issues/10-pay-each-demo-billing-period.md) | AFK | resolved | 09 |
 | 11 | [Capture demo Owner Payables per Billing Period](issues/11-capture-demo-owner-payables-per-period.md) | AFK | resolved | 10 |
 | 12 | [Show demo monthly prices and payment periods in guest screens](issues/12-show-demo-monthly-prices-and-periods.md) | AFK | ready-for-agent | 09, 10, 11, 13 |
-| 13 | [Demo monthly cancellation, Notice to End and overdue handling](issues/13-demo-monthly-cancellation-notice-and-overdue-handling.md) | AFK | ready-for-agent | 09, 10, 11 |
+| 13 | [Demo monthly cancellation, Notice to End and overdue handling](issues/13-demo-monthly-cancellation-notice-and-overdue-handling.md) | AFK | resolved | 09, 10, 11 |
 
 ## Frontier
 

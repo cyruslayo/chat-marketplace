@@ -1,6 +1,6 @@
 # Demo monthly cancellation, Notice to End and overdue handling
 
-Status: ready-for-agent
+Status: resolved
 Type: AFK
 Blocked by: 09, 10, 11
 
@@ -130,3 +130,12 @@ Still open, which keeps this issue `ready-for-agent`:
   - The driver's first turn returns only a message asking for dates. The issue 08 capture sends the stay in three turns ("…30 nights…", "10 Sep", "2 guests"). With those turns, the request is submitted and the state is a `waiting` surface with no action button. `guestAction` (test/helpers/guest-restart.ts) asserts a button, so `advance` fails there. This is the helper's manual-acceptance assumption, not a defect in my changes.
   - After `simulateOperatorAcceptance` succeeds, the next `fixture.state()` call gets `ECONNRESET`. I reproduced this at commit 71f2550, before any issue 13 change, in a temporary worktree (since removed). So it is a pre-existing defect in the demo composition's state read after operator acceptance. I did not isolate the server-side exception. The unhandled-rejection listener caught nothing, and the route handler does not respond.
   - Result: the contract and confirmation captures for an Extended Stay are not produced. Their absence keeps this issue `ready-for-agent`. The next step is to find the exception in the demo state route after the offer is issued, then drive payment to `confirmed` and capture at 320/390/768/1280.
+
+### Round 4 (commits d35d942, 19b9653): ECONNRESET root cause, contract captures, resolution
+
+- Root cause of the ECONNRESET on /api/state after operator acceptance: a test-driver artefact, not a demo-server defect. The helper `guestAction` asserts that a surface has an action button. A request awaiting the operator has none, so the assertion fails. Building the AssertionError message took 11.6 s of synchronous work in the test process (measured: `guestAction ms 11599`). The server's 5 s keep-alive timer closed the idle pooled socket during that time, and the next request reused it and was reset.
+- Evidence: the reset happens before any change in this issue, at 71f2550 (issue 13 not yet started). The control Short Stay sequence has an action on every surface and never reaches the failing path. Replacing the throwing check with a non-throwing one removed the 11 s gap, and the state read then returned `ok: true` every time. The server logs showed a stale client socket (port 59923) reset at the moment of the read, not a server-side exception. I did not run a full commit bisect across 60cae4a..c4b3998: the failure reproduces at 71f2550, and the server code on that path is identical to this branch's.
+- Fix (d35d942): additive helper `guestActionOrUndefined`. Red first: test/guest-restart-helper.test.ts failed with a missing export. Green: 3 of 3. `guestAction` is unchanged.
+- Captures (19b9653): the confirmed Extended Stay driven through the real guest flow (`drive-13.ts`, stubbed provider) to `/booking-contracts/...`. Standalone contract page and chat at 320/390/768/1280, light theme, eight PNGs. Overflow and 44px checks pass inside `.confirmed-screen`, the capture-10 convention. The Notice to End wording is shown and no counsel-approval claim appears. Shell chrome outside `.confirmed-screen` (the "Back to conversation" link and "View booking details" in the workspace heading) measured under 44px in some runs. It is pre-existing and out of scope, and is recorded rather than fixed.
+
+Resolution: every acceptance criterion has named tests, the Cloudflare parity test passes, and the contract and confirmation captures exist. The DoD items are checked as before. Open note for the owner: the cancellation version label `cancellation-extended-adr0092-v1` and the demo summary text are labels written for this issue. The thresholds and the 14-day notice trace to ADR 0092 and remain [counsel].
