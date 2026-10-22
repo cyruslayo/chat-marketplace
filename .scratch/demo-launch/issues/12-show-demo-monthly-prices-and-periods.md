@@ -1,6 +1,6 @@
 # Show demo monthly prices and payment periods in guest screens
 
-Status: ready-for-agent
+Status: resolved
 Type: AFK
 Blocked by: 09, 10, 11, 13
 
@@ -144,3 +144,17 @@ Resolution needs: AC4 later-period screen and Worker test, standalone-page parit
 **AC4 chat surface (item 2): NOT built. Blocker with evidence.** The chat renders one conventional-route link per surface (`client.ts`, "Open full details"), and the confirmed booking contract already uses it for the contract page. A schedule link would either replace the contract link, or need a new navigational chat action (`shortlet-app.ts` `EVENT_STAGE_ALLOW_LIST` and an event handler) or a second link slot in the chat client. That is a chat-shell change, outside this issue's minimal scope, so I stopped rather than guess. AC4 chat/page parity stays open.
 
 **Resolution:** NOT resolved. Open: the chat schedule link (above); the combined-run flakiness; the Worker empty-email risk (remote guest contact, `card-payment.ts` and the period path use `contact?.contactEmail ?? ""`); the back-office per-period payables (owner follow-up); the `dist/client.js` rebuild (`node apps/local-guest/scripts/build-client.mjs`, owner).
+
+### Orchestrator close-out: AC4 chat and page parity (6dcc06a)
+
+The executor stopped at the chat link because it believed it needed a chat-shell change. It did not: chat and the standalone page both render `confirmationScreenHtml` from the shared kit with `ConfirmationContent`. `scheduleHref` (Extended Stay only) now adds a "View payment schedule" button to `/bookings/periods/:offerId` in both.
+
+- Red first: `NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow npx tsx --test test/confirmation-schedule-link.test.ts` gave 1 of 2 passing (Extended link test failed; Short Stay guard passed). Green: 2 of 2.
+- Affected: confirmation-schedule-link, guest-confirmation-system, render-booking-contract-weaver-a2ui, integrate-booking-contract-application, demo-extended-cancellation-notice, later-period-payment-routes: 56 of 56. `npm run check`: clean.
+- Captures: `npx tsx .scratch/demo-launch/capture-12-confirmation.ts` (light and dark, 320/390/768/1280, standalone page): no overflow, no controls under 44px inside `.confirmed-screen`; 390 dark image viewed. The chat workspace uses the same kit function and shows the button after the owner rebuilds `apps/local-guest/dist/client.js` (`node apps/local-guest/scripts/build-client.mjs`); the chat view was not captured.
+
+Known external items, not blockers for this issue: back-office per-period payables (Period 1 only, no periodIndex on POSTs, no Notice reductions); combined-run Node flakiness (not root-caused); Worker empty-email risk for later-period payments; dist/client.js rebuild and commit; new copy (labels, first-period-only line) needs owner review and is not counsel-approved.
+
+## Answer
+
+Issue 12 is resolved. Guests see the monthly price, utilities and the six-period schedule on cards, details, request review and confirmation, and can pay later periods in separate Paystack TEST sessions from a schedule page. The Worker cold-start defect found on the way is fixed (0ef32b5).

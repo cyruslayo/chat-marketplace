@@ -15,12 +15,12 @@ Parent: [PRD.md](PRD.md)
 | 09 | [Extend demo quotes and contracts through 180 nights](issues/09-extend-demo-stays-to-180-nights.md) | AFK | resolved | 08 |
 | 10 | [Pay each demo Billing Period through a separate payment session](issues/10-pay-each-demo-billing-period.md) | AFK | resolved | 09 |
 | 11 | [Capture demo Owner Payables per Billing Period](issues/11-capture-demo-owner-payables-per-period.md) | AFK | resolved | 10 |
-| 12 | [Show demo monthly prices and payment periods in guest screens](issues/12-show-demo-monthly-prices-and-periods.md) | AFK | ready-for-agent | 09, 10, 11, 13 |
+| 12 | [Show demo monthly prices and payment periods in guest screens](issues/12-show-demo-monthly-prices-and-periods.md) | AFK | resolved | 09, 10, 11, 13 |
 | 13 | [Demo monthly cancellation, Notice to End and overdue handling](issues/13-demo-monthly-cancellation-notice-and-overdue-handling.md) | AFK | resolved | 09, 10, 11 |
 
 ## Frontier
 
-04, 08, 09, 10 and 11 are resolved. 05 remains claimed and is blocked on the monthly booking chain 12–13. Issues 12 and 13 are the next implementation frontier. Issue 11 leaves the back-office payables screen showing Period 1 only (see its deviations). Issue 03 is independent of that domain work, but needs an owner-supplied OpenRouter credential for its live runs; it remains `needs-info` and blocks staging deployment and live acceptance. Issue 06 stays `ready-for-human` and requires the pre-deploy gate plus explicit deployment authorization.
+04 and 08–13 are resolved. 05 is the next implementation frontier (demo apartment CSVs, credits and provisioner). Issue 11 leaves the back-office payables screen showing Period 1 only (see its deviations). Issue 03 is independent of that domain work, but needs an owner-supplied OpenRouter credential for its live runs; it remains `needs-info` and blocks staging deployment and live acceptance. Issue 06 stays `ready-for-human` and requires the pre-deploy gate plus explicit deployment authorization.
 
 ```
 01 → 02 ────────────────┐
