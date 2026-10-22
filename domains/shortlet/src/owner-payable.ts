@@ -31,6 +31,8 @@ export interface OwnerPayableCancellation {
 export interface OwnerPayout {
   readonly payoutId: string;
   readonly reservationId: string;
+  /** The Billing Period this payout is bound to (demo-launch issue 11). A Short Stay is one period, 1. */
+  readonly periodIndex: number;
   readonly amountKobo: number;
   /** The date you paid, YYYY-MM-DD in WAT. */
   readonly paidOn: string;
@@ -47,6 +49,8 @@ export interface OwnerPayout {
 export interface OwnerRecovery {
   readonly recoveryId: string;
   readonly reservationId: string;
+  /** The Billing Period whose Owner Overpayment this recovers (demo-launch issue 11). A Short Stay is one period, 1. */
+  readonly periodIndex: number;
   readonly amountKobo: number;
   /** The date the owner paid it back, YYYY-MM-DD in WAT. */
   readonly receivedOn: string;
@@ -83,7 +87,7 @@ export interface OwnerPayableProjection {
 }
 
 export interface OwnerPayableInput {
-  readonly settlement: OwnerSettlementSnapshot;
+  readonly settlement: Pick<OwnerSettlementSnapshot, "ownerPayableKobo" | "marginKobo">;
   /** When the protection window started (Verified Access), or null. */
   readonly protectionWindowStartsAt: string | null;
   readonly blockingComplaintOpen: boolean;
@@ -92,6 +96,11 @@ export interface OwnerPayableInput {
   readonly cancellation: OwnerPayableCancellation | null;
   readonly payouts: readonly OwnerPayout[];
   readonly recoveries?: readonly OwnerRecovery[];
+  /**
+   * Demo-launch issue 11 (ADR 0092): the due time of a later Billing Period, which is when its Period Payment was
+   * verified and its first night began. Null while it is unpaid. Undefined keeps the Period 1 protection-window rule.
+   */
+  readonly periodDueAt?: string | null;
   readonly now: Date;
 }
 
@@ -151,12 +160,14 @@ export function projectOwnerPayable(
   // Issue 10 (decided 28 Sept 2026): a complaint dismissed later makes it due at the dismissal, not a fresh window.
   const dueAt = input.cancellation
     ? input.cancellation.postedAt
-    : input.protectionWindowStartsAt && !input.blockingComplaintOpen
-      ? laterOf(
-          ownerPayableDueAt(input.protectionWindowStartsAt),
-          input.complaintResolvedAt ?? null,
-        )
-      : null;
+    : input.periodDueAt !== undefined
+      ? input.periodDueAt
+      : input.protectionWindowStartsAt && !input.blockingComplaintOpen
+        ? laterOf(
+            ownerPayableDueAt(input.protectionWindowStartsAt),
+            input.complaintResolvedAt ?? null,
+          )
+        : null;
   const status: OwnerPayableStatus =
     overpaidKobo > 0
       ? "overpaid"
@@ -197,6 +208,133 @@ export function projectOwnerPayable(
     recoveries: Object.freeze([...recoveries]),
     version,
   });
+}
+
+/** One Billing Period's captured settlement, from the stay's quote snapshot (demo-launch issue 11, ADR 0092). */
+export interface OwnerPeriodSettlement {
+  readonly periodIndex: number;
+  readonly checkIn: string;
+  readonly nights: number;
+  readonly ownerPayableKobo: number;
+  readonly marginKobo: number;
+}
+
+/** A Billing Period's owner payable projection. It carries no Period Payment reference and no guest identity (ADR 0075). */
+export interface OwnerPeriodPayable extends OwnerPayableProjection {
+  readonly periodIndex: number;
+  readonly checkIn: string;
+  readonly nights: number;
+  /** Period 1 is paid by the first Period Payment; a later period is paid once its own Period Payment is verified. */
+  readonly paid: boolean;
+  /** The owner payable this period has earned: non-zero only once the period is due, paid or over-paid (ADR 0089). */
+  readonly earnedOwnerPayableKobo: number;
+  /** The margin this period has earned, earned when its owner payable becomes due (ADR 0089, ADR 0092). */
+  readonly marginEarnedKobo: number;
+}
+
+/**
+ * Reads each Billing Period's captured owner payable and margin from a stored quote (ADR 0077, ADR 0089). Null for a
+ * Short Stay, and for a stay whose periods were captured without owner payables: the caller then shows no payable,
+ * as it does for a booking confirmed before owner payables existed (P4). It never reconstructs a figure.
+ */
+export function ownerPeriodSettlementsFromQuote(quote: unknown): readonly OwnerPeriodSettlement[] | null {
+  if (quote === null || typeof quote !== "object") return null;
+  const raw = (quote as { readonly billingPeriods?: unknown }).billingPeriods;
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const periods: OwnerPeriodSettlement[] = [];
+  for (const entry of raw as unknown[]) {
+    const period = entry as Record<string, unknown> | null;
+    if (
+      period === null || typeof period !== "object" ||
+      typeof period.index !== "number" || typeof period.checkIn !== "string" || typeof period.nights !== "number" ||
+      typeof period.ownerPayableKobo !== "number" || typeof period.marginKobo !== "number" ||
+      !Number.isSafeInteger(period.ownerPayableKobo) || !Number.isSafeInteger(period.marginKobo) ||
+      period.ownerPayableKobo < 0 || period.marginKobo < 0
+    )
+      return null;
+    periods.push(Object.freeze({ periodIndex: period.index, checkIn: period.checkIn, nights: period.nights, ownerPayableKobo: period.ownerPayableKobo, marginKobo: period.marginKobo }));
+  }
+  return Object.freeze(periods);
+}
+
+export interface OwnerPeriodPayablesInput {
+  readonly periods: readonly OwnerPeriodSettlement[];
+  /** Verified Period Payment time by Billing Period. Period 1 is the first Period Payment that formed the contract. */
+  readonly paidAt: ReadonlyMap<number, string>;
+  /** Verified Access for the stay (ADR 0089), which governs Period 1 only. */
+  readonly protectionWindowStartsAt: string | null;
+  readonly blockingComplaintOpen: boolean;
+  readonly complaintResolvedAt?: string | null;
+  /** The stay-level cancellation outcome, when one is posted (ADR 0014). */
+  readonly cancellation: OwnerPayableCancellation | null;
+  /** Every payout and recovery on the reservation; each period takes only the ones bound to it. */
+  readonly payouts: readonly OwnerPayout[];
+  readonly recoveries?: readonly OwnerRecovery[];
+  readonly now: Date;
+}
+
+/**
+ * Demo-launch issue 11 (ADR 0089 Period 1, ADR 0092 later periods). Projects one owner payable per Billing Period from
+ * the immutable quote snapshot, through the same `projectOwnerPayable` the Short Stay uses. A period earns its payable
+ * and margin only when it is due: Period 1 after Verified Access, a later period after its Period Payment is verified
+ * and its first night has begun, and in both cases with no Blocking Fulfilment Complaint open. An unpaid period never
+ * earns anything. A payout or recovery counts only against the period it is bound to.
+ */
+export function projectOwnerPeriodPayables(input: OwnerPeriodPayablesInput): readonly OwnerPeriodPayable[] {
+  return Object.freeze(
+    input.periods.map((period) => {
+      const paidAt = input.paidAt.get(period.periodIndex) ?? null;
+      const paid = paidAt !== null;
+      const isPeriodOne = period.periodIndex === 1;
+      const payouts = input.payouts.filter((payout) => payout.periodIndex === period.periodIndex);
+      const recoveries = (input.recoveries ?? []).filter((recovery) => recovery.periodIndex === period.periodIndex);
+      const common = {
+        settlement: { ownerPayableKobo: period.ownerPayableKobo, marginKobo: period.marginKobo },
+        cancellation: input.cancellation,
+        payouts,
+        recoveries,
+        now: input.now,
+      };
+      // An unpaid period is not due, paused or cancelled into a payable: it earns nothing (ADR 0092, AC4).
+      const projection = paid
+        ? projectOwnerPayable({
+            ...common,
+            protectionWindowStartsAt: isPeriodOne ? input.protectionWindowStartsAt : null,
+            blockingComplaintOpen: input.blockingComplaintOpen,
+            complaintResolvedAt: input.complaintResolvedAt ?? null,
+            ...(isPeriodOne
+              ? {}
+              : {
+                  periodDueAt: laterOf(
+                    laterOf(paidAt, `${period.checkIn}T00:00:00.000Z`),
+                    input.complaintResolvedAt ?? null,
+                  ),
+                }),
+          })
+        : projectOwnerPayable({
+            ...common,
+            cancellation: null,
+            payouts: [],
+            recoveries: [],
+            protectionWindowStartsAt: null,
+            blockingComplaintOpen: false,
+            periodDueAt: null,
+          });
+      const earns =
+        projection.status === "due" ||
+        projection.status === "paid" ||
+        projection.status === "overpaid";
+      return Object.freeze({
+        ...projection,
+        periodIndex: period.periodIndex,
+        checkIn: period.checkIn,
+        nights: period.nights,
+        paid,
+        earnedOwnerPayableKobo: earns ? projection.ownerPayableKobo : 0,
+        marginEarnedKobo: earns ? projection.marginKobo : 0,
+      });
+    }),
+  );
 }
 
 export type OwnerPayoutProblem =
@@ -325,7 +463,10 @@ function validDate(value: string): boolean {
 export function recordOwnerPayout(input: {
   readonly ledger: OwnerPayableLedger;
   readonly reservationId: string;
-  readonly payable: OwnerPayableProjection;
+  /** The payable of the Billing Period being paid (demo-launch issue 11). */
+  readonly payable: OwnerPeriodPayable | OwnerPayableProjection;
+  /** The Billing Period the payout is bound to. A Short Stay, and Period 1 by default, is 1. */
+  readonly periodIndex?: number;
   readonly basedOnVersion: string;
   readonly amountKobo: number | null;
   readonly paidOn: string;
@@ -344,9 +485,10 @@ export function recordOwnerPayout(input: {
     throw new OwnerPayoutError("date_required");
   if (reference === "") throw new OwnerPayoutError("reference_required");
 
-  const earlier = input.payable.payouts.find(
-    (payout) => payout.reference === reference,
-  );
+  // A reference is unique per booking, so one bank reference can never pay two Billing Periods.
+  const earlier = input.ledger
+    .listPayouts(input.reservationId)
+    .find((payout) => payout.reference === reference);
   if (earlier) {
     if (
       earlier.amountKobo === input.amountKobo &&
@@ -371,6 +513,7 @@ export function recordOwnerPayout(input: {
   const payout: OwnerPayout = Object.freeze({
     payoutId: generatePlatformId("payout"),
     reservationId: input.reservationId,
+    periodIndex: input.periodIndex ?? 1,
     amountKobo: input.amountKobo,
     paidOn: input.paidOn,
     reference,
@@ -389,7 +532,9 @@ export function recordOwnerPayout(input: {
 export function recordOwnerRecovery(input: {
   readonly ledger: OwnerPayableLedger;
   readonly reservationId: string;
-  readonly payable: OwnerPayableProjection;
+  readonly payable: OwnerPeriodPayable | OwnerPayableProjection;
+  /** The Billing Period whose Owner Overpayment is recovered. A Short Stay, and Period 1 by default, is 1. */
+  readonly periodIndex?: number;
   readonly basedOnVersion: string;
   readonly amountKobo: number | null;
   readonly receivedOn: string;
@@ -408,9 +553,9 @@ export function recordOwnerRecovery(input: {
     throw new OwnerRecoveryError("date_required");
   if (reference === "") throw new OwnerRecoveryError("reference_required");
 
-  const earlier = input.payable.recoveries.find(
-    (recovery) => recovery.reference === reference,
-  );
+  const earlier = input.ledger
+    .listRecoveries(input.reservationId)
+    .find((recovery) => recovery.reference === reference);
   if (earlier) {
     if (
       earlier.amountKobo === input.amountKobo &&
@@ -429,6 +574,7 @@ export function recordOwnerRecovery(input: {
   const recovery: OwnerRecovery = Object.freeze({
     recoveryId: generatePlatformId("recovery"),
     reservationId: input.reservationId,
+    periodIndex: input.periodIndex ?? 1,
     amountKobo: input.amountKobo,
     receivedOn: input.receivedOn,
     reference,
@@ -627,6 +773,7 @@ function isGuestRefundRow(value: unknown): value is {
 function isRecoveryRow(value: unknown): value is {
   recovery_id: string;
   reservation_id: string;
+  period_index: number;
   amount_kobo: number;
   received_on: string;
   reference: string;
@@ -638,6 +785,7 @@ function isRecoveryRow(value: unknown): value is {
     !!row &&
     typeof row.recovery_id === "string" &&
     typeof row.reservation_id === "string" &&
+    typeof row.period_index === "number" &&
     typeof row.amount_kobo === "number" &&
     typeof row.received_on === "string" &&
     typeof row.reference === "string" &&
@@ -669,6 +817,7 @@ function isCancellationRow(value: unknown): value is {
 function isPayoutRow(value: unknown): value is {
   payout_id: string;
   reservation_id: string;
+  period_index: number;
   amount_kobo: number;
   paid_on: string;
   reference: string;
@@ -680,6 +829,7 @@ function isPayoutRow(value: unknown): value is {
     !!row &&
     typeof row.payout_id === "string" &&
     typeof row.reservation_id === "string" &&
+    typeof row.period_index === "number" &&
     typeof row.amount_kobo === "number" &&
     typeof row.paid_on === "string" &&
     typeof row.reference === "string" &&
@@ -697,6 +847,16 @@ export const OWNER_PAYABLE_SCHEMA = `
       CREATE TABLE IF NOT EXISTS owner_payout_recoveries (recovery_id TEXT PRIMARY KEY, reservation_id TEXT NOT NULL, amount_kobo INTEGER NOT NULL, received_on TEXT NOT NULL, reference TEXT NOT NULL, recorded_at TEXT NOT NULL, recorded_by TEXT NOT NULL, UNIQUE (reservation_id, reference));
     `;
 
+/**
+ * Demo-launch issue 11: binds each payout and recovery to one Billing Period. The ledger entry id is the payout or
+ * recovery id. A ledger entry with no binding row belongs to Period 1, so Short Stay rows need no backfill. Applied by
+ * the Cloudflare migration that follows the baseline (apps/cloudflare/src/schema.ts) and by this ledger's constructor.
+ */
+export const OWNER_LEDGER_PERIOD_SCHEMA = `
+      CREATE TABLE IF NOT EXISTS owner_ledger_period_bindings (ledger_entry_id TEXT PRIMARY KEY, reservation_id TEXT NOT NULL, period_index INTEGER NOT NULL CHECK (period_index >= 1));
+      CREATE INDEX IF NOT EXISTS idx_owner_ledger_period_bindings_reservation ON owner_ledger_period_bindings (reservation_id, period_index);
+    `;
+
 /** The owner-payable ledger in the shared SQLite database, read fresh on every call (no cross-process cache). */
 export class SqliteOwnerPayableLedger implements OwnerPayableLedger {
   readonly #database: import("../../../packages/platform-core/src/sql-database.js").SqlDatabase;
@@ -708,6 +868,7 @@ export class SqliteOwnerPayableLedger implements OwnerPayableLedger {
     this.#database = database;
     this.#clock = clock;
     this.#database.exec(OWNER_PAYABLE_SCHEMA);
+    this.#database.exec(OWNER_LEDGER_PERIOD_SCHEMA);
   }
   postCancellation(
     input: Parameters<OwnerPayableLedger["postCancellation"]>[0],
@@ -749,13 +910,14 @@ export class SqliteOwnerPayableLedger implements OwnerPayableLedger {
   listPayouts(reservationId: string): readonly OwnerPayout[] {
     const rows: unknown[] = this.#database
       .prepare(
-        "SELECT * FROM owner_payouts WHERE reservation_id = $id ORDER BY recorded_at, payout_id",
+        "SELECT p.*, COALESCE(b.period_index, 1) AS period_index FROM owner_payouts p LEFT JOIN owner_ledger_period_bindings b ON b.ledger_entry_id = p.payout_id WHERE p.reservation_id = $id ORDER BY p.recorded_at, p.payout_id",
       )
       .all({ $id: reservationId });
     return rows.filter(isPayoutRow).map((row) =>
       Object.freeze({
         payoutId: row.payout_id,
         reservationId: row.reservation_id,
+        periodIndex: row.period_index,
         amountKobo: row.amount_kobo,
         paidOn: row.paid_on,
         reference: row.reference,
@@ -778,17 +940,26 @@ export class SqliteOwnerPayableLedger implements OwnerPayableLedger {
         $recordedAt: payout.recordedAt,
         $recordedBy: payout.recordedBy,
       });
+    this.#bindToPeriod(payout.payoutId, payout.reservationId, payout.periodIndex);
+  }
+  #bindToPeriod(ledgerEntryId: string, reservationId: string, periodIndex: number): void {
+    this.#database
+      .prepare(
+        "INSERT INTO owner_ledger_period_bindings (ledger_entry_id, reservation_id, period_index) VALUES ($id, $reservationId, $periodIndex)",
+      )
+      .run({ $id: ledgerEntryId, $reservationId: reservationId, $periodIndex: periodIndex });
   }
   listRecoveries(reservationId: string): readonly OwnerRecovery[] {
     const rows: unknown[] = this.#database
       .prepare(
-        "SELECT * FROM owner_payout_recoveries WHERE reservation_id = $id ORDER BY recorded_at, recovery_id",
+        "SELECT r.*, COALESCE(b.period_index, 1) AS period_index FROM owner_payout_recoveries r LEFT JOIN owner_ledger_period_bindings b ON b.ledger_entry_id = r.recovery_id WHERE r.reservation_id = $id ORDER BY r.recorded_at, r.recovery_id",
       )
       .all({ $id: reservationId });
     return rows.filter(isRecoveryRow).map((row) =>
       Object.freeze({
         recoveryId: row.recovery_id,
         reservationId: row.reservation_id,
+        periodIndex: row.period_index,
         amountKobo: row.amount_kobo,
         receivedOn: row.received_on,
         reference: row.reference,
@@ -844,5 +1015,6 @@ export class SqliteOwnerPayableLedger implements OwnerPayableLedger {
         $recordedAt: recovery.recordedAt,
         $recordedBy: recovery.recordedBy,
       });
+    this.#bindToPeriod(recovery.recoveryId, recovery.reservationId, recovery.periodIndex);
   }
 }

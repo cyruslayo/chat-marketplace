@@ -53,7 +53,10 @@ import {
   ownerPayableDueAt,
   unitPriceFromOwnerTerms,
   ownerSettlementFromQuote,
+  ownerPeriodSettlementsFromQuote,
   projectOwnerPayable,
+  projectOwnerPeriodPayables,
+  type OwnerPeriodPayable,
   recordOwnerPayout,
   recordOwnerRecovery,
   recordGuestRefund,
@@ -211,6 +214,18 @@ export interface OperatorReservation extends OperatorBooking {
  * A Reservation's owner payable as the back office shows it (B7, ADR 0089). Names, amounts and dates only:
  * no owner bank details are held, and none are logged (ADR 0075).
  */
+/**
+ * Demo-launch issue 11: the payable a payout or recovery acts on. An Extended Stay has its own period payables; a Short
+ * Stay has only Period 1, its booking-level payable. Null when the booking has no such period.
+ */
+function ownerPayableForPeriod(
+  current: OperatorOwnerPayable,
+  periodIndex: number,
+): OwnerPeriodPayable | OwnerPayableProjection | null {
+  if (current.periods) return current.periods.find((period) => period.periodIndex === periodIndex) ?? null;
+  return periodIndex === 1 ? current.payable : null;
+}
+
 export interface OperatorOwnerPayable {
   readonly requestId: string;
   readonly reservationId: string;
@@ -224,6 +239,11 @@ export interface OperatorOwnerPayable {
   readonly amountReceivedKobo: number;
   /** Null for a booking confirmed before owner payables were captured (P4): there is no snapshot to pay from. */
   readonly payable: OwnerPayableProjection | null;
+  /**
+   * Demo-launch issue 11: an Extended Stay's owner payable per Billing Period, in order. `payable` is Period 1.
+   * Null for a Short Stay. Carries no Period Payment reference and no guest identity (ADR 0075).
+   */
+  readonly periods: readonly OwnerPeriodPayable[] | null;
 }
 
 /**
@@ -1978,15 +1998,20 @@ export class LocalApartmentOwnerEnvironment {
       readonly paidOn: string;
       readonly reference: string;
       readonly basedOnVersion: string;
+      /** Demo-launch issue 11: the Billing Period this payout is for. Period 1 when omitted. */
+      readonly periodIndex?: number;
     },
   ): OperatorOwnerPayable {
     const current = this.ownerPayable(requestId, principal);
-    if (!current.payable) throw new OwnerPayoutError("not_due");
+    const periodIndex = input.periodIndex ?? 1;
+    const payable = ownerPayableForPeriod(current, periodIndex);
+    if (!payable) throw new OwnerPayoutError("not_due");
     const now = this.clock();
     const { payout, replayed } = recordOwnerPayout({
       ledger: this.ownerPayableLedger,
       reservationId: current.reservationId,
-      payable: current.payable,
+      payable,
+      periodIndex,
       basedOnVersion: input.basedOnVersion,
       amountKobo: parseNairaToKobo(input.amount),
       paidOn: input.paidOn.trim(),
@@ -2026,15 +2051,20 @@ export class LocalApartmentOwnerEnvironment {
       readonly receivedOn: string;
       readonly reference: string;
       readonly basedOnVersion: string;
+      /** Demo-launch issue 11: the Billing Period whose Owner Overpayment this recovers. Period 1 when omitted. */
+      readonly periodIndex?: number;
     },
   ): OperatorOwnerPayable {
     const current = this.ownerPayable(requestId, principal);
-    if (!current.payable) throw new OwnerRecoveryError("not_overpaid");
+    const periodIndex = input.periodIndex ?? 1;
+    const payable = ownerPayableForPeriod(current, periodIndex);
+    if (!payable) throw new OwnerRecoveryError("not_overpaid");
     const now = this.clock();
     const { recovery, replayed } = recordOwnerRecovery({
       ledger: this.ownerPayableLedger,
       reservationId: current.reservationId,
-      payable: current.payable,
+      payable,
+      periodIndex,
       basedOnVersion: input.basedOnVersion,
       amountKobo: parseNairaToKobo(input.amount),
       receivedOn: input.receivedOn.trim(),
@@ -2090,6 +2120,38 @@ export class LocalApartmentOwnerEnvironment {
     const accessRecorded =
       checkIn.result?.status === "verified_access" ||
       checkIn.result?.status === "late_voluntary_arrival";
+    // Demo-launch issue 11 (ADR 0089, ADR 0092): an Extended Stay has one owner payable per Billing Period, each due
+    // on its own payment. Period 1 is the first Period Payment that formed the contract; later periods are the verified
+    // Period Payments. A Short Stay has no periods and keeps the booking-level projection above.
+    const periodSettlements = settlement
+      ? ownerPeriodSettlementsFromQuote(contract.quote)
+      : null;
+    const periodPayables = periodSettlements
+      ? projectOwnerPeriodPayables({
+          periods: periodSettlements,
+          paidAt: new Map<number, string>([
+            [1, contract.paymentDetails.paidAt],
+            ...this.interactionStore
+              .listPeriodPayments(snapshot.offerId)
+              .map((record): [number, string] => [record.periodIndex, record.paidAt]),
+          ]),
+          protectionWindowStartsAt: accessRecorded
+            ? (checkIn.result?.protectionWindowStartsAt ?? null)
+            : null,
+          blockingComplaintOpen: checkIn.complaints.some(
+            (complaint) => complaint.status !== "resolved",
+          ),
+          complaintResolvedAt: lastComplaintResolvedAt(checkIn.complaints),
+          cancellation: this.ownerPayableLedger.findCancellation(
+            reservation.reservationId,
+          ),
+          payouts: this.ownerPayableLedger.listPayouts(reservation.reservationId),
+          recoveries: this.ownerPayableLedger.listRecoveries(
+            reservation.reservationId,
+          ),
+          now,
+        })
+      : null;
     return Object.freeze({
       requestId: booking.requestId,
       reservationId: reservation.reservationId,
@@ -2101,27 +2163,30 @@ export class LocalApartmentOwnerEnvironment {
       nights: booking.nights,
       amountReceivedKobo: contract.paymentDetails.amountKobo,
       payable: settlement
-        ? projectOwnerPayable({
-            settlement,
-            protectionWindowStartsAt: accessRecorded
-              ? (checkIn.result?.protectionWindowStartsAt ?? null)
-              : null,
-            blockingComplaintOpen: checkIn.complaints.some(
-              (complaint) => complaint.status !== "resolved",
-            ),
-            complaintResolvedAt: lastComplaintResolvedAt(checkIn.complaints),
-            cancellation: this.ownerPayableLedger.findCancellation(
-              reservation.reservationId,
-            ),
-            payouts: this.ownerPayableLedger.listPayouts(
-              reservation.reservationId,
-            ),
-            recoveries: this.ownerPayableLedger.listRecoveries(
-              reservation.reservationId,
-            ),
-            now,
-          })
+        ? periodPayables
+          ? periodPayables[0]!
+          : projectOwnerPayable({
+              settlement,
+              protectionWindowStartsAt: accessRecorded
+                ? (checkIn.result?.protectionWindowStartsAt ?? null)
+                : null,
+              blockingComplaintOpen: checkIn.complaints.some(
+                (complaint) => complaint.status !== "resolved",
+              ),
+              complaintResolvedAt: lastComplaintResolvedAt(checkIn.complaints),
+              cancellation: this.ownerPayableLedger.findCancellation(
+                reservation.reservationId,
+              ),
+              payouts: this.ownerPayableLedger.listPayouts(
+                reservation.reservationId,
+              ),
+              recoveries: this.ownerPayableLedger.listRecoveries(
+                reservation.reservationId,
+              ),
+              now,
+            })
         : null,
+      periods: periodPayables ?? null,
     });
   }
 

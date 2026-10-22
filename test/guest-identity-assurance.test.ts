@@ -808,7 +808,8 @@ test("AC5: the sweep reads JavaScript modules as well as TypeScript", () => {
 // Schema ------------------------------------------------------------------------------------------------------------
 
 test("Slice 17 ADR 0094: assurance remains in shortlet without a platform-account foreign key or cross-database trigger", () => {
-  assert.equal(SHORTLET_SCHEMA_VERSION, 4);
+  // Demo-launch issue 11 added migration 5 (owner ledger period bindings); the version follows the migration list.
+  assert.equal(SHORTLET_SCHEMA_VERSION, 5);
   const database = openNodeSqliteDatabase(":memory:");
   try {
     applySchemaMigrations(database, SHORTLET_SCHEMA_MIGRATIONS.slice(0, 3), "2026-10-10T00:00:00.000Z");

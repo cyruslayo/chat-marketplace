@@ -188,6 +188,10 @@ export interface BillingPeriodQuote {
   readonly checkOut: string;
   readonly nights: number;
   readonly amountKobo: number;
+  /** Demo-launch issue 11: the owner payable captured for this period at confirmation, never recalculated (ADR 0089). */
+  readonly ownerPayableKobo: number;
+  /** Demo-launch issue 11: the platform margin captured for this period; the periods' margins sum to the stay's margin. */
+  readonly marginKobo: number;
   readonly dueDate: string;
   readonly nightlyContractedValuesKobo: readonly number[];
 }
@@ -239,7 +243,7 @@ export function createStayQuote({
   let accommodationKobo: number;
   let mandatoryFeesKobo: number;
   let billingPeriods: readonly BillingPeriodQuote[] = Object.freeze([]);
-  let baseBillingPeriods: readonly { readonly index: number; readonly checkIn: string; readonly checkOut: string; readonly nights: number; readonly baseAmountKobo: number; readonly dueDate: string }[] = Object.freeze([]);
+  let baseBillingPeriods: readonly { readonly index: number; readonly checkIn: string; readonly checkOut: string; readonly nights: number; readonly baseAmountKobo: number; readonly ownerPayableKobo: number; readonly dueDate: string }[] = Object.freeze([]);
   let utilitiesAndServicing: unknown;
   let monthlyAgreedAmountsVersion: string | undefined;
   let periodOwnerPayableKobo = 0;
@@ -312,7 +316,10 @@ export function createStayQuote({
       const amountKobo = period.baseAmountKobo + extras;
       const nightlyBase = Math.floor(amountKobo / period.nights);
       const nightlyContractedValuesKobo = Array.from({ length: period.nights }, (_unused, day) => nightlyBase + (day === period.nights - 1 ? amountKobo - nightlyBase * period.nights : 0));
-      return Object.freeze({ index: period.index, checkIn: period.checkIn, checkOut: period.checkOut, nights: period.nights, amountKobo, dueDate: period.dueDate, nightlyContractedValuesKobo: Object.freeze(nightlyContractedValuesKobo) });
+      // Demo-launch issue 11 (ADR 0089, ADR 0092): each period's owner payable and margin are captured with the quote.
+      // The margin is the period's accommodation and charges less its owner payable; taxes and optional services are
+      // not owner money, so they stay out of the margin, as they do in the stay-level ownerSettlement.
+      return Object.freeze({ index: period.index, checkIn: period.checkIn, checkOut: period.checkOut, nights: period.nights, amountKobo, ownerPayableKobo: period.ownerPayableKobo, marginKobo: period.baseAmountKobo - period.ownerPayableKobo, dueDate: period.dueDate, nightlyContractedValuesKobo: Object.freeze(nightlyContractedValuesKobo) });
     }));
   }
   // ADR 0092: Extended Stays have a zero Refundable Security Deposit, including demo periods.

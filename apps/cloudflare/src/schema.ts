@@ -10,7 +10,7 @@ import { CHECKIN_SUPPORT_SCHEMA } from "../../../domains/shortlet/src/index.js";
 import { GUEST_IDENTITY_ASSURANCE_SCHEMA } from "../../../domains/shortlet/src/guest-identity-assurance.js";
 import { GUEST_INTERACTION_SCHEMA, GUEST_REQUEST_CONTACT_SCHEMA } from "../../../domains/shortlet/src/index.js";
 import { MANUAL_TRANSFERS_SCHEMA, MANUAL_TRANSFER_RECEIPTS_SCHEMA } from "../../../domains/shortlet/src/index.js";
-import { OWNER_PAYABLE_SCHEMA } from "../../../domains/shortlet/src/index.js";
+import { OWNER_LEDGER_PERIOD_SCHEMA, OWNER_PAYABLE_SCHEMA } from "../../../domains/shortlet/src/index.js";
 import { OPERATOR_REPRESENTATIVE_SCHEMA } from "../../../domains/shortlet/src/index.js";
 import { OPERATOR_SESSION_SCHEMA } from "../../../domains/shortlet/src/index.js";
 import { OPERATOR_ENFORCEMENT_SCHEMA } from "../../../domains/shortlet/src/index.js";
@@ -82,6 +82,8 @@ export const SHORTLET_SCHEMA_MIGRATIONS: readonly SchemaMigration[] = [
   { version: 3, name: "shortlet booking request contact snapshots", statements: [GUEST_REQUEST_CONTACT_SCHEMA] },
   // Personal-data table (ADR 0094, issue 09): exported in the daily export under the issue 05 precedent, flagged for the DPIA. Not a credential.
   { version: 4, name: "guest accounts: identity assurance anchored to the account", statements: [GUEST_IDENTITY_ASSURANCE_SCHEMA] },
+  // Demo-launch issue 11: each owner payout and recovery is bound to one Billing Period. Ids and period numbers only.
+  { version: 5, name: "owner ledger entries bound to a Billing Period", statements: [OWNER_LEDGER_PERIOD_SCHEMA] },
 ];
 
 /** The version the import checks for before it writes anything (ops-import.ts). */

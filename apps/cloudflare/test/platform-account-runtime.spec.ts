@@ -17,7 +17,7 @@ test("Shortlet schema upgrades preserve populated legacy Guest tables until owne
       INSERT INTO guest_contacts VALUES ('legacy-guest', 'legacy-tenant', '+2348012345678', 'legacy@example.test', 3);
       INSERT INTO guest_threads VALUES ('legacy-thread', 'legacy-guest', 'legacy-tenant', '{"v":1}');
       INSERT INTO guest_session_bindings VALUES ('legacy-session', 'opaque-hash', 'legacy-guest', 'legacy-tenant');
-      DELETE FROM schema_migrations WHERE version = 4;`);
+      DELETE FROM schema_migrations WHERE version >= 4;`);
     applySchemaMigrations(db, SHORTLET_SCHEMA_MIGRATIONS, new Date().toISOString());
     return {
       contact: db.prepare("SELECT phone_number, contact_email, revision FROM guest_contacts WHERE guest_id = ?").get(["legacy-guest"]),
