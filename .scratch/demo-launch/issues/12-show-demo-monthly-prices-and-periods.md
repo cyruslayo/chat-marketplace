@@ -113,3 +113,23 @@ Resolution needs: AC4 later-period screen and Worker test, standalone-page parit
 **Item 5, follow-up gap (not this issue's AC, owner decision).** The back-office payables screen shows Period 1 only; payout and recovery POSTs do not send `periodIndex`; Notice-to-End reductions are not shown. This blocks real period-N payouts in the back office, not the guest demo journey. Recorded here as an explicit owner follow-up.
 
 **Resolution:** NOT resolved. AC4 has no tests or Worker spec, and the schedule page has no captures.
+
+### Executor round 4: status stays `ready-for-agent`
+
+**Commits:** fbac91d (route fix, 11 route tests, Worker spec); 4fb3360 (schedule page captures).
+
+**AC4 route tests (a).** `test/later-period-payment-routes.test.ts`: 11 of 11, through the real guest handler and a stubbed Paystack TEST provider. Covers the schedule (six periods, Pay only for the payable period, no future period shown as paid), refusal of future, paid and unknown periods, the period 2 session, the callback confirming period 2, duplicate callback idempotence, wrong amount refused with no period recorded, unknown reference refused, no session refused (401), and no provider reference or Guest identity in the HTML.
+- Deviation: the routes were written before these tests. Mutation check by temporary edits, each restored from a backup and confirmed with cmp: (1) Pay form for every period, 1 failure; (2) callback skips provider verification, 3 failures; (3) Guest identity added to the HTML, 1 failure.
+
+**Worker spec (b).** `apps/cloudflare/test/later-period-payments.spec.ts`: 1 of 1. 180 nights, the clock fixed at START and advanced to check-in after period 1 is confirmed. Period 1 is paid; period 2 starts in its own session; a future period is refused; a wrong amount is refused and then confirmed; the duplicate callback is idempotent; after `abortAllDurableObjects`, period 2 is still paid, checked through the Durable Object store.
+- Two defects found and fixed in the process. (i) The Worker refused every later period with "A valid email address is required": the period start did not hydrate the remote guest contact before its synchronous read (ADR 0087; the card continuation does). Fixed in fbac91d. (ii) The schedule rendered after writing 200 headers, so a render failure could not reach the 400 path. Fixed in fbac91d.
+- Open, not fixed here: cold start. The first HTTP request to a restarted Durable Object fails with "no such table: guest_threads" in `resolveBrowserSession` (`findThreadsForPrincipal`), unless a Durable Object store read ran first. The spec does that read first, as demo-extended-stay.spec.ts does. This is a Worker defect outside the period code, and it needs its own issue.
+
+**Captures (c).** `.scratch/demo-launch/capture-12-schedule.ts`, one process, real Chrome, a real HTTP server over the synthetic stay: 8 PNGs `period-schedule-{light,dark}-{320,390,768,1280}.png` and `findings-schedule.txt`. Findings: none. Viewed 390 light: period 1 Paid, period 2 Payable now with its Pay button, periods 3 to 6 Not payable yet.
+- Chat workspace version: NOT built. The chat does not link to the schedule page; adding that link needs a chat surface on a confirmed booking. AC4 requires the kit components and the shared helper for chat and page, so this part is open.
+
+**Regression.** `npx tsx --test test/later-period-payment-routes.test.ts test/pay-each-demo-billing-period.test.ts test/integrate-card-payment-application.test.ts test/owner-payable-per-period.test.ts test/demo-extended-cancellation-notice.test.ts test/demo-extended-stay-180.test.ts`: 69 of 69. `npm run test:workers -- apps/cloudflare/test/demo-extended-stay.spec.ts`: 2 of 2. `npm run check`: 0 errors.
+
+**Item 5 (back-office payables), follow-up for the owner:** unchanged, recorded in round 3.
+
+**Resolution:** NOT resolved. Open: the chat-workspace schedule (AC4 kit and shared-helper parity), the cold-start defect in the Worker (its own issue), and the first-period payable state check is covered only by the route and Worker tests, with no live-journey evidence.
