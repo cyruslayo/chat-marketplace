@@ -20,6 +20,8 @@ import { openNodeSqliteDatabase } from "../packages/platform-core/src/node-sqlit
 import { bookingContractArtifactFromView } from "../apps/web/src/booking-contract-artifact.js";
 import { bookingContractArtifactToA2UI } from "../apps/web-agent/src/booking-contract-a2ui.js";
 import { confirmationContent } from "../apps/web-agent/src/confirmation-presentation.js";
+import { SHORTLET_SCHEMA_MIGRATIONS } from "../apps/cloudflare/src/schema.js";
+import { SHORTLET_EXPORT_TABLES } from "../apps/cloudflare/src/do-export.js";
 import { PeriodPaymentManager } from "../domains/shortlet/src/period-payment.js";
 import { CancellationApplication } from "../apps/web/src/cancellation-application.js";
 import { addDays, extendUnit, withConfirmedExtendedStay, type DemoJourneyContext } from "./helpers/demo-extended-journey.js";
@@ -534,4 +536,13 @@ test("AC6: The guest contract wording never claims counsel approval for the Noti
       assert.doesNotMatch(text, /counsel[- ]approved|approved by counsel|counsel has approved|legally approved/i);
     }
   });
+});
+
+// ---- AC3 (round 3): Cloudflare parity ----
+
+test("AC3: The per-period notice adjustment is in the shared Shortlet migrations and the daily export, with ids and amounts only", () => {
+  const migration = SHORTLET_SCHEMA_MIGRATIONS.find((entry) => entry.statements.some((statement) => statement.includes("owner_period_notice_adjustments")));
+  assert.ok(migration, "a shared Shortlet migration creates the notice adjustment table");
+  assert.ok(SHORTLET_EXPORT_TABLES.includes("owner_period_notice_adjustments"), "the daily export owner group carries the table");
+  assert.doesNotMatch(migration.statements.join("\n"), /psp|reference|account/i, "the table holds no payment references or account numbers");
 });

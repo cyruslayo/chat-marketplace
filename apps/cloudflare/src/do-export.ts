@@ -48,6 +48,7 @@ export const SHORTLET_EXPORT_TABLES = [
   "owner_payouts",
   "owner_payout_recoveries",
   "owner_ledger_period_bindings",
+  "owner_period_notice_adjustments",
   "pilot_notifications",
   "reserve_payout_records",
   "revenue_adjustments",
