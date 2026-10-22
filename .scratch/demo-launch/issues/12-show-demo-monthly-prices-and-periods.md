@@ -133,3 +133,14 @@ Resolution needs: AC4 later-period screen and Worker test, standalone-page parit
 **Item 5 (back-office payables), follow-up for the owner:** unchanged, recorded in round 3.
 
 **Resolution:** NOT resolved. Open: the chat-workspace schedule (AC4 kit and shared-helper parity), the cold-start defect in the Worker (its own issue), and the first-period payable state check is covered only by the route and Worker tests, with no live-journey evidence.
+
+### Executor round 5: status stays `ready-for-agent`
+
+**Cold-start defect: root cause and fix (0ef32b5).** The first HTTP request after a Durable Object restart failed with "no such table: guest_threads". Cause: in the Cloudflare split (ADR 0101) the shortlet Durable Object runs its interaction store with `includeThreadSessionSchema: false`, because the guest threads live in PlatformDO. `resolveBrowserSession` read the thread set from the local store, so any request whose browser session was not in the in-memory cache failed. Before the restart the cache served every request, which hid the defect. The earlier store-read workaround in the spec masked it too. Fix: the thread set is read through `env.guestData.findThreadsForPrincipal`, the port the split uses elsewhere.
+- Red: the spec without the workaround returned 500 and failed (`later-period-payments.spec.ts`, 1 of 1 failed). Green after the fix: 1 of 1.
+- Affected Worker specs after the fix: shortlet-ops-commerce-isolation 6 of 6; pilot-worker 4 of 4; ops-restore 3 of 3; demo-extended-stay 2 of 2; later-period-payments 1 of 1. `npm run check`: 0 errors.
+- Node: `guest-cross-tab-concurrency.test.ts` 18 of 18, `guest-account-sign-in.test.ts` 69 of 69, `guest-account-sign-in-chromium.test.ts` 2 of 2 when run alone. A combined run of 18 session, account and browser files (259 tests) gave 3 different failures on two runs, in different tests each time. None reproduces file by file. Recorded as load-dependent flakiness, not yet root-caused.
+
+**AC4 chat surface (item 2): NOT built. Blocker with evidence.** The chat renders one conventional-route link per surface (`client.ts`, "Open full details"), and the confirmed booking contract already uses it for the contract page. A schedule link would either replace the contract link, or need a new navigational chat action (`shortlet-app.ts` `EVENT_STAGE_ALLOW_LIST` and an event handler) or a second link slot in the chat client. That is a chat-shell change, outside this issue's minimal scope, so I stopped rather than guess. AC4 chat/page parity stays open.
+
+**Resolution:** NOT resolved. Open: the chat schedule link (above); the combined-run flakiness; the Worker empty-email risk (remote guest contact, `card-payment.ts` and the period path use `contact?.contactEmail ?? ""`); the back-office per-period payables (owner follow-up); the `dist/client.js` rebuild (`node apps/local-guest/scripts/build-client.mjs`, owner).
