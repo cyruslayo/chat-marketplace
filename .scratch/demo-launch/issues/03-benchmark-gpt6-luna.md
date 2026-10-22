@@ -1,6 +1,6 @@
 # Benchmark GPT-6 Luna against the baseline
 
-Status: ready-for-agent
+Status: needs-info
 Type: AFK
 Blocked by: 02
 Requested: 21 Oct 2026
@@ -53,3 +53,5 @@ The owner wants the agent's performance measured before the demo. ADR 0079 also 
 | 0080 | Fabricated prices or bookings mean the model fails | AC4 verdict |
 
 ## Comments
+
+- 22 Oct 2026: The benchmark needs an owner-supplied OpenRouter credential for three live runs. No credential is available in this environment. Do not record or request the credential in repository files or logs. Resume when the owner supplies it through the approved secret store or environment.

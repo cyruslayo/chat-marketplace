@@ -2,7 +2,7 @@
 
 Status: ready-for-human
 Type: HITL
-Blocked by: 02, 04, 05
+Blocked by: 02, 03, 04, 05
 Requested: 21 Oct 2026
 
 ## Parent
@@ -41,11 +41,11 @@ Nothing has been deployed yet.
 7. Point the Paystack **test-mode** webhook at the deployed webhook route, and confirm `PAYSTACK_CALLBACK_BASE_URL` equals the origin (ADR 0087).
 8. Record the URL, the Worker version id and the date in `## Comments`. Do not record secrets.
 
-Before deploying, run `npm run check`, `npm run test:workers` (the merge gate) and `npm test`. Run the browser phase in the background; it takes about 12 minutes.
+Before deploying, run the pre-deploy gate on the commit being deployed: `npm run check`, `npm run test:workers` and `npm test`. Run the browser phase in the background; it takes about 12 minutes.
 
 ## Acceptance criteria
 
-- [ ] AC1: `npm run check`, `npm run test:workers` and `npm test` pass on the commit that is deployed.
+- [ ] AC1: the pre-deploy gate passes on the commit that is deployed: `npm run check`, `npm run test:workers` and `npm test`.
 - [ ] AC2: `GET <origin>/welcome` returns 200 with the demo notice. It is not a 503 `NOT_PROVISIONED`.
 - [ ] AC3: `GET <origin>/demo/photos/<unit>/1.jpg` returns 200 `image/jpeg`.
 - [ ] AC4: `/_ops` without the secret returns 401 or 403.

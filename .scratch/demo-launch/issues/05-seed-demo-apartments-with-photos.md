@@ -1,8 +1,8 @@
 # Seed demo apartments with photos
 
-Status: ready-for-agent
+Status: claimed
 Type: AFK
-Blocked by: 04
+Blocked by: 04, 08, 09, 10, 11, 12, 13
 Requested: 21 Oct 2026
 
 ## Parent
@@ -38,6 +38,7 @@ Visitors need apartments that look real so they can try the agent, but none of t
   - Download only from the official Unsplash or Pexels hosts, into a fresh directory.
 - **Data files** in `apps/cloudflare/demo/`:
   - `operators.csv` and `inventory.csv`, in the import format;
+  - include the versioned Monthly Agreed Amounts and utilities/servicing fields required by issues 09 and 10;
   - `photo_urls` are absolute `https://<demo-origin>/demo/photos/...` URLs;
   - the origin is substituted at provision time, not hardcoded.
 - **`scripts/demo-provision.ts`** (with an npm script `demo:provision`):
@@ -49,15 +50,15 @@ Visitors need apartments that look real so they can try the agent, but none of t
 
 ## Acceptance criteria
 
-- [ ] AC1: All 8 demo units import cleanly and pass `isEligibleUnit`. A test loads the CSVs through `inventory-import.ts`.
+- [ ] AC1: All 8 demo units import cleanly, pass `isEligibleUnit`, and support valid demo quotes through 180 nights. A test loads the CSVs through `inventory-import.ts` and the monthly quote path.
 - [ ] AC1 failure path: a row with a non-HTTPS or `localhost` photo URL is rejected by the import, and an existing test covers the rejection reason.
 - [ ] AC2: Every unit has 4–5 photos, and every `photo_urls` path exists under `apps/cloudflare/public/demo/photos/`. A test checks the files exist.
 - [ ] AC3: Every photo file is credited in `CREDITS.md`. A test asserts one credit line per file.
 - [ ] AC4: `scripts/demo-provision.ts` is idempotent: a second run leaves the unit count at 8.
 - [ ] AC4 failure path: without `OPS_SHARED_SECRET`, or with a wrong one, the script exits non-zero and imports nothing.
 - [ ] AC5: The script never prints or writes the secret (ADR 0075).
-- [ ] AC6: Discovery returns the demo units with photo cards, and the unit-detail gallery shows all photos. Verify in the local walkthrough and take screenshots.
-- [ ] AC7: `npm run check` and `npm test` pass.
+- [ ] AC6: Discovery returns the demo units with monthly photo cards, and each unit-detail gallery shows all photos. Verify in the local walkthrough and take screenshots.
+- [ ] AC7: `npm run check` passes and the issue's own and affected tests pass (commands and counts recorded in Comments); the full `npm test` and `npm run test:workers` run at the batch's pre-merge gate.
 
 ## ADR compliance
 

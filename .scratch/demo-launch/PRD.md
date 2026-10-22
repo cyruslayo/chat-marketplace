@@ -20,6 +20,12 @@ The agent is the product being sold. The demo exists to show it working, not to 
 | Photos | Free-licence stock interiors (Unsplash or Pexels), credited, with each unit labelled "Demo listing" |
 | Legal and launch gates | Knowingly deferred for the demo only, and recorded in an ADR rather than silently bypassed |
 
+## Demo monthly booking scope (22 Oct 2026)
+
+The owner authorized a staging-only Extended Stay demo through 180 consecutive nights. Production keeps ADR 0092's 30–90-night maximum. Short Stays keep their existing 1–14-night rule, and 15–29 nights remain unsupported. A 180-night demo uses six 30-night Billing Periods. Guests pay each period through a separate payment session, under ADR 0092's due and reminder rules. The demo must use the real quote, Request to Book, confirmation and payment paths with synthetic inventory. It must not imply a six-calendar-month term or a production policy change. Cancellation and Notice to End may demonstrate ADR 0092 values with clear demo labels. An unpaid period may trigger human contact, but the demo must never simulate lockout or a legal termination process.
+
+Monthly booking support is new work because no Extended Stay pricing or payment-period runtime exists today. Issues 08–13 define the dependency chain before issue 05 seeds and provisions monthly demo units. ADR 0105 records the staging-only maximum exception. The monthly-stays tracker remains independent; this work does not resolve its open tickets or the pending legal review.
+
 ## Current state (findings, 21 Oct 2026, `main` b48bca6)
 
 - **Nothing is deployed.**

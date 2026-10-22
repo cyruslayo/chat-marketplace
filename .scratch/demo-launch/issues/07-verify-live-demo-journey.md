@@ -2,7 +2,7 @@
 
 Status: ready-for-agent
 Type: AFK
-Blocked by: 03, 06
+Blocked by: 03, 06, 08, 09, 10, 11, 12, 13
 Requested: 21 Oct 2026
 
 ## Parent
@@ -18,11 +18,11 @@ Before the owner shares the link, someone has to walk the deployed demo as a vis
 Walk the live origin in a real browser, such as the in-app browser:
 
 1. Open `/` and `/welcome`. Expect no invite prompt, the demo notice and the test-payment copy.
-2. In chat, send "I need a 2-bedroom in Lekki for 3 months from 1 November". Expect stay cards with photos and the "Demo listing" chip.
+2. In chat, request a synthetic unit for 180 consecutive nights. Expect a six-period quote, monthly price, photos and the "Demo listing" chip.
 3. Refine the search ("something cheaper, closer to VI"), then open a unit. The gallery should load all its photos.
 4. Ask the agent to compare two units and explain a price. The prices must match the unit data (no fabrication).
-5. Request to book. Confirm explicitly; the request should be auto-accepted (issue 04) and the offer screen shown.
-6. Pay with the Paystack published test card. Expect the booking to show as confirmed.
+5. Request to book. Confirm explicitly; the request should be auto-accepted (issue 04) and the offer should show all six periods.
+6. Pay the first period with the Paystack published test card. Expect one confirmed 180-night booking. Automated Worker and Node tests cover later-period payment sessions without waiting six months in the live demo.
 7. Check that `/_ops` shows model-handled turns above zero for the session (issue 02 counter).
 
 Then:
@@ -38,6 +38,7 @@ Then:
 - [ ] AC3: There is no horizontal overflow and no control under 44px at any captured width (ADR 0078).
 - [ ] AC4: `demo-script.md` exists.
 - [ ] AC5: The benchmark verdict from issue 03 is "go". Link it in `## Comments`.
+- [ ] AC6: The live quote shows six 30-night periods and the confirmed contract records a 180-night stay. Later-period payment rules pass the focused issue 10 tests.
 
 ## ADR compliance
 

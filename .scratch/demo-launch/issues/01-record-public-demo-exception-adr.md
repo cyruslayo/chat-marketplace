@@ -51,6 +51,7 @@ The owner wants a public demo before the legal, verification and processor gates
 | 0079 | Model changes require evaluation and rollback evidence | Kept (AC1) |
 | 0080 | Deterministic routes preserve critical workflow authority | Kept (AC1) |
 | 0087 | Server-authoritative Paystack with test credentials and matching callback origin | Kept (AC1) |
+| 0092 | Extended Stay length and Billing Period policy | Demo maximum amended by ADR 0105; 30-night periods and separate payments remain (AC1) |
 | 0095 | Cloudflare authority, processor scope, and real-data gates | Hosting kept; demo processor/data exception only (AC1, AC3) |
 | 0104 | Public demo restriction and public commerce restriction | Demo restriction superseded in part; commerce stays off (AC1) |
 
@@ -61,6 +62,8 @@ The owner wants a public demo before the legal, verification and processor gates
 - 22 Oct 2026: A later full run passed 2042 of 2044 non-browser tests, with two failures. Its browser phase passed 223 of 227 tests, with one failure and three skips. The failures were two back-office `fetch failed` errors and one Windows screenshot-write `UNKNOWN` error in `discovery-phase3-chromium.test.ts`. The full-suite gate remains open.
 - 22 Oct 2026: The lock watcher repeatedly observed `git.exe` children of `ChatGPT.exe` (parent PID 130772) during `.git/index.lock` creation. Its executable belongs to the installed `OpenAI.Codex` package. The observed locks cleared normally. This is process correlation, not a direct file-operation trace. The original stale lock's creator remains unproven.
 - 22 Oct 2026: `npm run check` passed. `npm test -- --test-concurrency=4` passed all 2046 non-browser tests. All 35 browser files passed: 224 tests passed, three skipped, zero failed, and zero timed out. Commit `fcc4978` contains the Windows build/capture fix that removed the observed file-write failures.
+- 22 Oct 2026: The owner authorized synthetic staging demo bookings up to 180 consecutive nights. ADR 0105 now records that narrow exception. ADR 0092's 30–90-night production maximum, 30-night Billing Periods, separate Period Payments, and existing Short Stay policy remain unchanged.
+- 22 Oct 2026: The staging demo may show ADR 0092's existing cancellation and Notice to End values as demo terms. Counsel's approval and any lawful process for an unpaid period remain open.
 
 ## Definition of Done review
 
