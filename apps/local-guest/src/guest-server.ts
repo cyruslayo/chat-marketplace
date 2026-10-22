@@ -24,7 +24,10 @@ import type { AssetLoader } from "../../../packages/platform-core/src/asset-load
 import { nodeAssetLoader } from "../../../packages/platform-core/src/node-asset-loader.js";
 import { GUEST_HTML_SECURITY_HEADERS } from "../../../packages/platform-core/src/security-headers.js";
 import { toDiscoveryProjection, StayDateRange, dateKeyInLagos, type ExtendedStayPolicy } from "../../../domains/shortlet/src/index.js";
-import { extendedStayUnitFacts } from "../../web-agent/src/extended-stay-presentation.js";
+import { billingPeriodStatusText, extendedStayUnitFacts } from "../../web-agent/src/extended-stay-presentation.js";
+import { formatBookingMoney } from "../../web-agent/src/booking-presentation.js";
+import { formatGuestDate } from "../../web-agent/src/guest-content.js";
+import type { BillingPeriodProjection } from "../../../domains/shortlet/src/index.js";
 import { createGuestShell, type StaticAsset } from "./guest-shell.js";
 import { createCommerceRouteModule } from "./commerce-route-module.js";
 import { MAX_TURN_TEXT_LENGTH } from "./turn-limits.js";
@@ -625,6 +628,26 @@ async function readJsonBody(req: HttpRequestLike): Promise<unknown> {
   } catch (error) {
     throw error instanceof Error ? error : new Error("Invalid JSON body");
   }
+}
+
+/**
+ * Demo-launch issue 12 AC4 (ADR 0092): the Guest's Billing Period schedule. Each period shows its dates, amount, due date and
+ * status; only the period that is payable now has a payment button, and each payment is a separate Paystack TEST session.
+ */
+function renderPeriodScheduleHtml(offerId: string, periods: readonly BillingPeriodProjection[]): string {
+  const rows = periods.map((period) => {
+    const label = `${GUEST_FACT_LABELS.billingPeriod} ${period.periodIndex}`;
+    const action = period.status === "payable" && !period.live
+      ? `<form method="post" action="/payments/periods/${encodeURIComponent(offerId)}/${period.periodIndex}"><button class="ui-button ui-button--primary ui-button--block" type="submit">Pay ${escapeHtml(label)}</button></form>`
+      : "";
+    return `<li class="ui-panel" data-period="${period.periodIndex}" data-status="${escapeHtml(period.status)}"><h2>${escapeHtml(label)}</h2><p>${escapeHtml(formatGuestDate(period.checkIn) ?? period.checkIn)} to ${escapeHtml(formatGuestDate(period.checkOut) ?? period.checkOut)} (${period.nights} nights)</p><p>${escapeHtml(formatBookingMoney(period.amountKobo))} · due ${escapeHtml(formatGuestDate(period.dueDate) ?? period.dueDate)}</p><p class="ui-money-metadata">${escapeHtml(billingPeriodStatusText(period))}</p>${action}</li>`;
+  }).join("");
+  return pageShell({
+    title: GUEST_FACT_LABELS.paymentSchedule,
+    frame: appFrameHtml({ threadId: null, publicStep: "stay" }),
+    style: "",
+    body: `<div class="guest-editorial"><section aria-label="${escapeHtml(GUEST_FACT_LABELS.paymentSchedule)}"><h1>${escapeHtml(GUEST_FACT_LABELS.paymentSchedule)}</h1><p>${escapeHtml(GUEST_FACT_LABELS.firstPeriodOnly)}</p><ol>${rows}</ol></section></div>`,
+  });
 }
 
 // Demo-launch issue 12: the standalone page derives the Extended Stay monthly facts from the same domain projection as chat.
@@ -4723,6 +4746,56 @@ export function createGuestRequestHandler(
       return;
     }
 
+    // Demo-launch issue 12 AC4 (ADR 0092): a Guest's later Billing Period schedule, and a separate Paystack TEST session
+    // for one period. The schedule shows what is payable now; it never shows a future period as paid.
+    const periodPageMatch = /^\/bookings\/periods\/([^/]+)$/.exec(url.pathname);
+    const periodStartMatch = /^\/payments\/periods\/([^/]+)\/(\d+)$/.exec(url.pathname);
+    if ((periodPageMatch && req.method === "GET") || (periodStartMatch && req.method === "POST")) {
+      const offerId = decodeURIComponent((periodPageMatch ?? periodStartMatch)![1]!);
+      const session = await resolveBrowserSession(
+        env,
+        browserSessions,
+        readGuestSession(req),
+        sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId,
+        accountCredentialsOf(req),
+        guestAccounts,
+      );
+      if (!session) {
+        sendJson(res, 401, { ok: false, code: "GUEST_SESSION_REQUIRED" });
+        return;
+      }
+      const principal: CommandPrincipal = { id: session.principalId, role: "guest", tenantId: session.tenantId };
+      try {
+        // getArtifact throws unless this Guest owns the offer (ADR 0087 binding of references to the Guest).
+        app.environment.cardPaymentApp.getArtifact(offerId, principal);
+        if (periodPageMatch) {
+          const periods = app.environment.cardPaymentApp.projectBillingPeriods(offerId);
+          res.writeHead(200, GUEST_HTML_HEADERS);
+          res.end(renderPeriodScheduleHtml(offerId, periods));
+          return;
+        }
+        if (!payments) {
+          sendJson(res, 503, { ok: false, code: "PAYSTACK_UNAVAILABLE" });
+          return;
+        }
+        const started = await app.environment.cardPaymentApp.initializePeriodPaystackCheckout(
+          offerId,
+          Number(periodStartMatch![2]),
+          principal,
+          payments,
+        );
+        if (!isApprovedPaystackCheckoutUrl(started.authorizationUrl)) {
+          sendPageError(req, res, 502, "INVALID_CHECKOUT_URL");
+          return;
+        }
+        res.writeHead(303, { Location: started.authorizationUrl });
+        res.end();
+      } catch {
+        sendJson(res, 400, { ok: false, code: "PERIOD_PAYMENT_REJECTED" });
+      }
+      return;
+    }
+
     if (
       req.method === "GET" &&
       url.pathname === "/payments/paystack/callback"
@@ -4750,6 +4823,22 @@ export function createGuestRequestHandler(
       }
       const checkout =
         app.environment.cardPaymentApp.getCheckoutSessionByReference(reference);
+      // Demo-launch issue 12 AC4: a later Billing Period's own session verifies through the period path, then returns to its schedule.
+      const periodOfferId = checkout ? undefined : app.environment.cardPaymentApp.periodOfferIdForReference(reference);
+      if (!checkout && periodOfferId !== undefined) {
+        try {
+          const periodOffer = app.environment.conditionalOfferApp.getOffer(periodOfferId);
+          const expectedPayerId = periodOffer.parties.distinctPayer?.id ?? periodOffer.parties.primaryGuest.id;
+          if (!session.principalId || session.principalId !== expectedPayerId || !session.tenantId || !periodOffer.tenantId || session.tenantId !== periodOffer.tenantId)
+            throw new Error("Payment callback is not authorized for this Guest");
+          await app.environment.cardPaymentApp.verifyAndConfirmPaystack(reference, app.environment.systemPrincipal(), payments);
+          res.writeHead(303, { Location: `/bookings/periods/${encodeURIComponent(periodOfferId)}` });
+          res.end();
+        } catch {
+          sendJson(res, 400, { ok: false, code: "PERIOD_PAYMENT_CALLBACK_REJECTED" });
+        }
+        return;
+      }
       if (!checkout) {
         sendJson(res, 400, { ok: false, code: "PAYMENT_CALLBACK_UNKNOWN" });
         return;

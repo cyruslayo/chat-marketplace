@@ -82,6 +82,13 @@ export class CardPaymentApplication {
     return this.#requirePeriods().projectBillingPeriods(offerId, now);
   }
 
+  /** Demo-launch issue 12 AC4: the offer a later Billing Period's provider reference belongs to, or undefined for any other reference. */
+  periodOfferIdForReference(pspReference: string): string | undefined {
+    const periods = this.#periods;
+    if (!periods || !periods.hasPeriodSession(pspReference)) return undefined;
+    return periods.offerIdForPeriodReference(pspReference);
+  }
+
   /** Reminders due at `now`: seven, three and one days before each unpaid due date (ADR 0092). */
   periodRemindersDue(offerId: string, now: Date = this.#clock()): readonly PeriodReminder[] {
     return this.#requirePeriods().remindersDue(offerId, now);

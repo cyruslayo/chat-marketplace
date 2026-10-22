@@ -99,3 +99,12 @@ export function extendedStayDraftFacts(quote: {
     ...(quote.utilitiesAndServicing === undefined ? {} : { utilitiesAndServicing: quote.utilitiesAndServicing as ExtendedStayUtilitiesFacts }),
   };
 }
+
+/** One Billing Period's status line on the schedule (ADR 0092). It never describes a future period as paid. */
+export function billingPeriodStatusText(period: { readonly status: string; readonly overdue: boolean; readonly live: boolean }): string {
+  if (period.status === "paid") return "Paid";
+  if (period.status === "payable") return period.live ? "Payable now. A payment is in progress." : "Payable now.";
+  if (period.status === "overdue" || period.overdue) return "Overdue. The payment was not received by its due date.";
+  if (period.status === "unpaid_at_start") return "Unpaid at the start of this Billing Period.";
+  return "Not payable yet. Payable once the previous Billing Period has started.";
+}
