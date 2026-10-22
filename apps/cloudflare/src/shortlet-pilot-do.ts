@@ -15,6 +15,7 @@ import { LocalGuestEnvironment } from "../../local-guest/src/fixture.js";
 import { GUEST_CODE_HASHING_KEY_ENV, loadGuestAccountComposition } from "../../local-guest/src/guest-account-composition.js";
 import { GUEST_COMMERCE_COMPOSITION, createGuestRequestHandler } from "../../local-guest/src/guest-server.js";
 import { LocalApartmentOwnerEnvironment, createOwnerRequestHandler } from "../../local-owner/src/index.js";
+import { createDemoRequestAcceptor } from "../../local-owner/src/demo-operator-acceptance.js";
 import { ResendEmailSender } from "../../pilot/src/notifications/email-sender.js";
 import { PilotNotifier } from "../../pilot/src/notifications/pilot-notifier.js";
 import { createPilotRequestHandler, type PilotRequestHandler } from "../../pilot/src/pilot-request-handler.js";
@@ -245,6 +246,23 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
     });
 
     const demoCheckIn = new Date(clock().getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const operatorEnvironment = new LocalApartmentOwnerEnvironment(
+      {
+        tenantId: configuration.tenantId,
+        operatorId: provisioning.operatorId,
+        operatorName: provisioning.operatorName,
+        representativePersonId: "production-session-actor",
+        representativePersonName: "Production Operator Representative",
+        adminId: "production-operations",
+        unitId: provisioning.unitId,
+        propertyId: provisioning.propertyId,
+        seedFixture: false,
+        production: true,
+        clock,
+      },
+      { database, unitRepository, operatorRepository, receiptBlobs, telemetrySink, guestDataIsRemote: true },
+    );
+
     const guestEnvironment = new LocalGuestEnvironment(
       {
         tenantId: configuration.tenantId,
@@ -262,27 +280,14 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
         deterministicPsp: false,
         clock,
         payments,
+        // ADR 0105: the staging demo labels, banners and accepts through the operator command path; off in production.
+        demo: configuration.demo,
+        ...(configuration.demo ? { demoRequestAcceptor: createDemoRequestAcceptor(operatorEnvironment, configuration.demoAcceptDelaySeconds) } : {}),
         // ADR 0090: manual transfer only when the business account is configured.
         manualTransferAccount: configuration.manualTransferAccount,
         ...(configuration.receiptMaxBytes === null ? {} : { receiptMaxBytes: configuration.receiptMaxBytes }),
       },
       { database, unitRepository, receiptBlobs, telemetrySink, guestData: platformGuestData(this.env, configuration.tenantId), guestDataIsRemote: true },
-    );
-    const operatorEnvironment = new LocalApartmentOwnerEnvironment(
-      {
-        tenantId: configuration.tenantId,
-        operatorId: provisioning.operatorId,
-        operatorName: provisioning.operatorName,
-        representativePersonId: "production-session-actor",
-        representativePersonName: "Production Operator Representative",
-        adminId: "production-operations",
-        unitId: provisioning.unitId,
-        propertyId: provisioning.propertyId,
-        seedFixture: false,
-        production: true,
-        clock,
-      },
-      { database, unitRepository, operatorRepository, receiptBlobs, telemetrySink, guestDataIsRemote: true },
     );
 
     const modelClient = createConciergeModelClient(configuration.concierge);

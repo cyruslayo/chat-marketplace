@@ -6,6 +6,7 @@
 import {
   COMMERCE_GUEST_COPY,
   GUEST_ACCOUNT_COPY,
+  GUEST_DEMO_COPY,
   GUEST_FACT_LABELS,
   GUEST_GLOSSARY,
   GUEST_JOURNEY,
@@ -511,6 +512,24 @@ export interface StayCardParts {
   readonly photoSrc?: string;
   /** How many photos the stay has; two or more show the "1 / N" badge over the photo. */
   readonly photoCount?: number;
+  /** ADR 0105: the staging demo labels every synthetic stay with the "Demo listing" chip. */
+  readonly demoListing?: boolean;
+}
+
+/** The "Demo listing" chip (ADR 0105): one helper for the chat card, the results page and the unit detail. */
+export function demoListingChipHtml(): string {
+  return `<span class="ui-chip ui-chip--demo" data-demo-listing>${escapeHtml(GUEST_FACT_LABELS.demoListing)}</span>`;
+}
+
+/** The staging demo banner, inserted once after the body tag of every guest page (ADR 0105). */
+export function demoBannerHtml(): string {
+  return `<div role="note" data-demo-banner class="ui-banner ui-banner--neutral">${escapeHtml(GUEST_DEMO_COPY.banner)}</div>`;
+}
+
+export function withDemoBanner(html: string): string {
+  // The landing page already carries the demo notice in its hero (data-landing-demo); a second banner would repeat it.
+  if (html.includes("data-landing-demo")) return html;
+  return html.replace(/<body\b[^>]*>/i, (body) => `${body}${demoBannerHtml()}`);
 }
 
 function photoCountHtml(count: number | undefined): string {
@@ -537,7 +556,7 @@ export function stayCardInnerHtml(parts: StayCardParts): string {
     parts.deposit === undefined
       ? ""
       : `<p class="ui-money-metadata">+ ${escapeHtml(parts.deposit)} ${GUEST_FACT_LABELS.refundableSecurityDeposit}</p>`;
-  return `${stayPhotoHtml(parts)}<p class="ui-stay-card__where">${icon("pin")}${escapeHtml(parts.where)}</p><h2 class="ui-stay-card__title"><a href="${href}">${escapeHtml(parts.title)}</a></h2><div class="ui-stay-card__facts" aria-label="Stay facts">${facts}</div><div class="ui-stay-card__total"><p class="ui-money-total">${escapeHtml(parts.total)}</p><p class="ui-money-metadata">${escapeHtml(parts.totalLabel)}</p>${deposit}</div><a class="ui-button ui-button--primary ui-button--block ui-stay-card__view" href="${href}">${GUEST_GLOSSARY.viewUnit}<span class="ui-sr-only">: ${escapeHtml(parts.title)}</span></a>`;
+  return `${stayPhotoHtml(parts)}${parts.demoListing === true ? demoListingChipHtml() : ""}<p class="ui-stay-card__where">${icon("pin")}${escapeHtml(parts.where)}</p><h2 class="ui-stay-card__title"><a href="${href}">${escapeHtml(parts.title)}</a></h2><div class="ui-stay-card__facts" aria-label="Stay facts">${facts}</div><div class="ui-stay-card__total"><p class="ui-money-total">${escapeHtml(parts.total)}</p><p class="ui-money-metadata">${escapeHtml(parts.totalLabel)}</p>${deposit}</div><a class="ui-button ui-button--primary ui-button--block ui-stay-card__view" href="${href}">${GUEST_GLOSSARY.viewUnit}<span class="ui-sr-only">: ${escapeHtml(parts.title)}</span></a>`;
 }
 
 export function stayCardPartsHtml(
@@ -573,6 +592,8 @@ export interface StayPreview {
   readonly photoSrc?: string;
   readonly photoCount?: number;
   readonly unitId?: string;
+  /** ADR 0105: true only while the staging demo is on. */
+  readonly demoListing?: boolean;
 }
 
 export function stayCardParts(preview: StayPreview): StayCardParts {
@@ -607,6 +628,7 @@ export function stayCardParts(preview: StayPreview): StayCardParts {
     ...(preview.photoCount === undefined
       ? {}
       : { photoCount: preview.photoCount }),
+    ...(preview.demoListing === true ? { demoListing: true } : {}),
   };
 }
 

@@ -66,6 +66,18 @@ export const LOCAL_GUEST_PORT = 3001;
 /** Default receipt size limit (5 MiB); a configuration default, overridable per deployment (ADR 0090). */
 export const DEFAULT_RECEIPT_MAX_BYTES = 5 * 1024 * 1024;
 
+/**
+ * ADR 0105: accepts a disclosed Booking Request through the operator command path (grant, confirmation, offer issue and
+ * audit). The staging composition supplies one; the fixture simulator never implements this.
+ */
+const MILLISECONDS_PER_SECOND = 1000;
+
+export interface DemoRequestAcceptor {
+  /** ADR 0105: seconds after disclosure before the demo accepts; zero accepts at once. */
+  readonly delaySeconds: number;
+  accept(requestId: string): void;
+}
+
 export interface LocalGuestFixtureConfig {
   readonly databasePath: string;
   /** Optional durable pilot inventory. When set, deterministic fixture seeding is disabled. */
@@ -84,6 +96,10 @@ export interface LocalGuestFixtureConfig {
   readonly initialGuestContactEmail?: string | null;
   /** Keep false only for deterministic delivery-failure fixtures. */
   readonly autoDeliverRequests?: boolean;
+  /** ADR 0105: the staging demo. Labels synthetic stays, shows the demo banner and accepts requests through the acceptor. */
+  readonly demo?: boolean;
+  /** ADR 0105: set only with `demo`; a request is accepted through this acceptor and nowhere else. */
+  readonly demoRequestAcceptor?: DemoRequestAcceptor;
   /** Deterministic demo check-in; checkout is derived from requested nights. */
   readonly demoCheckIn: string;
   /** @deprecated Checkout is derived from the requested nights. */
@@ -701,6 +717,36 @@ export class LocalGuestEnvironment {
     });
     const offer = this.conditionalOfferApp.issue(requestId, representative);
     return { offerId: offer.offerId };
+  }
+
+  /**
+   * ADR 0105: the staging demo accepts a submitted Booking Request through the operator command path, then reads the
+   * Conditional Booking Offer the command issued. Fails closed when the demo acceptor is not configured.
+   */
+  acceptDisclosedRequest(requestId: string): { readonly offerId: string } {
+    const acceptor = this.config.demoRequestAcceptor;
+    if (acceptor === undefined)
+      throw new Error(`Demo acceptance is not configured; ${requestId} stays awaiting an Operator (ADR 0105)`);
+    acceptor.accept(requestId);
+    const offer = this.interactionStore.findConditionalOfferByRequestId(requestId);
+    if (!offer)
+      throw new Error(`No Conditional Booking Offer was issued for ${requestId}`);
+    return { offerId: offer.offerId };
+  }
+
+  /**
+   * ADR 0105: the lazy due-check for a demo delay. Reads the request's disclosure time and the injected clock at call time,
+   * and accepts only once the configured delay has elapsed. Returns whether this call accepted the request.
+   */
+  acceptDueDemoRequest(requestId: string): boolean {
+    const acceptor = this.config.demoRequestAcceptor;
+    if (acceptor === undefined) return false;
+    const artifact = this.bookingRequestApp.getArtifact(requestId, this.guestPrincipal());
+    if (artifact.facts.status !== "disclosed") return false;
+    const dueAt = Date.parse(artifact.facts.disclosedAt) + acceptor.delaySeconds * MILLISECONDS_PER_SECOND;
+    if (this.clock().getTime() < dueAt) return false;
+    acceptor.accept(requestId);
+    return true;
   }
 
   /** Local-only deterministic fixture for decline and timeout browser tests. */

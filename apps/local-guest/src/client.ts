@@ -31,6 +31,7 @@ import {
   requestScreenHtml,
   resultRowPartsHtml,
   signInOfferHtml,
+  demoListingChipHtml,
   stayCardInnerHtml,
   ticketHtml,
   unitAboutHtml,
@@ -307,6 +308,13 @@ function organizeUnitDetail(mount: HTMLElement): void {
   if (tileFacts.some((tile) => !tile.fact || tile.fact.value.trim() === ""))
     return;
   root.classList.add("unit-detail-root");
+  // ADR 0105: the demo chip is the kit's chip on the chat sheet too, as on the standalone page.
+  const demoCaption = [...root.children].find((child) => child.textContent?.trim() === GUEST_FACT_LABELS.demoListing);
+  if (demoCaption) {
+    const template = document.createElement("template");
+    template.innerHTML = demoListingChipHtml();
+    demoCaption.replaceWith(template.content);
+  }
 
   // Guest gallery issue 01: the photos Weaver rendered become the shared listing gallery, as on the full page.
   const images: HTMLImageElement[] = [];
@@ -868,6 +876,7 @@ function decorateDiscoveryCards(mount: HTMLElement): void {
     );
     const view = buttons[0];
     const parts: StayCardParts = {
+      ...(children.some((child) => child.textContent?.trim() === GUEST_FACT_LABELS.demoListing) ? { demoListing: true } : {}),
       href: `/stays/${encodeURIComponent(unitId)}`,
       title: title.textContent?.trim() ?? "",
       where: where.value,

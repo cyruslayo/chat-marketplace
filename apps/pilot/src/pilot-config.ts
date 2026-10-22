@@ -8,6 +8,7 @@ import {
 } from "../../../domains/shortlet/src/index.js";
 import {
   betaInviteCode,
+  demoMode,
   pilotDeployment,
   publicOrigin,
   required,
@@ -56,7 +57,9 @@ export function loadPilotConfiguration(
   source: PilotEnvironmentSource = process.env,
 ): PilotConfiguration {
   const deployment = pilotDeployment(source.SHORTLET_DEPLOYMENT);
-  betaInviteCode(deployment, source.SHORTLET_BETA_INVITE_CODE);
+  // ADR 0105: refused before any file is read, so the production refusal never depends on inventory files.
+  const demo = demoMode(deployment, source.SHORTLET_DEMO);
+  betaInviteCode(deployment, source.SHORTLET_BETA_INVITE_CODE, demo);
   publicOrigin(required(source, "SHORTLET_PUBLIC_ORIGIN"));
   const databasePath = required(source, "SHORTLET_DB_PATH");
   const inventoryPath = required(source, "SHORTLET_INVENTORY_PATH");

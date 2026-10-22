@@ -840,13 +840,13 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
     validateToolCall: validateAssistantToolCall,
     executeTool: executeAssistantTool,
     taskSummary: shortletTaskSummary,
-    discoverySurface: (artifact, surfaceId) => discoveryArtifactToA2UI({ artifact: artifact as never, surfaceId }),
+    discoverySurface: (artifact, surfaceId) => discoveryArtifactToA2UI({ artifact: artifact as never, surfaceId, demo: environment.config.demo === true }),
     unitDetailSurface: ({ unitId, checkIn, checkOut, surfaceId }) => {
       const unit = environment.unitRepository.findById(unitId);
       if (!unit) throw new Error("The selected Unit no longer exists");
       const unitProjection = toDiscoveryProjection(unit, new StayDateRange(checkIn, checkOut, environment.clock()));
       const artifact = unitDetailArtifactFromProjection({ unit: unitProjection, checkIn, checkOut, projectionVersion: 1, viewer: environment.guestPrincipal() });
-      return unitDetailArtifactToA2UI({ artifact, surfaceId });
+      return unitDetailArtifactToA2UI({ artifact, surfaceId, demo: environment.config.demo === true });
     },
     pendingActionSurface: (action, surfaceId) => pendingActionToA2UI({ action, surfaceId }) as readonly unknown[],
     bookingRequestSurface: (artifact, surfaceId) => bookingRequestArtifactToA2UI({ artifact: artifact as never, surfaceId }),

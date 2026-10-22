@@ -476,12 +476,19 @@ test("AC8: The landing stylesheet uses design tokens only and the foundations st
     /#[0-9a-fA-F]{6}\b/,
     "no hex colour in the markup",
   );
-  // Failure path: any edit to the foundations stylesheet fails this check.
-  // git diff --quiet exits non-zero (and throws) when the file differs from the committed foundations.
-  execFileSync(
+  // Failure path: any edit to the foundations stylesheet other than the Guest UI kit's demo chip fails this check.
+  // Issue 04 (ADR 0105) adds one `.ui-chip--demo` line to the kit block; no other line may change.
+  const changed = execFileSync(
     "git",
-    ["diff", "--quiet", "--", "apps/web/src/shortlet-foundations.css"],
-    { cwd: fileURLToPath(new URL("..", import.meta.url)), stdio: "ignore" },
+    ["diff", "-U0", "--", "apps/web/src/shortlet-foundations.css"],
+    { cwd: fileURLToPath(new URL("..", import.meta.url)), encoding: "utf8" },
+  )
+    .split("\n")
+    .filter((line) => (line.startsWith("+") || line.startsWith("-")) && !line.startsWith("+++") && !line.startsWith("---"));
+  assert.deepEqual(
+    changed.filter((line) => !(line.startsWith("+") && /\.ui-chip--demo\b/.test(line))),
+    [],
+    "the foundations stylesheet changes only by the demo chip line",
   );
 });
 

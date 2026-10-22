@@ -26,11 +26,13 @@ export interface UnitDetailToA2UIInput {
   readonly action: UnitDetailActionContext;
 }
 
-export function unitDetailArtifactToA2UI({ artifact, surfaceId, backToResults }: {
+export function unitDetailArtifactToA2UI({ artifact, surfaceId, backToResults, demo = false }: {
   readonly artifact: UnitDetailArtifact;
   readonly surfaceId: string;
   /** The discovery artifact the Guest came from; omitted when there are no results to return to. */
   readonly backToResults?: { readonly artifactId: string };
+  /** ADR 0105: the staging demo labels the synthetic stay with the "Demo listing" chip. */
+  readonly demo?: boolean;
 }): readonly A2UIServerMessage[] {
   const { facts } = artifact;
   const action = artifact.actions.find((candidate) => candidate.type === "request-to-book");
@@ -50,11 +52,13 @@ export function unitDetailArtifactToA2UI({ artifact, surfaceId, backToResults }:
   const components: A2UIComponent[] = [
     { id: "root", component: "Column", children: [
       ...(photoIds.length > 0 ? photoIds : [`${prefix}-photo-unavailable`]),
+      ...(demo ? [`${prefix}-demo-listing`] : []),
       `${prefix}-title`, `${prefix}-location`, `${prefix}-bedrooms`, `${prefix}-bathrooms`, `${prefix}-sleeps`,
       `${prefix}-price-label`, `${prefix}-price`, ...depositId,
       `${prefix}-about-heading`, `${prefix}-about`, `${prefix}-amenities-heading`, `${prefix}-amenities`,
       ...inspectionId, `${prefix}-disclosure`, `${prefix}-actions`,
     ] },
+    ...(demo ? [{ id: `${prefix}-demo-listing`, component: "Text" as const, text: GUEST_FACT_LABELS.demoListing, variant: "caption" as const }] : []),
     { id: `${prefix}-title`, component: "Text", text: facts.title, variant: "h2" },
     { id: `${prefix}-location`, component: "Text", text: location, variant: "caption" },
     ...tiles.map((tile, index) => ({ id: `${prefix}-${["bedrooms", "bathrooms", "sleeps"][index]}`, component: "Text" as const, text: guestFact([GUEST_FACT_LABELS.bedrooms, GUEST_FACT_LABELS.bathrooms, GUEST_FACT_LABELS.sleeps][index]!, tile.text) })),

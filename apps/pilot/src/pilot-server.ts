@@ -14,6 +14,7 @@ import {
   LocalApartmentOwnerEnvironment,
   createOwnerRequestHandler,
 } from "../../local-owner/src/index.js";
+import { createDemoRequestAcceptor } from "../../local-owner/src/demo-operator-acceptance.js";
 import {
   JsonOperatorRepository,
   JsonUnitRepository,
@@ -127,33 +128,6 @@ export function startPilotServer(
   // ADR 0004: one SQLite handle and one inventory serve the Guest and Operator compositions in this process.
   const database = openNodeSqliteDatabase(configuration.databasePath);
   const unitRepository = new JsonUnitRepository(configuration.inventoryPath);
-  const guestEnvironment = new LocalGuestEnvironment(
-    {
-      databasePath: configuration.databasePath,
-      inventoryPath: configuration.inventoryPath,
-      tenantId: configuration.tenantId,
-      operatorId: configuration.operatorId,
-      operatorName: configuration.operatorName,
-      representativePersonId: "production-session-actor",
-      representativePersonName: "Production Operator Representative",
-      adminId: "production-operations",
-      guestId: generatePlatformId("guest-bootstrap"),
-      guestName: "Guest",
-      initialGuestPhoneNumber: null,
-      initialGuestContactEmail: null,
-      demoCheckIn,
-      production: true,
-      deterministicPsp: false,
-      clock,
-      payments,
-      // ADR 0090: manual transfer only when the business account is configured.
-      manualTransferAccount: configuration.manualTransferAccount,
-      ...(configuration.receiptMaxBytes === null
-        ? {}
-        : { receiptMaxBytes: configuration.receiptMaxBytes }),
-    },
-    { database, unitRepository },
-  );
   const operatorEnvironment = new LocalApartmentOwnerEnvironment(
     {
       databasePath: configuration.databasePath,
@@ -179,6 +153,37 @@ export function startPilotServer(
         { clock },
       ),
     },
+  );
+
+  const guestEnvironment = new LocalGuestEnvironment(
+    {
+      databasePath: configuration.databasePath,
+      inventoryPath: configuration.inventoryPath,
+      tenantId: configuration.tenantId,
+      operatorId: configuration.operatorId,
+      operatorName: configuration.operatorName,
+      representativePersonId: "production-session-actor",
+      representativePersonName: "Production Operator Representative",
+      adminId: "production-operations",
+      guestId: generatePlatformId("guest-bootstrap"),
+      guestName: "Guest",
+      initialGuestPhoneNumber: null,
+      initialGuestContactEmail: null,
+      demoCheckIn,
+      production: true,
+      deterministicPsp: false,
+      clock,
+      payments,
+      // ADR 0105: the staging demo labels, banners and accepts through the operator command path; off in production.
+      demo: configuration.demo,
+      ...(configuration.demo ? { demoRequestAcceptor: createDemoRequestAcceptor(operatorEnvironment, configuration.demoAcceptDelaySeconds) } : {}),
+      // ADR 0090: manual transfer only when the business account is configured.
+      manualTransferAccount: configuration.manualTransferAccount,
+      ...(configuration.receiptMaxBytes === null
+        ? {}
+        : { receiptMaxBytes: configuration.receiptMaxBytes }),
+    },
+    { database, unitRepository },
   );
 
   const modelClient =

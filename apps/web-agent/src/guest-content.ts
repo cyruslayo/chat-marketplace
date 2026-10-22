@@ -311,6 +311,21 @@ export const GUEST_FACT_LABELS = Object.freeze({
   fitReason: "Why it fits",
   /** "Photos: 7" on a discovery card; the stay card shows it as the "1 / 7" badge over the photo. */
   photos: "Photos",
+  /** ADR 0105: the chip on every synthetic stay in the staging demo (stay cards and the unit detail). */
+  demoListing: "Demo listing",
+});
+
+/**
+ * ADR 0105: the staging demo's visitor copy. Only the demo banner and the test-payment copy live here; the landing page
+ * keeps its own demo notice in landing-copy.ts. Nothing in this table is a live policy term.
+ */
+const GUEST_DEMO_NOTICE = "Demo: illustrative listings, not live bookings.";
+const GUEST_DEMO_TEST_PAYMENTS = "Payments use Paystack test mode with the published test card. Do not enter real personal data.";
+export const GUEST_DEMO_COPY = Object.freeze({
+  notice: GUEST_DEMO_NOTICE,
+  testPayments: GUEST_DEMO_TEST_PAYMENTS,
+  /** The banner every guest page carries in demo mode. */
+  banner: `${GUEST_DEMO_NOTICE} ${GUEST_DEMO_TEST_PAYMENTS}`,
 });
 
 /** The Compare control on a discovery result, before and after the Guest picks that stay (issue 13b). */

@@ -82,6 +82,8 @@ import {
   type DiscoveryArtifactProjection,
 } from "../../../apps/web-agent/src/index.js";
 import { unitDetailArtifactFromProjection } from "../../../apps/web/src/unit-detail-artifact.js";
+import { bannerWrapped } from "./html-banner.js";
+import { demoListingChipHtml, withDemoBanner } from "./guest-kit.js";
 import {
   errorPage,
   escapeHtml,
@@ -626,6 +628,7 @@ async function readJsonBody(req: HttpRequestLike): Promise<unknown> {
 export function renderConventionalUnitDetailHtml(
   unit: Unit,
   photoUrl?: (url: string) => string,
+  demo = false,
 ): string {
   const photos = normalizePhotoUrls(unit.photoUrls);
   // Guest gallery issue 01: the shared gallery. Every photo shows and links to its full image without JavaScript
@@ -638,7 +641,7 @@ export function renderConventionalUnitDetailHtml(
     title: unit.title,
     frame: appFrameHtml({ threadId: null, publicStep: "stay" }),
     style: `${LISTING_GALLERY_STYLE}.unit-detail-sheet{position:relative;z-index:1;display:grid;gap:var(--space-4);margin-block-start:calc(-1 * var(--space-6));padding:var(--space-5);border:1px solid var(--color-border-subtle);border-radius:var(--radius-sheet) var(--radius-sheet) var(--radius-card) var(--radius-card);background:var(--color-surface);box-shadow:var(--elevation-active)}.unit-detail-sheet h1,.unit-detail-sheet h2,.unit-detail-sheet p,.unit-detail-sheet ul{margin:0}.unit-detail-location{display:flex;align-items:center;gap:var(--space-1);color:var(--color-text-secondary)}.unit-detail-description{white-space:pre-line}.unit-detail-page{display:grid;gap:var(--space-4)}.unit-detail-page .listing-gallery{z-index:0}.unit-detail-page .ui-action-bar{position:sticky}.unit-detail-page .ui-ticket{margin-block:var(--space-2)}.stay-results{list-style:none;margin:0;padding:0;display:grid;gap:var(--space-4)}.stay-card-photo{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:var(--radius-card);background:var(--color-surface-subtle)}.stay-card-photo--empty{display:grid;place-items:center;color:var(--color-text-secondary)}.stay-card-facts{display:flex;flex-wrap:wrap;gap:var(--space-2)}.stay-card-facts span{display:inline-flex;min-block-size:2.75rem;align-items:center;padding:var(--space-2) var(--space-3);border:1px solid var(--color-border-subtle);border-radius:var(--radius-pill);background:var(--color-surface-subtle);font-size:var(--font-size-small)}.stay-card-price{display:grid;gap:var(--space-1);padding-block-start:var(--space-3);border-block-start:1px solid var(--color-border-subtle)}.stay-card-price p{margin:0}.guest-editorial .ui-button--primary,.guest-editorial .ui-button--block{border-radius:var(--radius-pill)}.ui-panel p{margin:0}`,
-    body: `<div class="guest-editorial unit-detail-page">${photoMarkup}<section class="unit-detail-sheet" aria-label="Stay details"><p class="unit-detail-location">${icon("pin")}${escapeHtml(unit.location.neighbourhood)}, ${escapeHtml(unit.location.city)} · exact address after payment</p><h1>${escapeHtml(unit.title)}</h1>${unitTilesHtml(unitTiles(unit.bedrooms, unit.bathrooms, unit.capacity))}${unitIndicativePriceHtml(unit.price.nightlyKobo)}${unitAboutHtml(unit.description)}</section><div class="ui-action-bar"><p class="ui-action-bar__sum"><strong>${formatNgnKobo(unit.price.nightlyKobo)}</strong><span class="ui-money-metadata">Price per night (indicative)</span></p><a class="ui-button ui-button--primary ui-button--block" href="/">Continue to Request to Book</a></div></div>`,
+    body: `<div class="guest-editorial unit-detail-page">${photoMarkup}<section class="unit-detail-sheet" aria-label="Stay details">${demo ? demoListingChipHtml() : ""}<p class="unit-detail-location">${icon("pin")}${escapeHtml(unit.location.neighbourhood)}, ${escapeHtml(unit.location.city)} · exact address after payment</p><h1>${escapeHtml(unit.title)}</h1>${unitTilesHtml(unitTiles(unit.bedrooms, unit.bathrooms, unit.capacity))}${unitIndicativePriceHtml(unit.price.nightlyKobo)}${unitAboutHtml(unit.description)}</section><div class="ui-action-bar"><p class="ui-action-bar__sum"><strong>${formatNgnKobo(unit.price.nightlyKobo)}</strong><span class="ui-money-metadata">Price per night (indicative)</span></p><a class="ui-button ui-button--primary ui-button--block" href="/">Continue to Request to Book</a></div></div>`,
   });
 }
 
@@ -870,6 +873,7 @@ function quotedNightCount(
 export function renderConventionalSearchHtml(
   artifact: DiscoveryArtifactProjection,
   photoUrl?: (url: string) => string,
+  demo = false,
 ): string {
   const { checkIn, checkOut } = artifact.facts.filters;
   const nights = quotedNightCount(checkIn, checkOut);
@@ -880,7 +884,7 @@ export function renderConventionalSearchHtml(
           (action) => action.type === "view-unit" && action.unitId === unit.id,
         )?.conventionalRoute ?? `/stays/${encodeURIComponent(unit.id)}`;
       const photo = unit.photoUrls[0];
-      return `<li data-unit-id="${escapeHtml(unit.id)}">${stayCardHtml({ href: route, title: unit.title, neighbourhood: unit.location.neighbourhood, city: unit.location.city, allInStayTotalKobo: unit.price.allInStayTotalKobo, refundableSecurityDepositKobo: unit.price.refundableSecurityDepositKobo, nightlyKobo: unit.price.nightlyKobo, bedrooms: unit.bedrooms ?? null, bathrooms: unit.bathrooms, capacity: unit.capacity, ...(nights === undefined ? {} : { nights }), ...(photo === undefined ? {} : { photoSrc: photoUrl ? photoUrl(photo) : photo, photoCount: unit.photoUrls.length }) })}</li>`;
+      return `<li data-unit-id="${escapeHtml(unit.id)}">${stayCardHtml({ href: route, title: unit.title, neighbourhood: unit.location.neighbourhood, city: unit.location.city, allInStayTotalKobo: unit.price.allInStayTotalKobo, refundableSecurityDepositKobo: unit.price.refundableSecurityDepositKobo, nightlyKobo: unit.price.nightlyKobo, bedrooms: unit.bedrooms ?? null, bathrooms: unit.bathrooms, capacity: unit.capacity, ...(nights === undefined ? {} : { nights }), ...(demo ? { demoListing: true } : {}), ...(photo === undefined ? {} : { photoSrc: photoUrl ? photoUrl(photo) : photo, photoCount: unit.photoUrls.length }) })}</li>`;
     })
     .join("");
   const stay =
@@ -3567,7 +3571,7 @@ export function createGuestRequestHandler(
         return;
       }
       res.writeHead(200, GUEST_HTML_HEADERS);
-      res.end(renderConventionalSearchHtml(artifact, options.localPhotoUrl));
+      res.end(renderConventionalSearchHtml(artifact, options.localPhotoUrl, app.environment.config.demo === true));
       return;
     }
 
@@ -3588,7 +3592,7 @@ export function createGuestRequestHandler(
         return;
       }
       res.writeHead(200, GUEST_HTML_HEADERS);
-      res.end(renderConventionalUnitDetailHtml(unit, options.localPhotoUrl));
+      res.end(renderConventionalUnitDetailHtml(unit, options.localPhotoUrl, app.environment.config.demo === true));
       return;
     }
 
@@ -5365,7 +5369,7 @@ export function createGuestRequestHandler(
       createLandingRouteModule({
         assets,
         binaryAssets: options.landingBinaryAssets ?? nodeLandingAssetLoader(),
-        demo: options.landingDemo === true,
+        demo: options.landingDemo === true || defaultApp.environment.config.demo === true,
         secureCookie,
         originAccepted: (req) =>
           browserOriginAccepted(req, options.publicOrigin),
@@ -5398,7 +5402,11 @@ export function createGuestRequestHandler(
       return sessionRuntimesBuilt;
     },
     handle(req, res) {
-      return shell.handle(req, res);
+      // ADR 0105: the staging demo banner covers every guest HTML response (chat, landing, results, unit detail, account).
+      return shell.handle(
+        req,
+        defaultApp.environment.config.demo === true ? bannerWrapped(res, req.method ?? "", withDemoBanner) : res,
+      );
     },
     close: () =>
       new Promise<void>((resolve) => {

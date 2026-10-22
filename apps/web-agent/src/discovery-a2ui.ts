@@ -76,6 +76,8 @@ export interface DiscoveryArtifactToA2UIInput {
   readonly surfaceId: string;
   /** Issue 13b: the result already picked for comparison, if any. */
   readonly compareSelection?: string;
+  /** ADR 0105: the staging demo labels each synthetic stay with the "Demo listing" chip. */
+  readonly demo?: boolean;
 }
 
 export const VIEW_UNIT_EVENT = "shortlet.discovery.view-unit";
@@ -176,6 +178,7 @@ function unitComponents(
   filters: Readonly<Record<string, unknown>>,
   budgetKobo?: number,
   compare?: CompareControl,
+  demo = false,
 ): { readonly cardId: string; readonly components: readonly A2UIComponent[] } {
   const prefix = `unit-${unit.id}`;
   // Guest UI consistency issue 05: always the neighbourhood-level place (ADR 0066), so the chat card and the page say the same.
@@ -206,6 +209,7 @@ function unitComponents(
         id: `${prefix}-content`,
         component: "Column",
         children: [
+          ...(demo ? [`${prefix}-demo-listing`] : []),
           ...(unit.photoUrls.length > 0 ? [`${prefix}-primary-photo`] : [`${prefix}-photo-unavailable`]),
           ...(unit.photoUrls.length > 1 ? [`${prefix}-photo-count`] : []),
           `${prefix}-title`, `${prefix}-location`, `${prefix}-facts`,
@@ -218,6 +222,7 @@ function unitComponents(
           ...(compare === undefined ? [] : [`${prefix}-compare-button`]),
         ],
       },
+      ...(demo ? [{ id: `${prefix}-demo-listing`, component: "Text" as const, text: GUEST_FACT_LABELS.demoListing, variant: "caption" as const }] : []),
       { id: `${prefix}-title`, component: "Text", text: unit.title, variant: "h3" },
       { id: `${prefix}-location`, component: "Text", text: guestFact(GUEST_FACT_LABELS.where, location), variant: "caption" },
       ...(unit.photoUrls.length > 0 ? [{
@@ -277,6 +282,7 @@ export function discoveryArtifactToA2UI({
   artifact,
   surfaceId,
   compareSelection,
+  demo = false,
 }: DiscoveryArtifactToA2UIInput): readonly A2UIServerMessage[] {
   // Issue 13b: comparing needs at least two results; a stale pick is ignored.
   const selected = artifact.facts.results.find((unit) => unit.id === compareSelection);
@@ -288,6 +294,7 @@ export function discoveryArtifactToA2UI({
     artifact.facts.filters,
     typeof artifact.facts.filters.maxPriceKobo === "number" ? artifact.facts.filters.maxPriceKobo : undefined,
     compare,
+    demo,
   ));
   const checkIn = typeof artifact.facts.filters.checkIn === "string" ? formatGuestDate(artifact.facts.filters.checkIn) : undefined;
   const checkOut = typeof artifact.facts.filters.checkOut === "string" ? formatGuestDate(artifact.facts.filters.checkOut) : undefined;

@@ -5,6 +5,7 @@ import { errorPage } from "../../web/src/ui-kit.js";
 import type { PilotConfiguration } from "./pilot-config.js";
 import { databaseHealthy } from "./database-health.js";
 import { SlidingWindowRateLimiter } from "./rate-limiter.js";
+import { bannerWrapped } from "../../local-guest/src/html-banner.js";
 
 /** Staging marks every Guest and Operator page so nobody mistakes the beta for real bookings (issue 22). */
 export const BETA_BANNER_TEXT = "Beta: test payments only. No real bookings are made.";
@@ -41,7 +42,8 @@ export interface PilotRequestHandler {
 }
 
 /** Which handler record the handler actually uses; the rest of the configuration stays with the compositor. */
-export type PilotHandlerConfiguration = Pick<PilotConfiguration, "publicOrigin" | "deployment" | "limits">;
+/** ADR 0105: `demo` is optional so the handler's existing configurations stay valid; the composition always sets it. */
+export type PilotHandlerConfiguration = Pick<PilotConfiguration, "publicOrigin" | "deployment" | "limits"> & Partial<Pick<PilotConfiguration, "demo">>;
 
 const GUEST_SESSION_COOKIE = "shortlet_guest_session";
 const HOUR_MS = 60 * 60 * 1000;
@@ -114,91 +116,13 @@ function sendRateLimited(
   res.end(transformHtml ? transformHtml(html) : html);
 }
 
-interface CapturedHeader {
-  readonly name: string;
-  readonly value: HttpResponseHeaderValueOrList;
-}
-
-function lowerCase(name: string): string {
-  return name.toLowerCase();
-}
-
-function contentTypeOf(headers: readonly CapturedHeader[]): string | null {
-  const entry = [...headers].reverse().find((candidate) => lowerCase(candidate.name) === "content-type");
-  const value = entry?.value;
-  return typeof value === "string" ? value : null;
-}
-
-function contentEncodingOf(headers: readonly CapturedHeader[]): string | null {
-  const entry = [...headers].reverse().find((candidate) => lowerCase(candidate.name) === "content-encoding");
-  const value = entry?.value;
-  return typeof value === "string" ? value : null;
-}
-
-/**
- * Staging only: captures the handler's HTML response and applies the beta banner to the complete page — the same
- * wrap the proxy applied by re-parsing a buffered body, with the content-length rewritten and `transfer-encoding`
- * dropped. JSON and assets pass through untouched, and a `HEAD` is never transformed.
- */
-function bannerWrapped(
-  inner: HttpResponseLike,
-  method: string,
-  transform: (html: string) => string,
-): HttpResponseLike {
-  const htmlResponse = (view: readonly CapturedHeader[]): boolean => {
-    const contentType = contentTypeOf(view);
-    return contentType !== null && /^text\/html\b/i.test(contentType) && contentEncodingOf(view) === null && method !== "HEAD";
-  };
-  let buffering = false;
-  let capturedStatus = 0;
-  let captured: CapturedHeader[] = [];
-  const wrapped: HttpResponseLike = {
-    get headersSent() {
-      return inner.headersSent || buffering;
-    },
-    writeHead(statusCode, headers) {
-      if (!buffering) {
-        // The buffering decision is made from the handler's own written headers, not a re-parsed proxied body.
-        const view = [...captured, ...Object.entries(headers ?? {}).map(([name, value]) => ({ name, value }))];
-        if (!htmlResponse(view)) return inner.writeHead(statusCode, headers);
-        buffering = true;
-      }
-      capturedStatus = statusCode;
-      for (const [name, value] of Object.entries(headers ?? {})) captured.push({ name, value });
-      return wrapped;
-    },
-    setHeader(name, value) {
-      if (!buffering) return inner.setHeader(name, value);
-      const lowered = lowerCase(name);
-      captured = captured.filter((entry) => lowerCase(entry.name) !== lowered);
-      captured.push({ name: lowered, value });
-      return wrapped;
-    },
-    end(body) {
-      if (!buffering) return inner.end(body);
-      // Rewrite content-length and drop transfer-encoding exactly as the buffering proxy did.
-      const source = body === undefined ? "" : Buffer.isBuffer(body) ? body.toString("utf8") : body;
-      const bodyBytes = Buffer.from(transform(source), "utf8");
-      const remaining = captured.filter((entry) => lowerCase(entry.name) !== "transfer-encoding" && lowerCase(entry.name) !== "content-length");
-      // node:http accepts setHeader only before writeHead flushes, so the replay sets everything first.
-      for (const entry of remaining) inner.setHeader(entry.name, entry.value);
-      inner.setHeader("Content-Length", String(bodyBytes.length));
-      inner.writeHead(capturedStatus, {});
-      return inner.end(bodyBytes);
-    },
-    destroy(error) {
-      return inner.destroy(error);
-    },
-  };
-  return wrapped;
-}
-
 export function createPilotRequestHandler(
   configuration: PilotHandlerConfiguration,
   deps: PilotRequestHandlerDeps,
 ): PilotRequestHandler {
   const guard = requestGuard(configuration, deps.clock, deps.clientAddress);
-  const transformHtml = configuration.deployment === "staging" ? withBetaBanner : undefined;
+  // ADR 0105: in the demo the guest handler carries the demo banner on every guest page, so the beta banner is not added.
+  const transformHtml = configuration.deployment === "staging" && !configuration.demo ? withBetaBanner : undefined;
 
   const dispatch = async (req: HttpRequestLike, res: HttpResponseLike): Promise<void> => {
     const url = new URL(req.url ?? "/", configuration.publicOrigin);

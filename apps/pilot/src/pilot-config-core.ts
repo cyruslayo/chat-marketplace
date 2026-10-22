@@ -17,6 +17,10 @@ export interface PilotEnvironmentSource extends PaystackEnvironmentSource, Conci
   readonly SHORTLET_RECEIPT_MAX_BYTES?: string;
   readonly SHORTLET_DEPLOYMENT?: string;
   readonly SHORTLET_BETA_INVITE_CODE?: string;
+  /** ADR 0105: the staging-only public demo switch. Refused in production; any other value fails closed. */
+  readonly SHORTLET_DEMO?: string;
+  /** ADR 0105: seconds between a submitted request's disclosure and its demo acceptance. Unset means zero. */
+  readonly SHORTLET_DEMO_ACCEPT_DELAY_SECONDS?: string;
   readonly SHORTLET_CHAT_TURNS_PER_SESSION_PER_HOUR?: string;
   readonly SHORTLET_CHAT_TURNS_PER_ADDRESS_PER_HOUR?: string;
   readonly SHORTLET_NEW_SESSIONS_PER_ADDRESS_PER_HOUR?: string;
@@ -95,6 +99,10 @@ export function pilotLimits(source: PilotEnvironmentSource): PilotLimits {
 export type PilotDeployment = "production" | "staging";
 export interface PilotCoreConfiguration {
   readonly deployment: PilotDeployment;
+  /** ADR 0105: true only on staging with SHORTLET_DEMO=enabled. The invite gate is off while it is on. */
+  readonly demo: boolean;
+  /** ADR 0105: zero unless the demo is on and the operator set a delay. */
+  readonly demoAcceptDelaySeconds: number;
   readonly betaInviteCode: string | null;
   readonly publicOrigin: string;
   readonly paystack: PaystackConfiguration;
@@ -152,8 +160,32 @@ export function pilotDeployment(value: string | undefined): PilotDeployment {
   throw new Error("SHORTLET_DEPLOYMENT must be production or staging");
 }
 
-export function betaInviteCode(deployment: PilotDeployment, value: string | undefined): string | null {
+/**
+ * ADR 0105: the demo is a staging-only exception. Production refuses it at startup; any value other than enabled or
+ * disabled fails closed. Unset means off.
+ */
+export function demoMode(deployment: PilotDeployment, value: string | undefined): boolean {
+  const setting = value?.trim() ?? "";
+  if (setting !== "" && setting !== "enabled" && setting !== "disabled") throw new Error("SHORTLET_DEMO must be enabled or disabled");
+  if (setting === "enabled" && deployment === "production") throw new Error("SHORTLET_DEMO is refused in production (ADR 0105)");
+  return setting === "enabled";
+}
+
+/** ADR 0105: the demo acceptance delay when none is configured. Zero accepts a submitted request at once. */
+export const DEFAULT_DEMO_ACCEPT_DELAY_SECONDS = 0;
+
+/** A whole number of seconds, or the default. Anything else fails closed at startup. */
+export function demoAcceptDelaySeconds(value: string | undefined): number {
+  const setting = value?.trim() ?? "";
+  if (setting === "") return DEFAULT_DEMO_ACCEPT_DELAY_SECONDS;
+  if (!/^\d+$/.test(setting) || !Number.isSafeInteger(Number(setting))) throw new Error("SHORTLET_DEMO_ACCEPT_DELAY_SECONDS must be a whole number of seconds");
+  return Number(setting);
+}
+
+export function betaInviteCode(deployment: PilotDeployment, value: string | undefined, demo = false): string | null {
   const code = value?.trim() ?? "";
+  // ADR 0105: with the demo on, the staging invite gate is off, so a visitor needs only the staging URL.
+  if (demo) return null;
   if (deployment === "production") {
     if (code !== "") throw new Error("SHORTLET_BETA_INVITE_CODE is only used when SHORTLET_DEPLOYMENT=staging");
     return null;
@@ -165,7 +197,10 @@ export function betaInviteCode(deployment: PilotDeployment, value: string | unde
 /** Explicit source only: no environment lookup or file access. */
 export function loadPilotCoreConfiguration(source: PilotEnvironmentSource): PilotCoreConfiguration {
   const deployment = pilotDeployment(source.SHORTLET_DEPLOYMENT);
-  const inviteCode = betaInviteCode(deployment, source.SHORTLET_BETA_INVITE_CODE);
+  const demo = demoMode(deployment, source.SHORTLET_DEMO);
+  const inviteCode = betaInviteCode(deployment, source.SHORTLET_BETA_INVITE_CODE, demo);
+  const acceptDelaySeconds = demoAcceptDelaySeconds(source.SHORTLET_DEMO_ACCEPT_DELAY_SECONDS);
+  if (!demo && acceptDelaySeconds !== DEFAULT_DEMO_ACCEPT_DELAY_SECONDS) throw new Error("SHORTLET_DEMO_ACCEPT_DELAY_SECONDS requires SHORTLET_DEMO=enabled");
   const origin = publicOrigin(required(source, "SHORTLET_PUBLIC_ORIGIN"));
   const paystackSource: PilotEnvironmentSource = { ...source, PAYSTACK_CALLBACK_BASE_URL: source.PAYSTACK_CALLBACK_BASE_URL?.trim() || origin };
   // ADR 0087: retain live-only production and origin binding, with test-only staging.
@@ -180,7 +215,7 @@ export function loadPilotCoreConfiguration(source: PilotEnvironmentSource): Pilo
     throw new Error("OpenRouter is permitted only for the staging demo (ADR 0105)");
   }
   return Object.freeze({
-    deployment, betaInviteCode: inviteCode, concierge,
+    deployment, demo, demoAcceptDelaySeconds: acceptDelaySeconds, betaInviteCode: inviteCode, concierge,
     limits: pilotLimits(source), notifications: notificationConfiguration(source),
     paystackTransfersEnabled: paystackTransfersEnabled(source.SHORTLET_PAYSTACK_TRANSFERS),
     manualTransferAccount: manualTransferAccount(source), receiptMaxBytes: receiptMaxBytes(source.SHORTLET_RECEIPT_MAX_BYTES),

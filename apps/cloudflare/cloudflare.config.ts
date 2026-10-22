@@ -88,6 +88,9 @@ function workerFor(environment: PilotEnvironment) {
       ...optionalText("LLM_MODEL"),
       ...optionalText("LLM_PROVIDER_LABEL"),
       ...optionalText("CONCIERGE_DAILY_MODEL_CALL_CAP"),
+      // ADR 0105: the staging-only public demo switch; the shared loader refuses it when SHORTLET_DEPLOYMENT is production.
+      ...optionalText("SHORTLET_DEMO"),
+      ...optionalText("SHORTLET_DEMO_ACCEPT_DELAY_SECONDS"),
       // Non-secret notification settings the operator supplies at deploy time.
       ...optionalText("SHORTLET_NOTIFICATION_FROM"),
       ...optionalText("SHORTLET_OPERATOR_ALERT_EMAILS"),

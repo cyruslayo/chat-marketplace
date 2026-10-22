@@ -17,6 +17,7 @@ import {
   stayTotalLabel,
 } from "../../web-agent/src/guest-content.js";
 import { formatNgnKobo } from "../../web-agent/src/discovery-a2ui.js";
+import { GUEST_DEMO_COPY } from "../../web-agent/src/guest-content.js";
 import {
   formatStayFoot,
   formatTicketDate,
@@ -520,7 +521,7 @@ export function renderLandingHtml(
   const illustrations = placeholders || demo;
   // ADR 0078: keep the disclosure inside the hero's padded content, below the sticky app bar.
   const demoNotice = demo
-    ? `<p class="ui-banner ui-banner--neutral" data-landing-demo>${escapeHtml(LANDING_COPY.demoNotice)}</p>`
+    ? `<p class="ui-banner ui-banner--neutral" data-landing-demo>${escapeHtml(LANDING_COPY.demoNotice)} ${escapeHtml(GUEST_DEMO_COPY.testPayments)}</p>`
     : "";
   const beatCaptions = [
     caption(

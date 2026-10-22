@@ -923,8 +923,9 @@ export class AssistantRuntime {
           };
         }
 
-        // ADR 0041: production disclosure must wait for an authorized Operator's real confirmation.
-        if (environment.config.production) {
+        // ADR 0041: production disclosure must wait for an authorized Operator's real confirmation. ADR 0105: the staging demo
+        // is the only exception, and it accepts through the operator command path rather than the fixture simulator.
+        if (environment.config.production && environment.config.demoRequestAcceptor?.delaySeconds !== 0) {
           return {
             ok: true,
             message: "Your booking request has been submitted to the host and is awaiting review.",
@@ -939,7 +940,9 @@ export class AssistantRuntime {
 
         // Attempt local operator simulation
         try {
-          const { offerId } = environment.simulateOperatorAcceptance(disclosed.requestId);
+          const { offerId } = environment.config.demoRequestAcceptor === undefined
+            ? environment.simulateOperatorAcceptance(disclosed.requestId)
+            : environment.acceptDisclosedRequest(disclosed.requestId);
           context.candidateTaskState.currentOfferId = offerId;
           const offerSurfaceId = `thread-${threadId}:offer:${offerId}`;
           context.candidateActiveSurfaces.set(OFFER_STAGE, offerSurfaceId);

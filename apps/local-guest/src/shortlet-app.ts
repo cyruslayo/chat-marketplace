@@ -2554,6 +2554,7 @@ export class LocalGuestApp {
             )?.conventionalRoute,
             textFallback: `${unit.title}. ${unit.location.neighbourhood}, ${unit.location.city}. Entire Place; capacity ${unit.capacity} guests.`,
             a2uiMessages: unitDetailArtifactToA2UI({
+              demo: environment.config.demo === true,
               artifact: unitDetailArtifactFromProjection({
                 unit,
                 ...this.#stayDatesFor(thread),
@@ -2832,6 +2833,7 @@ export class LocalGuestApp {
         return discoverySurface(
           projection.discoveryArtifact,
           projection.discoverySurfaceId,
+          this.#environment.config.demo === true,
         );
       }
       return null;
@@ -3139,6 +3141,7 @@ export class LocalGuestApp {
             artifact: unitDetailArtifact,
             surfaceId,
             backToResults: { artifactId: artifact.id },
+            demo: this.#environment.config.demo === true,
           }),
         },
       ],
@@ -3183,6 +3186,7 @@ export class LocalGuestApp {
             artifact,
             surfaceId,
             compareSelection: thread.compareSelection ?? undefined,
+            demo: this.#environment.config.demo === true,
           }),
         },
       ],
@@ -3242,6 +3246,7 @@ export class LocalGuestApp {
           ...discoverySurface(
             artifact,
             surfaceId,
+            this.#environment.config.demo === true,
             thread.compareSelection ?? undefined,
           ),
           ...(surfaceId.endsWith(":discovery:focused")
@@ -3324,7 +3329,7 @@ export class LocalGuestApp {
     return {
       ok: true,
       messages: ["Here are your search results again."],
-      surfaces: [discoverySurface(artifact, thread.discoverySurfaceId)],
+      surfaces: [discoverySurface(artifact, thread.discoverySurfaceId, this.#environment.config.demo === true)],
     };
   }
 
@@ -3378,7 +3383,7 @@ export class LocalGuestApp {
     return {
       ok: true,
       messages: ["Here are your search results again."],
-      surfaces: [discoverySurface(artifact, thread.discoverySurfaceId)],
+      surfaces: [discoverySurface(artifact, thread.discoverySurfaceId, this.#environment.config.demo === true)],
     };
   }
 
@@ -4265,6 +4270,13 @@ export class LocalGuestApp {
         correlationId: thread.draftId,
         surfaceId: surface.surfaceId,
       });
+      // ADR 0105: the staging demo accepts the submitted request through the operator command path, then the Guest sees the
+      // Conditional Booking Offer the same way a confirmed request presents it (the refresh path issues or adopts it).
+      if (this.#environment.config.demoRequestAcceptor?.delaySeconds === 0) {
+        this.#environment.acceptDisclosedRequest(disclosed.requestId);
+        const offered = this.#refreshWorkflow(thread);
+        if (offered !== null) return offered;
+      }
       // Issue 07: the Operator is named where known; the surface carries the reservation status.
       return {
         ok: true,
@@ -4617,6 +4629,8 @@ export class LocalGuestApp {
   }
 
   #refreshWorkflow(thread: GuestThreadState): GuestTurnResult | null {
+    // ADR 0105: a demo delay is honoured lazily, here, once the delay has elapsed on the injected clock.
+    if (thread.requestId && !thread.offerId) this.#environment.acceptDueDemoRequest(thread.requestId);
     const confirmedSurface = this.#confirmedBookingSurface(thread);
     if (confirmedSurface)
       return { ok: true, messages: [], surfaces: [confirmedSurface] };
@@ -5287,6 +5301,7 @@ function readEventPayload(payload: unknown): GuestEventPayload | undefined {
 function discoverySurface(
   artifact: DiscoveryArtifactProjection,
   surfaceId: string,
+  demo: boolean,
   compareSelection?: string,
 ): GuestSurfacePayload {
   return {
@@ -5300,6 +5315,7 @@ function discoverySurface(
       artifact,
       surfaceId,
       compareSelection,
+      demo,
     }),
   };
 }
