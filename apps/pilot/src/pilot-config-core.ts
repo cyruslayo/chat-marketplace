@@ -174,6 +174,11 @@ export function loadPilotCoreConfiguration(source: PilotEnvironmentSource): Pilo
   if (deployment === "staging" && paystack.environment !== "test") throw new Error("Staging requires PAYSTACK_ENVIRONMENT=test");
   if (paystack.callbackBaseUrl !== origin) throw new Error("Paystack callback origin must match SHORTLET_PUBLIC_ORIGIN");
   const concierge = loadConciergeConfiguration(source);
+  // ADR 0105: OpenRouter processing is a staging demo exception, never a production processor approval.
+  if (deployment === "production" && [concierge.primary, concierge.fallback].some((settings) => settings?.provider === "openai-compatible"
+    && (settings.label === "openrouter" || new URL(settings.baseUrl).hostname === "openrouter.ai"))) {
+    throw new Error("OpenRouter is permitted only for the staging demo (ADR 0105)");
+  }
   return Object.freeze({
     deployment, betaInviteCode: inviteCode, concierge,
     limits: pilotLimits(source), notifications: notificationConfiguration(source),

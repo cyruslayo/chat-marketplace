@@ -6,44 +6,11 @@ import {
   DEFAULT_OPENAI_COMPATIBLE_TIMEOUT_MS,
   OpenAiCompatibleClient,
   RateLimitError,
-  type OpenAiCompatibleClientConfig,
 } from "../apps/local-guest/src/assistant/openai-compatible-client.js";
 import { DEFAULT_GEMINI_TIMEOUT_MS } from "../apps/local-guest/src/assistant/gemini-interactions-client.js";
 import { ASSISTANT_TOOL_DEFINITIONS } from "../apps/local-guest/src/assistant/assistant-tools.js";
 import type { AssistantModelRequest } from "../apps/local-guest/src/assistant/assistant-model.js";
-
-interface CapturedRequest {
-  readonly url: string;
-  readonly init: RequestInit;
-  readonly body: Record<string, unknown>;
-}
-
-function jsonResponse(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
-}
-
-function completion(message: Record<string, unknown>): Response {
-  return jsonResponse(200, { id: "cmpl-1", choices: [{ index: 0, message: { role: "assistant", ...message }, finish_reason: "stop" }] });
-}
-
-function clientWith(
-  respond: (captured: CapturedRequest, attempt: number) => Promise<Response> | Response,
-  overrides: Partial<OpenAiCompatibleClientConfig> = {},
-): { readonly client: OpenAiCompatibleClient; readonly requests: CapturedRequest[] } {
-  const requests: CapturedRequest[] = [];
-  const client = new OpenAiCompatibleClient({
-    apiKey: "sk-offline-test",
-    baseUrl: "https://api.deepseek.com/",
-    model: "deepseek-chat",
-    fetch: async (url, init) => {
-      const captured = { url, init, body: JSON.parse(String(init.body)) as Record<string, unknown> };
-      requests.push(captured);
-      return respond(captured, requests.length);
-    },
-    ...overrides,
-  });
-  return { client, requests };
-}
+import { clientWith, completion, jsonResponse } from "./helpers/openai-compatible-client.js";
 
 const request: AssistantModelRequest = {
   systemInstruction: "You are the assistant.",

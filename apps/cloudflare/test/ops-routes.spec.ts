@@ -28,6 +28,14 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+test("Demo AC7: authenticated ops status exposes only numeric concierge turn counters", async () => {
+  const denied = await SELF.fetch(`${ORIGIN}/_ops/status`);
+  expect(denied.status).toBe(401);
+  const response = await SELF.fetch(`${ORIGIN}/_ops/status`, { headers: opsHeaders(await accessToken()) });
+  expect(response.status).toBe(200);
+  expect((await response.json()).concierge).toEqual({ modelHandledTurns: 0, deterministicFallbackTurns: 0 });
+});
+
 test("11a AC1: a request missing either authentication layer, or presenting a wrong value, is refused and changes nothing", async () => {
   const token = await accessToken();
   const before = await operatorIds();

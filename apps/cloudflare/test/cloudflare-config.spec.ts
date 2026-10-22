@@ -12,6 +12,12 @@ const source = {
   ASSETS: { fetch: async () => new Response("not used") },
 } as unknown as CloudflareEnv;
 
+test("AC6: CONCIERGE_MODE defaults to deterministic when unset", () => {
+  expect(loadCloudflareConfiguration(source).concierge.mode).toBe("deterministic");
+  const configuration = loadCloudflareConfiguration({ ...source, CONCIERGE_MODE: "openai-compatible", LLM_API_KEY: "synthetic-offline-key", LLM_BASE_URL: "https://openrouter.ai/api/v1", LLM_MODEL: "openai/gpt-6-luna", LLM_PROVIDER_LABEL: "openrouter" });
+  expect(configuration.concierge.primary?.model).toBe("openai/gpt-6-luna");
+});
+
 test("10a: Shared configuration validates explicit vars in workerd without Node file paths", () => {
   const configuration = loadCloudflareConfiguration(source);
   expect(configuration.tenantId).toBe("tenant-synthetic");

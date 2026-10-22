@@ -1,4 +1,5 @@
 import type { AuditLog } from "../../../packages/platform-core/src/index.js";
+import type { ConciergeTurnCounts } from "../../local-guest/src/assistant/model-call-budget.js";
 import type { UnitRepositoryContract } from "../../../domains/shortlet/src/index.js";
 import { importInventoryCsv, operatorResolverFromRepository } from "../../../domains/shortlet/src/index.js";
 import { bootstrapOperatorsFromUnitRepository, type OperatorRepository } from "../../../domains/shortlet/src/index.js";
@@ -50,6 +51,7 @@ export interface OpsStorageBookmarks {
 }
 
 export interface OpsRouteDependencies {
+  readonly conciergeDiagnostics?: () => ConciergeTurnCounts;
   /** Slice 16: the object's SQL handle, used by the import, verify and export routes. */
   readonly database: SqlDatabase;
   readonly sharedSecret: string;
@@ -295,6 +297,7 @@ export function createOpsHandler(dependencies: OpsRouteDependencies): OpsHandler
         cutoverMarker: cutover.marker,
         platform,
         commerce,
+        concierge: dependencies.conciergeDiagnostics?.() ?? null,
       });
     }
     if (request.method === "GET" && path === "/_ops/import/verify") {

@@ -126,6 +126,18 @@ Check the banner after every deploy.
   closed as before. Conventional search and booking routes never depend on the
   model (ADR 0080).
 
+For the staging demo, use `CONCIERGE_MODE=openai-compatible`,
+`LLM_BASE_URL=https://openrouter.ai/api/v1`, `LLM_MODEL=openai/gpt-6-luna`,
+and `LLM_PROVIDER_LABEL=openrouter` (ADR 0105). Production rejects OpenRouter.
+Cloudflare reads these non-secret settings and `CONCIERGE_DAILY_MODEL_CALL_CAP`
+from the build environment. Supply `LLM_API_KEY` through its runtime secret binding.
+OpenRouter attribution headers are optional and are omitted.
+
+The authenticated `/_ops/status` response includes `concierge.modelHandledTurns`
+and `concierge.deterministicFallbackTurns`. These counters contain numbers only.
+They reset with the runtime and at midnight in `Africa/Lagos`, like the existing
+in-memory model-call budget. They are not a durable account-wide spending limit.
+
 Before enabling a provider or changing a model, run the agent smoke against it
 (`npm run pilot:local:agent-smoke`) and the assistant evals (ADR 0079). DeepSeek
 processes guest conversation text outside Nigeria; do not enable it for real

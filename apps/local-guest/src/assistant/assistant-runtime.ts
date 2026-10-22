@@ -20,6 +20,7 @@ import {
   type AssistantToolContext,
 } from "./assistant-platform.js";
 import { createShortletAssistantPack } from "./shortlet-assistant-pack.js";
+import { isProviderUnavailable } from "./fallback-model-client.js";
 import {
   cloneTaskState,
   createInitialTaskState,
@@ -45,6 +46,8 @@ export interface AssistantTurnOutput {
   readonly messages?: readonly string[];
   readonly surfaces?: readonly AssistantTurnSurface[];
   readonly tasks?: readonly AssistantTaskRailEntry[];
+  readonly modelHandled?: boolean;
+  readonly providerUnavailable?: boolean;
 }
 
 /** A task's entry in the shell rail, derived from the active pack's `taskSummary`. */
@@ -598,6 +601,7 @@ export class AssistantRuntime {
         messages: [finalAssistantReply],
         surfaces: candidateSurfaces,
         tasks: this.getTaskRail(threadId),
+        modelHandled: true,
       };
     } catch (error) {
       this.#diagnose(createFailureDiagnostic(activeStage, round, activeToolName, error));
@@ -614,13 +618,15 @@ export class AssistantRuntime {
         thread.lastSurfaces = candidateSurfaces;
         thread.discoveryArtifactId = candidateDiscoveryArtifactId;
         this.#syncActiveTask(thread);
-        return { ok: true, messages: [message], surfaces: candidateSurfaces, tasks: this.getTaskRail(threadId) };
+        return { ok: true, messages: [message], surfaces: candidateSurfaces, tasks: this.getTaskRail(threadId), modelHandled: true };
       }
       // Rollback: thread is not mutated on error
       return {
         ok: false,
         code: "CONCIERGE_UNAVAILABLE",
         message: "The concierge is temporarily unavailable. Please try again.",
+        ...((activeStage === "provider_request" || activeStage === "function_result_round_trip") && isProviderUnavailable(error)
+          ? { providerUnavailable: true } : {}),
       };
     }
   }

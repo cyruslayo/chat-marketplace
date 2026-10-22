@@ -83,7 +83,11 @@ function workerFor(environment: PilotEnvironment) {
       PAYSTACK_CALLBACK_BASE_URL: bindings.text(PUBLIC_ORIGIN[environment]),
       // ADR 0088/0090: transfers and manual bank transfer stay off until explicitly certified and configured.
       SHORTLET_PAYSTACK_TRANSFERS: bindings.text("disabled"),
-      CONCIERGE_MODE: bindings.text("deterministic"),
+      CONCIERGE_MODE: bindings.text(process.env.CONCIERGE_MODE?.trim() || "deterministic"),
+      ...optionalText("LLM_BASE_URL"),
+      ...optionalText("LLM_MODEL"),
+      ...optionalText("LLM_PROVIDER_LABEL"),
+      ...optionalText("CONCIERGE_DAILY_MODEL_CALL_CAP"),
       // Non-secret notification settings the operator supplies at deploy time.
       ...optionalText("SHORTLET_NOTIFICATION_FROM"),
       ...optionalText("SHORTLET_OPERATOR_ALERT_EMAILS"),
@@ -97,6 +101,7 @@ function workerFor(environment: PilotEnvironment) {
       // Secrets: names declared here, values never committed (cf secret workflow or .dev.vars).
       PAYSTACK_SECRET_KEY: bindings.secret(),
       GEMINI_API_KEY: bindings.secret(),
+      LLM_API_KEY: bindings.secret(),
       RESEND_API_KEY: bindings.secret(),
       SHORTLET_GUEST_CODE_HASHING_KEY: bindings.secret(),
       OPS_SHARED_SECRET: bindings.secret(),

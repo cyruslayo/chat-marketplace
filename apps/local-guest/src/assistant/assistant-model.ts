@@ -58,6 +58,8 @@ export interface AssistantModelResponse {
   readonly toolCalls?: readonly AssistantToolCall[];
   /** Optional opaque provider-specific representation preserved across tool turns. */
   readonly rawStep?: unknown;
+  /** Provider-neutral token counts; absent means the provider supplied no valid usage. */
+  readonly usage?: { readonly promptTokens: number; readonly completionTokens: number };
 }
 
 export interface AssistantModelClient {

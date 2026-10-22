@@ -2,6 +2,15 @@
 # Non-secret staging/production vars come from cloudflare.config.ts; these secrets never appear there.
 PAYSTACK_SECRET_KEY="sk_test_replace_me"
 GEMINI_API_KEY="replace_me"
+LLM_API_KEY=""
 RESEND_API_KEY="re_test_replace_me"
 COMMERCE_REFERENCE_HMAC_KEY="replace_me_with_at_least_32_bytes_of_random_secret"
 COMMERCE_REFERENCE_HMAC_KEY_ID="k1"
+
+# OpenRouter demo: set these non-secret values in the staging build environment.
+# CONCIERGE_MODE=openai-compatible
+# LLM_BASE_URL=https://openrouter.ai/api/v1
+# LLM_MODEL=openai/gpt-6-luna
+# LLM_PROVIDER_LABEL=openrouter
+# CONCIERGE_DAILY_MODEL_CALL_CAP=3000
+# Supply LLM_API_KEY through the runtime secret binding, never the build environment.

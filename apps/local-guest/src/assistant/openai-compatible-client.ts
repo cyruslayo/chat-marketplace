@@ -90,18 +90,10 @@ export class OpenAiCompatibleClient implements AssistantModelClient {
       ...(request.tools.length > 0 ? { tools: request.tools.map(mapTool) } : {}),
       stream: false,
     });
-    const response = await this.#postWithBoundedConnectionRetry(body, request.timeoutMs ?? this.#timeoutMs);
-    if (!response.ok) throw await providerError(response);
-    let payload: unknown;
-    try {
-      payload = await response.json();
-    } catch {
-      throw new Error("LLM provider returned a response that is not JSON");
-    }
-    return parseCompletion(payload);
+    return this.#postWithBoundedConnectionRetry(body, request.timeoutMs ?? this.#timeoutMs);
   }
 
-  async #postWithBoundedConnectionRetry(body: string, timeoutMs: number): Promise<Response> {
+  async #postWithBoundedConnectionRetry(body: string, timeoutMs: number): Promise<AssistantModelResponse> {
     for (let attempt = 0; ; attempt++) {
       try {
         return await this.#post(body, timeoutMs);
@@ -113,19 +105,41 @@ export class OpenAiCompatibleClient implements AssistantModelClient {
     }
   }
 
-  async #post(body: string, timeoutMs: number): Promise<Response> {
+  async #post(body: string, timeoutMs: number): Promise<AssistantModelResponse> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        reject(new APIConnectionError("timeout"));
+      }, timeoutMs);
+    });
+    const operation = async (): Promise<AssistantModelResponse> => {
+      let response: Response;
+      try {
+        response = await this.#fetch(this.#endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${this.#apiKey}` },
+          body,
+          signal: controller.signal,
+        });
+      } catch {
+        // ADR 0075: transport exceptions may echo request details.
+        throw new APIConnectionError(controller.signal.aborted ? "timeout" : "connection_failed");
+      }
+      if (!response.ok) throw await providerError(response);
+      let payload: unknown;
+      try {
+        payload = await response.json();
+      } catch {
+        if (controller.signal.aborted) throw new APIConnectionError("timeout");
+        throw new Error("LLM provider returned a response that is not JSON");
+      }
+      return parseCompletion(payload);
+    };
     try {
-      return await this.#fetch(this.#endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${this.#apiKey}` },
-        body,
-        signal: controller.signal,
-      });
-    } catch {
-      // The underlying error may echo request details; replace it with a sanitised class (ADR-0075).
-      throw new APIConnectionError(controller.signal.aborted ? "timeout" : "connection_failed");
+      // ADR 0080: headers alone cannot release the timeout while the response body remains pending.
+      return await Promise.race([operation(), deadline]);
     } finally {
       clearTimeout(timer);
     }
@@ -208,10 +222,21 @@ function parseCompletion(payload: unknown): AssistantModelResponse {
     throw new Error("LLM provider tool_calls is structurally invalid");
   }
   const toolCalls: AssistantToolCall[] = (rawCalls ?? []).map(parseToolCall);
+  const usage = parseUsage(isPlainRecord(payload) ? payload.usage : undefined);
   return {
     ...(text !== undefined ? { text } : {}),
     ...(toolCalls.length > 0 ? { toolCalls } : {}),
+    ...(usage === undefined ? {} : { usage }),
   };
+}
+
+function parseUsage(value: unknown): AssistantModelResponse["usage"] {
+  if (!isPlainRecord(value)) return undefined;
+  const promptTokens = value.prompt_tokens;
+  const completionTokens = value.completion_tokens;
+  if (typeof promptTokens !== "number" || !Number.isSafeInteger(promptTokens) || promptTokens < 0
+    || typeof completionTokens !== "number" || !Number.isSafeInteger(completionTokens) || completionTokens < 0) return undefined;
+  return { promptTokens, completionTokens };
 }
 
 function parseToolCall(value: unknown): AssistantToolCall {

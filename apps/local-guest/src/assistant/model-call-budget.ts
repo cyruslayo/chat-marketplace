@@ -7,6 +7,11 @@ function lagosDay(at: Date): string {
   return new Date(at.getTime() + LAGOS_OFFSET_MS).toISOString().slice(0, 10);
 }
 
+export interface ConciergeTurnCounts {
+  readonly modelHandledTurns: number;
+  readonly deterministicFallbackTurns: number;
+}
+
 /**
  * Daily cap on model calls for one pilot process (launch-readiness issue 19). The count resets at midnight
  * Africa/Lagos. The cap is soft by at most one turn: a turn that starts with capacity finishes, and new turns
@@ -17,6 +22,8 @@ export class ModelCallBudget {
   readonly #clock: () => Date;
   #day = "";
   #calls = 0;
+  #modelHandledTurns = 0;
+  #deterministicFallbackTurns = 0;
 
   constructor(dailyCap: number, clock: () => Date = () => new Date()) {
     if (!Number.isSafeInteger(dailyCap) || dailyCap < 1) throw new Error("The daily model-call cap must be a positive whole number");
@@ -29,6 +36,8 @@ export class ModelCallBudget {
     if (today !== this.#day) {
       this.#day = today;
       this.#calls = 0;
+      this.#modelHandledTurns = 0;
+      this.#deterministicFallbackTurns = 0;
     }
   }
 
@@ -45,6 +54,18 @@ export class ModelCallBudget {
   get callsToday(): number {
     this.#rollover();
     return this.#calls;
+  }
+
+  recordTurn(kind: "model" | "fallback"): void {
+    this.#rollover();
+    if (kind === "model") this.#modelHandledTurns += 1;
+    else this.#deterministicFallbackTurns += 1;
+  }
+
+  /** ADR 0075: counts only, with no prompt, reply, key, or session credential. */
+  get turnCounts(): ConciergeTurnCounts {
+    this.#rollover();
+    return { modelHandledTurns: this.#modelHandledTurns, deterministicFallbackTurns: this.#deterministicFallbackTurns };
   }
 }
 

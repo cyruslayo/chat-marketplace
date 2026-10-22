@@ -69,6 +69,7 @@ function isOpsPath(pathname: string): boolean {
 
 export class ShortletPilot extends DurableObject<CloudflareEnv> {
   #runtime: PilotRuntime | null = null;
+  #modelCallBudget: ModelCallBudget | null = null;
   #opsHandler: OpsHandler | null = null;
   #alarmScheduled = false;
 
@@ -196,6 +197,7 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
       audit: new SqliteAuditLog(database),
       clock,
       tenantId: this.env.SHORTLET_TENANT_ID?.trim() ?? "",
+      conciergeDiagnostics: () => this.#modelCallBudget?.turnCounts ?? { modelHandledTurns: 0, deterministicFallbackTurns: 0 },
       platformMigration: platformMigrationClient(this.env, this.env.SHORTLET_TENANT_ID?.trim() ?? ""),
       commerceMigration: commerceMigrationClient(this.env, this.env.SHORTLET_TENANT_ID?.trim() ?? ""),
     });
@@ -284,6 +286,8 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
     );
 
     const modelClient = createConciergeModelClient(configuration.concierge);
+    const modelCallBudget = new ModelCallBudget(configuration.limits.dailyModelCallCap, clock);
+    this.#modelCallBudget = modelCallBudget;
     const guest = createGuestRequestHandler({
       environment: guestEnvironment,
       assets: cloudflareAssetLoader,
@@ -306,7 +310,7 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
         ...platformGuestAccountDependencies(this.env, configuration.tenantId),
       },
       payments,
-      modelCallBudget: new ModelCallBudget(configuration.limits.dailyModelCallCap, clock),
+      modelCallBudget,
       sessionRuntimeIdleMs: configuration.limits.sessionRuntimeIdleMinutes * 60_000,
       // 04c: the user-approved production cap; the Durable Object has 128 MB of memory.
       sessionRuntimeLimit: configuration.sessionRuntimeLimit,
