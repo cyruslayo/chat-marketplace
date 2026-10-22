@@ -13,14 +13,14 @@ Parent: [PRD.md](PRD.md)
 | 07 | [Verify the live demo journey end to end](issues/07-verify-live-demo-journey.md) | AFK | ready-for-agent | 03, 06, 08, 09, 10, 11, 12, 13 |
 | 08 | [Wire a 30-night demo Extended Stay through booking and payment](issues/08-one-period-demo-extended-stay.md) | AFK | resolved | 04 |
 | 09 | [Extend demo quotes and contracts through 180 nights](issues/09-extend-demo-stays-to-180-nights.md) | AFK | resolved | 08 |
-| 10 | [Pay each demo Billing Period through a separate payment session](issues/10-pay-each-demo-billing-period.md) | AFK | ready-for-agent | 09 |
+| 10 | [Pay each demo Billing Period through a separate payment session](issues/10-pay-each-demo-billing-period.md) | AFK | resolved | 09 |
 | 11 | [Capture demo Owner Payables per Billing Period](issues/11-capture-demo-owner-payables-per-period.md) | AFK | ready-for-agent | 10 |
 | 12 | [Show demo monthly prices and payment periods in guest screens](issues/12-show-demo-monthly-prices-and-periods.md) | AFK | ready-for-agent | 09, 10, 11, 13 |
 | 13 | [Demo monthly cancellation, Notice to End and overdue handling](issues/13-demo-monthly-cancellation-notice-and-overdue-handling.md) | AFK | ready-for-agent | 09, 10, 11 |
 
 ## Frontier
 
-04, 08 and 09 are resolved. 05 remains claimed and is blocked on the monthly booking chain 10–13. Issue 10 is the next implementation frontier. Issue 03 is independent of that domain work, but needs an owner-supplied OpenRouter credential for its live runs; it remains `needs-info` and blocks staging deployment and live acceptance. Issue 06 stays `ready-for-human` and requires the pre-deploy gate plus explicit deployment authorization.
+04, 08, 09 and 10 are resolved. 05 remains claimed and is blocked on the monthly booking chain 11–13. Issue 11 is the next implementation frontier. Issue 03 is independent of that domain work, but needs an owner-supplied OpenRouter credential for its live runs; it remains `needs-info` and blocks staging deployment and live acceptance. Issue 06 stays `ready-for-human` and requires the pre-deploy gate plus explicit deployment authorization.
 
 ```
 01 → 02 ────────────────┐
@@ -35,6 +35,8 @@ Parent: [PRD.md](PRD.md)
 - 01: [ADR 0105](../../docs/adr/0105-public-demo-exception.md) records the accepted demo exception. ADR 0104 notes its demo-only partial supersession. Four dedicated tests and the complete suite passed.
 
 - 04: the staging demo is off by default and refused in production (ADR 0105). Its acceptance runs the owner confirmation command path. Tests: test/demo-mode-config.test.ts, test/demo-mode-guest.test.ts, test/demo-auto-accept.test.ts, test/demo-listing-chip.test.ts, test/demo-accept-delay-config.test.ts, test/demo-mode-landing.test.ts. Captures: .scratch/demo-launch/screenshots/04/. Open items are in the issue Comments.
+
+- 10: Resolved. Each later Billing Period of a staging demo Extended Stay is paid through its own Paystack TEST session, persisted in the shared store (Node and the Cloudflare object). Tests: test/pay-each-demo-billing-period.test.ts (AC1 to AC9, 10 of 10). Open items: the back-office list is an application method with no page or route yet; no Worker-level period journey; the period tables are not in the daily export (ADR 0096 covers four named columns only). The Comments list the owner and counsel decisions.
 
 - 08–13: The owner authorized a synthetic staging-only 180-night Extended Stay on 22 Oct 2026. ADR 0105 records the exception. Production remains at ADR 0092's 30–90-night policy. The implementation chain uses the monthly-stays rules without resolving that separate tracker.
 
