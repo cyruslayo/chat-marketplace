@@ -2,7 +2,7 @@ import { generatePlatformId } from "../../../packages/platform-core/src/index.js
 import { StayDateRange } from "./browse.js";
 import { guestPriceFromOwnerTerms, marginOnKobo, ownerSettlementFor, unitOwnerTerms } from "./owner-terms.js";
 import type { OwnerSettlementSnapshot } from "./owner-terms.js";
-import { assertStayLength, monthlyAmountsAreValid, utilitiesStatementIsValid, type ExtendedStayPolicy } from "./extended-stay.js";
+import { EXTENDED_CANCELLATION_DEMO_SUMMARY, EXTENDED_CANCELLATION_POLICY_VERSION, assertStayLength, monthlyAmountsAreValid, utilitiesStatementIsValid, type ExtendedStayPolicy } from "./extended-stay.js";
 import { calculateSecurityDepositPolicySnapshot, calculateRefundableSecurityDeposit, SECURITY_DEPOSIT_POLICY_VERSION, type SecurityDepositPolicySnapshot } from "./security-deposit.js";
 
 export interface OptionalServiceCatalogueItem {
@@ -341,18 +341,21 @@ export function createStayQuote({
   const totalAmountDueNowKobo = amountDueNowStayKobo + securityDeposit.amountKobo;
 
   const configuredCancellationPolicy = unit.cancellationPolicy;
-  const policyType = configuredCancellationPolicy?.type ?? "standard";
-  if (policyType !== "flexible" && policyType !== "standard" && policyType !== "firm") {
+  // Demo-launch issue 13 (ADR 0092): every Extended Stay snapshots the Extended catalogue entry, whatever the unit's
+  // Short Stay policy. Short Stays keep the unit's configured Flexible, Standard or Firm policy unchanged.
+  const isExtendedQuote = stayType === "extended";
+  const policyType = isExtendedQuote ? "extended" : configuredCancellationPolicy?.type ?? "standard";
+  if (policyType !== "flexible" && policyType !== "standard" && policyType !== "firm" && policyType !== "extended") {
     throw new Error("Unit cancellation policy must be Flexible, Standard, or Firm");
   }
-  const policyVersion = configuredCancellationPolicy?.version ?? "cancellation-v1";
+  const policyVersion = isExtendedQuote ? EXTENDED_CANCELLATION_POLICY_VERSION : configuredCancellationPolicy?.version ?? "cancellation-v1";
   if (typeof policyVersion !== "string" || policyVersion.trim().length === 0) {
     throw new Error("Unit cancellation policy version is required");
   }
   const cancellationPolicy = Object.freeze({
     type: policyType,
     version: policyVersion,
-    policySummary: configuredCancellationPolicy?.summary ?? "Standard launch cancellation policy"
+    policySummary: isExtendedQuote ? EXTENDED_CANCELLATION_DEMO_SUMMARY : configuredCancellationPolicy?.summary ?? "Standard launch cancellation policy"
   });
 
   const revenueClassification = classifyRevenue({

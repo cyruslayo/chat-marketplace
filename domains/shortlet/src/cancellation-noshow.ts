@@ -1,7 +1,8 @@
 import type { BookingContract, Reservation } from "./card-payment.js";
 import type { BookingStateRepository } from "./booking-state.js";
 
-export type CancellationPolicyType = "flexible" | "standard" | "firm";
+/** "extended" is the ADR 0092 Extended Stay entry (demo-launch issue 13); the unit-level policy is never extended. */
+export type CancellationPolicyType = "flexible" | "standard" | "firm" | "extended";
 export type CancellationLiability = "guest" | "operator_failure" | "platform_failure" | "force_majeure" | "legal_override";
 export type FundingSource = "policy_refund" | "operator" | "platform" | "force_majeure_fund" | "statutory_override";
 
@@ -37,7 +38,7 @@ export function validateCancellationEconomics(value: CancellationEconomics): voi
 export function validateCancellationPolicy(policy: unknown): CancellationPolicySnapshot {
   if (!policy || typeof policy !== "object") throw new Error("Captured cancellation policy is required");
   const candidate = policy as { type?: unknown; version?: unknown; policySummary?: unknown; summary?: unknown };
-  if (candidate.type !== "flexible" && candidate.type !== "standard" && candidate.type !== "firm") throw new Error("Invalid cancellation policy");
+  if (candidate.type !== "flexible" && candidate.type !== "standard" && candidate.type !== "firm" && candidate.type !== "extended") throw new Error("Invalid cancellation policy");
   if (typeof candidate.version !== "string" || candidate.version.trim() === "") throw new Error("Captured cancellation policy version is required");
   return Object.freeze({ type: candidate.type, version: candidate.version, policySummary: typeof candidate.policySummary === "string" ? candidate.policySummary : typeof candidate.summary === "string" ? candidate.summary : "" });
 }
@@ -48,6 +49,7 @@ export class CancellationNoShowManager {
     const checkIn = new Date(input.checkInIso).getTime(); const cancelled = new Date(input.cancelledAtIso).getTime();
     if (!Number.isFinite(checkIn) || !Number.isFinite(cancelled) || !validKobo(input.cancellationBaseKobo)) throw new Error("Invalid cancellation calculation input");
     const elapsed = checkIn - cancelled;
+    // "firm" and "extended" (ADR 0092, demo-launch issue 13) share the T-30d full and T-14d partial thresholds.
     const full = input.policyType === "flexible" ? 72 * 3600_000 : input.policyType === "standard" ? 14 * 86400_000 : 30 * 86400_000;
     const partial = input.policyType === "flexible" ? 24 * 3600_000 : input.policyType === "standard" ? 7 * 86400_000 : 14 * 86400_000;
     const refundPercentage = elapsed >= full ? 100 : elapsed >= partial ? 50 : 0;

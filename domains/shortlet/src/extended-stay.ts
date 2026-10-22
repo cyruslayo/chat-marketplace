@@ -62,3 +62,16 @@ export function utilitiesStatementIsValid(value: UtilitiesAndServicingStatement 
     && typeof value.cleaningIncluded === "boolean"
     && ["daily", "weekly", "fortnightly", "at-checkout"].includes(value.cleaningFrequency);
 }
+
+/**
+ * Demo-launch issue 13 (ADR 0092, ADR 0105). The Extended catalogue entry used by every Extended Stay. Its thresholds
+ * (T-30d, T-14d) and the 14-day Notice to End are ADR 0092 values that await counsel approval [counsel]; they are
+ * demonstrated only by the synthetic staging demo, labelled as demo terms. They are not counsel-approved.
+ */
+export const EXTENDED_CANCELLATION_POLICY_VERSION = "cancellation-extended-adr0092-v1";
+export const EXTENDED_CANCELLATION_DEMO_SUMMARY =
+  "Demo terms for a synthetic staging booking, pending counsel review: 100% of the first Billing Period's cancellation base is refunded if you cancel 30 or more days before check-in, 50% if you cancel 14 or more days before, and nothing after that. Later Billing Periods are never charged.";
+/** ADR 0092: a Notice to End takes effect 14 days after notice. The 14 days await counsel approval [counsel]. */
+export const NOTICE_TO_END_DAYS = 14;
+export const NOTICE_TO_END_DEMO_TERMS =
+  "Demo Notice to End terms for a synthetic staging booking, pending counsel review: the stay ends 14 days after notice, and paid nights after that date are refunded at their nightly values.";

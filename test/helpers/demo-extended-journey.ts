@@ -226,3 +226,12 @@ export async function withDemoExtendedJourney(options: DemoJourneyOptions, run: 
     await run({ ...context, requestId, offerId });
   });
 }
+
+/** Runs the demo journey and confirms the first Period Payment through the TEST provider stub (issues 10 and 13). */
+export async function withConfirmedExtendedStay(options: DemoJourneyOptions, run: (context: DemoJourneyContext) => Promise<void> | void): Promise<void> {
+  await withDemoExtendedJourney(options, async (context) => {
+    const session = context.guest.cardPaymentApp.getCheckoutSession(context.offerId)!;
+    await context.guest.cardPaymentApp.verifyAndConfirmPaystack(session.pspReference, { id: "synthetic-system", role: "system", tenantId: context.guest.config.tenantId });
+    await run(context);
+  });
+}

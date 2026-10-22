@@ -93,6 +93,8 @@ export interface BookingContract {
       };
   readonly createdAt: string;
   readonly contractVersion: number;
+  /** Demo-launch issue 13 (ADR 0092, ADR 0060): the Notice to End amendment that shortened this Extended Stay, once committed. */
+  readonly noticeToEnd?: { readonly amendmentId: string; readonly noticeDate: string; readonly effectiveDate: string; readonly newLastNight: string };
   /** ADR 0031: the Contractual Check-In Window captured from the offer. */
   readonly checkInWindow?: import("./checkin-support.js").ContractualCheckInWindow;
   readonly checkout?: { readonly time: "11:00" | "12:00" | "13:00" | "14:00"; readonly timezone: "Africa/Lagos"; readonly source: "contractual" | "checkout_amendment"; readonly amendmentId?: string; readonly amendmentVersion?: number | string };

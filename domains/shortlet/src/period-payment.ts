@@ -172,7 +172,7 @@ export class PeriodPaymentManager {
         humanContactRequired: overdue,
         live: !isPaid && this.#hasLiveSession(offerId, period.index, now),
       });
-    });
+    }).filter((projection) => dayStartMs(projection.checkIn) < dayStartMs(contract.dates.checkOut));
   }
 
   /** Lazily projected Billing Periods of a confirmed Extended Stay, as of `now`. No background job changes them. */
