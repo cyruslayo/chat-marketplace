@@ -1,15 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { UnitDiscoveryQuery, UnitRepository, seedIssue01Units } from "../domains/shortlet/src/index.js";
+import { UnitDiscoveryQuery, UnitRepository } from "../domains/shortlet/src/index.js";
 import type { Unit } from "../domains/shortlet/src/browse.js";
 import { createStayQuote } from "../domains/shortlet/src/quote.js";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
-import { LocalApartmentOwnerEnvironment } from "../apps/local-owner/src/local-owner-environment.js";
-import { createDemoRequestAcceptor } from "../apps/local-owner/src/demo-operator-acceptance.js";
 import type { PaymentOutcome } from "../packages/platform-core/src/payments/payments.js";
-import { DirectPaystackClient, PaystackPayments, type PaystackHttpFetcher } from "../packages/platform-core/src/payments/index.js";
 import { demoDatabase, removeDemoDatabase } from "./helpers/demo-mode-fixture.js";
 import { openNodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-database.js";
+import { optedInUnit, withDemoExtendedJourney } from "./helpers/demo-extended-journey.js";
 import { loadPilotCoreConfiguration } from "../apps/pilot/src/pilot-config-core.js";
 import { PRODUCTION_WITH_DEMO_SOURCE } from "./helpers/demo-mode-fixture.js";
 import { createOpsHandler, type OpsRouteDependencies } from "../apps/cloudflare/src/ops-routes.js";
@@ -22,25 +20,6 @@ import { createProvisionedOperator } from "../domains/shortlet/src/operator.js";
 const NOW = new Date("2026-09-03T10:00:00.000Z");
 const DEMO_POLICY = Object.freeze({ minimumNights: 30, maximumNights: 30, billingPeriodNights: 30 });
 
-function optedInUnit() {
-  const repository = new UnitRepository();
-  seedIssue01Units(repository);
-  const unit = repository.findAll()[0]!;
-  return {
-    ...unit,
-    extendedStay: {
-      optedIn: true,
-      monthlyAgreedAmounts: { accommodationKobo: 10_000_000, mandatoryChargesKobo: 500_000, version: "monthly-v1" },
-    utilitiesAndServicing: {
-        powerAndGeneratorFuelIncluded: true,
-        waterIncluded: true,
-        internetIncluded: true,
-        cleaningIncluded: true,
-        cleaningFrequency: "weekly" as const,
-      },
-    },
-  };
-}
 
 test("AC1: authenticated demo inventory import creates opted-in monthly terms; missing, wrong, or malformed inputs write nothing", async () => {
   const repository = new UnitRepository();
@@ -234,61 +213,17 @@ test("AC2: a 30-night quote uses Monthly Agreed Amounts plus margin and carries 
   });
 });
 
-async function withDemoJourney(run: (input: { readonly guest: LocalGuestEnvironment; readonly owner: LocalApartmentOwnerEnvironment; readonly requestId: string; readonly offerId: string; readonly clock: () => Date; readonly nowRef: { now: number } }) => Promise<void> | void, outcomeFactory?: (reference: string, amount: number, payerId: string) => PaymentOutcome, offsetClock?: { now: number }, beforeOffer?: (input: { readonly guest: LocalGuestEnvironment; readonly requestId: string }) => void, afterCheckout?: (input: { readonly guest: LocalGuestEnvironment; readonly offerId: string; readonly session: { readonly checkoutId: string; readonly expiresAt: string } }) => void, beforeAcceptance?: (input: { readonly guest: LocalGuestEnvironment; readonly offerId: string }) => void, beforeCheckout?: (input: { readonly guest: LocalGuestEnvironment; readonly offerId: string }) => void): Promise<void> {
-  const files = demoDatabase();
-  const nowRef = offsetClock ?? { now: NOW.getTime() };
-  const clock = () => new Date(nowRef.now);
-  const database = openNodeSqliteDatabase(files.path);
-  const unitRepository = new UnitRepository();
-  const owner = new LocalApartmentOwnerEnvironment({ databasePath: files.path, clock, production: true, demo: true, deployment: "staging", seedFixture: false }, { database, unitRepository, operatorRepository: null });
-  let currentAmount = 0;
-  let currentPayer = "";
-  const paystackFetcher: PaystackHttpFetcher = async (url, init) => {
-    if (init.method === "POST") {
-      const payloadValue: unknown = JSON.parse(init.body ?? "{}");
-      if (payloadValue === null || typeof payloadValue !== "object") throw new Error("invalid synthetic request");
-      const payload = payloadValue as Record<string, unknown>;
-      currentAmount = typeof payload.amount === "number" ? payload.amount : 0;
-      const metadataValue: unknown = typeof payload.metadata === "string" ? JSON.parse(payload.metadata) : {};
-      const metadata = metadataValue !== null && typeof metadataValue === "object" ? metadataValue as Record<string, unknown> : {};
-      currentPayer = typeof metadata.shortlet_guest_id === "string" ? metadata.shortlet_guest_id : "";
-      return { status: 200, async json() { return { status: true, data: { authorization_url: "https://checkout.paystack.com/synthetic", reference: payload.reference } }; } };
-    }
-    const reference = decodeURIComponent(url.slice(url.lastIndexOf("/") + 1));
-    const result = outcomeFactory?.(reference, currentAmount, currentPayer) ?? { reference, method: "card" as const, verified: true, status: "success" as const, amountKobo: currentAmount, currency: "NGN", providerReference: reference, payerId: currentPayer, environment: "test" as const };
-    return { status: 200, async json() { return { status: true, data: { reference: result.providerReference, amount: result.amountKobo, currency: result.currency, status: result.status, domain: "test", metadata: { shortlet_guest_id: result.payerId } } }; } };
-  };
-  const paystack = new PaystackPayments({ card: new DirectPaystackClient({ secretKey: "sk_test_synthetic_fixture", environment: "test", callbackBaseUrl: "https://demo.example.test" }, paystackFetcher) });
-  const guest = new LocalGuestEnvironment({ databasePath: files.path, clock, production: true, demo: true, deployment: "staging", payments: paystack, demoRequestAcceptor: createDemoRequestAcceptor(owner, 0) }, { database, unitRepository, seedDemoUnits: true });
-  try {
-    const unit = guest.unitRepository.findAll()[0]!;
-    guest.unitRepository.save({ ...unit, extendedStay: optedInUnit().extendedStay });
-    const draft = guest.bookingRequestApp.createDraft({
-      unitId: unit.id,
-      primaryGuest: { id: guest.config.guestId, name: guest.config.guestName },
-      occupants: guest.demoOccupants(1),
-      selfBookingAttestation: guest.selfBookingAttestation(),
-      checkIn: "2026-09-10",
-      checkOut: "2026-10-10",
-    }, guest.guestPrincipal());
-    const requestId = guest.bookingRequestApp.disclose(draft.draftId, guest.guestPrincipal()).requestId;
-    beforeOffer?.({ guest, requestId });
-    const { offerId } = guest.acceptDisclosedRequest(requestId);
-    const offer = guest.conditionalOfferApp.getOffer(offerId);
-    beforeAcceptance?.({ guest, offerId });
-    guest.conditionalOfferApp.accept({ offerId, confirmationToken: offer.confirmationToken, expectedVersion: offer.offerVersion, principal: guest.guestPrincipal() });
-    beforeCheckout?.({ guest, offerId });
-    const session = await guest.cardPaymentApp.initializePaystackCheckout(offerId, guest.guestPrincipal());
-    currentAmount = session.amountKobo;
-    currentPayer = guest.config.guestId;
-    afterCheckout?.({ guest, offerId, session });
-    await run({ guest, owner, requestId, offerId, clock, nowRef });
-  } finally {
-    guest.close();
-    owner.close();
-    database.close();
-    removeDemoDatabase(files.dir);
-  }
+/** Issue 08 journey: the 30-night stay from 10 to 10 September 2026, on the shared demo journey helper. */
+function withDemoJourney(
+  run: Parameters<typeof withDemoExtendedJourney>[1],
+  outcomeFactory?: (reference: string, amount: number, payerId: string) => PaymentOutcome,
+  offsetClock?: { now: number },
+  beforeOffer?: Parameters<typeof withDemoExtendedJourney>[0]["beforeOffer"],
+  afterCheckout?: Parameters<typeof withDemoExtendedJourney>[0]["afterCheckout"],
+  beforeAcceptance?: Parameters<typeof withDemoExtendedJourney>[0]["beforeAcceptance"],
+  beforeCheckout?: Parameters<typeof withDemoExtendedJourney>[0]["beforeCheckout"],
+): Promise<void> {
+  return withDemoExtendedJourney({ checkIn: "2026-09-10", checkOut: "2026-10-10", outcomeFactory, offsetClock, beforeOffer, afterCheckout, beforeAcceptance, beforeCheckout }, run);
 }
 
 test("AC3: a valid verified test-mode first Period Payment confirms once and blocks all 30 nights", async () => {

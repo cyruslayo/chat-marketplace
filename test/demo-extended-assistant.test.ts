@@ -52,7 +52,7 @@ test("Staging demo Assistant tools expose and execute one 30-night stay; non-dem
   try {
     addExtendedTerms(demo.environment, "assistant-month-v1");
     const search = await demo.runtime.handleTurn("g-assistant-extended", "I need an apartment in Ikoyi for 30 nights for two guests.");
-    assert.equal(offeredMaximum, 30);
+    assert.equal(offeredMaximum, 180, "ADR 0105 (amended): the staging demo advertises up to 180 nights");
     assert.equal(search.surfaces?.length, 1);
     stayRef = demo.runtime.getThread("g-assistant-extended").taskState.shortlist[0]!.stayRef;
     await demo.runtime.handleTurn("g-assistant-extended", "Open the first stay.");
@@ -64,7 +64,7 @@ test("Staging demo Assistant tools expose and execute one 30-night stay; non-dem
     demo.close();
   }
 
-  for (const nights of [15, 29, 31]) {
+  for (const nights of [15, 29, 181]) {
     const badModel = new ScriptedAssistantModel([
       (request) => {
         if (request.history.at(-1)?.role === "user") return { toolCalls: [{ id: `search-${nights}`, name: "search_stays", args: { city: "Lagos", neighbourhood: "Old Ikoyi", checkIn: null, nights, guests: 2 } }] };

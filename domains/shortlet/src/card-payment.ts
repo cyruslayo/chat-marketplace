@@ -7,7 +7,8 @@ import type { GuestConductPolicySnapshot } from "./guest-conduct.js";
 import type { SecurityDepositPolicySnapshot } from "./security-deposit.js";
 import type { SecurityDepositAccountingRepository } from "./security-deposit-accounting.js";
 import type { ExtendedStayPolicy } from "./extended-stay.js";
-import { isEligibleExtendedStayUnit, isEligibleUnit, type Unit } from "./browse.js";
+import { StayDateRange, isEligibleExtendedStayUnit, isEligibleUnit, type Unit } from "./browse.js";
+import { stayAmountDueNowKobo } from "./quote.js";
 
 /**
  * ADR 0049 & AC 1: Strictly reject payloads containing raw PAN, CVV, PIN, OTP, or reusable card tokens.
@@ -299,6 +300,8 @@ export class CardPaymentManager {
       if (!raw || typeof raw !== "object" || !isEligibleUnit(raw as Unit, now, offer.dates)) throw new Error("Unit is no longer eligible through checkout");
     }
     if (offer.quote?.stayType === "extended" && !this.#extendedStayPolicy) throw new Error("Extended Stay payment is disabled in this runtime");
+    // ADR 0055: the 90-day check-in horizon is rechecked at payment initialization, as at search, draft, disclosure and confirmation.
+    if (offer.quote?.stayType === "extended") new StayDateRange(offer.dates.checkIn, offer.dates.checkOut, now, this.#extendedStayPolicy);
     if (offer.quote?.stayType === "extended" && this.#repository) {
       const raw: unknown = this.#repository.findById(offer.unitId);
       if (raw === null || typeof raw !== "object" || !isEligibleExtendedStayUnit(raw as Unit, this.#extendedStayPolicy)) throw new Error("Extended Stay unit terms are no longer eligible");
@@ -332,7 +335,7 @@ export class CardPaymentManager {
 
     if (offer.securityDeposit && offer.securityDeposit.amountKobo > 0 && (!this.#securityDepositCapability || !this.#journeys || !this.#securityDepositAccounting)) { if (this.#journeys?.findByOfferId(offerId)?.stage === "stay_settled") this.#compensateStay(offerId); throw new Error("Refundable Security Deposit collection unavailable"); }
     if (offer.securityDeposit && offer.securityDeposit.amountKobo > 0) { try { assertSecurityDepositCollectionAvailable(this.#securityDepositCapability!, "fresh_card"); } catch { if (this.#journeys?.findByOfferId(offerId)?.stage === "stay_settled") this.#compensateStay(offerId); throw new Error("Refundable Security Deposit collection unavailable"); } }
-    const journey = this.#journeys?.createIfAbsent({ offerId, paymentMethod: "fresh_card", originalPaymentDeadline: offer.paymentWindow.expiresAt, stayAmountKobo: typeof offer.quote?.allInStayTotalKobo === "number" ? offer.quote.allInStayTotalKobo : offer.totalAmountDueNowKobo - (offer.refundableSecurityDepositKobo ?? 0), deposit: offer.securityDeposit ?? null });
+    const journey = this.#journeys?.createIfAbsent({ offerId, paymentMethod: "fresh_card", originalPaymentDeadline: offer.paymentWindow.expiresAt, stayAmountKobo: stayAmountDueNowKobo(offer.quote) ?? offer.totalAmountDueNowKobo - (offer.refundableSecurityDepositKobo ?? 0), deposit: offer.securityDeposit ?? null });
     const purpose = journey?.stage === "stay_settled" ? "security_deposit" as const : "stay" as const;
     if (purpose === "security_deposit" && (!journey || !journey.requiredDeposit || journey.requiredDeposit.amountKobo <= 0)) throw new Error("No deposit payment is required");
     const pspReference = `psp_ref_${envelope.commandId.slice(0, 8)}_${now.getTime()}`;

@@ -5,10 +5,14 @@ export interface ExtendedStayPolicy {
   readonly billingPeriodNights: number;
 }
 
-/** Issue 08 enables one 30-night Billing Period. Issue 09 extends this staging-only value. */
+/**
+ * ADR 0105 (amended 22 Oct 2026): the staging demo accepts Extended Stays of 30 to 180 nights, six 30-night Billing
+ * Periods at most. Only the demo composition supplies this policy; production keeps ADR 0092's 30-90 nights and
+ * receives no policy at all until its ordinary launch gates close.
+ */
 export const DEMO_EXTENDED_STAY_POLICY: ExtendedStayPolicy = Object.freeze({
   minimumNights: 30,
-  maximumNights: 30,
+  maximumNights: 180,
   billingPeriodNights: 30,
 });
 

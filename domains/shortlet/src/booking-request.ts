@@ -1,6 +1,6 @@
 import { generatePlatformId } from "../../../packages/platform-core/src/index.js";
 import { PlatformCommandEnvelope, createPlatformCommandEnvelope } from "../../../packages/platform-core/src/index.js";
-import { StayDateRange } from "./browse.js";
+import { MAX_STAY_NIGHTS, StayDateRange, isEligibleExtendedStayUnit, isEligibleUnit } from "./browse.js";
 import { createStayQuote } from "./quote.js";
 import {
   DistinctPayer,
@@ -156,7 +156,8 @@ export class BookingRequestManager {
     if (!unitId) throw new Error("unitId is required to create a draft");
     if (!primaryGuest) throw new Error("primaryGuest is required to create a draft");
     if (!checkIn || !checkOut) throw new Error("checkIn and checkOut dates are required");
-    new StayDateRange(checkIn, checkOut, clock(), this.#extendedStayPolicy);
+    const draftRange = new StayDateRange(checkIn, checkOut, clock(), this.#extendedStayPolicy);
+    if (draftRange.nights > MAX_STAY_NIGHTS) this.#assertExtendedStayEligible(unitId, draftRange, clock());
 
     const canonicalPrimaryGuest: PrimaryGuest = {
       id: primaryGuest.id,
@@ -322,6 +323,22 @@ export class BookingRequestManager {
     return req;
   }
 
+  /**
+   * ADR 0092 and ADR 0055: an Extended Stay is rechecked at draft and disclosure against its opt-in, its complete
+   * monthly and utilities facts, and every inspection, authority, licence and insurance claim through checkout.
+   * It fails closed when the Unit cannot be read.
+   */
+  #assertExtendedStayEligible(unitId: string, dateRange: StayDateRange, now: Date): void {
+    const unit = this.#repository
+      ? (this.#repository.findById
+        ? this.#repository.findById(unitId)
+        : this.#repository.findAll().find((candidate: { readonly id?: string }) => candidate.id === unitId))
+      : null;
+    if (!unit) throw new Error(`Unit not found: ${unitId}`);
+    if (!isEligibleExtendedStayUnit(unit, this.#extendedStayPolicy)) throw new Error("Unit is not configured for Extended Stay pricing and servicing");
+    if (!isEligibleUnit(unit, now, dateRange)) throw new Error("Unit is no longer eligible through checkout");
+  }
+
   discloseBookingRequest(
     envelope: PlatformCommandEnvelope<{ draftId: string; autoDeliver?: boolean }>,
     { clock = () => new Date() }: { clock?: () => Date } = {}
@@ -391,6 +408,9 @@ export class BookingRequestManager {
         throw new Error("Disclosure violates Latest Disclosure Cutoff: must be completed by 10:55 AM WAT on check-in date to allow 5-minute delivery before 11:00 AM WAT cutoff");
       }
     }
+
+    // ADR 0055 / 0056 / 0057 / 0065: an Extended Stay is rechecked at disclosure through checkout.
+    if (dateRange.nights > MAX_STAY_NIGHTS) this.#assertExtendedStayEligible(draft.unitId, dateRange, now);
 
     // 4. Quote Validation
     let unit = null;

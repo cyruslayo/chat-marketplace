@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
+import { stayAmountDueNowKobo } from "./quote.js";
 import type {
   PlatformCommandEnvelope,
   CommandPrincipal,
@@ -457,10 +458,10 @@ export class BankTransferPaymentManager {
       throw new Error(
         "A valid email address is required before payment continuation",
       );
+    // ADR 0092: an Extended Stay's first Period Payment is its first Billing Period only.
     const stayAmountKobo =
-      typeof offer.quote?.allInStayTotalKobo === "number"
-        ? offer.quote.allInStayTotalKobo
-        : offer.totalAmountDueNowKobo -
+      stayAmountDueNowKobo(offer.quote) ??
+        offer.totalAmountDueNowKobo -
           (offer.refundableSecurityDepositKobo ?? 0);
     const purpose =
       existingJourney?.stage === "stay_settled"

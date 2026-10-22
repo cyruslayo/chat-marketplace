@@ -4,6 +4,7 @@ export type { ManualTransferAccount } from "./manual-transfer-account.js";
 import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
 import type { PlatformCommandEnvelope } from "../../../packages/platform-core/src/index.js";
 import type { ConditionalBookingOffer } from "./conditional-offer.js";
+import { stayAmountDueNowKobo } from "./quote.js";
 import type { LivePaymentAttemptRegistryPort } from "./payment-attempt.js";
 import type { BookingContract, Reservation } from "./card-payment.js";
 import type { BookingStateRepository } from "./booking-state.js";
@@ -591,10 +592,8 @@ export class ManualTransferManager {
         "slot_taken",
         `A live ${holder.method} payment attempt already owns this offer`,
       );
-    const amountKobo =
-      typeof offer.quote?.allInStayTotalKobo === "number"
-        ? offer.quote.allInStayTotalKobo
-        : offer.totalAmountDueNowKobo;
+    // ADR 0092: an Extended Stay's first Period Payment is its first Billing Period only.
+    const amountKobo = stayAmountDueNowKobo(offer.quote) ?? offer.totalAmountDueNowKobo;
     const transferId = `mtr_${createHash("sha256").update(`${offer.offerId}:${envelope.commandId}`).digest("hex").slice(0, 16)}`;
     const transfer: ManualTransfer = {
       transferId,

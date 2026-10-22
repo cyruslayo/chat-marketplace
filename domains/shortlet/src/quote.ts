@@ -1,6 +1,6 @@
 import { generatePlatformId } from "../../../packages/platform-core/src/index.js";
 import { StayDateRange } from "./browse.js";
-import { ownerSettlementFor, unitOwnerTerms } from "./owner-terms.js";
+import { guestPriceFromOwnerTerms, marginOnKobo, ownerSettlementFor, unitOwnerTerms } from "./owner-terms.js";
 import type { OwnerSettlementSnapshot } from "./owner-terms.js";
 import { assertStayLength, monthlyAmountsAreValid, utilitiesStatementIsValid, type ExtendedStayPolicy } from "./extended-stay.js";
 import { calculateSecurityDepositPolicySnapshot, calculateRefundableSecurityDeposit, SECURITY_DEPOSIT_POLICY_VERSION, type SecurityDepositPolicySnapshot } from "./security-deposit.js";
@@ -192,6 +192,23 @@ export interface BillingPeriodQuote {
   readonly nightlyContractedValuesKobo: readonly number[];
 }
 
+/** The quote fields that decide what the first Period Payment collects. */
+export interface StayAmountSource {
+  readonly stayType?: string;
+  readonly allInStayTotalKobo?: number;
+  readonly billingPeriods?: readonly { readonly amountKobo: number }[];
+}
+
+/**
+ * ADR 0092: the stay component of the first Period Payment. An Extended Stay collects its first Billing Period only;
+ * a Short Stay collects its whole All-In Stay Total. Returns undefined when the quote carries no such amount.
+ */
+export function stayAmountDueNowKobo(quote: StayAmountSource | null | undefined): number | undefined {
+  if (!quote) return undefined;
+  if (quote.stayType === "extended") return quote.billingPeriods?.[0]?.amountKobo;
+  return typeof quote.allInStayTotalKobo === "number" ? quote.allInStayTotalKobo : undefined;
+}
+
 export function createStayQuote({
   unit,
   checkIn,
@@ -243,8 +260,15 @@ export function createStayQuote({
       const isFullPeriod = periodNights === extendedStayPolicy!.billingPeriodNights;
       const ownerAccommodation = isFullPeriod ? monthly.accommodationKobo : ownerTerms.agreed.nightlyKobo * periodNights;
       const ownerCharges = isFullPeriod ? monthly.mandatoryChargesKobo : ownerTerms.agreed.mandatoryChargesKobo;
-      const guestAccommodation = ownerAccommodation + Math.floor(ownerAccommodation * ownerTerms.marginBasisPoints / 10_000);
-      const guestCharges = ownerCharges + Math.floor(ownerCharges * ownerTerms.marginBasisPoints / 10_000);
+      // ADR 0092: a shorter final period is each of its nights at the Short Stay nightly guest price (ADR 0089), so it
+      // carries no monthly discount and no rounding drift from pricing its nights as one block.
+      const guestPrice = guestPriceFromOwnerTerms(ownerTerms);
+      const guestAccommodation = isFullPeriod
+        ? ownerAccommodation + marginOnKobo(ownerAccommodation, ownerTerms.marginBasisPoints)
+        : guestPrice.nightlyKobo * periodNights;
+      const guestCharges = isFullPeriod
+        ? ownerCharges + marginOnKobo(ownerCharges, ownerTerms.marginBasisPoints)
+        : guestPrice.mandatoryFeesKobo;
       const periodAmount = guestAccommodation + guestCharges;
       accommodationKobo += guestAccommodation;
       mandatoryFeesKobo += guestCharges;
@@ -305,7 +329,9 @@ export function createStayQuote({
       amountKobo: calculateRefundableSecurityDeposit({ accommodationKobo, requestedDepositKobo: configuredDepositKobo }), collectionRequired: calculateRefundableSecurityDeposit({ accommodationKobo, requestedDepositKobo: configuredDepositKobo }) > 0
     });
   const refundableSecurityDepositKobo = securityDeposit.amountKobo;
-  const totalAmountDueNowKobo = allInStayTotalKobo + securityDeposit.amountKobo;
+  // ADR 0092: an Extended Stay's first Period Payment collects its first Billing Period only; the whole stay is contracted.
+  const amountDueNowStayKobo = stayType === "extended" ? billingPeriods[0]!.amountKobo : allInStayTotalKobo;
+  const totalAmountDueNowKobo = amountDueNowStayKobo + securityDeposit.amountKobo;
 
   const configuredCancellationPolicy = unit.cancellationPolicy;
   const policyType = configuredCancellationPolicy?.type ?? "standard";
