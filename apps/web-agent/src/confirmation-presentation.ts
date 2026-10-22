@@ -7,6 +7,8 @@ export interface ConfirmationContent {
   readonly steps: readonly string[];
   readonly conversationHref: string;
   readonly detailsHref: string;
+  /** Demo-launch issue 12 AC4: present for an Extended Stay only; the page that lists its Billing Periods. */
+  readonly scheduleHref?: string;
   readonly details: string;
 }
 
@@ -27,6 +29,7 @@ export function confirmationContent(artifact: BookingContractArtifact, threadId:
     steps: confirmationSteps(artifact.facts),
     conversationHref: `/conversation?threadId=${encodeURIComponent(threadId)}`,
     detailsHref: `${route}#booking-details`,
+    ...(artifact.facts.noticeToEndTerms ? { scheduleHref: `/bookings/periods/${encodeURIComponent(artifact.facts.offerId)}` } : {}),
     details: [details, accommodationProviderLine(artifact.facts.accommodationProvider.name),
       ...(guestNames.length ? [guestFact(GUEST_FACT_LABELS.guests, guestNames.join(", "))] : []),
       `Checkout time: ${artifact.facts.checkout?.time ?? "11:00"} WAT`,
