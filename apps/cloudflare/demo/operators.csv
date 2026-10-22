@@ -1,0 +1,2 @@
+operator_id,tenant_id,name,status,legal_form,approved_at,approval_expires_at,cac_reference,cac_verified,responsible_persons_verified,responsible_person_actor_id,beneficial_owners_verified,payment_provider_approved,settlement_account_verified
+demo-operator-001,tenant-staging,Demo Operator Ltd,approved,private-company-limited-by-shares,2026-10-01T00:00:00.000Z,2027-12-31T23:59:59.000Z,RC-DEMO-0001,true,true,demo-synthetic-representative,true,true,true
