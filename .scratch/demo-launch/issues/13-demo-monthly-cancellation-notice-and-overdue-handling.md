@@ -100,3 +100,21 @@ Status is left at `ready-for-agent`. The acceptance evidence below is complete f
 5. ADR 0061: a notice is refused while a failure is open. The ADR 0061 remedy calculation (`calculateAuthoritativeRemedy`) is not invoked by this issue; the existing mid-stay incident path handles the failure.
 6. Notice effective date: the WAT date is `now + 1 hour` with no DST, consistent with Lagos.
 7. The cancellation base is the Period 1 owner payable plus margin (guest accommodation and mandatory charges, ADR 0058). The Period 1 amount minus that base is treated as attributable tax, refundable in full.
+
+### Round 2 (commit 9c3b55f): open items 1, 2 and 4 closed; captures still open
+
+- Item 1 (AC6), Notice to End wording: the booking contract artifact carries `noticeToEndTerms` for an Extended Stay. The chat contract (`booking-contract-a2ui.ts`) and the confirmation page (`confirmation-presentation.ts`) show it as "Notice to End: ..." next to the cancellation terms. Tests: "AC6: The guest booking contract shows the Notice to End demo terms in chat and on the confirmation page" and "AC6: The guest contract wording never claims counsel approval ...".
+- Item 2 (AC3), owner payable: `SqliteOwnerPayableLedger.recordPeriodNoticeAdjustment` writes one row per reservation and period (`owner_period_notice_adjustments`, created with the issue 11 period schema). An identical row is a replay (`replayed: true`); a different row for the same period is refused. Unpaid periods write nothing. The projection (`projectOwnerPeriodPayables`, `noticeAdjustments`) replaces a period's settlement once. `NoticeToEndManager` requires the ledger (`owners`) and records after the amendment commits. Tests: four AC3 ledger tests, including replay and conflict.
+- Item 4, cut-short period: a Billing Period that straddles the amended checkout projects only its kept nights, with `checkOut` at the new checkout and the kept amount (the sum of its nightly values). A new payment session for it is refused ("cut short by a Notice to End"). Tests: "A Billing Period cut short by a Notice to End projects only the nights kept" and "... cannot start a new payment session".
+
+Commands and counts (round 2):
+- Red first: `NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow npx tsx --test test/demo-extended-cancellation-notice.test.ts` before the implementation: 30 tests, 22 pass, 8 fail. The 8 failures are exactly the new round-2 tests (4 ledger, 2 cut-short, 2 wording), which call methods and fields that did not exist yet.
+- Green: the same file, 30 of 30 pass.
+- `npm run check`: exit 0.
+- Affected set, one process, 17 files (the 13 from round 1 plus `guest-confirmation-system`, `render-booking-contract-weaver-a2ui`, `sql-port-booking-state`, `sql-port-store-imports`): 106 tests, 105 pass, 1 fail. The failing test was `back-office-owner-overpayment` AC4, with `fetch failed` inside the operator sign-in helper while many files ran in parallel. The file re-run alone gave 5 of 5 pass (`npx tsx --test test/back-office-owner-overpayment.test.ts`). Treat this as a parallel-load flake, recorded rather than hidden.
+- Worker: `npm run test:workers -- apps/cloudflare/test/demo-extended-stay.spec.ts`: 2 of 2 pass.
+
+Still open, which keeps this issue `ready-for-agent`:
+- Captures for the changed contract and confirmation screen are not in `screenshots/13/`. The round 1 captures cover only the request draft and discovery, and the contract screen is shown only after payment. The issue 08 request-draft captures predate the contract change. An attempt to drive an Extended Stay to `confirmed` through `restartFixture().advance` failed inside the chat-turn helper (`a2uiMessages` of undefined after the offer step). Producing those captures needs a payment-stage driver, and that script was not committed.
+- The notice's owner-payable reductions are now persisted, but the back-office payables screen does not show them yet. That is screen work for issue 12.
+- Known cross-check: the Cloudflare `SHORTLET` schema migration list does not include `owner_period_notice_adjustments`, since issue 11's period tables are also created inline in the local ledger. The daily export list is not updated.
