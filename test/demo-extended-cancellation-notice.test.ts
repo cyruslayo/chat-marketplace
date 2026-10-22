@@ -15,6 +15,11 @@ import {
   extendedCancellationEconomics,
 } from "../domains/shortlet/src/extended-stay-changes.js";
 import type { BillingPeriodQuote } from "../domains/shortlet/src/quote.js";
+import { SqliteOwnerPayableLedger, ownerPeriodSettlementsFromQuote, projectOwnerPeriodPayables } from "../domains/shortlet/src/owner-payable.js";
+import { openNodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-database.js";
+import { bookingContractArtifactFromView } from "../apps/web/src/booking-contract-artifact.js";
+import { bookingContractArtifactToA2UI } from "../apps/web-agent/src/booking-contract-a2ui.js";
+import { confirmationContent } from "../apps/web-agent/src/confirmation-presentation.js";
 import { PeriodPaymentManager } from "../domains/shortlet/src/period-payment.js";
 import { CancellationApplication } from "../apps/web/src/cancellation-application.js";
 import { addDays, extendUnit, withConfirmedExtendedStay, type DemoJourneyContext } from "./helpers/demo-extended-journey.js";
@@ -92,8 +97,10 @@ function noticeManager(contract: BookingContract, options: {
 }) {
   const store = new ContractStore(contract);
   const refunds: Array<{ periodIndex: number; amountKobo: number; amendmentId: string }> = [];
+  const owners = new SqliteOwnerPayableLedger(openNodeSqliteDatabase(":memory:"), () => new Date(options.now));
   const manager = new NoticeToEndManager({
     contracts: store,
+    owners,
     periods: paidLedger(periodsOf(contract), options.paid ?? [1]),
     arrival: { hasVerifiedAccess: () => options.verified ?? true },
     failures: { hasOpenFailure: () => options.failure ?? false },
@@ -106,7 +113,7 @@ function noticeManager(contract: BookingContract, options: {
     ...(options.noPolicy ? {} : { extendedStayPolicy: DEMO_EXTENDED_STAY_POLICY }),
     clock: () => new Date(options.now),
   });
-  return { store, refunds, manager };
+  return { store, refunds, manager, owners };
 }
 
 function cancellationApp(context: Context, contract: BookingContract, at: string, calls: Array<{ amountKobo: number; originalPaymentReference: string; cancellationId: string }>) {
@@ -407,4 +414,124 @@ test("AC7: Short Stay flexible, standard and firm cancellation thresholds are un
     const result = manager.calculateGuestCancellation({ policyType: policyType as "flexible" | "standard" | "firm", checkInIso: new Date(check).toISOString(), cancellationBaseKobo: 1000, cancelledAtIso: at(elapsed) });
     assert.equal(result.refundPercentage, expected, `${policyType} at ${elapsed} ms`);
   }
+});
+
+// ---- AC3 (round 2): the Notice to End owner-payable reduction is persisted per period ----
+
+test("AC3: The Notice to End owner-payable reduction is written once per amendment and period in the per-period owner ledger", async () => {
+  await withConfirmedExtendedStay({ unit: journeyUnit(), checkIn: CHECK_IN, checkOut: CHECK_OUT }, (context) => {
+    const contract = contractOf(context);
+    const { manager, owners } = noticeManager(contract, { now: "2026-10-01T09:00:00.000Z", paid: [1, 2] });
+    const result = manager.giveNotice(contract.contractId, principalOf(contract));
+    const rows = owners.listPeriodNoticeAdjustments(contract.reservationId);
+    assert.deepEqual(rows.map((row) => row.periodIndex), [2], "only the refunded paid period is adjusted");
+    assert.equal(rows[0]!.amendmentId, result.amendmentId);
+    assert.equal(rows[0]!.ownerPayableKobo, result.ownerPayables.find((entry) => entry.periodIndex === 2)!.ownerPayableKobo);
+    assert.equal(rows[0]!.reductionKobo, periodsOf(contract)[1]!.ownerPayableKobo - rows[0]!.ownerPayableKobo);
+    assert.ok(rows[0]!.reductionKobo > 0);
+    assert.equal(result.ownerAdjustments.length, 1, "the result reports the persisted adjustment");
+  });
+});
+
+test("AC3: Replaying the same Notice to End owner-payable reduction does not reduce the payable twice", async () => {
+  await withConfirmedExtendedStay({ unit: journeyUnit(), checkIn: CHECK_IN, checkOut: CHECK_OUT }, (context) => {
+    const contract = contractOf(context);
+    const { manager, owners } = noticeManager(contract, { now: "2026-10-01T09:00:00.000Z", paid: [1, 2] });
+    manager.giveNotice(contract.contractId, principalOf(contract));
+    const [row] = owners.listPeriodNoticeAdjustments(contract.reservationId);
+    const replay = owners.recordPeriodNoticeAdjustment({ ...row!, reservationId: contract.reservationId });
+    assert.equal(replay.replayed, true, "the identical adjustment is a replay");
+    assert.equal(owners.listPeriodNoticeAdjustments(contract.reservationId).length, 1, "no second row is written");
+    const settlements = ownerPeriodSettlementsFromQuote(contract.quote)!;
+    const paidAt = new Map([[1, "2026-09-01T00:00:00.000Z"], [2, "2026-10-01T00:00:00.000Z"]]);
+    const project = (adjustments: readonly (typeof row)[]) => projectOwnerPeriodPayables({ periods: settlements, paidAt, protectionWindowStartsAt: null, blockingComplaintOpen: false, cancellation: null, payouts: [], noticeAdjustments: adjustments, now: new Date("2026-11-01T00:00:00.000Z") });
+    const once = project([row!]).find((entry) => entry.periodIndex === 2)!;
+    const twice = project([row!, row!]).find((entry) => entry.periodIndex === 2)!;
+    assert.equal(twice.ownerPayableKobo, once.ownerPayableKobo, "the reduction is applied once");
+    assert.equal(once.ownerPayableKobo, row!.ownerPayableKobo);
+  });
+});
+
+test("AC3: No owner-payable reduction is written for an unpaid Billing Period", async () => {
+  await withConfirmedExtendedStay({ unit: journeyUnit(), checkIn: CHECK_IN, checkOut: CHECK_OUT }, (context) => {
+    const contract = contractOf(context);
+    const { manager, owners } = noticeManager(contract, { now: "2026-10-01T09:00:00.000Z", paid: [1] });
+    const result = manager.giveNotice(contract.contractId, principalOf(contract));
+    assert.equal(owners.listPeriodNoticeAdjustments(contract.reservationId).length, 0, "period 2 is unpaid, so no payable reduction");
+    assert.equal(result.ownerAdjustments.length, 0);
+  });
+});
+
+test("AC3: A conflicting owner-payable reduction for the same amendment and period is refused", async () => {
+  await withConfirmedExtendedStay({ unit: journeyUnit(), checkIn: CHECK_IN, checkOut: CHECK_OUT }, (context) => {
+    const contract = contractOf(context);
+    const { manager, owners } = noticeManager(contract, { now: "2026-10-01T09:00:00.000Z", paid: [1, 2] });
+    manager.giveNotice(contract.contractId, principalOf(contract));
+    const [row] = owners.listPeriodNoticeAdjustments(contract.reservationId);
+    assert.throws(() => owners.recordPeriodNoticeAdjustment({ ...row!, ownerPayableKobo: row!.ownerPayableKobo - 1, reductionKobo: row!.reductionKobo + 1 }), /already recorded/);
+    assert.equal(owners.listPeriodNoticeAdjustments(contract.reservationId)[0]!.ownerPayableKobo, row!.ownerPayableKobo, "the recorded value is unchanged");
+  });
+});
+
+// ---- AC3 (round 2): a Billing Period cut short by a Notice to End ----
+
+test("AC3: A Billing Period cut short by a Notice to End projects only the nights kept", async () => {
+  await withConfirmedExtendedStay({ unit: journeyUnit(), checkIn: CHECK_IN, checkOut: CHECK_OUT }, (context) => {
+    const contract = contractOf(context);
+    const { store, manager } = noticeManager(contract, { now: "2026-10-01T09:00:00.000Z", paid: [1] });
+    manager.giveNotice(contract.contractId, principalOf(contract));
+    const amended = store.current;
+    const periodManager = new PeriodPaymentManager({ store: null, contracts: { getBookingContract: () => amended } });
+    const cut = periodManager.projectBillingPeriods(contract.offerId, new Date("2026-10-02T00:00:00.000Z")).find((period) => period.periodIndex === 2)!;
+    const period2 = periodsOf(contract)[1]!;
+    assert.equal(cut.nights, 5, "10 to 14 October are kept");
+    assert.equal(cut.checkOut, "2026-10-15");
+    assert.equal(cut.amountKobo, period2.nightlyContractedValuesKobo.slice(0, 5).reduce((sum, value) => sum + value, 0));
+    assert.notEqual(cut.amountKobo, period2.amountKobo, "the projection does not show the original period amount");
+  });
+});
+
+test("AC3: A Billing Period cut short by a Notice to End cannot start a new payment session", async () => {
+  await withConfirmedExtendedStay({ unit: journeyUnit(), checkIn: CHECK_IN, checkOut: CHECK_OUT }, (context) => {
+    const contract = contractOf(context);
+    const { store, manager } = noticeManager(contract, { now: "2026-10-01T09:00:00.000Z", paid: [1] });
+    manager.giveNotice(contract.contractId, principalOf(contract));
+    const amended = store.current;
+    const periodManager = new PeriodPaymentManager({ store: {} as never, contracts: { getBookingContract: () => amended }, extendedStayPolicy: DEMO_EXTENDED_STAY_POLICY });
+    assert.throws(() => periodManager.initializePeriodCheckout({ offerId: contract.offerId, periodIndex: 2, now: new Date("2026-10-02T00:00:00.000Z"), payerId: contract.parties.primaryGuest.id, tenantId: contract.tenantId ?? "" }), /cut short/);
+  });
+});
+
+// ---- AC6 (round 2): the guest's booking contract shows the Notice to End demo terms ----
+
+function artifactFor(contract: BookingContract) {
+  const view = {
+    contractId: contract.contractId, reservationId: contract.reservationId, offerId: contract.offerId, unitId: contract.unitId,
+    parties: contract.parties, dates: contract.dates, occupants: contract.occupants, money: { allInStayTotalKobo: contract.totalAmountDueNowKobo },
+    contractVersion: contract.contractVersion, projectionVersion: "projection-13", addressAvailability: "locked", accessAvailability: "locked", disclosures: [],
+  } as unknown as Parameters<typeof bookingContractArtifactFromView>[0];
+  const viewer = { id: contract.parties.primaryGuest.id, role: "guest" as const, tenantId: contract.tenantId ?? "" };
+  return bookingContractArtifactFromView(view, contract as unknown as Parameters<typeof bookingContractArtifactFromView>[1], viewer);
+}
+
+test("AC6: The guest booking contract shows the Notice to End demo terms in chat and on the confirmation page", async () => {
+  await withConfirmedExtendedStay({ unit: journeyUnit(), checkIn: CHECK_IN, checkOut: CHECK_OUT }, (context) => {
+    const artifact = artifactFor(contractOf(context));
+    const chat = JSON.stringify(bookingContractArtifactToA2UI({ artifact, surfaceId: "surface-13" }));
+    assert.ok(chat.includes(NOTICE_TO_END_DEMO_TERMS), "the chat contract shows the demo Notice to End terms");
+    const confirmation = confirmationContent(artifact, "thread-13", "/contracts/13", "");
+    assert.ok(confirmation.details.includes(NOTICE_TO_END_DEMO_TERMS), "the confirmation page shows the demo Notice to End terms");
+    assert.ok(confirmation.details.includes(EXTENDED_CANCELLATION_DEMO_SUMMARY), "the cancellation demo terms are shown too");
+  });
+});
+
+test("AC6: The guest contract wording never claims counsel approval for the Notice to End or cancellation terms", async () => {
+  await withConfirmedExtendedStay({ unit: journeyUnit(), checkIn: CHECK_IN, checkOut: CHECK_OUT }, (context) => {
+    const artifact = artifactFor(contractOf(context));
+    const chat = JSON.stringify(bookingContractArtifactToA2UI({ artifact, surfaceId: "surface-13" }));
+    const confirmation = confirmationContent(artifact, "thread-13", "/contracts/13", "").details;
+    for (const text of [chat, confirmation]) {
+      assert.doesNotMatch(text, /counsel[- ]approved|approved by counsel|counsel has approved|legally approved/i);
+    }
+  });
 });

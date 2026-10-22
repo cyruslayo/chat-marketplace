@@ -159,13 +159,17 @@ export class PeriodPaymentManager {
             : nowMs >= payableFromMs
               ? "payable"
               : "scheduled";
+      // Demo-launch issue 13: a period cut short by a Notice to End projects only the nights kept (ADR 0092).
+      const cutShort = dayStartMs(period.checkOut) > dayStartMs(contract.dates.checkOut);
+      const keptNights = cutShort ? Math.round((dayStartMs(contract.dates.checkOut) - startMs) / DAY_MS) : period.nights;
+      const keptAmountKobo = cutShort ? period.nightlyContractedValuesKobo.slice(0, keptNights).reduce((sum, value) => sum + value, 0) : period.amountKobo;
       return Object.freeze({
         offerId,
         periodIndex: period.index,
         checkIn: period.checkIn,
-        checkOut: period.checkOut,
-        nights: period.nights,
-        amountKobo: period.amountKobo,
+        checkOut: cutShort ? contract.dates.checkOut : period.checkOut,
+        nights: keptNights,
+        amountKobo: keptAmountKobo,
         dueDate: period.dueDate,
         status,
         overdue,
@@ -237,6 +241,9 @@ export class PeriodPaymentManager {
     const { contract, periods } = this.#extendedContract(input.offerId);
     const period = periods.find((candidate) => candidate.index === input.periodIndex);
     if (!period) throw new RangeError("Billing Period is not part of this stay");
+    if (dayStartMs(period.checkOut) > dayStartMs(contract.dates.checkOut)) {
+      throw new Error(`Billing Period ${period.index} was cut short by a Notice to End and cannot start a new payment session`);
+    }
     const paid = this.#paidPeriods(input.offerId, contract);
     if (paid.has(period.index)) throw new Error(`Billing Period ${period.index} is already paid`);
     const nextUnpaid = periods.find((candidate) => !paid.has(candidate.index))!;

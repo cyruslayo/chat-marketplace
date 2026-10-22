@@ -1,6 +1,7 @@
 import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
 import type { BookingContractView } from "../../../domains/shortlet/src/index.js";
 import type { GuestConductPolicySnapshot } from "../../../domains/shortlet/src/index.js";
+import { NOTICE_TO_END_DEMO_TERMS } from "../../../domains/shortlet/src/extended-stay.js";
 
 export const BOOKING_CONTRACT_ARTIFACT_KIND = "shortlet.booking-contract";
 export const BOOKING_CONTRACT_SCHEMA_VERSION = "shortlet.booking-contract/v1";
@@ -33,6 +34,8 @@ export interface BookingContractArtifact {
     readonly paymentMethod: "fresh_card" | "bank_transfer";
     readonly cardMetadata?: { readonly brand: string; readonly last4: string };
     readonly cancellationPolicy?: { readonly type?: string; readonly version?: string; readonly summary?: string };
+    /** Demo-launch issue 13: the demo Notice to End terms, present for an Extended Stay only (ADR 0092, ADR 0105). */
+    readonly noticeToEndTerms?: string;
     readonly guestConductRules: readonly string[];
     readonly guestConductPolicy?: GuestConductPolicySnapshot;
     readonly contractVersion: number;
@@ -72,6 +75,7 @@ export function bookingContractArtifactFromView(view: BookingContractView, contr
     amountPaidKobo: contract.paymentDetails.amountKobo, ...(view.money.currency ? { currency: view.money.currency } : {}),
     paymentMethod: contract.paymentDetails.paymentMethod, ...(contract.paymentDetails.cardMetadata ? { cardMetadata: Object.freeze({ ...contract.paymentDetails.cardMetadata }) } : {}),
     ...(safeCancellationPolicy(contract.policies.cancellationPolicy) ? { cancellationPolicy: safeCancellationPolicy(contract.policies.cancellationPolicy) } : {}),
+    ...((contract.policies.cancellationPolicy as { readonly type?: unknown } | undefined)?.type === "extended" ? { noticeToEndTerms: NOTICE_TO_END_DEMO_TERMS } : {}),
     guestConductRules: Object.freeze(contract.policies.guestConductPolicy ? contract.policies.guestConductPolicy.rules.map((rule) => rule.summary) : [...contract.policies.guestConductRules]),
     ...(contract.policies.guestConductPolicy ? { guestConductPolicy: contract.policies.guestConductPolicy } : {}), contractVersion: view.contractVersion,
     checkout: Object.freeze({ time: view.checkout?.time ?? contract.checkout?.time ?? "11:00", timezone: view.checkout?.timezone ?? contract.checkout?.timezone ?? "Africa/Lagos", source: view.checkout?.source ?? contract.checkout?.source ?? "contractual" }),

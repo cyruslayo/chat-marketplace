@@ -31,6 +31,7 @@ export function confirmationContent(artifact: BookingContractArtifact, threadId:
       ...(guestNames.length ? [guestFact(GUEST_FACT_LABELS.guests, guestNames.join(", "))] : []),
       `Checkout time: ${artifact.facts.checkout?.time ?? "11:00"} WAT`,
       `Cancellation terms: ${artifact.facts.cancellationPolicy?.summary ?? "See your Booking Contract."} House rules: ${artifact.facts.guestConductRules.join("; ") || "See your Booking Contract."}`,
+      ...(artifact.facts.noticeToEndTerms ? [`Notice to End: ${artifact.facts.noticeToEndTerms}`] : []),
       ...(artifact.facts.cardMetadata ? [`Card ending ${artifact.facts.cardMetadata.last4}.`] : [])].join("\n"),
   };
 }

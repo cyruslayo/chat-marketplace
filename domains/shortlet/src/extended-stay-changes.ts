@@ -2,7 +2,7 @@ import type { CommandPrincipal } from "../../../packages/platform-core/src/index
 import type { BookingContract } from "./card-payment.js";
 import type { CancellationEconomics } from "./cancellation-noshow.js";
 import { EXTENDED_CANCELLATION_POLICY_VERSION, NOTICE_TO_END_DAYS, NOTICE_TO_END_DEMO_TERMS, type ExtendedStayPolicy } from "./extended-stay.js";
-import { ownerShareAfterCancellation } from "./owner-payable.js";
+import { ownerShareAfterCancellation, type OwnerPeriodNoticeAdjustment, type OwnerPeriodNoticeLedger } from "./owner-payable.js";
 import type { BillingPeriodQuote } from "./quote.js";
 
 export { EXTENDED_CANCELLATION_DEMO_SUMMARY, EXTENDED_CANCELLATION_POLICY_VERSION, NOTICE_TO_END_DAYS, NOTICE_TO_END_DEMO_TERMS } from "./extended-stay.js";
@@ -163,6 +163,8 @@ export interface NoticeRefundPort {
 export interface NoticeToEndManagerOptions {
   readonly contracts: NoticeContractRepository;
   readonly periods: NoticePeriodLedger;
+  /** The per-period owner ledger (demo-launch issue 11). Each refunded period's owner payable reduction is written here. */
+  readonly owners: OwnerPeriodNoticeLedger;
   readonly arrival: { hasVerifiedAccess(reservationId: string): boolean };
   /** ADR 0061: an open safety, operator or platform failure takes its remedy path, never the voluntary Notice to End. */
   readonly failures: { hasOpenFailure(reservationId: string): boolean };
@@ -178,6 +180,8 @@ export interface NoticeToEndResult extends NoticeCalculation {
   readonly previousVersion: number;
   readonly newVersion: number;
   readonly refunds: readonly { readonly periodIndex: number; readonly amountKobo: number; readonly refundId?: string; readonly status: "pending" | "settled" | "failed" | "reconciliation_required" }[];
+  /** The owner-payable reductions written to the per-period ledger; a period whose payable did not move is absent. */
+  readonly ownerAdjustments: readonly OwnerPeriodNoticeAdjustment[];
   readonly demoTerms: string;
 }
 
@@ -225,6 +229,24 @@ export class NoticeToEndManager {
       noticeToEnd: { amendmentId, noticeDate, effectiveDate: calculation.effectiveDate, newLastNight: calculation.newLastNight },
     }));
 
+    // ADR 0092: each refunded period's owner payable falls by the owner's share of the refunded nights. Only paid periods
+    // with refunds move; an unpaid period has no payable to reduce. The per-period ledger keeps one row per period.
+    const recordedAt = now.toISOString();
+    const ownerAdjustments = calculation.refundsByPeriod.flatMap((entry) => {
+      const before = periods.find((period) => period.index === entry.periodIndex)!;
+      const after = calculation.ownerPayables.find((period) => period.periodIndex === entry.periodIndex)!;
+      if (after.ownerPayableKobo === before.ownerPayableKobo && after.marginKobo === before.marginKobo) return [];
+      return [this.#o.owners.recordPeriodNoticeAdjustment({
+        reservationId: contract.reservationId,
+        periodIndex: entry.periodIndex,
+        amendmentId,
+        ownerPayableKobo: after.ownerPayableKobo,
+        marginKobo: after.marginKobo,
+        reductionKobo: before.ownerPayableKobo - after.ownerPayableKobo,
+        recordedAt,
+      }).adjustment];
+    });
+
     const refunds = calculation.refundsByPeriod.map((entry) => {
       try {
         const source = this.#paymentSource(contract, entry.periodIndex);
@@ -251,6 +273,7 @@ export class NoticeToEndManager {
       previousVersion: contract.contractVersion,
       newVersion: committed.contractVersion,
       refunds: Object.freeze(refunds),
+      ownerAdjustments: Object.freeze(ownerAdjustments),
       demoTerms: NOTICE_TO_END_DEMO_TERMS,
     });
   }

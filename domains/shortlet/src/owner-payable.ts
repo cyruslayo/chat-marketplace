@@ -270,6 +270,8 @@ export interface OwnerPeriodPayablesInput {
   /** Every payout and recovery on the reservation; each period takes only the ones bound to it. */
   readonly payouts: readonly OwnerPayout[];
   readonly recoveries?: readonly OwnerRecovery[];
+  /** Demo-launch issue 13: the persisted Notice to End reductions. A period's recorded settlement replaces the quote's. */
+  readonly noticeAdjustments?: readonly OwnerPeriodNoticeAdjustment[];
   readonly now: Date;
 }
 
@@ -288,8 +290,11 @@ export function projectOwnerPeriodPayables(input: OwnerPeriodPayablesInput): rea
       const isPeriodOne = period.periodIndex === 1;
       const payouts = input.payouts.filter((payout) => payout.periodIndex === period.periodIndex);
       const recoveries = (input.recoveries ?? []).filter((recovery) => recovery.periodIndex === period.periodIndex);
+      const notice = input.noticeAdjustments?.find((adjustment) => adjustment.periodIndex === period.periodIndex);
       const common = {
-        settlement: { ownerPayableKobo: period.ownerPayableKobo, marginKobo: period.marginKobo },
+        settlement: notice
+          ? { ownerPayableKobo: notice.ownerPayableKobo, marginKobo: notice.marginKobo }
+          : { ownerPayableKobo: period.ownerPayableKobo, marginKobo: period.marginKobo },
         cancellation: input.cancellation,
         payouts,
         recoveries,
@@ -375,6 +380,28 @@ export class OwnerPayoutError extends Error {
       this.problem === "reference_required"
     );
   }
+}
+
+/**
+ * Demo-launch issue 13 (ADR 0092 Notice to End, ADR 0060): the owner's payable and margin for one Billing Period after a
+ * Notice to End removed refunded nights. One row per reservation and period, so a replay cannot reduce it twice.
+ */
+export interface OwnerPeriodNoticeAdjustment {
+  readonly reservationId: string;
+  readonly periodIndex: number;
+  readonly amendmentId: string;
+  /** The owner payable for the period after the notice (ADR 0092: the owner's share of the refunded nights is removed). */
+  readonly ownerPayableKobo: number;
+  readonly marginKobo: number;
+  /** How much the owner payable fell; zero when only the margin moved. */
+  readonly reductionKobo: number;
+  readonly recordedAt: string;
+}
+
+export interface OwnerPeriodNoticeLedger {
+  /** Idempotent per reservation and period: an identical row is a replay; a different row for the period is refused. */
+  recordPeriodNoticeAdjustment(adjustment: OwnerPeriodNoticeAdjustment): { readonly adjustment: OwnerPeriodNoticeAdjustment; readonly replayed: boolean };
+  listPeriodNoticeAdjustments(reservationId: string): readonly OwnerPeriodNoticeAdjustment[];
 }
 
 export interface OwnerPayableLedger {
@@ -855,10 +882,11 @@ export const OWNER_PAYABLE_SCHEMA = `
 export const OWNER_LEDGER_PERIOD_SCHEMA = `
       CREATE TABLE IF NOT EXISTS owner_ledger_period_bindings (ledger_entry_id TEXT PRIMARY KEY, reservation_id TEXT NOT NULL, period_index INTEGER NOT NULL CHECK (period_index >= 1));
       CREATE INDEX IF NOT EXISTS idx_owner_ledger_period_bindings_reservation ON owner_ledger_period_bindings (reservation_id, period_index);
+      CREATE TABLE IF NOT EXISTS owner_period_notice_adjustments (reservation_id TEXT NOT NULL, period_index INTEGER NOT NULL CHECK (period_index >= 1), amendment_id TEXT NOT NULL, owner_payable_kobo INTEGER NOT NULL CHECK (owner_payable_kobo >= 0), margin_kobo INTEGER NOT NULL CHECK (margin_kobo >= 0), reduction_kobo INTEGER NOT NULL CHECK (reduction_kobo >= 0), recorded_at TEXT NOT NULL, PRIMARY KEY (reservation_id, period_index));
     `;
 
 /** The owner-payable ledger in the shared SQLite database, read fresh on every call (no cross-process cache). */
-export class SqliteOwnerPayableLedger implements OwnerPayableLedger {
+export class SqliteOwnerPayableLedger implements OwnerPayableLedger, OwnerPeriodNoticeLedger {
   readonly #database: import("../../../packages/platform-core/src/sql-database.js").SqlDatabase;
   readonly #clock: () => Date;
   constructor(
@@ -870,6 +898,52 @@ export class SqliteOwnerPayableLedger implements OwnerPayableLedger {
     this.#database.exec(OWNER_PAYABLE_SCHEMA);
     this.#database.exec(OWNER_LEDGER_PERIOD_SCHEMA);
   }
+  recordPeriodNoticeAdjustment(adjustment: OwnerPeriodNoticeAdjustment): { readonly adjustment: OwnerPeriodNoticeAdjustment; readonly replayed: boolean } {
+    const integers = [adjustment.periodIndex, adjustment.ownerPayableKobo, adjustment.marginKobo, adjustment.reductionKobo];
+    if (!integers.every((value) => Number.isSafeInteger(value)) || adjustment.periodIndex < 1 || adjustment.ownerPayableKobo < 0 || adjustment.marginKobo < 0 || adjustment.reductionKobo < 0 || adjustment.amendmentId.trim() === "") {
+      throw new Error("Invalid Notice to End owner-payable adjustment");
+    }
+    const existing = this.listPeriodNoticeAdjustments(adjustment.reservationId).find((row) => row.periodIndex === adjustment.periodIndex);
+    if (existing) {
+      if (existing.amendmentId === adjustment.amendmentId && existing.ownerPayableKobo === adjustment.ownerPayableKobo && existing.marginKobo === adjustment.marginKobo && existing.reductionKobo === adjustment.reductionKobo) {
+        return { adjustment: existing, replayed: true };
+      }
+      throw new Error("A different Notice to End adjustment is already recorded for this Billing Period");
+    }
+    const stored = Object.freeze({ ...adjustment });
+    this.#database
+      .prepare("INSERT INTO owner_period_notice_adjustments (reservation_id, period_index, amendment_id, owner_payable_kobo, margin_kobo, reduction_kobo, recorded_at) VALUES ($reservationId, $periodIndex, $amendmentId, $ownerPayable, $margin, $reduction, $recordedAt)")
+      .run({
+        $reservationId: stored.reservationId,
+        $periodIndex: stored.periodIndex,
+        $amendmentId: stored.amendmentId,
+        $ownerPayable: stored.ownerPayableKobo,
+        $margin: stored.marginKobo,
+        $reduction: stored.reductionKobo,
+        $recordedAt: stored.recordedAt,
+      });
+    return { adjustment: stored, replayed: false };
+  }
+
+  listPeriodNoticeAdjustments(reservationId: string): readonly OwnerPeriodNoticeAdjustment[] {
+    const rows = this.#database
+      .prepare("SELECT reservation_id, period_index, amendment_id, owner_payable_kobo, margin_kobo, reduction_kobo, recorded_at FROM owner_period_notice_adjustments WHERE reservation_id = $id ORDER BY period_index")
+      .all({ $id: reservationId }) as ReadonlyArray<Record<string, unknown>>;
+    return Object.freeze(
+      rows.map((row) =>
+        Object.freeze({
+          reservationId: String(row.reservation_id),
+          periodIndex: Number(row.period_index),
+          amendmentId: String(row.amendment_id),
+          ownerPayableKobo: Number(row.owner_payable_kobo),
+          marginKobo: Number(row.margin_kobo),
+          reductionKobo: Number(row.reduction_kobo),
+          recordedAt: String(row.recorded_at),
+        }),
+      ),
+    );
+  }
+
   postCancellation(
     input: Parameters<OwnerPayableLedger["postCancellation"]>[0],
   ): { readonly ledgerRecordId: string; readonly status: "posted" } {
