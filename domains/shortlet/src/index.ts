@@ -35,6 +35,7 @@ export * from "./checkin-support.js";
 export * from "./booking-amendment.js";
 export * from "./booking-state.js";
 export * from "./guest-interaction-store.js";
+export * from "./period-payment.js";
 export * from "../../../packages/platform-core/src/accounts/contact.js";
 export * from "../../../packages/platform-core/src/accounts/account-contacts.js";
 export * from "./checkout-overstay.js";

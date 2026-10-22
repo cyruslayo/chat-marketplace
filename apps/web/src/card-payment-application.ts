@@ -1,4 +1,4 @@
-import { CardPaymentManager, SHORTLET_DOMAIN_ID, type CardCheckoutSession, type CardPaymentManagerOptions, type PSPVerifyResult } from "../../../domains/shortlet/src/index.js";
+import { CardPaymentManager, PeriodPaymentManager, SHORTLET_DOMAIN_ID, type BackOfficePeriodEntry, type BillingPeriodProjection, type CardCheckoutSession, type CardPaymentManagerOptions, type DurablePeriodPaymentRefund, type PeriodReminder, type PeriodVerificationOutcome, type PSPVerifyResult } from "../../../domains/shortlet/src/index.js";
 import { isApprovedPaystackCheckoutUrl, type Payments } from "../../../packages/platform-core/src/payments/index.js";
 import { createPlatformCommandEnvelope, type CommandPrincipal, type PlatformCommandEnvelope } from "../../../packages/platform-core/src/index.js";
 import type { ConditionalOfferApplication } from "./conditional-offer-application.js";
@@ -55,14 +55,93 @@ export class CardPaymentApplication {
   readonly #clock: () => Date;
   readonly #payments?: Payments;
   readonly #onConfirmedOutcome?: CardPaymentApplicationOptions["onConfirmedOutcome"];
+  readonly #periods?: PeriodPaymentManager;
 
-  constructor(manager: CardPaymentManager, conditionalOfferApplication: ConditionalOfferApplication, clock: () => Date, payments?: Payments, onConfirmedOutcome?: CardPaymentApplicationOptions["onConfirmedOutcome"]) {
+  constructor(manager: CardPaymentManager, conditionalOfferApplication: ConditionalOfferApplication, clock: () => Date, payments?: Payments, onConfirmedOutcome?: CardPaymentApplicationOptions["onConfirmedOutcome"], periods?: PeriodPaymentManager) {
     this.#manager = manager;
     managers.set(this, manager);
     this.#conditionalOfferApplication = conditionalOfferApplication;
     this.#clock = clock;
     this.#payments = payments;
     this.#onConfirmedOutcome = onConfirmedOutcome;
+    this.#periods = periods;
+  }
+
+  #requirePeriods(): PeriodPaymentManager {
+    if (!this.#periods) throw new Error("Period payments are not configured in this runtime");
+    return this.#periods;
+  }
+
+  /** Façade read of the Booking Contract for an offer (issue 10 reads the immutable period snapshot through it). */
+  getBookingContract(offerId: string): ReturnType<CardPaymentManager["getBookingContract"]> {
+    return this.#manager.getBookingContract(offerId);
+  }
+
+  /** ADR 0092 projections of each Billing Period of a confirmed Extended Stay, lazily evaluated against the clock. */
+  projectBillingPeriods(offerId: string, now: Date = this.#clock()): readonly BillingPeriodProjection[] {
+    return this.#requirePeriods().projectBillingPeriods(offerId, now);
+  }
+
+  /** Reminders due at `now`: seven, three and one days before each unpaid due date (ADR 0092). */
+  periodRemindersDue(offerId: string, now: Date = this.#clock()): readonly PeriodReminder[] {
+    return this.#requirePeriods().remindersDue(offerId, now);
+  }
+
+  /** Later Period Payments recorded as paid. */
+  getPeriodPayments(offerId: string) {
+    return this.#requirePeriods().paymentsFor(offerId);
+  }
+
+  /** Money recorded for refund against this offer's later periods. */
+  periodRefunds(offerId: string): readonly DurablePeriodPaymentRefund[] {
+    return this.#requirePeriods().refundsFor(offerId);
+  }
+
+  /** The authenticated back-office list of periods that need action, by due date (AC7). Staff only. */
+  listPeriodPaymentsForBackOffice(principal: CommandPrincipal, now: Date = this.#clock()): readonly BackOfficePeriodEntry[] {
+    if (principal.role !== "authorized_staff" && principal.role !== "admin") throw new Error("The back-office payment list requires authorized staff");
+    return this.#requirePeriods().backOfficeList(now);
+  }
+
+  /**
+   * Starts the hosted Paystack TEST checkout for one later Billing Period (ADR 0092). Only the next unpaid, payable
+   * period can start, and only one live attempt exists for it. The amount is that period's immutable snapshot amount.
+   */
+  async initializePeriodPaystackCheckout(offerId: string, periodIndex: number, trustedPayerPrincipal: CommandPrincipal, providerOverride?: Payments): Promise<{ readonly pspReference: string; readonly periodIndex: number; readonly amountKobo: number; readonly expiresAt: string; readonly authorizationUrl: string }> {
+    const payments = providerOverride ?? this.#payments;
+    if (!payments) throw new Error("Paystack checkout is not configured");
+    const periods = this.#requirePeriods();
+    const contract = this.#manager.getBookingContract(offerId);
+    if (!contract) throw new Error("Period payments apply only to a confirmed Extended Stay");
+    const expectedPayerId = contract.parties.distinctPayer?.id ?? contract.parties.primaryGuest.id;
+    if (trustedPayerPrincipal.role !== "guest" || trustedPayerPrincipal.id !== expectedPayerId || trustedPayerPrincipal.tenantId !== contract.tenantId) {
+      throw new Error("Only the authoritative payer can initialize checkout");
+    }
+    const session = periods.initializePeriodCheckout({ offerId, periodIndex, now: this.#clock(), payerId: expectedPayerId, tenantId: contract.tenantId ?? "" });
+    const started = await payments.start({
+      domainId: SHORTLET_DOMAIN_ID,
+      method: "card",
+      reference: session.pspReference,
+      email: session.contactEmail,
+      amountKobo: session.amountKobo,
+      currency: "NGN",
+      payerId: trustedPayerPrincipal.id,
+    });
+    if (started.method !== "card") throw new Error("Paystack initialization returned a non-card checkout");
+    periods.bindProviderEnvironment(session.pspReference, started.environment);
+    return { pspReference: session.pspReference, periodIndex: session.periodIndex, amountKobo: session.amountKobo, expiresAt: session.expiresAt, authorizationUrl: started.authorizationUrl };
+  }
+
+  /** Verifies a later Period Payment's provider result on the server (ADR 0092, ADR 0044, ADR 0045). */
+  #verifyPeriodPaystack(pspReference: string, trustedServerPrincipal: CommandPrincipal, providerResult: PSPVerifyResult): PeriodVerificationOutcome {
+    const periods = this.#requirePeriods();
+    const offerId = periods.offerIdForPeriodReference(pspReference);
+    const contract = this.#manager.getBookingContract(offerId);
+    if (!contract) throw new Error("Period payments apply only to a confirmed Extended Stay");
+    if (trustedServerPrincipal.role !== "system" || !trustedServerPrincipal.id || trustedServerPrincipal.tenantId !== contract.tenantId) {
+      throw new Error("Payment verification requires a trusted system principal");
+    }
+    return periods.verifyPeriodPayment({ pspReference, providerResult, now: this.#clock() });
   }
 
   getArtifact(offerId: string, viewer: CommandPrincipal): CardPaymentArtifact {
@@ -82,6 +161,11 @@ export class CardPaymentApplication {
   /** Façade read of a card checkout session by PSP reference. */
   getCheckoutSessionByReference(pspReference: string): CardCheckoutSession | undefined {
     return this.#manager.getCheckoutSessionByReference(pspReference);
+  }
+
+  /** Façade read of the interaction payment projection (the Reservation stays confirmed whatever a later period does). */
+  projectInteractionState(offerId: string): ReturnType<CardPaymentManager["projectInteractionState"]> {
+    return this.#manager.projectInteractionState(offerId);
   }
 
   /** Façade read of the Booking Payment Journey for an offer. */
@@ -135,7 +219,11 @@ export class CardPaymentApplication {
     const payments = providerOverride ?? this.#payments;
     if (!payments) throw new Error("Paystack checkout is not configured");
     const session = this.#manager.getCheckoutSessionByReference(pspReference);
-    if (!session) throw new Error("Unknown PSP reference");
+    if (!session) {
+      // Demo-launch issue 10: a later Billing Period's reference is verified by its own session, never by the first payment.
+      if (!this.#periods?.hasPeriodSession(pspReference)) throw new Error("Unknown PSP reference");
+      return this.#verifyPeriodPaystack(pspReference, trustedServerPrincipal, toProviderResult(await payments.confirm(pspReference)));
+    }
     const result = toProviderResult(await payments.confirm(pspReference));
     const envelope = createPlatformCommandEnvelope({ commandName: "card_payment.verify_and_confirm", principal: trustedServerPrincipal, payload: { offerId: session.offerId, pspReference } });
     const outcome = this.#manager.verifyAndConfirmCardPaymentWithProviderResult(envelope, result, { clock: this.#clock });
@@ -149,5 +237,14 @@ export function createCardPaymentApplication(options: CardPaymentApplicationOpti
   if (!options.guestContacts) throw new Error("Guest contact source is required");
   const { conditionalOfferApplication, clock = () => new Date(), onConfirmedOutcome, ...dependencies } = options;
   const { payments, ...managerDependencies } = dependencies;
-  return new CardPaymentApplication(new CardPaymentManager({ ...managerDependencies, offerManager: getConditionalOfferManager(conditionalOfferApplication) }), conditionalOfferApplication, clock, payments, onConfirmedOutcome);
+  const manager = new CardPaymentManager({ ...managerDependencies, offerManager: getConditionalOfferManager(conditionalOfferApplication) });
+  // Demo-launch issue 10: later Billing Periods are paid through their own sessions, persisted in the same store.
+  const periods = new PeriodPaymentManager({
+    store: options.store ?? null,
+    contracts: manager,
+    ...(options.extendedStayPolicy === undefined ? {} : { extendedStayPolicy: options.extendedStayPolicy }),
+    ...(options.repository === undefined ? {} : { unitSource: options.repository as { findById(id: string): unknown } }),
+    guestContacts: options.guestContacts,
+  });
+  return new CardPaymentApplication(manager, conditionalOfferApplication, clock, payments, onConfirmedOutcome, periods);
 }

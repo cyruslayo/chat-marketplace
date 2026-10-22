@@ -110,6 +110,8 @@ export interface DemoGuestContext {
   readonly nowRef: { now: number };
   /** Moves the synthetic clock so eligibility is rechecked at a later point in the journey. */
   readonly setClock: (iso: string) => void;
+  /** The synthetic demo database file, so a test can reopen the authoritative store (restart tests, issue 10). */
+  readonly databasePath: string;
 }
 
 export interface DemoGuestOptions {
@@ -155,6 +157,7 @@ export async function withDemoGuest(options: DemoGuestOptions, run: (context: De
     await run({
       guest, owner, unitId: target.id, clock, nowRef,
       setClock: (iso: string) => { nowRef.now = Date.parse(iso); },
+      databasePath: files.path,
     });
   } finally {
     guest.close();

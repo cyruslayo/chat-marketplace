@@ -495,12 +495,140 @@ export const GUEST_INTERACTION_SCHEMA = `
       );
     `;
 
+/**
+ * Demo-launch issue 10 (ADR 0092 Later Period Payments, ADR 0046 one live attempt, ADR 0045 refund of late or superseded
+ * money). Applied idempotently by the store constructor so the Node store and the Cloudflare shortlet object both get it
+ * without a new schema migration version.
+ */
+export const PERIOD_PAYMENT_SCHEMA = `
+      CREATE TABLE IF NOT EXISTS guest_period_payment_sessions (
+        psp_reference TEXT PRIMARY KEY,
+        checkout_id TEXT NOT NULL,
+        offer_id TEXT NOT NULL,
+        period_index INTEGER NOT NULL,
+        amount_kobo INTEGER NOT NULL,
+        currency TEXT NOT NULL,
+        contact_email TEXT NOT NULL,
+        provider_environment TEXT,
+        started_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        status TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_guest_period_sessions_period
+        ON guest_period_payment_sessions (offer_id, period_index);
+
+      CREATE TABLE IF NOT EXISTS guest_period_payments (
+        offer_id TEXT NOT NULL,
+        period_index INTEGER NOT NULL,
+        psp_reference TEXT NOT NULL UNIQUE,
+        amount_kobo INTEGER NOT NULL,
+        currency TEXT NOT NULL,
+        paid_at TEXT NOT NULL,
+        PRIMARY KEY (offer_id, period_index)
+      );
+
+      CREATE TABLE IF NOT EXISTS guest_period_payment_refunds (
+        psp_reference TEXT PRIMARY KEY,
+        offer_id TEXT NOT NULL,
+        period_index INTEGER NOT NULL,
+        amount_kobo INTEGER NOT NULL,
+        currency TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        recorded_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_guest_period_refunds_offer
+        ON guest_period_payment_refunds (offer_id);
+    `;
+
+export interface DurablePeriodPaymentSession {
+  readonly pspReference: string;
+  readonly checkoutId: string;
+  readonly offerId: string;
+  readonly periodIndex: number;
+  readonly amountKobo: number;
+  readonly currency: "NGN";
+  readonly contactEmail: string;
+  readonly providerEnvironment?: "test" | "live";
+  readonly startedAt: string;
+  readonly expiresAt: string;
+  readonly status: "initiated" | "completed" | "superseded" | "expired";
+}
+
+export interface DurablePeriodPayment {
+  readonly offerId: string;
+  readonly periodIndex: number;
+  readonly pspReference: string;
+  readonly amountKobo: number;
+  readonly currency: "NGN";
+  readonly paidAt: string;
+}
+
+export interface DurablePeriodPaymentRefund {
+  readonly pspReference: string;
+  readonly offerId: string;
+  readonly periodIndex: number;
+  readonly amountKobo: number;
+  readonly currency: "NGN";
+  readonly reason: "superseded" | "expired" | "late" | "period_already_paid";
+  readonly recordedAt: string;
+}
+
+interface PeriodSessionRow {
+  psp_reference: string;
+  checkout_id: string;
+  offer_id: string;
+  period_index: number;
+  amount_kobo: number;
+  currency: string;
+  contact_email: string;
+  provider_environment: string | null;
+  started_at: string;
+  expires_at: string;
+  status: string;
+}
+
+interface PeriodPaymentRow {
+  offer_id: string;
+  period_index: number;
+  psp_reference: string;
+  amount_kobo: number;
+  currency: string;
+  paid_at: string;
+}
+
+interface PeriodRefundRow {
+  psp_reference: string;
+  offer_id: string;
+  period_index: number;
+  amount_kobo: number;
+  currency: string;
+  reason: string;
+  recorded_at: string;
+}
+
+function periodSessionFromRow(row: PeriodSessionRow): DurablePeriodPaymentSession {
+  return Object.freeze({
+    pspReference: row.psp_reference,
+    checkoutId: row.checkout_id,
+    offerId: row.offer_id,
+    periodIndex: row.period_index,
+    amountKobo: row.amount_kobo,
+    currency: "NGN" as const,
+    contactEmail: row.contact_email,
+    ...(row.provider_environment === "test" || row.provider_environment === "live" ? { providerEnvironment: row.provider_environment } : {}),
+    startedAt: row.started_at,
+    expiresAt: row.expires_at,
+    status: row.status as DurablePeriodPaymentSession["status"],
+  });
+}
+
 export class SqliteGuestInteractionStore {
   readonly #database: SqlDatabase;
 
   constructor(database: SqlDatabase, options: { readonly includeThreadSessionSchema?: boolean } = {}) {
     this.#database = database;
     this.#database.exec(GUEST_INTERACTION_SCHEMA);
+    this.#database.exec(PERIOD_PAYMENT_SCHEMA);
     // Local SQLite adapters retain their historical co-located composition; the Cloudflare split opts out and mounts this
     // schema only in PlatformDO (ADR 0101).
     if (options.includeThreadSessionSchema !== false) this.#database.exec(THREAD_SESSION_SCHEMA);
@@ -1127,6 +1255,115 @@ export class SqliteGuestInteractionStore {
       .prepare("SELECT DISTINCT offer_id FROM guest_live_payment_attempts")
       .all();
     return Object.freeze(rows.map((row) => storedText(row.offer_id)));
+  }
+
+  // --- Later Period Payments (demo-launch issue 10) ---
+
+  savePeriodPaymentSession(session: DurablePeriodPaymentSession): void {
+    this.#database
+      .prepare(`
+      INSERT INTO guest_period_payment_sessions (
+        psp_reference, checkout_id, offer_id, period_index, amount_kobo, currency,
+        contact_email, provider_environment, started_at, expires_at, status)
+      VALUES ($pspReference, $checkoutId, $offerId, $periodIndex, $amountKobo, $currency,
+        $contactEmail, $providerEnvironment, $startedAt, $expiresAt, $status)
+      ON CONFLICT(psp_reference) DO UPDATE SET
+        provider_environment = excluded.provider_environment,
+        expires_at = excluded.expires_at,
+        status = excluded.status
+    `)
+      .run({
+        $pspReference: session.pspReference,
+        $checkoutId: session.checkoutId,
+        $offerId: session.offerId,
+        $periodIndex: session.periodIndex,
+        $amountKobo: session.amountKobo,
+        $currency: session.currency,
+        $contactEmail: session.contactEmail,
+        $providerEnvironment: session.providerEnvironment ?? null,
+        $startedAt: session.startedAt,
+        $expiresAt: session.expiresAt,
+        $status: session.status,
+      });
+  }
+
+  findPeriodPaymentSessionByReference(pspReference: string): DurablePeriodPaymentSession | null {
+    const row = this.#database
+      .prepare("SELECT * FROM guest_period_payment_sessions WHERE psp_reference = $pspReference")
+      .get({ $pspReference: pspReference }) as PeriodSessionRow | undefined;
+    return row ? periodSessionFromRow(row) : null;
+  }
+
+  listPeriodPaymentSessions(offerId: string, periodIndex: number): readonly DurablePeriodPaymentSession[] {
+    const rows = this.#database
+      .prepare("SELECT * FROM guest_period_payment_sessions WHERE offer_id = $offerId AND period_index = $periodIndex ORDER BY started_at, psp_reference")
+      .all({ $offerId: offerId, $periodIndex: periodIndex }) as unknown as PeriodSessionRow[];
+    return Object.freeze(rows.map(periodSessionFromRow));
+  }
+
+  findPeriodPayment(offerId: string, periodIndex: number): DurablePeriodPayment | null {
+    const row = this.#database
+      .prepare("SELECT * FROM guest_period_payments WHERE offer_id = $offerId AND period_index = $periodIndex")
+      .get({ $offerId: offerId, $periodIndex: periodIndex }) as PeriodPaymentRow | undefined;
+    return row ? { offerId: row.offer_id, periodIndex: row.period_index, pspReference: row.psp_reference, amountKobo: row.amount_kobo, currency: "NGN", paidAt: row.paid_at } : null;
+  }
+
+  listPeriodPayments(offerId: string): readonly DurablePeriodPayment[] {
+    const rows = this.#database
+      .prepare("SELECT * FROM guest_period_payments WHERE offer_id = $offerId ORDER BY period_index")
+      .all({ $offerId: offerId }) as unknown as PeriodPaymentRow[];
+    return Object.freeze(rows.map((row) => ({ offerId: row.offer_id, periodIndex: row.period_index, pspReference: row.psp_reference, amountKobo: row.amount_kobo, currency: "NGN" as const, paidAt: row.paid_at })));
+  }
+
+  /** Inserts the one paid record of a Billing Period. The primary key refuses a second payment for the same period. */
+  savePeriodPayment(payment: DurablePeriodPayment): void {
+    this.#database
+      .prepare(`
+      INSERT INTO guest_period_payments (offer_id, period_index, psp_reference, amount_kobo, currency, paid_at)
+      VALUES ($offerId, $periodIndex, $pspReference, $amountKobo, $currency, $paidAt)
+    `)
+      .run({
+        $offerId: payment.offerId,
+        $periodIndex: payment.periodIndex,
+        $pspReference: payment.pspReference,
+        $amountKobo: payment.amountKobo,
+        $currency: payment.currency,
+        $paidAt: payment.paidAt,
+      });
+  }
+
+  /** Records money to refund. A reference is recorded once; a replay changes nothing. */
+  saveRefundablePeriodPayment(refund: DurablePeriodPaymentRefund): void {
+    this.#database
+      .prepare(`
+      INSERT INTO guest_period_payment_refunds (psp_reference, offer_id, period_index, amount_kobo, currency, reason, recorded_at)
+      VALUES ($pspReference, $offerId, $periodIndex, $amountKobo, $currency, $reason, $recordedAt)
+      ON CONFLICT(psp_reference) DO NOTHING
+    `)
+      .run({
+        $pspReference: refund.pspReference,
+        $offerId: refund.offerId,
+        $periodIndex: refund.periodIndex,
+        $amountKobo: refund.amountKobo,
+        $currency: refund.currency,
+        $reason: refund.reason,
+        $recordedAt: refund.recordedAt,
+      });
+  }
+
+  listRefundablePeriodPayments(offerId: string): readonly DurablePeriodPaymentRefund[] {
+    const rows = this.#database
+      .prepare("SELECT * FROM guest_period_payment_refunds WHERE offer_id = $offerId ORDER BY recorded_at, psp_reference")
+      .all({ $offerId: offerId }) as unknown as PeriodRefundRow[];
+    return Object.freeze(rows.map((row) => ({
+      pspReference: row.psp_reference,
+      offerId: row.offer_id,
+      periodIndex: row.period_index,
+      amountKobo: row.amount_kobo,
+      currency: "NGN" as const,
+      reason: row.reason as DurablePeriodPaymentRefund["reason"],
+      recordedAt: row.recorded_at,
+    })));
   }
 
   // --- Processed PSP references ---
