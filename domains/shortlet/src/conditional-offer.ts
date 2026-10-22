@@ -6,6 +6,8 @@ import { createGuestConductPolicySnapshot, type GuestConductPolicySnapshot, type
 import type { SecurityDepositPolicySnapshot } from "./security-deposit.js";
 import * as crypto from "node:crypto";
 import type { OperatorRepresentativeAuthority } from "./operator-representative-authority.js";
+import type { ExtendedStayPolicy } from "./extended-stay.js";
+import { isEligibleExtendedStayUnit, isEligibleUnit, type Unit } from "./browse.js";
 import { contractualCheckInWindow, type ContractualCheckInWindow } from "./checkin-support.js";
 
 
@@ -110,6 +112,7 @@ export class ConditionalOfferManager {
   #calendar: any;
   #bookingRequestManager: any;
   #operatorAuthority?: OperatorRepresentativeAuthority;
+  #extendedStayPolicy?: ExtendedStayPolicy;
   #offers = new Map<string, ConditionalBookingOffer>();
   readonly #store: import("./guest-interaction-store.js").SqliteGuestInteractionStore | null;
 
@@ -119,7 +122,8 @@ export class ConditionalOfferManager {
     calendar = null,
     bookingRequestManager = null,
     operatorAuthority = undefined,
-    store = null
+    store = null,
+    extendedStayPolicy
   }: {
     repository?: any;
     audit?: any;
@@ -127,12 +131,14 @@ export class ConditionalOfferManager {
     bookingRequestManager?: any;
     operatorAuthority?: OperatorRepresentativeAuthority;
     store?: import("./guest-interaction-store.js").SqliteGuestInteractionStore | null;
+    extendedStayPolicy?: ExtendedStayPolicy;
   } = {}) {
     this.#repository = repository;
     this.#audit = audit;
     this.#calendar = calendar;
     this.#bookingRequestManager = bookingRequestManager;
     this.#operatorAuthority = operatorAuthority;
+    this.#extendedStayPolicy = extendedStayPolicy;
     this.#store = store;
   }
 
@@ -212,6 +218,7 @@ export class ConditionalOfferManager {
       checkOut: request.checkOut,
       partySize: request.occupants.length || 1,
       selectedOptionalServices: request.quote?.lineItems?.optionalServices ?? [],
+      extendedStayPolicy: this.#extendedStayPolicy,
       clock
     });
     // ADR 0014/0058: reprice the offer, but never replace the immutable
@@ -434,21 +441,21 @@ export class ConditionalOfferManager {
       throw new Error(`Offer version mismatch: expected ${expectedVersion}, got ${offer.aggregateVersions.offerVersion}`);
     }
 
-    // 5. Unit Revalidation (Stale / Changed check)
+    const now = clock();
+    // ADR 0009/0055/0056/0057/0065: current claims must cover the full checkout date.
     if (this.#repository) {
-      const unit = this.#repository.findById
+      const rawUnit: unknown = this.#repository.findById
         ? this.#repository.findById(offer.unitId)
-        : this.#repository.findAll().find((u: any) => u.id === offer.unitId);
-      if (unit) {
-        if (unit.inspection?.materialChangePending || !unit.published) {
-          offer.status = "stale";
-          throw new Error("Offer terms are stale or changed: unit condition or publication status changed");
-        }
+        : this.#repository.findAll().find((unit: { readonly id?: string }) => unit.id === offer.unitId);
+      if (!rawUnit || typeof rawUnit !== "object" || (offer.quote?.stayType === "extended" && (!isEligibleUnit(rawUnit as Unit, now, offer.dates)
+        || !this.#extendedStayPolicy || !isEligibleExtendedStayUnit(rawUnit as Unit, this.#extendedStayPolicy)))
+        || (offer.quote?.stayType !== "extended" && ((rawUnit as Unit).inspection?.materialChangePending || !(rawUnit as Unit).published))) {
+        offer.status = "stale";
+        throw new Error("Offer terms are stale or changed: Unit eligibility no longer covers checkout");
       }
     }
 
     // 6. Expiry check (Payment Window deadline)
-    const now = clock();
     if (now.getTime() >= new Date(offer.paymentWindow.expiresAt).getTime()) {
       offer.status = "expired";
       if (this.#audit) {

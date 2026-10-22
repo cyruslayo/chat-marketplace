@@ -28,6 +28,7 @@ import {
   SqliteGuestContactRepository,
   GuestAccountContacts,
   UnitDiscoveryQuery,
+  DEMO_EXTENDED_STAY_POLICY,
   UnitRepository,
   JsonUnitRepository,
   type UnitRepositoryContract,
@@ -98,6 +99,9 @@ export interface LocalGuestFixtureConfig {
   readonly autoDeliverRequests?: boolean;
   /** ADR 0105: the staging demo. Labels synthetic stays, shows the demo banner and accepts requests through the acceptor. */
   readonly demo?: boolean;
+  readonly deployment?: "production" | "staging";
+  /** ADR 0105: the demo flag is authoritative; opted-in Unit data alone does not enable this policy. */
+  readonly extendedStayPolicy?: import("../../../domains/shortlet/src/index.js").ExtendedStayPolicy;
   /** ADR 0105: set only with `demo`; a request is accepted through this acceptor and nowhere else. */
   readonly demoRequestAcceptor?: DemoRequestAcceptor;
   /** Deterministic demo check-in; checkout is derived from requested nights. */
@@ -322,6 +326,8 @@ export interface LocalGuestEnvironmentDependencies {
 
 export class LocalGuestEnvironment {
   readonly config: LocalGuestFixtureConfig;
+  /** The effective request policy, derived only from the authoritative demo composition. */
+  readonly extendedStayPolicy?: import("../../../domains/shortlet/src/index.js").ExtendedStayPolicy;
   readonly clock: () => Date;
   readonly unitRepository: UnitRepositoryContract;
   readonly calendar: AvailabilityCalendar;
@@ -389,6 +395,13 @@ export class LocalGuestEnvironment {
     dependencies: LocalGuestEnvironmentDependencies,
   ) {
     this.config = { ...DEFAULT_LOCAL_GUEST_CONFIG, ...config };
+    if (this.config.demo === true && this.config.deployment === "production") {
+      throw new Error("Demo booking behavior is refused in production (ADR 0105)");
+    }
+    this.extendedStayPolicy = this.config.demo && this.config.deployment !== "production"
+      ? (this.config.extendedStayPolicy ?? DEMO_EXTENDED_STAY_POLICY)
+      : undefined;
+    const extendedStayPolicy = this.extendedStayPolicy;
     if (this.config.production && !this.config.paystackClient && !this.config.payments) {
       throw new Error(
         "Production Guest composition requires Paystack configuration",
@@ -459,6 +472,7 @@ export class LocalGuestEnvironment {
       audit: this.audit,
       telemetry: this.telemetry,
       clock: this.clock,
+      ...(extendedStayPolicy ? { extendedStayPolicy } : {}),
       idFactory: () =>
         `guest-demo-${String(++this.#searchCounter).padStart(3, "0")}`,
     });
@@ -473,6 +487,7 @@ export class LocalGuestEnvironment {
       operatorAuthority: this.grantStore,
       clock: this.clock,
       guestContacts: this.guestContactApp.repository,
+      ...(extendedStayPolicy ? { extendedStayPolicy } : {}),
     });
 
     this.conditionalOfferApp = createConditionalOfferApplication({
@@ -483,6 +498,7 @@ export class LocalGuestEnvironment {
       store: this.interactionStore,
       clock: this.clock,
       operatorAuthority: this.grantStore,
+      ...(extendedStayPolicy ? { extendedStayPolicy } : {}),
     });
 
     this.contractRepository = new LocalBookingContractRepository(
@@ -506,6 +522,7 @@ export class LocalGuestEnvironment {
       calendar: this.calendar,
       audit: this.audit,
       guestContacts: this.guestContactApp.repository,
+      ...(extendedStayPolicy ? { extendedStayPolicy } : {}),
       ...(this.config.deterministicPsp === false
         ? {}
         : {

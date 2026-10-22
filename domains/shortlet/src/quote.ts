@@ -1,6 +1,8 @@
 import { generatePlatformId } from "../../../packages/platform-core/src/index.js";
 import { StayDateRange } from "./browse.js";
 import { ownerSettlementFor, unitOwnerTerms } from "./owner-terms.js";
+import type { OwnerSettlementSnapshot } from "./owner-terms.js";
+import { assertStayLength, monthlyAmountsAreValid, utilitiesStatementIsValid, type ExtendedStayPolicy } from "./extended-stay.js";
 import { calculateSecurityDepositPolicySnapshot, calculateRefundableSecurityDeposit, SECURITY_DEPOSIT_POLICY_VERSION, type SecurityDepositPolicySnapshot } from "./security-deposit.js";
 
 export interface OptionalServiceCatalogueItem {
@@ -176,6 +178,18 @@ export interface CreateStayQuoteOptions {
   commissionRate?: number;
   clock?: () => Date;
   idFactory?: () => string;
+  /** Supplied only by an authoritative staging demo composition. */
+  extendedStayPolicy?: ExtendedStayPolicy;
+}
+
+export interface BillingPeriodQuote {
+  readonly index: number;
+  readonly checkIn: string;
+  readonly checkOut: string;
+  readonly nights: number;
+  readonly amountKobo: number;
+  readonly dueDate: string;
+  readonly nightlyContractedValuesKobo: readonly number[];
 }
 
 export function createStayQuote({
@@ -186,43 +200,109 @@ export function createStayQuote({
   selectedOptionalServices = [],
   commissionRate = 0.12,
   clock = () => new Date(),
-  idFactory = () => crypto.randomUUID()
+  idFactory = () => crypto.randomUUID(),
+  extendedStayPolicy
 }: CreateStayQuoteOptions) {
   if (!unit || !unit.id || !unit.price) {
     throw new TypeError("A valid unit with price details is required");
   }
 
   const now = clock();
-  const dateRange = new StayDateRange(checkIn, checkOut, now);
+  const dateRange = new StayDateRange(checkIn, checkOut, now, extendedStayPolicy);
   const nights = dateRange.nights;
+  const stayType = assertStayLength(nights, extendedStayPolicy);
 
   if (partySize < 1 || (unit.capacity && partySize > unit.capacity)) {
     throw new RangeError(`Party size (${partySize}) exceeds unit capacity (${unit.capacity})`);
   }
 
   // ADR 0089 (P4 AC3): a unit without owner agreed amounts and a margin rate cannot be quoted.
-  const ownerSettlement = ownerSettlementFor(unitOwnerTerms(unit), nights);
-
-  const accommodationKobo = unit.price.nightlyKobo * nights;
-  const mandatoryFeesKobo = unit.price.mandatoryFeesKobo ?? 0;
+  const ownerTerms = unitOwnerTerms(unit);
+  let ownerSettlement: OwnerSettlementSnapshot;
+  let accommodationKobo: number;
+  let mandatoryFeesKobo: number;
+  let billingPeriods: readonly BillingPeriodQuote[] = Object.freeze([]);
+  let baseBillingPeriods: readonly { readonly index: number; readonly checkIn: string; readonly checkOut: string; readonly nights: number; readonly baseAmountKobo: number; readonly dueDate: string }[] = Object.freeze([]);
+  let utilitiesAndServicing: unknown;
+  let monthlyAgreedAmountsVersion: string | undefined;
+  let periodOwnerPayableKobo = 0;
+  if (stayType === "extended") {
+    const terms = unit.extendedStay;
+    if (terms?.optedIn !== true || !monthlyAmountsAreValid(terms.monthlyAgreedAmounts) || !utilitiesStatementIsValid(terms.utilitiesAndServicing)) {
+      throw new Error("Unit is not configured for Extended Stay pricing and servicing");
+    }
+    const monthly = terms.monthlyAgreedAmounts;
+    monthlyAgreedAmountsVersion = monthly.version;
+    const periods: { index: number; checkIn: string; checkOut: string; nights: number; baseAmountKobo: number; ownerPayableKobo: number; dueDate: string }[] = [];
+    accommodationKobo = 0;
+    mandatoryFeesKobo = 0;
+    for (let offset = 0, index = 0; offset < nights; offset += extendedStayPolicy!.billingPeriodNights, index += 1) {
+      const periodNights = Math.min(extendedStayPolicy!.billingPeriodNights, nights - offset);
+      const checkInDate = new Date(Date.parse(`${dateRange.checkIn}T00:00:00Z`) + offset * 86_400_000);
+      const checkOutDate = new Date(checkInDate.getTime() + periodNights * 86_400_000);
+      const isFullPeriod = periodNights === extendedStayPolicy!.billingPeriodNights;
+      const ownerAccommodation = isFullPeriod ? monthly.accommodationKobo : ownerTerms.agreed.nightlyKobo * periodNights;
+      const ownerCharges = isFullPeriod ? monthly.mandatoryChargesKobo : ownerTerms.agreed.mandatoryChargesKobo;
+      const guestAccommodation = ownerAccommodation + Math.floor(ownerAccommodation * ownerTerms.marginBasisPoints / 10_000);
+      const guestCharges = ownerCharges + Math.floor(ownerCharges * ownerTerms.marginBasisPoints / 10_000);
+      const periodAmount = guestAccommodation + guestCharges;
+      accommodationKobo += guestAccommodation;
+      mandatoryFeesKobo += guestCharges;
+      const ownerPayableKobo = ownerAccommodation + ownerCharges;
+      periodOwnerPayableKobo += ownerPayableKobo;
+      const dueDate = new Date(checkInDate.getTime() - 7 * 86_400_000).toISOString().slice(0, 10);
+      periods.push({ index: index + 1, checkIn: checkInDate.toISOString().slice(0, 10), checkOut: checkOutDate.toISOString().slice(0, 10), nights: periodNights, baseAmountKobo: periodAmount, ownerPayableKobo, dueDate });
+    }
+    baseBillingPeriods = Object.freeze(periods);
+    ownerSettlement = Object.freeze({
+      ownerPayableKobo: periodOwnerPayableKobo,
+      marginKobo: accommodationKobo + mandatoryFeesKobo - periodOwnerPayableKobo,
+      marginBasisPoints: ownerTerms.marginBasisPoints,
+      agreed: ownerTerms.agreed,
+      nights,
+      currency: "NGN" as const,
+      pricingBasis: "monthly" as const,
+      monthlyAgreedAmounts: Object.freeze({ ...monthly }),
+    });
+    utilitiesAndServicing = Object.freeze({ ...terms.utilitiesAndServicing });
+  } else {
+    ownerSettlement = ownerSettlementFor(ownerTerms, nights);
+    accommodationKobo = unit.price.nightlyKobo * nights;
+    mandatoryFeesKobo = unit.price.mandatoryFeesKobo ?? 0;
+  }
 
   const resolvedOptionalServices = validateAndResolveOptionalServices(selectedOptionalServices, nights, partySize);
   const optionalServicesTotalKobo = resolvedOptionalServices.reduce((acc, item) => acc + item.totalKobo, 0);
 
   const taxableBaseKobo = accommodationKobo + mandatoryFeesKobo;
   const taxesKobo = calculateTaxKobo(unit.price.taxConfig, taxableBaseKobo);
-
   const allInStayTotalKobo = accommodationKobo + mandatoryFeesKobo + taxesKobo + optionalServicesTotalKobo;
+  if (stayType === "extended") {
+    const rawPeriods = baseBillingPeriods;
+    let allocatedExtras = 0;
+    billingPeriods = Object.freeze(rawPeriods.map((period, index) => {
+      const extras = index === rawPeriods.length - 1
+        ? taxesKobo + optionalServicesTotalKobo - allocatedExtras
+        : Math.floor((taxesKobo + optionalServicesTotalKobo) * period.baseAmountKobo / (accommodationKobo + mandatoryFeesKobo));
+      allocatedExtras += extras;
+      const amountKobo = period.baseAmountKobo + extras;
+      const nightlyBase = Math.floor(amountKobo / period.nights);
+      const nightlyContractedValuesKobo = Array.from({ length: period.nights }, (_unused, day) => nightlyBase + (day === period.nights - 1 ? amountKobo - nightlyBase * period.nights : 0));
+      return Object.freeze({ index: period.index, checkIn: period.checkIn, checkOut: period.checkOut, nights: period.nights, amountKobo, dueDate: period.dueDate, nightlyContractedValuesKobo: Object.freeze(nightlyContractedValuesKobo) });
+    }));
+  }
+  // ADR 0092: Extended Stays have a zero Refundable Security Deposit, including demo periods.
+  const configuredDepositKobo = stayType === "extended" ? 0 : (unit.price.refundableSecurityDepositKobo ?? 0);
   const bedrooms = unit.bedrooms ?? unit.bedroomCount;
   // Older catalogue records predate the bedroom classification. Keep their historical
   // quote compatibility while all new/authoritative records use the fail-closed policy API.
   const securityDeposit: SecurityDepositPolicySnapshot = typeof bedrooms === "number" && Object.prototype.hasOwnProperty.call(unit.price, "refundableSecurityDepositKobo")
-    ? calculateSecurityDepositPolicySnapshot({ accommodationSubtotalKobo: accommodationKobo, bedrooms, configuredDepositKobo: unit.price.refundableSecurityDepositKobo })
+    ? calculateSecurityDepositPolicySnapshot({ accommodationSubtotalKobo: accommodationKobo, bedrooms, configuredDepositKobo })
     : Object.freeze({
       policyVersion: SECURITY_DEPOSIT_POLICY_VERSION, currency: "NGN" as const, accommodationSubtotalKobo: accommodationKobo,
       bedroomBand: "studio_or_one_bedroom" as const, percentageCapKobo: Math.floor(accommodationKobo / 4), unitSizeCapKobo: 10_000_000,
-      unitConfiguredDepositKobo: unit.price.refundableSecurityDepositKobo ?? 0,
-      amountKobo: calculateRefundableSecurityDeposit({ accommodationKobo, requestedDepositKobo: unit.price.refundableSecurityDepositKobo }), collectionRequired: calculateRefundableSecurityDeposit({ accommodationKobo, requestedDepositKobo: unit.price.refundableSecurityDepositKobo }) > 0
+      unitConfiguredDepositKobo: configuredDepositKobo ?? 0,
+      amountKobo: calculateRefundableSecurityDeposit({ accommodationKobo, requestedDepositKobo: configuredDepositKobo }), collectionRequired: calculateRefundableSecurityDeposit({ accommodationKobo, requestedDepositKobo: configuredDepositKobo }) > 0
     });
   const refundableSecurityDepositKobo = securityDeposit.amountKobo;
   const totalAmountDueNowKobo = allInStayTotalKobo + securityDeposit.amountKobo;
@@ -266,6 +346,8 @@ export function createStayQuote({
     checkIn: dateRange.checkIn,
     checkOut: dateRange.checkOut,
     nights,
+    stayType,
+    ...(stayType === "extended" ? { billingPeriods, utilitiesAndServicing, monthlyAgreedAmountsVersion } : {}),
     partySize,
     createdAt: createdAtIso,
     expiresAt: expiresAtIso,

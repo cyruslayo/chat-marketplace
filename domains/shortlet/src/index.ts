@@ -1,5 +1,6 @@
 export * from "./browse.js";
 export * from "./domain-id.js";
+export * from "./extended-stay.js";
 export * from "./onboarding.js";
 export * from "./inventory-import.js";
 export * from "./photo-url.js";

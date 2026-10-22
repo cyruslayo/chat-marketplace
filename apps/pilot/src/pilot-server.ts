@@ -143,6 +143,8 @@ export function startPilotServer(
       propertyId: configuration.propertyId,
       seedFixture: false,
       production: true,
+      demo: configuration.demo,
+      deployment: configuration.deployment,
       clock,
     },
     {
@@ -171,11 +173,12 @@ export function startPilotServer(
       initialGuestContactEmail: null,
       demoCheckIn,
       production: true,
+      demo: configuration.demo,
+      deployment: configuration.deployment,
       deterministicPsp: false,
       clock,
       payments,
       // ADR 0105: the staging demo labels, banners and accepts through the operator command path; off in production.
-      demo: configuration.demo,
       ...(configuration.demo ? { demoRequestAcceptor: createDemoRequestAcceptor(operatorEnvironment, configuration.demoAcceptDelaySeconds) } : {}),
       // ADR 0090: manual transfer only when the business account is configured.
       manualTransferAccount: configuration.manualTransferAccount,

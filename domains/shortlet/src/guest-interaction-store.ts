@@ -1116,7 +1116,7 @@ export class SqliteGuestInteractionStore {
   ): DurableLivePaymentAttempt | null {
     const row = this.#database
       .prepare(
-        "SELECT * FROM guest_live_payment_attempts WHERE offer_id = $offerId",
+        "SELECT * FROM guest_live_payment_attempts WHERE offer_id = $offerId ORDER BY rowid DESC LIMIT 1",
       )
       .get({ $offerId: offerId }) as LivePaymentAttemptRow | undefined;
     return row ? this.findLivePaymentAttempt(row.attempt_id) : null;

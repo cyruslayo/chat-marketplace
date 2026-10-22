@@ -38,6 +38,7 @@ import { SHORTLET_SCHEMA_MIGRATIONS } from "./schema.js";
 import { cloudflareAssetLoader } from "./pilot-assets.js";
 import { R2ReceiptBlobStore } from "./r2-receipt-blob-store.js";
 import { commerceMigrationClient, platformGuestAccountDependencies, platformGuestData, platformMigrationClient } from "./do-clients.js";
+import { demoMode, pilotDeployment } from "../../pilot/src/pilot-config-core.js";
 
 /**
  * The assembled pilot (ADR 0004/0095): one SQLite-backed Durable Object is the single system of record. It builds
@@ -198,6 +199,7 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
       audit: new SqliteAuditLog(database),
       clock,
       tenantId: this.env.SHORTLET_TENANT_ID?.trim() ?? "",
+      demoEnabled: demoMode(pilotDeployment(this.env.SHORTLET_DEPLOYMENT), this.env.SHORTLET_DEMO),
       conciergeDiagnostics: () => this.#modelCallBudget?.turnCounts ?? { modelHandledTurns: 0, deterministicFallbackTurns: 0 },
       platformMigration: platformMigrationClient(this.env, this.env.SHORTLET_TENANT_ID?.trim() ?? ""),
       commerceMigration: commerceMigrationClient(this.env, this.env.SHORTLET_TENANT_ID?.trim() ?? ""),
@@ -258,6 +260,8 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
         propertyId: provisioning.propertyId,
         seedFixture: false,
         production: true,
+        demo: configuration.demo,
+        deployment: configuration.deployment,
         clock,
       },
       { database, unitRepository, operatorRepository, receiptBlobs, telemetrySink, guestDataIsRemote: true },
@@ -277,6 +281,7 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
         initialGuestContactEmail: null,
         demoCheckIn,
         production: true,
+        deployment: configuration.deployment,
         deterministicPsp: false,
         clock,
         payments,

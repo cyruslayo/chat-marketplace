@@ -1,8 +1,10 @@
 import { isEligibleUnit, StayDateRange } from "./browse.js";
+import type { ExtendedStayPolicy } from "./extended-stay.js";
 
 export interface RankingQueryOptions {
   units: any[];
   now?: Date;
+  extendedStayPolicy?: ExtendedStayPolicy;
   queryFilters?: {
     partySize?: number;
     amenity?: string;
@@ -73,7 +75,7 @@ export class OrganicRankingEngine {
     const now = options.now ?? new Date();
     const filters = options.queryFilters ?? {};
     const dateRange = (filters.checkIn && filters.checkOut)
-      ? new StayDateRange(filters.checkIn, filters.checkOut, now)
+      ? new StayDateRange(filters.checkIn, filters.checkOut, now, options.extendedStayPolicy)
       : null;
 
     // 1. Ineligible inventory NEVER ranks (AC1)

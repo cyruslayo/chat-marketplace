@@ -24,6 +24,7 @@ async function withShortletOps<T>(
 ): Promise<T> {
   return runInDurableObject(opsStub(), async (_instance, ctx) => {
     const dependencies: OpsRouteDependencies = {
+      demoEnabled: false,
       database: new DurableObjectSqlDatabase(ctx.storage),
       sharedSecret: SECRET,
       verifier: { verify: async () => true },

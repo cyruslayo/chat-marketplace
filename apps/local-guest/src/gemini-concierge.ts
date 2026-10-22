@@ -1,5 +1,5 @@
 import { GoogleGenAI, type Content, type FunctionDeclaration } from "@google/genai";
-import { StayDateRange } from "../../../domains/shortlet/src/index.js";
+import { StayDateRange, type ExtendedStayPolicy } from "../../../domains/shortlet/src/index.js";
 
 export const MAX_GEMINI_TOOL_ROUNDS = 2;
 export const GEMINI_SYSTEM_INSTRUCTION = `You are the conversational concierge for Shortlet.
@@ -34,7 +34,7 @@ export interface GeminiConciergeClient { generate(contents: Content[]): Promise<
 export interface NormalizedStaySearch { readonly location: string; readonly neighbourhood?: string; readonly checkIn: string; readonly checkOut: string; readonly partySize: number; }
 export interface GeminiSearchMetadata { readonly resultCount: number; readonly location: string; readonly neighbourhood?: string; readonly checkIn: string; readonly checkOut: string; }
 
-export function validateGeminiStaySearchArguments(args: unknown, options: { readonly demoCheckIn: string; readonly now: Date }): NormalizedStaySearch {
+export function validateGeminiStaySearchArguments(args: unknown, options: { readonly demoCheckIn: string; readonly now: Date; readonly extendedStayPolicy?: ExtendedStayPolicy }): NormalizedStaySearch {
   if (args === null || typeof args !== "object" || Array.isArray(args)) throw new TypeError("search_stays arguments must be an object");
   const value = args as Record<string, unknown>;
   const city = value.city;
@@ -56,7 +56,7 @@ export function validateGeminiStaySearchArguments(args: unknown, options: { read
   const end = new Date(start);
   end.setUTCDate(end.getUTCDate() + nights);
   const checkOut = end.toISOString().slice(0, 10);
-  const range = new StayDateRange(checkIn, checkOut, options.now);
+  const range = new StayDateRange(checkIn, checkOut, options.now, options.extendedStayPolicy);
   return { location: city.trim(), ...(neighbourhood ? { neighbourhood } : {}), checkIn: range.checkIn, checkOut: range.checkOut, partySize: guests };
 }
 
@@ -69,6 +69,7 @@ export async function handleGeminiTurn(input: {
   readonly history: Content[];
   readonly text: string;
   readonly demoCheckIn: string;
+  readonly extendedStayPolicy?: ExtendedStayPolicy;
   readonly now: Date;
   readonly search: (filters: NormalizedStaySearch) => GeminiSearchMetadata;
 }): Promise<{ readonly kind: "clarify"; readonly reply: string } | { readonly kind: "search"; readonly filters: NormalizedStaySearch; readonly metadata: GeminiSearchMetadata; readonly reply: string }> {
@@ -84,7 +85,7 @@ export async function handleGeminiTurn(input: {
     }
     if (calls.length !== 1 || calls[0]?.name !== "search_stays") throw new Error("Unsupported Gemini function call");
     const call = calls[0];
-    const filters = validateGeminiStaySearchArguments(call.args, { demoCheckIn: input.demoCheckIn, now: input.now });
+    const filters = validateGeminiStaySearchArguments(call.args, { demoCheckIn: input.demoCheckIn, now: input.now, ...(input.extendedStayPolicy ? { extendedStayPolicy: input.extendedStayPolicy } : {}) });
     const metadata = input.search(filters);
     input.history.push(modelContent(response));
     input.history.push({ role: "user", parts: [{ functionResponse: { id: call.id, name: "search_stays", response: { resultCount: metadata.resultCount, location: metadata.location, ...(metadata.neighbourhood ? { neighbourhood: metadata.neighbourhood } : {}), checkIn: metadata.checkIn, checkOut: metadata.checkOut } } }] });

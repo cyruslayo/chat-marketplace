@@ -20,6 +20,7 @@ export interface CardPaymentApplicationOptions {
   readonly compensationRefundProvider?: CardPaymentManagerOptions["compensationRefundProvider"];
   readonly store?: import("../../../domains/shortlet/src/index.js").SqliteGuestInteractionStore | null;
   readonly guestContacts: NonNullable<CardPaymentManagerOptions["guestContacts"]>;
+  readonly extendedStayPolicy?: CardPaymentManagerOptions["extendedStayPolicy"];
   /** The platform Payments module (ADR 0099 rule 2). Absent when hosted card checkout is not configured. */
   readonly payments?: Payments;
   readonly onConfirmedOutcome?: (outcome: { readonly outcome: "confirmed"; readonly reservation: import("../../../domains/shortlet/src/index.js").Reservation; readonly bookingContract: import("../../../domains/shortlet/src/index.js").BookingContract }) => void;

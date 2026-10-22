@@ -5,6 +5,8 @@ import { normalizePhotoUrls } from "./photo-url.js";
 import { normalizeListingDescription } from "./listing-details.js";
 import { contractualCheckInWindow } from "./checkin-support.js";
 import { OwnerTermsError, parseMarginPercent, unitPriceFromOwnerTerms } from "./owner-terms.js";
+import { monthlyAmountsAreValid, utilitiesStatementIsValid } from "./extended-stay.js";
+import { createHash } from "node:crypto";
 
 const SUPPORTED_CITIES = new Set(["Lagos", "Abuja"]);
 const REQUIRED_HEADERS = [
@@ -19,6 +21,10 @@ const RETIRED_PRICE_HEADERS = ["nightly_price_ngn", "mandatory_fees_ngn"] as con
  * An empty column is accepted so existing sheets still import; a value in it is refused per row.
  */
 const RETIRED_BLOCKED_DATES_HEADER = "blocked_dates";
+const EXTENDED_STAY_HEADERS = [
+  "extended_stay_opt_in", "monthly_accommodation_ngn", "monthly_mandatory_charges_ngn",
+  "power_generator_fuel_included", "water_included", "internet_included", "cleaning_included", "cleaning_frequency",
+] as const;
 
 export const PILOT_INVENTORY_HEADERS = Object.freeze([
   ...REQUIRED_HEADERS,
@@ -30,6 +36,7 @@ export const PILOT_INVENTORY_HEADERS = Object.freeze([
   "description", "bathrooms",
   "photo_urls",
   "check_in_earliest_access", "check_in_latest_arrival",
+  ...EXTENDED_STAY_HEADERS,
 ] as const);
 
 type InventoryHeader = typeof PILOT_INVENTORY_HEADERS[number];
@@ -248,6 +255,12 @@ function marginBasisPoints(row: CsvRow): number {
   }
 }
 
+function requiredBoolean(row: CsvRow, header: string): boolean {
+  const value = parseBoolean(cell(row, header), header);
+  if (value === undefined) throw new Error(`${header} is required`);
+  return value;
+}
+
 function buildUnit(row: CsvRow, operator: OperatorReference): Unit {
   const unitId = cell(row, "unit_id");
   const inspection = hasAny(row, ["inspection_status", "inspection_date", "inspection_expiry", "inspection_scope", "inspection_material_change_pending"])
@@ -287,6 +300,35 @@ function buildUnit(row: CsvRow, operator: OperatorReference): Unit {
     throw new Error("check_in_earliest_access and check_in_latest_arrival must be HH:MM between 14:00 and 22:00 WAT, earliest first");
   }
   const priceVersion = `inventory-import-${unitId}`;
+  const extendedStayOptIn = cell(row, "extended_stay_opt_in");
+  let extendedStay: Unit["extendedStay"];
+  const monthlyColumnsPresent = hasAny(row, EXTENDED_STAY_HEADERS.slice(1));
+  if (extendedStayOptIn !== "" && parseBoolean(extendedStayOptIn, "extended_stay_opt_in") !== true) {
+    if (monthlyColumnsPresent) throw new Error("monthly terms require extended_stay_opt_in=true");
+  } else if (extendedStayOptIn === "true") {
+    const cleaningFrequency = cell(row, "cleaning_frequency");
+    if (!["daily", "weekly", "fortnightly", "at-checkout"].includes(cleaningFrequency)) throw new Error("cleaning_frequency must be daily, weekly, fortnightly, or at-checkout");
+    extendedStay = {
+      optedIn: true,
+      monthlyAgreedAmounts: {
+        accommodationKobo: parseMoneyKobo(cell(row, "monthly_accommodation_ngn"), "monthly_accommodation_ngn", true),
+        mandatoryChargesKobo: parseMoneyKobo(cell(row, "monthly_mandatory_charges_ngn"), "monthly_mandatory_charges_ngn", true),
+        version: `monthly-import-${unitId}-${createHash("sha256").update(`${cell(row, "monthly_accommodation_ngn")}|${cell(row, "monthly_mandatory_charges_ngn")}`).digest("hex").slice(0, 16)}`,
+      },
+      utilitiesAndServicing: {
+        powerAndGeneratorFuelIncluded: requiredBoolean(row, "power_generator_fuel_included"),
+        waterIncluded: requiredBoolean(row, "water_included"),
+        internetIncluded: requiredBoolean(row, "internet_included"),
+        cleaningIncluded: requiredBoolean(row, "cleaning_included"),
+        cleaningFrequency: cleaningFrequency as "daily" | "weekly" | "fortnightly" | "at-checkout",
+      },
+    };
+    if (!monthlyAmountsAreValid(extendedStay.monthlyAgreedAmounts) || !utilitiesStatementIsValid(extendedStay.utilitiesAndServicing)) {
+      throw new Error("Extended Stay requires valid Monthly Agreed Amounts and utilities and servicing facts");
+    }
+  } else if (monthlyColumnsPresent) {
+    throw new Error("extended_stay_opt_in is required when monthly terms are supplied");
+  }
   return {
     id: unitId,
     externalListingId: cell(row, "external_listing_id"),
@@ -317,6 +359,7 @@ function buildUnit(row: CsvRow, operator: OperatorReference): Unit {
     blockedDates: [],
     ...(cancellationPolicy === "" ? {} : { cancellationPolicy: { type: cancellationPolicy, version: "cancellation-v1" } }),
     ...(checkInWindow === null ? {} : { checkInWindow }),
+    ...(extendedStay === undefined ? {} : { extendedStay }),
   };
 }
 
@@ -431,6 +474,23 @@ export function importInventoryCsv(contents: string, options: InventoryImportOpt
     zeroPhotoListings,
     errors: Object.freeze(errors),
   });
+}
+
+/** Returns the sole row's Unit id for the narrow authenticated demo import route. */
+export function inventoryUnitIdFromSingleRow(contents: string): string {
+  const parsed = parseCsv(contents);
+  if (parsed.rows.length !== 1) throw new Error("the demo inventory route accepts exactly one CSV row");
+  const unitId = cell(parsed.rows[0]!, "unit_id");
+  if (unitId === "") throw new Error("unit_id is required");
+  return unitId;
+}
+
+/** ADR 0105: the demo-only provisioner accepts reserved synthetic identifiers only. */
+export function isSyntheticDemoInventory(contents: string): boolean {
+  const parsed = parseCsv(contents);
+  if (parsed.rows.length !== 1) return false;
+  const row = parsed.rows[0]!;
+  return ["unit_id", "external_listing_id", "operator_id"].every((header) => cell(row, header).startsWith("demo-"));
 }
 
 export function importInventoryFile(filePath: string, options: InventoryImportOptions): InventoryImportSummary {

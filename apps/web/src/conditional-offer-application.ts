@@ -22,6 +22,7 @@ export interface ConditionalOfferApplicationDependencies {
   readonly clock?: () => Date;
   readonly operatorAuthority?: OperatorRepresentativeAuthority;
   readonly store?: import("../../../domains/shortlet/src/index.js").SqliteGuestInteractionStore | null;
+  readonly extendedStayPolicy?: import("../../../domains/shortlet/src/index.js").ExtendedStayPolicy;
 }
 
 const managers = new WeakMap<ConditionalOfferApplication, ConditionalOfferManager>();

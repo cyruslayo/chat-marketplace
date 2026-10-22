@@ -14,7 +14,7 @@
  * facts found in the latest message.
  */
 
-import { BOOKING_HORIZON_DAYS, MAX_STAY_NIGHTS, dateKeyInLagos } from "../../../domains/shortlet/src/index.js";
+import { BOOKING_HORIZON_DAYS, MAX_STAY_NIGHTS, dateKeyInLagos, isExtendedStayLength, type ExtendedStayPolicy } from "../../../domains/shortlet/src/index.js";
 import { formatNgnKobo } from "../../web-agent/src/discovery-a2ui.js";
 
 /**
@@ -44,6 +44,7 @@ export type StayRequestInterpretation = StayRequestResolution;
 export interface ConciergeOptions {
   /** The injected clock; every date phrase resolves against Africa/Lagos "today". */
   readonly now: Date;
+  readonly extendedStayPolicy?: ExtendedStayPolicy;
 }
 
 /** A location explicitly named by the Guest, with the phrase they used. */
@@ -607,9 +608,13 @@ function clarifyReply(context: DiscoverySearchContext, missing: readonly string[
  * discovery query, or which missing inputs still have to be asked for.
  */
 /** Refuses dates outside launch limits with a plain statement of the limit. */
-function dateLimitRefusal(checkIn: string, nights: number, today: string): string | undefined {
+function dateLimitRefusal(checkIn: string, nights: number, today: string, policy?: ExtendedStayPolicy): string | undefined {
   // ADR-0023: one through fourteen nights.
-  if (nights > MAX_STAY_NIGHTS) return `Stays can be at most ${MAX_STAY_NIGHTS} nights. Please choose ${MAX_STAY_NIGHTS} nights or fewer.`;
+  if (nights > MAX_STAY_NIGHTS && !isExtendedStayLength(nights, policy)) {
+    return policy
+      ? `This demo supports stays up to ${MAX_STAY_NIGHTS} nights, or ${policy.minimumNights} to ${policy.maximumNights} nights.`
+      : `Stays can be at most ${MAX_STAY_NIGHTS} nights. Please choose ${MAX_STAY_NIGHTS} nights or fewer.`;
+  }
   if (checkIn < today) return "That arrival date has already passed. Please choose today or a later date.";
   // ADR-0055: the horizon limits check-in only; a stay may end after day 90.
   const latestArrival = addCalendarDays(today, BOOKING_HORIZON_DAYS);
@@ -624,7 +629,7 @@ function dateLimitRefusal(checkIn: string, nights: number, today: string): strin
  */
 export function resolveStayRequestContext(
   context: DiscoverySearchContext,
-  options: { readonly now: Date },
+  options: { readonly now: Date; readonly extendedStayPolicy?: ExtendedStayPolicy },
 ): StayRequestResolution {
   const city = context.city;
   const nights = context.nights;
@@ -632,7 +637,7 @@ export function resolveStayRequestContext(
   const checkIn = context.checkIn;
   const today = dateKeyInLagos(options.now, "now");
   if (checkIn !== undefined && nights !== undefined) {
-    const refusal = dateLimitRefusal(checkIn, nights, today);
+    const refusal = dateLimitRefusal(checkIn, nights, today, options.extendedStayPolicy);
     if (refusal !== undefined) return { kind: "refuse", reply: refusal };
   }
   const missing: string[] = [];
@@ -723,7 +728,7 @@ export function applyCriteriaEdit(context: DiscoverySearchContext | null, edit: 
  */
 export function interpretStayRequest(text: string, options: ConciergeOptions): StayRequestInterpretation {
   const merged = mergeStayRequestContext(null, extractStayRequestFacts(text, { now: options.now }), text);
-  return resolveStayRequestContext(merged.context, { now: options.now });
+  return resolveStayRequestContext(merged.context, { now: options.now, ...(options.extendedStayPolicy ? { extendedStayPolicy: options.extendedStayPolicy } : {}) });
 }
 
 /**

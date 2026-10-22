@@ -4546,6 +4546,12 @@ export function createGuestRequestHandler(
         return;
       }
       try {
+        // ADR 0087: refresh authoritative remote contact before the synchronous payment domain read.
+        if (app.environment.guestDataIsRemote && app.environment.remoteGuestContacts) {
+          app.environment.remoteGuestContacts.hydrate(
+            await app.environment.guestData.findContact(session.principalId, session.tenantId),
+          );
+        }
         const principal: CommandPrincipal = {
           id: session.principalId,
           role: "guest",

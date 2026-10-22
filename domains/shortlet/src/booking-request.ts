@@ -12,6 +12,7 @@ import {
   SELF_BOOKING_ATTESTATION_VERSION
 } from "./guest-verification.js";
 import type { GuestContactSource } from "../../../packages/platform-core/src/accounts/contact.js";
+import type { ExtendedStayPolicy } from "./extended-stay.js";
 
 /** ADR 0043: Delivery Pending lasts at most five minutes (the Technical Delivery Window). */
 export const TECHNICAL_DELIVERY_WINDOW_MINUTES = 5;
@@ -81,6 +82,7 @@ export interface CreateDraftOptions extends OccupancyDetails {
   checkOut: string;
   selectedOptionalServices?: any[];
   clock?: () => Date;
+  extendedStayPolicy?: ExtendedStayPolicy;
 }
 
 export class BookingRequestManager {
@@ -93,6 +95,7 @@ export class BookingRequestManager {
   readonly #draftStore: import("./guest-interaction-store.js").SqliteGuestInteractionStore | null;
   readonly #requestStore: import("./guest-interaction-store.js").SqliteGuestInteractionStore | null;
   readonly #guestContacts?: GuestContactSource;
+  readonly #extendedStayPolicy?: ExtendedStayPolicy;
 
   constructor({
     repository = null,
@@ -100,7 +103,8 @@ export class BookingRequestManager {
     calendar = null,
     guestVerification,
     store = null,
-    guestContacts
+    guestContacts,
+    extendedStayPolicy
   }: {
     repository?: any;
     audit?: any;
@@ -108,6 +112,7 @@ export class BookingRequestManager {
     guestVerification?: GuestVerificationService;
     store?: import("./guest-interaction-store.js").SqliteGuestInteractionStore | null;
     guestContacts?: GuestContactSource;
+    extendedStayPolicy?: ExtendedStayPolicy;
   } = {}) {
     this.#repository = repository;
     this.#audit = audit;
@@ -116,6 +121,7 @@ export class BookingRequestManager {
     this.#draftStore = store;
     this.#requestStore = store;
     this.#guestContacts = guestContacts;
+    this.#extendedStayPolicy = extendedStayPolicy;
   }
 
   createDraft(
@@ -150,6 +156,7 @@ export class BookingRequestManager {
     if (!unitId) throw new Error("unitId is required to create a draft");
     if (!primaryGuest) throw new Error("primaryGuest is required to create a draft");
     if (!checkIn || !checkOut) throw new Error("checkIn and checkOut dates are required");
+    new StayDateRange(checkIn, checkOut, clock(), this.#extendedStayPolicy);
 
     const canonicalPrimaryGuest: PrimaryGuest = {
       id: primaryGuest.id,
@@ -351,14 +358,14 @@ export class BookingRequestManager {
     const now = clock();
     const watNow = getWatTime(now);
 
-    // 1. Stay Length & Horizon Enforcement (1 to 14 nights, rolling 90-day horizon)
+    // ADR 0105: the staging demo supplies its own scoped Extended Stay policy.
     let dateRange: StayDateRange;
     try {
-      dateRange = new StayDateRange(draft.checkIn, draft.checkOut, now);
+      dateRange = new StayDateRange(draft.checkIn, draft.checkOut, now, this.#extendedStayPolicy);
     } catch (err: any) {
       if (err instanceof RangeError) {
         if (err.message.includes("checkOut must be after checkIn") || err.message.includes("stay cannot exceed")) {
-          throw new Error(`Stay length must be between 1 and 14 nights (${err.message})`);
+          throw new Error(`Stay length is outside the configured ranges (${err.message})`);
         }
         if (err.message.includes("booking horizon")) {
           throw new Error(`Check-in date exceeds rolling 90-day booking horizon (${err.message})`);
@@ -400,6 +407,7 @@ export class BookingRequestManager {
       checkOut: draft.checkOut,
       partySize: draft.occupants.length || 1,
       selectedOptionalServices: draft.selectedOptionalServices,
+      extendedStayPolicy: this.#extendedStayPolicy,
       clock
     });
 

@@ -1,11 +1,12 @@
 import { generatePlatformId } from "../../../packages/platform-core/src/index.js";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { calculateTaxKobo } from "./quote.js";
+import { calculateTaxKobo, createStayQuote } from "./quote.js";
 import { normalizePhotoUrls } from "./photo-url.js";
 import { normalizeBathroomCount, normalizeListingDescription } from "./listing-details.js";
 import type { ContractualCheckInWindow } from "./checkin-support.js";
 import { unitPriceFromOwnerTerms, type UnitOwnerTerms } from "./owner-terms.js";
+import { assertStayLength, isExtendedStayLength, monthlyAmountsAreValid, utilitiesStatementIsValid, type ExtendedStayPolicy, type UnitExtendedStayTerms } from "./extended-stay.js";
 
 const LAGOS_TIME_ZONE = "Africa/Lagos";
 const SUPPORTED_LOCATIONS = new Set(["Lagos", "Abuja"]);
@@ -60,6 +61,8 @@ export interface Unit {
   sameDayTurnover?: any;
   /** ADR 0031: the unit's Contractual Check-In Window, captured by each offer. */
   checkInWindow?: ContractualCheckInWindow;
+  /** ADR 0092: explicit opt-in and versioned monthly terms; this data does not grant runtime policy. */
+  extendedStay?: UnitExtendedStayTerms;
 }
 
 function asDate(value: any, field: string): Date {
@@ -96,12 +99,12 @@ export class StayDateRange {
   public readonly checkOut: string;
   public readonly nights: number;
 
-  constructor(checkIn: any, checkOut: any, now: Date = new Date()) {
+  constructor(checkIn: any, checkOut: any, now: Date = new Date(), policy?: ExtendedStayPolicy) {
     this.checkIn = dateKeyInLagos(checkIn, "checkIn");
     this.checkOut = dateKeyInLagos(checkOut, "checkOut");
     this.nights = calendarDayNumber(this.checkOut) - calendarDayNumber(this.checkIn);
     if (this.nights < 1) throw new RangeError("checkOut must be after checkIn");
-    if (this.nights > MAX_STAY_NIGHTS) throw new RangeError(`stay cannot exceed ${MAX_STAY_NIGHTS} nights`);
+    assertStayLength(this.nights, policy);
     const today = dateKeyInLagos(now, "now");
     const horizonOffset = calendarDayNumber(this.checkIn) - calendarDayNumber(today);
     if (horizonOffset < 0 || horizonOffset > BOOKING_HORIZON_DAYS) {
@@ -175,6 +178,20 @@ function isUnitInput(value: unknown): value is UnitInput {
     || typeof value.checkInWindow.earliestAccessTime !== "string"
     || typeof value.checkInWindow.latestPermittedArrival !== "string"
     || value.checkInWindow.timezone !== "Africa/Lagos")) return false;
+  if (value.extendedStay !== undefined) {
+    if (!isRecord(value.extendedStay) || typeof value.extendedStay.optedIn !== "boolean") return false;
+    const monthly = value.extendedStay.monthlyAgreedAmounts;
+    if (monthly !== undefined && (!isRecord(monthly)
+      || !Number.isSafeInteger(monthly.accommodationKobo) || typeof monthly.accommodationKobo !== "number"
+      || !Number.isSafeInteger(monthly.mandatoryChargesKobo) || typeof monthly.mandatoryChargesKobo !== "number"
+      || typeof monthly.version !== "string" || monthly.version.trim() === "")) return false;
+    const utilities = value.extendedStay.utilitiesAndServicing;
+    if (utilities !== undefined && (!isRecord(utilities)
+      || typeof utilities.powerAndGeneratorFuelIncluded !== "boolean"
+      || typeof utilities.waterIncluded !== "boolean" || typeof utilities.internetIncluded !== "boolean"
+      || typeof utilities.cleaningIncluded !== "boolean"
+      || !["daily", "weekly", "fortnightly", "at-checkout"].includes(String(utilities.cleaningFrequency)))) return false;
+  }
   return true;
 }
 
@@ -255,6 +272,12 @@ export function isEligibleUnit(unit: any, now: Date = new Date(), dateRange?: El
     && unit.regulatory.insurance.propertyCoverVerified === true;
 }
 
+export function isEligibleExtendedStayUnit(unit: Unit, policy: ExtendedStayPolicy | undefined): boolean {
+  return policy !== undefined && unit.extendedStay?.optedIn === true
+    && monthlyAmountsAreValid(unit.extendedStay.monthlyAgreedAmounts)
+    && utilitiesStatementIsValid(unit.extendedStay.utilitiesAndServicing);
+}
+
 export class UnitRepository implements UnitRepositoryContract {
   #units = new Map<string, Unit>();
   save(unit: UnitSaveInput): void {
@@ -300,8 +323,16 @@ function withinPrice(total: number | null, test: (total: number) => boolean): bo
   return total !== null && Number.isFinite(total) && test(total);
 }
 
-export function allInStayTotalKobo(unit: any, dateRange: StayDateRange | null): number | null {
+export function allInStayTotalKobo(unit: any, dateRange: StayDateRange | null, policy?: ExtendedStayPolicy, now: Date = new Date()): number | null {
   if (!dateRange) return null;
+  if (dateRange.nights > MAX_STAY_NIGHTS) {
+    if (!isEligibleExtendedStayUnit(unit as Unit, policy)) return null;
+    try {
+      return createStayQuote({ unit, checkIn: dateRange.checkIn, checkOut: dateRange.checkOut, extendedStayPolicy: policy, clock: () => now }).allInStayTotalKobo;
+    } catch {
+      return null;
+    }
+  }
   const base = unit.price.nightlyKobo * dateRange.nights + (unit.price.mandatoryFeesKobo ?? 0);
   const taxes = calculateTaxKobo(unit.price.taxConfig, base);
   return base + taxes;
@@ -318,8 +349,12 @@ function deepFreeze<T>(value: T): T {
 /** The public discovery projection of one Unit. */
 export type DiscoveryProjection = ReturnType<typeof toDiscoveryProjection>;
 
-export function toDiscoveryProjection(unit: Unit, dateRange: StayDateRange | null) {
-  const allInTotal = allInStayTotalKobo(unit, dateRange);
+export function toDiscoveryProjection(unit: Unit, dateRange: StayDateRange | null, policy?: ExtendedStayPolicy, now: Date = new Date()) {
+  const extendedQuote = dateRange && isExtendedStayLength(dateRange.nights, policy) && isEligibleExtendedStayUnit(unit, policy)
+    ? createStayQuote({ unit, checkIn: dateRange.checkIn, checkOut: dateRange.checkOut, extendedStayPolicy: policy, clock: () => now })
+    : undefined;
+  const allInTotal = extendedQuote?.allInStayTotalKobo ?? allInStayTotalKobo(unit, dateRange, policy, now);
+  const refundableSecurityDepositKobo = extendedQuote?.refundableSecurityDepositKobo ?? unit.price.refundableSecurityDepositKobo;
   return deepFreeze({
     id: unit.id, title: unit.title,
     location: { city: unit.location.city, neighbourhood: unit.location.neighbourhood },
@@ -330,8 +365,8 @@ export function toDiscoveryProjection(unit: Unit, dateRange: StayDateRange | nul
       nightlyKobo: unit.price.nightlyKobo,
       allInStayTotalKobo: allInTotal,
       mandatoryFeesKobo: unit.price.mandatoryFeesKobo ?? 0,
-      refundableSecurityDepositKobo: unit.price.refundableSecurityDepositKobo,
-      amountDueNowKobo: allInTotal === null ? null : allInTotal + unit.price.refundableSecurityDepositKobo,
+      refundableSecurityDepositKobo,
+      amountDueNowKobo: extendedQuote?.totalAmountDueNowKobo ?? (allInTotal === null ? null : allInTotal + refundableSecurityDepositKobo),
       currency: "NGN" as const, pricingVersion: unit.price.version
     },
     trust: {
@@ -367,6 +402,7 @@ export interface UnitDiscoveryQueryOptions {
   telemetry: any;
   clock?: () => Date;
   idFactory?: () => string;
+  extendedStayPolicy?: ExtendedStayPolicy;
 }
 
 export interface UnitDiscoveryFilters {
@@ -389,20 +425,22 @@ export class UnitDiscoveryQuery {
   public readonly telemetry: any;
   public readonly clock: () => Date;
   public readonly idFactory: () => string;
+  public readonly extendedStayPolicy?: ExtendedStayPolicy;
 
-  constructor({ repository, audit, telemetry, clock = () => new Date(), idFactory = () => crypto.randomUUID() }: UnitDiscoveryQueryOptions) {
+  constructor({ repository, audit, telemetry, clock = () => new Date(), idFactory = () => crypto.randomUUID(), extendedStayPolicy }: UnitDiscoveryQueryOptions) {
     this.repository = repository;
     this.audit = audit;
     this.telemetry = telemetry;
     this.clock = clock;
     this.idFactory = idFactory;
+    this.extendedStayPolicy = extendedStayPolicy;
   }
 
   search(filters: UnitDiscoveryFilters = {}) {
     const now = this.clock();
     const hasAnyDate = filters.checkIn !== undefined || filters.checkOut !== undefined;
     if (hasAnyDate && (!filters.checkIn || !filters.checkOut)) throw new TypeError("checkIn and checkOut are required together");
-    const dateRange = hasAnyDate ? new StayDateRange(filters.checkIn, filters.checkOut, now) : null;
+    const dateRange = hasAnyDate ? new StayDateRange(filters.checkIn, filters.checkOut, now, this.extendedStayPolicy) : null;
     if (filters.partySize !== undefined && (!Number.isInteger(filters.partySize) || filters.partySize < 1)) {
       throw new RangeError("partySize must be a positive integer");
     }
@@ -411,7 +449,8 @@ export class UnitDiscoveryQuery {
       throw new TypeError("price filters require dates and partySize for an All-In Stay Total");
     }
     const results = this.repository.findAll()
-      .filter((unit: any) => isEligibleUnit(unit, now, dateRange))
+      .filter((unit: any) => isEligibleUnit(unit, now, dateRange)
+        && (dateRange === null || dateRange.nights <= MAX_STAY_NIGHTS || isEligibleExtendedStayUnit(unit, this.extendedStayPolicy)))
       .filter((unit: any) => !filters.location || unit.location.city === filters.location)
       .filter((unit: any) => !filters.neighbourhood || unit.location.neighbourhood === filters.neighbourhood)
       .filter((unit: any) => !filters.amenity || unit.amenities.includes(filters.amenity))
@@ -422,9 +461,9 @@ export class UnitDiscoveryQuery {
       .filter((unit: any) => !dateRange || !unit.blockedDates.some((range: any) => dateRange.overlaps(range)))
       // ADR-0015: price filters compare the All-In Stay Total. A unit without
       // one fails closed; it never passes a budget as if it were free.
-      .filter((unit: any) => filters.minPriceKobo === undefined || withinPrice(allInStayTotalKobo(unit, dateRange), (total) => total >= filters.minPriceKobo!))
-      .filter((unit: any) => filters.maxPriceKobo === undefined || withinPrice(allInStayTotalKobo(unit, dateRange), (total) => total <= filters.maxPriceKobo!))
-      .map((unit: any) => toDiscoveryProjection(unit, dateRange));
+      .filter((unit: any) => filters.minPriceKobo === undefined || withinPrice(allInStayTotalKobo(unit, dateRange, this.extendedStayPolicy, now), (total) => total >= filters.minPriceKobo!))
+      .filter((unit: any) => filters.maxPriceKobo === undefined || withinPrice(allInStayTotalKobo(unit, dateRange, this.extendedStayPolicy, now), (total) => total <= filters.maxPriceKobo!))
+      .map((unit: any) => toDiscoveryProjection(unit, dateRange, this.extendedStayPolicy, now));
     // ADR-0015: with a budget, results are ranked by All-In Stay Total (stable).
     // Every result has a total here: price filters dropped units without one.
     if (filters.maxPriceKobo !== undefined) results.sort((left: DiscoveryProjection, right: DiscoveryProjection) => (left.price.allInStayTotalKobo ?? 0) - (right.price.allInStayTotalKobo ?? 0));

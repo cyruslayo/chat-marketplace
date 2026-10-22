@@ -15,9 +15,11 @@
       { "name": "ISOLATED_SHORTLET", "class_name": "IsolatedShortletPilot" },
       { "name": "ISOLATED_PLATFORM", "class_name": "IsolatedPlatformDO" },
       { "name": "ISOLATED_COMMERCE", "class_name": "IsolatedCommerceMarket" }
+      ,{ "name": "DEMO_SHORTLET", "class_name": "DemoIsolatedShortletPilot" }
+      ,{ "name": "DEMO_PLATFORM", "class_name": "DemoIsolatedPlatformDO" }
     ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TestHarnessDO", "ShortletPilot", "PlatformDO", "CommerceMarket", "IsolatedShortletPilot", "IsolatedPlatformDO", "IsolatedCommerceMarket"] }],
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TestHarnessDO", "ShortletPilot", "PlatformDO", "CommerceMarket", "IsolatedShortletPilot", "IsolatedPlatformDO", "IsolatedCommerceMarket", "DemoIsolatedShortletPilot", "DemoIsolatedPlatformDO"] }],
   "r2_buckets": [
     { "binding": "RECEIPTS", "bucket_name": "test-receipts" },
     { "binding": "EXPORTS", "bucket_name": "test-exports" }

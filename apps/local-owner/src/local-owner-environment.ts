@@ -105,6 +105,7 @@ import { SqliteAuditLog } from "../../../packages/platform-core/src/sqlite-audit
 import { SqliteTelemetry } from "../../../packages/platform-core/src/sqlite-telemetry.js";
 import type { TelemetryEvent } from "../../../packages/platform-core/src/telemetry.js";
 import { SqliteRevenueAccountingRepository, SqliteRevenueReleaseStateStore } from "../../../domains/shortlet/src/index.js";
+import { DEMO_EXTENDED_STAY_POLICY } from "../../../domains/shortlet/src/extended-stay.js";
 
 export interface LocalOwnerFixtureConfig {
   readonly databasePath: string;
@@ -121,6 +122,8 @@ export interface LocalOwnerFixtureConfig {
   readonly seedFixture?: boolean;
   /** Production composition: the demo-only request list is never read or written (ADR 0004). */
   readonly production?: boolean;
+  readonly demo?: boolean;
+  readonly deployment?: "production" | "staging";
   readonly clock?: () => Date;
 }
 
@@ -591,6 +594,9 @@ export class LocalApartmentOwnerEnvironment {
     dependencies: LocalOwnerEnvironmentDependencies,
   ) {
     this.config = { ...DEFAULT_LOCAL_OWNER_CONFIG, ...config };
+    if (this.config.demo === true && this.config.deployment === "production") {
+      throw new Error("Demo booking behavior is refused in production (ADR 0105)");
+    }
     this.clock = this.config.clock ?? DEFAULT_OWNER_CLOCK;
 
     this.#sqlDatabase = dependencies.database;
@@ -707,6 +713,7 @@ export class LocalApartmentOwnerEnvironment {
       operatorAuthority: this.grantStore,
       audit: this.audit,
       clock: this.clock,
+      ...(this.config.demo && this.config.deployment !== "production" ? { extendedStayPolicy: DEMO_EXTENDED_STAY_POLICY } : {}),
     });
 
     if (this.config.seedFixture !== false) this.#seedFixture();

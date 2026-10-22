@@ -11,6 +11,7 @@ const UNUSED = (): never => { throw new Error("not used by the restore route"); 
 /** A handler whose bookmark authority is a stub: workerd's local storage has no point-in-time recovery (see below). */
 function restoreHandler(options: { readonly access: boolean; readonly bookmark: string }): ReturnType<typeof createOpsHandler> {
   const dependencies: OpsRouteDependencies = {
+    demoEnabled: false,
     database: { prepare: UNUSED, exec: UNUSED, transaction: UNUSED, close: () => {} } as unknown as SqlDatabase,
     sharedSecret: SECRET,
     verifier: { verify: async () => options.access },

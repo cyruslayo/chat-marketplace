@@ -6,6 +6,8 @@ import { assertSecurityDepositCollectionAvailable, type SecurityDepositCollectio
 import type { GuestConductPolicySnapshot } from "./guest-conduct.js";
 import type { SecurityDepositPolicySnapshot } from "./security-deposit.js";
 import type { SecurityDepositAccountingRepository } from "./security-deposit-accounting.js";
+import type { ExtendedStayPolicy } from "./extended-stay.js";
+import { isEligibleExtendedStayUnit, isEligibleUnit, type Unit } from "./browse.js";
 
 /**
  * ADR 0049 & AC 1: Strictly reject payloads containing raw PAN, CVV, PIN, OTP, or reusable card tokens.
@@ -159,6 +161,7 @@ export interface CardPaymentManagerOptions {
   readonly compensationRefundProvider?: BookingPaymentCompensationPort;
   readonly store?: import("./guest-interaction-store.js").SqliteGuestInteractionStore | null;
   readonly guestContacts?: import("../../../packages/platform-core/src/accounts/contact.js").GuestContactSource;
+  readonly extendedStayPolicy?: ExtendedStayPolicy;
 }
 
 export class CardPaymentManager {
@@ -175,6 +178,7 @@ export class CardPaymentManager {
   readonly #compensationRefundProvider?: CardPaymentManagerOptions["compensationRefundProvider"];
   readonly #store?: CardPaymentManagerOptions["store"];
   readonly #guestContacts?: CardPaymentManagerOptions["guestContacts"];
+  readonly #extendedStayPolicy?: ExtendedStayPolicy;
 
   readonly #sessions = new Map<string, CardCheckoutSession>();
   readonly #reservations = new Map<string, Reservation>();
@@ -199,6 +203,7 @@ export class CardPaymentManager {
     this.#compensationRefundProvider = options.compensationRefundProvider;
     this.#store = options.store ?? null;
     this.#guestContacts = options.guestContacts;
+    this.#extendedStayPolicy = options.extendedStayPolicy;
     if (this.#store) this.#rehydrateFromStore();
   }
 
@@ -286,6 +291,18 @@ export class CardPaymentManager {
     }
 
     const offer = this.#offerManager.getOffer(offerId);
+    const now = clock();
+    if (offer.quote?.stayType === "extended" && this.#repository) {
+      const raw: unknown = this.#repository.findById
+        ? this.#repository.findById(offer.unitId)
+        : this.#repository.findAll().find((unit: unknown) => unit !== null && typeof unit === "object" && "id" in unit && unit.id === offer.unitId);
+      if (!raw || typeof raw !== "object" || !isEligibleUnit(raw as Unit, now, offer.dates)) throw new Error("Unit is no longer eligible through checkout");
+    }
+    if (offer.quote?.stayType === "extended" && !this.#extendedStayPolicy) throw new Error("Extended Stay payment is disabled in this runtime");
+    if (offer.quote?.stayType === "extended" && this.#repository) {
+      const raw: unknown = this.#repository.findById(offer.unitId);
+      if (raw === null || typeof raw !== "object" || !isEligibleExtendedStayUnit(raw as Unit, this.#extendedStayPolicy)) throw new Error("Extended Stay unit terms are no longer eligible");
+    }
     const expectedPayerId = offer.parties.distinctPayer?.id ?? offer.parties.primaryGuest.id;
     if (envelope.principal.role !== "guest" || !envelope.principal.id || envelope.principal.id !== expectedPayerId) {
       throw new Error("Only the authoritative payer can initialize checkout");
@@ -307,7 +324,6 @@ export class CardPaymentManager {
       throw new Error(`Checkout initialization requires an accepted offer (current status: '${offer.status}')`);
     }
 
-    const now = clock();
     const existingJourney = this.#journeys?.findByOfferId(offerId);
     if (now.getTime() >= new Date(offer.paymentWindow.expiresAt).getTime()) {
       if (existingJourney?.stage === "stay_settled") this.#compensateStay(offerId);
@@ -422,6 +438,10 @@ export class CardPaymentManager {
     }
 
     const now = clock();
+    const activeAttempt = this.#liveAttempts?.current(offer.offerId, now);
+    const latestAttempt = this.#liveAttempts?.latest(offer.offerId);
+    const supersededAttempt = (activeAttempt !== undefined && activeAttempt.attemptId !== session.checkoutId)
+      || (latestAttempt !== undefined && latestAttempt.attemptId !== session.checkoutId);
 
     // Verification from PSP
     let pspResult: PSPVerifyResult | undefined = providerResult;
@@ -438,7 +458,7 @@ export class CardPaymentManager {
       if (["ongoing", "pending", "processing", "queued"].includes(pspResult.status)) {
         const paymentWindowEnd = new Date(offer.paymentWindow.expiresAt).getTime();
         const graceEnd = paymentWindowEnd + PAYMENT_PROCESSING_GRACE_MINUTES * 60_000;
-        if (now.getTime() <= graceEnd) {
+        if (now.getTime() <= graceEnd && !supersededAttempt) {
           this.#markPaymentProcessing(offerId, session.purpose);
           throw new Error("Payment is currently processing under Payment-Processing Grace period");
         }
@@ -478,21 +498,25 @@ export class CardPaymentManager {
       this.#markLatePaymentReconciliation(offerId, pspReference, pspResult.amountKobo, now);
       rejectDeposit("Payment verification failed: Payment Window and Grace period have expired");
     }
+    if (supersededAttempt) {
+      this.#markLatePaymentReconciliation(offerId, pspReference, pspResult.amountKobo, now);
+      rejectDeposit("Payment verification failed: the Live Payment Attempt was superseded");
+    }
 
     // Revalidate Unit publication state from repository if provided
     if (this.#repository) {
-      interface UnitRecord {
-        id?: string;
-        published?: boolean;
-        inspection?: {
-          materialChangePending?: boolean;
-        };
+      const rawUnit: unknown = this.#repository.findById
+        ? this.#repository.findById(offer.unitId)
+        : this.#repository.findAll().find((unit: unknown) => unit !== null && typeof unit === "object" && "id" in unit && unit.id === offer.unitId);
+      if (!rawUnit || typeof rawUnit !== "object") throw new Error("Inventory verification failed: Unit condition or publication status is invalid");
+      if (offer.quote?.stayType === "extended" && !isEligibleUnit(rawUnit as Unit, now, offer.dates)) {
+        this.#markLatePaymentReconciliation(offerId, pspReference, pspResult.amountKobo, now);
+        throw new Error("Inventory verification failed: Unit eligibility is invalid through checkout");
       }
-      const rawUnit = this.#repository.findById
-        ? (this.#repository.findById(offer.unitId) as UnitRecord | undefined)
-        : (this.#repository.findAll() as UnitRecord[]).find((u) => u?.id === offer.unitId);
-      if (rawUnit && (!rawUnit.published || rawUnit.inspection?.materialChangePending)) {
-        throw new Error("Inventory verification failed: Unit condition or publication status is invalid");
+      if (offer.quote?.stayType !== "extended" && (!((rawUnit as Unit).published) || (rawUnit as Unit).inspection?.materialChangePending)) throw new Error("Inventory verification failed: Unit condition or publication status is invalid");
+      if (offer.quote?.stayType === "extended" && (!this.#extendedStayPolicy || !isEligibleExtendedStayUnit(rawUnit as Unit, this.#extendedStayPolicy))) {
+        this.#markLatePaymentReconciliation(offerId, pspReference, pspResult.amountKobo, now);
+        throw new Error("Extended Stay payment verification is disabled or the unit is no longer eligible");
       }
     }
 
@@ -683,7 +707,7 @@ export class CardPaymentManager {
           stay: { ...value.compensation.stay, required: true, status: "reconciliation_required", obligationId: `payment-reconciliation:${offerId}`, originalPaymentReference: reference, amountKobo, currency: "NGN" },
         },
       }));
-      this.#audit?.record({ type: "card_payment.manual_reconciliation_required", offerId, pspReference: reference, amountKobo, recordedAt: now.toISOString() });
+      this.#audit?.record({ type: "card_payment.manual_reconciliation_required", offerId, amountKobo, recordedAt: now.toISOString() });
     } catch {
       // A concurrent callback/webhook may have won the journey version race.
     }

@@ -709,6 +709,13 @@ export class LocalGuestApp {
     return this.#assistantRuntime?.getTaskRail(threadId) ?? [];
   }
 
+  #resolveStayRequestContext(context: DiscoverySearchContext, now: Date) {
+    return resolveStayRequestContext(context, {
+      now,
+      ...(this.#environment.extendedStayPolicy ? { extendedStayPolicy: this.#environment.extendedStayPolicy } : {}),
+    });
+  }
+
   #verticals(): readonly GuestVertical[] {
     return this.#assistantRuntime?.registeredVerticals() ?? [];
   }
@@ -814,6 +821,7 @@ export class LocalGuestApp {
           history: thread.geminiHistory,
           text,
           demoCheckIn: this.#environment.config.demoCheckIn,
+          ...(this.#environment.extendedStayPolicy ? { extendedStayPolicy: this.#environment.extendedStayPolicy } : {}),
           now: this.#environment.clock(),
           search: (filters) => {
             this.#prepareDiscovery(thread);
@@ -899,9 +907,7 @@ export class LocalGuestApp {
         surfaces: [],
       });
     }
-    const resolution = resolveStayRequestContext(merged.context, {
-      now: this.#environment.clock(),
-    });
+    const resolution = this.#resolveStayRequestContext(merged.context, this.#environment.clock());
     if (resolution.kind !== "search") {
       // Clarifications, date confirmations and limit refusals never run a search.
       return acknowledged({
@@ -3467,9 +3473,7 @@ export class LocalGuestApp {
         message:
           "That change could not be applied. Check the value and try again.",
       };
-    const resolution = resolveStayRequestContext(next, {
-      now: this.#environment.clock(),
-    });
+    const resolution = this.#resolveStayRequestContext(next, this.#environment.clock());
     if (resolution.kind === "refuse")
       return {
         ok: false,
@@ -3510,9 +3514,7 @@ export class LocalGuestApp {
         code: "NOTHING_TO_UNDO",
         message: "There is no earlier search to go back to.",
       };
-    const resolution = resolveStayRequestContext(previous, {
-      now: this.#environment.clock(),
-    });
+    const resolution = this.#resolveStayRequestContext(previous, this.#environment.clock());
     // Dates that have since passed are refused like any other edit.
     if (resolution.kind !== "search")
       return {
@@ -3746,6 +3748,7 @@ export class LocalGuestApp {
       checkIn: draft.checkIn,
       checkOut: draft.checkOut,
       partySize: draft.occupants.length || 1,
+      ...(this.#environment.extendedStayPolicy ? { extendedStayPolicy: this.#environment.extendedStayPolicy } : {}),
       clock: this.#environment.clock,
     });
     return requestDraftArtifactFromProjection(
@@ -3823,7 +3826,7 @@ export class LocalGuestApp {
       merged.confirmedDates === true;
     if (!changed || merged.conflict) return null;
     const unchanged = "Your Request Draft is unchanged.";
-    const resolution = resolveStayRequestContext(merged.context, { now });
+    const resolution = this.#resolveStayRequestContext(merged.context, now);
     if (resolution.kind === "confirm") {
       // Issue 01: relative dates are confirmed before anything is quoted. The
       // wording is the discovery check's, but "yes" updates the draft here.
@@ -3913,6 +3916,7 @@ export class LocalGuestApp {
       checkIn: stay.checkIn,
       checkOut: stay.checkOut,
       partySize: stay.partySize,
+      ...(environment.extendedStayPolicy ? { extendedStayPolicy: environment.extendedStayPolicy } : {}),
       clock: environment.clock,
     });
     return {

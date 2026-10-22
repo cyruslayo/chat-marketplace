@@ -1,5 +1,6 @@
 import { generatePlatformId } from "../../../../packages/platform-core/src/index.js";
 import { StayDateRange, createStayQuote, toDiscoveryProjection, isEligibleUnit, allInStayTotalKobo, type Unit } from "../../../../domains/shortlet/src/index.js";
+import { isExtendedStayLength, type ExtendedStayPolicy } from "../../../../domains/shortlet/src/extended-stay.js";
 import {
   discoveryArtifactToA2UI,
   bookingRequestArtifactToA2UI,
@@ -186,9 +187,19 @@ export const ASSISTANT_TOOL_DEFINITIONS: readonly AssistantToolDefinition[] = [
   },
 ];
 
-export function assistantToolsForState(taskState: AssistantTaskState): readonly AssistantToolDefinition[] {
+function stayToolDefinitions(policy?: ExtendedStayPolicy): readonly AssistantToolDefinition[] {
+  const maximumNights = policy?.maximumNights ?? 14;
+  return ASSISTANT_TOOL_DEFINITIONS.map((tool) => {
+    if (maximumNights <= 14 || (tool.name !== "search_stays" && tool.name !== "prepare_request_draft")) return tool;
+    const nights = tool.parametersSchema.properties?.nights;
+    if (!nights || typeof nights !== "object") return tool;
+    return { ...tool, parametersSchema: { ...tool.parametersSchema, properties: { ...tool.parametersSchema.properties, nights: { ...nights, maximum: maximumNights } } } };
+  });
+}
+
+export function assistantToolsForState(taskState: AssistantTaskState, policy?: ExtendedStayPolicy): readonly AssistantToolDefinition[] {
   const currentSelectedStay = taskState.shortlist.find((stay) => stay.stayRef === taskState.selectedStayRef);
-  return ASSISTANT_TOOL_DEFINITIONS.filter((tool) => {
+  return stayToolDefinitions(policy).filter((tool) => {
     switch (tool.name) {
       case "get_unit_details":
       case "compare_stays":
@@ -211,8 +222,9 @@ export function validateAssistantToolCall(
   name: string,
   args: Record<string, unknown>,
   taskState: AssistantTaskState,
+  policy?: ExtendedStayPolicy,
 ): AssistantToolPreconditionFailure | undefined {
-  if (!ASSISTANT_TOOL_DEFINITIONS.some((tool) => tool.name === name)) {
+  if (!stayToolDefinitions(policy).some((tool) => tool.name === name)) {
     return { code: "invalid_tool_for_state", message: "That operation is not available for the current Guest workflow." };
   }
 
@@ -311,7 +323,7 @@ export function executeAssistantTool(
   args: Record<string, unknown>,
   context: AssistantToolContext,
 ): AssistantToolExecutionResult {
-  const preconditionFailure = validateAssistantToolCall(name, args, context.taskState);
+  const preconditionFailure = validateAssistantToolCall(name, args, context.taskState, context.environment.extendedStayPolicy);
   if (preconditionFailure) {
     throw Object.assign(new Error(preconditionFailure.message), { code: preconditionFailure.code });
   }
@@ -332,8 +344,8 @@ export function executeAssistantTool(
       const nights = args.nights === undefined ? taskState.stayIntent.nights : Number(args.nights);
       const guests = args.guests === undefined ? taskState.stayIntent.partySize : Number(args.guests);
       const hasStayDetails = nights !== undefined || guests !== undefined || (args.checkIn !== undefined && args.checkIn !== null);
-      if (hasStayDetails && (!Number.isSafeInteger(nights) || nights! < 1 || nights! > 14)) {
-        throw new RangeError("nights must be an integer between 1 and 14");
+      if (hasStayDetails && (!Number.isSafeInteger(nights) || nights! < 1 || (nights! > 14 && !isExtendedStayLength(nights!, context.environment.extendedStayPolicy)))) {
+        throw new RangeError("nights must fit the configured Short Stay or Extended Stay range");
       }
       if (hasStayDetails && (!Number.isSafeInteger(guests) || guests! < 1)) {
         throw new RangeError("guests must be a positive integer");
@@ -350,7 +362,7 @@ export function executeAssistantTool(
         const endDate = new Date(startDate);
         endDate.setUTCDate(endDate.getUTCDate() + nights);
         checkOut = endDate.toISOString().slice(0, 10);
-        new StayDateRange(checkIn, checkOut, context.now);
+        new StayDateRange(checkIn, checkOut, context.now, context.environment.extendedStayPolicy);
       }
 
       const maxBudgetKobo = typeof args.maxBudgetKobo === "number" && args.maxBudgetKobo > 0
@@ -652,7 +664,7 @@ export function executeAssistantTool(
       if (!stay) throw new Error(`Stay reference '${stayRef}' is not in the current shortlist.`);
       const nights = Number(args.nights);
       const guests = Number(args.guests);
-      if (!Number.isSafeInteger(nights) || nights < 1 || nights > 14) throw new RangeError("nights must be an integer between 1 and 14");
+      if (!Number.isSafeInteger(nights) || nights < 1 || (nights > 14 && !isExtendedStayLength(nights, context.environment.extendedStayPolicy))) throw new RangeError("nights must fit the configured Short Stay or Extended Stay range");
       if (!Number.isSafeInteger(guests) || guests < 1) throw new RangeError("guests must be a positive integer");
 
       const checkIn = taskState.stayIntent.checkIn ?? context.demoCheckIn;
@@ -661,7 +673,7 @@ export function executeAssistantTool(
       const endDate = new Date(startDate);
       endDate.setUTCDate(endDate.getUTCDate() + nights);
       const checkOut = endDate.toISOString().slice(0, 10);
-      new StayDateRange(checkIn, checkOut, context.now);
+      new StayDateRange(checkIn, checkOut, context.now, context.environment.extendedStayPolicy);
 
       // Recheck exact-unit eligibility and capacity in the authoritative query before drafting.
       const available = context.environment.discoveryQuery.search({
@@ -685,7 +697,7 @@ export function executeAssistantTool(
         checkIn,
         checkOut,
       }, principal);
-      const quote = createStayQuote({ unit, checkIn, checkOut, partySize: guests, clock: context.environment.clock });
+      const quote = createStayQuote({ unit, checkIn, checkOut, partySize: guests, extendedStayPolicy: context.environment.extendedStayPolicy, clock: context.environment.clock });
       const artifact = requestDraftArtifactFromProjection({
         draftId: draft.draftId,
         unitId: unit.id,
@@ -836,15 +848,15 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
     promptSection: SHORTLET_PROMPT_SECTION,
     intentKeywords: ["stay", "stays", "apartment", "apartments", "book", "booking", "ikoyi", "lekki", "lagos", "abuja", "check-in", "checkin"],
     toolNames: ASSISTANT_TOOL_DEFINITIONS.map((tool) => tool.name),
-    toolsForState: assistantToolsForState,
-    validateToolCall: validateAssistantToolCall,
+    toolsForState: (taskState) => assistantToolsForState(taskState, environment.extendedStayPolicy),
+    validateToolCall: (name, args, taskState) => validateAssistantToolCall(name, args, taskState, environment.extendedStayPolicy),
     executeTool: executeAssistantTool,
     taskSummary: shortletTaskSummary,
     discoverySurface: (artifact, surfaceId) => discoveryArtifactToA2UI({ artifact: artifact as never, surfaceId, demo: environment.config.demo === true }),
     unitDetailSurface: ({ unitId, checkIn, checkOut, surfaceId }) => {
       const unit = environment.unitRepository.findById(unitId);
       if (!unit) throw new Error("The selected Unit no longer exists");
-      const unitProjection = toDiscoveryProjection(unit, new StayDateRange(checkIn, checkOut, environment.clock()));
+      const unitProjection = toDiscoveryProjection(unit, new StayDateRange(checkIn, checkOut, environment.clock(), environment.extendedStayPolicy), environment.extendedStayPolicy, environment.clock());
       const artifact = unitDetailArtifactFromProjection({ unit: unitProjection, checkIn, checkOut, projectionVersion: 1, viewer: environment.guestPrincipal() });
       return unitDetailArtifactToA2UI({ artifact, surfaceId, demo: environment.config.demo === true });
     },
@@ -865,7 +877,7 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
       }
       let dateRange: StayDateRange;
       try {
-        dateRange = new StayDateRange(refs.checkIn, refs.checkOut, environment.clock());
+        dateRange = new StayDateRange(refs.checkIn, refs.checkOut, environment.clock(), environment.extendedStayPolicy);
       } catch {
         return { ok: false, code: "STALE_SURFACE", message: "The stay dates are no longer valid. Please select current dates." };
       }
@@ -876,7 +888,7 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
       if (!eligible || !capacityOk || !notBlocked) {
         return { ok: false, code: "STALE_SURFACE", message: "This stay is no longer available for your dates and party size. Please choose another stay." };
       }
-      const currentStayTotal = allInStayTotalKobo(currentUnit, dateRange);
+      const currentStayTotal = allInStayTotalKobo(currentUnit, dateRange, environment.extendedStayPolicy, environment.clock());
       if (refs.stayTotalKobo !== undefined && currentStayTotal !== null && refs.stayTotalKobo !== currentStayTotal) {
         return { ok: false, code: "STALE_SURFACE", message: "Pricing for this stay has changed. Please review the updated quote." };
       }

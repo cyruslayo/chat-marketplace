@@ -24,6 +24,9 @@ export interface OwnerSettlementSnapshot {
   readonly agreed: OwnerAgreedAmounts;
   readonly nights: number;
   readonly currency: "NGN";
+  /** ADR 0092: marks a captured Extended Stay period settlement. */
+  readonly pricingBasis?: "monthly";
+  readonly monthlyAgreedAmounts?: import("./extended-stay.js").MonthlyAgreedAmounts;
 }
 
 export class OwnerTermsError extends Error {
@@ -121,6 +124,21 @@ export function ownerSettlementFromQuote(quote: unknown): OwnerSettlementSnapsho
   if (!isNonNegativeKobo(value.ownerPayableKobo) || !isNonNegativeKobo(value.marginKobo) || !isNonNegativeKobo(value.marginBasisPoints)
     || !agreed || !isNonNegativeKobo(agreed.nightlyKobo) || !isNonNegativeKobo(agreed.mandatoryChargesKobo)
     || typeof value.nights !== "number" || !Number.isSafeInteger(value.nights) || value.nights < 1 || value.currency !== "NGN") return null;
+  if (value.pricingBasis === "monthly") {
+    const monthly = value.monthlyAgreedAmounts !== null && typeof value.monthlyAgreedAmounts === "object" ? value.monthlyAgreedAmounts as Record<string, unknown> : null;
+    if (!monthly || !isNonNegativeKobo(monthly.accommodationKobo) || monthly.accommodationKobo === 0
+      || !isNonNegativeKobo(monthly.mandatoryChargesKobo) || typeof monthly.version !== "string" || monthly.version.trim() === "") return null;
+    return Object.freeze({
+      ownerPayableKobo: value.ownerPayableKobo,
+      marginKobo: value.marginKobo,
+      marginBasisPoints: value.marginBasisPoints,
+      agreed: Object.freeze({ nightlyKobo: agreed.nightlyKobo, mandatoryChargesKobo: agreed.mandatoryChargesKobo }),
+      nights: value.nights,
+      currency: "NGN" as const,
+      pricingBasis: "monthly" as const,
+      monthlyAgreedAmounts: Object.freeze({ accommodationKobo: monthly.accommodationKobo, mandatoryChargesKobo: monthly.mandatoryChargesKobo, version: monthly.version }),
+    });
+  }
   return Object.freeze({
     ownerPayableKobo: value.ownerPayableKobo,
     marginKobo: value.marginKobo,

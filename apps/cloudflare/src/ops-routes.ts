@@ -1,7 +1,7 @@
 import type { AuditLog } from "../../../packages/platform-core/src/index.js";
 import type { ConciergeTurnCounts } from "../../local-guest/src/assistant/model-call-budget.js";
 import type { UnitRepositoryContract } from "../../../domains/shortlet/src/index.js";
-import { importInventoryCsv, operatorResolverFromRepository } from "../../../domains/shortlet/src/index.js";
+import { importInventoryCsv, inventoryUnitIdFromSingleRow, isSyntheticDemoInventory, operatorResolverFromRepository, publishUnit, UnitRepository } from "../../../domains/shortlet/src/index.js";
 import { bootstrapOperatorsFromUnitRepository, type OperatorRepository } from "../../../domains/shortlet/src/index.js";
 import { readBodyWithLimit, BodyTooLargeError } from "./bounded-body.js";
 import {
@@ -51,6 +51,8 @@ export interface OpsStorageBookmarks {
 }
 
 export interface OpsRouteDependencies {
+  /** ADR 0105: true only after the authoritative staging demo configuration passes the pilot loader. */
+  readonly demoEnabled?: boolean;
   readonly conciergeDiagnostics?: () => ConciergeTurnCounts;
   /** Slice 16: the object's SQL handle, used by the import, verify and export routes. */
   readonly database: SqlDatabase;
@@ -190,6 +192,38 @@ export function createOpsHandler(dependencies: OpsRouteDependencies): OpsHandler
       record("ops.inventory.import", { tenantId, inserted: result.inserted, invalid: result.invalid });
       // The importer's own summary is returned verbatim; invalid rows are reported exactly as the CLI reports them.
       return json(200, { ok: true, ...result });
+    }
+    if (request.method === "POST" && path === "/_ops/demo/inventory/import") {
+      if (dependencies.demoEnabled !== true) return json(404, { ok: false, code: "NOT_FOUND" });
+      const csv = new TextDecoder().decode(await readBodyWithLimit(request, MAX_INVENTORY_CSV_BYTES));
+      try {
+        const unitId = inventoryUnitIdFromSingleRow(csv);
+        if (!isSyntheticDemoInventory(csv)) return json(400, { ok: false, code: "INVALID_DEMO_INVENTORY" });
+        const operatorResolver = operatorResolverFromRepository(dependencies.operatorRepository);
+        const staged = new UnitRepository();
+        for (const existing of dependencies.unitRepository.findAll()) staged.save(existing);
+        const importOptions = {
+          repository: staged,
+          operatorResolver,
+          tenantId: dependencies.tenantId,
+          clock: dependencies.clock,
+        };
+        const preview = importInventoryCsv(csv, importOptions);
+        if (preview.rowsRead !== 1 || preview.valid !== 1 || preview.publicationReady !== 1 || preview.invalid !== 0) {
+          return json(400, { ok: false, code: "INVALID_DEMO_INVENTORY" });
+        }
+        const stagedUnit = staged.findById(unitId);
+        if (!stagedUnit?.extendedStay?.optedIn) return json(400, { ok: false, code: "INVALID_DEMO_INVENTORY" });
+        publishUnit(staged, unitId, { clock: dependencies.clock });
+        return dependencies.database.transaction(() => {
+          const result = importInventoryCsv(csv, { ...importOptions, repository: dependencies.unitRepository });
+          publishUnit(dependencies.unitRepository, unitId, { clock: dependencies.clock, audit: dependencies.audit });
+          record("ops.demo.inventory.import", { tenantId: dependencies.tenantId, unitId, inserted: result.inserted, updated: result.updated });
+          return json(200, { ok: true, unitId, imported: result.imported, published: true });
+        });
+      } catch {
+        return json(400, { ok: false, code: "INVALID_DEMO_INVENTORY" });
+      }
     }
     const operatorPath = /^\/_ops\/operators\/([^/]+)$/.exec(path);
     if (request.method === "PATCH" && operatorPath) {

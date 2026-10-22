@@ -11,15 +11,17 @@ export interface LivePaymentAttemptRegistryPort {
   current(offerId: string, now?: Date): LivePaymentAttempt | undefined;
   release(offerId: string): void;
   history(attemptId: string): LivePaymentAttempt | undefined;
+  latest(offerId: string): LivePaymentAttempt | undefined;
 }
 
 /** ADR 0046: one active provider attempt per offer; terminal history is retained but does not block the next component. */
 export class LivePaymentAttemptRegistry implements LivePaymentAttemptRegistryPort {
-  readonly #active = new Map<string, LivePaymentAttempt>(); readonly #history = new Map<string, LivePaymentAttempt>();
-  acquire(input: Omit<LivePaymentAttempt, "status">): LivePaymentAttempt { const current = this.#active.get(input.offerId); if (current) throw new Error(`A live ${current.method} ${current.purpose} payment attempt already owns this offer`); const attempt = { ...input, status: "active" as const }; this.#active.set(input.offerId, attempt); this.#history.set(input.attemptId, attempt); return { ...attempt }; }
+  readonly #active = new Map<string, LivePaymentAttempt>(); readonly #history = new Map<string, LivePaymentAttempt>(); readonly #latest = new Map<string, string>();
+  acquire(input: Omit<LivePaymentAttempt, "status">): LivePaymentAttempt { const current = this.#active.get(input.offerId); if (current) throw new Error(`A live ${current.method} ${current.purpose} payment attempt already owns this offer`); const attempt = { ...input, status: "active" as const }; this.#active.set(input.offerId, attempt); this.#history.set(input.attemptId, attempt); this.#latest.set(input.offerId, input.attemptId); return { ...attempt }; }
   current(offerId: string, now: Date = new Date()): LivePaymentAttempt | undefined { const attempt = this.#active.get(offerId); if (!attempt) return undefined; if (now.getTime() >= new Date(attempt.expiresAt).getTime()) { this.release(offerId); return undefined; } return { ...attempt }; }
   release(offerId: string): void { const current = this.#active.get(offerId); if (current) { this.#history.set(current.attemptId, { ...current, status: "terminal" }); this.#active.delete(offerId); } }
   history(attemptId: string): LivePaymentAttempt | undefined { const attempt = this.#history.get(attemptId); return attempt ? { ...attempt } : undefined; }
+  latest(offerId: string): LivePaymentAttempt | undefined { const attemptId = this.#latest.get(offerId); return attemptId === undefined ? undefined : this.history(attemptId); }
 }
 
 function isLivePaymentMethod(value: unknown): value is LivePaymentMethod {
@@ -118,5 +120,22 @@ export class SqliteLivePaymentAttemptRegistry implements LivePaymentAttemptRegis
     this.#loadAll(new Date());
     const attempt = this.#history.get(attemptId);
     return attempt ? { ...attempt } : undefined;
+  }
+
+  latest(offerId: string): LivePaymentAttempt | undefined {
+    this.#loadAll(new Date());
+    const record = this.#store.findLivePaymentAttemptByOfferId(offerId);
+    if (!record) return undefined;
+    const latest: LivePaymentAttempt = {
+      offerId: record.offerId,
+      method: isLivePaymentMethod(record.method) ? record.method : "fresh_card",
+      attemptId: record.attemptId,
+      purpose: isPaymentPurpose(record.purpose) ? record.purpose : "stay",
+      status: record.status,
+      startedAt: record.startedAt,
+      expiresAt: record.expiresAt,
+    };
+    this.#history.set(latest.attemptId, latest);
+    return { ...latest };
   }
 }
