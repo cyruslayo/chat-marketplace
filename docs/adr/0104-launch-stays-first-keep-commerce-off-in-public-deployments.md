@@ -4,6 +4,8 @@ status: proposed
 
 # Launch stays first; keep commerce off in public deployments
 
+**Superseded in part by 0105 (demo only).** The proposed restriction on public exposure of the development demo has a staging-only exception. The commerce restriction remains unchanged.
+
 ## Context
 
 On 20 Oct 2026 the owner chose to launch stays only and defer public commerce. ADR 0003 establishes shortlet as the first reference domain. ADR 0100 admits commerce as the second domain pack and describes its future front doors; it does not require commerce to launch before its payment and guest-experience gates pass.
