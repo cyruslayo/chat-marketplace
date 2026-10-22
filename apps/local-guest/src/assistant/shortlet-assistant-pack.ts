@@ -13,6 +13,7 @@ import {
 import { unitDetailArtifactFromProjection } from "../../../web/src/unit-detail-artifact.js";
 import { requestDraftArtifactFromProjection } from "../../../web/src/request-draft-artifact.js";
 import { requestDraftArtifactToA2UI } from "../../../web-agent/src/request-draft-a2ui.js";
+import { extendedStayDraftFacts } from "../../../web-agent/src/extended-stay-presentation.js";
 import type { LocalGuestEnvironment } from "../fixture.js";
 import type { AssistantToolDefinition } from "./assistant-model.js";
 import type {
@@ -711,6 +712,7 @@ export function executeAssistantTool(
         allInStayTotalKobo: quote.allInStayTotalKobo,
         refundableSecurityDepositKobo: quote.refundableSecurityDepositKobo,
         amountDueNowKobo: quote.totalAmountDueNowKobo,
+        ...extendedStayDraftFacts(quote),
         cancellationPolicy: { type: quote.cancellationPolicy.type, version: quote.cancellationPolicy.version, summary: quote.cancellationPolicy.policySummary },
         view: "draft",
         policyVersions: quote.policyVersions,

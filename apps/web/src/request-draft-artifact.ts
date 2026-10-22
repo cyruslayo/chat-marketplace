@@ -1,4 +1,5 @@
 import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
+import type { BillingPeriodFacts, ExtendedStayUtilitiesFacts } from "../../web-agent/src/extended-stay-presentation.js";
 
 export const REQUEST_DRAFT_ARTIFACT_KIND = "shortlet.request-draft";
 export const REQUEST_DRAFT_SCHEMA_VERSION = "shortlet.request-draft/v1";
@@ -38,6 +39,9 @@ export interface RequestDraftArtifact {
     readonly amountDueNowKobo: number;
     readonly cancellationPolicy: { readonly type: string; readonly version: string; readonly summary: string };
     readonly inventoryReserved: false;
+    /** Demo-launch issue 12 (ADR 0092): the Billing Period schedule and utilities of an Extended Stay draft. */
+    readonly billingPeriods?: readonly BillingPeriodFacts[];
+    readonly utilitiesAndServicing?: ExtendedStayUtilitiesFacts;
   };
   readonly actions: readonly RequestDraftArtifactAction[];
   readonly acknowledgements: readonly string[];
@@ -59,6 +63,9 @@ export interface RequestDraftProjectionInput {
   readonly refundableSecurityDepositKobo: number;
   readonly amountDueNowKobo: number;
   readonly cancellationPolicy: { readonly type: string; readonly version: string; readonly summary: string };
+  /** Demo-launch issue 12: the Billing Period schedule of an Extended Stay, from the quote snapshot. */
+  readonly billingPeriods?: readonly BillingPeriodFacts[];
+  readonly utilitiesAndServicing?: ExtendedStayUtilitiesFacts;
   readonly view: "draft" | "review";
   readonly policyVersions?: Readonly<Record<string, string>>;
   readonly disclosures?: readonly string[];
@@ -102,6 +109,8 @@ export function requestDraftArtifactFromProjection(input: RequestDraftProjection
       amountDueNowKobo: input.amountDueNowKobo,
       cancellationPolicy: Object.freeze({ ...input.cancellationPolicy }),
       inventoryReserved: false as const,
+      ...(input.billingPeriods === undefined ? {} : { billingPeriods: Object.freeze(input.billingPeriods.map((period) => Object.freeze({ ...period }))) }),
+      ...(input.utilitiesAndServicing === undefined ? {} : { utilitiesAndServicing: Object.freeze({ ...input.utilitiesAndServicing }) }),
     }),
     actions: Object.freeze(actions.map((action) => Object.freeze(action))),
     acknowledgements: Object.freeze([]),

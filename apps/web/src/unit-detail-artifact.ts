@@ -26,6 +26,7 @@ export interface UnitDetailArtifact {
     readonly city: string;
     readonly photos: readonly string[];
     readonly price: DiscoveryUnitProjection["price"];
+    readonly extendedStay?: NonNullable<DiscoveryUnitProjection["extendedStay"]>;
     readonly bedrooms?: number;
     readonly bathrooms: number;
     readonly capacity: number;
@@ -76,6 +77,8 @@ export function unitDetailArtifactFromProjection({ unit, checkIn, checkOut, proj
       city: unit.location.city,
       photos: Object.freeze([...unit.photoUrls]),
       price: Object.freeze({ ...unit.price }),
+      // Demo-launch issue 12: the monthly price and utilities of an Extended Stay result (ADR 0092).
+      ...(unit.extendedStay === undefined ? {} : { extendedStay: Object.freeze({ ...unit.extendedStay, utilitiesAndServicing: Object.freeze({ ...unit.extendedStay.utilitiesAndServicing }) }) }),
       ...(unit.bedrooms === undefined ? {} : { bedrooms: unit.bedrooms }),
       bathrooms: unit.bathrooms,
       capacity: unit.capacity,

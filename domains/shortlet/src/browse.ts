@@ -6,7 +6,7 @@ import { normalizePhotoUrls } from "./photo-url.js";
 import { normalizeBathroomCount, normalizeListingDescription } from "./listing-details.js";
 import type { ContractualCheckInWindow } from "./checkin-support.js";
 import { unitPriceFromOwnerTerms, type UnitOwnerTerms } from "./owner-terms.js";
-import { assertStayLength, isExtendedStayLength, monthlyAmountsAreValid, utilitiesStatementIsValid, type ExtendedStayPolicy, type UnitExtendedStayTerms } from "./extended-stay.js";
+import { assertStayLength, isExtendedStayLength, monthlyAmountsAreValid, utilitiesStatementIsValid, type ExtendedStayPolicy, type UnitExtendedStayTerms, type UtilitiesAndServicingStatement } from "./extended-stay.js";
 
 const LAGOS_TIME_ZONE = "Africa/Lagos";
 const SUPPORTED_LOCATIONS = new Set(["Lagos", "Abuja"]);
@@ -376,7 +376,16 @@ export function toDiscoveryProjection(unit: Unit, dateRange: StayDateRange | nul
       },
       managementAuthority: { status: "current" as const, verifiedAt: unit.managementAuthority.verifiedAt },
       occupancyModel: "entire-place" as const
-    }
+    },
+    // Demo-launch issue 12 (ADR 0092): the first Billing Period's guest amount and the unit's utilities statement, present
+    // only for an Extended Stay quote. A Short Stay result carries no extendedStay field.
+    ...(extendedQuote?.billingPeriods?.[0] === undefined ? {} : {
+      extendedStay: {
+        periodNights: extendedQuote.billingPeriods[0].nights,
+        monthlyPeriodAmountKobo: extendedQuote.billingPeriods[0].amountKobo,
+        utilitiesAndServicing: { ...(extendedQuote.utilitiesAndServicing as UtilitiesAndServicingStatement) },
+      },
+    }),
   });
 }
 

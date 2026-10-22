@@ -24,6 +24,7 @@ import type { AssetLoader } from "../../../packages/platform-core/src/asset-load
 import { nodeAssetLoader } from "../../../packages/platform-core/src/node-asset-loader.js";
 import { GUEST_HTML_SECURITY_HEADERS } from "../../../packages/platform-core/src/security-headers.js";
 import { createGuestShell, type StaticAsset } from "./guest-shell.js";
+import { extendedStayDraftFacts } from "../../web-agent/src/extended-stay-presentation.js";
 import {
   discoveryArtifactToA2UI,
   createWeaverWebAgentAdapter,
@@ -3766,6 +3767,7 @@ export class LocalGuestApp {
         allInStayTotalKobo: quote.allInStayTotalKobo,
         refundableSecurityDepositKobo: quote.refundableSecurityDepositKobo,
         amountDueNowKobo: quote.totalAmountDueNowKobo,
+        ...extendedStayDraftFacts(quote),
         cancellationPolicy: {
           type: quote.cancellationPolicy.type,
           version: quote.cancellationPolicy.version,

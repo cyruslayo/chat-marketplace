@@ -7,6 +7,7 @@ import { formatNgnKobo, type DiscoveryUnitProjection } from "./discovery-a2ui.js
 import { unitDetailArtifactFromProjection, type UnitDetailArtifact } from "../../web/src/unit-detail-artifact.js";
 import { GUEST_FACT_LABELS, GUEST_GLOSSARY, GUEST_JOURNEY, UNIT_DETAIL_ABOUT_HEADING, guestAmenityLabel, guestFact, guestInspectionDisclosure } from "./guest-content.js";
 import { formatStayDates, nightsBetween, unitStayTotalLabel, unitTiles } from "./booking-presentation.js";
+import { extendedStayUnitFacts } from "./extended-stay-presentation.js";
 
 export const REQUEST_TO_BOOK_EVENT = "shortlet.unit-detail.request-to-book";
 /** Issue 08: returns to the results of the same search; the server validates the discovery artifact id. */
@@ -48,13 +49,14 @@ export function unitDetailArtifactToA2UI({ artifact, surfaceId, backToResults, d
   const amenityIds = facts.amenities.map((_, index) => `${prefix}-amenity-${index}`);
   const inspectionId = inspectionDisclosure === undefined ? [] : [`${prefix}-inspection`];
   const depositId = facts.price.refundableSecurityDepositKobo > 0 ? [`${prefix}-deposit`] : [];
+  const extendedIds = facts.extendedStay === undefined ? [] : [`${prefix}-monthly`, `${prefix}-utilities`];
   const photoIds = facts.photos.map((_, index) => `${prefix}-photo-${index}`);
   const components: A2UIComponent[] = [
     { id: "root", component: "Column", children: [
       ...(photoIds.length > 0 ? photoIds : [`${prefix}-photo-unavailable`]),
       ...(demo ? [`${prefix}-demo-listing`] : []),
       `${prefix}-title`, `${prefix}-location`, `${prefix}-bedrooms`, `${prefix}-bathrooms`, `${prefix}-sleeps`,
-      `${prefix}-price-label`, `${prefix}-price`, ...depositId,
+      `${prefix}-price-label`, `${prefix}-price`, ...extendedIds, ...depositId,
       `${prefix}-about-heading`, `${prefix}-about`, `${prefix}-amenities-heading`, `${prefix}-amenities`,
       ...inspectionId, `${prefix}-disclosure`, `${prefix}-actions`,
     ] },
@@ -64,6 +66,8 @@ export function unitDetailArtifactToA2UI({ artifact, surfaceId, backToResults, d
     ...tiles.map((tile, index) => ({ id: `${prefix}-${["bedrooms", "bathrooms", "sleeps"][index]}`, component: "Text" as const, text: guestFact([GUEST_FACT_LABELS.bedrooms, GUEST_FACT_LABELS.bathrooms, GUEST_FACT_LABELS.sleeps][index]!, tile.text) })),
     { id: `${prefix}-price-label`, component: "Text", text: allInLabel, variant: "caption" },
     { id: `${prefix}-price`, component: "Text", text: formatNgnKobo(allInAmount), variant: "h2" },
+    // Demo-launch issue 12: the same monthly price and utilities lines the chat card and the standalone page show (ADR 0092).
+    ...extendedStayUnitFacts(facts.extendedStay).map((text, index) => ({ id: `${prefix}-${index === 0 ? "monthly" : "utilities"}`, component: "Text" as const, text, variant: "caption" as const })),
     ...(facts.price.refundableSecurityDepositKobo > 0 ? [{ id: `${prefix}-deposit`, component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.refundableSecurityDeposit, formatNgnKobo(facts.price.refundableSecurityDepositKobo)), variant: "caption" as const }] : []),
     { id: `${prefix}-about-heading`, component: "Text", text: UNIT_DETAIL_ABOUT_HEADING, variant: "h2" },
     { id: `${prefix}-about`, component: "Text", text: facts.description },

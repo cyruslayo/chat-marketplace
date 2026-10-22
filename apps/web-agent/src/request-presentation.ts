@@ -1,6 +1,7 @@
 import type { RequestDraftArtifact } from "../../web/src/request-draft-artifact.js";
 import type { BookingRequestArtifact } from "../../web/src/booking-request-artifact.js";
 import { bookingProgressText, formatBookingDateTime, guestRequestStatus } from "./booking-presentation.js";
+import { billingPeriodLines } from "./extended-stay-presentation.js";
 import { GUEST_FACT_LABELS, GUEST_GLOSSARY, accommodationProviderLine, guestDisclosure, guestFact, guestReservationStatus, guestWaitingCopy } from "./guest-content.js";
 
 /** Presentation-only request content, projected once for the chat and the conventional page (ADR 0077). */
@@ -31,7 +32,8 @@ export function draftScreenContent(artifact: RequestDraftArtifact, route: string
     title: review ? `Review ${GUEST_GLOSSARY.bookingRequest}` : "Request Draft",
     status: guestReservationStatus("draft"), tone: "neutral",
     steps: review ? guestWaitingCopy("operator-response", facts.operatorName).outcomes : ["Review these details before you send the request.", bookingProgressText("request").replace(/^Next:\s*/, "")],
-    notes: [...(review && names.length > 0 ? [guestFact(GUEST_FACT_LABELS.guests, names.join(", "))] : []), `Cancellation terms: ${facts.cancellationPolicy.summary}`, ...(review ? [`${GUEST_GLOSSARY.revalidation}.`] : []), ...artifact.disclosures.map(guestDisclosure)],
+    // Demo-launch issue 12: the same Billing Period schedule the chat review shows (ADR 0077).
+    notes: [...(facts.billingPeriods?.length ? [GUEST_FACT_LABELS.paymentSchedule, ...billingPeriodLines(facts.billingPeriods), GUEST_FACT_LABELS.firstPeriodOnly] : []), ...(review && names.length > 0 ? [guestFact(GUEST_FACT_LABELS.guests, names.join(", "))] : []), `Cancellation terms: ${facts.cancellationPolicy.summary}`, ...(review ? [`${GUEST_GLOSSARY.revalidation}.`] : []), ...artifact.disclosures.map(guestDisclosure)],
     ...(review ? { provider: accommodationProviderLine(facts.operatorName) } : {
       guests: names.length ? names.join(", ") : `${facts.occupants.length} ${facts.occupants.length === 1 ? "guest" : "guests"}`,
       ...(facts.selfBookingAttestation === undefined ? {} : { selfBooking: facts.selfBookingAttestation.accepted }),

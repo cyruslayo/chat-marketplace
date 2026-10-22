@@ -5,6 +5,7 @@ import {
 } from "@cylayo/weaver-core";
 import { formatMoney } from "../../web/src/ui-kit.js";
 import { GUEST_COMPARE_LABELS, GUEST_FACT_LABELS, GUEST_GLOSSARY, formatGuestDate, guestAmenityLabel, guestFact, stayTotalLabel } from "./guest-content.js";
+import { monthlyPriceFact, utilitiesFact, type ExtendedStayUnitFacts } from "./extended-stay-presentation.js";
 
 export interface DiscoveryLocationProjection {
   readonly city: string;
@@ -47,6 +48,8 @@ export interface DiscoveryUnitProjection {
     };
     readonly occupancyModel: string;
   };
+  /** Demo-launch issue 12: present only on an Extended Stay result (ADR 0092). */
+  readonly extendedStay?: ExtendedStayUnitFacts;
 }
 
 export interface DiscoveryArtifactProjection {
@@ -216,6 +219,7 @@ function unitComponents(
           ...(fit.length > 0 ? [`${prefix}-fit`] : []),
           ...(highlights.length > 0 ? [`${prefix}-amenities`] : []),
           `${prefix}-divider`, `${prefix}-price-label`, `${prefix}-price`,
+          ...(unit.extendedStay ? [`${prefix}-monthly`, `${prefix}-utilities`] : []),
           ...(unit.price.refundableSecurityDepositKobo > 0 ? [`${prefix}-deposit`] : []),
           ...(budget === undefined ? [] : [`${prefix}-budget`]),
           ...(canViewUnit ? [`${prefix}-view-button`] : []),
@@ -250,6 +254,10 @@ function unitComponents(
       { id: `${prefix}-divider`, component: "Divider", axis: "horizontal" },
       { id: `${prefix}-price-label`, component: "Text", text: allInLabel, variant: "caption" },
       { id: `${prefix}-price`, component: "Text", text: formatNgnKobo(allInAmount), variant: "h3" },
+      ...(unit.extendedStay ? [
+        { id: `${prefix}-monthly`, component: "Text" as const, text: monthlyPriceFact(unit.extendedStay), variant: "caption" as const },
+        { id: `${prefix}-utilities`, component: "Text" as const, text: utilitiesFact(unit.extendedStay), variant: "caption" as const },
+      ] : []),
       ...(unit.price.refundableSecurityDepositKobo > 0 ? [{
         id: `${prefix}-deposit`,
         component: "Text" as const,

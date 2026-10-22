@@ -405,6 +405,23 @@ function organizeUnitDetail(mount: HTMLElement): void {
     });
     sheet.append(template.content);
   }
+  // Demo-launch issue 12 (ADR 0092): an Extended Stay's monthly price and utilities lines, as the chat card shows them.
+  // They sit under the price, before the description, as on the standalone page.
+  const extendedFacts = [
+    findFact(children, GUEST_FACT_LABELS.monthlyPrice),
+    findFact(children, GUEST_FACT_LABELS.utilitiesIncluded),
+  ].filter((fact): fact is { readonly element: Element; readonly value: string } => fact !== undefined);
+  if (extendedFacts.length > 0) {
+    const block = document.createElement("div");
+    block.className = "unit-detail-extended";
+    for (const fact of extendedFacts) {
+      const line = document.createElement("p");
+      line.className = "ui-money-metadata";
+      line.textContent = fact.element.textContent?.trim() ?? "";
+      block.append(line);
+    }
+    sheet.append(block);
+  }
   if (aboutHeading) {
     const description = aboutHeading.nextElementSibling;
     const text = description?.textContent ?? "";
@@ -419,6 +436,7 @@ function organizeUnitDetail(mount: HTMLElement): void {
   priceLabel?.remove();
   amount?.remove();
   deposit?.element.remove();
+  for (const fact of extendedFacts) fact.element.remove();
 
   const amenitiesNodes = amenitiesHeading
     ? [

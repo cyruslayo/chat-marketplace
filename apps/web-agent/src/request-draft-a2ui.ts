@@ -1,6 +1,7 @@
 import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage } from "@cylayo/weaver-core";
 import type { RequestDraftArtifact } from "../../web/src/request-draft-artifact.js";
 import { bookingProgressText, formatBookingMoney, ticketFactComponents, ticketFactIds } from "./booking-presentation.js";
+import { billingPeriodLines } from "./extended-stay-presentation.js";
 import { GUEST_FACT_LABELS, GUEST_GLOSSARY, accommodationProviderLine, guestDisclosure, guestFact, guestReservationStatus } from "./guest-content.js";
 
 export const REQUEST_DRAFT_REVIEW_EVENT = "shortlet.request-draft.review";
@@ -14,8 +15,17 @@ export function requestDraftArtifactToA2UI({ artifact, surfaceId }: { readonly a
   // not an authorization to charge both components in one checkout.
   // Named occupants stay visible as their own labelled line (the ticket itself shows only the count).
   const guestNames = facts.occupants.filter((name) => !/^(?:demo\s+guest|guest(?:\s*\d+)?|companion\s+\d+)$/i.test(name.trim()));
+  // Demo-launch issue 12 (ADR 0092): an Extended Stay shows its six-or-fewer Billing Periods, and says that the amount
+  // due now is the first period only. The same lines feed the standalone review page (request-presentation.ts).
+  const periodLines = billingPeriodLines(facts.billingPeriods);
+  const scheduleIds = periodLines.length === 0 ? [] : ["draft-schedule-heading", ...periodLines.map((_, index) => `draft-period-${index + 1}`), "draft-first-period-only"];
+  const scheduleComponents: A2UIComponent[] = periodLines.length === 0 ? [] : [
+    { id: "draft-schedule-heading", component: "Text", text: GUEST_FACT_LABELS.paymentSchedule, variant: "h3" },
+    ...periodLines.map((text, index) => ({ id: `draft-period-${index + 1}`, component: "Text" as const, text, variant: "caption" as const })),
+    { id: "draft-first-period-only", component: "Text", text: GUEST_FACT_LABELS.firstPeriodOnly, variant: "caption" },
+  ];
   const components: A2UIComponent[] = [
-    { id: "root", component: "Column", children: ["draft-title", "draft-status", "draft-unit", ...(isReview ? ["draft-provider"] : []), ...ticketFactIds("draft"), ...(guestNames.length > 0 ? ["draft-guests"] : []), "draft-condition", "draft-total", ...(facts.refundableSecurityDepositKobo > 0 ? ["draft-deposit"] : []), ...(isReview ? ["draft-due", "draft-revalidation"] : []), "draft-progress", "draft-cancellation", "draft-disclosures", "draft-actions"] },
+    { id: "root", component: "Column", children: ["draft-title", "draft-status", "draft-unit", ...(isReview ? ["draft-provider"] : []), ...ticketFactIds("draft"), ...(guestNames.length > 0 ? ["draft-guests"] : []), "draft-condition", "draft-total", ...(facts.refundableSecurityDepositKobo > 0 ? ["draft-deposit"] : []), ...(isReview ? ["draft-due"] : []), ...scheduleIds, ...(isReview ? ["draft-revalidation"] : []), "draft-progress", "draft-cancellation", "draft-disclosures", "draft-actions"] },
     { id: "draft-title", component: "Text", text: isReview ? `Review ${GUEST_GLOSSARY.bookingRequest}` : "Request Draft", variant: "h2" },
     // Issue 07 AC1: the one reservation-status line on this surface.
     { id: "draft-status", component: "Text", text: guestReservationStatus("draft") },
@@ -29,6 +39,7 @@ export function requestDraftArtifactToA2UI({ artifact, surfaceId }: { readonly a
     { id: "draft-total", component: "Text", text: guestFact(GUEST_FACT_LABELS.allInStayTotal, formatBookingMoney(facts.allInStayTotalKobo)), variant: "h3" },
     { id: "draft-deposit", component: "Text", text: guestFact(GUEST_FACT_LABELS.refundableSecurityDeposit, formatBookingMoney(facts.refundableSecurityDepositKobo)) },
     { id: "draft-due", component: "Text", text: guestFact(GUEST_FACT_LABELS.amountDueNow, formatBookingMoney(facts.amountDueNowKobo)) },
+    ...scheduleComponents,
     { id: "draft-progress", component: "Text", text: `What happens next: ${bookingProgressText("request").replace(/^Next:\s*/, "")}` },
     { id: "draft-cancellation", component: "Text", text: `Cancellation terms: ${facts.cancellationPolicy.summary}` },
     ...(isReview ? [{ id: "draft-revalidation", component: "Text" as const, text: `${GUEST_GLOSSARY.revalidation}.` }] : []),

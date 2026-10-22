@@ -313,6 +313,15 @@ export const GUEST_FACT_LABELS = Object.freeze({
   photos: "Photos",
   /** ADR 0105: the chip on every synthetic stay in the staging demo (stay cards and the unit detail). */
   demoListing: "Demo listing",
+  /** Demo-launch issue 12: the Extended Stay's monthly price, one Billing Period's guest amount (ADR 0092). */
+  monthlyPrice: "Monthly price",
+  /** Demo-launch issue 12: the utilities and servicing statement the unit publishes (ADR 0092). */
+  utilitiesIncluded: "Utilities and servicing",
+  /** Demo-launch issue 12: the payment schedule heading and each period's label (CONTEXT.md term). */
+  paymentSchedule: "Payment schedule",
+  billingPeriod: "Billing Period",
+  /** Demo-launch issue 12: says the amount due now is the first Billing Period, not the whole stay (ADR 0092). */
+  firstPeriodOnly: "This is the first Billing Period only. Later Billing Periods are paid separately on their due dates.",
 });
 
 /**
