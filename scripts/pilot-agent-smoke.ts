@@ -12,8 +12,37 @@ import {
   parsePilotAgentSmokeRuns,
   providerStopReason as getProviderStopReason,
 } from "./pilot-agent-smoke-budget.js";
+import {
+  TurnUsageAccumulator,
+  buildPerformanceReport,
+  createOpenRouterPriceFetcher,
+  observeModelClient,
+  type ModelPrice,
+  type PerformanceReport,
+  type TurnPerformance,
+} from "./pilot-agent-smoke-metrics.js";
+import {
+  BENCHMARK_DOCUMENT_PATH,
+  SMOKE_RESULT_FILE,
+  buildSmokeResult,
+  writeBenchmarkDocumentFromResult,
+  writeSmokeArtifacts,
+  type SmokeScenarioReport,
+} from "./pilot-agent-smoke-report.js";
 
 const reportDirectory = resolve(".scratch/pilot-agent-smoke");
+// Offline: renders docs/testing/openrouter-gpt6-luna-benchmark.md from an existing live result file only.
+// Refuses (exit 2) unless that file was produced by a live run. Never calls a provider.
+if (process.argv.slice(2).includes("--write-benchmark-doc")) {
+  try {
+    await writeBenchmarkDocumentFromResult(resolve(reportDirectory, SMOKE_RESULT_FILE), resolve(BENCHMARK_DOCUMENT_PATH));
+    console.log(`Benchmark document written to ${BENCHMARK_DOCUMENT_PATH}`);
+    process.exit(0);
+  } catch (error) {
+    process.stderr.write(`${error instanceof Error ? error.message : "Benchmark document not written."}\n`);
+    process.exit(2);
+  }
+}
 // CONCIERGE_MODE=openai-compatible smokes the LLM_* provider (DeepSeek or OpenAI); anything else smokes Gemini.
 const openAiCompatible = process.env.CONCIERGE_MODE?.trim() === "openai-compatible";
 const providerName = openAiCompatible ? process.env.LLM_PROVIDER_LABEL?.trim() || "openai-compatible" : "Google Gemini";
@@ -34,15 +63,11 @@ let rateLimitOccurred = false;
 let journeysAttempted = 0;
 let providerStopClassification: "PROVIDER_RATE_LIMITED" | "PROVIDER_REQUEST_BUDGET_EXCEEDED" | null = null;
 
-interface ScenarioReport {
-  readonly scenario: string;
-  readonly selectedApplicationOperation: string | null;
-  readonly surfaceSelected: string | null;
-  readonly authoritativeEntities: readonly string[];
-  readonly semanticResult: "PASS" | "FAIL" | "NOT_RUN";
-  readonly failureClassification?: "PROVIDER_RATE_LIMITED" | "PROVIDER_REQUEST_BUDGET_EXCEEDED" | "PROVIDER_TRANSPORT_FAILURE" | "MODEL_SELECTION_FAILURE" | "INVALID_TOOL_FOR_STATE" | "APPLICATION_OPERATION_FAILURE" | "PROJECTION_FAILURE" | "A2UI_FAILURE" | "WEAVER_FAILURE" | "FABRICATION_FAILURE" | "AUTHORITY_FAILURE";
-  readonly note?: string;
-}
+type ScenarioReport = SmokeScenarioReport;
+
+// Per-turn wall-clock latency and provider-reported usage, grouped by journey (AC1).
+const turnPerformanceByJourney = new Map<number, TurnPerformance[]>();
+let activeTurnUsage: TurnUsageAccumulator | null = null;
 
 interface ProviderTurnUsage {
   readonly journey: number;
@@ -63,17 +88,24 @@ const scenarios = [
   "booking intent",
 ];
 
-async function writeReports(result: "NOT_RUN" | "PASS" | "FAIL", entries: readonly ScenarioReport[], note: string, journeysAttempted: number): Promise<void> {
-  await mkdir(reportDirectory, { recursive: true });
-  const report = {
+async function writeReports(
+  result: "NOT_RUN" | "PASS" | "FAIL",
+  entries: readonly ScenarioReport[],
+  note: string,
+  journeysAttempted: number,
+  performanceReport?: PerformanceReport,
+): Promise<void> {
+  await writeSmokeArtifacts(reportDirectory, buildSmokeResult({
     generatedAt: new Date().toISOString(),
     provider: providerName,
     model,
     result,
+    // Live only when a credential was configured and at least one journey reached the provider.
+    liveRun: Boolean(credential) && journeysAttempted > 0,
     credentialConfigured: Boolean(credential),
     configuredJourneyCount: configuredJourneys,
     journeysActuallyAttempted: journeysAttempted,
-    totalGeminiProviderRequests: requestBudget.totalRequests,
+    totalProviderRequests: requestBudget.totalRequests,
     providerRequestsPerTurn,
     providerRequestBudget: {
       perJourney: requestBudget.maxRequestsPerJourney,
@@ -84,33 +116,14 @@ async function writeReports(result: "NOT_RUN" | "PASS" | "FAIL", entries: readon
     providerStopClassification,
     scenarios: entries,
     note,
-  };
-  await writeFile(resolve(reportDirectory, "agent-smoke-result.json"), `${JSON.stringify(report, null, 2)}\n`, "utf8");
-  const lines = [
-    "# Local pilot live-agent smoke",
-    "",
-    `- Provider: ${providerName}`,
-    `- Model: ${model}`,
-    `- Result: ${result}`,
-    `- Credential configured: ${Boolean(credential)}`,
-    `- Configured journeys: ${configuredJourneys}`,
-    `- Journeys actually attempted: ${journeysAttempted}`,
-    `- Total provider requests: ${requestBudget.totalRequests}`,
-    `- Provider requests per turn: ${providerRequestsPerTurn.map((usage) => `journey ${usage.journey} ${usage.turn}=${usage.providerRequests}`).join(", ") || "none"}`,
-    `- Provider request budget: ${requestBudget.maxRequests} total (${requestBudget.maxRequestsPerJourney} per journey)`,
-    `- Provider request budget exceeded: ${budgetExceeded}`,
-    `- HTTP 429 occurred: ${rateLimitOccurred}`,
-    `- Provider stop classification: ${providerStopClassification ?? "none"}`,
-    `- Note: ${note}`,
-    "",
-    "| Scenario | Operation | Surface | Authoritative entities | Result | Classification |",
-    "|---|---|---|---|---|---|",
-    ...entries.map((entry) => `| ${entry.scenario} | ${entry.selectedApplicationOperation ?? "—"} | ${entry.surfaceSelected ?? "—"} | ${entry.authoritativeEntities.join(", ") || "—"} | ${entry.semanticResult} | ${entry.failureClassification ?? "—"} |`),
-    "",
-    "No prompts, model prose, or credentials are recorded in this report.",
-    "",
-  ];
-  await writeFile(resolve(reportDirectory, "agent-smoke-report.md"), lines.join("\n"), "utf8");
+    ...(performanceReport ? { performance: performanceReport } : {}),
+  }));
+}
+
+function recordTurnPerformance(journey: number, turn: TurnPerformance): void {
+  const turns = turnPerformanceByJourney.get(journey) ?? [];
+  turns.push(turn);
+  turnPerformanceByJourney.set(journey, turns);
 }
 
 if (!credential) {
@@ -143,6 +156,7 @@ if (!credential) {
   const errors: string[] = [];
   const paths = localPilotPaths();
   let environment: LocalGuestEnvironment | undefined;
+  let price: ModelPrice | null = null;
   let smokeDatabasePath: string | undefined;
   try {
     assertLocalPilotReady(paths);
@@ -176,7 +190,7 @@ if (!credential) {
       }
       currentTurn.providerRequests++;
     };
-    const modelClient = openAiCompatible
+    const providerClient = openAiCompatible
       ? new OpenAiCompatibleClient({
         apiKey: credential,
         baseUrl: process.env.LLM_BASE_URL?.trim() ?? "",
@@ -204,6 +218,15 @@ if (!credential) {
           },
         });
       })();
+    // Counts every model call and its provider-reported usage per turn; the provider client itself is unchanged.
+    const modelClient = observeModelClient(providerClient, {
+      record: (usage) => activeTurnUsage?.record(usage),
+    });
+    // The OpenRouter catalogue is public and needs no credential. Gemini has no OpenRouter slug, so cost stays unavailable.
+    const priceFetcher = createOpenRouterPriceFetcher({
+      fetch: (url, init) => fetch(url, init),
+    });
+    price = openAiCompatible ? await priceFetcher(model) : null;
     journeyLoop: for (let run = 1; run <= configuredJourneys; run++) {
       journeysAttempted++;
       let turnDiagnostics: AssistantDiagnosticEvent[] = [];
@@ -216,12 +239,25 @@ if (!credential) {
       const runEntries: ScenarioReport[] = [];
       const invokeTurn = async (turn: string, text: string) => {
         const usage: ActiveProviderTurn = { journey: run, turn, providerRequests: 0 };
+        const turnUsage = new TurnUsageAccumulator();
         activeProviderTurn = usage;
+        activeTurnUsage = turnUsage;
+        const startedAt = performance.now();
         try {
           return await runtime.handleTurn(threadId, text);
         } finally {
+          const snapshot = turnUsage.snapshot();
+          recordTurnPerformance(run, {
+            turn,
+            latencyMs: Math.round(performance.now() - startedAt),
+            modelCalls: snapshot.modelCalls,
+            promptTokens: snapshot.promptTokens,
+            completionTokens: snapshot.completionTokens,
+            tokenUsage: snapshot.promptTokens === null || snapshot.completionTokens === null ? "unavailable" : "reported",
+          });
           providerRequestsPerTurn.push({ journey: run, turn, providerRequests: usage.providerRequests });
           activeProviderTurn = null;
+          activeTurnUsage = null;
         }
       };
       turnDiagnostics = [];
@@ -412,7 +448,12 @@ if (!credential) {
     }
   }
   const failed = errors.length > 0;
-  await writeReports(failed ? "FAIL" : "PASS", reports, failed ? errors.join("; ") : "All semantic assertions passed.", journeysAttempted);
+  const performanceReport = buildPerformanceReport({
+    journeys: [...turnPerformanceByJourney.entries()].map(([journey, turns]) => ({ journey, turns })),
+    slug: model,
+    price,
+  });
+  await writeReports(failed ? "FAIL" : "PASS", reports, failed ? errors.join("; ") : "All semantic assertions passed.", journeysAttempted, performanceReport);
   if (failed) {
     console.error("Live-agent smoke failed; see .scratch/pilot-agent-smoke/agent-smoke-report.md");
     process.exitCode = 1;
