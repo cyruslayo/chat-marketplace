@@ -1,4 +1,4 @@
-import { expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { SELF, abortAllDurableObjects, runInDurableObject } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { createProvisionedOperator } from "../../../domains/shortlet/src/operator.js";
@@ -14,6 +14,16 @@ import { DurableObjectSqlDatabase } from "../src/do-sql-database.js";
 
 const START = new Date("2026-09-03T10:00:00.000Z");
 const ORIGIN = "https://pilot.example.test";
+
+// Demo-launch issue 12 (batch-gate fix): Operator Active Hours (08:00-19:30 WAT for disclosure) read the wall clock.
+// The spec fixes the clock at START (11:00 WAT), inside those hours, so it passes at any time of day.
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(START);
+});
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 function demoWorkerFetch(tenantId: string, path: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers);
