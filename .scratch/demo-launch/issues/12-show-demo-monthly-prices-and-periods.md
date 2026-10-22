@@ -95,3 +95,21 @@ Use the repository checklist and AGENTS.md guest UI requirements. Save captures 
 7. `npm run check` 0 errors; the issue test 8 of 8; affected set 160 of 160; Worker spec 1 of 2 (time-dependent, see above).
 
 Resolution needs: AC4 later-period screen and Worker test, standalone-page parity, the 180-night review capture, the Worker spec re-run in active hours, and the client bundle commit.
+
+### Executor round 3: status stays `ready-for-agent`
+
+**Commits:** b14251c (Worker spec fixed clock, item 4); b509eeb (standalone unit page parity and schedule under the amount, items 2 and 3); c68e4c2 (180-night request draft and review capture, item 3); 6cd82c7 (later-period schedule page, period start route and period callback, partial AC4).
+
+**Item 4, Worker clock.** `apps/cloudflare/test/demo-extended-stay.spec.ts` fixes Date at START (11:00 WAT) with vitest fake timers. `npm run test:workers -- apps/cloudflare/test/demo-extended-stay.spec.ts`: 2 of 2 passed. Outside hours: a temporary copy with 2026-09-03T20:30Z failed AC6, as expected (copy deleted).
+
+**Item 2, standalone page parity.** `renderConventionalUnitDetailHtml` derives the monthly price and utilities from the same domain projection as chat (30 nights from tomorrow, Lagos). `test/demo-monthly-prices-and-periods.test.ts` 10 of 10. Affected set 106 of 106.
+
+**Item 3, 180-night review capture.** Driven through the fixture API (`.scratch/demo-launch/capture-12-review-180.ts`), then the standalone request page at 320/390/768/1280, light and dark. The review shows the all-in total, the amount due now labelled as the first Billing Period only, and six Billing Periods with dates, amounts and due dates. Findings: 0 (`screenshots/12/findings-180.txt`). This satisfies the capture, but the AC2 proof is the capture's text assertions plus the unit test (6 periods).
+
+**Item 1, AC4: NOT complete.** Implemented in 6cd82c7: GET `/bookings/periods/:offerId` (schedule, Pay button only on the payable period), POST `/payments/periods/:offerId/:periodIndex` (separate Paystack TEST session through `initializePeriodPaystackCheckout`), and the callback now resolves later-period references (`periodOfferIdForReference`) and verifies them. Shared Node/Worker through `createGuestRequestHandler`.
+- Not done: red-first tests for these routes (the code preceded the tests, a deviation); the Worker spec (period 1, then period 2 in its own session, duplicate callback, wrong period or amount refused, restart with fresh stubs, fixed clock); captures of the schedule page at 320/390/768/1280 light and dark; a chat-workspace version of the schedule.
+- Checked: 128 of 128 across the callback, paystack, card-payment, pay-each-demo-billing-period, owner-payable-per-period, demo-extended and demo-monthly test files; `npm run check` 0 errors.
+
+**Item 5, follow-up gap (not this issue's AC, owner decision).** The back-office payables screen shows Period 1 only; payout and recovery POSTs do not send `periodIndex`; Notice-to-End reductions are not shown. This blocks real period-N payouts in the back office, not the guest demo journey. Recorded here as an explicit owner follow-up.
+
+**Resolution:** NOT resolved. AC4 has no tests or Worker spec, and the schedule page has no captures.
