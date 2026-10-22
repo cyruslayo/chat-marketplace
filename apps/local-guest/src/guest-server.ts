@@ -4770,13 +4770,19 @@ export function createGuestRequestHandler(
         app.environment.cardPaymentApp.getArtifact(offerId, principal);
         if (periodPageMatch) {
           const periods = app.environment.cardPaymentApp.projectBillingPeriods(offerId);
+          // Render before the headers are written: a failure here must still reach the catch below as a 400.
+          const html = renderPeriodScheduleHtml(offerId, periods);
           res.writeHead(200, GUEST_HTML_HEADERS);
-          res.end(renderPeriodScheduleHtml(offerId, periods));
+          res.end(html);
           return;
         }
         if (!payments) {
           sendJson(res, 503, { ok: false, code: "PAYSTACK_UNAVAILABLE" });
           return;
+        }
+        // ADR 0087: refresh authoritative remote contact before the synchronous period domain read.
+        if (app.environment.guestDataIsRemote && app.environment.remoteGuestContacts) {
+          app.environment.remoteGuestContacts.hydrate(await app.environment.guestData.findContact(session.principalId, session.tenantId));
         }
         const started = await app.environment.cardPaymentApp.initializePeriodPaystackCheckout(
           offerId,
