@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
+import { writeCapture } from "./helpers/write-capture.js";
 import { join } from "node:path";
 import test from "node:test";
 import { launchRealBrowser, type RealBrowserTab } from "./helpers/chrome-devtools.js";
@@ -62,7 +63,7 @@ test("AC3: captures at 320, 390, 768, 1280 show no horizontal overflow and targe
         })()`);
         assert.equal(result.overflow <= 0, true, `${theme}-${width}: no horizontal overflow`);
         assert.deepEqual(result.small, [], `${theme}-${width}: every control is at least 44px`);
-        writeFileSync(join(SCREENSHOT_DIR, `task-rail-${theme}-${width}.png`), await tab.captureScreenshot());
+        await writeCapture(join(SCREENSHOT_DIR, `task-rail-${theme}-${width}.png`), await tab.captureScreenshot());
       }
     }
     await tab.close();

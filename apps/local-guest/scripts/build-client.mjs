@@ -1,8 +1,21 @@
-import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runInNewContext } from "node:vm";
 import { build } from "esbuild";
+import { writeOutput } from "../../../scripts/write-output.mjs";
+
+async function buildBundle(options) {
+  const result = await build({ ...options, write: false });
+  for (const output of result.outputFiles) {
+    mkdirSync(dirname(output.path), { recursive: true });
+    await writeOutput(output.path, output.contents);
+  }
+}
+
+async function copyOutput(source, target) {
+  await writeOutput(target, readFileSync(source));
+}
 
 // Reuse the route's closed allow-list rather than keeping a second list of published files. esbuild (a runtime dependency)
 // compiles the TypeScript module in memory, so the production build needs no development-only loader.
@@ -18,7 +31,7 @@ const allowList = await build({
 const { LANDING_BINARY_ASSETS } = runInNewContext(`${allowList.outputFiles[0].text}\nlandingAssets`);
 
 // Landing motion stays separate from the guest bundle; preserve the Cloudflare public-copy block below.
-await build({
+await buildBundle({
   entryPoints: ["apps/local-guest/src/landing-page.ts"],
   bundle: true,
   format: "iife",
@@ -31,7 +44,7 @@ await build({
 });
 
 // The full apartment page's gallery script (guest-gallery issue 01), shared with the chat bundle's gallery.
-await build({
+await buildBundle({
   entryPoints: ["apps/local-guest/src/gallery-page.ts"],
   bundle: true,
   format: "iife",
@@ -43,7 +56,7 @@ await build({
   logLevel: "warning",
 });
 
-await build({
+await buildBundle({
   entryPoints: ["apps/local-guest/src/offer-page.ts"],
   bundle: true,
   format: "iife",
@@ -56,7 +69,7 @@ await build({
 });
 
 // The bank transfer pages' copy-account-number script.
-await build({
+await buildBundle({
   entryPoints: ["apps/local-guest/src/payment-page.ts"],
   bundle: true,
   format: "iife",
@@ -68,7 +81,7 @@ await build({
   logLevel: "warning",
 });
 
-await build({
+await buildBundle({
   entryPoints: ["apps/local-guest/src/client.ts"],
   bundle: true,
   format: "iife",
@@ -90,13 +103,13 @@ for (const name of [
   "client.js",
   "landing.js",
 ]) {
-  copyFileSync(
+  await copyOutput(
     `apps/local-guest/dist/${name}`,
     join("apps/cloudflare/public", name),
   );
 }
 for (const name of ["shortlet-foundations.css", "shortlet-landing.css"]) {
-  copyFileSync(
+  await copyOutput(
     join("apps/web/src", name),
     join("apps/cloudflare/public", name),
   );
@@ -104,12 +117,12 @@ for (const name of ["shortlet-foundations.css", "shortlet-landing.css"]) {
 for (const [path, asset] of Object.entries(LANDING_BINARY_ASSETS)) {
   const target = join("apps/cloudflare/public", path.slice(1));
   mkdirSync(dirname(target), { recursive: true });
-  copyFileSync(join("apps/local-guest/assets", asset.file), target);
+  await copyOutput(join("apps/local-guest/assets", asset.file), target);
 }
 
 // `_headers` mirrors the values the Node handlers send today (guest-server.ts script routes, and both CSS
 // routes): the CSS is an hour of shared caching; the scripts set neither `Cache-Control` nor an extra header.
-writeFileSync(
+await writeOutput(
   "apps/cloudflare/public/_headers",
   [
     "\

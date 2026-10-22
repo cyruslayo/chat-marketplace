@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
+import { writeCapture as writeFile } from "./helpers/write-capture.js";
 import test from "node:test";
 import { launchRealBrowser } from "./helpers/chrome-devtools.js";
 import { withStagePage } from "./helpers/guest-stage-pages.js";

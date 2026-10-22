@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { startLocalPilotServer } from "../apps/pilot/src/local-pilot-server.js";
 import { bootstrapLocalPilot, localPilotPaths } from "../apps/pilot/src/local-pilot.js";
 import { launchRealBrowser, type RealBrowserTab } from "./helpers/chrome-devtools.js";
+import { writeCapture } from "./helpers/write-capture.js";
 
 const PORT = 3099;
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -19,7 +20,7 @@ async function sendPrompt(tab: RealBrowserTab, prompt: string, expectedText: str
 
 async function capture(tab: RealBrowserTab, name: string): Promise<void> {
   mkdirSync(EVIDENCE, { recursive: true });
-  writeFileSync(join(EVIDENCE, name), await tab.captureScreenshot());
+  await writeCapture(join(EVIDENCE, name), await tab.captureScreenshot());
 }
 
 test("Phase 3 discovery renders Wuse, Lekki, zero-result and fallback states without 320px overflow", async () => {

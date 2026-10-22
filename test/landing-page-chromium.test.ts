@@ -4,10 +4,10 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
-  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { writeCapture } from "./helpers/write-capture.js";
 import test from "node:test";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import {
@@ -2567,11 +2567,11 @@ test("Owner demo approval: the illustrative-photo notice is unobscured, with acc
           small: string[];
         }>(TEXT_SIZES);
         reports.push({ theme, width, ...findings, text });
-        writeFileSync(
+        await writeCapture(
           join(directory, `demo-${theme}-${width}.png`),
           await page.tab.captureScreenshot(),
         );
-        writeFileSync(
+        await writeCapture(
           join(directory, "demo-findings.json"),
           JSON.stringify(reports, null, 2),
         );

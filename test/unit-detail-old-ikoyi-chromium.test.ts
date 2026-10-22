@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
+import { writeCapture } from "./helpers/write-capture.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -143,12 +144,12 @@ test("Authoritative Old Ikoyi Unit detail renders through Weaver in real Chromiu
       const evidenceDirectory = ".scratch/ui-phase3-discovery-detail";
       mkdirSync(evidenceDirectory, { recursive: true });
       const fileName = width === 320 ? "07-unit-detail-320.png" : width === 768 ? "08-unit-detail-768.png" : width === 1280 ? "10-unit-detail-1280.png" : "05-unit-detail-ikoyi-390.png";
-      writeFileSync(`${evidenceDirectory}/${fileName}`, await tab.captureScreenshot());
+      await writeCapture(`${evidenceDirectory}/${fileName}`, await tab.captureScreenshot());
     }
 
     await tab.setCssViewport(390, 844);
     await tab.focus("#active-workspace button");
-    writeFileSync(".scratch/ui-phase3-discovery-detail/12-focus-accessibility.png", await tab.captureScreenshot());
+    await writeCapture(".scratch/ui-phase3-discovery-detail/12-focus-accessibility.png", await tab.captureScreenshot());
     assert.ok((await tab.getAccessibilityTree()).some((node) => node.role === "heading" && node.name === authoritative.title), "Unit title is exposed as a heading in the browser accessibility tree");
     assert.equal(await tab.clickButton("Back to conversation"), true);
     await sendPrompt(tab, "Old Ikoyi", "Garden Two-Bedroom Stay in Old Ikoyi");

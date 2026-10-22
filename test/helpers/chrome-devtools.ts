@@ -248,7 +248,7 @@ export const BROWSER_LOCK_STALE_MS = 30_000;
 const BROWSER_LOCK_POLL_MS = 50;
 const BROWSER_LOCK_HEARTBEAT_MS = 1_000;
 export const DEVTOOLS_ATTACH_TIMEOUT_MS = 10_000;
-export const OWNED_CHROME_TERMINATION_TIMEOUT_MS = 5_000;
+export const OWNED_CHROME_TERMINATION_TIMEOUT_MS = 15_000;
 /** Budget for the cleanup calls in close(); a tab that cannot close quickly does not hold the run up. */
 const CLOSE_CALL_TIMEOUT_MS = 5_000;
 

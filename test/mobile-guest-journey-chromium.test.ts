@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { writeCapture } from "./helpers/write-capture.js";
 import { launchRealBrowser, type RealBrowserInstance, type RealBrowserTab } from "./helpers/chrome-devtools.js";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { startLocalGuestServer, type LocalGuestServerHandle } from "../apps/local-guest/src/guest-server.js";
@@ -339,7 +340,7 @@ async function capturePhase4(context: MobileContext, state: string): Promise<voi
   await context.tab.evaluate("document.getElementById('active-workspace')?.scrollIntoView({ block: 'start', behavior: 'instant' })");
   await context.tab.waitForFunction("document.querySelector('#active-workspace')?.getAnimations().every((animation) => animation.playState !== 'running') ?? true", 3000);
   const image = await context.tab.captureScreenshot();
-  writeFileSync(join(directory, `${context.width}-${state}.png`), Buffer.from(image));
+  await writeCapture(join(directory, `${context.width}-${state}.png`), Buffer.from(image));
 }
 
 async function completeJourney(context: MobileContext, recoverFromPendingPayment = false): Promise<void> {
