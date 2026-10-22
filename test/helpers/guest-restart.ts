@@ -98,3 +98,17 @@ export async function proveStage(stage: RestartStage) {
     assert.deepEqual(second, restored, "restoration must not run another command or change the projection");
   } finally { await fixture.close(); }
 }
+
+/**
+ * Like guestAction, but returns undefined for a surface with no action button (a request waiting for the operator).
+ * guestAction asserts, and building that AssertionError reads source and can block the event loop for seconds; a
+ * driver that steps through waiting surfaces must not pay that cost (demo-launch issue 13).
+ */
+export function guestActionOrUndefined(surface: GuestSurfacePayload, name?: string) {
+  const update = surface.a2uiMessages.find((message): message is Extract<A2UIServerMessage, { updateComponents: unknown }> => "updateComponents" in message);
+  if (!update) return undefined;
+  const components = update.updateComponents.components as readonly { component: string; action?: { event?: { name?: unknown; context?: unknown } } }[];
+  const event = components.find((component) => component.component === "Button" && component.action?.event && (name === undefined || component.action.event.name === name))?.action?.event;
+  if (!event || typeof event.name !== "string" || !event.context || typeof event.context !== "object") return undefined;
+  return { name: event.name, context: event.context, surfaceId: surface.surfaceId, sourceComponentId: "restart-test", timestamp: new Date().toISOString() };
+}
