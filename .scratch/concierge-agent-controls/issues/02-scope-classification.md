@@ -63,3 +63,5 @@ Definition of Done: named tests and focused evidence exist; full batch gates, ca
 This issue remains claimed.
 
 Final checks: npm run check passed. Final protocol/pack/task/demo command (same four paths above without scope file) passed 19/19. Scope file passed 7/7 after corrections. Logs: controls02-final-check.log, controls02-final-compat.log, controls02-reviewed2.log in the OS temporary directory.
+
+Independent review of 76ff0fc found no remaining control02 code blockers. Reviewer reproduced date success, rejected slot injection, and rejected non-string enums. Reviewer inspected timeline propagation but did not execute remote rehydration. Implementation commit: 76ff0fc. Remote integration remains explicitly open for04.
