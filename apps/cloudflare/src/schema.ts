@@ -74,6 +74,10 @@ const BASELINE_STATEMENTS: readonly string[] = [
   REVENUE_COMPATIBILITY_SCHEMA,
   BANK_TRANSFER_SCHEMA,
   PILOT_NOTIFICATIONS_SCHEMA,
+  // Demo-launch issue 10 (ADR 0092, ADR 0045, ADR 0046): later-period payment sessions, payments and refunds. Kept in the
+  // baseline, not migration 5, so migration 5 stays the owner-ledger migration (its no-payment-reference guard) and the
+  // version stays 5. Idempotent (IF NOT EXISTS), as the store constructor also applies it.
+  PERIOD_PAYMENT_SCHEMA,
   LOCAL_BOOKING_DDL,
 ];
 
@@ -84,9 +88,7 @@ export const SHORTLET_SCHEMA_MIGRATIONS: readonly SchemaMigration[] = [
   // Personal-data table (ADR 0094, issue 09): exported in the daily export under the issue 05 precedent, flagged for the DPIA. Not a credential.
   { version: 4, name: "guest accounts: identity assurance anchored to the account", statements: [GUEST_IDENTITY_ASSURANCE_SCHEMA] },
   // Demo-launch issue 11: each owner payout and recovery is bound to one Billing Period. Ids and period numbers only.
-  // Demo-launch issue 10 (ADR 0092, ADR 0045, ADR 0046): later-period payment sessions, payments and refunds. Migration 5 is
-  // unapplied in production, so the period payment tables ride in it (batch gate fix; the store constructor stays idempotent).
-  { version: 5, name: "owner ledger entries bound to a Billing Period; later-period payment records", statements: [OWNER_LEDGER_PERIOD_SCHEMA, PERIOD_PAYMENT_SCHEMA] },
+  { version: 5, name: "owner ledger entries bound to a Billing Period", statements: [OWNER_LEDGER_PERIOD_SCHEMA] },
 ];
 
 /** The version the import checks for before it writes anything (ops-import.ts). */
