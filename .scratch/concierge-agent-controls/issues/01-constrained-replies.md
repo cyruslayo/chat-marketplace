@@ -39,6 +39,8 @@ UI captures are consolidated after all five controls; this issue remains part of
 
 The issue remains `claimed`. I implemented only constrained replies and provider output options.
 
+Implementation commit: `193caa1d0e2b3f3175890ac9fcd5491ee22e0d52`.
+
 The platform requests a closed typed reply plan with a configurable output-token bound. It validates the plan locally and discards model prose and final opaque provider steps. Shortlet and Commerce packs render fixed shared copy from successful current operation results. Invalid references, failed operations, malformed plans, and legacy prose use safe server copy. Existing Weaver projections and command paths remain in place.
 
 The first red run used `npx tsx --test --test-name-pattern='AC1:|AC2:|AC4:' test/shortlet-assistant-evals.test.ts`. AC1 and AC2 failed because raw model text and JSON reached the guest. AC4 also failed because its initial fake used invalid search argument names; I corrected the fixture before the green runs.
