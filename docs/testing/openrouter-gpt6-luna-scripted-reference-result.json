@@ -1,0 +1,83 @@
+{
+  "generatedAt": "2026-10-23T07:13:13.723Z",
+  "provider": "Scripted offline reference",
+  "model": "scripted-reference",
+  "result": "PASS",
+  "liveRun": false,
+  "credentialConfigured": false,
+  "configuredJourneyCount": 1,
+  "journeysActuallyAttempted": 1,
+  "totalProviderRequests": 0,
+  "providerRequestsPerTurn": [
+    {
+      "journey": 1,
+      "turn": "discovery",
+      "providerRequests": 0
+    },
+    {
+      "journey": 1,
+      "turn": "refinement",
+      "providerRequests": 0
+    },
+    {
+      "journey": 1,
+      "turn": "unit inspection",
+      "providerRequests": 0
+    },
+    {
+      "journey": 1,
+      "turn": "booking intent",
+      "providerRequests": 0
+    }
+  ],
+  "providerRequestBudget": {
+    "perJourney": 10,
+    "total": 10
+  },
+  "providerRequestBudgetExceeded": false,
+  "rateLimitOccurred": false,
+  "providerStopClassification": null,
+  "scenarios": [
+    {
+      "scenario": "run 1 discovery",
+      "selectedApplicationOperation": "search_stays",
+      "surfaceSelected": "thread-g-live-smoke-1:discovery:search-guest-demo-001",
+      "authoritativeEntities": [
+        "unit-local-abuja-wuse2"
+      ],
+      "semanticResult": "PASS",
+      "note": "Wuse 2 filters=true; authoritative units=1; entity=true; InteractionArtifact=true; displayed prices=true; fabrication=false; render=PASS; diagnostics=provider_request:ok,provider_response:ok,application_operation:ok:search_stays,provider_request:ok,function_result_round_trip:ok,provider_response:ok"
+    },
+    {
+      "scenario": "run 1 refinement",
+      "selectedApplicationOperation": "search_stays",
+      "surfaceSelected": "thread-g-live-smoke-1:discovery:search-guest-demo-002",
+      "authoritativeEntities": [
+        "unit-local-abuja-wuse2"
+      ],
+      "semanticResult": "PASS",
+      "note": "Wuse 2 context preserved=true; refined IDs and prices are authoritative; prior results=1; zero-result projection valid=true; fabrication=false; render=PASS; diagnostics=provider_request:ok,provider_response:ok,application_operation:ok:search_stays,provider_request:ok,function_result_round_trip:ok,provider_response:ok"
+    },
+    {
+      "scenario": "run 1 Unit inspection",
+      "selectedApplicationOperation": "get_unit_details",
+      "surfaceSelected": "thread-g-live-smoke-1:unit:detail",
+      "authoritativeEntities": [
+        "unit-local-abuja-wuse2"
+      ],
+      "semanticResult": "PASS",
+      "note": "selected from current shortlist=true; authoritative detail facts=true; fabrication=false; render=PASS; diagnostics=provider_request:ok,provider_response:ok,application_operation:ok:get_unit_details,provider_request:ok,function_result_round_trip:ok,provider_response:ok"
+    },
+    {
+      "scenario": "run 1 booking intent",
+      "selectedApplicationOperation": "prepare_request_draft",
+      "surfaceSelected": "thread-g-live-smoke-1:request:draft:draft-3f51259b-c0d3-462f-8d6f-9772a3597561",
+      "authoritativeEntities": [
+        "unit-local-abuja-wuse2"
+      ],
+      "semanticResult": "PASS",
+      "note": "Request Draft=true; availability rechecked=true; application price intact=true; Guest review action=true; no submission=true; no offer/reservation/contract/payment ops=true; false confirmation/pricing=false; render=PASS; diagnostics=provider_request:ok,provider_response:ok,application_operation:ok:prepare_request_draft,provider_request:ok,function_result_round_trip:ok,provider_response:ok."
+    }
+  ],
+  "note": "All semantic assertions passed."
+}

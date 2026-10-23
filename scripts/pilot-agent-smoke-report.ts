@@ -171,7 +171,7 @@ export function renderBenchmarkDocument(value: unknown): string {
     `- Provider: ${result.provider}`,
     `- Model slug: ${result.model}`,
     `- Live journeys: ${result.journeysActuallyAttempted} of ${result.configuredJourneyCount} configured (${REQUIRED_LIVE_JOURNEYS} required for the benchmark)`,
-    `- Offline reference: scripted model is not run by this document (see issue 03 Comments)`,
+    `- Offline reference: run separately with --scripted; see issue 03 Comments for its result`,
     "",
     "## Pass rate per grading dimension",
     "",

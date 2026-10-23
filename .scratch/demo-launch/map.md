@@ -6,7 +6,7 @@ Parent: [PRD.md](PRD.md)
 | --- | --- | --- | --- | --- |
 | 01 | [Record the public demo exception ADR](issues/01-record-public-demo-exception-adr.md) | HITL | resolved | none |
 | 02 | [Run the concierge on GPT-6 Luna via OpenRouter](issues/02-run-concierge-on-gpt6-luna-via-openrouter.md) | AFK | resolved | 01 |
-| 03 | [Benchmark GPT-6 Luna against the baseline](issues/03-benchmark-gpt6-luna.md) | AFK | needs-info | 02 |
+| 03 | [Benchmark GPT-6 Luna against the baseline](issues/03-benchmark-gpt6-luna.md) | AFK | ready-for-human | 02 |
 | 04 | [Add a staging-only demo mode](issues/04-add-staging-only-demo-mode.md) | AFK | resolved | 01 |
 | 05 | [Seed demo apartments with photos](issues/05-seed-demo-apartments-with-photos.md) | AFK | resolved | 04, 08, 09, 10, 11, 12, 13 |
 | 06 | [Deploy the demo to Cloudflare staging](issues/06-deploy-demo-to-cloudflare-staging.md) | HITL | ready-for-human | 02, 03, 04, 05 |
@@ -20,11 +20,15 @@ Parent: [PRD.md](PRD.md)
 
 ## Frontier
 
-04, 05 and 08–13 are resolved. Issue 06 is the next gate and stays `ready-for-human` (deploy needs explicit authorization; confirm the staging operator-import cutover state first, see issue 05 Comments). Issue 11 leaves the back-office payables screen showing Period 1 only (see its deviations). Issue 03 is independent of that domain work, but needs an owner-supplied OpenRouter credential for its live runs; it remains `needs-info` and blocks staging deployment and live acceptance. Issue 06 stays `ready-for-human` and requires the pre-deploy gate plus explicit deployment authorization.
+04, 05 and 08–13 are resolved. Issue 03 now has three passing live journeys after diagnosis and fixes on 23 October 2026.
+The four-turn scripted reference also passes. Issue 03 is `ready-for-human` for benchmark acceptance.
+Issues 06 and 07 remain subject to benchmark acceptance, deployment requirements, and live staging verification.
+Issue 06 stays `ready-for-human`. Deployment needs explicit authorization, clean-checkout checks, and confirmation of the staging operator-import cutover state.
+Issue 11 leaves the back-office payables screen showing Period 1 only. See its deviations.
 
 ```
 01 → 02 ────────────────┐
-     03 (needs-info) ───┤
+     03 (review GO) ────┤
 01 → 04 → 08 → 09 → 10 → 11 ─┬→ 12 ─┐
                               └→ 13 ─┤
                                  05 → 06 → 07
@@ -36,7 +40,7 @@ Parent: [PRD.md](PRD.md)
 
 - 04: the staging demo is off by default and refused in production (ADR 0105). Its acceptance runs the owner confirmation command path. Tests: test/demo-mode-config.test.ts, test/demo-mode-guest.test.ts, test/demo-auto-accept.test.ts, test/demo-listing-chip.test.ts, test/demo-accept-delay-config.test.ts, test/demo-mode-landing.test.ts. Captures: .scratch/demo-launch/screenshots/04/. Open items are in the issue Comments.
 
-- 03: Still `needs-info`. Offline part committed in fc3df55: per-turn latency, model calls, provider usage and OpenRouter-priced cost; `--write-benchmark-doc` refuses non-live results. AC4 (three live runs and the go/no-go) waits for the owner's key through the approved secret store. Tests: test/pilot-agent-smoke-metrics.test.ts (7 of 7). Details and the owner command are in the issue Comments.
+- 03: `ready-for-human`, with all ACs checked and a passing three-journey benchmark. Unknown search defaults, detail-price context, and mandatory-fee grading were fixed. All 12 live stages and the four-turn scripted reference pass. Type checking passed; focused tests passed 29 of 29; assistant tests passed 56 of 56. Total reported key usage is USD 0.009090460. Initial failed evidence is preserved. See the benchmark and issue Comments for acceptance limits.
 
 - 05: Resolved. Eight synthetic units (6 Lagos, 2 Abuja) and one synthetic operator are in apps/cloudflare/demo/ CSVs. The 35 photos are re-downloaded from Unsplash and credited in apps/cloudflare/public/demo/photos/CREDITS.md (the earlier unattributed download was not usable). scripts/demo-provision.ts (npm run demo:provision) imports through /_ops, idempotently. Implementation commit 910a0af. Tests: test/demo-apartments.test.ts and test/demo-provision.test.ts (17 of 17). Walkthrough captures: .scratch/demo-launch/screenshots/05/. Risk for issue 06: operators go through /_ops/import, which is refused after cutover.
 

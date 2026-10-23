@@ -6,6 +6,8 @@ import type { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import type { AssistantDiagnosticEvent } from "../apps/local-guest/src/assistant/assistant-runtime.js";
 import type { AssistantConversationStep } from "../apps/local-guest/src/assistant/assistant-model.js";
 import { resolvePilotBaseUrl } from "./pilot-base-url.js";
+import { authoritativePriceAmounts, hasUnsupportedPriceOrConfirmation } from "./pilot-agent-smoke-grading.js";
+import { createSmokeReferenceModel } from "./pilot-agent-smoke-reference.js";
 import {
   DEFAULT_PROVIDER_REQUEST_BUDGET_PER_JOURNEY,
   ProviderRequestBudget,
@@ -44,17 +46,19 @@ if (process.argv.slice(2).includes("--write-benchmark-doc")) {
   }
 }
 // CONCIERGE_MODE=openai-compatible smokes the LLM_* provider (DeepSeek or OpenAI); anything else smokes Gemini.
-const openAiCompatible = process.env.CONCIERGE_MODE?.trim() === "openai-compatible";
-const providerName = openAiCompatible ? process.env.LLM_PROVIDER_LABEL?.trim() || "openai-compatible" : "Google Gemini";
-const model = openAiCompatible ? process.env.LLM_MODEL?.trim() ?? "" : process.env.GEMINI_MODEL?.trim() || "gemini-3.8-flash";
-const credential = openAiCompatible ? process.env.LLM_API_KEY : process.env.GEMINI_API_KEY;
+const scripted = process.argv.slice(2).includes("--scripted");
+const runArguments = process.argv.slice(2).filter((argument) => argument !== "--scripted");
+const openAiCompatible = !scripted && process.env.CONCIERGE_MODE?.trim() === "openai-compatible";
+const providerName = scripted ? "Scripted offline reference" : openAiCompatible ? process.env.LLM_PROVIDER_LABEL?.trim() || "openai-compatible" : "Google Gemini";
+const model = scripted ? "scripted-reference" : openAiCompatible ? process.env.LLM_MODEL?.trim() ?? "" : process.env.GEMINI_MODEL?.trim() || "gemini-3.8-flash";
+const credential = scripted ? undefined : openAiCompatible ? process.env.LLM_API_KEY : process.env.GEMINI_API_KEY;
 // Slice 15: this smoke drives the assistant in-process and has no HTTP surface, so it cannot target a remote origin.
 // Refuse before argument parsing or any model client is created; local runs are unchanged.
-if (resolvePilotBaseUrl(process.argv.slice(2), process.env) !== null) {
+if (resolvePilotBaseUrl(runArguments, process.env) !== null) {
   process.stderr.write("pilot:local:agent-smoke runs in-process and cannot target a base URL. Run the staging journeys through pilot:acceptance:rodney with SHORTLET_BASE_URL.\n");
   process.exit(2);
 }
-const configuredJourneys = parsePilotAgentSmokeRuns(process.argv.slice(2), process.env.PILOT_AGENT_SMOKE_RUNS);
+const configuredJourneys = parsePilotAgentSmokeRuns(runArguments, process.env.PILOT_AGENT_SMOKE_RUNS);
 const requestBudget = new ProviderRequestBudget(configuredJourneys, DEFAULT_PROVIDER_REQUEST_BUDGET_PER_JOURNEY);
 const providerRequestsPerTurn: ProviderTurnUsage[] = [];
 let activeProviderTurn: ActiveProviderTurn | null = null;
@@ -126,7 +130,7 @@ function recordTurnPerformance(journey: number, turn: TurnPerformance): void {
   turnPerformanceByJourney.set(journey, turns);
 }
 
-if (!credential) {
+if (!credential && !scripted) {
   const entries: ScenarioReport[] = Array.from({ length: configuredJourneys }, (_, index) =>
     scenarios.map((scenario) => ({
       scenario: `run ${index + 1} ${scenario}`,
@@ -190,9 +194,9 @@ if (!credential) {
       }
       currentTurn.providerRequests++;
     };
-    const providerClient = openAiCompatible
+    const providerClient = scripted ? createSmokeReferenceModel() : openAiCompatible
       ? new OpenAiCompatibleClient({
-        apiKey: credential,
+        apiKey: credential!,
         baseUrl: process.env.LLM_BASE_URL?.trim() ?? "",
         model,
         fetch: async (input, init) => {
@@ -201,9 +205,9 @@ if (!credential) {
         },
       })
       : (() => {
-        const googleAi = new GoogleGenAI({ apiKey: credential });
+        const googleAi = new GoogleGenAI({ apiKey: credential! });
         return new GeminiInteractionsClient({
-          apiKey: credential,
+          apiKey: credential!,
           model,
           customAi: {
             interactions: {
@@ -247,7 +251,7 @@ if (!credential) {
           return await runtime.handleTurn(threadId, text);
         } finally {
           const snapshot = turnUsage.snapshot();
-          recordTurnPerformance(run, {
+          if (!scripted) recordTurnPerformance(run, {
             turn,
             latencyMs: Math.round(performance.now() - startedAt),
             modelCalls: snapshot.modelCalls,
@@ -286,7 +290,7 @@ if (!credential) {
       const discoveryArtifactPresent = Boolean(thread.discoveryArtifactId
         && first.surfaces?.[0]?.surfaceId.endsWith(thread.discoveryArtifactId));
       const discoveryRender = await anyRenderable(first.surfaces ?? []);
-      const discoveryFabricated = hasUnsupportedPriceOrConfirmation(first.messages ?? [], discovered.map((stay) => [stay.nightlyKobo, stay.allInStayTotalKobo, stay.refundableSecurityDepositKobo]));
+      const discoveryFabricated = hasUnsupportedPriceOrConfirmation(first.messages ?? [], discovered.map(authoritativePriceAmounts));
       const discoveryStopReason = providerStopReason(discoveryDiagnostics, budgetExceeded);
       if (discoveryStopReason === "PROVIDER_RATE_LIMITED") rateLimitOccurred = true;
       runEntries.push({
@@ -316,7 +320,7 @@ if (!credential) {
         && refinedIds.every((id) => environment!.unitRepository.findById(id)?.bedrooms === 2)
         && refined.supersededSurfaces.has(first.surfaces?.[0]?.surfaceId ?? "")
         && refined.activeSurfaces.get("discovery") === refinement.surfaces?.[0]?.surfaceId;
-      const refinementFabricated = hasUnsupportedPriceOrConfirmation(refinement.messages ?? [], refined.taskState.shortlist.map((stay) => [stay.nightlyKobo, stay.allInStayTotalKobo, stay.refundableSecurityDepositKobo]));
+      const refinementFabricated = hasUnsupportedPriceOrConfirmation(refinement.messages ?? [], refined.taskState.shortlist.map(authoritativePriceAmounts));
       const refinementPresentation = JSON.stringify(refinement.surfaces?.[0]?.a2uiMessages ?? []);
       const refinedPricesAuthoritative = refined.taskState.shortlist.every((stay) => refinementPresentation.includes(formatNairaKobo(stay.allInStayTotalKobo ?? stay.nightlyKobo)));
       const refinementRender = await anyRenderable(refinement.surfaces ?? []);
@@ -348,8 +352,11 @@ if (!credential) {
       const detailRender = await anyRenderable(inspection.surfaces ?? []);
       const detailMessages = JSON.stringify(inspection.surfaces?.[0]?.a2uiMessages ?? []);
       const selectedUnit = selected ? environment.unitRepository.findById(selected.unitId) : null;
-      const detailQuote = selectedUnit && environment.config.demoCheckOut
-        ? createStayQuote({ unit: selectedUnit, checkIn: environment.config.demoCheckIn, checkOut: environment.config.demoCheckOut, partySize: 1, clock: environment.clock })
+      const detailState = runtime.getThread(threadId).taskState.stayIntent;
+      const detailCheckIn = detailState.checkIn ?? environment.config.demoCheckIn;
+      const detailCheckOut = detailState.checkOut ?? environment.config.demoCheckOut;
+      const detailQuote = selectedUnit && detailCheckOut
+        ? createStayQuote({ unit: selectedUnit, checkIn: detailCheckIn, checkOut: detailCheckOut, partySize: detailState.partySize ?? 1, clock: environment.clock })
         : null;
       const detailFactsPreserved = Boolean(selected)
         && inspectionToolResult?.stayRef === selected!.stayRef
@@ -357,7 +364,7 @@ if (!credential) {
         && detailMessages.includes(selected!.neighbourhood)
         && detailMessages.includes(selected!.city)
         && Boolean(detailQuote && detailMessages.includes(formatNairaKobo(detailQuote.allInStayTotalKobo)));
-      const detailFabricated = hasUnsupportedPriceOrConfirmation(inspection.messages ?? [], selected ? [[selected.nightlyKobo, selected.allInStayTotalKobo, selected.refundableSecurityDepositKobo]] : []);
+      const detailFabricated = hasUnsupportedPriceOrConfirmation(inspection.messages ?? [], inspectionToolResult ? [authoritativePriceAmounts(inspectionToolResult)] : []);
       const inspectionStopReason = providerStopReason(inspectionDiagnostics, budgetExceeded);
       if (inspectionStopReason === "PROVIDER_RATE_LIMITED") rateLimitOccurred = true;
       runEntries.push({
@@ -404,7 +411,9 @@ if (!credential) {
       const noDownstreamState = !bookingState.currentOfferId && !bookingState.currentReservationId && !bookingState.currentContractId
         && !bookingDiagnostics.some((event) => event.toolName === "propose_accept_offer" || event.toolName === "propose_start_payment");
       const draftRender = await anyRenderable(booking.surfaces ?? []);
-      const bookingFabricated = hasUnsupportedPriceOrConfirmation(booking.messages ?? [], selected ? [[selected.nightlyKobo, selected.allInStayTotalKobo, selected.refundableSecurityDepositKobo]] : []);
+      const bookingFabricated = hasUnsupportedPriceOrConfirmation(booking.messages ?? [], bookingQuote ? [authoritativePriceAmounts({
+        ...bookingQuote.lineItems, allInStayTotalKobo: bookingQuote.allInStayTotalKobo, amountDueNowKobo: bookingQuote.totalAmountDueNowKobo,
+      })] : []);
       const bookingStopReason = providerStopReason(bookingDiagnostics, budgetExceeded);
       if (bookingStopReason === "PROVIDER_RATE_LIMITED") rateLimitOccurred = true;
       runEntries.push({
@@ -453,12 +462,12 @@ if (!credential) {
     slug: model,
     price,
   });
-  await writeReports(failed ? "FAIL" : "PASS", reports, failed ? errors.join("; ") : "All semantic assertions passed.", journeysAttempted, performanceReport);
+  await writeReports(failed ? "FAIL" : "PASS", reports, failed ? errors.join("; ") : "All semantic assertions passed.", journeysAttempted, scripted ? undefined : performanceReport);
   if (failed) {
-    console.error("Live-agent smoke failed; see .scratch/pilot-agent-smoke/agent-smoke-report.md");
+    console.error(`${scripted ? "Scripted reference" : "Live-agent smoke"} failed; see .scratch/pilot-agent-smoke/agent-smoke-report.md`);
     process.exitCode = 1;
   } else {
-    console.log("Live-agent smoke passed; see .scratch/pilot-agent-smoke/agent-smoke-report.md");
+    console.log(`${scripted ? "Scripted reference" : "Live-agent smoke"} passed; see .scratch/pilot-agent-smoke/agent-smoke-report.md`);
   }
 }
 
@@ -572,17 +581,6 @@ class ProviderRequestBudgetExceededError extends Error {
     super("Live smoke provider request budget exhausted");
     this.name = "ProviderRequestBudgetExceededError";
   }
-}
-
-function hasUnsupportedPriceOrConfirmation(messages: readonly string[], priceGroups: readonly (readonly (number | null)[])[]): boolean {
-  const text = messages.join(" ");
-  if (/\b(?:booking|reservation) (?:is )?confirmed\b|\bpayment (?:is )?(?:successful|confirmed|complete)\b|\b(?:you are )?booked\b/i.test(text)) return true;
-  const authoritativeKobo = new Set(priceGroups.flatMap((group) => group.filter((amount): amount is number => typeof amount === "number" && Number.isFinite(amount))));
-  const claims = [...text.matchAll(/(?:₦|\bNGN\s*)([\d,]+(?:\.\d{1,2})?)/gi)];
-  return claims.some((match) => {
-    const naira = Number(match[1]?.replaceAll(",", ""));
-    return !Number.isFinite(naira) || !authoritativeKobo.has(Math.round(naira * 100));
-  });
 }
 
 function formatNairaKobo(kobo: number): string {

@@ -1,6 +1,6 @@
 # Benchmark GPT-6 Luna against the baseline
 
-Status: needs-info
+Status: ready-for-human
 Type: AFK
 Blocked by: 02
 Requested: 21 Oct 2026
@@ -41,7 +41,7 @@ The owner wants the agent's performance measured before the demo. ADR 0079 also 
 - [x] AC1 failure path: when the provider returns no `usage`, the report still writes, and the token and cost fields are marked unavailable instead of zero.
 - [x] AC2: The cost estimate comes from the OpenRouter-reported price for the model slug. A unit test covers the arithmetic.
 - [x] AC3: No prompt, reply or key text is written to the result or report files (ADR 0075). A test asserts this on a stubbed run.
-- [ ] AC4: `docs/testing/openrouter-gpt6-luna-benchmark.md` exists with 3 live runs and a go/no-go verdict.
+- [x] AC4: `docs/testing/openrouter-gpt6-luna-benchmark.md` exists with 3 live runs and a go/no-go verdict.
 - [x] AC5: `npm run test:assistant` stays green.
 
 ## ADR compliance
@@ -53,6 +53,173 @@ The owner wants the agent's performance measured before the demo. ADR 0079 also 
 | 0080 | Fabricated prices or bookings mean the model fails | AC4 verdict |
 
 ## Comments
+
+### 23 October 2026: diagnosis fixed; three live journeys now pass
+
+The owner requested diagnosis with the goal of making the concierge usable.
+The diagnostic loop reproduced both failures in two additional one-journey runs before application changes.
+The first diagnostic runner did not inherit the probe. The second used Node imports directly and recorded bounded facts.
+Neither probe retained prompts, model replies, credentials, or HTTP headers.
+
+Confirmed causes:
+
+1. The model filled unknown search fields with zero bedrooms, one night, and one guest. Zero bedrooms excluded the available apartment.
+2. `Number(null)` also converted unknown bedroom values into a studio filter. Null nights and guests became invalid zero values.
+3. The model repeated the authoritative NGN 12,000 mandatory fee. The grader excluded this valid fee and falsely classified fabrication.
+4. The inspection grader assumed two nights, while the invented search duration was one night.
+5. After undated discovery, the detail tool could return no total while the surface displayed a dated demo quote.
+
+Changes:
+
+- Search schemas accept null for unknown nights, guests, and bedrooms. The prompt forbids invented zero or one defaults.
+- Execution treats null as unknown and preserves prior constraints. Explicit zero-bedroom studio filters still work.
+- The detail tool now projects the current Unit for the same dates used by its surface. It marks demo dates.
+- Price grading accepts current authoritative fees and quote amounts. Unsupported prices and false confirmations still fail.
+- The grader uses actual detail dates and the current booking quote. It also distinguishes simple negated booking claims.
+- `--scripted` runs the same four-turn harness with fixed tool decisions and no credentials, network calls, or live performance claims.
+
+ADR compliance:
+
+| ADR | Constraint | Verification |
+| --- | --- | --- |
+| 0015, 0089 | Domain prices include mandatory fees; unknown stay details cannot become a firm quote. | Unknown discovery remains undated. Detail prices match the domain projection. Unsupported price tests remain red-capable. |
+| 0068, 0069 | Provider adapters retain the neutral interface and pinned protocol. | No provider SDK, model default, or interaction protocol changed. |
+| 0072, 0080 | Guest confirmation and platform commands retain transaction authority. | All three live booking turns created reviewable drafts without downstream transactions. |
+| 0075 | Secrets and conversation content stay out of artifacts. | Probes record bounded facts only. Artifact checks found no credential value. |
+| 0077, 0102 | Model and channel prices come from current application projections. | A regression test verifies detail-tool and surface quote context. |
+| 0079 | Preserve failed evidence and rerun semantic checks after changes. | Initial NO-GO files remain alongside the passing benchmark. |
+| 0092, 0105 | Production and demo stay limits remain distinct. Synthetic evaluation uses OpenRouter only. | Extended-stay assistant tests pass. No deployment or payment provider was called. |
+
+Red-first evidence:
+
+```text
+npx tsx --test test/assistant-search-unknowns.test.ts
+```
+
+Before fixes: four tests, one passed and three failed. The failures covered null execution, schema support, and prior-filter preservation.
+
+```text
+npx tsx --test --test-name-pattern='Unit detail gives' test/assistant-search-unknowns.test.ts
+```
+
+Before the detail fix: one failed. The tool returned no total while the expected domain quote was NGN 370,000 in that fixture.
+After the fixes, all seven new search and grading tests passed.
+The scripted-reference integration test was added after implementation; this is a test-first deviation.
+
+Final verification commands used `NODE_ENV=test` and `COMMERCE_REFERENCE_TEST_KEY=allow`:
+
+```text
+npm run check
+npx tsx --test test/assistant-search-unknowns.test.ts test/pilot-agent-smoke-grading.test.ts test/pilot-agent-smoke-reference.test.ts test/pilot-agent-smoke-metrics.test.ts test/pilot-agent-smoke-budget.test.ts test/pilot-base-url.test.ts test/demo-extended-assistant.test.ts
+npm run test:assistant
+```
+
+- Type checking and the Worker bundle guard: exit 0.
+- Focused tests: 29 of 29 passed, exit 0.
+- Assistant tests: 56 of 56 passed, exit 0.
+- Scripted reference: four of four stages passed, zero provider requests, exit 0.
+- Live rerun: three journeys, 12 of 12 stages passed, 24 provider requests, exit 0.
+- Each live stage passed three of three. No fabrication, rendering, rate-limit, or request-budget failure was recorded.
+- Median turn latency: 5,718 ms. The 95th percentile was 8,787 ms. These are complete-turn measurements.
+- Passing-rerun catalogue estimate: USD 0.004607300. Reported key usage increased by USD 0.002634830.
+- Cumulative key usage: USD 0.009090460. Remaining allowance under the USD 2 cap: USD 1.990909540.
+
+The exact local-run pattern used fresh temporary pilot data, without replacing the existing pilot:
+
+```powershell
+Push-Location $benchmarkRoot
+node C:\AI2026\chat-marketplace\node_modules\tsx\dist\cli.mjs C:\AI2026\chat-marketplace\apps\pilot\src\cli-local-bootstrap.ts
+node --import file:///C:/AI2026/chat-marketplace/node_modules/tsx/dist/loader.mjs C:\AI2026\chat-marketplace\scripts\pilot-agent-smoke.ts --scripted --runs 1
+# Preserve the reference result before the live run. Load LLM_API_KEY from the Windows user environment without displaying it.
+$env:CONCIERGE_MODE = 'openai-compatible'
+$env:LLM_PROVIDER_LABEL = 'openrouter'
+$env:LLM_BASE_URL = 'https://openrouter.ai/api/v1'
+$env:LLM_MODEL = 'openai/gpt-6-luna'
+node --import file:///C:/AI2026/chat-marketplace/node_modules/tsx/dist/loader.mjs --import file:///C:/AI2026/chat-marketplace/.scratch/pilot-agent-smoke/diagnosis/trace.mjs C:\AI2026\chat-marketplace\scripts\pilot-agent-smoke.ts --runs 3
+Pop-Location
+npx tsx scripts/pilot-agent-smoke.ts --write-benchmark-doc
+```
+
+The probe is an ignored diagnostic artifact. Normal smoke runs do not import it.
+Evidence lives in `docs/testing/openrouter-gpt6-luna-benchmark.md`, its numeric result, the preserved initial NO-GO files, and the scripted-reference result.
+The ignored archive `.scratch/pilot-agent-smoke/2026-10-23-issue03-fixed/` contains verification logs and numeric probe output.
+
+Definition of Done self-review:
+
+1. Original AC tests remain present. New regression tests cover unknown fields, prior filters, studio filters, detail prices, grading, and the reference.
+2. Unknown-value failures and unsupported price/confirmation paths are covered. The reference test forbids network access with synthetic keys configured.
+3. Applicable ADRs were listed and read. The table above maps their constraints to changes and evidence.
+4. The reference and grader helpers are exercised by the smoke script and tests. No unused dependency was added.
+5. No business policy, service, dependency, provider default, or deployment configuration changed.
+6. Task artifacts contain no credentials or conversation prose. Source fixtures contain synthetic strings only.
+7. Type checking, all 29 focused tests, and all 56 assistant tests passed. The full suites remain the batch deployment gate.
+
+Final text-only report changes were followed by another `npm run check`: exit 0.
+`npx tsx --test test/pilot-agent-smoke-metrics.test.ts test/pilot-agent-smoke-reference.test.ts` then passed eight of eight, exit 0.
+Artifact checks confirmed 12 live passes, a non-live offline result, and no credential values. `git diff --check` passed.
+
+The issue is `ready-for-human` for benchmark acceptance. The narrow four-turn local evaluation passes; staging and full-browser acceptance remain separate.
+No production-readiness claim, deployment, push, or real payment is implied.
+
+### 23 October 2026: three live journeys completed; NO-GO
+
+The owner supplied `LLM_API_KEY` through the Windows user environment. No credential was written to repository files or logs.
+OpenRouter key inspection reported a USD 2 limit, USD 2 remaining, and zero prior usage before paid calls.
+The public catalogue confirmed `openai/gpt-6-luna`, with USD 0.0000001 per prompt token and USD 0.0000005 per completion token.
+
+ADR review: 0075 governs redacted artifacts; 0079 governs evaluation evidence; 0080 preserves platform authority; 0105 limits the demo processor and synthetic scope.
+The live result retains no model prose, prompt text, or credential. All booking turns preserved guest review and created no downstream transaction.
+
+The existing local pilot dated from September. A new temporary directory held a separately bootstrapped synthetic pilot.
+The original pilot and unrelated working-tree changes were preserved. Source HEAD was `9a22b36`; this was not a clean-checkout gate.
+
+Commands and results:
+
+```powershell
+# $benchmarkRoot identifies the new temporary directory. It contains synthetic data only.
+# $env:LLM_API_KEY was loaded from the Windows user environment without displaying it.
+$env:NODE_ENV = 'test'
+$env:COMMERCE_REFERENCE_TEST_KEY = 'allow'
+npm run check
+npx tsx --test test/pilot-agent-smoke-metrics.test.ts test/pilot-agent-smoke-budget.test.ts test/pilot-base-url.test.ts
+npm run test:assistant
+
+Push-Location $benchmarkRoot
+node C:\AI2026\chat-marketplace\node_modules\tsx\dist\cli.mjs C:\AI2026\chat-marketplace\apps\pilot\src\cli-local-bootstrap.ts
+$env:LLM_API_KEY = [Environment]::GetEnvironmentVariable('LLM_API_KEY', 'User')
+$env:CONCIERGE_MODE = 'openai-compatible'
+$env:LLM_PROVIDER_LABEL = 'openrouter'
+$env:LLM_BASE_URL = 'https://openrouter.ai/api/v1'
+$env:LLM_MODEL = 'openai/gpt-6-luna'
+node C:\AI2026\chat-marketplace\node_modules\tsx\dist\cli.mjs C:\AI2026\chat-marketplace\scripts\pilot-agent-smoke.ts --runs 3
+Pop-Location
+# Copy the redacted live artifacts into .scratch/pilot-agent-smoke before rendering.
+npx tsx scripts/pilot-agent-smoke.ts --write-benchmark-doc
+```
+
+- Type checking: exit 0, including all configured TypeScript projects and the Worker bundle guard.
+- Focused benchmark tests: 20 of 20 passed, exit 0.
+- Offline assistant tests: 56 of 56 passed, exit 0.
+- Synthetic bootstrap: exit 0.
+- Live smoke: three journeys, 12 turns, 24 requests; exit 1.
+- Discovery: 0 of 3 passed. Refinement: 3 of 3 passed.
+- Unit inspection: 0 of 3 passed. Booking intent: 3 of 3 passed.
+- Failures: `MODEL_SELECTION_FAILURE` 3; `FABRICATION_FAILURE` 3.
+- All 12 surface rendering checks passed. No rate limit or request-budget exhaustion occurred.
+- Benchmark rendering: exit 0. The generated verdict is NO-GO.
+- Catalogue-price estimate: USD 0.004815900. Key usage increased by USD 0.003851435.
+- Remaining key allowance: USD 1.996148565. No additional paid retries were run.
+
+Evidence: `docs/testing/openrouter-gpt6-luna-benchmark.md` and `docs/testing/openrouter-gpt6-luna-benchmark-result.json`.
+The ignored archive `.scratch/pilot-agent-smoke/2026-10-23-issue03/` holds run artifacts, previous reports, and local check logs.
+
+AC4 is complete with a negative verdict. The issue remains open; issues 06 and 07 remain blocked on benchmark acceptance.
+Next work: diagnose empty discovery results and inspection flags without discarding this failed run.
+The report lacks model prose and search arguments, so it cannot prove the exact cause.
+The fabrication detector matches booking words without checking negation. Review this possible grading limitation before concluding model fabrication.
+The separate four-turn scripted reference remains unfinished. The 56 offline tests do not replace it.
+No implementation changed, no commit was made, and no deployment or push occurred.
+The full batch suites were not run; this task did not merge or deploy code.
 
 - 22 Oct 2026: The benchmark needs an owner-supplied OpenRouter credential for three live runs. No credential is available in this environment. Do not record or request the credential in repository files or logs. Resume when the owner supplies it through the approved secret store or environment.
 - 22 Oct 2026 (offline executor, commit fc3df55): AC1, AC1 failure path, AC2, AC3 and AC5 are implemented and ticked. AC4 stays open and the status stays `needs-info`. No provider was called.
