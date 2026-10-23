@@ -1,6 +1,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { PerformanceReport, JourneyPerformance } from "./pilot-agent-smoke-metrics.js";
+import { MAX_PILOT_AGENT_SMOKE_RUNS } from "./pilot-agent-smoke-budget.js";
+import { SMOKE_GRADING_PROFILE } from "./pilot-agent-smoke-grading.js";
 
 export interface SmokeScenarioReport {
   readonly scenario: string;
@@ -13,6 +15,8 @@ export interface SmokeScenarioReport {
 }
 
 export interface SmokeResult {
+  /** Absent on historical runs; they cannot establish a verdict under a newer grader. */
+  readonly gradingProfile?: string;
   readonly generatedAt: string;
   readonly provider: string;
   readonly model: string;
@@ -113,16 +117,122 @@ export async function writeSmokeArtifacts(directory: string, result: SmokeResult
 
 /** Returns the reason a parsed result file cannot back the benchmark document, or null when it can. */
 export function validateLiveBenchmarkResult(value: unknown): string | null {
-  if (typeof value !== "object" || value === null) return "result file is not an object";
+  if (!isRecord(value)) return "result file is not an object";
   const candidate = value as Partial<SmokeResult>;
   if (candidate.liveRun !== true) return "result is not a live run";
+  if (candidate.gradingProfile !== SMOKE_GRADING_PROFILE) return "result uses an absent or unsupported grading profile";
   if (candidate.credentialConfigured !== true) return "result has no configured provider credential";
   if (candidate.result !== "PASS" && candidate.result !== "FAIL") return "result has no live verdict";
-  if (typeof candidate.journeysActuallyAttempted !== "number" || candidate.journeysActuallyAttempted < 1) return "no journeys were attempted";
+  if (!positiveInteger(candidate.configuredJourneyCount) || candidate.configuredJourneyCount > MAX_PILOT_AGENT_SMOKE_RUNS) return "configured journey count is invalid";
+  if (!positiveInteger(candidate.journeysActuallyAttempted) || candidate.journeysActuallyAttempted > candidate.configuredJourneyCount) return "attempted journey count is invalid";
+  if (typeof candidate.generatedAt !== "string" || !Number.isFinite(Date.parse(candidate.generatedAt))) return "result date is invalid";
+  if (typeof candidate.provider !== "string" || !candidate.provider.trim() || typeof candidate.model !== "string" || !candidate.model.trim()) return "provider or model is missing";
   if (!Array.isArray(candidate.scenarios)) return "result has no scenarios";
-  if (!candidate.performance) return "result has no performance block";
+  const count = candidate.journeysActuallyAttempted;
+  if (candidate.scenarios.length !== count * SCENARIO_NAMES.length) return "result does not contain four stages per attempted journey";
+  const stages = new Map<string, SmokeScenarioReport["semanticResult"]>();
+  for (const entry of candidate.scenarios) {
+    if (!isRecord(entry) || typeof entry.scenario !== "string") return "scenario entry is invalid";
+    const match = /^run (\d+) (.+)$/i.exec(entry.scenario);
+    const key = match ? stageKey(Number(match[1]), match[2], count) : null;
+    if (!key || stages.has(key)) return "scenario stage is unknown or duplicated";
+    if (entry.semanticResult !== "PASS" && entry.semanticResult !== "FAIL" && entry.semanticResult !== "NOT_RUN") return "scenario verdict is invalid";
+    if (entry.semanticResult === "PASS" && entry.failureClassification !== undefined) return "passing stage has a failure classification";
+    if (entry.semanticResult === "FAIL" && (typeof entry.failureClassification !== "string" || !FAILURE_CLASSES.has(entry.failureClassification))) return "failed stage lacks a valid failure classification";
+    stages.set(key, entry.semanticResult);
+  }
+  const hasNonPassingStage = [...stages.values()].some((status) => status !== "PASS");
+  if ((candidate.result === "PASS" && hasNonPassingStage) || (candidate.result === "FAIL" && !hasNonPassingStage)) return "overall verdict contradicts stage results";
+  if (typeof candidate.providerRequestBudgetExceeded !== "boolean" || typeof candidate.rateLimitOccurred !== "boolean") return "provider flags are invalid";
+  if (candidate.providerStopClassification !== null && candidate.providerStopClassification !== "PROVIDER_RATE_LIMITED" && candidate.providerStopClassification !== "PROVIDER_REQUEST_BUDGET_EXCEEDED") return "provider stop classification is invalid";
+  if (candidate.result === "PASS" && (candidate.providerRequestBudgetExceeded || candidate.rateLimitOccurred || candidate.providerStopClassification !== null)) return "passing run has a provider failure flag";
+  if (!positiveInteger(candidate.totalProviderRequests)) return "result has no actual provider requests";
+  const budget = candidate.providerRequestBudget;
+  if (!isRecord(budget) || !positiveInteger(budget.perJourney) || budget.total !== budget.perJourney * candidate.configuredJourneyCount || candidate.totalProviderRequests > budget.total) return "provider request budget is inconsistent";
+  if (!Array.isArray(candidate.providerRequestsPerTurn) || candidate.providerRequestsPerTurn.length !== stages.size) return "provider request stages are incomplete";
+  const requests = new Map<string, number>();
+  for (const turn of candidate.providerRequestsPerTurn) {
+    if (!isRecord(turn)) return "provider request entry is invalid";
+    const key = stageKey(turn.journey, turn.turn, count);
+    if (!key || requests.has(key) || !nonNegativeInteger(turn.providerRequests)) return "provider request stage is invalid or duplicated";
+    if (stages.get(key) === "PASS" && turn.providerRequests === 0) return "passing stage has no provider request";
+    if (stages.get(key) === "NOT_RUN" && turn.providerRequests !== 0) return "unrun stage has provider requests";
+    requests.set(key, turn.providerRequests);
+  }
+  if ([...requests.values()].reduce((sum, requests) => sum + requests, 0) !== candidate.totalProviderRequests) return "provider request total contradicts per-turn counts";
+  for (let journey = 1; journey <= count; journey++) {
+    const journeyRequests = SCENARIO_NAMES.reduce((sum, stage) => sum + (requests.get(`${journey}:${stage}`) ?? 0), 0);
+    if (journeyRequests > budget.perJourney) return "journey exceeds its provider request budget";
+  }
+  if (!isRecord(candidate.performance) || !Array.isArray(candidate.performance.journeys) || candidate.performance.journeys.length !== count) return "performance journeys are incomplete";
+  const pricing = candidate.performance.pricing;
+  if (!isRecord(pricing) || pricing.slug !== candidate.model) return "pricing identity is invalid";
+  if (pricing.status === "reported") {
+    if (pricing.source !== "openrouter-models" || !nonNegativeNumber(pricing.promptUsdPerToken) || !nonNegativeNumber(pricing.completionUsdPerToken)) return "reported pricing is invalid";
+  } else if (pricing.status !== "unavailable" || typeof pricing.reason !== "string") return "pricing status is invalid";
+  const performanceStages = new Set<string>();
+  const performanceJourneys = new Set<number>();
+  for (const journey of candidate.performance.journeys) {
+    if (!isRecord(journey) || !positiveInteger(journey.journey) || journey.journey > count || performanceJourneys.has(journey.journey) || !Array.isArray(journey.turns)) return "performance journey is invalid or duplicated";
+    performanceJourneys.add(journey.journey);
+    let latencyMs = 0;
+    let modelCalls = 0;
+    for (const turn of journey.turns) {
+      if (!isRecord(turn)) return "performance turn is invalid";
+      const key = stageKey(journey.journey, turn.turn, count);
+      if (!key || performanceStages.has(key) || stages.get(key) === "NOT_RUN") return "performance stage is invalid or duplicated";
+      if (typeof turn.latencyMs !== "number" || !Number.isFinite(turn.latencyMs) || turn.latencyMs < 0 || !positiveInteger(turn.modelCalls)) return "performance timing or model-call count is invalid";
+      if (turn.tokenUsage === "reported") {
+        if (!nonNegativeInteger(turn.promptTokens) || !nonNegativeInteger(turn.completionTokens)) return "reported token usage is invalid";
+      } else if (turn.tokenUsage !== "unavailable" || turn.promptTokens !== null || turn.completionTokens !== null) return "missing token usage is not marked unavailable";
+      if (candidate.result === "PASS" && turn.modelCalls > (requests.get(key) ?? 0)) return "model calls exceed provider requests";
+      performanceStages.add(key);
+      latencyMs += turn.latencyMs;
+      modelCalls += turn.modelCalls;
+    }
+    if (journey.latencyMs !== latencyMs || journey.modelCalls !== modelCalls) return "journey totals contradict per-turn performance";
+    const completeTokens = journey.turns.every((turn) => turn.tokenUsage === "reported");
+    if (completeTokens) {
+      if (journey.tokenUsage !== "reported" || journey.promptTokens !== journey.turns.reduce((sum, turn) => sum + (turn.promptTokens ?? 0), 0)
+        || journey.completionTokens !== journey.turns.reduce((sum, turn) => sum + (turn.completionTokens ?? 0), 0)) return "journey token totals contradict per-turn usage";
+    } else if (journey.tokenUsage !== "unavailable" || journey.promptTokens !== null || journey.completionTokens !== null) return "journey token usage is inconsistent";
+    if (pricing.status === "reported" && completeTokens) {
+      if (journey.costStatus !== "estimated" || !nonNegativeNumber(journey.costUsd)) return "estimated cost is invalid";
+    } else if (journey.costStatus !== "unavailable" || journey.costUsd !== null) return "missing cost is not marked unavailable";
+  }
+  if ([...stages].some(([key, status]) => status !== "NOT_RUN" && !performanceStages.has(key))) return "performance stages are incomplete";
+  const latency = candidate.performance.latency;
+  if (!isRecord(latency) || latency.turnSamples !== performanceStages.size || latency.journeySamples !== count
+    || ![latency.turnP50Ms, latency.turnP95Ms, latency.journeyP50Ms, latency.journeyP95Ms].every(nonNegativeNumber)) return "latency summary is invalid";
   return null;
 }
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function nonNegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function nonNegativeNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function positiveInteger(value: unknown): value is number {
+  return nonNegativeInteger(value) && value > 0;
+}
+
+function stageKey(journey: unknown, stage: unknown, count: number): string | null {
+  if (!positiveInteger(journey) || journey > count || typeof stage !== "string") return null;
+  const normalized = stage.trim().toLowerCase();
+  return SCENARIO_NAMES.some((name) => name === normalized) ? `${journey}:${normalized}` : null;
+}
+
+const FAILURE_CLASSES: ReadonlySet<string> = new Set([
+  "PROVIDER_RATE_LIMITED", "PROVIDER_REQUEST_BUDGET_EXCEEDED", "PROVIDER_TRANSPORT_FAILURE", "MODEL_SELECTION_FAILURE",
+  "INVALID_TOOL_FOR_STATE", "APPLICATION_OPERATION_FAILURE", "PROJECTION_FAILURE", "A2UI_FAILURE", "WEAVER_FAILURE", "FABRICATION_FAILURE", "AUTHORITY_FAILURE",
+]);
 
 function dimensionName(scenario: string): string {
   return scenario.replace(/^run \d+ /, "").trim().toLowerCase();
@@ -141,12 +251,12 @@ export function renderBenchmarkDocument(value: unknown): string {
   const semanticFailures = result.scenarios.some((entry) => entry.semanticResult === "FAIL");
   const notAllRun = result.journeysActuallyAttempted < result.configuredJourneyCount || result.scenarios.some((entry) => entry.semanticResult === "NOT_RUN");
   const verdict = fabricated
-    ? "**NO-GO**: at least one journey fabricated a price or a booking claim (ADR 0080). Recorded, not tuned away."
+    ? "**NO-GO**: at least one journey failed price or booking-status verification (ADR 0080). Recorded, not tuned away."
     : semanticFailures
       ? "**NO-GO**: semantic assertions failed in at least one journey (ADR 0079 evidence)."
       : notAllRun || result.journeysActuallyAttempted < REQUIRED_LIVE_JOURNEYS
         ? "**INCOMPLETE**: fewer than the required live journeys ran; no go/no-go verdict is given."
-        : "**GO** for the demo, subject to the owner's review of this table.";
+        : "**GO** for the evaluated local discovery-to-draft journey, subject to the owner's review.";
   const passRows = SCENARIO_NAMES.map((name) => {
     const entries = result.scenarios.filter((entry) => dimensionName(entry.scenario) === name);
     const passed = entries.filter((entry) => entry.semanticResult === "PASS").length;
@@ -170,6 +280,7 @@ export function renderBenchmarkDocument(value: unknown): string {
     `- Date: ${date}`,
     `- Provider: ${result.provider}`,
     `- Model slug: ${result.model}`,
+    `- Grading profile: ${result.gradingProfile}`,
     `- Live journeys: ${result.journeysActuallyAttempted} of ${result.configuredJourneyCount} configured (${REQUIRED_LIVE_JOURNEYS} required for the benchmark)`,
     `- Offline reference: run separately with --scripted; see issue 03 Comments for its result`,
     "",

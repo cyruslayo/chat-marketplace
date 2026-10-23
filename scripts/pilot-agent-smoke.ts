@@ -6,7 +6,7 @@ import type { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import type { AssistantDiagnosticEvent } from "../apps/local-guest/src/assistant/assistant-runtime.js";
 import type { AssistantConversationStep } from "../apps/local-guest/src/assistant/assistant-model.js";
 import { resolvePilotBaseUrl } from "./pilot-base-url.js";
-import { authoritativePriceAmounts, hasUnsupportedPriceOrConfirmation } from "./pilot-agent-smoke-grading.js";
+import { authoritativePriceFacts, hasUnsupportedPriceOrConfirmation, SMOKE_GRADING_PROFILE } from "./pilot-agent-smoke-grading.js";
 import { createSmokeReferenceModel } from "./pilot-agent-smoke-reference.js";
 import {
   DEFAULT_PROVIDER_REQUEST_BUDGET_PER_JOURNEY,
@@ -100,6 +100,7 @@ async function writeReports(
   performanceReport?: PerformanceReport,
 ): Promise<void> {
   await writeSmokeArtifacts(reportDirectory, buildSmokeResult({
+    gradingProfile: SMOKE_GRADING_PROFILE,
     generatedAt: new Date().toISOString(),
     provider: providerName,
     model,
@@ -290,7 +291,7 @@ if (!credential && !scripted) {
       const discoveryArtifactPresent = Boolean(thread.discoveryArtifactId
         && first.surfaces?.[0]?.surfaceId.endsWith(thread.discoveryArtifactId));
       const discoveryRender = await anyRenderable(first.surfaces ?? []);
-      const discoveryFabricated = hasUnsupportedPriceOrConfirmation(first.messages ?? [], discovered.map(authoritativePriceAmounts));
+      const discoveryFabricated = hasUnsupportedPriceOrConfirmation(first.messages ?? [], discovered.map(authoritativePriceFacts));
       const discoveryStopReason = providerStopReason(discoveryDiagnostics, budgetExceeded);
       if (discoveryStopReason === "PROVIDER_RATE_LIMITED") rateLimitOccurred = true;
       runEntries.push({
@@ -320,7 +321,7 @@ if (!credential && !scripted) {
         && refinedIds.every((id) => environment!.unitRepository.findById(id)?.bedrooms === 2)
         && refined.supersededSurfaces.has(first.surfaces?.[0]?.surfaceId ?? "")
         && refined.activeSurfaces.get("discovery") === refinement.surfaces?.[0]?.surfaceId;
-      const refinementFabricated = hasUnsupportedPriceOrConfirmation(refinement.messages ?? [], refined.taskState.shortlist.map(authoritativePriceAmounts));
+      const refinementFabricated = hasUnsupportedPriceOrConfirmation(refinement.messages ?? [], refined.taskState.shortlist.map(authoritativePriceFacts));
       const refinementPresentation = JSON.stringify(refinement.surfaces?.[0]?.a2uiMessages ?? []);
       const refinedPricesAuthoritative = refined.taskState.shortlist.every((stay) => refinementPresentation.includes(formatNairaKobo(stay.allInStayTotalKobo ?? stay.nightlyKobo)));
       const refinementRender = await anyRenderable(refinement.surfaces ?? []);
@@ -364,7 +365,9 @@ if (!credential && !scripted) {
         && detailMessages.includes(selected!.neighbourhood)
         && detailMessages.includes(selected!.city)
         && Boolean(detailQuote && detailMessages.includes(formatNairaKobo(detailQuote.allInStayTotalKobo)));
-      const detailFabricated = hasUnsupportedPriceOrConfirmation(inspection.messages ?? [], inspectionToolResult ? [authoritativePriceAmounts(inspectionToolResult)] : []);
+      const detailFabricated = hasUnsupportedPriceOrConfirmation(inspection.messages ?? [], inspectionToolResult ? [authoritativePriceFacts({
+        ...inspectionToolResult, accommodationKobo: detailQuote?.lineItems.accommodationKobo,
+      })] : []);
       const inspectionStopReason = providerStopReason(inspectionDiagnostics, budgetExceeded);
       if (inspectionStopReason === "PROVIDER_RATE_LIMITED") rateLimitOccurred = true;
       runEntries.push({
@@ -411,7 +414,7 @@ if (!credential && !scripted) {
       const noDownstreamState = !bookingState.currentOfferId && !bookingState.currentReservationId && !bookingState.currentContractId
         && !bookingDiagnostics.some((event) => event.toolName === "propose_accept_offer" || event.toolName === "propose_start_payment");
       const draftRender = await anyRenderable(booking.surfaces ?? []);
-      const bookingFabricated = hasUnsupportedPriceOrConfirmation(booking.messages ?? [], bookingQuote ? [authoritativePriceAmounts({
+      const bookingFabricated = hasUnsupportedPriceOrConfirmation(booking.messages ?? [], bookingQuote ? [authoritativePriceFacts({
         ...bookingQuote.lineItems, allInStayTotalKobo: bookingQuote.allInStayTotalKobo, amountDueNowKobo: bookingQuote.totalAmountDueNowKobo,
       })] : []);
       const bookingStopReason = providerStopReason(bookingDiagnostics, budgetExceeded);

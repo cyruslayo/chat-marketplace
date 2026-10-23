@@ -3,6 +3,7 @@
 - Date: 2026-10-23
 - Provider: openrouter
 - Model slug: openai/gpt-6-luna
+- Grading profile: price-roles-and-status-v3
 - Live journeys: 3 of 3 configured (3 required for the benchmark)
 - Offline reference: run separately with --scripted; see issue 03 Comments for its result
 
@@ -19,16 +20,16 @@
 
 | Measure | p50 | p95 |
 |---|---|---|
-| Turn | 5718 | 8787 |
-| Journey | 22769 | 28379 |
+| Turn | 5060 | 7028 |
+| Journey | 21750 | 22633 |
 
 ## Per journey
 
 | Journey | Latency ms | Model calls | Prompt / completion tokens | Cost (USD) |
 |---|---|---|---|---|
-| 1 | 28379 | 8 | 11570 / 825 | $0.001570 |
-| 2 | 22769 | 8 | 11448 / 757 | $0.001523 |
-| 3 | 22706 | 8 | 11400 / 749 | $0.001515 |
+| 1 | 22633 | 8 | 11574 / 828 | $0.001571 |
+| 2 | 21750 | 8 | 11576 / 849 | $0.001582 |
+| 3 | 20213 | 8 | 11468 / 741 | $0.001517 |
 
 Pricing: OpenRouter-reported per-token price for openai/gpt-6-luna, read at run time.
 
@@ -38,65 +39,70 @@ No failures recorded.
 
 ## Go/no-go
 
-**GO** for the demo, subject to the owner's review of this table.
+**GO** for the evaluated local discovery-to-draft journey, subject to the owner's review.
 
-## Diagnosis and changes
+## Review findings 1 and 2
 
-The [initial benchmark](openrouter-gpt6-luna-initial-no-go.md) failed discovery and inspection in every journey.
-The original result and diagnostic summaries remain in [the initial result](openrouter-gpt6-luna-initial-no-go-result.json).
+This run uses `price-roles-and-status-v3`. Earlier runs cannot establish a verdict under this grading profile.
+The [pre-review report](openrouter-gpt6-luna-pre-review.md) and [its result](openrouter-gpt6-luna-pre-review-result.json) preserve the earlier evidence.
+The [initial failed run](openrouter-gpt6-luna-initial-no-go.md) remains available.
 
-The diagnostic probe recorded only bounded filter facts and numeric price claims. It retained no prompts, replies, or credentials.
+Price checks retain separate authoritative values for nightly rates, accommodation, mandatory fees, deposits, stay totals, and amounts due.
+A mandatory fee presented as a full stay total fails. A deposit cannot validate an accommodation price.
+Currency checks recognize NGN and ₦ prefixes, plus NGN and naira suffixes. Ambiguous monetary roles fail closed.
+Booking-status checks cover completed, secured, paid, and confirmed claims, including active confirmation wording.
+Tests distinguish negation and future steps from completed actions. Separate messages cannot share a negation.
 
-| Failure | Evidence | Change |
-| --- | --- | --- |
-| Empty discovery | The model supplied zero bedrooms, one night, and one guest for a location-only request. | The schema and prompt explicitly represent unknown numeric fields as null. Execution preserves unknowns and prior constraints. |
-| Detail context mismatch | The search invented one night, while the grader expected the configured two-night demo stay. | The grader uses the same dates as the detail surface. |
-| False price-fabrication flag | The model repeated the correct NGN 12,000 mandatory fee. The allowed-price set excluded that fee. | Price grading includes authoritative mandatory fees and still rejects unsupported amounts. |
-| Model and surface price mismatch | An undated shortlist carried no total, but the detail surface displayed a dated demo quote. | The detail tool and surface now use the same current domain projection. The tool identifies demo dates. |
+These are bounded prose checks. They do not prove correctness for unrestricted language, every listing reference, or every currency representation.
+They operate in memory. Reports retain classifications and numbers, rather than prompts or model replies.
 
-The detector also had a latent false positive for negated booking claims. Regression checks cover negation and positive confirmations.
-That defect did not cause the recorded diagnostic inspection failure.
+Report generation requires four distinct stages per attempted journey. It validates journey identifiers, verdict consistency, requests, budgets, and performance records.
+Empty, missing, duplicate, unknown, contradictory, or malformed evidence is refused.
+A complete failed run produces NO-GO. A single complete journey produces INCOMPLETE for this three-journey benchmark.
 
-## Scripted reference
+## Intermediate failure and accommodation subtotal
 
-`--scripted --runs 1` executes the same four-turn harness with fixed tool decisions and the actual application runtime.
-All four stages passed. The reference made zero provider requests and used no credentials.
-It records no model latency or token-cost claims. It tests application execution rather than natural-language understanding.
-The automated test forbids network access, even when synthetic credential variables are present.
+The first stricter run used profile v2. Eleven of 12 stages passed; one inspection was classified as a verification failure.
+Its numeric trace included NGN 190,000. The retained trace does not contain the claim's label.
+That value equals the domain quote's accommodation subtotal. The first stricter grader did not support that role.
 
-Reference evidence: [scripted results](openrouter-gpt6-luna-scripted-reference-result.json).
+Profile v3 reads the subtotal from the domain quote. It accepts that value only when the reply identifies accommodation or a subtotal.
+Regression tests still reject NGN 190,000 when presented as the full NGN 202,000 stay total.
+The [v2 NO-GO result](openrouter-gpt6-luna-role-check-v2-no-go-result.json) remains unchanged. Its saved replies cannot be regraded because they were not retained.
+The current table comes from a fresh three-journey run under v3.
 
 ## Verification
 
 - `npm run check`: exit 0, including the Worker bundle guard.
-- Focused tests: 29 passed, zero failed.
-- `npm run test:assistant`: 56 passed, zero failed.
-- Live smoke: three journeys, 12 passing stages, 24 provider requests, exit 0.
-- Benchmark rendering: exit 0.
-- All checks used `NODE_ENV=test` and `COMMERCE_REFERENCE_TEST_KEY=allow`.
+- Focused tests: 34 passed, zero failed.
+- Scripted reference: four stages passed with zero provider requests and no live performance claims.
+- Current live run: three journeys, 12 passing stages, 24 provider requests, exit 0.
+- Report generation: exit 0 after strict evidence validation.
+- No application, provider default, deployment setting, dependency, or business policy changed in these review fixes.
 
-Focused command:
+Focused command, with `NODE_ENV=test` and `COMMERCE_REFERENCE_TEST_KEY=allow`:
 
 ```text
-npx tsx --test test/assistant-search-unknowns.test.ts test/pilot-agent-smoke-grading.test.ts test/pilot-agent-smoke-reference.test.ts test/pilot-agent-smoke-metrics.test.ts test/pilot-agent-smoke-budget.test.ts test/pilot-base-url.test.ts test/demo-extended-assistant.test.ts
+npx tsx --test test/pilot-agent-smoke-grading.test.ts test/pilot-agent-smoke-report.test.ts test/pilot-agent-smoke-metrics.test.ts test/pilot-agent-smoke-reference.test.ts test/pilot-agent-smoke-budget.test.ts test/pilot-base-url.test.ts
 ```
 
-## Cost and scope
+## Cost and acceptance limits
 
-- Rerun catalogue-price estimate: USD 0.004607300.
-- Reported key usage before the passing rerun: USD 0.006455630.
-- Reported key usage after the passing rerun: USD 0.009090460.
-- Rerun usage increase: USD 0.002634830.
-- Cumulative key usage, including the initial benchmark and diagnosis: USD 0.009090460.
-- Remaining allowance under the USD 2 key limit: USD 1.990909540.
+- Current run catalogue-price estimate: USD 0.004670800.
+- Key usage before the current run: USD 0.011871950.
+- Key usage after the current run: USD 0.014437050.
+- Current run usage increase: USD 0.002565100.
+- Both live review runs used 48 provider requests. Their combined key usage increase was USD 0.005346590.
+- Remaining allowance under the USD 2 key limit: USD 1.985562950.
 
-Catalogue estimates and provider usage are distinct measurements. Their difference was not reconciled.
-The client selects the model slug. These runs do not record the serving provider or explicitly disable provider fallbacks.
-The sample contains three journeys. The median complete-turn time was 5.718 seconds; the 95th percentile was 8.787 seconds.
+Provider usage and catalogue estimates are distinct measurements. Their difference remains unreconciled.
+The model slug is selected explicitly. Serving-provider identity and provider fallbacks remain outside this evidence.
+Median complete-turn latency was 5.060 seconds. The 95th percentile was 7.028 seconds across 12 turns.
 These figures do not measure first-response latency or establish production reliability.
 
-The rerun used fresh synthetic pilot data in a separate temporary directory. Source started at `9a22b36`, with these fixes applied.
-Unrelated working-tree changes remained present. This was not a clean-checkout deployment gate.
-No deployment, real payment, or booking submission occurred. The full browser and Workers batch gates remain separate requirements.
+The run used fresh synthetic pilot data. Source started at `6ae88cc`, with the review fixes applied and unrelated changes present.
+This verifies the fixed four-turn local journey. Broader scenarios, Extended Stay journeys, staging browser checks, and public acceptance remain outstanding.
+No deployment, booking submission, real payment, push, full browser suite, or full Workers gate occurred.
 
-The ignored archive `.scratch/pilot-agent-smoke/2026-10-23-issue03-fixed/` holds run artifacts and local verification logs.
+Numeric results: [current live evidence](openrouter-gpt6-luna-benchmark-result.json) and [scripted reference](openrouter-gpt6-luna-scripted-reference-result.json).
+The ignored archive `.scratch/pilot-agent-smoke/2026-10-23-review-fixes/` holds local logs and bounded numeric traces.

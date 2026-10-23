@@ -1,5 +1,6 @@
 {
-  "generatedAt": "2026-10-23T07:13:13.723Z",
+  "gradingProfile": "price-roles-and-status-v3",
+  "generatedAt": "2026-10-23T07:53:57.245Z",
   "provider": "Scripted offline reference",
   "model": "scripted-reference",
   "result": "PASS",
@@ -71,7 +72,7 @@
     {
       "scenario": "run 1 booking intent",
       "selectedApplicationOperation": "prepare_request_draft",
-      "surfaceSelected": "thread-g-live-smoke-1:request:draft:draft-3f51259b-c0d3-462f-8d6f-9772a3597561",
+      "surfaceSelected": "thread-g-live-smoke-1:request:draft:draft-878547b0-aebc-4b90-9baf-7864a9da9600",
       "authoritativeEntities": [
         "unit-local-abuja-wuse2"
       ],

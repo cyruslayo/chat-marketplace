@@ -54,6 +54,86 @@ The owner wants the agent's performance measured before the demo. ADR 0079 also 
 
 ## Comments
 
+### 23 October 2026: benchmark review findings 1 and 2 fixed
+
+The owner authorized both review fixes. This change affects the smoke harness and report generator, rather than application behavior.
+
+Finding 1:
+
+- The grader now retains named authoritative price facts instead of one set of interchangeable amounts.
+- It distinguishes nightly rates, accommodation, mandatory fees, deposits, stay totals, and amounts due.
+- It rejects a fee presented as a stay total and rejects a stay total presented as a deposit or fee.
+- NGN and naira suffixes are checked. Ambiguous monetary roles fail closed.
+- Completed, secured, paid, and active booking/payment confirmation wording is checked.
+- Negation and future-step tests remain green. Separate messages cannot share a negation.
+- These are bounded language checks. They do not prove correctness for unrestricted prose or every currency representation.
+
+Finding 2:
+
+- The report generator requires exactly four distinct stages for each attempted journey.
+- It checks stage names, journey bounds, verdict consistency, provider flags, budgets, requests, and performance counts.
+- Missing, duplicate, unknown, contradictory, or malformed evidence is refused before rendering.
+- Complete failed runs still render NO-GO. A complete single journey remains INCOMPLETE for the required three-journey benchmark.
+- Each new result identifies its grading profile. Old or unsupported profiles cannot establish a new verdict.
+
+ADR compliance table:
+
+| ADR | Constraint | Affected code / verification |
+| --- | --- | --- |
+| 0015, 0089 | Preserve the meaning of authoritative price components. | Named price facts and cross-role regression tests. Accommodation comes from `detailQuote.lineItems.accommodationKobo`. |
+| 0075 | Keep prompts, replies, and credentials out of artifacts. | Claims are checked in memory. Saved evidence contains classifications and numbers only. |
+| 0079 | Require complete and consistent model evaluation evidence. | Stage matrices, count reconciliation, strict report validation, and grading-profile checks. |
+| 0080 | False booking/payment confirmation cannot pass evaluation. | Confirmation variants, negation tests, and NO-GO preservation. |
+
+Red-first evidence:
+
+```text
+npx tsx --test test/pilot-agent-smoke-grading.test.ts test/pilot-agent-smoke-report.test.ts
+```
+
+Before implementation: nine tests, four passed and five failed. These reproduced the review's price, status, and invalid-evidence examples.
+Additional profile, accommodation subtotal, and accommodation-label regressions each failed before their corresponding change.
+
+Final checks used `NODE_ENV=test` and `COMMERCE_REFERENCE_TEST_KEY=allow`:
+
+```text
+npm run check
+npx tsx --test test/pilot-agent-smoke-grading.test.ts test/pilot-agent-smoke-report.test.ts test/pilot-agent-smoke-metrics.test.ts test/pilot-agent-smoke-reference.test.ts test/pilot-agent-smoke-budget.test.ts test/pilot-base-url.test.ts
+```
+
+- Type checking and the Worker bundle guard: exit 0.
+- Focused tests: 34 of 34 passed, exit 0.
+- Final `npx tsx --test test/pilot-agent-smoke-grading.test.ts test/pilot-agent-smoke-report.test.ts`: 13 of 13 passed, exit 0.
+- Final `npm run check`: exit 0. Task credential scanning and `git diff --check` passed.
+- Scripted reference: four of four stages passed, zero provider requests, exit 0.
+- First stricter live run, profile v2: 11 of 12 stages passed; one inspection verification failed, exit 1.
+- The v2 numeric trace included NGN 190,000. Its claim label was not retained, so the exact meaning cannot be verified retrospectively.
+- NGN 190,000 equals the domain quote's accommodation subtotal. Profile v2 had no authoritative subtotal role.
+- Profile v3 accepts that domain value only as accommodation or a subtotal. Presenting it as the full stay total still fails.
+- Fresh v3 live run: three journeys, 12 of 12 stages passed, 24 provider requests, exit 0.
+- Strict benchmark rendering: exit 0. The verdict explicitly applies to the evaluated local discovery-to-draft journey.
+- Both live review runs used 48 requests. Key usage increased from USD 0.009090460 to USD 0.014437050.
+- Current-run usage increase: USD 0.002565100. Current-run catalogue estimate: USD 0.004670800.
+- Remaining key allowance: USD 1.985562950 under the USD 2 cap. No further paid calls followed the passing v3 run.
+
+Live commands followed the temporary-directory pattern recorded below. The final run used `--scripted --runs 1`, then `--runs 3`.
+Credentials came from the Windows user environment. Keys were never printed or written to task files.
+
+Evidence:
+
+- `docs/testing/openrouter-gpt6-luna-benchmark.md`: current v3 benchmark.
+- `docs/testing/openrouter-gpt6-luna-benchmark-result.json`: current live evidence.
+- `docs/testing/openrouter-gpt6-luna-scripted-reference-result.json`: current offline reference.
+- `docs/testing/openrouter-gpt6-luna-pre-review.md` and its result: preserved earlier passing evidence with the weaker grader.
+- `docs/testing/openrouter-gpt6-luna-role-check-v2-no-go-result.json`: preserved intermediate failure, unchanged.
+- `.scratch/pilot-agent-smoke/2026-10-23-review-fixes/`: ignored local logs and bounded numeric probes.
+
+Definition of Done self-review: named regression tests cover both findings and their failure paths; applicable ADRs are mapped above.
+Helpers are used by the harness and tests. No service, dependency, business policy, application code, or deployment setting changed.
+Credentials and model prose remain absent from artifacts. Type checking and the 34 affected tests passed.
+The issue remains `ready-for-human`. Broader scenario coverage and staging/browser acceptance remain outstanding.
+Full browser and Workers suites were not run because this change does not merge or deploy the batch.
+
 ### 23 October 2026: diagnosis fixed; three live journeys now pass
 
 The owner requested diagnosis with the goal of making the concierge usable.

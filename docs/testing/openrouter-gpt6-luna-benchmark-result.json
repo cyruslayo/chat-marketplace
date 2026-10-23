@@ -1,5 +1,6 @@
 {
-  "generatedAt": "2026-10-23T07:14:40.879Z",
+  "gradingProfile": "price-roles-and-status-v3",
+  "generatedAt": "2026-10-23T07:55:07.973Z",
   "provider": "openrouter",
   "model": "openai/gpt-6-luna",
   "result": "PASS",
@@ -111,7 +112,7 @@
     {
       "scenario": "run 1 booking intent",
       "selectedApplicationOperation": "prepare_request_draft",
-      "surfaceSelected": "thread-g-live-smoke-1:request:draft:draft-31ed61f0-b9e0-4ef5-bcf2-80a85de6321c",
+      "surfaceSelected": "thread-g-live-smoke-1:request:draft:draft-132a89da-ec22-4240-b812-e1a7d7a38b79",
       "authoritativeEntities": [
         "unit-local-abuja-wuse2"
       ],
@@ -151,7 +152,7 @@
     {
       "scenario": "run 2 booking intent",
       "selectedApplicationOperation": "prepare_request_draft",
-      "surfaceSelected": "thread-g-live-smoke-2:request:draft:draft-bc57cbc9-3363-443f-beaa-dd8434cabeac",
+      "surfaceSelected": "thread-g-live-smoke-2:request:draft:draft-31891299-d7f2-418b-ba8b-d4ae9e1aff68",
       "authoritativeEntities": [
         "unit-local-abuja-wuse2"
       ],
@@ -191,7 +192,7 @@
     {
       "scenario": "run 3 booking intent",
       "selectedApplicationOperation": "prepare_request_draft",
-      "surfaceSelected": "thread-g-live-smoke-3:request:draft:draft-4af4aedb-e1cd-43b5-9255-31e6aafb9c5a",
+      "surfaceSelected": "thread-g-live-smoke-3:request:draft:draft-0511388c-7a4a-4bbb-983e-8df7a52bce77",
       "authoritativeEntities": [
         "unit-local-abuja-wuse2"
       ],
@@ -202,10 +203,10 @@
   "note": "All semantic assertions passed.",
   "performance": {
     "latency": {
-      "turnP50Ms": 5718,
-      "turnP95Ms": 8787,
-      "journeyP50Ms": 22769,
-      "journeyP95Ms": 28379,
+      "turnP50Ms": 5060,
+      "turnP95Ms": 7028,
+      "journeyP50Ms": 21750,
+      "journeyP95Ms": 22633,
       "turnSamples": 12,
       "journeySamples": 3
     },
@@ -219,61 +220,105 @@
     "journeys": [
       {
         "journey": 1,
-        "latencyMs": 28379,
+        "latencyMs": 22633,
         "modelCalls": 8,
-        "promptTokens": 11570,
-        "completionTokens": 825,
+        "promptTokens": 11574,
+        "completionTokens": 828,
         "tokenUsage": "reported",
-        "costUsd": 0.0015695000000000001,
+        "costUsd": 0.0015714000000000001,
         "costStatus": "estimated",
         "turns": [
           {
             "turn": "discovery",
-            "latencyMs": 6268,
+            "latencyMs": 6255,
             "modelCalls": 2,
             "promptTokens": 1745,
-            "completionTokens": 224,
+            "completionTokens": 281,
             "tokenUsage": "reported"
           },
           {
             "turn": "refinement",
-            "latencyMs": 8787,
+            "latencyMs": 5134,
             "modelCalls": 2,
-            "promptTokens": 2618,
-            "completionTokens": 133,
+            "promptTokens": 2624,
+            "completionTokens": 142,
             "tokenUsage": "reported"
           },
           {
             "turn": "unit inspection",
-            "latencyMs": 7463,
+            "latencyMs": 5060,
             "modelCalls": 2,
-            "promptTokens": 3267,
-            "completionTokens": 290,
+            "promptTokens": 3277,
+            "completionTokens": 261,
             "tokenUsage": "reported"
           },
           {
             "turn": "booking intent",
-            "latencyMs": 5861,
+            "latencyMs": 6184,
             "modelCalls": 2,
-            "promptTokens": 3940,
-            "completionTokens": 178,
+            "promptTokens": 3928,
+            "completionTokens": 144,
             "tokenUsage": "reported"
           }
         ]
       },
       {
         "journey": 2,
-        "latencyMs": 22769,
+        "latencyMs": 21750,
         "modelCalls": 8,
-        "promptTokens": 11448,
-        "completionTokens": 757,
+        "promptTokens": 11576,
+        "completionTokens": 849,
         "tokenUsage": "reported",
-        "costUsd": 0.0015232999999999998,
+        "costUsd": 0.0015821,
         "costStatus": "estimated",
         "turns": [
           {
             "turn": "discovery",
-            "latencyMs": 6684,
+            "latencyMs": 6354,
+            "modelCalls": 2,
+            "promptTokens": 1745,
+            "completionTokens": 257,
+            "tokenUsage": "reported"
+          },
+          {
+            "turn": "refinement",
+            "latencyMs": 4068,
+            "modelCalls": 2,
+            "promptTokens": 2600,
+            "completionTokens": 153,
+            "tokenUsage": "reported"
+          },
+          {
+            "turn": "unit inspection",
+            "latencyMs": 6339,
+            "modelCalls": 2,
+            "promptTokens": 3287,
+            "completionTokens": 287,
+            "tokenUsage": "reported"
+          },
+          {
+            "turn": "booking intent",
+            "latencyMs": 4989,
+            "modelCalls": 2,
+            "promptTokens": 3944,
+            "completionTokens": 152,
+            "tokenUsage": "reported"
+          }
+        ]
+      },
+      {
+        "journey": 3,
+        "latencyMs": 20213,
+        "modelCalls": 8,
+        "promptTokens": 11468,
+        "completionTokens": 741,
+        "tokenUsage": "reported",
+        "costUsd": 0.0015172999999999999,
+        "costStatus": "estimated",
+        "turns": [
+          {
+            "turn": "discovery",
+            "latencyMs": 4809,
             "modelCalls": 2,
             "promptTokens": 1745,
             "completionTokens": 210,
@@ -281,70 +326,26 @@
           },
           {
             "turn": "refinement",
-            "latencyMs": 5299,
+            "latencyMs": 4179,
             "modelCalls": 2,
-            "promptTokens": 2562,
-            "completionTokens": 172,
-            "tokenUsage": "reported"
-          },
-          {
-            "turn": "unit inspection",
-            "latencyMs": 5134,
-            "modelCalls": 2,
-            "promptTokens": 3245,
-            "completionTokens": 262,
-            "tokenUsage": "reported"
-          },
-          {
-            "turn": "booking intent",
-            "latencyMs": 5652,
-            "modelCalls": 2,
-            "promptTokens": 3896,
-            "completionTokens": 113,
-            "tokenUsage": "reported"
-          }
-        ]
-      },
-      {
-        "journey": 3,
-        "latencyMs": 22706,
-        "modelCalls": 8,
-        "promptTokens": 11400,
-        "completionTokens": 749,
-        "tokenUsage": "reported",
-        "costUsd": 0.0015145,
-        "costStatus": "estimated",
-        "turns": [
-          {
-            "turn": "discovery",
-            "latencyMs": 5718,
-            "modelCalls": 2,
-            "promptTokens": 1745,
-            "completionTokens": 229,
-            "tokenUsage": "reported"
-          },
-          {
-            "turn": "refinement",
-            "latencyMs": 5085,
-            "modelCalls": 2,
-            "promptTokens": 2578,
-            "completionTokens": 131,
-            "tokenUsage": "reported"
-          },
-          {
-            "turn": "unit inspection",
-            "latencyMs": 5610,
-            "modelCalls": 2,
-            "promptTokens": 3215,
-            "completionTokens": 241,
-            "tokenUsage": "reported"
-          },
-          {
-            "turn": "booking intent",
-            "latencyMs": 6293,
-            "modelCalls": 2,
-            "promptTokens": 3862,
+            "promptTokens": 2580,
             "completionTokens": 148,
+            "tokenUsage": "reported"
+          },
+          {
+            "turn": "unit inspection",
+            "latencyMs": 4197,
+            "modelCalls": 2,
+            "promptTokens": 3237,
+            "completionTokens": 161,
+            "tokenUsage": "reported"
+          },
+          {
+            "turn": "booking intent",
+            "latencyMs": 7028,
+            "modelCalls": 2,
+            "promptTokens": 3906,
+            "completionTokens": 222,
             "tokenUsage": "reported"
           }
         ]
