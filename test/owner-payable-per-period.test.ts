@@ -269,7 +269,7 @@ test("AC6: The same owner-payable projection runs through Node SQLite storage an
   // The Cloudflare Durable Object applies the shared migrations; the binding table is one of them and is idempotent.
   const migration = SHORTLET_SCHEMA_MIGRATIONS.find((entry) => entry.statements.some((statement) => statement.includes("owner_ledger_period_bindings")));
   assert.ok(migration, "a shared migration creates the period binding table");
-  assert.equal(migration.statements.join("\n"), OWNER_LEDGER_PERIOD_SCHEMA, "the migration uses the ledger's own DDL");
+  assert.ok(migration.statements.includes(OWNER_LEDGER_PERIOD_SCHEMA), "the migration uses the ledger's own DDL");
   const fresh = openNodeSqliteDatabase(":memory:");
   fresh.exec(OWNER_PAYABLE_SCHEMA);
   fresh.exec(OWNER_LEDGER_PERIOD_SCHEMA);

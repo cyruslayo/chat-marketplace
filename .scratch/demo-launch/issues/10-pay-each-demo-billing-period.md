@@ -110,6 +110,12 @@ Deviations, risks and decisions needed:
 7. **Schema.** The period tables are created by the store constructor with `CREATE TABLE IF NOT EXISTS`, not by a new schema migration version, so `SHORTLET_SCHEMA_VERSION` is still 4.
 8. **Trailer.** The commit uses `Co-Authored-By: Claude Sonnet 5.5`, per the operating rules.
 
+### Batch gate fixes
+
+- Migration: `guest_period_payment_sessions`, `guest_period_payments` and `guest_period_payment_refunds` are now in shared Shortlet migration 5 (`apps/cloudflare/src/schema.ts`), with `SHORTLET_SCHEMA_VERSION` still 5. The store constructor's `IF NOT EXISTS` DDL is unchanged. `apps/cloudflare/test/production-composition.spec.ts` "created by the schema migrations" now passes.
+- Export: NOT decided. The spec "in the daily export set or excluded" still fails for these three tables. `DAILY_EXPORT_EXCLUDED` may only hold `CREDENTIAL_TABLES` (the spec asserts its keys equal that list), so they cannot be excluded without changing the spec. Exporting them puts `psp_reference` in plaintext in tables ADR 0096 does not name (it exempts four columns only) and puts `contact_email` into the export. Owner or counsel decision required (ADR 0096, ADR 0095 gates). Until decided, a restore from the daily export loses later-period payment records.
+- `test/owner-payable-per-period.test.ts`: the migration assertion now checks that migration 5 contains the ledger DDL (`includes`), since migration 5 holds a second statement.
+
 ## Answer
 
 Issue 10 is resolved. Later demo Billing Periods are paid through their own Paystack TEST sessions. Each session is verified against that period's immutable snapshot amount and currency, and only a designated, in-window success pays the period. Superseded, expired, late and duplicate money is recorded for refund and never advances a period. The Node and Worker suites pass, as recorded above. The open items are the back-office page, Worker-level coverage, the export decision and the owner or counsel interpretations.

@@ -11,6 +11,7 @@ import { GUEST_IDENTITY_ASSURANCE_SCHEMA } from "../../../domains/shortlet/src/g
 import { GUEST_INTERACTION_SCHEMA, GUEST_REQUEST_CONTACT_SCHEMA } from "../../../domains/shortlet/src/index.js";
 import { MANUAL_TRANSFERS_SCHEMA, MANUAL_TRANSFER_RECEIPTS_SCHEMA } from "../../../domains/shortlet/src/index.js";
 import { OWNER_LEDGER_PERIOD_SCHEMA, OWNER_PAYABLE_SCHEMA } from "../../../domains/shortlet/src/index.js";
+import { PERIOD_PAYMENT_SCHEMA } from "../../../domains/shortlet/src/index.js";
 import { OPERATOR_REPRESENTATIVE_SCHEMA } from "../../../domains/shortlet/src/index.js";
 import { OPERATOR_SESSION_SCHEMA } from "../../../domains/shortlet/src/index.js";
 import { OPERATOR_ENFORCEMENT_SCHEMA } from "../../../domains/shortlet/src/index.js";
@@ -83,7 +84,9 @@ export const SHORTLET_SCHEMA_MIGRATIONS: readonly SchemaMigration[] = [
   // Personal-data table (ADR 0094, issue 09): exported in the daily export under the issue 05 precedent, flagged for the DPIA. Not a credential.
   { version: 4, name: "guest accounts: identity assurance anchored to the account", statements: [GUEST_IDENTITY_ASSURANCE_SCHEMA] },
   // Demo-launch issue 11: each owner payout and recovery is bound to one Billing Period. Ids and period numbers only.
-  { version: 5, name: "owner ledger entries bound to a Billing Period", statements: [OWNER_LEDGER_PERIOD_SCHEMA] },
+  // Demo-launch issue 10 (ADR 0092, ADR 0045, ADR 0046): later-period payment sessions, payments and refunds. Migration 5 is
+  // unapplied in production, so the period payment tables ride in it (batch gate fix; the store constructor stays idempotent).
+  { version: 5, name: "owner ledger entries bound to a Billing Period; later-period payment records", statements: [OWNER_LEDGER_PERIOD_SCHEMA, PERIOD_PAYMENT_SCHEMA] },
 ];
 
 /** The version the import checks for before it writes anything (ops-import.ts). */
