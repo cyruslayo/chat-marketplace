@@ -76,5 +76,7 @@ export interface AssistantModelResponse {
 
 export interface AssistantModelClient {
   generate(request: AssistantModelRequest): Promise<AssistantModelResponse>;
+  /** Optional provider seam: retain only validated opaque continuity metadata for accepted calls. */
+  projectProviderContinuation?(response: AssistantModelResponse, acceptedCalls: readonly AssistantToolCall[]): unknown;
 }
 

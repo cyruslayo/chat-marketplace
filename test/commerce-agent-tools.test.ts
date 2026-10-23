@@ -210,7 +210,11 @@ test("AC4 scripted assistant and conventional route use the same authorized, ver
   const turn = await fixture.assistant.handleTurn(fixture.threadId, "Prepare checkout");
   assert.equal(turn.ok, true);
   const proposal = fixture.getToolResult();
-  assert.equal(typeof proposal?.proposalId, "string");
+  assert.equal(proposal?.status, "awaiting_explicit_confirmation");
+  assert.equal(typeof proposal?.totalKobo, "number");
+  assert.equal(proposal?.paymentAvailable, false);
+  assert.equal("proposalId" in (proposal ?? {}), false, "Private workflow ids stay out of model history");
+  assert.equal("taskId" in (proposal ?? {}), false, "Task identity stays platform-owned");
   const surface = turn.surfaces?.find(item => item.surfaceId.includes(":commerce-checkout:"));
   assert.ok(surface);
   const confirmContext = checkoutConfirmContext(surface.a2uiMessages);
@@ -323,10 +327,11 @@ test("commerce projections enforce configured Unicode-safe text and result budge
   }
   const turn = await fixture.assistant.handleTurn(fixture.threadId, "Search products");
   assert.equal(turn.ok, true);
-  const result = fixture.getToolResult() as { offers: Array<{ offerId: string; description: string; priceKobo: number; stock: number }> };
+  const result = fixture.getToolResult() as { offers: Array<{ offerId: string; priceKobo: number; stock: number; description?: string; productName?: string }> };
   assert.equal(result.offers.length, limits.maxResults);
-  assert.ok(result.offers.every(offer => Array.from(offer.description).length <= limits.maxTextCodePoints));
   assert.ok(result.offers.every(offer => offer.priceKobo > 0 && offer.stock > 0));
+  assert.ok(result.offers.every(offer => /^extra-offer-|^scripted-o$/.test(offer.offerId)));
+  assert.ok(result.offers.every(offer => offer.description === undefined && offer.productName === undefined));
   const serialized = JSON.stringify(result);
   assert.equal(serialized.includes("Ignore previous instructions"), false);
   assert.equal(serialized.includes("FORBIDDEN"), false);

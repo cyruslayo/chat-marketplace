@@ -952,6 +952,35 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
     toolsForState: (taskState) => assistantToolsForState(taskState, environment.extendedStayPolicy),
     validateToolCall: (name, args, taskState) => validateAssistantToolCall(name, args, taskState, environment.extendedStayPolicy),
     executeTool: executeAssistantTool,
+    projectToolResult: (_name, result, limits) => {
+      const keys = new Set(["stayRef", "city", "capacity", "bedrooms", "resultCount", "checkIn", "checkOut", "nights", "partySize", "isDemoDate", "nightlyKobo", "mandatoryFeesKobo", "allInStayTotalKobo", "refundableSecurityDepositKobo", "amountDueNowKobo", "totalAmountDueNowKobo", "currency", "inspectionStatus", "managementAuthorityStatus", "status", "expiresAt", "expiresAtIso", "hasOffer", "hasBooking", "draftCreated", "created", "availabilityChecked", "inventoryReserved", "operation", "available", "stays", "compared", "result", "hasRequest", "requestStatus"]);
+      const closedStatuses = new Set(["passed", "failed", "expired", "verified", "unverified", "none", "request_draft", "request_submitted", "request_disclosed", "offer_issued", "issued", "accepted", "payment_pending", "paid", "cancelled", "rejected", "stale", "revoked", "confirmed", "no_active_booking", "unknown"]);
+      const project = (value: unknown): unknown => {
+        if (Array.isArray(value)) return value.slice(0, limits.maxItems).map(project).filter((entry) => entry !== undefined);
+        if (typeof value !== "object" || value === null) return undefined;
+        const record = value as Record<string, unknown>;
+        const projected: Record<string, unknown> = {};
+        for (const [key, item] of Object.entries(record)) {
+          if (!keys.has(key)) continue;
+          if (key === "stays" || key === "compared" || key === "result") {
+            const nested = project(item);
+            if (nested !== undefined) projected[key] = nested;
+          } else if (["capacity", "bedrooms", "resultCount", "nights", "partySize", "nightlyKobo", "mandatoryFeesKobo", "allInStayTotalKobo", "refundableSecurityDepositKobo", "amountDueNowKobo", "totalAmountDueNowKobo"].includes(key)
+            && typeof item === "number" && Number.isFinite(item)) projected[key] = item;
+          else if (["isDemoDate", "hasOffer", "hasBooking", "draftCreated", "created", "availabilityChecked", "inventoryReserved", "available", "hasRequest"].includes(key) && typeof item === "boolean") projected[key] = item;
+          else if (key === "operation" && item === "request_draft.create") projected[key] = item;
+          else if (key === "stayRef" && typeof item === "string" && /^stay-[1-9]\d{0,3}$/.test(item)) projected[key] = item;
+          else if (key === "city" && (item === "Lagos" || item === "Abuja")) projected[key] = item;
+          else if (key === "currency" && item === "NGN") projected[key] = item;
+          else if (["checkIn", "checkOut"].includes(key) && typeof item === "string" && /^\d{4}-\d{2}-\d{2}$/.test(item) && !Number.isNaN(Date.parse(`${item}T00:00:00Z`))) projected[key] = item;
+          else if (["inspectionStatus", "managementAuthorityStatus", "status", "requestStatus"].includes(key) && typeof item === "string" && closedStatuses.has(item)) projected[key] = item;
+          else if (["expiresAt", "expiresAtIso"].includes(key) && typeof item === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(item) && !Number.isNaN(Date.parse(item))) projected[key] = item;
+        }
+        return projected;
+      };
+      return project(result) as Record<string, unknown>;
+    },
+    projectStateSummary: (state, limits) => ({ hasShortlist: state.shortlist.length > 0, shortlistRefs: state.shortlist.slice(0, limits.maxItems).map((stay) => stay.stayRef), selectedStayRef: state.selectedStayRef ?? null, checkIn: state.stayIntent.checkIn ?? null, checkOut: state.stayIntent.checkOut ?? null, nights: state.stayIntent.nights ?? null, partySize: state.stayIntent.partySize ?? null, hasSelectedStay: Boolean(state.selectedStayRef), hasPendingAction: Boolean(state.pendingAction) }),
     taskSummary: shortletTaskSummary,
     renderReply: (plan, results, text) => renderShortletReply(plan, results, text, environment.clock()),
     discoverySurface: (artifact, surfaceId) => discoveryArtifactToA2UI({ artifact: artifact as never, surfaceId, demo: environment.config.demo === true }),

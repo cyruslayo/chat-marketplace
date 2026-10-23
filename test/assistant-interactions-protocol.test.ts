@@ -9,6 +9,7 @@ import {
 import { ASSISTANT_TOOL_DEFINITIONS } from "../apps/local-guest/src/assistant/assistant-tools.js";
 import type { AssistantConversationStep } from "../apps/local-guest/src/assistant/assistant-model.js";
 import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import { FallbackModelClient } from "../apps/local-guest/src/assistant/fallback-model-client.js";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 
 test("GeminiInteractionsClient maps request to Interactions API shape without live network", async () => {
@@ -467,16 +468,88 @@ test("AssistantRuntime keeps Gemini tool continuity and replaces legacy final pr
     assert.equal(requests.length, 2);
     const continuation = requests[1]!.input;
     assert.ok(Array.isArray(continuation));
-    assert.equal(continuation[0]?.type, "user_input");
-    assert.equal(continuation[1], thoughtStep);
-    assert.equal(continuation[2], functionCallStep);
-    const result = continuation[3] as Interactions.FunctionResultStep;
+    assert.equal(continuation[0]?.type, "model_output");
+    const summaryStep = continuation[0] as Interactions.ModelOutputStep;
+    const summaryContent = summaryStep.content?.find((item) => item.type === "text");
+    assert.ok(summaryContent?.type === "text");
+    if (summaryContent?.type === "text") assert.match(summaryContent.text, /Canonical task facts/);
+    assert.equal(continuation[1]?.type, "user_input");
+    assert.equal(continuation[2], thoughtStep);
+    assert.equal(continuation[3], functionCallStep);
+    const result = continuation[4] as Interactions.FunctionResultStep;
     assert.equal(result.call_id, functionCallStep.id);
     assert.equal(result.name, functionCallStep.name);
     assert.ok(Array.isArray(result.result));
     assert.equal(result.result.length, 1);
     assert.equal(result.result[0]?.type, "text");
     assert.match(result.result[0]?.type === "text" ? result.result[0].text : "", /"resultCount":1/);
+  } finally {
+    env.close();
+  }
+});
+
+test("AssistantRuntime keeps Gemini signed continuity paired when one call in a batch is rejected", async () => {
+  const thoughtStep: Interactions.ThoughtStep = { type: "thought", signature: "mixed-signed-thought" };
+  const searchStep: Interactions.FunctionCallStep = {
+    type: "function_call", id: "safe-search-call", name: "search_stays",
+    arguments: { city: "Lagos", neighbourhood: "Old Ikoyi", nights: 2, guests: 2 },
+  };
+  const deniedStep = {
+    type: "function_call", id: "denied-call", name: "invented-tool-secret", arguments: { guestId: "private-victim" },
+    payload: "RAW-STEP-SECRET",
+  } as unknown as Interactions.FunctionCallStep;
+  const requests: Interactions.CreateModelInteractionParamsNonStreaming[] = [];
+  const client = new GeminiInteractionsClient({
+    apiKey: "fake-key-offline",
+    customAi: { interactions: { async create(params): Promise<Interactions.Interaction> {
+      requests.push(params);
+      if (requests.length === 1) return { id: "mixed-tools", status: "completed", steps: [thoughtStep, searchStep, deniedStep] } as Interactions.Interaction;
+      return { id: "mixed-reply", status: "completed", steps: [{ type: "model_output", content: [{ type: "text", text: JSON.stringify({ kind: "show_results", references: ["search_stays"] }) }] }] } as Interactions.Interaction;
+    } } },
+  });
+  const env = LocalGuestEnvironment.openNode({ databasePath: `.scratch/eval-test/mixed_context_${Date.now()}.sqlite` });
+  try {
+    const runtime = new AssistantRuntime(env, client, { scopeClassifier: approvedTestScope });
+    const response = await runtime.handleTurn("mixed-context", "Ikoyi for two nights and two guests");
+    assert.equal(response.ok, true);
+    assert.equal(requests.length, 2);
+    const input = requests[1]!.input;
+    assert.ok(Array.isArray(input));
+    assert.equal(input[0]?.type, "model_output");
+    assert.equal(input[1]?.type, "user_input");
+    assert.equal(input[2], thoughtStep);
+    assert.equal(input[3], searchStep);
+    const result = input[4] as Interactions.FunctionResultStep;
+    assert.equal(result.call_id, searchStep.id);
+    assert.equal(result.name, searchStep.name);
+    assert.doesNotMatch(JSON.stringify(input), /invented-tool-secret|private-victim|RAW-STEP-SECRET|denied-call/);
+  } finally {
+    env.close();
+  }
+});
+
+test("FallbackModelClient reprojects sanitized signed continuity after history reconstruction", async () => {
+  const thought: Interactions.ThoughtStep = { type: "thought", signature: "fallback-signed-thought" };
+  const call: Interactions.FunctionCallStep = { type: "function_call", id: "fallback-search", name: "search_stays", arguments: { city: "Lagos", neighbourhood: "Old Ikoyi", nights: 2, guests: 2 } };
+  const requests: Interactions.CreateModelInteractionParamsNonStreaming[] = [];
+  const primary = new GeminiInteractionsClient({ apiKey: "fake-key-offline", customAi: { interactions: { async create(params): Promise<Interactions.Interaction> {
+    requests.push(params);
+    if (requests.length === 1) return { id: "fallback-search-turn", status: "completed", steps: [thought, call] } as Interactions.Interaction;
+    return { id: `fallback-reply-${requests.length}`, status: "completed", steps: [{ type: "model_output", content: [{ type: "text", text: JSON.stringify({ kind: "clarify_stay", references: [] }) }] }] } as Interactions.Interaction;
+  } } } });
+  const secondary = { generate: async () => ({ text: JSON.stringify({ kind: "clarify_stay", references: [] }) }) };
+  const env = LocalGuestEnvironment.openNode({ databasePath: `.scratch/eval-test/fallback_continuity_${Date.now()}.sqlite` });
+  try {
+    const runtime = new AssistantRuntime(env, new FallbackModelClient(primary, secondary), { scopeClassifier: approvedTestScope });
+    await runtime.handleTurn("fallback-context", "Ikoyi for two nights and two guests");
+    await runtime.handleTurn("fallback-context", "Tell me about that stay");
+    const input = requests[2]!.input;
+    assert.ok(Array.isArray(input));
+    assert.ok(input.some((step) => step === thought));
+    assert.ok(input.some((step) => step === call));
+    const result = input.find((step) => step.type === "function_result") as Interactions.FunctionResultStep | undefined;
+    assert.equal(result?.call_id, call.id);
+    assert.equal(result?.name, call.name);
   } finally {
     env.close();
   }

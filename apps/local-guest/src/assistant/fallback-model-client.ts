@@ -11,6 +11,7 @@ import type { AssistantModelClient, AssistantModelRequest, AssistantModelRespons
 export class FallbackModelClient implements AssistantModelClient {
   readonly #primary: AssistantModelClient;
   readonly #secondary: AssistantModelClient;
+  readonly #responseProviders = new WeakMap<object, AssistantModelClient>();
 
   constructor(primary: AssistantModelClient, secondary: AssistantModelClient) {
     this.#primary = primary;
@@ -19,11 +20,24 @@ export class FallbackModelClient implements AssistantModelClient {
 
   async generate(request: AssistantModelRequest): Promise<AssistantModelResponse> {
     try {
-      return await this.#primary.generate(request);
+      const response = await this.#primary.generate(request);
+      this.#responseProviders.set(response, this.#primary);
+      return response;
     } catch (error) {
       if (!isProviderUnavailable(error)) throw error;
-      return this.#secondary.generate(request);
+      const response = await this.#secondary.generate(request);
+      this.#responseProviders.set(response, this.#secondary);
+      return response;
     }
+  }
+
+  projectProviderContinuation(response: AssistantModelResponse, acceptedCalls: readonly import("./assistant-model.js").AssistantToolCall[]): unknown {
+    const selected = this.#responseProviders.get(response);
+    if (selected) return selected.projectProviderContinuation?.(response, acceptedCalls);
+    // After persistence or neutral-history reconstruction, response object identity is gone.
+    // Each adapter must still sanitize its own closed continuity format without trusting prose.
+    return this.#primary.projectProviderContinuation?.(response, acceptedCalls)
+      ?? this.#secondary.projectProviderContinuation?.(response, acceptedCalls);
   }
 }
 

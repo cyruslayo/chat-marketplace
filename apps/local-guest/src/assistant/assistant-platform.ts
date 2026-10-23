@@ -98,6 +98,10 @@ export interface AssistantDomainPack {
   toolsForState(taskState: AssistantTaskState): readonly AssistantToolDefinition[];
   validateToolCall(name: string, args: Record<string, unknown>, taskState: AssistantTaskState): AssistantToolPreconditionFailure | undefined;
   executeTool(name: string, args: Record<string, unknown>, context: AssistantToolContext): AssistantToolExecutionResult;
+  /** Pack-owned minimal facts for model history. Raw execution results remain local to the platform. */
+  projectToolResult?(name: string, result: Record<string, unknown>, limits: { readonly maxItems: number }): Record<string, unknown>;
+  /** Canonical bounded facts used when older operation pairs leave retained history. */
+  projectStateSummary?(taskState: AssistantTaskState, limits: { readonly maxItems: number }): Record<string, unknown>;
   /** Where a task in this domain is right now, for the shell task rail. */
   taskSummary(taskState: AssistantTaskState): AssistantTaskSummary;
   /** Projections the runtime renders for this pack's authoritative results. */

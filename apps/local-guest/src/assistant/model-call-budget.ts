@@ -83,4 +83,8 @@ export class BudgetedModelClient implements AssistantModelClient {
     this.#budget.record();
     return this.#inner.generate(request);
   }
+
+  projectProviderContinuation(response: AssistantModelResponse, acceptedCalls: readonly import("./assistant-model.js").AssistantToolCall[]): unknown {
+    return this.#inner.projectProviderContinuation?.(response, acceptedCalls);
+  }
 }

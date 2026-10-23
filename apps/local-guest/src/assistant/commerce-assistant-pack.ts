@@ -175,6 +175,37 @@ export function createCommerceAssistantPack(input: {
       }
       throw new Error("This Commerce tool is not available.");
     },
+    projectToolResult: (_name, result, contextLimits) => {
+      const numericFacts = new Set(["priceKobo", "feeKobo", "quantity", "stock", "subtotalKobo", "shippingFeeKobo", "totalKobo"]);
+      const boolFacts = new Set(["paymentAvailable", "available"]);
+      const refPatterns: Readonly<Record<string, RegExp>> = {
+        offerId: /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/,
+        storeId: /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/,
+        variantId: /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/,
+        deliveryZoneId: /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/,
+        publicCode: /^[A-Z0-9-]{4,32}$/,
+      };
+      const statuses = new Set(["proposed", "awaiting_explicit_confirmation", "payment_started", "dispatching", "confirmed", "fulfilled", "cancelled", "failed", "pending", "paid", "Pending Verification", "Processing", "Shipped", "Fulfilled", "Cancelled"]);
+      const pick = (value: unknown): unknown => {
+        if (Array.isArray(value)) return value.slice(0, Math.min(projectionLimits.maxResults, contextLimits.maxItems)).map(pick).filter((entry) => entry !== undefined);
+        if (typeof value !== "object" || value === null) return undefined;
+        const output: Record<string, unknown> = {};
+        for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+          if (numericFacts.has(key) && typeof child === "number" && Number.isFinite(child)) output[key] = child;
+          else if (boolFacts.has(key) && typeof child === "boolean") output[key] = child;
+          else if (refPatterns[key] && typeof child === "string" && refPatterns[key]!.test(child)) output[key] = child;
+          else if (key === "status" && typeof child === "string" && statuses.has(child)) output[key] = child;
+          else if (key === "updatedAt" && typeof child === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(child) && !Number.isNaN(Date.parse(child))) output[key] = child;
+          else if (Array.isArray(child) || (typeof child === "object" && child !== null)) {
+            const nested = pick(child);
+            if (nested !== undefined) output[key] = nested;
+          }
+        }
+        return output;
+      };
+      return pick(result) as Record<string, unknown>;
+    },
+    projectStateSummary: () => ({ hasCommerceTask: true }),
     taskSummary: () => ({ label: "Shop", status: "Browse" }),
     renderReply: (plan: AssistantReplyPlan | undefined, results: readonly AssistantToolResult[]) => {
       const successful = results.filter((result) => !result.isError);

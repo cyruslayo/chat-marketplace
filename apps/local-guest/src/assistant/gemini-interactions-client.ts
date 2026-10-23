@@ -116,6 +116,28 @@ export class GeminiInteractionsClient implements AssistantModelClient {
     return this.#parseInteractionResponse(interaction);
   }
 
+  projectProviderContinuation(response: AssistantModelResponse, acceptedCalls: readonly AssistantToolCall[]): unknown {
+    if (!Array.isArray(response.rawStep)) return undefined;
+    const safe: Interactions.Step[] = [];
+    for (const item of response.rawStep) {
+      if (typeof item !== "object" || item === null || !("type" in item)) continue;
+      const step = item as Interactions.Step;
+      if (step.type === "thought" && "signature" in step && typeof step.signature === "string") {
+        const keys = Object.keys(step);
+        safe.push(keys.length === 2 && keys.includes("type") && keys.includes("signature")
+          ? step : { type: "thought", signature: step.signature });
+      } else if (step.type === "function_call") {
+        const call = acceptedCalls.find((candidate) => candidate.id === step.id && candidate.name === step.name);
+        if (!call) continue;
+        const sameArgs = JSON.stringify(step.arguments) === JSON.stringify(call.args);
+        const keys = Object.keys(step);
+        safe.push(sameArgs && keys.length === 4 && ["type", "id", "name", "arguments"].every((key) => keys.includes(key))
+          ? step : { type: "function_call", id: call.id, name: call.name, arguments: call.args });
+      }
+    }
+    return safe.length ? safe : undefined;
+  }
+
   async #createWithBoundedConnectionRetry(
     params: Interactions.CreateModelInteractionParamsNonStreaming,
     options: InteractionRequestOptions,

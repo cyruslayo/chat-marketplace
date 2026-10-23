@@ -46,6 +46,7 @@ import {
   ASSISTANT_CONFIRM_ACTION_EVENT,
   ASSISTANT_CANCEL_ACTION_EVENT,
 } from "./pending-action-a2ui.js";
+import { redactSensitiveData } from "../../../../packages/platform-core/src/redaction.js";
 
 export interface AssistantTurnOutput {
   readonly ok: boolean;
@@ -118,6 +119,11 @@ export interface AssistantRuntimeOptions {
   readonly scopeClassifier?: ScopeClassifier;
   readonly scopeTimeoutMs?: number;
   readonly maxInputCharacters?: number;
+  /** Engineering bounds on retained model context; packs supply the canonical state summary. */
+  readonly maxHistorySteps?: number;
+  readonly maxHistoryCharacters?: number;
+  /** Maximum projected result/reference items retained in model context. */
+  readonly maxContextItems?: number;
 }
 
 interface AssistantEventContext {
@@ -141,6 +147,12 @@ const PAYMENT_STAGE = "payment";
 const BOOKING_STAGE = "booking";
 export const DEFAULT_ASSISTANT_REPLY_MAX_OUTPUT_TOKENS = 128;
 export const DEFAULT_ASSISTANT_PLANNING_MAX_OUTPUT_TOKENS = 1024;
+export const DEFAULT_ASSISTANT_HISTORY_MAX_STEPS = 32;
+export const DEFAULT_ASSISTANT_HISTORY_MAX_CHARACTERS = 24_000;
+export const DEFAULT_ASSISTANT_CONTEXT_MAX_ITEMS = 8;
+const MAX_ASSISTANT_HISTORY_STEPS = 512;
+const MAX_ASSISTANT_HISTORY_CHARACTERS = 262_144;
+const MAX_ASSISTANT_CONTEXT_ITEMS = 128;
 const MAX_ASSISTANT_REPLY_OUTPUT_TOKENS = 4096;
 const REPLY_PLAN_SCHEMA = {
   type: "object",
@@ -174,6 +186,9 @@ export class AssistantRuntime {
   readonly #scopeClassifier: ScopeClassifier;
   readonly #scopeTimeoutMs: number;
   readonly #maxInputCharacters: number;
+  readonly #maxHistorySteps: number;
+  readonly #maxHistoryCharacters: number;
+  readonly #maxContextItems: number;
   readonly #threads = new Map<string, AssistantThreadState>();
   readonly #packs = new AssistantPackRegistry();
 
@@ -191,7 +206,13 @@ export class AssistantRuntime {
     this.#maxPlanningOutputTokens = planningLimit;
     this.#scopeTimeoutMs = options.scopeTimeoutMs ?? 5000;
     this.#maxInputCharacters = options.maxInputCharacters ?? 8192;
-    if (!Number.isSafeInteger(this.#scopeTimeoutMs) || this.#scopeTimeoutMs < 1 || !Number.isSafeInteger(this.#maxInputCharacters) || this.#maxInputCharacters < 1) throw new Error("Scope engineering limits must be positive integers");
+    this.#maxHistorySteps = options.maxHistorySteps ?? DEFAULT_ASSISTANT_HISTORY_MAX_STEPS;
+    this.#maxHistoryCharacters = options.maxHistoryCharacters ?? DEFAULT_ASSISTANT_HISTORY_MAX_CHARACTERS;
+    this.#maxContextItems = options.maxContextItems ?? DEFAULT_ASSISTANT_CONTEXT_MAX_ITEMS;
+    if (![this.#scopeTimeoutMs, this.#maxInputCharacters].every((value) => Number.isSafeInteger(value) && value > 0)
+      || !Number.isSafeInteger(this.#maxHistorySteps) || this.#maxHistorySteps < 2 || this.#maxHistorySteps > MAX_ASSISTANT_HISTORY_STEPS
+      || !Number.isSafeInteger(this.#maxHistoryCharacters) || this.#maxHistoryCharacters < 256 || this.#maxHistoryCharacters > MAX_ASSISTANT_HISTORY_CHARACTERS) throw new Error("Scope and history engineering limits are outside configured bounds");
+    if (!Number.isSafeInteger(this.#maxContextItems) || this.#maxContextItems < 1 || this.#maxContextItems > MAX_ASSISTANT_CONTEXT_ITEMS) throw new Error("maxContextItems is outside configured bounds");
     this.#scopeClassifier = options.scopeClassifier ?? new ModelScopeClassifier(modelClient, this.#scopeTimeoutMs);
     this.#packs.register(createShortletAssistantPack(environment));
     for (const pack of options.additionalPacks ?? []) this.#packs.register(pack);
@@ -199,6 +220,70 @@ export class AssistantRuntime {
 
   get #activePack(): AssistantDomainPack {
     return this.#packs.active;
+  }
+
+  #projectionForTool(name: string, result: Record<string, unknown>): Record<string, unknown> {
+    for (const id of this.#packs.ids()) {
+      const pack = this.#packs.packFor(id);
+      if (pack?.toolNames.includes(name)) return pack.projectToolResult?.(name, result, { maxItems: this.#maxContextItems }) ?? {};
+    }
+    return {};
+  }
+
+  #sanitizeHistory(history: readonly AssistantConversationStep[]): AssistantConversationStep[] {
+    const projected = history.map((step): AssistantConversationStep => {
+      if (step.role === "user") return { role: "user", text: redactSensitiveData(step.text) as string };
+      if (step.role === "assistant") return { role: "assistant", text: "Server reply delivered." };
+      if (step.role === "tool_calls") {
+        const calls = step.calls.map((call) => ({ id: call.id, name: safeAssistantToolName(call.name, this.#packs), args: redactSensitiveData(call.args) as Record<string, unknown> }));
+        const rawStep = step.rawStep === undefined ? undefined : this.#modelClient.projectProviderContinuation?.({ rawStep: step.rawStep }, calls);
+        return { role: "tool_calls", calls, ...(rawStep === undefined ? {} : { rawStep }) };
+      }
+      return { role: "tool_results", results: step.results.map((result) => ({ callId: result.callId, name: safeAssistantToolName(result.name, this.#packs), result: this.#projectionForTool(result.name, result.result), ...(result.isError ? { isError: true } : {}) })) };
+    });
+    const safe: AssistantConversationStep[] = [];
+    for (let index = 0; index < projected.length; index++) {
+      const step = projected[index]!;
+      if (step.role === "tool_results") continue;
+      if (step.role !== "tool_calls") { safe.push(step); continue; }
+      const resultStep = projected[index + 1];
+      if (resultStep?.role !== "tool_results") continue;
+      const results = resultStep.results.filter((result) => step.calls.some((call) => call.id === result.callId && call.name === result.name));
+      const calls = step.calls.filter((call) => results.some((result) => result.callId === call.id && result.name === call.name));
+      if (calls.length === 0 || results.length === 0) continue;
+      const rawStep = step.rawStep === undefined ? undefined : this.#modelClient.projectProviderContinuation?.({ rawStep: step.rawStep }, calls);
+      safe.push({ role: "tool_calls", calls, ...(rawStep === undefined ? {} : { rawStep }) }, { role: "tool_results", results });
+      index++;
+    }
+    return safe;
+  }
+
+  #commitHistory(thread: AssistantThreadState, history: readonly AssistantConversationStep[], pack: AssistantDomainPack, state: AssistantTaskState): void {
+    let retained: readonly AssistantConversationStep[];
+    try {
+      retained = this.#boundedHistory(this.#sanitizeHistory(history), pack, state);
+    } catch {
+      // Preserve committed domain state and a minimal server-owned summary when even bounded context cannot fit.
+      retained = [{ role: "assistant", text: `Canonical task facts: ${JSON.stringify({ domain: pack.id })}` }];
+    }
+    thread.conversationHistory.length = 0;
+    thread.conversationHistory.push(...retained);
+  }
+
+  #boundedHistory(history: readonly AssistantConversationStep[], pack: AssistantDomainPack, state: AssistantTaskState): readonly AssistantConversationStep[] {
+    let retained = history.filter((step) => step.role !== "assistant");
+    const facts = pack.projectStateSummary?.(state, { maxItems: this.#maxContextItems }) ?? { domain: pack.id };
+    const summary: AssistantConversationStep = { role: "assistant", text: `Canonical task facts: ${JSON.stringify(redactSensitiveData(facts))}` };
+    const currentUser = [...retained].reverse().find((step) => step.role === "user");
+    const exceeds = () => retained.length + 1 > this.#maxHistorySteps || JSON.stringify([summary, ...retained]).length > this.#maxHistoryCharacters;
+    while (exceeds()) {
+      if (!retained.length || retained[0] === currentUser) throw new Error("The current input and canonical task facts exceed configured history bounds");
+      const removed = retained.shift();
+      if (removed?.role === "tool_calls" && retained[0]?.role === "tool_results") retained.shift();
+      else if (retained[0]?.role === "tool_results") retained.shift();
+      if (removed?.role === "user" && removed === currentUser) throw new Error("The current input and canonical task facts exceed configured history bounds");
+    }
+    return [summary, ...retained];
   }
 
   #packForThread(threadId: string): AssistantDomainPack {
@@ -350,7 +435,7 @@ export class AssistantRuntime {
     let candidateTaskState = cloneTaskState(thread.taskState);
     let candidateActiveTaskId = thread.activeTaskId;
     const candidateTasks: AssistantTask[] = thread.tasks.map((task) => ({ ...task }));
-    const candidateHistory: AssistantConversationStep[] = [...thread.conversationHistory];
+    const candidateHistory = this.#sanitizeHistory(thread.conversationHistory);
     const candidateSurfaces: AssistantTurnSurface[] = [];
     let candidateActiveSurfaces = new Map<string, string>(thread.activeSurfaces);
     let candidateSuperseded = new Set<string>(thread.supersededSurfaces);
@@ -398,8 +483,9 @@ export class AssistantRuntime {
 
         // Action completed: commit state transaction
         thread.taskState = candidateTaskState;
-        thread.conversationHistory.push({ role: "user", text });
-        thread.conversationHistory.push({ role: "assistant", text: execution.message });
+        thread.conversationHistory.push({ role: "user", text: redactSensitiveData(text) as string });
+        thread.conversationHistory.push({ role: "assistant", text: "Server reply delivered." });
+        this.#commitHistory(thread, thread.conversationHistory, candidatePack(), candidateTaskState);
         thread.activeSurfaces = candidateActiveSurfaces;
         thread.supersededSurfaces = candidateSuperseded;
         thread.lastSurfaces = execution.surfaces.length > 0 ? execution.surfaces : candidateLastSurfaces;
@@ -420,8 +506,9 @@ export class AssistantRuntime {
 
         // Commit cancellation
         thread.taskState = candidateTaskState;
-        thread.conversationHistory.push({ role: "user", text });
-        thread.conversationHistory.push({ role: "assistant", text: "Action cancelled. Let me know how else I can help." });
+        thread.conversationHistory.push({ role: "user", text: redactSensitiveData(text) as string });
+        thread.conversationHistory.push({ role: "assistant", text: "Server reply delivered." });
+        this.#commitHistory(thread, thread.conversationHistory, candidatePack(), candidateTaskState);
         thread.activeSurfaces = candidateActiveSurfaces;
         thread.supersededSurfaces = candidateSuperseded;
         thread.lastSurfaces = candidateLastSurfaces;
@@ -446,7 +533,8 @@ export class AssistantRuntime {
     // 3. User message turn
     const originalUserText = text;
     const packForScope = candidatePack();
-    const assessment = text.length > this.#maxInputCharacters ? undefined : await assessScopeSafely(this.#scopeClassifier, text, {
+    const safeUserText = redactSensitiveData(text) as string;
+    const assessment = text.length > this.#maxInputCharacters ? undefined : await assessScopeSafely(this.#scopeClassifier, safeUserText, {
       domain: packForScope.id, description: packForScope.scopeDescription ?? packForScope.label,
       hasShortlist: candidateTaskState.shortlist.length > 0, hasSelectedStay: Boolean(candidateTaskState.selectedStayRef), hasOffer: Boolean(candidateTaskState.currentOfferId),
     }, this.#scopeTimeoutMs);
@@ -465,19 +553,20 @@ export class AssistantRuntime {
     validatedTurnIntents = assessment.intents;
     validatedTurnToolNames = toolNamesForValidatedIntents(packForScope, assessment.intents);
     taskSwitchPermitted = assessment.intents.includes("task_switch");
-    candidateHistory.push({ role: "user", text });
+    candidateHistory.push({ role: "user", text: redactSensitiveData(discardUserInput ? text : originalUserText) as string });
 
     const userTextHistory: string[] = candidateHistory
       .filter((s): s is Extract<AssistantConversationStep, { role: "user" }> => s.role === "user")
       .map((s) => s.text);
     // ADR 0106: provenance stays server-side; unsupported text never enters model history.
-    if (discardUserInput) userTextHistory[userTextHistory.length - 1] = originalUserText;
+    if (discardUserInput) userTextHistory[userTextHistory.length - 1] = redactSensitiveData(text) as string;
 
     let round = 0;
     let finalAssistantReply: string | undefined;
     let activeStage: AssistantDiagnosticStage = "provider_request";
     let activeToolName: string | undefined;
     let hasSuccessfulApplicationOperation = false;
+    let latestRawResults: AssistantToolResult[] = [];
 
     try {
       while (round < MAX_ASSISTANT_TOOL_ROUNDS) {
@@ -488,7 +577,7 @@ export class AssistantRuntime {
         const modelResponse = await this.#modelClient.generate({
           systemInstruction: composeSystemInstruction(candidatePack()),
           tools: taskTools(),
-          history: candidateHistory,
+          history: this.#boundedHistory(candidateHistory, candidatePack(), candidateTaskState),
           timeoutMs: 20_000,
           structuredOutput: { name: "assistant_reply_plan", schema: REPLY_PLAN_SCHEMA, strict: true },
           maxOutputTokens: this.#maxPlanningOutputTokens,
@@ -503,27 +592,21 @@ export class AssistantRuntime {
         // If model produced no tool calls, it is returning a natural language reply
         if (!modelResponse.toolCalls || modelResponse.toolCalls.length === 0) {
           // ADR 0106: accept a validated typed plan; discard legacy prose and opaque steps.
-          const lastStep = candidateHistory.at(-1);
-          const latestResults = lastStep?.role === "tool_results" ? lastStep.results : [];
+          const latestResults = latestRawResults;
           const plan = parseReplyPlan(modelResponse, latestResults);
           finalAssistantReply = candidatePack().renderReply?.(plan, latestResults, userTextHistory.at(-1) ?? "")
             ?? "I can help with your current request. Please review the information shown and tell me what you need next.";
-          candidateHistory.push({ role: "assistant", text: finalAssistantReply });
+          candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
           break;
         }
 
-        // Record tool calls into history
-        candidateHistory.push({
-          role: "tool_calls",
-          calls: modelResponse.toolCalls,
-          ...(modelResponse.text === undefined && modelResponse.rawStep !== undefined ? { rawStep: modelResponse.rawStep } : {}),
-        });
-
         const toolResults: AssistantToolResult[] = [];
+        const acceptedCalls: AssistantToolCall[] = [];
+        const roundRawResults: AssistantToolResult[] = [];
 
         for (const call of modelResponse.toolCalls) {
           activeStage = "tool_execution";
-          activeToolName = call.name;
+          activeToolName = safeAssistantToolName(call.name, this.#packs);
           const offeredTool = taskTools().find((tool) => tool.name === call.name);
           const activePack = candidatePack();
           const isTaskTool = this.#isPlatformTaskTool(call.name);
@@ -549,18 +632,19 @@ export class AssistantRuntime {
             this.#diagnose({
               stage: "tool_execution",
               round,
-              toolName: call.name,
+              toolName: safeAssistantToolName(call.name, this.#packs),
               succeeded: false,
               failureClass: invalidCall.code === "invalid_tool_for_state" ? "INVALID_TOOL_FOR_STATE" : "MODEL_SELECTION_FAILURE",
             });
             toolResults.push({
               callId: call.id,
-              name: call.name,
+              name: safeAssistantToolName(call.name, this.#packs),
               result: { error: invalidCall.code, message: invalidCall.message },
               isError: true,
             });
             continue;
           }
+          acceptedCalls.push(call);
           if (this.#isPlatformTaskTool(call.name)) {
             const applied = this.#applyTaskTool(
               call.name,
@@ -575,7 +659,12 @@ export class AssistantRuntime {
             candidateActiveSurfaces = applied.workspace.activeSurfaces;
             candidateSuperseded = applied.workspace.supersededSurfaces;
             candidateLastSurfaces = applied.workspace.lastSurfaces;
-            toolResults.push({ callId: call.id, name: call.name, result: applied.result });
+            const safeTaskResult = typeof applied.result.started === "string"
+              ? { started: applied.result.started }
+              : typeof applied.result.switched === "string"
+                ? { switched: true, domain: applied.result.domain }
+                : { error: "TASK_UNAVAILABLE" };
+            toolResults.push({ callId: call.id, name: call.name, result: safeTaskResult });
             continue;
           }
           const toolContext: AssistantToolContext = {
@@ -595,14 +684,15 @@ export class AssistantRuntime {
           this.#diagnose({
             stage: activeStage,
             round,
-            toolName: call.name,
+            toolName: safeAssistantToolName(call.name, this.#packs),
             succeeded: true,
             ...(resultCount !== undefined ? { resultCount } : {}),
           });
+          roundRawResults.push({ callId: call.id, name: call.name, result: execution.result });
           toolResults.push({
             callId: call.id,
             name: call.name,
-            result: execution.result,
+            result: candidatePack().projectToolResult?.(call.name, execution.result, { maxItems: this.#maxContextItems }) ?? {},
           });
 
           // Application projections are generated server-side from authoritative operation results.
@@ -668,9 +758,18 @@ export class AssistantRuntime {
           }
         }
 
+        latestRawResults = roundRawResults;
+
+        if (acceptedCalls.length === 0 && candidateHistory.at(-1)?.role === "user") candidateHistory.pop();
+        candidateHistory.push({
+          role: "tool_calls",
+          calls: (acceptedCalls.length > 0 ? acceptedCalls : modelResponse.toolCalls).map((call) => ({ id: call.id, name: safeAssistantToolName(call.name, this.#packs), args: acceptedCalls.some((accepted) => accepted.id === call.id) ? call.args : {} })),
+          ...(modelResponse.rawStep !== undefined && this.#modelClient.projectProviderContinuation
+            ? { rawStep: this.#modelClient.projectProviderContinuation(modelResponse, acceptedCalls) } : {}),
+        });
         candidateHistory.push({
           role: "tool_results",
-          results: toolResults,
+          results: acceptedCalls.length > 0 ? toolResults.filter((result) => acceptedCalls.some((call) => call.id === result.callId)) : toolResults,
         });
         activeStage = "function_result_round_trip";
         activeToolName = undefined;
@@ -683,7 +782,7 @@ export class AssistantRuntime {
         const finalModelResponse = await this.#modelClient.generate({
           systemInstruction: composeSystemInstruction(candidatePack()),
           tools: [],
-          history: candidateHistory,
+          history: this.#boundedHistory(candidateHistory, candidatePack(), candidateTaskState),
           structuredOutput: { name: "assistant_reply_plan", schema: REPLY_PLAN_SCHEMA, strict: true },
           maxOutputTokens: this.#maxReplyOutputTokens,
         });
@@ -692,19 +791,18 @@ export class AssistantRuntime {
         activeStage = "provider_response";
         this.#diagnose({ stage: activeStage, round, succeeded: true });
         const lastStep = candidateHistory.at(-1);
-        const latestResults = lastStep?.role === "tool_results" ? lastStep.results : [];
+        const latestResults = latestRawResults;
         const plan = parseReplyPlan(finalModelResponse, latestResults);
         finalAssistantReply = candidatePack().renderReply?.(plan, latestResults, userTextHistory.at(-1) ?? "")
           ?? "I can help with your current request. Please review the information shown and tell me what you need next.";
-        candidateHistory.push({ role: "assistant", text: finalAssistantReply });
+        candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
       }
 
       // 4. Commit Transaction (Item 24)
       thread.taskState = candidateTaskState;
       thread.tasks = candidateTasks;
       thread.activeTaskId = candidateActiveTaskId;
-      thread.conversationHistory.length = 0;
-      thread.conversationHistory.push(...candidateHistory);
+      this.#commitHistory(thread, candidateHistory, candidatePack(), candidateTaskState);
       thread.activeSurfaces = candidateActiveSurfaces;
       thread.supersededSurfaces = candidateSuperseded;
       thread.lastSurfaces = candidateSurfaces.length > 0 ? candidateSurfaces : candidateLastSurfaces;
@@ -723,12 +821,11 @@ export class AssistantRuntime {
       this.#diagnose(createFailureDiagnostic(activeStage, round, activeToolName, error));
       if (hasSuccessfulApplicationOperation && candidateSurfaces.length > 0) {
         const message = fallbackForProjectedOperation(candidateSurfaces[0]?.surfaceId ?? "");
-        candidateHistory.push({ role: "assistant", text: message });
+        candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
         thread.taskState = candidateTaskState;
         thread.tasks = candidateTasks;
         thread.activeTaskId = candidateActiveTaskId;
-        thread.conversationHistory.length = 0;
-        thread.conversationHistory.push(...candidateHistory);
+        this.#commitHistory(thread, candidateHistory, candidatePack(), candidateTaskState);
         thread.activeSurfaces = candidateActiveSurfaces;
         thread.supersededSurfaces = candidateSuperseded;
         thread.lastSurfaces = candidateSurfaces;
@@ -1264,6 +1361,10 @@ function getSafeResultCount(result: unknown): number | undefined {
   return typeof count === "number" && Number.isSafeInteger(count) && count >= 0 ? count : undefined;
 }
 
+function safeAssistantToolName(name: string, packs?: AssistantPackRegistry): string {
+  return PLATFORM_TASK_TOOL_NAMES.includes(name) || packs?.ids().some((id) => packs.packFor(id)?.toolNames.includes(name)) === true ? name : "unknown_tool";
+}
+
 function createFailureDiagnostic(
   stage: AssistantDiagnosticStage,
   round: number,
@@ -1279,7 +1380,7 @@ function createFailureDiagnostic(
     && statusCandidate <= 599
     ? statusCandidate
     : undefined;
-  const safeCode = typeof codeCandidate === "string" && /^[A-Za-z0-9_.-]{1,64}$/.test(codeCandidate)
+  const safeCode = typeof codeCandidate === "string" && new Set(["RATE_LIMITED"]).has(codeCandidate)
     ? codeCandidate
     : undefined;
   return {
@@ -1287,7 +1388,7 @@ function createFailureDiagnostic(
     round,
     succeeded: false,
     ...(toolName ? { toolName } : {}),
-    errorClass: error instanceof Error ? error.constructor.name : typeof error,
+    errorClass: error instanceof Error && ["Error", "TypeError", "RangeError", "SyntaxError", "APIError", "APIConnectionError", "RateLimitError"].includes(error.constructor.name) ? error.constructor.name : "UNKNOWN_ERROR",
     failureClass: classifyFailure(stage, error),
     ...(safeStatus !== undefined ? { providerStatusCode: safeStatus } : {}),
     ...(safeCode !== undefined ? { providerErrorCode: safeCode } : {}),
