@@ -32,6 +32,9 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      # apps/cloudflare/public is git-ignored build output (landing assets, bundles, fonts). A fresh checkout has none of it,
+      # so the Workers and non-browser suites need this build first (docs/testing/ci.md).
+      - run: npm run build
       - run: npm run check
       - run: npm run test:workers
       - run: npm run test:non-browser
