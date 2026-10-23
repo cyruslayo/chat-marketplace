@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { approvedTestScope } from "./helpers/assistant-scope.js";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { createShortletAssistantPack } from "../apps/local-guest/src/assistant/shortlet-assistant-pack.js";
 import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
@@ -44,7 +45,7 @@ test("Planning output has a separate configurable bound from the final reply", a
   t.after(() => env.close());
   const requests: AssistantModelRequest[] = [];
   const model = { generate: async (request: AssistantModelRequest) => { requests.push(request); return { text: "{}" }; } };
-  const runtime = new AssistantRuntime(env, model, { maxPlanningOutputTokens: 777, maxReplyOutputTokens: 77 });
+  const runtime = new AssistantRuntime(env, model, { scopeClassifier: approvedTestScope, maxPlanningOutputTokens: 777, maxReplyOutputTokens: 77 });
   await runtime.handleTurn("bounds", "Hello");
   assert.equal(requests[0]?.maxOutputTokens, 777);
   assert.throws(() => new AssistantRuntime(env, model, { maxPlanningOutputTokens: 0 }), /maxPlanningOutputTokens/);

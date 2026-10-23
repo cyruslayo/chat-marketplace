@@ -932,6 +932,8 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
     label: "Stays",
     starterDescription: "Find an inspected apartment in Lagos or Abuja and book it.",
     promptSection: SHORTLET_PROMPT_SECTION,
+    scopeDescription: "Accommodation discovery, comparison, pricing, request drafts, booking status, payment guidance, account guidance, and stay/access support in Lagos and Abuja.",
+    scopeLocations: [...new Set(environment.unitRepository.findAll().map((unit) => unit.location.neighbourhood))],
     intentKeywords: ["stay", "stays", "apartment", "apartments", "book", "booking", "ikoyi", "lekki", "lagos", "abuja", "check-in", "checkin"],
     toolNames: ASSISTANT_TOOL_DEFINITIONS.map((tool) => tool.name),
     toolsForState: (taskState) => assistantToolsForState(taskState, environment.extendedStayPolicy),

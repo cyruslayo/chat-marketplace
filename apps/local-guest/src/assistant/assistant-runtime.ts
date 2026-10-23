@@ -23,6 +23,8 @@ import {
   type AssistantReplyPlanKind,
 } from "./assistant-platform.js";
 import { createShortletAssistantPack } from "./shortlet-assistant-pack.js";
+import { ModelScopeClassifier, assessScopeSafely, scopedMixedInput, type ScopeClassifier, type ScopeAssessment } from "./scope-classifier.js";
+import { ASSISTANT_CONTROL_COPY } from "./control-copy.js";
 import { isProviderUnavailable } from "./fallback-model-client.js";
 import {
   cloneTaskState,
@@ -51,6 +53,7 @@ export interface AssistantTurnOutput {
   readonly tasks?: readonly AssistantTaskRailEntry[];
   readonly modelHandled?: boolean;
   readonly providerUnavailable?: boolean;
+  readonly discardUserInput?: boolean;
 }
 
 /** A task's entry in the shell rail, derived from the active pack's `taskSummary`. */
@@ -109,6 +112,9 @@ export interface AssistantRuntimeOptions {
   /** Maximum tokens for a final reply plan; engineering bound configured by the host. */
   readonly maxReplyOutputTokens?: number;
   readonly maxPlanningOutputTokens?: number;
+  readonly scopeClassifier?: ScopeClassifier;
+  readonly scopeTimeoutMs?: number;
+  readonly maxInputCharacters?: number;
 }
 
 interface AssistantEventContext {
@@ -162,6 +168,9 @@ export class AssistantRuntime {
   readonly #onDiagnostic?: (event: AssistantDiagnosticEvent) => void;
   readonly #maxReplyOutputTokens: number;
   readonly #maxPlanningOutputTokens: number;
+  readonly #scopeClassifier: ScopeClassifier;
+  readonly #scopeTimeoutMs: number;
+  readonly #maxInputCharacters: number;
   readonly #threads = new Map<string, AssistantThreadState>();
   readonly #packs = new AssistantPackRegistry();
 
@@ -177,6 +186,10 @@ export class AssistantRuntime {
     const planningLimit = options.maxPlanningOutputTokens ?? DEFAULT_ASSISTANT_PLANNING_MAX_OUTPUT_TOKENS;
     if (!Number.isSafeInteger(planningLimit) || planningLimit < 1 || planningLimit > MAX_ASSISTANT_REPLY_OUTPUT_TOKENS) throw new Error("maxPlanningOutputTokens is invalid");
     this.#maxPlanningOutputTokens = planningLimit;
+    this.#scopeTimeoutMs = options.scopeTimeoutMs ?? 5000;
+    this.#maxInputCharacters = options.maxInputCharacters ?? 8192;
+    if (!Number.isSafeInteger(this.#scopeTimeoutMs) || this.#scopeTimeoutMs < 1 || !Number.isSafeInteger(this.#maxInputCharacters) || this.#maxInputCharacters < 1) throw new Error("Scope engineering limits must be positive integers");
+    this.#scopeClassifier = options.scopeClassifier ?? new ModelScopeClassifier(modelClient, this.#scopeTimeoutMs);
     this.#packs.register(createShortletAssistantPack(environment));
     for (const pack of options.additionalPacks ?? []) this.#packs.register(pack);
   }
@@ -418,11 +431,30 @@ export class AssistantRuntime {
     }
 
     // 3. User message turn
+    const originalUserText = text;
+    const packForScope = candidatePack();
+    const assessment = text.length > this.#maxInputCharacters ? undefined : await assessScopeSafely(this.#scopeClassifier, text, {
+      domain: packForScope.id, description: packForScope.scopeDescription ?? packForScope.label,
+      hasShortlist: candidateTaskState.shortlist.length > 0, hasSelectedStay: Boolean(candidateTaskState.selectedStayRef), hasOffer: Boolean(candidateTaskState.currentOfferId),
+    }, this.#scopeTimeoutMs);
+    if (!assessment || assessment.scope === "unclear" || assessment.scope === "out_of_scope" || assessment.risk === "policy_override" || assessment.risk === "unauthorized_data" || assessment.risk === "unknown") {
+      return { ok: true, messages: [assessment?.scope === "out_of_scope" ? ASSISTANT_CONTROL_COPY.redirect : ASSISTANT_CONTROL_COPY.unavailable],
+        surfaces: [], modelHandled: false, discardUserInput: true, tasks: this.getTaskRail(threadId) };
+    }
+    const discardUserInput = assessment.scope === "mixed";
+    const validMixedLocation = assessment.slots.neighbourhood === null || packForScope.scopeLocations?.includes(assessment.slots.neighbourhood) === true;
+    if (discardUserInput && (!validMixedLocation || [assessment.slots.checkIn, assessment.slots.checkOut].some((date) => date !== null && !originalUserText.includes(date)))) {
+      return { ok: true, messages: [ASSISTANT_CONTROL_COPY.unavailable], surfaces: [], modelHandled: false,
+        discardUserInput: true, tasks: this.getTaskRail(threadId) };
+    }
+    if (discardUserInput) text = scopedMixedInput(assessment);
     candidateHistory.push({ role: "user", text });
 
     const userTextHistory: string[] = candidateHistory
       .filter((s): s is Extract<AssistantConversationStep, { role: "user" }> => s.role === "user")
       .map((s) => s.text);
+    // ADR 0106: provenance stays server-side; unsupported text never enters model history.
+    if (discardUserInput) userTextHistory[userTextHistory.length - 1] = originalUserText;
 
     let round = 0;
     let finalAssistantReply: string | undefined;
@@ -652,6 +684,7 @@ export class AssistantRuntime {
         surfaces: candidateSurfaces,
         tasks: this.getTaskRail(threadId),
         modelHandled: true,
+        discardUserInput,
       };
     } catch (error) {
       this.#diagnose(createFailureDiagnostic(activeStage, round, activeToolName, error));
@@ -668,9 +701,13 @@ export class AssistantRuntime {
         thread.lastSurfaces = candidateSurfaces;
         thread.discoveryArtifactId = candidateDiscoveryArtifactId;
         this.#syncActiveTask(thread);
-        return { ok: true, messages: [message], surfaces: candidateSurfaces, tasks: this.getTaskRail(threadId), modelHandled: true };
+        return { ok: true, messages: [message], surfaces: candidateSurfaces, tasks: this.getTaskRail(threadId), modelHandled: true, discardUserInput };
       }
       // Rollback: thread is not mutated on error
+      if (discardUserInput) {
+        return { ok: true, messages: [ASSISTANT_CONTROL_COPY.unavailable], surfaces: [],
+          modelHandled: false, discardUserInput: true, tasks: this.getTaskRail(threadId) };
+      }
       return {
         ok: false,
         code: "CONCIERGE_UNAVAILABLE",

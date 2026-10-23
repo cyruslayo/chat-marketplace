@@ -354,6 +354,7 @@ export interface GuestStateSnapshot {
 }
 
 export interface GuestTurnSuccess {
+  readonly discardUserInput?: boolean;
   readonly ok: true;
   readonly messages: readonly string[];
   /** Completed-action receipts, rendered as quiet timeline markers. */
@@ -731,6 +732,7 @@ export class LocalGuestApp {
   }
 
   #assistantResult(output: {
+    readonly discardUserInput?: boolean;
     readonly messages?: readonly string[];
     readonly message?: string;
     readonly surfaces?: readonly { readonly surfaceId: string; readonly a2uiMessages: readonly unknown[] }[];
@@ -738,6 +740,7 @@ export class LocalGuestApp {
   }): GuestTurnResult {
     return {
       ok: true,
+      ...(output.discardUserInput ? { discardUserInput: true } : {}),
       messages: output.messages ?? (output.message ? [output.message] : []),
       surfaces: this.#assistantSurfaces(output.surfaces ?? []),
       ...(output.tasks === undefined || output.tasks.length === 0
@@ -752,7 +755,7 @@ export class LocalGuestApp {
     const result = await this.#handleTurn(threadId, text);
     const decorated = this.#decorateResult(result);
     if (decorated.ok) {
-      this.#rememberResult(threadId, text, decorated);
+      this.#rememberResult(threadId, decorated.discardUserInput ? undefined : text, decorated);
       if (this.#environment.guestDataIsRemote) await this.#persistRemoteThread(threadId);
     }
     await this.#flushRemoteContact();

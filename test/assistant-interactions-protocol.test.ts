@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { approvedTestScope } from "./helpers/assistant-scope.js";
 import { type Interactions } from "@google/genai";
 import {
   GeminiInteractionsClient,
@@ -459,7 +460,7 @@ test("AssistantRuntime keeps Gemini tool continuity and replaces legacy final pr
   });
   const env = LocalGuestEnvironment.openNode({ databasePath: `.scratch/eval-test/runtime_protocol_${Date.now()}.sqlite` });
   try {
-    const response = await new AssistantRuntime(env, client).handleTurn("runtime-protocol", "Ikoyi for four nights and two guests");
+    const response = await new AssistantRuntime(env, client, { scopeClassifier: approvedTestScope }).handleTurn("runtime-protocol", "Ikoyi for four nights and two guests");
 
     assert.equal(response.ok, true);
     assert.equal(response.messages?.[0], "I found 1 matching stay in Old Ikoyi.");

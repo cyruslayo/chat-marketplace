@@ -82,6 +82,9 @@ export interface AssistantDomainPack {
   /** One line for the vertical starter card; omitted when there is no starter. */
   readonly starterDescription?: string;
   readonly promptSection: string;
+  readonly scopeDescription?: string;
+  /** Canonical structured location values; external narrative is excluded. */
+  readonly scopeLocations?: readonly string[];
   /** Words that signal the user is asking for this domain, used by the router. */
   readonly intentKeywords: readonly string[];
   readonly toolNames: readonly string[];
