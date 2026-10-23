@@ -188,7 +188,7 @@ verification result. Receipt bytes live in the private R2 bucket; never copy the
 ## 6. Backups and point-in-time recovery drill (issue step 6; AC4)
 
 **Exports check.** The daily alarm writes one JSONL object per table per Africa/Lagos day to the private `EXPORTS`
-bucket, keyed `YYYY-MM-DD/<table>.jsonl`. Confirm that today's set of 45 objects exists, one per table in `EXPORT_TABLES` (`apps/cloudflare/src/do-export.ts`; the five bearer-credential tables are not exported). List keys in the R2
+bucket, keyed `YYYY-MM-DD/<table>.jsonl`. Confirm that today's set of 61 objects exists, one per table in `EXPORT_TABLES` (61 is the current count: 45 SHORTLET, 8 PLATFORM, 8 COMMERCE; the earlier 45 was stale) (`apps/cloudflare/src/do-export.ts`; the five bearer-credential tables are not exported). List keys in the R2
 dashboard; the pinned CLI is used for reading objects). Record the object keys and their count in the evidence log.
 If today's objects are absent, record `BLOCKED` with the time checked. Do not force the alarm.
 

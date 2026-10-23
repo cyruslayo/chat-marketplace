@@ -30,6 +30,11 @@ export const SHORTLET_EXPORT_TABLES = [
   "guest_identity_assurance",
   "guest_live_payment_attempts",
   "guest_payment_journey_snapshots",
+  // Demo-launch issue 10, exported under the ADR 0096 amendment of 23 Oct 2026: the PSP references and contact emails in these
+  // three tables are exported in plaintext. Production use is gated on Nigerian counsel sign-off, which is pending.
+  "guest_period_payment_refunds",
+  "guest_period_payment_sessions",
+  "guest_period_payments",
   "guest_processed_psp_references",
   "guest_refunds",
   "guest_request_drafts",

@@ -236,3 +236,36 @@ test("16 restore (issue 09): identity assurance rows for an active and a closed 
     expect(await dayLines(DAY_TWO, table), `${table} after restore`).toEqual(await dayLines(DAY_ONE, table));
   }
 });
+
+/**
+ * Demo-launch issue 10 (ADR 0092 later Period Payments; ADR 0096 as amended 23 Oct 2026): a paid later Billing Period survives a daily
+ * export and a restore into a new object. Period 2 is paid, so the restored object still holds that payment, and its PSP reference and
+ * contact email are exported as the amendment records. The restored object re-exports the same bytes.
+ */
+test("16 restore (issue 10): a paid later Billing Period survives export and restore, and re-exports the same bytes", async () => {
+  const periodTables = ["guest_period_payment_sessions", "guest_period_payments", "guest_period_payment_refunds"] as const;
+  const source = freshStub("restore-period-source");
+  await provisionTenant(source);
+  await runInDurableObject(source, (_instance, ctx) => {
+    const database = new DurableObjectSqlDatabase(ctx.storage);
+    database.prepare("INSERT INTO guest_period_payment_sessions (psp_reference, checkout_id, offer_id, period_index, amount_kobo, currency, contact_email, provider_environment, started_at, expires_at, status) VALUES ($psp, $checkout, $offer, 2, 1234500, 'NGN', $email, 'test', $at, $expires, 'paid')")
+      .run({ $psp: "psp-restore-period-2", $checkout: "checkout-restore-period-2", $offer: "offer-restore-period", $email: "period-restore@example.test", $at: "2031-02-14T10:00:00Z", $expires: "2031-02-14T10:30:00Z" });
+    database.prepare("INSERT INTO guest_period_payments (offer_id, period_index, psp_reference, amount_kobo, currency, paid_at) VALUES ($offer, 2, $psp, 1234500, 'NGN', $at)")
+      .run({ $offer: "offer-restore-period", $psp: "psp-restore-period-2", $at: "2031-02-14T10:05:00Z" });
+  });
+  // The three tables are on the daily export list, so the alarm exports them and the restore route accepts them.
+  for (const table of periodTables) expect(SHORTLET_EXPORT_TABLES, `${table} on the daily export list`).toContain(table);
+  await exportTables(source, DAY_ONE, periodTables, "shortlet");
+
+  const target = freshStub("restore-period-target");
+  const headers = opsHeaders(await accessToken({}));
+  for (const table of periodTables) await loadTable(target, table, await dayLines(DAY_ONE, table), headers);
+  expect(await countRows(target, "guest_period_payments")).toBe(1);
+  const restored = await runInDurableObject(target, (_instance, ctx) => new DurableObjectSqlDatabase(ctx.storage)
+    .prepare("SELECT period_index, psp_reference, amount_kobo FROM guest_period_payments WHERE offer_id = ?")
+    .get(["offer-restore-period"]));
+  expect(restored).toMatchObject({ period_index: 2, psp_reference: "psp-restore-period-2", amount_kobo: 1234500 });
+
+  await exportTables(target, DAY_TWO, periodTables, "shortlet");
+  for (const table of periodTables) expect(await dayLines(DAY_TWO, table), `${table} after restore`).toEqual(await dayLines(DAY_ONE, table));
+}, 30_000);

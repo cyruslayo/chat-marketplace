@@ -37,6 +37,16 @@ The exemption is conditional on these four conditions. Each is a launch conditio
 3. **Retention.** Retention stays at the existing 400-day default (`DEFAULT_EXPORT_RETENTION_DAYS` in `apps/cloudflare/src/cloudflare-config.ts`). A longer period needs a new decision recorded here.
 4. **Revisit before real data.** Encryption at rest (Option B) must be revisited, and this exemption re-reviewed, before real customer or real-person data enters the export. That review is tied to the ADR 0095 production gates (Nigerian counsel, cross-border transfer basis, vendor terms and DPIA). Until those gates clear, the export holds synthetic or staging data only, as ADR 0095 allows.
 
+### Amendment (23 Oct 2026): later Billing Period payment records
+
+The owner decided in chat on 23 October 2026 that the three later-period payment tables are exported to the same private daily export, with their payment references and guest contact emails in plaintext. The tables are `guest_period_payment_sessions`, `guest_period_payments` and `guest_period_payment_refunds` (demo-launch issue 10, ADR 0092 later Period Payments). This amendment is narrow:
+
+- **Exempted columns (exact):** `guest_period_payment_sessions.psp_reference`, `guest_period_payments.psp_reference`, `guest_period_payment_refunds.psp_reference`, and `guest_period_payment_sessions.contact_email`. The contact email is personal data, not a payment reference; the owner's decision names it expressly. No other column of these tables is exempted by this amendment.
+- **Conditions:** conditions 1 to 4 above apply to these tables in full.
+- **Nigerian counsel sign-off: PENDING.** It has not been obtained. Production use of the period payment records, and of this export of their references and contact emails, is gated on that sign-off, alongside the ADR 0095 gates. Until it is recorded here, the export holds synthetic or staging data only.
+- **Effect on restore:** a restore from the daily export now carries later-period payment records, including the paid period 2 record, under this exemption. The round trip is tested in `apps/cloudflare/test/restore-from-export.spec.ts`.
+- **Not changed:** audit records, logs, interaction state, and every other store still follow the coding-standards rule and ADR 0075.
+
 ## Options considered
 
 | Option | What it does | Status | Reason |
