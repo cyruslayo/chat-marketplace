@@ -92,3 +92,5 @@ Definition of Done review:
 5. Tool intent maps use the closed classifier vocabulary and existing domain tool names.
 6. Errors use fixed messages and omit model arguments; invalid calls do not execute tools.
 7. `npm run check`, the 99-test focused gate, and the Commerce Worker spec pass. Full `npm test` and the integrated all-Worker gate remain for the batch. The issue remains claimed pending independent review.
+
+Parent review: inspected bae38ad and 22d914e committed diffs. Independently ran npx tsx --test --test-timeout=120000 test/assistant-tool-authorization.test.ts with NODE_ENV=test and COMMERCE_REFERENCE_TEST_KEY=allow: 6 passed, 0 failed (controls03-parent-review.log). No control03 code blockers remain. Retention of rejected arguments, opaque provider steps, and arbitrary diagnostic strings remains explicit control04 work. Full batch acceptance remains pending.
