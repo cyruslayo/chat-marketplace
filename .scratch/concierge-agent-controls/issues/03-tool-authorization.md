@@ -35,6 +35,8 @@ Record commands, pass counts, commit, and Definition of Done evidence.
 
 The issue remains `claimed` pending independent review and the integrated five-control gate.
 
+Implementation commit: `bae38ad513f3cdaa1d090330f364bd7f2785af67`.
+
 The platform now validates model arguments against the complete tool schema before execution. The active pack maps validated turn intents to tools. The runtime intersects those capabilities with state-available tools and the pack's declared tool names. A task switch cannot grant the new pack's tools during the same turn. The next turn must classify again for that pack.
 
 The platform retains the existing task tool path only for the explicit `task_switch` intent. Missing pack maps grant no pack tools. Unavailable state tools return their pack's existing validation message when available. Provider arguments never supply guest, tenant, principal, task, or command identity.
