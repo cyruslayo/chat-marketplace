@@ -18,6 +18,9 @@ import { ScriptedAssistantModel } from "../apps/local-guest/src/assistant/script
 import { TASK_START_EVENT } from "../apps/local-guest/src/assistant/assistant-platform.js";
 import { COMMERCE_CHECKOUT_CONFIRM_ACTION } from "../apps/web-agent/src/commerce-presentation.js";
 import { assertSurfaceReferencesResolve, checkoutConfirmContext } from "./helpers/a2ui-surface-integrity.js";
+import { approvedTestScope } from "./helpers/assistant-scope.js";
+import { temporaryDatabasePath } from "./helpers/temporary-database.js";
+import type { AssistantModelClient } from "../apps/local-guest/src/assistant/assistant-model.js";
 
 const clock = () => new Date("2026-10-16T00:00:00.000Z");
 const context = { environment: { guestPrincipal: () => ({ id: "guest", role: "guest" as const, tenantId: "tenant" }) } as never, taskState: createInitialTaskState(), threadId: "thread-shopping", taskId: "commerce-task-1", userTextHistory: ["I want to shop"], now: clock(), demoCheckIn: "2026-10-20" };
@@ -424,5 +427,47 @@ test("chat never offers an offer from a pending Merchant or a suspended Store, a
   const toolContext = { ...context, taskId: fixture.taskId, threadId: fixture.threadId };
   for (const offerId of ["pending-o", "suspended-o"]) {
     assert.throws(() => fixture.pack.executeTool("get_offer", { offerId }, toolContext as never), /unavailable/);
+  }
+});
+
+test("Distinct guest tasks in separate threads keep development Commerce carts isolated in one shared database", async () => {
+  const databasePath = temporaryDatabasePath("commerce-task-isolation.sqlite");
+  const guestA = LocalGuestEnvironment.openNode({ databasePath, guestId: "guest-isolation-a", guestName: "Guest A" });
+  const guestB = LocalGuestEnvironment.openNode({ databasePath, guestId: "guest-isolation-b", guestName: "Guest B" });
+  try {
+    migrateCommerceDatabase(guestA.database);
+    const commerce = createCommercePack({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS, database: guestA.database, clock: guestA.clock });
+    commerce.directory.createMerchant({ id: "isolation-merchant", name: "Verified Merchant", status: "verified" });
+    commerce.directory.createStore({ id: "isolation-store", merchantId: "isolation-merchant", slug: "isolation-store", name: "Store", status: "active" });
+    commerce.catalogue.createProduct({ id: "isolation-product", name: "Soap", category: "Care" });
+    commerce.catalogue.createOffer({ id: "isolation-offer", productId: "isolation-product", storeId: "isolation-store", priceKobo: 500, stock: 10 });
+
+    const makeModel = (): AssistantModelClient => {
+      let callPending = true;
+      return { generate: async (request) => {
+        if (request.history.at(-1)?.role === "tool_results") return { text: JSON.stringify({ kind: "show_status", references: ["add_to_store_cart"] }) };
+        if (callPending) { callPending = false; return { toolCalls: [{ id: "add-isolation-offer", name: "add_to_store_cart", args: { offerId: "isolation-offer", quantity: 1 } }] }; }
+        return { text: JSON.stringify({ kind: "clarify_stay", references: [] }) };
+      } };
+    };
+    const makeRuntime = (environment: LocalGuestEnvironment) => new AssistantRuntime(environment, makeModel(), {
+      additionalPacks: [createCommerceAssistantPack({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS, database: environment.database, clock: environment.clock })],
+      scopeClassifier: approvedTestScope,
+    });
+    const runtimeA = makeRuntime(guestA);
+    const runtimeB = makeRuntime(guestB);
+    assert.equal(runtimeA.handleAssistantEvent("thread-guest-a", TASK_START_EVENT, { domain: "commerce" }).ok, true);
+    assert.equal(runtimeB.handleAssistantEvent("thread-guest-b", TASK_START_EVENT, { domain: "commerce" }).ok, true);
+    const taskIdA = runtimeA.getThread("thread-guest-a").activeTaskId;
+    const taskIdB = runtimeB.getThread("thread-guest-b").activeTaskId;
+    await runtimeA.handleTurn("thread-guest-a", "Add soap to my cart");
+    const cartA = commerce.cart.cart(taskIdA);
+    const cartB = commerce.cart.cart(taskIdB);
+    assert.notEqual(taskIdA, taskIdB, "Separate threads need distinct server-issued task ids");
+    assert.equal(cartA.storeCarts.reduce((count, cart) => count + cart.lines.length, 0), 1);
+    assert.equal(cartB.storeCarts.reduce((count, cart) => count + cart.lines.length, 0), 0, "Guest B must not read Guest A's Store Cart");
+  } finally {
+    guestB.close();
+    guestA.close();
   }
 });

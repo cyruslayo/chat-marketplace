@@ -356,7 +356,9 @@ export class AssistantRuntime {
       return { state: restored.state, activeTaskId: restored.activeTaskId, workspace: restored, result: { started: domain, taskId: existing.taskId } };
     }
     const created: AssistantTask = {
-      taskId: `task-${tasks.length + 1}`,
+      // Task IDs cross domain storage boundaries (for example, Commerce Cart task_id).
+      // Allocate a server-unique ID so separate guests and threads cannot share task-keyed state.
+      taskId: `task-${crypto.randomUUID()}`,
       domain,
       state: createInitialTaskState(),
       activeSurfaces: new Map(),
