@@ -439,7 +439,7 @@ test("GeminiInteractionsClient replays signed thought and function-call steps wi
   assert.equal(second.text, "I found one matching stay.");
 });
 
-test("AssistantRuntime executes the full stateless user-to-tool-to-function-result-to-model-output Interactions sequence", async () => {
+test("AssistantRuntime keeps Gemini tool continuity and replaces legacy final prose with a safe server reply", async () => {
   const thoughtStep: Interactions.ThoughtStep = { type: "thought", signature: "runtime-signed-thought" };
   const functionCallStep: Interactions.FunctionCallStep = {
     type: "function_call",
@@ -462,7 +462,7 @@ test("AssistantRuntime executes the full stateless user-to-tool-to-function-resu
     const response = await new AssistantRuntime(env, client).handleTurn("runtime-protocol", "Ikoyi for four nights and two guests");
 
     assert.equal(response.ok, true);
-    assert.equal(response.messages?.[0], "Authoritative search complete.");
+    assert.equal(response.messages?.[0], "I found 1 matching stay in Old Ikoyi.");
     assert.equal(requests.length, 2);
     const continuation = requests[1]!.input;
     assert.ok(Array.isArray(continuation));

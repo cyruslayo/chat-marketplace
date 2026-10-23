@@ -6,6 +6,7 @@ import type {
   AssistantModelClient,
   AssistantToolCall,
   AssistantToolResult,
+  AssistantModelResponse,
 } from "./assistant-model.js";
 import {
   AssistantPackRegistry,
@@ -18,6 +19,8 @@ import {
   type AssistantDomainPack,
   type AssistantTaskSummary,
   type AssistantToolContext,
+  type AssistantReplyPlan,
+  type AssistantReplyPlanKind,
 } from "./assistant-platform.js";
 import { createShortletAssistantPack } from "./shortlet-assistant-pack.js";
 import { isProviderUnavailable } from "./fallback-model-client.js";
@@ -103,6 +106,8 @@ export interface AssistantRuntimeOptions {
   readonly onDiagnostic?: (event: AssistantDiagnosticEvent) => void;
   /** Additional domain packs to register (used by hosts that host more than one domain). */
   readonly additionalPacks?: readonly AssistantDomainPack[];
+  /** Maximum tokens for a final reply plan; engineering bound configured by the host. */
+  readonly maxReplyOutputTokens?: number;
 }
 
 interface AssistantEventContext {
@@ -124,11 +129,36 @@ const REQUEST_STAGE = "request";
 const OFFER_STAGE = "offer";
 const PAYMENT_STAGE = "payment";
 const BOOKING_STAGE = "booking";
+export const DEFAULT_ASSISTANT_REPLY_MAX_OUTPUT_TOKENS = 128;
+const MAX_ASSISTANT_REPLY_OUTPUT_TOKENS = 4096;
+const REPLY_PLAN_SCHEMA = {
+  type: "object",
+  properties: {
+    kind: { type: "string", enum: ["show_results", "show_details", "compare", "explain_price", "show_status", "propose_action", "clarify_stay", "redirect"] },
+    references: { type: "array", items: { type: "string" } },
+  },
+  required: ["kind", "references"],
+  additionalProperties: false,
+} as const;
 
+function parseReplyPlan(response: AssistantModelResponse, results: readonly AssistantToolResult[]): AssistantReplyPlan | undefined {
+  if (response.toolCalls?.length || !response.text) return undefined;
+  let value: unknown;
+  try { value = JSON.parse(response.text); } catch { return undefined; }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const kinds: readonly AssistantReplyPlanKind[] = ["show_results", "show_details", "compare", "explain_price", "show_status", "propose_action", "clarify_stay", "redirect"];
+  if (Object.keys(record).length !== 2 || typeof record.kind !== "string" || !kinds.includes(record.kind as AssistantReplyPlanKind)
+    || !Array.isArray(record.references) || !record.references.every((item) => typeof item === "string")) return undefined;
+  const allowed = new Set(results.filter((result) => !result.isError).map((result) => result.name));
+  if (record.references.some((reference) => !allowed.has(reference))) return undefined;
+  return { kind: record.kind as AssistantReplyPlanKind, references: record.references as string[] };
+}
 export class AssistantRuntime {
   readonly #environment: LocalGuestEnvironment;
   readonly #modelClient: AssistantModelClient;
   readonly #onDiagnostic?: (event: AssistantDiagnosticEvent) => void;
+  readonly #maxReplyOutputTokens: number;
   readonly #threads = new Map<string, AssistantThreadState>();
   readonly #packs = new AssistantPackRegistry();
 
@@ -136,6 +166,11 @@ export class AssistantRuntime {
     this.#environment = environment;
     this.#modelClient = modelClient;
     this.#onDiagnostic = options.onDiagnostic;
+    const maxReplyOutputTokens = options.maxReplyOutputTokens ?? DEFAULT_ASSISTANT_REPLY_MAX_OUTPUT_TOKENS;
+    if (!Number.isSafeInteger(maxReplyOutputTokens) || maxReplyOutputTokens < 1 || maxReplyOutputTokens > MAX_ASSISTANT_REPLY_OUTPUT_TOKENS) {
+      throw new Error(`maxReplyOutputTokens must be an integer between 1 and ${MAX_ASSISTANT_REPLY_OUTPUT_TOKENS}`);
+    }
+    this.#maxReplyOutputTokens = maxReplyOutputTokens;
     this.#packs.register(createShortletAssistantPack(environment));
     for (const pack of options.additionalPacks ?? []) this.#packs.register(pack);
   }
@@ -400,6 +435,8 @@ export class AssistantRuntime {
           tools: taskTools(),
           history: candidateHistory,
           timeoutMs: 20_000,
+          structuredOutput: { name: "assistant_reply_plan", schema: REPLY_PLAN_SCHEMA, strict: true },
+          maxOutputTokens: this.#maxReplyOutputTokens,
         });
         this.#diagnose({ stage: "provider_request", round, succeeded: true });
         if (isFunctionResultContinuation) {
@@ -410,12 +447,13 @@ export class AssistantRuntime {
 
         // If model produced no tool calls, it is returning a natural language reply
         if (!modelResponse.toolCalls || modelResponse.toolCalls.length === 0) {
-          finalAssistantReply = modelResponse.text?.trim() ?? "How can I assist you with your stay?";
-          candidateHistory.push({
-            role: "assistant",
-            text: finalAssistantReply,
-            rawStep: modelResponse.rawStep,
-          });
+          // ADR 0106: accept a validated typed plan; discard legacy prose and opaque steps.
+          const lastStep = candidateHistory.at(-1);
+          const latestResults = lastStep?.role === "tool_results" ? lastStep.results : [];
+          const plan = parseReplyPlan(modelResponse, latestResults);
+          finalAssistantReply = candidatePack().renderReply?.(plan, latestResults, userTextHistory.at(-1) ?? "")
+            ?? "I can help with your current request. Please review the information shown and tell me what you need next.";
+          candidateHistory.push({ role: "assistant", text: finalAssistantReply });
           break;
         }
 
@@ -423,7 +461,7 @@ export class AssistantRuntime {
         candidateHistory.push({
           role: "tool_calls",
           calls: modelResponse.toolCalls,
-          rawStep: modelResponse.rawStep,
+          ...(modelResponse.text === undefined && modelResponse.rawStep !== undefined ? { rawStep: modelResponse.rawStep } : {}),
         });
 
         const toolResults: AssistantToolResult[] = [];
@@ -575,12 +613,18 @@ export class AssistantRuntime {
           systemInstruction: composeSystemInstruction(candidatePack()),
           tools: [],
           history: candidateHistory,
+          structuredOutput: { name: "assistant_reply_plan", schema: REPLY_PLAN_SCHEMA, strict: true },
+          maxOutputTokens: this.#maxReplyOutputTokens,
         });
         this.#diagnose({ stage: "provider_request", round, succeeded: true });
         this.#diagnose({ stage: "function_result_round_trip", round, succeeded: true });
         activeStage = "provider_response";
         this.#diagnose({ stage: activeStage, round, succeeded: true });
-        finalAssistantReply = finalModelResponse.text?.trim() ?? "I processed your request.";
+        const lastStep = candidateHistory.at(-1);
+        const latestResults = lastStep?.role === "tool_results" ? lastStep.results : [];
+        const plan = parseReplyPlan(finalModelResponse, latestResults);
+        finalAssistantReply = candidatePack().renderReply?.(plan, latestResults, userTextHistory.at(-1) ?? "")
+          ?? "I can help with your current request. Please review the information shown and tell me what you need next.";
         candidateHistory.push({ role: "assistant", text: finalAssistantReply });
       }
 

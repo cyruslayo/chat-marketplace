@@ -52,6 +52,21 @@ test("The request maps the system instruction, user and assistant turns, tool ca
   assert.equal("tools" in noTools.requests[0]!.body, false);
 });
 
+test("AC5: provider-neutral structured-output and token limits map to OpenAI-compatible parameters", async () => {
+  const { client, requests } = clientWith(() => completion({ content: "{}" }), { baseUrl: "https://openrouter.ai/api/v1" });
+  await client.generate({
+    ...request,
+    tools: [],
+    structuredOutput: { name: "reply_plan", schema: { type: "object", additionalProperties: false }, strict: true },
+    maxOutputTokens: 128,
+  });
+  const body = requests[0]!.body;
+  assert.equal(body.max_completion_tokens, 128);
+  assert.deepEqual(body.response_format, { type: "json_schema", json_schema: { name: "reply_plan", schema: { type: "object", additionalProperties: false }, strict: true } });
+  assert.deepEqual(body.provider, { require_parameters: true });
+  assert.equal("tools" in body, false);
+});
+
 test("Tool calls in the response become AssistantToolCalls; a tool call with a missing id or name, or arguments that are not a JSON object, fails closed", async () => {
   const valid = clientWith(() => completion({
     content: null,

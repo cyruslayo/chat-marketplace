@@ -71,13 +71,17 @@ export class OpenAiCompatibleClient implements AssistantModelClient {
   readonly #endpoint: string;
   readonly #model: string;
   readonly #timeoutMs: number;
+  readonly #requireSupportedParameters: boolean;
   readonly #fetch: FetchFunction;
 
   constructor(config: OpenAiCompatibleClientConfig) {
     if (!config.apiKey?.trim()) throw new Error("LLM_API_KEY is required for OpenAiCompatibleClient");
     if (!config.model?.trim()) throw new Error("LLM_MODEL is required for OpenAiCompatibleClient");
     this.#apiKey = config.apiKey.trim();
-    this.#endpoint = `${httpsBaseUrl(config.baseUrl)}/chat/completions`;
+    const safeBaseUrl = httpsBaseUrl(config.baseUrl);
+    this.#endpoint = `${safeBaseUrl}/chat/completions`;
+    const host = new URL(safeBaseUrl).hostname.toLowerCase();
+    this.#requireSupportedParameters = host === "openrouter.ai" || host.endsWith(".openrouter.ai");
     this.#model = config.model.trim();
     this.#timeoutMs = config.timeoutMs ?? DEFAULT_OPENAI_COMPATIBLE_TIMEOUT_MS;
     this.#fetch = config.fetch ?? ((input, init) => fetch(input, init));
@@ -88,6 +92,11 @@ export class OpenAiCompatibleClient implements AssistantModelClient {
       model: this.#model,
       messages: mapHistoryToMessages(request.systemInstruction, request.history),
       ...(request.tools.length > 0 ? { tools: request.tools.map(mapTool) } : {}),
+      ...(request.structuredOutput ? {
+        response_format: { type: "json_schema", json_schema: { name: request.structuredOutput.name, schema: request.structuredOutput.schema, strict: request.structuredOutput.strict ?? true } },
+        ...(this.#requireSupportedParameters ? { provider: { require_parameters: true } } : {}),
+      } : {}),
+      ...(request.maxOutputTokens !== undefined ? { max_completion_tokens: request.maxOutputTokens } : {}),
       stream: false,
     });
     return this.#postWithBoundedConnectionRetry(body, request.timeoutMs ?? this.#timeoutMs);

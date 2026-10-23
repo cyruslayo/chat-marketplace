@@ -15,7 +15,8 @@ export const MAX_ASSISTANT_TOOL_ROUNDS = 4;
 
 /** The domain-agnostic preamble the runtime prefixes to every pack's prompt section. */
 export const ASSISTANT_PLATFORM_PREAMBLE = `You are the Shortlet Guest Assistant.
-You assist guests with discovering accommodation, answering questions about stays and pricing, and preparing booking actions.`;
+You assist guests with discovering accommodation, answering questions about stays and pricing, and preparing booking actions.
+Use tools for current facts and actions. When you have no tool call, return only the requested typed reply plan. Do not write guest-facing prose.`;
 
 export interface AssistantToolPreconditionFailure {
   readonly code: "invalid_tool_for_state" | "invalid_reference";
@@ -52,6 +53,14 @@ export interface AssistantToolExecutionResult {
 export interface AssistantSurfaceMessages {
   readonly surfaceId: string;
   readonly a2uiMessages: readonly unknown[];
+}
+
+/** Closed model choice. Facts and guest wording stay in the active pack. */
+export type AssistantReplyPlanKind = "show_results" | "show_details" | "compare" | "explain_price" | "show_status" | "propose_action" | "clarify_stay" | "redirect";
+
+export interface AssistantReplyPlan {
+  readonly kind: AssistantReplyPlanKind;
+  readonly references: readonly string[];
 }
 
 /** One task's place in the shell task rail: a domain label plus its current step. */
@@ -91,6 +100,8 @@ export interface AssistantDomainPack {
   conditionalOfferSurface(artifact: unknown, surfaceId: string): readonly unknown[];
   cardPaymentSurface(artifact: unknown, surfaceId: string): readonly unknown[];
   bookingContractSurface(artifact: unknown, surfaceId: string): readonly unknown[];
+  /** Validates references and renders a reply from current server-owned operation data. */
+  renderReply?(plan: AssistantReplyPlan | undefined, results: readonly import("./assistant-model.js").AssistantToolResult[], latestUserText: string): string;
   /** Re-reads authoritative truth before a proposed booking request is confirmed. */
   revalidateProposal(action: PendingAssistantAction): { readonly ok: true } | { readonly ok: false; readonly code: string; readonly message: string };
   /** Optional pack-owned command adapter; the pack must route through the platform ActionSpec gate. */

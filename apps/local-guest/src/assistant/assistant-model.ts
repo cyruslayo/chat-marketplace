@@ -51,6 +51,10 @@ export interface AssistantModelRequest {
   readonly tools: readonly AssistantToolDefinition[];
   readonly history: readonly AssistantConversationStep[];
   readonly timeoutMs?: number;
+  /** Provider-neutral JSON schema request for a final typed reply plan. */
+  readonly structuredOutput?: { readonly name: string; readonly schema: Readonly<Record<string, unknown>>; readonly strict?: boolean };
+  /** Maximum generated tokens; this is an engineering bound, not a domain rule. */
+  readonly maxOutputTokens?: number;
 }
 
 export interface AssistantModelResponse {

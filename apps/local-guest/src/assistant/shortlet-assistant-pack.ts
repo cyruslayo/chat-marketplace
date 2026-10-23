@@ -13,6 +13,7 @@ import { unitDetailArtifactFromProjection } from "../../../web/src/unit-detail-a
 import { requestDraftArtifactFromProjection } from "../../../web/src/request-draft-artifact.js";
 import { requestDraftArtifactToA2UI } from "../../../web-agent/src/request-draft-a2ui.js";
 import { extendedStayDraftFacts } from "../../../web-agent/src/extended-stay-presentation.js";
+import { GUEST_ASSISTANT_COPY } from "../../../web-agent/src/guest-content.js";
 import type { LocalGuestEnvironment } from "../fixture.js";
 import type { AssistantToolDefinition } from "./assistant-model.js";
 import type {
@@ -28,7 +29,9 @@ import {
   type AssistantToolContext,
   type AssistantToolExecutionResult,
   type AssistantToolPreconditionFailure,
+  type AssistantReplyPlan,
 } from "./assistant-platform.js";
+import type { AssistantToolResult } from "./assistant-model.js";
 
 /** The domain prompt section for the shortlet pack; the runtime prefixes the platform preamble. */
 export const SHORTLET_PROMPT_SECTION = `The Shortlet platform and tools are authoritative.
@@ -849,6 +852,70 @@ function shortletTaskSummary(taskState: AssistantTaskState): AssistantTaskSummar
   return { label: "Stay", status };
 }
 
+function renderShortletReply(plan: AssistantReplyPlan | undefined, results: readonly AssistantToolResult[], userText: string): string {
+  const successfulResults = results.filter((result) => !result.isError);
+  const kindForTool: Readonly<Record<string, string>> = {
+    search_stays: "show_results", get_unit_details: "show_details", compare_stays: "compare",
+    explain_stay_price: "explain_price", get_booking_status: "show_status", get_offer_status: "show_status",
+    propose_request_to_book: "propose_action", propose_accept_offer: "propose_action", propose_start_payment: "propose_action",
+  };
+  const selected = plan ? successfulResults.find((result) => plan.references.includes(result.name) && kindForTool[result.name] === plan.kind) : undefined;
+  const operation = selected ?? successfulResults[0];
+  if (!operation && /\b(next friday|next week|tomorrow|next month)\b/i.test(userText)) return GUEST_ASSISTANT_COPY.dateClarification;
+  if (!operation) return plan?.kind === "clarify_stay" || /how many|nights|\bstay\b|somewhere|\bplace\b|lagos|abuja|lekki|ikoyi/i.test(userText)
+    ? GUEST_ASSISTANT_COPY.stayClarification
+    : GUEST_ASSISTANT_COPY.safeClarification;
+  const data = operation.result;
+  if (typeof data.message === "string" && ["propose_request_to_book", "propose_accept_offer", "propose_start_payment", "get_offer_status"].includes(operation.name)) return data.message;
+  if (operation.name === "search_stays") {
+    if (typeof data.resultCount !== "number" || typeof data.neighbourhood !== "string" && typeof data.location !== "string") return GUEST_ASSISTANT_COPY.safeClarification;
+    const count = data.resultCount;
+    const place = String(data.neighbourhood ?? data.location ?? "your selected area");
+    return count > 0 ? GUEST_ASSISTANT_COPY.results(count, place) : GUEST_ASSISTANT_COPY.noResults(place);
+  }
+  if (operation.name === "get_unit_details") {
+    const amenities = Array.isArray(data.amenities) ? data.amenities.filter((item): item is string => typeof item === "string").join(", ") : "";
+    return GUEST_ASSISTANT_COPY.details(String(data.title ?? "This stay"), amenities, data.inspectionStatus === "passed");
+  }
+  if (operation.name === "compare_stays") {
+    const compared = Array.isArray(data.compared) ? data.compared.filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null) : [];
+    if (compared.length >= 2) {
+      const first = compared[0]!;
+      const second = compared[1]!;
+      const money = (value: unknown) => typeof value === "number" ? `₦${(value / 100).toLocaleString("en-NG")}` : undefined;
+      const firstTitle = String(first.title ?? "First stay");
+      const secondTitle = String(second.title ?? "Second stay");
+      const firstTotal = money(first.allInStayTotalKobo);
+      const secondTotal = money(second.allInStayTotalKobo);
+      const firstNight = money(first.nightlyKobo);
+      const secondNight = money(second.nightlyKobo);
+      if (firstTotal && secondTotal) {
+        return firstNight && secondNight
+          ? GUEST_ASSISTANT_COPY.comparedAllIn(firstTitle, firstTotal, firstNight, secondTitle, secondTotal, secondNight)
+          : GUEST_ASSISTANT_COPY.comparedAllInOnly(firstTitle, firstTotal, secondTitle, secondTotal);
+      }
+      return firstNight && secondNight
+        ? GUEST_ASSISTANT_COPY.comparedIndicative(firstTitle, firstNight, secondTitle, secondNight)
+        : GUEST_ASSISTANT_COPY.comparisonNoPrice;
+    }
+  }
+  if (operation.name === "explain_stay_price") {
+    const money = (value: unknown) => typeof value === "number" ? `₦${(value / 100).toLocaleString("en-NG")}` : undefined;
+    const total = money(data.allInStayTotalKobo);
+    const fees = money(data.mandatoryFeesKobo);
+    const deposit = money(data.refundableSecurityDepositKobo);
+    if (!total || !fees || !deposit) return GUEST_ASSISTANT_COPY.priceUnavailable;
+    return GUEST_ASSISTANT_COPY.priceBreakdown(String(data.title ?? "This stay"), total, fees, deposit);
+  }
+  if (operation.name === "get_booking_status") {
+    if (data.status === "confirmed" && typeof data.contractId === "string") return GUEST_ASSISTANT_COPY.confirmedBooking(data.contractId);
+    if (data.status === "offer_issued" && typeof data.offerId === "string") return GUEST_ASSISTANT_COPY.issuedOffer(data.offerId);
+    if (data.status === "request_disclosed" && typeof data.requestId === "string") return GUEST_ASSISTANT_COPY.disclosedRequest(data.requestId);
+    return GUEST_ASSISTANT_COPY.noCurrentBooking;
+  }
+  return GUEST_ASSISTANT_COPY.safeClarification;
+}
+
 /** The shortlet pack: prompt section, tools and surface projections for the shortlet domain. */
 export function createShortletAssistantPack(environment: LocalGuestEnvironment): AssistantDomainPack {
   return {
@@ -862,6 +929,7 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
     validateToolCall: (name, args, taskState) => validateAssistantToolCall(name, args, taskState, environment.extendedStayPolicy),
     executeTool: executeAssistantTool,
     taskSummary: shortletTaskSummary,
+    renderReply: renderShortletReply,
     discoverySurface: (artifact, surfaceId) => discoveryArtifactToA2UI({ artifact: artifact as never, surfaceId, demo: environment.config.demo === true }),
     unitDetailSurface: ({ unitId, checkIn, checkOut, surfaceId }) => {
       const unit = environment.unitRepository.findById(unitId);

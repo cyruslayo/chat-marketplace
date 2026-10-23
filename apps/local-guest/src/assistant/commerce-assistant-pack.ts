@@ -1,12 +1,14 @@
 import type { AssistantDomainPack, AssistantToolExecutionResult } from "./assistant-platform.js";
-import type { AssistantToolDefinition } from "./assistant-model.js";
+import type { AssistantToolDefinition, AssistantToolResult } from "./assistant-model.js";
 import type { AssistantTaskState } from "./assistant-state.js";
+import type { AssistantReplyPlan } from "./assistant-platform.js";
 import { createCommercePack } from "../../../../domains/commerce/src/index.js";
 import type { SqlDatabase } from "../../../../packages/platform-core/src/sql-database.js";
 import { COMMERCE_CHECKOUT_CONFIRM_ACTION, COMMERCE_CHECKOUT_STATUS_COPY, DEFAULT_COMMERCE_PROJECTION_LIMITS, projectCommerceText, validateCommerceProjectionLimits, commerceDiscoverySurface, commerceCartSurface, commerceOrderSurface, commerceCheckoutSurface, commerceDiscoveryPresentation, commerceCartPresentation, commerceOrderPresentation, type CommerceProjectionLimits } from "../../../web-agent/src/commerce-presentation.js";
 import { CommerceCheckoutCommandBoundary, confirmCommerceCheckoutAction, confirmCommerceCheckoutConventional, type CommerceCheckoutProposal, type CommerceCheckoutConfirmation, type CommerceCheckoutExecutor } from "./commerce-checkout-command.js";
 import type { CommandPrincipal } from "../../../../packages/platform-core/src/envelope.js";
 import type { AuditLog } from "../../../../packages/platform-core/src/index.js";
+import { GUEST_COMMERCE_ASSISTANT_COPY } from "../../../web-agent/src/guest-content.js";
 
 function cartVersionFor(lines: readonly { readonly lineId: string; readonly offerId: string; readonly variantId?: string; readonly quantity: number; readonly priceKobo: number }[]): string {
   return JSON.stringify(lines.map((line) => [line.lineId, line.offerId, line.variantId ?? null, line.quantity, line.priceKobo]));
@@ -164,6 +166,32 @@ export function createCommerceAssistantPack(input: {
       throw new Error("This Commerce tool is not available.");
     },
     taskSummary: () => ({ label: "Shop", status: "Browse" }),
+    renderReply: (plan: AssistantReplyPlan | undefined, results: readonly AssistantToolResult[]) => {
+      const successful = results.filter((result) => !result.isError);
+      const kindForTool: Readonly<Record<string, string>> = {
+        search_products: "show_results", get_offer: "show_details", quote_delivery: "show_results",
+        add_to_store_cart: "show_status", propose_checkout: "propose_action", get_order_status: "show_status",
+      };
+      const result = plan ? successful.find((item) => plan.references.includes(item.name) && kindForTool[item.name] === plan.kind) : undefined;
+      const operation = result ?? successful[0];
+      if (!operation) return GUEST_COMMERCE_ASSISTANT_COPY.safeClarification;
+      if (operation.name === "search_products") {
+        const offers = Array.isArray(operation.result.offers) ? operation.result.offers : [];
+        return GUEST_COMMERCE_ASSISTANT_COPY.searchResults(offers.length);
+      }
+      if (operation.name === "get_offer") return GUEST_COMMERCE_ASSISTANT_COPY.offer;
+      if (operation.name === "quote_delivery") {
+        const quotes = Array.isArray(operation.result.quotes) ? operation.result.quotes : [];
+        return GUEST_COMMERCE_ASSISTANT_COPY.delivery(quotes.length);
+      }
+      if (operation.name === "add_to_store_cart") return GUEST_COMMERCE_ASSISTANT_COPY.cart;
+      if (operation.name === "propose_checkout" && typeof operation.result.message === "string") {
+        // This copy is authored by the Commerce pack above; never accept model text as a reply.
+        return operation.result.message;
+      }
+      if (operation.name === "get_order_status" && typeof operation.result.status === "string") return GUEST_COMMERCE_ASSISTANT_COPY.orderStatus(operation.result.status);
+      return GUEST_COMMERCE_ASSISTANT_COPY.safeClarification;
+    },
     discoverySurface: (artifact, surfaceId) => commerceDiscoverySurface(artifact, surfaceId),
     unitDetailSurface: () => [], pendingActionSurface: () => [], bookingRequestSurface: () => [], conditionalOfferSurface: () => [], cardPaymentSurface: () => [], bookingContractSurface: () => [],
     revalidateProposal: () => ({ ok: true }),

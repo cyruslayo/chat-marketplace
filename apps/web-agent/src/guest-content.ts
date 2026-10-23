@@ -23,6 +23,35 @@ export const GUEST_GLOSSARY = Object.freeze({
   operatorFallback: "the Operator",
 });
 
+/** Server-authored concierge copy for replies whose facts come from current pack projections. */
+export const GUEST_ASSISTANT_COPY = Object.freeze({
+  stayClarification: "How many nights will you be staying, and for how many guests?",
+  dateClarification: "Please give me the check-in date as YYYY-MM-DD.",
+  safeClarification: "I can help you find and compare stays, explain pricing, or check a booking status. What would you like to do?",
+  results: (count: number, location: string) => `I found ${count} matching ${count === 1 ? "stay" : "stays"} in ${location}.`,
+  noResults: (location: string) => `I couldn't find any eligible stays matching those requirements in ${location}.`,
+  priceUnavailable: "Current price facts are not available. Review the current stay details before you continue.",
+  details: (title: string, amenities: string, inspectionPassed: boolean) => `${title} offers ${amenities || "the listed amenities"}, entire place possession${inspectionPassed ? " and passed physical inspection" : ""}.`,
+  comparedAllIn: (first: string, firstTotal: string, firstNight: string, second: string, secondTotal: string, secondNight: string) => `Comparing both options: ${first} has an All-In Stay Total of ${firstTotal}, with a nightly rate of ${firstNight}/night; ${second} has an All-In Stay Total of ${secondTotal}, with a nightly rate of ${secondNight}/night.`,
+  comparedAllInOnly: (first: string, firstTotal: string, second: string, secondTotal: string) => `Comparing both options: ${first} has an All-In Stay Total of ${firstTotal}; ${second} has an All-In Stay Total of ${secondTotal}.`,
+  comparedIndicative: (first: string, firstNight: string, second: string, secondNight: string) => `Comparing both options: ${first} has an indicative nightly rate of ${firstNight}, while ${second} has an indicative nightly rate of ${secondNight}. Current All-In Stay Totals are not available for this comparison.`,
+  comparisonNoPrice: "I can compare the stays, but current price facts are not available.",
+  priceBreakdown: (title: string, total: string, fees: string, deposit: string) => `For ${title}, the All-In Stay Total is ${total}, including mandatory fees of ${fees}. A refundable security deposit of ${deposit} is collected separately.`,
+  confirmedBooking: (contractId: string) => `Your booking is confirmed under contract reference ${contractId}.`,
+  issuedOffer: (offerId: string) => `The Accommodation Provider has issued a Conditional Booking Offer under offer reference ${offerId}.`,
+  disclosedRequest: (requestId: string) => `Your Booking Request ${requestId} has been disclosed and is awaiting the Accommodation Provider's response.`,
+  noCurrentBooking: "You currently have no active booking or pending request.",
+});
+
+export const GUEST_COMMERCE_ASSISTANT_COPY = Object.freeze({
+  searchResults: (count: number) => `I found ${count} current product ${count === 1 ? "offer" : "offers"}. Review the Commerce results below.`,
+  offer: "I found the current Merchant Offer. Review its details on the Commerce surface.",
+  delivery: (count: number) => `I found ${count} current delivery ${count === 1 ? "option" : "options"}. Review the quotes below.`,
+  cart: "I updated the Store Cart. Review its current quantities and prices below.",
+  orderStatus: (status: string) => `The current Merchant Order status is ${status}.`,
+  safeClarification: "I can help you search products, review an offer, check delivery options, or review an order status. What would you like to do?",
+});
+
 /** Internal or avoided terms that never appear in guest copy (CONTEXT.md, ADR-0016). */
 export const GUEST_FORBIDDEN_TERMS: readonly RegExp[] = Object.freeze([
   /\brevalidated\b/i,
