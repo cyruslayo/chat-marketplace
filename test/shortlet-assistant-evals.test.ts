@@ -1084,7 +1084,7 @@ test("AC4: invalid legacy replies after operations keep safe surfaces and never 
 test("AC5: reply token limits are configurable engineering bounds and reject invalid values", async () => {
   let captured: AssistantModelRequest | undefined;
   const model: AssistantModelClient = { generate: async (request) => { captured = request; return { text: "legacy reply" }; } };
-  const { env, runtime } = createTestRuntime(model, { maxReplyOutputTokens: 77 });
+  const { env, runtime } = createTestRuntime(model, { maxReplyOutputTokens: 77, maxPlanningOutputTokens: 77 });
   await runtime.handleTurn("ac5-configurable-limit", "Hello");
   assert.equal(captured?.maxOutputTokens, 77);
   assert.equal(captured?.structuredOutput?.name, "assistant_reply_plan");

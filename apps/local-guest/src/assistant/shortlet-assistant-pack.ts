@@ -852,12 +852,12 @@ function shortletTaskSummary(taskState: AssistantTaskState): AssistantTaskSummar
   return { label: "Stay", status };
 }
 
-function renderShortletReply(plan: AssistantReplyPlan | undefined, results: readonly AssistantToolResult[], userText: string): string {
+function renderShortletReply(plan: AssistantReplyPlan | undefined, results: readonly AssistantToolResult[], userText: string, now: Date): string {
   const successfulResults = results.filter((result) => !result.isError);
   const kindForTool: Readonly<Record<string, string>> = {
     search_stays: "show_results", get_unit_details: "show_details", compare_stays: "compare",
     explain_stay_price: "explain_price", get_booking_status: "show_status", get_offer_status: "show_status",
-    propose_request_to_book: "propose_action", propose_accept_offer: "propose_action", propose_start_payment: "propose_action",
+    prepare_request_draft: "propose_action", propose_request_to_book: "propose_action", propose_accept_offer: "propose_action", propose_start_payment: "propose_action",
   };
   const selected = plan ? successfulResults.find((result) => plan.references.includes(result.name) && kindForTool[result.name] === plan.kind) : undefined;
   const operation = selected ?? successfulResults[0];
@@ -866,6 +866,15 @@ function renderShortletReply(plan: AssistantReplyPlan | undefined, results: read
     ? GUEST_ASSISTANT_COPY.stayClarification
     : GUEST_ASSISTANT_COPY.safeClarification;
   const data = operation.result;
+  if (operation.name === "prepare_request_draft") return data.created === true && data.operation === "request_draft.create" ? GUEST_ASSISTANT_COPY.draftReady : GUEST_ASSISTANT_COPY.safeClarification;
+  if (operation.name === "get_offer_status") {
+    const expiresAt = typeof data.expiresAtIso === "string" ? Date.parse(data.expiresAtIso) : NaN;
+    if (data.hasOffer !== true || data.status !== "issued" || !Number.isFinite(expiresAt) || expiresAt <= now.getTime()) return GUEST_ASSISTANT_COPY.offerInactive;
+    const amounts = [data.allInStayTotalKobo, data.totalAmountDueNowKobo, data.refundableSecurityDepositKobo];
+    if (!amounts.every((value) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0)) return GUEST_ASSISTANT_COPY.priceUnavailable;
+    const money = (value: unknown) => `₦${(Number(value) / 100).toLocaleString("en-NG")}`;
+    return GUEST_ASSISTANT_COPY.offerAmount(...amounts.map(money) as [string, string, string]);
+  }
   if (typeof data.message === "string" && ["propose_request_to_book", "propose_accept_offer", "propose_start_payment", "get_offer_status"].includes(operation.name)) return data.message;
   if (operation.name === "search_stays") {
     if (typeof data.resultCount !== "number" || typeof data.neighbourhood !== "string" && typeof data.location !== "string") return GUEST_ASSISTANT_COPY.safeClarification;
@@ -929,7 +938,7 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
     validateToolCall: (name, args, taskState) => validateAssistantToolCall(name, args, taskState, environment.extendedStayPolicy),
     executeTool: executeAssistantTool,
     taskSummary: shortletTaskSummary,
-    renderReply: renderShortletReply,
+    renderReply: (plan, results, text) => renderShortletReply(plan, results, text, environment.clock()),
     discoverySurface: (artifact, surfaceId) => discoveryArtifactToA2UI({ artifact: artifact as never, surfaceId, demo: environment.config.demo === true }),
     unitDetailSurface: ({ unitId, checkIn, checkOut, surfaceId }) => {
       const unit = environment.unitRepository.findById(unitId);

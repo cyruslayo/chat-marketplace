@@ -32,6 +32,16 @@ Do not weaken old assertions to accept missing facts or unsafe effects.
 
 ## Comments
 
+### Independent review corrections, 23 October 2026
+
+The first review found missing active-offer and successful-draft replies, zero-deposit collection wording, and a planning-token limit mismatch.
+Four new tests failed before correction, then passed four of four.
+Offer replies now use authoritative amounts and current expiry. Draft copy requires a successful creation result.
+Deposit copy describes display rather than claiming collection. Planning defaults to 1024 configurable tokens; final plans default to 128.
+`npm run check` passed. `npx tsx --test --test-timeout=120000 test/shortlet-assistant-evals.test.ts test/assistant-reply-coverage.test.ts test/openai-compatible-client.test.ts` passed 60 of 60.
+The delegated executor reached its usage limit. The primary agent completed these authorized corrections after the owner's instruction to continue.
+Control 1 implementation and focused review are complete. Integrated captures and full batch gates remain outstanding.
+
 Record red/green commands and counts, changed paths, commit, remaining gaps, and Definition of Done checks.
 UI captures are consolidated after all five controls; this issue remains part of a claimed batch until that gate passes.
 

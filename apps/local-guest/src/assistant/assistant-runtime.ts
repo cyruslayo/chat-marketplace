@@ -108,6 +108,7 @@ export interface AssistantRuntimeOptions {
   readonly additionalPacks?: readonly AssistantDomainPack[];
   /** Maximum tokens for a final reply plan; engineering bound configured by the host. */
   readonly maxReplyOutputTokens?: number;
+  readonly maxPlanningOutputTokens?: number;
 }
 
 interface AssistantEventContext {
@@ -130,6 +131,7 @@ const OFFER_STAGE = "offer";
 const PAYMENT_STAGE = "payment";
 const BOOKING_STAGE = "booking";
 export const DEFAULT_ASSISTANT_REPLY_MAX_OUTPUT_TOKENS = 128;
+export const DEFAULT_ASSISTANT_PLANNING_MAX_OUTPUT_TOKENS = 1024;
 const MAX_ASSISTANT_REPLY_OUTPUT_TOKENS = 4096;
 const REPLY_PLAN_SCHEMA = {
   type: "object",
@@ -159,6 +161,7 @@ export class AssistantRuntime {
   readonly #modelClient: AssistantModelClient;
   readonly #onDiagnostic?: (event: AssistantDiagnosticEvent) => void;
   readonly #maxReplyOutputTokens: number;
+  readonly #maxPlanningOutputTokens: number;
   readonly #threads = new Map<string, AssistantThreadState>();
   readonly #packs = new AssistantPackRegistry();
 
@@ -171,6 +174,9 @@ export class AssistantRuntime {
       throw new Error(`maxReplyOutputTokens must be an integer between 1 and ${MAX_ASSISTANT_REPLY_OUTPUT_TOKENS}`);
     }
     this.#maxReplyOutputTokens = maxReplyOutputTokens;
+    const planningLimit = options.maxPlanningOutputTokens ?? DEFAULT_ASSISTANT_PLANNING_MAX_OUTPUT_TOKENS;
+    if (!Number.isSafeInteger(planningLimit) || planningLimit < 1 || planningLimit > MAX_ASSISTANT_REPLY_OUTPUT_TOKENS) throw new Error("maxPlanningOutputTokens is invalid");
+    this.#maxPlanningOutputTokens = planningLimit;
     this.#packs.register(createShortletAssistantPack(environment));
     for (const pack of options.additionalPacks ?? []) this.#packs.register(pack);
   }
@@ -436,7 +442,7 @@ export class AssistantRuntime {
           history: candidateHistory,
           timeoutMs: 20_000,
           structuredOutput: { name: "assistant_reply_plan", schema: REPLY_PLAN_SCHEMA, strict: true },
-          maxOutputTokens: this.#maxReplyOutputTokens,
+          maxOutputTokens: this.#maxPlanningOutputTokens,
         });
         this.#diagnose({ stage: "provider_request", round, succeeded: true });
         if (isFunctionResultContinuation) {
