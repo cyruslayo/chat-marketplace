@@ -1,7 +1,7 @@
 import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
 import type { BookingContractView } from "../../../domains/shortlet/src/index.js";
 import type { GuestConductPolicySnapshot } from "../../../domains/shortlet/src/index.js";
-import { NOTICE_TO_END_DEMO_TERMS } from "../../../domains/shortlet/src/extended-stay.js";
+import { NOTICE_TO_END_DEMO_TERMS } from "../../../domains/shortlet/src/index.js";
 
 export const BOOKING_CONTRACT_ARTIFACT_KIND = "shortlet.booking-contract";
 export const BOOKING_CONTRACT_SCHEMA_VERSION = "shortlet.booking-contract/v1";

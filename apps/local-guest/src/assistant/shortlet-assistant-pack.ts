@@ -1,6 +1,5 @@
 import { generatePlatformId } from "../../../../packages/platform-core/src/index.js";
-import { StayDateRange, createStayQuote, toDiscoveryProjection, isEligibleUnit, allInStayTotalKobo, type Unit } from "../../../../domains/shortlet/src/index.js";
-import { isExtendedStayLength, type ExtendedStayPolicy } from "../../../../domains/shortlet/src/extended-stay.js";
+import { StayDateRange, createStayQuote, toDiscoveryProjection, isEligibleUnit, allInStayTotalKobo, isExtendedStayLength, type ExtendedStayPolicy, type Unit } from "../../../../domains/shortlet/src/index.js";
 import {
   discoveryArtifactToA2UI,
   bookingRequestArtifactToA2UI,

@@ -107,8 +107,7 @@ import {
 import { SqliteAuditLog } from "../../../packages/platform-core/src/sqlite-audit-log.js";
 import { SqliteTelemetry } from "../../../packages/platform-core/src/sqlite-telemetry.js";
 import type { TelemetryEvent } from "../../../packages/platform-core/src/telemetry.js";
-import { SqliteRevenueAccountingRepository, SqliteRevenueReleaseStateStore } from "../../../domains/shortlet/src/index.js";
-import { DEMO_EXTENDED_STAY_POLICY } from "../../../domains/shortlet/src/extended-stay.js";
+import { DEMO_EXTENDED_STAY_POLICY, SqliteRevenueAccountingRepository, SqliteRevenueReleaseStateStore } from "../../../domains/shortlet/src/index.js";
 
 export interface LocalOwnerFixtureConfig {
   readonly databasePath: string;

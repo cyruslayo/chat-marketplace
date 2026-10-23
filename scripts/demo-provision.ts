@@ -9,7 +9,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { validateOperatorRecord, type OperatorRecord } from "../domains/shortlet/src/operator.js";
+import { validateOperatorRecord, type OperatorRecord } from "../domains/shortlet/src/index.js";
 
 export const DEMO_PLACEHOLDER_ORIGIN = "https://demo-origin.invalid";
 export const DEMO_TENANT_ID = "tenant-staging";
