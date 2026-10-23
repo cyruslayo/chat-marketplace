@@ -288,5 +288,5 @@ test("AC6: the demo Worker imports, requests, pays, and confirms a 30-night stay
   } finally {
     vi.unstubAllGlobals();
   }
-});
+}, 30_000); // This journey (import, request, payment, confirmation through the Worker) hit vitest's 5000 ms default under full-suite load in the batch gate run; it passes alone. Per-test timeout only.
 
