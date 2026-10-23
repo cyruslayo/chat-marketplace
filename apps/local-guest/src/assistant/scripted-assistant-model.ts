@@ -27,7 +27,7 @@ export class ScriptedAssistantModel implements AssistantModelClient {
       const message = input !== null && typeof input === "object" && "message" in input ? String(input.message) : "";
       const outside = /write.*(?:poem|code)|ignore.*instructions/i.test(message);
       return { text: JSON.stringify({ scope: outside ? "out_of_scope" : "in_scope", risk: "ordinary",
-        intents: outside ? [] : ["search", "details", "compare", "price", "status", "offer", "draft", "request", "accept", "payment", "support", "clarify", "greet"],
+        intents: outside ? [] : ["search", "details", "compare", "price", "status", "offer", "draft", "request", "accept", "payment", "support", "clarify", "greet", "task_switch"],
         slots: { city: null, neighbourhood: null, bedrooms: null, nights: null, guests: null, checkIn: null, checkOut: null }, reasonCode: outside ? "outside" : "supported" }) };
     }
     for (const override of this.#scenarioOverrides) {

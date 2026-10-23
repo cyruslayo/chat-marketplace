@@ -80,7 +80,7 @@ test("AC1: a shopping intent starts a commerce task and only commerce tools are 
   database.close();
 });
 
-test("AC1 scripted assistant: shopping intent confirms commerce task and exposes only its six tools", async () => {
+test("AC6: development commerce search works only after task selection and exposes only commerce tools", async () => {
   const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:" });
   migrateCommerceDatabase(environment.database);
   let offeredTools: readonly string[] = [];

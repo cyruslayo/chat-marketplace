@@ -16,6 +16,9 @@ import {
   PLATFORM_TASK_TOOL_NAMES,
   TASK_START_EVENT,
   TASK_SWITCH_EVENT,
+  toolsForValidatedIntents,
+  toolNamesForValidatedIntents,
+  validateAssistantToolArguments,
   type AssistantDomainPack,
   type AssistantTaskSummary,
   type AssistantToolContext,
@@ -23,7 +26,7 @@ import {
   type AssistantReplyPlanKind,
 } from "./assistant-platform.js";
 import { createShortletAssistantPack } from "./shortlet-assistant-pack.js";
-import { ModelScopeClassifier, assessScopeSafely, scopedMixedInput, type ScopeClassifier, type ScopeAssessment } from "./scope-classifier.js";
+import { ModelScopeClassifier, assessScopeSafely, scopedMixedInput, type ScopeClassifier, type ScopeAssessment, type ConciergeIntent } from "./scope-classifier.js";
 import { ASSISTANT_CONTROL_COPY } from "./control-copy.js";
 import { isProviderUnavailable } from "./fallback-model-client.js";
 import {
@@ -357,9 +360,19 @@ export class AssistantRuntime {
     // The active task decides the active pack: its tools, prompt and projections.
     const candidateDomain = () => candidateTasks.find((task) => task.taskId === candidateActiveTaskId)?.domain ?? this.#activePack.id;
     const candidatePack = () => this.#packs.packFor(candidateDomain()) ?? this.#activePack;
-    const taskTools = () => this.#packs.size > 1
-      ? [...PLATFORM_TASK_TOOLS, ...candidatePack().toolsForState(candidateTaskState)]
-      : [...candidatePack().toolsForState(candidateTaskState)];
+    let validatedDomainId: string | undefined;
+    let validatedTurnIntents: readonly ConciergeIntent[] = [];
+    let validatedTurnToolNames: ReadonlySet<string> = new Set();
+    let taskSwitchPermitted = false;
+    // ADR 0099/0106: intersect the active pack, its current-state tools, and this turn's validated intents.
+    const taskTools = () => {
+      const pack = candidatePack();
+      const domainTools = pack.id === validatedDomainId
+        ? toolsForValidatedIntents(pack, candidateTaskState, validatedTurnIntents)
+        : [];
+      const taskTools = this.#packs.size > 1 && taskSwitchPermitted ? PLATFORM_TASK_TOOLS : [];
+      return [...taskTools, ...domainTools];
+    };
 
     const supersede = (stage: string) => {
       const surfaceId = candidateActiveSurfaces.get(stage);
@@ -448,6 +461,10 @@ export class AssistantRuntime {
         discardUserInput: true, tasks: this.getTaskRail(threadId) };
     }
     if (discardUserInput) text = scopedMixedInput(assessment);
+    validatedDomainId = packForScope.id;
+    validatedTurnIntents = assessment.intents;
+    validatedTurnToolNames = toolNamesForValidatedIntents(packForScope, assessment.intents);
+    taskSwitchPermitted = assessment.intents.includes("task_switch");
     candidateHistory.push({ role: "user", text });
 
     const userTextHistory: string[] = candidateHistory
@@ -507,11 +524,27 @@ export class AssistantRuntime {
         for (const call of modelResponse.toolCalls) {
           activeStage = "tool_execution";
           activeToolName = call.name;
-          const offered = taskTools().some((tool) => tool.name === call.name);
-          const precondition = this.#isPlatformTaskTool(call.name)
+          const offeredTool = taskTools().find((tool) => tool.name === call.name);
+          const activePack = candidatePack();
+          const isTaskTool = this.#isPlatformTaskTool(call.name);
+          const turnAuthorized = isTaskTool
+            ? taskSwitchPermitted && this.#packs.size > 1
+            : activePack.id === validatedDomainId && validatedTurnToolNames.has(call.name);
+          const schemaTool = offeredTool ?? (activePack.id === validatedDomainId ? activePack.toolDefinition?.(call.name) : undefined);
+          // ADR 0072/0106: validate provider arguments locally before pack execution or command routing.
+          const malformedArguments = turnAuthorized && schemaTool && !validateAssistantToolArguments(schemaTool.parametersSchema, call.args)
+            ? { code: "invalid_tool_arguments" as const, message: "The tool arguments do not match the declared schema." }
+            : undefined;
+          const precondition = !turnAuthorized || isTaskTool || malformedArguments || !offeredTool
             ? undefined
-            : candidatePack().validateToolCall(call.name, call.args, candidateTaskState);
-          const invalidCall = precondition ?? (offered ? undefined : { code: "invalid_tool_for_state" as const, message: "That operation is not available for the current Guest workflow." });
+            : activePack.validateToolCall(call.name, call.args, candidateTaskState);
+          const stateUnavailable = !isTaskTool && !offeredTool && turnAuthorized
+            ? activePack.validateToolCall(call.name, call.args, candidateTaskState)
+              ?? { code: "invalid_tool_for_state" as const, message: "That operation is not available for the current Guest workflow." }
+            : undefined;
+          const invalidCall = !turnAuthorized || !schemaTool
+            ? { code: "invalid_tool_for_state" as const, message: "That operation is not available for the current Guest workflow." }
+            : malformedArguments ?? precondition ?? stateUnavailable;
           if (invalidCall) {
             this.#diagnose({
               stage: "tool_execution",

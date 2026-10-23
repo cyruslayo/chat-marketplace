@@ -10,7 +10,15 @@ export interface AssistantToolParameterProperty {
   readonly description?: string;
   readonly minimum?: number;
   readonly maximum?: number;
-  readonly items?: { readonly type: string };
+  readonly minLength?: number;
+  readonly maxLength?: number;
+  readonly minItems?: number;
+  readonly maxItems?: number;
+  readonly enum?: readonly unknown[];
+  readonly items?: AssistantToolParameterProperty;
+  readonly properties?: Readonly<Record<string, AssistantToolParameterProperty>>;
+  readonly required?: readonly string[];
+  readonly additionalProperties?: boolean;
 }
 
 export interface AssistantToolParametersSchema {

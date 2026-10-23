@@ -92,10 +92,10 @@ test("Scope AC5: pending confirmations and cancellations bypass an unavailable c
   t.after(() => env.close());
   let calls = 0;
   let unavailable = false;
-  const runtime = new AssistantRuntime(env, new ScriptedAssistantModel(), { scopeClassifier: { assess: async () => {
+  const runtime = new AssistantRuntime(env, new ScriptedAssistantModel(), { scopeClassifier: { assess: async (text) => {
     calls++;
     if (unavailable) throw new Error("offline");
-    return allowed;
+    return { ...allowed, intents: text.toLowerCase().includes("request the first one") ? ["request"] : ["search"] };
   } } });
   for (const [thread, decision] of [["confirm", "Yes"], ["cancel", "Cancel"]]) {
     unavailable = false;
