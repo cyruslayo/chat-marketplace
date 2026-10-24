@@ -1,0 +1,102 @@
+TAP version 13
+# Subtest: AC3: a quota reservation that exceeds the request deadline cannot start transport after it resolves
+ok 1 - AC3: a quota reservation that exceeds the request deadline cannot start transport after it resolves
+  ---
+  duration_ms: 33.7129
+  type: 'test'
+  ...
+# Subtest: AC3: the shorter of the request timeout and absolute deadline bounds quota reservation
+ok 2 - AC3: the shorter of the request timeout and absolute deadline bounds quota reservation
+  ---
+  duration_ms: 124.6184
+  type: 'test'
+  ...
+# Subtest: AC3: a configured fallback provider reserves its own actual transport attempt
+ok 3 - AC3: a configured fallback provider reserves its own actual transport attempt
+  ---
+  duration_ms: 6.2883
+  type: 'test'
+  ...
+# (node:120628) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC1: concurrent reservations cannot exceed tenant-daily or guest-hour limits across database handles
+ok 4 - AC1: concurrent reservations cannot exceed tenant-daily or guest-hour limits across database handles
+  ---
+  duration_ms: 118.2492
+  type: 'test'
+  ...
+# Subtest: AC2: reopening preserves reservations, the guest-hour limit rolls across clock boundaries, and day rollover resets tenant capacity
+ok 5 - AC2: reopening preserves reservations, the guest-hour limit rolls across clock boundaries, and day rollover resets tenant capacity
+  ---
+  duration_ms: 144.1534
+  type: 'test'
+  ...
+# Subtest: AC1: invalid identities and limits fail closed instead of creating quota records
+ok 6 - AC1: invalid identities and limits fail closed instead of creating quota records
+  ---
+  duration_ms: 53.4593
+  type: 'test'
+  ...
+# Subtest: AC2: storage failure and malformed persisted counts reject reservations safely
+ok 7 - AC2: storage failure and malformed persisted counts reject reservations safely
+  ---
+  duration_ms: 62.2304
+  type: 'test'
+  ...
+# Subtest: The request maps the system instruction, user and assistant turns, tool calls and tool results onto Chat Completions messages, and tool definitions onto tools[].function
+ok 8 - The request maps the system instruction, user and assistant turns, tool calls and tool results onto Chat Completions messages, and tool definitions onto tools[].function
+  ---
+  duration_ms: 74.8938
+  type: 'test'
+  ...
+# Subtest: AC5: provider-neutral structured-output and token limits map to OpenAI-compatible parameters
+ok 9 - AC5: provider-neutral structured-output and token limits map to OpenAI-compatible parameters
+  ---
+  duration_ms: 2.2781
+  type: 'test'
+  ...
+# Subtest: AC3: each OpenAI-compatible transport attempt reserves before fetch, and refusal or an expired deadline starts no request
+ok 10 - AC3: each OpenAI-compatible transport attempt reserves before fetch, and refusal or an expired deadline starts no request
+  ---
+  duration_ms: 121.8057
+  type: 'test'
+  ...
+# Subtest: Tool calls in the response become AssistantToolCalls; a tool call with a missing id or name, or arguments that are not a JSON object, fails closed
+ok 11 - Tool calls in the response become AssistantToolCalls; a tool call with a missing id or name, or arguments that are not a JSON object, fails closed
+  ---
+  duration_ms: 19.5479
+  type: 'test'
+  ...
+# Subtest: A connection failure is retried exactly once; an HTTP error response is never retried
+ok 12 - A connection failure is retried exactly once; an HTTP error response is never retried
+  ---
+  duration_ms: 222.7198
+  type: 'test'
+  ...
+# Subtest: HTTP 429 surfaces as RateLimitError and other HTTP errors as APIError, carrying only a sanitised status and code
+ok 13 - HTTP 429 surfaces as RateLimitError and other HTTP errors as APIError, carrying only a sanitised status and code
+  ---
+  duration_ms: 4.3339
+  type: 'test'
+  ...
+# Subtest: Requests time out after the configured timeout (default matches DEFAULT_GEMINI_TIMEOUT_MS)
+ok 14 - Requests time out after the configured timeout (default matches DEFAULT_GEMINI_TIMEOUT_MS)
+  ---
+  duration_ms: 54.0768
+  type: 'test'
+  ...
+# Subtest: The adapter refuses to construct without an API key, a model, or an HTTPS base URL
+ok 15 - The adapter refuses to construct without an API key, a model, or an HTTPS base URL
+  ---
+  duration_ms: 4.4873
+  type: 'test'
+  ...
+1..15
+# tests 15
+# suites 0
+# pass 15
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 6180.1505
