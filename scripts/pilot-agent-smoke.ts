@@ -645,7 +645,7 @@ function classifyFailure(
 
 function diagnosticSummary(diagnostics: readonly AssistantDiagnosticEvent[]): string {
   if (diagnostics.length === 0) return "none";
-  return diagnostics.map((event) => `${event.stage}:${event.succeeded ? "ok" : event.failureClass ?? "failed"}${event.toolName ? `:${event.toolName}` : ""}${event.errorClass ? `:${event.errorClass}` : ""}${event.providerStatusCode ? `:http${event.providerStatusCode}` : ""}${event.providerErrorCode ? `:${event.providerErrorCode}` : ""}`).join(",");
+  return diagnostics.map((event) => `${event.stage}:${event.succeeded ? "ok" : event.failureClass ?? "failed"}${event.toolName ? `:${event.toolName}` : ""}${event.errorClass ? `:${event.errorClass}` : ""}${event.providerStatusCode ? `:http${event.providerStatusCode}` : ""}${event.providerErrorCode ? `:${event.providerErrorCode}` : ""}${event.scopeFailureReason ? `:${event.scopeFailureReason}` : ""}`).join(",");
 }
 
 function formatNairaKobo(kobo: number): string {

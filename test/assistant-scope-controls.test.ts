@@ -5,7 +5,7 @@ import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-ru
 import type { AssistantModelRequest } from "../apps/local-guest/src/assistant/assistant-model.js";
 import { temporaryDatabasePath } from "./helpers/temporary-database.js";
 import { ScriptedAssistantModel } from "../apps/local-guest/src/assistant/scripted-assistant-model.js";
-import { parseScopeAssessment } from "../apps/local-guest/src/assistant/scope-classifier.js";
+import { parseScopeAssessment, ModelScopeClassifier, ScopeClassificationError } from "../apps/local-guest/src/assistant/scope-classifier.js";
 
 const slots = { city: null, neighbourhood: null, bedrooms: null, nights: null, guests: null, checkIn: null, checkOut: null };
 const allowed = { scope: "in_scope", risk: "ordinary", intents: ["search"], slots, reasonCode: "supported" } as const;
@@ -162,4 +162,14 @@ test("Classifier reasoning can retain provider defaults without extending its fi
     assert.equal(requests[0]?.maxOutputTokens, 512);
     assert.throws(() => new AssistantRuntime(environment, model, { scopeReasoningEffort: "unsupported" as never }), /reasoning effort/);
   } finally { environment.close(); }
+});
+
+test("Invalid classifier tuples report closed failure reasons without exposing response content", async () => {
+  const classifier = new ModelScopeClassifier({ generate: async () => ({ text: JSON.stringify({ ...allowed, scope: "out_of_scope", reasonCode: "outside", intents: ["clarify"] }) }) });
+  await assert.rejects(classifier.assess("PRIVATE_INPUT_CANARY", { domain: "shortlet", description: "Stays", hasShortlist: false, hasSelectedStay: false, hasOffer: false }), (error: unknown) => {
+    assert.ok(error instanceof ScopeClassificationError);
+    assert.equal(error.reason, "scope_intent_mismatch");
+    assert.doesNotMatch(error.message, /PRIVATE_|clarify|out_of_scope/);
+    return true;
+  });
 });

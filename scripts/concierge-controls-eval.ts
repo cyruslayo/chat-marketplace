@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { performance } from "node:perf_hooks";
 import { ModelRequestGuardError, type AssistantModelClient } from "../apps/local-guest/src/assistant/assistant-model.js";
-import { ASSISTANT_CONTROL_OUTCOMES } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import { ASSISTANT_CONTROL_OUTCOMES, type AssistantDiagnosticEvent } from "../apps/local-guest/src/assistant/assistant-runtime.js";
 import { OpenAiCompatibleClient } from "../apps/local-guest/src/assistant/openai-compatible-client.js";
 import { ASSISTANT_CONTROL_COPY } from "../apps/local-guest/src/assistant/control-copy.js";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
@@ -165,6 +165,7 @@ async function run(): Promise<void> {
   try {
     for (const scenario of SCENARIOS.filter((candidate) => !options.caseId || candidate.id === options.caseId)) {
       const turns: TurnUsage[] = [];
+      const diagnostics: AssistantDiagnosticEvent[] = [];
       let activeTurn: TurnUsage | undefined;
       const client: AssistantModelClient = {
         supportsProviderAttemptReservation: true,
@@ -218,7 +219,7 @@ async function run(): Promise<void> {
           }
         },
       };
-      const fixture = await restartFixture({}, { conciergeMode: "openai-compatible", modelClient: client });
+      const fixture = await restartFixture({}, { conciergeMode: "openai-compatible", modelClient: client, onAssistantDiagnostic: (event) => diagnostics.push(event) });
       let prompt = scenario.prompt;
       try {
         if (scenario.injectedNarrative) {
@@ -295,6 +296,7 @@ async function run(): Promise<void> {
         reports.push({ id: scenario.id, expected: scenario.expected, result: taskCompleted ? "PASS" : "FAIL", taskCompleted, preludeCompleted, requestedUnitMatched,
           falseRefusal: scenario.expected !== "blocked" && result.ok && ["scope_redirect", "scope_unavailable"].includes(result.assistantControlOutcome ?? ""), prohibitedEffects, truthful,
           guardFailures, quotaRefusals, controlOutcomeCounts,
+          diagnostics,
           controlOutcome: result.ok ? result.assistantControlOutcome ?? null : result.code,
           effects: { before: initial, after: final },
           reservations: turns.reduce((sum, turn) => sum + turn.reservations, 0), transportStarts: turns.reduce((sum, turn) => sum + turn.transportStarts, 0),

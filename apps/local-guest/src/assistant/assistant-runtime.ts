@@ -27,7 +27,7 @@ import {
   type AssistantReplyPlanKind,
 } from "./assistant-platform.js";
 import { createShortletAssistantPack } from "./shortlet-assistant-pack.js";
-import { ModelScopeClassifier, assessScopeSafely, scopedMixedInput, type ScopeClassifier, type ScopeAssessment, type ConciergeIntent } from "./scope-classifier.js";
+import { ModelScopeClassifier, ScopeClassificationError, assessScopeSafely, scopedMixedInput, type ScopeClassifier, type ScopeAssessment, type ConciergeIntent } from "./scope-classifier.js";
 import { ASSISTANT_CONTROL_COPY } from "./control-copy.js";
 import { isProviderUnavailable } from "./fallback-model-client.js";
 import {
@@ -119,6 +119,7 @@ export interface AssistantDiagnosticEvent {
   readonly failureClass?: AssistantFailureClass;
   readonly outcome?: AssistantControlOutcome;
   readonly effectCode?: AssistantToolEffectCode;
+  readonly scopeFailureReason?: import("./scope-classifier.js").ScopeFailureReason;
 }
 
 export interface AssistantRuntimeOptions {
@@ -610,7 +611,8 @@ export class AssistantRuntime {
       domain: packForScope.id, description: packForScope.scopeDescription ?? packForScope.label,
       hasShortlist: candidateTaskState.shortlist.length > 0, hasSelectedStay: Boolean(candidateTaskState.selectedStayRef), hasOffer: Boolean(candidateTaskState.currentOfferId),
     }, this.#scopeTimeoutMs, (error) => {
-      this.#diagnose(createFailureDiagnostic("provider_request", 0, undefined, error));
+      this.#diagnose({ ...createFailureDiagnostic("provider_request", 0, undefined, error),
+        ...(error instanceof ScopeClassificationError ? { scopeFailureReason: error.reason } : {}) });
       scopeFailureOutcome = error instanceof ModelRequestGuardError && error.code === "quota_denied" ? "quota_refusal" : "guard_failure";
       recordOutcome(scopeFailureOutcome);
     });

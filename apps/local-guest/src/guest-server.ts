@@ -255,6 +255,7 @@ import {
   type ModelCallBudget,
 } from "./assistant/model-call-budget.js";
 import type { AssistantModelClient } from "./assistant/assistant-model.js";
+import type { AssistantDiagnosticEvent } from "./assistant/assistant-runtime.js";
 import { SqliteModelRequestQuota, type ModelRequestQuotaPort } from "../../../packages/platform-core/src/model-request-quota.js";
 import { modelRequestQuotaLimitsFromEnvironment } from "../../../packages/platform-core/src/model-request-quota-config.js";
 import { ModelQuotaGuardClient } from "./assistant/model-quota-guard.js";
@@ -2212,6 +2213,8 @@ export interface GuestRequestHandlerOptions {
   landingBinaryAssets?: LandingBinaryAssetLoader;
   geminiClient?: GeminiConciergeClient;
   modelClient?: AssistantModelClient;
+  /** Metadata-only observation for local evaluation and host telemetry. */
+  onAssistantDiagnostic?: (event: AssistantDiagnosticEvent) => void;
   conciergeMode?:
     | "deterministic"
     | "gemini"
@@ -2369,6 +2372,7 @@ export function createGuestRequestHandler(
     assistantModelClient = options.modelClient ?? new ScriptedAssistantModel();
     assistantRuntime = new AssistantRuntime(env, assistantModelClient, {
       additionalPacks: options.additionalPacks,
+      onDiagnostic: options.onAssistantDiagnostic,
     });
   } else if (mode === "gemini" || mode === "openai-compatible") {
     // The production pilot passes a validated client; development commands read the same settings from the environment.
@@ -2389,6 +2393,7 @@ export function createGuestRequestHandler(
     const guardedModelClient = quotaGuard(assistantModelClient, env);
     assistantRuntime = new AssistantRuntime(env, guardedModelClient, {
       additionalPacks: options.additionalPacks,
+      onDiagnostic: options.onAssistantDiagnostic,
     });
   }
   const modelCallBudget = options.modelCallBudget
@@ -2512,7 +2517,7 @@ export function createGuestRequestHandler(
               assistantRuntime: new AssistantRuntime(
                 runtimeEnvironment,
                 quotaGuard(assistantModelClient, runtimeEnvironment),
-                { additionalPacks: options.additionalPacks },
+                { additionalPacks: options.additionalPacks, onDiagnostic: options.onAssistantDiagnostic },
               ),
             }
           : {}),

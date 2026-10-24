@@ -1,0 +1,120 @@
+TAP version 13
+# (node:116964) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC6: classifier guard failures and quota refusals emit separate metadata-only outcomes once
+ok 1 - AC6: classifier guard failures and quota refusals emit separate metadata-only outcomes once
+  ---
+  duration_ms: 57.0469
+  type: 'test'
+  ...
+# (node:23384) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Scope AC1: unrelated requests never invoke planner tools or retain rejected input
+ok 2 - Scope AC1: unrelated requests never invoke planner tools or retain rejected input
+  ---
+  duration_ms: 503.342
+  type: 'test'
+  ...
+# Subtest: Scope AC3: mixed requests send only validated scope slots to the planner
+ok 3 - Scope AC3: mixed requests send only validated scope slots to the planner
+  ---
+  duration_ms: 564.4015
+  type: 'test'
+  ...
+# Subtest: Scope AC4: unavailable and malformed classifier decisions use fixed replies without a planner call
+ok 4 - Scope AC4: unavailable and malformed classifier decisions use fixed replies without a planner call
+  ---
+  duration_ms: 515.0595
+  type: 'test'
+  ...
+# Subtest: Scope AC2: valid stays, greetings, Pidgin, corrections and contextual follow-ups reach planning
+ok 5 - Scope AC2: valid stays, greetings, Pidgin, corrections and contextual follow-ups reach planning
+  ---
+  duration_ms: 625.3717
+  type: 'test'
+  ...
+# Subtest: Scope AC5: pending confirmations and cancellations bypass an unavailable classifier
+ok 6 - Scope AC5: pending confirmations and cancellations bypass an unavailable classifier
+  ---
+  duration_ms: 858.3314
+  type: 'test'
+  ...
+# Subtest: Scope AC6: rejected input stays absent from persisted history and later classifier context
+ok 7 - Scope AC6: rejected input stays absent from persisted history and later classifier context
+  ---
+  duration_ms: 658.6158
+  type: 'test'
+  ...
+# Subtest: Scope AC7: the default classifier is tool-free and excludes prior history and listing prose
+ok 8 - Scope AC7: the default classifier is tool-free and excludes prior history and listing prose
+  ---
+  duration_ms: 515.9198
+  type: 'test'
+  ...
+# Subtest: Classifier reasoning can retain provider defaults without extending its five-second deadline
+ok 9 - Classifier reasoning can retain provider defaults without extending its five-second deadline
+  ---
+  duration_ms: 10.8084
+  type: 'test'
+  ...
+# Subtest: Invalid classifier tuples report closed failure reasons without exposing response content
+ok 10 - Invalid classifier tuples report closed failure reasons without exposing response content
+  ---
+  duration_ms: 1.7942
+  type: 'test'
+  ...
+# (node:31764) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Controlled live evaluation requires explicit opt-in and a bounded total attempt limit
+ok 11 - Controlled live evaluation requires explicit opt-in and a bounded total attempt limit
+  ---
+  duration_ms: 8.1854
+  type: 'test'
+  ...
+# Subtest: Blocked scenario grading rejects arbitrary generation, planner calls, and new surfaces despite unchanged database effects
+ok 12 - Blocked scenario grading rejects arbitrary generation, planner calls, and new surfaces despite unchanged database effects
+  ---
+  duration_ms: 0.6508
+  type: 'test'
+  ...
+# Subtest: Pending evaluator calls keep usage and cost unavailable in immutable report snapshots
+ok 13 - Pending evaluator calls keep usage and cost unavailable in immutable report snapshots
+  ---
+  duration_ms: 0.531
+  type: 'test'
+  ...
+# Subtest: Controlled details grading pins the first public action before generation and rejects a different authorized Unit
+ok 14 - Controlled details grading pins the first public action before generation and rejects a different authorized Unit
+  ---
+  duration_ms: 0.796
+  type: 'test'
+  ...
+# Subtest: The controlled evaluator runs a synthetic HTTP case with network-blocked provider fixtures and excludes content from reports
+ok 15 - The controlled evaluator runs a synthetic HTTP case with network-blocked provider fixtures and excludes content from reports
+  ---
+  duration_ms: 3460.4691
+  type: 'test'
+  ...
+# (node:115740) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: The four-turn scripted reference uses the full smoke harness without credentials, network calls or live performance claims
+ok 16 - The four-turn scripted reference uses the full smoke harness without credentials, network calls or live performance claims
+  ---
+  duration_ms: 6742.9737
+  type: 'test'
+  ...
+# Subtest: A bounded offline transport probe reserves retries outside transport catches and reports quota refusal once
+ok 17 - A bounded offline transport probe reserves retries outside transport catches and reports quota refusal once
+  ---
+  duration_ms: 3258.1093
+  type: 'test'
+  ...
+1..17
+# tests 17
+# suites 0
+# pass 17
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 11113.1771
