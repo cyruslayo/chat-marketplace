@@ -1,0 +1,3 @@
+(node:172120) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+Live-agent smoke failed; see C:\AI2026\chat-marketplace-controls\.scratch\concierge-agent-controls\validation\benchmark-20261024T202049Z/agent-smoke-report.md
