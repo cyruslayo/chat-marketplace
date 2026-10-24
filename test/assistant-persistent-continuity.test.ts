@@ -11,18 +11,54 @@ const serverModel: AssistantModelClient = {
     if (request.structuredOutput?.name === "concierge_scope") {
       const message = JSON.parse(request.history[0]?.role === "user" ? request.history[0].text : "{}") as { message?: string };
       const text = message.message?.toLowerCase() ?? "";
-      const intents = text.includes("status") ? ["status"] : text.includes("draft") ? ["draft"] : text.includes("more") ? ["details"] : ["search"];
+      if (text.includes("poem")) return { text: JSON.stringify({ scope: "out_of_scope", risk: "ordinary", intents: [], reasonCode: "outside", slots: { city: null, neighbourhood: null, bedrooms: null, nights: null, guests: null, checkIn: null, checkOut: null } }) };
+      const intents = text.includes("support") || text.includes("locked out") ? ["support"] : text.includes("status") ? ["status"] : text.includes("draft") ? ["draft"] : text.includes("more") ? ["details"] : ["search"];
       return { text: JSON.stringify({ scope: "in_scope", risk: "ordinary", intents, reasonCode: "supported", slots: { city: "Lagos", neighbourhood: "Old Ikoyi", bedrooms: null, nights: 4, guests: 2, checkIn: null, checkOut: null } }) };
     }
     if (request.history.at(-1)?.role === "tool_results") return { text: JSON.stringify({ kind: "clarify_stay", references: [] }) };
     const user = [...request.history].reverse().find((step) => step.role === "user");
     const text = user?.role === "user" ? user.text.toLowerCase() : "";
+    if (text.includes("support") || text.includes("locked out")) return { text: JSON.stringify({ kind: "support_guidance", references: [] }) };
     if (text.includes("status")) return { toolCalls: [{ id: "status", name: "get_booking_status", args: {} }] };
     if (text.includes("draft")) return { toolCalls: [{ id: "draft", name: "prepare_request_draft", args: { stayRef: "stay-1", nights: 4, guests: 2 } }] };
     if (text.includes("more")) return { toolCalls: [{ id: "details", name: "get_unit_details", args: { stayRef: "stay-1" } }] };
     return { toolCalls: [{ id: "search", name: "search_stays", args: { city: "Lagos", neighbourhood: "Old Ikoyi", checkIn: null, nights: 4, guests: 2 } }] };
   },
 };
+
+test("A scope redirect keeps its fixed meaning in the timeline and after refresh", async () => {
+  const fixture = await restartFixture({}, { modelClient: serverModel, conciergeMode: "assistant-offline" });
+  try {
+    const search = await fixture.send("/api/turn", { text: "Find Ikoyi stays for four nights for two guests" });
+    assert.equal(search.ok, true);
+    const redirect = await fixture.send("/api/turn", { text: "Write me a poem about stars" });
+    assert.equal(redirect.ok, true);
+    if (!redirect.ok) return;
+    assert.match(redirect.messages[0] ?? "", /I can help you find accommodation/);
+    const current = await fixture.state();
+    assert.equal(current.ok, true);
+    if (!current.ok) return;
+    assert.equal(current.timeline.at(-1)?.text, redirect.messages[0]);
+    await fixture.restart();
+    const restored = await fixture.state();
+    assert.equal(restored.ok, true);
+    if (restored.ok) assert.equal(restored.timeline.at(-1)?.text, redirect.messages[0]);
+
+    const support = await fixture.send("/api/turn", { text: "I am locked out of my stay and need support." });
+    assert.equal(support.ok, true);
+    if (!support.ok) return;
+    assert.match(support.messages[0] ?? "", /Active-Stay Emergency Support/);
+    const supportState = await fixture.state();
+    assert.equal(supportState.ok, true);
+    if (supportState.ok) assert.equal(supportState.timeline.at(-1)?.text, support.messages[0]);
+    await fixture.restart();
+    const restoredSupport = await fixture.state();
+    assert.equal(restoredSupport.ok, true);
+    if (restoredSupport.ok) assert.equal(restoredSupport.timeline.at(-1)?.text, support.messages[0]);
+  } finally {
+    await fixture.close();
+  }
+});
 
 test("Assistant Shortlet search, detail, and draft continuity survive authenticated HTTP refreshes and application restarts", async () => {
   const fixture = await restartFixture({}, { modelClient: serverModel, conciergeMode: "assistant-offline" });
@@ -79,7 +115,13 @@ test("Assistant Shortlet search, detail, and draft continuity survive authentica
     assert.doesNotMatch(storedDraft!.threadJson, /Prepare a Request Draft|Tell me more|conversationHistory|rawStep|Luxury 2-Bedroom|paymentReference|occupants/);
     const status = await fixture.send("/api/turn", { text: "Check my booking status" });
     assert.equal(status.ok, true);
-    if (status.ok) assert.match(status.messages[0] ?? "", /no active booking/i);
+    if (status.ok) {
+      assert.match(status.messages[0] ?? "", /no active booking/i);
+      await fixture.restart();
+      const restoredStatus = await fixture.state();
+      assert.equal(restoredStatus.ok, true);
+      if (restoredStatus.ok) assert.equal(restoredStatus.timeline.at(-1)?.text, status.messages[0]);
+    }
     const draftSurface = reopenedDraft.surfaces[0]!;
     assert.match(draftSurface.conventionalRoute ?? "", /^\/booking-requests\/drafts\//);
     const draftId = draftSurface.conventionalRoute!.split("/").at(-1)!;

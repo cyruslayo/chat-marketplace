@@ -1,0 +1,396 @@
+TAP version 13
+# (node:156080) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: A scope redirect keeps its fixed meaning in the timeline and after refresh
+ok 1 - A scope redirect keeps its fixed meaning in the timeline and after refresh
+  ---
+  duration_ms: 2465.0824
+  type: 'test'
+  ...
+# Subtest: Assistant Shortlet search, detail, and draft continuity survive authenticated HTTP refreshes and application restarts
+ok 2 - Assistant Shortlet search, detail, and draft continuity survive authenticated HTTP refreshes and application restarts
+  ---
+  duration_ms: 2608.4577
+  type: 'test'
+  ...
+# (node:168352) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Current offer replies show authoritative amounts and stop treating expired offers as payable
+ok 3 - Current offer replies show authoritative amounts and stop treating expired offers as payable
+  ---
+  duration_ms: 988.3637
+  type: 'test'
+  ...
+# Subtest: Only a successfully created Request Draft gets a review-ready reply
+ok 4 - Only a successfully created Request Draft gets a review-ready reply
+  ---
+  duration_ms: 891.9071
+  type: 'test'
+  ...
+# Subtest: Zero-deposit price replies never claim that a deposit is collected
+ok 5 - Zero-deposit price replies never claim that a deposit is collected
+  ---
+  duration_ms: 881.3355
+  type: 'test'
+  ...
+# Subtest: Planning output has a separate configurable bound from the final reply
+ok 6 - Planning output has a separate configurable bound from the final reply
+  ---
+  duration_ms: 1050.0262
+  type: 'test'
+  ...
+# Subtest: Support intent returns server-owned Active-Stay guidance for access emergencies without tools
+ok 7 - Support intent returns server-owned Active-Stay guidance for access emergencies without tools
+  ---
+  duration_ms: 901.5335
+  type: 'test'
+  ...
+# (node:142564) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Controlled live evaluation requires explicit opt-in and a bounded total attempt limit
+ok 8 - Controlled live evaluation requires explicit opt-in and a bounded total attempt limit
+  ---
+  duration_ms: 6.2473
+  type: 'test'
+  ...
+# Subtest: Blocked scenario grading rejects arbitrary generation, planner calls, and new surfaces despite unchanged database effects
+ok 9 - Blocked scenario grading rejects arbitrary generation, planner calls, and new surfaces despite unchanged database effects
+  ---
+  duration_ms: 0.6669
+  type: 'test'
+  ...
+# Subtest: AC3: a quota reservation that exceeds the request deadline cannot start transport after it resolves
+ok 10 - AC3: a quota reservation that exceeds the request deadline cannot start transport after it resolves
+  ---
+  duration_ms: 73.6567
+  type: 'test'
+  ...
+# Subtest: AC3: the shorter of the request timeout and absolute deadline bounds quota reservation
+ok 11 - AC3: the shorter of the request timeout and absolute deadline bounds quota reservation
+  ---
+  duration_ms: 151.3658
+  type: 'test'
+  ...
+# Subtest: AC3: a configured fallback provider reserves its own actual transport attempt
+ok 12 - AC3: a configured fallback provider reserves its own actual transport attempt
+  ---
+  duration_ms: 10.5299
+  type: 'test'
+  ...
+# Subtest: AC2: quota refusal and authority failure stop transport safely
+ok 13 - AC2: quota refusal and authority failure stop transport safely
+  ---
+  duration_ms: 1.7507
+  type: 'test'
+  ...
+# (node:182572) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC1: shared quota configuration defaults to existing daily and per-guest limits
+ok 14 - AC1: shared quota configuration defaults to existing daily and per-guest limits
+  ---
+  duration_ms: 3.8706
+  type: 'test'
+  ...
+# Subtest: AC5: default local paid composition honors existing per-guest and tenant limit overrides
+ok 15 - AC5: default local paid composition honors existing per-guest and tenant limit overrides
+  ---
+  duration_ms: 3369.034
+  type: 'test'
+  ...
+# Subtest: AC1: shared quota configuration uses existing environment overrides and rejects invalid bounds
+ok 16 - AC1: shared quota configuration uses existing environment overrides and rejects invalid bounds
+  ---
+  duration_ms: 0.9566
+  type: 'test'
+  ...
+# Subtest: live smoke defaults to one journey and accepts an explicit three-run request
+ok 17 - live smoke defaults to one journey and accepts an explicit three-run request
+  ---
+  duration_ms: 2.2932
+  type: 'test'
+  ...
+# Subtest: live smoke run count rejects malformed or unbounded options
+ok 18 - live smoke run count rejects malformed or unbounded options
+  ---
+  duration_ms: 1.304
+  type: 'test'
+  ...
+# Subtest: provider request budget counts only reserved provider attempts and hard-stops at its cap
+ok 19 - provider request budget counts only reserved provider attempts and hard-stops at its cap
+  ---
+  duration_ms: 0.8379
+  type: 'test'
+  ...
+# Subtest: controlled evaluation keeps the legacy ten-attempt default and accepts an explicit sixteen-attempt cap
+ok 20 - controlled evaluation keeps the legacy ten-attempt default and accepts an explicit sixteen-attempt cap
+  ---
+  duration_ms: 1.3607
+  type: 'test'
+  ...
+# Subtest: explicit multi-run mode receives a fixed per-journey budget without unbounded growth
+ok 21 - explicit multi-run mode receives a fixed per-journey budget without unbounded growth
+  ---
+  duration_ms: 0.3929
+  type: 'test'
+  ...
+# Subtest: provider stop reason treats HTTP 429 as terminal and budget exhaustion as its own classification
+ok 22 - provider stop reason treats HTTP 429 as terminal and budget exhaustion as its own classification
+  ---
+  duration_ms: 0.5553
+  type: 'test'
+  ...
+# Subtest: AC1: the smoke result JSON includes per-turn latency, model-call count and token usage when the provider returns usage
+ok 23 - AC1: the smoke result JSON includes per-turn latency, model-call count and token usage when the provider returns usage
+  ---
+  duration_ms: 7.6607
+  type: 'test'
+  ...
+# Subtest: AC1 percentiles: p50 and p95 are nearest-rank over the recorded samples and null when empty
+ok 24 - AC1 percentiles: p50 and p95 are nearest-rank over the recorded samples and null when empty
+  ---
+  duration_ms: 0.454
+  type: 'test'
+  ...
+# Subtest: AC1 failure path: when the provider returns no usage, the report still writes and token and cost fields are unavailable instead of zero
+ok 25 - AC1 failure path: when the provider returns no usage, the report still writes and token and cost fields are unavailable instead of zero
+  ---
+  duration_ms: 129.5686
+  type: 'test'
+  ...
+# Subtest: AC2: the cost estimate comes from the OpenRouter-reported price for the model slug
+ok 26 - AC2: the cost estimate comes from the OpenRouter-reported price for the model slug
+  ---
+  duration_ms: 1.728
+  type: 'test'
+  ...
+# Subtest: AC2 failure path: an unknown slug, a failed price fetch or a missing price leaves the cost unavailable
+ok 27 - AC2 failure path: an unknown slug, a failed price fetch or a missing price leaves the cost unavailable
+  ---
+  duration_ms: 1.0451
+  type: 'test'
+  ...
+# Subtest: AC3: no prompt, reply or key text is written to the result or report files (ADR 0075)
+ok 28 - AC3: no prompt, reply or key text is written to the result or report files (ADR 0075)
+  ---
+  duration_ms: 64.7032
+  type: 'test'
+  ...
+# Subtest: AC3: observation preserves guarded adapter capability, continuation projection, and per-call usage ownership
+ok 29 - AC3: observation preserves guarded adapter capability, continuation projection, and per-call usage ownership
+  ---
+  duration_ms: 1.1792
+  type: 'test'
+  ...
+# Subtest: AC4 guard: the benchmark document is refused unless the result file holds real live results
+ok 30 - AC4 guard: the benchmark document is refused unless the result file holds real live results
+  ---
+  duration_ms: 2.3932
+  type: 'test'
+  ...
+# (node:93808) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: The four-turn scripted reference uses the full smoke harness without credentials, network calls or live performance claims
+ok 31 - The four-turn scripted reference uses the full smoke harness without credentials, network calls or live performance claims
+  ---
+  duration_ms: 9249.7692
+  type: 'test'
+  ...
+# Subtest: Finding 2: complete consistent live evidence produces GO
+ok 32 - Finding 2: complete consistent live evidence produces GO
+  ---
+  duration_ms: 32.7401
+  type: 'test'
+  ...
+# Subtest: AC6: reserved capacity and actual transport starts are reported and validated separately
+not ok 33 - AC6: reserved capacity and actual transport starts are reported and validated separately
+  ---
+  duration_ms: 14.1952
+  type: 'test'
+  location: 'C:\\AI2026\\chat-marketplace-controls\\test\\pilot-agent-smoke-report.test.ts:1:1532'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /Reserved provider-request capacity/. Input:
+    
+    '# OpenRouter GPT-6 Luna benchmark\n' +
+      '\n' +
+      '- Date: 2026-10-23\n' +
+      '- Provider: openrouter\n' +
+      '- Model slug: openai/gpt-6-luna\n' +
+      '- Grading profile: price-roles-and-status-v3\n' +
+      '- Live journeys: 3 of 3 configured (3 required for the benchmark)\n' +
+      '- Offline reference: run separately with --scripted; see issue 03 Comments for its result\n' +
+      '\n' +
+      '## Pass rate per grading dimension\n' +
+      '\n' +
+      '| Dimension | Pass |\n' +
+      '|---|---|\n' +
+      '| discovery | 3 / 3 |\n' +
+      '| refinement | 3 / 3 |\n' +
+      '| unit inspection | 3 / 3 |\n' +
+      '| booking intent | 3 / 3 |\n' +
+      '\n' +
+      '## Latency (ms)\n' +
+      '\n' +
+      '| Measure | p50 | p95 |\n' +
+      '|---|---|---|\n' +
+      '| Turn | 5060 | 7028 |\n' +
+      '| Journey | 21750 | 22633 |\n' +
+      '\n' +
+      '## Per journey\n' +
+      '\n' +
+      '| Journey | Latency ms | Model calls | Prompt / completion tokens | Cost (USD) |\n' +
+      '|---|---|---|---|---|\n' +
+      '| 1 | 22633 | 8 | 11574 / 828 | $0.001571 |\n' +
+      '| 2 | 21750 | 8 | 11576 / 849 | $0.001582 |\n' +
+      '| 3 | 20213 | 8 | 11468 / 741 | $0.001517 |\n' +
+      '\n' +
+      'Pricing: OpenRouter-reported per-token price for openai/gpt-6-luna, read at run time.\n' +
+      '\n' +
+      '## Failures by AssistantFailureClass\n' +
+      '\n' +
+      'No failures recorded.\n' +
+      '\n' +
+      '## Go/no-go\n' +
+      '\n' +
+      "**GO** for the evaluated local discovery-to-draft journey, subject to the owner's review.\n"
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    # OpenRouter GPT-6 Luna benchmark
+    
+    - Date: 2026-10-23
+    - Provider: openrouter
+    - Model slug: openai/gpt-6-luna
+    - Grading profile: price-roles-and-status-v3
+    - Live journeys: 3 of 3 configured (3 required for the benchmark)
+    - Offline reference: run separately with --scripted; see issue 03 Comments for its result
+    
+    ## Pass rate per grading dimension
+    
+    | Dimension | Pass |
+    |---|---|
+    | discovery | 3 / 3 |
+    | refinement | 3 / 3 |
+    | unit inspection | 3 / 3 |
+    | booking intent | 3 / 3 |
+    
+    ## Latency (ms)
+    
+    | Measure | p50 | p95 |
+    |---|---|---|
+    | Turn | 5060 | 7028 |
+    | Journey | 21750 | 22633 |
+    
+    ## Per journey
+    
+    | Journey | Latency ms | Model calls | Prompt / completion tokens | Cost (USD) |
+    |---|---|---|---|---|
+    | 1 | 22633 | 8 | 11574 / 828 | $0.001571 |
+    | 2 | 21750 | 8 | 11576 / 849 | $0.001582 |
+    | 3 | 20213 | 8 | 11468 / 741 | $0.001517 |
+    
+    Pricing: OpenRouter-reported per-token price for openai/gpt-6-luna, read at run time.
+    
+    ## Failures by AssistantFailureClass
+    
+    No failures recorded.
+    
+    ## Go/no-go
+    
+    **GO** for the evaluated local discovery-to-draft journey, subject to the owner's review.
+    
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\pilot-agent-smoke-report.test.ts:40:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: Finding 2: empty, missing, duplicate and unknown journey stages cannot produce GO
+ok 34 - Finding 2: empty, missing, duplicate and unknown journey stages cannot produce GO
+  ---
+  duration_ms: 5.1152
+  type: 'test'
+  ...
+# Subtest: Finding 2: contradictory verdicts and journey or request counts are refused
+ok 35 - Finding 2: contradictory verdicts and journey or request counts are refused
+  ---
+  duration_ms: 8.6558
+  type: 'test'
+  ...
+# Subtest: Finding 2: a complete single journey remains INCOMPLETE for the three-journey benchmark
+not ok 36 - Finding 2: a complete single journey remains INCOMPLETE for the three-journey benchmark
+  ---
+  duration_ms: 3.5635
+  type: 'test'
+  location: 'C:\\AI2026\\chat-marketplace-controls\\test\\pilot-agent-smoke-report.test.ts:1:4111'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + 'task completion count contradicts scenario results'
+    - null
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: ~
+  actual: 'task completion count contradicts scenario results'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\pilot-agent-smoke-report.test.ts:94:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: Finding 2: a complete failed run preserves its NO-GO evidence
+not ok 37 - Finding 2: a complete failed run preserves its NO-GO evidence
+  ---
+  duration_ms: 1.7902
+  type: 'test'
+  location: 'C:\\AI2026\\chat-marketplace-controls\\test\\pilot-agent-smoke-report.test.ts:1:5161'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + 'task completion count contradicts scenario results'
+    - null
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: ~
+  actual: 'task completion count contradicts scenario results'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\pilot-agent-smoke-report.test.ts:104:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: Finding 2: legacy grading and malformed nested evidence cannot produce a new GO
+ok 38 - Finding 2: legacy grading and malformed nested evidence cannot produce a new GO
+  ---
+  duration_ms: 5.3114
+  type: 'test'
+  ...
+1..38
+# tests 38
+# suites 0
+# pass 35
+# fail 3
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 12285.9598

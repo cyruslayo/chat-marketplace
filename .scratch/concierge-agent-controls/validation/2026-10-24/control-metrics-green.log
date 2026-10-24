@@ -1,0 +1,118 @@
+TAP version 13
+# (node:150244) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC6: classifier guard failures and quota refusals emit separate metadata-only outcomes once
+ok 1 - AC6: classifier guard failures and quota refusals emit separate metadata-only outcomes once
+  ---
+  duration_ms: 34.0964
+  type: 'test'
+  ...
+# (node:190116) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Current offer replies show authoritative amounts and stop treating expired offers as payable
+ok 2 - Current offer replies show authoritative amounts and stop treating expired offers as payable
+  ---
+  duration_ms: 618.7602
+  type: 'test'
+  ...
+# Subtest: Only a successfully created Request Draft gets a review-ready reply
+ok 3 - Only a successfully created Request Draft gets a review-ready reply
+  ---
+  duration_ms: 636.8377
+  type: 'test'
+  ...
+# Subtest: Zero-deposit price replies never claim that a deposit is collected
+ok 4 - Zero-deposit price replies never claim that a deposit is collected
+  ---
+  duration_ms: 557.072
+  type: 'test'
+  ...
+# Subtest: Planning output has a separate configurable bound from the final reply
+ok 5 - Planning output has a separate configurable bound from the final reply
+  ---
+  duration_ms: 676.6406
+  type: 'test'
+  ...
+# Subtest: Support intent returns server-owned Active-Stay guidance for access emergencies without tools
+ok 6 - Support intent returns server-owned Active-Stay guidance for access emergencies without tools
+  ---
+  duration_ms: 617.2994
+  type: 'test'
+  ...
+# (node:129092) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Scope AC1: unrelated requests never invoke planner tools or retain rejected input
+ok 7 - Scope AC1: unrelated requests never invoke planner tools or retain rejected input
+  ---
+  duration_ms: 601.052
+  type: 'test'
+  ...
+# Subtest: Scope AC3: mixed requests send only validated scope slots to the planner
+ok 8 - Scope AC3: mixed requests send only validated scope slots to the planner
+  ---
+  duration_ms: 792.9618
+  type: 'test'
+  ...
+# Subtest: Scope AC4: unavailable and malformed classifier decisions use fixed replies without a planner call
+ok 9 - Scope AC4: unavailable and malformed classifier decisions use fixed replies without a planner call
+  ---
+  duration_ms: 754.9644
+  type: 'test'
+  ...
+# Subtest: Scope AC2: valid stays, greetings, Pidgin, corrections and contextual follow-ups reach planning
+ok 10 - Scope AC2: valid stays, greetings, Pidgin, corrections and contextual follow-ups reach planning
+  ---
+  duration_ms: 738.2191
+  type: 'test'
+  ...
+# Subtest: Scope AC5: pending confirmations and cancellations bypass an unavailable classifier
+ok 11 - Scope AC5: pending confirmations and cancellations bypass an unavailable classifier
+  ---
+  duration_ms: 662.9089
+  type: 'test'
+  ...
+# Subtest: Scope AC6: rejected input stays absent from persisted history and later classifier context
+ok 12 - Scope AC6: rejected input stays absent from persisted history and later classifier context
+  ---
+  duration_ms: 455.8349
+  type: 'test'
+  ...
+# Subtest: Scope AC7: the default classifier is tool-free and excludes prior history and listing prose
+ok 13 - Scope AC7: the default classifier is tool-free and excludes prior history and listing prose
+  ---
+  duration_ms: 431.6711
+  type: 'test'
+  ...
+# Subtest: AC3: a quota reservation that exceeds the request deadline cannot start transport after it resolves
+ok 14 - AC3: a quota reservation that exceeds the request deadline cannot start transport after it resolves
+  ---
+  duration_ms: 53.4506
+  type: 'test'
+  ...
+# Subtest: AC3: the shorter of the request timeout and absolute deadline bounds quota reservation
+ok 15 - AC3: the shorter of the request timeout and absolute deadline bounds quota reservation
+  ---
+  duration_ms: 110.8665
+  type: 'test'
+  ...
+# Subtest: AC3: a configured fallback provider reserves its own actual transport attempt
+ok 16 - AC3: a configured fallback provider reserves its own actual transport attempt
+  ---
+  duration_ms: 3.2495
+  type: 'test'
+  ...
+# Subtest: AC2: quota refusal and authority failure stop transport safely
+ok 17 - AC2: quota refusal and authority failure stop transport safely
+  ---
+  duration_ms: 1.5772
+  type: 'test'
+  ...
+1..17
+# tests 17
+# suites 0
+# pass 17
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 6005.5083

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import test from "node:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { restartFixture } from "../../test/helpers/guest-restart.js";
@@ -8,9 +9,11 @@ import type { AssistantModelClient } from "../../apps/local-guest/src/assistant/
 import { ASSISTANT_CONTROL_COPY } from "../../apps/local-guest/src/assistant/control-copy.js";
 import { ModelQuotaGuardClient } from "../../apps/local-guest/src/assistant/model-quota-guard.js";
 import { SqliteModelRequestQuota } from "../../packages/platform-core/src/model-request-quota.js";
+import { GUEST_ASSISTANT_COPY } from "../../apps/web-agent/src/guest-content.js";
 
 const state = process.argv[2] ?? "results";
-assert.ok(["results", "details", "draft", "redirect", "unavailable", "quota"].includes(state), "Choose one supported capture state");
+assert.ok(["results", "details", "draft", "redirect", "unavailable", "quota", "support"].includes(state), "Choose one supported capture state");
+await test(`AC7: ${state} guest captures preserve reflow and 44px controls at 320, 390, 768, and 1280 pixels`, async () => {
 const run = process.env.CONTROLS_CAPTURE_RUN ?? new Date().toISOString().replace(/[:.]/g, "-");
 const directory = join(".scratch/guest-ui-consistency/screenshots/concierge-controls-05", run, state);
 mkdirSync(directory, { recursive: true });
@@ -23,6 +26,7 @@ const scripted = new ScriptedAssistantModel([(request) => {
     return { text: JSON.stringify({ kind: kinds[last.results[0]?.name ?? ""] ?? "show_status", references: last.results.filter((result) => !result.isError).map((result) => result.name) }) };
   }
   if (last?.role === "user" && last.text === "Show me the first one") return { toolCalls: [{ id: "capture-details", name: "get_unit_details", args: { stayRef: "stay-1" } }] };
+  if (last?.role === "user" && last.text === "I am locked out of my stay and need support.") return { text: JSON.stringify({ kind: "support_guidance", references: [] }) };
   if (last?.role === "user" && last.text === "Prepare a Request Draft") return { toolCalls: [{ id: "capture-draft", name: "prepare_request_draft", args: { stayRef: "stay-1", nights: 4, guests: 2 } }] };
   return null;
 }]);
@@ -30,6 +34,11 @@ const transport: AssistantModelClient = { supportsProviderAttemptReservation: tr
   await request.beforeProviderAttempt?.();
   transportStarts++;
   if (unavailable) throw new Error("Synthetic guard outage");
+  const input = request.history.at(-1);
+  if (request.structuredOutput?.name === "concierge_scope" && input?.role === "user" && input.text.includes("locked out")) {
+    return { text: JSON.stringify({ scope: "in_scope", risk: "ordinary", intents: ["support"], reasonCode: "supported",
+      slots: { city: null, neighbourhood: null, bedrooms: null, nights: null, guests: null, checkIn: null, checkOut: null } }) };
+  }
   return scripted.generate(request);
 } };
 let guard: ModelQuotaGuardClient | undefined;
@@ -76,12 +85,12 @@ try {
       await tab.waitForSelector("#composer-input", 15_000);
       await tab.waitForFunction("document.readyState === 'complete' && !document.querySelector('#active-workspace')?.hidden", 15_000);
       await tab.evaluate(`document.documentElement.dataset.theme = ${JSON.stringify(theme)}`);
-      if (state === "redirect" || state === "unavailable" || state === "quota") {
+      if (state === "redirect" || state === "unavailable" || state === "quota" || state === "support") {
         const startsBefore = transportStarts;
         unavailable = state === "unavailable";
-        const prompt = state === "redirect" ? "Write a poem about stars" : "Please check my stay";
+        const prompt = state === "redirect" ? "Write a poem about stars" : state === "support" ? "I am locked out of my stay and need support." : "Please check my stay";
         await tab.evaluate(`(() => { const input = document.querySelector('#composer-input'); input.value = ${JSON.stringify(prompt)}; input.dispatchEvent(new Event('input', { bubbles: true })); document.querySelector('#composer').requestSubmit(); })()`);
-        await tab.waitForText(state === "redirect" ? ASSISTANT_CONTROL_COPY.redirect : ASSISTANT_CONTROL_COPY.unavailable, 15_000);
+        await tab.waitForText(state === "redirect" ? ASSISTANT_CONTROL_COPY.redirect : state === "support" ? GUEST_ASSISTANT_COPY.activeStayEmergencySupport : ASSISTANT_CONTROL_COPY.unavailable, 15_000);
         if (state === "quota") assert.equal(transportStarts, startsBefore, "Quota refusal cannot start model transport");
       }
       const height = await tab.evaluate<number>("Math.max(900, document.documentElement.scrollHeight)");
@@ -103,3 +112,4 @@ try {
   await browser?.close();
   await fixture.close();
 }
+});

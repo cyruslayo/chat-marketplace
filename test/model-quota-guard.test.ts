@@ -70,10 +70,11 @@ test("AC3: a configured fallback provider reserves its own actual transport atte
 
 test("AC2: quota refusal and authority failure stop transport safely", async () => {
   let transports = 0;
+  const outcomes: string[] = [];
   const inner = attemptAware(() => { transports += 1; });
   const denied = new ModelQuotaGuardClient(inner, {
     reserve: async () => ({ reserved: false, reason: "guest_hour_limit" }),
-  }, identity);
+  }, identity, undefined, (outcome) => outcomes.push(outcome));
   await assert.rejects(
     denied.generate(request),
     (error: unknown) => error instanceof Error && error.message === "quota_denied",
@@ -81,10 +82,11 @@ test("AC2: quota refusal and authority failure stop transport safely", async () 
 
   const unavailable = new ModelQuotaGuardClient(inner, {
     reserve: async () => { throw new Error("storage unavailable"); },
-  }, identity);
+  }, identity, undefined, (outcome) => outcomes.push(outcome));
   await assert.rejects(
     unavailable.generate(request),
     (error: unknown) => error instanceof Error && error.message === "quota_unavailable",
   );
   assert.equal(transports, 0);
+  assert.deepEqual(outcomes, ["quota_refusal", "guard_failure"]);
 });

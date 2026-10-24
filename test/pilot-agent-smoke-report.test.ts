@@ -4,14 +4,43 @@ import test from "node:test";
 import { renderBenchmarkDocument, validateLiveBenchmarkResult, type SmokeResult } from "../scripts/pilot-agent-smoke-report.js";
 import { buildPerformanceReport } from "../scripts/pilot-agent-smoke-metrics.js";
 import { SMOKE_GRADING_PROFILE } from "../scripts/pilot-agent-smoke-grading.js";
+import { ASSISTANT_CONTROL_OUTCOMES } from "../apps/local-guest/src/assistant/assistant-runtime.js";
 
 // The preserved live result is the golden complete report fixture.
 const recorded = JSON.parse(readFileSync(new URL("../docs/testing/openrouter-gpt6-luna-benchmark-result.json", import.meta.url), "utf8")) as SmokeResult;
-const fixture = (): SmokeResult => ({ ...structuredClone(recorded), gradingProfile: SMOKE_GRADING_PROFILE });
+const fixture = (): SmokeResult => ({
+  ...structuredClone(recorded),
+  gradingProfile: SMOKE_GRADING_PROFILE,
+  // The archived smoke increments its request budget immediately before every transport start.
+  totalReservedRequests: recorded.totalProviderRequests,
+  providerReservationsPerTurn: recorded.providerRequestsPerTurn,
+  controlOutcomeCounts: Object.fromEntries(ASSISTANT_CONTROL_OUTCOMES.map((outcome) => [outcome, 0])) as Record<typeof ASSISTANT_CONTROL_OUTCOMES[number], number>,
+  evaluationMetrics: {
+    guardFailures: 0,
+    falseRefusals: recorded.scenarios.filter((entry) => entry.falseRefusal === true).length,
+    taskCompletions: recorded.scenarios.filter((entry) => entry.semanticResult === "PASS").length,
+    prohibitedEffects: recorded.scenarios.reduce((sum, entry) => sum + (entry.prohibitedEffects ?? 0), 0),
+  },
+});
 
 test("Finding 2: complete consistent live evidence produces GO", () => {
   assert.equal(validateLiveBenchmarkResult(fixture()), null);
   assert.match(renderBenchmarkDocument(fixture()), /\*\*GO\*\*/);
+});
+
+test("AC6: reserved capacity and actual transport starts are reported and validated separately", () => {
+  const value = fixture();
+  const turn = value.providerReservationsPerTurn[0]!;
+  const reservedOnly = {
+    ...value,
+    totalReservedRequests: value.totalReservedRequests + 1,
+    providerReservationsPerTurn: [{ ...turn, providerRequests: turn.providerRequests + 1 }, ...value.providerReservationsPerTurn.slice(1)],
+  };
+  assert.equal(validateLiveBenchmarkResult(reservedOnly), null);
+  assert.match(renderBenchmarkDocument(reservedOnly), /Reserved provider-request capacity/);
+  assert.match(renderBenchmarkDocument(reservedOnly), /Actual provider transport starts/);
+  const impossible = { ...reservedOnly, totalReservedRequests: reservedOnly.totalProviderRequests - 1 };
+  assert.match(validateLiveBenchmarkResult(impossible) ?? "", /budget|reservation|count/i);
 });
 
 test("Finding 2: empty, missing, duplicate and unknown journey stages cannot produce GO", () => {
@@ -54,8 +83,11 @@ test("Finding 2: a complete single journey remains INCOMPLETE for the three-jour
   const pricing = performance.pricing;
   const single: SmokeResult = {
     ...value, configuredJourneyCount: 1, journeysActuallyAttempted: 1,
+    evaluationMetrics: { ...value.evaluationMetrics, taskCompletions: 4 },
     scenarios: value.scenarios.slice(0, 4), providerRequestsPerTurn: value.providerRequestsPerTurn.slice(0, 4),
+    providerReservationsPerTurn: value.providerReservationsPerTurn.slice(0, 4),
     totalProviderRequests: value.providerRequestsPerTurn.slice(0, 4).reduce((sum, turn) => sum + turn.providerRequests, 0),
+    totalReservedRequests: value.providerReservationsPerTurn.slice(0, 4).reduce((sum, turn) => sum + turn.providerRequests, 0),
     providerRequestBudget: { perJourney: 10, total: 10 },
     performance: buildPerformanceReport({ journeys: performance.journeys.slice(0, 1), slug: value.model,
       price: pricing.status === "reported" ? pricing : null }),
@@ -67,7 +99,7 @@ test("Finding 2: a complete single journey remains INCOMPLETE for the three-jour
 
 test("Finding 2: a complete failed run preserves its NO-GO evidence", () => {
   const value = fixture();
-  const failed: SmokeResult = { ...value, result: "FAIL", scenarios: [
+  const failed: SmokeResult = { ...value, result: "FAIL", evaluationMetrics: { ...value.evaluationMetrics, taskCompletions: value.evaluationMetrics.taskCompletions - 1 }, scenarios: [
     { ...value.scenarios[0]!, semanticResult: "FAIL", failureClassification: "FABRICATION_FAILURE" }, ...value.scenarios.slice(1),
   ] };
   assert.equal(validateLiveBenchmarkResult(failed), null);
@@ -91,4 +123,16 @@ test("Finding 2: legacy grading and malformed nested evidence cannot produce a n
     assert.notEqual(validateLiveBenchmarkResult(invalid), null);
     assert.throws(() => renderBenchmarkDocument(invalid), /refused/i);
   }
+});
+
+test("AC6: failed task selection does not become a false refusal without refusal evidence", () => {
+  const value = fixture();
+  const failed: SmokeResult = { ...value, result: "FAIL",
+    evaluationMetrics: { ...value.evaluationMetrics, taskCompletions: value.evaluationMetrics.taskCompletions - 1, falseRefusals: 0 },
+    scenarios: [{ ...value.scenarios[0]!, semanticResult: "FAIL", failureClassification: "MODEL_SELECTION_FAILURE", falseRefusal: false }, ...value.scenarios.slice(1)],
+  };
+  assert.equal(validateLiveBenchmarkResult(failed), null);
+  const refusal = { ...failed, scenarios: [{ ...failed.scenarios[0]!, falseRefusal: true }, ...failed.scenarios.slice(1)] };
+  assert.match(validateLiveBenchmarkResult(refusal) ?? "", /false refusal count/);
+  assert.equal(validateLiveBenchmarkResult({ ...refusal, evaluationMetrics: { ...refusal.evaluationMetrics, falseRefusals: 1 } }), null);
 });

@@ -42,6 +42,7 @@ For discovery-only requests, location and optional filters suffice. Do not inven
 Never fill unknown search fields with zero or one. Omit unknown nights, guests, and bedrooms, or pass null. Preserve prior guest constraints when refining a search. Zero bedrooms means an explicitly requested studio, not an unknown bedroom count.
 For booking intent, call prepare_request_draft to create the normal non-submitting Request Draft. Never submit a Booking Request automatically. For other consequential actions (Accept Offer, Start Payment), call the corresponding proposal tool to request guest confirmation.
 Explain actions clearly and ask the guest to confirm before consequential execution.
+For an in-scope support request, return the typed support_guidance reply plan without calling a tool. The server supplies the support route. Do not invent contact details or claim that a responder has been contacted.
 Do not claim an action succeeded until the authoritative tool or platform result confirms it.
 Do not generate HTML, A2UI, or raw application commands.
 Do not expose internal database IDs, tokens, or private credentials to the guest. Use conversational stay references like stay-1, stay-2.`;
@@ -853,6 +854,11 @@ function shortletTaskSummary(taskState: AssistantTaskState): AssistantTaskSummar
 }
 
 function renderShortletReply(plan: AssistantReplyPlan | undefined, results: readonly AssistantToolResult[], userText: string, now: Date): string {
+  if (plan?.kind === "support_guidance") {
+    return /active stay|locked out|access|safety|emergency/i.test(userText)
+      ? GUEST_ASSISTANT_COPY.activeStayEmergencySupport
+      : GUEST_ASSISTANT_COPY.generalSupport;
+  }
   const successfulResults = results.filter((result) => !result.isError);
   const kindForTool: Readonly<Record<string, string>> = {
     search_stays: "show_results", get_unit_details: "show_details", compare_stays: "compare",

@@ -28,6 +28,9 @@ export const GUEST_ASSISTANT_COPY = Object.freeze({
   stayClarification: "How many nights will you be staying, and for how many guests?",
   dateClarification: "Please give me the check-in date as YYYY-MM-DD.",
   safeClarification: "I can help you find and compare stays, explain pricing, or check a booking status. What would you like to do?",
+  // ADR 0067 governs the support window and active-stay on-call coverage.
+  generalSupport: "General human support is available daily from 8:00 AM to 8:00 PM WAT. Use the existing support channel provided with your stay.",
+  activeStayEmergencySupport: "Active stays have 24/7 Human Incident Support. Use Active-Stay Emergency Support through your existing booking support route.",
   detailsReady: "The current stay details are ready below.",
   statusReady: "The current booking information is ready below.",
   results: (count: number, location: string) => `I found ${count} matching ${count === 1 ? "stay" : "stays"} in ${location}.`,

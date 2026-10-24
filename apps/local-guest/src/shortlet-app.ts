@@ -216,10 +216,12 @@ import {
 import type { Content } from "@google/genai";
 import {
   AssistantRuntime,
+  type AssistantControlOutcome,
   type AssistantShortletRestoreInput,
   type AssistantTaskRailEntry,
   type AssistantVertical,
 } from "./assistant/assistant-runtime.js";
+import { ASSISTANT_CONTROL_COPY } from "./assistant/control-copy.js";
 import type { AssistantStayReference, AssistantTaskState } from "./assistant/assistant-state.js";
 import { redactSensitiveData } from "../../../packages/platform-core/src/redaction.js";
 import {
@@ -360,6 +362,7 @@ export interface GuestTurnSuccess {
   readonly discardUserInput?: boolean;
   /** Indicates that the AssistantRuntime owns this turn's in-memory conversation state. */
   readonly assistantManaged?: boolean;
+  readonly assistantControlOutcome?: AssistantControlOutcome;
   readonly ok: true;
   readonly messages: readonly string[];
   /** Completed-action receipts, rendered as quiet timeline markers. */
@@ -752,12 +755,14 @@ export class LocalGuestApp {
     readonly message?: string;
     readonly surfaces?: readonly { readonly surfaceId: string; readonly a2uiMessages: readonly unknown[] }[];
     readonly tasks?: readonly AssistantTaskRailEntry[];
+    readonly controlOutcome?: AssistantControlOutcome;
   }): GuestTurnResult {
     return {
       ok: true,
       // Assistant prompts and model turns are never written to the guest timeline.
       discardUserInput: true,
       assistantManaged: true,
+      ...(output.controlOutcome === undefined ? {} : { assistantControlOutcome: output.controlOutcome }),
       messages: output.messages ?? (output.message ? [output.message] : []),
       surfaces: this.#assistantSurfaces(output.surfaces ?? []),
       ...(output.tasks === undefined || output.tasks.length === 0
@@ -2987,6 +2992,18 @@ export class LocalGuestApp {
     if (restored) thread.lastSurfaces = [restored];
   }
 
+  #safeAssistantTimelineMessage(thread: GuestThreadState): string {
+    const stage = this.#stageForSurfaceId(thread.lastSurfaces.at(-1)?.surfaceId ?? "");
+    if (stage === REQUEST_STAGE && thread.draftId && !thread.requestId) return GUEST_ASSISTANT_COPY.draftReady;
+    if (stage === UNIT_STAGE) return GUEST_ASSISTANT_COPY.detailsReady;
+    if (thread.requestId || thread.offerId) return GUEST_ASSISTANT_COPY.statusReady;
+    if (thread.discoveryArtifact) {
+      const count = thread.discoveryArtifact.facts.results.length;
+      return GUEST_ASSISTANT_COPY.results(count, thread.assistantContext?.neighbourhood ?? thread.assistantContext?.city ?? "your selected area");
+    }
+    return GUEST_ASSISTANT_COPY.safeClarification;
+  }
+
   #restoreAssistantFromGuestThread(threadId: string, thread: GuestThreadState): void {
     const runtime = this.#assistantRuntime;
     const context = thread.assistantContext;
@@ -3085,18 +3102,6 @@ export class LocalGuestApp {
     }
   }
 
-  #safeAssistantTimelineMessage(thread: GuestThreadState): string {
-    const stage = this.#stageForSurfaceId(thread.lastSurfaces.at(-1)?.surfaceId ?? "");
-    if (stage === REQUEST_STAGE && thread.draftId && !thread.requestId) return GUEST_ASSISTANT_COPY.draftReady;
-    if (stage === UNIT_STAGE) return GUEST_ASSISTANT_COPY.detailsReady;
-    if (thread.requestId || thread.offerId) return GUEST_ASSISTANT_COPY.statusReady;
-    if (thread.discoveryArtifact) {
-      const count = thread.discoveryArtifact.facts.results.length;
-      return GUEST_ASSISTANT_COPY.results(count, thread.assistantContext?.neighbourhood ?? thread.assistantContext?.city ?? "your selected area");
-    }
-    return GUEST_ASSISTANT_COPY.safeClarification;
-  }
-
   #supersede(thread: GuestThreadState, stage: string): void {
     const surfaceId = thread.activeSurfaces.get(stage);
     if (surfaceId) {
@@ -3154,7 +3159,9 @@ export class LocalGuestApp {
       }
     }
     const messages = this.#assistantRuntime?.hasThread(threadId)
-      ? result.messages.length > 0 ? [this.#safeAssistantTimelineMessage(thread)] : []
+      ? result.messages.length > 0
+        ? [this.#assistantTimelineMessage(result, thread)]
+        : []
       : result.messages;
     for (const message of messages) {
       // Refresh paths can re-present the same outcome message (ADR-0074);
@@ -3188,6 +3195,25 @@ export class LocalGuestApp {
       /* presentation telemetry is best-effort */
     }
     if (!this.#environment.guestDataIsRemote) this.#persistThread(thread);
+  }
+
+  #assistantTimelineMessage(result: GuestTurnSuccess, thread: GuestThreadState): string {
+    switch (result.assistantControlOutcome) {
+      case "scope_redirect": return ASSISTANT_CONTROL_COPY.redirect;
+      case "scope_unavailable":
+      case "quota_refusal":
+      case "guard_failure": return ASSISTANT_CONTROL_COPY.unavailable;
+      case "support_guidance":
+        // This plan renders only fixed support copy from the Shortlet pack; no model prose enters the timeline.
+        return result.messages[0] === GUEST_ASSISTANT_COPY.activeStayEmergencySupport
+          ? GUEST_ASSISTANT_COPY.activeStayEmergencySupport
+          : GUEST_ASSISTANT_COPY.generalSupport;
+      case "no_current_booking": return GUEST_ASSISTANT_COPY.noCurrentBooking;
+      case "rejected_plan_fallback":
+      case "tool_denial":
+      case "successful_model_handling":
+      case undefined: return this.#safeAssistantTimelineMessage(thread);
+    }
   }
 
   #decorateResult(result: GuestTurnResult): GuestTurnResult {

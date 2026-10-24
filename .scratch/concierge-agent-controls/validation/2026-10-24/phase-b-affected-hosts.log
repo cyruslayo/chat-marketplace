@@ -1,0 +1,228 @@
+TAP version 13
+# Subtest: CONCIERGE_MODE must be deterministic, gemini or openai-compatible; any other value fails startup
+ok 1 - CONCIERGE_MODE must be deterministic, gemini or openai-compatible; any other value fails startup
+  ---
+  duration_ms: 3.4127
+  type: 'test'
+  ...
+# Subtest: gemini requires GEMINI_API_KEY; openai-compatible requires LLM_API_KEY, an HTTPS LLM_BASE_URL and LLM_MODEL
+ok 2 - gemini requires GEMINI_API_KEY; openai-compatible requires LLM_API_KEY, an HTTPS LLM_BASE_URL and LLM_MODEL
+  ---
+  duration_ms: 9.9843
+  type: 'test'
+  ...
+# Subtest: CONCIERGE_FALLBACK=openai-compatible is accepted only with a gemini primary and requires the LLM_* settings
+ok 3 - CONCIERGE_FALLBACK=openai-compatible is accepted only with a gemini primary and requires the LLM_* settings
+  ---
+  duration_ms: 1.0516
+  type: 'test'
+  ...
+# Subtest: The fallback client uses the secondary provider only when the primary fails with a connection error, a rate limit or a server error
+ok 4 - The fallback client uses the secondary provider only when the primary fails with a connection error, a rate limit or a server error
+  ---
+  duration_ms: 3.5888
+  type: 'test'
+  ...
+# Subtest: A provider never receives another provider's rawStep; history is rebuilt from the neutral fields
+ok 5 - A provider never receives another provider's rawStep; history is rebuilt from the neutral fields
+  ---
+  duration_ms: 48.5692
+  type: 'test'
+  ...
+# Subtest: The startup banner shows the concierge mode, model and fallback, and no key
+ok 6 - The startup banner shows the concierge mode, model and fallback, and no key
+  ---
+  duration_ms: 1.2005
+  type: 'test'
+  ...
+# (node:53868) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC1: shared quota configuration defaults to existing daily and per-guest limits
+ok 7 - AC1: shared quota configuration defaults to existing daily and per-guest limits
+  ---
+  duration_ms: 3.5849
+  type: 'test'
+  ...
+# Subtest: AC5: default local paid composition honors existing per-guest and tenant limit overrides
+ok 8 - AC5: default local paid composition honors existing per-guest and tenant limit overrides
+  ---
+  duration_ms: 2841.4178
+  type: 'test'
+  ...
+# Subtest: AC1: shared quota configuration uses existing environment overrides and rejects invalid bounds
+ok 9 - AC1: shared quota configuration uses existing environment overrides and rejects invalid bounds
+  ---
+  duration_ms: 0.6028
+  type: 'test'
+  ...
+# (node:80664) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: 02e AC1: Only node-sqlite-database.ts imports node:sqlite in production code
+ok 10 - 02e AC1: Only node-sqlite-database.ts imports node:sqlite in production code
+  ---
+  duration_ms: 66.4209
+  type: 'test'
+  ...
+# Subtest: 02e AC1: the guard fails, naming the file, when a direct import is added
+ok 11 - 02e AC1: the guard fails, naming the file, when a direct import is added
+  ---
+  duration_ms: 18.8701
+  type: 'test'
+  ...
+# Subtest: 02e AC2: No component opens a second connection to the pilot database
+ok 12 - 02e AC2: No component opens a second connection to the pilot database
+  ---
+  duration_ms: 2572.2261
+  type: 'test'
+  ...
+# Subtest: 02e AC3: The owner environment now enforces foreign keys, the same as the guest environment
+ok 13 - 02e AC3: The owner environment now enforces foreign keys, the same as the guest environment
+  ---
+  duration_ms: 1413.8986
+  type: 'test'
+  ...
+# Subtest: 02e AC4: The healthcheck reuses the shared handle and answers 200, or 503 when the database is closed
+ok 14 - 02e AC4: The healthcheck reuses the shared handle and answers 200, or 503 when the database is closed
+  ---
+  duration_ms: 2451.6738
+  type: 'test'
+  ...
+# Subtest: 02e AC4: the local pilot healthcheck reuses the shared handle
+ok 15 - 02e AC4: the local pilot healthcheck reuses the shared handle
+  ---
+  duration_ms: 1289.263
+  type: 'test'
+  ...
+# (node:35636) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Chat turns are rate-limited per session and per client address
+ok 16 - Chat turns are rate-limited per session and per client address
+  ---
+  duration_ms: 2810.678
+  type: 'test'
+  ...
+# Subtest: New guest sessions and operator login attempts are rate-limited per client address
+ok 17 - New guest sessions and operator login attempts are rate-limited per client address
+  ---
+  duration_ms: 4877.7695
+  type: 'test'
+  ...
+# Subtest: A daily model-call cap degrades the concierge to deterministic replies instead of erroring
+ok 18 - A daily model-call cap degrades the concierge to deterministic replies instead of erroring
+  ---
+  duration_ms: 1868.5989
+  type: 'test'
+  ...
+# Subtest: JSON bodies, the operator login form and the webhook body are size-limited
+ok 19 - JSON bodies, the operator login form and the webhook body are size-limited
+  ---
+  duration_ms: 1986.6279
+  type: 'test'
+  ...
+# Subtest: Idle session runtimes are closed and evicted
+ok 20 - Idle session runtimes are closed and evicted
+  ---
+  duration_ms: 2083.1739
+  type: 'test'
+  ...
+# Subtest: /api/turn 500 responses carry a generic message
+ok 21 - /api/turn 500 responses carry a generic message
+  ---
+  duration_ms: 863.4716
+  type: 'test'
+  ...
+# Subtest: Landing 14: Sending from the landing page counts as a chat turn, and without a session as a new Guest session
+ok 22 - Landing 14: Sending from the landing page counts as a chat turn, and without a session as a new Guest session
+  ---
+  duration_ms: 3882.0572
+  type: 'test'
+  ...
+# (node:122492) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC1/AC2/AC3 — Production Guest sessions create distinct server-owned principals
+ok 23 - AC1/AC2/AC3 — Production Guest sessions create distinct server-owned principals
+  ---
+  duration_ms: 2635.7343
+  type: 'test'
+  ...
+# Subtest: Production composition uses one live runtime clock across Guest and Operator environments
+ok 24 - Production composition uses one live runtime clock across Guest and Operator environments
+  ---
+  duration_ms: 2109.6791
+  type: 'test'
+  ...
+# Subtest: Production callback HTTP completion rehydrates the confirmed Reservation and Contract
+ok 25 - Production callback HTTP completion rehydrates the confirmed Reservation and Contract
+  ---
+  duration_ms: 3791.5462
+  type: 'test'
+  ...
+# Subtest: AC4/AC5/AC7/AC9/AC10/AC11/AC12/AC13 — Production Guest isolation, cookie, Origin, and fixture-route boundaries hold
+ok 26 - AC4/AC5/AC7/AC9/AC10/AC11/AC12/AC13 — Production Guest isolation, cookie, Origin, and fixture-route boundaries hold
+  ---
+  duration_ms: 1853.1993
+  type: 'test'
+  ...
+# Subtest: AC8/AC18/AC19/AC20/AC22/AC23/AC24/AC26/AC27 — Production Operator shares durable state and configured files
+ok 27 - AC8/AC18/AC19/AC20/AC22/AC23/AC24/AC26/AC27 — Production Operator shares durable state and configured files
+  ---
+  duration_ms: 2223.7776
+  type: 'test'
+  ...
+# Subtest: The production pilot passes the concierge mode and model client to the guest server explicitly
+ok 28 - The production pilot passes the concierge mode and model client to the guest server explicitly
+  ---
+  duration_ms: 3490.1792
+  type: 'test'
+  ...
+# Subtest: AC14/AC15/AC16/AC17/AC28 — Production configuration rejects deterministic or unsafe startup
+ok 29 - AC14/AC15/AC16/AC17/AC28 — Production configuration rejects deterministic or unsafe startup
+  ---
+  duration_ms: 664.4083
+  type: 'test'
+  ...
+# Subtest: Staging starts with Paystack test keys
+ok 30 - Staging starts with Paystack test keys
+  ---
+  duration_ms: 2146.4885
+  type: 'test'
+  ...
+# Subtest: Production still refuses Paystack test keys
+ok 31 - Production still refuses Paystack test keys
+  ---
+  duration_ms: 382.5745
+  type: 'test'
+  ...
+# Subtest: Any SHORTLET_DEPLOYMENT value other than production or staging fails startup; unset means production
+ok 32 - Any SHORTLET_DEPLOYMENT value other than production or staging fails startup; unset means production
+  ---
+  duration_ms: 410.0116
+  type: 'test'
+  ...
+# Subtest: Staging still requires an HTTPS public origin and persistent paths, and mounts no fixture routes
+ok 33 - Staging still requires an HTTPS public origin and persistent paths, and mounts no fixture routes
+  ---
+  duration_ms: 1698.0051
+  type: 'test'
+  ...
+# Subtest: Every staging guest and operator page shows the beta banner
+ok 34 - Every staging guest and operator page shows the beta banner
+  ---
+  duration_ms: 2643.7687
+  type: 'test'
+  ...
+# Subtest: Staging requires a configured invite code before a guest session starts
+ok 35 - Staging requires a configured invite code before a guest session starts
+  ---
+  duration_ms: 1833.8466
+  type: 'test'
+  ...
+1..35
+# tests 35
+# suites 0
+# pass 35
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 28476.7386

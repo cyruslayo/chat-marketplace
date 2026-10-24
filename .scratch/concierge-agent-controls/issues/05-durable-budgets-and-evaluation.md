@@ -49,6 +49,7 @@ Model metadata preparation: OpenRouter /api/v1/models still lists exact slug ope
 | ADR | Constraint | AC / path |
 |---|---|---|
 | 0015, 0077, 0089 | Server-owned price facts retain meaning across channels. | AC4/AC7: quota fallback cannot invent or mutate price/status output. |
+| 0067 | Existing support hours and active-stay on-call coverage supply fixed guidance. | AC4/AC6: support replies and persisted support meaning. |
 | 0068–0069 | Platform owns adapters and pinned protocol contracts. | AC3–5: guarded adapters and host composition. |
 | 0070–0071 | Server identities stay distinct; projections stay redacted. | AC1–2/AC6: tenant/guest ownership and metadata-only evaluation. |
 | 0072 | Consequential effects use the authenticated platform command gate. | AC4: pending confirmation/cancellation keeps deterministic path. |
@@ -82,3 +83,59 @@ The durable host gate is not complete. Parent review findings remain open for ap
 - `$env:NODE_ENV='test'; $env:COMMERCE_REFERENCE_TEST_KEY='allow'; npx tsx --test test/model-quota-guard.test.ts test/model-request-quota.test.ts test/openai-compatible-client.test.ts test/concierge-configuration.test.ts test/pilot-production-composition.test.ts test/pilot-database-handle.test.ts test/pilot-guardrails.test.ts` passed 48 tests, 0 failed/cancelled/skipped; exit 0. Full output: `.scratch/concierge-agent-controls/validation/2026-10-24/phase-a-focused.log`.
 - `npm run test:workers -- test/platform-model-request-quota.spec.ts` passed 1 test in 1 file; exit 0. Full output: `.scratch/concierge-agent-controls/validation/2026-10-24/phase-a-worker-quota.log`.
 - Parent independently ran the narrower guard/quota/OpenAI gate: 15 passed, 0 failed; output is `.scratch/concierge-agent-controls/validation/2026-10-24/parent-quota-focused.log`.
+
+24 Oct phase-B continuation evidence:
+
+The delegated executor stopped after a usage-limit error. The parent inspected its unfinished diff before continuing directly.
+No provider model was substituted. No paid inference has run in this continuation yet.
+
+Implementation now applies the existing validated limits to the default paid local host.
+It preserves attempt-aware wrappers and captures immutable turn usage and transport context.
+Smoke allocation now runs before provider transport, including retries.
+The legacy smoke default remains ten attempts. Explicit controlled evaluation permits sixteen per journey.
+A separate twelve-scenario synthetic HTTP evaluation permits an explicit maximum of 64 attempts.
+Every live invocation must verify the existing non-resetting USD 2 key cap.
+
+Metadata-only telemetry separates scope outcomes, guard failures, quota refusals, tool denials, rejected-plan fallback, support, status, and successful handling.
+Classifier failure and quota refusal each emit one failure outcome plus the safe scope outcome.
+Telemetry stores elapsed time without prompts, replies, principal details, or provider error text.
+The smoke grades current authoritative state and effect codes instead of old history offsets.
+False refusals now require explicit refusal evidence. Task-selection failures remain separate.
+
+Support, no-current-booking status, scope refusal, and quota/guard wording retain their server-owned meaning after restoration.
+ADR 0067 supplies the existing support window and on-call coverage.
+All previously recorded ADR constraints remain in force. No migration was applied remotely.
+
+Commands and results:
+
+- `npm run check` passed; exit 0. Log: `validation/2026-10-24/integrated-check-final.log`.
+- `$env:NODE_ENV='test'; $env:COMMERCE_REFERENCE_TEST_KEY='allow'; npx tsx --test test/pilot-agent-smoke-budget.test.ts test/pilot-agent-smoke-metrics.test.ts test/pilot-agent-smoke-report.test.ts test/pilot-agent-smoke-reference.test.ts test/assistant-reply-coverage.test.ts test/assistant-persistent-continuity.test.ts test/model-request-quota-config.test.ts test/model-quota-guard.test.ts test/concierge-controls-eval.test.ts test/assistant-control-metrics.test.ts test/model-quota-host-recovery.test.ts` passed 54 tests; 0 failures, cancellations, or skips; exit 0. Log: `phase-b-focused-complete.log`.
+- `$env:NODE_ENV='test'; $env:COMMERCE_REFERENCE_TEST_KEY='allow'; npx tsx --test test/concierge-configuration.test.ts test/pilot-production-composition.test.ts test/pilot-database-handle.test.ts test/pilot-guardrails.test.ts test/model-request-quota-config.test.ts` passed 35 tests; 0 failures, cancellations, or skips; exit 0. Log: `phase-b-affected-hosts.log`.
+- `npm run test:workers -- test/platform-model-request-quota.spec.ts` passed 2 tests in 1 file; exit 0. The new evidence uses configured limits and aborts the object before checking persistent guest and daily reservations. Log: `worker-quota-cold-start.log`.
+- `npm run build` passed; exit 0. Log: `integrated-ui-build.log`.
+
+Preserved failures:
+
+- `phase-b-focused-initial.log`: 35 passed, 3 failed. Benchmark fixtures and document output did not yet contain consistent new counters.
+- `control-metrics-red.log`: 0 passed, 1 failed. Classifier failure lacked its separate failure event.
+- `evaluation-blocked-grader-red.log`: 1 passed, 1 failed. Arbitrary generation could pass a blocked scenario.
+- `smoke-attempt-probe-red.log`: 1 passed, 1 failed. The quota error also appeared as a guard failure.
+- `smoke-attempt-probe-green.log`: 4 passed, 1 failed. The budget error class was used before top-level initialization.
+- `smoke-attempt-probe-final.log`: corrected gate passed 5 tests; exit 0.
+- `phase-b-check.log`: type checking found a duplicate report field. The corrected full check passed.
+
+The generated `client.js` refresh includes source changes already committed before this continuation.
+Review confirmed generated booking-schedule and demo-label code, plus junction-relative build comments.
+Other generated files have no textual diff and remain preserved.
+
+Self-review against Definition of Done:
+
+1. Named tests cover quota concurrency, restart, attempts, composed recovery, configuration, and metrics. AC7 has a named capture test for each state. Full live and integrated evidence remains pending.
+2. Tests cover refusal, storage failure, retry/fallback, late reservation, invalid bounds, replay rejection, malformed classification, and prohibited evaluator output.
+3. The ADR table remains applicable. ADR 0067 was added for fixed support copy.
+4. New dependencies are used. No service or package was added.
+5. Policy values trace to existing configuration and ADRs. Evaluation limits are documented engineering bounds.
+6. Diagnostics and reports exclude credentials and restricted content.
+7. Full Workers, full `npm test`, bounded live evaluation, integrated captures, and final independent review still govern batch acceptance.
+
+The issue and batch remain claimed. This entry does not establish acceptance.

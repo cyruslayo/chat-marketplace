@@ -256,6 +256,7 @@ import {
 } from "./assistant/model-call-budget.js";
 import type { AssistantModelClient } from "./assistant/assistant-model.js";
 import { SqliteModelRequestQuota, type ModelRequestQuotaPort } from "../../../packages/platform-core/src/model-request-quota.js";
+import { modelRequestQuotaLimitsFromEnvironment } from "../../../packages/platform-core/src/model-request-quota-config.js";
 import { ModelQuotaGuardClient } from "./assistant/model-quota-guard.js";
 import {
   ASSISTANT_CONFIRM_ACTION_EVENT,
@@ -2350,8 +2351,15 @@ export function createGuestRequestHandler(
       ? undefined
       : new PaystackPayments({ card: paystackClient }));
   const modelRequestQuota = options.modelRequestQuota ?? (mode === "gemini" || mode === "openai-compatible"
-    ? new SqliteModelRequestQuota(env.database)
+    ? new SqliteModelRequestQuota(env.database, modelRequestQuotaLimitsFromEnvironment(process.env))
     : undefined);
+  const quotaGuard = (client: AssistantModelClient, runtimeEnvironment: LocalGuestEnvironment): AssistantModelClient => modelRequestQuota
+    ? new ModelQuotaGuardClient(
+      client,
+      modelRequestQuota,
+      { tenantId: runtimeEnvironment.config.tenantId, guestId: runtimeEnvironment.guestPrincipal().id },
+    )
+    : client;
 
   let assistantRuntime: AssistantRuntime | undefined;
   let assistantModelClient: AssistantModelClient | undefined;
@@ -2378,9 +2386,7 @@ export function createGuestRequestHandler(
         assistantModelClient,
         options.modelCallBudget,
       );
-    const guardedModelClient = modelRequestQuota
-      ? new ModelQuotaGuardClient(assistantModelClient, modelRequestQuota, { tenantId: env.config.tenantId, guestId: env.guestPrincipal().id })
-      : assistantModelClient;
+    const guardedModelClient = quotaGuard(assistantModelClient, env);
     assistantRuntime = new AssistantRuntime(env, guardedModelClient, {
       additionalPacks: options.additionalPacks,
     });
@@ -2505,9 +2511,7 @@ export function createGuestRequestHandler(
           ? {
               assistantRuntime: new AssistantRuntime(
                 runtimeEnvironment,
-                modelRequestQuota
-                  ? new ModelQuotaGuardClient(assistantModelClient, modelRequestQuota, { tenantId: runtimeEnvironment.config.tenantId, guestId: runtimeEnvironment.guestPrincipal().id })
-                  : assistantModelClient,
+                quotaGuard(assistantModelClient, runtimeEnvironment),
                 { additionalPacks: options.additionalPacks },
               ),
             }

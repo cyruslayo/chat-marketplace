@@ -8,6 +8,7 @@ import type {
   AssistantToolResult,
   AssistantModelResponse,
 } from "./assistant-model.js";
+import { ModelRequestGuardError } from "./assistant-model.js";
 import {
   AssistantPackRegistry,
   composeSystemInstruction,
@@ -48,6 +49,12 @@ import {
 } from "./pending-action-a2ui.js";
 import { redactSensitiveData } from "../../../../packages/platform-core/src/redaction.js";
 
+export const ASSISTANT_CONTROL_OUTCOMES = [
+  "scope_redirect", "scope_unavailable", "quota_refusal", "guard_failure", "rejected_plan_fallback",
+  "support_guidance", "no_current_booking", "successful_model_handling", "tool_denial",
+] as const;
+export type AssistantControlOutcome = typeof ASSISTANT_CONTROL_OUTCOMES[number];
+
 export interface AssistantTurnOutput {
   readonly ok: boolean;
   readonly code?: string;
@@ -58,6 +65,7 @@ export interface AssistantTurnOutput {
   readonly modelHandled?: boolean;
   readonly providerUnavailable?: boolean;
   readonly discardUserInput?: boolean;
+  readonly controlOutcome?: AssistantControlOutcome;
 }
 
 /** A task's entry in the shell rail, derived from the active pack's `taskSummary`. */
@@ -97,6 +105,8 @@ export type AssistantFailureClass =
   | "A2UI_FAILURE"
   | "WEAVER_FAILURE";
 
+export type AssistantToolEffectCode = "request_draft_created_availability_checked_not_reserved";
+
 export interface AssistantDiagnosticEvent {
   readonly stage: AssistantDiagnosticStage;
   readonly round: number;
@@ -107,6 +117,8 @@ export interface AssistantDiagnosticEvent {
   readonly providerStatusCode?: number;
   readonly providerErrorCode?: string;
   readonly failureClass?: AssistantFailureClass;
+  readonly outcome?: AssistantControlOutcome;
+  readonly effectCode?: AssistantToolEffectCode;
 }
 
 export interface AssistantRuntimeOptions {
@@ -164,7 +176,7 @@ const MAX_ASSISTANT_REPLY_OUTPUT_TOKENS = 4096;
 const REPLY_PLAN_SCHEMA = {
   type: "object",
   properties: {
-    kind: { type: "string", enum: ["show_results", "show_details", "compare", "explain_price", "show_status", "propose_action", "clarify_stay", "redirect"] },
+    kind: { type: "string", enum: ["show_results", "show_details", "compare", "explain_price", "show_status", "propose_action", "clarify_stay", "redirect", "support_guidance"] },
     references: { type: "array", items: { type: "string" } },
   },
   required: ["kind", "references"],
@@ -177,7 +189,7 @@ function parseReplyPlan(response: AssistantModelResponse, results: readonly Assi
   try { value = JSON.parse(response.text); } catch { return undefined; }
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
   const record = value as Record<string, unknown>;
-  const kinds: readonly AssistantReplyPlanKind[] = ["show_results", "show_details", "compare", "explain_price", "show_status", "propose_action", "clarify_stay", "redirect"];
+  const kinds: readonly AssistantReplyPlanKind[] = ["show_results", "show_details", "compare", "explain_price", "show_status", "propose_action", "clarify_stay", "redirect", "support_guidance"];
   if (Object.keys(record).length !== 2 || typeof record.kind !== "string" || !kinds.includes(record.kind as AssistantReplyPlanKind)
     || !Array.isArray(record.references) || !record.references.every((item) => typeof item === "string")) return undefined;
   const allowed = new Set(results.filter((result) => !result.isError).map((result) => result.name));
@@ -482,6 +494,8 @@ export class AssistantRuntime {
   }
 
   async handleTurn(threadId: string, text: string): Promise<AssistantTurnOutput> {
+    const controlStartedAt = performance.now();
+    const recordOutcome = (outcome: AssistantControlOutcome) => this.#recordControlOutcome(outcome, performance.now() - controlStartedAt);
     const thread = this.getThread(threadId);
 
     // 1. Transactional Candidates (Item 24)
@@ -589,19 +603,27 @@ export class AssistantRuntime {
     const originalUserText = text;
     const packForScope = candidatePack();
     const safeUserText = redactSensitiveData(text) as string;
+    let scopeFailureOutcome: "quota_refusal" | "guard_failure" | undefined;
     const assessment = text.length > this.#maxInputCharacters ? undefined : await assessScopeSafely(this.#scopeClassifier, safeUserText, {
       domain: packForScope.id, description: packForScope.scopeDescription ?? packForScope.label,
       hasShortlist: candidateTaskState.shortlist.length > 0, hasSelectedStay: Boolean(candidateTaskState.selectedStayRef), hasOffer: Boolean(candidateTaskState.currentOfferId),
-    }, this.#scopeTimeoutMs);
+    }, this.#scopeTimeoutMs, (error) => {
+      scopeFailureOutcome = error instanceof ModelRequestGuardError && error.code === "quota_denied" ? "quota_refusal" : "guard_failure";
+      recordOutcome(scopeFailureOutcome);
+    });
     if (!assessment || assessment.scope === "unclear" || assessment.scope === "out_of_scope" || assessment.risk === "policy_override" || assessment.risk === "unauthorized_data" || assessment.risk === "unknown") {
-      return { ok: true, messages: [assessment?.scope === "out_of_scope" ? ASSISTANT_CONTROL_COPY.redirect : ASSISTANT_CONTROL_COPY.unavailable],
-        surfaces: [], modelHandled: false, discardUserInput: true, tasks: this.getTaskRail(threadId) };
+      const scopeOutcome = assessment?.scope === "out_of_scope" ? "scope_redirect" : "scope_unavailable";
+      const controlOutcome = scopeFailureOutcome ?? scopeOutcome;
+      recordOutcome(scopeOutcome);
+      return { ok: true, messages: [controlOutcome === "scope_redirect" ? ASSISTANT_CONTROL_COPY.redirect : ASSISTANT_CONTROL_COPY.unavailable],
+        surfaces: [], modelHandled: false, discardUserInput: true, controlOutcome, tasks: this.getTaskRail(threadId) };
     }
     const discardUserInput = assessment.scope === "mixed";
     const validMixedLocation = assessment.slots.neighbourhood === null || packForScope.scopeLocations?.includes(assessment.slots.neighbourhood) === true;
     if (discardUserInput && (!validMixedLocation || [assessment.slots.checkIn, assessment.slots.checkOut].some((date) => date !== null && !originalUserText.includes(date)))) {
+      recordOutcome("scope_unavailable");
       return { ok: true, messages: [ASSISTANT_CONTROL_COPY.unavailable], surfaces: [], modelHandled: false,
-        discardUserInput: true, tasks: this.getTaskRail(threadId) };
+        discardUserInput: true, controlOutcome: "scope_unavailable", tasks: this.getTaskRail(threadId) };
     }
     if (discardUserInput) text = scopedMixedInput(assessment);
     validatedDomainId = packForScope.id;
@@ -622,6 +644,7 @@ export class AssistantRuntime {
     let activeToolName: string | undefined;
     let hasSuccessfulApplicationOperation = false;
     let latestRawResults: AssistantToolResult[] = [];
+    let controlOutcome: AssistantControlOutcome = "successful_model_handling";
 
     try {
       while (round < MAX_ASSISTANT_TOOL_ROUNDS) {
@@ -649,6 +672,17 @@ export class AssistantRuntime {
           // ADR 0106: accept a validated typed plan; discard legacy prose and opaque steps.
           const latestResults = latestRawResults;
           const plan = parseReplyPlan(modelResponse, latestResults);
+          if (!plan) {
+            controlOutcome = "rejected_plan_fallback";
+            recordOutcome(controlOutcome);
+          } else if (plan.kind === "support_guidance") {
+            controlOutcome = "support_guidance";
+            recordOutcome(controlOutcome);
+          }
+          if (latestResults.some((result) => result.name === "get_booking_status" && result.result.status === "no_active_booking")) {
+            controlOutcome = "no_current_booking";
+            recordOutcome(controlOutcome);
+          }
           finalAssistantReply = candidatePack().renderReply?.(plan, latestResults, userTextHistory.at(-1) ?? "")
             ?? "I can help with your current request. Please review the information shown and tell me what you need next.";
           candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
@@ -684,6 +718,8 @@ export class AssistantRuntime {
             ? { code: "invalid_tool_for_state" as const, message: "That operation is not available for the current Guest workflow." }
             : malformedArguments ?? precondition ?? stateUnavailable;
           if (invalidCall) {
+            controlOutcome = "tool_denial";
+            recordOutcome(controlOutcome);
             this.#diagnose({
               stage: "tool_execution",
               round,
@@ -736,12 +772,20 @@ export class AssistantRuntime {
           const execution = candidatePack().executeTool(call.name, call.args, toolContext);
           hasSuccessfulApplicationOperation = true;
           const resultCount = getSafeResultCount(execution.result);
+          const effectCode: AssistantToolEffectCode | undefined = call.name === "prepare_request_draft"
+            && execution.result.operation === "request_draft.create"
+            && execution.result.created === true
+            && execution.result.availabilityChecked === true
+            && execution.result.inventoryReserved === false
+            ? "request_draft_created_availability_checked_not_reserved"
+            : undefined;
           this.#diagnose({
             stage: activeStage,
             round,
             toolName: safeAssistantToolName(call.name, this.#packs),
             succeeded: true,
             ...(resultCount !== undefined ? { resultCount } : {}),
+            ...(effectCode ? { effectCode } : {}),
           });
           roundRawResults.push({ callId: call.id, name: call.name, result: execution.result });
           toolResults.push({
@@ -865,6 +909,7 @@ export class AssistantRuntime {
       thread.discoveryArtifactId = candidateDiscoveryArtifactId;
       thread.discoveryArtifact = candidateDiscoveryArtifact;
       this.#syncActiveTask(thread);
+      recordOutcome("successful_model_handling");
 
       return {
         ok: true,
@@ -873,10 +918,18 @@ export class AssistantRuntime {
         tasks: this.getTaskRail(threadId),
         modelHandled: true,
         discardUserInput,
+        controlOutcome,
       };
     } catch (error) {
+      if (error instanceof ModelRequestGuardError && (error.code === "quota_denied" || error.code === "quota_unavailable")) {
+        controlOutcome = error.code === "quota_denied" ? "quota_refusal" : "guard_failure";
+      } else if (error instanceof ModelRequestGuardError && error.code === "deadline_exceeded") {
+        controlOutcome = "guard_failure";
+      }
+      if (error instanceof ModelRequestGuardError) recordOutcome(controlOutcome);
       this.#diagnose(createFailureDiagnostic(activeStage, round, activeToolName, error));
       if (hasSuccessfulApplicationOperation && candidateSurfaces.length > 0) {
+        recordOutcome("rejected_plan_fallback");
         const message = fallbackForProjectedOperation(candidateSurfaces[0]?.surfaceId ?? "");
         candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
         thread.taskState = candidateTaskState;
@@ -889,12 +942,23 @@ export class AssistantRuntime {
         thread.discoveryArtifactId = candidateDiscoveryArtifactId;
         thread.discoveryArtifact = candidateDiscoveryArtifact;
         this.#syncActiveTask(thread);
-        return { ok: true, messages: [message], surfaces: candidateSurfaces, tasks: this.getTaskRail(threadId), modelHandled: true, discardUserInput };
+        return { ok: true, messages: [message], surfaces: candidateSurfaces, tasks: this.getTaskRail(threadId), modelHandled: true, discardUserInput, controlOutcome: "rejected_plan_fallback" };
       }
       // Rollback: thread is not mutated on error
       if (discardUserInput) {
         return { ok: true, messages: [ASSISTANT_CONTROL_COPY.unavailable], surfaces: [],
           modelHandled: false, discardUserInput: true, tasks: this.getTaskRail(threadId) };
+      }
+      if (error instanceof ModelRequestGuardError) {
+        return {
+          ok: true,
+          messages: [ASSISTANT_CONTROL_COPY.unavailable],
+          surfaces: [],
+          modelHandled: false,
+          discardUserInput: true,
+          controlOutcome,
+          tasks: this.getTaskRail(threadId),
+        };
       }
       return {
         ok: false,
@@ -911,6 +975,15 @@ export class AssistantRuntime {
       this.#onDiagnostic?.(event);
     } catch {
       // Diagnostics are observational and must never affect the authoritative flow.
+    }
+  }
+
+  #recordControlOutcome(outcome: AssistantControlOutcome, elapsedMs: number): void {
+    try {
+      // ADR 0075: store closed outcome codes only. Never include prompt, reply, identity, or provider error text.
+      this.#environment.telemetry.track({ type: "assistant.control.outcome.v1", outcome, elapsedMs: Math.round(Math.max(0, elapsedMs)) });
+    } catch {
+      // Telemetry must never affect the authoritative workflow.
     }
   }
 

@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import {
   DEFAULT_PILOT_AGENT_SMOKE_RUNS,
   DEFAULT_PROVIDER_REQUEST_BUDGET_PER_JOURNEY,
+  DEFAULT_CONTROLLED_EVALUATION_REQUEST_LIMIT,
   ProviderRequestBudget,
+  parseProviderRequestLimit,
   parsePilotAgentSmokeRuns,
   providerStopReason,
 } from "../scripts/pilot-agent-smoke-budget.js";
@@ -33,6 +35,23 @@ test("provider request budget counts only reserved provider attempts and hard-st
   assert.equal(budget.reserve(1), false);
   assert.equal(budget.totalRequests, 10, "rejected reservation does not represent an API request");
   assert.equal(budget.exceeded, true);
+});
+
+test("controlled evaluation keeps the legacy ten-attempt default and accepts an explicit sixteen-attempt cap", () => {
+  assert.equal(DEFAULT_PROVIDER_REQUEST_BUDGET_PER_JOURNEY, 10);
+  assert.equal(DEFAULT_CONTROLLED_EVALUATION_REQUEST_LIMIT, 16);
+  assert.equal(parseProviderRequestLimit([]), 10);
+  assert.equal(parseProviderRequestLimit(["--request-limit", "16"]), 16);
+  assert.equal(parseProviderRequestLimit(["--request-limit=16"]), 16);
+  assert.equal(parseProviderRequestLimit([], "16"), 16);
+  for (const args of [["--request-limit", "0"], ["--request-limit", "17"], ["--request-limit", "2.5"], ["--request-limit", "1", "--request-limit", "2"]]) {
+    assert.throws(() => parseProviderRequestLimit(args));
+  }
+  assert.throws(() => parseProviderRequestLimit([], "17"));
+  const controlled = new ProviderRequestBudget(1, 16);
+  for (let attempt = 0; attempt < 16; attempt++) assert.equal(controlled.reserve(1), true);
+  assert.equal(controlled.reserve(1), false);
+  assert.equal(controlled.totalRequests, 16);
 });
 
 test("explicit multi-run mode receives a fixed per-journey budget without unbounded growth", () => {

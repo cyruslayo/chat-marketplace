@@ -69,11 +69,19 @@ export class ModelScopeClassifier implements ScopeClassifier {
   }
 }
 
-export async function assessScopeSafely(classifier: ScopeClassifier, text: string, context: ScopeContext, timeoutMs: number): Promise<ScopeAssessment | undefined> {
+export async function assessScopeSafely(classifier: ScopeClassifier, text: string, context: ScopeContext, timeoutMs: number, onFailure?: (error: unknown) => void): Promise<ScopeAssessment | undefined> {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let reported = false;
+  const report = (error: unknown) => {
+    if (reported) return;
+    reported = true;
+    try { onFailure?.(error); } catch { /* Observability cannot alter scope enforcement. */ }
+  };
   try {
-    return parseScopeAssessment(await Promise.race([classifier.assess(text, context), new Promise<undefined>((resolve) => { timer = setTimeout(() => resolve(undefined), timeoutMs); })]));
-  } catch { return undefined; } finally { if (timer) clearTimeout(timer); }
+    const assessment = parseScopeAssessment(await Promise.race([classifier.assess(text, context), new Promise<undefined>((resolve) => { timer = setTimeout(() => resolve(undefined), timeoutMs); })]));
+    if (!assessment) report(new Error("scope_assessment_unavailable"));
+    return assessment;
+  } catch (error) { report(error); return undefined; } finally { if (timer) clearTimeout(timer); }
 }
 
 export function scopedMixedInput(assessment: ScopeAssessment): string {

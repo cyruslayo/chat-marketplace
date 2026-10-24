@@ -49,19 +49,28 @@ export class TurnUsageAccumulator {
 /** Counts every model call (including failed ones) and forwards the response unchanged. */
 export function observeModelClient(
   client: AssistantModelClient,
-  recorder: { record(usage: ModelUsage | undefined): void },
+  recorder: {
+    record(usage: ModelUsage | undefined): void;
+    capture?(): { record(usage: ModelUsage | undefined): void } | null;
+  },
 ): AssistantModelClient {
   return {
+    ...(client.supportsProviderAttemptReservation === true ? { supportsProviderAttemptReservation: true as const } : {}),
     async generate(request: AssistantModelRequest): Promise<AssistantModelResponse> {
+      // Capture the active turn once; a late response cannot read a later turn's mutable pointer.
+      const callRecorder = recorder.capture ? recorder.capture() : recorder;
       let response: AssistantModelResponse;
       try {
         response = await client.generate(request);
       } catch (error) {
-        recorder.record(undefined);
+        callRecorder?.record(undefined);
         throw error;
       }
-      recorder.record(response.usage);
+      callRecorder?.record(response.usage);
       return response;
+    },
+    projectProviderContinuation(response, acceptedCalls) {
+      return client.projectProviderContinuation?.(response, acceptedCalls);
     },
   };
 }

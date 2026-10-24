@@ -50,3 +50,32 @@ test("Planning output has a separate configurable bound from the final reply", a
   assert.equal(requests[0]?.maxOutputTokens, 777);
   assert.throws(() => new AssistantRuntime(env, model, { maxPlanningOutputTokens: 0 }), /maxPlanningOutputTokens/);
 });
+
+test("Support intent returns server-owned Active-Stay guidance for access emergencies without tools", async (t) => {
+  const env = LocalGuestEnvironment.openNode({ databasePath: temporaryDatabasePath("reply-support.sqlite") });
+  t.after(() => env.close());
+  const requests: AssistantModelRequest[] = [];
+  const runtime = new AssistantRuntime(env, {
+    generate: async (request) => {
+      requests.push(request);
+      return { text: JSON.stringify({ kind: "support_guidance", references: [] }) };
+    },
+  }, {
+    scopeClassifier: {
+      assess: async () => ({ scope: "in_scope", risk: "ordinary", intents: ["support"], reasonCode: "supported",
+        slots: { city: null, neighbourhood: null, bedrooms: null, nights: null, guests: null, checkIn: null, checkOut: null } }),
+    },
+  });
+  const result = await runtime.handleTurn("support-test", "I am locked out of my stay and need support.");
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.equal(result.messages?.length, 1);
+    assert.match(result.messages?.[0] ?? "", /Active-Stay Emergency Support/);
+    assert.match(result.messages?.[0] ?? "", /Human Incident Support/);
+  }
+  assert.deepEqual(requests[0]?.tools, []);
+  assert.equal(requests[0]?.structuredOutput?.name, "assistant_reply_plan");
+  const events = env.telemetry.events().filter((event) => event.type === "assistant.control.outcome.v1");
+  assert.deepEqual(events.map((event) => event.outcome), ["support_guidance", "successful_model_handling"]);
+  assert.doesNotMatch(JSON.stringify(events), /locked out of my stay|I am locked out/);
+});

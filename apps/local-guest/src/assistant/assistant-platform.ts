@@ -57,7 +57,7 @@ export interface AssistantSurfaceMessages {
 }
 
 /** Closed model choice. Facts and guest wording stay in the active pack. */
-export type AssistantReplyPlanKind = "show_results" | "show_details" | "compare" | "explain_price" | "show_status" | "propose_action" | "clarify_stay" | "redirect";
+export type AssistantReplyPlanKind = "show_results" | "show_details" | "compare" | "explain_price" | "show_status" | "propose_action" | "clarify_stay" | "redirect" | "support_guidance";
 
 export interface AssistantReplyPlan {
   readonly kind: AssistantReplyPlanKind;

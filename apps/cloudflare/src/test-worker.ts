@@ -98,8 +98,13 @@ export class IsolatedPlatformDO extends PlatformDO {
   constructor(ctx: DurableObjectState, env: IsolatedTenantEnv) {
     const tenantId = ctx.id.name;
     if (!tenantId) throw new Error("Isolated test Durable Object must use idFromName");
+    // Test-only configured authority. Other test tenants retain their existing limits.
+    const quotaLimits = tenantId.startsWith("quota-limits-")
+      ? { CONCIERGE_DAILY_MODEL_CALL_CAP: "3", SHORTLET_CHAT_TURNS_PER_SESSION_PER_HOUR: "2" }
+      : {};
     super(ctx, {
       ...env,
+      ...quotaLimits,
       SHORTLET_TENANT_ID: tenantId,
       SHORTLET: env.ISOLATED_SHORTLET,
       PLATFORM: env.ISOLATED_PLATFORM,
