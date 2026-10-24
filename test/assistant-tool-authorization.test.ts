@@ -73,6 +73,26 @@ test("AC1: unknown, unavailable, malformed, extra, missing, mistyped, out-of-ran
   assert.ok(errors.every((result) => typeof result.result.error === "string"));
 });
 
+test("Booking request intent can prepare a reviewable draft without a confirmation proposal or submission", async () => {
+  const environment = createEnvironment("request-intent-draft");
+  let turn = 0;
+  const runtime = new AssistantRuntime(environment, modelForCalls([
+    { id: "search", name: "search_stays", args: searchArguments },
+    { id: "details", name: "get_unit_details", args: { stayRef: "stay-1" } },
+    { id: "prepare", name: "prepare_request_draft", args: { stayRef: "stay-1", nights: 4, guests: 2 } },
+  ]), { scopeClassifier: { assess: async () => scope(turn++ === 0 ? ["search"] : turn === 2 ? ["details"] : ["request"]) } });
+  await runtime.handleTurn("request-intent-draft", "Find an Ikoyi stay for 4 nights and 2 guests");
+  await runtime.handleTurn("request-intent-draft", "Open the first one");
+  const result = await runtime.handleTurn("request-intent-draft", "I want to book this apartment for 4 nights and 2 guests");
+  assert.equal(result.ok, true);
+  const state = runtime.getThread("request-intent-draft").taskState;
+  assert.ok(state.currentDraftId, "Booking intent must permit the non-submitting draft operation");
+  assert.equal(state.pendingAction, null);
+  assert.equal(state.currentBookingRequestId, undefined);
+  assert.equal(environment.bookingRequestApp.getDraft(state.currentDraftId).status, "draft");
+  assert.equal(environment.database.prepare("SELECT COUNT(*) AS count FROM availability_commitments").get()?.count, 0);
+});
+
 test("AC2: approved intents, the active pack, and current state intersect before planner tools and execution", async () => {
   const observedToolLists: string[][] = [];
   const calls: AssistantToolCall[] = [

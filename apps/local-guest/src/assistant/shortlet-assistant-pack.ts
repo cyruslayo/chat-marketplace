@@ -948,7 +948,8 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
       status: ["get_booking_status", "get_offer_status"],
       offer: ["get_offer_status"],
       draft: ["get_unit_details", "prepare_request_draft"],
-      request: ["get_unit_details", "propose_request_to_book"],
+      // ADR 0106: booking preparation remains available when the classifier labels intent as a request.
+      request: ["get_unit_details", "prepare_request_draft", "propose_request_to_book"],
       accept: ["get_offer_status", "propose_accept_offer"],
       payment: ["get_offer_status", "propose_start_payment"],
     },

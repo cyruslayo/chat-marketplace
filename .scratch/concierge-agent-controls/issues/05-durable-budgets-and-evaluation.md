@@ -173,3 +173,41 @@ No runtime failure was hidden by those log warnings.
 
 Live semantic checks, full `npm test`, and final review clearance remain pending.
 Keep the issue and batch claimed.
+
+First bounded live benchmark evidence:
+
+`node --import tsx scripts/pilot-agent-smoke.ts --runs 1 --request-limit 16`
+
+The process used exact `openai/gpt-6-luna` through OpenRouter.
+Read-only key metadata confirmed limit USD 2, no reset, usage USD 0.01443705, and remaining USD 1.98556295 before inference.
+The run reserved and started 12 attempts. Three of four stages passed; booking preparation failed.
+The model selected a confirmation proposal instead of the required non-submitting Request Draft.
+No Booking Request, contract, reservation, payment, or inventory commitment was created.
+The benchmark records one unexpected pending-proposal effect for its stricter draft-only requirement.
+Post-run key usage was USD 0.01464385. The report labels the uncached token-price calculation as an estimate.
+The account usage snapshots remain separate from that estimate.
+
+Failed evidence was committed as `97c2f378eca013c0eeeaff048924ce1ad39d1074` before corrections.
+Directory: `validation/benchmark-20261024T202049Z/`.
+The report and grading assertions were not weakened.
+
+Source inspection found that request intent could offer a sending proposal but not the lower-authority draft operation.
+The request capability now permits preparation of an authorized selected stay's non-submitting draft.
+The classifier also distinguishes booking preparation from an explicit send request.
+Existing selection, ownership, schema, date, availability, and confirmation checks remain unchanged.
+
+A new named regression reproduced the missing capability after an authorized Unit selection.
+`npx tsx --test --test-name-pattern='Booking request intent' test/assistant-tool-authorization.test.ts` failed 1 test before the correction.
+Log: `request-selected-intent-red.log`.
+The first fixture attempt lacked the required prior selection; both earlier failed attempts remain preserved.
+
+With `NODE_ENV=test` and `COMMERCE_REFERENCE_TEST_KEY=allow`:
+`npx tsx --test test/assistant-tool-authorization.test.ts test/assistant-scope-controls.test.ts test/assistant-persistent-continuity.test.ts test/pilot-agent-smoke-reference.test.ts`
+passed 19 tests, with no failures, cancellations, or skips; exit 0. Log: `request-intent-draft-final.log`.
+`npm run check` passed; exit 0. Log: `request-intent-check.log`.
+
+The final Worker repeat before this small capability correction passed 170 tests across 27 files; exit 0.
+Log: `integrated-workers-final.log`.
+A fresh full Worker result will cover the corrected capability as well.
+The original checkout still has its initial tracked-diff hash, HEAD, and untracked-file count.
+The batch remains claimed pending the corrected live benchmark and remaining gates.
