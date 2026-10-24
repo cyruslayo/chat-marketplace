@@ -28,6 +28,8 @@ export const GUEST_ASSISTANT_COPY = Object.freeze({
   stayClarification: "How many nights will you be staying, and for how many guests?",
   dateClarification: "Please give me the check-in date as YYYY-MM-DD.",
   safeClarification: "I can help you find and compare stays, explain pricing, or check a booking status. What would you like to do?",
+  detailsReady: "The current stay details are ready below.",
+  statusReady: "The current booking information is ready below.",
   results: (count: number, location: string) => `I found ${count} matching ${count === 1 ? "stay" : "stays"} in ${location}.`,
   noResults: (location: string) => `I couldn't find any eligible stays matching those requirements in ${location}.`,
   priceUnavailable: "Current price facts are not available. Review the current stay details before you continue.",

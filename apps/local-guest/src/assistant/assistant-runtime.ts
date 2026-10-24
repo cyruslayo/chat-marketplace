@@ -126,6 +126,13 @@ export interface AssistantRuntimeOptions {
   readonly maxContextItems?: number;
 }
 
+export interface AssistantShortletRestoreInput {
+  readonly principalId: string;
+  readonly tenantId: string;
+  readonly taskState: AssistantTaskState;
+  readonly canonicalUserFacts: readonly string[];
+}
+
 interface AssistantEventContext {
   readonly actionId?: unknown;
   readonly threadId?: unknown;
@@ -356,7 +363,7 @@ export class AssistantRuntime {
       return { state: restored.state, activeTaskId: restored.activeTaskId, workspace: restored, result: { started: domain, taskId: existing.taskId } };
     }
     const created: AssistantTask = {
-      // Task IDs cross domain storage boundaries (for example, Commerce Cart task_id).
+      // ADR 0070/0099: task IDs cross domain storage boundaries (for example, Commerce Cart task_id).
       // Allocate a server-unique ID so separate guests and threads cannot share task-keyed state.
       taskId: `task-${crypto.randomUUID()}`,
       domain,
@@ -429,6 +436,51 @@ export class AssistantRuntime {
     return thread;
   }
 
+  hasThread(threadId: string): boolean {
+    return this.#threads.has(threadId);
+  }
+
+  /** Restores only app-validated canonical Shortlet state; no model history or provider metadata is accepted. */
+  restoreShortletState(threadId: string, input: AssistantShortletRestoreInput): boolean {
+    const principal = this.#environment.guestPrincipal();
+    if (!threadId || input.principalId !== principal.id || input.tenantId !== this.#environment.config.tenantId || principal.tenantId !== input.tenantId) return false;
+    const thread = this.getThread(threadId);
+    const task = thread.tasks.find((entry) => entry.domain === "shortlet") ?? thread.tasks[0];
+    if (!task || task.domain !== "shortlet") return false;
+    const state = cloneTaskState(input.taskState);
+    task.state = state;
+    thread.activeTaskId = task.taskId;
+    thread.taskState = state;
+    thread.canonicalUserFactHistory = input.canonicalUserFacts.filter((fact) => /^\d{4}-\d{2}-\d{2}$/.test(fact));
+    thread.conversationHistory.length = 0;
+    thread.activeSurfaces.clear();
+    thread.supersededSurfaces.clear();
+    thread.lastSurfaces = [];
+    thread.discoveryArtifactId = null;
+    thread.discoveryArtifact = undefined;
+    this.#syncActiveTask(thread);
+    return true;
+  }
+
+  selectShortletUnit(threadId: string, unitId: string): boolean {
+    const thread = this.#threads.get(threadId);
+    if (!thread) return false;
+    const selected = thread.taskState.shortlist.find((stay) => stay.unitId === unitId);
+    if (!selected) return false;
+    thread.taskState.selectedStayRef = selected.stayRef;
+    const task = thread.tasks.find((entry) => entry.taskId === thread.activeTaskId);
+    if (task) task.state = thread.taskState;
+    return true;
+  }
+
+  clearShortletSelection(threadId: string): void {
+    const thread = this.#threads.get(threadId);
+    if (!thread) return;
+    thread.taskState.selectedStayRef = undefined;
+    const task = thread.tasks.find((entry) => entry.taskId === thread.activeTaskId);
+    if (task) task.state = thread.taskState;
+  }
+
   async handleTurn(threadId: string, text: string): Promise<AssistantTurnOutput> {
     const thread = this.getThread(threadId);
 
@@ -443,6 +495,7 @@ export class AssistantRuntime {
     let candidateSuperseded = new Set<string>(thread.supersededSurfaces);
     let candidateLastSurfaces: readonly AssistantTurnSurface[] = thread.lastSurfaces;
     let candidateDiscoveryArtifactId = thread.discoveryArtifactId;
+    let candidateDiscoveryArtifact = thread.discoveryArtifact;
 
     // The active task decides the active pack: its tools, prompt and projections.
     const candidateDomain = () => candidateTasks.find((task) => task.taskId === candidateActiveTaskId)?.domain ?? this.#activePack.id;
@@ -557,9 +610,9 @@ export class AssistantRuntime {
     taskSwitchPermitted = assessment.intents.includes("task_switch");
     candidateHistory.push({ role: "user", text: redactSensitiveData(discardUserInput ? text : originalUserText) as string });
 
-    const userTextHistory: string[] = candidateHistory
+    const userTextHistory: string[] = [...(thread.canonicalUserFactHistory ?? []), ...candidateHistory
       .filter((s): s is Extract<AssistantConversationStep, { role: "user" }> => s.role === "user")
-      .map((s) => s.text);
+      .map((s) => s.text)];
     // ADR 0106: provenance stays server-side; unsupported text never enters model history.
     if (discardUserInput) userTextHistory[userTextHistory.length - 1] = redactSensitiveData(text) as string;
 
@@ -708,6 +761,7 @@ export class AssistantRuntime {
               throw new Error("Authoritative discovery did not return an artifact");
             }
             candidateDiscoveryArtifactId = execution.discoveryArtifact.id;
+            candidateDiscoveryArtifact = execution.discoveryArtifact;
             const surfaceId = `thread-${threadId}:discovery:${execution.discoveryArtifact.id}`;
             candidateActiveSurfaces.set(DISCOVERY_STAGE, surfaceId);
             activeStage = "a2ui";
@@ -809,6 +863,7 @@ export class AssistantRuntime {
       thread.supersededSurfaces = candidateSuperseded;
       thread.lastSurfaces = candidateSurfaces.length > 0 ? candidateSurfaces : candidateLastSurfaces;
       thread.discoveryArtifactId = candidateDiscoveryArtifactId;
+      thread.discoveryArtifact = candidateDiscoveryArtifact;
       this.#syncActiveTask(thread);
 
       return {
@@ -832,6 +887,7 @@ export class AssistantRuntime {
         thread.supersededSurfaces = candidateSuperseded;
         thread.lastSurfaces = candidateSurfaces;
         thread.discoveryArtifactId = candidateDiscoveryArtifactId;
+        thread.discoveryArtifact = candidateDiscoveryArtifact;
         this.#syncActiveTask(thread);
         return { ok: true, messages: [message], surfaces: candidateSurfaces, tasks: this.getTaskRail(threadId), modelHandled: true, discardUserInput };
       }

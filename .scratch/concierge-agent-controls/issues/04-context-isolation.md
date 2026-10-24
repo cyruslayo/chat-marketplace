@@ -55,3 +55,22 @@ Issue 05 note: draft projections retain only the closed `request_draft.create` o
 Definition of Done review: all five criteria have named tests; named failure cases include sensitive-input redaction, invalid-call quarantine, persistent history inspection, successful discovery/details/compare/price/status/draft/request/offer projections, unknown diagnostics, and safe provider continuity. No new dependency or domain policy constant was added. The existing redactor serves sensitive-data handling. Configurable engineering bounds default to 32 history steps, 24,000 history characters, and 8 projected context items, with runtime validation. Issue remains claimed pending independent review and batch gates; full batch gates run after all five controls.
 
 Independent parent review accepted commit `c2c1b4f` without OpenRouter context blockers. Parent reran context, scope, and OpenAI adapter checks at 21/21 (`controls04-final-parent.log`).
+
+Cold-start continuity follow-up red: `NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow npx tsx --test test/assistant-persistent-continuity.test.ts` initially failed because the authenticated HTTP `/api/state` route returned an empty timeline immediately after an Assistant search. The prior fast path created an empty runtime thread and returned `timeline: []` before loading the owner-checked Guest projection.
+
+The follow-up stores only a closed Shortlet context: validated city, current filters, selected Unit reference, and existing owner-scoped workflow references. It omits Assistant conversation history, prompts, model prose, provider steps, credentials, listing artifacts, descriptions, and amenities. It redacts persisted user timeline text and uses shared server-authored timeline copy. Restore validates principal and tenant, re-queries current discovery facts, reconstructs Assistant shortlist and selected Unit state, and rebuilds the legacy surface from current domain state. The test exercises search, HTTP refresh, process restart, a real result-view event, detail follow-up, another restart, draft follow-up, current booking status, owner-checked conventional draft and Review routes, and wrong-principal/tenant rejection.
+
+ADR constraints applied:
+
+| ADR | Constraint applied | Code path |
+| --- | --- | --- |
+| 0070, 0093 | Bind persisted work to authenticated principal and tenant; identity fields never come from the model. | `#hydrateThreadRecord`, `restoreShortletState`, wrong-owner tests. |
+| 0071, 0075 | Keep interaction projections redacted and omit restricted data and model history. | `assistantContext`, redacted timeline, no discovery narrative in Assistant projections. |
+| 0072, 0080 | Preserve command authority and conventional draft/Review routes. | `getState`, `#restoreCurrentSurface`, HTTP Review test. |
+| 0077 | Rebuild canonical presentations from current authorized domain artifacts. | `#assistantContextSearch`, detail and draft restoration. |
+| 0099, 0101 | Keep pack state behind the platform host and read threads through the authorized local/remote guest-data boundary. | Assistant-to-Guest projection sync and restore path. |
+| 0094 | Do not add identity assurance or restricted identity fields to Assistant continuity. | Closed assistant projection contains no identity or payment data. |
+
+Green evidence: `NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow npx tsx --test test/assistant-persistent-continuity.test.ts` passed 1/1 after the restore fix. `NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow npx tsx --test test/assistant-persistent-continuity.test.ts test/local-guest-shell.test.ts test/guest-process-restart.test.ts test/guest-booking-journey.test.ts` passed 37/37. The latest `NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow npm run check` passed, including all Cloudflare type checks and the Worker bundle guard. The follow-up commit and issue remain claimed pending independent review and the five-control batch gate.
+
+Final follow-up evidence after preserving the original discovery action/artifact pairing: `NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow npx tsx --test test/assistant-persistent-continuity.test.ts test/local-guest-shell.test.ts` passed 9/9; the latest `npm run check` passed. The test verifies storage contains no Assistant `conversationHistory`, `rawStep`, original guest prompts, or external listing narrative. Assistant continuity restores only from the owner/tenant-checked canonical projection.

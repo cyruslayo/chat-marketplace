@@ -32,6 +32,21 @@ export interface GuestPersistentProjection {
    * is the current results' criteria. "Undo last change" steps back one.
    */
   readonly searchHistory: readonly DiscoverySearchContext[];
+  /** Minimal Shortlet assistant state needed to re-authorize a cold-start follow-up. */
+  readonly assistantContext: PersistedAssistantContext | null;
+}
+
+export interface PersistedAssistantContext {
+  readonly city: "Lagos" | "Abuja";
+  readonly neighbourhood?: string;
+  readonly checkIn?: string;
+  readonly checkOut?: string;
+  readonly nights?: number;
+  readonly partySize?: number;
+  readonly bedrooms?: number;
+  readonly maxBudgetKobo?: number;
+  readonly requiredAmenities?: readonly string[];
+  readonly selectedUnitId?: string;
 }
 
 export function isPersistentTimelineEntry(value: unknown): value is { readonly role: "assistant" | "user" | "receipt"; readonly text: string } {
@@ -53,6 +68,35 @@ function isDraftQuote(value: unknown): value is { readonly allInStayTotalKobo: n
 
 function isUnitDetail(value: unknown): value is { readonly unitId: string; readonly artifactId: string } {
   return isRecord(value) && typeof value.unitId === "string" && typeof value.artifactId === "string";
+}
+
+function parseAssistantContext(value: unknown): PersistedAssistantContext | null {
+  if (!isRecord(value) || (value.city !== "Lagos" && value.city !== "Abuja")) return null;
+  const allowed = new Set(["city", "neighbourhood", "checkIn", "checkOut", "nights", "partySize", "bedrooms", "maxBudgetKobo", "requiredAmenities", "selectedUnitId"]);
+  if (Object.keys(value).some((key) => !allowed.has(key))) return null;
+  if (value.neighbourhood !== undefined && (typeof value.neighbourhood !== "string" || value.neighbourhood.length > 100)) return null;
+  for (const key of ["checkIn", "checkOut"] as const) {
+    const candidate = value[key];
+    if (candidate !== undefined && (typeof candidate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(candidate) || Number.isNaN(Date.parse(`${candidate}T00:00:00Z`)))) return null;
+  }
+  for (const key of ["nights", "partySize", "bedrooms", "maxBudgetKobo"] as const) {
+    const candidate = value[key];
+    if (candidate !== undefined && (typeof candidate !== "number" || !Number.isSafeInteger(candidate) || candidate < (key === "bedrooms" ? 0 : key === "maxBudgetKobo" ? 0 : 1))) return null;
+  }
+  if (value.requiredAmenities !== undefined && (!Array.isArray(value.requiredAmenities) || value.requiredAmenities.length > 16 || !value.requiredAmenities.every((entry) => typeof entry === "string" && /^[A-Za-z0-9_-]{1,48}$/.test(entry)))) return null;
+  if (value.selectedUnitId !== undefined && (typeof value.selectedUnitId !== "string" || value.selectedUnitId.length < 1 || value.selectedUnitId.length > 128)) return null;
+  return {
+    city: value.city,
+    ...(typeof value.neighbourhood === "string" ? { neighbourhood: value.neighbourhood } : {}),
+    ...(typeof value.checkIn === "string" ? { checkIn: value.checkIn } : {}),
+    ...(typeof value.checkOut === "string" ? { checkOut: value.checkOut } : {}),
+    ...(typeof value.nights === "number" ? { nights: value.nights } : {}),
+    ...(typeof value.partySize === "number" ? { partySize: value.partySize } : {}),
+    ...(typeof value.bedrooms === "number" ? { bedrooms: value.bedrooms } : {}),
+    ...(typeof value.maxBudgetKobo === "number" ? { maxBudgetKobo: value.maxBudgetKobo } : {}),
+    ...(Array.isArray(value.requiredAmenities) ? { requiredAmenities: [...value.requiredAmenities] as string[] } : {}),
+    ...(typeof value.selectedUnitId === "string" ? { selectedUnitId: value.selectedUnitId } : {}),
+  };
 }
 
 function optionalField<T>(value: unknown, parse: (candidate: unknown) => T | null): { readonly valid: boolean; readonly value: T | null } {
@@ -104,6 +148,8 @@ export function parseGuestProjection(value: unknown): GuestPersistentProjection 
   if (value.searchHistory !== undefined && !Array.isArray(value.searchHistory)) return null;
   const parsedHistory = ((value.searchHistory ?? []) as readonly unknown[]).map(parseDiscoverySearchContext);
   if (parsedHistory.some((entry) => entry === null)) return null;
+  const assistantContextResult = optionalField(value.assistantContext ?? null, parseAssistantContext);
+  if (!assistantContextResult.valid) return null;
   return Object.freeze({
     version: 1,
     timeline: Object.freeze(value.timeline.map((entry) => Object.freeze({ role: entry.role, text: entry.text }))),
@@ -119,5 +165,6 @@ export function parseGuestProjection(value: unknown): GuestPersistentProjection 
     activeStage: value.activeStage,
     activeSurfaceId: value.activeSurfaceId,
     searchHistory: Object.freeze(parsedHistory.filter((entry): entry is DiscoverySearchContext => entry !== null)),
+    assistantContext: assistantContextResult.value,
   });
 }

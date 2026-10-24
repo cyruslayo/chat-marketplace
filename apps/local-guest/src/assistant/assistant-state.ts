@@ -84,6 +84,10 @@ export interface AssistantThreadState {
   supersededSurfaces: Set<string>;
   lastSurfaces: readonly AssistantTurnSurface[];
   discoveryArtifactId: string | null;
+  /** Current server-owned discovery artifact for same-turn adapter synchronization only. */
+  discoveryArtifact?: unknown;
+  /** Redacted canonical slots used for date provenance after a trusted cold-start restore. */
+  canonicalUserFactHistory?: readonly string[];
 }
 
 export function createInitialTaskState(): AssistantTaskState {

@@ -980,7 +980,7 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
       };
       return project(result) as Record<string, unknown>;
     },
-    projectStateSummary: (state, limits) => ({ hasShortlist: state.shortlist.length > 0, shortlistRefs: state.shortlist.slice(0, limits.maxItems).map((stay) => stay.stayRef), selectedStayRef: state.selectedStayRef ?? null, checkIn: state.stayIntent.checkIn ?? null, checkOut: state.stayIntent.checkOut ?? null, nights: state.stayIntent.nights ?? null, partySize: state.stayIntent.partySize ?? null, hasSelectedStay: Boolean(state.selectedStayRef), hasPendingAction: Boolean(state.pendingAction) }),
+    projectStateSummary: (state, limits) => ({ city: state.stayIntent.location === "Lagos" || state.stayIntent.location === "Abuja" ? state.stayIntent.location : null, hasShortlist: state.shortlist.length > 0, shortlistRefs: state.shortlist.slice(0, limits.maxItems).map((stay) => stay.stayRef), selectedStayRef: state.selectedStayRef ?? null, checkIn: state.stayIntent.checkIn ?? null, checkOut: state.stayIntent.checkOut ?? null, nights: state.stayIntent.nights ?? null, partySize: state.stayIntent.partySize ?? null, hasSelectedStay: Boolean(state.selectedStayRef), hasPendingAction: Boolean(state.pendingAction) }),
     taskSummary: shortletTaskSummary,
     renderReply: (plan, results, text) => renderShortletReply(plan, results, text, environment.clock()),
     discoverySurface: (artifact, surfaceId) => discoveryArtifactToA2UI({ artifact: artifact as never, surfaceId, demo: environment.config.demo === true }),
